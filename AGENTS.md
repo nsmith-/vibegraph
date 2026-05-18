@@ -46,18 +46,19 @@ vibegraph/
 
 ### Feynman Diagram Enumeration
 - MadGraph5_aMC@NLO: generates amplitudes from Feynman diagrams
-- Rust crate `feyngraph`: https://crates.io/crates/feyngraph
+- Rust crate `feyngraph`: https://github.com/Jens-Braun/FeynGraph
 - Key algorithm: recursive diagram generation from vertices + external particles
 
 ### Helicity Amplitudes (HELAS / ALOHA)
 - HELAS: Helas Amplitude Subroutines — Fortran routines for wavefunction/vertex computations
 - ALOHA: Automatic Libraries Of Helicity Amplitudes — generates HELAS-like code from UFO Lorentz structures
-- Reference: https://arxiv.org/abs/1108.2040 (ALOHA), https://arxiv.org/abs/hep-ph/9401258 (HELAS)
+- Reference: https://arxiv.org/abs/1108.2041 (ALOHA), https://inspirehep.net/literature/336604 (HELAS)
 
 ### Phase-Space Sampling
 - VEGAS: adaptive Monte Carlo integration (Lepage 1978)
 - Maps unit hypercube → physical phase space (LIPS measure)
-- Rust crate `vegas-rs` or implement directly
+- **TODO (research phase):** survey available Rust LIPS/VEGAS implementations and choose one
+  (vegas-rs is unrelated; options may include porting MadGraph's phase-space routines directly)
 
 ### Cross Section
 - σ = ∫ dΦ_n |M|² / flux  (integrated over n-body Lorentz-invariant phase space)
@@ -72,3 +73,11 @@ See `research/notes/` for step-by-step derivations and implementation notes.
 - Natural units: ℏ = c = 1
 - Metric signature: (+, -, -, -)
 - Spinor conventions: Weyl/van der Waerden unless noted otherwise
+
+## Open Research Questions
+
+- **Units library:** Research Rust typed-units crates (e.g., `uom`, `dimensioned`, `units`) for
+  applicability to HEP quantities (GeV, mb, etc.) — goal is typed four-momenta and cross sections
+  throughout to catch dimension errors at compile time.
+- **LIPS sampling:** Survey Rust (and portable Fortran/Python) implementations of n-body
+  phase-space generators before committing to an approach.
