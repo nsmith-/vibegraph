@@ -1,0 +1,6 @@
+[submodule "research/refs/feyngraph"]
+	path = research/refs/feyngraph
+	url = https://github.com/Jens-Braun/FeynGraph
+[submodule "research/refs/mg5amcnlo"]
+	path = research/refs/mg5amcnlo
+	url = https://github.com/mg5amcnlo/mg5amcnlo
