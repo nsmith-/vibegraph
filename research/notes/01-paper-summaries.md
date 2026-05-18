@@ -139,33 +139,7 @@ MadGraph paper for the diagram enumeration algorithm.
 ## HELAS — HELicity Amplitude Subroutines
 **Ref:** Murayama, Watanabe, Hagiwara, KEK-91-11 (1992)
 **InspireHEP:** https://inspirehep.net/literature/336604
-*(InspireHEP renders as a JS SPA — not directly fetchable. Get the KEK
-preprint from https://lib-extopc.kek.jp/preprints/PDF/1991/9124/9124011.pdf)*
-
-### What it does
-The original Fortran library of helicity amplitude subroutines. Defines
-the calling convention that ALOHA and MadGraph are built on.
-
-### Key routine families
-| Prefix | Type | Description |
-|---|---|---|
-| `ixxxxx` | wavefunction | Incoming fermion (u-spinor) |
-| `oxxxxx` | wavefunction | Outgoing fermion (v-spinor) |
-| `vxxxxx` | wavefunction | External vector boson (polarization ε^μ) |
-| `sxxxxx` | wavefunction | External scalar |
-| `FFVx_y` | vertex+current | Fermion-fermion-vector → off-shell current |
-| `VVVx_y` | vertex+current | Triple gauge vertex |
-| `FFVx_0` | amplitude | Fermion-fermion-vector → complex scalar M |
-
-### Wavefunction convention
-Each wavefunction is a fixed-size complex array. For spin-1/2: 6 elements
-(4 spinor components + 4-momentum packed in last 2). For spin-1: 6 elements
-(4 polarization components + 4-momentum).
-
-### Relevance to vibegraph
-Defines the data layout for wavefunctions and the function signatures we
-need to implement in Rust. The "array of complex numbers" representation
-maps naturally to `[Complex<f64>; N]`.
+*(Superseded below by full summary from OCR'd document — see second HELAS entry)*
 
 ---
 
@@ -356,3 +330,113 @@ final-state and initial-state emitters/spectators, including massive quarks.
 **Not needed for the current LO scope.** Included as the essential reference
 for "what would have to be added" if we extend to NLO. The C-S dipole method
 is used directly inside MadGraph5_aMC@NLO's NLO infrastructure (MadFKS).
+
+---
+
+## HELAS — HELicity Amplitude Subroutines
+**Source:** KEK Report 91-11 (1992), not on arXiv; fetched from KEK preprint server
+**fetch:** `research/refs/papers/helas.pdf` (scanned); OCR output: `research/refs/papers/helas.mmd`
+**Authors:** Murayama, Watanabe & Hagiwara
+
+### What it does
+A library of FORTRAN77 subroutines for computing helicity amplitudes of
+arbitrary tree-level Feynman diagrams. Given external four-momenta and
+helicities, HELAS computes wavefunctions, propagates them through vertices,
+and returns the complex amplitude. MadGraph generates calls to HELAS routines
+automatically from diagram topology.
+
+### Core architecture
+Two building blocks:
+1. **Wavefunction subroutines** — compute external particle states from
+   four-momenta and helicity quantum numbers
+2. **Vertex subroutines** — take wavefunction arrays as input, return either
+   an off-shell internal current (for propagation to the next vertex) or a
+   scalar amplitude (at the final vertex of a diagram)
+
+### Wavefunction subroutines
+All wavefunction outputs are `complex(6)` arrays: 4 Lorentz/spinor components
++ 4-momentum packed as 2 complex numbers.
+
+| Subroutine | Computes | Output symbol |
+|---|---|---|
+| `IXXXXX(P, FMASS, NHEL, NSF, FI)` | Flowing-in fermion u(p) or v(p) | `\|f>` |
+| `OXXXXX(P, FMASS, NHEL, NSF, FO)` | Flowing-out fermion u-bar(p) or v-bar(p) | `<f\|` |
+| `VXXXXX(P, VMASS, NHEL, NSV, VC)` | Vector boson polarization ε(p) or ε*(p) | `V^μ` |
+| `SXXXXX(P, NSS, SC)` | Scalar boson wavefunction (unity + momentum) | `S` |
+
+**Key parameter conventions:**
+- `NHEL`: helicity (+1/-1 for spin-1/2; +1/0/-1 for spin-1)
+- `NSF`/`NSV`/`NSS`: +1 = final state (outgoing), -1 = initial state (incoming);
+  for fermions, NSF also selects particle (u-spinor) vs antiparticle (v-spinor)
+- `P(0:3)`: 4-momentum with P(0) = energy, always positive
+- Momentum packed into last 2 complex slots: `(P(0)+iP(3), P(1)+iP(2))`
+
+### Vertex subroutines
+For each vertex type, HELAS provides variants that return either a complex
+scalar amplitude (all external legs provided) or an off-shell current array
+for one of the legs (with propagator factor included).
+
+All vertex types in renormalizable theories:
+
+| Vertex | Amplitude routine | Current routine(s) |
+|---|---|---|
+| FFV (fermion-fermion-vector) | `IOVXXX` | `FVIXXX`, `FVOXXX` (fermion), `JIOXXX`, `J3XXXX` (vector) |
+| FFS (Yukawa) | `IOSXXX` | `FSIXXX`, `FSOXXX`, `HIOXXX` |
+| VVV (3-gauge-boson) | `VVVXXX` | `JVVXXX` |
+| VVS | `VVSXXX` | `JVSXXX`, `HVVXXX` |
+| VSS | `VSSXXX` | `JSSXXX`, `HVSXXX` |
+| SSS | `SSSXXX` | `HSSXXX` |
+| VVVV (4-gauge-boson) | `WWWWXX`, `W3W3XX` | `JWWWWX`, `JW3WXX` |
+| VVSS (seagull) | `VVSSXX` | `JVSSXX`, `HVVSXX` |
+| SSSS | `SSSSXX` | `HSSSX` |
+| EEA (collinear e-γ) | — | `EAIXX`, `EAOXX`, `JEEXX` |
+
+**Coupling convention for FFV:** `G(2)` array:
+- `G(1)` = left-chiral coupling (coefficient of `(1-γ₅)/2`)
+- `G(2)` = right-chiral coupling (coefficient of `(1+γ₅)/2`)
+
+### Naming scheme
+Subroutine names encode vertex type + input/output roles, padded to 8 chars with `X`:
+- Input codes: `I` = flowing-in fermion, `O` = flowing-out fermion, `V` = vector, `S` = scalar
+- Output codes: `J` = off-shell vector current, `H` = off-shell scalar current,
+  `F` = off-shell fermion current; amplitude routines use all-input naming (e.g. `IOV`)
+- Special codes: `E` = collinear electron, `A` = photon (EEA vertex), `W`/`3` = W/Z bosons
+
+### Example: W+W− → tt̄ (4 diagrams, 11 CALL lines)
+```fortran
+! External wavefunctions
+CALL VXXXXX(PWM, WMASS, NHWM, -1, WM)   ! W- incoming
+CALL VXXXXX(PWP, WMASS, NHWP, -1, WP)   ! W+ incoming
+CALL OXXXXX(PT,  TMASS, NHT,  +1, FO)   ! t outgoing
+CALL IXXXXX(PTB, TMASS, NHTB, -1, FI)   ! tbar outgoing (flowing-in)
+! Diagrams
+CALL J3XXXX(FI, FO, GAU, GZU, ZMASS, ZWIDTH, J3)  ! Z/γ current (s-channel)
+CALL VVVXXX(WP, WM, J3, GW, AMPS)                  ! s-channel diagram
+CALL FVIXXX(FI, WM, GWF, 0., 0., FVI)              ! off-shell b quark
+CALL IOVXXX(FVI, FO, WP, GWF, AMPT)                ! t-channel diagram
+CALL HIOXXX(FI, FO, GCHT, HMASS, HWIDTH, HTT)      ! Higgs current
+CALL VVSXXX(WM, WP, HTT, GWHH, AMPH)               ! s-channel Higgs diagram
+AMP = AMPS + AMPT + AMPH
+```
+
+### Utility subroutines
+- `MOMNTX(E, M, COSTH, PHI, P)`: construct 4-momentum from energy, mass, angles
+- `MOM2CX(SQRT_S, M1, M2, COSTH, P1, P2)`: two-body CM frame momenta
+- `BOOSTX(P, Q, R)`: Lorentz boost of momentum P along direction Q
+- `ROTXXX(P, COSTH, PHI, R)`: rotate momentum
+- `COUP1X`–`COUP4X`: Standard Model coupling constants (VVV, FFV, VVS/Higgs, FFS)
+
+### Conventions (Appendix A)
+- Dirac matrices in Weyl (chiral) representation
+- Massless spinors defined via reference momentum for longitudinal gauge
+- Unitary gauge for weak boson propagators (minimises diagram count)
+- Single precision throughout; double precision `DHELAS` available separately
+
+### Relevance to vibegraph
+**Central reference for the helicity amplitude module.** The Rust implementation
+will mirror this structure:
+- Wavefunction functions return `[Complex<f64>; 6]`
+- Vertex functions take wavefunction arrays, return current array or amplitude
+- FFV coupling maps to `g: [f64; 2]` for chiral left/right components
+- ALOHA (see that summary) describes how to auto-generate these routines from
+  UFO vertices, extending HELAS to arbitrary BSM models
