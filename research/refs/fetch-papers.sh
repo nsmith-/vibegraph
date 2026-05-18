@@ -18,16 +18,21 @@ URLS=(
   [aloha]="https://ar5iv.org/html/1108.2041"
   [ufo]="https://ar5iv.org/html/1108.2040"
   [madgraph5]="https://ar5iv.org/html/1405.0301"
-  [helas]="https://inspirehep.net/literature/336604"
-  [vegas]="https://inspirehep.net/literature/119196"
+  [madgraph_orig]="https://ar5iv.org/html/hep-ph/9401258"
+  # HELAS (KEK-91-11, 1992) is pre-arXiv; InspireHEP is a JS SPA (not fetchable).
+  # Direct PDF: https://lib-extopc.kek.jp/preprints/PDF/1991/9124/9124011.pdf
+  [helas]="https://lib-extopc.kek.jp/preprints/PDF/1991/9124/9124011.pdf"
+  # VEGAS (Lepage 1978) is pre-arXiv. Lepage's later pedagogical write-up:
+  [vegas]="https://ar5iv.org/html/math/9109021"
   [mcreview]="https://ar5iv.org/html/1101.2599"
 )
 DESCS=(
   [aloha]="ALOHA: Automatic Libraries Of Helicity Amplitudes (arXiv:1108.2041)"
   [ufo]="UFO: Universal FeynRules Output (arXiv:1108.2040)"
   [madgraph5]="MadGraph5_aMC@NLO (arXiv:1405.0301)"
-  [helas]="HELAS: HELicity Amplitude Subroutines (InspireHEP:336604)"
-  [vegas]="VEGAS: Monte Carlo integration, Lepage 1978 (InspireHEP:119196)"
+  [madgraph_orig]="Original MadGraph: diagram generation + HELAS calls (hep-ph/9401258)"
+  [helas]="HELAS: HELicity Amplitude Subroutines, KEK-91-11 (PDF)"
+  [vegas]="VEGAS: Lepage pedagogical writeup (math/9109021)"
   [mcreview]="General-purpose MC event generators review (arXiv:1101.2599)"
 )
 
