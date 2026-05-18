@@ -21,10 +21,8 @@ pytorch = ">=2.0"
 nougat-ocr = "*"
 
 [feature.nougat.tasks]
-# Runs nougat OCR on a PDF. Override PAPER to target a different file.
 # Example: pixi run -e nougat ocr
-# Example: PAPER=research/refs/papers/helas.pdf pixi run -e nougat ocr
-ocr = "nougat ${PAPER:-research/refs/papers/helas.pdf} -o research/refs/papers/"
+ocr = "nougat research/refs/papers/helas.pdf -o research/refs/papers/"
 
 [environments]
 nougat = { features = ["nougat"], solve-group = "nougat" }
