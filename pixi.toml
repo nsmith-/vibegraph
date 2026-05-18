@@ -19,6 +19,9 @@ pytorch = ">=2.0"
 
 [feature.nougat.pypi-dependencies]
 nougat-ocr = "*"
+albumentations = "<1.4"  # nougat incompatible with albumentations>=1.4 (ImageCompression API change)
+pypdfium2 = "<5"         # nougat uses PdfDocument.render() which was removed in pypdfium2 v5
+transformers = "<4.36"   # nougat incompatible with transformers>=4.36 (cache_position kwarg added to generate)
 
 [feature.nougat.tasks]
 # Example: pixi run -e nougat ocr
