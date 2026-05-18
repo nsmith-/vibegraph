@@ -48,8 +48,9 @@ following the same pipeline used by MadGraph5_aMC@NLO.
 ## References
 
 - MadGraph paper: https://arxiv.org/abs/1405.0301
-- HELAS manual: https://arxiv.org/abs/hep-ph/9401258
-- ALOHA paper: https://arxiv.org/abs/1108.2040
+- HELAS manual: https://inspirehep.net/literature/336604
+- ALOHA paper: https://arxiv.org/abs/1108.2041
 - UFO format: https://arxiv.org/abs/1108.2040
-- VEGAS: Lepage, J.Comput.Phys. 27 (1978) 192
-- feyngraph crate: https://crates.io/crates/feyngraph
+- VEGAS: Lepage, J.Comput.Phys. 27 (1978) 192 — https://inspirehep.net/literature/119196
+- feyngraph: https://github.com/Jens-Braun/FeynGraph
+- General-purpose event generators for LHC physics: https://arxiv.org/abs/1101.2599
