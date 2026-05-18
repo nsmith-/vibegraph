@@ -1,0 +1,30 @@
+[workspace]
+authors = ["Nick Smith <nick.smith@cern.ch>"]
+channels = ["conda-forge", "pytorch"]
+name = "vibegraph"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+# Default environment: no conda deps (Rust toolchain managed by rustup)
+[dependencies]
+
+[tasks]
+
+# --- nougat: scientific PDF OCR ---
+# Converts scanned academic PDFs to markdown+LaTeX
+[feature.nougat.dependencies]
+python = ">=3.10,<3.12"
+pip = "*"
+pytorch = ">=2.0"
+
+[feature.nougat.pypi-dependencies]
+nougat-ocr = "*"
+
+[feature.nougat.tasks]
+# Runs nougat OCR on a PDF. Override PAPER to target a different file.
+# Example: pixi run -e nougat ocr
+# Example: PAPER=research/refs/papers/helas.pdf pixi run -e nougat ocr
+ocr = "nougat ${PAPER:-research/refs/papers/helas.pdf} -o research/refs/papers/"
+
+[environments]
+nougat = { features = ["nougat"], solve-group = "nougat" }

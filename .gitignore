@@ -1,2 +1,5 @@
 /target
 /research/refs/papers/
+# pixi environments
+.pixi/*
+!.pixi/config.toml
