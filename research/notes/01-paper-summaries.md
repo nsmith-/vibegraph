@@ -228,3 +228,131 @@ beyond our current scope.
 ### Relevance to vibegraph
 Good big-picture context for where LO matrix elements fit in the full
 simulation chain. Not needed for the initial toy implementation.
+
+---
+
+## FeynRules - Feynman Rules Made Easy
+**arXiv:** 0806.4194  **fetch:** `https://ar5iv.org/html/0806.4194`
+**Authors:** Christensen & Duhr (2009). Note: FeynRules 2.0 (Alloul et al., arXiv:1310.1921) adds full UFO output support.
+
+### What it does
+A Mathematica package that takes a model Lagrangian as input and automatically
+derives Feynman rules (interaction vertices), then exports them in the format
+required by various ME generators. It is the upstream tool that produces UFO
+files consumed by MadGraph5 and ALOHA.
+
+### Workflow
+1. User writes a model file declaring: particle content, parameters, and
+   the Lagrangian in Mathematica notation.
+2. FeynRules applies canonical quantization to extract all interaction vertices.
+3. Vertices are stored in a generic internal representation.
+4. A translation interface exports to the desired format (UFO, CalcHEP,
+   FeynArts, Sherpa, etc.).
+
+### UFO connection
+The UFO format (`particles.py`, `vertices.py`, etc.) is precisely the
+serialization of FeynRules' internal vertex representation. When we load a
+UFO model in vibegraph, we are consuming FeynRules output.
+
+### Key data structures
+- **Particle**: `PDG code`, mass symbol, spin, color representation, charge
+- **Vertex**: list of participating particles + Lorentz structure + color factor
+  + coupling symbol
+- **Parameter**: internal (derived) or external (input) with numerical value
+
+### Relevance to vibegraph
+Essential context for understanding the UFO file format. We do not need to
+run FeynRules ourselves — we consume pre-generated UFO models (e.g. the
+Standard Model UFO from the MadGraph model library).
+
+---
+
+## COMIX - A New Matrix Element Generator (Sherpa)
+**arXiv:** 0808.3674  **fetch:** `https://ar5iv.org/html/0808.3674` (note: ar5iv fails to render this paper; see PDF at https://arxiv.org/pdf/0808.3674)
+**Authors:** Gleisberg & Höche (2008), published in JHEP 0812 (2008) 039.
+
+### What it does
+COMIX is the high-multiplicity ME generator inside Sherpa. It uses
+**Berends-Giele off-shell recursive currents** rather than summing individual
+Feynman diagrams, enabling polynomial (rather than factorial) scaling with
+the number of external legs.
+
+### Berends-Giele recursion (the core idea)
+Instead of enumerating all diagrams and computing each independently, define
+an **off-shell current** J(1,...,n) as the sum over all sub-diagrams
+connecting external legs {1,...,n} to a single off-shell leg. The recursion is:
+
+    J(1,...,n) = sum over partitions: V * J(subset_A) * J(subset_B)
+
+where V is the vertex factor. Physical amplitudes are obtained by contracting
+the current for all-but-one legs with the remaining external wavefunction.
+
+**Scaling:** O(3^n) operations vs O(n!) diagrams — dramatically better
+for 6+ external particles.
+
+### Color/helicity decomposition
+COMIX uses color-dressed Berends-Giele currents: currents carry explicit color
+indices, summed at the end. Helicity states are handled by computing currents
+for each helicity configuration.
+
+### Comparison to HELAS (our approach)
+| | HELAS/MadGraph | COMIX/Berends-Giele |
+|---|---|---|
+| Unit | Individual Feynman diagram | Recursive current |
+| Scaling | O(n!) diagrams | O(3^n) recursion steps |
+| Code structure | Per-diagram FORTRAN routines | Single recursive function |
+| Good for | Low multiplicity (2->2, 2->4) | High multiplicity (2->6+) |
+
+### Relevance to vibegraph
+Not used in our initial LO implementation (we follow HELAS/MadGraph). Worth
+understanding as an alternative approach if we later target processes with many
+final-state particles. The scaling advantage becomes significant above ~6 legs.
+
+---
+
+## Catani-Seymour - General IR Subtraction at NLO
+**arXiv:** hep-ph/9605323  **fetch:** `https://ar5iv.org/html/hep-ph/9605323`
+**Authors:** Catani & Seymour (1996), published in Nucl.Phys. B485 (1997) 291-419.
+
+### Context
+This paper is **not needed for our LO implementation**, but is included as a
+reference for future NLO extension. It defines the canonical method for
+handling infrared (soft and collinear) divergences in NLO QCD calculations.
+
+### The problem it solves
+At NLO, two contributions must be added:
+- **Real emission**: m+1 partons in final state — integrand is singular when
+  one parton is soft or two partons are collinear.
+- **Virtual correction**: m partons + one loop — produces explicit 1/epsilon poles
+  in dimensional regularization.
+
+Each piece is separately divergent; their sum is finite for infrared-safe
+observables. The challenge is to make both pieces numerically integrable.
+
+### The subtraction method
+Introduce a local counterterm dσ^A that:
+1. Has the same pointwise singular behaviour as the real emission dσ^R
+2. Can be integrated analytically over the one-parton subspace
+
+Then:
+
+    σ^NLO = ∫_{m+1} [dσ^R - dσ^A]_{ε=0}   (finite, integrate numerically)
+           + ∫_m    [dσ^V + ∫_1 dσ^A]_{ε=0}  (poles cancel analytically)
+
+### Dipole factorization formulae
+The key innovation: the counterterms d^A are built from **dipole terms**,
+which factorize the singular limits in a Lorentz-covariant way that smoothly
+interpolates between soft and collinear limits. Each dipole involves:
+- An **emitter** parton *i*
+- An **emitted/spectator** parton *j* (or *k*)
+- A reduced m-parton kinematics with a momentum mapping (i,j) -> ĩ
+
+### Appendix C
+The most practically useful section: collects all explicit dipole formulae
+needed to implement the method. The paper covers all combinations of
+final-state and initial-state emitters/spectators, including massive quarks.
+
+### Relevance to vibegraph
+**Not needed for the current LO scope.** Included as the essential reference
+for "what would have to be added" if we extend to NLO. The C-S dipole method
+is used directly inside MadGraph5_aMC@NLO's NLO infrastructure (MadFKS).
