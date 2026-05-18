@@ -24,6 +24,13 @@ PAPERS=(
   # describes the original algorithm in full plus enhancements:
   "vegas|https://ar5iv.org/html/2009.05112|VEGAS+: Adaptive Multidimensional Integration, Lepage 2020 (arXiv:2009.05112)"
   "mcreview|https://ar5iv.org/html/1101.2599|General-purpose MC event generators review (arXiv:1101.2599)"
+  # Fixed-order / NLO infrastructure references:
+  "feynrules|https://ar5iv.org/html/0806.4194|FeynRules: Feynman rules from Lagrangian (arXiv:0806.4194)"
+  # NOTE: ar5iv fails to render 0808.3674 (Gleisberg & Höche, COMIX) — the fetched
+  # HTML will be an 8KB error page. Use https://arxiv.org/pdf/0808.3674 instead if
+  # a local copy is needed.
+  "comix|https://ar5iv.org/html/0808.3674|COMIX/Sherpa: Berends-Giele recursive ME generation (arXiv:0808.3674)"
+  "catani_seymour|https://ar5iv.org/html/hep-ph/9605323|Catani-Seymour: general IR subtraction at NLO (hep-ph/9605323)"
 )
 
 get_field() { echo "$1" | cut -d'|' -f"$2"; }
