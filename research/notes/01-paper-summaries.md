@@ -173,21 +173,39 @@ maps naturally to `[Complex<f64>; N]`.
 **Ref:** Lepage, J.Comput.Phys. 27 (1978) 192 — pre-arXiv, no arXiv ID
 **VEGAS+ (updated):** arXiv:2009.05112  **fetch:** `https://ar5iv.org/html/2009.05112`
 
-### Algorithm
-1. Divide each integration dimension into N bins of equal initial width.
-2. Evaluate integrand at random points (stratified by bin).
-3. After each iteration, resize bins so each bin contributes equal variance
-   (narrow bins where integrand is large, wide bins where it is small).
-4. Repeat for several iterations; accumulate estimate and error.
-5. Final result: weighted combination of all iterations.
+### Classic VEGAS algorithm (importance sampling only)
+1. Divide each integration dimension into Ng bins (typical Ng=1000) of
+   initially equal width Δxi.
+2. Map the integration variable x ∈ [a,b] to y ∈ [0,1] via x(y), where
+   equal Δy intervals in y-space map to variable-width Δxi intervals in x-space.
+   The Jacobian is J(y) = Ng·Δx_{i(y)}.
+3. Evaluate the integrand at Nev random points uniform in y-space. Because
+   J ∝ 1/|f(x)| at the optimum, this concentrates samples near peaks in x-space
+   (importance sampling — **not** stratification).
+4. After each iteration, refine the grid: shrink Δxi where |f| is large
+   (so J is small and more y-points map there), widen where |f| is small.
+   Optimal condition: J²/Δxi · ∫f²dx = constant across all bins.
+5. Repeat for several iterations; combine estimates weighted by 1/σ²_i.
+
+### VEGAS+ additions (arXiv:2009.05112)
+- Adds **adaptive stratified sampling** on top of importance sampling.
+- Subdivides the unit hypercube into Ns stratification cells per dimension;
+  allocates more integrand evaluations to cells with higher variance.
+- Much more effective for integrands with multiple peaks or diagonal
+  structures that importance sampling alone cannot handle.
+- 2–19× improvement over classic VEGAS on relevant problems.
+- **For our use case** (single s-channel or t-channel peak in 2→2),
+  classic VEGAS importance sampling is likely sufficient.
 
 ### Phase space integration
-For an n-body final state at CM energy √s, LIPS is mapped to a unit
-hypercube [0,1]^(3n-4) (after fixing one longitudinal and using δ⁴ to
-remove 4 DOF). VEGAS adapts to peaks from propagators (s-channel, t-channel).
+For an n-body final state, LIPS has 3n−4 independent degrees of freedom
+(3n momenta, minus 4 from the on-shell δ⁴(p_in−Σp_f), minus nothing for
+massless case). VEGAS adapts to peaks from propagators (e.g. 1/(p²−m²)²
+divergence near resonance).
 
 ### Relevance to vibegraph
-The integration driver. Our |M|² is the integrand; VEGAS provides σ.
+The integration driver. Our |M|² × LIPS Jacobian is the integrand; VEGAS
+provides σ ± δσ and a set of weighted phase-space points for event generation.
 **Open question:** survey available Rust implementations vs. porting
 the algorithm directly. See AGENTS.md for this research task.
 
