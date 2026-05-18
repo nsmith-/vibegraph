@@ -170,10 +170,8 @@ maps naturally to `[Complex<f64>; N]`.
 ---
 
 ## VEGAS — Adaptive Monte Carlo Integration
-**Ref:** Lepage, J.Comput.Phys. 27 (1978) 192
-**InspireHEP:** https://inspirehep.net/literature/119196
-*(Pre-arXiv; InspireHEP is a JS SPA. A later pedagogical writeup by
-Lepage is at https://arxiv.org/abs/math/9109021 — Cornell preprint CLNS-80/447)*
+**Ref:** Lepage, J.Comput.Phys. 27 (1978) 192 — pre-arXiv, no arXiv ID
+**VEGAS+ (updated):** arXiv:2009.05112  **fetch:** `https://ar5iv.org/html/2009.05112`
 
 ### Algorithm
 1. Divide each integration dimension into N bins of equal initial width.

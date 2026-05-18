@@ -20,7 +20,9 @@ PAPERS=(
   "madgraph5|https://ar5iv.org/html/1405.0301|MadGraph5_aMC@NLO (arXiv:1405.0301)"
   "madgraph_orig|https://ar5iv.org/html/hep-ph/9401258|Original MadGraph: diagram generation + HELAS calls (hep-ph/9401258)"
   "helas|https://lib-extopc.kek.jp/preprints/PDF/1991/9124/9124011.pdf|HELAS: HELicity Amplitude Subroutines, KEK-91-11 (PDF)"
-  "vegas|https://ar5iv.org/html/math/9109021|VEGAS: Lepage pedagogical writeup (math/9109021)"
+  # VEGAS (Lepage 1978) is pre-arXiv. Use Lepage's 2020 VEGAS+ paper which
+  # describes the original algorithm in full plus enhancements:
+  "vegas|https://ar5iv.org/html/2009.05112|VEGAS+: Adaptive Multidimensional Integration, Lepage 2020 (arXiv:2009.05112)"
   "mcreview|https://ar5iv.org/html/1101.2599|General-purpose MC event generators review (arXiv:1101.2599)"
 )
 
