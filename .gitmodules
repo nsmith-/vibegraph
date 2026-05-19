@@ -4,3 +4,9 @@
 [submodule "research/refs/mg5amcnlo"]
 	path = research/refs/mg5amcnlo
 	url = https://github.com/mg5amcnlo/mg5amcnlo
+[submodule "research/refs/sherpa"]
+	path = research/refs/sherpa
+	url = https://gitlab.com/sherpa-team/sherpa.git
+[submodule "research/refs/powheg-box-v2"]
+	path = research/refs/powheg-box-v2
+	url = https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2.git
