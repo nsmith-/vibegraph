@@ -47,12 +47,7 @@ pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
     zwidth: F,
 ) -> VectorWf<F> {
     // Off-shell momentum: fo.p − fi.p
-    let jmom = [
-        fo.momentum[0] - fi.momentum[0],
-        fo.momentum[1] - fi.momentum[1],
-        fo.momentum[2] - fi.momentum[2],
-        fo.momentum[3] - fi.momentum[3],
-    ];
+    let jmom = std::array::from_fn(|mu| fo.momentum[mu] - fi.momentum[mu]);
     // Propagator momentum (inflow convention)
     let q = [-jmom[0], -jmom[1], -jmom[2], -jmom[3]];
     let q2 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
