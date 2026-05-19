@@ -34,7 +34,14 @@ pub fn parse_particles_ext(
     Ok(raw
         .into_iter()
         .map(|(name, mass, width)| {
-            (name.clone(), ParticleExt { name, mass_param: mass, width_param: width })
+            (
+                name.clone(),
+                ParticleExt {
+                    name,
+                    mass_param: mass,
+                    width_param: width,
+                },
+            )
         })
         .collect())
 }

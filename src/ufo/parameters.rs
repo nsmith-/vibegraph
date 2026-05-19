@@ -19,10 +19,7 @@ pub enum ParameterError {
     #[error("Cyclic dependency among internal parameters")]
     CyclicDep,
     #[error("Expression parse error for parameter '{name}': {cause}")]
-    ExprParse {
-        name: String,
-        cause: String,
-    },
+    ExprParse { name: String, cause: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,9 +67,11 @@ impl ParameterSet {
 
         for p in &self.externals {
             let v = match &p.nature {
-                ParamNature::External { default_value, lha_block, lha_code } => {
-                    slha.get(lha_block, lha_code).unwrap_or(*default_value)
-                }
+                ParamNature::External {
+                    default_value,
+                    lha_block,
+                    lha_code,
+                } => slha.get(lha_block, lha_code).unwrap_or(*default_value),
                 _ => unreachable!(),
             };
             values.insert(p.name.clone(), Complex64::new(v, 0.0));
@@ -140,7 +139,11 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
                 externals.push(Parameter {
                     name,
                     complex: is_complex,
-                    nature: ParamNature::External { default_value, lha_block, lha_code },
+                    nature: ParamNature::External {
+                        default_value,
+                        lha_block,
+                        lha_code,
+                    },
                 });
             }
             _ => {
@@ -174,7 +177,11 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
     // Extend all_known with internals (for completeness, not used further here).
     all_known.extend(internals.iter().map(|p| p.name.clone()));
 
-    Ok(ParameterSet { externals, internals, rdeps })
+    Ok(ParameterSet {
+        externals,
+        internals,
+        rdeps,
+    })
 }
 
 /// Kahn's topological sort for internal parameters.
@@ -188,8 +195,11 @@ fn toposort_internals(
     let mut in_degree: Vec<usize> = vec![0; n];
     let mut forward: Vec<Vec<usize>> = vec![vec![]; n]; // forward[i] = list of indices that depend on i
 
-    let name_index: HashMap<&str, usize> =
-        names.iter().enumerate().map(|(i, name)| (name.as_str(), i)).collect();
+    let name_index: HashMap<&str, usize> = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.as_str(), i))
+        .collect();
 
     for (i, (_, _, _, deps)) in raw.iter().enumerate() {
         for dep in deps {
@@ -216,7 +226,10 @@ fn toposort_internals(
         sorted.push(Parameter {
             name: name.clone(),
             complex: *complex,
-            nature: ParamNature::Internal { expr: expr.clone(), deps: deps.clone() },
+            nature: ParamNature::Internal {
+                expr: expr.clone(),
+                deps: deps.clone(),
+            },
         });
         for &j in &forward[i] {
             in_degree[j] -= 1;
@@ -239,7 +252,7 @@ struct RawParam {
     name: String,
     nature: Option<String>,
     type_str: Option<String>,
-    ext_value: Option<f64>,   // external: bare float
+    ext_value: Option<f64>,    // external: bare float
     int_value: Option<String>, // internal: quoted string
     lha_block: Option<String>,
     lha_code: Option<Vec<i32>>,
