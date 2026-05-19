@@ -122,9 +122,7 @@ fn weyl_ixxxxx<F: Real>(p: [F; 4], mass: F, nhel: i32, nsf: i32) -> [C<F>; 4] {
     let mut fi = [C::new(F::zero(), F::zero()); 4];
 
     if mass != F::zero() {
-        let pp = (p[1] * p[1] + p[2] * p[2] + p[3] * p[3])
-            .sqrt()
-            .min(p[0]);
+        let pp = (p[1] * p[1] + p[2] * p[2] + p[3] * p[3]).sqrt().min(p[0]);
 
         if pp == F::zero() {
             // ── at rest ───────────────────────────────────────────────────
@@ -218,9 +216,7 @@ fn weyl_oxxxxx<F: Real>(p: [F; 4], mass: F, nhel: i32, nsf: i32) -> [C<F>; 4] {
     let mut fo = [C::new(F::zero(), F::zero()); 4];
 
     if mass != F::zero() {
-        let pp = (p[1] * p[1] + p[2] * p[2] + p[3] * p[3])
-            .sqrt()
-            .min(p[0]);
+        let pp = (p[1] * p[1] + p[2] * p[2] + p[3] * p[3]).sqrt().min(p[0]);
 
         if pp == F::zero() {
             // ── at rest ───────────────────────────────────────────────────
@@ -230,7 +226,7 @@ fn weyl_oxxxxx<F: Real>(p: [F; 4], mass: F, nhel: i32, nsf: i32) -> [C<F>; 4] {
             let sqm = [sqm0, sqm1];
 
             let ip_i = -((1 + nh) / 2); // 0 or -1
-            let im_i = (1 - nh) / 2;    // 1 or 0
+            let im_i = (1 - nh) / 2; // 1 or 0
             let neg_ip = (-ip_i) as usize; // sqm index for sqm[-ip]: 0 or 1
             let im = im_i as usize;
 

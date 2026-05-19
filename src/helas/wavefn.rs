@@ -1,4 +1,4 @@
-use crate::helas::repr::{Real, SpinorRepr, C};
+use crate::helas::repr::{C, Real, SpinorRepr};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Spinor wavefunction

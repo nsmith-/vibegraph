@@ -8,8 +8,8 @@
 //! This module parses those strings into an [`Expr`] AST and evaluates them
 //! against a map of parameter values.
 
-use std::collections::HashMap;
 use num_complex::Complex64;
+use std::collections::HashMap;
 
 /// A symbolic expression from a UFO value string.
 #[derive(Debug, Clone, PartialEq)]
@@ -46,11 +46,11 @@ pub enum Func {
     Exp,
     Abs,
     Arg,
-    Conj,  // complexconjugate
+    Conj, // complexconjugate
     Re,
     Im,
-    Sec,   // 1/cos
-    Csc,   // 1/sin
+    Sec, // 1/cos
+    Csc, // 1/sin
     ASec,
     ACsc,
     Sin,
@@ -93,9 +93,9 @@ pub fn eval(expr: &Expr, params: &HashMap<String, Complex64>) -> Complex64 {
     match expr {
         Expr::Num(x) => Complex64::new(*x, 0.0),
         Expr::Pi => Complex64::new(PI, 0.0),
-        Expr::Param(name) => *params.get(name.as_str()).unwrap_or_else(|| {
-            panic!("UFO expression references unknown parameter '{name}'")
-        }),
+        Expr::Param(name) => *params
+            .get(name.as_str())
+            .unwrap_or_else(|| panic!("UFO expression references unknown parameter '{name}'")),
         Expr::BinOp(op, lhs, rhs) => {
             let l = eval(lhs, params);
             let r = eval(rhs, params);
@@ -261,7 +261,10 @@ mod tests {
     use std::f64::consts::PI;
 
     fn params(pairs: &[(&str, f64)]) -> HashMap<String, Complex64> {
-        pairs.iter().map(|(k, v)| (k.to_string(), Complex64::new(*v, 0.0))).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), Complex64::new(*v, 0.0)))
+            .collect()
     }
 
     #[test]

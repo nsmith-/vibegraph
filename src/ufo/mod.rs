@@ -95,10 +95,15 @@ impl UfoModel {
         let topo = TopoModel::from_ufo(path)?;
 
         // Build final vertex coupling map, resolving splits via FeynGraph.
-        let vertex_coupling_map =
-            build_vertex_coupling_map(&topo, &raw_vertex_couplings);
+        let vertex_coupling_map = build_vertex_coupling_map(&topo, &raw_vertex_couplings);
 
-        Ok(UfoModel { topo, params, coupling_values, particle_ext, vertex_coupling_map })
+        Ok(UfoModel {
+            topo,
+            params,
+            coupling_values,
+            particle_ext,
+            vertex_coupling_map,
+        })
     }
 
     /// Evaluate all parameters and coupling constants for the given param_card.
@@ -116,7 +121,11 @@ impl UfoModel {
             })
             .collect();
 
-        EvaluatedModel { model: self, param_values, coupling_values }
+        EvaluatedModel {
+            model: self,
+            param_values,
+            coupling_values,
+        }
     }
 }
 
@@ -143,7 +152,9 @@ fn build_vertex_coupling_map(
                     let entries: Vec<(usize, usize, String)> = lc_pairs
                         .iter()
                         .filter_map(|(l, c)| {
-                            lc_to_coupling.get(&(*l, *c)).map(|coup| (*l, *c, coup.clone()))
+                            lc_to_coupling
+                                .get(&(*l, *c))
+                                .map(|coup| (*l, *c, coup.clone()))
                         })
                         .collect();
                     if !entries.is_empty() {
@@ -201,14 +212,24 @@ impl EvaluatedModel<'_> {
     ///
     /// Returns `[(lorentz_idx, color_idx, value)]` or `None` if the vertex is unknown.
     pub fn vertex_couplings(&self, vertex_name: &str) -> Option<Vec<(usize, usize, Complex64)>> {
-        self.model.vertex_coupling_map.get(vertex_name).map(|entries| {
-            entries
-                .iter()
-                .map(|(l, c, coup_name)| {
-                    (*l, *c, self.coupling_values.get(coup_name).copied().unwrap_or_default())
-                })
-                .collect()
-        })
+        self.model
+            .vertex_coupling_map
+            .get(vertex_name)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|(l, c, coup_name)| {
+                        (
+                            *l,
+                            *c,
+                            self.coupling_values
+                                .get(coup_name)
+                                .copied()
+                                .unwrap_or_default(),
+                        )
+                    })
+                    .collect()
+            })
     }
 
     /// Re-evaluate only the parameters transitively depending on `changed`,
@@ -265,8 +286,10 @@ mod tests {
         // limitation — a later phase can patch FeynGraph or pre-process the file.
         let result = UfoModel::load(&path);
         if let Err(UfoError::FeynGraph(_)) = &result {
-            eprintln!("loop_sm: FeynGraph topology parser does not support loop-level \
-                       particle attributes (.counterterm, .loop_particles) — skipping");
+            eprintln!(
+                "loop_sm: FeynGraph topology parser does not support loop-level \
+                       particle attributes (.counterterm, .loop_particles) — skipping"
+            );
             return;
         }
         let model = result.expect("unexpected error loading loop_sm UFO");
@@ -368,7 +391,10 @@ mod tests {
         // G = 2 * sqrt(aS) * sqrt(pi) ≈ 1.2177
         let expected_g = 2.0 * (0.118f64).sqrt() * PI.sqrt();
         let g_val = ev.param_values["G"].re;
-        assert!((g_val - expected_g).abs() < 1e-6, "G = {g_val}, expected {expected_g}");
+        assert!(
+            (g_val - expected_g).abs() < 1e-6,
+            "G = {g_val}, expected {expected_g}"
+        );
 
         // GC_10 = -G
         let gc10 = ev.coupling("GC_10");
@@ -399,9 +425,15 @@ mod tests {
 
         let expected_g = 2.0 * new_as.sqrt() * PI.sqrt();
         let g_val = ev.param_values["G"].re;
-        assert!((g_val - expected_g).abs() < 1e-6, "After recompute: G = {g_val}");
+        assert!(
+            (g_val - expected_g).abs() < 1e-6,
+            "After recompute: G = {g_val}"
+        );
 
         let gc10 = ev.coupling("GC_10");
-        assert!((gc10.re + expected_g).abs() < 1e-6, "After recompute: GC_10 = {gc10}");
+        assert!(
+            (gc10.re + expected_g).abs() < 1e-6,
+            "After recompute: GC_10 = {gc10}"
+        );
     }
 }

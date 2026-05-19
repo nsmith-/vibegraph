@@ -30,8 +30,8 @@ pub type VertexCouplingMap = HashMap<String, HashMap<(usize, usize), String>>;
 
 /// Parse `vertices.py` and return the coupling association map.
 pub fn parse_vertex_couplings(content: &str) -> Result<VertexCouplingMap, VertexExtError> {
-    let raw = ufo_vertices_ext::vertices(content)
-        .map_err(|e| VertexExtError::Parse(e.to_string()))?;
+    let raw =
+        ufo_vertices_ext::vertices(content).map_err(|e| VertexExtError::Parse(e.to_string()))?;
 
     Ok(raw
         .into_iter()
