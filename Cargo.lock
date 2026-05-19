@@ -222,8 +222,10 @@ version = "0.1.0"
 dependencies = [
  "feyngraph",
  "indexmap",
+ "itertools",
  "log",
  "num-complex",
+ "num-traits",
  "peg",
  "thiserror",
 ]
