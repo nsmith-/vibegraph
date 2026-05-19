@@ -1,0 +1,75 @@
+# vibegraph
+
+<p align="center">
+  <img src="assets/badger.png" width="420"
+       alt="A whimsical photograph of a blissful European badger seated cross-legged on a mossy forest floor at sunset. The badger is dressed in a vibrant tie-dye t-shirt, wears large wooden headphones, and listens to music on a vintage cassette tape player. Its eyes are contentedly closed, soaking in the moment, surrounded by ferns, glowing mushrooms, small daisies, a sprig of lavender, and a dreamcatcher hanging from a tree branch above. The soft, filtering golden light of the woods creates a warm and peaceful atmosphere." />
+</p>
+
+A toy **leading-order (LO) tree-level Monte Carlo event generator** written in
+Rust, following the same pipeline used by
+[MadGraph5\_aMC@NLO](https://arxiv.org/abs/1405.0301).
+
+## What it does (eventually)
+
+1. **Load a UFO model** — parse the Python-format
+   [Universal FeynRules Output](https://arxiv.org/abs/1108.2040) files
+   (`particles.py`, `vertices.py`, `lorentz.py`, …) to build an internal
+   representation of particle content, Feynman rules, and coupling constants.
+
+2. **Enumerate Feynman diagrams** — given an initial and final state, find all
+   tree-level diagrams by recursive vertex matching (à la MadGraph) or using
+   the [FeynGraph](https://github.com/Jens-Braun/FeynGraph) crate.
+
+3. **Evaluate helicity amplitudes** — implement
+   [HELAS](https://inspirehep.net/literature/336604)-style wavefunction and
+   vertex routines; generate calls automatically from UFO Lorentz structures
+   via [ALOHA](https://arxiv.org/abs/1108.2041).
+
+4. **Sample phase space** — map the unit hypercube to physical four-momenta
+   and importance-sample with [VEGAS](https://inspirehep.net/literature/119196).
+
+5. **Compute the cross section** — integrate |M|² over phase space; produce
+   an unweighted event sample.
+
+### Toy process
+
+**e⁺e⁻ → μ⁺μ⁻** via a single photon / Z propagator — the simplest
+non-trivial 2→2 process, with an analytic check: σ = 4πα²/3s (massless limit).
+
+## Status
+
+Early research and infrastructure phase. See [`research/notes/`](research/notes/)
+for working notes and paper summaries.
+
+## Repository layout
+
+```
+src/                  Rust source (not yet started)
+research/
+  notes/              Working notes and algorithm derivations
+    00-overview.md      Pipeline walkthrough and references
+    01-paper-summaries.md  Quick-reference summaries of key papers
+    02-reference-implementations.md  Analysis of reference submodules
+  refs/               Reference code (git submodules)
+    feyngraph/          FeynGraph Rust diagram generator (Jens-Braun/FeynGraph)
+    mg5amcnlo/          MadGraph5 v3.7.1 (HELAS, ALOHA, SM UFO)
+  ufo/                Sample UFO model files
+assets/               Images and other static assets
+```
+
+## Getting started
+
+```bash
+git clone --recurse-submodules <repo-url>
+cd vibegraph
+cargo build
+```
+
+To regenerate the HELAS OCR output from the scanned PDF:
+
+```bash
+pixi run -e nougat ocr
+```
+
+See [`research/refs/README.md`](research/refs/README.md) for details on the
+reference materials and OCR workflow.
