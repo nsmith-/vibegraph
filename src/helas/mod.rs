@@ -2,15 +2,15 @@ pub mod repr;
 pub mod vertex;
 pub mod wavefn;
 
-pub use repr::{Real, SpinorRepr, WeylBasis, C};
+pub use repr::{C, Real, SpinorRepr, WeylBasis};
 pub use vertex::{iovxxx, j3xxxx};
 pub use wavefn::{DiracWf, VectorWf};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use repr::r;
     use itertools::iproduct;
+    use repr::r;
 
     /// e⁺e⁻ → μ⁺μ⁻ via s-channel photon/Z.
     ///
@@ -42,10 +42,10 @@ mod tests {
         let s2 = 2.0_f64.sqrt();
 
         // 4-momenta [E, px, py, pz]
-        let p_em = [1.0, 0.0, 0.0,  1.0]; // e⁻
+        let p_em = [1.0, 0.0, 0.0, 1.0]; // e⁻
         let p_ep = [1.0, 0.0, 0.0, -1.0]; // e⁺
-        let p_mm = [1.0, 1.0, 0.0,  0.0]; // μ⁻
-        let p_mp = [1.0,-1.0, 0.0,  0.0]; // μ⁺
+        let p_mm = [1.0, 1.0, 0.0, 0.0]; // μ⁻
+        let p_mp = [1.0, -1.0, 0.0, 0.0]; // μ⁺
 
         // Couplings that reduce j3xxxx to a pure vector photon
         let gaf = [s2, s2];
@@ -56,11 +56,13 @@ mod tests {
 
         let mut amp_sq_sum = 0.0;
 
-        for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in iproduct!([-1_i32, 1], [-1_i32, 1], [-1_i32, 1], [-1_i32, 1]) {
+        for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in
+            iproduct!([-1_i32, 1], [-1_i32, 1], [-1_i32, 1], [-1_i32, 1])
+        {
             // nsf: +1 for particle, -1 for antiparticle
-            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em,  1);
+            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, 1);
             let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, -1);
-            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm,  1);
+            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, 1);
             let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, -1);
 
             // Off-shell photon from the electron current
@@ -83,10 +85,10 @@ mod tests {
     fn test_ee_to_mumu_individual_helicities() {
         let s2 = 2.0_f64.sqrt();
 
-        let p_em = [1.0, 0.0, 0.0,  1.0];
+        let p_em = [1.0, 0.0, 0.0, 1.0];
         let p_ep = [1.0, 0.0, 0.0, -1.0];
-        let p_mm = [1.0, 1.0, 0.0,  0.0];
-        let p_mp = [1.0,-1.0, 0.0,  0.0];
+        let p_mm = [1.0, 1.0, 0.0, 0.0];
+        let p_mp = [1.0, -1.0, 0.0, 0.0];
 
         let gaf = [s2, s2];
         let gzf = [0.0, s2];
@@ -94,12 +96,17 @@ mod tests {
 
         // The four non-zero combinations: helicity conservation in massless QED
         // requires λ(e⁻) = −λ(e⁺) and λ(μ⁻) = −λ(μ⁺).
-        let nonzero = [(-1, 1, -1, 1), (-1, 1, 1, -1), (1, -1, -1, 1), (1, -1, 1, -1)];
+        let nonzero = [
+            (-1, 1, -1, 1),
+            (-1, 1, 1, -1),
+            (1, -1, -1, 1),
+            (1, -1, 1, -1),
+        ];
 
         for &(nhel_em, nhel_ep, nhel_mm, nhel_mp) in &nonzero {
-            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em,  1);
+            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, 1);
             let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, -1);
-            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm,  1);
+            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, 1);
             let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, -1);
 
             let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
@@ -113,13 +120,17 @@ mod tests {
         }
 
         // The other 12 helicity combinations should vanish.
-        for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in iproduct!([-1_i32, 1], [-1_i32, 1], [-1_i32, 1], [-1_i32, 1]) {
+        for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in
+            iproduct!([-1_i32, 1], [-1_i32, 1], [-1_i32, 1], [-1_i32, 1])
+        {
             let combo = (nhel_em, nhel_ep, nhel_mm, nhel_mp);
-            if nonzero.contains(&combo) { continue; }
+            if nonzero.contains(&combo) {
+                continue;
+            }
 
-            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em,  1);
+            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, 1);
             let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, -1);
-            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm,  1);
+            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, 1);
             let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, -1);
 
             let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);

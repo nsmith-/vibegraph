@@ -1,4 +1,4 @@
-use crate::helas::repr::{Real, SpinorRepr, C, r};
+use crate::helas::repr::{C, Real, SpinorRepr, r};
 use crate::helas::wavefn::{DiracWf, VectorWf};
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -46,7 +46,6 @@ pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
     zmass: F,
     zwidth: F,
 ) -> VectorWf<F> {
-
     // Off-shell momentum: fo.p − fi.p
     let jmom = [
         fo.momentum[0] - fi.momentum[0],
@@ -68,13 +67,13 @@ pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
 
     let ga3l = gaf[0] * sw; // photon left coupling
     let gz3l = gzf[0] * cw; // Z left coupling
-    let gn   = gaf[1] * sw; // combined right coupling
+    let gn = gaf[1] * sw; // combined right coupling
 
     // ── Propagators ───────────────────────────────────────────────────────
-    let da = F::one() / q2;                              // real photon: 1/q²
+    let da = F::one() / q2; // real photon: 1/q²
     let dz = C::new(F::one(), F::zero())                 // Z: 1/(q²−mZ²+imZΓZ)
         / C::new(q2 - zm2, zmw);
-    let ddif = C::new(-zm2, zmw) * r(da) * dz;          // ≈ da for mZ → ∞
+    let ddif = C::new(-zm2, zmw) * r(da) * dz; // ≈ da for mZ → ∞
 
     // ── Bilinear currents (metric signs absorbed) ─────────────────────────
     let cl = B::left_current(&fo.spinor, &fi.spinor);
@@ -96,7 +95,10 @@ pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
             + r(gn) * (cr[mu] * ddif + qmu * csr * dz)
     });
 
-    VectorWf { eps, momentum: jmom }
+    VectorWf {
+        eps,
+        momentum: jmom,
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

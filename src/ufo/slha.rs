@@ -81,12 +81,13 @@ impl ParamCard {
                 }
                 // Try to parse all but the last token as integers (the key)
                 // and the last as a float.
-                let value: f64 = tokens[tokens.len() - 1].parse().map_err(|_| {
-                    SlhaError::Parse {
-                        line: lineno,
-                        msg: format!("expected float, got '{}'", tokens[tokens.len() - 1]),
-                    }
-                })?;
+                let value: f64 =
+                    tokens[tokens.len() - 1]
+                        .parse()
+                        .map_err(|_| SlhaError::Parse {
+                            line: lineno,
+                            msg: format!("expected float, got '{}'", tokens[tokens.len() - 1]),
+                        })?;
                 let mut key: Vec<i32> = Vec::new();
                 for tok in &tokens[..tokens.len() - 1] {
                     match tok.parse::<i32>() {

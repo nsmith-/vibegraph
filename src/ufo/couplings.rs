@@ -35,8 +35,7 @@ pub struct CouplingValue {
 
 /// Parse `couplings.py` content into a map of coupling name → [`CouplingValue`].
 pub fn parse_couplings(content: &str) -> Result<HashMap<String, CouplingValue>, CouplingError> {
-    let raw =
-        ufo_couplings::couplings(content).map_err(|e| CouplingError::Parse(e.to_string()))?;
+    let raw = ufo_couplings::couplings(content).map_err(|e| CouplingError::Parse(e.to_string()))?;
 
     let mut result = HashMap::new();
 
@@ -52,7 +51,12 @@ pub fn parse_couplings(content: &str) -> Result<HashMap<String, CouplingValue>, 
 
         result.insert(
             name.clone(),
-            CouplingValue { name, value: expr, orders: rc.orders, deps },
+            CouplingValue {
+                name,
+                value: expr,
+                orders: rc.orders,
+                deps,
+            },
         );
     }
 
@@ -144,8 +148,8 @@ impl RawVal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use num_complex::Complex64;
     use crate::ufo::expr::eval;
+    use num_complex::Complex64;
     use std::collections::HashMap as Map;
 
     const SAMPLE: &str = r"
