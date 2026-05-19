@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+feyngraph = { path = "research/refs/feyngraph", default-features = false }
+indexmap = "2.14.0"
+log = "0.4.29"
+num-complex = "0.4.6"
+peg = "0.8.6"
+thiserror = "2.0.18"

@@ -1,3 +1,5 @@
+mod ufo;
+
 fn main() {
-    println!("Hello, world!");
+    println!("vibegraph — LO matrix element generator (work in progress)");
 }
