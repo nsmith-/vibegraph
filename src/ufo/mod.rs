@@ -16,6 +16,31 @@
 //! [`UfoModel::evaluate`] computes all parameter and coupling values for a given
 //! `param_card.dat`, returning an [`EvaluatedModel`] that supports incremental
 //! re-evaluation via [`EvaluatedModel::recompute`].
+//!
+//! # Future work: ALOHA / amplitude evaluation
+//!
+//! FeynGraph is a *topology* library; it intentionally discards information that
+//! is only needed for amplitude computation.  Three gaps must be filled before
+//! ALOHA-style automatic HELAS routine generation is possible:
+//!
+//! 1. **Lorentz structure expressions** — FeynGraph's `lorentz_atom` parser
+//!    (`ufo_parser.rs`) recognises `Identity`, `Gamma`, `Sigma`, `Gamma5`,
+//!    `ProjM`, `ProjP`, `C`, but strips everything except the pair of spinor-leg
+//!    indices `(i, j)`.  Momentum insertions `P(mu,i)`, metrics `Metric(mu,nu)`,
+//!    and Levi-Civita tensors `Epsilon(...)` are silently dropped.  ALOHA needs
+//!    the full symbolic expression from `lorentz.py` to generate the correct
+//!    matrix-element contractions.
+//!
+//! 2. **Coupling values** — In FeynGraph's `coupling` rule the `"value"` field
+//!    is explicitly matched and immediately ignored.  Only the QED/QCD power
+//!    (`order`) is kept.  We already parse coupling values in `src/ufo/couplings.rs`,
+//!    but the connection to the vertex-level (color_index, lorentz_index) key used
+//!    in `vertices.py` needs to be wired through.
+//!
+//! 3. **Color structures** — The `"color"` key in FeynGraph's `parse_vertex` is
+//!    discarded.  Color factors such as `f(1,2,3)` (SU(3) structure constants) and
+//!    `T(1,2,3)` (generator matrix elements) must be preserved and evaluated for
+//!    color-summed/averaged squared amplitudes.
 
 pub mod couplings;
 pub mod expr;
