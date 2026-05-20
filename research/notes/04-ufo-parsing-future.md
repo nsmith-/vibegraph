@@ -85,3 +85,58 @@ PEG, drop FeynGraph topology dep) is lower risk.
 | `couplings.py` | Drops `value` expression string | Workaround: `couplings.rs` |
 | `parameters.py` | Not parsed at all | Workaround: `parameters.rs` |
 | `particles.py` | Drops `r'...'` raw string texnames | Workaround: fixed in `parameters.rs` |
+
+## What FeynGraph drops that ALOHA needs
+
+ALOHA (Automatic Lorentz and Helicity Amplitude generator) derives numerical
+routines from the symbolic Lorentz structures and coupling values in a UFO
+model. FeynGraph discards exactly the information ALOHA requires:
+
+### 1. Lorentz structure expressions (`lorentz.py`)
+
+FeynGraph's `lorentz_atom` rule (ufo_parser.rs lines 299-303) recognises
+`Identity`, `Gamma`, `Sigma`, `Gamma5`, `ProjM`, `ProjP`, `C` but only
+extracts the pair of *spinor leg indices* `(i, j)` — discarding the operator
+type entirely. The full `structure` string (e.g.
+`"Gamma(1,2,3)*ProjM(4,5)"`) is reduced to just the connectivity `[(2,5)]`
+(which spinor legs are linked). Crucially:
+
+- `P(mu, i)` (momentum insertions) — parsed as `None`, silently dropped
+- `Metric(mu,nu)` (vector boson Lorentz contractions) — same
+- `Epsilon(mu,nu,rho,sigma)` (Levi-Civita) — same
+- The operator type (`Gamma` vs `Identity` vs `ProjM`) — stripped away
+
+ALOHA needs the full symbolic expression to emit code like
+`Gamma(mu,i,j)*P(nu,k)` → a Dirac-matrix times momentum tensor contraction.
+
+### 2. Coupling values (`couplings.py`)
+
+In the `coupling` rule (ufo_parser.rs line 258), `"value" => ()` explicitly
+discards the complex-valued expression string (e.g. `"-(ee*complex(0,1))"`).
+FeynGraph only retains `order = {'QED':1}` for power-counting purposes.
+ALOHA needs the value to evaluate the coupling constant numerically.
+
+### 3. Color structures (`vertices.py`)
+
+In `parse_vertex`, `"color" => ()` discards color factor strings like
+`'f(1,2,3)'` (SU(3) structure constants) and `'T(1,2,3)'` (fundamental
+generators). These are needed for color-summed squared amplitudes.
+`InteractionVertex` has no field to store them.
+
+### Implication for ALOHA implementation
+
+To implement ALOHA-style automatic Lorentz routine generation we will need to
+either take full ownership of UFO parsing (Options B or C above) or add
+parallel parsers for `lorentz.py` and the coupling `value` field, similar to
+what was done for `parameters.py` and `couplings.rs`. The color structures
+will also need a new parser and storage layer.
+
+The minimum viable ALOHA path (assuming LO SM only) is:
+1. Parse `lorentz.py` fully — preserve the `structure` string and parse it
+   into a symbolic tensor-product AST (operators × index labels)
+2. Extend `couplings.rs` to recover the `value` expression (already dropped
+   by FeynGraph; our `CouplingValue` struct already has a `value: String`
+   field ready for this)
+3. Add color factor parsing to `vertices_ext.rs` (currently `"color" => ()`)
+4. Feed the symbolic Lorentz AST through a code-generator that emits Rust
+   functions matching the trait interface already defined in `src/helas/repr.rs`
