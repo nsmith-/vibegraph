@@ -11,7 +11,7 @@ Status is maintained in the session SQL database; update here at milestones.
 codebase to identify categories of bugs that have historically appeared, with the aim of
 informing what unit tests vibegraph needs to catch the same classes of errors.
 
-**Output:** `research/notes/04-mg5-code-quality.md`
+**Output:** `research/notes/07-mg5-code-quality.md` *(renamed from 04- to avoid collision with main's `04-ufo-parsing-future.md`)*
 
 **Approach:**
 1. Fully read `UpdateNotes.txt` (2633 lines) — each entry describes a fix or new feature;
@@ -28,6 +28,21 @@ informing what unit tests vibegraph needs to catch the same classes of errors.
    unit test to catch it would look like in vibegraph's Rust test suite.
 
 **Dependencies:** None (read-only).
+
+**Status: ✅ Done**
+
+**Results:** `research/notes/04-mg5-code-quality.md` written (408 lines, 110+ bug entries
+across 7 categories). Key findings:
+- **Strengths:** Exact rational arithmetic for color algebra (no FP rounding in color-factor
+  reduction); `DiagramTag` canonical deduplication (O(1) identity check); clean RAMBO
+  implementation with correct massless weight formula.
+- **Weaknesses:** Color-matrix bugs recur across 6+ major versions — no systematic algebraic
+  test suite; helicity-recycling optimization introduced 7 distinct correctness bugs after
+  introduction; RAMBO overflow-check has a sign error (`iwarn[4] > 5` should be `< 5`,
+  still present in source); 30+ Python 2→3 migration bugs showing lack of version-agnostic
+  coding discipline.
+- Document includes 7 bug-category tables with version, description, trigger, and
+  vibegraph test implications for each entry.
 
 ---
 
@@ -54,6 +69,18 @@ prefer adding non-overlapping feature blocks so a textual merge is trivial.
 
 **Dependencies:** None (independent of other tasks).
 
+**Status: ✅ Done**
+
+**Results:**
+- `pixi.toml` updated with `[feature.madgraph]` block: `mg5amcnlo = "==3.5.7"` from
+  conda-forge (native `osx-arm64`, Python 3.11); `generate-ee` pixi task; environment
+  entry `madgraph = { features = ["madgraph"], solve-group = "madgraph" }`.
+- `research/mg5_scripts/ee_to_mumu.mg5` — MadGraph batch script for `e+ e- > mu+ mu-`
+  at √s = 91.2 GeV.
+- `research/notes/05-madgraph-setup.md` — documents package name, setup steps, expected
+  cross sections (~1.8 nb at Z-pole, ~6 pb at 200 GeV), and caveats.
+- To install: `pixi install -e madgraph`; to run: `pixi run -e madgraph generate-ee`.
+
 ---
 
 ## T3 · arXiv Paper Scan of mg5amcnlo Source
@@ -76,6 +103,19 @@ summaries to `research/notes/01-paper-summaries.md`.
 **Output:** Updated `fetch-papers.sh` and `research/notes/01-paper-summaries.md`.
 
 **Dependencies:** None (read-only scan + file edits in non-overlapping files from T2/T4).
+
+**Status: ✅ Done**
+
+**Results:** 4 new papers added (50+ references scanned; majority skipped as NLO/phenomenology):
+
+| Key | arXiv | Topic |
+|---|---|---|
+| `polarized_me` | 1912.01725 | Automated polarized/helicity ME in MadGraph5 — fermion/vector helicity conventions |
+| `polarized_propagator` | 2512.10015 | Truncated propagator paradigm for polarized amplitudes — covariant/axial gauge |
+| `loop_induced_ps` | 1507.00020 | Phase-space optimisation appendix (multi-channel decomposition, channel Jacobians) |
+| `madwidth` | 1402.1178 | MadWidth — automatic decay widths; extends UFO with `decay.py` / `Decay` objects |
+
+Skipped: NLO loop integral libraries, PDF sets, shower tunes, BSM phenomenology, etc.
 
 ---
 
@@ -110,6 +150,27 @@ and updated `pixi.toml` (feature block only; environment registration too).
 
 **Dependencies:** None hard, but complements T1 (insights about which routines have bugs).
 
+**Status: ✅ Done** *(updated 2026-05-22: extended-validation test gating added)*
+
+**Results:**
+- `validation/helas/` created with copies of `ixxxxx.F`, `oxxxxx.F`, `jioxxx.F`,
+  `iovxxx.F`, `vxxxxx.F` (with `cf2py intent(in/out)` directives added for f2py).
+- `validation/helas/build.sh` — compiles HELAS into `helas_f.so` via `python -m numpy.f2py`;
+  includes `-fallow-argument-mismatch` for gfortran ≥ 10.
+- `validation/helas/gen_reference.py` — iterates 20×20 grid over (√s, cos θ), calls HELAS
+  routines for all 16 helicity combinations of `e+ e- → μ+ μ-`, saves `reference.npz` and
+  `reference.csv`; cross-checks against analytic result `Σ|M|² = 4e⁴(1 + cos²θ)`.
+- `validation/helas/README.md` — explains build/run steps and expected output.
+- `src/lib.rs` — exposes `pub mod helas` with stub `compute_m2_ee_mumu` returning 0.0.
+- `tests/helas_validation.rs` — integration test gated behind `#[cfg(feature = "extended-validation")]`;
+  invisible to plain `cargo test`, opt-in via `cargo test --features extended-validation`.
+- `Cargo.toml` — `[features] extended-validation = []` declared; also has explicit `[lib]`/`[[bin]]`.
+- `pixi.toml` — `[feature.helas-validation]` (gfortran + numpy) with three tasks:
+  - `build-helas` — compile f2py extension
+  - `gen-reference` — generate `reference.npz`/`reference.csv` (depends-on: build-helas)
+  - `validate-helas` — full pipeline ending in `cargo test --features extended-validation` (depends-on: gen-reference)
+- One-shot command: `pixi run -e helas-validation validate-helas`
+
 ---
 
 ## T5 · MadGraph Process-Specification PEG Grammar
@@ -134,3 +195,113 @@ and distil it into a formal PEG grammar that vibegraph can use to steer feyngrap
 **Output:** `research/notes/06-process-grammar.md` with the PEG grammar and feyngraph gap analysis.
 
 **Dependencies:** None (read-only analysis of mg5amcnlo Python source).
+
+**Status: ✅ Done**
+
+**Results:** `research/notes/06-process-grammar.md` written (529 lines). Key contents:
+- **Parser location** — exact file + line numbers: `do_generate` at L4811,
+  `do_add` at L3232, `extract_process` at L4822, `extract_decay_chain_process` at L5661,
+  `check_process_format` at L1150 (in `madgraph/interface/madgraph_interface.py`).
+- **Complete PEG grammar** in pest.rs-style notation covering:
+  - Particle tokens: names, PDG codes, duplication prefix (`2e+`), polarization (`z{T}`)
+  - Process body: `A > B` and `A > X > B` (required s-channel insertion)
+  - All restrictions: `/` (forbidden), `$` (no on-shell s-channel), `$$` (no s-channel)
+  - Coupling order constraints: `QCD=2`, `QED<=4`, `QCD^2==4`
+  - Loop spec: `[QCD]`, `[virt=QCD]`
+  - Process tag: `@N`
+  - Decay chains: `t t~, (t > b w+)`
+  - `define` multiparticle alias command
+  - Each rule marked 🟢 Core (LO tree-level) vs 🔵 Extended (NLO/decay chains)
+- **Data flow trace** — string → `ProcessDefinition` → `MultiProcess` → `AmplitudeList`
+- **Worked example** — `e+ e- > mu+ mu-` traced token-by-token with PDG codes and objects
+- **Feyngraph gap analysis** — notes submodule uninitialized; recommends a translation layer
+  between the MadGraph syntax parser and feyngraph's diagram generator API
+
+---
+
+## Rebase onto main — Follow-up Notes
+
+*Rebased onto `origin/main` (ae92da6) on 2026-05-22. The following commits were new on main
+and have implications for the 5 tasks above.*
+
+### What came in on main
+
+| Commit | Summary |
+|---|---|
+| `9a22e58` | `feat(ufo)`: full UFO model loader — `src/ufo/` with parameter/coupling eval, 31 tests |
+| `0491ea7` | `research`: stub note on future full UFO parsing ownership (`04-ufo-parsing-future.md`) |
+| `01784e9` | `feat(helas)`: full HELAS implementation for `e+ e- → μ+ μ-` in `src/helas/` |
+| `8659cd3` | `style`: cargo fmt across helas + ufo modules |
+| `c6fde0e` | `style`: cargo fmt |
+| `ae92da6` | `docs`: ALOHA gap analysis added to `04-ufo-parsing-future.md` and `src/ufo/mod.rs` |
+
+### Follow-up per task
+
+**T1 — Code quality review** (`research/notes/07-mg5-code-quality.md`)
+- ⚠️ **Note numbering collision fixed**: renamed from `04-` to `07-mg5-code-quality.md`
+  since main added `04-ufo-parsing-future.md`.
+- The new `src/helas/` implementation is directly exposed to the bug categories T1
+  identified (helicity-recycling bugs, sign errors in wavefunction normalization). The
+  test suite in `src/helas/mod.rs` covers θ=90° only — T1's recommendation to test a
+  range of kinematics is still unimplemented.
+- **Follow-up:** Cross-reference T1's "physics-correctness" and "numerical stability"
+  categories against the actual `repr.rs`/`vertex.rs` implementation; file concrete
+  Rust `#[test]` cases that cover the specific triggers identified in UpdateNotes.
+
+**T2 — Runnable MadGraph** (`research/notes/05-madgraph-setup.md`)
+- Main now has a fully working UFO loader and HELAS implementation. The MadGraph
+  validation is therefore more important — we now have a Rust side to compare against.
+- **Follow-up:** Actually run `pixi install -e madgraph` and `pixi run -e madgraph
+  generate-ee` to confirm the conda package resolves correctly on this platform and
+  record the actual cross-section output in `05-madgraph-setup.md`. The note currently
+  contains expected (theoretical) values only.
+
+**T3 — arXiv paper scan** (`research/notes/01-paper-summaries.md`)
+- `04-ufo-parsing-future.md` and `src/ufo/mod.rs` explicitly document three FeynGraph
+  gaps needed for ALOHA: Lorentz structure expressions, coupling values, color structures.
+  These gaps reference ALOHA (already fetched) and implicitly the original MadGraph
+  ALOHA paper. No new arXiv IDs were introduced by the main commits.
+- **Follow-up:**
+  1. Run `./research/refs/fetch-papers.sh` for the four newly added paper keys
+     (`polarized_me`, `polarized_propagator`, `loop_induced_ps`, `madwidth`) and verify
+     that ar5iv returns valid HTML (not an error page). Check file sizes — a valid fetch
+     is typically 100KB+; an ar5iv error page is ~8KB.
+  2. When ALOHA implementation begins, the `lorentz.py` parsing problem may surface
+     papers on tensor-product/Lorentz algebra code generation worth adding.
+
+**T4 — HELAS validation harness** (`validation/helas/`)
+- 🔴 **Major change:** Main landed a full, working HELAS Rust implementation in
+  `src/helas/` (`repr.rs`, `wavefn.rs`, `vertex.rs`, `mod.rs`). The stub
+  `compute_m2_ee_mumu` in `src/lib.rs` (created by T4) is now redundant.
+- The real entry point is `src/helas/mod.rs` which exposes `ixxxxx`/`oxxxxx`/`j3xxxx`/
+  `iovxxx` directly. The integration test `tests/helas_validation.rs` needs to be
+  updated to call the actual HELAS Rust functions rather than the stub.
+- ✅ **Extended-validation test gating implemented:** `tests/helas_validation.rs` is now
+  gated behind `#[cfg(feature = "extended-validation")]` — invisible to normal `cargo test`,
+  opt-in via `cargo test --features extended-validation`. The `Cargo.toml` `[features]`
+  section declares `extended-validation = []`. The pixi `helas-validation` environment
+  has a `validate-helas` task that chains the full pipeline:
+  ```
+  pixi run -e helas-validation validate-helas
+  # → build-helas → gen-reference → cargo test --features extended-validation --test helas_validation
+  ```
+- **Follow-up (high priority):**
+  1. Remove or replace the stub in `src/lib.rs` — wire `compute_m2_ee_mumu` to the
+     real `src/helas/` routines (or delete the function and update the test to call
+     `src/helas/` directly without going through the stub).
+  2. Build the Fortran f2py harness and run the full validation:
+     `pixi run -e helas-validation validate-helas`
+  3. The current Rust tests only check θ=90°, √s=2 with artificial couplings. Running
+     the full 20×20 grid with real physical couplings will be a stronger validation.
+
+**T5 — Process grammar** (`research/notes/06-process-grammar.md`)
+- Main initialized and uses `feyngraph` as a real Rust dependency (it was uninitialized
+  when T5 ran). The feyngraph crate is now checked out at `research/refs/feyngraph/`.
+- **Follow-up:** Revisit the feyngraph gap analysis in `06-process-grammar.md` with
+  the actual crate code available. In particular: does feyngraph expose a programmatic
+  API for specifying initial/final-state particle lists (bypassing the MadGraph text
+  syntax entirely), or does it require the text format? This determines whether a
+  full PEG parser is needed or just a thin translation layer.
+  Also: `04-ufo-parsing-future.md` documents that FeynGraph does not parse
+  `lorentz.py` correctly (drops operator types, momentum insertions, color structures)
+  — this is relevant to how far feyngraph can take us before we need to replace it.
