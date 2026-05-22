@@ -15,7 +15,6 @@ pub const ALPHA_QED: f64 = 1.0 / 137.035_999_084;
 
 /// Elementary charge in natural units: e = √(4πα).
 pub const ELEM_CHARGE: f64 = 0.302_862_407; // sqrt(4π / 137.036)
-
 /// Compute |M|² summed over all 16 helicity combinations for
 /// e⁺ e⁻ → μ⁺ μ⁻ via a single virtual photon exchange (QED tree level,
 /// massless fermion approximation).
