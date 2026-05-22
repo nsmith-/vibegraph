@@ -97,6 +97,65 @@ pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// jioxxx — off-shell single-boson current
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Off-shell single-boson current from a fermion pair, with independent
+/// left/right couplings.
+///
+/// Mirrors the HELAS `jioxxx` routine.  Uses Feynman gauge for massless bosons
+/// and unitary gauge (with the Fabio fixed-width prescription) for massive ones.
+///
+/// Unlike [`j3xxxx`], this routine handles a single boson species (photon *or*
+/// Z) at a time.  To compute the full SM `e⁺e⁻ → μ⁺μ⁻` matrix element, call
+/// this once for the photon and once for the Z, then sum the resulting
+/// amplitudes before squaring.
+///
+/// # Arguments
+/// * `fo`     – flowing-OUT fermion wavefunction (e.g. e⁺ in the electron current)
+/// * `fi`     – flowing-IN  fermion wavefunction (e.g. e⁻)
+/// * `gc`     – couplings `[g_L, g_R]` (left/right-handed, real)
+/// * `vmass`  – boson mass (0 for photon)
+/// * `vwidth` – boson total width (0 for stable)
+pub fn jioxxx<F: Real, B: SpinorRepr<F>>(
+    fo: &DiracWf<F, B>,
+    fi: &DiracWf<F, B>,
+    gc: [F; 2],
+    vmass: F,
+    vwidth: F,
+) -> VectorWf<F> {
+    // Off-shell momentum: jmom = fo.p − fi.p  (outflow convention)
+    let jmom = std::array::from_fn(|mu| fo.momentum[mu] - fi.momentum[mu]);
+    let q = jmom;
+    let q2 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
+
+    let cl = B::left_current(&fo.spinor, &fi.spinor);
+    let cr = B::right_current(&fo.spinor, &fi.spinor);
+    let blin: [C<F>; 4] = std::array::from_fn(|mu| r(gc[0]) * cl[mu] + r(gc[1]) * cr[mu]);
+
+    let eps = if vmass == F::zero() {
+        // Massless: Feynman gauge — propagator is real 1/q²
+        let d = r(F::one() / q2);
+        std::array::from_fn(|mu| blin[mu] * d)
+    } else {
+        // Massive: unitary gauge with Fabio fixed-width complex denominator
+        let vm2 = vmass * vmass;
+        let vmw = vmass * vwidth;
+        let denom = C::new(q2 - vm2, vmw);
+        // Longitudinal mode subtraction: divide by m²−imΓ (Fabio prescription)
+        let cm2 = C::new(vm2, -vmw);
+        let cs = mink_dot_q(q, blin) / cm2;
+        let d = C::new(F::one(), F::zero()) / denom;
+        std::array::from_fn(|mu| (blin[mu] - cs * r(q[mu])) * d)
+    };
+
+    VectorWf {
+        eps,
+        momentum: jmom,
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // iovxxx — amplitude: fermion–fermion–vector contraction
 // ──────────────────────────────────────────────────────────────────────────────
 

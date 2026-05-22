@@ -3,24 +3,40 @@ pub mod vertex;
 pub mod wavefn;
 
 pub use repr::{SpinorRepr, WeylBasis};
-pub use vertex::{iovxxx, j3xxxx};
+pub use vertex::{iovxxx, j3xxxx, jioxxx};
 pub use wavefn::{DiracWf, VectorWf};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Public physics API
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Fine-structure constant α (Thompson limit).
+/// Fine-structure constant α (Thompson limit, low-energy QED).
 pub const ALPHA_QED: f64 = 1.0 / 137.035_999_084;
 
-/// Elementary charge in natural units: e = √(4πα).
+/// Elementary charge in natural units: e = √(4πα_Thompson).
 pub const ELEM_CHARGE: f64 = 0.302_822_120_871_753; // sqrt(4π / 137.035999084)
+
+// SM parameters matching MadGraph's default `param_card.dat`:
+//   aEWM1 = 132.507,  Gf = 1.16639e-5,  MZ = 91.188 GeV,  WZ = 2.441404 GeV
+
+/// Fine-structure constant α at the MZ scale (used in MadGraph SM runs).
+pub const ALPHA_QED_MZ: f64 = 1.0 / 132.507;
+
+/// Z boson mass (GeV) — MadGraph default SM param_card.
+pub const MDL_MZ: f64 = 91.188;
+
+/// Z boson total width (GeV) — MadGraph default SM param_card.
+pub const MDL_WZ: f64 = 2.441_404;
+
 /// Compute |M|² summed over all 16 helicity combinations for
-/// e⁺ e⁻ → μ⁺ μ⁻ via a single virtual photon exchange (QED tree level,
-/// massless fermion approximation).
+/// `e⁺ e⁻ → μ⁺ μ⁻` at tree level in the Standard Model (γ + Z s-channel).
 ///
-/// Uses physical coupling e = √(4πα) with α = 1/137.036.  The Z boson is
-/// decoupled by taking mZ = 1 × 10¹² GeV.
+/// Uses SM couplings derived from MadGraph's default `param_card.dat`:
+///   `aEWM1 = 132.507`,  `Gf = 1.16639e-5`,  `MZ = 91.188 GeV`,  `WZ = 2.441404 GeV`.
+///
+/// The γ and Z off-shell currents are computed separately via [`jioxxx`] and
+/// then summed coherently before squaring, matching MadGraph's `JAMP` formula:
+///   `JAMP = −AMP(γ) − AMP(Z)`.
 ///
 /// # Arguments
 /// * `sqrt_s`    — CM energy √s in GeV
@@ -28,8 +44,6 @@ pub const ELEM_CHARGE: f64 = 0.302_822_120_871_753; // sqrt(4π / 137.035999084)
 ///
 /// # Returns
 /// Σ_{helicities} |M|²  (summed, not averaged, over initial/final helicities)
-///
-/// Expected analytic value: 4 e⁴ (1 + cos²θ) ≈ 3.35×10⁻³ × (1 + cos²θ).
 pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
     use itertools::iproduct;
     use repr::r;
@@ -37,21 +51,32 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
     let e_beam = sqrt_s / 2.0;
     let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
 
-    // CM-frame 4-momenta [E, px, py, pz] (massless limit)
+    // CM-frame 4-momenta [E, px, py, pz] (massless fermion limit)
     let p_em = [e_beam, 0.0, 0.0, e_beam]; // e⁻ along +z
-    let p_ep = [e_beam, 0.0, 0.0, -e_beam]; // e⁺ along -z
+    let p_ep = [e_beam, 0.0, 0.0, -e_beam]; // e⁺ along −z
     let p_mm = [e_beam, e_beam * sin_theta, 0.0, e_beam * cos_theta]; // μ⁻
     let p_mp = [e_beam, -e_beam * sin_theta, 0.0, -e_beam * cos_theta]; // μ⁺
 
-    // Physical QED couplings.  The j3xxxx routing uses gzf[1]/gaf[1] to derive
-    // the Weinberg angle.  With gaf = [e√2, e√2] and gzf = [0, e√2] the ratio
-    // is 1 → sw = cw = 1/√2 → ga3l = e, gz3l = 0 (Z decoupled).
-    let e2 = ELEM_CHARGE * 2.0_f64.sqrt();
-    let gaf = [e2, e2];
-    let gzf = [0.0_f64, e2];
-    let zmass = 1.0e12_f64; // effectively infinite → Z decouples
-    let zwidth = 0.0_f64;
-    let gc = [r(ELEM_CHARGE), r(ELEM_CHARGE)];
+    // Derive SM coupling constants from param_card values.
+    let aew = ALPHA_QED_MZ;
+    let gf = 1.166_39e-5_f64;
+    let ee = (4.0 * std::f64::consts::PI * aew).sqrt();
+    // sin²θW from the muon-decay definition (tree-level Fermi relation)
+    let sw2 = 0.5
+        - (0.25 - std::f64::consts::PI * aew / (gf * std::f64::consts::SQRT_2 * MDL_MZ * MDL_MZ))
+            .sqrt();
+    let sw = sw2.sqrt();
+    let cw = (1.0 - sw2).sqrt();
+
+    // Photon coupling: Q_e = −1  →  gc_γ = [−e, −e]  (vector)
+    let gc_gamma = [-ee, -ee];
+
+    // Z coupling:
+    //   g_L = e (−½ + sin²θW) / (sin θW cos θW)   (matches GC_59 in MadGraph)
+    //   g_R = e sin θW / cos θW                     (matches GC_50 in MadGraph)
+    let gl_z = ee * (-0.5 + sw2) / (sw * cw);
+    let gr_z = ee * sw / cw;
+    let gc_z = [gl_z, gr_z];
 
     let mut sum = 0.0;
     for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in
@@ -62,9 +87,20 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
         let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, 1);
         let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, -1);
 
-        let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, zmass, zwidth);
-        let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
-        sum += amp.norm_sqr();
+        // Off-shell photon current from the electron line
+        let v_gamma = jioxxx(&fo_ep, &fi_em, gc_gamma, 0.0, 0.0);
+        // Off-shell Z current from the electron line
+        let v_z = jioxxx(&fo_ep, &fi_em, gc_z, MDL_MZ, MDL_WZ);
+
+        // Muon-line amplitudes for each diagram (contracted with each current)
+        let gc_gamma_c = [r(gc_gamma[0]), r(gc_gamma[1])];
+        let gc_z_c = [r(gc_z[0]), r(gc_z[1])];
+        let amp_gamma = iovxxx(&fo_mp, &fi_mm, &v_gamma, gc_gamma_c);
+        let amp_z = iovxxx(&fo_mp, &fi_mm, &v_z, gc_z_c);
+
+        // Coherent sum before squaring (MadGraph: JAMP = −AMP(γ) − AMP(Z))
+        let amp_total = amp_gamma + amp_z;
+        sum += amp_total.norm_sqr();
     }
     sum
 }
@@ -209,27 +245,43 @@ mod tests {
 
     // ── T1/T4 follow-up: extended kinematics and robustness tests ─────────────
 
-    /// Validate Σ|M|² against the analytic QED formula over a range of angles.
+    /// Validate `compute_m2_ee_mumu` behaves as expected under the full SM (γ+Z).
     ///
-    /// Analytic result (massless, pure photon exchange):
-    ///   Σ|M|² = 4 e⁴ (1 + cos²θ)
-    ///
-    /// This addresses the T1 finding that the existing tests cover only θ = 90°,
-    /// and the T4 requirement that the Fortran reference covers a 20×20 grid.
-    /// The same physical coupling constants are used in `compute_m2_ee_mumu`.
+    /// Two cross-checks:
+    /// 1. At √s = 10 GeV (well below the Z pole), the pure-photon contribution
+    ///    dominates and Σ|M|² should be close to 4 e⁴ (1+cos²θ).  We allow
+    ///    10 % tolerance since the off-shell Z adds a small interference term.
+    /// 2. At the Z pole (√s ≈ M_Z = 91.188 GeV), the resonant Z contribution
+    ///    makes Σ|M|² much larger than the pure-QED value — we verify it is at
+    ///    least 50× the QED prediction, confirming Z resonance is active.
     #[test]
     fn test_ee_to_mumu_multi_angle() {
-        let e4 = ELEM_CHARGE.powi(4);
-        let analytic = |cos_theta: f64| 4.0 * e4 * (1.0 + cos_theta * cos_theta);
+        // ee = sqrt(4π α(MZ))  — must match compute_m2_ee_mumu
+        let aew = ALPHA_QED_MZ;
+        let ee = (4.0 * std::f64::consts::PI * aew).sqrt();
+        let e4 = ee.powi(4);
+        let analytic_qed = |ct: f64| 4.0 * e4 * (1.0 + ct * ct);
 
+        // ── 1. Off-Z-pole: agree with QED within 10 % ──────────────────────
         let cos_thetas = [-0.9_f64, -0.6, -0.3, 0.0, 0.3, 0.6, 0.9];
         for &ct in &cos_thetas {
-            let m2 = compute_m2_ee_mumu(91.2, ct);
-            let expected = analytic(ct);
+            let m2 = compute_m2_ee_mumu(10.0, ct);
+            let expected = analytic_qed(ct);
             let rel = (m2 - expected).abs() / expected;
             assert!(
-                rel < 1e-6,
-                "cos_θ={ct}: Σ|M|²={m2:.8e} expected={expected:.8e} rel={rel:.2e}"
+                rel < 0.10,
+                "√s=10 GeV, cos_θ={ct}: Σ|M|²={m2:.6e} QED={expected:.6e} rel_diff={rel:.3}"
+            );
+        }
+
+        // ── 2. Z pole: large resonant enhancement ─────────────────────────
+        for &ct in &[-0.9_f64, 0.0, 0.9] {
+            let m2_sm = compute_m2_ee_mumu(MDL_MZ, ct);
+            let m2_qed = analytic_qed(ct);
+            assert!(
+                m2_sm > 50.0 * m2_qed,
+                "Z-pole enhancement check at cos_θ={ct}: SM={m2_sm:.3e}, 50×QED={:.3e}",
+                50.0 * m2_qed
             );
         }
     }

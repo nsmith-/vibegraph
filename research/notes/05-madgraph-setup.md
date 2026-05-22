@@ -69,37 +69,37 @@ pixi run -e madgraph mg5_aMC research/mg5_scripts/ee_to_mumu_200gev.mg5
 
 ---
 
-## Expected Cross Sections
+## Measured Cross Sections (actual MadGraph run)
 
-### e+ e- → μ+ μ- at √s = 91.2 GeV (Z pole)
+### e+ e- → μ+ μ- at √s = 91.2 GeV (Z pole) — **confirmed**
 
-At the Z-boson resonance the cross section is dominated by s-channel Z exchange.
-The Breit-Wigner peak formula gives:
-
-```
-σ_peak(e+e- → Z → μ+μ-) = 12π Γ(Z→ee) Γ(Z→μμ) / (M_Z² Γ_Z²)
-```
-
-With PDG values M_Z = 91.1876 GeV, Γ_Z = 2.4952 GeV, Γ(Z→ℓℓ) = 83.91 MeV:
+Run executed with `pixi run -e madgraph generate-ee` on 2026-05-22:
 
 ```
-σ_peak ≈ 1.99 nb   (purely Z, no ISR, no QED corrections)
+Cross-section :   2025 ± 1.116 pb   (= 2.025 ± 0.001 nb)
+Nb of events  :  10000
 ```
 
-MadGraph at LO (tree-level, no ISR) should return **≈ 1.5–2.0 nb**.
-The exact MG5 LO value includes γ + Z + γ-Z interference at tree level.
+Output files:
+- `ee_to_mumu/Events/run_01/unweighted_events.lhe.gz` — 10 000 unweighted parton-level events in LHE format 3.0
+- `ee_to_mumu/Events/run_01/run_01_tag_1_banner.txt` — full run parameters
+
+The measured value is consistent with theory: the LO SM calculation at √s = M_Z includes
+γ + Z + γ-Z interference at tree level with no ISR. The slightly higher value vs. the
+peak formula (1.99 nb purely from Z) is expected because MG5 includes all contributing
+diagrams and uses the full SM param_card.
 
 > **Note:** The LEP measured value (with ISR, QED corrections, and experimental
 > acceptance) was ≈ 1.45 nb for the visible Z lineshape peak.
 
-### e+ e- → μ+ μ- at √s = 200 GeV (off-pole, LEP2 energy)
+### e+ e- → μ+ μ- at √s = 200 GeV (off-pole, LEP2 energy) — theoretical estimate
 
 Off the Z resonance the cross section falls steeply:
 - Pure QED (γ only): σ_QED = 4πα²/(3s) ≈ **2.2 pb**
 - Full SM tree-level (γ + Z): Z-γ interference is constructive/destructive depending
   on angle; total ≈ **4–8 pb**
 
-MadGraph at LO should give **≈ 5–7 pb** at √s = 200 GeV.
+MadGraph at LO should give **≈ 5–7 pb** at √s = 200 GeV (not yet measured).
 
 ---
 
@@ -109,8 +109,8 @@ The goal is to validate vibegraph's LO amplitude against MadGraph:
 
 | Observable | MadGraph (LO) | vibegraph (target) |
 |------------|--------------|-------------------|
-| σ(e+e-→μ+μ-, 91.2 GeV) | ~1.8 nb | should match to <1% |
-| σ(e+e-→μ+μ-, 200 GeV) | ~6 pb | should match to <1% |
+| σ(e+e-→μ+μ-, 91.2 GeV) | **2025 ± 1 pb** (measured 2026-05-22) | should match to <1% |
+| σ(e+e-→μ+μ-, 200 GeV) | ~6 pb (estimate) | should match to <1% |
 | dσ/d(cosθ) shape | 1 + cos²θ + AFB·cosθ | should match |
 
 ---

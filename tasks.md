@@ -257,10 +257,11 @@ and have implications for the 5 tasks above.*
 **T2 — Runnable MadGraph** (`research/notes/05-madgraph-setup.md`)
 - Main now has a fully working UFO loader and HELAS implementation. The MadGraph
   validation is therefore more important — we now have a Rust side to compare against.
-- **Follow-up:** Actually run `pixi install -e madgraph` and `pixi run -e madgraph
-  generate-ee` to confirm the conda package resolves correctly on this platform and
-  record the actual cross-section output in `05-madgraph-setup.md`. The note currently
-  contains expected (theoretical) values only.
+- ✅ **Follow-up done (2026-05-22):** `pixi install -e madgraph` and
+  `pixi run -e madgraph generate-ee` both succeeded on `osx-arm64`.
+  Actual cross-section measured: **σ = 2025 ± 1 pb** (= 2.025 ± 0.001 nb) at √s = 91.2 GeV.
+  10 000 unweighted LHE events written to `ee_to_mumu/Events/run_01/unweighted_events.lhe.gz`.
+  `05-madgraph-setup.md` updated with the actual measured value and LHE file location.
 
 **T3 — arXiv paper scan** (`research/notes/01-paper-summaries.md`)
 - `04-ufo-parsing-future.md` and `src/ufo/mod.rs` explicitly document three FeynGraph
@@ -295,11 +296,44 @@ and have implications for the 5 tasks above.*
   1. ✅ **Done (2026-05-22):** `src/lib.rs` updated to `pub mod helas; pub mod ufo;`
      (no longer a stub). `compute_m2_ee_mumu` implemented in `src/helas/mod.rs` using
      real `DiracWf`/`j3xxxx`/`iovxxx` routines with physical QED coupling. Tests pass.
-  2. Build the Fortran f2py harness and run the full validation:
-     `pixi run -e helas-validation validate-helas`
+  2. ✅ **Done (2026-05-22):** Full Fortran f2py harness run and validated.
+     `pixi run -e helas-validation validate-helas` passes all 400 grid points with
+     max rel diff < 1e-6. Two bugs found and fixed:
+     - `np.trapz` → `np.trapezoid` in `gen_reference.py` (NumPy 2.0 API change)
+     - `ELEM_CHARGE` corrected from `sqrt(4π/137.0)` to `sqrt(4π/137.035999084)`;
+       the old value caused a systematic ~5.32e-4 bias in |M|² across all 400 points.
   3. ✅ **Done (2026-05-22):** 5 new tests added covering multi-angle kinematics and
-     physical coupling (see T1 follow-up above). Running the Fortran reference comparison
-     is the remaining step.
+     physical coupling (see T1 follow-up above).
+  4. ✅ **Done:** Cross-checked MadGraph HELAS call sequence vs harness and Rust.
+     Found 3 discrepancies; all 3 fixed (see SM alignment note below).
+
+### T4 SM alignment: discrepancies and fixes
+
+After inspecting `ee_to_mumu/SubProcesses/P1_ll_ll/matrix1_optim.f` (MadGraph γ+Z matrix element).
+
+**Discrepancy 1 — Z boson missing from harness (`gen_reference.py`)**
+- Original: photon only (`jioxxx` with `vmass=0`). At Z pole: MadGraph=2025 pb, pure QED≈2 pb (×1000 off).
+- Fixed: `gen_reference.py` now calls `jioxxx` twice (γ and Z), sums amplitudes coherently before squaring.
+
+**Discrepancy 2 — Z decoupled in Rust (`compute_m2_ee_mumu`)**
+- Original: `j3xxxx` with `zmass=1e12` (Z→0) and Thompson alpha (α=1/137).
+- Fixed: uses `jioxxx` for separate γ and Z, coherent sum, MadGraph SM params:
+  `aEWM1=132.507`, `Gf=1.16639e-5`, `MZ=91.188 GeV`, `WZ=2.441404 GeV`.
+
+**Discrepancy 3 — `j3xxxx` not suitable for physical SM γ+Z couplings**
+- `j3xxxx` computes the SU(2)×U(1) W³ gauge-eigenstate current; introduces spurious
+  sin θW factors. MadGraph uses separate FFV1P0_3 (γ) and FFV2_4_3 (Z) routines.
+- Fixed: added `jioxxx` to `src/helas/vertex.rs` — single-boson off-shell current with
+  independent `[g_L, g_R]` couplings. `j3xxxx` retained for W³-basis unit tests.
+
+**SM coupling values (param_card.dat):**
+- `e = sqrt(4π/132.507) ≈ 0.30803`,  `sw² ≈ 0.2221`
+- `gL_Z = e(−½+sw²)/(sw·cw) ≈ −0.20590`  (= Im GC_59 in MadGraph)
+- `gR_Z = e·sw/cw ≈ +0.16469`             (= Im GC_50 in MadGraph)
+
+**`test_ee_to_mumu_multi_angle` updated:** replaced pure-QED check at 91.2 GeV with:
+1. Off-Z-pole QED agreement at √s=10 GeV (10% tolerance)
+2. Z-pole resonance enhancement: SM > 50× QED at √s=MZ
 
 **T5 — Process grammar** (`research/notes/06-process-grammar.md`)
 - Main initialized and uses `feyngraph` as a real Rust dependency (it was uninitialized
