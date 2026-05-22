@@ -10,9 +10,11 @@ echo "Building HELAS f2py extension..."
 # -fallow-argument-mismatch: suppress errors from mixed real/complex arg types
 # in old Fortran77 code (required for gfortran >= 10).
 # The .F extension triggers C-preprocessor (handles #ifdef HELAS_CHECK blocks).
+# We turn on HELAS_CHECK to enable extra argument checks in the Fortran code, which
+# can help catch issues when calling from Python.
 python -m numpy.f2py \
     -c \
-    --f77flags="-fallow-argument-mismatch" \
+    --f77flags="-fallow-argument-mismatch -DHELAS_CHECK" \
     ixxxxx.F oxxxxx.F jioxxx.F iovxxx.F vxxxxx.F \
     -m helas_f
 

@@ -79,28 +79,29 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
     let gc_z = [gl_z, gr_z];
 
     let mut sum = 0.0;
-    for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in
-        iproduct!([-1_i32, 1], [-1_i32, 1], [-1_i32, 1], [-1_i32, 1])
-    {
+    for (nhel_em, nhel_ep) in iproduct!([-1_i32, 1], [-1_i32, 1]) {
         let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, 1);
         let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, -1);
-        let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, 1);
-        let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, -1);
 
         // Off-shell photon current from the electron line
         let v_gamma = jioxxx(&fo_ep, &fi_em, gc_gamma, 0.0, 0.0);
         // Off-shell Z current from the electron line
         let v_z = jioxxx(&fo_ep, &fi_em, gc_z, MDL_MZ, MDL_WZ);
 
-        // Muon-line amplitudes for each diagram (contracted with each current)
-        let gc_gamma_c = [r(gc_gamma[0]), r(gc_gamma[1])];
-        let gc_z_c = [r(gc_z[0]), r(gc_z[1])];
-        let amp_gamma = iovxxx(&fo_mp, &fi_mm, &v_gamma, gc_gamma_c);
-        let amp_z = iovxxx(&fo_mp, &fi_mm, &v_z, gc_z_c);
+        for (nhel_mm, nhel_mp) in iproduct!([-1_i32, 1], [-1_i32, 1]) {
+            let fi_mp = DiracWf::<f64, WeylBasis>::ixxxxx(p_mp, 0.0, nhel_mp, 1);
+            let fo_mm = DiracWf::<f64, WeylBasis>::oxxxxx(p_mm, 0.0, nhel_mm, -1);
 
-        // Coherent sum before squaring (MadGraph: JAMP = −AMP(γ) − AMP(Z))
-        let amp_total = amp_gamma + amp_z;
-        sum += amp_total.norm_sqr();
+            // Muon-line amplitudes for each diagram (contracted with each current)
+            let gc_gamma_c = [r(gc_gamma[0]), r(gc_gamma[1])];
+            let gc_z_c = [r(gc_z[0]), r(gc_z[1])];
+            let amp_gamma = iovxxx(&fo_mm, &fi_mp, &v_gamma, gc_gamma_c);
+            let amp_z = iovxxx(&fo_mm, &fi_mp, &v_z, gc_z_c);
+
+            // Coherent sum before squaring (MadGraph: JAMP = −AMP(γ) − AMP(Z))
+            let amp_total = amp_gamma + amp_z;
+            sum += amp_total.norm_sqr();
+        }
     }
     sum
 }
