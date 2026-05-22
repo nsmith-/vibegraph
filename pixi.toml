@@ -40,6 +40,19 @@ mg5amcnlo = "==3.5.7"
 # Usage: pixi run -e madgraph generate-ee
 generate-ee = "mg5_aMC research/mg5_scripts/ee_to_mumu.mg5"
 
+# --- helas-validation: Fortran77 HELAS compiled via f2py for amplitude cross-checks ---
+[feature.helas-validation.dependencies]
+python = ">=3.10,<3.12"
+numpy = "*"
+gfortran = "*"
+
+[feature.helas-validation.tasks]
+# Compile HELAS .F files into a Python extension module (helas_f.so)
+build-helas = "cd validation/helas && bash build.sh"
+# Run the reference generator: produces reference.npz and reference.csv
+gen-reference = "cd validation/helas && python gen_reference.py"
+
 [environments]
 nougat = { features = ["nougat"], solve-group = "nougat" }
 madgraph = { features = ["madgraph"], solve-group = "madgraph" }
+helas-validation = { features = ["helas-validation"], solve-group = "helas-validation" }
