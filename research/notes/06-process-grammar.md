@@ -141,7 +141,10 @@ Multiple codes can be comma-separated inside `{}`: `z{+1,-1}` = `z{T}`.
 
 ## 5. PEG Grammar
 
-Grammar is written in pest.rs notation. Silent rules are prefixed `_`.
+Grammar is written in `pest` notation for compactness (separate grammar file,
+clean rule syntax). **Implementation will use the `peg` crate** (`peg::parser!`
+macro) to stay consistent with the existing UFO parsers in `src/ufo/` — the
+rule semantics are identical, only the surface syntax differs.
 Whitespace around operators is optional unless explicitly noted.
 
 ```pest
