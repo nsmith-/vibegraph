@@ -318,3 +318,7 @@ and have implications for the 5 tasks above.*
     bypassing feyngraph's parser entirely.
   - **Conclusion:** A thin translation layer (~300 lines) is sufficient for LO
     tree-level use. A full MadGraph-compatible PEG parser is optional / future work.
+- ✅ **Follow-up done (2026-05-22):** Grammar notation clarified — the `pest`
+  syntax in section 5 is reference notation only; implementation will use the
+  `peg` crate (`peg::parser!`) to stay consistent with the UFO parsers in
+  `src/ufo/`. The conclusion section in section 8 updated accordingly.
