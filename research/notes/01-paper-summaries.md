@@ -435,8 +435,157 @@ AMP = AMPS + AMPT + AMPH
 ### Relevance to vibegraph
 **Central reference for the helicity amplitude module.** The Rust implementation
 will mirror this structure:
+
 - Wavefunction functions return `[Complex<f64>; 6]`
 - Vertex functions take wavefunction arrays, return current array or amplitude
 - FFV coupling maps to `g: [f64; 2]` for chiral left/right components
 - ALOHA (see that summary) describes how to auto-generate these routines from
   UFO vertices, extending HELAS to arbitrary BSM models
+
+---
+
+## Polarized Matrix Element Automation in MadGraph5_aMC@NLO
+**arXiv:** 1912.01725  **fetch:** `https://ar5iv.org/html/1912.01725`
+**Authors:** Artoisenet, Faber, Maltoni, Ruiz et al. (2019)
+
+### What it does
+Automates the computation of helicity-polarized matrix elements inside
+MadGraph5_aMC@NLO. Particles (fermions and weak bosons) can be assigned
+fixed helicity quantum numbers λ; spin correlations and off-shell effects
+are preserved. Covers leading-order production and decay.
+
+### Helicity polarization conventions
+- **Fermions:** λ = ±1 (chiral); λ = ±1/2 in HELAS convention; defined
+  relative to the fermion momentum direction.
+- **Vectors:** λ = ±1 (transverse), λ = 0 (longitudinal), λ = ±2 (axial);
+  defined in a user-specified rest frame (laboratory, CM, or custom).
+- MadGraph encodes these as polarization indices on particle declarations:
+  e.g. `generate p p > w{0} z{T}` to select W longitudinal and Z transverse.
+
+### Implementation approach (truncated propagator)
+For an intermediate particle with definite helicity λ, the propagator is
+replaced by a "truncated" version projecting onto the helicity eigenstate:
+
+    Δ_μν(q) → ε_μ*(q,λ) ε_ν(q,λ)
+
+The rest of the amplitude computation is standard HELAS/ALOHA.
+Off-shell particles still run over all momenta; only the spin state is fixed.
+
+### Relevance to vibegraph
+Defines the helicity polarization conventions used by MadGraph5 (and
+reproduced in our HELAS implementation). The truncated propagator technique
+provides a clean recipe for computing polarized amplitudes without changing
+the HELAS calling convention — just swap the polarization sum for a single
+polarization vector.
+
+---
+
+## Truncated Propagator Paradigm for Polarized Amplitudes
+**arXiv:** 2512.10015  **fetch:** `https://ar5iv.org/html/2512.10015`
+**Authors:** Ruiz et al. (2025)
+
+### What it does
+Systematic analysis of polarization-induced interference and off-shell effects
+in multi-leg processes with fixed-helicity intermediate bosons. Develops
+bookkeeping tools (covariant and axial gauge) for evaluating polarized
+helicity amplitudes, making mass/energy power counting explicit.
+
+### Key results
+- Polarization interference is generically non-zero even on shell.
+- Longitudinal contributions are suppressed at high energy (consistent with
+  the Goldstone equivalence theorem).
+- Helicity inversion generates interference; s- and t-channel exchanges
+  suppress it at high energy.
+- A scheme for reducing gauge dependence in polarized rate predictions.
+
+### Technical content relevant to implementation
+The paper works at the amplitude level and provides explicit formulae for
+polarization vectors in covariant (Rξ) and axial gauges, as well as
+completeness relations. Connects to the scalar polarization (λ = S) and
+Goldstone contributions in Rξ gauge.
+
+### Relevance to vibegraph
+Extends the formalism of arXiv:1912.01725 to more complex multi-leg
+situations. Directly informs the polarization vector conventions we should
+use in our `vxxxxx`-equivalent Rust routines. The completeness-relation
+bookkeeping is essential for verifying that our polarization sums reproduce
+the unpolarized cross section.
+
+---
+
+## Loop-Induced Processes and Phase-Space Optimisation in MadGraph5
+**arXiv:** 1507.00020  **fetch:** `https://ar5iv.org/html/1507.00020`
+**Authors:** Hirschi & Mattelaer (2015)
+
+### What it does
+Presents the first fully automated framework for computing cross sections and
+generating events for loop-induced processes (e.g. gg → H). Embedded in
+MadGraph5_aMC@NLO. Key new contribution is the polynomial decomposition of
+loop integrands and phase-space integration strategies for large multiplicities.
+
+### Phase-space integration content (Appendix, relevant to LO)
+Even for tree-level processes, the paper's appendix describes MadGraph5's
+**phase-space integration strategy** in detail:
+- Channel decomposition: each Feynman diagram defines a phase-space channel
+  whose parametrisation maps uniformly onto the propagator peaks.
+- Multi-channel weights: RAMBO-style flat phase space × per-channel Jacobian.
+  The optimal multi-channel weight is 1/Σ_i (1/J_i), minimising variance.
+- Job strategy variants (§A): `job_strategy = 0/1/2` controls how the survey
+  and refine steps are distributed across phase-space channels.
+- Polynomial decomposition (Eq. 2.6): numerator N(t) is expanded in powers
+  of the loop variable t, allowing OPP reduction without re-evaluating the
+  full integrand — a technique applicable to any rational function integrand.
+
+### RAMBO / multichannel phase space
+The multi-channel method is central to MadGraph's performance for processes
+with many competing propagator peaks. Each diagram contributes one channel;
+samples are drawn from the mixed distribution to suppress the relative
+variance. This is the phase-space algorithm we should implement alongside VEGAS.
+
+### Relevance to vibegraph
+The phase-space integration appendix is directly applicable to our LO
+integrator design. Implement each Feynman diagram as a separate phase-space
+channel (parametrised by its propagator poles), use multi-channel weights to
+combine, and drive the outer integral with VEGAS.
+
+---
+
+## MadWidth — Automatic Decay Widths for Arbitrary Models
+**arXiv:** 1402.1178  **fetch:** `https://ar5iv.org/html/1402.1178`
+**Authors:** Alwall, Duhr, Fuks, Mattelaer, Öztürk, Shen (2014)
+
+### What it does
+A module for FeynRules and MadGraph5_aMC@NLO that automatically computes
+tree-level decay widths for any particle in any QFT model, including
+higher-dimensional operators. Extends the UFO format with decay tables.
+
+### Two components
+1. **FeynRules/Mathematica part** — derives analytic two-body partial widths,
+   exports as UFO `decay.py` containing `Decay` objects with `partial_widths`.
+2. **MadGraph5/Python part** — numerical multi-body decay widths via
+   automated ME generation + phase-space integration for each decay channel.
+
+### UFO extension
+Adds two new UFO objects:
+- `Decay(particle, partial_widths_dict)`: maps final-state particle tuples
+  to partial width expressions.
+- `decays` field on `Particle`: total width derived by summing partials.
+
+This means a UFO model can be shipped with pre-computed widths; MadGraph
+substitutes them into `param_card.dat`.
+
+### Algorithm
+For each particle *P* with mass *M*:
+1. Enumerate all kinematically allowed final states from the model vertices.
+2. For 2-body decays: evaluate analytically using FeynRules.
+3. For n-body (n ≥ 3): generate matrix element code via MadGraph, integrate
+   over the n-body phase space numerically.
+4. Sum over colors/spins; divide by 2M to get the partial width.
+
+### Relevance to vibegraph
+When loading a UFO model that includes `decay.py`, we should propagate
+widths into particle objects (Breit-Wigner propagator denominators). The
+UFO `Decay` class structure is our reference for parsing pre-computed widths.
+For narrow-width approximation at LO, the total width is only needed in the
+propagator; MadWidth's output provides it without requiring us to compute
+widths ourselves.

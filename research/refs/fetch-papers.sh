@@ -31,6 +31,13 @@ PAPERS=(
   # a local copy is needed.
   "comix|https://ar5iv.org/html/0808.3674|COMIX/Sherpa: Berends-Giele recursive ME generation (arXiv:0808.3674)"
   "catani_seymour|https://ar5iv.org/html/hep-ph/9605323|Catani-Seymour: general IR subtraction at NLO (hep-ph/9605323)"
+  # Polarization / helicity amplitude papers:
+  "polarized_me|https://ar5iv.org/html/1912.01725|Polarized ME automation in MadGraph5_aMC@NLO: helicity definitions (arXiv:1912.01725)"
+  "polarized_propagator|https://ar5iv.org/html/2512.10015|Truncated propagator paradigm for polarized amplitudes (arXiv:2512.10015)"
+  # Phase-space integration:
+  "loop_induced_ps|https://ar5iv.org/html/1507.00020|Loop-induced processes and phase-space optimisation in MadGraph5 (arXiv:1507.00020)"
+  # UFO / model format extensions:
+  "madwidth|https://ar5iv.org/html/1402.1178|MadWidth: automatic decay widths, extends UFO with decay tables (arXiv:1402.1178)"
 )
 
 get_field() { echo "$1" | cut -d'|' -f"$2"; }

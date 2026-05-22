@@ -3,6 +3,17 @@ name = "vibegraph"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "vibegraph"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vibegraph"
+path = "src/main.rs"
+
+[features]
+extended-validation = []
+
 [dependencies]
 num-traits = "0.2"
 feyngraph = { path = "research/refs/feyngraph", default-features = false }

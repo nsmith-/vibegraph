@@ -27,5 +27,34 @@ transformers = "<4.36"   # nougat incompatible with transformers>=4.36 (cache_po
 # Example: pixi run -e nougat ocr
 ocr = "nougat research/refs/papers/helas.pdf -o research/refs/papers/"
 
+# --- madgraph: MadGraph5_aMC@NLO for cross-section validation ---
+# mg5amcnlo 3.5.7 builds against Python 3.11 on osx-arm64 (native Apple Silicon)
+# conda-forge package includes fortran-compiler, lhapdf, hepmc2/3, fastjet, etc.
+[feature.madgraph.dependencies]
+python = "3.11.*"
+mg5amcnlo = "==3.5.7"
+
+[feature.madgraph.tasks]
+# Compute σ(e+ e- > mu+ mu-) at sqrt(s) = 91.2 GeV (ebeam1 = ebeam2 = 45.6 GeV)
+# Expected LO cross section: ~1.8 nb at Z pole, ~6 pb at 200 GeV
+# Usage: pixi run -e madgraph generate-ee
+generate-ee = "mg5_aMC research/mg5_scripts/ee_to_mumu.mg5"
+
+# --- helas-validation: Fortran77 HELAS compiled via f2py for amplitude cross-checks ---
+[feature.helas-validation.dependencies]
+python = ">=3.10,<3.12"
+numpy = "*"
+gfortran = "*"
+
+[feature.helas-validation.tasks]
+# Compile HELAS .F files into a Python extension module (helas_f.so)
+build-helas = "cd validation/helas && bash build.sh"
+# Run the reference generator: produces reference.npz and reference.csv
+gen-reference = { cmd = "cd validation/helas && python gen_reference.py", depends-on = ["build-helas"] }
+# Full pipeline: build f2py extension, generate reference data, then run extended Rust tests
+validate-helas = { cmd = "cargo test --features extended-validation --test helas_validation", depends-on = ["gen-reference"] }
+
 [environments]
 nougat = { features = ["nougat"], solve-group = "nougat" }
+madgraph = { features = ["madgraph"], solve-group = "madgraph" }
+helas-validation = { features = ["helas-validation"], solve-group = "helas-validation" }
