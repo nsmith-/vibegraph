@@ -262,10 +262,10 @@ and have implications for the 5 tasks above.*
   These gaps reference ALOHA (already fetched) and implicitly the original MadGraph
   ALOHA paper. No new arXiv IDs were introduced by the main commits.
 - **Follow-up:**
-  1. Run `./research/refs/fetch-papers.sh` for the four newly added paper keys
-     (`polarized_me`, `polarized_propagator`, `loop_induced_ps`, `madwidth`) and verify
-     that ar5iv returns valid HTML (not an error page). Check file sizes — a valid fetch
-     is typically 100KB+; an ar5iv error page is ~8KB.
+  1. ✅ **Done (2026-05-22):** Ran `./research/refs/fetch-papers.sh polarized_me
+     polarized_propagator loop_induced_ps madwidth`. All four fetched successfully with
+     valid HTML content (sizes: polarized_me 2.5 MB, polarized_propagator 1.5 MB,
+     loop_induced_ps 1.1 MB, madwidth 1.0 MB — well above the ~8KB error-page threshold).
   2. When ALOHA implementation begins, the `lorentz.py` parsing problem may surface
      papers on tensor-product/Lorentz algebra code generation worth adding.
 
@@ -297,11 +297,17 @@ and have implications for the 5 tasks above.*
 **T5 — Process grammar** (`research/notes/06-process-grammar.md`)
 - Main initialized and uses `feyngraph` as a real Rust dependency (it was uninitialized
   when T5 ran). The feyngraph crate is now checked out at `research/refs/feyngraph/`.
-- **Follow-up:** Revisit the feyngraph gap analysis in `06-process-grammar.md` with
-  the actual crate code available. In particular: does feyngraph expose a programmatic
-  API for specifying initial/final-state particle lists (bypassing the MadGraph text
-  syntax entirely), or does it require the text format? This determines whether a
-  full PEG parser is needed or just a thin translation layer.
-  Also: `04-ufo-parsing-future.md` documents that FeynGraph does not parse
-  `lorentz.py` correctly (drops operator types, momentum insertions, color structures)
-  — this is relevant to how far feyngraph can take us before we need to replace it.
+- ✅ **Follow-up done (2026-05-22):** Section 8 of `06-process-grammar.md` rewritten
+  as a concrete gap analysis based on the actual feyngraph source. Key findings:
+  - feyngraph exposes a **fully programmatic Rust API** (`DiagramGenerator::new` takes
+    `&[&str]` particle names, no MadGraph text format required).
+  - `DiagramSelector` covers coupling orders (`select_coupling_power`), forbidden
+    propagators (`select_propagator_count("Z", 0)`), and arbitrary diagram predicates
+    (`add_custom_function`). Required/forbidden s-channels need custom functions (no
+    built-in); decay chains are handled by vibegraph iteratively.
+  - feyngraph's own `from_ufo` parser is incomplete (drops mass/width/Lorentz/color
+    — same defects documented in `04-ufo-parsing-future.md`). The recommended approach
+    is to build feyngraph's `Model` programmatically from vibegraph's own `UfoModel`,
+    bypassing feyngraph's parser entirely.
+  - **Conclusion:** A thin translation layer (~300 lines) is sufficient for LO
+    tree-level use. A full MadGraph-compatible PEG parser is optional / future work.

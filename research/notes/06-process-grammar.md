@@ -442,53 +442,120 @@ Feynman diagram with an off-shell photon in the t-channel.
 
 ## 8. Feyngraph Gap Analysis
 
-The `feyngraph` submodule (`research/refs/feyngraph/`) is a git submodule pointing to
-[`https://github.com/Jens-Braun/FeynGraph`](https://github.com/Jens-Braun/FeynGraph)
-but **has not been initialized** in this worktree (directory is empty).
+*(Updated 2026-05-22: feyngraph is now checked out at `research/refs/feyngraph/`;
+this section is based on the actual Rust source.)*
 
-The following gap analysis is based on the grammar above and FeynGraph's GitHub
-description, which states it is a "Rust library for generating Feynman diagrams from
-Feynman rules."
+### 8.1 The feyngraph public API
 
-### What vibegraph needs feyngraph to accept
+The entry point is:
 
-For **LO tree-level generation** (the immediate vibegraph goal), the inputs to the
-diagram generator are:
+```rust
+// src/lib.rs
+pub fn generate_diagrams(
+    particles_in:  &[&str],   // incoming particle names (model's `.name()`)
+    particles_out: &[&str],   // outgoing particle names
+    n_loops:       usize,
+    model:         Model,
+    selector:      DiagramSelector,
+) -> Result<DiagramContainer, ModelError>
+```
 
-1. **A list of external legs** — each with:
-   - PDG code (signed integer)
-   - State (initial vs. final)
-   
-2. **A model** (vertex table mapping particle-triples / -quadruples to coupling orders)
+Or equivalently, via the builder:
 
-3. **Coupling order bounds** — e.g. `{QCD: 2}` meaning "include only diagrams with
-   at most 2 QCD vertices"
+```rust
+DiagramGenerator::new(particles_in, particles_out, n_loops, model, Some(selector))?
+    .generate()   // -> DiagramContainer
+```
 
-4. **Forbidden propagator particles** — PDG code set
+**Key observation:** feyngraph accepts particles **by name** (the UFO `name` field),
+not by PDG code. There is no MadGraph process-string parser in feyngraph at all.
+The translation from a process string to a particle name list is entirely vibegraph's
+responsibility.
 
-5. **Forbidden s-channel propagators** — PDG code sets
+### 8.2 DiagramSelector capabilities
 
-6. **Required s-channel propagators** — PDG code sets
+`DiagramSelector` (`src/diagram/filter.rs`) exposes these filter methods:
 
-### Likely gaps (to verify once feyngraph is initialized)
+| Method | What it does | MadGraph equivalent |
+|--------|-------------|---------------------|
+| `select_coupling_power(coupling, power)` | Keep diagrams with exactly `power` vertices of type `coupling` | `QCD=2`, `QED=4` |
+| `select_coupling_power_list(coupling, powers)` | Keep diagrams with coupling power in a list | `QCD<=2` (powers 0,1,2) |
+| `select_propagator_count(particle, count)` | Keep diagrams with exactly `count` propagators of species `particle` | partial `/` (forbidden = count 0) |
+| `select_vertex_count(particles, count)` | Keep diagrams with `count` vertices involving the named particles | — |
+| `select_self_loops(count)` / `select_tadpoles(count)` | Loop / tadpole filters | — |
+| `select_on_shell()` | Exclude self-energy insertions on external legs | implicit in LO |
+| `add_custom_function(Arc<dyn Fn(&DiagramView) -> bool>)` | Arbitrary diagram filter | forbidden/required s-channels |
 
-| Feature | MadGraph uses | feyngraph status |
-|---------|--------------|-----------------|
-| Multiparticle alias expansion | yes (p, j, l+, …) | Unknown — likely done before calling feyngraph |
-| Coupling order filtering | yes (QCD=2, QED=4) | Unknown |
-| Forbidden propagators | yes (/ particles) | Unknown |
-| Required s-channels | yes (> X >) | Unknown |
-| Mirror-process deduplication | yes | Unknown |
-| Decay chain recursion | yes | Unknown — vibegraph may handle this layer itself |
+### 8.3 Gap table (MadGraph features vs. feyngraph)
 
-**Recommendation:** vibegraph should implement a **translation layer** that:
-1. Parses the MadGraph process string using the grammar above
-2. Expands multiparticle aliases
-3. Constructs the external-legs list and filter sets
-4. Calls feyngraph with the expanded, concrete inputs
+| Feature | MadGraph syntax | feyngraph support | Notes |
+|---------|-----------------|-------------------|-------|
+| External leg specification | `A > B` particle names | ✅ **Programmatic** — `&[&str]` by name | No text parser needed |
+| Multiparticle alias expansion | `p = g u d …` | ✅ **Vibegraph pre-step** — expand aliases before calling feyngraph | |
+| Coupling order upper bound | `QCD<=2` | ✅ `select_coupling_power_list("QCD", vec![0,1,2])` | |
+| Coupling order exact | `QCD==2` | ✅ `select_coupling_power("QCD", 2)` | |
+| Forbidden propagator species | `/ Z` | ✅ `select_propagator_count("Z", 0)` — zero Z propagators | |
+| Required s-channel | `> Z >` | ⚠️ **Gap** — no built-in; implement via `add_custom_function` | Custom function checks that ≥1 propagator with the right particle carries a single external momentum sum |
+| Forbidden s-channel (hard) | `$$ Z` | ⚠️ **Gap** — no built-in; implement via `add_custom_function` | |
+| Forbidden on-shell s-channel | `$ Z` | ⚠️ **Gap** — no built-in; implement via `add_custom_function` | |
+| Mirror-process deduplication | `e+ e- > mu+ mu-` ≡ `mu+ mu- > e+ e-` | ✅ **Not needed** — feyngraph topologies are unique by construction | Caller should canonicalise initial/final separately |
+| Decay chain recursion | `t t~, (t > b w+)` | ⚠️ **Gap** — no built-in; vibegraph handles iteratively | Generate top-level process; for each diagram call feyngraph again for each decay sub-process |
+| Loop diagrams | `[QCD]` | ✅ `n_loops > 0` | |
+| Process tag | `@N` | — metadata only, not passed to feyngraph | |
 
-This decouples the MadGraph syntax layer from the diagram-generation layer,
-matching how MadGraph itself separates `extract_process` from `MultiProcess`.
+### 8.4 Model construction: bypassing feyngraph's UFO parser
+
+feyngraph provides two ways to build a `Model`:
+
+```rust
+Model::from_ufo(path)          // delegates to feyngraph's own ufo_parser
+Model::empty()                 // blank model; populate with:
+    .add_particle(name, anti_name, spin, color, pdg, …)
+    .add_vertex(name, particles, spin_map, coupling_orders)
+```
+
+**Critical finding:** vibegraph's own UFO loader (`src/ufo/`) is more complete than
+feyngraph's `from_ufo` (see `04-ufo-parsing-future.md` for the full defect list).
+In particular, feyngraph drops `mass`, `width`, coupling `value` expressions, and
+all Lorentz/color structure data — and fails entirely on `loop_sm` due to unrecognised
+`x.attr = ...` syntax.
+
+**Recommended approach:** do **not** call `Model::from_ufo` at all. Instead:
+
+1. Load the UFO model with vibegraph's `UfoModel::load()`.
+2. Construct feyngraph's `Model` programmatically via `Model::empty()` + iteration
+   over `UfoModel.particles` and `UfoModel.vertices`.
+3. Pass the programmatically-constructed `Model` to `DiagramGenerator::new`.
+
+This makes feyngraph responsible only for diagram topology enumeration, while
+vibegraph retains full ownership of model data.
+
+### 8.5 Conclusion: is a full PEG parser needed?
+
+**No.** A full PEG parser of the MadGraph process string is not required in order
+to drive feyngraph. The translation layer vibegraph needs is:
+
+1. **Parse the process string** — a single `A > B [opts]` line. This is a thin
+   layer; the grammar in section 4 can be implemented in ~150 lines with `pest` or
+   `nom`.
+2. **Expand multiparticle aliases** — substitute `p`, `j`, `l+`, etc. using a
+   lookup table (loaded from model's `multiparticles` or a static default list).
+   This fans a single process into multiple concrete particle-name lists.
+3. **Build `DiagramSelector`** from the extracted coupling orders, forbidden
+   propagators, and (via custom functions) forbidden/required s-channels.
+4. **Build `Model`** programmatically from `UfoModel` — bypass feyngraph's parser.
+5. **Call `generate_diagrams`** for each expanded particle-name combination.
+
+The three s-channel filter types (`/`, `$`, `$$`, `> X >`) require custom diagram
+filter functions because feyngraph has no built-in topology-level s-channel
+awareness. These can be implemented by inspecting the `DiagramView` propagator
+list and checking whether any propagator's momentum is a sum of only initial-state
+momenta (= an s-channel propagator).
+
+**Bottom line:** a thin translation layer (~300 lines total) is sufficient.
+A feature-complete PEG parser covering decay chains, NLO loop specs, and all
+modifiers is only needed if vibegraph exposes a MadGraph-compatible command-line
+interface — an optional future step.
 
 ---
 

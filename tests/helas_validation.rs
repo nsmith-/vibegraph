@@ -45,8 +45,7 @@ mod extended {
 
     #[test]
     fn helas_matches_fortran_reference() {
-        let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("validation/helas/reference.csv");
+        let csv_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("validation/helas/reference.csv");
 
         assert!(
             csv_path.exists(),
@@ -79,7 +78,8 @@ mod extended {
         }
 
         assert_eq!(
-            failures, 0,
+            failures,
+            0,
             "{failures}/{} points exceeded relative tolerance {REL_TOL:.0e}",
             rows.len()
         );
