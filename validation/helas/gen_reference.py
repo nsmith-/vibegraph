@@ -210,7 +210,7 @@ def main():
     s_check = sqrt_s_check**2
     cos_vals = np.linspace(-1.0, 1.0, 1000)
     M2_vals = np.array([compute_M2_helas(helas_f, sqrt_s_check, c) for c in cos_vals])
-    integ = np.trapz(M2_vals, cos_vals)  # ∫_{-1}^{1} Σ|M|²(c) dc
+    integ = np.trapezoid(M2_vals, cos_vals)  # ∫_{-1}^{1} Σ|M|²(c) dc
     # dσ/dΩ = |M̄|²/(64π²s), |M̄|² = Σ|M|²/4
     # σ = (1/4) * (1/(64π²s)) * 2π * ∫ Σ|M|² dc
     GeVm2_to_nb = 0.3894e6  # 1 GeV^-2 = 0.3894 mb = 0.3894e6 nb
