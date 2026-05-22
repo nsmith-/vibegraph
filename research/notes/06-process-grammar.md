@@ -530,14 +530,26 @@ all Lorentz/color structure data — and fails entirely on `loop_sm` due to unre
 This makes feyngraph responsible only for diagram topology enumeration, while
 vibegraph retains full ownership of model data.
 
-### 8.5 Conclusion: is a full PEG parser needed?
+### 8.5 Conclusion: scope of the parser needed
 
-**No.** A full PEG parser of the MadGraph process string is not required in order
-to drive feyngraph. The translation layer vibegraph needs is:
+A parser is needed — the question is *how complete* it needs to be.
 
-1. **Parse the process string** — a single `A > B [opts]` line. This is a thin
-   layer; the grammar in section 4 can be implemented in ~150 lines with `pest` or
-   `nom`.
+The MadGraph process string grammar has two tiers:
+
+- **LO core** (🟢 in section 4): `A > B`, coupling order constraints, forbidden
+  propagators, s-channel filters, multiparticle aliases. This covers everything
+  vibegraph needs for tree-level diagram generation.
+- **Extended** (🔵 in section 4): NLO loop specs (`[QCD]`, `[virt=QCD]`), decay
+  chain syntax (`t > b w+`), process tags (`@N`). These are only needed if
+  vibegraph later exposes a MadGraph-compatible command-line interface.
+
+**For the immediate vibegraph goal, only the LO core needs to be parsed.** The
+grammar in section 4 covers this tier. Implementation:
+
+1. **Parse the process string** using the `peg` crate — already a dependency in
+   `Cargo.toml` (used by the UFO parsers in `src/ufo/`). The LO core grammar fits
+   in ~150 lines of `peg::parser!` rules, following the same patterns as
+   `src/ufo/parameters.rs` and `src/ufo/couplings.rs`.
 2. **Expand multiparticle aliases** — substitute `p`, `j`, `l+`, etc. using a
    lookup table (loaded from model's `multiparticles` or a static default list).
    This fans a single process into multiple concrete particle-name lists.
@@ -546,16 +558,15 @@ to drive feyngraph. The translation layer vibegraph needs is:
 4. **Build `Model`** programmatically from `UfoModel` — bypass feyngraph's parser.
 5. **Call `generate_diagrams`** for each expanded particle-name combination.
 
-The three s-channel filter types (`/`, `$`, `$$`, `> X >`) require custom diagram
-filter functions because feyngraph has no built-in topology-level s-channel
-awareness. These can be implemented by inspecting the `DiagramView` propagator
-list and checking whether any propagator's momentum is a sum of only initial-state
-momenta (= an s-channel propagator).
+The three s-channel filter types (`/ particles`, `$ particles`, `$$ particles`,
+`> X >`) require custom diagram filter functions because feyngraph has no
+built-in topology-level s-channel awareness. These can be implemented by
+inspecting the `DiagramView` propagator list and checking whether any
+propagator's momentum is a sum of only initial-state momenta.
 
-**Bottom line:** a thin translation layer (~300 lines total) is sufficient.
-A feature-complete PEG parser covering decay chains, NLO loop specs, and all
-modifiers is only needed if vibegraph exposes a MadGraph-compatible command-line
-interface — an optional future step.
+**Bottom line:** implement the LO core grammar with `peg` (~150 lines) plus
+~150 lines of translation logic. Extend to the full grammar later if a
+MadGraph-compatible CLI is wanted.
 
 ---
 
