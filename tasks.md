@@ -240,13 +240,19 @@ and have implications for the 5 tasks above.*
 **T1 — Code quality review** (`research/notes/07-mg5-code-quality.md`)
 - ⚠️ **Note numbering collision fixed**: renamed from `04-` to `07-mg5-code-quality.md`
   since main added `04-ufo-parsing-future.md`.
-- The new `src/helas/` implementation is directly exposed to the bug categories T1
-  identified (helicity-recycling bugs, sign errors in wavefunction normalization). The
-  test suite in `src/helas/mod.rs` covers θ=90° only — T1's recommendation to test a
-  range of kinematics is still unimplemented.
-- **Follow-up:** Cross-reference T1's "physics-correctness" and "numerical stability"
-  categories against the actual `repr.rs`/`vertex.rs` implementation; file concrete
-  Rust `#[test]` cases that cover the specific triggers identified in UpdateNotes.
+- ✅ **Follow-up done (2026-05-22):** Cross-referenced T1's physics-correctness and
+  numerical stability categories against the actual `repr.rs`/`vertex.rs` implementation.
+  Added 5 new `#[test]` cases to `src/helas/mod.rs` (commit `4b961e3`):
+  - `test_ee_to_mumu_multi_angle` — validates `Σ|M|² = 4e⁴(1+cos²θ)` at 7 angles
+    with physical coupling `e = √(4πα)`; directly covers T1's "range of kinematics" gap
+  - `test_ward_identity` — replaces ε^μ with q^μ, asserts amplitude vanishes; catches
+    sign/normalisation errors (T1 v1.4.3 ALOHA bug class)
+  - `test_backward_direction_massless` — exercises the `sqp0p3 = 0` branch in
+    `weyl_ixxxxx`/`weyl_oxxxxx`; guards collinear-limit divergences
+  - `test_massive_wavefunction_moving` — checks `fi†fi = 2E` for massive moving fermion
+  - `test_massive_wavefunction_at_rest` — checks `fi†fi = 2m` for the pp=0 at-rest branch
+- **Remaining:** Helicity-recycling tests (not yet implemented; relevant if/when recycling
+  is added); color-matrix tests (for diagram generation phase).
 
 **T2 — Runnable MadGraph** (`research/notes/05-madgraph-setup.md`)
 - Main now has a fully working UFO loader and HELAS implementation. The MadGraph
@@ -286,13 +292,14 @@ and have implications for the 5 tasks above.*
   # → build-helas → gen-reference → cargo test --features extended-validation --test helas_validation
   ```
 - **Follow-up (high priority):**
-  1. Remove or replace the stub in `src/lib.rs` — wire `compute_m2_ee_mumu` to the
-     real `src/helas/` routines (or delete the function and update the test to call
-     `src/helas/` directly without going through the stub).
+  1. ✅ **Done (2026-05-22):** `src/lib.rs` updated to `pub mod helas; pub mod ufo;`
+     (no longer a stub). `compute_m2_ee_mumu` implemented in `src/helas/mod.rs` using
+     real `DiracWf`/`j3xxxx`/`iovxxx` routines with physical QED coupling. Tests pass.
   2. Build the Fortran f2py harness and run the full validation:
      `pixi run -e helas-validation validate-helas`
-  3. The current Rust tests only check θ=90°, √s=2 with artificial couplings. Running
-     the full 20×20 grid with real physical couplings will be a stronger validation.
+  3. ✅ **Done (2026-05-22):** 5 new tests added covering multi-angle kinematics and
+     physical coupling (see T1 follow-up above). Running the Fortran reference comparison
+     is the remaining step.
 
 **T5 — Process grammar** (`research/notes/06-process-grammar.md`)
 - Main initialized and uses `feyngraph` as a real Rust dependency (it was uninitialized
