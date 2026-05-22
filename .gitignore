@@ -3,3 +3,7 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+# MadGraph generated output
+/ee_to_mumu/
+/validation/helas/*.so
+/validation/helas/reference.*
