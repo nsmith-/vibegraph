@@ -2,7 +2,7 @@ pub mod repr;
 pub mod vertex;
 pub mod wavefn;
 
-pub use repr::{SpinorRepr, WeylBasis};
+pub use repr::{Charge, FourMomentum, SpinorHelicity, SpinorRepr, WeylBasis};
 pub use vertex::{iovxxx, j3xxxx, jioxxx};
 pub use wavefn::{DiracWf, VectorWf};
 
@@ -45,6 +45,7 @@ pub const MDL_WZ: f64 = 2.441_404;
 /// # Returns
 /// Σ_{helicities} |M|²  (summed, not averaged, over initial/final helicities)
 pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
+    use SpinorHelicity::{Down, Up};
     use itertools::iproduct;
     use repr::r;
 
@@ -52,10 +53,10 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
     let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
 
     // CM-frame 4-momenta [E, px, py, pz] (massless fermion limit)
-    let p_em = [e_beam, 0.0, 0.0, e_beam]; // e⁻ along +z
-    let p_ep = [e_beam, 0.0, 0.0, -e_beam]; // e⁺ along −z
-    let p_mm = [e_beam, e_beam * sin_theta, 0.0, e_beam * cos_theta]; // μ⁻
-    let p_mp = [e_beam, -e_beam * sin_theta, 0.0, -e_beam * cos_theta]; // μ⁺
+    let p_em = FourMomentum([e_beam, 0.0, 0.0, e_beam]); // e⁻ along +z
+    let p_ep = FourMomentum([e_beam, 0.0, 0.0, -e_beam]); // e⁺ along −z
+    let p_mm = FourMomentum([e_beam, e_beam * sin_theta, 0.0, e_beam * cos_theta]); // μ⁻
+    let p_mp = FourMomentum([e_beam, -e_beam * sin_theta, 0.0, -e_beam * cos_theta]); // μ⁺
 
     // Derive SM coupling constants from param_card values.
     let aew = ALPHA_QED_MZ;
@@ -79,18 +80,18 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
     let gc_z = [gl_z, gr_z];
 
     let mut sum = 0.0;
-    for (nhel_em, nhel_ep) in iproduct!([-1_i32, 1], [-1_i32, 1]) {
-        let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, 1);
-        let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, -1);
+    for (nhel_em, nhel_ep) in iproduct!([Down, Up], [Down, Up]) {
+        let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, Charge::Particle);
+        let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, Charge::Antiparticle);
 
         // Off-shell photon current from the electron line
         let v_gamma = jioxxx(&fo_ep, &fi_em, gc_gamma, 0.0, 0.0);
         // Off-shell Z current from the electron line
         let v_z = jioxxx(&fo_ep, &fi_em, gc_z, MDL_MZ, MDL_WZ);
 
-        for (nhel_mm, nhel_mp) in iproduct!([-1_i32, 1], [-1_i32, 1]) {
-            let fi_mp = DiracWf::<f64, WeylBasis>::ixxxxx(p_mp, 0.0, nhel_mp, 1);
-            let fo_mm = DiracWf::<f64, WeylBasis>::oxxxxx(p_mm, 0.0, nhel_mm, -1);
+        for (nhel_mm, nhel_mp) in iproduct!([Down, Up], [Down, Up]) {
+            let fi_mp = DiracWf::<f64, WeylBasis>::ixxxxx(p_mp, 0.0, nhel_mp, Charge::Particle);
+            let fo_mm = DiracWf::<f64, WeylBasis>::oxxxxx(p_mm, 0.0, nhel_mm, Charge::Antiparticle);
 
             // Muon-line amplitudes for each diagram (contracted with each current)
             let gc_gamma_c = [r(gc_gamma[0]), r(gc_gamma[1])];
@@ -111,9 +112,9 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
 /// Integrates the differential cross section over `cosθ ∈ [cos_min, cos_max]`
 /// with a 1D VEGAS adaptive Monte Carlo integrator.  The formula is
 ///
-/// ```text
+/// \`\`\`text
 /// σ = prefactor2(√s) × (cos_max − cos_min)/2 × ∫₀¹ Σ|M|²(cosθ(u)) du
-/// ```
+/// \`\`\`
 ///
 /// where [`phasespace::prefactor2`] encodes the flux factor `1/(2s)`, the
 /// spin-averaging factor `1/4`, and the massless 2-body LIPS Jacobian `1/(8π)`.
@@ -157,6 +158,8 @@ pub fn sigma_ee_mumu(sqrt_s: f64, cos_range: (f64, f64), neval: usize, niter: us
 #[cfg(test)]
 mod tests {
     use super::*;
+    use Charge::{Antiparticle, Particle};
+    use SpinorHelicity::{Down, Up};
     use itertools::iproduct;
     use repr::r;
 
@@ -190,10 +193,10 @@ mod tests {
         let s2 = 2.0_f64.sqrt();
 
         // 4-momenta [E, px, py, pz]
-        let p_em = [1.0, 0.0, 0.0, 1.0]; // e⁻
-        let p_ep = [1.0, 0.0, 0.0, -1.0]; // e⁺
-        let p_mm = [1.0, 1.0, 0.0, 0.0]; // μ⁻
-        let p_mp = [1.0, -1.0, 0.0, 0.0]; // μ⁺
+        let p_em = FourMomentum([1.0, 0.0, 0.0, 1.0]); // e⁻
+        let p_ep = FourMomentum([1.0, 0.0, 0.0, -1.0]); // e⁺
+        let p_mm = FourMomentum([1.0, 1.0, 0.0, 0.0]); // μ⁻
+        let p_mp = FourMomentum([1.0, -1.0, 0.0, 0.0]); // μ⁺
 
         // Couplings that reduce j3xxxx to a pure vector photon
         let gaf = [s2, s2];
@@ -205,13 +208,13 @@ mod tests {
         let mut amp_sq_sum = 0.0;
 
         for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in
-            iproduct!([-1_i32, 1], [-1_i32, 1], [-1_i32, 1], [-1_i32, 1])
+            iproduct!([Down, Up], [Down, Up], [Down, Up], [Down, Up])
         {
-            // nsf: +1 for particle, -1 for antiparticle
-            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, 1);
-            let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, -1);
-            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, 1);
-            let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, -1);
+            // nsf: Particle for e⁻/μ⁻, Antiparticle for e⁺/μ⁺
+            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, Particle);
+            let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, Antiparticle);
+            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, Particle);
+            let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, Antiparticle);
 
             // Off-shell photon from the electron current
             let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, zmass, zwidth);
@@ -233,10 +236,10 @@ mod tests {
     fn test_ee_to_mumu_individual_helicities() {
         let s2 = 2.0_f64.sqrt();
 
-        let p_em = [1.0, 0.0, 0.0, 1.0];
-        let p_ep = [1.0, 0.0, 0.0, -1.0];
-        let p_mm = [1.0, 1.0, 0.0, 0.0];
-        let p_mp = [1.0, -1.0, 0.0, 0.0];
+        let p_em = FourMomentum([1.0, 0.0, 0.0, 1.0]);
+        let p_ep = FourMomentum([1.0, 0.0, 0.0, -1.0]);
+        let p_mm = FourMomentum([1.0, 1.0, 0.0, 0.0]);
+        let p_mp = FourMomentum([1.0, -1.0, 0.0, 0.0]);
 
         let gaf = [s2, s2];
         let gzf = [0.0, s2];
@@ -245,17 +248,17 @@ mod tests {
         // The four non-zero combinations: helicity conservation in massless QED
         // requires λ(e⁻) = −λ(e⁺) and λ(μ⁻) = −λ(μ⁺).
         let nonzero = [
-            (-1, 1, -1, 1),
-            (-1, 1, 1, -1),
-            (1, -1, -1, 1),
-            (1, -1, 1, -1),
+            (Down, Up, Down, Up),
+            (Down, Up, Up, Down),
+            (Up, Down, Down, Up),
+            (Up, Down, Up, Down),
         ];
 
         for &(nhel_em, nhel_ep, nhel_mm, nhel_mp) in &nonzero {
-            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, 1);
-            let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, -1);
-            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, 1);
-            let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, -1);
+            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, Particle);
+            let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, Antiparticle);
+            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, Particle);
+            let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, Antiparticle);
 
             let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
             let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
@@ -269,17 +272,17 @@ mod tests {
 
         // The other 12 helicity combinations should vanish.
         for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in
-            iproduct!([-1_i32, 1], [-1_i32, 1], [-1_i32, 1], [-1_i32, 1])
+            iproduct!([Down, Up], [Down, Up], [Down, Up], [Down, Up])
         {
             let combo = (nhel_em, nhel_ep, nhel_mm, nhel_mp);
             if nonzero.contains(&combo) {
                 continue;
             }
 
-            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, 1);
-            let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, -1);
-            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, 1);
-            let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, -1);
+            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, Particle);
+            let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, Antiparticle);
+            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, Particle);
+            let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, Antiparticle);
 
             let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
             let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
@@ -347,18 +350,18 @@ mod tests {
         let gzf = [0.0, s2];
         let gc = [r(1.0_f64), r(1.0_f64)];
 
-        let p_em = [1.0, 0.0, 0.0, 1.0];
-        let p_ep = [1.0, 0.0, 0.0, -1.0];
-        let p_mm = [1.0, 1.0, 0.0, 0.0];
-        let p_mp = [1.0, -1.0, 0.0, 0.0];
+        let p_em = FourMomentum([1.0, 0.0, 0.0, 1.0]);
+        let p_ep = FourMomentum([1.0, 0.0, 0.0, -1.0]);
+        let p_mm = FourMomentum([1.0, 1.0, 0.0, 0.0]);
+        let p_mp = FourMomentum([1.0, -1.0, 0.0, 0.0]);
 
         for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in
-            iproduct!([-1_i32, 1], [-1_i32, 1], [-1_i32, 1], [-1_i32, 1])
+            iproduct!([Down, Up], [Down, Up], [Down, Up], [Down, Up])
         {
-            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, 1);
-            let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, -1);
-            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, 1);
-            let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, -1);
+            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, Particle);
+            let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, Antiparticle);
+            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, Particle);
+            let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, Antiparticle);
 
             let v_phys = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
 
@@ -394,19 +397,19 @@ mod tests {
         let gc = [r(1.0_f64), r(1.0_f64)];
 
         // e⁻ and e⁺ coming in head-on from the *opposite* direction.
-        let p_em = [1.0, 0.0, 0.0, -1.0]; // backward e⁻ (sqp0p3=0 branch)
-        let p_ep = [1.0, 0.0, 0.0, 1.0]; // backward e⁺
-        let p_mm = [1.0, 1.0, 0.0, 0.0];
-        let p_mp = [1.0, -1.0, 0.0, 0.0];
+        let p_em = FourMomentum([1.0, 0.0, 0.0, -1.0]); // backward e⁻ (sqp0p3=0 branch)
+        let p_ep = FourMomentum([1.0, 0.0, 0.0, 1.0]); // backward e⁺
+        let p_mm = FourMomentum([1.0, 1.0, 0.0, 0.0]);
+        let p_mp = FourMomentum([1.0, -1.0, 0.0, 0.0]);
 
         let mut sum = 0.0;
         for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in
-            iproduct!([-1_i32, 1], [-1_i32, 1], [-1_i32, 1], [-1_i32, 1])
+            iproduct!([Down, Up], [Down, Up], [Down, Up], [Down, Up])
         {
-            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, 1);
-            let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, -1);
-            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, 1);
-            let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, -1);
+            let fi_em = DiracWf::<f64, WeylBasis>::ixxxxx(p_em, 0.0, nhel_em, Particle);
+            let fo_ep = DiracWf::<f64, WeylBasis>::oxxxxx(p_ep, 0.0, nhel_ep, Antiparticle);
+            let fi_mm = DiracWf::<f64, WeylBasis>::ixxxxx(p_mm, 0.0, nhel_mm, Particle);
+            let fo_mp = DiracWf::<f64, WeylBasis>::oxxxxx(p_mp, 0.0, nhel_mp, Antiparticle);
 
             let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
             let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
@@ -434,23 +437,23 @@ mod tests {
         let mass = 1.0_f64; // 1 GeV test mass
         let e = 3.0_f64; // E > mass → moving
         let p_abs = (e * e - mass * mass).sqrt();
-        let p = [e, p_abs / 2.0_f64.sqrt(), 0.0, p_abs / 2.0_f64.sqrt()];
+        let p = FourMomentum([e, p_abs / 2.0_f64.sqrt(), 0.0, p_abs / 2.0_f64.sqrt()]);
 
-        for nhel in [-1_i32, 1] {
-            let fi = DiracWf::<f64, WeylBasis>::ixxxxx(p, mass, nhel, 1);
+        for nhel in [Down, Up] {
+            let fi = DiracWf::<f64, WeylBasis>::ixxxxx(p, mass, nhel, Particle);
             // On-shell condition: fi†·fi = 2E (HELAS convention)
             let norm_sq: f64 = fi.spinor.iter().map(|c| c.norm_sqr()).sum();
             assert!(
                 (norm_sq - 2.0 * e).abs() < 1e-10,
-                "Moving massive ixxxxx normalization: fi†fi = {norm_sq}, expected 2E = {}",
+                "Moving massive ixxxxx normalization nhel={nhel}: fi†fi = {norm_sq}, expected 2E = {}",
                 2.0 * e
             );
 
-            let fo = DiracWf::<f64, WeylBasis>::oxxxxx(p, mass, nhel, 1);
+            let fo = DiracWf::<f64, WeylBasis>::oxxxxx(p, mass, nhel, Particle);
             let norm_sq_fo: f64 = fo.spinor.iter().map(|c| c.norm_sqr()).sum();
             assert!(
                 (norm_sq_fo - 2.0 * e).abs() < 1e-10,
-                "Moving massive oxxxxx normalization: fo†fo = {norm_sq_fo}, expected 2E = {}",
+                "Moving massive oxxxxx normalization nhel={nhel}: fo†fo = {norm_sq_fo}, expected 2E = {}",
                 2.0 * e
             );
         }
@@ -464,10 +467,10 @@ mod tests {
     #[test]
     fn test_massive_wavefunction_at_rest() {
         let mass = 0.511e-3_f64; // electron mass in GeV
-        let p = [mass, 0.0, 0.0, 0.0];
+        let p = FourMomentum([mass, 0.0, 0.0, 0.0]);
 
-        for nhel in [-1_i32, 1] {
-            let fi = DiracWf::<f64, WeylBasis>::ixxxxx(p, mass, nhel, 1);
+        for nhel in [Down, Up] {
+            let fi = DiracWf::<f64, WeylBasis>::ixxxxx(p, mass, nhel, Particle);
             let norm_sq: f64 = fi.spinor.iter().map(|c| c.norm_sqr()).sum();
             assert!(
                 (norm_sq - 2.0 * mass).abs() < 1e-15,
@@ -475,7 +478,7 @@ mod tests {
                 2.0 * mass
             );
 
-            let fo = DiracWf::<f64, WeylBasis>::oxxxxx(p, mass, nhel, 1);
+            let fo = DiracWf::<f64, WeylBasis>::oxxxxx(p, mass, nhel, Particle);
             let norm_sq_fo: f64 = fo.spinor.iter().map(|c| c.norm_sqr()).sum();
             assert!(
                 (norm_sq_fo - 2.0 * mass).abs() < 1e-15,
