@@ -16,6 +16,7 @@ extended-validation = []
 
 [dependencies]
 num-traits = "0.2"
+rand = "0.9"
 feyngraph = { path = "research/refs/feyngraph", default-features = false }
 indexmap = "2.14.0"
 log = "0.4.29"
@@ -23,3 +24,6 @@ num-complex = "0.4.6"
 peg = "0.8.6"
 thiserror = "2.0.18"
 itertools = "0.14.0"
+
+[dev-dependencies]
+libm = "0.2"

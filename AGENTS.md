@@ -64,6 +64,24 @@ vibegraph/
 - σ = ∫ dΦ_n |M|² / flux  (integrated over n-body Lorentz-invariant phase space)
 - Events are sampled with weight = |M|² / max(|M|²)
 
+## Agent Tooling Guidelines
+
+**Prefer Unix CLI tools over Python scripts for search and extraction tasks.**
+
+Use `grep`, `sed`, `awk`, `find`, etc. instead of writing ad-hoc Python scripts. This enables
+auto-approval of these commands in agentic workflows, whereas arbitrary Python scripts require
+manual review. Key flags to remember:
+
+- `grep -n` — include line numbers in output
+- `grep -r` — recursive search through directories
+- `grep -C N` — show N lines of context around each match
+- `grep -l` — list only matching filenames
+- `sed -n 'N,Mp'` — print lines N through M of a file
+- `find . -name "*.rs"` — locate files by pattern
+
+Only write a Python (or other) script when the task genuinely requires logic that these tools
+cannot express (e.g., structured parsing of binary formats, complex data transformations).
+
 ## Working Notes
 
 See `research/notes/` for step-by-step derivations and implementation notes.
