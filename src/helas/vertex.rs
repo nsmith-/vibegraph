@@ -1,4 +1,9 @@
-use crate::helas::repr::{C, Real, SpinorRepr, r};
+use crate::helas::repr::{
+    C, Real, SpinorRepr,
+    intertwiner::{GammaL, GammaR, Intertwiner},
+    lorentz::FourMomentum,
+    r,
+};
 use crate::helas::wavefn::{DiracWf, VectorWf};
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -47,7 +52,7 @@ pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
     zwidth: F,
 ) -> VectorWf<F> {
     // Off-shell momentum: fo.p − fi.p
-    let jmom = std::array::from_fn(|mu| fo.momentum[mu] - fi.momentum[mu]);
+    let jmom: [F; 4] = std::array::from_fn(|mu| fo.momentum[mu] - fi.momentum[mu]);
     // Propagator momentum (inflow convention)
     let q = [-jmom[0], -jmom[1], -jmom[2], -jmom[3]];
     let q2 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
@@ -70,9 +75,9 @@ pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
         / C::new(q2 - zm2, zmw);
     let ddif = C::new(-zm2, zmw) * r(da) * dz; // ≈ da for mZ → ∞
 
-    // ── Bilinear currents (metric signs absorbed) ─────────────────────────
-    let cl = B::left_current(&fo.spinor, &fi.spinor);
-    let cr = B::right_current(&fo.spinor, &fi.spinor);
+    // ── Bilinear currents via GammaL / GammaR intertwiners ────────────────
+    let cl = GammaL::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
+    let cr = GammaR::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
 
     // Longitudinal-mode projections divided by complex mZ²
     let cm2 = C::new(zm2, -zmw);
@@ -125,12 +130,13 @@ pub fn jioxxx<F: Real, B: SpinorRepr<F>>(
     vwidth: F,
 ) -> VectorWf<F> {
     // Off-shell momentum: jmom = fo.p − fi.p  (outflow convention)
-    let jmom = std::array::from_fn(|mu| fo.momentum[mu] - fi.momentum[mu]);
+    let jmom: [F; 4] = std::array::from_fn(|mu| fo.momentum[mu] - fi.momentum[mu]);
     let q = jmom;
     let q2 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
 
-    let cl = B::left_current(&fo.spinor, &fi.spinor);
-    let cr = B::right_current(&fo.spinor, &fi.spinor);
+    // Bilinear currents via GammaL / GammaR intertwiners
+    let cl = GammaL::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
+    let cr = GammaR::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
     let blin: [C<F>; 4] = std::array::from_fn(|mu| r(gc[0]) * cl[mu] + r(gc[1]) * cr[mu]);
 
     let eps = if vmass == F::zero() {
@@ -177,8 +183,8 @@ pub fn iovxxx<F: Real, B: SpinorRepr<F>>(
     v: &VectorWf<F>,
     gc: [C<F>; 2],
 ) -> C<F> {
-    let cl = B::left_current(&fo.spinor, &fi.spinor);
-    let cr = B::right_current(&fo.spinor, &fi.spinor);
+    let cl = GammaL::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
+    let cr = GammaR::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
 
     // M = gc[0] * (C_L · V) + gc[1] * (C_R · V)
     gc[0] * mink_dot(cl, v.eps) + gc[1] * mink_dot(cr, v.eps)

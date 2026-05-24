@@ -1,4 +1,7 @@
-use crate::helas::repr::{C, Real, SpinorRepr};
+use crate::helas::repr::{
+    C, Real, SpinorRepr,
+    lorentz::{Charge, FourMomentum, SpinorHelicity},
+};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Spinor wavefunction
@@ -6,34 +9,36 @@ use crate::helas::repr::{C, Real, SpinorRepr};
 
 /// A Dirac spinor wavefunction together with its (signed) 4-momentum.
 ///
-/// `momentum` stores `p * nsf`:  positive for particles, negative for
+/// `momentum` stores `p * nsf.sign()`: positive for particles, negative for
 /// antiparticles.  This matches the HELAS convention used when building
 /// currents and computing the s-channel propagator momentum.
+///
+/// `spinor` has type `B::Fiber` (= `[C<F>; 4]` for any `B: SpinorRepr<F>`),
+/// since [`SpinorRepr<F>`] is a subtrait of [`crate::helas::repr::LorentzRepr<F>`]
+/// with `Fiber = [C<F>; 4]`.
 #[derive(Clone, Copy, Debug)]
 pub struct DiracWf<F: Real, B: SpinorRepr<F>> {
-    pub spinor: B::Spinor,
+    pub spinor: B::Fiber,
     /// Signed momentum: particle → +p, antiparticle → −p
-    pub momentum: [F; 4],
+    pub momentum: FourMomentum<F>,
 }
 
 impl<F: Real, B: SpinorRepr<F>> DiracWf<F, B> {
     /// Construct a flowing-IN wavefunction.
-    pub fn ixxxxx(p: [F; 4], mass: F, nhel: i32, nsf: i32) -> Self {
+    pub fn ixxxxx(p: FourMomentum<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
         let spinor = B::ixxxxx(p, mass, nhel, nsf);
-        let sf = F::from(nsf).unwrap();
         DiracWf {
             spinor,
-            momentum: [p[0] * sf, p[1] * sf, p[2] * sf, p[3] * sf],
+            momentum: p.scaled(nsf.sign()),
         }
     }
 
     /// Construct a flowing-OUT wavefunction.
-    pub fn oxxxxx(p: [F; 4], mass: F, nhel: i32, nsf: i32) -> Self {
+    pub fn oxxxxx(p: FourMomentum<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
         let spinor = B::oxxxxx(p, mass, nhel, nsf);
-        let sf = F::from(nsf).unwrap();
         DiracWf {
             spinor,
-            momentum: [p[0] * sf, p[1] * sf, p[2] * sf, p[3] * sf],
+            momentum: p.scaled(nsf.sign()),
         }
     }
 }
