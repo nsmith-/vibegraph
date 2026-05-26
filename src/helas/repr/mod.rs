@@ -55,20 +55,8 @@ pub mod intertwiner;
 pub mod lorentz;
 pub mod propagator;
 
-pub use color::{ColorRepr, ColorSinglet, SU3Adjoint, SU3Fundamental};
-pub use coupling::{ColorStructure, GaugeVertex, LorentzStructure, Vertex3};
-pub use intertwiner::{
-    Epsilon, GammaL, GammaR, GammaV, Intertwiner2Leg, Intertwiner3Leg, Intertwiner4Leg,
-    SigmaTensor,
-};
-pub use lorentz::{
-    Bispinor, Charge, LorentzRepr, LorentzVector, Rank2Tensor, Scalar, ScalarRepr,
-    SpinorHelicity, SpinorRepr, VectorRepr,
-};
-pub use propagator::{
-    DiracPropagator, MassiveVectorPropagator, MasslessVectorPropagator, Propagator,
-    ScalarPropagator,
-};
+// Re-exports removed: prefer using submodules directly to avoid unused-import warnings.
+// Public scalar primitives (keep these for downstream code):
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Scalar primitives — used throughout all submodules
