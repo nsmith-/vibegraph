@@ -1,7 +1,7 @@
 use crate::helas::repr::{
-    C, Real, SpinorRepr,
-    intertwiner::{GammaL, GammaR, Intertwiner},
-    lorentz::{ComplexVector, LorentzVector},
+    C, Real,
+    intertwiner::{GammaL, GammaR, Intertwiner2Leg},
+    lorentz::ComplexVector,
     r,
 };
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, VectorWf};
@@ -79,8 +79,8 @@ pub fn j3xxxx<F: Real>(
     let ddif = C::new(-zm2, zmw) * r(da) * dz; // ≈ da for mZ → ∞
 
     // ── Bilinear currents via GammaL / GammaR intertwiners ────────────────
-    let cl = GammaL::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
-    let cr = GammaR::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
+    let cl = GammaL::apply(&(fo.spinor, fi.spinor));
+    let cr = GammaR::apply(&(fo.spinor, fi.spinor));
 
     // Longitudinal-mode projections divided by complex mZ²
     let cm2 = C::new(zm2, -zmw);
@@ -138,8 +138,8 @@ pub fn jioxxx<F: Real>(
     let q2 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
 
     // Bilinear currents via GammaL / GammaR intertwiners
-    let cl = GammaL::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
-    let cr = GammaR::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
+    let cl = GammaL::apply(&(fo.spinor, fi.spinor));
+    let cr = GammaR::apply(&(fo.spinor, fi.spinor));
     let blin: [C<F>; 4] = std::array::from_fn(|mu| r(gc[0]) * cl[mu] + r(gc[1]) * cr[mu]);
 
     let eps = if vmass == F::zero() {
@@ -186,8 +186,8 @@ pub fn iovxxx<F: Real>(
     v: &VectorWf<F>,
     gc: [C<F>; 2],
 ) -> C<F> {
-    let cl = GammaL::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
-    let cr = GammaR::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
+    let cl = GammaL::apply(&(fo.spinor, fi.spinor));
+    let cr = GammaR::apply(&(fo.spinor, fi.spinor));
 
     // M = gc[0] * (C_L · V) + gc[1] * (C_R · V)
     gc[0] * mink_dot(cl.0, v.eps.0) + gc[1] * mink_dot(cr.0, v.eps.0)

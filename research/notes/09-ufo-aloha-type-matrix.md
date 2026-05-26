@@ -177,19 +177,16 @@ So both forms should be modeled:
 - FourMomentum<F>
 - ScalarWf<F>
 - GhostScalarWf<F>
-- SpinorIn<F, B>
-- SpinorOut<F, B>
+- DiracWf<F, Flow>
 - VectorWf<F>
-- VectorSpinorWf<F, B> (spin-3/2, planned)
+- VectorSpinorWf<F> (spin-3/2, planned)
 - Rank2TensorWf<F> (spin-2, planned)
 
 ### Representation tags
 
 - LorentzRepr should remain as representation identity/tag.
 - SpinorRepr should define spinor-space intertwiners/projections.
-- Spinor construction can be inherent methods on SpinorIn/SpinorOut in the
-  Weyl-first path, or remain in a small constructor trait if basis-polymorphism
-  becomes necessary.
+- Spinor construction can be inherent methods on Bispinor in the Weyl-first path.
 
 ## Phased implementation plan
 
