@@ -1,14 +1,10 @@
-//! Parser for UFO `parameters.py`.
-//!
-//! Builds a [`ParameterSet`] that:
-//! - Holds external parameters (with SLHA block/code for lookup)
-//! - Holds internal parameters topo-sorted for evaluation order
-//! - Provides a reverse-dependency map for efficient incremental re-evaluation
-//!   (e.g. when α_s is updated, only params depending on `aS` need re-eval)
-
-use crate::ufo::expr::{Expr, collect_deps, eval, parse_expr};
-use crate::ufo::slha::ParamCard;
+use super::ast_util::{
+    call_func_name, extract_float, extract_int, extract_str, kwarg_str, parse_stmts,
+};
+use super::expr::{Expr, collect_deps, eval, parse_expr};
+use super::slha::ParamCard;
 use num_complex::Complex64;
+use rustpython_parser::ast;
 use std::collections::{HashMap, VecDeque};
 use thiserror::Error;
 
@@ -52,16 +48,11 @@ pub struct ParameterSet {
     /// Internal parameters in topo-sorted evaluation order.
     pub internals: Vec<Parameter>,
     /// Reverse dependency map: name → list of parameter names that depend on it.
-    ///
-    /// Used for incremental re-evaluation: when `aS` changes, walk `rdeps["aS"]`
-    /// and re-evaluate in the order given by `internals`.
     pub rdeps: HashMap<String, Vec<String>>,
 }
 
 impl ParameterSet {
     /// Evaluate all parameters using the given param_card for external inputs.
-    ///
-    /// Missing SLHA entries fall back to the UFO default value.
     pub fn evaluate(&self, slha: &ParamCard) -> HashMap<String, Complex64> {
         let mut values: HashMap<String, Complex64> = HashMap::new();
 
@@ -89,11 +80,7 @@ impl ParameterSet {
     }
 
     /// Re-evaluate only the transitive dependents of `changed` in place.
-    ///
-    /// This is the efficient path for α_s running: after updating `aS` in
-    /// `current`, call `recompute("aS", current)` to propagate the change.
     pub fn recompute(&self, changed: &str, current: &mut HashMap<String, Complex64>) {
-        // Collect all transitively affected params using BFS over rdeps.
         let mut affected: Vec<String> = Vec::new();
         let mut queue: VecDeque<&str> = VecDeque::new();
         queue.push_back(changed);
@@ -108,7 +95,6 @@ impl ParameterSet {
             }
         }
 
-        // Re-evaluate affected internals in topo order.
         for p in &self.internals {
             if affected.contains(&p.name) {
                 if let ParamNature::Internal { expr, .. } = &p.nature {
@@ -122,20 +108,37 @@ impl ParameterSet {
 
 /// Parse `parameters.py` content into a [`ParameterSet`].
 pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
-    let raw = ufo_params::parameters(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
+    let stmts = parse_stmts(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
 
     let mut externals: Vec<Parameter> = Vec::new();
-    let mut raw_internals: Vec<(String, bool, Expr, Vec<String>)> = Vec::new(); // (name, complex, expr, deps)
+    let mut raw_internals: Vec<(String, bool, Expr, Vec<String>)> = Vec::new();
 
-    for rp in raw {
-        let name = rp.name.clone();
-        let is_complex = rp.type_str.as_deref() == Some("complex");
+    for stmt in &stmts {
+        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
+            continue;
+        };
+        let ast::Expr::Name(ast::ExprName { id, .. }) = targets.first().unwrap() else {
+            continue;
+        };
+        let lhs_name = id.as_str().to_owned();
 
-        match rp.nature.as_deref() {
+        let ast::Expr::Call(ast::ExprCall { func, keywords, .. }) = value.as_ref() else {
+            continue;
+        };
+        if call_func_name(func) != Some("Parameter") {
+            continue;
+        }
+
+        // Use the LHS variable name as the canonical name.
+        let name = lhs_name;
+        let is_complex = kwarg_str(keywords, "type").as_deref() == Some("complex");
+        let nature_str = kwarg_str(keywords, "nature");
+
+        match nature_str.as_deref() {
             Some("external") => {
-                let default_value = rp.ext_value.unwrap_or(0.0);
-                let lha_block = rp.lha_block.unwrap_or_default();
-                let lha_code = rp.lha_code.unwrap_or_default();
+                let default_value = extract_value_float(keywords).unwrap_or(0.0);
+                let lha_block = kwarg_str(keywords, "lhablock").unwrap_or_default();
+                let lha_code = extract_lhacode(keywords);
                 externals.push(Parameter {
                     name,
                     complex: is_complex,
@@ -147,9 +150,8 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
                 });
             }
             _ => {
-                // Treat unknown nature as internal.
-                let expr_str = rp.int_value.as_deref().unwrap_or("0.0");
-                let expr = parse_expr(expr_str).map_err(|e| ParameterError::ExprParse {
+                let expr_str = extract_value_str(keywords).unwrap_or_else(|| "0.0".to_owned());
+                let expr = parse_expr(&expr_str).map_err(|e| ParameterError::ExprParse {
                     name: name.clone(),
                     cause: e.to_string(),
                 })?;
@@ -160,11 +162,8 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
         }
     }
 
-    // Build the set of all known names (externals first).
-    let mut all_known: Vec<String> = externals.iter().map(|p| p.name.clone()).collect();
     let internals = toposort_internals(raw_internals)?;
 
-    // Build reverse dep map.
     let mut rdeps: HashMap<String, Vec<String>> = HashMap::new();
     for p in &internals {
         if let ParamNature::Internal { deps, .. } = &p.nature {
@@ -174,9 +173,6 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
         }
     }
 
-    // Extend all_known with internals (for completeness, not used further here).
-    all_known.extend(internals.iter().map(|p| p.name.clone()));
-
     Ok(ParameterSet {
         externals,
         internals,
@@ -184,15 +180,43 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
     })
 }
 
-/// Kahn's topological sort for internal parameters.
+/// Extract the `value` keyword as a string (for internal parameters).
+fn extract_value_str(keywords: &[ast::Keyword]) -> Option<String> {
+    use super::ast_util::get_kwarg;
+    let val = get_kwarg(keywords, "value")?;
+    extract_str(val).map(|s| s.to_owned())
+}
+
+/// Extract the `value` keyword as a float (for external parameters).
+fn extract_value_float(keywords: &[ast::Keyword]) -> Option<f64> {
+    use super::ast_util::get_kwarg;
+    let val = get_kwarg(keywords, "value")?;
+    extract_float(val).or_else(|| extract_int(val).map(|n| n as f64))
+}
+
+/// Extract `lhacode = [ 3 ]` as a Vec<i32>.
+fn extract_lhacode(keywords: &[ast::Keyword]) -> Vec<i32> {
+    use super::ast_util::get_kwarg;
+    let Some(val) = get_kwarg(keywords, "lhacode") else {
+        return vec![];
+    };
+    match val {
+        ast::Expr::List(ast::ExprList { elts, .. }) => elts
+            .iter()
+            .filter_map(extract_int)
+            .map(|n| n as i32)
+            .collect(),
+        _ => extract_int(val).map(|n| vec![n as i32]).unwrap_or_default(),
+    }
+}
+
 fn toposort_internals(
     raw: Vec<(String, bool, Expr, Vec<String>)>,
 ) -> Result<Vec<Parameter>, ParameterError> {
-    // Build maps.
     let n = raw.len();
     let names: Vec<String> = raw.iter().map(|(name, _, _, _)| name.clone()).collect();
     let mut in_degree: Vec<usize> = vec![0; n];
-    let mut forward: Vec<Vec<usize>> = vec![vec![]; n]; // forward[i] = list of indices that depend on i
+    let mut forward: Vec<Vec<usize>> = vec![vec![]; n];
 
     let name_index: HashMap<&str, usize> = names
         .iter()
@@ -202,16 +226,13 @@ fn toposort_internals(
 
     for (i, (_, _, _, deps)) in raw.iter().enumerate() {
         for dep in deps {
-            // dep might be an external (not in names) — skip those.
             if let Some(&j) = name_index.get(dep.as_str()) {
                 in_degree[i] += 1;
                 forward[j].push(i);
             }
-            // Also skip externals — they have no in-degree contribution here.
         }
     }
 
-    // Kahn's algorithm.
     let mut queue: VecDeque<usize> = VecDeque::new();
     for (i, &deg) in in_degree.iter().enumerate() {
         if deg == 0 {
@@ -243,115 +264,6 @@ fn toposort_internals(
     }
 
     Ok(sorted)
-}
-
-/// Raw parsed parameter before classification.
-#[derive(Debug, Default)]
-struct RawParam {
-    name: String,
-    nature: Option<String>,
-    type_str: Option<String>,
-    ext_value: Option<f64>,    // external: bare float
-    int_value: Option<String>, // internal: quoted string
-    lha_block: Option<String>,
-    lha_code: Option<Vec<i32>>,
-}
-
-peg::parser! {
-    grammar ufo_params() for str {
-
-        pub rule parameters() -> Vec<RawParam>
-            = _ p:(parameter() ** _) _ { p }
-
-        rule parameter() -> RawParam
-            = _ name:ident() _ "=" _ "Parameter(" _ props:(prop() ** (_ "," _)) _ ","? _ ")" _ {
-                let mut p = RawParam { name: name.to_owned(), ..Default::default() };
-                for (k, v) in props {
-                    match k {
-                        "name"     => { /* already have it from LHS */ }
-                        "nature"   => p.nature   = Some(v.unquoted().to_owned()),
-                        "type"     => p.type_str = Some(v.unquoted().to_owned()),
-                        "lhablock" => p.lha_block = Some(v.unquoted().to_owned()),
-                        "lhacode"  => p.lha_code  = Some(v.int_list()),
-                        "value"    => {
-                            match v {
-                                PropVal::Str(s) => p.int_value = Some(s.to_owned()),
-                                PropVal::Float(f) => p.ext_value = Some(f),
-                                PropVal::Int(i) => p.ext_value = Some(i as f64),
-                                _ => {}
-                            }
-                        }
-                        "texname" | "lhatex" => { /* ignored */ }
-                        _ => {}
-                    }
-                }
-                p
-            }
-
-        rule prop() -> (&'input str, PropVal<'input>)
-            = _ k:ident() _ "=" _ v:prop_value() _ { (k, v) }
-
-        rule prop_value() -> PropVal<'input>
-            = s:quoted_string() { PropVal::Str(s) }
-            / f:float() { PropVal::Float(f) }
-            / i:int() { PropVal::Int(i) }
-            / "[" _ items:(int() ** (_ "," _)) _ ","? _ "]" { PropVal::IntList(items) }
-
-        rule quoted_string() -> &'input str
-            = "r'" s:$([^'\'']*) "'" { s }                        // raw string r'...'
-            / "r\"" s:$([^'"']*) "\"" { s }                       // raw string r"..."
-            / "'" s:$(([^'\'' | '\\'] / "\\" [_])*) "'" { s }     // string with \' escapes
-            / "\"" s:$(([^'"' | '\\'] / "\\" [_])*) "\"" { s }
-
-        rule float() -> f64
-            = s:$(
-                "-"? ['0'..='9']+ "." ['0'..='9']* (exponent())?
-                / "-"? ['0'..='9']* "." ['0'..='9']+ (exponent())?
-                / "-"? ['0'..='9']+ exponent()
-            ) {?
-                s.parse().or(Err("float"))
-            }
-
-        rule exponent() = ("e" / "E") ("+" / "-")? ['0'..='9']+
-
-        rule int() -> i32
-            = s:$("-"? ['0'..='9']+) {? s.parse().or(Err("int")) }
-
-        rule ident() -> &'input str
-            = $(['a'..='z' | 'A'..='Z' | '_'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*)
-
-        rule _ = (whitespace() / comment() / python_skip_line())*
-        rule whitespace() = [' ' | '\t' | '\n' | '\r']+
-        rule comment() = "#" [^'\n']* ("\n" / ![_])
-        rule python_skip_line()
-            = "from" [' ' | '\t'] [^'\n']* ("\n" / ![_])
-            / "import" [' ' | '\t'] [^'\n']* ("\n" / ![_])
-    }
-}
-
-#[derive(Debug, Clone)]
-enum PropVal<'a> {
-    Str(&'a str),
-    Float(f64),
-    Int(i32),
-    IntList(Vec<i32>),
-}
-
-impl<'a> PropVal<'a> {
-    fn unquoted(&self) -> &str {
-        match self {
-            PropVal::Str(s) => s,
-            _ => "",
-        }
-    }
-
-    fn int_list(&self) -> Vec<i32> {
-        match self {
-            PropVal::IntList(v) => v.clone(),
-            PropVal::Int(i) => vec![*i],
-            _ => vec![],
-        }
-    }
 }
 
 #[cfg(test)]
