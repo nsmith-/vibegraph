@@ -167,6 +167,12 @@ fn make_trial(json_path: PathBuf, mg_data: DiagramData) -> Option<Trial> {
 fn main() {
     let args = Arguments::from_args();
 
+    // Each trial runs sequentially; rayon parallelism only adds lock overhead here.
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build_global()
+        .unwrap();
+
     let references = find_madgraph_references();
     if references.is_empty() {
         eprintln!("No MadGraph reference files found");
