@@ -1,0 +1,10 @@
+# MadGraph5 batch script: p p > l+ l- at LO with QCD=0
+# Pure electroweak: no strong coupling, only photon/Z exchange
+# Selects only the QED diagrams (gluon exchange suppressed)
+
+generate p p > l+ l- QCD=0
+output pp_to_ll_qcd0 -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  done

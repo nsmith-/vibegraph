@@ -1,0 +1,10 @@
+# MadGraph5 batch script: p p > l+ l- j at LO (default order)
+# Default: one additional QCD coupling for the extra jet
+# Tree-level: QCD=2 (from initial state quarks), QED=2 (dilepton)
+
+generate p p > l+ l- j
+output pp_to_llj -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  done

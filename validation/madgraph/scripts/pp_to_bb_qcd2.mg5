@@ -1,0 +1,10 @@
+# MadGraph5 batch script: p p > b b~ with fixed order QCD=2
+# Explicitly constrains to leading-order strong production
+# Suppresses any higher-order or purely electroweak contributions
+
+generate p p > b b~ QCD=2
+output pp_to_bb_qcd2 -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  done

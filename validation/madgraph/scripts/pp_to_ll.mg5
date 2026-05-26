@@ -1,0 +1,9 @@
+# MadGraph5 batch script: p p > l+ l- at LO (default order)
+# Default: QCD=2 (from initial state), QED=2 (dilepton)
+
+generate p p > l+ l-
+output pp_to_ll -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  done

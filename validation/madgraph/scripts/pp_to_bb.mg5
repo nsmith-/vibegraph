@@ -1,0 +1,9 @@
+# MadGraph5 batch script: p p > b b~ at LO (default order)
+# Default: QCD=2 (for pair production of heavy quarks)
+
+generate p p > b b~
+output pp_to_bb -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  done

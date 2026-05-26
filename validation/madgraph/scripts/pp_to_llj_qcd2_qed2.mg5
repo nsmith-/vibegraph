@@ -1,0 +1,10 @@
+# MadGraph5 batch script: p p > l+ l- j with fixed orders QCD=2 QED=2
+# Explicitly constrains: exactly 2 QCD couplings (initial state), exactly 2 QED (dilepton)
+# Suppresses higher-order diagrams (e.g., with extra gluon interactions)
+
+generate p p > l+ l- j QCD=2 QED=2
+output pp_to_llj_qcd2_qed2 -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  done
