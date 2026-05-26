@@ -1,6 +1,6 @@
 # Paper Summaries: Key References for vibegraph
 
-Quick-reference summaries of the core papers, focused on what is
+**Status:** Reference material — no action items. Quick-reference summaries of the core papers, focused on what is
 directly relevant to implementing LO event generation in Rust.
 
 ---

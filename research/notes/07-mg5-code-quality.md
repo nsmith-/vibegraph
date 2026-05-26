@@ -1,5 +1,7 @@
 # MadGraph5 Code Quality Review
 
+**Status:** Reference material — no action items. Code quality assessment; motivates design patterns for vibegraph.
+
 > **Source material**: UpdateNotes.txt (2633 lines, covering v1.0.0 through v3.7.1, 2011–2026) plus
 > direct code inspection of `madgraph/core/{base_objects,diagram_generation,color_algebra}.py`,
 > `aloha/{aloha_lib,aloha_writers,create_aloha}.py`, `madgraph/various/{misc,banner,lhe_parser,rambo}.py`.
