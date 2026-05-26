@@ -104,7 +104,10 @@ pub struct ConcreteProcess {
 /// Each leg independently expands to its alias members; the Cartesian product
 /// of all per-leg expansions is computed with `itertools::multi_cartesian_product`.
 /// For `p p > e+ e-` this yields up to 9 × 9 = 81 concrete processes.
-pub fn expand_process(spec: &ProcessSpec, table: &AliasTable) -> Vec<ConcreteProcess> {
+pub fn expand_process<'a>(
+    spec: &'a ProcessSpec,
+    table: &'a AliasTable,
+) -> impl Iterator<Item = ConcreteProcess> + use<'a> {
     // Build per-leg option-lists for initial and final state.
     let initial_options: Vec<Vec<String>> = spec
         .initial
@@ -134,21 +137,15 @@ pub fn expand_process(spec: &ProcessSpec, table: &AliasTable) -> Vec<ConcretePro
     let required_s_channels = expand_name_list(&spec.required_s_channels, table);
 
     // Combine: one ConcreteProcess per (initial_combo × final_combo) pair.
-    let mut result = Vec::new();
-    for init in &initial_combos {
-        for fin in &final_combos {
-            result.push(ConcreteProcess {
-                initial: init.clone(),
-                final_state: fin.clone(),
-                forbidden_particles: forbidden_particles.clone(),
-                forbidden_s_channels: forbidden_s_channels.clone(),
-                forbidden_onsh_s_channels: forbidden_onsh_s_channels.clone(),
-                required_s_channels: required_s_channels.clone(),
-                coupling_constraints: spec.coupling_constraints.clone(),
-            });
-        }
-    }
-    result
+    itertools::iproduct!(initial_combos, final_combos).map(move |(init, fin)| ConcreteProcess {
+        initial: init,
+        final_state: fin,
+        forbidden_particles: forbidden_particles.clone(),
+        forbidden_s_channels: forbidden_s_channels.clone(),
+        forbidden_onsh_s_channels: forbidden_onsh_s_channels.clone(),
+        required_s_channels: required_s_channels.clone(),
+        coupling_constraints: spec.coupling_constraints.clone(),
+    })
 }
 
 fn expand_leg(leg: &ParticleLeg, table: &AliasTable) -> Vec<String> {
@@ -178,7 +175,7 @@ mod tests {
     fn test_concrete_particle_no_expansion() {
         let spec = parse_process_string("e+ e- > mu+ mu-", &opts()).unwrap();
         let table = AliasTable::default_sm();
-        let concrete = expand_process(&spec, &table);
+        let concrete = expand_process(&spec, &table).collect::<Vec<_>>();
         // No aliases → exactly 1 combination.
         assert_eq!(concrete.len(), 1);
         assert_eq!(concrete[0].initial, vec!["e+", "e-"]);
@@ -190,7 +187,7 @@ mod tests {
         // p p > e+ e-: p expands to 9 particles → 9 × 9 = 81 combos.
         let spec = parse_process_string("p p > e+ e-", &opts()).unwrap();
         let table = AliasTable::default_sm();
-        let concrete = expand_process(&spec, &table);
+        let concrete = expand_process(&spec, &table).collect::<Vec<_>>();
         assert_eq!(concrete.len(), 81);
         // Every initial particle should be a member of p.
         let p_members: Vec<_> = vec!["g", "u", "c", "d", "s", "u~", "c~", "d~", "s~"];
@@ -209,7 +206,7 @@ mod tests {
         }];
         let table = AliasTable::from_defines(&defs);
         let spec = parse_process_string("myp > e+ e-", &opts()).unwrap();
-        let concrete = expand_process(&spec, &table);
+        let concrete = expand_process(&spec, &table).collect::<Vec<_>>();
         // myp expands to [u, d] → 2 combos.
         assert_eq!(concrete.len(), 2);
     }
@@ -231,7 +228,7 @@ mod tests {
     fn test_forbidden_particles_expanded() {
         let spec = parse_process_string("p p > e+ e- / p", &opts()).unwrap();
         let table = AliasTable::default_sm();
-        let concrete = expand_process(&spec, &table);
+        let concrete = expand_process(&spec, &table).collect::<Vec<_>>();
         // Forbidden particles should be the 9 members of p.
         assert_eq!(concrete[0].forbidden_particles.len(), 9);
     }
