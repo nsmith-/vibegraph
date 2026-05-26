@@ -42,7 +42,7 @@
 //!   Lorentz structure with external wavefunctions.
 
 use super::color::ColorRepr;
-use super::{C, Real};
+use super::{Real, C};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ColorStructure

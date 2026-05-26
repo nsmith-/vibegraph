@@ -1,7 +1,7 @@
 use super::ast_util::{
     call_func_name, extract_float, extract_int, extract_str, kwarg_str, parse_stmts,
 };
-use super::expr::{Expr, collect_deps, eval, parse_expr};
+use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::slha::ParamCard;
 use num_complex::Complex64;
 use rustpython_parser::ast;

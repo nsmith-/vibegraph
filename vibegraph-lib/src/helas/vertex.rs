@@ -1,8 +1,7 @@
 use crate::helas::repr::{
-    C, Real,
     intertwiner::{GammaL, GammaR, Intertwiner2Leg},
     lorentz::ComplexVector,
-    r,
+    r, Real, C,
 };
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, VectorWf};
 

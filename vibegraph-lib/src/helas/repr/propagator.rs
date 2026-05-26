@@ -38,7 +38,7 @@
 //! - Consider a `FeynmanGaugeVectorPropagator` for consistency checks vs.
 //!   `MasslessVectorPropagator`.
 
-use super::{C, Real};
+use super::{Real, C};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Propagator — base trait

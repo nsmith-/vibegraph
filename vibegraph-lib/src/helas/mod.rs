@@ -45,9 +45,9 @@ pub const MDL_WZ: f64 = 2.441_404;
 /// # Returns
 /// Σ_{helicities} |M|²  (summed, not averaged, over initial/final helicities)
 pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
-    use SpinorHelicity::{Down, Up};
     use itertools::iproduct;
     use repr::r;
+    use SpinorHelicity::{Down, Up};
 
     let e_beam = sqrt_s / 2.0;
     let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
@@ -112,10 +112,10 @@ mod tests {
     use crate::helas::repr::lorentz::ComplexVector;
 
     use super::*;
-    use Charge::{Antiparticle, Particle};
-    use SpinorHelicity::{Down, Up};
     use itertools::iproduct;
     use repr::r;
+    use Charge::{Antiparticle, Particle};
+    use SpinorHelicity::{Down, Up};
 
     /// e⁺e⁻ → μ⁺μ⁻ via s-channel photon/Z.
     ///
@@ -441,5 +441,4 @@ mod tests {
             );
         }
     }
-
 }
