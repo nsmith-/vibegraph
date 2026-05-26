@@ -2,7 +2,7 @@ pub mod repr;
 pub mod vertex;
 pub mod wavefn;
 
-pub use repr::{Bispinor, Charge, LorentzVector, SpinorHelicity};
+pub use repr::lorentz::{Bispinor, Charge, LorentzVector, SpinorHelicity};
 pub use vertex::{iovxxx, j3xxxx, jioxxx};
 pub use wavefn::{DiracWf, InDiracWf, OutDiracWf, VectorWf};
 

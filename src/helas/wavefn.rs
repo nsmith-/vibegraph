@@ -1,7 +1,5 @@
-use crate::helas::repr::{
-    Bispinor, C, Real,
-    lorentz::{Charge, ComplexVector, LorentzVector, SpinorHelicity},
-};
+use crate::helas::repr::Real;
+use crate::helas::repr::lorentz::{Bispinor, Charge, ComplexVector, LorentzVector, SpinorHelicity};
 use std::marker::PhantomData;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -12,7 +10,7 @@ use std::marker::PhantomData;
 #[derive(Clone, Copy, Debug)]
 pub struct FlowIn;
 
-/// Marker for flowing-OUT spinors (`ū`/`v̄` rows).
+/// Marker for flowing-OUT spinors (`ū`/`v̄` rows).
 #[derive(Clone, Copy, Debug)]
 pub struct FlowOut;
 

@@ -64,6 +64,48 @@ vibegraph/
 - σ = ∫ dΦ_n |M|² / flux  (integrated over n-body Lorentz-invariant phase space)
 - Events are sampled with weight = |M|² / max(|M|²)
 
+## Implementation Patterns & Conventions
+
+### Rust Type System
+
+The codebase leverages Rust's trait system and higher-kinded types extensively:
+
+- **Basis-independence via trait bounds**: Lorentz/spinor/color representations are generic over
+  the scalar field `F` to keep physics-layer code independent of representation details.
+  For example, `LorentzRepr<F>` works over any `F: Real`.
+
+- **Phantom types for zero-cost abstraction**: Types like `DiracWf` use `PhantomData` to distinguish
+  physical meaning (flowing-in vs. flowing-out) at compile time with zero runtime cost.
+
+### Module Organization
+
+The `helas/repr/` submodules are organized by **geometric/physical meaning**, not mathematical type:
+
+- `lorentz.rs` — Lorentz covariance layer (spinors, vectors, scalars, metric)
+- `color.rs` — Gauge/color structure (SU(3) fund. and adj. reps, singlet)
+- `coupling.rs` — Vertex structures coupling Lorentz and color (e.g., quark-gluon coupling)
+- `intertwiner.rs` — Intertwiners (γ^μ, σ^μν, ε^μνρσ) and their leg-count specializations
+- `propagator.rs` — Propagator types (Dirac, vector, scalar, with mass terms)
+
+**Import style after recent refactoring**: Direct submodule imports (e.g., `repr::lorentz::Bispinor`)
+are preferred over re-exports to avoid unused-import warnings. The `repr/mod.rs` re-exports only the
+scalar primitives `Real` and `C<F>` which are used universally.
+
+### Code Style & Conventions
+
+- **Natural units**: ℏ = c = 1 (GeV is the fundamental energy scale)
+- **Metric signature**: (+, −, −, −)
+- **Comment guidelines**: Avoid narrative comments; add notes only for non-obvious constraints or physics assumptions
+- **Constants**: Physical constants (α_QED, m_Z, coupling strengths) are defined at the top level in `helas/mod.rs`
+- **Four-momentum layout**: `[E, px, py, pz]` (energy first, spatial components follow)
+
+## Build & Test
+
+```bash
+cargo build          # Compile the library and binary
+cargo test           # Run all tests (includes helas_validation.rs)
+```
+
 ## Agent Tooling Guidelines
 
 **Prefer Unix CLI tools over Python scripts for search and extraction tasks.**
@@ -85,12 +127,6 @@ cannot express (e.g., structured parsing of binary formats, complex data transfo
 ## Working Notes
 
 See `research/notes/` for step-by-step derivations and implementation notes.
-
-## Conventions
-
-- Natural units: ℏ = c = 1
-- Metric signature: (+, -, -, -)
-- Spinor conventions: Weyl/van der Waerden unless noted otherwise
 
 ## Open Research Questions
 
