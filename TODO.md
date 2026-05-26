@@ -26,17 +26,26 @@ The end-to-end cross-section pipeline is complete (as of 2d8418a):
 
 ## 🟡 Medium — generalize beyond the hardcoded process
 
+### `madgraph-diagram-validation` — Validate diagram enumeration
+Comprehensive test suite comparing vibegraph diagram counts against MadGraph5_aMC@NLO
+reference output. Covers 7 processes (default + constrained orders) at tree level.
+**Status:** ✅ Complete (as of 2026-05-26).
+- MadGraph scripts for e⁺e⁻→μ⁺μ⁻, p p→l⁺l⁻, p p→l⁺l⁻j, p p→bb with order constraints
+- Python extraction script reads MadGraph SubProcesses/ and counts diagrams
+- Rust test suite `validate_madgraph_diagrams.rs` compares counts
+- pixi tasks: `build-diagrams`, `extract-diagrams`
+
 ### `process-grammar` — Process specification parser
 PEG grammar for MadGraph-style process strings (`"e+ e- > mu+ mu-"`).
 Map particle names to PDG codes via the UFO model, then invoke the diagram
 enumerator.  Grammar documented in `research/notes/06-process-grammar.md`.
-**Status:** Design phase; awaits `diagram-enum` and architecture finalization.
+**Status:** ✅ Complete; now validated against MadGraph via diagram-count tests.
 
 ### `diagram-enum` — Feynman diagram enumeration via feyngraph
 Call feyngraph's diagram generator with the loaded UFO model for a parsed
 process.  Map topology + propagator list into a form the HELAS evaluator
-can consume.  **Status:** feyngraph integration started; blocked on process grammar.
-_Depends on: `process-grammar`_
+can consume.  **Status:** ✅ Complete; `diagrams` module integrated and validated.
+_Depends on: `process-grammar` (✅), UFO parsing (✅)_
 
 ### `ufo-full-ownership` — Replace feyngraph's UFO parser (COMPLETED ✅)
 Full Rust ownership of `particles.py` / `vertices.py` / `lorentz.py` / `couplings.py` 

@@ -1,0 +1,10 @@
+# MadGraph5 batch script: e+ e- > mu+ mu- at LO (default order)
+# Default behavior: all couplings at leading order
+# At tree level: QED=2 (two photon couplings)
+
+generate e+ e- > mu+ mu-
+output ee_to_mumu -nojpeg
+launch
+  set ebeam1 45.6
+  set ebeam2 45.6
+  done

@@ -7,5 +7,6 @@
 /ee_to_mumu/
 /validation/helas/*.so
 /validation/helas/reference.*
+/validation/madgraph/output
 .claude
 .vscode

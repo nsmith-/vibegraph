@@ -35,9 +35,12 @@ python = "3.11.*"
 mg5amcnlo = "==3.5.7"
 
 [feature.madgraph.tasks]
-# Compute σ(e+ e- > mu+ mu-) at sqrt(s) = 91.2 GeV (ebeam1 = ebeam2 = 45.6 GeV)
-# Expected LO cross section: ~1.8 nb at Z pole, ~6 pb at 200 GeV
-# Usage: pixi run -e madgraph generate-ee
+# Build all diagram validation output via MadGraph
+# Generates process directories with SubProcesses/P*/ containing Feynman diagrams
+build-diagrams = "bash validation/madgraph/build.sh"
+# Extract diagram counts and metadata from MadGraph output
+extract-diagrams = { cmd = "python validation/madgraph/extract_diagrams.py", depends-on = ["build-diagrams"] }
+# Legacy: single ee_to_mumu run (now incorporated in build-diagrams)
 generate-ee = "mg5_aMC research/mg5_scripts/ee_to_mumu.mg5"
 
 # --- helas-validation: Fortran77 HELAS compiled via f2py for amplitude cross-checks ---
