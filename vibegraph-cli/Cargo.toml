@@ -1,0 +1,11 @@
+[package]
+name = "vibegraph"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "vibegraph"
+path = "src/main.rs"
+
+[dependencies]
+vibegraph-lib = { path = "../vibegraph-lib" }

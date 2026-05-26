@@ -99,6 +99,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 [[package]]
 name = "feyngraph"
 version = "0.1.0-beta.5"
+source = "git+https://github.com/Jens-Braun/FeynGraph?branch=main#1dc4ea768855bcbae034eff8c0e6e8c8b0aae47c"
 dependencies = [
  "either",
  "indexmap",
@@ -755,6 +756,13 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibegraph"
+version = "0.1.0"
+dependencies = [
+ "vibegraph-lib",
+]
+
+[[package]]
+name = "vibegraph-lib"
 version = "0.1.0"
 dependencies = [
  "feyngraph",

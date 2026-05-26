@@ -52,7 +52,7 @@ build-helas = "cd validation/helas && bash build.sh"
 # Run the reference generator: produces reference.npz and reference.csv
 gen-reference = { cmd = "cd validation/helas && python gen_reference.py", depends-on = ["build-helas"] }
 # Full pipeline: build f2py extension, generate reference data, then run extended Rust tests
-validate-helas = { cmd = "cargo test --features extended-validation --test helas_validation", depends-on = ["gen-reference"] }
+validate-helas = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test helas_validation", depends-on = ["gen-reference"] }
 
 [environments]
 nougat = { features = ["nougat"], solve-group = "nougat" }
