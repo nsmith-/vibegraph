@@ -10,7 +10,7 @@ version = "0.1.0"
 
 [tasks]
 install-samply = "which samply || cargo install --locked samply"
-profile-diagrams = { cmd = "cargo test --profile profiling --test validate_madgraph_diagrams --no-run && find target/profiling/deps -name 'validate_madgraph_diagrams-*' -perm +111 | head -n 1 | xargs samply record", depends-on = ["install-samply"] }
+profile-diagrams = { cmd = "rm -f target/profiling/deps/validate_madgraph_diagrams-* && cargo test --profile profiling --test validate_madgraph_diagrams --no-run && find target/profiling/deps -name 'validate_madgraph_diagrams-*' -perm +111 | head -n 1 | xargs samply record", depends-on = ["install-samply"] }
 
 
 # --- nougat: scientific PDF OCR ---
