@@ -1,16 +1,8 @@
-//! Parser for UFO `couplings.py` — extended to include the `value` expression.
-//!
-//! FeynGraph parses `couplings.py` but only extracts the `order` dict, discarding
-//! the symbolic `value` string. We need `value` to evaluate the numerical coupling
-//! constant at a given parameter point.
-//!
-//! Example:
-//! ```python
-//! GC_10 = Coupling(value = '-G', order = {'QCD':1})
-//! GC_33 = Coupling(value = 'complex(0,1)*G**2', order = {'QCD':2})
-//! ```
-
-use crate::ufo::expr::{Expr, collect_deps, parse_expr};
+use super::ast_util::{
+    call_func_name, extract_int, extract_name, extract_str, kwarg_str, parse_stmts,
+};
+use super::expr::{Expr, collect_deps, parse_expr};
+use rustpython_parser::ast;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -22,8 +14,15 @@ pub enum CouplingError {
     ExprParse { name: String, cause: String },
 }
 
+/// Opaque index into `UFOModel::couplings`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CouplingId(pub usize);
+
 #[derive(Debug, Clone)]
-pub struct CouplingValue {
+pub struct Coupling {
+    /// Python variable name, e.g. `"GC_10"`.
+    pub python_name: String,
+    /// UFO `name` field.
     pub name: String,
     /// Symbolic expression for the coupling constant value.
     pub value: Expr,
@@ -33,116 +32,67 @@ pub struct CouplingValue {
     pub deps: Vec<String>,
 }
 
-/// Parse `couplings.py` content into a map of coupling name → [`CouplingValue`].
-pub fn parse_couplings(content: &str) -> Result<HashMap<String, CouplingValue>, CouplingError> {
-    let raw = ufo_couplings::couplings(content).map_err(|e| CouplingError::Parse(e.to_string()))?;
+/// Parse `couplings.py` content into a list of [`Coupling`]s.
+pub fn parse_couplings(src: &str) -> Result<Vec<Coupling>, CouplingError> {
+    let stmts = parse_stmts(src).map_err(|e| CouplingError::Parse(e.to_string()))?;
+    let mut result = Vec::new();
 
-    let mut result = HashMap::new();
+    for stmt in &stmts {
+        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
+            continue;
+        };
+        let ast::Expr::Name(ast::ExprName { id, .. }) = targets.first().unwrap() else {
+            continue;
+        };
+        let python_name = id.as_str().to_owned();
 
-    for rc in raw {
-        let name = rc.name.clone();
-        let expr_str = rc.value_str.as_deref().unwrap_or("0.0");
-        let expr = parse_expr(expr_str).map_err(|e| CouplingError::ExprParse {
+        let ast::Expr::Call(ast::ExprCall { func, keywords, .. }) = value.as_ref() else {
+            continue;
+        };
+        if call_func_name(func) != Some("Coupling") {
+            continue;
+        }
+
+        let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.clone());
+        let expr_str = kwarg_str(keywords, "value").unwrap_or_else(|| "0.0".to_owned());
+        let expr = parse_expr(&expr_str).map_err(|e| CouplingError::ExprParse {
             name: name.clone(),
             cause: e.to_string(),
         })?;
         let mut deps = Vec::new();
         collect_deps(&expr, &mut deps);
+        let orders = extract_orders(keywords);
 
-        result.insert(
-            name.clone(),
-            CouplingValue {
-                name,
-                value: expr,
-                orders: rc.orders,
-                deps,
-            },
-        );
+        result.push(Coupling {
+            python_name,
+            name,
+            value: expr,
+            orders,
+            deps,
+        });
     }
 
     Ok(result)
 }
 
-/// Raw parsed coupling before expression parsing.
-#[derive(Debug, Default)]
-struct RawCoupling {
-    name: String,
-    value_str: Option<String>,
-    orders: HashMap<String, usize>,
-}
+/// Extract the `order = {'QCD': 1, ...}` dict from keyword arguments.
+fn extract_orders(keywords: &[ast::Keyword]) -> HashMap<String, usize> {
+    use super::ast_util::get_kwarg;
+    let Some(val) = get_kwarg(keywords, "order") else {
+        return HashMap::new();
+    };
+    let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = val else {
+        return HashMap::new();
+    };
 
-peg::parser! {
-    grammar ufo_couplings() for str {
-
-        pub rule couplings() -> Vec<RawCoupling>
-            = _ c:(coupling() ** _) _ { c }
-
-        rule coupling() -> RawCoupling
-            = _ name:ident() _ "=" _ "Coupling(" _ props:(prop() ** (_ "," _)) _ ","? _ ")" _ {
-                let mut rc = RawCoupling { name: name.to_owned(), ..Default::default() };
-                for (k, v) in props {
-                    match k {
-                        "name"  => { /* ignored — use LHS name */ }
-                        "value" => rc.value_str = Some(v.unquoted()),
-                        "order" => rc.orders = v.order_dict(),
-                        _ => {}
-                    }
-                }
-                rc
-            }
-
-        rule prop() -> (&'input str, RawVal)
-            = _ k:ident() _ "=" _ v:prop_value() _ { (k, v) }
-
-        rule prop_value() -> RawVal
-            = s:quoted_string() { RawVal::Str(s) }
-            / "{" _ entries:(order_entry() ** (_ "," _)) _ ","? _ "}" {
-                RawVal::OrderDict(entries.into_iter().collect())
-            }
-
-        rule order_entry() -> (String, usize)
-            = _ "'" k:$(['a'..='z' | 'A'..='Z' | '_']['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*)
-              "'" _ ":" _ v:uint() _ { (k.to_owned(), v) }
-
-        rule quoted_string() -> String
-            = "'" s:$([^'\'']*) "'" { s.to_owned() }
-            / "\"" s:$([^'"']*) "\"" { s.to_owned() }
-
-        rule uint() -> usize
-            = s:$(['0'..='9']+) {? s.parse().or(Err("uint")) }
-
-        rule ident() -> &'input str
-            = $(['a'..='z' | 'A'..='Z' | '_'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*)
-
-        rule _ = (whitespace() / comment() / python_skip_line())*
-        rule whitespace() = [' ' | '\t' | '\n' | '\r']+
-        rule comment() = "#" [^'\n']* ("\n" / ![_])
-        rule python_skip_line()
-            = "from" [' ' | '\t'] [^'\n']* ("\n" / ![_])
-            / "import" [' ' | '\t'] [^'\n']* ("\n" / ![_])
-    }
-}
-
-#[derive(Debug)]
-enum RawVal {
-    Str(String),
-    OrderDict(HashMap<String, usize>),
-}
-
-impl RawVal {
-    fn unquoted(self) -> String {
-        match self {
-            RawVal::Str(s) => s,
-            _ => String::new(),
-        }
-    }
-
-    fn order_dict(self) -> HashMap<String, usize> {
-        match self {
-            RawVal::OrderDict(m) => m,
-            _ => HashMap::new(),
-        }
-    }
+    keys.iter()
+        .zip(values.iter())
+        .filter_map(|(k, v)| {
+            let key = k.as_ref().and_then(|e| extract_str(e))?.to_owned();
+            let val = extract_int(v).map(|n| n as usize)?;
+            Some((key, val))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -171,14 +121,14 @@ GC_33 = Coupling(name = 'GC_33',
     #[test]
     fn test_parse_couplings() {
         let couplings = parse_couplings(SAMPLE).unwrap();
-        assert!(couplings.contains_key("GC_10"));
-        assert!(couplings.contains_key("GC_33"));
+        assert!(couplings.iter().any(|c| c.python_name == "GC_10"));
+        assert!(couplings.iter().any(|c| c.python_name == "GC_33"));
     }
 
     #[test]
     fn test_gc10_value() {
         let couplings = parse_couplings(SAMPLE).unwrap();
-        let gc10 = &couplings["GC_10"];
+        let gc10 = couplings.iter().find(|c| c.python_name == "GC_10").unwrap();
         let val = eval(&gc10.value, &g_map(1.2177));
         assert!((val.re + 1.2177).abs() < 1e-8);
         assert!(val.im.abs() < 1e-12);
@@ -187,10 +137,9 @@ GC_33 = Coupling(name = 'GC_33',
     #[test]
     fn test_gc33_value() {
         let couplings = parse_couplings(SAMPLE).unwrap();
-        let gc33 = &couplings["GC_33"];
+        let gc33 = couplings.iter().find(|c| c.python_name == "GC_33").unwrap();
         let g = 1.2177f64;
         let val = eval(&gc33.value, &g_map(g));
-        // complex(0,1) * G^2  → im = G^2, re = 0
         assert!(val.re.abs() < 1e-8);
         assert!((val.im - g * g).abs() < 1e-6);
     }
@@ -198,14 +147,16 @@ GC_33 = Coupling(name = 'GC_33',
     #[test]
     fn test_orders() {
         let couplings = parse_couplings(SAMPLE).unwrap();
-        assert_eq!(couplings["GC_10"].orders.get("QCD"), Some(&1));
-        assert_eq!(couplings["GC_33"].orders.get("QCD"), Some(&2));
+        let gc10 = couplings.iter().find(|c| c.python_name == "GC_10").unwrap();
+        let gc33 = couplings.iter().find(|c| c.python_name == "GC_33").unwrap();
+        assert_eq!(gc10.orders.get("QCD"), Some(&1));
+        assert_eq!(gc33.orders.get("QCD"), Some(&2));
     }
 
     #[test]
     fn test_deps() {
         let couplings = parse_couplings(SAMPLE).unwrap();
-        assert!(couplings["GC_10"].deps.contains(&"G".to_owned()));
-        assert!(couplings["GC_33"].deps.contains(&"G".to_owned()));
+        let gc10 = couplings.iter().find(|c| c.python_name == "GC_10").unwrap();
+        assert!(gc10.deps.contains(&"G".to_owned()));
     }
 }
