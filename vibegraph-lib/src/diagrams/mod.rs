@@ -116,11 +116,8 @@ pub fn generate_from_process_spec(
     model: &UFOModel,
     aliases: &AliasTable,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
-    let concrete_list = expand_process(spec, aliases);
-
-    let mut sets = Vec::with_capacity(concrete_list.len());
-
-    for concrete in concrete_list {
+    let mut sets = Vec::new();
+    for concrete in expand_process(spec, aliases) {
         let sel = build_selector(&concrete);
 
         let in_refs: Vec<&str> = concrete.initial.iter().map(String::as_str).collect();
@@ -140,7 +137,6 @@ pub fn generate_from_process_spec(
             diagrams,
         });
     }
-
     Ok(sets)
 }
 
