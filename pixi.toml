@@ -9,8 +9,9 @@ version = "0.1.0"
 [dependencies]
 
 [tasks]
-install-samply = "command -v samply >/dev/null 2>&1 || cargo install --locked samply"
-profile-diagrams = { cmd = "cargo test --profile profiling --test validate_madgraph_diagrams --no-run && samply record $(find target/profiling/deps -name 'validate_madgraph_diagrams-*' ! -name '*.d' | head -1)", depends-on = ["install-samply"] }
+install-samply = "which samply || cargo install --locked samply"
+profile-diagrams = { cmd = "cargo test --profile profiling --test validate_madgraph_diagrams --no-run && find target/profiling/deps -name 'validate_madgraph_diagrams-*' -perm +111 | head -1 | xargs samply", depends-on = ["install-samply"] }
+
 
 # --- nougat: scientific PDF OCR ---
 # Converts scanned academic PDFs to markdown+LaTeX
