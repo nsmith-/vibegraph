@@ -1,3 +1,4 @@
+pub mod diagrams;
 pub mod helas;
 pub mod phasespace;
 pub mod ufo;
