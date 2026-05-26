@@ -1,5 +1,5 @@
 use super::ast_util::{
-    call_func_name, extract_attr, extract_float, extract_int, kwarg_float, kwarg_int, kwarg_str,
+    call_func_name, extract_attr, kwarg_float, kwarg_int, kwarg_str,
     parse_stmts,
 };
 use rustpython_parser::ast;

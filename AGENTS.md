@@ -103,8 +103,34 @@ scalar primitives `Real` and `C<F>` which are used universally.
 
 ```bash
 cargo build          # Compile the library and binary
-cargo test           # Run all tests (includes helas_validation.rs)
+cargo test           # Run all tests
 ```
+
+### Extended Validation (Fortran HELAS Cross-check)
+
+The `helas_validation` test compares Rust HELAS amplitudes against Fortran77 reference data.
+This is a comprehensive but slow integration test, so it is **not run by default**.
+
+**When to run:**
+- After modifying `helas/` representation layer or amplitude computations
+- When validating numeric accuracy changes
+
+**How to run:**
+
+```bash
+# Generate reference data (one-time per environment)
+pixi run -e helas-validation build-helas
+pixi run -e helas-validation gen-reference
+
+# Run the validation test (re-runs the generation steps to ensure consistency)
+pixi run -e helas-validation validate-helas
+
+# Or manually, after generation:
+cargo test -p vibegraph-lib --features extended-validation --test helas_validation
+```
+
+The reference CSV is generated at `validation/helas/reference.csv` and consumed by the test
+in `vibegraph-lib/tests/helas_validation.rs`.
 
 ## Agent Tooling Guidelines
 

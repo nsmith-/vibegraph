@@ -7,3 +7,5 @@
 /ee_to_mumu/
 /validation/helas/*.so
 /validation/helas/reference.*
+.claude
+.vscode
