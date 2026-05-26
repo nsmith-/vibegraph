@@ -29,7 +29,8 @@
 //!   produces an off-shell vector with different normalization.
 //!
 //! The same coupling constant appears in all orientations; only the map between
-//! fibers changes.  The [`Intertwiner`] trait encodes one such orientation.
+//! fibers changes.  The [`Intertwiner2Leg`], [`Intertwiner3Leg`], and
+//! [`Intertwiner4Leg`] traits encode each orientation by leg count.
 //!
 //! ## Implemented intertwiners
 //!
@@ -47,22 +48,57 @@
 //! - [`GammaV`], [`SigmaTensor`], and [`Epsilon`] are **stubs** pending
 //!   implementation.
 
-use super::{C, Real, lorentz::LorentzVector};
-use crate::helas::repr::lorentz::{ComplexVector, Scalar, SpinorRepr};
+use super::Real;
+use crate::helas::repr::lorentz::{ComplexVector, LorentzRepr, Rank2Tensor, Scalar, SpinorRepr};
 use std::marker::PhantomData;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Intertwiner — base trait
+// Intertwiner traits — leg-count-specific
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A Spin(1,3)-equivariant linear map between two representation fibers.
+/// A 2-leg intertwiner: 2 inputs → 1 output.
 ///
-/// The `momentum` argument carries the 4-momentum flowing through the vertex.
-/// For bilinear fermion currents (with no momentum insertion) pass
-/// `FourMomentum::zero()`.
-pub trait Intertwiner<F: Real, In: Copy, Out: Copy> {
-    /// Apply the intertwiner to the input fiber `input` with momentum `momentum`.
-    fn apply(input: &In, momentum: LorentzVector<F>) -> Out;
+/// Used for bilinear currents like `ψ̄ γ^μ ψ` (two fermions → one vector).
+/// Input momenta are derived from the wavefunction fiber data by routing
+/// convention; no explicit momentum argument is needed for local vertices.
+pub trait Intertwiner2Leg<F: Real> {
+    type In1: LorentzRepr<F>;
+    type In2: LorentzRepr<F>;
+    type Out: LorentzRepr<F>;
+
+    /// Apply the intertwiner to two input fibers.
+    fn apply(input: &(Self::In1, Self::In2)) -> Self::Out;
+}
+
+/// A 3-leg intertwiner: 3 inputs → 1 output.
+///
+/// Used for off-shell current reductions like `jgggxx` (3 vectors → 1 vector).
+/// Corresponds to HELAS routines that build off-shell currents from three
+/// on-shell wavefunctions.
+pub trait Intertwiner3Leg<F: Real> {
+    type In1: LorentzRepr<F>;
+    type In2: LorentzRepr<F>;
+    type In3: LorentzRepr<F>;
+    type Out: LorentzRepr<F>;
+
+    /// Apply the intertwiner to three input fibers.
+    fn apply(input: &(Self::In1, Self::In2, Self::In3)) -> Self::Out;
+}
+
+/// A 4-leg intertwiner: 4 inputs → 1 output.
+///
+/// Used for direct quartic contact maps like `ggggxx` (4 vectors → scalar).
+/// Corresponds to direct quartic-vector contact amplitude routines that do not
+/// reduce to chains of lower-arity routines.
+pub trait Intertwiner4Leg<F: Real> {
+    type In1: LorentzRepr<F>;
+    type In2: LorentzRepr<F>;
+    type In3: LorentzRepr<F>;
+    type In4: LorentzRepr<F>;
+    type Out: LorentzRepr<F>;
+
+    /// Apply the intertwiner to four input fibers.
+    fn apply(input: &(Self::In1, Self::In2, Self::In3, Self::In4)) -> Self::Out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,8 +116,12 @@ pub struct GammaL<B> {
     _marker: PhantomData<B>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B, B), ComplexVector<F>> for GammaL<B> {
-    fn apply(input: &(B, B), _momentum: LorentzVector<F>) -> ComplexVector<F> {
+impl<F: Real, B: SpinorRepr<F>> Intertwiner2Leg<F> for GammaL<B> {
+    type In1 = B;
+    type In2 = B;
+    type Out = ComplexVector<F>;
+
+    fn apply(input: &(Self::In1, Self::In2)) -> Self::Out {
         B::left_current(&input.0, &input.1)
     }
 }
@@ -101,8 +141,12 @@ pub struct GammaR<B> {
     _marker: PhantomData<B>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B, B), ComplexVector<F>> for GammaR<B> {
-    fn apply(input: &(B, B), _momentum: LorentzVector<F>) -> ComplexVector<F> {
+impl<F: Real, B: SpinorRepr<F>> Intertwiner2Leg<F> for GammaR<B> {
+    type In1 = B;
+    type In2 = B;
+    type Out = ComplexVector<F>;
+
+    fn apply(input: &(Self::In1, Self::In2)) -> Self::Out {
         B::right_current(&input.0, &input.1)
     }
 }
@@ -123,8 +167,12 @@ pub struct GammaV<B> {
     _marker: PhantomData<B>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (ComplexVector<F>, B), B> for GammaV<B> {
-    fn apply(_input: &(ComplexVector<F>, B), _momentum: LorentzVector<F>) -> B {
+impl<F: Real, B: SpinorRepr<F>> Intertwiner2Leg<F> for GammaV<B> {
+    type In1 = ComplexVector<F>;
+    type In2 = B;
+    type Out = B;
+
+    fn apply(_input: &(Self::In1, Self::In2)) -> Self::Out {
         todo!("GammaV: γ^μ acting on off-shell spinor current — Weyl implementation pending")
     }
 }
@@ -139,17 +187,20 @@ impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (ComplexVector<F>, B), B> for Gam
 /// tensor couplings (FCNC operators, anomalous gauge couplings).
 ///
 /// Input: `(fo, fi)` pair of Dirac spinors.
-/// Output: an antisymmetric rank-2 tensor `[[C<F>; 4]; 4]`.
+/// Output: an antisymmetric rank-2 tensor [`Rank2Tensor<F>`].
 ///
 /// # TODO
 /// Implement for [`SpinorRepr`].
-/// Implement an antisymmetric rank-2 tensor type and return that instead of a raw `[[C<F>; 4]; 4]`.
 pub struct SigmaTensor<B> {
     _marker: PhantomData<B>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B, B), [[C<F>; 4]; 4]> for SigmaTensor<B> {
-    fn apply(_input: &(B, B), _momentum: LorentzVector<F>) -> [[C<F>; 4]; 4] {
+impl<F: Real, B: SpinorRepr<F>> Intertwiner2Leg<F> for SigmaTensor<B> {
+    type In1 = B;
+    type In2 = B;
+    type Out = Rank2Tensor<F>;
+
+    fn apply(_input: &(Self::In1, Self::In2)) -> Self::Out {
         todo!("SigmaTensor: σ^μν bilinear — implementation pending")
     }
 }
@@ -166,14 +217,18 @@ impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B, B), [[C<F>; 4]; 4]> for Sigma
 /// `C<F>`.
 ///
 /// # TODO
-/// Implement for [`crate::helas::repr::lorentz::WeylBasis`] using
+/// Implement for [`crate::helas::repr::lorentz::Bispinor`] using
 /// `ε_{αβ} = [[0,1],[-1,0]]`.
 pub struct Epsilon<B> {
     _marker: PhantomData<B>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B, B), Scalar<F>> for Epsilon<B> {
-    fn apply(_input: &(B, B), _momentum: LorentzVector<F>) -> Scalar<F> {
+impl<F: Real, B: SpinorRepr<F>> Intertwiner2Leg<F> for Epsilon<B> {
+    type In1 = B;
+    type In2 = B;
+    type Out = Scalar<F>;
+
+    fn apply(_input: &(Self::In1, Self::In2)) -> Self::Out {
         todo!("Epsilon: Lorentz scalar bilinear ε_{{αβ}} ψ^α χ^β — implementation pending")
     }
 }

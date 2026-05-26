@@ -106,6 +106,17 @@ impl<F: Real> LorentzRepr<F> for Scalar<F> {}
 
 impl<F: Real> ScalarRepr<F> for Scalar<F> {}
 
+/// Antisymmetric rank-2 Lorentz tensor (placeholder type).
+///
+/// Represents a tensor `T^{μν} = -T^{νμ}` such as the output of `σ^μν = i/2 [γ^μ, γ^ν]`.
+///
+/// # TODO
+/// Replace raw array with a proper antisymmetric tensor type with index access.
+#[derive(Clone, Copy, Debug)]
+pub struct Rank2Tensor<F: Real>(pub [[C<F>; 4]; 4]);
+
+impl<F: Real> LorentzRepr<F> for Rank2Tensor<F> {}
+
 /// Spin-1 Lorentz representation
 pub trait VectorRepr<F: Real>: LorentzRepr<F> {}
 

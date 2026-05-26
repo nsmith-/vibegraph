@@ -57,10 +57,13 @@ pub mod propagator;
 
 pub use color::{ColorRepr, ColorSinglet, SU3Adjoint, SU3Fundamental};
 pub use coupling::{ColorStructure, GaugeVertex, LorentzStructure, Vertex3};
-pub use intertwiner::{Epsilon, GammaL, GammaR, GammaV, Intertwiner, SigmaTensor};
+pub use intertwiner::{
+    Epsilon, GammaL, GammaR, GammaV, Intertwiner2Leg, Intertwiner3Leg, Intertwiner4Leg,
+    SigmaTensor,
+};
 pub use lorentz::{
-    Bispinor, Charge, LorentzRepr, LorentzVector, ScalarRepr, SpinorHelicity, SpinorRepr,
-    VectorRepr,
+    Bispinor, Charge, LorentzRepr, LorentzVector, Rank2Tensor, Scalar, ScalarRepr,
+    SpinorHelicity, SpinorRepr, VectorRepr,
 };
 pub use propagator::{
     DiracPropagator, MassiveVectorPropagator, MasslessVectorPropagator, Propagator,
