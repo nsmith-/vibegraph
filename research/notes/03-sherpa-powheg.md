@@ -1,5 +1,7 @@
 # Reference Implementations: Sherpa and POWHEG-BOX-V2
 
+**Status:** Reference material — no action items. Detailed architectural survey of reference implementations.
+
 Surveyed revisions:
 - **Sherpa** (`research/refs/sherpa`): `e12c72f` (GitLab `sherpa-team/sherpa`, `master`)
 - **POWHEG-BOX-V2** (`research/refs/powheg-box-v2`): `e26982d` (GitLab

@@ -1,6 +1,6 @@
 # Reference Implementation Analysis
 
-Analysis of the two reference submodules added to `research/refs/`.
+**Status:** Reference material — no action items. Analysis of reference submodules in `research/refs/`.
 Each section notes the exact git revision examined and highlights relevance to vibegraph's pipeline goals.
 
 ---
