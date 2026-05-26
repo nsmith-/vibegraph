@@ -1,5 +1,7 @@
 # UFO and ALOHA type matrix for medium-term implementation
 
+**Status:** Complete, implemented in `6596913318a33a2a0f03ac505ee84f5874385c20`
+
 This note proposes a medium-term Rust type system for Lorentz objects based on
 how UFO and ALOHA actually enumerate spins and Lorentz structures.
 

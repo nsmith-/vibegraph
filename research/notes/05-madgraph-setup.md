@@ -1,5 +1,7 @@
 # MadGraph5_aMC@NLO Setup via pixi/conda
 
+**Status:** Complete — implemented in `2d8418a31598c2470e68954775a4b1927b916353`
+
 ## Package
 
 | Field | Value |

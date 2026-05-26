@@ -1,5 +1,7 @@
 # Geometric picture for `repr.rs`
 
+**Status:** Complete, partially oudated by updates made following `09-ufo-aloha-type-matrix.md`. Implemented in `5cd7fd5fcf62ac686a3fdfccc42b140fd88ae5de`.
+
 It would be nice to capture some hint of the geometric picture of the field
 theory we are simulating in our eventual repr.rs implementation of the various
 representations of spin(1,3) x (SM gauge groups, or even BSM gauges if the UFO
