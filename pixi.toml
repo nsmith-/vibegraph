@@ -40,8 +40,6 @@ mg5amcnlo = "==3.5.7"
 build-diagrams = "bash validation/madgraph/build.sh"
 # Extract diagram counts and metadata from MadGraph output
 extract-diagrams = { cmd = "python validation/madgraph/extract_diagrams.py", depends-on = ["build-diagrams"] }
-# Legacy: single ee_to_mumu run (now incorporated in build-diagrams)
-generate-ee = "mg5_aMC research/mg5_scripts/ee_to_mumu.mg5"
 
 # --- helas-validation: Fortran77 HELAS compiled via f2py for amplitude cross-checks ---
 [feature.helas-validation.dependencies]
