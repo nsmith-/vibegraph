@@ -1,5 +1,5 @@
-use crate::helas::repr::Real;
 use crate::helas::repr::lorentz::{Bispinor, Charge, ComplexVector, LorentzVector, SpinorHelicity};
+use crate::helas::repr::Real;
 use std::marker::PhantomData;
 
 // ──────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 use rustpython_parser::ast;
-use rustpython_parser::{Mode, ParseError, parse};
+use rustpython_parser::{parse, Mode, ParseError};
 
 /// Parse Python source into a list of top-level statements.
 pub fn parse_stmts(src: &str) -> Result<Vec<ast::Stmt>, ParseError> {

@@ -15,7 +15,7 @@
 //! ## Concrete types
 //!
 
-use super::{C, Real, r, ri};
+use super::{r, ri, Real, C};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helicity and charge labels

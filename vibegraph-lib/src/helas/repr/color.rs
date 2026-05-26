@@ -21,7 +21,7 @@
 //! | SU3Adjoint      |   8 |     3 |    3 |
 //! | ColorSinglet    |   1 |     0 |    0 |
 
-use super::{C, Real};
+use super::{Real, C};
 use num_rational::Ratio;
 
 /// Exact rational scalar for group-theoretic constants.

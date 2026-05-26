@@ -7,17 +7,17 @@ pub mod particles;
 pub mod slha;
 pub mod vertices;
 
-use couplings::{Coupling, CouplingError, CouplingId, parse_couplings};
+use couplings::{parse_couplings, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
-use lorentz::{LorentzError, LorentzId, LorentzStructure, parse_lorentz};
+use lorentz::{parse_lorentz, LorentzError, LorentzId, LorentzStructure};
 use num_complex::Complex64;
-use parameters::{ParameterError, ParameterSet, parse_parameters};
-use particles::{Particle, ParticleError, ParticleId, parse_particles};
+use parameters::{parse_parameters, ParameterError, ParameterSet};
+use particles::{parse_particles, Particle, ParticleError, ParticleId};
 use slha::ParamCard;
 use std::collections::HashMap;
 use std::path::Path;
 use thiserror::Error;
-use vertices::{RawVertex, Vertex, VertexError, VertexId, parse_vertices};
+use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
 
 #[derive(Debug, Error)]
 pub enum UfoError {
