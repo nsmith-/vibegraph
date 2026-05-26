@@ -9,6 +9,8 @@ version = "0.1.0"
 [dependencies]
 
 [tasks]
+# Requires: cargo install samply
+profile-diagrams = "cargo test --profile profiling --test validate_madgraph_diagrams --no-run && samply record $(find target/profiling/deps -name 'validate_madgraph_diagrams-*' ! -name '*.d' | head -1)"
 
 # --- nougat: scientific PDF OCR ---
 # Converts scanned academic PDFs to markdown+LaTeX
