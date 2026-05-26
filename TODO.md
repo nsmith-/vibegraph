@@ -46,7 +46,11 @@ Eliminates external tool dependency and enables full ALOHA support.
 ### `lorentz-parse` — Parse `lorentz.py` into a symbolic tensor AST  
 Extract and preserve the `structure` field of each Lorentz object 
 (e.g. `"Gamma(1,2,3)*ProjM(4,5)"`) for automatic HELAS code generation.
-**Status:** UFO loader now preserves lorentz structures; AST parsing is next.
+**Status:** PEG parser implemented with proper arithmetic precedence and named-operator
+dispatch (`build_lorentz_op`). Unknown operators produce `LorentzError::UnknownOperator(name)`.
+UFOModel now uses `IndexMap` for ordered O(1) name→index lookup; `EvaluatedModel` uses
+index-based `Vec<Complex64>` for coupling values (no string detour).
+Next: walk the AST for ALOHA codegen.
 _Depends on: `ufo-full-ownership` (now ✅)_
 
 ### `aloha-codegen` — Code-generate HELAS routines from Lorentz structures

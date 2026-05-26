@@ -9,6 +9,7 @@ pub mod vertices;
 
 use couplings::{parse_couplings, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
+use indexmap::IndexMap;
 use lorentz::{parse_lorentz, LorentzError, LorentzId, LorentzStructure};
 use num_complex::Complex64;
 use parameters::{parse_parameters, ParameterError, ParameterSet};
@@ -39,21 +40,17 @@ pub enum UfoError {
 
 /// A UFO model with all topology and field/parameter/coupling information loaded.
 ///
-/// All data is stored in flat `Vec`s for cache-friendly access.
-/// Named lookup is O(1) via index `HashMap`s keyed by Python name.
+/// Each collection is an `IndexMap<String, T>` keyed by the Python variable name,
+/// preserving insertion order and providing O(1) name→index and name→value lookups
+/// without a separate index map.
 pub struct UFOModel {
-    pub particles: Vec<Particle>,
-    pub lorentz: Vec<LorentzStructure>,
-    pub couplings: Vec<Coupling>,
-    pub vertices: Vec<Vertex>,
+    pub particles: IndexMap<String, Particle>,
+    pub lorentz: IndexMap<String, LorentzStructure>,
+    pub couplings: IndexMap<String, Coupling>,
+    pub vertices: IndexMap<String, Vertex>,
     pub params: ParameterSet,
     /// FeynGraph topology model — retained for diagram-level topology queries.
     pub topo: TopoModel,
-
-    particle_index: HashMap<String, ParticleId>,
-    lorentz_index: HashMap<String, LorentzId>,
-    coupling_index: HashMap<String, CouplingId>,
-    vertex_index: HashMap<String, VertexId>,
 }
 
 impl UFOModel {
@@ -72,75 +69,78 @@ impl UFOModel {
         let params_src = read("parameters.py")?;
         let vertices_src = read("vertices.py")?;
 
-        let particles = parse_particles(&particles_src)?;
-        let lorentz_structs = parse_lorentz(&lorentz_src)?;
-        let couplings = parse_couplings(&couplings_src)?;
+        let particles: IndexMap<String, Particle> = parse_particles(&particles_src)?
+            .into_iter()
+            .map(|p| (p.python_name.clone(), p))
+            .collect();
+
+        let lorentz: IndexMap<String, LorentzStructure> = parse_lorentz(&lorentz_src)?
+            .into_iter()
+            .map(|l| (l.python_name.clone(), l))
+            .collect();
+
+        let couplings: IndexMap<String, Coupling> = parse_couplings(&couplings_src)?
+            .into_iter()
+            .map(|c| (c.python_name.clone(), c))
+            .collect();
+
         let params = parse_parameters(&params_src)?;
         let raw_vertices = parse_vertices(&vertices_src)?;
 
         let topo = TopoModel::from_ufo(path)?;
 
-        // Build index maps.
-        let particle_index: HashMap<String, ParticleId> = particles
-            .iter()
-            .enumerate()
-            .map(|(i, p)| (p.python_name.clone(), ParticleId(i)))
-            .collect();
-
-        let lorentz_index: HashMap<String, LorentzId> = lorentz_structs
-            .iter()
-            .enumerate()
-            .map(|(i, l)| (l.python_name.clone(), LorentzId(i)))
-            .collect();
-
-        let coupling_index: HashMap<String, CouplingId> = couplings
-            .iter()
-            .enumerate()
-            .map(|(i, c)| (c.python_name.clone(), CouplingId(i)))
-            .collect();
-
-        // Resolve raw vertices to typed IDs.
-        let vertices: Vec<Vertex> = raw_vertices
+        let vertices: IndexMap<String, Vertex> = raw_vertices
             .into_iter()
-            .map(|rv| resolve_vertex(rv, &particle_index, &lorentz_index, &coupling_index))
-            .collect();
-
-        let vertex_index: HashMap<String, VertexId> = vertices
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (v.name.clone(), VertexId(i)))
+            .map(|rv| {
+                let v = resolve_vertex(rv, &particles, &lorentz, &couplings);
+                (v.name.clone(), v)
+            })
             .collect();
 
         Ok(UFOModel {
             particles,
-            lorentz: lorentz_structs,
+            lorentz,
             couplings,
             vertices,
             params,
             topo,
-            particle_index,
-            lorentz_index,
-            coupling_index,
-            vertex_index,
         })
     }
 
-    // ── Lookup helpers ────────────────────────────────────────────────────────
+    // ── Name → index lookup ───────────────────────────────────────────────────
 
     pub fn particle_id(&self, name: &str) -> Option<ParticleId> {
-        self.particle_index.get(name).copied()
+        self.particles.get_index_of(name).map(ParticleId)
     }
 
     pub fn lorentz_id(&self, name: &str) -> Option<LorentzId> {
-        self.lorentz_index.get(name).copied()
+        self.lorentz.get_index_of(name).map(LorentzId)
     }
 
     pub fn coupling_id(&self, name: &str) -> Option<CouplingId> {
-        self.coupling_index.get(name).copied()
+        self.couplings.get_index_of(name).map(CouplingId)
     }
 
     pub fn vertex_id(&self, name: &str) -> Option<VertexId> {
-        self.vertex_index.get(name).copied()
+        self.vertices.get_index_of(name).map(VertexId)
+    }
+
+    // ── Index → value accessors ───────────────────────────────────────────────
+
+    pub fn particle(&self, id: ParticleId) -> &Particle {
+        &self.particles[id.0]
+    }
+
+    pub fn lorentz_struct(&self, id: LorentzId) -> &LorentzStructure {
+        &self.lorentz[id.0]
+    }
+
+    pub fn coupling_def(&self, id: CouplingId) -> &Coupling {
+        &self.couplings[id.0]
+    }
+
+    pub fn vertex_def(&self, id: VertexId) -> &Vertex {
+        &self.vertices[id.0]
     }
 
     // ── Evaluation ────────────────────────────────────────────────────────────
@@ -149,13 +149,10 @@ impl UFOModel {
     pub fn evaluate<'a>(&'a self, param_card: &ParamCard) -> EvaluatedModel<'a> {
         let param_values = self.params.evaluate(param_card);
 
-        let coupling_values: HashMap<String, Complex64> = self
+        let coupling_values: Vec<Complex64> = self
             .couplings
-            .iter()
-            .map(|c| {
-                let val = expr::eval(&c.value, &param_values);
-                (c.python_name.clone(), val)
-            })
+            .values()
+            .map(|c| expr::eval(&c.value, &param_values))
             .collect();
 
         EvaluatedModel {
@@ -169,34 +166,38 @@ impl UFOModel {
 /// Resolve a `RawVertex`'s string names to typed IDs.
 fn resolve_vertex(
     rv: RawVertex,
-    particle_index: &HashMap<String, ParticleId>,
-    lorentz_index: &HashMap<String, LorentzId>,
-    coupling_index: &HashMap<String, CouplingId>,
+    particles: &IndexMap<String, Particle>,
+    lorentz: &IndexMap<String, LorentzStructure>,
+    couplings: &IndexMap<String, Coupling>,
 ) -> Vertex {
-    let particles = rv
+    let particle_ids = rv
         .particles
         .iter()
-        .filter_map(|name| particle_index.get(name).copied())
+        .filter_map(|name| particles.get_index_of(name.as_str()).map(ParticleId))
         .collect();
 
-    let lorentz = rv
+    let lorentz_ids = rv
         .lorentz
         .iter()
-        .filter_map(|name| lorentz_index.get(name).copied())
+        .filter_map(|name| lorentz.get_index_of(name.as_str()).map(LorentzId))
         .collect();
 
-    let couplings = rv
+    let coupling_ids = rv
         .couplings
         .iter()
-        .filter_map(|(key, name)| coupling_index.get(name).copied().map(|id| (*key, id)))
+        .filter_map(|(key, name)| {
+            couplings
+                .get_index_of(name.as_str())
+                .map(|i| (*key, CouplingId(i)))
+        })
         .collect();
 
     Vertex {
         name: rv.name,
-        particles,
+        particles: particle_ids,
         color: rv.color,
-        lorentz,
-        couplings,
+        lorentz: lorentz_ids,
+        couplings: coupling_ids,
     }
 }
 
@@ -205,18 +206,17 @@ pub struct EvaluatedModel<'a> {
     model: &'a UFOModel,
     /// All parameter values (external + internal), keyed by parameter name.
     pub param_values: HashMap<String, Complex64>,
-    /// All coupling constant values, keyed by coupling python_name (e.g. `"GC_10"`).
-    pub coupling_values: HashMap<String, Complex64>,
+    /// Coupling constant values indexed by `CouplingId.0`, parallel to `model.couplings`.
+    coupling_values: Vec<Complex64>,
 }
 
 impl EvaluatedModel<'_> {
     /// Get the mass of a particle by its Python name.
     pub fn mass(&self, particle_name: &str) -> f64 {
         self.model
-            .particle_index
-            .get(particle_name)
+            .particle_id(particle_name)
             .and_then(|id| {
-                let mass_param = &self.model.particles[id.0].mass_param;
+                let mass_param = &self.model.particle(id).mass_param;
                 self.param_values.get(mass_param)
             })
             .map(|v| v.re)
@@ -226,10 +226,9 @@ impl EvaluatedModel<'_> {
     /// Get the decay width of a particle by its Python name.
     pub fn width(&self, particle_name: &str) -> f64 {
         self.model
-            .particle_index
-            .get(particle_name)
+            .particle_id(particle_name)
             .and_then(|id| {
-                let width_param = &self.model.particles[id.0].width_param;
+                let width_param = &self.model.particle(id).width_param;
                 self.param_values.get(width_param)
             })
             .map(|v| v.re)
@@ -238,9 +237,9 @@ impl EvaluatedModel<'_> {
 
     /// Get a coupling constant by its Python name.
     pub fn coupling(&self, coupling_name: &str) -> Complex64 {
-        self.coupling_values
-            .get(coupling_name)
-            .copied()
+        self.model
+            .coupling_id(coupling_name)
+            .map(|id| self.coupling_values[id.0])
             .unwrap_or_default()
     }
 
@@ -249,16 +248,12 @@ impl EvaluatedModel<'_> {
     /// Returns `[(lorentz_idx, color_idx, value)]` or `None` if unknown.
     pub fn vertex_couplings(&self, vertex_name: &str) -> Option<Vec<(usize, usize, Complex64)>> {
         let id = self.model.vertex_id(vertex_name)?;
-        let vertex = &self.model.vertices[id.0];
+        let vertex = self.model.vertex_def(id);
         let entries = vertex
             .couplings
             .iter()
             .map(|((l, c), coup_id)| {
-                let val = self
-                    .coupling_values
-                    .get(&self.model.couplings[coup_id.0].python_name)
-                    .copied()
-                    .unwrap_or_default();
+                let val = self.coupling_values[coup_id.0];
                 (*l, *c, val)
             })
             .collect();
@@ -276,10 +271,10 @@ impl EvaluatedModel<'_> {
             changed_params.extend(rdeps.iter().cloned());
         }
 
-        for c in &self.model.couplings {
+        for (i, c) in self.model.couplings.values().enumerate() {
             if c.deps.iter().any(|d| changed_params.contains(d)) {
                 let val = expr::eval(&c.value, &self.param_values);
-                self.coupling_values.insert(c.python_name.clone(), val);
+                self.coupling_values[i] = val;
             }
         }
     }
@@ -361,9 +356,16 @@ mod tests {
             .expect("failed to load taudecay param_card.dat");
 
         let result = UFOModel::load(&path);
-        if let Err(UfoError::Lorentz(_)) = &result {
-            eprintln!("taudecay_UFO: uses non-standard form-factor Lorentz structures (FFCT2/FFCT3) — skipping");
-            return;
+        match &result {
+            Err(UfoError::Lorentz(LorentzError::UnknownOperator(op))) => {
+                eprintln!("taudecay_UFO: uses unsupported Lorentz operator '{op}' — skipping");
+                return;
+            }
+            Err(UfoError::Lorentz(e)) => {
+                eprintln!("taudecay_UFO: Lorentz parse error ({e}) — skipping");
+                return;
+            }
+            _ => {}
         }
         let model = result.expect("failed to load taudecay UFO");
         let ev = model.evaluate(&card);
