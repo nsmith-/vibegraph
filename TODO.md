@@ -47,6 +47,22 @@ process.  Map topology + propagator list into a form the HELAS evaluator
 can consume.  **Status:** ✅ Complete; `diagrams` module integrated and validated.
 _Depends on: `process-grammar` (✅), UFO parsing (✅)_
 
+### `feyngraph-perf` — Investigate feyngraph allocation overhead
+Profiling (`pixi run profile-diagrams`) shows the hot loop is feyngraph's
+recursive topology workspace (`connect_node` / `connect_leg` / `connect_next_class`),
+with malloc/free dominating CPU time. Two contributing factors identified:
+- feyngraph uses rayon unconditionally; when trials run sequentially the thread-pool
+  scheduling adds lock overhead → mitigated with `rayon::ThreadPoolBuilder::num_threads(1)`
+  in the test harness, but the per-call allocation pressure remains.
+- The recursive backtracking clones partial topology state on every branch, producing
+  many small short-lived heap allocations.
+
+**Possible directions (cheapest first):**
+1. Try an alternate global allocator (`mimalloc` or `tikv-jemallocator`) — two-line change,
+   often 20–40% win on allocation-heavy workloads with no upstream changes required.
+2. Upstream contribution to feyngraph: arena-allocate the workspace, or add a cargo feature
+   to gate rayon use so the call site can opt into sequential iteration.
+
 ### `ufo-full-ownership` — Replace feyngraph's UFO parser (COMPLETED ✅)
 Full Rust ownership of `particles.py` / `vertices.py` / `lorentz.py` / `couplings.py` 
 parsing using Python AST walker instead of PEG (as of 316598b). 
