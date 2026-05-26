@@ -1,6 +1,6 @@
 # vibegraph — Research & Implementation Progress
 
-**Last updated:** 2026-05-26
+**Last updated:** 2026-05-26 (post-IndexMap/parser refactor)
 
 This document cross-references `TODO.md` with research notes to track which design decisions are finalized vs. in-flight vs. archived.
 
@@ -38,7 +38,10 @@ This document cross-references `TODO.md` with research notes to track which desi
 
 ### Phase 3: ALOHA Codegen (🔲 PENDING)
 - **Design:** `09` maps UFO/ALOHA types to Rust HELAS routines
-- **Blocker:** `lorentz-parse` (extract `lorentz.py` structures) — currently UFO loader preserves raw JSON
+- **Progress:** Lorentz PEG parser now produces `LorentzExpr = Vec<LorentzTerm>` from structure strings.
+  Grammar uses proper arithmetic precedence and captures operator names via `build_lorentz_op`.
+  UFOModel uses `IndexMap` for ordered storage; `EvaluatedModel` coupling values are index-based `Vec`.
+- **Blocker:** `aloha-codegen` — walk the `LorentzExpr` AST to emit Rust HELAS routines
 - **Research:** `04` (now ✅ completed — Python AST owns UFO parsing), `09`
 
 ### Phase 4: Generic HELAS + LIPS-nbody (🔲 PENDING)
