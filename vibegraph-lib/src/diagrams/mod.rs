@@ -148,7 +148,7 @@ mod tests {
 
     fn sm_ufo_path() -> std::path::PathBuf {
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        std::path::Path::new(&manifest).join("research/refs/mg5amcnlo/models/sm")
+        std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm")
     }
 
     #[test]
