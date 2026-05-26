@@ -147,16 +147,20 @@ peg::parser! {
             }
 
         rule unsigned_term() -> LorentzTerm
-            = head:factor() tail:( _ "*" _ f:factor() { f } )* {
+            // (A * B * ...) / n  — parenthesized product divided by a literal
+            = "(" _ head:factor() tail:( _ "*" _ f:factor() { f } )* _ ")" _ "/" _ n:number() {
+                let mut coeff = 1.0 / n;
+                let mut ops = Vec::new();
+                for f in std::iter::once(head).chain(tail) {
+                    match f { Factor::Num(x) => coeff *= x, Factor::Op(op) => ops.push(op) }
+                }
+                LorentzTerm { coeff, ops }
+            }
+            / head:factor() tail:( _ "*" _ f:factor() { f } )* {
                 let mut coeff = 1.0;
                 let mut ops = Vec::new();
-                // collect coefficient from numeric factors; ops from operator factors
-                let all_factors = std::iter::once(head).chain(tail);
-                for f in all_factors {
-                    match f {
-                        Factor::Num(n) => coeff *= n,
-                        Factor::Op(op) => ops.push(op),
-                    }
+                for f in std::iter::once(head).chain(tail) {
+                    match f { Factor::Num(n) => coeff *= n, Factor::Op(op) => ops.push(op) }
                 }
                 LorentzTerm { coeff, ops }
             }
@@ -164,7 +168,6 @@ peg::parser! {
         rule factor() -> Factor
             = n:number() { Factor::Num(n) }
             / op:operator() { Factor::Op(op) }
-            / "(" _ t:term() _ ")" { Factor::Op(LorentzOp::Identity { i: 0, j: 0 }) } // shouldn't occur
 
         rule operator() -> LorentzOp
             = "Gamma(" _ mu:idx() _ "," _ i:idx() _ "," _ j:idx() _ ")" {
@@ -268,6 +271,24 @@ mod tests {
         // e.g. "2*Gamma(3,2,1)"
         let expr = lorentz_structure::structure("2*Gamma(3,2,1)").unwrap();
         assert_eq!(expr[0].coeff, 2.0);
+    }
+
+    #[test]
+    fn test_parse_grouped_div() {
+        // VVVV5: Metric(1,4)*Metric(2,3) - (Metric(1,3)*Metric(2,4))/2. - (Metric(1,2)*Metric(3,4))/2.
+        let s =
+            "Metric(1,4)*Metric(2,3) - (Metric(1,3)*Metric(2,4))/2. - (Metric(1,2)*Metric(3,4))/2.";
+        let expr = lorentz_structure::structure(s).unwrap();
+        assert_eq!(expr.len(), 3);
+        assert!((expr[0].coeff - 1.0).abs() < 1e-10);
+        assert!((expr[1].coeff + 0.5).abs() < 1e-10);
+        assert!((expr[2].coeff + 0.5).abs() < 1e-10);
+        assert_eq!(expr[0].ops[0], LorentzOp::Metric { mu: 1, nu: 4 });
+        assert_eq!(expr[0].ops[1], LorentzOp::Metric { mu: 2, nu: 3 });
+        assert_eq!(expr[1].ops[0], LorentzOp::Metric { mu: 1, nu: 3 });
+        assert_eq!(expr[1].ops[1], LorentzOp::Metric { mu: 2, nu: 4 });
+        assert_eq!(expr[2].ops[0], LorentzOp::Metric { mu: 1, nu: 2 });
+        assert_eq!(expr[2].ops[1], LorentzOp::Metric { mu: 3, nu: 4 });
     }
 
     #[test]

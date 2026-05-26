@@ -67,7 +67,16 @@ _Depends on: `diagram-enum`, `aloha-codegen`_
 ### `lips-nbody` — n-body LIPS phase-space generator
 Generalize phase-space sampling to 3+ final-state particles using a
 recursive 2-body decomposition (RAMBO-style) or Sudakov parametrization.
+**Research first:** survey available Rust (and portable Fortran/Python) n-body
+phase-space implementations before committing to an approach. Options include
+porting MadGraph's phase-space routines or adapting an existing crate.
 _Depends on: `xsec-ee-mumu`_
+
+### `typed-units` — Typed physical units throughout the codebase
+Research Rust typed-units crates (`uom`, `dimensioned`, `units`) for applicability
+to HEP quantities (GeV, mb, etc.). Goal: typed four-momenta and cross sections
+throughout to catch dimension errors at compile time. Evaluate ergonomics against
+the natural-units convention (ℏ = c = 1) before committing.
 
 ### `event-output-lhef` — Unweighted events in LHEF format
 Accept/reject sampling with `w(p) = |M(p)|²/w_max` to produce an

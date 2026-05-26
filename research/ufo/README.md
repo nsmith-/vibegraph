@@ -2,6 +2,13 @@
 
 Place UFO model directories here for use as test inputs.
 
+## Integration Tests
+
+The `vibegraph::ufo` module contains integration tests that load real UFO models from
+`research/refs/mg5amcnlo/models/` (SM, loop_sm, MSSM_SLHA2, taudecay_UFO). These tests
+run automatically with `cargo test`; they skip gracefully if the submodule is not populated
+(`git submodule update --init --depth=1`).
+
 ## Getting Models
 
 Standard models are available from:
