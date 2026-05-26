@@ -1,6 +1,6 @@
 # Future: Full UFO Parsing (Take Over from FeynGraph)
 
-**Status:** Stub / future work
+**Status:** Complete — implemented in `316598bcde65fc889986a630d6c3a907d64b6977` feat(ufo): replace PEG/FeynGraph parsers with Python AST + unified UFOModel
 
 ## Current situation
 
