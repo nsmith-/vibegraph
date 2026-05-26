@@ -162,7 +162,7 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
 
     // Build the set of all known names (externals first).
     let mut all_known: Vec<String> = externals.iter().map(|p| p.name.clone()).collect();
-    let internals = toposort_internals(raw_internals, &all_known)?;
+    let internals = toposort_internals(raw_internals)?;
 
     // Build reverse dep map.
     let mut rdeps: HashMap<String, Vec<String>> = HashMap::new();
@@ -187,7 +187,6 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
 /// Kahn's topological sort for internal parameters.
 fn toposort_internals(
     raw: Vec<(String, bool, Expr, Vec<String>)>,
-    externals: &[String],
 ) -> Result<Vec<Parameter>, ParameterError> {
     // Build maps.
     let n = raw.len();
