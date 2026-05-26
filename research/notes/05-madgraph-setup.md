@@ -36,7 +36,8 @@ python = "3.11.*"    # mg5amcnlo 3.5.7 builds against CPython 3.11
 mg5amcnlo = "3.5.7"
 
 [feature.madgraph.tasks]
-generate-ee = "mg5_aMC research/mg5_scripts/ee_to_mumu.mg5"
+build-diagrams = "bash validation/madgraph/build.sh"
+extract-diagrams = { cmd = "python validation/madgraph/extract_diagrams.py", depends-on = ["build-diagrams"] }
 
 [environments]
 madgraph = { features = ["madgraph"], solve-group = "madgraph" }
@@ -50,24 +51,23 @@ pixi install -e madgraph
 
 ### Run
 
+For comprehensive diagram validation across all processes:
+
 ```bash
-pixi run -e madgraph generate-ee
+pixi run -e madgraph build-diagrams
+pixi run -e madgraph extract-diagrams
+cargo test -p vibegraph-lib --test validate_madgraph_diagrams
 ```
 
-This executes the batch script `research/mg5_scripts/ee_to_mumu.mg5`, which:
+This executes batch scripts from `validation/madgraph/scripts/*.mg5`, which:
 1. Generates diagrams for `e+ e- > mu+ mu-` (SM, tree-level)
 2. Writes the process to the `ee_to_mumu/` output directory
 3. Launches the cross-section integration at √s = 91.2 GeV (ebeam1 = ebeam2 = 45.6 GeV)
 
-Output appears in `ee_to_mumu/Events/run_01/` and `ee_to_mumu/crossx.html`.
+Output appears in the generated process directories under `validation/madgraph/output/`.
 
-To run at a different √s, edit the `ebeam1`/`ebeam2` values in the script or
-pass a custom script:
-
-```bash
-# e.g. at √s = 200 GeV
-pixi run -e madgraph mg5_aMC research/mg5_scripts/ee_to_mumu_200gev.mg5
-```
+To run at different collision energies, edit the `ebeam1`/`ebeam2` values in the
+respective script under `validation/madgraph/scripts/` or create a new process script.
 
 ---
 
