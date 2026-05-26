@@ -41,14 +41,14 @@
 //!
 //! ## Status
 //!
-//! - [`Gamma`], [`GammaL`] and [`GammaR`] are **fully implemented** — they
+//! - [`GammaL`] and [`GammaR`] are **fully implemented** — they
 //!   delegate to [`SpinorRepr::left_current`] and [`SpinorRepr::right_current`].
 //!   These are used directly in [`crate::helas::vertex`].
 //! - [`GammaV`], [`SigmaTensor`], and [`Epsilon`] are **stubs** pending
 //!   implementation.
 
-use super::{C, Real, lorentz::FourMomentum};
-use crate::helas::repr::lorentz::SpinorRepr;
+use super::{C, Real, lorentz::LorentzVector};
+use crate::helas::repr::lorentz::{ComplexVector, Scalar, SpinorRepr};
 use std::marker::PhantomData;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,33 +62,7 @@ use std::marker::PhantomData;
 /// `FourMomentum::zero()`.
 pub trait Intertwiner<F: Real, In: Copy, Out: Copy> {
     /// Apply the intertwiner to the input fiber `input` with momentum `momentum`.
-    fn apply(input: &In, momentum: FourMomentum<F>) -> Out;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Gamma — full vector current
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Full vector current intertwiner: `J^μ = ψ̄ γ^μ ψ = J_L^μ + J_R^μ`.
-///
-/// Numerically equal to [`GammaL`] + [`GammaR`] component-wise.
-/// Useful for QED (where no chirality projection is applied) and as a
-/// diagnostic that the chiral decomposition is correct.
-///
-/// The map is `S* ⊗ S → T*M`, taking a pair `(fo, fi)` of Dirac spinors to
-/// a covariant 4-vector (the Minkowski fiber).
-pub struct Gamma<B> {
-    _marker: PhantomData<B>,
-}
-
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B::Fiber, B::Fiber), [C<F>; 4]> for Gamma<B> {
-    /// Compute `J^μ = J_L^μ + J_R^μ` using the chiral decomposition.
-    fn apply(input: &(B::Fiber, B::Fiber), _momentum: FourMomentum<F>) -> [C<F>; 4] {
-        let (fo, fi) = input;
-        let jl = B::left_current(fo, fi);
-        let jr = B::right_current(fo, fi);
-        [jl[0] + jr[0], jl[1] + jr[1], jl[2] + jr[2], jl[3] + jr[3]]
-    }
+    fn apply(input: &In, momentum: LorentzVector<F>) -> Out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,8 +80,8 @@ pub struct GammaL<B> {
     _marker: PhantomData<B>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B::Fiber, B::Fiber), [C<F>; 4]> for GammaL<B> {
-    fn apply(input: &(B::Fiber, B::Fiber), _momentum: FourMomentum<F>) -> [C<F>; 4] {
+impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B, B), ComplexVector<F>> for GammaL<B> {
+    fn apply(input: &(B, B), _momentum: LorentzVector<F>) -> ComplexVector<F> {
         B::left_current(&input.0, &input.1)
     }
 }
@@ -127,8 +101,8 @@ pub struct GammaR<B> {
     _marker: PhantomData<B>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B::Fiber, B::Fiber), [C<F>; 4]> for GammaR<B> {
-    fn apply(input: &(B::Fiber, B::Fiber), _momentum: FourMomentum<F>) -> [C<F>; 4] {
+impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B, B), ComplexVector<F>> for GammaR<B> {
+    fn apply(input: &(B, B), _momentum: LorentzVector<F>) -> ComplexVector<F> {
         B::right_current(&input.0, &input.1)
     }
 }
@@ -143,18 +117,14 @@ impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B::Fiber, B::Fiber), [C<F>; 4]> 
 /// off-shell spinor.  Used in the construction of off-shell fermion currents
 /// when a vector boson is attached to a fermion line.
 ///
-/// Input: a pair `([C<F>;4], B::Fiber)` = (polarisation, off-shell spinor).
-/// Output: `B::Fiber` = new off-shell spinor.
-///
 /// # TODO
-/// Implement for [`crate::helas::repr::lorentz::WeylBasis`] using the
-/// explicit form of `γ^μ` in the Weyl basis.
+/// Implement for [`SpinorRepr`] using new methods on the SpinorRepr trait.
 pub struct GammaV<B> {
     _marker: PhantomData<B>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, ([C<F>; 4], B::Fiber), B::Fiber> for GammaV<B> {
-    fn apply(_input: &([C<F>; 4], B::Fiber), _momentum: FourMomentum<F>) -> B::Fiber {
+impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (ComplexVector<F>, B), B> for GammaV<B> {
+    fn apply(_input: &(ComplexVector<F>, B), _momentum: LorentzVector<F>) -> B {
         todo!("GammaV: γ^μ acting on off-shell spinor current — Weyl implementation pending")
     }
 }
@@ -172,15 +142,14 @@ impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, ([C<F>; 4], B::Fiber), B::Fiber> 
 /// Output: an antisymmetric rank-2 tensor `[[C<F>; 4]; 4]`.
 ///
 /// # TODO
-/// Implement for [`crate::helas::repr::lorentz::WeylBasis`].
+/// Implement for [`SpinorRepr`].
+/// Implement an antisymmetric rank-2 tensor type and return that instead of a raw `[[C<F>; 4]; 4]`.
 pub struct SigmaTensor<B> {
     _marker: PhantomData<B>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B::Fiber, B::Fiber), [[C<F>; 4]; 4]>
-    for SigmaTensor<B>
-{
-    fn apply(_input: &(B::Fiber, B::Fiber), _momentum: FourMomentum<F>) -> [[C<F>; 4]; 4] {
+impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B, B), [[C<F>; 4]; 4]> for SigmaTensor<B> {
+    fn apply(_input: &(B, B), _momentum: LorentzVector<F>) -> [[C<F>; 4]; 4] {
         todo!("SigmaTensor: σ^μν bilinear — implementation pending")
     }
 }
@@ -203,8 +172,8 @@ pub struct Epsilon<B> {
     _marker: PhantomData<B>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B::Fiber, B::Fiber), C<F>> for Epsilon<B> {
-    fn apply(_input: &(B::Fiber, B::Fiber), _momentum: FourMomentum<F>) -> C<F> {
+impl<F: Real, B: SpinorRepr<F>> Intertwiner<F, (B, B), Scalar<F>> for Epsilon<B> {
+    fn apply(_input: &(B, B), _momentum: LorentzVector<F>) -> Scalar<F> {
         todo!("Epsilon: Lorentz scalar bilinear ε_{{αβ}} ψ^α χ^β — implementation pending")
     }
 }

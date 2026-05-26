@@ -1,19 +1,22 @@
 use crate::helas::repr::{
     C, Real, SpinorRepr,
     intertwiner::{GammaL, GammaR, Intertwiner},
-    lorentz::FourMomentum,
+    lorentz::{ComplexVector, LorentzVector},
     r,
 };
-use crate::helas::wavefn::{DiracWf, VectorWf};
+use crate::helas::wavefn::{InDiracWf, OutDiracWf, VectorWf};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Minkowski inner product with metric (+,−,−,−), where the *metric signs are
-/// already absorbed* into the current components (HELAS convention).
+/// HELAS Lorentz contraction with Minkowski signature (+,−,−,−).
 ///
-/// Formula: `a[0]*b[0] − a[1]*b[1] − a[2]*b[2] − a[3]*b[3]`
+/// The spinor bilinears built by `GammaL/GammaR` already carry HELAS-specific
+/// component signs/phases (matching `iovxxx`), but the final contraction is
+/// still the Minkowski one used in the Fortran reference routine.
+///
+/// TODO: roll this into the [`LorentzRepr`] trait
 #[inline]
 fn mink_dot<F: Real>(a: [C<F>; 4], b: [C<F>; 4]) -> C<F> {
     a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3]
@@ -43,19 +46,19 @@ fn mink_dot_q<F: Real>(q: [F; 4], c: [C<F>; 4]) -> C<F> {
 /// * `gzf`    – Z couplings       `[g_L^Z, g_R^Z]`
 /// * `zmass`  – Z mass
 /// * `zwidth` – Z total decay width (Breit-Wigner)
-pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
-    fo: &DiracWf<F, B>,
-    fi: &DiracWf<F, B>,
+pub fn j3xxxx<F: Real>(
+    fo: &OutDiracWf<F>,
+    fi: &InDiracWf<F>,
     gaf: [F; 2],
     gzf: [F; 2],
     zmass: F,
     zwidth: F,
 ) -> VectorWf<F> {
     // Off-shell momentum: fo.p − fi.p
-    let jmom: [F; 4] = std::array::from_fn(|mu| fo.momentum[mu] - fi.momentum[mu]);
+    let jmom = fo.momentum - fi.momentum;
     // Propagator momentum (inflow convention)
-    let q = [-jmom[0], -jmom[1], -jmom[2], -jmom[3]];
-    let q2 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
+    let q = -jmom;
+    let q2 = q.m2();
 
     let zm2 = zmass * zmass;
     let zmw = zmass * zwidth;
@@ -76,13 +79,13 @@ pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
     let ddif = C::new(-zm2, zmw) * r(da) * dz; // ≈ da for mZ → ∞
 
     // ── Bilinear currents via GammaL / GammaR intertwiners ────────────────
-    let cl = GammaL::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
-    let cr = GammaR::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
+    let cl = GammaL::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
+    let cr = GammaR::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
 
     // Longitudinal-mode projections divided by complex mZ²
     let cm2 = C::new(zm2, -zmw);
-    let csl = mink_dot_q(q, cl) / cm2;
-    let csr = mink_dot_q(q, cr) / cm2;
+    let csl = mink_dot_q(q.0, cl.0) / cm2;
+    let csr = mink_dot_q(q.0, cr.0) / cm2;
 
     // ── Output polarisation vector ────────────────────────────────────────
     // eps[μ] = gz3l·dz·(cl[μ] − q[μ]·csl)
@@ -96,7 +99,7 @@ pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
     });
 
     VectorWf {
-        eps,
+        eps: ComplexVector { 0: eps },
         momentum: jmom,
     }
 }
@@ -122,21 +125,21 @@ pub fn j3xxxx<F: Real, B: SpinorRepr<F>>(
 /// * `gc`     – couplings `[g_L, g_R]` (left/right-handed, real)
 /// * `vmass`  – boson mass (0 for photon)
 /// * `vwidth` – boson total width (0 for stable)
-pub fn jioxxx<F: Real, B: SpinorRepr<F>>(
-    fo: &DiracWf<F, B>,
-    fi: &DiracWf<F, B>,
+pub fn jioxxx<F: Real>(
+    fo: &OutDiracWf<F>,
+    fi: &InDiracWf<F>,
     gc: [F; 2],
     vmass: F,
     vwidth: F,
 ) -> VectorWf<F> {
     // Off-shell momentum: jmom = fo.p − fi.p  (outflow convention)
-    let jmom: [F; 4] = std::array::from_fn(|mu| fo.momentum[mu] - fi.momentum[mu]);
+    let jmom = fo.momentum - fi.momentum;
     let q = jmom;
     let q2 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
 
     // Bilinear currents via GammaL / GammaR intertwiners
-    let cl = GammaL::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
-    let cr = GammaR::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
+    let cl = GammaL::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
+    let cr = GammaR::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
     let blin: [C<F>; 4] = std::array::from_fn(|mu| r(gc[0]) * cl[mu] + r(gc[1]) * cr[mu]);
 
     let eps = if vmass == F::zero() {
@@ -150,13 +153,13 @@ pub fn jioxxx<F: Real, B: SpinorRepr<F>>(
         let denom = C::new(q2 - vm2, vmw);
         // Longitudinal mode subtraction: divide by m²−imΓ (Fabio prescription)
         let cm2 = C::new(vm2, -vmw);
-        let cs = mink_dot_q(q, blin) / cm2;
+        let cs = mink_dot_q(q.0, blin) / cm2;
         let d = C::new(F::one(), F::zero()) / denom;
         std::array::from_fn(|mu| (blin[mu] - cs * r(q[mu])) * d)
     };
 
     VectorWf {
-        eps,
+        eps: ComplexVector(eps),
         momentum: jmom,
     }
 }
@@ -177,15 +180,15 @@ pub fn jioxxx<F: Real, B: SpinorRepr<F>>(
 ///
 /// # Returns
 /// The complex-valued Lorentz-invariant amplitude.
-pub fn iovxxx<F: Real, B: SpinorRepr<F>>(
-    fo: &DiracWf<F, B>,
-    fi: &DiracWf<F, B>,
+pub fn iovxxx<F: Real>(
+    fo: &OutDiracWf<F>,
+    fi: &InDiracWf<F>,
     v: &VectorWf<F>,
     gc: [C<F>; 2],
 ) -> C<F> {
-    let cl = GammaL::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
-    let cr = GammaR::<B>::apply(&(fo.spinor, fi.spinor), FourMomentum::zero());
+    let cl = GammaL::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
+    let cr = GammaR::apply(&(fo.spinor, fi.spinor), LorentzVector::zero());
 
     // M = gc[0] * (C_L · V) + gc[1] * (C_R · V)
-    gc[0] * mink_dot(cl, v.eps) + gc[1] * mink_dot(cr, v.eps)
+    gc[0] * mink_dot(cl.0, v.eps.0) + gc[1] * mink_dot(cr.0, v.eps.0)
 }

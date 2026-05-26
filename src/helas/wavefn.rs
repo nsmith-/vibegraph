@@ -1,11 +1,20 @@
 use crate::helas::repr::{
-    C, Real, SpinorRepr,
-    lorentz::{Charge, FourMomentum, SpinorHelicity},
+    Bispinor, C, Real,
+    lorentz::{Charge, ComplexVector, LorentzVector, SpinorHelicity},
 };
+use std::marker::PhantomData;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Spinor wavefunction
 // ──────────────────────────────────────────────────────────────────────────────
+
+/// Marker for flowing-IN spinors (`u`/`v` columns).
+#[derive(Clone, Copy, Debug)]
+pub struct FlowIn;
+
+/// Marker for flowing-OUT spinors (`ū`/`v̄` rows).
+#[derive(Clone, Copy, Debug)]
+pub struct FlowOut;
 
 /// A Dirac spinor wavefunction together with its (signed) 4-momentum.
 ///
@@ -17,29 +26,43 @@ use crate::helas::repr::{
 /// since [`SpinorRepr<F>`] is a subtrait of [`crate::helas::repr::LorentzRepr<F>`]
 /// with `Fiber = [C<F>; 4]`.
 #[derive(Clone, Copy, Debug)]
-pub struct DiracWf<F: Real, B: SpinorRepr<F>> {
-    pub spinor: B::Fiber,
+pub struct DiracWf<F: Real, Flow = FlowIn> {
+    pub spinor: Bispinor<F>,
     /// Signed momentum: particle → +p, antiparticle → −p
-    pub momentum: FourMomentum<F>,
+    pub momentum: LorentzVector<F>,
+    _flow: PhantomData<Flow>,
 }
 
-impl<F: Real, B: SpinorRepr<F>> DiracWf<F, B> {
-    /// Construct a flowing-IN wavefunction.
-    pub fn ixxxxx(p: FourMomentum<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
-        let spinor = B::ixxxxx(p, mass, nhel, nsf);
-        DiracWf {
+/// Flowing-IN typed spinor wavefunction.
+pub type InDiracWf<F> = DiracWf<F, FlowIn>;
+
+/// Flowing-OUT typed spinor wavefunction.
+pub type OutDiracWf<F> = DiracWf<F, FlowOut>;
+
+impl<F: Real, Flow> DiracWf<F, Flow> {
+    #[inline(always)]
+    fn from_parts(spinor: Bispinor<F>, momentum: LorentzVector<F>) -> Self {
+        Self {
             spinor,
-            momentum: p.scaled(nsf.sign()),
+            momentum,
+            _flow: PhantomData,
         }
     }
+}
 
+impl<F: Real> InDiracWf<F> {
+    /// Construct a flowing-IN wavefunction.
+    pub fn new(p: LorentzVector<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
+        let spinor = Bispinor::ixxxxx(p, mass, nhel, nsf);
+        Self::from_parts(spinor, p.scaled(nsf.sign()))
+    }
+}
+
+impl<F: Real> OutDiracWf<F> {
     /// Construct a flowing-OUT wavefunction.
-    pub fn oxxxxx(p: FourMomentum<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
-        let spinor = B::oxxxxx(p, mass, nhel, nsf);
-        DiracWf {
-            spinor,
-            momentum: p.scaled(nsf.sign()),
-        }
+    pub fn new(p: LorentzVector<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
+        let spinor = Bispinor::oxxxxx(p, mass, nhel, nsf);
+        Self::from_parts(spinor, p.scaled(nsf.sign()))
     }
 }
 
@@ -53,8 +76,10 @@ impl<F: Real, B: SpinorRepr<F>> DiracWf<F, B> {
 /// Used as both the result of `j3xxxx` and the input to `iovxxx`.
 #[derive(Clone, Copy, Debug)]
 pub struct VectorWf<F: Real> {
-    /// Polarisation / Lorentz components (covariant, metric signs already
-    /// absorbed for `iovxxx` contraction).
-    pub eps: [C<F>; 4],
-    pub momentum: [F; 4],
+    /// Polarisation / Lorentz components in HELAS convention.
+    ///
+    /// `iovxxx` contracts these components with bilinear currents using an
+    /// explicit Minkowski (+,−,−,−) contraction (`mink_dot`).
+    pub eps: ComplexVector<F>,
+    pub momentum: LorentzVector<F>,
 }
