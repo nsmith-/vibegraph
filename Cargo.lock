@@ -998,6 +998,7 @@ dependencies = [
  "peg",
  "rand 0.9.4",
  "rayon",
+ "rustc-hash 2.1.2",
  "rustpython-parser",
  "serde",
  "serde_json",

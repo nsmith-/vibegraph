@@ -105,6 +105,116 @@ pub struct UFOModel {
     pub order_hierarchy: HashMap<String, u32>,
 }
 
+/// Helper function to determine feyngraph LineStyle from spin.
+fn spin_to_line_style(spin: i32) -> feyngraph::model::LineStyle {
+    use feyngraph::model::LineStyle;
+    match spin {
+        1 => LineStyle::Dashed,
+        2 => LineStyle::Straight,
+        3 => LineStyle::Curly,
+        _ if spin >= 5 => LineStyle::Double,
+        _ => LineStyle::Dashed,
+    }
+}
+
+/// Helper function to determine feyngraph Statistic from spin.
+fn spin_to_statistic(spin: i32) -> feyngraph::model::Statistic {
+    use feyngraph::model::Statistic;
+    match spin {
+        1 | 3 => Statistic::Bose,
+        2 => Statistic::Fermi,
+        _ if spin >= 5 => Statistic::Bose,
+        _ => Statistic::Bose,
+    }
+}
+
+/// Build a feyngraph Model from vibegraph's parsed UFO data.
+///
+/// Uses feyngraph's mutation API to construct the model without re-parsing the UFO.
+fn build_feyngraph_model(
+    particles: &IndexMap<String, Particle>,
+    lorentz: &IndexMap<String, LorentzStructure>,
+    vertices: &IndexMap<String, Vertex>,
+    _couplings: &IndexMap<String, Coupling>,
+    _order_hierarchy: &HashMap<String, u32>,
+) -> Result<TopoModel, UfoError> {
+    use rustc_hash::FxHashMap;
+
+    let mut model = TopoModel::empty();
+
+    // Add all particles
+    for (_py_name, particle) in particles {
+        model.add_particle(
+            particle.name.clone(),
+            particle.antiname.clone(),
+            particle.spin as isize,
+            particle.color as isize,
+            particle.pdg_code as isize,
+            particle.texname.clone(),
+            particle.antitexname.clone(),
+            spin_to_line_style(particle.spin),
+            spin_to_statistic(particle.spin),
+        );
+    }
+
+    // Add all vertices
+    let mut added_count = 0;
+    let mut skipped_count = 0;
+    for (vertex_name, vertex) in vertices {
+        // Skip vertices with no lorentz structures — they cannot be added to feyngraph
+        if vertex.lorentz.is_empty() {
+            log::warn!("Skipping vertex {} with no lorentz structures", vertex_name);
+            skipped_count += 1;
+            continue;
+        }
+        added_count += 1;
+
+        // Collect particle names for this vertex
+        let particle_names: Vec<String> = vertex
+            .particles
+            .iter()
+            .map(|pid| particles[pid.0].name.clone())
+            .collect();
+
+        // Build spin_map from lorentz structures
+        // Use the first (and typically only) lorentz structure's spin_map
+        let lorentz_id = vertex.lorentz[0];
+        let lorentz_struct = &lorentz[lorentz_id.0];
+        // compute_spin_map returns 1-indexed values; convert to 0-indexed for feyngraph
+        let spin_map_for_vertex: Vec<isize> = lorentz_struct
+            .spin_map
+            .iter()
+            .map(|&m| if m > 0 { m - 1 } else { 0 })
+            .collect();
+
+        // Build coupling orders map from vertex couplings
+        // For now, use a default mapping; the coupling order discovery is done separately
+        // during diagram enumeration via the WEIGHTED coupling mechanism.
+        let mut coupling_orders: FxHashMap<String, usize> = FxHashMap::default();
+
+        // If no coupling orders found, use default QCD=1
+        if coupling_orders.is_empty() {
+            coupling_orders.insert("QCD".to_string(), 1);
+        }
+
+        model.add_vertex(
+            vertex_name.clone(),
+            particle_names,
+            spin_map_for_vertex,
+            coupling_orders,
+        )?;
+    }
+
+    log::info!(
+        "Built feyngraph model: {} particles, {} vertices added, {} skipped",
+        particles.len(),
+        added_count,
+        skipped_count
+    );
+
+    Ok(model)
+}
+
 impl UFOModel {
     /// Load a UFO model from a directory path.
     ///
@@ -141,8 +251,6 @@ impl UFOModel {
 
         let params = parse_parameters(&params_src)?;
         let raw_vertices = parse_vertices(&vertices_src)?;
-
-        let topo = TopoModel::from_ufo(path)?;
 
         let mut vertices: IndexMap<String, Vertex> = raw_vertices
             .into_iter()
@@ -202,6 +310,11 @@ impl UFOModel {
             }
             Err(_) => default_sm_hierarchy(),
         };
+
+        // TODO: Replace with build_feyngraph_model once feyngraph Model API is fully compatible.
+        // For now, use feyngraph's own from_ufo parser, but vibegraph now computes spin_map
+        // independently and makes it available via LorentzStructure.spin_map.
+        let topo = TopoModel::from_ufo(path)?;
 
         Ok(UFOModel {
             particles,
