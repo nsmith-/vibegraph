@@ -29,25 +29,28 @@
 
 ### `feyngraph-ufo-replace` — Replace `TopoModel::from_ufo()` with vibegraph-built model
 
-Currently feyngraph's `TopoModel::from_ufo(path)` re-parses the UFO directory independently.
-Replace it by building the feyngraph `Model` directly from vibegraph's already-parsed data
-using feyngraph's mutation API (`Model::empty()` + `add_particle` + `add_vertex`).
+Status: **⚠️  PARTIALLY COMPLETE** (as of d19a4e7)
 
-The missing piece is `spin_map`: feyngraph needs a `Vec<isize>` of length `n_legs` mapping
-each leg to its spin-contracted partner. This is directly readable from the existing `LorentzExpr`:
-`Gamma`, `Sigma`, `Identity`, `ProjM`, `ProjP`, and `C` all carry `i`/`j` spinor index fields
-where positive values are external leg indices (1-based) and negative values are internal
-contraction dummies. Scan the ops across all terms, trace chains through shared negative indices,
-and the external (positive) endpoints are the spinor pair for that leg. Add
-`compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Vec<isize>` to `vibegraph-lib/src/ufo/lorentz/`.
+**Completed**: `compute_spin_map()` function (commit d19a4e7)
+- Added `compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Vec<isize>` to `ufo/lorentz.rs`
+- Traces spinor index chains through `Gamma`, `Sigma`, `Identity`, `ProjM`, `ProjP`, `C` operators
+- Returns 1-indexed mapping: positive values map external legs, 0 means unmapped
+- Updated `LorentzStructure` struct with `spin_map` field
+- Integrated into `parse_lorentz()` so all structures have spin_map computed automatically
+- Added comprehensive unit tests (FFV1, no-spinor, projector-chain cases)
+- Also implemented `build_feyngraph_model()` helper (temporarily unused due to API investigation)
 
-**Benefit**: eliminates feyngraph's UFO parser entirely; vibegraph owns the full parsing pipeline,
-enabling support for non-standard UFOs (`loop_sm`, etc.) and removing the `TopoModel::from_ufo` path.
-The `spin_map` is also needed by the Lorentz runtime evaluator — feyngraph's internal spin_map is not
-public, so vibegraph must compute and carry it alongside each `LorentzStructure` regardless.
+**Remaining**: Full feyngraph Model replacement
+- `build_feyngraph_model()` builds the model but `generate_diagrams()` returns 0 diagrams
+- Investigation needed: Model::empty()+add_particle+add_vertex may not initialize internal state needed by diagram generator
+- Consider: either (a) expose feyngraph Model::new() API, (b) patch feyngraph to support streaming construction, or (c) keep using from_ufo() for now and note that vibegraph computes spin_map independently
+
+**Current approach**: Using `TopoModel::from_ufo()` but with vibegraph's computed `spin_map` available on every `LorentzStructure` for use by lorentz-runtime-eval.
+
+**Benefit**: The `spin_map` is now computed and available — it's needed by the Lorentz runtime evaluator since feyngraph's internal spin_map is not public. Full UFO ownership can be deferred.
 
 _Depends on: `lorentz-parse` (✅), `ufo-full-ownership` (✅)_
-_Unblocks: `lorentz-runtime-eval`_
+_Unblocks: `lorentz-runtime-eval` (spin_map is now ready)_
 
 ### `lorentz-runtime-eval` — Runtime Lorentz structure evaluator
 
