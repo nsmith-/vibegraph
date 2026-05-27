@@ -22,7 +22,8 @@ pub mod selector;
 
 pub use alias::AliasTable;
 pub use parse::{
-    CouplingConstraint, CouplingOp, MultiparticleDef, ParsedProcCard, ParsingOptions, ProcessSpec,
+    CouplingConstraint, CouplingOp, ModelImport, MultiparticleDef, ParsedProcCard, ParsingOptions,
+    ProcessSpec,
 };
 
 use std::path::Path;
@@ -173,46 +174,7 @@ pub fn generate_from_process_spec(
         });
     }
 
-    // Deduplicate by topology fingerprint: group DiagramSets with identical
-    // propagator PDG signatures and keep one representative per group
-    deduplicate_by_topology(sets)
-}
-
-/// Deduplicate diagram sets by topology fingerprint.
-/// Two sets are considered duplicates if they have identical topology
-/// (i.e., same propagators with same PDG codes in each diagram).
-fn deduplicate_by_topology(sets: Vec<DiagramSet>) -> Result<Vec<DiagramSet>, DiagramError> {
-    use std::collections::HashMap;
-
-    let mut topology_groups: HashMap<Vec<Vec<i32>>, DiagramSet> = HashMap::new();
-
-    for set in sets {
-        // Compute topology fingerprint for this set
-        let fingerprint = compute_fingerprint(&set);
-
-        // Keep only the first representative for each topology
-        topology_groups.entry(fingerprint).or_insert(set);
-    }
-
-    Ok(topology_groups.into_values().collect())
-}
-
-/// Compute a topology fingerprint: for each diagram, collect and sort the
-/// propagator PDG codes, then return the list of these sorted PDG lists.
-fn compute_fingerprint(set: &DiagramSet) -> Vec<Vec<i32>> {
-    let mut fingerprint = Vec::new();
-
-    for diagram in set.diagrams.views() {
-        let mut pdg_codes: Vec<i32> = diagram
-            .propagators()
-            .map(|prop| prop.particle().pdg() as i32)
-            .collect();
-        pdg_codes.sort();
-        fingerprint.push(pdg_codes);
-    }
-
-    fingerprint.sort();
-    fingerprint
+    Ok(sets)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

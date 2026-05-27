@@ -129,9 +129,20 @@ pub struct MultiparticleDef {
     pub except: Vec<String>,
 }
 
+/// Information extracted from an `import model` directive.
+#[derive(Debug, Clone)]
+pub struct ModelImport {
+    /// Model name (e.g. "sm", "loop_sm").
+    pub name: String,
+    /// Optional restrict variant (e.g. "no_b_mass" from "sm-no_b_mass").
+    pub restrict_variant: Option<String>,
+}
+
 /// The result of parsing an entire `proc_card.dat` file.
 #[derive(Debug, Clone)]
 pub struct ParsedProcCard {
+    /// Model import directive if present (e.g. `import model sm-no_b_mass`).
+    pub model: Option<ModelImport>,
     /// All `define` commands, in order.
     pub defines: Vec<MultiparticleDef>,
     /// All processes from `generate` and `add process` commands, in order.
@@ -143,6 +154,7 @@ pub struct ParsedProcCard {
 /// Parse a `proc_card.dat` string into a `ParsedProcCard`.
 pub fn parse_proc_card(content: &str, opts: &ParsingOptions) -> Result<ParsedProcCard, ParseError> {
     let mut card = ParsedProcCard {
+        model: None,
         defines: Vec::new(),
         processes: Vec::new(),
     };
@@ -154,7 +166,10 @@ pub fn parse_proc_card(content: &str, opts: &ParsingOptions) -> Result<ParsedPro
         }
         let lower = line.to_lowercase();
 
-        if let Some(rest) = lower.strip_prefix("generate ") {
+        if let Some(rest) = lower.strip_prefix("import model ") {
+            let rest_original = &line[line.len() - rest.len()..];
+            card.model = Some(parse_model_import(rest_original)?);
+        } else if let Some(rest) = lower.strip_prefix("generate ") {
             let rest_original = &line[line.len() - rest.len()..];
             card.processes
                 .push(parse_process_string(rest_original, opts)?);
@@ -234,6 +249,29 @@ pub fn parse_define_line(s: &str) -> Result<MultiparticleDef, ParseError> {
         particles,
         except,
     })
+}
+
+/// Parse an `import model` directive.
+/// Examples: "sm", "loop_sm", "sm-no_b_mass", "loop_sm-no_top"
+fn parse_model_import(s: &str) -> Result<ModelImport, ParseError> {
+    let model_spec = s.trim();
+
+    // Split on the first '-' after the model name to extract restrict variant.
+    // Models are typically: "sm", "loop_sm", etc.
+    // Variants: "sm-no_b_mass", "loop_sm-no_b_mass"
+    if let Some(dash_pos) = model_spec.find('-') {
+        let name = model_spec[..dash_pos].to_owned();
+        let restrict_variant = model_spec[dash_pos + 1..].to_owned();
+        Ok(ModelImport {
+            name,
+            restrict_variant: Some(restrict_variant),
+        })
+    } else {
+        Ok(ModelImport {
+            name: model_spec.to_owned(),
+            restrict_variant: None,
+        })
+    }
 }
 
 // ── Stripping helpers ─────────────────────────────────────────────────────────
@@ -698,5 +736,31 @@ define myp = u d
         };
         let result = parse_process_string("p p > e+ e- [QCD]", &no_loop);
         assert!(matches!(result, Err(ParseError::LoopSpecDisabled)));
+    }
+
+    #[test]
+    fn test_model_import_basic() {
+        let card = r#"
+import model sm
+generate e+ e- > mu+ mu-
+"#;
+        let parsed = parse_proc_card(card, &opts()).expect("proc_card parse failed");
+        assert!(parsed.model.is_some());
+        let model = parsed.model.unwrap();
+        assert_eq!(model.name, "sm");
+        assert_eq!(model.restrict_variant, None);
+    }
+
+    #[test]
+    fn test_model_import_with_variant() {
+        let card = r#"
+import model sm-no_b_mass
+generate e+ e- > mu+ mu-
+"#;
+        let parsed = parse_proc_card(card, &opts()).expect("proc_card parse failed");
+        assert!(parsed.model.is_some());
+        let model = parsed.model.unwrap();
+        assert_eq!(model.name, "sm");
+        assert_eq!(model.restrict_variant, Some("no_b_mass".to_string()));
     }
 }
