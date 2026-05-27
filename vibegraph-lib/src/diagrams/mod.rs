@@ -6,13 +6,13 @@
 //! ## Typical usage
 //!
 //! ```rust,ignore
-//! use vibegraph_lib::diagrams::{parse_process_string, ParsingOptions, generate_from_process_spec};
-//! use vibegraph_lib::ufo::UFOModel;
+//! use vibegraph::diagrams::{parse_proc_card, ParsingOptions, generate_from_proc_card};
+//! use vibegraph::ufo::UFOModel;
 //!
-//! let model = UFOModel::load(ufo_path)?;
+//! let model = UFOModel::load(ufo_path, None).expect("failed to load UFO model");
 //! let opts  = ParsingOptions::default();
-//! let spec  = parse_process_string("e+ e- > mu+ mu-", &opts)?;
-//! let sets  = generate_from_process_spec(&spec, &model, &Default::default())?;
+//! let card  = parse_proc_card("generate e+ e- > mu+ mu-", &opts).expect("failed to parse process");
+//! let sets  = generate_from_proc_card(&card, &model).expect("diagram generation failed");
 //! println!("{} diagram sets generated", sets.len());
 //! ```
 
@@ -234,19 +234,24 @@ fn generate_sets_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::OnceLock;
 
-    fn sm_model() -> UFOModel {
-        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm");
-        UFOModel::load(&path, None)
-            .expect("SM UFO not found — run: git submodule update --init --recursive")
+    static UFO_MODEL: OnceLock<UFOModel> = OnceLock::new();
+
+    fn sm_model() -> &'static UFOModel {
+        UFO_MODEL.get_or_init(|| {
+            let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+            let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm");
+            UFOModel::load(&path, None)
+                .expect("SM UFO not found — run: git submodule update --init --recursive")
+        })
     }
 
     fn generate(process: &str) -> Vec<DiagramSet> {
         let opts = ParsingOptions::default();
         let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
         let model = sm_model();
-        generate_from_proc_card(&card, &model).unwrap()
+        generate_from_proc_card(&card, model).unwrap()
     }
 
     fn total_diagrams(sets: &[DiagramSet]) -> usize {
