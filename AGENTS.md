@@ -67,21 +67,40 @@ cargo build          # Compile the library and binary
 cargo test           # Run all tests
 ```
 
-### Extended Validation (Fortran HELAS Cross-check)
+### Extended Validation Tests
+
+Extended validation tests are comprehensive but slow integration tests, **not run by default**.
+They are gated behind the `extended-validation` feature and require specific dependencies.
+
+#### Fortran HELAS Cross-check
 
 The `helas_validation` test compares Rust HELAS amplitudes against Fortran77 reference data.
-This is a comprehensive but slow integration test, **not run by default**.
 
 **When to run:** after modifying `helas/` representation layer or amplitude computations.
 
 ```bash
 # Generate reference data (one-time per environment)
 pixi run -e helas-validation build-helas
-pixi run -e helas-validation gen-reference
+pixi run -e helas-validation generate-helas
 
 # Run the validation test
 pixi run -e helas-validation validate-helas
 ```
+
+#### MadGraph Diagram Validation
+
+The `validate_madgraph_diagrams` test compares vibegraph diagram enumeration against MadGraph5_aMC@NLO reference output.
+
+**When to run:** after modifying diagram enumeration logic or subprocess classification.
+
+```bash
+# Build MadGraph reference data and run validation
+pixi run -e madgraph validate-diagrams
+```
+
+Individual steps are also available:
+- `pixi run -e madgraph build-diagrams` — generate MadGraph output
+- `pixi run -e madgraph extract-diagrams` — extract diagram counts to JSON
 
 ## Agent Tooling Guidelines
 

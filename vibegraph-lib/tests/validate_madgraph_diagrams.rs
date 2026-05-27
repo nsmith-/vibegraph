@@ -2,6 +2,11 @@
 //!
 //! Each discovered process appears as a separate named test case via `libtest-mimic`.
 //!
+//! This test is part of extended validation and only runs with the `extended-validation` feature:
+//! ```sh
+//! cargo test --test validate_madgraph_diagrams --features extended-validation
+//! ```
+//!
 //! ## Prerequisites
 //!
 //! Run the build pipeline:
@@ -58,14 +63,14 @@ struct DiagramData {
 }
 
 fn print_madgraph_topologies(data: &DiagramData) {
-    eprintln!("=== MadGraph topologies: {} ===", data.process);
+    println!("=== MadGraph topologies: {} ===", data.process);
     let mut subprocesses: Vec<_> = data.topologies_by_subprocess.iter().collect();
     subprocesses.sort_by_key(|(name, _)| name.as_str());
     for (subprocess, diagrams) in subprocesses {
         if diagrams.is_empty() {
             continue;
         }
-        eprintln!("  subprocess: {subprocess}");
+        println!("  subprocess: {subprocess}");
         for diag in diagrams {
             let cluster_strs: Vec<String> = diag
                 .clusters
@@ -90,7 +95,7 @@ fn print_madgraph_topologies(data: &DiagramData) {
                     }
                 })
                 .collect();
-            eprintln!(
+            println!(
                 "    diagram {:2}: {}",
                 diag.diagram_id,
                 cluster_strs.join(", ")
@@ -221,13 +226,13 @@ fn count_mg_style_topologies(sets: &[DiagramSet], model: &UFOModel) -> u32 {
 /// Outgoing leg momenta already have their sign flipped, so the vector reads as the
 /// sum of incoming momenta flowing into the propagator.
 fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet]) {
-    eprintln!("\n=== vibegraph topologies: {process_str} ===");
+    println!("\n=== vibegraph topologies: {process_str} ===");
     let mut global_idx = 0usize;
     for set in sets {
         if set.diagrams.is_empty() {
             continue;
         }
-        eprintln!(
+        println!(
             "  subprocess: {} > {}",
             set.particles_in.join(" "),
             set.particles_out.join(" ")
@@ -258,9 +263,9 @@ fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet]) {
                 })
                 .collect();
             if prop_strs.is_empty() {
-                eprintln!("    diagram {global_idx:2}: <no internal propagators>");
+                println!("    diagram {global_idx:2}: <no internal propagators>");
             } else {
-                eprintln!("    diagram {global_idx:2}: {}", prop_strs.join(", "));
+                println!("    diagram {global_idx:2}: {}", prop_strs.join(", "));
             }
         }
     }
@@ -304,7 +309,7 @@ fn run_trial(json_path: &Path, mg_data: &DiagramData) -> Result<(), Failed> {
 
     print_madgraph_topologies(mg_data);
     print_diagram_topologies(&process_str, &sets);
-    eprintln!(
+    println!(
         "  vibegraph: {total_count} total diagrams ({unique_topology_count} unique topologies)"
     );
     if unique_topology_count != mg_data.total_diagrams {
