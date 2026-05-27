@@ -10,7 +10,7 @@ version = "0.1.0"
 
 [tasks]
 install-samply = "which samply || cargo install --locked samply"
-profile-diagrams = { cmd = "rm -f target/profiling/deps/validate_madgraph_diagrams-* && cargo test --profile profiling --test validate_madgraph_diagrams --no-run && find target/profiling/deps -name 'validate_madgraph_diagrams-*' -perm +111 | head -n 1 | xargs samply record", depends-on = ["install-samply"] }
+profile-diagrams = { cmd = "rm -f target/profiling/deps/validate_madgraph_diagrams-* && cargo test --profile profiling --test validate_madgraph_diagrams --features extended-validation --no-run && find target/profiling/deps -name 'validate_madgraph_diagrams-*' -perm +111 | head -n 1 | xargs samply record", depends-on = ["install-samply"] }
 
 
 # --- nougat: scientific PDF OCR ---
@@ -43,6 +43,8 @@ mg5amcnlo = "==3.5.7"
 build-diagrams = "bash validation/madgraph/build.sh"
 # Extract diagram counts and metadata from MadGraph output
 extract-diagrams = { cmd = "python validation/madgraph/extract_diagrams.py", depends-on = ["build-diagrams"] }
+# Full pipeline: extract MadGraph reference data, then run extended Rust tests
+validate-diagrams = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_madgraph_diagrams", depends-on = ["extract-diagrams"] }
 
 # --- helas-validation: Fortran77 HELAS compiled via f2py for amplitude cross-checks ---
 [feature.helas-validation.dependencies]
@@ -53,10 +55,10 @@ gfortran = "*"
 [feature.helas-validation.tasks]
 # Compile HELAS .F files into a Python extension module (helas_f.so)
 build-helas = "cd validation/helas && bash build.sh"
-# Run the reference generator: produces reference.npz and reference.csv
-gen-reference = { cmd = "cd validation/helas && python gen_reference.py", depends-on = ["build-helas"] }
+# Generate HELAS reference data: produces reference.npz and reference.csv
+generate-helas = { cmd = "cd validation/helas && python gen_reference.py", depends-on = ["build-helas"] }
 # Full pipeline: build f2py extension, generate reference data, then run extended Rust tests
-validate-helas = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test helas_validation", depends-on = ["gen-reference"] }
+validate-helas = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test helas_validation", depends-on = ["generate-helas"] }
 
 [environments]
 nougat = { features = ["nougat"], solve-group = "nougat" }

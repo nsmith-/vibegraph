@@ -33,3 +33,4 @@ serde_json = "1.0"
 [[test]]
 name = "validate_madgraph_diagrams"
 harness = false
+required-features = ["extended-validation"]
