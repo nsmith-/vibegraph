@@ -155,41 +155,63 @@ fn ufo_search_path() -> Result<PathBuf, &'static str> {
     }
 }
 
-/// Compute a topology fingerprint: for each diagram, collect and sort the
-/// propagator PDG codes, then return the list of these sorted PDG lists.
-fn compute_fingerprint(set: &DiagramSet) -> Vec<Vec<i32>> {
-    let mut fingerprint = Vec::new();
-
-    for diagram in set.diagrams.views() {
-        let mut pdg_codes: Vec<i32> = diagram
-            .propagators()
-            .map(|prop| prop.particle().pdg() as i32)
-            .collect();
-        pdg_codes.sort();
-        fingerprint.push(pdg_codes);
+/// Map a PDG code to a coarse particle-type class.
+///
+/// MadGraph groups subprocesses by initial/final state particle type rather than specific
+/// particle identity.  All light quarks and antiquarks (|pdg| 1–6) collapse to "quark";
+/// leptons/antileptons (|pdg| 11–16) collapse to "lepton"; gluon stays "gluon".
+/// This mirrors MadGraph's subprocess class naming convention (P1_gq_llq, P1_qq_llg, …).
+fn particle_type_class(pdg: i64) -> &'static str {
+    match pdg.unsigned_abs() {
+        21 => "gluon",
+        1..=6 => "quark",
+        11..=16 => "lepton",
+        22 => "photon",
+        23..=25 => "weak_boson",
+        _ => "other",
     }
-
-    fingerprint.sort();
-    fingerprint
 }
 
-/// Count unique topologies across diagram sets.
-/// Two diagram sets are considered the same topology if they have identical
-/// propagator PDG signatures. Returns the count of one representative per topology.
-fn count_unique_topologies(sets: &[DiagramSet]) -> u32 {
+/// Count diagrams using MadGraph-style subprocess class grouping.
+///
+/// Groups subprocess sets by (sorted initial particle type classes, sorted final particle
+/// type classes), takes the diagram count of one representative per class, and sums.
+/// All quarks/antiquarks of any flavor map to the same type class, reproducing MadGraph's
+/// behaviour of collapsing flavor-equivalent subprocesses into one representative
+/// (e.g. `g d > e+ e- d`, `g u > e+ e- u`, `g d~ > e+ e- d~` all belong to P1_gq_llq).
+fn count_mg_style_topologies(sets: &[DiagramSet], model: &UFOModel) -> u32 {
     use std::collections::HashMap;
 
-    let mut topology_groups: HashMap<Vec<Vec<i32>>, u32> = HashMap::new();
-
-    for set in sets {
-        let fingerprint = compute_fingerprint(set);
-        // Count the first representative of each topology
-        topology_groups
-            .entry(fingerprint)
-            .or_insert_with(|| set.diagrams.len() as u32);
+    // Build display-name → PDG lookup from the model's particle table.
+    let mut name_to_pdg: HashMap<String, i64> = HashMap::new();
+    for p in model.particles.values() {
+        name_to_pdg.insert(p.name.clone(), p.pdg_code);
     }
 
-    topology_groups.values().sum()
+    let classify = |name: &str| -> &'static str {
+        let pdg = name_to_pdg.get(name).copied().unwrap_or(0);
+        particle_type_class(pdg)
+    };
+
+    let mut groups: HashMap<(Vec<&'static str>, Vec<&'static str>), u32> = HashMap::new();
+
+    for set in sets {
+        if set.diagrams.is_empty() {
+            continue;
+        }
+        let mut in_types: Vec<&'static str> =
+            set.particles_in.iter().map(|n| classify(n)).collect();
+        in_types.sort_unstable();
+        let mut out_types: Vec<&'static str> =
+            set.particles_out.iter().map(|n| classify(n)).collect();
+        out_types.sort_unstable();
+
+        groups
+            .entry((in_types, out_types))
+            .or_insert(set.diagrams.len() as u32);
+    }
+
+    groups.values().sum()
 }
 
 /// Print the topology (propagator particles + momentum routing) for each diagram.
@@ -278,7 +300,7 @@ fn run_trial(json_path: &Path, mg_data: &DiagramData) -> Result<(), Failed> {
     let sets = generate_from_proc_card(&card, &model)
         .map_err(|e| Failed::from(format!("diagram generation failed: {e}")))?;
     let total_count: u32 = sets.iter().map(|s| s.diagrams.len() as u32).sum();
-    let unique_topology_count = count_unique_topologies(&sets);
+    let unique_topology_count = count_mg_style_topologies(&sets, &model);
 
     print_madgraph_topologies(mg_data);
     print_diagram_topologies(&process_str, &sets);

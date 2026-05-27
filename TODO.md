@@ -29,7 +29,7 @@ The end-to-end cross-section pipeline is complete (as of 2d8418a):
 ### `madgraph-diagram-validation` — Validate diagram enumeration
 Comprehensive test suite comparing vibegraph diagram counts against MadGraph5_aMC@NLO
 reference output. Covers 7 processes (default + constrained orders) at tree level.
-**Status:** 🔄 Infrastructure complete; counts diverge — root causes identified.
+**Status:** ✅ All 7 processes pass (2026-05-27).
 - MadGraph scripts for e⁺e⁻→μ⁺μ⁻, p p→l⁺l⁻, p p→l⁺l⁻j, p p→bb with order constraints
 - Python `extract_diagrams.py` reads `configs.inc` (IFOREST/SPROP/TPRID) for both diagram
   counts and per-diagram topology (cluster structure + propagator PDG codes).
@@ -45,13 +45,19 @@ reference output. Covers 7 processes (default + constrained orders) at tree leve
    now discovers the minimum WEIGHTED order iteratively (MadGraph algorithm) and filters diagrams
    above that threshold.  For QCD-dominant processes (e.g. `p p > b b~`), this removes photon/Z
    s-channel diagrams from quark initial states (QED=2 → WEIGHTED=4 > QCD=2 → WEIGHTED=2).
-3. **Subprocess expansion / flavor deduplication** (remaining): vibegraph counts d and s quark
-   propagators as different topologies; MadGraph groups them as a single `P1_qq_*` representative.
-   Tests currently pass because the overcount of flavor-distinct subprocesses coincidentally matches
-   the MadGraph total (e.g. pp→l⁺l⁻j: dd~(4) + ss~(4) = 8 = gq(4) + qq~(4)).  Properly fixing
-   this requires flavor-blind topology fingerprinting and correctly generating `gq` initial states.
-4. **`gq` initial states missing** (remaining): feyngraph does not generate diagrams for mixed
-   gluon-quark initial states (e.g. `g d > e⁺ e⁻ d`); cause unknown.  Passes by coincidence.
+3. **Subprocess expansion / flavor deduplication** ✅ resolved: validation test now uses
+   MadGraph-style subprocess class grouping: each set is keyed by (sorted initial particle-type
+   classes, sorted final particle-type classes) where all quarks/antiquarks → "quark", all
+   leptons/antileptons → "lepton", gluon → "gluon".  One representative diagram count per class.
+   Implemented in `count_mg_style_topologies` in `validate_madgraph_diagrams.rs`.
+4. **`gq` initial states missing** ✅ resolved: root cause was two bugs: (a) `parse_particles`
+   skipped `.anti()` definitions → anti-quark python-names absent → CKM-zero vertices mis-resolved
+   to single-particle entries like `["u"]`, over-broadly rejecting all u/c quark diagrams; fixed by
+   adding `.anti()` handling to `parse_particles` (now exposed as `Particle::make_anti`; forward
+   refs in `.anti()` now return `ParticleError` instead of silently dropping the entry).
+   (b) `generate_sets_inner` deduped on `sorted_initial` only → first final-state combo for
+   `["d","g"]` (i.e. `g d > e⁺ e⁻ g`, 0 diagrams) blocked the correct `g d > e⁺ e⁻ d`; fixed
+   by deduplicating on `(sorted_initial, final_state)` pair.
 
 ### `process-grammar` — Process specification parser
 PEG grammar for MadGraph-style process strings (`"e+ e- > mu+ mu-"`).

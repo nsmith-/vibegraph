@@ -1,6 +1,6 @@
 # vibegraph — Research & Implementation Progress
 
-**Last updated:** 2026-05-26 (post-IndexMap/parser refactor)
+**Last updated:** 2026-05-27 (diagram validation complete)
 
 This document cross-references `TODO.md` with research notes to track which design decisions are finalized vs. in-flight vs. archived.
 
