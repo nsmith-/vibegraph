@@ -307,8 +307,8 @@ mod tests {
         assert_eq!(total_diagrams(&sets), 4);
     }
 
-    /// uu~ → dd~: automatic WEIGHTED ordering selects only the QCD (gluon) diagram.
-    /// Photon and Z exchange (WEIGHTED=4) are excluded at the minimum WEIGHTED=2.
+    /// uu~ → dd~: automatic WEIGHTED ordering selects only the QCD (gluon) s-channel diagram.
+    /// γ, Z, and W+ exchange (all WEIGHTED=4) are excluded at the minimum WEIGHTED=2.
     #[test]
     fn test_generate_uux_to_ddx_weighted_lo() {
         let sets = generate("u u~ > d d~");
@@ -317,17 +317,30 @@ mod tests {
             1,
             "only s-channel gluon at minimum WEIGHTED order"
         );
+        let prop_name = sets[0]
+            .diagrams
+            .views()
+            .next()
+            .unwrap()
+            .propagators()
+            .next()
+            .unwrap()
+            .particle()
+            .name()
+            .to_string();
+        assert_eq!(prop_name, "g", "single diagram should be s-channel gluon");
     }
 
-    /// uu~ → dd~ QED<=2: explicit constraint admits g (QED=0), γ, Z, and H (all QED=2).
-    /// Higgs couples to quarks via Yukawa (QED=1 per vertex → QED=2 total).
+    /// uu~ → dd~ QED<=2: explicit constraint admits s-channel g (QED=0) and s-channel
+    /// γ, Z plus t-channel W+ via CKM (all QED=2). Higgs exchange is absent because
+    /// the light-quark Yukawa couplings are zero in the SM restrict_default.dat.
     #[test]
     fn test_generate_uux_to_ddx_explicit_qed() {
         let sets = generate("u u~ > d d~ QED<=2");
         assert_eq!(
             total_diagrams(&sets),
             4,
-            "gluon + photon + Z + Higgs exchange"
+            "gluon + photon + Z (s-channel) + W+ (t-channel CKM)"
         );
     }
 
