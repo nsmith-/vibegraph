@@ -43,6 +43,7 @@ pub enum UfoError {
 /// Each collection is an `IndexMap<String, T>` keyed by the Python variable name,
 /// preserving insertion order and providing O(1) name→index and name→value lookups
 /// without a separate index map.
+#[derive(Clone)]
 pub struct UFOModel {
     pub particles: IndexMap<String, Particle>,
     pub lorentz: IndexMap<String, LorentzStructure>,
@@ -51,11 +52,17 @@ pub struct UFOModel {
     pub params: ParameterSet,
     /// FeynGraph topology model — retained for diagram-level topology queries.
     pub topo: TopoModel,
+    /// Particle sets (sorted) of zero-coupling vertices, used for diagram filtering.
+    /// Populated only when a restrict card is loaded.
+    pub zero_coupling_vertices: Vec<Vec<String>>,
 }
 
 impl UFOModel {
     /// Load a UFO model from a directory path.
-    pub fn load(path: &Path) -> Result<Self, UfoError> {
+    ///
+    /// If `restrict_card` is `None`, automatically looks for `restrict_default.dat`
+    /// in the UFO directory. If found, it is used for vertex pruning (zero-coupling vertices are removed).
+    pub fn load(path: &Path, restrict_card: Option<&Path>) -> Result<Self, UfoError> {
         let read = |name: &str| -> Result<String, UfoError> {
             std::fs::read_to_string(path.join(name)).map_err(|e| UfoError::Io {
                 file: path.join(name).display().to_string(),
@@ -89,13 +96,50 @@ impl UFOModel {
 
         let topo = TopoModel::from_ufo(path)?;
 
-        let vertices: IndexMap<String, Vertex> = raw_vertices
+        let mut vertices: IndexMap<String, Vertex> = raw_vertices
             .into_iter()
             .map(|rv| {
                 let v = resolve_vertex(rv, &particles, &lorentz, &couplings);
                 (v.name.clone(), v)
             })
             .collect();
+
+        // Load restrict card for vertex pruning
+        let restrict_card_path = match restrict_card {
+            Some(path) => Some(path.to_path_buf()),
+            None => {
+                let default = path.join("restrict_default.dat");
+                if default.exists() {
+                    Some(default)
+                } else {
+                    None
+                }
+            }
+        };
+
+        let mut zero_coupling_vertices = Vec::new();
+
+        if let Some(restrict_path) = restrict_card_path {
+            let restrict_values =
+                evaluate_couplings_for_restrict(&params, &couplings, &restrict_path)?;
+
+            // Track zero-coupling vertices before filtering, using display names (as feyngraph uses them)
+            for (_name, vertex) in &vertices {
+                if is_zero_coupling_vertex(vertex, &couplings, &restrict_values) {
+                    let mut particle_names: Vec<String> = vertex
+                        .particles
+                        .iter()
+                        .map(|pid| particles[pid.0].name.clone()) // Use display name, not python_name
+                        .collect();
+                    particle_names.sort();
+                    zero_coupling_vertices.push(particle_names);
+                }
+            }
+
+            vertices.retain(|_name, vertex| {
+                !is_zero_coupling_vertex(vertex, &couplings, &restrict_values)
+            });
+        }
 
         Ok(UFOModel {
             particles,
@@ -104,7 +148,20 @@ impl UFOModel {
             vertices,
             params,
             topo,
+            zero_coupling_vertices,
         })
+    }
+
+    /// Load with automatic restrict card discovery (equivalent to `load(path, None)`).
+    pub fn load_auto(path: &Path) -> Result<Self, UfoError> {
+        Self::load(path, None)
+    }
+
+    /// Check if a feyngraph Vertex matches any of the zero-coupling vertices.
+    pub fn is_zero_coupling_vertex(&self, particle_names: &[&str]) -> bool {
+        let mut names: Vec<String> = particle_names.iter().map(|s| s.to_string()).collect();
+        names.sort();
+        self.zero_coupling_vertices.contains(&names)
     }
 
     // ── Name → index lookup ───────────────────────────────────────────────────
@@ -280,6 +337,48 @@ impl EvaluatedModel<'_> {
     }
 }
 
+/// Evaluate coupling constants under the parameters specified by a restrict card.
+fn evaluate_couplings_for_restrict(
+    params: &ParameterSet,
+    couplings: &IndexMap<String, Coupling>,
+    restrict_path: &std::path::Path,
+) -> Result<HashMap<CouplingId, Complex64>, UfoError> {
+    let restrict_card = ParamCard::from_file(restrict_path).map_err(|e| UfoError::Io {
+        file: restrict_path.display().to_string(),
+        cause: std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("restrict card parse error: {}", e),
+        ),
+    })?;
+
+    let param_values = params.evaluate(&restrict_card);
+
+    let coupling_values: HashMap<CouplingId, Complex64> = couplings
+        .iter()
+        .enumerate()
+        .map(|(i, (_, c))| {
+            let val = expr::eval(&c.value, &param_values);
+            (CouplingId(i), val)
+        })
+        .collect();
+
+    Ok(coupling_values)
+}
+
+/// Check if a vertex has all couplings equal to zero under the restrict parameters.
+fn is_zero_coupling_vertex(
+    vertex: &Vertex,
+    _couplings: &IndexMap<String, Coupling>,
+    restrict_values: &HashMap<CouplingId, Complex64>,
+) -> bool {
+    vertex.couplings.values().all(|coup_id| {
+        restrict_values
+            .get(coup_id)
+            .map(|v| v.norm() < 1e-20)
+            .unwrap_or(true)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,7 +402,7 @@ mod tests {
             eprintln!("loop_sm UFO not found — skipping");
             return;
         }
-        let result = UFOModel::load(&path);
+        let result = UFOModel::load(&path, None);
         if let Err(UfoError::FeynGraph(_)) = &result {
             eprintln!(
                 "loop_sm: FeynGraph topology parser does not support loop-level \
@@ -329,7 +428,7 @@ mod tests {
             eprintln!("MSSM_SLHA2 UFO not found — skipping");
             return;
         }
-        let model = UFOModel::load(&path).expect("failed to load MSSM_SLHA2 UFO");
+        let model = UFOModel::load(&path, None).expect("failed to load MSSM_SLHA2 UFO");
         let empty_card = ParamCard::from_str("").unwrap();
         let ev = model.evaluate(&empty_card);
 
@@ -355,7 +454,7 @@ mod tests {
         let card = slha::ParamCard::from_file(&param_card_path)
             .expect("failed to load taudecay param_card.dat");
 
-        let result = UFOModel::load(&path);
+        let result = UFOModel::load(&path, None);
         match &result {
             Err(UfoError::Lorentz(LorentzError::UnknownOperator(op))) => {
                 eprintln!("taudecay_UFO: uses unsupported Lorentz operator '{op}' — skipping");
@@ -387,7 +486,7 @@ mod tests {
             eprintln!("SM UFO not found at {:?} — skipping integration test", path);
             return;
         }
-        let model = UFOModel::load(&path).expect("failed to load SM UFO");
+        let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
 
         let empty_card = ParamCard::from_str("").unwrap();
         let ev = model.evaluate(&empty_card);
@@ -420,7 +519,7 @@ mod tests {
         if !path.exists() {
             return;
         }
-        let model = UFOModel::load(&path).expect("failed to load SM UFO");
+        let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
         let empty_card = ParamCard::from_str("").unwrap();
         let mut ev = model.evaluate(&empty_card);
 
