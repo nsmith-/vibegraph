@@ -40,14 +40,42 @@ pub struct Particle {
     pub is_self_conjugate: bool,
 }
 
+impl Particle {
+    /// Return the antiparticle, assigning `python_name` as its variable name.
+    pub fn make_anti(&self, python_name: impl Into<String>) -> Particle {
+        Particle {
+            python_name: python_name.into(),
+            name: self.antiname.clone(),
+            antiname: self.name.clone(),
+            pdg_code: -self.pdg_code,
+            spin: self.spin,
+            color: -self.color,
+            mass_param: self.mass_param.clone(),
+            width_param: self.width_param.clone(),
+            charge: -self.charge,
+            texname: self.antitexname.clone(),
+            antitexname: self.texname.clone(),
+            ghost_number: self.ghost_number,
+            is_self_conjugate: self.is_self_conjugate,
+        }
+    }
+}
+
 /// Parse `particles.py` content into a list of [`Particle`]s.
 ///
-/// Only direct `Particle(...)` constructor assignments are returned.
-/// `.anti()` shorthand and attribute assignments (e.g. loop_sm's
-/// `.counterterm = ...`) are silently skipped.
+/// Handles both direct `Particle(...)` constructor assignments and the
+/// `.anti()` shorthand (`u__tilde__ = u.anti()`).  Attribute assignments
+/// (e.g. loop_sm's `.counterterm = ...`) are silently skipped.
+///
+/// Anti-particle entries are created so vertex resolution can look up all
+/// particle python-names, including those defined via `.anti()`.
 pub fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
+    use std::collections::HashMap;
+
     let stmts = parse_stmts(src).map_err(|e| ParticleError::Parse(e.to_string()))?;
-    let mut particles = Vec::new();
+    let mut particles: Vec<Particle> = Vec::new();
+    // Index base python_name → position in particles, for resolving .anti() calls.
+    let mut by_python_name: HashMap<String, usize> = HashMap::new();
 
     for stmt in &stmts {
         let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
@@ -60,44 +88,78 @@ pub fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
         };
         let python_name = lhs_id.as_str().to_owned();
 
-        // Only handle `Particle(...)` constructor calls.
-        let ast::Expr::Call(ast::ExprCall { func, keywords, .. }) = value.as_ref() else {
-            continue;
-        };
-        if call_func_name(func) != Some("Particle") {
-            continue;
+        match value.as_ref() {
+            // Direct constructor: `x = Particle(...)`
+            ast::Expr::Call(ast::ExprCall { func, keywords, .. })
+                if call_func_name(func) == Some("Particle") =>
+            {
+                let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.clone());
+                let antiname = kwarg_str(keywords, "antiname").unwrap_or_else(|| name.clone());
+                let pdg_code = kwarg_int(keywords, "pdg_code").unwrap_or(0);
+                let spin = kwarg_int(keywords, "spin").unwrap_or(1) as i32;
+                let color = kwarg_int(keywords, "color").unwrap_or(1) as i32;
+                let charge = kwarg_float(keywords, "charge").unwrap_or(0.0);
+                let texname = kwarg_str(keywords, "texname").unwrap_or_default();
+                let antitexname = kwarg_str(keywords, "antitexname").unwrap_or_default();
+                let ghost_number = kwarg_int(keywords, "GhostNumber").unwrap_or(0) as i32;
+                let mass_param =
+                    extract_param_ref(keywords, "mass").unwrap_or_else(|| "ZERO".to_owned());
+                let width_param =
+                    extract_param_ref(keywords, "width").unwrap_or_else(|| "ZERO".to_owned());
+                let is_self_conjugate = name == antiname;
+
+                by_python_name.insert(python_name.clone(), particles.len());
+                particles.push(Particle {
+                    python_name,
+                    name,
+                    antiname,
+                    pdg_code,
+                    spin,
+                    color,
+                    mass_param,
+                    width_param,
+                    charge,
+                    texname,
+                    antitexname,
+                    ghost_number,
+                    is_self_conjugate,
+                });
+            }
+
+            // Anti-particle shorthand: `x = y.anti()`
+            ast::Expr::Call(ast::ExprCall {
+                func,
+                args,
+                keywords,
+                ..
+            }) if args.is_empty()
+                && keywords.is_empty()
+                && matches!(func.as_ref(),
+                        ast::Expr::Attribute(ast::ExprAttribute { attr, .. })
+                        if attr.as_str() == "anti") =>
+            {
+                let base_name = match func.as_ref() {
+                    ast::Expr::Attribute(ast::ExprAttribute { value, .. }) => {
+                        super::ast_util::extract_name(value)
+                    }
+                    _ => None,
+                };
+                match base_name.and_then(|n| by_python_name.get(n)) {
+                    Some(base) => {
+                        let anti = particles[*base].make_anti(python_name.clone());
+                        by_python_name.insert(python_name, particles.len());
+                        particles.push(anti);
+                    }
+                    None => {
+                        return Err(ParticleError::Parse(format!(
+                            "anti-particle '{python_name}' references an undefined base particle"
+                        )));
+                    }
+                }
+            }
+
+            _ => {}
         }
-
-        let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.clone());
-        let antiname = kwarg_str(keywords, "antiname").unwrap_or_else(|| name.clone());
-        let pdg_code = kwarg_int(keywords, "pdg_code").unwrap_or(0);
-        let spin = kwarg_int(keywords, "spin").unwrap_or(1) as i32;
-        let color = kwarg_int(keywords, "color").unwrap_or(1) as i32;
-        let charge = kwarg_float(keywords, "charge").unwrap_or(0.0);
-        let texname = kwarg_str(keywords, "texname").unwrap_or_default();
-        let antitexname = kwarg_str(keywords, "antitexname").unwrap_or_default();
-        let ghost_number = kwarg_int(keywords, "GhostNumber").unwrap_or(0) as i32;
-
-        let mass_param = extract_param_ref(keywords, "mass").unwrap_or_else(|| "ZERO".to_owned());
-        let width_param = extract_param_ref(keywords, "width").unwrap_or_else(|| "ZERO".to_owned());
-
-        let is_self_conjugate = name == antiname;
-
-        particles.push(Particle {
-            python_name,
-            name,
-            antiname,
-            pdg_code,
-            spin,
-            color,
-            mass_param,
-            width_param,
-            charge,
-            texname,
-            antitexname,
-            ghost_number,
-            is_self_conjugate,
-        });
     }
 
     Ok(particles)
@@ -184,11 +246,14 @@ W__minus__ = W__plus__.anti()
     }
 
     #[test]
-    fn test_anti_skipped() {
+    fn test_anti_resolved() {
         let ps = parse_particles(SAMPLE).unwrap();
-        // W__minus__ = W__plus__.anti() should be skipped
-        assert_eq!(ps.len(), 3);
-        assert!(ps.iter().all(|p| p.python_name != "W__minus__"));
+        // W__minus__ = W__plus__.anti() should now be included as an anti-particle entry.
+        assert_eq!(ps.len(), 4);
+        let wm = ps.iter().find(|p| p.python_name == "W__minus__").unwrap();
+        assert_eq!(wm.name, "W-");
+        assert_eq!(wm.antiname, "W+");
+        assert_eq!(wm.pdg_code, -24);
     }
 
     const LOOP_SM_FRAGMENT: &str = r#"

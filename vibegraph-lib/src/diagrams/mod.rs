@@ -148,15 +148,21 @@ fn generate_sets_inner(
     max_weighted: Option<usize>,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     let mut sets = Vec::new();
-    let mut seen_initials = std::collections::HashSet::new();
+    // Deduplicate on (sorted_initial, final_state): skip only when both the
+    // initial state (as an unordered set) AND the final state are identical to
+    // a previously-seen process.  Deduplicating on the initial state alone
+    // would silently drop subprocesses like `g d > e+ e- d` when the first
+    // final-state combo tried for that initial (e.g. `g d > e+ e- g`) has no
+    // diagrams at the active WEIGHTED bound.
+    let mut seen_processes: std::collections::HashSet<(Vec<String>, Vec<String>)> =
+        std::collections::HashSet::new();
 
     for concrete in expand_process(spec, aliases) {
-        // Deduplicate mirror processes: if initial state is a permutation
-        // of one we've seen, skip it (same diagrams)
         let mut initial_sorted = concrete.initial.clone();
         initial_sorted.sort();
-        if !seen_initials.insert(initial_sorted) {
-            continue; // Already processed this initial state (permutation)
+        let key = (initial_sorted, concrete.final_state.clone());
+        if !seen_processes.insert(key) {
+            continue;
         }
 
         let mut sel = build_selector(&concrete);
