@@ -234,15 +234,23 @@ fn generate_sets_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
-    fn ufo_search_path() -> PathBuf {
+    fn sm_model() -> UFOModel {
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models");
-        if !path.exists() {
-            eprintln!("SM UFO not found — skipping integration test");
-        }
-        path
+        let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm");
+        UFOModel::load(&path, None)
+            .expect("SM UFO not found — run: git submodule update --init --recursive")
+    }
+
+    fn generate(process: &str) -> Vec<DiagramSet> {
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+        let model = sm_model();
+        generate_from_proc_card(&card, &model).unwrap()
+    }
+
+    fn total_diagrams(sets: &[DiagramSet]) -> usize {
+        sets.iter().map(|s| s.diagrams.len()).sum()
     }
 
     #[test]
@@ -262,18 +270,97 @@ mod tests {
         assert_eq!(table.expand_name("myp"), vec!["u", "d"]);
     }
 
-    /// Integration: generate e+ e- > mu+ mu- against SM UFO.
-    /// Skipped if the SM UFO model is not present.
+    // ── SM diagram-count tests ────────────────────────────────────────────────
+    // Expected counts validated against MadGraph5_aMC@NLO reference output.
+    // All use automatic WEIGHTED coupling-order selection unless noted.
+
+    /// e+e- → μ+μ-: two s-channel diagrams (γ and Z).
     #[test]
     fn test_generate_ee_to_mumu() {
-        let opts = ParsingOptions::default();
-        let spec = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
-        let path = ufo_search_path().join("sm");
-        let model = UFOModel::load(&path, None).expect("SM UFO load failed");
-        let sets = generate_from_proc_card(&spec, &model).expect("Failed to generate model");
-        assert_eq!(sets.len(), 1, "should be exactly 1 concrete process");
-        // At LO in QED there is exactly 1 tree-level diagram for e+ e- > mu+ mu-.
-        let n = sets[0].diagrams.len();
-        assert!(n >= 1, "expected at least 1 diagram, got {n}");
+        let sets = generate("e+ e- > mu+ mu-");
+        assert_eq!(sets.len(), 1);
+        assert_eq!(
+            sets[0].diagrams.len(),
+            2,
+            "expected γ and Z exchange diagrams"
+        );
+    }
+
+    /// uu~ → gg: three pure-QCD diagrams (s-channel 3g vertex, t- and u-channel quark).
+    #[test]
+    fn test_generate_uux_to_gg() {
+        let sets = generate("u u~ > g g");
+        assert_eq!(total_diagrams(&sets), 3);
+    }
+
+    /// gg → uu~: crossing of uu~ → gg, also 3 diagrams.
+    #[test]
+    fn test_generate_gg_to_uux() {
+        let sets = generate("g g > u u~");
+        assert_eq!(total_diagrams(&sets), 3);
+    }
+
+    /// gg → gg: four pure-QCD diagrams (s-, t-, u-channel gluon + 4-gluon contact).
+    #[test]
+    fn test_generate_gg_to_gg() {
+        let sets = generate("g g > g g");
+        assert_eq!(total_diagrams(&sets), 4);
+    }
+
+    /// uu~ → dd~: automatic WEIGHTED ordering selects only the QCD (gluon) diagram.
+    /// Photon and Z exchange (WEIGHTED=4) are excluded at the minimum WEIGHTED=2.
+    #[test]
+    fn test_generate_uux_to_ddx_weighted_lo() {
+        let sets = generate("u u~ > d d~");
+        assert_eq!(
+            total_diagrams(&sets),
+            1,
+            "only s-channel gluon at minimum WEIGHTED order"
+        );
+    }
+
+    /// uu~ → dd~ QED<=2: explicit constraint admits g (QED=0), γ, Z, and H (all QED=2).
+    /// Higgs couples to quarks via Yukawa (QED=1 per vertex → QED=2 total).
+    #[test]
+    fn test_generate_uux_to_ddx_explicit_qed() {
+        let sets = generate("u u~ > d d~ QED<=2");
+        assert_eq!(
+            total_diagrams(&sets),
+            4,
+            "gluon + photon + Z + Higgs exchange"
+        );
+    }
+
+    /// Required s-channel: e+e- > Z > μ+μ-.
+    /// Momentum-flow filtering is not yet implemented in feyngraph (see selector.rs TODO),
+    /// so the Z requirement is currently ignored and both γ and Z diagrams are returned.
+    #[test]
+    #[ignore = "required_s_channel filtering not yet implemented (selector.rs TODO)"]
+    fn test_generate_ee_to_mumu_required_z() {
+        let sets = generate("e+ e- > Z > mu+ mu-");
+        assert_eq!(
+            sets[0].diagrams.len(),
+            1,
+            "only Z exchange when Z is required s-channel"
+        );
+    }
+
+    /// Forbidden mediators: e+e- → μ+μ- with both γ and Z forbidden gives zero diagrams.
+    #[test]
+    fn test_no_diagrams_when_both_mediators_forbidden() {
+        let sets = generate("e+ e- > mu+ mu- / a / Z");
+        assert_eq!(total_diagrams(&sets), 0);
+    }
+
+    /// Forbidden propagator: forbidding u as propagator in uu~ → gg removes
+    /// the t- and u-channel diagrams, leaving only the s-channel gluon diagram.
+    #[test]
+    fn test_forbidden_u_propagator_in_uux_to_gg() {
+        let sets = generate("u u~ > g g / u");
+        assert_eq!(
+            total_diagrams(&sets),
+            1,
+            "only s-channel gluon without quark propagators"
+        );
     }
 }
