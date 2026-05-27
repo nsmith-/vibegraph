@@ -97,44 +97,15 @@ separate task.
 feyngraph's UFO parser, which is known to fail on `loop_sm` and other non-standard
 UFOs. After removal, vibegraph owns the entire parsing pipeline.
 
-### 1.4 Side-task: parse `import model` in proc_card
+### 1.4 Side-task: parse `import model` in proc_card ✅ Done
 
-`parse_proc_card` currently handles `generate`, `add process`, and `define`, but
-silently skips `import model sm` / `import model sm-no_b_mass`.
+`ParsedProcCard` and `ModelImport` are implemented. Parsing rule: `import model sm-no_b_mass`
+splits on the first `-` → name `"sm"`, restrict variant `"no_b_mass"`.
 
-**Changes to `ParsedProcCard`**:
-```rust
-pub struct ParsedProcCard {
-    pub model: Option<ModelImport>,   // NEW
-    pub defines: Vec<MultiparticleDef>,
-    pub processes: Vec<ProcessSpec>,
-}
+`validate_madgraph_diagrams.rs` already uses `parse_proc_card` directly on `.mg5` script content.
 
-pub struct ModelImport {
-    pub name: String,               // e.g. "sm"
-    pub restrict_variant: Option<String>, // e.g. "no_b_mass" from "sm-no_b_mass"
-}
-```
-
-**Changes to `ParsingOptions`** (or a new companion config struct at the
-proc-card level):
-```rust
-pub struct ProcCardConfig {
-    pub parsing: ParsingOptions,
-    pub ufo_search_path: Option<PathBuf>,       // directory that contains model subdirectory
-    pub restrict_card_path: Option<PathBuf>,    // override restrict card location
-}
-```
-
-**Parsing rule**: on a line like `import model sm-no_b_mass`, split on `-` after
-`sm` (or the model name) to get the restrict variant. Maps to:
-`<ufo_search_path>/<model_name>/restrict_<variant>.dat`.
-
-**Fix `validate_madgraph_diagrams.rs`**: remove `extract_process_from_mg5()` and
-`infer_script_path()`. Instead, call `parse_proc_card(script_content, &opts)` on
-the `.mg5` file contents. The existing `parse_proc_card` handles `generate`,
-`add process`, and `define` correctly. The `model` field from `import model` can
-be used to load the correct UFO model and restrict card.
+A `vibegraph_lib::config::GlobalConfig` module (to wire `ParsedProcCard` → `UFOModel` loading
+for the CLI) is designed but not yet implemented — tracked in TODO.md as `global-config`.
 
 ---
 
@@ -206,15 +177,27 @@ as a future performance item.
 1. **Problem 1, step 1.2–1.3 (fallback path)**: Load restrict card; filter
    vibegraph vertex list; use DiagramSelector custom function to exclude
    zero-coupling diagrams from feyngraph output. Run validation tests.
+   ✅ Done (restrict card + zero-coupling filter via custom_function).
 
 2. **Problem 1, step 1.4**: Add `import model` parsing; remove
    `extract_process_from_mg5` from the validation test.
+   ✅ Done.
 
-3. **Problem 2, step 2.1**: Mirror process check; fix if double-counting.
+3. **WEIGHTED coupling order filter** ✅ Done:
+   - Parse `coupling_orders.py` into `UFOModel::order_hierarchy: HashMap<String, u32>`.
+   - When `ProcessSpec::coupling_constraints` is empty, `generate_from_process_spec` iterates
+     WEIGHTED starting at `(n_ext-2)*min_hierarchy` and stops at the first level that produces
+     any diagrams (mirrors MadGraph's `find_optimal_process_orders`).
+   - Filter applied via `DiagramSelector::add_custom_function` using `DiagramView::order()`.
+   - Result: `pp > b b~` now gives 4 unique topologies (was 6) matching MadGraph reference.
 
-4. **Problem 2, step 2.2**: Topology-fingerprint dedup; update validation test
-   comparisons.
+4. **Problem 2, step 2.1**: Mirror process check; fix if double-counting.
+   ✅ Done — `seen_initials` HashSet in `generate_from_process_spec`.
 
-5. **Problem 1, full model replacement (deferred)**: Implement spin_map derivation
+5. **Problem 2, step 2.2**: Topology-fingerprint dedup; update validation test comparisons.
+   ⏳ Partially done — fingerprinting by propagator PDG codes; flavor-blind grouping not yet
+   implemented.  Tests pass by coincidence for `pp > l+l-j`.
+
+6. **Problem 1, full model replacement (deferred)**: Implement spin_map derivation
    from `LorentzExpr`, build `TopoModel` from vibegraph data directly, remove
    `TopoModel::from_ufo()`. Track as `feyngraph-ufo-replace` in TODO.md.

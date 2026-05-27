@@ -34,7 +34,7 @@ use thiserror::Error;
 use crate::ufo::UFOModel;
 
 use alias::expand_process;
-use parse::{parse_proc_card as inner_parse_proc_card, parse_process_string as inner_parse};
+use parse::parse_proc_card as inner_parse_proc_card;
 use selector::build_selector;
 
 // ── Error ─────────────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ pub fn parse_proc_card_file(
     opts: &ParsingOptions,
 ) -> Result<ParsedProcCard, DiagramError> {
     let content = std::fs::read_to_string(path)?;
-    Ok(inner_parse_proc_card(&content, opts)?)
+    parse_proc_card(content.as_str(), opts)
 }
 
 /// Parse a `proc_card.dat` from a string.
@@ -77,17 +77,6 @@ pub fn parse_proc_card(
     opts: &ParsingOptions,
 ) -> Result<ParsedProcCard, DiagramError> {
     Ok(inner_parse_proc_card(content, opts)?)
-}
-
-/// Parse a single MadGraph process string (e.g. `"p p > e+ e- j QCD<=2 @1"`).
-pub fn parse_process_string(s: &str, opts: &ParsingOptions) -> Result<ProcessSpec, DiagramError> {
-    Ok(inner_parse(s, opts)?)
-}
-
-/// Build an `AliasTable` seeded with default SM aliases plus the `define` commands
-/// from a parsed proc_card.
-pub fn build_alias_table(defines: &[MultiparticleDef]) -> AliasTable {
-    AliasTable::from_defines(defines)
 }
 
 // ── Diagram generation API ────────────────────────────────────────────────────
@@ -100,7 +89,7 @@ pub fn generate_from_proc_card(
     proc_card: &ParsedProcCard,
     model: &UFOModel,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
-    let aliases = build_alias_table(&proc_card.defines);
+    let aliases = AliasTable::from_defines(&proc_card.defines);
     let mut sets = Vec::new();
     for spec in &proc_card.processes {
         sets.extend(generate_from_process_spec(spec, model, &aliases)?);
@@ -112,10 +101,51 @@ pub fn generate_from_proc_card(
 ///
 /// Expands multiparticle aliases, builds a `DiagramSelector` for each concrete
 /// particle assignment, then calls `feyngraph::generate_diagrams`.
-pub fn generate_from_process_spec(
+///
+/// When the process has no explicit coupling constraints, the WEIGHTED coupling
+/// order filter is applied automatically: the minimum WEIGHTED value that produces
+/// any diagrams is found iteratively, then only diagrams at that value are kept.
+/// This mirrors MadGraph's default behaviour of selecting the lowest perturbative
+/// order.  WEIGHTED = Σ_i (hierarchy_i × n_i) where hierarchy comes from the
+/// UFO `coupling_orders.py` (e.g. QCD→1, QED→2 in the SM).
+fn generate_from_process_spec(
     spec: &ProcessSpec,
     model: &UFOModel,
     aliases: &AliasTable,
+) -> Result<Vec<DiagramSet>, DiagramError> {
+    if spec.coupling_constraints.is_empty() {
+        // No explicit constraints: discover the minimum WEIGHTED order.
+        let n_ext = spec.initial.len() + spec.final_state.len();
+        let min_hier = model.order_hierarchy.values().copied().min().unwrap_or(1) as usize;
+        let max_hier = model.order_hierarchy.values().copied().max().unwrap_or(2) as usize;
+        let min_w = (n_ext - 2) * min_hier;
+        let max_w = (n_ext - 2) * max_hier;
+
+        let mut w = min_w;
+        loop {
+            let sets = generate_sets_inner(spec, model, aliases, Some(w))?;
+            if sets.iter().any(|s| !s.diagrams.is_empty()) {
+                return Ok(sets);
+            }
+            if w >= max_w {
+                return Ok(sets);
+            }
+            w += 1;
+        }
+    } else {
+        generate_sets_inner(spec, model, aliases, None)
+    }
+}
+
+/// Inner generation loop: expand aliases, deduplicate mirror processes, and call
+/// feyngraph for each concrete subprocess.  `max_weighted` (when `Some`) adds an
+/// extra diagram filter that rejects any diagram whose WEIGHTED order exceeds the
+/// given bound.
+fn generate_sets_inner(
+    spec: &ProcessSpec,
+    model: &UFOModel,
+    aliases: &AliasTable,
+    max_weighted: Option<usize>,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     let mut sets = Vec::new();
     let mut seen_initials = std::collections::HashSet::new();
@@ -156,6 +186,22 @@ pub fn generate_from_process_spec(
             sel.add_custom_function(filter_fn);
         }
 
+        // WEIGHTED coupling-order filter: reject diagrams whose weighted sum exceeds max_weighted.
+        if let Some(max_w) = max_weighted {
+            use std::sync::Arc;
+            let hierarchy = model.order_hierarchy.clone();
+            let weighted_fn: Arc<
+                dyn Fn(&feyngraph::diagram::view::DiagramView) -> bool + Send + Sync,
+            > = Arc::new(move |diag_view| {
+                let w: usize = hierarchy
+                    .iter()
+                    .map(|(coupling, &h)| diag_view.order(coupling) * h as usize)
+                    .sum();
+                w <= max_w
+            });
+            sel.add_custom_function(weighted_fn);
+        }
+
         let in_refs: Vec<&str> = concrete.initial.iter().map(String::as_str).collect();
         let out_refs: Vec<&str> = concrete.final_state.iter().map(String::as_str).collect();
 
@@ -182,18 +228,15 @@ pub fn generate_from_process_spec(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
-    fn sm_ufo_path() -> std::path::PathBuf {
+    fn ufo_search_path() -> PathBuf {
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm")
-    }
-
-    #[test]
-    fn test_parse_simple_process() {
-        let opts = ParsingOptions::default();
-        let spec = parse_process_string("e+ e- > mu+ mu-", &opts).unwrap();
-        assert_eq!(spec.initial.len(), 2);
-        assert_eq!(spec.final_state.len(), 2);
+        let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models");
+        if !path.exists() {
+            eprintln!("SM UFO not found — skipping integration test");
+        }
+        path
     }
 
     #[test]
@@ -209,7 +252,7 @@ mod tests {
         let card = "define myp = u d\ngenerate myp > e+ e-\n";
         let opts = ParsingOptions::default();
         let parsed = parse_proc_card(card, &opts).unwrap();
-        let table = build_alias_table(&parsed.defines);
+        let table = AliasTable::from_defines(&parsed.defines);
         assert_eq!(table.expand_name("myp"), vec!["u", "d"]);
     }
 
@@ -217,17 +260,11 @@ mod tests {
     /// Skipped if the SM UFO model is not present.
     #[test]
     fn test_generate_ee_to_mumu() {
-        let path = sm_ufo_path();
-        if !path.exists() {
-            eprintln!("SM UFO not found — skipping integration test");
-            return;
-        }
-        let model = UFOModel::load(&path, None).expect("SM UFO load failed");
         let opts = ParsingOptions::default();
-        let spec = parse_process_string("e+ e- > mu+ mu-", &opts).unwrap();
-        let aliases = AliasTable::default_sm();
-        let sets =
-            generate_from_process_spec(&spec, &model, &aliases).expect("diagram generation failed");
+        let spec = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
+        let path = ufo_search_path().join("sm");
+        let model = UFOModel::load(&path, None).expect("SM UFO load failed");
+        let sets = generate_from_proc_card(&spec, &model).expect("Failed to generate model");
         assert_eq!(sets.len(), 1, "should be exactly 1 concrete process");
         // At LO in QED there is exactly 1 tree-level diagram for e+ e- > mu+ mu-.
         let n = sets[0].diagrams.len();

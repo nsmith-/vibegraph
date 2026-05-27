@@ -5,6 +5,8 @@
 //! is stripped from the process string in a fixed order using plain string operations;
 //! the residual `initial > final` tokens are whitespace-split.
 
+use std::fmt::Display;
+
 use thiserror::Error;
 
 // ── Error ─────────────────────────────────────────────────────────────────────
@@ -117,6 +119,38 @@ pub struct ProcessSpec {
     pub coupling_constraints: Vec<CouplingConstraint>,
     /// Process tag from `@N`; `None` if absent.
     pub tag: Option<u32>,
+}
+
+impl Display for ProcessSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Reconstruct a process string from the parsed spec (without modifiers).
+        // TODO: refine this to include modifiers if we want to round-trip test the parser.
+        let initial = self
+            .initial
+            .iter()
+            .map(|leg| {
+                if leg.count > 1 {
+                    format!("{}{}", leg.count, leg.name)
+                } else {
+                    leg.name.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let final_state = self
+            .final_state
+            .iter()
+            .map(|leg| {
+                if leg.count > 1 {
+                    format!("{}{}", leg.count, leg.name)
+                } else {
+                    leg.name.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        write!(f, "{} > {}", initial, final_state)
+    }
 }
 
 /// A `define alias = particles... [/ except...]` command.
