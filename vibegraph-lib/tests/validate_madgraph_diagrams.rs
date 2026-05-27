@@ -29,8 +29,23 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use libtest_mimic::{Arguments, Failed, Trial};
-use vibegraph::diagrams::{self, ParsingOptions};
+use vibegraph::diagrams::{self, DiagramSet, ParsingOptions};
 use vibegraph::ufo::UFOModel;
+
+#[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
+struct MgCluster {
+    cluster: i32,
+    legs: Vec<i32>,
+    sprop: Vec<i32>,
+    tprop: i32,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct MgDiagram {
+    diagram_id: u32,
+    clusters: Vec<MgCluster>,
+}
 
 #[derive(Debug, serde::Deserialize)]
 #[allow(dead_code)]
@@ -38,6 +53,47 @@ struct DiagramData {
     process: String,
     total_diagrams: u32,
     diagrams_by_subprocess: HashMap<String, u32>,
+    #[serde(default)]
+    topologies_by_subprocess: HashMap<String, Vec<MgDiagram>>,
+}
+
+fn print_madgraph_topologies(data: &DiagramData) {
+    eprintln!("=== MadGraph topologies: {} ===", data.process);
+    let mut subprocesses: Vec<_> = data.topologies_by_subprocess.iter().collect();
+    subprocesses.sort_by_key(|(name, _)| name.as_str());
+    for (subprocess, diagrams) in subprocesses {
+        eprintln!("  subprocess: {subprocess}");
+        for diag in diagrams {
+            let cluster_strs: Vec<String> = diag
+                .clusters
+                .iter()
+                .map(|c| {
+                    let legs_str = c
+                        .legs
+                        .iter()
+                        .map(|l| {
+                            if *l < 0 {
+                                format!("cluster{l}")
+                            } else {
+                                format!("leg{l}")
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    if c.tprop != 0 {
+                        format!("[{legs_str}]→t-chan(pdg={})", c.tprop)
+                    } else {
+                        format!("[{legs_str}]→s-chan(pdg={:?})", c.sprop)
+                    }
+                })
+                .collect();
+            eprintln!(
+                "    diagram {:2}: {}",
+                diag.diagram_id,
+                cluster_strs.join(", ")
+            );
+        }
+    }
 }
 
 /// Find all MadGraph reference JSON files
@@ -111,22 +167,69 @@ fn load_sm_ufo() -> Option<UFOModel> {
         return None;
     }
 
-    UFOModel::load(&ufo_path).ok()
+    UFOModel::load(&ufo_path, None).ok()
 }
 
-/// Generate diagrams and count them for a process
-fn count_vibegraph_diagrams(process_str: &str, model: &UFOModel) -> Result<u32, String> {
+/// Generate diagrams for a process.
+fn generate_vibegraph_diagrams(
+    process_str: &str,
+    model: &UFOModel,
+) -> Result<Vec<DiagramSet>, String> {
     let opts = ParsingOptions::default();
     let spec = diagrams::parse_process_string(process_str, &opts)
         .map_err(|e| format!("Parse error: {e}"))?;
-
     let aliases = diagrams::AliasTable::default_sm();
-    let sets = diagrams::generate_from_process_spec(&spec, model, &aliases)
-        .map_err(|e| format!("Generation error: {e}"))?;
+    diagrams::generate_from_process_spec(&spec, model, &aliases)
+        .map_err(|e| format!("Generation error: {e}"))
+}
 
-    let total: u32 = sets.iter().map(|s| s.diagrams.len() as u32).sum();
-
-    Ok(total)
+/// Print the topology (propagator particles + momentum routing) for each diagram.
+///
+/// Momentum routing uses the convention from feyngraph: entry i is the coefficient of
+/// the i-th external momentum (0-indexed: legs 1..n_in, then n_in+1..n_ext outgoing).
+/// Outgoing leg momenta already have their sign flipped, so the vector reads as the
+/// sum of incoming momenta flowing into the propagator.
+fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet]) {
+    eprintln!("\n=== vibegraph topologies: {process_str} ===");
+    let mut global_idx = 0usize;
+    for set in sets {
+        eprintln!(
+            "  subprocess: {} > {}",
+            set.particles_in.join(" "),
+            set.particles_out.join(" ")
+        );
+        for view in set.diagrams.views() {
+            global_idx += 1;
+            let prop_strs: Vec<String> = view
+                .propagators()
+                .map(|p| {
+                    let mom = p.momentum();
+                    let mom_str = mom
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, &c)| c != 0)
+                        .map(|(i, &c)| match c {
+                            1 => format!("p{}", i + 1),
+                            -1 => format!("-p{}", i + 1),
+                            _ => format!("{c}*p{}", i + 1),
+                        })
+                        .collect::<Vec<_>>()
+                        .join("+");
+                    format!(
+                        "{}(pdg={},mom={})",
+                        p.particle().name(),
+                        p.particle().pdg(),
+                        mom_str
+                    )
+                })
+                .collect();
+            if prop_strs.is_empty() {
+                eprintln!("    diagram {global_idx:2}: <no internal propagators>");
+            } else {
+                eprintln!("    diagram {global_idx:2}: {}", prop_strs.join(", "));
+            }
+        }
+    }
 }
 
 /// Infer the .mg5 script path from a JSON file path
@@ -148,10 +251,13 @@ fn run_trial(json_path: &Path, mg_data: &DiagramData) -> Result<(), Failed> {
     let process =
         extract_process_from_mg5(&script_path).ok_or("no 'generate' line in .mg5 script")?;
     let model = load_sm_ufo().ok_or("SM UFO model not found")?;
-    let count = count_vibegraph_diagrams(&process, &model).map_err(Failed::from)?;
-    if count == 0 {
+    let sets = generate_vibegraph_diagrams(&process, &model).map_err(Failed::from)?;
+    let count: u32 = sets.iter().map(|s| s.diagrams.len() as u32).sum();
+    print_madgraph_topologies(mg_data);
+    print_diagram_topologies(&process, &sets);
+    if count != mg_data.total_diagrams {
         return Err(format!(
-            "vibegraph: 0 diagrams (MG5 reference: {})",
+            "vibegraph: {count} diagrams, MG5 reference: {}",
             mg_data.total_diagrams
         )
         .into());

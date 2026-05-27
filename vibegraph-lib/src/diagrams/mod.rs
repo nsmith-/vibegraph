@@ -117,8 +117,43 @@ pub fn generate_from_process_spec(
     aliases: &AliasTable,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     let mut sets = Vec::new();
+    let mut seen_initials = std::collections::HashSet::new();
+
     for concrete in expand_process(spec, aliases) {
-        let sel = build_selector(&concrete);
+        // Deduplicate mirror processes: if initial state is a permutation
+        // of one we've seen, skip it (same diagrams)
+        let mut initial_sorted = concrete.initial.clone();
+        initial_sorted.sort();
+        if !seen_initials.insert(initial_sorted) {
+            continue; // Already processed this initial state (permutation)
+        }
+
+        let mut sel = build_selector(&concrete);
+
+        // Add custom function to filter out diagrams containing zero-coupling vertices
+        let zero_vertices = model.zero_coupling_vertices.clone();
+        if !zero_vertices.is_empty() {
+            use std::sync::Arc;
+            let filter_fn: Arc<
+                dyn Fn(&feyngraph::diagram::view::DiagramView) -> bool + Send + Sync,
+            > = Arc::new(move |diag_view| {
+                for vertex in diag_view.vertices() {
+                    let particle_names: Vec<String> = vertex
+                        .interaction()
+                        .particles_iter()
+                        .map(|s| s.clone())
+                        .collect();
+                    // Check if any zero-coupling vertex's particles are all present in this vertex
+                    for zero_v in &zero_vertices {
+                        if zero_v.iter().all(|p| particle_names.contains(p)) {
+                            return false;
+                        }
+                    }
+                }
+                true
+            });
+            sel.add_custom_function(filter_fn);
+        }
 
         let in_refs: Vec<&str> = concrete.initial.iter().map(String::as_str).collect();
         let out_refs: Vec<&str> = concrete.final_state.iter().map(String::as_str).collect();
@@ -137,7 +172,47 @@ pub fn generate_from_process_spec(
             diagrams,
         });
     }
-    Ok(sets)
+
+    // Deduplicate by topology fingerprint: group DiagramSets with identical
+    // propagator PDG signatures and keep one representative per group
+    deduplicate_by_topology(sets)
+}
+
+/// Deduplicate diagram sets by topology fingerprint.
+/// Two sets are considered duplicates if they have identical topology
+/// (i.e., same propagators with same PDG codes in each diagram).
+fn deduplicate_by_topology(sets: Vec<DiagramSet>) -> Result<Vec<DiagramSet>, DiagramError> {
+    use std::collections::HashMap;
+
+    let mut topology_groups: HashMap<Vec<Vec<i32>>, DiagramSet> = HashMap::new();
+
+    for set in sets {
+        // Compute topology fingerprint for this set
+        let fingerprint = compute_fingerprint(&set);
+
+        // Keep only the first representative for each topology
+        topology_groups.entry(fingerprint).or_insert(set);
+    }
+
+    Ok(topology_groups.into_values().collect())
+}
+
+/// Compute a topology fingerprint: for each diagram, collect and sort the
+/// propagator PDG codes, then return the list of these sorted PDG lists.
+fn compute_fingerprint(set: &DiagramSet) -> Vec<Vec<i32>> {
+    let mut fingerprint = Vec::new();
+
+    for diagram in set.diagrams.views() {
+        let mut pdg_codes: Vec<i32> = diagram
+            .propagators()
+            .map(|prop| prop.particle().pdg() as i32)
+            .collect();
+        pdg_codes.sort();
+        fingerprint.push(pdg_codes);
+    }
+
+    fingerprint.sort();
+    fingerprint
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -185,7 +260,7 @@ mod tests {
             eprintln!("SM UFO not found — skipping integration test");
             return;
         }
-        let model = UFOModel::load(&path).expect("SM UFO load failed");
+        let model = UFOModel::load(&path, None).expect("SM UFO load failed");
         let opts = ParsingOptions::default();
         let spec = parse_process_string("e+ e- > mu+ mu-", &opts).unwrap();
         let aliases = AliasTable::default_sm();
