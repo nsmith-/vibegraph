@@ -20,6 +20,51 @@ use std::path::Path;
 use thiserror::Error;
 use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
 
+// Default SM coupling hierarchy: QCD (strong) counts once, QED (electroweak) counts twice.
+// Used when coupling_orders.py is absent or contains no hierarchy data.
+fn default_sm_hierarchy() -> HashMap<String, u32> {
+    [("QCD".to_owned(), 1u32), ("QED".to_owned(), 2u32)]
+        .into_iter()
+        .collect()
+}
+
+/// Parse `coupling_orders.py` and return a `name → hierarchy` map.
+///
+/// Each line of the form `VAR = CouplingOrder(name='X', hierarchy=N, ...)` contributes
+/// one entry. Returns an empty map on parse failure (caller should fall back to defaults).
+fn parse_coupling_orders_hierarchy(src: &str) -> HashMap<String, u32> {
+    use ast_util::{call_func_name, kwarg_int, kwarg_str, parse_stmts};
+    use rustpython_parser::ast;
+
+    let Ok(stmts) = parse_stmts(src) else {
+        return HashMap::new();
+    };
+
+    let mut map = HashMap::new();
+    for stmt in &stmts {
+        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
+            continue;
+        };
+        let ast::Expr::Name(ast::ExprName { id: lhs_id, .. }) = targets.first().unwrap() else {
+            continue;
+        };
+        let python_name = lhs_id.as_str();
+
+        let ast::Expr::Call(ast::ExprCall { func, keywords, .. }) = value.as_ref() else {
+            continue;
+        };
+        if call_func_name(func) != Some("CouplingOrder") {
+            continue;
+        }
+
+        // Use the `name` keyword if present, otherwise fall back to the Python variable name.
+        let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.to_owned());
+        let hierarchy = kwarg_int(keywords, "hierarchy").unwrap_or(1) as u32;
+        map.insert(name, hierarchy);
+    }
+    map
+}
+
 #[derive(Debug, Error)]
 pub enum UfoError {
     #[error("IO error reading UFO file '{file}': {cause}")]
@@ -55,6 +100,9 @@ pub struct UFOModel {
     /// Particle sets (sorted) of zero-coupling vertices, used for diagram filtering.
     /// Populated only when a restrict card is loaded.
     pub zero_coupling_vertices: Vec<Vec<String>>,
+    /// Coupling order hierarchy from `coupling_orders.py` (e.g. QCD→1, QED→2).
+    /// Used to compute the WEIGHTED coupling order for automatic order selection.
+    pub order_hierarchy: HashMap<String, u32>,
 }
 
 impl UFOModel {
@@ -141,6 +189,20 @@ impl UFOModel {
             });
         }
 
+        // Parse coupling_orders.py for the WEIGHTED order hierarchy.
+        // Fall back to SM defaults (QCD=1, QED=2) if the file is absent or unparseable.
+        let order_hierarchy = match std::fs::read_to_string(path.join("coupling_orders.py")) {
+            Ok(src) => {
+                let parsed = parse_coupling_orders_hierarchy(&src);
+                if parsed.is_empty() {
+                    default_sm_hierarchy()
+                } else {
+                    parsed
+                }
+            }
+            Err(_) => default_sm_hierarchy(),
+        };
+
         Ok(UFOModel {
             particles,
             lorentz,
@@ -149,6 +211,7 @@ impl UFOModel {
             params,
             topo,
             zero_coupling_vertices,
+            order_hierarchy,
         })
     }
 

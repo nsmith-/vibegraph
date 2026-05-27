@@ -29,7 +29,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use libtest_mimic::{Arguments, Failed, Trial};
-use vibegraph::diagrams::{self, DiagramSet, ParsingOptions};
+use vibegraph::diagrams::{self, generate_from_proc_card, DiagramSet, ParsingOptions};
 use vibegraph::ufo::UFOModel;
 
 #[derive(Debug, serde::Deserialize)]
@@ -62,6 +62,9 @@ fn print_madgraph_topologies(data: &DiagramData) {
     let mut subprocesses: Vec<_> = data.topologies_by_subprocess.iter().collect();
     subprocesses.sort_by_key(|(name, _)| name.as_str());
     for (subprocess, diagrams) in subprocesses {
+        if diagrams.is_empty() {
+            continue;
+        }
         eprintln!("  subprocess: {subprocess}");
         for diag in diagrams {
             let cluster_strs: Vec<String> = diag
@@ -138,31 +141,18 @@ fn find_madgraph_references() -> Vec<(PathBuf, DiagramData)> {
     results
 }
 
-/// Extract process string from .mg5 script file
-/// Load the SM UFO model from the submodule
-fn load_sm_ufo() -> Option<UFOModel> {
+/// Default UFO search path for test harness. Skipped if not found.
+fn ufo_search_path() -> Result<PathBuf, &'static str> {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let ufo_path = Path::new(manifest_dir).join("../research/refs/mg5amcnlo/models/sm");
+    let ufo_path = Path::new(manifest_dir).join("../research/refs/mg5amcnlo/models");
 
-    if !ufo_path.exists() {
-        eprintln!("SM UFO model not found: {}", ufo_path.display());
-        return None;
+    match ufo_path.exists() {
+        true => Ok(ufo_path),
+        false => Err(
+            "UFO models directory not found. Please clone the madgraph submodule:
+    git submodule update --init --recursive",
+        ),
     }
-
-    UFOModel::load(&ufo_path, None).ok()
-}
-
-/// Generate diagrams for a process.
-fn generate_vibegraph_diagrams(
-    process_str: &str,
-    model: &UFOModel,
-) -> Result<Vec<DiagramSet>, String> {
-    let opts = ParsingOptions::default();
-    let spec = diagrams::parse_process_string(process_str, &opts)
-        .map_err(|e| format!("Parse error: {e}"))?;
-    let aliases = diagrams::AliasTable::default_sm();
-    diagrams::generate_from_process_spec(&spec, model, &aliases)
-        .map_err(|e| format!("Generation error: {e}"))
 }
 
 /// Compute a topology fingerprint: for each diagram, collect and sort the
@@ -212,6 +202,9 @@ fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet]) {
     eprintln!("\n=== vibegraph topologies: {process_str} ===");
     let mut global_idx = 0usize;
     for set in sets {
+        if set.diagrams.is_empty() {
+            continue;
+        }
         eprintln!(
             "  subprocess: {} > {}",
             set.particles_in.join(" "),
@@ -275,26 +268,15 @@ fn run_trial(json_path: &Path, mg_data: &DiagramData) -> Result<(), Failed> {
         .map_err(|e| Failed::from(format!("cannot parse .mg5 script: {e}")))?;
 
     // Extract first process from the card (should be 'generate' line)
-    let process = card
+    let process_str = card
         .processes
         .first()
-        .ok_or("no 'generate' line in .mg5 script")?;
+        .ok_or("no 'generate' line in .mg5 script")?
+        .to_string();
 
-    // Format process string for display (extract names from ParticleLeg structs)
-    let initial_names: Vec<&str> = process
-        .initial
-        .iter()
-        .map(|leg| leg.name.as_str())
-        .collect();
-    let final_names: Vec<&str> = process
-        .final_state
-        .iter()
-        .map(|leg| leg.name.as_str())
-        .collect();
-    let process_str = format!("{} > {}", initial_names.join(" "), final_names.join(" "));
-
-    let model = load_sm_ufo().ok_or("SM UFO model not found")?;
-    let sets = generate_vibegraph_diagrams(&process_str, &model).map_err(Failed::from)?;
+    let model = UFOModel::load(&ufo_search_path()?.join("sm"), None)?;
+    let sets = generate_from_proc_card(&card, &model)
+        .map_err(|e| Failed::from(format!("diagram generation failed: {e}")))?;
     let total_count: u32 = sets.iter().map(|s| s.diagrams.len() as u32).sum();
     let unique_topology_count = count_unique_topologies(&sets);
 
