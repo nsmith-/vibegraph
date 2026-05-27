@@ -96,6 +96,25 @@ Restrict-card resolution: `restrict_path_override` takes precedence; otherwise
 look for `<model_dir>/restrict_<variant>.dat` (variant from `ModelImport`), then
 fall back to auto-discovery of `restrict_default.dat`.
 
+### `feyngraph-ufo-replace` — Replace `TopoModel::from_ufo()` with vibegraph-built model
+
+Currently feyngraph's `TopoModel::from_ufo(path)` re-parses the UFO directory independently.
+Replace it by building the feyngraph `Model` directly from vibegraph's already-parsed data
+using feyngraph's mutation API (`Model::empty()` + `add_particle` + `add_vertex`).
+
+The missing piece is `spin_map`: feyngraph needs a `Vec<isize>` of length `n_legs` mapping
+each leg to its spin-contracted partner. Add `compute_spin_map(structure: &LorentzExpr, n_legs: usize) -> Vec<isize>`
+to `vibegraph-lib/src/ufo/lorentz/` — walk the AST and extract spinor-index contractions from
+`Gamma`, `ProjP`, `ProjM`, `C`, and spinor-index `Metric` operators.
+
+**Benefit**: eliminates feyngraph's UFO parser entirely; vibegraph owns the full parsing pipeline,
+enabling support for non-standard UFOs (`loop_sm`, etc.) and removing the `TopoModel::from_ufo` path.
+The `spin_map` is also required by `aloha-codegen` — feyngraph's internal spin_map is not public,
+so vibegraph must compute and carry it alongside each `LorentzStructure` regardless.
+
+_Depends on: `lorentz-parse`, `ufo-full-ownership` (both ✅)_
+_Unblocks: `aloha-codegen`_
+
 ### `feyngraph-perf` — Investigate feyngraph allocation overhead
 Profiling (`pixi run profile-diagrams`) shows the hot loop is feyngraph's
 recursive topology workspace (`connect_node` / `connect_leg` / `connect_next_class`),
