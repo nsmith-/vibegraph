@@ -167,31 +167,6 @@ fn generate_sets_inner(
 
         let mut sel = build_selector(&concrete);
 
-        // Add custom function to filter out diagrams containing zero-coupling vertices
-        let zero_vertices = model.zero_coupling_vertices.clone();
-        if !zero_vertices.is_empty() {
-            use std::sync::Arc;
-            let filter_fn: Arc<
-                dyn Fn(&feyngraph::diagram::view::DiagramView) -> bool + Send + Sync,
-            > = Arc::new(move |diag_view| {
-                for vertex in diag_view.vertices() {
-                    let particle_names: Vec<String> = vertex
-                        .interaction()
-                        .particles_iter()
-                        .map(|s| s.clone())
-                        .collect();
-                    // Check if any zero-coupling vertex's particles are all present in this vertex
-                    for zero_v in &zero_vertices {
-                        if zero_v.iter().all(|p| particle_names.contains(p)) {
-                            return false;
-                        }
-                    }
-                }
-                true
-            });
-            sel.add_custom_function(filter_fn);
-        }
-
         // WEIGHTED coupling-order filter: reject diagrams whose weighted sum exceeds max_weighted.
         if let Some(max_w) = max_weighted {
             use std::sync::Arc;

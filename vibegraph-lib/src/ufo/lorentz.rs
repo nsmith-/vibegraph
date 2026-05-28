@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::ast_util::{call_func_name, get_kwarg, kwarg_str, parse_stmts};
 use rustpython_parser::ast;
 use thiserror::Error;
@@ -10,6 +12,8 @@ pub enum LorentzError {
     StructureParse { name: String, cause: String },
     #[error("Unknown Lorentz operator '{0}'")]
     UnknownOperator(String),
+    #[error("Spin map error in structure '{structure}': {cause}")]
+    SpinMap { structure: String, cause: String },
 }
 
 /// Opaque index into `UFOModel::lorentz`.
@@ -65,10 +69,11 @@ pub struct LorentzStructure {
     pub spins: Vec<i32>,
     /// Verbatim `structure` string from the UFO file.
     pub structure: String,
-    /// Parsed symbolic expression.
+    /// Parsed symbolic expression (1-indexed legs, negative for internal contractions).
     pub expr: LorentzExpr,
     /// Spinor index mapping for feyngraph: `spin_map[i]` is the external leg
-    /// that spinor index `i+1` (1-based) contracts with, or `0` if not contracted.
+    /// The i-th entry of the spin_map must be the leg j to which leg i is spin-connected
+    /// (so i=j for any leg with no spinor contractions)
     /// Built from the Lorentz expression by tracing spinor index chains.
     pub spin_map: Vec<isize>,
 }
@@ -80,14 +85,19 @@ pub struct LorentzStructure {
 /// negative indices are internal contraction dummies. For each external leg, we find its
 /// contracted partner by following the chain of contractions.
 ///
-/// Returns a vector of length `n_legs` where `spin_map[i]` (0-indexed) is the 1-indexed
-/// external leg that leg `i+1` contracts with (or 0 if no contraction).
-pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Vec<isize> {
+/// Returns a vector of length `n_legs` where `spin_map[i]` (0-indexed) is the 0-indexed
+/// external leg that leg `i` contracts with.
+///
+/// CAUTION: this function converts the 1-indexed LorentzExpr into a 0-indexed map
+/// for compatibility with feyngraph conventions. It also only considers the spinor
+/// current associated with the first term, even though in principle different terms
+/// could have different spinor contractions.
+pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Result<Vec<isize>, String> {
     use std::collections::HashMap;
 
     // Build an index graph: for each spinor index, track which external leg it connects to
     // and which dummy index it connects to on the other side.
-    let mut connections: HashMap<i32, Vec<i32>> = HashMap::new();
+    let mut connections: HashMap<i32, HashSet<i32>> = HashMap::new();
 
     for term in expr {
         for op in &term.ops {
@@ -99,11 +109,32 @@ pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Vec<isize> {
                 | LorentzOp::ProjM { i, j }
                 | LorentzOp::ProjP { i, j }
                 | LorentzOp::C { i, j } => {
-                    connections.entry(*i).or_insert_with(Vec::new).push(*j);
-                    connections.entry(*j).or_insert_with(Vec::new).push(*i);
+                    connections
+                        .entry(*i)
+                        .or_insert_with(HashSet::new)
+                        .insert(*j);
+                    connections
+                        .entry(*j)
+                        .or_insert_with(HashSet::new)
+                        .insert(*i);
                 }
                 _ => {}
             }
+        }
+    }
+
+    // Validation: connections should either have 1 or 2 endpoints
+    // 1 endpoint means an external leg; 2 endpoints means an internal contraction
+    for (&idx, conns) in &connections {
+        if conns.len() > 2 {
+            return Err(format!(
+                "index {idx} has more than 2 connections: {conns:?}"
+            ));
+        }
+        if idx > 0 && conns.len() != 1 {
+            return Err(format!(
+                "external leg index {idx} should have exactly 1 connection, found {conns:?}"
+            ));
         }
     }
 
@@ -113,7 +144,8 @@ pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Vec<isize> {
     let mut spin_map = vec![0isize; n_legs];
 
     for leg in 1..=n_legs as i32 {
-        if spin_map[(leg - 1) as usize] != 0 {
+        let leg_idx = (leg - 1) as usize;
+        if spin_map[leg_idx] != 0 {
             continue; // already paired
         }
 
@@ -123,29 +155,46 @@ pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Vec<isize> {
 
         loop {
             if visited.contains(&current) {
-                break; // cycle, shouldn't happen in valid UFO
+                return Err(format!("cycle detected at index {current}"));
             }
             visited.insert(current);
 
-            let next_indices = connections.get(&current).cloned().unwrap_or_default();
-            if next_indices.is_empty() {
-                break;
+            // Advance current by following connections
+            match connections.get(&current).as_deref() {
+                None => {
+                    // No connections, so this leg has no spinor contractions (maps to itself)
+                    spin_map[leg_idx] = leg as isize;
+                    break;
+                }
+                Some(nexts) => {
+                    // Follow the first connection out that we have not yet visited
+                    if let Some(&next) = nexts.iter().find(|&n| !visited.contains(n)) {
+                        current = next;
+                    } else {
+                        return Err(format!("dead end reached at index {current}"));
+                    }
+                }
             }
 
-            // Follow to the next index (should be unique in valid UFO)
-            let next = next_indices[0];
-            current = next;
-
-            // If we reach another external leg, record the pairing
-            if next > 0 && (next as usize) <= n_legs {
-                spin_map[(leg - 1) as usize] = next as isize;
-                spin_map[(next - 1) as usize] = leg as isize;
+            // If we reach another external leg, record the 1-indexed pairing
+            if current > 0 && (current as usize) <= n_legs {
+                spin_map[leg_idx] = current as isize;
+                spin_map[(current - 1) as usize] = leg as isize;
                 break;
             }
         }
     }
 
-    spin_map
+    // Convert to 0-index
+    for x in spin_map.iter_mut() {
+        if *x > 0 {
+            *x -= 1;
+        } else {
+            unreachable!("logic error: all legs should have been visited");
+        }
+    }
+
+    Ok(spin_map)
 }
 
 /// Parse `lorentz.py` content into a list of [`LorentzStructure`]s.
@@ -170,7 +219,7 @@ pub fn parse_lorentz(src: &str) -> Result<Vec<LorentzStructure>, LorentzError> {
         }
 
         let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.clone());
-        let spins = extract_spins(keywords);
+        let spins = extract_spins(keywords)?;
         let structure = kwarg_str(keywords, "structure").unwrap_or_default();
 
         let raw =
@@ -188,7 +237,10 @@ pub fn parse_lorentz(src: &str) -> Result<Vec<LorentzStructure>, LorentzError> {
         })?;
 
         let n_legs = spins.len();
-        let spin_map = compute_spin_map(&expr, n_legs);
+        let spin_map = compute_spin_map(&expr, n_legs).map_err(|cause| LorentzError::SpinMap {
+            structure: structure.clone(),
+            cause,
+        })?;
 
         result.push(LorentzStructure {
             python_name,
@@ -203,18 +255,24 @@ pub fn parse_lorentz(src: &str) -> Result<Vec<LorentzStructure>, LorentzError> {
     Ok(result)
 }
 
-fn extract_spins(keywords: &[ast::Keyword]) -> Vec<i32> {
+/// Parse the `spins` keyword argument from a Lorentz structure definition
+fn extract_spins(keywords: &[ast::Keyword]) -> Result<Vec<i32>, LorentzError> {
     use super::ast_util::extract_int;
+    let mut spins = Vec::new();
     let Some(val) = get_kwarg(keywords, "spins") else {
-        return vec![];
+        return Ok(spins);
     };
     let ast::Expr::List(ast::ExprList { elts, .. }) = val else {
-        return vec![];
+        return Ok(spins);
     };
-    elts.iter()
-        .filter_map(extract_int)
-        .map(|n| n as i32)
-        .collect()
+    for elt in elts {
+        let s = extract_int(elt).ok_or_else(|| LorentzError::StructureParse {
+            name: "spins".into(),
+            cause: format!("expected integer spin, got {elt:?}"),
+        })? as i32;
+        spins.push(s);
+    }
+    Ok(spins)
 }
 
 // ── Intermediate (raw) types used by the PEG grammar ─────────────────────────
@@ -533,11 +591,11 @@ UUV1 = Lorentz(name = 'UUV1',
             coeff: 1.0,
             ops: vec![LorentzOp::Gamma { mu: 3, i: 2, j: 1 }],
         }];
-        let spin_map = compute_spin_map(&expr, 3);
+        let spin_map = compute_spin_map(&expr, 3).expect("failed to compute spin map");
         // Leg 1 should connect to leg 2, and leg 2 should connect to leg 1
-        assert_eq!(spin_map[0], 2); // leg 1 (index 0) connects to leg 2
-        assert_eq!(spin_map[1], 1); // leg 2 (index 1) connects to leg 1
-        assert_eq!(spin_map[2], 0); // leg 3 (index 2) has no spinor contraction
+        assert_eq!(spin_map[0], 1); // leg 1 (index 0) connects to leg 2
+        assert_eq!(spin_map[1], 0); // leg 2 (index 1) connects to leg 1
+        assert_eq!(spin_map[2], 2); // leg 3 (index 2) has no spinor contraction
     }
 
     #[test]
@@ -553,8 +611,8 @@ UUV1 = Lorentz(name = 'UUV1',
                 ops: vec![LorentzOp::P { mu: 3, leg: 3 }],
             },
         ];
-        let spin_map = compute_spin_map(&expr, 3);
-        assert_eq!(spin_map, vec![0, 0, 0]);
+        let spin_map = compute_spin_map(&expr, 3).expect("failed to compute spin map");
+        assert_eq!(spin_map, vec![0, 1, 2]);
     }
 
     #[test]
@@ -567,9 +625,9 @@ UUV1 = Lorentz(name = 'UUV1',
                 LorentzOp::ProjM { i: -1, j: 1 },
             ],
         }];
-        let spin_map = compute_spin_map(&expr, 2);
-        assert_eq!(spin_map[0], 2); // leg 1 connects to leg 2
-        assert_eq!(spin_map[1], 1); // leg 2 connects to leg 1
+        let spin_map = compute_spin_map(&expr, 2).expect("failed to compute spin map");
+        assert_eq!(spin_map[0], 1); // leg 1 connects to leg 2
+        assert_eq!(spin_map[1], 0); // leg 2 connects to leg 1
     }
 
     /// Helper: parse a structure string directly to LorentzExpr (skips the .py wrapper).

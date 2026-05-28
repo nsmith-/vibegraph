@@ -38,6 +38,8 @@ pub struct Particle {
     pub ghost_number: i32,
     /// True when `name == antiname` (self-conjugate, e.g. photon, Z).
     pub is_self_conjugate: bool,
+    /// Optional line style override, e.g. `line = 'dashed'`.
+    pub line_style: Option<String>,
 }
 
 impl Particle {
@@ -57,6 +59,7 @@ impl Particle {
             antitexname: self.texname.clone(),
             ghost_number: self.ghost_number,
             is_self_conjugate: self.is_self_conjugate,
+            line_style: self.line_style.clone(),
         }
     }
 }
@@ -107,6 +110,7 @@ pub fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
                 let width_param =
                     extract_param_ref(keywords, "width").unwrap_or_else(|| "ZERO".to_owned());
                 let is_self_conjugate = name == antiname;
+                let line_style = extract_param_ref(keywords, "line");
 
                 by_python_name.insert(python_name.clone(), particles.len());
                 particles.push(Particle {
@@ -123,6 +127,7 @@ pub fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
                     antitexname,
                     ghost_number,
                     is_self_conjugate,
+                    line_style,
                 });
             }
 
