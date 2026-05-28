@@ -1,7 +1,10 @@
 use super::ast_util::{call_func_name, extract_int, extract_str, kwarg_str, parse_stmts};
 use super::expr::{collect_deps, parse_expr, Expr};
+use indexmap::IndexMap;
+use num_complex::Complex64;
 use rustpython_parser::ast;
 use std::collections::HashMap;
+use std::ops::Index;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -12,9 +15,32 @@ pub enum CouplingError {
     ExprParse { name: String, cause: String },
 }
 
-/// Opaque index into `UFOModel::couplings`.
+/// Strongly typed index for [`Coupling`] lookup
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CouplingId(pub usize);
+pub struct CouplingId(usize);
+
+impl From<usize> for CouplingId {
+    fn from(value: usize) -> Self {
+        CouplingId(value)
+    }
+}
+
+impl Index<CouplingId> for IndexMap<String, Coupling> {
+    type Output = Coupling;
+
+    fn index(&self, index: CouplingId) -> &Self::Output {
+        &self.index(index.0)
+    }
+}
+
+/// As used in [`super::EvaluatedModel`] for storing evaluated coupling values.
+impl Index<CouplingId> for Vec<Complex64> {
+    type Output = Complex64;
+
+    fn index(&self, index: CouplingId) -> &Self::Output {
+        &self[index.0]
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Coupling {

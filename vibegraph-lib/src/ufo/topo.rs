@@ -103,21 +103,21 @@ pub fn build_feyngraph_model(
         let particle_names: Vec<String> = vertex
             .particles
             .iter()
-            .map(|pid| particles[pid.0].name.clone())
+            .map(|&pid| particles[pid].name.clone())
             .collect();
 
         // Build spin_map from lorentz structures
         // Use the first (and typically only) lorentz structure's spin_map
         let lorentz_id = vertex.lorentz[0];
-        let lorentz_struct = &lorentz[lorentz_id.0];
+        let lorentz_struct = &lorentz[lorentz_id];
         let spin_map_for_vertex: Vec<isize> = lorentz_struct.spin_map.clone();
 
         // Build coupling orders map from vertex couplings
         let mut coupling_orders: FxHashMap<String, usize> = FxHashMap::default();
 
         // Process all couplings associated with this vertex
-        for (_coupling_key, coupling_id) in &vertex.couplings {
-            let coupling_def = &couplings[coupling_id.0];
+        for (_coupling_key, &coupling_id) in &vertex.couplings {
+            let coupling_def = &couplings[coupling_id];
 
             // Extract coupling order information from the coupling definition
             // The coupling definition includes the order information in the `orders` field
