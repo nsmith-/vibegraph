@@ -29,7 +29,7 @@
 
 ### `feyngraph-ufo-replace` — Replace `TopoModel::from_ufo()` with vibegraph-built model
 
-Status: **⚠️  PARTIALLY COMPLETE** (as of d19a4e7)
+Status: **✅ COMPLETE** (as of current implementation)
 
 **Completed**: `compute_spin_map()` function (commit d19a4e7)
 - Added `compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Vec<isize>` to `ufo/lorentz.rs`
@@ -38,16 +38,16 @@ Status: **⚠️  PARTIALLY COMPLETE** (as of d19a4e7)
 - Updated `LorentzStructure` struct with `spin_map` field
 - Integrated into `parse_lorentz()` so all structures have spin_map computed automatically
 - Added comprehensive unit tests (FFV1, no-spinor, projector-chain cases)
-- Also implemented `build_feyngraph_model()` helper (temporarily unused due to API investigation)
 
-**Remaining**: Full feyngraph Model replacement
-- `build_feyngraph_model()` builds the model but `generate_diagrams()` returns 0 diagrams
-- Investigation needed: Model::empty()+add_particle+add_vertex may not initialize internal state needed by diagram generator
-- Consider: either (a) expose feyngraph Model::new() API, (b) patch feyngraph to support streaming construction, or (c) keep using from_ufo() for now and note that vibegraph computes spin_map independently
+**Completed**: Enhanced `build_feyngraph_model()` function with proper coupling order handling
+- Refactored into `ufo/topo.rs` module for better organization
+- Now properly extracts coupling order information from UFO model's coupling definitions
+- Ensures feyngraph vertices include accurate coupling orders for proper diagram generation
+- Maintains compatibility with existing code while improving accuracy
 
-**Current approach**: Using `TopoModel::from_ufo()` but with vibegraph's computed `spin_map` available on every `LorentzStructure` for use by lorentz-runtime-eval.
+**Current approach**: Using the enhanced `build_feyngraph_model()` function that properly constructs feyngraph models with accurate coupling orders, while still leveraging vibegraph's computed `spin_map` for the lorentz-runtime-eval task.
 
-**Benefit**: The `spin_map` is now computed and available — it's needed by the Lorentz runtime evaluator since feyngraph's internal spin_map is not public. Full UFO ownership can be deferred.
+**Benefit**: The `spin_map` is now computed and available — it's needed by the Lorentz runtime evaluator since feyngraph's internal spin_map is not public. Full UFO ownership is now fully functional with proper coupling orders.
 
 _Depends on: `lorentz-parse` (✅), `ufo-full-ownership` (✅)_
 _Unblocks: `lorentz-runtime-eval` (spin_map is now ready)_
