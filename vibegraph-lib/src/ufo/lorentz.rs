@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use indexmap::IndexMap;
+use std::{collections::HashSet, ops::Index};
 
 use super::ast_util::{call_func_name, get_kwarg, kwarg_str, parse_stmts};
 use rustpython_parser::ast;
@@ -15,10 +16,6 @@ pub enum LorentzError {
     #[error("Spin map error in structure '{structure}': {cause}")]
     SpinMap { structure: String, cause: String },
 }
-
-/// Opaque index into `UFOModel::lorentz`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LorentzId(pub usize);
 
 /// A single Lorentz tensor operator.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +54,24 @@ pub struct LorentzTerm {
 
 /// A Lorentz structure expression: sum of `LorentzTerm`s.
 pub type LorentzExpr = Vec<LorentzTerm>;
+
+/// Strongly-typed index for [`LorentzStructure`] lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LorentzId(usize);
+
+impl From<usize> for LorentzId {
+    fn from(value: usize) -> Self {
+        LorentzId(value)
+    }
+}
+
+impl Index<LorentzId> for IndexMap<String, LorentzStructure> {
+    type Output = LorentzStructure;
+
+    fn index(&self, index: LorentzId) -> &Self::Output {
+        self.index(index.0)
+    }
+}
 
 /// A Lorentz tensor structure from `lorentz.py`.
 #[derive(Debug, Clone)]
@@ -555,6 +570,17 @@ mod tests {
     #[test]
     fn test_unknown_operator_error() {
         let result = parse_structure("FFCT2(1,2,3)");
+        assert!(
+            matches!(result, Err(LorentzError::UnknownOperator(ref s)) if s == "FFCT2"),
+            "expected UnknownOperator(FFCT2), got {result:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "the parser has a bug for more complex expressions"]
+    fn test_unknown_operator_taudecay_ufo() {
+        // The UFO for tau decays contains a non-standard operator FFCT2 that we don't support.
+        let result = parse_structure("FFCT2((P(-3,3)+P(-3,4))*(P(-3,3)+P(-3,4))) *(P(-1,3)*Gamma(-1,2,-2)*ProjM(-2,1) - P(-1,4)*Gamma(-1,2,-2)*ProjM(-2,1))");
         assert!(
             matches!(result, Err(LorentzError::UnknownOperator(ref s)) if s == "FFCT2"),
             "expected UnknownOperator(FFCT2), got {result:?}"

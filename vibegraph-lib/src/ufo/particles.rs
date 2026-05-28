@@ -1,7 +1,9 @@
 use super::ast_util::{
     call_func_name, extract_attr, kwarg_float, kwarg_int, kwarg_str, parse_stmts,
 };
+use indexmap::IndexMap;
 use rustpython_parser::ast;
+use std::ops::Index;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -10,9 +12,23 @@ pub enum ParticleError {
     Parse(String),
 }
 
-/// Opaque index into `UFOModel::particles`.
+/// Strongly typed index for [`Particle`] lookup
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ParticleId(pub usize);
+pub struct ParticleId(usize);
+
+impl From<usize> for ParticleId {
+    fn from(value: usize) -> Self {
+        ParticleId(value)
+    }
+}
+
+impl Index<ParticleId> for IndexMap<String, Particle> {
+    type Output = Particle;
+
+    fn index(&self, index: ParticleId) -> &Self::Output {
+        self.index(index.0)
+    }
+}
 
 /// A UFO particle with full field data.
 #[derive(Debug, Clone)]

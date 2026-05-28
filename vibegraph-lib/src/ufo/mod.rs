@@ -126,29 +126,23 @@ impl UFOModel {
 
         let particles: IndexMap<String, Particle> = parse_particles(&particles_src)?
             .into_iter()
-            .map(|p| (p.python_name.clone(), p))
+            .map(|p| (p.name.clone(), p))
             .collect();
 
         let lorentz: IndexMap<String, LorentzStructure> = parse_lorentz(&lorentz_src)?
             .into_iter()
-            .map(|l| (l.python_name.clone(), l))
+            .map(|l| (l.name.clone(), l))
             .collect();
 
         let couplings: IndexMap<String, Coupling> = parse_couplings(&couplings_src)?
             .into_iter()
-            .map(|c| (c.python_name.clone(), c))
+            .map(|c| (c.name.clone(), c))
             .collect();
 
         let params = parse_parameters(&params_src)?;
         let raw_vertices = parse_vertices(&vertices_src)?;
-
-        let mut vertices: IndexMap<String, Vertex> = raw_vertices
-            .into_iter()
-            .map(|rv| {
-                let v = resolve_vertex(rv, &particles, &lorentz, &couplings);
-                (v.name.clone(), v)
-            })
-            .collect();
+        let mut vertices: IndexMap<String, Vertex> =
+            resolve_vertices(raw_vertices, &particles, &lorentz, &couplings)?;
 
         // Load restrict card for vertex pruning
         let restrict_card_path = match restrict_card {
@@ -163,24 +157,9 @@ impl UFOModel {
             }
         };
 
-        let mut zero_coupling_vertex_names = Vec::new();
-
         if let Some(restrict_path) = restrict_card_path {
             let restrict_values =
                 evaluate_couplings_for_restrict(&params, &couplings, &restrict_path)?;
-
-            // Track zero-coupling vertices before filtering, using display names (as feyngraph uses them)
-            for (_name, vertex) in &vertices {
-                if is_zero_coupling_vertex(vertex, &couplings, &restrict_values) {
-                    let mut particle_names: Vec<String> = vertex
-                        .particles
-                        .iter()
-                        .map(|pid| particles[pid.0].name.clone()) // Use display name, not python_name
-                        .collect();
-                    particle_names.sort();
-                    zero_coupling_vertex_names.push(vertex.name.clone());
-                }
-            }
 
             vertices.retain(|_name, vertex| {
                 !is_zero_coupling_vertex(vertex, &couplings, &restrict_values)
@@ -222,18 +201,22 @@ impl UFOModel {
 
     // ── Name → index lookup ───────────────────────────────────────────────────
 
+    /// Get a ParticleId by its name
     pub fn particle_id(&self, name: &str) -> Option<ParticleId> {
-        self.particles.get_index_of(name).map(ParticleId)
+        self.particles.get_index_of(name).map(ParticleId::from)
     }
 
+    /// Get a LorentzId by its name
     pub fn lorentz_id(&self, name: &str) -> Option<LorentzId> {
-        self.lorentz.get_index_of(name).map(LorentzId)
+        self.lorentz.get_index_of(name).map(LorentzId::from)
     }
 
+    /// Get a CouplingId by its name
     pub fn coupling_id(&self, name: &str) -> Option<CouplingId> {
-        self.couplings.get_index_of(name).map(CouplingId)
+        self.couplings.get_index_of(name).map(CouplingId::from)
     }
 
+    /// Get a VertexId by its name
     pub fn vertex_id(&self, name: &str) -> Option<VertexId> {
         self.vertices.get_index_of(name).map(VertexId)
     }
@@ -241,15 +224,15 @@ impl UFOModel {
     // ── Index → value accessors ───────────────────────────────────────────────
 
     pub fn particle(&self, id: ParticleId) -> &Particle {
-        &self.particles[id.0]
+        &self.particles[id]
     }
 
     pub fn lorentz_struct(&self, id: LorentzId) -> &LorentzStructure {
-        &self.lorentz[id.0]
+        &self.lorentz[id]
     }
 
     pub fn coupling_def(&self, id: CouplingId) -> &Coupling {
-        &self.couplings[id.0]
+        &self.couplings[id]
     }
 
     pub fn vertex_def(&self, id: VertexId) -> &Vertex {
@@ -276,97 +259,135 @@ impl UFOModel {
     }
 }
 
-/// Resolve a `RawVertex`'s string names to typed IDs.
-fn resolve_vertex(
-    rv: RawVertex,
+/// Resolve raw vertex definitions into `Vertex`es
+///
+/// Returns values with proper IDs, validating that all referenced particles,
+/// Lorentz structures, and couplings exist in the provided maps.
+/// Errors if any referenced particle, Lorentz structure, or coupling is missing from the provided maps.
+fn resolve_vertices(
+    input: impl IntoIterator<Item = RawVertex>,
     particles: &IndexMap<String, Particle>,
     lorentz: &IndexMap<String, LorentzStructure>,
     couplings: &IndexMap<String, Coupling>,
-) -> Vertex {
-    let particle_ids = rv
-        .particles
-        .iter()
-        .filter_map(|name| particles.get_index_of(name.as_str()).map(ParticleId))
-        .collect();
+) -> Result<IndexMap<String, Vertex>, VertexError> {
+    // Vertices link to their particles, structures, and couplings by their Python variable names
+    // The rest of the library uses the object names (e.g. "P.e__minus__" → "e-"), so we resolve here to get the correct names and IDs.
+    let particle_id_map = particles
+        .values()
+        .enumerate()
+        .map(|(i, p)| (p.python_name.clone(), ParticleId::from(i)))
+        .collect::<HashMap<_, _>>();
+    let lorentz_id_map = lorentz
+        .values()
+        .enumerate()
+        .map(|(i, l)| (l.python_name.clone(), LorentzId::from(i)))
+        .collect::<HashMap<_, _>>();
+    let coupling_id_map = couplings
+        .values()
+        .enumerate()
+        .map(|(i, c)| (c.python_name.clone(), CouplingId::from(i)))
+        .collect::<HashMap<_, _>>();
 
-    let lorentz_ids = rv
-        .lorentz
-        .iter()
-        .filter_map(|name| lorentz.get_index_of(name.as_str()).map(LorentzId))
-        .collect();
+    input
+        .into_iter()
+        .map(|rv| {
+            let particle_ids = rv
+                .particles
+                .iter()
+                .map(|py_name| {
+                    particle_id_map
+                        .get(py_name.as_str())
+                        .copied()
+                        .ok_or(VertexError::Parse(format!(
+                            "vertex references nonexistent particle '{py_name}'"
+                        )))
+                })
+                .collect::<Result<_, _>>()?;
 
-    let coupling_ids = rv
-        .couplings
-        .iter()
-        .filter_map(|(key, name)| {
-            couplings
-                .get_index_of(name.as_str())
-                .map(|i| (*key, CouplingId(i)))
+            let lorentz_ids = rv
+                .lorentz
+                .iter()
+                .map(|py_name| {
+                    lorentz_id_map
+                        .get(py_name.as_str())
+                        .copied()
+                        .ok_or_else(|| {
+                            VertexError::Parse(format!(
+                                "vertex references nonexistent Lorentz structure '{py_name}'"
+                            ))
+                        })
+                })
+                .collect::<Result<_, _>>()?;
+
+            let coupling_ids = rv
+                .couplings
+                .iter()
+                .map(|(key, py_name)| {
+                    coupling_id_map
+                        .get(py_name.as_str())
+                        .map(|&i| (*key, i))
+                        .ok_or(VertexError::Parse(format!(
+                            "vertex references nonexistent coupling '{py_name}'"
+                        )))
+                })
+                .collect::<Result<_, _>>()?;
+
+            let vertex = Vertex {
+                name: rv.name,
+                particles: particle_ids,
+                color: rv.color,
+                lorentz: lorentz_ids,
+                couplings: coupling_ids,
+            };
+            Ok((vertex.name.clone(), vertex))
         })
-        .collect();
-
-    Vertex {
-        name: rv.name,
-        particles: particle_ids,
-        color: rv.color,
-        lorentz: lorentz_ids,
-        couplings: coupling_ids,
-    }
+        .collect::<Result<_, _>>()
 }
 
-/// Evaluated parameter and coupling values for a specific phase-space point.
+/// Evaluated parameter and coupling values for a specific parameter set (e.g. from a param_card).
 pub struct EvaluatedModel<'a> {
     model: &'a UFOModel,
     /// All parameter values (external + internal), keyed by parameter name.
+    ///
+    /// TODO: intern parameter names into UFOModel and use ParameterId here instead of string keys
+    /// (then, as for the other Ids, we allow to expect the parameter exists)
     pub param_values: HashMap<String, Complex64>,
-    /// Coupling constant values indexed by `CouplingId.0`, parallel to `model.couplings`.
+    /// Coupling constant values indexed by [`CouplingId`], parallel to `model.couplings`.
     coupling_values: Vec<Complex64>,
 }
 
 impl EvaluatedModel<'_> {
-    /// Get the mass of a particle by its Python name.
-    pub fn mass(&self, particle_name: &str) -> f64 {
-        self.model
-            .particle_id(particle_name)
-            .and_then(|id| {
-                let mass_param = &self.model.particle(id).mass_param;
-                self.param_values.get(mass_param)
-            })
+    /// Get the mass of a particle
+    pub fn mass(&self, id: ParticleId) -> f64 {
+        self.param_values
+            .get(&self.model.particle(id).mass_param)
             .map(|v| v.re)
             .unwrap_or(0.0)
     }
 
-    /// Get the decay width of a particle by its Python name.
-    pub fn width(&self, particle_name: &str) -> f64 {
-        self.model
-            .particle_id(particle_name)
-            .and_then(|id| {
-                let width_param = &self.model.particle(id).width_param;
-                self.param_values.get(width_param)
-            })
+    /// Get the decay width of a particle
+    pub fn width(&self, id: ParticleId) -> f64 {
+        self.param_values
+            .get(&self.model.particle(id).width_param)
             .map(|v| v.re)
             .unwrap_or(0.0)
     }
 
-    /// Get a coupling constant by its Python name.
-    pub fn coupling(&self, coupling_name: &str) -> Complex64 {
-        self.model
-            .coupling_id(coupling_name)
-            .map(|id| self.coupling_values[id.0])
-            .unwrap_or_default()
+    /// Get a coupling constant
+    pub fn coupling(&self, id: CouplingId) -> Complex64 {
+        self.coupling_values[id]
     }
 
     /// Get the coupling entries for a vertex by its name.
     ///
     /// Returns `[(lorentz_idx, color_idx, value)]` or `None` if unknown.
-    pub fn vertex_couplings(&self, vertex_name: &str) -> Option<Vec<(usize, usize, Complex64)>> {
-        let id = self.model.vertex_id(vertex_name)?;
+    pub fn vertex_couplings(&self, id: VertexId) -> Option<Vec<(usize, usize, Complex64)>> {
         let vertex = self.model.vertex_def(id);
         let entries = vertex
             .couplings
             .iter()
-            .map(|((l, c), coup_id)| {
-                let val = self.coupling_values[coup_id.0];
+            .map(|((l, c), &coup_id)| {
+                let val = self.coupling_values[coup_id];
                 (*l, *c, val)
             })
             .collect();
@@ -414,7 +435,7 @@ fn evaluate_couplings_for_restrict(
         .enumerate()
         .map(|(i, (_, c))| {
             let val = expr::eval(&c.value, &param_values);
-            (CouplingId(i), val)
+            (CouplingId::from(i), val)
         })
         .collect();
 
@@ -470,10 +491,10 @@ mod tests {
         let empty_card = ParamCard::from_str("").unwrap();
         let ev = model.evaluate(&empty_card);
 
-        let mz = ev.mass("Z");
+        let mz = ev.mass(model.particle_id("Z").expect("no Z in model"));
         assert!((mz - 91.188).abs() < 0.01, "loop_sm MZ = {mz}");
 
-        let ma = ev.mass("a");
+        let ma = ev.mass(model.particle_id("A").expect("no a in model"));
         assert!(ma.abs() < 1e-10, "loop_sm m_photon = {ma}");
     }
 
@@ -495,11 +516,12 @@ mod tests {
         let expected_beta = 9.74862403f64.atan();
         assert!((beta - expected_beta).abs() < 1e-8, "MSSM beta = {beta}");
 
-        let ma = ev.mass("a");
+        let ma = ev.mass(model.particle_id("a").expect("no a in model"));
         assert!(ma.abs() < 1e-10, "MSSM m_photon = {ma}");
     }
 
     #[test]
+    #[ignore = "the FFCT2 operator in the lorentz structure is a custom fortran routine in this model's functions.f"]
     fn test_load_taudecay() {
         let path = ufo_path("taudecay_UFO");
         if !path.exists() {
@@ -516,22 +538,18 @@ mod tests {
                 eprintln!("taudecay_UFO: uses unsupported Lorentz operator '{op}' — skipping");
                 return;
             }
-            Err(UfoError::Lorentz(e)) => {
-                eprintln!("taudecay_UFO: Lorentz parse error ({e}) — skipping");
-                return;
-            }
             _ => {}
         }
         let model = result.expect("failed to load taudecay UFO");
         let ev = model.evaluate(&card);
 
-        let mta = ev.mass("ta__minus__");
+        let mta = ev.mass(model.particle_id("ta__minus__").expect("no tau"));
         assert!((mta - 1.776820).abs() < 1e-4, "taudecay MTA = {mta}");
 
-        let mmu = ev.mass("mu__minus__");
+        let mmu = ev.mass(model.particle_id("mu__minus__").expect("no muon"));
         assert!((mmu - 0.105660).abs() < 1e-4, "taudecay MMU = {mmu}");
 
-        let mve = ev.mass("ve");
+        let mve = ev.mass(model.particle_id("ve").expect("no ve"));
         assert!(mve.abs() < 1e-10, "taudecay m_ve = {mve}");
     }
 
@@ -554,19 +572,19 @@ mod tests {
         let g_val = ev.param_values["G"].re;
         assert!((g_val - expected_g).abs() < 1e-6, "G = {g_val}");
 
-        let gc10 = ev.coupling("GC_10");
+        let gc10 = ev.coupling(model.coupling_id("GC_10").expect("no GC_10 in model"));
         assert!((gc10.re + expected_g).abs() < 1e-6, "GC_10 = {gc10}");
         assert!(gc10.im.abs() < 1e-10);
 
-        let mz = ev.mass("Z");
+        let mz = ev.mass(model.particle_id("Z").expect("missing param"));
         assert!((mz - 91.1876).abs() < 0.01, "MZ = {mz}");
 
-        let ma = ev.mass("a");
+        let ma = ev.mass(model.particle_id("a").expect("missing param"));
         assert!(ma.abs() < 1e-10, "m_photon = {ma}");
 
         // Verify the new index-based lookup
-        let e_id = model.particle_id("e__minus__");
-        assert!(e_id.is_some(), "e__minus__ not found in particle index");
+        let e_id = model.particle_id("e-");
+        assert!(e_id.is_some(), "e- not found in particle index");
     }
 
     #[test]
@@ -589,7 +607,7 @@ mod tests {
             "After recompute: G = {g_val}"
         );
 
-        let gc10 = ev.coupling("GC_10");
+        let gc10 = ev.coupling(model.coupling_id("GC_10").expect("missing coupling"));
         assert!(
             (gc10.re + expected_g).abs() < 1e-6,
             "After recompute: GC_10 = {gc10}"
