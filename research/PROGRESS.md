@@ -1,6 +1,6 @@
 # vibegraph — Research & Implementation Progress
 
-**Last updated:** 2026-05-27 (diagram validation complete; lorentz-runtime-eval is next phase)
+**Last updated:** 2026-06-01 (research note 10 written; lorentz-runtime-eval implementation plan finalized)
 
 This document cross-references `TODO.md` with research notes to track which design decisions are finalized vs. in-flight vs. archived.
 
@@ -20,6 +20,7 @@ This document cross-references `TODO.md` with research notes to track which desi
 | `07` | MadGraph Code Quality | Reference | ✅ Reference | Design patterns and architecture lessons |
 | `08` | Repr Geometry | ✅ Completed | ✅ Done | Implemented in `src/repr.rs` (cdb41de) |
 | `09` | UFO-ALOHA Type Matrix | 🔄 In-flight | 🔲 Design phase | Input for `lorentz-runtime-eval` primitive dispatch table |
+| `10` | Lorentz Runtime Eval Plan | 🔄 In-flight | 🔲 Implementation phase | Detailed plan for AST compiler, missing primitives, vertex dispatch |
 
 ---
 
@@ -44,8 +45,12 @@ This document cross-references `TODO.md` with research notes to track which desi
   Core primitives `GammaL`, `GammaR`, `ScalarPropagator` are implemented in `helas/repr/`.
   Missing: `GammaV`, `SigmaTensor`, `Epsilon`, `DiracPropagator`, `MasslessVectorPropagator`,
   `MassiveVectorPropagator`, `GaugeVertex::apply`, and the AST-walker dispatch layer.
-- **Next:** `feyngraph-ufo-replace` (compute `spin_map`) → implement missing primitives → AST walker
-- **Research:** `09` (type matrix for primitive dispatch)
+- **Design finalized:** Note `10` documents the complete phased plan: slot-based `DiagramAst`,
+  topological ordering algorithm, vertex dispatch pattern table, all missing primitives with
+  ALOHA references, and a new `helas/eval/` module structure.
+- **Next:** Phase 1 primitives (vxxxxx, sxxxxx, propagators, GammaV) → Phase 2 vertex
+  routines (fioxxx, jvvxxx, jsixxx) → Phase 3 AST compiler
+- **Research:** `09` (type matrix for primitive dispatch), `10` (detailed plan)
 
 ### Phase 4: Generic HELAS + LIPS-nbody (🔲 PENDING)
 - **Design:** `08` (repr geometry) finalized; intertwiners partially in place
@@ -80,8 +85,9 @@ This document cross-references `TODO.md` with research notes to track which desi
 
 ## Next Steps (Priority Order)
 
-1. **`feyngraph-ufo-replace`** — build feyngraph `Model` from vibegraph's parsed data; compute `spin_map`
-2. **`lorentz-runtime-eval`** — implement missing propagators/intertwiners; build AST walker
-3. **`helas-generalize`** — topology-driven evaluator replacing hardcoded `compute_m2_ee_mumu`
-4. **`global-config`** — thin coordinator wiring proc_card → UFO model
-5. **`lips-nbody` + `event-output-lhef`** — n-body phase space and unweighted event output
+1. **`lorentz-runtime-eval`** — Phase 1: implement missing primitives (vxxxxx, sxxxxx, propagators, GammaV)
+2. **`lorentz-runtime-eval`** — Phase 2: off-shell vertex routines (fioxxx, jvvxxx, jsixxx, iosxxx)
+3. **`lorentz-runtime-eval`** — Phase 3-5: AST compiler (`helas/eval/`), dispatch, validation vs. `compute_m2_ee_mumu`
+4. **`helas-generalize`** — topology-driven evaluator replacing hardcoded `compute_m2_ee_mumu`
+5. **`global-config`** — thin coordinator wiring proc_card → UFO model
+6. **`lips-nbody` + `event-output-lhef`** — n-body phase space and unweighted event output
