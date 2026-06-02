@@ -72,6 +72,8 @@ and the AST is interpreted at runtime. This is the generalization of the hardcod
 - Need design: bridge from `LorentzOp` variants (`Gamma`, `Sigma`, `ProjM`, `ProjP`, `Metric`,
   `P`, `Epsilon`, `C`) to runtime dispatch using `spin_map` to route spinor indices
 
+Revised plan: see research/notes/10-lorentz-runtime-eval-plan.md for detailed design and current status.
+
 _Depends on: `feyngraph-ufo-replace` (for spin_map), `lorentz-parse` (✅)_
 _Unblocks: `helas-generalize`_
 

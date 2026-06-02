@@ -48,8 +48,10 @@
 //! - [`GammaV`], [`SigmaTensor`], and [`Epsilon`] are **stubs** pending
 //!   implementation.
 
-use super::Real;
-use crate::helas::repr::lorentz::{ComplexVector, LorentzRepr, Rank2Tensor, Scalar, SpinorRepr};
+use super::{ri, Real, C};
+use crate::helas::repr::lorentz::{
+    Bispinor, ComplexVector, LorentzRepr, Rank2Tensor, Scalar, SpinorRepr,
+};
 use std::marker::PhantomData;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,9 +174,65 @@ impl<F: Real, B: SpinorRepr<F>> Intertwiner2Leg<F> for GammaV<B> {
     type In2 = B;
     type Out = B;
 
-    fn apply(_input: &(Self::In1, Self::In2)) -> Self::Out {
-        todo!("GammaV: γ^μ acting on off-shell spinor current — Weyl implementation pending")
+    fn apply(input: &(Self::In1, Self::In2)) -> Self::Out {
+        // This is a workaround: we only support Bispinor right now.
+        // Cast the generic B to Bispinor using transmute (safe because we verify at runtime).
+        let eps = &input.0;
+
+        // Use type ID to verify at runtime
+        if std::any::TypeId::of::<B>() == std::any::TypeId::of::<Bispinor<F>>() {
+            let psi_ptr = &input.1 as *const B as *const Bispinor<F>;
+            let psi = unsafe { *psi_ptr };
+
+            let result = gamma_v_apply::<F>(&eps.0, &psi.0);
+            let result_bispin = Bispinor(result);
+
+            // Now we need to convert Bispinor<F> back to B
+            let result_ptr = &result_bispin as *const Bispinor<F> as *const B;
+            unsafe { *result_ptr }
+        } else {
+            panic!(
+                "GammaV is only implemented for Bispinor, got {}",
+                std::any::type_name::<B>()
+            )
+        }
     }
+}
+
+/// Helper function to apply γ^μ ε_μ (slash operator on polarization vector).
+fn gamma_v_apply<F: Real>(eps: &[C<F>; 4], psi: &[C<F>; 4]) -> [C<F>; 4] {
+    let eps0 = eps[0];
+    let eps1 = eps[1];
+    let eps2 = eps[2];
+    let eps3 = eps[3];
+
+    let psi_l1 = psi[0];
+    let psi_l2 = psi[1];
+    let psi_r1 = psi[2];
+    let psi_r2 = psi[3];
+
+    // Compute ε·σ components:
+    // ε·σ = [[ε_0+ε_3,  ε_1-iε_2],
+    //        [ε_1+iε_2, ε_0-ε_3]]
+    let eps0_eps3 = eps0 + eps3;
+    let eps0_meps3 = eps0 - eps3;
+    let eps1_ieps2 = eps1 - ri(F::one()) * eps2; // ε_1 - i*ε_2
+    let eps1_mieps2 = eps1 + ri(F::one()) * eps2; // ε_1 + i*ε_2
+
+    // Apply ε·σ to ψ_L = [ψ_L1, ψ_L2]:
+    let es_psi_l1 = eps0_eps3 * psi_l1 + eps1_ieps2 * psi_l2;
+    let es_psi_l2 = eps1_mieps2 * psi_l1 + eps0_meps3 * psi_l2;
+
+    // Compute ε·σ̄ components:
+    // ε·σ̄ = [[ε_0-ε_3, -(ε_1-iε_2)],
+    //         [-(ε_1+iε_2), ε_0+ε_3]]
+    let esbar_psi_r1 = eps0_meps3 * psi_r1 - eps1_mieps2 * psi_r2;
+    let esbar_psi_r2 = -eps1_ieps2 * psi_r1 + eps0_eps3 * psi_r2;
+
+    // Apply (ε̸):
+    // new_ψ_L = ε·σ̄·ψ_R
+    // new_ψ_R = ε·σ·ψ_L
+    [esbar_psi_r1, esbar_psi_r2, es_psi_l1, es_psi_l2]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
