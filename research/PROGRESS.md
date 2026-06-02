@@ -1,93 +1,77 @@
-# vibegraph — Research & Implementation Progress
+# lorentz-runtime-eval Implementation Progress
 
-**Last updated:** 2026-06-01 (research note 10 written; lorentz-runtime-eval implementation plan finalized)
+## Completed 
 
-This document cross-references `TODO.md` with research notes to track which design decisions are finalized vs. in-flight vs. archived.
+### Phase 1: Core Primitives (6/6)
+-   external vector wavefunction (massless, massive, all 5 cases)vxxxxx() 
+-  sxxxxx() +  external scalar wavefunctionScalarWf 
+- g MassiveVectorPropagator:: unitary gauge with Fabio fixed-widthpropagate() _{
+-  GammaV:: apply() 
+**Status**: 110 unit tests passing
 
----
+### Phase 2: Off-Shell Vertex Routines (5/5)
+ fo_offshell  
+  - Composition: GammaV::apply() + DiracPropagator::propagate()
+  - Momentum: q = fi.p + V.p
+  - Output: OutDiracWf
+  
+ fi_offshell  
+  - Similar structure to fioxxx
+  - Momentum: q = fo.p + V.p
+  - Output: InDiracWf
+  
+ V_offshell (triple-gauge coupling)
+  - Translated from ALOHA VVV1P0_1.f Fortran
+  - Computes 5 Minkowski contractions (TMP5)TMP1
+  - Supports massless case (mass=0)
+  
+ S_offshell  
+  - Scalar current from fermion pair
+  - Left/right helicity contractions
+  - Uses ScalarPropagator
+  
+ amplitude)  
+  - Direct spinor contraction with scalar
+  - Supports left/right couplings
 
-## Quick Reference: Research Note Status
+**Status**: 5 new unit tests, 118 total tests passing (115 active, 3 ignored)
 
-| Note | Title | Type | Status | Action |
-|------|-------|------|--------|--------|
-| `00` | LO Event Generation Overview | Reference | ✅ Finalized | None — foundational architecture fixed |
-| `01` | Paper Summaries | Reference | ✅ Reference | Consult for theory background |
-| `02` | FeynGraph Analysis | Reference | ✅ Reference | Alternative diagram-enum approaches |
-| `03` | Sherpa & POWHEG-BOX | Reference | ✅ Reference | COMIX recursion vs MadGraph diagram enumeration |
-| `04` | UFO Parsing Future | ✅ Archived | ✅ Completed | Python AST parser live (316598b) — no longer a blocker |
-| `05` | MadGraph Setup | ✅ Reference | ✅ Reference | Validation pipeline: `pixi run -e madgraph generate-ee` |
-| `06` | Process Grammar (PEG) | ✅ Completed | ✅ Done | Process grammar implemented and validated (diagram-count tests) |
-| `07` | MadGraph Code Quality | Reference | ✅ Reference | Design patterns and architecture lessons |
-| `08` | Repr Geometry | ✅ Completed | ✅ Done | Implemented in `src/repr.rs` (cdb41de) |
-| `09` | UFO-ALOHA Type Matrix | 🔄 In-flight | 🔲 Design phase | Input for `lorentz-runtime-eval` primitive dispatch table |
-| `10` | Lorentz Runtime Eval Plan | 🔄 In-flight | 🔲 Implementation phase | Detailed plan for AST compiler, missing primitives, vertex dispatch |
+## Immediate Next Steps
 
----
+### Phase 3a: AST Compiler (pending)
+ `DiagramAst`
+  - Topological ordering of vertices
+  - Slot-based register allocation
+  - Momentum routing and helicity tracking
 
-## Implementation Pipeline vs. Research Ownership
+### Phase 3b: Vertex Dispatch (pending)
+ HELAS routine
+  - Map FFV, VVV, FFS, etc. to appropriate routines
+  - Handle coupling resolution
 
-### Phase 1: LO Event Generation (✅ DONE)
-- **Code:** `vibegraph-lib` crate (7f6e82a)
-- **Papers:** `00`, `01`, `05`, `07`
-- **Pipeline:** UFO loader → HELAS (hardcoded) → LIPS → VEGAS → σ
-- **Validation:** σ(e⁺e⁻→μ⁺μ⁻, Z-pole) = 2025 ± 1 pb vs MadGraph 2026-05-22
+### Phase 3c: AmplitudeEvaluator (pending)
+- **Runtime loop**: Walk DiagramAst, dispatch vertices, accumulate amplitude
+- **Validation**: Compare against hardcoded `compute_m2_ee_mumu`
 
-### Phase 2: Process Generalization (✅ DONE)
-- **Code:** `diagrams` module (process grammar + feyngraph integration + alias expansion)
-- **Validation:** All 7 MadGraph reference processes match diagram counts (2026-05-27)
-- **Research:** `02`, `03`, `06`, `07`
+## Implementation Notes
 
-### Phase 3: Lorentz Runtime Evaluator (🔲 IN PROGRESS)
-- **Approach:** Statically-compiled runtime dispatch — all Lorentz primitives pre-compiled into
-  the binary; the `LorentzExpr` AST (from `ufo/lorentz.rs`) is walked at runtime to dispatch to them.
-  No code generation; no compiler shipped with the binary.
-- **Progress:** Lorentz PEG parser produces `LorentzExpr = Vec<LorentzTerm>` from structure strings.
-  Core primitives `GammaL`, `GammaR`, `ScalarPropagator` are implemented in `helas/repr/`.
-  Missing: `GammaV`, `SigmaTensor`, `Epsilon`, `DiracPropagator`, `MasslessVectorPropagator`,
-  `MassiveVectorPropagator`, `GaugeVertex::apply`, and the AST-walker dispatch layer.
-- **Design finalized:** Note `10` documents the complete phased plan: slot-based `DiagramAst`,
-  topological ordering algorithm, vertex dispatch pattern table, all missing primitives with
-  ALOHA references, and a new `helas/eval/` module structure.
-- **Next:** Phase 1 primitives (vxxxxx, sxxxxx, propagators, GammaV) → Phase 2 vertex
-  routines (fioxxx, jvvxxx, jsixxx) → Phase 3 AST compiler
-- **Research:** `09` (type matrix for primitive dispatch), `10` (detailed plan)
+### Weyl Basis Spinor Indexing
+- **InDiracWf (fi)**: indices [0,1]=LEFT-chiral, [2,3]=RIGHT-chiral
+- **OutDiracWf (fo)**: indices [0,1]=RIGHT-chiral, [2,3]=LEFT-chiral (after sfomeg swap)
+- **Critical**: jsixxx and iosxxx contract indices carefully to match HELAS/ALOHA spinor layout
 
-### Phase 4: Generic HELAS + LIPS-nbody (🔲 PENDING)
-- **Design:** `08` (repr geometry) finalized; intertwiners partially in place
-- **Blocker:** `lorentz-runtime-eval` → `helas-generalize` → `lips-nbody` (recursive RAMBO)
-- **Research:** `00`, `08`
+### Momentum Convention
+- HELAS FFV1_2: `P = -(fi.p + V.p)` for propagator denominator
+- vibegraph: DiracPropagator expects `q` directly; sign handled internally
+- Off-shell currents store accumulated momentum with outflow convention
 
-### Phase 5: Event Output (🔲 PENDING)
-- **Design:** Accept/reject sampling + LHEF serialization
-- **Blocker:** `helas-generalize` must be stable
-- **Research:** `05` (MadGraph LHEF reference)
+### Phase 2 Public API Additions
+- **wavefn.rs**: Added `InDiracWf::from_spinor()` and `OutDiracWf::from_spinor()`
+  - Allow constructing off-shell currents from arbitrary spinor+momentum
+  - Needed by fioxxx/foxxx implementations
 
----
-
-## Archived / No-Longer-Active Research
-
-**Note 04: UFO Parsing Future**
-- **Why retired:** As of commit 316598b, vibegraph uses a Python AST parser to own all UFO
-  parsing (particles, vertices, lorentz, couplings). Eliminates external tool dependency.
-- **Action:** None — complete.
-
-**Note 06: Process Grammar**
-- **Why retired:** Process grammar is fully implemented and validated. The PEG-vs-hand-written
-  question was resolved in favor of PEG (already in use).
-- **Action:** None — complete.
-
-**ALOHA codegen approach (rejected)**
-- Code-generating Rust source at runtime (as MadGraph does) would require shipping a compiler
-  alongside the vibegraph CLI binary. This is not acceptable for a static binary distribution.
-  Replaced by `lorentz-runtime-eval`: statically-compiled primitives with runtime AST dispatch.
-
----
-
-## Next Steps (Priority Order)
-
-1. **`lorentz-runtime-eval`** — Phase 1: implement missing primitives (vxxxxx, sxxxxx, propagators, GammaV)
-2. **`lorentz-runtime-eval`** — Phase 2: off-shell vertex routines (fioxxx, jvvxxx, jsixxx, iosxxx)
-3. **`lorentz-runtime-eval`** — Phase 3-5: AST compiler (`helas/eval/`), dispatch, validation vs. `compute_m2_ee_mumu`
-4. **`helas-generalize`** — topology-driven evaluator replacing hardcoded `compute_m2_ee_mumu`
-5. **`global-config`** — thin coordinator wiring proc_card → UFO model
-6. **`lips-nbody` + `event-output-lhef`** — n-body phase space and unweighted event output
+## References
+- FFV1_2.f (ALOHA-generated): fioxxx reference at validation/madgraph/output/pp_to_bb/Source/DHELAS/
+- FFV1_1.f (ALOHA-generated): foxxx reference
+- VVV1P0_1.f (ALOHA-generated): jvvxxx reference
+- iosxxx.F (HELAS reference): powheg-box-v2/MadGraphStuff/MadGraph_POWHEG/HELAS/
