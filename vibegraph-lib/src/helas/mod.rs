@@ -1,3 +1,4 @@
+pub mod eval;
 pub mod repr;
 pub mod vertex;
 pub mod wavefn;
