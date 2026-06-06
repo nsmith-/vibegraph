@@ -6,7 +6,7 @@
 
 use super::dispatch::DispatchKind;
 use crate::helas::repr::Real;
-use crate::helas::wavefn::{DiracWf, ScalarWf, VectorWf};
+use crate::helas::wavefn::{InDiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
 use crate::ufo::particles::ParticleId;
@@ -22,7 +22,10 @@ use crate::ufo::UFOModel;
 #[derive(Clone, Debug)]
 pub enum WaveformSlot<F: Real> {
     /// 4-component Dirac spinor / off-shell fermion current
-    Fermion(DiracWf<F>),
+    ///
+    /// We will use always [`InDiracWf`] for the slot type and use
+    /// [`InDiracWf::to_outgoing`] to convert to an outgoing spinor when needed.
+    Fermion(InDiracWf<F>),
     /// 4-component polarization / off-shell vector current
     Vector(VectorWf<F>),
     /// Scalar amplitude + momentum
@@ -38,8 +41,10 @@ pub struct ExtLegInfo {
     pub id: ParticleId,
     /// Index into external leg array (0..n_in are incoming; n_in.. are outgoing)
     pub leg_idx: usize,
-    /// True if incoming leg, false if outgoing
-    pub is_incoming: bool,
+    /// For fermions: true if the particle has antiparticle flow (outgoing leg or incoming antiparticle)
+    /// This determines whether to use InDiracWf (u/v) or OutDiracWf (ū/v̄) spinors.
+    /// For non-fermions, this is unused.
+    pub fermion_flow_out: bool,
 }
 
 /// Description of an internal propagator.
@@ -126,8 +131,6 @@ pub enum EvalStep {
     ExternalWf {
         /// External leg descriptor
         info: ExtLegInfo,
-        /// Index into the runtime helicity array (set at eval time)
-        hel_index: usize,
         /// Which slot receives this wavefunction
         output_slot: usize,
     },

@@ -55,16 +55,32 @@ impl<'a> TopoContext<'a> {
     }
 
     fn make_externalwf(&mut self, leg: LegView) -> EvalStep {
+        let particle = leg.particle();
+        let particle_id = self
+            .model
+            .particle_id(particle.name())
+            .expect("particle not found");
+        let is_incoming = leg.index() < self.incoming_legs;
+
+        // Fermion flow direction for external legs:
+        // feyngraph uses invert_particle to adjust incoming/outgoing convention:
+        //   - Incoming legs: invert_particle=false → leg.particle() returns the input particle as-is
+        //   - Outgoing legs: invert_particle=true → leg.particle() returns the antiparticle
+        // For HELAS fermion wavefunctions:
+        //   - InDiracWf (u/v columns): flowing-in fermions; used for incoming particles and outgoing antiparticles
+        //   - OutDiracWf (ū/v̄ rows): flowing-out fermions; used for outgoing particles and incoming antiparticles
+        // Therefore, fermion_flow_out should be true when the *conjugated* particle flows out,
+        // which happens for outgoing legs (where invert_particle=true) OR incoming antiparticles.
+        // Since leg.particle() already applies the inversion, we check if the resulting particle
+        // is different from the base particle by seeing if we're outgoing.
+        let fermion_flow_out = !is_incoming; // outgoing legs have invert_particle=true
+
         EvalStep::ExternalWf {
             info: ExtLegInfo {
-                id: self
-                    .model
-                    .particle_id(leg.particle().name().as_str())
-                    .expect("particle not found"),
+                id: particle_id,
                 leg_idx: leg.index(),
-                is_incoming: leg.index() < self.incoming_legs, // convention: incoming legs first
+                fermion_flow_out,
             },
-            hel_index: 0, // TODO: determine helicity index
             output_slot: self.next_slot(),
         }
     }
