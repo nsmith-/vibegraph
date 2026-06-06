@@ -6,7 +6,8 @@
 //!
 //! The evaluator consists of:
 //! - `ast.rs` — AST data structures (DiagramAst, EvalStep, WaveformSlot, descriptors)
-//! - `compile.rs` — Compile phase: DiagramView + UFOModel → DiagramAst
+//! - `compile.rs` — Compile phase: DiagramView + UFOModel → DiagramAst (leg/prop extraction)
+//! - `topo_sort.rs` — Topological ordering: dependency graph → evaluation steps
 //! - `dispatch.rs` — Vertex dispatch: VertexInfo + slots → result
 //! - `run.rs` — Evaluation phase: DiagramAst × momenta × helicities → amplitude
 
@@ -14,8 +15,9 @@ pub mod ast;
 pub mod compile;
 pub mod dispatch;
 pub mod run;
+pub mod topo_sort;
 
-pub use ast::{DiagramAst, DispatchKind, EvalStep, WaveformSlot};
+pub use ast::{DiagramAst, EvalStep, WaveformSlot};
 pub use compile::{compile_diagram_ast, CompileError};
 pub use run::AmplitudeEvaluator;
 

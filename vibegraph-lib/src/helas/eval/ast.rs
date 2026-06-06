@@ -4,11 +4,14 @@
 //! It stores descriptor types at compile time (external leg info, propagator params, vertex
 //! dispatches) and is evaluated at runtime against external momenta + helicity configurations.
 
-use crate::helas::repr::lorentz::LorentzVector;
-use crate::helas::repr::{Real, C};
+use super::dispatch::DispatchKind;
+use crate::helas::repr::Real;
 use crate::helas::wavefn::{DiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
+use crate::ufo::particles::ParticleId;
+use crate::ufo::vertices::VertexId;
+use crate::ufo::UFOModel;
 
 /// A runtime wavefunction register (holds one particle's wavefunction).
 ///
@@ -31,52 +34,22 @@ pub enum WaveformSlot<F: Real> {
 /// Description of an external leg baked in at compile time.
 #[derive(Clone, Debug)]
 pub struct ExtLegInfo {
+    /// Particle information
+    pub id: ParticleId,
     /// Index into external leg array (0..n_in are incoming; n_in.. are outgoing)
     pub leg_idx: usize,
-    /// UFO spin code (1=scalar, 2=fermion, 3=vector)
-    pub spin: i32,
-    /// Particle mass (GeV)
-    pub mass: f64,
     /// True if incoming leg, false if outgoing
     pub is_incoming: bool,
-    /// For debugging
-    pub particle_name: String,
 }
 
 /// Description of an internal propagator.
 #[derive(Clone, Debug)]
 pub struct PropInfo {
-    /// UFO spin code (determines which Propagator impl to use)
-    pub spin: i32,
-    /// Particle mass (GeV)
-    pub mass: f64,
-    /// Particle width (GeV)
-    pub width: f64,
+    /// Particle information
+    pub id: ParticleId,
     /// Momentum = Σ_i coeff[i] * p_ext[i]; i indexes external legs in order
     /// Coefficients are ±1 indicating which external legs contribute (inflow direction)
     pub momentum_coeffs: Vec<i8>,
-}
-
-/// Pre-compiled dispatch tag, derived from LorentzExpr + spins at compile time.
-/// Eliminates symbolic evaluation on the hot path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DispatchKind {
-    /// FFV with left-chiral projector (ProjM)
-    FfvProjM,
-    /// FFV with right-chiral projector (ProjP)
-    FfvProjP,
-    /// FFS Yukawa (scalar coupling)
-    Ffs,
-    /// VVV triple gauge
-    Vvv,
-    /// VVVV quartic gauge
-    Vvvv,
-    /// VVS (Higgs coupling)
-    Vvs,
-    /// SSS scalar triple
-    Sss,
-    /// SSSS scalar quartic
-    Ssss,
 }
 
 /// One (lorentz_structure, coupling_constant) pair at a vertex.
@@ -88,7 +61,7 @@ pub enum DispatchKind {
 pub struct VertexTerm {
     /// Model's lorentz structure ID (can resolve to LorentzExpr if needed)
     pub lorentz_id: LorentzId,
-    /// Pre-compiled dispatch tag (from LorentzExpr pattern match)
+    /// Pre-compiled dispatch tag (from LorentzTerm pattern match)
     pub dispatch_kind: DispatchKind,
     /// Per-leg spin codes (from LorentzStructure.spins)
     pub spins: Vec<i32>,
@@ -96,16 +69,54 @@ pub struct VertexTerm {
     pub coupling_id: CouplingId,
 }
 
+impl VertexTerm {
+    pub fn from_ufo(
+        model: &UFOModel,
+        lorentz_id: LorentzId,
+        _color: &str, // TODO: handle color structures if needed
+        coupling_id: CouplingId,
+    ) -> Self {
+        let lorentz = model.lorentz_struct(lorentz_id);
+        VertexTerm {
+            lorentz_id: lorentz_id,
+            dispatch_kind: DispatchKind::from_lorentz_expr(&lorentz.expr, &lorentz.spins)
+                .expect("Unable to determine dispatch kind from Lorentz expression"),
+            spins: lorentz.spins.clone(),
+            coupling_id,
+        }
+    }
+}
+
 /// Descriptor for one vertex with all its terms (sum over Lorentz × color).
 #[derive(Clone, Debug)]
 pub struct VertexInfo {
     /// Sum over Lorentz + color terms
     pub terms: Vec<VertexTerm>,
-    /// Which vertex-local leg is the output (receives the off-shell current)
-    /// Convention: the leg that connects toward the root of the tree
-    pub result_leg_idx: usize,
     /// Total number of vertex legs
     pub n_legs: usize,
+}
+
+impl VertexInfo {
+    /// Generate VertexInfo from a UFO vertex definition, given the model and the desired index of the result leg.
+    pub fn from_ufo(model: &UFOModel, id: VertexId) -> Self {
+        let vertex = model.vertex_def(id);
+        let terms = vertex
+            .couplings
+            .iter()
+            .map(|(&(color_idx, lorentz_idx), coupling_id)| {
+                VertexTerm::from_ufo(
+                    model,
+                    vertex.lorentz[lorentz_idx],
+                    vertex.color[color_idx].as_str(),
+                    *coupling_id,
+                )
+            })
+            .collect();
+        VertexInfo {
+            terms,
+            n_legs: vertex.particles.len(),
+        }
+    }
 }
 
 /// One compilation step in the diagram evaluation.
@@ -118,13 +129,15 @@ pub enum EvalStep {
         /// Index into the runtime helicity array (set at eval time)
         hel_index: usize,
         /// Which slot receives this wavefunction
-        slot: usize,
+        output_slot: usize,
     },
 
     /// Apply a vertex to compute an off-shell current (all but one leg known).
     OffShellCurrent {
-        /// Vertex descriptor (terms + output leg)
+        /// Vertex descriptor (terms)
         info: VertexInfo,
+        /// Which vertex-local leg is the output (receives the off-shell current)
+        result_leg_idx: usize,
         /// Slots for the known legs (inputs to the vertex)
         input_slots: Vec<usize>,
         /// Slot receiving the off-shell wavefunction (output)
@@ -136,21 +149,32 @@ pub enum EvalStep {
         /// Propagator descriptor (mass, width, momentum coeffs)
         info: PropInfo,
         /// Input slot (wavefunction to propagate)
-        in_slot: usize,
+        input_slot: usize,
         /// Output slot (propagated wavefunction)
-        out_slot: usize,
+        output_slot: usize,
     },
 
     /// Final vertex: all legs known → produces a complex scalar amplitude.
     /// This is typically stored in a temporary slot as a `WaveformSlot::Scalar`.
     ContractAmplitude {
-        /// Vertex descriptor (terms + output leg)
+        /// Vertex descriptor (terms)
         info: VertexInfo,
         /// All legs (inputs to the final vertex)
         input_slots: Vec<usize>,
         /// Slot receiving the amplitude (as WaveformSlot::Scalar)
-        result_slot: usize,
+        output_slot: usize,
     },
+}
+
+impl EvalStep {
+    pub fn output_slot(&self) -> usize {
+        match self {
+            EvalStep::ExternalWf { output_slot, .. } => *output_slot,
+            EvalStep::OffShellCurrent { output_slot, .. } => *output_slot,
+            EvalStep::Propagate { output_slot, .. } => *output_slot,
+            EvalStep::ContractAmplitude { output_slot, .. } => *output_slot,
+        }
+    }
 }
 
 /// A compiled representation of a single Feynman diagram.

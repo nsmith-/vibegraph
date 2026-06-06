@@ -13,7 +13,7 @@ extended-validation = []
 [dependencies]
 num-traits = "0.2"
 rand = "0.9"
-feyngraph = { git = "https://github.com/Jens-Braun/FeynGraph", branch = "main", default-features = false }
+feyngraph = { git = "https://github.com/nsmith-/FeynGraph", branch = "main", default-features = false }
 indexmap = "2.14.0"
 log = "0.4.29"
 num-complex = "0.4.6"

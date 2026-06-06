@@ -207,13 +207,16 @@ fn generate_sets_inner(
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use std::sync::OnceLock;
 
     static UFO_MODEL: OnceLock<UFOModel> = OnceLock::new();
 
-    fn sm_model() -> &'static UFOModel {
+    /// Load the SM UFO model once for all tests.
+    ///
+    /// This is public to be accessible from any test module that needs it
+    pub fn sm_model() -> &'static UFOModel {
         UFO_MODEL.get_or_init(|| {
             let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
             let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm");
@@ -222,7 +225,10 @@ mod tests {
         })
     }
 
-    fn generate(process: &str) -> Vec<DiagramSet> {
+    /// Generate diagrams for a process string using the SM UFO model
+    ///
+    /// Used in multiple tests, so factored out here.
+    pub fn generate(process: &str) -> Vec<DiagramSet> {
         let opts = ParsingOptions::default();
         let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
         let model = sm_model();

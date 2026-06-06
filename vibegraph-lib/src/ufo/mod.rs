@@ -380,15 +380,15 @@ impl EvaluatedModel<'_> {
 
     /// Get the coupling entries for a vertex by its name.
     ///
-    /// Returns `[(lorentz_idx, color_idx, value)]` or `None` if unknown.
+    /// Returns `[(color_idx, lorentz_idx, value)]` or `None` if unknown.
     pub fn vertex_couplings(&self, id: VertexId) -> Option<Vec<(usize, usize, Complex64)>> {
         let vertex = self.model.vertex_def(id);
         let entries = vertex
             .couplings
             .iter()
-            .map(|((l, c), &coup_id)| {
+            .map(|((c, l), &coup_id)| {
                 let val = self.coupling_values[coup_id];
-                (*l, *c, val)
+                (*c, *l, val)
             })
             .collect();
         Some(entries)

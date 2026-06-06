@@ -38,20 +38,26 @@
 
 ## Immediate Next Steps
 
-### Phase 3a: AST Compiler (pending)
- `DiagramAst`
-  - Topological ordering of vertices
-  - Slot-based register allocation
-  - Momentum routing and helicity tracking
+### Phase 3a: AST Compiler (✅ COMPLETE)
+- **topo_sort.rs**: Recursive tree-walk from arbitrary root vertex
+  - Converts undirected diagram graph into directed DAG by rooting at first vertex
+  - External legs → ExternalWf steps (slots 0..n_ext)
+  - Internal vertices → OffShellCurrent + Propagate (non-root) or ContractAmplitude (root)
+  - Depth-first traversal ensures all inputs available before evaluation
+- **compile.rs**: Wired compile_diagram_ast to call compile_single_diagram for each diagram
+- **Status**: Tests passing for e⁺e⁻→μ⁺μ⁻ (photon and Z diagrams)
 
 ### Phase 3b: Vertex Dispatch (pending)
- HELAS routine
-  - Map FFV, VVV, FFS, etc. to appropriate routines
-  - Handle coupling resolution
+- **dispatch.rs**: Runtime evaluation of DispatchKind variants
+  - Map vertex terms (FFV, VVV, FFS, etc.) to HELAS routines
+  - Resolve couplings and helicity indices at eval time
 
 ### Phase 3c: AmplitudeEvaluator (pending)
-- **Runtime loop**: Walk DiagramAst, dispatch vertices, accumulate amplitude
-- **Validation**: Compare against hardcoded `compute_m2_ee_mumu`
+- **run.rs**: Runtime evaluation loop
+  - Walk DiagramAst, execute EvalSteps in order
+  - Read from input slots, write to output slots
+  - Final amplitude from amplitude_slot
+  - Validation: Compare against hardcoded `compute_m2_ee_mumu`
 
 ## Implementation Notes
 
