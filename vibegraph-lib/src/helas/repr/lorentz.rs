@@ -331,7 +331,7 @@ pub trait SpinorRepr<F: Real>: LorentzRepr<F> {
 ///
 /// The `left_current` and `right_current` implementations match the Fortran
 /// HELAS routines `iovxxx` lines 86–89 exactly.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Bispinor<F: Real>(pub [C<F>; 4]);
 
 impl<F: Real> Bispinor<F> {
@@ -344,6 +344,20 @@ impl<F: Real> Bispinor<F> {
     pub fn oxxxxx(p: LorentzVector<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
         Bispinor {
             0: weyl_oxxxxx(p, mass, nhel, nsf),
+        }
+    }
+
+    pub fn dirac_conjugate(&self) -> Self {
+        // In the Weyl basis, the Dirac conjugate ψ̄ = ψ† γ^0
+        // swaps the left and right components and takes the Hermitian conjugate:
+        // ψ̄ = [χ†, ψ†] = [ψ[2]*, ψ[3]*, ψ[0]*, ψ[1]*]
+        Bispinor {
+            0: [
+                self.0[2].conj(),
+                self.0[3].conj(),
+                self.0[0].conj(),
+                self.0[1].conj(),
+            ],
         }
     }
 }

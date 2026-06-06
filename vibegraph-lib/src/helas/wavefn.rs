@@ -65,6 +65,12 @@ impl<F: Real> InDiracWf<F> {
             _flow: PhantomData,
         }
     }
+
+    /// Convert to a flowing-OUT wavefunction by taking the Dirac conjugate of the spinor
+    /// and flipping the momentum sign.
+    pub fn to_outgoing(self) -> OutDiracWf<F> {
+        OutDiracWf::from_spinor(self.spinor.dirac_conjugate(), self.momentum.scaled(-1))
+    }
 }
 
 impl<F: Real> OutDiracWf<F> {
@@ -83,6 +89,13 @@ impl<F: Real> OutDiracWf<F> {
             momentum,
             _flow: PhantomData,
         }
+    }
+
+    /// Convert to a flowing-IN wavefunction by taking the Dirac conjugate of the spinor
+    /// and flipping the momentum sign.
+    /// This is the inverse of [`InDiracWf::to_outgoing`].
+    pub fn to_incoming(self) -> InDiracWf<F> {
+        InDiracWf::from_spinor(self.spinor.dirac_conjugate(), self.momentum.scaled(-1))
     }
 }
 
@@ -307,5 +320,72 @@ mod tests {
         // Momentum should be -p (nsv=-1)
         assert_eq!(wf.momentum[0], -2.0);
         assert_eq!(wf.momentum[1], -0.1);
+    }
+}
+
+#[cfg(test)]
+mod ixxxxx_oxxxxx_tests {
+    use super::*;
+    use crate::helas::repr::lorentz::Bispinor;
+
+    /// Test that ixxxxx and oxxxxx both produce valid spinors.
+    ///
+    /// HELAS convention:
+    /// - ixxxxx(p, m, nhel, nsf) creates an incoming spinor (column): u/v spinors
+    /// - oxxxxx(p, m, nhel, nsf) creates an outgoing spinor (row): ū/v̄ spinors
+    ///
+    /// Both use the same momentum, helicity, and charge (nsf) parameters.
+    /// The difference is:
+    /// 1. Component indexing (which Weyl chiralities are where)
+    /// 2. Complex conjugation of transverse phases (χ[1] uses -p[2] in oxxxxx)
+    /// 3. Swapping of omega factors (sfomeg[0] ↔ sfomeg[1])
+    ///
+    /// These differences reflect the Dirac conjugate relationship ψ̄ = ψ† γ⁰,
+    #[test]
+    fn test_ixxxxx_oxxxxx() {
+        let p1 = LorentzVector([2.0, 0.5, -0.3, 1.2]);
+        let p2 = LorentzVector([(3.5_f64).sqrt(), 0.5, -1.0, 1.5]);
+        assert!(p2.m() < 1e-10, "p2 should be massless for this test");
+        let lorentz_cases = vec![
+            (p1, 0.5),    // off-shell massive
+            (p1, 0.0),    // off-shell massless
+            (p1, p1.m()), // on-shell massive
+            (p2, 0.0),    // on-shell massless
+        ];
+        let cases = itertools::iproduct!(
+            lorentz_cases,
+            [SpinorHelicity::Up, SpinorHelicity::Down],
+            [Charge::Particle, Charge::Antiparticle]
+        );
+
+        for ((p, mass), nhel, nsf) in cases {
+            let fi = Bispinor::ixxxxx(p, mass, nhel, nsf);
+            let fo = Bispinor::oxxxxx(p, mass, nhel, nsf);
+
+            // Both should produce non-zero spinors
+            assert!(
+                fi.0.iter().any(|c| c.norm() > 1e-10),
+                "ixxxxx should produce non-zero spinor"
+            );
+            assert!(
+                fo.0.iter().any(|c| c.norm() > 1e-10),
+                "oxxxxx should produce non-zero spinor"
+            );
+
+            // The norms should be equal (both represent a spinor at momentum p)
+            let fi_norm: f64 = fi.0.iter().map(|c| c.norm_sqr()).sum();
+            let fo_norm: f64 = fo.0.iter().map(|c| c.norm_sqr()).sum();
+            assert!(fi_norm > 0.0, "ixxxxx norm should be non-zero");
+            assert!(fo_norm > 0.0, "oxxxxx norm should be non-zero");
+
+            // The norms should be equal because both represent the same physical state
+            assert!(
+                (fi_norm - fo_norm).abs() / fi_norm < 1e-10,
+                "ixxxxx and oxxxxx with same params should have equal norms"
+            );
+
+            // They should be dirac conjugates of each other
+            assert_eq!(fi.dirac_conjugate(), fo);
+        }
     }
 }
