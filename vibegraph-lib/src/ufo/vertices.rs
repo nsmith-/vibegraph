@@ -26,7 +26,7 @@ pub struct Vertex {
     /// Color factor strings, e.g. `["1"]`, `["f(1,2,3)"]`.
     pub color: Vec<String>,
     pub lorentz: Vec<LorentzId>,
-    /// `(lorentz_idx, color_idx)` → coupling id.
+    /// `(color_idx, lorentz_idx)` → coupling id.
     pub couplings: HashMap<(usize, usize), CouplingId>,
 }
 
@@ -64,6 +64,26 @@ pub(crate) fn parse_vertices(src: &str) -> Result<Vec<RawVertex>, VertexError> {
         let color = extract_str_list(keywords, "color");
         let lorentz = extract_name_list(keywords, "lorentz", "L");
         let couplings = extract_couplings_dict(keywords);
+
+        // Validation: check all coupling indices are in range of lorentz/color lists
+        for (&(color_idx, lor_idx), coup_name) in &couplings {
+            if lor_idx >= lorentz.len() {
+                return Err(VertexError::Parse(format!(
+                    "Coupling {} references invalid lorentz index {} (only {} provided)",
+                    coup_name,
+                    lor_idx,
+                    lorentz.len()
+                )));
+            }
+            if color_idx >= color.len() {
+                return Err(VertexError::Parse(format!(
+                    "Coupling {} references invalid color index {} (only {} provided)",
+                    coup_name,
+                    color_idx,
+                    color.len()
+                )));
+            }
+        }
 
         result.push(RawVertex {
             name,
