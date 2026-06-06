@@ -104,7 +104,18 @@ Individual steps are also available:
 
 ## Agent Tooling Guidelines
 
-**Prefer Unix CLI tools over Python scripts for search and extraction tasks.**
+### Rust Code Exploration
+
+**Prefer the rust-analyzer MCP server** for Rust code queries. It provides intelligent navigation:
+- Find all references to a symbol
+- Type information and trait implementations
+- Accurate definition lookup and call hierarchies
+
+Fall back to Unix CLI tools (`grep`, `sed`, `find`, etc.) only when the MCP is unavailable or the query is simpler (e.g., finding a specific string literal).
+
+### General Search & Extraction
+
+**Prefer Unix CLI tools over Python scripts** for search and extraction tasks.
 
 Use `grep`, `sed`, `awk`, `find`, etc. instead of writing ad-hoc Python scripts. Only write a
 script when the task genuinely requires logic these tools cannot express.
