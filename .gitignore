@@ -10,3 +10,4 @@
 /validation/madgraph/output
 .claude
 .vscode
+.mcp.json  # TODO: add MCP server setup to pixi.toml ?
