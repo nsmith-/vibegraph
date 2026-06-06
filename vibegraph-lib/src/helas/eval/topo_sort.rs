@@ -26,8 +26,6 @@ use super::compile::CompileError;
 struct TopoContext<'a> {
     /// Model for looking up particle and vertex details not available from feyngraph
     model: &'a UFOModel,
-    /// Number incoming external legs (for interpreting leg.index())
-    incoming_legs: usize,
     /// Next available slot for internal propagators
     next_slot: usize,
     /// Steps to emit (in order)
@@ -38,10 +36,9 @@ struct TopoContext<'a> {
 
 impl<'a> TopoContext<'a> {
     /// Create a new context for topological ordering.
-    fn new(model: &'a UFOModel, view: &DiagramView) -> Self {
+    fn new(model: &'a UFOModel) -> Self {
         TopoContext {
             model: model,
-            incoming_legs: view.incoming().count(),
             next_slot: 0,
             steps: Vec::new(),
             processed_vertices: HashSet::new(),
@@ -60,26 +57,11 @@ impl<'a> TopoContext<'a> {
             .model
             .particle_id(particle.name())
             .expect("particle not found");
-        let is_incoming = leg.index() < self.incoming_legs;
-
-        // Fermion flow direction for external legs:
-        // feyngraph uses invert_particle to adjust incoming/outgoing convention:
-        //   - Incoming legs: invert_particle=false → leg.particle() returns the input particle as-is
-        //   - Outgoing legs: invert_particle=true → leg.particle() returns the antiparticle
-        // For HELAS fermion wavefunctions:
-        //   - InDiracWf (u/v columns): flowing-in fermions; used for incoming particles and outgoing antiparticles
-        //   - OutDiracWf (ū/v̄ rows): flowing-out fermions; used for outgoing particles and incoming antiparticles
-        // Therefore, fermion_flow_out should be true when the *conjugated* particle flows out,
-        // which happens for outgoing legs (where invert_particle=true) OR incoming antiparticles.
-        // Since leg.particle() already applies the inversion, we check if the resulting particle
-        // is different from the base particle by seeing if we're outgoing.
-        let fermion_flow_out = !is_incoming; // outgoing legs have invert_particle=true
 
         EvalStep::ExternalWf {
             info: ExtLegInfo {
                 id: particle_id,
                 leg_idx: leg.index(),
-                fermion_flow_out,
             },
             output_slot: self.next_slot(),
         }
@@ -184,7 +166,7 @@ pub fn compile_single_diagram(
 ) -> Result<DiagramAst, CompileError> {
     let n_ext = view.legs().count();
 
-    let mut ctx = TopoContext::new(model, view);
+    let mut ctx = TopoContext::new(model);
 
     // Choose an arbitrary root vertex (the first one) and walk the tree from there.
     // External legs are handled as we encounter them, and internal propagators

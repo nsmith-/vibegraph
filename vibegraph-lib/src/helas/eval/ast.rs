@@ -41,10 +41,6 @@ pub struct ExtLegInfo {
     pub id: ParticleId,
     /// Index into external leg array (0..n_in are incoming; n_in.. are outgoing)
     pub leg_idx: usize,
-    /// For fermions: true if the particle has antiparticle flow (outgoing leg or incoming antiparticle)
-    /// This determines whether to use InDiracWf (u/v) or OutDiracWf (ū/v̄) spinors.
-    /// For non-fermions, this is unused.
-    pub fermion_flow_out: bool,
 }
 
 /// Description of an internal propagator.
