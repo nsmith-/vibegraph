@@ -1,6 +1,6 @@
 use crate::helas::repr::{
     intertwiner::{GammaL, GammaR, GammaV, Intertwiner2Leg},
-    lorentz::{Bispinor, ComplexVector},
+    lorentz::{Bispinor, Chirality, ComplexVector, SpinorRepr},
     propagator::{DiracPropagator, Propagator, ScalarPropagator},
     r, Real, C,
 };
@@ -379,21 +379,12 @@ pub fn jsixxx<F: Real>(
     // Accumulated momentum: q = fi.p + fo.p
     let q = fi.momentum + fo.momentum;
 
-    // Scalar current: contract fi and fo spinor components
-    // Vibegraph Weyl basis indexing:
-    //   fo: indices 0,1 = RIGHT-chiral, indices 2,3 = LEFT-chiral (sfomeg swap)
-    //   fi: indices 0,1 = LEFT-chiral, indices 2,3 = RIGHT-chiral
-    // Left contraction: fi_       fo_leftleft
-    // Right contraction: fi_       fo_rightright
-    let fi_left_dot_fo_left = fi.spinor.0[0] * fo.spinor.0[2] + fi.spinor.0[1] * fo.spinor.0[3];
-    let fi_right_dot_fo_right = fi.spinor.0[2] * fo.spinor.0[0] + fi.spinor.0[3] * fo.spinor.0[1];
-
-    // Scalar value before propagation
-    let scalar_value = fi_left_dot_fo_left + fi_right_dot_fo_right;
+    // Scalar current: sum of left and right bilinears (identity structure)
+    let scalar_value = Bispinor::scalar_bilinear(&fo.spinor, &fi.spinor, Chirality::Both);
 
     // Apply scalar propagator
     let prop = ScalarPropagator { mass, width };
-    let prop_value = prop.propagate(q.0, scalar_value);
+    let prop_value = prop.propagate(q.0, scalar_value.0);
 
     // Scale by coupling
     let final_value = g * prop_value;
@@ -424,15 +415,9 @@ pub fn iosxxx<F: Real>(
     s: &ScalarWf<F>,
     gc: [C<F>; 2],
 ) -> C<F> {
-    // Spinor index contractions in Weyl basis:
-    //   fo indices 0,1 = RIGHT-chiral, 2,3 = LEFT-chiral (after sfomeg swap)
-    //   fi indices 0,1 = LEFT-chiral, 2,3 = RIGHT-chiral
-
-    // Left contraction: gc[0] * (fi_       fo_left)left
-    let left_contr = fi.spinor.0[0] * fo.spinor.0[2] + fi.spinor.0[1] * fo.spinor.0[3];
-
-    // Right contraction: gc[1] * (fi_       fo_right)right
-    let right_contr = fi.spinor.0[2] * fo.spinor.0[0] + fi.spinor.0[3] * fo.spinor.0[1];
+    // Compute left and right chiral bilinears using the new trait methods
+    let left_contr = Bispinor::scalar_bilinear(&fo.spinor, &fi.spinor, Chirality::Left).0;
+    let right_contr = Bispinor::scalar_bilinear(&fo.spinor, &fi.spinor, Chirality::Right).0;
 
     // Combine with couplings and scalar value
     s.value * (gc[0] * left_contr + gc[1] * right_contr)

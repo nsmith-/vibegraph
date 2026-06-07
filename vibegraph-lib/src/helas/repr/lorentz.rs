@@ -311,11 +311,29 @@ pub trait SpinorRepr<F: Real>: LorentzRepr<F> {
     fn right_current(fo: &Self, fi: &Self) -> ComplexVector<F>;
     // fn right_current(fo: &[C<F>; 4], fi: &[C<F>; 4]) -> [C<F>; 4];
 
-    // Left projection: `P_L = (1 - γ^5)/2`.
-    // fn proj_left(self) -> Self;
+    /// Left projection: `P_L = (1 - γ^5)/2` — zero the right-chiral (indices 2-3) components.
+    fn project_left(self) -> Self;
 
-    // Right projection: `P_R = (1 + γ^5)/2`.
-    // fn proj_right(self) -> Self;
+    /// Right projection: `P_R = (1 + γ^5)/2` — zero the left-chiral (indices 0-1) components.
+    fn project_right(self) -> Self;
+
+    /// Scalar bilinear with chiral structure: `f̄ Γ f` where Γ ∈ {Identity, P_L, P_R}.
+    ///
+    /// In the Weyl basis with the `fo` swap convention:
+    /// - `fo` has indices 0,1=RIGHT-chiral, 2,3=LEFT-chiral
+    /// - `fi` has indices 0,1=LEFT-chiral, 2,3=RIGHT-chiral
+    fn scalar_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> Scalar<F>;
+}
+
+/// Chirality label for chiral projections and bilinears.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Chirality {
+    /// Left-handed: `P_L = (1 - γ^5)/2` — projects onto left-chiral (undotted Weyl) components.
+    Left,
+    /// Right-handed: `P_R = (1 + γ^5)/2` — projects onto right-chiral (dotted Weyl) components.
+    Right,
+    /// Both: identity projector — includes both chiralities.
+    Both,
 }
 
 /// A concrete Spin(1,3) representation: the Weyl basis for Dirac spinors.
@@ -411,6 +429,44 @@ impl<F: Real> SpinorRepr<F> for Bispinor<F> {
                 fo[0] * fi[2] - fo[1] * fi[3],
             ],
         }
+    }
+
+    /// Left projection: zero the right-chiral (indices 2-3) components, keeping left-chiral (0-1).
+    fn project_left(self) -> Self {
+        Bispinor([
+            self.0[0],
+            self.0[1],
+            C::new(F::zero(), F::zero()),
+            C::new(F::zero(), F::zero()),
+        ])
+    }
+
+    /// Right projection: zero the left-chiral (indices 0-1) components, keeping right-chiral (2-3).
+    fn project_right(self) -> Self {
+        Bispinor([
+            C::new(F::zero(), F::zero()),
+            C::new(F::zero(), F::zero()),
+            self.0[2],
+            self.0[3],
+        ])
+    }
+
+    /// Scalar bilinear contraction: `f̄ Γ f` where `Γ` encodes chirality.
+    ///
+    /// With `fo` having the sfomeg swap convention (indices 0,1=RIGHT-chiral, 2,3=LEFT-chiral)
+    /// and `fi` with indices 0,1=LEFT-chiral, 2,3=RIGHT-chiral:
+    /// - Left (P_L): `fi_left · fo_left = fi[0]·fo[2] + fi[1]·fo[3]`
+    /// - Right (P_R): `fi_right · fo_right = fi[2]·fo[0] + fi[3]·fo[1]`
+    /// - Both (Identity): both left and right contractions.
+    fn scalar_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> Scalar<F> {
+        let fo = &fo.0;
+        let fi = &fi.0;
+        let result = match chirality {
+            Chirality::Left => fi[0] * fo[2] + fi[1] * fo[3],
+            Chirality::Right => fi[2] * fo[0] + fi[3] * fo[1],
+            Chirality::Both => (fi[0] * fo[2] + fi[1] * fo[3]) + (fi[2] * fo[0] + fi[3] * fo[1]),
+        };
+        Scalar(result)
     }
 }
 
