@@ -27,67 +27,55 @@
 
 ## 🔴 High — unblock amplitude generalization
 
-### `feyngraph-ufo-replace` — Replace `TopoModel::from_ufo()` with vibegraph-built model
+### `lorentz-runtime-eval` — Runtime Lorentz structure evaluator (🟡 TESTING)
 
-Status: **✅ COMPLETE** (as of current implementation)
+**Status**: 567-line runtime evaluator staged in `helas/eval/run.rs` + integration test added.
 
-**Completed**: `compute_spin_map()` function (commit d19a4e7)
-- Added `compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Vec<isize>` to `ufo/lorentz.rs`
-- Traces spinor index chains through `Gamma`, `Sigma`, `Identity`, `ProjM`, `ProjP`, `C` operators
-- Returns 1-indexed mapping: positive values map external legs, 0 means unmapped
-- Updated `LorentzStructure` struct with `spin_map` field
-- Integrated into `parse_lorentz()` so all structures have spin_map computed automatically
-- Added comprehensive unit tests (FFV1, no-spinor, projector-chain cases)
+**Completed in staged commit**:
+- `AmplitudeEvaluator::compile()`: Resolves external particles, compiles AST, precomputes helicity states
+- `eval_amplitude()`: Executes `EvalStep` instructions in topological order
+  - Dispatch: `ExternalWf` → `OffShellCurrent` → `Propagate` → `ContractAmplitude`
+  - Supported terms: FFV (ProjM/ProjP), FFS, VVV, VVS, SSS, SSSS
+  - Propagators: Dirac (massive), massless/massive vectors, scalars
+- `eval_m2()`: Helicity-summed driver; sums |amplitude|² over all valid helicity states
+- Helper functions: slot extractors, complex/Lorentz arithmetic
 
-**Completed**: Enhanced `build_feyngraph_model()` function with proper coupling order handling
-- Refactored into `ufo/topo.rs` module for better organization
-- Now properly extracts coupling order information from UFO model's coupling definitions
-- Ensures feyngraph vertices include accurate coupling orders for proper diagram generation
-- Maintains compatibility with existing code while improving accuracy
+**Test Status**:
+- ✅ Integration test `test_eval_m2_ee_mumu_vs_hardcoded` runs without errors
+- ✅ Generates correct helicity combinations (16 for e⁺e⁻→μ⁺μ⁻)
+- ✅ Evaluator produces non-zero, finite amplitudes across angles
+- 🔴 **AMPLITUDE SCALE MISMATCH**: Runtime evaluator gives ~15–30% of hardcoded reference
+  - Suggests bug in wavefunction construction or vertex dispatch
+  - Consistent across angles; not helicity counting issue
+  - Likely in: fermion/antiparticle crossing logic, charge assignment, or vertex contraction sign
 
-**Current approach**: Using the enhanced `build_feyngraph_model()` function that properly constructs feyngraph models with accurate coupling orders, while still leveraging vibegraph's computed `spin_map` for the lorentz-runtime-eval task.
+**Next steps**:
+1. Debug amplitude scale factor (compare individual helicity terms vs hardcoded)
+2. Commit staged changes with updated test notes once root cause identified
+3. Fix underlying issue in evaluator or test setup
+4. Extend `dispatch.rs` for additional vertex types if needed
 
-**Benefit**: The `spin_map` is now computed and available — it's needed by the Lorentz runtime evaluator since feyngraph's internal spin_map is not public. Full UFO ownership is now fully functional with proper coupling orders.
-
-_Depends on: `lorentz-parse` (✅), `ufo-full-ownership` (✅)_
-_Unblocks: `lorentz-runtime-eval` (spin_map is now ready)_
-
-### `lorentz-runtime-eval` — Runtime Lorentz structure evaluator
-
-Walk the `LorentzExpr` AST (parsed by `ufo/lorentz.rs`) and dispatch to pre-compiled primitives
-in `helas/repr/`. No code generation — all primitives are statically compiled into the binary
-and the AST is interpreted at runtime. This is the generalization of the hardcoded `compute_m2_ee_mumu`.
-
-**Current primitive state** (in `helas/repr/`):
-- Working: `GammaL`, `GammaR` (`intertwiner.rs`); `ScalarPropagator` (`propagator.rs`);
-  `weyl_ixxxxx`/`oxxxxx` (`lorentz.rs`); `j3xxxx` (`vertex.rs`)
-- Need implementation:
-  - `GammaV::apply` — `γ^μ` on off-shell spinor current (`intertwiner.rs:176`)
-  - `SigmaTensor::apply` — `σ^μν` bilinear (`intertwiner.rs:204`)
-  - `Epsilon::apply` — spinor metric `ε_{αβ}` (`intertwiner.rs:232`)
-  - `DiracPropagator::propagate` — `(q̸ + m)/(q²−m²+imΓ)` (`propagator.rs:109`)
-  - `MasslessVectorPropagator::propagate` — `−g_{μν}/q²` (`propagator.rs:146`)
-  - `MassiveVectorPropagator::propagate` — unitary gauge (`propagator.rs:180`)
-  - `GaugeVertex::apply` — color intertwiner dispatch (`coupling.rs:281`)
-- Need design: bridge from `LorentzOp` variants (`Gamma`, `Sigma`, `ProjM`, `ProjP`, `Metric`,
-  `P`, `Epsilon`, `C`) to runtime dispatch using `spin_map` to route spinor indices
-
-Revised plan: see research/notes/10-lorentz-runtime-eval-plan.md for detailed design and current status.
-
-_Depends on: `feyngraph-ufo-replace` (for spin_map), `lorentz-parse` (✅)_
+_Depends on: `feyngraph-ufo-replace` (✅), `lorentz-parse` (✅)_
 _Unblocks: `helas-generalize`_
 
 ---
 
-## 🟡 Medium — wire up the generalized evaluator
+## 🟡 Medium — wire up the generalized evaluator and CLI integration
 
-### `helas-generalize` — Topology-driven HELAS evaluator
-Replace the hardcoded `compute_m2_ee_mumu` with a generic evaluator that
-accepts a diagram topology (propagator chain + vertex list) and dispatches
-to the appropriate Lorentz runtime primitives.
-_Depends on: `diagram-enum` (✅), `lorentz-runtime-eval`_
+### `helas-generalize` — Topology-driven HELAS evaluator (PENDING)
+Replace the hardcoded `compute_m2_ee_mumu` with the generalized `AmplitudeEvaluator`.
+Once the staged `eval_amplitude` tests pass, integrate it into the cross-section integration pipeline.
 
-### `global-config` — Implement `vibegraph_lib::config::GlobalConfig`
+**Tasks**:
+1. Replace calls to `compute_m2_ee_mumu` with `AmplitudeEvaluator::eval_m2`
+2. Update phase-space loop to pass `&DiagramSet` and `&EvaluatedModel`
+3. Extend `DispatchKind` coverage if needed for new processes
+4. Validate against existing hardcoded reference
+
+_Depends on: `lorentz-runtime-eval` (staged, testing)_
+_Unblocks: Process generalization beyond e⁺e⁻→μ⁺μ⁻_
+
+### `global-config` — Implement `vibegraph_lib::config::GlobalConfig` (PENDING)
 
 A thin coordinator that wires `ParsedProcCard` → `UFOModel` loading for the CLI
 and future Python/WASM bindings. The parsing side is already done (`ModelImport`
@@ -117,6 +105,9 @@ Caller flow:
 Restrict-card resolution: `restrict_path_override` takes precedence; otherwise
 look for `<model_dir>/restrict_<variant>.dat` (variant from `ModelImport`), then
 fall back to auto-discovery of `restrict_default.dat`.
+
+_Depends on: `helas-generalize` (for pipeline integration)_
+_Unblocks: Full CLI with process cards_
 
 ---
 
@@ -160,11 +151,55 @@ the natural-units convention (ℏ = c = 1) before committing.
 
 ---
 
+---
+
+## 🎯 Updated Implementation Plan (2026-06-06)
+
+### Immediate (next session)
+1. **Test staged `run.rs` implementation** (15–30 min)
+   - Run `cargo test -p vibegraph-lib --lib` to confirm no regressions
+   - Add integration test: `eval_m2` against e⁺e⁻→μ⁺μ⁻ hardcoded reference
+   - Commit if all tests pass
+
+2. **Extend dispatch coverage if needed** (30 min–1 hour)
+   - Review `dispatch.rs` for unhandled vertex types
+   - Add new `DispatchKind` variants if required for broader processes
+   - Update `eval_amplitude` helper functions for new terms
+
+3. **Integration test: pp→bb with generalized evaluator** (1–2 hours)
+   - Use existing feyngraph/diagram infrastructure
+   - Compare sample diagram amplitudes against MadGraph
+   - Confirm FFV + VVV dispatch works correctly
+
+### Short-term (1–2 days)
+4. **Replace hardcoded `compute_m2_ee_mumu` with `eval_m2`** (30 min–1 hour)
+   - Update integration loop in `cross_section` module
+   - Validate σ(e⁺e⁻→μ⁺μ⁻) unchanged vs hardcoded reference
+   - Clean up old code
+
+5. **Validate process generalization** (1–3 hours)
+   - Test at least one new process (e.g., pp→bb, e⁺e⁻→tt̄)
+   - Check σ against MadGraph reference (if available)
+   - Log dispatch statistics (vertex types seen, dispatch hit rates)
+
+### Medium-term (end of week)
+6. **Implement GlobalConfig CLI glue** (2–4 hours)
+   - Wire up proc card parsing → UFO loading
+   - Add command-line flags for model search path, restrict card, parameter overrides
+   - Integration test: full pipeline from proc card to σ
+
+7. **Broader dispatch coverage** (ongoing)
+   - Add color structure support if needed
+   - Handle additional vertex types (Higgs couplings, etc.)
+
 ## Dependency graph
 
 ```
-feyngraph-ufo-replace ──→ lorentz-runtime-eval ──→ helas-generalize ──→ event-output-lhef
-lorentz-parse (✅) ────────────────────────────────┘                        │
-diagram-enum (✅) ──────────────────────────────────────────────────────────┘
+feyngraph-ufo-replace (✅) ──→ lorentz-runtime-eval (staged) ──→ helas-generalize ──→ event-output-lhef
+lorentz-parse (✅) ──────────────────────────────────────┘              │
+diagram-enum (✅) ──────────────────────────────────────────────────────┘
 lips-nbody ─────────────────────────────────────────────────────────────────────────────┘
+global-config ───────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Legend**: ✅ = complete, staged = ready for testing/commit, pending = blocked or not started
