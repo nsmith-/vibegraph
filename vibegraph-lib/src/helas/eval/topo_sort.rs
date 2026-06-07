@@ -118,7 +118,7 @@ impl<'a> TopoContext<'a> {
         if let Some(result_leg_idx) = result_leg_idx {
             // This is an internal vertex, so push OffShellCurrent and return Propagate step
             let contraction = EvalStep::OffShellCurrent {
-                info: VertexInfo::from_ufo(self.model, model_vertex_id),
+                info: VertexInfo::from_ufo(self.model, model_vertex_id, Some(result_leg_idx)),
                 result_leg_idx,
                 input_slots: slots,
                 output_slot: self.next_slot(),
@@ -137,7 +137,7 @@ impl<'a> TopoContext<'a> {
         } else {
             // This is the top vertex, so emit ContractAmplitude step
             let step = EvalStep::ContractAmplitude {
-                info: VertexInfo::from_ufo(self.model, model_vertex_id),
+                info: VertexInfo::from_ufo(self.model, model_vertex_id, None),
                 input_slots: slots,
                 output_slot: self.next_slot(),
             };

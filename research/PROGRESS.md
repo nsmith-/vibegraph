@@ -60,9 +60,9 @@
 - **Status**: Disagrees with the hardcoded reference for e⁺e⁻→μ⁺μ⁻ **and is
   non-deterministic across runs**. Root cause diagnosed (see Phase 3d).
 
-#### Phase 3d: Diagnosis + redesign (🟡 IN PROGRESS)
+#### Phase 3d: Diagnosis + redesign (🟡 IN PROGRESS → STAGED MIGRATION)
 
-**Completed (Steps 1–2)**:
+**Completed (Steps 1–3)**:
 - ✅ Added `SpinorRepr::{project_left, project_right, scalar_bilinear}` to `lorentz.rs`
   - `project_left/right`: zero opposite Weyl 2-block (P_L/P_R chiral projections)
   - `scalar_bilinear`: `f̄ Γ f` for Γ ∈ {Identity, P_L, P_R}
@@ -72,19 +72,22 @@
   - `root_term()` parser: resolves each `LorentzTerm` to a rooted primitive with output fiber fixed
   - 11 unit tests covering FFV1/FFV2/FFS/VVS/SSS/Sigma/unsupported cases
   - Legacy `DispatchKind` kept for backward compatibility during gradual migration
-  - All 129 existing tests still passing
+- ✅ Threaded `result_leg_idx: Option<usize>` through compilation pipeline (Step 3)
+  - `VertexTerm::from_ufo(…, result_leg_idx)` now computes both legacy `DispatchKind` and new `RootedTerm`
+  - `VertexInfo::from_ufo(…, result_leg_idx)` passes index to all terms
+  - `topo_sort.rs:121, 140` passes rooted context to `VertexInfo::from_ufo`
+  - **All 129 existing tests passing** (evaluator uses legacy dispatch, rooted terms are metadata)
 
-**Remaining (Steps 3–7)**:
-- ⏳ Thread `result_leg_idx: Option<usize>` through `VertexTerm::from_ufo`, `VertexInfo::from_ufo`,
-  and `topo_sort.rs` to pass output-leg context into `root_term()`
-- ⏳ Rewrite `evaluate_off_shell_current` / `evaluate_contract_amplitude` in `run.rs` as a
-  **double-sum with no early returns** over resolved nodes
-- ⏳ Implement `SpinorOut` (fioxxx/foxxx split via project+`GammaV`; FFS fermion-out)
-- ⏳ Ensure VVV/VVVV/Sigma/Epsilon/C raise `CompileError::UnsupportedVertex` with deferred message
-- ⏳ Unit tests: `project_left/right` Weyl semantics, `root_term` on all vertex types,
-  generic-vs-reference equivalence (e.g., `SpinorCurrent`+prop == `jioxxx`)
-- ⏳ Integration test: `test_eval_m2_ee_mumu_vs_hardcoded` matches to <1e-6 relative across
-  5 angles + Z-pole; determinism test (20× compile/eval, bit-identical results)
+**Remaining (Steps 4–7)**:
+- ⏳ **Gradual migration:** Implement each `RootedNode` variant in `run.rs` one at a time
+  - SpinorCurrent/SpinorAmplitude mostly work but deferred (needs per-node logic)
+  - SpinorOut: requires careful handling of row/col fermion indices (blocked on design detail)
+  - BosonScalar/BosonVector/ScalarProduct: placeholder implementations
+- ⏳ For multi-term vertices: sum over all `RootedTerm`s (each with independent node type)
+  - Current implementation still uses legacy `dispatch_kind` from first term
+  - Will require handling heterogeneous terms (e.g., photon + Z in neutral current)
+- ⏳ Determinism test: compile/eval ~20×, assert bit-identical results
+- ⏳ Full integration test: `test_eval_m2_ee_mumu_vs_hardcoded` validates new evaluator matches hardcoded
 
 ## Implementation Notes
 

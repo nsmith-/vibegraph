@@ -142,7 +142,7 @@ pub fn root_term(
 
 /// Extract the spinor chain structure: fermion pair indices, Gamma free index, and chirality.
 fn extract_spinor_chain(
-    spins: &[i32],
+    _spins: &[i32],
     spinor_ops: &[&LorentzOp],
 ) -> Result<(u8, u8, Option<u8>, Chirality), CompileError> {
     // Trace which legs appear in single-connection endpoints.

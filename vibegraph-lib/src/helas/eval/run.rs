@@ -386,8 +386,7 @@ fn evaluate_off_shell_current<F: Real + FromPrimitive>(
                 super::dispatch::DispatchKind::FfvProjM | super::dispatch::DispatchKind::FfvProjP,
                 3,
             ) => {
-                let (fo, fi) =
-                    fermion_pair_from_slots(input_slots, slots, evaluated, result_leg_idx);
+                let (fo, fi) = fermion_pair_from_slots(input_slots, slots, evaluated, 0, 0);
                 let current = match term.dispatch_kind {
                     super::dispatch::DispatchKind::FfvProjM => {
                         GammaL::apply(&(fo.spinor, fi.spinor))
@@ -404,8 +403,7 @@ fn evaluate_off_shell_current<F: Real + FromPrimitive>(
                 });
             }
             (super::dispatch::DispatchKind::Ffs, 1) => {
-                let (fo, fi) =
-                    fermion_pair_from_slots(input_slots, slots, evaluated, result_leg_idx);
+                let (fo, fi) = fermion_pair_from_slots(input_slots, slots, evaluated, 0, 0);
                 let left = fo.spinor.0[2] * fi.spinor.0[0] + fo.spinor.0[3] * fi.spinor.0[1];
                 let right = fo.spinor.0[0] * fi.spinor.0[2] + fo.spinor.0[1] * fi.spinor.0[3];
                 let momentum = fo.momentum + fi.momentum;
@@ -512,7 +510,7 @@ fn evaluate_contract_amplitude<F: Real + FromPrimitive>(
         let coupling = complex_from_complex64::<F>(evaluated.coupling(term.coupling_id));
         let term_value = match kind {
             super::dispatch::DispatchKind::FfvProjM | super::dispatch::DispatchKind::FfvProjP => {
-                let (fo, fi) = fermion_pair_from_slots(input_slots, slots, evaluated, usize::MAX);
+                let (fo, fi) = fermion_pair_from_slots(input_slots, slots, evaluated, 0, 0);
                 let v = vector_slot(&slots[input_slots[2]]);
                 let current = match term.dispatch_kind {
                     super::dispatch::DispatchKind::FfvProjM => {
@@ -526,7 +524,7 @@ fn evaluate_contract_amplitude<F: Real + FromPrimitive>(
                 coupling * dot_complex(current.0, v.eps.0)
             }
             super::dispatch::DispatchKind::Ffs => {
-                let (fo, fi) = fermion_pair_from_slots(input_slots, slots, evaluated, usize::MAX);
+                let (fo, fi) = fermion_pair_from_slots(input_slots, slots, evaluated, 0, 0);
                 let s = scalar_slot(&slots[input_slots[2]]);
                 let left = fo.spinor.0[2] * fi.spinor.0[0] + fo.spinor.0[3] * fi.spinor.0[1];
                 let right = fo.spinor.0[0] * fi.spinor.0[2] + fo.spinor.0[1] * fi.spinor.0[3];
@@ -579,7 +577,8 @@ fn fermion_pair_from_slots<F: Real>(
     input_slots: &[usize],
     slots: &[WaveformSlot<F>],
     _evaluated: &EvaluatedModel,
-    _result_leg_idx: usize,
+    _row_leg_idx: usize,
+    _col_leg_idx: usize,
 ) -> (OutDiracWf<F>, InDiracWf<F>) {
     let first = match &slots[input_slots[0]] {
         WaveformSlot::Fermion(wf) => *wf,

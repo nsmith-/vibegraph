@@ -4,7 +4,7 @@
 //! It stores descriptor types at compile time (external leg info, propagator params, vertex
 //! dispatches) and is evaluated at runtime against external momenta + helicity configurations.
 
-use super::dispatch::DispatchKind;
+use super::dispatch::{DispatchKind, RootedTerm};
 use crate::helas::repr::Real;
 use crate::helas::wavefn::{InDiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
@@ -56,14 +56,17 @@ pub struct PropInfo {
 /// One (lorentz_structure, coupling_constant) pair at a vertex.
 ///
 /// The `LorentzId` is stored so that the AST remains independent of the UFO model reference.
-/// At compile time the `LorentzExpr` is pattern-matched into `DispatchKind`.
+/// At compile time the `LorentzExpr` is pattern-matched into both `DispatchKind` (legacy, for immediate evaluation)
+/// and `RootedTerm` (new, for gradual migration to rooted dispatch).
 /// At eval time, `coupling_id` is resolved via `EvaluatedModel::coupling(id)`.
 #[derive(Clone, Debug)]
 pub struct VertexTerm {
     /// Model's lorentz structure ID (can resolve to LorentzExpr if needed)
     pub lorentz_id: LorentzId,
-    /// Pre-compiled dispatch tag (from LorentzTerm pattern match)
-    pub dispatch_kind: DispatchKind,
+    /// Legacy pre-compiled dispatch tag (from LorentzTerm pattern match)
+    pub dispatch_kind: super::dispatch::DispatchKind,
+    /// New pre-compiled rooted dispatch (from LorentzTerm pattern match, rooted at output leg)
+    pub rooted_term: RootedTerm,
     /// Per-leg spin codes (from LorentzStructure.spins)
     pub spins: Vec<i32>,
     /// Model's coupling ID (resolved via EvaluatedModel at eval time)
@@ -76,12 +79,26 @@ impl VertexTerm {
         lorentz_id: LorentzId,
         _color: &str, // TODO: handle color structures if needed
         coupling_id: CouplingId,
+        result_leg_idx: Option<usize>,
     ) -> Self {
         let lorentz = model.lorentz_struct(lorentz_id);
+        // Compute both legacy dispatch and new rooted term.
+        let dispatch_kind = DispatchKind::from_lorentz_expr(&lorentz.expr, &lorentz.spins)
+            .expect("Unable to determine dispatch kind from Lorentz expression");
+
+        // Root the first term of the LorentzExpr at the output leg.
+        // For multi-term vertices, this will be generalized to root each term independently.
+        let rooted_term = if let Some(first_term) = lorentz.expr.first() {
+            super::dispatch::root_term(first_term, &lorentz.spins, result_leg_idx)
+                .expect("Unable to root term from Lorentz expression")
+        } else {
+            panic!("Empty Lorentz expression");
+        };
+
         VertexTerm {
             lorentz_id: lorentz_id,
-            dispatch_kind: DispatchKind::from_lorentz_expr(&lorentz.expr, &lorentz.spins)
-                .expect("Unable to determine dispatch kind from Lorentz expression"),
+            dispatch_kind,
+            rooted_term,
             spins: lorentz.spins.clone(),
             coupling_id,
         }
@@ -99,7 +116,7 @@ pub struct VertexInfo {
 
 impl VertexInfo {
     /// Generate VertexInfo from a UFO vertex definition, given the model and the desired index of the result leg.
-    pub fn from_ufo(model: &UFOModel, id: VertexId) -> Self {
+    pub fn from_ufo(model: &UFOModel, id: VertexId, result_leg_idx: Option<usize>) -> Self {
         let vertex = model.vertex_def(id);
         let terms = vertex
             .couplings
@@ -110,6 +127,7 @@ impl VertexInfo {
                     vertex.lorentz[lorentz_idx],
                     vertex.color[color_idx].as_str(),
                     *coupling_id,
+                    result_leg_idx,
                 )
             })
             .collect();
