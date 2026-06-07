@@ -29,6 +29,33 @@ pub const MDL_MZ: f64 = 91.188;
 /// Z boson total width (GeV) — MadGraph default SM param_card.
 pub const MDL_WZ: f64 = 2.441_404;
 
+/// Derive the effective photon and Z couplings to charged leptons from MadGraph's default SM parameters.
+///
+/// These are GC_3 (photon) and GC_59 (left-handed Z) / GC_50 (right-handed Z) in MadGraph's `lorentz.py`.
+pub fn derive_gammaz_couplings() -> ([f64; 2], [f64; 2]) {
+    let aew = ALPHA_QED_MZ;
+    let gf = 1.166_39e-5_f64;
+    let ee = (4.0 * std::f64::consts::PI * aew).sqrt();
+    // sin²θW from the muon-decay definition (tree-level Fermi relation)
+    let sw2 = 0.5
+        - (0.25 - std::f64::consts::PI * aew / (gf * std::f64::consts::SQRT_2 * MDL_MZ * MDL_MZ))
+            .sqrt();
+    let sw = sw2.sqrt();
+    let cw = (1.0 - sw2).sqrt();
+
+    // Photon coupling: Q_e = −1  →  gc_γ = [−e, −e]  (vector)
+    let gc_gamma = [-ee, -ee];
+
+    // Z coupling:
+    //   g_L = e (−½ + sin²θW) / (sin θW cos θW)   (matches GC_59 in MadGraph)
+    //   g_R = e sin θW / cos θW                     (matches GC_50 in MadGraph)
+    let gl_z = ee * (-0.5 + sw2) / (sw * cw);
+    let gr_z = ee * sw / cw;
+    let gc_z = [gl_z, gr_z];
+
+    (gc_gamma, gc_z)
+}
+
 /// Compute |M|² summed over all 16 helicity combinations for
 /// `e⁺ e⁻ → μ⁺ μ⁻` at tree level in the Standard Model (γ + Z s-channel).
 ///
@@ -53,32 +80,13 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
     let e_beam = sqrt_s / 2.0;
     let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
 
+    let (gc_gamma, gc_z) = derive_gammaz_couplings();
+
     // CM-frame 4-momenta [E, px, py, pz] (massless fermion limit)
     let p_em = LorentzVector([e_beam, 0.0, 0.0, e_beam]); // e⁻ along +z
     let p_ep = LorentzVector([e_beam, 0.0, 0.0, -e_beam]); // e⁺ along −z
     let p_mm = LorentzVector([e_beam, e_beam * sin_theta, 0.0, e_beam * cos_theta]); // μ⁻
     let p_mp = LorentzVector([e_beam, -e_beam * sin_theta, 0.0, -e_beam * cos_theta]); // μ⁺
-
-    // Derive SM coupling constants from param_card values.
-    let aew = ALPHA_QED_MZ;
-    let gf = 1.166_39e-5_f64;
-    let ee = (4.0 * std::f64::consts::PI * aew).sqrt();
-    // sin²θW from the muon-decay definition (tree-level Fermi relation)
-    let sw2 = 0.5
-        - (0.25 - std::f64::consts::PI * aew / (gf * std::f64::consts::SQRT_2 * MDL_MZ * MDL_MZ))
-            .sqrt();
-    let sw = sw2.sqrt();
-    let cw = (1.0 - sw2).sqrt();
-
-    // Photon coupling: Q_e = −1  →  gc_γ = [−e, −e]  (vector)
-    let gc_gamma = [-ee, -ee];
-
-    // Z coupling:
-    //   g_L = e (−½ + sin²θW) / (sin θW cos θW)   (matches GC_59 in MadGraph)
-    //   g_R = e sin θW / cos θW                     (matches GC_50 in MadGraph)
-    let gl_z = ee * (-0.5 + sw2) / (sw * cw);
-    let gr_z = ee * sw / cw;
-    let gc_z = [gl_z, gr_z];
 
     let mut sum = 0.0;
     for (nhel_em, nhel_ep) in iproduct!([Down, Up], [Down, Up]) {
@@ -496,6 +504,69 @@ mod tests {
             evaluator.n_diagrams(),
             set.diagrams.len(),
             "AST count mismatch"
+        );
+
+        let (cids, pids) = evaluator.coupling_particle_ids();
+        for cid in cids {
+            eprintln!(
+                "Coupling {cid:?} ({:?}): {}",
+                model.coupling_def(cid),
+                evaluated.coupling(cid)
+            );
+        }
+        for pid in pids {
+            eprintln!(
+                "Particle {pid:?} ({}): mass {} width {}",
+                model.particle(pid).name,
+                evaluated.mass(pid),
+                evaluated.width(pid)
+            );
+        }
+
+        // Compare derived photon/Z couplings against the evaluated GC_3, GC_59, and GC_50
+        // It appears the evaluated values are always pure imaginary, and our
+        // hardcoded reference is pure real. Not sure why, but since the factor of i appears
+        // twice (once for each ffv vertex), the final amplitude is just -1 times the reference.
+        // Perhaps this is why MadGraph uses "JAMP = -AMP(γ) - AMP(Z)" in its formula whereas
+        // we just sum the amplitudes directly.
+        let (gc_gamma, gc_z) = derive_gammaz_couplings();
+        // GC_3 is the photon coupling in MadGraph's default SM param_card, so we check it matches.
+        let gc_3 = evaluated.coupling(model.coupling_id("GC_3").unwrap());
+        assert!(
+            (gc_gamma[0] - gc_3.im).abs() < 1e-6,
+            "Derived photon coupling does not match evaluated GC_3"
+        );
+        assert!(
+            gc_3.re.abs() < 1e-6,
+            "Evaluated GC_3 has unexpected real part"
+        );
+        // GC_59 and GC_50 encode the Z coupling through the lorentz structures FFV4 and FFV2:
+        // - FFV2 has L projection
+        // - FFV4 has L + 2*R projection
+        // So, g_L L + g_R R = GC_59 (L + 2R) + GC_50 L = (GC_59 + GC_50) L + 2 GC_59 R
+        let gc_59 = evaluated.coupling(model.coupling_id("GC_59").unwrap());
+        let gc_50 = evaluated.coupling(model.coupling_id("GC_50").unwrap());
+        let gl_from_couplings = gc_59.im + gc_50.im;
+        let gr_from_couplings = 2.0 * gc_59.im;
+        assert!(
+            (gc_z[0] - gl_from_couplings).abs() < 1e-6,
+            "Derived Z left-handed coupling does not match GC_59 + GC_50: {} vs {}",
+            gc_z[0],
+            gl_from_couplings
+        );
+        assert!(
+            (gc_z[1] - gr_from_couplings).abs() < 1e-6,
+            "Derived Z right-handed coupling does not match 2*GC_59: {} vs {}",
+            gc_z[1],
+            gr_from_couplings
+        );
+        assert!(
+            gc_59.re.abs() < 1e-6,
+            "Evaluated GC_59 has unexpected real part"
+        );
+        assert!(
+            gc_50.re.abs() < 1e-6,
+            "Evaluated GC_50 has unexpected real part"
         );
 
         // Test at multiple angles and compare against hardcoded reference
