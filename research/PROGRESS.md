@@ -51,29 +51,45 @@
   - Maps Lorentz structures to HELAS routine types (FFV, VVV, FFS, VVS, SSS, SSSS, etc.)
   - 10 dispatch tests passing
 
-#### Phase 3c: AmplitudeEvaluator Runtime (🟡 STAGED, INTEGRATION TESTING)
-- **run.rs**: Complete runtime evaluation loop (567 lines, staged changes)
-  - `AmplitudeEvaluator::compile`:
-    - Resolves external particle IDs from `DiagramSet` against `UFOModel`
-    - Compiles diagrams via `compile_diagram_ast`
-    - Precomputes valid helicity combinations from external spin codes
-    - Stores incoming-leg count and external-particle ordering metadata
-  - `eval_amplitude`: Walks `DiagramAst`, executes `EvalStep`s in order
-    - Reads from input slots, writes to output slots
-    - Dispatches `ExternalWf`, `OffShellCurrent`, `Propagate`, `ContractAmplitude` steps
-    - Supported dispatch kinds: FFV (ProjM/ProjP), FFS, VVV, VVS, SSS, SSSS
-    - Propagators: Dirac (massive), massless/massive vectors, scalars
-  - `eval_m2`: Helicity-summed driver (sums |amplitude|² over valid helicity states)
-  - Input-shape guards for `momenta`/`helicities` dimensions
-  - **Status**: Staged; integration test added but reveals amplitude scale mismatch
+#### Phase 3c: AmplitudeEvaluator Runtime (✅ COMMITTED, ❌ INCORRECT — redesign planned)
+- **run.rs**: Runtime evaluation loop committed (07896fa)
+  - `AmplitudeEvaluator::compile`: resolves external particle IDs, compiles diagrams,
+    precomputes helicity combinations, stores leg-count/ordering metadata
+  - `eval_amplitude`: walks `DiagramAst`, executes `EvalStep`s in topological order
+  - `eval_m2`: helicity-summed driver
+- **Status**: Disagrees with the hardcoded reference for e⁺e⁻→μ⁺μ⁻ **and is
+  non-deterministic across runs**. Root cause diagnosed (see Phase 3d).
 
-**Test Status**: 
-- ✅ `cargo test -p vibegraph-lib --lib helas::eval` passes all dispatch/compilation tests
-- ✅ `test_eval_m2_ee_mumu_vs_hardcoded` runs without panics; produces valid amplitudes
-- 🔴 Amplitude values systematically too low (~15–30% of reference hardcoded implementation)
-  - e.g., at √s=100 GeV, cos_θ=0: evaluator=3.75e-2 vs hardcoded=2.05e-1 (5.5× discrepancy)
-  - Non-resonant region; suggests systematic issue in evaluator, not kinematics
-  - Likely source: fermion wavefunction sign/crossing, charge convention, or contraction order
+#### Phase 3d: Diagnosis + redesign (🔴 PLANNED — `.claude/plans/starry-discovering-pascal.md`)
+
+**Root cause**: `dispatch.rs` collapses a whole `LorentzExpr` to a single chiral tag
+(`DispatchKind`) instead of evaluating the full structure. Three compounding bugs:
+1. `dispatch_ffv` loses chirality/structure — FFV1 (photon, full γ^μ) defaults to ProjP
+   (right-handed only); FFV4 projector tie drops the ProjM term + its coefficient.
+2. `LorentzTerm.coeff` is never stored on `VertexTerm` → FFV4's `+2·ProjP` loses the 2.
+3. Early `return` in the per-term loop keeps only the *first* term of a multi-term vertex;
+   `VertexInfo.terms` comes from a `HashMap`, so the surviving term is hash-order
+   nondeterministic — **the primary source of run-to-run non-determinism**, since
+   `evaluate_contract_amplitude` *does* sum its terms (asymmetry with the off-shell path).
+
+**Planned fix**: resolve each `LorentzTerm` into a **compile-time rooted contraction
+tree**. `topo_sort.rs` already knows `result_leg_idx: Option<usize>` when it builds each
+`VertexInfo`; thread it into `from_ufo` and translate the tensor network implicit in each
+term into a rooted tree of resolved primitives (`RootedNode`) with the output fiber fixed
+at compile time. Eval becomes a double-sum over terms (coupling × `coeff`) with **no early
+returns**.
+- **Adds** two missing primitives as `SpinorRepr` methods: `project_left`/`project_right`
+  (chiral projection, zero the opposite Weyl 2-block) and `scalar_bilinear` (the FFS
+  `f̄Γf` contraction); `iosxxx`/`jsixxx` refactored onto them.
+- **In scope**: FFV (all orientations incl. fermion-out via project+`GammaV`), FFS, VVS,
+  SSS/SSSS — i.e. spinor chains + single Metric/P boson factors.
+- **Deferred to future work** (loud `UnsupportedVertex`): `Sigma`/`Epsilon`/`C` and
+  genuine higher-rank tensor contractions (VVV, VVVV — terms with ≥2 free non-root vector
+  indices). This drops the previous draft's "generic Metric/P contractor."
+
+**Verification target**: `test_eval_m2_ee_mumu_vs_hardcoded` matches to <1e-6 relative
+across the 5 angles + a Z-pole point; a determinism test (compile/eval ~20×, bit-identical);
+parser + new-trait-method unit tests; generic-vs-reference equivalence tests.
 
 ## Implementation Notes
 
