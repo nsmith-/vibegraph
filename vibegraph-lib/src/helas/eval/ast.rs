@@ -57,15 +57,15 @@ pub struct PropInfo {
 ///
 /// The `LorentzId` is stored so that the AST remains independent of the UFO model reference.
 /// At compile time the `LorentzExpr` is pattern-matched into both `DispatchKind` (legacy, for immediate evaluation)
-/// and `RootedTerm` (new, for gradual migration to rooted dispatch).
+/// and `RootedTerm` (new, for rooted dispatch).
 /// At eval time, `coupling_id` is resolved via `EvaluatedModel::coupling(id)`.
 #[derive(Clone, Debug)]
 pub struct VertexTerm {
     /// Model's lorentz structure ID (can resolve to LorentzExpr if needed)
     pub lorentz_id: LorentzId,
-    /// Legacy pre-compiled dispatch tag (from LorentzTerm pattern match)
+    /// Pre-compiled dispatch tag (from LorentzTerm pattern match)
     pub dispatch_kind: super::dispatch::DispatchKind,
-    /// New pre-compiled rooted dispatch (from LorentzTerm pattern match, rooted at output leg)
+    /// Pre-compiled rooted dispatch (from LorentzTerm pattern match, rooted at output leg)
     pub rooted_term: RootedTerm,
     /// Per-leg spin codes (from LorentzStructure.spins)
     pub spins: Vec<i32>,
@@ -96,7 +96,7 @@ impl VertexTerm {
         };
 
         VertexTerm {
-            lorentz_id: lorentz_id,
+            lorentz_id,
             dispatch_kind,
             rooted_term,
             spins: lorentz.spins.clone(),
