@@ -1,5 +1,7 @@
 //! Runtime amplitude evaluation: DiagramAst × momenta × helicities → amplitude
 
+use std::collections::HashSet;
+
 use crate::diagrams::DiagramSet;
 use crate::helas::eval::compile::compile_diagram_ast;
 use crate::helas::repr::intertwiner::{GammaL, GammaR, Intertwiner2Leg};
@@ -10,6 +12,7 @@ use crate::helas::repr::propagator::{
 };
 use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
+use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use num_traits::FromPrimitive;
@@ -192,6 +195,33 @@ impl AmplitudeEvaluator {
     /// Return the valid helicity combinations.
     pub fn helicities(&self) -> &[Vec<i32>] {
         &self.helicities
+    }
+
+    /// Return all coupling and particle ids needed to evaluate the amplitude.
+    ///
+    /// Can be used for prefetching from EvaluatedModel if desired.
+    pub fn coupling_particle_ids(&self) -> (HashSet<CouplingId>, HashSet<ParticleId>) {
+        let mut coupling_ids = HashSet::new();
+        let mut particle_ids = HashSet::new();
+        for ast in &self.diagram_asts {
+            for step in &ast.steps {
+                match step {
+                    EvalStep::OffShellCurrent { info, .. }
+                    | EvalStep::ContractAmplitude { info, .. } => {
+                        for term in &info.terms {
+                            coupling_ids.insert(term.coupling_id);
+                        }
+                    }
+                    EvalStep::ExternalWf { info, .. } => {
+                        particle_ids.insert(info.id);
+                    }
+                    EvalStep::Propagate { info, .. } => {
+                        particle_ids.insert(info.id);
+                    }
+                }
+            }
+        }
+        (coupling_ids, particle_ids)
     }
 }
 
