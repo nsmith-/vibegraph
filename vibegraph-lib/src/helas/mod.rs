@@ -465,10 +465,7 @@ mod tests {
         assert!(!sets.is_empty(), "no diagram sets generated for e⁺e⁻→μ⁺μ⁻");
 
         let set = &sets[0];
-        assert!(
-            set.diagrams.len() >= 2,
-            "expected at least 2 diagrams (photon+Z)"
-        );
+        assert!(set.diagrams.len() == 2, "expected 2 diagrams (photon+Z)");
 
         // Load UFO model and evaluate with default param card
         let model = diagrams::tests::sm_model();
