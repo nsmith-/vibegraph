@@ -495,9 +495,6 @@ mod tests {
         }
         let hel_combos = evaluator.helicities();
         eprintln!("Number of helicity combinations: {}", hel_combos.len());
-        for hel in hel_combos.iter().take(4) {
-            eprintln!("  {:?}", hel);
-        }
         assert_eq!(evaluator.n_ext(), 4, "expected 4 external legs");
         assert_eq!(evaluator.n_in(), 2, "expected 2 incoming legs");
         assert_eq!(
@@ -506,14 +503,10 @@ mod tests {
             "AST count mismatch"
         );
 
-        let (cids, pids) = evaluator.coupling_particle_ids();
-        for cid in cids {
-            eprintln!(
-                "Coupling {cid:?} ({:?}): {}",
-                model.coupling_def(cid),
-                evaluated.coupling(cid)
-            );
-        }
+        let (_, pids) = evaluator.coupling_particle_ids();
+
+        // the evaluated electron and muon masses are nonzero but very small, so the lack of treatment
+        // of mass in the hardcoded reference should still give good agreement
         for pid in pids {
             eprintln!(
                 "Particle {pid:?} ({}): mass {} width {}",
@@ -592,6 +585,12 @@ mod tests {
             // Evaluate via hardcoded reference
             let m2_hardcoded = compute_m2_ee_mumu(sqrt_s, cos_theta);
 
+            // TODO: investigate the discrepancies in the results
+            // This is likely due to issues in the vertex routines in eval/run.rs
+            // (evaluate_off_shell_current, evaluate_contract_amplitude)
+            // Or perhaps dispatch.rs is too naive and doesn't properly handle the
+            // lorentz structures FFV2 and FFV4 that encode the Z coupling, leading
+            // to incorrect interference between photon and Z diagrams.
             eprintln!(
                 "√s={:.1}, cos_θ={:5.1}: runtime={:.4e}, hardcoded={:.4e}",
                 sqrt_s, cos_theta, m2_runtime, m2_hardcoded
