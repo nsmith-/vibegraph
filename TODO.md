@@ -27,47 +27,26 @@
 
 ## 🔴 High — unblock amplitude generalization
 
-### `lorentz-runtime-eval` — Runtime Lorentz structure evaluator (🔴 REDESIGN PLANNED)
+### `lorentz-runtime-eval` — Runtime Lorentz structure evaluator (🟡 IN PROGRESS)
 
-**Status**: Runtime evaluator committed (07896fa) but disagrees with the hardcoded
-reference for e⁺e⁻→μ⁺μ⁻ **and is non-deterministic across runs**. Root cause diagnosed;
-redesign planned (see `.claude/plans/starry-discovering-pascal.md`).
+**Status**: Redesign in progress (see `.claude/plans/starry-discovering-pascal.md`).
+Steps 1–2 complete; Steps 3–7 pending.
 
-**Root cause** — `dispatch.rs` collapses a whole `LorentzExpr` to a single chiral tag
-(`DispatchKind`) instead of evaluating the full structure. Three compounding bugs:
-1. `dispatch_ffv` loses chirality/structure: FFV1 (photon, full γ^μ) defaults to ProjP →
-   right-handed only; FFV4 projector tie drops the ProjM term + coefficient.
-2. `LorentzTerm.coeff` is never stored on `VertexTerm`, so FFV4's `+2·ProjP` loses its 2.
-3. Early `return` inside the per-term loop keeps only the *first* term of a multi-term
-   vertex; `VertexInfo.terms` comes from a `HashMap`, so which term survives is
-   hash-order nondeterministic — **the primary source of run-to-run non-determinism.**
+**Completed (2026-06-07 session)**:
+1. ✅ Added `SpinorRepr::{project_left,project_right,scalar_bilinear}` and refactored
+   `iosxxx`/`jsixxx` onto them; all unit tests pass (127 → 129 passing).
+2. ✅ Resolved `RootedNode` descriptors + `root_term` parser in `dispatch.rs`:
+   - New enum variants: SpinorCurrent, SpinorAmplitude, SpinorOut, BosonScalar, BosonVector, ScalarProduct
+   - `root_term()` compiler: resolves each `LorentzTerm` to rooted primitive with output fiber fixed
+   - 11 unit tests covering FFV1/FFV2/FFS/VVS/SSS/Sigma cases
+   - Legacy `DispatchKind` retained for backward compatibility
 
-**Redesign** (decided with user): resolve each `LorentzTerm` into a **compile-time rooted
-contraction tree**. `topo_sort.rs` already knows `result_leg_idx: Option<usize>` when it
-builds each `VertexInfo`; thread that into `from_ufo` and translate the tensor network
-implicit in each term into a rooted tree of resolved primitives (`RootedNode`), output
-fiber fixed at compile time. Eval becomes a double-sum over terms with **no early
-returns**, carrying `coeff` and complex couplings end-to-end.
-
-**Scope**: SM spinor-chain model — Gamma/Proj/Identity spinor chains + single Metric/P
-boson factors (FFV all orientations incl. fermion-out, FFS, VVS, SSS/SSSS). Adds two
-missing primitives as `SpinorRepr` methods: `project_left`/`project_right` (chiral
-projection) and `scalar_bilinear` (FFS contraction); refactors `iosxxx`/`jsixxx` onto
-them. **Deferred to future work** (loud `UnsupportedVertex`): `Sigma`/`Epsilon`/`C` and
-genuine higher-rank tensors (VVV, VVVV).
-
-**Next steps** (per plan):
-1. Add `SpinorRepr::{project_left,project_right,scalar_bilinear}`; refactor `iosxxx`/`jsixxx`.
-2. Resolved `RootedNode` descriptors + `root_term` parser; thread `result_leg_idx` through
-   `VertexTerm`/`VertexInfo::from_ufo` and `topo_sort.rs`; delete `DispatchKind`.
-3. Rewrite the two eval fns (double-sum, no early return): SpinorCurrent, SpinorAmplitude,
-   BosonScalar, ScalarProduct — covers e⁺e⁻→μμ + VVS + scalars.
-4. SpinorOut (fioxxx/foxxx fermion-out split; FFS fermion-out).
-5. Confirm VVV/VVVV/Sigma/Epsilon/C raise `UnsupportedVertex`.
-
-**Verification**: tighten `test_eval_m2_ee_mumu_vs_hardcoded` to <1e-6 relative across 5
-angles + a Z-pole point; add a determinism test (compile/eval ~20×, assert bit-identical);
-parser + new-trait-method unit tests; generic-vs-reference equivalence tests.
+**Pending (Steps 3–7)**:
+3. Thread `result_leg_idx: Option<usize>` through `VertexTerm::from_ufo`, `VertexInfo::from_ufo`, `topo_sort.rs`
+4. Rewrite `evaluate_off_shell_current` / `evaluate_contract_amplitude` as double-sum with no early returns
+5. Implement `SpinorOut` (fioxxx/foxxx/FFS-fermion-out) with project+GammaV
+6. Ensure VVV/VVVV/Sigma/Epsilon/C raise `CompileError::UnsupportedVertex`
+7. Tighten integration test to <1e-6 relative across 5 angles + Z-pole; add determinism test
 
 _Depends on: `feyngraph-ufo-replace` (✅), `lorentz-parse` (✅)_
 _Unblocks: `helas-generalize`_
@@ -173,17 +152,19 @@ the natural-units convention (ℏ = c = 1) before committing.
 Active work: **`lorentz-runtime-eval` redesign** into a compile-time rooted contraction
 tree (full plan in `.claude/plans/starry-discovering-pascal.md`).
 
-### Immediate (next session) — the redesign
-1. **Add `SpinorRepr::{project_left,project_right,scalar_bilinear}`** and refactor
-   `iosxxx`/`jsixxx` onto them; unit-test against the old inline formulas.
-2. **Resolved descriptors + `root_term` parser** in `dispatch.rs`; thread
-   `result_leg_idx: Option<usize>` through `VertexTerm`/`VertexInfo::from_ufo` and
-   `topo_sort.rs`; delete `DispatchKind`/`dispatch_ffv`; port parser unit tests.
-3. **Rewrite the two eval fns** (double-sum, no early return): SpinorCurrent,
+### Completed (this session) — Steps 1–2
+1. ✅ **`SpinorRepr::{project_left,project_right,scalar_bilinear}`** and refactored
+   `iosxxx`/`jsixxx`; all 129 unit tests pass.
+2. ✅ **Resolved descriptors + `root_term` parser** in `dispatch.rs`; legacy `DispatchKind`
+   retained for backward compatibility; 11 new parser unit tests.
+
+### Remaining (next session) — Steps 3–7
+3. **Thread `result_leg_idx`** through `VertexTerm`/`VertexInfo::from_ufo` and `topo_sort.rs`
+4. **Rewrite the two eval fns** (double-sum, no early return): SpinorCurrent,
    SpinorAmplitude, BosonScalar, ScalarProduct — covers e⁺e⁻→μμ + VVS + scalars.
-4. **SpinorOut** (fioxxx/foxxx fermion-out split; FFS fermion-out).
-5. **Confirm** VVV/VVVV/Sigma/Epsilon/C raise `UnsupportedVertex` (deferred).
-6. **Verify**: tighten `test_eval_m2_ee_mumu_vs_hardcoded` to <1e-6 across 5 angles +
+5. **SpinorOut** (fioxxx/foxxx fermion-out split; FFS fermion-out).
+6. **Confirm** VVV/VVVV/Sigma/Epsilon/C raise `UnsupportedVertex` (deferred).
+7. **Verify**: tighten `test_eval_m2_ee_mumu_vs_hardcoded` to <1e-6 across 5 angles +
    Z-pole; determinism test; equivalence tests vs reference routines; full suite green.
 
 ### Short-term (1–2 days) — `helas-generalize`
