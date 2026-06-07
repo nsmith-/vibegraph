@@ -27,33 +27,47 @@
 
 ## 🔴 High — unblock amplitude generalization
 
-### `lorentz-runtime-eval` — Runtime Lorentz structure evaluator (🟡 TESTING)
+### `lorentz-runtime-eval` — Runtime Lorentz structure evaluator (🔴 REDESIGN PLANNED)
 
-**Status**: 567-line runtime evaluator staged in `helas/eval/run.rs` + integration test added.
+**Status**: Runtime evaluator committed (07896fa) but disagrees with the hardcoded
+reference for e⁺e⁻→μ⁺μ⁻ **and is non-deterministic across runs**. Root cause diagnosed;
+redesign planned (see `.claude/plans/starry-discovering-pascal.md`).
 
-**Completed in staged commit**:
-- `AmplitudeEvaluator::compile()`: Resolves external particles, compiles AST, precomputes helicity states
-- `eval_amplitude()`: Executes `EvalStep` instructions in topological order
-  - Dispatch: `ExternalWf` → `OffShellCurrent` → `Propagate` → `ContractAmplitude`
-  - Supported terms: FFV (ProjM/ProjP), FFS, VVV, VVS, SSS, SSSS
-  - Propagators: Dirac (massive), massless/massive vectors, scalars
-- `eval_m2()`: Helicity-summed driver; sums |amplitude|² over all valid helicity states
-- Helper functions: slot extractors, complex/Lorentz arithmetic
+**Root cause** — `dispatch.rs` collapses a whole `LorentzExpr` to a single chiral tag
+(`DispatchKind`) instead of evaluating the full structure. Three compounding bugs:
+1. `dispatch_ffv` loses chirality/structure: FFV1 (photon, full γ^μ) defaults to ProjP →
+   right-handed only; FFV4 projector tie drops the ProjM term + coefficient.
+2. `LorentzTerm.coeff` is never stored on `VertexTerm`, so FFV4's `+2·ProjP` loses its 2.
+3. Early `return` inside the per-term loop keeps only the *first* term of a multi-term
+   vertex; `VertexInfo.terms` comes from a `HashMap`, so which term survives is
+   hash-order nondeterministic — **the primary source of run-to-run non-determinism.**
 
-**Test Status**:
-- ✅ Integration test `test_eval_m2_ee_mumu_vs_hardcoded` runs without errors
-- ✅ Generates correct helicity combinations (16 for e⁺e⁻→μ⁺μ⁻)
-- ✅ Evaluator produces non-zero, finite amplitudes across angles
-- 🔴 **AMPLITUDE SCALE MISMATCH**: Runtime evaluator gives ~15–30% of hardcoded reference
-  - Suggests bug in wavefunction construction or vertex dispatch
-  - Consistent across angles; not helicity counting issue
-  - Likely in: fermion/antiparticle crossing logic, charge assignment, or vertex contraction sign
+**Redesign** (decided with user): resolve each `LorentzTerm` into a **compile-time rooted
+contraction tree**. `topo_sort.rs` already knows `result_leg_idx: Option<usize>` when it
+builds each `VertexInfo`; thread that into `from_ufo` and translate the tensor network
+implicit in each term into a rooted tree of resolved primitives (`RootedNode`), output
+fiber fixed at compile time. Eval becomes a double-sum over terms with **no early
+returns**, carrying `coeff` and complex couplings end-to-end.
 
-**Next steps**:
-1. Debug amplitude scale factor (compare individual helicity terms vs hardcoded)
-2. Commit staged changes with updated test notes once root cause identified
-3. Fix underlying issue in evaluator or test setup
-4. Extend `dispatch.rs` for additional vertex types if needed
+**Scope**: SM spinor-chain model — Gamma/Proj/Identity spinor chains + single Metric/P
+boson factors (FFV all orientations incl. fermion-out, FFS, VVS, SSS/SSSS). Adds two
+missing primitives as `SpinorRepr` methods: `project_left`/`project_right` (chiral
+projection) and `scalar_bilinear` (FFS contraction); refactors `iosxxx`/`jsixxx` onto
+them. **Deferred to future work** (loud `UnsupportedVertex`): `Sigma`/`Epsilon`/`C` and
+genuine higher-rank tensors (VVV, VVVV).
+
+**Next steps** (per plan):
+1. Add `SpinorRepr::{project_left,project_right,scalar_bilinear}`; refactor `iosxxx`/`jsixxx`.
+2. Resolved `RootedNode` descriptors + `root_term` parser; thread `result_leg_idx` through
+   `VertexTerm`/`VertexInfo::from_ufo` and `topo_sort.rs`; delete `DispatchKind`.
+3. Rewrite the two eval fns (double-sum, no early return): SpinorCurrent, SpinorAmplitude,
+   BosonScalar, ScalarProduct — covers e⁺e⁻→μμ + VVS + scalars.
+4. SpinorOut (fioxxx/foxxx fermion-out split; FFS fermion-out).
+5. Confirm VVV/VVVV/Sigma/Epsilon/C raise `UnsupportedVertex`.
+
+**Verification**: tighten `test_eval_m2_ee_mumu_vs_hardcoded` to <1e-6 relative across 5
+angles + a Z-pole point; add a determinism test (compile/eval ~20×, assert bit-identical);
+parser + new-trait-method unit tests; generic-vs-reference equivalence tests.
 
 _Depends on: `feyngraph-ufo-replace` (✅), `lorentz-parse` (✅)_
 _Unblocks: `helas-generalize`_
@@ -64,15 +78,16 @@ _Unblocks: `helas-generalize`_
 
 ### `helas-generalize` — Topology-driven HELAS evaluator (PENDING)
 Replace the hardcoded `compute_m2_ee_mumu` with the generalized `AmplitudeEvaluator`.
-Once the staged `eval_amplitude` tests pass, integrate it into the cross-section integration pipeline.
+Once the `lorentz-runtime-eval` redesign lands and its tests pass, integrate it into the
+cross-section integration pipeline.
 
 **Tasks**:
 1. Replace calls to `compute_m2_ee_mumu` with `AmplitudeEvaluator::eval_m2`
 2. Update phase-space loop to pass `&DiagramSet` and `&EvaluatedModel`
-3. Extend `DispatchKind` coverage if needed for new processes
+3. Extend `RootedNode` coverage if needed for new processes
 4. Validate against existing hardcoded reference
 
-_Depends on: `lorentz-runtime-eval` (staged, testing)_
+_Depends on: `lorentz-runtime-eval` (🔴 redesign planned)_
 _Unblocks: Process generalization beyond e⁺e⁻→μ⁺μ⁻_
 
 ### `global-config` — Implement `vibegraph_lib::config::GlobalConfig` (PENDING)
@@ -153,53 +168,41 @@ the natural-units convention (ℏ = c = 1) before committing.
 
 ---
 
-## 🎯 Updated Implementation Plan (2026-06-06)
+## 🎯 Updated Implementation Plan (2026-06-07)
 
-### Immediate (next session)
-1. **Test staged `run.rs` implementation** (15–30 min)
-   - Run `cargo test -p vibegraph-lib --lib` to confirm no regressions
-   - Add integration test: `eval_m2` against e⁺e⁻→μ⁺μ⁻ hardcoded reference
-   - Commit if all tests pass
+Active work: **`lorentz-runtime-eval` redesign** into a compile-time rooted contraction
+tree (full plan in `.claude/plans/starry-discovering-pascal.md`).
 
-2. **Extend dispatch coverage if needed** (30 min–1 hour)
-   - Review `dispatch.rs` for unhandled vertex types
-   - Add new `DispatchKind` variants if required for broader processes
-   - Update `eval_amplitude` helper functions for new terms
+### Immediate (next session) — the redesign
+1. **Add `SpinorRepr::{project_left,project_right,scalar_bilinear}`** and refactor
+   `iosxxx`/`jsixxx` onto them; unit-test against the old inline formulas.
+2. **Resolved descriptors + `root_term` parser** in `dispatch.rs`; thread
+   `result_leg_idx: Option<usize>` through `VertexTerm`/`VertexInfo::from_ufo` and
+   `topo_sort.rs`; delete `DispatchKind`/`dispatch_ffv`; port parser unit tests.
+3. **Rewrite the two eval fns** (double-sum, no early return): SpinorCurrent,
+   SpinorAmplitude, BosonScalar, ScalarProduct — covers e⁺e⁻→μμ + VVS + scalars.
+4. **SpinorOut** (fioxxx/foxxx fermion-out split; FFS fermion-out).
+5. **Confirm** VVV/VVVV/Sigma/Epsilon/C raise `UnsupportedVertex` (deferred).
+6. **Verify**: tighten `test_eval_m2_ee_mumu_vs_hardcoded` to <1e-6 across 5 angles +
+   Z-pole; determinism test; equivalence tests vs reference routines; full suite green.
 
-3. **Integration test: pp→bb with generalized evaluator** (1–2 hours)
-   - Use existing feyngraph/diagram infrastructure
-   - Compare sample diagram amplitudes against MadGraph
-   - Confirm FFV + VVV dispatch works correctly
+### Short-term (1–2 days) — `helas-generalize`
+7. Replace hardcoded `compute_m2_ee_mumu` with `eval_m2` in the cross-section loop;
+   validate σ(e⁺e⁻→μ⁺μ⁻) unchanged.
+8. Validate a second process where in scope (e.g. pp→bb) vs MadGraph.
 
-### Short-term (1–2 days)
-4. **Replace hardcoded `compute_m2_ee_mumu` with `eval_m2`** (30 min–1 hour)
-   - Update integration loop in `cross_section` module
-   - Validate σ(e⁺e⁻→μ⁺μ⁻) unchanged vs hardcoded reference
-   - Clean up old code
-
-5. **Validate process generalization** (1–3 hours)
-   - Test at least one new process (e.g., pp→bb, e⁺e⁻→tt̄)
-   - Check σ against MadGraph reference (if available)
-   - Log dispatch statistics (vertex types seen, dispatch hit rates)
-
-### Medium-term (end of week)
-6. **Implement GlobalConfig CLI glue** (2–4 hours)
-   - Wire up proc card parsing → UFO loading
-   - Add command-line flags for model search path, restrict card, parameter overrides
-   - Integration test: full pipeline from proc card to σ
-
-7. **Broader dispatch coverage** (ongoing)
-   - Add color structure support if needed
-   - Handle additional vertex types (Higgs couplings, etc.)
+### Medium-term (end of week) — `global-config`
+9. Wire proc-card parsing → UFO loading; CLI flags for model path / restrict card;
+   full-pipeline integration test.
 
 ## Dependency graph
 
 ```
-feyngraph-ufo-replace (✅) ──→ lorentz-runtime-eval (staged) ──→ helas-generalize ──→ event-output-lhef
+feyngraph-ufo-replace (✅) ──→ lorentz-runtime-eval (🔴 redesign) ──→ helas-generalize ──→ event-output-lhef
 lorentz-parse (✅) ──────────────────────────────────────┘              │
 diagram-enum (✅) ──────────────────────────────────────────────────────┘
 lips-nbody ─────────────────────────────────────────────────────────────────────────────┘
 global-config ───────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Legend**: ✅ = complete, staged = ready for testing/commit, pending = blocked or not started
+**Legend**: ✅ = complete, 🔴 = redesign planned, pending = blocked or not started
