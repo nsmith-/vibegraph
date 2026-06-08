@@ -60,34 +60,29 @@
 - **Status**: Disagrees with the hardcoded reference for e⁺e⁻→μ⁺μ⁻ **and is
   non-deterministic across runs**. Root cause diagnosed (see Phase 3d).
 
-#### Phase 3d: Diagnosis + redesign (🟡 IN PROGRESS → STAGED MIGRATION)
+#### Phase 3d: Diagnosis + redesign (🟡 IN PROGRESS — tree evaluator working, node coverage incomplete)
 
-**Completed (Steps 1–3)**:
-- ✅ Added `SpinorRepr::{project_left, project_right, scalar_bilinear}` to `lorentz.rs`
-  - `project_left/right`: zero opposite Weyl 2-block (P_L/P_R chiral projections)
-  - `scalar_bilinear`: `f̄ Γ f` for Γ ∈ {Identity, P_L, P_R}
-  - Refactored `iosxxx`/`jsixxx` in `vertex.rs` to use these methods (unit tests pass)
-- ✅ Implemented resolved descriptor types in `dispatch.rs` (Step 2)
-  - New types: `RootedNode` (enum with 6 variants), `RootedTerm` (coeff + node), `Chirality`
-  - `root_term()` parser: resolves each `LorentzTerm` to a rooted primitive with output fiber fixed
-  - 11 unit tests covering FFV1/FFV2/FFS/VVS/SSS/Sigma/unsupported cases
-  - Legacy `DispatchKind` kept for backward compatibility during gradual migration
-- ✅ Threaded `result_leg_idx: Option<usize>` through compilation pipeline (Step 3)
-  - `VertexTerm::from_ufo(…, result_leg_idx)` now computes both legacy `DispatchKind` and new `RootedTerm`
-  - `VertexInfo::from_ufo(…, result_leg_idx)` passes index to all terms
-  - `topo_sort.rs:121, 140` passes rooted context to `VertexInfo::from_ufo`
-  - **All 129 existing tests passing** (evaluator uses legacy dispatch, rooted terms are metadata)
+**Completed (2026-06-07/08 sessions)**:
+- ✅ `SpinorRepr::{project_left, project_right, scalar_bilinear}` added to `lorentz.rs`
+- ✅ `LorentzEvalTree` + `LorentzEvalNode` DAG in `dispatch.rs`
+  - Recursive `build_child()` turns undirected UFO tensor network into directed tree
+  - Node types: Leg, GammaVout/Iout/Jout, ProjM/P, ProjMAmp/PAmp, Metric, ScalarProduct
+  - Sigma/Epsilon/C raise `CompileError::UnsupportedVertex`; P/Identity are `todo!()`
+  - 7 unit tests (FFV1/FFV2/FFS/Yukawa/VVS/SSS/Sigma); all passing
+- ✅ `VertexTerm.terms: Vec<RootedTerm>` — each `LorentzTerm` rooted independently
+- ✅ `WaveformSlot::Add` + `C<F> * WaveformSlot`; `result_leg_idx` removed from `EvalStep`
+- ✅ `evaluate_lorentz_node()` tree walker in `run.rs`
+  - Implemented: Leg, GammaVout, ProjM, ProjP, Metric
+  - Remaining (`todo!()`): GammaIout, GammaJout, ProjMAmp, ProjPAmp, ScalarProduct
+- ✅ `repr/vectorspace.rs`: `VectorSpace<F>` trait + macros; `Scalar<F>` removed; `GammaV` de-genericized
+- ✅ `test_eval_m2_ee_mumu_vs_hardcoded` **passes** — 125/125 tests green (2026-06-08)
 
-**Remaining (Steps 4–7)**:
-- ⏳ **Gradual migration:** Implement each `RootedNode` variant in `run.rs` one at a time
-  - SpinorCurrent/SpinorAmplitude mostly work but deferred (needs per-node logic)
-  - SpinorOut: requires careful handling of row/col fermion indices (blocked on design detail)
-  - BosonScalar/BosonVector/ScalarProduct: placeholder implementations
-- ⏳ For multi-term vertices: sum over all `RootedTerm`s (each with independent node type)
-  - Current implementation still uses legacy `dispatch_kind` from first term
-  - Will require handling heterogeneous terms (e.g., photon + Z in neutral current)
-- ⏳ Determinism test: compile/eval ~20×, assert bit-identical results
-- ⏳ Full integration test: `test_eval_m2_ee_mumu_vs_hardcoded` validates new evaluator matches hardcoded
+**Remaining**:
+- ⏳ Implement `GammaIout`/`GammaJout` in `evaluate_lorentz_node` (off-shell fermion-out currents)
+- ⏳ Implement `ProjMAmp`/`ProjPAmp` (FFS chiral scalar bilinears)
+- ⏳ Implement `ScalarProduct` (multi-factor product for SSS/VVS/etc.)
+- ⏳ Implement `P` and `Identity` in `build_child` (momentum insertion; needed for scalars)
+- ⏳ Tighten integration test: <1e-6 relative across ≥5 angles + Z-pole; determinism test
 
 ## Implementation Notes
 

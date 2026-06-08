@@ -52,7 +52,13 @@ impl<F: Real> InDiracWf<F> {
     /// Construct a flowing-IN wavefunction.
     pub fn new(p: LorentzVector<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
         let spinor = Bispinor::ixxxxx(p, mass, nhel, nsf);
-        Self::from_parts(spinor, p.scaled(nsf.sign()))
+        Self::from_parts(
+            spinor,
+            match nsf {
+                Charge::Particle => p,      // outgoing: +p
+                Charge::Antiparticle => -p, // incoming: -p
+            },
+        )
     }
 
     /// Construct an off-shell flowing-IN fermion from an arbitrary spinor and momentum.
@@ -69,7 +75,7 @@ impl<F: Real> InDiracWf<F> {
     /// Convert to a flowing-OUT wavefunction by taking the Dirac conjugate of the spinor
     /// and flipping the momentum sign.
     pub fn to_outgoing(self) -> OutDiracWf<F> {
-        OutDiracWf::from_spinor(self.spinor.dirac_conjugate(), self.momentum.scaled(-1))
+        OutDiracWf::from_spinor(self.spinor.dirac_conjugate(), -self.momentum)
     }
 }
 
@@ -77,7 +83,13 @@ impl<F: Real> OutDiracWf<F> {
     /// Construct a flowing-OUT wavefunction.
     pub fn new(p: LorentzVector<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
         let spinor = Bispinor::oxxxxx(p, mass, nhel, nsf);
-        Self::from_parts(spinor, p.scaled(nsf.sign()))
+        Self::from_parts(
+            spinor,
+            match nsf {
+                Charge::Particle => p,
+                Charge::Antiparticle => -p,
+            },
+        )
     }
 
     /// Construct an off-shell flowing-OUT fermion from an arbitrary spinor and momentum.
@@ -95,7 +107,7 @@ impl<F: Real> OutDiracWf<F> {
     /// and flipping the momentum sign.
     /// This is the inverse of [`InDiracWf::to_outgoing`].
     pub fn to_incoming(self) -> InDiracWf<F> {
-        InDiracWf::from_spinor(self.spinor.dirac_conjugate(), self.momentum.scaled(-1))
+        InDiracWf::from_spinor(self.spinor.dirac_conjugate(), -self.momentum)
     }
 }
 
@@ -212,7 +224,11 @@ impl<F: Real> VectorWf<F> {
 
         VectorWf {
             eps: ComplexVector(eps),
-            momentum: p.scaled(nsv),
+            momentum: match nsv {
+                1 => p,   // outgoing: +p
+                -1 => -p, // incoming: -p
+                _ => panic!("nsv must be ±1"),
+            },
         }
     }
 }
@@ -249,7 +265,11 @@ impl<F: Real> ScalarWf<F> {
     pub fn sxxxxx(p: LorentzVector<F>, nss: i32) -> Self {
         ScalarWf {
             value: C::new(F::one(), F::zero()),
-            momentum: p.scaled(nss),
+            momentum: match nss {
+                1 => p,   // outgoing: +p
+                -1 => -p, // incoming: -p
+                _ => panic!("nss must be ±1"),
+            },
         }
     }
 }

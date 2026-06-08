@@ -4,13 +4,16 @@ use std::collections::HashSet;
 
 use crate::diagrams::DiagramSet;
 use crate::helas::eval::compile::compile_diagram_ast;
+use crate::helas::eval::dispatch::{LorentzEvalNode, LorentzEvalTree};
 use crate::helas::repr::intertwiner::{GammaL, GammaR, Intertwiner2Leg};
-use crate::helas::repr::lorentz::{Bispinor, Charge, ComplexVector, LorentzVector, SpinorHelicity};
+use crate::helas::repr::lorentz::{
+    Bispinor, Charge, ComplexVector, LorentzVector, SpinorHelicity, SpinorRepr,
+};
 use crate::helas::repr::propagator::{
     DiracPropagator, MassiveVectorPropagator, MasslessVectorPropagator, Propagator,
     ScalarPropagator,
 };
-use crate::helas::repr::{Real, C};
+use crate::helas::repr::{r, Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
@@ -239,6 +242,7 @@ fn helicity_states_for_spin(spin_code: i32) -> Result<Vec<i32>, CompileError> {
 }
 
 fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
+    // TODO: use itertools multi_cartesian_product
     let mut out = vec![Vec::new()];
     for leg_states in states {
         let mut next = Vec::with_capacity(out.len() * leg_states.len());
@@ -280,17 +284,11 @@ fn eval_single_diagram<F: Real + FromPrimitive>(
             }
             EvalStep::OffShellCurrent {
                 info,
-                result_leg_idx,
                 input_slots,
                 output_slot,
             } => {
-                slots[*output_slot] = evaluate_off_shell_current(
-                    info,
-                    *result_leg_idx,
-                    input_slots,
-                    &slots,
-                    evaluated,
-                );
+                slots[*output_slot] =
+                    evaluate_off_shell_current(info, input_slots, &slots, evaluated);
             }
             EvalStep::Propagate {
                 info,
@@ -361,92 +359,23 @@ fn build_external_slot<F: Real + FromPrimitive>(
 
 fn evaluate_off_shell_current<F: Real + FromPrimitive>(
     info: &super::ast::VertexInfo,
-    result_leg_idx: usize,
     input_slots: &[usize],
     slots: &[WaveformSlot<F>],
     evaluated: &EvaluatedModel,
 ) -> WaveformSlot<F> {
-    let mut accum = C::new(F::zero(), F::zero());
-    let kind = match info.terms.first() {
-        Some(term) => term.dispatch_kind,
-        None => {
-            return WaveformSlot::Scalar(ScalarWf {
-                value: accum,
-                momentum: LorentzVector::zero(),
-            })
+    let mut accum = WaveformSlot::Empty;
+
+    for lorentz_term in &info.terms {
+        let coupling = complex_from_complex64::<F>(evaluated.coupling(lorentz_term.coupling_id));
+        let mut term_accum = WaveformSlot::Empty;
+        for structure in &lorentz_term.terms {
+            let term_value = evaluate_lorentz_structure(structure, input_slots, slots);
+            term_accum = term_accum + term_value;
         }
-    };
-
-    for term in &info.terms {
-        let coupling = complex_from_complex64::<F>(evaluated.coupling(term.coupling_id));
-        let result_spin = term.spins[result_leg_idx].abs();
-
-        let term_value = match (kind, result_spin) {
-            (
-                super::dispatch::DispatchKind::FfvProjM | super::dispatch::DispatchKind::FfvProjP,
-                3,
-            ) => {
-                let (fo, fi) = fermion_pair_from_slots(input_slots, slots, evaluated, 0, 0);
-                let current = match term.dispatch_kind {
-                    super::dispatch::DispatchKind::FfvProjM => {
-                        GammaL::apply(&(fo.spinor, fi.spinor))
-                    }
-                    super::dispatch::DispatchKind::FfvProjP => {
-                        GammaR::apply(&(fo.spinor, fi.spinor))
-                    }
-                    _ => unreachable!(),
-                };
-                let eps = std::array::from_fn(|mu| coupling * current.0[mu]);
-                return WaveformSlot::Vector(VectorWf {
-                    eps: ComplexVector(eps),
-                    momentum: fo.momentum - fi.momentum,
-                });
-            }
-            (super::dispatch::DispatchKind::Ffs, 1) => {
-                let (fo, fi) = fermion_pair_from_slots(input_slots, slots, evaluated, 0, 0);
-                let left = fo.spinor.0[2] * fi.spinor.0[0] + fo.spinor.0[3] * fi.spinor.0[1];
-                let right = fo.spinor.0[0] * fi.spinor.0[2] + fo.spinor.0[1] * fi.spinor.0[3];
-                let momentum = fo.momentum + fi.momentum;
-                return WaveformSlot::Scalar(ScalarWf {
-                    value: coupling * (left + right),
-                    momentum,
-                });
-            }
-            (super::dispatch::DispatchKind::Vvv, 3) => {
-                let v1 = vector_slot(&slots[input_slots[0]]);
-                let v2 = vector_slot(&slots[input_slots[1]]);
-                let q = v1.momentum + v2.momentum;
-                let v1_eps = v1.eps.0;
-                let v2_eps = v2.eps.0;
-
-                let tmp1 = dot_q_complex(q.0, v2_eps);
-                let tmp2 = dot_q_complex(v1.momentum.0, v2_eps);
-                let tmp3 = dot_q_complex(q.0, v1_eps);
-                let tmp4 = dot_q_complex(v2.momentum.0, v1_eps);
-                let tmp5 = dot_complex(v1_eps, v2_eps);
-
-                let eps: [C<F>; 4] = std::array::from_fn(|mu| {
-                    coupling
-                        * (tmp5 * C::new(v2.momentum[mu] - v1.momentum[mu], F::zero())
-                            + v1_eps[mu] * (tmp1 - tmp2)
-                            + v2_eps[mu] * (tmp3 - tmp4))
-                });
-
-                return WaveformSlot::Vector(VectorWf {
-                    eps: ComplexVector(eps),
-                    momentum: q,
-                });
-            }
-            _ => C::new(F::zero(), F::zero()),
-        };
-
-        accum = accum + term_value;
+        accum = accum + coupling * term_accum;
     }
 
-    WaveformSlot::Scalar(ScalarWf {
-        value: accum,
-        momentum: LorentzVector::zero(),
-    })
+    accum
 }
 
 fn evaluate_propagation<F: Real + FromPrimitive>(
@@ -495,126 +424,109 @@ fn evaluate_contract_amplitude<F: Real + FromPrimitive>(
     slots: &[WaveformSlot<F>],
     evaluated: &EvaluatedModel,
 ) -> WaveformSlot<F> {
-    let mut value = C::new(F::zero(), F::zero());
-    let kind = match info.terms.first() {
-        Some(term) => term.dispatch_kind,
-        None => {
-            return WaveformSlot::Scalar(ScalarWf {
-                value,
-                momentum: LorentzVector::zero(),
-            })
-        }
-    };
+    let mut accum = WaveformSlot::Empty;
 
     for term in &info.terms {
         let coupling = complex_from_complex64::<F>(evaluated.coupling(term.coupling_id));
-        let term_value = match kind {
-            super::dispatch::DispatchKind::FfvProjM | super::dispatch::DispatchKind::FfvProjP => {
-                let (fo, fi) = fermion_pair_from_slots(input_slots, slots, evaluated, 0, 0);
-                let v = vector_slot(&slots[input_slots[2]]);
-                let current = match term.dispatch_kind {
-                    super::dispatch::DispatchKind::FfvProjM => {
-                        GammaL::apply(&(fo.spinor, fi.spinor))
-                    }
-                    super::dispatch::DispatchKind::FfvProjP => {
-                        GammaR::apply(&(fo.spinor, fi.spinor))
-                    }
-                    _ => unreachable!(),
-                };
-                coupling * dot_complex(current.0, v.eps.0)
-            }
-            super::dispatch::DispatchKind::Ffs => {
-                let (fo, fi) = fermion_pair_from_slots(input_slots, slots, evaluated, 0, 0);
-                let s = scalar_slot(&slots[input_slots[2]]);
-                let left = fo.spinor.0[2] * fi.spinor.0[0] + fo.spinor.0[3] * fi.spinor.0[1];
-                let right = fo.spinor.0[0] * fi.spinor.0[2] + fo.spinor.0[1] * fi.spinor.0[3];
-                s.value * coupling * (left + right)
-            }
-            super::dispatch::DispatchKind::Vvv => {
-                let v1 = vector_slot(&slots[input_slots[0]]);
-                let v2 = vector_slot(&slots[input_slots[1]]);
-                let v3 = vector_slot(&slots[input_slots[2]]);
-                let q = v1.momentum + v2.momentum;
-                let amp = dot_complex(v1.eps.0, v2.eps.0)
-                    * dot_complex(
-                        v3.eps.0,
-                        [
-                            C::new(q[0], F::zero()),
-                            C::new(q[1], F::zero()),
-                            C::new(q[2], F::zero()),
-                            C::new(q[3], F::zero()),
-                        ],
-                    )
-                    + dot_complex(v1.eps.0, v3.eps.0)
-                    + dot_complex(v2.eps.0, v3.eps.0);
-                coupling * amp
-            }
-            super::dispatch::DispatchKind::Vvs => {
-                let v1 = vector_slot(&slots[input_slots[0]]);
-                let v2 = vector_slot(&slots[input_slots[1]]);
-                let s = scalar_slot(&slots[input_slots[2]]);
-                coupling * s.value * dot_complex(v1.eps.0, v2.eps.0)
-            }
-            super::dispatch::DispatchKind::Sss | super::dispatch::DispatchKind::Ssss => {
-                let mut product = coupling;
-                for slot in input_slots {
-                    product = product * scalar_slot(&slots[*slot]).value;
-                }
-                product
-            }
-            super::dispatch::DispatchKind::Vvvv => C::new(F::zero(), F::zero()),
-        };
-        value = value + term_value;
+        let mut term_accum = WaveformSlot::Empty;
+
+        for structure in &term.terms {
+            let term_value = evaluate_lorentz_structure(structure, input_slots, slots);
+            term_accum = term_accum + term_value;
+        }
+        accum = accum + coupling * term_accum;
     }
 
-    WaveformSlot::Scalar(ScalarWf {
-        value,
-        momentum: LorentzVector::zero(),
-    })
+    accum
 }
 
-fn fermion_pair_from_slots<F: Real>(
+fn evaluate_lorentz_node<F: Real + FromPrimitive>(
+    tree: &LorentzEvalTree,
+    node: &LorentzEvalNode,
     input_slots: &[usize],
     slots: &[WaveformSlot<F>],
-    _evaluated: &EvaluatedModel,
-    _row_leg_idx: usize,
-    _col_leg_idx: usize,
-) -> (OutDiracWf<F>, InDiracWf<F>) {
-    let first = match &slots[input_slots[0]] {
-        WaveformSlot::Fermion(wf) => *wf,
-        other => panic!("expected fermion slot, got {:?}", other),
-    };
-    let second = match &slots[input_slots[1]] {
-        WaveformSlot::Fermion(wf) => *wf,
-        other => panic!("expected fermion slot, got {:?}", other),
-    };
-    (first.to_outgoing(), second)
-}
-
-fn vector_slot<F: Real>(slot: &WaveformSlot<F>) -> VectorWf<F> {
-    match slot {
-        WaveformSlot::Vector(wf) => *wf,
-        other => panic!("expected vector slot, got {:?}", other),
+) -> WaveformSlot<F> {
+    match node {
+        // TODO: is clone here ok? we're using the stack to accumulate intermediate results rather than reserving slots (as done for the diagram AST)
+        LorentzEvalNode::Leg(i) => slots[input_slots[*i as usize - 1]].clone(),
+        LorentzEvalNode::GammaVout { i, j } => {
+            let WaveformSlot::Fermion(f1) =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
+            else {
+                panic!("expected fermion output from node {i}");
+            };
+            let WaveformSlot::Fermion(f2) =
+                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots)
+            else {
+                panic!("expected fermion output from node {j}");
+            };
+            let eps_l = GammaL::apply(&(f1.spinor, f2.spinor));
+            let eps_r = GammaR::apply(&(f1.spinor, f2.spinor));
+            WaveformSlot::Vector(VectorWf {
+                eps: eps_l + eps_r,
+                momentum: f1.momentum + f2.momentum,
+            })
+        }
+        LorentzEvalNode::ProjM { i } => {
+            let WaveformSlot::Fermion(f) =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
+            else {
+                panic!("expected fermion output from node {i}");
+            };
+            WaveformSlot::Fermion(InDiracWf::from_spinor(f.spinor.project_left(), f.momentum))
+        }
+        LorentzEvalNode::ProjP { i } => {
+            let WaveformSlot::Fermion(f) =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
+            else {
+                panic!("expected fermion output from node {i}");
+            };
+            WaveformSlot::Fermion(InDiracWf::from_spinor(f.spinor.project_right(), f.momentum))
+        }
+        LorentzEvalNode::Metric { mu, nu } => {
+            let WaveformSlot::Vector(v1) =
+                evaluate_lorentz_node(tree, tree.node(*mu), input_slots, slots)
+            else {
+                panic!("expected vector output from node {mu}");
+            };
+            let WaveformSlot::Vector(v2) =
+                evaluate_lorentz_node(tree, tree.node(*nu), input_slots, slots)
+            else {
+                panic!("expected vector output from node {nu}");
+            };
+            let dot = dot_complex(v1.eps.0, v2.eps.0);
+            WaveformSlot::Scalar(ScalarWf {
+                value: dot,
+                momentum: v1.momentum + v2.momentum,
+            })
+        }
+        _ => todo!("implement other Lorentz structures"),
     }
 }
 
-fn scalar_slot<F: Real>(slot: &WaveformSlot<F>) -> ScalarWf<F> {
-    match slot {
-        WaveformSlot::Scalar(wf) => *wf,
-        other => panic!("expected scalar slot, got {:?}", other),
-    }
+fn evaluate_lorentz_structure<F: Real + FromPrimitive>(
+    structure: &super::dispatch::RootedTerm,
+    input_slots: &[usize],
+    slots: &[WaveformSlot<F>],
+) -> WaveformSlot<F> {
+    let coeff = F::from(structure.coeff).expect("coef not valid");
+    let term = evaluate_lorentz_node(&structure.tree, structure.tree.root(), input_slots, slots);
+    r(coeff) * term
 }
 
 fn dot_complex<F: Real>(a: [C<F>; 4], b: [C<F>; 4]) -> C<F> {
     a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3]
 }
 
-fn dot_q_complex<F: Real>(q: [F; 4], c: [C<F>; 4]) -> C<F> {
-    C::new(q[0], F::zero()) * c[0]
-        - C::new(q[1], F::zero()) * c[1]
-        - C::new(q[2], F::zero()) * c[2]
-        - C::new(q[3], F::zero()) * c[3]
-}
+// TODO: this is used in jioxxx for massive gauge boson
+// "unitary gauge with Fabio fixed-width complex denominator"
+// How will it be treated here?
+// fn dot_q_complex<F: Real>(q: [F; 4], c: [C<F>; 4]) -> C<F> {
+//     C::new(q[0], F::zero()) * c[0]
+//         - C::new(q[1], F::zero()) * c[1]
+//         - C::new(q[2], F::zero()) * c[2]
+//         - C::new(q[3], F::zero()) * c[3]
+// }
 
 fn real<F: Real + FromPrimitive>(x: f64) -> F {
     <F as FromPrimitive>::from_f64(x).expect("value convertible to real scalar")

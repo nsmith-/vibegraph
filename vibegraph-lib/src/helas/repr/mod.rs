@@ -54,6 +54,7 @@ pub mod coupling;
 pub mod intertwiner;
 pub mod lorentz;
 pub mod propagator;
+pub mod vectorspace;
 
 // Re-exports removed: prefer using submodules directly to avoid unused-import warnings.
 // Public scalar primitives (keep these for downstream code):

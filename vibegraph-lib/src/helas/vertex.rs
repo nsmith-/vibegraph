@@ -384,7 +384,7 @@ pub fn jsixxx<F: Real>(
 
     // Apply scalar propagator
     let prop = ScalarPropagator { mass, width };
-    let prop_value = prop.propagate(q.0, scalar_value.0);
+    let prop_value = prop.propagate(q.0, scalar_value);
 
     // Scale by coupling
     let final_value = g * prop_value;
@@ -416,8 +416,8 @@ pub fn iosxxx<F: Real>(
     gc: [C<F>; 2],
 ) -> C<F> {
     // Compute left and right chiral bilinears using the new trait methods
-    let left_contr = Bispinor::scalar_bilinear(&fo.spinor, &fi.spinor, Chirality::Left).0;
-    let right_contr = Bispinor::scalar_bilinear(&fo.spinor, &fi.spinor, Chirality::Right).0;
+    let left_contr = Bispinor::scalar_bilinear(&fo.spinor, &fi.spinor, Chirality::Left);
+    let right_contr = Bispinor::scalar_bilinear(&fo.spinor, &fi.spinor, Chirality::Right);
 
     // Combine with couplings and scalar value
     s.value * (gc[0] * left_contr + gc[1] * right_contr)

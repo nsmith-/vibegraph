@@ -49,9 +49,7 @@
 //!   implementation.
 
 use super::{ri, Real, C};
-use crate::helas::repr::lorentz::{
-    Bispinor, ComplexVector, LorentzRepr, Rank2Tensor, Scalar, SpinorRepr,
-};
+use crate::helas::repr::lorentz::{Bispinor, ComplexVector, LorentzRepr, Rank2Tensor, SpinorRepr};
 use std::marker::PhantomData;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,37 +163,18 @@ impl<F: Real, B: SpinorRepr<F>> Intertwiner2Leg<F> for GammaR<B> {
 ///
 /// # TODO
 /// Implement for [`SpinorRepr`] using new methods on the SpinorRepr trait.
-pub struct GammaV<B> {
-    _marker: PhantomData<B>,
-}
+pub struct GammaV {}
 
-impl<F: Real, B: SpinorRepr<F>> Intertwiner2Leg<F> for GammaV<B> {
+impl<F: Real> Intertwiner2Leg<F> for GammaV {
     type In1 = ComplexVector<F>;
-    type In2 = B;
-    type Out = B;
+    type In2 = Bispinor<F>;
+    type Out = Bispinor<F>;
 
     fn apply(input: &(Self::In1, Self::In2)) -> Self::Out {
-        // This is a workaround: we only support Bispinor right now.
-        // Cast the generic B to Bispinor using transmute (safe because we verify at runtime).
         let eps = &input.0;
-
-        // Use type ID to verify at runtime
-        if std::any::TypeId::of::<B>() == std::any::TypeId::of::<Bispinor<F>>() {
-            let psi_ptr = &input.1 as *const B as *const Bispinor<F>;
-            let psi = unsafe { *psi_ptr };
-
-            let result = gamma_v_apply::<F>(&eps.0, &psi.0);
-            let result_bispin = Bispinor(result);
-
-            // Now we need to convert Bispinor<F> back to B
-            let result_ptr = &result_bispin as *const Bispinor<F> as *const B;
-            unsafe { *result_ptr }
-        } else {
-            panic!(
-                "GammaV is only implemented for Bispinor, got {}",
-                std::any::type_name::<B>()
-            )
-        }
+        let psi = &input.1;
+        let result = gamma_v_apply::<F>(&eps.0, &psi.0);
+        Bispinor(result)
     }
 }
 
@@ -284,7 +263,7 @@ pub struct Epsilon<B> {
 impl<F: Real, B: SpinorRepr<F>> Intertwiner2Leg<F> for Epsilon<B> {
     type In1 = B;
     type In2 = B;
-    type Out = Scalar<F>;
+    type Out = C<F>;
 
     fn apply(_input: &(Self::In1, Self::In2)) -> Self::Out {
         todo!("Epsilon: Lorentz scalar bilinear ε_{{αβ}} ψ^α χ^β — implementation pending")
