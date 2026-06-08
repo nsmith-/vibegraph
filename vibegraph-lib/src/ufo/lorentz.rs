@@ -18,6 +18,9 @@ pub enum LorentzError {
 }
 
 /// A single Lorentz tensor operator.
+///
+/// The indices i,j are 1-indexed leg numbers from the UFO definition, with negative values for internal contractions.
+/// i and j are spinor indices for fermion legs, or dummy indices for internal contractions. mu, nu, etc. are Lorentz indices.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LorentzOp {
     /// Dirac gamma matrix: Γ^μ_{ij}
@@ -45,7 +48,43 @@ pub enum LorentzOp {
     C { i: i32, j: i32 },
 }
 
+impl LorentzOp {
+    // TODO: involves_scalar (is this possible? momentum insertion?)
+
+    /// Returns true if this operator involves a spinor index contraction with the given leg index.
+    pub fn involves_spinor(&self, idx: i32) -> bool {
+        match self {
+            LorentzOp::Gamma { i, j, .. }
+            | LorentzOp::Sigma { i, j, .. }
+            | LorentzOp::Identity { i, j }
+            | LorentzOp::ProjM { i, j }
+            | LorentzOp::ProjP { i, j }
+            | LorentzOp::C { i, j } => *i == idx || *j == idx,
+            _ => false,
+        }
+    }
+
+    /// Returns true if this operator involves a Lorentz index contraction with the given leg index.
+    pub fn involves_vector(&self, idx: i32) -> bool {
+        match self {
+            LorentzOp::Gamma { mu, .. } => *mu == idx,
+            LorentzOp::P { mu, leg } => *mu == idx || *leg == idx,
+            LorentzOp::Sigma { mu, nu, .. } => *mu == idx || *nu == idx,
+            LorentzOp::Metric { mu, nu } => *mu == idx || *nu == idx,
+            LorentzOp::Epsilon { mu, nu, rho, sigma } => {
+                *mu == idx || *nu == idx || *rho == idx || *sigma == idx
+            }
+            _ => false,
+        }
+    }
+}
+
 /// A term in a Lorentz structure: `coeff * op1 * op2 * ...`
+///
+/// The term itself is a fully connected graph of Lorentz operators
+/// The LorentzOp indices indicate connections between operators when negative,
+/// and (1-indexed) external leg indices when positive. An implicit product
+/// over all connected operators is assumed, with the given coefficient.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LorentzTerm {
     pub coeff: f64,

@@ -4,8 +4,10 @@
 //! It stores descriptor types at compile time (external leg info, propagator params, vertex
 //! dispatches) and is evaluated at runtime against external momenta + helicity configurations.
 
-use super::dispatch::{DispatchKind, RootedTerm};
-use crate::helas::repr::Real;
+use std::ops::{Add, Mul};
+
+use super::dispatch::RootedTerm;
+use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
@@ -34,6 +36,68 @@ pub enum WaveformSlot<F: Real> {
     Empty,
 }
 
+impl<F: Real> Add for WaveformSlot<F> {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        use WaveformSlot::*;
+        match (self, other) {
+            (Empty, x) | (x, Empty) => x,
+            (Scalar(s1), Scalar(s2)) => {
+                assert_eq!(
+                    s1.momentum, s2.momentum,
+                    "Cannot add scalar waveforms with different momenta"
+                );
+                WaveformSlot::Scalar(ScalarWf {
+                    value: s1.value + s2.value,
+                    momentum: s1.momentum,
+                })
+            }
+            (Vector(v1), Vector(v2)) => {
+                assert_eq!(
+                    v1.momentum, v2.momentum,
+                    "Cannot add vector waveforms with different momenta"
+                );
+                WaveformSlot::Vector(VectorWf {
+                    eps: v1.eps + v2.eps,
+                    momentum: v1.momentum,
+                })
+            }
+            (Fermion(f1), Fermion(f2)) => {
+                assert_eq!(
+                    f1.momentum, f2.momentum,
+                    "Cannot add fermion waveforms with different momenta"
+                );
+                WaveformSlot::Fermion(InDiracWf::from_spinor(f1.spinor + f2.spinor, f1.momentum))
+            }
+            _ => panic!("Addition only implemented for Scalar waveforms"),
+        }
+    }
+}
+
+impl<F> Mul<WaveformSlot<F>> for C<F>
+where
+    F: Real,
+{
+    type Output = WaveformSlot<F>;
+
+    fn mul(self, rhs: WaveformSlot<F>) -> WaveformSlot<F> {
+        use WaveformSlot::*;
+        match rhs {
+            Empty => Empty,
+            Scalar(s) => Scalar(ScalarWf {
+                value: self * s.value,
+                momentum: s.momentum,
+            }),
+            Vector(v) => Vector(VectorWf {
+                eps: v.eps * self,
+                momentum: v.momentum,
+            }),
+            Fermion(f) => Fermion(InDiracWf::from_spinor(f.spinor * self, f.momentum)),
+        }
+    }
+}
+
 /// Description of an external leg baked in at compile time.
 #[derive(Clone, Debug)]
 pub struct ExtLegInfo {
@@ -56,17 +120,14 @@ pub struct PropInfo {
 /// One (lorentz_structure, coupling_constant) pair at a vertex.
 ///
 /// The `LorentzId` is stored so that the AST remains independent of the UFO model reference.
-/// At compile time the `LorentzExpr` is pattern-matched into both `DispatchKind` (legacy, for immediate evaluation)
-/// and `RootedTerm` (new, for rooted dispatch).
+/// At compile time the `LorentzExpr` is pattern-matched into `RootedTerm`
 /// At eval time, `coupling_id` is resolved via `EvaluatedModel::coupling(id)`.
 #[derive(Clone, Debug)]
 pub struct VertexTerm {
     /// Model's lorentz structure ID (can resolve to LorentzExpr if needed)
     pub lorentz_id: LorentzId,
-    /// Pre-compiled dispatch tag (from LorentzTerm pattern match)
-    pub dispatch_kind: super::dispatch::DispatchKind,
     /// Pre-compiled rooted dispatch (from LorentzTerm pattern match, rooted at output leg)
-    pub rooted_term: RootedTerm,
+    pub terms: Vec<RootedTerm>,
     /// Per-leg spin codes (from LorentzStructure.spins)
     pub spins: Vec<i32>,
     /// Model's coupling ID (resolved via EvaluatedModel at eval time)
@@ -74,6 +135,9 @@ pub struct VertexTerm {
 }
 
 impl VertexTerm {
+    /// Generate a VertexTerm from a UFO vertex definition, given the model and the desired index of the result leg.
+    ///
+    /// TODO: move this to compile.rs as free function, so errors can propagate instead of panicking.
     pub fn from_ufo(
         model: &UFOModel,
         lorentz_id: LorentzId,
@@ -82,23 +146,19 @@ impl VertexTerm {
         result_leg_idx: Option<usize>,
     ) -> Self {
         let lorentz = model.lorentz_struct(lorentz_id);
-        // Compute both legacy dispatch and new rooted term.
-        let dispatch_kind = DispatchKind::from_lorentz_expr(&lorentz.expr, &lorentz.spins)
-            .expect("Unable to determine dispatch kind from Lorentz expression");
 
-        // Root the first term of the LorentzExpr at the output leg.
-        // For multi-term vertices, this will be generalized to root each term independently.
-        let rooted_term = if let Some(first_term) = lorentz.expr.first() {
-            super::dispatch::root_term(first_term, &lorentz.spins, result_leg_idx)
-                .expect("Unable to root term from Lorentz expression")
-        } else {
-            panic!("Empty Lorentz expression");
-        };
+        let terms = lorentz
+            .expr
+            .iter()
+            .map(|term| {
+                super::dispatch::root_term(term, &lorentz.spins, result_leg_idx)
+                    .expect("Unable to root term from Lorentz expression")
+            })
+            .collect();
 
         VertexTerm {
             lorentz_id,
-            dispatch_kind,
-            rooted_term,
+            terms,
             spins: lorentz.spins.clone(),
             coupling_id,
         }
@@ -116,6 +176,8 @@ pub struct VertexInfo {
 
 impl VertexInfo {
     /// Generate VertexInfo from a UFO vertex definition, given the model and the desired index of the result leg.
+    ///
+    /// TODO: move this to compile.rs as free function, so errors can propagate instead of panicking.
     pub fn from_ufo(model: &UFOModel, id: VertexId, result_leg_idx: Option<usize>) -> Self {
         let vertex = model.vertex_def(id);
         let terms = vertex
@@ -153,8 +215,6 @@ pub enum EvalStep {
     OffShellCurrent {
         /// Vertex descriptor (terms)
         info: VertexInfo,
-        /// Which vertex-local leg is the output (receives the off-shell current)
-        result_leg_idx: usize,
         /// Slots for the known legs (inputs to the vertex)
         input_slots: Vec<usize>,
         /// Slot receiving the off-shell wavefunction (output)

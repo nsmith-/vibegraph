@@ -29,24 +29,27 @@
 
 ### `lorentz-runtime-eval` — Runtime Lorentz structure evaluator (🟡 IN PROGRESS)
 
-**Status**: Redesign in progress (see `.claude/plans/starry-discovering-pascal.md`).
-Steps 1–2 complete; Steps 3–7 pending.
+**Status**: Tree-based evaluator implemented and passing for e⁺e⁻→μ⁺μ⁻.
+Remaining work: complete missing node variants, tighten validation.
 
-**Completed (2026-06-07 session)**:
-1. ✅ Added `SpinorRepr::{project_left,project_right,scalar_bilinear}` and refactored
-   `iosxxx`/`jsixxx` onto them; all unit tests pass (127 → 129 passing).
-2. ✅ Resolved `RootedNode` descriptors + `root_term` parser in `dispatch.rs`:
-   - New enum variants: SpinorCurrent, SpinorAmplitude, SpinorOut, BosonScalar, BosonVector, ScalarProduct
-   - `root_term()` compiler: resolves each `LorentzTerm` to rooted primitive with output fiber fixed
-   - 11 unit tests covering FFV1/FFV2/FFS/VVS/SSS/Sigma cases
-   - Legacy `DispatchKind` retained for backward compatibility
+**Completed (2026-06-07/08 sessions)**:
+1. ✅ `SpinorRepr::{project_left,project_right,scalar_bilinear}` + refactored `iosxxx`/`jsixxx`.
+2. ✅ `LorentzEvalTree` + `LorentzEvalNode` DAG in `dispatch.rs`; recursive `build_child()`
+   turns undirected UFO tensor network into a directed tree rooted at the output leg.
+   Handles Gamma (Vout/Iout/Jout), ProjM/P, ProjMAmp/PAmp, Metric, ScalarProduct.
+   Sigma/Epsilon/C raise `CompileError::UnsupportedVertex`.
+3. ✅ `VertexTerm.terms: Vec<RootedTerm>` (multi-term support); `WaveformSlot::Add` + `C<F> * WaveformSlot`.
+4. ✅ `evaluate_lorentz_node()` tree walker in `run.rs`: implements Leg, GammaVout, ProjM, ProjP, Metric.
+   Both `evaluate_off_shell_current` and `evaluate_contract_amplitude` now iterate over rooted trees.
+5. ✅ `test_eval_m2_ee_mumu_vs_hardcoded` **passes** (125/125 tests green as of 2026-06-08).
+6. ✅ `VectorSpace<F>` trait + `impl_add/mul_for_array!` macros; `Scalar<F>` removed; `GammaV` de-genericized.
 
-**Pending (Steps 3–7)**:
-3. Thread `result_leg_idx: Option<usize>` through `VertexTerm::from_ufo`, `VertexInfo::from_ufo`, `topo_sort.rs`
-4. Rewrite `evaluate_off_shell_current` / `evaluate_contract_amplitude` as double-sum with no early returns
-5. Implement `SpinorOut` (fioxxx/foxxx/FFS-fermion-out) with project+GammaV
-6. Ensure VVV/VVVV/Sigma/Epsilon/C raise `CompileError::UnsupportedVertex`
-7. Tighten integration test to <1e-6 relative across 5 angles + Z-pole; add determinism test
+**Pending**:
+- `evaluate_lorentz_node` is `todo!()` for: `GammaIout`, `GammaJout` (off-shell fermion currents),
+  `ProjMAmp`, `ProjPAmp` (FFS scalar bilinears), `ScalarProduct` (multi-factor products)
+- `dispatch.rs` `build_child` is `todo!()` for: `P` (momentum insertion) and `Identity` operators
+- Tighten `test_eval_m2_ee_mumu_vs_hardcoded` to <1e-6 relative across 5 scattering angles + Z-pole
+- Add determinism test (compile/eval ~20× → bit-identical results)
 
 _Depends on: `feyngraph-ufo-replace` (✅), `lorentz-parse` (✅)_
 _Unblocks: `helas-generalize`_
@@ -147,32 +150,28 @@ the natural-units convention (ℏ = c = 1) before committing.
 
 ---
 
-## 🎯 Updated Implementation Plan (2026-06-07)
+## 🎯 Updated Implementation Plan (2026-06-08)
 
-Active work: **`lorentz-runtime-eval` redesign** into a compile-time rooted contraction
-tree (full plan in `.claude/plans/starry-discovering-pascal.md`).
+Active work: completing `lorentz-runtime-eval` — tree-walk evaluator is working for
+e⁺e⁻→μ⁺μ⁻; remaining node variants needed for fermion-out currents, FFS scalars, and
+general scalar products.
 
-### Completed (this session) — Steps 1–2
-1. ✅ **`SpinorRepr::{project_left,project_right,scalar_bilinear}`** and refactored
-   `iosxxx`/`jsixxx`; all 129 unit tests pass.
-2. ✅ **Resolved descriptors + `root_term` parser** in `dispatch.rs`; legacy `DispatchKind`
-   retained for backward compatibility; 11 new parser unit tests.
-
-### Remaining (next session) — Steps 3–7
-3. **Thread `result_leg_idx`** through `VertexTerm`/`VertexInfo::from_ufo` and `topo_sort.rs`
-4. **Rewrite the two eval fns** (double-sum, no early return): SpinorCurrent,
-   SpinorAmplitude, BosonScalar, ScalarProduct — covers e⁺e⁻→μμ + VVS + scalars.
-5. **SpinorOut** (fioxxx/foxxx fermion-out split; FFS fermion-out).
-6. **Confirm** VVV/VVVV/Sigma/Epsilon/C raise `UnsupportedVertex` (deferred).
-7. **Verify**: tighten `test_eval_m2_ee_mumu_vs_hardcoded` to <1e-6 across 5 angles +
-   Z-pole; determinism test; equivalence tests vs reference routines; full suite green.
+### Immediate (next session) — finish `lorentz-runtime-eval`
+1. Implement `GammaIout` / `GammaJout` in `evaluate_lorentz_node` (off-shell fermion currents:
+   vector + fermion → fermion; needed for `fioxxx`/`foxxx` analogues).
+2. Implement `ProjMAmp` / `ProjPAmp` (chiral scalar bilinears; needed for FFS Yukawa amplitude).
+3. Implement `ScalarProduct` (multiply scalar children; needed for SSS/VVS amplitude).
+4. Implement `P` and `Identity` in `dispatch.rs` `build_child` (momentum insertion; deferred but
+   needed for processes with off-shell scalars carrying momentum).
+5. Tighten `test_eval_m2_ee_mumu_vs_hardcoded` to <1e-6 relative across ≥5 scattering angles + Z-pole.
+6. Add determinism test (compile/eval ~20× → bit-identical).
 
 ### Short-term (1–2 days) — `helas-generalize`
 7. Replace hardcoded `compute_m2_ee_mumu` with `eval_m2` in the cross-section loop;
    validate σ(e⁺e⁻→μ⁺μ⁻) unchanged.
-8. Validate a second process where in scope (e.g. pp→bb) vs MadGraph.
+8. Validate a second process (e.g. uū→dd̄) vs MadGraph.
 
-### Medium-term (end of week) — `global-config`
+### Medium-term — `global-config`
 9. Wire proc-card parsing → UFO loading; CLI flags for model path / restrict card;
    full-pipeline integration test.
 

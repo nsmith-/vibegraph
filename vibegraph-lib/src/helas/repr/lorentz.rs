@@ -15,6 +15,9 @@
 //! ## Concrete types
 //!
 
+use num_traits::Zero;
+
+use super::vectorspace::{impl_add_for_array, impl_mul_for_array, VectorSpace};
 use super::{r, ri, Real, C};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,31 +92,25 @@ impl std::fmt::Display for Charge {
 
 /// Base trait for a Lorentz representation.
 ///
+/// Every Lorentz representation is a vector space over a real or complex scalar field `F`.
+/// This trait marker indicates membership in an associated fiber bundle to the SO(1,3)
+/// principle bundle; specialized subtypes like [`SpinorRepr`] and [`VectorRepr`] add
+/// physics-specific operations.
+///
 /// # Type parameters
 /// - `F` — the real scalar type (e.g. `f64`)
+// pub trait LorentzRepr<F: Real>: VectorSpace<F> {}
 pub trait LorentzRepr<F: Real>: Sized + Copy + 'static {}
 
-/// Spin-0 Lorentz representation
-///
-/// TODO: is this going to have any nontrivial methods, or is it just a marker type for the scalar fiber?
-pub trait ScalarRepr<F: Real>: LorentzRepr<F> {}
-
-/// Spin-0 Lorentz scalar
-#[derive(Clone, Copy, Debug)]
-pub struct Scalar<F: Real>(pub C<F>);
-
-impl<F: Real> LorentzRepr<F> for Scalar<F> {}
-
-impl<F: Real> ScalarRepr<F> for Scalar<F> {}
+// Implement LorentzRepr for the (complex) scalar representation
+impl<F: Real> LorentzRepr<F> for F {}
+impl<F: Real> LorentzRepr<F> for C<F> {}
 
 /// Antisymmetric rank-2 Lorentz tensor (placeholder type).
 ///
 /// Represents a tensor `T^{μν} = -T^{νμ}` such as the output of `σ^μν = i/2 [γ^μ, γ^ν]`.
-///
-/// # TODO
-/// Replace raw array with a proper antisymmetric tensor type with index access.
 #[derive(Clone, Copy, Debug)]
-pub struct Rank2Tensor<F: Real>(pub [[C<F>; 4]; 4]);
+pub struct Rank2Tensor<F: Real>(pub [C<F>; 6]);
 
 impl<F: Real> LorentzRepr<F> for Rank2Tensor<F> {}
 
@@ -132,6 +129,22 @@ pub trait VectorRepr<F: Real>: LorentzRepr<F> {}
 /// `FourMomentum<F>`, completing the bundle-theoretic picture for kinematics.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LorentzVector<F: Real>(pub [F; 4]);
+
+impl_add_for_array!(LorentzVector<F>, 4);
+impl_mul_for_array!(LorentzVector<F>, F, 4);
+
+impl<F: Real> Zero for LorentzVector<F> {
+    #[inline(always)]
+    fn zero() -> Self {
+        LorentzVector([F::zero(); 4])
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.iter().all(|x| x.is_zero())
+    }
+}
+
+impl<F: Real> VectorSpace<F> for LorentzVector<F> {}
 
 impl<F: Real> LorentzRepr<F> for LorentzVector<F> {}
 
@@ -164,12 +177,6 @@ impl<F: Real> LorentzVector<F> {
         Self::from_pxpypzmass(px, py, pz, mass)
     }
 
-    /// Zero momentum (useful as a dummy argument for algebraic intertwiners).
-    #[inline(always)]
-    pub fn zero() -> Self {
-        LorentzVector([F::zero(); 4])
-    }
-
     /// Energy component E = p^0.
     #[inline(always)]
     pub fn e(self) -> F {
@@ -199,13 +206,6 @@ impl<F: Real> LorentzVector<F> {
     pub fn m(self) -> F {
         self.m2().sqrt()
     }
-
-    /// Return the signed momentum `self * sign`, used by wavefunction factories.
-    #[inline(always)]
-    pub fn scaled(self, sign: i32) -> Self {
-        let s = F::from(sign).unwrap();
-        LorentzVector([self.0[0] * s, self.0[1] * s, self.0[2] * s, self.0[3] * s])
-    }
 }
 
 impl<F: Real> std::ops::Index<usize> for LorentzVector<F> {
@@ -216,73 +216,29 @@ impl<F: Real> std::ops::Index<usize> for LorentzVector<F> {
     }
 }
 
-// potential TODO: roll our own derive macro for vector space traits
-
-impl<F: Real> std::ops::Add for LorentzVector<F> {
-    type Output = Self;
-    #[inline(always)]
-    fn add(self, rhs: Self) -> Self {
-        let mut result = [F::zero(); 4];
-        for i in 0..4 {
-            result[i] = self.0[i] + rhs.0[i];
-        }
-        LorentzVector(result)
-    }
-}
-
-impl<F: Real> std::ops::Sub for LorentzVector<F> {
-    type Output = Self;
-    #[inline(always)]
-    fn sub(self, rhs: Self) -> Self {
-        let mut result = [F::zero(); 4];
-        for i in 0..4 {
-            result[i] = self.0[i] - rhs.0[i];
-        }
-        LorentzVector(result)
-    }
-}
-
-impl<F: Real> std::ops::Neg for LorentzVector<F> {
-    type Output = Self;
-    #[inline(always)]
-    fn neg(self) -> Self {
-        let mut result = [F::zero(); 4];
-        for i in 0..4 {
-            result[i] = -self.0[i];
-        }
-        LorentzVector(result)
-    }
-}
-
-impl<F: Real> std::ops::Mul<F> for LorentzVector<F> {
-    type Output = Self;
-    #[inline(always)]
-    fn mul(self, rhs: F) -> Self {
-        let mut result = [F::zero(); 4];
-        for i in 0..4 {
-            result[i] = self.0[i] * rhs;
-        }
-        LorentzVector(result)
-    }
-}
-
-impl<F: Real> std::ops::Div<F> for LorentzVector<F> {
-    type Output = Self;
-    #[inline(always)]
-    fn div(self, rhs: F) -> Self {
-        let mut result = [F::zero(); 4];
-        for i in 0..4 {
-            result[i] = self.0[i] / rhs;
-        }
-        LorentzVector(result)
-    }
-}
-
 /// A complex (e.g. polarisation) 4-vector.
 ///
 /// This is the fiber type for [`SpinorRepr::left_current`] and [`SpinorRepr::right_current`].
 #[derive(Clone, Copy, Debug)]
 pub struct ComplexVector<F: Real>(pub [C<F>; 4]);
+
+impl_add_for_array!(ComplexVector<F>, 4);
+impl_mul_for_array!(ComplexVector<F>, F, 4);
+impl_mul_for_array!(ComplexVector<F>, C<F>, 4);
+
+impl<F: Real> Zero for ComplexVector<F> {
+    #[inline(always)]
+    fn zero() -> Self {
+        ComplexVector([C::zero(); 4])
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.iter().all(|c| c.is_zero())
+    }
+}
+
+impl<F: Real> VectorSpace<F> for ComplexVector<F> {}
+impl<F: Real> VectorSpace<C<F>> for ComplexVector<F> {}
 
 impl<F: Real> LorentzRepr<F> for ComplexVector<F> {}
 
@@ -296,10 +252,6 @@ impl<F: Real> std::ops::Index<usize> for ComplexVector<F> {
     }
 }
 
-// TODO: implement vector space ops for ComplexVector
-// TODO: investigate whether we can unify LorentzVector and ComplexVector with a single generic struct
-// pub type ComplexVector<F> = LorentzVector<C<F>>;
-
 /// Spin-½ Lorentz representation.
 ///
 /// This is a trait to allow for multiple concrete bases (e.g. Weyl, Dirac) to be implemented.
@@ -309,7 +261,6 @@ pub trait SpinorRepr<F: Real>: LorentzRepr<F> {
 
     /// Right-handed fermion current  `J_R^μ = v̄_out γ^μ P_R u_in`.
     fn right_current(fo: &Self, fi: &Self) -> ComplexVector<F>;
-    // fn right_current(fo: &[C<F>; 4], fi: &[C<F>; 4]) -> [C<F>; 4];
 
     /// Left projection: `P_L = (1 - γ^5)/2` — zero the right-chiral (indices 2-3) components.
     fn project_left(self) -> Self;
@@ -322,7 +273,7 @@ pub trait SpinorRepr<F: Real>: LorentzRepr<F> {
     /// In the Weyl basis with the `fo` swap convention:
     /// - `fo` has indices 0,1=RIGHT-chiral, 2,3=LEFT-chiral
     /// - `fi` has indices 0,1=LEFT-chiral, 2,3=RIGHT-chiral
-    fn scalar_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> Scalar<F>;
+    fn scalar_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> C<F>;
 }
 
 /// Chirality label for chiral projections and bilinears.
@@ -351,6 +302,23 @@ pub enum Chirality {
 /// HELAS routines `iovxxx` lines 86–89 exactly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Bispinor<F: Real>(pub [C<F>; 4]);
+
+impl_add_for_array!(Bispinor<F>, 4);
+impl_mul_for_array!(Bispinor<F>, F, 4);
+impl_mul_for_array!(Bispinor<F>, C<F>, 4);
+
+impl<F: Real> Zero for Bispinor<F> {
+    #[inline(always)]
+    fn zero() -> Self {
+        Bispinor([C::zero(); 4])
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.iter().all(|x| x.is_zero())
+    }
+}
+
+impl<F: Real> VectorSpace<F> for Bispinor<F> {}
 
 impl<F: Real> Bispinor<F> {
     pub fn ixxxxx(p: LorentzVector<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
@@ -458,7 +426,7 @@ impl<F: Real> SpinorRepr<F> for Bispinor<F> {
     /// - Left (P_L): `fi_left · fo_left = fi[0]·fo[2] + fi[1]·fo[3]`
     /// - Right (P_R): `fi_right · fo_right = fi[2]·fo[0] + fi[3]·fo[1]`
     /// - Both (Identity): both left and right contractions.
-    fn scalar_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> Scalar<F> {
+    fn scalar_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> C<F> {
         let fo = &fo.0;
         let fi = &fi.0;
         let result = match chirality {
@@ -466,7 +434,7 @@ impl<F: Real> SpinorRepr<F> for Bispinor<F> {
             Chirality::Right => fi[2] * fo[0] + fi[3] * fo[1],
             Chirality::Both => (fi[0] * fo[2] + fi[1] * fo[3]) + (fi[2] * fo[0] + fi[3] * fo[1]),
         };
-        Scalar(result)
+        result
     }
 }
 

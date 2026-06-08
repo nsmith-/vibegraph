@@ -103,8 +103,11 @@ impl<'a> TopoContext<'a> {
                         }
                     });
                 }
-                (true, _) => {
-                    // This is the propagator we came from, so skip it
+                (true, Either::Left(_)) => {
+                    panic!("An external leg cannot be the result leg for a vertex");
+                }
+                (true, Either::Right(_)) => {
+                    // This is the propagator we came from
                 }
             }
         }
@@ -119,7 +122,6 @@ impl<'a> TopoContext<'a> {
             // This is an internal vertex, so push OffShellCurrent and return Propagate step
             let contraction = EvalStep::OffShellCurrent {
                 info: VertexInfo::from_ufo(self.model, model_vertex_id, Some(result_leg_idx)),
-                result_leg_idx,
                 input_slots: slots,
                 output_slot: self.next_slot(),
             };
