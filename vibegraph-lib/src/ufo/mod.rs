@@ -397,7 +397,11 @@ impl EvaluatedModel<'_> {
     /// Re-evaluate only the parameters transitively depending on `changed`,
     /// then re-evaluate all coupling values that depend on any changed parameter.
     pub fn recompute(&mut self, changed: &str, new_value: Complex64) {
-        self.param_values.insert(changed.to_owned(), new_value);
+        // Update the changed parameter value, allowing error if it doesn't exist (caller should only call with known parameters)
+        self.param_values
+            .get_mut(changed)
+            .map(|v| *v = new_value)
+            .expect(format!("attempted to recompute unknown parameter '{changed}'").as_str());
         self.model.params.recompute(changed, &mut self.param_values);
 
         let mut changed_params = vec![changed.to_owned()];

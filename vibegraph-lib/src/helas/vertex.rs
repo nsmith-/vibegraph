@@ -135,17 +135,17 @@ pub fn jioxxx<F: Real>(
     // Off-shell momentum: jmom = fo.p − fi.p  (outflow convention)
     let jmom = fo.momentum - fi.momentum;
     let q = jmom;
-    let q2 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
+    let q2 = q.m2();
 
     // Bilinear currents via GammaL / GammaR intertwiners
-    let cl = GammaL::apply(&(fo.spinor, fi.spinor));
-    let cr = GammaR::apply(&(fo.spinor, fi.spinor));
-    let blin: [C<F>; 4] = std::array::from_fn(|mu| r(gc[0]) * cl[mu] + r(gc[1]) * cr[mu]);
+    let cl = fo.vector_bilinear(fi, Chirality::Left);
+    let cr = fo.vector_bilinear(fi, Chirality::Right);
+    let blin = cl * gc[0] + cr * gc[1]; // linear combination of left and right currents
 
     let eps = if vmass == F::zero() {
         // Massless: Feynman gauge — propagator is real 1/q²
         let d = r(F::one() / q2);
-        std::array::from_fn(|mu| blin[mu] * d)
+        blin * d
     } else {
         // Massive: unitary gauge with Fabio fixed-width complex denominator
         let vm2 = vmass * vmass;
@@ -153,13 +153,13 @@ pub fn jioxxx<F: Real>(
         let denom = C::new(q2 - vm2, vmw);
         // Longitudinal mode subtraction: divide by m²−imΓ (Fabio prescription)
         let cm2 = C::new(vm2, -vmw);
-        let cs = mink_dot_q(q.0, blin) / cm2;
-        let d = C::new(F::one(), F::zero()) / denom;
-        std::array::from_fn(|mu| (blin[mu] - cs * r(q[mu])) * d)
+        let cs = blin.mink_dot_lorentz(&q) / cm2;
+        let d = r(F::one()) / denom;
+        (blin - ComplexVector::from(q) * cs) * d
     };
 
     VectorWf {
-        eps: ComplexVector(eps),
+        eps,
         momentum: jmom,
     }
 }
@@ -186,11 +186,11 @@ pub fn iovxxx<F: Real>(
     v: &VectorWf<F>,
     gc: [C<F>; 2],
 ) -> C<F> {
-    let cl = GammaL::apply(&(fo.spinor, fi.spinor));
-    let cr = GammaR::apply(&(fo.spinor, fi.spinor));
+    let cl = fo.vector_bilinear(fi, Chirality::Left);
+    let cr = fo.vector_bilinear(fi, Chirality::Right);
 
     // M = gc[0] * (C_L · V) + gc[1] * (C_R · V)
-    gc[0] * mink_dot(cl.0, v.eps.0) + gc[1] * mink_dot(cr.0, v.eps.0)
+    gc[0] * cl.mink_dot(&v.eps) + gc[1] * cr.mink_dot(&v.eps)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

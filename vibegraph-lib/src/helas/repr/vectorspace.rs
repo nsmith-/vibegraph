@@ -3,6 +3,9 @@
 use num_traits::Zero;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
+// TODO: in the future we could add a trait to track the raise/lower index structure
+// Then covectors and vectors would be type-distinguished vector spaces.
+
 /// Vector space over a real scalar field `F`.
 ///
 /// Implementations must satisfy:

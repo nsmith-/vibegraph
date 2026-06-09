@@ -46,6 +46,14 @@ impl SpinorHelicity {
             SpinorHelicity::Down => -1,
         }
     }
+
+    /// Return the opposite helicity (Up ↔ Down).
+    pub fn flip(self) -> Self {
+        match self {
+            SpinorHelicity::Up => SpinorHelicity::Down,
+            SpinorHelicity::Down => SpinorHelicity::Up,
+        }
+    }
 }
 
 impl std::fmt::Display for SpinorHelicity {
@@ -79,6 +87,14 @@ impl Charge {
             Charge::Antiparticle => -1,
         }
     }
+
+    /// Return the opposite charge (particle ↔ antiparticle).
+    pub fn anti(self) -> Self {
+        match self {
+            Charge::Particle => Charge::Antiparticle,
+            Charge::Antiparticle => Charge::Particle,
+        }
+    }
 }
 
 impl std::fmt::Display for Charge {
@@ -100,7 +116,7 @@ impl std::fmt::Display for Charge {
 /// # Type parameters
 /// - `F` — the real scalar type (e.g. `f64`)
 // pub trait LorentzRepr<F: Real>: VectorSpace<F> {}
-pub trait LorentzRepr<F: Real>: Sized + Copy + 'static {}
+pub trait LorentzRepr<F: Real>: Sized + Copy + 'static + PartialEq {}
 
 // Implement LorentzRepr for the (complex) scalar representation
 impl<F: Real> LorentzRepr<F> for F {}
@@ -109,7 +125,7 @@ impl<F: Real> LorentzRepr<F> for C<F> {}
 /// Antisymmetric rank-2 Lorentz tensor (placeholder type).
 ///
 /// Represents a tensor `T^{μν} = -T^{νμ}` such as the output of `σ^μν = i/2 [γ^μ, γ^ν]`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rank2Tensor<F: Real>(pub [C<F>; 6]);
 
 impl<F: Real> LorentzRepr<F> for Rank2Tensor<F> {}
@@ -177,6 +193,15 @@ impl<F: Real> LorentzVector<F> {
         Self::from_pxpypzmass(px, py, pz, mass)
     }
 
+    /// Minkowski dot product treating `self` as a covector and `other` as a vector.
+    #[inline(always)]
+    pub fn mink_dot(&self, other: &Self) -> F {
+        self.0[0] * other.0[0]
+            - self.0[1] * other.0[1]
+            - self.0[2] * other.0[2]
+            - self.0[3] * other.0[3]
+    }
+
     /// Energy component E = p^0.
     #[inline(always)]
     pub fn e(self) -> F {
@@ -219,7 +244,7 @@ impl<F: Real> std::ops::Index<usize> for LorentzVector<F> {
 /// A complex (e.g. polarisation) 4-vector.
 ///
 /// This is the fiber type for [`SpinorRepr::left_current`] and [`SpinorRepr::right_current`].
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ComplexVector<F: Real>(pub [C<F>; 4]);
 
 impl_add_for_array!(ComplexVector<F>, 4);
@@ -237,7 +262,6 @@ impl<F: Real> Zero for ComplexVector<F> {
     }
 }
 
-impl<F: Real> VectorSpace<F> for ComplexVector<F> {}
 impl<F: Real> VectorSpace<C<F>> for ComplexVector<F> {}
 
 impl<F: Real> LorentzRepr<F> for ComplexVector<F> {}
@@ -249,6 +273,40 @@ impl<F: Real> std::ops::Index<usize> for ComplexVector<F> {
     #[inline(always)]
     fn index(&self, i: usize) -> &C<F> {
         &self.0[i]
+    }
+}
+
+impl<F: Real> From<LorentzVector<F>> for ComplexVector<F> {
+    #[inline(always)]
+    fn from(lv: LorentzVector<F>) -> Self {
+        ComplexVector([
+            C::new(lv.0[0], F::zero()),
+            C::new(lv.0[1], F::zero()),
+            C::new(lv.0[2], F::zero()),
+            C::new(lv.0[3], F::zero()),
+        ])
+    }
+}
+
+impl<F: Real> ComplexVector<F> {
+    /// Minkowski dot product treating `self` as a covector and `other` as a vector.
+    #[inline(always)]
+    pub fn mink_dot(&self, other: &Self) -> C<F> {
+        self.0[0] * other.0[0]
+            - self.0[1] * other.0[1]
+            - self.0[2] * other.0[2]
+            - self.0[3] * other.0[3]
+    }
+
+    /// Specialized Minkowski dot product for a `ComplexVector` and a `LorentzVector`.
+    ///
+    /// Slightly more efficient than the general `mink_dot` since it can avoid some complex multiplications.
+    #[inline(always)]
+    pub fn mink_dot_lorentz(&self, other: &LorentzVector<F>) -> C<F> {
+        self.0[0] * other.0[0]
+            - self.0[1] * other.0[1]
+            - self.0[2] * other.0[2]
+            - self.0[3] * other.0[3]
     }
 }
 
@@ -269,11 +327,25 @@ pub trait SpinorRepr<F: Real>: LorentzRepr<F> {
     fn project_right(self) -> Self;
 
     /// Scalar bilinear with chiral structure: `f̄ Γ f` where Γ ∈ {Identity, P_L, P_R}.
-    ///
-    /// In the Weyl basis with the `fo` swap convention:
-    /// - `fo` has indices 0,1=RIGHT-chiral, 2,3=LEFT-chiral
-    /// - `fi` has indices 0,1=LEFT-chiral, 2,3=RIGHT-chiral
     fn scalar_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> C<F>;
+
+    /// Vector bilinear contraction: `f̄ γ^μ Γ f` where `Γ` encodes chirality.
+    ///
+    /// This can be implemented using the left and right currents:
+    /// - Left (P_L): `J_L^μ = v̄_out γ^μ P_L u_in`
+    /// - Right (P_R): `J_R^μ = v̄_out γ^μ P_R u_in`
+    /// - Both (Identity): `J^μ = J_L^μ + J_R^μ`
+    fn vector_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> ComplexVector<F> {
+        match chirality {
+            Chirality::Left => Self::left_current(fo, fi),
+            Chirality::Right => Self::right_current(fo, fi),
+            Chirality::Both => {
+                let left = Self::left_current(fo, fi);
+                let right = Self::right_current(fo, fi);
+                left + right
+            }
+        }
+    }
 }
 
 /// Chirality label for chiral projections and bilinears.
@@ -300,7 +372,7 @@ pub enum Chirality {
 ///
 /// The `left_current` and `right_current` implementations match the Fortran
 /// HELAS routines `iovxxx` lines 86–89 exactly.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bispinor<F: Real>(pub [C<F>; 4]);
 
 impl_add_for_array!(Bispinor<F>, 4);

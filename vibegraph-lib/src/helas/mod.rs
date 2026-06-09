@@ -1,3 +1,14 @@
+//! # HELAS (HELicity Amplitude Subroutines) implementation in Rust.
+//!
+//! This module provides a Rust implementation of the HELAS formalism for computing helicity amplitudes in quantum field theory.
+//! The main components include:
+//! - `repr`: Data structures for Lorentz representations (vectors, spinors, antisymmetric tensors) and related utilities.
+//! - `wavefn`: Wavefunction constructors for external legs
+//! - `vertex`: Vertex functions (mirroring HELAS vertex subroutines)
+//! - `eval`: Evaluation engine for executing compiled HELAS ASTs.
+//!
+//!
+//!
 pub mod eval;
 pub mod repr;
 pub mod vertex;
@@ -28,6 +39,10 @@ pub const MDL_MZ: f64 = 91.188;
 
 /// Z boson total width (GeV) — MadGraph default SM param_card.
 pub const MDL_WZ: f64 = 2.441_404;
+
+/// Lepton masses
+pub const MDL_ME: f64 = 0.0; //0.000_511; // electron mass in GeV
+pub const MDL_MMU: f64 = 0.0; //0.105_658; // muon mass in GeV
 
 /// Derive the effective photon and Z couplings to charged leptons from MadGraph's default SM parameters.
 ///
@@ -83,15 +98,16 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
     let (gc_gamma, gc_z) = derive_gammaz_couplings();
 
     // CM-frame 4-momenta [E, px, py, pz] (massless fermion limit)
-    let p_em = LorentzVector([e_beam, 0.0, 0.0, e_beam]); // e⁻ along +z
-    let p_ep = LorentzVector([e_beam, 0.0, 0.0, -e_beam]); // e⁺ along −z
-    let p_mm = LorentzVector([e_beam, e_beam * sin_theta, 0.0, e_beam * cos_theta]); // μ⁻
-    let p_mp = LorentzVector([e_beam, -e_beam * sin_theta, 0.0, -e_beam * cos_theta]); // μ⁺
+    let p_ep = LorentzVector::from_pxpypzmass(0.0, 0.0, -e_beam, MDL_ME); // e+ (incoming)
+    let p_em = LorentzVector::from_pxpypzmass(0.0, 0.0, e_beam, MDL_ME); // e- (incoming)
+    let p_mm = LorentzVector::from_pxpypzmass(e_beam * sin_theta, 0.0, e_beam * cos_theta, MDL_MMU); // mu- (outgoing)
+    let p_mp =
+        LorentzVector::from_pxpypzmass(-e_beam * sin_theta, 0.0, -e_beam * cos_theta, MDL_MMU); // mu+ (outgoing)
 
     let mut sum = 0.0;
     for (nhel_em, nhel_ep) in iproduct!([Down, Up], [Down, Up]) {
-        let fi_em = InDiracWf::new(p_em, 0.0, nhel_em, Charge::Particle);
-        let fo_ep = OutDiracWf::new(p_ep, 0.0, nhel_ep, Charge::Antiparticle);
+        let fi_em = InDiracWf::new(p_em, MDL_ME, nhel_em, Charge::Particle);
+        let fo_ep = OutDiracWf::new(p_ep, MDL_ME, nhel_ep, Charge::Antiparticle);
 
         // Off-shell photon current from the electron line
         let v_gamma = jioxxx(&fo_ep, &fi_em, gc_gamma, 0.0, 0.0);
@@ -99,8 +115,8 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
         let v_z = jioxxx(&fo_ep, &fi_em, gc_z, MDL_MZ, MDL_WZ);
 
         for (nhel_mm, nhel_mp) in iproduct!([Down, Up], [Down, Up]) {
-            let fi_mp = InDiracWf::new(p_mp, 0.0, nhel_mp, Charge::Particle);
-            let fo_mm = OutDiracWf::new(p_mm, 0.0, nhel_mm, Charge::Antiparticle);
+            let fi_mp = InDiracWf::new(p_mp, MDL_MMU, nhel_mp, Charge::Particle);
+            let fo_mm = OutDiracWf::new(p_mm, MDL_MMU, nhel_mm, Charge::Antiparticle);
 
             // Muon-line amplitudes for each diagram (contracted with each current)
             let gc_gamma_c = [r(gc_gamma[0]), r(gc_gamma[1])];
@@ -478,23 +494,16 @@ mod tests {
         // Load UFO model and evaluate with default param card
         let model = diagrams::tests::sm_model();
         let empty_card = ParamCard::from_str("").unwrap();
-        let evaluated = model.evaluate(&empty_card);
-
-        // Debug: print external particle ordering
-        eprintln!("DiagramSet particles_in: {:?}", set.particles_in);
-        eprintln!("DiagramSet particles_out: {:?}", set.particles_out);
+        let mut evaluated = model.evaluate(&empty_card);
 
         // Compile the evaluator
         let evaluator = AmplitudeEvaluator::compile(set, &model)
             .expect("failed to compile amplitude evaluator");
-        let ext_ids = evaluator.external_particles();
-        eprintln!("External particle IDs: {:?}", ext_ids);
-        for (i, &pid) in ext_ids.iter().enumerate() {
-            let p = model.particle(pid);
-            eprintln!("  leg {}: {} (charge {})", i, p.name, p.charge);
-        }
-        let hel_combos = evaluator.helicities();
-        eprintln!("Number of helicity combinations: {}", hel_combos.len());
+        assert_eq!(
+            evaluator.helicities().len(),
+            16,
+            "expected 16 helicity combinations for massless fermions"
+        );
         assert_eq!(evaluator.n_ext(), 4, "expected 4 external legs");
         assert_eq!(evaluator.n_in(), 2, "expected 2 incoming legs");
         assert_eq!(
@@ -502,19 +511,6 @@ mod tests {
             set.diagrams.len(),
             "AST count mismatch"
         );
-
-        let (_, pids) = evaluator.coupling_particle_ids();
-
-        // the evaluated electron and muon masses are nonzero but very small, so the lack of treatment
-        // of mass in the hardcoded reference should still give good agreement
-        for pid in pids {
-            eprintln!(
-                "Particle {pid:?} ({}): mass {} width {}",
-                model.particle(pid).name,
-                evaluated.mass(pid),
-                evaluated.width(pid)
-            );
-        }
 
         // Compare derived photon/Z couplings against the evaluated GC_3, GC_59, and GC_50
         // It appears the evaluated values are always pure imaginary, and our
@@ -564,19 +560,26 @@ mod tests {
 
         // Test at multiple angles and compare against hardcoded reference
         let test_angles = vec![-0.9_f64, -0.3, 0.0, 0.3, 0.9];
-        let sqrt_s = 100.0_f64; // test away from Z pole first to avoid resonance width issues
+        let test_roots = vec![1.0_f64, MDL_MZ, 200.0]; // test below, at, and above the Z pole
 
-        for cos_theta in test_angles {
+        evaluated.recompute("Me", r(MDL_ME));
+        evaluated.recompute("MM", r(MDL_MMU));
+        let me = evaluated.mass(model.particle_id("e-").unwrap());
+        let mmu = evaluated.mass(model.particle_id("mu-").unwrap());
+        eprintln!("Electron mass from evaluated model: {me:.3e} GeV");
+        eprintln!("Muon mass from evaluated model: {mmu:.3e} GeV");
+
+        for (cos_theta, sqrt_s) in iproduct!(test_angles, test_roots) {
             let e_beam = sqrt_s / 2.0;
             let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
 
             // Build 4-momenta in the order expected by the evaluator:
             // [e+ (in), e- (in), mu+ (out), mu- (out)]
             let momenta_eval = vec![
-                LorentzVector([e_beam, 0.0, 0.0, -e_beam]), // e+ (incoming)
-                LorentzVector([e_beam, 0.0, 0.0, e_beam]),  // e- (incoming)
-                LorentzVector([e_beam, -e_beam * sin_theta, 0.0, -e_beam * cos_theta]), // mu+ (outgoing)
-                LorentzVector([e_beam, e_beam * sin_theta, 0.0, e_beam * cos_theta]), // mu- (outgoing)
+                LorentzVector::from_pxpypzmass(0.0, 0.0, -e_beam, me), // e+ (incoming)
+                LorentzVector::from_pxpypzmass(0.0, 0.0, e_beam, me),  // e- (incoming)
+                LorentzVector::from_pxpypzmass(-e_beam * sin_theta, 0.0, -e_beam * cos_theta, mmu), // mu+ (outgoing)
+                LorentzVector::from_pxpypzmass(e_beam * sin_theta, 0.0, e_beam * cos_theta, mmu), // mu- (outgoing)
             ];
 
             // Evaluate via runtime evaluator
@@ -585,28 +588,14 @@ mod tests {
             // Evaluate via hardcoded reference
             let m2_hardcoded = compute_m2_ee_mumu(sqrt_s, cos_theta);
 
-            // TODO: investigate the discrepancies in the results
-            // This is likely due to issues in the vertex routines in eval/run.rs
-            // (evaluate_off_shell_current, evaluate_contract_amplitude)
-            // Or perhaps dispatch.rs is too naive and doesn't properly handle the
-            // lorentz structures FFV2 and FFV4 that encode the Z coupling, leading
-            // to incorrect interference between photon and Z diagrams.
-            eprintln!(
-                "√s={:.1}, cos_θ={:5.1}: runtime={:.4e}, hardcoded={:.4e}",
-                sqrt_s, cos_theta, m2_runtime, m2_hardcoded
-            );
-
-            // Check that evaluator produces non-zero, physically reasonable result
-            // (allowing for phase/normalization differences we're still debugging)
+            // Allow 1e-4 relative tolerance
+            // the evaluated electron and muon masses are nonzero but very small, so the lack of treatment
+            // of mass in the hardcoded reference should still give good agreement
+            let rel_diff = (m2_runtime - m2_hardcoded).abs() / m2_hardcoded.max(1e-10);
             assert!(
-                m2_runtime > 0.0,
-                "runtime evaluator returned zero or negative for cos_θ={}",
-                cos_theta
-            );
-            assert!(
-                m2_runtime.is_finite(),
-                "runtime evaluator returned non-finite for cos_θ={}",
-                cos_theta
+                rel_diff < 1e-6,
+                "Mismatch at √s={:.1}, cos_θ={:5.1}: runtime={:.4e}, hardcoded={:.4e}, rel_diff={:.2e}",
+                sqrt_s, cos_theta, m2_runtime, m2_hardcoded, rel_diff
             );
         }
     }

@@ -5,16 +5,15 @@ use std::collections::HashSet;
 use crate::diagrams::DiagramSet;
 use crate::helas::eval::compile::compile_diagram_ast;
 use crate::helas::eval::dispatch::{LorentzEvalNode, LorentzEvalTree};
-use crate::helas::repr::intertwiner::{GammaL, GammaR, Intertwiner2Leg};
 use crate::helas::repr::lorentz::{
-    Bispinor, Charge, ComplexVector, LorentzVector, SpinorHelicity, SpinorRepr,
+    Bispinor, Charge, Chirality, ComplexVector, LorentzVector, SpinorHelicity, SpinorRepr,
 };
 use crate::helas::repr::propagator::{
     DiracPropagator, MassiveVectorPropagator, MasslessVectorPropagator, Propagator,
     ScalarPropagator,
 };
 use crate::helas::repr::{r, Real, C};
-use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
+use crate::helas::wavefn::{InDiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
 use crate::ufo::{EvaluatedModel, UFOModel};
@@ -27,6 +26,7 @@ use super::compile::CompileError;
 ///
 /// The AST is built once from `&UFOModel`; coupling values are resolved at eval time
 /// from `&EvaluatedModel` so the same evaluator works with any param card.
+#[derive(Debug)]
 pub struct AmplitudeEvaluator {
     /// One compiled AST per diagram
     diagram_asts: Vec<DiagramAst>,
@@ -272,6 +272,7 @@ fn eval_single_diagram<F: Real + FromPrimitive>(
     for step in &ast.steps {
         match step {
             EvalStep::ExternalWf { info, output_slot } => {
+                // TOOD: store necessary info in ExtLegInfo during compile phase instead of reconstructing here
                 slots[*output_slot] = build_external_slot(
                     momenta[info.leg_idx],
                     helicities[info.leg_idx],
@@ -341,11 +342,15 @@ fn build_external_slot<F: Real + FromPrimitive>(
                 other => panic!("invalid fermion helicity {other}"),
             };
             let mass = real(evaluated.mass(particle_id));
-            let wf = if is_incoming == is_antiparticle {
-                OutDiracWf::new(momentum, mass, hel, Charge::Antiparticle).to_incoming()
-            } else {
-                InDiracWf::new(momentum, mass, hel, Charge::Particle)
-            };
+            let wf = InDiracWf::new(
+                momentum,
+                mass,
+                hel,
+                match is_antiparticle {
+                    true => Charge::Antiparticle,
+                    false => Charge::Particle,
+                },
+            );
             WaveformSlot::Fermion(wf)
         }
         3 => {
@@ -374,7 +379,6 @@ fn evaluate_off_shell_current<F: Real + FromPrimitive>(
         }
         accum = accum + coupling * term_accum;
     }
-
     accum
 }
 
@@ -460,11 +464,12 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             else {
                 panic!("expected fermion output from node {j}");
             };
-            let eps_l = GammaL::apply(&(f1.spinor, f2.spinor));
-            let eps_r = GammaR::apply(&(f1.spinor, f2.spinor));
+            // TODO: is this convention (i = out, j = in) consistent?
+            let fo = f1.to_outgoing();
+            let fi = f2;
             WaveformSlot::Vector(VectorWf {
-                eps: eps_l + eps_r,
-                momentum: f1.momentum + f2.momentum,
+                eps: fi.vector_bilinear(&fo, Chirality::Both),
+                momentum: fo.momentum - fi.momentum,
             })
         }
         LorentzEvalNode::ProjM { i } => {
