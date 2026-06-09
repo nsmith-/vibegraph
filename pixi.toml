@@ -11,6 +11,8 @@ version = "0.1.0"
 [tasks]
 install-samply = "which samply || cargo install --locked samply"
 profile-diagrams = { cmd = "rm -f target/profiling/deps/validate_madgraph_diagrams-* && cargo test --profile profiling --test validate_madgraph_diagrams --features extended-validation --no-run && find target/profiling/deps -name 'validate_madgraph_diagrams-*' -perm +111 | head -n 1 | xargs samply record", depends-on = ["install-samply"] }
+# Custom command to build docs with MathJax support for rendering LaTeX in docstrings
+docs = "RUSTDOCFLAGS=\"--html-in-header doc-include/mathjax-header.html\" cargo doc --no-deps"
 
 
 # --- nougat: scientific PDF OCR ---
