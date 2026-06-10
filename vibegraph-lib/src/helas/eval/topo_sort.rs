@@ -17,6 +17,7 @@ use feyngraph::diagram::view::{DiagramView, LegView, VertexView};
 use itertools::Either;
 
 use crate::helas::eval::ast::{ExtLegInfo, PropInfo, VertexInfo};
+use crate::helas::Charge;
 use crate::ufo::UFOModel;
 
 use super::ast::{DiagramAst, EvalStep};
@@ -58,10 +59,26 @@ impl<'a> TopoContext<'a> {
             .particle_id(particle.name())
             .expect("particle not found");
 
+        let model_particle = self.model.particle(particle_id);
+        // check charge consistency between feyngraph and UFOModel
+        assert_eq!(
+            particle.is_anti(),
+            model_particle.charge > 0.0,
+            "Charge mismatch for particle {}: feyngraph is_anti={} but UFOModel charge={}",
+            particle.name(),
+            particle.is_anti(),
+            model_particle.charge
+        );
+
         EvalStep::ExternalWf {
             info: ExtLegInfo {
                 id: particle_id,
                 leg_idx: leg.index(),
+                charge: match particle.is_anti() {
+                    true => Charge::Antiparticle,
+                    false => Charge::Particle,
+                },
+                spin: model_particle.spin,
             },
             output_slot: self.next_slot(),
         }

@@ -143,19 +143,16 @@ pub fn jioxxx<F: Real>(
     let blin = cl * gc[0] + cr * gc[1]; // linear combination of left and right currents
 
     let eps = if vmass == F::zero() {
-        // Massless: Feynman gauge — propagator is real 1/q²
-        let d = r(F::one() / q2);
-        blin * d
+        // Massless: Feynman gauge — propagator is 1/q²
+        blin / q2
     } else {
         // Massive: unitary gauge with Fabio fixed-width complex denominator
         let vm2 = vmass * vmass;
         let vmw = vmass * vwidth;
         let denom = C::new(q2 - vm2, vmw);
         // Longitudinal mode subtraction: divide by m²−imΓ (Fabio prescription)
-        let cm2 = C::new(vm2, -vmw);
-        let cs = blin.mink_dot_lorentz(&q) / cm2;
-        let d = r(F::one()) / denom;
-        (blin - ComplexVector::from(q) * cs) * d
+        let cs = blin.mink_dot_lorentz(&q) / C::new(vm2, -vmw);
+        (blin - ComplexVector::from(q) * cs) / denom
     };
 
     VectorWf {
@@ -180,17 +177,12 @@ pub fn jioxxx<F: Real>(
 ///
 /// # Returns
 /// The complex-valued Lorentz-invariant amplitude.
-pub fn iovxxx<F: Real>(
-    fo: &OutDiracWf<F>,
-    fi: &InDiracWf<F>,
-    v: &VectorWf<F>,
-    gc: [C<F>; 2],
-) -> C<F> {
+pub fn iovxxx<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, v: &VectorWf<F>, gc: [F; 2]) -> C<F> {
     let cl = fo.vector_bilinear(fi, Chirality::Left);
     let cr = fo.vector_bilinear(fi, Chirality::Right);
 
     // M = gc[0] * (C_L · V) + gc[1] * (C_R · V)
-    gc[0] * cl.mink_dot(&v.eps) + gc[1] * cr.mink_dot(&v.eps)
+    r(gc[0]) * cl.mink_dot(&v.eps) + r(gc[1]) * cr.mink_dot(&v.eps)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

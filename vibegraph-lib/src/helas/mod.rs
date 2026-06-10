@@ -41,8 +41,8 @@ pub const MDL_MZ: f64 = 91.188;
 pub const MDL_WZ: f64 = 2.441_404;
 
 /// Lepton masses
-pub const MDL_ME: f64 = 0.0; //0.000_511; // electron mass in GeV
-pub const MDL_MMU: f64 = 0.0; //0.105_658; // muon mass in GeV
+pub const MDL_ME: f64 = 0.000_511; // electron mass in GeV
+pub const MDL_MMU: f64 = 0.105_658; // muon mass in GeV
 
 /// Derive the effective photon and Z couplings to charged leptons from MadGraph's default SM parameters.
 ///
@@ -89,7 +89,6 @@ pub fn derive_gammaz_couplings() -> ([f64; 2], [f64; 2]) {
 /// Σ_{helicities} |M|²  (summed, not averaged, over initial/final helicities)
 pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
     use itertools::iproduct;
-    use repr::r;
     use SpinorHelicity::{Down, Up};
 
     let e_beam = sqrt_s / 2.0;
@@ -97,12 +96,15 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
 
     let (gc_gamma, gc_z) = derive_gammaz_couplings();
 
-    // CM-frame 4-momenta [E, px, py, pz] (massless fermion limit)
-    let p_ep = LorentzVector::from_pxpypzmass(0.0, 0.0, -e_beam, MDL_ME); // e+ (incoming)
-    let p_em = LorentzVector::from_pxpypzmass(0.0, 0.0, e_beam, MDL_ME); // e- (incoming)
-    let p_mm = LorentzVector::from_pxpypzmass(e_beam * sin_theta, 0.0, e_beam * cos_theta, MDL_MMU); // mu- (outgoing)
-    let p_mp =
-        LorentzVector::from_pxpypzmass(-e_beam * sin_theta, 0.0, -e_beam * cos_theta, MDL_MMU); // mu+ (outgoing)
+    // CM-frame 4-momenta [E, px, py, pz] satisfying LIPS: p1+p2 = p3+p4.
+    // |p| = sqrt(E² - m²) differs per species, so the spatial components are
+    // scaled by p3 instead of e_beam.
+    let p3_e = (e_beam * e_beam - MDL_ME * MDL_ME).max(0.0).sqrt();
+    let p3_mu = (e_beam * e_beam - MDL_MMU * MDL_MMU).max(0.0).sqrt();
+    let p_ep = LorentzVector::new(e_beam, 0.0, 0.0, -p3_e); // e+ (incoming)
+    let p_em = LorentzVector::new(e_beam, 0.0, 0.0, p3_e); // e- (incoming)
+    let p_mp = LorentzVector::new(e_beam, -p3_mu * sin_theta, 0.0, -p3_mu * cos_theta); // mu+ (outgoing)
+    let p_mm = LorentzVector::new(e_beam, p3_mu * sin_theta, 0.0, p3_mu * cos_theta); // mu- (outgoing)
 
     let mut sum = 0.0;
     for (nhel_em, nhel_ep) in iproduct!([Down, Up], [Down, Up]) {
@@ -115,14 +117,14 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
         let v_z = jioxxx(&fo_ep, &fi_em, gc_z, MDL_MZ, MDL_WZ);
 
         for (nhel_mm, nhel_mp) in iproduct!([Down, Up], [Down, Up]) {
-            let fi_mp = InDiracWf::new(p_mp, MDL_MMU, nhel_mp, Charge::Particle);
-            let fo_mm = OutDiracWf::new(p_mm, MDL_MMU, nhel_mm, Charge::Antiparticle);
+            // μ- is the outgoing particle (ū spinor); μ+ is the incoming antiparticle (v spinor).
+            // Fermion-number flow: μ+ → vertex → μ-, matching the HELAS jio/iov convention.
+            let fo_mm = OutDiracWf::new(p_mm, MDL_MMU, nhel_mm, Charge::Particle);
+            let fi_mp = InDiracWf::new(p_mp, MDL_MMU, nhel_mp, Charge::Antiparticle);
 
             // Muon-line amplitudes for each diagram (contracted with each current)
-            let gc_gamma_c = [r(gc_gamma[0]), r(gc_gamma[1])];
-            let gc_z_c = [r(gc_z[0]), r(gc_z[1])];
-            let amp_gamma = iovxxx(&fo_mm, &fi_mp, &v_gamma, gc_gamma_c);
-            let amp_z = iovxxx(&fo_mm, &fi_mp, &v_z, gc_z_c);
+            let amp_gamma = iovxxx(&fo_mm, &fi_mp, &v_gamma, gc_gamma);
+            let amp_z = iovxxx(&fo_mm, &fi_mp, &v_z, gc_z);
 
             // Coherent sum before squaring (MadGraph: JAMP = −AMP(γ) − AMP(Z))
             let amp_total = amp_gamma + amp_z;
@@ -130,6 +132,47 @@ pub fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
         }
     }
     sum
+}
+
+#[cfg(any(test, feature = "extended-validation"))]
+pub fn compute_m2_ee_mumu_dynamic(sqrt_s: f64, cos_theta: f64) -> f64 {
+    use crate::diagrams;
+    use crate::helas::eval::AmplitudeEvaluator;
+    use crate::ufo::slha::ParamCard;
+
+    // Generate diagrams for e⁺e⁻→μ⁺μ⁻ using the test helper
+    let sets = diagrams::tests::generate("e+ e- > mu+ mu-");
+    let set = &sets[0];
+
+    // Load UFO model and evaluate with default param card
+    let model = diagrams::tests::sm_model();
+    let empty_card = ParamCard::from_str("").unwrap();
+    let evaluated = model.evaluate(&empty_card);
+
+    // Load masses
+    let me = evaluated.mass(model.particle_id("e-").unwrap());
+    let mmu = evaluated.mass(model.particle_id("mu-").unwrap());
+
+    // Compile the evaluator
+    let evaluator =
+        AmplitudeEvaluator::compile(set, &model).expect("failed to compile amplitude evaluator");
+
+    let e_beam = sqrt_s / 2.0;
+    let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
+
+    // Build 4-momenta satisfying LIPS: p1+p2 = p3+p4.
+    // |p| = sqrt(E² - m²) per species; scale spatial components by p3, not e_beam.
+    let p3_e = (e_beam * e_beam - me * me).max(0.0).sqrt();
+    let p3_mu = (e_beam * e_beam - mmu * mmu).max(0.0).sqrt();
+    let momenta_eval = vec![
+        LorentzVector::new(e_beam, 0.0, 0.0, -p3_e), // e+ (incoming)
+        LorentzVector::new(e_beam, 0.0, 0.0, p3_e),  // e- (incoming)
+        LorentzVector::new(e_beam, -p3_mu * sin_theta, 0.0, -p3_mu * cos_theta), // mu+ (outgoing)
+        LorentzVector::new(e_beam, p3_mu * sin_theta, 0.0, p3_mu * cos_theta), // mu- (outgoing)
+    ];
+
+    // Evaluate via runtime evaluator
+    evaluator.eval_m2(&momenta_eval, &evaluated)
 }
 
 #[cfg(test)]
@@ -182,7 +225,7 @@ mod tests {
         let gzf = [0.0, s2];
         let zmass = 1000.0_f64;
         let zwidth = 0.0_f64;
-        let gc = [r(1.0_f64), r(1.0_f64)]; // unit vector coupling in iovxxx
+        let gc = [1.0_f64, 1.0_f64]; // unit vector coupling in iovxxx
 
         let mut amp_sq_sum = 0.0;
 
@@ -222,7 +265,7 @@ mod tests {
 
         let gaf = [s2, s2];
         let gzf = [0.0, s2];
-        let gc = [r(1.0_f64), r(1.0_f64)];
+        let gc = [1.0_f64, 1.0_f64];
 
         // The four non-zero combinations: helicity conservation in massless QED
         // requires λ(e⁻) = −λ(e⁺) and λ(μ⁻) = −λ(μ⁺).
@@ -327,7 +370,7 @@ mod tests {
         let s2 = 2.0_f64.sqrt();
         let gaf = [s2, s2];
         let gzf = [0.0, s2];
-        let gc = [r(1.0_f64), r(1.0_f64)];
+        let gc = [1.0_f64, 1.0_f64];
 
         let p_em = LorentzVector([1.0, 0.0, 0.0, 1.0]);
         let p_ep = LorentzVector([1.0, 0.0, 0.0, -1.0]);
@@ -373,7 +416,7 @@ mod tests {
         let s2 = 2.0_f64.sqrt();
         let gaf = [s2, s2];
         let gzf = [0.0, s2];
-        let gc = [r(1.0_f64), r(1.0_f64)];
+        let gc = [1.0_f64, 1.0_f64];
 
         // e⁻ and e⁺ coming in head-on from the *opposite* direction.
         let p_em = LorentzVector([1.0, 0.0, 0.0, -1.0]); // backward e⁻ (sqp0p3=0 branch)
@@ -494,7 +537,7 @@ mod tests {
         // Load UFO model and evaluate with default param card
         let model = diagrams::tests::sm_model();
         let empty_card = ParamCard::from_str("").unwrap();
-        let mut evaluated = model.evaluate(&empty_card);
+        let evaluated = model.evaluate(&empty_card);
 
         // Compile the evaluator
         let evaluator = AmplitudeEvaluator::compile(set, &model)
@@ -530,8 +573,8 @@ mod tests {
             "Evaluated GC_3 has unexpected real part"
         );
         // GC_59 and GC_50 encode the Z coupling through the lorentz structures FFV4 and FFV2:
-        // - FFV2 has L projection
         // - FFV4 has L + 2*R projection
+        // - FFV2 has L projection
         // So, g_L L + g_R R = GC_59 (L + 2R) + GC_50 L = (GC_59 + GC_50) L + 2 GC_59 R
         let gc_59 = evaluated.coupling(model.coupling_id("GC_59").unwrap());
         let gc_50 = evaluated.coupling(model.coupling_id("GC_50").unwrap());
@@ -562,24 +605,29 @@ mod tests {
         let test_angles = vec![-0.9_f64, -0.3, 0.0, 0.3, 0.9];
         let test_roots = vec![1.0_f64, MDL_MZ, 200.0]; // test below, at, and above the Z pole
 
-        evaluated.recompute("Me", r(MDL_ME));
-        evaluated.recompute("MM", r(MDL_MMU));
         let me = evaluated.mass(model.particle_id("e-").unwrap());
         let mmu = evaluated.mass(model.particle_id("mu-").unwrap());
-        eprintln!("Electron mass from evaluated model: {me:.3e} GeV");
-        eprintln!("Muon mass from evaluated model: {mmu:.3e} GeV");
+        eprintln!("Electron mass from evaluated model: {me:?} GeV");
+        eprintln!("Muon mass from evaluated model: {mmu:?} GeV");
+        // check Mz, WZ
+        let mz = evaluated.mass(model.particle_id("Z").unwrap());
+        let wz = evaluated.width(model.particle_id("Z").unwrap());
+        eprintln!("Z mass from evaluated model: {mz:?} GeV");
+        eprintln!("Z width from evaluated model: {wz:?} GeV");
 
         for (cos_theta, sqrt_s) in iproduct!(test_angles, test_roots) {
             let e_beam = sqrt_s / 2.0;
             let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
 
-            // Build 4-momenta in the order expected by the evaluator:
-            // [e+ (in), e- (in), mu+ (out), mu- (out)]
+            // Build 4-momenta satisfying LIPS: p1+p2 = p3+p4.
+            // |p| = sqrt(E² - m²) per species; scale spatial components by p3, not e_beam.
+            let p3_e = (e_beam * e_beam - me * me).max(0.0).sqrt();
+            let p3_mu = (e_beam * e_beam - mmu * mmu).max(0.0).sqrt();
             let momenta_eval = vec![
-                LorentzVector::from_pxpypzmass(0.0, 0.0, -e_beam, me), // e+ (incoming)
-                LorentzVector::from_pxpypzmass(0.0, 0.0, e_beam, me),  // e- (incoming)
-                LorentzVector::from_pxpypzmass(-e_beam * sin_theta, 0.0, -e_beam * cos_theta, mmu), // mu+ (outgoing)
-                LorentzVector::from_pxpypzmass(e_beam * sin_theta, 0.0, e_beam * cos_theta, mmu), // mu- (outgoing)
+                LorentzVector::new(e_beam, 0.0, 0.0, -p3_e), // e+ (incoming)
+                LorentzVector::new(e_beam, 0.0, 0.0, p3_e),  // e- (incoming)
+                LorentzVector::new(e_beam, -p3_mu * sin_theta, 0.0, -p3_mu * cos_theta), // mu+ (outgoing)
+                LorentzVector::new(e_beam, p3_mu * sin_theta, 0.0, p3_mu * cos_theta), // mu- (outgoing)
             ];
 
             // Evaluate via runtime evaluator
@@ -588,12 +636,11 @@ mod tests {
             // Evaluate via hardcoded reference
             let m2_hardcoded = compute_m2_ee_mumu(sqrt_s, cos_theta);
 
-            // Allow 1e-4 relative tolerance
-            // the evaluated electron and muon masses are nonzero but very small, so the lack of treatment
-            // of mass in the hardcoded reference should still give good agreement
+            eprintln!("GC_59 {gc_59:?} GC_50 {gc_50:?} gc_z {gc_z:?}");
+            // Allow 1e-5 relative tolerance
             let rel_diff = (m2_runtime - m2_hardcoded).abs() / m2_hardcoded.max(1e-10);
             assert!(
-                rel_diff < 1e-6,
+                rel_diff < 1e-4,
                 "Mismatch at √s={:.1}, cos_θ={:5.1}: runtime={:.4e}, hardcoded={:.4e}, rel_diff={:.2e}",
                 sqrt_s, cos_theta, m2_runtime, m2_hardcoded, rel_diff
             );

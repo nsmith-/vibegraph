@@ -73,7 +73,16 @@ pub(super) use impl_add_for_array;
 /// Implement multiplcation for a newtype wrapper around a fixed-size array.
 ///
 /// This implements Mul<F> and Div<F> for any type that has .0 as a fixed-size
-/// array of a field that has * and / available for F
+/// array of a scalar type (F or possibly over F) that itself has * and / available
+///
+/// We purposefully only implement right multiplication by a scalar to encourage
+/// putting lighter-weight operations at the end.
+/// Note Rust is left-associative (i.e. a * b * c = (a * b) * c if types allow)
+/// so we might prefer to only have left multiplication, but division must be on
+/// right, so better to group things that way, i.e. the types force
+/// v * s1 / s2 = v * ( s1 / s2 )
+///
+/// TODO: revisit this decision
 macro_rules! impl_mul_for_array {
     ($newtype:ident<$field:ident>, $scalar:ty, $len:expr) => {
         impl<$field: Real> std::ops::Mul<$scalar> for $newtype<$field> {

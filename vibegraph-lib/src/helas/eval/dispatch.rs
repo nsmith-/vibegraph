@@ -313,7 +313,7 @@ impl LorentzEvalTree {
 /// # Arguments
 /// * `term` — The UFO LorentzTerm to resolve.
 /// * `spins` — Spin codes [1, 2, 3] for each leg (1-indexed).
-/// * `result_leg_idx` — The output leg (1-indexed), or `None` for amplitude (scalar sink).
+/// * `result_leg_idx` — The output leg (0-indexed), or `None` for amplitude (scalar sink).
 ///
 /// # Returns
 /// A `RootedTerm` ready for evaluation, or a `CompileError`.

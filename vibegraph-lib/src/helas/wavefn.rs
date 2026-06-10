@@ -119,7 +119,7 @@ impl<F: Real, Flow: SpinorFlow> DiracWf<F, Flow> {
     #[inline(always)]
     fn flip_flow(self) -> DiracWf<F, Flow::Opposite> {
         DiracWf {
-            spinor: self.spinor.dirac_conjugate(),
+            spinor: self.spinor.dirac_adjoint(),
             momentum: self.momentum,
             _flow: PhantomData,
         }
@@ -518,7 +518,7 @@ mod tests {
             );
 
             // They should be dirac conjugates of each other
-            assert_eq!(fi.dirac_conjugate(), fo);
+            assert_eq!(fi.dirac_adjoint(), fo);
         }
     }
 

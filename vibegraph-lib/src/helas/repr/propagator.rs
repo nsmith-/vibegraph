@@ -238,8 +238,11 @@ impl<F: Real> Propagator<F> for MassiveVectorPropagator<F> {
             - C::new(q[2], F::zero()) * wf[2]
             - C::new(q[3], F::zero()) * wf[3];
 
-        // Unitary gauge numerator: −ε_μ + (q·ε) q_μ / m²
-        let scale = q_dot_wf / C::new(m2, F::zero());
+        // Unitary gauge numerator: −ε_μ + (q·ε) q_μ / (m² − imΓ)
+        // Fabio fixed-width prescription: use complex cm2 = m² − imΓ,
+        // matching jioxxx (both Fortran and Rust implementations).
+        let cm2 = C::new(m2, -mw);
+        let scale = q_dot_wf / cm2;
 
         [
             (-wf[0] + scale * C::new(q[0], F::zero())) / denom,
