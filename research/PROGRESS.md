@@ -60,9 +60,9 @@
 - **Status**: Disagrees with the hardcoded reference for e⁺e⁻→μ⁺μ⁻ **and is
   non-deterministic across runs**. Root cause diagnosed (see Phase 3d).
 
-#### Phase 3d: Diagnosis + redesign (🟡 IN PROGRESS — tree evaluator working, node coverage incomplete)
+#### Phase 3d: Diagnosis + redesign (🟡 IN PROGRESS — runtime agrees with HELAS for massive e⁺e⁻→μ⁺μ⁻)
 
-**Completed (2026-06-07/08 sessions)**:
+**Completed (2026-06-07/08/10 sessions)**:
 - ✅ `SpinorRepr::{project_left, project_right, scalar_bilinear}` added to `lorentz.rs`
 - ✅ `LorentzEvalTree` + `LorentzEvalNode` DAG in `dispatch.rs`
   - Recursive `build_child()` turns undirected UFO tensor network into directed tree
@@ -75,14 +75,29 @@
   - Implemented: Leg, GammaVout, ProjM, ProjP, Metric
   - Remaining (`todo!()`): GammaIout, GammaJout, ProjMAmp, ProjPAmp, ScalarProduct
 - ✅ `repr/vectorspace.rs`: `VectorSpace<F>` trait + macros; `Scalar<F>` removed; `GammaV` de-genericized
-- ✅ `test_eval_m2_ee_mumu_vs_hardcoded` **passes** — 125/125 tests green (2026-06-08)
+- ✅ `test_eval_m2_ee_mumu_vs_hardcoded` passes — 125/125 tests green
+- ✅ **Massive fermion kinematics (2026-06-10)**: enabled `MDL_ME`/`MDL_MMU`; momenta use `|p| = sqrt(E²−m²)`
+  in both the hardcoded reference and the runtime evaluator + validation script
+- ✅ **Fermion-flow fix**: `GammaVout` selects `(fo, fi)` by charge (particle → outgoing) rather than
+  positional order; eliminates sign error in the off-shell current
+- ✅ **Propagator momentum convention**: all propagated slots carry `−q` (outgoing); fixes cancellation
+  in the coherent amplitude sum
+- ✅ **Massive vector propagator**: inline unitary-gauge formula with Fabio fixed-width prescription
+  (`m² − imΓ` denominator for longitudinal subtraction), replacing `MassiveVectorPropagator` in runtime
+- ✅ **Massless vector propagator**: simplified to `eps * (−i/q²)` inline; removes `MasslessVectorPropagator` from runtime
+- ✅ **`iovxxx` signature**: coupling `[F; 2]` instead of `[C<F>; 2]`; callers updated
+- ✅ **`Bispinor::dirac_adjoint`** rename (was `dirac_conjugate`) for clarity
+- ✅ **`spin`/`charge` fields in `ExtLegInfo`**: populated by `topo_sort.rs`; removes redundant
+  `ext_spins`/`ext_is_antiparticle` from `AmplitudeEvaluator`; charge assertion added vs feyngraph
+- ✅ **`helas_validation` extended test** updated to call `compute_m2_ee_mumu_dynamic`; passes <1e-4 vs Fortran
+- ✅ **`compute_m2_ee_mumu_dynamic`** added to `helas/mod.rs` (feature-gated) as the public runtime entry point
 
 **Remaining**:
 - ⏳ Implement `GammaIout`/`GammaJout` in `evaluate_lorentz_node` (off-shell fermion-out currents)
 - ⏳ Implement `ProjMAmp`/`ProjPAmp` (FFS chiral scalar bilinears)
 - ⏳ Implement `ScalarProduct` (multi-factor product for SSS/VVS/etc.)
 - ⏳ Implement `P` and `Identity` in `build_child` (momentum insertion; needed for scalars)
-- ⏳ Tighten integration test: <1e-6 relative across ≥5 angles + Z-pole; determinism test
+- ⏳ Add determinism test (compile/eval ~20× → bit-identical)
 
 ## Implementation Notes
 

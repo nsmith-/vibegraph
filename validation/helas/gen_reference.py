@@ -31,6 +31,8 @@ ALPHA_QED_MZ = 1.0 / AEWM1
 GF = 1.16639e-5  # Fermi constant (GeV⁻²)
 MDL_MZ = 91.188  # Z mass (GeV)
 MDL_WZ = 2.441404  # Z total width (GeV)
+MDL_ME = 0.000_511  # electron mass (GeV)
+MDL_MMU = 0.105_658  # muon mass (GeV)
 
 # Derived EW parameters
 E_SM = math.sqrt(4 * math.pi * ALPHA_QED_MZ)  # e = sqrt(4π α(MZ))
@@ -59,16 +61,18 @@ def make_momenta(sqrt_s: float, cos_theta: float) -> tuple:
         μ-  at polar angle θ in the x-z plane  (p3)
         μ+  opposite  (p4)
 
-    Massless approximation: me = mμ = 0.
+    Massive: |p| = sqrt(E² - m²) differs per species.
     HELAS uses the ordering p(0:3) = (E, px, py, pz).
     """
     E = sqrt_s / 2.0
     sin_theta = math.sqrt(max(0.0, 1.0 - cos_theta**2))
+    p3_e = math.sqrt(max(0.0, E * E - MDL_ME * MDL_ME))
+    p3_mu = math.sqrt(max(0.0, E * E - MDL_MMU * MDL_MMU))
 
-    p_em = np.array([E, 0.0, 0.0, E], dtype=np.float64)
-    p_ep = np.array([E, 0.0, 0.0, -E], dtype=np.float64)
-    p_mum = np.array([E, E * sin_theta, 0.0, E * cos_theta], dtype=np.float64)
-    p_mup = np.array([E, -E * sin_theta, 0.0, -E * cos_theta], dtype=np.float64)
+    p_em = np.array([E, 0.0, 0.0, p3_e], dtype=np.float64)
+    p_ep = np.array([E, 0.0, 0.0, -p3_e], dtype=np.float64)
+    p_mum = np.array([E, p3_mu * sin_theta, 0.0, p3_mu * cos_theta], dtype=np.float64)
+    p_mup = np.array([E, -p3_mu * sin_theta, 0.0, -p3_mu * cos_theta], dtype=np.float64)
     return p_em, p_ep, p_mum, p_mup
 
 
@@ -84,14 +88,14 @@ def compute_M2_helas(helas_f, sqrt_s: float, cos_theta: float) -> float:
 
     HELAS calls:
         Electron line:
-            ixxxxx(p1, me=0, nhel1, nsf=+1) → fi_em
-            oxxxxx(p2, me=0, nhel2, nsf=-1) → fo_ep
+            ixxxxx(p1, MDL_ME,  nhel1, nsf=+1) → fi_em
+            oxxxxx(p2, MDL_ME,  nhel2, nsf=-1) → fo_ep
             jioxxx(fi_em, fo_ep, gc_gamma, vmass=0, vwidth=0)  → jio_gamma
             jioxxx(fi_em, fo_ep, gc_z,     MZ,      WZ)        → jio_z
 
         Muon line:
-            ixxxxx(p4, mmu=0, nhel4, nsf=-1) → fi_mup
-            oxxxxx(p3, mmu=0, nhel3, nsf=+1) → fo_mum
+            ixxxxx(p4, MDL_MMU, nhel4, nsf=-1) → fi_mup
+            oxxxxx(p3, MDL_MMU, nhel3, nsf=+1) → fo_mum
             iovxxx(fi_mup, fo_mum, jio_gamma, gc_gamma) → amp_gamma
             iovxxx(fi_mup, fo_mum, jio_z,     gc_z)     → amp_z
 
@@ -123,16 +127,16 @@ def compute_M2_helas(helas_f, sqrt_s: float, cos_theta: float) -> float:
     for nhel_em in (-1, 1):
         for nhel_ep in (-1, 1):
             # Electron line — one call each for γ and Z off-shell current
-            fi_em = helas_f.ixxxxx(p_em, 0.0, nhel_em, 1)
-            fo_ep = helas_f.oxxxxx(p_ep, 0.0, nhel_ep, -1)
+            fi_em = helas_f.ixxxxx(p_em, MDL_ME, nhel_em, 1)
+            fo_ep = helas_f.oxxxxx(p_ep, MDL_ME, nhel_ep, -1)
             jio_gamma = helas_f.jioxxx(fi_em, fo_ep, gc_gamma, 0.0, 0.0)
             jio_z = helas_f.jioxxx(fi_em, fo_ep, gc_z, MDL_MZ, MDL_WZ)
 
             for nhel_mum in (-1, 1):
                 for nhel_mup in (-1, 1):
                     # Muon line
-                    fi_mup = helas_f.ixxxxx(p_mup, 0.0, nhel_mup, -1)
-                    fo_mum = helas_f.oxxxxx(p_mum, 0.0, nhel_mum, 1)
+                    fi_mup = helas_f.ixxxxx(p_mup, MDL_MMU, nhel_mup, -1)
+                    fo_mum = helas_f.oxxxxx(p_mum, MDL_MMU, nhel_mum, 1)
                     amp_gamma = helas_f.iovxxx(fi_mup, fo_mum, jio_gamma, gc_gamma)
                     amp_z = helas_f.iovxxx(fi_mup, fo_mum, jio_z, gc_z)
                     amp_total = amp_gamma + amp_z

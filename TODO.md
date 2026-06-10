@@ -7,7 +7,7 @@
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser replacing PEG (as of 316598b) |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph (2026-05-27) |
 | 3 | HELAS helicity amplitudes (e⁺e⁻→μ⁺μ⁻, hardcoded) | ✅ Done | Validated against MadGraph to <0.1% (Z-pole) |
-| 3′ | HELAS generalized (topology-driven, arbitrary process) | 🔲 Pending | Awaits Lorentz runtime evaluator |
+| 3′ | HELAS generalized (topology-driven, arbitrary process) | 🟡 In Progress | Runtime evaluator agrees with HELAS for massive e⁺e⁻→μ⁺μ⁻ to 1e-7 |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS + 2-body LIPS |
 | 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻) | ✅ Done | σ ≈ 2025 pb at √s = 91.2 GeV vs MadGraph ref |
 | 6 | Unweighted event output (LHEF) | 🔲 Pending | Accept/reject sampling + Les Houches format |
@@ -29,10 +29,10 @@
 
 ### `lorentz-runtime-eval` — Runtime Lorentz structure evaluator (🟡 IN PROGRESS)
 
-**Status**: Tree-based evaluator implemented and passing for e⁺e⁻→μ⁺μ⁻.
-Remaining work: complete missing node variants, tighten validation.
+**Status**: Runtime evaluator agrees with Fortran HELAS for massive e⁺e⁻→μ⁺μ⁻ to ~1e-7 relative.
+Remaining work: extend node coverage for fermion-out currents, FFS/VVS scalars.
 
-**Completed (2026-06-07/08 sessions)**:
+**Completed (2026-06-07/08/10 sessions)**:
 1. ✅ `SpinorRepr::{project_left,project_right,scalar_bilinear}` + refactored `iosxxx`/`jsixxx`.
 2. ✅ `LorentzEvalTree` + `LorentzEvalNode` DAG in `dispatch.rs`; recursive `build_child()`
    turns undirected UFO tensor network into a directed tree rooted at the output leg.
@@ -41,14 +41,22 @@ Remaining work: complete missing node variants, tighten validation.
 3. ✅ `VertexTerm.terms: Vec<RootedTerm>` (multi-term support); `WaveformSlot::Add` + `C<F> * WaveformSlot`.
 4. ✅ `evaluate_lorentz_node()` tree walker in `run.rs`: implements Leg, GammaVout, ProjM, ProjP, Metric.
    Both `evaluate_off_shell_current` and `evaluate_contract_amplitude` now iterate over rooted trees.
-5. ✅ `test_eval_m2_ee_mumu_vs_hardcoded` **passes** (125/125 tests green as of 2026-06-08).
+5. ✅ `test_eval_m2_ee_mumu_vs_hardcoded` **passes** (125/125 tests green).
 6. ✅ `VectorSpace<F>` trait + `impl_add/mul_for_array!` macros; `Scalar<F>` removed; `GammaV` de-genericized.
+7. ✅ **Massive fermion kinematics**: `MDL_ME`/`MDL_MMU` enabled; momenta built as `(E, 0, 0, ±|p|)` with `|p| = sqrt(E²−m²)`.
+8. ✅ **Fermion-flow fix**: `GammaVout` node selects `(fo, fi)` by charge rather than fixed order; matches jioxxx/iovxxx convention.
+9. ✅ **Propagator momentum flip**: all propagated waveform slots now carry `−q` (outgoing convention), fixing coherent sum cancellation.
+10. ✅ **Massive vector propagator**: inline unitary-gauge formula with Fabio fixed-width prescription (replaces `MassiveVectorPropagator`).
+11. ✅ **Massless vector propagator**: simplified to `−i/q²` inline, removed `MasslessVectorPropagator` from runtime path.
+12. ✅ **`iovxxx` signature**: coupling `[F; 2]` instead of `[C<F>; 2]`; callers updated.
+13. ✅ **`Bispinor::dirac_conjugate` → `dirac_adjoint`** rename for clarity.
+14. ✅ **`helas_validation` extended test** updated to use `compute_m2_ee_mumu_dynamic`; agrees with Fortran HELAS to <1e-4.
+15. ✅ **`spin`/`charge` fields added to `ExtLegInfo`**; propagated from `topo_sort.rs`; removes redundant `ext_spins`/`ext_is_antiparticle` from `AmplitudeEvaluator`.
 
 **Pending**:
 - `evaluate_lorentz_node` is `todo!()` for: `GammaIout`, `GammaJout` (off-shell fermion currents),
   `ProjMAmp`, `ProjPAmp` (FFS scalar bilinears), `ScalarProduct` (multi-factor products)
 - `dispatch.rs` `build_child` is `todo!()` for: `P` (momentum insertion) and `Identity` operators
-- Tighten `test_eval_m2_ee_mumu_vs_hardcoded` to <1e-6 relative across 5 scattering angles + Z-pole
 - Add determinism test (compile/eval ~20× → bit-identical results)
 
 _Depends on: `feyngraph-ufo-replace` (✅), `lorentz-parse` (✅)_
@@ -163,8 +171,7 @@ general scalar products.
 3. Implement `ScalarProduct` (multiply scalar children; needed for SSS/VVS amplitude).
 4. Implement `P` and `Identity` in `dispatch.rs` `build_child` (momentum insertion; deferred but
    needed for processes with off-shell scalars carrying momentum).
-5. Tighten `test_eval_m2_ee_mumu_vs_hardcoded` to <1e-6 relative across ≥5 scattering angles + Z-pole.
-6. Add determinism test (compile/eval ~20× → bit-identical).
+5. Add determinism test (compile/eval ~20× → bit-identical).
 
 ### Short-term (1–2 days) — `helas-generalize`
 7. Replace hardcoded `compute_m2_ee_mumu` with `eval_m2` in the cross-section loop;

@@ -405,10 +405,10 @@ impl<F: Real> Bispinor<F> {
         }
     }
 
-    pub fn dirac_conjugate(&self) -> Self {
-        // In the Weyl basis, the Dirac conjugate ψ̄ = ψ† γ^0
-        // swaps the left and right components and takes the Hermitian conjugate:
-        // ψ̄ = [χ†, ψ†] = [ψ[2]*, ψ[3]*, ψ[0]*, ψ[1]*]
+    /// In the Weyl basis, the Dirac conjugate ψ̄ = ψ† γ^0
+    /// swaps the left and right components and takes the Hermitian conjugate:
+    /// ψ̄ = [χ†, ψ†] = [ψ[2]*, ψ[3]*, ψ[0]*, ψ[1]*]
+    pub fn dirac_adjoint(&self) -> Self {
         Bispinor {
             0: [
                 self.0[2].conj(),

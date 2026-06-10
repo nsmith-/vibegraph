@@ -19,7 +19,7 @@
 mod extended {
     use std::f64::consts::PI;
     use std::path::Path;
-    use vibegraph::helas::{compute_m2_ee_mumu, ALPHA_QED_MZ, MDL_MZ};
+    use vibegraph::helas::{compute_m2_ee_mumu, compute_m2_ee_mumu_dynamic, ALPHA_QED_MZ, MDL_MZ};
     use vibegraph::phasespace::GEV2_TO_PB;
 
     /// Relative tolerance for comparing Rust |M|² against Fortran reference.
@@ -64,7 +64,7 @@ mod extended {
 
         let mut failures = 0usize;
         for (sqrt_s, cos_theta, m2_ref) in &rows {
-            let m2_rust = compute_m2_ee_mumu(*sqrt_s, *cos_theta);
+            let m2_rust = compute_m2_ee_mumu_dynamic(*sqrt_s, *cos_theta);
             let rel_diff = if *m2_ref != 0.0 {
                 (m2_rust - m2_ref).abs() / m2_ref.abs()
             } else {

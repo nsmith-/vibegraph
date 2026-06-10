@@ -9,6 +9,7 @@ use std::ops::{Add, Mul};
 use super::dispatch::RootedTerm;
 use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, ScalarWf, VectorWf};
+use crate::helas::Charge;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
 use crate::ufo::particles::ParticleId;
@@ -105,6 +106,11 @@ pub struct ExtLegInfo {
     pub id: ParticleId,
     /// Index into external leg array (0..n_in are incoming; n_in.. are outgoing)
     pub leg_idx: usize,
+    /// Spin code (UFOModel convention: 2s+1)
+    pub spin: i32,
+    /// Charge
+    pub charge: Charge,
+    // TODO: mass: F
 }
 
 /// Description of an internal propagator.
@@ -124,8 +130,6 @@ pub struct PropInfo {
 /// At eval time, `coupling_id` is resolved via `EvaluatedModel::coupling(id)`.
 #[derive(Clone, Debug)]
 pub struct VertexTerm {
-    /// Model's lorentz structure ID (can resolve to LorentzExpr if needed)
-    pub lorentz_id: LorentzId,
     /// Pre-compiled rooted dispatch (from LorentzTerm pattern match, rooted at output leg)
     pub terms: Vec<RootedTerm>,
     /// Per-leg spin codes (from LorentzStructure.spins)
@@ -138,6 +142,8 @@ impl VertexTerm {
     /// Generate a VertexTerm from a UFO vertex definition, given the model and the desired index of the result leg.
     ///
     /// TODO: move this to compile.rs as free function, so errors can propagate instead of panicking.
+    ///
+    /// result_leg_idx is 0-indexed here
     pub fn from_ufo(
         model: &UFOModel,
         lorentz_id: LorentzId,
@@ -157,7 +163,6 @@ impl VertexTerm {
             .collect();
 
         VertexTerm {
-            lorentz_id,
             terms,
             spins: lorentz.spins.clone(),
             coupling_id,

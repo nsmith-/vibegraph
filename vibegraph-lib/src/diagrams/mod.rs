@@ -206,7 +206,7 @@ fn generate_sets_inner(
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(any(test, feature = "extended-validation"))]
 pub mod tests {
     use super::*;
     use std::sync::OnceLock;
