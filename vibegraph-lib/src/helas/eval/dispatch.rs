@@ -54,7 +54,11 @@ pub enum LorentzEvalNode {
     /// Handle the implicit product over the disconnected structures.
     /// At most one child can be non-scalar (which then implies the output type)
     ScalarProduct { children: Vec<usize> },
-    // TODO: rest of LorentzOps (Identity, P, Sigma, Epsilon)
+    /// 4-momentum of leg `leg` (1-indexed) as a vector at a free Lorentz index
+    P { leg: i32 },
+    /// Full scalar bilinear ψ̄_i δ ψ_j (Identity amplitude contraction)
+    IdentityAmp { i: usize, j: usize },
+    // TODO: Sigma, Epsilon
 }
 
 impl LorentzEvalNode {
@@ -68,6 +72,8 @@ impl LorentzEvalNode {
             LorentzEvalNode::ProjMAmp { i, j } | LorentzEvalNode::ProjPAmp { i, j } => vec![*i, *j],
             LorentzEvalNode::Metric { mu, nu } => vec![*mu, *nu],
             LorentzEvalNode::ScalarProduct { children } => children.clone(),
+            LorentzEvalNode::P { .. } => vec![],
+            LorentzEvalNode::IdentityAmp { i, j } => vec![*i, *j],
         }
     }
 }
@@ -187,6 +193,25 @@ impl LorentzEvalTree {
                     nu: child_nu,
                 }))
             }
+            LorentzOp::P { leg, .. } => {
+                // mu == idx (guaranteed by involves_vector fix); leg is the momentum source particle
+                Ok(self.add_node(LorentzEvalNode::P { leg: *leg }))
+            }
+            LorentzOp::Identity { i, j } => {
+                if *i > 0 && *j > 0 {
+                    // Bilinear scalar ū_i δ ψ_j
+                    let child_i = self.build_child(term, *i, visited_ops)?;
+                    let child_j = self.build_child(term, *j, visited_ops)?;
+                    Ok(self.add_node(LorentzEvalNode::IdentityAmp {
+                        i: child_i,
+                        j: child_j,
+                    }))
+                } else {
+                    // Projection: δ is transparent, just thread the fermion through
+                    let k = if *i == idx { *j } else { *i };
+                    self.build_child(term, k, visited_ops)
+                }
+            }
             LorentzOp::Sigma { .. } => Err(CompileError::UnsupportedVertex(
                 "Sigma tensors are deferred to future work".to_string(),
             )),
@@ -196,9 +221,6 @@ impl LorentzEvalTree {
             LorentzOp::C { .. } => Err(CompileError::UnsupportedVertex(
                 "Charge conjugation is deferred to future work".to_string(),
             )),
-            LorentzOp::P { .. } | LorentzOp::Identity { .. } => {
-                todo!("P and Identity operators not yet implemented in tree builder")
-            }
         }
     }
 
@@ -282,6 +304,18 @@ impl LorentzEvalTree {
                 LorentzOp::Metric { mu, nu } if *mu > 0 && *nu > 0 => {
                     // upstream will handle the contraction
                     tree.build_child(term, *mu, &mut visited_ops)?
+                }
+                LorentzOp::P { mu, .. } => {
+                    // p^μ contracted with the vector leg at the same index
+                    let p_node = tree.build_child(term, *mu, &mut visited_ops)?;
+                    let leg_node = tree.build_child(term, *mu, &mut visited_ops)?;
+                    tree.add_node(LorentzEvalNode::Metric {
+                        mu: p_node,
+                        nu: leg_node,
+                    })
+                }
+                LorentzOp::Identity { i, j } if *i > 0 && *j > 0 => {
+                    tree.build_child(term, *i, &mut visited_ops)?
                 }
                 _ => {
                     todo!(

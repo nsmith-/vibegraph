@@ -148,7 +148,6 @@ impl<'a> TopoContext<'a> {
             EvalStep::Propagate {
                 info: PropInfo {
                     id: self.model.vertex_def(model_vertex_id).particles[result_leg_idx],
-                    momentum_coeffs: vec![], // TODO: determine momentum coefficients from diagram structure
                 },
                 input_slot: contraction_output_slot,
                 output_slot: self.next_slot(),
