@@ -29,6 +29,8 @@
 //! - Generate diagrams with vibegraph
 //! - Validate against MadGraph reference counts
 
+mod common;
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -146,13 +148,10 @@ fn find_madgraph_references() -> Vec<(PathBuf, DiagramData)> {
     results
 }
 
-/// Default UFO search path for test harness. Skipped if not found.
 fn ufo_search_path() -> Result<PathBuf, &'static str> {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let ufo_path = Path::new(manifest_dir).join("../research/refs/mg5amcnlo/models");
-
-    match ufo_path.exists() {
-        true => Ok(ufo_path),
+    let path = common::ufo_models_dir();
+    match path.exists() {
+        true => Ok(path),
         false => Err(
             "UFO models directory not found. Please clone the madgraph submodule:
     git submodule update --init --recursive",

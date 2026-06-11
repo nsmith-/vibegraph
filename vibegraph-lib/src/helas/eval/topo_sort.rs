@@ -217,11 +217,27 @@ pub fn compile_single_diagram(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagrams::tests::generate;
+    use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
+    use crate::ufo::UFOModel;
+    use std::sync::OnceLock;
+
+    static SM_MODEL: OnceLock<UFOModel> = OnceLock::new();
+    fn sm_model() -> &'static UFOModel {
+        SM_MODEL.get_or_init(|| {
+            let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+            let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm");
+            UFOModel::load(&path, None).expect("SM UFO not found")
+        })
+    }
+    fn generate(process: &str) -> Vec<DiagramSet> {
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+        generate_from_proc_card(&card, sm_model()).unwrap()
+    }
 
     #[test]
     fn test_walk() {
-        let model = crate::diagrams::tests::sm_model();
+        let model = sm_model();
         let sets = generate("e+ e- > mu+ mu-");
         for set in sets {
             for view in set.diagrams.views() {

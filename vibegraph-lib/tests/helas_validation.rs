@@ -15,12 +15,132 @@
 //!     pixi run -e helas-validation gen-reference
 //!     cargo test --features extended-validation --test helas_validation
 
+mod common;
+
+#[cfg(test)]
+mod eval_vs_hardcoded {
+    use super::common::{generate, sm_model};
+    use itertools::iproduct;
+    use vibegraph::helas::eval::AmplitudeEvaluator;
+    use vibegraph::helas::{compute_m2_ee_mumu, derive_gammaz_couplings, LorentzVector, MDL_MZ};
+    use vibegraph::ufo::slha::ParamCard;
+
+    /// Compare the runtime `AmplitudeEvaluator` against the hardcoded `compute_m2_ee_mumu`
+    /// reference for e⁺e⁻→μ⁺μ⁻ at multiple angles and CM energies.
+    #[test]
+    fn test_eval_m2_ee_mumu_vs_hardcoded() {
+        let sets = generate("e+ e- > mu+ mu-");
+        assert!(!sets.is_empty(), "no diagram sets generated for e⁺e⁻→μ⁺μ⁻");
+
+        let set = &sets[0];
+        assert!(set.diagrams.len() == 2, "expected 2 diagrams (photon+Z)");
+
+        let model = sm_model();
+        let empty_card = ParamCard::from_str("").unwrap();
+        let evaluated = model.evaluate(&empty_card);
+
+        let evaluator =
+            AmplitudeEvaluator::compile(set, model).expect("failed to compile amplitude evaluator");
+        assert_eq!(
+            evaluator.helicities().len(),
+            16,
+            "expected 16 helicity combinations"
+        );
+        assert_eq!(evaluator.n_ext(), 4, "expected 4 external legs");
+        assert_eq!(evaluator.n_in(), 2, "expected 2 incoming legs");
+        assert_eq!(
+            evaluator.n_diagrams(),
+            set.diagrams.len(),
+            "AST count mismatch"
+        );
+
+        // UFO couplings are pure imaginary; the factor of i appears twice per diagram
+        // so amplitudes agree up to sign (hence MadGraph's JAMP = -AMP(γ) - AMP(Z)).
+        let (gc_gamma, gc_z) = derive_gammaz_couplings();
+        let gc_3 = evaluated.coupling(model.coupling_id("GC_3").unwrap());
+        assert!(
+            (gc_gamma[0] - gc_3.im).abs() < 1e-6,
+            "photon coupling mismatch vs GC_3"
+        );
+        assert!(gc_3.re.abs() < 1e-6, "GC_3 has unexpected real part");
+        let gc_59 = evaluated.coupling(model.coupling_id("GC_59").unwrap());
+        let gc_50 = evaluated.coupling(model.coupling_id("GC_50").unwrap());
+        assert!(
+            (gc_z[0] - (gc_59.im + gc_50.im)).abs() < 1e-6,
+            "Z left coupling mismatch"
+        );
+        assert!(
+            (gc_z[1] - 2.0 * gc_59.im).abs() < 1e-6,
+            "Z right coupling mismatch"
+        );
+
+        let me = evaluated.mass(model.particle_id("e-").unwrap());
+        let mmu = evaluated.mass(model.particle_id("mu-").unwrap());
+
+        let test_angles = [-0.9_f64, -0.3, 0.0, 0.3, 0.9];
+        let test_roots = [1.0_f64, MDL_MZ, 200.0];
+
+        for (cos_theta, sqrt_s) in iproduct!(test_angles, test_roots) {
+            let e_beam = sqrt_s / 2.0;
+            let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
+            let p3_e = (e_beam * e_beam - me * me).max(0.0).sqrt();
+            let p3_mu = (e_beam * e_beam - mmu * mmu).max(0.0).sqrt();
+            let momenta = vec![
+                LorentzVector::new(e_beam, 0.0, 0.0, -p3_e),
+                LorentzVector::new(e_beam, 0.0, 0.0, p3_e),
+                LorentzVector::new(e_beam, -p3_mu * sin_theta, 0.0, -p3_mu * cos_theta),
+                LorentzVector::new(e_beam, p3_mu * sin_theta, 0.0, p3_mu * cos_theta),
+            ];
+
+            let m2_runtime = evaluator.eval_m2(&momenta, &evaluated);
+            let m2_hardcoded = compute_m2_ee_mumu(sqrt_s, cos_theta);
+
+            let rel_diff = (m2_runtime - m2_hardcoded).abs() / m2_hardcoded.max(1e-10);
+            assert!(
+                rel_diff < 1e-4,
+                "Mismatch at √s={:.1}, cos_θ={:.1}: runtime={:.4e}, hardcoded={:.4e}, rel_diff={:.2e}",
+                sqrt_s, cos_theta, m2_runtime, m2_hardcoded, rel_diff
+            );
+        }
+    }
+}
+
 #[cfg(feature = "extended-validation")]
 mod extended {
     use std::f64::consts::PI;
     use std::path::Path;
-    use vibegraph::helas::{compute_m2_ee_mumu, compute_m2_ee_mumu_dynamic, ALPHA_QED_MZ, MDL_MZ};
+    use vibegraph::helas::{compute_m2_ee_mumu, LorentzVector, ALPHA_QED_MZ, MDL_MZ};
     use vibegraph::phasespace::GEV2_TO_PB;
+
+    fn compute_m2_ee_mumu_dynamic(sqrt_s: f64, cos_theta: f64) -> f64 {
+        use super::common;
+        use vibegraph::helas::eval::AmplitudeEvaluator;
+        use vibegraph::ufo::slha::ParamCard;
+
+        let sets = common::generate("e+ e- > mu+ mu-");
+        let set = &sets[0];
+        let model = common::sm_model();
+        let empty_card = ParamCard::from_str("").unwrap();
+        let evaluated = model.evaluate(&empty_card);
+
+        let me = evaluated.mass(model.particle_id("e-").unwrap());
+        let mmu = evaluated.mass(model.particle_id("mu-").unwrap());
+
+        let evaluator =
+            AmplitudeEvaluator::compile(set, model).expect("failed to compile amplitude evaluator");
+
+        let e_beam = sqrt_s / 2.0;
+        let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
+        let p3_e = (e_beam * e_beam - me * me).max(0.0).sqrt();
+        let p3_mu = (e_beam * e_beam - mmu * mmu).max(0.0).sqrt();
+        let momenta = vec![
+            LorentzVector::new(e_beam, 0.0, 0.0, -p3_e),
+            LorentzVector::new(e_beam, 0.0, 0.0, p3_e),
+            LorentzVector::new(e_beam, -p3_mu * sin_theta, 0.0, -p3_mu * cos_theta),
+            LorentzVector::new(e_beam, p3_mu * sin_theta, 0.0, p3_mu * cos_theta),
+        ];
+        evaluator.eval_m2(&momenta, &evaluated)
+    }
 
     /// Relative tolerance for comparing Rust |M|² against Fortran reference.
     const REL_TOL: f64 = 1e-6;
