@@ -234,10 +234,23 @@ impl LorentzEvalTree {
         let mut visited_ops = Vec::new(); // LorentzOp is so small that Vec is probably better than HashSet
         let mut term_roots = Vec::new();
 
+        // When computing an off-shell current (idx=Some), the output leg is NOT an input.
+        // Track its 1-indexed value so we can exclude it from leaf nodes below.
+        let excluded_leg: Option<i32> = idx.map(|i| (i as i32) + 1);
+
         // If idx is specified, build the tree rooted at that leg
-        if let Some(idx) = idx {
-            term_roots.push(tree.build_child(term, (idx as i32) + 1, &mut visited_ops)?);
-        };
+        if let Some(root_leg) = excluded_leg {
+            let node_idx = tree.build_child(term, root_leg, &mut visited_ops)?;
+            // If no operator connects to this leg, build_child returns a trivial Leg leaf.
+            // Pop it — the disconnected structures collected below are the actual output.
+            let is_trivial_leaf =
+                matches!(tree.nodes[node_idx], LorentzEvalNode::Leg(i) if i == root_leg);
+            if is_trivial_leaf {
+                tree.nodes.pop();
+            } else {
+                term_roots.push(node_idx);
+            }
+        }
 
         // find all the remaining scalar roots
         while visited_ops.len() < term.ops.len() {
@@ -280,10 +293,14 @@ impl LorentzEvalTree {
             term_roots.push(term);
         }
 
-        // Find any scalar legs not connected to any operator and add them as scalar roots
+        // Find any scalar legs not connected to any operator and add them as scalar roots.
+        // Skip the output leg (excluded_leg) — it is not an input for off-shell currents.
         for (ileg, spin) in spins.iter().enumerate() {
             if *spin == 1 {
                 let idx = (ileg as i32) + 1;
+                if Some(idx) == excluded_leg {
+                    continue; // output leg — not an input
+                }
                 if !tree
                     .nodes
                     .iter()
@@ -434,6 +451,28 @@ mod tests {
                     },
                 ],
                 root: Some(4)
+            }
+        )
+    }
+
+    #[test]
+    fn test_root_ffs_off_shell_scalar() {
+        // FFS1: ProjM(2,1) rooted at scalar leg 3 → just the bilinear, no Leg(3)
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::ProjM { i: 2, j: 1 }],
+        };
+        let spins = vec![2, 2, 1];
+        let result = root_term(&term, &spins, Some(2)).unwrap();
+        assert_eq!(
+            result.tree,
+            LorentzEvalTree {
+                nodes: vec![
+                    LorentzEvalNode::Leg(2),
+                    LorentzEvalNode::Leg(1),
+                    LorentzEvalNode::ProjMAmp { i: 0, j: 1 },
+                ],
+                root: Some(2)
             }
         )
     }
