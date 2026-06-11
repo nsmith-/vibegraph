@@ -17,12 +17,69 @@
 
 mod common;
 
+// SM parameters matching MadGraph's default param_card.dat:
+//   aEWM1 = 132.507, Gf = 1.16639e-5, MZ = 91.188 GeV, WZ = 2.441404 GeV
+const ALPHA_QED_MZ: f64 = 1.0 / 132.507;
+const MDL_MZ: f64 = 91.188;
+const MDL_WZ: f64 = 2.441_404;
+const MDL_ME: f64 = 0.000_511;
+const MDL_MMU: f64 = 0.105_658;
+
+fn derive_gammaz_couplings() -> ([f64; 2], [f64; 2]) {
+    let aew = ALPHA_QED_MZ;
+    let gf = 1.166_39e-5_f64;
+    let ee = (4.0 * std::f64::consts::PI * aew).sqrt();
+    let sw2 = 0.5
+        - (0.25 - std::f64::consts::PI * aew / (gf * std::f64::consts::SQRT_2 * MDL_MZ * MDL_MZ))
+            .sqrt();
+    let sw = sw2.sqrt();
+    let cw = (1.0 - sw2).sqrt();
+    let gc_gamma = [-ee, -ee];
+    let gl_z = ee * (-0.5 + sw2) / (sw * cw);
+    let gr_z = ee * sw / cw;
+    ([gc_gamma[0], gc_gamma[1]], [gl_z, gr_z])
+}
+
+fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
+    use itertools::iproduct;
+    use vibegraph::helas::{iovxxx, jioxxx};
+    use vibegraph::helas::{Charge, InDiracWf, LorentzVector, OutDiracWf, SpinorHelicity};
+    use SpinorHelicity::{Down, Up};
+
+    let e_beam = sqrt_s / 2.0;
+    let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
+    let (gc_gamma, gc_z) = derive_gammaz_couplings();
+    let p3_e = (e_beam * e_beam - MDL_ME * MDL_ME).max(0.0).sqrt();
+    let p3_mu = (e_beam * e_beam - MDL_MMU * MDL_MMU).max(0.0).sqrt();
+    let p_ep = LorentzVector::new(e_beam, 0.0, 0.0, -p3_e);
+    let p_em = LorentzVector::new(e_beam, 0.0, 0.0, p3_e);
+    let p_mp = LorentzVector::new(e_beam, -p3_mu * sin_theta, 0.0, -p3_mu * cos_theta);
+    let p_mm = LorentzVector::new(e_beam, p3_mu * sin_theta, 0.0, p3_mu * cos_theta);
+
+    let mut sum = 0.0;
+    for (nhel_em, nhel_ep) in iproduct!([Down, Up], [Down, Up]) {
+        let fi_em = InDiracWf::new(p_em, MDL_ME, nhel_em, Charge::Particle);
+        let fo_ep = OutDiracWf::new(p_ep, MDL_ME, nhel_ep, Charge::Antiparticle);
+        let v_gamma = jioxxx(&fo_ep, &fi_em, gc_gamma, 0.0, 0.0);
+        let v_z = jioxxx(&fo_ep, &fi_em, gc_z, MDL_MZ, MDL_WZ);
+        for (nhel_mm, nhel_mp) in iproduct!([Down, Up], [Down, Up]) {
+            let fo_mm = OutDiracWf::new(p_mm, MDL_MMU, nhel_mm, Charge::Particle);
+            let fi_mp = InDiracWf::new(p_mp, MDL_MMU, nhel_mp, Charge::Antiparticle);
+            let amp_gamma = iovxxx(&fo_mm, &fi_mp, &v_gamma, gc_gamma);
+            let amp_z = iovxxx(&fo_mm, &fi_mp, &v_z, gc_z);
+            sum += (amp_gamma + amp_z).norm_sqr();
+        }
+    }
+    sum
+}
+
 #[cfg(test)]
 mod eval_vs_hardcoded {
     use super::common::{generate, sm_model};
+    use super::{compute_m2_ee_mumu, derive_gammaz_couplings, MDL_MZ};
     use itertools::iproduct;
     use vibegraph::helas::eval::AmplitudeEvaluator;
-    use vibegraph::helas::{compute_m2_ee_mumu, derive_gammaz_couplings, LorentzVector, MDL_MZ};
+    use vibegraph::helas::LorentzVector;
     use vibegraph::ufo::slha::ParamCard;
 
     /// Compare the runtime `AmplitudeEvaluator` against the hardcoded `compute_m2_ee_mumu`
@@ -107,9 +164,10 @@ mod eval_vs_hardcoded {
 
 #[cfg(feature = "extended-validation")]
 mod extended {
+    use super::{compute_m2_ee_mumu, ALPHA_QED_MZ, MDL_MZ};
     use std::f64::consts::PI;
     use std::path::Path;
-    use vibegraph::helas::{compute_m2_ee_mumu, LorentzVector, ALPHA_QED_MZ, MDL_MZ};
+    use vibegraph::helas::LorentzVector;
     use vibegraph::phasespace::GEV2_TO_PB;
 
     fn compute_m2_ee_mumu_dynamic(sqrt_s: f64, cos_theta: f64) -> f64 {
