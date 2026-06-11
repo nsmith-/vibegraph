@@ -516,12 +516,23 @@ mod tests {
         ufo::slha::ParamCard,
     };
 
+    fn sm_model() -> &'static crate::ufo::UFOModel {
+        use crate::ufo::UFOModel;
+        use std::sync::OnceLock;
+        static SM_MODEL: OnceLock<UFOModel> = OnceLock::new();
+        SM_MODEL.get_or_init(|| {
+            let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+            let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm");
+            UFOModel::load(&path, None).expect("SM UFO not found")
+        })
+    }
+
     /// Unit test a simple dispatch tree against HELAS vertex
     ///
     /// Let's compare against jioxxx
     #[test]
     fn test_eval_jioxxx() {
-        let model = crate::diagrams::tests::sm_model();
+        let model = sm_model();
         let empty_card = ParamCard::from_str("").unwrap();
         let evaluated = model.evaluate(&empty_card);
 
