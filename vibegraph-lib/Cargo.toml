@@ -35,3 +35,8 @@ serde_json = "1.0"
 name = "validate_madgraph_diagrams"
 harness = false
 required-features = ["extended-validation"]
+
+[[test]]
+name = "helas_mg_validation"
+harness = false
+required-features = ["extended-validation"]

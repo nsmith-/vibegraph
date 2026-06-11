@@ -21,11 +21,21 @@
 Replace the hardcoded `compute_m2_ee_mumu` with the generalized `AmplitudeEvaluator` and
 validate a second process (e.g. uū→dd̄) vs MadGraph.
 
-**Tasks**:
+**Scaffolding done** ✅:
+- MadGraph amplitude validation infrastructure: `validation/madgraph/wrappers/`,
+  `build_amplitude.sh`, `gen_amplitude.py`, pixi tasks `build-amplitude` /
+  `generate-amplitude` / `validate-helas-mg`
+- `vibegraph-lib/tests/helas_mg_validation.rs` — libtest_mimic test, one trial per process
+- `ee_to_mumu` passes at REL_TOL=2e-3; the looser tolerance is intentional: MadGraph's
+  generated `matrix1_optim.f` treats all leptons as massless (hard-coded `ZERO` in HELAS
+  calls), while Rust uses physical masses. The systematic O(m_μ²/s) difference reaches
+  ~7×10⁻⁴ at √s=10 GeV; any real amplitude bug gives >1% error.
+
+**Remaining tasks**:
 1. Replace calls to `compute_m2_ee_mumu` with `AmplitudeEvaluator::eval_m2`
 2. Update phase-space loop to pass `&DiagramSet` and `&EvaluatedModel`
-3. Validate σ(e⁺e⁻→μ⁺μ⁻) unchanged vs hardcoded reference
-4. Validate a second process vs MadGraph
+3. Validate σ(e⁺e⁻→μ⁺μ⁻) unchanged vs hardcoded reference (`validate_vegas` test)
+4. Colored processes in `helas_mg_validation` — blocked on color flow implementation
 
 _Depends on: `lorentz-runtime-eval` (✅)_
 _Unblocks: Process generalization beyond e⁺e⁻→μ⁺μ⁻_
