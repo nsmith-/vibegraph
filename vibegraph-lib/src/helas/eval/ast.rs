@@ -22,7 +22,7 @@ use crate::ufo::UFOModel;
 /// but is meaningless for internal off-shell currents. Slots therefore hold `DiracWf<F>`
 /// (default phantom): correctness is guaranteed by the AST topology (compile step knows
 /// which vertex leg is "in" vs "out"), not by the type.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub enum WaveformSlot<F: Real> {
     /// 4-component Dirac spinor / off-shell fermion current
     ///

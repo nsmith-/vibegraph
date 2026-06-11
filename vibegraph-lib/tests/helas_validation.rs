@@ -134,8 +134,8 @@ mod eval_vs_hardcoded {
         let me = evaluated.mass(model.particle_id("e-").unwrap());
         let mmu = evaluated.mass(model.particle_id("mu-").unwrap());
 
-        let test_angles = [-0.9_f64, -0.3, 0.0, 0.3, 0.9];
-        let test_roots = [1.0_f64, MDL_MZ, 200.0];
+        let test_angles = (0..=100).map(|i| -1.0 + 2.0 * (i as f64) / 100.0);
+        let test_roots = (1..=200).map(|i| i as f64);
 
         for (cos_theta, sqrt_s) in iproduct!(test_angles, test_roots) {
             let e_beam = sqrt_s / 2.0;

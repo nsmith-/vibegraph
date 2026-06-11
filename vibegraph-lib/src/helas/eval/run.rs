@@ -423,8 +423,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
     slots: &[WaveformSlot<F>],
 ) -> WaveformSlot<F> {
     match node {
-        // TODO: is clone here ok? we're using the stack to accumulate intermediate results rather than reserving slots (as done for the diagram AST)
-        LorentzEvalNode::Leg(i) => slots[input_slots[*i as usize - 1]].clone(),
+        LorentzEvalNode::Leg(i) => slots[input_slots[*i as usize - 1]],
         LorentzEvalNode::GammaVout { i, j } => {
             let WaveformSlot::Fermion(f1) =
                 evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
