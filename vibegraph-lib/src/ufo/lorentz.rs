@@ -68,7 +68,7 @@ impl LorentzOp {
     pub fn involves_vector(&self, idx: i32) -> bool {
         match self {
             LorentzOp::Gamma { mu, .. } => *mu == idx,
-            LorentzOp::P { mu, leg } => *mu == idx || *leg == idx,
+            LorentzOp::P { mu, .. } => *mu == idx,
             LorentzOp::Sigma { mu, nu, .. } => *mu == idx || *nu == idx,
             LorentzOp::Metric { mu, nu } => *mu == idx || *nu == idx,
             LorentzOp::Epsilon { mu, nu, rho, sigma } => {

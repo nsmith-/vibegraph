@@ -7,7 +7,7 @@
 use std::ops::{Add, Mul};
 
 use super::dispatch::RootedTerm;
-use crate::helas::repr::{Real, C};
+use crate::helas::repr::{lorentz::LorentzVector, Real, C};
 use crate::helas::wavefn::{InDiracWf, ScalarWf, VectorWf};
 use crate::helas::Charge;
 use crate::ufo::couplings::CouplingId;
@@ -99,6 +99,17 @@ where
     }
 }
 
+impl<F: Real> WaveformSlot<F> {
+    pub fn momentum(&self) -> Option<LorentzVector<F>> {
+        match self {
+            WaveformSlot::Fermion(f) => Some(f.momentum),
+            WaveformSlot::Vector(v) => Some(v.momentum),
+            WaveformSlot::Scalar(s) => Some(s.momentum),
+            WaveformSlot::Empty => None,
+        }
+    }
+}
+
 /// Description of an external leg baked in at compile time.
 #[derive(Clone, Debug)]
 pub struct ExtLegInfo {
@@ -118,9 +129,6 @@ pub struct ExtLegInfo {
 pub struct PropInfo {
     /// Particle information
     pub id: ParticleId,
-    /// Momentum = Σ_i coeff[i] * p_ext[i]; i indexes external legs in order
-    /// Coefficients are ±1 indicating which external legs contribute (inflow direction)
-    pub momentum_coeffs: Vec<i8>,
 }
 
 /// One (lorentz_structure, coupling_constant) pair at a vertex.

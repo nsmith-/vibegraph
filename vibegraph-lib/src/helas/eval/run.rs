@@ -553,6 +553,34 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
                 momentum: fo.momentum + fi_col.momentum,
             })
         }
+        LorentzEvalNode::P { leg } => {
+            let momentum = slots[input_slots[*leg as usize - 1]]
+                .momentum()
+                .expect("P: empty slot");
+            WaveformSlot::Vector(VectorWf {
+                eps: ComplexVector::from(momentum),
+                momentum,
+            })
+        }
+        LorentzEvalNode::IdentityAmp { i, j } => {
+            // Full scalar bilinear ψ̄_i δ ψ_j = ψ̄_i (P_L + P_R) ψ_j
+            let WaveformSlot::Fermion(fi_row) =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
+            else {
+                panic!("expected fermion for IdentityAmp row (node {i})");
+            };
+            let WaveformSlot::Fermion(fi_col) =
+                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots)
+            else {
+                panic!("expected fermion for IdentityAmp col (node {j})");
+            };
+            let fo = fi_row.to_outgoing();
+            let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Both);
+            WaveformSlot::Scalar(ScalarWf {
+                value,
+                momentum: fo.momentum + fi_col.momentum,
+            })
+        }
         LorentzEvalNode::ScalarProduct { children } => {
             // Implicit product of disconnected tensor factors.
             // At most one child may be non-scalar; all others must be scalars.
@@ -711,10 +739,7 @@ mod tests {
                 )],
                 n_legs: 3,
             };
-            let prop_info = PropInfo {
-                id: prop_id,
-                momentum_coeffs: vec![],
-            };
+            let prop_info = PropInfo { id: prop_id };
             let amp_info = VertexInfo {
                 terms: vec![VertexTerm::from_ufo(
                     &model,
@@ -816,10 +841,7 @@ mod tests {
         let prop_id = model.particle_id("e-").unwrap();
         let mass = evaluated.mass(prop_id);
         let width = evaluated.width(prop_id);
-        let prop_info = PropInfo {
-            id: prop_id,
-            momentum_coeffs: vec![],
-        };
+        let prop_info = PropInfo { id: prop_id };
 
         // FFV1: Gamma(3,2,1) — legs 1,2 fermions, leg 3 vector.
         let term = LorentzTerm {
