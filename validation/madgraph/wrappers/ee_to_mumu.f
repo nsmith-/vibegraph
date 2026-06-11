@@ -16,6 +16,7 @@ C     Satisfies the linker without pulling in the full genps.f dependency chain.
 
 C     f2py wrapper: evaluate MadGraph e+ e- > mu+ mu- amplitude.
 C     Computes sum_hel |M|^2 (not divided by IDEN=4).
+C     Single-event entry point.
 C
 C     Common blocks are populated from scalar SM inputs before MATRIX1
 C     is called.  The MATRIX1 subroutine caches fk_MDL_WZ on its first
@@ -88,4 +89,75 @@ C     Evaluate and sum over optimized helicity combinations
         SUMTS = SUMTS + TS(I)
       END DO
       M2_OUT = SUMTS
+      END
+
+C     Batch wrapper: evaluate N events in a single call.
+C     Common blocks and EW couplings are set up once before the loop.
+C     N is hidden from Python and inferred from the third axis of P_BATCH.
+      SUBROUTINE MG_EVAL_M2_BATCH(P_BATCH, N, AEWM1_IN, GF_IN,
+     &                             MZ_IN, WZ_IN, M2_OUT)
+Cf2py intent(in)  P_BATCH, AEWM1_IN, GF_IN, MZ_IN, WZ_IN
+Cf2py intent(out) M2_OUT
+Cf2py integer intent(hide), depend(P_BATCH) :: N = shape(P_BATCH, 2)
+      IMPLICIT NONE
+      INCLUDE 'maxamps.inc'
+      INCLUDE 'coupl.inc'
+      INTEGER NCOMB
+      PARAMETER (NCOMB=4)
+      INTEGER N, I
+      DOUBLE PRECISION P_BATCH(0:3, 4, N)
+      DOUBLE PRECISION AEWM1_IN, GF_IN, MZ_IN, WZ_IN
+      DOUBLE PRECISION M2_OUT(N)
+      DOUBLE PRECISION TS(NCOMB)
+      INTEGER IC(4), J
+      DOUBLE PRECISION PI, AEW, EE, SW2, SW, CW, SUMTS
+      DOUBLE PRECISION AMP2_LOC(MAXAMPS), JAMP2_LOC(0:MAXFLOW)
+      COMMON/TO_AMPS/ AMP2_LOC, JAMP2_LOC
+      DOUBLE PRECISION SMALL_WIDTH_TREATMENT
+      COMMON/NARROW_WIDTH/ SMALL_WIDTH_TREATMENT
+      DOUBLE PRECISION TMIN_FOR_CHANNEL
+      INTEGER SDE_STRAT
+      COMMON/TO_CHANNEL_STRAT/ TMIN_FOR_CHANNEL, SDE_STRAT
+      PARAMETER (PI=3.141592653589793D0)
+C     Set up common blocks once for the entire batch
+      MDL_MZ = MZ_IN
+      MDL_WZ = WZ_IN
+      MDL_MB = 4.7D0
+      MDL_MT = 173.0D0
+      MDL_MH = 125.0D0
+      MDL_MTA = 1.777D0
+      MDL_WH = 6.382339D-3
+      MDL_WT = 1.4915D0
+      MDL_WW = 2.0476D0
+      SMALL_WIDTH_TREATMENT = 1.0D-6
+      SDE_STRAT = 1
+      TMIN_FOR_CHANNEL = 0.0D0
+      DO J = 1, MAXAMPS
+        AMP2_LOC(J) = 0.0D0
+      END DO
+      DO J = 0, MAXFLOW
+        JAMP2_LOC(J) = 0.0D0
+      END DO
+      AEW = 1.0D0 / AEWM1_IN
+      EE = SQRT(4.0D0 * PI * AEW)
+      SW2 = 0.5D0 - SQRT(0.25D0
+     &    - PI * AEW / (GF_IN * SQRT(2.0D0) * MZ_IN**2))
+      SW = SQRT(SW2)
+      CW = SQRT(1.0D0 - SW2)
+      MDL_MW = MZ_IN * CW
+      GC_3 = DCMPLX(0D0, -EE)
+      GC_59 = DCMPLX(0D0, EE * SW / (2.0D0 * CW))
+      GC_50 = DCMPLX(0D0, EE * (-0.5D0 + SW2) / (SW * CW)) - GC_59
+      DO J = 1, 4
+        IC(J) = 1
+      END DO
+C     Loop: P_BATCH(0,1,I) is the start of the I-th contiguous 4x4 momentum block
+      DO I = 1, N
+        CALL MATRIX1(P_BATCH(0, 1, I), IC, TS)
+        SUMTS = 0.0D0
+        DO J = 1, NCOMB
+          SUMTS = SUMTS + TS(J)
+        END DO
+        M2_OUT(I) = SUMTS
+      END DO
       END
