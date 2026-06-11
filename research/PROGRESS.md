@@ -46,7 +46,60 @@ Unsupported (raise `CompileError::UnsupportedVertex`): Sigma, Epsilon, C.
 - **Off-shell scalar output-leg fix**: trivial `Leg(root)` leaf is dropped from build_at_leg; prevents reading the output slot as an input
 - **`involves_vector` for P**: only checks `*mu`, not `*leg` (particle index ≠ Lorentz index)
 
-## Next step
+---
 
-`helas-generalize`: replace `compute_m2_ee_mumu` with `AmplitudeEvaluator::eval_m2`
-and validate σ(e⁺e⁻→μ⁺μ⁻) + a second process vs MadGraph. See `TODO.md`.
+# helas-generalize — MadGraph amplitude validation scaffolding COMPLETE ✅
+
+## What was built
+
+### MadGraph amplitude validation pipeline
+
+New files under `validation/madgraph/`:
+- `wrappers/ee_to_mumu.f` — Fortran77 f2py wrapper; populates all COMMON blocks
+  (MASSES, WIDTHS, COUPLINGS, TO_AMPS, NARROW_WIDTH, TO_CHANNEL_STRAT) from scalar
+  SM inputs, then calls `MATRIX1(P, IC, TS)` and returns `sum(TS)` = Σ|M|² (not
+  divided by IDEN=4, matching Rust `eval_m2`)
+- `build_amplitude.sh` — f2py compilation: links `matrix1_optim.f` + wrapper against
+  pre-built `libdhelas.a`; runs from subprocess directory so all `.inc` files resolve
+- `gen_amplitude.py` — evaluates on a 20×20 grid (√s ∈ [10,200] GeV,
+  cos θ ∈ [−0.9,0.9]), writes `output/ee_to_mumu_amplitude.csv`
+
+New pixi tasks in `madgraph` environment: `build-amplitude`, `generate-amplitude`,
+`validate-helas-mg`. Full pipeline: `pixi run -e madgraph validate-helas-mg`.
+
+### Rust comparison test
+
+`vibegraph-lib/tests/helas_mg_validation.rs` — `libtest_mimic`-based; one named trial
+per `*_amplitude.csv` file discovered in `validation/madgraph/output/`. Reads the
+`# process:` comment from each CSV, calls `AmplitudeEvaluator::compile` + `eval_m2`,
+checks all grid points against MadGraph reference. Colored processes emit INFO and
+pass regardless (color flow not yet implemented).
+
+### Result: `ee_to_mumu` passes at REL_TOL = 2e-3
+
+## Key design decisions
+
+**MATRIX1 vs SMATRIX1**: `matrix1_optim.f` contains both. `SMATRIX1` divides by
+IDEN=4 and requires the full MadEvent runtime (genps, RANMAR). `MATRIX1(P, IC, TS)`
+is clean: returns per-helicity values in `TS(NCOMB)` without averaging. The
+Fortran wrapper calls `MATRIX1` only.
+
+**Relaxed tolerance (2e-3, not 1e-6)**: MadGraph's generated code hard-codes `ZERO`
+for lepton masses in all `OXXXXX`/`IXXXXX` calls. Rust uses physical masses from
+the UFO model (m_e = 0.511 MeV, m_μ = 105.66 MeV). The resulting O(m_μ²/s)
+systematic difference reaches ~7×10⁻⁴ at √s = 10 GeV and decreases at higher
+energies. The tighter `helas_matches_fortran_reference` test (REL_TOL = 1e-6) uses
+a custom HELAS reference that respects physical masses and is the right tool for
+precision amplitude validation. The MadGraph comparison at 2e-3 exercises the
+correct diagram topology and coupling structure; any real bug gives >1% deviation.
+
+**Stub symbols**: `GET_CHANNEL_CUT` and `RANMAR` are referenced by `SMATRIX1`; the
+linker requires them even though we never call `SMATRIX1`. Both are stubbed in the
+wrapper file with trivial return values.
+
+## Next steps for helas-generalize
+
+1. Replace `compute_m2_ee_mumu` calls with `AmplitudeEvaluator::eval_m2` in
+   production code; update phase-space loop signature
+2. Validate σ(e⁺e⁻→μ⁺μ⁻) unchanged vs hardcoded reference in `validate_vegas` test
+3. Colored processes in `helas_mg_validation` — blocked on color flow implementation

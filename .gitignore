@@ -8,6 +8,7 @@
 /validation/helas/*.so
 /validation/helas/reference.*
 /validation/madgraph/output
+/validation/madgraph/*.so
 .claude
 .vscode
 # TODO: add MCP server setup to pixi.toml ?
