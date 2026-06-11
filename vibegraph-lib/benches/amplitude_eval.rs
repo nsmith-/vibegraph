@@ -1,0 +1,68 @@
+//! Benchmark AmplitudeEvaluator::eval_m2 on N random ee→μμ kinematic points.
+//!
+//! Run (release-optimised, same as cargo bench default):
+//!   cargo bench -p vibegraph-lib --bench amplitude_eval
+//!
+//! Compare to MadGraph Fortran MATRIX1:
+//!   pixi run -e madgraph generate-amplitude
+
+use std::time::Instant;
+use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+use vibegraph::helas::{eval::AmplitudeEvaluator, LorentzVector};
+use vibegraph::ufo::{slha::ParamCard, UFOModel};
+
+const N: usize = 10_000;
+
+fn ufo_sm_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../research/refs/mg5amcnlo/models/sm")
+}
+
+fn make_momenta(sqrt_s: f64, cos_theta: f64) -> Vec<LorentzVector<f64>> {
+    let e = sqrt_s / 2.0;
+    let sin_t = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
+    vec![
+        LorentzVector::new(e, 0.0, 0.0, -e),
+        LorentzVector::new(e, 0.0, 0.0, e),
+        LorentzVector::new(e, -e * sin_t, 0.0, -e * cos_theta),
+        LorentzVector::new(e, e * sin_t, 0.0, e * cos_theta),
+    ]
+}
+
+fn main() {
+    let model = UFOModel::load(&ufo_sm_path(), None)
+        .expect("SM UFO not found — run: git submodule update --init --recursive");
+
+    let opts = ParsingOptions::default();
+    let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
+    let sets = generate_from_proc_card(&card, &model).unwrap();
+
+    let empty_card = ParamCard::from_str("").unwrap();
+    let evaluated = model.evaluate(&empty_card);
+    let evaluator = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+
+    // Fixed-seed random kinematic points, same range as gen_amplitude.py
+    use rand::{Rng, SeedableRng};
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
+    let batch: Vec<Vec<LorentzVector<f64>>> = (0..N)
+        .map(|_| {
+            let r1: f64 = rng.random();
+            let r2: f64 = rng.random();
+            make_momenta(10.0 + r1 * 190.0, -0.9 + r2 * 1.8)
+        })
+        .collect();
+
+    // Warm-up: one call to trigger any lazy initialisation
+    let _ = evaluator.eval_m2(&batch[0], &evaluated);
+
+    let t0 = Instant::now();
+    for momenta in &batch {
+        let _ = evaluator.eval_m2(momenta, &evaluated);
+    }
+    let elapsed = t0.elapsed();
+
+    println!(
+        "AmplitudeEvaluator (ee->mumu): {N} evals in {:.2} ms  ({:.0} ns/eval)",
+        elapsed.as_secs_f64() * 1e3,
+        elapsed.as_nanos() as f64 / N as f64,
+    );
+}
