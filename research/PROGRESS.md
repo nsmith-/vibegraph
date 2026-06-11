@@ -93,10 +93,7 @@
 - ✅ **`compute_m2_ee_mumu_dynamic`** added to `helas/mod.rs` (feature-gated) as the public runtime entry point
 
 **Remaining**:
-- ⏳ Implement `GammaIout`/`GammaJout` in `evaluate_lorentz_node` (off-shell fermion-out currents)
-- ⏳ Implement `ProjMAmp`/`ProjPAmp` (FFS chiral scalar bilinears)
-- ⏳ Implement `ScalarProduct` (multi-factor product for SSS/VVS/etc.)
-- ⏳ Implement `P` and `Identity` in `build_child` (momentum insertion; needed for scalars)
+- ⏳ Implement `P` and `Identity` in `build_child` (momentum insertion; deferred)
 - ⏳ Add determinism test (compile/eval ~20× → bit-identical)
 
 ## Implementation Notes

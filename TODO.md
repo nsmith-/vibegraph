@@ -59,10 +59,17 @@ Remaining work: extend node coverage for fermion-out currents, FFS/VVS scalars.
 17. ✅ **`GammaIout`/`GammaJout`** in `evaluate_lorentz_node`: off-shell fermion currents
     (`fioxxx`/`foxxx` analogues). `Iout` slashes the column leg directly; `Jout` adjoints the row
     leg first. Cross-checked vs `fioxxx`/`foxxx` to 1e-10 (`test_eval_off_shell_fermion_vs_fioxxx`).
+18. ✅ **`ProjMAmp`/`ProjPAmp`** in `evaluate_lorentz_node`: FFS chiral scalar bilinears.
+    `ProjMAmp` = `ψ̄_i P_L ψ_j` (Left); `ProjPAmp` = `ψ̄_i P_R ψ_j` (Right). Both use
+    `Bispinor::scalar_bilinear` with `Chirality::Left/Right`. Cross-checked vs `iosxxx` to 1e-10
+    (`test_eval_proj_amp_vs_iosxxx`).
+19. ✅ **`ScalarProduct`** in `evaluate_lorentz_node`: multiplies disconnected tensor children;
+    at most one non-scalar (passes scalar factor through). Handles SSS, VVS, FFS amplitude cases.
+20. ✅ **`build_at_leg` output-leg fix** in `dispatch.rs`: when rooting at a scalar output leg
+    (FFS/VVS off-shell scalar current), the trivial `Leg(root)` leaf is now dropped — only the
+    bilinear/metric structure forms the tree root. Verified by `test_root_ffs_off_shell_scalar`.
 
 **Pending**:
-- `evaluate_lorentz_node` is `todo!()` for: `ProjMAmp`, `ProjPAmp` (FFS scalar bilinears),
-  `ScalarProduct` (multi-factor products)
 - `dispatch.rs` `build_child` is `todo!()` for: `P` (momentum insertion) and `Identity` operators
 - Add determinism test (compile/eval ~20× → bit-identical results)
 

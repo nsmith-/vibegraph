@@ -514,7 +514,76 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
                 momentum: v1.momentum + v2.momentum,
             })
         }
-        _ => todo!("implement other Lorentz structures"),
+        LorentzEvalNode::ProjMAmp { i, j } => {
+            // Left-chiral scalar bilinear: ψ̄_i P_L ψ_j
+            // Node i is the row (barred) fermion; node j is the column fermion.
+            let WaveformSlot::Fermion(fi_row) =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
+            else {
+                panic!("expected fermion for ProjMAmp row (node {i})");
+            };
+            let WaveformSlot::Fermion(fi_col) =
+                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots)
+            else {
+                panic!("expected fermion for ProjMAmp col (node {j})");
+            };
+            let fo = fi_row.to_outgoing();
+            let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Left);
+            WaveformSlot::Scalar(ScalarWf {
+                value,
+                momentum: fo.momentum + fi_col.momentum,
+            })
+        }
+        LorentzEvalNode::ProjPAmp { i, j } => {
+            // Right-chiral scalar bilinear: ψ̄_i P_R ψ_j
+            let WaveformSlot::Fermion(fi_row) =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
+            else {
+                panic!("expected fermion for ProjPAmp row (node {i})");
+            };
+            let WaveformSlot::Fermion(fi_col) =
+                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots)
+            else {
+                panic!("expected fermion for ProjPAmp col (node {j})");
+            };
+            let fo = fi_row.to_outgoing();
+            let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Right);
+            WaveformSlot::Scalar(ScalarWf {
+                value,
+                momentum: fo.momentum + fi_col.momentum,
+            })
+        }
+        LorentzEvalNode::ScalarProduct { children } => {
+            // Implicit product of disconnected tensor factors.
+            // At most one child may be non-scalar; all others must be scalars.
+            let mut scalar_val = C::new(F::one(), F::zero());
+            let mut scalar_mom = LorentzVector([F::zero(); 4]);
+            let mut non_scalar = WaveformSlot::Empty;
+            for &child_idx in children {
+                let child = evaluate_lorentz_node(tree, tree.node(child_idx), input_slots, slots);
+                match child {
+                    WaveformSlot::Scalar(s) => {
+                        scalar_val = scalar_val * s.value;
+                        scalar_mom = scalar_mom + s.momentum;
+                    }
+                    WaveformSlot::Empty => {}
+                    other => {
+                        assert!(
+                            matches!(non_scalar, WaveformSlot::Empty),
+                            "ScalarProduct: at most one non-scalar child"
+                        );
+                        non_scalar = other;
+                    }
+                }
+            }
+            match non_scalar {
+                WaveformSlot::Empty => WaveformSlot::Scalar(ScalarWf {
+                    value: scalar_val,
+                    momentum: scalar_mom,
+                }),
+                other => scalar_val * other,
+            }
+        }
     }
 }
 
@@ -824,6 +893,85 @@ mod tests {
                 diff < 1e-10,
                 "GammaJout vs foxxx diff={diff} (hel {hel}, {charge:?})"
             );
+        }
+    }
+
+    /// Cross-check `ProjMAmp` / `ProjPAmp` nodes against the `iosxxx` reference routine.
+    ///
+    /// FFS1: ProjM(2,1) rooted at amplitude → ScalarProduct[ProjMAmp, Leg(3)]
+    /// FFS3: ProjP(2,1) rooted at amplitude → ScalarProduct[ProjPAmp, Leg(3)]
+    ///
+    /// Slot ordering: input_slots=[leg1_slot, leg2_slot, leg3_slot].
+    /// leg1 = fi (column/incoming), leg2 = fo (row/outgoing), leg3 = scalar.
+    /// iosxxx uses gc=[g,0] (left-only) for FFS1 and gc=[0,g] (right-only) for FFS3.
+    #[test]
+    fn test_eval_proj_amp_vs_iosxxx() {
+        use crate::helas::vertex::iosxxx;
+        use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
+        use num_complex::Complex64;
+
+        let mass = 0.511e-3_f64;
+        let p_fi = LorentzVector::from_pxpypzmass(30.0, 0.0, 40.0, mass);
+        let p_fo = LorentzVector::from_pxpypzmass(-20.0, 10.0, -30.0, mass);
+        let p_s = -(p_fi + p_fo);
+        let s_wf = ScalarWf {
+            value: Complex64::new(0.7, -0.3),
+            momentum: p_s,
+        };
+        let g = Complex64::new(1.0, 0.0);
+
+        let ffs1 = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::ProjM { i: 2, j: 1 }],
+        };
+        let ffs3 = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::ProjP { i: 2, j: 1 }],
+        };
+        let spins = [2, 2, 1];
+
+        let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
+        for (hel1, hel2) in iproduct!(hels, hels) {
+            for charge in [Charge::Particle, Charge::Antiparticle] {
+                let fo = OutDiracWf::new(p_fo, mass, hel1, charge);
+                let fi = InDiracWf::new(p_fi, mass, hel2, charge);
+
+                let left_ref = iosxxx(&fo, &fi, &s_wf, [g, Complex64::new(0.0, 0.0)]);
+                let right_ref = iosxxx(&fo, &fi, &s_wf, [Complex64::new(0.0, 0.0), g]);
+
+                // Build slots: leg1=fi (col), leg2=fo.to_incoming() (row), leg3=scalar
+                let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
+                slots[0] = WaveformSlot::Fermion(fi);
+                slots[1] = WaveformSlot::Fermion(fo.to_incoming());
+                slots[2] = WaveformSlot::Scalar(s_wf);
+                let input_slots = vec![0usize, 1, 2];
+
+                // FFS1: ProjM(2,1) → left bilinear × s
+                let tree1 = LorentzEvalTree::build_at_leg(&ffs1, &spins, None).unwrap();
+                let WaveformSlot::Scalar(got1) =
+                    evaluate_lorentz_node(&tree1, tree1.root(), &input_slots, &slots)
+                else {
+                    panic!("FFS1 did not produce a scalar");
+                };
+                let diff1 = (got1.value - left_ref).norm();
+                assert!(
+                    diff1 < 1e-10,
+                    "ProjMAmp vs iosxxx left diff={diff1} (hel {hel1},{hel2}, {charge:?})"
+                );
+
+                // FFS3: ProjP(2,1) → right bilinear × s
+                let tree3 = LorentzEvalTree::build_at_leg(&ffs3, &spins, None).unwrap();
+                let WaveformSlot::Scalar(got3) =
+                    evaluate_lorentz_node(&tree3, tree3.root(), &input_slots, &slots)
+                else {
+                    panic!("FFS3 did not produce a scalar");
+                };
+                let diff3 = (got3.value - right_ref).norm();
+                assert!(
+                    diff3 < 1e-10,
+                    "ProjPAmp vs iosxxx right diff={diff3} (hel {hel1},{hel2}, {charge:?})"
+                );
+            }
         }
     }
 }
