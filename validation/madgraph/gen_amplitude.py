@@ -24,6 +24,7 @@ Prerequisites:
 import sys
 import os
 import math
+import time
 import numpy as np
 
 # Allow importing compiled .so modules from this directory
@@ -42,6 +43,9 @@ MDL_WZ = 2.441404
 # Kinematic grid: 20×20, same as gen_reference.py
 SQRT_S_VALUES = np.linspace(10.0, 200.0, 20)
 COS_THETA_VALUES = np.linspace(-0.9, 0.9, 20)
+
+# Number of random points used for the batch timing benchmark.
+PROFILE_N = 10_000
 
 
 def make_momenta_ee_mumu(sqrt_s: float, cos_theta: float) -> np.ndarray:
@@ -67,6 +71,35 @@ def make_momenta_ee_mumu(sqrt_s: float, cos_theta: float) -> np.ndarray:
     return p
 
 
+def make_momenta_batch_ee_mumu(
+    sqrt_s_arr: np.ndarray, cos_theta_arr: np.ndarray
+) -> np.ndarray:
+    """Build a Fortran-contiguous (4, 4, N) batch array for MG_EVAL_M2_BATCH.
+
+    Axis layout: [4-momentum component, particle index, event index].
+    The first two axes match the (0:3, 4) P array expected by MATRIX1.
+    """
+    e = sqrt_s_arr / 2.0
+    sin_t = np.sqrt(np.maximum(0.0, 1.0 - cos_theta_arr**2))
+    n = len(sqrt_s_arr)
+    p = np.zeros((4, 4, n), dtype=np.float64, order="F")
+    # e+: (E, 0, 0, -E)
+    p[0, 0, :] = e
+    p[3, 0, :] = -e
+    # e-: (E, 0, 0, +E)
+    p[0, 1, :] = e
+    p[3, 1, :] = e
+    # mu+: (E, -E*sin_t, 0, -E*cos_t)
+    p[0, 2, :] = e
+    p[1, 2, :] = -e * sin_t
+    p[3, 2, :] = -e * cos_theta_arr
+    # mu-: (E, +E*sin_t, 0, +E*cos_t)
+    p[0, 3, :] = e
+    p[1, 3, :] = e * sin_t
+    p[3, 3, :] = e * cos_theta_arr
+    return p
+
+
 def gen_ee_to_mumu() -> list[tuple[float, float, float]]:
     """Evaluate MadGraph ee->mumu amplitude on the kinematic grid."""
     import mg_ee_to_mumu  # compiled by build_amplitude.sh
@@ -78,6 +111,36 @@ def gen_ee_to_mumu() -> list[tuple[float, float, float]]:
             m2 = mg_ee_to_mumu.mg_eval_m2(p, AEWM1, MDL_GF, MDL_MZ, MDL_WZ)
             rows.append((float(sqrt_s), float(cos_theta), float(m2)))
     return rows
+
+
+def profile_ee_to_mumu(n: int = PROFILE_N) -> None:
+    """Time MadGraph's MATRIX1 on a batch of N random kinematic points.
+
+    Uses the MG_EVAL_M2_BATCH entry point so common-block setup overhead is
+    paid once per batch rather than once per event.  Prints ns/eval to stdout.
+    """
+    import mg_ee_to_mumu
+
+    rng = np.random.default_rng(42)
+    sqrt_s_arr = rng.uniform(10.0, 200.0, n)
+    cos_theta_arr = rng.uniform(-0.9, 0.9, n)
+    p_batch = make_momenta_batch_ee_mumu(sqrt_s_arr, cos_theta_arr)
+
+    # Warm-up: triggers MATRIX1's first-call SAVE initialisation
+    p_warm = make_momenta_ee_mumu(50.0, 0.0)
+    mg_ee_to_mumu.mg_eval_m2(p_warm, AEWM1, MDL_GF, MDL_MZ, MDL_WZ)
+
+    t0 = time.perf_counter()
+    m2 = mg_ee_to_mumu.mg_eval_m2_batch(p_batch, AEWM1, MDL_GF, MDL_MZ, MDL_WZ)
+    t1 = time.perf_counter()
+
+    elapsed_ms = (t1 - t0) * 1e3
+    ns_per_eval = (t1 - t0) / n * 1e9
+    print(
+        f"MadGraph MATRIX1 (ee->mumu): {n} evals in {elapsed_ms:.2f} ms"
+        f"  ({ns_per_eval:.0f} ns/eval)"
+    )
+    _ = m2  # result available if caller needs it
 
 
 def write_csv(path: str, process_str: str, rows: list[tuple[float, float, float]]):
@@ -125,4 +188,7 @@ if __name__ == "__main__":
         rows,
     )
 
-    print("Done.")
+    print(f"\nProfiling batch evaluator ({PROFILE_N} random points)...")
+    profile_ee_to_mumu(PROFILE_N)
+
+    print("\nDone.")
