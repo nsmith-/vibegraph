@@ -1,5 +1,5 @@
 use crate::helas::repr::{
-    intertwiner::{GammaL, GammaR, GammaV, Intertwiner2Leg},
+    intertwiner::{GammaL, GammaR, Intertwiner2Leg},
     lorentz::{Bispinor, Chirality, ComplexVector, SpinorRepr},
     propagator::{DiracPropagator, Propagator, ScalarPropagator},
     r, Real, C,
@@ -213,24 +213,13 @@ pub fn fioxxx<F: Real>(
     // Accumulated momentum: q = fi.p + V.p (both inflow)
     let q = fi.momentum + v.momentum;
 
-    // Apply the vertex coupling × GammaV to the incoming fermion
-    // GammaV computes ε̸ ψ where ε is the vector polarization
-    let gv_psi = GammaV::apply(&(v.eps, fi.spinor));
-
-    // Create a DiracPropagator and propagate
+    // Vertex factor ε̸ ψ, then the (q̸ + m)/(q² − m² + imΓ) propagator, scaled by g.
+    let gv_psi = fi.spinor.slash(&v.eps);
     let prop = DiracPropagator { mass, width };
-    let prop_psi = prop.propagate(q.0, gv_psi.0);
-
-    // Scale by coupling: multiply by g
-    let scaled_psi = [
-        g * prop_psi[0],
-        g * prop_psi[1],
-        g * prop_psi[2],
-        g * prop_psi[3],
-    ];
+    let prop_psi = Bispinor(prop.propagate(q.0, gv_psi.0));
 
     // Output momentum: off-shell fermion carries momentum q (outflow convention)
-    OutDiracWf::from_spinor(Bispinor(scaled_psi), q)
+    OutDiracWf::from_spinor(prop_psi * g, q)
 }
 
 /// Off-shell fermion from outgoing fermion + vector boson.
@@ -258,23 +247,13 @@ pub fn foxxx<F: Real>(
     // Accumulated momentum: q = fo.p + V.p (outflow convention)
     let q = fo.momentum + v.momentum;
 
-    // Apply GammaV: ε̸ ψ
-    let gv_psi = GammaV::apply(&(v.eps, fo.spinor));
-
-    // Propagate
+    // Vertex factor ε̸ ψ, then the (q̸ + m)/(q² − m² + imΓ) propagator, scaled by g.
+    let gv_psi = fo.spinor.slash(&v.eps);
     let prop = DiracPropagator { mass, width };
-    let prop_psi = prop.propagate(q.0, gv_psi.0);
-
-    // Scale by coupling
-    let scaled_psi = [
-        g * prop_psi[0],
-        g * prop_psi[1],
-        g * prop_psi[2],
-        g * prop_psi[3],
-    ];
+    let prop_psi = Bispinor(prop.propagate(q.0, gv_psi.0));
 
     // Output momentum: off-shell fermion carries accumulated momentum (inflow convention)
-    InDiracWf::from_spinor(Bispinor(scaled_psi), q)
+    InDiracWf::from_spinor(prop_psi * g, q)
 }
 
 /// Off-shell vector from two vector bosons.

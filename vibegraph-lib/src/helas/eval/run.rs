@@ -445,6 +445,43 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
                 momentum: fo.momentum - fi.momentum,
             })
         }
+        LorentzEvalNode::GammaIout { mu, j } => {
+            // Off-shell fermion current ε̸ ψ from a vector (mu) and a column (flow-in) fermion (j).
+            // Output index is the row i; cf. `fioxxx`. The propagator (q̸+m)/D is a separate step.
+            let WaveformSlot::Vector(v) =
+                evaluate_lorentz_node(tree, tree.node(*mu), input_slots, slots)
+            else {
+                panic!("expected vector output from node {mu}");
+            };
+            let WaveformSlot::Fermion(f) =
+                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots)
+            else {
+                panic!("expected fermion output from node {j}");
+            };
+            WaveformSlot::Fermion(InDiracWf::from_spinor(
+                f.spinor.slash(&v.eps),
+                f.momentum + v.momentum,
+            ))
+        }
+        LorentzEvalNode::GammaJout { mu, i } => {
+            // Off-shell fermion current ε̸ ψ̄ from a vector (mu) and a row (flow-out) fermion (i).
+            // The input leg is the barred index, so adjoint it before slashing; cf. `foxxx`.
+            let WaveformSlot::Vector(v) =
+                evaluate_lorentz_node(tree, tree.node(*mu), input_slots, slots)
+            else {
+                panic!("expected vector output from node {mu}");
+            };
+            let WaveformSlot::Fermion(f) =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
+            else {
+                panic!("expected fermion output from node {i}");
+            };
+            let q = f.momentum + v.momentum;
+            WaveformSlot::Fermion(InDiracWf::from_spinor(
+                f.to_outgoing().spinor.slash(&v.eps),
+                q,
+            ))
+        }
         LorentzEvalNode::ProjM { i } => {
             let WaveformSlot::Fermion(f) =
                 evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
@@ -684,6 +721,109 @@ mod tests {
                     eprintln!("evaluated amplitude does not match: diff={diff:?}");
                 }
             }
+        }
+    }
+
+    /// Cross-check the off-shell fermion-current nodes (`GammaIout`/`GammaJout`)
+    /// against the `fioxxx`/`foxxx` reference routines.
+    ///
+    /// Rooting the FFV1 structure `Gamma(3,2,1)` at fermion leg 2 yields a
+    /// `GammaIout` node (input = column fermion leg 1) ≅ `fioxxx`; rooting at
+    /// leg 1 yields a `GammaJout` node (input = row fermion leg 2) ≅ `foxxx`.
+    /// The runtime applies the vertex factor and the Dirac propagator as two
+    /// steps, so we compare against the reference (which folds both in) with a
+    /// unit coupling. As in `test_eval_jioxxx`, the runtime carries the
+    /// propagated leg with the opposite momentum sign (incoming convention).
+    #[test]
+    fn test_eval_off_shell_fermion_vs_fioxxx() {
+        use crate::helas::eval::dispatch::LorentzEvalTree;
+        use crate::helas::vertex::{fioxxx, foxxx};
+        use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
+
+        let model = sm_model();
+        let evaluated = model.evaluate(&ParamCard::from_str("").unwrap());
+
+        // Off-shell fermion line propagates an electron.
+        let prop_id = model.particle_id("e-").unwrap();
+        let mass = evaluated.mass(prop_id);
+        let width = evaluated.width(prop_id);
+        let prop_info = PropInfo {
+            id: prop_id,
+            momentum_coeffs: vec![],
+        };
+
+        // FFV1: Gamma(3,2,1) — legs 1,2 fermions, leg 3 vector.
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::Gamma { mu: 3, i: 2, j: 1 }],
+        };
+        let spins = [2, 2, 3];
+        let g = Complex64::new(1.0, 0.0);
+
+        // Generic (unphysical) vector input — any ε works for an impl cross-check.
+        let v = VectorWf {
+            eps: ComplexVector([
+                Complex64::new(1.0, 0.0),
+                Complex64::new(0.5, 0.2),
+                Complex64::new(0.3, 0.1),
+                Complex64::new(0.4, 0.0),
+            ]),
+            momentum: LorentzVector::new(50.0, 10.0, 0.0, 20.0),
+        };
+        let p_f = LorentzVector::from_pxpypzmass(30.0, 0.0, 40.0, mass);
+
+        let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
+        for (hel, charge) in iproduct!(hels, [Charge::Particle, Charge::Antiparticle]) {
+            // ── GammaIout ≅ fioxxx: input is the flow-in column fermion (leg 1) ──
+            let fi = InDiracWf::new(p_f, mass, hel, charge);
+            let tree = LorentzEvalTree::build_at_leg(&term, &spins, Some(1)).unwrap();
+            assert!(matches!(tree.root(), LorentzEvalNode::GammaIout { .. }));
+
+            let input_slots = vec![0, 1, 2];
+            let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
+            slots[0] = WaveformSlot::Fermion(fi);
+            slots[2] = WaveformSlot::Vector(v);
+
+            let vertex = evaluate_lorentz_node(&tree, tree.root(), &input_slots, &slots);
+            let WaveformSlot::Fermion(got) = evaluate_propagation(&prop_info, &vertex, &evaluated)
+            else {
+                panic!("expected fermion from propagation");
+            };
+            let want = fioxxx(&fi, &v, g, mass, width);
+            assert_eq!(
+                got.momentum, -want.momentum,
+                "Iout momentum (hel {hel}, {charge:?})"
+            );
+            let diff: f64 = (got.spinor - want.spinor).0.iter().map(|x| x.norm()).sum();
+            assert!(
+                diff < 1e-10,
+                "GammaIout vs fioxxx diff={diff} (hel {hel}, {charge:?})"
+            );
+
+            // ── GammaJout ≅ foxxx: input is the flow-out row fermion (leg 2) ──
+            let fo = fi.to_outgoing();
+            let tree = LorentzEvalTree::build_at_leg(&term, &spins, Some(0)).unwrap();
+            assert!(matches!(tree.root(), LorentzEvalNode::GammaJout { .. }));
+
+            let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
+            slots[1] = WaveformSlot::Fermion(fi);
+            slots[2] = WaveformSlot::Vector(v);
+
+            let vertex = evaluate_lorentz_node(&tree, tree.root(), &input_slots, &slots);
+            let WaveformSlot::Fermion(got) = evaluate_propagation(&prop_info, &vertex, &evaluated)
+            else {
+                panic!("expected fermion from propagation");
+            };
+            let want = foxxx(&fo, &v, g, mass, width);
+            assert_eq!(
+                got.momentum, -want.momentum,
+                "Jout momentum (hel {hel}, {charge:?})"
+            );
+            let diff: f64 = (got.spinor - want.spinor).0.iter().map(|x| x.norm()).sum();
+            assert!(
+                diff < 1e-10,
+                "GammaJout vs foxxx diff={diff} (hel {hel}, {charge:?})"
+            );
         }
     }
 }
