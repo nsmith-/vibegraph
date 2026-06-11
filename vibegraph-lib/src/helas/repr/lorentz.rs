@@ -326,6 +326,13 @@ pub trait SpinorRepr<F: Real>: LorentzRepr<F> {
     /// Right projection: `P_R = (1 + γ^5)/2` — zero the left-chiral (indices 0-1) components.
     fn project_right(self) -> Self;
 
+    /// Apply the gamma-slash `v̸ = γ^μ v_μ`, returning `v̸ · self`.
+    ///
+    /// Used to attach a vector leg to a fermion line (the off-shell-current
+    /// vertex factor `γ^μ ε_μ`) and to build the Dirac propagator numerator
+    /// `q̸ + m`.
+    fn slash(self, v: &ComplexVector<F>) -> Self;
+
     /// Scalar bilinear with chiral structure: `f̄ Γ f` where Γ ∈ {Identity, P_L, P_R}.
     fn scalar_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> C<F>;
 
@@ -489,6 +496,34 @@ impl<F: Real> SpinorRepr<F> for Bispinor<F> {
             self.0[2],
             self.0[3],
         ])
+    }
+
+    /// Apply the gamma-slash `v̸ = γ^μ v_μ`.
+    ///
+    /// In the Weyl basis `γ^μ = [[0, σ̄^μ], [σ^μ, 0]]`, so the slash swaps the
+    /// chiral blocks: the left-chiral output is `(σ̄·v) ψ_R` and the right-chiral
+    /// output is `(σ·v) ψ_L`, with
+    /// `σ·v  = [[v₀+v₃, v₁−iv₂], [v₁+iv₂, v₀−v₃]]` and
+    /// `σ̄·v = [[v₀−v₃, −(v₁−iv₂)], [−(v₁+iv₂), v₀+v₃]]`.
+    fn slash(self, v: &ComplexVector<F>) -> Self {
+        let psi = &self.0;
+        let v = &v.0;
+        let i = ri(F::one());
+
+        // σ·v and σ̄·v share the v₁∓iv₂ off-diagonal entries.
+        let v0_p_v3 = v[0] + v[3];
+        let v0_m_v3 = v[0] - v[3];
+        let v1_m_iv2 = v[1] - i * v[2];
+        let v1_p_iv2 = v[1] + i * v[2];
+
+        // ψ_L ← (σ̄·v) ψ_R
+        let l1 = v0_m_v3 * psi[2] - v1_p_iv2 * psi[3];
+        let l2 = -v1_m_iv2 * psi[2] + v0_p_v3 * psi[3];
+        // ψ_R ← (σ·v) ψ_L
+        let r1 = v0_p_v3 * psi[0] + v1_m_iv2 * psi[1];
+        let r2 = v1_p_iv2 * psi[0] + v0_m_v3 * psi[1];
+
+        Bispinor([l1, l2, r1, r2])
     }
 
     /// Scalar bilinear contraction: `f̄ Γ f` where `Γ` encodes chirality.

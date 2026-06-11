@@ -38,6 +38,7 @@
 //! - Consider a `FeynmanGaugeVectorPropagator` for consistency checks vs.
 //!   `MasslessVectorPropagator`.
 
+use super::lorentz::{Bispinor, ComplexVector, LorentzVector, SpinorRepr};
 use super::{Real, C};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,52 +107,17 @@ impl<F: Real> Propagator<F> for DiracPropagator<F> {
     type Fiber = [C<F>; 4];
 
     fn propagate(&self, q: [F; 4], wf: [C<F>; 4]) -> [C<F>; 4] {
-        // q² in (+,−,−,−) metric
-        let q2 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
+        let q = LorentzVector(q);
         let m2 = self.mass * self.mass;
         let mw = self.mass * self.width;
 
         // Complex denominator: q² − m² + imΓ
-        let denom = C::new(q2 - m2, mw);
+        let denom = C::new(q.m2() - m2, mw);
 
-        // Extract Weyl components
-        let psi_l1 = wf[0];
-        let psi_l2 = wf[1];
-        let psi_r1 = wf[2];
-        let psi_r2 = wf[3];
-
-        let m_c = C::new(self.mass, F::zero());
-
-        // Compute q·σ components:
-        // q·σ = [[q₀+q₃,  q₁-iq₂],
-        //        [q₁+iq₂, q₀-q₃]]
-        let q0_q3_re = C::new(q[0] + q[3], F::zero());
-        let q0_q3_im = C::new(q[0] - q[3], F::zero());
-        let q1_iq2 = C::new(q[1], -q[2]);
-        let q1_miq2 = C::new(q[1], q[2]);
-
-        // Apply q·σ to ψ_L = [ψ_L1, ψ_L2]:
-        // result = [q0_q3 * ψ_L1 + q1_iq2 * ψ_L2, q1_miq2 * ψ_L1 + q0_mq3 * ψ_L2]
-        let qs_psi_l1 = q0_q3_re * psi_l1 + q1_iq2 * psi_l2;
-        let qs_psi_l2 = q1_miq2 * psi_l1 + q0_q3_im * psi_l2;
-
-        // Compute q·σ̄ components:
-        // q·σ̄ = [[q₀-q₃, -q₁+iq₂],
-        //         [-q₁-iq₂, q₀+q₃]]
-        // which is equivalent to [[q₀-q₃, -(q₁-iq₂)],
-        //                         [-(q₁+iq₂), q₀+q₃]]
-        let qsbar_psi_r1 = q0_q3_im * psi_r1 - q1_miq2 * psi_r2;
-        let qsbar_psi_r2 = -q1_iq2 * psi_r1 + q0_q3_re * psi_r2;
-
-        // Apply (q̸ + m):
-        // new_ψ_L = m·ψ_L + q·σ̄·ψ_R
-        // new_ψ_R = q·σ·ψ_L + m·ψ_R
-        let new_psi_l1 = (m_c * psi_l1 + qsbar_psi_r1) / denom;
-        let new_psi_l2 = (m_c * psi_l2 + qsbar_psi_r2) / denom;
-        let new_psi_r1 = (qs_psi_l1 + m_c * psi_r1) / denom;
-        let new_psi_r2 = (qs_psi_l2 + m_c * psi_r2) / denom;
-
-        [new_psi_l1, new_psi_l2, new_psi_r1, new_psi_r2]
+        // Numerator (q̸ + m) ψ via the gamma-slash, divided by the denominator.
+        let psi = Bispinor(wf);
+        let numerator = psi.slash(&ComplexVector::from(q)) + psi * C::new(self.mass, F::zero());
+        (numerator / denom).0
     }
 }
 

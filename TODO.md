@@ -53,9 +53,16 @@ Remaining work: extend node coverage for fermion-out currents, FFS/VVS scalars.
 14. ✅ **`helas_validation` extended test** updated to use `compute_m2_ee_mumu_dynamic`; agrees with Fortran HELAS to <1e-4.
 15. ✅ **`spin`/`charge` fields added to `ExtLegInfo`**; propagated from `topo_sort.rs`; removes redundant `ext_spins`/`ext_is_antiparticle` from `AmplitudeEvaluator`.
 
+**Completed (2026-06-11 session)**:
+16. ✅ **`SpinorRepr::slash`**: single γ-slash `v̸ = γ^μ v_μ` method; `DiracPropagator`,
+    `GammaV`, `fioxxx`/`foxxx` all share it (removed the duplicated `q·σ`/`gamma_v_apply` block algebra).
+17. ✅ **`GammaIout`/`GammaJout`** in `evaluate_lorentz_node`: off-shell fermion currents
+    (`fioxxx`/`foxxx` analogues). `Iout` slashes the column leg directly; `Jout` adjoints the row
+    leg first. Cross-checked vs `fioxxx`/`foxxx` to 1e-10 (`test_eval_off_shell_fermion_vs_fioxxx`).
+
 **Pending**:
-- `evaluate_lorentz_node` is `todo!()` for: `GammaIout`, `GammaJout` (off-shell fermion currents),
-  `ProjMAmp`, `ProjPAmp` (FFS scalar bilinears), `ScalarProduct` (multi-factor products)
+- `evaluate_lorentz_node` is `todo!()` for: `ProjMAmp`, `ProjPAmp` (FFS scalar bilinears),
+  `ScalarProduct` (multi-factor products)
 - `dispatch.rs` `build_child` is `todo!()` for: `P` (momentum insertion) and `Identity` operators
 - Add determinism test (compile/eval ~20× → bit-identical results)
 
