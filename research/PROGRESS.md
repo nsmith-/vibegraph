@@ -111,9 +111,18 @@ Two bugs fixed enabling quarks to compile through AmplitudeEvaluator:
 **Result**: `pp_to_ll_qcd0` INFO-passes with `max_rel_diff = 0.667 = 2/3`, exactly the expected
 color factor discrepancy: MadGraph returns 3×|M|² (color-summed), Rust returns |M|² (no color).
 
+## VEGAS cross-section migrated to AmplitudeEvaluator ✅
+
+`validate_vegas.rs` — new extended-validation test file:
+- `sigma_ee_mumu(evaluator, evaluated, sqrt_s, cos_range, neval, niter)` replaces the
+  old hardcoded `compute_m2_ee_mumu` in the VEGAS integrand; uses `eval_m2` directly
+- `sigma_qed_limit`: σ at √s=10 GeV agrees with QED formula 4πα²/3s to within 3%
+- `sigma_z_pole`: σ at √s=MZ (with MG5 acceptance cuts) agrees with 2025 pb to <0.1%
+- `validate_vegas`: regression test confirming AmplitudeEvaluator path gives same result
+
+Old `sigma_ee_mumu`, `sigma_ee_mumu_qed_limit`, `sigma_ee_mumu_z_pole` removed from
+`helas_validation.rs::extended`.
+
 ## Next steps for helas-generalize
 
-1. Replace `compute_m2_ee_mumu` calls with `AmplitudeEvaluator::eval_m2` in
-   production code; update phase-space loop signature
-2. Validate σ(e⁺e⁻→μ⁺μ⁻) unchanged vs hardcoded reference in `validate_vegas` test
-3. Colored processes in `helas_mg_validation` — blocked on color flow implementation
+1. Colored processes in `helas_mg_validation` — blocked on color flow implementation

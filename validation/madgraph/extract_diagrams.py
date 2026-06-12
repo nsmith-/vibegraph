@@ -76,6 +76,19 @@ def parse_configs_inc(path: str) -> Optional[Dict[str, Any]]:
     except OSError:
         return None
 
+    # Join Fortran 77 fixed-form continuation lines (non-blank char in column 6).
+    # MadGraph generates DATA statements that span lines for high-multiplicity processes.
+    joined_lines = []
+    for line in text.split("\n"):
+        if len(line) > 5 and line[5] not in (" ", "0") and line[0].upper() not in ("C", "!", "*"):
+            if joined_lines:
+                joined_lines[-1] = joined_lines[-1] + line[6:]
+            else:
+                joined_lines.append(line[6:])
+        else:
+            joined_lines.append(line)
+    text = "\n".join(joined_lines)
+
     # DATA MAPCONFIG(D)/V/  ← diagram number or DATA MAPCONFIG(0)/N/ for total
     re_mapconfig = re.compile(
         r"DATA\s+MAPCONFIG\s*\(\s*(\d+)\s*\)\s*/\s*(\d+)\s*/", re.IGNORECASE

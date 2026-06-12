@@ -106,12 +106,12 @@ Individual steps are also available:
 
 ### Rust Code Exploration
 
-**Prefer the rust-analyzer MCP server** for Rust code queries. It provides intelligent navigation:
+**Prefer the LSP tool** for Rust code queries when available. It provides intelligent navigation:
 - Find all references to a symbol
 - Type information and trait implementations
 - Accurate definition lookup and call hierarchies
 
-Fall back to Unix CLI tools (`grep`, `sed`, `find`, etc.) only when the MCP is unavailable or the query is simpler (e.g., finding a specific string literal).
+Fall back to Unix CLI tools (`grep`, `sed`, `find`, etc.) when the LSP is unavailable or the query is simpler (e.g., finding a specific string literal).
 
 ### General Search & Extraction
 
