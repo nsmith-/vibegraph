@@ -126,3 +126,28 @@ Old `sigma_ee_mumu`, `sigma_ee_mumu_qed_limit`, `sigma_ee_mumu_z_pole` removed f
 ## Next steps for helas-generalize
 
 1. Colored processes in `helas_mg_validation` — blocked on color flow implementation
+
+## Diagram generation performance — topology caching + charge filter ✅
+
+`generate_from_process_spec` now pre-generates abstract topologies once per `(n_ext, n_loops)`
+via `generate_topologies()`, then passes the cached `Vec<Topology>` to each subprocess via
+`DiagramGenerator::assign_topologies()`.  This avoids the O(n!) topology search being re-run
+for every concrete subprocess produced by alias expansion.
+
+For `p p > q q~ l+ l- l+ l-` (n_ext=8): 34,300 topologies in 4.86s (one-time cost).
+Without caching: ~11,520 subprocesses × 4.86s ≈ 15 hours. With caching: 4.86s + assign time.
+
+**Charge conservation pre-filter** added inside the alias-expansion loop: Σ Q_in == Σ Q_out
+(O(n) check). For the 8-leg EW process this prunes 11,520 → ~1,664 subprocesses before the
+expensive topology assignment step.
+
+**Remaining hot spot** (samply-profiled during pp→qq̃4l run): `feyngraph/src/diagram/workspace.rs:L122`
+in `AssignWorkspace::assign()`. The `.counts()` call (itertools) allocates a fresh
+`HashMap<particle_index, count>` per candidate vertex per topology. Fix: pre-compute in
+`AssignWorkspace::new()` — deferred to a dedicated feyngraph session.
+
+## pp_to_qq4l_qcd0 MadGraph validation ✅
+
+`validate_madgraph_diagrams::pp_to_qq4l_qcd0` validates `p p > q q~ l+ l- l+ l- QCD=0`
+(pure EW, 2→6) against MadGraph5 reference (2672 diagrams, subprocess `P1_qq_qqllll`).
+Reference generated with `pixi run -e madgraph build-diagrams` using `pp_to_qq4l_qcd0.mg5`.

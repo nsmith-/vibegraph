@@ -79,11 +79,21 @@ _Unblocks: Full CLI with process cards_
 
 ## 🟢 Later — polish and extensibility
 
-### `feyngraph-perf` — Investigate feyngraph allocation overhead
+### `feyngraph-perf` — Fix feyngraph allocation hot spot
 
-Profiling (`pixi run profile-diagrams`) shows the hot loop is feyngraph's recursive topology
-workspace. Two directions: try `mimalloc`/`tikv-jemallocator` (two-line change), or upstream
-a cargo feature to gate rayon for sequential callers.
+**Hot spot identified** (samply profile, pp→qq̃4l run): `workspace.rs:L122` in
+`AssignWorkspace::assign()` calls `.counts()` (itertools) on every candidate vertex for every
+topology for every subprocess. Each `.counts()` call allocates a fresh `HashMap<particle_index,
+count>`. For pp→qq̃4l: ~1,664 subprocesses × 34,300 topologies × O(vertices) = ~340M HashMap
+allocations. **Fix**: pre-compute per-vertex particle counts in `AssignWorkspace::new()` and
+reuse them in the inner loop. This is a change to the `feyngraph` submodule; deferred to a
+dedicated feyngraph session.
+
+Vibegraph-side mitigations already applied:
+- Topology caching: `generate_topologies()` called once per `n_ext`; all subprocesses share the
+  same `Vec<Topology>` via `DiagramGenerator::assign_topologies()`.
+- Charge conservation pre-filter: eliminates ~86% of alias-expanded candidates before topology
+  assignment (11,520 → ~1,664 for pp→qq̃4l).
 
 ### `lips-nbody` — n-body LIPS phase-space generator
 
