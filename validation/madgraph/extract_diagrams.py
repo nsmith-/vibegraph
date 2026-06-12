@@ -40,6 +40,18 @@ The topology encoding mirrors MadGraph's IFOREST/SPROP/TPRID arrays:
            the cluster is an s-channel propagator, tprop == 0)
   - tprop: PDG code of the t-channel propagator (0 means this cluster is
            an s-channel propagator)
+
+Diagram counts (``total_diagrams`` / ``diagrams_by_subprocess``) come from the
+``NGRAPHS`` parameter in the representative subprocess's matrix file
+(``matrix1_orig.f``): the true number of Feynman diagrams for subprocess index 1
+of each P-class.  This is deliberately *not* ``MAPCONFIG(0)`` from configs.inc —
+MAPCONFIG counts phase-space integration channels for the whole P-class (the
+union over every flavour variant in the class), which can exceed the
+per-subprocess diagram count (e.g. q q~ > q q~ l+ l- l+ l-: NGRAPHS=2316 for
+u u~ > u u~ ... vs MAPCONFIG(0)=2672 for the union).  We compare against the
+per-subprocess diagram count because that is what vibegraph enumerates for a
+single concrete subprocess.  ``topologies_by_subprocess`` still mirrors the
+configs.inc structure, so its entry count reflects the MAPCONFIG union.
 """
 
 import json
@@ -48,6 +60,41 @@ import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+
+# ---------------------------------------------------------------------------
+# matrix<N>.f NGRAPHS parser
+# ---------------------------------------------------------------------------
+
+# PARAMETER (NGRAPHS=2316)
+_RE_NGRAPHS = re.compile(r"PARAMETER\s*\(\s*NGRAPHS\s*=\s*(\d+)\s*\)", re.IGNORECASE)
+
+
+def parse_ngraphs(path: str) -> Optional[int]:
+    """Return the NGRAPHS value (number of Feynman diagrams) from a matrix .f file."""
+    try:
+        with open(path) as f:
+            text = f.read()
+    except OSError:
+        return None
+    m = _RE_NGRAPHS.search(text)
+    return int(m.group(1)) if m else None
+
+
+def representative_ngraphs(subprocess_path: str) -> Optional[int]:
+    """
+    Number of Feynman diagrams for the representative subprocess (index 1) of a
+    P-class directory, read from its matrix file.
+
+    MadGraph writes one matrix file per flavour variant in the class; index 1 is
+    the representative (the same one leshouche.inc lists first).  We prefer
+    ``matrix1_orig.f`` and fall back to ``template_matrix1.f``.
+    """
+    for fname in ("matrix1_orig.f", "template_matrix1.f"):
+        ng = parse_ngraphs(os.path.join(subprocess_path, fname))
+        if ng is not None:
+            return ng
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -192,14 +239,29 @@ def extract_from_output_dir(output_dir: str) -> Dict[str, Any]:
             if not (os.path.isdir(subprocess_path) and subprocess_name.startswith("P")):
                 continue
 
+            # Diagram count: true NGRAPHS of the representative subprocess (index 1),
+            # not MAPCONFIG(0) (which counts the integration-channel union over the
+            # whole P-class — see module docstring).
+            count = representative_ngraphs(subprocess_path)
+
             configs_path = os.path.join(subprocess_path, "configs.inc")
             parsed = parse_configs_inc(configs_path)
-            if parsed is None:
-                continue
 
-            count = parsed["n_diagrams"]
+            # Fall back to the configs.inc count only if no matrix file was found.
+            if count is None:
+                if parsed is None:
+                    continue
+                print(
+                    f"  ! {subprocess_name}: no matrix1 file, "
+                    f"falling back to MAPCONFIG(0)={parsed['n_diagrams']}",
+                    file=sys.stderr,
+                )
+                count = parsed["n_diagrams"]
+
             diagrams_by_subprocess[subprocess_name] = count
-            topologies_by_subprocess[subprocess_name] = parsed["diagrams"]
+            topologies_by_subprocess[subprocess_name] = (
+                parsed["diagrams"] if parsed is not None else []
+            )
             total_diagrams += count
 
     return {

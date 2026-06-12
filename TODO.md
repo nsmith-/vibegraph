@@ -95,6 +95,21 @@ Vibegraph-side mitigations already applied:
 - Charge conservation pre-filter: eliminates ~86% of alias-expanded candidates before topology
   assignment (11,520 → ~1,664 for pp→qq̃4l).
 
+### `madgraph-diagram-cmp-per-flavor` — Match subprocesses by flavor in diagram validation
+
+The `validate_madgraph_diagrams` reference count now uses the representative subprocess's
+true Feynman-diagram count (`NGRAPHS` from `matrix1_orig.f`), not `MAPCONFIG(0)` from
+`configs.inc` (which counts the phase-space integration-channel *union* across all flavor
+variants in a P-class — e.g. 2672 vs the actual 2316 for `u u~ > u u~ l+ l- l+ l-`).
+
+**Remaining gap**: the comparison still assumes vibegraph's first-enumerated subprocess in
+each particle-type group matches MadGraph's `matrix1` representative. That holds for the
+current process set but is fragile. Refinement: have `count_mg_style_topologies` (in
+`vibegraph-lib/tests/validate_madgraph_diagrams.rs`) match each vibegraph subprocess to the
+MadGraph variant with the same flavors (via `leshouche.inc` `IDUP`) rather than picking one
+representative per coarse particle-type class, and compare per-subprocess `NGRAPHS`. This
+would also let the test validate *all* 40 variants of the qq4l class instead of just one.
+
 ### `lips-nbody` — n-body LIPS phase-space generator
 
 Generalize phase-space sampling to 3+ final-state particles using recursive 2-body
