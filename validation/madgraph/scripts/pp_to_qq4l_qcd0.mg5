@@ -1,0 +1,7 @@
+# MadGraph5 batch script: p p > q q~ l+ l- l+ l- at LO, QCD=0
+# Pure electroweak: VBF Higgs (H→ZZ→4l), ZZ/WZ associated production, quark EW radiation
+# Define light-quark aliases (b omitted to keep subprocess count manageable)
+define q = u d s c
+define q~ = u~ d~ s~ c~
+generate p p > q q~ l+ l- l+ l- QCD=0
+output pp_to_qq4l_qcd0 -nojpeg

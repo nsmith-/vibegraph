@@ -41,6 +41,6 @@ harness = false
 required-features = ["extended-validation"]
 
 [[test]]
-name = "helas_mg_validation"
+name = "validate_helas_mg"
 harness = false
 required-features = ["extended-validation"]

@@ -38,10 +38,9 @@ validate a second process (e.g. uū→dd̄) vs MadGraph.
   check uses `pdg_code < 0` (not `charge > 0`, which is wrong for up-type quarks)
 
 **Remaining tasks**:
-1. Replace calls to `compute_m2_ee_mumu` with `AmplitudeEvaluator::eval_m2`
-2. Update phase-space loop to pass `&DiagramSet` and `&EvaluatedModel`
-3. Validate σ(e⁺e⁻→μ⁺μ⁻) unchanged vs hardcoded reference (`validate_vegas` test)
-4. Colored processes in `helas_mg_validation` — blocked on color flow implementation
+1. ✅ Replace calls to `compute_m2_ee_mumu` with `AmplitudeEvaluator::eval_m2` in the VEGAS integrand (`validate_vegas.rs`)
+2. ✅ Break out VEGAS cross-section tests into `validate_vegas.rs` (`sigma_qed_limit`, `sigma_z_pole`, `validate_vegas`)
+3. Colored processes in `helas_mg_validation` — blocked on color flow implementation
 
 **Future: hadronic cross section for pp→ll requires PDF sampling**:
 - Amplitude validation only tests u ū → l⁺ l⁻ (one parton flavor).  A hadronic σ

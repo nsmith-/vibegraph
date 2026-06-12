@@ -52,7 +52,7 @@ build-amplitude = { cmd = "bash validation/madgraph/build_amplitude.sh", depends
 # Evaluate compiled matrix elements on a fixed kinematic grid and write reference CSVs
 generate-amplitude = { cmd = "python validation/madgraph/gen_amplitude.py", depends-on = ["build-amplitude"] }
 # Full pipeline: build amplitudes, generate reference CSVs, run Rust comparison tests
-validate-helas-mg = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test helas_mg_validation", depends-on = ["generate-amplitude"] }
+validate-helas-mg = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_helas_mg", depends-on = ["generate-amplitude"] }
 
 # --- helas-validation: Fortran77 HELAS compiled via f2py for amplitude cross-checks ---
 [feature.helas-validation.dependencies]
@@ -66,7 +66,7 @@ build-helas = "cd validation/helas && bash build.sh"
 # Generate HELAS reference data: produces reference.npz and reference.csv
 generate-helas = { cmd = "cd validation/helas && python gen_reference.py", depends-on = ["build-helas"] }
 # Full pipeline: build f2py extension, generate reference data, then run extended Rust tests
-validate-helas = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test helas_validation", depends-on = ["generate-helas"] }
+validate-helas = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_helas", depends-on = ["generate-helas"] }
 
 [environments]
 nougat = { features = ["nougat"], solve-group = "nougat" }
