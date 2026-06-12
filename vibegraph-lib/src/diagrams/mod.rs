@@ -29,6 +29,8 @@ pub use parse::{
 use std::path::Path;
 
 use feyngraph::diagram::DiagramContainer;
+use feyngraph::topology::{Topology, TopologyGenerator, TopologyModel};
+use feyngraph::DiagramGenerator;
 use thiserror::Error;
 
 use crate::ufo::UFOModel;
@@ -113,9 +115,15 @@ fn generate_from_process_spec(
     model: &UFOModel,
     aliases: &AliasTable,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
+    // Generate abstract graph topologies once for this (n_external, n_loops=0) combination.
+    // All concrete subprocesses share the same topology set; reusing it avoids re-running
+    // the O(n!) topology search for every one of the potentially thousands of particle
+    // assignments produced by alias expansion (e.g. p p > q q~ l+ l- l+ l- has ~11k combos).
+    let n_ext = spec.initial.len() + spec.final_state.len();
+    let cached_topologies = generate_topologies(n_ext, &model.topo);
+
     if spec.coupling_constraints.is_empty() {
         // No explicit constraints: discover the minimum WEIGHTED order.
-        let n_ext = spec.initial.len() + spec.final_state.len();
         let min_hier = model.order_hierarchy.values().copied().min().unwrap_or(1) as usize;
         let max_hier = model.order_hierarchy.values().copied().max().unwrap_or(2) as usize;
         let min_w = (n_ext - 2) * min_hier;
@@ -123,7 +131,7 @@ fn generate_from_process_spec(
 
         let mut w = min_w;
         loop {
-            let sets = generate_sets_inner(spec, model, aliases, Some(w))?;
+            let sets = generate_sets_inner(spec, model, aliases, Some(w), &cached_topologies)?;
             if sets.iter().any(|s| !s.diagrams.is_empty()) {
                 return Ok(sets);
             }
@@ -133,19 +141,36 @@ fn generate_from_process_spec(
             w += 1;
         }
     } else {
-        generate_sets_inner(spec, model, aliases, None)
+        generate_sets_inner(spec, model, aliases, None, &cached_topologies)
     }
+}
+
+/// Pre-generate all abstract graph topologies for `n_ext` external legs at tree level.
+/// Result is cached by the caller and passed into `generate_sets_inner` to avoid
+/// recomputing the topology search (which is O(n!) in the number of internal vertices)
+/// for every concrete subprocess.
+fn generate_topologies(n_ext: usize, topo_model: &feyngraph::model::Model) -> Vec<Topology> {
+    let container =
+        TopologyGenerator::new(n_ext, 0, TopologyModel::from(topo_model), None).generate();
+    (0..container.len())
+        .map(|i| container.get(i).clone())
+        .collect()
 }
 
 /// Inner generation loop: expand aliases, deduplicate mirror processes, and call
 /// feyngraph for each concrete subprocess.  `max_weighted` (when `Some`) adds an
 /// extra diagram filter that rejects any diagram whose WEIGHTED order exceeds the
 /// given bound.
+///
+/// `cached_topologies` must be pre-computed by the caller via `generate_topologies`.
+/// Coupling constraints are enforced during particle assignment, not topology
+/// generation, so no topology filtering is needed here.
 fn generate_sets_inner(
     spec: &ProcessSpec,
     model: &UFOModel,
     aliases: &AliasTable,
     max_weighted: Option<usize>,
+    cached_topologies: &[Topology],
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     let mut sets = Vec::new();
     // Deduplicate on (sorted_initial, final_state): skip only when both the
@@ -162,6 +187,21 @@ fn generate_sets_inner(
         initial_sorted.sort();
         let key = (initial_sorted, concrete.final_state.clone());
         if !seen_processes.insert(key) {
+            continue;
+        }
+
+        // Charge conservation: skip subprocesses that can't conserve electric charge.
+        // This fast O(n) check prunes the majority of alias-expanded candidates before
+        // the expensive topology-assignment step (e.g. ~90% of pp→qq~4l subprocesses).
+        let particle_charge =
+            |name: &str| -> f64 { model.particles.get(name).map(|p| p.charge).unwrap_or(0.0) };
+        let q_in: f64 = concrete.initial.iter().map(|p| particle_charge(p)).sum();
+        let q_out: f64 = concrete
+            .final_state
+            .iter()
+            .map(|p| particle_charge(p))
+            .sum();
+        if (q_in - q_out).abs() > 1e-6 {
             continue;
         }
 
@@ -186,13 +226,13 @@ fn generate_sets_inner(
         let in_refs: Vec<&str> = concrete.initial.iter().map(String::as_str).collect();
         let out_refs: Vec<&str> = concrete.final_state.iter().map(String::as_str).collect();
 
-        let diagrams = feyngraph::generate_diagrams(
-            &in_refs,
-            &out_refs,
-            0, // LO tree-level only
-            model.topo.clone(),
-            sel,
-        )?;
+        let generator =
+            DiagramGenerator::new(&in_refs, &out_refs, 0, model.topo.clone(), Some(sel))?;
+        // assign_topologies only errors on n_external/n_loops mismatch, which can't
+        // happen here since cached_topologies was built for the same n_ext and n_loops=0.
+        let diagrams = generator
+            .assign_topologies(cached_topologies)
+            .expect("topology cache n_external/n_loops mismatch — impossible by construction");
 
         sets.push(DiagramSet {
             particles_in: concrete.initial,
