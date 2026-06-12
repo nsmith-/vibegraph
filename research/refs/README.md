@@ -62,7 +62,7 @@ git commit -m "research: add <name> reference"
 
 ## Papers
 
-Fetched papers live in `papers/` (gitignored). Run the fetch script to download all reference PDFs and HTML snapshots:
+Fetched papers live in `papers/` (gitignored). Run the fetch script to download all reference PDFs and markdown snapshots:
 
 ```bash
 bash research/refs/fetch-papers.sh
@@ -70,13 +70,13 @@ bash research/refs/fetch-papers.sh
 
 | Key | Description | Format |
 |---|---|---|
-| `aloha` | ALOHA helicity amplitude generator (arXiv:1108.2041) | HTML (ar5iv) |
-| `ufo` | Universal FeynRules Output format (arXiv:1108.2040) | HTML (ar5iv) |
-| `madgraph5` | MadGraph5_aMC@NLO | HTML (ar5iv) |
-| `madgraph_orig` | Original MadGraph (Stelzer & Long) | HTML (ar5iv) |
+| `aloha` | ALOHA helicity amplitude generator (arXiv:1108.2041) | markdown |
+| `ufo` | Universal FeynRules Output format (arXiv:1108.2040) | markdown |
+| `madgraph5` | MadGraph5_aMC@NLO | markdown |
+| `madgraph_orig` | Original MadGraph (Stelzer & Long) | markdown |
 | `helas` | HELAS manual (KEK-91-11, scanned PDF) | PDF |
-| `vegas` | VEGAS+ adaptive importance sampling | HTML (ar5iv) |
-| `mcreview` | Monte Carlo methods review | HTML (ar5iv) |
+| `vegas` | VEGAS+ adaptive importance sampling | markdown |
+| `mcreview` | Monte Carlo methods review | markdown |
 
 ## OCR for scanned PDFs (HELAS)
 

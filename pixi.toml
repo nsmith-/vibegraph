@@ -68,7 +68,13 @@ generate-helas = { cmd = "cd validation/helas && python gen_reference.py", depen
 # Full pipeline: build f2py extension, generate reference data, then run extended Rust tests
 validate-helas = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_helas", depends-on = ["generate-helas"] }
 
+# --- MarkItDown: CLI tool for converting to markdown files ---
+[feature.markitdown.dependencies]
+python = ">=3.10,<3.12"
+markitdown = "*"
+
 [environments]
 nougat = { features = ["nougat"], solve-group = "nougat" }
 madgraph = { features = ["madgraph"], solve-group = "madgraph" }
 helas-validation = { features = ["helas-validation"], solve-group = "helas-validation" }
+markitdown = { features = ["markitdown"], solve-group = "markitdown" }

@@ -57,9 +57,12 @@ fetch_one() {
   local size
   size=$(wc -c < "$outfile")
   echo "  Saved: $outfile (${size} bytes)"
-  # Write a small index stub alongside
-  printf '# %s\n# Source: %s\n\n(%s saved as %s.%s)\n' \
-    "$desc" "$url" "$ext" "$key" "$ext" > "$PAPERS_DIR/${key}.md"
+  # Convert HTML to markdown using MarkItDown (Python tool installed in pixi)
+  if [[ "$ext" == "html" ]]; then
+    pixi run -e markitdown markitdown $outfile --output "$PAPERS_DIR/${key}.md"
+    echo "  Converted to markdown: ${key}.md"
+    rm "$outfile"  # Remove original HTML file
+  fi
 }
 
 if [[ $# -gt 0 ]]; then
