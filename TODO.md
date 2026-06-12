@@ -40,7 +40,30 @@ validate a second process (e.g. uū→dd̄) vs MadGraph.
 **Remaining tasks**:
 1. ✅ Replace calls to `compute_m2_ee_mumu` with `AmplitudeEvaluator::eval_m2` in the VEGAS integrand (`validate_vegas.rs`)
 2. ✅ Break out VEGAS cross-section tests into `validate_vegas.rs` (`sigma_qed_limit`, `sigma_z_pole`, `validate_vegas`)
-3. Colored processes in `helas_mg_validation` — blocked on color flow implementation
+3. 🔴 **Off-shell current with non-last output leg gives wrong |M|²** (blocks 2→6).
+   Found via the new `uux_to_ccx_emmm_qcd0` 2→6 validation: the evaluator now *runs*
+   for 8-leg processes (fixed a leg-index crash in `topo_sort::walk_vertex` — the
+   output leg was skipped instead of placeholdered in `input_slots`, misaligning the
+   1-based `Leg(i)` references), but the result is wrong by ~1e10 for all points.
+   `ee_to_mumu`/`pp_to_ll` only ever produce the *last* leg (s-channel boson) as an
+   off-shell output, so they never exercised this. Suspect the rooted off-shell-current
+   dispatch (`dispatch.rs`) and/or output-momentum routing is only correct when the
+   output is the last leg. `uux` is informational in `validate_helas_mg` until fixed.
+4. ✅ **Single-color-flow validation via scalar color factor.** For NCOLOR=1 processes,
+   `MG = CF(1,1)·eval_m2_rust` (e.g. Nc=3 for `pp_to_ll`, Nc²=9 for `uux_to_ccx`).
+   `validate_helas_mg::color_factor` applies it; `pp_to_ll_qcd0` now *enforced* (was
+   informational), matching at cf=3. True multi-flow color (e.g. same-flavor
+   `u u~ > u u~`, NCOLOR=2) still needs a color-flow implementation.
+5. ✅ **Generic MadGraph wrapper + n-body validation infra.**
+   - `wrappers/generic.f`: one f2py wrapper for any process — calls `setpara` (couplings
+     from `param_card.dat`, no hand-coded `GC_*`) and links the launch-built `libmodel.a`.
+     Validated bit-for-bit against the old `ee`/`pp_to_ll` wrappers.
+   - `scripts/uux_to_ccx_emmm_qcd0.mg5`: dedicated single-flow 2→6 (`u u~ > c c~ e+ e- mu+ mu-`,
+     QCD=0); `launch` with `lpp=0`, √s=500 → optimized matrix element + partonic σ̂ =
+     6.556e-7 pb (future `validate-vegas` reference).
+   - `gen_amplitude.py`: RAMBO n-body momenta + momenta-based CSV schema (`# n_ext:` header).
+   - `build_amplitude.sh`: `compile_process_generic`.
+   - Follow-up: migrate `ee`/`pp_to_ll` off their bespoke wrappers to `generic.f`.
 
 **Future: hadronic cross section for pp→ll requires PDF sampling**:
 - Amplitude validation only tests u ū → l⁺ l⁻ (one parton flavor).  A hadronic σ

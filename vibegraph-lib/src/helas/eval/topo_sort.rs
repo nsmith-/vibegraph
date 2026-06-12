@@ -126,7 +126,14 @@ impl<'a> TopoContext<'a> {
                     panic!("An external leg cannot be the result leg for a vertex");
                 }
                 (true, Either::Right(_)) => {
-                    // This is the propagator we came from
+                    // This is the result (output) leg — the propagator we came from.
+                    // It has no input wavefunction yet, but we must keep `slots`
+                    // aligned with the vertex's leg ordering so the rooted Lorentz
+                    // structure's 1-based Leg(i) references resolve correctly even
+                    // when the output is not the last leg (e.g. an off-shell fermion
+                    // current). This placeholder is never read: an off-shell current
+                    // never references its own output leg as an input.
+                    slots.push(usize::MAX);
                 }
             }
         }
