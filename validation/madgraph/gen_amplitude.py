@@ -167,6 +167,97 @@ def gen_pp_to_ll_qcd0() -> list[tuple[float, float, float]]:
     return rows
 
 
+def rambo_massless(n: int, sqrt_s: float, rng: np.random.Generator) -> np.ndarray:
+    """RAMBO: n massless 4-momenta distributed flat in phase space, summing to
+    (sqrt_s, 0, 0, 0).  Returns an (n, 4) array with [E, px, py, pz] rows.
+
+    Standard Kleiss-Stirling-van der Bij construction: isotropic massless q_i,
+    then a single boost+scale maps Σq_i onto the CM frame at total energy sqrt_s.
+    """
+    q = np.zeros((n, 4))
+    for i in range(n):
+        cth = 2.0 * rng.random() - 1.0
+        phi = 2.0 * math.pi * rng.random()
+        sth = math.sqrt(max(0.0, 1.0 - cth * cth))
+        e = -math.log(max(1e-300, rng.random() * rng.random()))
+        q[i] = [e, e * sth * math.cos(phi), e * sth * math.sin(phi), e * cth]
+
+    big_q = q.sum(axis=0)
+    mass = math.sqrt(big_q[0] ** 2 - big_q[1:] @ big_q[1:])
+    b = -big_q[1:] / mass
+    gamma = big_q[0] / mass
+    a = 1.0 / (1.0 + gamma)
+    x = sqrt_s / mass
+
+    p = np.zeros((n, 4))
+    for i in range(n):
+        bq = b @ q[i, 1:]
+        p[i, 0] = x * (gamma * q[i, 0] + bq)
+        p[i, 1:] = x * (q[i, 1:] + b * q[i, 0] + a * bq * b)
+    return p
+
+
+def gen_nbody(
+    module, process_str: str, n_final: int, sqrt_s: float, npoints: int, seed: int
+) -> tuple[int, list[list[float]]]:
+    """Evaluate an n-body MadGraph amplitude over RAMBO phase-space points.
+
+    Incoming legs 1,2 are massless beams along ±z at energy sqrt_s/2 (matching
+    the generic wrapper / launch run_card with lpp=0).  Returns (n_ext, rows)
+    where each row is [m2, E0,px0,py0,pz0, E1,...] over all n_ext legs.
+    """
+    import os as _os
+
+    n_ext = 2 + n_final
+    card = _os.path.join(
+        OUTPUT_DIR, "..", "output", process_str_to_dir(process_str), "Cards", "param_card.dat"
+    )
+    card = _os.path.abspath(card)
+    rng = np.random.default_rng(seed)
+    e_beam = sqrt_s / 2.0
+
+    rows: list[list[float]] = []
+    for _ in range(npoints):
+        out = rambo_massless(n_final, sqrt_s, rng)
+        p = np.zeros((4, n_ext), dtype=np.float64, order="F")
+        p[:, 0] = [e_beam, 0.0, 0.0, e_beam]   # leg 1 (incoming)
+        p[:, 1] = [e_beam, 0.0, 0.0, -e_beam]  # leg 2 (incoming)
+        for j in range(n_final):
+            p[:, 2 + j] = out[j]
+        m2 = float(module.mg_eval_m2(p, card))
+        row = [m2]
+        for leg in range(n_ext):
+            row.extend(float(x) for x in p[:, leg])
+        rows.append(row)
+    return n_ext, rows
+
+
+def process_str_to_dir(process_str: str) -> str:
+    """Map a process string to its output directory name (registry-driven)."""
+    return NBODY_DIR_BY_PROCESS[process_str]
+
+
+# Registry of n-body processes: process string -> output dir name.
+NBODY_DIR_BY_PROCESS = {
+    "u u~ > c c~ e+ e- mu+ mu-": "uux_to_ccx_emmm_qcd0",
+}
+
+
+def write_csv_nbody(path: str, process_str: str, n_ext: int, rows: list[list[float]]):
+    """Write a momenta-based CSV: header carries n_ext, each row is m2 + all
+    leg 4-momenta.  Distinct from the 2->2 (sqrt_s, cos_theta) schema."""
+    comps = ",".join(
+        f"{c}{leg}" for leg in range(n_ext) for c in ("E", "px", "py", "pz")
+    )
+    with open(path, "w") as f:
+        f.write(f"# process: {process_str}\n")
+        f.write(f"# n_ext: {n_ext}\n")
+        f.write(f"m2_summed,{comps}\n")
+        for row in rows:
+            f.write(",".join(repr(v) for v in row) + "\n")
+    print(f"Wrote {len(rows)} rows ({n_ext} legs) to {path}")
+
+
 def write_csv(path: str, process_str: str, rows: list[tuple[float, float, float]]):
     with open(path, "w") as f:
         f.write(f"# process: {process_str}\n")
@@ -221,6 +312,20 @@ if __name__ == "__main__":
         os.path.join(OUTPUT_DIR, "pp_to_ll_qcd0_amplitude.csv"),
         "u u~ > mu+ mu-",
         rows_qq,
+    )
+
+    print("\nGenerating u u~ > c c~ e+ e- mu+ mu- (QCD=0) 2->6 amplitude reference...")
+    import mg_uux_to_ccx_emmm_qcd0  # compiled by build_amplitude.sh (generic wrapper)
+
+    proc = "u u~ > c c~ e+ e- mu+ mu-"
+    n_ext, rows_6 = gen_nbody(
+        mg_uux_to_ccx_emmm_qcd0, proc, n_final=6, sqrt_s=500.0, npoints=50, seed=7
+    )
+    write_csv_nbody(
+        os.path.join(OUTPUT_DIR, "uux_to_ccx_emmm_qcd0_amplitude.csv"),
+        proc,
+        n_ext,
+        rows_6,
     )
 
     print("\nDone.")

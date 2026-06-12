@@ -1,0 +1,27 @@
+# MadGraph5 batch script: u u~ > c c~ e+ e- mu+ mu- at LO, QCD=0
+# Single-flavor, single-subprocess version of pp_to_qq4l for HELAS amplitude validation.
+#
+# Why this exact process:
+#   - Different-flavor quark lines (u vs c) + diagonal CKM => only the s-channel
+#     EW connection between the two quark lines => a single color flow (NCOLOR=1).
+#     This is reproducible by vibegraph's coherent diagram sum without color-flow code.
+#   - Distinct leptons (e, mu) => no identical final-state particles, so MadGraph's
+#     IDEN is pure spin*color averaging (4*9=36) with no symmetry factor.
+#   - One concrete subprocess => the matrix element is matrix1 (no matrix9 to extract).
+#
+# This is a MadEvent output (default), so `launch` also yields the total cross
+# section for a future validate-vegas reference.
+generate u u~ > c c~ e+ e- mu+ mu- QCD=0
+output uux_to_ccx_emmm_qcd0 -nojpeg
+# launch compiles the process (producing the helicity-recycled matrix1_optim.f
+# for the optimized-routine timing comparison) and integrates the cross section
+# (a future validate-vegas reference).  lpp=0 => no PDF: fixed-energy partonic
+# beams (u, u~) so the result is the partonic sigma-hat, directly comparable to
+# vibegraph's partonic VEGAS integral.
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

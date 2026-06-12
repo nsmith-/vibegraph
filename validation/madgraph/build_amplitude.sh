@@ -55,6 +55,54 @@ compile_process() {
     echo "  -> $OUTDIR/mg_${name}*.so"
 }
 
+# compile_process_generic NAME SUBPROCESS_DIR
+#   Generic build: links matrix1_optim.f + the shared wrappers/generic.f +
+#   the Source/MODEL coupling routines (so SETPARA resolves).  No per-process
+#   Fortran or hand-coded couplings.  Use for any process whose external legs
+#   are all 2-helicity (massless fermions/vectors).
+compile_process_generic() {
+    local name="$1"
+    local subproc="$2"
+    local pdir="$MG_OUTPUT/$name/SubProcesses/$subproc"
+    local libdir="$MG_OUTPUT/$name/lib"
+    local model="$MG_OUTPUT/$name/Source/MODEL"
+    local wrapper="$WRAPPERS/generic.f"
+
+    if [ ! -f "$pdir/matrix1_optim.f" ]; then
+        echo "SKIP $name: matrix1_optim.f not found (did the .mg5 script 'launch'?)"
+        return 0
+    fi
+    if [ ! -f "$libdir/libmodel.a" ]; then
+        echo "SKIP $name: libmodel.a not found (did the .mg5 script 'launch'?)"
+        return 0
+    fi
+
+    echo "Building mg_${name} (generic, subprocess $subproc)..."
+
+    # f2py scans only matrix1_optim.f + the wrapper; the model coupling routines
+    # (SETPARA/COUP/lha_read) are linked from the precompiled libmodel.a that
+    # `launch` builds, so f2py never has to parse their complex PARAMETER decls.
+    pushd "$pdir" > /dev/null
+    python -m numpy.f2py \
+        -c \
+        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I." \
+        "matrix1_optim.f" \
+        "$wrapper" \
+        -L"$libdir" -lmodel -ldhelas \
+        -m "mg_${name}"
+
+    mv mg_${name}*.so "$OUTDIR/"
+    popd > /dev/null
+    : "$model"  # (model dir no longer needed; kept for clarity)
+
+    echo "  -> $OUTDIR/mg_${name}*.so"
+}
+
+# uux_to_ccx_emmm_qcd0: u u~ > c c~ e+ e- mu+ mu- (QCD=0).  Different-flavor
+# quarks => single color flow (NCOLOR=1); built with the generic wrapper.
+# MATRIX1 includes the CF(1,1)=9 color factor; vibegraph applies it on its side.
+compile_process_generic uux_to_ccx_emmm_qcd0 P1_qq_qqllll
+
 # ee_to_mumu: pure QED/EW process, no color — expected to match Rust eval_m2
 compile_process ee_to_mumu P1_ll_ll
 
