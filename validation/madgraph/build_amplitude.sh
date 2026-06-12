@@ -58,9 +58,9 @@ compile_process() {
 # ee_to_mumu: pure QED/EW process, no color — expected to match Rust eval_m2
 compile_process ee_to_mumu P1_ll_ll
 
-# Future (colored processes — scaffold only, not expected to agree until color is
-# implemented in vibegraph):
-# compile_process pp_to_ll  P1_ll_ll
-# compile_process pp_to_bb  P1_bb_gg
+# pp_to_ll_qcd0: u u~ > l+ l- via gamma/Z (QCD=0).  MATRIX1 includes CF=3 quark
+# color factor; Rust omits color, so agreement is informational until color is
+# implemented in vibegraph.
+compile_process pp_to_ll_qcd0 P1_qq_ll
 
 echo "Done building amplitude modules."

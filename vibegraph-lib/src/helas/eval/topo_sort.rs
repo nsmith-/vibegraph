@@ -60,14 +60,16 @@ impl<'a> TopoContext<'a> {
             .expect("particle not found");
 
         let model_particle = self.model.particle(particle_id);
-        // check charge consistency between feyngraph and UFOModel
+        // Check that feyngraph's is_anti flag is consistent with the UFO model.
+        // Use pdg_code < 0 (not charge sign) because up-type quarks have positive
+        // charge yet are particles (is_anti=false), breaking the charge-based check.
         assert_eq!(
             particle.is_anti(),
-            model_particle.charge > 0.0,
-            "Charge mismatch for particle {}: feyngraph is_anti={} but UFOModel charge={}",
+            model_particle.pdg_code < 0,
+            "Antiparticle mismatch for {}: feyngraph is_anti={} but UFOModel pdg_code={}",
             particle.name(),
             particle.is_anti(),
-            model_particle.charge
+            model_particle.pdg_code
         );
 
         EvalStep::ExternalWf {

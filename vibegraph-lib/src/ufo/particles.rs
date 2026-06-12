@@ -305,9 +305,13 @@ b.loop_particles = [[['t']]]
 
     #[test]
     fn test_charge_fraction() {
-        // charge = -1/3 is a BinOp in the AST, so charge defaults to 0.0
+        // charge = -1/3 is a BinOp; extract_float now handles simple arithmetic.
         let ps = parse_particles(LOOP_SM_FRAGMENT).unwrap();
-        // -1/3 is not a simple constant — charge falls back to 0.0
-        let _ = ps[0].charge; // just ensure no panic
+        let tol = 1e-9;
+        assert!(
+            (ps[0].charge - (-1.0 / 3.0)).abs() < tol,
+            "expected charge ≈ -1/3, got {}",
+            ps[0].charge
+        );
     }
 }
