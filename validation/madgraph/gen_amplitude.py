@@ -143,6 +143,30 @@ def profile_ee_to_mumu(n: int = PROFILE_N) -> None:
     _ = m2  # result available if caller needs it
 
 
+def gen_pp_to_ll_qcd0() -> list[tuple[float, float, float]]:
+    """Evaluate MadGraph u u~ > mu+ mu- amplitude on the kinematic grid.
+
+    The subprocess P1_qq_ll covers u u~, c c~ > e+ e-, mu+ mu- (same coupling
+    structure: up-type quarks, massless limit).  MATRIX1 returns CF*sum_hel|M|^2
+    where CF=3 is the quark color factor; this is NOT divided by IDEN=36.
+
+    Momentum layout (columns match Rust make_momenta_2to2 and Fortran MATRIX1):
+      col 0: u   → (E,  0,       0,  -E)
+      col 1: u~  → (E,  0,       0,  +E)
+      col 2: mu+ → (E, -E*sin_t, 0,  -E*cos_t)
+      col 3: mu- → (E, +E*sin_t, 0,  +E*cos_t)
+    """
+    import mg_pp_to_ll_qcd0  # compiled by build_amplitude.sh
+
+    rows = []
+    for sqrt_s in SQRT_S_VALUES:
+        for cos_theta in COS_THETA_VALUES:
+            p = make_momenta_ee_mumu(float(sqrt_s), float(cos_theta))
+            m2 = mg_pp_to_ll_qcd0.mg_eval_m2(p, AEWM1, MDL_GF, MDL_MZ, MDL_WZ)
+            rows.append((float(sqrt_s), float(cos_theta), float(m2)))
+    return rows
+
+
 def write_csv(path: str, process_str: str, rows: list[tuple[float, float, float]]):
     with open(path, "w") as f:
         f.write(f"# process: {process_str}\n")
@@ -190,5 +214,13 @@ if __name__ == "__main__":
 
     print(f"\nProfiling batch evaluator ({PROFILE_N} random points)...")
     profile_ee_to_mumu(PROFILE_N)
+
+    print("\nGenerating pp->ll QCD=0 amplitude reference (u u~ > mu+ mu-)...")
+    rows_qq = gen_pp_to_ll_qcd0()
+    write_csv(
+        os.path.join(OUTPUT_DIR, "pp_to_ll_qcd0_amplitude.csv"),
+        "u u~ > mu+ mu-",
+        rows_qq,
+    )
 
     print("\nDone.")

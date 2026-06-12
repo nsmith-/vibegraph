@@ -39,7 +39,8 @@ pub fn extract_int(expr: &ast::Expr) -> Option<i64> {
     }
 }
 
-/// Extract a float/int constant from an expression, handling unary negation.
+/// Extract a float/int constant from an expression, handling unary negation
+/// and simple binary arithmetic (including fractional charges like `2/3`).
 pub fn extract_float(expr: &ast::Expr) -> Option<f64> {
     match expr {
         ast::Expr::Constant(ast::ExprConstant {
@@ -55,6 +56,19 @@ pub fn extract_float(expr: &ast::Expr) -> Option<f64> {
             operand,
             ..
         }) => extract_float(operand).map(|f| -f),
+        ast::Expr::BinOp(ast::ExprBinOp {
+            left, op, right, ..
+        }) => {
+            let l = extract_float(left)?;
+            let r = extract_float(right)?;
+            match op {
+                ast::Operator::Div => Some(l / r),
+                ast::Operator::Mult => Some(l * r),
+                ast::Operator::Add => Some(l + r),
+                ast::Operator::Sub => Some(l - r),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }

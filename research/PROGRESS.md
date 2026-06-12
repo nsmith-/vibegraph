@@ -97,6 +97,20 @@ correct diagram topology and coupling structure; any real bug gives >1% deviatio
 linker requires them even though we never call `SMATRIX1`. Both are stubbed in the
 wrapper file with trivial return values.
 
+## pp_to_ll_qcd0 validation added ✅
+
+`wrappers/pp_to_ll_qcd0.f` — f2py wrapper for u ū → l⁺ l⁻ (QCD=0, subprocess P1_qq_ll).
+Sets quark couplings `GC_2 = (2i/3)*ee` (photon) and `GC_58 = -(i*ee*sw)/(6*cw)` (Z right),
+plus existing lepton couplings (GC_3, GC_50, GC_59). MATRIX1 includes color factor CF=3.
+
+Two bugs fixed enabling quarks to compile through AmplitudeEvaluator:
+- `ast_util.rs extract_float`: added BinOp handling so `charge = 2/3` parses as 0.666..., not 0.0
+- `topo_sort.rs make_externalwf`: replaced `charge > 0` antiparticle check with `pdg_code < 0`
+  (charge sign is wrong for up-type quarks which have +2/3 but are particles, not antiparticles)
+
+**Result**: `pp_to_ll_qcd0` INFO-passes with `max_rel_diff = 0.667 = 2/3`, exactly the expected
+color factor discrepancy: MadGraph returns 3×|M|² (color-summed), Rust returns |M|² (no color).
+
 ## Next steps for helas-generalize
 
 1. Replace `compute_m2_ee_mumu` calls with `AmplitudeEvaluator::eval_m2` in
