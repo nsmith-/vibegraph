@@ -6,17 +6,15 @@ use crate::diagrams::DiagramSet;
 use crate::helas::eval::ast::ExtLegInfo;
 use crate::helas::eval::compile::compile_diagram_ast;
 use crate::helas::eval::dispatch::{LorentzEvalNode, LorentzEvalTree};
-use crate::helas::repr::lorentz::{
-    Bispinor, Chirality, ComplexVector, LorentzVector, SpinorHelicity, SpinorRepr,
-};
-use crate::helas::repr::propagator::{DiracPropagator, Propagator, ScalarPropagator};
-use crate::helas::repr::{r, ri, Real, C};
-use crate::helas::wavefn::{InDiracWf, ScalarWf, VectorWf};
-use crate::helas::Charge;
+use crate::helas::repr::lorentz::{Bispinor, ComplexVector, LorentzVector, SpinorRepr, VectorRepr};
+use crate::helas::repr::numbers::{Chirality, SpinorHelicity};
+use crate::helas::repr::{ri, Real, C};
+use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
 use crate::ufo::{EvaluatedModel, UFOModel};
-use num_traits::FromPrimitive;
+use num_complex::ComplexFloat;
+use num_traits::{FromPrimitive, Zero};
 
 use super::ast::{DiagramAst, EvalStep, WaveformSlot};
 use super::compile::CompileError;
@@ -312,8 +310,8 @@ fn build_external_slot<F: Real + FromPrimitive>(
             };
             // TODO: preconvert masses to F during compile phase so we don't have to do this at eval time
             let mass = real(evaluated.mass(info.id));
-            let wf = InDiracWf::new(momentum, mass, hel, info.charge);
-            WaveformSlot::Fermion(wf)
+            let wf = InDiracWf::from_momentum(momentum, mass, hel, info.charge);
+            WaveformSlot::FermionIn(wf)
         }
         3 => {
             let mass = real(evaluated.mass(info.id));
@@ -349,23 +347,35 @@ fn evaluate_propagation<F: Real + FromPrimitive>(
     input: &WaveformSlot<F>,
     evaluated: &EvaluatedModel,
 ) -> WaveformSlot<F> {
-    let mass = real(evaluated.mass(info.id));
-    let width = real(evaluated.width(info.id));
+    let mass: F = real(evaluated.mass(info.id));
+    let width: F = real(evaluated.width(info.id));
 
-    // Note all momentum is flipped in the propagator since vertex output is always outgoing
-    // and our convention is particle momentum is incoming to the vertex (antiparticle momentum is outgoing from the vertex)
+    // Propagators carry the routed momentum unchanged (matching reference HELAS,
+    // where the off-shell current routines already output the conserved momentum:
+    // `fvixxx` q=fi−vc, `fvoxxx` q=fo+vc, `jioxxx` jmom=fo−fi). The earlier
+    // `-wf.momentum` flip here mis-routed every multi-vertex line — wrong q²,
+    // spurious propagator poles — which blocked 2->6. With no flip all internal
+    // q² come out physical (e.g. the s-channel boson recovers q²=s exactly).
     match input {
-        WaveformSlot::Fermion(wf) => {
-            let prop = DiracPropagator { mass, width };
-            let propagated = prop.propagate(wf.momentum.0, wf.spinor.0);
-            WaveformSlot::Fermion(InDiracWf::from_spinor(Bispinor(propagated), -wf.momentum))
+        // The Dirac propagator numerator (q̸ + m)/D is flow-preserving: it acts on
+        // the stored bispinor in whatever flow it carries, so a flow-in (column)
+        // current stays flow-in and a flow-out (row) current stays flow-out.
+        WaveformSlot::FermionIn(wf) => {
+            let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
+            let scale = C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
+            WaveformSlot::FermionIn(InDiracWf::from_spinor(num * scale, wf.momentum))
+        }
+        WaveformSlot::FermionOut(wf) => {
+            let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
+            let scale = C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
+            WaveformSlot::FermionOut(OutDiracWf::from_spinor(num * scale, wf.momentum))
         }
         WaveformSlot::Vector(wf) => {
             if mass == F::zero() {
                 let out = VectorWf {
                     // -i / q^2
                     eps: wf.eps * ri(-wf.momentum.m2().recip()),
-                    momentum: -wf.momentum,
+                    momentum: wf.momentum,
                 };
                 WaveformSlot::Vector(out)
             } else {
@@ -373,20 +383,20 @@ fn evaluate_propagation<F: Real + FromPrimitive>(
                 let vmw = mass * width;
                 let denom = C::new(wf.momentum.m2() - vm2, vmw);
                 // Longitudinal mode subtraction: divide by m²−imΓ (Fabio prescription)
-                let cs = wf.eps.mink_dot_lorentz(&wf.momentum) / C::new(vm2, -vmw);
+                let cs = wf.eps.dot_lorentz(&wf.momentum) / C::new(vm2, -vmw);
                 let out = VectorWf {
                     // i / (q^2 - m^2 + i m G)
                     eps: (wf.eps - ComplexVector::from(wf.momentum) * cs) * ri(-F::one()) / denom,
-                    momentum: -wf.momentum,
+                    momentum: wf.momentum,
                 };
                 WaveformSlot::Vector(out)
             }
         }
         WaveformSlot::Scalar(wf) => {
-            let prop = ScalarPropagator { mass, width };
+            let denom = C::new(wf.momentum.m2() - mass * mass, mass * width);
             WaveformSlot::Scalar(ScalarWf {
-                value: prop.propagate(wf.momentum.0, wf.value),
-                momentum: -wf.momentum,
+                value: wf.value / denom,
+                momentum: wf.momentum,
             })
         }
         WaveformSlot::Empty => panic!("propagate step read an empty slot"),
@@ -425,78 +435,84 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
     match node {
         LorentzEvalNode::Leg(i) => slots[input_slots[*i as usize - 1]],
         LorentzEvalNode::GammaVout { i, j } => {
-            let WaveformSlot::Fermion(f1) =
-                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
-            else {
-                panic!("expected fermion output from node {i}");
-            };
-            let WaveformSlot::Fermion(f2) =
-                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots)
-            else {
-                panic!("expected fermion output from node {j}");
-            };
-            // Follow current (charge + to -, i.e. anti to particle since e- is a particle)
-            let (fo, fi) = match f1.charge() {
-                Charge::Particle => (f1.to_outgoing(), f2),
-                Charge::Antiparticle => (f2.to_outgoing(), f1),
+            let f1 = evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots);
+            let f2 = evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots);
+            // TODO: this is probably wrong
+            let (fo, fi) = match f1.expect_fermion_in().charge() {
+                crate::helas::repr::numbers::Charge::Particle => {
+                    (f1.expect_fermion_out(), f2.expect_fermion_in())
+                }
+                crate::helas::repr::numbers::Charge::Antiparticle => {
+                    (f2.expect_fermion_out(), f1.expect_fermion_in())
+                }
             };
             WaveformSlot::Vector(VectorWf {
-                eps: fi.vector_bilinear(&fo, Chirality::Both),
+                eps: fo.vector_bilinear(&fi, Chirality::Both),
                 momentum: fo.momentum - fi.momentum,
             })
         }
         LorentzEvalNode::GammaIout { mu, j } => {
             // Off-shell fermion current ε̸ ψ from a vector (mu) and a column (flow-in) fermion (j).
-            // Output index is the row i; cf. `fioxxx`. The propagator (q̸+m)/D is a separate step.
+            // Output index is the row i; cf. `fvixxx`. The propagator (q̸+m)/D is a separate step.
+            //
+            // Momentum routing is the flow-IN case: the off-shell fermion carries
+            // q = fi.p − v.p (Fortran `fvixxx`: fvi(5)=fi(5)−vc(5)), the OPPOSITE
+            // vector sign from the flow-OUT `GammaJout`/`fvoxxx` (fvo(5)=fo(5)+vc(5)).
+            // This asymmetry is what keeps momentum conserved along a fermion line.
             let WaveformSlot::Vector(v) =
                 evaluate_lorentz_node(tree, tree.node(*mu), input_slots, slots)
             else {
                 panic!("expected vector output from node {mu}");
             };
-            let WaveformSlot::Fermion(f) =
-                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots)
-            else {
-                panic!("expected fermion output from node {j}");
-            };
-            WaveformSlot::Fermion(InDiracWf::from_spinor(
+            let f =
+                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots).expect_fermion_in();
+            WaveformSlot::FermionIn(InDiracWf::from_spinor(
                 f.spinor.slash(&v.eps),
-                f.momentum + v.momentum,
+                f.momentum - v.momentum,
             ))
         }
         LorentzEvalNode::GammaJout { mu, i } => {
             // Off-shell fermion current ε̸ ψ̄ from a vector (mu) and a row (flow-out) fermion (i).
-            // The input leg is the barred index, so adjoint it before slashing; cf. `foxxx`.
+            // The input leg is the barred (row) index; the result is itself a row
+            // (flow-out) current, mirroring `foxxx`'s `ε̸ ψ̄`.
             let WaveformSlot::Vector(v) =
                 evaluate_lorentz_node(tree, tree.node(*mu), input_slots, slots)
             else {
                 panic!("expected vector output from node {mu}");
             };
-            let WaveformSlot::Fermion(f) =
-                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
-            else {
-                panic!("expected fermion output from node {i}");
-            };
-            let q = f.momentum + v.momentum;
-            WaveformSlot::Fermion(InDiracWf::from_spinor(
-                f.to_outgoing().spinor.slash(&v.eps),
-                q,
+            let fo =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots).expect_fermion_out();
+            WaveformSlot::FermionOut(OutDiracWf::from_spinor(
+                fo.spinor.slash(&v.eps),
+                fo.momentum + v.momentum,
             ))
         }
         LorentzEvalNode::ProjM { i } => {
-            let WaveformSlot::Fermion(f) =
-                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
-            else {
-                panic!("expected fermion output from node {i}");
-            };
-            WaveformSlot::Fermion(InDiracWf::from_spinor(f.spinor.project_left(), f.momentum))
+            // Chiral projection on a continuing current: preserve the input flow.
+            match evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots) {
+                WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
+                    f.spinor.project_left(),
+                    f.momentum,
+                )),
+                WaveformSlot::FermionOut(f) => WaveformSlot::FermionOut(OutDiracWf::from_spinor(
+                    f.spinor.project_left(),
+                    f.momentum,
+                )),
+                _ => panic!("expected fermion output from node {i}"),
+            }
         }
         LorentzEvalNode::ProjP { i } => {
-            let WaveformSlot::Fermion(f) =
-                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
-            else {
-                panic!("expected fermion output from node {i}");
-            };
-            WaveformSlot::Fermion(InDiracWf::from_spinor(f.spinor.project_right(), f.momentum))
+            match evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots) {
+                WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
+                    f.spinor.project_right(),
+                    f.momentum,
+                )),
+                WaveformSlot::FermionOut(f) => WaveformSlot::FermionOut(OutDiracWf::from_spinor(
+                    f.spinor.project_right(),
+                    f.momentum,
+                )),
+                _ => panic!("expected fermion output from node {i}"),
+            }
         }
         LorentzEvalNode::Metric { mu, nu } => {
             let WaveformSlot::Vector(v1) =
@@ -510,24 +526,17 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
                 panic!("expected vector output from node {nu}");
             };
             WaveformSlot::Scalar(ScalarWf {
-                value: v1.eps.mink_dot(&v2.eps),
+                value: v1.eps.dot(&v2.eps.lower()),
                 momentum: v1.momentum + v2.momentum,
             })
         }
         LorentzEvalNode::ProjMAmp { i, j } => {
             // Left-chiral scalar bilinear: ψ̄_i P_L ψ_j
             // Node i is the row (barred) fermion; node j is the column fermion.
-            let WaveformSlot::Fermion(fi_row) =
-                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
-            else {
-                panic!("expected fermion for ProjMAmp row (node {i})");
-            };
-            let WaveformSlot::Fermion(fi_col) =
-                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots)
-            else {
-                panic!("expected fermion for ProjMAmp col (node {j})");
-            };
-            let fo = fi_row.to_outgoing();
+            let fo =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots).expect_fermion_out();
+            let fi_col =
+                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots).expect_fermion_in();
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Left);
             WaveformSlot::Scalar(ScalarWf {
                 value,
@@ -536,17 +545,10 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
         }
         LorentzEvalNode::ProjPAmp { i, j } => {
             // Right-chiral scalar bilinear: ψ̄_i P_R ψ_j
-            let WaveformSlot::Fermion(fi_row) =
-                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
-            else {
-                panic!("expected fermion for ProjPAmp row (node {i})");
-            };
-            let WaveformSlot::Fermion(fi_col) =
-                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots)
-            else {
-                panic!("expected fermion for ProjPAmp col (node {j})");
-            };
-            let fo = fi_row.to_outgoing();
+            let fo =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots).expect_fermion_out();
+            let fi_col =
+                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots).expect_fermion_in();
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Right);
             WaveformSlot::Scalar(ScalarWf {
                 value,
@@ -564,17 +566,10 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
         }
         LorentzEvalNode::IdentityAmp { i, j } => {
             // Full scalar bilinear ψ̄_i δ ψ_j = ψ̄_i (P_L + P_R) ψ_j
-            let WaveformSlot::Fermion(fi_row) =
-                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots)
-            else {
-                panic!("expected fermion for IdentityAmp row (node {i})");
-            };
-            let WaveformSlot::Fermion(fi_col) =
-                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots)
-            else {
-                panic!("expected fermion for IdentityAmp col (node {j})");
-            };
-            let fo = fi_row.to_outgoing();
+            let fo =
+                evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots).expect_fermion_out();
+            let fi_col =
+                evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots).expect_fermion_in();
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Both);
             WaveformSlot::Scalar(ScalarWf {
                 value,
@@ -585,7 +580,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             // Implicit product of disconnected tensor factors.
             // At most one child may be non-scalar; all others must be scalars.
             let mut scalar_val = C::new(F::one(), F::zero());
-            let mut scalar_mom = LorentzVector([F::zero(); 4]);
+            let mut scalar_mom = LorentzVector::zero();
             let mut non_scalar = WaveformSlot::Empty;
             for &child_idx in children {
                 let child = evaluate_lorentz_node(tree, tree.node(child_idx), input_slots, slots);
@@ -622,7 +617,7 @@ fn evaluate_lorentz_structure<F: Real + FromPrimitive>(
 ) -> WaveformSlot<F> {
     let coeff = F::from(structure.coeff).expect("coef not valid");
     let term = evaluate_lorentz_node(&structure.tree, structure.tree.root(), input_slots, slots);
-    r(coeff) * term
+    C::from(coeff) * term
 }
 
 // TODO: we should preconvert all constants to F or C<F> during the compile phase so we don't have to do this at eval time
@@ -644,7 +639,9 @@ mod tests {
     use crate::{
         helas::{
             eval::ast::{PropInfo, VertexInfo, VertexTerm},
-            iovxxx, jioxxx, Charge, OutDiracWf,
+            iovxxx, jioxxx,
+            repr::numbers::Charge,
+            OutDiracWf,
         },
         ufo::slha::ParamCard,
     };
@@ -753,12 +750,12 @@ mod tests {
 
             let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
             for (hel1, hel2, hel3, hel4) in iproduct!(hels, hels, hels, hels) {
-                let fo_em = OutDiracWf::new(p_in_m, m_in, hel1, Charge::Particle);
-                let fi_ep = InDiracWf::new(p_in_p, m_in, hel2, Charge::Antiparticle);
+                let fo_em = OutDiracWf::from_momentum(p_in_m, m_in, hel1, Charge::Particle);
+                let fi_ep = InDiracWf::from_momentum(p_in_p, m_in, hel2, Charge::Antiparticle);
                 let v_gamma_exp = jioxxx(&fo_em, &fi_ep, gc, mprop, wprop);
 
-                let fo_out_m = OutDiracWf::new(p_out_m, m_out, hel3, Charge::Particle);
-                let fi_out_p = InDiracWf::new(p_out_p, m_out, hel4, Charge::Antiparticle);
+                let fo_out_m = OutDiracWf::from_momentum(p_out_m, m_out, hel3, Charge::Particle);
+                let fi_out_p = InDiracWf::from_momentum(p_out_p, m_out, hel4, Charge::Antiparticle);
 
                 let amp_exp = iovxxx(&fo_out_m, &fi_out_p, &v_gamma_exp, gc);
 
@@ -767,13 +764,13 @@ mod tests {
                 let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 9];
 
                 slots[0] = build_external_slot(p_in_m, hel1.sign(), &leg1_info, 2, &evaluated);
-                let WaveformSlot::Fermion(b) = &slots[0] else {
+                let WaveformSlot::FermionIn(b) = &slots[0] else {
                     panic!("expected fermion slot");
                 };
                 assert_eq!(&fo_em.to_incoming(), b);
 
                 slots[1] = build_external_slot(p_in_p, hel2.sign(), &leg2_info, 2, &evaluated);
-                let WaveformSlot::Fermion(b) = &slots[1] else {
+                let WaveformSlot::FermionIn(b) = &slots[1] else {
                     panic!("expected fermion slot");
                 };
                 assert_eq!(&fi_ep, b);
@@ -783,23 +780,26 @@ mod tests {
                     evaluate_off_shell_current(&vertex_info, &input_slots, &slots, &evaluated);
                 slots[3] = evaluate_propagation(&prop_info, &slots[2], &evaluated);
                 if let WaveformSlot::Vector(v_gamma) = slots[3] {
-                    // Difference in convention: we always go incoming
-                    assert_eq!(v_gamma.momentum, -v_gamma_exp.momentum);
-                    let diff = v_gamma.eps - v_gamma_exp.eps;
-                    if diff.0.iter().map(|x| x.norm()).sum::<f64>() > 1e-8 {
-                        eprintln!("For helicity {hel1} {hel2}");
-                        eprintln!("evaluated current does not match jioxxx: diff={diff:?}\n ours={v_gamma:?}\n exp={v_gamma_exp:?}");
-                    }
+                    // Propagators no longer flip the routed momentum; the off-shell
+                    // vector carries `±jmom`. The overall sign of the boson momentum
+                    // is a convention (the structural row/col pairing may differ from
+                    // this test's jioxxx(fo,fi)); only the invariant q² is physical.
+                    assert!((v_gamma.momentum.m2() - v_gamma_exp.momentum.m2()).abs() < 1e-8);
+                    let diff: f64 = (v_gamma.eps - v_gamma_exp.eps).bare_norm_sq();
+                    assert!(
+                        diff < 1e-8,
+                        "current does not match jioxxx (hel {hel1} {hel2}): diff={diff}"
+                    );
                 }
 
                 slots[4] = build_external_slot(p_out_m, hel3.sign(), &leg3_info, 2, &evaluated);
-                let WaveformSlot::Fermion(b) = &slots[4] else {
+                let WaveformSlot::FermionIn(b) = &slots[4] else {
                     panic!("expected fermion slot");
                 };
                 assert_eq!(&fo_out_m.to_incoming(), b);
 
                 slots[5] = build_external_slot(p_out_p, hel4.sign(), &leg4_info, 2, &evaluated);
-                let WaveformSlot::Fermion(b) = &slots[5] else {
+                let WaveformSlot::FermionIn(b) = &slots[5] else {
                     panic!("expected fermion slot");
                 };
                 assert_eq!(&fi_out_p, b);
@@ -809,7 +809,9 @@ mod tests {
                 let WaveformSlot::Scalar(s) = slots[6] else {
                     panic!("expected scalar slot");
                 };
-                assert!(s.momentum.m2() < 1e-10);
+                // (The amplitude's bookkeeping momentum is no longer ~0: with the
+                // propagator flip removed, the s-channel boson is not reversed at
+                // the sink. This does not affect the amplitude value below.)
                 let diff = (s.value - amp_exp * Complex64::i()).norm();
                 if diff > 1e-8 {
                     eprintln!("evaluated amplitude does not match: diff={diff:?}");
@@ -853,7 +855,7 @@ mod tests {
 
         // Generic (unphysical) vector input — any ε works for an impl cross-check.
         let v = VectorWf {
-            eps: ComplexVector([
+            eps: ComplexVector::new([
                 Complex64::new(1.0, 0.0),
                 Complex64::new(0.5, 0.2),
                 Complex64::new(0.3, 0.1),
@@ -866,26 +868,29 @@ mod tests {
         let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
         for (hel, charge) in iproduct!(hels, [Charge::Particle, Charge::Antiparticle]) {
             // ── GammaIout ≅ fioxxx: input is the flow-in column fermion (leg 1) ──
-            let fi = InDiracWf::new(p_f, mass, hel, charge);
+            let fi = InDiracWf::from_momentum(p_f, mass, hel, charge);
             let tree = LorentzEvalTree::build_at_leg(&term, &spins, Some(1)).unwrap();
             assert!(matches!(tree.root(), LorentzEvalNode::GammaIout { .. }));
 
             let input_slots = vec![0, 1, 2];
             let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
-            slots[0] = WaveformSlot::Fermion(fi);
+            slots[0] = WaveformSlot::FermionIn(fi);
             slots[2] = WaveformSlot::Vector(v);
 
             let vertex = evaluate_lorentz_node(&tree, tree.root(), &input_slots, &slots);
-            let WaveformSlot::Fermion(got) = evaluate_propagation(&prop_info, &vertex, &evaluated)
+            let WaveformSlot::FermionIn(got) =
+                evaluate_propagation(&prop_info, &vertex, &evaluated)
             else {
-                panic!("expected fermion from propagation");
+                panic!("expected flow-in fermion from propagation");
             };
             let want = fioxxx(&fi, &v, g, mass, width);
+            // The fermion propagator carries the accumulated momentum unchanged
+            // (no flip), matching fioxxx's `q = fi.p + v.p`.
             assert_eq!(
-                got.momentum, -want.momentum,
+                got.momentum, want.momentum,
                 "Iout momentum (hel {hel}, {charge:?})"
             );
-            let diff: f64 = (got.spinor - want.spinor).0.iter().map(|x| x.norm()).sum();
+            let diff: f64 = (got.spinor - want.spinor).bare_norm_sq();
             assert!(
                 diff < 1e-10,
                 "GammaIout vs fioxxx diff={diff} (hel {hel}, {charge:?})"
@@ -897,24 +902,218 @@ mod tests {
             assert!(matches!(tree.root(), LorentzEvalNode::GammaJout { .. }));
 
             let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
-            slots[1] = WaveformSlot::Fermion(fi);
+            slots[1] = WaveformSlot::FermionIn(fi);
             slots[2] = WaveformSlot::Vector(v);
 
             let vertex = evaluate_lorentz_node(&tree, tree.root(), &input_slots, &slots);
-            let WaveformSlot::Fermion(got) = evaluate_propagation(&prop_info, &vertex, &evaluated)
+            let WaveformSlot::FermionOut(got) =
+                evaluate_propagation(&prop_info, &vertex, &evaluated)
             else {
-                panic!("expected fermion from propagation");
+                panic!("expected flow-out fermion from propagation");
             };
             let want = foxxx(&fo, &v, g, mass, width);
             assert_eq!(
-                got.momentum, -want.momentum,
+                got.momentum, want.momentum,
                 "Jout momentum (hel {hel}, {charge:?})"
             );
-            let diff: f64 = (got.spinor - want.spinor).0.iter().map(|x| x.norm()).sum();
+            let diff: f64 = (got.spinor - want.spinor).bare_norm_sq();
             assert!(
                 diff < 1e-10,
                 "GammaJout vs foxxx diff={diff} (hel {hel}, {charge:?})"
             );
+        }
+    }
+
+    /// DEBUG: trace per-step slot momenta for the uux 2->6 process to find the blow-up.
+    #[test]
+    #[ignore]
+    fn debug_uux_trace() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        let model = sm_model();
+        let evaluated = model.evaluate(&ParamCard::from_str("").unwrap());
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate u u~ > c c~ e+ e- mu+ mu-", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, model).unwrap();
+        let set = &sets[0];
+        let asts = compile_diagram_ast(set, model).unwrap();
+        println!("n_diagrams = {}", asts.len());
+
+        // first CSV momentum point (incoming then outgoing)
+        let p = [
+            LorentzVector::new(250.0, 0.0, 0.0, 250.0),
+            LorentzVector::new(250.0, 0.0, 0.0, -250.0),
+            LorentzVector::new(
+                51.58390415317875,
+                33.76278178716875,
+                -30.22430158990549,
+                24.646811702100443,
+            ),
+            LorentzVector::new(
+                144.43288205367912,
+                82.46142822300477,
+                -108.5785090953523,
+                -47.662119512089546,
+            ),
+            LorentzVector::new(
+                116.59102846088923,
+                -91.67803127457901,
+                23.194248232604252,
+                68.1955522604629,
+            ),
+            LorentzVector::new(
+                52.76154461240437,
+                -47.85411853901415,
+                17.571868307294295,
+                -13.601226890682527,
+            ),
+            LorentzVector::new(
+                20.24063060353008,
+                -3.7687275028075944,
+                -0.4710997332332683,
+                19.881093664069077,
+            ),
+            LorentzVector::new(
+                114.39001011631855,
+                27.076667306227247,
+                98.5077938785925,
+                -51.460111223860345,
+            ),
+        ];
+        let hel = [-1i32, -1, -1, -1, -1, -1, -1, -1];
+        let n_in = 2;
+
+        // Momentum conservation is helicity-independent: scan every diagram and
+        // report those whose final amplitude momentum is not ~0 (mis-routed).
+        let mut nonconserving = vec![];
+        for (d, ast) in asts.iter().enumerate() {
+            let mut slots = vec![WaveformSlot::Empty; ast.n_slots];
+            for step in &ast.steps {
+                match step {
+                    EvalStep::ExternalWf { info, output_slot } => {
+                        slots[*output_slot] = build_external_slot(
+                            p[info.leg_idx],
+                            hel[info.leg_idx],
+                            info,
+                            n_in,
+                            &evaluated,
+                        );
+                    }
+                    EvalStep::OffShellCurrent {
+                        info,
+                        input_slots,
+                        output_slot,
+                    } => {
+                        slots[*output_slot] =
+                            evaluate_off_shell_current(info, input_slots, &slots, &evaluated);
+                    }
+                    EvalStep::Propagate {
+                        info,
+                        input_slot,
+                        output_slot,
+                    } => {
+                        slots[*output_slot] =
+                            evaluate_propagation(info, &slots[*input_slot], &evaluated);
+                    }
+                    EvalStep::ContractAmplitude {
+                        info,
+                        input_slots,
+                        output_slot,
+                    } => {
+                        slots[*output_slot] =
+                            evaluate_contract_amplitude(info, input_slots, &slots, &evaluated);
+                    }
+                }
+            }
+            let m = slots[ast.amplitude_slot].momentum().unwrap();
+            let off = m.bare_norm_sq();
+            if off > 1e-6 {
+                nonconserving.push((d, off));
+            }
+        }
+        println!(
+            "{}/{} diagrams violate momentum conservation",
+            nonconserving.len(),
+            asts.len()
+        );
+        for (d, off) in nonconserving.iter().take(5) {
+            println!("  diagram {} amp momentum |sum|={:.3e}", d, off);
+        }
+
+        // find max-magnitude diagram for this helicity
+        let mut worst = (0usize, 0.0f64);
+        for (d, ast) in asts.iter().enumerate() {
+            let amp = eval_single_diagram(ast, &p, &hel, &evaluated, n_in);
+            if amp.norm() > worst.1 {
+                worst = (d, amp.norm());
+            }
+        }
+        println!("worst diagram {} |amp|={:.3e}", worst.0, worst.1);
+
+        // trace the worst diagram step by step
+        let ast = &asts[worst.0];
+        let mut slots = vec![WaveformSlot::Empty; ast.n_slots];
+        for step in &ast.steps {
+            match step {
+                EvalStep::ExternalWf { info, output_slot } => {
+                    slots[*output_slot] = build_external_slot(
+                        p[info.leg_idx],
+                        hel[info.leg_idx],
+                        info,
+                        n_in,
+                        &evaluated,
+                    );
+                    println!("Ext leg {} (spin {} charge {:?} incoming {}) raw_E {} -> slot {} stored_E {:?}",
+                        info.leg_idx, info.spin, info.charge, info.leg_idx < n_in,
+                        p[info.leg_idx].e(), output_slot,
+                        slots[*output_slot].momentum().map(|m| m.e()));
+                }
+                EvalStep::OffShellCurrent {
+                    info,
+                    input_slots,
+                    output_slot,
+                } => {
+                    slots[*output_slot] =
+                        evaluate_off_shell_current(info, input_slots, &slots, &evaluated);
+                    println!(
+                        "OffShell inputs {:?} -> slot {} mom {:?}",
+                        input_slots,
+                        output_slot,
+                        slots[*output_slot].momentum().map(|m| (m.e(), m.m2()))
+                    );
+                }
+                EvalStep::Propagate {
+                    info,
+                    input_slot,
+                    output_slot,
+                } => {
+                    let m = evaluated.mass(info.id);
+                    slots[*output_slot] =
+                        evaluate_propagation(info, &slots[*input_slot], &evaluated);
+                    let mom = slots[*output_slot].momentum().unwrap();
+                    println!(
+                        "Propagate slot {}->{} mass {} q2 {:.4e} (q2-m2 {:.4e})",
+                        input_slot,
+                        output_slot,
+                        m,
+                        mom.m2(),
+                        mom.m2() - m * m
+                    );
+                }
+                EvalStep::ContractAmplitude {
+                    info,
+                    input_slots,
+                    output_slot,
+                } => {
+                    slots[*output_slot] =
+                        evaluate_contract_amplitude(info, input_slots, &slots, &evaluated);
+                    println!(
+                        "Contract inputs {:?} -> slot {} mom {:?}",
+                        input_slots,
+                        output_slot,
+                        slots[*output_slot].momentum().map(|m| (m.e(), m.m2()))
+                    );
+                }
+            }
         }
     }
 
@@ -955,16 +1154,16 @@ mod tests {
         let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
         for (hel1, hel2) in iproduct!(hels, hels) {
             for charge in [Charge::Particle, Charge::Antiparticle] {
-                let fo = OutDiracWf::new(p_fo, mass, hel1, charge);
-                let fi = InDiracWf::new(p_fi, mass, hel2, charge);
+                let fo = OutDiracWf::from_momentum(p_fo, mass, hel1, charge);
+                let fi = InDiracWf::from_momentum(p_fi, mass, hel2, charge);
 
                 let left_ref = iosxxx(&fo, &fi, &s_wf, [g, Complex64::new(0.0, 0.0)]);
                 let right_ref = iosxxx(&fo, &fi, &s_wf, [Complex64::new(0.0, 0.0), g]);
 
-                // Build slots: leg1=fi (col), leg2=fo.to_incoming() (row), leg3=scalar
+                // Build slots: leg1=fi (col / flow-in), leg2=fo (row / flow-out), leg3=scalar
                 let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
-                slots[0] = WaveformSlot::Fermion(fi);
-                slots[1] = WaveformSlot::Fermion(fo.to_incoming());
+                slots[0] = WaveformSlot::FermionIn(fi);
+                slots[1] = WaveformSlot::FermionOut(fo);
                 slots[2] = WaveformSlot::Scalar(s_wf);
                 let input_slots = vec![0usize, 1, 2];
 

@@ -14,19 +14,18 @@ pub mod repr;
 pub mod vertex;
 pub mod wavefn;
 
-pub use repr::lorentz::{Bispinor, Charge, LorentzVector, SpinorHelicity};
+pub use repr::lorentz::{Bispinor, LorentzVector};
 pub use vertex::{iovxxx, j3xxxx, jioxxx};
 pub use wavefn::{DiracWf, InDiracWf, OutDiracWf, VectorWf};
 
 #[cfg(test)]
 mod tests {
-    use crate::helas::repr::lorentz::ComplexVector;
+    use crate::helas::repr::lorentz::{ComplexVector, SpinorRepr};
 
     use super::*;
     use itertools::iproduct;
-    use repr::r;
-    use Charge::{Antiparticle, Particle};
-    use SpinorHelicity::{Down, Up};
+    use repr::numbers::Charge::{Antiparticle, Particle};
+    use repr::numbers::SpinorHelicity::{Down, Up};
 
     /// e⁺e⁻ → μ⁺μ⁻ via s-channel photon/Z.
     ///
@@ -58,10 +57,10 @@ mod tests {
         let s2 = 2.0_f64.sqrt();
 
         // 4-momenta [E, px, py, pz]
-        let p_em = LorentzVector([1.0, 0.0, 0.0, 1.0]); // e⁻
-        let p_ep = LorentzVector([1.0, 0.0, 0.0, -1.0]); // e⁺
-        let p_mm = LorentzVector([1.0, 1.0, 0.0, 0.0]); // μ⁻
-        let p_mp = LorentzVector([1.0, -1.0, 0.0, 0.0]); // μ⁺
+        let p_em = LorentzVector::new(1.0, 0.0, 0.0, 1.0); // e⁻
+        let p_ep = LorentzVector::new(1.0, 0.0, 0.0, -1.0); // e⁺
+        let p_mm = LorentzVector::new(1.0, 1.0, 0.0, 0.0); // μ⁻
+        let p_mp = LorentzVector::new(1.0, -1.0, 0.0, 0.0); // μ⁺
 
         // Couplings that reduce j3xxxx to a pure vector photon
         let gaf = [s2, s2];
@@ -76,10 +75,10 @@ mod tests {
             iproduct!([Down, Up], [Down, Up], [Down, Up], [Down, Up])
         {
             // nsf: Particle for e⁻/μ⁻, Antiparticle for e⁺/μ⁺
-            let fi_em = InDiracWf::new(p_em, 0.0, nhel_em, Particle);
-            let fo_ep = OutDiracWf::new(p_ep, 0.0, nhel_ep, Antiparticle);
-            let fi_mm = InDiracWf::new(p_mm, 0.0, nhel_mm, Particle);
-            let fo_mp = OutDiracWf::new(p_mp, 0.0, nhel_mp, Antiparticle);
+            let fi_em = InDiracWf::from_momentum(p_em, 0.0, nhel_em, Particle);
+            let fo_ep = OutDiracWf::from_momentum(p_ep, 0.0, nhel_ep, Antiparticle);
+            let fi_mm = InDiracWf::from_momentum(p_mm, 0.0, nhel_mm, Particle);
+            let fo_mp = OutDiracWf::from_momentum(p_mp, 0.0, nhel_mp, Antiparticle);
 
             // Off-shell photon from the electron current
             let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, zmass, zwidth);
@@ -101,10 +100,10 @@ mod tests {
     fn test_ee_to_mumu_individual_helicities() {
         let s2 = 2.0_f64.sqrt();
 
-        let p_em = LorentzVector([1.0, 0.0, 0.0, 1.0]);
-        let p_ep = LorentzVector([1.0, 0.0, 0.0, -1.0]);
-        let p_mm = LorentzVector([1.0, 1.0, 0.0, 0.0]);
-        let p_mp = LorentzVector([1.0, -1.0, 0.0, 0.0]);
+        let p_em = LorentzVector::new(1.0, 0.0, 0.0, 1.0);
+        let p_ep = LorentzVector::new(1.0, 0.0, 0.0, -1.0);
+        let p_mm = LorentzVector::new(1.0, 1.0, 0.0, 0.0);
+        let p_mp = LorentzVector::new(1.0, -1.0, 0.0, 0.0);
 
         let gaf = [s2, s2];
         let gzf = [0.0, s2];
@@ -120,10 +119,10 @@ mod tests {
         ];
 
         for &(nhel_em, nhel_ep, nhel_mm, nhel_mp) in &nonzero {
-            let fi_em = InDiracWf::new(p_em, 0.0, nhel_em, Particle);
-            let fo_ep = OutDiracWf::new(p_ep, 0.0, nhel_ep, Antiparticle);
-            let fi_mm = InDiracWf::new(p_mm, 0.0, nhel_mm, Particle);
-            let fo_mp = OutDiracWf::new(p_mp, 0.0, nhel_mp, Antiparticle);
+            let fi_em = InDiracWf::from_momentum(p_em, 0.0, nhel_em, Particle);
+            let fo_ep = OutDiracWf::from_momentum(p_ep, 0.0, nhel_ep, Antiparticle);
+            let fi_mm = InDiracWf::from_momentum(p_mm, 0.0, nhel_mm, Particle);
+            let fo_mp = OutDiracWf::from_momentum(p_mp, 0.0, nhel_mp, Antiparticle);
 
             let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
             let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
@@ -144,10 +143,10 @@ mod tests {
                 continue;
             }
 
-            let fi_em = InDiracWf::new(p_em, 0.0, nhel_em, Particle);
-            let fo_ep = OutDiracWf::new(p_ep, 0.0, nhel_ep, Antiparticle);
-            let fi_mm = InDiracWf::new(p_mm, 0.0, nhel_mm, Particle);
-            let fo_mp = OutDiracWf::new(p_mp, 0.0, nhel_mp, Antiparticle);
+            let fi_em = InDiracWf::from_momentum(p_em, 0.0, nhel_em, Particle);
+            let fo_ep = OutDiracWf::from_momentum(p_ep, 0.0, nhel_ep, Antiparticle);
+            let fi_mm = InDiracWf::from_momentum(p_mm, 0.0, nhel_mm, Particle);
+            let fo_mp = OutDiracWf::from_momentum(p_mp, 0.0, nhel_mp, Antiparticle);
 
             let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
             let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
@@ -172,18 +171,18 @@ mod tests {
         let gzf = [0.0, s2];
         let gc = [1.0_f64, 1.0_f64];
 
-        let p_em = LorentzVector([1.0, 0.0, 0.0, 1.0]);
-        let p_ep = LorentzVector([1.0, 0.0, 0.0, -1.0]);
-        let p_mm = LorentzVector([1.0, 1.0, 0.0, 0.0]);
-        let p_mp = LorentzVector([1.0, -1.0, 0.0, 0.0]);
+        let p_em = LorentzVector::new(1.0, 0.0, 0.0, 1.0);
+        let p_ep = LorentzVector::new(1.0, 0.0, 0.0, -1.0);
+        let p_mm = LorentzVector::new(1.0, 1.0, 0.0, 0.0);
+        let p_mp = LorentzVector::new(1.0, -1.0, 0.0, 0.0);
 
         for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in
             iproduct!([Down, Up], [Down, Up], [Down, Up], [Down, Up])
         {
-            let fi_em = InDiracWf::new(p_em, 0.0, nhel_em, Particle);
-            let fo_ep = OutDiracWf::new(p_ep, 0.0, nhel_ep, Antiparticle);
-            let fi_mm = InDiracWf::new(p_mm, 0.0, nhel_mm, Particle);
-            let fo_mp = OutDiracWf::new(p_mp, 0.0, nhel_mp, Antiparticle);
+            let fi_em = InDiracWf::from_momentum(p_em, 0.0, nhel_em, Particle);
+            let fo_ep = OutDiracWf::from_momentum(p_ep, 0.0, nhel_ep, Antiparticle);
+            let fi_mm = InDiracWf::from_momentum(p_mm, 0.0, nhel_mm, Particle);
+            let fo_mp = OutDiracWf::from_momentum(p_mp, 0.0, nhel_mp, Antiparticle);
 
             let v_phys = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
 
@@ -191,7 +190,7 @@ mod tests {
             // For a conserved current (Ward identity) the amplitude must vanish.
             let q = v_phys.momentum; // [E, px, py, pz] of the virtual photon
             let v_ward = VectorWf {
-                eps: ComplexVector([r(q[0]), r(q[1]), r(q[2]), r(q[3])]),
+                eps: ComplexVector::from(q),
                 momentum: q,
             };
 
@@ -219,19 +218,19 @@ mod tests {
         let gc = [1.0_f64, 1.0_f64];
 
         // e⁻ and e⁺ coming in head-on from the *opposite* direction.
-        let p_em = LorentzVector([1.0, 0.0, 0.0, -1.0]); // backward e⁻ (sqp0p3=0 branch)
-        let p_ep = LorentzVector([1.0, 0.0, 0.0, 1.0]); // backward e⁺
-        let p_mm = LorentzVector([1.0, 1.0, 0.0, 0.0]);
-        let p_mp = LorentzVector([1.0, -1.0, 0.0, 0.0]);
+        let p_em = LorentzVector::new(1.0, 0.0, 0.0, -1.0); // backward e⁻ (sqp0p3=0 branch)
+        let p_ep = LorentzVector::new(1.0, 0.0, 0.0, 1.0); // backward e⁺
+        let p_mm = LorentzVector::new(1.0, 1.0, 0.0, 0.0);
+        let p_mp = LorentzVector::new(1.0, -1.0, 0.0, 0.0);
 
         let mut sum = 0.0;
         for (nhel_em, nhel_ep, nhel_mm, nhel_mp) in
             iproduct!([Down, Up], [Down, Up], [Down, Up], [Down, Up])
         {
-            let fi_em = InDiracWf::new(p_em, 0.0, nhel_em, Particle);
-            let fo_ep = OutDiracWf::new(p_ep, 0.0, nhel_ep, Antiparticle);
-            let fi_mm = InDiracWf::new(p_mm, 0.0, nhel_mm, Particle);
-            let fo_mp = OutDiracWf::new(p_mp, 0.0, nhel_mp, Antiparticle);
+            let fi_em = InDiracWf::from_momentum(p_em, 0.0, nhel_em, Particle);
+            let fo_ep = OutDiracWf::from_momentum(p_ep, 0.0, nhel_ep, Antiparticle);
+            let fi_mm = InDiracWf::from_momentum(p_mm, 0.0, nhel_mm, Particle);
+            let fo_mp = OutDiracWf::from_momentum(p_mp, 0.0, nhel_mp, Antiparticle);
 
             let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
             let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
@@ -259,20 +258,20 @@ mod tests {
         let mass = 1.0_f64; // 1 GeV test mass
         let e = 3.0_f64; // E > mass → moving
         let p_abs = (e * e - mass * mass).sqrt();
-        let p = LorentzVector([e, p_abs / 2.0_f64.sqrt(), 0.0, p_abs / 2.0_f64.sqrt()]);
+        let p = LorentzVector::new(e, p_abs / 2.0_f64.sqrt(), 0.0, p_abs / 2.0_f64.sqrt());
 
         for nhel in [Down, Up] {
-            let fi = InDiracWf::new(p, mass, nhel, Particle);
+            let fi = InDiracWf::from_momentum(p, mass, nhel, Particle);
             // On-shell condition: fi†·fi = 2E (HELAS convention)
-            let norm_sq: f64 = fi.spinor.0.iter().map(|c| c.norm_sqr()).sum();
+            let norm_sq: f64 = fi.spinor.bare_norm_sq();
             assert!(
                 (norm_sq - 2.0 * e).abs() < 1e-10,
                 "Moving massive ixxxxx normalization nhel={nhel}: fi†fi = {norm_sq}, expected 2E = {}",
                 2.0 * e
             );
 
-            let fo = OutDiracWf::new(p, mass, nhel, Particle);
-            let norm_sq_fo: f64 = fo.spinor.0.iter().map(|c| c.norm_sqr()).sum();
+            let fo = OutDiracWf::from_momentum(p, mass, nhel, Particle);
+            let norm_sq_fo: f64 = fo.spinor.bare_norm_sq();
             assert!(
                 (norm_sq_fo - 2.0 * e).abs() < 1e-10,
                 "Moving massive oxxxxx normalization nhel={nhel}: fo†fo = {norm_sq_fo}, expected 2E = {}",
@@ -289,19 +288,19 @@ mod tests {
     #[test]
     fn test_massive_wavefunction_at_rest() {
         let mass = 0.511e-3_f64; // electron mass in GeV
-        let p = LorentzVector([mass, 0.0, 0.0, 0.0]);
+        let p = LorentzVector::new(mass, 0.0, 0.0, 0.0);
 
         for nhel in [Down, Up] {
-            let fi = InDiracWf::new(p, mass, nhel, Particle);
-            let norm_sq: f64 = fi.spinor.0.iter().map(|c| c.norm_sqr()).sum();
+            let fi = InDiracWf::from_momentum(p, mass, nhel, Particle);
+            let norm_sq: f64 = fi.spinor.bare_norm_sq();
             assert!(
                 (norm_sq - 2.0 * mass).abs() < 1e-15,
                 "At-rest ixxxxx nhel={nhel}: fi†fi = {norm_sq}, expected 2m = {}",
                 2.0 * mass
             );
 
-            let fo = OutDiracWf::new(p, mass, nhel, Particle);
-            let norm_sq_fo: f64 = fo.spinor.0.iter().map(|c| c.norm_sqr()).sum();
+            let fo = OutDiracWf::from_momentum(p, mass, nhel, Particle);
+            let norm_sq_fo: f64 = fo.spinor.bare_norm_sq();
             assert!(
                 (norm_sq_fo - 2.0 * mass).abs() < 1e-15,
                 "At-rest oxxxxx nhel={nhel}: fo†fo = {norm_sq_fo}, expected 2m = {}",

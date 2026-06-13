@@ -1,32 +1,9 @@
 use crate::helas::repr::{
-    intertwiner::{GammaL, GammaR, Intertwiner2Leg},
-    lorentz::{Bispinor, Chirality, ComplexVector, SpinorRepr},
-    propagator::{DiracPropagator, Propagator, ScalarPropagator},
+    lorentz::{Bispinor, ComplexVector, SpinorRepr, VectorRepr},
+    numbers::Chirality,
     r, Real, C,
 };
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// HELAS Lorentz contraction with Minkowski signature (+,−,−,−).
-///
-/// The spinor bilinears built by `GammaL/GammaR` already carry HELAS-specific
-/// component signs/phases (matching `iovxxx`), but the final contraction is
-/// still the Minkowski one used in the Fortran reference routine.
-///
-/// TODO: roll this into the [`LorentzRepr`] trait
-#[inline]
-fn mink_dot<F: Real>(a: [C<F>; 4], b: [C<F>; 4]) -> C<F> {
-    a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3]
-}
-
-/// Minkowski inner product of a real momentum with a complex current.
-#[inline]
-fn mink_dot_q<F: Real>(q: [F; 4], c: [C<F>; 4]) -> C<F> {
-    r(q[0]) * c[0] - r(q[1]) * c[1] - r(q[2]) * c[2] - r(q[3]) * c[3]
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // j3xxxx — off-shell W³ (γ + Z combined) current
@@ -68,9 +45,9 @@ pub fn j3xxxx<F: Real>(
     let cw = F::one() / (F::one() + ratio * ratio).sqrt();
     let sw = ((F::one() - cw) * (F::one() + cw)).sqrt();
 
-    let ga3l = gaf[0] * sw; // photon left coupling
-    let gz3l = gzf[0] * cw; // Z left coupling
-    let gn = gaf[1] * sw; // combined right coupling
+    let ga3l = C::from(gaf[0] * sw); // photon left coupling
+    let gz3l = C::from(gzf[0] * cw); // Z left coupling
+    let gn = C::from(gaf[1] * sw); // combined right coupling
 
     // ── Propagators ───────────────────────────────────────────────────────
     let da = F::one() / q2; // real photon: 1/q²
@@ -79,27 +56,23 @@ pub fn j3xxxx<F: Real>(
     let ddif = C::new(-zm2, zmw) * r(da) * dz; // ≈ da for mZ → ∞
 
     // ── Bilinear currents via GammaL / GammaR intertwiners ────────────────
-    let cl = GammaL::apply(&(fo.spinor, fi.spinor));
-    let cr = GammaR::apply(&(fo.spinor, fi.spinor));
+    let cl = fo.vector_bilinear(fi, Chirality::Left);
+    let cr = fo.vector_bilinear(fi, Chirality::Right);
 
     // Longitudinal-mode projections divided by complex mZ²
     let cm2 = C::new(zm2, -zmw);
-    let csl = mink_dot_q(q.0, cl.0) / cm2;
-    let csr = mink_dot_q(q.0, cr.0) / cm2;
+    let csl = cl.dot_lorentz(&q) / cm2;
+    let csr = cr.dot_lorentz(&q) / cm2;
 
     // ── Output polarisation vector ────────────────────────────────────────
     // eps[μ] = gz3l·dz·(cl[μ] − q[μ]·csl)
     //        + ga3l·da·cl[μ]
     //        + gn·(cr[μ]·ddif + q[μ]·csr·dz)
-    let eps: [C<F>; 4] = std::array::from_fn(|mu| {
-        let qmu = r(q[mu]);
-        r(gz3l) * dz * (cl[mu] - qmu * csl)
-            + r(ga3l) * r(da) * cl[mu]
-            + r(gn) * (cr[mu] * ddif + qmu * csr * dz)
-    });
+    let qc = ComplexVector::from(q);
+    let eps = (cl - qc * csl) * (gz3l * dz) + cl * (ga3l * da) + (cr * ddif + qc * (csr * dz)) * gn;
 
     VectorWf {
-        eps: ComplexVector { 0: eps },
+        eps: eps,
         momentum: jmom,
     }
 }
@@ -151,7 +124,7 @@ pub fn jioxxx<F: Real>(
         let vmw = vmass * vwidth;
         let denom = C::new(q2 - vm2, vmw);
         // Longitudinal mode subtraction: divide by m²−imΓ (Fabio prescription)
-        let cs = blin.mink_dot_lorentz(&q) / C::new(vm2, -vmw);
+        let cs = blin.dot_lorentz(&q) / C::new(vm2, -vmw);
         (blin - ComplexVector::from(q) * cs) / denom
     };
 
@@ -182,7 +155,7 @@ pub fn iovxxx<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, v: &VectorWf<F>, g
     let cr = fo.vector_bilinear(fi, Chirality::Right);
 
     // M = gc[0] * (C_L · V) + gc[1] * (C_R · V)
-    r(gc[0]) * cl.mink_dot(&v.eps) + r(gc[1]) * cr.mink_dot(&v.eps)
+    C::from(gc[0]) * cl.dot(&v.eps.lower()) + C::from(gc[1]) * cr.dot(&v.eps.lower())
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -202,24 +175,28 @@ pub fn iovxxx<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, v: &VectorWf<F>, g
 /// * `width` – fermion width (usually 0 for stable)
 ///
 /// # Returns
-/// Off-shell outgoing fermion current as `OutDiracWf<F>`.
+/// Off-shell fermion current as `InDiracWf<F>` (the codebase stores every
+/// off-shell fermion in the flow-IN representation so it can be paired with a
+/// flow-OUT leg at the next vertex).
 pub fn fioxxx<F: Real>(
     fi: &InDiracWf<F>,
     v: &VectorWf<F>,
     g: C<F>,
     mass: F,
     width: F,
-) -> OutDiracWf<F> {
-    // Accumulated momentum: q = fi.p + V.p (both inflow)
-    let q = fi.momentum + v.momentum;
+) -> InDiracWf<F> {
+    // Accumulated momentum for the flow-IN case: q = fi.p − V.p
+    // (Fortran `fvixxx`: fvi(5)=fi(5)−vc(5)). Opposite vector sign from the
+    // flow-OUT `foxxx`/`fvoxxx` — the asymmetry that conserves momentum along a line.
+    let q = fi.momentum - v.momentum;
+    let q2 = q.m2();
 
     // Vertex factor ε̸ ψ, then the (q̸ + m)/(q² − m² + imΓ) propagator, scaled by g.
-    let gv_psi = fi.spinor.slash(&v.eps);
-    let prop = DiracPropagator { mass, width };
-    let prop_psi = Bispinor(prop.propagate(q.0, gv_psi.0));
+    let psi = fi.spinor.slash(&v.eps);
+    let num = psi.slash(&q.into()) + psi * mass;
+    let scale = g / C::new(q2 - mass * mass, mass * width);
 
-    // Output momentum: off-shell fermion carries momentum q (outflow convention)
-    OutDiracWf::from_spinor(prop_psi * g, q)
+    InDiracWf::from_spinor(num * scale, q)
 }
 
 /// Off-shell fermion from outgoing fermion + vector boson.
@@ -236,24 +213,25 @@ pub fn fioxxx<F: Real>(
 /// * `width` – fermion width
 ///
 /// # Returns
-/// Off-shell incoming fermion current as `InDiracWf<F>`.
+/// Off-shell fermion current as `OutDiracWf<F>`. `ε̸` and the propagator are
+/// flow-preserving, so a flow-OUT (bra) input yields a flow-OUT current.
 pub fn foxxx<F: Real>(
     fo: &OutDiracWf<F>,
     v: &VectorWf<F>,
     g: C<F>,
     mass: F,
     width: F,
-) -> InDiracWf<F> {
+) -> OutDiracWf<F> {
     // Accumulated momentum: q = fo.p + V.p (outflow convention)
     let q = fo.momentum + v.momentum;
+    let q2 = q.m2();
 
-    // Vertex factor ε̸ ψ, then the (q̸ + m)/(q² − m² + imΓ) propagator, scaled by g.
-    let gv_psi = fo.spinor.slash(&v.eps);
-    let prop = DiracPropagator { mass, width };
-    let prop_psi = Bispinor(prop.propagate(q.0, gv_psi.0));
+    // Vertex factor ε̸ ψ̄, then the (q̸ + m)/(q² − m² + imΓ) propagator, scaled by g.
+    let psi = fo.spinor.slash(&v.eps);
+    let num = psi.slash(&q.into()) + psi * mass;
+    let scale = g / C::new(q2 - mass * mass, mass * width);
 
-    // Output momentum: off-shell fermion carries accumulated momentum (inflow convention)
-    InDiracWf::from_spinor(prop_psi * g, q)
+    OutDiracWf::from_spinor(num * scale, q)
 }
 
 /// Off-shell vector from two vector bosons.
@@ -281,7 +259,7 @@ pub fn jvvxxx<F: Real>(
 ) -> VectorWf<F> {
     // Accumulated momentum: q = v2.p + v3.p (outflow for incoming vectors)
     let q = v2.momentum + v3.momentum;
-    let q2 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
+    let q2 = q.m2();
 
     let m2 = mass * mass;
     let mw = mass * width;
@@ -289,41 +267,20 @@ pub fn jvvxxx<F: Real>(
     // Complex propagator denominator: q² − m² + imΓ
     let denom = C::new(q2 - m2, mw);
 
-    // Extract polarization vectors
-    let v2_eps = &v2.eps.0;
-    let v3_eps = &v3.eps.0;
-
-    // Compute contraction terms
-    // TMP1 = v3·q (Minkowski)
-    let tmp1 = mink_dot_q(q.0, [v3_eps[0], v3_eps[1], v3_eps[2], v3_eps[3]]);
-    // TMP2 = v3·v2.p (Minkowski contraction)
-    let tmp2 = mink_dot_q(v2.momentum.0, [v3_eps[0], v3_eps[1], v3_eps[2], v3_eps[3]]);
-    // TMP3 = v2·q (Minkowski)
-    let tmp3 = mink_dot_q(q.0, [v2_eps[0], v2_eps[1], v2_eps[2], v2_eps[3]]);
-    // TMP4 = v2·v3.p (Minkowski)
-    let tmp4 = mink_dot_q(v3.momentum.0, [v2_eps[0], v2_eps[1], v2_eps[2], v2_eps[3]]);
-    // TMP5 = v2·v3 (Minkowski)
-    let tmp5 = mink_dot(*v2_eps, *v3_eps);
+    // Minkowski contractions (cf. VVV1P0_1.f)
+    let tmp1 = v2.eps.dot_lorentz(&q); // v2·q
+    let tmp2 = v2.eps.dot_lorentz(&v3.momentum); // v2·p3
+    let tmp3 = v3.eps.dot_lorentz(&q); // v3·q
+    let tmp4 = v3.eps.dot_lorentz(&v2.momentum); // v3·p2
+    let tmp5 = v2.eps.dot(&v3.eps.lower()); // v2·v3
 
     let scale = g / denom;
 
-    // Build the off-shell vector
-    // Formula from VVV1P0_1.f (ALOHA):
-    // V1^μ = DENOM * [TMP5·(q2_μ - q3_μ) + v2^μ·(TMP1 - TMP2) + v3^μ·(TMP3 - TMP4)]
-    let eps: [C<F>; 4] = std::array::from_fn(|mu| {
-        let v2_mu_eps = v2_eps[mu];
-        let v3_mu_eps = v3_eps[mu];
-        // Note: this follows the ALOHA formula closely
-        scale
-            * (tmp5 * (r(v3.momentum[mu]) - r(v2.momentum[mu]))
-                + v2_mu_eps * (tmp1 - tmp2)
-                + v3_mu_eps * (tmp3 - tmp4))
-    });
+    // V1^μ = scale · [v2·v3·(p3^μ − p2^μ) + v2^μ·(v3·q − v3·p2) + v3^μ·(v2·q − v2·p3)]
+    let q_diff = ComplexVector::from(v3.momentum - v2.momentum);
+    let eps = (q_diff * tmp5 + v2.eps * (tmp3 - tmp4) + v3.eps * (tmp1 - tmp2)) * scale;
 
-    VectorWf {
-        eps: ComplexVector(eps),
-        momentum: q,
-    }
+    VectorWf { eps, momentum: q }
 }
 
 /// Off-shell scalar from two fermions.
@@ -349,19 +306,16 @@ pub fn jsixxx<F: Real>(
 ) -> ScalarWf<F> {
     // Accumulated momentum: q = fi.p + fo.p
     let q = fi.momentum + fo.momentum;
+    let q2 = q.m2();
 
     // Scalar current: sum of left and right bilinears (identity structure)
     let scalar_value = Bispinor::scalar_bilinear(&fo.spinor, &fi.spinor, Chirality::Both);
 
-    // Apply scalar propagator
-    let prop = ScalarPropagator { mass, width };
-    let prop_value = prop.propagate(q.0, scalar_value);
-
-    // Scale by coupling
-    let final_value = g * prop_value;
+    // Scalar propagator 1/(q² − m² + imΓ), scaled by the coupling.
+    let denom = C::new(q2 - mass * mass, mass * width);
 
     ScalarWf {
-        value: final_value,
+        value: g * scalar_value / denom,
         momentum: q,
     }
 }
@@ -397,21 +351,17 @@ pub fn iosxxx<F: Real>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helas::repr::lorentz::{Charge, LorentzVector, SpinorHelicity};
+    use crate::helas::repr::lorentz::LorentzVector;
+    use crate::helas::repr::numbers::{Charge, SpinorHelicity};
     use num_complex::Complex64 as C64;
-
-    /// Helper to create a simple LorentzVector.
-    fn lorentz_vec(e: f64, px: f64, py: f64, pz: f64) -> LorentzVector<f64> {
-        LorentzVector([e, px, py, pz])
-    }
 
     #[test]
     fn test_fioxxx_basic() {
         // Create test wavefunctions
-        let fi_mom = lorentz_vec(100.0, 0.0, 0.0, 100.0);
-        let fi = InDiracWf::new(fi_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
+        let fi_mom = LorentzVector::new(100.0, 0.0, 0.0, 100.0);
+        let fi = InDiracWf::from_momentum(fi_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
 
-        let v_mom = lorentz_vec(10.0, 5.0, 0.0, 8.66);
+        let v_mom = LorentzVector::new(10.0, 5.0, 0.0, 8.66);
         let v_eps = [
             C64::new(1.0, 0.0),
             C64::new(0.5, 0.2),
@@ -419,7 +369,7 @@ mod tests {
             C64::new(0.4, 0.0),
         ];
         let v = VectorWf {
-            eps: ComplexVector(v_eps),
+            eps: ComplexVector::new(v_eps),
             momentum: v_mom,
         };
 
@@ -429,30 +379,25 @@ mod tests {
 
         // Basic sanity checks
         assert!(
-            result.spinor.0.iter().any(|x| x.norm() > 0.0),
+            result.spinor.bare_norm_sq() > 0.0,
             "Result spinor should be non-zero"
         );
 
-        // Check that output momentum is fi + v
-        let expected_momentum = fi_mom + v_mom;
-        for i in 0..4 {
-            assert!(
-                (result.momentum[i] - expected_momentum[i]).abs() < 1e-10,
-                "Momentum mismatch at component {}: {} vs {}",
-                i,
-                result.momentum[i],
-                expected_momentum[i]
-            );
-        }
+        // Check that output momentum is fi − v (flow-in convention, cf. fvixxx)
+        let expected_momentum = fi_mom - v_mom;
+        assert!(
+            (result.momentum - expected_momentum).bare_norm_sq() < 1e-10,
+            "Momentum mismatch: expected {expected_momentum:?}, got {result:?}"
+        );
     }
 
     #[test]
     fn test_foxxx_basic() {
         // Create test wavefunctions
-        let fo_mom = lorentz_vec(100.0, 0.0, 0.0, 100.0);
-        let fo = OutDiracWf::new(fo_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
+        let fo_mom = LorentzVector::new(100.0, 0.0, 0.0, 100.0);
+        let fo = OutDiracWf::from_momentum(fo_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
 
-        let v_mom = lorentz_vec(10.0, 5.0, 0.0, 8.66);
+        let v_mom = LorentzVector::new(10.0, 5.0, 0.0, 8.66);
         let v_eps = [
             C64::new(1.0, 0.0),
             C64::new(0.5, 0.2),
@@ -460,7 +405,7 @@ mod tests {
             C64::new(0.4, 0.0),
         ];
         let v = VectorWf {
-            eps: ComplexVector(v_eps),
+            eps: ComplexVector::new(v_eps),
             momentum: v_mom,
         };
 
@@ -470,25 +415,22 @@ mod tests {
 
         // Basic sanity checks
         assert!(
-            result.spinor.0.iter().any(|x| x.norm() > 0.0),
+            result.spinor.bare_norm_sq() > 0.0,
             "Result spinor should be non-zero"
         );
 
         // Check that output momentum is fo + v
         let expected_momentum = fo_mom + v_mom;
-        for i in 0..4 {
-            assert!(
-                (result.momentum[i] - expected_momentum[i]).abs() < 1e-10,
-                "Momentum mismatch at component {}",
-                i
-            );
-        }
+        assert!(
+            (result.momentum - expected_momentum).bare_norm_sq() < 1e-10,
+            "Momentum mismatch: expected {expected_momentum:?}, got {result:?}"
+        );
     }
 
     #[test]
     fn test_jvvxxx_basic() {
         // Create two vector wavefunctions
-        let v2_mom = lorentz_vec(50.0, 30.0, 0.0, 40.0);
+        let v2_mom = LorentzVector::new(50.0, 30.0, 0.0, 40.0);
         let v2_eps = [
             C64::new(0.8, 0.0),
             C64::new(0.3, 0.1),
@@ -496,11 +438,11 @@ mod tests {
             C64::new(0.4, 0.0),
         ];
         let v2 = VectorWf {
-            eps: ComplexVector(v2_eps),
+            eps: ComplexVector::new(v2_eps),
             momentum: v2_mom,
         };
 
-        let v3_mom = lorentz_vec(30.0, -20.0, 0.0, 22.4);
+        let v3_mom = LorentzVector::new(30.0, -20.0, 0.0, 22.4);
         let v3_eps = [
             C64::new(0.6, 0.0),
             C64::new(-0.2, 0.1),
@@ -508,7 +450,7 @@ mod tests {
             C64::new(0.2, 0.0),
         ];
         let v3 = VectorWf {
-            eps: ComplexVector(v3_eps),
+            eps: ComplexVector::new(v3_eps),
             momentum: v3_mom,
         };
 
@@ -518,29 +460,26 @@ mod tests {
 
         // Basic sanity checks
         assert!(
-            result.eps.0.iter().any(|x| x.norm() > 0.0),
+            result.eps.bare_norm_sq() > 0.0,
             "Result polarization should be non-zero"
         );
 
         // Check that output momentum is v2 + v3
         let expected_momentum = v2_mom + v3_mom;
-        for i in 0..4 {
-            assert!(
-                (result.momentum[i] - expected_momentum[i]).abs() < 1e-10,
-                "Momentum mismatch at component {}",
-                i
-            );
-        }
+        assert!(
+            (result.momentum - expected_momentum).bare_norm_sq() < 1e-10,
+            "Momentum mismatch: expected {expected_momentum:?}, got {result:?}"
+        );
     }
 
     #[test]
     fn test_jsixxx_basic() {
         // Create fermion wavefunctions
-        let fi_mom = lorentz_vec(50.0, 0.0, 0.0, 50.0);
-        let fi = InDiracWf::new(fi_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
+        let fi_mom = LorentzVector::new(50.0, 0.0, 0.0, 50.0);
+        let fi = InDiracWf::from_momentum(fi_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
 
-        let fo_mom = lorentz_vec(30.0, 20.0, 0.0, 22.4);
-        let fo = OutDiracWf::new(fo_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
+        let fo_mom = LorentzVector::new(30.0, 20.0, 0.0, 22.4);
+        let fo = OutDiracWf::from_momentum(fo_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
 
         // Apply jsixxx
         let coupling = C64::new(0.1, 0.0);
@@ -554,25 +493,22 @@ mod tests {
 
         // Check that output momentum is fi + fo
         let expected_momentum = fi_mom + fo_mom;
-        for i in 0..4 {
-            assert!(
-                (result.momentum[i] - expected_momentum[i]).abs() < 1e-10,
-                "Momentum mismatch at component {}",
-                i
-            );
-        }
+        assert!(
+            (result.momentum - expected_momentum).bare_norm_sq() < 1e-10,
+            "Momentum mismatch: expected {expected_momentum:?}, got {result:?}"
+        );
     }
 
     #[test]
     fn test_iosxxx_basic() {
         // Create fermion and scalar wavefunctions
-        let fi_mom = lorentz_vec(50.0, 0.0, 0.0, 50.0);
-        let fi = InDiracWf::new(fi_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
+        let fi_mom = LorentzVector::new(50.0, 0.0, 0.0, 50.0);
+        let fi = InDiracWf::from_momentum(fi_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
 
-        let fo_mom = lorentz_vec(30.0, 20.0, 0.0, 22.4);
-        let fo = OutDiracWf::new(fo_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
+        let fo_mom = LorentzVector::new(30.0, 20.0, 0.0, 22.4);
+        let fo = OutDiracWf::from_momentum(fo_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
 
-        let s_mom = lorentz_vec(20.0, -20.0, 0.0, 0.0);
+        let s_mom = LorentzVector::new(20.0, -20.0, 0.0, 0.0);
         let s = ScalarWf {
             value: C64::new(1.0, 0.0),
             momentum: s_mom,

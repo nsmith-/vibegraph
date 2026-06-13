@@ -17,7 +17,7 @@ use feyngraph::diagram::view::{DiagramView, LegView, VertexView};
 use itertools::Either;
 
 use crate::helas::eval::ast::{ExtLegInfo, PropInfo, VertexInfo};
-use crate::helas::Charge;
+use crate::helas::repr::numbers::Charge;
 use crate::ufo::UFOModel;
 
 use super::ast::{DiagramAst, EvalStep};

@@ -7,9 +7,9 @@
 use std::ops::{Add, Mul};
 
 use super::dispatch::RootedTerm;
+use crate::helas::repr::numbers::Charge;
 use crate::helas::repr::{lorentz::LorentzVector, Real, C};
-use crate::helas::wavefn::{InDiracWf, ScalarWf, VectorWf};
-use crate::helas::Charge;
+use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
 use crate::ufo::particles::ParticleId;
@@ -18,17 +18,18 @@ use crate::ufo::UFOModel;
 
 /// A runtime wavefunction register (holds one particle's wavefunction).
 ///
-/// The `Flow` phantom tag on `DiracWf` enforces correct pairing at function call boundaries
-/// but is meaningless for internal off-shell currents. Slots therefore hold `DiracWf<F>`
-/// (default phantom): correctness is guaranteed by the AST topology (compile step knows
-/// which vertex leg is "in" vs "out"), not by the type.
+/// Fermion slots carry their flow direction in the type: a column (ket, `u`/`v`)
+/// current is [`WaveformSlot::FermionIn`] and a row (bra, `ū`/`v̄`) current is
+/// [`WaveformSlot::FermionOut`]. An off-shell current produced by a `GammaIout`-style
+/// node is flow-in; a `GammaJout`-style node is flow-out. Consumers request the flow
+/// they need (see [`WaveformSlot::expect_fermion_in`] / [`WaveformSlot::expect_fermion_out`]),
+/// applying the Dirac adjoint only when the topology genuinely needs the opposite flow.
 #[derive(Clone, Debug, Copy)]
 pub enum WaveformSlot<F: Real> {
-    /// 4-component Dirac spinor / off-shell fermion current
-    ///
-    /// We will use always [`InDiracWf`] for the slot type and use
-    /// [`InDiracWf::to_outgoing`] to convert to an outgoing spinor when needed.
-    Fermion(InDiracWf<F>),
+    /// Flow-in (column / ket) Dirac spinor or off-shell fermion current
+    FermionIn(InDiracWf<F>),
+    /// Flow-out (row / bra) Dirac spinor or off-shell fermion current
+    FermionOut(OutDiracWf<F>),
     /// 4-component polarization / off-shell vector current
     Vector(VectorWf<F>),
     /// Scalar amplitude + momentum
@@ -64,14 +65,24 @@ impl<F: Real> Add for WaveformSlot<F> {
                     momentum: v1.momentum,
                 })
             }
-            (Fermion(f1), Fermion(f2)) => {
+            (FermionIn(f1), FermionIn(f2)) => {
                 assert_eq!(
                     f1.momentum, f2.momentum,
                     "Cannot add fermion waveforms with different momenta"
                 );
-                WaveformSlot::Fermion(InDiracWf::from_spinor(f1.spinor + f2.spinor, f1.momentum))
+                WaveformSlot::FermionIn(InDiracWf::from_spinor(f1.spinor + f2.spinor, f1.momentum))
             }
-            _ => panic!("Addition only implemented for Scalar waveforms"),
+            (FermionOut(f1), FermionOut(f2)) => {
+                assert_eq!(
+                    f1.momentum, f2.momentum,
+                    "Cannot add fermion waveforms with different momenta"
+                );
+                WaveformSlot::FermionOut(OutDiracWf::from_spinor(
+                    f1.spinor + f2.spinor,
+                    f1.momentum,
+                ))
+            }
+            _ => panic!("Addition only implemented for matching waveform variants"),
         }
     }
 }
@@ -94,7 +105,8 @@ where
                 eps: v.eps * self,
                 momentum: v.momentum,
             }),
-            Fermion(f) => Fermion(InDiracWf::from_spinor(f.spinor * self, f.momentum)),
+            FermionIn(f) => FermionIn(InDiracWf::from_spinor(f.spinor * self, f.momentum)),
+            FermionOut(f) => FermionOut(OutDiracWf::from_spinor(f.spinor * self, f.momentum)),
         }
     }
 }
@@ -102,10 +114,31 @@ where
 impl<F: Real> WaveformSlot<F> {
     pub fn momentum(&self) -> Option<LorentzVector<F>> {
         match self {
-            WaveformSlot::Fermion(f) => Some(f.momentum),
+            WaveformSlot::FermionIn(f) => Some(f.momentum),
+            WaveformSlot::FermionOut(f) => Some(f.momentum),
             WaveformSlot::Vector(v) => Some(v.momentum),
             WaveformSlot::Scalar(s) => Some(s.momentum),
             WaveformSlot::Empty => None,
+        }
+    }
+
+    /// Extract a flow-in (column / ket) fermion, applying the Dirac adjoint if
+    /// the slot holds a flow-out current (the topology asked for the opposite flow).
+    pub fn expect_fermion_in(self) -> InDiracWf<F> {
+        match self {
+            WaveformSlot::FermionIn(f) => f,
+            WaveformSlot::FermionOut(f) => f.to_incoming(),
+            _ => panic!("expected a fermion waveform slot"),
+        }
+    }
+
+    /// Extract a flow-out (row / bra) fermion, applying the Dirac adjoint if
+    /// the slot holds a flow-in current (the topology asked for the opposite flow).
+    pub fn expect_fermion_out(self) -> OutDiracWf<F> {
+        match self {
+            WaveformSlot::FermionOut(f) => f,
+            WaveformSlot::FermionIn(f) => f.to_outgoing(),
+            _ => panic!("expected a fermion waveform slot"),
         }
     }
 }
