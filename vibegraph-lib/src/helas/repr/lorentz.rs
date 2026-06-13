@@ -1,109 +1,27 @@
 //! Lorentz representation traits and concrete basis implementations.
 //!
-//! ## Representation hierarchy
-//!
 //! The Lorentz group Spin(1,3) ≅ SL(2,ℂ) has irreducible representations
-//! labelled by two half-integers `(j_L, j_R)`. The physically relevant ones are:
-//!
-//! | Trait | Rep | Dim | Description |
-//! |-------|-----|-----|-------------|
-//! | [`LorentzRepr`] | base | — | Marker + fiber type for any rep |
-//! | [`SpinorRepr`] | (½,0)⊕(0,½) | 4 | Dirac spinor (Weyl decomposed) |
-//! | [`VectorRepr`] | (½,½) | 4 | tangent / polarisation vector |
-//! | [`ScalarRepr`] | (0,0) | 1 | Lorentz scalar |
-//!
-//! ## Concrete types
-//!
+//! labelled by two half-integers `(j_L, j_R)`. This module defines the base
+//! trait [`LorentzRepr`] for any representation, and specialized traits like
+//! [`SpinorRepr`] and [`VectorRepr`] for physics-specific operations. We also
+//! provide concrete implementations.
+
+use std::iter::Sum;
+use std::marker::PhantomData;
 
 use num_traits::Zero;
 
-use super::vectorspace::{impl_add_for_array, impl_mul_for_array, VectorSpace};
+use crate::helas::repr::numbers::Chirality;
+use crate::helas::repr::vectorspace::impl_mul_for_array;
+
+use super::numbers::{Charge, SpinorHelicity};
+use super::vectorspace::{impl_vectorspace, ArrayBacked};
 use super::{r, ri, Real, C};
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helicity and charge labels
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Spinor helicity label: the sign of the projection of spin onto momentum.
-///
-/// Corresponds to the HELAS `nhel` parameter (±1). The name `Up`/`Down`
-/// matches the convention that `Up` (positive helicity, right-handed) has
-/// `λ = +½` and `Down` (negative helicity, left-handed) has `λ = −½`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum SpinorHelicity {
-    /// Positive helicity: `nhel = +1`.
-    Up,
-    /// Negative helicity: `nhel = −1`.
-    Down,
-}
-
-impl SpinorHelicity {
-    /// Return `+1` or `−1` as an `i32`.
-    #[inline(always)]
-    pub fn sign(self) -> i32 {
-        match self {
-            SpinorHelicity::Up => 1,
-            SpinorHelicity::Down => -1,
-        }
-    }
-
-    /// Return the opposite helicity (Up ↔ Down).
-    pub fn flip(self) -> Self {
-        match self {
-            SpinorHelicity::Up => SpinorHelicity::Down,
-            SpinorHelicity::Down => SpinorHelicity::Up,
-        }
-    }
-}
-
-impl std::fmt::Display for SpinorHelicity {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SpinorHelicity::Up => write!(f, "↑"),
-            SpinorHelicity::Down => write!(f, "↓"),
-        }
-    }
-}
-
-/// Particle-vs-antiparticle label.
-///
-/// Corresponds to the HELAS `nsf` parameter (+1 for particle, −1 for
-/// antiparticle).  The signed momentum stored in
-/// [`DiracWf`](crate::helas::wavefn::DiracWf) is `p * nsf.sign()`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Charge {
-    /// Particle (e.g. e⁻, q): `nsf = +1`.
-    Particle,
-    /// Antiparticle (e.g. e⁺, q̄): `nsf = −1`.
-    Antiparticle,
-}
-
-impl Charge {
-    /// Return `+1` or `−1` as an `i32`.
-    #[inline(always)]
-    pub fn sign(self) -> i32 {
-        match self {
-            Charge::Particle => 1,
-            Charge::Antiparticle => -1,
-        }
-    }
-
-    /// Return the opposite charge (particle ↔ antiparticle).
-    pub fn anti(self) -> Self {
-        match self {
-            Charge::Particle => Charge::Antiparticle,
-            Charge::Antiparticle => Charge::Particle,
-        }
-    }
-}
-
-impl std::fmt::Display for Charge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Charge::Particle => write!(f, "particle"),
-            Charge::Antiparticle => write!(f, "antiparticle"),
-        }
-    }
+/// We will have some marker traits that are sealed in this module
+/// (i.e. no external code can implement them)
+mod sealed {
+    pub trait Sealed {}
 }
 
 /// Base trait for a Lorentz representation.
@@ -115,62 +33,151 @@ impl std::fmt::Display for Charge {
 ///
 /// # Type parameters
 /// - `F` — the real scalar type (e.g. `f64`)
-// pub trait LorentzRepr<F: Real>: VectorSpace<F> {}
-pub trait LorentzRepr<F: Real>: Sized + Copy + 'static + PartialEq {}
+///
+/// # Associated types
+/// - `Scalar` — the scalar field of the representation (e.g. `F` or `C<F>` depending on the rep)
+///
+/// Representations that are self-dual (e.g. (½,½) for LorentzVector) have `Scalar = F`, whle
+/// representations that are not (e.g. Weyl spinors: (½,0) has dual repr (0,½)) require `Scalar = C<F>`
+/// to allow for complex coefficients.
+pub trait LorentzRepr<F: Real>: Sized + Copy + 'static + PartialEq {
+    /// Scalar type of this representation
+    ///
+    /// Usually `F` or [`C<F>`] depending on the representation
+    type Scalar;
+}
 
 // Implement LorentzRepr for the (complex) scalar representation
-impl<F: Real> LorentzRepr<F> for F {}
-impl<F: Real> LorentzRepr<F> for C<F> {}
+impl<F: Real> LorentzRepr<F> for F {
+    type Scalar = F;
+}
+impl<F: Real> LorentzRepr<F> for C<F> {
+    type Scalar = C<F>;
+}
 
-/// Antisymmetric rank-2 Lorentz tensor (placeholder type).
-///
-/// Represents a tensor `T^{μν} = -T^{νμ}` such as the output of `σ^μν = i/2 [γ^μ, γ^ν]`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rank2Tensor<F: Real>(pub [C<F>; 6]);
+// Next easiest is the vector representations
 
-impl<F: Real> LorentzRepr<F> for Rank2Tensor<F> {}
+/// Marker trait for vector variance (contravariant vs. covariant).
+pub trait Variance: sealed::Sealed + Copy + PartialEq + Eq + 'static {
+    type Dual: Variance;
+    const COVARIANT: bool;
+}
+
+/// Marker type for contravariant vectors (e.g. 4-momentum `p^μ`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Contravariant;
+impl sealed::Sealed for Contravariant {}
+impl Variance for Contravariant {
+    type Dual = Covariant;
+    const COVARIANT: bool = false;
+}
+
+/// Marker type for covariant vectors (e.g. polarisation vector `ε_μ`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Covariant;
+impl sealed::Sealed for Covariant {}
+impl Variance for Covariant {
+    type Dual = Contravariant;
+    const COVARIANT: bool = true;
+}
 
 /// Spin-1 Lorentz representation
-pub trait VectorRepr<F: Real>: LorentzRepr<F> {}
+pub trait VectorRepr<F: Real, V: Variance = Contravariant>: LorentzRepr<F> {
+    type Dual: VectorRepr<F, V::Dual, Scalar = Self::Scalar>;
 
-/// A contravariant 4-momentum vector `p^μ = [E, p_x, p_y, p_z]`.
-///
-/// This type wraps a real `[F; 4]` array.  It is distinct from
-/// [`MinkowskiRep::Fiber`], which is a complex 4-component HELAS Lorentz
-/// object (`[C<F>; 4]`).  Until explicit `Vector`/`Covector` newtypes are
-/// introduced, index variance is handled by convention at contraction sites.
-///
-/// # TODO
-/// Implement `LorentzRepr<F>` for a `RealVectorRep` marker type whose fiber is
-/// `FourMomentum<F>`, completing the bundle-theoretic picture for kinematics.
+    /// Contract with a vector of the opposite variance to get a scalar: `v_μ w^μ` or `v^μ w_μ`
+    fn dot(&self, other: &Self::Dual) -> Self::Scalar;
+
+    /// Raise or lower the index using the Minkowski metric: `v^μ = g^μν v_ν` or `v_μ = g_μν v^ν`.
+    ///
+    /// Implementation note: suggest also implementing lower() and raise() on the concrete types
+    /// of appropriate variance, calling this method internally.
+    fn dualize(&self) -> Self::Dual;
+
+    /// Bare normalization of the vector, without any metric contractions.
+    ///
+    /// This is not a basis-independent or Lorentz-invariant quantity, but it is useful for testing.
+    fn bare_norm_sq(self) -> F
+    where
+        F: Sum;
+
+    /// The `i`-th component in the underlying cartesian basis.
+    ///
+    /// Like [`bare_norm_sq`](Self::bare_norm_sq), this exposes the raw basis
+    /// coordinates rather than a Lorentz-invariant quantity; it is mainly useful
+    /// for testing and serialization.
+    fn component(&self, i: usize) -> Self::Scalar;
+}
+
+/// A real 4-momentum vector in cartesian basis (E, px, py, pz).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct LorentzVector<F: Real>(pub [F; 4]);
+pub struct LorentzVector<F: Real, V: Variance = Contravariant>([F; 4], PhantomData<V>);
 
-impl_add_for_array!(LorentzVector<F>, 4);
-impl_mul_for_array!(LorentzVector<F>, F, 4);
-
-impl<F: Real> Zero for LorentzVector<F> {
-    #[inline(always)]
-    fn zero() -> Self {
-        LorentzVector([F::zero(); 4])
+impl<F: Real, V: Variance> ArrayBacked<F, 4> for LorentzVector<F, V> {
+    fn as_array(&self) -> &[F; 4] {
+        &self.0
     }
 
-    fn is_zero(&self) -> bool {
-        self.0.iter().all(|x| x.is_zero())
+    fn from_array(arr: [F; 4]) -> Self {
+        LorentzVector(arr, PhantomData)
     }
 }
 
-impl<F: Real> VectorSpace<F> for LorentzVector<F> {}
+impl_vectorspace!(impl[F: Real, V: Variance] LorentzVector<F, V>, scalar = F);
 
-impl<F: Real> LorentzRepr<F> for LorentzVector<F> {}
+impl<F: Real, V: Variance> LorentzRepr<F> for LorentzVector<F, V> {
+    type Scalar = F;
+}
 
-impl<F: Real> VectorRepr<F> for LorentzVector<F> {}
+impl<F: Real, V: Variance> VectorRepr<F, V> for LorentzVector<F, V> {
+    type Dual = LorentzVector<F, V::Dual>;
 
-impl<F: Real> LorentzVector<F> {
+    fn dot(&self, other: &Self::Dual) -> Self::Scalar {
+        // if other is truly dual, the contraction is a simple dot product
+        self.0[0] * other.0[0]
+            + self.0[1] * other.0[1]
+            + self.0[2] * other.0[2]
+            + self.0[3] * other.0[3]
+    }
+
+    fn dualize(&self) -> Self::Dual {
+        let arr = self.as_array();
+        LorentzVector::from_array([arr[0], -arr[1], -arr[2], -arr[3]])
+    }
+
+    fn bare_norm_sq(self) -> F
+    where
+        F: Sum,
+    {
+        self.0.iter().map(|x| *x * *x).sum()
+    }
+
+    fn component(&self, i: usize) -> Self::Scalar {
+        self.0[i]
+    }
+}
+
+impl<F: Real> LorentzVector<F, Covariant> {
+    /// Raise the index to get a contravariant vector: `p^μ = g^μν p_ν`.
+    #[inline(always)]
+    pub fn raise(self) -> LorentzVector<F, Contravariant> {
+        self.dualize()
+    }
+}
+
+impl<F: Real> LorentzVector<F, Contravariant> {
+    /// Lower the index to get a covariant vector: `p_μ = g_μν p^ν`.
+    #[inline(always)]
+    pub fn lower(self) -> LorentzVector<F, Covariant> {
+        self.dualize()
+    }
+}
+
+impl<F: Real, V: Variance> LorentzVector<F, V> {
     /// Construct from individual components `[E, px, py, pz]`.
     #[inline(always)]
     pub fn new(e: F, px: F, py: F, pz: F) -> Self {
-        LorentzVector([e, px, py, pz])
+        LorentzVector([e, px, py, pz], PhantomData)
     }
 
     /// Construct from mass and cartesian 3-momentum
@@ -178,7 +185,7 @@ impl<F: Real> LorentzVector<F> {
     pub fn from_pxpypzmass(px: F, py: F, pz: F, mass: F) -> Self {
         let p3_squared = px * px + py * py + pz * pz;
         let e = (p3_squared + mass * mass).sqrt();
-        LorentzVector([e, px, py, pz])
+        LorentzVector([e, px, py, pz], PhantomData)
     }
 
     /// Construct from mass and spherical 3-momentum
@@ -193,19 +200,28 @@ impl<F: Real> LorentzVector<F> {
         Self::from_pxpypzmass(px, py, pz, mass)
     }
 
-    /// Minkowski dot product treating `self` as a covector and `other` as a vector.
-    #[inline(always)]
-    pub fn mink_dot(&self, other: &Self) -> F {
-        self.0[0] * other.0[0]
-            - self.0[1] * other.0[1]
-            - self.0[2] * other.0[2]
-            - self.0[3] * other.0[3]
-    }
-
     /// Energy component E = p^0.
     #[inline(always)]
     pub fn e(self) -> F {
         self.0[0]
+    }
+
+    /// x-component of momentum pˣ = p^1.
+    #[inline(always)]
+    pub fn px(self) -> F {
+        self.0[1]
+    }
+
+    /// y-component of momentum pʸ = p^2.
+    #[inline(always)]
+    pub fn py(self) -> F {
+        self.0[2]
+    }
+
+    /// z-component of momentum pᶻ = p^3.
+    #[inline(always)]
+    pub fn pz(self) -> F {
+        self.0[3]
     }
 
     /// Momentum magnitude squared |p|² = px² + py² + pz²
@@ -233,76 +249,102 @@ impl<F: Real> LorentzVector<F> {
     }
 }
 
-impl<F: Real> std::ops::Index<usize> for LorentzVector<F> {
-    type Output = F;
-    #[inline(always)]
-    fn index(&self, i: usize) -> &F {
-        &self.0[i]
-    }
-}
-
 /// A complex (e.g. polarisation) 4-vector.
 ///
 /// This is the fiber type for [`SpinorRepr::left_current`] and [`SpinorRepr::right_current`].
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ComplexVector<F: Real>(pub [C<F>; 4]);
+pub struct ComplexVector<F: Real, V: Variance>([C<F>; 4], PhantomData<V>);
 
-impl_add_for_array!(ComplexVector<F>, 4);
-impl_mul_for_array!(ComplexVector<F>, F, 4);
-impl_mul_for_array!(ComplexVector<F>, C<F>, 4);
-
-impl<F: Real> Zero for ComplexVector<F> {
-    #[inline(always)]
-    fn zero() -> Self {
-        ComplexVector([C::zero(); 4])
+impl<F: Real, V: Variance> ArrayBacked<C<F>, 4> for ComplexVector<F, V> {
+    fn as_array(&self) -> &[C<F>; 4] {
+        &self.0
     }
 
-    fn is_zero(&self) -> bool {
-        self.0.iter().all(|c| c.is_zero())
+    fn from_array(arr: [C<F>; 4]) -> Self {
+        ComplexVector(arr, PhantomData)
     }
 }
 
-impl<F: Real> VectorSpace<C<F>> for ComplexVector<F> {}
+impl_vectorspace!(impl[F: Real, V: Variance] ComplexVector<F, V>, scalar = C<F>);
 
-impl<F: Real> LorentzRepr<F> for ComplexVector<F> {}
+// Allow scalar multiplication by a real (performance optimization)
+impl_mul_for_array!(impl[F: Real, V: Variance] ComplexVector<F, V>, scalar = F);
 
-impl<F: Real> VectorRepr<F> for ComplexVector<F> {}
-
-impl<F: Real> std::ops::Index<usize> for ComplexVector<F> {
-    type Output = C<F>;
-    #[inline(always)]
-    fn index(&self, i: usize) -> &C<F> {
-        &self.0[i]
-    }
+impl<F: Real, V: Variance> LorentzRepr<F> for ComplexVector<F, V> {
+    type Scalar = C<F>;
 }
 
-impl<F: Real> From<LorentzVector<F>> for ComplexVector<F> {
-    #[inline(always)]
-    fn from(lv: LorentzVector<F>) -> Self {
-        ComplexVector([
-            C::new(lv.0[0], F::zero()),
-            C::new(lv.0[1], F::zero()),
-            C::new(lv.0[2], F::zero()),
-            C::new(lv.0[3], F::zero()),
-        ])
-    }
-}
+impl<F: Real, V: Variance> VectorRepr<F, V> for ComplexVector<F, V> {
+    type Dual = ComplexVector<F, V::Dual>;
 
-impl<F: Real> ComplexVector<F> {
-    /// Minkowski dot product treating `self` as a covector and `other` as a vector.
-    #[inline(always)]
-    pub fn mink_dot(&self, other: &Self) -> C<F> {
+    fn dot(&self, other: &Self::Dual) -> Self::Scalar {
+        // Dual basis has the metric built in, so the contraction is a simple dot product
         self.0[0] * other.0[0]
-            - self.0[1] * other.0[1]
-            - self.0[2] * other.0[2]
-            - self.0[3] * other.0[3]
+            + self.0[1] * other.0[1]
+            + self.0[2] * other.0[2]
+            + self.0[3] * other.0[3]
+    }
+
+    fn dualize(&self) -> Self::Dual {
+        let arr = self.as_array();
+        ComplexVector::from_array([arr[0], -arr[1], -arr[2], -arr[3]])
+    }
+
+    fn bare_norm_sq(self) -> F
+    where
+        F: Sum,
+    {
+        self.0.iter().map(|x| x.norm_sqr()).sum()
+    }
+
+    fn component(&self, i: usize) -> Self::Scalar {
+        self.0[i]
+    }
+}
+
+impl<F: Real> ComplexVector<F, Covariant> {
+    /// Raise the index to get a contravariant vector: `ε^μ = g^μν ε_ν`.
+    #[inline(always)]
+    pub fn raise(self) -> ComplexVector<F, Contravariant> {
+        self.dualize()
+    }
+}
+
+impl<F: Real> ComplexVector<F, Contravariant> {
+    /// Lower the index to get a covariant vector: `ε_μ = g_μν ε^ν`.
+    #[inline(always)]
+    pub fn lower(self) -> ComplexVector<F, Covariant> {
+        self.dualize()
+    }
+}
+
+impl<F: Real, V: Variance> From<LorentzVector<F, V>> for ComplexVector<F, V> {
+    #[inline(always)]
+    fn from(lv: LorentzVector<F, V>) -> Self {
+        ComplexVector(
+            [
+                C::new(lv.0[0], F::ZERO),
+                C::new(lv.0[1], F::ZERO),
+                C::new(lv.0[2], F::ZERO),
+                C::new(lv.0[3], F::ZERO),
+            ],
+            PhantomData,
+        )
+    }
+}
+
+impl<F: Real, V: Variance> ComplexVector<F, V> {
+    pub fn new(eps: [C<F>; 4]) -> Self {
+        ComplexVector(eps, PhantomData)
     }
 
     /// Specialized Minkowski dot product for a `ComplexVector` and a `LorentzVector`.
     ///
-    /// Slightly more efficient than the general `mink_dot` since it can avoid some complex multiplications.
+    /// Slightly more efficient than converting the `LorentzVector` to a
+    /// `ComplexVector` and using the `dot` method
     #[inline(always)]
-    pub fn mink_dot_lorentz(&self, other: &LorentzVector<F>) -> C<F> {
+    pub fn dot_lorentz(&self, other: &LorentzVector<F, V>) -> C<F> {
+        // Here the variance is THE SAME for both, so we need to manually insert the metric signs in the contraction
         self.0[0] * other.0[0]
             - self.0[1] * other.0[1]
             - self.0[2] * other.0[2]
@@ -310,15 +352,72 @@ impl<F: Real> ComplexVector<F> {
     }
 }
 
+/// Sealed trait for spinor flow direction, implemented by `FlowIn` and `FlowOut`.
+pub trait SpinorFlow: sealed::Sealed + Copy + PartialEq + Eq + 'static {
+    type Opposite: SpinorFlow;
+    const INCOMING: bool;
+
+    /// Assemble a (massive) bispinor with this flow direction
+    fn build_bispinor<F: Real>(
+        p: LorentzVector<F, Contravariant>,
+        mass: F,
+        nhel: SpinorHelicity,
+        nsf: Charge,
+    ) -> Bispinor<F, Self>;
+}
+
+/// Marker for flowing-IN spinors (`u`/`v` columns).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlowIn;
+impl sealed::Sealed for FlowIn {}
+impl SpinorFlow for FlowIn {
+    type Opposite = FlowOut;
+    const INCOMING: bool = true;
+
+    fn build_bispinor<F: Real>(
+        p: LorentzVector<F, Contravariant>,
+        mass: F,
+        nhel: SpinorHelicity,
+        nsf: Charge,
+    ) -> Bispinor<F, Self> {
+        Bispinor::from_array(weyl_ixxxxx(p, mass, nhel, nsf))
+    }
+}
+
+/// Marker for flowing-OUT spinors (`ū`/`v̄` rows).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlowOut;
+impl sealed::Sealed for FlowOut {}
+impl SpinorFlow for FlowOut {
+    type Opposite = FlowIn;
+    const INCOMING: bool = false;
+
+    fn build_bispinor<F: Real>(
+        p: LorentzVector<F, Contravariant>,
+        mass: F,
+        nhel: SpinorHelicity,
+        nsf: Charge,
+    ) -> Bispinor<F, Self> {
+        Bispinor::from_array(weyl_ixxxxx(p, mass, nhel, nsf)).bar()
+    }
+}
+
+/// Marker for flows that can sit on the bra (out) side of a bilinear.
+pub trait OutFlow: SpinorFlow {}
+impl OutFlow for FlowOut {}
+
 /// Spin-½ Lorentz representation.
 ///
 /// This is a trait to allow for multiple concrete bases (e.g. Weyl, Dirac) to be implemented.
-pub trait SpinorRepr<F: Real>: LorentzRepr<F> {
-    /// Left-handed fermion current  `J_L^μ = v̄_out γ^μ P_L u_in`.
-    fn left_current(fo: &Self, fi: &Self) -> ComplexVector<F>;
+pub trait SpinorRepr<F: Real, Flow: SpinorFlow = FlowIn>: LorentzRepr<F> {
+    /// The dual representation (e.g. for Weyl spinors, the dual of (½,0) is (0,½)).
+    type Dual: SpinorRepr<F, Flow::Opposite, Scalar = Self::Scalar>;
 
-    /// Right-handed fermion current  `J_R^μ = v̄_out γ^μ P_R u_in`.
-    fn right_current(fo: &Self, fi: &Self) -> ComplexVector<F>;
+    /// Dirac adjoint (dualize operation for bispinors)
+    ///
+    /// `ψ̄ = ψ† γ^0` and its inverse `ψ = γ^0 ψ̄†`.
+    /// Implementations should add bar() and unbar() methods that call this internally.
+    fn dualize(&self) -> Self::Dual;
 
     /// Left projection: `P_L = (1 - γ^5)/2` — zero the right-chiral (indices 2-3) components.
     fn project_left(self) -> Self;
@@ -331,10 +430,31 @@ pub trait SpinorRepr<F: Real>: LorentzRepr<F> {
     /// Used to attach a vector leg to a fermion line (the off-shell-current
     /// vertex factor `γ^μ ε_μ`) and to build the Dirac propagator numerator
     /// `q̸ + m`.
-    fn slash(self, v: &ComplexVector<F>) -> Self;
+    fn slash<V: Variance>(self, v: &ComplexVector<F, V>) -> Self;
+
+    /// Bare normalization of the spinor, without any gamma matrices or projections.
+    ///
+    /// This is not a basis-independent or Lorentz-invariant quantity, but it is useful for testing
+    fn bare_norm_sq(self) -> F
+    where
+        F: Sum;
+
+    // Things only applicable to the bra (out) side of a bilinear follow
+
+    /// Left-handed fermion current  `J_L^μ = v̄_out γ^μ P_L u_in`.
+    fn left_current(&self, fi: &Self::Dual) -> ComplexVector<F, Contravariant>
+    where
+        Flow: OutFlow;
+
+    /// Right-handed fermion current  `J_R^μ = v̄_out γ^μ P_R u_in`.
+    fn right_current(&self, fi: &Self::Dual) -> ComplexVector<F, Contravariant>
+    where
+        Flow: OutFlow;
 
     /// Scalar bilinear with chiral structure: `f̄ Γ f` where Γ ∈ {Identity, P_L, P_R}.
-    fn scalar_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> C<F>;
+    fn scalar_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> C<F>
+    where
+        Flow: OutFlow;
 
     /// Vector bilinear contraction: `f̄ γ^μ Γ f` where `Γ` encodes chirality.
     ///
@@ -342,28 +462,24 @@ pub trait SpinorRepr<F: Real>: LorentzRepr<F> {
     /// - Left (P_L): `J_L^μ = v̄_out γ^μ P_L u_in`
     /// - Right (P_R): `J_R^μ = v̄_out γ^μ P_R u_in`
     /// - Both (Identity): `J^μ = J_L^μ + J_R^μ`
-    fn vector_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> ComplexVector<F> {
+    fn vector_bilinear(
+        &self,
+        fi: &Self::Dual,
+        chirality: Chirality,
+    ) -> ComplexVector<F, Contravariant>
+    where
+        Flow: OutFlow,
+    {
         match chirality {
-            Chirality::Left => Self::left_current(fo, fi),
-            Chirality::Right => Self::right_current(fo, fi),
+            Chirality::Left => self.left_current(fi),
+            Chirality::Right => self.right_current(fi),
             Chirality::Both => {
-                let left = Self::left_current(fo, fi);
-                let right = Self::right_current(fo, fi);
+                let left = self.left_current(fi);
+                let right = self.right_current(fi);
                 left + right
             }
         }
     }
-}
-
-/// Chirality label for chiral projections and bilinears.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Chirality {
-    /// Left-handed: `P_L = (1 - γ^5)/2` — projects onto left-chiral (undotted Weyl) components.
-    Left,
-    /// Right-handed: `P_R = (1 + γ^5)/2` — projects onto right-chiral (dotted Weyl) components.
-    Right,
-    /// Both: identity projector — includes both chiralities.
-    Both,
 }
 
 /// A concrete Spin(1,3) representation: the Weyl basis for Dirac spinors.
@@ -379,123 +495,44 @@ pub enum Chirality {
 ///
 /// The `left_current` and `right_current` implementations match the Fortran
 /// HELAS routines `iovxxx` lines 86–89 exactly.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Bispinor<F: Real>(pub [C<F>; 4]);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Bispinor<F: Real, Flow: SpinorFlow>([C<F>; 4], PhantomData<Flow>);
 
-impl_add_for_array!(Bispinor<F>, 4);
-impl_mul_for_array!(Bispinor<F>, F, 4);
-impl_mul_for_array!(Bispinor<F>, C<F>, 4);
-
-impl<F: Real> Zero for Bispinor<F> {
-    #[inline(always)]
-    fn zero() -> Self {
-        Bispinor([C::zero(); 4])
+impl<F: Real, Flow: SpinorFlow> ArrayBacked<C<F>, 4> for Bispinor<F, Flow> {
+    fn as_array(&self) -> &[C<F>; 4] {
+        &self.0
     }
 
-    fn is_zero(&self) -> bool {
-        self.0.iter().all(|x| x.is_zero())
+    fn from_array(arr: [C<F>; 4]) -> Self {
+        Bispinor(arr, PhantomData)
     }
 }
 
-impl<F: Real> VectorSpace<F> for Bispinor<F> {}
+impl_vectorspace!(impl[F: Real, Flow: SpinorFlow] Bispinor<F, Flow>, scalar = C<F>);
 
-impl<F: Real> Bispinor<F> {
-    pub fn ixxxxx(p: LorentzVector<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
-        Bispinor {
-            0: weyl_ixxxxx(p, mass, nhel, nsf),
-        }
-    }
+// Allow scalar multiplication by a real (performance optimization)
+impl_mul_for_array!(impl[F: Real, Flow: SpinorFlow] Bispinor<F, Flow>, scalar = F);
 
-    pub fn oxxxxx(p: LorentzVector<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
-        Bispinor {
-            0: weyl_oxxxxx(p, mass, nhel, nsf),
-        }
-    }
-
-    /// In the Weyl basis, the Dirac conjugate ψ̄ = ψ† γ^0
-    /// swaps the left and right components and takes the Hermitian conjugate:
-    /// ψ̄ = [χ†, ψ†] = [ψ[2]*, ψ[3]*, ψ[0]*, ψ[1]*]
-    pub fn dirac_adjoint(&self) -> Self {
-        Bispinor {
-            0: [
-                self.0[2].conj(),
-                self.0[3].conj(),
-                self.0[0].conj(),
-                self.0[1].conj(),
-            ],
-        }
-    }
+impl<F: Real, Flow: SpinorFlow> LorentzRepr<F> for Bispinor<F, Flow> {
+    type Scalar = C<F>;
 }
 
-impl<F: Real> LorentzRepr<F> for Bispinor<F> {}
+impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
+    type Dual = Bispinor<F, Flow::Opposite>;
 
-impl<F: Real> SpinorRepr<F> for Bispinor<F> {
-    /// Left current using right-chiral indices of `fo` and left-chiral indices of `fi`.
-    ///
-    /// Formula: `J_L^μ = (σ̄^μ)_{α̇β} fo[2+α̇] fi[β]`
-    /// with `σ̄^0 = I₂`, `σ̄^i = −σ^i`:
-    ///
-    /// | μ | σ̄^μ | component |
-    /// |---|------|-----------|
-    /// | 0 | I₂   | `fo[2]·fi[0] + fo[3]·fi[1]` |
-    /// | 1 | −σ¹  | `−(fo[2]·fi[1] + fo[3]·fi[0])` |
-    /// | 2 | −σ²  | `i(fo[2]·fi[1] − fo[3]·fi[0])` |
-    /// | 3 | −σ³  | `−fo[2]·fi[0] + fo[3]·fi[1]` |
-    fn left_current(fo: &Self, fi: &Self) -> ComplexVector<F> {
-        let fo = &fo.0;
-        let fi = &fi.0;
-        ComplexVector {
-            0: [
-                fo[2] * fi[0] + fo[3] * fi[1],
-                -(fo[2] * fi[1] + fo[3] * fi[0]),
-                ri(F::one()) * (fo[2] * fi[1] - fo[3] * fi[0]),
-                -fo[2] * fi[0] + fo[3] * fi[1],
-            ],
-        }
-    }
-
-    /// Right current using left-chiral indices of `fo` and right-chiral indices of `fi`.
-    ///
-    /// Formula: `J_R^μ = (σ^μ)^{αβ̇} fo[α] fi[2+β̇]`
-    /// with `σ^0 = I₂`, `σ^i = +σ^i`:
-    ///
-    /// | μ | σ^μ | component |
-    /// |---|-----|-----------|
-    /// | 0 | I₂  | `fo[0]·fi[2] + fo[1]·fi[3]` |
-    /// | 1 | +σ¹ | `fo[0]·fi[3] + fo[1]·fi[2]` |
-    /// | 2 | +σ²  | `−i(fo[0]·fi[3] − fo[1]·fi[2])` |
-    /// | 3 | +σ³  | `fo[0]·fi[2] − fo[1]·fi[3]` |
-    fn right_current(fo: &Self, fi: &Self) -> ComplexVector<F> {
-        let fo = &fo.0;
-        let fi = &fi.0;
-        ComplexVector {
-            0: [
-                fo[0] * fi[2] + fo[1] * fi[3],
-                fo[0] * fi[3] + fo[1] * fi[2],
-                -ri(F::one()) * (fo[0] * fi[3] - fo[1] * fi[2]),
-                fo[0] * fi[2] - fo[1] * fi[3],
-            ],
-        }
+    fn dualize(&self) -> Self::Dual {
+        let arr = self.as_array();
+        Bispinor::from_array([arr[2].conj(), arr[3].conj(), arr[0].conj(), arr[1].conj()])
     }
 
     /// Left projection: zero the right-chiral (indices 2-3) components, keeping left-chiral (0-1).
     fn project_left(self) -> Self {
-        Bispinor([
-            self.0[0],
-            self.0[1],
-            C::new(F::zero(), F::zero()),
-            C::new(F::zero(), F::zero()),
-        ])
+        Bispinor([self.0[0], self.0[1], C::ZERO, C::ZERO], PhantomData)
     }
 
     /// Right projection: zero the left-chiral (indices 0-1) components, keeping right-chiral (2-3).
     fn project_right(self) -> Self {
-        Bispinor([
-            C::new(F::zero(), F::zero()),
-            C::new(F::zero(), F::zero()),
-            self.0[2],
-            self.0[3],
-        ])
+        Bispinor([C::ZERO, C::ZERO, self.0[2], self.0[3]], PhantomData)
     }
 
     /// Apply the gamma-slash `v̸ = γ^μ v_μ`.
@@ -505,7 +542,8 @@ impl<F: Real> SpinorRepr<F> for Bispinor<F> {
     /// output is `(σ·v) ψ_L`, with
     /// `σ·v  = [[v₀+v₃, v₁−iv₂], [v₁+iv₂, v₀−v₃]]` and
     /// `σ̄·v = [[v₀−v₃, −(v₁−iv₂)], [−(v₁+iv₂), v₀+v₃]]`.
-    fn slash(self, v: &ComplexVector<F>) -> Self {
+    fn slash<V: Variance>(self, v: &ComplexVector<F, V>) -> Self {
+        // TODO: does this depend on the variance?
         let psi = &self.0;
         let v = &v.0;
         let i = ri(F::one());
@@ -523,7 +561,70 @@ impl<F: Real> SpinorRepr<F> for Bispinor<F> {
         let r1 = v0_p_v3 * psi[0] + v1_m_iv2 * psi[1];
         let r2 = v1_p_iv2 * psi[0] + v0_m_v3 * psi[1];
 
-        Bispinor([l1, l2, r1, r2])
+        Bispinor([l1, l2, r1, r2], PhantomData)
+    }
+
+    fn bare_norm_sq(self) -> F
+    where
+        F: Sum,
+    {
+        self.0.iter().map(|x| x.norm_sqr()).sum()
+    }
+
+    /// Left current using right-chiral indices of `fo` and left-chiral indices of `fi`.
+    ///
+    /// Formula: `J_L^μ = (σ̄^μ)_{α̇β} fo[2+α̇] fi[β]`
+    /// with `σ̄^0 = I₂`, `σ̄^i = −σ^i`:
+    ///
+    /// | μ | σ̄^μ | component |
+    /// |---|------|-----------|
+    /// | 0 | I₂   | `fo[2]·fi[0] + fo[3]·fi[1]` |
+    /// | 1 | −σ¹  | `−(fo[2]·fi[1] + fo[3]·fi[0])` |
+    /// | 2 | −σ²  | `i(fo[2]·fi[1] − fo[3]·fi[0])` |
+    /// | 3 | −σ³  | `−fo[2]·fi[0] + fo[3]·fi[1]` |
+    fn left_current(&self, fi: &Self::Dual) -> ComplexVector<F, Contravariant>
+    where
+        Flow: OutFlow,
+    {
+        let fo = &self.0;
+        let fi = &fi.0;
+        ComplexVector {
+            0: [
+                fo[2] * fi[0] + fo[3] * fi[1],
+                -(fo[2] * fi[1] + fo[3] * fi[0]),
+                ri(F::one()) * (fo[2] * fi[1] - fo[3] * fi[0]),
+                -fo[2] * fi[0] + fo[3] * fi[1],
+            ],
+            1: PhantomData,
+        }
+    }
+
+    /// Right current using left-chiral indices of `fo` and right-chiral indices of `fi`.
+    ///
+    /// Formula: `J_R^μ = (σ^μ)^{αβ̇} fo[α] fi[2+β̇]`
+    /// with `σ^0 = I₂`, `σ^i = +σ^i`:
+    ///
+    /// | μ | σ^μ | component |
+    /// |---|-----|-----------|
+    /// | 0 | I₂  | `fo[0]·fi[2] + fo[1]·fi[3]` |
+    /// | 1 | +σ¹ | `fo[0]·fi[3] + fo[1]·fi[2]` |
+    /// | 2 | +σ²  | `−i(fo[0]·fi[3] − fo[1]·fi[2])` |
+    /// | 3 | +σ³  | `fo[0]·fi[2] − fo[1]·fi[3]` |
+    fn right_current(&self, fi: &Self::Dual) -> ComplexVector<F, Contravariant>
+    where
+        Flow: OutFlow,
+    {
+        let fo = &self.0;
+        let fi = &fi.0;
+        ComplexVector {
+            0: [
+                fo[0] * fi[2] + fo[1] * fi[3],
+                fo[0] * fi[3] + fo[1] * fi[2],
+                -ri(F::one()) * (fo[0] * fi[3] - fo[1] * fi[2]),
+                fo[0] * fi[2] - fo[1] * fi[3],
+            ],
+            1: PhantomData,
+        }
     }
 
     /// Scalar bilinear contraction: `f̄ Γ f` where `Γ` encodes chirality.
@@ -533,8 +634,11 @@ impl<F: Real> SpinorRepr<F> for Bispinor<F> {
     /// - Left (P_L): `fi_left · fo_left = fi[0]·fo[2] + fi[1]·fo[3]`
     /// - Right (P_R): `fi_right · fo_right = fi[2]·fo[0] + fi[3]·fo[1]`
     /// - Both (Identity): both left and right contractions.
-    fn scalar_bilinear(fo: &Self, fi: &Self, chirality: Chirality) -> C<F> {
-        let fo = &fo.0;
+    fn scalar_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> C<F>
+    where
+        Flow: OutFlow,
+    {
+        let fo = &self.0;
         let fi = &fi.0;
         let result = match chirality {
             Chirality::Left => fi[0] * fo[2] + fi[1] * fo[3],
@@ -545,6 +649,46 @@ impl<F: Real> SpinorRepr<F> for Bispinor<F> {
     }
 }
 
+impl<F: Real, Flow: SpinorFlow> Bispinor<F, Flow> {
+    /// Construct a spinor from a 4-momentum, mass, helicity, and fermion flow.
+    #[inline(always)]
+    pub fn from_momentum(
+        p: LorentzVector<F, Contravariant>,
+        mass: F,
+        nhel: SpinorHelicity,
+        nsf: Charge,
+    ) -> Self {
+        Flow::build_bispinor(p, mass, nhel, nsf)
+    }
+}
+
+impl<F: Real> Bispinor<F, FlowIn> {
+    /// Bar the spinor to get the outgoing flow: `ū = ψ† γ^0`.
+    #[inline(always)]
+    pub fn bar(self) -> Bispinor<F, FlowOut> {
+        self.dualize()
+    }
+}
+
+impl<F: Real> Bispinor<F, FlowOut> {
+    /// Unbar the spinor to get the incoming flow: `u = γ^0 ψ̄†`.
+    #[inline(always)]
+    pub fn unbar(self) -> Bispinor<F, FlowIn> {
+        self.dualize()
+    }
+}
+
+/// Antisymmetric rank-2 Lorentz tensor (placeholder type).
+///
+/// Represents a tensor `T^{μν} = -T^{νμ}` such as the output of `σ^μν = i/2 [γ^μ, γ^ν]`.
+/// It is the (1,0) ⊕ (0,1) representation of the Lorentz group, which is 6-dimensional.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AsymRank2Tensor<F: Real>(pub [C<F>; 6]);
+
+impl<F: Real> LorentzRepr<F> for AsymRank2Tensor<F> {
+    type Scalar = C<F>;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers: the actual WeylBasis numerics (moved from repr.rs)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -553,21 +697,21 @@ impl<F: Real> SpinorRepr<F> for Bispinor<F> {
 ///
 /// Mirrors Fortran `ixxxxx` exactly.
 fn weyl_ixxxxx<F: Real>(
-    p: LorentzVector<F>,
+    p: LorentzVector<F, Contravariant>,
     mass: F,
     nhel: SpinorHelicity,
     nsf: Charge,
 ) -> [C<F>; 4] {
-    let two = F::one() + F::one();
+    let two = F::ONE + F::ONE;
     let nh = nhel.sign() * nsf.sign();
     let nsf_i = nsf.sign();
 
-    let mut fi = [C::new(F::zero(), F::zero()); 4];
+    let mut fi = [C::new(F::ZERO, F::ZERO); 4];
 
-    if mass != F::zero() {
+    if mass != F::ZERO {
         let pp = p.p3().min(p.e());
 
-        if pp == F::zero() {
+        if pp == F::ZERO {
             // ── at rest ───────────────────────────────────────────────────
             let sqm0 = mass.abs().sqrt();
             let sqm1 = sqm0 * mass.signum();
@@ -588,7 +732,7 @@ fn weyl_ixxxxx<F: Real>(
                 F::from(1 + nsf_i + (1 - nsf_i) * nh).unwrap() / two,
                 F::from(1 + nsf_i - (1 - nsf_i) * nh).unwrap() / two,
             ];
-            let omega0 = (p[0] + pp).sqrt();
+            let omega0 = (p.e() + pp).sqrt();
             let omega = [omega0, mass / omega0];
 
             let ip = ((1 + nh) / 2) as usize;
@@ -596,10 +740,10 @@ fn weyl_ixxxxx<F: Real>(
 
             let sfomeg = [r(sf[0] * omega[ip]), r(sf[1] * omega[im])];
 
-            let pp3 = (pp + p[3]).max(F::zero());
+            let pp3 = (pp + p.pz()).max(F::ZERO);
             let chi0 = r((pp3 / (two * pp)).sqrt());
-            let chi1 = if pp3 > F::zero() {
-                C::new(F::from(nh).unwrap() * p[1], p[2]) / r((two * pp * pp3).sqrt())
+            let chi1 = if pp3 > F::ZERO {
+                C::new(F::from(nh).unwrap() * p.px(), p.py()) / r((two * pp * pp3).sqrt())
             } else {
                 r(F::from(-nh).unwrap())
             };
@@ -612,127 +756,30 @@ fn weyl_ixxxxx<F: Real>(
         }
     } else {
         // ── massless ──────────────────────────────────────────────────────
-        let sqp0p3 = if p[1] == F::zero() && p[2] == F::zero() && p[3] < F::zero() {
-            F::zero()
+        let sqp0p3 = if p.px() == F::ZERO && p.py() == F::ZERO && p.pz() < F::ZERO {
+            F::ZERO
         } else {
-            (p.e() + p[3]).max(F::zero()).sqrt() * F::from(nsf_i).unwrap()
+            (p.e() + p.pz()).max(F::ZERO).sqrt() * F::from(nsf_i).unwrap()
         };
         let chi0 = r(sqp0p3);
-        let chi1 = if sqp0p3 == F::zero() {
-            r(F::from(-nhel.sign()).unwrap() * (two * p[0]).sqrt())
+        let chi1 = if sqp0p3 == F::ZERO {
+            r(F::from(-nhel.sign()).unwrap() * (two * p.e()).sqrt())
         } else {
-            C::new(F::from(nh).unwrap() * p[1], p[2]) / r(sqp0p3)
+            C::new(F::from(nh).unwrap() * p.px(), p.py()) / r(sqp0p3)
         };
 
         if nh == 1 {
-            fi[0] = r(F::zero());
-            fi[1] = r(F::zero());
+            fi[0] = C::ZERO;
+            fi[1] = C::ZERO;
             fi[2] = chi0;
             fi[3] = chi1;
         } else {
             fi[0] = chi1;
             fi[1] = chi0;
-            fi[2] = r(F::zero());
-            fi[3] = r(F::zero());
+            fi[2] = C::ZERO;
+            fi[3] = C::ZERO;
         }
     }
 
     fi
-}
-
-/// Outgoing fermion wavefunction (row spinor / Dirac conjugate).
-///
-/// Mirrors Fortran `oxxxxx` exactly. Key differences from `ixxxxx`:
-/// - `chi[1]` uses `−p[2]` (complex conjugate of the transverse phase),
-/// - `sfomeg[0]` ↔ `sfomeg[1]` swapped in the component assignment,
-/// - At rest: `ip_i = −((1+nh)/2)` instead of `+(1+nh)/2`.
-fn weyl_oxxxxx<F: Real>(
-    p: LorentzVector<F>,
-    mass: F,
-    nhel: SpinorHelicity,
-    nsf: Charge,
-) -> [C<F>; 4] {
-    let two = F::one() + F::one();
-    let nh = nhel.sign() * nsf.sign();
-    let nsf_i = nsf.sign();
-
-    let mut fo = [C::new(F::zero(), F::zero()); 4];
-
-    if mass != F::zero() {
-        let pp = p.p3().min(p.e());
-
-        if pp == F::zero() {
-            // ── at rest ───────────────────────────────────────────────────
-            let sqm0 = mass.abs().sqrt();
-            let sqm1 = sqm0 * mass.signum();
-            let sqm = [sqm0, sqm1];
-
-            let ip_i = -((1 + nh) / 2);
-            let im_i = (1 - nh) / 2;
-            let neg_ip = (-ip_i) as usize;
-            let im = im_i as usize;
-
-            fo[0] = r(F::from(im_i).unwrap() * sqm[im]);
-            fo[1] = r(F::from(ip_i * nsf_i).unwrap() * sqm[im]);
-            fo[2] = r(F::from(im_i * nsf_i).unwrap() * sqm[neg_ip]);
-            fo[3] = r(F::from(ip_i).unwrap() * sqm[neg_ip]);
-        } else {
-            // ── massive, moving ───────────────────────────────────────────
-            let sf = [
-                F::from(1 + nsf_i + (1 - nsf_i) * nh).unwrap() / two,
-                F::from(1 + nsf_i - (1 - nsf_i) * nh).unwrap() / two,
-            ];
-            let omega0 = (p[0] + pp).sqrt();
-            let omega = [omega0, mass / omega0];
-
-            let ip = ((1 + nh) / 2) as usize;
-            let im = ((1 - nh) / 2) as usize;
-
-            let sfomeg = [r(sf[0] * omega[ip]), r(sf[1] * omega[im])];
-
-            let pp3 = (pp + p[3]).max(F::zero());
-            let chi0 = r((pp3 / (two * pp)).sqrt());
-            // chi[1] uses −p[2] (conjugate)
-            let chi1 = if pp3 > F::zero() {
-                C::new(F::from(nh).unwrap() * p[1], -p[2]) / r((two * pp * pp3).sqrt())
-            } else {
-                r(F::from(-nh).unwrap())
-            };
-            let chi = [chi0, chi1];
-
-            // sfomeg[0] ↔ sfomeg[1] swapped vs ixxxxx
-            fo[0] = sfomeg[1] * chi[im];
-            fo[1] = sfomeg[1] * chi[ip];
-            fo[2] = sfomeg[0] * chi[im];
-            fo[3] = sfomeg[0] * chi[ip];
-        }
-    } else {
-        // ── massless ──────────────────────────────────────────────────────
-        let sqp0p3 = if p[1] == F::zero() && p[2] == F::zero() && p[3] < F::zero() {
-            F::zero()
-        } else {
-            (p.e() + p[3]).max(F::zero()).sqrt() * F::from(nsf_i).unwrap()
-        };
-        let chi0 = r(sqp0p3);
-        // chi[1] uses −p[2] (conjugate) and NHEL (not nh) when sqp0p3 == 0
-        let chi1 = if sqp0p3 == F::zero() {
-            r(F::from(-nhel.sign()).unwrap() * (two * p[0]).sqrt())
-        } else {
-            C::new(F::from(nh).unwrap() * p[1], -p[2]) / r(sqp0p3)
-        };
-
-        if nh == 1 {
-            fo[0] = chi0;
-            fo[1] = chi1;
-            fo[2] = r(F::zero());
-            fo[3] = r(F::zero());
-        } else {
-            fo[0] = r(F::zero());
-            fo[1] = r(F::zero());
-            fo[2] = chi1;
-            fo[3] = chi0;
-        }
-    }
-
-    fo
 }

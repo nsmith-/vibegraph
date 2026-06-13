@@ -42,8 +42,9 @@ fn derive_gammaz_couplings() -> ([f64; 2], [f64; 2]) {
 
 fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
     use itertools::iproduct;
+    use vibegraph::helas::repr::numbers::{Charge, SpinorHelicity};
     use vibegraph::helas::{iovxxx, jioxxx};
-    use vibegraph::helas::{Charge, InDiracWf, LorentzVector, OutDiracWf, SpinorHelicity};
+    use vibegraph::helas::{InDiracWf, LorentzVector, OutDiracWf};
     use SpinorHelicity::{Down, Up};
 
     let e_beam = sqrt_s / 2.0;
@@ -58,13 +59,13 @@ fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
 
     let mut sum = 0.0;
     for (nhel_em, nhel_ep) in iproduct!([Down, Up], [Down, Up]) {
-        let fi_em = InDiracWf::new(p_em, MDL_ME, nhel_em, Charge::Particle);
-        let fo_ep = OutDiracWf::new(p_ep, MDL_ME, nhel_ep, Charge::Antiparticle);
+        let fi_em = InDiracWf::from_momentum(p_em, MDL_ME, nhel_em, Charge::Particle);
+        let fo_ep = OutDiracWf::from_momentum(p_ep, MDL_ME, nhel_ep, Charge::Antiparticle);
         let v_gamma = jioxxx(&fo_ep, &fi_em, gc_gamma, 0.0, 0.0);
         let v_z = jioxxx(&fo_ep, &fi_em, gc_z, MDL_MZ, MDL_WZ);
         for (nhel_mm, nhel_mp) in iproduct!([Down, Up], [Down, Up]) {
-            let fo_mm = OutDiracWf::new(p_mm, MDL_MMU, nhel_mm, Charge::Particle);
-            let fi_mp = InDiracWf::new(p_mp, MDL_MMU, nhel_mp, Charge::Antiparticle);
+            let fo_mm = OutDiracWf::from_momentum(p_mm, MDL_MMU, nhel_mm, Charge::Particle);
+            let fi_mp = InDiracWf::from_momentum(p_mp, MDL_MMU, nhel_mp, Charge::Antiparticle);
             let amp_gamma = iovxxx(&fo_mm, &fi_mp, &v_gamma, gc_gamma);
             let amp_z = iovxxx(&fo_mm, &fi_mp, &v_z, gc_z);
             sum += (amp_gamma + amp_z).norm_sqr();

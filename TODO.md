@@ -40,15 +40,31 @@ validate a second process (e.g. uū→dd̄) vs MadGraph.
 **Remaining tasks**:
 1. ✅ Replace calls to `compute_m2_ee_mumu` with `AmplitudeEvaluator::eval_m2` in the VEGAS integrand (`validate_vegas.rs`)
 2. ✅ Break out VEGAS cross-section tests into `validate_vegas.rs` (`sigma_qed_limit`, `sigma_z_pole`, `validate_vegas`)
-3. 🔴 **Off-shell current with non-last output leg gives wrong |M|²** (blocks 2→6).
-   Found via the new `uux_to_ccx_emmm_qcd0` 2→6 validation: the evaluator now *runs*
-   for 8-leg processes (fixed a leg-index crash in `topo_sort::walk_vertex` — the
-   output leg was skipped instead of placeholdered in `input_slots`, misaligning the
-   1-based `Leg(i)` references), but the result is wrong by ~1e10 for all points.
-   `ee_to_mumu`/`pp_to_ll` only ever produce the *last* leg (s-channel boson) as an
-   off-shell output, so they never exercised this. Suspect the rooted off-shell-current
-   dispatch (`dispatch.rs`) and/or output-momentum routing is only correct when the
-   output is the last leg. `uux` is informational in `validate_helas_mg` until fixed.
+3. 🟡 **Off-shell fermion-line momentum routing FIXED; residual |M|² value error remains** (2→6).
+   - ✅ **Momentum routing fixed** (`helas/eval/run.rs`): three conflated bugs in how
+     off-shell currents chain — (a) `evaluate_propagation` flipped `-wf.momentum` on every
+     propagator (reference HELAS already emits conserved momentum → flip mis-routed every
+     >1-vertex line, wrong q², spurious poles); (b) flow-in `GammaIout` must subtract the
+     vector `q = fi.p − v.p` (Fortran `fvixxx`), opposite to flow-out `GammaJout`/`fvoxxx`
+     (`fo+vc`) — both used `f+v`; (c) earlier leg-index crash already fixed. After: every
+     internal q² is physical (u-ū s-channel boson recovers q²=s exactly); `ee_to_mumu`/
+     `pp_to_ll` still pass; uux rel diff **2.26e10 → 6.95e6**.
+   - ✅ **Flow-typed fermion slots (recommended fix implemented).** `WaveformSlot::Fermion`
+     was split into `FermionIn(InDiracWf)` / `FermionOut(OutDiracWf)` so an off-shell fermion
+     line carries its flow in the slot. `GammaIout` → `FermionIn`, `GammaJout` → `FermionOut`
+     (now mirrors `foxxx`'s `ε̸ψ̄` directly, no adjoint hack); `evaluate_propagation` is
+     flow-preserving for both; consumers pull the flow they need via
+     `WaveformSlot::expect_fermion_in/out` (Dirac adjoint applied only on genuine flow
+     conversion). This removed the wrong `.unbar()`/`.bar()` coercions: `GammaJout ≅ foxxx`
+     now matches exactly. Also fixed `DiracWf::flip_flow`, which was negating the momentum
+     (flow is the bra/ket dual of the *same* particle — momentum carries through unchanged).
+   - 🟡 **Residual uux value error — re-measure.** With flow-typed slots the row/column
+     propagator-numerator ambiguity that was the leading suspect is resolved at the unit
+     level. The uux 2→6 |M|² discrepancy needs re-measuring against MadGraph (it was ~6.95e6
+     before this change); also re-check fermion permutation signs. (Verified NOT caused by the
+     `charge()`-vs-structural row/col choice in `GammaVout` — identical result either way.)
+     `uux` stays informational in `validate_helas_mg`; trace tool: `run::tests::debug_uux_trace`
+     (ignored).
 4. ✅ **Single-color-flow validation via scalar color factor.** For NCOLOR=1 processes,
    `MG = CF(1,1)·eval_m2_rust` (e.g. Nc=3 for `pp_to_ll`, Nc²=9 for `uux_to_ccx`).
    `validate_helas_mg::color_factor` applies it; `pp_to_ll_qcd0` now *enforced* (was

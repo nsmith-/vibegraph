@@ -4,7 +4,7 @@
 //! The rooted descriptor (RootedNode) specifies the concrete primitive and its input/output orientation
 //! so that eval walks resolved nodes, never symbolic ops.
 
-pub use crate::helas::repr::lorentz::Chirality;
+pub use crate::helas::repr::numbers::Chirality;
 use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
 
 /// A single LorentzTerm, already rooted at the output leg and ready to eval.

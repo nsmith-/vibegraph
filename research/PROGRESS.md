@@ -18,8 +18,8 @@ All SM node types implemented:
 |------|---------|
 | `Leg(i)` | External wavefunction / off-shell input |
 | `GammaVout { i, j }` | γ^μ bilinear → vector (ffV vertex) |
-| `GammaIout { mu, j }` | ε̸ψ → fermion out (fioxxx) |
-| `GammaJout { mu, i }` | ε̸ψ̄ → fermion out (foxxx) |
+| `GammaIout { mu, j }` | ε̸ψ → flow-in fermion current (fioxxx) |
+| `GammaJout { mu, i }` | ε̸ψ̄ → flow-out fermion current (foxxx) |
 | `ProjM/P { i }` | Left/right chiral projector on fermion |
 | `ProjMAmp/PAmp { i, j }` | Chiral scalar bilinear (FFS Yukawa) |
 | `Metric { mu, nu }` | g^{μν} contraction → scalar |
@@ -31,7 +31,7 @@ Unsupported (raise `CompileError::UnsupportedVertex`): Sigma, Epsilon, C.
 
 ### Runtime evaluator (`run.rs`)
 - `evaluate_lorentz_node`: recursive tree walker, implements all node types above
-- `WaveformSlot<F>`: register file holding Fermion/Vector/Scalar/Empty; supports `+`, `C<F>*`, `momentum()`
+- `WaveformSlot<F>`: register file holding FermionIn/FermionOut/Vector/Scalar/Empty; supports `+`, `C<F>*`, `momentum()`, `expect_fermion_in/out()`
 - `evaluate_off_shell_current` / `evaluate_contract_amplitude`: per-vertex entry points
 - `evaluate_propagation`: Dirac, massive vector (unitary gauge, Fabio fixed-width), massless vector, scalar
 
@@ -41,6 +41,15 @@ Unsupported (raise `CompileError::UnsupportedVertex`): Sigma, Epsilon, C.
 - `ExtLegInfo`: spin + charge populated at compile time; eliminates redundant metadata
 
 ### Key design decisions
+- **Flow-typed fermion slots**: `WaveformSlot` distinguishes `FermionIn(InDiracWf)` (column/ket)
+  from `FermionOut(OutDiracWf)` (row/bra). An off-shell current produced by `GammaIout` is
+  flow-in; by `GammaJout` is flow-out (`ε̸ψ̄`, matching `foxxx` with no adjoint coercion).
+  `evaluate_propagation` preserves flow; consumers request the flow they need via
+  `expect_fermion_in/out`, which apply the Dirac adjoint only on a genuine flow conversion.
+  This replaced the earlier "all slots are `InDiracWf`, adjoint on demand" convention, whose
+  `.unbar()`/`.bar()` coercions corrupted the `GammaJout` numerator (the propagator `(q̸+m)`
+  does not commute with the adjoint). `DiracWf::flip_flow` carries momentum through unchanged
+  (flow is the bra/ket dual of the same particle). See `research/notes/11-variance-flow-duality.md`.
 - **Fermion flow by charge**: `GammaVout` selects `(fo, fi)` by `Charge::Particle/Antiparticle`, not positional order
 - **Propagator momentum convention**: all propagated slots carry −q (outgoing)
 - **Off-shell scalar output-leg fix**: trivial `Leg(root)` leaf is dropped from build_at_leg; prevents reading the output slot as an input

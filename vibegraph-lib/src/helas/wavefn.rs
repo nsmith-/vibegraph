@@ -46,42 +46,14 @@
 //!
 //! (TODO)
 use crate::helas::repr::lorentz::{
-    Bispinor, Charge, Chirality, ComplexVector, LorentzVector, SpinorHelicity, SpinorRepr,
+    Bispinor, ComplexVector, Contravariant, FlowIn, FlowOut, LorentzVector, SpinorFlow, SpinorRepr,
 };
+use crate::helas::repr::numbers::{Charge, Chirality, SpinorHelicity};
 use crate::helas::repr::{Real, C};
-use std::marker::PhantomData;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Spinor wavefunction
 // ──────────────────────────────────────────────────────────────────────────────
-
-/// Marker for flowing-IN spinors (`u`/`v` columns).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FlowIn;
-
-/// Marker for flowing-OUT spinors (`ū`/`v̄` rows).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FlowOut;
-
-mod sealed {
-    pub trait Sealed {}
-}
-
-/// Sealed trait for spinor flow direction, implemented by `FlowIn` and `FlowOut`.
-pub trait SpinorFlow: sealed::Sealed {
-    type Opposite: SpinorFlow;
-    const INCOMING: bool;
-}
-impl sealed::Sealed for FlowIn {}
-impl SpinorFlow for FlowIn {
-    type Opposite = FlowOut;
-    const INCOMING: bool = true;
-}
-impl sealed::Sealed for FlowOut {}
-impl SpinorFlow for FlowOut {
-    type Opposite = FlowIn;
-    const INCOMING: bool = false;
-}
 
 /// A Dirac spinor wavefunction together with its (signed) 4-momentum.
 ///
@@ -93,11 +65,10 @@ impl SpinorFlow for FlowOut {
 /// since [`SpinorRepr<F>`] is a subtrait of [`crate::helas::repr::LorentzRepr<F>`]
 /// with `Fiber = [C<F>; 4]`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct DiracWf<F: Real, Flow: SpinorFlow = FlowIn> {
-    pub spinor: Bispinor<F>,
+pub struct DiracWf<F: Real, Flow: SpinorFlow> {
+    pub spinor: Bispinor<F, Flow>,
     /// Signed momentum: particle → +p, antiparticle → −p
-    pub momentum: LorentzVector<F>,
-    _flow: PhantomData<Flow>,
+    pub momentum: LorentzVector<F, Contravariant>,
 }
 
 /// Flowing-IN typed spinor wavefunction.
@@ -107,22 +78,29 @@ pub type InDiracWf<F> = DiracWf<F, FlowIn>;
 pub type OutDiracWf<F> = DiracWf<F, FlowOut>;
 
 impl<F: Real, Flow: SpinorFlow> DiracWf<F, Flow> {
-    #[inline(always)]
-    fn from_parts(spinor: Bispinor<F>, momentum: LorentzVector<F>) -> Self {
+    /// Create a spinor wavefunction from a bispinor and momentum.
+    pub fn from_momentum(
+        p: LorentzVector<F, Contravariant>,
+        mass: F,
+        nhel: SpinorHelicity,
+        nsf: Charge,
+    ) -> Self {
+        let spinor = Bispinor::from_momentum(p, mass, nhel, nsf);
         Self {
             spinor,
-            momentum,
-            _flow: PhantomData,
+            momentum: match nsf {
+                Charge::Particle => p,      // outgoing: +p
+                Charge::Antiparticle => -p, // incoming: -p
+            },
         }
     }
 
-    #[inline(always)]
-    fn flip_flow(self) -> DiracWf<F, Flow::Opposite> {
-        DiracWf {
-            spinor: self.spinor.dirac_adjoint(),
-            momentum: self.momentum,
-            _flow: PhantomData,
-        }
+    /// Create a spinor wavefunction from a bispinor and momentum.
+    pub fn from_spinor(
+        spinor: Bispinor<F, Flow>,
+        momentum: LorentzVector<F, Contravariant>,
+    ) -> Self {
+        Self { spinor, momentum }
     }
 
     /// Return the charge (particle vs antiparticle) based on the sign of the energy component of the momentum.
@@ -130,58 +108,27 @@ impl<F: Real, Flow: SpinorFlow> DiracWf<F, Flow> {
     /// This relies on the HELAS convention that the momentum stored in the wavefunction is `p * nsf.sign()`,
     /// where `nsf` is the charge sign parameter used when constructing the spinor.
     pub fn charge(&self) -> Charge {
-        if self.momentum[0] >= F::zero() {
+        if self.momentum.e().is_sign_positive() {
             Charge::Particle
         } else {
             Charge::Antiparticle
         }
     }
 
-    /// Return a scalar bilinear of the form `f̄ Γ f` where `Γ` is a chiral structure (Identity, P_L, P_R).
-    pub fn scalar_bilinear(
-        &self,
-        other: &DiracWf<F, Flow::Opposite>,
-        chirality: Chirality,
-    ) -> C<F> {
-        match Flow::INCOMING {
-            true => SpinorRepr::scalar_bilinear(&other.spinor, &self.spinor, chirality),
-            false => SpinorRepr::scalar_bilinear(&self.spinor, &other.spinor, chirality),
-        }
-    }
-
-    /// Return a vector bilinear of the form `f̄ γ^μ Γ f` where `Γ` is a chiral structure (Identity, P_L, P_R).
-    pub fn vector_bilinear(
-        &self,
-        other: &DiracWf<F, Flow::Opposite>,
-        chirality: Chirality,
-    ) -> ComplexVector<F> {
-        match Flow::INCOMING {
-            true => SpinorRepr::vector_bilinear(&other.spinor, &self.spinor, chirality),
-            false => SpinorRepr::vector_bilinear(&self.spinor, &other.spinor, chirality),
+    /// Flip the flow direction by taking the Dirac conjugate of the spinor (`u ↔ ū`).
+    ///
+    /// This is the bra/ket dual of the *same* physical particle, so the stored
+    /// (HELAS-signed) momentum is carried through unchanged — matching the
+    /// no-flip momentum routing used throughout off-shell-current evaluation.
+    pub fn flip_flow(self) -> DiracWf<F, Flow::Opposite> {
+        DiracWf {
+            spinor: self.spinor.dualize(),
+            momentum: self.momentum,
         }
     }
 }
 
 impl<F: Real> InDiracWf<F> {
-    /// Construct a flowing-IN wavefunction.
-    pub fn new(p: LorentzVector<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
-        let spinor = Bispinor::ixxxxx(p, mass, nhel, nsf);
-        Self::from_parts(
-            spinor,
-            match nsf {
-                Charge::Particle => p,      // outgoing: +p
-                Charge::Antiparticle => -p, // incoming: -p
-            },
-        )
-    }
-
-    /// Construct an off-shell flowing-IN fermion from an arbitrary spinor and momentum.
-    ///
-    /// Used by `foxxx` and similar off-shell vertex routines.
-    pub fn from_spinor(spinor: Bispinor<F>, momentum: LorentzVector<F>) -> Self {
-        Self::from_parts(spinor, momentum)
-    }
-
     /// Convert to a flowing-OUT wavefunction by taking the Dirac conjugate of the spinor
     pub fn to_outgoing(self) -> OutDiracWf<F> {
         self.flip_flow()
@@ -189,30 +136,23 @@ impl<F: Real> InDiracWf<F> {
 }
 
 impl<F: Real> OutDiracWf<F> {
-    /// Construct a flowing-OUT wavefunction.
-    pub fn new(p: LorentzVector<F>, mass: F, nhel: SpinorHelicity, nsf: Charge) -> Self {
-        let spinor = Bispinor::oxxxxx(p, mass, nhel, nsf);
-        Self::from_parts(
-            spinor,
-            match nsf {
-                Charge::Particle => p,      // outgoing: +p
-                Charge::Antiparticle => -p, // incoming: -p
-            },
-        )
-    }
-
-    /// Construct an off-shell flowing-OUT fermion from an arbitrary spinor and momentum.
-    ///
-    /// Used by `fioxxx` and similar off-shell vertex routines.
-    pub fn from_spinor(spinor: Bispinor<F>, momentum: LorentzVector<F>) -> Self {
-        Self::from_parts(spinor, momentum)
-    }
-
     /// Convert to a flowing-IN wavefunction by taking the Dirac conjugate of the spinor
     ///
     /// This is the inverse of [`InDiracWf::to_outgoing`].
     pub fn to_incoming(self) -> InDiracWf<F> {
         self.flip_flow()
+    }
+
+    pub fn scalar_bilinear(self, other: &InDiracWf<F>, chirality: Chirality) -> C<F> {
+        Bispinor::scalar_bilinear(&self.spinor, &other.spinor, chirality)
+    }
+
+    pub fn vector_bilinear(
+        self,
+        other: &InDiracWf<F>,
+        chirality: Chirality,
+    ) -> ComplexVector<F, Contravariant> {
+        Bispinor::vector_bilinear(&self.spinor, &other.spinor, chirality)
     }
 }
 
@@ -228,10 +168,11 @@ impl<F: Real> OutDiracWf<F> {
 pub struct VectorWf<F: Real> {
     /// Polarisation / Lorentz components in HELAS convention.
     ///
-    /// `iovxxx` contracts these components with bilinear currents using an
-    /// explicit Minkowski (+,−,−,−) contraction (`mink_dot`).
-    pub eps: ComplexVector<F>,
-    pub momentum: LorentzVector<F>,
+    /// We keep everything contravariant so that the off-sheel current and
+    /// external leg are the same type and can be used interchangeably in vertices.
+    /// TODO: in a future refactor we may prefer to let the propagator lower the index
+    pub eps: ComplexVector<F, Contravariant>,
+    pub momentum: LorentzVector<F, Contravariant>,
 }
 
 impl<F: Real> VectorWf<F> {
@@ -249,16 +190,16 @@ impl<F: Real> VectorWf<F> {
     /// Converted from ALOHA `vxxxxx.F` (Fortran77 HELAS).
     /// Handles 5 cases: massive at-rest, massive along-z, massive general,
     /// massless along-z, massless general.
-    pub fn vxxxxx(p: LorentzVector<F>, vmass: F, nhel: i32, nsv: i32) -> Self {
+    pub fn vxxxxx(p: LorentzVector<F, Contravariant>, vmass: F, nhel: i32, nsv: i32) -> Self {
         let two = F::one() + F::one();
         let sqh = (F::one() / two).sqrt();
         let hel = F::from(nhel).unwrap();
         let nsvahl = F::from(nsv).unwrap() * hel.abs();
 
-        let p0 = p[0];
-        let p1 = p[1];
-        let p2 = p[2];
-        let p3 = p[3];
+        let p0 = p.e();
+        let p1 = p.px();
+        let p2 = p.py();
+        let p3 = p.pz();
 
         let pt2 = p1 * p1 + p2 * p2;
         let pp3 = (pt2 + p3 * p3).sqrt();
@@ -272,10 +213,10 @@ impl<F: Real> VectorWf<F> {
             if pp == F::zero() {
                 // At rest: use special case
                 [
-                    C::new(F::zero(), F::zero()),
-                    C::new(-hel * sqh, F::zero()),
-                    C::new(F::zero(), nsvahl * sqh),
-                    C::new(hel0, F::zero()),
+                    C::ZERO,
+                    C::new(-hel * sqh, F::ZERO),
+                    C::new(F::ZERO, nsvahl * sqh),
+                    C::new(hel0, F::ZERO),
                 ]
             } else {
                 // Moving particle
@@ -328,7 +269,7 @@ impl<F: Real> VectorWf<F> {
         };
 
         VectorWf {
-            eps: ComplexVector(eps),
+            eps: ComplexVector::new(eps),
             momentum: match nsv {
                 1 => p,   // outgoing: +p
                 -1 => -p, // incoming: -p
@@ -352,7 +293,7 @@ pub struct ScalarWf<F: Real> {
     /// Scalar amplitude (always 1+0i for external scalars).
     pub value: C<F>,
     /// Signed momentum: particle → +p, antiparticle → −p
-    pub momentum: LorentzVector<F>,
+    pub momentum: LorentzVector<F, Contravariant>,
 }
 
 impl<F: Real> ScalarWf<F> {
@@ -367,7 +308,7 @@ impl<F: Real> ScalarWf<F> {
     /// # Implementation
     /// Converted from ALOHA `sxxxxx.F` (Fortran77 HELAS).
     /// The scalar amplitude is trivial; this mainly stores momentum for routing.
-    pub fn sxxxxx(p: LorentzVector<F>, nss: i32) -> Self {
+    pub fn sxxxxx(p: LorentzVector<F, Contravariant>, nss: i32) -> Self {
         ScalarWf {
             value: C::new(F::one(), F::zero()),
             momentum: match nss {
@@ -382,50 +323,51 @@ impl<F: Real> ScalarWf<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::helas::repr::lorentz::VectorRepr;
 
     #[test]
     fn test_vxxxxx_massless_along_z_positive_helicity() {
         // Massless photon along +z axis with E=1: p = [1, 0, 0, 1]
-        let p = LorentzVector([1.0, 0.0, 0.0, 1.0]);
+        let p = LorentzVector::new(1.0, 0.0, 0.0, 1.0);
         let wf = VectorWf::vxxxxx(p, 0.0, 1, 1);
 
         // Momentum should be p (nsv=+1 for outgoing)
-        assert_eq!(wf.momentum[0], 1.0);
-        assert_eq!(wf.momentum[3], 1.0);
+        assert_eq!(wf.momentum.e(), 1.0);
+        assert_eq!(wf.momentum.pz(), 1.0);
 
         // For massless along z, ε_0 = 0
-        assert_eq!(wf.eps.0[0].re, 0.0);
-        assert_eq!(wf.eps.0[0].im, 0.0);
+        assert_eq!(wf.eps.component(0).re, 0.0);
+        assert_eq!(wf.eps.component(0).im, 0.0);
     }
 
     #[test]
     fn test_vxxxxx_massive_at_rest() {
         // Massive vector at rest: p = [m, 0, 0, 0]
-        let p = LorentzVector([1.0, 0.0, 0.0, 0.0]);
+        let p = LorentzVector::new(1.0, 0.0, 0.0, 0.0);
         let wf = VectorWf::vxxxxx(p, 1.0, 1, 1);
 
         // Signed momentum: nsv=1 means no sign change
-        assert_eq!(wf.momentum[0], 1.0);
+        assert_eq!(wf.momentum.component(0), 1.0);
 
         // At rest with nhel=1, hel0=0, so ε_1 = -1/√2
         let sqh = 1.0 / 2.0_f64.sqrt();
-        assert!((wf.eps.0[1].re + sqh).abs() < 1e-10);
+        assert!((wf.eps.component(1).re + sqh).abs() < 1e-10);
     }
 
     #[test]
     fn test_vxxxxx_incoming_vs_outgoing() {
-        let p = LorentzVector([2.0, 1.0, 0.5, 0.2]);
+        let p = LorentzVector::new(2.0, 1.0, 0.5, 0.2);
         let wf_out = VectorWf::vxxxxx(p, 0.5, 0, 1); // outgoing (nsv=+1)
         let wf_in = VectorWf::vxxxxx(p, 0.5, 0, -1); // incoming (nsv=-1)
 
         // Momenta should have opposite signs
-        assert_eq!(wf_out.momentum[0], 2.0);
-        assert_eq!(wf_in.momentum[0], -2.0);
+        assert_eq!(wf_out.momentum.component(0), 2.0);
+        assert_eq!(wf_in.momentum.component(0), -2.0);
     }
 
     #[test]
     fn test_sxxxxx_scalar() {
-        let p = LorentzVector([1.0, 0.5, 0.3, 0.2]);
+        let p = LorentzVector::new(1.0, 0.5, 0.3, 0.2);
         let wf = ScalarWf::sxxxxx(p, 1);
 
         // Scalar amplitude is always 1+0i
@@ -433,25 +375,31 @@ mod tests {
         assert_eq!(wf.value.im, 0.0);
 
         // Momentum should be +p (nsv=1)
-        assert_eq!(wf.momentum[0], 1.0);
-        assert_eq!(wf.momentum[1], 0.5);
+        assert_eq!(wf.momentum.component(0), 1.0);
+        assert_eq!(wf.momentum.component(1), 0.5);
     }
 
     #[test]
     fn test_sxxxxx_incoming() {
-        let p = LorentzVector([2.0, 0.1, 0.2, 0.3]);
+        let p = LorentzVector::new(2.0, 0.1, 0.2, 0.3);
         let wf = ScalarWf::sxxxxx(p, -1);
 
         // Momentum should be -p (nsv=-1)
-        assert_eq!(wf.momentum[0], -2.0);
-        assert_eq!(wf.momentum[1], -0.1);
+        assert_eq!(wf.momentum.component(0), -2.0);
+        assert_eq!(wf.momentum.component(1), -0.1);
     }
 
     fn generate_test_cases(
         onshell_only: bool,
-    ) -> impl Iterator<Item = ((LorentzVector<f64>, f64), SpinorHelicity, Charge)> {
-        let p1 = LorentzVector([2.0, 0.5, -0.3, 1.2]);
-        let p2 = LorentzVector([(3.5_f64).sqrt(), 0.5, -1.0, 1.5]);
+    ) -> impl Iterator<
+        Item = (
+            (LorentzVector<f64, Contravariant>, f64),
+            SpinorHelicity,
+            Charge,
+        ),
+    > {
+        let p1 = LorentzVector::new(2.0, 0.5, -0.3, 1.2);
+        let p2 = LorentzVector::new((3.5_f64).sqrt(), 0.5, -1.0, 1.5);
         assert!(p2.m() < 1e-10, "p2 should be massless for this test");
         let offshell_cases = vec![
             (p1, 0.5), // off-shell massive
@@ -476,60 +424,14 @@ mod tests {
         )
     }
 
-    /// Test that ixxxxx and oxxxxx both produce valid spinors.
-    ///
-    /// HELAS convention:
-    /// - ixxxxx(p, m, nhel, nsf) creates an incoming spinor (column): u/v spinors
-    /// - oxxxxx(p, m, nhel, nsf) creates an outgoing spinor (row): ū/v̄ spinors
-    ///
-    /// Both use the same momentum, helicity, and charge (nsf) parameters.
-    /// The difference is:
-    /// 1. Component indexing (which Weyl chiralities are where)
-    /// 2. Complex conjugation of transverse phases (χ[1] uses -p[2] in oxxxxx)
-    /// 3. Swapping of omega factors (sfomeg[0] ↔ sfomeg[1])
-    ///
-    /// These differences reflect the Dirac conjugate relationship ψ̄ = ψ† γ⁰,
-    #[test]
-    fn test_ixxxxx_oxxxxx() {
-        for ((p, mass), nhel, nsf) in generate_test_cases(false) {
-            let fi = Bispinor::ixxxxx(p, mass, nhel, nsf);
-            let fo = Bispinor::oxxxxx(p, mass, nhel, nsf);
-
-            // Both should produce non-zero spinors
-            assert!(
-                fi.0.iter().any(|c| c.norm() > 1e-10),
-                "ixxxxx should produce non-zero spinor"
-            );
-            assert!(
-                fo.0.iter().any(|c| c.norm() > 1e-10),
-                "oxxxxx should produce non-zero spinor"
-            );
-
-            // The norms should be equal (both represent a spinor at momentum p)
-            let fi_norm: f64 = fi.0.iter().map(|c| c.norm_sqr()).sum();
-            let fo_norm: f64 = fo.0.iter().map(|c| c.norm_sqr()).sum();
-            assert!(fi_norm > 0.0, "ixxxxx norm should be non-zero");
-            assert!(fo_norm > 0.0, "oxxxxx norm should be non-zero");
-
-            // The norms should be equal because both represent the same physical state
-            assert!(
-                (fi_norm - fo_norm).abs() / fi_norm < 1e-10,
-                "ixxxxx and oxxxxx with same params should have equal norms"
-            );
-
-            // They should be dirac conjugates of each other
-            assert_eq!(fi.dirac_adjoint(), fo);
-        }
-    }
-
     /// Test bilinear scalar norm for the spinors
     #[test]
     fn test_bilinear_scalar_norm() {
         for ((p, mass), nhel, nsf) in generate_test_cases(true) {
-            let in_wf = InDiracWf::new(p, mass, nhel, nsf);
-            let scalar_bilinear = in_wf.scalar_bilinear(&in_wf.to_outgoing(), Chirality::Both);
+            let in_wf = InDiracWf::from_momentum(p, mass, nhel, nsf);
+            let scalar_bilinear = in_wf.to_outgoing().scalar_bilinear(&in_wf, Chirality::Both);
             // HELAS convention for the scalar bilinear norm is 2 * p[0] (twice the energy component of the momentum)
-            let expected = 2.0 * p[0];
+            let expected = 2.0 * p.e();
             assert!(
                 (scalar_bilinear.re - expected).abs() < 1e-10,
                 "Scalar bilinear norm failed for p={:?}, mass={}, nhel={:?}, nsf={:?}: got {}, expected {}",
@@ -542,9 +444,10 @@ mod tests {
             );
 
             // now check orthogonality
-            let in_wf_oh = InDiracWf::new(p, mass, nhel.flip(), nsf);
-            let scalar_bilinear_orthogonal =
-                in_wf.scalar_bilinear(&in_wf_oh.to_outgoing(), Chirality::Both);
+            let in_wf_oh = InDiracWf::from_momentum(p, mass, nhel.flip(), nsf);
+            let scalar_bilinear_orthogonal = in_wf
+                .to_outgoing()
+                .scalar_bilinear(&in_wf_oh, Chirality::Both);
             assert!(
                 scalar_bilinear_orthogonal.norm() < 1e-10,
                 "Scalar bilinear should be orthogonal for opposite helicity: got {}",
@@ -557,8 +460,8 @@ mod tests {
     #[test]
     fn test_in_out_conversion() {
         for ((p, mass), nhel, nsf) in generate_test_cases(false) {
-            let in_wf = InDiracWf::new(p, mass, nhel, nsf);
-            let out_wf = OutDiracWf::new(p, mass, nhel, nsf);
+            let in_wf = InDiracWf::from_momentum(p, mass, nhel, nsf);
+            let out_wf = OutDiracWf::from_momentum(p, mass, nhel, nsf);
             let in_wf_converted = out_wf.to_incoming();
             let out_wf_converted = in_wf.to_outgoing();
 

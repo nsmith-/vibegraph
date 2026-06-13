@@ -33,16 +33,6 @@
 //! orientation as a separate implementor of the [`intertwiner::Intertwiner`]
 //! trait, parameterised by the basis type `B`.
 //!
-//! ## Module structure
-//!
-//! | Submodule | Contents |
-//! |-----------|----------|
-//! | [`lorentz`] | `LorentzRepr`, `SpinorRepr`, `VectorRepr`, `ScalarRepr`, `WeylBasis`, `DiracBasis` |
-//! | [`color`] | `ColorRepr`, `SU3Fundamental`, `SU3Adjoint`, `ColorSinglet` |
-//! | [`intertwiner`] | `Intertwiner`, `GammaL`, `GammaR`, `GammaV`, `SigmaTensor`, `Epsilon` |
-//! | [`propagator`] | `Propagator`, `DiracPropagator`, `MasslessVectorPropagator`, `MassiveVectorPropagator`, `ScalarPropagator` |
-//! | [`coupling`] | `ColorStructure`, `LorentzStructure`, `Vertex3`, `GaugeVertex` |
-//!
 //! ## Scalar primitives
 //!
 //! The [`Real`] trait and the [`C`] type alias are the atomic building blocks
@@ -53,25 +43,41 @@ pub mod color;
 pub mod coupling;
 pub mod intertwiner;
 pub mod lorentz;
-pub mod propagator;
+pub mod numbers;
 pub mod vectorspace;
-
-// Re-exports removed: prefer using submodules directly to avoid unused-import warnings.
-// Public scalar primitives (keep these for downstream code):
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Scalar primitives — used throughout all submodules
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Blanket trait alias for the real floating-point scalar used throughout.
 ///
-/// Requires [`num_traits::Float`] (arithmetic, sqrt, etc.), [`Copy`], `'static`
-/// lifetime (needed for higher-kinded bounds), and [`std::fmt::Debug`] for
-/// diagnostic output.
+/// Requires:
+///    - [`num_traits::Float`] (arithmetic, sqrt, etc.)
+///    - [`num_traits::ConstZero`] and [`num_traits::ConstOne`] (for zero/one literals)
+///    - [`num_traits::FloatConst`] (for π, etc.)
+///    - [`Copy`] these should be cheap to copy for intermediate values
+///    - `'static` no non-static references, can be used in trait objects without lifetime parameters
+///    - [`std::fmt::Debug`] for diagnostic output.
 ///
 /// Both `f32` and `f64` implement this automatically.
-pub trait Real: num_traits::Float + Copy + 'static + std::fmt::Debug {}
-impl<F: num_traits::Float + Copy + 'static + std::fmt::Debug> Real for F {}
+pub trait Real:
+    num_traits::Float
+    + num_traits::ConstZero
+    + num_traits::ConstOne
+    + num_traits::FloatConst
+    + Copy
+    + 'static
+    + std::fmt::Debug
+{
+}
+impl<
+        F: num_traits::Float
+            + num_traits::ConstZero
+            + num_traits::ConstOne
+            + num_traits::FloatConst
+            + Copy
+            + 'static
+            + std::fmt::Debug,
+    > Real for F
+{
+}
 
 /// Complex number over a [`Real`] scalar. Alias for [`num_complex::Complex`].
 pub type C<F> = num_complex::Complex<F>;
@@ -81,7 +87,7 @@ pub type C<F> = num_complex::Complex<F>;
 /// Convenience shorthand used heavily in wavefunction and vertex code.
 #[inline(always)]
 pub fn r<F: Real>(x: F) -> C<F> {
-    C::new(x, F::zero())
+    C::from(x)
 }
 
 /// Lift a real scalar to a purely imaginary complex number: `i·x`.
@@ -89,5 +95,5 @@ pub fn r<F: Real>(x: F) -> C<F> {
 /// Convenience shorthand for `C::new(0, x)`.
 #[inline(always)]
 pub fn ri<F: Real>(x: F) -> C<F> {
-    C::new(F::zero(), x)
+    C::I * x
 }
