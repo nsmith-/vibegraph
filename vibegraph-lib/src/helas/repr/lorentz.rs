@@ -554,9 +554,9 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
         let v1_m_iv2 = v[1] - i * v[2];
         let v1_p_iv2 = v[1] + i * v[2];
 
-        // ψ_L ← (σ̄·v) ψ_R
-        let l1 = v0_m_v3 * psi[2] - v1_p_iv2 * psi[3];
-        let l2 = -v1_m_iv2 * psi[2] + v0_p_v3 * psi[3];
+        // ψ_L ← (σ̄·v) ψ_R,  σ̄·v = v₀ − v⃗·σ⃗ = [[v₀−v₃, −(v₁−iv₂)], [−(v₁+iv₂), v₀+v₃]]
+        let l1 = v0_m_v3 * psi[2] - v1_m_iv2 * psi[3];
+        let l2 = -v1_p_iv2 * psi[2] + v0_p_v3 * psi[3];
         // ψ_R ← (σ·v) ψ_L
         let r1 = v0_p_v3 * psi[0] + v1_m_iv2 * psi[1];
         let r2 = v1_p_iv2 * psi[0] + v0_m_v3 * psi[1];
