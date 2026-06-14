@@ -204,6 +204,95 @@ mod tests {
         }
     }
 
+    /// Off-shell Ward identity for the fermion current (the slash-consumption path).
+    ///
+    /// Replacing a photon's polarisation `ε^μ` by its own momentum `p_γ^μ` and
+    /// slashing it onto a fermion line must collapse the off-shell fermion current
+    /// to `−g·(original spinor)`: with `q = p_f − p_γ`, the Dirac equation gives
+    /// `p̸_γ·ψ = (p̸_f − q̸)·ψ = (m − q̸)·ψ`, so `(q̸+m)·p̸_γ·ψ = (m²−q²)·ψ` and the
+    /// propagator `1/(q²−m²)` cancels it (the QED contact term). If the slash/metric
+    /// convention is wrong, `q̸` fails to telescope, the propagator does NOT cancel,
+    /// and the result is enhanced by `1/(q²−m²)` and not proportional to the spinor.
+    ///
+    /// This exercises `fioxxx` (≡ the GammaIout dispatch path), which 2→2 ee→μμ
+    /// never tests — there the boson is consumed at the amplitude (`iovxxx`, a dot),
+    /// not slashed onto a fermion. (Originally this caught the σ̄·v sign-swap bug in
+    /// `SpinorRepr::slash`: with ε→q the propagator failed to cancel, rel diff ~0.65;
+    /// fixing σ̄ restored `p̸ψ=mψ` to machine precision.)
+    #[test]
+    fn test_ward_identity_offshell_fermion() {
+        let g = repr::C::new(1.3, -0.4); // arbitrary nonzero coupling
+        let p_gamma = LorentzVector::new(2.5, 1.0, 0.3, -1.5); // off-shell photon momentum
+
+        for &mass in &[0.0_f64, 1.7_f64] {
+            let p_f = LorentzVector::from_pxpypzmass(0.5, -1.2, 2.0, mass); // on-shell fermion
+            for nhel in [Down, Up] {
+                for charge in [Particle, Antiparticle] {
+                    // Photon with ε replaced by its own 4-momentum (Ward substitution).
+                    let v = VectorWf {
+                        eps: ComplexVector::from(p_gamma),
+                        momentum: p_gamma,
+                    };
+
+                    // Flow-in current (fioxxx): q = fi.p − v.p
+                    let fi = InDiracWf::from_momentum(p_f, mass, nhel, charge);
+                    let out = vertex::fioxxx(&fi, &v, g, mass, 0.0);
+                    let expect = fi.spinor * (-g);
+                    let diff: f64 = (out.spinor - expect).bare_norm_sq();
+                    let scale: f64 = expect.bare_norm_sq().max(1e-30);
+                    assert!(
+                        diff / scale < 1e-12,
+                        "fioxxx off-shell Ward (m={mass}, {nhel}, {charge:?}): \
+                         current is not −g·ψ (propagator failed to cancel), \
+                         rel diff={:.3e}",
+                        diff / scale
+                    );
+                    assert_eq!(out.momentum, fi.momentum - p_gamma);
+                }
+            }
+        }
+    }
+
+    /// KNOWN BUG (ignored): the flow-OUT off-shell fermion current (`foxxx`, ≡ the
+    /// `GammaJout` dispatch path) fails the Ward identity even after the σ̄ slash fix.
+    ///
+    /// `foxxx` slashes the *barred* (dualized) spinor with left-multiplication
+    /// (`ε̸·ψ̄`), but for a bra the physical operation is right-multiplication
+    /// `ψ̄·γ^μ`; left-slash on the dualized column does not satisfy the bra Dirac
+    /// equation, so `q̸` fails to telescope and the propagator does not cancel.
+    /// Expected contact term (with `q = fo.p + v.p`) is `+g·ψ̄`. This is the next
+    /// piece of the 2→6 continuum cancellation residual — see helas-2to6-continuum.
+    #[test]
+    #[ignore = "flow-out off-shell fermion current (foxxx/GammaJout) Ward bug — not yet fixed"]
+    fn test_ward_identity_offshell_fermion_out() {
+        let g = repr::C::new(1.3, -0.4);
+        let p_gamma = LorentzVector::new(2.5, 1.0, 0.3, -1.5);
+
+        for &mass in &[0.0_f64, 1.7_f64] {
+            let p_f = LorentzVector::from_pxpypzmass(0.5, -1.2, 2.0, mass);
+            for nhel in [Down, Up] {
+                for charge in [Particle, Antiparticle] {
+                    let v = VectorWf {
+                        eps: ComplexVector::from(p_gamma),
+                        momentum: p_gamma,
+                    };
+                    let fo = OutDiracWf::from_momentum(p_f, mass, nhel, charge);
+                    let out_o = vertex::foxxx(&fo, &v, g, mass, 0.0);
+                    let expect_o = fo.spinor * g; // q = fo.p + v.p → +g·ψ̄
+                    let diff_o: f64 = (out_o.spinor - expect_o).bare_norm_sq();
+                    let scale_o: f64 = expect_o.bare_norm_sq().max(1e-30);
+                    assert!(
+                        diff_o / scale_o < 1e-12,
+                        "foxxx off-shell Ward (m={mass}, {nhel}, {charge:?}): \
+                         current is not +g·ψ̄ (propagator failed to cancel), \
+                         rel diff={:.3e}",
+                        diff_o / scale_o
+                    );
+                }
+            }
+        }
+    }
+
     /// Backward-going massless particle: the `sqp0p3 = 0` branch in
     /// `weyl_ixxxxx` / `weyl_oxxxxx` is reached when p = [E, 0, 0, −E].
     ///
