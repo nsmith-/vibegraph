@@ -1,3 +1,5 @@
+use num_complex::ComplexFloat;
+
 use crate::helas::repr::{
     lorentz::{Bispinor, ComplexVector, SpinorRepr, VectorRepr},
     numbers::Chirality,
@@ -164,13 +166,13 @@ pub fn iovxxx<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, v: &VectorWf<F>, g
 
 /// Off-shell fermion from incoming fermion + vector boson.
 ///
-/// Corresponds to HELAS `fioxxx` (FFV1_2 in ALOHA).
-/// Computes `Ψ = (q̸ + m) ψ / (q² − m² + imΓ)` where `q = fi.p + V.p`.
+/// Corresponds to HELAS `fvixxx` (FFV1_2 in ALOHA).
+/// Computes `Ψ = i (q̸ + m) (i g_L P_L ψ + i g_R P_R ψ) / (q² − m² + imΓ)` where `q = fi.p + V.p`.
 ///
 /// # Arguments
 /// * `fi`    – flowing-IN  fermion wavefunction
 /// * `v`     – vector (gauge boson) wavefunction
-/// * `g`     – coupling constant (complex, includes vertex factor)
+/// * `gc`     – couplings `[g_L, g_R]` (left/right-handed, real)
 /// * `mass`  – off-shell fermion mass (usually 0 for light quarks)
 /// * `width` – fermion width (usually 0 for stable)
 ///
@@ -178,47 +180,48 @@ pub fn iovxxx<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, v: &VectorWf<F>, g
 /// Off-shell fermion current as `InDiracWf<F>` (the codebase stores every
 /// off-shell fermion in the flow-IN representation so it can be paired with a
 /// flow-OUT leg at the next vertex).
-pub fn fioxxx<F: Real>(
+pub fn fvixxx<F: Real>(
     fi: &InDiracWf<F>,
     v: &VectorWf<F>,
-    g: C<F>,
+    gc: [F; 2],
     mass: F,
     width: F,
 ) -> InDiracWf<F> {
     // Accumulated momentum for the flow-IN case: q = fi.p − V.p
     // (Fortran `fvixxx`: fvi(5)=fi(5)−vc(5)). Opposite vector sign from the
-    // flow-OUT `foxxx`/`fvoxxx` — the asymmetry that conserves momentum along a line.
+    // flow-OUT `fvoxxx` — the asymmetry that conserves momentum along a line.
     let q = fi.momentum - v.momentum;
     let q2 = q.m2();
 
     // Vertex factor ε̸ ψ, then the (q̸ + m)/(q² − m² + imΓ) propagator, scaled by g.
-    let psi = fi.spinor.slash(&v.eps);
+    let psi = fi.spinor.project_left().slash(&v.eps) * gc[0]
+        + fi.spinor.project_right().slash(&v.eps) * gc[1];
     let num = psi.slash(&q.into()) + psi * mass;
-    let scale = g / C::new(q2 - mass * mass, mass * width);
+    // i^2 = -1 from the coupling and overall i factor
+    let scale = -C::new(q2 - mass * mass, mass * width).recip();
 
     InDiracWf::from_spinor(num * scale, q)
 }
 
 /// Off-shell fermion from outgoing fermion + vector boson.
 ///
-/// Corresponds to HELAS `foxxx` (FFV1_1 in ALOHA).
-/// Similar to `fioxxx` but with outgoing fermion input.
-/// Computes `Ψ = (q̸ + m) ψ / (q² − m² + imΓ)` where `q = fo.p + V.p`.
+/// Corresponds to HELAS `fvoxxx` (FFV1_1 in ALOHA).
+/// Similar to `fvixxx` but with outgoing fermion input.
 ///
 /// # Arguments
 /// * `fo`    – flowing-OUT fermion wavefunction (acts as input here)
 /// * `v`     – vector (gauge boson) wavefunction
-/// * `g`     – coupling constant (complex, includes vertex factor)
+/// * `gc`     – couplings `[g_L, g_R]` (left/right-handed, real)
 /// * `mass`  – off-shell fermion mass
 /// * `width` – fermion width
 ///
 /// # Returns
 /// Off-shell fermion current as `OutDiracWf<F>`. `ε̸` and the propagator are
 /// flow-preserving, so a flow-OUT (bra) input yields a flow-OUT current.
-pub fn foxxx<F: Real>(
+pub fn fvoxxx<F: Real>(
     fo: &OutDiracWf<F>,
     v: &VectorWf<F>,
-    g: C<F>,
+    g: [F; 2],
     mass: F,
     width: F,
 ) -> OutDiracWf<F> {
@@ -230,9 +233,10 @@ pub fn foxxx<F: Real>(
     // scaled by g. The slash is flow-dependent: on a flow-out (bra) spinor it is
     // the right action (`SpinorFlow::slash_bispinor`), so writing it left-to-right
     // builds ψ̄·ε̸·(q̸+m) — the correct order for a bra.
-    let psi = fo.spinor.slash(&v.eps);
+    let psi = fo.spinor.project_left().slash(&v.eps) * g[0]
+        + fo.spinor.project_right().slash(&v.eps) * g[1];
     let num = psi.slash(&q.into()) + psi * mass;
-    let scale = g / C::new(q2 - mass * mass, mass * width);
+    let scale = -C::new(q2 - mass * mass, mass * width).recip();
 
     OutDiracWf::from_spinor(num * scale, q)
 }
@@ -359,7 +363,7 @@ mod tests {
     use num_complex::Complex64 as C64;
 
     #[test]
-    fn test_fioxxx_basic() {
+    fn test_fvixxx_basic() {
         // Create test wavefunctions
         let fi_mom = LorentzVector::new(100.0, 0.0, 0.0, 100.0);
         let fi = InDiracWf::from_momentum(fi_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
@@ -376,9 +380,9 @@ mod tests {
             momentum: v_mom,
         };
 
-        // Apply fioxxx
-        let coupling = C64::new(0.3, 0.0);
-        let result = fioxxx(&fi, &v, coupling, 0.0, 0.0);
+        // Apply fvixxx
+        let g = C64::new(0.0, 1.0);
+        let result = fvixxx(&fi, &v, [g.im, g.im], 0.0, 0.0);
 
         // Basic sanity checks
         assert!(
@@ -395,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn test_foxxx_basic() {
+    fn test_fvoxxx_basic() {
         // Create test wavefunctions
         let fo_mom = LorentzVector::new(100.0, 0.0, 0.0, 100.0);
         let fo = OutDiracWf::from_momentum(fo_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
@@ -412,9 +416,9 @@ mod tests {
             momentum: v_mom,
         };
 
-        // Apply foxxx
-        let coupling = C64::new(0.3, 0.0);
-        let result = foxxx(&fo, &v, coupling, 0.0, 0.0);
+        // Apply fvoxxx
+        let g = C64::new(0.0, 1.0);
+        let result = fvoxxx(&fo, &v, [g.im, g.im], 0.0, 0.0);
 
         // Basic sanity checks
         assert!(

@@ -142,19 +142,35 @@ off-shell-current sign/metric bugs live.
 
 ### `helas-2to6-continuum` — Fix the pure-EW continuum |M|² (uux 2→6)
 
-After the QCD=0 harness fix + VVS off-shell vector current fix + the σ̄ slash fix + the
-**flow-out slash fix** (2026-06-14: `slash` is now flow-dependent — `SpinorFlow::slash_bispinor`
-right-acts `ψ̄v̸` for flow-out bras, fixing `foxxx`, the FermionOut propagator, and `GammaJout`;
-`test_ward_identity_offshell_fermion_out` passes), the Higgs diagrams agree with MadGraph and the
-continuum improved, but the **non-Higgs γ/Z continuum** still fails: `validate_helas_mg`
-`uux_to_ccx_emmm_qcd0` max_rel_diff ≈ **7.26e3** (was 3.18e4), still **varying across points** — a
-broken-cancellation signature in the multi-vertex FFV chains. FFV is validated to 1e-7 in 2→2
-ee→μμ, so the bug is in paths 2→2 never exercises: chained off-shell fermion currents via fermion
-propagators, and off-shell γ/Z bosons (VectorWf, −i/q²) absorbed by `GammaIout`/`GammaJout`.
-Remaining suspects: massive-Z propagator longitudinal `q^μq^ν/m²` term; a residual relative
-sign/phase in the chained currents. Probe: extend `run::tests::probe_uux_diagrams` to filter to
-non-Higgs diagrams and find which class fails to cancel; or generate a smaller multi-vertex EW
-reference (e.g. `e+ e- > e+ e- mu+ mu-`, 2→4) to isolate with fewer diagrams.
+**2026-06-14 fermion-FLOW fix: max_rel_diff 7.26e3 → 3.96e1 (~180×).** The bulk of the
+continuum error was that off-shell fermion currents and bilinears took their bra/ket flow
+from the UFO `Gamma` i/j leg position (structural), while `build_external_slot` built EVERY
+external as `FermionIn` and relied on `expect_fermion_in/out` to silently `dualize` at
+consumption. That coercion is wrong for any leg whose physical flow disagrees with the
+structural slot (e.g. an incoming particle = ket landing in the barred slot, ISR), corrupting
+a mid-line spinor. Fixes (`helas/eval/`):
+- `build_external_slot` flow-types externals: `FermionIn` iff `is_incoming == is_particle`.
+- flow-driven dispatch: `resolve_bra_ket` (GammaVout/ProjMAmp/ProjPAmp/IdentityAmp) picks
+  bra/ket by ACTUAL flow; `off_shell_fermion_current` makes the current follow the input
+  fermion's flow (fvixxx for ket / fvoxxx for bra). Structural i/j only selects which leg is
+  input vs output, never the flow.
+- `expect_fermion_in/out` now STRICT (panic on flow mismatch) — enforced invariant.
+Validated reference-free by machine-precision (~1e-13) full-amplitude U(1) Ward tests
+(`run::tests::test_ward_identity_full_amplitude_*`): 2→3 `eemumua`, 2→4 `eemumuaa` (chained
+currents), quark `uumumua`. ee→μμ & pp→ll unchanged at 6.69e-4; `test_eval_jioxxx` (massive-Z
+off-shell vector current incl. longitudinal term) passes → massive-Z confirmed correct.
+
+**REMAINING (~24% at pt0, 40× worst-case, amplified by gauge cancellation):** the 2→5 Ward
+test `test_ward_identity_full_amplitude_eemumutata_a` (`e+ e- > mu+ mu- ta+ ta- a`, #[ignore]d)
+FAILS at ~1.06e-4. This is the first topology with THREE fermion lines, where the boson-tree
+forces one fermion line to absorb **two INTERNAL off-shell bosons (−i/q²) in series** — the
+exact path uux 2→6 (4 lines / 3 bosons) always has but 2→3/2→4 (≤1 internal boson per line +
+external photons) never exercise. Confirmed NOT masses (zeroing c/e/mu in `probe_uux_diagrams`
+left ratio 0.76 unchanged), NOT the massive-Z longitudinal term, NOT single-line chained
+currents/quark couplings/fermi sign. Suspect: a relative-phase / momentum-SIGN error when a
+`GammaVout`-built off-shell boson is absorbed by a fermion line that itself builds another
+boson (the propagator numerator q̸+m depends on the momentum sign). Un-ignore the 2→5 test as
+the regression guard once fixed.
 
 ### `feyngraph-perf` — Fix feyngraph allocation hot spot
 

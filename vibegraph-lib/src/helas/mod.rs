@@ -24,6 +24,7 @@ mod tests {
 
     use super::*;
     use itertools::iproduct;
+    use num_complex::Complex64;
     use repr::numbers::Charge::{Antiparticle, Particle};
     use repr::numbers::SpinorHelicity::{Down, Up};
 
@@ -214,14 +215,14 @@ mod tests {
     /// convention is wrong, `q̸` fails to telescope, the propagator does NOT cancel,
     /// and the result is enhanced by `1/(q²−m²)` and not proportional to the spinor.
     ///
-    /// This exercises `fioxxx` (≡ the GammaIout dispatch path), which 2→2 ee→μμ
+    /// This exercises `fvixxx` (≡ the GammaIout dispatch path), which 2→2 ee→μμ
     /// never tests — there the boson is consumed at the amplitude (`iovxxx`, a dot),
     /// not slashed onto a fermion. (Originally this caught the σ̄·v sign-swap bug in
     /// `SpinorRepr::slash`: with ε→q the propagator failed to cancel, rel diff ~0.65;
     /// fixing σ̄ restored `p̸ψ=mψ` to machine precision.)
     #[test]
     fn test_ward_identity_offshell_fermion() {
-        let g = repr::C::new(1.3, -0.4); // arbitrary nonzero coupling
+        let g = repr::C::new(0.0, -1.4); // arbitrary nonzero coupling
         let p_gamma = LorentzVector::new(2.5, 1.0, 0.3, -1.5); // off-shell photon momentum
 
         for &mass in &[0.0_f64, 1.7_f64] {
@@ -234,16 +235,16 @@ mod tests {
                         momentum: p_gamma,
                     };
 
-                    // Flow-in current (fioxxx): q = fi.p − v.p
+                    // Flow-in current (fvixxx): q = fi.p − v.p
                     let fi = InDiracWf::from_momentum(p_f, mass, nhel, charge);
-                    let out = vertex::fioxxx(&fi, &v, g, mass, 0.0);
-                    let expect = fi.spinor * (-g);
+                    let out = vertex::fvixxx(&fi, &v, [g.im, g.im], mass, 0.0);
+                    let expect = fi.spinor * (-Complex64::I * g);
                     let diff: f64 = (out.spinor - expect).bare_norm_sq();
                     let scale: f64 = expect.bare_norm_sq().max(1e-30);
                     assert!(
                         diff / scale < 1e-12,
-                        "fioxxx off-shell Ward (m={mass}, {nhel}, {charge:?}): \
-                         current is not −g·ψ (propagator failed to cancel), \
+                        "fvixxx off-shell Ward (m={mass}, {nhel}, {charge:?}): \
+                         current is not g·ψ (propagator failed to cancel), \
                          rel diff={:.3e}",
                         diff / scale
                     );
@@ -254,7 +255,7 @@ mod tests {
     }
 
     /// Flow-OUT counterpart of [`test_ward_identity_offshell_fermion`], exercising
-    /// `foxxx` (≡ the `GammaJout` dispatch path).
+    /// `fvoxxx` (≡ the `GammaJout` dispatch path).
     ///
     /// A flow-out fermion is a bra, so the vertex/propagator slash acts to the
     /// *right* (`ψ̄·γ^μ`), not the left (`γ^μ·ψ`). The slash is now flow-dependent
@@ -265,7 +266,7 @@ mod tests {
     /// column did not satisfy the bra Dirac equation, so the propagator survived.
     #[test]
     fn test_ward_identity_offshell_fermion_out() {
-        let g = repr::C::new(1.3, -0.4);
+        let g = repr::C::new(0.0, -0.4);
         let p_gamma = LorentzVector::new(2.5, 1.0, 0.3, -1.5);
 
         for &mass in &[0.0_f64, 1.7_f64] {
@@ -277,13 +278,13 @@ mod tests {
                         momentum: p_gamma,
                     };
                     let fo = OutDiracWf::from_momentum(p_f, mass, nhel, charge);
-                    let out_o = vertex::foxxx(&fo, &v, g, mass, 0.0);
-                    let expect_o = fo.spinor * g; // q = fo.p + v.p → +g·ψ̄
+                    let out_o = vertex::fvoxxx(&fo, &v, [g.im, g.im], mass, 0.0);
+                    let expect_o = fo.spinor * (Complex64::I * g); // q = fo.p + v.p → +g·ψ̄
                     let diff_o: f64 = (out_o.spinor - expect_o).bare_norm_sq();
                     let scale_o: f64 = expect_o.bare_norm_sq().max(1e-30);
                     assert!(
                         diff_o / scale_o < 1e-12,
-                        "foxxx off-shell Ward (m={mass}, {nhel}, {charge:?}): \
+                        "fvoxxx off-shell Ward (m={mass}, {nhel}, {charge:?}): \
                          current is not +g·ψ̄ (propagator failed to cancel), \
                          rel diff={:.3e}",
                         diff_o / scale_o

@@ -375,7 +375,7 @@ pub trait SpinorFlow: sealed::Sealed + Copy + PartialEq + Eq + 'static {
     /// These are genuinely different component formulas — closing a bra's open
     /// index from the right transposes the chiral blocks of `γ^μ` relative to
     /// the ket. Using the ket (left) action on a stored flow-out spinor was the
-    /// `foxxx`/`fvoxxx` Ward-identity bug: `q̸` then failed to telescope against
+    /// `fvoxxx` Ward-identity bug: `q̸` then failed to telescope against
     /// the bra Dirac equation and the propagator did not cancel.
     fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4];
 }
@@ -597,7 +597,7 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     /// a flow-out bra the right action `ψ̄v̸` (a distinct component formula — see
     /// [`SpinorFlow::slash_bispinor`]). The variance of `v` does not matter; the
     /// stored components are summed against `γ^μ` directly (contravariant
-    /// convention, matching `fioxxx`/`foxxx`/the Dirac propagator).
+    /// convention, matching `fvixxx`/`foxxx`/the Dirac propagator).
     fn slash<V: Variance>(self, v: &ComplexVector<F, V>) -> Self {
         Bispinor::from_array(Flow::slash_bispinor(&self.0, &v.0))
     }
