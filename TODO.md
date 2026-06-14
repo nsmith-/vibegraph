@@ -118,6 +118,41 @@ _Unblocks: Full CLI with process cards_
 
 ## 🟢 Later — polish and extensibility
 
+### `lorentz-eval-node-2level` — Two-level LorentzEvalNode + variance-aware slots
+
+Reorganize `LorentzEvalNode` (`helas/eval/dispatch.rs`) into two levels:
+- **outer = output type**, carrying variance/flow: `ScalarOut` / `VectorOut<V>` /
+  `SpinorOut<Flow>` (+ tensor later);
+- **inner = the UFO primitive** (Gamma, Metric, P, Proj, …), with one node per
+  (structure × distinct output-leg type) — e.g. `Metric`→scalar vs `MetricVout`→vector
+  are the same structure with different outputs.
+
+Make `VectorWf` (and `WaveformSlot`) variance-parameterized so each vertex returns its
+natural variance, the propagator's raise/lower is type-checked, and contractions can't
+silently double-apply or drop the metric. This removes the manual component/index
+hand-coding currently in `MetricVout` (`run.rs`), which had to bypass the typed repr
+because `VectorWf.eps` is pinned to `Contravariant` — the exact variance-bug class the
+typing was meant to prevent. (FFV currents are contravariant `J^μ`; the metric vertex
+emits covariant `g^{μν}V_ν`, so a single `Covector` slot variant is insufficient — the
+variance must be tracked per output.)
+
+**Sequence after** the continuum cancellation bug below, and only once VVS (ideally also
+VVV) regression tests exist — this refactor changes the convention surface where the
+off-shell-current sign/metric bugs live.
+
+### `helas-2to6-continuum` — Fix the pure-EW continuum |M|² (uux 2→6)
+
+After the QCD=0 harness fix + VVS off-shell vector current fix, the Higgs diagrams agree
+with MadGraph, but the **non-Higgs γ/Z continuum** still fails: `validate_helas_mg`
+`uux_to_ccx_emmm_qcd0` max_rel_diff ≈ 3.18e4, **varying wildly across points** (38× at the
+probe point, up to 3.18e4) — a broken-cancellation signature in the multi-vertex FFV
+chains. FFV is validated to 1e-7 in 2→2 ee→μμ, so the bug is in paths 2→2 never exercises:
+multi-radiation fermion lines (off-shell fermion currents chained via fermion propagators)
+and off-shell γ/Z bosons absorbed by `GammaIout`/`GammaJout` (fvixxx/fvoxxx) rather than at
+the amplitude (iovxxx). Probe: extend `run::tests::probe_uux_diagrams` to filter to non-Higgs
+diagrams and find which class fails to cancel; or generate a smaller multi-vertex EW
+reference (e.g. `e+ e- > e+ e- mu+ mu-`, 2→4) to isolate with fewer diagrams.
+
 ### `feyngraph-perf` — Fix feyngraph allocation hot spot
 
 **Hot spot identified** (samply profile, pp→qq̃4l run): `workspace.rs:L122` in
