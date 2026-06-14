@@ -262,15 +262,34 @@ impl LorentzEvalTree {
 
         // If idx is specified, build the tree rooted at that leg
         if let Some(root_leg) = excluded_leg {
-            let node_idx = tree.build_child(term, root_leg, &mut visited_ops)?;
-            // If no operator connects to this leg, build_child returns a trivial Leg leaf.
-            // Pop it — the disconnected structures collected below are the actual output.
-            let is_trivial_leaf =
-                matches!(tree.nodes[node_idx], LorentzEvalNode::Leg(i) if i == root_leg);
-            if is_trivial_leaf {
-                tree.nodes.pop();
-            } else {
+            // Special case: the output leg sits in a Metric g^{μν} (e.g. the
+            // off-shell vector current of a VVS/VVVV vertex). The metric raises
+            // the output index, so the current is simply the OTHER metric leg as
+            // a vector (the remaining scalar/vector factors multiply in via the
+            // ScalarProduct below). The generic `build_child` would instead
+            // contract both legs into a scalar and wrongly read the output leg
+            // as an input — see topo_sort's output-leg placeholder.
+            let metric_partner = term.ops.iter().enumerate().find_map(|(i, op)| match op {
+                LorentzOp::Metric { mu, nu } if *mu == root_leg => Some((i, *nu)),
+                LorentzOp::Metric { mu, nu } if *nu == root_leg => Some((i, *mu)),
+                _ => None,
+            });
+
+            if let Some((iop, partner)) = metric_partner {
+                visited_ops.push(iop);
+                let node_idx = tree.build_child(term, partner, &mut visited_ops)?;
                 term_roots.push(node_idx);
+            } else {
+                let node_idx = tree.build_child(term, root_leg, &mut visited_ops)?;
+                // If no operator connects to this leg, build_child returns a trivial Leg leaf.
+                // Pop it — the disconnected structures collected below are the actual output.
+                let is_trivial_leaf =
+                    matches!(tree.nodes[node_idx], LorentzEvalNode::Leg(i) if i == root_leg);
+                if is_trivial_leaf {
+                    tree.nodes.pop();
+                } else {
+                    term_roots.push(node_idx);
+                }
             }
         }
 
@@ -383,6 +402,52 @@ pub fn root_term(
 mod tests {
     use super::*;
     use crate::ufo::lorentz::LorentzTerm;
+
+    #[test]
+    fn test_vvs_rooted_at_vector_leg_is_a_vector_current() {
+        // VVS1: Metric(1,2), spins [3,3,1] (Z, Z, H). Rooting at a *vector* leg
+        // (the off-shell Z current of an HZZ vertex) must raise that index via
+        // the metric: the current is the OTHER vector leg × the scalar leg — a
+        // vector, NOT a scalar contraction. It must never reference its own
+        // output leg as an input (which would read topo_sort's output-leg
+        // placeholder and panic). Regression for the VVS Leg/placeholder crash.
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::Metric { mu: 1, nu: 2 }],
+        };
+        let spins = vec![3, 3, 1];
+
+        // Output = vector leg 1 (idx 0): current = Leg(2) × Leg(3), no Leg(1).
+        let t0 = LorentzEvalTree::build_at_leg(&term, &spins, Some(0)).unwrap();
+        assert!(
+            !t0.nodes
+                .iter()
+                .any(|n| matches!(n, LorentzEvalNode::Leg(1))),
+            "VVS rooted at leg 1 must not consume its own output leg: {t0:?}"
+        );
+        assert!(
+            matches!(t0.root(), LorentzEvalNode::ScalarProduct { .. }),
+            "VVS rooted at a vector leg must yield a vector (scalar×vector), got {:?}",
+            t0.root()
+        );
+
+        // Output = vector leg 2 (idx 1): current = Leg(1) × Leg(3), no Leg(2).
+        let t1 = LorentzEvalTree::build_at_leg(&term, &spins, Some(1)).unwrap();
+        assert!(
+            !t1.nodes
+                .iter()
+                .any(|n| matches!(n, LorentzEvalNode::Leg(2))),
+            "VVS rooted at leg 2 must not consume its own output leg: {t1:?}"
+        );
+
+        // Output = scalar leg 3 (idx 2): unchanged — a Metric contraction → scalar H.
+        let t2 = LorentzEvalTree::build_at_leg(&term, &spins, Some(2)).unwrap();
+        assert!(
+            matches!(t2.root(), LorentzEvalNode::Metric { .. }),
+            "VVS rooted at the scalar leg must contract the two vectors: {:?}",
+            t2.root()
+        );
+    }
 
     #[test]
     fn test_root_ffv1_photon_current_at_leg3() {

@@ -17,6 +17,7 @@
 mod common;
 
 use libtest_mimic::{Arguments, Failed, Trial};
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use vibegraph::helas::eval::AmplitudeEvaluator;
 use vibegraph::helas::LorentzVector;
@@ -33,11 +34,12 @@ const REL_TOL: f64 = 2e-3;
 
 /// Processes for which we enforce agreement; others are informational only.
 ///
-/// `uux_to_ccx_emmm_qcd0` (2->6) is intentionally NOT enforced yet: the evaluator
-/// now runs for it (the leg-index crash in topo_sort is fixed) but produces wrong
-/// values because off-shell currents whose output is a NON-last leg are evaluated
-/// incorrectly — a path ee_to_mumu/pp_to_ll never exercise (their only off-shell
-/// output is the last leg, the s-channel boson).  Tracked as a helas-generalize task.
+/// `uux_to_ccx_emmm_qcd0` (2->6) is intentionally NOT enforced yet: all 579
+/// diagrams now evaluate (QCD=0 header + the VVS vector-leg rooting fix), but the
+/// |M|² is still off — the VVS/Higgs off-shell vector current is over-large and a
+/// smaller multi-vertex continuum residual remains (max_rel_diff ~3e4). Paths that
+/// ee_to_mumu/pp_to_ll never exercise (their only off-shell output is the last leg,
+/// the s-channel boson). Tracked as a helas-generalize task.
 const EXPECT_MATCH: &[&str] = &["ee_to_mumu", "pp_to_ll_qcd0"];
 
 /// Overall color factor relating MadGraph's color-summed |M|² to vibegraph's
@@ -200,16 +202,38 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
     let cf = color_factor(&name);
     let mut failures = 0usize;
     let mut max_rel_diff = 0.0f64;
+    let mut panicked = false;
 
     for pt in &points {
-        let m2_rust = cf * evaluator.eval_m2(&pt.momenta, &evaluated);
-        let rel = (m2_rust - pt.m2_ref).abs() / pt.m2_ref.max(1e-30);
-        if rel > max_rel_diff {
-            max_rel_diff = rel;
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            evaluator.eval_m2(&pt.momenta, &evaluated)
+        }));
+        match result {
+            Err(_) => {
+                panicked = true;
+                failures += 1;
+            }
+            Ok(raw) => {
+                let m2_rust = cf * raw;
+                let rel = (m2_rust - pt.m2_ref).abs() / pt.m2_ref.max(1e-30);
+                if rel > max_rel_diff {
+                    max_rel_diff = rel;
+                }
+                if rel > REL_TOL {
+                    failures += 1;
+                }
+            }
         }
-        if rel > REL_TOL {
-            failures += 1;
+    }
+
+    if panicked {
+        eprintln!(
+            "INFO [{name}]: evaluator panicked on ≥1 points — evaluator bug, not a harness failure"
+        );
+        if !EXPECT_MATCH.contains(&name.as_str()) {
+            return Ok(());
         }
+        return Err("evaluator panicked on a process in EXPECT_MATCH".into());
     }
 
     println!(

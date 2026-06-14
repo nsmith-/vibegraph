@@ -1117,6 +1117,210 @@ mod tests {
         }
     }
 
+    /// PROBE: per-diagram amplitude breakdown for the uux 2->6 process.
+    ///
+    /// Identifies the diagram classes (by propagator content), measures the
+    /// gauge cancellation (|Σa|² vs Σ|a|²), and compares the total |M|² to the
+    /// MadGraph reference. MadGraph (matrix1_orig.f) has NGRAPHS=579 for this
+    /// exact process (IDUP 2,-2,4,-4,-11,11,-13,13) and sums AMP() in plain
+    /// COMPLEX*16 (no Kahan / quad precision).
+    #[test]
+    #[ignore]
+    fn probe_uux_diagrams() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use std::collections::BTreeMap;
+
+        let model = sm_model();
+        let evaluated = model.evaluate(&ParamCard::from_str("").unwrap());
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate u u~ > c c~ e+ e- mu+ mu- QCD=0", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, model).unwrap();
+        let set = &sets[0];
+        let asts = compile_diagram_ast(set, model).unwrap();
+        let n_in = 2;
+        println!("n_diagrams = {} (MadGraph NGRAPHS = 579)", asts.len());
+
+        let p = [
+            LorentzVector::new(250.0, 0.0, 0.0, 250.0),
+            LorentzVector::new(250.0, 0.0, 0.0, -250.0),
+            LorentzVector::new(
+                51.58390415317875,
+                33.76278178716875,
+                -30.22430158990549,
+                24.646811702100443,
+            ),
+            LorentzVector::new(
+                144.43288205367912,
+                82.46142822300477,
+                -108.5785090953523,
+                -47.662119512089546,
+            ),
+            LorentzVector::new(
+                116.59102846088923,
+                -91.67803127457901,
+                23.194248232604252,
+                68.1955522604629,
+            ),
+            LorentzVector::new(
+                52.76154461240437,
+                -47.85411853901415,
+                17.571868307294295,
+                -13.601226890682527,
+            ),
+            LorentzVector::new(
+                20.24063060353008,
+                -3.7687275028075944,
+                -0.4710997332332683,
+                19.881093664069077,
+            ),
+            LorentzVector::new(
+                114.39001011631855,
+                27.076667306227247,
+                98.5077938785925,
+                -51.460111223860345,
+            ),
+        ];
+
+        // Propagator signature of a diagram = sorted multiset of internal particle names.
+        let prop_sig = |ast: &DiagramAst| -> Vec<String> {
+            let mut names: Vec<String> = ast
+                .steps
+                .iter()
+                .filter_map(|s| match s {
+                    EvalStep::Propagate { info, .. } => Some(model.particle(info.id).name.clone()),
+                    _ => None,
+                })
+                .collect();
+            names.sort();
+            names
+        };
+
+        // 1) How many diagrams contain each internal particle?
+        let mut contains: BTreeMap<String, usize> = BTreeMap::new();
+        for ast in &asts {
+            let uniq: std::collections::BTreeSet<String> = prop_sig(ast).into_iter().collect();
+            for name in uniq {
+                *contains.entry(name).or_default() += 1;
+            }
+        }
+        println!("\ndiagrams containing each internal particle:");
+        for (k, v) in &contains {
+            println!("  {k:<6} : {v}");
+        }
+
+        // 1b) Which diagrams panic during evaluation? Group by propagator signature.
+        let hel0 = [-1i32; 8];
+        let mut panic_sigs: BTreeMap<String, usize> = BTreeMap::new();
+        let mut ok_count = 0usize;
+        std::panic::set_hook(Box::new(|_| {})); // silence per-diagram panic spew
+        for ast in &asts {
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                eval_single_diagram(ast, &p, &hel0, &evaluated, n_in)
+            }));
+            match res {
+                Ok(_) => ok_count += 1,
+                Err(_) => *panic_sigs.entry(prop_sig(ast).join("+")).or_default() += 1,
+            }
+        }
+        let _ = std::panic::take_hook();
+        let n_panic: usize = panic_sigs.values().sum();
+        println!("\nevaluation: {ok_count} ok, {n_panic} PANIC");
+        println!("panicking diagrams by propagator signature:");
+        for (sig, c) in &panic_sigs {
+            println!("  [{sig}] x{c}");
+        }
+        if n_panic > 0 {
+            println!("\n(stopping before |M|² — some diagrams don't evaluate yet)");
+            return;
+        }
+
+        // 2) Per-helicity cancellation + total |M|^2 over all helicities.
+        let hel_states = [-1i32, 1];
+        let mut total_m2 = 0.0f64;
+        let mut worst_cancel = (Vec::new(), 1.0f64, 0.0f64); // (hel, |Σa|²/Σ|a|², Σ|a|²)
+                                                             // count helicity combos
+        let mut n_hel = 0usize;
+        let mut combos: Vec<Vec<i32>> = vec![vec![]];
+        for _ in 0..8 {
+            let mut next = vec![];
+            for c in &combos {
+                for &h in &hel_states {
+                    let mut cc = c.clone();
+                    cc.push(h);
+                    next.push(cc);
+                }
+            }
+            combos = next;
+        }
+        let has_higgs: Vec<bool> = asts
+            .iter()
+            .map(|a| prop_sig(a).contains(&"H".to_string()))
+            .collect();
+        let mut total_m2_noh = 0.0f64;
+        for hel in &combos {
+            let amps: Vec<C<f64>> = asts
+                .iter()
+                .map(|ast| eval_single_diagram(ast, &p, hel, &evaluated, n_in))
+                .collect();
+            let sum: C<f64> = amps.iter().fold(C::new(0.0, 0.0), |a, b| a + *b);
+            let sum_noh: C<f64> = amps
+                .iter()
+                .zip(&has_higgs)
+                .filter(|(_, h)| !**h)
+                .fold(C::new(0.0, 0.0), |a, (b, _)| a + *b);
+            let sum_abs2: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
+            total_m2 += sum.norm_sqr();
+            total_m2_noh += sum_noh.norm_sqr();
+            n_hel += 1;
+            if sum_abs2 > 0.0 {
+                let ratio = sum.norm_sqr() / sum_abs2;
+                if sum_abs2 > worst_cancel.2 {
+                    worst_cancel = (hel.clone(), ratio, sum_abs2);
+                }
+            }
+        }
+        // color factor for uux (two quark lines, Nc^2 = 9)
+        let total_m2 = total_m2 * 9.0;
+        let total_m2_noh = total_m2_noh * 9.0;
+        let mg_ref = 2.9422266141524934e-18; // CSV point-0 reference
+        println!("\n{n_hel} helicity combos");
+        println!("MG reference (pt0)        = {mg_ref:.6e}");
+        println!(
+            "Σ_hel |Σ_d a_d|² × cf(9)  = {total_m2:.6e}  (ratio {:.3e})",
+            total_m2 / mg_ref
+        );
+        println!(
+            "  excluding 3 Higgs diags = {total_m2_noh:.6e}  (ratio {:.3e})",
+            total_m2_noh / mg_ref
+        );
+        println!(
+            "loudest-helicity cancellation: Σ|a_d|²={:.4e}  |Σa_d|²/Σ|a_d|²={:.4e}  hel={:?}",
+            worst_cancel.2, worst_cancel.1, worst_cancel.0
+        );
+
+        // 3) For that loudest helicity, top contributors grouped by signature.
+        let hel = &worst_cancel.0;
+        let mut by_sig: BTreeMap<String, (usize, f64, C<f64>)> = BTreeMap::new();
+        for ast in &asts {
+            let a = eval_single_diagram(ast, &p, hel, &evaluated, n_in);
+            let sig = prop_sig(ast).join("+");
+            let e = by_sig.entry(sig).or_insert((0, 0.0, C::new(0.0, 0.0)));
+            e.0 += 1;
+            e.1 += a.norm_sqr();
+            e.2 = e.2 + a;
+        }
+        println!("\nby propagator signature @ loudest helicity (count, Σ|a|², |Σa|):");
+        let mut rows: Vec<_> = by_sig.into_iter().collect();
+        rows.sort_by(|a, b| b.1 .1.partial_cmp(&a.1 .1).unwrap());
+        for (sig, (cnt, s2, s)) in rows.iter().take(20) {
+            println!(
+                "  [{sig:<28}] x{cnt:<3} Σ|a|²={:.4e} |Σa|={:.4e}",
+                s2,
+                s.norm()
+            );
+        }
+    }
+
     /// Cross-check `ProjMAmp` / `ProjPAmp` nodes against the `iosxxx` reference routine.
     ///
     /// FFS1: ProjM(2,1) rooted at amplitude → ScalarProduct[ProjMAmp, Leg(3)]

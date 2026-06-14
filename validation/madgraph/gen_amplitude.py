@@ -317,13 +317,17 @@ if __name__ == "__main__":
     print("\nGenerating u u~ > c c~ e+ e- mu+ mu- (QCD=0) 2->6 amplitude reference...")
     import mg_uux_to_ccx_emmm_qcd0  # compiled by build_amplitude.sh (generic wrapper)
 
+    # The bare process string is used to locate the output directory; the CSV
+    # header records the full spec including coupling orders so the harness can
+    # reproduce the same diagram set (QCD=0 → pure-EW, 579 diagrams).
     proc = "u u~ > c c~ e+ e- mu+ mu-"
+    proc_with_orders = "u u~ > c c~ e+ e- mu+ mu- QCD=0"
     n_ext, rows_6 = gen_nbody(
         mg_uux_to_ccx_emmm_qcd0, proc, n_final=6, sqrt_s=500.0, npoints=50, seed=7
     )
     write_csv_nbody(
         os.path.join(OUTPUT_DIR, "uux_to_ccx_emmm_qcd0_amplitude.csv"),
-        proc,
+        proc_with_orders,
         n_ext,
         rows_6,
     )
