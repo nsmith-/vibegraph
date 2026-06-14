@@ -530,6 +530,31 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
                 momentum: v1.momentum + v2.momentum,
             })
         }
+        LorentzEvalNode::MetricVout { v } => {
+            // Off-shell vector current of a `Metric(out, v)` structure: the metric
+            // raises the output index on the partner vector `v`. Matching ALOHA
+            // `VVS1P1N_1` (`V1^0 = -i·V^0`, `V1^j = +i·V^j`, i.e. `-i·g·V`); the
+            // explicit `-i` is the vertex factor on top of the coupling (the UFO
+            // GC for HVV already carries its own `i`). A trailing scalar leg (the
+            // Higgs) multiplies in at the enclosing ScalarProduct.
+            let WaveformSlot::Vector(vin) =
+                evaluate_lorentz_node(tree, tree.node(*v), input_slots, slots)
+            else {
+                panic!("expected vector output from node {v}");
+            };
+            let e = &vin.eps;
+            let pi = ri(F::one()); // +i
+            let mi = ri(-F::one()); // -i
+            WaveformSlot::Vector(VectorWf {
+                eps: ComplexVector::new([
+                    mi * e.component(0),
+                    pi * e.component(1),
+                    pi * e.component(2),
+                    pi * e.component(3),
+                ]),
+                momentum: vin.momentum,
+            })
+        }
         LorentzEvalNode::ProjMAmp { i, j } => {
             // Left-chiral scalar bilinear: ψ̄_i P_L ψ_j
             // Node i is the row (barred) fermion; node j is the column fermion.
@@ -604,7 +629,24 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
                     value: scalar_val,
                     momentum: scalar_mom,
                 }),
-                other => scalar_val * other,
+                // The scalar factors carry momentum too (e.g. an off-shell Higgs
+                // multiplying the VVS vector current); route it into the surviving
+                // non-scalar current so the propagator sees the conserved q.
+                other => match scalar_val * other {
+                    WaveformSlot::Vector(mut v) => {
+                        v.momentum = v.momentum + scalar_mom;
+                        WaveformSlot::Vector(v)
+                    }
+                    WaveformSlot::FermionIn(mut f) => {
+                        f.momentum = f.momentum + scalar_mom;
+                        WaveformSlot::FermionIn(f)
+                    }
+                    WaveformSlot::FermionOut(mut f) => {
+                        f.momentum = f.momentum + scalar_mom;
+                        WaveformSlot::FermionOut(f)
+                    }
+                    scaled => scaled,
+                },
             }
         }
     }
@@ -655,6 +697,72 @@ mod tests {
             let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm");
             UFOModel::load(&path, None).expect("SM UFO not found")
         })
+    }
+
+    /// Cross-check the VVS off-shell *vector* current (`MetricVout` node) against
+    /// ALOHA `VVS1P1N_1.f`, whose Lorentz structure (coupling stripped) is
+    ///   V1(3) = -i·V2(3)·S ;  V1(4..6) = +i·V2(4..6)·S    (i.e. -i·g·V2·S)
+    /// vibegraph applies the coupling separately, so the bare dispatch tree for
+    /// `Metric(1,2)` rooted at vector leg 1 must reproduce exactly this.
+    #[test]
+    fn test_metric_vout_vs_aloha_vvs1p1n1() {
+        use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
+
+        // VVS1: Metric(1,2), spins [Z, Z, H]; root at vector leg 1 (idx 0).
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::Metric { mu: 1, nu: 2 }],
+        };
+        let tree = LorentzEvalTree::build_at_leg(&term, &[3, 3, 1], Some(0)).unwrap();
+
+        // Slots: leg2 = input vector V2 (slot 1), leg3 = input scalar S (slot 2).
+        // input_slots aligns 1-based Leg(i) → input_slots[i-1]; slot 0 is the
+        // (unused) output leg placeholder.
+        let v2 = VectorWf {
+            eps: ComplexVector::new([
+                C::new(2.0, 1.0),
+                C::new(3.0, -1.0),
+                C::new(5.0, 2.0),
+                C::new(7.0, -3.0),
+            ]),
+            momentum: LorentzVector::new(10.0, 1.0, 2.0, 3.0),
+        };
+        let s = ScalarWf {
+            value: C::new(2.0, 0.0),
+            momentum: LorentzVector::new(4.0, 0.0, 0.0, 1.0),
+        };
+        let slots = vec![
+            WaveformSlot::Empty,
+            WaveformSlot::Vector(v2),
+            WaveformSlot::Scalar(s),
+        ];
+        let input_slots = vec![0usize, 1, 2];
+
+        let WaveformSlot::Vector(out) =
+            evaluate_lorentz_node(&tree, tree.root(), &input_slots, &slots)
+        else {
+            panic!("VVS rooted at a vector leg must produce a vector current");
+        };
+
+        // ALOHA VVS1P1N_1 (coupling stripped): -i·g·V2 · S.value
+        let sv = s.value;
+        let i = C::new(0.0, 1.0);
+        let expect = [
+            -i * v2.eps.component(0) * sv,
+            i * v2.eps.component(1) * sv,
+            i * v2.eps.component(2) * sv,
+            i * v2.eps.component(3) * sv,
+        ];
+        for mu in 0..4 {
+            let got = out.eps.component(mu);
+            assert!(
+                (got - expect[mu]).norm() < 1e-12,
+                "component {mu}: got {got:?}, ALOHA expects {:?}",
+                expect[mu]
+            );
+        }
+        // Momentum is conserved through the vertex: q = p_V2 + p_S.
+        assert_eq!(out.momentum, v2.momentum + s.momentum);
     }
 
     /// Unit test a simple dispatch tree against HELAS vertex

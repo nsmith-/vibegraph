@@ -49,8 +49,13 @@ pub enum LorentzEvalNode {
     ProjMAmp { i: usize, j: usize },
     /// Right chiral amplitude
     ProjPAmp { i: usize, j: usize },
-    /// contract two vector indices
+    /// contract two vector indices → scalar (`g^{μν} V_μ W_ν`)
     Metric { mu: usize, nu: usize },
+    /// metric with one free index → vector: the off-shell vector current of a
+    /// `Metric(out, v)` structure (e.g. the VVS/HVV vertex rooted at a vector
+    /// leg). Raises the output index on the partner vector `v`; cf. ALOHA
+    /// `VVS1P1N_1`. Output type: vector.
+    MetricVout { v: usize },
     /// Handle the implicit product over the disconnected structures.
     /// At most one child can be non-scalar (which then implies the output type)
     ScalarProduct { children: Vec<usize> },
@@ -71,6 +76,7 @@ impl LorentzEvalNode {
             LorentzEvalNode::ProjM { i } | LorentzEvalNode::ProjP { i } => vec![*i],
             LorentzEvalNode::ProjMAmp { i, j } | LorentzEvalNode::ProjPAmp { i, j } => vec![*i, *j],
             LorentzEvalNode::Metric { mu, nu } => vec![*mu, *nu],
+            LorentzEvalNode::MetricVout { v } => vec![*v],
             LorentzEvalNode::ScalarProduct { children } => children.clone(),
             LorentzEvalNode::P { .. } => vec![],
             LorentzEvalNode::IdentityAmp { i, j } => vec![*i, *j],
@@ -277,7 +283,8 @@ impl LorentzEvalTree {
 
             if let Some((iop, partner)) = metric_partner {
                 visited_ops.push(iop);
-                let node_idx = tree.build_child(term, partner, &mut visited_ops)?;
+                let partner_node = tree.build_child(term, partner, &mut visited_ops)?;
+                let node_idx = tree.add_node(LorentzEvalNode::MetricVout { v: partner_node });
                 term_roots.push(node_idx);
             } else {
                 let node_idx = tree.build_child(term, root_leg, &mut visited_ops)?;
