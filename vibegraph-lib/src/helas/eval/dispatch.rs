@@ -37,10 +37,10 @@ pub enum LorentzEvalNode {
     Leg(i32),
     /// 2-fermion in, vector out
     GammaVout { i: usize, j: usize },
-    /// vector+fermion in, fermion out
+    /// vector+in-flowing fermion in, in-flowing fermion out
     GammaIout { mu: usize, j: usize },
-    /// vector+fermion in, fermion out (TODO: is this distinct from Gamma_Iout or can it be unified with a flag?)
-    GammaJout { mu: usize, i: usize },
+    /// vector+out-flowing fermion in, out-flowing fermion out
+    GammaOout { mu: usize, i: usize },
     /// fermion left projection
     ProjM { i: usize },
     /// fermion right projection
@@ -49,7 +49,7 @@ pub enum LorentzEvalNode {
     ProjMAmp { i: usize, j: usize },
     /// Right chiral amplitude
     ProjPAmp { i: usize, j: usize },
-    /// contract two vector indices → scalar (`g^{μν} V_μ W_ν`)
+    /// contract two vector indices → scalar (`g_{μν} V^μ W^ν`)
     Metric { mu: usize, nu: usize },
     /// metric with one free index → vector: the off-shell vector current of a
     /// `Metric(out, v)` structure (e.g. the VVS/HVV vertex rooted at a vector
@@ -72,7 +72,7 @@ impl LorentzEvalNode {
             LorentzEvalNode::Leg(_) => vec![],
             LorentzEvalNode::GammaVout { i, j } => vec![*i, *j],
             LorentzEvalNode::GammaIout { mu, j } => vec![*mu, *j],
-            LorentzEvalNode::GammaJout { mu, i } => vec![*mu, *i],
+            LorentzEvalNode::GammaOout { mu, i } => vec![*mu, *i],
             LorentzEvalNode::ProjM { i } | LorentzEvalNode::ProjP { i } => vec![*i],
             LorentzEvalNode::ProjMAmp { i, j } | LorentzEvalNode::ProjPAmp { i, j } => vec![*i, *j],
             LorentzEvalNode::Metric { mu, nu } => vec![*mu, *nu],
@@ -141,7 +141,7 @@ impl LorentzEvalTree {
                 } else if *j == idx {
                     let child_mu = self.build_child(term, *mu, visited_ops)?;
                     let child_i = self.build_child(term, *i, visited_ops)?;
-                    Ok(self.add_node(LorentzEvalNode::GammaJout {
+                    Ok(self.add_node(LorentzEvalNode::GammaOout {
                         mu: child_mu,
                         i: child_i,
                     }))

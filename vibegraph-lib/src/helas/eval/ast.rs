@@ -127,7 +127,14 @@ impl<F: Real> WaveformSlot<F> {
     pub fn expect_fermion_in(self) -> InDiracWf<F> {
         match self {
             WaveformSlot::FermionIn(f) => f,
-            WaveformSlot::FermionOut(f) => f.to_incoming(),
+            // A fermion line carries one flow throughout. With flow-typed externals
+            // (`build_external_slot`) and flow-preserving currents, the flow a
+            // consumer needs always matches the slot — a flow-out slot here means
+            // the dispatch mis-assigned the flow, so panic instead of silently
+            // applying a (physically wrong) mid-line Dirac adjoint.
+            WaveformSlot::FermionOut(_) => {
+                panic!("expect_fermion_in: slot is flow-OUT (fermion-flow mismatch)")
+            }
             _ => panic!("expected a fermion waveform slot"),
         }
     }
@@ -137,7 +144,10 @@ impl<F: Real> WaveformSlot<F> {
     pub fn expect_fermion_out(self) -> OutDiracWf<F> {
         match self {
             WaveformSlot::FermionOut(f) => f,
-            WaveformSlot::FermionIn(f) => f.to_outgoing(),
+            // See expect_fermion_in: flow is an enforced invariant, not coerced.
+            WaveformSlot::FermionIn(_) => {
+                panic!("expect_fermion_out: slot is flow-IN (fermion-flow mismatch)")
+            }
             _ => panic!("expected a fermion waveform slot"),
         }
     }
