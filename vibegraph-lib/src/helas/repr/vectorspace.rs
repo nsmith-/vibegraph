@@ -16,6 +16,7 @@ use std::ops::{Add, Div, Mul, Neg, Sub};
 /// - Distributivity: `α(a + b) = αa + αb` and `(α + β)a = αa + βa`
 /// - Compatibility: `α(βa) = (αβ)a`
 /// - Scalar identity: `1·a = a`
+#[allow(dead_code)] // Future work may use this to implement e.g. inner product spaces
 pub(super) trait VectorSpace<F: Copy>:
     Add<Output = Self>
     + Sub<Output = Self>
