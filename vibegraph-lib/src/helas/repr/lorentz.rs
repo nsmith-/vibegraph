@@ -364,6 +364,20 @@ pub trait SpinorFlow: sealed::Sealed + Copy + PartialEq + Eq + 'static {
         nhel: SpinorHelicity,
         nsf: Charge,
     ) -> Bispinor<F, Self>;
+
+    /// Apply the gamma-slash `v̸ = γ^μ v_μ` to a bispinor of this flow.
+    ///
+    /// The action depends on the flow because the open spinor index sits on a
+    /// different side of `v̸`:
+    /// - **flow-in (ket)**: the left action `v̸ ψ`;
+    /// - **flow-out (bra)**: the right action `ψ̄ v̸`.
+    ///
+    /// These are genuinely different component formulas — closing a bra's open
+    /// index from the right transposes the chiral blocks of `γ^μ` relative to
+    /// the ket. Using the ket (left) action on a stored flow-out spinor was the
+    /// `foxxx`/`fvoxxx` Ward-identity bug: `q̸` then failed to telescope against
+    /// the bra Dirac equation and the propagator did not cancel.
+    fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4];
 }
 
 /// Marker for flowing-IN spinors (`u`/`v` columns).
@@ -382,6 +396,28 @@ impl SpinorFlow for FlowIn {
     ) -> Bispinor<F, Self> {
         Bispinor::from_array(weyl_ixxxxx(p, mass, nhel, nsf))
     }
+
+    /// Ket left action `v̸ ψ`. In the Weyl basis `γ^μ = [[0, σ̄^μ], [σ^μ, 0]]`,
+    /// so the left-chiral output is `(σ̄·v) ψ_R` and the right-chiral output is
+    /// `(σ·v) ψ_L`, with
+    /// `σ·v  = [[v₀+v₃, v₁−iv₂], [v₁+iv₂, v₀−v₃]]` and
+    /// `σ̄·v = [[v₀−v₃, −(v₁−iv₂)], [−(v₁+iv₂), v₀+v₃]]`.
+    fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4] {
+        let i = ri(F::one());
+        let v0_p_v3 = v[0] + v[3];
+        let v0_m_v3 = v[0] - v[3];
+        let v1_m_iv2 = v[1] - i * v[2];
+        let v1_p_iv2 = v[1] + i * v[2];
+
+        // ψ_L ← (σ̄·v) ψ_R
+        let l1 = v0_m_v3 * psi[2] - v1_m_iv2 * psi[3];
+        let l2 = -v1_p_iv2 * psi[2] + v0_p_v3 * psi[3];
+        // ψ_R ← (σ·v) ψ_L
+        let r1 = v0_p_v3 * psi[0] + v1_m_iv2 * psi[1];
+        let r2 = v1_p_iv2 * psi[0] + v0_m_v3 * psi[1];
+
+        [l1, l2, r1, r2]
+    }
 }
 
 /// Marker for flowing-OUT spinors (`ū`/`v̄` rows).
@@ -399,6 +435,26 @@ impl SpinorFlow for FlowOut {
         nsf: Charge,
     ) -> Bispinor<F, Self> {
         Bispinor::from_array(weyl_ixxxxx(p, mass, nhel, nsf)).bar()
+    }
+
+    /// Bra right action `ψ̄ v̸`, stored in the same swapped-chiral layout the
+    /// flow-out spinor uses (`dualize` swaps the chiral blocks and conjugates).
+    /// Equivalently `bar(slash_in(unbar(ψ̄), v*))`; the two `dualize`
+    /// conjugations cancel the explicit `v*`, so the formula below is in terms
+    /// of `v` directly and is the chiral-block transpose of the ket action.
+    fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4] {
+        let i = ri(F::one());
+        let v0_p_v3 = v[0] + v[3];
+        let v0_m_v3 = v[0] - v[3];
+        let v1_m_iv2 = v[1] - i * v[2];
+        let v1_p_iv2 = v[1] + i * v[2];
+
+        [
+            v0_p_v3 * psi[2] + v1_p_iv2 * psi[3],
+            v1_m_iv2 * psi[2] + v0_m_v3 * psi[3],
+            v0_m_v3 * psi[0] - v1_p_iv2 * psi[1],
+            -v1_m_iv2 * psi[0] + v0_p_v3 * psi[1],
+        ]
     }
 }
 
@@ -537,31 +593,13 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
 
     /// Apply the gamma-slash `v̸ = γ^μ v_μ`.
     ///
-    /// In the Weyl basis `γ^μ = [[0, σ̄^μ], [σ^μ, 0]]`, so the slash swaps the
-    /// chiral blocks: the left-chiral output is `(σ̄·v) ψ_R` and the right-chiral
-    /// output is `(σ·v) ψ_L`, with
-    /// `σ·v  = [[v₀+v₃, v₁−iv₂], [v₁+iv₂, v₀−v₃]]` and
-    /// `σ̄·v = [[v₀−v₃, −(v₁−iv₂)], [−(v₁+iv₂), v₀+v₃]]`.
+    /// The slash is flow-dependent: a flow-in ket takes the left action `v̸ψ`,
+    /// a flow-out bra the right action `ψ̄v̸` (a distinct component formula — see
+    /// [`SpinorFlow::slash_bispinor`]). The variance of `v` does not matter; the
+    /// stored components are summed against `γ^μ` directly (contravariant
+    /// convention, matching `fioxxx`/`foxxx`/the Dirac propagator).
     fn slash<V: Variance>(self, v: &ComplexVector<F, V>) -> Self {
-        // TODO: does this depend on the variance?
-        let psi = &self.0;
-        let v = &v.0;
-        let i = ri(F::one());
-
-        // σ·v and σ̄·v share the v₁∓iv₂ off-diagonal entries.
-        let v0_p_v3 = v[0] + v[3];
-        let v0_m_v3 = v[0] - v[3];
-        let v1_m_iv2 = v[1] - i * v[2];
-        let v1_p_iv2 = v[1] + i * v[2];
-
-        // ψ_L ← (σ̄·v) ψ_R,  σ̄·v = v₀ − v⃗·σ⃗ = [[v₀−v₃, −(v₁−iv₂)], [−(v₁+iv₂), v₀+v₃]]
-        let l1 = v0_m_v3 * psi[2] - v1_m_iv2 * psi[3];
-        let l2 = -v1_p_iv2 * psi[2] + v0_p_v3 * psi[3];
-        // ψ_R ← (σ·v) ψ_L
-        let r1 = v0_p_v3 * psi[0] + v1_m_iv2 * psi[1];
-        let r2 = v1_p_iv2 * psi[0] + v0_m_v3 * psi[1];
-
-        Bispinor([l1, l2, r1, r2], PhantomData)
+        Bispinor::from_array(Flow::slash_bispinor(&self.0, &v.0))
     }
 
     fn bare_norm_sq(self) -> F

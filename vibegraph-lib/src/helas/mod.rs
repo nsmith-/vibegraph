@@ -253,17 +253,17 @@ mod tests {
         }
     }
 
-    /// KNOWN BUG (ignored): the flow-OUT off-shell fermion current (`foxxx`, ≡ the
-    /// `GammaJout` dispatch path) fails the Ward identity even after the σ̄ slash fix.
+    /// Flow-OUT counterpart of [`test_ward_identity_offshell_fermion`], exercising
+    /// `foxxx` (≡ the `GammaJout` dispatch path).
     ///
-    /// `foxxx` slashes the *barred* (dualized) spinor with left-multiplication
-    /// (`ε̸·ψ̄`), but for a bra the physical operation is right-multiplication
-    /// `ψ̄·γ^μ`; left-slash on the dualized column does not satisfy the bra Dirac
-    /// equation, so `q̸` fails to telescope and the propagator does not cancel.
-    /// Expected contact term (with `q = fo.p + v.p`) is `+g·ψ̄`. This is the next
-    /// piece of the 2→6 continuum cancellation residual — see helas-2to6-continuum.
+    /// A flow-out fermion is a bra, so the vertex/propagator slash acts to the
+    /// *right* (`ψ̄·γ^μ`), not the left (`γ^μ·ψ`). The slash is now flow-dependent
+    /// (`SpinorFlow::slash_bispinor`): flow-out uses the chiral-block-transposed
+    /// right action. With ε→q_γ the bra Dirac equation `ψ̄(p̸−m)=0` makes `q̸`
+    /// telescope, the propagator `1/(q²−m²)` cancels, and the current collapses to
+    /// `+g·ψ̄` (with `q = fo.p + v.p`). The earlier left-slash on the dualized
+    /// column did not satisfy the bra Dirac equation, so the propagator survived.
     #[test]
-    #[ignore = "flow-out off-shell fermion current (foxxx/GammaJout) Ward bug — not yet fixed"]
     fn test_ward_identity_offshell_fermion_out() {
         let g = repr::C::new(1.3, -0.4);
         let p_gamma = LorentzVector::new(2.5, 1.0, 0.3, -1.5);

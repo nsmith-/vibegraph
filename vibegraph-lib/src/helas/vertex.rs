@@ -226,7 +226,10 @@ pub fn foxxx<F: Real>(
     let q = fo.momentum + v.momentum;
     let q2 = q.m2();
 
-    // Vertex factor ε̸ ψ̄, then the (q̸ + m)/(q² − m² + imΓ) propagator, scaled by g.
+    // Bra vertex factor ψ̄ε̸, then the bra propagator ψ̄(q̸ + m)/(q² − m² + imΓ),
+    // scaled by g. The slash is flow-dependent: on a flow-out (bra) spinor it is
+    // the right action (`SpinorFlow::slash_bispinor`), so writing it left-to-right
+    // builds ψ̄·ε̸·(q̸+m) — the correct order for a bra.
     let psi = fo.spinor.slash(&v.eps);
     let num = psi.slash(&q.into()) + psi * mass;
     let scale = g / C::new(q2 - mass * mass, mass * width);
