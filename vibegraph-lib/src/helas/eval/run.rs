@@ -1364,7 +1364,10 @@ mod tests {
             .iter()
             .map(|a| prop_sig(a).contains(&"H".to_string()))
             .collect();
+        let fsign: Vec<f64> = asts.iter().map(|a| a.fermi_sign as f64).collect();
         let mut total_m2_noh = 0.0f64;
+        let mut total_m2_noh_nosign = 0.0f64; // continuum coherent sum with fermi_sign stripped
+        let mut incoh_noh = 0.0f64; // Σ_hel Σ_d |a_d|² over continuum diagrams
         for hel in &combos {
             let amps: Vec<C<f64>> = asts
                 .iter()
@@ -1376,7 +1379,20 @@ mod tests {
                 .zip(&has_higgs)
                 .filter(|(_, h)| !**h)
                 .fold(C::new(0.0, 0.0), |a, (b, _)| a + *b);
+            let sum_noh_nosign: C<f64> = amps
+                .iter()
+                .zip(&has_higgs)
+                .zip(&fsign)
+                .filter(|((_, h), _)| !**h)
+                .fold(C::new(0.0, 0.0), |a, ((b, _), fs)| a + *b / *fs);
+            total_m2_noh_nosign += sum_noh_nosign.norm_sqr();
             let sum_abs2: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
+            incoh_noh += amps
+                .iter()
+                .zip(&has_higgs)
+                .filter(|(_, h)| !**h)
+                .map(|(a, _)| a.norm_sqr())
+                .sum::<f64>();
             total_m2 += sum.norm_sqr();
             total_m2_noh += sum_noh.norm_sqr();
             n_hel += 1;
@@ -1400,6 +1416,18 @@ mod tests {
         println!(
             "  excluding 3 Higgs diags = {total_m2_noh:.6e}  (ratio {:.3e})",
             total_m2_noh / mg_ref
+        );
+        let incoh_noh = incoh_noh * 9.0;
+        let total_m2_noh_nosign = total_m2_noh_nosign * 9.0;
+        println!(
+            "  continuum cancellation: coherent Σ|Σa|²={total_m2_noh:.4e}  incoherent ΣΣ|a|²={incoh_noh:.4e}  (coh/incoh {:.3e})",
+            total_m2_noh / incoh_noh
+        );
+        let fdist = fsign.iter().filter(|&&s| s < 0.0).count();
+        println!(
+            "  fermi_sign stripped: continuum |M|²={total_m2_noh_nosign:.4e} (ratio to MG {:.3e}); {fdist}/{} diagrams have fermi_sign=-1",
+            total_m2_noh_nosign / mg_ref,
+            asts.len()
         );
         println!(
             "loudest-helicity cancellation: Σ|a_d|²={:.4e}  |Σa_d|²/Σ|a_d|²={:.4e}  hel={:?}",
