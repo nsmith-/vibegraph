@@ -142,15 +142,18 @@ off-shell-current sign/metric bugs live.
 
 ### `helas-2to6-continuum` — Fix the pure-EW continuum |M|² (uux 2→6)
 
-After the QCD=0 harness fix + VVS off-shell vector current fix, the Higgs diagrams agree
-with MadGraph, but the **non-Higgs γ/Z continuum** still fails: `validate_helas_mg`
-`uux_to_ccx_emmm_qcd0` max_rel_diff ≈ 3.18e4, **varying wildly across points** (38× at the
-probe point, up to 3.18e4) — a broken-cancellation signature in the multi-vertex FFV
-chains. FFV is validated to 1e-7 in 2→2 ee→μμ, so the bug is in paths 2→2 never exercises:
-multi-radiation fermion lines (off-shell fermion currents chained via fermion propagators)
-and off-shell γ/Z bosons absorbed by `GammaIout`/`GammaJout` (fvixxx/fvoxxx) rather than at
-the amplitude (iovxxx). Probe: extend `run::tests::probe_uux_diagrams` to filter to non-Higgs
-diagrams and find which class fails to cancel; or generate a smaller multi-vertex EW
+After the QCD=0 harness fix + VVS off-shell vector current fix + the σ̄ slash fix + the
+**flow-out slash fix** (2026-06-14: `slash` is now flow-dependent — `SpinorFlow::slash_bispinor`
+right-acts `ψ̄v̸` for flow-out bras, fixing `foxxx`, the FermionOut propagator, and `GammaJout`;
+`test_ward_identity_offshell_fermion_out` passes), the Higgs diagrams agree with MadGraph and the
+continuum improved, but the **non-Higgs γ/Z continuum** still fails: `validate_helas_mg`
+`uux_to_ccx_emmm_qcd0` max_rel_diff ≈ **7.26e3** (was 3.18e4), still **varying across points** — a
+broken-cancellation signature in the multi-vertex FFV chains. FFV is validated to 1e-7 in 2→2
+ee→μμ, so the bug is in paths 2→2 never exercises: chained off-shell fermion currents via fermion
+propagators, and off-shell γ/Z bosons (VectorWf, −i/q²) absorbed by `GammaIout`/`GammaJout`.
+Remaining suspects: massive-Z propagator longitudinal `q^μq^ν/m²` term; a residual relative
+sign/phase in the chained currents. Probe: extend `run::tests::probe_uux_diagrams` to filter to
+non-Higgs diagrams and find which class fails to cancel; or generate a smaller multi-vertex EW
 reference (e.g. `e+ e- > e+ e- mu+ mu-`, 2→4) to isolate with fewer diagrams.
 
 ### `feyngraph-perf` — Fix feyngraph allocation hot spot

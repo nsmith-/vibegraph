@@ -472,9 +472,10 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             ))
         }
         LorentzEvalNode::GammaJout { mu, i } => {
-            // Off-shell fermion current ε̸ ψ̄ from a vector (mu) and a row (flow-out) fermion (i).
+            // Off-shell fermion current ψ̄ε̸ from a vector (mu) and a row (flow-out) fermion (i).
             // The input leg is the barred (row) index; the result is itself a row
-            // (flow-out) current, mirroring `foxxx`'s `ε̸ ψ̄`.
+            // (flow-out) current, mirroring `foxxx`. The slash is the flow-out
+            // (right) action, so it builds the bra ψ̄·ε̸ (not the wrong ε̸·ψ̄).
             let WaveformSlot::Vector(v) =
                 evaluate_lorentz_node(tree, tree.node(*mu), input_slots, slots)
             else {
