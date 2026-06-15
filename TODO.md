@@ -170,6 +170,16 @@ vertex (only with ≥3 fermion lines). Found via `probe_2to5_momentum` (6/174 di
 non-conserving). Fix: `+`→`−`. Now all 174 conserve, 2→5 Ward passes ~1e-13 (un-ignored as a
 guard); `probe_uux_momentum` shows all 579 uux diagrams conserve.
 
+**2026-06-14 mass/param consistency: ee→μμ & pp→ll now BIT-MATCH MadGraph (~1e-14, was 6.69e-4).**
+Root cause (UFO loading bug): `UFOModel::load` found `restrict_default.dat` but used it only for
+vertex pruning — its parameter VALUES were discarded, so `model.evaluate()` used parameters.py
+defaults (physical MM=0.10566) while MadGraph bakes the restriction in (massless light fermions,
+rounded SM inputs). Fixes: `ParameterSet::apply_restrict` bakes the restrict card's externals into
+the param defaults (called from `load`); slha parses `DECAY <pdg> <width>` (was skipped) so width
+params resolve; `validate_helas_mg` evaluates with each process's actual MG `param_card.dat` for a
+bit-for-bit comparison (REL_TOL 2e-3→1e-10). uux stayed at 3.96e1 under this exact comparison ⇒ the
+uux residual is genuinely mass/param-independent, and the MG validation is now a clean oracle.
+
 **REMAINING (~24% at pt0, 40× worst-case): uux continuum γ/Z relative-phase — a SEPARATE bug.**
 The FFS fix did NOT move uux: uux's Higgs diagrams are VVS (HZZ), and with massless c the
 c-Yukawa is 0 so there are no FFS-Higgs diagrams; the continuum is pure γ/Z. The residual is
