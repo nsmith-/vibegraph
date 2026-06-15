@@ -25,21 +25,21 @@ use vibegraph::ufo::slha::ParamCard;
 
 /// Relative tolerance for processes expected to agree (color-free, same SM params).
 ///
-/// MadGraph's generated MATRIX1 treats all leptons as massless (hard-coded `ZERO` in
-/// HELAS calls), while vibegraph uses physical masses from the UFO model.  The resulting
-/// difference is O(m_mu² / s) ≈ 7×10⁻⁴ at √s = 10 GeV, decreasing at higher energies.
-/// Any real amplitude bug (wrong coupling, missing diagram) would produce O(1%) or larger
-/// deviations, well above this threshold.
-const REL_TOL: f64 = 2e-3;
+/// vibegraph now evaluates with MadGraph's exact per-process `param_card.dat` (same
+/// rounded masses, SM inputs, and decay widths), and the SM model bakes in
+/// `restrict_default.dat`, so the comparison is bit-for-bit: ee→μμ and pp→ll agree
+/// to ~1e-14 (was ~7e-4 when vibegraph used physical lepton masses vs MadGraph's
+/// massless ZERO). The tolerance is kept a few orders above the double-precision
+/// floor to allow for benign summation-order differences across the diagram set.
+const REL_TOL: f64 = 1e-10;
 
 /// Processes for which we enforce agreement; others are informational only.
 ///
-/// `uux_to_ccx_emmm_qcd0` (2->6) is intentionally NOT enforced yet: all 579
-/// diagrams now evaluate (QCD=0 header + the VVS vector-leg rooting fix), but the
-/// |M|² is still off — the VVS/Higgs off-shell vector current is over-large and a
-/// smaller multi-vertex continuum residual remains (max_rel_diff ~3e4). Paths that
-/// ee_to_mumu/pp_to_ll never exercise (their only off-shell output is the last leg,
-/// the s-channel boson). Tracked as a helas-generalize task.
+/// `uux_to_ccx_emmm_qcd0` (2->6) is intentionally NOT enforced yet: all 579 diagrams
+/// evaluate and conserve momentum, but a continuum γ/Z relative-phase residual
+/// remains (max_rel_diff ~3.96e1, amplified by the strong gauge cancellation). It is
+/// momentum-conserving and mass-independent (confirmed: this bit-for-bit param-card
+/// comparison leaves it unchanged). Tracked as `helas-2to6-continuum`.
 const EXPECT_MATCH: &[&str] = &["ee_to_mumu", "pp_to_ll_qcd0"];
 
 /// Overall color factor relating MadGraph's color-summed |M|² to vibegraph's
@@ -192,9 +192,19 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
     }
 
     let model = common::sm_model();
-    // Use UFO SM defaults (matching MadGraph's param_card values used in gen_amplitude.py)
-    let empty_card = ParamCard::from_str("").unwrap();
-    let evaluated = model.evaluate(&empty_card);
+    // Evaluate with MadGraph's actual param_card for this process, so vibegraph uses
+    // the exact (param-card-rounded) inputs MadGraph used — masses, SM inputs, and
+    // decay widths — giving a bit-for-bit comparison rather than a ~1e-7 floor from
+    // 7-significant-figure rounding. Falls back to the baked restrict defaults.
+    let card_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/output")
+        .join(&name)
+        .join("Cards/param_card.dat");
+    let card = std::fs::read_to_string(&card_path)
+        .ok()
+        .and_then(|s| ParamCard::from_str(&s).ok())
+        .unwrap_or_else(|| ParamCard::from_str("").unwrap());
+    let evaluated = model.evaluate(&card);
 
     let evaluator = AmplitudeEvaluator::compile(&sets[0], model)
         .map_err(|e| Failed::from(format!("compile: {e}")))?;

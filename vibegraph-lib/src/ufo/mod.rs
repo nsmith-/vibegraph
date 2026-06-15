@@ -139,7 +139,7 @@ impl UFOModel {
             .map(|c| (c.name.clone(), c))
             .collect();
 
-        let params = parse_parameters(&params_src)?;
+        let mut params = parse_parameters(&params_src)?;
         let raw_vertices = parse_vertices(&vertices_src)?;
         let mut vertices: IndexMap<String, Vertex> =
             resolve_vertices(raw_vertices, &particles, &lorentz, &couplings)?;
@@ -158,8 +158,22 @@ impl UFOModel {
         };
 
         if let Some(restrict_path) = restrict_card_path {
+            let restrict_card = ParamCard::from_file(&restrict_path).map_err(|e| UfoError::Io {
+                file: restrict_path.display().to_string(),
+                cause: std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("restrict card parse error: {}", e),
+                ),
+            })?;
+
+            // Bake the restriction's fixed values (zeroed light masses/Yukawas,
+            // rounded SM inputs) into the parameter defaults — MadGraph does this
+            // on `import model`, so without it our defaults differ from the
+            // generated param card (e.g. a physical muon mass vs MadGraph's ZERO).
+            params.apply_restrict(&restrict_card);
+
             let restrict_values =
-                evaluate_couplings_for_restrict(&params, &couplings, &restrict_path)?;
+                evaluate_couplings_for_restrict(&params, &couplings, &restrict_card);
 
             vertices.retain(|_name, vertex| {
                 !is_zero_coupling_vertex(vertex, &couplings, &restrict_values)
@@ -418,32 +432,23 @@ impl EvaluatedModel<'_> {
     }
 }
 
-/// Evaluate coupling constants under the parameters specified by a restrict card.
+/// Evaluate coupling constants under the parameters specified by a restrict card,
+/// for the purpose of pruning zero-coupling vertices.
 fn evaluate_couplings_for_restrict(
     params: &ParameterSet,
     couplings: &IndexMap<String, Coupling>,
-    restrict_path: &std::path::Path,
-) -> Result<HashMap<CouplingId, Complex64>, UfoError> {
-    let restrict_card = ParamCard::from_file(restrict_path).map_err(|e| UfoError::Io {
-        file: restrict_path.display().to_string(),
-        cause: std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("restrict card parse error: {}", e),
-        ),
-    })?;
+    restrict_card: &ParamCard,
+) -> HashMap<CouplingId, Complex64> {
+    let param_values = params.evaluate(restrict_card);
 
-    let param_values = params.evaluate(&restrict_card);
-
-    let coupling_values: HashMap<CouplingId, Complex64> = couplings
+    couplings
         .iter()
         .enumerate()
         .map(|(i, (_, c))| {
             let val = expr::eval(&c.value, &param_values);
             (CouplingId::from(i), val)
         })
-        .collect();
-
-    Ok(coupling_values)
+        .collect()
 }
 
 /// Check if a vertex has all couplings equal to zero under the restrict parameters.

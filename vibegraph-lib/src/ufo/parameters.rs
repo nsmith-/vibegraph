@@ -79,6 +79,27 @@ impl ParameterSet {
         values
     }
 
+    /// Bake a model restriction card's external values into the parameter
+    /// defaults. MadGraph applies the restriction (e.g. `restrict_default.dat`)
+    /// when importing a model: the listed parameters become fixed to those values
+    /// — zeroed light-fermion masses/Yukawas and the SM inputs as written (already
+    /// rounded to the param-card precision). We mirror that so `evaluate(&empty)`
+    /// uses the same baseline MadGraph does; a user-supplied card still overrides.
+    pub fn apply_restrict(&mut self, card: &ParamCard) {
+        for p in &mut self.externals {
+            if let ParamNature::External {
+                default_value,
+                lha_block,
+                lha_code,
+            } = &mut p.nature
+            {
+                if let Some(v) = card.get(lha_block, lha_code) {
+                    *default_value = v;
+                }
+            }
+        }
+    }
+
     /// Re-evaluate only the transitive dependents of `changed` in place.
     pub fn recompute(&self, changed: &str, current: &mut HashMap<String, Complex64>) {
         let mut affected: Vec<String> = Vec::new();

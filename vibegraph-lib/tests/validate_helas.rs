@@ -94,8 +94,16 @@ mod eval_vs_hardcoded {
         assert!(set.diagrams.len() == 2, "expected 2 diagrams (photon+Z)");
 
         let model = sm_model();
-        let empty_card = ParamCard::from_str("").unwrap();
-        let evaluated = model.evaluate(&empty_card);
+        // The hardcoded reference uses physical lepton masses (MDL_ME/MDL_MMU); the
+        // SM model now defaults to MadGraph's massless leptons (restrict_default is
+        // baked in), so restore the physical masses here to compare like-for-like.
+        let card = ParamCard::from_str(&format!(
+            "Block MASS\n 11 {}\n 13 {}\n",
+            super::MDL_ME,
+            super::MDL_MMU
+        ))
+        .unwrap();
+        let evaluated = model.evaluate(&card);
 
         let evaluator =
             AmplitudeEvaluator::compile(set, model).expect("failed to compile amplitude evaluator");
