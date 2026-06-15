@@ -166,10 +166,10 @@ impl UFOModel {
                 ),
             })?;
 
-            // Bake the restriction's fixed values (zeroed light masses/Yukawas,
-            // rounded SM inputs) into the parameter defaults — MadGraph does this
-            // on `import model`, so without it our defaults differ from the
-            // generated param card (e.g. a physical muon mass vs MadGraph's ZERO).
+            // Lock the restriction's zeroed parameters (light masses/Yukawas, CKM
+            // mixing) to zero — MadGraph does this on `import model` and uses it to
+            // prune vertices/diagrams, so a later param card must not revive them.
+            // See `apply_restrict`.
             params.apply_restrict(&restrict_card);
 
             let restrict_values =
