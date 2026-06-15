@@ -389,7 +389,7 @@ mod tests {
         assert_eq!(wf.momentum.component(1), -0.1);
     }
 
-    fn generate_test_cases(
+    fn generate_spinor_test_cases(
         onshell_only: bool,
     ) -> impl Iterator<
         Item = (
@@ -427,10 +427,10 @@ mod tests {
     /// Test bilinear scalar norm for the spinors
     #[test]
     fn test_bilinear_scalar_norm() {
-        for ((p, mass), nhel, nsf) in generate_test_cases(true) {
+        for ((p, mass), nhel, nsf) in generate_spinor_test_cases(true) {
             let in_wf = InDiracWf::from_momentum(p, mass, nhel, nsf);
             let scalar_bilinear = in_wf.to_outgoing().scalar_bilinear(&in_wf, Chirality::Both);
-            // HELAS convention for the scalar bilinear norm is 2 * p[0] (twice the energy component of the momentum)
+            // HELAS convention for the scalar bilinear norm is 2 * E when on-shell
             let expected = 2.0 * p.e();
             assert!(
                 (scalar_bilinear.re - expected).abs() < 1e-10,
@@ -443,7 +443,7 @@ mod tests {
                 p, mass, nhel, nsf, scalar_bilinear.im
             );
 
-            // now check orthogonality
+            // Opposite helicity should give zero scalar bilinear when on-shell
             let in_wf_oh = InDiracWf::from_momentum(p, mass, nhel.flip(), nsf);
             let scalar_bilinear_orthogonal = in_wf
                 .to_outgoing()
@@ -459,7 +459,7 @@ mod tests {
     /// Test the to_outgoing and to_incoming conversions between InDiracWf and OutDiracWf.
     #[test]
     fn test_in_out_conversion() {
-        for ((p, mass), nhel, nsf) in generate_test_cases(false) {
+        for ((p, mass), nhel, nsf) in generate_spinor_test_cases(false) {
             let in_wf = InDiracWf::from_momentum(p, mass, nhel, nsf);
             let out_wf = OutDiracWf::from_momentum(p, mass, nhel, nsf);
             let in_wf_converted = out_wf.to_incoming();
