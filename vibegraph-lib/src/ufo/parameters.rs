@@ -4,8 +4,9 @@ use super::ast_util::{
 use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::slha::ParamCard;
 use num_complex::Complex64;
+use num_traits::Zero;
 use rustpython_parser::ast;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -49,6 +50,8 @@ pub struct ParameterSet {
     pub internals: Vec<Parameter>,
     /// Reverse dependency map: name → list of parameter names that depend on it.
     pub rdeps: HashMap<String, Vec<String>>,
+    /// Const-zero parameters (set by restrictions)
+    pub zeros: HashSet<String>,
 }
 
 impl ParameterSet {
@@ -62,7 +65,18 @@ impl ParameterSet {
                     default_value,
                     lha_block,
                     lha_code,
-                } => slha.get(lha_block, lha_code).unwrap_or(*default_value),
+                } => {
+                    // A parameter zeroed by a restriction is locked to zero: the
+                    // user's param card cannot revive it (see `apply_restrict`).
+                    // Keep it in the map as 0.0 — internal params still reference
+                    // it (e.g. CKM via `lamWS`, `ye` via `yme`), and `eval` panics
+                    // on a missing name.
+                    if self.zeros.contains(&p.name) {
+                        0.0
+                    } else {
+                        slha.get(lha_block, lha_code).unwrap_or(*default_value)
+                    }
+                }
                 _ => unreachable!(),
             };
             values.insert(p.name.clone(), Complex64::new(v, 0.0));
@@ -79,12 +93,14 @@ impl ParameterSet {
         values
     }
 
-    /// Bake a model restriction card's external values into the parameter
-    /// defaults. MadGraph applies the restriction (e.g. `restrict_default.dat`)
-    /// when importing a model: the listed parameters become fixed to those values
-    /// — zeroed light-fermion masses/Yukawas and the SM inputs as written (already
-    /// rounded to the param-card precision). We mirror that so `evaluate(&empty)`
-    /// uses the same baseline MadGraph does; a user-supplied card still overrides.
+    /// Bake a model restriction card's external values into the parameter defaults.
+    ///
+    /// MadGraph applies the restriction (e.g. `restrict_default.dat`)
+    /// when importing a model: the listed parameters with value ZERO become fixed
+    /// to zero from that point forward. A user-supplied param card (e.g. `param_card.dat`)
+    /// CANNOT override a zero parameter in the restriction. This is intentional, because
+    /// the restriction also is used to prune the vertices and diagrams, so allowing a user
+    /// card to "un-restrict" a parameter would lead to inconsistencies.
     pub fn apply_restrict(&mut self, card: &ParamCard) {
         for p in &mut self.externals {
             if let ParamNature::External {
@@ -94,7 +110,10 @@ impl ParameterSet {
             } = &mut p.nature
             {
                 if let Some(v) = card.get(lha_block, lha_code) {
-                    *default_value = v;
+                    if v.is_zero() {
+                        self.zeros.insert(p.name.clone());
+                        *default_value = v;
+                    }
                 }
             }
         }
@@ -102,6 +121,10 @@ impl ParameterSet {
 
     /// Re-evaluate only the transitive dependents of `changed` in place.
     pub fn recompute(&self, changed: &str, current: &mut HashMap<String, Complex64>) {
+        if self.zeros.contains(changed) {
+            // This parameter is fixed to zero by a restriction, so ignore any changes.
+            return;
+        }
         let mut affected: Vec<String> = Vec::new();
         let mut queue: VecDeque<&str> = VecDeque::new();
         queue.push_back(changed);
@@ -198,6 +221,7 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
         externals,
         internals,
         rdeps,
+        zeros: HashSet::new(),
     })
 }
 
@@ -364,6 +388,61 @@ G = Parameter(name = 'G',
 
         let expected_g = 2.0 * new_as.sqrt() * PI.sqrt();
         assert!((vals["G"].re - expected_g).abs() < 1e-8);
+    }
+
+    const PARAMS_WITH_MASS_DEP: &str = r"
+from object_library import all_parameters, Parameter
+
+MZ = Parameter(name = 'MZ',
+               nature = 'external',
+               type = 'real',
+               value = 91.1876,
+               texname = 'm_Z',
+               lhablock = 'MASS',
+               lhacode = [ 23 ])
+
+MZ2 = Parameter(name = 'MZ2',
+                nature = 'internal',
+                type = 'real',
+                value = 'MZ**2',
+                texname = 'm_Z^2')
+";
+
+    #[test]
+    fn test_restrict_zero_is_locked() {
+        let mut ps = parse_parameters(PARAMS_WITH_MASS_DEP).unwrap();
+
+        // Restriction zeros MZ. A non-zero entry would NOT be baked/locked.
+        let restrict = ParamCard::from_str("Block MASS\n 23 0.0\n").unwrap();
+        ps.apply_restrict(&restrict);
+        assert!(ps.zeros.contains("MZ"));
+
+        // A user card cannot revive a restriction-zeroed parameter, and the
+        // internal that references it stays zero (no panic on a missing name).
+        let user = ParamCard::from_str("Block MASS\n 23 91.1876\n").unwrap();
+        let vals = ps.evaluate(&user);
+        assert_eq!(vals["MZ"].re, 0.0);
+        assert_eq!(vals["MZ2"].re, 0.0);
+
+        // recompute also refuses to change a locked parameter.
+        let mut vals = ps.evaluate(&user);
+        vals.insert("MZ".to_owned(), Complex64::new(91.1876, 0.0));
+        ps.recompute("MZ", &mut vals);
+        assert_eq!(vals["MZ2"].re, 0.0);
+    }
+
+    #[test]
+    fn test_restrict_nonzero_not_baked() {
+        let mut ps = parse_parameters(PARAMS_WITH_MASS_DEP).unwrap();
+
+        // A non-zero restriction value is not locked: the user card overrides it.
+        let restrict = ParamCard::from_str("Block MASS\n 23 80.0\n").unwrap();
+        ps.apply_restrict(&restrict);
+        assert!(!ps.zeros.contains("MZ"));
+
+        let user = ParamCard::from_str("Block MASS\n 23 91.1876\n").unwrap();
+        let vals = ps.evaluate(&user);
+        assert!((vals["MZ"].re - 91.1876).abs() < 1e-10);
     }
 
     #[test]

@@ -76,7 +76,7 @@ fn compute_m2_ee_mumu(sqrt_s: f64, cos_theta: f64) -> f64 {
 
 #[cfg(test)]
 mod eval_vs_hardcoded {
-    use super::common::{generate, sm_model};
+    use super::common::{generate_with, sm_lepton_masses_model};
     use super::{compute_m2_ee_mumu, derive_gammaz_couplings};
     use itertools::iproduct;
     use vibegraph::helas::eval::AmplitudeEvaluator;
@@ -87,18 +87,28 @@ mod eval_vs_hardcoded {
     /// reference for e⁺e⁻→μ⁺μ⁻ at multiple angles and CM energies.
     #[test]
     fn test_eval_m2_ee_mumu_vs_hardcoded() {
-        let sets = generate("e+ e- > mu+ mu-");
+        // The hardcoded reference uses physical lepton masses (MDL_ME/MDL_MMU).
+        // The default SM restriction (restrict_default) locks Me/MM to zero, so a
+        // param card cannot revive them; use the `lepton_masses` restriction, which
+        // keeps the lepton masses settable, then supply the physical values here.
+        let model = sm_lepton_masses_model();
+        let sets = generate_with("e+ e- > mu+ mu-", model);
         assert!(!sets.is_empty(), "no diagram sets generated for e⁺e⁻→μ⁺μ⁻");
 
+        // The `lepton_masses` restriction also keeps the lepton Yukawas non-zero,
+        // so e⁺e⁻→μ⁺μ⁻ gains s-channel Higgs and neutral-Goldstone (G0) diagrams
+        // (γ, Z, H, G0) — both scalar couplings are ∝ the lepton Yukawa. The
+        // hardcoded reference is γ+Z only, so we decouple the scalars by zeroing
+        // the lepton Yukawas (YUKAWA 11/13) in the param card while keeping the
+        // physical masses (MASS 11/13). The H and G0 diagrams are still built but
+        // evaluate to zero. TODO: once forbidden-propagator filtering (`/ H / G0`)
+        // is implemented this is a good test of that syntax — drop the scalars
+        // there and the Yukawa override here.
         let set = &sets[0];
-        assert!(set.diagrams.len() == 2, "expected 2 diagrams (photon+Z)");
+        assert_eq!(set.diagrams.len(), 4, "expected 4 diagrams (γ, Z, H, G0)");
 
-        let model = sm_model();
-        // The hardcoded reference uses physical lepton masses (MDL_ME/MDL_MMU); the
-        // SM model now defaults to MadGraph's massless leptons (restrict_default is
-        // baked in), so restore the physical masses here to compare like-for-like.
         let card = ParamCard::from_str(&format!(
-            "Block MASS\n 11 {}\n 13 {}\n",
+            "Block MASS\n 11 {}\n 13 {}\nBlock YUKAWA\n 11 0.0\n 13 0.0\n",
             super::MDL_ME,
             super::MDL_MMU
         ))
