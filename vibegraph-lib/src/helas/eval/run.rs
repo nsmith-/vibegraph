@@ -607,7 +607,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Left);
             WaveformSlot::Scalar(ScalarWf {
                 value,
-                momentum: fo.momentum + fi_col.momentum,
+                momentum: fo.momentum - fi_col.momentum,
             })
         }
         LorentzEvalNode::ProjPAmp { i, j } => {
@@ -618,7 +618,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Right);
             WaveformSlot::Scalar(ScalarWf {
                 value,
-                momentum: fo.momentum + fi_col.momentum,
+                momentum: fo.momentum - fi_col.momentum,
             })
         }
         LorentzEvalNode::P { leg } => {
@@ -638,7 +638,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Both);
             WaveformSlot::Scalar(ScalarWf {
                 value,
-                momentum: fo.momentum + fi_col.momentum,
+                momentum: fo.momentum - fi_col.momentum,
             })
         }
         LorentzEvalNode::ScalarProduct { children } => {
@@ -1688,13 +1688,13 @@ mod tests {
     /// tests (one internal boson + external photons) never exercise. The photon
     /// (leg 6) is Ward-substituted.
     ///
-    /// CURRENTLY FAILS at max |k·M|/scale ≈ 1e-4 (vs ~1e-13 for the 2→3/2→4/quark
-    /// Ward tests). This is the remaining uux 2→6 continuum bug: a relative-phase
-    /// error in the path where a fermion line absorbs two internal off-shell bosons
-    /// in series. Ignored until fixed; un-ignore as the regression guard. See TODO
-    /// `helas-2to6-continuum`.
+    /// Regression guard for the FFS off-shell *scalar* (Higgs) current momentum bug:
+    /// it used `fo.p + fi.p`, while the analogous off-shell vector current
+    /// `GammaVout` uses `fo.p − fi.p` (the HELAS jioxxx convention). The sum is
+    /// harmless at the amplitude sink (momentum unused there) but non-conserving when
+    /// the scalar is an off-shell Higgs current feeding a VVS vertex — which only
+    /// happens with ≥3 fermion lines. See `probe_2to5_momentum`.
     #[test]
-    #[ignore]
     fn test_ward_identity_full_amplitude_eemumutata_a() {
         let r3 = 3.0_f64.sqrt();
         let p = [
@@ -1894,6 +1894,290 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// DIAGNOSTIC: momentum-routing consistency for `e+ e- > mu+ mu- ta+ ta- a`.
+    /// Re-runs each diagram and reports the momentum each Propagate/Contract step
+    /// produces; the amplitude-sink momentum must be IDENTICAL across all diagrams
+    /// (a single convention). Any outlier is a mis-routed diagram. Also flags any
+    /// internal propagator whose q² is wildly off (a sign-flipped boson momentum
+    /// corrupts the downstream fermion propagator's q²).
+    #[test]
+    #[ignore]
+    fn probe_2to5_momentum() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use std::collections::BTreeMap;
+
+        let model = sm_model();
+        let evaluated = model
+            .evaluate(&ParamCard::from_str("Block MASS\n 11 0.0\n 13 0.0\n 15 0.0\n").unwrap());
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate e+ e- > mu+ mu- ta+ ta- a", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, model).unwrap();
+        let asts = compile_diagram_ast(&sets[0], model).unwrap();
+        let n_in = 2;
+        println!("n_diagrams = {}", asts.len());
+
+        let r3 = 3.0_f64.sqrt();
+        let p = [
+            LorentzVector::new(50.0, 0.0, 0.0, 50.0),
+            LorentzVector::new(50.0, 0.0, 0.0, -50.0),
+            LorentzVector::new(20.0, 20.0, 0.0, 0.0),
+            LorentzVector::new(20.0, -20.0, 0.0, 0.0),
+            LorentzVector::new(20.0, 0.0, 20.0, 0.0),
+            LorentzVector::new(20.0, 0.0, -10.0, 10.0 * r3),
+            LorentzVector::new(20.0, 0.0, -10.0, -10.0 * r3),
+        ];
+        let hel = [1, -1, -1, 1, -1, 1, 1];
+
+        // Per diagram: amplitude-sink total momentum (rounded) → count.
+        let mut sink_totals: BTreeMap<(i64, i64, i64, i64), usize> = BTreeMap::new();
+        let mut traced = 0;
+        for (d, ast) in asts.iter().enumerate() {
+            let mut slots = vec![WaveformSlot::Empty; ast.n_slots];
+            let mut log: Vec<String> = Vec::new();
+            for step in &ast.steps {
+                match step {
+                    EvalStep::ExternalWf { info, output_slot } => {
+                        slots[*output_slot] = build_external_slot(
+                            p[info.leg_idx],
+                            hel[info.leg_idx],
+                            info,
+                            n_in,
+                            &evaluated,
+                        );
+                        let m = slots[*output_slot].momentum().unwrap();
+                        log.push(format!(
+                            "  Ext leg {} ({:?}) -> slot {} mom ({:.1},{:.1},{:.1},{:.1})",
+                            info.leg_idx,
+                            info.charge,
+                            output_slot,
+                            m.e(),
+                            m.px(),
+                            m.py(),
+                            m.pz()
+                        ));
+                    }
+                    EvalStep::OffShellCurrent {
+                        info,
+                        input_slots,
+                        output_slot,
+                    } => {
+                        slots[*output_slot] =
+                            evaluate_off_shell_current(info, input_slots, &slots, &evaluated);
+                        let m = slots[*output_slot].momentum().unwrap();
+                        let kind = match &slots[*output_slot] {
+                            WaveformSlot::FermionIn(_) => "Fin",
+                            WaveformSlot::FermionOut(_) => "Fout",
+                            WaveformSlot::Vector(_) => "Vec",
+                            _ => "?",
+                        };
+                        log.push(format!(
+                            "  OffShell in {:?} -> slot {} {kind} mom ({:.1},{:.1},{:.1},{:.1})",
+                            input_slots,
+                            output_slot,
+                            m.e(),
+                            m.px(),
+                            m.py(),
+                            m.pz()
+                        ));
+                    }
+                    EvalStep::Propagate {
+                        info,
+                        input_slot,
+                        output_slot,
+                    } => {
+                        slots[*output_slot] =
+                            evaluate_propagation(info, &slots[*input_slot], &evaluated);
+                        let m = slots[*output_slot].momentum().unwrap();
+                        log.push(format!(
+                            "  Propagate {} slot {}->{} mom ({:.1},{:.1},{:.1},{:.1}) q2={:.3e}",
+                            model.particle(info.id).name,
+                            input_slot,
+                            output_slot,
+                            m.e(),
+                            m.px(),
+                            m.py(),
+                            m.pz(),
+                            m.m2()
+                        ));
+                    }
+                    EvalStep::ContractAmplitude {
+                        info,
+                        input_slots,
+                        output_slot,
+                    } => {
+                        slots[*output_slot] =
+                            evaluate_contract_amplitude(info, input_slots, &slots, &evaluated);
+                        log.push(format!("  Contract in {input_slots:?}"));
+                    }
+                }
+            }
+            let m = slots[ast.amplitude_slot]
+                .momentum()
+                .unwrap_or(LorentzVector::new(0.0, 0.0, 0.0, 0.0));
+            let key = (
+                (m.e() * 1e3).round() as i64,
+                (m.px() * 1e3).round() as i64,
+                (m.py() * 1e3).round() as i64,
+                (m.pz() * 1e3).round() as i64,
+            );
+            *sink_totals.entry(key).or_default() += 1;
+            // Trace the first 2 mis-routed diagrams (sink total != 0).
+            if key != (0, 0, 0, 0) && traced < 2 {
+                traced += 1;
+                println!("\n--- MIS-ROUTED diag {d}: sink total {key:?} ---");
+                for l in &log {
+                    println!("{l}");
+                }
+            }
+        }
+        println!("\ndistinct amplitude-sink momentum totals (E,px,py,pz)*1e3 → count:");
+        for (k, v) in &sink_totals {
+            println!("  {k:?} : {v}");
+        }
+    }
+
+    /// DIAGNOSTIC: momentum-routing consistency for the uux 2→6 continuum. Same
+    /// idea as `probe_2to5_momentum`: the amplitude-sink momentum must be identical
+    /// across all 579 diagrams. Groups outliers by propagator signature so we can
+    /// see which diagram class (if any) mis-routes.
+    #[test]
+    #[ignore]
+    fn probe_uux_momentum() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use std::collections::BTreeMap;
+
+        let model = sm_model();
+        let evaluated = model.evaluate(&ParamCard::from_str("").unwrap());
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate u u~ > c c~ e+ e- mu+ mu- QCD=0", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, model).unwrap();
+        let asts = compile_diagram_ast(&sets[0], model).unwrap();
+        let n_in = 2;
+        println!("n_diagrams = {}", asts.len());
+
+        let p = [
+            LorentzVector::new(250.0, 0.0, 0.0, 250.0),
+            LorentzVector::new(250.0, 0.0, 0.0, -250.0),
+            LorentzVector::new(
+                51.58390415317875,
+                33.76278178716875,
+                -30.22430158990549,
+                24.646811702100443,
+            ),
+            LorentzVector::new(
+                144.43288205367912,
+                82.46142822300477,
+                -108.5785090953523,
+                -47.662119512089546,
+            ),
+            LorentzVector::new(
+                116.59102846088923,
+                -91.67803127457901,
+                23.194248232604252,
+                68.1955522604629,
+            ),
+            LorentzVector::new(
+                52.76154461240437,
+                -47.85411853901415,
+                17.571868307294295,
+                -13.601226890682527,
+            ),
+            LorentzVector::new(
+                20.24063060353008,
+                -3.7687275028075944,
+                -0.4710997332332683,
+                19.881093664069077,
+            ),
+            LorentzVector::new(
+                114.39001011631855,
+                27.076667306227247,
+                98.5077938785925,
+                -51.460111223860345,
+            ),
+        ];
+        let hel = [1, -1, 1, -1, 1, -1, 1, -1];
+
+        let prop_sig = |ast: &DiagramAst| -> Vec<String> {
+            let mut names: Vec<String> = ast
+                .steps
+                .iter()
+                .filter_map(|s| match s {
+                    EvalStep::Propagate { info, .. } => Some(model.particle(info.id).name.clone()),
+                    _ => None,
+                })
+                .collect();
+            names.sort();
+            names
+        };
+
+        let mut sink_totals: BTreeMap<(i64, i64, i64, i64), usize> = BTreeMap::new();
+        let mut bad_sigs: BTreeMap<Vec<String>, usize> = BTreeMap::new();
+        for ast in &asts {
+            let mut slots = vec![WaveformSlot::Empty; ast.n_slots];
+            for step in &ast.steps {
+                match step {
+                    EvalStep::ExternalWf { info, output_slot } => {
+                        slots[*output_slot] = build_external_slot(
+                            p[info.leg_idx],
+                            hel[info.leg_idx],
+                            info,
+                            n_in,
+                            &evaluated,
+                        );
+                    }
+                    EvalStep::OffShellCurrent {
+                        info,
+                        input_slots,
+                        output_slot,
+                    } => {
+                        slots[*output_slot] =
+                            evaluate_off_shell_current(info, input_slots, &slots, &evaluated);
+                    }
+                    EvalStep::Propagate {
+                        info,
+                        input_slot,
+                        output_slot,
+                    } => {
+                        slots[*output_slot] =
+                            evaluate_propagation(info, &slots[*input_slot], &evaluated);
+                    }
+                    EvalStep::ContractAmplitude {
+                        info,
+                        input_slots,
+                        output_slot,
+                    } => {
+                        slots[*output_slot] =
+                            evaluate_contract_amplitude(info, input_slots, &slots, &evaluated);
+                    }
+                }
+            }
+            let m: LorentzVector<f64> = slots[ast.amplitude_slot]
+                .momentum()
+                .unwrap_or(LorentzVector::new(0.0, 0.0, 0.0, 0.0));
+            let key = (
+                (m.e() * 1e2).round() as i64,
+                (m.px() * 1e2).round() as i64,
+                (m.py() * 1e2).round() as i64,
+                (m.pz() * 1e2).round() as i64,
+            );
+            *sink_totals.entry(key).or_default() += 1;
+            if key != (0, 0, 0, 0) {
+                *bad_sigs.entry(prop_sig(ast)).or_default() += 1;
+            }
+        }
+        println!(
+            "distinct amplitude-sink totals → count: {}",
+            sink_totals.len()
+        );
+        for (k, v) in &sink_totals {
+            println!("  {k:?} : {v}");
+        }
+        println!("mis-routed diagram propagator signatures → count:");
+        for (k, v) in &bad_sigs {
+            println!("  {k:?} : {v}");
         }
     }
 }
