@@ -19,6 +19,7 @@ mod common;
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use vibegraph::helas::eval::AmplitudeEvaluator;
 use vibegraph::helas::LorentzVector;
 use vibegraph::ufo::slha::ParamCard;
@@ -214,6 +215,7 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
     let mut max_rel_diff = 0.0f64;
     let mut panicked = false;
 
+    let t0 = Instant::now();
     for pt in &points {
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             evaluator.eval_m2(&pt.momenta, &evaluated)
@@ -235,6 +237,14 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
             }
         }
     }
+    // Quick-and-dirty timing for rough performance feedback; not a rigorous benchmark.
+    let elapsed = t0.elapsed();
+    eprintln!(
+        "  [{name}] evaluated {} points in {:.2} ms  ({:.0} ns/eval)",
+        points.len(),
+        elapsed.as_secs_f64() * 1e3,
+        elapsed.as_nanos() as f64 / points.len() as f64
+    );
 
     if panicked {
         eprintln!(

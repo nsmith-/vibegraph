@@ -229,6 +229,28 @@ def gen_nbody(
         for leg in range(n_ext):
             row.extend(float(x) for x in p[:, leg])
         rows.append(row)
+
+    # Quick profiling run
+    inputs_array = np.array(rows, dtype=np.float64)[:, 1:].T.reshape(4, n_ext, npoints, order="F")
+    # make it bigger if needed
+    inputs_array = np.tile(inputs_array, (1, 1, max(1, PROFILE_N // npoints)))
+    # actually make values different (how can it be so fast with repeated inputs??) by changing sqrt_s slightly
+    inputs_array *= rng.uniform(0.9, 1.1, size=(1, 1, inputs_array.shape[2]))
+    nbench = inputs_array.shape[2]
+
+    # warm-up
+    module.mg_eval_m2_batch(inputs_array, card)
+
+    t0 = time.perf_counter()
+    module.mg_eval_m2_batch(inputs_array, card)
+    t1 = time.perf_counter()
+
+    elapsed_ms = (t1 - t0) * 1e3
+    print(
+        f"MadGraph {module.__name__} MATRIX1 (n={n_ext} legs): {nbench} evals in {elapsed_ms:.2f} ms"
+        f"  ({elapsed_ms / nbench:.2f} ms/eval)"
+    )
+
     return n_ext, rows
 
 
