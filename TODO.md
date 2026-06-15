@@ -160,17 +160,29 @@ Validated reference-free by machine-precision (~1e-13) full-amplitude U(1) Ward 
 currents), quark `uumumua`. ee→μμ & pp→ll unchanged at 6.69e-4; `test_eval_jioxxx` (massive-Z
 off-shell vector current incl. longitudinal term) passes → massive-Z confirmed correct.
 
-**REMAINING (~24% at pt0, 40× worst-case, amplified by gauge cancellation):** the 2→5 Ward
-test `test_ward_identity_full_amplitude_eemumutata_a` (`e+ e- > mu+ mu- ta+ ta- a`, #[ignore]d)
-FAILS at ~1.06e-4. This is the first topology with THREE fermion lines, where the boson-tree
-forces one fermion line to absorb **two INTERNAL off-shell bosons (−i/q²) in series** — the
-exact path uux 2→6 (4 lines / 3 bosons) always has but 2→3/2→4 (≤1 internal boson per line +
-external photons) never exercise. Confirmed NOT masses (zeroing c/e/mu in `probe_uux_diagrams`
-left ratio 0.76 unchanged), NOT the massive-Z longitudinal term, NOT single-line chained
-currents/quark couplings/fermi sign. Suspect: a relative-phase / momentum-SIGN error when a
-`GammaVout`-built off-shell boson is absorbed by a fermion line that itself builds another
-boson (the propagator numerator q̸+m depends on the momentum sign). Un-ignore the 2→5 test as
-the regression guard once fixed.
+**2026-06-14 FFS Higgs current momentum fix.** The 2→5 Ward test
+`test_ward_identity_full_amplitude_eemumutata_a` (`e+ e- > mu+ mu- ta+ ta- a`, 3 fermion lines)
+was failing at ~1e-4. Cause: the off-shell SCALAR bilinear nodes (`ProjMAmp`/`ProjPAmp`/
+`IdentityAmp`) computed momentum `fo.p + fi.p`, but the analogous off-shell VECTOR current
+`GammaVout` uses `fo.p − fi.p` (HELAS jioxxx convention). Harmless at the amplitude sink
+(momentum unused) but non-conserving when the scalar is an off-shell Higgs current feeding a VVS
+vertex (only with ≥3 fermion lines). Found via `probe_2to5_momentum` (6/174 diagrams, all Higgs,
+non-conserving). Fix: `+`→`−`. Now all 174 conserve, 2→5 Ward passes ~1e-13 (un-ignored as a
+guard); `probe_uux_momentum` shows all 579 uux diagrams conserve.
+
+**REMAINING (~24% at pt0, 40× worst-case): uux continuum γ/Z relative-phase — a SEPARATE bug.**
+The FFS fix did NOT move uux: uux's Higgs diagrams are VVS (HZZ), and with massless c the
+c-Yukawa is 0 so there are no FFS-Higgs diagrams; the continuum is pure γ/Z. The residual is
+momentum-CONSERVING, mass-independent (zeroing c/e/mu leaves ratio 0.76), ~1% per-diagram,
+amplified by the strong cancellation (coh/incoh≈3e-3). It is NOT constrained by the external-
+photon Ward (which only fixes the photon gauge structure, not the internal γ/Z magnitude), so
+the passing 2→3/2→4/2→5/quark Ward tests can't see it — and those tests never checked |M|²
+against a reference. NEXT: generate a MadGraph |M|² reference for a small **massless pure-γ/Z
+continuum** process (e.g. `e+ e- > mu+ mu- ta+ ta-`, 2→4, 3 lines) and compare |M|² directly —
+any disagreement >1e-6 is the bug (no mass systematic). If it agrees, escalate to 4 lines (a
+line absorbing 3 internal bosons, as the uux u-line does). Per-diagram `AMP()` comparison vs
+`matrix1_orig.f` would pinpoint the offending class. pixi/MadGraph is available
+(`pixi run -e madgraph ...`); add the process to `validation/madgraph/scripts/` + `gen_amplitude.py`.
 
 ### `feyngraph-perf` — Fix feyngraph allocation hot spot
 
