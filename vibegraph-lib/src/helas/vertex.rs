@@ -108,8 +108,7 @@ pub fn jioxxx<F: Real>(
     vwidth: F,
 ) -> VectorWf<F> {
     // Off-shell momentum: jmom = fo.p − fi.p  (outflow convention)
-    let jmom = fo.momentum - fi.momentum;
-    let q = jmom;
+    let q = fo.momentum - fi.momentum;
     let q2 = q.m2();
 
     // Bilinear currents via GammaL / GammaR intertwiners
@@ -130,10 +129,7 @@ pub fn jioxxx<F: Real>(
         (blin - ComplexVector::from(q) * cs) / denom
     };
 
-    VectorWf {
-        eps,
-        momentum: jmom,
-    }
+    VectorWf { eps, momentum: q }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -230,11 +226,10 @@ pub fn fvoxxx<F: Real>(
     let q2 = q.m2();
 
     // Bra vertex factor ψ̄ε̸, then the bra propagator ψ̄(q̸ + m)/(q² − m² + imΓ),
-    // scaled by g. The slash is flow-dependent: on a flow-out (bra) spinor it is
-    // the right action (`SpinorFlow::slash_bispinor`), so writing it left-to-right
-    // builds ψ̄·ε̸·(q̸+m) — the correct order for a bra.
-    let psi = fo.spinor.project_left().slash(&v.eps) * g[0]
-        + fo.spinor.project_right().slash(&v.eps) * g[1];
+    // scaled by g. Note the right projection for flow-out is the correct
+    // left coupling
+    let psi = fo.spinor.project_right().slash(&v.eps) * g[0]
+        + fo.spinor.project_left().slash(&v.eps) * g[1];
     let num = psi.slash(&q.into()) + psi * mass;
     let scale = -C::new(q2 - mass * mass, mass * width).recip();
 
@@ -330,8 +325,6 @@ pub fn jsixxx<F: Real>(
 /// Amplitude: two fermions + scalar.
 ///
 /// Corresponds to HELAS `iosxxx`.
-/// Direct contraction of two fermions with a scalar:
-/// Amplitude =        [g_(((((((fi_fffffffo_left) + g_(((((((fi_fffffffo_right)]rightRleftLS
 ///
 /// # Arguments
 /// * ` flowing-OUT fermionfo`  
@@ -482,11 +475,10 @@ mod tests {
     #[test]
     fn test_jsixxx_basic() {
         // Create fermion wavefunctions
-        let fi_mom = LorentzVector::new(50.0, 0.0, 0.0, 50.0);
-        let fi = InDiracWf::from_momentum(fi_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
-
-        let fo_mom = LorentzVector::new(30.0, 20.0, 0.0, 22.4);
-        let fo = OutDiracWf::from_momentum(fo_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
+        let fi_mom = LorentzVector::from_pxpypzmass(0.0, 0.0, 20.0, 10.0);
+        let fo_mom = LorentzVector::from_pxpypzmass(0.0, 0.0, -20.0, 10.0);
+        let fi = InDiracWf::from_momentum(fi_mom, 10.0, SpinorHelicity::Up, Charge::Particle);
+        let fo = OutDiracWf::from_momentum(fo_mom, 10.0, SpinorHelicity::Up, Charge::Antiparticle);
 
         // Apply jsixxx
         let coupling = C64::new(0.1, 0.0);
@@ -498,26 +490,26 @@ mod tests {
             "Result scalar should be non-zero"
         );
 
-        // Check that output momentum is fi + fo
-        let expected_momentum = fi_mom + fo_mom;
+        // Check that output momentum is the exchanged momentum (fi - fo)
+        let expected_momentum = fi_mom - fo_mom;
         assert!(
             (result.momentum - expected_momentum).bare_norm_sq() < 1e-10,
-            "Momentum mismatch: expected {expected_momentum:?}, got {result:?}"
+            "Momentum mismatch: expected {expected_momentum}, got {}",
+            result.momentum
         );
     }
 
     #[test]
     fn test_iosxxx_basic() {
         // Create fermion and scalar wavefunctions
-        let fi_mom = LorentzVector::new(50.0, 0.0, 0.0, 50.0);
-        let fi = InDiracWf::from_momentum(fi_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
+        let fi_mom = LorentzVector::from_pxpypzmass(0.0, 0.0, 20.0, 10.0);
+        let fo_mom = LorentzVector::from_pxpypzmass(0.0, 0.0, -20.0, 10.0);
+        let fi = InDiracWf::from_momentum(fi_mom, 10.0, SpinorHelicity::Up, Charge::Particle);
+        let fo = OutDiracWf::from_momentum(fo_mom, 10.0, SpinorHelicity::Up, Charge::Antiparticle);
 
-        let fo_mom = LorentzVector::new(30.0, 20.0, 0.0, 22.4);
-        let fo = OutDiracWf::from_momentum(fo_mom, 0.0, SpinorHelicity::Up, Charge::Particle);
-
-        let s_mom = LorentzVector::new(20.0, -20.0, 0.0, 0.0);
+        let s_mom = -(fi_mom + fo_mom);
         let s = ScalarWf {
-            value: C64::new(1.0, 0.0),
+            value: C64::new(0.0, 1.0),
             momentum: s_mom,
         };
 

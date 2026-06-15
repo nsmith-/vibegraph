@@ -430,8 +430,8 @@ mod tests {
         for ((p, mass), nhel, nsf) in generate_spinor_test_cases(true) {
             let in_wf = InDiracWf::from_momentum(p, mass, nhel, nsf);
             let scalar_bilinear = in_wf.to_outgoing().scalar_bilinear(&in_wf, Chirality::Both);
-            // HELAS convention for the scalar bilinear norm is 2 * E when on-shell
-            let expected = 2.0 * p.e();
+            // HELAS convention for the scalar bilinear norm is 2 * mass when on-shell
+            let expected = nsf.sign() as f64 * 2.0 * mass;
             assert!(
                 (scalar_bilinear.re - expected).abs() < 1e-10,
                 "Scalar bilinear norm failed for p={:?}, mass={}, nhel={:?}, nsf={:?}: got {}, expected {}",
