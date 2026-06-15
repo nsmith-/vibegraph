@@ -70,7 +70,21 @@ impl ParamCard {
                 card.blocks.entry(block_name.clone()).or_default();
                 current_block = Some(block_name);
             } else if lower.starts_with("decay") {
-                // Decay blocks — skip for now
+                // `DECAY <pdg> <total_width>` — store the total width under a
+                // synthetic block "decay" keyed by [pdg], so external width
+                // parameters (lhablock = DECAY, e.g. WZ) resolve. Any
+                // branching-ratio rows that follow are ignored.
+                let tokens: Vec<&str> = line.split_whitespace().collect();
+                if tokens.len() >= 3 {
+                    if let (Ok(code), Ok(width)) =
+                        (tokens[1].parse::<i32>(), tokens[2].parse::<f64>())
+                    {
+                        card.blocks
+                            .entry("decay".to_string())
+                            .or_default()
+                            .insert(vec![code], width);
+                    }
+                }
                 current_block = None;
             } else if let Some(ref block) = current_block {
                 // Data entry: one or more integers followed by a float
@@ -171,9 +185,12 @@ DECAY 6 1.49
     }
 
     #[test]
-    fn test_decay_skipped() {
+    fn test_decay_width_parsed() {
         let card = ParamCard::from_str(SAMPLE).unwrap();
-        // Decay block should not be parsed into a mass-like block
-        assert!(!card.has_block("decay"));
+        // `DECAY 6 1.49` → total width under block "decay", key [6].
+        assert_eq!(card.get("DECAY", &[6]), Some(1.49));
+        // The branching-ratio row `1.0  2  5 24` must NOT be parsed as an entry.
+        assert_eq!(card.get("decay", &[5, 24]), None);
+        assert_eq!(card.get("decay", &[2, 5, 24]), None);
     }
 }
