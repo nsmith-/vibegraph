@@ -249,11 +249,37 @@ impl<F: Real, V: Variance> LorentzVector<F, V> {
     }
 }
 
+impl<F: Real + std::fmt::Display> std::fmt::Display for LorentzVector<F, Contravariant> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "LorentzVector({}, {}, {}, {})",
+            self.e(),
+            self.px(),
+            self.py(),
+            self.pz()
+        )
+    }
+}
+
+impl<F: Real + std::fmt::Display> std::fmt::Display for LorentzVector<F, Covariant> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "LorentzVector_co({}, {}, {}, {})",
+            self.e(),
+            self.px(),
+            self.py(),
+            self.pz()
+        )
+    }
+}
+
 /// A complex (e.g. polarisation) 4-vector.
 ///
 /// This is the fiber type for [`SpinorRepr::left_current`] and [`SpinorRepr::right_current`].
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ComplexVector<F: Real, V: Variance>([C<F>; 4], PhantomData<V>);
+pub struct ComplexVector<F: Real, V: Variance = Contravariant>([C<F>; 4], PhantomData<V>);
 
 impl<F: Real, V: Variance> ArrayBacked<C<F>, 4> for ComplexVector<F, V> {
     fn as_array(&self) -> &[C<F>; 4] {
@@ -349,6 +375,26 @@ impl<F: Real, V: Variance> ComplexVector<F, V> {
             - self.0[1] * other.0[1]
             - self.0[2] * other.0[2]
             - self.0[3] * other.0[3]
+    }
+}
+
+impl<F: Real + std::fmt::Display> std::fmt::Display for ComplexVector<F, Contravariant> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ComplexVector({}, {}, {}, {})",
+            self.0[0], self.0[1], self.0[2], self.0[3]
+        )
+    }
+}
+
+impl<F: Real + std::fmt::Display> std::fmt::Display for ComplexVector<F, Covariant> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ComplexVector_co({}, {}, {}, {})",
+            self.0[0], self.0[1], self.0[2], self.0[3]
+        )
     }
 }
 
@@ -512,6 +558,11 @@ pub trait SpinorRepr<F: Real, Flow: SpinorFlow = FlowIn>: LorentzRepr<F> {
     where
         Flow: OutFlow;
 
+    /// Pseudoscalar bilinear with chiral structure: `f̄ γ^5 Γ f` where Γ ∈ {Identity, P_L, P_R}.
+    fn pseudoscalar_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> C<F>
+    where
+        Flow: OutFlow;
+
     /// Vector bilinear contraction: `f̄ γ^μ Γ f` where `Γ` encodes chirality.
     ///
     /// This can be implemented using the left and right currents:
@@ -536,6 +587,31 @@ pub trait SpinorRepr<F: Real, Flow: SpinorFlow = FlowIn>: LorentzRepr<F> {
             }
         }
     }
+
+    /// Axial vector bilinear contraction: `f̄ γ^μ γ^5 Γ f` where `Γ` encodes chirality.
+    ///
+    /// This can be implemented using the left and right currents, with a relative minus sign
+    /// because `γ^5` acts as +1 on right-chiral and -1 on left-chiral components.
+    fn axial_vector_bilinear(
+        &self,
+        fi: &Self::Dual,
+        chirality: Chirality,
+    ) -> ComplexVector<F, Contravariant>
+    where
+        Flow: OutFlow,
+    {
+        match chirality {
+            Chirality::Left => -self.left_current(fi),
+            Chirality::Right => self.right_current(fi),
+            Chirality::Both => {
+                let left = self.left_current(fi);
+                let right = self.right_current(fi);
+                right - left
+            }
+        }
+    }
+
+    // TODO: tensor bilinear `f̄ σ^μν Γ f` where `σ^μν = i/2 [γ^μ, γ^ν]` and `Γ` encodes chirality.
 }
 
 /// A concrete Spin(1,3) representation: the Weyl basis for Dirac spinors.
@@ -678,12 +754,31 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     {
         let fo = &self.0;
         let fi = &fi.0;
-        let result = match chirality {
+        match chirality {
             Chirality::Left => fi[0] * fo[2] + fi[1] * fo[3],
             Chirality::Right => fi[2] * fo[0] + fi[3] * fo[1],
             Chirality::Both => (fi[0] * fo[2] + fi[1] * fo[3]) + (fi[2] * fo[0] + fi[3] * fo[1]),
-        };
-        result
+        }
+    }
+
+    /// Pseudoscalar bilinear contraction: `f̄ γ^5 Γ f` where `Γ` encodes chirality.
+    /// With `γ^5` acting as +1 on right-chiral and -1 on left-chiral components, this is:
+    /// - Left (P_L): `-(fi_left · fo_left) = -(fi[0]·fo[2] + fi[1]·fo[3])`
+    /// - Right (P_R): `fi_right · fo_right = fi[2]·fo[0] + fi[3]·fo[1]`
+    /// - Both (Identity): `fi_right · fo_right - fi_left · fo_left`
+    #[inline(always)]
+    fn pseudoscalar_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> C<F>
+    where
+        Flow: OutFlow,
+    {
+        match chirality {
+            Chirality::Left => -self.scalar_bilinear(fi, Chirality::Left),
+            Chirality::Right => self.scalar_bilinear(fi, Chirality::Right),
+            Chirality::Both => {
+                self.scalar_bilinear(fi, Chirality::Right)
+                    - self.scalar_bilinear(fi, Chirality::Left)
+            }
+        }
     }
 }
 
@@ -713,6 +808,26 @@ impl<F: Real> Bispinor<F, FlowOut> {
     #[inline(always)]
     pub fn unbar(self) -> Bispinor<F, FlowIn> {
         self.dualize()
+    }
+}
+
+impl<F: Real + std::fmt::Display> std::fmt::Display for Bispinor<F, FlowIn> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "|{}, {}, {}, {}>",
+            self.0[0], self.0[1], self.0[2], self.0[3]
+        )
+    }
+}
+
+impl<F: Real + std::fmt::Display> std::fmt::Display for Bispinor<F, FlowOut> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<{}, {}, {}, {}|",
+            self.0[0], self.0[1], self.0[2], self.0[3]
+        )
     }
 }
 
@@ -820,4 +935,188 @@ fn weyl_ixxxxx<F: Real>(
     }
 
     fi
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::iproduct;
+
+    use super::*;
+
+    /// Absolute tolerance for floating-point comparisons in these tests.
+    const EPS_ABS: f64 = 1e-12;
+
+    /// Generate a variety of momenta test cases
+    ///
+    /// Exercises all 3 axes, massive and massless
+    fn momenta_test_cases() -> impl Iterator<Item = (LorentzVector<f64>, f64)> {
+        let momenta = [
+            LorentzVector::from_pxpypzmass(1.0, 0.0, 0.0, 0.0),
+            LorentzVector::from_pxpypzmass(0.0, 1.0, 0.0, 0.0),
+            LorentzVector::from_pxpypzmass(0.0, 0.0, 1.0, 0.0),
+            LorentzVector::from_pxpypzmass(1.0, 0.0, 0.0, 0.5),
+            LorentzVector::from_pxpypzmass(0.0, 1.0, 0.0, 0.5),
+            LorentzVector::from_pxpypzmass(0.0, 0.0, 1.0, 0.5),
+            LorentzVector::from_pxpypzmass(1.0, 2.0, 3.0, 0.0),
+            LorentzVector::from_pxpypzmass(1.0, 2.0, 3.0, 0.5),
+        ];
+        let masses = [0.0, 0.5, 1.0];
+        iproduct!(momenta, masses)
+    }
+
+    /// Generate a variety of test cases for spinor bilinears and currents.
+    ///
+    /// On-shell and off-shell, all helicity and charge combinations.
+    fn spinor_test_cases() -> impl Iterator<Item = (LorentzVector<f64>, f64, SpinorHelicity, Charge)>
+    {
+        let helicities = [SpinorHelicity::Up, SpinorHelicity::Down];
+        let charges = [Charge::Particle, Charge::Antiparticle];
+
+        iproduct!(momenta_test_cases(), helicities, charges).map(|((p, m), h, c)| (p, m, h, c))
+    }
+
+    #[test]
+    fn test_scalar_bilinear_norm() {
+        for (p, mass, nhel, nsf) in spinor_test_cases() {
+            let psi = Bispinor::from_momentum(p, mass, nhel, nsf);
+            let psibar = psi.bar();
+            let bilinear = psibar.scalar_bilinear(&psi, Chirality::Both);
+
+            // The left and right components should be orthogonal, so the scalar bilinear norm should match the bare norm squared.
+            let norm_sq = psi.bare_norm_sq();
+            assert!(
+                (bilinear.norm_sqr() - norm_sq * norm_sq).abs() < EPS_ABS,
+                "Scalar bilinear norm does not match bare norm squared: |ψ̄ ψ|^2 = {}, (ψ† ψ)^2 = {}",
+                bilinear.norm_sqr(),
+                norm_sq * norm_sq
+            );
+
+            if (p.m() - mass).abs() < EPS_ABS {
+                // On-shell spinors
+
+                // HELAS convention is |ψ̄ ψ| = 2 E for on-shell spinors
+                let expected_norm_sq = 4.0 * p.e() * p.e();
+                assert!(
+                    (bilinear.norm_sqr() - expected_norm_sq).abs() < EPS_ABS,
+                    "Scalar bilinear norm does not match HELAS convention for on-shell spinors: |ψ̄ ψ|^2 = {}, (2E)^2 = {}",
+                    bilinear.norm_sqr(),
+                    expected_norm_sq
+                );
+
+                // Satisfy Dirac equation
+                let dirac_in =
+                    psi.slash(&ComplexVector::from(p)) - psi * (nsf.sign() as f64 * mass);
+                let norm_sq = psibar.scalar_bilinear(&dirac_in, Chirality::Both);
+                assert!(
+                    norm_sq.norm() < EPS_ABS,
+                    "Spinor does not satisfy Dirac equation: (p̸ ± m) ψ has norm squared = {}",
+                    norm_sq
+                );
+                let dirac_out =
+                    psibar.slash(&ComplexVector::from(p)) - psibar * (nsf.sign() as f64 * mass);
+                let norm_sq = dirac_out.scalar_bilinear(&psi, Chirality::Both);
+                assert!(
+                    norm_sq.norm() < EPS_ABS,
+                    "Spinor does not satisfy Dirac equation: ψ̄ (p̸ ± m) has norm squared = {}",
+                    norm_sq
+                );
+            }
+        }
+    }
+
+    /// Test spinor compleness relations
+    ///
+    /// We expect the following completeness relations to hold for the spinors:
+    /// - For flow-in (ket) spinors: `∑_h u(p, h) ū(p, h) = p̸ + m`
+    /// - For flow-out (bra) spinors: `∑_h v(p, h) v̄(p, h) = p̸ - m`
+    ///
+    /// We can test these using Fierz identities (i.e. use the bilinears to
+    /// project the completeness relation onto a basis of gamma matrices and
+    /// check that the coefficients match those of `p̸ ± m`).
+    #[test]
+    fn test_completeness_relations() {
+        for (p, mass) in momenta_test_cases() {
+            if (p.m() - mass).abs() > EPS_ABS {
+                // Only valid for on-shell spinors
+                continue;
+            }
+            let up = Bispinor::from_momentum(p, mass, SpinorHelicity::Up, Charge::Particle);
+            let um = Bispinor::from_momentum(p, mass, SpinorHelicity::Down, Charge::Particle);
+            let vp = Bispinor::from_momentum(p, mass, SpinorHelicity::Up, Charge::Antiparticle);
+            let vm = Bispinor::from_momentum(p, mass, SpinorHelicity::Down, Charge::Antiparticle);
+
+            // The scalar bilinear should give the mass term: u_scalar = v_scalar = 4E
+            // Note this is a HELAS convention, not standard in textbooks (usually ±2m)
+            let u_scalar = up.bar().scalar_bilinear(&up, Chirality::Both)
+                + um.bar().scalar_bilinear(&um, Chirality::Both);
+            let v_scalar = vp.bar().scalar_bilinear(&vp, Chirality::Both)
+                + vm.bar().scalar_bilinear(&vm, Chirality::Both);
+            let expected = 4.0 * p.e();
+            assert!(
+                (u_scalar - expected).norm() < EPS_ABS,
+                "Fermion scalar bilinear does not match: u_scalar = {}, 4E = {}",
+                u_scalar,
+                expected
+            );
+            assert!(
+                (v_scalar - expected).norm() < EPS_ABS,
+                "Antifermion scalar bilinear does not match: v_scalar = {}, 4E = {}",
+                v_scalar,
+                expected
+            );
+
+            // The vector bilinear should give 4x the momentum term
+            let u_vector = up.bar().vector_bilinear(&up, Chirality::Both)
+                + um.bar().vector_bilinear(&um, Chirality::Both);
+            let v_vector = vp.bar().vector_bilinear(&vp, Chirality::Both)
+                + vm.bar().vector_bilinear(&vm, Chirality::Both);
+            let expected = ComplexVector::from(p * 4.0);
+            assert!(
+                (u_vector - expected).bare_norm_sq() < EPS_ABS,
+                "Fermion vector bilinear does not match: u_vector = {}, 4p = {}",
+                u_vector,
+                expected
+            );
+            assert!(
+                (v_vector - expected).bare_norm_sq() < EPS_ABS,
+                "Antifermion vector bilinear does not match: v_vector = {}, 4p = {}",
+                v_vector,
+                expected
+            );
+
+            // TODO: when tensor bilinears are implemented, test those as well to fully check the completeness relations.
+
+            // The axial vector bilinear should vanish for the helicity-summed spinors
+            let u_axial_vector = up.bar().axial_vector_bilinear(&up, Chirality::Both)
+                + um.bar().axial_vector_bilinear(&um, Chirality::Both);
+            let v_axial_vector = vp.bar().axial_vector_bilinear(&vp, Chirality::Both)
+                + vm.bar().axial_vector_bilinear(&vm, Chirality::Both);
+            assert!(
+                u_axial_vector.bare_norm_sq() < EPS_ABS,
+                "Fermion axial vector bilinear nonzero for helicity-summed spinors: u_axial_vector = {}",
+                u_axial_vector
+            );
+            assert!(
+                v_axial_vector.bare_norm_sq() < EPS_ABS,
+                "Antifermion axial vector bilinear nonzero for helicity-summed spinors: v_axial_vector = {}",
+                v_axial_vector
+            );
+
+            // The pseudoscalar bilinear should also vanish for the helicity-summed spinors
+            let u_pseudoscalar = up.bar().pseudoscalar_bilinear(&up, Chirality::Both)
+                + um.bar().pseudoscalar_bilinear(&um, Chirality::Both);
+            let v_pseudoscalar = vp.bar().pseudoscalar_bilinear(&vp, Chirality::Both)
+                + vm.bar().pseudoscalar_bilinear(&vm, Chirality::Both);
+            assert!(
+                u_pseudoscalar.norm() < EPS_ABS,
+                "Fermion pseudoscalar bilinear nonzero for helicity-summed spinors: u_pseudoscalar = {}",
+                u_pseudoscalar
+            );
+            assert!(
+                v_pseudoscalar.norm() < EPS_ABS,
+                "Antifermion pseudoscalar bilinear nonzero for helicity-summed spinors: v_pseudoscalar = {}",
+                v_pseudoscalar
+            );
+        }
+    }
 }
