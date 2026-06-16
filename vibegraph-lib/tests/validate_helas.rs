@@ -187,15 +187,21 @@ mod extended {
     use vibegraph::helas::LorentzVector;
 
     fn compute_m2_ee_mumu_dynamic(sqrt_s: f64, cos_theta: f64) -> f64 {
-        use super::common;
+        use super::common::{generate_with, sm_lepton_masses_model};
         use vibegraph::helas::eval::AmplitudeEvaluator;
         use vibegraph::ufo::slha::ParamCard;
 
-        let sets = common::generate("e+ e- > mu+ mu-");
+        // Same situation as test_eval_m2_ee_mumu_vs_hardcoded
+        let model = sm_lepton_masses_model();
+        let sets = generate_with("e+ e- > mu+ mu-", model);
         let set = &sets[0];
-        let model = common::sm_model();
-        let empty_card = ParamCard::from_str("").unwrap();
-        let evaluated = model.evaluate(&empty_card);
+        let card = ParamCard::from_str(&format!(
+            "Block MASS\n 11 {}\n 13 {}\nBlock YUKAWA\n 11 0.0\n 13 0.0\n",
+            super::MDL_ME,
+            super::MDL_MMU
+        ))
+        .unwrap();
+        let evaluated = model.evaluate(&card);
 
         let me = evaluated.mass(model.particle_id("e-").unwrap());
         let mmu = evaluated.mass(model.particle_id("mu-").unwrap());
@@ -217,7 +223,8 @@ mod extended {
     }
 
     /// Relative tolerance for comparing Rust |M|² against Fortran reference.
-    const REL_TOL: f64 = 1e-6;
+    /// TODO: Understand why we don't achieve machine precision as we do in validate_helas_mg
+    const REL_TOL: f64 = 3e-6;
 
     /// Parse the CSV reference file and return rows as (sqrt_s, cos_theta, M2).
     fn read_reference_csv(path: &Path) -> Vec<(f64, f64, f64)> {

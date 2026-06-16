@@ -8,7 +8,7 @@
 //!
 //! Run:
 //!   cargo test -p vibegraph-lib --features extended-validation \
-//!              --test helas_mg_validation
+//!              --test validate_helas_mg
 //!
 //! Prerequisites:
 //!   pixi run -e madgraph build-amplitude
