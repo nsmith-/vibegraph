@@ -174,6 +174,82 @@ impl<'a> TopoContext<'a> {
     }
 }
 
+/// Trace the fermion line that enters `start_vtx` at ordered ray `in_ray`,
+/// following spinor connectivity until it reaches an external leg.
+///
+/// Connectivity comes from *our* recomputed `spin_map` (UFOModel
+/// `LorentzStructure`), indexed by the vertex's ordered rays — which align with
+/// feyngraph's `propagators_ordered` because we feed feyngraph that same particle
+/// ordering. Returns the external leg index where the line terminates and whether
+/// it passed through at least one internal propagator (i.e. is an off-shell spine).
+fn trace_fermion_line(
+    view: &DiagramView,
+    model: &UFOModel,
+    start_vtx_id: usize,
+    in_ray: usize,
+) -> (usize, bool) {
+    let mut vtx_id = start_vtx_id;
+    let mut in_ray = in_ray;
+    let mut passed_internal = false;
+    // Tree diagrams terminate; the bound only guards against pathological loops.
+    for _ in 0..1024 {
+        let vtx = view.vertex(vtx_id);
+        let vid = model
+            .vertex_id(vtx.interaction().name())
+            .expect("vertex in UFO");
+        let lid = model.vertex_def(vid).lorentz[0];
+        let out_ray = model.lorentz_struct(lid).spin_map[in_ray] as usize;
+        // Extract Copy values so the `propagators_ordered` borrow of `vtx` is
+        // released before the next iteration rebinds it from `view`.
+        let next: (usize, usize) = match vtx
+            .propagators_ordered()
+            .nth(out_ray)
+            .expect("spin_map ray index in range")
+        {
+            Either::Left(leg) => return (leg.index(), passed_internal),
+            Either::Right(prop) => {
+                let n = if prop.vertex(0).id() == vtx_id { 1 } else { 0 };
+                (prop.vertex(n).id(), prop.ray_index_ordered(n))
+            }
+        };
+        passed_internal = true;
+        vtx_id = next.0;
+        in_ray = next.1;
+    }
+    panic!("fermion line trace did not terminate");
+}
+
+/// Relative fermion sign that feyngraph's connectivity-based `view.sign()` omits.
+///
+/// MadGraph assigns a relative −1 to a diagram whose off-shell fermion **spine**
+/// is the line joining the two **initial-state** fermions: in MadGraph's
+/// all-outgoing convention that pair is crossed, and chaining it as a propagator
+/// (rather than closing it at a single vertex) picks up the crossing sign. Across
+/// such diagrams `view.sign()` is uniform, so we apply the correction here.
+///
+/// Detected structurally by tracing each external fermion line: flip when a line
+/// connects two incoming legs through at least one internal propagator. Validated
+/// against MadGraph per-diagram amplitudes for e+e-→μ+μ-τ+τ- and
+/// u u~→c c~ e+e- μ+μ- (QCD=0).
+fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> i8 {
+    let n_in = view.incoming().count();
+    let mut visited: HashSet<usize> = HashSet::new();
+    let mut sign: i8 = 1;
+    for leg in view.incoming().chain(view.outgoing()) {
+        let li = leg.index();
+        if !leg.particle().is_fermi() || !visited.insert(li) {
+            continue;
+        }
+        let (other, passed_internal) =
+            trace_fermion_line(view, model, leg.vertex().id(), leg.ray_index_ordered());
+        visited.insert(other);
+        if passed_internal && li < n_in && other < n_in {
+            sign = -sign;
+        }
+    }
+    sign
+}
+
 /// Compile a single diagram into an evaluable AST.
 ///
 /// Recursively walk from an arbitrary root vertex, building a directed evaluation tree.
@@ -218,7 +294,7 @@ pub fn compile_single_diagram(
         steps: ctx.steps,
         amplitude_slot,
         symmetry_factor: 1.0 / view.symmetry_factor() as f64,
-        fermi_sign: view.sign(),
+        fermi_sign: view.sign() * initial_state_spine_sign(view, model),
     })
 }
 

@@ -13,6 +13,7 @@ use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
 use crate::ufo::{EvaluatedModel, UFOModel};
+use num_complex::ComplexFloat;
 use num_traits::{FromPrimitive, Zero};
 
 use super::ast::{DiagramAst, EvalStep, WaveformSlot};
@@ -388,15 +389,15 @@ fn evaluate_propagation<F: Real + FromPrimitive>(
     // where the off-shell current routines already output the conserved momentum:
     // `fvixxx` q=fi−vc, `fvoxxx` q=fo+vc, `jioxxx` jmom=fo−fi).
     match input {
-        // Dirac propagator: i (q̸ + m) / (q² - m² + i m Γ)
+        // Dirac propagator: -(q̸ + m) / (q² - m² + i m Γ)
         WaveformSlot::FermionIn(wf) => {
             let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
-            let scale = ri(F::ONE) / C::new(wf.momentum.m2() - mass * mass, mass * width);
+            let scale = -C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
             WaveformSlot::FermionIn(InDiracWf::from_spinor(num * scale, wf.momentum))
         }
         WaveformSlot::FermionOut(wf) => {
             let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
-            let scale = ri(F::ONE) / C::new(wf.momentum.m2() - mass * mass, mass * width);
+            let scale = -C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
             WaveformSlot::FermionOut(OutDiracWf::from_spinor(num * scale, wf.momentum))
         }
         WaveformSlot::Vector(wf) => {
@@ -412,9 +413,9 @@ fn evaluate_propagation<F: Real + FromPrimitive>(
                 let vmw = mass * width;
                 let denom = C::new(wf.momentum.m2() - vm2, vmw);
                 // Longitudinal mode subtraction: divide by m²−imΓ (Fabio prescription)
-                let cs = wf.eps.dot_lorentz(&wf.momentum) / C::new(vm2, -vmw);
+                let cs = wf.eps.dot_lorentz(&wf.momentum) / vm2; // C::new(vm2, -vmw);
                 let out = VectorWf {
-                    // i / (q^2 - m^2 + i m G)
+                    // i (g - q q) / (q^2 - m^2 + i m Γ)
                     eps: (wf.eps - ComplexVector::from(wf.momentum) * cs) * ri(-F::one()) / denom,
                     momentum: wf.momentum,
                 };
@@ -533,6 +534,8 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
         }
         LorentzEvalNode::ProjM { i } => {
             // Chiral projection on a continuing current: preserve the input flow.
+            // `project_left` is flow-dependent (a bra projects different components
+            // than a ket), so the same call is correct for both flows.
             match evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots) {
                 WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
                     f.spinor.project_left(),
@@ -959,9 +962,10 @@ mod tests {
                 let WaveformSlot::Scalar(s) = slots[6] else {
                     panic!("expected scalar slot");
                 };
-                // (The amplitude's bookkeeping momentum is no longer ~0: with the
-                // propagator flip removed, the s-channel boson is not reversed at
-                // the sink. This does not affect the amplitude value below.)
+                assert!(
+                    s.momentum.bare_norm_sq() < 1e-8,
+                    "amplitude momentum not conserved: {s:?}"
+                );
                 let diff = (s.value - amp_exp * Complex64::i()).norm();
                 if diff > 1e-8 {
                     eprintln!("evaluated amplitude does not match: diff={diff:?}");
@@ -1041,7 +1045,7 @@ mod tests {
                 got.momentum, want.momentum,
                 "Iout momentum (hel {hel}, {charge:?})"
             );
-            let diff: f64 = (got.spinor + want.spinor * Complex64::I).bare_norm_sq();
+            let diff: f64 = (got.spinor - want.spinor).bare_norm_sq();
             assert!(
                 diff < 1e-10,
                 "GammaIout vs fvixxx diff={diff} (hel {hel}, {charge:?})"
@@ -1069,10 +1073,92 @@ mod tests {
                 got.momentum, want.momentum,
                 "Jout momentum (hel {hel}, {charge:?})"
             );
-            let diff: f64 = (got.spinor + want.spinor * Complex64::I).bare_norm_sq();
+            let diff: f64 = (got.spinor - want.spinor).bare_norm_sq();
             assert!(
                 diff < 1e-10,
                 "GammaJout vs fvoxxx diff={diff} (hel {hel}, {charge:?})"
+            );
+        }
+    }
+
+    /// Fermion-line reversal: a single fermion line absorbing two vectors must give
+    /// the SAME amplitude whether the off-shell current is seeded from the ket end
+    /// (`fvixxx`) or the bra end (`fvoxxx`). This is the consistency MadGraph relies
+    /// on — it builds the e-line spine from the e⁺ (bra) end via FFV1_1, while
+    /// vibegraph always seeds from the FermionIn (ket) end. If these disagree by a
+    /// sign, every incoming-spine diagram (e-line off-shell) gets a spurious −1.
+    #[test]
+    fn test_fermion_line_reversal_ket_vs_bra() {
+        use crate::helas::vertex::{fvixxx, fvoxxx};
+
+        let mass = 0.0_f64; // massless internal fermion (the continuum case)
+        let width = 0.0_f64;
+        let gc = [1.0_f64, 2.0];
+
+        // Cover all charge/helicity combinations: the e-line spine has an
+        // ANTIparticle bra (e⁺) while μ/τ-line spines have an ANTIparticle ket
+        // (μ⁺/τ⁺). The reversal identity is algebraic, so it must hold for every
+        // combination; a break on a specific charge isolates the continuum −1.
+        for (qi, qo, hi, ho) in iproduct!(
+            [Charge::Particle, Charge::Antiparticle],
+            [Charge::Particle, Charge::Antiparticle],
+            [SpinorHelicity::Down, SpinorHelicity::Up],
+            [SpinorHelicity::Down, SpinorHelicity::Up]
+        ) {
+            let fi_spinor = InDiracWf::from_momentum(
+                LorentzVector::from_pxpypzmass(12.0, -7.0, 3.0, 0.0),
+                0.0,
+                hi,
+                qi,
+            )
+            .spinor;
+            let fo_spinor = OutDiracWf::from_momentum(
+                LorentzVector::from_pxpypzmass(-4.0, 9.0, -5.0, 0.0),
+                0.0,
+                ho,
+                qo,
+            )
+            .spinor;
+
+            let v1 = VectorWf {
+                eps: ComplexVector::new([
+                    Complex64::new(1.0, 0.2),
+                    Complex64::new(0.5, -0.1),
+                    Complex64::new(0.3, 0.4),
+                    Complex64::new(-0.2, 0.0),
+                ]),
+                momentum: LorentzVector::new(40.0, 10.0, -5.0, 20.0),
+            };
+            let v2 = VectorWf {
+                eps: ComplexVector::new([
+                    Complex64::new(0.7, -0.3),
+                    Complex64::new(-0.4, 0.6),
+                    Complex64::new(0.2, 0.1),
+                    Complex64::new(0.9, -0.2),
+                ]),
+                momentum: LorentzVector::new(55.0, -15.0, 8.0, -10.0),
+            };
+
+            // Momentum conservation along the line: the intermediate momentum seen by
+            // fvixxx (fi.p − v1.p) must equal that seen by fvoxxx (fo.p + v2.p).
+            let fi_mom = LorentzVector::new(120.0, 5.0, 0.0, 30.0);
+            let fo_mom = fi_mom - v1.momentum - v2.momentum;
+            let fi = InDiracWf::from_spinor(fi_spinor, fi_mom);
+            let fo = OutDiracWf::from_spinor(fo_spinor, fo_mom);
+
+            // A: seed from the ket (fvixxx absorbs v1), amplitude with bra + v2.
+            let off_ket = fvixxx(&fi, &v1, gc, mass, width);
+            let a = iovxxx(&fo, &off_ket, &v2, gc);
+
+            // B: seed from the bra (fvoxxx absorbs v2), amplitude with ket + v1.
+            let off_bra = fvoxxx(&fo, &v2, gc, mass, width);
+            let b = iovxxx(&off_bra, &fi, &v1, gc);
+
+            let diff = (a - b).norm();
+            assert!(
+                diff < 1e-9,
+                "fermion line reversal broken (qi={qi:?} qo={qo:?} hi={hi} ho={ho}): \
+             ket-build={a:.6e} bra-build={b:.6e} diff={diff:.3e}"
             );
         }
     }
@@ -1498,6 +1584,177 @@ mod tests {
                 "  [{sig:<28}] x{cnt:<3} Σ|a|²={:.4e} |Σa|={:.4e}",
                 s2,
                 s.norm()
+            );
+        }
+    }
+
+    /// Per-diagram amplitude dump for e+ e- > mu+ mu- ta+ ta- (QCD=0), the
+    /// minimal chained-off-shell-fermion-current reproducer of the uux continuum
+    /// relative-phase bug (2→4, 25 diagrams, colorless).  Computes the two
+    /// basis-independent helicity-summed quantities (invariant under the massive-τ
+    /// spin-basis ambiguity) at CSV point 0 to cross-check against MadGraph's
+    /// per-diagram AMP() (validation/madgraph/probe_amp.py):
+    ///   diag[i] = Σ_hel |a_i|²            (per-diagram magnitude → match diagrams)
+    ///   Rrow[i] = Σ_hel conj(a_i)·a_total (contribution to |M|²; Σ Re = |M|²)
+    ///
+    /// Run: cargo test -p vibegraph-lib --features extended-validation \
+    ///        --lib helas::eval::run::tests::probe_eemumutata_diagrams -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn probe_eemumutata_diagrams() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+
+        let model = sm_model();
+        // Use MadGraph's exact param card for this process (massive τ, massless e/μ).
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let card_path = std::path::Path::new(&manifest).join(
+            "../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards/param_card_masslesstau.dat",
+        );
+        let card = std::fs::read_to_string(&card_path)
+            .ok()
+            .and_then(|s| ParamCard::from_str(&s).ok())
+            .expect("ee_to_mumu_tata_qcd0 param_card_masslesstau.dat");
+        let evaluated = model.evaluate(&card);
+
+        let opts = ParsingOptions::default();
+        let pc = parse_proc_card("generate e+ e- > mu+ mu- ta+ ta- QCD=0", &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, model).unwrap();
+        let set = &sets[0];
+        let asts = compile_diagram_ast(set, model).unwrap();
+        let n_in = 2;
+        println!("n_diagrams = {} (MadGraph NGRAPHS = 25)", asts.len());
+
+        // CSV point-0 momenta, order [e+,e-,mu+,mu-,ta+,ta-].
+        let p = [
+            LorentzVector::new(250.0, 0.0, 0.0, 250.0),
+            LorentzVector::new(250.0, 0.0, 0.0, -250.0),
+            LorentzVector::new(
+                130.98844490914234,
+                -106.66561232781022,
+                -0.9379201403415187,
+                -76.02328690775641,
+            ),
+            LorentzVector::new(
+                167.2530959714149,
+                134.2336665209957,
+                -62.607066356179416,
+                -77.68703963098595,
+            ),
+            LorentzVector::new(
+                94.5533499515044,
+                -18.39281604525598,
+                -22.219961151047247,
+                90.04617499607066,
+            ),
+            LorentzVector::new(
+                107.2051091679384,
+                -9.175238147929512,
+                85.76494764756818,
+                63.66415154267164,
+            ),
+        ];
+
+        let prop_sig = |ast: &DiagramAst| -> String {
+            let mut names: Vec<String> = ast
+                .steps
+                .iter()
+                .filter_map(|s| match s {
+                    EvalStep::Propagate { info, .. } => Some(model.particle(info.id).name.clone()),
+                    _ => None,
+                })
+                .collect();
+            names.sort();
+            names.join("+")
+        };
+
+        // All 64 helicity combos for 6 external legs.
+        let mut combos: Vec<Vec<i32>> = vec![vec![]];
+        for _ in 0..6 {
+            let mut next = vec![];
+            for c in &combos {
+                for &h in &[-1i32, 1] {
+                    let mut cc = c.clone();
+                    cc.push(h);
+                    next.push(cc);
+                }
+            }
+            combos = next;
+        }
+
+        // print all asts
+        for (i, ast) in asts.iter().enumerate() {
+            println!("AST {}: {:?}", i, ast);
+        }
+        let n = asts.len();
+        // The e-spine relative −1 vs MadGraph is now carried by `fermi_sign`
+        // (topo_sort::initial_state_spine_sign), applied inside
+        // eval_single_diagram — no manual flip here.
+        let mut diag = vec![0.0f64; n];
+        let mut rrow = vec![C::new(0.0, 0.0); n];
+        let mut m2_total = 0.0f64;
+        let mut amp_hel0 = None;
+        let mut full: Vec<Vec<C<f64>>> = vec![Vec::with_capacity(combos.len()); n]; // [diagram][hel]
+        for hel in &combos {
+            let amps: Vec<C<f64>> = asts
+                .iter()
+                .enumerate()
+                .map(|(_, ast)| eval_single_diagram(ast, &p, hel, &evaluated, n_in, &[]))
+                .collect();
+            let a_tot: C<f64> = amps.iter().fold(C::new(0.0, 0.0), |a, b| a + *b);
+            m2_total += a_tot.norm_sqr();
+            for (i, a) in amps.iter().enumerate() {
+                diag[i] += a.norm_sqr();
+                rrow[i] = rrow[i] + a.conj() * a_tot;
+                full[i].push(*a);
+            }
+            if hel == &[-1, 1, -1, 1, -1, 1] {
+                amp_hel0 = Some(amps);
+            }
+        }
+        // Write the full [diagram][helicity] complex array + per-diagram sig for the
+        // Python matcher (validation/madgraph/match_amps.py). Same helicity order as
+        // itertools.product((-1,1), repeat=6) (leg0 slowest).
+        {
+            use std::fmt::Write as _;
+            let mut s = String::new();
+            for i in 0..n {
+                let _ = write!(s, "{}\t{}", i, prop_sig(&asts[i]));
+                for a in &full[i] {
+                    let _ = write!(s, "\t{}\t{}", a.re, a.im);
+                }
+                s.push('\n');
+            }
+            let out = std::path::Path::new(&manifest)
+                .join("../validation/madgraph/output/vibegraph_amps_full.txt");
+            std::fs::write(&out, s).unwrap();
+            println!("wrote {}", out.display());
+        }
+        let rsum: f64 = rrow.iter().map(|r| r.re).sum();
+        println!("vibegraph total |M|² = {m2_total:.10e}");
+        println!("(MG CSV point-0 ref  = 1.1519918572120465e-10)");
+        println!("check Σ Re(Rrow)     = {rsum:.10e}");
+
+        for (i, amp) in amp_hel0.unwrap().iter().enumerate() {
+            // Diagram {i:02}  {amp.real:+.8e} {amp.imag:+.8e} (diag[{i}] = {diag[i]:.8e})
+            println!(
+                "Diagram {i:02}  {are:+.8e} {aim:+.8e} (diag[{i}] = {diag_i:.8e})  [{sig}]",
+                are = amp.re,
+                aim = amp.im,
+                diag_i = diag[i],
+                sig = prop_sig(&asts[i])
+            );
+        }
+
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by(|&a, &b| diag[b].partial_cmp(&diag[a]).unwrap());
+        println!("\n  vibegraph diagrams sorted by magnitude:");
+        println!("  rank  diag_mag        Re(Rrow)         sig");
+        for (rank, &i) in order.iter().enumerate() {
+            println!(
+                "  {rank:3}   {:.6e}  {:+.6e}  [{}]",
+                diag[i],
+                rrow[i].re,
+                prop_sig(&asts[i])
             );
         }
     }
