@@ -1,0 +1,26 @@
+# MadGraph5 batch script: e+ e- > mu+ mu- ta+ ta- at LO, QCD=0
+#
+# Minimal pure-EW (γ/Z) continuum process that exercises a CHAINED off-shell
+# fermion current — the HELAS path that ee→μμ (2→2) never touches but the
+# uux 2→6 continuum does. The incoming e-line absorbs two internal off-shell
+# γ/Z bosons in series (one →μ⁺μ⁻, one →τ⁺τ⁻), so an off-shell fermion current
+# (fvixxx/fvoxxx) consumes an off-shell vector propagator current.
+#
+# Why this exact process:
+#   - Colorless (all leptons) => no color factor (CF=1), unlike uux (Nc²=9).
+#   - Three DISTINCT fermion lines (e, mu, ta) => no identical final-state
+#     particles and no relative Fermi sign needed (no crossing lines).
+#   - Massless leptons under the SM restriction => pure γ/Z continuum, no Higgs
+#     (zero Yukawa), bit-for-bit comparable to vibegraph (same param_card).
+#
+# This isolates the uux continuum relative-phase bug in a 3-line / 2→4 process,
+# far smaller than the 4-line / 2→6 uux, enabling per-diagram AMP() comparison.
+generate e+ e- > mu+ mu- ta+ ta- QCD=0
+output ee_to_mumu_tata_qcd0 -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

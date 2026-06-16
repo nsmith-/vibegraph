@@ -103,6 +103,11 @@ compile_process_generic() {
 # MATRIX1 includes the CF(1,1)=9 color factor; vibegraph applies it on its side.
 compile_process_generic uux_to_ccx_emmm_qcd0 P1_qq_qqllll
 
+# ee_to_mumu_tata_qcd0: e+ e- > mu+ mu- ta+ ta- (QCD=0).  Colorless (NCOLOR=1,
+# CF=1); minimal chained-off-shell-fermion-current process to isolate the uux
+# continuum γ/Z relative-phase bug in a 3-line / 2→4 topology.  Generic wrapper.
+compile_process_generic ee_to_mumu_tata_qcd0 P1_ll_lltaptam
+
 # ee_to_mumu: pure QED/EW process, no color — expected to match Rust eval_m2
 compile_process ee_to_mumu P1_ll_ll
 
