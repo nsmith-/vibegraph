@@ -8,7 +8,7 @@ use std::ops::{Add, Mul};
 
 use itertools::Itertools;
 
-use super::dispatch::RootedTerm;
+use super::root_lorentz::RootedTerm;
 use crate::helas::repr::numbers::Charge;
 use crate::helas::repr::{lorentz::LorentzVector, Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
@@ -220,7 +220,7 @@ impl VertexTerm {
             .expr
             .iter()
             .map(|term| {
-                super::dispatch::root_term(term, &lorentz.spins, result_leg_idx)
+                super::root_lorentz::root_term(term, &lorentz.spins, result_leg_idx)
                     .expect("Unable to root term from Lorentz expression")
             })
             .collect();

@@ -13,9 +13,10 @@
 
 pub mod ast;
 pub mod compile;
-pub mod dispatch;
+pub mod root_lorentz;
 pub mod run;
 pub mod topo_sort;
+mod tree;
 
 pub use ast::{DiagramAst, EvalStep, WaveformSlot};
 pub use compile::{compile_diagram_ast, CompileError};
