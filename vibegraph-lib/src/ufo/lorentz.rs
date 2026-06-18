@@ -15,44 +15,52 @@ pub enum LorentzError {
     UnknownOperator(String),
     #[error("Spin map error in structure '{structure}': {cause}")]
     SpinMap { structure: String, cause: String },
+    #[error("Invalid Lorentz index '{0}'")]
+    InvalidIndex(i32),
 }
 
 /// A single Lorentz tensor operator.
 ///
-/// The indices i,j are 1-indexed leg numbers from the UFO definition, with negative values for internal contractions.
+/// The indices i,j are leg numbers from the UFO definition, with negative values for internal contractions.
+/// We convert from 1-indexed convention to 0-indexed isize at import
 /// i and j are spinor indices for fermion legs, or dummy indices for internal contractions. mu, nu, etc. are Lorentz indices.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LorentzOp {
     /// Dirac gamma matrix: Γ^μ_{ij}
-    Gamma { mu: i32, i: i32, j: i32 },
+    Gamma { mu: isize, i: isize, j: isize },
     /// Sigma: σ^{μν}_{ij} = i/2 [γ^μ, γ^ν]
-    Sigma { mu: i32, nu: i32, i: i32, j: i32 },
+    Sigma {
+        mu: isize,
+        nu: isize,
+        i: isize,
+        j: isize,
+    },
     /// Identity in spinor space: δ_{ij}
-    Identity { i: i32, j: i32 },
+    Identity { i: isize, j: isize },
     /// Left projector: P_L = (1 - γ^5)/2
-    ProjM { i: i32, j: i32 },
+    ProjM { i: isize, j: isize },
     /// Right projector: P_R = (1 + γ^5)/2
-    ProjP { i: i32, j: i32 },
+    ProjP { i: isize, j: isize },
     /// Metric tensor: g^{μν}
-    Metric { mu: i32, nu: i32 },
+    Metric { mu: isize, nu: isize },
     /// Momentum insertion: p_leg^μ
-    P { mu: i32, leg: i32 },
+    P { mu: isize, leg: isize },
     /// Levi-Civita tensor: ε^{μνρσ}
     Epsilon {
-        mu: i32,
-        nu: i32,
-        rho: i32,
-        sigma: i32,
+        mu: isize,
+        nu: isize,
+        rho: isize,
+        sigma: isize,
     },
     /// Charge-conjugation matrix: C_{ij}
-    C { i: i32, j: i32 },
+    C { i: isize, j: isize },
 }
 
 impl LorentzOp {
     // TODO: involves_scalar (is this possible? momentum insertion?)
 
     /// Returns true if this operator involves a spinor index contraction with the given leg index.
-    pub fn involves_spinor(&self, idx: i32) -> bool {
+    pub fn involves_spinor(&self, idx: isize) -> bool {
         match self {
             LorentzOp::Gamma { i, j, .. }
             | LorentzOp::Sigma { i, j, .. }
@@ -65,7 +73,7 @@ impl LorentzOp {
     }
 
     /// Returns true if this operator involves a Lorentz index contraction with the given leg index.
-    pub fn involves_vector(&self, idx: i32) -> bool {
+    pub fn involves_vector(&self, idx: isize) -> bool {
         match self {
             LorentzOp::Gamma { mu, .. } => *mu == idx,
             LorentzOp::P { mu, .. } => *mu == idx,
@@ -83,7 +91,7 @@ impl LorentzOp {
 ///
 /// The term itself is a fully connected graph of Lorentz operators
 /// The LorentzOp indices indicate connections between operators when negative,
-/// and (1-indexed) external leg indices when positive. An implicit product
+/// and (0-indexed) external leg indices when positive. An implicit product
 /// over all connected operators is assumed, with the given coefficient.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LorentzTerm {
@@ -123,7 +131,7 @@ pub struct LorentzStructure {
     pub spins: Vec<i32>,
     /// Verbatim `structure` string from the UFO file.
     pub structure: String,
-    /// Parsed symbolic expression (1-indexed legs, negative for internal contractions).
+    /// Parsed symbolic expression (0-indexed legs, negative for internal contractions).
     pub expr: LorentzExpr,
     /// Spinor index mapping for feyngraph: `spin_map[i]` is the external leg
     /// The i-th entry of the spin_map must be the leg j to which leg i is spin-connected
@@ -132,27 +140,8 @@ pub struct LorentzStructure {
     pub spin_map: Vec<isize>,
 }
 
-/// Compute the spinor index mapping from a Lorentz expression.
-///
-/// Traces spinor index chains through the Lorentz operators to find which external legs
-/// are spinor-contracted together. Positive indices (1 to n_legs) are external leg indices;
-/// negative indices are internal contraction dummies. For each external leg, we find its
-/// contracted partner by following the chain of contractions.
-///
-/// Returns a vector of length `n_legs` where `spin_map[i]` (0-indexed) is the 0-indexed
-/// external leg that leg `i` contracts with.
-///
-/// CAUTION: this function converts the 1-indexed LorentzExpr into a 0-indexed map
-/// for compatibility with feyngraph conventions. It also only considers the spinor
-/// current associated with the first term, even though in principle different terms
-/// could have different spinor contractions.
-pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Result<Vec<isize>, String> {
-    use std::collections::HashMap;
-
-    // Build an index graph: for each spinor index, track which external leg it connects to
-    // and which dummy index it connects to on the other side.
-    let mut connections: HashMap<i32, HashSet<i32>> = HashMap::new();
-
+fn find_connections(expr: &LorentzExpr, idx: isize) -> HashSet<isize> {
+    let mut out = HashSet::new();
     for term in expr {
         for op in &term.ops {
             match op {
@@ -163,92 +152,74 @@ pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Result<Vec<isize>,
                 | LorentzOp::ProjM { i, j }
                 | LorentzOp::ProjP { i, j }
                 | LorentzOp::C { i, j } => {
-                    connections
-                        .entry(*i)
-                        .or_insert_with(HashSet::new)
-                        .insert(*j);
-                    connections
-                        .entry(*j)
-                        .or_insert_with(HashSet::new)
-                        .insert(*i);
+                    if *i == idx {
+                        out.insert(*j);
+                    } else if *j == idx {
+                        out.insert(*i);
+                    }
                 }
                 _ => {}
-            }
+            };
         }
     }
+    out
+}
 
-    // Validation: connections should either have 1 or 2 endpoints
-    // 1 endpoint means an external leg; 2 endpoints means an internal contraction
-    for (&idx, conns) in &connections {
-        if conns.len() > 2 {
-            return Err(format!(
-                "index {idx} has more than 2 connections: {conns:?}"
-            ));
-        }
-        if idx > 0 && conns.len() != 1 {
-            return Err(format!(
-                "external leg index {idx} should have exactly 1 connection, found {conns:?}"
-            ));
-        }
-    }
-
-    // Now trace from each external leg to find its partner.
-    // External legs are indices 1..=n_legs (1-indexed).
+/// Compute the spinor index mapping from a Lorentz expression.
+///
+/// Traces spinor index chains through the Lorentz operators to find which external legs
+/// are spinor-contracted together. Nonnegative indices (0..n_legs) are external leg indices;
+/// negative indices are internal contraction dummies. For each external leg, we find its
+/// contracted partner by following the chain of contractions.
+///
+/// Returns a vector of length `n_legs` where `spin_map[i]` (0-indexed) is the 0-indexed
+/// external leg that leg `i` contracts with.
+pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Result<Vec<isize>, String> {
+    // Trace from each external leg to find its partner.
+    // External legs are indices 0..n_legs
     // Follow the chain of dummies (negative indices) to the other external endpoint.
-    let mut spin_map = vec![0isize; n_legs];
+    let mut spin_map = vec![None; n_legs];
 
-    for leg in 1..=n_legs as i32 {
-        let leg_idx = (leg - 1) as usize;
-        if spin_map[leg_idx] != 0 {
+    for leg in 0..n_legs as isize {
+        if spin_map[leg as usize].is_some() {
             continue; // already paired
         }
 
         // Trace from this leg through dummy indices to find the other endpoint
         let mut current = leg;
-        let mut visited = std::collections::HashSet::new();
+        let mut visited = vec![];
 
         loop {
             if visited.contains(&current) {
                 return Err(format!("cycle detected at index {current}"));
             }
-            visited.insert(current);
+            visited.push(current);
 
             // Advance current by following connections
-            match connections.get(&current).as_deref() {
-                None => {
-                    // No connections, so this leg has no spinor contractions (maps to itself)
-                    spin_map[leg_idx] = leg as isize;
-                    break;
-                }
-                Some(nexts) => {
-                    // Follow the first connection out that we have not yet visited
-                    if let Some(&next) = nexts.iter().find(|&n| !visited.contains(n)) {
-                        current = next;
-                    } else {
-                        return Err(format!("dead end reached at index {current}"));
-                    }
-                }
-            }
+            let Some(next) = find_connections(expr, current)
+                .into_iter()
+                .filter(|i| !visited.contains(i))
+                .next()
+            else {
+                // Leg is not connected to any other leg through dummy indices
+                spin_map[leg as usize] = Some(leg);
+                break;
+            };
+            current = next;
 
-            // If we reach another external leg, record the 1-indexed pairing
-            if current > 0 && (current as usize) <= n_legs {
-                spin_map[leg_idx] = current as isize;
-                spin_map[(current - 1) as usize] = leg as isize;
+            // If we reach another external leg, record the pairing
+            if current >= 0 {
+                spin_map[leg as usize] = Some(current);
+                spin_map[current as usize] = Some(leg);
                 break;
             }
         }
     }
 
-    // Convert to 0-index
-    for x in spin_map.iter_mut() {
-        if *x > 0 {
-            *x -= 1;
-        } else {
-            unreachable!("logic error: all legs should have been visited");
-        }
-    }
-
-    Ok(spin_map)
+    spin_map
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .ok_or(format!("Not all spins were connected!"))
 }
 
 /// Parse `lorentz.py` content into a list of [`LorentzStructure`]s.
@@ -360,9 +331,24 @@ fn convert_expr(raw: RawExpr) -> Result<LorentzExpr, LorentzError> {
         .collect()
 }
 
+fn to_isize(i: &i32) -> Result<isize, LorentzError> {
+    let out: isize = (*i)
+        .try_into()
+        .map_err(|_| LorentzError::InvalidIndex(*i))?;
+    if out == 0 {
+        Err(LorentzError::InvalidIndex(*i))
+    } else if out > 0 {
+        // Convert to 0-indexed
+        Ok(out - 1)
+    } else {
+        Ok(out)
+    }
+}
+
 fn build_lorentz_op(raw: &RawOp) -> Result<LorentzOp, LorentzError> {
     let RawOp(name, args) = raw;
-    match (name.as_str(), args.as_slice()) {
+    let iargs = args.iter().map(to_isize).collect::<Result<Vec<_>, _>>()?;
+    match (name.as_str(), iargs.as_slice()) {
         ("Gamma", &[mu, i, j]) => Ok(LorentzOp::Gamma { mu, i, j }),
         ("Sigma", &[mu, nu, i, j]) => Ok(LorentzOp::Sigma { mu, nu, i, j }),
         ("Identity", &[i, j]) => Ok(LorentzOp::Identity { i, j }),
@@ -526,7 +512,7 @@ mod tests {
     fn test_parse_gamma() {
         let expr = parse_structure("Gamma(3,2,1)").unwrap();
         assert_eq!(expr.len(), 1);
-        assert_eq!(expr[0].ops[0], LorentzOp::Gamma { mu: 3, i: 2, j: 1 });
+        assert_eq!(expr[0].ops[0], LorentzOp::Gamma { mu: 2, i: 1, j: 0 });
     }
 
     #[test]
@@ -535,8 +521,8 @@ mod tests {
         let expr = parse_structure("Gamma(3,2,-1)*ProjM(-1,1)").unwrap();
         assert_eq!(expr.len(), 1);
         assert_eq!(expr[0].ops.len(), 2);
-        assert_eq!(expr[0].ops[0], LorentzOp::Gamma { mu: 3, i: 2, j: -1 });
-        assert_eq!(expr[0].ops[1], LorentzOp::ProjM { i: -1, j: 1 });
+        assert_eq!(expr[0].ops[0], LorentzOp::Gamma { mu: 2, i: 1, j: -1 });
+        assert_eq!(expr[0].ops[1], LorentzOp::ProjM { i: -1, j: 0 });
     }
 
     #[test]
@@ -553,8 +539,8 @@ mod tests {
         // UUV1: P(3,2) + P(3,3)
         let expr = parse_structure("P(3,2) + P(3,3)").unwrap();
         assert_eq!(expr.len(), 2);
-        assert_eq!(expr[0].ops[0], LorentzOp::P { mu: 3, leg: 2 });
-        assert_eq!(expr[1].ops[0], LorentzOp::P { mu: 3, leg: 3 });
+        assert_eq!(expr[0].ops[0], LorentzOp::P { mu: 2, leg: 1 });
+        assert_eq!(expr[1].ops[0], LorentzOp::P { mu: 2, leg: 2 });
     }
 
     #[test]
@@ -574,12 +560,12 @@ mod tests {
         assert!((expr[0].coeff - 1.0).abs() < 1e-10);
         assert!((expr[1].coeff + 0.5).abs() < 1e-10);
         assert!((expr[2].coeff + 0.5).abs() < 1e-10);
-        assert_eq!(expr[0].ops[0], LorentzOp::Metric { mu: 1, nu: 4 });
-        assert_eq!(expr[0].ops[1], LorentzOp::Metric { mu: 2, nu: 3 });
-        assert_eq!(expr[1].ops[0], LorentzOp::Metric { mu: 1, nu: 3 });
-        assert_eq!(expr[1].ops[1], LorentzOp::Metric { mu: 2, nu: 4 });
-        assert_eq!(expr[2].ops[0], LorentzOp::Metric { mu: 1, nu: 2 });
-        assert_eq!(expr[2].ops[1], LorentzOp::Metric { mu: 3, nu: 4 });
+        assert_eq!(expr[0].ops[0], LorentzOp::Metric { mu: 0, nu: 3 });
+        assert_eq!(expr[0].ops[1], LorentzOp::Metric { mu: 1, nu: 2 });
+        assert_eq!(expr[1].ops[0], LorentzOp::Metric { mu: 0, nu: 2 });
+        assert_eq!(expr[1].ops[1], LorentzOp::Metric { mu: 1, nu: 3 });
+        assert_eq!(expr[2].ops[0], LorentzOp::Metric { mu: 0, nu: 1 });
+        assert_eq!(expr[2].ops[1], LorentzOp::Metric { mu: 2, nu: 3 });
     }
 
     #[test]
@@ -588,10 +574,10 @@ mod tests {
         assert_eq!(
             expr[0].ops[0],
             LorentzOp::Epsilon {
-                mu: 1,
-                nu: 2,
-                rho: 3,
-                sigma: 4
+                mu: 0,
+                nu: 1,
+                rho: 2,
+                sigma: 3
             }
         );
     }
@@ -602,8 +588,8 @@ mod tests {
         let expr = parse_structure("Metric(1,2)*Metric(3,4)/2.").unwrap();
         assert_eq!(expr.len(), 1);
         assert!((expr[0].coeff - 0.5).abs() < 1e-10);
-        assert_eq!(expr[0].ops[0], LorentzOp::Metric { mu: 1, nu: 2 });
-        assert_eq!(expr[0].ops[1], LorentzOp::Metric { mu: 3, nu: 4 });
+        assert_eq!(expr[0].ops[0], LorentzOp::Metric { mu: 0, nu: 1 });
+        assert_eq!(expr[0].ops[1], LorentzOp::Metric { mu: 2, nu: 3 });
     }
 
     #[test]
@@ -646,7 +632,7 @@ UUV1 = Lorentz(name = 'UUV1',
         let ffv1 = ls.iter().find(|l| l.name == "FFV1").unwrap();
         assert_eq!(ffv1.spins, vec![2, 2, 3]);
         assert_eq!(ffv1.expr.len(), 1);
-        assert_eq!(ffv1.expr[0].ops[0], LorentzOp::Gamma { mu: 3, i: 2, j: 1 });
+        assert_eq!(ffv1.expr[0].ops[0], LorentzOp::Gamma { mu: 2, i: 1, j: 0 });
     }
 
     #[test]
@@ -654,7 +640,7 @@ UUV1 = Lorentz(name = 'UUV1',
         // FFV1: Gamma(3,2,1) connects legs 1 and 2 (indices 2 and 1)
         let expr = vec![LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::Gamma { mu: 3, i: 2, j: 1 }],
+            ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
         }];
         let spin_map = compute_spin_map(&expr, 3).expect("failed to compute spin map");
         // Leg 1 should connect to leg 2, and leg 2 should connect to leg 1
@@ -686,8 +672,8 @@ UUV1 = Lorentz(name = 'UUV1',
         let expr = vec![LorentzTerm {
             coeff: 1.0,
             ops: vec![
-                LorentzOp::Gamma { mu: 3, i: 2, j: -1 },
-                LorentzOp::ProjM { i: -1, j: 1 },
+                LorentzOp::Gamma { mu: 2, i: 1, j: -1 },
+                LorentzOp::ProjM { i: -1, j: 0 },
             ],
         }];
         let spin_map = compute_spin_map(&expr, 2).expect("failed to compute spin map");

@@ -512,7 +512,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
     slots: &[WaveformSlot<F>],
 ) -> WaveformSlot<F> {
     match node {
-        LorentzEvalNode::Leg(i) => slots[input_slots[*i as usize - 1]],
+        LorentzEvalNode::Leg(i) => slots[input_slots[*i]],
         LorentzEvalNode::GammaVout { i, j } => {
             let f1 = evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots);
             let f2 = evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots);
@@ -625,9 +625,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             })
         }
         LorentzEvalNode::P { leg } => {
-            let momentum = slots[input_slots[*leg as usize - 1]]
-                .momentum()
-                .expect("P: empty slot");
+            let momentum = slots[input_slots[*leg]].momentum().expect("P: empty slot");
             WaveformSlot::Vector(VectorWf {
                 eps: ComplexVector::from(momentum),
                 momentum,
@@ -754,7 +752,7 @@ mod tests {
         // VVS1: Metric(1,2), spins [Z, Z, H]; root at vector leg 1 (idx 0).
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::Metric { mu: 1, nu: 2 }],
+            ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
         };
         let tree = LorentzEvalTree::build_at_leg(&term, &[3, 3, 1], Some(0)).unwrap();
 
@@ -1002,7 +1000,7 @@ mod tests {
         // FFV1: Gamma(3,2,1) — legs 1,2 fermions, leg 3 vector.
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::Gamma { mu: 3, i: 2, j: 1 }],
+            ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
         };
         let spins = [2, 2, 3];
         // UFO convention: coupling includes i
@@ -1683,7 +1681,7 @@ mod tests {
 
         // print all asts
         for (i, ast) in asts.iter().enumerate() {
-            println!("AST {}: {:?}", i, ast);
+            println!("AST {}: {}", i, ast);
         }
         let n = asts.len();
         // The e-spine relative −1 vs MadGraph is now carried by `fermi_sign`
@@ -1785,11 +1783,11 @@ mod tests {
 
         let ffs1 = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::ProjM { i: 2, j: 1 }],
+            ops: vec![LorentzOp::ProjM { i: 1, j: 0 }],
         };
         let ffs3 = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::ProjP { i: 2, j: 1 }],
+            ops: vec![LorentzOp::ProjP { i: 1, j: 0 }],
         };
         let spins = [2, 2, 1];
 

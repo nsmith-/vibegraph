@@ -6,6 +6,8 @@
 
 use std::ops::{Add, Mul};
 
+use itertools::Itertools;
+
 use super::dispatch::RootedTerm;
 use crate::helas::repr::numbers::Charge;
 use crate::helas::repr::{lorentz::LorentzVector, Real, C};
@@ -167,6 +169,16 @@ pub struct ExtLegInfo {
     // TODO: mass: F
 }
 
+impl std::fmt::Display for ExtLegInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "id: {:?}, leg: {} {} {} }}",
+            self.id, self.leg_idx, self.spin, self.charge
+        )
+    }
+}
+
 /// Description of an internal propagator.
 #[derive(Clone, Debug)]
 pub struct PropInfo {
@@ -219,6 +231,26 @@ impl VertexTerm {
             coupling_id,
         }
     }
+
+    /// Convert the rooted term
+    fn render_term(&self) -> String {
+        self.terms
+            .iter()
+            .map(|term| format!("{}", term))
+            .collect::<Vec<_>>()
+            .join("+")
+    }
+}
+
+impl std::fmt::Display for VertexTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?}*({})",
+            self.coupling_id,
+            self.render_term().as_str()
+        )
+    }
 }
 
 /// Descriptor for one vertex with all its terms (sum over Lorentz × color).
@@ -253,6 +285,18 @@ impl VertexInfo {
             terms,
             n_legs: vertex.particles.len(),
         }
+    }
+}
+
+impl std::fmt::Display for VertexInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            self.terms
+                .iter()
+                .map(|term| format!("{}", term))
+                .join(" + ")
+                .as_str(),
+        )
     }
 }
 
@@ -310,6 +354,29 @@ impl EvalStep {
     }
 }
 
+impl std::fmt::Display for EvalStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvalStep::ExternalWf { info, .. } => write!(f, "ExternalWf({})", info),
+            EvalStep::OffShellCurrent {
+                info, input_slots, ..
+            } => {
+                write!(f, "OffShellCurrent({}, {:?})", info, input_slots)
+            }
+            EvalStep::Propagate {
+                info: PropInfo { id },
+                input_slot,
+                ..
+            } => write!(f, "Propagate({:?}, slots[{}])", id, input_slot),
+            EvalStep::ContractAmplitude {
+                info, input_slots, ..
+            } => {
+                write!(f, "ContractAmplitude({}, {:?})", info, input_slots)
+            }
+        }
+    }
+}
+
 /// A compiled representation of a single Feynman diagram.
 ///
 /// The AST is built once from a `DiagramView` + `UFOModel` and then evaluated
@@ -350,5 +417,20 @@ impl DiagramAst {
             symmetry_factor,
             fermi_sign,
         }
+    }
+}
+
+impl std::fmt::Display for DiagramAst {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "AST(external legs {}, slots {}) steps:\n{}",
+            self.n_ext,
+            self.n_slots,
+            self.steps
+                .iter()
+                .map(|s| format!(" slots[{}] = {}", s.output_slot(), s))
+                .join("\n")
+        )
     }
 }
