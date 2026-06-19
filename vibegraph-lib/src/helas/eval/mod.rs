@@ -25,30 +25,6 @@ mod tree;
 mod waveform_slot;
 
 pub use compile::{compile_diagram_ast, CompileError};
-pub use run::AmplitudeEvaluator;
-
-/// Errors that can occur during AST compilation or evaluation.
-#[derive(Debug, Clone)]
-pub enum EvalError {
-    /// Compilation error
-    Compile(CompileError),
-    /// Error during evaluation (e.g., invalid slot access)
-    Runtime(String),
-}
-
-impl From<CompileError> for EvalError {
-    fn from(e: CompileError) -> Self {
-        EvalError::Compile(e)
-    }
-}
-
-impl std::fmt::Display for EvalError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EvalError::Compile(e) => write!(f, "Compilation error: {:?}", e),
-            EvalError::Runtime(s) => write!(f, "Runtime error: {}", s),
-        }
-    }
-}
-
-impl std::error::Error for EvalError {}
+pub use root_diagram::RootDiagramError;
+pub use root_lorentz::RootLorentzError;
+pub use run::{AmplitudeEvaluator, EvalError};

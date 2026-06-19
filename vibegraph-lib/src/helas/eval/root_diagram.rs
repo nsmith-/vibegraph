@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use feyngraph::diagram::view::{DiagramView, LegView, VertexView};
 use itertools::Either;
 
-use crate::helas::eval::ast::{DiagramEval, ExtLegInfo, PropInfo, VertexInfo};
+use crate::helas::eval::ast::{ExtLegInfo, PropInfo, VertexInfo};
 use crate::helas::eval::tree::Tree;
 use crate::helas::repr::numbers::Charge;
 use crate::ufo::particles::ParticleId;
@@ -29,6 +29,31 @@ use crate::ufo::vertices::VertexId;
 use crate::ufo::UFOModel;
 
 use super::compile::CompileError;
+use super::root_lorentz::RootLorentzError;
+
+/// Errors from Pass 1: walking the diagram topology and interning model ids.
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum RootDiagramError {
+    /// A leg's particle name is absent from the UFO model.
+    #[error("particle not found in model: {0}")]
+    ParticleNotFound(String),
+    /// A vertex's interaction name is absent from the UFO model.
+    #[error("vertex not found in model: {0}")]
+    VertexNotFound(String),
+    /// feyngraph's is_anti flag disagrees with the model's pdg-code sign.
+    #[error(
+        "antiparticle flag mismatch for {name}: feyngraph is_anti={is_anti}, model pdg_code={pdg}"
+    )]
+    AntiparticleMismatch {
+        name: String,
+        is_anti: bool,
+        pdg: i64,
+    },
+    /// The output (result) leg of a vertex resolved to an external leg, which has no
+    /// off-shell continuation.
+    #[error("an external leg cannot be the result leg of a vertex")]
+    ExternalLegAsResult,
+}
 
 // ───────────────────────────── Pass 1: raw topology tree ─────────────────────────────
 
@@ -115,27 +140,26 @@ impl<'a> RawBuilder<'a> {
         id
     }
 
-    fn make_leg(&mut self, leg: LegView) -> RawNodeId {
+    fn make_leg(&mut self, leg: LegView) -> Result<RawNodeId, RootDiagramError> {
         let particle = leg.particle();
         let particle_id = self
             .model
             .particle_id(particle.name())
-            .expect("particle not found");
+            .ok_or_else(|| RootDiagramError::ParticleNotFound(particle.name().to_string()))?;
 
         let model_particle = self.model.particle(particle_id);
         // Check that feyngraph's is_anti flag is consistent with the UFO model.
         // Use pdg_code < 0 (not charge sign) because up-type quarks have positive
         // charge yet are particles (is_anti=false), breaking the charge-based check.
-        assert_eq!(
-            particle.is_anti(),
-            model_particle.pdg_code < 0,
-            "Antiparticle mismatch for {}: feyngraph is_anti={} but UFOModel pdg_code={}",
-            particle.name(),
-            particle.is_anti(),
-            model_particle.pdg_code
-        );
+        if particle.is_anti() != (model_particle.pdg_code < 0) {
+            return Err(RootDiagramError::AntiparticleMismatch {
+                name: particle.name().to_string(),
+                is_anti: particle.is_anti(),
+                pdg: model_particle.pdg_code,
+            });
+        }
 
-        self.add(RawNode::Leg {
+        Ok(self.add(RawNode::Leg {
             particle: particle_id,
             leg_idx: leg.index(),
             charge: match particle.is_anti() {
@@ -143,7 +167,7 @@ impl<'a> RawBuilder<'a> {
                 false => Charge::Particle,
             },
             spin: model_particle.spin,
-        })
+        }))
     }
 
     /// Recursively walk the diagram tree from a root vertex.
@@ -157,26 +181,30 @@ impl<'a> RawBuilder<'a> {
     /// position omitted; `result_leg_idx` records that position so the second pass
     /// can root the vertex's Lorentz structure there (the rooted tree's `Leg(i)`
     /// references are then compacted to index this gap-free child list directly).
-    fn walk_vertex(&mut self, vtx: &VertexView, result_leg_idx: Option<usize>) -> RawNodeId {
+    fn walk_vertex(
+        &mut self,
+        vtx: &VertexView,
+        result_leg_idx: Option<usize>,
+    ) -> Result<RawNodeId, RootDiagramError> {
         self.processed_vertices.insert(vtx.id());
         let mut children = vec![];
         for (idx, prop) in vtx.propagators_ordered().enumerate() {
             let is_upstream = result_leg_idx.is_some_and(|ir| ir == idx);
             match (is_upstream, prop) {
                 (false, Either::Left(leg)) => {
-                    children.push(self.make_leg(leg));
+                    children.push(self.make_leg(leg)?);
                 }
                 (false, Either::Right(prop)) => {
-                    prop.vertices().enumerate().for_each(|(vidx, next_vtx)| {
+                    for (vidx, next_vtx) in prop.vertices().enumerate() {
                         // Either it is the vertex we are at or the next one the propagator goes to
                         if !self.processed_vertices.contains(&next_vtx.id()) {
                             let this_prop = prop.ray_index_ordered(vidx);
-                            children.push(self.walk_vertex(&next_vtx, Some(this_prop)));
+                            children.push(self.walk_vertex(&next_vtx, Some(this_prop))?);
                         }
-                    });
+                    }
                 }
                 (true, Either::Left(_)) => {
-                    panic!("An external leg cannot be the result leg for a vertex");
+                    return Err(RootDiagramError::ExternalLegAsResult);
                 }
                 (true, Either::Right(_)) => {
                     // The output (result) leg — the propagator we came from. It has
@@ -189,13 +217,15 @@ impl<'a> RawBuilder<'a> {
         let vertex = self
             .model
             .vertex_id(vtx.interaction().name())
-            .expect("no vertex in UFO");
+            .ok_or_else(|| {
+                RootDiagramError::VertexNotFound(vtx.interaction().name().to_string())
+            })?;
 
-        self.add(RawNode::Vertex {
+        Ok(self.add(RawNode::Vertex {
             vertex,
             result_leg_idx,
             children,
-        })
+        }))
     }
 }
 
@@ -290,10 +320,10 @@ impl DiagramEvalTree {
 
     /// Bake a raw topology tree into the evaluable tree: root each vertex's Lorentz
     /// structure and type each node by what it produces.
-    fn bake(raw: &RawDiagramTree, model: &UFOModel) -> Self {
+    fn bake(raw: &RawDiagramTree, model: &UFOModel) -> Result<Self, RootLorentzError> {
         let mut nodes = Vec::with_capacity(raw.nodes.len());
-        let root = Self::bake_node(raw, raw.root, model, &mut nodes);
-        DiagramEvalTree { nodes, root }
+        let root = Self::bake_node(raw, raw.root, model, &mut nodes)?;
+        Ok(DiagramEvalTree { nodes, root })
     }
 
     fn bake_node(
@@ -301,14 +331,14 @@ impl DiagramEvalTree {
         id: RawNodeId,
         model: &UFOModel,
         nodes: &mut Vec<EvalNode>,
-    ) -> EvalNodeId {
+    ) -> Result<EvalNodeId, RootLorentzError> {
         match raw.value(id) {
             RawNode::Leg {
                 particle,
                 leg_idx,
                 charge,
                 spin,
-            } => Self::add(
+            } => Ok(Self::add(
                 nodes,
                 EvalNode::External(ExtLegInfo {
                     id: *particle,
@@ -316,7 +346,7 @@ impl DiagramEvalTree {
                     charge: *charge,
                     spin: *spin,
                 }),
-            ),
+            )),
             RawNode::Vertex {
                 vertex,
                 result_leg_idx,
@@ -325,12 +355,12 @@ impl DiagramEvalTree {
                 let baked: Vec<EvalNodeId> = children
                     .iter()
                     .map(|&c| Self::bake_node(raw, c, model, nodes))
-                    .collect();
+                    .collect::<Result<Vec<_>, _>>()?;
                 match result_leg_idx {
                     Some(ri) => {
                         // Internal vertex: off-shell current rooted at the output leg,
                         // wrapped by the propagator on that leg.
-                        let info = VertexInfo::from_ufo(model, *vertex, Some(*ri));
+                        let info = VertexInfo::from_ufo(model, *vertex, Some(*ri))?;
                         let prop_id = model.vertex_def(*vertex).particles[*ri];
                         let current = Self::add(
                             nodes,
@@ -339,24 +369,24 @@ impl DiagramEvalTree {
                                 children: baked,
                             },
                         );
-                        Self::add(
+                        Ok(Self::add(
                             nodes,
                             EvalNode::Propagate {
                                 info: PropInfo { id: prop_id },
                                 child: current,
                             },
-                        )
+                        ))
                     }
                     None => {
                         // Root vertex: contract all legs into the scalar amplitude.
-                        let info = VertexInfo::from_ufo(model, *vertex, None);
-                        Self::add(
+                        let info = VertexInfo::from_ufo(model, *vertex, None)?;
+                        Ok(Self::add(
                             nodes,
                             EvalNode::ContractAmplitude {
                                 info,
                                 children: baked,
                             },
-                        )
+                        ))
                     }
                 }
             }
@@ -438,7 +468,7 @@ fn trace_fermion_line(
 /// connects two incoming legs through at least one internal propagator. Validated
 /// against MadGraph per-diagram amplitudes for e+e-→μ+μ-τ+τ- and
 /// u u~→c c~ e+e- μ+μ- (QCD=0).
-fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> i8 {
+pub(super) fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> i8 {
     let n_in = view.incoming().count();
     let mut visited: HashSet<usize> = HashSet::new();
     let mut sign: i8 = 1;
@@ -457,39 +487,31 @@ fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> i8 {
     sign
 }
 
-// ───────────────────────────── Compile entry point ─────────────────────────────
+// ───────────────────────────── Rooting entry point ─────────────────────────────
 
-/// Compile a single diagram into an evaluable tree.
+/// Root a diagram into an evaluable tree.
 ///
-/// Walk from an arbitrary root vertex to build the raw topology tree, then bake it
-/// into the evaluable [`DiagramEvalTree`] (Lorentz structures rooted at output legs,
-/// nodes typed by produced wavefunction).
+/// Walk from an arbitrary root vertex to build the raw topology tree (Pass 1), then
+/// bake it into the evaluable [`DiagramEvalTree`] (Pass 2: Lorentz structures rooted
+/// at output legs, nodes typed by produced wavefunction). Both pass errors surface
+/// through the [`CompileError`] umbrella.
 ///
 /// # Arguments
 /// * `view` — DiagramView with vertices and propagators
 /// * `model` — UFO model for vertex/particle/coupling lookups
-pub fn compile_single_diagram(
+pub(super) fn root_tree(
     view: &DiagramView,
     model: &UFOModel,
-) -> Result<DiagramEval, CompileError> {
-    let n_ext = view.legs().count();
-
+) -> Result<DiagramEvalTree, CompileError> {
     // Choose an arbitrary root vertex (the first one) and walk the tree from there.
     let mut builder = RawBuilder::new(model);
-    let raw_root = builder.walk_vertex(&view.vertex(0), None);
+    let raw_root = builder.walk_vertex(&view.vertex(0), None)?;
     let raw = RawDiagramTree {
         nodes: builder.nodes,
         root: raw_root,
     };
 
-    let tree = DiagramEvalTree::bake(&raw, model);
-
-    Ok(DiagramEval {
-        n_ext,
-        tree,
-        symmetry_factor: 1.0 / view.symmetry_factor() as f64,
-        fermi_sign: view.sign() * initial_state_spine_sign(view, model),
-    })
+    Ok(DiagramEvalTree::bake(&raw, model)?)
 }
 
 #[cfg(test)]
@@ -520,8 +542,8 @@ mod tests {
         for set in sets {
             for view in set.diagrams.views() {
                 println!("Testing diagram {}", view);
-                let diagram = compile_single_diagram(&view, model).expect("compilation failed");
-                println!("Generated tree: {}", diagram.tree);
+                let tree = root_tree(&view, model).expect("rooting failed");
+                println!("Generated tree: {}", tree);
             }
         }
     }

@@ -7,7 +7,7 @@
 use itertools::Itertools;
 
 use super::root_diagram::{DiagramEvalTree, EvalNode};
-use super::root_lorentz::RootedTerm;
+use super::root_lorentz::{RootLorentzError, RootedTerm};
 use super::tree::Tree;
 use crate::helas::repr::numbers::Charge;
 use crate::ufo::couplings::CouplingId;
@@ -63,8 +63,6 @@ pub struct VertexTerm {
 impl VertexTerm {
     /// Generate a VertexTerm from a UFO vertex definition, given the model and the desired index of the result leg.
     ///
-    /// TODO: move this to compile.rs as free function, so errors can propagate instead of panicking.
-    ///
     /// result_leg_idx is 0-indexed here
     pub fn from_ufo(
         model: &UFOModel,
@@ -72,19 +70,16 @@ impl VertexTerm {
         _color: &str, // TODO: handle color structures if needed
         coupling_id: CouplingId,
         result_leg_idx: Option<usize>,
-    ) -> Self {
+    ) -> Result<Self, RootLorentzError> {
         let lorentz = model.lorentz_struct(lorentz_id);
 
         let terms = lorentz
             .expr
             .iter()
-            .map(|term| {
-                super::root_lorentz::root_term(term, &lorentz.spins, result_leg_idx)
-                    .unwrap_or_else(|e| panic!("Unable to root term from Lorentz expression: {e}"))
-            })
-            .collect();
+            .map(|term| super::root_lorentz::root_term(term, &lorentz.spins, result_leg_idx))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        VertexTerm { terms, coupling_id }
+        Ok(VertexTerm { terms, coupling_id })
     }
 
     /// Convert the rooted term
@@ -117,9 +112,11 @@ pub struct VertexInfo {
 
 impl VertexInfo {
     /// Generate VertexInfo from a UFO vertex definition, given the model and the desired index of the result leg.
-    ///
-    /// TODO: move this to compile.rs as free function, so errors can propagate instead of panicking.
-    pub fn from_ufo(model: &UFOModel, id: VertexId, result_leg_idx: Option<usize>) -> Self {
+    pub fn from_ufo(
+        model: &UFOModel,
+        id: VertexId,
+        result_leg_idx: Option<usize>,
+    ) -> Result<Self, RootLorentzError> {
         let vertex = model.vertex_def(id);
         let terms = vertex
             .couplings
@@ -133,8 +130,8 @@ impl VertexInfo {
                     result_leg_idx,
                 )
             })
-            .collect();
-        VertexInfo { terms }
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(VertexInfo { terms })
     }
 }
 

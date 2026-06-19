@@ -4,43 +4,46 @@
 //! converting feyngraph DiagramView objects into evaluable DiagramEval trees
 //! that can be efficiently evaluated at runtime against phase-space points.
 
+use feyngraph::diagram::view::DiagramView;
+
 use crate::diagrams::DiagramSet;
 use crate::ufo::UFOModel;
 
 use super::ast::DiagramEval;
-use super::root_diagram;
+use super::root_diagram::{self, RootDiagramError};
+use super::root_lorentz::RootLorentzError;
 
-/// Errors during AST compilation.
-#[derive(Debug, Clone)]
+/// Errors during diagram rooting (the compile phase).
+///
+/// The two rooting passes each contribute a subtype: [`RootDiagramError`] from
+/// walking the topology, and [`RootLorentzError`] from rooting each vertex's
+/// Lorentz structure.
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum CompileError {
-    /// Vertex not found in model
-    VertexNotFound(String),
-    /// Lorentz structure not found
-    LorentzNotFound(String),
-    /// Coupling not found
-    CouplingNotFound(String),
-    /// Invalid topological ordering (e.g., cyclic dependencies)
-    TopologyError(String),
-    /// Unsupported vertex type or coupling
-    UnsupportedVertex(String),
-    /// Particle not found in model
-    ParticleNotFound(String),
+    /// Pass 1: walking the diagram topology and interning model ids.
+    #[error(transparent)]
+    RootDiagram(#[from] RootDiagramError),
+    /// Pass 2: rooting a vertex's Lorentz structure into a contraction tree.
+    #[error(transparent)]
+    RootVertex(#[from] RootLorentzError),
 }
 
-impl std::fmt::Display for CompileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CompileError::VertexNotFound(s) => write!(f, "Vertex not found: {}", s),
-            CompileError::LorentzNotFound(s) => write!(f, "Lorentz structure not found: {}", s),
-            CompileError::CouplingNotFound(s) => write!(f, "Coupling not found: {}", s),
-            CompileError::TopologyError(s) => write!(f, "Topology error: {}", s),
-            CompileError::UnsupportedVertex(s) => write!(f, "Unsupported vertex: {}", s),
-            CompileError::ParticleNotFound(s) => write!(f, "Particle not found: {}", s),
-        }
-    }
+/// Compile a single diagram into an evaluable [`DiagramEval`].
+///
+/// Roots the diagram into its evaluation tree (topology + Lorentz structures) and
+/// attaches the per-diagram metadata (external-leg count, symmetry factor, and the
+/// fermion-flow sign, including the initial-state spine correction).
+fn compile_single_diagram(
+    view: &DiagramView,
+    model: &UFOModel,
+) -> Result<DiagramEval, CompileError> {
+    Ok(DiagramEval {
+        n_ext: view.legs().count(),
+        tree: root_diagram::root_tree(view, model)?,
+        symmetry_factor: 1.0 / view.symmetry_factor() as f64,
+        fermi_sign: view.sign() * root_diagram::initial_state_spine_sign(view, model),
+    })
 }
-
-impl std::error::Error for CompileError {}
 
 /// Compile all diagrams from a DiagramSet into optimized ASTs.
 ///
@@ -61,6 +64,6 @@ pub fn compile_diagram_ast(
 ) -> Result<Vec<DiagramEval>, CompileError> {
     set.diagrams
         .views()
-        .map(|view| root_diagram::compile_single_diagram(&view, model))
+        .map(|view| compile_single_diagram(&view, model))
         .collect()
 }
