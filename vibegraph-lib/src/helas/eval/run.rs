@@ -17,8 +17,9 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 use num_complex::ComplexFloat;
 use num_traits::{FromPrimitive, Zero};
 
-use super::ast::{DiagramAst, EvalStep, WaveformSlot};
+use super::ast::{DiagramAst, EvalStep};
 use super::compile::CompileError;
+use super::waveform_slot::WaveformSlot;
 
 /// Compiled amplitude evaluator for all diagrams of a process.
 ///

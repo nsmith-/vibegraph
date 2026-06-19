@@ -11,14 +11,15 @@
 //! - `dispatch.rs` — Vertex dispatch: VertexInfo + slots → result
 //! - `run.rs` — Evaluation phase: DiagramAst × momenta × helicities → amplitude
 
-pub mod ast;
-pub mod compile;
-pub mod root_lorentz;
-pub mod run;
-pub mod topo_sort;
+mod ast;
+mod compile;
+mod root_diagram;
+mod root_lorentz;
+mod run;
 mod tree;
+mod waveform_slot;
 
-pub use ast::{DiagramAst, EvalStep, WaveformSlot};
+pub use ast::DiagramAst;
 pub use compile::{compile_diagram_ast, CompileError};
 pub use run::AmplitudeEvaluator;
 

@@ -1,4 +1,4 @@
-//! Topological ordering for diagram compilation.
+//! Root a diagram at a given vertex
 //!
 //! This module converts an undirected diagram graph into a directed acyclic graph (DAG)
 //! by choosing an arbitrary root vertex and directing all edges toward it. This transforms
