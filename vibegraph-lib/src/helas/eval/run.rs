@@ -22,6 +22,28 @@ use super::compile::CompileError;
 use super::root_diagram::EvalNode;
 use super::waveform_slot::WaveformSlot;
 
+/// Errors while building an [`AmplitudeEvaluator`] from a process.
+///
+/// Holds the model-parameter lookups performed at this layer (particle ids, spins,
+/// external-leg counts) on top of the diagram-rooting [`CompileError`]. These
+/// lookup variants are temporary: they will move into a dedicated parameter-interning
+/// step (masses, couplings, spins) in a later refactor.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum EvalError {
+    /// An external particle name is absent from the UFO model.
+    #[error("particle not found in model: {0}")]
+    ParticleNotFound(String),
+    /// An external leg carries a spin code with no defined helicity states.
+    #[error("unsupported external spin code: {0}")]
+    UnsupportedSpin(i32),
+    /// The process and the compiled AST disagree on the external-leg count.
+    #[error("external-leg count mismatch: {0}")]
+    TopologyError(String),
+    /// Diagram rooting failed.
+    #[error(transparent)]
+    Compile(#[from] CompileError),
+}
+
 /// Compiled amplitude evaluator for all diagrams of a process.
 ///
 /// The AST is built once from `&UFOModel`; coupling values are resolved at eval time
@@ -49,7 +71,7 @@ impl AmplitudeEvaluator {
     ///
     /// # Returns
     /// A compiled evaluator, or a compilation error.
-    pub fn compile(set: &DiagramSet, model: &UFOModel) -> Result<Self, CompileError> {
+    pub fn compile(set: &DiagramSet, model: &UFOModel) -> Result<Self, EvalError> {
         let ext_particle_names = set
             .particles_in
             .iter()
@@ -62,7 +84,7 @@ impl AmplitudeEvaluator {
             .map(|name| {
                 model
                     .particle_id(name)
-                    .ok_or_else(|| CompileError::ParticleNotFound(name.clone()))
+                    .ok_or_else(|| EvalError::ParticleNotFound(name.clone()))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -72,8 +94,8 @@ impl AmplitudeEvaluator {
         // Compile phase should preserve process external-leg count consistency.
         if let Some(ast) = diagrams.first() {
             if ast.n_ext != n_ext {
-                return Err(CompileError::TopologyError(format!(
-                    "External-leg mismatch: process has {n_ext}, AST has {}",
+                return Err(EvalError::TopologyError(format!(
+                    "process has {n_ext}, AST has {}",
                     ast.n_ext
                 )));
             }
@@ -222,16 +244,14 @@ impl AmplitudeEvaluator {
     }
 }
 
-fn helicity_states_for_spin(spin_code: i32) -> Result<Vec<i32>, CompileError> {
+fn helicity_states_for_spin(spin_code: i32) -> Result<Vec<i32>, EvalError> {
     // UFO spin code convention is 2s+1 with negative values reserved for ghosts.
     match spin_code.abs() {
         1 => Ok(vec![0]),               // scalar
         2 => Ok(vec![-1, 1]),           // fermion
         3 => Ok(vec![-1, 0, 1]),        // vector
         5 => Ok(vec![-2, -1, 0, 1, 2]), // spin-2 (future-proof)
-        other => Err(CompileError::UnsupportedVertex(format!(
-            "unsupported external spin code: {other}"
-        ))),
+        other => Err(EvalError::UnsupportedSpin(other)),
     }
 }
 
@@ -877,23 +897,15 @@ mod tests {
                 charge: Charge::Antiparticle,
             };
             let vertex_info = VertexInfo {
-                terms: vec![VertexTerm::from_ufo(
-                    model,
-                    lorentz_id,
-                    "asdf",
-                    coupling_id,
-                    Some(2),
-                )],
+                terms: vec![
+                    VertexTerm::from_ufo(model, lorentz_id, "asdf", coupling_id, Some(2)).unwrap(),
+                ],
             };
             let prop_info = PropInfo { id: prop_id };
             let amp_info = VertexInfo {
-                terms: vec![VertexTerm::from_ufo(
-                    model,
-                    lorentz_id,
-                    "asdf",
-                    coupling_id,
-                    None,
-                )],
+                terms: vec![
+                    VertexTerm::from_ufo(model, lorentz_id, "asdf", coupling_id, None).unwrap(),
+                ],
             };
 
             let hels = [SpinorHelicity::Down, SpinorHelicity::Up];

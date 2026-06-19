@@ -24,22 +24,15 @@ impl std::fmt::Display for RootedTerm {
     }
 }
 
-/// Compile error types for unsupported vertices or invalid structures.
-#[derive(Clone, Debug)]
-pub enum CompileError {
+/// Errors from rooting a vertex's Lorentz structure into a contraction tree.
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum RootLorentzError {
     /// The vertex structure contains unsupported ops (Sigma, Epsilon, C) or too many free indices.
+    #[error("unsupported vertex: {0}")]
     UnsupportedVertex(String),
     /// The structure is syntactically invalid (e.g., mismatched indices).
+    #[error("invalid structure: {0}")]
     InvalidStructure(String),
-}
-
-impl std::fmt::Display for CompileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CompileError::UnsupportedVertex(s) => write!(f, "unsupported vertex: {s}"),
-            CompileError::InvalidStructure(s) => write!(f, "invalid structure: {s}"),
-        }
-    }
 }
 
 /// Descriptor for one term in the vertex lorentz structure, with dispatch info and resolved rooted node.
@@ -165,7 +158,7 @@ impl LorentzEvalTree {
         term: &LorentzTerm,
         idx: isize,
         visited_ops: &mut Vec<usize>,
-    ) -> Result<usize, CompileError> {
+    ) -> Result<usize, RootLorentzError> {
         // Find an operator that involves this index and has not been visited
         let Some((iop, op)) = term.ops.iter().enumerate().find(|&(i, op)| {
             (op.involves_spinor(idx) || op.involves_vector(idx))
@@ -176,7 +169,7 @@ impl LorentzEvalTree {
                 // This is a scalar leaf node
                 return Ok(self.add_node(LorentzEvalNode::Leg(idx as usize)));
             } else {
-                return Err(CompileError::InvalidStructure(format!(
+                return Err(RootLorentzError::InvalidStructure(format!(
                     "Free index {} has no operator in term",
                     idx
                 )));
@@ -259,13 +252,13 @@ impl LorentzEvalTree {
                     unreachable!("Identity op should involve idx {}", idx);
                 }
             }
-            LorentzOp::Sigma { .. } => Err(CompileError::UnsupportedVertex(
+            LorentzOp::Sigma { .. } => Err(RootLorentzError::UnsupportedVertex(
                 "Sigma tensors are deferred to future work".to_string(),
             )),
-            LorentzOp::Epsilon { .. } => Err(CompileError::UnsupportedVertex(
+            LorentzOp::Epsilon { .. } => Err(RootLorentzError::UnsupportedVertex(
                 "Epsilon tensors are deferred to future work".to_string(),
             )),
-            LorentzOp::C { .. } => Err(CompileError::UnsupportedVertex(
+            LorentzOp::C { .. } => Err(RootLorentzError::UnsupportedVertex(
                 "Charge conjugation is deferred to future work".to_string(),
             )),
         }
@@ -283,7 +276,7 @@ impl LorentzEvalTree {
         term: &LorentzTerm,
         spins: &[i32],
         idx: Option<usize>,
-    ) -> Result<Self, CompileError> {
+    ) -> Result<Self, RootLorentzError> {
         let mut tree = LorentzEvalTree {
             nodes: vec![],
             root: None,
@@ -453,12 +446,12 @@ impl std::fmt::Display for LorentzEvalTree {
 /// * `result_leg_idx` — The output leg (0-indexed), or `None` for amplitude (scalar sink).
 ///
 /// # Returns
-/// A `RootedTerm` ready for evaluation, or a `CompileError`.
+/// A `RootedTerm` ready for evaluation, or a `RootLorentzError`.
 pub fn root_term(
     term: &crate::ufo::lorentz::LorentzTerm,
     spins: &[i32],
     result_leg_idx: Option<usize>,
-) -> Result<RootedTerm, CompileError> {
+) -> Result<RootedTerm, RootLorentzError> {
     Ok(RootedTerm {
         coeff: term.coeff,
         tree: LorentzEvalTree::build_at_leg(term, spins, result_leg_idx)?,
@@ -667,7 +660,10 @@ mod tests {
         };
         let spins = vec![2, 2, 3];
         let result = root_term(&term, &spins, Some(0)); // root at leg 1 (0-indexed as 0)
-        assert!(matches!(result, Err(CompileError::UnsupportedVertex(_))));
+        assert!(matches!(
+            result,
+            Err(RootLorentzError::UnsupportedVertex(_))
+        ));
     }
 
     #[test]
