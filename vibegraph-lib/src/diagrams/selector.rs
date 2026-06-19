@@ -78,7 +78,7 @@ fn apply_coupling_constraint(sel: &mut DiagramSelector, c: &CouplingConstraint) 
         CouplingOp::Ne => {
             let excluded = if v >= 0 { Some(v as usize) } else { None };
             let powers: Vec<usize> = (0..=MAX_COUPLING_POWER)
-                .filter(|&p| excluded.map_or(true, |ex| p != ex))
+                .filter(|&p| excluded != Some(p))
                 .collect();
             sel.select_coupling_power_list(name, powers);
         }

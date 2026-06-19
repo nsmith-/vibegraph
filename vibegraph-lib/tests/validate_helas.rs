@@ -107,11 +107,12 @@ mod eval_vs_hardcoded {
         let set = &sets[0];
         assert_eq!(set.diagrams.len(), 4, "expected 4 diagrams (γ, Z, H, G0)");
 
-        let card = ParamCard::from_str(&format!(
+        let card = format!(
             "Block MASS\n 11 {}\n 13 {}\nBlock YUKAWA\n 11 0.0\n 13 0.0\n",
             super::MDL_ME,
             super::MDL_MMU
-        ))
+        )
+        .parse::<ParamCard>()
         .unwrap();
         let evaluated = model.evaluate(&card);
 
@@ -195,11 +196,12 @@ mod extended {
         let model = sm_lepton_masses_model();
         let sets = generate_with("e+ e- > mu+ mu-", model);
         let set = &sets[0];
-        let card = ParamCard::from_str(&format!(
+        let card = format!(
             "Block MASS\n 11 {}\n 13 {}\nBlock YUKAWA\n 11 0.0\n 13 0.0\n",
             super::MDL_ME,
             super::MDL_MMU
-        ))
+        )
+        .parse::<ParamCard>()
         .unwrap();
         let evaluated = model.evaluate(&card);
 

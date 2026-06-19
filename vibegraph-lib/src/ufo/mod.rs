@@ -415,7 +415,7 @@ impl EvaluatedModel<'_> {
         self.param_values
             .get_mut(changed)
             .map(|v| *v = new_value)
-            .expect(format!("attempted to recompute unknown parameter '{changed}'").as_str());
+            .unwrap_or_else(|| panic!("attempted to recompute unknown parameter '{changed}'"));
         self.model.params.recompute(changed, &mut self.param_values);
 
         let mut changed_params = vec![changed.to_owned()];
@@ -497,7 +497,7 @@ mod tests {
             return;
         }
         let model = result.expect("unexpected error loading loop_sm UFO");
-        let empty_card = ParamCard::from_str("").unwrap();
+        let empty_card = "".parse::<ParamCard>().unwrap();
         let ev = model.evaluate(&empty_card);
 
         let mz = ev.mass(model.particle_id("Z").expect("no Z in model"));
@@ -515,7 +515,7 @@ mod tests {
             return;
         }
         let model = UFOModel::load(&path, None).expect("failed to load MSSM_SLHA2 UFO");
-        let empty_card = ParamCard::from_str("").unwrap();
+        let empty_card = "".parse::<ParamCard>().unwrap();
         let ev = model.evaluate(&empty_card);
 
         let tb = ev.param_values["tb"].re;
@@ -542,12 +542,9 @@ mod tests {
             .expect("failed to load taudecay param_card.dat");
 
         let result = UFOModel::load(&path, None);
-        match &result {
-            Err(UfoError::Lorentz(LorentzError::UnknownOperator(op))) => {
-                eprintln!("taudecay_UFO: uses unsupported Lorentz operator '{op}' — skipping");
-                return;
-            }
-            _ => {}
+        if let Err(UfoError::Lorentz(LorentzError::UnknownOperator(op))) = &result {
+            eprintln!("taudecay_UFO: uses unsupported Lorentz operator '{op}' — skipping");
+            return;
         }
         let model = result.expect("failed to load taudecay UFO");
         let ev = model.evaluate(&card);
@@ -571,7 +568,7 @@ mod tests {
         }
         let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
 
-        let empty_card = ParamCard::from_str("").unwrap();
+        let empty_card = "".parse::<ParamCard>().unwrap();
         let ev = model.evaluate(&empty_card);
 
         let as_val = ev.param_values["aS"].re;
@@ -603,7 +600,7 @@ mod tests {
             return;
         }
         let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
-        let empty_card = ParamCard::from_str("").unwrap();
+        let empty_card = "".parse::<ParamCard>().unwrap();
         let mut ev = model.evaluate(&empty_card);
 
         let new_as = 0.130f64;

@@ -116,7 +116,7 @@ pub fn build_feyngraph_model(
         let mut coupling_orders: FxHashMap<String, usize> = FxHashMap::default();
 
         // Process all couplings associated with this vertex
-        for (_coupling_key, &coupling_id) in &vertex.couplings {
+        for &coupling_id in vertex.couplings.values() {
             let coupling_def = &couplings[coupling_id];
 
             // Extract coupling order information from the coupling definition

@@ -722,15 +722,15 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     {
         let fo = &self.0;
         let fi = &fi.0;
-        ComplexVector {
-            0: [
+        ComplexVector(
+            [
                 fo[2] * fi[0] + fo[3] * fi[1],
                 -(fo[2] * fi[1] + fo[3] * fi[0]),
                 ri(F::ONE) * (fo[2] * fi[1] - fo[3] * fi[0]),
                 -fo[2] * fi[0] + fo[3] * fi[1],
             ],
-            1: PhantomData,
-        }
+            PhantomData,
+        )
     }
 
     /// Right current
@@ -750,15 +750,15 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     {
         let fo = &self.0;
         let fi = &fi.0;
-        ComplexVector {
-            0: [
+        ComplexVector(
+            [
                 fo[0] * fi[2] + fo[1] * fi[3],
                 fo[0] * fi[3] + fo[1] * fi[2],
                 -ri(F::one()) * (fo[0] * fi[3] - fo[1] * fi[2]),
                 fo[0] * fi[2] - fo[1] * fi[3],
             ],
-            1: PhantomData,
-        }
+            PhantomData,
+        )
     }
 
     /// Scalar bilinear contraction: `f̄ Γ f` where `Γ` encodes chirality.

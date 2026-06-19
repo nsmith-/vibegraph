@@ -87,7 +87,7 @@ mod validate_vegas {
         let sigma_analytic = 4.0 * PI * ALPHA_QED_MZ * ALPHA_QED_MZ / (3.0 * s);
 
         let (evaluator, model) = build_evaluator();
-        let empty_card = ParamCard::from_str("").unwrap();
+        let empty_card = "".parse::<ParamCard>().unwrap();
         let evaluated = model.evaluate(&empty_card);
 
         let (sigma, err) = sigma_ee_mumu(&evaluator, &evaluated, sqrt_s, (-1.0, 1.0), 50_000, 10);
@@ -122,7 +122,7 @@ mod validate_vegas {
         let cos_max = cos_max_ptl.min(cos_max_eta);
 
         let (evaluator, model) = build_evaluator();
-        let empty_card = ParamCard::from_str("").unwrap();
+        let empty_card = "".parse::<ParamCard>().unwrap();
         let evaluated = model.evaluate(&empty_card);
 
         let (sigma, _err) = sigma_ee_mumu(
@@ -162,7 +162,7 @@ mod validate_vegas {
         let cos_max = (1.0 - (PTL_CUT / p_cm).powi(2)).sqrt().min(ETAL_CUT.tanh());
 
         let (evaluator, model) = build_evaluator();
-        let empty_card = ParamCard::from_str("").unwrap();
+        let empty_card = "".parse::<ParamCard>().unwrap();
         let evaluated = model.evaluate(&empty_card);
 
         let (sigma, err) = sigma_ee_mumu(
