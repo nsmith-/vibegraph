@@ -7,52 +7,115 @@
 //!
 //! The key insight: an undirected Feynman diagram has no intrinsic evaluation order,
 //! but choosing a root makes it a tree. We do this by starting at any external vertex
-//! and recursively processing unvisited neighbors. Each vertex becomes an evaluation step
-//! that reads inputs from its children and produces either an off-shell current (if not root)
-//! or the final amplitude (if root).
+//! and recursively processing unvisited neighbors.
+//!
+//! Rooting is a two-pass walk:
+//! 1. [`RawDiagramTree`] — pure topology with model ids interned ([`RawNode`]). No
+//!    Lorentz rooting, no wavefunctions.
+//! 2. [`DiagramEvalTree`] — the evaluable tree ([`EvalNode`]): each vertex's Lorentz
+//!    structure is rooted at its output leg, and nodes are typed by what they
+//!    produce (external wavefunction, off-shell current, propagator, amplitude).
 
 use std::collections::HashSet;
 
 use feyngraph::diagram::view::{DiagramView, LegView, VertexView};
 use itertools::Either;
 
-use crate::helas::eval::ast::{ExtLegInfo, PropInfo, VertexInfo};
+use crate::helas::eval::ast::{DiagramEval, ExtLegInfo, PropInfo, VertexInfo};
+use crate::helas::eval::tree::Tree;
 use crate::helas::repr::numbers::Charge;
+use crate::ufo::particles::ParticleId;
+use crate::ufo::vertices::VertexId;
 use crate::ufo::UFOModel;
 
-use super::ast::{DiagramAst, EvalStep};
 use super::compile::CompileError;
 
-/// Topological sorting context for a single diagram.
-struct TopoContext<'a> {
-    /// Model for looking up particle and vertex details not available from feyngraph
+// ───────────────────────────── Pass 1: raw topology tree ─────────────────────────────
+
+/// Node id into a [`RawDiagramTree`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RawNodeId(usize);
+
+/// A node in the raw rooted-diagram tree: pure topology with interned model ids,
+/// before Lorentz rooting or wavefunction construction.
+#[derive(Clone, Debug)]
+enum RawNode {
+    /// External leg (tree leaf).
+    Leg {
+        particle: ParticleId,
+        leg_idx: usize,
+        charge: Charge,
+        spin: i32,
+    },
+    /// A vertex. `result_leg_idx` is the output (continuation) leg for a non-root
+    /// vertex, or `None` for the root. `children` are the input nodes in vertex-leg
+    /// order, with the output-leg position omitted.
+    Vertex {
+        vertex: VertexId,
+        result_leg_idx: Option<usize>,
+        children: Vec<RawNodeId>,
+    },
+}
+
+impl RawNode {
+    fn children(&self) -> Vec<RawNodeId> {
+        match self {
+            RawNode::Leg { .. } => vec![],
+            RawNode::Vertex { children, .. } => children.clone(),
+        }
+    }
+}
+
+/// Pure-topology rooted tree produced by the first walk.
+struct RawDiagramTree {
+    nodes: Vec<RawNode>,
+    root: RawNodeId,
+}
+
+impl Tree for RawDiagramTree {
+    type Item = RawNode;
+    type NodeId = RawNodeId;
+
+    fn children(&self, node: Self::NodeId) -> impl Iterator<Item = Self::NodeId> {
+        self.value(node).children().into_iter()
+    }
+
+    fn value(&self, node: Self::NodeId) -> &Self::Item {
+        &self.nodes[node.0]
+    }
+
+    fn root(&self) -> Self::NodeId {
+        self.root
+    }
+
+    fn iter(&self) -> impl Iterator<Item = Self::NodeId> {
+        (0..self.nodes.len()).map(RawNodeId)
+    }
+}
+
+/// Builder for the raw topology tree.
+struct RawBuilder<'a> {
     model: &'a UFOModel,
-    /// Next available slot for internal propagators
-    next_slot: usize,
-    /// Steps to emit (in order)
-    steps: Vec<EvalStep>,
-    /// Set of processed vertices
+    nodes: Vec<RawNode>,
     processed_vertices: HashSet<usize>,
 }
 
-impl<'a> TopoContext<'a> {
-    /// Create a new context for topological ordering.
+impl<'a> RawBuilder<'a> {
     fn new(model: &'a UFOModel) -> Self {
-        TopoContext {
-            model: model,
-            next_slot: 0,
-            steps: Vec::new(),
+        RawBuilder {
+            model,
+            nodes: Vec::new(),
             processed_vertices: HashSet::new(),
         }
     }
 
-    fn next_slot(&mut self) -> usize {
-        let slot = self.next_slot;
-        self.next_slot += 1;
-        slot
+    fn add(&mut self, node: RawNode) -> RawNodeId {
+        let id = RawNodeId(self.nodes.len());
+        self.nodes.push(node);
+        id
     }
 
-    fn make_externalwf(&mut self, leg: LegView) -> EvalStep {
+    fn make_leg(&mut self, leg: LegView) -> RawNodeId {
         let particle = leg.particle();
         let particle_id = self
             .model
@@ -72,53 +135,43 @@ impl<'a> TopoContext<'a> {
             model_particle.pdg_code
         );
 
-        EvalStep::ExternalWf {
-            info: ExtLegInfo {
-                id: particle_id,
-                leg_idx: leg.index(),
-                charge: match particle.is_anti() {
-                    true => Charge::Antiparticle,
-                    false => Charge::Particle,
-                },
-                spin: model_particle.spin,
+        self.add(RawNode::Leg {
+            particle: particle_id,
+            leg_idx: leg.index(),
+            charge: match particle.is_anti() {
+                true => Charge::Antiparticle,
+                false => Charge::Particle,
             },
-            output_slot: self.next_slot(),
-        }
+            spin: model_particle.spin,
+        })
     }
 
     /// Recursively walk the diagram tree from a root vertex.
     ///
     /// Process all propagators attached to `vtx`. For each:
-    /// - If external leg: emit ExternalWf step and store input slot
-    /// - If internal (unvisited): recurse to the other vertex and store its output
-    /// - If internal (visited): skip (came from here via result_leg_idx)
+    /// - external leg: emit a `Leg` child
+    /// - internal (unvisited): recurse to the other vertex and keep its node as a child
+    /// - internal (visited): skip — this is the output leg we came from
     ///
-    /// Then emit the appropriate step for this vertex:
-    /// - If not root (result_leg_idx is Some): emit OffShellCurrent + Propagate
-    /// - If root (result_leg_idx is None): emit ContractAmplitude
-    ///
-    /// Returns the step that produces this vertex's output (OffShellCurrent's Propagate
-    /// for non-root, or ContractAmplitude for root). This return value is accumulated
-    /// into parent vertices' input slots.
-    fn walk_vertex(&mut self, vtx: &VertexView, result_leg_idx: Option<usize>) -> EvalStep {
+    /// `children` collects the input nodes in vertex-leg order with the output-leg
+    /// position omitted; `result_leg_idx` records that position so the second pass
+    /// can root the vertex's Lorentz structure there (the rooted tree's `Leg(i)`
+    /// references are then compacted to index this gap-free child list directly).
+    fn walk_vertex(&mut self, vtx: &VertexView, result_leg_idx: Option<usize>) -> RawNodeId {
         self.processed_vertices.insert(vtx.id());
-        let mut slots = vec![];
+        let mut children = vec![];
         for (idx, prop) in vtx.propagators_ordered().enumerate() {
-            let is_upstream = result_leg_idx.map_or(false, |ir| ir == idx);
+            let is_upstream = result_leg_idx.is_some_and(|ir| ir == idx);
             match (is_upstream, prop) {
                 (false, Either::Left(leg)) => {
-                    let step = self.make_externalwf(leg);
-                    slots.push(step.output_slot());
-                    self.steps.push(step);
+                    children.push(self.make_leg(leg));
                 }
                 (false, Either::Right(prop)) => {
                     prop.vertices().enumerate().for_each(|(vidx, next_vtx)| {
                         // Either it is the vertex we are at or the next one the propagator goes to
                         if !self.processed_vertices.contains(&next_vtx.id()) {
                             let this_prop = prop.ray_index_ordered(vidx);
-                            let step = self.walk_vertex(&next_vtx, Some(this_prop));
-                            slots.push(step.output_slot());
-                            self.steps.push(step);
+                            children.push(self.walk_vertex(&next_vtx, Some(this_prop)));
                         }
                     });
                 }
@@ -126,53 +179,207 @@ impl<'a> TopoContext<'a> {
                     panic!("An external leg cannot be the result leg for a vertex");
                 }
                 (true, Either::Right(_)) => {
-                    // This is the result (output) leg — the propagator we came from.
-                    // It has no input wavefunction yet, but we must keep `slots`
-                    // aligned with the vertex's leg ordering so the rooted Lorentz
-                    // structure's 1-based Leg(i) references resolve correctly even
-                    // when the output is not the last leg (e.g. an off-shell fermion
-                    // current). This placeholder is never read: an off-shell current
-                    // never references its own output leg as an input.
-                    slots.push(usize::MAX);
+                    // The output (result) leg — the propagator we came from. It has
+                    // no input wavefunction, so it contributes no child; the gap is
+                    // tracked by `result_leg_idx`.
                 }
             }
         }
 
-        let model_vertex_id = self
+        let vertex = self
             .model
             .vertex_id(vtx.interaction().name())
             .expect("no vertex in UFO");
 
-        // After processing all connections, emit the appropriate step for this vertex
-        if let Some(result_leg_idx) = result_leg_idx {
-            // This is an internal vertex, so push OffShellCurrent and return Propagate step
-            let contraction = EvalStep::OffShellCurrent {
-                info: VertexInfo::from_ufo(self.model, model_vertex_id, Some(result_leg_idx)),
-                input_slots: slots,
-                output_slot: self.next_slot(),
-            };
-            let contraction_output_slot = contraction.output_slot();
-            self.steps.push(contraction);
-            // return propagation step
-            EvalStep::Propagate {
-                info: PropInfo {
-                    id: self.model.vertex_def(model_vertex_id).particles[result_leg_idx],
-                },
-                input_slot: contraction_output_slot,
-                output_slot: self.next_slot(),
+        self.add(RawNode::Vertex {
+            vertex,
+            result_leg_idx,
+            children,
+        })
+    }
+}
+
+// ───────────────────────────── Pass 2: evaluable tree ─────────────────────────────
+
+/// Node id into a [`DiagramEvalTree`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EvalNodeId(usize);
+
+/// A node in the evaluable diagram tree, typed by what it produces.
+#[derive(Clone, Debug)]
+pub enum EvalNode {
+    /// External wavefunction (leaf): built from momentum + helicity at eval time.
+    External(ExtLegInfo),
+    /// Off-shell current: apply the vertex to its input children. `children` are in
+    /// vertex-leg order with the output position omitted, and the vertex's rooted
+    /// Lorentz tree indexes them directly (its leg references were compacted at
+    /// compile time, see `LorentzEvalTree::build_at_leg`).
+    OffShellCurrent {
+        info: VertexInfo,
+        children: Vec<EvalNodeId>,
+    },
+    /// Propagator applied to its single child off-shell current.
+    Propagate { info: PropInfo, child: EvalNodeId },
+    /// Root vertex: contract all children into the scalar amplitude.
+    ContractAmplitude {
+        info: VertexInfo,
+        children: Vec<EvalNodeId>,
+    },
+}
+
+impl EvalNode {
+    fn children(&self) -> Vec<EvalNodeId> {
+        match self {
+            EvalNode::External(_) => vec![],
+            EvalNode::OffShellCurrent { children, .. } => children.clone(),
+            EvalNode::Propagate { child, .. } => vec![*child],
+            EvalNode::ContractAmplitude { children, .. } => children.clone(),
+        }
+    }
+
+    fn render(&self, body: String) -> String {
+        match self {
+            EvalNode::External(info) => format!("ExternalWf({})", info),
+            EvalNode::OffShellCurrent { info, .. } => {
+                format!("OffShellCurrent({}; {})", info, body)
             }
-        } else {
-            // This is the top vertex, so emit ContractAmplitude step
-            let step = EvalStep::ContractAmplitude {
-                info: VertexInfo::from_ufo(self.model, model_vertex_id, None),
-                input_slots: slots,
-                output_slot: self.next_slot(),
-            };
-            self.steps.push(step.clone());
-            step
+            EvalNode::Propagate { info, .. } => {
+                format!("Propagate({:?}; {})", info.id, body)
+            }
+            EvalNode::ContractAmplitude { info, .. } => {
+                format!("ContractAmplitude({}; {})", info, body)
+            }
         }
     }
 }
+
+/// The evaluable rooted tree for a single diagram (second-pass output).
+#[derive(Clone, Debug)]
+pub struct DiagramEvalTree {
+    nodes: Vec<EvalNode>,
+    root: EvalNodeId,
+}
+
+impl Tree for DiagramEvalTree {
+    type Item = EvalNode;
+    type NodeId = EvalNodeId;
+
+    fn children(&self, node: Self::NodeId) -> impl Iterator<Item = Self::NodeId> {
+        self.value(node).children().into_iter()
+    }
+
+    fn value(&self, node: Self::NodeId) -> &Self::Item {
+        &self.nodes[node.0]
+    }
+
+    fn root(&self) -> Self::NodeId {
+        self.root
+    }
+
+    fn iter(&self) -> impl Iterator<Item = Self::NodeId> {
+        (0..self.nodes.len()).map(EvalNodeId)
+    }
+}
+
+impl DiagramEvalTree {
+    fn add(nodes: &mut Vec<EvalNode>, node: EvalNode) -> EvalNodeId {
+        let id = EvalNodeId(nodes.len());
+        nodes.push(node);
+        id
+    }
+
+    /// Bake a raw topology tree into the evaluable tree: root each vertex's Lorentz
+    /// structure and type each node by what it produces.
+    fn bake(raw: &RawDiagramTree, model: &UFOModel) -> Self {
+        let mut nodes = Vec::with_capacity(raw.nodes.len());
+        let root = Self::bake_node(raw, raw.root, model, &mut nodes);
+        DiagramEvalTree { nodes, root }
+    }
+
+    fn bake_node(
+        raw: &RawDiagramTree,
+        id: RawNodeId,
+        model: &UFOModel,
+        nodes: &mut Vec<EvalNode>,
+    ) -> EvalNodeId {
+        match raw.value(id) {
+            RawNode::Leg {
+                particle,
+                leg_idx,
+                charge,
+                spin,
+            } => Self::add(
+                nodes,
+                EvalNode::External(ExtLegInfo {
+                    id: *particle,
+                    leg_idx: *leg_idx,
+                    charge: *charge,
+                    spin: *spin,
+                }),
+            ),
+            RawNode::Vertex {
+                vertex,
+                result_leg_idx,
+                children,
+            } => {
+                let baked: Vec<EvalNodeId> = children
+                    .iter()
+                    .map(|&c| Self::bake_node(raw, c, model, nodes))
+                    .collect();
+                match result_leg_idx {
+                    Some(ri) => {
+                        // Internal vertex: off-shell current rooted at the output leg,
+                        // wrapped by the propagator on that leg.
+                        let info = VertexInfo::from_ufo(model, *vertex, Some(*ri));
+                        let prop_id = model.vertex_def(*vertex).particles[*ri];
+                        let current = Self::add(
+                            nodes,
+                            EvalNode::OffShellCurrent {
+                                info,
+                                children: baked,
+                            },
+                        );
+                        Self::add(
+                            nodes,
+                            EvalNode::Propagate {
+                                info: PropInfo { id: prop_id },
+                                child: current,
+                            },
+                        )
+                    }
+                    None => {
+                        // Root vertex: contract all legs into the scalar amplitude.
+                        let info = VertexInfo::from_ufo(model, *vertex, None);
+                        Self::add(
+                            nodes,
+                            EvalNode::ContractAmplitude {
+                                info,
+                                children: baked,
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_expression(&self) -> String {
+        self.fold_recursive(
+            &|node, acc| node.render(acc),
+            &|acc, r| if acc.is_empty() { r } else { acc + ", " + &r },
+            String::new(),
+            self.root,
+        )
+    }
+}
+
+impl std::fmt::Display for DiagramEvalTree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.render_expression())
+    }
+}
+
+// ───────────────────────────── Fermion-line sign ─────────────────────────────
 
 /// Trace the fermion line that enters `start_vtx` at ordered ray `in_ray`,
 /// following spinor connectivity until it reaches an external leg.
@@ -250,49 +457,36 @@ fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> i8 {
     sign
 }
 
-/// Compile a single diagram into an evaluable AST.
+// ───────────────────────────── Compile entry point ─────────────────────────────
+
+/// Compile a single diagram into an evaluable tree.
 ///
-/// Recursively walk from an arbitrary root vertex, building a directed evaluation tree.
-/// External legs produce slots 0..n_ext (immediately available). Internal vertices are
-/// processed depth-first as children feed their outputs upward. The root vertex emits
-/// the final ContractAmplitude step.
+/// Walk from an arbitrary root vertex to build the raw topology tree, then bake it
+/// into the evaluable [`DiagramEvalTree`] (Lorentz structures rooted at output legs,
+/// nodes typed by produced wavefunction).
 ///
 /// # Arguments
 /// * `view` — DiagramView with vertices and propagators
 /// * `model` — UFO model for vertex/particle/coupling lookups
-///
-/// # Returns
-/// A DiagramAst with steps in evaluation order, ready to run against phase-space points.
 pub fn compile_single_diagram(
     view: &DiagramView,
     model: &UFOModel,
-) -> Result<DiagramAst, CompileError> {
+) -> Result<DiagramEval, CompileError> {
     let n_ext = view.legs().count();
 
-    let mut ctx = TopoContext::new(model);
-
     // Choose an arbitrary root vertex (the first one) and walk the tree from there.
-    // External legs are handled as we encounter them, and internal propagators
-    // trigger recursive walks to unvisited vertices. The final step emitted
-    // (from the root) is a ContractAmplitude.
-    let start_vertex = view.vertex(0);
-
-    let amplitude_slot = match ctx.walk_vertex(&start_vertex, None) {
-        EvalStep::ContractAmplitude {
-            output_slot: result_slot,
-            ..
-        } => result_slot,
-        _ => {
-            return Err(CompileError::TopologyError(
-                "Topological sort did not produce a ContractAmplitude step".to_string(),
-            ));
-        }
+    let mut builder = RawBuilder::new(model);
+    let raw_root = builder.walk_vertex(&view.vertex(0), None);
+    let raw = RawDiagramTree {
+        nodes: builder.nodes,
+        root: raw_root,
     };
-    Ok(DiagramAst {
+
+    let tree = DiagramEvalTree::bake(&raw, model);
+
+    Ok(DiagramEval {
         n_ext,
-        n_slots: ctx.next_slot,
-        steps: ctx.steps,
-        amplitude_slot,
+        tree,
         symmetry_factor: 1.0 / view.symmetry_factor() as f64,
         fermi_sign: view.sign() * initial_state_spine_sign(view, model),
     })
@@ -326,8 +520,8 @@ mod tests {
         for set in sets {
             for view in set.diagrams.views() {
                 println!("Testing diagram {}", view);
-                let ast = compile_single_diagram(&view, model).expect("compilation failed");
-                println!("Generated AST: {:#?}", ast);
+                let diagram = compile_single_diagram(&view, model).expect("compilation failed");
+                println!("Generated tree: {}", diagram.tree);
             }
         }
     }

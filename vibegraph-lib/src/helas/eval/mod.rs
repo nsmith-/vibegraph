@@ -5,11 +5,12 @@
 //! configuration.
 //!
 //! The evaluator consists of:
-//! - `ast.rs` — AST data structures (DiagramAst, EvalStep, WaveformSlot, descriptors)
-//! - `compile.rs` — Compile phase: DiagramView + UFOModel → DiagramAst (leg/prop extraction)
-//! - `topo_sort.rs` — Topological ordering: dependency graph → evaluation steps
-//! - `dispatch.rs` — Vertex dispatch: VertexInfo + slots → result
-//! - `run.rs` — Evaluation phase: DiagramAst × momenta × helicities → amplitude
+//! - `ast.rs` — Data structures (DiagramEval, VertexInfo, leg/prop descriptors)
+//! - `compile.rs` — Compile phase: DiagramSet + UFOModel → DiagramEval
+//! - `root_diagram.rs` — Two-pass diagram rooting: DiagramView → DiagramEvalTree
+//! - `root_lorentz.rs` — Vertex dispatch: LorentzTerm → rooted LorentzEvalTree
+//! - `tree.rs` — Generic tree trait + linearization onto a stack machine
+//! - `run.rs` — Evaluation phase: DiagramEval × momenta × helicities → amplitude
 
 mod ast;
 mod compile;
@@ -17,13 +18,12 @@ mod root_diagram;
 mod root_lorentz;
 mod run;
 
-// TODO: allow dead code warnings for the tree module until we fully integrate it.
+// TODO(Step 4): drop once the remaining tree helpers (max_depth, len) gain users.
 #[allow(dead_code)]
 mod tree;
 
 mod waveform_slot;
 
-pub use ast::DiagramAst;
 pub use compile::{compile_diagram_ast, CompileError};
 pub use run::AmplitudeEvaluator;
 
