@@ -7,6 +7,7 @@
 ///
 /// This trait provides methods for accessing children, values, and the root of the tree,
 /// as well as utility methods for folding and linearizing the tree.
+
 pub trait Tree {
     type Item;
     type NodeId: Copy + Eq + From<usize>;
@@ -22,7 +23,11 @@ pub trait Tree {
 
     /// Get the maximum depth of the tree.
     fn max_depth(&self) -> usize {
-        self.fold_recursive(&|_, a: usize| a + 1, &|a, d| a.max(d), 0usize, self.root())
+        let d = self.fold_recursive(&|_, a: usize| a + 1, &|a, d| a.max(d), 0usize, self.root());
+        // The fold_recursive call returns the depth including the current node,
+        // so we subtract 1 to get the maximum depth relative to the root.
+        assert!(d > 0);
+        d - 1
     }
 
     /// General tree fold helper function
@@ -114,6 +119,16 @@ mod tests {
         fn root(&self) -> Self::NodeId {
             0
         }
+    }
+
+    #[test]
+    fn test_max_depth() {
+        let tree = TestTree {
+            values: vec![1, 2, 3, 4],
+            children: vec![vec![1, 2], vec![3], vec![], vec![]],
+        };
+        let max_depth = tree.max_depth();
+        assert_eq!(max_depth, 2);
     }
 
     #[test]

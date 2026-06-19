@@ -16,7 +16,11 @@ mod compile;
 mod root_diagram;
 mod root_lorentz;
 mod run;
+
+// TODO: allow dead code warnings for the tree module until we fully integrate it.
+#[allow(dead_code)]
 mod tree;
+
 mod waveform_slot;
 
 pub use ast::DiagramAst;
