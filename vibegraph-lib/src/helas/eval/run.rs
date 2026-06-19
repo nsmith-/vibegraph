@@ -456,20 +456,22 @@ fn evaluate_contract_amplitude<F: Real + FromPrimitive>(
     accum
 }
 
-/// Resolve the two fermion legs of a bilinear into (bra = flow-out, ket = flow-in)
-/// by their *actual* runtime flow, not the UFO `Gamma` i/j position. A fermion
-/// line carries one flow throughout, so with physically-typed externals (see
-/// `build_external_slot`) and flow-preserving currents, the two fermions meeting
-/// at any vertex always have opposite flow. Picking bra/ket structurally (the old
-/// `expect_fermion_in`/`out` coercion) silently dualizes the wrong leg whenever
-/// feyngraph maps a ket-end external into the barred slot (e.g. ISR continuum).
+/// Resolve the two fermion legs of a bilinear into `(bra = flow-out, ket = flow-in,
+/// reversed)` by their *actual* runtime flow, not the UFO `Gamma` i/j position. A
+/// fermion line carries one flow throughout, so with physically-typed externals
+/// (see `build_external_slot`) and flow-preserving currents, the two fermions
+/// meeting at any vertex always have opposite flow.
+///
+/// `reversed` is `true` when the slots arrive in `(flow-in, flow-out)` order, i.e.
+/// the line runs against the vertex's defined flow; callers use it to apply the
+/// flow-reversal sign η_Γ of their Lorentz structure.
 fn resolve_bra_ket<F: Real>(
     a: WaveformSlot<F>,
     b: WaveformSlot<F>,
-) -> (OutDiracWf<F>, InDiracWf<F>) {
+) -> (OutDiracWf<F>, InDiracWf<F>, bool) {
     match (a, b) {
-        (WaveformSlot::FermionOut(fo), WaveformSlot::FermionIn(fi)) => (fo, fi),
-        (WaveformSlot::FermionIn(fi), WaveformSlot::FermionOut(fo)) => (fo, fi),
+        (WaveformSlot::FermionOut(fo), WaveformSlot::FermionIn(fi)) => (fo, fi, false),
+        (WaveformSlot::FermionIn(fi), WaveformSlot::FermionOut(fo)) => (fo, fi, true),
         _ => panic!("a fermion bilinear needs exactly one flow-in and one flow-out leg"),
     }
 }
@@ -516,9 +518,13 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
         LorentzEvalNode::GammaVout { i, j } => {
             let f1 = evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots);
             let f2 = evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots);
-            let (fo, fi) = resolve_bra_ket(f1, f2);
+            let (fo, fi, reversed) = resolve_bra_ket(f1, f2);
+            let eps = fo.vector_bilinear(&fi, Chirality::Both);
+            // Reading the fermion line against the vertex's defined flow conjugates
+            // the structure as C γ^{μT} C⁻¹ = −γ^μ, so the vector current picks up a
+            // relative −1. (Scalar/pseudoscalar structures have +1 and need no flip.)
             WaveformSlot::Vector(VectorWf {
-                eps: fo.vector_bilinear(&fi, Chirality::Both),
+                eps: if reversed { -eps } else { eps },
                 momentum: fo.momentum - fi.momentum,
             })
         }
@@ -606,7 +612,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             // Left-chiral scalar bilinear ψ̄ P_L ψ; bra/ket picked by actual flow.
             let f1 = evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots);
             let f2 = evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots);
-            let (fo, fi_col) = resolve_bra_ket(f1, f2);
+            let (fo, fi_col, _) = resolve_bra_ket(f1, f2);
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Left);
             WaveformSlot::Scalar(ScalarWf {
                 value,
@@ -617,7 +623,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             // Right-chiral scalar bilinear ψ̄ P_R ψ; bra/ket picked by actual flow.
             let f1 = evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots);
             let f2 = evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots);
-            let (fo, fi_col) = resolve_bra_ket(f1, f2);
+            let (fo, fi_col, _) = resolve_bra_ket(f1, f2);
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Right);
             WaveformSlot::Scalar(ScalarWf {
                 value,
@@ -637,7 +643,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             // Full scalar bilinear ψ̄ δ ψ = ψ̄ (P_L+P_R) ψ; bra/ket by actual flow.
             let f1 = evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots);
             let f2 = evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots);
-            let (fo, fi_col) = resolve_bra_ket(f1, f2);
+            let (fo, fi_col, _) = resolve_bra_ket(f1, f2);
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Both);
             WaveformSlot::Scalar(ScalarWf {
                 value,
@@ -1686,7 +1692,7 @@ mod tests {
             println!("AST {}: {:?}", i, ast);
         }
         let n = asts.len();
-        // The e-spine relative −1 vs MadGraph is now carried by `fermi_sign`
+        // The e-spine relative −1 vs MadGraph is carried by `fermi_sign`
         // (topo_sort::initial_state_spine_sign), applied inside
         // eval_single_diagram — no manual flip here.
         let mut diag = vec![0.0f64; n];

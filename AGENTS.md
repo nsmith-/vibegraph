@@ -57,7 +57,7 @@ For paper references, submodule locations and key paths, and instructions for fe
 
 - **Natural units**: ℏ = c = 1 (GeV is the fundamental energy scale)
 - **Metric signature**: (+, −, −, −)
-- **Comment guidelines**: Avoid narrative comments; add notes only for non-obvious constraints or physics assumptions
+- **Comment guidelines**: Avoid narrative comments; add notes only for non-obvious constraints or physics assumptions. Document what the code *does now*, not what it used to do or what was tried before — git history records that, and "the old X" / "no longer Y" framing is just distraction.
 - **Four-momentum layout**: `[E, px, py, pz]` (energy first, spatial components follow)
 
 ## Build & Test
