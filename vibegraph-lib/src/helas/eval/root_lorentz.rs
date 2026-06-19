@@ -33,6 +33,15 @@ pub enum CompileError {
     InvalidStructure(String),
 }
 
+impl std::fmt::Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompileError::UnsupportedVertex(s) => write!(f, "unsupported vertex: {s}"),
+            CompileError::InvalidStructure(s) => write!(f, "invalid structure: {s}"),
+        }
+    }
+}
+
 /// Descriptor for one term in the vertex lorentz structure, with dispatch info and resolved rooted node.
 ///
 /// Index labels follow the convention:
@@ -132,9 +141,15 @@ impl Tree for LorentzEvalTree {
     fn root(&self) -> Self::NodeId {
         self.root.expect("LorentzEvalTree has no root node")
     }
+
+    fn iter(&self) -> impl Iterator<Item = Self::NodeId> {
+        0..self.nodes.len()
+    }
 }
 
 impl LorentzEvalTree {
+    /// The value at the root node. Used by tests to assert the rooted primitive.
+    #[cfg(test)]
     pub fn root_value(&self) -> &LorentzEvalNode {
         self.value(self.root())
     }
@@ -395,6 +410,22 @@ impl LorentzEvalTree {
         };
 
         tree.root = Some(root);
+
+        // The output leg is never referenced by an off-shell current, so its
+        // position is a hole in the input-leg numbering. Compact the leg references
+        // by dropping that hole: every input leg above `out` shifts down by one, so
+        // `Leg(i)`/`P{leg}` index directly into the caller's gap-free input list
+        // (vertex legs in order, output omitted) with no per-eval reindexing.
+        if let Some(out) = idx {
+            for node in &mut tree.nodes {
+                match node {
+                    LorentzEvalNode::Leg(i) if *i > out => *i -= 1,
+                    LorentzEvalNode::P { leg } if *leg > out => *leg -= 1,
+                    _ => {}
+                }
+            }
+        }
+
         Ok(tree)
     }
 
@@ -444,22 +475,33 @@ mod tests {
         // VVS1: Metric(1,2), spins [3,3,1] (Z, Z, H). Rooting at a *vector* leg
         // (the off-shell Z current of an HZZ vertex) must raise that index via
         // the metric: the current is the OTHER vector leg × the scalar leg — a
-        // vector, NOT a scalar contraction. It must never reference its own
-        // output leg as an input (which would read topo_sort's output-leg
-        // placeholder and panic). Regression for the VVS Leg/placeholder crash.
+        // vector, NOT a scalar contraction. It must never reference its own output
+        // leg as an input; since `build_at_leg` compacts leg references over the
+        // removed output, that means every `Leg(i)` must land in the gap-free input
+        // range `0..n_legs-1`. Regression for the VVS Leg/placeholder crash.
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
         };
         let spins = vec![3, 3, 1];
+        let n_inputs = spins.len() - 1; // gap-free input legs (output removed)
 
-        // Output = vector leg 0: current = Leg(1) × Leg(2), no Leg(0).
+        let max_leg = |t: &LorentzEvalTree| {
+            t.nodes
+                .iter()
+                .filter_map(|n| match n {
+                    LorentzEvalNode::Leg(i) => Some(*i),
+                    _ => None,
+                })
+                .max()
+        };
+
+        // Output = vector leg 0: current = (other vector) × (scalar), both compacted
+        // into 0..n_inputs.
         let t0 = LorentzEvalTree::build_at_leg(&term, &spins, Some(0)).unwrap();
         assert!(
-            !t0.nodes
-                .iter()
-                .any(|n| matches!(n, LorentzEvalNode::Leg(0))),
-            "VVS rooted at leg 1 must not consume its own output leg: {t0:?}"
+            max_leg(&t0).is_some_and(|m| m < n_inputs),
+            "VVS rooted at leg 0 must only index the gap-free inputs: {t0:?}"
         );
         assert!(
             matches!(t0.root_value(), LorentzEvalNode::Mul { .. }),
@@ -467,13 +509,11 @@ mod tests {
             t0.root_value()
         );
 
-        // Output = vector leg 2 (idx 1): current = Leg(0) × Leg(2), no Leg(1).
+        // Output = vector leg 2 (idx 1): same invariant.
         let t1 = LorentzEvalTree::build_at_leg(&term, &spins, Some(1)).unwrap();
         assert!(
-            !t1.nodes
-                .iter()
-                .any(|n| matches!(n, LorentzEvalNode::Leg(1))),
-            "VVS rooted at leg 2 must not consume its own output leg: {t1:?}"
+            max_leg(&t1).is_some_and(|m| m < n_inputs),
+            "VVS rooted at leg 1 must only index the gap-free inputs: {t1:?}"
         );
 
         // Output = scalar leg 3 (idx 2): unchanged — a Metric contraction → scalar H.

@@ -1,13 +1,13 @@
-//! Diagram compilation: DiagramSet + UFOModel → DiagramAst(s)
+//! Diagram compilation: DiagramSet + UFOModel → DiagramEval(s)
 //!
 //! This module implements the compile-time phase of the amplitude evaluator:
-//! converting feyngraph DiagramView objects into optimized DiagramAst structures
+//! converting feyngraph DiagramView objects into evaluable DiagramEval trees
 //! that can be efficiently evaluated at runtime against phase-space points.
 
 use crate::diagrams::DiagramSet;
 use crate::ufo::UFOModel;
 
-use super::ast::DiagramAst;
+use super::ast::DiagramEval;
 use super::root_diagram;
 
 /// Errors during AST compilation.
@@ -54,11 +54,11 @@ impl std::error::Error for CompileError {}
 /// * `model` — The UFO model (needed for particle/vertex/coupling lookups)
 ///
 /// # Returns
-/// Vector of compiled `DiagramAst`, one per diagram in the set
+/// Vector of compiled `DiagramEval`, one per diagram in the set
 pub fn compile_diagram_ast(
     set: &DiagramSet,
     model: &UFOModel,
-) -> Result<Vec<DiagramAst>, CompileError> {
+) -> Result<Vec<DiagramEval>, CompileError> {
     set.diagrams
         .views()
         .map(|view| root_diagram::compile_single_diagram(&view, model))

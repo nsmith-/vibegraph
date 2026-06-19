@@ -25,6 +25,12 @@ pub trait Tree {
     /// Returns the root node of the tree.
     fn root(&self) -> Self::NodeId;
 
+    /// Iterate over every node id, in unspecified (storage) order — NOT tree order.
+    /// This is just for cheaply scanning every node (e.g. collecting couplings);
+    /// resolve a value with [`Tree::value`]. For structural traversal use
+    /// `children`/`root`/`linearize`.
+    fn iter(&self) -> impl Iterator<Item = Self::NodeId>;
+
     /// Get the maximum depth of the tree.
     fn max_depth(&self) -> usize {
         let d = self.fold_recursive(&|_, a: usize| a + 1, &|a, d| a.max(d), 0usize, self.root());
@@ -146,6 +152,9 @@ mod tests {
         }
         fn root(&self) -> Self::NodeId {
             0
+        }
+        fn iter(&self) -> impl Iterator<Item = Self::NodeId> {
+            0..self.values.len()
         }
     }
 

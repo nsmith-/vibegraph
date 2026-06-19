@@ -17,8 +17,9 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 use num_complex::ComplexFloat;
 use num_traits::{FromPrimitive, Zero};
 
-use super::ast::{DiagramAst, EvalStep};
+use super::ast::DiagramEval;
 use super::compile::CompileError;
+use super::root_diagram::EvalNode;
 use super::waveform_slot::WaveformSlot;
 
 /// Compiled amplitude evaluator for all diagrams of a process.
@@ -27,8 +28,8 @@ use super::waveform_slot::WaveformSlot;
 /// from `&EvaluatedModel` so the same evaluator works with any param card.
 #[derive(Debug)]
 pub struct AmplitudeEvaluator {
-    /// One compiled AST per diagram
-    diagram_asts: Vec<DiagramAst>,
+    /// One compiled evaluation tree per diagram
+    diagrams: Vec<DiagramEval>,
     /// Number of external particles
     n_ext: usize,
     /// Number of incoming external particles
@@ -65,11 +66,11 @@ impl AmplitudeEvaluator {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let diagram_asts = compile_diagram_ast(set, model)?;
+        let diagrams = compile_diagram_ast(set, model)?;
         let n_ext = ext_particle_ids.len();
 
         // Compile phase should preserve process external-leg count consistency.
-        if let Some(ast) = diagram_asts.first() {
+        if let Some(ast) = diagrams.first() {
             if ast.n_ext != n_ext {
                 return Err(CompileError::TopologyError(format!(
                     "External-leg mismatch: process has {n_ext}, AST has {}",
@@ -88,7 +89,7 @@ impl AmplitudeEvaluator {
         // Some combinations may always evaluate to zero
 
         Ok(Self {
-            diagram_asts,
+            diagrams,
             n_ext,
             n_in: set.particles_in.len(),
             ext_particle_ids,
@@ -142,7 +143,7 @@ impl AmplitudeEvaluator {
             return C::new(F::zero(), F::zero());
         }
 
-        self.diagram_asts
+        self.diagrams
             .iter()
             .fold(C::new(F::zero(), F::zero()), |acc, ast| {
                 acc + eval_single_diagram(ast, momenta, helicities, evaluated, self.n_in, &[])
@@ -161,7 +162,7 @@ impl AmplitudeEvaluator {
         evaluated: &EvaluatedModel,
         overrides: &[Option<VectorWf<F>>],
     ) -> C<F> {
-        self.diagram_asts
+        self.diagrams
             .iter()
             .fold(C::new(F::zero(), F::zero()), |acc, ast| {
                 acc + eval_single_diagram(ast, momenta, helicities, evaluated, self.n_in, overrides)
@@ -185,7 +186,7 @@ impl AmplitudeEvaluator {
 
     /// Return the number of compiled diagrams.
     pub fn n_diagrams(&self) -> usize {
-        self.diagram_asts.len()
+        self.diagrams.len()
     }
 
     /// Return the valid helicity combinations.
@@ -199,19 +200,19 @@ impl AmplitudeEvaluator {
     pub fn coupling_particle_ids(&self) -> (HashSet<CouplingId>, HashSet<ParticleId>) {
         let mut coupling_ids = HashSet::new();
         let mut particle_ids = HashSet::new();
-        for ast in &self.diagram_asts {
-            for step in &ast.steps {
-                match step {
-                    EvalStep::OffShellCurrent { info, .. }
-                    | EvalStep::ContractAmplitude { info, .. } => {
+        for diagram in &self.diagrams {
+            for id in diagram.tree.iter() {
+                match diagram.tree.value(id) {
+                    EvalNode::OffShellCurrent { info, .. }
+                    | EvalNode::ContractAmplitude { info, .. } => {
                         for term in &info.terms {
                             coupling_ids.insert(term.coupling_id);
                         }
                     }
-                    EvalStep::ExternalWf { info, .. } => {
+                    EvalNode::External(info) => {
                         particle_ids.insert(info.id);
                     }
-                    EvalStep::Propagate { info, .. } => {
+                    EvalNode::Propagate { info, .. } => {
                         particle_ids.insert(info.id);
                     }
                 }
@@ -252,69 +253,77 @@ fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
 }
 
 fn eval_single_diagram<F: Real + FromPrimitive>(
-    ast: &DiagramAst,
+    diagram: &DiagramEval,
     momenta: &[LorentzVector<F>],
     helicities: &[i32],
     evaluated: &EvaluatedModel,
     n_in: usize,
     pol_overrides: &[Option<VectorWf<F>>],
 ) -> C<F> {
-    let mut slots = vec![WaveformSlot::Empty; ast.n_slots];
+    // Linearize the rooted diagram tree and reduce it on a stack: each node sees
+    // its children's already-evaluated wavefunctions.
+    // TODO(perf, Step 4): cache the linearized plan on the diagram at compile time.
+    let result = diagram
+        .tree
+        .linearize(diagram.tree.root())
+        .eval_once(|node, children| {
+            apply_diagram_node(
+                node,
+                children,
+                momenta,
+                helicities,
+                n_in,
+                evaluated,
+                pol_overrides,
+            )
+        });
 
-    for step in &ast.steps {
-        match step {
-            EvalStep::ExternalWf { info, output_slot } => {
-                // TOOD: store necessary info in ExtLegInfo during compile phase instead of reconstructing here
-                slots[*output_slot] = match pol_overrides.get(info.leg_idx) {
-                    Some(Some(vwf)) => WaveformSlot::Vector(*vwf),
-                    _ => build_external_slot(
-                        momenta[info.leg_idx],
-                        helicities[info.leg_idx],
-                        info,
-                        n_in,
-                        evaluated,
-                    ),
-                };
-            }
-            EvalStep::OffShellCurrent {
-                info,
-                input_slots,
-                output_slot,
-            } => {
-                slots[*output_slot] =
-                    evaluate_off_shell_current(info, input_slots, &slots, evaluated);
-            }
-            EvalStep::Propagate {
-                info,
-                input_slot,
-                output_slot,
-            } => {
-                slots[*output_slot] = evaluate_propagation(info, &slots[*input_slot], evaluated);
-            }
-            EvalStep::ContractAmplitude {
-                info,
-                input_slots,
-                output_slot,
-            } => {
-                slots[*output_slot] =
-                    evaluate_contract_amplitude(info, input_slots, &slots, evaluated);
-            }
-        }
-    }
-
-    let amp = match &slots[ast.amplitude_slot] {
+    let amp = match result {
         WaveformSlot::Scalar(s) => s.value,
-        other => panic!(
-            "amplitude slot {} did not contain a scalar: {:?}",
-            ast.amplitude_slot, other
-        ),
+        other => panic!("amplitude did not contain a scalar: {:?}", other),
     };
 
     let factor: C<F> = C::new(
-        real::<F>(ast.symmetry_factor) * real::<F>(ast.fermi_sign as f64),
+        real::<F>(diagram.symmetry_factor) * real::<F>(diagram.fermi_sign as f64),
         F::zero(),
     );
     amp * factor
+}
+
+/// Reduce one diagram node from its children's already-evaluated wavefunctions.
+///
+/// Used as the per-node closure for the linearized (stack-machine) evaluation of a
+/// `DiagramEvalTree`: `children` holds the results of `node`'s children in order.
+fn apply_diagram_node<F: Real + FromPrimitive>(
+    node: &EvalNode,
+    children: &[WaveformSlot<F>],
+    momenta: &[LorentzVector<F>],
+    helicities: &[i32],
+    n_in: usize,
+    evaluated: &EvaluatedModel,
+    pol_overrides: &[Option<VectorWf<F>>],
+) -> WaveformSlot<F> {
+    match node {
+        EvalNode::External(info) => match pol_overrides.get(info.leg_idx) {
+            Some(Some(vwf)) => WaveformSlot::Vector(*vwf),
+            _ => build_external_slot(
+                momenta[info.leg_idx],
+                helicities[info.leg_idx],
+                info,
+                n_in,
+                evaluated,
+            ),
+        },
+        // The vertex's rooted Lorentz tree indexes the gap-free input list directly
+        // (leg references compacted in `build_at_leg`), so `children` is passed as-is.
+        EvalNode::OffShellCurrent { info, .. } => {
+            evaluate_off_shell_current(info, children, evaluated)
+        }
+        EvalNode::Propagate { info, .. } => evaluate_propagation(info, &children[0], evaluated),
+        EvalNode::ContractAmplitude { info, .. } => {
+            evaluate_contract_amplitude(info, children, evaluated)
+        }
+    }
 }
 
 fn build_external_slot<F: Real + FromPrimitive>(
@@ -361,8 +370,7 @@ fn build_external_slot<F: Real + FromPrimitive>(
 
 fn evaluate_off_shell_current<F: Real + FromPrimitive>(
     info: &super::ast::VertexInfo,
-    input_slots: &[usize],
-    slots: &[WaveformSlot<F>],
+    legs: &[WaveformSlot<F>],
     evaluated: &EvaluatedModel,
 ) -> WaveformSlot<F> {
     let mut accum = WaveformSlot::Empty;
@@ -371,7 +379,7 @@ fn evaluate_off_shell_current<F: Real + FromPrimitive>(
         let coupling = complex_from_complex64::<F>(evaluated.coupling(lorentz_term.coupling_id));
         let mut term_accum = WaveformSlot::Empty;
         for structure in &lorentz_term.terms {
-            let term_value = evaluate_lorentz_structure(structure, input_slots, slots);
+            let term_value = evaluate_lorentz_structure(structure, legs);
             term_accum = term_accum + term_value;
         }
         accum = accum + coupling * term_accum;
@@ -437,8 +445,7 @@ fn evaluate_propagation<F: Real + FromPrimitive>(
 
 fn evaluate_contract_amplitude<F: Real + FromPrimitive>(
     info: &super::ast::VertexInfo,
-    input_slots: &[usize],
-    slots: &[WaveformSlot<F>],
+    legs: &[WaveformSlot<F>],
     evaluated: &EvaluatedModel,
 ) -> WaveformSlot<F> {
     let mut accum = WaveformSlot::Empty;
@@ -448,7 +455,7 @@ fn evaluate_contract_amplitude<F: Real + FromPrimitive>(
         let mut term_accum = WaveformSlot::Empty;
 
         for structure in &term.terms {
-            let term_value = evaluate_lorentz_structure(structure, input_slots, slots);
+            let term_value = evaluate_lorentz_structure(structure, legs);
             term_accum = term_accum + term_value;
         }
         accum = accum + coupling * term_accum;
@@ -511,16 +518,16 @@ fn off_shell_fermion_current<F: Real + FromPrimitive>(
 ///
 /// Used as the per-node closure for the linearized (stack-machine) evaluation of a
 /// `LorentzEvalTree`: `children` holds the results of `node.children()` in order.
-/// Leaf nodes (`Leg`, `P`) read the contraction's external inputs via `input_slots`
-/// into the diagram-level `slots`.
+/// Leaf nodes (`Leg`, `P`) read the vertex's input wavefunctions from `legs` — the
+/// gap-free input list (vertex legs in order, output omitted); the tree's leg
+/// references were compacted to match in `LorentzEvalTree::build_at_leg`.
 fn apply_lorentz_node<F: Real + FromPrimitive>(
     node: &LorentzEvalNode,
     children: &[WaveformSlot<F>],
-    input_slots: &[usize],
-    slots: &[WaveformSlot<F>],
+    legs: &[WaveformSlot<F>],
 ) -> WaveformSlot<F> {
     match node {
-        LorentzEvalNode::Leg(i) => slots[input_slots[*i]],
+        LorentzEvalNode::Leg(i) => legs[*i],
         LorentzEvalNode::GammaVout { .. } => {
             let (fo, fi, reversed) = resolve_bra_ket(children[0], children[1]);
             let eps = fo.vector_bilinear(&fi, Chirality::Both);
@@ -619,7 +626,7 @@ fn apply_lorentz_node<F: Real + FromPrimitive>(
             })
         }
         LorentzEvalNode::P { leg } => {
-            let momentum = slots[input_slots[*leg]].momentum().expect("P: empty slot");
+            let momentum = legs[*leg].momentum().expect("P: empty slot");
             WaveformSlot::Vector(VectorWf {
                 eps: ComplexVector::from(momentum),
                 momentum,
@@ -691,20 +698,18 @@ fn apply_lorentz_node<F: Real + FromPrimitive>(
 /// instead of rebuilding it (and the scratch buffer) per phase-space point.
 fn eval_lorentz_tree<F: Real + FromPrimitive>(
     tree: &LorentzEvalTree,
-    input_slots: &[usize],
-    slots: &[WaveformSlot<F>],
+    legs: &[WaveformSlot<F>],
 ) -> WaveformSlot<F> {
     tree.linearize(tree.root())
-        .eval_once(|node, children| apply_lorentz_node(node, children, input_slots, slots))
+        .eval_once(|node, children| apply_lorentz_node(node, children, legs))
 }
 
 fn evaluate_lorentz_structure<F: Real + FromPrimitive>(
     structure: &super::root_lorentz::RootedTerm,
-    input_slots: &[usize],
-    slots: &[WaveformSlot<F>],
+    legs: &[WaveformSlot<F>],
 ) -> WaveformSlot<F> {
     let coeff = F::from(structure.coeff).expect("coef not valid");
-    C::from(coeff) * eval_lorentz_tree(&structure.tree, input_slots, slots)
+    C::from(coeff) * eval_lorentz_tree(&structure.tree, legs)
 }
 
 // TODO: we should preconvert all constants to F or C<F> during the compile phase so we don't have to do this at eval time
@@ -760,9 +765,6 @@ mod tests {
         };
         let tree = LorentzEvalTree::build_at_leg(&term, &[3, 3, 1], Some(0)).unwrap();
 
-        // Slots: leg2 = input vector V2 (slot 1), leg3 = input scalar S (slot 2).
-        // input_slots aligns 1-based Leg(i) → input_slots[i-1]; slot 0 is the
-        // (unused) output leg placeholder.
         let v2 = VectorWf {
             eps: ComplexVector::new([
                 C::new(2.0, 1.0),
@@ -776,16 +778,11 @@ mod tests {
             value: C::new(2.0, 0.0),
             momentum: LorentzVector::new(4.0, 0.0, 0.0, 1.0),
         };
-        let slots = vec![
-            WaveformSlot::Empty,
-            WaveformSlot::Vector(v2),
-            WaveformSlot::Scalar(s),
-        ];
-        let input_slots = vec![0usize, 1, 2];
+        // Rooted at vector leg 0; gap-free inputs are the remaining legs in order:
+        // leg 1 = V2, leg 2 = S.
+        let legs = vec![WaveformSlot::Vector(v2), WaveformSlot::Scalar(s)];
 
-        let WaveformSlot::Vector(out) =
-            eval_lorentz_tree(&tree, &input_slots, &slots)
-        else {
+        let WaveformSlot::Vector(out) = eval_lorentz_tree(&tree, &legs) else {
             panic!("VVS rooted at a vector leg must produce a vector current");
         };
 
@@ -887,7 +884,6 @@ mod tests {
                     coupling_id,
                     Some(2),
                 )],
-                n_legs: 3,
             };
             let prop_info = PropInfo { id: prop_id };
             let amp_info = VertexInfo {
@@ -898,7 +894,6 @@ mod tests {
                     coupling_id,
                     None,
                 )],
-                n_legs: 3,
             };
 
             let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
@@ -932,9 +927,10 @@ mod tests {
                 };
                 assert_eq!(&fo_ep, b);
 
-                let input_slots = vec![0, 1];
-                slots[2] =
-                    evaluate_off_shell_current(&vertex_info, &input_slots, &slots, &evaluated);
+                // Vertex rooted at the vector leg (idx 2); inputs are the two
+                // fermion legs in leg order. Leg 2 (output) is never referenced.
+                let legs = vec![slots[0], slots[1]];
+                slots[2] = evaluate_off_shell_current(&vertex_info, &legs, &evaluated);
                 slots[3] = evaluate_propagation(&prop_info, &slots[2], &evaluated);
                 if let WaveformSlot::Vector(v_gamma) = slots[3] {
                     // With flow-typed externals the off-shell current matches jioxxx
@@ -959,8 +955,10 @@ mod tests {
                 };
                 assert_eq!(&fi_out_p, b);
 
-                let input_slots = vec![4, 5, 3];
-                slots[6] = evaluate_contract_amplitude(&amp_info, &input_slots, &slots, &evaluated);
+                // Amplitude sink: legs in vertex order are leg3(fo), leg4(fi), and
+                // the s-channel current (slot 3).
+                let legs = vec![slots[4], slots[5], slots[3]];
+                slots[6] = evaluate_contract_amplitude(&amp_info, &legs, &evaluated);
                 let WaveformSlot::Scalar(s) = slots[6] else {
                     panic!("expected scalar slot");
                 };
@@ -1032,12 +1030,11 @@ mod tests {
                 LorentzEvalNode::GammaIout { .. }
             ));
 
-            let input_slots = vec![0, 1, 2];
-            let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
-            slots[0] = WaveformSlot::FermionIn(fi);
-            slots[2] = WaveformSlot::Vector(v);
+            // Rooted at fermion leg 1; gap-free inputs in leg order are leg0 = fi,
+            // leg2 = v (the tree's leg refs were compacted accordingly).
+            let legs = vec![WaveformSlot::FermionIn(fi), WaveformSlot::Vector(v)];
 
-            let vertex = eval_lorentz_tree(&tree, &input_slots, &slots);
+            let vertex = eval_lorentz_tree(&tree, &legs);
             let WaveformSlot::FermionIn(got) =
                 evaluate_propagation(&prop_info, &vertex, &evaluated)
             else {
@@ -1066,11 +1063,11 @@ mod tests {
                 LorentzEvalNode::GammaOout { .. }
             ));
 
-            let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
-            slots[1] = WaveformSlot::FermionOut(fo);
-            slots[2] = WaveformSlot::Vector(v);
+            // Rooted at fermion leg 0; gap-free inputs in leg order are leg1 = fo,
+            // leg2 = v.
+            let legs = vec![WaveformSlot::FermionOut(fo), WaveformSlot::Vector(v)];
 
-            let vertex = eval_lorentz_tree(&tree, &input_slots, &slots);
+            let vertex = eval_lorentz_tree(&tree, &legs);
             let WaveformSlot::FermionOut(got) =
                 evaluate_propagation(&prop_info, &vertex, &evaluated)
             else {
@@ -1171,431 +1168,6 @@ mod tests {
         }
     }
 
-    /// DEBUG: trace per-step slot momenta for the uux 2->6 process to find the blow-up.
-    #[test]
-    #[ignore]
-    fn debug_uux_trace() {
-        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-        let model = sm_model();
-        let evaluated = model.evaluate(&ParamCard::from_str("").unwrap());
-        let opts = ParsingOptions::default();
-        let card = parse_proc_card("generate u u~ > c c~ e+ e- mu+ mu-", &opts).unwrap();
-        let sets = generate_from_proc_card(&card, model).unwrap();
-        let set = &sets[0];
-        let asts = compile_diagram_ast(set, model).unwrap();
-        println!("n_diagrams = {}", asts.len());
-
-        // first CSV momentum point (incoming then outgoing)
-        let p = [
-            LorentzVector::new(250.0, 0.0, 0.0, 250.0),
-            LorentzVector::new(250.0, 0.0, 0.0, -250.0),
-            LorentzVector::new(
-                51.58390415317875,
-                33.76278178716875,
-                -30.22430158990549,
-                24.646811702100443,
-            ),
-            LorentzVector::new(
-                144.43288205367912,
-                82.46142822300477,
-                -108.5785090953523,
-                -47.662119512089546,
-            ),
-            LorentzVector::new(
-                116.59102846088923,
-                -91.67803127457901,
-                23.194248232604252,
-                68.1955522604629,
-            ),
-            LorentzVector::new(
-                52.76154461240437,
-                -47.85411853901415,
-                17.571868307294295,
-                -13.601226890682527,
-            ),
-            LorentzVector::new(
-                20.24063060353008,
-                -3.7687275028075944,
-                -0.4710997332332683,
-                19.881093664069077,
-            ),
-            LorentzVector::new(
-                114.39001011631855,
-                27.076667306227247,
-                98.5077938785925,
-                -51.460111223860345,
-            ),
-        ];
-        let hel = [-1i32, -1, -1, -1, -1, -1, -1, -1];
-        let n_in = 2;
-
-        // Momentum conservation is helicity-independent: scan every diagram and
-        // report those whose final amplitude momentum is not ~0 (mis-routed).
-        let mut nonconserving = vec![];
-        for (d, ast) in asts.iter().enumerate() {
-            let mut slots = vec![WaveformSlot::Empty; ast.n_slots];
-            for step in &ast.steps {
-                match step {
-                    EvalStep::ExternalWf { info, output_slot } => {
-                        slots[*output_slot] = build_external_slot(
-                            p[info.leg_idx],
-                            hel[info.leg_idx],
-                            info,
-                            n_in,
-                            &evaluated,
-                        );
-                    }
-                    EvalStep::OffShellCurrent {
-                        info,
-                        input_slots,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_off_shell_current(info, input_slots, &slots, &evaluated);
-                    }
-                    EvalStep::Propagate {
-                        info,
-                        input_slot,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_propagation(info, &slots[*input_slot], &evaluated);
-                    }
-                    EvalStep::ContractAmplitude {
-                        info,
-                        input_slots,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_contract_amplitude(info, input_slots, &slots, &evaluated);
-                    }
-                }
-            }
-            let m = slots[ast.amplitude_slot].momentum().unwrap();
-            let off = m.bare_norm_sq();
-            if off > 1e-6 {
-                nonconserving.push((d, off));
-            }
-        }
-        println!(
-            "{}/{} diagrams violate momentum conservation",
-            nonconserving.len(),
-            asts.len()
-        );
-        for (d, off) in nonconserving.iter().take(5) {
-            println!("  diagram {} amp momentum |sum|={:.3e}", d, off);
-        }
-
-        // find max-magnitude diagram for this helicity
-        let mut worst = (0usize, 0.0f64);
-        for (d, ast) in asts.iter().enumerate() {
-            let amp = eval_single_diagram(ast, &p, &hel, &evaluated, n_in, &[]);
-            if amp.norm() > worst.1 {
-                worst = (d, amp.norm());
-            }
-        }
-        println!("worst diagram {} |amp|={:.3e}", worst.0, worst.1);
-
-        // trace the worst diagram step by step
-        let ast = &asts[worst.0];
-        let mut slots = vec![WaveformSlot::Empty; ast.n_slots];
-        for step in &ast.steps {
-            match step {
-                EvalStep::ExternalWf { info, output_slot } => {
-                    slots[*output_slot] = build_external_slot(
-                        p[info.leg_idx],
-                        hel[info.leg_idx],
-                        info,
-                        n_in,
-                        &evaluated,
-                    );
-                    println!("Ext leg {} (spin {} charge {:?} incoming {}) raw_E {} -> slot {} stored_E {:?}",
-                        info.leg_idx, info.spin, info.charge, info.leg_idx < n_in,
-                        p[info.leg_idx].e(), output_slot,
-                        slots[*output_slot].momentum().map(|m| m.e()));
-                }
-                EvalStep::OffShellCurrent {
-                    info,
-                    input_slots,
-                    output_slot,
-                } => {
-                    slots[*output_slot] =
-                        evaluate_off_shell_current(info, input_slots, &slots, &evaluated);
-                    println!(
-                        "OffShell inputs {:?} -> slot {} mom {:?}",
-                        input_slots,
-                        output_slot,
-                        slots[*output_slot].momentum().map(|m| (m.e(), m.m2()))
-                    );
-                }
-                EvalStep::Propagate {
-                    info,
-                    input_slot,
-                    output_slot,
-                } => {
-                    let m = evaluated.mass(info.id);
-                    slots[*output_slot] =
-                        evaluate_propagation(info, &slots[*input_slot], &evaluated);
-                    let mom = slots[*output_slot].momentum().unwrap();
-                    println!(
-                        "Propagate slot {}->{} mass {} q2 {:.4e} (q2-m2 {:.4e})",
-                        input_slot,
-                        output_slot,
-                        m,
-                        mom.m2(),
-                        mom.m2() - m * m
-                    );
-                }
-                EvalStep::ContractAmplitude {
-                    info,
-                    input_slots,
-                    output_slot,
-                } => {
-                    slots[*output_slot] =
-                        evaluate_contract_amplitude(info, input_slots, &slots, &evaluated);
-                    println!(
-                        "Contract inputs {:?} -> slot {} mom {:?}",
-                        input_slots,
-                        output_slot,
-                        slots[*output_slot].momentum().map(|m| (m.e(), m.m2()))
-                    );
-                }
-            }
-        }
-    }
-
-    /// PROBE: per-diagram amplitude breakdown for the uux 2->6 process.
-    ///
-    /// Identifies the diagram classes (by propagator content), measures the
-    /// gauge cancellation (|Σa|² vs Σ|a|²), and compares the total |M|² to the
-    /// MadGraph reference. MadGraph (matrix1_orig.f) has NGRAPHS=579 for this
-    /// exact process (IDUP 2,-2,4,-4,-11,11,-13,13) and sums AMP() in plain
-    /// COMPLEX*16 (no Kahan / quad precision).
-    #[test]
-    #[ignore]
-    fn probe_uux_diagrams() {
-        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-        use std::collections::BTreeMap;
-
-        let model = sm_model();
-        let evaluated = model.evaluate(&ParamCard::from_str("").unwrap());
-        let opts = ParsingOptions::default();
-        let card = parse_proc_card("generate u u~ > c c~ e+ e- mu+ mu- QCD=0", &opts).unwrap();
-        let sets = generate_from_proc_card(&card, model).unwrap();
-        let set = &sets[0];
-        let asts = compile_diagram_ast(set, model).unwrap();
-        let n_in = 2;
-        println!("n_diagrams = {} (MadGraph NGRAPHS = 579)", asts.len());
-
-        let p = [
-            LorentzVector::new(250.0, 0.0, 0.0, 250.0),
-            LorentzVector::new(250.0, 0.0, 0.0, -250.0),
-            LorentzVector::new(
-                51.58390415317875,
-                33.76278178716875,
-                -30.22430158990549,
-                24.646811702100443,
-            ),
-            LorentzVector::new(
-                144.43288205367912,
-                82.46142822300477,
-                -108.5785090953523,
-                -47.662119512089546,
-            ),
-            LorentzVector::new(
-                116.59102846088923,
-                -91.67803127457901,
-                23.194248232604252,
-                68.1955522604629,
-            ),
-            LorentzVector::new(
-                52.76154461240437,
-                -47.85411853901415,
-                17.571868307294295,
-                -13.601226890682527,
-            ),
-            LorentzVector::new(
-                20.24063060353008,
-                -3.7687275028075944,
-                -0.4710997332332683,
-                19.881093664069077,
-            ),
-            LorentzVector::new(
-                114.39001011631855,
-                27.076667306227247,
-                98.5077938785925,
-                -51.460111223860345,
-            ),
-        ];
-
-        // Propagator signature of a diagram = sorted multiset of internal particle names.
-        let prop_sig = |ast: &DiagramAst| -> Vec<String> {
-            let mut names: Vec<String> = ast
-                .steps
-                .iter()
-                .filter_map(|s| match s {
-                    EvalStep::Propagate { info, .. } => Some(model.particle(info.id).name.clone()),
-                    _ => None,
-                })
-                .collect();
-            names.sort();
-            names
-        };
-
-        // 1) How many diagrams contain each internal particle?
-        let mut contains: BTreeMap<String, usize> = BTreeMap::new();
-        for ast in &asts {
-            let uniq: std::collections::BTreeSet<String> = prop_sig(ast).into_iter().collect();
-            for name in uniq {
-                *contains.entry(name).or_default() += 1;
-            }
-        }
-        println!("\ndiagrams containing each internal particle:");
-        for (k, v) in &contains {
-            println!("  {k:<6} : {v}");
-        }
-
-        // 1b) Which diagrams panic during evaluation? Group by propagator signature.
-        let hel0 = [-1i32; 8];
-        let mut panic_sigs: BTreeMap<String, usize> = BTreeMap::new();
-        let mut ok_count = 0usize;
-        std::panic::set_hook(Box::new(|_| {})); // silence per-diagram panic spew
-        for ast in &asts {
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                eval_single_diagram(ast, &p, &hel0, &evaluated, n_in, &[])
-            }));
-            match res {
-                Ok(_) => ok_count += 1,
-                Err(_) => *panic_sigs.entry(prop_sig(ast).join("+")).or_default() += 1,
-            }
-        }
-        let _ = std::panic::take_hook();
-        let n_panic: usize = panic_sigs.values().sum();
-        println!("\nevaluation: {ok_count} ok, {n_panic} PANIC");
-        println!("panicking diagrams by propagator signature:");
-        for (sig, c) in &panic_sigs {
-            println!("  [{sig}] x{c}");
-        }
-        if n_panic > 0 {
-            println!("\n(stopping before |M|² — some diagrams don't evaluate yet)");
-            return;
-        }
-
-        // 2) Per-helicity cancellation + total |M|^2 over all helicities.
-        let hel_states = [-1i32, 1];
-        let mut total_m2 = 0.0f64;
-        let mut worst_cancel = (Vec::new(), 1.0f64, 0.0f64); // (hel, |Σa|²/Σ|a|², Σ|a|²)
-                                                             // count helicity combos
-        let mut n_hel = 0usize;
-        let mut combos: Vec<Vec<i32>> = vec![vec![]];
-        for _ in 0..8 {
-            let mut next = vec![];
-            for c in &combos {
-                for &h in &hel_states {
-                    let mut cc = c.clone();
-                    cc.push(h);
-                    next.push(cc);
-                }
-            }
-            combos = next;
-        }
-        let has_higgs: Vec<bool> = asts
-            .iter()
-            .map(|a| prop_sig(a).contains(&"H".to_string()))
-            .collect();
-        let fsign: Vec<f64> = asts.iter().map(|a| a.fermi_sign as f64).collect();
-        let mut total_m2_noh = 0.0f64;
-        let mut total_m2_noh_nosign = 0.0f64; // continuum coherent sum with fermi_sign stripped
-        let mut incoh_noh = 0.0f64; // Σ_hel Σ_d |a_d|² over continuum diagrams
-        for hel in &combos {
-            let amps: Vec<C<f64>> = asts
-                .iter()
-                .map(|ast| eval_single_diagram(ast, &p, hel, &evaluated, n_in, &[]))
-                .collect();
-            let sum: C<f64> = amps.iter().fold(C::new(0.0, 0.0), |a, b| a + *b);
-            let sum_noh: C<f64> = amps
-                .iter()
-                .zip(&has_higgs)
-                .filter(|(_, h)| !**h)
-                .fold(C::new(0.0, 0.0), |a, (b, _)| a + *b);
-            let sum_noh_nosign: C<f64> = amps
-                .iter()
-                .zip(&has_higgs)
-                .zip(&fsign)
-                .filter(|((_, h), _)| !**h)
-                .fold(C::new(0.0, 0.0), |a, ((b, _), fs)| a + *b / *fs);
-            total_m2_noh_nosign += sum_noh_nosign.norm_sqr();
-            let sum_abs2: f64 = amps.iter().map(|a| a.norm_sqr()).sum();
-            incoh_noh += amps
-                .iter()
-                .zip(&has_higgs)
-                .filter(|(_, h)| !**h)
-                .map(|(a, _)| a.norm_sqr())
-                .sum::<f64>();
-            total_m2 += sum.norm_sqr();
-            total_m2_noh += sum_noh.norm_sqr();
-            n_hel += 1;
-            if sum_abs2 > 0.0 {
-                let ratio = sum.norm_sqr() / sum_abs2;
-                if sum_abs2 > worst_cancel.2 {
-                    worst_cancel = (hel.clone(), ratio, sum_abs2);
-                }
-            }
-        }
-        // color factor for uux (two quark lines, Nc^2 = 9)
-        let total_m2 = total_m2 * 9.0;
-        let total_m2_noh = total_m2_noh * 9.0;
-        let mg_ref = 2.9422266141524934e-18; // CSV point-0 reference
-        println!("\n{n_hel} helicity combos");
-        println!("MG reference (pt0)        = {mg_ref:.6e}");
-        println!(
-            "Σ_hel |Σ_d a_d|² × cf(9)  = {total_m2:.6e}  (ratio {:.3e})",
-            total_m2 / mg_ref
-        );
-        println!(
-            "  excluding 3 Higgs diags = {total_m2_noh:.6e}  (ratio {:.3e})",
-            total_m2_noh / mg_ref
-        );
-        let incoh_noh = incoh_noh * 9.0;
-        let total_m2_noh_nosign = total_m2_noh_nosign * 9.0;
-        println!(
-            "  continuum cancellation: coherent Σ|Σa|²={total_m2_noh:.4e}  incoherent ΣΣ|a|²={incoh_noh:.4e}  (coh/incoh {:.3e})",
-            total_m2_noh / incoh_noh
-        );
-        let fdist = fsign.iter().filter(|&&s| s < 0.0).count();
-        println!(
-            "  fermi_sign stripped: continuum |M|²={total_m2_noh_nosign:.4e} (ratio to MG {:.3e}); {fdist}/{} diagrams have fermi_sign=-1",
-            total_m2_noh_nosign / mg_ref,
-            asts.len()
-        );
-        println!(
-            "loudest-helicity cancellation: Σ|a_d|²={:.4e}  |Σa_d|²/Σ|a_d|²={:.4e}  hel={:?}",
-            worst_cancel.2, worst_cancel.1, worst_cancel.0
-        );
-
-        // 3) For that loudest helicity, top contributors grouped by signature.
-        let hel = &worst_cancel.0;
-        let mut by_sig: BTreeMap<String, (usize, f64, C<f64>)> = BTreeMap::new();
-        for ast in &asts {
-            let a = eval_single_diagram(ast, &p, hel, &evaluated, n_in, &[]);
-            let sig = prop_sig(ast).join("+");
-            let e = by_sig.entry(sig).or_insert((0, 0.0, C::new(0.0, 0.0)));
-            e.0 += 1;
-            e.1 += a.norm_sqr();
-            e.2 = e.2 + a;
-        }
-        println!("\nby propagator signature @ loudest helicity (count, Σ|a|², |Σa|):");
-        let mut rows: Vec<_> = by_sig.into_iter().collect();
-        rows.sort_by(|a, b| b.1 .1.partial_cmp(&a.1 .1).unwrap());
-        for (sig, (cnt, s2, s)) in rows.iter().take(20) {
-            println!(
-                "  [{sig:<28}] x{cnt:<3} Σ|a|²={:.4e} |Σa|={:.4e}",
-                s2,
-                s.norm()
-            );
-        }
-    }
-
     /// Per-diagram amplitude dump for e+ e- > mu+ mu- ta+ ta- (QCD=0), the
     /// minimal chained-off-shell-fermion-current reproducer of the uux continuum
     /// relative-phase bug (2→4, 25 diagrams, colorless).  Computes the two
@@ -1662,14 +1234,10 @@ mod tests {
             ),
         ];
 
-        let prop_sig = |ast: &DiagramAst| -> String {
+        let prop_sig = |ast: &DiagramEval| -> String {
             let mut names: Vec<String> = ast
-                .steps
-                .iter()
-                .filter_map(|s| match s {
-                    EvalStep::Propagate { info, .. } => Some(model.particle(info.id).name.clone()),
-                    _ => None,
-                })
+                .propagator_particles()
+                .map(|id| model.particle(id).name.clone())
                 .collect();
             names.sort();
             names.join("+")
@@ -1815,13 +1383,10 @@ mod tests {
                 slots[0] = WaveformSlot::FermionIn(fi);
                 slots[1] = WaveformSlot::FermionOut(fo);
                 slots[2] = WaveformSlot::Scalar(s_wf);
-                let input_slots = vec![0usize, 1, 2];
 
                 // FFS1: ProjM(2,1) → left bilinear × s
                 let tree1 = LorentzEvalTree::build_at_leg(&ffs1, &spins, None).unwrap();
-                let WaveformSlot::Scalar(got1) =
-                    eval_lorentz_tree(&tree1, &input_slots, &slots)
-                else {
+                let WaveformSlot::Scalar(got1) = eval_lorentz_tree(&tree1, &slots) else {
                     panic!("FFS1 did not produce a scalar");
                 };
                 let diff1 = (got1.value - left_ref).norm();
@@ -1832,9 +1397,7 @@ mod tests {
 
                 // FFS3: ProjP(2,1) → right bilinear × s
                 let tree3 = LorentzEvalTree::build_at_leg(&ffs3, &spins, None).unwrap();
-                let WaveformSlot::Scalar(got3) =
-                    eval_lorentz_tree(&tree3, &input_slots, &slots)
-                else {
+                let WaveformSlot::Scalar(got3) = eval_lorentz_tree(&tree3, &slots) else {
                     panic!("FFS3 did not produce a scalar");
                 };
                 let diff3 = (got3.value - right_ref).norm();
@@ -2001,448 +1564,5 @@ mod tests {
             ratio < 1e-9,
             "2→4 Ward identity violated: max |k·M|/scale = {ratio:.3e}"
         );
-    }
-
-    /// DIAGNOSTIC: per-diagram Ward breakdown for `e+ e- > mu+ mu- a`.
-    /// Prints each diagram's propagator signature and its Ward-substituted
-    /// (ε_γ→k_γ) complex amplitude, so we can see which group fails to telescope.
-    #[test]
-    #[ignore]
-    fn probe_ward_eemumua() {
-        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-
-        let model = sm_model();
-        let evaluated = model.evaluate(&ParamCard::from_str("").unwrap());
-        let opts = ParsingOptions::default();
-        let card = parse_proc_card("generate e+ e- > mu+ mu- a", &opts).unwrap();
-        let sets = generate_from_proc_card(&card, model).unwrap();
-        let set = &sets[0];
-        let asts = compile_diagram_ast(set, model).unwrap();
-        let n_in = 2;
-
-        let s40 = 5.0 * 40.0_f64.sqrt();
-        let p = [
-            LorentzVector::new(50.0, 0.0, 0.0, 50.0),
-            LorentzVector::new(50.0, 0.0, 0.0, -50.0),
-            LorentzVector::new(30.0, 30.0, 0.0, 0.0),
-            LorentzVector::new(35.0, -15.0, s40, 0.0),
-            LorentzVector::new(35.0, -15.0, -s40, 0.0),
-        ];
-        let k = p[4];
-        let mut overrides: Vec<Option<VectorWf<f64>>> = vec![None; 5];
-        overrides[4] = Some(VectorWf {
-            eps: ComplexVector::from(k),
-            momentum: k,
-        });
-
-        let prop_sig = |ast: &DiagramAst| -> Vec<String> {
-            let mut names: Vec<String> = ast
-                .steps
-                .iter()
-                .filter_map(|s| match s {
-                    EvalStep::Propagate { info, .. } => Some(model.particle(info.id).name.clone()),
-                    _ => None,
-                })
-                .collect();
-            names.sort();
-            names
-        };
-
-        // Use a helicity combo where the violation is large.
-        for hel in [[-1, -1, -1, -1, 1], [1, -1, -1, 1, 1], [-1, 1, 1, -1, 1]] {
-            println!("\n=== fermion helicities {hel:?} (photon overridden ε→k) ===");
-            let mut sum = C::new(0.0, 0.0);
-            for (d, ast) in asts.iter().enumerate() {
-                let a = eval_single_diagram(ast, &p, &hel, &evaluated, n_in, &overrides);
-                sum += a;
-                println!(
-                    "  diag {d}: props {:?}  k·M = {:+.4e} {:+.4e}i  |a|={:.3e}",
-                    prop_sig(ast),
-                    a.re,
-                    a.im,
-                    a.norm()
-                );
-            }
-            println!(
-                "  Σ k·M = {:+.4e} {:+.4e}i  |Σ|={:.3e}",
-                sum.re,
-                sum.im,
-                sum.norm()
-            );
-        }
-
-        // Step-by-step trace of one FSR diagram (0) and one ISR diagram (6).
-        let hel = [1, -1, -1, 1, 1];
-        for d in [0usize, 2, 4, 6] {
-            println!(
-                "\n--- TRACE diag {d} (props {:?}) hel {hel:?} ---",
-                prop_sig(&asts[d])
-            );
-            let ast = &asts[d];
-            let mut slots = vec![WaveformSlot::Empty; ast.n_slots];
-            for step in &ast.steps {
-                match step {
-                    EvalStep::ExternalWf { info, output_slot } => {
-                        slots[*output_slot] = match overrides.get(info.leg_idx) {
-                            Some(Some(v)) => WaveformSlot::Vector(*v),
-                            _ => build_external_slot(
-                                p[info.leg_idx],
-                                hel[info.leg_idx],
-                                info,
-                                n_in,
-                                &evaluated,
-                            ),
-                        };
-                        println!(
-                            "  Ext leg {} spin {} charge {:?} in {} -> slot {} mom_E {:?}",
-                            info.leg_idx,
-                            info.spin,
-                            info.charge,
-                            info.leg_idx < n_in,
-                            output_slot,
-                            slots[*output_slot].momentum().map(|m| m.e())
-                        );
-                    }
-                    EvalStep::OffShellCurrent {
-                        info,
-                        input_slots,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_off_shell_current(info, input_slots, &slots, &evaluated);
-                        let kind = match &slots[*output_slot] {
-                            WaveformSlot::FermionIn(_) => "FermionIn",
-                            WaveformSlot::FermionOut(_) => "FermionOut",
-                            WaveformSlot::Vector(_) => "Vector",
-                            WaveformSlot::Scalar(_) => "Scalar",
-                            WaveformSlot::Empty => "Empty",
-                        };
-                        println!(
-                            "  OffShell in {:?} -> slot {} {kind} mom {:?}",
-                            input_slots,
-                            output_slot,
-                            slots[*output_slot].momentum().map(|m| (m.e(), m.m2()))
-                        );
-                    }
-                    EvalStep::Propagate {
-                        info,
-                        input_slot,
-                        output_slot,
-                    } => {
-                        let m = evaluated.mass(info.id);
-                        slots[*output_slot] =
-                            evaluate_propagation(info, &slots[*input_slot], &evaluated);
-                        let mom = slots[*output_slot].momentum().unwrap();
-                        println!(
-                            "  Propagate {} ({}) slot {}->{} q2 {:.4e} (q2-m2 {:.4e})",
-                            model.particle(info.id).name,
-                            m,
-                            input_slot,
-                            output_slot,
-                            mom.m2(),
-                            mom.m2() - m * m
-                        );
-                    }
-                    EvalStep::ContractAmplitude {
-                        info,
-                        input_slots,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_contract_amplitude(info, input_slots, &slots, &evaluated);
-                        if let WaveformSlot::Scalar(s) = &slots[*output_slot] {
-                            println!(
-                                "  Contract in {:?} -> amp {:+.4e}{:+.4e}i",
-                                input_slots, s.value.re, s.value.im
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// DIAGNOSTIC: momentum-routing consistency for `e+ e- > mu+ mu- ta+ ta- a`.
-    /// Re-runs each diagram and reports the momentum each Propagate/Contract step
-    /// produces; the amplitude-sink momentum must be IDENTICAL across all diagrams
-    /// (a single convention). Any outlier is a mis-routed diagram. Also flags any
-    /// internal propagator whose q² is wildly off (a sign-flipped boson momentum
-    /// corrupts the downstream fermion propagator's q²).
-    #[test]
-    #[ignore]
-    fn probe_2to5_momentum() {
-        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-        use std::collections::BTreeMap;
-
-        let model = sm_model();
-        let evaluated = model
-            .evaluate(&ParamCard::from_str("Block MASS\n 11 0.0\n 13 0.0\n 15 0.0\n").unwrap());
-        let opts = ParsingOptions::default();
-        let card = parse_proc_card("generate e+ e- > mu+ mu- ta+ ta- a", &opts).unwrap();
-        let sets = generate_from_proc_card(&card, model).unwrap();
-        let asts = compile_diagram_ast(&sets[0], model).unwrap();
-        let n_in = 2;
-        println!("n_diagrams = {}", asts.len());
-
-        let r3 = 3.0_f64.sqrt();
-        let p = [
-            LorentzVector::new(50.0, 0.0, 0.0, 50.0),
-            LorentzVector::new(50.0, 0.0, 0.0, -50.0),
-            LorentzVector::new(20.0, 20.0, 0.0, 0.0),
-            LorentzVector::new(20.0, -20.0, 0.0, 0.0),
-            LorentzVector::new(20.0, 0.0, 20.0, 0.0),
-            LorentzVector::new(20.0, 0.0, -10.0, 10.0 * r3),
-            LorentzVector::new(20.0, 0.0, -10.0, -10.0 * r3),
-        ];
-        let hel = [1, -1, -1, 1, -1, 1, 1];
-
-        // Per diagram: amplitude-sink total momentum (rounded) → count.
-        let mut sink_totals: BTreeMap<(i64, i64, i64, i64), usize> = BTreeMap::new();
-        let mut traced = 0;
-        for (d, ast) in asts.iter().enumerate() {
-            let mut slots = vec![WaveformSlot::Empty; ast.n_slots];
-            let mut log: Vec<String> = Vec::new();
-            for step in &ast.steps {
-                match step {
-                    EvalStep::ExternalWf { info, output_slot } => {
-                        slots[*output_slot] = build_external_slot(
-                            p[info.leg_idx],
-                            hel[info.leg_idx],
-                            info,
-                            n_in,
-                            &evaluated,
-                        );
-                        let m = slots[*output_slot].momentum().unwrap();
-                        log.push(format!(
-                            "  Ext leg {} ({:?}) -> slot {} mom ({:.1},{:.1},{:.1},{:.1})",
-                            info.leg_idx,
-                            info.charge,
-                            output_slot,
-                            m.e(),
-                            m.px(),
-                            m.py(),
-                            m.pz()
-                        ));
-                    }
-                    EvalStep::OffShellCurrent {
-                        info,
-                        input_slots,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_off_shell_current(info, input_slots, &slots, &evaluated);
-                        let m = slots[*output_slot].momentum().unwrap();
-                        let kind = match &slots[*output_slot] {
-                            WaveformSlot::FermionIn(_) => "Fin",
-                            WaveformSlot::FermionOut(_) => "Fout",
-                            WaveformSlot::Vector(_) => "Vec",
-                            _ => "?",
-                        };
-                        log.push(format!(
-                            "  OffShell in {:?} -> slot {} {kind} mom ({:.1},{:.1},{:.1},{:.1})",
-                            input_slots,
-                            output_slot,
-                            m.e(),
-                            m.px(),
-                            m.py(),
-                            m.pz()
-                        ));
-                    }
-                    EvalStep::Propagate {
-                        info,
-                        input_slot,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_propagation(info, &slots[*input_slot], &evaluated);
-                        let m = slots[*output_slot].momentum().unwrap();
-                        log.push(format!(
-                            "  Propagate {} slot {}->{} mom ({:.1},{:.1},{:.1},{:.1}) q2={:.3e}",
-                            model.particle(info.id).name,
-                            input_slot,
-                            output_slot,
-                            m.e(),
-                            m.px(),
-                            m.py(),
-                            m.pz(),
-                            m.m2()
-                        ));
-                    }
-                    EvalStep::ContractAmplitude {
-                        info,
-                        input_slots,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_contract_amplitude(info, input_slots, &slots, &evaluated);
-                        log.push(format!("  Contract in {input_slots:?}"));
-                    }
-                }
-            }
-            let m = slots[ast.amplitude_slot]
-                .momentum()
-                .unwrap_or(LorentzVector::new(0.0, 0.0, 0.0, 0.0));
-            let key = (
-                (m.e() * 1e3).round() as i64,
-                (m.px() * 1e3).round() as i64,
-                (m.py() * 1e3).round() as i64,
-                (m.pz() * 1e3).round() as i64,
-            );
-            *sink_totals.entry(key).or_default() += 1;
-            // Trace the first 2 mis-routed diagrams (sink total != 0).
-            if key != (0, 0, 0, 0) && traced < 2 {
-                traced += 1;
-                println!("\n--- MIS-ROUTED diag {d}: sink total {key:?} ---");
-                for l in &log {
-                    println!("{l}");
-                }
-            }
-        }
-        println!("\ndistinct amplitude-sink momentum totals (E,px,py,pz)*1e3 → count:");
-        for (k, v) in &sink_totals {
-            println!("  {k:?} : {v}");
-        }
-    }
-
-    /// DIAGNOSTIC: momentum-routing consistency for the uux 2→6 continuum. Same
-    /// idea as `probe_2to5_momentum`: the amplitude-sink momentum must be identical
-    /// across all 579 diagrams. Groups outliers by propagator signature so we can
-    /// see which diagram class (if any) mis-routes.
-    #[test]
-    #[ignore]
-    fn probe_uux_momentum() {
-        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-        use std::collections::BTreeMap;
-
-        let model = sm_model();
-        let evaluated = model.evaluate(&ParamCard::from_str("").unwrap());
-        let opts = ParsingOptions::default();
-        let card = parse_proc_card("generate u u~ > c c~ e+ e- mu+ mu- QCD=0", &opts).unwrap();
-        let sets = generate_from_proc_card(&card, model).unwrap();
-        let asts = compile_diagram_ast(&sets[0], model).unwrap();
-        let n_in = 2;
-        println!("n_diagrams = {}", asts.len());
-
-        let p = [
-            LorentzVector::new(250.0, 0.0, 0.0, 250.0),
-            LorentzVector::new(250.0, 0.0, 0.0, -250.0),
-            LorentzVector::new(
-                51.58390415317875,
-                33.76278178716875,
-                -30.22430158990549,
-                24.646811702100443,
-            ),
-            LorentzVector::new(
-                144.43288205367912,
-                82.46142822300477,
-                -108.5785090953523,
-                -47.662119512089546,
-            ),
-            LorentzVector::new(
-                116.59102846088923,
-                -91.67803127457901,
-                23.194248232604252,
-                68.1955522604629,
-            ),
-            LorentzVector::new(
-                52.76154461240437,
-                -47.85411853901415,
-                17.571868307294295,
-                -13.601226890682527,
-            ),
-            LorentzVector::new(
-                20.24063060353008,
-                -3.7687275028075944,
-                -0.4710997332332683,
-                19.881093664069077,
-            ),
-            LorentzVector::new(
-                114.39001011631855,
-                27.076667306227247,
-                98.5077938785925,
-                -51.460111223860345,
-            ),
-        ];
-        let hel = [1, -1, 1, -1, 1, -1, 1, -1];
-
-        let prop_sig = |ast: &DiagramAst| -> Vec<String> {
-            let mut names: Vec<String> = ast
-                .steps
-                .iter()
-                .filter_map(|s| match s {
-                    EvalStep::Propagate { info, .. } => Some(model.particle(info.id).name.clone()),
-                    _ => None,
-                })
-                .collect();
-            names.sort();
-            names
-        };
-
-        let mut sink_totals: BTreeMap<(i64, i64, i64, i64), usize> = BTreeMap::new();
-        let mut bad_sigs: BTreeMap<Vec<String>, usize> = BTreeMap::new();
-        for ast in &asts {
-            let mut slots = vec![WaveformSlot::Empty; ast.n_slots];
-            for step in &ast.steps {
-                match step {
-                    EvalStep::ExternalWf { info, output_slot } => {
-                        slots[*output_slot] = build_external_slot(
-                            p[info.leg_idx],
-                            hel[info.leg_idx],
-                            info,
-                            n_in,
-                            &evaluated,
-                        );
-                    }
-                    EvalStep::OffShellCurrent {
-                        info,
-                        input_slots,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_off_shell_current(info, input_slots, &slots, &evaluated);
-                    }
-                    EvalStep::Propagate {
-                        info,
-                        input_slot,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_propagation(info, &slots[*input_slot], &evaluated);
-                    }
-                    EvalStep::ContractAmplitude {
-                        info,
-                        input_slots,
-                        output_slot,
-                    } => {
-                        slots[*output_slot] =
-                            evaluate_contract_amplitude(info, input_slots, &slots, &evaluated);
-                    }
-                }
-            }
-            let m: LorentzVector<f64> = slots[ast.amplitude_slot]
-                .momentum()
-                .unwrap_or(LorentzVector::new(0.0, 0.0, 0.0, 0.0));
-            let key = (
-                (m.e() * 1e2).round() as i64,
-                (m.px() * 1e2).round() as i64,
-                (m.py() * 1e2).round() as i64,
-                (m.pz() * 1e2).round() as i64,
-            );
-            *sink_totals.entry(key).or_default() += 1;
-            if key != (0, 0, 0, 0) {
-                *bad_sigs.entry(prop_sig(ast)).or_default() += 1;
-            }
-        }
-        println!(
-            "distinct amplitude-sink totals → count: {}",
-            sink_totals.len()
-        );
-        for (k, v) in &sink_totals {
-            println!("  {k:?} : {v}");
-        }
-        println!("mis-routed diagram propagator signatures → count:");
-        for (k, v) in &bad_sigs {
-            println!("  {k:?} : {v}");
-        }
     }
 }
