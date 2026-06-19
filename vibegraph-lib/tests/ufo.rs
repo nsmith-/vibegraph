@@ -20,7 +20,7 @@ fn test_load_loop_sm() {
         return;
     }
     let model = result.expect("unexpected error loading loop_sm UFO");
-    let empty_card = ParamCard::from_str("").unwrap();
+    let empty_card = "".parse::<ParamCard>().unwrap();
     let ev = model.evaluate(&empty_card);
 
     let mz = ev.mass(model.particle_id("Z").expect("no Z in model"));
@@ -38,7 +38,7 @@ fn test_load_mssm() {
         return;
     }
     let model = UFOModel::load(&path, None).expect("failed to load MSSM_SLHA2 UFO");
-    let empty_card = ParamCard::from_str("").unwrap();
+    let empty_card = "".parse::<ParamCard>().unwrap();
     let ev = model.evaluate(&empty_card);
 
     let tb = ev.param_values["tb"].re;
@@ -93,7 +93,7 @@ fn test_load_sm_ufo() {
         return;
     }
     let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
-    let empty_card = ParamCard::from_str("").unwrap();
+    let empty_card = "".parse::<ParamCard>().unwrap();
     let ev = model.evaluate(&empty_card);
 
     let as_val = ev.param_values["aS"].re;
@@ -124,7 +124,7 @@ fn test_recompute_propagates() {
         return;
     }
     let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
-    let empty_card = ParamCard::from_str("").unwrap();
+    let empty_card = "".parse::<ParamCard>().unwrap();
     let mut ev = model.evaluate(&empty_card);
 
     let new_as = 0.130f64;

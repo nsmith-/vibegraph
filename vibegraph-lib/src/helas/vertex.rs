@@ -74,7 +74,7 @@ pub fn j3xxxx<F: Real>(
     let eps = (cl - qc * csl) * (gz3l * dz) + cl * (ga3l * da) + (cr * ddif + qc * (csr * dz)) * gn;
 
     VectorWf {
-        eps: eps,
+        eps,
         momentum: jmom,
     }
 }

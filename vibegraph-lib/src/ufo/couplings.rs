@@ -29,7 +29,7 @@ impl Index<CouplingId> for IndexMap<String, Coupling> {
     type Output = Coupling;
 
     fn index(&self, index: CouplingId) -> &Self::Output {
-        &self.index(index.0)
+        self.index(index.0)
     }
 }
 

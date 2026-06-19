@@ -36,7 +36,7 @@ fn main() {
     let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
     let sets = generate_from_proc_card(&card, &model).unwrap();
 
-    let empty_card = ParamCard::from_str("").unwrap();
+    let empty_card = "".parse::<ParamCard>().unwrap();
     let evaluated = model.evaluate(&empty_card);
     let evaluator = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
 

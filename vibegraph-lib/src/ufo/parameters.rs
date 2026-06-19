@@ -350,7 +350,7 @@ G = Parameter(name = 'G',
 ";
 
     fn empty_card() -> ParamCard {
-        ParamCard::from_str("").unwrap()
+        "".parse::<ParamCard>().unwrap()
     }
 
     #[test]
@@ -413,13 +413,13 @@ MZ2 = Parameter(name = 'MZ2',
         let mut ps = parse_parameters(PARAMS_WITH_MASS_DEP).unwrap();
 
         // Restriction zeros MZ. A non-zero entry would NOT be baked/locked.
-        let restrict = ParamCard::from_str("Block MASS\n 23 0.0\n").unwrap();
+        let restrict = "Block MASS\n 23 0.0\n".parse::<ParamCard>().unwrap();
         ps.apply_restrict(&restrict);
         assert!(ps.zeros.contains("MZ"));
 
         // A user card cannot revive a restriction-zeroed parameter, and the
         // internal that references it stays zero (no panic on a missing name).
-        let user = ParamCard::from_str("Block MASS\n 23 91.1876\n").unwrap();
+        let user = "Block MASS\n 23 91.1876\n".parse::<ParamCard>().unwrap();
         let vals = ps.evaluate(&user);
         assert_eq!(vals["MZ"].re, 0.0);
         assert_eq!(vals["MZ2"].re, 0.0);
@@ -436,11 +436,11 @@ MZ2 = Parameter(name = 'MZ2',
         let mut ps = parse_parameters(PARAMS_WITH_MASS_DEP).unwrap();
 
         // A non-zero restriction value is not locked: the user card overrides it.
-        let restrict = ParamCard::from_str("Block MASS\n 23 80.0\n").unwrap();
+        let restrict = "Block MASS\n 23 80.0\n".parse::<ParamCard>().unwrap();
         ps.apply_restrict(&restrict);
         assert!(!ps.zeros.contains("MZ"));
 
-        let user = ParamCard::from_str("Block MASS\n 23 91.1876\n").unwrap();
+        let user = "Block MASS\n 23 91.1876\n".parse::<ParamCard>().unwrap();
         let vals = ps.evaluate(&user);
         assert!((vals["MZ"].re - 91.1876).abs() < 1e-10);
     }

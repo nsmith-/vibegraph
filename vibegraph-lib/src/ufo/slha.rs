@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::str::FromStr;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -35,11 +36,15 @@ impl ParamCard {
     /// Parse a `param_card.dat` from a file.
     pub fn from_file(path: &Path) -> Result<Self, SlhaError> {
         let content = std::fs::read_to_string(path)?;
-        Self::from_str(&content)
+        content.parse()
     }
+}
+
+impl FromStr for ParamCard {
+    type Err = SlhaError;
 
     /// Parse SLHA content from a string.
-    pub fn from_str(content: &str) -> Result<Self, SlhaError> {
+    fn from_str(content: &str) -> Result<Self, SlhaError> {
         let mut card = ParamCard::default();
         let mut current_block: Option<String> = None;
 
@@ -59,7 +64,6 @@ impl ParamCard {
                 let block_name = lower
                     .strip_prefix("block")
                     .unwrap()
-                    .trim()
                     .split_whitespace()
                     .next()
                     .ok_or_else(|| SlhaError::Parse {
@@ -124,7 +128,9 @@ impl ParamCard {
 
         Ok(card)
     }
+}
 
+impl ParamCard {
     /// Look up a parameter value.
     ///
     /// `block` is case-insensitive; `code` is the integer key list.
@@ -164,7 +170,7 @@ DECAY 6 1.49
 
     #[test]
     fn test_parse_sminputs() {
-        let card = ParamCard::from_str(SAMPLE).unwrap();
+        let card = SAMPLE.parse::<ParamCard>().unwrap();
         assert!((card.get("SMINPUTS", &[1]).unwrap() - 132.50698).abs() < 1e-5);
         assert!((card.get("sminputs", &[3]).unwrap() - 0.118).abs() < 1e-10);
         assert!((card.get("SMINPUTS", &[2]).unwrap() - 1.16639e-05).abs() < 1e-14);
@@ -172,21 +178,21 @@ DECAY 6 1.49
 
     #[test]
     fn test_parse_mass() {
-        let card = ParamCard::from_str(SAMPLE).unwrap();
+        let card = SAMPLE.parse::<ParamCard>().unwrap();
         assert!((card.get("MASS", &[23]).unwrap() - 91.188).abs() < 1e-5);
         assert!((card.get("mass", &[6]).unwrap() - 172.0).abs() < 1e-10);
     }
 
     #[test]
     fn test_missing_key() {
-        let card = ParamCard::from_str(SAMPLE).unwrap();
+        let card = SAMPLE.parse::<ParamCard>().unwrap();
         assert!(card.get("MASS", &[999]).is_none());
         assert!(card.get("NOSUCHBLOCK", &[1]).is_none());
     }
 
     #[test]
     fn test_decay_width_parsed() {
-        let card = ParamCard::from_str(SAMPLE).unwrap();
+        let card = SAMPLE.parse::<ParamCard>().unwrap();
         // `DECAY 6 1.49` → total width under block "decay", key [6].
         assert_eq!(card.get("DECAY", &[6]), Some(1.49));
         // The branching-ratio row `1.0  2  5 24` must NOT be parsed as an entry.

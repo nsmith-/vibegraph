@@ -7,7 +7,7 @@
 ///
 /// This trait provides methods for accessing children, values, and the root of the tree,
 /// as well as utility methods for folding and linearizing the tree.
-
+///
 /// `children`/`value`/`root` describe the shape; the default methods (`fold_recursive`,
 /// `max_depth`, `linearize`) build on them. All traversals assume a genuine tree: every
 /// node is reached exactly once. A DAG (shared child) will be visited — and evaluated —

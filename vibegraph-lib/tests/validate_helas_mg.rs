@@ -203,8 +203,8 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
         .join("Cards/param_card.dat");
     let card = std::fs::read_to_string(&card_path)
         .ok()
-        .and_then(|s| ParamCard::from_str(&s).ok())
-        .unwrap_or_else(|| ParamCard::from_str("").unwrap());
+        .and_then(|s| s.parse::<ParamCard>().ok())
+        .unwrap_or_else(|| "".parse::<ParamCard>().unwrap());
     let evaluated = model.evaluate(&card);
 
     let evaluator = AmplitudeEvaluator::compile(&sets[0], model)

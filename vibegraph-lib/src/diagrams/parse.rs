@@ -352,9 +352,7 @@ fn strip_loop_spec(line: &mut String, opts: &ParsingOptions) -> Result<(), Parse
 fn strip_coupling_orders(line: &mut String) -> Vec<CouplingConstraint> {
     let mut constraints = Vec::new();
 
-    loop {
-        let Some(gt) = line.find('>') else { break };
-
+    while let Some(gt) = line.find('>') {
         // Own the post-separator region to avoid borrow conflicts.
         let region: String = line[gt + 1..].to_owned();
 
@@ -534,10 +532,11 @@ fn strip_forbidden_onsh_s_channels(
     Ok(particles)
 }
 
+/// `(initial legs, required s-channel names, final legs)`.
+type ProcessBody = (Vec<ParticleLeg>, Vec<String>, Vec<ParticleLeg>);
+
 /// Steps 7–8: split the residual `"initial [> required] > final"` on `>`.
-fn parse_process_body(
-    line: &str,
-) -> Result<(Vec<ParticleLeg>, Vec<String>, Vec<ParticleLeg>), ParseError> {
+fn parse_process_body(line: &str) -> Result<ProcessBody, ParseError> {
     // Count `>` in the residual.
     let parts: Vec<&str> = line.splitn(4, '>').collect();
     match parts.len() {
@@ -729,7 +728,7 @@ mod tests {
     #[test]
     fn test_squared_order() {
         let p = parse("e+ e- > mu+ mu- QCD^2 <= 4");
-        assert_eq!(p.coupling_constraints[0].squared, true);
+        assert!(p.coupling_constraints[0].squared);
         assert_eq!(p.coupling_constraints[0].name, "QCD");
     }
 

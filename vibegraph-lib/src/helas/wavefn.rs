@@ -412,10 +412,7 @@ mod tests {
         let lorentz_cases = if onshell_only {
             onshell_cases
         } else {
-            offshell_cases
-                .into_iter()
-                .chain(onshell_cases.into_iter())
-                .collect()
+            offshell_cases.into_iter().chain(onshell_cases).collect()
         };
         itertools::iproduct!(
             lorentz_cases,

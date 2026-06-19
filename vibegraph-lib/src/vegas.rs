@@ -186,9 +186,9 @@ impl Vegas {
         let nbins = self.nbins;
         let hits_per_bin = (neval / nbins).max(1) as f64;
 
-        for dim in 0..self.ndim {
+        for (dim, d_dim) in d.iter().enumerate() {
             // Step 1: normalise by expected hits per bin.
-            let mut m: Vec<f64> = d[dim]
+            let mut m: Vec<f64> = d_dim
                 .iter()
                 .map(|&v| (v / hits_per_bin).max(1e-100))
                 .collect();

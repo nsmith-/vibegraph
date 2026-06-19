@@ -490,6 +490,7 @@ fn resolve_bra_ket<F: Real>(
 /// flow**, so no mid-line Dirac adjoint is ever needed:
 ///   - flow-in (ket): `ε̸ψ`, q = f.p − v.p   (Fortran `fvixxx`)
 ///   - flow-out (bra): `ψ̄ε̸`, q = f.p + v.p   (Fortran `fvoxxx`)
+///
 /// `Bispinor::slash` is flow-dependent, so the left/right action is automatic.
 /// The propagator `(q̸+m)/D` is applied in a separate `Propagate` step.
 /// Continue a fermion line by slashing the input fermion `fermion` with the
@@ -795,12 +796,11 @@ mod tests {
             i * v2.eps.component(2) * sv,
             i * v2.eps.component(3) * sv,
         ];
-        for mu in 0..4 {
+        for (mu, &exp) in expect.iter().enumerate() {
             let got = out.eps.component(mu);
             assert!(
-                (got - expect[mu]).norm() < 1e-12,
-                "component {mu}: got {got:?}, ALOHA expects {:?}",
-                expect[mu]
+                (got - exp).norm() < 1e-12,
+                "component {mu}: got {got:?}, ALOHA expects {exp:?}",
             );
         }
         // Momentum is conserved through the vertex: q = p_V2 + p_S.
@@ -813,7 +813,7 @@ mod tests {
     #[test]
     fn test_eval_jioxxx() {
         let model = sm_model();
-        let empty_card = ParamCard::from_str("").unwrap();
+        let empty_card = "".parse::<ParamCard>().unwrap();
         let evaluated = model.evaluate(&empty_card);
 
         // This doesn't matter so much, it's pure imaginary and just scales the lorentz structure
@@ -878,7 +878,7 @@ mod tests {
             };
             let vertex_info = VertexInfo {
                 terms: vec![VertexTerm::from_ufo(
-                    &model,
+                    model,
                     lorentz_id,
                     "asdf",
                     coupling_id,
@@ -888,7 +888,7 @@ mod tests {
             let prop_info = PropInfo { id: prop_id };
             let amp_info = VertexInfo {
                 terms: vec![VertexTerm::from_ufo(
-                    &model,
+                    model,
                     lorentz_id,
                     "asdf",
                     coupling_id,
@@ -991,7 +991,7 @@ mod tests {
         use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
 
         let model = sm_model();
-        let evaluated = model.evaluate(&ParamCard::from_str("").unwrap());
+        let evaluated = model.evaluate(&"".parse::<ParamCard>().unwrap());
 
         // Off-shell fermion line propagates an electron.
         let prop_id = model.particle_id("e-").unwrap();
@@ -1192,7 +1192,7 @@ mod tests {
         );
         let card = std::fs::read_to_string(&card_path)
             .ok()
-            .and_then(|s| ParamCard::from_str(&s).ok())
+            .and_then(|s| s.parse::<ParamCard>().ok())
             .expect("ee_to_mumu_tata_qcd0 param_card_masslesstau.dat");
         let evaluated = model.evaluate(&card);
 
@@ -1273,14 +1273,13 @@ mod tests {
         for hel in &combos {
             let amps: Vec<C<f64>> = asts
                 .iter()
-                .enumerate()
-                .map(|(_, ast)| eval_single_diagram(ast, &p, hel, &evaluated, n_in, &[]))
+                .map(|ast| eval_single_diagram(ast, &p, hel, &evaluated, n_in, &[]))
                 .collect();
             let a_tot: C<f64> = amps.iter().fold(C::new(0.0, 0.0), |a, b| a + *b);
             m2_total += a_tot.norm_sqr();
             for (i, a) in amps.iter().enumerate() {
                 diag[i] += a.norm_sqr();
-                rrow[i] = rrow[i] + a.conj() * a_tot;
+                rrow[i] += a.conj() * a_tot;
                 full[i].push(*a);
             }
             if hel == &[-1, 1, -1, 1, -1, 1] {
@@ -1419,8 +1418,10 @@ mod tests {
     ///     line absorbs the s-channel boson, propagates, then radiates the photon),
     ///   - an off-shell γ/Z (internal `VectorWf`, −i/q²) absorbed by a fermion line
     ///     via `GammaIout`/`GammaJout`.
+    ///
     /// If the relative phases/signs between continuum diagrams are wrong (the
     /// diagnosed bug), this sum will NOT cancel.
+    ///
     /// Largest U(1) Ward residual `|Σ_diagrams M(ε_γ→k_γ)| / max|M|`, maximised
     /// over all helicity configurations, for `proc` at momenta `p` with the photon
     /// on `ward_leg` replaced by its 4-momentum. Lepton masses are zeroed so the
@@ -1431,8 +1432,11 @@ mod tests {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 
         let model = sm_model();
-        let evaluated = model
-            .evaluate(&ParamCard::from_str("Block MASS\n 11 0.0\n 13 0.0\n 15 0.0\n").unwrap());
+        let evaluated = model.evaluate(
+            &"Block MASS\n 11 0.0\n 13 0.0\n 15 0.0\n"
+                .parse::<ParamCard>()
+                .unwrap(),
+        );
         let opts = ParsingOptions::default();
         let card = parse_proc_card(proc, &opts).unwrap();
         let sets = generate_from_proc_card(&card, model).unwrap();

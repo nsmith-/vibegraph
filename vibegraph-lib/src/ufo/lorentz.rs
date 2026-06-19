@@ -198,8 +198,7 @@ pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Result<Vec<isize>,
             // Advance current by following connections
             let Some(next) = find_connections(expr, current)
                 .into_iter()
-                .filter(|i| !visited.contains(i))
-                .next()
+                .find(|i| !visited.contains(i))
             else {
                 // Leg is not connected to any other leg through dummy indices
                 spin_map[leg as usize] = Some(leg);
@@ -219,7 +218,7 @@ pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Result<Vec<isize>,
     spin_map
         .into_iter()
         .collect::<Option<Vec<_>>>()
-        .ok_or(format!("Not all spins were connected!"))
+        .ok_or("Not all spins were connected!".to_string())
 }
 
 /// Parse `lorentz.py` content into a list of [`LorentzStructure`]s.
