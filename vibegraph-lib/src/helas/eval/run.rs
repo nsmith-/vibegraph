@@ -5,7 +5,8 @@ use std::collections::HashSet;
 use crate::diagrams::DiagramSet;
 use crate::helas::eval::ast::ExtLegInfo;
 use crate::helas::eval::compile::compile_diagram_ast;
-use crate::helas::eval::dispatch::{LorentzEvalNode, LorentzEvalTree};
+use crate::helas::eval::root_lorentz::{LorentzEvalNode, LorentzEvalTree};
+use crate::helas::eval::tree::Tree;
 use crate::helas::repr::lorentz::{Bispinor, ComplexVector, LorentzVector, SpinorRepr, VectorRepr};
 use crate::helas::repr::numbers::{Chirality, SpinorHelicity};
 use crate::helas::repr::{ri, Real, C};
@@ -16,8 +17,9 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 use num_complex::ComplexFloat;
 use num_traits::{FromPrimitive, Zero};
 
-use super::ast::{DiagramAst, EvalStep, WaveformSlot};
+use super::ast::{DiagramAst, EvalStep};
 use super::compile::CompileError;
+use super::waveform_slot::WaveformSlot;
 
 /// Compiled amplitude evaluator for all diagrams of a process.
 ///
@@ -490,11 +492,11 @@ fn off_shell_fermion_current<F: Real + FromPrimitive>(
     input_slots: &[usize],
     slots: &[WaveformSlot<F>],
 ) -> WaveformSlot<F> {
-    let WaveformSlot::Vector(v) = evaluate_lorentz_node(tree, tree.node(mu), input_slots, slots)
+    let WaveformSlot::Vector(v) = evaluate_lorentz_node(tree, tree.value(mu), input_slots, slots)
     else {
         panic!("expected vector output from node {mu}");
     };
-    match evaluate_lorentz_node(tree, tree.node(f), input_slots, slots) {
+    match evaluate_lorentz_node(tree, tree.value(f), input_slots, slots) {
         WaveformSlot::FermionIn(fi) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
             fi.spinor.slash(&v.eps),
             fi.momentum - v.momentum,
@@ -514,10 +516,10 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
     slots: &[WaveformSlot<F>],
 ) -> WaveformSlot<F> {
     match node {
-        LorentzEvalNode::Leg(i) => slots[input_slots[*i as usize - 1]],
+        LorentzEvalNode::Leg(i) => slots[input_slots[*i]],
         LorentzEvalNode::GammaVout { i, j } => {
-            let f1 = evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots);
-            let f2 = evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots);
+            let f1 = evaluate_lorentz_node(tree, tree.value(*i), input_slots, slots);
+            let f2 = evaluate_lorentz_node(tree, tree.value(*j), input_slots, slots);
             let (fo, fi, reversed) = resolve_bra_ket(f1, f2);
             let eps = fo.vector_bilinear(&fi, Chirality::Both);
             // Reading the fermion line against the vertex's defined flow conjugates
@@ -542,7 +544,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             // Chiral projection on a continuing current: preserve the input flow.
             // `project_left` is flow-dependent (a bra projects different components
             // than a ket), so the same call is correct for both flows.
-            match evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots) {
+            match evaluate_lorentz_node(tree, tree.value(*i), input_slots, slots) {
                 WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
                     f.spinor.project_left(),
                     f.momentum,
@@ -555,7 +557,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             }
         }
         LorentzEvalNode::ProjP { i } => {
-            match evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots) {
+            match evaluate_lorentz_node(tree, tree.value(*i), input_slots, slots) {
                 WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
                     f.spinor.project_right(),
                     f.momentum,
@@ -569,12 +571,12 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
         }
         LorentzEvalNode::Metric { mu, nu } => {
             let WaveformSlot::Vector(v1) =
-                evaluate_lorentz_node(tree, tree.node(*mu), input_slots, slots)
+                evaluate_lorentz_node(tree, tree.value(*mu), input_slots, slots)
             else {
                 panic!("expected vector output from node {mu}");
             };
             let WaveformSlot::Vector(v2) =
-                evaluate_lorentz_node(tree, tree.node(*nu), input_slots, slots)
+                evaluate_lorentz_node(tree, tree.value(*nu), input_slots, slots)
             else {
                 panic!("expected vector output from node {nu}");
             };
@@ -591,7 +593,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             // GC for HVV already carries its own `i`). A trailing scalar leg (the
             // Higgs) multiplies in at the enclosing ScalarProduct.
             let WaveformSlot::Vector(vin) =
-                evaluate_lorentz_node(tree, tree.node(*v), input_slots, slots)
+                evaluate_lorentz_node(tree, tree.value(*v), input_slots, slots)
             else {
                 panic!("expected vector output from node {v}");
             };
@@ -610,8 +612,8 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
         }
         LorentzEvalNode::ProjMAmp { i, j } => {
             // Left-chiral scalar bilinear ψ̄ P_L ψ; bra/ket picked by actual flow.
-            let f1 = evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots);
-            let f2 = evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots);
+            let f1 = evaluate_lorentz_node(tree, tree.value(*i), input_slots, slots);
+            let f2 = evaluate_lorentz_node(tree, tree.value(*j), input_slots, slots);
             let (fo, fi_col, _) = resolve_bra_ket(f1, f2);
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Left);
             WaveformSlot::Scalar(ScalarWf {
@@ -621,8 +623,8 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
         }
         LorentzEvalNode::ProjPAmp { i, j } => {
             // Right-chiral scalar bilinear ψ̄ P_R ψ; bra/ket picked by actual flow.
-            let f1 = evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots);
-            let f2 = evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots);
+            let f1 = evaluate_lorentz_node(tree, tree.value(*i), input_slots, slots);
+            let f2 = evaluate_lorentz_node(tree, tree.value(*j), input_slots, slots);
             let (fo, fi_col, _) = resolve_bra_ket(f1, f2);
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Right);
             WaveformSlot::Scalar(ScalarWf {
@@ -631,9 +633,7 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
             })
         }
         LorentzEvalNode::P { leg } => {
-            let momentum = slots[input_slots[*leg as usize - 1]]
-                .momentum()
-                .expect("P: empty slot");
+            let momentum = slots[input_slots[*leg]].momentum().expect("P: empty slot");
             WaveformSlot::Vector(VectorWf {
                 eps: ComplexVector::from(momentum),
                 momentum,
@@ -641,8 +641,8 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
         }
         LorentzEvalNode::IdentityAmp { i, j } => {
             // Full scalar bilinear ψ̄ δ ψ = ψ̄ (P_L+P_R) ψ; bra/ket by actual flow.
-            let f1 = evaluate_lorentz_node(tree, tree.node(*i), input_slots, slots);
-            let f2 = evaluate_lorentz_node(tree, tree.node(*j), input_slots, slots);
+            let f1 = evaluate_lorentz_node(tree, tree.value(*i), input_slots, slots);
+            let f2 = evaluate_lorentz_node(tree, tree.value(*j), input_slots, slots);
             let (fo, fi_col, _) = resolve_bra_ket(f1, f2);
             let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, Chirality::Both);
             WaveformSlot::Scalar(ScalarWf {
@@ -650,14 +650,14 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
                 momentum: fo.momentum - fi_col.momentum,
             })
         }
-        LorentzEvalNode::ScalarProduct { children } => {
+        LorentzEvalNode::Mul { children } => {
             // Implicit product of disconnected tensor factors.
             // At most one child may be non-scalar; all others must be scalars.
             let mut scalar_val = C::new(F::one(), F::zero());
             let mut scalar_mom = LorentzVector::zero();
             let mut non_scalar = WaveformSlot::Empty;
             for &child_idx in children {
-                let child = evaluate_lorentz_node(tree, tree.node(child_idx), input_slots, slots);
+                let child = evaluate_lorentz_node(tree, tree.value(child_idx), input_slots, slots);
                 match child {
                     WaveformSlot::Scalar(s) => {
                         scalar_val = scalar_val * s.value;
@@ -702,12 +702,17 @@ fn evaluate_lorentz_node<F: Real + FromPrimitive>(
 }
 
 fn evaluate_lorentz_structure<F: Real + FromPrimitive>(
-    structure: &super::dispatch::RootedTerm,
+    structure: &super::root_lorentz::RootedTerm,
     input_slots: &[usize],
     slots: &[WaveformSlot<F>],
 ) -> WaveformSlot<F> {
     let coeff = F::from(structure.coeff).expect("coef not valid");
-    let term = evaluate_lorentz_node(&structure.tree, structure.tree.root(), input_slots, slots);
+    let term = evaluate_lorentz_node(
+        &structure.tree,
+        structure.tree.root_value(),
+        input_slots,
+        slots,
+    );
     C::from(coeff) * term
 }
 
@@ -760,7 +765,7 @@ mod tests {
         // VVS1: Metric(1,2), spins [Z, Z, H]; root at vector leg 1 (idx 0).
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::Metric { mu: 1, nu: 2 }],
+            ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
         };
         let tree = LorentzEvalTree::build_at_leg(&term, &[3, 3, 1], Some(0)).unwrap();
 
@@ -788,7 +793,7 @@ mod tests {
         let input_slots = vec![0usize, 1, 2];
 
         let WaveformSlot::Vector(out) =
-            evaluate_lorentz_node(&tree, tree.root(), &input_slots, &slots)
+            evaluate_lorentz_node(&tree, tree.root_value(), &input_slots, &slots)
         else {
             panic!("VVS rooted at a vector leg must produce a vector current");
         };
@@ -992,7 +997,7 @@ mod tests {
     /// propagated leg with the opposite momentum sign (incoming convention).
     #[test]
     fn test_eval_off_shell_fermion_vs_fvixxx() {
-        use crate::helas::eval::dispatch::LorentzEvalTree;
+        use crate::helas::eval::root_lorentz::LorentzEvalTree;
         use crate::helas::vertex::{fvixxx, fvoxxx};
         use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
 
@@ -1008,7 +1013,7 @@ mod tests {
         // FFV1: Gamma(3,2,1) — legs 1,2 fermions, leg 3 vector.
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::Gamma { mu: 3, i: 2, j: 1 }],
+            ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
         };
         let spins = [2, 2, 3];
         // UFO convention: coupling includes i
@@ -1031,14 +1036,17 @@ mod tests {
             // ── GammaIout ≅ fvixxx: input is the flow-in column fermion (leg 1) ──
             let fi = InDiracWf::from_momentum(p_f, mass, hel, charge);
             let tree = LorentzEvalTree::build_at_leg(&term, &spins, Some(1)).unwrap();
-            assert!(matches!(tree.root(), LorentzEvalNode::GammaIout { .. }));
+            assert!(matches!(
+                tree.root_value(),
+                LorentzEvalNode::GammaIout { .. }
+            ));
 
             let input_slots = vec![0, 1, 2];
             let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
             slots[0] = WaveformSlot::FermionIn(fi);
             slots[2] = WaveformSlot::Vector(v);
 
-            let vertex = evaluate_lorentz_node(&tree, tree.root(), &input_slots, &slots);
+            let vertex = evaluate_lorentz_node(&tree, tree.root_value(), &input_slots, &slots);
             let WaveformSlot::FermionIn(got) =
                 evaluate_propagation(&prop_info, &vertex, &evaluated)
             else {
@@ -1062,13 +1070,16 @@ mod tests {
             // slot must itself be flow-out (a bra) to produce a flow-out current.
             let fo = fi.to_outgoing();
             let tree = LorentzEvalTree::build_at_leg(&term, &spins, Some(0)).unwrap();
-            assert!(matches!(tree.root(), LorentzEvalNode::GammaOout { .. }));
+            assert!(matches!(
+                tree.root_value(),
+                LorentzEvalNode::GammaOout { .. }
+            ));
 
             let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
             slots[1] = WaveformSlot::FermionOut(fo);
             slots[2] = WaveformSlot::Vector(v);
 
-            let vertex = evaluate_lorentz_node(&tree, tree.root(), &input_slots, &slots);
+            let vertex = evaluate_lorentz_node(&tree, tree.root_value(), &input_slots, &slots);
             let WaveformSlot::FermionOut(got) =
                 evaluate_propagation(&prop_info, &vertex, &evaluated)
             else {
@@ -1689,7 +1700,7 @@ mod tests {
 
         // print all asts
         for (i, ast) in asts.iter().enumerate() {
-            println!("AST {}: {:?}", i, ast);
+            println!("AST {}: {}", i, ast);
         }
         let n = asts.len();
         // The e-spine relative −1 vs MadGraph is carried by `fermi_sign`
@@ -1791,11 +1802,11 @@ mod tests {
 
         let ffs1 = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::ProjM { i: 2, j: 1 }],
+            ops: vec![LorentzOp::ProjM { i: 1, j: 0 }],
         };
         let ffs3 = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::ProjP { i: 2, j: 1 }],
+            ops: vec![LorentzOp::ProjP { i: 1, j: 0 }],
         };
         let spins = [2, 2, 1];
 
@@ -1818,7 +1829,7 @@ mod tests {
                 // FFS1: ProjM(2,1) → left bilinear × s
                 let tree1 = LorentzEvalTree::build_at_leg(&ffs1, &spins, None).unwrap();
                 let WaveformSlot::Scalar(got1) =
-                    evaluate_lorentz_node(&tree1, tree1.root(), &input_slots, &slots)
+                    evaluate_lorentz_node(&tree1, tree1.root_value(), &input_slots, &slots)
                 else {
                     panic!("FFS1 did not produce a scalar");
                 };
@@ -1831,7 +1842,7 @@ mod tests {
                 // FFS3: ProjP(2,1) → right bilinear × s
                 let tree3 = LorentzEvalTree::build_at_leg(&ffs3, &spins, None).unwrap();
                 let WaveformSlot::Scalar(got3) =
-                    evaluate_lorentz_node(&tree3, tree3.root(), &input_slots, &slots)
+                    evaluate_lorentz_node(&tree3, tree3.root_value(), &input_slots, &slots)
                 else {
                     panic!("FFS3 did not produce a scalar");
                 };

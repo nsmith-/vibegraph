@@ -4,154 +4,15 @@
 //! It stores descriptor types at compile time (external leg info, propagator params, vertex
 //! dispatches) and is evaluated at runtime against external momenta + helicity configurations.
 
-use std::ops::{Add, Mul};
+use itertools::Itertools;
 
-use super::dispatch::RootedTerm;
+use super::root_lorentz::RootedTerm;
 use crate::helas::repr::numbers::Charge;
-use crate::helas::repr::{lorentz::LorentzVector, Real, C};
-use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
 use crate::ufo::particles::ParticleId;
 use crate::ufo::vertices::VertexId;
 use crate::ufo::UFOModel;
-
-/// A runtime wavefunction register (holds one particle's wavefunction).
-///
-/// Fermion slots carry their flow direction in the type: a column (ket, `u`/`v`)
-/// current is [`WaveformSlot::FermionIn`] and a row (bra, `ū`/`v̄`) current is
-/// [`WaveformSlot::FermionOut`]. An off-shell current produced by a `GammaIout`-style
-/// node is flow-in; a `GammaJout`-style node is flow-out. Consumers request the flow
-/// they need (see [`WaveformSlot::expect_fermion_in`] / [`WaveformSlot::expect_fermion_out`]),
-/// applying the Dirac adjoint only when the topology genuinely needs the opposite flow.
-#[derive(Clone, Debug, Copy)]
-pub enum WaveformSlot<F: Real> {
-    /// Flow-in (column / ket) Dirac spinor or off-shell fermion current
-    FermionIn(InDiracWf<F>),
-    /// Flow-out (row / bra) Dirac spinor or off-shell fermion current
-    FermionOut(OutDiracWf<F>),
-    /// 4-component polarization / off-shell vector current
-    Vector(VectorWf<F>),
-    /// Scalar amplitude + momentum
-    Scalar(ScalarWf<F>),
-    /// Empty slot (not yet computed)
-    Empty,
-}
-
-impl<F: Real> Add for WaveformSlot<F> {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        use WaveformSlot::*;
-        match (self, other) {
-            (Empty, x) | (x, Empty) => x,
-            (Scalar(s1), Scalar(s2)) => {
-                assert_eq!(
-                    s1.momentum, s2.momentum,
-                    "Cannot add scalar waveforms with different momenta"
-                );
-                WaveformSlot::Scalar(ScalarWf {
-                    value: s1.value + s2.value,
-                    momentum: s1.momentum,
-                })
-            }
-            (Vector(v1), Vector(v2)) => {
-                assert_eq!(
-                    v1.momentum, v2.momentum,
-                    "Cannot add vector waveforms with different momenta"
-                );
-                WaveformSlot::Vector(VectorWf {
-                    eps: v1.eps + v2.eps,
-                    momentum: v1.momentum,
-                })
-            }
-            (FermionIn(f1), FermionIn(f2)) => {
-                assert_eq!(
-                    f1.momentum, f2.momentum,
-                    "Cannot add fermion waveforms with different momenta"
-                );
-                WaveformSlot::FermionIn(InDiracWf::from_spinor(f1.spinor + f2.spinor, f1.momentum))
-            }
-            (FermionOut(f1), FermionOut(f2)) => {
-                assert_eq!(
-                    f1.momentum, f2.momentum,
-                    "Cannot add fermion waveforms with different momenta"
-                );
-                WaveformSlot::FermionOut(OutDiracWf::from_spinor(
-                    f1.spinor + f2.spinor,
-                    f1.momentum,
-                ))
-            }
-            _ => panic!("Addition only implemented for matching waveform variants"),
-        }
-    }
-}
-
-impl<F> Mul<WaveformSlot<F>> for C<F>
-where
-    F: Real,
-{
-    type Output = WaveformSlot<F>;
-
-    fn mul(self, rhs: WaveformSlot<F>) -> WaveformSlot<F> {
-        use WaveformSlot::*;
-        match rhs {
-            Empty => Empty,
-            Scalar(s) => Scalar(ScalarWf {
-                value: self * s.value,
-                momentum: s.momentum,
-            }),
-            Vector(v) => Vector(VectorWf {
-                eps: v.eps * self,
-                momentum: v.momentum,
-            }),
-            FermionIn(f) => FermionIn(InDiracWf::from_spinor(f.spinor * self, f.momentum)),
-            FermionOut(f) => FermionOut(OutDiracWf::from_spinor(f.spinor * self, f.momentum)),
-        }
-    }
-}
-
-impl<F: Real> WaveformSlot<F> {
-    pub fn momentum(&self) -> Option<LorentzVector<F>> {
-        match self {
-            WaveformSlot::FermionIn(f) => Some(f.momentum),
-            WaveformSlot::FermionOut(f) => Some(f.momentum),
-            WaveformSlot::Vector(v) => Some(v.momentum),
-            WaveformSlot::Scalar(s) => Some(s.momentum),
-            WaveformSlot::Empty => None,
-        }
-    }
-
-    /// Extract a flow-in (column / ket) fermion, applying the Dirac adjoint if
-    /// the slot holds a flow-out current (the topology asked for the opposite flow).
-    pub fn expect_fermion_in(self) -> InDiracWf<F> {
-        match self {
-            WaveformSlot::FermionIn(f) => f,
-            // A fermion line carries one flow throughout. With flow-typed externals
-            // (`build_external_slot`) and flow-preserving currents, the flow a
-            // consumer needs always matches the slot — a flow-out slot here means
-            // the dispatch mis-assigned the flow, so panic instead of silently
-            // applying a (physically wrong) mid-line Dirac adjoint.
-            WaveformSlot::FermionOut(_) => {
-                panic!("expect_fermion_in: slot is flow-OUT (fermion-flow mismatch)")
-            }
-            _ => panic!("expected a fermion waveform slot"),
-        }
-    }
-
-    /// Extract a flow-out (row / bra) fermion, applying the Dirac adjoint if
-    /// the slot holds a flow-in current (the topology asked for the opposite flow).
-    pub fn expect_fermion_out(self) -> OutDiracWf<F> {
-        match self {
-            WaveformSlot::FermionOut(f) => f,
-            // See expect_fermion_in: flow is an enforced invariant, not coerced.
-            WaveformSlot::FermionIn(_) => {
-                panic!("expect_fermion_out: slot is flow-IN (fermion-flow mismatch)")
-            }
-            _ => panic!("expected a fermion waveform slot"),
-        }
-    }
-}
 
 /// Description of an external leg baked in at compile time.
 #[derive(Clone, Debug)]
@@ -165,6 +26,16 @@ pub struct ExtLegInfo {
     /// Charge
     pub charge: Charge,
     // TODO: mass: F
+}
+
+impl std::fmt::Display for ExtLegInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "id: {:?}, leg: {} {} {} }}",
+            self.id, self.leg_idx, self.spin, self.charge
+        )
+    }
 }
 
 /// Description of an internal propagator.
@@ -208,7 +79,7 @@ impl VertexTerm {
             .expr
             .iter()
             .map(|term| {
-                super::dispatch::root_term(term, &lorentz.spins, result_leg_idx)
+                super::root_lorentz::root_term(term, &lorentz.spins, result_leg_idx)
                     .expect("Unable to root term from Lorentz expression")
             })
             .collect();
@@ -218,6 +89,26 @@ impl VertexTerm {
             spins: lorentz.spins.clone(),
             coupling_id,
         }
+    }
+
+    /// Convert the rooted term
+    fn render_term(&self) -> String {
+        self.terms
+            .iter()
+            .map(|term| format!("{}", term))
+            .collect::<Vec<_>>()
+            .join("+")
+    }
+}
+
+impl std::fmt::Display for VertexTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?}*({})",
+            self.coupling_id,
+            self.render_term().as_str()
+        )
     }
 }
 
@@ -253,6 +144,18 @@ impl VertexInfo {
             terms,
             n_legs: vertex.particles.len(),
         }
+    }
+}
+
+impl std::fmt::Display for VertexInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            self.terms
+                .iter()
+                .map(|term| format!("{}", term))
+                .join(" + ")
+                .as_str(),
+        )
     }
 }
 
@@ -310,6 +213,29 @@ impl EvalStep {
     }
 }
 
+impl std::fmt::Display for EvalStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvalStep::ExternalWf { info, .. } => write!(f, "ExternalWf({})", info),
+            EvalStep::OffShellCurrent {
+                info, input_slots, ..
+            } => {
+                write!(f, "OffShellCurrent({}, {:?})", info, input_slots)
+            }
+            EvalStep::Propagate {
+                info: PropInfo { id },
+                input_slot,
+                ..
+            } => write!(f, "Propagate({:?}, slots[{}])", id, input_slot),
+            EvalStep::ContractAmplitude {
+                info, input_slots, ..
+            } => {
+                write!(f, "ContractAmplitude({}, {:?})", info, input_slots)
+            }
+        }
+    }
+}
+
 /// A compiled representation of a single Feynman diagram.
 ///
 /// The AST is built once from a `DiagramView` + `UFOModel` and then evaluated
@@ -350,5 +276,20 @@ impl DiagramAst {
             symmetry_factor,
             fermi_sign,
         }
+    }
+}
+
+impl std::fmt::Display for DiagramAst {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "AST(external legs {}, slots {}) steps:\n{}",
+            self.n_ext,
+            self.n_slots,
+            self.steps
+                .iter()
+                .map(|s| format!(" slots[{}] = {}", s.output_slot(), s))
+                .join("\n")
+        )
     }
 }
