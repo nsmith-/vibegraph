@@ -8,7 +8,7 @@ use crate::diagrams::DiagramSet;
 use crate::ufo::UFOModel;
 
 use super::ast::DiagramAst;
-use super::topo_sort;
+use super::root_diagram;
 
 /// Errors during AST compilation.
 #[derive(Debug, Clone)]
@@ -61,6 +61,6 @@ pub fn compile_diagram_ast(
 ) -> Result<Vec<DiagramAst>, CompileError> {
     set.diagrams
         .views()
-        .map(|view| topo_sort::compile_single_diagram(&view, model))
+        .map(|view| root_diagram::compile_single_diagram(&view, model))
         .collect()
 }

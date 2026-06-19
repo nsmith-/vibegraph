@@ -1,11 +1,14 @@
-//! Vertex dispatch: resolve LorentzExpr + spin codes into rooted contraction trees at compile time.
+//! Vertex dispatch: resolve LorentzTerm into rooted contraction trees at compile time.
 //!
-//! Each LorentzTerm is decomposed into a tensor network with an output fiber fixed by `result_leg_idx`.
-//! The rooted descriptor (RootedNode) specifies the concrete primitive and its input/output orientation
-//! so that eval walks resolved nodes, never symbolic ops.
+//! Each LorentzTerm is a tensor network, we root it with an output fixed by `result_leg_idx`.
+//! The rooted descriptor (RootedNode) specifies the concrete primitive and its input/output
+//! orientation so that eval walks resolved nodes
 
 pub use crate::helas::repr::numbers::Chirality;
-use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
+use crate::{
+    helas::eval::tree::Tree,
+    ufo::lorentz::{LorentzOp, LorentzTerm},
+};
 
 /// A single LorentzTerm, already rooted at the output leg and ready to eval.
 #[derive(Clone, Debug)]
@@ -14,6 +17,12 @@ pub struct RootedTerm {
     pub coeff: f64,
     /// Resolved primitive with output fiber fixed.
     pub tree: LorentzEvalTree,
+}
+
+impl std::fmt::Display for RootedTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}*{}", self.coeff, self.tree)
+    }
 }
 
 /// Compile error types for unsupported vertices or invalid structures.
@@ -33,8 +42,8 @@ pub enum CompileError {
 /// - mu, nu, ... for vectors
 #[derive(Clone, Debug, PartialEq)]
 pub enum LorentzEvalNode {
-    /// Leg index according to LorentzOp conventions (1-indexed)
-    Leg(i32),
+    /// Leg index (0-indexed)
+    Leg(usize),
     /// 2-fermion in, vector out
     GammaVout { i: usize, j: usize },
     /// vector+in-flowing fermion in, in-flowing fermion out
@@ -58,9 +67,9 @@ pub enum LorentzEvalNode {
     MetricVout { v: usize },
     /// Handle the implicit product over the disconnected structures.
     /// At most one child can be non-scalar (which then implies the output type)
-    ScalarProduct { children: Vec<usize> },
-    /// 4-momentum of leg `leg` (1-indexed) as a vector at a free Lorentz index
-    P { leg: i32 },
+    Mul { children: Vec<usize> },
+    /// 4-momentum of leg `leg` (0-indexed) as a vector at a free Lorentz index
+    P { leg: usize },
     /// Full scalar bilinear ψ̄_i δ ψ_j (Identity amplitude contraction)
     IdentityAmp { i: usize, j: usize },
     // TODO: Sigma, Epsilon
@@ -77,9 +86,28 @@ impl LorentzEvalNode {
             LorentzEvalNode::ProjMAmp { i, j } | LorentzEvalNode::ProjPAmp { i, j } => vec![*i, *j],
             LorentzEvalNode::Metric { mu, nu } => vec![*mu, *nu],
             LorentzEvalNode::MetricVout { v } => vec![*v],
-            LorentzEvalNode::ScalarProduct { children } => children.clone(),
+            LorentzEvalNode::Mul { children } => children.clone(),
             LorentzEvalNode::P { .. } => vec![],
             LorentzEvalNode::IdentityAmp { i, j } => vec![*i, *j],
+        }
+    }
+
+    fn render(&self, body: String) -> String {
+        use LorentzEvalNode::*;
+        match self {
+            Leg(i) => format!("Leg({})", i), // leaf node
+            GammaVout { .. } => format!("GammaVout({})", body),
+            GammaIout { .. } => format!("GammaIout({})", body),
+            GammaOout { .. } => format!("GammaOout({})", body),
+            ProjM { .. } => format!("ProjM({})", body),
+            ProjP { .. } => format!("ProjP({})", body),
+            ProjMAmp { .. } => format!("ProjMAmp({})", body),
+            ProjPAmp { .. } => format!("ProjPAmp({})", body),
+            Metric { .. } => format!("Metric({})", body),
+            MetricVout { .. } => format!("MetricVout({})", body),
+            Mul { .. } => format!("ScalarProduct({})", body),
+            P { .. } => format!("P({})", body),
+            IdentityAmp { .. } => format!("IdentityAmp({})", body),
         }
     }
 }
@@ -90,7 +118,28 @@ pub struct LorentzEvalTree {
     root: Option<usize>,
 }
 
+impl Tree for LorentzEvalTree {
+    type Item = LorentzEvalNode;
+    type NodeId = usize;
+
+    fn children(&self, node: Self::NodeId) -> impl Iterator<Item = usize> {
+        self.value(node).children().into_iter()
+    }
+
+    fn value(&self, node: Self::NodeId) -> &Self::Item {
+        &self.nodes[node]
+    }
+
+    fn root(&self) -> Self::NodeId {
+        self.root.expect("LorentzEvalTree has no root node")
+    }
+}
+
 impl LorentzEvalTree {
+    pub fn root_value(&self) -> &LorentzEvalNode {
+        self.value(self.root())
+    }
+
     fn add_node(&mut self, node: LorentzEvalNode) -> usize {
         let idx = self.nodes.len();
         self.nodes.push(node);
@@ -100,7 +149,7 @@ impl LorentzEvalTree {
     fn build_child(
         &mut self,
         term: &LorentzTerm,
-        idx: i32,
+        idx: isize,
         visited_ops: &mut Vec<usize>,
     ) -> Result<usize, CompileError> {
         // Find an operator that involves this index and has not been visited
@@ -109,9 +158,9 @@ impl LorentzEvalTree {
                 && visited_ops.iter().all(|&j| i != j)
         }) else {
             // No operator involves this index
-            if idx > 0 {
+            if idx >= 0 {
                 // This is a scalar leaf node
-                return Ok(self.add_node(LorentzEvalNode::Leg(idx)));
+                return Ok(self.add_node(LorentzEvalNode::Leg(idx as usize)));
             } else {
                 return Err(CompileError::InvalidStructure(format!(
                     "Free index {} has no operator in term",
@@ -150,72 +199,50 @@ impl LorentzEvalTree {
                 }
             }
             LorentzOp::ProjM { i, j } => {
-                if *i > 0 && *j > 0 {
-                    // Contracts to a scalar
-                    let child_i = self.build_child(term, *i, visited_ops)?;
-                    let child_j = self.build_child(term, *j, visited_ops)?;
-                    Ok(self.add_node(LorentzEvalNode::ProjMAmp {
-                        i: child_i,
-                        j: child_j,
-                    }))
-                } else {
-                    // Projects a fermion
-                    let k = if *i == idx {
-                        *j
-                    } else {
-                        assert_eq!(*j, idx);
-                        *i
-                    };
-                    let child = self.build_child(term, k, visited_ops)?;
+                if *i == idx {
+                    let child = self.build_child(term, *j, visited_ops)?;
                     Ok(self.add_node(LorentzEvalNode::ProjM { i: child }))
+                } else if *j == idx {
+                    let child = self.build_child(term, *i, visited_ops)?;
+                    Ok(self.add_node(LorentzEvalNode::ProjM { i: child }))
+                } else {
+                    unreachable!("ProjM op should involve idx {}", idx);
                 }
             }
             LorentzOp::ProjP { i, j } => {
-                if *i > 0 && *j > 0 {
-                    // Contracts to a scalar
-                    let child_i = self.build_child(term, *i, visited_ops)?;
-                    let child_j = self.build_child(term, *j, visited_ops)?;
-                    Ok(self.add_node(LorentzEvalNode::ProjPAmp {
-                        i: child_i,
-                        j: child_j,
-                    }))
-                } else {
-                    // Projects a fermion
-                    let k = if *i == idx {
-                        *j
-                    } else {
-                        assert_eq!(*j, idx);
-                        *i
-                    };
-                    let child = self.build_child(term, k, visited_ops)?;
+                if *i == idx {
+                    let child = self.build_child(term, *j, visited_ops)?;
                     Ok(self.add_node(LorentzEvalNode::ProjP { i: child }))
+                } else if *j == idx {
+                    let child = self.build_child(term, *i, visited_ops)?;
+                    Ok(self.add_node(LorentzEvalNode::ProjP { i: child }))
+                } else {
+                    unreachable!("ProjP op should involve idx {}", idx);
                 }
             }
             LorentzOp::Metric { mu, nu } => {
-                let child_mu = self.build_child(term, *mu, visited_ops)?;
-                let child_nu = self.build_child(term, *nu, visited_ops)?;
-                Ok(self.add_node(LorentzEvalNode::Metric {
-                    mu: child_mu,
-                    nu: child_nu,
-                }))
+                if *mu == idx {
+                    let child = self.build_child(term, *nu, visited_ops)?;
+                    Ok(self.add_node(LorentzEvalNode::MetricVout { v: child }))
+                } else if *nu == idx {
+                    let child = self.build_child(term, *mu, visited_ops)?;
+                    Ok(self.add_node(LorentzEvalNode::MetricVout { v: child }))
+                } else {
+                    unreachable!("Metric op should involve idx {}", idx);
+                }
             }
-            LorentzOp::P { leg, .. } => {
+            LorentzOp::P { mu, leg } => {
                 // mu == idx (guaranteed by involves_vector fix); leg is the momentum source particle
-                Ok(self.add_node(LorentzEvalNode::P { leg: *leg }))
+                assert_eq!(*mu, idx, "Momentum index mismatch");
+                Ok(self.add_node(LorentzEvalNode::P { leg: *leg as usize }))
             }
             LorentzOp::Identity { i, j } => {
-                if *i > 0 && *j > 0 {
-                    // Bilinear scalar ū_i δ ψ_j
-                    let child_i = self.build_child(term, *i, visited_ops)?;
-                    let child_j = self.build_child(term, *j, visited_ops)?;
-                    Ok(self.add_node(LorentzEvalNode::IdentityAmp {
-                        i: child_i,
-                        j: child_j,
-                    }))
+                if *i == idx {
+                    self.build_child(term, *j, visited_ops)
+                } else if *j == idx {
+                    self.build_child(term, *i, visited_ops)
                 } else {
-                    // Projection: δ is transparent, just thread the fermion through
-                    let k = if *i == idx { *j } else { *i };
-                    self.build_child(term, k, visited_ops)
+                    unreachable!("Identity op should involve idx {}", idx);
                 }
             }
             LorentzOp::Sigma { .. } => Err(CompileError::UnsupportedVertex(
@@ -228,18 +255,6 @@ impl LorentzEvalTree {
                 "Charge conjugation is deferred to future work".to_string(),
             )),
         }
-    }
-
-    /// Get the node at the specified index.
-    pub fn node(&self, idx: usize) -> &LorentzEvalNode {
-        &self.nodes[idx]
-    }
-
-    /// Get the root node
-    pub fn root(&self) -> &LorentzEvalNode {
-        self.root
-            .map(|idx| self.node(idx))
-            .expect("The only public constructor is build_at_leg, and it always sets a root node")
     }
 
     /// Build a LorentzEvalTree rooted at the specified leg index.
@@ -262,48 +277,24 @@ impl LorentzEvalTree {
         let mut visited_ops = Vec::new(); // LorentzOp is so small that Vec is probably better than HashSet
         let mut term_roots = Vec::new();
 
-        // When computing an off-shell current (idx=Some), the output leg is NOT an input.
-        // Track its 1-indexed value so we can exclude it from leaf nodes below.
-        let excluded_leg: Option<i32> = idx.map(|i| (i as i32) + 1);
-
         // If idx is specified, build the tree rooted at that leg
-        if let Some(root_leg) = excluded_leg {
-            // Special case: the output leg sits in a Metric g^{μν} (e.g. the
-            // off-shell vector current of a VVS/VVVV vertex). The metric raises
-            // the output index, so the current is simply the OTHER metric leg as
-            // a vector (the remaining scalar/vector factors multiply in via the
-            // ScalarProduct below). The generic `build_child` would instead
-            // contract both legs into a scalar and wrongly read the output leg
-            // as an input — see topo_sort's output-leg placeholder.
-            let metric_partner = term.ops.iter().enumerate().find_map(|(i, op)| match op {
-                LorentzOp::Metric { mu, nu } if *mu == root_leg => Some((i, *nu)),
-                LorentzOp::Metric { mu, nu } if *nu == root_leg => Some((i, *mu)),
-                _ => None,
-            });
-
-            if let Some((iop, partner)) = metric_partner {
-                visited_ops.push(iop);
-                let partner_node = tree.build_child(term, partner, &mut visited_ops)?;
-                let node_idx = tree.add_node(LorentzEvalNode::MetricVout { v: partner_node });
-                term_roots.push(node_idx);
+        if let Some(root_leg) = idx {
+            let node_idx = tree.build_child(term, root_leg as isize, &mut visited_ops)?;
+            // If no operator connects to this leg, build_child returns a trivial Leg leaf.
+            // Pop it — the disconnected structures collected below are the actual output.
+            let is_trivial_leaf =
+                matches!(tree.nodes[node_idx], LorentzEvalNode::Leg(i) if i == root_leg);
+            if is_trivial_leaf {
+                tree.nodes.pop();
             } else {
-                let node_idx = tree.build_child(term, root_leg, &mut visited_ops)?;
-                // If no operator connects to this leg, build_child returns a trivial Leg leaf.
-                // Pop it — the disconnected structures collected below are the actual output.
-                let is_trivial_leaf =
-                    matches!(tree.nodes[node_idx], LorentzEvalNode::Leg(i) if i == root_leg);
-                if is_trivial_leaf {
-                    tree.nodes.pop();
-                } else {
-                    term_roots.push(node_idx);
-                }
+                term_roots.push(node_idx);
             }
         }
 
         // find all the remaining scalar roots
         while visited_ops.len() < term.ops.len() {
             // find an unvisited op
-            let Some((_, op)) = term
+            let Some((iop, op)) = term
                 .ops
                 .iter()
                 .enumerate()
@@ -323,13 +314,32 @@ impl LorentzEvalTree {
                         nu: v_out,
                     })
                 }
-                LorentzOp::ProjM { i, j } | LorentzOp::ProjP { i, j } if *i > 0 && *j > 0 => {
-                    // upstream will handle the contraction
-                    tree.build_child(term, *i, &mut visited_ops)?
+                LorentzOp::ProjM { i, j } => {
+                    visited_ops.push(iop);
+                    let child_i = tree.build_child(term, *i, &mut visited_ops)?;
+                    let child_j = tree.build_child(term, *j, &mut visited_ops)?;
+                    tree.add_node(LorentzEvalNode::ProjMAmp {
+                        i: child_i,
+                        j: child_j,
+                    })
                 }
-                LorentzOp::Metric { mu, nu } if *mu > 0 && *nu > 0 => {
-                    // upstream will handle the contraction
-                    tree.build_child(term, *mu, &mut visited_ops)?
+                LorentzOp::ProjP { i, j } => {
+                    visited_ops.push(iop);
+                    let child_i = tree.build_child(term, *i, &mut visited_ops)?;
+                    let child_j = tree.build_child(term, *j, &mut visited_ops)?;
+                    tree.add_node(LorentzEvalNode::ProjPAmp {
+                        i: child_i,
+                        j: child_j,
+                    })
+                }
+                LorentzOp::Metric { mu, nu } => {
+                    visited_ops.push(iop);
+                    let child_mu = tree.build_child(term, *mu, &mut visited_ops)?;
+                    let child_nu = tree.build_child(term, *nu, &mut visited_ops)?;
+                    tree.add_node(LorentzEvalNode::Metric {
+                        mu: child_mu,
+                        nu: child_nu,
+                    })
                 }
                 LorentzOp::P { mu, .. } => {
                     // p^μ contracted with the vector leg at the same index
@@ -340,8 +350,14 @@ impl LorentzEvalTree {
                         nu: leg_node,
                     })
                 }
-                LorentzOp::Identity { i, j } if *i > 0 && *j > 0 => {
-                    tree.build_child(term, *i, &mut visited_ops)?
+                LorentzOp::Identity { i, j } => {
+                    visited_ops.push(iop);
+                    let child_i = tree.build_child(term, *i, &mut visited_ops)?;
+                    let child_j = tree.build_child(term, *j, &mut visited_ops)?;
+                    tree.add_node(LorentzEvalNode::IdentityAmp {
+                        i: child_i,
+                        j: child_j,
+                    })
                 }
                 _ => {
                     todo!(
@@ -357,16 +373,15 @@ impl LorentzEvalTree {
         // Skip the output leg (excluded_leg) — it is not an input for off-shell currents.
         for (ileg, spin) in spins.iter().enumerate() {
             if *spin == 1 {
-                let idx = (ileg as i32) + 1;
-                if Some(idx) == excluded_leg {
+                if Some(ileg) == idx {
                     continue; // output leg — not an input
                 }
                 if !tree
                     .nodes
                     .iter()
-                    .any(|node| matches!(node, LorentzEvalNode::Leg(i) if *i == idx))
+                    .any(|node| matches!(node, LorentzEvalNode::Leg(i) if *i == ileg))
                 {
-                    term_roots.push(tree.add_node(LorentzEvalNode::Leg(idx)));
+                    term_roots.push(tree.add_node(LorentzEvalNode::Leg(ileg)));
                 }
             }
         }
@@ -375,7 +390,7 @@ impl LorentzEvalTree {
         let root = if term_roots.len() == 1 {
             term_roots[0]
         } else {
-            tree.add_node(LorentzEvalNode::ScalarProduct {
+            tree.add_node(LorentzEvalNode::Mul {
                 children: term_roots,
             })
         };
@@ -383,13 +398,28 @@ impl LorentzEvalTree {
         tree.root = Some(root);
         Ok(tree)
     }
+
+    fn render_expression(&self) -> String {
+        self.fold_recursive(
+            &|node, acc| node.render(acc),
+            &|acc, r| if acc.is_empty() { r } else { acc + "," + &r },
+            String::new(),
+            self.root.expect("should have a root node"),
+        )
+    }
+}
+
+impl std::fmt::Display for LorentzEvalTree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.render_expression())
+    }
 }
 
 /// Resolve a single LorentzTerm into a rooted primitive with the output leg fixed.
 ///
 /// # Arguments
 /// * `term` — The UFO LorentzTerm to resolve.
-/// * `spins` — Spin codes [1, 2, 3] for each leg (1-indexed).
+/// * `spins` — Spin codes [1, 2, 3] for each leg
 /// * `result_leg_idx` — The output leg (0-indexed), or `None` for amplitude (scalar sink).
 ///
 /// # Returns
@@ -420,39 +450,39 @@ mod tests {
         // placeholder and panic). Regression for the VVS Leg/placeholder crash.
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::Metric { mu: 1, nu: 2 }],
+            ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
         };
         let spins = vec![3, 3, 1];
 
-        // Output = vector leg 1 (idx 0): current = Leg(2) × Leg(3), no Leg(1).
+        // Output = vector leg 0: current = Leg(1) × Leg(2), no Leg(0).
         let t0 = LorentzEvalTree::build_at_leg(&term, &spins, Some(0)).unwrap();
         assert!(
             !t0.nodes
                 .iter()
-                .any(|n| matches!(n, LorentzEvalNode::Leg(1))),
+                .any(|n| matches!(n, LorentzEvalNode::Leg(0))),
             "VVS rooted at leg 1 must not consume its own output leg: {t0:?}"
         );
         assert!(
-            matches!(t0.root(), LorentzEvalNode::ScalarProduct { .. }),
+            matches!(t0.root_value(), LorentzEvalNode::Mul { .. }),
             "VVS rooted at a vector leg must yield a vector (scalar×vector), got {:?}",
-            t0.root()
+            t0.root_value()
         );
 
-        // Output = vector leg 2 (idx 1): current = Leg(1) × Leg(3), no Leg(2).
+        // Output = vector leg 2 (idx 1): current = Leg(0) × Leg(2), no Leg(1).
         let t1 = LorentzEvalTree::build_at_leg(&term, &spins, Some(1)).unwrap();
         assert!(
             !t1.nodes
                 .iter()
-                .any(|n| matches!(n, LorentzEvalNode::Leg(2))),
+                .any(|n| matches!(n, LorentzEvalNode::Leg(1))),
             "VVS rooted at leg 2 must not consume its own output leg: {t1:?}"
         );
 
         // Output = scalar leg 3 (idx 2): unchanged — a Metric contraction → scalar H.
         let t2 = LorentzEvalTree::build_at_leg(&term, &spins, Some(2)).unwrap();
         assert!(
-            matches!(t2.root(), LorentzEvalNode::Metric { .. }),
+            matches!(t2.root_value(), LorentzEvalNode::Metric { .. }),
             "VVS rooted at the scalar leg must contract the two vectors: {:?}",
-            t2.root()
+            t2.root_value()
         );
     }
 
@@ -461,7 +491,7 @@ mod tests {
         // FFV1: Gamma(3,2,1) rooted at vector leg 3 → SpinorCurrent{Both,row=2,col=1}
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::Gamma { mu: 3, i: 2, j: 1 }],
+            ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 3]; // e+, e-, photon
         let result = root_term(&term, &spins, Some(2)).unwrap();
@@ -470,8 +500,8 @@ mod tests {
             result.tree,
             LorentzEvalTree {
                 nodes: vec![
-                    LorentzEvalNode::Leg(2),
                     LorentzEvalNode::Leg(1),
+                    LorentzEvalNode::Leg(0),
                     LorentzEvalNode::GammaVout { i: 0, j: 1 },
                 ],
                 root: Some(2)
@@ -484,7 +514,7 @@ mod tests {
         // FFV1 rooted at amplitude (scalar sink) → ScalarProduct of the vector output and itself
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::Gamma { mu: 3, i: 2, j: 1 }],
+            ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 3];
         let result = root_term(&term, &spins, None).unwrap();
@@ -494,10 +524,10 @@ mod tests {
             result.tree,
             LorentzEvalTree {
                 nodes: vec![
-                    LorentzEvalNode::Leg(2),
                     LorentzEvalNode::Leg(1),
+                    LorentzEvalNode::Leg(0),
                     LorentzEvalNode::GammaVout { i: 0, j: 1 },
-                    LorentzEvalNode::Leg(3),
+                    LorentzEvalNode::Leg(2),
                     LorentzEvalNode::Metric { mu: 2, nu: 3 },
                 ],
                 root: Some(4)
@@ -511,8 +541,8 @@ mod tests {
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![
-                LorentzOp::Gamma { mu: 3, i: 2, j: -1 },
-                LorentzOp::ProjM { i: -1, j: 1 },
+                LorentzOp::Gamma { mu: 2, i: 1, j: -1 },
+                LorentzOp::ProjM { i: -1, j: 0 },
             ],
         };
         let spins = vec![2, 2, 3];
@@ -523,11 +553,11 @@ mod tests {
             result.tree,
             LorentzEvalTree {
                 nodes: vec![
-                    LorentzEvalNode::Leg(2),
                     LorentzEvalNode::Leg(1),
+                    LorentzEvalNode::Leg(0),
                     LorentzEvalNode::ProjM { i: 1 },
                     LorentzEvalNode::GammaVout { i: 0, j: 2 },
-                    LorentzEvalNode::Leg(3),
+                    LorentzEvalNode::Leg(2),
                     LorentzEvalNode::Metric { mu: 3, nu: 4 },
                 ],
                 root: Some(5)
@@ -540,7 +570,7 @@ mod tests {
         // FFS1: ProjM(2,1) rooted at amplitude → ScalarProduct (bilinear)
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::ProjM { i: 2, j: 1 }],
+            ops: vec![LorentzOp::ProjM { i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 1];
         let result = root_term(&term, &spins, None).unwrap();
@@ -548,11 +578,11 @@ mod tests {
             result.tree,
             LorentzEvalTree {
                 nodes: vec![
-                    LorentzEvalNode::Leg(2),
                     LorentzEvalNode::Leg(1),
+                    LorentzEvalNode::Leg(0),
                     LorentzEvalNode::ProjMAmp { i: 0, j: 1 },
-                    LorentzEvalNode::Leg(3),
-                    LorentzEvalNode::ScalarProduct {
+                    LorentzEvalNode::Leg(2),
+                    LorentzEvalNode::Mul {
                         children: vec![2, 3]
                     },
                 ],
@@ -563,10 +593,10 @@ mod tests {
 
     #[test]
     fn test_root_ffs_off_shell_scalar() {
-        // FFS1: ProjM(2,1) rooted at scalar leg 3 → just the bilinear, no Leg(3)
+        // FFS1: ProjM(2,1) rooted at scalar leg 3 → just the bilinear, no Leg(2)
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::ProjM { i: 2, j: 1 }],
+            ops: vec![LorentzOp::ProjM { i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 1];
         let result = root_term(&term, &spins, Some(2)).unwrap();
@@ -574,8 +604,8 @@ mod tests {
             result.tree,
             LorentzEvalTree {
                 nodes: vec![
-                    LorentzEvalNode::Leg(2),
                     LorentzEvalNode::Leg(1),
+                    LorentzEvalNode::Leg(0),
                     LorentzEvalNode::ProjMAmp { i: 0, j: 1 },
                 ],
                 root: Some(2)
@@ -590,10 +620,10 @@ mod tests {
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::Sigma {
-                mu: 1,
-                nu: 2,
-                i: 2,
-                j: 1,
+                mu: 0,
+                nu: 1,
+                i: 1,
+                j: 0,
             }],
         };
         let spins = vec![2, 2, 3];
@@ -606,7 +636,7 @@ mod tests {
         // VVS1: Metric(1,2) rooted at amplitude → Metric contraction
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::Metric { mu: 1, nu: 2 }],
+            ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
         };
         let spins = vec![3, 3, 1];
         let result = root_term(&term, &spins, None).unwrap();
@@ -616,11 +646,11 @@ mod tests {
             result.tree,
             LorentzEvalTree {
                 nodes: vec![
+                    LorentzEvalNode::Leg(0),
                     LorentzEvalNode::Leg(1),
-                    LorentzEvalNode::Leg(2),
                     LorentzEvalNode::Metric { mu: 0, nu: 1 },
-                    LorentzEvalNode::Leg(3),
-                    LorentzEvalNode::ScalarProduct {
+                    LorentzEvalNode::Leg(2),
+                    LorentzEvalNode::Mul {
                         children: vec![2, 3]
                     },
                 ],
@@ -642,10 +672,10 @@ mod tests {
             result.tree,
             LorentzEvalTree {
                 nodes: vec![
+                    LorentzEvalNode::Leg(0),
                     LorentzEvalNode::Leg(1),
                     LorentzEvalNode::Leg(2),
-                    LorentzEvalNode::Leg(3),
-                    LorentzEvalNode::ScalarProduct {
+                    LorentzEvalNode::Mul {
                         children: vec![0, 1, 2]
                     },
                 ],
