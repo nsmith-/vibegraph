@@ -15,7 +15,7 @@ mod validate_vegas {
     const ALPHA_QED_MZ: f64 = 1.0 / 132.507;
     const MDL_MZ: f64 = 91.188;
     use std::f64::consts::PI;
-    use vibegraph::helas::eval::AmplitudeEvaluator;
+    use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
     use vibegraph::helas::LorentzVector;
     use vibegraph::phasespace::{self, GEV2_TO_PB};
     use vibegraph::ufo::slha::ParamCard;
@@ -38,7 +38,7 @@ mod validate_vegas {
         let ext = evaluator.external_particles();
         let m_in = evaluated.mass(ext[0]);
         let m_out = evaluated.mass(ext[2]);
-        let bound = evaluator.bind::<f64>(evaluated);
+        let bound = BoundAmplitude::<f64>::bind(evaluator, evaluated);
 
         let (cos_min, cos_max) = cos_range;
         let prefactor = phasespace::prefactor2(sqrt_s) * (cos_max - cos_min) / 2.0;

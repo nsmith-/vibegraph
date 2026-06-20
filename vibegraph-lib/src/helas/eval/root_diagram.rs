@@ -21,6 +21,7 @@ use std::collections::HashSet;
 use feyngraph::diagram::view::{DiagramView, LegView, VertexView};
 use itertools::Either;
 
+use crate::diagrams::DiagramSet;
 use crate::helas::eval::diagram_eval::{ExtLegInfo, PropInfo, VertexInfo};
 use crate::helas::eval::tree::Tree;
 use crate::helas::repr::numbers::Charge;
@@ -28,32 +29,8 @@ use crate::ufo::particles::ParticleId;
 use crate::ufo::vertices::VertexId;
 use crate::ufo::UFOModel;
 
-use super::compile::CompileError;
+use super::error::{CompileError, RootDiagramError};
 use super::root_lorentz::RootLorentzError;
-
-/// Errors from Pass 1: walking the diagram topology and interning model ids.
-#[derive(Clone, Debug, thiserror::Error)]
-pub enum RootDiagramError {
-    /// A leg's particle name is absent from the UFO model.
-    #[error("particle not found in model: {0}")]
-    ParticleNotFound(String),
-    /// A vertex's interaction name is absent from the UFO model.
-    #[error("vertex not found in model: {0}")]
-    VertexNotFound(String),
-    /// feyngraph's is_anti flag disagrees with the model's pdg-code sign.
-    #[error(
-        "antiparticle flag mismatch for {name}: feyngraph is_anti={is_anti}, model pdg_code={pdg}"
-    )]
-    AntiparticleMismatch {
-        name: String,
-        is_anti: bool,
-        pdg: i64,
-    },
-    /// The output (result) leg of a vertex resolved to an external leg, which has no
-    /// off-shell continuation.
-    #[error("an external leg cannot be the result leg of a vertex")]
-    ExternalLegAsResult,
-}
 
 // ───────────────────────────── Pass 1: raw topology tree ─────────────────────────────
 
@@ -234,6 +211,14 @@ impl<'a> RawBuilder<'a> {
 /// Node id into a [`DiagramEvalTree`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EvalNodeId(usize);
+
+impl EvalNodeId {
+    /// Reference a node by its position in a hand-built node list (tests only).
+    #[cfg(test)]
+    pub fn new(idx: usize) -> Self {
+        EvalNodeId(idx)
+    }
+}
 
 /// A node in the evaluable diagram tree, typed by what it produces.
 #[derive(Clone, Debug)]
@@ -515,6 +500,92 @@ pub(super) fn root_tree(
     };
 
     Ok(DiagramEvalTree::bake(&raw, model, view.incoming().count())?)
+}
+
+// ───────────────────────────── Per-diagram artifact ─────────────────────────────
+
+/// A compiled representation of a single Feynman diagram.
+///
+/// Built once from a `DiagramView` + `UFOModel`. The diagram is a rooted
+/// [`DiagramEvalTree`]: external legs are leaves, internal vertices are off-shell
+/// currents wrapped by propagators, and the root contracts into the scalar amplitude.
+#[derive(Clone, Debug)]
+pub struct DiagramEval {
+    /// Number of external legs (determines array indexing for momenta)
+    pub n_ext: usize,
+    /// Rooted evaluation tree for this diagram
+    pub tree: DiagramEvalTree,
+    /// Symmetry factor: 1 / (vertex_sym × propagator_sym)
+    pub symmetry_factor: f64,
+    /// ±1 from the diagram's Fermi permutation sign
+    pub fermi_sign: i8,
+}
+
+impl DiagramEval {
+    /// Assemble a single diagram from a hand-specified node list (tests only).
+    ///
+    /// The last node is the root; children reference earlier nodes by index (see
+    /// [`EvalNodeId::new`]). Symmetry factor and Fermi sign are trivial (1, +1), so the
+    /// reconstructed amplitude is exactly the rooted contraction of the given nodes —
+    /// used to drive single-vertex primitives through the production `run_forward` path.
+    #[cfg(test)]
+    pub fn from_nodes(n_ext: usize, nodes: Vec<EvalNode>) -> Self {
+        let root = EvalNodeId(nodes.len() - 1);
+        DiagramEval {
+            n_ext,
+            tree: DiagramEvalTree { nodes, root },
+            symmetry_factor: 1.0,
+            fermi_sign: 1,
+        }
+    }
+
+    /// Internal propagator particle ids appearing in this diagram (one per
+    /// `Propagate` node). Used to characterize a diagram by its propagator content.
+    #[cfg(test)]
+    pub fn propagator_particles(&self) -> impl Iterator<Item = ParticleId> + '_ {
+        self.tree.iter().filter_map(|id| match self.tree.value(id) {
+            EvalNode::Propagate { info, .. } => Some(info.id),
+            _ => None,
+        })
+    }
+}
+
+impl std::fmt::Display for DiagramEval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Diagram(external legs {}): {}", self.n_ext, self.tree)
+    }
+}
+
+/// Compile a single diagram into an evaluable [`DiagramEval`].
+///
+/// Roots the diagram into its evaluation tree (topology + Lorentz structures) and
+/// attaches the per-diagram metadata (external-leg count, symmetry factor, and the
+/// fermion-flow sign, including the initial-state spine correction).
+fn compile_single_diagram(
+    view: &DiagramView,
+    model: &UFOModel,
+) -> Result<DiagramEval, CompileError> {
+    Ok(DiagramEval {
+        n_ext: view.legs().count(),
+        tree: root_tree(view, model)?,
+        symmetry_factor: 1.0 / view.symmetry_factor() as f64,
+        fermi_sign: view.sign() * initial_state_spine_sign(view, model),
+    })
+}
+
+/// Compile all diagrams from a DiagramSet into rooted [`DiagramEval`]s.
+///
+/// For each diagram, recursively walks from an arbitrary root vertex to build a
+/// directed evaluation tree. External legs become leaves; internal vertices emit an
+/// off-shell current + propagator pair; the root emits the amplitude contraction.
+pub fn compile_diagram_ast(
+    set: &DiagramSet,
+    model: &UFOModel,
+) -> Result<Vec<DiagramEval>, CompileError> {
+    set.diagrams
+        .views()
+        .map(|view| compile_single_diagram(&view, model))
+        .collect()
 }
 
 #[cfg(test)]

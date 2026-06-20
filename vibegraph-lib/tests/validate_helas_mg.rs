@@ -20,7 +20,7 @@ use libtest_mimic::{Arguments, Failed, Trial};
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use vibegraph::helas::eval::AmplitudeEvaluator;
+use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::LorentzVector;
 use vibegraph::ufo::slha::ParamCard;
 
@@ -209,7 +209,7 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
 
     let evaluator = AmplitudeEvaluator::compile(&sets[0], model)
         .map_err(|e| Failed::from(format!("compile: {e}")))?;
-    let bound = evaluator.bind::<f64>(&evaluated);
+    let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
 
     let cf = color_factor(&name);
     let mut failures = 0usize;

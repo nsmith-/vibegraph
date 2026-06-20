@@ -79,7 +79,7 @@ mod eval_vs_hardcoded {
     use super::common::{generate_with, sm_lepton_masses_model};
     use super::{compute_m2_ee_mumu, derive_gammaz_couplings};
     use itertools::iproduct;
-    use vibegraph::helas::eval::AmplitudeEvaluator;
+    use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
     use vibegraph::helas::LorentzVector;
     use vibegraph::ufo::slha::ParamCard;
 
@@ -118,7 +118,7 @@ mod eval_vs_hardcoded {
 
         let evaluator =
             AmplitudeEvaluator::compile(set, model).expect("failed to compile amplitude evaluator");
-        let bound = evaluator.bind::<f64>(&evaluated);
+        let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
         assert_eq!(
             evaluator.helicities().len(),
             16,
@@ -190,7 +190,7 @@ mod extended {
 
     fn compute_m2_ee_mumu_dynamic(sqrt_s: f64, cos_theta: f64) -> f64 {
         use super::common::{generate_with, sm_lepton_masses_model};
-        use vibegraph::helas::eval::AmplitudeEvaluator;
+        use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
         use vibegraph::ufo::slha::ParamCard;
 
         // Same situation as test_eval_m2_ee_mumu_vs_hardcoded
@@ -222,7 +222,7 @@ mod extended {
             LorentzVector::new(e_beam, -p3_mu * sin_theta, 0.0, -p3_mu * cos_theta),
             LorentzVector::new(e_beam, p3_mu * sin_theta, 0.0, p3_mu * cos_theta),
         ];
-        evaluator.bind::<f64>(&evaluated).eval_m2(&momenta)
+        BoundAmplitude::<f64>::bind(&evaluator, &evaluated).eval_m2(&momenta)
     }
 
     /// Relative tolerance for comparing Rust |M|² against Fortran reference.

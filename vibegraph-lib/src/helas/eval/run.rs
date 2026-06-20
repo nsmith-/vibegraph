@@ -1,7 +1,7 @@
 //! Runtime amplitude evaluation: a single forward pass over the folded `Ast`.
 //!
 //! [`BoundAmplitude`] holds a compiled [`AmplitudeEvaluator`] together with its
-//! card-resolved constant pools (see [`AmplitudeEvaluator::bind`]). For each
+//! card-resolved constant pools (see [`BoundAmplitude::bind`]). For each
 //! phase-space point it walks the arena in storage (topological) order, reducing each
 //! node from its already-computed children via the single [`apply`] match.
 
@@ -19,21 +19,18 @@ use super::compile::AmplitudeEvaluator;
 use super::op::{Const, Node, Op};
 use super::tree::Tree;
 use super::waveform_slot::WaveformSlot;
+use crate::ufo::EvaluatedModel;
 
-#[cfg(test)]
-use super::compile::{compile_diagram_ast, DiagramEval};
 #[cfg(test)]
 use super::fold::Folded;
 #[cfg(test)]
 use super::lower;
 #[cfg(test)]
-use crate::helas::eval::root_lorentz::LorentzEvalNode;
-#[cfg(test)]
-use crate::ufo::EvaluatedModel;
+use super::root_diagram::{compile_diagram_ast, DiagramEval};
 
 /// A compiled amplitude bound to a parameter card at scalar precision `F`.
 ///
-/// Created by [`AmplitudeEvaluator::bind`]: it borrows the card-independent
+/// Created by [`BoundAmplitude::bind`]: it borrows the card-independent
 /// [`AmplitudeEvaluator`] and owns the resolved constant pools (`consts_c` couplings,
 /// `consts_f` masses/widths/coeffs), so evaluation is pure kinematics — no parameter
 /// lookups on the hot path.
@@ -45,8 +42,17 @@ pub struct BoundAmplitude<'a, F: Real> {
 }
 
 impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
-    /// Build from a compiled evaluator and its card-resolved pools (see
-    /// [`AmplitudeEvaluator::bind`]).
+    /// Resolve a parameter card at scalar precision `F` against a compiled
+    /// [`AmplitudeEvaluator`], baking all couplings/masses/widths into the constant
+    /// pools. The same evaluator binds against any card and precision.
+    pub fn bind(eval: &'a AmplitudeEvaluator, evaluated: &EvaluatedModel) -> Self {
+        let (consts_c, consts_f) = eval.folded().pools::<F>(evaluated);
+        BoundAmplitude::new(eval, consts_c, consts_f)
+    }
+
+    /// Build from a compiled evaluator and its card-resolved pools (see [`bind`]).
+    ///
+    /// [`bind`]: BoundAmplitude::bind
     pub(super) fn new(
         eval: &'a AmplitudeEvaluator,
         consts_c: Box<[C<F>]>,
@@ -119,19 +125,20 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
     }
 }
 
-/// Evaluate the whole-amplitude folded arena in one forward pass.
+/// Evaluate the folded arena in one forward pass, returning the root [`WaveformSlot`].
 ///
 /// Nodes are visited in arena (storage) order; since children always have smaller ids
 /// than their parents, each node's children are already computed and read from `res` by
-/// id, so a shared (DAG) node is evaluated exactly once. Returns the root scalar = M.
-fn run_forward<F: Real + FromPrimitive>(
+/// id, so a shared (DAG) node is evaluated exactly once. For a whole amplitude the root
+/// is a scalar; rooting a sub-tree (tests) can return any slot.
+fn run_forward_slot<F: Real + FromPrimitive>(
     ast: &Ast<Const>,
     consts_c: &[C<F>],
     consts_f: &[F],
     momenta: &[LorentzVector<F>],
     helicities: &[i32],
     ward_leg: Option<usize>,
-) -> C<F> {
+) -> WaveformSlot<F> {
     let mut res: Vec<WaveformSlot<F>> = Vec::with_capacity(ast.len());
     let mut kids: Vec<WaveformSlot<F>> = Vec::new();
     for id in ast.iter() {
@@ -148,7 +155,20 @@ fn run_forward<F: Real + FromPrimitive>(
         );
         res.push(value);
     }
-    match res[ast.root() as usize] {
+    res[ast.root() as usize]
+}
+
+/// Evaluate the whole-amplitude folded arena in one forward pass, returning the root
+/// scalar = M.
+fn run_forward<F: Real + FromPrimitive>(
+    ast: &Ast<Const>,
+    consts_c: &[C<F>],
+    consts_f: &[F],
+    momenta: &[LorentzVector<F>],
+    helicities: &[i32],
+    ward_leg: Option<usize>,
+) -> C<F> {
+    match run_forward_slot(ast, consts_c, consts_f, momenta, helicities, ward_leg) {
         WaveformSlot::Scalar(s) => s.value,
         WaveformSlot::Empty => C::new(F::zero(), F::zero()),
         other => panic!("amplitude root is not a scalar: {other:?}"),
@@ -156,9 +176,9 @@ fn run_forward<F: Real + FromPrimitive>(
 }
 
 /// Reduce one folded node from its children's already-evaluated results. The single
-/// match unifying the old `apply_diagram_node` + `apply_lorentz_node`: constant leaves
-/// resolve from the pools; `External`/`Propagate` build wavefunctions; `Mul`/`Add` are
-/// the algebraic combinators; the Lorentz primitives reuse [`apply_lorentz_node`].
+/// match over `Op`: constant leaves resolve from the pools; `External`/`Propagate` build
+/// wavefunctions; `Mul`/`Add` are the algebraic combinators; the Lorentz primitives
+/// dispatch to the shared helpers below.
 #[allow(clippy::too_many_arguments)]
 fn apply<F: Real + FromPrimitive>(
     node: &Node<Const>,
@@ -233,8 +253,7 @@ fn apply<F: Real + FromPrimitive>(
             })
         }
         // Lorentz primitives: each reads its operands from `children` and dispatches to
-        // the shared primitive helper (the same helpers the test-only `apply_lorentz_node`
-        // uses for the `LorentzEvalTree` cross-check).
+        // the shared primitive helper below.
         Op::GammaVout => gamma_vout(children),
         Op::GammaIout | Op::GammaOout => off_shell_fermion_current(children[0], children[1]),
         Op::ProjM => chiral_project(children[0], Chirality::Left),
@@ -255,9 +274,9 @@ fn expect_real<F: Real>(slot: WaveformSlot<F>) -> F {
     }
 }
 
-/// n-ary product. Scalar/real children fold into a complex coefficient (reals kept in
-/// `F`); at most one non-scalar child carries the output type and absorbs the scalar
-/// momentum (matching the old `LorentzEvalNode::Mul`).
+/// n-ary product (the `Mul` op). Scalar/real children fold into a complex coefficient
+/// (reals kept in `F`); at most one non-scalar child carries the output type and absorbs
+/// the scalar momentum.
 fn mul_apply<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let mut real_acc = F::one();
     let mut cplx_acc = C::new(F::one(), F::zero());
@@ -306,9 +325,25 @@ fn mul_apply<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> WaveformS
     }
 }
 
-/// Test helper: evaluate a single diagram's amplitude (symmetry × Fermi sign folded
-/// in) by lowering just that diagram and running the unified forward pass. Used by the
-/// per-diagram probes.
+/// Test helper: lower a single diagram (symmetry × Fermi sign folded in) and run the
+/// unified forward pass, returning the root [`WaveformSlot`]. With a `ContractAmplitude`
+/// root this is the scalar amplitude; rooting at an off-shell current returns that
+/// current, which lets the cross-checks read an intermediate node through production.
+#[cfg(test)]
+fn eval_single_diagram_slot<F: Real + FromPrimitive>(
+    diagram: &DiagramEval,
+    momenta: &[LorentzVector<F>],
+    helicities: &[i32],
+    evaluated: &EvaluatedModel,
+) -> WaveformSlot<F> {
+    let symbolic = lower::lower(std::slice::from_ref(diagram));
+    let folded = Folded::build(&symbolic);
+    let (consts_c, consts_f) = folded.pools::<F>(evaluated);
+    run_forward_slot(&folded.ast, &consts_c, &consts_f, momenta, helicities, None)
+}
+
+/// Test helper: the scalar amplitude of a single diagram (see
+/// [`eval_single_diagram_slot`]). Used by the per-diagram probes.
 #[cfg(test)]
 fn eval_single_diagram<F: Real + FromPrimitive>(
     diagram: &DiagramEval,
@@ -316,10 +351,11 @@ fn eval_single_diagram<F: Real + FromPrimitive>(
     helicities: &[i32],
     evaluated: &EvaluatedModel,
 ) -> C<F> {
-    let symbolic = lower::lower(std::slice::from_ref(diagram));
-    let folded = Folded::build(&symbolic);
-    let (consts_c, consts_f) = folded.pools::<F>(evaluated);
-    run_forward(&folded.ast, &consts_c, &consts_f, momenta, helicities, None)
+    match eval_single_diagram_slot(diagram, momenta, helicities, evaluated) {
+        WaveformSlot::Scalar(s) => s.value,
+        WaveformSlot::Empty => C::new(F::zero(), F::zero()),
+        other => panic!("amplitude root is not a scalar: {other:?}"),
+    }
 }
 
 /// Build an external wavefunction from its kinematics + interned mass.
@@ -355,56 +391,6 @@ fn build_external_core<F: Real + FromPrimitive>(
         }
         other => panic!("unsupported external spin code: {other}"),
     }
-}
-
-#[cfg(test)]
-fn build_external_slot<F: Real + FromPrimitive>(
-    momentum: LorentzVector<F>,
-    helicity: i32,
-    info: &super::diagram_eval::ExtLegInfo,
-    evaluated: &EvaluatedModel,
-) -> WaveformSlot<F> {
-    build_external_core(
-        momentum,
-        helicity,
-        info.spin,
-        info.charge,
-        info.incoming,
-        real(evaluated.mass(info.id)),
-    )
-}
-
-#[cfg(test)]
-fn evaluate_off_shell_current<F: Real + FromPrimitive>(
-    info: &super::diagram_eval::VertexInfo,
-    legs: &[WaveformSlot<F>],
-    evaluated: &EvaluatedModel,
-) -> WaveformSlot<F> {
-    let mut accum = WaveformSlot::Empty;
-
-    for lorentz_term in &info.terms {
-        let coupling = complex_from_complex64::<F>(evaluated.coupling(lorentz_term.coupling_id));
-        let mut term_accum = WaveformSlot::Empty;
-        for structure in &lorentz_term.terms {
-            let term_value = evaluate_lorentz_structure(structure, legs);
-            term_accum = term_accum + term_value;
-        }
-        accum = accum + coupling * term_accum;
-    }
-    accum
-}
-
-#[cfg(test)]
-fn evaluate_propagation<F: Real + FromPrimitive>(
-    info: &super::diagram_eval::PropInfo,
-    input: &WaveformSlot<F>,
-    evaluated: &EvaluatedModel,
-) -> WaveformSlot<F> {
-    propagate_core(
-        input,
-        real(evaluated.mass(info.id)),
-        real(evaluated.width(info.id)),
-    )
 }
 
 /// Apply a propagator with interned mass/width to an off-shell current. The current
@@ -462,33 +448,10 @@ fn propagate_core<F: Real + FromPrimitive>(
     }
 }
 
-#[cfg(test)]
-fn evaluate_contract_amplitude<F: Real + FromPrimitive>(
-    info: &super::diagram_eval::VertexInfo,
-    legs: &[WaveformSlot<F>],
-    evaluated: &EvaluatedModel,
-) -> WaveformSlot<F> {
-    let mut accum = WaveformSlot::Empty;
-
-    for term in &info.terms {
-        let coupling = complex_from_complex64::<F>(evaluated.coupling(term.coupling_id));
-        let mut term_accum = WaveformSlot::Empty;
-
-        for structure in &term.terms {
-            let term_value = evaluate_lorentz_structure(structure, legs);
-            term_accum = term_accum + term_value;
-        }
-        accum = accum + coupling * term_accum;
-    }
-
-    // TODO: can check the momentum is all 0 here
-    accum
-}
-
 /// Resolve the two fermion legs of a bilinear into `(bra = flow-out, ket = flow-in,
 /// reversed)` by their *actual* runtime flow, not the UFO `Gamma` i/j position. A
 /// fermion line carries one flow throughout, so with physically-typed externals
-/// (see `build_external_slot`) and flow-preserving currents, the two fermions
+/// (see `build_external_core`) and flow-preserving currents, the two fermions
 /// meeting at any vertex always have opposite flow.
 ///
 /// `reversed` is `true` when the slots arrive in `(flow-in, flow-out)` order, i.e.
@@ -536,9 +499,8 @@ fn off_shell_fermion_current<F: Real + FromPrimitive>(
 }
 
 // ──────────────────────── Lorentz primitive helpers ────────────────────────
-// Each takes the already-evaluated `children` in operand order. The runtime [`apply`]
-// dispatches to these by `Op`; the test-only [`apply_lorentz_node`] dispatches by
-// `LorentzEvalNode`. Both share one implementation per primitive.
+// Each takes the already-evaluated `children` in operand order; the runtime [`apply`]
+// dispatches to these by `Op`. The cross-check tests call them directly.
 
 /// `GammaVout`: two fermions → off-shell vector current `ψ̄ γ^μ ψ`.
 fn gamma_vout<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
@@ -634,77 +596,6 @@ fn scalar_bilinear_current<F: Real + FromPrimitive>(
     })
 }
 
-/// Reduce one resolved Lorentz node from its children's already-evaluated results.
-///
-/// Test-only: the per-node closure for the linearized (stack-machine) evaluation of a
-/// `LorentzEvalTree` (the HELAS cross-check path). `children` holds the results of
-/// `node.children()` in order; leaf nodes (`Leg`, `P`) read the vertex's input
-/// wavefunctions from `legs` — the gap-free input list (vertex legs in order, output
-/// omitted), compacted to match in `LorentzEvalTree::build_at_leg`. Every primitive
-/// shares its implementation with the runtime [`apply`] via the helpers above.
-#[cfg(test)]
-fn apply_lorentz_node<F: Real + FromPrimitive>(
-    node: &LorentzEvalNode,
-    children: &[WaveformSlot<F>],
-    legs: &[WaveformSlot<F>],
-) -> WaveformSlot<F> {
-    match node {
-        LorentzEvalNode::Leg(i) => legs[*i],
-        LorentzEvalNode::GammaVout { .. } => gamma_vout(children),
-        LorentzEvalNode::GammaIout { .. } | LorentzEvalNode::GammaOout { .. } => {
-            off_shell_fermion_current(children[0], children[1])
-        }
-        LorentzEvalNode::ProjM { .. } => chiral_project(children[0], Chirality::Left),
-        LorentzEvalNode::ProjP { .. } => chiral_project(children[0], Chirality::Right),
-        LorentzEvalNode::Metric { .. } => metric_contract(children),
-        LorentzEvalNode::MetricVout { .. } => metric_vout(children),
-        LorentzEvalNode::ProjMAmp { .. } => scalar_bilinear_current(children, Chirality::Left),
-        LorentzEvalNode::ProjPAmp { .. } => scalar_bilinear_current(children, Chirality::Right),
-        LorentzEvalNode::IdentityAmp { .. } => scalar_bilinear_current(children, Chirality::Both),
-        LorentzEvalNode::P { leg } => {
-            let momentum = legs[*leg].momentum().expect("P: empty slot");
-            WaveformSlot::Vector(VectorWf {
-                eps: ComplexVector::from(momentum),
-                momentum,
-            })
-        }
-        LorentzEvalNode::Mul { .. } => mul_apply(children),
-    }
-}
-
-/// Evaluate a rooted Lorentz contraction tree against the contraction's external
-/// inputs, via the linearized (stack-machine) traversal. Test-only cross-check path
-/// against the reference HELAS routines; production evaluates the inlined nodes through
-/// [`apply`].
-#[cfg(test)]
-fn eval_lorentz_tree<F: Real + FromPrimitive>(
-    tree: &super::root_lorentz::LorentzEvalTree,
-    legs: &[WaveformSlot<F>],
-) -> WaveformSlot<F> {
-    use super::tree::Tree;
-    tree.linearize(tree.root())
-        .eval_once(|node, children| apply_lorentz_node(node, children, legs))
-}
-
-#[cfg(test)]
-fn evaluate_lorentz_structure<F: Real + FromPrimitive>(
-    structure: &super::root_lorentz::RootedTerm,
-    legs: &[WaveformSlot<F>],
-) -> WaveformSlot<F> {
-    let coeff = F::from(structure.coeff).expect("coef not valid");
-    C::from(coeff) * eval_lorentz_tree(&structure.tree, legs)
-}
-
-#[cfg(test)]
-fn real<F: Real + FromPrimitive>(x: f64) -> F {
-    F::from_f64(x).expect("value convertible to real scalar")
-}
-
-#[cfg(test)]
-fn complex_from_complex64<F: Real + FromPrimitive>(x: num_complex::Complex64) -> C<F> {
-    C::new(real(x.re), real(x.im))
-}
-
 #[cfg(test)]
 mod tests {
     use itertools::iproduct;
@@ -714,7 +605,7 @@ mod tests {
     use crate::{
         helas::{
             eval::diagram_eval::{ExtLegInfo, PropInfo, VertexInfo, VertexTerm},
-            eval::root_lorentz::LorentzEvalTree,
+            eval::root_diagram::{EvalNode, EvalNodeId},
             iovxxx, jioxxx,
             repr::numbers::Charge,
             OutDiracWf,
@@ -740,15 +631,6 @@ mod tests {
     /// `Metric(1,2)` rooted at vector leg 1 must reproduce exactly this.
     #[test]
     fn test_metric_vout_vs_aloha_vvs1p1n1() {
-        use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
-
-        // VVS1: Metric(1,2), spins [Z, Z, H]; root at vector leg 1 (idx 0).
-        let term = LorentzTerm {
-            coeff: 1.0,
-            ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
-        };
-        let tree = LorentzEvalTree::build_at_leg(&term, &[3, 3, 1], Some(0)).unwrap();
-
         let v2 = VectorWf {
             eps: ComplexVector::new([
                 C::new(2.0, 1.0),
@@ -762,11 +644,14 @@ mod tests {
             value: C::new(2.0, 0.0),
             momentum: LorentzVector::new(4.0, 0.0, 0.0, 1.0),
         };
-        // Rooted at vector leg 0; gap-free inputs are the remaining legs in order:
-        // leg 1 = V2, leg 2 = S.
-        let legs = vec![WaveformSlot::Vector(v2), WaveformSlot::Scalar(s)];
-
-        let WaveformSlot::Vector(out) = eval_lorentz_tree(&tree, &legs) else {
+        // VVS1 `Metric(1,2)` rooted at vector leg 1 is a `MetricVout` current on the
+        // partner vector V2, with the spectator scalar leg S multiplied in (the `Mul`
+        // the rooted tree carries). Both primitives here are the production helpers.
+        let out = mul_apply(&[
+            metric_vout(&[WaveformSlot::Vector(v2)]),
+            WaveformSlot::Scalar(s),
+        ]);
+        let WaveformSlot::Vector(out) = out else {
             panic!("VVS rooted at a vector leg must produce a vector current");
         };
 
@@ -790,9 +675,15 @@ mod tests {
         assert_eq!(out.momentum, v2.momentum + s.momentum);
     }
 
-    /// Unit test a simple dispatch tree against HELAS vertex
+    /// Cross-check the s-channel FFV current and amplitude — evaluated through the
+    /// production `run_forward` path — against the `jioxxx`/`iovxxx` reference routines.
     ///
-    /// Let's compare against jioxxx
+    /// Hand-built single diagrams (e⁺e⁻ → boson* [→ μ⁺μ⁻]) are assembled from `EvalNode`s
+    /// and run through the same lower → fold → `run_forward` runtime used for real
+    /// amplitudes. Rooting at the propagator returns the dressed s-channel current, which
+    /// must equal `jioxxx` for every FFV structure (vector / left / left+2·right) and both
+    /// the photon and Z propagators. For the unambiguous vector coupling (FFV1) the full
+    /// μ⁺μ⁻ amplitude is also cross-checked against `iovxxx(·, jioxxx(·))`.
     #[test]
     fn test_eval_jioxxx() {
         let model = sm_model();
@@ -875,99 +766,122 @@ mod tests {
                 ],
             };
 
+            // Single s-channel current sub-diagram e⁺e⁻ → (FFV) → boson*: the two
+            // externals feed the off-shell current (rooted at the vector leg), and the
+            // propagator dresses it. Rooting at the propagator makes `run_forward` return
+            // the dressed current itself (a vector), so we read it straight from the
+            // production pass. Children reference earlier nodes by index.
+            let current_diagram = DiagramEval::from_nodes(
+                2,
+                vec![
+                    EvalNode::External(leg1_info.clone()),
+                    EvalNode::External(leg2_info.clone()),
+                    EvalNode::OffShellCurrent {
+                        info: vertex_info.clone(),
+                        children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                    },
+                    EvalNode::Propagate {
+                        info: prop_info.clone(),
+                        child: EvalNodeId::new(2),
+                    },
+                ],
+            );
+            // The full diagram extends it with the μ⁺μ⁻ sink contraction (a scalar M).
+            let amp_diagram = DiagramEval::from_nodes(
+                4,
+                vec![
+                    EvalNode::External(leg1_info),
+                    EvalNode::External(leg2_info),
+                    EvalNode::OffShellCurrent {
+                        info: vertex_info,
+                        children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                    },
+                    EvalNode::Propagate {
+                        info: prop_info,
+                        child: EvalNodeId::new(2),
+                    },
+                    EvalNode::External(leg3_info),
+                    EvalNode::External(leg4_info),
+                    EvalNode::ContractAmplitude {
+                        info: amp_info,
+                        children: vec![EvalNodeId::new(4), EvalNodeId::new(5), EvalNodeId::new(3)],
+                    },
+                ],
+            );
+
             let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
             for (hel1, hel2, hel3, hel4) in iproduct!(hels, hels, hels, hels) {
                 // Physical flow (per the leg charge labels): leg1 (Particle, in) and
                 // leg4 (Antiparticle, out) are kets; leg2 (Antiparticle, in) and
-                // leg3 (Particle, out) are bras. The s-channel current is
-                // jioxxx(fo=leg2 bra, fi=leg1 ket).
+                // leg3 (Particle, out) are bras. The reference s-channel current is
+                // jioxxx(fo=leg2 bra, fi=leg1 ket); the sink is iovxxx.
                 let fi_em = InDiracWf::from_momentum(p_in_m, m_in, hel1, Charge::Particle);
                 let fo_ep = OutDiracWf::from_momentum(p_in_p, m_in, hel2, Charge::Antiparticle);
                 let v_gamma_exp = jioxxx(&fo_ep, &fi_em, gc, mprop, wprop);
 
-                let fo_out_m = OutDiracWf::from_momentum(p_out_m, m_out, hel3, Charge::Particle);
-                let fi_out_p = InDiracWf::from_momentum(p_out_p, m_out, hel4, Charge::Antiparticle);
-
-                let amp_exp = iovxxx(&fo_out_m, &fi_out_p, &v_gamma_exp, gc);
-
-                // The same current should be obtained from the dispatch tree with the same inputs
-
-                let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 9];
-
-                slots[0] = build_external_slot(p_in_m, hel1.sign(), &leg1_info, &evaluated);
-                let WaveformSlot::FermionIn(b) = &slots[0] else {
-                    panic!("leg1 (incoming particle) should be flow-in");
+                // The dressed s-channel current from the production pass must match jioxxx
+                // exactly (value + routed momentum jmom = fo.p − fi.p), for every FFV
+                // structure (vector / left / left+2·right) and both propagators.
+                let WaveformSlot::Vector(v_gamma) = eval_single_diagram_slot(
+                    &current_diagram,
+                    &[p_in_m, p_in_p],
+                    &[hel1.sign(), hel2.sign()],
+                    &evaluated,
+                ) else {
+                    panic!("s-channel current must evaluate to a vector");
                 };
-                assert_eq!(&fi_em, b);
+                assert_eq!(
+                    v_gamma.momentum, v_gamma_exp.momentum,
+                    "current momentum ({coup_str}/{prop_name}, hel {hel1}{hel2})"
+                );
+                let cdiff: f64 = (v_gamma.eps - v_gamma_exp.eps).bare_norm_sq();
+                assert!(
+                    cdiff < 1e-8,
+                    "current vs jioxxx ({coup_str}/{prop_name}, hel {hel1}{hel2}): diff={cdiff}"
+                );
 
-                slots[1] = build_external_slot(p_in_p, hel2.sign(), &leg2_info, &evaluated);
-                let WaveformSlot::FermionOut(b) = &slots[1] else {
-                    panic!("leg2 (incoming antiparticle) should be flow-out");
-                };
-                assert_eq!(&fo_ep, b);
+                // The vector (FFV1) coupling has no chirality ambiguity, so the full
+                // amplitude reproduces the composed reference iovxxx∘jioxxx up to one
+                // global convention factor of −i (the i the routines fold into the
+                // amplitude vs. the i the UFO coupling carries at each vertex; it drops
+                // out of |M|²). The pure-chiral FFV2/FFV4 sinks use a different HELAS
+                // gc=[gl,gr] decomposition, so only their current is cross-checked above;
+                // the chiral amplitude sink is covered by the full-process tests
+                // (`test_whole_amplitude_equals_diagram_sum_eemumu`, `validate_helas`).
+                if coup_str == "FFV1" {
+                    let fo_out_m =
+                        OutDiracWf::from_momentum(p_out_m, m_out, hel3, Charge::Particle);
+                    let fi_out_p =
+                        InDiracWf::from_momentum(p_out_p, m_out, hel4, Charge::Antiparticle);
+                    let amp_exp = iovxxx(&fo_out_m, &fi_out_p, &v_gamma_exp, gc);
 
-                // Vertex rooted at the vector leg (idx 2); inputs are the two
-                // fermion legs in leg order. Leg 2 (output) is never referenced.
-                let legs = vec![slots[0], slots[1]];
-                slots[2] = evaluate_off_shell_current(&vertex_info, &legs, &evaluated);
-                slots[3] = evaluate_propagation(&prop_info, &slots[2], &evaluated);
-                if let WaveformSlot::Vector(v_gamma) = slots[3] {
-                    // With flow-typed externals the off-shell current matches jioxxx
-                    // exactly, including the routed momentum jmom = fo.p − fi.p.
-                    assert_eq!(v_gamma.momentum, v_gamma_exp.momentum);
-                    let diff: f64 = (v_gamma.eps - v_gamma_exp.eps).bare_norm_sq();
+                    let momenta = [p_in_m, p_in_p, p_out_m, p_out_p];
+                    let hel_codes = [hel1.sign(), hel2.sign(), hel3.sign(), hel4.sign()];
+                    let got = eval_single_diagram(&amp_diagram, &momenta, &hel_codes, &evaluated);
+
+                    let want = amp_exp * -Complex64::i();
+                    let diff = (got - want).norm();
                     assert!(
                         diff < 1e-8,
-                        "current does not match jioxxx ({coup_str}/{prop_name}, hel {hel1} {hel2}): diff={diff}"
+                        "amplitude vs iovxxx∘jioxxx ({coup_str}/{prop_name}, \
+                         hel {hel1}{hel2}{hel3}{hel4}): got={got:.6e} want={want:.6e} diff={diff}"
                     );
-                }
-
-                slots[4] = build_external_slot(p_out_m, hel3.sign(), &leg3_info, &evaluated);
-                let WaveformSlot::FermionOut(b) = &slots[4] else {
-                    panic!("leg3 (outgoing particle) should be flow-out");
-                };
-                assert_eq!(&fo_out_m, b);
-
-                slots[5] = build_external_slot(p_out_p, hel4.sign(), &leg4_info, &evaluated);
-                let WaveformSlot::FermionIn(b) = &slots[5] else {
-                    panic!("leg4 (outgoing antiparticle) should be flow-in");
-                };
-                assert_eq!(&fi_out_p, b);
-
-                // Amplitude sink: legs in vertex order are leg3(fo), leg4(fi), and
-                // the s-channel current (slot 3).
-                let legs = vec![slots[4], slots[5], slots[3]];
-                slots[6] = evaluate_contract_amplitude(&amp_info, &legs, &evaluated);
-                let WaveformSlot::Scalar(s) = slots[6] else {
-                    panic!("expected scalar slot");
-                };
-                assert!(
-                    s.momentum.bare_norm_sq() < 1e-8,
-                    "amplitude momentum not conserved: {s:?}"
-                );
-                let diff = (s.value - amp_exp * Complex64::i()).norm();
-                if diff > 1e-8 {
-                    eprintln!("evaluated amplitude does not match: diff={diff:?}");
                 }
             }
         }
     }
 
-    /// Cross-check the off-shell fermion-current nodes (`GammaIout`/`GammaJout`)
-    /// against the `fvixxx`/`fvoxxx` reference routines.
+    /// Cross-check the production off-shell fermion current (`off_shell_fermion_current`
+    /// + `propagate_core`) against the `fvixxx`/`fvoxxx` reference routines.
     ///
-    /// Rooting the FFV1 structure `Gamma(3,2,1)` at fermion leg 2 yields a
-    /// `GammaIout` node (input = column fermion leg 1) ≅ `fvixxx`; rooting at
-    /// leg 1 yields a `GammaJout` node (input = row fermion leg 2) ≅ `fvoxxx`.
-    /// The runtime applies the vertex factor and the Dirac propagator as two
-    /// steps, so we compare against the reference (which folds both in) with a
-    /// unit coupling. As in `test_eval_jioxxx`, the runtime carries the
-    /// propagated leg with the opposite momentum sign (incoming convention).
+    /// The current follows the input fermion's flow: seeding it from a flow-in (ket)
+    /// fermion is `fvixxx`; from a flow-out (bra) fermion is `fvoxxx`. The runtime
+    /// applies the bare γ^μ vertex structure and the Dirac propagator as two steps, so
+    /// we compare against the reference (which folds both in) with a unit coupling. As
+    /// in `test_eval_jioxxx`, the propagator carries the routed momentum unchanged.
     #[test]
     fn test_eval_off_shell_fermion_vs_fvixxx() {
-        use crate::helas::eval::root_lorentz::LorentzEvalTree;
         use crate::helas::vertex::{fvixxx, fvoxxx};
-        use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
 
         let model = sm_model();
         let evaluated = model.evaluate(&"".parse::<ParamCard>().unwrap());
@@ -976,15 +890,9 @@ mod tests {
         let prop_id = model.particle_id("e-").unwrap();
         let mass = evaluated.mass(prop_id);
         let width = evaluated.width(prop_id);
-        let prop_info = PropInfo { id: prop_id };
 
-        // FFV1: Gamma(3,2,1) — legs 1,2 fermions, leg 3 vector.
-        let term = LorentzTerm {
-            coeff: 1.0,
-            ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
-        };
-        let spins = [2, 2, 3];
-        // UFO convention: coupling includes i
+        // UFO convention: coupling includes i. fvixxx/fvoxxx fold the vertex factor in,
+        // so we cross-check the bare structure + propagator at unit coupling [1, 1].
         let g = Complex64::new(0.0, 1.0);
 
         // Generic (unphysical) vector input — any ε works for an impl cross-check.
@@ -1001,22 +909,11 @@ mod tests {
 
         let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
         for (hel, charge) in iproduct!(hels, [Charge::Particle, Charge::Antiparticle]) {
-            // ── GammaIout ≅ fvixxx: input is the flow-in column fermion (leg 1) ──
+            // ── fvixxx: off-shell current seeded from the flow-in (ket) fermion ──
             let fi = InDiracWf::from_momentum(p_f, mass, hel, charge);
-            let tree = LorentzEvalTree::build_at_leg(&term, &spins, Some(1)).unwrap();
-            assert!(matches!(
-                tree.root_value(),
-                LorentzEvalNode::GammaIout { .. }
-            ));
-
-            // Rooted at fermion leg 1; gap-free inputs in leg order are leg0 = fi,
-            // leg2 = v (the tree's leg refs were compacted accordingly).
-            let legs = vec![WaveformSlot::FermionIn(fi), WaveformSlot::Vector(v)];
-
-            let vertex = eval_lorentz_tree(&tree, &legs);
-            let WaveformSlot::FermionIn(got) =
-                evaluate_propagation(&prop_info, &vertex, &evaluated)
-            else {
+            let vertex =
+                off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionIn(fi));
+            let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width) else {
                 panic!("expected flow-in fermion from propagation");
             };
             let want = fvixxx(&fi, &v, [g.im, g.im], mass, width);
@@ -1024,43 +921,32 @@ mod tests {
             // (no flip), matching fvixxx's `q = fi.p + v.p`.
             assert_eq!(
                 got.momentum, want.momentum,
-                "Iout momentum (hel {hel}, {charge:?})"
+                "fvixxx momentum (hel {hel}, {charge:?})"
             );
             let diff: f64 = (got.spinor - want.spinor).bare_norm_sq();
             assert!(
                 diff < 1e-10,
-                "GammaIout vs fvixxx diff={diff} (hel {hel}, {charge:?})"
+                "off-shell current vs fvixxx diff={diff} (hel {hel}, {charge:?})"
             );
 
-            // ── GammaOout ≅ fvoxxx: input is the flow-out row fermion (leg 2) ──
-            // The off-shell current follows the input fermion's flow, so the input
-            // slot must itself be flow-out (a bra) to produce a flow-out current.
+            // ── fvoxxx: off-shell current seeded from the flow-out (bra) fermion ──
+            // The current follows the input fermion's flow, so the input slot must
+            // itself be flow-out (a bra) to produce a flow-out current.
             let fo = fi.to_outgoing();
-            let tree = LorentzEvalTree::build_at_leg(&term, &spins, Some(0)).unwrap();
-            assert!(matches!(
-                tree.root_value(),
-                LorentzEvalNode::GammaOout { .. }
-            ));
-
-            // Rooted at fermion leg 0; gap-free inputs in leg order are leg1 = fo,
-            // leg2 = v.
-            let legs = vec![WaveformSlot::FermionOut(fo), WaveformSlot::Vector(v)];
-
-            let vertex = eval_lorentz_tree(&tree, &legs);
-            let WaveformSlot::FermionOut(got) =
-                evaluate_propagation(&prop_info, &vertex, &evaluated)
-            else {
+            let vertex =
+                off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionOut(fo));
+            let WaveformSlot::FermionOut(got) = propagate_core(&vertex, mass, width) else {
                 panic!("expected flow-out fermion from propagation");
             };
             let want = fvoxxx(&fo, &v, [g.im, g.im], mass, width);
             assert_eq!(
                 got.momentum, want.momentum,
-                "Jout momentum (hel {hel}, {charge:?})"
+                "fvoxxx momentum (hel {hel}, {charge:?})"
             );
             let diff: f64 = (got.spinor - want.spinor).bare_norm_sq();
             assert!(
                 diff < 1e-10,
-                "GammaJout vs fvoxxx diff={diff} (hel {hel}, {charge:?})"
+                "off-shell current vs fvoxxx diff={diff} (hel {hel}, {charge:?})"
             );
         }
     }
@@ -1312,18 +1198,15 @@ mod tests {
         }
     }
 
-    /// Cross-check `ProjMAmp` / `ProjPAmp` nodes against the `iosxxx` reference routine.
+    /// Cross-check the production scalar bilinear (`scalar_bilinear_current` × scalar
+    /// leg) against the `iosxxx` reference routine.
     ///
-    /// FFS1: ProjM(2,1) rooted at amplitude → ScalarProduct[ProjMAmp, Leg(3)]
-    /// FFS3: ProjP(2,1) rooted at amplitude → ScalarProduct[ProjPAmp, Leg(3)]
-    ///
-    /// Slot ordering: input_slots=[leg1_slot, leg2_slot, leg3_slot].
-    /// leg1 = fi (column/incoming), leg2 = fo (row/outgoing), leg3 = scalar.
-    /// iosxxx uses gc=[g,0] (left-only) for FFS1 and gc=[0,g] (right-only) for FFS3.
+    /// FFS1 (`ProjM`) is the left bilinear `ψ̄ P_L ψ`; FFS3 (`ProjP`) the right one.
+    /// Each is multiplied by the off-shell scalar leg (the `Mul` the rooted FFS tree
+    /// carries). `iosxxx` uses gc=[g,0] (left) for FFS1 and gc=[0,g] (right) for FFS3.
     #[test]
     fn test_eval_proj_amp_vs_iosxxx() {
         use crate::helas::vertex::iosxxx;
-        use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
         use num_complex::Complex64;
 
         let mass = 0.511e-3_f64;
@@ -1336,16 +1219,6 @@ mod tests {
         };
         let g = Complex64::new(1.0, 0.0);
 
-        let ffs1 = LorentzTerm {
-            coeff: 1.0,
-            ops: vec![LorentzOp::ProjM { i: 1, j: 0 }],
-        };
-        let ffs3 = LorentzTerm {
-            coeff: 1.0,
-            ops: vec![LorentzOp::ProjP { i: 1, j: 0 }],
-        };
-        let spins = [2, 2, 1];
-
         let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
         for (hel1, hel2) in iproduct!(hels, hels) {
             for charge in [Charge::Particle, Charge::Antiparticle] {
@@ -1355,32 +1228,35 @@ mod tests {
                 let left_ref = iosxxx(&fo, &fi, &s_wf, [g, Complex64::new(0.0, 0.0)]);
                 let right_ref = iosxxx(&fo, &fi, &s_wf, [Complex64::new(0.0, 0.0), g]);
 
-                // Build slots: leg1=fi (col / flow-in), leg2=fo (row / flow-out), leg3=scalar
-                let mut slots: Vec<WaveformSlot<f64>> = vec![WaveformSlot::Empty; 3];
-                slots[0] = WaveformSlot::FermionIn(fi);
-                slots[1] = WaveformSlot::FermionOut(fo);
-                slots[2] = WaveformSlot::Scalar(s_wf);
+                // leg1 = fi (column / flow-in), leg2 = fo (row / flow-out), leg3 = scalar.
+                let fi_slot = WaveformSlot::FermionIn(fi);
+                let fo_slot = WaveformSlot::FermionOut(fo);
+                let s_slot = WaveformSlot::Scalar(s_wf);
 
-                // FFS1: ProjM(2,1) → left bilinear × s
-                let tree1 = LorentzEvalTree::build_at_leg(&ffs1, &spins, None).unwrap();
-                let WaveformSlot::Scalar(got1) = eval_lorentz_tree(&tree1, &slots) else {
+                // FFS1: left bilinear × s
+                let WaveformSlot::Scalar(got1) = mul_apply(&[
+                    scalar_bilinear_current(&[fi_slot, fo_slot], Chirality::Left),
+                    s_slot,
+                ]) else {
                     panic!("FFS1 did not produce a scalar");
                 };
                 let diff1 = (got1.value - left_ref).norm();
                 assert!(
                     diff1 < 1e-10,
-                    "ProjMAmp vs iosxxx left diff={diff1} (hel {hel1},{hel2}, {charge:?})"
+                    "left bilinear vs iosxxx diff={diff1} (hel {hel1},{hel2}, {charge:?})"
                 );
 
-                // FFS3: ProjP(2,1) → right bilinear × s
-                let tree3 = LorentzEvalTree::build_at_leg(&ffs3, &spins, None).unwrap();
-                let WaveformSlot::Scalar(got3) = eval_lorentz_tree(&tree3, &slots) else {
+                // FFS3: right bilinear × s
+                let WaveformSlot::Scalar(got3) = mul_apply(&[
+                    scalar_bilinear_current(&[fi_slot, fo_slot], Chirality::Right),
+                    s_slot,
+                ]) else {
                     panic!("FFS3 did not produce a scalar");
                 };
                 let diff3 = (got3.value - right_ref).norm();
                 assert!(
                     diff3 < 1e-10,
-                    "ProjPAmp vs iosxxx right diff={diff3} (hel {hel1},{hel2}, {charge:?})"
+                    "right bilinear vs iosxxx diff={diff3} (hel {hel1},{hel2}, {charge:?})"
                 );
             }
         }
@@ -1419,7 +1295,7 @@ mod tests {
         let card = parse_proc_card(proc, &opts).unwrap();
         let sets = generate_from_proc_card(&card, model).unwrap();
         let eval = AmplitudeEvaluator::compile(&sets[0], model).unwrap();
-        let bound = eval.bind::<f64>(&evaluated);
+        let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
 
         let global_scale = eval
             .helicities()
@@ -1583,7 +1459,7 @@ mod tests {
         let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
         let sets = generate_from_proc_card(&card, model).unwrap();
         let eval = AmplitudeEvaluator::compile(&sets[0], model).unwrap();
-        let bound = eval.bind::<f64>(&evaluated);
+        let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
         let diagrams = compile_diagram_ast(&sets[0], model).unwrap();
 
         let st = 0.6_f64;

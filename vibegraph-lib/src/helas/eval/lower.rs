@@ -14,10 +14,9 @@
 //! summed terms is shared (a DAG), not duplicated.
 
 use super::ast::{Ast, AstBuilder};
-use super::compile::DiagramEval;
 use super::diagram_eval::VertexInfo;
 use super::op::{NodeId, Op, Sym};
-use super::root_diagram::{DiagramEvalTree, EvalNode, EvalNodeId};
+use super::root_diagram::{DiagramEval, DiagramEvalTree, EvalNode, EvalNodeId};
 use super::root_lorentz::{LorentzEvalNode, LorentzEvalTree};
 use super::tree::Tree;
 

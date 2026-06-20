@@ -7,137 +7,29 @@
 //! - pass 3b: [`Folded::build`] interns the constants into a card-independent skeleton.
 //!
 //! The result is independent of both the parameter card and the scalar field `F`.
-//! Resolving a card (and choosing `F`) happens in [`AmplitudeEvaluator::bind`], which
-//! produces the runtime [`BoundAmplitude`](super::run::BoundAmplitude).
+//! Resolving a card (and choosing `F`) happens in
+//! [`BoundAmplitude::bind`](super::run::BoundAmplitude::bind), which produces the
+//! runtime [`BoundAmplitude`](super::run::BoundAmplitude).
 
 use std::collections::HashSet;
 
-use feyngraph::diagram::view::DiagramView;
-use num_traits::FromPrimitive;
-
 use crate::diagrams::DiagramSet;
-use crate::helas::repr::Real;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
-use crate::ufo::{EvaluatedModel, UFOModel};
+use crate::ufo::UFOModel;
 
+use super::error::EvalError;
 use super::fold::Folded;
 use super::lower;
-use super::root_diagram::{self, RootDiagramError};
-use super::root_lorentz::RootLorentzError;
-use super::run::BoundAmplitude;
-
-/// Errors during diagram rooting (the compile phase).
-///
-/// The two rooting passes each contribute a subtype: [`RootDiagramError`] from
-/// walking the topology, and [`RootLorentzError`] from rooting each vertex's
-/// Lorentz structure.
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum CompileError {
-    /// Pass 1: walking the diagram topology and interning model ids.
-    #[error(transparent)]
-    RootDiagram(#[from] RootDiagramError),
-    /// Pass 2: rooting a vertex's Lorentz structure into a contraction tree.
-    #[error(transparent)]
-    RootVertex(#[from] RootLorentzError),
-}
-
-/// Errors while building an [`AmplitudeEvaluator`] from a process.
-///
-/// Holds the model-parameter lookups performed at this layer (particle ids, spins,
-/// external-leg counts) on top of the diagram-rooting [`CompileError`].
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum EvalError {
-    /// An external particle name is absent from the UFO model.
-    #[error("particle not found in model: {0}")]
-    ParticleNotFound(String),
-    /// An external leg carries a spin code with no defined helicity states.
-    #[error("unsupported external spin code: {0}")]
-    UnsupportedSpin(i32),
-    /// The process and the compiled AST disagree on the external-leg count.
-    #[error("external-leg count mismatch: {0}")]
-    TopologyError(String),
-    /// Diagram rooting failed.
-    #[error(transparent)]
-    Compile(#[from] CompileError),
-}
-
-/// A compiled representation of a single Feynman diagram.
-///
-/// Built once from a `DiagramView` + `UFOModel`. The diagram is a rooted
-/// [`DiagramEvalTree`](super::root_diagram::DiagramEvalTree): external legs are leaves,
-/// internal vertices are off-shell currents wrapped by propagators, and the root
-/// contracts into the scalar amplitude.
-#[derive(Clone, Debug)]
-pub struct DiagramEval {
-    /// Number of external legs (determines array indexing for momenta)
-    pub n_ext: usize,
-    /// Rooted evaluation tree for this diagram
-    pub tree: super::root_diagram::DiagramEvalTree,
-    /// Symmetry factor: 1 / (vertex_sym × propagator_sym)
-    pub symmetry_factor: f64,
-    /// ±1 from the diagram's Fermi permutation sign
-    pub fermi_sign: i8,
-}
-
-impl DiagramEval {
-    /// Internal propagator particle ids appearing in this diagram (one per
-    /// `Propagate` node). Used to characterize a diagram by its propagator content.
-    #[cfg(test)]
-    pub fn propagator_particles(&self) -> impl Iterator<Item = ParticleId> + '_ {
-        use super::root_diagram::EvalNode;
-        use super::tree::Tree;
-        self.tree.iter().filter_map(|id| match self.tree.value(id) {
-            EvalNode::Propagate { info, .. } => Some(info.id),
-            _ => None,
-        })
-    }
-}
-
-impl std::fmt::Display for DiagramEval {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Diagram(external legs {}): {}", self.n_ext, self.tree)
-    }
-}
-
-/// Compile a single diagram into an evaluable [`DiagramEval`].
-///
-/// Roots the diagram into its evaluation tree (topology + Lorentz structures) and
-/// attaches the per-diagram metadata (external-leg count, symmetry factor, and the
-/// fermion-flow sign, including the initial-state spine correction).
-fn compile_single_diagram(
-    view: &DiagramView,
-    model: &UFOModel,
-) -> Result<DiagramEval, CompileError> {
-    Ok(DiagramEval {
-        n_ext: view.legs().count(),
-        tree: root_diagram::root_tree(view, model)?,
-        symmetry_factor: 1.0 / view.symmetry_factor() as f64,
-        fermi_sign: view.sign() * root_diagram::initial_state_spine_sign(view, model),
-    })
-}
-
-/// Compile all diagrams from a DiagramSet into rooted [`DiagramEval`]s.
-///
-/// For each diagram, recursively walks from an arbitrary root vertex to build a
-/// directed evaluation tree. External legs become leaves; internal vertices emit an
-/// off-shell current + propagator pair; the root emits the amplitude contraction.
-pub fn compile_diagram_ast(
-    set: &DiagramSet,
-    model: &UFOModel,
-) -> Result<Vec<DiagramEval>, CompileError> {
-    set.diagrams
-        .views()
-        .map(|view| compile_single_diagram(&view, model))
-        .collect()
-}
+use super::root_diagram::compile_diagram_ast;
 
 /// Compiled amplitude evaluator for a whole process (card- and `F`-independent).
 ///
 /// Built once into a [`Folded`] skeleton (pass 1+2 rooting → `lower` → `fold`).
-/// [`AmplitudeEvaluator::bind`] resolves a `&EvaluatedModel` at a chosen scalar
-/// precision `F` into a runtime [`BoundAmplitude`], so the same evaluator works with
-/// any parameter card and any precision.
+/// [`BoundAmplitude::bind`](super::run::BoundAmplitude::bind) resolves a
+/// `&EvaluatedModel` at a chosen scalar precision `F` into a runtime
+/// [`BoundAmplitude`](super::run::BoundAmplitude), so the same evaluator works with any
+/// parameter card and any precision.
 #[derive(Debug)]
 pub struct AmplitudeEvaluator {
     /// Folded whole-amplitude AST + constant-pool specs.
@@ -206,16 +98,6 @@ impl AmplitudeEvaluator {
             ext_particle_ids,
             helicities,
         })
-    }
-
-    /// Resolve a parameter card at scalar precision `F` into a runtime evaluator with
-    /// all couplings/masses/widths baked into its constant pools.
-    pub fn bind<F: Real + FromPrimitive>(
-        &self,
-        evaluated: &EvaluatedModel,
-    ) -> BoundAmplitude<'_, F> {
-        let (consts_c, consts_f) = self.folded.pools::<F>(evaluated);
-        BoundAmplitude::new(self, consts_c, consts_f)
     }
 
     /// The folded whole-amplitude skeleton (arena + pool specs).
