@@ -14,6 +14,7 @@ use num_traits::FromPrimitive;
 
 use super::ast::{Ast, AstBuilder};
 use super::op::{Const, Op, Sym};
+use super::tree::Tree;
 use crate::helas::repr::{Real, C};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
@@ -62,10 +63,11 @@ impl Folded {
         };
 
         let mut builder = AstBuilder::new();
-        for (i, node) in sym.nodes().iter().enumerate() {
-            let children = sym.child_ids(i as u32).to_vec();
+        for id in sym.iter() {
+            let node = sym.value(id);
+            let children: Vec<_> = sym.children(id).collect();
             let leaf = match (node.op, node.leaf) {
-                (Op::Coupling, Sym::Coupling(id)) => Const::Cplx(intern_c(id)),
+                (Op::Coupling, Sym::Coupling(id)) => Const::Complex(intern_c(id)),
                 (Op::Mass, Sym::Particle(id)) => Const::Real(intern_f(RealReq::Mass(id))),
                 (Op::Width, Sym::Particle(id)) => Const::Real(intern_f(RealReq::Width(id))),
                 (Op::Coeff, Sym::Coeff(c)) => Const::Real(intern_f(RealReq::Coeff(c.to_bits()))),
@@ -75,11 +77,13 @@ impl Folded {
                         leg_idx,
                         spin,
                         charge,
+                        incoming,
                     },
                 ) => Const::Ext {
                     leg_idx,
                     spin,
                     charge,
+                    incoming,
                 },
                 _ => Const::None,
             };
@@ -87,7 +91,7 @@ impl Folded {
         }
 
         Folded {
-            ast: builder.finish(sym.root_id()),
+            ast: builder.finish(sym.root()),
             pool_c,
             pool_f,
         }

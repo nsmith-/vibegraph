@@ -1,16 +1,16 @@
-//! Pass-1+2 compiled descriptors: the symbolic, model-bound form of a diagram.
+//! Pass-1+2 vertex/leg descriptors: the symbolic, model-bound data carried by a rooted
+//! diagram node.
 //!
-//! A `DiagramEval` is the output of diagram + Lorentz rooting (`root_diagram` /
-//! `root_lorentz`): a rooted [`DiagramEvalTree`] whose vertices still carry model ids
-//! (`CouplingId`/`ParticleId`) and rooted Lorentz contraction trees. The [`super::lower`]
-//! pass inlines these into the unified [`Ast`](super::ast::Ast); the unified runtime
-//! evaluates that, not this.
+//! These `*Info` types ([`ExtLegInfo`], [`PropInfo`], [`VertexInfo`]/[`VertexTerm`]) are
+//! the payloads of [`EvalNode`](super::root_diagram::EvalNode): vertices still carry
+//! model ids (`CouplingId`/`ParticleId`) and rooted Lorentz contraction trees. The
+//! per-diagram artifact that assembles them ([`DiagramEval`](super::compile::DiagramEval))
+//! lives in [`super::compile`]; [`super::lower`] inlines them into the unified
+//! [`Ast`](super::ast::Ast), which the runtime evaluates.
 
 use itertools::Itertools;
 
-use super::root_diagram::{DiagramEvalTree, EvalNode};
 use super::root_lorentz::{RootLorentzError, RootedTerm};
-use super::tree::Tree;
 use crate::helas::repr::numbers::Charge;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
@@ -29,6 +29,9 @@ pub struct ExtLegInfo {
     pub spin: i32,
     /// Charge
     pub charge: Charge,
+    /// Whether this leg is incoming (`leg_idx < n_in`); selects ket/bra flow and the
+    /// HELAS `nsf` sign of the external wavefunction.
+    pub incoming: bool,
 }
 
 impl std::fmt::Display for ExtLegInfo {
@@ -145,39 +148,5 @@ impl std::fmt::Display for VertexInfo {
                 .join(" + ")
                 .as_str(),
         )
-    }
-}
-
-/// A compiled representation of a single Feynman diagram.
-///
-/// Built once from a `DiagramView` + `UFOModel`. The diagram is a rooted
-/// [`DiagramEvalTree`]: external legs are leaves, internal vertices are off-shell
-/// currents wrapped by propagators, and the root contracts into the scalar amplitude.
-#[derive(Clone, Debug)]
-pub struct DiagramEval {
-    /// Number of external legs (determines array indexing for momenta)
-    pub n_ext: usize,
-    /// Rooted evaluation tree for this diagram
-    pub tree: DiagramEvalTree,
-    /// Symmetry factor: 1 / (vertex_sym × propagator_sym)
-    pub symmetry_factor: f64,
-    /// ±1 from the diagram's Fermi permutation sign
-    pub fermi_sign: i8,
-}
-
-impl DiagramEval {
-    /// Internal propagator particle ids appearing in this diagram (one per
-    /// `Propagate` node). Used to characterize a diagram by its propagator content.
-    pub fn propagator_particles(&self) -> impl Iterator<Item = ParticleId> + '_ {
-        self.tree.iter().filter_map(|id| match self.tree.value(id) {
-            EvalNode::Propagate { info, .. } => Some(info.id),
-            _ => None,
-        })
-    }
-}
-
-impl std::fmt::Display for DiagramEval {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Diagram(external legs {}): {}", self.n_ext, self.tree)
     }
 }

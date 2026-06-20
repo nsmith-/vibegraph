@@ -14,7 +14,8 @@
 //! summed terms is shared (a DAG), not duplicated.
 
 use super::ast::{Ast, AstBuilder};
-use super::diagram_eval::{DiagramEval, VertexInfo};
+use super::compile::DiagramEval;
+use super::diagram_eval::VertexInfo;
 use super::op::{NodeId, Op, Sym};
 use super::root_diagram::{DiagramEvalTree, EvalNode, EvalNodeId};
 use super::root_lorentz::{LorentzEvalNode, LorentzEvalTree};
@@ -57,6 +58,7 @@ fn lower_diagram_node(tree: &DiagramEvalTree, id: EvalNodeId, b: &mut AstBuilder
                     leg_idx: info.leg_idx,
                     spin: info.spin,
                     charge: info.charge,
+                    incoming: info.incoming,
                 },
                 vec![mass],
             )

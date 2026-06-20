@@ -164,6 +164,9 @@ pub enum Sym {
         leg_idx: usize,
         spin: i32,
         charge: Charge,
+        /// Whether this leg is an incoming external (selects ket/bra flow and the
+        /// `nsf` sign of the wavefunction). Baked in at compile time.
+        incoming: bool,
     },
     /// Non-leaf op: no payload.
     None,
@@ -173,7 +176,7 @@ pub enum Sym {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Const {
     /// index into `consts_c` (complex pool) — `Op::Coupling`.
-    Cplx(u32),
+    Complex(u32),
     /// index into `consts_f` (real pool) — `Op::Mass` / `Op::Width` / `Op::Coeff`.
     Real(u32),
     /// `Op::External` payload (structural, never pooled).
@@ -181,17 +184,14 @@ pub enum Const {
         leg_idx: usize,
         spin: i32,
         charge: Charge,
+        /// Whether this leg is an incoming external (see [`Sym::Ext`]).
+        incoming: bool,
     },
     /// Non-leaf op: no payload.
     None,
 }
 
-/// Encode a charge as its HELAS `nsf` sign for compact s-expr round-tripping.
-pub(super) fn charge_sign(c: Charge) -> i32 {
-    c.sign()
-}
-
-/// Decode a charge from its `nsf` sign.
+/// Decode a charge from its HELAS `nsf` sign (the s-expr encoding of [`Charge::sign`]).
 pub(super) fn charge_from_sign(s: i32) -> Charge {
     if s < 0 {
         Charge::Antiparticle
@@ -211,7 +211,8 @@ impl fmt::Display for Sym {
                 leg_idx,
                 spin,
                 charge,
-            } => write!(f, "{leg_idx} {spin} {}", charge_sign(*charge)),
+                incoming,
+            } => write!(f, "{leg_idx} {spin} {} {}", charge.sign(), *incoming as i32),
             Sym::None => Ok(()),
         }
     }
