@@ -8,7 +8,10 @@
 
 use std::time::Instant;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-use vibegraph::helas::{eval::AmplitudeEvaluator, LorentzVector};
+use vibegraph::helas::{
+    eval::{AmplitudeEvaluator, BoundAmplitude},
+    LorentzVector,
+};
 use vibegraph::ufo::{slha::ParamCard, UFOModel};
 
 const N: usize = 10_000;
@@ -39,7 +42,7 @@ fn main() {
     let empty_card = "".parse::<ParamCard>().unwrap();
     let evaluated = model.evaluate(&empty_card);
     let evaluator = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
-    let bound = evaluator.bind::<f64>(&evaluated);
+    let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
 
     // Fixed-seed random kinematic points, same range as gen_amplitude.py
     use rand::{Rng, SeedableRng};
