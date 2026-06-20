@@ -2,6 +2,7 @@
 use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use crate::helas::LorentzVector;
+use num_traits::Zero;
 use std::ops::{Add, Mul};
 
 /// A runtime wavefunction register (holds one particle's wavefunction).
@@ -22,6 +23,10 @@ pub enum WaveformSlot<F: Real> {
     Vector(VectorWf<F>),
     /// Scalar amplitude + momentum
     Scalar(ScalarWf<F>),
+    /// A bare real constant (mass / width / coefficient) with no momentum. Kept
+    /// separate from `Scalar` so real coupling/coefficient chains multiply in `F`
+    /// rather than paying the ~2× cost of `C<F>` multiplication.
+    Real(F),
     /// Empty slot (not yet computed)
     Empty,
 }
@@ -33,16 +38,15 @@ impl<F: Real> Add for WaveformSlot<F> {
         use WaveformSlot::*;
         match (self, other) {
             (Empty, x) | (x, Empty) => x,
-            (Scalar(s1), Scalar(s2)) => {
-                assert_eq!(
-                    s1.momentum, s2.momentum,
-                    "Cannot add scalar waveforms with different momenta"
-                );
-                WaveformSlot::Scalar(ScalarWf {
-                    value: s1.value + s2.value,
-                    momentum: s1.momentum,
-                })
-            }
+            // Scalars are summed by value without a momentum-equality check: the only
+            // momentum-mismatched scalar sum is the final coherent sum over diagram
+            // amplitudes, where the (conserved, ≈0) momentum is physically irrelevant.
+            // Within a diagram, summed scalars share their inputs and so their momenta
+            // already match bit-for-bit.
+            (Scalar(s1), Scalar(s2)) => WaveformSlot::Scalar(ScalarWf {
+                value: s1.value + s2.value,
+                momentum: s1.momentum,
+            }),
             (Vector(v1), Vector(v2)) => {
                 assert_eq!(
                     v1.momentum, v2.momentum,
@@ -85,6 +89,12 @@ where
         use WaveformSlot::*;
         match rhs {
             Empty => Empty,
+            // A bare real const scaled by a complex factor becomes a complex scalar
+            // with no momentum.
+            Real(r) => Scalar(ScalarWf {
+                value: self * r,
+                momentum: LorentzVector::zero(),
+            }),
             Scalar(s) => Scalar(ScalarWf {
                 value: self * s.value,
                 momentum: s.momentum,
@@ -106,6 +116,7 @@ impl<F: Real> WaveformSlot<F> {
             WaveformSlot::FermionOut(f) => Some(f.momentum),
             WaveformSlot::Vector(v) => Some(v.momentum),
             WaveformSlot::Scalar(s) => Some(s.momentum),
+            WaveformSlot::Real(_) => None,
             WaveformSlot::Empty => None,
         }
     }

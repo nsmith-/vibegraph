@@ -1,0 +1,218 @@
+//! The unified node language for the evaluation AST.
+//!
+//! A node is a dataless [`Op`] tag plus a typed leaf payload (`Node<T>`); children
+//! are stored separately by the [`Ast`](super::ast::Ast) arena. The same `Op` set is
+//! shared by two leaf flavors:
+//! - [`Sym`] — model ids ([`CouplingId`]/[`ParticleId`]/coeff/leg), the egglog /
+//!   structure-optimization domain (`Ast<Sym>`).
+//! - [`Const`] — deduped pool indices, the constant-folded eval domain (`Ast<Const>`),
+//!   resolved against the `C<F>`/`F` pools built by [`super::fold`].
+//!
+//! The `Op` disambiguates what a leaf means (e.g. `Op::Mass` vs `Op::Width` both carry a
+//! `ParticleId`), so the leaf enums stay small.
+
+use std::fmt;
+
+use crate::helas::repr::numbers::Charge;
+use crate::ufo::couplings::CouplingId;
+use crate::ufo::particles::ParticleId;
+
+/// Index of a node within an [`Ast`](super::ast::Ast) arena.
+pub type NodeId = u32;
+
+/// Opcode tag — carries no data of its own (operands are arena children, constants are
+/// the node's leaf payload).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Op {
+    // ── inputs / structural / algebraic ──
+    /// External wavefunction input. Leaf: `{leg_idx, spin, charge}`; child: `[Mass]`.
+    External,
+    /// Propagator. Children: `[current, Mass, Width]`.
+    Propagate,
+    /// n-ary product: ≤1 non-scalar child sets the output type, the rest are scalar
+    /// factors. Subsumes scalar×wf scaling (coupling·coeff·current) and the Lorentz
+    /// tensor product.
+    Mul,
+    /// n-ary sum (Lorentz-term, vertex-term, and diagram sums).
+    Add,
+    // ── Lorentz primitives (semantics mirror the old `LorentzEvalNode`) ──
+    /// 2 fermions → off-shell vector current.
+    GammaVout,
+    /// vector + flow-in fermion → flow-in fermion current.
+    GammaIout,
+    /// vector + flow-out fermion → flow-out fermion current.
+    GammaOout,
+    /// left chiral projection of a continuing fermion current.
+    ProjM,
+    /// right chiral projection of a continuing fermion current.
+    ProjP,
+    /// left chiral scalar bilinear ψ̄ P_L ψ.
+    ProjMAmp,
+    /// right chiral scalar bilinear ψ̄ P_R ψ.
+    ProjPAmp,
+    /// contract two vectors → scalar.
+    Metric,
+    /// metric with one free index → off-shell vector current.
+    MetricVout,
+    /// full scalar bilinear ψ̄ δ ψ.
+    IdentityAmp,
+    /// 4-momentum of the single child input, as a vector.
+    PMom,
+    // ── constant leaves ──
+    /// complex coupling constant (leaf id → `consts_c`).
+    Coupling,
+    /// particle mass (leaf id → `consts_f`).
+    Mass,
+    /// particle width (leaf id → `consts_f`).
+    Width,
+    /// real Lorentz-structure coefficient (leaf → `consts_f`).
+    Coeff,
+}
+
+impl Op {
+    /// The s-expression head token for this op.
+    pub fn name(self) -> &'static str {
+        match self {
+            Op::External => "External",
+            Op::Propagate => "Propagate",
+            Op::Mul => "Mul",
+            Op::Add => "Add",
+            Op::GammaVout => "GammaVout",
+            Op::GammaIout => "GammaIout",
+            Op::GammaOout => "GammaOout",
+            Op::ProjM => "ProjM",
+            Op::ProjP => "ProjP",
+            Op::ProjMAmp => "ProjMAmp",
+            Op::ProjPAmp => "ProjPAmp",
+            Op::Metric => "Metric",
+            Op::MetricVout => "MetricVout",
+            Op::IdentityAmp => "IdentityAmp",
+            Op::PMom => "PMom",
+            Op::Coupling => "Coupling",
+            Op::Mass => "Mass",
+            Op::Width => "Width",
+            Op::Coeff => "Coeff",
+        }
+    }
+
+    /// Parse an op from its s-expression head token.
+    pub fn from_name(s: &str) -> Option<Op> {
+        Some(match s {
+            "External" => Op::External,
+            "Propagate" => Op::Propagate,
+            "Mul" => Op::Mul,
+            "Add" => Op::Add,
+            "GammaVout" => Op::GammaVout,
+            "GammaIout" => Op::GammaIout,
+            "GammaOout" => Op::GammaOout,
+            "ProjM" => Op::ProjM,
+            "ProjP" => Op::ProjP,
+            "ProjMAmp" => Op::ProjMAmp,
+            "ProjPAmp" => Op::ProjPAmp,
+            "Metric" => Op::Metric,
+            "MetricVout" => Op::MetricVout,
+            "IdentityAmp" => Op::IdentityAmp,
+            "PMom" => Op::PMom,
+            "Coupling" => Op::Coupling,
+            "Mass" => Op::Mass,
+            "Width" => Op::Width,
+            "Coeff" => Op::Coeff,
+            _ => return None,
+        })
+    }
+
+    /// Whether this op carries a leaf payload token in the s-expression (a single
+    /// id/coeff for the constant leaves, the `leg spin charge` triple for `External`).
+    pub fn has_leaf_token(self) -> bool {
+        matches!(
+            self,
+            Op::External | Op::Coupling | Op::Mass | Op::Width | Op::Coeff
+        )
+    }
+}
+
+impl fmt::Display for Op {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// A node: opcode tag + typed leaf payload. Children live in the arena's CSR table.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Node<T> {
+    pub op: Op,
+    pub leaf: T,
+}
+
+impl<T> Node<T> {
+    pub fn new(op: Op, leaf: T) -> Self {
+        Node { op, leaf }
+    }
+}
+
+/// Symbolic leaf payload: model ids, kept independent of any parameter card.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Sym {
+    /// `Op::Coupling` payload.
+    Coupling(CouplingId),
+    /// `Op::Mass` / `Op::Width` payload.
+    Particle(ParticleId),
+    /// `Op::Coeff` payload.
+    Coeff(f64),
+    /// `Op::External` payload.
+    Ext {
+        leg_idx: usize,
+        spin: i32,
+        charge: Charge,
+    },
+    /// Non-leaf op: no payload.
+    None,
+}
+
+/// Folded leaf payload: deduped indices into the `C<F>` / `F` constant pools.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Const {
+    /// index into `consts_c` (complex pool) — `Op::Coupling`.
+    Cplx(u32),
+    /// index into `consts_f` (real pool) — `Op::Mass` / `Op::Width` / `Op::Coeff`.
+    Real(u32),
+    /// `Op::External` payload (structural, never pooled).
+    Ext {
+        leg_idx: usize,
+        spin: i32,
+        charge: Charge,
+    },
+    /// Non-leaf op: no payload.
+    None,
+}
+
+/// Encode a charge as its HELAS `nsf` sign for compact s-expr round-tripping.
+pub(super) fn charge_sign(c: Charge) -> i32 {
+    c.sign()
+}
+
+/// Decode a charge from its `nsf` sign.
+pub(super) fn charge_from_sign(s: i32) -> Charge {
+    if s < 0 {
+        Charge::Antiparticle
+    } else {
+        Charge::Particle
+    }
+}
+
+impl fmt::Display for Sym {
+    /// Render only the payload (the enclosing [`Ast`](super::ast::Ast) emits the op head).
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Sym::Coupling(id) => write!(f, "{id}"),
+            Sym::Particle(id) => write!(f, "{id}"),
+            Sym::Coeff(c) => write!(f, "{c}"),
+            Sym::Ext {
+                leg_idx,
+                spin,
+                charge,
+            } => write!(f, "{leg_idx} {spin} {}", charge_sign(*charge)),
+            Sym::None => Ok(()),
+        }
+    }
+}

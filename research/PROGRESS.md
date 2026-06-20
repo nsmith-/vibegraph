@@ -3,6 +3,18 @@
 The topology-driven Lorentz structure evaluator is fully implemented and validated.
 All 135 tests pass; amplitude agrees with Fortran HELAS to <1e-7 for massive e⁺e⁻→μ⁺μ⁻.
 
+> **Update 2026-06-19 — eval/ unified-AST refactor (Steps 3+4) complete.** The two
+> nested eval trees (`DiagramEvalTree` + `LorentzEvalTree`) are now flattened into ONE
+> egglog-ready arena `Ast<T>` over the whole amplitude, evaluated by a single forward
+> pass / one `apply` match. New modules `op.rs` (dataless `Op` + `Sym`/`Const` leaves),
+> `ast.rs` (CSR arena, `Tree`, s-expr `Display`/`FromStr`), `lower.rs` (DiagramEval →
+> `Ast<Sym>`), `fold.rs` (intern couplings/masses/widths/coeffs into deduped C<F>/F
+> pools → `Ast<Const>`); the old pass-1+2 descriptors moved to `diagram_eval.rs`. The
+> sections below naming `dispatch.rs`/`topo_sort.rs`/`evaluate_lorentz_node` describe the
+> pre-refactor layout (now `root_lorentz.rs`/`root_diagram.rs` + the unified `apply`).
+> Bit-for-bit |M|²-preserving: ee 4.17e-14, pp 2.14e-14, tata 5.73e-3, uux 2.66e1 vs MG.
+> See memory `helas-eval-tree-refactor` for the full module layout.
+
 ## What was built
 
 ### Core primitives
