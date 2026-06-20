@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use feyngraph::diagram::view::{DiagramView, LegView, VertexView};
 use itertools::Either;
 
-use crate::helas::eval::ast::{ExtLegInfo, PropInfo, VertexInfo};
+use crate::helas::eval::diagram_eval::{ExtLegInfo, PropInfo, VertexInfo};
 use crate::helas::eval::tree::Tree;
 use crate::helas::repr::numbers::Charge;
 use crate::ufo::particles::ParticleId;

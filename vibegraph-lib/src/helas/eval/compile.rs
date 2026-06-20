@@ -9,7 +9,7 @@ use feyngraph::diagram::view::DiagramView;
 use crate::diagrams::DiagramSet;
 use crate::ufo::UFOModel;
 
-use super::ast::DiagramEval;
+use super::diagram_eval::DiagramEval;
 use super::root_diagram::{self, RootDiagramError};
 use super::root_lorentz::RootLorentzError;
 

@@ -25,6 +25,19 @@ impl From<usize> for CouplingId {
     }
 }
 
+impl CouplingId {
+    /// The raw index this id wraps.
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+impl std::fmt::Display for CouplingId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl Index<CouplingId> for IndexMap<String, Coupling> {
     type Output = Coupling;
 

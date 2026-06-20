@@ -1,14 +1,17 @@
-//! Runtime amplitude evaluation: DiagramAst × momenta × helicities → amplitude
+//! Runtime amplitude evaluation: a single forward pass over the folded `Ast`.
+//!
+//! `AmplitudeEvaluator` compiles a process once (pass 1+2 rooting → `lower` → `fold`)
+//! into a card-independent [`Folded`] skeleton, then for each phase-space point resolves
+//! the constant pools and walks the arena in storage (topological) order, reducing each
+//! node from its already-computed children via the single [`apply`] match.
 
 use std::collections::HashSet;
 
 use crate::diagrams::DiagramSet;
-use crate::helas::eval::ast::ExtLegInfo;
 use crate::helas::eval::compile::compile_diagram_ast;
-use crate::helas::eval::root_lorentz::{LorentzEvalNode, LorentzEvalTree};
-use crate::helas::eval::tree::Tree;
+use crate::helas::eval::root_lorentz::LorentzEvalNode;
 use crate::helas::repr::lorentz::{Bispinor, ComplexVector, LorentzVector, SpinorRepr, VectorRepr};
-use crate::helas::repr::numbers::{Chirality, SpinorHelicity};
+use crate::helas::repr::numbers::{Charge, Chirality, SpinorHelicity};
 use crate::helas::repr::{ri, Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use crate::ufo::couplings::CouplingId;
@@ -17,10 +20,15 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 use num_complex::ComplexFloat;
 use num_traits::{FromPrimitive, Zero};
 
-use super::ast::DiagramEval;
+use super::ast::Ast;
 use super::compile::CompileError;
-use super::root_diagram::EvalNode;
+use super::fold::Folded;
+use super::lower;
+use super::op::{Const, Node, NodeId, Op};
 use super::waveform_slot::WaveformSlot;
+
+#[cfg(test)]
+use super::diagram_eval::DiagramEval;
 
 /// Errors while building an [`AmplitudeEvaluator`] from a process.
 ///
@@ -44,18 +52,21 @@ pub enum EvalError {
     Compile(#[from] CompileError),
 }
 
-/// Compiled amplitude evaluator for all diagrams of a process.
+/// Compiled amplitude evaluator for a whole process.
 ///
-/// The AST is built once from `&UFOModel`; coupling values are resolved at eval time
-/// from `&EvaluatedModel` so the same evaluator works with any param card.
+/// Built once into a card-independent [`Folded`] skeleton (pass 1+2 rooting → `lower`
+/// → `fold`). The constant pools are resolved per `&EvaluatedModel` at eval time, so the
+/// same evaluator works with any param card and any scalar precision `F`.
 #[derive(Debug)]
 pub struct AmplitudeEvaluator {
-    /// One compiled evaluation tree per diagram
-    diagrams: Vec<DiagramEval>,
+    /// Folded whole-amplitude AST + constant-pool specs.
+    folded: Folded,
     /// Number of external particles
     n_ext: usize,
     /// Number of incoming external particles
     n_in: usize,
+    /// Number of diagrams folded into the amplitude
+    n_diagrams: usize,
     /// External particle ids in process order (incoming first, then outgoing)
     ext_particle_ids: Vec<ParticleId>,
     /// All valid helicity combinations (precomputed)
@@ -110,10 +121,17 @@ impl AmplitudeEvaluator {
         // TODO: compile phase should also verify that all helicity combinations are valid for the process
         // Some combinations may always evaluate to zero
 
+        // Pass 3: inline every diagram into one whole-amplitude AST (structure pass is a
+        // no-op for now), then intern the constants into the folded skeleton.
+        let n_diagrams = diagrams.len();
+        let symbolic = lower::optimize(lower::lower(&diagrams));
+        let folded = Folded::build(&symbolic);
+
         Ok(Self {
-            diagrams,
+            folded,
             n_ext,
             n_in: set.particles_in.len(),
+            n_diagrams,
             ext_particle_ids,
             helicities,
         })
@@ -136,12 +154,21 @@ impl AmplitudeEvaluator {
         if momenta.len() != self.n_ext {
             return F::zero();
         }
-
+        // The constant pools depend only on the card, not on helicity — resolve once.
+        let (consts_c, consts_f) = self.folded.pools::<F>(evaluated);
         self.helicities
             .iter()
             .map(|hel| {
-                self.eval_amplitude(momenta, hel.as_slice(), evaluated)
-                    .norm_sqr()
+                run_forward(
+                    &self.folded.ast,
+                    &consts_c,
+                    &consts_f,
+                    momenta,
+                    hel,
+                    self.n_in,
+                    &[],
+                )
+                .norm_sqr()
             })
             .fold(F::zero(), |acc, x| acc + x)
     }
@@ -164,12 +191,16 @@ impl AmplitudeEvaluator {
         if momenta.len() != self.n_ext || helicities.len() != self.n_ext {
             return C::new(F::zero(), F::zero());
         }
-
-        self.diagrams
-            .iter()
-            .fold(C::new(F::zero(), F::zero()), |acc, ast| {
-                acc + eval_single_diagram(ast, momenta, helicities, evaluated, self.n_in, &[])
-            })
+        let (consts_c, consts_f) = self.folded.pools::<F>(evaluated);
+        run_forward(
+            &self.folded.ast,
+            &consts_c,
+            &consts_f,
+            momenta,
+            helicities,
+            self.n_in,
+            &[],
+        )
     }
 
     /// Test-only: evaluate the amplitude with external vector wavefunctions
@@ -184,11 +215,16 @@ impl AmplitudeEvaluator {
         evaluated: &EvaluatedModel,
         overrides: &[Option<VectorWf<F>>],
     ) -> C<F> {
-        self.diagrams
-            .iter()
-            .fold(C::new(F::zero(), F::zero()), |acc, ast| {
-                acc + eval_single_diagram(ast, momenta, helicities, evaluated, self.n_in, overrides)
-            })
+        let (consts_c, consts_f) = self.folded.pools::<F>(evaluated);
+        run_forward(
+            &self.folded.ast,
+            &consts_c,
+            &consts_f,
+            momenta,
+            helicities,
+            self.n_in,
+            overrides,
+        )
     }
 
     /// Return the number of external legs.
@@ -208,7 +244,7 @@ impl AmplitudeEvaluator {
 
     /// Return the number of compiled diagrams.
     pub fn n_diagrams(&self) -> usize {
-        self.diagrams.len()
+        self.n_diagrams
     }
 
     /// Return the valid helicity combinations.
@@ -220,27 +256,10 @@ impl AmplitudeEvaluator {
     ///
     /// Can be used for prefetching from EvaluatedModel if desired.
     pub fn coupling_particle_ids(&self) -> (HashSet<CouplingId>, HashSet<ParticleId>) {
-        let mut coupling_ids = HashSet::new();
-        let mut particle_ids = HashSet::new();
-        for diagram in &self.diagrams {
-            for id in diagram.tree.iter() {
-                match diagram.tree.value(id) {
-                    EvalNode::OffShellCurrent { info, .. }
-                    | EvalNode::ContractAmplitude { info, .. } => {
-                        for term in &info.terms {
-                            coupling_ids.insert(term.coupling_id);
-                        }
-                    }
-                    EvalNode::External(info) => {
-                        particle_ids.insert(info.id);
-                    }
-                    EvalNode::Propagate { info, .. } => {
-                        particle_ids.insert(info.id);
-                    }
-                }
-            }
-        }
-        (coupling_ids, particle_ids)
+        (
+            self.folded.coupling_ids().collect(),
+            self.folded.particle_ids().collect(),
+        )
     }
 }
 
@@ -272,6 +291,205 @@ fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
     out
 }
 
+/// Evaluate the whole-amplitude folded arena in one forward pass.
+///
+/// Nodes are visited in arena (storage) order; since children always have smaller ids
+/// than their parents, each node's children are already computed and read from `res` by
+/// id, so a shared (DAG) node is evaluated exactly once. Returns the root scalar = M.
+fn run_forward<F: Real + FromPrimitive>(
+    ast: &Ast<Const>,
+    consts_c: &[C<F>],
+    consts_f: &[F],
+    momenta: &[LorentzVector<F>],
+    helicities: &[i32],
+    n_in: usize,
+    pol_overrides: &[Option<VectorWf<F>>],
+) -> C<F> {
+    let mut res: Vec<WaveformSlot<F>> = Vec::with_capacity(ast.len());
+    let mut kids: Vec<WaveformSlot<F>> = Vec::new();
+    for id in 0..ast.len() as NodeId {
+        kids.clear();
+        kids.extend(ast.child_ids(id).iter().map(|&c| res[c as usize]));
+        let value = apply(
+            ast.node(id),
+            &kids,
+            momenta,
+            helicities,
+            n_in,
+            consts_c,
+            consts_f,
+            pol_overrides,
+        );
+        res.push(value);
+    }
+    match res[ast.root_id() as usize] {
+        WaveformSlot::Scalar(s) => s.value,
+        WaveformSlot::Empty => C::new(F::zero(), F::zero()),
+        other => panic!("amplitude root is not a scalar: {other:?}"),
+    }
+}
+
+/// Reduce one folded node from its children's already-evaluated results. The single
+/// match unifying the old `apply_diagram_node` + `apply_lorentz_node`: constant leaves
+/// resolve from the pools; `External`/`Propagate` build wavefunctions; `Mul`/`Add` are
+/// the algebraic combinators; the Lorentz primitives reuse [`apply_lorentz_node`].
+#[allow(clippy::too_many_arguments)]
+fn apply<F: Real + FromPrimitive>(
+    node: &Node<Const>,
+    children: &[WaveformSlot<F>],
+    momenta: &[LorentzVector<F>],
+    helicities: &[i32],
+    n_in: usize,
+    consts_c: &[C<F>],
+    consts_f: &[F],
+    pol_overrides: &[Option<VectorWf<F>>],
+) -> WaveformSlot<F> {
+    match node.op {
+        Op::Coupling => {
+            let Const::Cplx(i) = node.leaf else {
+                panic!("Coupling node without a complex-pool index");
+            };
+            WaveformSlot::Scalar(ScalarWf {
+                value: consts_c[i as usize],
+                momentum: LorentzVector::zero(),
+            })
+        }
+        Op::Mass | Op::Width | Op::Coeff => {
+            let Const::Real(i) = node.leaf else {
+                panic!("real-const node without a real-pool index");
+            };
+            WaveformSlot::Real(consts_f[i as usize])
+        }
+        Op::External => {
+            let Const::Ext {
+                leg_idx,
+                spin,
+                charge,
+            } = node.leaf
+            else {
+                panic!("External node without leg info");
+            };
+            if let Some(Some(vwf)) = pol_overrides.get(leg_idx) {
+                return WaveformSlot::Vector(*vwf);
+            }
+            let mass = expect_real(children[0]);
+            build_external_core(
+                momenta[leg_idx],
+                helicities[leg_idx],
+                spin,
+                charge,
+                leg_idx,
+                n_in,
+                mass,
+            )
+        }
+        Op::Propagate => {
+            let mass = expect_real(children[1]);
+            let width = expect_real(children[2]);
+            propagate_core(&children[0], mass, width)
+        }
+        Op::Add => children
+            .iter()
+            .copied()
+            .fold(WaveformSlot::Empty, |acc, x| acc + x),
+        Op::Mul => mul_apply(children),
+        Op::PMom => {
+            let momentum = children[0].momentum().expect("PMom: empty slot");
+            WaveformSlot::Vector(VectorWf {
+                eps: ComplexVector::from(momentum),
+                momentum,
+            })
+        }
+        // Lorentz primitives: the field values are placeholders — `apply_lorentz_node`
+        // reads its operands from `children`, not from the node's indices.
+        Op::GammaVout => {
+            apply_lorentz_node(&LorentzEvalNode::GammaVout { i: 0, j: 0 }, children, &[])
+        }
+        Op::GammaIout => {
+            apply_lorentz_node(&LorentzEvalNode::GammaIout { mu: 0, j: 0 }, children, &[])
+        }
+        Op::GammaOout => {
+            apply_lorentz_node(&LorentzEvalNode::GammaOout { mu: 0, i: 0 }, children, &[])
+        }
+        Op::ProjM => apply_lorentz_node(&LorentzEvalNode::ProjM { i: 0 }, children, &[]),
+        Op::ProjP => apply_lorentz_node(&LorentzEvalNode::ProjP { i: 0 }, children, &[]),
+        Op::ProjMAmp => {
+            apply_lorentz_node(&LorentzEvalNode::ProjMAmp { i: 0, j: 0 }, children, &[])
+        }
+        Op::ProjPAmp => {
+            apply_lorentz_node(&LorentzEvalNode::ProjPAmp { i: 0, j: 0 }, children, &[])
+        }
+        Op::Metric => apply_lorentz_node(&LorentzEvalNode::Metric { mu: 0, nu: 0 }, children, &[]),
+        Op::MetricVout => apply_lorentz_node(&LorentzEvalNode::MetricVout { v: 0 }, children, &[]),
+        Op::IdentityAmp => {
+            apply_lorentz_node(&LorentzEvalNode::IdentityAmp { i: 0, j: 0 }, children, &[])
+        }
+    }
+}
+
+/// Extract a bare real constant from a [`WaveformSlot::Real`] child.
+fn expect_real<F: Real>(slot: WaveformSlot<F>) -> F {
+    match slot {
+        WaveformSlot::Real(r) => r,
+        other => panic!("expected a real-constant slot, got {other:?}"),
+    }
+}
+
+/// n-ary product. Scalar/real children fold into a complex coefficient (reals kept in
+/// `F`); at most one non-scalar child carries the output type and absorbs the scalar
+/// momentum (matching the old `LorentzEvalNode::Mul`).
+fn mul_apply<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
+    let mut real_acc = F::one();
+    let mut cplx_acc = C::new(F::one(), F::zero());
+    let mut scalar_mom = LorentzVector::zero();
+    let mut non_scalar = WaveformSlot::Empty;
+    for &child in children {
+        match child {
+            WaveformSlot::Real(r) => real_acc = real_acc * r,
+            WaveformSlot::Scalar(s) => {
+                cplx_acc = cplx_acc * s.value;
+                scalar_mom = scalar_mom + s.momentum;
+            }
+            WaveformSlot::Empty => {}
+            other => {
+                assert!(
+                    matches!(non_scalar, WaveformSlot::Empty),
+                    "Mul: at most one non-scalar child"
+                );
+                non_scalar = other;
+            }
+        }
+    }
+    let coeff = cplx_acc * real_acc;
+    match non_scalar {
+        WaveformSlot::Empty => WaveformSlot::Scalar(ScalarWf {
+            value: coeff,
+            momentum: scalar_mom,
+        }),
+        // Route the scalar factors' momentum into the surviving non-scalar current so
+        // the propagator sees the conserved q.
+        other => match coeff * other {
+            WaveformSlot::Vector(mut v) => {
+                v.momentum = v.momentum + scalar_mom;
+                WaveformSlot::Vector(v)
+            }
+            WaveformSlot::FermionIn(mut f) => {
+                f.momentum = f.momentum + scalar_mom;
+                WaveformSlot::FermionIn(f)
+            }
+            WaveformSlot::FermionOut(mut f) => {
+                f.momentum = f.momentum + scalar_mom;
+                WaveformSlot::FermionOut(f)
+            }
+            scaled => scaled,
+        },
+    }
+}
+
+/// Test helper: evaluate a single diagram's amplitude (symmetry × Fermi sign folded
+/// in) by lowering just that diagram and running the unified forward pass. Used by the
+/// per-diagram probes.
+#[cfg(test)]
 fn eval_single_diagram<F: Real + FromPrimitive>(
     diagram: &DiagramEval,
     momenta: &[LorentzVector<F>],
@@ -280,81 +498,33 @@ fn eval_single_diagram<F: Real + FromPrimitive>(
     n_in: usize,
     pol_overrides: &[Option<VectorWf<F>>],
 ) -> C<F> {
-    // Linearize the rooted diagram tree and reduce it on a stack: each node sees
-    // its children's already-evaluated wavefunctions.
-    // TODO(perf, Step 4): cache the linearized plan on the diagram at compile time.
-    let result = diagram
-        .tree
-        .linearize(diagram.tree.root())
-        .eval_once(|node, children| {
-            apply_diagram_node(
-                node,
-                children,
-                momenta,
-                helicities,
-                n_in,
-                evaluated,
-                pol_overrides,
-            )
-        });
-
-    let amp = match result {
-        WaveformSlot::Scalar(s) => s.value,
-        other => panic!("amplitude did not contain a scalar: {:?}", other),
-    };
-
-    let factor: C<F> = C::new(
-        real::<F>(diagram.symmetry_factor) * real::<F>(diagram.fermi_sign as f64),
-        F::zero(),
-    );
-    amp * factor
+    let symbolic = lower::lower(std::slice::from_ref(diagram));
+    let folded = Folded::build(&symbolic);
+    let (consts_c, consts_f) = folded.pools::<F>(evaluated);
+    run_forward(
+        &folded.ast,
+        &consts_c,
+        &consts_f,
+        momenta,
+        helicities,
+        n_in,
+        pol_overrides,
+    )
 }
 
-/// Reduce one diagram node from its children's already-evaluated wavefunctions.
-///
-/// Used as the per-node closure for the linearized (stack-machine) evaluation of a
-/// `DiagramEvalTree`: `children` holds the results of `node`'s children in order.
-fn apply_diagram_node<F: Real + FromPrimitive>(
-    node: &EvalNode,
-    children: &[WaveformSlot<F>],
-    momenta: &[LorentzVector<F>],
-    helicities: &[i32],
-    n_in: usize,
-    evaluated: &EvaluatedModel,
-    pol_overrides: &[Option<VectorWf<F>>],
-) -> WaveformSlot<F> {
-    match node {
-        EvalNode::External(info) => match pol_overrides.get(info.leg_idx) {
-            Some(Some(vwf)) => WaveformSlot::Vector(*vwf),
-            _ => build_external_slot(
-                momenta[info.leg_idx],
-                helicities[info.leg_idx],
-                info,
-                n_in,
-                evaluated,
-            ),
-        },
-        // The vertex's rooted Lorentz tree indexes the gap-free input list directly
-        // (leg references compacted in `build_at_leg`), so `children` is passed as-is.
-        EvalNode::OffShellCurrent { info, .. } => {
-            evaluate_off_shell_current(info, children, evaluated)
-        }
-        EvalNode::Propagate { info, .. } => evaluate_propagation(info, &children[0], evaluated),
-        EvalNode::ContractAmplitude { info, .. } => {
-            evaluate_contract_amplitude(info, children, evaluated)
-        }
-    }
-}
-
-fn build_external_slot<F: Real + FromPrimitive>(
+/// Build an external wavefunction from its kinematics + interned mass.
+#[allow(clippy::too_many_arguments)]
+fn build_external_core<F: Real + FromPrimitive>(
     momentum: LorentzVector<F>,
     helicity: i32,
-    info: &ExtLegInfo,
+    spin: i32,
+    charge: Charge,
+    leg_idx: usize,
     n_in: usize,
-    evaluated: &EvaluatedModel,
+    mass: F,
 ) -> WaveformSlot<F> {
-    let is_incoming = info.leg_idx < n_in;
-    match info.spin {
+    let is_incoming = leg_idx < n_in;
+    match spin {
         1 => WaveformSlot::Scalar(ScalarWf::sxxxxx(momentum, if is_incoming { -1 } else { 1 })),
         2 => {
             let hel = match helicity {
@@ -362,25 +532,17 @@ fn build_external_slot<F: Real + FromPrimitive>(
                 1 => SpinorHelicity::Up,
                 other => panic!("invalid fermion helicity {other}"),
             };
-            // TODO: preconvert masses to F during compile phase so we don't have to do this at eval time
-            let mass = real(evaluated.mass(info.id));
             // HELAS external flow: a leg is a ket (flow-in, ixxxxx) iff it is an
             // incoming particle or an outgoing antiparticle; otherwise it is a bra
             // (flow-out, oxxxxx). Equivalently flow-in ⟺ (is_incoming == is_particle).
-            let is_particle = matches!(info.charge, crate::helas::repr::numbers::Charge::Particle);
+            let is_particle = matches!(charge, Charge::Particle);
             if is_incoming == is_particle {
-                WaveformSlot::FermionIn(InDiracWf::from_momentum(momentum, mass, hel, info.charge))
+                WaveformSlot::FermionIn(InDiracWf::from_momentum(momentum, mass, hel, charge))
             } else {
-                WaveformSlot::FermionOut(OutDiracWf::from_momentum(
-                    momentum,
-                    mass,
-                    hel,
-                    info.charge,
-                ))
+                WaveformSlot::FermionOut(OutDiracWf::from_momentum(momentum, mass, hel, charge))
             }
         }
         3 => {
-            let mass = real(evaluated.mass(info.id));
             let wf = VectorWf::vxxxxx(momentum, mass, helicity, if is_incoming { -1 } else { 1 });
             WaveformSlot::Vector(wf)
         }
@@ -388,8 +550,28 @@ fn build_external_slot<F: Real + FromPrimitive>(
     }
 }
 
+#[cfg(test)]
+fn build_external_slot<F: Real + FromPrimitive>(
+    momentum: LorentzVector<F>,
+    helicity: i32,
+    info: &super::diagram_eval::ExtLegInfo,
+    n_in: usize,
+    evaluated: &EvaluatedModel,
+) -> WaveformSlot<F> {
+    build_external_core(
+        momentum,
+        helicity,
+        info.spin,
+        info.charge,
+        info.leg_idx,
+        n_in,
+        real(evaluated.mass(info.id)),
+    )
+}
+
+#[cfg(test)]
 fn evaluate_off_shell_current<F: Real + FromPrimitive>(
-    info: &super::ast::VertexInfo,
+    info: &super::diagram_eval::VertexInfo,
     legs: &[WaveformSlot<F>],
     evaluated: &EvaluatedModel,
 ) -> WaveformSlot<F> {
@@ -407,17 +589,28 @@ fn evaluate_off_shell_current<F: Real + FromPrimitive>(
     accum
 }
 
+#[cfg(test)]
 fn evaluate_propagation<F: Real + FromPrimitive>(
-    info: &super::ast::PropInfo,
+    info: &super::diagram_eval::PropInfo,
     input: &WaveformSlot<F>,
     evaluated: &EvaluatedModel,
 ) -> WaveformSlot<F> {
-    let mass: F = real(evaluated.mass(info.id));
-    let width: F = real(evaluated.width(info.id));
+    propagate_core(
+        input,
+        real(evaluated.mass(info.id)),
+        real(evaluated.width(info.id)),
+    )
+}
 
-    // Propagators carry the routed momentum unchanged (matching reference HELAS,
-    // where the off-shell current routines already output the conserved momentum:
-    // `fvixxx` q=fi−vc, `fvoxxx` q=fo+vc, `jioxxx` jmom=fo−fi).
+/// Apply a propagator with interned mass/width to an off-shell current. The current
+/// already carries the conserved routed momentum (matching reference HELAS, where the
+/// off-shell current routines output it: `fvixxx` q=fi−vc, `fvoxxx` q=fo+vc,
+/// `jioxxx` jmom=fo−fi).
+fn propagate_core<F: Real + FromPrimitive>(
+    input: &WaveformSlot<F>,
+    mass: F,
+    width: F,
+) -> WaveformSlot<F> {
     match input {
         // Dirac propagator: -(q̸ + m) / (q² - m² + i m Γ)
         WaveformSlot::FermionIn(wf) => {
@@ -459,12 +652,14 @@ fn evaluate_propagation<F: Real + FromPrimitive>(
                 momentum: wf.momentum,
             })
         }
+        WaveformSlot::Real(_) => panic!("propagate step read a real-constant slot"),
         WaveformSlot::Empty => panic!("propagate step read an empty slot"),
     }
 }
 
+#[cfg(test)]
 fn evaluate_contract_amplitude<F: Real + FromPrimitive>(
-    info: &super::ast::VertexInfo,
+    info: &super::diagram_eval::VertexInfo,
     legs: &[WaveformSlot<F>],
     evaluated: &EvaluatedModel,
 ) -> WaveformSlot<F> {
@@ -713,18 +908,20 @@ fn apply_lorentz_node<F: Real + FromPrimitive>(
 }
 
 /// Evaluate a rooted Lorentz contraction tree against the contraction's external
-/// inputs, via the linearized (stack-machine) traversal.
-///
-/// TODO(perf, Step 4): cache the linearized plan on the tree at compile time
-/// instead of rebuilding it (and the scratch buffer) per phase-space point.
+/// inputs, via the linearized (stack-machine) traversal. Test-only cross-check path
+/// against the reference HELAS routines; production evaluates the inlined nodes through
+/// [`apply`].
+#[cfg(test)]
 fn eval_lorentz_tree<F: Real + FromPrimitive>(
-    tree: &LorentzEvalTree,
+    tree: &super::root_lorentz::LorentzEvalTree,
     legs: &[WaveformSlot<F>],
 ) -> WaveformSlot<F> {
+    use super::tree::Tree;
     tree.linearize(tree.root())
         .eval_once(|node, children| apply_lorentz_node(node, children, legs))
 }
 
+#[cfg(test)]
 fn evaluate_lorentz_structure<F: Real + FromPrimitive>(
     structure: &super::root_lorentz::RootedTerm,
     legs: &[WaveformSlot<F>],
@@ -733,12 +930,12 @@ fn evaluate_lorentz_structure<F: Real + FromPrimitive>(
     C::from(coeff) * eval_lorentz_tree(&structure.tree, legs)
 }
 
-// TODO: we should preconvert all constants to F or C<F> during the compile phase so we don't have to do this at eval time
-
+#[cfg(test)]
 fn real<F: Real + FromPrimitive>(x: f64) -> F {
     F::from_f64(x).expect("value convertible to real scalar")
 }
 
+#[cfg(test)]
 fn complex_from_complex64<F: Real + FromPrimitive>(x: num_complex::Complex64) -> C<F> {
     C::new(real(x.re), real(x.im))
 }
@@ -751,7 +948,8 @@ mod tests {
     use super::*;
     use crate::{
         helas::{
-            eval::ast::{PropInfo, VertexInfo, VertexTerm},
+            eval::diagram_eval::{ExtLegInfo, PropInfo, VertexInfo, VertexTerm},
+            eval::root_lorentz::LorentzEvalTree,
             iovxxx, jioxxx,
             repr::numbers::Charge,
             OutDiracWf,
@@ -1580,5 +1778,75 @@ mod tests {
             ratio < 1e-9,
             "2→4 Ward identity violated: max |k·M|/scale = {ratio:.3e}"
         );
+    }
+
+    /// The unified `Ast<Sym>` round-trips through its s-expression `Display`/`FromStr`
+    /// (the egglog boundary): re-rendering the parsed tree reproduces the original
+    /// string exactly.
+    #[test]
+    fn test_sexpr_roundtrip_eemumu() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::helas::eval::Sym;
+
+        let model = sm_model();
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, model).unwrap();
+        let diagrams = compile_diagram_ast(&sets[0], model).unwrap();
+
+        let ast = lower::lower(&diagrams);
+        let rendered = ast.to_string();
+        let reparsed: Ast<Sym> = rendered.parse().expect("s-expr should re-parse");
+        // `Display` expands the shared (DAG) currents into a tree, so the reparsed arena
+        // has at least as many nodes; the rendered string is the stable invariant
+        // (re-merging shared subterms is the future hash-consing/egglog pass).
+        assert_eq!(
+            rendered,
+            reparsed.to_string(),
+            "s-expr round-trip changed the tree"
+        );
+        assert!(reparsed.len() >= ast.len());
+    }
+
+    /// The whole-amplitude AST (one `Add` over all diagrams) reproduces the explicit
+    /// coherent sum over per-diagram amplitudes, for every helicity of e+e-→μ+μ-.
+    /// Guards the final diagram-sum `Add` and the symmetry/Fermi-sign folding.
+    #[test]
+    fn test_whole_amplitude_equals_diagram_sum_eemumu() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+
+        let model = sm_model();
+        let evaluated = model.evaluate(
+            &"Block MASS\n 11 0.0\n 13 0.0\n"
+                .parse::<ParamCard>()
+                .unwrap(),
+        );
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, model).unwrap();
+        let eval = AmplitudeEvaluator::compile(&sets[0], model).unwrap();
+        let diagrams = compile_diagram_ast(&sets[0], model).unwrap();
+
+        let st = 0.6_f64;
+        let ct = (1.0 - st * st).sqrt();
+        let p = [
+            LorentzVector::new(50.0, 0.0, 0.0, 50.0),
+            LorentzVector::new(50.0, 0.0, 0.0, -50.0),
+            LorentzVector::new(50.0, 50.0 * st, 0.0, 50.0 * ct),
+            LorentzVector::new(50.0, -50.0 * st, 0.0, -50.0 * ct),
+        ];
+
+        for hel in eval.helicities() {
+            let whole = eval.eval_amplitude(&p, hel, &evaluated);
+            let parts = diagrams
+                .iter()
+                .map(|d| eval_single_diagram(d, &p, hel, &evaluated, eval.n_in(), &[]))
+                .fold(C::new(0.0, 0.0), |a, b| a + b);
+            assert!(
+                (whole - parts).norm() <= 1e-12 * (whole.norm() + 1e-30),
+                "whole-amplitude AST disagrees with per-diagram sum for hel {hel:?}: \
+                 whole={whole:.6e} parts={parts:.6e}"
+            );
+        }
     }
 }

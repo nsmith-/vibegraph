@@ -22,6 +22,19 @@ impl From<usize> for ParticleId {
     }
 }
 
+impl ParticleId {
+    /// The raw index this id wraps.
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+impl std::fmt::Display for ParticleId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl Index<ParticleId> for IndexMap<String, Particle> {
     type Output = Particle;
 
