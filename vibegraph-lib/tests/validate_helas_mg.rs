@@ -209,6 +209,7 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
 
     let evaluator = AmplitudeEvaluator::compile(&sets[0], model)
         .map_err(|e| Failed::from(format!("compile: {e}")))?;
+    let bound = evaluator.bind::<f64>(&evaluated);
 
     let cf = color_factor(&name);
     let mut failures = 0usize;
@@ -217,9 +218,7 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
 
     let t0 = Instant::now();
     for pt in &points {
-        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            evaluator.eval_m2(&pt.momenta, &evaluated)
-        }));
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| bound.eval_m2(&pt.momenta)));
         match result {
             Err(_) => {
                 panicked = true;

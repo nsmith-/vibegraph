@@ -37,41 +37,25 @@ impl<T> Ast<T> {
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
-
-    /// The root node id (evaluates to the whole-amplitude result).
-    pub fn root_id(&self) -> NodeId {
-        self.root
-    }
-
-    /// All nodes, in arena (topological) order.
-    pub fn nodes(&self) -> &[Node<T>] {
-        &self.nodes
-    }
-
-    /// The node at `id`.
-    pub fn node(&self, id: NodeId) -> &Node<T> {
-        &self.nodes[id as usize]
-    }
-
-    /// The children of `id`, in operand order.
-    pub fn child_ids(&self, id: NodeId) -> &[NodeId] {
-        let i = id as usize;
-        let lo = self.children_offsets[i] as usize;
-        let hi = self.children_offsets[i + 1] as usize;
-        &self.children_content[lo..hi]
-    }
 }
 
+/// The arena exposes its shape through [`Tree`]: `value`/`children`/`root` give a node,
+/// its operands, and the whole-amplitude root; `iter` scans every id in storage
+/// (topological) order. The default `linearize`/`fold_recursive` then come for free —
+/// kept so the forward-scan runtime can be benchmarked against a linearized stack walk.
 impl<T> Tree for Ast<T> {
     type Item = Node<T>;
     type NodeId = NodeId;
 
     fn children(&self, node: NodeId) -> impl Iterator<Item = NodeId> {
-        self.child_ids(node).iter().copied()
+        let i = node as usize;
+        let lo = self.children_offsets[i] as usize;
+        let hi = self.children_offsets[i + 1] as usize;
+        self.children_content[lo..hi].iter().copied()
     }
 
     fn value(&self, node: NodeId) -> &Node<T> {
-        self.node(node)
+        &self.nodes[node as usize]
     }
 
     fn root(&self) -> NodeId {
@@ -136,7 +120,7 @@ impl<T> AstBuilder<T> {
 /// Number of leaf payload tokens an op carries in the s-expression.
 fn leaf_token_count(op: Op) -> usize {
     match op {
-        Op::External => 3,                                    // leg_idx spin charge_sign
+        Op::External => 4, // leg_idx spin charge_sign incoming
         Op::Coupling | Op::Mass | Op::Width | Op::Coeff => 1, // id / coeff
         _ => 0,
     }
@@ -144,7 +128,7 @@ fn leaf_token_count(op: Op) -> usize {
 
 impl<T: fmt::Display> Ast<T> {
     fn render(&self, id: NodeId, out: &mut String) {
-        let node = self.node(id);
+        let node = self.value(id);
         out.push('(');
         out.push_str(node.op.name());
         if node.op.has_leaf_token() {
@@ -154,7 +138,7 @@ impl<T: fmt::Display> Ast<T> {
                 out.push_str(&leaf);
             }
         }
-        for &c in self.child_ids(id) {
+        for c in self.children(id) {
             out.push(' ');
             self.render(c, out);
         }
@@ -213,10 +197,12 @@ fn parse_sym_leaf(op: Op, toks: &[String]) -> Result<Sym, ParseAstError> {
             let leg_idx: usize = toks[0].parse().map_err(|_| bad(&toks[0]))?;
             let spin: i32 = toks[1].parse().map_err(|_| bad(&toks[1]))?;
             let sign: i32 = toks[2].parse().map_err(|_| bad(&toks[2]))?;
+            let incoming: i32 = toks[3].parse().map_err(|_| bad(&toks[3]))?;
             Sym::Ext {
                 leg_idx,
                 spin,
                 charge: charge_from_sign(sign),
+                incoming: incoming != 0,
             }
         }
         _ => Sym::None,

@@ -118,6 +118,7 @@ mod eval_vs_hardcoded {
 
         let evaluator =
             AmplitudeEvaluator::compile(set, model).expect("failed to compile amplitude evaluator");
+        let bound = evaluator.bind::<f64>(&evaluated);
         assert_eq!(
             evaluator.helicities().len(),
             16,
@@ -169,7 +170,7 @@ mod eval_vs_hardcoded {
                 LorentzVector::new(e_beam, p3_mu * sin_theta, 0.0, p3_mu * cos_theta),
             ];
 
-            let m2_runtime = evaluator.eval_m2(&momenta, &evaluated);
+            let m2_runtime = bound.eval_m2(&momenta);
             let m2_hardcoded = compute_m2_ee_mumu(sqrt_s, cos_theta);
 
             let rel_diff = (m2_runtime - m2_hardcoded).abs() / m2_hardcoded.max(1e-10);
@@ -221,7 +222,7 @@ mod extended {
             LorentzVector::new(e_beam, -p3_mu * sin_theta, 0.0, -p3_mu * cos_theta),
             LorentzVector::new(e_beam, p3_mu * sin_theta, 0.0, p3_mu * cos_theta),
         ];
-        evaluator.eval_m2(&momenta, &evaluated)
+        evaluator.bind::<f64>(&evaluated).eval_m2(&momenta)
     }
 
     /// Relative tolerance for comparing Rust |M|² against Fortran reference.

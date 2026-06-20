@@ -39,6 +39,7 @@ fn main() {
     let empty_card = "".parse::<ParamCard>().unwrap();
     let evaluated = model.evaluate(&empty_card);
     let evaluator = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+    let bound = evaluator.bind::<f64>(&evaluated);
 
     // Fixed-seed random kinematic points, same range as gen_amplitude.py
     use rand::{Rng, SeedableRng};
@@ -52,11 +53,11 @@ fn main() {
         .collect();
 
     // Warm-up: one call to trigger any lazy initialisation
-    let _ = evaluator.eval_m2(&batch[0], &evaluated);
+    let _ = bound.eval_m2(&batch[0]);
 
     let t0 = Instant::now();
     for momenta in &batch {
-        let _ = evaluator.eval_m2(momenta, &evaluated);
+        let _ = bound.eval_m2(momenta);
     }
     let elapsed = t0.elapsed();
 

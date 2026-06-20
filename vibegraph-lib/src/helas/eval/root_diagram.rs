@@ -319,10 +319,11 @@ impl DiagramEvalTree {
     }
 
     /// Bake a raw topology tree into the evaluable tree: root each vertex's Lorentz
-    /// structure and type each node by what it produces.
-    fn bake(raw: &RawDiagramTree, model: &UFOModel) -> Result<Self, RootLorentzError> {
+    /// structure and type each node by what it produces. `n_in` is the number of
+    /// incoming externals, used to flag each leg's flow direction.
+    fn bake(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) -> Result<Self, RootLorentzError> {
         let mut nodes = Vec::with_capacity(raw.nodes.len());
-        let root = Self::bake_node(raw, raw.root, model, &mut nodes)?;
+        let root = Self::bake_node(raw, raw.root, model, n_in, &mut nodes)?;
         Ok(DiagramEvalTree { nodes, root })
     }
 
@@ -330,6 +331,7 @@ impl DiagramEvalTree {
         raw: &RawDiagramTree,
         id: RawNodeId,
         model: &UFOModel,
+        n_in: usize,
         nodes: &mut Vec<EvalNode>,
     ) -> Result<EvalNodeId, RootLorentzError> {
         match raw.value(id) {
@@ -345,6 +347,7 @@ impl DiagramEvalTree {
                     leg_idx: *leg_idx,
                     charge: *charge,
                     spin: *spin,
+                    incoming: *leg_idx < n_in,
                 }),
             )),
             RawNode::Vertex {
@@ -354,7 +357,7 @@ impl DiagramEvalTree {
             } => {
                 let baked: Vec<EvalNodeId> = children
                     .iter()
-                    .map(|&c| Self::bake_node(raw, c, model, nodes))
+                    .map(|&c| Self::bake_node(raw, c, model, n_in, nodes))
                     .collect::<Result<Vec<_>, _>>()?;
                 match result_leg_idx {
                     Some(ri) => {
@@ -511,7 +514,7 @@ pub(super) fn root_tree(
         root: raw_root,
     };
 
-    Ok(DiagramEvalTree::bake(&raw, model)?)
+    Ok(DiagramEvalTree::bake(&raw, model, view.incoming().count())?)
 }
 
 #[cfg(test)]
