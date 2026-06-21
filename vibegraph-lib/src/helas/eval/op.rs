@@ -204,15 +204,20 @@ impl fmt::Display for Sym {
     /// Render only the payload (the enclosing [`Ast`](super::ast::Ast) emits the op head).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Sym::Coupling(id) => write!(f, "{id}"),
-            Sym::Particle(id) => write!(f, "{id}"),
-            Sym::Coeff(c) => write!(f, "{c}"),
+            Sym::Coupling(id) => write!(f, "(CouplingId {id})"),
+            Sym::Particle(id) => write!(f, "(ParticleId {id})"),
+            Sym::Coeff(c) => write!(f, "(Real {c:?})"),
             Sym::Ext {
                 leg_idx,
                 spin,
                 charge,
                 incoming,
-            } => write!(f, "{leg_idx} {spin} {} {}", charge.sign(), *incoming as i32),
+            } => write!(
+                f,
+                "(ExtLegInfo {leg_idx} {spin} {} {})",
+                charge.sign(),
+                *incoming as i32
+            ),
             Sym::None => Ok(()),
         }
     }
@@ -221,8 +226,8 @@ impl fmt::Display for Sym {
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Const::Complex(idx) => write!(f, "Complex({idx})"),
-            Const::Real(idx) => write!(f, "Real({idx})"),
+            Const::Complex(idx) => write!(f, "(Complex {idx})"),
+            Const::Real(idx) => write!(f, "(Real {idx})"),
             Const::Ext {
                 leg_idx,
                 spin,
@@ -231,12 +236,12 @@ impl fmt::Display for Const {
             } => {
                 write!(
                     f,
-                    "Ext({leg_idx} {spin} {} {})",
+                    "(ExtLegInfo {leg_idx} {spin} {} {})",
                     charge.sign(),
                     *incoming as i32
                 )
             }
-            Const::None => write!(f, "None"),
+            Const::None => write!(f, "(None)"),
         }
     }
 }
