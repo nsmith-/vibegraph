@@ -62,11 +62,11 @@ fn lower_diagram_node(tree: &DiagramEvalTree, id: EvalNodeId, b: &mut AstBuilder
                 vec![mass],
             )
         }
-        EvalNode::OffShellCurrent { info, children } => {
+        EvalNode::OffShellCurrent { info, children, .. } => {
             let inputs = lower_children(tree, children, b);
             lower_vertex(info, &inputs, b)
         }
-        EvalNode::Propagate { info, child } => {
+        EvalNode::Propagate { info, child, .. } => {
             let current = lower_diagram_node(tree, *child, b);
             let mass = b.add(Op::Mass, Sym::Particle(info.id), vec![]);
             let width = b.add(Op::Width, Sym::Particle(info.id), vec![]);

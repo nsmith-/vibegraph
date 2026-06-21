@@ -9,6 +9,33 @@ use crate::{
     ufo::lorentz::{LorentzOp, LorentzTerm},
 };
 
+/// Fermion-number (spinor) flow direction of a wavefunction, resolved structurally
+/// during the bake step's first (topology) pass.
+///
+/// `In` is a ket (flow-in, HELAS `ixxxxx`); `Out` is a bra (flow-out, `oxxxxx`). The
+/// flow is constant along a fermion line, so an off-shell current and the propagator on
+/// it inherit the flow of their continuing fermion input. Bosonic and scalar-amplitude
+/// nodes carry no flow. The pair (bra, ket) meeting at a vertex always have opposite
+/// flow; the runtime `resolve_bra_ket` reads the same distinction off the evaluated slot
+/// variants, so baking it makes the line direction explicit and lets the rooting choose
+/// the correct in/out fermion routine ([`LorentzEvalTree::build_at_leg`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flow {
+    /// Ket: flow-in (`ixxxxx`).
+    In,
+    /// Bra: flow-out (`oxxxxx`).
+    Out,
+}
+
+impl std::fmt::Display for Flow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Flow::In => "ket",
+            Flow::Out => "bra",
+        })
+    }
+}
+
 /// A single LorentzTerm, already rooted at the output leg and ready to eval.
 #[derive(Clone, Debug)]
 pub struct RootedTerm {
@@ -158,6 +185,7 @@ impl LorentzEvalTree {
         term: &LorentzTerm,
         idx: isize,
         visited_ops: &mut Vec<usize>,
+        out_flow: Option<Flow>,
     ) -> Result<usize, RootLorentzError> {
         // Find an operator that involves this index and has not been visited
         let Some((iop, op)) = term.ops.iter().enumerate().find(|&(i, op)| {
@@ -181,36 +209,47 @@ impl LorentzEvalTree {
         match op {
             LorentzOp::Gamma { mu, i, j } => {
                 if *mu == idx {
-                    let child_i = self.build_child(term, *i, visited_ops)?;
-                    let child_j = self.build_child(term, *j, visited_ops)?;
+                    let child_i = self.build_child(term, *i, visited_ops, out_flow)?;
+                    let child_j = self.build_child(term, *j, visited_ops, out_flow)?;
                     Ok(self.add_node(LorentzEvalNode::GammaVout {
                         i: child_i,
                         j: child_j,
                     }))
-                } else if *i == idx {
-                    let child_mu = self.build_child(term, *mu, visited_ops)?;
-                    let child_j = self.build_child(term, *j, visited_ops)?;
-                    Ok(self.add_node(LorentzEvalNode::GammaIout {
-                        mu: child_mu,
-                        j: child_j,
-                    }))
-                } else if *j == idx {
-                    let child_mu = self.build_child(term, *mu, visited_ops)?;
-                    let child_i = self.build_child(term, *i, visited_ops)?;
-                    Ok(self.add_node(LorentzEvalNode::GammaOout {
-                        mu: child_mu,
-                        i: child_i,
-                    }))
+                } else if *i == idx || *j == idx {
+                    // Fermion output: the continuing line's *physical* flow (resolved by
+                    // the first pass) chooses the in/out routine — not the UFO `i`/`j`
+                    // position, which only fixes the vertex's *defined* flow and can run
+                    // opposite to the actual line (e.g. an incoming-pair spine). The
+                    // input fermion is the gamma's other fermion index.
+                    let other = if *i == idx { *j } else { *i };
+                    let child_mu = self.build_child(term, *mu, visited_ops, out_flow)?;
+                    let child_f = self.build_child(term, other, visited_ops, out_flow)?;
+                    let node = match out_flow {
+                        Some(Flow::In) => LorentzEvalNode::GammaIout {
+                            mu: child_mu,
+                            j: child_f,
+                        },
+                        Some(Flow::Out) => LorentzEvalNode::GammaOout {
+                            mu: child_mu,
+                            i: child_f,
+                        },
+                        None => {
+                            return Err(RootLorentzError::InvalidStructure(
+                                "fermion-output Gamma rooted without a spinor flow".to_string(),
+                            ))
+                        }
+                    };
+                    Ok(self.add_node(node))
                 } else {
                     unreachable!("Gamma op should involve idx {}", idx);
                 }
             }
             LorentzOp::ProjM { i, j } => {
                 if *i == idx {
-                    let child = self.build_child(term, *j, visited_ops)?;
+                    let child = self.build_child(term, *j, visited_ops, out_flow)?;
                     Ok(self.add_node(LorentzEvalNode::ProjM { i: child }))
                 } else if *j == idx {
-                    let child = self.build_child(term, *i, visited_ops)?;
+                    let child = self.build_child(term, *i, visited_ops, out_flow)?;
                     Ok(self.add_node(LorentzEvalNode::ProjM { i: child }))
                 } else {
                     unreachable!("ProjM op should involve idx {}", idx);
@@ -218,10 +257,10 @@ impl LorentzEvalTree {
             }
             LorentzOp::ProjP { i, j } => {
                 if *i == idx {
-                    let child = self.build_child(term, *j, visited_ops)?;
+                    let child = self.build_child(term, *j, visited_ops, out_flow)?;
                     Ok(self.add_node(LorentzEvalNode::ProjP { i: child }))
                 } else if *j == idx {
-                    let child = self.build_child(term, *i, visited_ops)?;
+                    let child = self.build_child(term, *i, visited_ops, out_flow)?;
                     Ok(self.add_node(LorentzEvalNode::ProjP { i: child }))
                 } else {
                     unreachable!("ProjP op should involve idx {}", idx);
@@ -229,10 +268,10 @@ impl LorentzEvalTree {
             }
             LorentzOp::Metric { mu, nu } => {
                 if *mu == idx {
-                    let child = self.build_child(term, *nu, visited_ops)?;
+                    let child = self.build_child(term, *nu, visited_ops, out_flow)?;
                     Ok(self.add_node(LorentzEvalNode::MetricVout { v: child }))
                 } else if *nu == idx {
-                    let child = self.build_child(term, *mu, visited_ops)?;
+                    let child = self.build_child(term, *mu, visited_ops, out_flow)?;
                     Ok(self.add_node(LorentzEvalNode::MetricVout { v: child }))
                 } else {
                     unreachable!("Metric op should involve idx {}", idx);
@@ -245,9 +284,9 @@ impl LorentzEvalTree {
             }
             LorentzOp::Identity { i, j } => {
                 if *i == idx {
-                    self.build_child(term, *j, visited_ops)
+                    self.build_child(term, *j, visited_ops, out_flow)
                 } else if *j == idx {
-                    self.build_child(term, *i, visited_ops)
+                    self.build_child(term, *i, visited_ops, out_flow)
                 } else {
                     unreachable!("Identity op should involve idx {}", idx);
                 }
@@ -271,11 +310,17 @@ impl LorentzEvalTree {
     /// tree is rooted at an amplitude (scalar sink) and an arbitrary leg
     /// is chosen for routing.
     ///
+    /// `out_flow` is the spinor flow of the output leg (`Some` iff the output is a
+    /// fermion), used to pick the in/out gamma routine. The disconnected scalar
+    /// structures collected for an amplitude/scalar sink contract to scalars, so they
+    /// root through vectors and never consult the flow.
+    ///
     /// Note: idx is 0-indexed
     pub fn build_at_leg(
         term: &LorentzTerm,
         spins: &[i32],
         idx: Option<usize>,
+        out_flow: Option<Flow>,
     ) -> Result<Self, RootLorentzError> {
         let mut tree = LorentzEvalTree {
             nodes: vec![],
@@ -286,7 +331,7 @@ impl LorentzEvalTree {
 
         // If idx is specified, build the tree rooted at that leg
         if let Some(root_leg) = idx {
-            let node_idx = tree.build_child(term, root_leg as isize, &mut visited_ops)?;
+            let node_idx = tree.build_child(term, root_leg as isize, &mut visited_ops, out_flow)?;
             // If no operator connects to this leg, build_child returns a trivial Leg leaf.
             // Pop it — the disconnected structures collected below are the actual output.
             let is_trivial_leaf =
@@ -314,8 +359,8 @@ impl LorentzEvalTree {
                 LorentzOp::Gamma { mu, .. } => {
                     // route through a vector leg, which can always be contracted with a metric to return a scalar
                     // two-pass: one for the gamma and one for the leg
-                    let v_in = tree.build_child(term, *mu, &mut visited_ops)?;
-                    let v_out = tree.build_child(term, *mu, &mut visited_ops)?;
+                    let v_in = tree.build_child(term, *mu, &mut visited_ops, None)?;
+                    let v_out = tree.build_child(term, *mu, &mut visited_ops, None)?;
                     tree.add_node(LorentzEvalNode::Metric {
                         mu: v_in,
                         nu: v_out,
@@ -323,8 +368,8 @@ impl LorentzEvalTree {
                 }
                 LorentzOp::ProjM { i, j } => {
                     visited_ops.push(iop);
-                    let child_i = tree.build_child(term, *i, &mut visited_ops)?;
-                    let child_j = tree.build_child(term, *j, &mut visited_ops)?;
+                    let child_i = tree.build_child(term, *i, &mut visited_ops, None)?;
+                    let child_j = tree.build_child(term, *j, &mut visited_ops, None)?;
                     tree.add_node(LorentzEvalNode::ProjMAmp {
                         i: child_i,
                         j: child_j,
@@ -332,8 +377,8 @@ impl LorentzEvalTree {
                 }
                 LorentzOp::ProjP { i, j } => {
                     visited_ops.push(iop);
-                    let child_i = tree.build_child(term, *i, &mut visited_ops)?;
-                    let child_j = tree.build_child(term, *j, &mut visited_ops)?;
+                    let child_i = tree.build_child(term, *i, &mut visited_ops, None)?;
+                    let child_j = tree.build_child(term, *j, &mut visited_ops, None)?;
                     tree.add_node(LorentzEvalNode::ProjPAmp {
                         i: child_i,
                         j: child_j,
@@ -341,8 +386,8 @@ impl LorentzEvalTree {
                 }
                 LorentzOp::Metric { mu, nu } => {
                     visited_ops.push(iop);
-                    let child_mu = tree.build_child(term, *mu, &mut visited_ops)?;
-                    let child_nu = tree.build_child(term, *nu, &mut visited_ops)?;
+                    let child_mu = tree.build_child(term, *mu, &mut visited_ops, None)?;
+                    let child_nu = tree.build_child(term, *nu, &mut visited_ops, None)?;
                     tree.add_node(LorentzEvalNode::Metric {
                         mu: child_mu,
                         nu: child_nu,
@@ -350,8 +395,8 @@ impl LorentzEvalTree {
                 }
                 LorentzOp::P { mu, .. } => {
                     // p^μ contracted with the vector leg at the same index
-                    let p_node = tree.build_child(term, *mu, &mut visited_ops)?;
-                    let leg_node = tree.build_child(term, *mu, &mut visited_ops)?;
+                    let p_node = tree.build_child(term, *mu, &mut visited_ops, None)?;
+                    let leg_node = tree.build_child(term, *mu, &mut visited_ops, None)?;
                     tree.add_node(LorentzEvalNode::Metric {
                         mu: p_node,
                         nu: leg_node,
@@ -359,8 +404,8 @@ impl LorentzEvalTree {
                 }
                 LorentzOp::Identity { i, j } => {
                     visited_ops.push(iop);
-                    let child_i = tree.build_child(term, *i, &mut visited_ops)?;
-                    let child_j = tree.build_child(term, *j, &mut visited_ops)?;
+                    let child_i = tree.build_child(term, *i, &mut visited_ops, None)?;
+                    let child_j = tree.build_child(term, *j, &mut visited_ops, None)?;
                     tree.add_node(LorentzEvalNode::IdentityAmp {
                         i: child_i,
                         j: child_j,
@@ -444,6 +489,8 @@ impl std::fmt::Display for LorentzEvalTree {
 /// * `term` — The UFO LorentzTerm to resolve.
 /// * `spins` — Spin codes [1, 2, 3] for each leg
 /// * `result_leg_idx` — The output leg (0-indexed), or `None` for amplitude (scalar sink).
+/// * `out_flow` — Spinor flow of the output leg (`Some` iff a fermion output), used to
+///   pick the in/out gamma routine.
 ///
 /// # Returns
 /// A `RootedTerm` ready for evaluation, or a `RootLorentzError`.
@@ -451,10 +498,11 @@ pub fn root_term(
     term: &crate::ufo::lorentz::LorentzTerm,
     spins: &[i32],
     result_leg_idx: Option<usize>,
+    out_flow: Option<Flow>,
 ) -> Result<RootedTerm, RootLorentzError> {
     Ok(RootedTerm {
         coeff: term.coeff,
-        tree: LorentzEvalTree::build_at_leg(term, spins, result_leg_idx)?,
+        tree: LorentzEvalTree::build_at_leg(term, spins, result_leg_idx, out_flow)?,
     })
 }
 
@@ -491,7 +539,7 @@ mod tests {
 
         // Output = vector leg 0: current = (other vector) × (scalar), both compacted
         // into 0..n_inputs.
-        let t0 = LorentzEvalTree::build_at_leg(&term, &spins, Some(0)).unwrap();
+        let t0 = LorentzEvalTree::build_at_leg(&term, &spins, Some(0), None).unwrap();
         assert!(
             max_leg(&t0).is_some_and(|m| m < n_inputs),
             "VVS rooted at leg 0 must only index the gap-free inputs: {t0:?}"
@@ -503,14 +551,14 @@ mod tests {
         );
 
         // Output = vector leg 2 (idx 1): same invariant.
-        let t1 = LorentzEvalTree::build_at_leg(&term, &spins, Some(1)).unwrap();
+        let t1 = LorentzEvalTree::build_at_leg(&term, &spins, Some(1), None).unwrap();
         assert!(
             max_leg(&t1).is_some_and(|m| m < n_inputs),
             "VVS rooted at leg 1 must only index the gap-free inputs: {t1:?}"
         );
 
         // Output = scalar leg 3 (idx 2): unchanged — a Metric contraction → scalar H.
-        let t2 = LorentzEvalTree::build_at_leg(&term, &spins, Some(2)).unwrap();
+        let t2 = LorentzEvalTree::build_at_leg(&term, &spins, Some(2), None).unwrap();
         assert!(
             matches!(t2.root_value(), LorentzEvalNode::Metric { .. }),
             "VVS rooted at the scalar leg must contract the two vectors: {:?}",
@@ -526,7 +574,7 @@ mod tests {
             ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 3]; // e+, e-, photon
-        let result = root_term(&term, &spins, Some(2)).unwrap();
+        let result = root_term(&term, &spins, Some(2), None).unwrap();
         assert_eq!(result.coeff, 1.0);
         assert_eq!(
             result.tree,
@@ -542,6 +590,52 @@ mod tests {
     }
 
     #[test]
+    fn test_root_ffv1_fermion_current_uses_flow_not_index() {
+        // FFV1: Gamma(mu=2, i=1, j=0) rooted at the fermion output leg 0 (the gamma's
+        // `j`/ket index). Same structure either way — vector input mu, the other fermion
+        // (leg 1) as input — but the *physical* flow chooses the routine: a ket-flow
+        // continuation is GammaIout, a bra-flow continuation is GammaOout. The old
+        // index-based rule keyed on `j == idx` would have hard-coded GammaOout for both.
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
+        };
+        let spins = vec![2, 2, 3];
+
+        let ket = root_term(&term, &spins, Some(0), Some(Flow::In)).unwrap();
+        assert_eq!(
+            ket.tree,
+            LorentzEvalTree {
+                nodes: vec![
+                    LorentzEvalNode::Leg(1), // mu (vector), compacted over removed out=0
+                    LorentzEvalNode::Leg(0), // the other fermion input
+                    LorentzEvalNode::GammaIout { mu: 0, j: 1 },
+                ],
+                root: Some(2)
+            }
+        );
+
+        let bra = root_term(&term, &spins, Some(0), Some(Flow::Out)).unwrap();
+        assert_eq!(
+            bra.tree,
+            LorentzEvalTree {
+                nodes: vec![
+                    LorentzEvalNode::Leg(1),
+                    LorentzEvalNode::Leg(0),
+                    LorentzEvalNode::GammaOout { mu: 0, i: 1 },
+                ],
+                root: Some(2)
+            }
+        );
+
+        // A fermion output with no flow is an internal inconsistency.
+        assert!(matches!(
+            root_term(&term, &spins, Some(0), None),
+            Err(RootLorentzError::InvalidStructure(_))
+        ));
+    }
+
+    #[test]
     fn test_root_ffv1_amplitude_at_sink() {
         // FFV1 rooted at amplitude (scalar sink) → ScalarProduct of the vector output and itself
         let term = LorentzTerm {
@@ -549,7 +643,7 @@ mod tests {
             ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 3];
-        let result = root_term(&term, &spins, None).unwrap();
+        let result = root_term(&term, &spins, None, None).unwrap();
         assert_eq!(result.coeff, 1.0);
         // When rooted at amplitude, builds the Gamma structure and contracts with a vector leg
         assert_eq!(
@@ -578,7 +672,7 @@ mod tests {
             ],
         };
         let spins = vec![2, 2, 3];
-        let result = root_term(&term, &spins, None).unwrap();
+        let result = root_term(&term, &spins, None, None).unwrap();
         assert_eq!(result.coeff, 1.0);
         // The tree routes through ProjM → Gamma
         assert_eq!(
@@ -605,7 +699,7 @@ mod tests {
             ops: vec![LorentzOp::ProjM { i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 1];
-        let result = root_term(&term, &spins, None).unwrap();
+        let result = root_term(&term, &spins, None, None).unwrap();
         assert_eq!(
             result.tree,
             LorentzEvalTree {
@@ -631,7 +725,7 @@ mod tests {
             ops: vec![LorentzOp::ProjM { i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 1];
-        let result = root_term(&term, &spins, Some(2)).unwrap();
+        let result = root_term(&term, &spins, Some(2), None).unwrap();
         assert_eq!(
             result.tree,
             LorentzEvalTree {
@@ -659,7 +753,7 @@ mod tests {
             }],
         };
         let spins = vec![2, 2, 3];
-        let result = root_term(&term, &spins, Some(0)); // root at leg 1 (0-indexed as 0)
+        let result = root_term(&term, &spins, Some(0), None); // root at leg 1 (0-indexed as 0)
         assert!(matches!(
             result,
             Err(RootLorentzError::UnsupportedVertex(_))
@@ -674,7 +768,7 @@ mod tests {
             ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
         };
         let spins = vec![3, 3, 1];
-        let result = root_term(&term, &spins, None).unwrap();
+        let result = root_term(&term, &spins, None, None).unwrap();
         assert_eq!(result.coeff, 1.0);
         // When rooted at amplitude with 2 vector legs, uses Metric to contract them
         assert_eq!(
@@ -702,7 +796,7 @@ mod tests {
             ops: vec![],
         };
         let spins = vec![1, 1, 1];
-        let result = root_term(&term, &spins, None).unwrap();
+        let result = root_term(&term, &spins, None, None).unwrap();
         assert_eq!(
             result.tree,
             LorentzEvalTree {

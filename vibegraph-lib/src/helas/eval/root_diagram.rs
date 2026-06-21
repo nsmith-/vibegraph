@@ -30,7 +30,7 @@ use crate::ufo::vertices::VertexId;
 use crate::ufo::UFOModel;
 
 use super::error::{CompileError, RootDiagramError};
-use super::root_lorentz::RootLorentzError;
+use super::root_lorentz::{Flow, RootLorentzError};
 
 // ───────────────────────────── Pass 1: raw topology tree ─────────────────────────────
 
@@ -228,13 +228,21 @@ pub enum EvalNode {
     /// Off-shell current: apply the vertex to its input children. `children` are in
     /// vertex-leg order with the output position omitted, and the vertex's rooted
     /// Lorentz tree indexes them directly (its leg references were compacted at
-    /// compile time, see `LorentzEvalTree::build_at_leg`).
+    /// compile time, see `LorentzEvalTree::build_at_leg`). `flow` is the spinor flow of
+    /// the output current (`Some` iff the output leg is a fermion), inherited from the
+    /// continuing fermion input.
     OffShellCurrent {
         info: VertexInfo,
+        flow: Option<Flow>,
         children: Vec<EvalNodeId>,
     },
-    /// Propagator applied to its single child off-shell current.
-    Propagate { info: PropInfo, child: EvalNodeId },
+    /// Propagator applied to its single child off-shell current. `flow` matches the
+    /// current it wraps (a propagator preserves fermion flow).
+    Propagate {
+        info: PropInfo,
+        flow: Option<Flow>,
+        child: EvalNodeId,
+    },
     /// Root vertex: contract all children into the scalar amplitude.
     ContractAmplitude {
         info: VertexInfo,
@@ -252,20 +260,39 @@ impl EvalNode {
         }
     }
 
+    /// Spinor flow of the wavefunction this node outputs (`None` for bosonic / scalar
+    /// outputs).
+    fn out_flow(&self) -> Option<Flow> {
+        match self {
+            EvalNode::External(info) => info.flow(),
+            EvalNode::OffShellCurrent { flow, .. } => *flow,
+            EvalNode::Propagate { flow, .. } => *flow,
+            EvalNode::ContractAmplitude { .. } => None,
+        }
+    }
+
     fn render(&self, body: String) -> String {
         match self {
-            EvalNode::External(info) => format!("ExternalWf({})", info),
-            EvalNode::OffShellCurrent { info, .. } => {
-                format!("OffShellCurrent({}; {})", info, body)
+            EvalNode::External(info) => {
+                format!("ExternalWf{}({})", flow_tag(info.flow()), info)
             }
-            EvalNode::Propagate { info, .. } => {
-                format!("Propagate({:?}; {})", info.id, body)
+            EvalNode::OffShellCurrent { info, flow, .. } => {
+                format!("OffShellCurrent{}({}; {})", flow_tag(*flow), info, body)
+            }
+            EvalNode::Propagate { info, flow, .. } => {
+                format!("Propagate{}({:?}; {})", flow_tag(*flow), info.id, body)
             }
             EvalNode::ContractAmplitude { info, .. } => {
                 format!("ContractAmplitude({}; {})", info, body)
             }
         }
     }
+}
+
+/// Render a baked flow as a bracketed tag (`[ket]`/`[bra]`), or empty for a bosonic /
+/// scalar node.
+fn flow_tag(flow: Option<Flow>) -> String {
+    flow.map(|f| format!("[{f}]")).unwrap_or_default()
 }
 
 /// The evaluable rooted tree for a single diagram (second-pass output).
@@ -308,72 +335,95 @@ impl DiagramEvalTree {
     /// incoming externals, used to flag each leg's flow direction.
     fn bake(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) -> Result<Self, RootLorentzError> {
         let mut nodes = Vec::with_capacity(raw.nodes.len());
-        let root = Self::bake_node(raw, raw.root, model, n_in, &mut nodes)?;
+        let (root, _) = Self::bake_node(raw, raw.root, model, n_in, &mut nodes)?;
         Ok(DiagramEvalTree { nodes, root })
     }
 
+    /// Bake one node, returning its id and the spinor flow of the wavefunction it
+    /// produces (`None` for bosonic / scalar-amplitude outputs). The flow is resolved
+    /// bottom-up: external legs from their charge/direction, and an off-shell fermion
+    /// current (plus the propagator on it) inherits the flow of its continuing fermion
+    /// input.
     fn bake_node(
         raw: &RawDiagramTree,
         id: RawNodeId,
         model: &UFOModel,
         n_in: usize,
         nodes: &mut Vec<EvalNode>,
-    ) -> Result<EvalNodeId, RootLorentzError> {
+    ) -> Result<(EvalNodeId, Option<Flow>), RootLorentzError> {
         match raw.value(id) {
             RawNode::Leg {
                 particle,
                 leg_idx,
                 charge,
                 spin,
-            } => Ok(Self::add(
-                nodes,
-                EvalNode::External(ExtLegInfo {
+            } => {
+                let info = ExtLegInfo {
                     id: *particle,
                     leg_idx: *leg_idx,
                     charge: *charge,
                     spin: *spin,
                     incoming: *leg_idx < n_in,
-                }),
-            )),
+                };
+                let flow = info.flow();
+                Ok((Self::add(nodes, EvalNode::External(info)), flow))
+            }
             RawNode::Vertex {
                 vertex,
                 result_leg_idx,
                 children,
             } => {
-                let baked: Vec<EvalNodeId> = children
+                let baked: Vec<(EvalNodeId, Option<Flow>)> = children
                     .iter()
                     .map(|&c| Self::bake_node(raw, c, model, n_in, nodes))
                     .collect::<Result<Vec<_>, _>>()?;
+                let child_ids: Vec<EvalNodeId> = baked.iter().map(|(id, _)| *id).collect();
                 match result_leg_idx {
                     Some(ri) => {
                         // Internal vertex: off-shell current rooted at the output leg,
                         // wrapped by the propagator on that leg.
-                        let info = VertexInfo::from_ufo(model, *vertex, Some(*ri))?;
                         let prop_id = model.vertex_def(*vertex).particles[*ri];
+                        // The current keeps the flow of its continuing fermion input
+                        // (one such child for an FFV) iff the output leg is itself a
+                        // fermion; a bosonic output carries no flow. The flow is passed
+                        // into the Lorentz rooting so it picks the in/out gamma routine.
+                        let flow = (model.particle(prop_id).spin == 2)
+                            .then(|| baked.iter().find_map(|(_, f)| *f))
+                            .flatten();
+                        let info = VertexInfo::from_ufo(model, *vertex, Some(*ri), flow)?;
                         let current = Self::add(
                             nodes,
                             EvalNode::OffShellCurrent {
                                 info,
-                                children: baked,
+                                flow,
+                                children: child_ids,
                             },
                         );
-                        Ok(Self::add(
-                            nodes,
-                            EvalNode::Propagate {
-                                info: PropInfo { id: prop_id },
-                                child: current,
-                            },
+                        Ok((
+                            Self::add(
+                                nodes,
+                                EvalNode::Propagate {
+                                    info: PropInfo { id: prop_id },
+                                    flow,
+                                    child: current,
+                                },
+                            ),
+                            flow,
                         ))
                     }
                     None => {
-                        // Root vertex: contract all legs into the scalar amplitude.
-                        let info = VertexInfo::from_ufo(model, *vertex, None)?;
-                        Ok(Self::add(
-                            nodes,
-                            EvalNode::ContractAmplitude {
-                                info,
-                                children: baked,
-                            },
+                        // Root vertex: contract all legs into the scalar amplitude — a
+                        // scalar sink, so no fermion output flow.
+                        let info = VertexInfo::from_ufo(model, *vertex, None, None)?;
+                        Ok((
+                            Self::add(
+                                nodes,
+                                EvalNode::ContractAmplitude {
+                                    info,
+                                    children: child_ids,
+                                },
+                            ),
+                            None,
                         ))
                     }
                 }
@@ -397,7 +447,11 @@ impl std::fmt::Display for DiagramEvalTree {
     }
 }
 
-// ───────────────────────────── Fermion-line sign ─────────────────────────────
+// ───────────────────────── Fermion-line sign (test oracle) ─────────────────────────
+//
+// The production spine sign is derived from the baked spinor flow
+// ([`spine_sign_from_flow`]). The independent `spin_map`-tracing implementation below
+// is retained as the cross-check oracle for `spine_sign_from_flow_matches_heuristic`.
 
 /// Trace the fermion line that enters `start_vtx` at ordered ray `in_ray`,
 /// following spinor connectivity until it reaches an external leg.
@@ -407,6 +461,7 @@ impl std::fmt::Display for DiagramEvalTree {
 /// feyngraph's `propagators_ordered` because we feed feyngraph that same particle
 /// ordering. Returns the external leg index where the line terminates and whether
 /// it passed through at least one internal propagator (i.e. is an off-shell spine).
+#[cfg(test)]
 fn trace_fermion_line(
     view: &DiagramView,
     model: &UFOModel,
@@ -456,7 +511,8 @@ fn trace_fermion_line(
 /// connects two incoming legs through at least one internal propagator. Validated
 /// against MadGraph per-diagram amplitudes for e+e-→μ+μ-τ+τ- and
 /// u u~→c c~ e+e- μ+μ- (QCD=0).
-pub(super) fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> i8 {
+#[cfg(test)]
+fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> i8 {
     let n_in = view.incoming().count();
     let mut visited: HashSet<usize> = HashSet::new();
     let mut sign: i8 = 1;
@@ -470,6 +526,70 @@ pub(super) fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> 
         visited.insert(other);
         if passed_internal && li < n_in && other < n_in {
             sign = -sign;
+        }
+    }
+    sign
+}
+
+// ──────────────────────── Spine sign from baked flow ────────────────────────
+
+/// Descend the fermion line from `node` (a fermion child of a pair-sink) to its
+/// terminal external leg, reporting whether the descent crossed an internal fermion
+/// propagator. Follows the continuing fermion (the lone `Some`-flow child) through each
+/// off-shell current; a `Propagate` is exactly one internal fermion propagator.
+fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> (bool, bool) {
+    match tree.value(node) {
+        EvalNode::External(info) => (info.incoming, false),
+        EvalNode::Propagate { child, .. } => {
+            let (incoming, _) = descend_fermion_line(tree, *child);
+            (incoming, true)
+        }
+        EvalNode::OffShellCurrent { children, .. } => {
+            let cont = children
+                .iter()
+                .copied()
+                .find(|&c| tree.value(c).out_flow().is_some())
+                .expect("a fermion off-shell current has a continuing fermion input");
+            descend_fermion_line(tree, cont)
+        }
+        EvalNode::ContractAmplitude { .. } => {
+            unreachable!("the amplitude root is never reached while descending a fermion line")
+        }
+    }
+}
+
+/// Derive the initial-state spine sign purely from the baked spinor flow, using only
+/// the rooted evaluation tree we already build — no second graph walk. (The
+/// `spin_map`-tracing `initial_state_spine_sign` is kept as a test oracle and proven
+/// equivalent by `spine_sign_from_flow_matches_heuristic`.)
+///
+/// A fermion line terminates at any vertex node that outputs a non-fermion yet has two
+/// fermion children: an FFV/FFS current rooted at its boson leg, or the root
+/// contraction. Descend both ends to their external legs and flip the diagram sign when
+/// the line joins two incoming legs through at least one internal fermion propagator —
+/// MadGraph's crossing sign for an initial-state fermion pair carried as an off-shell
+/// spine. Each fermion line meets exactly one such sink, so every line is counted once.
+pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
+    let mut sign = 1i8;
+    for id in tree.iter() {
+        let node = tree.value(id);
+        let is_sink = matches!(node, EvalNode::ContractAmplitude { .. })
+            || matches!(node, EvalNode::OffShellCurrent { flow: None, .. });
+        if !is_sink {
+            continue;
+        }
+        let fermions: Vec<EvalNodeId> = node
+            .children()
+            .into_iter()
+            .filter(|&c| tree.value(c).out_flow().is_some())
+            .collect();
+        // SM vertices pair fermions, so a sink has 0 or 2 fermion legs (one line).
+        if let [a, b] = fermions[..] {
+            let (inc_a, internal_a) = descend_fermion_line(tree, a);
+            let (inc_b, internal_b) = descend_fermion_line(tree, b);
+            if inc_a && inc_b && (internal_a || internal_b) {
+                sign = -sign;
+            }
         }
     }
     sign
@@ -560,16 +680,19 @@ impl std::fmt::Display for DiagramEval {
 ///
 /// Roots the diagram into its evaluation tree (topology + Lorentz structures) and
 /// attaches the per-diagram metadata (external-leg count, symmetry factor, and the
-/// fermion-flow sign, including the initial-state spine correction).
+/// fermion-flow sign, including the initial-state spine correction derived from the
+/// baked spinor flow via [`spine_sign_from_flow`]).
 fn compile_single_diagram(
     view: &DiagramView,
     model: &UFOModel,
 ) -> Result<DiagramEval, CompileError> {
+    let tree = root_tree(view, model)?;
+    let fermi_sign = view.sign() * spine_sign_from_flow(&tree);
     Ok(DiagramEval {
         n_ext: view.legs().count(),
-        tree: root_tree(view, model)?,
+        tree,
         symmetry_factor: 1.0 / view.symmetry_factor() as f64,
-        fermi_sign: view.sign() * initial_state_spine_sign(view, model),
+        fermi_sign,
     })
 }
 
@@ -620,5 +743,42 @@ mod tests {
                 println!("Generated tree: {}", tree);
             }
         }
+    }
+
+    /// The flow-derived spine sign must agree with the `spin_map`-tracing heuristic for
+    /// every diagram, across processes with and without initial-state fermion spines.
+    #[test]
+    fn spine_sign_from_flow_matches_heuristic() {
+        let model = sm_model();
+        let processes = [
+            "e+ e- > mu+ mu-",
+            "e+ e- > e+ e-",
+            "u u~ > d d~",
+            "e+ e- > mu+ mu- ta+ ta-",
+        ];
+        let mut flipped_total = 0;
+        for process in processes {
+            for set in generate(process) {
+                for (i, view) in set.diagrams.views().enumerate() {
+                    let tree = root_tree(&view, model).expect("rooting failed");
+                    let from_flow = spine_sign_from_flow(&tree);
+                    let heuristic = initial_state_spine_sign(&view, model);
+                    assert_eq!(
+                        from_flow, heuristic,
+                        "spine sign mismatch in `{process}` diagram {i}: \
+                         flow={from_flow} heuristic={heuristic}"
+                    );
+                    if from_flow < 0 {
+                        flipped_total += 1;
+                    }
+                }
+            }
+        }
+        // The e+e-→μ+μ-τ+τ- e-spine class (8 diagrams) must actually exercise a flip,
+        // so the agreement above is not vacuous.
+        assert!(
+            flipped_total >= 8,
+            "expected at least the 8 e-spine flips, saw {flipped_total}"
+        );
     }
 }

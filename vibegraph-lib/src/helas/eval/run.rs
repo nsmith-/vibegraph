@@ -131,7 +131,7 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
 /// than their parents, each node's children are already computed and read from `res` by
 /// id, so a shared (DAG) node is evaluated exactly once. For a whole amplitude the root
 /// is a scalar; rooting a sub-tree (tests) can return any slot.
-fn run_forward_slot<F: Real + FromPrimitive>(
+fn run_forward_slot<F: Real>(
     ast: &Ast<Const>,
     consts_c: &[C<F>],
     consts_f: &[F],
@@ -160,7 +160,7 @@ fn run_forward_slot<F: Real + FromPrimitive>(
 
 /// Evaluate the whole-amplitude folded arena in one forward pass, returning the root
 /// scalar = M.
-fn run_forward<F: Real + FromPrimitive>(
+fn run_forward<F: Real>(
     ast: &Ast<Const>,
     consts_c: &[C<F>],
     consts_f: &[F],
@@ -180,7 +180,7 @@ fn run_forward<F: Real + FromPrimitive>(
 /// wavefunctions; `Mul`/`Add` are the algebraic combinators; the Lorentz primitives
 /// dispatch to the shared helpers below.
 #[allow(clippy::too_many_arguments)]
-fn apply<F: Real + FromPrimitive>(
+fn apply<F: Real>(
     node: &Node<Const>,
     children: &[WaveformSlot<F>],
     momenta: &[LorentzVector<F>],
@@ -277,7 +277,7 @@ fn expect_real<F: Real>(slot: WaveformSlot<F>) -> F {
 /// n-ary product (the `Mul` op). Scalar/real children fold into a complex coefficient
 /// (reals kept in `F`); at most one non-scalar child carries the output type and absorbs
 /// the scalar momentum.
-fn mul_apply<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
+fn mul_apply<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let mut real_acc = F::one();
     let mut cplx_acc = C::new(F::one(), F::zero());
     let mut scalar_mom = LorentzVector::zero();
@@ -359,7 +359,7 @@ fn eval_single_diagram<F: Real + FromPrimitive>(
 }
 
 /// Build an external wavefunction from its kinematics + interned mass.
-fn build_external_core<F: Real + FromPrimitive>(
+fn build_external_core<F: Real>(
     momentum: LorentzVector<F>,
     helicity: i32,
     spin: i32,
@@ -397,11 +397,7 @@ fn build_external_core<F: Real + FromPrimitive>(
 /// already carries the conserved routed momentum (matching reference HELAS, where the
 /// off-shell current routines output it: `fvixxx` q=fi−vc, `fvoxxx` q=fo+vc,
 /// `jioxxx` jmom=fo−fi).
-fn propagate_core<F: Real + FromPrimitive>(
-    input: &WaveformSlot<F>,
-    mass: F,
-    width: F,
-) -> WaveformSlot<F> {
+fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> WaveformSlot<F> {
     match input {
         // Dirac propagator: -(q̸ + m) / (q² - m² + i m Γ)
         WaveformSlot::FermionIn(wf) => {
@@ -478,7 +474,7 @@ fn resolve_bra_ket<F: Real>(
 /// The propagator `(q̸+m)/D` is applied in a separate `Propagate` step.
 /// Continue a fermion line by slashing the input fermion `fermion` with the
 /// vector current `v` (fvixxx/fvoxxx chosen at runtime by the fermion's flow).
-fn off_shell_fermion_current<F: Real + FromPrimitive>(
+fn off_shell_fermion_current<F: Real>(
     v: WaveformSlot<F>,
     fermion: WaveformSlot<F>,
 ) -> WaveformSlot<F> {
@@ -503,7 +499,7 @@ fn off_shell_fermion_current<F: Real + FromPrimitive>(
 // dispatches to these by `Op`. The cross-check tests call them directly.
 
 /// `GammaVout`: two fermions → off-shell vector current `ψ̄ γ^μ ψ`.
-fn gamma_vout<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
+fn gamma_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let (fo, fi, reversed) = resolve_bra_ket(children[0], children[1]);
     let eps = fo.vector_bilinear(&fi, Chirality::Both);
     // Reading the fermion line against the vertex's defined flow conjugates the
@@ -518,10 +514,7 @@ fn gamma_vout<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> Waveform
 /// `ProjM`/`ProjP`: chiral projection on a continuing fermion current, preserving the
 /// input flow. `project_left`/`project_right` are flow-dependent (a bra projects
 /// different components than a ket), so the same call is correct for both flows.
-fn chiral_project<F: Real + FromPrimitive>(
-    child: WaveformSlot<F>,
-    chirality: Chirality,
-) -> WaveformSlot<F> {
+fn chiral_project<F: Real>(child: WaveformSlot<F>, chirality: Chirality) -> WaveformSlot<F> {
     fn project<F: Real, Fl: SpinorFlow>(
         s: Bispinor<F, Fl>,
         chirality: Chirality,
@@ -546,7 +539,7 @@ fn chiral_project<F: Real + FromPrimitive>(
 }
 
 /// `Metric`: contract two vectors → scalar.
-fn metric_contract<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
+fn metric_contract<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let WaveformSlot::Vector(v1) = children[0] else {
         panic!("Metric: expected vector input");
     };
@@ -564,7 +557,7 @@ fn metric_contract<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> Wav
 /// (`V1^0 = -i·V^0`, `V1^j = +i·V^j`, i.e. `-i·g·V`); the explicit `-i` is the vertex
 /// factor on top of the coupling (the UFO GC for HVV already carries its own `i`). A
 /// trailing scalar leg (the Higgs) multiplies in at the enclosing `Mul`.
-fn metric_vout<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
+fn metric_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let WaveformSlot::Vector(vin) = children[0] else {
         panic!("MetricVout: expected vector input");
     };
@@ -584,7 +577,7 @@ fn metric_vout<F: Real + FromPrimitive>(children: &[WaveformSlot<F>]) -> Wavefor
 
 /// `ProjMAmp`/`ProjPAmp`/`IdentityAmp`: scalar bilinear `ψ̄ Γ ψ` (`Γ = P_L`, `P_R`, or
 /// `1`); the bra/ket are picked by the legs' actual flow.
-fn scalar_bilinear_current<F: Real + FromPrimitive>(
+fn scalar_bilinear_current<F: Real>(
     children: &[WaveformSlot<F>],
     chirality: Chirality,
 ) -> WaveformSlot<F> {
@@ -606,7 +599,7 @@ mod tests {
         helas::{
             eval::diagram_eval::{ExtLegInfo, PropInfo, VertexInfo, VertexTerm},
             eval::root_diagram::{EvalNode, EvalNodeId},
-            iovxxx, jioxxx,
+            ffv2_4_3, iovxxx, jioxxx,
             repr::numbers::Charge,
             OutDiracWf,
         },
@@ -755,15 +748,27 @@ mod tests {
                 incoming: false,
             };
             let vertex_info = VertexInfo {
-                terms: vec![
-                    VertexTerm::from_ufo(model, lorentz_id, "asdf", coupling_id, Some(2)).unwrap(),
-                ],
+                terms: vec![VertexTerm::from_ufo(
+                    model,
+                    lorentz_id,
+                    "asdf",
+                    coupling_id,
+                    Some(2),
+                    None,
+                )
+                .unwrap()],
             };
             let prop_info = PropInfo { id: prop_id };
             let amp_info = VertexInfo {
-                terms: vec![
-                    VertexTerm::from_ufo(model, lorentz_id, "asdf", coupling_id, None).unwrap(),
-                ],
+                terms: vec![VertexTerm::from_ufo(
+                    model,
+                    lorentz_id,
+                    "asdf",
+                    coupling_id,
+                    None,
+                    None,
+                )
+                .unwrap()],
             };
 
             // Single s-channel current sub-diagram e⁺e⁻ → (FFV) → boson*: the two
@@ -778,10 +783,12 @@ mod tests {
                     EvalNode::External(leg2_info.clone()),
                     EvalNode::OffShellCurrent {
                         info: vertex_info.clone(),
+                        flow: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                     },
                     EvalNode::Propagate {
                         info: prop_info.clone(),
+                        flow: None,
                         child: EvalNodeId::new(2),
                     },
                 ],
@@ -794,10 +801,12 @@ mod tests {
                     EvalNode::External(leg2_info),
                     EvalNode::OffShellCurrent {
                         info: vertex_info,
+                        flow: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                     },
                     EvalNode::Propagate {
                         info: prop_info,
+                        flow: None,
                         child: EvalNodeId::new(2),
                     },
                     EvalNode::External(leg3_info),
@@ -865,6 +874,139 @@ mod tests {
                         diff < 1e-8,
                         "amplitude vs iovxxx∘jioxxx ({coup_str}/{prop_name}, \
                          hel {hel1}{hel2}{hel3}{hel4}): got={got:.6e} want={want:.6e} diff={diff}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Cross-check the production *combined* SM Z off-shell current — built through
+    /// `run_forward` from a two-term (FFV2 ⊕ FFV4) vertex — against the ALOHA
+    /// `FFV2_4_3` reference routine.
+    ///
+    /// `FFV2_4_3` adds the pure-left (FFV2, ProjM) and left+2·right (FFV4,
+    /// ProjM + 2·ProjP) Lorentz structures with independent couplings — exactly the
+    /// SM ℓ̄ℓZ current. Here both structures carry the same coupling `GC_3`, so the
+    /// evaluator's combined current equals `jioxxx([2g, 2g])` and ALOHA's
+    /// `ffv2_4_3(g, g)`. The two differ only by the global `−i` that ALOHA folds into
+    /// each Lorentz structure while vibegraph carries it in the UFO coupling, so the
+    /// production current matches `i · ffv2_4_3`. Both the massless photon (no
+    /// longitudinal term) and the massive Z (OM3 ≠ 0, exercising the `P3·P3/M²`
+    /// longitudinal subtraction) propagators are checked.
+    #[test]
+    fn test_eval_ffv2_4_3() {
+        let model = sm_model();
+        let evaluated = model.evaluate(&"".parse::<ParamCard>().unwrap());
+
+        let coupling_id = model.coupling_id("GC_3").unwrap();
+        let g = evaluated.coupling(coupling_id).im; // real chiral coupling
+
+        let ffv2_id = model.lorentz_id("FFV2").unwrap();
+        let ffv4_id = model.lorentz_id("FFV4").unwrap();
+
+        let inpart_id = model.particle_id("e+").unwrap();
+        let inpart_p_id = model.particle_id("e-").unwrap();
+        let m_in = evaluated.mass(inpart_id);
+
+        let leg1_info = ExtLegInfo {
+            leg_idx: 0,
+            id: inpart_id,
+            spin: 2,
+            charge: Charge::Particle,
+            incoming: true,
+        };
+        let leg2_info = ExtLegInfo {
+            leg_idx: 1,
+            id: inpart_p_id,
+            spin: 2,
+            charge: Charge::Antiparticle,
+            incoming: true,
+        };
+
+        // Two-term vertex: FFV2 (left) ⊕ FFV4 (left + 2·right), both with GC_3.
+        let vertex_info = VertexInfo {
+            terms: vec![
+                VertexTerm::from_ufo(model, ffv2_id, "asdf", coupling_id, Some(2), None).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "asdf", coupling_id, Some(2), None).unwrap(),
+            ],
+        };
+
+        let i = Complex64::i();
+        let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
+        // q² = s, so sqrts ≈ MZ drives the internal Z onto its pole — the regime where
+        // the longitudinal q^μq^ν/m² subtraction dominates and any spinor-basis or OM3
+        // mismatch would show up. sqrts = 1 keeps a deep-off-pole point for contrast.
+        for (sqrts, prop_name) in iproduct!([1.0_f64, 91.188], ["a", "Z"]) {
+            let p3_in = (sqrts * sqrts / 4.0 - m_in * m_in).sqrt();
+            let p_in_m = LorentzVector::from_pxpypzmass(0.0, 0.0, -p3_in, m_in);
+            let p_in_p = LorentzVector::from_pxpypzmass(0.0, 0.0, p3_in, m_in);
+
+            let prop_id = model.particle_id(prop_name).unwrap();
+            let mprop = evaluated.mass(prop_id);
+            let wprop = evaluated.width(prop_id);
+
+            let current_diagram = DiagramEval::from_nodes(
+                2,
+                vec![
+                    EvalNode::External(leg1_info.clone()),
+                    EvalNode::External(leg2_info.clone()),
+                    EvalNode::OffShellCurrent {
+                        info: vertex_info.clone(),
+                        flow: None,
+                        children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                    },
+                    EvalNode::Propagate {
+                        info: PropInfo { id: prop_id },
+                        flow: None,
+                        child: EvalNodeId::new(2),
+                    },
+                ],
+            );
+
+            for (hel1, hel2) in iproduct!(hels, hels) {
+                let fi_em = InDiracWf::from_momentum(p_in_m, m_in, hel1, Charge::Particle);
+                let fo_ep = OutDiracWf::from_momentum(p_in_p, m_in, hel2, Charge::Antiparticle);
+
+                // Literal ALOHA FFV2_4_3 reference: FFV2(g) + FFV4(g).
+                let aloha = ffv2_4_3(
+                    &fi_em,
+                    &fo_ep,
+                    Complex64::from(g),
+                    Complex64::from(g),
+                    mprop,
+                    wprop,
+                );
+
+                // Faithfulness: the transcribed ALOHA current equals our validated
+                // `jioxxx` in the equivalent [gL, gR] = [2g, 2g] chiral basis, times −i.
+                let jio = jioxxx(&fo_ep, &fi_em, [2.0 * g, 2.0 * g], mprop, wprop);
+                for mu in 0..4 {
+                    let diff = (aloha.eps.component(mu) - (-i) * jio.eps.component(mu)).norm();
+                    assert!(
+                        diff < 1e-10,
+                        "ffv2_4_3 vs −i·jioxxx (√s={sqrts}, {prop_name}, hel {hel1}{hel2}, μ={mu}): diff={diff}"
+                    );
+                }
+
+                // Headline: the production combined current (run_forward) matches the
+                // ALOHA reference up to the global −i UFO-coupling convention factor.
+                let WaveformSlot::Vector(got) = eval_single_diagram_slot(
+                    &current_diagram,
+                    &[p_in_m, p_in_p],
+                    &[hel1.sign(), hel2.sign()],
+                    &evaluated,
+                ) else {
+                    panic!("combined Z current must evaluate to a vector");
+                };
+                assert_eq!(
+                    got.momentum, aloha.momentum,
+                    "current momentum (√s={sqrts}, {prop_name}, hel {hel1}{hel2})"
+                );
+                for mu in 0..4 {
+                    let diff = (got.eps.component(mu) - i * aloha.eps.component(mu)).norm();
+                    assert!(
+                        diff < 1e-8,
+                        "eval current vs i·ffv2_4_3 (√s={sqrts}, {prop_name}, hel {hel1}{hel2}, μ={mu}): diff={diff}"
                     );
                 }
             }
@@ -1065,6 +1207,11 @@ mod tests {
         let pc = parse_proc_card("generate e+ e- > mu+ mu- ta+ ta- QCD=0", &opts).unwrap();
         let sets = generate_from_proc_card(&pc, model).unwrap();
         let set = &sets[0];
+
+        let evaluator = AmplitudeEvaluator::compile(set, model).expect("should compile");
+        let ast = &evaluator.folded().ast;
+        eprintln!("folded ast = {}", ast);
+
         let asts = compile_diagram_ast(set, model).unwrap();
         println!("n_diagrams = {} (MadGraph NGRAPHS = 25)", asts.len());
 
