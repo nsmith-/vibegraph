@@ -33,6 +33,19 @@ All 135 tests pass; amplitude agrees with Fortran HELAS to <1e-7 for massive e�
 > (same per-term mechanism as the bit-matching vector output, so likely fine). See memory
 > `helas-2to6-offshell-bug`.
 
+> **Update 2026-06-21 (cont.) — longitudinal-Z production ALSO ruled out (Ward test).**
+> `test_longitudinal_z_current_transverse_for_massless_fermions` builds the off-shell Z
+> current from a massless e⁺e⁻ pair via the production eval with the real `ℓ̄ℓZ` vertex
+> (FFV2·GC_50 ⊕ FFV4·GC_59, so `gL ≠ gR` — a genuine *axial* current the vector
+> photon-Ward tests can't probe) and verifies `q_μ J^μ = 0` at √s=1 and √s=m_Z (where the
+> `q^μq^ν/m²` numerator is largest). It passes: the current is exactly transverse, so the
+> longitudinal mode decouples on the production side; with the absorption side already
+> cleared (any ε handled correctly), longitudinal-Z is clean end-to-end for massless
+> fermions. Both chiral suspects for the parity reweighting are now ruled out — the
+> massless-τ matcher residual is either a per-diagram basis/convention artifact vs MG
+> (coherent total only 0.2% off → likely |M|²-harmless) or a coherent-sum relative
+> sign/coupling that no per-primitive test can isolate.
+
 ## What was built
 
 ### Core primitives
