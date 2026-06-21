@@ -117,15 +117,6 @@ impl<T> AstBuilder<T> {
 
 // ───────────────────────────── s-expression I/O ─────────────────────────────
 
-/// Number of leaf payload tokens an op carries in the s-expression.
-fn leaf_token_count(op: Op) -> usize {
-    match op {
-        Op::External => 4, // leg_idx spin charge_sign incoming
-        Op::Coupling | Op::Mass | Op::Width | Op::Coeff => 1, // id / coeff
-        _ => 0,
-    }
-}
-
 impl<T: fmt::Display> Ast<T> {
     fn render(&self, id: NodeId, out: &mut String) {
         let node = self.value(id);
@@ -237,12 +228,32 @@ impl<'a> Parser<'a> {
         let head = self.next().ok_or(ParseAstError::UnexpectedEof)?.to_string();
         let op = Op::from_name(&head).ok_or_else(|| ParseAstError::UnknownOp(head.clone()))?;
 
-        let n_leaf = leaf_token_count(op);
-        let mut leaf_toks = Vec::with_capacity(n_leaf);
-        for _ in 0..n_leaf {
-            leaf_toks.push(self.next().ok_or(ParseAstError::UnexpectedEof)?.to_string());
-        }
-        let leaf = parse_sym_leaf(op, &leaf_toks)?;
+        // Leaf is a nested s-expression (TypeName arg...) when present.
+        let leaf = if op.has_leaf_token() {
+            match self.next() {
+                Some("(") => {}
+                Some(other) => return Err(ParseAstError::ExpectedOpen(other.to_string())),
+                None => return Err(ParseAstError::UnexpectedEof),
+            }
+            // consume the type name (CouplingId / ParticleId / Real / ExtLegInfo)
+            self.next().ok_or(ParseAstError::UnexpectedEof)?;
+            let mut leaf_toks = Vec::new();
+            loop {
+                match self.peek() {
+                    Some(")") => {
+                        self.pos += 1;
+                        break;
+                    }
+                    Some(tok) if tok != "(" => {
+                        leaf_toks.push(self.next().unwrap().to_string());
+                    }
+                    _ => return Err(ParseAstError::UnexpectedEof),
+                }
+            }
+            parse_sym_leaf(op, &leaf_toks)?
+        } else {
+            Sym::None
+        };
 
         let mut children = Vec::new();
         loop {
@@ -275,5 +286,238 @@ impl FromStr for Ast<Sym> {
             return Err(ParseAstError::Trailing);
         }
         Ok(p.builder.finish(root))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::helas::eval::op::Const;
+    use crate::helas::repr::numbers::Charge;
+    use crate::ufo::couplings::CouplingId;
+    use crate::ufo::particles::ParticleId;
+
+    fn leaf_ast(op: Op, leaf: Sym) -> Ast<Sym> {
+        let mut b = AstBuilder::new();
+        let id = b.add(op, leaf, vec![]);
+        b.finish(id)
+    }
+
+    fn check_roundtrip(ast: &Ast<Sym>) {
+        let s = ast.to_string();
+        let reparsed: Ast<Sym> = s
+            .parse()
+            .unwrap_or_else(|e| panic!("parse failed: {e}\ninput: {s}"));
+        assert_eq!(s, reparsed.to_string(), "roundtrip changed the tree");
+    }
+
+    // ── leaf variants ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn coupling_leaf() {
+        let ast = leaf_ast(Op::Coupling, Sym::Coupling(CouplingId::from(42usize)));
+        assert_eq!(ast.to_string(), "(Coupling (CouplingId 42))");
+        check_roundtrip(&ast);
+    }
+
+    #[test]
+    fn mass_leaf() {
+        let ast = leaf_ast(Op::Mass, Sym::Particle(ParticleId::from(11usize)));
+        assert_eq!(ast.to_string(), "(Mass (ParticleId 11))");
+        check_roundtrip(&ast);
+    }
+
+    #[test]
+    fn width_leaf() {
+        let ast = leaf_ast(Op::Width, Sym::Particle(ParticleId::from(23usize)));
+        assert_eq!(ast.to_string(), "(Width (ParticleId 23))");
+        check_roundtrip(&ast);
+    }
+
+    #[test]
+    fn coeff_leaf() {
+        let ast = leaf_ast(Op::Coeff, Sym::Coeff(1.5));
+        assert_eq!(ast.to_string(), "(Coeff (Real 1.5))");
+        check_roundtrip(&ast);
+    }
+
+    #[test]
+    fn external_particle_incoming() {
+        let ast = leaf_ast(
+            Op::External,
+            Sym::Ext {
+                leg_idx: 0,
+                spin: 2,
+                charge: Charge::Particle,
+                incoming: true,
+            },
+        );
+        assert_eq!(ast.to_string(), "(External (ExtLegInfo 0 2 1 1))");
+        check_roundtrip(&ast);
+    }
+
+    #[test]
+    fn external_antiparticle_outgoing() {
+        let ast = leaf_ast(
+            Op::External,
+            Sym::Ext {
+                leg_idx: 3,
+                spin: 2,
+                charge: Charge::Antiparticle,
+                incoming: false,
+            },
+        );
+        assert_eq!(ast.to_string(), "(External (ExtLegInfo 3 2 -1 0))");
+        check_roundtrip(&ast);
+    }
+
+    // ── Const Display ─────────────────────────────────────────────────────────
+    // Ast<Const> has no FromStr; verify the Display strings match the egglog schema.
+
+    #[test]
+    fn const_display_complex() {
+        assert_eq!(Const::Complex(7).to_string(), "(Complex 7)");
+    }
+
+    #[test]
+    fn const_display_real() {
+        assert_eq!(Const::Real(3).to_string(), "(Real 3)");
+    }
+
+    #[test]
+    fn const_display_ext() {
+        let c = Const::Ext {
+            leg_idx: 1,
+            spin: 3,
+            charge: Charge::Antiparticle,
+            incoming: true,
+        };
+        assert_eq!(c.to_string(), "(ExtLegInfo 1 3 -1 1)");
+    }
+
+    #[test]
+    fn const_display_none() {
+        assert_eq!(Const::None.to_string(), "(None)");
+    }
+
+    // ── structural trees ──────────────────────────────────────────────────────
+
+    #[test]
+    fn projm_wrapping_coupling() {
+        let mut b = AstBuilder::new();
+        let coup = b.add(
+            Op::Coupling,
+            Sym::Coupling(CouplingId::from(5usize)),
+            vec![],
+        );
+        let root = b.add(Op::ProjM, Sym::None, vec![coup]);
+        let ast = b.finish(root);
+        assert_eq!(ast.to_string(), "(ProjM (Coupling (CouplingId 5)))");
+        check_roundtrip(&ast);
+    }
+
+    #[test]
+    fn add_two_coeffs() {
+        let mut b = AstBuilder::new();
+        let c1 = b.add(Op::Coeff, Sym::Coeff(1.0), vec![]);
+        let c2 = b.add(Op::Coeff, Sym::Coeff(2.0), vec![]);
+        let root = b.add(Op::Add, Sym::None, vec![c1, c2]);
+        let ast = b.finish(root);
+        check_roundtrip(&ast);
+        let s = ast.to_string();
+        assert!(s.starts_with("(Add "), "unexpected: {s}");
+        assert!(s.contains("(Coeff (Real"), "unexpected: {s}");
+    }
+
+    #[test]
+    fn external_with_mass_child() {
+        // A realistic External node: leaf + one Mass child (as lowered in practice).
+        let mut b = AstBuilder::new();
+        let mass = b.add(Op::Mass, Sym::Particle(ParticleId::from(11usize)), vec![]);
+        let ext = b.add(
+            Op::External,
+            Sym::Ext {
+                leg_idx: 0,
+                spin: 2,
+                charge: Charge::Particle,
+                incoming: true,
+            },
+            vec![mass],
+        );
+        let ast = b.finish(ext);
+        assert_eq!(
+            ast.to_string(),
+            "(External (ExtLegInfo 0 2 1 1) (Mass (ParticleId 11)))"
+        );
+        check_roundtrip(&ast);
+    }
+
+    #[test]
+    fn mul_coupling_coeff_external() {
+        let mut b = AstBuilder::new();
+        let coup = b.add(
+            Op::Coupling,
+            Sym::Coupling(CouplingId::from(5usize)),
+            vec![],
+        );
+        let coeff = b.add(Op::Coeff, Sym::Coeff(1.5), vec![]);
+        let mass = b.add(Op::Mass, Sym::Particle(ParticleId::from(11usize)), vec![]);
+        let ext = b.add(
+            Op::External,
+            Sym::Ext {
+                leg_idx: 0,
+                spin: 2,
+                charge: Charge::Particle,
+                incoming: true,
+            },
+            vec![mass],
+        );
+        let root = b.add(Op::Mul, Sym::None, vec![coup, coeff, ext]);
+        let ast = b.finish(root);
+        assert_eq!(
+            ast.to_string(),
+            "(Mul (Coupling (CouplingId 5)) (Coeff (Real 1.5)) (External (ExtLegInfo 0 2 1 1) (Mass (ParticleId 11))))"
+        );
+        check_roundtrip(&ast);
+    }
+
+    // ── error cases ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn error_unexpected_eof() {
+        assert!(matches!(
+            "(Add".parse::<Ast<Sym>>(),
+            Err(ParseAstError::UnexpectedEof)
+        ));
+    }
+
+    #[test]
+    fn error_expected_open() {
+        assert!(matches!(
+            "Add".parse::<Ast<Sym>>(),
+            Err(ParseAstError::ExpectedOpen(_))
+        ));
+    }
+
+    #[test]
+    fn error_unknown_op() {
+        assert!(matches!(
+            "(Frobnicate)".parse::<Ast<Sym>>(),
+            Err(ParseAstError::UnknownOp(_))
+        ));
+    }
+
+    #[test]
+    fn error_trailing_tokens() {
+        assert!(matches!(
+            "(Add) extra".parse::<Ast<Sym>>(),
+            Err(ParseAstError::Trailing)
+        ));
+    }
+
+    #[test]
+    fn error_bad_leaf_not_integer() {
+        let r = "(Coupling (CouplingId notanumber))".parse::<Ast<Sym>>();
+        assert!(matches!(r, Err(ParseAstError::BadLeaf(_))));
     }
 }
