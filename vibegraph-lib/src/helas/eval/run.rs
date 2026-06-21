@@ -1013,6 +1013,138 @@ mod tests {
         }
     }
 
+    /// Ward identity for the off-shell **Z** current: built from a **massless** fermion
+    /// pair it must be transverse, `q_μ J^μ = 0`, so the `q^μq^ν/m²` longitudinal piece
+    /// of the massive-vector propagator decouples.
+    ///
+    /// This targets the one continuum-residual mechanism that survives every other test:
+    /// the longitudinal Z mode on the massless spine. Unlike the external-photon Ward
+    /// tests (`test_ward_identity_full_amplitude_*`), which only constrain the conserved
+    /// **vector** current, this uses the real `ℓ̄ℓZ` couplings (FFV2·GC_50 + FFV4·GC_59,
+    /// `gL ≠ gR`) so the current carries a genuine **axial** part — the parity-odd piece
+    /// that, if its conservation were broken on the massless line, would leave a residual
+    /// longitudinal contribution and reweight the L/R (parity-conjugate) helicities. The
+    /// axial current's divergence is `∝ 2m·(pseudoscalar)`, so transversality is exact
+    /// only for massless fermions; the contraction is checked at the very `q²/m_Z²`
+    /// (`√s = m_Z`) where the longitudinal numerator is largest.
+    #[test]
+    fn test_longitudinal_z_current_transverse_for_massless_fermions() {
+        let model = sm_model();
+        let evaluated = model.evaluate(&"".parse::<ParamCard>().unwrap());
+
+        // Real ℓ̄ℓZ vertex (SM V_107): FFV2·GC_50 (pure left) ⊕ FFV4·GC_59 (left+2·right),
+        // i.e. gL = GC_50+GC_59, gR = 2·GC_59 — a parity-violating (gL ≠ gR) current.
+        let gc50 = model.coupling_id("GC_50").unwrap();
+        let gc59 = model.coupling_id("GC_59").unwrap();
+        let ffv2_id = model.lorentz_id("FFV2").unwrap();
+        let ffv4_id = model.lorentz_id("FFV4").unwrap();
+        // Sanity: this is genuinely chiral (the axial part is non-trivial).
+        assert_ne!(
+            evaluated.coupling(gc50),
+            evaluated.coupling(gc59),
+            "test needs gL ≠ gR to exercise the axial current"
+        );
+
+        let inpart_id = model.particle_id("e+").unwrap();
+        let inpart_p_id = model.particle_id("e-").unwrap();
+        let m_in = evaluated.mass(inpart_id);
+        assert_eq!(
+            m_in, 0.0,
+            "Ward identity requires massless producing fermions"
+        );
+
+        let leg1_info = ExtLegInfo {
+            leg_idx: 0,
+            id: inpart_id,
+            spin: 2,
+            charge: Charge::Particle,
+            incoming: true,
+        };
+        let leg2_info = ExtLegInfo {
+            leg_idx: 1,
+            id: inpart_p_id,
+            spin: 2,
+            charge: Charge::Antiparticle,
+            incoming: true,
+        };
+
+        let vertex_info = VertexInfo {
+            terms: vec![
+                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), None).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), None).unwrap(),
+            ],
+        };
+
+        let z_id = model.particle_id("Z").unwrap();
+        let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
+        // √s = m_Z drives q² to the pole region, maximising the longitudinal numerator.
+        for sqrts in [1.0_f64, 91.1876] {
+            let p3 = sqrts / 2.0; // massless ⇒ |p| = √s/2
+            let p_in_m = LorentzVector::from_pxpypzmass(0.0, 0.0, -p3, 0.0);
+            let p_in_p = LorentzVector::from_pxpypzmass(0.0, 0.0, p3, 0.0);
+
+            let current_diagram = DiagramEval::from_nodes(
+                2,
+                vec![
+                    EvalNode::External(leg1_info.clone()),
+                    EvalNode::External(leg2_info.clone()),
+                    EvalNode::OffShellCurrent {
+                        info: vertex_info.clone(),
+                        flow: None,
+                        children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                    },
+                    EvalNode::Propagate {
+                        info: PropInfo { id: z_id },
+                        flow: None,
+                        child: EvalNodeId::new(2),
+                    },
+                ],
+            );
+
+            // Track the largest current over helicities so transversality is not
+            // vacuously satisfied (the chiral coupling kills the equal-helicity combos).
+            let mut max_jnorm = 0.0_f64;
+            for (hel1, hel2) in iproduct!(hels, hels) {
+                let WaveformSlot::Vector(j) = eval_single_diagram_slot(
+                    &current_diagram,
+                    &[p_in_m, p_in_p],
+                    &[hel1.sign(), hel2.sign()],
+                    &evaluated,
+                ) else {
+                    panic!("Z current must evaluate to a vector");
+                };
+
+                // Minkowski contraction q·J = q⁰J⁰ − q⃗·J⃗ with the current's own momentum.
+                let q = j.momentum;
+                let qdotj = Complex64::from(q.e()) * j.eps.component(0)
+                    - Complex64::from(q.px()) * j.eps.component(1)
+                    - Complex64::from(q.py()) * j.eps.component(2)
+                    - Complex64::from(q.pz()) * j.eps.component(3);
+
+                let jnorm = (0..4)
+                    .map(|k| j.eps.component(k).norm_sqr())
+                    .sum::<f64>()
+                    .sqrt();
+                let qnorm =
+                    (q.e() * q.e() + q.px() * q.px() + q.py() * q.py() + q.pz() * q.pz()).sqrt();
+                max_jnorm = max_jnorm.max(jnorm);
+
+                // q·J must vanish relative to |q||J| (absolute floor covers the
+                // equal-helicity combos where the current itself is zero).
+                assert!(
+                    qdotj.norm() < 1e-9 * qnorm * jnorm + 1e-12,
+                    "longitudinal Z fails to decouple for massless fermions \
+                     (√s={sqrts}, hel {hel1}{hel2}): q·J={qdotj} vs |q||J|={}",
+                    qnorm * jnorm
+                );
+            }
+            assert!(
+                max_jnorm > 1e-6,
+                "Z current vacuously zero at all helicities (√s={sqrts})"
+            );
+        }
+    }
+
     /// Cross-check the production off-shell fermion current (`off_shell_fermion_current`
     /// + `propagate_core`) against the `fvixxx`/`fvoxxx` reference routines.
     ///
