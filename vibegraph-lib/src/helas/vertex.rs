@@ -1,9 +1,9 @@
 use num_complex::ComplexFloat;
 
 use crate::helas::repr::{
-    lorentz::{Bispinor, ComplexVector, SpinorRepr, VectorRepr},
+    lorentz::{Bispinor, ComplexVector, SpinorFlow, SpinorRepr, VectorRepr},
     numbers::Chirality,
-    r, Real, C,
+    r, ri, Real, C,
 };
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 
@@ -154,6 +154,153 @@ pub fn iovxxx<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, v: &VectorWf<F>, g
 
     // M = gc[0] * (C_L · V) + gc[1] * (C_R · V)
     C::from(gc[0]) * cl.dot(&v.eps.lower()) + C::from(gc[1]) * cr.dot(&v.eps.lower())
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ffv2_3 / ffv4_3 / ffv2_4_3 — ALOHA off-shell vector currents (chiral basis)
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// These transcribe the ALOHA-generated routines `FFV2_3.f` / `FFV4_3.f` (and the
+// `FFV2_4_3` wrapper) component-for-component. They are the modern equivalent of
+// [`jioxxx`], but expressed directly in ALOHA's chiral-projector convention:
+//
+//   FFV2  =  Gamma(3,2,-1)·ProjM(-1,1)                  (pure left, P_L)
+//   FFV4  =  Gamma(3,2,-1)·(ProjM + 2·ProjP)(-1,1)      (left + 2·right)
+//
+// vibegraph stores the Weyl-basis bispinor index-for-index with the HELAS/ALOHA
+// 6-component array: our `spinor[k]` is ALOHA `F(3+k)` (components 0,1 left-chiral,
+// 2,3 right-chiral). The off-shell momentum is `P3 = f2.p − f1.p`, matching
+// [`jioxxx`]'s `q`. ALOHA folds an explicit `−i` per Lorentz structure into the
+// current (the `(−CI)` / `(−2·CI)` prefactors below), which vibegraph's evaluator
+// instead carries in the UFO coupling — so an ALOHA current equals the vibegraph /
+// `jioxxx` current times that `−i`.
+
+/// The four Weyl-basis spinor components, ordered as the HELAS/ALOHA `F(3..6)` array.
+fn spinor_components<F: Real, Flow: SpinorFlow>(s: &Bispinor<F, Flow>) -> [C<F>; 4] {
+    [
+        s.component(0),
+        s.component(1),
+        s.component(2),
+        s.component(3),
+    ]
+}
+
+/// ALOHA `FFV2_3`: off-shell vector current with the pure-left (P_L) structure.
+///
+/// `f1` is the flow-IN (ket) fermion `F1`, `f2` the flow-OUT (bra) fermion `F2`.
+pub fn ffv2_3<F: Real>(
+    f1: &InDiracWf<F>,
+    f2: &OutDiracWf<F>,
+    coup: C<F>,
+    m3: F,
+    w3: F,
+) -> VectorWf<F> {
+    let a = spinor_components(&f1.spinor);
+    let b = spinor_components(&f2.spinor);
+    let q = f2.momentum - f1.momentum;
+    let (p0, p1, p2, p3) = (q.e(), q.px(), q.py(), q.pz());
+
+    let ci: C<F> = C::I;
+    let om3 = if m3 == F::zero() {
+        F::zero()
+    } else {
+        F::one() / (m3 * m3)
+    };
+    let denom = coup / C::new(q.m2() - m3 * m3, m3 * w3);
+
+    // TMP1 = J_L · P3  (left current contracted with the off-shell momentum).
+    let tmp1 = a[0] * (b[2] * r(p0 + p3) + b[3] * (r(p1) + ri(p2)))
+        + a[1] * (b[2] * (r(p1) - ri(p2)) + b[3] * r(p0 - p3));
+
+    let eps = ComplexVector::new([
+        denom * (-ci) * (a[0] * b[2] + a[1] * b[3] - tmp1 * r(p0 * om3)),
+        denom * (-ci) * (-a[0] * b[3] - a[1] * b[2] - tmp1 * r(p1 * om3)),
+        denom * (-ci) * (-ci * (a[0] * b[3]) + ci * (a[1] * b[2]) - tmp1 * r(p2 * om3)),
+        denom * (-ci) * (-a[0] * b[2] + a[1] * b[3] - tmp1 * r(p3 * om3)),
+    ]);
+
+    VectorWf { eps, momentum: q }
+}
+
+/// ALOHA `FFV4_3`: off-shell vector current with the (P_L + 2·P_R) structure.
+///
+/// `f1` is the flow-IN (ket) fermion `F1`, `f2` the flow-OUT (bra) fermion `F2`.
+pub fn ffv4_3<F: Real>(
+    f1: &InDiracWf<F>,
+    f2: &OutDiracWf<F>,
+    coup: C<F>,
+    m3: F,
+    w3: F,
+) -> VectorWf<F> {
+    let a = spinor_components(&f1.spinor);
+    let b = spinor_components(&f2.spinor);
+    let q = f2.momentum - f1.momentum;
+    let (p0, p1, p2, p3) = (q.e(), q.px(), q.py(), q.pz());
+
+    let ci: C<F> = C::I;
+    let two = r(F::one() + F::one());
+    let half = r(F::one() / (F::one() + F::one()));
+    let om3 = if m3 == F::zero() {
+        F::zero()
+    } else {
+        F::one() / (m3 * m3)
+    };
+    let denom = coup / C::new(q.m2() - m3 * m3, m3 * w3);
+    let hf = F::one() / (F::one() + F::one()); // ½ as a real, for the OM3 momentum terms
+
+    // TMP1 = J_L · P3,  TMP3 = J_R · P3  (left/right currents · momentum).
+    let tmp1 = a[0] * (b[2] * r(p0 + p3) + b[3] * (r(p1) + ri(p2)))
+        + a[1] * (b[2] * (r(p1) - ri(p2)) + b[3] * r(p0 - p3));
+    let tmp3 = a[2] * (b[0] * r(p0 - p3) - b[1] * (r(p1) + ri(p2)))
+        + a[3] * (b[0] * (-r(p1) + ri(p2)) + b[1] * r(p0 + p3));
+    let s = tmp1 + tmp3 * two; // TMP1 + 2·TMP3
+
+    let eps = ComplexVector::new([
+        denom
+            * (-(ci * two))
+            * (s * r(-hf * p0 * om3)
+                + half * (a[0] * b[2] + a[1] * b[3])
+                + a[2] * b[0]
+                + a[3] * b[1]),
+        denom
+            * (-(ci * two))
+            * (s * r(-hf * p1 * om3) - half * (a[0] * b[3] + a[1] * b[2])
+                + a[2] * b[1]
+                + a[3] * b[0]),
+        denom
+            * (ci * two)
+            * (s * r(hf * p2 * om3) + ci * half * (a[0] * b[3])
+                - ci * half * (a[1] * b[2])
+                - ci * (a[2] * b[1])
+                + ci * (a[3] * b[0])),
+        denom
+            * (ci * two)
+            * (s * r(hf * p3 * om3) + half * (a[0] * b[2]) - half * (a[1] * b[3]) - a[2] * b[0]
+                + a[3] * b[1]),
+    ]);
+
+    VectorWf { eps, momentum: q }
+}
+
+/// ALOHA `FFV2_4_3`: the SM Z off-shell vector current, combining the FFV2 (left)
+/// and FFV4 (left + 2·right) Lorentz structures with independent couplings.
+///
+/// Equivalent to `ffv2_3(.., coup1, ..) + ffv4_3(.., coup2, ..)` — exactly the body
+/// of the generated `FFV2_4_3.f` wrapper.
+pub fn ffv2_4_3<F: Real>(
+    f1: &InDiracWf<F>,
+    f2: &OutDiracWf<F>,
+    coup1: C<F>,
+    coup2: C<F>,
+    m3: F,
+    w3: F,
+) -> VectorWf<F> {
+    let v2 = ffv2_3(f1, f2, coup1, m3, w3);
+    let v4 = ffv4_3(f1, f2, coup2, m3, w3);
+    VectorWf {
+        eps: v2.eps + v4.eps,
+        momentum: v2.momentum,
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

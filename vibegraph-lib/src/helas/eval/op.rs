@@ -217,3 +217,26 @@ impl fmt::Display for Sym {
         }
     }
 }
+
+impl fmt::Display for Const {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Const::Complex(idx) => write!(f, "Complex({idx})"),
+            Const::Real(idx) => write!(f, "Real({idx})"),
+            Const::Ext {
+                leg_idx,
+                spin,
+                charge,
+                incoming,
+            } => {
+                write!(
+                    f,
+                    "Ext({leg_idx} {spin} {} {})",
+                    charge.sign(),
+                    *incoming as i32
+                )
+            }
+            Const::None => write!(f, "None"),
+        }
+    }
+}

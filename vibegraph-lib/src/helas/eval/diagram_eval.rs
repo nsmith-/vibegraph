@@ -10,7 +10,7 @@
 
 use itertools::Itertools;
 
-use super::root_lorentz::{RootLorentzError, RootedTerm};
+use super::root_lorentz::{Flow, RootLorentzError, RootedTerm};
 use crate::helas::repr::numbers::Charge;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
@@ -32,6 +32,25 @@ pub struct ExtLegInfo {
     /// Whether this leg is incoming (`leg_idx < n_in`); selects ket/bra flow and the
     /// HELAS `nsf` sign of the external wavefunction.
     pub incoming: bool,
+}
+
+impl ExtLegInfo {
+    /// Spinor flow of this external leg, or `None` for non-Dirac legs.
+    ///
+    /// Mirrors the HELAS external-flow rule applied at eval time in
+    /// `build_external_core`: a Dirac leg is a ket (flow-in) iff it is an incoming
+    /// particle or an outgoing antiparticle, i.e. `incoming == is_particle`.
+    pub fn flow(&self) -> Option<Flow> {
+        if self.spin != 2 {
+            return None;
+        }
+        let is_particle = matches!(self.charge, Charge::Particle);
+        Some(if self.incoming == is_particle {
+            Flow::In
+        } else {
+            Flow::Out
+        })
+    }
 }
 
 impl std::fmt::Display for ExtLegInfo {
@@ -74,13 +93,16 @@ impl VertexTerm {
         _color: &str, // TODO: handle color structures if needed
         coupling_id: CouplingId,
         result_leg_idx: Option<usize>,
+        out_flow: Option<Flow>,
     ) -> Result<Self, RootLorentzError> {
         let lorentz = model.lorentz_struct(lorentz_id);
 
         let terms = lorentz
             .expr
             .iter()
-            .map(|term| super::root_lorentz::root_term(term, &lorentz.spins, result_leg_idx))
+            .map(|term| {
+                super::root_lorentz::root_term(term, &lorentz.spins, result_leg_idx, out_flow)
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(VertexTerm { terms, coupling_id })
@@ -120,6 +142,7 @@ impl VertexInfo {
         model: &UFOModel,
         id: VertexId,
         result_leg_idx: Option<usize>,
+        out_flow: Option<Flow>,
     ) -> Result<Self, RootLorentzError> {
         let vertex = model.vertex_def(id);
         let terms = vertex
@@ -132,6 +155,7 @@ impl VertexInfo {
                     vertex.color[color_idx].as_str(),
                     *coupling_id,
                     result_leg_idx,
+                    out_flow,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;

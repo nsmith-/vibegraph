@@ -808,6 +808,15 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
 }
 
 impl<F: Real, Flow: SpinorFlow> Bispinor<F, Flow> {
+    /// The `i`-th Weyl-basis spinor component (0,1 left-chiral; 2,3 right-chiral).
+    ///
+    /// This index matches the HELAS/ALOHA 6-component fermion array: `component(k)`
+    /// is `F(3+k)`. Exposes the raw basis coordinate, useful for cross-checks.
+    #[inline(always)]
+    pub fn component(&self, i: usize) -> C<F> {
+        self.0[i]
+    }
+
     /// Construct a spinor from a 4-momentum, mass, helicity, and fermion flow.
     #[inline(always)]
     pub fn from_momentum(

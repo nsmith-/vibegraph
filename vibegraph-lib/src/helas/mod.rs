@@ -15,7 +15,7 @@ pub mod vertex;
 pub mod wavefn;
 
 pub use repr::lorentz::{Bispinor, LorentzVector};
-pub use vertex::{iovxxx, j3xxxx, jioxxx};
+pub use vertex::{ffv2_3, ffv2_4_3, ffv4_3, iovxxx, j3xxxx, jioxxx};
 pub use wavefn::{DiracWf, InDiracWf, OutDiracWf, VectorWf};
 
 #[cfg(test)]
