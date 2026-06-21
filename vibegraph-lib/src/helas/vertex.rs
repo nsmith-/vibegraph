@@ -303,6 +303,142 @@ pub fn ffv2_4_3<F: Real>(
     }
 }
 
+/// ALOHA `FFV2_2`: off-shell *fermion* current with the pure-left (P_L) vertex
+/// `Gamma(3,2,-1)·ProjM(-1,1)`, propagator folded in.
+///
+/// This is the chiral analogue of [`fvixxx`] (FFV1_2 is the vector version): a
+/// flow-IN fermion `f1` absorbs the vector `v`, continuing the line. It computes
+/// `(q̸+m)·γ̸_V·P_L·ψ / (q²−m²+imΓ)` with `q = f1.p − v.p`, transcribed
+/// component-for-component from the generated `FFV2_2.f`. The explicit `±i` per
+/// component is part of ALOHA's gamma algebra; the overall current relates to the
+/// vibegraph evaluator's by the same global `−i` UFO-coupling factor as the other
+/// ALOHA references.
+pub fn ffv2_2<F: Real>(
+    f1: &InDiracWf<F>,
+    v: &VectorWf<F>,
+    coup: C<F>,
+    m2: F,
+    w2: F,
+) -> InDiracWf<F> {
+    let a = spinor_components(&f1.spinor);
+    let w = [
+        v.eps.component(0),
+        v.eps.component(1),
+        v.eps.component(2),
+        v.eps.component(3),
+    ];
+    let q = f1.momentum - v.momentum;
+    let (p0, p1, p2, p3) = (q.e(), q.px(), q.py(), q.pz());
+    let ci = C::I;
+    let denom = coup / C::new(q.m2() - m2 * m2, m2 * w2);
+
+    // F1(3..6) = a[0..4];  V3(3..6) = w[0..4];  P2 = q.
+    let f2_3 = denom
+        * ci
+        * (a[0]
+            * (r(p0) * (w[0] + w[3]) - r(p1) * (w[1] + ci * w[2]) + r(p2) * (ci * w[1] - w[2])
+                - r(p3) * (w[0] + w[3]))
+            + a[1]
+                * (r(p0) * (w[1] - ci * w[2])
+                    + r(p1) * (-w[0] + w[3])
+                    + r(p2) * (ci * w[0] - ci * w[3])
+                    + r(p3) * (-w[1] + ci * w[2])));
+    let f2_4 = denom
+        * ci
+        * (a[0]
+            * (r(p0) * (w[1] + ci * w[2]) - r(p1) * (w[0] + w[3]) - r(p2) * (ci * (w[0] + w[3]))
+                + r(p3) * (w[1] + ci * w[2]))
+            + a[1]
+                * (r(p0) * (w[0] - w[3]) + r(p1) * (-w[1] + ci * w[2])
+                    - r(p2) * (ci * w[1] + w[2])
+                    + r(p3) * (w[0] - w[3])));
+    let f2_5 = denom * (-ci) * r(m2) * (-a[0] * (w[0] + w[3]) + a[1] * (-w[1] + ci * w[2]));
+    let f2_6 = denom * ci * r(m2) * (a[0] * (w[1] + ci * w[2]) + a[1] * (w[0] - w[3]));
+
+    InDiracWf::from_spinor(Bispinor::from_components([f2_3, f2_4, f2_5, f2_6]), q)
+}
+
+/// ALOHA `FFV4_2`: off-shell *fermion* current with the `(P_L + 2·P_R)` vertex
+/// `Gamma(3,2,-1)·(ProjM + 2·ProjP)(-1,1)`, propagator folded in.
+///
+/// The FFV4 (left + 2·right) analogue of [`ffv2_2`]; together with it this covers the
+/// SM Z fermion absorption (`FFV2_4_2 = ffv2_2(coup1) + ffv4_2(coup2)`). Transcribed
+/// component-for-component from `FFV4_2.f`; relates to the vibegraph evaluator by the
+/// same global `−i` factor.
+pub fn ffv4_2<F: Real>(
+    f1: &InDiracWf<F>,
+    v: &VectorWf<F>,
+    coup: C<F>,
+    m2: F,
+    w2: F,
+) -> InDiracWf<F> {
+    let a = spinor_components(&f1.spinor);
+    let w = [
+        v.eps.component(0),
+        v.eps.component(1),
+        v.eps.component(2),
+        v.eps.component(3),
+    ];
+    let q = f1.momentum - v.momentum;
+    let (p0, p1, p2, p3) = (q.e(), q.px(), q.py(), q.pz());
+    let ci = C::I;
+    let two = r(F::one() + F::one());
+    let half = r(F::one() / (F::one() + F::one()));
+    let m = r(m2);
+    let denom = coup / C::new(q.m2() - m2 * m2, m2 * w2);
+
+    // Left-output (F2(3,4)): left-input momentum terms (≡ FFV2_2) + 2·right-input mass.
+    let f2_3 = denom
+        * ci
+        * (a[0]
+            * (r(p0) * (w[0] + w[3]) - r(p1) * (w[1] + ci * w[2]) + r(p2) * (ci * w[1] - w[2])
+                - r(p3) * (w[0] + w[3]))
+            + a[1]
+                * (r(p0) * (w[1] - ci * w[2])
+                    + r(p1) * (-w[0] + w[3])
+                    + r(p2) * (ci * w[0] - ci * w[3])
+                    + r(p3) * (-w[1] + ci * w[2]))
+            + m * two * (a[2] * (w[0] - w[3]) + a[3] * (-w[1] + ci * w[2])));
+    let f2_4 = denom
+        * ci
+        * (a[0]
+            * (r(p0) * (w[1] + ci * w[2]) - r(p1) * (w[0] + w[3]) - r(p2) * (ci * (w[0] + w[3]))
+                + r(p3) * (w[1] + ci * w[2]))
+            + a[1]
+                * (r(p0) * (w[0] - w[3]) + r(p1) * (-w[1] + ci * w[2])
+                    - r(p2) * (ci * w[1] + w[2])
+                    + r(p3) * (w[0] - w[3]))
+            + m * two * (-a[2] * (w[1] + ci * w[2]) + a[3] * (w[0] + w[3])));
+    // Right-output (F2(5,6)): 2·right-input momentum terms + ½·left-input mass.
+    let f2_5 = denom
+        * (-(two * ci))
+        * (a[2]
+            * (r(p0) * (-w[0] + w[3])
+                + r(p1) * (w[1] + ci * w[2])
+                + r(p2) * (-ci * w[1] + w[2])
+                + r(p3) * (-w[0] + w[3]))
+            + a[3]
+                * (r(p0) * (w[1] - ci * w[2]) - r(p1) * (w[0] + w[3])
+                    + r(p2) * (ci * (w[0] + w[3]))
+                    + r(p3) * (w[1] - ci * w[2]))
+            + m * (-half * a[0] * (w[0] + w[3]) + half * a[1] * (-w[1] + ci * w[2])));
+    let f2_6 = denom
+        * (-(two * ci))
+        * (a[2]
+            * (r(p0) * (w[1] + ci * w[2])
+                + r(p1) * (-w[0] + w[3])
+                + r(p2) * (-ci * w[0] + ci * w[3])
+                - r(p3) * (w[1] + ci * w[2]))
+            + a[3]
+                * (-r(p0) * (w[0] + w[3])
+                    + r(p1) * (w[1] - ci * w[2])
+                    + r(p2) * (ci * w[1] + w[2])
+                    + r(p3) * (w[0] + w[3]))
+            + m * (-half * a[0] * (w[1] + ci * w[2]) + half * a[1] * (-w[0] + w[3])));
+
+    InDiracWf::from_spinor(Bispinor::from_components([f2_3, f2_4, f2_5, f2_6]), q)
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Phase 2: Off-shell vertex routines
 // ──────────────────────────────────────────────────────────────────────────────
