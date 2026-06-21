@@ -1191,6 +1191,148 @@ mod tests {
         }
     }
 
+    /// Validate the production *chiral* off-shell fermion current rooted at the
+    /// **projector-side** fermion leg — the e-spine case — against a textbook
+    /// Dirac-matrix reconstruction.
+    ///
+    /// On an incoming-pair spine (the e-line absorbing an internal Z) the bake roots
+    /// the chiral FFV2/FFV4 vertex at the fermion on the `ProjM`/column leg, producing
+    /// the composition `Propagate ∘ chiral_project ∘ off_shell_fermion_current` — the
+    /// projector applied **after** the gamma current (`P_L·ε̸·ψ`), the mirror of
+    /// [`test_chiral_off_shell_fermion_vs_ffv2_2`]'s `ε̸·P_L·ψ`. Since `γ^μ P_L =
+    /// P_R γ^μ`, the two orderings carry opposite chirality, so this is a genuinely
+    /// distinct code path that ee→μμ (vector-output Z) and the leg-2 tests never
+    /// exercise — and the per-diagram matcher flagged the e-spine Z absorption as where
+    /// the parity-conjugate `gL/gR` reweighting lives.
+    ///
+    /// Reference: the physical current is `S(q)·P·ε̸·ψ` with the Dirac propagator
+    /// `S(q) = (q̸ + m)/(q² − m²)` and `q = ψ.p − v.p`, built here from explicit
+    /// Weyl-basis γ matrices independent of the evaluator's representation. The
+    /// evaluator carries an overall `−1` from its propagator normalisation
+    /// (`propagate_core`), so `eval == −1 · S·P·ε̸·ψ`. FFV2 uses `P = P_L`; FFV4 uses
+    /// `P = P_L + 2P_R`. This pins both the chiral handedness and the relative `gL/gR`
+    /// weight of the e-spine current.
+    #[test]
+    fn test_chiral_off_shell_fermion_espine_vs_textbook() {
+        // Weyl basis γ^μ = [[0,σ^μ],[σ̄^μ,0]], σ^μ=(I,σ_i), σ̄^μ=(I,−σ_i); metric (+,−,−,−).
+        type M4 = [[Complex64; 4]; 4];
+        let z = Complex64::new(0.0, 0.0);
+        let o = Complex64::new(1.0, 0.0);
+        let ii = Complex64::new(0.0, 1.0);
+        let g0: M4 = [[z, z, o, z], [z, z, z, o], [o, z, z, z], [z, o, z, z]];
+        let g1: M4 = [[z, z, z, o], [z, z, o, z], [z, -o, z, z], [-o, z, z, z]];
+        let g2: M4 = [[z, z, z, -ii], [z, z, ii, z], [z, ii, z, z], [-ii, z, z, z]];
+        let g3: M4 = [[z, z, o, z], [z, z, z, -o], [-o, z, z, z], [z, o, z, z]];
+        let matvec = |m: &M4, x: &[Complex64; 4]| -> [Complex64; 4] {
+            core::array::from_fn(|r| (0..4).map(|c| m[r][c] * x[c]).sum())
+        };
+        let add = |a: [Complex64; 4], b: [Complex64; 4]| -> [Complex64; 4] {
+            core::array::from_fn(|k| a[k] + b[k])
+        };
+        let scale = |s: Complex64, a: [Complex64; 4]| -> [Complex64; 4] {
+            core::array::from_fn(|k| s * a[k])
+        };
+        // Covariant slash v̸ = γ^0 v^0 − γ^1 v^1 − γ^2 v^2 − γ^3 v^3.
+        let slash = |v: &[Complex64; 4], x: &[Complex64; 4]| -> [Complex64; 4] {
+            let mut r = scale(v[0], matvec(&g0, x));
+            r = add(r, scale(-v[1], matvec(&g1, x)));
+            r = add(r, scale(-v[2], matvec(&g2, x)));
+            add(r, scale(-v[3], matvec(&g3, x)))
+        };
+
+        let v = VectorWf {
+            eps: ComplexVector::new([
+                Complex64::new(1.0, 0.0),
+                Complex64::new(0.5, 0.2),
+                Complex64::new(0.3, 0.1),
+                Complex64::new(0.4, 0.0),
+            ]),
+            momentum: LorentzVector::new(50.0, 10.0, 0.0, 20.0),
+        };
+        let eps = core::array::from_fn(|k| v.eps.component(k));
+        let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
+        for (mass, width) in [(0.0_f64, 0.0_f64), (0.106, 0.0)] {
+            let p_f = LorentzVector::from_pxpypzmass(30.0, 0.0, 40.0, mass);
+            for (hel, charge) in iproduct!(hels, [Charge::Particle, Charge::Antiparticle]) {
+                let fi = InDiracWf::from_momentum(p_f, mass, hel, charge);
+                let psi: [Complex64; 4] = core::array::from_fn(|k| fi.spinor.component(k));
+                let q = fi.momentum - v.momentum;
+                let qvec = [
+                    Complex64::from(q.e()),
+                    Complex64::from(q.px()),
+                    Complex64::from(q.py()),
+                    Complex64::from(q.pz()),
+                ];
+                let denom = Complex64::from(q.m2() - mass * mass);
+
+                // Textbook S(q)·P·ε̸·ψ for P = P_L (FFV2) and P = P_L + 2P_R (FFV4),
+                // with the evaluator's overall −1 from propagate_core folded in.
+                let textbook = |pl: Complex64, pr: Complex64| -> [Complex64; 4] {
+                    let eps_psi = slash(&eps, &psi);
+                    // P · ε̸ψ with chiral weights (P_L keeps [0,1], P_R keeps [2,3]).
+                    let projected = [
+                        pl * eps_psi[0],
+                        pl * eps_psi[1],
+                        pr * eps_psi[2],
+                        pr * eps_psi[3],
+                    ];
+                    // (q̸ + m)/(q²−m²), then ×(−1).
+                    let qslash = slash(&qvec, &projected);
+                    let massterm = scale(Complex64::from(mass), projected);
+                    scale(-o / denom, add(qslash, massterm))
+                };
+
+                // ── FFV2 e-spine current: ProjM(ε̸·ψ) propagated ─────────────────
+                let curr =
+                    off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionIn(fi));
+                let WaveformSlot::FermionIn(got2) =
+                    propagate_core(&chiral_project(curr, Chirality::Left), mass, width)
+                else {
+                    panic!("expected flow-in fermion from chiral propagation");
+                };
+                let want2 = textbook(o, z);
+                for k in 0..4 {
+                    let d = (got2.spinor.component(k) - want2[k]).norm();
+                    assert!(
+                        d < 1e-10,
+                        "FFV2 e-spine vs textbook (m={mass}, {hel}, {charge:?}, comp {k}): {d}"
+                    );
+                }
+
+                // ── FFV4 e-spine current: ProjM(ε̸ψ) + 2·ProjP(ε̸ψ) propagated ───
+                let mk = |chi| {
+                    let WaveformSlot::FermionIn(c) = chiral_project(
+                        off_shell_fermion_current(
+                            WaveformSlot::Vector(v),
+                            WaveformSlot::FermionIn(fi),
+                        ),
+                        chi,
+                    ) else {
+                        unreachable!()
+                    };
+                    c
+                };
+                let left = mk(Chirality::Left);
+                let right = mk(Chirality::Right);
+                let summed = WaveformSlot::FermionIn(InDiracWf::from_spinor(
+                    left.spinor + right.spinor * 2.0,
+                    left.momentum,
+                ));
+                let WaveformSlot::FermionIn(got4) = propagate_core(&summed, mass, width) else {
+                    unreachable!()
+                };
+                let want4 = textbook(o, Complex64::new(2.0, 0.0));
+                for k in 0..4 {
+                    let d = (got4.spinor.component(k) - want4[k]).norm();
+                    assert!(
+                        d < 1e-10,
+                        "FFV4 e-spine vs textbook (m={mass}, {hel}, {charge:?}, comp {k}): {d}"
+                    );
+                }
+            }
+        }
+    }
+
     /// Fermion-line reversal: a single fermion line absorbing two vectors must give
     /// the SAME amplitude whether the off-shell current is seeded from the ket end
     /// (`fvixxx`) or the bra end (`fvoxxx`). This is the consistency MadGraph relies
