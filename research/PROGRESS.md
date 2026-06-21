@@ -15,6 +15,24 @@ All 135 tests pass; amplitude agrees with Fortran HELAS to <1e-7 for massive e�
 > Bit-for-bit |M|²-preserving: ee 4.17e-14, pp 2.14e-14, tata 5.73e-3, uux 2.66e1 vs MG.
 > See memory `helas-eval-tree-refactor` for the full module layout.
 
+> **Update 2026-06-21 — continuum parity-ratio: e-spine chiral fermion current RULED OUT.**
+> The leading suspect for the per-helicity parity-conjugate `gL/gR` reweighting
+> (`c_h·c_{63−h}=1`) was the chiral off-shell fermion current on the incoming e-pair
+> spine, which the bake roots at the `ProjM`/column fermion leg → composition
+> `propagate(ProjM(ε̸·ψ) [+ 2·ProjP(ε̸·ψ)])` (projector AFTER the gamma, vs the leg-2
+> path's `ε̸·ProjM(ψ)`). Since `γ^μ P_L = P_R γ^μ` these orderings carry opposite
+> chirality, so this is a distinct code path ee→μμ and the leg-2 tests never exercise.
+> A textbook Dirac-matrix reconstruction (explicit Weyl-basis γ, new test
+> `test_chiral_off_shell_fermion_espine_vs_textbook`) proves the eval's e-spine current
+> equals `−S(q)·(P_L+2P_R)·ε̸·ψ` EXACTLY (clean −1 propagator-normalisation factor) for
+> every helicity × charge × mass, with a *generic* ε carrying longitudinal content. So
+> the e-spine chiral fermion current — handedness AND relative `gL/gR` weight — is
+> physically correct; the parity reweighting is NOT here. Remaining suspects: the
+> longitudinal-Z Ward cancellation across the full massless-spine diagram sum, and the
+> end-to-end coupling application (GC_50→FFV2, GC_59→FFV4) for the fermion-output rooting
+> (same per-term mechanism as the bit-matching vector output, so likely fine). See memory
+> `helas-2to6-offshell-bug`.
+
 ## What was built
 
 ### Core primitives
