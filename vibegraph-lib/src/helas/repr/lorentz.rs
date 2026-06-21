@@ -817,6 +817,14 @@ impl<F: Real, Flow: SpinorFlow> Bispinor<F, Flow> {
         self.0[i]
     }
 
+    /// Build a spinor from its four Weyl-basis components (the inverse of
+    /// [`component`](Self::component)). The component order is the HELAS/ALOHA
+    /// `F(3..6)` layout; mainly useful for cross-checks against reference routines.
+    #[inline(always)]
+    pub fn from_components(comps: [C<F>; 4]) -> Self {
+        Bispinor(comps, PhantomData)
+    }
+
     /// Construct a spinor from a 4-momentum, mass, helicity, and fermion flow.
     #[inline(always)]
     pub fn from_momentum(

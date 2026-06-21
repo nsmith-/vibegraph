@@ -1093,6 +1093,104 @@ mod tests {
         }
     }
 
+    /// Cross-check the production *chiral* off-shell fermion current — the path an
+    /// e-line uses when it absorbs an internal **Z** (FFV2/FFV4, gL≠gR) — against the
+    /// independent ALOHA `FFV2_2` routine.
+    ///
+    /// This is the one Z-specific fermion path never validated before: SESSION 6b's
+    /// chain check used a pure-vector `γ q̸ γ` (no projector), and
+    /// `test_eval_off_shell_fermion_vs_fvixxx` uses the vector coupling `gc=[g,g]`
+    /// (P_L+P_R, projector-insensitive). The per-diagram matcher shows each internal Z
+    /// injects a ~5% helicity-dependent error while photons (vector current) are exact,
+    /// pointing straight at the chiral fermion current.
+    ///
+    /// The production tree for `Gamma(3,2,-1)·ProjM(-1,1)` rooted at the output fermion
+    /// is `Propagate ∘ off_shell_fermion_current ∘ chiral_project(Left)`. It must equal
+    /// our `fvixxx([1,0])` (self-consistency) and ALOHA `FFV2_2` up to the global `−i`
+    /// UFO-coupling factor (`got = i·ffv2_2(1)`).
+    #[test]
+    fn test_chiral_off_shell_fermion_vs_ffv2_2() {
+        use crate::helas::vertex::{ffv2_2, ffv4_2, fvixxx};
+
+        // Generic vector input (transverse + longitudinal parts) — any ε exercises the
+        // linear map; an internal-Z current is just one such ε.
+        let v = VectorWf {
+            eps: ComplexVector::new([
+                Complex64::new(1.0, 0.0),
+                Complex64::new(0.5, 0.2),
+                Complex64::new(0.3, 0.1),
+                Complex64::new(0.4, 0.0),
+            ]),
+            momentum: LorentzVector::new(50.0, 10.0, 0.0, 20.0),
+        };
+        let i = Complex64::i();
+        let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
+        // Massless (electron line) and massive (exercises the FFV2_2 M2 terms F2(5,6)).
+        for (mass, width) in [(0.0_f64, 0.0_f64), (0.106, 0.0)] {
+            let p_f = LorentzVector::from_pxpypzmass(30.0, 0.0, 40.0, mass);
+            for (hel, charge) in iproduct!(hels, [Charge::Particle, Charge::Antiparticle]) {
+                let fi = InDiracWf::from_momentum(p_f, mass, hel, charge);
+
+                // Production composition for the chiral (ProjM) fermion current.
+                let projected = chiral_project(WaveformSlot::FermionIn(fi), Chirality::Left);
+                let vertex = off_shell_fermion_current(WaveformSlot::Vector(v), projected);
+                let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width) else {
+                    panic!("expected flow-in fermion from chiral propagation");
+                };
+
+                // (a) Self-consistency: equals our pure-left fvixxx helper.
+                let fvi = fvixxx(&fi, &v, [1.0, 0.0], mass, width);
+                assert_eq!(got.momentum, fvi.momentum);
+                let d_self: f64 = (got.spinor - fvi.spinor).bare_norm_sq();
+                assert!(
+                    d_self < 1e-10,
+                    "chiral current vs fvixxx[1,0] (m={mass}, {hel}, {charge:?}): diff={d_self}"
+                );
+
+                // (b) Independent ALOHA FFV2_2 (the decisive check), up to the −i factor.
+                let aloha = ffv2_2(&fi, &v, Complex64::from(1.0), mass, width);
+                assert_eq!(
+                    got.momentum, aloha.momentum,
+                    "ffv2_2 momentum (m={mass}, {hel}, {charge:?})"
+                );
+                let d_aloha: f64 = (got.spinor - aloha.spinor * i).bare_norm_sq();
+                assert!(
+                    d_aloha < 1e-10,
+                    "chiral current vs i·ffv2_2 (m={mass}, {hel}, {charge:?}): diff={d_aloha}"
+                );
+
+                // (c) Full Z fermion current FFV4 = P_L + 2·P_R (exercises the ProjP /
+                // right path and its coefficient): the tree sums the two projected
+                // slashes BEFORE the shared propagator.
+                let WaveformSlot::FermionIn(left) = off_shell_fermion_current(
+                    WaveformSlot::Vector(v),
+                    chiral_project(WaveformSlot::FermionIn(fi), Chirality::Left),
+                ) else {
+                    unreachable!()
+                };
+                let WaveformSlot::FermionIn(right) = off_shell_fermion_current(
+                    WaveformSlot::Vector(v),
+                    chiral_project(WaveformSlot::FermionIn(fi), Chirality::Right),
+                ) else {
+                    unreachable!()
+                };
+                let summed = WaveformSlot::FermionIn(InDiracWf::from_spinor(
+                    left.spinor + right.spinor * 2.0,
+                    left.momentum,
+                ));
+                let WaveformSlot::FermionIn(got4) = propagate_core(&summed, mass, width) else {
+                    unreachable!()
+                };
+                let aloha4 = ffv4_2(&fi, &v, Complex64::from(1.0), mass, width);
+                let d4: f64 = (got4.spinor - aloha4.spinor * i).bare_norm_sq();
+                assert!(
+                    d4 < 1e-10,
+                    "FFV4 chiral current vs i·ffv4_2 (m={mass}, {hel}, {charge:?}): diff={d4}"
+                );
+            }
+        }
+    }
+
     /// Fermion-line reversal: a single fermion line absorbing two vectors must give
     /// the SAME amplitude whether the off-shell current is seeded from the ket end
     /// (`fvixxx`) or the bra end (`fvoxxx`). This is the consistency MadGraph relies
