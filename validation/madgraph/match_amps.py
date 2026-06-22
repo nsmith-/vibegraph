@@ -26,6 +26,36 @@ with open(os.path.join(HERE, "output", "vibegraph_amps_full.txt")) as f:
         vg[i] = np.array(vals[0::2]) + 1j * np.array(vals[1::2])
 
 NG = mg.shape[0]
+
+# Hand-built vibegraph to madgraph diagram mapping using madgraph matrix1.ps diagram visualization
+vg_to_mg = {
+    # VG names read from e- leg's vertex
+     0: 9,  # [a+mu-+a]
+     1: 11,  # [Z+mu-+a]
+     2: 13,  # [a+mu-+Z]
+     3: 15,  # [Z+mu-+Z]
+     4: 10,  # [a+mu++a]
+     5: 12,  # [Z+mu++a]
+     6: 14,  # [a+mu++Z]
+     7: 16,  # [Z+mu++Z]
+     8: 0,  # [a+ta-+a]
+     9: 2,  # [Z+ta-+a]
+    10: 4,  # [a+ta-+Z]
+    11: 6,  # [Z+ta-+Z]
+    12: 1,  # [a+ta++a]
+    13: 3,  # [Z+ta++a]
+    14: 5,  # [a+ta++Z]
+    15: 7,  # [Z+ta++Z]
+    16: 8,  # [Z+H+Z]
+    17: 17,  # [a+e++a]
+    18: 19,  # [Z+e++a]
+    19: 21,  # [a+e++Z]
+    20: 23,  # [Z+e++Z]
+    21: 18,  # [a+e++a]
+    22: 22,  # [Z+e++a]
+    23: 20,  # [a+e++Z]
+    24: 24,  # [Z+e++Z]
+}
 mgnorm = np.linalg.norm(mg, axis=1)
 vgnorm = np.linalg.norm(vg, axis=1)
 
@@ -38,7 +68,11 @@ for i in range(NG):
         continue
     # overlaps against all MG diagrams
     ov = np.abs(vg[i].conj() @ mg.T) / (vgnorm[i] * np.maximum(mgnorm, 1e-300))
-    j = int(np.argmax(ov))
+    # j = int(np.argmax(ov))
+    j = vg_to_mg.get(i)
+    if j is None:
+        print(f"{i:3} {sigs[i]:<10} {'--':>4}   (no mapping)")
+        continue
     ratio = (mg[j].conj() @ vg[i]) / (mg[j].conj() @ mg[j])
     phase = np.degrees(np.angle(ratio))
     mark = "" if j not in used else "  <DUP>"

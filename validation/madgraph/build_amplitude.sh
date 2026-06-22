@@ -116,4 +116,35 @@ compile_process ee_to_mumu P1_ll_ll
 # implemented in vibegraph.
 compile_process pp_to_ll_qcd0 P1_qq_ll
 
+# ee_amp_probe: per-diagram amplitude + intermediate wavefunction probe for the
+# e+ e- > mu+ mu- ta+ ta- continuum debugging.  Uses wrappers/matrix1_func.f (a
+# patched MATRIX1 with DBG_AMP + DBG_WFUNCS COMMON blocks) instead of the
+# generated matrix1_optim.f, plus wrappers/ee_amp_probe.f (f2py entry points).
+build_amp_probe() {
+    local name="ee_to_mumu_tata_qcd0"
+    local subproc="P1_ll_lltaptam"
+    local pdir="$MG_OUTPUT/$name/SubProcesses/$subproc"
+    local libdir="$MG_OUTPUT/$name/lib"
+
+    if [ ! -f "$pdir/matrix1_optim.f" ]; then
+        echo "SKIP ee_amp_probe: $pdir/matrix1_optim.f not found"
+        return 0
+    fi
+
+    echo "Building mg_ee_amp_probe (wavefunction + amplitude probe)..."
+    pushd "$pdir" > /dev/null
+    python -m numpy.f2py \
+        -c \
+        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I." \
+        "$WRAPPERS/matrix1_func.f" \
+        "$WRAPPERS/ee_amp_probe.f" \
+        -L"$libdir" -lmodel -ldhelas \
+        -m "mg_ee_amp_probe"
+    mv mg_ee_amp_probe*.so "$OUTDIR/"
+    popd > /dev/null
+    echo "  -> $OUTDIR/mg_ee_amp_probe*.so"
+}
+
+build_amp_probe
+
 echo "Done building amplitude modules."
