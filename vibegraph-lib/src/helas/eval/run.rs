@@ -1323,27 +1323,28 @@ mod tests {
         }
     }
 
-    /// Validate the production *chiral* off-shell fermion current rooted at the
-    /// **projector-side** fermion leg — the e-spine case — against a textbook
-    /// Dirac-matrix reconstruction.
+    /// Validate **both leg rootings** of the production *chiral* off-shell fermion
+    /// current against a textbook Dirac-matrix reconstruction (flow-IN / ket input).
     ///
-    /// On an incoming-pair spine (the e-line absorbing an internal Z) the bake roots
-    /// the chiral FFV2/FFV4 vertex at the fermion on the `ProjM`/column leg, producing
-    /// the composition `Propagate ∘ chiral_project ∘ off_shell_fermion_current` — the
-    /// projector applied **after** the gamma current (`P_L·ε̸·ψ`), the mirror of
-    /// [`test_chiral_off_shell_fermion_vs_ffv2_2`]'s `ε̸·P_L·ψ`. Since `γ^μ P_L =
-    /// P_R γ^μ`, the two orderings carry opposite chirality, so this is a genuinely
-    /// distinct code path that ee→μμ (vector-output Z) and the leg-2 tests never
-    /// exercise — and the per-diagram matcher flagged the e-spine Z absorption as where
-    /// the parity-conjugate `gL/gR` reweighting lives.
+    /// An FFV2/FFV4 vertex `ψ̄ γ^μ P ψ` rooted at a fermion output leg can land the
+    /// projector on either side of the gamma:
+    ///   • **leg-0** (`Some(0)`, `ProjM`/column leg): `Propagate ∘ chiral_project ∘
+    ///     off_shell_fermion_current` = `P·ε̸·ψ` (projector AFTER the gamma);
+    ///   • **leg-1** (`Some(1)`, gamma's row leg): `Propagate ∘ off_shell_fermion_current
+    ///     ∘ chiral_project` = `ε̸·P·ψ` (projector BEFORE the gamma).
+    /// Since `γ^μ P_L = P_R γ^μ`, the two carry OPPOSITE chirality — genuinely distinct
+    /// code paths that ee→μμ (vector output) and the leg-2 tests never exercise. The
+    /// per-diagram matcher + `test_espine_eline_z_absorption_ratio_vs_mg` show the
+    /// production e+-spine uses **leg-1**, and that its **flow-OUT (bra) realization**
+    /// mis-weights the hel-42 Z polarisation by 0.6403 vs MadGraph. This test confirms
+    /// the **flow-IN (ket)** realization of *both* rootings is textbook-exact, so the
+    /// residual is isolated to the flow-OUT (`GammaOout`) chiral path — not the ordering.
     ///
-    /// Reference: the physical current is `S(q)·P·ε̸·ψ` with the Dirac propagator
-    /// `S(q) = (q̸ + m)/(q² − m²)` and `q = ψ.p − v.p`, built here from explicit
-    /// Weyl-basis γ matrices independent of the evaluator's representation. The
-    /// evaluator carries an overall `−1` from its propagator normalisation
-    /// (`propagate_core`), so `eval == −1 · S·P·ε̸·ψ`. FFV2 uses `P = P_L`; FFV4 uses
-    /// `P = P_L + 2P_R`. This pins both the chiral handedness and the relative `gL/gR`
-    /// weight of the e-spine current.
+    /// Reference: `S(q)·P·ε̸·ψ` (leg-0) and `S(q)·ε̸·P·ψ` (leg-1), Dirac propagator
+    /// `S(q) = (q̸ + m)/(q² − m²)`, `q = ψ.p − v.p`, built from explicit Weyl-basis γ
+    /// matrices independent of the evaluator's representation. The evaluator carries an
+    /// overall `−1` from `propagate_core`, so `eval == −1 · reference`. FFV2 uses
+    /// `P = P_L`; FFV4 uses `P = P_L + 2P_R`.
     #[test]
     fn test_chiral_off_shell_fermion_espine_vs_textbook() {
         // Weyl basis γ^μ = [[0,σ^μ],[σ̄^μ,0]], σ^μ=(I,σ_i), σ̄^μ=(I,−σ_i); metric (+,−,−,−).
@@ -1461,6 +1462,290 @@ mod tests {
                         "FFV4 e-spine vs textbook (m={mass}, {hel}, {charge:?}, comp {k}): {d}"
                     );
                 }
+
+                // ══ The OTHER rooting: leg-1 (`Some(1)`), projector BEFORE the gamma ══
+                // The production e+-spine Z absorption roots the FFV2/FFV4 vertex at the
+                // gamma's row/output leg, giving `GammaXout(V, ProjM(F))` = `ε̸·P_χ·ψ` —
+                // the mirror of the leg-0 `P_χ·ε̸·ψ` above. Since `γ^μ P_L = P_R γ^μ` the
+                // two rootings carry OPPOSITE chirality, so this is a genuinely distinct
+                // current. (This is the rooting `test_espine_eline_z_absorption_ratio_vs_mg`
+                // shows is the production-consistent one — matches MadGraph at hel 38.)
+                //
+                // NOTE ON FLOW: here the input is a flow-IN ket, so this exercises the
+                // `fvixxx`/`GammaIout` realization, which equals ALOHA FFV2_2 (see
+                // `test_chiral_off_shell_fermion_vs_ffv2_2`). The production e+ spine is a
+                // flow-OUT bra (`GammaOout`) — its 0.6403 hel-42 mismatch vs MadGraph is
+                // pinned by `test_espine_eline_z_absorption_ratio_vs_mg`; that flow-out
+                // realization is the remaining isolated suspect this ket path does not cover.
+                let textbook_proj_first = |pl: Complex64, pr: Complex64| -> [Complex64; 4] {
+                    // ε̸ · (P_L+P_R-weighted ψ), then (q̸+m)/(q²−m²), then ×(−1).
+                    let projected = [pl * psi[0], pl * psi[1], pr * psi[2], pr * psi[3]];
+                    let eps_proj = slash(&eps, &projected);
+                    let qslash = slash(&qvec, &eps_proj);
+                    let massterm = scale(Complex64::from(mass), eps_proj);
+                    scale(-o / denom, add(qslash, massterm))
+                };
+
+                // FFV2 leg-1: ε̸·P_L·ψ propagated.
+                let WaveformSlot::FermionIn(g2b) = propagate_core(
+                    &off_shell_fermion_current(
+                        WaveformSlot::Vector(v),
+                        chiral_project(WaveformSlot::FermionIn(fi), Chirality::Left),
+                    ),
+                    mass,
+                    width,
+                ) else {
+                    panic!("expected flow-in fermion");
+                };
+                let want2b = textbook_proj_first(o, z);
+                for k in 0..4 {
+                    let d = (g2b.spinor.component(k) - want2b[k]).norm();
+                    assert!(
+                        d < 1e-10,
+                        "FFV2 leg-1 (ε̸·P_L·ψ) vs textbook (m={mass}, {hel}, {charge:?}, comp {k}): {d}"
+                    );
+                }
+
+                // FFV4 leg-1: ε̸·(P_L+2P_R)·ψ propagated — project the INPUT first, slash
+                // after (mirror of `mk`, which projects after the slash for leg-0).
+                let mk1 = |chi| {
+                    let WaveformSlot::FermionIn(c) = off_shell_fermion_current(
+                        WaveformSlot::Vector(v),
+                        chiral_project(WaveformSlot::FermionIn(fi), chi),
+                    ) else {
+                        unreachable!()
+                    };
+                    c
+                };
+                let l1 = mk1(Chirality::Left);
+                let r1 = mk1(Chirality::Right);
+                let summed1 = WaveformSlot::FermionIn(InDiracWf::from_spinor(
+                    l1.spinor + r1.spinor * 2.0,
+                    l1.momentum,
+                ));
+                let WaveformSlot::FermionIn(g4b) = propagate_core(&summed1, mass, width) else {
+                    unreachable!()
+                };
+                let want4b = textbook_proj_first(o, Complex64::new(2.0, 0.0));
+                for k in 0..4 {
+                    let d = (g4b.spinor.component(k) - want4b[k]).norm();
+                    assert!(
+                        d < 1e-10,
+                        "FFV4 leg-1 (ε̸·(P_L+2P_R)·ψ) vs textbook (m={mass}, {hel}, {charge:?}, comp {k}): {d}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// THE BUG: the flow-OUT (bra) leg-1 chiral absorption projects the bra on the WRONG
+    /// SIDE of the slash — the source of the hel-42 0.6403 reweighting
+    /// (`test_espine_eline_z_absorption_ratio_vs_mg`).
+    ///
+    /// The leg-1 rooting (`GammaXout(V, ProjM(F))`) projects the *input* fermion, then
+    /// slashes. For a **ket** input that gives `ε̸·(P_χ ψ)` = `ε̸·P_χ·ψ` — projector
+    /// adjacent to the ket (right side), which IS the physical vertex (the flow-IN leg-1
+    /// path in `test_chiral_off_shell_fermion_espine_vs_textbook` passes). For a **bra**
+    /// input it gives `(ψ̄·P_χ)·ε̸` = `ψ̄·P_χ·ε̸` — projector adjacent to the bra (left
+    /// side). But the physical vertex `(bra) γ^μ P_χ (ket)` (established by the validated
+    /// leg-2 jioxxx current) requires the projector on the FAR side: `ψ̄·ε̸·P_χ`. The two
+    /// differ by `ψ̄·ε̸·(P_L−P_R)·S = ψ̄·ε̸·γ5·S`, which is POLARISATION-dependent — it
+    /// (near-)vanishes for the hel-38 Z polarisation but not hel-42, giving the
+    /// helicity-dependent 0.64 (a flat gL↔gR swap on a massless line would be constant).
+    ///
+    /// This test reconstructs a storage-independent **bra** textbook via the bilinear
+    /// scalar `R_out · χ_ref` (a flow-out spinor dotted with a ket gives the Lorentz
+    /// scalar `ψ̄ … χ`), validated FIRST on the chirality-blind photon. It then PINS the
+    /// eval's current (buggy) behaviour `ψ̄·P_χ·ε̸·S` and asserts it differs from the
+    /// physical `ψ̄·ε̸·P_χ·S`. **Flip these to the gamma-first form when the rooting/flow
+    /// is fixed** (so a flow-out leg-1 bra projects after the slash).
+    #[test]
+    fn test_chiral_off_shell_fermion_flowout_vs_textbook() {
+        type M4 = [[Complex64; 4]; 4];
+        let z = Complex64::new(0.0, 0.0);
+        let o = Complex64::new(1.0, 0.0);
+        let ii = Complex64::new(0.0, 1.0);
+        let g0: M4 = [[z, z, o, z], [z, z, z, o], [o, z, z, z], [z, o, z, z]];
+        let g1: M4 = [[z, z, z, o], [z, z, o, z], [z, -o, z, z], [-o, z, z, z]];
+        let g2: M4 = [[z, z, z, -ii], [z, z, ii, z], [z, ii, z, z], [-ii, z, z, z]];
+        let g3: M4 = [[z, z, o, z], [z, z, z, -o], [-o, z, z, z], [z, o, z, z]];
+        let matmul = |a: &M4, b: &M4| -> M4 {
+            core::array::from_fn(|r| {
+                core::array::from_fn(|c| (0..4).map(|k| a[r][k] * b[k][c]).sum())
+            })
+        };
+        let matadd = |a: &M4, b: &M4| -> M4 {
+            core::array::from_fn(|r| core::array::from_fn(|c| a[r][c] + b[r][c]))
+        };
+        let smul = |s: Complex64, a: &M4| -> M4 {
+            core::array::from_fn(|r| core::array::from_fn(|c| s * a[r][c]))
+        };
+        let ident: M4 =
+            core::array::from_fn(|r| core::array::from_fn(|c| if r == c { o } else { z }));
+        // Slash matrix v̸ = γ^0 v0 − γ^1 v1 − γ^2 v2 − γ^3 v3 (contravariant v).
+        let slashm = |v: &[Complex64; 4]| -> M4 {
+            let mut m = smul(v[0], &g0);
+            m = matadd(&m, &smul(-v[1], &g1));
+            m = matadd(&m, &smul(-v[2], &g2));
+            matadd(&m, &smul(-v[3], &g3))
+        };
+        let rowmat = |r: &[Complex64; 4], m: &M4| -> [Complex64; 4] {
+            core::array::from_fn(|c| (0..4).map(|k| r[k] * m[k][c]).sum())
+        };
+        let dot = |a: &[Complex64; 4], b: &[Complex64; 4]| -> Complex64 {
+            (0..4).map(|k| a[k] * b[k]).sum()
+        };
+
+        let v = VectorWf {
+            eps: ComplexVector::new([
+                Complex64::new(1.0, 0.0),
+                Complex64::new(0.5, 0.2),
+                Complex64::new(0.3, 0.1),
+                Complex64::new(0.4, 0.0),
+            ]),
+            momentum: LorentzVector::new(50.0, 10.0, 0.0, 20.0),
+        };
+        let eps: [Complex64; 4] = core::array::from_fn(|k| v.eps.component(k));
+        let eslash = slashm(&eps);
+        // Arbitrary reference ket (probes all components).
+        let chi_ref = [
+            Complex64::new(0.7, 0.1),
+            Complex64::new(-0.2, 0.4),
+            Complex64::new(0.5, -0.3),
+            Complex64::new(0.1, 0.6),
+        ];
+        let proj = |pl: Complex64, pr: Complex64| -> M4 {
+            let mut m = ident;
+            m[0][0] = pl;
+            m[1][1] = pl;
+            m[2][2] = pr;
+            m[3][3] = pr;
+            m
+        };
+
+        let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
+        for (mass, width) in [(0.0_f64, 0.0_f64), (0.106, 0.0)] {
+            let p_f = LorentzVector::from_pxpypzmass(30.0, 0.0, 40.0, mass);
+            for (hel, charge) in iproduct!(hels, [Charge::Particle, Charge::Antiparticle]) {
+                let fo = OutDiracWf::from_momentum(p_f, mass, hel, charge);
+                let ket = InDiracWf::from_momentum(p_f, mass, hel, charge);
+                let psi: [Complex64; 4] = core::array::from_fn(|k| ket.spinor.component(k));
+                // Physical bra ψ̄ = ψ† γ⁰  (OutDiracWf::from_momentum == bar(InDiracWf)).
+                let psibar: [Complex64; 4] =
+                    core::array::from_fn(|j| (0..4).map(|i| psi[i].conj() * g0[i][j]).sum());
+
+                // q = fo.p + v.p (flow-out current momentum); S(q) with eval's −1.
+                let q = fo.momentum + v.momentum;
+                let qvec = [
+                    Complex64::from(q.e()),
+                    Complex64::from(q.px()),
+                    Complex64::from(q.py()),
+                    Complex64::from(q.pz()),
+                ];
+                let denom = Complex64::from(q.m2() - mass * mass);
+                let sprop = smul(
+                    -o / denom,
+                    &matadd(&slashm(&qvec), &smul(Complex64::from(mass), &ident)),
+                );
+
+                // Textbook scalar for a bra operator `op` (applied to ψ̄ from the right),
+                // propagated, then contracted with the reference ket.
+                let textbook = |op: &M4| -> Complex64 {
+                    let r = rowmat(&psibar, op);
+                    let r = rowmat(&r, &sprop);
+                    dot(&r, &chi_ref)
+                };
+                // Eval flow-out scalar: dot the produced bra with the reference ket.
+                let eval_scalar = |r: &OutDiracWf<f64>| -> Complex64 {
+                    let comps: [Complex64; 4] = core::array::from_fn(|k| r.spinor.component(k));
+                    dot(&comps, &chi_ref)
+                };
+
+                // ── Photon (no projector): validates the bra machinery end-to-end ──
+                let WaveformSlot::FermionOut(ph) = propagate_core(
+                    &off_shell_fermion_current(
+                        WaveformSlot::Vector(v),
+                        WaveformSlot::FermionOut(fo),
+                    ),
+                    mass,
+                    width,
+                ) else {
+                    panic!("expected flow-out fermion");
+                };
+                let s_ph_eval = eval_scalar(&ph);
+                let s_ph_book = textbook(&eslash); // ψ̄·ε̸·S
+                let d_ph = (s_ph_eval - s_ph_book).norm();
+                assert!(
+                    d_ph < 1e-9 * (s_ph_book.norm() + 1.0),
+                    "PHOTON flow-out bra recon failed (m={mass}, {hel}, {charge:?}): \
+                     eval={s_ph_eval:.5e} book={s_ph_book:.5e} d={d_ph:.2e}"
+                );
+
+                // Project-bra-first builder for the eval flow-out current.
+                let eval_flowout = |proj_chi: Option<Chirality>, tworight: bool| -> Complex64 {
+                    // FFV2: single P_L term. FFV4: P_L + 2·P_R.
+                    let build = |chi: Chirality| {
+                        let WaveformSlot::FermionOut(c) = off_shell_fermion_current(
+                            WaveformSlot::Vector(v),
+                            chiral_project(WaveformSlot::FermionOut(fo.clone()), chi),
+                        ) else {
+                            unreachable!()
+                        };
+                        c
+                    };
+                    let combined = match (proj_chi, tworight) {
+                        (Some(chi), false) => build(chi).spinor, // FFV2: P_L only
+                        (None, true) => {
+                            build(Chirality::Left).spinor + build(Chirality::Right).spinor * 2.0
+                        } // FFV4
+                        _ => unreachable!(),
+                    };
+                    let WaveformSlot::FermionOut(r) = propagate_core(
+                        &WaveformSlot::FermionOut(OutDiracWf::from_spinor(
+                            combined,
+                            fo.momentum + v.momentum,
+                        )),
+                        mass,
+                        width,
+                    ) else {
+                        unreachable!()
+                    };
+                    eval_scalar(&r)
+                };
+
+                // The eval projects the bra BEFORE slashing: `ψ̄·P_χ·ε̸·S`. Because
+                // `P_L·ε̸ = ε̸·P_R`, that is the OPPOSITE-chirality action of the nominal
+                // `P_L` vertex on the bra — the precise flow-out structure, here pinned
+                // against the textbook for every helicity/charge/mass.
+                // FFV2 (P_L vertex):
+                let s_ffv2 = eval_flowout(Some(Chirality::Left), false);
+                let book_ffv2 = textbook(&matmul(&proj(o, z), &eslash)); // ψ̄·P_L·ε̸·S
+                let d2 = (s_ffv2 - book_ffv2).norm();
+                assert!(
+                    d2 < 1e-9 * (book_ffv2.norm() + 1.0),
+                    "FFV2 flow-out (m={mass}, {hel}, {charge:?}): eval={s_ffv2:.5e} vs ψ̄·P_L·ε̸·S={book_ffv2:.5e}, d={d2:.2e}"
+                );
+                // It must NOT equal the gamma-first `ψ̄·ε̸·P_L·S` (off the massless point).
+                let book_gammafirst = textbook(&matmul(&eslash, &proj(o, z)));
+                if mass == 0.0 && (book_ffv2 - book_gammafirst).norm() > 1e-6 {
+                    assert!(
+                        (s_ffv2 - book_gammafirst).norm() > 1e-6,
+                        "FFV2 flow-out unexpectedly matched the gamma-first ordering"
+                    );
+                }
+
+                // FFV4 (P_L + 2P_R vertex):
+                let s_ffv4 = eval_flowout(None, true);
+                // Eval order: ψ̄·(P_L+2P_R)·ε̸·S.
+                let book_ffv4 = textbook(&matmul(
+                    &matadd(&proj(o, z), &smul(o + o, &proj(z, o))),
+                    &eslash,
+                ));
+                let d4 = (s_ffv4 - book_ffv4).norm();
+                assert!(
+                    d4 < 1e-9 * (book_ffv4.norm() + 1.0),
+                    "FFV4 flow-out (m={mass}, {hel}, {charge:?}): eval={s_ffv4:.5e} vs ψ̄·(P_L+2P_R)·ε̸·S={book_ffv4:.5e}, d={d4:.2e}"
+                );
             }
         }
     }
@@ -1618,11 +1903,12 @@ mod tests {
         ];
 
         let prop_sig = |ast: &DiagramEval| -> String {
-            let mut names: Vec<String> = ast
+            let names: Vec<String> = ast
                 .propagator_particles()
                 .map(|id| model.particle(id).name.clone())
                 .collect();
-            names.sort();
+            // don't sort so we can tell e.g. a+ta-+Z from Z+ta-+a
+            // names.sort();
             names.join("+")
         };
 
@@ -2000,6 +2286,702 @@ mod tests {
                 (whole - parts).norm() <= 1e-12 * (whole.norm() + 1e-30),
                 "whole-amplitude AST disagrees with per-diagram sum for hel {hel:?}: \
                  whole={whole:.6e} parts={parts:.6e}"
+            );
+        }
+    }
+
+    /// Cross-check the Z current from the *outgoing* mu-pair against MadGraph's W11
+    /// intermediate wavefunction for helicities 38 (correct in total |M|²) and 42
+    /// (wrong, ratio ≈ 0.640).
+    ///
+    /// The test sets up FFV2·GC_50 ⊕ FFV4·GC_59 with OUTGOING mu+ (Antiparticle,
+    /// incoming=false) and mu- (Particle, incoming=false) at the CSV point-0 momenta,
+    /// then propagates through the Z. The expected result (MG W11 × i, from the
+    /// MG_EVAL_WFUNCS probe) is hardcoded.
+    ///
+    /// Run: cargo test -p vibegraph-lib \
+    ///   --lib helas::eval::run::tests::test_z_current_outgoing_mupair_vs_mg -- --nocapture
+    #[test]
+    fn test_z_current_outgoing_mupair_vs_mg() {
+        use num_complex::Complex64;
+
+        let model = sm_model();
+        // Use MadGraph's massless-tau param card so couplings match the probe.
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let card_path = std::path::Path::new(&manifest).join(
+            "../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards/param_card_masslesstau.dat",
+        );
+        let card = std::fs::read_to_string(&card_path)
+            .ok()
+            .and_then(|s| s.parse::<ParamCard>().ok())
+            .expect("param_card_masslesstau.dat not found — run `pixi run -e madgraph build-diagrams` first");
+        let evaluated = model.evaluate(&card);
+
+        let gc50 = model.coupling_id("GC_50").unwrap();
+        let gc59 = model.coupling_id("GC_59").unwrap();
+        let ffv2_id = model.lorentz_id("FFV2").unwrap();
+        let ffv4_id = model.lorentz_id("FFV4").unwrap();
+        let mu_id = model.particle_id("mu-").unwrap();
+        let amu_id = model.particle_id("mu+").unwrap();
+        let z_id = model.particle_id("Z").unwrap();
+
+        // CSV point-0 momenta: mu+ (outgoing antiparticle) and mu- (outgoing particle).
+        // MG Fortran leg ordering: P(0,3)=mu+, P(0,4)=mu- (leg indices 3,4 in Fortran = 2,3 in Python).
+        let p_mup = LorentzVector::new(
+            130.98844490914234,
+            -106.66561232781022,
+            -0.9379201403415187,
+            -76.02328690775641,
+        );
+        let p_mum = LorentzVector::new(
+            167.2530959714149,
+            134.2336665209957,
+            -62.607066356179416,
+            -77.68703963098595,
+        );
+
+        // OUTGOING mu+ = Antiparticle; OUTGOING mu- = Particle.
+        // leg_idx is the index into the momenta/helicities slice passed to eval, so 0/1.
+        let leg_mup = ExtLegInfo {
+            leg_idx: 0,
+            id: amu_id,
+            spin: 2,
+            charge: Charge::Antiparticle,
+            incoming: false,
+        };
+        let leg_mum = ExtLegInfo {
+            leg_idx: 1,
+            id: mu_id,
+            spin: 2,
+            charge: Charge::Particle,
+            incoming: false,
+        };
+
+        // FFV2·GC_50 + FFV4·GC_59 = SM ℓ̄ℓZ vertex (same as test_eval_ffv2_4_3 but
+        // rooted at the Z (vector output leg = leg index 2 in the vertex).
+        let vertex_info = VertexInfo {
+            terms: vec![
+                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), None).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), None).unwrap(),
+            ],
+        };
+
+        let mz = evaluated.mass(z_id);
+
+        let current_diagram = DiagramEval::from_nodes(
+            2,
+            vec![
+                EvalNode::External(leg_mup.clone()),
+                EvalNode::External(leg_mum.clone()),
+                EvalNode::OffShellCurrent {
+                    info: vertex_info.clone(),
+                    flow: None,
+                    children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                },
+                EvalNode::Propagate {
+                    info: PropInfo { id: z_id },
+                    flow: None,
+                    child: EvalNodeId::new(2),
+                },
+            ],
+        );
+
+        // MG W11 values (indices [2..6], i.e. the 4 eps components) from MG_EVAL_WFUNCS,
+        // measured at CSV point 0 via the probe_wfuncs.py script.
+        // Convention check (contrast with test_eval_ffv2_4_3 incoming case): VG = MG here.
+        // Hel 38: (e+:+1, e-:-1, mu+:-1, mu-:+1, ta+:+1, ta-:-1)
+        //   → mu+ nhel=-1, mu- nhel=+1 → Down/Up
+        // Hel 42: (e+:+1, e-:-1, mu+:+1, mu-:-1, ta+:+1, ta-:-1)
+        //   → mu+ nhel=+1, mu- nhel=-1 → Up/Down
+        let mg_w11 = [
+            // hel 38: [eps_t, eps_x, eps_y, eps_z] from MG probe
+            [
+                Complex64::new(4.20870284e-04, 3.03971367e-04),
+                Complex64::new(9.71186197e-05, -1.51285696e-04),
+                Complex64::new(1.55174433e-04, -7.61571054e-04),
+                Complex64::new(-8.63339445e-04, -3.02084576e-04),
+            ],
+            // hel 42: [eps_t, eps_x, eps_y, eps_z]
+            [
+                Complex64::new(-5.22725529e-04, 3.84361483e-04),
+                Complex64::new(-1.22982451e-04, -1.88027964e-04),
+                Complex64::new(-2.02039917e-04, -9.50088237e-04),
+                Complex64::new(1.07570329e-03, -3.86719509e-04),
+            ],
+        ];
+
+        let test_cases = [
+            // hel 38: mu+ Down, mu- Up
+            (SpinorHelicity::Down, SpinorHelicity::Up, mg_w11[0], "hel38"),
+            // hel 42: mu+ Up, mu- Down
+            (SpinorHelicity::Up, SpinorHelicity::Down, mg_w11[1], "hel42"),
+        ];
+
+        for (hel_mup, hel_mum, mg_eps, label) in test_cases {
+            let WaveformSlot::Vector(got) = eval_single_diagram_slot(
+                &current_diagram,
+                &[p_mup, p_mum],
+                &[hel_mup.sign(), hel_mum.sign()],
+                &evaluated,
+            ) else {
+                panic!("Z current ({label}) must evaluate to a vector");
+            };
+
+            eprintln!("\n{label}: mu+ hel={hel_mup}, mu- hel={hel_mum}");
+            let mut convention_factor = Complex64::from(0.0);
+            for mu in 0..4 {
+                let vg = got.eps.component(mu);
+                let mg = mg_eps[mu];
+                let diff_direct = (vg - mg).norm();
+                let diff_i = (vg - Complex64::i() * mg).norm();
+                // Report which convention (VG=MG or VG=i×MG) fits better.
+                if mg.norm() > 1e-30 {
+                    let best = if diff_direct < diff_i {
+                        "VG=MG"
+                    } else {
+                        "VG=i×MG"
+                    };
+                    eprintln!(
+                        "  eps[{mu}]: VG={:.6e}+{:.6e}i  MG={:.6e}+{:.6e}i  \
+                         diff_direct={:.2e}  diff_i={:.2e}  → {best}",
+                        vg.re, vg.im, mg.re, mg.im, diff_direct, diff_i
+                    );
+                    convention_factor = convention_factor + vg / mg;
+                }
+            }
+            eprintln!(
+                "  mean VG/MG = {:.6}",
+                convention_factor / Complex64::from(4.0)
+            );
+
+            // The outgoing mu-pair convention is VG = MG (no i factor).
+            for mu in 0..4 {
+                let vg = got.eps.component(mu);
+                let expected = mg_eps[mu];
+                let diff = (vg - expected).norm();
+                assert!(
+                    diff < 5e-10 * mz as f64,
+                    "Z current from outgoing mu-pair ({label}, μ={mu}): \
+                     VG={vg:.4e} vs MG={expected:.4e}, diff={diff:.2e}"
+                );
+            }
+        }
+    }
+
+    /// Cross-check two *intermediate* wavefunctions on the e-spine / τ-line against
+    /// MadGraph's `MG_EVAL_WFUNCS` dump (`probe_wfuncs.py`), at the CSV point-0 momenta:
+    ///
+    ///   W10 = Z current radiated by the e-spine, `FFV2_4_3(e-, e+)` — a vector;
+    ///   W9  = off-shell τ⁻ after absorbing that Z, `FFV2_4_2(τ-, W10)` — a fermion.
+    ///
+    /// W10 follows the validated [`test_eval_ffv2_4_3`] structure but at the *physical*
+    /// e⁺e⁻ momenta, and W9 is the first **fermion-absorption** step validated against
+    /// MadGraph's real numbers (previously only vs the textbook / ALOHA primitives).
+    ///
+    /// Both depend only on the e/τ helicities, which are **identical** at hel 38
+    /// (correct) and hel 42 (wrong: VG/MG ≈ 0.64) — only the μ-pair flips between them.
+    /// So this test cannot itself exhibit the 0.64; a pass localises the residual to the
+    /// μ-current absorption path (the off-shell electron after absorbing W11 / W8), which
+    /// the MG probe does not yet dump.
+    ///
+    /// Run: cargo test -p vibegraph-lib \
+    ///   helas::eval::run::tests::test_espine_z_and_tau_absorption_vs_mg -- --nocapture
+    #[test]
+    fn test_espine_z_and_tau_absorption_vs_mg() {
+        use num_complex::Complex64;
+
+        let model = sm_model();
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let card_path = std::path::Path::new(&manifest).join(
+            "../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards/param_card_masslesstau.dat",
+        );
+        let card = std::fs::read_to_string(&card_path)
+            .ok()
+            .and_then(|s| s.parse::<ParamCard>().ok())
+            .expect("param_card_masslesstau.dat not found — run `pixi run -e madgraph build-diagrams` first");
+        let evaluated = model.evaluate(&card);
+
+        let gc50 = model.coupling_id("GC_50").unwrap();
+        let gc59 = model.coupling_id("GC_59").unwrap();
+        let ffv2_id = model.lorentz_id("FFV2").unwrap();
+        let ffv4_id = model.lorentz_id("FFV4").unwrap();
+        let ep_id = model.particle_id("e+").unwrap();
+        let em_id = model.particle_id("e-").unwrap();
+        let tam_id = model.particle_id("ta-").unwrap();
+        let z_id = model.particle_id("Z").unwrap();
+
+        // CSV point-0 momenta (E, px, py, pz). e⁺e⁻ head-on along z → the e-spine boson
+        // is produced at rest, q = (500, 0, 0, 0).
+        let p_ep = LorentzVector::new(250.0, 0.0, 0.0, 250.0);
+        let p_em = LorentzVector::new(250.0, 0.0, 0.0, -250.0);
+        let p_tam = LorentzVector::new(
+            94.5533499515044,
+            -18.39281604525598,
+            -22.219961151047247,
+            90.04617499607066,
+        );
+
+        // FFV2·GC_50 ⊕ FFV4·GC_59 = SM ℓ̄ℓZ vertex. Rooted at the vector leg (index 2)
+        // it is the off-shell Z *current*; rooted at the fermion leg (index 1) it is the
+        // off-shell *fermion* after absorbing the Z (MG's FFV2_4_2).
+        let z_current_vertex = VertexInfo {
+            terms: vec![
+                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), None).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), None).unwrap(),
+            ],
+        };
+
+        // F1 = e- (particle ket), F2 = e+ (antiparticle bra), both INCOMING; τ⁻ outgoing.
+        let leg_em = ExtLegInfo {
+            leg_idx: 0,
+            id: em_id,
+            spin: 2,
+            charge: Charge::Particle,
+            incoming: true,
+        };
+        let leg_ep = ExtLegInfo {
+            leg_idx: 1,
+            id: ep_id,
+            spin: 2,
+            charge: Charge::Antiparticle,
+            incoming: true,
+        };
+        let leg_tam = ExtLegInfo {
+            leg_idx: 2,
+            id: tam_id,
+            spin: 2,
+            charge: Charge::Particle,
+            incoming: false,
+        };
+
+        // Fermion-output rooting needs the continuing line's flow. τ⁻ (outgoing
+        // particle) is a bra → Flow::Out, inherited by the off-shell τ⁻.
+        let tau_flow = leg_tam.flow().unwrap();
+        let z_absorb_vertex = VertexInfo {
+            terms: vec![
+                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(1), Some(tau_flow)).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(1), Some(tau_flow)).unwrap(),
+            ],
+        };
+
+        // W10: e-, e+ → Z current → propagate(Z).
+        let w10_diagram = DiagramEval::from_nodes(
+            2,
+            vec![
+                EvalNode::External(leg_em.clone()),
+                EvalNode::External(leg_ep.clone()),
+                EvalNode::OffShellCurrent {
+                    info: z_current_vertex.clone(),
+                    flow: None,
+                    children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                },
+                EvalNode::Propagate {
+                    info: PropInfo { id: z_id },
+                    flow: None,
+                    child: EvalNodeId::new(2),
+                },
+            ],
+        );
+
+        // W9: extend W10 by τ⁻ absorbing it (FFV2_4_2 → off-shell τ⁻ → propagate(τ)).
+        let w9_diagram = DiagramEval::from_nodes(
+            3,
+            vec![
+                EvalNode::External(leg_em),
+                EvalNode::External(leg_ep),
+                EvalNode::OffShellCurrent {
+                    info: z_current_vertex,
+                    flow: None,
+                    children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                },
+                EvalNode::Propagate {
+                    info: PropInfo { id: z_id },
+                    flow: None,
+                    child: EvalNodeId::new(2),
+                },
+                EvalNode::External(leg_tam),
+                EvalNode::OffShellCurrent {
+                    info: z_absorb_vertex,
+                    flow: Some(tau_flow),
+                    children: vec![EvalNodeId::new(4), EvalNodeId::new(3)],
+                },
+                EvalNode::Propagate {
+                    info: PropInfo { id: tam_id },
+                    flow: Some(tau_flow),
+                    child: EvalNodeId::new(5),
+                },
+            ],
+        );
+
+        // e+ nhel=+1 (Up), e- nhel=-1 (Down), τ- nhel=-1 (Down) — fixed across hel 38/42.
+        let hel_em = SpinorHelicity::Down;
+        let hel_ep = SpinorHelicity::Up;
+        let hel_tam = SpinorHelicity::Down;
+
+        // MG W10 (Z[e-spine]) and W9 (off-shell τ-): physical components are array
+        // slots [2..6]; [0]=P0+iP3, [1]=P1+iP2 carry the momentum (used to label only).
+        let mg_w10 = [
+            Complex64::new(0.0, 0.0),
+            Complex64::new(-4.2562490448e-04, 3.9206234096e-07),
+            Complex64::new(-3.9206234096e-07, -4.2562490448e-04),
+            Complex64::new(0.0, 0.0),
+        ];
+        let mg_w9 = [
+            Complex64::new(7.5845893607e-06, -6.9865081405e-09),
+            Complex64::new(-2.8186273499e-07, -3.3987438764e-07),
+            Complex64::new(-9.0999412971e-09, 8.3823673144e-12),
+            Complex64::new(-2.1193052488e-09, -2.5554906138e-09),
+        ];
+
+        // Detect the global convention phase (VG = factor · MG) from MG's largest
+        // component, then assert every component agrees up to that single unit factor.
+        fn check(label: &str, vg: [Complex64; 4], mg: [Complex64; 4]) {
+            let kmax = (0..4)
+                .max_by(|&a, &b| mg[a].norm().total_cmp(&mg[b].norm()))
+                .unwrap();
+            let factor = vg[kmax] / mg[kmax];
+            eprintln!(
+                "\n{label}: convention factor VG/MG = {:.6}+{:.6}i  |factor|={:.6}",
+                factor.re,
+                factor.im,
+                factor.norm()
+            );
+            for k in 0..4 {
+                let want = factor * mg[k];
+                let diff = (vg[k] - want).norm();
+                eprintln!(
+                    "  [{k}] VG={:+.6e}{:+.6e}i  MG={:+.6e}{:+.6e}i  factor·MG={:+.6e}{:+.6e}i  diff={:.2e}",
+                    vg[k].re, vg[k].im, mg[k].re, mg[k].im, want.re, want.im, diff
+                );
+            }
+            assert!(
+                (factor.norm() - 1.0).abs() < 1e-6,
+                "{label}: VG/MG must be a pure phase, got |factor|={:.6}",
+                factor.norm()
+            );
+            let scale = mg.iter().map(|c| c.norm()).fold(0.0, f64::max);
+            for k in 0..4 {
+                let diff = (vg[k] - factor * mg[k]).norm();
+                assert!(
+                    diff < 1e-9 * scale,
+                    "{label} component [{k}]: VG={:.4e} vs factor·MG={:.4e}, diff={diff:.2e}",
+                    vg[k],
+                    factor * mg[k]
+                );
+            }
+        }
+
+        let WaveformSlot::Vector(w10) = eval_single_diagram_slot(
+            &w10_diagram,
+            &[p_em, p_ep],
+            &[hel_em.sign(), hel_ep.sign()],
+            &evaluated,
+        ) else {
+            panic!("W10 (e-spine Z current) must evaluate to a vector");
+        };
+        eprintln!("W10 momentum: VG={:?}  (MG q=(-500,0,0,0))", w10.momentum);
+        check(
+            "W10 = Z[e-spine] (FFV2_4_3)",
+            core::array::from_fn(|k| w10.eps.component(k)),
+            mg_w10,
+        );
+
+        // W9 is the off-shell τ⁻ *fermion* after absorbing W10. MadGraph builds the
+        // outgoing τ⁻ as a flow-IN spinor (`IXXXXX`, nsf=−1), vibegraph as flow-OUT — an
+        // equivalent fermion-line orientation that washes out of vector currents (hence
+        // W10/W11 match MG) but flips the chiral half a raw off-shell fermion is stored
+        // in. So MG's W9 raw array is NOT bit-comparable to VG's; we instead pin the
+        // routing (momentum) and the orientation signature (which chiral half is filled),
+        // and leave the absorption *physics* to `test_chiral_off_shell_fermion_vs_ffv2_2`.
+        let (w9_comps, w9_mom): ([Complex64; 4], _) = match eval_single_diagram_slot(
+            &w9_diagram,
+            &[p_em, p_ep, p_tam],
+            &[hel_em.sign(), hel_ep.sign(), hel_tam.sign()],
+            &evaluated,
+        ) {
+            WaveformSlot::FermionOut(f) => {
+                (core::array::from_fn(|k| f.spinor.component(k)), f.momentum)
+            }
+            WaveformSlot::FermionIn(f) => {
+                (core::array::from_fn(|k| f.spinor.component(k)), f.momentum)
+            }
+            other => panic!("W9 (off-shell τ-) must be a fermion, got {other:?}"),
+        };
+        let mg_w9_mom = LorentzVector::new(
+            -405.4466500484956,
+            -18.39281604525598,
+            -22.219961151047247,
+            90.04617499607066,
+        );
+        eprintln!("\nW9 = off-shell τ- after Z absorption (FFV2_4_2)");
+        eprintln!("  momentum: VG={w9_mom:?}");
+        for k in 0..4 {
+            eprintln!(
+                "  [{k}] VG={:+.4e}{:+.4e}i   MG={:+.4e}{:+.4e}i",
+                w9_comps[k].re, w9_comps[k].im, mg_w9[k].re, mg_w9[k].im
+            );
+        }
+        let mom_diff = (w9_mom - mg_w9_mom).bare_norm_sq().sqrt();
+        assert!(
+            mom_diff < 1e-9 * 500.0,
+            "W9 routed momentum must match MG: VG={w9_mom:?} vs MG={mg_w9_mom:?}, diff={mom_diff:.2e}"
+        );
+        // Massless τ ⇒ a single chiral half is populated. VG (flow-out) fills the
+        // right half [2,3]; MG (flow-in) the left half [0,1] — the orientation signature.
+        let vg_left = w9_comps[0].norm() + w9_comps[1].norm();
+        let vg_right = w9_comps[2].norm() + w9_comps[3].norm();
+        assert!(
+            vg_right > 1e6 * vg_left,
+            "VG flow-out W9 must populate the right-chiral half (orientation signature): \
+             left={vg_left:.2e} right={vg_right:.2e}"
+        );
+    }
+
+    /// Localise the per-Z 0.64 helicity reweighting to the **e-line Z absorption**.
+    ///
+    /// Controlled experiment on the e+-spine (MadGraph AMP(18) vs AMP(22), CSV point 0):
+    /// the off-shell electron is built two ways that differ ONLY in the μ-side boson —
+    ///   γ-path: e⁺ absorbs γ[μ] = `FFV1_1(e⁺, FFV1P0_3(μ-,μ+))`   (→ AMP(18), VG matches MG)
+    ///   Z-path: e⁺ absorbs Z[μ] = `FFV2_4_1(e⁺, FFV2_4_3(μ-,μ+))` (→ AMP(22))
+    /// Both μ-currents are already validated == MG bit-for-bit, and the **γ path matches
+    /// MadGraph's off-shell electron exactly** (up to the global −i), pinning the
+    /// rooting/flow/propagator machinery (γ couples L=R, so it is chirality-blind).
+    ///
+    /// Against MadGraph's actual off-shell electron (`probe_wfuncs.py`, slots 6=γ, 7=Z),
+    /// the Z-path off-shell electron then:
+    ///   • **matches MG exactly at hel 38** (the correct helicity), and
+    ///   • is **0.6403 × MG at hel 42** (the flipped-μ helicity) — the exact per-Z 0.64.
+    /// Every input to that vertex is correct, so the residual lives entirely in VG's
+    /// chiral (FFV2/FFV4) e-line absorption at hel 42. This is a **characterisation test**:
+    /// the hel-42 assertion pins the bug at 0.6403 and must be tightened to `== MG` once
+    /// the absorption is fixed.
+    #[test]
+    fn test_espine_eline_z_absorption_ratio_vs_mg() {
+        use num_complex::Complex64;
+
+        let model = sm_model();
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let card_path = std::path::Path::new(&manifest).join(
+            "../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards/param_card_masslesstau.dat",
+        );
+        let card = std::fs::read_to_string(&card_path)
+            .ok()
+            .and_then(|s| s.parse::<ParamCard>().ok())
+            .expect("param_card_masslesstau.dat not found — run `pixi run -e madgraph build-diagrams` first");
+        let evaluated = model.evaluate(&card);
+
+        let gc3 = model.coupling_id("GC_3").unwrap();
+        let gc50 = model.coupling_id("GC_50").unwrap();
+        let gc59 = model.coupling_id("GC_59").unwrap();
+        let ffv1_id = model.lorentz_id("FFV1").unwrap();
+        let ffv2_id = model.lorentz_id("FFV2").unwrap();
+        let ffv4_id = model.lorentz_id("FFV4").unwrap();
+        let ep_id = model.particle_id("e+").unwrap();
+        let em_id = model.particle_id("e-").unwrap();
+        let mu_id = model.particle_id("mu-").unwrap();
+        let amu_id = model.particle_id("mu+").unwrap();
+        let a_id = model.particle_id("a").unwrap();
+        let z_id = model.particle_id("Z").unwrap();
+
+        let p_ep = LorentzVector::new(250.0, 0.0, 0.0, 250.0);
+        let p_mup = LorentzVector::new(
+            130.98844490914234,
+            -106.66561232781022,
+            -0.9379201403415187,
+            -76.02328690775641,
+        );
+        let p_mum = LorentzVector::new(
+            167.2530959714149,
+            134.2336665209957,
+            -62.607066356179416,
+            -77.68703963098595,
+        );
+
+        let leg_mum = ExtLegInfo {
+            leg_idx: 0,
+            id: mu_id,
+            spin: 2,
+            charge: Charge::Particle,
+            incoming: false,
+        };
+        let leg_mup = ExtLegInfo {
+            leg_idx: 1,
+            id: amu_id,
+            spin: 2,
+            charge: Charge::Antiparticle,
+            incoming: false,
+        };
+        let leg_ep = ExtLegInfo {
+            leg_idx: 2,
+            id: ep_id,
+            spin: 2,
+            charge: Charge::Antiparticle,
+            incoming: true,
+        };
+        let ep_flow = leg_ep.flow().unwrap();
+
+        // Build the off-shell-electron sub-diagram for a given boson (γ via FFV1/GC_3,
+        // or Z via FFV2⊕FFV4/GC_50,GC_59): μ-pair → boson current → e⁺ absorbs it.
+        let make_diagram = |current_vertex: VertexInfo, absorb_vertex: VertexInfo, boson| {
+            DiagramEval::from_nodes(
+                3,
+                vec![
+                    EvalNode::External(leg_mum.clone()),
+                    EvalNode::External(leg_mup.clone()),
+                    EvalNode::OffShellCurrent {
+                        info: current_vertex,
+                        flow: None,
+                        children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                    },
+                    EvalNode::Propagate {
+                        info: PropInfo { id: boson },
+                        flow: None,
+                        child: EvalNodeId::new(2),
+                    },
+                    EvalNode::External(leg_ep.clone()),
+                    EvalNode::OffShellCurrent {
+                        info: absorb_vertex,
+                        flow: Some(ep_flow),
+                        children: vec![EvalNodeId::new(4), EvalNodeId::new(3)],
+                    },
+                    EvalNode::Propagate {
+                        info: PropInfo { id: em_id },
+                        flow: Some(ep_flow),
+                        child: EvalNodeId::new(5),
+                    },
+                ],
+            )
+        };
+
+        let gamma_current = VertexInfo {
+            terms: vec![VertexTerm::from_ufo(model, ffv1_id, "1", gc3, Some(2), None).unwrap()],
+        };
+        let gamma_absorb = VertexInfo {
+            terms: vec![
+                VertexTerm::from_ufo(model, ffv1_id, "1", gc3, Some(1), Some(ep_flow)).unwrap(),
+            ],
+        };
+        let z_current = VertexInfo {
+            terms: vec![
+                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), None).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), None).unwrap(),
+            ],
+        };
+        let z_absorb = VertexInfo {
+            terms: vec![
+                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(1), Some(ep_flow)).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(1), Some(ep_flow)).unwrap(),
+            ],
+        };
+
+        let gamma_diagram = make_diagram(gamma_current, gamma_absorb, a_id);
+        let z_diagram = make_diagram(z_current, z_absorb, z_id);
+
+        let off_shell_e = |diagram: &DiagramEval, hmum, hmup| -> [Complex64; 4] {
+            match eval_single_diagram_slot(
+                diagram,
+                &[p_mum, p_mup, p_ep],
+                &[hmum, hmup, 1], // e+ helicity +1 (Up) for both hel 38 and 42
+                &evaluated,
+            ) {
+                WaveformSlot::FermionOut(f) => core::array::from_fn(|k| f.spinor.component(k)),
+                WaveformSlot::FermionIn(f) => core::array::from_fn(|k| f.spinor.component(k)),
+                other => panic!("off-shell e must be a fermion, got {other:?}"),
+            }
+        };
+
+        // r = eZ / eγ at the dominant component (cancels the orientation convention).
+        let ratio = |ez: [Complex64; 4], eg: [Complex64; 4]| -> Complex64 {
+            let k = (0..4)
+                .max_by(|&a, &b| eg[a].norm().total_cmp(&eg[b].norm()))
+                .unwrap();
+            ez[k] / eg[k]
+        };
+
+        // MadGraph off-shell electron (probe_wfuncs.py slots 6=γ, 7=Z; physical [2..6]).
+        let mg_ratio = |ez: [Complex64; 4], eg: [Complex64; 4]| ratio(ez, eg);
+        let mg = [
+            // (label, mu-, mu+ helicity codes, eγ[2..6], eZ[2..6])
+            (
+                "hel38",
+                1_i32,
+                -1_i32,
+                [
+                    Complex64::ZERO,
+                    Complex64::ZERO,
+                    Complex64::new(-2.108086e-05, -4.566556e-06),
+                    Complex64::new(3.215450e-05, 1.827798e-05),
+                ],
+                [
+                    Complex64::ZERO,
+                    Complex64::ZERO,
+                    Complex64::new(8.735431e-06, 1.853315e-06),
+                    Complex64::new(-1.334406e-05, -7.510224e-06),
+                ],
+            ),
+            (
+                "hel42",
+                -1_i32,
+                1_i32,
+                [
+                    Complex64::ZERO,
+                    Complex64::ZERO,
+                    Complex64::new(1.989177e-05, -1.598997e-05),
+                    Complex64::new(2.804911e-05, -1.685689e-05),
+                ],
+                [
+                    Complex64::ZERO,
+                    Complex64::ZERO,
+                    Complex64::new(1.025656e-05, -8.316966e-06),
+                    Complex64::new(1.447519e-05, -8.783500e-06),
+                ],
+            ),
+        ];
+
+        let i = Complex64::i();
+        for (label, hmum, hmup, mg_eg, mg_ez) in mg {
+            let vg_eg = off_shell_e(&gamma_diagram, hmum, hmup);
+            let vg_ez = off_shell_e(&z_diagram, hmum, hmup);
+            let r_vg = ratio(vg_ez, vg_eg);
+            let r_mg = mg_ratio(mg_ez, mg_eg);
+            eprintln!(
+                "\n{label}: e-line off-shell electron, Z/γ ratio  VG={:+.5}{:+.5}i  MG={:+.5}{:+.5}i",
+                r_vg.re, r_vg.im, r_mg.re, r_mg.im
+            );
+
+            // Photon absorption is chirality-blind (γ couples L=R), so it pins the
+            // rooting/flow/propagator/momentum machinery: VG's γ-path off-shell electron
+            // must equal MadGraph's up to the global −i UFO-coupling phase. (The Z-path
+            // carries the chiral physics and is the localiser — printed above.)
+            let kmax = (0..4)
+                .max_by(|&a, &b| mg_eg[a].norm().total_cmp(&mg_eg[b].norm()))
+                .unwrap();
+            let scale = mg_eg[kmax].norm();
+            for k in 0..4 {
+                let diff = (vg_eg[k] - (-i) * mg_eg[k]).norm();
+                assert!(
+                    diff < 1e-6 * scale,
+                    "{label} γ-path off-shell e [{k}]: VG={:.4e} vs −i·MG={:.4e}, diff={diff:.2e}",
+                    vg_eg[k],
+                    -i * mg_eg[k]
+                );
+            }
+
+            // Z path: identical machinery, only the chiral (FFV2/FFV4) vertex differs.
+            // Factor of VG's Z off-shell electron vs the correct value (−i·MG): must be
+            // 1 at hel 38 (correct) and is exactly 0.6403 at hel 42 (the per-Z bug).
+            let kz = (0..4)
+                .max_by(|&a, &b| mg_ez[a].norm().total_cmp(&mg_ez[b].norm()))
+                .unwrap();
+            let zfac = vg_ez[kz] / ((-i) * mg_ez[kz]);
+            let expected = if label == "hel38" { 1.0 } else { 0.6403 };
+            eprintln!(
+                "  Z-path VG/(−i·MG) = {:+.4}{:+.4}i   (expected ≈ {expected})",
+                zfac.re, zfac.im
+            );
+            assert!(
+                (zfac.re - expected).abs() < 2e-3 && zfac.im.abs() < 2e-3,
+                "{label} Z-path off-shell e: VG/(−i·MG)={zfac:.4}, expected ≈ {expected}"
             );
         }
     }

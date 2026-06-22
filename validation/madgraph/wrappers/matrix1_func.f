@@ -48,6 +48,19 @@ C
 C     DBG: expose per-diagram amplitudes for vibegraph cross-check
       COMPLEX*16 AMP_DBG(NGRAPHS)
       COMMON/DBG_AMP/AMP_DBG
+C     DBG: expose key intermediate wavefunctions for step-by-step comparison
+C     Slots: 1=W7(gamma_e), 2=W8(gamma_mu), 3=W10(Z_e, after line 135),
+C            4=W9(ta-offshell-Z, after line 137), 5=W11(Z_mu, after line 129)
+C     e-spine off-shell electrons (controlled gamma-vs-Z comparison on the
+C     e-line, sink = gamma[ta]):
+C            6 = off-shell e+ after absorbing gamma[mu] (FFV1_1) -> AMP(18)
+C            7 = off-shell e+ after absorbing Z[mu]     (FFV2_4_1) -> AMP(22)
+C            8 = gamma[ta] current (FFV1P0_3(ta-,ta+)), the shared sink boson
+      COMPLEX*16 WF_DBG(6,8)
+      COMMON/DBG_WFUNCS/WF_DBG
+C     DBG: expose all 6 external wavefunctions W(1:6)
+      COMPLEX*16 EXT_WF(6,6)
+      COMMON/DBG_EXT/EXT_WF
 C     Needed for v4 models
       COMPLEX*16 DUM0,DUM1
       DATA DUM0, DUM1/(0D0, 0D0), (1D0, 0D0)/
@@ -118,8 +131,19 @@ C     ----------
       CALL OXXXXX(P(0,4),ZERO,NHEL(4),+1*IC(4),W(1,4))
       CALL IXXXXX(P(0,5),MDL_MTA,NHEL(5),-1*IC(5),W(1,5))
       CALL OXXXXX(P(0,6),MDL_MTA,NHEL(6),+1*IC(6),W(1,6))
+C     DBG: save all 6 external wavefunctions
+      DO I=1,6; EXT_WF(I,1)=W(I,1); ENDDO
+      DO I=1,6; EXT_WF(I,2)=W(I,2); ENDDO
+      DO I=1,6; EXT_WF(I,3)=W(I,3); ENDDO
+      DO I=1,6; EXT_WF(I,4)=W(I,4); ENDDO
+      DO I=1,6; EXT_WF(I,5)=W(I,5); ENDDO
+      DO I=1,6; EXT_WF(I,6)=W(I,6); ENDDO
       CALL FFV1P0_3(W(1,2),W(1,1),GC_3,ZERO, FK_ZERO,W(1,7))
+C     DBG: save W7 = gamma current from e-spine
+      DO I=1,6; WF_DBG(I,1)=W(I,7); ENDDO
       CALL FFV1P0_3(W(1,3),W(1,4),GC_3,ZERO, FK_ZERO,W(1,8))
+C     DBG: save W8 = gamma current from mu-spine
+      DO I=1,6; WF_DBG(I,2)=W(I,8); ENDDO
       CALL FFV1_2(W(1,5),W(1,7),GC_3,MDL_MTA, FK_ZERO,W(1,9))
 C     Amplitude(s) for diagram number 1
       CALL FFV1_0(W(1,9),W(1,6),W(1,8),GC_3,AMP(1))
@@ -128,13 +152,19 @@ C     Amplitude(s) for diagram number 2
       CALL FFV1_0(W(1,5),W(1,10),W(1,8),GC_3,AMP(2))
       CALL FFV2_4_3(W(1,3),W(1,4),GC_50,GC_59,MDL_MZ, FK_MDL_WZ,W(1,11)
      $ )
+C     DBG: save W11 = Z current from mu-spine
+      DO I=1,6; WF_DBG(I,5)=W(I,11); ENDDO
 C     Amplitude(s) for diagram number 3
       CALL FFV2_4_0(W(1,9),W(1,6),W(1,11),GC_50,GC_59,AMP(3))
 C     Amplitude(s) for diagram number 4
       CALL FFV2_4_0(W(1,5),W(1,10),W(1,11),GC_50,GC_59,AMP(4))
       CALL FFV2_4_3(W(1,2),W(1,1),GC_50,GC_59,MDL_MZ, FK_MDL_WZ,W(1,10)
      $ )
+C     DBG: save W10 = Z current from e-spine
+      DO I=1,6; WF_DBG(I,3)=W(I,10); ENDDO
       CALL FFV2_4_2(W(1,5),W(1,10),GC_50,GC_59,MDL_MTA, FK_ZERO,W(1,9))
+C     DBG: save W9 = off-shell ta- after absorbing Z from e-spine
+      DO I=1,6; WF_DBG(I,4)=W(I,9); ENDDO
 C     Amplitude(s) for diagram number 5
       CALL FFV1_0(W(1,9),W(1,6),W(1,8),GC_3,AMP(5))
       CALL FFV2_4_1(W(1,6),W(1,10),GC_50,GC_59,MDL_MTA, FK_ZERO,W(1,12)
@@ -149,6 +179,8 @@ C     Amplitude(s) for diagram number 8
 C     Amplitude(s) for diagram number 9
       CALL VVS1_0(W(1,10),W(1,11),W(1,12),GC_81,AMP(9))
       CALL FFV1P0_3(W(1,5),W(1,6),GC_3,ZERO, FK_ZERO,W(1,12))
+C     DBG: save W12 = gamma[ta] current (shared e-spine sink boson)
+      DO I=1,6; WF_DBG(I,8)=W(I,12); ENDDO
       CALL FFV1_2(W(1,3),W(1,7),GC_3,ZERO, FK_ZERO,W(1,9))
 C     Amplitude(s) for diagram number 10
       CALL FFV1_0(W(1,9),W(1,4),W(1,12),GC_3,AMP(10))
@@ -171,6 +203,8 @@ C     Amplitude(s) for diagram number 16
 C     Amplitude(s) for diagram number 17
       CALL FFV2_4_0(W(1,3),W(1,9),W(1,7),GC_50,GC_59,AMP(17))
       CALL FFV1_1(W(1,1),W(1,8),GC_3,ZERO, FK_ZERO,W(1,9))
+C     DBG: save off-shell e+ after absorbing gamma[mu] (correct path, AMP18)
+      DO I=1,6; WF_DBG(I,6)=W(I,9); ENDDO
 C     Amplitude(s) for diagram number 18
       CALL FFV1_0(W(1,2),W(1,9),W(1,12),GC_3,AMP(18))
       CALL FFV1_1(W(1,1),W(1,12),GC_3,ZERO, FK_ZERO,W(1,3))
@@ -182,6 +216,8 @@ C     Amplitude(s) for diagram number 20
 C     Amplitude(s) for diagram number 21
       CALL FFV1_0(W(1,2),W(1,9),W(1,8),GC_3,AMP(21))
       CALL FFV2_4_1(W(1,1),W(1,11),GC_50,GC_59,ZERO, FK_ZERO,W(1,8))
+C     DBG: save off-shell e+ after absorbing Z[mu] (discrepant path, AMP22)
+      DO I=1,6; WF_DBG(I,7)=W(I,8); ENDDO
 C     Amplitude(s) for diagram number 22
       CALL FFV1_0(W(1,2),W(1,8),W(1,12),GC_3,AMP(22))
 C     Amplitude(s) for diagram number 23
