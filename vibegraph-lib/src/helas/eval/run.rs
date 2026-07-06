@@ -433,9 +433,14 @@ fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> Wavefo
             }
         }
         WaveformSlot::Scalar(wf) => {
+            // Scalar propagator: -i / (q² - m² + i m Γ). The -i puts the scalar
+            // chain in phase with the fermion chain (chains carry no i in the
+            // current step, so the propagator holds the relative structure phase);
+            // pinned by the ee→μμττ Higgs-diagram interference vs MadGraph
+            // (validation/madgraph/compare_full_hel.py).
             let denom = C::new(wf.momentum.m2() - mass * mass, mass * width);
             WaveformSlot::Scalar(ScalarWf {
-                value: wf.value / denom,
+                value: wf.value * ri(-F::one()) / denom,
                 momentum: wf.momentum,
             })
         }
@@ -617,6 +622,17 @@ mod tests {
         })
     }
 
+    /// Uncrossed per-leg binding shorthand for hand-built flow vectors (the
+    /// hand-built diagrams bind wavefunctions in MG order, so no crossing).
+    fn lf(
+        flow: crate::helas::eval::root_lorentz::Flow,
+    ) -> Option<crate::helas::eval::root_lorentz::LegFlow> {
+        Some(crate::helas::eval::root_lorentz::LegFlow {
+            flow,
+            crossed: false,
+        })
+    }
+
     /// Cross-check the VVS off-shell *vector* current (`MetricVout` node) against
     /// ALOHA `VVS1P1N_1.f`, whose Lorentz structure (coupling stripped) is
     ///   V1(3) = -i·V2(3)·S ;  V1(4..6) = +i·V2(4..6)·S    (i.e. -i·g·V2·S)
@@ -754,7 +770,7 @@ mod tests {
                     "asdf",
                     coupling_id,
                     Some(2),
-                    None,
+                    &[],
                 )
                 .unwrap()],
             };
@@ -766,7 +782,7 @@ mod tests {
                     "asdf",
                     coupling_id,
                     None,
-                    None,
+                    &[],
                 )
                 .unwrap()],
             };
@@ -926,8 +942,8 @@ mod tests {
         // Two-term vertex: FFV2 (left) ⊕ FFV4 (left + 2·right), both with GC_3.
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "asdf", coupling_id, Some(2), None).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "asdf", coupling_id, Some(2), None).unwrap(),
+                VertexTerm::from_ufo(model, ffv2_id, "asdf", coupling_id, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "asdf", coupling_id, Some(2), &[]).unwrap(),
             ],
         };
 
@@ -1070,8 +1086,8 @@ mod tests {
 
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), None).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), None).unwrap(),
+                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), &[]).unwrap(),
             ],
         };
 
@@ -1849,15 +1865,20 @@ mod tests {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 
         let model = sm_model();
-        // Use MadGraph's exact param card for this process (massive τ, massless e/μ).
+        // CAUTION: the MG probe reference (mg_amps_full.npy) has MTA=ymtau=1.777
+        // hardcoded at generation time (Source/param_card.inc; SETPARA ignores the
+        // card passed at runtime) — for apples-to-apples comparison the VG card
+        // must be param_card_default.dat. VG_PARAM_CARD selects the card file name.
+        let card_file = std::env::var("VG_PARAM_CARD")
+            .unwrap_or_else(|_| "param_card_masslesstau.dat".to_string());
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let card_path = std::path::Path::new(&manifest).join(
-            "../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards/param_card_masslesstau.dat",
-        );
+        let card_path = std::path::Path::new(&manifest)
+            .join("../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards")
+            .join(&card_file);
         let card = std::fs::read_to_string(&card_path)
             .ok()
             .and_then(|s| s.parse::<ParamCard>().ok())
-            .expect("ee_to_mumu_tata_qcd0 param_card_masslesstau.dat");
+            .unwrap_or_else(|| panic!("ee_to_mumu_tata_qcd0 {card_file}"));
         let evaluated = model.evaluate(&card);
 
         let opts = ParsingOptions::default();
@@ -2361,8 +2382,8 @@ mod tests {
         // rooted at the Z (vector output leg = leg index 2 in the vertex).
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), None).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), None).unwrap(),
+                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), &[]).unwrap(),
             ],
         };
 
@@ -2526,8 +2547,8 @@ mod tests {
         // off-shell *fermion* after absorbing the Z (MG's FFV2_4_2).
         let z_current_vertex = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), None).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), None).unwrap(),
+                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), &[]).unwrap(),
             ],
         };
 
@@ -2559,8 +2580,24 @@ mod tests {
         let tau_flow = leg_tam.flow().unwrap();
         let z_absorb_vertex = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(1), Some(tau_flow)).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(1), Some(tau_flow)).unwrap(),
+                VertexTerm::from_ufo(
+                    model,
+                    ffv2_id,
+                    "1",
+                    gc50,
+                    Some(1),
+                    &[lf(tau_flow), lf(tau_flow), None],
+                )
+                .unwrap(),
+                VertexTerm::from_ufo(
+                    model,
+                    ffv4_id,
+                    "1",
+                    gc59,
+                    Some(1),
+                    &[lf(tau_flow), lf(tau_flow), None],
+                )
+                .unwrap(),
             ],
         };
 
@@ -2737,24 +2774,21 @@ mod tests {
         );
     }
 
-    /// Localise the per-Z 0.64 helicity reweighting to the **e-line Z absorption**.
+    /// Pin the **e-line Z absorption** (chiral off-shell electron) against MadGraph.
     ///
     /// Controlled experiment on the e+-spine (MadGraph AMP(18) vs AMP(22), CSV point 0):
     /// the off-shell electron is built two ways that differ ONLY in the μ-side boson —
-    ///   γ-path: e⁺ absorbs γ[μ] = `FFV1_1(e⁺, FFV1P0_3(μ-,μ+))`   (→ AMP(18), VG matches MG)
+    ///   γ-path: e⁺ absorbs γ[μ] = `FFV1_1(e⁺, FFV1P0_3(μ-,μ+))`   (→ AMP(18))
     ///   Z-path: e⁺ absorbs Z[μ] = `FFV2_4_1(e⁺, FFV2_4_3(μ-,μ+))` (→ AMP(22))
-    /// Both μ-currents are already validated == MG bit-for-bit, and the **γ path matches
-    /// MadGraph's off-shell electron exactly** (up to the global −i), pinning the
-    /// rooting/flow/propagator machinery (γ couples L=R, so it is chirality-blind).
+    /// The γ path (chirality-blind, L=R) pins the rooting/flow/propagator machinery;
+    /// the Z path adds the chiral (FFV2/FFV4) physics. The hand-built μ-pair current
+    /// binds (μ⁻ bra, μ⁺ ket) at slots (mu+, mu-) — a reversed traversal — so the
+    /// vertex is given the per-leg flows and the rooting conjugates its projector.
     ///
-    /// Against MadGraph's actual off-shell electron (`probe_wfuncs.py`, slots 6=γ, 7=Z),
-    /// the Z-path off-shell electron then:
-    ///   • **matches MG exactly at hel 38** (the correct helicity), and
-    ///   • is **0.6403 × MG at hel 42** (the flipped-μ helicity) — the exact per-Z 0.64.
-    /// Every input to that vertex is correct, so the residual lives entirely in VG's
-    /// chiral (FFV2/FFV4) e-line absorption at hel 42. This is a **characterisation test**:
-    /// the hel-42 assertion pins the bug at 0.6403 and must be tightened to `== MG` once
-    /// the absorption is fixed.
+    /// Against MadGraph's actual off-shell electron (`probe_wfuncs.py`, slots 6=γ,
+    /// 7=Z), both paths must equal −i·MG exactly at both helicities. (Historically
+    /// the Z path was 0.6403 × MG at the flipped-μ helicity — the per-Z continuum
+    /// bug, fixed by the flow/crossing-aware chiral projector.)
     #[test]
     fn test_espine_eline_z_absorption_ratio_vs_mg() {
         use num_complex::Complex64;
@@ -2853,24 +2887,56 @@ mod tests {
             )
         };
 
+        // The μ-pair current binds (μ⁻ bra, μ⁺ ket) at slots (mu+, mu-) — the line
+        // reads against the UFO slots (bra at the column), so the rooting needs the
+        // per-leg flows to conjugate the chiral projector (uncrossed reversal).
+        let mu_flows = [
+            lf(leg_mum.flow().unwrap()),
+            lf(leg_mup.flow().unwrap()),
+            None,
+        ];
         let gamma_current = VertexInfo {
-            terms: vec![VertexTerm::from_ufo(model, ffv1_id, "1", gc3, Some(2), None).unwrap()],
+            terms: vec![
+                VertexTerm::from_ufo(model, ffv1_id, "1", gc3, Some(2), &mu_flows).unwrap(),
+            ],
         };
         let gamma_absorb = VertexInfo {
-            terms: vec![
-                VertexTerm::from_ufo(model, ffv1_id, "1", gc3, Some(1), Some(ep_flow)).unwrap(),
-            ],
+            terms: vec![VertexTerm::from_ufo(
+                model,
+                ffv1_id,
+                "1",
+                gc3,
+                Some(1),
+                &[lf(ep_flow), lf(ep_flow), None],
+            )
+            .unwrap()],
         };
         let z_current = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), None).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), None).unwrap(),
+                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), &mu_flows).unwrap(),
+                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), &mu_flows).unwrap(),
             ],
         };
         let z_absorb = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(1), Some(ep_flow)).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(1), Some(ep_flow)).unwrap(),
+                VertexTerm::from_ufo(
+                    model,
+                    ffv2_id,
+                    "1",
+                    gc50,
+                    Some(1),
+                    &[lf(ep_flow), lf(ep_flow), None],
+                )
+                .unwrap(),
+                VertexTerm::from_ufo(
+                    model,
+                    ffv4_id,
+                    "1",
+                    gc59,
+                    Some(1),
+                    &[lf(ep_flow), lf(ep_flow), None],
+                )
+                .unwrap(),
             ],
         };
 
@@ -2968,20 +3034,20 @@ mod tests {
             }
 
             // Z path: identical machinery, only the chiral (FFV2/FFV4) vertex differs.
-            // Factor of VG's Z off-shell electron vs the correct value (−i·MG): must be
-            // 1 at hel 38 (correct) and is exactly 0.6403 at hel 42 (the per-Z bug).
+            // With the flow-corrected chiral projector the off-shell electron equals
+            // −i·MG exactly at BOTH helicities (the historical per-Z 0.6403 at the
+            // flipped-μ helicity is gone).
             let kz = (0..4)
                 .max_by(|&a, &b| mg_ez[a].norm().total_cmp(&mg_ez[b].norm()))
                 .unwrap();
             let zfac = vg_ez[kz] / ((-i) * mg_ez[kz]);
-            let expected = if label == "hel38" { 1.0 } else { 0.6403 };
             eprintln!(
-                "  Z-path VG/(−i·MG) = {:+.4}{:+.4}i   (expected ≈ {expected})",
+                "  Z-path VG/(−i·MG) = {:+.4}{:+.4}i   (expected 1)",
                 zfac.re, zfac.im
             );
             assert!(
-                (zfac.re - expected).abs() < 2e-3 && zfac.im.abs() < 2e-3,
-                "{label} Z-path off-shell e: VG/(−i·MG)={zfac:.4}, expected ≈ {expected}"
+                (zfac.re - 1.0).abs() < 2e-3 && zfac.im.abs() < 2e-3,
+                "{label} Z-path off-shell e: VG/(−i·MG)={zfac:.4}, expected 1"
             );
         }
     }
