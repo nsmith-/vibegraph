@@ -3,6 +3,26 @@
 The topology-driven Lorentz structure evaluator is fully implemented and validated.
 All 135 tests pass; amplitude agrees with Fortran HELAS to <1e-7 for massive e⁺e⁻→μ⁺μ⁻.
 
+> **Update 2026-07-06 — ee→μμττ continuum chirality bug FIXED (per-diagram exact vs MG).**
+> Root cause: feyngraph presents outgoing legs in the all-incoming (crossed) convention,
+> so every final-state fermion binds at its antiparticle's UFO slot with the conjugate
+> wavefunction type (outgoing μ⁺ = a *bra* at the `mu-` slot). By the reversal identity
+> `ū₁Γv₂ = −ū₂(CΓᵀC⁻¹)v₁` a crossed pair is exact for vector structures but needs
+> `P_χ → P_χ̄` (no sign) on gamma-chained chiral projectors and an explicit −1 on scalar
+> bilinears (`CΓᵀC⁻¹ = Γ` for `1`/`P_χ`). Since crossing inverts slot identity and flow
+> together, flow-vs-slot inspection cannot detect it — a per-leg `crossed` bit
+> (`LegFlow`) is now threaded through the bake (externals: `!incoming`; off-shell
+> currents inherit it). Together with the flow-driven rooting corrections for uncrossed
+> reversals (initial-state annihilation pair, e-spine absorptions; NO explicit Denner
+> sign — the runtime reversed-bilinear sign supplies it) and a scalar-propagator −i
+> (S-chain phase relative to the F-chain, pinning the Higgs-diagram interference), the
+> full-helicity oracle `validation/madgraph/compare_full_hel.py` gives −1.000 in every
+> 25-diagram × 16-helicity cell (≤1.5e-13) and per-helicity |M|² matches MG to 4e-14.
+> `validate_helas_mg`: **ee→μμττ max_rel_diff 1.8e-14 over 50 points** (the historical
+> 0.2–0.57% residual was this bug). ee→μμ / pp→ll unchanged (1e-14); uux 2→6 (2.66e1)
+> is a separate open bug. 166/166 lib tests, Ward suite, and the Fortran HELAS
+> reference all pass.
+
 > **Update 2026-06-19 — eval/ unified-AST refactor (Steps 3+4) complete.** The two
 > nested eval trees (`DiagramEvalTree` + `LorentzEvalTree`) are now flattened into ONE
 > egglog-ready arena `Ast<T>` over the whole amplitude, evaluated by a single forward

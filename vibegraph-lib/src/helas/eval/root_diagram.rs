@@ -30,7 +30,7 @@ use crate::ufo::vertices::VertexId;
 use crate::ufo::UFOModel;
 
 use super::error::{CompileError, RootDiagramError};
-use super::root_lorentz::{Flow, RootLorentzError};
+use super::root_lorentz::{Flow, LegFlow, RootLorentzError};
 
 // ───────────────────────────── Pass 1: raw topology tree ─────────────────────────────
 
@@ -339,18 +339,19 @@ impl DiagramEvalTree {
         Ok(DiagramEvalTree { nodes, root })
     }
 
-    /// Bake one node, returning its id and the spinor flow of the wavefunction it
-    /// produces (`None` for bosonic / scalar-amplitude outputs). The flow is resolved
-    /// bottom-up: external legs from their charge/direction, and an off-shell fermion
-    /// current (plus the propagator on it) inherits the flow of its continuing fermion
-    /// input.
+    /// Bake one node, returning its id and the spinor binding of the wavefunction it
+    /// produces (`None` for bosonic / scalar-amplitude outputs). The binding is
+    /// resolved bottom-up: external legs from their charge/direction (with
+    /// `crossed = !incoming`, since diagram enumeration presents outgoing legs in the
+    /// all-incoming convention), and an off-shell fermion current (plus the propagator
+    /// on it) inherits the binding of its continuing fermion input.
     fn bake_node(
         raw: &RawDiagramTree,
         id: RawNodeId,
         model: &UFOModel,
         n_in: usize,
         nodes: &mut Vec<EvalNode>,
-    ) -> Result<(EvalNodeId, Option<Flow>), RootLorentzError> {
+    ) -> Result<(EvalNodeId, Option<LegFlow>), RootLorentzError> {
         match raw.value(id) {
             RawNode::Leg {
                 particle,
@@ -365,15 +366,18 @@ impl DiagramEvalTree {
                     spin: *spin,
                     incoming: *leg_idx < n_in,
                 };
-                let flow = info.flow();
-                Ok((Self::add(nodes, EvalNode::External(info)), flow))
+                let bind = info.flow().map(|flow| LegFlow {
+                    flow,
+                    crossed: !info.incoming,
+                });
+                Ok((Self::add(nodes, EvalNode::External(info)), bind))
             }
             RawNode::Vertex {
                 vertex,
                 result_leg_idx,
                 children,
             } => {
-                let baked: Vec<(EvalNodeId, Option<Flow>)> = children
+                let baked: Vec<(EvalNodeId, Option<LegFlow>)> = children
                     .iter()
                     .map(|&c| Self::bake_node(raw, c, model, n_in, nodes))
                     .collect::<Result<Vec<_>, _>>()?;
@@ -383,14 +387,22 @@ impl DiagramEvalTree {
                         // Internal vertex: off-shell current rooted at the output leg,
                         // wrapped by the propagator on that leg.
                         let prop_id = model.vertex_def(*vertex).particles[*ri];
-                        // The current keeps the flow of its continuing fermion input
+                        // The current keeps the binding of its continuing fermion input
                         // (one such child for an FFV) iff the output leg is itself a
-                        // fermion; a bosonic output carries no flow. The flow is passed
-                        // into the Lorentz rooting so it picks the in/out gamma routine.
-                        let flow = (model.particle(prop_id).spin == 2)
+                        // fermion; a bosonic output carries none. The bindings are
+                        // passed into the Lorentz rooting so it picks the in/out gamma
+                        // routine and detects reversed/crossed pairs.
+                        let bind = (model.particle(prop_id).spin == 2)
                             .then(|| baked.iter().find_map(|(_, f)| *f))
                             .flatten();
-                        let info = VertexInfo::from_ufo(model, *vertex, Some(*ri), flow)?;
+                        // Per-leg bindings in vertex-leg order: children with the
+                        // output's binding spliced in at its position, so the Lorentz
+                        // rooting can compare each leg to its UFO slot.
+                        let mut flows: Vec<Option<LegFlow>> =
+                            baked.iter().map(|(_, f)| *f).collect();
+                        flows.insert(*ri, bind);
+                        let info = VertexInfo::from_ufo(model, *vertex, Some(*ri), &flows)?;
+                        let flow = bind.map(|lf| lf.flow);
                         let current = Self::add(
                             nodes,
                             EvalNode::OffShellCurrent {
@@ -408,13 +420,14 @@ impl DiagramEvalTree {
                                     child: current,
                                 },
                             ),
-                            flow,
+                            bind,
                         ))
                     }
                     None => {
                         // Root vertex: contract all legs into the scalar amplitude — a
-                        // scalar sink, so no fermion output flow.
-                        let info = VertexInfo::from_ufo(model, *vertex, None, None)?;
+                        // scalar sink, so no fermion output flow; every leg is a child.
+                        let flows: Vec<Option<LegFlow>> = baked.iter().map(|(_, f)| *f).collect();
+                        let info = VertexInfo::from_ufo(model, *vertex, None, &flows)?;
                         Ok((
                             Self::add(
                                 nodes,
@@ -741,6 +754,66 @@ mod tests {
                 println!("Testing diagram {}", view);
                 let tree = root_tree(&view, model).expect("rooting failed");
                 println!("Generated tree: {}", tree);
+            }
+        }
+    }
+
+    /// Instrumentation dump (S18 fix item 2): per-vertex UFO slot order vs the actual
+    /// bound children, for every ee→μμττ diagram. Prints, for each vertex:
+    /// interaction name, UFO particle slots, result_leg_idx, and each
+    /// `propagators_ordered` entry (external leg index + particle name + is_anti, or
+    /// internal propagator particle), so slot↔leg binding and flow alignment can be
+    /// read off directly.
+    ///
+    /// Run: cargo test -p vibegraph-lib --lib \
+    ///        helas::eval::root_diagram::tests::probe_vertex_leg_binding -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn probe_vertex_leg_binding() {
+        let model = sm_model();
+        let sets = generate("e+ e- > mu+ mu- ta+ ta- QCD=0");
+        for set in &sets {
+            for (d, view) in set.diagrams.views().enumerate() {
+                println!("── diagram {d} ──");
+                for leg in view.legs() {
+                    println!(
+                        "  ext leg {}: {} (is_anti={})",
+                        leg.index(),
+                        leg.particle().name(),
+                        leg.particle().is_anti()
+                    );
+                }
+                for vi in 0..view.vertices().count() {
+                    let vtx = view.vertex(vi);
+                    let interaction = vtx.interaction().name().to_string();
+                    let vid = model.vertex_id(&interaction).expect("vertex in UFO");
+                    let slots: Vec<String> = model
+                        .vertex_def(vid)
+                        .particles
+                        .iter()
+                        .map(|pid| model.particle(*pid).name.clone())
+                        .collect();
+                    println!("  vertex {vi}: {interaction} slots={slots:?}");
+                    for (ray, prop) in vtx.propagators_ordered().enumerate() {
+                        match prop {
+                            Either::Left(leg) => println!(
+                                "    ray {ray} (slot {}): EXT leg {} {} (is_anti={})",
+                                slots[ray],
+                                leg.index(),
+                                leg.particle().name(),
+                                leg.particle().is_anti()
+                            ),
+                            Either::Right(p) => println!(
+                                "    ray {ray} (slot {}): PROP {} [{}]",
+                                slots[ray],
+                                p.particle().name(),
+                                p.momentum_str()
+                            ),
+                        }
+                    }
+                }
+                let tree = root_tree(&view, model).expect("rooting failed");
+                println!("  baked: {tree}");
             }
         }
     }

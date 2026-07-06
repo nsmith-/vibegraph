@@ -142,6 +142,19 @@ off-shell-current sign/metric bugs live.
 
 ### `helas-2to6-continuum` — Fix the pure-EW continuum |M|² (uux 2→6)
 
+**2026-07-06 ee→μμττ (2→4 continuum) FIXED — per-diagram, per-helicity exact vs MG.**
+Root cause: feyngraph binds outgoing legs in the all-incoming (crossed) convention, so
+final-state fermion pairs sit in each other's UFO slots with conjugate wavefunction types;
+`ū₁Γv₂ = −ū₂(CΓᵀC⁻¹)v₁` then requires conjugating gamma-chained chiral projectors
+(`P_χ→P_χ̄`, no sign) and negating scalar bilinears on crossed lines. A per-leg `crossed`
+bit (`LegFlow`, `root_lorentz.rs`) is threaded through the bake; uncrossed reversals
+(annihilation pair, e-spine absorptions) are handled by the flow-driven re-rooting /
+projector flip with no explicit sign; the scalar propagator gains a −i (S-chain phase
+relative to the F-chain, pinned by the Higgs-diagram interference). Oracle
+`validation/madgraph/compare_full_hel.py`: all 25×16 cells −1.000 (≤1.5e-13); per-hel
+|M|² vs MG 4e-14; `validate_helas_mg` ee→μμττ max_rel_diff **1.8e-14** (the historical
+0.2–0.57% residual was this bug). uux 2→6 unchanged at 2.66e1 — still open, below.
+
 **2026-06-14 fermion-FLOW fix: max_rel_diff 7.26e3 → 3.96e1 (~180×).** The bulk of the
 continuum error was that off-shell fermion currents and bilinears took their bra/ket flow
 from the UFO `Gamma` i/j leg position (structural), while `build_external_slot` built EVERY

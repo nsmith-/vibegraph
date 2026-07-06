@@ -10,7 +10,7 @@
 
 use itertools::Itertools;
 
-use super::root_lorentz::{Flow, RootLorentzError, RootedTerm};
+use super::root_lorentz::{Flow, LegFlow, RootLorentzError, RootedTerm};
 use crate::helas::repr::numbers::Charge;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
@@ -93,16 +93,14 @@ impl VertexTerm {
         _color: &str, // TODO: handle color structures if needed
         coupling_id: CouplingId,
         result_leg_idx: Option<usize>,
-        out_flow: Option<Flow>,
+        flows: &[Option<LegFlow>],
     ) -> Result<Self, RootLorentzError> {
         let lorentz = model.lorentz_struct(lorentz_id);
 
         let terms = lorentz
             .expr
             .iter()
-            .map(|term| {
-                super::root_lorentz::root_term(term, &lorentz.spins, result_leg_idx, out_flow)
-            })
+            .map(|term| super::root_lorentz::root_term(term, &lorentz.spins, result_leg_idx, flows))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(VertexTerm { terms, coupling_id })
@@ -142,7 +140,7 @@ impl VertexInfo {
         model: &UFOModel,
         id: VertexId,
         result_leg_idx: Option<usize>,
-        out_flow: Option<Flow>,
+        flows: &[Option<LegFlow>],
     ) -> Result<Self, RootLorentzError> {
         let vertex = model.vertex_def(id);
         let terms = vertex
@@ -155,7 +153,7 @@ impl VertexInfo {
                     vertex.color[color_idx].as_str(),
                     *coupling_id,
                     result_leg_idx,
-                    out_flow,
+                    flows,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
