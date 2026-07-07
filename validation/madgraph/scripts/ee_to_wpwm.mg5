@@ -1,0 +1,17 @@
+# MadGraph5 batch script: e+ e- > w+ w- at LO
+#
+# Why this exact process:
+#   - Triple-gauge vertex (VVV: aWW, ZWW) + massive CHARGED vector externals
+#     (3 helicity states each) + t-channel neutrino exchange.  First process
+#     where the V-chain phase ledger meets VVV.
+#
+# sqrt(s) = 500 GeV > 2*MW = 161 GeV so the channel is open.
+generate e+ e- > w+ w-
+output ee_to_wpwm -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

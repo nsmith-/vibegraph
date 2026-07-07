@@ -1,0 +1,19 @@
+# MadGraph5 batch script: e+ e- > e+ e- (Bhabha) at LO
+#
+# Why this exact process:
+#   - s⊕t-channel interference with IDENTICAL initial/final flavors: the
+#     sharpest regression for crossed-line conjugation and the relative sign
+#     between crossed diagram classes (research/notes/12, fix 5).
+#   - Colorless, massless externals => no new evaluator features needed.
+#
+# launch with lpp=0 fixed-energy beams; the default run_card lepton pT cut
+# regulates the t-channel divergence for the (informational) cross section.
+generate e+ e- > e+ e-
+output ee_to_ee -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

@@ -1,0 +1,15 @@
+# MadGraph5 batch script: e+ e- > ta+ ta- h at LO
+#
+# Why this exact process:
+#   - External FFS Yukawa emission: the Higgs is radiated off a massive tau
+#     line (default sm card keeps MTA and ymtau non-zero), so the external
+#     scalar meets the fermion chain — untested by the VVS-only zh channel.
+generate e+ e- > ta+ ta- h
+output ee_to_tatah -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

@@ -332,26 +332,36 @@ impl DiagramEvalTree {
 
     /// Bake a raw topology tree into the evaluable tree: root each vertex's Lorentz
     /// structure and type each node by what it produces. `n_in` is the number of
-    /// incoming externals, used to flag each leg's flow direction.
-    fn bake(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) -> Result<Self, RootLorentzError> {
+    /// incoming externals, used to flag each leg's flow direction; `uncross` lists
+    /// the final-state legs to type physically (see [`mixed_line_final_legs`]).
+    fn bake(
+        raw: &RawDiagramTree,
+        model: &UFOModel,
+        n_in: usize,
+        uncross: &HashSet<usize>,
+    ) -> Result<Self, RootLorentzError> {
         let mut nodes = Vec::with_capacity(raw.nodes.len());
-        let (root, _) = Self::bake_node(raw, raw.root, model, n_in, &mut nodes)?;
+        let (root, _, _) = Self::bake_node(raw, raw.root, model, n_in, uncross, &mut nodes)?;
         Ok(DiagramEvalTree { nodes, root })
     }
 
-    /// Bake one node, returning its id and the spinor binding of the wavefunction it
-    /// produces (`None` for bosonic / scalar-amplitude outputs). The binding is
-    /// resolved bottom-up: external legs from their charge/direction (with
-    /// `crossed = !incoming`, since diagram enumeration presents outgoing legs in the
-    /// all-incoming convention), and an off-shell fermion current (plus the propagator
-    /// on it) inherits the binding of its continuing fermion input.
+    /// Bake one node, returning its id, the spinor binding of the wavefunction it
+    /// produces (`None` for bosonic / scalar-amplitude outputs), and the number of
+    /// *incoming* external legs in its subtree (for the t-channel propagator test).
+    /// The binding is resolved bottom-up: external legs from their charge/direction
+    /// (with `crossed = !incoming`, since diagram enumeration presents outgoing legs
+    /// in the all-incoming convention — except legs in `uncross`, restored to their
+    /// physical particle/flow because their line partner is an initial-state leg),
+    /// and an off-shell fermion current (plus the propagator on it) inherits the
+    /// binding of its continuing fermion input.
     fn bake_node(
         raw: &RawDiagramTree,
         id: RawNodeId,
         model: &UFOModel,
         n_in: usize,
+        uncross: &HashSet<usize>,
         nodes: &mut Vec<EvalNode>,
-    ) -> Result<(EvalNodeId, Option<LegFlow>), RootLorentzError> {
+    ) -> Result<(EvalNodeId, Option<LegFlow>, usize), RootLorentzError> {
         match raw.value(id) {
             RawNode::Leg {
                 particle,
@@ -359,29 +369,40 @@ impl DiagramEvalTree {
                 charge,
                 spin,
             } => {
+                let uncrossed = uncross.contains(leg_idx);
+                let (id, charge) = if uncrossed {
+                    let anti = model
+                        .particle_id(&model.particle(*particle).antiname)
+                        .expect("antiparticle exists in model");
+                    (anti, charge.anti())
+                } else {
+                    (*particle, *charge)
+                };
                 let info = ExtLegInfo {
-                    id: *particle,
+                    id,
                     leg_idx: *leg_idx,
-                    charge: *charge,
+                    charge,
                     spin: *spin,
                     incoming: *leg_idx < n_in,
                 };
                 let bind = info.flow().map(|flow| LegFlow {
                     flow,
-                    crossed: !info.incoming,
+                    crossed: !info.incoming && !uncrossed,
                 });
-                Ok((Self::add(nodes, EvalNode::External(info)), bind))
+                let n_inc = info.incoming as usize;
+                Ok((Self::add(nodes, EvalNode::External(info)), bind, n_inc))
             }
             RawNode::Vertex {
                 vertex,
                 result_leg_idx,
                 children,
             } => {
-                let baked: Vec<(EvalNodeId, Option<LegFlow>)> = children
+                let baked: Vec<(EvalNodeId, Option<LegFlow>, usize)> = children
                     .iter()
-                    .map(|&c| Self::bake_node(raw, c, model, n_in, nodes))
+                    .map(|&c| Self::bake_node(raw, c, model, n_in, uncross, nodes))
                     .collect::<Result<Vec<_>, _>>()?;
-                let child_ids: Vec<EvalNodeId> = baked.iter().map(|(id, _)| *id).collect();
+                let child_ids: Vec<EvalNodeId> = baked.iter().map(|(id, _, _)| *id).collect();
+                let n_inc: usize = baked.iter().map(|(_, _, n)| *n).sum();
                 match result_leg_idx {
                     Some(ri) => {
                         // Internal vertex: off-shell current rooted at the output leg,
@@ -393,15 +414,20 @@ impl DiagramEvalTree {
                         // passed into the Lorentz rooting so it picks the in/out gamma
                         // routine and detects reversed/crossed pairs.
                         let bind = (model.particle(prop_id).spin == 2)
-                            .then(|| baked.iter().find_map(|(_, f)| *f))
+                            .then(|| baked.iter().find_map(|(_, f, _)| *f))
                             .flatten();
                         // Per-leg bindings in vertex-leg order: children with the
                         // output's binding spliced in at its position, so the Lorentz
                         // rooting can compare each leg to its UFO slot.
                         let mut flows: Vec<Option<LegFlow>> =
-                            baked.iter().map(|(_, f)| *f).collect();
+                            baked.iter().map(|(_, f, _)| *f).collect();
                         flows.insert(*ri, bind);
                         let info = VertexInfo::from_ufo(model, *vertex, Some(*ri), &flows)?;
+                        let lowered_storage = info
+                            .terms
+                            .iter()
+                            .flat_map(|vt| vt.terms.iter())
+                            .any(|rt| rt.tree.has_flipped_vector_out());
                         let flow = bind.map(|lf| lf.flow);
                         let current = Self::add(
                             nodes,
@@ -415,18 +441,26 @@ impl DiagramEvalTree {
                             Self::add(
                                 nodes,
                                 EvalNode::Propagate {
-                                    info: PropInfo { id: prop_id },
+                                    info: PropInfo {
+                                        id: prop_id,
+                                        // Exactly one beam on this side of the line
+                                        // ⟺ spacelike (t-channel) momentum.
+                                        t_channel: n_in == 2 && n_inc == 1,
+                                        lowered_storage,
+                                    },
                                     flow,
                                     child: current,
                                 },
                             ),
                             bind,
+                            n_inc,
                         ))
                     }
                     None => {
                         // Root vertex: contract all legs into the scalar amplitude — a
                         // scalar sink, so no fermion output flow; every leg is a child.
-                        let flows: Vec<Option<LegFlow>> = baked.iter().map(|(_, f)| *f).collect();
+                        let flows: Vec<Option<LegFlow>> =
+                            baked.iter().map(|(_, f, _)| *f).collect();
                         let info = VertexInfo::from_ufo(model, *vertex, None, &flows)?;
                         Ok((
                             Self::add(
@@ -437,6 +471,7 @@ impl DiagramEvalTree {
                                 },
                             ),
                             None,
+                            n_inc,
                         ))
                     }
                 }
@@ -540,6 +575,10 @@ fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> i8 {
         if passed_internal && li < n_in && other < n_in {
             sign = -sign;
         }
+        // Crossed (final–final) line: one −1 each, mirroring spine_sign_from_flow.
+        if li >= n_in && other >= n_in {
+            sign = -sign;
+        }
     }
     sign
 }
@@ -571,20 +610,27 @@ fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> (bool, usiz
     }
 }
 
-/// Derive the initial-state spine sign purely from the baked spinor flow, using only
-/// the rooted evaluation tree we already build — no second graph walk. (The
+/// Derive the fermion-line sign corrections purely from the baked spinor flow, using
+/// only the rooted evaluation tree we already build — no second graph walk. (The
 /// `spin_map`-tracing `initial_state_spine_sign` is kept as a test oracle and proven
 /// equivalent by `spine_sign_from_flow_matches_heuristic`.)
 ///
 /// A fermion line terminates at any vertex node that outputs a non-fermion yet has two
 /// fermion children: an FFV/FFS current rooted at its boson leg, or the root
-/// contraction. Descend both ends to their external legs and flip the diagram sign when
-/// the line joins two incoming legs through an ODD number of internal fermion
-/// propagators — MadGraph's crossing sign for an initial-state fermion pair carried as
-/// an off-shell spine, one −1 per reversed propagator (a 2-propagator initial spine
-/// flips twice = no net sign; pinned by the uux 2→6 per-diagram oracle,
-/// validation/madgraph/compare_uux_amps.py). Each fermion line meets exactly one such
-/// sink, so every line is counted once.
+/// contraction. Each fermion line meets exactly one such sink, so every line is
+/// counted once. Two per-line flips on top of feyngraph's permutation sign:
+///
+/// * **Initial spine**: a line joining two *incoming* legs through an ODD number of
+///   internal fermion propagators — MadGraph's crossing sign for an initial-state
+///   fermion pair carried as an off-shell spine, one −1 per reversed propagator (a
+///   2-propagator initial spine flips twice = no net sign; pinned by the uux 2→6
+///   per-diagram oracle, validation/madgraph/compare_amps.py).
+/// * **Crossed line**: a line joining two *final-state* legs, evaluated in the
+///   crossed (conjugate-wavefunction) representation, takes one −1 — the operator
+///   reordering of the conjugated pair. Invisible while every diagram of a process
+///   has the same crossed-line count (uniform sign); exposed and pinned by Bhabha,
+///   where the s-channel has one crossed line and the t-channel none
+///   (validation/madgraph/compare_amps.py, ee_to_ee).
 pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
     let mut sign = 1i8;
     for id in tree.iter() {
@@ -606,9 +652,76 @@ pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
             if inc_a && inc_b && (n_props_a + n_props_b) % 2 == 1 {
                 sign = -sign;
             }
+            if !inc_a && !inc_b {
+                sign = -sign;
+            }
         }
     }
     sign
+}
+
+// ─────────────────────── Mixed-line (initial↔final) uncrossing ───────────────────────
+
+/// Walk one raw subtree collecting closed fermion-line endpoint pairs into `pairs`,
+/// returning the subtree's open fermion end (the external leg whose line continues
+/// through this subtree's output), if any. A line closes at any vertex whose output
+/// is not a fermion (or at the root contraction) yet has two fermion inputs.
+fn collect_fermion_pairs(
+    raw: &RawDiagramTree,
+    model: &UFOModel,
+    id: RawNodeId,
+    pairs: &mut Vec<(usize, usize)>,
+) -> Option<usize> {
+    match raw.value(id) {
+        RawNode::Leg { leg_idx, spin, .. } => (spin.abs() == 2).then_some(*leg_idx),
+        RawNode::Vertex {
+            vertex,
+            result_leg_idx,
+            children,
+        } => {
+            let mut ends: Vec<usize> = children
+                .iter()
+                .filter_map(|&c| collect_fermion_pairs(raw, model, c, pairs))
+                .collect();
+            let out_is_fermion = result_leg_idx.is_some_and(|ri| {
+                let pid = model.vertex_def(*vertex).particles[ri];
+                model.particle(pid).spin.abs() == 2
+            });
+            if out_is_fermion {
+                assert_eq!(ends.len(), 1, "a fermion current has one continuing input");
+                ends.pop()
+            } else {
+                match ends[..] {
+                    [] => None,
+                    [a, b] => {
+                        pairs.push((a, b));
+                        None
+                    }
+                    _ => panic!("SM vertices pair fermions: 0 or 2 fermion legs per sink"),
+                }
+            }
+        }
+    }
+}
+
+/// Final-state legs whose fermion line connects to an *initial-state* leg (e.g. the
+/// Bhabha t-channel electron line). Such legs must be typed by their physical
+/// particle/flow — matching the reference HELAS externals — rather than by the
+/// crossed (all-incoming) identity feyngraph reports: the crossed representation
+/// C-conjugates the whole bilinear chain, which is only an identity when *both*
+/// endpoints of the line conjugate together, i.e. for final–final pairs.
+fn mixed_line_final_legs(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) -> HashSet<usize> {
+    let mut pairs = Vec::new();
+    let open = collect_fermion_pairs(raw, model, raw.root(), &mut pairs);
+    assert!(open.is_none(), "all fermion lines close at some sink");
+    pairs
+        .into_iter()
+        .filter_map(|(a, b)| match (a < n_in, b < n_in) {
+            (true, false) => Some(b),
+            (false, true) => Some(a),
+            _ => None,
+        })
+        .collect()
 }
 
 // ───────────────────────────── Rooting entry point ─────────────────────────────
@@ -635,7 +748,9 @@ pub(super) fn root_tree(
         root: raw_root,
     };
 
-    Ok(DiagramEvalTree::bake(&raw, model, view.incoming().count())?)
+    let n_in = view.incoming().count();
+    let uncross = mixed_line_final_legs(&raw, model, n_in);
+    Ok(DiagramEvalTree::bake(&raw, model, n_in, &uncross)?)
 }
 
 // ───────────────────────────── Per-diagram artifact ─────────────────────────────

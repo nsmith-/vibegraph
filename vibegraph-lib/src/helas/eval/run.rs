@@ -238,18 +238,39 @@ fn apply<F: Real>(
         Op::Propagate => {
             let mass = expect_real(children[1]);
             let width = expect_real(children[2]);
-            propagate_core(&children[0], mass, width)
+            propagate_core(&children[0], mass, width, false)
+        }
+        Op::PropagateLowered => {
+            let mass = expect_real(children[1]);
+            let width = expect_real(children[2]);
+            propagate_core(&children[0], mass, width, true)
         }
         Op::Add => children
             .iter()
             .copied()
             .fold(WaveformSlot::Empty, |acc, x| acc + x),
         Op::Mul => mul_apply(children),
+        // The P nodes read structure momenta off the stored (HELAS-convention)
+        // current momenta: an input leg's directly (ALOHA `Pi = dble(Vi(1:2))`), the
+        // output leg's as the negated sum over all inputs (ALOHA `VVV1P0_1`:
+        // `P1 = −(V2+V3)`). Their slots carry *zero* routing momentum: only
+        // wavefunctions route momentum to the propagator, and each leg's
+        // wavefunction already appears exactly once per term — a P duplicating a
+        // leg's momentum would double-count it in the `Mul`/`Metric` bookkeeping.
         Op::PMom => {
             let momentum = children[0].momentum().expect("PMom: empty slot");
             WaveformSlot::Vector(VectorWf {
                 eps: ComplexVector::from(momentum),
-                momentum,
+                momentum: LorentzVector::zero(),
+            })
+        }
+        Op::PMomOut => {
+            let momentum = -children.iter().fold(LorentzVector::zero(), |acc, c| {
+                acc + c.momentum().expect("PMomOut: empty slot")
+            });
+            WaveformSlot::Vector(VectorWf {
+                eps: ComplexVector::from(momentum),
+                momentum: LorentzVector::zero(),
             })
         }
         // Lorentz primitives: each reads its operands from `children` and dispatches to
@@ -261,7 +282,15 @@ fn apply<F: Real>(
         Op::ProjMAmp => scalar_bilinear_current(children, Chirality::Left),
         Op::ProjPAmp => scalar_bilinear_current(children, Chirality::Right),
         Op::Metric => metric_contract(children),
+        Op::MetricNegI => match metric_contract(children) {
+            WaveformSlot::Scalar(s) => WaveformSlot::Scalar(ScalarWf {
+                value: s.value * ri(-F::one()),
+                momentum: s.momentum,
+            }),
+            other => panic!("MetricNegI produced a non-scalar: {other:?}"),
+        },
         Op::MetricVout => metric_vout(children),
+        Op::LowerVout => lower_vout(children),
         Op::IdentityAmp => scalar_bilinear_current(children, Chirality::Both),
     }
 }
@@ -306,14 +335,18 @@ fn mul_apply<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
             momentum: scalar_mom,
         }),
         // Route the scalar factors' momentum into the surviving non-scalar current so
-        // the propagator sees the conserved q.
+        // the propagator sees the conserved q. A continuing *fermion* current follows
+        // the HELAS off-shell conventions (`fsixxx` q = fi − s, `fsoxxx` q = fo + s,
+        // mirroring `fvixxx`/`fvoxxx`): flow-in subtracts the absorbed boson's
+        // momentum, flow-out adds it. Pinned by e+e-→τ+τ-H (H emitted off the τ
+        // ket line) vs MadGraph per-diagram AMP().
         other => match coeff * other {
             WaveformSlot::Vector(mut v) => {
                 v.momentum = v.momentum + scalar_mom;
                 WaveformSlot::Vector(v)
             }
             WaveformSlot::FermionIn(mut f) => {
-                f.momentum = f.momentum + scalar_mom;
+                f.momentum = f.momentum - scalar_mom;
                 WaveformSlot::FermionIn(f)
             }
             WaveformSlot::FermionOut(mut f) => {
@@ -397,14 +430,27 @@ fn build_external_core<F: Real>(
 /// already carries the conserved routed momentum (matching reference HELAS, where the
 /// off-shell current routines output it: `fvixxx` q=fi−vc, `fvoxxx` q=fo+vc,
 /// `jioxxx` jmom=fo−fi).
-fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> WaveformSlot<F> {
+///
+/// `lowered` marks a vector current stored index-flipped (±g·J, the
+/// `MetricVout`/`LowerVout` output convention): the massive vector's longitudinal
+/// term must then be formed with the *physical* current, `x − (g·q)(x⊙q)/m²`
+/// (= g·[J − q(q·J)/m²] up to the stored sign), instead of the plain-storage
+/// `x − q(q·x)/m²`. Only visible when the far side of the propagator also has
+/// q·J ≠ 0 (a massive-fermion current); pinned by the b b̄ 2→6 double-ZZH
+/// diagrams vs MadGraph AMP() (validation/madgraph/compare_amps.py).
+fn propagate_core<F: Real>(
+    input: &WaveformSlot<F>,
+    mass: F,
+    width: F,
+    lowered: bool,
+) -> WaveformSlot<F> {
     match input {
         // Dirac propagator: -i (q̸ + m) / (q² - m² + i m Γ). The -i puts the fermion
         // chain in phase with the vector chain (which is bit-validated against
         // MadGraph's W-arrays), so every off-shell chain type carries the same
         // phase relative to MadGraph and diagram classes with different chain
         // contents interfere correctly; pinned by the uux 2→6 per-diagram oracle
-        // (validation/madgraph/compare_uux_amps.py), where continuum diagrams
+        // (validation/madgraph/compare_amps.py), where continuum diagrams
         // (two fermion propagators) meet H diagrams (one scalar propagator).
         WaveformSlot::FermionIn(wf) => {
             let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
@@ -430,25 +476,47 @@ fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> Wavefo
                 let vm2 = mass * mass;
                 let vmw = mass * width;
                 let denom = C::new(wf.momentum.m2() - vm2, vmw);
-                // Longitudinal mode subtraction: divide by m²−imΓ (Fabio prescription)
-                let cs = wf.eps.dot_lorentz(&wf.momentum) / vm2; // C::new(vm2, -vmw);
+                // -i (g - q q / m²) / (q² - m² + i m Γ), with the longitudinal
+                // subtraction matched to the current's storage convention (see
+                // the `lowered` doc above). Real m² in the subtraction, like
+                // ALOHA's OM3 = 1/M3².
+                let q = wf.momentum;
+                let (metric_term, cs, storage_sign) = if lowered {
+                    // Stored current is `−g·eps` (a MetricVout output, the VVS
+                    // vector leg): the physical lowered current E_ν up to the
+                    // MetricVout `−1`. The propagator's g^{μν} term raises it back,
+                    // g·(g·eps) = eps in the metric slot, and its longitudinal dot
+                    // is the natural pairing q^ν E_ν = eps·(g·q). The `−1` undoes
+                    // the MetricVout storage sign.
+                    let gq = LorentzVector::new(q.e(), -q.px(), -q.py(), -q.pz());
+                    let raised = ComplexVector::new([
+                        wf.eps.component(0),
+                        -wf.eps.component(1),
+                        -wf.eps.component(2),
+                        -wf.eps.component(3),
+                    ]);
+                    (raised, wf.eps.dot_lorentz(&gq) / vm2, -F::one())
+                } else {
+                    (wf.eps, wf.eps.dot_lorentz(&q) / vm2, F::one())
+                };
                 let out = VectorWf {
-                    // i (g - q q) / (q^2 - m^2 + i m Γ)
-                    eps: (wf.eps - ComplexVector::from(wf.momentum) * cs) * ri(-F::one()) / denom,
+                    eps: (metric_term - ComplexVector::from(q) * cs) * ri(-storage_sign) / denom,
                     momentum: wf.momentum,
                 };
                 WaveformSlot::Vector(out)
             }
         }
         WaveformSlot::Scalar(wf) => {
-            // Scalar propagator: 1 / (q² - m² + i m Γ). Together with the fermion
-            // propagator's -i this puts all three chain types (V/F/S) at the same
-            // phase relative to MadGraph; pinned jointly by the ee→μμττ
-            // Higgs-diagram interference (compare_full_hel.py) and the uux 2→6
-            // per-diagram oracle (compare_uux_amps.py).
+            // Scalar propagator: -i / (q² - m² + i m Γ) — the same -i/D phase as
+            // the vector and Dirac propagators, so every chain type propagates
+            // uniformly. The compensating signs live in the scalar-sink vertex
+            // roots (see `build_at_leg`'s scalar-root arms); the combination is
+            // pinned per-diagram by the internal-H chains (ee→μμττ, uux 2→6, and
+            // the b b̄ 2→6 spine-Yukawa diagrams) and the external-H chains
+            // (e+e-→τ+τ-H) against MadGraph AMP().
             let denom = C::new(wf.momentum.m2() - mass * mass, mass * width);
             WaveformSlot::Scalar(ScalarWf {
-                value: wf.value / denom,
+                value: wf.value * ri(-F::one()) / denom,
                 momentum: wf.momentum,
             })
         }
@@ -566,23 +634,45 @@ fn metric_contract<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 }
 
 /// `MetricVout`: off-shell vector current of a `Metric(out, v)` structure — the metric
-/// raises the output index on the partner vector `v`. Matches ALOHA `VVS1P1N_1`
-/// (`V1^0 = -i·V^0`, `V1^j = +i·V^j`, i.e. `-i·g·V`); the explicit `-i` is the vertex
-/// factor on top of the coupling (the UFO GC for HVV already carries its own `i`). A
+/// lowers the output index on the partner vector `v`, times the vertex factor: `−g·V`
+/// (= −i · ALOHA `VVS1P1N_1`'s `−i·g·V`). The −i share of the V/S chain-phase split
+/// lives here and the +i share in the scalar propagator (see `propagate_core`): the
+/// internal-H chains always pair one `MetricVout` with one scalar propagator (pinned
+/// bit-for-bit by ee→μμττ and uux 2→6), while the external-H VVS current (e+e-→τ+τ-H's
+/// ZZH diagram, pinned per-diagram vs MadGraph AMP()) fixes how the pair splits. A
 /// trailing scalar leg (the Higgs) multiplies in at the enclosing `Mul`.
 fn metric_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let WaveformSlot::Vector(vin) = children[0] else {
         panic!("MetricVout: expected vector input");
     };
     let e = &vin.eps;
-    let pi = ri(F::one()); // +i
-    let mi = ri(-F::one()); // -i
     WaveformSlot::Vector(VectorWf {
         eps: ComplexVector::new([
-            mi * e.component(0),
-            pi * e.component(1),
-            pi * e.component(2),
-            pi * e.component(3),
+            -e.component(0),
+            e.component(1),
+            e.component(2),
+            e.component(3),
+        ]),
+        momentum: vin.momentum,
+    })
+}
+
+/// `LowerVout`: [`metric_vout`] without ALOHA's −i vertex factor — the output index
+/// is lowered on the partner vector, nothing else. The vector-output transform of
+/// P-carrying structures (VVV): with the VVS −i·g the whole VVV current comes out
+/// −i relative to the FFV chain convention; pinned per-diagram against MadGraph's
+/// e+e-→W+W- AMP() (validation/madgraph/compare_amps.py).
+fn lower_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
+    let WaveformSlot::Vector(vin) = children[0] else {
+        panic!("LowerVout: expected vector input");
+    };
+    let e = &vin.eps;
+    WaveformSlot::Vector(VectorWf {
+        eps: ComplexVector::new([
+            e.component(0),
+            -e.component(1),
+            -e.component(2),
+            -e.component(3),
         ]),
         momentum: vin.momentum,
     })
@@ -642,10 +732,12 @@ mod tests {
     }
 
     /// Cross-check the VVS off-shell *vector* current (`MetricVout` node) against
-    /// ALOHA `VVS1P1N_1.f`, whose Lorentz structure (coupling stripped) is
-    ///   V1(3) = -i·V2(3)·S ;  V1(4..6) = +i·V2(4..6)·S    (i.e. -i·g·V2·S)
-    /// vibegraph applies the coupling separately, so the bare dispatch tree for
-    /// `Metric(1,2)` rooted at vector leg 1 must reproduce exactly this.
+    /// ALOHA `VVS1P1N_1.f` times −i. ALOHA's routine (coupling stripped) is
+    ///   V1(3) = -i·V2(3)·S ;  V1(4..6) = +i·V2(4..6)·S    (i.e. -i·g·V2·S);
+    /// vibegraph splits the V/S chain phase differently: the −i here (→ −g·V2·S)
+    /// with the compensating +i in the scalar propagator (see `metric_vout` /
+    /// `propagate_core`). vibegraph applies the coupling separately, so the bare
+    /// dispatch tree for `Metric(1,2)` rooted at vector leg 1 must reproduce this.
     #[test]
     fn test_metric_vout_vs_aloha_vvs1p1n1() {
         let v2 = VectorWf {
@@ -672,14 +764,13 @@ mod tests {
             panic!("VVS rooted at a vector leg must produce a vector current");
         };
 
-        // ALOHA VVS1P1N_1 (coupling stripped): -i·g·V2 · S.value
+        // −i × ALOHA VVS1P1N_1 (coupling stripped): -g·V2 · S.value
         let sv = s.value;
-        let i = C::new(0.0, 1.0);
         let expect = [
-            -i * v2.eps.component(0) * sv,
-            i * v2.eps.component(1) * sv,
-            i * v2.eps.component(2) * sv,
-            i * v2.eps.component(3) * sv,
+            -v2.eps.component(0) * sv,
+            v2.eps.component(1) * sv,
+            v2.eps.component(2) * sv,
+            v2.eps.component(3) * sv,
         ];
         for (mu, &exp) in expect.iter().enumerate() {
             let got = out.eps.component(mu);
@@ -782,7 +873,11 @@ mod tests {
                 )
                 .unwrap()],
             };
-            let prop_info = PropInfo { id: prop_id };
+            let prop_info = PropInfo {
+                id: prop_id,
+                t_channel: false,
+                lowered_storage: false,
+            };
             let amp_info = VertexInfo {
                 terms: vec![VertexTerm::from_ufo(
                     model,
@@ -980,7 +1075,11 @@ mod tests {
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                     },
                     EvalNode::Propagate {
-                        info: PropInfo { id: prop_id },
+                        info: PropInfo {
+                            id: prop_id,
+                            t_channel: false,
+                            lowered_storage: false,
+                        },
                         flow: None,
                         child: EvalNodeId::new(2),
                     },
@@ -1118,7 +1217,11 @@ mod tests {
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                     },
                     EvalNode::Propagate {
-                        info: PropInfo { id: z_id },
+                        info: PropInfo {
+                            id: z_id,
+                            t_channel: false,
+                            lowered_storage: false,
+                        },
                         flow: None,
                         child: EvalNodeId::new(2),
                     },
@@ -1211,7 +1314,7 @@ mod tests {
             let fi = InDiracWf::from_momentum(p_f, mass, hel, charge);
             let vertex =
                 off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionIn(fi));
-            let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width) else {
+            let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width, false) else {
                 panic!("expected flow-in fermion from propagation");
             };
             let want = fvixxx(&fi, &v, [g.im, g.im], mass, width);
@@ -1235,7 +1338,7 @@ mod tests {
             let fo = fi.to_outgoing();
             let vertex =
                 off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionOut(fo));
-            let WaveformSlot::FermionOut(got) = propagate_core(&vertex, mass, width) else {
+            let WaveformSlot::FermionOut(got) = propagate_core(&vertex, mass, width, false) else {
                 panic!("expected flow-out fermion from propagation");
             };
             let want = fvoxxx(&fo, &v, [g.im, g.im], mass, width);
@@ -1293,7 +1396,8 @@ mod tests {
                 // Production composition for the chiral (ProjM) fermion current.
                 let projected = chiral_project(WaveformSlot::FermionIn(fi), Chirality::Left);
                 let vertex = off_shell_fermion_current(WaveformSlot::Vector(v), projected);
-                let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width) else {
+                let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width, false)
+                else {
                     panic!("expected flow-in fermion from chiral propagation");
                 };
 
@@ -1342,7 +1446,8 @@ mod tests {
                     left.spinor + right.spinor * 2.0,
                     left.momentum,
                 ));
-                let WaveformSlot::FermionIn(got4) = propagate_core(&summed, mass, width) else {
+                let WaveformSlot::FermionIn(got4) = propagate_core(&summed, mass, width, false)
+                else {
                     unreachable!()
                 };
                 let aloha4 = ffv4_2(&fi, &v, Complex64::from(1.0), mass, width);
@@ -1449,7 +1554,7 @@ mod tests {
                 let curr =
                     off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionIn(fi));
                 let WaveformSlot::FermionIn(got2) =
-                    propagate_core(&chiral_project(curr, Chirality::Left), mass, width)
+                    propagate_core(&chiral_project(curr, Chirality::Left), mass, width, false)
                 else {
                     panic!("expected flow-in fermion from chiral propagation");
                 };
@@ -1481,7 +1586,8 @@ mod tests {
                     left.spinor + right.spinor * 2.0,
                     left.momentum,
                 ));
-                let WaveformSlot::FermionIn(got4) = propagate_core(&summed, mass, width) else {
+                let WaveformSlot::FermionIn(got4) = propagate_core(&summed, mass, width, false)
+                else {
                     unreachable!()
                 };
                 let want4 = textbook(o, Complex64::new(2.0, 0.0));
@@ -1520,6 +1626,7 @@ mod tests {
                     ),
                     mass,
                     width,
+                    false,
                 ) else {
                     panic!("expected flow-in fermion");
                 };
@@ -1549,7 +1656,8 @@ mod tests {
                     l1.spinor + r1.spinor * 2.0,
                     l1.momentum,
                 ));
-                let WaveformSlot::FermionIn(g4b) = propagate_core(&summed1, mass, width) else {
+                let WaveformSlot::FermionIn(g4b) = propagate_core(&summed1, mass, width, false)
+                else {
                     unreachable!()
                 };
                 let want4b = textbook_proj_first(o, Complex64::new(2.0, 0.0));
@@ -1692,6 +1800,7 @@ mod tests {
                     ),
                     mass,
                     width,
+                    false,
                 ) else {
                     panic!("expected flow-out fermion");
                 };
@@ -1730,6 +1839,7 @@ mod tests {
                         )),
                         mass,
                         width,
+                        false,
                     ) else {
                         unreachable!()
                     };
@@ -1855,243 +1965,53 @@ mod tests {
         }
     }
 
-    /// Per-diagram amplitude dump for e+ e- > mu+ mu- ta+ ta- (QCD=0), the
-    /// minimal chained-off-shell-fermion-current reproducer of the uux continuum
-    /// relative-phase bug (2→4, 25 diagrams, colorless).  Computes the two
-    /// basis-independent helicity-summed quantities (invariant under the massive-τ
-    /// spin-basis ambiguity) at CSV point 0 to cross-check against MadGraph's
-    /// per-diagram AMP() (validation/madgraph/probe_amp.py):
-    ///   diag[i] = Σ_hel |a_i|²            (per-diagram magnitude → match diagrams)
-    ///   Rrow[i] = Σ_hel conj(a_i)·a_total (contribution to |M|²; Σ Re = |M|²)
+    /// Process-parameterized per-diagram probe (paired with the MG-side matcher
+    /// `validation/madgraph/compare_amps.py`), so any failing process gets the
+    /// note-12 diagnostic treatment immediately.
     ///
-    /// Run: cargo test -p vibegraph-lib --features extended-validation \
-    ///        --lib helas::eval::run::tests::probe_eemumutata_diagrams -- --ignored --nocapture
+    /// Reads everything from the process's generated reference data:
+    /// momenta + MG |M|² from CSV point 0 of `output/<NAME>_amplitude.csv` (whose
+    /// `# process:` header is the proc-card line), the param card from
+    /// `output/<NAME>/Cards/param_card.dat`.  Dumps the full [diagram × helicity]
+    /// complex amplitudes to `output/vibegraph_amps_<NAME>.txt` (match against an
+    /// MG AMP-dump probe), prints the coherent |M|² vs the MG reference, and runs
+    /// sign-flip experiments — exhaustive over diagram subsets when the diagram
+    /// count is small, else one flip per propagator-signature class — reporting any
+    /// assignment that collapses the residual (instant diagnosis for sign bugs).
+    ///
+    /// Run: VG_PROBE_NAME=ee_to_ee VG_PROBE_CF=1 cargo test -p vibegraph-lib --release \
+    ///        --lib helas::eval::run::tests::probe_process_diagrams -- --ignored --nocapture
     #[test]
     #[ignore]
-    fn probe_eemumutata_diagrams() {
+    fn probe_process_diagrams() {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 
-        let model = sm_model();
-        // CAUTION: the MG probe reference (mg_amps_full.npy) has MTA=ymtau=1.777
-        // hardcoded at generation time (Source/param_card.inc; SETPARA ignores the
-        // card passed at runtime) — for apples-to-apples comparison the VG card
-        // must be param_card_default.dat. VG_PARAM_CARD selects the card file name.
-        let card_file = std::env::var("VG_PARAM_CARD")
-            .unwrap_or_else(|_| "param_card_masslesstau.dat".to_string());
-        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let card_path = std::path::Path::new(&manifest)
-            .join("../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards")
-            .join(&card_file);
-        let card = std::fs::read_to_string(&card_path)
+        let name = std::env::var("VG_PROBE_NAME").expect("set VG_PROBE_NAME=<process name>");
+        let cf: f64 = std::env::var("VG_PROBE_CF")
             .ok()
-            .and_then(|s| s.parse::<ParamCard>().ok())
-            .unwrap_or_else(|| panic!("ee_to_mumu_tata_qcd0 {card_file}"));
-        let evaluated = model.evaluate(&card);
-
-        let opts = ParsingOptions::default();
-        let pc = parse_proc_card("generate e+ e- > mu+ mu- ta+ ta- QCD=0", &opts).unwrap();
-        let sets = generate_from_proc_card(&pc, model).unwrap();
-        let set = &sets[0];
-
-        let evaluator = AmplitudeEvaluator::compile(set, model).expect("should compile");
-        let ast = &evaluator.folded().ast;
-        eprintln!("folded ast = {}", ast);
-
-        let asts = compile_diagram_ast(set, model).unwrap();
-        println!("n_diagrams = {} (MadGraph NGRAPHS = 25)", asts.len());
-
-        // CSV point-0 momenta, order [e+,e-,mu+,mu-,ta+,ta-].
-        let p = [
-            LorentzVector::new(250.0, 0.0, 0.0, 250.0),
-            LorentzVector::new(250.0, 0.0, 0.0, -250.0),
-            LorentzVector::new(
-                130.98844490914234,
-                -106.66561232781022,
-                -0.9379201403415187,
-                -76.02328690775641,
-            ),
-            LorentzVector::new(
-                167.2530959714149,
-                134.2336665209957,
-                -62.607066356179416,
-                -77.68703963098595,
-            ),
-            LorentzVector::new(
-                94.5533499515044,
-                -18.39281604525598,
-                -22.219961151047247,
-                90.04617499607066,
-            ),
-            LorentzVector::new(
-                107.2051091679384,
-                -9.175238147929512,
-                85.76494764756818,
-                63.66415154267164,
-            ),
-        ];
-
-        let prop_sig = |ast: &DiagramEval| -> String {
-            let names: Vec<String> = ast
-                .propagator_particles()
-                .map(|id| model.particle(id).name.clone())
-                .collect();
-            // don't sort so we can tell e.g. a+ta-+Z from Z+ta-+a
-            // names.sort();
-            names.join("+")
-        };
-
-        // All 64 helicity combos for 6 external legs.
-        let mut combos: Vec<Vec<i32>> = vec![vec![]];
-        for _ in 0..6 {
-            let mut next = vec![];
-            for c in &combos {
-                for &h in &[-1i32, 1] {
-                    let mut cc = c.clone();
-                    cc.push(h);
-                    next.push(cc);
-                }
-            }
-            combos = next;
-        }
-
-        // print all asts
-        for (i, ast) in asts.iter().enumerate() {
-            println!("AST {}: {}", i, ast);
-        }
-        let n = asts.len();
-        // The e-spine relative −1 vs MadGraph is carried by `fermi_sign`
-        // (topo_sort::initial_state_spine_sign), applied inside
-        // eval_single_diagram — no manual flip here.
-        let mut diag = vec![0.0f64; n];
-        let mut rrow = vec![C::new(0.0, 0.0); n];
-        let mut m2_total = 0.0f64;
-        let mut amp_hel0 = None;
-        let mut full: Vec<Vec<C<f64>>> = vec![Vec::with_capacity(combos.len()); n]; // [diagram][hel]
-        for hel in &combos {
-            let amps: Vec<C<f64>> = asts
-                .iter()
-                .map(|ast| eval_single_diagram(ast, &p, hel, &evaluated))
-                .collect();
-            let a_tot: C<f64> = amps.iter().fold(C::new(0.0, 0.0), |a, b| a + *b);
-            m2_total += a_tot.norm_sqr();
-            for (i, a) in amps.iter().enumerate() {
-                diag[i] += a.norm_sqr();
-                rrow[i] += a.conj() * a_tot;
-                full[i].push(*a);
-            }
-            if hel == &[-1, 1, -1, 1, -1, 1] {
-                amp_hel0 = Some(amps);
-            }
-        }
-        // Write the full [diagram][helicity] complex array + per-diagram sig for the
-        // Python matcher (validation/madgraph/match_amps.py). Same helicity order as
-        // itertools.product((-1,1), repeat=6) (leg0 slowest).
-        {
-            use std::fmt::Write as _;
-            let mut s = String::new();
-            for i in 0..n {
-                let _ = write!(s, "{}\t{}", i, prop_sig(&asts[i]));
-                for a in &full[i] {
-                    let _ = write!(s, "\t{}\t{}", a.re, a.im);
-                }
-                s.push('\n');
-            }
-            let out = std::path::Path::new(&manifest)
-                .join("../validation/madgraph/output/vibegraph_amps_full.txt");
-            std::fs::write(&out, s).unwrap();
-            println!("wrote {}", out.display());
-        }
-        let rsum: f64 = rrow.iter().map(|r| r.re).sum();
-        println!("vibegraph total |M|² = {m2_total:.10e}");
-        println!("(MG CSV point-0 ref  = 1.1519918572120465e-10)");
-        println!("check Σ Re(Rrow)     = {rsum:.10e}");
-
-        for (i, amp) in amp_hel0.unwrap().iter().enumerate() {
-            // Diagram {i:02}  {amp.real:+.8e} {amp.imag:+.8e} (diag[{i}] = {diag[i]:.8e})
-            println!(
-                "Diagram {i:02}  {are:+.8e} {aim:+.8e} (diag[{i}] = {diag_i:.8e})  [{sig}]",
-                are = amp.re,
-                aim = amp.im,
-                diag_i = diag[i],
-                sig = prop_sig(&asts[i])
-            );
-        }
-
-        let mut order: Vec<usize> = (0..n).collect();
-        order.sort_by(|&a, &b| diag[b].partial_cmp(&diag[a]).unwrap());
-        println!("\n  vibegraph diagrams sorted by magnitude:");
-        println!("  rank  diag_mag        Re(Rrow)         sig");
-        for (rank, &i) in order.iter().enumerate() {
-            println!(
-                "  {rank:3}   {:.6e}  {:+.6e}  [{}]",
-                diag[i],
-                rrow[i].re,
-                prop_sig(&asts[i])
-            );
-        }
-    }
-
-    /// Per-diagram class probe for `u u~ > c c~ e+ e- mu+ mu-` QCD=0 (2→6, 579
-    /// diagrams) at CSV point 0 of `uux_to_ccx_emmm_qcd0_amplitude.csv`.
-    ///
-    /// Splits the coherent sum by diagram class — keyed on the propagator spin
-    /// content (#fermion, #scalar internal lines) — and evaluates |M|² with the
-    /// H-diagram class (0 fermion props + 1 scalar chain, vs 2 fermion props
-    /// everywhere else) rotated by test phases. If the uux residual is a
-    /// per-chain relative-phase mismatch between the classes, one rotation
-    /// collapses the rel diff vs the MG reference (color factor 9).
-    ///
-    /// Run: cargo test -p vibegraph-lib --release \
-    ///        --lib helas::eval::run::tests::probe_uux_diagram_classes -- --ignored --nocapture
-    #[test]
-    #[ignore]
-    fn probe_uux_diagram_classes() {
-        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1.0);
 
         let model = sm_model();
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let out_dir = std::path::Path::new(&manifest).join("../validation/madgraph/output");
-        let card =
-            std::fs::read_to_string(out_dir.join("uux_to_ccx_emmm_qcd0/Cards/param_card.dat"))
-                .expect("uux param_card.dat")
-                .parse::<ParamCard>()
-                .unwrap();
-        let evaluated = model.evaluate(&card);
 
-        let opts = ParsingOptions::default();
-        let pc = parse_proc_card("generate u u~ > c c~ e+ e- mu+ mu- QCD=0", &opts).unwrap();
-        let sets = generate_from_proc_card(&pc, model).unwrap();
-        let set = &sets[0];
-        let asts = compile_diagram_ast(set, model).unwrap();
-        let n = asts.len();
-        println!("n_diagrams = {n} (MadGraph NGRAPHS = 579)");
-
-        // Classify by internal-line spin content: (n_fermion_props, n_scalar_props).
-        let class_of = |ast: &DiagramEval| -> (usize, usize) {
-            let (mut nf, mut ns) = (0, 0);
-            for id in ast.propagator_particles() {
-                match model.particle(id).spin {
-                    2 => nf += 1,
-                    1 => ns += 1,
-                    _ => {}
-                }
-            }
-            (nf, ns)
-        };
-        let classes: Vec<(usize, usize)> = asts.iter().map(class_of).collect();
-        let mut hist: std::collections::BTreeMap<(usize, usize), usize> =
-            std::collections::BTreeMap::new();
-        for c in &classes {
-            *hist.entry(*c).or_default() += 1;
-        }
-        println!("diagram classes (n_fermion_props, n_scalar_props) -> count:");
-        for (c, cnt) in &hist {
-            println!("  {c:?} -> {cnt}");
-        }
-
-        // CSV point 0: m2_ref + 8 external momenta.
-        let csv =
-            std::fs::read_to_string(out_dir.join("uux_to_ccx_emmm_qcd0_amplitude.csv")).unwrap();
+        // CSV: process string from the header, momenta + m2_ref from point 0.
+        let csv = std::fs::read_to_string(out_dir.join(format!("{name}_amplitude.csv")))
+            .expect("amplitude CSV (run generate-amplitude first)");
+        let process_str = csv
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("# process:"))
+            .expect("# process: header")
+            .trim()
+            .to_owned();
+        let n_ext: usize = csv
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("# n_ext:"))
+            .expect("# n_ext: header")
+            .trim()
+            .parse()
+            .unwrap();
         let row: Vec<f64> = csv
             .lines()
             .filter(|l| !l.trim().starts_with('#') && !l.trim().is_empty())
@@ -2100,47 +2020,67 @@ mod tests {
             .split(',')
             .map(|c| c.trim().parse().unwrap())
             .collect();
-        assert_eq!(row.len(), 1 + 4 * 8);
+        assert_eq!(row.len(), 1 + 4 * n_ext);
         let m2_ref = row[0];
-        let p: Vec<LorentzVector<f64>> = (0..8)
+        let p: Vec<LorentzVector<f64>> = (0..n_ext)
             .map(|i| {
                 let b = 1 + 4 * i;
                 LorentzVector::new(row[b], row[b + 1], row[b + 2], row[b + 3])
             })
             .collect();
 
-        // Fold each diagram once, then run all 256 helicity combos.
-        let folded: Vec<(Folded, Box<[C<f64>]>, Box<[f64]>)> = asts
+        let card = std::fs::read_to_string(out_dir.join(format!("{name}/Cards/param_card.dat")))
+            .expect("param_card.dat")
+            .parse::<ParamCard>()
+            .unwrap();
+        let evaluated = model.evaluate(&card);
+
+        let opts = ParsingOptions::default();
+        let pc = parse_proc_card(&format!("generate {process_str}"), &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, model).unwrap();
+        let set = &sets[0];
+        let asts = compile_diagram_ast(set, model).unwrap();
+        let n = asts.len();
+        let evaluator = AmplitudeEvaluator::compile(set, model).unwrap();
+        let combos = evaluator.helicities();
+        println!(
+            "[{name}] {process_str}: {n} diagrams, {} hel combos",
+            combos.len()
+        );
+
+        let prop_sig = |ast: &DiagramEval| -> String {
+            let names: Vec<String> = ast
+                .propagator_particles()
+                .map(|id| model.particle(id).name.clone())
+                .collect();
+            names.join("+")
+        };
+        for (i, ast) in asts.iter().enumerate() {
+            println!(
+                "  diagram {i:3}  fermi_sign={:+}  [{}]",
+                ast.fermi_sign,
+                prop_sig(ast)
+            );
+        }
+        // VG_PROBE_DUMP=3,17: print the full rooted trees of selected diagrams.
+        if let Ok(dump) = std::env::var("VG_PROBE_DUMP") {
+            for tok in dump.split(',') {
+                let i: usize = tok.trim().parse().unwrap();
+                println!("--- diagram {i} tree:\n{}", asts[i]);
+            }
+        }
+
+        // amps[d][hel] via the production forward pass, one diagram at a time.
+        let amps: Vec<Vec<C<f64>>> = asts
             .iter()
             .map(|d| {
                 let symbolic = lower::lower(std::slice::from_ref(d));
                 let f = Folded::build(&symbolic);
-                let (cc, cf) = f.pools::<f64>(&evaluated);
-                (f, cc, cf)
-            })
-            .collect();
-
-        let mut combos: Vec<Vec<i32>> = vec![vec![]];
-        for _ in 0..8 {
-            let mut next = vec![];
-            for c in &combos {
-                for &h in &[-1i32, 1] {
-                    let mut cc = c.clone();
-                    cc.push(h);
-                    next.push(cc);
-                }
-            }
-            combos = next;
-        }
-
-        // amps[d][hel]
-        let amps: Vec<Vec<C<f64>>> = folded
-            .iter()
-            .map(|(f, cc, cf)| {
+                let (cc, cf_pool) = f.pools::<f64>(&evaluated);
                 combos
                     .iter()
                     .map(
-                        |hel| match run_forward_slot(&f.ast, cc, cf, &p, hel, None) {
+                        |hel| match run_forward_slot(&f.ast, &cc, &cf_pool, &p, hel, None) {
                             WaveformSlot::Scalar(s) => s.value,
                             WaveformSlot::Empty => C::new(0.0, 0.0),
                             other => panic!("amplitude root is not a scalar: {other:?}"),
@@ -2150,80 +2090,76 @@ mod tests {
             })
             .collect();
 
-        // Full [diagram][helicity] complex dump for the Python matcher
-        // (validation/madgraph/compare_uux_amps.py), same row format as
-        // vibegraph_amps_full.txt: index, prop signature, then re/im pairs in
-        // the same helicity order as itertools.product((-1,1), repeat=8).
+        // Full [diagram][helicity] dump for the MG-side per-diagram matcher
+        // (validation/madgraph/compare_amps.py). The `#hel` header lists the
+        // helicity combos column-by-column so the matcher evaluates MadGraph's
+        // AMP() at exactly the same combos in the same order.
         {
             use std::fmt::Write as _;
-            let prop_sig = |ast: &DiagramEval| -> String {
-                let names: Vec<String> = ast
-                    .propagator_particles()
-                    .map(|id| model.particle(id).name.clone())
-                    .collect();
-                names.join("+")
-            };
-            let mut s = String::new();
-            for (i, row) in amps.iter().enumerate() {
+            let mut s = String::from("#hel");
+            for hel in combos {
+                let cs: Vec<String> = hel.iter().map(|h| h.to_string()).collect();
+                let _ = write!(s, "\t{}", cs.join(","));
+            }
+            s.push('\n');
+            for (i, arow) in amps.iter().enumerate() {
                 let _ = write!(s, "{}\t{}", i, prop_sig(&asts[i]));
-                for a in row {
+                for a in arow {
                     let _ = write!(s, "\t{}\t{}", a.re, a.im);
                 }
                 s.push('\n');
             }
-            let out = out_dir.join("vibegraph_uux_amps_full.txt");
+            let out = out_dir.join(format!("vibegraph_amps_{name}.txt"));
             std::fs::write(&out, s).unwrap();
             println!("wrote {}", out.display());
         }
 
-        let cf_color = 9.0;
-        let m2_with = |phase_h: C<f64>| -> f64 {
+        // |M|² with a per-diagram sign assignment (subset S of diagrams flipped).
+        let m2_flipped = |flip: &dyn Fn(usize) -> bool| -> f64 {
             let mut m2 = 0.0;
-            for (h, _) in combos.iter().enumerate() {
+            for h in 0..combos.len() {
                 let mut tot = C::new(0.0, 0.0);
-                for d in 0..n {
-                    let a = amps[d][h];
-                    tot += if classes[d].1 > 0 { a * phase_h } else { a };
+                for (d, arow) in amps.iter().enumerate() {
+                    tot += if flip(d) { -arow[h] } else { arow[h] };
                 }
                 m2 += tot.norm_sqr();
             }
-            cf_color * m2
+            cf * m2
         };
 
-        // Per-class decomposition at the base phase.
-        let mut m2_h = 0.0;
-        let mut m2_rest = 0.0;
-        let mut interf = 0.0;
-        for (h, _) in combos.iter().enumerate() {
-            let mut th = C::new(0.0, 0.0);
-            let mut tr = C::new(0.0, 0.0);
-            for d in 0..n {
-                if classes[d].1 > 0 {
-                    th += amps[d][h];
-                } else {
-                    tr += amps[d][h];
-                }
-            }
-            m2_h += th.norm_sqr();
-            m2_rest += tr.norm_sqr();
-            interf += 2.0 * (th.conj() * tr).re;
-        }
-        println!("MG ref |M|²         = {m2_ref:.10e}");
-        println!("class decomposition (×{cf_color} color factor):");
-        println!("  |H class|²      = {:.10e}", cf_color * m2_h);
-        println!("  |rest|²         = {:.10e}", cf_color * m2_rest);
-        println!("  2·Re interference = {:.10e}", cf_color * interf);
+        let base = m2_flipped(&|_| false);
+        println!("MG ref |M|²      = {m2_ref:.10e}");
+        println!(
+            "vibegraph ×CF={cf} = {base:.10e}   rel_diff = {:.3e}",
+            (base - m2_ref).abs() / m2_ref
+        );
 
-        for (label, ph) in [
-            ("+1 (as evaluated)", C::new(1.0, 0.0)),
-            ("-1", C::new(-1.0, 0.0)),
-            ("+i", C::new(0.0, 1.0)),
-            ("-i", C::new(0.0, -1.0)),
-            ("0 (H class removed)", C::new(0.0, 0.0)),
-        ] {
-            let m2 = m2_with(ph);
-            let rel = (m2 - m2_ref).abs() / m2_ref;
-            println!("H-class phase {label:>20}: |M|² = {m2:.10e}  rel_diff = {rel:.3e}");
+        if n <= 16 {
+            // Exhaustive subset flips (diagram 0 held fixed: global sign is irrelevant).
+            let mut hits: Vec<(u32, f64)> = (0u32..(1 << (n - 1)))
+                .map(|mask| {
+                    let m2 = m2_flipped(&|d| d > 0 && (mask >> (d - 1)) & 1 == 1);
+                    (mask, (m2 - m2_ref).abs() / m2_ref)
+                })
+                .collect();
+            hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            println!("best sign assignments (flipped diagram set -> rel_diff):");
+            for (mask, rel) in hits.iter().take(4) {
+                let flipped: Vec<usize> = (1..n).filter(|d| (mask >> (d - 1)) & 1 == 1).collect();
+                println!("  flip {flipped:?} -> rel_diff {rel:.3e}");
+            }
+        } else {
+            // One flip per propagator-signature class.
+            let sigs: Vec<String> = asts.iter().map(prop_sig).collect();
+            let uniq: std::collections::BTreeSet<&String> = sigs.iter().collect();
+            println!("per-class sign flips ({} classes):", uniq.len());
+            for sig in uniq {
+                let m2 = m2_flipped(&|d| &sigs[d] == sig);
+                println!(
+                    "  flip [{sig}] -> rel_diff {:.3e}",
+                    (m2 - m2_ref).abs() / m2_ref
+                );
+            }
         }
     }
 
@@ -2601,7 +2537,11 @@ mod tests {
                     children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                 },
                 EvalNode::Propagate {
-                    info: PropInfo { id: z_id },
+                    info: PropInfo {
+                        id: z_id,
+                        t_channel: false,
+                        lowered_storage: false,
+                    },
                     flow: None,
                     child: EvalNodeId::new(2),
                 },
@@ -2757,7 +2697,11 @@ mod tests {
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                     },
                     EvalNode::Propagate {
-                        info: PropInfo { id: boson },
+                        info: PropInfo {
+                            id: boson,
+                            t_channel: false,
+                            lowered_storage: false,
+                        },
                         flow: None,
                         child: EvalNodeId::new(2),
                     },
@@ -2768,7 +2712,11 @@ mod tests {
                         children: vec![EvalNodeId::new(4), EvalNodeId::new(3)],
                     },
                     EvalNode::Propagate {
-                        info: PropInfo { id: em_id },
+                        info: PropInfo {
+                            id: em_id,
+                            t_channel: false,
+                            lowered_storage: false,
+                        },
                         flow: Some(ep_flow),
                         child: EvalNodeId::new(5),
                     },

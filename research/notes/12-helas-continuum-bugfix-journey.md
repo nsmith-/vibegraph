@@ -111,6 +111,11 @@ amplitude dump on both sides, at bit-matched parameters**.
   `compare_uux_amps.py` (matches 579 diagrams by log-|amp| helicity fingerprint,
   cost ~1e-31 — unambiguous).
 
+_These per-process probes/matchers were later generalized into one
+process-parameterized pair — the `probe_process_diagrams` test (`VG_PROBE_NAME`)
+and `validation/madgraph/compare_amps.py` — during `mg-validation-coverage`; the
+bespoke scripts named above no longer exist._
+
 For uux this instantly produced the whole diagnosis: **every one of 579 diagram
 magnitudes already exact; the residual was three phase clusters** (528 diagrams at
 +i, 48 u-spine at −i, 3 Higgs at −1). The candidate fix was then verified

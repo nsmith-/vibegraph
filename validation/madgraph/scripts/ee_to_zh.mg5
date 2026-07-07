@@ -1,0 +1,16 @@
+# MadGraph5 batch script: e+ e- > z h (Higgsstrahlung) at LO
+#
+# Why this exact process:
+#   - External scalar wavefunction (sxxxxx) + on-shell VVS vertex; complements
+#     the internal-Higgs ZZH class exercised by the uux 2->6.
+#
+# sqrt(s) = 500 GeV > MZ + MH = 216 GeV so the channel is open.
+generate e+ e- > z h
+output ee_to_zh -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

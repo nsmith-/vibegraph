@@ -38,22 +38,29 @@ const REL_TOL: f64 = 1e-10;
 const EXPECT_MATCH: &[&str] = &[
     "ee_to_mumu",
     "pp_to_ll_qcd0",
+    "ee_to_ee",
+    "ee_to_mumua",
+    "ee_to_ttx",
+    "ee_to_wpwm",
+    "ee_to_zh",
+    "ee_to_tatah",
     "ee_to_mumu_tata_qcd0",
     "uux_to_ccx_emmm_qcd0",
+    "bbx_to_ccx_emmm_qcd0",
 ];
 
 /// Overall color factor relating MadGraph's color-summed |M|² to vibegraph's
 /// color-stripped coherent diagram sum, for single-color-flow processes.
 /// MadGraph computes CF(1,1)·|JAMP|² with JAMP = ±(coherent sum); vibegraph
 /// omits color, so `color_factor * eval_m2_rust == MG`.
-///   ee_to_mumu          : colorless                       → 1
-///   pp_to_ll_qcd0        : one quark line (Nc)            → 3
-///   uux_to_ccx_emmm_qcd0 : two quark lines (Nc²)          → 9
+///   colorless (leptons/EW bosons only)                    → 1
+///   one quark line (Nc): pp_to_ll_qcd0, ee_to_ttx         → 3
+///   two quark lines (Nc²): uux/bbx 2→6                    → 9
 /// This is a stand-in until multi-flow color is implemented in vibegraph.
 fn color_factor(name: &str) -> f64 {
     match name {
-        "pp_to_ll_qcd0" => 3.0,
-        "uux_to_ccx_emmm_qcd0" => 9.0,
+        "pp_to_ll_qcd0" | "ee_to_ttx" => 3.0,
+        "uux_to_ccx_emmm_qcd0" | "bbx_to_ccx_emmm_qcd0" => 9.0,
         _ => 1.0,
     }
 }
@@ -99,10 +106,9 @@ fn process_name(p: &Path) -> String {
     stem.strip_suffix("_amplitude").unwrap_or(&stem).to_owned()
 }
 
-/// Parse the CSV into (process_string, points).  Two schemas are supported:
-///   * 2->2:  columns `sqrt_s_GeV, cos_theta, M2_summed` (momenta rebuilt below)
-///   * n-body: a `# n_ext: N` header, then columns `m2_summed, E0,px0,..,pz_{N-1}`
-/// Points are empty for skeleton CSVs.
+/// Parse the CSV into (process_string, points): a `# process:` + `# n_ext: N`
+/// header, one column-name row, then rows of `m2_summed, E0,px0,..,pz_{N-1}`
+/// (the momenta-based schema gen_amplitude.py writes for every process).
 fn read_csv(path: &Path) -> (String, Vec<AmpPoint>) {
     let content = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
@@ -122,10 +128,11 @@ fn read_csv(path: &Path) -> (String, Vec<AmpPoint>) {
             continue;
         } else if !header_skipped {
             header_skipped = true; // skip column-name header row
-        } else if let Some(n) = n_ext {
+        } else {
+            let n = n_ext.expect("missing '# n_ext:' header before data rows");
             let cols: Vec<f64> = line
                 .split(',')
-                .map(|c| c.trim().parse().expect("bad number in n-body row"))
+                .map(|c| c.trim().parse().expect("bad number in row"))
                 .collect();
             assert_eq!(
                 cols.len(),
@@ -143,35 +150,10 @@ fn read_csv(path: &Path) -> (String, Vec<AmpPoint>) {
                 momenta,
                 m2_ref: cols[0],
             });
-        } else {
-            let cols: Vec<&str> = line.splitn(3, ',').collect();
-            assert_eq!(cols.len(), 3, "expected 3 columns in: {line}");
-            let sqrt_s: f64 = cols[0].trim().parse().expect("bad sqrt_s");
-            let cos_theta: f64 = cols[1].trim().parse().expect("bad cos_theta");
-            points.push(AmpPoint {
-                momenta: make_momenta_2to2(sqrt_s, cos_theta),
-                m2_ref: cols[2].trim().parse().expect("bad M2"),
-            });
         }
     }
 
     (process_str, points)
-}
-
-/// Build massless 2→2 momenta matching helas_validation.rs convention (lines 145-149):
-///   [0] e+  (E,  0,       0,  -E)
-///   [1] e-  (E,  0,       0,  +E)
-///   [2] mu+ (E, -E*sin_t, 0,  -E*cos_t)
-///   [3] mu- (E, +E*sin_t, 0,  +E*cos_t)
-fn make_momenta_2to2(sqrt_s: f64, cos_theta: f64) -> Vec<LorentzVector<f64>> {
-    let e = sqrt_s / 2.0;
-    let sin_t = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
-    vec![
-        LorentzVector::new(e, 0.0, 0.0, -e),
-        LorentzVector::new(e, 0.0, 0.0, e),
-        LorentzVector::new(e, -e * sin_t, 0.0, -e * cos_theta),
-        LorentzVector::new(e, e * sin_t, 0.0, e * cos_theta),
-    ]
 }
 
 fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {

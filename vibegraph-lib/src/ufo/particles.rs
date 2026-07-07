@@ -1,5 +1,5 @@
 use super::ast_util::{
-    call_func_name, extract_attr, kwarg_float, kwarg_int, kwarg_str, parse_stmts,
+    call_func_name, extract_attr, kwarg_bool, kwarg_float, kwarg_int, kwarg_str, parse_stmts,
 };
 use indexmap::IndexMap;
 use rustpython_parser::ast;
@@ -65,6 +65,9 @@ pub struct Particle {
     pub texname: String,
     pub antitexname: String,
     pub ghost_number: i32,
+    /// UFO `goldstoneboson`/`goldstone` flag: a Goldstone mode of a massive gauge
+    /// boson. Excluded from diagram enumeration (unitary gauge, like MadGraph).
+    pub is_goldstone: bool,
     /// True when `name == antiname` (self-conjugate, e.g. photon, Z).
     pub is_self_conjugate: bool,
     /// Optional line style override, e.g. `line = 'dashed'`.
@@ -87,6 +90,7 @@ impl Particle {
             texname: self.antitexname.clone(),
             antitexname: self.texname.clone(),
             ghost_number: self.ghost_number,
+            is_goldstone: self.is_goldstone,
             is_self_conjugate: self.is_self_conjugate,
             line_style: self.line_style.clone(),
         }
@@ -134,6 +138,10 @@ pub fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
                 let texname = kwarg_str(keywords, "texname").unwrap_or_default();
                 let antitexname = kwarg_str(keywords, "antitexname").unwrap_or_default();
                 let ghost_number = kwarg_int(keywords, "GhostNumber").unwrap_or(0) as i32;
+                // Older UFO models (sm) spell it `goldstoneboson`, newer ones `goldstone`.
+                let is_goldstone = kwarg_bool(keywords, "goldstoneboson")
+                    .or_else(|| kwarg_bool(keywords, "goldstone"))
+                    .unwrap_or(false);
                 let mass_param =
                     extract_param_ref(keywords, "mass").unwrap_or_else(|| "ZERO".to_owned());
                 let width_param =
@@ -155,6 +163,7 @@ pub fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
                     texname,
                     antitexname,
                     ghost_number,
+                    is_goldstone,
                     is_self_conjugate,
                     line_style,
                 });

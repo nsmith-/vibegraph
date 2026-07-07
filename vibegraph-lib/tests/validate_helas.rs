@@ -96,16 +96,16 @@ mod eval_vs_hardcoded {
         assert!(!sets.is_empty(), "no diagram sets generated for e⁺e⁻→μ⁺μ⁻");
 
         // The `lepton_masses` restriction also keeps the lepton Yukawas non-zero,
-        // so e⁺e⁻→μ⁺μ⁻ gains s-channel Higgs and neutral-Goldstone (G0) diagrams
-        // (γ, Z, H, G0) — both scalar couplings are ∝ the lepton Yukawa. The
-        // hardcoded reference is γ+Z only, so we decouple the scalars by zeroing
-        // the lepton Yukawas (YUKAWA 11/13) in the param card while keeping the
-        // physical masses (MASS 11/13). The H and G0 diagrams are still built but
-        // evaluate to zero. TODO: once forbidden-propagator filtering (`/ H / G0`)
-        // is implemented this is a good test of that syntax — drop the scalars
-        // there and the Yukawa override here.
+        // so e⁺e⁻→μ⁺μ⁻ gains an s-channel Higgs diagram (γ, Z, H); the Goldstone
+        // (G0) diagram is excluded in unitary gauge like MadGraph. The Higgs
+        // coupling is ∝ the lepton Yukawa. The hardcoded reference is γ+Z only, so
+        // we decouple the scalar by zeroing the lepton Yukawas (YUKAWA 11/13) in
+        // the param card while keeping the physical masses (MASS 11/13). The H
+        // diagram is still built but evaluates to zero. TODO: once
+        // forbidden-propagator filtering (`/ H`) is implemented this is a good
+        // test of that syntax — drop the scalar there and the Yukawa override here.
         let set = &sets[0];
-        assert_eq!(set.diagrams.len(), 4, "expected 4 diagrams (γ, Z, H, G0)");
+        assert_eq!(set.diagrams.len(), 3, "expected 3 diagrams (γ, Z, H)");
 
         let card = format!(
             "Block MASS\n 11 {}\n 13 {}\nBlock YUKAWA\n 11 0.0\n 13 0.0\n",

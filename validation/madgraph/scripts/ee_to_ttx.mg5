@@ -1,0 +1,17 @@
+# MadGraph5 batch script: e+ e- > t t~ at LO
+#
+# Why this exact process:
+#   - Massive external fermions (top mass in the ixxxxx/oxxxxx wavefunctions):
+#     tests the massive-fermion spinor conventions the massless continuum
+#     processes never touch.
+#
+# sqrt(s) = 500 GeV > 2*MT = 346 GeV so the channel is open.
+generate e+ e- > t t~
+output ee_to_ttx -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

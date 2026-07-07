@@ -6,15 +6,17 @@
 |------|-----------|--------|-------|
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
-| 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 4 processes bit-match MadGraph (≤2e-13, incl. 2→6); single color flow only |
+| 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 11 processes bit-match MadGraph (≤6e-13, incl. 2→6, VVV, massive externals); single color flow only |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS + 2-body LIPS |
 | 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻) | ✅ Done | σ ≈ 2025 pb at √s = 91.2 GeV vs MadGraph ref |
 | 6 | Unweighted event output (LHEF) | 🔲 Pending | Accept/reject sampling + Les Houches format |
 
 `helas-generalize` is **done** for single-color-flow processes: `AmplitudeEvaluator`
 drives the VEGAS integrand, and `validate_helas_mg` enforces bit-for-bit agreement
-with MadGraph (`ee_to_mumu` 4.2e-14, `pp_to_ll_qcd0` 2.1e-14 ×CF=3,
-`ee_to_mumu_tata_qcd0` 1.8e-14, `uux_to_ccx_emmm_qcd0` 2.1e-13 ×CF=9). The
+with MadGraph across **11 processes** (all ≤6.3e-13): `ee_to_mumu`, `pp_to_ll_qcd0`
+(×CF=3), `ee_to_mumu_tata_qcd0`, `uux_to_ccx_emmm_qcd0` (×CF=9), plus the 7
+`mg-validation-coverage` additions below (`ee_to_ee`, `ee_to_mumua`, `ee_to_ttx`,
+`ee_to_wpwm`, `ee_to_zh`, `ee_to_tatah`, `bbx_to_ccx_emmm_qcd0` ×CF=9). The
 three-week continuum bug hunt that got there is written up in
 `research/notes/12-helas-continuum-bugfix-journey.md`.
 
@@ -22,41 +24,41 @@ three-week continuum bug hunt that got there is written up in
 
 ## 🔴 High — broaden the MadGraph amplitude validation surface
 
-### `mg-validation-coverage` — New processes for `validate_helas_mg`
+### `mg-validation-coverage` — New processes for `validate_helas_mg` ✅ Done
 
-The four enforced processes cover external fermions, γ/Z/H propagators, and FFV/FFS/VVS
-vertices. Each proposed process below adds exactly one untested axis, in rough
-priority order (all use the existing generic wrapper + RAMBO CSV pipeline:
-`wrappers/generic.f`, `gen_amplitude.py`, `build_amplitude.sh`):
+All 7 single-flow processes are enforced bit-for-bit in `validate_helas_mg`
+(≤6.3e-13); `u u~ > u u~` (#8) remains blocked on color flow. Each added exactly one
+convention axis; the fixes each landed with a per-diagram AMP-dump cross-check:
 
-1. **`e+ e- > e+ e-` (Bhabha)** — s⊕t-channel interference with *identical*
-   initial/final flavors: the sharpest regression for the crossed-line conjugation
-   (note 12, fix 5) and the relative sign between crossed diagram classes. No new
-   evaluator features needed.
-2. **`e+ e- > mu+ mu- a`** — first *external vector* wavefunction (`vxxxxx`) vs MG.
-   Already Ward-tested internally, never compared to MadGraph values.
-3. **`e+ e- > t t~`** — massive external fermions (top mass/width in wavefunctions
-   and phase-space); tests the massive-fermion spinor conventions the massless
-   continuum never touched.
-4. **`e+ e- > w+ w-`** — triple-gauge vertex (VVV) + massive *charged* vector
-   externals + t-channel ν exchange. First process where the V-chain phase ledger
-   meets VVV.
-5. **`e+ e- > z h`** — external scalar + on-shell VVS; complements the internal-H
-   ZZH class from uux.
-6. **`e+ e- > ta+ ta- h`** (massive-τ card) — external FFS Yukawa emission.
-7. **`b b~ > c c~ e+ e- mu+ mu-` QCD=0 (massive-b card)** — the S20 loose end: a
-   2-propagator initial spine with *massive* internal fermions. The spine-parity
-   sign derivation assumes the massless `S(−q) = −S(q)` identity; this is the
-   process that would catch it if that's wrong.
-8. **`u u~ > u u~` QCD=0** — NCOLOR=2, same-flavor interference. **Blocked on color
-   flow** (below); everything else in this list is single-flow.
+1. **`ee_to_ee` (Bhabha)** — s⊕t interference with identical flavors. Needed the
+   crossed-line `−1` (s-channel has one crossed line, t-channel none) and ZERO width
+   on the t-channel Z (MadGraph passes ZERO for spacelike propagators). 2.7e-14.
+2. **`ee_to_mumua`** — first external vector wavefunction (`vxxxxx`) vs MG. Required
+   the massless-vector 3→2 helicity fix (`[-1,0,1]` → `[-1,1]`). 3.9e-13.
+3. **`ee_to_ttx`** — massive external fermions. 4.8e-15.
+4. **`ee_to_wpwm`** — VVV triple-gauge + massive charged vector externals + t-channel
+   ν. Needed `LowerVout` (VVV's P-carrying structure lowers its output index without
+   the vertex −i, vs VVS's `MetricVout`). 4.4e-14.
+5. **`ee_to_zh`** — external scalar + on-shell VVS + massive s-channel Z propagator.
+   9.5e-14.
+6. **`ee_to_tatah`** — external FFS Yukawa emission. Needed goldstone/ghost exclusion
+   in unitary gauge (`is_goldstone` + `ghost_number` filter in `topo.rs`). 3.9e-13.
+7. **`bbx_to_ccx_emmm_qcd0`** — 2-propagator spine with massive internal fermions +
+   massive-vector propagators fed by index-flipped (VVS `MetricVout`) currents. Needed
+   the `PropagateLowered` op: the massive-vector longitudinal term reads its `g^{μν}`
+   term off the raised current and undoes the `MetricVout` storage sign. 6.3e-14.
 
-Infra follow-ups:
-- Generalize the per-diagram AMP-dump oracle (currently two bespoke probes:
-  `probe_eemumutata_diagrams`, `probe_uux_diagram_classes` + matching Python) into
-  one process-parameterized probe + matcher, so any new failing process gets the
-  note-12 treatment immediately.
-- Migrate `ee`/`pp_to_ll` off their bespoke Fortran wrappers to `generic.f`.
+Infra delivered with this work (the reusable-scripts request):
+- `wrappers/generic.f` — one Fortran wrapper (`MG_EVAL_M2` / `..._BATCH`) for all
+  momentum-CSV processes; `TS` sized `3**NEXTERNAL` for massive-vector helicities.
+  `ee`/`pp_to_ll` migrated off their bespoke wrappers.
+- `gen_amplitude.py` — registry-driven (`Process` dataclass + `PROCESSES` list),
+  massive RAMBO (Newton ξ-rescale), momentum-based CSV schema shared by all.
+- `build_amplitude.sh` — registry-driven (`GENERIC_PROCESSES`, `AMP_PROBE_PROCESSES`);
+  `subprocess_dir()` glob helper.
+- `wrappers/amp_probe.f.in` + `compare_amps.py` — one process-parameterized
+  per-diagram AMP-dump probe + matcher, replacing the two bespoke note-12 probes.
+  Driven by the `probe_process_diagrams` Rust test (`VG_PROBE_NAME`/`VG_PROBE_CF`).
 
 ### `color-flow` — Multi-flow color algebra
 
@@ -111,15 +113,18 @@ levels:
 Make `VectorWf` (and `WaveformSlot`) variance-parameterized so each vertex returns its
 natural variance, the propagator's raise/lower is type-checked, and contractions can't
 silently double-apply or drop the metric. This removes the manual component/index
-hand-coding in `MetricVout` (`run.rs`), which bypasses the typed repr because
-`VectorWf.eps` is pinned to `Contravariant` — the exact variance-bug class the typing
-was meant to prevent. Note 12's lesson 10 is the motivation: every convention bug in
-the hunt lived at a duality boundary (flow, crossing, variance) that was hand-coded.
+hand-coding in `MetricVout`/`LowerVout` and the `PropagateLowered` branch (`run.rs`),
+which bypass the typed repr because `VectorWf.eps` is pinned to `Contravariant` — the
+exact variance-bug class the typing was meant to prevent. Note 12's lesson 10 is the
+motivation: every convention bug in the hunt lived at a duality boundary (flow,
+crossing, variance) that was hand-coded — and the `bbx` lowered-propagator fix added
+another `lowered_storage` flag + hand-raised `g^{μν}` term to that pile.
 
-**Now unblocked**: the continuum bug is fixed and VVS is regression-pinned
-(`test_metric_vout_vs_aloha_vvs1p1n1`). Prefer to also land a VVV MG validation
-(`mg-validation-coverage` #4) first, since this refactor changes the convention
-surface where off-shell-current sign/metric bugs live.
+**Now unblocked**: the continuum bug is fixed, VVS is regression-pinned
+(`test_metric_vout_vs_aloha_vvs1p1n1`), and VVV + lowered-vector propagation are now
+MG-validated (`ee_to_wpwm`, `bbx_to_ccx_emmm_qcd0`). This refactor is the natural next
+structural cleanup: it would collapse `Metric`/`MetricNegI`/`MetricVout`/`LowerVout`
+and `Propagate`/`PropagateLowered` into variance-typed nodes.
 
 ### `feyngraph-perf` — Fix feyngraph allocation hot spot
 
