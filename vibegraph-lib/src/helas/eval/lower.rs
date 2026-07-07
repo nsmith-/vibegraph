@@ -69,8 +69,19 @@ fn lower_diagram_node(tree: &DiagramEvalTree, id: EvalNodeId, b: &mut AstBuilder
         EvalNode::Propagate { info, child, .. } => {
             let current = lower_diagram_node(tree, *child, b);
             let mass = b.add(Op::Mass, Sym::Particle(info.id), vec![]);
-            let width = b.add(Op::Width, Sym::Particle(info.id), vec![]);
-            b.add(Op::Propagate, Sym::None, vec![current, mass, width])
+            // t-channel (spacelike) propagators can never resonate: MadGraph
+            // passes ZERO width for them, and we bake the same zero in here.
+            let width = if info.t_channel {
+                b.add(Op::Coeff, Sym::Coeff(0.0), vec![])
+            } else {
+                b.add(Op::Width, Sym::Particle(info.id), vec![])
+            };
+            let op = if info.lowered_storage {
+                Op::PropagateLowered
+            } else {
+                Op::Propagate
+            };
+            b.add(op, Sym::None, vec![current, mass, width])
         }
         EvalNode::ContractAmplitude { info, children } => {
             let inputs = lower_children(tree, children, b);
@@ -122,6 +133,7 @@ fn lower_lorentz(
     match *lt.value(n) {
         L::Leg(i) => inputs[i],
         L::P { leg } => b.add(Op::PMom, Sym::None, vec![inputs[leg]]),
+        L::POut => b.add(Op::PMomOut, Sym::None, inputs.to_vec()),
         L::GammaVout { i, j } => {
             let a = rec(i, b);
             let c = rec(j, b);
@@ -160,9 +172,18 @@ fn lower_lorentz(
             let c = rec(nu, b);
             b.add(Op::Metric, Sym::None, vec![a, c])
         }
+        L::MetricNegI { mu, nu } => {
+            let a = rec(mu, b);
+            let c = rec(nu, b);
+            b.add(Op::MetricNegI, Sym::None, vec![a, c])
+        }
         L::MetricVout { v } => {
             let a = rec(v, b);
             b.add(Op::MetricVout, Sym::None, vec![a])
+        }
+        L::LowerVout { v } => {
+            let a = rec(v, b);
+            b.add(Op::LowerVout, Sym::None, vec![a])
         }
         L::IdentityAmp { i, j } => {
             let a = rec(i, b);

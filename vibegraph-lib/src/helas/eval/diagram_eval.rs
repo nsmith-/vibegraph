@@ -68,6 +68,16 @@ impl std::fmt::Display for ExtLegInfo {
 pub struct PropInfo {
     /// Particle information
     pub id: ParticleId,
+    /// True iff the line is t-channel — it separates the two initial-state legs
+    /// (exactly one incoming external in its subtree), so its momentum is
+    /// spacelike and can never resonate. MadGraph passes ZERO width for such
+    /// propagators (cf. the Bhabha t-channel Z, `FFV2_4_3(..., MDL_MZ, ZERO, ...)`)
+    /// and the width is dropped at lowering accordingly.
+    pub t_channel: bool,
+    /// True iff the propagated current is stored index-flipped (±g·J, the
+    /// `MetricVout`/`LowerVout` vector-output convention); the massive vector
+    /// propagator forms its longitudinal term accordingly (see `propagate_core`).
+    pub lowered_storage: bool,
 }
 
 /// One (lorentz_structure, coupling_constant) pair at a vertex.

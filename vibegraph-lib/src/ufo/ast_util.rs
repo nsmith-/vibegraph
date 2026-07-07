@@ -114,6 +114,17 @@ pub fn kwarg_float(kws: &[ast::Keyword], name: &str) -> Option<f64> {
     extract_float(get_kwarg(kws, name)?)
 }
 
+/// Get a keyword argument as a boolean (`True`/`False` literals).
+pub fn kwarg_bool(kws: &[ast::Keyword], name: &str) -> Option<bool> {
+    match get_kwarg(kws, name)? {
+        ast::Expr::Constant(ast::ExprConstant {
+            value: ast::Constant::Bool(b),
+            ..
+        }) => Some(*b),
+        _ => None,
+    }
+}
+
 /// Get the function name from a Call expression (handles bare names and `mod.name` attributes).
 pub fn call_func_name(expr: &ast::Expr) -> Option<&str> {
     match expr {

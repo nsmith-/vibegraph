@@ -1,10 +1,11 @@
-C     Per-diagram amplitude probe for u u~ > c c~ e+ e- mu+ mu- (QCD=0).
+C     Per-diagram amplitude probe template (any process): @NGRAPHS@ is
+C     substituted with the process's NGRAPHS by build_amplitude.sh.
 C
 C     Exposes MadGraph's individual AMP(1:NGRAPHS) for one explicit helicity
 C     assignment, so vibegraph's per-diagram amplitudes can be matched against
-C     MadGraph diagram-by-diagram to localize the uux 2->6 continuum residual.
+C     MadGraph diagram-by-diagram (validation/madgraph/compare_amps.py).
 C     Relies on the COMMON/DBG_AMP/ block patched into matrix1_orig.f's
-C     MATRIX1 at build time (build_amplitude.sh build_uux_amp_probe), which
+C     MATRIX1 at build time (build_amplitude.sh build_amp_dump_probe), which
 C     copies AMP into AMP_DBG each call.
 C
 C       P           REAL*8 P(0:3, NEXTERNAL): external 4-momenta [E,px,py,pz]
@@ -16,7 +17,7 @@ Cf2py intent(in)  P, NHEL, PARAM_PATH
 Cf2py intent(out) AMP_OUT
       IMPLICIT NONE
       INTEGER    NGRAPHS
-      PARAMETER (NGRAPHS=579)
+      PARAMETER (NGRAPHS=@NGRAPHS@)
       INCLUDE 'nexternal.inc'
       CHARACTER*(*) PARAM_PATH
       REAL*8 P(0:3, NEXTERNAL)

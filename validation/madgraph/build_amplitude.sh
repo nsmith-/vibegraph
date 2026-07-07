@@ -16,57 +16,50 @@ MG_OUTPUT="$REPO_ROOT/validation/madgraph/output"
 WRAPPERS="$REPO_ROOT/validation/madgraph/wrappers"
 OUTDIR="$REPO_ROOT/validation/madgraph"
 
-# compile_process NAME SUBPROCESS_DIR
-#   NAME       — process name, e.g. ee_to_mumu
-#   SUBPROCESS — subprocess subdirectory, e.g. P1_ll_ll
-compile_process() {
+# All amplitude-validation processes build against the shared wrappers/generic.f
+# (SETPARA reads couplings from param_card.dat; libmodel.a supplies the model
+# routines), so registering a new process is one line here + one .mg5 script +
+# one gen_amplitude.py registry entry.
+GENERIC_PROCESSES=(
+    ee_to_mumu
+    pp_to_ll_qcd0
+    ee_to_ee
+    ee_to_mumua
+    ee_to_ttx
+    ee_to_wpwm
+    ee_to_zh
+    ee_to_tatah
+    ee_to_mumu_tata_qcd0
+    uux_to_ccx_emmm_qcd0
+    bbx_to_ccx_emmm_qcd0
+)
+
+# subprocess_dir NAME — the single SubProcesses/P1_* directory of a process.
+# All registered processes are single-subprocess by construction (one concrete
+# flavor assignment per .mg5 script), so a glob with a uniqueness check avoids
+# hardcoding MadGraph's P1 naming per process.
+subprocess_dir() {
     local name="$1"
-    local subproc="$2"
-    local pdir="$MG_OUTPUT/$name/SubProcesses/$subproc"
-    local libdir="$MG_OUTPUT/$name/lib"
-    local wrapper="$WRAPPERS/${name}.f"
-
-    if [ ! -f "$pdir/matrix1_optim.f" ]; then
-        echo "SKIP $name: matrix1_optim.f not found in $pdir"
-        return 0
+    local matches=("$MG_OUTPUT/$name/SubProcesses/"P1_*/)
+    if [ ${#matches[@]} -ne 1 ]; then
+        echo "ERROR $name: expected exactly one SubProcesses/P1_* dir, found: ${matches[*]}" >&2
+        return 1
     fi
-    if [ ! -f "$wrapper" ]; then
-        echo "SKIP $name: wrapper $wrapper not found"
-        return 0
-    fi
-
-    echo "Building mg_${name} (subprocess $subproc)..."
-
-    # Run from the subprocess directory so Fortran INCLUDE statements resolve.
-    # -I. makes the compiler find coupl.inc, maxamps.inc, nexternal.inc, genps.inc, etc.
-    pushd "$pdir" > /dev/null
-    python -m numpy.f2py \
-        -c \
-        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I." \
-        "matrix1_optim.f" \
-        "$wrapper" \
-        -L"$libdir" -ldhelas \
-        -m "mg_${name}"
-
-    # Move the compiled .so to validation/madgraph/ for import by gen_amplitude.py
-    mv mg_${name}*.so "$OUTDIR/"
-    popd > /dev/null
-
-    echo "  -> $OUTDIR/mg_${name}*.so"
+    echo "${matches[0]%/}"
 }
 
-# compile_process_generic NAME SUBPROCESS_DIR
+# compile_process_generic NAME
 #   Generic build: links matrix1_optim.f + the shared wrappers/generic.f +
-#   the Source/MODEL coupling routines (so SETPARA resolves).  No per-process
-#   Fortran or hand-coded couplings.  Use for any process whose external legs
-#   are all 2-helicity (massless fermions/vectors).
+#   the launch-built libmodel.a (so SETPARA resolves).  No per-process Fortran
+#   or hand-coded couplings.
 compile_process_generic() {
     local name="$1"
-    local subproc="$2"
-    local pdir="$MG_OUTPUT/$name/SubProcesses/$subproc"
-    local libdir="$MG_OUTPUT/$name/lib"
-    local model="$MG_OUTPUT/$name/Source/MODEL"
-    local wrapper="$WRAPPERS/generic.f"
+    local pdir libdir
+    if ! pdir="$(subprocess_dir "$name")"; then
+        echo "SKIP $name: no unique subprocess dir (did build-diagrams run?)"
+        return 0
+    fi
+    libdir="$MG_OUTPUT/$name/lib"
 
     if [ ! -f "$pdir/matrix1_optim.f" ]; then
         echo "SKIP $name: matrix1_optim.f not found (did the .mg5 script 'launch'?)"
@@ -77,44 +70,30 @@ compile_process_generic() {
         return 0
     fi
 
-    echo "Building mg_${name} (generic, subprocess $subproc)..."
+    echo "Building mg_${name} (generic, $(basename "$pdir"))..."
 
     # f2py scans only matrix1_optim.f + the wrapper; the model coupling routines
     # (SETPARA/COUP/lha_read) are linked from the precompiled libmodel.a that
     # `launch` builds, so f2py never has to parse their complex PARAMETER decls.
+    # Run from the subprocess directory so Fortran INCLUDE statements resolve.
     pushd "$pdir" > /dev/null
     python -m numpy.f2py \
         -c \
         --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I." \
         "matrix1_optim.f" \
-        "$wrapper" \
+        "$WRAPPERS/generic.f" \
         -L"$libdir" -lmodel -ldhelas \
         -m "mg_${name}"
 
     mv mg_${name}*.so "$OUTDIR/"
     popd > /dev/null
-    : "$model"  # (model dir no longer needed; kept for clarity)
 
     echo "  -> $OUTDIR/mg_${name}*.so"
 }
 
-# uux_to_ccx_emmm_qcd0: u u~ > c c~ e+ e- mu+ mu- (QCD=0).  Different-flavor
-# quarks => single color flow (NCOLOR=1); built with the generic wrapper.
-# MATRIX1 includes the CF(1,1)=9 color factor; vibegraph applies it on its side.
-compile_process_generic uux_to_ccx_emmm_qcd0 P1_qq_qqllll
-
-# ee_to_mumu_tata_qcd0: e+ e- > mu+ mu- ta+ ta- (QCD=0).  Colorless (NCOLOR=1,
-# CF=1); minimal chained-off-shell-fermion-current process to isolate the uux
-# continuum γ/Z relative-phase bug in a 3-line / 2→4 topology.  Generic wrapper.
-compile_process_generic ee_to_mumu_tata_qcd0 P1_ll_lltaptam
-
-# ee_to_mumu: pure QED/EW process, no color — expected to match Rust eval_m2
-compile_process ee_to_mumu P1_ll_ll
-
-# pp_to_ll_qcd0: u u~ > l+ l- via gamma/Z (QCD=0).  MATRIX1 includes CF=3 quark
-# color factor; Rust omits color, so agreement is informational until color is
-# implemented in vibegraph.
-compile_process pp_to_ll_qcd0 P1_qq_ll
+for name in "${GENERIC_PROCESSES[@]}"; do
+    compile_process_generic "$name"
+done
 
 # ee_amp_probe: per-diagram amplitude + intermediate wavefunction probe for the
 # e+ e- > mu+ mu- ta+ ta- continuum debugging.  Uses wrappers/matrix1_func.f (a
@@ -147,23 +126,32 @@ build_amp_probe() {
 
 build_amp_probe
 
-# uux_amp_probe: per-diagram amplitude probe for u u~ > c c~ e+ e- mu+ mu-
-# (QCD=0, NGRAPHS=579).  matrix1_orig.f (one HELAS call sequence per diagram,
-# AMP(i) == diagram i) is patched at build time with a COMMON/DBG_AMP/ block
-# exposing AMP, then wrapped by wrappers/uux_amp_probe.f (f2py entry point).
-build_uux_amp_probe() {
-    local name="uux_to_ccx_emmm_qcd0"
-    local subproc="P1_qq_qqllll"
-    local pdir="$MG_OUTPUT/$name/SubProcesses/$subproc"
-    local libdir="$MG_OUTPUT/$name/lib"
+# build_amp_dump_probe NAME: per-diagram amplitude probe for any process.
+# matrix1_orig.f (one HELAS call sequence per diagram, AMP(i) == diagram i) is
+# patched at build time with a COMMON/DBG_AMP/ block exposing AMP, then wrapped
+# by wrappers/amp_probe.f.in (f2py entry point; NGRAPHS substituted from the
+# process's matrix1_orig.f).  Consumed by validation/madgraph/compare_amps.py.
+build_amp_dump_probe() {
+    local name="$1"
+    local pdir libdir ngraphs
+    if ! pdir="$(subprocess_dir "$name")"; then
+        echo "SKIP amp_probe $name: no unique subprocess dir"
+        return 0
+    fi
+    libdir="$MG_OUTPUT/$name/lib"
 
     if [ ! -f "$pdir/matrix1_orig.f" ]; then
-        echo "SKIP uux_amp_probe: $pdir/matrix1_orig.f not found"
+        echo "SKIP amp_probe $name: matrix1_orig.f not found"
         return 0
     fi
 
-    echo "Building mg_uux_amp_probe (per-diagram amplitude probe)..."
-    awk '
+    ngraphs=$(grep -m1 -o 'NGRAPHS=[0-9]*' "$pdir/matrix1_orig.f" | cut -d= -f2)
+    echo "Building mg_amp_probe_${name} (per-diagram amplitude probe, NGRAPHS=$ngraphs)..."
+
+    # Keep only MATRIX1 (drop SMATRIX1, whose MadEvent deps — DSIG, unwgt,
+    # DiscreteSampler — the probe neither needs nor links), then inject the
+    # COMMON/DBG_AMP/ block that copies the per-diagram AMP() out.
+    sed -n '/FUNCTION MATRIX1(/,$p' "$pdir/matrix1_orig.f" | awk '
         /^      JAMP\(:,:\) = \(0D0,0D0\)$/ {
             print "      DO I = 1, NGRAPHS"
             print "        AMP_DBG(I) = AMP(I)"
@@ -174,23 +162,32 @@ build_uux_amp_probe() {
             print "      COMPLEX*16 AMP_DBG(NGRAPHS)"
             print "      COMMON/DBG_AMP/AMP_DBG"
         }
-    ' "$pdir/matrix1_orig.f" > "$pdir/matrix1_uux_dbg.f"
+    ' > "$pdir/matrix1_ampdbg.f"
+    sed "s/@NGRAPHS@/$ngraphs/" "$WRAPPERS/amp_probe.f.in" > "$pdir/amp_probe_gen.f"
 
-    # -I../../Source: SMATRIX1 (also in the file) USEs discretesampler.mod;
-    # -ldsample -lgeneric resolve its symbols at link time.
     pushd "$pdir" > /dev/null
     python -m numpy.f2py \
         -c \
-        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I. -I../../Source" \
-        "matrix1_uux_dbg.f" \
-        "$WRAPPERS/uux_amp_probe.f" \
-        -L"$libdir" -lmodel -ldhelas -ldsample -lgeneric \
-        -m "mg_uux_amp_probe"
-    mv mg_uux_amp_probe*.so "$OUTDIR/"
+        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I." \
+        "matrix1_ampdbg.f" \
+        "amp_probe_gen.f" \
+        -L"$libdir" -lmodel -ldhelas \
+        -m "mg_amp_probe_${name}"
+    mv mg_amp_probe_${name}*.so "$OUTDIR/"
     popd > /dev/null
-    echo "  -> $OUTDIR/mg_uux_amp_probe*.so"
+    echo "  -> $OUTDIR/mg_amp_probe_${name}*.so"
 }
 
-build_uux_amp_probe
+# Per-diagram oracles for processes under active convention debugging.
+AMP_PROBE_PROCESSES=(
+    uux_to_ccx_emmm_qcd0
+    ee_to_ee
+    ee_to_wpwm
+    ee_to_tatah
+    bbx_to_ccx_emmm_qcd0
+)
+for name in "${AMP_PROBE_PROCESSES[@]}"; do
+    build_amp_dump_probe "$name"
+done
 
 echo "Done building amplitude modules."

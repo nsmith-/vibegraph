@@ -1,0 +1,19 @@
+# MadGraph5 batch script: b b~ > c c~ e+ e- mu+ mu- at LO, QCD=0
+# Massive-initial-spine variant of uux_to_ccx_emmm_qcd0.
+#
+# Why this exact process:
+#   - A 2-propagator initial spine with MASSIVE internal fermions (default sm
+#     card keeps MB non-zero): the spine-parity sign derivation assumes the
+#     massless S(-q) = -S(q) identity, and this is the process that would
+#     catch it if that is wrong (TODO mg-validation-coverage #7 / S20).
+#   - Different-flavor quark lines (b vs c) + diagonal CKM => single color
+#     flow (NCOLOR=1), reproducible without color-flow code (CF = Nc^2 = 9).
+generate b b~ > c c~ e+ e- mu+ mu- QCD=0
+output bbx_to_ccx_emmm_qcd0 -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

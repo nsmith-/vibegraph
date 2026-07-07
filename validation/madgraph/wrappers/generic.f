@@ -1,18 +1,18 @@
 C     Generic f2py wrapper for any MadGraph MadEvent subprocess.
 C
-C     Replaces the per-process wrappers (ee_to_mumu.f, pp_to_ll_qcd0.f): instead
-C     of hand-deriving the EW couplings (GC_*, whose numbering changes per
-C     process), it calls MadGraph's own SETPARA to populate coupl.inc from the
-C     standard param_card.dat.  Everything else is read from the subprocess's own
-C     include files, so this single file compiles unchanged against any process.
+C     Instead of hand-deriving the EW couplings (GC_*, whose numbering changes
+C     per process), it calls MadGraph's own SETPARA to populate coupl.inc from
+C     the standard param_card.dat.  Everything else is read from the
+C     subprocess's own include files, so this single file compiles unchanged
+C     against any process.
 C
 C     Assumptions:
-C       * All external particles have 2 helicity states (massless fermions /
-C         massless vectors), so the helicity count is N_MAX_CL = 2^NEXTERNAL.
-C         True for our EW lepton+quark processes; external massive vectors would
-C         need a different count.
 C       * MATRIX1(P, IC, TS) returns the per-helicity, color-summed |M|^2 in
-C         TS(NCOMB) (the helicity-recycled matrix1_optim.f API).
+C         TS(NCOMB) (the helicity-recycled matrix1_optim.f API).  NCOMB is not
+C         exported by any include file, so TS is oversized to 3^NEXTERNAL
+C         (>= any product of SM per-leg helicity counts, incl. massive
+C         vectors' 3) and zero-initialized; the sum over unused entries is a
+C         no-op.
 C
 C     Returns M2_OUT = sum_hel sum_color |M|^2  (NOT divided by IDEN / averaged),
 C     matching vibegraph's AmplitudeEvaluator.eval_m2 convention.  The remaining
@@ -44,10 +44,11 @@ Cf2py intent(in)  P, PARAM_PATH
 Cf2py intent(out) M2_OUT
       IMPLICIT NONE
       INCLUDE 'nexternal.inc'
-      INCLUDE 'ncombs.inc'
+      INTEGER MAXHEL
+      PARAMETER (MAXHEL = 3**NEXTERNAL)
       CHARACTER*(*) PARAM_PATH
       DOUBLE PRECISION P(0:3, NEXTERNAL), M2_OUT
-      DOUBLE PRECISION TS(N_MAX_CL)
+      DOUBLE PRECISION TS(MAXHEL)
       INTEGER IC(NEXTERNAL), I
       LOGICAL FIRST
       SAVE FIRST
@@ -61,14 +62,14 @@ Cf2py intent(out) M2_OUT
       DO I = 1, NEXTERNAL
         IC(I) = 1
       END DO
-      DO I = 1, N_MAX_CL
+      DO I = 1, MAXHEL
         TS(I) = 0.0D0
       END DO
 
       CALL MATRIX1(P, IC, TS)
 
       M2_OUT = 0.0D0
-      DO I = 1, N_MAX_CL
+      DO I = 1, MAXHEL
         M2_OUT = M2_OUT + TS(I)
       END DO
       END
@@ -81,12 +82,13 @@ Cf2py intent(out) M2_OUT
 Cf2py integer intent(hide), depend(P_BATCH) :: N = shape(P_BATCH, 2)
       IMPLICIT NONE
       INCLUDE 'nexternal.inc'
-      INCLUDE 'ncombs.inc'
+      INTEGER MAXHEL
+      PARAMETER (MAXHEL = 3**NEXTERNAL)
       CHARACTER*(*) PARAM_PATH
       INTEGER N
       DOUBLE PRECISION P_BATCH(0:3, NEXTERNAL, N)
       DOUBLE PRECISION M2_OUT(N)
-      DOUBLE PRECISION TS(N_MAX_CL), SUMTS
+      DOUBLE PRECISION TS(MAXHEL), SUMTS
       INTEGER IC(NEXTERNAL), I, J
       LOGICAL FIRST
       SAVE FIRST
@@ -102,12 +104,12 @@ Cf2py integer intent(hide), depend(P_BATCH) :: N = shape(P_BATCH, 2)
       END DO
 
       DO J = 1, N
-        DO I = 1, N_MAX_CL
+        DO I = 1, MAXHEL
           TS(I) = 0.0D0
         END DO
         CALL MATRIX1(P_BATCH(0, 1, J), IC, TS)
         SUMTS = 0.0D0
-        DO I = 1, N_MAX_CL
+        DO I = 1, MAXHEL
           SUMTS = SUMTS + TS(I)
         END DO
         M2_OUT(J) = SUMTS

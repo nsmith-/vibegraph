@@ -29,6 +29,11 @@ pub enum Op {
     External,
     /// Propagator. Children: `[current, Mass, Width]`.
     Propagate,
+    /// Propagator on an index-flipped (±g·J) stored vector current
+    /// (`MetricVout`/`LowerVout` outputs): identical to `Propagate` except the
+    /// massive vector's longitudinal term, which must be formed with the
+    /// physical (plain) current. Children: `[current, Mass, Width]`.
+    PropagateLowered,
     /// n-ary product: ≤1 non-scalar child sets the output type, the rest are scalar
     /// factors. Subsumes scalar×wf scaling (coupling·coeff·current) and the Lorentz
     /// tensor product.
@@ -52,12 +57,22 @@ pub enum Op {
     ProjPAmp,
     /// contract two vectors → scalar.
     Metric,
+    /// contract two vectors → scalar, times the vertex's −i (pure-metric
+    /// structure rooted as an amplitude; see `LorentzEvalNode::MetricNegI`).
+    MetricNegI,
     /// metric with one free index → off-shell vector current.
     MetricVout,
+    /// `MetricVout` without the −i vertex factor (index lowering only); the
+    /// vector-output transform of P-carrying structures (VVV).
+    LowerVout,
     /// full scalar bilinear ψ̄ δ ψ.
     IdentityAmp,
     /// 4-momentum of the single child input, as a vector.
     PMom,
+    /// 4-momentum of the vertex's *output* leg, as a vector: −Σ (input momenta).
+    /// Children: all input currents of the vertex (ALOHA reads the output `P` off
+    /// the negated stored sum, e.g. `VVV1P0_1`: `P1 = −(V2+V3)`).
+    PMomOut,
     // ── constant leaves ──
     /// complex coupling constant (leaf id → `consts_c`).
     Coupling,
@@ -75,6 +90,7 @@ impl Op {
         match self {
             Op::External => "External",
             Op::Propagate => "Propagate",
+            Op::PropagateLowered => "PropagateLowered",
             Op::Mul => "Mul",
             Op::Add => "Add",
             Op::GammaVout => "GammaVout",
@@ -85,9 +101,12 @@ impl Op {
             Op::ProjMAmp => "ProjMAmp",
             Op::ProjPAmp => "ProjPAmp",
             Op::Metric => "Metric",
+            Op::MetricNegI => "MetricNegI",
             Op::MetricVout => "MetricVout",
+            Op::LowerVout => "LowerVout",
             Op::IdentityAmp => "IdentityAmp",
             Op::PMom => "PMom",
+            Op::PMomOut => "PMomOut",
             Op::Coupling => "Coupling",
             Op::Mass => "Mass",
             Op::Width => "Width",
@@ -100,6 +119,7 @@ impl Op {
         Some(match s {
             "External" => Op::External,
             "Propagate" => Op::Propagate,
+            "PropagateLowered" => Op::PropagateLowered,
             "Mul" => Op::Mul,
             "Add" => Op::Add,
             "GammaVout" => Op::GammaVout,
@@ -110,9 +130,12 @@ impl Op {
             "ProjMAmp" => Op::ProjMAmp,
             "ProjPAmp" => Op::ProjPAmp,
             "Metric" => Op::Metric,
+            "MetricNegI" => Op::MetricNegI,
             "MetricVout" => Op::MetricVout,
+            "LowerVout" => Op::LowerVout,
             "IdentityAmp" => Op::IdentityAmp,
             "PMom" => Op::PMom,
+            "PMomOut" => Op::PMomOut,
             "Coupling" => Op::Coupling,
             "Mass" => Op::Mass,
             "Width" => Op::Width,

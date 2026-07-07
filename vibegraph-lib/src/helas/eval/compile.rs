@@ -80,7 +80,10 @@ impl AmplitudeEvaluator {
 
         let helicity_states = ext_particle_ids
             .iter()
-            .map(|&pid| helicity_states_for_spin(model.particle(pid).spin))
+            .map(|&pid| {
+                let particle = model.particle(pid);
+                helicity_states_for_spin(particle.spin, particle.mass_param == "ZERO")
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let helicities = cartesian_helicity_product(&helicity_states);
 
@@ -141,14 +144,17 @@ impl AmplitudeEvaluator {
     }
 }
 
-fn helicity_states_for_spin(spin_code: i32) -> Result<Vec<i32>, EvalError> {
+fn helicity_states_for_spin(spin_code: i32, massless: bool) -> Result<Vec<i32>, EvalError> {
     // UFO spin code convention is 2s+1 with negative values reserved for ghosts.
-    match spin_code.abs() {
-        1 => Ok(vec![0]),               // scalar
-        2 => Ok(vec![-1, 1]),           // fermion
-        3 => Ok(vec![-1, 0, 1]),        // vector
-        5 => Ok(vec![-2, -1, 0, 1, 2]), // spin-2 (future-proof)
-        other => Err(EvalError::UnsupportedSpin(other)),
+    // A massless vector has no longitudinal mode (and `vxxxxx`'s massless branch
+    // only defines helicities ±1), so 0 is dropped from its state list.
+    match (spin_code.abs(), massless) {
+        (1, _) => Ok(vec![0]),               // scalar
+        (2, _) => Ok(vec![-1, 1]),           // fermion
+        (3, false) => Ok(vec![-1, 0, 1]),    // massive vector
+        (3, true) => Ok(vec![-1, 1]),        // massless vector
+        (5, _) => Ok(vec![-2, -1, 0, 1, 2]), // spin-2 (future-proof)
+        (other, _) => Err(EvalError::UnsupportedSpin(other)),
     }
 }
 

@@ -1,0 +1,18 @@
+# MadGraph5 batch script: e+ e- > mu+ mu- a at LO
+#
+# Why this exact process:
+#   - First EXTERNAL vector wavefunction (vxxxxx) compared against MadGraph;
+#     previously only Ward-tested internally.
+#   - Massless photon => exactly 2 physical helicity states (±1).
+#
+# Default run_card photon pT / isolation cuts regulate the soft/collinear
+# photon divergences for the (informational) cross section.
+generate e+ e- > mu+ mu- a
+output ee_to_mumua -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done
