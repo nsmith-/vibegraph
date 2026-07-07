@@ -223,3 +223,36 @@ in `AssignWorkspace::assign()`. The `.counts()` call (itertools) allocates a fre
 `validate_madgraph_diagrams::pp_to_qq4l_qcd0` validates `p p > q q~ l+ l- l+ l- QCD=0`
 (pure EW, 2→6) against MadGraph5 reference (2672 diagrams, subprocess `P1_qq_qqllll`).
 Reference generated with `pixi run -e madgraph build-diagrams` using `pp_to_qq4l_qcd0.mg5`.
+
+## uux 2→6 continuum fixed — all validate_helas_mg processes enforced ✅ (2026-07-06)
+
+`u u~ > c c~ e+ e- mu+ mu-` QCD=0: max_rel_diff **2.66e1 → 2.14e-13** over 50 points;
+`uux_to_ccx_emmm_qcd0` and `ee_to_mumu_tata_qcd0` promoted to enforced in
+`validate_helas_mg` (all four processes now bit-match MadGraph, color factor 9/1).
+
+Diagnosis (new per-diagram MG oracle for uux): every one of the 579 diagrams already
+matched MadGraph's per-helicity magnitudes to machine precision; the residual was purely
+diagram-class **global phases** (528 diagrams at +i, the 48 u-spine diagrams at −i, the
+3 ZZH Higgs diagrams at −1) whose mixing broke the strongly-cancelling coherent sum
+(coh/incoh ≈ 3e-3 → 26.6× |M|² error). Two production fixes in `helas/eval/`:
+
+1. **Chain-phase normalization** (`run.rs propagate_core`): fermion propagator
+   `−(q̸+m)/D → −i(q̸+m)/D`, scalar propagator `−i/D → 1/D`. All three chain types
+   (V/F/S) now carry the same phase relative to MadGraph; previously each F- or S-chain
+   deviated by a factor i, invisible while every diagram in a process had identical
+   chain content and fatal when classes mix (uux continuum: 2 F-chains; Higgs class:
+   1 S-chain, 0 F-chains — the class the "#vertices − #fermion-lines" count missed
+   because ZZH vertices are not on fermion lines).
+2. **Initial-spine sign per propagator** (`root_diagram.rs spine_sign_from_flow`):
+   the crossing sign for a fermion line joining two incoming legs is −1 per internal
+   fermion propagator (flip iff odd count), not once per line. Equivalent for 1-prop
+   spines (the 2→4 e-spine), wrong for the uux u-spine (2 props, 48 diagrams).
+
+New committed oracle tooling: `validation/madgraph/probe_uux_amp.py` +
+`compare_uux_amps.py` + `wrappers/uux_amp_probe.f` (per-diagram AMP dump via a
+build-time-patched `matrix1_orig.f`, `build_amplitude.sh build_uux_amp_probe`);
+VG side `run::tests::probe_uux_diagram_classes` (class decomposition + full
+[diagram×helicity] dump). Test re-pins: production fermion chain = `i·fvixxx`
+= `−ffv2_2(bare)`; off-shell e-line now equals MG exactly. Post-fix: uux per-diagram
+ratios uniform −i; compare_full_hel.py 25×16 cells magnitude 1.000, uniform phase;
+Ward suite, Fortran HELAS reference, 166 lib tests, clippy clean.

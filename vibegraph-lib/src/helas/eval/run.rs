@@ -399,15 +399,23 @@ fn build_external_core<F: Real>(
 /// `jioxxx` jmom=fo−fi).
 fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> WaveformSlot<F> {
     match input {
-        // Dirac propagator: -(q̸ + m) / (q² - m² + i m Γ)
+        // Dirac propagator: -i (q̸ + m) / (q² - m² + i m Γ). The -i puts the fermion
+        // chain in phase with the vector chain (which is bit-validated against
+        // MadGraph's W-arrays), so every off-shell chain type carries the same
+        // phase relative to MadGraph and diagram classes with different chain
+        // contents interfere correctly; pinned by the uux 2→6 per-diagram oracle
+        // (validation/madgraph/compare_uux_amps.py), where continuum diagrams
+        // (two fermion propagators) meet H diagrams (one scalar propagator).
         WaveformSlot::FermionIn(wf) => {
             let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
-            let scale = -C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
+            let scale =
+                ri(-F::one()) * C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
             WaveformSlot::FermionIn(InDiracWf::from_spinor(num * scale, wf.momentum))
         }
         WaveformSlot::FermionOut(wf) => {
             let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
-            let scale = -C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
+            let scale =
+                ri(-F::one()) * C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
             WaveformSlot::FermionOut(OutDiracWf::from_spinor(num * scale, wf.momentum))
         }
         WaveformSlot::Vector(wf) => {
@@ -433,14 +441,14 @@ fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> Wavefo
             }
         }
         WaveformSlot::Scalar(wf) => {
-            // Scalar propagator: -i / (q² - m² + i m Γ). The -i puts the scalar
-            // chain in phase with the fermion chain (chains carry no i in the
-            // current step, so the propagator holds the relative structure phase);
-            // pinned by the ee→μμττ Higgs-diagram interference vs MadGraph
-            // (validation/madgraph/compare_full_hel.py).
+            // Scalar propagator: 1 / (q² - m² + i m Γ). Together with the fermion
+            // propagator's -i this puts all three chain types (V/F/S) at the same
+            // phase relative to MadGraph; pinned jointly by the ee→μμττ
+            // Higgs-diagram interference (compare_full_hel.py) and the uux 2→6
+            // per-diagram oracle (compare_uux_amps.py).
             let denom = C::new(wf.momentum.m2() - mass * mass, mass * width);
             WaveformSlot::Scalar(ScalarWf {
-                value: wf.value * ri(-F::one()) / denom,
+                value: wf.value / denom,
                 momentum: wf.momentum,
             })
         }
@@ -1208,15 +1216,17 @@ mod tests {
             };
             let want = fvixxx(&fi, &v, [g.im, g.im], mass, width);
             // The fermion propagator carries the accumulated momentum unchanged
-            // (no flip), matching fvixxx's `q = fi.p + v.p`.
+            // (no flip), matching fvixxx's `q = fi.p + v.p`. Production carries the
+            // Feynman-propagator i that the HELAS transcription leaves to the vertex
+            // routine, hence the relative factor i.
             assert_eq!(
                 got.momentum, want.momentum,
                 "fvixxx momentum (hel {hel}, {charge:?})"
             );
-            let diff: f64 = (got.spinor - want.spinor).bare_norm_sq();
+            let diff: f64 = (got.spinor - want.spinor * g).bare_norm_sq();
             assert!(
                 diff < 1e-10,
-                "off-shell current vs fvixxx diff={diff} (hel {hel}, {charge:?})"
+                "off-shell current vs i·fvixxx diff={diff} (hel {hel}, {charge:?})"
             );
 
             // ── fvoxxx: off-shell current seeded from the flow-out (bra) fermion ──
@@ -1233,10 +1243,10 @@ mod tests {
                 got.momentum, want.momentum,
                 "fvoxxx momentum (hel {hel}, {charge:?})"
             );
-            let diff: f64 = (got.spinor - want.spinor).bare_norm_sq();
+            let diff: f64 = (got.spinor - want.spinor * g).bare_norm_sq();
             assert!(
                 diff < 1e-10,
-                "off-shell current vs fvoxxx diff={diff} (hel {hel}, {charge:?})"
+                "off-shell current vs i·fvoxxx diff={diff} (hel {hel}, {charge:?})"
             );
         }
     }
@@ -1254,8 +1264,9 @@ mod tests {
     ///
     /// The production tree for `Gamma(3,2,-1)·ProjM(-1,1)` rooted at the output fermion
     /// is `Propagate ∘ off_shell_fermion_current ∘ chiral_project(Left)`. It must equal
-    /// our `fvixxx([1,0])` (self-consistency) and ALOHA `FFV2_2` up to the global `−i`
-    /// UFO-coupling factor (`got = i·ffv2_2(1)`).
+    /// `i·fvixxx([1,0])` (self-consistency; the i is the Feynman-propagator phase) and
+    /// `−1 ·` ALOHA `FFV2_2` (the −1 = that i × the −i-per-Lorentz-structure ALOHA
+    /// folds into its coupling).
     #[test]
     fn test_chiral_off_shell_fermion_vs_ffv2_2() {
         use crate::helas::vertex::{ffv2_2, ffv4_2, fvixxx};
@@ -1286,25 +1297,30 @@ mod tests {
                     panic!("expected flow-in fermion from chiral propagation");
                 };
 
-                // (a) Self-consistency: equals our pure-left fvixxx helper.
+                // (a) Self-consistency: i × our pure-left fvixxx helper (the i is the
+                // Feynman-propagator phase the production chain carries; the HELAS
+                // transcription leaves it to the vertex routine).
                 let fvi = fvixxx(&fi, &v, [1.0, 0.0], mass, width);
                 assert_eq!(got.momentum, fvi.momentum);
-                let d_self: f64 = (got.spinor - fvi.spinor).bare_norm_sq();
+                let d_self: f64 = (got.spinor - fvi.spinor * i).bare_norm_sq();
                 assert!(
                     d_self < 1e-10,
-                    "chiral current vs fvixxx[1,0] (m={mass}, {hel}, {charge:?}): diff={d_self}"
+                    "chiral current vs i·fvixxx[1,0] (m={mass}, {hel}, {charge:?}): diff={d_self}"
                 );
 
-                // (b) Independent ALOHA FFV2_2 (the decisive check), up to the −i factor.
+                // (b) Independent ALOHA FFV2_2 (the decisive check), up to the global
+                // −1 (= i·i: the propagator i above × the −i-per-Lorentz-structure
+                // ALOHA folds into its coupling while vibegraph keeps it in the UFO
+                // coupling value).
                 let aloha = ffv2_2(&fi, &v, Complex64::from(1.0), mass, width);
                 assert_eq!(
                     got.momentum, aloha.momentum,
                     "ffv2_2 momentum (m={mass}, {hel}, {charge:?})"
                 );
-                let d_aloha: f64 = (got.spinor - aloha.spinor * i).bare_norm_sq();
+                let d_aloha: f64 = (got.spinor + aloha.spinor).bare_norm_sq();
                 assert!(
                     d_aloha < 1e-10,
-                    "chiral current vs i·ffv2_2 (m={mass}, {hel}, {charge:?}): diff={d_aloha}"
+                    "chiral current vs -ffv2_2 (m={mass}, {hel}, {charge:?}): diff={d_aloha}"
                 );
 
                 // (c) Full Z fermion current FFV4 = P_L + 2·P_R (exercises the ProjP /
@@ -1330,10 +1346,10 @@ mod tests {
                     unreachable!()
                 };
                 let aloha4 = ffv4_2(&fi, &v, Complex64::from(1.0), mass, width);
-                let d4: f64 = (got4.spinor - aloha4.spinor * i).bare_norm_sq();
+                let d4: f64 = (got4.spinor + aloha4.spinor).bare_norm_sq();
                 assert!(
                     d4 < 1e-10,
-                    "FFV4 chiral current vs i·ffv4_2 (m={mass}, {hel}, {charge:?}): diff={d4}"
+                    "FFV4 chiral current vs -ffv4_2 (m={mass}, {hel}, {charge:?}): diff={d4}"
                 );
             }
         }
@@ -1415,7 +1431,7 @@ mod tests {
                 let denom = Complex64::from(q.m2() - mass * mass);
 
                 // Textbook S(q)·P·ε̸·ψ for P = P_L (FFV2) and P = P_L + 2P_R (FFV4),
-                // with the evaluator's overall −1 from propagate_core folded in.
+                // with the evaluator's overall −i from propagate_core folded in.
                 let textbook = |pl: Complex64, pr: Complex64| -> [Complex64; 4] {
                     let eps_psi = slash(&eps, &psi);
                     // P · ε̸ψ with chiral weights (P_L keeps [0,1], P_R keeps [2,3]).
@@ -1425,10 +1441,10 @@ mod tests {
                         pr * eps_psi[2],
                         pr * eps_psi[3],
                     ];
-                    // (q̸ + m)/(q²−m²), then ×(−1).
+                    // (q̸ + m)/(q²−m²), then ×(−i).
                     let qslash = slash(&qvec, &projected);
                     let massterm = scale(Complex64::from(mass), projected);
-                    scale(-o / denom, add(qslash, massterm))
+                    scale(-ii / denom, add(qslash, massterm))
                 };
 
                 // ── FFV2 e-spine current: ProjM(ε̸·ψ) propagated ─────────────────
@@ -1494,12 +1510,12 @@ mod tests {
                 // pinned by `test_espine_eline_z_absorption_ratio_vs_mg`; that flow-out
                 // realization is the remaining isolated suspect this ket path does not cover.
                 let textbook_proj_first = |pl: Complex64, pr: Complex64| -> [Complex64; 4] {
-                    // ε̸ · (P_L+P_R-weighted ψ), then (q̸+m)/(q²−m²), then ×(−1).
+                    // ε̸ · (P_L+P_R-weighted ψ), then (q̸+m)/(q²−m²), then ×(−i).
                     let projected = [pl * psi[0], pl * psi[1], pr * psi[2], pr * psi[3]];
                     let eps_proj = slash(&eps, &projected);
                     let qslash = slash(&qvec, &eps_proj);
                     let massterm = scale(Complex64::from(mass), eps_proj);
-                    scale(-o / denom, add(qslash, massterm))
+                    scale(-ii / denom, add(qslash, massterm))
                 };
 
                 // FFV2 leg-1: ε̸·P_L·ψ propagated.
@@ -1660,7 +1676,7 @@ mod tests {
                 ];
                 let denom = Complex64::from(q.m2() - mass * mass);
                 let sprop = smul(
-                    -o / denom,
+                    -ii / denom,
                     &matadd(&slashm(&qvec), &smul(Complex64::from(mass), &ident)),
                 );
 
@@ -2021,6 +2037,202 @@ mod tests {
                 rrow[i].re,
                 prop_sig(&asts[i])
             );
+        }
+    }
+
+    /// Per-diagram class probe for `u u~ > c c~ e+ e- mu+ mu-` QCD=0 (2→6, 579
+    /// diagrams) at CSV point 0 of `uux_to_ccx_emmm_qcd0_amplitude.csv`.
+    ///
+    /// Splits the coherent sum by diagram class — keyed on the propagator spin
+    /// content (#fermion, #scalar internal lines) — and evaluates |M|² with the
+    /// H-diagram class (0 fermion props + 1 scalar chain, vs 2 fermion props
+    /// everywhere else) rotated by test phases. If the uux residual is a
+    /// per-chain relative-phase mismatch between the classes, one rotation
+    /// collapses the rel diff vs the MG reference (color factor 9).
+    ///
+    /// Run: cargo test -p vibegraph-lib --release \
+    ///        --lib helas::eval::run::tests::probe_uux_diagram_classes -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn probe_uux_diagram_classes() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+
+        let model = sm_model();
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let out_dir = std::path::Path::new(&manifest).join("../validation/madgraph/output");
+        let card =
+            std::fs::read_to_string(out_dir.join("uux_to_ccx_emmm_qcd0/Cards/param_card.dat"))
+                .expect("uux param_card.dat")
+                .parse::<ParamCard>()
+                .unwrap();
+        let evaluated = model.evaluate(&card);
+
+        let opts = ParsingOptions::default();
+        let pc = parse_proc_card("generate u u~ > c c~ e+ e- mu+ mu- QCD=0", &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, model).unwrap();
+        let set = &sets[0];
+        let asts = compile_diagram_ast(set, model).unwrap();
+        let n = asts.len();
+        println!("n_diagrams = {n} (MadGraph NGRAPHS = 579)");
+
+        // Classify by internal-line spin content: (n_fermion_props, n_scalar_props).
+        let class_of = |ast: &DiagramEval| -> (usize, usize) {
+            let (mut nf, mut ns) = (0, 0);
+            for id in ast.propagator_particles() {
+                match model.particle(id).spin {
+                    2 => nf += 1,
+                    1 => ns += 1,
+                    _ => {}
+                }
+            }
+            (nf, ns)
+        };
+        let classes: Vec<(usize, usize)> = asts.iter().map(class_of).collect();
+        let mut hist: std::collections::BTreeMap<(usize, usize), usize> =
+            std::collections::BTreeMap::new();
+        for c in &classes {
+            *hist.entry(*c).or_default() += 1;
+        }
+        println!("diagram classes (n_fermion_props, n_scalar_props) -> count:");
+        for (c, cnt) in &hist {
+            println!("  {c:?} -> {cnt}");
+        }
+
+        // CSV point 0: m2_ref + 8 external momenta.
+        let csv =
+            std::fs::read_to_string(out_dir.join("uux_to_ccx_emmm_qcd0_amplitude.csv")).unwrap();
+        let row: Vec<f64> = csv
+            .lines()
+            .filter(|l| !l.trim().starts_with('#') && !l.trim().is_empty())
+            .nth(1) // skip the column-header row
+            .expect("data row")
+            .split(',')
+            .map(|c| c.trim().parse().unwrap())
+            .collect();
+        assert_eq!(row.len(), 1 + 4 * 8);
+        let m2_ref = row[0];
+        let p: Vec<LorentzVector<f64>> = (0..8)
+            .map(|i| {
+                let b = 1 + 4 * i;
+                LorentzVector::new(row[b], row[b + 1], row[b + 2], row[b + 3])
+            })
+            .collect();
+
+        // Fold each diagram once, then run all 256 helicity combos.
+        let folded: Vec<(Folded, Box<[C<f64>]>, Box<[f64]>)> = asts
+            .iter()
+            .map(|d| {
+                let symbolic = lower::lower(std::slice::from_ref(d));
+                let f = Folded::build(&symbolic);
+                let (cc, cf) = f.pools::<f64>(&evaluated);
+                (f, cc, cf)
+            })
+            .collect();
+
+        let mut combos: Vec<Vec<i32>> = vec![vec![]];
+        for _ in 0..8 {
+            let mut next = vec![];
+            for c in &combos {
+                for &h in &[-1i32, 1] {
+                    let mut cc = c.clone();
+                    cc.push(h);
+                    next.push(cc);
+                }
+            }
+            combos = next;
+        }
+
+        // amps[d][hel]
+        let amps: Vec<Vec<C<f64>>> = folded
+            .iter()
+            .map(|(f, cc, cf)| {
+                combos
+                    .iter()
+                    .map(
+                        |hel| match run_forward_slot(&f.ast, cc, cf, &p, hel, None) {
+                            WaveformSlot::Scalar(s) => s.value,
+                            WaveformSlot::Empty => C::new(0.0, 0.0),
+                            other => panic!("amplitude root is not a scalar: {other:?}"),
+                        },
+                    )
+                    .collect()
+            })
+            .collect();
+
+        // Full [diagram][helicity] complex dump for the Python matcher
+        // (validation/madgraph/compare_uux_amps.py), same row format as
+        // vibegraph_amps_full.txt: index, prop signature, then re/im pairs in
+        // the same helicity order as itertools.product((-1,1), repeat=8).
+        {
+            use std::fmt::Write as _;
+            let prop_sig = |ast: &DiagramEval| -> String {
+                let names: Vec<String> = ast
+                    .propagator_particles()
+                    .map(|id| model.particle(id).name.clone())
+                    .collect();
+                names.join("+")
+            };
+            let mut s = String::new();
+            for (i, row) in amps.iter().enumerate() {
+                let _ = write!(s, "{}\t{}", i, prop_sig(&asts[i]));
+                for a in row {
+                    let _ = write!(s, "\t{}\t{}", a.re, a.im);
+                }
+                s.push('\n');
+            }
+            let out = out_dir.join("vibegraph_uux_amps_full.txt");
+            std::fs::write(&out, s).unwrap();
+            println!("wrote {}", out.display());
+        }
+
+        let cf_color = 9.0;
+        let m2_with = |phase_h: C<f64>| -> f64 {
+            let mut m2 = 0.0;
+            for (h, _) in combos.iter().enumerate() {
+                let mut tot = C::new(0.0, 0.0);
+                for d in 0..n {
+                    let a = amps[d][h];
+                    tot += if classes[d].1 > 0 { a * phase_h } else { a };
+                }
+                m2 += tot.norm_sqr();
+            }
+            cf_color * m2
+        };
+
+        // Per-class decomposition at the base phase.
+        let mut m2_h = 0.0;
+        let mut m2_rest = 0.0;
+        let mut interf = 0.0;
+        for (h, _) in combos.iter().enumerate() {
+            let mut th = C::new(0.0, 0.0);
+            let mut tr = C::new(0.0, 0.0);
+            for d in 0..n {
+                if classes[d].1 > 0 {
+                    th += amps[d][h];
+                } else {
+                    tr += amps[d][h];
+                }
+            }
+            m2_h += th.norm_sqr();
+            m2_rest += tr.norm_sqr();
+            interf += 2.0 * (th.conj() * tr).re;
+        }
+        println!("MG ref |M|²         = {m2_ref:.10e}");
+        println!("class decomposition (×{cf_color} color factor):");
+        println!("  |H class|²      = {:.10e}", cf_color * m2_h);
+        println!("  |rest|²         = {:.10e}", cf_color * m2_rest);
+        println!("  2·Re interference = {:.10e}", cf_color * interf);
+
+        for (label, ph) in [
+            ("+1 (as evaluated)", C::new(1.0, 0.0)),
+            ("-1", C::new(-1.0, 0.0)),
+            ("+i", C::new(0.0, 1.0)),
+            ("-i", C::new(0.0, -1.0)),
+            ("0 (H class removed)", C::new(0.0, 0.0)),
+        ] {
+            let m2 = m2_with(ph);
+            let rel = (m2 - m2_ref).abs() / m2_ref;
+            println!("H-class phase {label:>20}: |M|² = {m2:.10e}  rel_diff = {rel:.3e}");
         }
     }
 
@@ -2786,7 +2998,7 @@ mod tests {
     /// vertex is given the per-leg flows and the rooting conjugates its projector.
     ///
     /// Against MadGraph's actual off-shell electron (`probe_wfuncs.py`, slots 6=γ,
-    /// 7=Z), both paths must equal −i·MG exactly at both helicities. (Historically
+    /// 7=Z), both paths must equal MG exactly at both helicities. (Historically
     /// the Z path was 0.6403 × MG at the flipped-μ helicity — the per-Z continuum
     /// bug, fixed by the flow/crossing-aware chiral projector.)
     #[test]
@@ -3004,7 +3216,6 @@ mod tests {
             ),
         ];
 
-        let i = Complex64::i();
         for (label, hmum, hmup, mg_eg, mg_ez) in mg {
             let vg_eg = off_shell_e(&gamma_diagram, hmum, hmup);
             let vg_ez = off_shell_e(&z_diagram, hmum, hmup);
@@ -3017,37 +3228,38 @@ mod tests {
 
             // Photon absorption is chirality-blind (γ couples L=R), so it pins the
             // rooting/flow/propagator/momentum machinery: VG's γ-path off-shell electron
-            // must equal MadGraph's up to the global −i UFO-coupling phase. (The Z-path
-            // carries the chiral physics and is the localiser — printed above.)
+            // must equal MadGraph's EXACTLY (the fermion chain carries the Feynman
+            // propagator −i, in phase with ALOHA). (The Z-path carries the chiral
+            // physics and is the localiser — printed above.)
             let kmax = (0..4)
                 .max_by(|&a, &b| mg_eg[a].norm().total_cmp(&mg_eg[b].norm()))
                 .unwrap();
             let scale = mg_eg[kmax].norm();
             for k in 0..4 {
-                let diff = (vg_eg[k] - (-i) * mg_eg[k]).norm();
+                let diff = (vg_eg[k] - mg_eg[k]).norm();
                 assert!(
                     diff < 1e-6 * scale,
-                    "{label} γ-path off-shell e [{k}]: VG={:.4e} vs −i·MG={:.4e}, diff={diff:.2e}",
+                    "{label} γ-path off-shell e [{k}]: VG={:.4e} vs MG={:.4e}, diff={diff:.2e}",
                     vg_eg[k],
-                    -i * mg_eg[k]
+                    mg_eg[k]
                 );
             }
 
             // Z path: identical machinery, only the chiral (FFV2/FFV4) vertex differs.
             // With the flow-corrected chiral projector the off-shell electron equals
-            // −i·MG exactly at BOTH helicities (the historical per-Z 0.6403 at the
+            // MG exactly at BOTH helicities (the historical per-Z 0.6403 at the
             // flipped-μ helicity is gone).
             let kz = (0..4)
                 .max_by(|&a, &b| mg_ez[a].norm().total_cmp(&mg_ez[b].norm()))
                 .unwrap();
-            let zfac = vg_ez[kz] / ((-i) * mg_ez[kz]);
+            let zfac = vg_ez[kz] / mg_ez[kz];
             eprintln!(
-                "  Z-path VG/(−i·MG) = {:+.4}{:+.4}i   (expected 1)",
+                "  Z-path VG/MG = {:+.4}{:+.4}i   (expected 1)",
                 zfac.re, zfac.im
             );
             assert!(
                 (zfac.re - 1.0).abs() < 2e-3 && zfac.im.abs() < 2e-3,
-                "{label} Z-path off-shell e: VG/(−i·MG)={zfac:.4}, expected 1"
+                "{label} Z-path off-shell e: VG/MG={zfac:.4}, expected 1"
             );
         }
     }

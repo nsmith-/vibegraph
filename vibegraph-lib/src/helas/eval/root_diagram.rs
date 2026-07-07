@@ -547,15 +547,15 @@ fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> i8 {
 // ──────────────────────── Spine sign from baked flow ────────────────────────
 
 /// Descend the fermion line from `node` (a fermion child of a pair-sink) to its
-/// terminal external leg, reporting whether the descent crossed an internal fermion
-/// propagator. Follows the continuing fermion (the lone `Some`-flow child) through each
+/// terminal external leg, reporting how many internal fermion propagators the descent
+/// crossed. Follows the continuing fermion (the lone `Some`-flow child) through each
 /// off-shell current; a `Propagate` is exactly one internal fermion propagator.
-fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> (bool, bool) {
+fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> (bool, usize) {
     match tree.value(node) {
-        EvalNode::External(info) => (info.incoming, false),
+        EvalNode::External(info) => (info.incoming, 0),
         EvalNode::Propagate { child, .. } => {
-            let (incoming, _) = descend_fermion_line(tree, *child);
-            (incoming, true)
+            let (incoming, n) = descend_fermion_line(tree, *child);
+            (incoming, n + 1)
         }
         EvalNode::OffShellCurrent { children, .. } => {
             let cont = children
@@ -579,9 +579,12 @@ fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> (bool, bool
 /// A fermion line terminates at any vertex node that outputs a non-fermion yet has two
 /// fermion children: an FFV/FFS current rooted at its boson leg, or the root
 /// contraction. Descend both ends to their external legs and flip the diagram sign when
-/// the line joins two incoming legs through at least one internal fermion propagator —
-/// MadGraph's crossing sign for an initial-state fermion pair carried as an off-shell
-/// spine. Each fermion line meets exactly one such sink, so every line is counted once.
+/// the line joins two incoming legs through an ODD number of internal fermion
+/// propagators — MadGraph's crossing sign for an initial-state fermion pair carried as
+/// an off-shell spine, one −1 per reversed propagator (a 2-propagator initial spine
+/// flips twice = no net sign; pinned by the uux 2→6 per-diagram oracle,
+/// validation/madgraph/compare_uux_amps.py). Each fermion line meets exactly one such
+/// sink, so every line is counted once.
 pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
     let mut sign = 1i8;
     for id in tree.iter() {
@@ -598,9 +601,9 @@ pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
             .collect();
         // SM vertices pair fermions, so a sink has 0 or 2 fermion legs (one line).
         if let [a, b] = fermions[..] {
-            let (inc_a, internal_a) = descend_fermion_line(tree, a);
-            let (inc_b, internal_b) = descend_fermion_line(tree, b);
-            if inc_a && inc_b && (internal_a || internal_b) {
+            let (inc_a, n_props_a) = descend_fermion_line(tree, a);
+            let (inc_b, n_props_b) = descend_fermion_line(tree, b);
+            if inc_a && inc_b && (n_props_a + n_props_b) % 2 == 1 {
                 sign = -sign;
             }
         }

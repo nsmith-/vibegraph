@@ -35,13 +35,12 @@ use vibegraph::ufo::slha::ParamCard;
 const REL_TOL: f64 = 1e-10;
 
 /// Processes for which we enforce agreement; others are informational only.
-///
-/// `uux_to_ccx_emmm_qcd0` (2->6) is intentionally NOT enforced yet: all 579 diagrams
-/// evaluate and conserve momentum, but a continuum γ/Z relative-phase residual
-/// remains (max_rel_diff ~3.96e1, amplified by the strong gauge cancellation). It is
-/// momentum-conserving and mass-independent (confirmed: this bit-for-bit param-card
-/// comparison leaves it unchanged). Tracked as `helas-2to6-continuum`.
-const EXPECT_MATCH: &[&str] = &["ee_to_mumu", "pp_to_ll_qcd0"];
+const EXPECT_MATCH: &[&str] = &[
+    "ee_to_mumu",
+    "pp_to_ll_qcd0",
+    "ee_to_mumu_tata_qcd0",
+    "uux_to_ccx_emmm_qcd0",
+];
 
 /// Overall color factor relating MadGraph's color-summed |M|² to vibegraph's
 /// color-stripped coherent diagram sum, for single-color-flow processes.

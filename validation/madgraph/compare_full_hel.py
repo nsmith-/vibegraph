@@ -3,9 +3,12 @@
 
 The decisive oracle for the continuum chirality bug: prints VG/MG for all 25
 diagrams at every helicity config where MG is nonzero. A correct eval gives
--1.000 in every cell (the global fermion-flow convention). Chiral-coupling
-errors show up as signed powers of gL/gR = 1.25 / gR/gL = 0.80 keyed to the
-helicity config of the lepton pair each Z vertex attaches to.
+magnitude 1.000 in every cell with the SAME phase everywhere (the global
+convention, -i since the chain-phase normalization; cells render 1.000* with
+the phase flagged). Chiral-coupling errors show up as signed powers of
+gL/gR = 1.25 / gR/gL = 0.80 keyed to the helicity config of the lepton pair
+each Z vertex attaches to; chain-phase errors show up as per-diagram-class
+phase splits (cf. compare_uux_amps.py).
 
 IMPORTANT - matched parameters: the MG reference (mg_amps_full.npy, regenerate
 with probe_amp.py) has MTA = ymtau = 1.777 hardcoded at process-generation time
