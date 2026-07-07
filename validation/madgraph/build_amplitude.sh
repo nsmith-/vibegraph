@@ -147,4 +147,50 @@ build_amp_probe() {
 
 build_amp_probe
 
+# uux_amp_probe: per-diagram amplitude probe for u u~ > c c~ e+ e- mu+ mu-
+# (QCD=0, NGRAPHS=579).  matrix1_orig.f (one HELAS call sequence per diagram,
+# AMP(i) == diagram i) is patched at build time with a COMMON/DBG_AMP/ block
+# exposing AMP, then wrapped by wrappers/uux_amp_probe.f (f2py entry point).
+build_uux_amp_probe() {
+    local name="uux_to_ccx_emmm_qcd0"
+    local subproc="P1_qq_qqllll"
+    local pdir="$MG_OUTPUT/$name/SubProcesses/$subproc"
+    local libdir="$MG_OUTPUT/$name/lib"
+
+    if [ ! -f "$pdir/matrix1_orig.f" ]; then
+        echo "SKIP uux_amp_probe: $pdir/matrix1_orig.f not found"
+        return 0
+    fi
+
+    echo "Building mg_uux_amp_probe (per-diagram amplitude probe)..."
+    awk '
+        /^      JAMP\(:,:\) = \(0D0,0D0\)$/ {
+            print "      DO I = 1, NGRAPHS"
+            print "        AMP_DBG(I) = AMP(I)"
+            print "      ENDDO"
+        }
+        { print }
+        /^      COMPLEX\*16 AMP\(NGRAPHS\), JAMP\(NCOLOR,NAMPSO\)$/ {
+            print "      COMPLEX*16 AMP_DBG(NGRAPHS)"
+            print "      COMMON/DBG_AMP/AMP_DBG"
+        }
+    ' "$pdir/matrix1_orig.f" > "$pdir/matrix1_uux_dbg.f"
+
+    # -I../../Source: SMATRIX1 (also in the file) USEs discretesampler.mod;
+    # -ldsample -lgeneric resolve its symbols at link time.
+    pushd "$pdir" > /dev/null
+    python -m numpy.f2py \
+        -c \
+        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I. -I../../Source" \
+        "matrix1_uux_dbg.f" \
+        "$WRAPPERS/uux_amp_probe.f" \
+        -L"$libdir" -lmodel -ldhelas -ldsample -lgeneric \
+        -m "mg_uux_amp_probe"
+    mv mg_uux_amp_probe*.so "$OUTDIR/"
+    popd > /dev/null
+    echo "  -> $OUTDIR/mg_uux_amp_probe*.so"
+}
+
+build_uux_amp_probe
+
 echo "Done building amplitude modules."

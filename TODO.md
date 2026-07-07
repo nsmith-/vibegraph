@@ -58,13 +58,10 @@ validate a second process (e.g. uū→dd̄) vs MadGraph.
      conversion). This removed the wrong `.unbar()`/`.bar()` coercions: `GammaJout ≅ foxxx`
      now matches exactly. Also fixed `DiracWf::flip_flow`, which was negating the momentum
      (flow is the bra/ket dual of the *same* particle — momentum carries through unchanged).
-   - 🟡 **Residual uux value error — re-measure.** With flow-typed slots the row/column
-     propagator-numerator ambiguity that was the leading suspect is resolved at the unit
-     level. The uux 2→6 |M|² discrepancy needs re-measuring against MadGraph (it was ~6.95e6
-     before this change); also re-check fermion permutation signs. (Verified NOT caused by the
-     `charge()`-vs-structural row/col choice in `GammaVout` — identical result either way.)
-     `uux` stays informational in `validate_helas_mg`; trace tool: `run::tests::debug_uux_trace`
-     (ignored).
+   - ✅ **Residual uux value error FIXED** (2026-07-06): chain-phase normalization +
+     initial-spine propagator-parity sign; see `helas-2to6-continuum` below.
+     `uux_to_ccx_emmm_qcd0` is now *enforced* in `validate_helas_mg` at
+     max_rel_diff 2.14e-13 (color factor 9).
 4. ✅ **Single-color-flow validation via scalar color factor.** For NCOLOR=1 processes,
    `MG = CF(1,1)·eval_m2_rust` (e.g. Nc=3 for `pp_to_ll`, Nc²=9 for `uux_to_ccx`).
    `validate_helas_mg::color_factor` applies it; `pp_to_ll_qcd0` now *enforced* (was
@@ -140,7 +137,33 @@ variance must be tracked per output.)
 VVV) regression tests exist — this refactor changes the convention surface where the
 off-shell-current sign/metric bugs live.
 
-### `helas-2to6-continuum` — Fix the pure-EW continuum |M|² (uux 2→6)
+### `helas-2to6-continuum` — Fix the pure-EW continuum |M|² (uux 2→6) ✅ DONE
+
+**2026-07-06 uux 2→6 FIXED: 2.66e1 → 2.14e-13 (all 50 points, now enforced).**
+Per-diagram MG oracle (new `mg_uux_amp_probe` + `probe_uux_amp.py` +
+`compare_uux_amps.py`, VG side `run::tests::probe_uux_diagram_classes`): every one of
+the 579 diagrams matched MG's per-helicity magnitudes to machine precision; the entire
+residual was **diagram-class global phases** — 528 diagrams at +i, the 48 u-spine
+diagrams (both fermion props internal `u`) at −i, the 3 Higgs diagrams (ZZH–H–ZZH, the
+only 0-fermion-prop/1-scalar-prop class; S19's "all uux diagrams have 2 F-props" was a
+miscount that ignored VVS vertices) at −1 — mixed unit phases amplified by the strong
+gauge cancellation (coh/incoh ≈ 3e-3) into the 26.6× error. Two fixes (`helas/eval/`):
+1. **Chain-phase normalization** (`run.rs propagate_core`): fermion propagator
+   `−(q̸+m)/D → −i(q̸+m)/D` and scalar propagator `−i/D → 1/D`, so V/F/S chains all
+   carry the SAME phase relative to MadGraph (the vector chain is bit-validated against
+   MG W-arrays). Any per-chain-type deviation is invisible while every diagram in a
+   process has the same chain content (all prior processes) and breaks interference the
+   moment classes mix (uux: continuum 2 F-chains vs Higgs 1 S-chain).
+2. **Initial-spine sign is per-propagator** (`root_diagram.rs spine_sign_from_flow`):
+   flip iff the line joining two incoming legs crosses an ODD number of internal fermion
+   propagators (one −1 per reversed propagator), not once-per-line — indistinguishable
+   for 1-prop spines (2→4 e-spine), wrong for the 2-prop uux u-spine.
+Re-pins: production fermion chain now = `i·fvixxx` = `−ffv2_2` (bare-ALOHA), off-shell
+e-line = MG exactly (`test_espine_eline_z_absorption_ratio_vs_mg`), textbook refs
+`−1/D → −i/D`. Oracles after: uux all 579 diagrams uniform ratio −i, |M|² = MG (2e-14);
+compare_full_hel.py all 25×16 cells magnitude 1.000 uniform phase, total 1.00000;
+ee→μμ/pp→ll/ee→μμττ unchanged (1e-14); Ward suite, Fortran HELAS reference, 166 lib
+tests, clippy clean. All four processes in `validate_helas_mg` are now ENFORCED.
 
 **2026-07-06 ee→μμττ (2→4 continuum) FIXED — per-diagram, per-helicity exact vs MG.**
 Root cause: feyngraph binds outgoing legs in the all-incoming (crossed) convention, so
@@ -153,7 +176,10 @@ projector flip with no explicit sign; the scalar propagator gains a −i (S-chai
 relative to the F-chain, pinned by the Higgs-diagram interference). Oracle
 `validation/madgraph/compare_full_hel.py`: all 25×16 cells −1.000 (≤1.5e-13); per-hel
 |M|² vs MG 4e-14; `validate_helas_mg` ee→μμττ max_rel_diff **1.8e-14** (the historical
-0.2–0.57% residual was this bug). uux 2→6 unchanged at 2.66e1 — still open, below.
+0.2–0.57% residual was this bug). uux 2→6 was unchanged at 2.66e1 — fixed above.
+(Note: this fix set the scalar propagator to −i/D to match the F-chain; the chain-phase
+normalization above supersedes that with F=−i(q̸+m)/D, S=1/D — same relative phase,
+now also aligned with the V-chain.)
 
 **2026-06-14 fermion-FLOW fix: max_rel_diff 7.26e3 → 3.96e1 (~180×).** The bulk of the
 continuum error was that off-shell fermion currents and bilinears took their bra/ket flow
@@ -193,7 +219,7 @@ params resolve; `validate_helas_mg` evaluates with each process's actual MG `par
 bit-for-bit comparison (REL_TOL 2e-3→1e-10). uux stayed at 3.96e1 under this exact comparison ⇒ the
 uux residual is genuinely mass/param-independent, and the MG validation is now a clean oracle.
 
-**REMAINING (~24% at pt0, 40× worst-case): uux continuum γ/Z relative-phase — a SEPARATE bug.**
+**(diagnosed 2026-06-14, resolved above) uux continuum γ/Z relative-phase — a SEPARATE bug.**
 The FFS fix did NOT move uux: uux's Higgs diagrams are VVS (HZZ), and with massless c the
 c-Yukawa is 0 so there are no FFS-Higgs diagrams; the continuum is pure γ/Z. The residual is
 momentum-CONSERVING, mass-independent (zeroing c/e/mu leaves ratio 0.76), ~1% per-diagram,
