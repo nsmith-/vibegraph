@@ -22,6 +22,112 @@ three-week continuum bug hunt that got there is written up in
 
 ---
 
+## 🧹 Cleanup Refactor (branch `cleanup-refactor`)
+
+Multi-session structural cleanup at the post-`mg-validation-coverage` checkpoint.
+Ordered by dependency; each is its own session (task 4 spans several).
+
+### 1. `intern-sm-model` — Intern the SM UFOModel, drop the submodule from the build
+
+Tests currently load the SM model from `../research/refs/mg5amcnlo/models/sm` (submodule).
+Intern it so `cargo build`/`test` never touch the submodule.
+
+- Add `serde` `Serialize`/`Deserialize` to the parsed UFO types (`Particle`,
+  `LorentzStructure`, `Coupling`, `Vertex`, `ParameterSet` + expr-AST nested types).
+  **Skip `topo: TopoModel`** (feyngraph `Model`, not serde-able) — rebuild it via
+  `build_feyngraph_model` in a `from_parsed()` / deserialize hook.
+- Blob layout: **one compressed blob** of the raw pre-restriction parsed model (parts
+  independent of any restrict card) **plus one SLHA ParamCard blob per restrict
+  variant**. The 9 SM cards → a baked enum:
+  `SMRestrict { Default, CMass, Ckm, LeptonMasses, NoBMass, NoMasses, NoTauMass,
+  NoWidths, ZeromassCkm }`.
+- Public API: `sm_model(restrict: SMRestrict) -> Arc<UFOModel>` — deserialize the raw
+  blob, apply that variant's interned param card (zero params + prune zero-coupling
+  vertices, same logic as `UFOModel::load`), rebuild `topo`. Cache a per-variant
+  `Arc<UFOModel>` (`OnceLock` per variant), since each variant is a distinct pruned
+  model and callers share it cheaply.
+- Generation: a committed dev bin `vibegraph-lib/src/bin/gen_sm_blob.rs` that reuses
+  the crate's own `UFOModel::load` + serde, reads the submodule, and writes the
+  `.bin.zst` blobs into the source tree (committed). Normal builds `include_bytes!`
+  them; the submodule is needed only to regenerate. (Chosen over `build.rs`, which
+  would force splitting the parser into a separate crate since a build script can't
+  call its own crate.) Optional: a CI job that regenerates and `git diff --exit-code`s
+  to catch staleness.
+- Fold in **`global-config`** (below) — same model-loading wiring session.
+
+_Deps: none. Unblocks: `feature-gate-mg-tests`._
+
+### 2. `feature-gate-mg-tests` — Move MadGraph-dependent tests out of the default suite
+
+- Tests that only needed the *model* switch to the interned `sm_model(...)` — no
+  submodule (depends on task 1).
+- Inline `#[cfg(test)]` modules in `helas/eval/run.rs` and `root_diagram.rs` that read
+  MG AMP dumps / param cards from `../validation/madgraph/output/...` move into `tests/`
+  integration files gated behind `extended-validation`.
+- Fold in **`madgraph-diagram-cmp-per-flavor`** (below) while `validate_madgraph_diagrams`
+  is already open.
+
+_Deps: `intern-sm-model`._
+
+### 3. `diagram-canonical-stream` — Self-owned diagram structure + streaming API
+
+`DiagramSet.diagrams` is a feyngraph `DiagramContainer`; `root_diagram.rs` hand-reconciles
+feyngraph's all-incoming crossing / `is_anti` / propagator-vertex conventions.
+
+- Introduce a vibegraph-owned diagram type with explicit baked conventions (flow
+  direction, momentum routing, rooted-tree orientation) so rooting stops reconciling
+  feyngraph's implicit conventions. Keep feyngraph for **topology generation only**;
+  convert to owned diagrams at the module boundary and never expose its views.
+- Make the public `generate_*` API an **iterator/stream** of diagrams to avoid
+  materializing large containers.
+- (`feyngraph-perf` below is adjacent but is a submodule change — separate session.)
+
+_Deps: none; do before task 4 so the typed-convention work sits on a clean base._
+
+### 4. `typed-repr-conventions` — Make all wavefunction/Lorentz conventions explicit in types
+
+The big one. Supersedes `lorentz-eval-node-2level` (below) and absorbs the note-11
+`Flow`-into-`repr` move. Every convention bug in the note-12 hunt lived at a hand-coded
+duality boundary (flow, crossing, variance).
+
+- **Design stage first**: pick the call formalism (HELAS F/I/O/V/S call style vs. the
+  `intertwiner` abstraction) so hand-written diagram evals map 1:1 to the s-expression
+  language, and each call is typed so it cannot be misapplied. Success: run.rs's
+  evaluator just unpacks the `WaveformSlot`, dispatches typed calls, and repacks.
+- Catalog every vertex- and wavefunction-altering call (`ProjM`/`ProjP`, `Gamma*out`,
+  `Metric*`, `P`, propagators) in that one formalism. Note flow is a spin-independent
+  property fixed by the sign of the free-EOM exponential — split responsibilities:
+  variance/metric at `helas::repr::lorentz`, flow at `helas::wavefn`.
+- **Terminology fix (do first):** what is currently named `Flow`/`SpinorFlow`/
+  `FlowIn`/`FlowOut` (`repr/lorentz.rs`) and `Flow`/`LegFlow` (`root_lorentz.rs`) is
+  actually the **bra/unbar (Dirac-adjoint) duality** — ket (u/v columns) ↔ bra
+  (ū/v̄ rows), iso `bar()` = ψ†γ⁰ — which is **spinor-only**. Three orthogonal axes:
+    - **Variance** (index up/down, metric g) — vectors/tensors — symmetric musical iso.
+    - **bra/unbar** (Dirac adjoint) — spinors only — Hermitian musical iso. *This* is
+      the one that belongs next to `Variance` (note 11's placement is right), but
+      **rename** it off "Flow": e.g. trait `SpinorAdjoint` with sides `Ket`/`Bra`
+      (parallel to `Contravariant`/`Covariant`). Rename runtime `Flow`/`LegFlow` too.
+    - **Flow** (in/out, sign of e^{∓ipx}, HELAS nsf/nss/nsv) — **all** wavefunctions,
+      currently has no dedicated type (scattered across `Charge`/`crossed`/momentum
+      signs). Reserve the name "Flow" for *this*; it lives at `wavefn`, is NOT next to
+      Variance, and is not a musical iso.
+    - Invariant to enforce: for spinors bra/ket is *derived* from (Flow) ⊕ (Charge)
+      via the rooting-chosen fermion-arrow, with `crossed` recording the mismatch vs
+      physical momentum. Flow and Charge are the independent inputs; bra/ket is not a
+      free fourth axis.
+- Implementation: two-level `LorentzEvalNode` (outer = output type carrying
+  variance/adjoint: `ScalarOut`/`VectorOut<V>`/`SpinorOut<Ket|Bra>`; inner = UFO
+  primitive), variance-parameterized `VectorWf`/`WaveformSlot`. Collapses
+  `Metric`/`MetricNegI`/`MetricVout`/`LowerVout` (`root_lorentz.rs`) and
+  `Propagate`/`PropagateLowered` (`run.rs`) into variance-typed nodes.
+- Regression net: the 11 MG-validated processes (task 2 keeps them fast). Design notes:
+  `research/notes/10-lorentz-runtime-eval-plan.md`, `11-variance-flow-duality.md`.
+
+_Deps: benefits from `diagram-canonical-stream` (clean rooting) + `feature-gate-mg-tests`
+(fast regression). Design stage before any code._
+
+---
+
 ## 🔴 High — broaden the MadGraph amplitude validation surface
 
 ### `mg-validation-coverage` — New processes for `validate_helas_mg` ✅ Done
@@ -81,6 +187,8 @@ charge type since MG treats light quarks as massless.
 
 ### `global-config` — Implement `vibegraph_lib::config::GlobalConfig`
 
+_Folded into cleanup task 1 `intern-sm-model` (same model-loading wiring)._
+
 A thin coordinator that wires `ParsedProcCard` → `UFOModel` loading for the CLI.
 
 ```rust
@@ -101,6 +209,9 @@ _Unblocks: Full CLI with process cards_
 ## 🟢 Later — polish and extensibility
 
 ### `lorentz-eval-node-2level` — Two-level LorentzEvalNode + variance-aware slots
+
+_Superseded by cleanup task 4 `typed-repr-conventions` (kept here for the detailed
+motivation)._
 
 Reorganize the Lorentz eval nodes (`helas/eval/root_lorentz.rs` + `run.rs`) into two
 levels:
@@ -147,6 +258,9 @@ Vibegraph-side mitigations already applied:
 
 ### `madgraph-diagram-cmp-per-flavor` — Match subprocesses by flavor in diagram validation
 
+_Fold into cleanup task 2 `feature-gate-mg-tests` while `validate_madgraph_diagrams`
+is already being moved._
+
 The `validate_madgraph_diagrams` reference count now uses the representative subprocess's
 true Feynman-diagram count (`NGRAPHS` from `matrix1_orig.f`), not `MAPCONFIG(0)` from
 `configs.inc` (which counts the phase-space integration-channel *union* across all flavor
@@ -191,5 +305,9 @@ lorentz-parse (✅) ────────────────────
 diagram-enum (✅) ──────────────────────────────────────────────────────┤
 color-flow ──→ mg-validation-coverage #8, hadronic pp→ll               │
 lips-nbody ─────────────────────────────────────────────────────────────┴──→ event-output-lhef
-global-config ──→ CLI
+
+Cleanup (branch cleanup-refactor):
+intern-sm-model (+global-config) ──→ feature-gate-mg-tests (+mg-diagram-cmp-per-flavor)
+diagram-canonical-stream ──┐
+feature-gate-mg-tests ─────┴──→ typed-repr-conventions (supersedes lorentz-eval-node-2level)
 ```
