@@ -18,9 +18,7 @@
 
 use std::collections::HashSet;
 
-use feyngraph::diagram::view::{DiagramView, LegView, VertexView};
-use itertools::Either;
-
+use crate::diagrams::diagram::{Diagram, Leg, LegIdx, Ray, RaySlot, VtxIdx};
 use crate::diagrams::DiagramSet;
 use crate::helas::eval::diagram_eval::{ExtLegInfo, PropInfo, VertexInfo};
 use crate::helas::eval::tree::Tree;
@@ -45,16 +43,16 @@ enum RawNode {
     /// External leg (tree leaf).
     Leg {
         particle: ParticleId,
-        leg_idx: usize,
+        leg_idx: LegIdx,
         charge: Charge,
         spin: i32,
     },
-    /// A vertex. `result_leg_idx` is the output (continuation) leg for a non-root
+    /// A vertex. `result_leg_idx` is the output (continuation) ray slot for a non-root
     /// vertex, or `None` for the root. `children` are the input nodes in vertex-leg
     /// order, with the output-leg position omitted.
     Vertex {
         vertex: VertexId,
-        result_leg_idx: Option<usize>,
+        result_leg_idx: Option<RaySlot>,
         children: Vec<RawNodeId>,
     },
 }
@@ -97,15 +95,15 @@ impl Tree for RawDiagramTree {
 
 /// Builder for the raw topology tree.
 struct RawBuilder<'a> {
-    model: &'a UFOModel,
+    diagram: &'a Diagram,
     nodes: Vec<RawNode>,
-    processed_vertices: HashSet<usize>,
+    processed_vertices: HashSet<VtxIdx>,
 }
 
 impl<'a> RawBuilder<'a> {
-    fn new(model: &'a UFOModel) -> Self {
+    fn new(diagram: &'a Diagram) -> Self {
         RawBuilder {
-            model,
+            diagram,
             nodes: Vec::new(),
             processed_vertices: HashSet::new(),
         }
@@ -117,73 +115,62 @@ impl<'a> RawBuilder<'a> {
         id
     }
 
-    fn make_leg(&mut self, leg: LegView) -> Result<RawNodeId, RootDiagramError> {
-        let particle = leg.particle();
-        let particle_id = self
-            .model
-            .particle_id(particle.name())
-            .ok_or_else(|| RootDiagramError::ParticleNotFound(particle.name().to_string()))?;
-
-        let model_particle = self.model.particle(particle_id);
-        // Check that feyngraph's is_anti flag is consistent with the UFO model.
-        // Use pdg_code < 0 (not charge sign) because up-type quarks have positive
-        // charge yet are particles (is_anti=false), breaking the charge-based check.
-        if particle.is_anti() != (model_particle.pdg_code < 0) {
-            return Err(RootDiagramError::AntiparticleMismatch {
-                name: particle.name().to_string(),
-                is_anti: particle.is_anti(),
-                pdg: model_particle.pdg_code,
-            });
-        }
-
-        Ok(self.add(RawNode::Leg {
-            particle: particle_id,
-            leg_idx: leg.index(),
-            charge: match particle.is_anti() {
-                true => Charge::Antiparticle,
-                false => Charge::Particle,
-            },
-            spin: model_particle.spin,
-        }))
+    fn make_leg(&mut self, leg: &Leg) -> RawNodeId {
+        // The owned diagram already resolved the particle and baked charge/spin at the
+        // module boundary (`Diagram::from_view`), so this is a pure structural copy.
+        self.add(RawNode::Leg {
+            particle: leg.particle,
+            leg_idx: leg.leg_idx,
+            charge: leg.charge,
+            spin: leg.spin,
+        })
     }
 
     /// Recursively walk the diagram tree from a root vertex.
     ///
-    /// Process all propagators attached to `vtx`. For each:
+    /// Process all rays attached to vertex `vtx`. For each:
     /// - external leg: emit a `Leg` child
     /// - internal (unvisited): recurse to the other vertex and keep its node as a child
     /// - internal (visited): skip — this is the output leg we came from
     ///
     /// `children` collects the input nodes in vertex-leg order with the output-leg
-    /// position omitted; `result_leg_idx` records that position so the second pass
+    /// position omitted; `result_leg_idx` records that ray slot so the second pass
     /// can root the vertex's Lorentz structure there (the rooted tree's `Leg(i)`
     /// references are then compacted to index this gap-free child list directly).
     fn walk_vertex(
         &mut self,
-        vtx: &VertexView,
-        result_leg_idx: Option<usize>,
+        vtx: VtxIdx,
+        result_leg_idx: Option<RaySlot>,
     ) -> Result<RawNodeId, RootDiagramError> {
-        self.processed_vertices.insert(vtx.id());
+        self.processed_vertices.insert(vtx);
         let mut children = vec![];
-        for (idx, prop) in vtx.propagators_ordered().enumerate() {
-            let is_upstream = result_leg_idx.is_some_and(|ir| ir == idx);
-            match (is_upstream, prop) {
-                (false, Either::Left(leg)) => {
-                    children.push(self.make_leg(leg)?);
+        for (idx, ray) in self
+            .diagram
+            .vertex(vtx)
+            .rays
+            .clone()
+            .into_iter()
+            .enumerate()
+        {
+            let is_upstream = result_leg_idx.is_some_and(|ir| ir.0 == idx);
+            match (is_upstream, ray) {
+                (false, Ray::Leg(li)) => {
+                    let leg = self.diagram.leg(li).clone();
+                    children.push(self.make_leg(&leg));
                 }
-                (false, Either::Right(prop)) => {
-                    for (vidx, next_vtx) in prop.vertices().enumerate() {
-                        // Either it is the vertex we are at or the next one the propagator goes to
-                        if !self.processed_vertices.contains(&next_vtx.id()) {
-                            let this_prop = prop.ray_index_ordered(vidx);
-                            children.push(self.walk_vertex(&next_vtx, Some(this_prop))?);
-                        }
+                (false, Ray::Prop { prop, end }) => {
+                    // The propagator's other endpoint is the next vertex; recurse into it
+                    // (unless already processed — that end is where we came from), rooting
+                    // its Lorentz structure at the ray slot the line occupies there.
+                    let (next_vtx, next_slot) = self.diagram.prop(prop).endpoints[1 - end];
+                    if !self.processed_vertices.contains(&next_vtx) {
+                        children.push(self.walk_vertex(next_vtx, Some(next_slot))?);
                     }
                 }
-                (true, Either::Left(_)) => {
+                (true, Ray::Leg(_)) => {
                     return Err(RootDiagramError::ExternalLegAsResult);
                 }
-                (true, Either::Right(_)) => {
+                (true, Ray::Prop { .. }) => {
                     // The output (result) leg — the propagator we came from. It has
                     // no input wavefunction, so it contributes no child; the gap is
                     // tracked by `result_leg_idx`.
@@ -191,15 +178,8 @@ impl<'a> RawBuilder<'a> {
             }
         }
 
-        let vertex = self
-            .model
-            .vertex_id(vtx.interaction().name())
-            .ok_or_else(|| {
-                RootDiagramError::VertexNotFound(vtx.interaction().name().to_string())
-            })?;
-
         Ok(self.add(RawNode::Vertex {
-            vertex,
+            vertex: self.diagram.vertex(vtx).interaction,
             result_leg_idx,
             children,
         }))
@@ -338,7 +318,7 @@ impl DiagramEvalTree {
         raw: &RawDiagramTree,
         model: &UFOModel,
         n_in: usize,
-        uncross: &HashSet<usize>,
+        uncross: &HashSet<LegIdx>,
     ) -> Result<Self, RootLorentzError> {
         let mut nodes = Vec::with_capacity(raw.nodes.len());
         let (root, _, _) = Self::bake_node(raw, raw.root, model, n_in, uncross, &mut nodes)?;
@@ -359,7 +339,7 @@ impl DiagramEvalTree {
         id: RawNodeId,
         model: &UFOModel,
         n_in: usize,
-        uncross: &HashSet<usize>,
+        uncross: &HashSet<LegIdx>,
         nodes: &mut Vec<EvalNode>,
     ) -> Result<(EvalNodeId, Option<LegFlow>, usize), RootLorentzError> {
         match raw.value(id) {
@@ -380,10 +360,10 @@ impl DiagramEvalTree {
                 };
                 let info = ExtLegInfo {
                     id,
-                    leg_idx: *leg_idx,
+                    leg_idx: leg_idx.0,
                     charge,
                     spin: *spin,
-                    incoming: *leg_idx < n_in,
+                    incoming: leg_idx.0 < n_in,
                 };
                 let bind = info.flow().map(|flow| LegFlow {
                     flow,
@@ -407,7 +387,7 @@ impl DiagramEvalTree {
                     Some(ri) => {
                         // Internal vertex: off-shell current rooted at the output leg,
                         // wrapped by the propagator on that leg.
-                        let prop_id = model.vertex_def(*vertex).particles[*ri];
+                        let prop_id = model.vertex_def(*vertex).particles[ri.0];
                         // The current keeps the binding of its continuing fermion input
                         // (one such child for an FFV) iff the output leg is itself a
                         // fermion; a bosonic output carries none. The bindings are
@@ -421,8 +401,8 @@ impl DiagramEvalTree {
                         // rooting can compare each leg to its UFO slot.
                         let mut flows: Vec<Option<LegFlow>> =
                             baked.iter().map(|(_, f, _)| *f).collect();
-                        flows.insert(*ri, bind);
-                        let info = VertexInfo::from_ufo(model, *vertex, Some(*ri), &flows)?;
+                        flows.insert(ri.0, bind);
+                        let info = VertexInfo::from_ufo(model, *vertex, Some(ri.0), &flows)?;
                         let lowered_storage = info
                             .terms
                             .iter()
@@ -501,48 +481,38 @@ impl std::fmt::Display for DiagramEvalTree {
 // ([`spine_sign_from_flow`]). The independent `spin_map`-tracing implementation below
 // is retained as the cross-check oracle for `spine_sign_from_flow_matches_heuristic`.
 
-/// Trace the fermion line that enters `start_vtx` at ordered ray `in_ray`,
+/// Trace the fermion line that enters `start_vtx` at ordered ray slot `in_ray`,
 /// following spinor connectivity until it reaches an external leg.
 ///
-/// Connectivity comes from *our* recomputed `spin_map` (UFOModel
-/// `LorentzStructure`), indexed by the vertex's ordered rays — which align with
-/// feyngraph's `propagators_ordered` because we feed feyngraph that same particle
-/// ordering. Returns the external leg index where the line terminates and whether
-/// it passed through at least one internal propagator (i.e. is an off-shell spine).
+/// Connectivity comes from *our* recomputed `spin_map` (UFOModel `LorentzStructure`),
+/// indexed by the vertex's ordered ray slots — which are exactly the owned diagram's
+/// `Vertex.rays`, since `Diagram::from_view` records them in interaction-slot order.
+/// Returns the external leg index where the line terminates and whether it passed
+/// through at least one internal propagator (i.e. is an off-shell spine).
 #[cfg(test)]
 fn trace_fermion_line(
-    view: &DiagramView,
+    diagram: &Diagram,
     model: &UFOModel,
-    start_vtx_id: usize,
-    in_ray: usize,
-) -> (usize, bool) {
-    let mut vtx_id = start_vtx_id;
+    start_vtx: VtxIdx,
+    in_ray: RaySlot,
+) -> (LegIdx, bool) {
+    let mut vtx = start_vtx;
     let mut in_ray = in_ray;
     let mut passed_internal = false;
     // Tree diagrams terminate; the bound only guards against pathological loops.
     for _ in 0..1024 {
-        let vtx = view.vertex(vtx_id);
-        let vid = model
-            .vertex_id(vtx.interaction().name())
-            .expect("vertex in UFO");
-        let lid = model.vertex_def(vid).lorentz[0];
-        let out_ray = model.lorentz_struct(lid).spin_map[in_ray] as usize;
-        // Extract Copy values so the `propagators_ordered` borrow of `vtx` is
-        // released before the next iteration rebinds it from `view`.
-        let next: (usize, usize) = match vtx
-            .propagators_ordered()
-            .nth(out_ray)
-            .expect("spin_map ray index in range")
-        {
-            Either::Left(leg) => return (leg.index(), passed_internal),
-            Either::Right(prop) => {
-                let n = if prop.vertex(0).id() == vtx_id { 1 } else { 0 };
-                (prop.vertex(n).id(), prop.ray_index_ordered(n))
+        let vertex = diagram.vertex(vtx);
+        let lid = model.vertex_def(vertex.interaction).lorentz[0];
+        let out_ray = model.lorentz_struct(lid).spin_map[in_ray.0] as usize;
+        match vertex.rays[out_ray] {
+            Ray::Leg(li) => return (li, passed_internal),
+            Ray::Prop { prop, end } => {
+                let (next_vtx, next_slot) = diagram.prop(prop).endpoints[1 - end];
+                passed_internal = true;
+                vtx = next_vtx;
+                in_ray = next_slot;
             }
-        };
-        passed_internal = true;
-        vtx_id = next.0;
-        in_ray = next.1;
+        }
     }
     panic!("fermion line trace did not terminate");
 }
@@ -560,23 +530,24 @@ fn trace_fermion_line(
 /// against MadGraph per-diagram amplitudes for e+e-→μ+μ-τ+τ- and
 /// u u~→c c~ e+e- μ+μ- (QCD=0).
 #[cfg(test)]
-fn initial_state_spine_sign(view: &DiagramView, model: &UFOModel) -> i8 {
-    let n_in = view.incoming().count();
-    let mut visited: HashSet<usize> = HashSet::new();
+fn initial_state_spine_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
+    let n_in = diagram.n_in;
+    let mut visited: HashSet<LegIdx> = HashSet::new();
     let mut sign: i8 = 1;
-    for leg in view.incoming().chain(view.outgoing()) {
-        let li = leg.index();
-        if !leg.particle().is_fermi() || !visited.insert(li) {
+    for leg in &diagram.legs {
+        let li = leg.leg_idx;
+        // A Dirac fermion leg (UFO spin code 2); mirrors the rest of this file.
+        if leg.spin.abs() != 2 || !visited.insert(li) {
             continue;
         }
-        let (other, passed_internal) =
-            trace_fermion_line(view, model, leg.vertex().id(), leg.ray_index_ordered());
+        let (attach_vtx, attach_slot) = diagram.leg_attachment(li);
+        let (other, passed_internal) = trace_fermion_line(diagram, model, attach_vtx, attach_slot);
         visited.insert(other);
-        if passed_internal && li < n_in && other < n_in {
+        if passed_internal && li.0 < n_in && other.0 < n_in {
             sign = -sign;
         }
         // Crossed (final–final) line: one −1 each, mirroring spine_sign_from_flow.
-        if li >= n_in && other >= n_in {
+        if li.0 >= n_in && other.0 >= n_in {
             sign = -sign;
         }
     }
@@ -670,8 +641,8 @@ fn collect_fermion_pairs(
     raw: &RawDiagramTree,
     model: &UFOModel,
     id: RawNodeId,
-    pairs: &mut Vec<(usize, usize)>,
-) -> Option<usize> {
+    pairs: &mut Vec<(LegIdx, LegIdx)>,
+) -> Option<LegIdx> {
     match raw.value(id) {
         RawNode::Leg { leg_idx, spin, .. } => (spin.abs() == 2).then_some(*leg_idx),
         RawNode::Vertex {
@@ -679,12 +650,12 @@ fn collect_fermion_pairs(
             result_leg_idx,
             children,
         } => {
-            let mut ends: Vec<usize> = children
+            let mut ends: Vec<LegIdx> = children
                 .iter()
                 .filter_map(|&c| collect_fermion_pairs(raw, model, c, pairs))
                 .collect();
             let out_is_fermion = result_leg_idx.is_some_and(|ri| {
-                let pid = model.vertex_def(*vertex).particles[ri];
+                let pid = model.vertex_def(*vertex).particles[ri.0];
                 model.particle(pid).spin.abs() == 2
             });
             if out_is_fermion {
@@ -710,13 +681,13 @@ fn collect_fermion_pairs(
 /// crossed (all-incoming) identity feyngraph reports: the crossed representation
 /// C-conjugates the whole bilinear chain, which is only an identity when *both*
 /// endpoints of the line conjugate together, i.e. for final–final pairs.
-fn mixed_line_final_legs(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) -> HashSet<usize> {
+fn mixed_line_final_legs(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) -> HashSet<LegIdx> {
     let mut pairs = Vec::new();
     let open = collect_fermion_pairs(raw, model, raw.root(), &mut pairs);
     assert!(open.is_none(), "all fermion lines close at some sink");
     pairs
         .into_iter()
-        .filter_map(|(a, b)| match (a < n_in, b < n_in) {
+        .filter_map(|(a, b)| match (a.0 < n_in, b.0 < n_in) {
             (true, false) => Some(b),
             (false, true) => Some(a),
             _ => None,
@@ -734,21 +705,21 @@ fn mixed_line_final_legs(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) ->
 /// through the [`CompileError`] umbrella.
 ///
 /// # Arguments
-/// * `view` — DiagramView with vertices and propagators
+/// * `diagram` — the owned, convention-baked diagram
 /// * `model` — UFO model for vertex/particle/coupling lookups
 pub(super) fn root_tree(
-    view: &DiagramView,
+    diagram: &Diagram,
     model: &UFOModel,
 ) -> Result<DiagramEvalTree, CompileError> {
     // Choose an arbitrary root vertex (the first one) and walk the tree from there.
-    let mut builder = RawBuilder::new(model);
-    let raw_root = builder.walk_vertex(&view.vertex(0), None)?;
+    let mut builder = RawBuilder::new(diagram);
+    let raw_root = builder.walk_vertex(VtxIdx(0), None)?;
     let raw = RawDiagramTree {
         nodes: builder.nodes,
         root: raw_root,
     };
 
-    let n_in = view.incoming().count();
+    let n_in = diagram.n_in;
     let uncross = mixed_line_final_legs(&raw, model, n_in);
     Ok(DiagramEvalTree::bake(&raw, model, n_in, &uncross)?)
 }
@@ -757,7 +728,7 @@ pub(super) fn root_tree(
 
 /// A compiled representation of a single Feynman diagram.
 ///
-/// Built once from a `DiagramView` + `UFOModel`. The diagram is a rooted
+/// Built once from an owned [`Diagram`] + `UFOModel`. The diagram is a rooted
 /// [`DiagramEvalTree`]: external legs are leaves, internal vertices are off-shell
 /// currents wrapped by propagators, and the root contracts into the scalar amplitude.
 #[derive(Clone, Debug)]
@@ -814,15 +785,15 @@ impl std::fmt::Display for DiagramEval {
 /// fermion-flow sign, including the initial-state spine correction derived from the
 /// baked spinor flow via [`spine_sign_from_flow`]).
 fn compile_single_diagram(
-    view: &DiagramView,
+    diagram: &Diagram,
     model: &UFOModel,
 ) -> Result<DiagramEval, CompileError> {
-    let tree = root_tree(view, model)?;
-    let fermi_sign = view.sign() * spine_sign_from_flow(&tree);
+    let tree = root_tree(diagram, model)?;
+    let fermi_sign = diagram.sign * spine_sign_from_flow(&tree);
     Ok(DiagramEval {
-        n_ext: view.legs().count(),
+        n_ext: diagram.n_ext(),
         tree,
-        symmetry_factor: 1.0 / view.symmetry_factor() as f64,
+        symmetry_factor: 1.0 / diagram.symmetry_factor as f64,
         fermi_sign,
     })
 }
@@ -837,8 +808,8 @@ pub fn compile_diagram_ast(
     model: &UFOModel,
 ) -> Result<Vec<DiagramEval>, CompileError> {
     set.diagrams
-        .views()
-        .map(|view| compile_single_diagram(&view, model))
+        .iter()
+        .map(|diagram| compile_single_diagram(diagram, model))
         .collect()
 }
 
@@ -865,20 +836,19 @@ mod tests {
         let model = sm_model();
         let sets = generate("e+ e- > mu+ mu-");
         for set in sets {
-            for view in set.diagrams.views() {
-                println!("Testing diagram {}", view);
-                let tree = root_tree(&view, model).expect("rooting failed");
-                println!("Generated tree: {}", tree);
+            for (d, diagram) in set.diagrams.iter().enumerate() {
+                println!("Testing diagram {d}");
+                let tree = root_tree(diagram, model).expect("rooting failed");
+                println!("Generated tree: {tree}");
             }
         }
     }
 
-    /// Instrumentation dump (S18 fix item 2): per-vertex UFO slot order vs the actual
-    /// bound children, for every ee→μμττ diagram. Prints, for each vertex:
-    /// interaction name, UFO particle slots, result_leg_idx, and each
-    /// `propagators_ordered` entry (external leg index + particle name + is_anti, or
-    /// internal propagator particle), so slot↔leg binding and flow alignment can be
-    /// read off directly.
+    /// Instrumentation dump: per-vertex UFO slot order vs the actual bound rays, for
+    /// every ee→μμττ diagram. Prints, for each vertex: interaction name, UFO particle
+    /// slots, and each ray in slot order (external leg index + particle + charge, or
+    /// internal propagator particle + momentum), so slot↔ray binding and flow alignment
+    /// can be read off directly.
     ///
     /// Run: cargo test -p vibegraph-lib --lib \
     ///        helas::eval::root_diagram::tests::probe_vertex_leg_binding -- --ignored --nocapture
@@ -888,46 +858,51 @@ mod tests {
         let model = sm_model();
         let sets = generate("e+ e- > mu+ mu- ta+ ta- QCD=0");
         for set in &sets {
-            for (d, view) in set.diagrams.views().enumerate() {
+            for (d, diagram) in set.diagrams.iter().enumerate() {
                 println!("── diagram {d} ──");
-                for leg in view.legs() {
+                for leg in &diagram.legs {
                     println!(
-                        "  ext leg {}: {} (is_anti={})",
-                        leg.index(),
-                        leg.particle().name(),
-                        leg.particle().is_anti()
+                        "  ext leg {}: {} ({}, incoming={})",
+                        leg.leg_idx.0,
+                        model.particle(leg.particle).name,
+                        leg.charge,
+                        leg.incoming
                     );
                 }
-                for vi in 0..view.vertices().count() {
-                    let vtx = view.vertex(vi);
-                    let interaction = vtx.interaction().name().to_string();
-                    let vid = model.vertex_id(&interaction).expect("vertex in UFO");
+                for (vi, vtx) in diagram.vertices.iter().enumerate() {
                     let slots: Vec<String> = model
-                        .vertex_def(vid)
+                        .vertex_def(vtx.interaction)
                         .particles
                         .iter()
                         .map(|pid| model.particle(*pid).name.clone())
                         .collect();
+                    let interaction = &model.vertex_def(vtx.interaction).name;
                     println!("  vertex {vi}: {interaction} slots={slots:?}");
-                    for (ray, prop) in vtx.propagators_ordered().enumerate() {
-                        match prop {
-                            Either::Left(leg) => println!(
-                                "    ray {ray} (slot {}): EXT leg {} {} (is_anti={})",
-                                slots[ray],
-                                leg.index(),
-                                leg.particle().name(),
-                                leg.particle().is_anti()
-                            ),
-                            Either::Right(p) => println!(
-                                "    ray {ray} (slot {}): PROP {} [{}]",
-                                slots[ray],
-                                p.particle().name(),
-                                p.momentum_str()
-                            ),
+                    for (slot, ray) in vtx.rays.iter().enumerate() {
+                        match ray {
+                            Ray::Leg(li) => {
+                                let leg = diagram.leg(*li);
+                                println!(
+                                    "    ray {slot} (slot {}): EXT leg {} {} ({})",
+                                    slots[slot],
+                                    li.0,
+                                    model.particle(leg.particle).name,
+                                    leg.charge
+                                );
+                            }
+                            Ray::Prop { prop, end } => {
+                                let p = diagram.prop(*prop);
+                                println!(
+                                    "    ray {slot} (slot {}): PROP {} (end={end}, mom={:?})",
+                                    slots[slot],
+                                    model.particle(p.particle).name,
+                                    p.momentum
+                                );
+                            }
                         }
                     }
                 }
-                let tree = root_tree(&view, model).expect("rooting failed");
+                let tree = root_tree(diagram, model).expect("rooting failed");
                 println!("  baked: {tree}");
             }
         }
@@ -947,10 +922,10 @@ mod tests {
         let mut flipped_total = 0;
         for process in processes {
             for set in generate(process) {
-                for (i, view) in set.diagrams.views().enumerate() {
-                    let tree = root_tree(&view, model).expect("rooting failed");
+                for (i, diagram) in set.diagrams.iter().enumerate() {
+                    let tree = root_tree(diagram, model).expect("rooting failed");
                     let from_flow = spine_sign_from_flow(&tree);
-                    let heuristic = initial_state_spine_sign(&view, model);
+                    let heuristic = initial_state_spine_sign(diagram, model);
                     assert_eq!(
                         from_flow, heuristic,
                         "spine sign mismatch in `{process}` diagram {i}: \
