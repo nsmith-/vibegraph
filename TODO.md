@@ -68,15 +68,30 @@ catch a stale blob vs the pinned submodule.
 
 _Deps: none. Unblocks: `feature-gate-mg-tests`._
 
-### 2. `feature-gate-mg-tests` — Move MadGraph-dependent tests out of the default suite
+### 2. `feature-gate-mg-tests` — Move MadGraph-dependent tests out of the default suite ✅ Core done
 
-- Tests that only needed the *model* switch to the interned `sm_model(...)` — no
-  submodule (depends on task 1).
-- Inline `#[cfg(test)]` modules in `helas/eval/run.rs` and `root_diagram.rs` that read
-  MG AMP dumps / param cards from `../validation/madgraph/output/...` move into `tests/`
-  integration files gated behind `extended-validation`.
-- Fold in **`madgraph-diagram-cmp-per-flavor`** (below) while `validate_madgraph_diagrams`
-  is already open.
+Default `cargo test` now passes on a clean checkout with **all** pixi-generated
+validation data absent (verified by moving `validation/madgraph/output` +
+`validation/helas/reference.csv` away: 169 lib + integration tests green).
+
+What landed:
+- The three inline tests in `helas/eval/run.rs` that read MG data from
+  `../validation/madgraph/output/...` — `probe_process_diagrams` (already `#[ignore]`),
+  `test_z_current_outgoing_mupair_vs_mg`, `test_espine_eline_z_absorption_ratio_vs_mg`
+  (both previously panicked on the gitignored `param_card_masslesstau.dat`) — plus the
+  `lf` helper they alone use, are gated with `#[cfg(feature = "extended-validation")]`.
+  `cargo test --features extended-validation` still compiles them and the two `_vs_mg`
+  tests pass bit-for-bit.
+- Gated **inline** rather than physically moved to `tests/`: the `eval` submodules are
+  private (`mod run`, `mod diagram_eval`, …) and the tests use private fns
+  (`run_forward_slot`, `eval_single_diagram_slot`), so an external `tests/` crate would
+  force a large public-API expansion. This matches the existing idiom in
+  `validate_helas.rs` (`#[cfg(feature = "extended-validation")] mod extended`).
+- `root_diagram.rs` needed no change — its inline tests use the interned model +
+  hardcoded reference numbers only (no filesystem reads).
+
+Remaining: fold in **`madgraph-diagram-cmp-per-flavor`** (below) — deferred; it is an
+independent, verification-heavy refactor (see that section for the design).
 
 _Deps: `intern-sm-model`._
 
@@ -272,21 +287,38 @@ Vibegraph-side mitigations already applied:
 
 ### `madgraph-diagram-cmp-per-flavor` — Match subprocesses by flavor in diagram validation
 
-_Fold into cleanup task 2 `feature-gate-mg-tests` while `validate_madgraph_diagrams`
-is already being moved._
+_Was to fold into cleanup task 2 `feature-gate-mg-tests`; deferred as its own session —
+it is an independent, verification-heavy refactor (Python extractor + Rust matching +
+JSON regen), not part of the feature-gating itself._
 
 The `validate_madgraph_diagrams` reference count now uses the representative subprocess's
 true Feynman-diagram count (`NGRAPHS` from `matrix1_orig.f`), not `MAPCONFIG(0)` from
 `configs.inc` (which counts the phase-space integration-channel *union* across all flavor
 variants in a P-class — e.g. 2672 vs the actual 2316 for `u u~ > u u~ l+ l- l+ l-`).
 
-**Remaining gap**: the comparison still assumes vibegraph's first-enumerated subprocess in
-each particle-type group matches MadGraph's `matrix1` representative. That holds for the
-current process set but is fragile. Refinement: have `count_mg_style_topologies` (in
-`vibegraph-lib/tests/validate_madgraph_diagrams.rs`) match each vibegraph subprocess to the
-MadGraph variant with the same flavors (via `leshouche.inc` `IDUP`) rather than picking one
-representative per coarse particle-type class, and compare per-subprocess `NGRAPHS`. This
-would also let the test validate *all* 40 variants of the qq4l class instead of just one.
+**Remaining gap**: the comparison (`count_mg_style_topologies` in
+`vibegraph-lib/tests/validate_madgraph_diagrams.rs`) still collapses vibegraph subprocesses
+into coarse particle-type classes (`quark`/`lepton`/…) and compares one representative per
+class against the summed `total_diagrams`. Fragile: it assumes vibegraph's first-enumerated
+subprocess in each class matches MadGraph's `matrix1` representative.
+
+**Design for the refinement** (per-flavor matching, validates *all* variants incl. the 40
+of the qq4l class):
+- **Robust flavor source — the matrix-file header, not `IDUP`.** Each
+  `SubProcesses/P*/matrix<N>_orig.f` carries `C     Process: u u~ > u u~ e+ e- e+ e- QCD=0 @1`
+  comment lines — one per concrete flavor process sharing that variant's `NGRAPHS` (u/c and
+  e/mu are grouped). Parse these directly: it avoids reverse-engineering MG's fragile
+  `matrix<N> ↔ IDUP(I,J,K)` 3-index mapping in `leshouche.inc`. `extract_diagrams.py` grows
+  a per-concrete-process `{in:[pdg…], out:[pdg…], ngraphs}` list (name→PDG via a bounded SM
+  dict: the full token set is `a b b~ c c~ d d~ e± g h mu± s s~ t t~ ta± u u~ w± z`).
+- **Rust side**: key each MG entry and each vibegraph subprocess by
+  `(sorted initial PDGs, sorted final PDGs)`; look up and compare per-subprocess
+  (`set.diagrams.len()` vs `ngraphs`).
+- **Known risk to resolve first**: this exposes whether vibegraph enumerates the *same set*
+  of concrete subprocesses as MG's `C Process:` union — i.e. whether the multiparticle `p`/`l`
+  definitions and flavor-symmetry pruning align. Validate on a small process (`pp_to_ll`)
+  before the qq4l class; a set mismatch here is a real finding, not a test bug, and needs
+  physics judgment (note-12 territory: MG-convention reconciliation is a bug magnet).
 
 ### `lips-nbody` — n-body LIPS phase-space generator
 
