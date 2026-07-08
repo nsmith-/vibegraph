@@ -8,7 +8,7 @@
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 11 processes bit-match MadGraph (≤6e-13, incl. 2→6, VVV, massive externals); single color flow only |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS + 2-body LIPS |
-| 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻) | ✅ Done | σ ≈ 2025 pb at √s = 91.2 GeV vs MadGraph ref |
+| 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻) | ✅ Done | Lepage VEGAS on `AmplitudeEvaluator::eval_m2`; `validate_vegas.rs`: `sigma_z_pole` σ≈2025 pb at √s=91.2 (<0.1% vs MG), `sigma_qed_limit` (√s=10 vs 4πα²/3s, 3%) |
 | 6 | Unweighted event output (LHEF) | 🔲 Pending | Accept/reject sampling + Les Houches format |
 
 `helas-generalize` is **done** for single-color-flow processes: `AmplitudeEvaluator`
@@ -118,7 +118,9 @@ which bypass the typed repr because `VectorWf.eps` is pinned to `Contravariant` 
 exact variance-bug class the typing was meant to prevent. Note 12's lesson 10 is the
 motivation: every convention bug in the hunt lived at a duality boundary (flow,
 crossing, variance) that was hand-coded — and the `bbx` lowered-propagator fix added
-another `lowered_storage` flag + hand-raised `g^{μν}` term to that pile.
+another `lowered_storage` flag + hand-raised `g^{μν}` term to that pile. The
+flow-typed `WaveformSlot` design this builds on is written up in
+`research/notes/11-variance-flow-duality.md`.
 
 **Now unblocked**: the continuum bug is fixed, VVS is regression-pinned
 (`test_metric_vout_vs_aloha_vvs1p1n1`), and VVV + lowered-vector propagation are now
@@ -137,8 +139,9 @@ reuse them in the inner loop. This is a change to the `feyngraph` submodule; def
 dedicated feyngraph session.
 
 Vibegraph-side mitigations already applied:
-- Topology caching: `generate_topologies()` called once per `n_ext`; all subprocesses share the
-  same `Vec<Topology>` via `DiagramGenerator::assign_topologies()`.
+- Topology caching: `generate_topologies()` called once per `(n_ext, n_loops)`; all subprocesses
+  share the same `Vec<Topology>` via `DiagramGenerator::assign_topologies()` (pp→qq̃4l: 4.86s once
+  vs ~15h naive).
 - Charge conservation pre-filter: eliminates ~86% of alias-expanded candidates before topology
   assignment (11,520 → ~1,664 for pp→qq̃4l).
 
