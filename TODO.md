@@ -95,20 +95,36 @@ independent, verification-heavy refactor (see that section for the design).
 
 _Deps: `intern-sm-model`._
 
-### 3. `diagram-canonical-stream` — Self-owned diagram structure + streaming API
+### 3. `diagram-canonical-stream` — Self-owned diagram structure + streaming API ✅ Owned type done
 
-`DiagramSet.diagrams` is a feyngraph `DiagramContainer`; `root_diagram.rs` hand-reconciles
-feyngraph's all-incoming crossing / `is_anti` / propagator-vertex conventions.
+Part A (the owned diagram type) landed; feyngraph is now used for topology generation only.
+Part B (streaming `generate_*` API) is deferred to its own follow-up (see below).
 
-- Introduce a vibegraph-owned diagram type with explicit baked conventions (flow
-  direction, momentum routing, rooted-tree orientation) so rooting stops reconciling
-  feyngraph's implicit conventions. Keep feyngraph for **topology generation only**;
-  convert to owned diagrams at the module boundary and never expose its views.
-- Make the public `generate_*` API an **iterator/stream** of diagrams to avoid
-  materializing large containers.
-- (`feyngraph-perf` below is adjacent but is a submodule change — separate session.)
+What landed:
+- `diagrams::diagram::Diagram` — a UFO-resolved, `feyngraph`-free owned diagram with
+  newtype indices (`LegIdx`/`VtxIdx`/`PropIdx`/`RaySlot`), interned `ParticleId`/`VertexId`,
+  and rays in UFO interaction-slot order. `Diagram::from_view` is the **single** boundary
+  where a feyngraph `DiagramView` is consumed: it bakes the all-incoming crossing, resolves
+  particles, runs the `is_anti`-vs-pdg check (now `ConvertError::AntiparticleMismatch`, a
+  `diagrams`-module error — no longer `helas::eval`'s), and carries each propagator's
+  **momentum** (signed external combination, `endpoints[0]→[1]`), giving each `Ray` a
+  natural momentum-flow direction.
+- `DiagramSet.diagrams` is now `Vec<Diagram>`; `generate_sets_inner` converts the feyngraph
+  container at the module boundary and drops it. No feyngraph view escapes `diagrams/`.
+- `helas/eval/root_diagram.rs` is fully `feyngraph`-free: walk/bake/`root_tree`/compile and
+  both test oracles (`trace_fermion_line`, `initial_state_spine_sign`) operate on the owned
+  `Diagram`. `RootDiagramError` shrank to just `ExternalLegAsResult` (resolution moved to the
+  boundary). Regression: default suite (169) green, `validate_helas_mg` 11/11 bit-for-bit,
+  `validate_madgraph_diagrams` 16/16, Fortran HELAS cross-check green.
 
-_Deps: none; do before task 4 so the typed-convention work sits on a clean base._
+Deferred — **Part B (`generate-stream`)**: make `generate_*` return
+`impl Iterator<Item = Result<DiagramSet, DiagramError>>` (yield subprocesses lazily; keep
+per-spec WEIGHTED discovery eager) so the whole card's subprocesses aren't materialized at
+once. Also deferrable follow-up: rewire `Leg.incoming`/rooting `crossed`/`t_channel` to read
+the now-baked momentum sign (kept on their validated structural derivations for now to avoid
+perturbing pinned convention signs). `feyngraph-perf` below is adjacent but a submodule change.
+
+_Deps: none; done before task 4 so the typed-convention work sits on a clean base._
 
 ### 4. `typed-repr-conventions` — Make all wavefunction/Lorentz conventions explicit in types
 

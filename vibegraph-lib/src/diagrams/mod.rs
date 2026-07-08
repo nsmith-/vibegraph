@@ -21,10 +21,12 @@
 //! ```
 
 pub mod alias;
+pub mod diagram;
 pub mod parse;
 pub mod selector;
 
 pub use alias::AliasTable;
+pub use diagram::{ConvertError, Diagram};
 pub use parse::{
     CouplingConstraint, CouplingOp, ModelImport, MultiparticleDef, ParsedProcCard, ParsingOptions,
     ProcessSpec,
@@ -32,7 +34,6 @@ pub use parse::{
 
 use std::path::Path;
 
-use feyngraph::diagram::DiagramContainer;
 use feyngraph::topology::{Topology, TopologyGenerator, TopologyModel};
 use feyngraph::DiagramGenerator;
 use thiserror::Error;
@@ -53,6 +54,8 @@ pub enum DiagramError {
     UnknownParticle(String),
     #[error("feyngraph error: {0}")]
     FeynGraph(#[from] feyngraph::model::ModelError),
+    #[error("diagram conversion error: {0}")]
+    Convert(#[from] ConvertError),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -63,7 +66,7 @@ pub enum DiagramError {
 pub struct DiagramSet {
     pub particles_in: Vec<String>,
     pub particles_out: Vec<String>,
-    pub diagrams: DiagramContainer,
+    pub diagrams: Vec<Diagram>,
 }
 
 // ── Public parsing API ────────────────────────────────────────────────────────
@@ -265,9 +268,16 @@ fn generate_sets_inner(
             DiagramGenerator::new(&in_refs, &out_refs, 0, model.topo.clone(), Some(sel))?;
         // assign_topologies only errors on n_external/n_loops mismatch, which can't
         // happen here since cached_topologies was built for the same n_ext and n_loops=0.
-        let diagrams = generator
+        let container = generator
             .assign_topologies(cached_topologies)
             .expect("topology cache n_external/n_loops mismatch — impossible by construction");
+
+        // Module boundary: convert feyngraph's borrowed views into owned, UFO-resolved
+        // diagrams here and drop the container. feyngraph views never escape `diagrams/`.
+        let diagrams = container
+            .views()
+            .map(|view| Diagram::from_view(&view, model))
+            .collect::<Result<Vec<_>, _>>()?;
 
         sets.push(DiagramSet {
             particles_in: concrete.initial,

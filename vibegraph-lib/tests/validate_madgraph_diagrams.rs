@@ -214,7 +214,7 @@ fn count_mg_style_topologies(sets: &[DiagramSet], model: &UFOModel) -> u32 {
 /// the i-th external momentum (0-indexed: legs 1..n_in, then n_in+1..n_ext outgoing).
 /// Outgoing leg momenta already have their sign flipped, so the vector reads as the
 /// sum of incoming momenta flowing into the propagator.
-fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet]) {
+fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet], model: &UFOModel) {
     println!("\n=== vibegraph topologies: {process_str} ===");
     let mut global_idx = 0usize;
     for set in sets {
@@ -226,13 +226,14 @@ fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet]) {
             set.particles_in.join(" "),
             set.particles_out.join(" ")
         );
-        for view in set.diagrams.views() {
+        for diagram in &set.diagrams {
             global_idx += 1;
-            let prop_strs: Vec<String> = view
-                .propagators()
+            let prop_strs: Vec<String> = diagram
+                .props
+                .iter()
                 .map(|p| {
-                    let mom = p.momentum();
-                    let mom_str = mom
+                    let mom_str = p
+                        .momentum
                         .iter()
                         .enumerate()
                         .filter(|(_, &c)| c != 0)
@@ -243,11 +244,10 @@ fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet]) {
                         })
                         .collect::<Vec<_>>()
                         .join("+");
+                    let particle = model.particle(p.particle);
                     format!(
                         "{}(pdg={},mom={})",
-                        p.particle().name(),
-                        p.particle().pdg(),
-                        mom_str
+                        particle.name, particle.pdg_code, mom_str
                     )
                 })
                 .collect();
@@ -297,7 +297,7 @@ fn run_trial(json_path: &Path, mg_data: &DiagramData) -> Result<(), Failed> {
     let unique_topology_count = count_mg_style_topologies(&sets, &model);
 
     print_madgraph_topologies(mg_data);
-    print_diagram_topologies(&process_str, &sets);
+    print_diagram_topologies(&process_str, &sets, &model);
     println!(
         "  vibegraph: {total_count} total diagrams ({unique_topology_count} unique topologies)"
     );

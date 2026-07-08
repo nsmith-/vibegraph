@@ -7,24 +7,14 @@
 
 use super::root_lorentz::RootLorentzError;
 
-/// Errors from Pass 1: walking the diagram topology and interning model ids.
+/// Errors from Pass 1: walking the owned diagram topology into a rooted tree.
+///
+/// Particle/interaction resolution and the antiparticle-consistency check happen earlier,
+/// at the module boundary ([`Diagram::from_view`](crate::diagrams::diagram::Diagram::from_view),
+/// reported via [`ConvertError`](crate::diagrams::ConvertError)), so the only failure left
+/// here is a structural one from the walk itself.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum RootDiagramError {
-    /// A leg's particle name is absent from the UFO model.
-    #[error("particle not found in model: {0}")]
-    ParticleNotFound(String),
-    /// A vertex's interaction name is absent from the UFO model.
-    #[error("vertex not found in model: {0}")]
-    VertexNotFound(String),
-    /// feyngraph's is_anti flag disagrees with the model's pdg-code sign.
-    #[error(
-        "antiparticle flag mismatch for {name}: feyngraph is_anti={is_anti}, model pdg_code={pdg}"
-    )]
-    AntiparticleMismatch {
-        name: String,
-        is_anti: bool,
-        pdg: i64,
-    },
     /// The output (result) leg of a vertex resolved to an external leg, which has no
     /// off-shell continuation.
     #[error("an external leg cannot be the result leg of a vertex")]

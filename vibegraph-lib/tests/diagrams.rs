@@ -65,17 +65,11 @@ fn test_generate_uux_to_ddx_weighted_lo() {
         1,
         "only s-channel gluon at minimum WEIGHTED order"
     );
-    let prop_name = sets[0]
-        .diagrams
-        .views()
-        .next()
-        .unwrap()
-        .propagators()
-        .next()
-        .unwrap()
-        .particle()
-        .name()
-        .to_string();
+    let prop = sets[0].diagrams[0]
+        .props
+        .first()
+        .expect("s-channel propagator");
+    let prop_name = &common::sm_model().particle(prop.particle).name;
     assert_eq!(prop_name, "g", "single diagram should be s-channel gluon");
 }
 
