@@ -719,6 +719,7 @@ mod tests {
 
     /// Uncrossed per-leg binding shorthand for hand-built flow vectors (the
     /// hand-built diagrams bind wavefunctions in MG order, so no crossing).
+    #[cfg(feature = "extended-validation")]
     fn lf(
         flow: crate::helas::eval::root_lorentz::Flow,
     ) -> Option<crate::helas::eval::root_lorentz::LegFlow> {
@@ -1980,6 +1981,7 @@ mod tests {
     ///        --lib helas::eval::run::tests::probe_process_diagrams -- --ignored --nocapture
     #[test]
     #[ignore]
+    #[cfg(feature = "extended-validation")]
     fn probe_process_diagrams() {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 
@@ -2457,6 +2459,7 @@ mod tests {
     /// convention factor) — the wavefunction-level anchor tying the production
     /// vector chain to MadGraph.
     #[test]
+    #[cfg(feature = "extended-validation")]
     fn test_z_current_outgoing_mupair_vs_mg() {
         use num_complex::Complex64;
 
@@ -2616,6 +2619,7 @@ mod tests {
     /// the Z path was 0.6403 × MG at the flipped-μ helicity — the per-Z continuum
     /// bug, fixed by the flow/crossing-aware chiral projector.)
     #[test]
+    #[cfg(feature = "extended-validation")]
     fn test_espine_eline_z_absorption_ratio_vs_mg() {
         use num_complex::Complex64;
 
