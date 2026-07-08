@@ -1,8 +1,26 @@
 # Unifying `Variance` and `Flow` as form-induced dualities
 
-**Status:** Stub / design note. Currently in progress: moving `Flow` (`SpinorFlow`,
-`FlowIn`/`FlowOut`) out of `helas/wavefn.rs` and into `helas/repr/lorentz.rs`
-alongside `Variance`, since both are the same abstraction.
+> **⚠ Terminology correction (2026-07-07).** Throughout this note "`Flow`" names the
+> **bra/unbar (Dirac-adjoint) duality** — ket (u/v columns) ↔ bra (ū/v̄ rows), iso
+> `bar()` = ψ†γ⁰, spinor-only. That is the axis this note pairs with `Variance`, and the
+> pairing thesis below is correct. **But the *name* is wrong.** "Flow" should denote a
+> *different*, universal axis: momentum in/out, the sign of e^{∓ipx} (HELAS nsf/nss/nsv),
+> which every wavefunction has and which is **not** a musical iso. So:
+> - Read every "`Flow`"/`SpinorFlow`/`FlowIn`/`FlowOut` below as the **bra/unbar / Dirac
+>   adjoint** axis, to be renamed `SpinorAdjoint` with sides `Ket`/`Bra` (parallel to
+>   `Contravariant`/`Covariant`). *This* is what belongs next to `Variance`.
+> - The name "Flow" is reserved for the universal in/out axis (lives at `wavefn`, not a
+>   form iso). For spinors, bra/ket is *derived* from Flow ⊕ Charge via the rooting-chosen
+>   fermion arrow (`crossed` records the mismatch vs physical momentum) — not a free axis.
+>
+> The rename and three-axis split are the first step of `typed-repr-conventions` in
+> `TODO.md` (cleanup task 4); this note is its design backing for the adjoint↔variance
+> unification.
+
+**Status:** Stub / design note. The bra/unbar (Dirac-adjoint) duality currently lives in
+`helas/repr/lorentz.rs` as `SpinorFlow`/`FlowIn`/`FlowOut` (already moved out of
+`helas/wavefn.rs`), alongside `Variance`, since both are the same abstraction — see the
+terminology correction above for the pending rename.
 
 ## The idea
 
