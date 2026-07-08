@@ -25,11 +25,10 @@ Cross-section integral + weighted event sample
 
 ## Planning & Progress
 
-**Before starting any new feature or task**, read:
-- `TODO.md` — prioritized task list
-- `research/PROGRESS.md` — research status and decisions already made
+**Before starting any new feature or task**, read `TODO.md` — the prioritized task
+list and pipeline status. Deeper derivations live in `research/notes/`.
 
-**After completing any planned change**, update both files to reflect current status.
+**After completing any planned change**, update `TODO.md` to reflect current status.
 
 ## Codebase Exploration
 
