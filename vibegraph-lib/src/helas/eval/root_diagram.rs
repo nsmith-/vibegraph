@@ -18,7 +18,7 @@
 
 use std::collections::HashSet;
 
-use crate::diagrams::diagram::{Diagram, Leg, LegIdx, Ray, RaySlot, VtxIdx};
+use crate::diagrams::diagram::{Diagram, Leg, LegIdx, PropIdx, Ray, RaySlot, VtxIdx};
 use crate::diagrams::DiagramSet;
 use crate::helas::eval::diagram_eval::{ExtLegInfo, PropInfo, VertexInfo};
 use crate::helas::eval::tree::Tree;
@@ -36,23 +36,33 @@ use super::root_lorentz::{Flow, LegFlow, RootLorentzError};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct RawNodeId(usize);
 
+/// The output (continuation) leg of a non-root vertex: the ray slot the result
+/// propagator occupies at this vertex, plus that propagator's index so its baked
+/// momentum can be read when typing the propagator node.
+#[derive(Clone, Copy, Debug)]
+struct ResultLeg {
+    slot: RaySlot,
+    prop: PropIdx,
+}
+
 /// A node in the raw rooted-diagram tree: pure topology with interned model ids,
 /// before Lorentz rooting or wavefunction construction.
 #[derive(Clone, Debug)]
 enum RawNode {
-    /// External leg (tree leaf).
+    /// External leg (tree leaf). `incoming` is the baked momentum-flow direction.
     Leg {
         particle: ParticleId,
         leg_idx: LegIdx,
         charge: Charge,
         spin: i32,
+        incoming: bool,
     },
-    /// A vertex. `result_leg_idx` is the output (continuation) ray slot for a non-root
-    /// vertex, or `None` for the root. `children` are the input nodes in vertex-leg
-    /// order, with the output-leg position omitted.
+    /// A vertex. `result` is the output (continuation) leg for a non-root vertex, or
+    /// `None` for the root. `children` are the input nodes in vertex-leg order, with
+    /// the output-leg position omitted.
     Vertex {
         vertex: VertexId,
-        result_leg_idx: Option<RaySlot>,
+        result: Option<ResultLeg>,
         children: Vec<RawNodeId>,
     },
 }
@@ -116,13 +126,14 @@ impl<'a> RawBuilder<'a> {
     }
 
     fn make_leg(&mut self, leg: &Leg) -> RawNodeId {
-        // The owned diagram already resolved the particle and baked charge/spin at the
-        // module boundary (`Diagram::from_view`), so this is a pure structural copy.
+        // The owned diagram already resolved the particle and baked charge/spin/flow at
+        // the module boundary (`Diagram::from_view`), so this is a pure structural copy.
         self.add(RawNode::Leg {
             particle: leg.particle,
             leg_idx: leg.leg_idx,
             charge: leg.charge,
             spin: leg.spin,
+            incoming: leg.incoming,
         })
     }
 
@@ -134,13 +145,14 @@ impl<'a> RawBuilder<'a> {
     /// - internal (visited): skip — this is the output leg we came from
     ///
     /// `children` collects the input nodes in vertex-leg order with the output-leg
-    /// position omitted; `result_leg_idx` records that ray slot so the second pass
-    /// can root the vertex's Lorentz structure there (the rooted tree's `Leg(i)`
-    /// references are then compacted to index this gap-free child list directly).
+    /// position omitted; `result` records that ray slot and its propagator so the second
+    /// pass can root the vertex's Lorentz structure there (the rooted tree's `Leg(i)`
+    /// references are then compacted to index this gap-free child list directly) and read
+    /// the propagator's baked momentum.
     fn walk_vertex(
         &mut self,
         vtx: VtxIdx,
-        result_leg_idx: Option<RaySlot>,
+        result: Option<ResultLeg>,
     ) -> Result<RawNodeId, RootDiagramError> {
         self.processed_vertices.insert(vtx);
         let mut children = vec![];
@@ -152,7 +164,7 @@ impl<'a> RawBuilder<'a> {
             .into_iter()
             .enumerate()
         {
-            let is_upstream = result_leg_idx.is_some_and(|ir| ir.0 == idx);
+            let is_upstream = result.is_some_and(|r| r.slot.0 == idx);
             match (is_upstream, ray) {
                 (false, Ray::Leg(li)) => {
                     let leg = self.diagram.leg(li).clone();
@@ -161,10 +173,15 @@ impl<'a> RawBuilder<'a> {
                 (false, Ray::Prop { prop, end }) => {
                     // The propagator's other endpoint is the next vertex; recurse into it
                     // (unless already processed — that end is where we came from), rooting
-                    // its Lorentz structure at the ray slot the line occupies there.
+                    // its Lorentz structure at the ray slot the line occupies there and
+                    // carrying `prop` so the child can read its momentum.
                     let (next_vtx, next_slot) = self.diagram.prop(prop).endpoints[1 - end];
                     if !self.processed_vertices.contains(&next_vtx) {
-                        children.push(self.walk_vertex(next_vtx, Some(next_slot))?);
+                        let result = ResultLeg {
+                            slot: next_slot,
+                            prop,
+                        };
+                        children.push(self.walk_vertex(next_vtx, Some(result))?);
                     }
                 }
                 (true, Ray::Leg(_)) => {
@@ -173,14 +190,14 @@ impl<'a> RawBuilder<'a> {
                 (true, Ray::Prop { .. }) => {
                     // The output (result) leg — the propagator we came from. It has
                     // no input wavefunction, so it contributes no child; the gap is
-                    // tracked by `result_leg_idx`.
+                    // tracked by `result`.
                 }
             }
         }
 
         Ok(self.add(RawNode::Vertex {
             vertex: self.diagram.vertex(vtx).interaction,
-            result_leg_idx,
+            result,
             children,
         }))
     }
@@ -316,38 +333,41 @@ impl DiagramEvalTree {
     /// the final-state legs to type physically (see [`mixed_line_final_legs`]).
     fn bake(
         raw: &RawDiagramTree,
+        diagram: &Diagram,
         model: &UFOModel,
         n_in: usize,
         uncross: &HashSet<LegIdx>,
     ) -> Result<Self, RootLorentzError> {
         let mut nodes = Vec::with_capacity(raw.nodes.len());
-        let (root, _, _) = Self::bake_node(raw, raw.root, model, n_in, uncross, &mut nodes)?;
+        let (root, _) = Self::bake_node(raw, raw.root, diagram, model, n_in, uncross, &mut nodes)?;
         Ok(DiagramEvalTree { nodes, root })
     }
 
-    /// Bake one node, returning its id, the spinor binding of the wavefunction it
-    /// produces (`None` for bosonic / scalar-amplitude outputs), and the number of
-    /// *incoming* external legs in its subtree (for the t-channel propagator test).
-    /// The binding is resolved bottom-up: external legs from their charge/direction
-    /// (with `crossed = !incoming`, since diagram enumeration presents outgoing legs
-    /// in the all-incoming convention — except legs in `uncross`, restored to their
-    /// physical particle/flow because their line partner is an initial-state leg),
-    /// and an off-shell fermion current (plus the propagator on it) inherits the
-    /// binding of its continuing fermion input.
+    /// Bake one node, returning its id and the spinor binding of the wavefunction it
+    /// produces (`None` for bosonic / scalar-amplitude outputs). The binding is resolved
+    /// bottom-up: external legs from their charge/direction (with `crossed = !incoming`,
+    /// since diagram enumeration presents outgoing legs in the all-incoming convention —
+    /// except legs in `uncross`, restored to their physical particle/flow because their
+    /// line partner is an initial-state leg), and an off-shell fermion current (plus the
+    /// propagator on it) inherits the binding of its continuing fermion input. Each leg's
+    /// `incoming` flag and each propagator's t-channel classification are read off the
+    /// baked momentum (`Leg.incoming`, `Prop::is_spacelike`).
     fn bake_node(
         raw: &RawDiagramTree,
         id: RawNodeId,
+        diagram: &Diagram,
         model: &UFOModel,
         n_in: usize,
         uncross: &HashSet<LegIdx>,
         nodes: &mut Vec<EvalNode>,
-    ) -> Result<(EvalNodeId, Option<LegFlow>, usize), RootLorentzError> {
+    ) -> Result<(EvalNodeId, Option<LegFlow>), RootLorentzError> {
         match raw.value(id) {
             RawNode::Leg {
                 particle,
                 leg_idx,
                 charge,
                 spin,
+                incoming,
             } => {
                 let uncrossed = uncross.contains(leg_idx);
                 let (id, charge) = if uncrossed {
@@ -363,30 +383,29 @@ impl DiagramEvalTree {
                     leg_idx: leg_idx.0,
                     charge,
                     spin: *spin,
-                    incoming: leg_idx.0 < n_in,
+                    incoming: *incoming,
                 };
                 let bind = info.flow().map(|flow| LegFlow {
                     flow,
                     crossed: !info.incoming && !uncrossed,
                 });
-                let n_inc = info.incoming as usize;
-                Ok((Self::add(nodes, EvalNode::External(info)), bind, n_inc))
+                Ok((Self::add(nodes, EvalNode::External(info)), bind))
             }
             RawNode::Vertex {
                 vertex,
-                result_leg_idx,
+                result,
                 children,
             } => {
-                let baked: Vec<(EvalNodeId, Option<LegFlow>, usize)> = children
+                let baked: Vec<(EvalNodeId, Option<LegFlow>)> = children
                     .iter()
-                    .map(|&c| Self::bake_node(raw, c, model, n_in, uncross, nodes))
+                    .map(|&c| Self::bake_node(raw, c, diagram, model, n_in, uncross, nodes))
                     .collect::<Result<Vec<_>, _>>()?;
-                let child_ids: Vec<EvalNodeId> = baked.iter().map(|(id, _, _)| *id).collect();
-                let n_inc: usize = baked.iter().map(|(_, _, n)| *n).sum();
-                match result_leg_idx {
-                    Some(ri) => {
+                let child_ids: Vec<EvalNodeId> = baked.iter().map(|(id, _)| *id).collect();
+                match result {
+                    Some(rl) => {
                         // Internal vertex: off-shell current rooted at the output leg,
                         // wrapped by the propagator on that leg.
+                        let ri = rl.slot;
                         let prop_id = model.vertex_def(*vertex).particles[ri.0];
                         // The current keeps the binding of its continuing fermion input
                         // (one such child for an FFV) iff the output leg is itself a
@@ -394,13 +413,13 @@ impl DiagramEvalTree {
                         // passed into the Lorentz rooting so it picks the in/out gamma
                         // routine and detects reversed/crossed pairs.
                         let bind = (model.particle(prop_id).spin == 2)
-                            .then(|| baked.iter().find_map(|(_, f, _)| *f))
+                            .then(|| baked.iter().find_map(|(_, f)| *f))
                             .flatten();
                         // Per-leg bindings in vertex-leg order: children with the
                         // output's binding spliced in at its position, so the Lorentz
                         // rooting can compare each leg to its UFO slot.
                         let mut flows: Vec<Option<LegFlow>> =
-                            baked.iter().map(|(_, f, _)| *f).collect();
+                            baked.iter().map(|(_, f)| *f).collect();
                         flows.insert(ri.0, bind);
                         let info = VertexInfo::from_ufo(model, *vertex, Some(ri.0), &flows)?;
                         let lowered_storage = info
@@ -423,9 +442,10 @@ impl DiagramEvalTree {
                                 EvalNode::Propagate {
                                     info: PropInfo {
                                         id: prop_id,
-                                        // Exactly one beam on this side of the line
-                                        // ⟺ spacelike (t-channel) momentum.
-                                        t_channel: n_in == 2 && n_inc == 1,
+                                        // Spacelike (t-channel) iff exactly one beam
+                                        // flows through this line — read off its baked
+                                        // momentum.
+                                        t_channel: diagram.prop(rl.prop).is_spacelike(n_in),
                                         lowered_storage,
                                     },
                                     flow,
@@ -433,14 +453,12 @@ impl DiagramEvalTree {
                                 },
                             ),
                             bind,
-                            n_inc,
                         ))
                     }
                     None => {
                         // Root vertex: contract all legs into the scalar amplitude — a
                         // scalar sink, so no fermion output flow; every leg is a child.
-                        let flows: Vec<Option<LegFlow>> =
-                            baked.iter().map(|(_, f, _)| *f).collect();
+                        let flows: Vec<Option<LegFlow>> = baked.iter().map(|(_, f)| *f).collect();
                         let info = VertexInfo::from_ufo(model, *vertex, None, &flows)?;
                         Ok((
                             Self::add(
@@ -451,7 +469,6 @@ impl DiagramEvalTree {
                                 },
                             ),
                             None,
-                            n_inc,
                         ))
                     }
                 }
@@ -647,15 +664,15 @@ fn collect_fermion_pairs(
         RawNode::Leg { leg_idx, spin, .. } => (spin.abs() == 2).then_some(*leg_idx),
         RawNode::Vertex {
             vertex,
-            result_leg_idx,
+            result,
             children,
         } => {
             let mut ends: Vec<LegIdx> = children
                 .iter()
                 .filter_map(|&c| collect_fermion_pairs(raw, model, c, pairs))
                 .collect();
-            let out_is_fermion = result_leg_idx.is_some_and(|ri| {
-                let pid = model.vertex_def(*vertex).particles[ri.0];
+            let out_is_fermion = result.is_some_and(|rl| {
+                let pid = model.vertex_def(*vertex).particles[rl.slot.0];
                 model.particle(pid).spin.abs() == 2
             });
             if out_is_fermion {
@@ -721,7 +738,7 @@ pub(super) fn root_tree(
 
     let n_in = diagram.n_in;
     let uncross = mixed_line_final_legs(&raw, model, n_in);
-    Ok(DiagramEvalTree::bake(&raw, model, n_in, &uncross)?)
+    Ok(DiagramEvalTree::bake(&raw, diagram, model, n_in, &uncross)?)
 }
 
 // ───────────────────────────── Per-diagram artifact ─────────────────────────────

@@ -117,12 +117,18 @@ What landed:
   boundary). Regression: default suite (169) green, `validate_helas_mg` 11/11 bit-for-bit,
   `validate_madgraph_diagrams` 16/16, Fortran HELAS cross-check green.
 
+Momentum-sign rewire done: `t_channel` now reads the baked propagator momentum
+(`Prop::is_spacelike(n_in)` — spacelike iff exactly one of the two beam coefficients is
+nonzero), replacing the `n_inc` subtree-incoming-count threading (dropped from `bake_node`);
+each leg's `incoming`/`crossed` now reads the baked `Leg.incoming` (momentum-flow direction)
+instead of recomputing `leg_idx < n_in`. Bit-for-bit preserved: all 11 `validate_helas_mg`
+processes unchanged (incl. Bhabha t-channel Z width and the `bbx` lowered propagator), 169
+default tests + `spine_sign_from_flow_matches_heuristic` green.
+
 Deferred — **Part B (`generate-stream`)**: make `generate_*` return
 `impl Iterator<Item = Result<DiagramSet, DiagramError>>` (yield subprocesses lazily; keep
 per-spec WEIGHTED discovery eager) so the whole card's subprocesses aren't materialized at
-once. Also deferrable follow-up: rewire `Leg.incoming`/rooting `crossed`/`t_channel` to read
-the now-baked momentum sign (kept on their validated structural derivations for now to avoid
-perturbing pinned convention signs). `feyngraph-perf` below is adjacent but a submodule change.
+once. `feyngraph-perf` below is adjacent but a submodule change.
 
 _Deps: none; done before task 4 so the typed-convention work sits on a clean base._
 

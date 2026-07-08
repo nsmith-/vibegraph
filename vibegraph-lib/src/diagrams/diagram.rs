@@ -74,6 +74,17 @@ pub struct Prop {
     pub momentum: Vec<i8>,
 }
 
+impl Prop {
+    /// Whether this propagator is spacelike (t-channel) for an `n_in`-beam process:
+    /// exactly one of the two initial-state beams flows through it. Read directly off
+    /// the baked momentum — the beams are externals `0..n_in`, so the line separates
+    /// them iff exactly one of those coefficients is nonzero. Only meaningful for
+    /// 2→n (`n_in == 2`); timelike (s-channel) lines carry both beams or neither.
+    pub fn is_spacelike(&self, n_in: usize) -> bool {
+        n_in == 2 && self.momentum[..n_in].iter().filter(|&&c| c != 0).count() == 1
+    }
+}
+
 /// A directed half-edge attached to a vertex, in UFO particle-slot order.
 #[derive(Clone, Copy, Debug)]
 pub enum Ray {
