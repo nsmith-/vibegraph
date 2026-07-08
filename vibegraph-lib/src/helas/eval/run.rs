@@ -710,14 +710,11 @@ mod tests {
     };
 
     fn sm_model() -> &'static crate::ufo::UFOModel {
+        use crate::ufo::sm::{sm_model as interned_sm, SMRestrict};
         use crate::ufo::UFOModel;
-        use std::sync::OnceLock;
-        static SM_MODEL: OnceLock<UFOModel> = OnceLock::new();
-        SM_MODEL.get_or_init(|| {
-            let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-            let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm");
-            UFOModel::load(&path, None).expect("SM UFO not found")
-        })
+        use std::sync::{Arc, OnceLock};
+        static SM_MODEL: OnceLock<Arc<UFOModel>> = OnceLock::new();
+        SM_MODEL.get_or_init(|| interned_sm(SMRestrict::Default))
     }
 
     /// Uncrossed per-leg binding shorthand for hand-built flow vectors (the

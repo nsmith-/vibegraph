@@ -27,33 +27,44 @@ three-week continuum bug hunt that got there is written up in
 Multi-session structural cleanup at the post-`mg-validation-coverage` checkpoint.
 Ordered by dependency; each is its own session (task 4 spans several).
 
-### 1. `intern-sm-model` — Intern the SM UFOModel, drop the submodule from the build
+### 1. `intern-sm-model` — Intern the SM UFOModel, drop the submodule from the build ✅ Done
 
-Tests currently load the SM model from `../research/refs/mg5amcnlo/models/sm` (submodule).
-Intern it so `cargo build`/`test` never touch the submodule.
+The SM model is baked into the binary; `cargo build`/`test` (default suite) never
+touch the submodule. Verified: the full default suite passes with the `sm/` submodule
+dir moved away, and `ufo::sm::tests::interned_default_matches_submodule` asserts the
+interned `SMRestrict::Default` model matches a fresh `UFOModel::load` from the
+submodule (particle/vertex keys, lorentz/coupling counts, order hierarchy, and
+evaluated masses/couplings).
 
-- Add `serde` `Serialize`/`Deserialize` to the parsed UFO types (`Particle`,
-  `LorentzStructure`, `Coupling`, `Vertex`, `ParameterSet` + expr-AST nested types).
-  **Skip `topo: TopoModel`** (feyngraph `Model`, not serde-able) — rebuild it via
-  `build_feyngraph_model` in a `from_parsed()` / deserialize hook.
-- Blob layout: **one compressed blob** of the raw pre-restriction parsed model (parts
-  independent of any restrict card) **plus one SLHA ParamCard blob per restrict
-  variant**. The 9 SM cards → a baked enum:
-  `SMRestrict { Default, CMass, Ckm, LeptonMasses, NoBMass, NoMasses, NoTauMass,
-  NoWidths, ZeromassCkm }`.
-- Public API: `sm_model(restrict: SMRestrict) -> Arc<UFOModel>` — deserialize the raw
-  blob, apply that variant's interned param card (zero params + prune zero-coupling
-  vertices, same logic as `UFOModel::load`), rebuild `topo`. Cache a per-variant
-  `Arc<UFOModel>` (`OnceLock` per variant), since each variant is a distinct pruned
-  model and callers share it cheaply.
-- Generation: a committed dev bin `vibegraph-lib/src/bin/gen_sm_blob.rs` that reuses
-  the crate's own `UFOModel::load` + serde, reads the submodule, and writes the
-  `.bin.zst` blobs into the source tree (committed). Normal builds `include_bytes!`
-  them; the submodule is needed only to regenerate. (Chosen over `build.rs`, which
-  would force splitting the parser into a separate crate since a build script can't
-  call its own crate.) Optional: a CI job that regenerates and `git diff --exit-code`s
-  to catch staleness.
-- Fold in **`global-config`** (below) — same model-loading wiring session.
+What landed:
+- `serde` `Serialize`/`Deserialize` on the parsed UFO types (`Particle`,
+  `LorentzStructure`/`LorentzTerm`/`LorentzOp`, `Coupling`, `Vertex`, `ParameterSet`/
+  `Parameter`/`ParamNature`, `Expr`/`BinOp`/`Func`, + the `*Id` newtypes). `topo:
+  TopoModel` is **not** serialized — rebuilt by `ParsedModel::into_model`.
+- `UFOModel::load` split into serializable `ParsedModel::parse(dir)` (read+parse, no
+  prune, no topo) + `ParsedModel::into_model(Option<&ParamCard>)` (bake restrict,
+  prune zero-coupling vertices, build topo). `load` = parse + default-card discovery
+  + `into_model`.
+- Assets under `vibegraph-lib/src/ufo/sm_assets/` (committed): one `sm_parsed.bin.zst`
+  (zstd(bincode(ParsedModel)), ~5 KB) + the 9 raw `restrict_*.dat` cards baked via
+  `include_str!`. Blob decompressed once (`OnceLock<ParsedModel>`).
+- `ufo::sm`: `SMRestrict { Default, CMass, Ckm, LeptonMasses, NoBMass, NoMasses,
+  NoTauMass, NoWidths, ZeromassCkm }` + `sm_model(SMRestrict) -> Arc<UFOModel>` with a
+  per-variant `OnceLock<Arc<UFOModel>>` cache. `SMRestrict::from_suffix` maps
+  `sm-<variant>` directive suffixes.
+- Dev bin `vibegraph-lib/src/bin/gen_sm_blob.rs` (`cargo run -p vibegraph-lib --bin
+  gen_sm_blob`) → `ufo::sm::regenerate`: reparses the submodule, rewrites the blob +
+  cards into the source tree. Only this binary reads the submodule sm dir.
+- Deps: `serde`, `bincode`, `zstd` moved to normal deps; `indexmap` `serde` feature.
+- In-tree SM callers rewired to the interned model (`tests/common`, the inline test
+  mods in `ufo/mod.rs`/`helas/eval/run.rs`/`root_diagram.rs`, `benches/amplitude_eval`,
+  and the model load in `validate_madgraph_diagrams`).
+- **`global-config`** folded in: `config::GlobalConfig::load_ufo(&Option<ModelImport>)`
+  returns the interned SM (no filesystem) for `import model sm[-variant]`, else loads a
+  UFO dir from `ufo_search_path`.
+
+Optional follow-up: a CI job that runs `gen_sm_blob` and `git diff --exit-code`s to
+catch a stale blob vs the pinned submodule.
 
 _Deps: none. Unblocks: `feature-gate-mg-tests`._
 
@@ -185,9 +196,12 @@ charge type since MG treats light quarks as massless.
 
 ## 🟡 Medium — CLI integration
 
-### `global-config` — Implement `vibegraph_lib::config::GlobalConfig`
+### `global-config` — Implement `vibegraph_lib::config::GlobalConfig` ✅ Done
 
-_Folded into cleanup task 1 `intern-sm-model` (same model-loading wiring)._
+_Folded into cleanup task 1 `intern-sm-model` (same model-loading wiring)._ Landed as
+`config::GlobalConfig::load_ufo(&Option<ModelImport>) -> Arc<UFOModel>`: interned SM
+for `import model sm[-variant]`, else a UFO dir under `ufo_search_path`. CLI wiring of
+a full proc card is still pending.
 
 A thin coordinator that wires `ParsedProcCard` → `UFOModel` loading for the CLI.
 

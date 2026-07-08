@@ -3,6 +3,7 @@ use super::ast_util::{
 };
 use indexmap::IndexMap;
 use rustpython_parser::ast;
+use serde::{Deserialize, Serialize};
 use std::ops::Index;
 use thiserror::Error;
 
@@ -13,7 +14,7 @@ pub enum ParticleError {
 }
 
 /// Strongly typed index for [`Particle`] lookup
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ParticleId(usize);
 
 impl From<usize> for ParticleId {
@@ -44,7 +45,7 @@ impl Index<ParticleId> for IndexMap<String, Particle> {
 }
 
 /// A UFO particle with full field data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Particle {
     /// Python variable name, e.g. `"e__minus__"` or `"W__plus__"`.
     pub python_name: String,

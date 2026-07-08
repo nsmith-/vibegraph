@@ -9,10 +9,11 @@
 //! against a map of parameter values.
 
 use num_complex::Complex64;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// A symbolic expression from a UFO value string.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Expr {
     /// Numeric literal (real).
     Num(f64),
@@ -30,7 +31,7 @@ pub enum Expr {
     Complex(Box<Expr>, Box<Expr>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BinOp {
     Add,
     Sub,
@@ -39,7 +40,7 @@ pub enum BinOp {
     Pow,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Func {
     Sqrt,
     Log,

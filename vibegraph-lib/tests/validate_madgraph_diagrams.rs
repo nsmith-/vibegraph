@@ -37,6 +37,7 @@ use std::path::{Path, PathBuf};
 
 use libtest_mimic::{Arguments, Failed, Trial};
 use vibegraph::diagrams::{self, generate_from_proc_card, DiagramSet, ParsingOptions};
+use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::UFOModel;
 
 #[derive(Debug, serde::Deserialize)]
@@ -146,17 +147,6 @@ fn find_madgraph_references() -> Vec<(PathBuf, DiagramData)> {
     }
 
     results
-}
-
-fn ufo_search_path() -> Result<PathBuf, &'static str> {
-    let path = common::ufo_models_dir();
-    match path.exists() {
-        true => Ok(path),
-        false => Err(
-            "UFO models directory not found. Please clone the madgraph submodule:
-    git submodule update --init --recursive",
-        ),
-    }
 }
 
 /// Map a PDG code to a coarse particle-type class.
@@ -300,7 +290,7 @@ fn run_trial(json_path: &Path, mg_data: &DiagramData) -> Result<(), Failed> {
         .ok_or("no 'generate' line in .mg5 script")?
         .to_string();
 
-    let model = UFOModel::load(&ufo_search_path()?.join("sm"), None)?;
+    let model = sm_model(SMRestrict::Default);
     let sets = generate_from_proc_card(&card, &model)
         .map_err(|e| Failed::from(format!("diagram generation failed: {e}")))?;
     let total_count: u32 = sets.iter().map(|s| s.diagrams.len() as u32).sum();

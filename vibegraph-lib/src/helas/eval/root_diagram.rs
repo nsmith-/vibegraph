@@ -846,16 +846,13 @@ pub fn compile_diagram_ast(
 mod tests {
     use super::*;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
+    use crate::ufo::sm::{sm_model as interned_sm, SMRestrict};
     use crate::ufo::UFOModel;
-    use std::sync::OnceLock;
+    use std::sync::{Arc, OnceLock};
 
-    static SM_MODEL: OnceLock<UFOModel> = OnceLock::new();
+    static SM_MODEL: OnceLock<Arc<UFOModel>> = OnceLock::new();
     fn sm_model() -> &'static UFOModel {
-        SM_MODEL.get_or_init(|| {
-            let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-            let path = std::path::Path::new(&manifest).join("../research/refs/mg5amcnlo/models/sm");
-            UFOModel::load(&path, None).expect("SM UFO not found")
-        })
+        SM_MODEL.get_or_init(|| interned_sm(SMRestrict::Default))
     }
     fn generate(process: &str) -> Vec<DiagramSet> {
         let opts = ParsingOptions::default();

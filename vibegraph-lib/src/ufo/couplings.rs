@@ -3,6 +3,7 @@ use super::expr::{collect_deps, parse_expr, Expr};
 use indexmap::IndexMap;
 use num_complex::Complex64;
 use rustpython_parser::ast;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Index;
 use thiserror::Error;
@@ -16,7 +17,7 @@ pub enum CouplingError {
 }
 
 /// Strongly typed index for [`Coupling`] lookup
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CouplingId(usize);
 
 impl From<usize> for CouplingId {
@@ -55,7 +56,7 @@ impl Index<CouplingId> for Vec<Complex64> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Coupling {
     /// Python variable name, e.g. `"GC_10"`.
     pub python_name: String,

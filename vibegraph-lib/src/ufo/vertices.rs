@@ -5,6 +5,7 @@ use super::couplings::CouplingId;
 use super::lorentz::LorentzId;
 use super::particles::ParticleId;
 use rustpython_parser::ast;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -19,7 +20,7 @@ pub enum VertexError {
 pub struct VertexId(pub usize);
 
 /// A fully resolved interaction vertex.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Vertex {
     pub name: String,
     pub particles: Vec<ParticleId>,

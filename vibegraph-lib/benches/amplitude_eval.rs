@@ -12,13 +12,10 @@ use vibegraph::helas::{
     eval::{AmplitudeEvaluator, BoundAmplitude},
     LorentzVector,
 };
-use vibegraph::ufo::{slha::ParamCard, UFOModel};
+use vibegraph::ufo::slha::ParamCard;
+use vibegraph::ufo::sm::{sm_model, SMRestrict};
 
 const N: usize = 10_000;
-
-fn ufo_sm_path() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../research/refs/mg5amcnlo/models/sm")
-}
 
 fn make_momenta(sqrt_s: f64, cos_theta: f64) -> Vec<LorentzVector<f64>> {
     let e = sqrt_s / 2.0;
@@ -32,8 +29,7 @@ fn make_momenta(sqrt_s: f64, cos_theta: f64) -> Vec<LorentzVector<f64>> {
 }
 
 fn main() {
-    let model = UFOModel::load(&ufo_sm_path(), None)
-        .expect("SM UFO not found — run: git submodule update --init --recursive");
+    let model = sm_model(SMRestrict::Default);
 
     let opts = ParsingOptions::default();
     let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
