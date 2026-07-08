@@ -3,6 +3,10 @@
 //! Translates MadGraph-style process strings (`p p > e+ e- j QCD<=2 @1`) and
 //! `proc_card.dat` files into feyngraph diagram-generation calls.
 //!
+//! Particle names are resolved case-insensitively, as in MadGraph: a proc card may
+//! spell a leg `z`, `w+`, or `h` where the UFO model names it `Z`, `W+`, `H`. Tokens
+//! are canonicalized to the model's casing before diagram generation.
+//!
 //! ## Typical usage
 //!
 //! ```rust,ignore
@@ -182,7 +186,38 @@ fn generate_sets_inner(
     let mut seen_processes: std::collections::HashSet<(Vec<String>, Vec<String>)> =
         std::collections::HashSet::new();
 
+    // MadGraph resolves particle names case-insensitively, so a proc card may spell
+    // a leg `z`, `w+`, or `h` where the UFO model names it `Z`, `W+`, `H`. Canonicalize
+    // each token to the model's casing before it reaches the charge check or feyngraph.
+    // An exact match wins; a token with no case-insensitive match is left unchanged so
+    // feyngraph still reports a genuinely unknown particle.
+    let canon: std::collections::HashMap<String, &str> = model
+        .particles
+        .keys()
+        .map(|k| (k.to_lowercase(), k.as_str()))
+        .collect();
+    let canonicalize = |name: &str| -> String {
+        if model.particles.contains_key(name) {
+            name.to_owned()
+        } else {
+            canon
+                .get(&name.to_lowercase())
+                .map(|s| (*s).to_owned())
+                .unwrap_or_else(|| name.to_owned())
+        }
+    };
+
     for concrete in expand_process(spec, aliases) {
+        let mut concrete = concrete;
+        for n in concrete
+            .initial
+            .iter_mut()
+            .chain(concrete.final_state.iter_mut())
+            .chain(concrete.forbidden_particles.iter_mut())
+        {
+            *n = canonicalize(n);
+        }
+
         let mut initial_sorted = concrete.initial.clone();
         initial_sorted.sort();
         let key = (initial_sorted, concrete.final_state.clone());
