@@ -46,7 +46,7 @@ build-diagrams = "bash validation/madgraph/build.sh"
 # Extract diagram counts and metadata from MadGraph output
 extract-diagrams = { cmd = "python validation/madgraph/extract_diagrams.py", depends-on = ["build-diagrams"] }
 # Full pipeline: extract MadGraph reference data, then run extended Rust tests
-validate-diagrams = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_madgraph_diagrams", depends-on = ["extract-diagrams"] }
+validate-diagrams = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_madgraph_diagrams", depends-on = ["extract-diagrams"] }
 # Compile MadGraph Fortran MATRIX1 subroutines via f2py into Python extension modules
 build-amplitude = { cmd = "bash validation/madgraph/build_amplitude.sh", depends-on = ["build-diagrams"] }
 # Evaluate compiled matrix elements on a fixed kinematic grid and write reference CSVs
@@ -66,7 +66,7 @@ build-helas = "cd validation/helas && bash build.sh"
 # Generate HELAS reference data: produces reference.npz and reference.csv
 generate-helas = { cmd = "cd validation/helas && python gen_reference.py", depends-on = ["build-helas"] }
 # Full pipeline: build f2py extension, generate reference data, then run extended Rust tests
-validate-helas = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_helas", depends-on = ["generate-helas"] }
+validate-helas = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_helas", depends-on = ["generate-helas"] }
 
 # --- MarkItDown: CLI tool for converting to markdown files ---
 [feature.markitdown.dependencies]
