@@ -15,3 +15,4 @@ __pycache__/
 # TODO: add MCP server setup to pixi.toml ?
 .mcp.json
 profile.json.gz
+.DS_Store
