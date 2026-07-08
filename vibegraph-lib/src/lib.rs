@@ -1,3 +1,4 @@
+pub mod config;
 pub mod diagrams;
 pub mod helas;
 pub mod phasespace;

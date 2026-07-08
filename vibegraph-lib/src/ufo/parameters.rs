@@ -6,6 +6,7 @@ use super::slha::ParamCard;
 use num_complex::Complex64;
 use num_traits::Zero;
 use rustpython_parser::ast;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use thiserror::Error;
 
@@ -19,7 +20,7 @@ pub enum ParameterError {
     ExprParse { name: String, cause: String },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ParamNature {
     External {
         default_value: f64,
@@ -33,7 +34,7 @@ pub enum ParamNature {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Parameter {
     pub name: String,
     /// `true` if `type = 'complex'`
@@ -42,7 +43,7 @@ pub struct Parameter {
 }
 
 /// A complete set of parsed parameters, ready for evaluation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParameterSet {
     /// External parameters (no deps on other params).
     pub externals: Vec<Parameter>,

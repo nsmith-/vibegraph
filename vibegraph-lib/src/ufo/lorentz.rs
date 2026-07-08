@@ -3,6 +3,7 @@ use std::{collections::HashSet, ops::Index};
 
 use super::ast_util::{call_func_name, get_kwarg, kwarg_str, parse_stmts};
 use rustpython_parser::ast;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -24,7 +25,7 @@ pub enum LorentzError {
 /// The indices i,j are leg numbers from the UFO definition, with negative values for internal contractions.
 /// We convert from 1-indexed convention to 0-indexed isize at import
 /// i and j are spinor indices for fermion legs, or dummy indices for internal contractions. mu, nu, etc. are Lorentz indices.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum LorentzOp {
     /// Dirac gamma matrix: Γ^μ_{ij}
     Gamma { mu: isize, i: isize, j: isize },
@@ -93,7 +94,7 @@ impl LorentzOp {
 /// The LorentzOp indices indicate connections between operators when negative,
 /// and (0-indexed) external leg indices when positive. An implicit product
 /// over all connected operators is assumed, with the given coefficient.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LorentzTerm {
     pub coeff: f64,
     pub ops: Vec<LorentzOp>,
@@ -103,7 +104,7 @@ pub struct LorentzTerm {
 pub type LorentzExpr = Vec<LorentzTerm>;
 
 /// Strongly-typed index for [`LorentzStructure`] lookup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct LorentzId(usize);
 
 impl From<usize> for LorentzId {
@@ -121,7 +122,7 @@ impl Index<LorentzId> for IndexMap<String, LorentzStructure> {
 }
 
 /// A Lorentz tensor structure from `lorentz.py`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LorentzStructure {
     /// Python variable name, e.g. `"FFV1"`.
     pub python_name: String,

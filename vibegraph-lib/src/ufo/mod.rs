@@ -5,6 +5,7 @@ pub mod lorentz;
 pub mod parameters;
 pub mod particles;
 pub mod slha;
+pub mod sm;
 pub mod topo;
 pub mod vertices;
 
@@ -15,6 +16,7 @@ use lorentz::{parse_lorentz, LorentzError, LorentzId, LorentzStructure};
 use num_complex::Complex64;
 use parameters::{parse_parameters, ParameterError, ParameterSet};
 use particles::{parse_particles, Particle, ParticleError, ParticleId};
+use serde::{Deserialize, Serialize};
 use slha::ParamCard;
 use std::collections::HashMap;
 use std::path::Path;
@@ -105,12 +107,26 @@ pub struct UFOModel {
     pub order_hierarchy: HashMap<String, u32>,
 }
 
-impl UFOModel {
-    /// Load a UFO model from a directory path.
-    ///
-    /// If `restrict_card` is `None`, automatically looks for `restrict_default.dat`
-    /// in the UFO directory. If found, it is used for vertex pruning (zero-coupling vertices are removed).
-    pub fn load(path: &Path, restrict_card: Option<&Path>) -> Result<Self, UfoError> {
+/// The parsed, pre-restriction UFO model data.
+///
+/// Holds everything that is independent of a specific restrict card and is
+/// serializable — i.e. everything in [`UFOModel`] except the feyngraph `topo`
+/// model (which is rebuilt by [`ParsedModel::into_model`]). Vertices are the
+/// full unpruned set; parameters have not yet had a restriction baked in.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ParsedModel {
+    pub particles: IndexMap<String, Particle>,
+    pub lorentz: IndexMap<String, LorentzStructure>,
+    pub couplings: IndexMap<String, Coupling>,
+    pub vertices: IndexMap<String, Vertex>,
+    pub params: ParameterSet,
+    pub order_hierarchy: HashMap<String, u32>,
+}
+
+impl ParsedModel {
+    /// Parse a UFO model directory into its pre-restriction form: no vertex
+    /// pruning, no topology model.
+    pub fn parse(path: &Path) -> Result<Self, UfoError> {
         let read = |name: &str| -> Result<String, UfoError> {
             std::fs::read_to_string(path.join(name)).map_err(|e| UfoError::Io {
                 file: path.join(name).display().to_string(),
@@ -139,46 +155,10 @@ impl UFOModel {
             .map(|c| (c.name.clone(), c))
             .collect();
 
-        let mut params = parse_parameters(&params_src)?;
+        let params = parse_parameters(&params_src)?;
         let raw_vertices = parse_vertices(&vertices_src)?;
-        let mut vertices: IndexMap<String, Vertex> =
+        let vertices: IndexMap<String, Vertex> =
             resolve_vertices(raw_vertices, &particles, &lorentz, &couplings)?;
-
-        // Load restrict card for vertex pruning
-        let restrict_card_path = match restrict_card {
-            Some(path) => Some(path.to_path_buf()),
-            None => {
-                let default = path.join("restrict_default.dat");
-                if default.exists() {
-                    Some(default)
-                } else {
-                    None
-                }
-            }
-        };
-
-        if let Some(restrict_path) = restrict_card_path {
-            let restrict_card = ParamCard::from_file(&restrict_path).map_err(|e| UfoError::Io {
-                file: restrict_path.display().to_string(),
-                cause: std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("restrict card parse error: {}", e),
-                ),
-            })?;
-
-            // Lock the restriction's zeroed parameters (light masses/Yukawas, CKM
-            // mixing) to zero — MadGraph does this on `import model` and uses it to
-            // prune vertices/diagrams, so a later param card must not revive them.
-            // See `apply_restrict`.
-            params.apply_restrict(&restrict_card);
-
-            let restrict_values =
-                evaluate_couplings_for_restrict(&params, &couplings, &restrict_card);
-
-            vertices.retain(|_name, vertex| {
-                !is_zero_coupling_vertex(vertex, &couplings, &restrict_values)
-            });
-        }
 
         // Parse coupling_orders.py for the WEIGHTED order hierarchy.
         // Fall back to SM defaults (QCD=1, QED=2) if the file is absent or unparseable.
@@ -194,18 +174,89 @@ impl UFOModel {
             Err(_) => default_sm_hierarchy(),
         };
 
-        // Build the feyngraph model using vibegraph's parsed UFO data
-        let topo = build_feyngraph_model(&particles, &lorentz, &couplings, &vertices)?;
-
-        Ok(UFOModel {
+        Ok(ParsedModel {
             particles,
             lorentz,
             couplings,
             vertices,
             params,
-            topo,
             order_hierarchy,
         })
+    }
+
+    /// Apply a restrict card (bake its zeroed parameters, prune zero-coupling
+    /// vertices) and build the feyngraph topology model.
+    ///
+    /// With `restrict = None`, no pruning happens — the full vertex set is kept.
+    pub fn into_model(mut self, restrict: Option<&ParamCard>) -> Result<UFOModel, UfoError> {
+        if let Some(restrict_card) = restrict {
+            // Lock the restriction's zeroed parameters (light masses/Yukawas, CKM
+            // mixing) to zero — MadGraph does this on `import model` and uses it to
+            // prune vertices/diagrams, so a later param card must not revive them.
+            // See `apply_restrict`.
+            self.params.apply_restrict(restrict_card);
+
+            let restrict_values =
+                evaluate_couplings_for_restrict(&self.params, &self.couplings, restrict_card);
+
+            self.vertices.retain(|_name, vertex| {
+                !is_zero_coupling_vertex(vertex, &self.couplings, &restrict_values)
+            });
+        }
+
+        // Build the feyngraph model using vibegraph's parsed UFO data
+        let topo = build_feyngraph_model(
+            &self.particles,
+            &self.lorentz,
+            &self.couplings,
+            &self.vertices,
+        )?;
+
+        Ok(UFOModel {
+            particles: self.particles,
+            lorentz: self.lorentz,
+            couplings: self.couplings,
+            vertices: self.vertices,
+            params: self.params,
+            topo,
+            order_hierarchy: self.order_hierarchy,
+        })
+    }
+}
+
+impl UFOModel {
+    /// Load a UFO model from a directory path.
+    ///
+    /// If `restrict_card` is `None`, automatically looks for `restrict_default.dat`
+    /// in the UFO directory. If found, it is used for vertex pruning (zero-coupling vertices are removed).
+    pub fn load(path: &Path, restrict_card: Option<&Path>) -> Result<Self, UfoError> {
+        let parsed = ParsedModel::parse(path)?;
+
+        // Resolve the restrict card path: explicit, else restrict_default.dat if present.
+        let restrict_card_path = match restrict_card {
+            Some(path) => Some(path.to_path_buf()),
+            None => {
+                let default = path.join("restrict_default.dat");
+                default.exists().then_some(default)
+            }
+        };
+
+        let card = match restrict_card_path {
+            Some(restrict_path) => {
+                Some(
+                    ParamCard::from_file(&restrict_path).map_err(|e| UfoError::Io {
+                        file: restrict_path.display().to_string(),
+                        cause: std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("restrict card parse error: {}", e),
+                        ),
+                    })?,
+                )
+            }
+            None => None,
+        };
+
+        parsed.into_model(card.as_ref())
     }
 
     /// Load with automatic restrict card discovery (equivalent to `load(path, None)`).
@@ -477,10 +528,6 @@ mod tests {
             .join(model)
     }
 
-    fn sm_ufo_path() -> std::path::PathBuf {
-        ufo_path("sm")
-    }
-
     #[test]
     fn test_load_loop_sm() {
         let path = ufo_path("loop_sm");
@@ -561,12 +608,7 @@ mod tests {
 
     #[test]
     fn test_load_sm_ufo() {
-        let path = sm_ufo_path();
-        if !path.exists() {
-            eprintln!("SM UFO not found at {:?} — skipping integration test", path);
-            return;
-        }
-        let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
+        let model = sm::sm_model(sm::SMRestrict::Default);
 
         let empty_card = "".parse::<ParamCard>().unwrap();
         let ev = model.evaluate(&empty_card);
@@ -595,11 +637,7 @@ mod tests {
 
     #[test]
     fn test_recompute_propagates() {
-        let path = sm_ufo_path();
-        if !path.exists() {
-            return;
-        }
-        let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
+        let model = sm::sm_model(sm::SMRestrict::Default);
         let empty_card = "".parse::<ParamCard>().unwrap();
         let mut ev = model.evaluate(&empty_card);
 
