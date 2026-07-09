@@ -6,7 +6,7 @@
 //! node from its already-computed children via the single [`apply`] match.
 
 use crate::helas::repr::lorentz::{
-    Bispinor, ComplexVector, LorentzVector, SpinorFlow, SpinorRepr, VectorRepr,
+    Bispinor, ComplexVector, DiracAdjoint, LorentzVector, SpinorRepr, VectorRepr,
 };
 use crate::helas::repr::numbers::{Charge, Chirality, SpinorHelicity};
 use crate::helas::repr::{ri, Real, C};
@@ -337,8 +337,8 @@ fn mul_apply<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
         // Route the scalar factors' momentum into the surviving non-scalar current so
         // the propagator sees the conserved q. A continuing *fermion* current follows
         // the HELAS off-shell conventions (`fsixxx` q = fi − s, `fsoxxx` q = fo + s,
-        // mirroring `fvixxx`/`fvoxxx`): flow-in subtracts the absorbed boson's
-        // momentum, flow-out adds it. Pinned by e+e-→τ+τ-H (H emitted off the τ
+        // mirroring `fvixxx`/`fvoxxx`): ket subtracts the absorbed boson's
+        // momentum, bra adds it. Pinned by e+e-→τ+τ-H (H emitted off the τ
         // ket line) vs MadGraph per-diagram AMP().
         other => match coeff * other {
             WaveformSlot::Vector(mut v) => {
@@ -408,9 +408,9 @@ fn build_external_core<F: Real>(
                 1 => SpinorHelicity::Up,
                 other => panic!("invalid fermion helicity {other}"),
             };
-            // HELAS external flow: a leg is a ket (flow-in, ixxxxx) iff it is an
+            // HELAS external adjoint: a leg is a ket (ket, ixxxxx) iff it is an
             // incoming particle or an outgoing antiparticle; otherwise it is a bra
-            // (flow-out, oxxxxx). Equivalently flow-in ⟺ (is_incoming == is_particle).
+            // (bra, oxxxxx). Equivalently ket ⟺ (is_incoming == is_particle).
             let is_particle = matches!(charge, Charge::Particle);
             if is_incoming == is_particle {
                 WaveformSlot::FermionIn(InDiracWf::from_momentum(momentum, mass, hel, charge))
@@ -525,15 +525,15 @@ fn propagate_core<F: Real>(
     }
 }
 
-/// Resolve the two fermion legs of a bilinear into `(bra = flow-out, ket = flow-in,
-/// reversed)` by their *actual* runtime flow, not the UFO `Gamma` i/j position. A
-/// fermion line carries one flow throughout, so with physically-typed externals
-/// (see `build_external_core`) and flow-preserving currents, the two fermions
-/// meeting at any vertex always have opposite flow.
+/// Resolve the two fermion legs of a bilinear into `(bra = bra, ket = ket,
+/// reversed)` by their *actual* runtime adjoint, not the UFO `Gamma` i/j position. A
+/// fermion line carries one adjoint throughout, so with physically-typed externals
+/// (see `build_external_core`) and adjoint-preserving currents, the two fermions
+/// meeting at any vertex always have opposite adjoint.
 ///
-/// `reversed` is `true` when the slots arrive in `(flow-in, flow-out)` order, i.e.
-/// the line runs against the vertex's defined flow; callers use it to apply the
-/// flow-reversal sign η_Γ of their Lorentz structure.
+/// `reversed` is `true` when the slots arrive in `(ket, bra)` order, i.e.
+/// the line runs against the vertex's defined adjoint; callers use it to apply the
+/// adjoint-reversal sign η_Γ of their Lorentz structure.
 fn resolve_bra_ket<F: Real>(
     a: WaveformSlot<F>,
     b: WaveformSlot<F>,
@@ -541,20 +541,20 @@ fn resolve_bra_ket<F: Real>(
     match (a, b) {
         (WaveformSlot::FermionOut(fo), WaveformSlot::FermionIn(fi)) => (fo, fi, false),
         (WaveformSlot::FermionIn(fi), WaveformSlot::FermionOut(fo)) => (fo, fi, true),
-        _ => panic!("a fermion bilinear needs exactly one flow-in and one flow-out leg"),
+        _ => panic!("a fermion bilinear needs exactly one ket and one bra leg"),
     }
 }
 
 /// Off-shell fermion current from an FFV `Gamma` vertex (one vector leg `mu` +
 /// one continuing fermion leg `f`). The current **follows the input fermion's
-/// flow**, so no mid-line Dirac adjoint is ever needed:
-///   - flow-in (ket): `ε̸ψ`, q = f.p − v.p   (Fortran `fvixxx`)
-///   - flow-out (bra): `ψ̄ε̸`, q = f.p + v.p   (Fortran `fvoxxx`)
+/// adjoint**, so no mid-line Dirac adjoint is ever needed:
+///   - ket: `ε̸ψ`, q = f.p − v.p   (Fortran `fvixxx`)
+///   - bra: `ψ̄ε̸`, q = f.p + v.p   (Fortran `fvoxxx`)
 ///
-/// `Bispinor::slash` is flow-dependent, so the left/right action is automatic.
+/// `Bispinor::slash` is adjoint-dependent, so the left/right action is automatic.
 /// The propagator `(q̸+m)/D` is applied in a separate `Propagate` step.
 /// Continue a fermion line by slashing the input fermion `fermion` with the
-/// vector current `v` (fvixxx/fvoxxx chosen at runtime by the fermion's flow).
+/// vector current `v` (fvixxx/fvoxxx chosen at runtime by the fermion's adjoint).
 fn off_shell_fermion_current<F: Real>(
     v: WaveformSlot<F>,
     fermion: WaveformSlot<F>,
@@ -583,7 +583,7 @@ fn off_shell_fermion_current<F: Real>(
 fn gamma_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let (fo, fi, reversed) = resolve_bra_ket(children[0], children[1]);
     let eps = fo.vector_bilinear(&fi, Chirality::Both);
-    // Reading the fermion line against the vertex's defined flow conjugates the
+    // Reading the fermion line against the vertex's defined adjoint conjugates the
     // structure as C γ^{μT} C⁻¹ = −γ^μ, so the vector current picks up a relative −1.
     // (Scalar/pseudoscalar structures have +1 and need no flip.)
     WaveformSlot::Vector(VectorWf {
@@ -593,10 +593,10 @@ fn gamma_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 }
 
 /// `ProjM`/`ProjP`: chiral projection on a continuing fermion current, preserving the
-/// input flow. `project_left`/`project_right` are flow-dependent (a bra projects
+/// input adjoint. `project_left`/`project_right` are adjoint-dependent (a bra projects
 /// different components than a ket), so the same call is correct for both flows.
 fn chiral_project<F: Real>(child: WaveformSlot<F>, chirality: Chirality) -> WaveformSlot<F> {
-    fn project<F: Real, Fl: SpinorFlow>(
+    fn project<F: Real, Fl: DiracAdjoint>(
         s: Bispinor<F, Fl>,
         chirality: Chirality,
     ) -> Bispinor<F, Fl> {
@@ -679,7 +679,7 @@ fn lower_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 }
 
 /// `ProjMAmp`/`ProjPAmp`/`IdentityAmp`: scalar bilinear `ψ̄ Γ ψ` (`Γ = P_L`, `P_R`, or
-/// `1`); the bra/ket are picked by the legs' actual flow.
+/// `1`); the bra/ket are picked by the legs' actual adjoint.
 fn scalar_bilinear_current<F: Real>(
     children: &[WaveformSlot<F>],
     chirality: Chirality,
@@ -717,14 +717,14 @@ mod tests {
         SM_MODEL.get_or_init(|| interned_sm(SMRestrict::Default))
     }
 
-    /// Uncrossed per-leg binding shorthand for hand-built flow vectors (the
+    /// Uncrossed per-leg binding shorthand for hand-built adjoint vectors (the
     /// hand-built diagrams bind wavefunctions in MG order, so no crossing).
     #[cfg(feature = "extended-validation")]
     fn lf(
-        flow: crate::helas::eval::root_lorentz::Flow,
-    ) -> Option<crate::helas::eval::root_lorentz::LegFlow> {
-        Some(crate::helas::eval::root_lorentz::LegFlow {
-            flow,
+        adjoint: crate::helas::eval::root_lorentz::Adjoint,
+    ) -> Option<crate::helas::eval::root_lorentz::LegAdjoint> {
+        Some(crate::helas::eval::root_lorentz::LegAdjoint {
+            adjoint,
             crossed: false,
         })
     }
@@ -900,12 +900,12 @@ mod tests {
                     EvalNode::External(leg2_info.clone()),
                     EvalNode::OffShellCurrent {
                         info: vertex_info.clone(),
-                        flow: None,
+                        adjoint: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                     },
                     EvalNode::Propagate {
                         info: prop_info.clone(),
-                        flow: None,
+                        adjoint: None,
                         child: EvalNodeId::new(2),
                     },
                 ],
@@ -918,12 +918,12 @@ mod tests {
                     EvalNode::External(leg2_info),
                     EvalNode::OffShellCurrent {
                         info: vertex_info,
-                        flow: None,
+                        adjoint: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                     },
                     EvalNode::Propagate {
                         info: prop_info,
-                        flow: None,
+                        adjoint: None,
                         child: EvalNodeId::new(2),
                     },
                     EvalNode::External(leg3_info),
@@ -937,7 +937,7 @@ mod tests {
 
             let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
             for (hel1, hel2, hel3, hel4) in iproduct!(hels, hels, hels, hels) {
-                // Physical flow (per the leg charge labels): leg1 (Particle, in) and
+                // Physical adjoint (per the leg charge labels): leg1 (Particle, in) and
                 // leg4 (Antiparticle, out) are kets; leg2 (Antiparticle, in) and
                 // leg3 (Particle, out) are bras. The reference s-channel current is
                 // jioxxx(fo=leg2 bra, fi=leg1 ket); the sink is iovxxx.
@@ -1069,7 +1069,7 @@ mod tests {
                     EvalNode::External(leg2_info.clone()),
                     EvalNode::OffShellCurrent {
                         info: vertex_info.clone(),
-                        flow: None,
+                        adjoint: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                     },
                     EvalNode::Propagate {
@@ -1078,7 +1078,7 @@ mod tests {
                             t_channel: false,
                             lowered_storage: false,
                         },
-                        flow: None,
+                        adjoint: None,
                         child: EvalNodeId::new(2),
                     },
                 ],
@@ -1211,7 +1211,7 @@ mod tests {
                     EvalNode::External(leg2_info.clone()),
                     EvalNode::OffShellCurrent {
                         info: vertex_info.clone(),
-                        flow: None,
+                        adjoint: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                     },
                     EvalNode::Propagate {
@@ -1220,7 +1220,7 @@ mod tests {
                             t_channel: false,
                             lowered_storage: false,
                         },
-                        flow: None,
+                        adjoint: None,
                         child: EvalNodeId::new(2),
                     },
                 ],
@@ -1273,8 +1273,8 @@ mod tests {
     /// Cross-check the production off-shell fermion current (`off_shell_fermion_current`
     /// + `propagate_core`) against the `fvixxx`/`fvoxxx` reference routines.
     ///
-    /// The current follows the input fermion's flow: seeding it from a flow-in (ket)
-    /// fermion is `fvixxx`; from a flow-out (bra) fermion is `fvoxxx`. The runtime
+    /// The current follows the input fermion's adjoint: seeding it from a ket
+    /// fermion is `fvixxx`; from a bra fermion is `fvoxxx`. The runtime
     /// applies the bare γ^μ vertex structure and the Dirac propagator as two steps, so
     /// we compare against the reference (which folds both in) with a unit coupling. As
     /// in `test_eval_jioxxx`, the propagator carries the routed momentum unchanged.
@@ -1308,12 +1308,12 @@ mod tests {
 
         let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
         for (hel, charge) in iproduct!(hels, [Charge::Particle, Charge::Antiparticle]) {
-            // ── fvixxx: off-shell current seeded from the flow-in (ket) fermion ──
+            // ── fvixxx: off-shell current seeded from the ket fermion ──
             let fi = InDiracWf::from_momentum(p_f, mass, hel, charge);
             let vertex =
                 off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionIn(fi));
             let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width, false) else {
-                panic!("expected flow-in fermion from propagation");
+                panic!("expected ket fermion from propagation");
             };
             let want = fvixxx(&fi, &v, [g.im, g.im], mass, width);
             // The fermion propagator carries the accumulated momentum unchanged
@@ -1330,14 +1330,14 @@ mod tests {
                 "off-shell current vs i·fvixxx diff={diff} (hel {hel}, {charge:?})"
             );
 
-            // ── fvoxxx: off-shell current seeded from the flow-out (bra) fermion ──
-            // The current follows the input fermion's flow, so the input slot must
-            // itself be flow-out (a bra) to produce a flow-out current.
+            // ── fvoxxx: off-shell current seeded from the bra fermion ──
+            // The current follows the input fermion's adjoint, so the input slot must
+            // itself be bra (a bra) to produce a bra current.
             let fo = fi.to_outgoing();
             let vertex =
                 off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionOut(fo));
             let WaveformSlot::FermionOut(got) = propagate_core(&vertex, mass, width, false) else {
-                panic!("expected flow-out fermion from propagation");
+                panic!("expected bra fermion from propagation");
             };
             let want = fvoxxx(&fo, &v, [g.im, g.im], mass, width);
             assert_eq!(
@@ -1396,7 +1396,7 @@ mod tests {
                 let vertex = off_shell_fermion_current(WaveformSlot::Vector(v), projected);
                 let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width, false)
                 else {
-                    panic!("expected flow-in fermion from chiral propagation");
+                    panic!("expected ket fermion from chiral propagation");
                 };
 
                 // (a) Self-consistency: i × our pure-left fvixxx helper (the i is the
@@ -1459,7 +1459,7 @@ mod tests {
     }
 
     /// Validate **both leg rootings** of the production *chiral* off-shell fermion
-    /// current against a textbook Dirac-matrix reconstruction (flow-IN / ket input).
+    /// current against a textbook Dirac-matrix reconstruction (adjoint-IN / ket input).
     ///
     /// An FFV2/FFV4 vertex `ψ̄ γ^μ P ψ` rooted at a fermion output leg can land the
     /// projector on either side of the gamma:
@@ -1469,8 +1469,8 @@ mod tests {
     ///     ∘ chiral_project` = `ε̸·P·ψ` (projector BEFORE the gamma).
     /// Since `γ^μ P_L = P_R γ^μ`, the two carry OPPOSITE chirality — genuinely distinct
     /// code paths that ee→μμ (vector output) and the leg-2 tests never exercise. The
-    /// production e-spine uses **leg-1**; this test pins the **flow-IN (ket)**
-    /// realization of *both* rootings against the textbook (the flow-OUT realization
+    /// production e-spine uses **leg-1**; this test pins the **adjoint-IN (ket)**
+    /// realization of *both* rootings against the textbook (the adjoint-OUT realization
     /// is pinned by `test_chiral_off_shell_fermion_flowout_vs_textbook`).
     ///
     /// Reference: `S(q)·P·ε̸·ψ` (leg-0) and `S(q)·ε̸·P·ψ` (leg-1), Dirac propagator
@@ -1554,7 +1554,7 @@ mod tests {
                 let WaveformSlot::FermionIn(got2) =
                     propagate_core(&chiral_project(curr, Chirality::Left), mass, width, false)
                 else {
-                    panic!("expected flow-in fermion from chiral propagation");
+                    panic!("expected ket fermion from chiral propagation");
                 };
                 let want2 = textbook(o, z);
                 for k in 0..4 {
@@ -1602,9 +1602,9 @@ mod tests {
                 // gamma's row/output leg, giving `GammaXout(V, ProjM(F))` = `ε̸·P_χ·ψ` —
                 // the mirror of the leg-0 `P_χ·ε̸·ψ` above. Since `γ^μ P_L = P_R γ^μ` the
                 // two rootings carry OPPOSITE chirality, so this is a genuinely distinct
-                // current. Here the input is a flow-IN ket, so this exercises the
+                // current. Here the input is a adjoint-IN ket, so this exercises the
                 // `fvixxx`/`GammaIout` realization, which equals ALOHA FFV2_2 (see
-                // `test_chiral_off_shell_fermion_vs_ffv2_2`); the flow-OUT (bra)
+                // `test_chiral_off_shell_fermion_vs_ffv2_2`); the adjoint-OUT (bra)
                 // realization is pinned by `test_chiral_off_shell_fermion_flowout_vs_textbook`
                 // and, end-to-end vs MadGraph, by `test_espine_eline_z_absorption_ratio_vs_mg`.
                 let textbook_proj_first = |pl: Complex64, pr: Complex64| -> [Complex64; 4] {
@@ -1626,7 +1626,7 @@ mod tests {
                     width,
                     false,
                 ) else {
-                    panic!("expected flow-in fermion");
+                    panic!("expected ket fermion");
                 };
                 let want2b = textbook_proj_first(o, z);
                 for k in 0..4 {
@@ -1670,13 +1670,13 @@ mod tests {
         }
     }
 
-    /// Pin the **flow-OUT (bra)** leg-1 chiral-absorption primitives: `chiral_project`
+    /// Pin the **adjoint-OUT (bra)** leg-1 chiral-absorption primitives: `chiral_project`
     /// on a bra acts ADJACENT to the bra, so the raw composition
     /// `off_shell_fermion_current ∘ chiral_project` gives `ψ̄·P_χ·ε̸·S` — which is NOT
     /// the physical vertex action `ψ̄·ε̸·P_χ·S` (they differ by `ψ̄·ε̸·γ5·S`, a
     /// polarisation-dependent term; for a ket input the same composition IS physical,
     /// see the leg-1 half of `test_chiral_off_shell_fermion_espine_vs_textbook`).
-    /// The physical vertex is recovered one level up: the flow-driven rooting
+    /// The physical vertex is recovered one level up: the adjoint-driven rooting
     /// (`root_lorentz.rs`) hands a bra-side leg-1 absorption the conjugated projector
     /// (`P_χ → P_χ̄`), and `P_χ̄·ε̸ = ε̸·P_χ` lands it on the physical side. That full
     /// composition is pinned end-to-end vs MadGraph by
@@ -1684,7 +1684,7 @@ mod tests {
     /// unconjugated, was the historical hel-42 0.6403 continuum bug).
     ///
     /// This test reconstructs a storage-independent **bra** textbook via the bilinear
-    /// scalar `R_out · χ_ref` (a flow-out spinor dotted with a ket gives the Lorentz
+    /// scalar `R_out · χ_ref` (a bra spinor dotted with a ket gives the Lorentz
     /// scalar `ψ̄ … χ`), validated FIRST on the chirality-blind photon. It then pins the
     /// primitive composition to `ψ̄·P_χ·ε̸·S` and asserts it differs from `ψ̄·ε̸·P_χ·S`,
     /// so any silent change to which side the bra projector acts on is caught here.
@@ -1763,7 +1763,7 @@ mod tests {
                 let psibar: [Complex64; 4] =
                     core::array::from_fn(|j| (0..4).map(|i| psi[i].conj() * g0[i][j]).sum());
 
-                // q = fo.p + v.p (flow-out current momentum); S(q) with eval's −1.
+                // q = fo.p + v.p (bra current momentum); S(q) with eval's −1.
                 let q = fo.momentum + v.momentum;
                 let qvec = [
                     Complex64::from(q.e()),
@@ -1784,7 +1784,7 @@ mod tests {
                     let r = rowmat(&r, &sprop);
                     dot(&r, &chi_ref)
                 };
-                // Eval flow-out scalar: dot the produced bra with the reference ket.
+                // Eval bra scalar: dot the produced bra with the reference ket.
                 let eval_scalar = |r: &OutDiracWf<f64>| -> Complex64 {
                     let comps: [Complex64; 4] = core::array::from_fn(|k| r.spinor.component(k));
                     dot(&comps, &chi_ref)
@@ -1800,18 +1800,18 @@ mod tests {
                     width,
                     false,
                 ) else {
-                    panic!("expected flow-out fermion");
+                    panic!("expected bra fermion");
                 };
                 let s_ph_eval = eval_scalar(&ph);
                 let s_ph_book = textbook(&eslash); // ψ̄·ε̸·S
                 let d_ph = (s_ph_eval - s_ph_book).norm();
                 assert!(
                     d_ph < 1e-9 * (s_ph_book.norm() + 1.0),
-                    "PHOTON flow-out bra recon failed (m={mass}, {hel}, {charge:?}): \
+                    "PHOTON bra bra recon failed (m={mass}, {hel}, {charge:?}): \
                      eval={s_ph_eval:.5e} book={s_ph_book:.5e} d={d_ph:.2e}"
                 );
 
-                // Project-bra-first builder for the eval flow-out current.
+                // Project-bra-first builder for the eval bra current.
                 let eval_flowout = |proj_chi: Option<Chirality>, tworight: bool| -> Complex64 {
                     // FFV2: single P_L term. FFV4: P_L + 2·P_R.
                     let build = |chi: Chirality| {
@@ -1846,7 +1846,7 @@ mod tests {
 
                 // The eval projects the bra BEFORE slashing: `ψ̄·P_χ·ε̸·S`. Because
                 // `P_L·ε̸ = ε̸·P_R`, that is the OPPOSITE-chirality action of the nominal
-                // `P_L` vertex on the bra — the precise flow-out structure, here pinned
+                // `P_L` vertex on the bra — the precise bra structure, here pinned
                 // against the textbook for every helicity/charge/mass.
                 // FFV2 (P_L vertex):
                 let s_ffv2 = eval_flowout(Some(Chirality::Left), false);
@@ -1854,14 +1854,14 @@ mod tests {
                 let d2 = (s_ffv2 - book_ffv2).norm();
                 assert!(
                     d2 < 1e-9 * (book_ffv2.norm() + 1.0),
-                    "FFV2 flow-out (m={mass}, {hel}, {charge:?}): eval={s_ffv2:.5e} vs ψ̄·P_L·ε̸·S={book_ffv2:.5e}, d={d2:.2e}"
+                    "FFV2 bra (m={mass}, {hel}, {charge:?}): eval={s_ffv2:.5e} vs ψ̄·P_L·ε̸·S={book_ffv2:.5e}, d={d2:.2e}"
                 );
                 // It must NOT equal the gamma-first `ψ̄·ε̸·P_L·S` (off the massless point).
                 let book_gammafirst = textbook(&matmul(&eslash, &proj(o, z)));
                 if mass == 0.0 && (book_ffv2 - book_gammafirst).norm() > 1e-6 {
                     assert!(
                         (s_ffv2 - book_gammafirst).norm() > 1e-6,
-                        "FFV2 flow-out unexpectedly matched the gamma-first ordering"
+                        "FFV2 bra unexpectedly matched the gamma-first ordering"
                     );
                 }
 
@@ -1875,7 +1875,7 @@ mod tests {
                 let d4 = (s_ffv4 - book_ffv4).norm();
                 assert!(
                     d4 < 1e-9 * (book_ffv4.norm() + 1.0),
-                    "FFV4 flow-out (m={mass}, {hel}, {charge:?}): eval={s_ffv4:.5e} vs ψ̄·(P_L+2P_R)·ε̸·S={book_ffv4:.5e}, d={d4:.2e}"
+                    "FFV4 bra (m={mass}, {hel}, {charge:?}): eval={s_ffv4:.5e} vs ψ̄·(P_L+2P_R)·ε̸·S={book_ffv4:.5e}, d={d4:.2e}"
                 );
             }
         }
@@ -2192,7 +2192,7 @@ mod tests {
                 let left_ref = iosxxx(&fo, &fi, &s_wf, [g, Complex64::new(0.0, 0.0)]);
                 let right_ref = iosxxx(&fo, &fi, &s_wf, [Complex64::new(0.0, 0.0), g]);
 
-                // leg1 = fi (column / flow-in), leg2 = fo (row / flow-out), leg3 = scalar.
+                // leg1 = fi (column / ket), leg2 = fo (row / bra), leg3 = scalar.
                 let fi_slot = WaveformSlot::FermionIn(fi);
                 let fo_slot = WaveformSlot::FermionOut(fo);
                 let s_slot = WaveformSlot::Scalar(s_wf);
@@ -2533,7 +2533,7 @@ mod tests {
                 EvalNode::External(leg_mum.clone()),
                 EvalNode::OffShellCurrent {
                     info: vertex_info.clone(),
-                    flow: None,
+                    adjoint: None,
                     children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                 },
                 EvalNode::Propagate {
@@ -2542,7 +2542,7 @@ mod tests {
                         t_channel: false,
                         lowered_storage: false,
                     },
-                    flow: None,
+                    adjoint: None,
                     child: EvalNodeId::new(2),
                 },
             ],
@@ -2609,7 +2609,7 @@ mod tests {
     /// the off-shell electron is built two ways that differ ONLY in the μ-side boson —
     ///   γ-path: e⁺ absorbs γ[μ] = `FFV1_1(e⁺, FFV1P0_3(μ-,μ+))`   (→ AMP(18))
     ///   Z-path: e⁺ absorbs Z[μ] = `FFV2_4_1(e⁺, FFV2_4_3(μ-,μ+))` (→ AMP(22))
-    /// The γ path (chirality-blind, L=R) pins the rooting/flow/propagator machinery;
+    /// The γ path (chirality-blind, L=R) pins the rooting/adjoint/propagator machinery;
     /// the Z path adds the chiral (FFV2/FFV4) physics. The hand-built μ-pair current
     /// binds (μ⁻ bra, μ⁺ ket) at slots (mu+, mu-) — a reversed traversal — so the
     /// vertex is given the per-leg flows and the rooting conjugates its projector.
@@ -2617,7 +2617,7 @@ mod tests {
     /// Against MadGraph's actual off-shell electron (`probe_wfuncs.py`, slots 6=γ,
     /// 7=Z), both paths must equal MG exactly at both helicities. (Historically
     /// the Z path was 0.6403 × MG at the flipped-μ helicity — the per-Z continuum
-    /// bug, fixed by the flow/crossing-aware chiral projector.)
+    /// bug, fixed by the adjoint/crossing-aware chiral projector.)
     #[test]
     #[cfg(feature = "extended-validation")]
     fn test_espine_eline_z_absorption_ratio_vs_mg() {
@@ -2682,7 +2682,7 @@ mod tests {
             charge: Charge::Antiparticle,
             incoming: true,
         };
-        let ep_flow = leg_ep.flow().unwrap();
+        let ep_flow = leg_ep.adjoint().unwrap();
 
         // Build the off-shell-electron sub-diagram for a given boson (γ via FFV1/GC_3,
         // or Z via FFV2⊕FFV4/GC_50,GC_59): μ-pair → boson current → e⁺ absorbs it.
@@ -2694,7 +2694,7 @@ mod tests {
                     EvalNode::External(leg_mup.clone()),
                     EvalNode::OffShellCurrent {
                         info: current_vertex,
-                        flow: None,
+                        adjoint: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
                     },
                     EvalNode::Propagate {
@@ -2703,13 +2703,13 @@ mod tests {
                             t_channel: false,
                             lowered_storage: false,
                         },
-                        flow: None,
+                        adjoint: None,
                         child: EvalNodeId::new(2),
                     },
                     EvalNode::External(leg_ep.clone()),
                     EvalNode::OffShellCurrent {
                         info: absorb_vertex,
-                        flow: Some(ep_flow),
+                        adjoint: Some(ep_flow),
                         children: vec![EvalNodeId::new(4), EvalNodeId::new(3)],
                     },
                     EvalNode::Propagate {
@@ -2718,7 +2718,7 @@ mod tests {
                             t_channel: false,
                             lowered_storage: false,
                         },
-                        flow: Some(ep_flow),
+                        adjoint: Some(ep_flow),
                         child: EvalNodeId::new(5),
                     },
                 ],
@@ -2729,8 +2729,8 @@ mod tests {
         // reads against the UFO slots (bra at the column), so the rooting needs the
         // per-leg flows to conjugate the chiral projector (uncrossed reversal).
         let mu_flows = [
-            lf(leg_mum.flow().unwrap()),
-            lf(leg_mup.flow().unwrap()),
+            lf(leg_mum.adjoint().unwrap()),
+            lf(leg_mup.adjoint().unwrap()),
             None,
         ];
         let gamma_current = VertexInfo {
@@ -2853,7 +2853,7 @@ mod tests {
             );
 
             // Photon absorption is chirality-blind (γ couples L=R), so it pins the
-            // rooting/flow/propagator/momentum machinery: VG's γ-path off-shell electron
+            // rooting/adjoint/propagator/momentum machinery: VG's γ-path off-shell electron
             // must equal MadGraph's EXACTLY (the fermion chain carries the Feynman
             // propagator −i, in phase with ALOHA). (The Z-path carries the chiral
             // physics and is the localiser — printed above.)
@@ -2872,7 +2872,7 @@ mod tests {
             }
 
             // Z path: identical machinery, only the chiral (FFV2/FFV4) vertex differs.
-            // With the flow-corrected chiral projector the off-shell electron equals
+            // With the adjoint-corrected chiral projector the off-shell electron equals
             // MG exactly at BOTH helicities (the historical per-Z 0.6403 at the
             // flipped-μ helicity is gone).
             let kz = (0..4)

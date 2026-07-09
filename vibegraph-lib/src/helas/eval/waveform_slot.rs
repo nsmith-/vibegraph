@@ -15,9 +15,9 @@ use std::ops::{Add, Mul};
 /// applying the Dirac adjoint only when the topology genuinely needs the opposite flow.
 #[derive(Clone, Debug, Copy)]
 pub enum WaveformSlot<F: Real> {
-    /// Flow-in (column / ket) Dirac spinor or off-shell fermion current
+    /// Ket (column) Dirac spinor or off-shell fermion current
     FermionIn(InDiracWf<F>),
-    /// Flow-out (row / bra) Dirac spinor or off-shell fermion current
+    /// Bra (row) Dirac spinor or off-shell fermion current
     FermionOut(OutDiracWf<F>),
     /// 4-component polarization / off-shell vector current
     Vector(VectorWf<F>),

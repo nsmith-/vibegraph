@@ -9,49 +9,49 @@ use crate::{
     ufo::lorentz::{LorentzOp, LorentzTerm},
 };
 
-/// Fermion-number (spinor) flow direction of a wavefunction, resolved structurally
+/// Fermion-number (spinor) adjoint direction of a wavefunction, resolved structurally
 /// during the bake step's first (topology) pass.
 ///
-/// `In` is a ket (flow-in, HELAS `ixxxxx`); `Out` is a bra (flow-out, `oxxxxx`). The
-/// flow is constant along a fermion line, so an off-shell current and the propagator on
-/// it inherit the flow of their continuing fermion input. Bosonic and scalar-amplitude
-/// nodes carry no flow. The pair (bra, ket) meeting at a vertex always have opposite
-/// flow; the runtime `resolve_bra_ket` reads the same distinction off the evaluated slot
+/// `Ket` (`u`/`v` column) roots the HELAS `ixxxxx`; `Bra` (`ū`/`v̄` row) roots `oxxxxx`. The
+/// adjoint is constant along a fermion line, so an off-shell current and the propagator on
+/// it inherit the adjoint of their continuing fermion input. Bosonic and scalar-amplitude
+/// nodes carry no adjoint. The pair (bra, ket) meeting at a vertex always have opposite
+/// adjoint; the runtime `resolve_bra_ket` reads the same distinction off the evaluated slot
 /// variants, so baking it makes the line direction explicit and lets the rooting choose
 /// the correct in/out fermion routine ([`LorentzEvalTree::build_at_leg`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Flow {
-    /// Ket: flow-in (`ixxxxx`).
-    In,
-    /// Bra: flow-out (`oxxxxx`).
-    Out,
+pub enum Adjoint {
+    /// Ket (`u`/`v` column); external via `ixxxxx`.
+    Ket,
+    /// Bra (`ū`/`v̄` row); external via `oxxxxx`.
+    Bra,
 }
 
-impl std::fmt::Display for Flow {
+impl std::fmt::Display for Adjoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Flow::In => "ket",
-            Flow::Out => "bra",
+            Adjoint::Ket => "ket",
+            Adjoint::Bra => "bra",
         })
     }
 }
 
-/// Per-leg spinor binding as seen by the Lorentz rooting: the baked [`Flow`] plus
+/// Per-leg spinor binding as seen by the Lorentz rooting: the baked [`Adjoint`] plus
 /// whether the leg sits on a *crossed* fermion line.
 ///
 /// Diagram enumeration presents outgoing legs in the all-incoming convention, so a
 /// final-state fermion is bound at the UFO slot of its antiparticle with the
-/// conjugate wavefunction type (the outgoing μ⁺ is a *bra* at the `mu-` slot). The
-/// crossing inverts slot identity and flow together, so flow-vs-slot inspection
-/// cannot see it — the bit must be carried explicitly (external legs: `!incoming`;
+/// conjugate wavefunction type (the outgoing Î¼âº is a *bra* at the `mu-` slot). The
+/// crossing inverts slot identity and adjoint together, so adjoint-vs-slot inspection
+/// cannot see it â the bit must be carried explicitly (external legs: `!incoming`;
 /// off-shell currents inherit it from their continuing fermion input). A crossed
-/// pair evaluates `ū₁Γv₂` where the vertex is defined as `ū₂Γv₁`; by
-/// `ū₁Γv₂ = −ū₂(CΓᵀC⁻¹)v₁` this is exact for vector structures and requires
-/// conjugating `P_χ → P_χ̄` (no sign) for gamma-chained chiral projectors.
+/// pair evaluates `Å«âÎvâ` where the vertex is defined as `Å«âÎvâ`; by
+/// `Å«âÎvâ = âÅ«â(CÎáµCâ»Â¹)vâ` this is exact for vector structures and requires
+/// conjugating `P_Ï â P_ÏÌ` (no sign) for gamma-chained chiral projectors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LegFlow {
-    /// Ket/bra flow of the bound wavefunction.
-    pub flow: Flow,
+pub struct LegAdjoint {
+    /// Ket/bra adjoint of the bound wavefunction.
+    pub adjoint: Adjoint,
     /// True iff the leg's fermion line is crossed (its externals are final-state).
     pub crossed: bool,
 }
@@ -80,9 +80,9 @@ pub enum RootLorentzError {
     /// The structure is syntactically invalid (e.g., mismatched indices).
     #[error("invalid structure: {0}")]
     InvalidStructure(String),
-    /// The spin index does not match the expected spinor flow.
-    #[error("spinor flow mismatch: {0}")]
-    SpinorFlow(String),
+    /// The spin index does not match the expected spinor adjoint.
+    #[error("spinor adjoint mismatch: {0}")]
+    MissingAdjoint(String),
 }
 
 /// Descriptor for one term in the vertex lorentz structure, with dispatch info and resolved rooted node.
@@ -109,34 +109,34 @@ pub enum LorentzEvalNode {
     ProjMAmp { i: usize, j: usize },
     /// Right chiral amplitude
     ProjPAmp { i: usize, j: usize },
-    /// contract two vector indices → scalar (`g_{μν} V^μ W^ν`)
+    /// contract two vector indices â scalar (`g_{Î¼Î½} V^Î¼ W^Î½`)
     Metric { mu: usize, nu: usize },
-    /// [`Metric`] times the vertex's −i: the amplitude contraction of a
-    /// pure-metric structure (VVS/VVSS), mirroring the −i `MetricVout` carries
+    /// [`Metric`] times the vertex's âi: the amplitude contraction of a
+    /// pure-metric structure (VVS/VVSS), mirroring the âi `MetricVout` carries
     /// on the current-rooted side (cf. ALOHA `VVS1_0`). Emitted at most once
     /// per term. Output: scalar.
     MetricNegI { mu: usize, nu: usize },
-    /// metric with one free index → vector: the off-shell vector current of a
+    /// metric with one free index â vector: the off-shell vector current of a
     /// `Metric(out, v)` structure (e.g. the VVS/HVV vertex rooted at a vector
     /// leg). Raises the output index on the partner vector `v`; cf. ALOHA
     /// `VVS1P1N_1`. Output type: vector.
     MetricVout { v: usize },
-    /// [`MetricVout`] without ALOHA's −i vertex factor: index lowering only.
+    /// [`MetricVout`] without ALOHA's âi vertex factor: index lowering only.
     /// Used for the vector-output roots of P-carrying structures (VVV1),
-    /// where the −i·g convention of the P-less VVS current overshoots the
-    /// V-chain phase ledger by −i — pinned per-diagram against MadGraph's
-    /// e+e-→W+W- AMP() (validation/madgraph/compare_amps.py). Output: vector.
+    /// where the âiÂ·g convention of the P-less VVS current overshoots the
+    /// V-chain phase ledger by âi â pinned per-diagram against MadGraph's
+    /// e+e-âW+W- AMP() (validation/madgraph/compare_amps.py). Output: vector.
     LowerVout { v: usize },
     /// Handle the implicit product over the disconnected structures.
     /// At most one child can be non-scalar (which then implies the output type)
     Mul { children: Vec<usize> },
     /// 4-momentum of leg `leg` (0-indexed) as a vector at a free Lorentz index
     P { leg: usize },
-    /// 4-momentum of the *output* leg as a vector: −Σ (input momenta). Emitted by
+    /// 4-momentum of the *output* leg as a vector: âÎ£ (input momenta). Emitted by
     /// the leg-compaction pass in [`build_at_leg`] when a `P` references the leg
     /// the tree is rooted at (which has no input current to read a momentum from).
     POut,
-    /// Full scalar bilinear ψ̄_i δ ψ_j (Identity amplitude contraction)
+    /// Full scalar bilinear ÏÌ_i Î´ Ï_j (Identity amplitude contraction)
     IdentityAmp { i: usize, j: usize },
     // TODO: Sigma, Epsilon
 }
@@ -212,8 +212,8 @@ impl Tree for LorentzEvalTree {
 }
 
 /// The vector-output transform for a rooted structure term: `MetricVout` (ALOHA's
-/// −i·g storage, cf. `VVS1P1N_1`) for P-less structures (VVS), `LowerVout` (g only)
-/// for P-carrying ones (VVV) — see [`LorentzEvalNode::LowerVout`].
+/// âiÂ·g storage, cf. `VVS1P1N_1`) for P-less structures (VVS), `LowerVout` (g only)
+/// for P-carrying ones (VVV) â see [`LorentzEvalNode::LowerVout`].
 fn vector_out_node(term: &LorentzTerm, child: usize) -> LorentzEvalNode {
     if term.ops.iter().any(|op| matches!(op, LorentzOp::P { .. })) {
         LorentzEvalNode::LowerVout { v: child }
@@ -230,9 +230,9 @@ impl LorentzEvalTree {
     }
 
     /// Whether this rooted tree's vector output is stored index-flipped
-    /// (`MetricVout`/`LowerVout`, i.e. ±g·J instead of the plain J). The massive
+    /// (`MetricVout`/`LowerVout`, i.e. Â±gÂ·J instead of the plain J). The massive
     /// vector propagator must know this to form its longitudinal term with the
-    /// physical (plain) current — see `propagate_core`'s `lowered` flag.
+    /// physical (plain) current â see `propagate_core`'s `lowered` flag.
     pub fn has_flipped_vector_out(&self) -> bool {
         self.nodes.iter().any(|n| {
             matches!(
@@ -253,8 +253,8 @@ impl LorentzEvalTree {
         term: &LorentzTerm,
         idx: isize,
         visited_ops: &mut Vec<usize>,
-        flows: &[Option<LegFlow>],
-        out_flow: Option<Flow>,
+        flows: &[Option<LegAdjoint>],
+        out_adjoint: Option<Adjoint>,
         sign: &mut f64,
     ) -> Result<usize, RootLorentzError> {
         // Find an operator that involves this index and has not been visited
@@ -279,35 +279,37 @@ impl LorentzEvalTree {
         match op {
             LorentzOp::Gamma { mu, i, j } => {
                 if *mu == idx {
-                    let child_i = self.build_child(term, *i, visited_ops, flows, out_flow, sign)?;
-                    let child_j = self.build_child(term, *j, visited_ops, flows, out_flow, sign)?;
+                    let child_i =
+                        self.build_child(term, *i, visited_ops, flows, out_adjoint, sign)?;
+                    let child_j =
+                        self.build_child(term, *j, visited_ops, flows, out_adjoint, sign)?;
                     Ok(self.add_node(LorentzEvalNode::GammaVout {
                         i: child_i,
                         j: child_j,
                     }))
                 } else if *i == idx || *j == idx {
-                    // Fermion output: the continuing line's *physical* flow (resolved by
-                    // the first pass) chooses the in/out routine — not the UFO `i`/`j`
-                    // position, which only fixes the vertex's *defined* flow and can run
+                    // Fermion output: the continuing line's *physical* adjoint (resolved by
+                    // the first pass) chooses the in/out routine â not the UFO `i`/`j`
+                    // position, which only fixes the vertex's *defined* adjoint and can run
                     // opposite to the actual line (e.g. an incoming-pair spine). The
                     // input fermion is the gamma's other fermion index.
                     let other = if *i == idx { *j } else { *i };
                     let child_mu =
-                        self.build_child(term, *mu, visited_ops, flows, out_flow, sign)?;
+                        self.build_child(term, *mu, visited_ops, flows, out_adjoint, sign)?;
                     let child_f =
-                        self.build_child(term, other, visited_ops, flows, out_flow, sign)?;
-                    let node = match out_flow {
-                        Some(Flow::In) => LorentzEvalNode::GammaIout {
+                        self.build_child(term, other, visited_ops, flows, out_adjoint, sign)?;
+                    let node = match out_adjoint {
+                        Some(Adjoint::Ket) => LorentzEvalNode::GammaIout {
                             mu: child_mu,
                             j: child_f,
                         },
-                        Some(Flow::Out) => LorentzEvalNode::GammaOout {
+                        Some(Adjoint::Bra) => LorentzEvalNode::GammaOout {
                             mu: child_mu,
                             i: child_f,
                         },
                         None => {
                             return Err(RootLorentzError::InvalidStructure(
-                                "fermion-output Gamma rooted without a spinor flow".to_string(),
+                                "fermion-output Gamma rooted without a spinor adjoint".to_string(),
                             ))
                         }
                     };
@@ -327,7 +329,8 @@ impl LorentzEvalTree {
                 if standalone_projector_crossed(idx, wrapped, flows) {
                     *sign = -*sign;
                 }
-                let child = self.build_child(term, wrapped, visited_ops, flows, out_flow, sign)?;
+                let child =
+                    self.build_child(term, wrapped, visited_ops, flows, out_adjoint, sign)?;
                 let node = if chiral_correction(idx, wrapped, wrapped_is_row, flows) {
                     LorentzEvalNode::ProjP { i: child }
                 } else {
@@ -346,7 +349,8 @@ impl LorentzEvalTree {
                 if standalone_projector_crossed(idx, wrapped, flows) {
                     *sign = -*sign;
                 }
-                let child = self.build_child(term, wrapped, visited_ops, flows, out_flow, sign)?;
+                let child =
+                    self.build_child(term, wrapped, visited_ops, flows, out_adjoint, sign)?;
                 let node = if chiral_correction(idx, wrapped, wrapped_is_row, flows) {
                     LorentzEvalNode::ProjM { i: child }
                 } else {
@@ -362,7 +366,7 @@ impl LorentzEvalTree {
                 } else {
                     unreachable!("Metric op should involve idx {}", idx);
                 };
-                let child = self.build_child(term, other, visited_ops, flows, out_flow, sign)?;
+                let child = self.build_child(term, other, visited_ops, flows, out_adjoint, sign)?;
                 Ok(self.add_node(vector_out_node(term, child)))
             }
             LorentzOp::P { mu, leg } => {
@@ -372,9 +376,9 @@ impl LorentzEvalTree {
             }
             LorentzOp::Identity { i, j } => {
                 if *i == idx {
-                    self.build_child(term, *j, visited_ops, flows, out_flow, sign)
+                    self.build_child(term, *j, visited_ops, flows, out_adjoint, sign)
                 } else if *j == idx {
-                    self.build_child(term, *i, visited_ops, flows, out_flow, sign)
+                    self.build_child(term, *i, visited_ops, flows, out_adjoint, sign)
                 } else {
                     unreachable!("Identity op should involve idx {}", idx);
                 }
@@ -398,26 +402,26 @@ impl LorentzEvalTree {
     /// tree is rooted at an amplitude (scalar sink) and an arbitrary leg
     /// is chosen for routing.
     ///
-    /// `out_flow` is the spinor flow of the output leg (`Some` iff the output is a
+    /// `out_adjoint` is the spinor adjoint of the output leg (`Some` iff the output is a
     /// fermion), used to pick the in/out gamma routine. The disconnected scalar
     /// structures collected for an amplitude/scalar sink contract to scalars, so they
-    /// root through vectors and never consult the flow.
+    /// root through vectors and never consult the adjoint.
     ///
-    /// Returns the tree together with a ±1 sign for the enclosing term coefficient:
-    /// a standalone scalar bilinear (`ψ̄ Γ ψ`, Γ gamma-less) over a *crossed* pair
-    /// evaluates `ū₁Γv₂` for a vertex defined as `ū₂Γv₁ = −ū₁(CΓᵀC⁻¹)v₂`, and with
-    /// `CΓᵀC⁻¹ = Γ` for `1`/`P_χ` the −1 survives (unlike the gamma-chained case,
-    /// where `Cγ^{μT}C⁻¹ = −γ^μ` cancels it — see [`chiral_correction`]).
+    /// Returns the tree together with a Â±1 sign for the enclosing term coefficient:
+    /// a standalone scalar bilinear (`ÏÌ Î Ï`, Î gamma-less) over a *crossed* pair
+    /// evaluates `Å«âÎvâ` for a vertex defined as `Å«âÎvâ = âÅ«â(CÎáµCâ»Â¹)vâ`, and with
+    /// `CÎáµCâ»Â¹ = Î` for `1`/`P_Ï` the â1 survives (unlike the gamma-chained case,
+    /// where `CÎ³^{Î¼T}Câ»Â¹ = âÎ³^Î¼` cancels it â see [`chiral_correction`]).
     ///
     /// Note: idx is 0-indexed
     pub fn build_at_leg(
         term: &LorentzTerm,
         spins: &[i32],
         idx: Option<usize>,
-        flows: &[Option<LegFlow>],
+        flows: &[Option<LegAdjoint>],
     ) -> Result<(Self, f64), RootLorentzError> {
-        let out_flow = idx.and_then(|i| flows.get(i).copied().flatten().map(|lf| lf.flow));
-        let idx = correct_spin_index_for_flow(spins, idx, out_flow)?;
+        let out_adjoint = idx.and_then(|i| flows.get(i).copied().flatten().map(|lf| lf.adjoint));
+        let idx = correct_spin_index_for_flow(spins, idx, out_adjoint)?;
         let mut tree = LorentzEvalTree {
             nodes: vec![],
             root: None,
@@ -425,7 +429,7 @@ impl LorentzEvalTree {
         let mut sign = 1.0;
         let mut visited_ops = Vec::new(); // LorentzOp is so small that Vec is probably better than HashSet
         let mut term_roots = Vec::new();
-        // Whether this term's once-per-vertex −i (pure-metric amplitude case)
+        // Whether this term's once-per-vertex âi (pure-metric amplitude case)
         // has been emitted; guards against double application for structures
         // with several Metric ops (VVVV).
         let mut negi_applied = false;
@@ -437,18 +441,18 @@ impl LorentzEvalTree {
                 root_leg as isize,
                 &mut visited_ops,
                 flows,
-                out_flow,
+                out_adjoint,
                 &mut sign,
             )?;
             // If no operator connects to this leg, build_child returns a trivial Leg leaf.
-            // Pop it — the disconnected structures collected below are the actual output.
+            // Pop it â the disconnected structures collected below are the actual output.
             let is_trivial_leaf =
                 matches!(tree.nodes[node_idx], LorentzEvalNode::Leg(i) if i == root_leg);
             if is_trivial_leaf {
                 tree.nodes.pop();
             } else if matches!(tree.nodes[node_idx], LorentzEvalNode::P { .. }) {
                 // A P carrying the output Lorentz index (e.g. the VVV1 terms
-                // P(1,2)·Metric(2,3) rooted at leg 1) emits a bare momentum vector.
+                // P(1,2)Â·Metric(2,3) rooted at leg 1) emits a bare momentum vector.
                 // Wrap it in the term's vector-output transform so the mixed
                 // Metric-/P-rooted terms of the structure stay coherent.
                 let wrapped = tree.add_node(vector_out_node(term, node_idx));
@@ -485,9 +489,9 @@ impl LorentzEvalTree {
                 }
                 LorentzOp::ProjM { i, j } => {
                     visited_ops.push(iop);
-                    // Scalar-sink bilinear (amplitude or scalar-out current): −1
-                    // against the −i/D scalar propagator (see `propagate_core`),
-                    // on top of the crossed-pair −1.
+                    // Scalar-sink bilinear (amplitude or scalar-out current): â1
+                    // against the âi/D scalar propagator (see `propagate_core`),
+                    // on top of the crossed-pair â1.
                     sign = -sign;
                     if pair_crossed(*i, *j, flows) {
                         sign = -sign;
@@ -503,7 +507,7 @@ impl LorentzEvalTree {
                 }
                 LorentzOp::ProjP { i, j } => {
                     visited_ops.push(iop);
-                    // Scalar-sink bilinear: −1, as in the ProjM arm above.
+                    // Scalar-sink bilinear: â1, as in the ProjM arm above.
                     sign = -sign;
                     if pair_crossed(*i, *j, flows) {
                         sign = -sign;
@@ -525,12 +529,12 @@ impl LorentzEvalTree {
                         tree.build_child(term, *nu, &mut visited_ops, flows, None, &mut sign)?;
                     // A pure-metric structure (VVS/VVSS) reaching a scalar sink
                     // carries the vertex factor explicitly, once per term
-                    // (Gamma-/P-carrying structures — FFV, VVV — contract
-                    // plainly): −i when contracted into the *amplitude* (pinned
-                    // by e+e-→τ+τ-H's ZZH diagram), −1 when rooted at a scalar
-                    // output leg (the H-current from two Z chains; −1 against
-                    // the −i/D scalar propagator, pinned by the uux 2→6 and
-                    // b b̄ 2→6 H classes vs MadGraph AMP()).
+                    // (Gamma-/P-carrying structures â FFV, VVV â contract
+                    // plainly): âi when contracted into the *amplitude* (pinned
+                    // by e+e-âÏ+Ï-H's ZZH diagram), â1 when rooted at a scalar
+                    // output leg (the H-current from two Z chains; â1 against
+                    // the âi/D scalar propagator, pinned by the uux 2â6 and
+                    // b bÌ 2â6 H classes vs MadGraph AMP()).
                     let pure_metric = !term
                         .ops
                         .iter()
@@ -557,7 +561,7 @@ impl LorentzEvalTree {
                     }
                 }
                 LorentzOp::P { mu, .. } => {
-                    // p^μ contracted with the vector leg at the same index
+                    // p^Î¼ contracted with the vector leg at the same index
                     let p_node =
                         tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
                     let leg_node =
@@ -569,7 +573,7 @@ impl LorentzEvalTree {
                 }
                 LorentzOp::Identity { i, j } => {
                     visited_ops.push(iop);
-                    // Scalar-sink bilinear: −1, as in the ProjM arm above.
+                    // Scalar-sink bilinear: â1, as in the ProjM arm above.
                     sign = -sign;
                     if pair_crossed(*i, *j, flows) {
                         sign = -sign;
@@ -594,11 +598,11 @@ impl LorentzEvalTree {
         }
 
         // Find any scalar legs not connected to any operator and add them as scalar roots.
-        // Skip the output leg (excluded_leg) — it is not an input for off-shell currents.
+        // Skip the output leg (excluded_leg) â it is not an input for off-shell currents.
         for (ileg, spin) in spins.iter().enumerate() {
             if *spin == 1 {
                 if Some(ileg) == idx {
-                    continue; // output leg — not an input
+                    continue; // output leg â not an input
                 }
                 if !tree
                     .nodes
@@ -658,16 +662,16 @@ impl std::fmt::Display for LorentzEvalTree {
     }
 }
 
-/// True iff a fermion pair's plain legs sit on a crossed line (see [`LegFlow`]).
+/// True iff a fermion pair's plain legs sit on a crossed line (see [`LegAdjoint`]).
 /// Summed (negative) indices carry no binding and are skipped.
-/// A *standalone* chiral projector (`ψ̄ P_χ ψ`, not gamma-chained) rooted as an
+/// A *standalone* chiral projector (`ÏÌ P_Ï Ï`, not gamma-chained) rooted as an
 /// off-shell fermion current, whose wrapped input leg sits on a crossed line:
-/// the reversed bilinear reading takes the same −1 as the amplitude case
-/// ([`pair_crossed`]), but with only one external leg in view. `idx ≥ 0` (the
+/// the reversed bilinear reading takes the same â1 as the amplitude case
+/// ([`pair_crossed`]), but with only one external leg in view. `idx â¥ 0` (the
 /// output fermion slot) excludes gamma-chained projectors reached through a
-/// summed index, whose −1 is supplied by the runtime reversed-bilinear sign.
-/// Pinned by e+e-→τ+τ-H (H emitted off the crossed τ line) vs MadGraph AMP().
-fn standalone_projector_crossed(idx: isize, wrapped: isize, flows: &[Option<LegFlow>]) -> bool {
+/// summed index, whose â1 is supplied by the runtime reversed-bilinear sign.
+/// Pinned by e+e-âÏ+Ï-H (H emitted off the crossed Ï line) vs MadGraph AMP().
+fn standalone_projector_crossed(idx: isize, wrapped: isize, flows: &[Option<LegAdjoint>]) -> bool {
     idx >= 0
         && wrapped >= 0
         && matches!(
@@ -676,7 +680,7 @@ fn standalone_projector_crossed(idx: isize, wrapped: isize, flows: &[Option<LegF
         )
 }
 
-fn pair_crossed(i: isize, j: isize, flows: &[Option<LegFlow>]) -> bool {
+fn pair_crossed(i: isize, j: isize, flows: &[Option<LegAdjoint>]) -> bool {
     [i, j].into_iter().any(|k| {
         k >= 0
             && matches!(
@@ -687,38 +691,38 @@ fn pair_crossed(i: isize, j: isize, flows: &[Option<LegFlow>]) -> bool {
 }
 
 /// Decide whether a gamma-chained chiral projector must emit the opposite chirality
-/// (`P_χ → P_χ̄`), for a projector reached through `idx` and wrapping the index
+/// (`P_Ï â P_ÏÌ`), for a projector reached through `idx` and wrapping the index
 /// `wrapped` on its other side.
 ///
-/// Only gamma-chained projectors (`γ^μ·P_χ` via a summed index) conjugate under a
-/// fermion-line reversal (`γ^μ P_χ = P_χ̄ γ^μ`); standalone scalar projectors
-/// (`ψ̄ P_χ ψ`) are reversal-invariant and never flip. Two distinct defects require
-/// the conjugation, neither with an explicit sign (the reversal −1 of
-/// `C(γ^μP_χ)ᵀC⁻¹ = −γ^μP_χ̄` is supplied at runtime by the reversed-bilinear sign,
-/// and a crossed pair's two −1s cancel):
+/// Only gamma-chained projectors (`Î³^Î¼Â·P_Ï` via a summed index) conjugate under a
+/// fermion-line reversal (`Î³^Î¼ P_Ï = P_ÏÌ Î³^Î¼`); standalone scalar projectors
+/// (`ÏÌ P_Ï Ï`) are reversal-invariant and never flip. Two distinct defects require
+/// the conjugation, neither with an explicit sign (the reversal â1 of
+/// `C(Î³^Î¼P_Ï)áµCâ»Â¹ = âÎ³^Î¼P_ÏÌ` is supplied at runtime by the reversed-bilinear sign,
+/// and a crossed pair's two â1s cancel):
 ///
-/// - **Uncrossed reversal** (`idx` summed, `wrapped` a plain leg whose flow
-///   contradicts its UFO slot — column expects a ket, row a bra): the line
+/// - **Uncrossed reversal** (`idx` summed, `wrapped` a plain leg whose adjoint
+///   contradicts its UFO slot â column expects a ket, row a bra): the line
 ///   traverses the vertex against its arrow, e.g. the initial-state annihilation
 ///   pair. (The rooted-output variant of this case is canonicalized by
 ///   [`correct_spin_index_for_flow`], which realizes the conjugation by
 ///   re-rooting.)
-/// - **Crossed line** (the adjacent plain leg has [`LegFlow::crossed`]): the two
+/// - **Crossed line** (the adjacent plain leg has [`LegAdjoint::crossed`]): the two
 ///   pair wavefunctions sit in each other's slots with conjugate types
-///   (all-incoming diagram convention), evaluating `ū₁Γv₂` for a vertex defined as
-///   `ū₂Γv₁ = −ū₁(CΓᵀC⁻¹)v₂`. Crossing inverts slot identity and flow together,
-///   so this case is flow-aligned and disjoint from the uncrossed reversal; it is
+///   (all-incoming diagram convention), evaluating `Å«âÎvâ` for a vertex defined as
+///   `Å«âÎvâ = âÅ«â(CÎáµCâ»Â¹)vâ`. Crossing inverts slot identity and adjoint together,
+///   so this case is adjoint-aligned and disjoint from the uncrossed reversal; it is
 ///   also checked at the rooted output leg (`idx` plain, projector wrapping the
 ///   gamma), where re-rooting cannot see it.
 fn chiral_correction(
     idx: isize,
     wrapped: isize,
     wrapped_is_row: bool,
-    flows: &[Option<LegFlow>],
+    flows: &[Option<LegAdjoint>],
 ) -> bool {
     if idx >= 0 {
         // Projector adjacent to the rooted output leg (wraps the gamma chain). The
-        // flow-vs-slot alignment was already canonicalized by re-rooting; only a
+        // adjoint-vs-slot alignment was already canonicalized by re-rooting; only a
         // crossed line still needs the conjugation.
         return wrapped < 0
             && matches!(
@@ -735,32 +739,36 @@ fn chiral_correction(
     if lf.crossed {
         return true;
     }
-    let expected = if wrapped_is_row { Flow::Out } else { Flow::In };
-    lf.flow != expected
+    let expected = if wrapped_is_row {
+        Adjoint::Bra
+    } else {
+        Adjoint::Ket
+    };
+    lf.adjoint != expected
 }
 
-/// Adjust leg index for spinor flow if it is a spinor leg.
+/// Adjust leg index for spinor adjoint if it is a spinor leg.
 ///
-/// UFO spinor pairs are ordered (column/ket slot, row/bra slot): for `ψ̄₂Γψ₁`
-/// (e.g. SM FFV `Gamma(3,2,1)` with particles (ℓ⁺, ℓ⁻, V)) the pair-first leg is
+/// UFO spinor pairs are ordered (column/ket slot, row/bra slot): for `ÏÌâÎÏâ`
+/// (e.g. SM FFV `Gamma(3,2,1)` with particles (ââº, ââ», V)) the pair-first leg is
 /// the column the ket contracts into, the pair-second leg the row for the bra.
-/// An off-shell output at the column leg leaves `ψ̄Γ` — a bra (`Flow::Out`); an
-/// output at the row leg leaves `Γψ` — a ket (`Flow::In`). When the baked flow
+/// An off-shell output at the column leg leaves `ÏÌÎ` â a bra (`Adjoint::Bra`); an
+/// output at the row leg leaves `ÎÏ` â a ket (`Adjoint::Ket`). When the baked adjoint
 /// disagrees with the rooted slot (the line traverses the vertex against its UFO
-/// arrow), re-root at the flow-matching slot so the chiral projector lands on the
-/// physical side of the gamma (ket: `ε̸·P_χ·ψ`, bra: `ψ̄·ε̸·P_χ`); the leg
+/// arrow), re-root at the adjoint-matching slot so the chiral projector lands on the
+/// physical side of the gamma (ket: `ÎµÌ¸Â·P_ÏÂ·Ï`, bra: `ÏÌÂ·ÎµÌ¸Â·P_Ï`); the leg
 /// compaction in `build_at_leg` keeps the caller's child binding unchanged.
 ///
 /// spins: 2s+1 convention
 fn correct_spin_index_for_flow(
     spins: &[i32],
     idx: Option<usize>,
-    flow: Option<Flow>,
+    adjoint: Option<Adjoint>,
 ) -> Result<Option<usize>, RootLorentzError> {
-    match (idx, flow) {
+    match (idx, adjoint) {
         (Some(idx), Some(f)) => {
-            // The index should be the first of a spin pair (column slot) if the flow
-            // is outgoing and the second (row slot) if the flow is incoming.
+            // The index should be the first of a spin pair (column slot) if the adjoint
+            // is outgoing and the second (row slot) if the adjoint is incoming.
 
             let mut current_pair = (None, None);
             for (i, s) in spins.iter().enumerate() {
@@ -780,17 +788,17 @@ fn correct_spin_index_for_flow(
                 }
             }
             match (current_pair, f) {
-                // Correct pairing of spin index and flow
-                ((Some(i), Some(_)), Flow::Out) if i == idx => Ok(Some(i)),
-                ((Some(_), Some(j)), Flow::In) if j == idx => Ok(Some(j)),
-                // Incorrect pairing of spin index and flow, fix by swapping the indices
-                ((Some(i), Some(j)), Flow::Out) if j == idx => Ok(Some(i)),
-                ((Some(i), Some(j)), Flow::In) if i == idx => Ok(Some(j)),
+                // Correct pairing of spin index and adjoint
+                ((Some(i), Some(_)), Adjoint::Bra) if i == idx => Ok(Some(i)),
+                ((Some(_), Some(j)), Adjoint::Ket) if j == idx => Ok(Some(j)),
+                // Incorrect pairing of spin index and adjoint, fix by swapping the indices
+                ((Some(i), Some(j)), Adjoint::Bra) if j == idx => Ok(Some(i)),
+                ((Some(i), Some(j)), Adjoint::Ket) if i == idx => Ok(Some(j)),
                 _ => unreachable!("One of the spin indices must match the given index"),
             }
         }
-        (Some(i), None) if spins[i] == 2 => Err(RootLorentzError::SpinorFlow(
-            "Flow must be specified for spinor output".to_string(),
+        (Some(i), None) if spins[i] == 2 => Err(RootLorentzError::MissingAdjoint(
+            "adjoint (bra/ket) must be specified for spinor output".to_string(),
         )),
         (None, Some(_)) => {
             // Amplitude contraction: reversed/crossed pairs are handled per
@@ -804,10 +812,10 @@ fn correct_spin_index_for_flow(
 /// Resolve a single LorentzTerm into a rooted primitive with the output leg fixed.
 ///
 /// # Arguments
-/// * `term` — The UFO LorentzTerm to resolve.
-/// * `spins` — Spin codes [1, 2, 3] for each leg
-/// * `result_leg_idx` — The output leg (0-indexed), or `None` for amplitude (scalar sink).
-/// * `out_flow` — Spinor flow of the output leg (`Some` iff a fermion output), used to
+/// * `term` â The UFO LorentzTerm to resolve.
+/// * `spins` â Spin codes [1, 2, 3] for each leg
+/// * `result_leg_idx` â The output leg (0-indexed), or `None` for amplitude (scalar sink).
+/// * `out_adjoint` â Spinor adjoint of the output leg (`Some` iff a fermion output), used to
 ///   pick the in/out gamma routine.
 ///
 /// # Returns
@@ -816,7 +824,7 @@ pub fn root_term(
     term: &crate::ufo::lorentz::LorentzTerm,
     spins: &[i32],
     result_leg_idx: Option<usize>,
-    flows: &[Option<LegFlow>],
+    flows: &[Option<LegAdjoint>],
 ) -> Result<RootedTerm, RootLorentzError> {
     let (tree, sign) = LorentzEvalTree::build_at_leg(term, spins, result_leg_idx, flows)?;
     Ok(RootedTerm {
@@ -830,10 +838,10 @@ mod tests {
     use super::*;
     use crate::ufo::lorentz::LorentzTerm;
 
-    /// Uncrossed per-leg binding shorthand for hand-built flow vectors.
-    fn lf(flow: Flow) -> Option<LegFlow> {
-        Some(LegFlow {
-            flow,
+    /// Uncrossed per-leg binding shorthand for hand-built adjoint vectors.
+    fn lf(adjoint: Adjoint) -> Option<LegAdjoint> {
+        Some(LegAdjoint {
+            adjoint,
             crossed: false,
         })
     }
@@ -842,7 +850,7 @@ mod tests {
     fn test_vvs_rooted_at_vector_leg_is_a_vector_current() {
         // VVS1: Metric(1,2), spins [3,3,1] (Z, Z, H). Rooting at a *vector* leg
         // (the off-shell Z current of an HZZ vertex) must raise that index via
-        // the metric: the current is the OTHER vector leg × the scalar leg — a
+        // the metric: the current is the OTHER vector leg Ã the scalar leg â a
         // vector, NOT a scalar contraction. It must never reference its own output
         // leg as an input; since `build_at_leg` compacts leg references over the
         // removed output, that means every `Leg(i)` must land in the gap-free input
@@ -864,7 +872,7 @@ mod tests {
                 .max()
         };
 
-        // Output = vector leg 0: current = (other vector) × (scalar), both compacted
+        // Output = vector leg 0: current = (other vector) Ã (scalar), both compacted
         // into 0..n_inputs.
         let (t0, _) = LorentzEvalTree::build_at_leg(&term, &spins, Some(0), &[]).unwrap();
         assert!(
@@ -873,7 +881,7 @@ mod tests {
         );
         assert!(
             matches!(t0.root_value(), LorentzEvalNode::Mul { .. }),
-            "VVS rooted at a vector leg must yield a vector (scalar×vector), got {:?}",
+            "VVS rooted at a vector leg must yield a vector (scalarÃvector), got {:?}",
             t0.root_value()
         );
 
@@ -884,7 +892,7 @@ mod tests {
             "VVS rooted at leg 1 must only index the gap-free inputs: {t1:?}"
         );
 
-        // Output = scalar leg 3 (idx 2): unchanged — a Metric contraction → scalar H.
+        // Output = scalar leg 3 (idx 2): unchanged â a Metric contraction â scalar H.
         let (t2, _) = LorentzEvalTree::build_at_leg(&term, &spins, Some(2), &[]).unwrap();
         assert!(
             matches!(t2.root_value(), LorentzEvalNode::Metric { .. }),
@@ -895,14 +903,19 @@ mod tests {
 
     #[test]
     fn test_root_ffv1_photon_current_at_leg3() {
-        // FFV1: Gamma(3,2,1) rooted at vector leg 3 → SpinorCurrent{Both,row=2,col=1}
+        // FFV1: Gamma(3,2,1) rooted at vector leg 3 â SpinorCurrent{Both,row=2,col=1}
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 3]; // e+, e-, photon
-        let result =
-            root_term(&term, &spins, Some(2), &[lf(Flow::In), lf(Flow::Out), None]).unwrap();
+        let result = root_term(
+            &term,
+            &spins,
+            Some(2),
+            &[lf(Adjoint::Ket), lf(Adjoint::Bra), None],
+        )
+        .unwrap();
         assert_eq!(result.coeff, 1.0);
         assert_eq!(
             result.tree,
@@ -921,14 +934,20 @@ mod tests {
     fn test_root_ffv1_fermion_current_uses_flow() {
         // FFV1: Gamma(mu=2, i=1, j=0) rooted at fermion leg 0 must produce
         // GammaIout with that leg, and rooted at fermion leg 1 must produce
-        // GammaOout with that leg. Any other configuration should raise a SpinorFlow error.
+        // GammaOout with that leg. Any other configuration should raise a MissingAdjoint error.
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 3];
 
-        let ket = root_term(&term, &spins, Some(0), &[lf(Flow::In), lf(Flow::In), None]).unwrap();
+        let ket = root_term(
+            &term,
+            &spins,
+            Some(0),
+            &[lf(Adjoint::Ket), lf(Adjoint::Ket), None],
+        )
+        .unwrap();
         assert_eq!(
             ket.tree,
             LorentzEvalTree {
@@ -945,7 +964,7 @@ mod tests {
             &term,
             &spins,
             Some(1),
-            &[lf(Flow::Out), lf(Flow::Out), None],
+            &[lf(Adjoint::Bra), lf(Adjoint::Bra), None],
         )
         .unwrap();
         assert_eq!(
@@ -960,16 +979,16 @@ mod tests {
             }
         );
 
-        // A fermion output with no flow is an internal inconsistency.
+        // A fermion output with no adjoint is an internal inconsistency.
         assert!(matches!(
             root_term(&term, &spins, Some(0), &[]),
-            Err(RootLorentzError::SpinorFlow(_))
+            Err(RootLorentzError::MissingAdjoint(_))
         ));
     }
 
     #[test]
     fn test_root_ffv1_amplitude_at_sink() {
-        // FFV1 rooted at amplitude (scalar sink) → ScalarProduct of the vector output and itself
+        // FFV1 rooted at amplitude (scalar sink) â ScalarProduct of the vector output and itself
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::Gamma { mu: 2, i: 1, j: 0 }],
@@ -995,7 +1014,7 @@ mod tests {
 
     #[test]
     fn test_root_ffv2_left_chiral() {
-        // FFV2: Gamma(3,2,-1)*ProjM(-1,1) → left-chiral fermion rooted at amplitude
+        // FFV2: Gamma(3,2,-1)*ProjM(-1,1) â left-chiral fermion rooted at amplitude
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![
@@ -1008,7 +1027,7 @@ mod tests {
         // amplitude case
         let result = root_term(&term, &spins, None, &[]).unwrap();
         assert_eq!(result.coeff, 1.0);
-        // The tree routes through ProjM → Gamma
+        // The tree routes through ProjM â Gamma
         assert_eq!(
             result.tree,
             LorentzEvalTree {
@@ -1024,11 +1043,11 @@ mod tests {
             }
         );
 
-        // A ket output (Flow::In) roots at the row slot regardless of the requested
-        // pair leg, so the projector lands on the input: `ε̸·P_χ·ψ` (the reversed
+        // A ket output (Adjoint::Ket) roots at the row slot regardless of the requested
+        // pair leg, so the projector lands on the input: `ÎµÌ¸Â·P_ÏÂ·Ï` (the reversed
         // traversal's chirality conjugation is realized by the re-rooting; no
-        // explicit sign — see `chiral_correction`).
-        let flows_in = [lf(Flow::In), lf(Flow::In), None];
+        // explicit sign â see `chiral_correction`).
+        let flows_in = [lf(Adjoint::Ket), lf(Adjoint::Ket), None];
         for requested in [0usize, 1] {
             let result = root_term(&term, &spins, Some(requested), &flows_in).unwrap();
             assert_eq!(result.coeff, 1.0);
@@ -1046,9 +1065,9 @@ mod tests {
             );
         }
 
-        // A bra output (Flow::Out) roots at the column slot, so the projector lands
-        // on the output: `ψ̄·ε̸·P_χ`.
-        let flows_out = [lf(Flow::Out), lf(Flow::Out), None];
+        // A bra output (Adjoint::Bra) roots at the column slot, so the projector lands
+        // on the output: `ÏÌÂ·ÎµÌ¸Â·P_Ï`.
+        let flows_out = [lf(Adjoint::Bra), lf(Adjoint::Bra), None];
         for requested in [0usize, 1] {
             let result = root_term(&term, &spins, Some(requested), &flows_out).unwrap();
             assert_eq!(result.coeff, 1.0);
@@ -1069,7 +1088,7 @@ mod tests {
 
     #[test]
     fn test_root_ffs_yukawa() {
-        // FFS1: ProjM(2,1) rooted at amplitude → ScalarProduct (bilinear)
+        // FFS1: ProjM(2,1) rooted at amplitude â ScalarProduct (bilinear)
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::ProjM { i: 1, j: 0 }],
@@ -1095,14 +1114,19 @@ mod tests {
 
     #[test]
     fn test_root_ffs_off_shell_scalar() {
-        // FFS1: ProjM(2,1) rooted at scalar leg 3 → just the bilinear, no Leg(2)
+        // FFS1: ProjM(2,1) rooted at scalar leg 3 â just the bilinear, no Leg(2)
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::ProjM { i: 1, j: 0 }],
         };
         let spins = vec![2, 2, 1];
-        let result =
-            root_term(&term, &spins, Some(2), &[lf(Flow::In), lf(Flow::Out), None]).unwrap();
+        let result = root_term(
+            &term,
+            &spins,
+            Some(2),
+            &[lf(Adjoint::Ket), lf(Adjoint::Bra), None],
+        )
+        .unwrap();
         assert_eq!(
             result.tree,
             LorentzEvalTree {
@@ -1130,7 +1154,12 @@ mod tests {
             }],
         };
         let spins = vec![2, 2, 3];
-        let result = root_term(&term, &spins, Some(0), &[lf(Flow::In), lf(Flow::In), None]); // root at leg 1 (0-indexed as 0)
+        let result = root_term(
+            &term,
+            &spins,
+            Some(0),
+            &[lf(Adjoint::Ket), lf(Adjoint::Ket), None],
+        ); // root at leg 1 (0-indexed as 0)
         assert!(matches!(
             result,
             Err(RootLorentzError::UnsupportedVertex(_))
@@ -1139,8 +1168,8 @@ mod tests {
 
     #[test]
     fn test_root_vvs_metric() {
-        // VVS1: Metric(1,2) rooted at amplitude → Metric contraction carrying the
-        // vertex's −i (pure-metric amplitude case, `MetricNegI`).
+        // VVS1: Metric(1,2) rooted at amplitude â Metric contraction carrying the
+        // vertex's âi (pure-metric amplitude case, `MetricNegI`).
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
@@ -1168,7 +1197,7 @@ mod tests {
 
     #[test]
     fn test_root_sss_scalar() {
-        // SSS1: Empty ops (all scalars) rooted at amplitude → ScalarProduct
+        // SSS1: Empty ops (all scalars) rooted at amplitude â ScalarProduct
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![],

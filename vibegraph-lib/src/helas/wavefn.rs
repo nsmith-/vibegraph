@@ -46,7 +46,7 @@
 //!
 //! (TODO)
 use crate::helas::repr::lorentz::{
-    Bispinor, ComplexVector, Contravariant, FlowIn, FlowOut, LorentzVector, SpinorFlow, SpinorRepr,
+    Bispinor, Bra, ComplexVector, Contravariant, DiracAdjoint, Ket, LorentzVector, SpinorRepr,
 };
 use crate::helas::repr::numbers::{Charge, Chirality, SpinorHelicity};
 use crate::helas::repr::{Real, C};
@@ -65,19 +65,19 @@ use crate::helas::repr::{Real, C};
 /// since [`SpinorRepr<F>`] is a subtrait of [`crate::helas::repr::LorentzRepr<F>`]
 /// with `Fiber = [C<F>; 4]`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct DiracWf<F: Real, Flow: SpinorFlow> {
-    pub spinor: Bispinor<F, Flow>,
+pub struct DiracWf<F: Real, Adj: DiracAdjoint> {
+    pub spinor: Bispinor<F, Adj>,
     /// Signed momentum: particle → +p, antiparticle → −p
     pub momentum: LorentzVector<F, Contravariant>,
 }
 
 /// Flowing-IN typed spinor wavefunction.
-pub type InDiracWf<F> = DiracWf<F, FlowIn>;
+pub type InDiracWf<F> = DiracWf<F, Ket>;
 
 /// Flowing-OUT typed spinor wavefunction.
-pub type OutDiracWf<F> = DiracWf<F, FlowOut>;
+pub type OutDiracWf<F> = DiracWf<F, Bra>;
 
-impl<F: Real, Flow: SpinorFlow> DiracWf<F, Flow> {
+impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
     /// Create a spinor wavefunction from a bispinor and momentum.
     pub fn from_momentum(
         p: LorentzVector<F, Contravariant>,
@@ -97,7 +97,7 @@ impl<F: Real, Flow: SpinorFlow> DiracWf<F, Flow> {
 
     /// Create a spinor wavefunction from a bispinor and momentum.
     pub fn from_spinor(
-        spinor: Bispinor<F, Flow>,
+        spinor: Bispinor<F, Adj>,
         momentum: LorentzVector<F, Contravariant>,
     ) -> Self {
         Self { spinor, momentum }
@@ -115,12 +115,12 @@ impl<F: Real, Flow: SpinorFlow> DiracWf<F, Flow> {
         }
     }
 
-    /// Flip the flow direction by taking the Dirac conjugate of the spinor (`u ↔ ū`).
+    /// Flip the adjoint (ket/bra) by taking the Dirac conjugate of the spinor (`u ↔ ū`).
     ///
     /// This is the bra/ket dual of the *same* physical particle, so the stored
     /// (HELAS-signed) momentum is carried through unchanged — matching the
     /// no-flip momentum routing used throughout off-shell-current evaluation.
-    pub fn flip_flow(self) -> DiracWf<F, Flow::Opposite> {
+    pub fn flip_adjoint(self) -> DiracWf<F, Adj::Dual> {
         DiracWf {
             spinor: self.spinor.dualize(),
             momentum: self.momentum,
@@ -129,18 +129,18 @@ impl<F: Real, Flow: SpinorFlow> DiracWf<F, Flow> {
 }
 
 impl<F: Real> InDiracWf<F> {
-    /// Convert to a flowing-OUT wavefunction by taking the Dirac conjugate of the spinor
+    /// Convert to a bra wavefunction by taking the Dirac conjugate of the spinor
     pub fn to_outgoing(self) -> OutDiracWf<F> {
-        self.flip_flow()
+        self.flip_adjoint()
     }
 }
 
 impl<F: Real> OutDiracWf<F> {
-    /// Convert to a flowing-IN wavefunction by taking the Dirac conjugate of the spinor
+    /// Convert to a ket wavefunction by taking the Dirac conjugate of the spinor
     ///
     /// This is the inverse of [`InDiracWf::to_outgoing`].
     pub fn to_incoming(self) -> InDiracWf<F> {
-        self.flip_flow()
+        self.flip_adjoint()
     }
 
     pub fn scalar_bilinear(self, other: &InDiracWf<F>, chirality: Chirality) -> C<F> {

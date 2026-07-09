@@ -235,7 +235,7 @@ mod tests {
                         momentum: p_gamma,
                     };
 
-                    // Flow-in current (fvixxx): q = fi.p − v.p
+                    // Ket current (fvixxx): q = fi.p − v.p
                     let fi = InDiracWf::from_momentum(p_f, mass, nhel, charge);
                     let out = vertex::fvixxx(&fi, &v, [g.im, g.im], mass, 0.0);
                     let expect = fi.spinor * (-Complex64::I * g);
@@ -254,12 +254,12 @@ mod tests {
         }
     }
 
-    /// Flow-OUT counterpart of [`test_ward_identity_offshell_fermion`], exercising
+    /// Bra counterpart of [`test_ward_identity_offshell_fermion`], exercising
     /// `fvoxxx` (≡ the `GammaJout` dispatch path).
     ///
     /// A flow-out fermion is a bra, so the vertex/propagator slash acts to the
     /// *right* (`ψ̄·γ^μ`), not the left (`γ^μ·ψ`). The slash is now flow-dependent
-    /// (`SpinorFlow::slash_bispinor`): flow-out uses the chiral-block-transposed
+    /// (`DiracAdjoint::slash_bispinor`): flow-out uses the chiral-block-transposed
     /// right action. With ε→q_γ the bra Dirac equation `ψ̄(p̸−m)=0` makes `q̸`
     /// telescope, the propagator `1/(q²−m²)` cancels, and the current collapses to
     /// `+g·ψ̄` (with `q = fo.p + v.p`). The earlier left-slash on the dualized

@@ -400,12 +400,12 @@ impl<F: Real + std::fmt::Display> std::fmt::Display for ComplexVector<F, Covaria
     }
 }
 
-/// Sealed trait for spinor flow direction, implemented by `FlowIn` and `FlowOut`.
-pub trait SpinorFlow: sealed::Sealed + Copy + PartialEq + Eq + 'static {
-    type Opposite: SpinorFlow;
-    const INCOMING: bool;
+/// Sealed trait for the spinor Dirac-adjoint side (bra/ket), implemented by `Ket` and `Bra`.
+pub trait DiracAdjoint: sealed::Sealed + Copy + PartialEq + Eq + 'static {
+    type Dual: DiracAdjoint;
+    const KET: bool;
 
-    /// Assemble a (massive) bispinor with this flow direction
+    /// Assemble a (massive) bispinor with this adjoint (bra/ket)
     fn build_bispinor<F: Real>(
         p: LorentzVector<F, Contravariant>,
         mass: F,
@@ -413,26 +413,26 @@ pub trait SpinorFlow: sealed::Sealed + Copy + PartialEq + Eq + 'static {
         nsf: Charge,
     ) -> Bispinor<F, Self>;
 
-    /// Apply the gamma-slash `v̸ = γ^μ v_μ` to a bispinor of this flow.
+    /// Apply the gamma-slash `v̸ = γ^μ v_μ` to a bispinor of this adjoint.
     ///
     /// `v` holds the **covariant** components `v_μ`; the kernel sums them against
     /// `γ^μ` directly. Variance handling (lowering a contravariant input) is the
     /// caller's job — see [`SpinorRepr::slash`].
     ///
-    /// The action depends on the flow because the open spinor index sits on a
+    /// The action depends on the adjoint because the open spinor index sits on a
     /// different side of `v̸`:
-    /// - **flow-in (ket)**: the left action `v̸ ψ`;
-    /// - **flow-out (bra)**: the right action `ψ̄ v̸`.
+    /// - **ket**: the left action `v̸ ψ`;
+    /// - **bra**: the right action `ψ̄ v̸`.
     fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4];
 }
 
-/// Marker for flowing-IN spinors (`u`/`v` columns).
+/// Marker for ket spinors (`u`/`v` columns).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FlowIn;
-impl sealed::Sealed for FlowIn {}
-impl SpinorFlow for FlowIn {
-    type Opposite = FlowOut;
-    const INCOMING: bool = true;
+pub struct Ket;
+impl sealed::Sealed for Ket {}
+impl DiracAdjoint for Ket {
+    type Dual = Bra;
+    const KET: bool = true;
 
     fn build_bispinor<F: Real>(
         p: LorentzVector<F, Contravariant>,
@@ -466,13 +466,13 @@ impl SpinorFlow for FlowIn {
     }
 }
 
-/// Marker for flowing-OUT spinors (`ū`/`v̄` rows).
+/// Marker for bra spinors (`ū`/`v̄` rows).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FlowOut;
-impl sealed::Sealed for FlowOut {}
-impl SpinorFlow for FlowOut {
-    type Opposite = FlowIn;
-    const INCOMING: bool = false;
+pub struct Bra;
+impl sealed::Sealed for Bra {}
+impl DiracAdjoint for Bra {
+    type Dual = Ket;
+    const KET: bool = false;
 
     fn build_bispinor<F: Real>(
         p: LorentzVector<F, Contravariant>,
@@ -484,7 +484,7 @@ impl SpinorFlow for FlowOut {
     }
 
     /// Bra right action `ψ̄ v̸`, stored in the same standard bra layout the
-    /// flow-out spinor uses (`ψ̄ = ψ† γ⁰`, i.e. `bar`). This is the row–matrix
+    /// bra spinor uses (`ψ̄ = ψ† γ⁰`, i.e. `bar`). This is the row–matrix
     /// product `(ψ̄) · v̸` written component-wise: the left block `(ψ̄_L)` multiplies
     /// `σ̄·v` into columns 0–1 and the right block `(ψ̄_R)` multiplies `σ·v` into
     /// columns 2–3. It is the transpose, NOT the chiral-swap, of the ket action,
@@ -505,16 +505,16 @@ impl SpinorFlow for FlowOut {
     }
 }
 
-/// Marker for flows that can sit on the bra (out) side of a bilinear.
-pub trait OutFlow: SpinorFlow {}
-impl OutFlow for FlowOut {}
+/// Marker for adjoints that can sit on the bra side of a bilinear.
+pub trait IsBra: DiracAdjoint {}
+impl IsBra for Bra {}
 
 /// Spin-½ Lorentz representation.
 ///
 /// This is a trait to allow for multiple concrete bases (e.g. Weyl, Dirac) to be implemented.
-pub trait SpinorRepr<F: Real, Flow: SpinorFlow = FlowIn>: LorentzRepr<F> {
+pub trait SpinorRepr<F: Real, Adj: DiracAdjoint = Ket>: LorentzRepr<F> {
     /// The dual representation (e.g. for Weyl spinors, the dual of (½,0) is (0,½)).
-    type Dual: SpinorRepr<F, Flow::Opposite, Scalar = Self::Scalar>;
+    type Dual: SpinorRepr<F, Adj::Dual, Scalar = Self::Scalar>;
 
     /// Dirac adjoint (dualize operation for bispinors)
     ///
@@ -548,22 +548,22 @@ pub trait SpinorRepr<F: Real, Flow: SpinorFlow = FlowIn>: LorentzRepr<F> {
     /// Left-handed fermion current  `J_L^μ = v̄_out γ^μ P_L u_in`.
     fn left_current(&self, fi: &Self::Dual) -> ComplexVector<F, Contravariant>
     where
-        Flow: OutFlow;
+        Adj: IsBra;
 
     /// Right-handed fermion current  `J_R^μ = v̄_out γ^μ P_R u_in`.
     fn right_current(&self, fi: &Self::Dual) -> ComplexVector<F, Contravariant>
     where
-        Flow: OutFlow;
+        Adj: IsBra;
 
     /// Scalar bilinear with chiral structure: `f̄ Γ f` where Γ ∈ {Identity, P_L, P_R}.
     fn scalar_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> C<F>
     where
-        Flow: OutFlow;
+        Adj: IsBra;
 
     /// Pseudoscalar bilinear with chiral structure: `f̄ γ^5 Γ f` where Γ ∈ {Identity, P_L, P_R}.
     fn pseudoscalar_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> C<F>
     where
-        Flow: OutFlow;
+        Adj: IsBra;
 
     /// Vector bilinear contraction: `f̄ γ^μ Γ f` where `Γ` encodes chirality.
     ///
@@ -577,7 +577,7 @@ pub trait SpinorRepr<F: Real, Flow: SpinorFlow = FlowIn>: LorentzRepr<F> {
         chirality: Chirality,
     ) -> ComplexVector<F, Contravariant>
     where
-        Flow: OutFlow,
+        Adj: IsBra,
     {
         match chirality {
             Chirality::Left => self.left_current(fi),
@@ -600,7 +600,7 @@ pub trait SpinorRepr<F: Real, Flow: SpinorFlow = FlowIn>: LorentzRepr<F> {
         chirality: Chirality,
     ) -> ComplexVector<F, Contravariant>
     where
-        Flow: OutFlow,
+        Adj: IsBra,
     {
         match chirality {
             Chirality::Left => -self.left_current(fi),
@@ -630,9 +630,9 @@ pub trait SpinorRepr<F: Real, Flow: SpinorFlow = FlowIn>: LorentzRepr<F> {
 /// The `left_current` and `right_current` implementations match the Fortran
 /// HELAS routines `iovxxx` lines 86–89 exactly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Bispinor<F: Real, Flow: SpinorFlow>([C<F>; 4], PhantomData<Flow>);
+pub struct Bispinor<F: Real, Adj: DiracAdjoint>([C<F>; 4], PhantomData<Adj>);
 
-impl<F: Real, Flow: SpinorFlow> ArrayBacked<C<F>, 4> for Bispinor<F, Flow> {
+impl<F: Real, Adj: DiracAdjoint> ArrayBacked<C<F>, 4> for Bispinor<F, Adj> {
     #[inline(always)]
     fn as_array(&self) -> &[C<F>; 4] {
         &self.0
@@ -644,17 +644,17 @@ impl<F: Real, Flow: SpinorFlow> ArrayBacked<C<F>, 4> for Bispinor<F, Flow> {
     }
 }
 
-impl_vectorspace!(impl[F: Real, Flow: SpinorFlow] Bispinor<F, Flow>, scalar = C<F>);
+impl_vectorspace!(impl[F: Real, Adj: DiracAdjoint] Bispinor<F, Adj>, scalar = C<F>);
 
 // Allow scalar multiplication by a real (performance optimization)
-impl_mul_for_array!(impl[F: Real, Flow: SpinorFlow] Bispinor<F, Flow>, scalar = F);
+impl_mul_for_array!(impl[F: Real, Adj: DiracAdjoint] Bispinor<F, Adj>, scalar = F);
 
-impl<F: Real, Flow: SpinorFlow> LorentzRepr<F> for Bispinor<F, Flow> {
+impl<F: Real, Adj: DiracAdjoint> LorentzRepr<F> for Bispinor<F, Adj> {
     type Scalar = C<F>;
 }
 
-impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
-    type Dual = Bispinor<F, Flow::Opposite>;
+impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
+    type Dual = Bispinor<F, Adj::Dual>;
 
     fn dualize(&self) -> Self::Dual {
         let arr = self.as_array();
@@ -664,7 +664,7 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     /// Left projection: zero the right-chiral (indices 2-3) components, keeping left-chiral (0-1).
     #[inline(always)]
     fn project_left(self) -> Self {
-        // For either flow, the left projection is the same, because P_L doesn't "commute" with Dirac adjoint
+        // For either adjoint, the left projection is the same, because P_L doesn't "commute" with Dirac adjoint
         let psi = self.as_array();
         Bispinor::from_array([psi[0], psi[1], C::ZERO, C::ZERO])
     }
@@ -672,7 +672,7 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     /// Right projection: zero the left-chiral (indices 0-1) components, keeping right-chiral (2-3).
     #[inline(always)]
     fn project_right(self) -> Self {
-        // For either flow, the right projection is the same, because P_R doesn't "commute" with Dirac adjoint
+        // For either adjoint, the right projection is the same, because P_R doesn't "commute" with Dirac adjoint
         let psi = self.as_array();
         Bispinor::from_array([C::ZERO, C::ZERO, psi[2], psi[3]])
     }
@@ -680,20 +680,20 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     /// Apply the gamma-slash `v̸ = γ^μ v_μ`.
     ///
     /// Two orthogonal axes determine the action:
-    /// - **Flow** picks the side: a flow-in ket takes the left action `v̸ψ`, a
-    ///   flow-out bra the right action `ψ̄v̸` (distinct component formulas — see
-    ///   [`SpinorFlow::slash_bispinor`]).
+    /// - The **adjoint** picks the side: a ket takes the left action `v̸ψ`, a
+    ///   bra the right action `ψ̄v̸` (distinct component formulas — see
+    ///   [`DiracAdjoint::slash_bispinor`]).
     /// - **Variance** fixes the contraction. `v̸ = γ^μ v_μ` is a single operator;
-    ///   the kernel [`SpinorFlow::slash_bispinor`] sums the stored components
+    ///   the kernel [`DiracAdjoint::slash_bispinor`] sums the stored components
     ///   against `γ^μ` directly, which equals `γ^μ v_μ` only for a **covariant**
     ///   `v`. A contravariant `v` is lowered first, so the result is the same
     ///   physical operator regardless of how the vector was stored.
     fn slash<V: Variance>(self, v: &ComplexVector<F, V>) -> Self {
         if V::COVARIANT {
-            Bispinor::from_array(Flow::slash_bispinor(&self.0, &v.0))
+            Bispinor::from_array(Adj::slash_bispinor(&self.0, &v.0))
         } else {
             // Contravariant input: lower to v_μ = g_μν v^ν before contracting.
-            Bispinor::from_array(Flow::slash_bispinor(&self.0, &v.dualize().0))
+            Bispinor::from_array(Adj::slash_bispinor(&self.0, &v.dualize().0))
         }
     }
 
@@ -718,7 +718,7 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     /// | 3 | −σ³  | `−fo[2]·fi[0] + fo[3]·fi[1]` |
     fn left_current(&self, fi: &Self::Dual) -> ComplexVector<F, Contravariant>
     where
-        Flow: OutFlow,
+        Adj: IsBra,
     {
         let fo = &self.0;
         let fi = &fi.0;
@@ -746,7 +746,7 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     /// | 3 | +σ³  | `fo[0]·fi[2] − fo[1]·fi[3]` |
     fn right_current(&self, fi: &Self::Dual) -> ComplexVector<F, Contravariant>
     where
-        Flow: OutFlow,
+        Adj: IsBra,
     {
         let fo = &self.0;
         let fi = &fi.0;
@@ -775,7 +775,7 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     /// - Both (Identity): the sum of both.
     fn scalar_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> C<F>
     where
-        Flow: OutFlow,
+        Adj: IsBra,
     {
         let fo = &self.0;
         let fi = &fi.0;
@@ -794,7 +794,7 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     #[inline(always)]
     fn pseudoscalar_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> C<F>
     where
-        Flow: OutFlow,
+        Adj: IsBra,
     {
         match chirality {
             Chirality::Left => -self.scalar_bilinear(fi, Chirality::Left),
@@ -807,7 +807,7 @@ impl<F: Real, Flow: SpinorFlow> SpinorRepr<F, Flow> for Bispinor<F, Flow> {
     }
 }
 
-impl<F: Real, Flow: SpinorFlow> Bispinor<F, Flow> {
+impl<F: Real, Adj: DiracAdjoint> Bispinor<F, Adj> {
     /// The `i`-th Weyl-basis spinor component (0,1 left-chiral; 2,3 right-chiral).
     ///
     /// This index matches the HELAS/ALOHA 6-component fermion array: `component(k)`
@@ -825,7 +825,7 @@ impl<F: Real, Flow: SpinorFlow> Bispinor<F, Flow> {
         Bispinor(comps, PhantomData)
     }
 
-    /// Construct a spinor from a 4-momentum, mass, helicity, and fermion flow.
+    /// Construct a spinor from a 4-momentum, mass, helicity, and adjoint (bra/ket).
     #[inline(always)]
     pub fn from_momentum(
         p: LorentzVector<F, Contravariant>,
@@ -833,27 +833,27 @@ impl<F: Real, Flow: SpinorFlow> Bispinor<F, Flow> {
         nhel: SpinorHelicity,
         nsf: Charge,
     ) -> Self {
-        Flow::build_bispinor(p, mass, nhel, nsf)
+        Adj::build_bispinor(p, mass, nhel, nsf)
     }
 }
 
-impl<F: Real> Bispinor<F, FlowIn> {
-    /// Bar the spinor to get the outgoing flow: `ū = ψ† γ^0`.
+impl<F: Real> Bispinor<F, Ket> {
+    /// Bar the spinor to get the bra: `ū = ψ† γ^0`.
     #[inline(always)]
-    pub fn bar(self) -> Bispinor<F, FlowOut> {
+    pub fn bar(self) -> Bispinor<F, Bra> {
         self.dualize()
     }
 }
 
-impl<F: Real> Bispinor<F, FlowOut> {
-    /// Unbar the spinor to get the incoming flow: `u = γ^0 ψ̄†`.
+impl<F: Real> Bispinor<F, Bra> {
+    /// Unbar the spinor to get the ket: `u = γ^0 ψ̄†`.
     #[inline(always)]
-    pub fn unbar(self) -> Bispinor<F, FlowIn> {
+    pub fn unbar(self) -> Bispinor<F, Ket> {
         self.dualize()
     }
 }
 
-impl<F: Real + std::fmt::Display> std::fmt::Display for Bispinor<F, FlowIn> {
+impl<F: Real + std::fmt::Display> std::fmt::Display for Bispinor<F, Ket> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -863,7 +863,7 @@ impl<F: Real + std::fmt::Display> std::fmt::Display for Bispinor<F, FlowIn> {
     }
 }
 
-impl<F: Real + std::fmt::Display> std::fmt::Display for Bispinor<F, FlowOut> {
+impl<F: Real + std::fmt::Display> std::fmt::Display for Bispinor<F, Bra> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1070,8 +1070,8 @@ mod tests {
     /// Test spinor compleness relations
     ///
     /// We expect the following completeness relations to hold for the spinors:
-    /// - For flow-in (ket) spinors: `∑_h u(p, h) ū(p, h) = p̸ + m`
-    /// - For flow-out (bra) spinors: `∑_h v(p, h) v̄(p, h) = p̸ - m`
+    /// - For ket spinors: `∑_h u(p, h) ū(p, h) = p̸ + m`
+    /// - For bra spinors: `∑_h v(p, h) v̄(p, h) = p̸ - m`
     ///
     /// We can test these using Fierz identities (i.e. use the bilinears to
     /// project the completeness relation onto a basis of gamma matrices and
@@ -1163,17 +1163,17 @@ mod tests {
         }
     }
 
-    /// Test spinor projectors for consistency between in and out flows and with the currents.
+    /// Test spinor projectors for consistency between ket and bra adjoints and with the currents.
     #[test]
     fn test_spinor_projectors() {
         let in_cases = spinor_test_cases()
-            .map(|(p, mass, nhel, nsf)| Bispinor::<_, FlowIn>::from_momentum(p, mass, nhel, nsf))
+            .map(|(p, mass, nhel, nsf)| Bispinor::<_, Ket>::from_momentum(p, mass, nhel, nsf))
             .collect_vec();
         let out_cases = spinor_test_cases()
-            .map(|(p, mass, nhel, nsf)| Bispinor::<_, FlowOut>::from_momentum(p, mass, nhel, nsf))
+            .map(|(p, mass, nhel, nsf)| Bispinor::<_, Bra>::from_momentum(p, mass, nhel, nsf))
             .collect_vec();
         for (psi_in, psi_out) in iproduct!(in_cases, out_cases) {
-            // Projectors should flip with the flow reversal operation (bar/unbar)
+            // Projectors should flip with the adjoint reversal operation (bar/unbar)
             assert_eq!(psi_in.project_left().bar(), psi_in.bar().project_right());
             assert_eq!(psi_in.project_right().bar(), psi_in.bar().project_left());
 
@@ -1223,7 +1223,7 @@ mod tests {
                     }));
                 let expected = v.lower().dot(&current); // v_μ J^μ
 
-                // Flow-in (ket) path: ψ̄ (v̸ ψ)
+                // Ket path: ψ̄ (v̸ ψ)
                 let slash_in = psi_out.scalar_bilinear(&psi_in.slash(&v), Chirality::Both);
                 assert!(
                     (slash_in - expected).norm() < EPS_ABS,
@@ -1232,7 +1232,7 @@ mod tests {
                     expected,
                     basis
                 );
-                // Flow-out (bra) path: (ψ̄ v̸) ψ — must agree with the ket path.
+                // Bra path: (ψ̄ v̸) ψ — must agree with the ket path.
                 let slash_out = psi_out.slash(&v).scalar_bilinear(&psi_in, Chirality::Both);
                 assert!(
                     (slash_out - expected).norm() < EPS_ABS,
