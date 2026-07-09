@@ -783,6 +783,25 @@ mod tests {
         assert_eq!(out.momentum, v2.momentum + s.momentum);
     }
 
+    /// Stage 0 harness smoke test: drive a real (private) eval kernel through the
+    /// `prop_harness` toolbox, proving the generators + `check_agree` driver wire up to the
+    /// production kernels the later stages will certify. `metric_contract` realises the
+    /// symmetric bilinear `g_{μν} V^μ W^ν`, so contracting two random vectors in either order
+    /// must agree; this exercises the vector generators, the driver, and the scalar comparison
+    /// path. It is a harness self-check, not a Stage A/B equivalence certificate.
+    #[test]
+    fn prop_harness_drives_metric_contract_symmetry() {
+        use crate::helas::eval::prop_harness::{check_agree, rand_vector};
+        check_agree(
+            256,
+            0xC0FFEE,
+            1e-11,
+            |rng| vec![rand_vector(rng), rand_vector(rng)],
+            |c| metric_contract(&[c[0], c[1]]),
+            |c| metric_contract(&[c[1], c[0]]),
+        );
+    }
+
     /// Cross-check the s-channel FFV current and amplitude — evaluated through the
     /// production `run_forward` path — against the `jioxxx`/`iovxxx` reference routines.
     ///

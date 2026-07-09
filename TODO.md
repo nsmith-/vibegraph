@@ -134,8 +134,8 @@ _Deps: none; done before task 4 so the typed-convention work sits on a clean bas
 
 ### 4. `typed-repr-conventions` — Make all wavefunction/Lorentz conventions explicit in types
 
-**Status (2026-07-09, `cleanup-refactor`): terminology rename + typed propagator seam DONE;
-remaining node/peephole work deferred.** Landed:
+**Status (2026-07-09, `cleanup-refactor`): terminology rename + typed propagator seam + Stage 0
+property-test harness DONE; remaining node/peephole work (Stages A/B) deferred.** Landed:
 - §7 step 1 terminology rename `SpinorFlow`→`DiracAdjoint`/`Ket`/`Bra`, runtime `Flow`→`Adjoint`
   (`84bd2d3`).
 - `VectorWf` variance-parameterized (`aed1a80`).
@@ -155,24 +155,50 @@ off the WWγ vertex → `LowerVout` → massless photon propagator, exercising t
 branch bit-for-bit; `mu+ mu- > w+ w-` hits the same path). See `research/notes/13` §7 and memory
 `lorentz-eval-node-refactor`.
 
-**Staged plan for the remaining work — harness FIRST, then two goals in dedicated sessions:**
+**Staged plan for the remaining work — harness done; NEXT is the kernel factor-out; then
+simplify (Stage B) before fuse (Stage A, deferred pending profiling).**
 
-- **Stage 0 — shared property-test harness (do first, §7 step 5).** A reusable module: typed
-  random-input generators (ket/bra spinors, ε at each `Variance`, momenta) + an "evaluate a
-  subtree/kernel on random inputs and compare `WaveformSlot`s" core. Both goals below layer on it;
-  they are two *different* equivalence relations sharing this one toolbox.
-- **Stage A (own session) — `fused == generic`.** Oracle = the generic path. Certifies each fused
-  peephole kernel (FFV → `[g_L,g_R]`, …) reproduces the generic composition. This is the note 13
-  §7 step 4 peephole/instruction-selection layer + its per-kernel oracle. (Two-level
-  `LorentzEvalNode` restructure, now *purely structural*, is scaffolding for this.)
-- **Stage B (own session) — simplify the generic-kernel conventions.** Normalize
+_Design decision (2026-07-09): **drop the two-level `LorentzEvalNode` enum** — nested enums carry
+two discriminants (larger/cache-worse than the flat dataless `Op`), and the variance/adjoint it was
+to carry already live on the `WaveformSlot` (`Vector`/`VectorCo`, `FermionIn`/`FermionOut`) after the
+seam work. The "output type" axis stays a naming discipline on the flat `Op` set. See note 13 §1b
+REVISION + §7._
+
+- **Stage 0 — shared property-test harness (§7 step 3) ✅ Done.** `helas/eval/prop_harness.rs`
+  (`#[cfg(test)]`, `pub(crate)`): typed random-input generators (`rand_ket`/`rand_bra`,
+  `rand_vector`/`rand_vector_co` at each `Variance`, `rand_scalar`/`rand_real`, `rand_momentum`,
+  plus `rand_c` component-level for bespoke inputs) + a variant-strict `slots_approx_eq` comparator
+  (compares every stored component *and* routed momentum) + the `check_agree(n, seed, tol, gen,
+  lhs, rhs)` driver = the "evaluate two kernels on the same random inputs and compare
+  `WaveformSlot`s" core. Inputs are deliberately off-shell/EOM-violating (the identities are
+  algebraic). 5 self-tests (reflexivity, variant-mismatch/perturbation rejection, driver
+  pass + `#[should_panic]` disagreement) + a `run.rs` smoke test driving the real private
+  `metric_contract` kernel (bilinear symmetry). 175 lib tests green (was 169). Both goals below
+  layer on this; they are two *different* equivalence relations sharing this one toolbox.
+- **NEXT (own session) — kernel factor-out + 1-1 `Op` naming.** Move the Lorentz-primitive kernels
+  out of `run.rs` into `kernel.rs`; give each `Op` exactly one entry point named for it. Today's
+  mapping is N-to-1 (`GammaIout`/`GammaOout`→`off_shell_fermion_current`; `ProjM`/`ProjP`→
+  `chiral_project`; `ProjMAmp`/`ProjPAmp`/`IdentityAmp`→`scalar_bilinear_current`) and some Ops are
+  inline in `apply` (`MetricNegI`, `PMom`/`PMomOut`): add thin per-Op wrappers over shared private
+  helpers so `apply` collapses to `kernel::<op>(children)`. Structural/const ops (`External`/`Mul`/
+  `Add`/`Coupling`/…) stay out of scope. Move `prop_harness.rs` alongside; repoint its smoke test
+  off the `metric_contract` name. **Pure structural → bit-for-bit** (175 lib + `validate_helas_mg`
+  11/11). Then checkpoint + record a `benches/amplitude_eval` perf baseline.
+- **Stage B (own session, do BEFORE A) — simplify the generic-kernel conventions.** Normalize
   `LowerVout`/`MetricVout` to emit a fully-reconciled contravariant current (raise + rephase), so
   the `VectorCo` variant and its two extra propagator branches collapse into the plain `Vector`
   path (4 vector-propagator branches → 2; massive/massless split stays — it's physical). Oracle
   here is NOT `fused==generic` (circular — it would move the reference); it is
   `new_composite == old_composite` refactor-invariance at the *contracted-observable* seam
   (produce→propagate→contract), tested against the MG-anchored OLD convention, so it inherits the
-  11/11 validation. MG net stays the final anchor.
+  11/11 validation. Amplitude-preserving but primitive-output-*changing* → never test
+  `new_primitive == old_primitive`. Blocker: fold in the pinned −i/+i / MetricVout-−1 chain-phase
+  ledger, don't rebalance blindly. Re-checkpoint perf after. MG net stays the final anchor.
+- **Stage A (own session, DEFERRED pending profiling) — `fused == generic`.** Peephole/
+  instruction-selection layer (note 13 §7 step 5a) + coordinate read-off (FFV → `[g_L,g_R]`, …),
+  oracle = the generic path. This is a *performance* play, so **profile `run.rs` first** — the
+  forward-pass `Vec` churn, `C<F>`-vs-`F` multiply, and arena traversal may dominate kernel-fusion
+  wins. Pursue only if fusion proves the bottleneck. (No two-level node scaffolding — dropped.)
 
 The big one. Supersedes `lorentz-eval-node-2level` (below) and absorbs the note-11
 `Flow`-into-`repr` move. Every convention bug in the note-12 hunt lived at a hand-coded
@@ -203,11 +229,12 @@ duality boundary (flow, crossing, variance).
       via the rooting-chosen fermion-arrow, with `crossed` recording the mismatch vs
       physical momentum. Flow and Charge are the independent inputs; bra/ket is not a
       free fourth axis.
-- Implementation: two-level `LorentzEvalNode` (outer = output type carrying
-  variance/adjoint: `ScalarOut`/`VectorOut<V>`/`SpinorOut<Ket|Bra>`; inner = UFO
-  primitive), variance-parameterized `VectorWf`/`WaveformSlot`. Collapses
-  `Metric`/`MetricNegI`/`MetricVout`/`LowerVout` (`root_lorentz.rs`) and
-  `Propagate`/`PropagateLowered` (`run.rs`) into variance-typed nodes.
+- Implementation: ~~two-level `LorentzEvalNode`~~ **SUPERSEDED — see the revised staged plan
+  above and note 13 §1b REVISION.** The two-level enum is dropped (layout cost + redundant with
+  slot-carried variance/adjoint). What actually landed: variance-parameterized `VectorWf` +
+  `WaveformSlot::VectorCo` (variance on the register) and a variance-dispatching propagator that
+  killed `Op::PropagateLowered`. Remaining structure work is the flat kernel factor-out (NEXT) and
+  the Stage B convention simplification, not a node-level restructure.
 - Regression net: the 11 MG-validated processes (task 2 keeps them fast).
 - **Design of record: `research/notes/13-typed-repr-conventions-design.md`** — general typed IR
   + peephole/instruction-selection rewrite layer, per-kernel `fused==generic` property tests,

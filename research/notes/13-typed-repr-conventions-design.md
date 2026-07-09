@@ -81,6 +81,23 @@ buy compile-time proof at a large churn/altitude cost that is not justified here
 belongs to `color-flow`; the Weyl ε belongs to a future Weyl refactor; design the sign in (per
 `11`) but do not use it yet.
 
+> **REVISION (2026-07-09, `cleanup-refactor`): drop the two-*level* enum; keep a flat, clearly-
+> labeled op set.** Two reasons, learned after the typed-propagator-seam work landed:
+> 1. **Layout cost.** A nested `enum Outer { VectorOut(V), SpinorOut(Adj), … }` carries *two*
+>    discriminants (Rust niche-packs only opportunistically), so it is strictly larger and
+>    cache-worse than the flat, dataless `Op` (`op.rs`) that already fits in a byte. The eval AST
+>    is an arena walked in the VEGAS inner loop — node size matters.
+> 2. **The tag is redundant.** The variance/adjoint the outer level was meant to carry *already
+>    live on the register* after the seam work: variance via `WaveformSlot::Vector`/`VectorCo`,
+>    adjoint via `FermionIn`/`FermionOut`. A `VectorOut<V>` node tag would only re-encode what the
+>    produced slot already says — paying memory to duplicate a fact.
+>
+> So the "output type" axis stays a **naming/documentation discipline on the flat `Op` set**, not
+> a second enum level. Nothing to tear down: the two-level node was only ever planned. The typing
+> that prevents duality-boundary bugs is the slot's variance/adjoint (already done); the flat `Op`
+> enum is the node representation. Concretely this rewrites §7 step 2 (below): no two-level node —
+> instead **factor the kernels out of `run.rs` and name them 1-1 with `Op`.**
+
 ---
 
 ## 2. The intertwiner basis is (mostly) enumerable from the leg reps
@@ -261,16 +278,43 @@ LO becomes imminent.
 
 ## 7. Implementation sketch (aligns with TODO task 4)
 
-1. **Terminology rename (do first):** `SpinorFlow`/`FlowIn`/`FlowOut` → `SpinorAdjoint`/`Ket`/`Bra`
-   in `repr/lorentz.rs`; runtime `Flow`/`LegFlow` in `root_lorentz.rs`. Reserve "Flow" for the
-   in/out axis at `wavefn`. Pure rename + re-placement; keep all 11 processes bit-for-bit.
-2. **Two-level `LorentzEvalNode`:** outer = output type carrying variance/adjoint
-   (`ScalarOut`/`VectorOut<V>`/`SpinorOut<Ket|Bra>`); inner = primitive. Variance-parameterize
-   `VectorWf`/`WaveformSlot`.
-3. **Typed propagator node** (musical iso), collapsing `Metric`/`MetricNegI`/`MetricVout`/
-   `LowerVout` and `Propagate`/`PropagateLowered` into variance-typed nodes (§4).
-4. **Peephole layer + coordinate read-off** for the §2b catalog; generic fallback for the rest.
-5. **Property-test harness:** for each fused kernel, `fused(random) == generic(random)`.
+*Steps 1–3 revised per the §1b REVISION (flat op set, not a two-level enum) and the 2026-07-09
+re-plan (harness first; simplify before optimize; Stage A may defer). Status flags reflect
+`cleanup-refactor`.*
+
+1. **Terminology rename ✅ Done** (`84bd2d3`): `SpinorFlow`/`FlowIn`/`FlowOut` →
+   `DiracAdjoint`/`Ket`/`Bra` in `repr/lorentz.rs`; runtime `Flow`/`LegFlow` → `Adjoint`/`LegAdjoint`
+   in `root_lorentz.rs`. "Flow" reserved for the in/out axis at `wavefn`.
+2. **Typed propagator seam ✅ Done** (`aed1a80`, `402322c`): `VectorWf` variance-parameterized;
+   `WaveformSlot::VectorCo` carries the index-lowered currents; the propagator dispatches on slot
+   variance. Variance/adjoint now live **on the register**, not a node tag. Killed
+   `Op::PropagateLowered` + `PropInfo.lowered_storage` + `has_flipped_vector_out`.
+3. **Property-test harness (Stage 0) ✅ Done** (uncommitted): `helas/eval/prop_harness.rs` —
+   typed random-input generators + variant-strict `slots_approx_eq` + the `check_agree` driver.
+   The shared toolbox for steps 5a/5b.
+4. **Kernel factor-out + 1-1 `Op` naming (NEXT session).** Move the Lorentz-primitive kernels out
+   of `run.rs` into `kernel.rs`; give each `Op` exactly one entry point named for it
+   (snake_cased). Today's mapping is N-to-1 (`GammaIout`/`GammaOout`→`off_shell_fermion_current`;
+   `ProjM`/`ProjP`→`chiral_project`; `ProjMAmp`/`ProjPAmp`/`IdentityAmp`→`scalar_bilinear_current`)
+   and some Ops are inline in `apply` (`MetricNegI`, `PMom`/`PMomOut`): add thin per-Op wrappers
+   delegating to shared private helpers, so `apply` collapses to `kernel::<op>(children)`.
+   Structural/const ops (`External`/`Mul`/`Add`/`Coupling`/…) stay out of scope. Also move
+   `prop_harness.rs` alongside. **Pure structural refactor → bit-for-bit** (175 lib +
+   `validate_helas_mg` 11/11); repoint the harness smoke test off the old `metric_contract` name.
+   Then **checkpoint + record a perf baseline** (`benches/amplitude_eval`).
+5. **Two equivalence stages on the harness — Stage B FIRST, Stage A deferred:**
+   - **5b. Stage B (simplify, do first):** normalize `MetricVout`/`LowerVout` so the `VectorCo`
+     variant and its two extra propagator branches collapse into the plain `Vector` path
+     (massive/massless split stays — physical). Oracle = `new_composite == old_composite`
+     refactor-invariance at the produce→propagate→contract seam vs the MG-anchored OLD convention
+     (NOT `fused==generic` — circular). Amplitude-preserving but primitive-output-*changing*, so
+     never test `new_primitive == old_primitive`. Blocker: fold in the pinned −i/+i / MetricVout-−1
+     chain-phase ledger, don't rebalance it blindly. Re-checkpoint perf after.
+   - **5a. Stage A (fuse, deferred pending profiling):** peephole/instruction-selection rewrite +
+     coordinate read-off for the §2b catalog; per-kernel oracle `fused(random) == generic(random)`.
+     This is a *performance* play. **Profile `run.rs` first** — the forward-pass `Vec` churn,
+     `C<F>`-vs-`F` multiply, and arena traversal may dominate kernel-fusion wins. Pursue only if
+     fusion proves the bottleneck.
 6. **Regression net:** the 11 MG-validated processes stay bit-for-bit throughout (task 2 keeps them
    fast).
 

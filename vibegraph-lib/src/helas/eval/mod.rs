@@ -26,6 +26,11 @@ mod error;
 mod fold;
 mod lower;
 mod op;
+// Stage 0 property-test harness (typed-repr-conventions): reusable typed random-input
+// generators + a "compare two kernels on the same random inputs" driver, shared by the
+// later `fused==generic` (Stage A) and convention-refactor (Stage B) sessions.
+#[cfg(test)]
+mod prop_harness;
 mod root_diagram;
 mod root_lorentz;
 mod run;
