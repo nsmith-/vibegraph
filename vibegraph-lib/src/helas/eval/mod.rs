@@ -18,12 +18,17 @@
 //! - `compile.rs` — orchestrates passes 1–3 into a card-independent `AmplitudeEvaluator`.
 //! - `run.rs` — `BoundAmplitude`: `BoundAmplitude::bind` resolves an `EvaluatedModel`
 //!   into the pools; a single forward pass evaluates the folded arena.
+//! - `kernel.rs` — the Lorentz-primitive eval kernels `run::apply` dispatches to
+//!   (one `pub(crate)` fn per Lorentz `Op`, named for it).
 
 mod ast;
 mod compile;
 mod diagram_eval;
 mod error;
 mod fold;
+// Lorentz-primitive eval kernels (one `pub(crate)` fn per Lorentz `Op`, named for it);
+// the `run::apply` dispatch is `kernel::<op>(children)`.
+mod kernel;
 mod lower;
 mod op;
 // Stage 0 property-test harness (typed-repr-conventions): reusable typed random-input
