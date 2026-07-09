@@ -147,12 +147,32 @@ remaining node/peephole work deferred.** Landed:
   11/11 bit-for-bit.
 
 This delivered the type-safety + bool-elimination goal (variance now lives on the slot at the
-duality boundary). **Deferred (own future session):** the two-level `LorentzEvalNode` restructure
-is now *purely structural* (variance already on the slot) — its value is peephole scaffolding, not
-type-safety — plus the peephole/fused-kernel layer and per-kernel `fused==generic` property tests.
-Findings that revise the remaining plan: (1) don't rebalance the pinned −i/+i V-vs-S chain-phase
-split; (2) the propagator is not a clean musical iso (massless branch does not raise). See
-`research/notes/13` §7 and memory `lorentz-eval-node-refactor`.
+duality boundary). Findings that revise the remaining plan: (1) don't naively rebalance the pinned
+−i/+i V-vs-S chain-phase split; (2) the propagator is not a clean musical iso — the massive
+covariant branch raises the lowered index in place, the massless branch defers the raise to the
+downstream contraction — but BOTH sides are MG-validated (`ee_to_wpwm` roots its s-channel photon
+off the WWγ vertex → `LowerVout` → massless photon propagator, exercising the massless covariant
+branch bit-for-bit; `mu+ mu- > w+ w-` hits the same path). See `research/notes/13` §7 and memory
+`lorentz-eval-node-refactor`.
+
+**Staged plan for the remaining work — harness FIRST, then two goals in dedicated sessions:**
+
+- **Stage 0 — shared property-test harness (do first, §7 step 5).** A reusable module: typed
+  random-input generators (ket/bra spinors, ε at each `Variance`, momenta) + an "evaluate a
+  subtree/kernel on random inputs and compare `WaveformSlot`s" core. Both goals below layer on it;
+  they are two *different* equivalence relations sharing this one toolbox.
+- **Stage A (own session) — `fused == generic`.** Oracle = the generic path. Certifies each fused
+  peephole kernel (FFV → `[g_L,g_R]`, …) reproduces the generic composition. This is the note 13
+  §7 step 4 peephole/instruction-selection layer + its per-kernel oracle. (Two-level
+  `LorentzEvalNode` restructure, now *purely structural*, is scaffolding for this.)
+- **Stage B (own session) — simplify the generic-kernel conventions.** Normalize
+  `LowerVout`/`MetricVout` to emit a fully-reconciled contravariant current (raise + rephase), so
+  the `VectorCo` variant and its two extra propagator branches collapse into the plain `Vector`
+  path (4 vector-propagator branches → 2; massive/massless split stays — it's physical). Oracle
+  here is NOT `fused==generic` (circular — it would move the reference); it is
+  `new_composite == old_composite` refactor-invariance at the *contracted-observable* seam
+  (produce→propagate→contract), tested against the MG-anchored OLD convention, so it inherits the
+  11/11 validation. MG net stays the final anchor.
 
 The big one. Supersedes `lorentz-eval-node-2level` (below) and absorbs the note-11
 `Flow`-into-`repr` move. Every convention bug in the note-12 hunt lived at a hand-coded
