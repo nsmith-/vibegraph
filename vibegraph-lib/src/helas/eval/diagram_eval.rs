@@ -10,7 +10,7 @@
 
 use itertools::Itertools;
 
-use super::root_lorentz::{Flow, LegFlow, RootLorentzError, RootedTerm};
+use super::root_lorentz::{Adjoint, LegAdjoint, RootLorentzError, RootedTerm};
 use crate::helas::repr::numbers::Charge;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
@@ -29,26 +29,26 @@ pub struct ExtLegInfo {
     pub spin: i32,
     /// Charge
     pub charge: Charge,
-    /// Whether this leg is incoming (`leg_idx < n_in`); selects ket/bra flow and the
+    /// Whether this leg is incoming (`leg_idx < n_in`); selects ket/bra adjoint and the
     /// HELAS `nsf` sign of the external wavefunction.
     pub incoming: bool,
 }
 
 impl ExtLegInfo {
-    /// Spinor flow of this external leg, or `None` for non-Dirac legs.
+    /// Spinor adjoint of this external leg, or `None` for non-Dirac legs.
     ///
-    /// Mirrors the HELAS external-flow rule applied at eval time in
-    /// `build_external_core`: a Dirac leg is a ket (flow-in) iff it is an incoming
+    /// Mirrors the HELAS external-adjoint rule applied at eval time in
+    /// `build_external_core`: a Dirac leg is a ket (ket) iff it is an incoming
     /// particle or an outgoing antiparticle, i.e. `incoming == is_particle`.
-    pub fn flow(&self) -> Option<Flow> {
+    pub fn adjoint(&self) -> Option<Adjoint> {
         if self.spin != 2 {
             return None;
         }
         let is_particle = matches!(self.charge, Charge::Particle);
         Some(if self.incoming == is_particle {
-            Flow::In
+            Adjoint::Ket
         } else {
-            Flow::Out
+            Adjoint::Bra
         })
     }
 }
@@ -103,7 +103,7 @@ impl VertexTerm {
         _color: &str, // TODO: handle color structures if needed
         coupling_id: CouplingId,
         result_leg_idx: Option<usize>,
-        flows: &[Option<LegFlow>],
+        flows: &[Option<LegAdjoint>],
     ) -> Result<Self, RootLorentzError> {
         let lorentz = model.lorentz_struct(lorentz_id);
 
@@ -150,7 +150,7 @@ impl VertexInfo {
         model: &UFOModel,
         id: VertexId,
         result_leg_idx: Option<usize>,
-        flows: &[Option<LegFlow>],
+        flows: &[Option<LegAdjoint>],
     ) -> Result<Self, RootLorentzError> {
         let vertex = model.vertex_def(id);
         let terms = vertex

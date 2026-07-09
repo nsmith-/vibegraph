@@ -1,7 +1,7 @@
 use num_complex::ComplexFloat;
 
 use crate::helas::repr::{
-    lorentz::{Bispinor, ComplexVector, SpinorFlow, SpinorRepr, VectorRepr},
+    lorentz::{Bispinor, ComplexVector, DiracAdjoint, SpinorRepr, VectorRepr},
     numbers::Chirality,
     r, ri, Real, C,
 };
@@ -176,7 +176,7 @@ pub fn iovxxx<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, v: &VectorWf<F>, g
 // `jioxxx` current times that `−i`.
 
 /// The four Weyl-basis spinor components, ordered as the HELAS/ALOHA `F(3..6)` array.
-fn spinor_components<F: Real, Flow: SpinorFlow>(s: &Bispinor<F, Flow>) -> [C<F>; 4] {
+fn spinor_components<F: Real, Adj: DiracAdjoint>(s: &Bispinor<F, Adj>) -> [C<F>; 4] {
     [
         s.component(0),
         s.component(1),
