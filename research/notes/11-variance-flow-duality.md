@@ -1,5 +1,11 @@
 # Unifying `Variance` and `Flow` as form-induced dualities
 
+> **⚠ Superseded as design input (2026-07-08) by `13-typed-repr-conventions-design.md`.**
+> `13` §5 folds in this note's form/adjoint unification and the three-axis terminology split
+> (Variance / bra-unbar adjoint / Flow), but adopts *only the invariants* — not a blanket
+> `Paired`/`Side` trait. Kept for the form-kind taxonomy (symmetric/Hermitian/alternating) and
+> the Weyl-ε roadmap.
+
 > **⚠ Terminology correction (2026-07-07).** Throughout this note "`Flow`" names the
 > **bra/unbar (Dirac-adjoint) duality** — ket (u/v columns) ↔ bra (ū/v̄ rows), iso
 > `bar()` = ψ†γ⁰, spinor-only. That is the axis this note pairs with `Variance`, and the

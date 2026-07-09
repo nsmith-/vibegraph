@@ -1,5 +1,11 @@
 # UFO and ALOHA type matrix for medium-term implementation
 
+> **⚠ Design direction superseded (2026-07-08) by `13-typed-repr-conventions-design.md`.**
+> The forward-looking parts here (the `Intertwiner{2,3,4}Leg` traits, variance newtypes, the
+> Phase C operator-typing plan) are replaced by `13`'s two-tier design (general typed IR +
+> peephole kernels). The *ground truth* below — UFO spin codes, ALOHA operator/value families,
+> the `ProjM`/`ProjP` naming rationale — remains valid reference.
+
 **Status:** Complete, implemented in `6596913318a33a2a0f03ac505ee84f5874385c20`
 
 This note proposes a medium-term Rust type system for Lorentz objects based on

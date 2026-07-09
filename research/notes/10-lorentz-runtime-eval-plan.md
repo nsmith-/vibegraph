@@ -1,5 +1,12 @@
 # 10 — Lorentz Runtime Evaluator: Detailed Design and Implementation Plan
 
+> **⚠ Implemented, and its future direction superseded (2026-07-08) by
+> `13-typed-repr-conventions-design.md`.** This plan shipped as `helas-generalize` (the slot
+> machine, `WaveformSlot`, `DiagramAst`/`EvalStep`). Its `DispatchKind` pattern-matching (§6) is
+> refined by `13` into the general-IR + peephole/instruction-selection design; the untyped
+> `WaveformSlot`/variance policy (§5.1, "meaningless for internal off-shell currents") is exactly
+> what `13`'s typed two-level node replaces. Kept as implementation reference.
+
 **Status:** Planning (2026-06-01)  
 **Depends on:** note `09` (type matrix ✅), `feyngraph-ufo-replace` (spin_map ✅)  
 **Implements:** `lorentz-runtime-eval` TODO item  

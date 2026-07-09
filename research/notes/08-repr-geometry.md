@@ -1,5 +1,10 @@
 # Geometric picture for `repr.rs`
 
+> **⚠ Superseded as design input (2026-07-08) by `13-typed-repr-conventions-design.md`.**
+> `13` adopts the intertwiner/form *typing discipline* from this note but deliberately does
+> **not** lift the blanket `Intertwiner<In,Out>` trait / product-bundle machinery into the eval
+> layer (too much churn/altitude for the payoff). Kept for the geometric motivation and history.
+
 **Status:** Complete, partially oudated by updates made following `09-ufo-aloha-type-matrix.md`. Implemented in `5cd7fd5fcf62ac686a3fdfccc42b140fd88ae5de`.
 
 It would be nice to capture some hint of the geometric picture of the field

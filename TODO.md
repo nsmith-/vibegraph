@@ -168,8 +168,13 @@ duality boundary (flow, crossing, variance).
   primitive), variance-parameterized `VectorWf`/`WaveformSlot`. Collapses
   `Metric`/`MetricNegI`/`MetricVout`/`LowerVout` (`root_lorentz.rs`) and
   `Propagate`/`PropagateLowered` (`run.rs`) into variance-typed nodes.
-- Regression net: the 11 MG-validated processes (task 2 keeps them fast). Design notes:
-  `research/notes/10-lorentz-runtime-eval-plan.md`, `11-variance-flow-duality.md`.
+- Regression net: the 11 MG-validated processes (task 2 keeps them fast).
+- **Design of record: `research/notes/13-typed-repr-conventions-design.md`** — general typed IR
+  + peephole/instruction-selection rewrite layer, per-kernel `fused==generic` property tests,
+  the §2b intertwiner-basis catalog, and the three-axis terminology fix. Supersedes the input
+  notes `08`/`09`/`10`/`11` as design input. Scope decision (i): land the typed general SM node
+  set + peephole + property-test harness now; leave `ε`/`σ`/high-grade (dim-8 EFT) as a
+  documented, un-implemented extension point in the general tier.
 
 _Deps: benefits from `diagram-canonical-stream` (clean rooting) + `feature-gate-mg-tests`
 (fast regression). Design stage before any code._
