@@ -436,10 +436,12 @@ fn build_external_core<F: Real>(
 /// the `MetricVout`/`LowerVout` output convention): the massive vector's longitudinal
 /// term is then formed with the *physical* current, `x − (g·q)(x⊙q)/m²`
 /// (= g·[J − q(q·J)/m²] up to the stored sign), instead of the contravariant-storage
-/// `x − q(q·x)/m²`. The propagator raises the index back (musical iso ♯), so every
-/// propagated current comes out contravariant. Only visible when the far side of the
-/// propagator also has q·J ≠ 0 (a massive-fermion current); pinned by the b b̄ 2→6
-/// double-ZZH diagrams vs MadGraph AMP() (validation/madgraph/compare_amps.py).
+/// `x − q(q·x)/m²`. Every propagated current comes out typed contravariant. The massive
+/// branch raises the covariant index here (its longitudinal term needs the physical
+/// vector); the massless branch defers the raise to the downstream contraction (see the
+/// per-branch notes below) — an asymmetry that is nonetheless MG-validated on both sides
+/// (`ee_to_wpwm`'s lowered photon current for the massless case; the b b̄ 2→6 double-ZZH
+/// diagrams for the massive case, vs MadGraph AMP() in validation/madgraph/compare_amps.py).
 fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> WaveformSlot<F> {
     match input {
         // Dirac propagator: -i (q̸ + m) / (q² - m² + i m Γ). The -i puts the fermion
@@ -488,10 +490,15 @@ fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> Wavefo
         WaveformSlot::VectorCo(wf) => {
             let q = wf.momentum;
             if mass == F::zero() {
-                // Massless numerator is the bare metric −i g^{μν}/q²; raising the stored
-                // ε_μ back happens at the downstream contraction, so this leaves the
-                // components untouched (typed contravariant). Unexercised by the current
-                // all-massive-internal net; preserved bit-for-bit for fidelity.
+                // Massless numerator is the bare metric −i g^{μν}/q². The metric raise is
+                // deferred to the downstream contraction (which lowers the *other*
+                // current), so here the stored ε_μ components pass through unchanged, typed
+                // contravariant — unlike the massive branch below, whose explicit
+                // longitudinal term forces it to raise here. This asymmetry is exercised
+                // and MG-validated: `ee_to_wpwm` roots its s-channel photon current off the
+                // WWγ vertex (`LowerVout`), so this branch dresses a lowered photon current
+                // and reproduces MadGraph bit-for-bit. (`mu+ mu- > w+ w-` hits the same
+                // path.)
                 WaveformSlot::Vector(VectorWf {
                     eps: ComplexVector::new([
                         wf.eps.component(0),
