@@ -304,13 +304,31 @@ re-plan (harness first; simplify before optimize; Stage A may defer). Status fla
    bit-for-bit** (175 lib + `validate_helas_mg` 11/11, max_rel_diff ≤ 6.25e-13). Perf baseline
    (`benches/amplitude_eval`, ee→μμ, release, N=10k): ~14.0 µs/eval — the Stage-A profiling anchor.
 5. **Two equivalence stages on the harness — Stage B FIRST, Stage A deferred:**
-   - **5b. Stage B (simplify, do first):** normalize `MetricVout`/`LowerVout` so the `VectorCo`
-     variant and its two extra propagator branches collapse into the plain `Vector` path
-     (massive/massless split stays — physical). Oracle = `new_composite == old_composite`
-     refactor-invariance at the produce→propagate→contract seam vs the MG-anchored OLD convention
-     (NOT `fused==generic` — circular). Amplitude-preserving but primitive-output-*changing*, so
-     never test `new_primitive == old_primitive`. Blocker: fold in the pinned −i/+i / MetricVout-−1
-     chain-phase ledger, don't rebalance it blindly. Re-checkpoint perf after.
+   - **5b. Stage B — SCOPE CORRECTED (2026-07-09 design stage): NOT a local simplify; it is a
+     global vector-convention rewrite.** The original plan — "normalize `MetricVout`/`LowerVout` so
+     `VectorCo` + its two extra propagator branches collapse into the plain `Vector` path" — was
+     shown to be *impossible as a producer-only change*:
+     - **Empirical:** routing `VectorCo` through `raise()` + the plain `Vector` branch (everything
+       else unchanged) breaks 5/11 MG processes — `ee_to_wpwm` catastrophically (max_rel_diff 1.72e3,
+       the massless photon via `LowerVout`) and the four massive-vector-current processes at 1–37%
+       (`ee_to_tatah`, `ee_to_mumu_tata`, `uux`, `bbx`).
+     - **Analytic:** the massless `VectorCo` branch *relabels* `ε_μ→ε^μ` (raw components, NO metric
+       raise) ×(−i/q²); the massive branch *raises* (spatial flip) AND uses the opposite propagator
+       phase (+i vs the plain branch's −i). Reproducing both from one contravariant producer output
+       through the plain branches needs producer values differing in the **time-component sign**
+       between the two mass regimes — no single mass-independent producer works. And the propagator
+       + the sink contract (`metric`/`slash`) are **shared with the already-correct FFV (`GammaVout`)
+       chains**, so the propagated `Vector` fed to them can't be changed producer-side.
+     - **⇒ Eliminating `VectorCo` requires moving *every* vector chain to one physical convention at
+       once:** the FFV/VVS/VVV producers, the vector propagator, and the vector contract — a global
+       re-derivation that re-attributes the non-physical −i/+i / MetricVout-−1 chain-phase split to
+       physical per-vertex/per-propagator factors. **Oracle:** the *closed-amplitude* MG net only —
+       a smaller harness "composite" with a fixed contract degenerates to `new_prop == old_prop`
+       (impossible), so `validate_helas_mg` + the per-diagram `compare_amps.py` AMP probe are the
+       real oracles (a produce→propagate→contract sub-composite is NOT faithful for a convention
+       change that alters intermediate currents). Multi-session, note-12-class; verify per-diagram,
+       not just |M|². Payoff: drop `WaveformSlot::VectorCo`, 4 vector-prop branches → 2. Re-checkpoint
+       perf after.
    - **5a. Stage A (fuse, deferred pending profiling):** peephole/instruction-selection rewrite +
      coordinate read-off for the §2b catalog; per-kernel oracle `fused(random) == generic(random)`.
      This is a *performance* play. **Profile `run.rs` first** — the forward-pass `Vec` churn,
