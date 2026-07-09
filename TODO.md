@@ -134,6 +134,26 @@ _Deps: none; done before task 4 so the typed-convention work sits on a clean bas
 
 ### 4. `typed-repr-conventions` — Make all wavefunction/Lorentz conventions explicit in types
 
+**Status (2026-07-09, `cleanup-refactor`): terminology rename + typed propagator seam DONE;
+remaining node/peephole work deferred.** Landed:
+- §7 step 1 terminology rename `SpinorFlow`→`DiracAdjoint`/`Ket`/`Bra`, runtime `Flow`→`Adjoint`
+  (`84bd2d3`).
+- `VectorWf` variance-parameterized (`aed1a80`).
+- **The typed propagator seam (`402322c`):** `WaveformSlot::VectorCo(VectorWf<F, Covariant>)`
+  carries the index-lowered off-shell vector currents; the propagator dispatches on slot
+  variance and raises them back (massive branch). Removed `Op::PropagateLowered`,
+  `PropInfo.lowered_storage` + its computation, `has_flipped_vector_out`, and the manual
+  component-poking in `metric_vout`/`lower_vout`/`propagate_core`. 169 lib + validate_helas_mg
+  11/11 bit-for-bit.
+
+This delivered the type-safety + bool-elimination goal (variance now lives on the slot at the
+duality boundary). **Deferred (own future session):** the two-level `LorentzEvalNode` restructure
+is now *purely structural* (variance already on the slot) — its value is peephole scaffolding, not
+type-safety — plus the peephole/fused-kernel layer and per-kernel `fused==generic` property tests.
+Findings that revise the remaining plan: (1) don't rebalance the pinned −i/+i V-vs-S chain-phase
+split; (2) the propagator is not a clean musical iso (massless branch does not raise). See
+`research/notes/13` §7 and memory `lorentz-eval-node-refactor`.
+
 The big one. Supersedes `lorentz-eval-node-2level` (below) and absorbs the note-11
 `Flow`-into-`repr` move. Every convention bug in the note-12 hunt lived at a hand-coded
 duality boundary (flow, crossing, variance).
