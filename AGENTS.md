@@ -71,6 +71,11 @@ cargo test           # Run all tests
 Extended validation tests are comprehensive but slow integration tests, **not run by default**.
 They are gated behind the `extended-validation` feature and require specific dependencies.
 
+**Skipping regeneration:** these tasks chain `depends-on` steps that regenerate reference data
+(MadGraph/HELAS output), which dominates the runtime. When you know the generated outputs are
+already fresh — e.g. you only touched Rust and reran the same task — pass `--skip-deps` to run
+just the final step: `pixi run -e madgraph --skip-deps validate-helas-mg`.
+
 #### Fortran HELAS Cross-check
 
 The `helas_validation` test compares Rust HELAS amplitudes against Fortran77 reference data.
