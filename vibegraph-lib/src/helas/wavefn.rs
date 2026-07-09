@@ -46,7 +46,8 @@
 //!
 //! (TODO)
 use crate::helas::repr::lorentz::{
-    Bispinor, Bra, ComplexVector, Contravariant, DiracAdjoint, Ket, LorentzVector, SpinorRepr,
+    Bispinor, Bra, ComplexVector, Contravariant, Covariant, DiracAdjoint, Ket, LorentzVector,
+    SpinorRepr, Variance,
 };
 use crate::helas::repr::numbers::{Charge, Chirality, SpinorHelicity};
 use crate::helas::repr::{Real, C};
@@ -164,18 +165,43 @@ impl<F: Real> OutDiracWf<F> {
 /// the associated 4-momentum.
 ///
 /// Used as both the result of `j3xxxx` and the input to `iovxxx`.
+///
+/// The polarisation carries its [`Variance`] in the type (`V`, default
+/// [`Contravariant`]). External legs and the P-less off-shell currents are
+/// contravariant `ε^μ`; index-lowering vertex/propagator kernels produce the
+/// covariant `ε_μ`, so the raise/lower at the propagator seam is type-checked
+/// rather than hand-coded. The `momentum` is always the physical contravariant
+/// 4-momentum `p^μ`.
 #[derive(Clone, Copy, Debug)]
-pub struct VectorWf<F: Real> {
-    /// Polarisation / Lorentz components in HELAS convention.
-    ///
-    /// We keep everything contravariant so that the off-sheel current and
-    /// external leg are the same type and can be used interchangeably in vertices.
-    /// TODO: in a future refactor we may prefer to let the propagator lower the index
-    pub eps: ComplexVector<F, Contravariant>,
+pub struct VectorWf<F: Real, V: Variance = Contravariant> {
+    /// Polarisation / Lorentz components in HELAS convention, at variance `V`.
+    pub eps: ComplexVector<F, V>,
     pub momentum: LorentzVector<F, Contravariant>,
 }
 
-impl<F: Real> VectorWf<F> {
+impl<F: Real> VectorWf<F, Covariant> {
+    /// Raise the polarisation index: `ε^μ = g^{μν} ε_ν` (momentum unchanged).
+    #[inline(always)]
+    pub fn raise(self) -> VectorWf<F, Contravariant> {
+        VectorWf {
+            eps: self.eps.raise(),
+            momentum: self.momentum,
+        }
+    }
+}
+
+impl<F: Real> VectorWf<F, Contravariant> {
+    /// Lower the polarisation index: `ε_μ = g_{μν} ε^ν` (momentum unchanged).
+    #[inline(always)]
+    pub fn lower(self) -> VectorWf<F, Covariant> {
+        VectorWf {
+            eps: self.eps.lower(),
+            momentum: self.momentum,
+        }
+    }
+}
+
+impl<F: Real> VectorWf<F, Contravariant> {
     /// On-shell polarization vector for a spin-1 external particle.
     ///
     /// # Arguments
