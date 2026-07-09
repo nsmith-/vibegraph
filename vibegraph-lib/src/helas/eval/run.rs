@@ -238,12 +238,9 @@ fn apply<F: Real>(
         Op::Propagate => {
             let mass = expect_real(children[1]);
             let width = expect_real(children[2]);
-            propagate_core(&children[0], mass, width, false)
-        }
-        Op::PropagateLowered => {
-            let mass = expect_real(children[1]);
-            let width = expect_real(children[2]);
-            propagate_core(&children[0], mass, width, true)
+            // The current's variance (`Vector` vs `VectorCo`) selects the longitudinal
+            // convention; the propagator always outputs a contravariant current.
+            propagate_core(&children[0], mass, width)
         }
         Op::Add => children
             .iter()
@@ -345,6 +342,10 @@ fn mul_apply<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
                 v.momentum = v.momentum + scalar_mom;
                 WaveformSlot::Vector(v)
             }
+            WaveformSlot::VectorCo(mut v) => {
+                v.momentum = v.momentum + scalar_mom;
+                WaveformSlot::VectorCo(v)
+            }
             WaveformSlot::FermionIn(mut f) => {
                 f.momentum = f.momentum - scalar_mom;
                 WaveformSlot::FermionIn(f)
@@ -431,19 +432,15 @@ fn build_external_core<F: Real>(
 /// off-shell current routines output it: `fvixxx` q=fi−vc, `fvoxxx` q=fo+vc,
 /// `jioxxx` jmom=fo−fi).
 ///
-/// `lowered` marks a vector current stored index-flipped (±g·J, the
-/// `MetricVout`/`LowerVout` output convention): the massive vector's longitudinal
-/// term must then be formed with the *physical* current, `x − (g·q)(x⊙q)/m²`
-/// (= g·[J − q(q·J)/m²] up to the stored sign), instead of the plain-storage
-/// `x − q(q·x)/m²`. Only visible when the far side of the propagator also has
-/// q·J ≠ 0 (a massive-fermion current); pinned by the b b̄ 2→6 double-ZZH
-/// diagrams vs MadGraph AMP() (validation/madgraph/compare_amps.py).
-fn propagate_core<F: Real>(
-    input: &WaveformSlot<F>,
-    mass: F,
-    width: F,
-    lowered: bool,
-) -> WaveformSlot<F> {
+/// A [`WaveformSlot::VectorCo`] input marks a vector current stored index-*down* (`ε_μ`,
+/// the `MetricVout`/`LowerVout` output convention): the massive vector's longitudinal
+/// term is then formed with the *physical* current, `x − (g·q)(x⊙q)/m²`
+/// (= g·[J − q(q·J)/m²] up to the stored sign), instead of the contravariant-storage
+/// `x − q(q·x)/m²`. The propagator raises the index back (musical iso ♯), so every
+/// propagated current comes out contravariant. Only visible when the far side of the
+/// propagator also has q·J ≠ 0 (a massive-fermion current); pinned by the b b̄ 2→6
+/// double-ZZH diagrams vs MadGraph AMP() (validation/madgraph/compare_amps.py).
+fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> WaveformSlot<F> {
     match input {
         // Dirac propagator: -i (q̸ + m) / (q² - m² + i m Γ). The -i puts the fermion
         // chain in phase with the vector chain (which is bit-validated against
@@ -464,46 +461,55 @@ fn propagate_core<F: Real>(
                 ri(-F::one()) * C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
             WaveformSlot::FermionOut(OutDiracWf::from_spinor(num * scale, wf.momentum))
         }
+        // Contravariant current (`ε^μ`: FFV / propagated). Plain-storage longitudinal.
         WaveformSlot::Vector(wf) => {
+            let q = wf.momentum;
             if mass == F::zero() {
-                let out = VectorWf {
+                WaveformSlot::Vector(VectorWf {
                     // -i / q^2
-                    eps: wf.eps * ri(-wf.momentum.m2().recip()),
-                    momentum: wf.momentum,
-                };
-                WaveformSlot::Vector(out)
+                    eps: wf.eps * ri(-q.m2().recip()),
+                    momentum: q,
+                })
             } else {
                 let vm2 = mass * mass;
-                let vmw = mass * width;
-                let denom = C::new(wf.momentum.m2() - vm2, vmw);
-                // -i (g - q q / m²) / (q² - m² + i m Γ), with the longitudinal
-                // subtraction matched to the current's storage convention (see
-                // the `lowered` doc above). Real m² in the subtraction, like
-                // ALOHA's OM3 = 1/M3².
-                let q = wf.momentum;
-                let (metric_term, cs, storage_sign) = if lowered {
-                    // Stored current is `−g·eps` (a MetricVout output, the VVS
-                    // vector leg): the physical lowered current E_ν up to the
-                    // MetricVout `−1`. The propagator's g^{μν} term raises it back,
-                    // g·(g·eps) = eps in the metric slot, and its longitudinal dot
-                    // is the natural pairing q^ν E_ν = eps·(g·q). The `−1` undoes
-                    // the MetricVout storage sign.
-                    let gq = LorentzVector::new(q.e(), -q.px(), -q.py(), -q.pz());
-                    let raised = ComplexVector::new([
+                let denom = C::new(q.m2() - vm2, mass * width);
+                // -i (g - q q / m²) / (q² - m² + i m Γ). Real m² in the subtraction,
+                // like ALOHA's OM3 = 1/M3².
+                let cs = wf.eps.dot_lorentz(&q) / vm2;
+                WaveformSlot::Vector(VectorWf {
+                    eps: (wf.eps - ComplexVector::from(q) * cs) * ri(-F::one()) / denom,
+                    momentum: q,
+                })
+            }
+        }
+        // Covariant current (`ε_μ`: a `MetricVout`/`LowerVout` output). The propagator's
+        // g^{μν} numerator raises the index back to contravariant (♯); its longitudinal
+        // dot is the natural covariant pairing `q^ν ε_ν = ε·q_μ` (see doc above).
+        WaveformSlot::VectorCo(wf) => {
+            let q = wf.momentum;
+            if mass == F::zero() {
+                // Massless numerator is the bare metric −i g^{μν}/q²; raising the stored
+                // ε_μ back happens at the downstream contraction, so this leaves the
+                // components untouched (typed contravariant). Unexercised by the current
+                // all-massive-internal net; preserved bit-for-bit for fidelity.
+                WaveformSlot::Vector(VectorWf {
+                    eps: ComplexVector::new([
                         wf.eps.component(0),
-                        -wf.eps.component(1),
-                        -wf.eps.component(2),
-                        -wf.eps.component(3),
-                    ]);
-                    (raised, wf.eps.dot_lorentz(&gq) / vm2, -F::one())
-                } else {
-                    (wf.eps, wf.eps.dot_lorentz(&q) / vm2, F::one())
-                };
-                let out = VectorWf {
-                    eps: (metric_term - ComplexVector::from(q) * cs) * ri(-storage_sign) / denom,
-                    momentum: wf.momentum,
-                };
-                WaveformSlot::Vector(out)
+                        wf.eps.component(1),
+                        wf.eps.component(2),
+                        wf.eps.component(3),
+                    ]) * ri(-q.m2().recip()),
+                    momentum: q,
+                })
+            } else {
+                let vm2 = mass * mass;
+                let denom = C::new(q.m2() - vm2, mass * width);
+                let raised = wf.eps.raise();
+                let cs = wf.eps.dot_lorentz(&q.lower()) / vm2;
+                WaveformSlot::Vector(VectorWf {
+                    eps: (raised - ComplexVector::from(q) * cs) * ri(F::one()) / denom,
+                    momentum: q,
+                })
             }
         }
         WaveformSlot::Scalar(wf) => {
@@ -645,15 +651,11 @@ fn metric_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let WaveformSlot::Vector(vin) = children[0] else {
         panic!("MetricVout: expected vector input");
     };
-    let e = &vin.eps;
-    WaveformSlot::Vector(VectorWf {
-        eps: ComplexVector::new([
-            -e.component(0),
-            e.component(1),
-            e.component(2),
-            e.component(3),
-        ]),
-        momentum: vin.momentum,
+    // −g·V: lower the partner's index (musical iso ♭) and carry the −1 vertex share.
+    let low = vin.lower();
+    WaveformSlot::VectorCo(VectorWf {
+        eps: -low.eps,
+        momentum: low.momentum,
     })
 }
 
@@ -666,16 +668,8 @@ fn lower_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let WaveformSlot::Vector(vin) = children[0] else {
         panic!("LowerVout: expected vector input");
     };
-    let e = &vin.eps;
-    WaveformSlot::Vector(VectorWf {
-        eps: ComplexVector::new([
-            e.component(0),
-            -e.component(1),
-            -e.component(2),
-            -e.component(3),
-        ]),
-        momentum: vin.momentum,
-    })
+    // g·V: lower the partner's index (musical iso ♭) with no vertex factor.
+    WaveformSlot::VectorCo(vin.lower())
 }
 
 /// `ProjMAmp`/`ProjPAmp`/`IdentityAmp`: scalar bilinear `ψ̄ Γ ψ` (`Γ = P_L`, `P_R`, or
@@ -758,8 +752,9 @@ mod tests {
             metric_vout(&[WaveformSlot::Vector(v2)]),
             WaveformSlot::Scalar(s),
         ]);
-        let WaveformSlot::Vector(out) = out else {
-            panic!("VVS rooted at a vector leg must produce a vector current");
+        // `MetricVout` emits the index-lowered (covariant) current `ε_μ`.
+        let WaveformSlot::VectorCo(out) = out else {
+            panic!("VVS rooted at a vector leg must produce a covariant vector current");
         };
 
         // −i × ALOHA VVS1P1N_1 (coupling stripped): -g·V2 · S.value
@@ -874,7 +869,6 @@ mod tests {
             let prop_info = PropInfo {
                 id: prop_id,
                 t_channel: false,
-                lowered_storage: false,
             };
             let amp_info = VertexInfo {
                 terms: vec![VertexTerm::from_ufo(
@@ -1076,7 +1070,6 @@ mod tests {
                         info: PropInfo {
                             id: prop_id,
                             t_channel: false,
-                            lowered_storage: false,
                         },
                         adjoint: None,
                         child: EvalNodeId::new(2),
@@ -1218,7 +1211,6 @@ mod tests {
                         info: PropInfo {
                             id: z_id,
                             t_channel: false,
-                            lowered_storage: false,
                         },
                         adjoint: None,
                         child: EvalNodeId::new(2),
@@ -1312,7 +1304,7 @@ mod tests {
             let fi = InDiracWf::from_momentum(p_f, mass, hel, charge);
             let vertex =
                 off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionIn(fi));
-            let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width, false) else {
+            let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width) else {
                 panic!("expected ket fermion from propagation");
             };
             let want = fvixxx(&fi, &v, [g.im, g.im], mass, width);
@@ -1336,7 +1328,7 @@ mod tests {
             let fo = fi.to_outgoing();
             let vertex =
                 off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionOut(fo));
-            let WaveformSlot::FermionOut(got) = propagate_core(&vertex, mass, width, false) else {
+            let WaveformSlot::FermionOut(got) = propagate_core(&vertex, mass, width) else {
                 panic!("expected bra fermion from propagation");
             };
             let want = fvoxxx(&fo, &v, [g.im, g.im], mass, width);
@@ -1394,8 +1386,7 @@ mod tests {
                 // Production composition for the chiral (ProjM) fermion current.
                 let projected = chiral_project(WaveformSlot::FermionIn(fi), Chirality::Left);
                 let vertex = off_shell_fermion_current(WaveformSlot::Vector(v), projected);
-                let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width, false)
-                else {
+                let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width) else {
                     panic!("expected ket fermion from chiral propagation");
                 };
 
@@ -1444,8 +1435,7 @@ mod tests {
                     left.spinor + right.spinor * 2.0,
                     left.momentum,
                 ));
-                let WaveformSlot::FermionIn(got4) = propagate_core(&summed, mass, width, false)
-                else {
+                let WaveformSlot::FermionIn(got4) = propagate_core(&summed, mass, width) else {
                     unreachable!()
                 };
                 let aloha4 = ffv4_2(&fi, &v, Complex64::from(1.0), mass, width);
@@ -1552,7 +1542,7 @@ mod tests {
                 let curr =
                     off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionIn(fi));
                 let WaveformSlot::FermionIn(got2) =
-                    propagate_core(&chiral_project(curr, Chirality::Left), mass, width, false)
+                    propagate_core(&chiral_project(curr, Chirality::Left), mass, width)
                 else {
                     panic!("expected ket fermion from chiral propagation");
                 };
@@ -1584,8 +1574,7 @@ mod tests {
                     left.spinor + right.spinor * 2.0,
                     left.momentum,
                 ));
-                let WaveformSlot::FermionIn(got4) = propagate_core(&summed, mass, width, false)
-                else {
+                let WaveformSlot::FermionIn(got4) = propagate_core(&summed, mass, width) else {
                     unreachable!()
                 };
                 let want4 = textbook(o, Complex64::new(2.0, 0.0));
@@ -1624,7 +1613,6 @@ mod tests {
                     ),
                     mass,
                     width,
-                    false,
                 ) else {
                     panic!("expected ket fermion");
                 };
@@ -1654,8 +1642,7 @@ mod tests {
                     l1.spinor + r1.spinor * 2.0,
                     l1.momentum,
                 ));
-                let WaveformSlot::FermionIn(g4b) = propagate_core(&summed1, mass, width, false)
-                else {
+                let WaveformSlot::FermionIn(g4b) = propagate_core(&summed1, mass, width) else {
                     unreachable!()
                 };
                 let want4b = textbook_proj_first(o, Complex64::new(2.0, 0.0));
@@ -1798,7 +1785,6 @@ mod tests {
                     ),
                     mass,
                     width,
-                    false,
                 ) else {
                     panic!("expected bra fermion");
                 };
@@ -1837,7 +1823,6 @@ mod tests {
                         )),
                         mass,
                         width,
-                        false,
                     ) else {
                         unreachable!()
                     };
@@ -2540,7 +2525,6 @@ mod tests {
                     info: PropInfo {
                         id: z_id,
                         t_channel: false,
-                        lowered_storage: false,
                     },
                     adjoint: None,
                     child: EvalNodeId::new(2),
@@ -2701,7 +2685,6 @@ mod tests {
                         info: PropInfo {
                             id: boson,
                             t_channel: false,
-                            lowered_storage: false,
                         },
                         adjoint: None,
                         child: EvalNodeId::new(2),
@@ -2716,7 +2699,6 @@ mod tests {
                         info: PropInfo {
                             id: em_id,
                             t_channel: false,
-                            lowered_storage: false,
                         },
                         adjoint: Some(ep_flow),
                         child: EvalNodeId::new(5),

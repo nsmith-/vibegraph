@@ -76,12 +76,7 @@ fn lower_diagram_node(tree: &DiagramEvalTree, id: EvalNodeId, b: &mut AstBuilder
             } else {
                 b.add(Op::Width, Sym::Particle(info.id), vec![])
             };
-            let op = if info.lowered_storage {
-                Op::PropagateLowered
-            } else {
-                Op::Propagate
-            };
-            b.add(op, Sym::None, vec![current, mass, width])
+            b.add(Op::Propagate, Sym::None, vec![current, mass, width])
         }
         EvalNode::ContractAmplitude { info, children } => {
             let inputs = lower_children(tree, children, b);

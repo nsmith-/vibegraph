@@ -229,19 +229,6 @@ impl LorentzEvalTree {
         self.value(self.root())
     }
 
-    /// Whether this rooted tree's vector output is stored index-flipped
-    /// (`MetricVout`/`LowerVout`, i.e. Â±gÂ·J instead of the plain J). The massive
-    /// vector propagator must know this to form its longitudinal term with the
-    /// physical (plain) current â see `propagate_core`'s `lowered` flag.
-    pub fn has_flipped_vector_out(&self) -> bool {
-        self.nodes.iter().any(|n| {
-            matches!(
-                n,
-                LorentzEvalNode::MetricVout { .. } | LorentzEvalNode::LowerVout { .. }
-            )
-        })
-    }
-
     fn add_node(&mut self, node: LorentzEvalNode) -> usize {
         let idx = self.nodes.len();
         self.nodes.push(node);
