@@ -292,16 +292,17 @@ re-plan (harness first; simplify before optimize; Stage A may defer). Status fla
 3. **Property-test harness (Stage 0) ✅ Done** (uncommitted): `helas/eval/prop_harness.rs` —
    typed random-input generators + variant-strict `slots_approx_eq` + the `check_agree` driver.
    The shared toolbox for steps 5a/5b.
-4. **Kernel factor-out + 1-1 `Op` naming (NEXT session).** Move the Lorentz-primitive kernels out
-   of `run.rs` into `kernel.rs`; give each `Op` exactly one entry point named for it
-   (snake_cased). Today's mapping is N-to-1 (`GammaIout`/`GammaOout`→`off_shell_fermion_current`;
-   `ProjM`/`ProjP`→`chiral_project`; `ProjMAmp`/`ProjPAmp`/`IdentityAmp`→`scalar_bilinear_current`)
-   and some Ops are inline in `apply` (`MetricNegI`, `PMom`/`PMomOut`): add thin per-Op wrappers
-   delegating to shared private helpers, so `apply` collapses to `kernel::<op>(children)`.
-   Structural/const ops (`External`/`Mul`/`Add`/`Coupling`/…) stay out of scope. Also move
-   `prop_harness.rs` alongside. **Pure structural refactor → bit-for-bit** (175 lib +
-   `validate_helas_mg` 11/11); repoint the harness smoke test off the old `metric_contract` name.
-   Then **checkpoint + record a perf baseline** (`benches/amplitude_eval`).
+4. **Kernel factor-out + 1-1 `Op` naming ✅ Done** (`cleanup-refactor`, `e2ba8e7`; Stage 0 harness
+   committed first as `820614e`). New `helas/eval/kernel.rs` (`pub(crate)`) holds the Lorentz-
+   primitive kernels; each Lorentz `Op` maps 1-to-1 to a kernel fn named for it (snake_cased), so
+   `run::apply` collapses to a match of `kernel::<op>(children)`. The N-to-1 cases got thin per-Op
+   wrappers over shared private helpers (`gamma_iout`/`gamma_oout`→`off_shell_fermion_current`;
+   `proj_m`/`proj_p`→`chiral_project`; `proj_m_amp`/`proj_p_amp`/`identity_amp`→
+   `scalar_bilinear_current`; `metric_neg_i`; `pmom`/`pmom_out`; `propagate`→`propagate_core`);
+   `metric_contract`→`metric`. Structural/const/algebraic ops (`External`/`Mul`/`Add`/`Coupling`/…)
+   stayed inline in `apply`. Harness smoke test repointed off `metric_contract`. **Pure structural →
+   bit-for-bit** (175 lib + `validate_helas_mg` 11/11, max_rel_diff ≤ 6.25e-13). Perf baseline
+   (`benches/amplitude_eval`, ee→μμ, release, N=10k): ~14.0 µs/eval — the Stage-A profiling anchor.
 5. **Two equivalence stages on the harness — Stage B FIRST, Stage A deferred:**
    - **5b. Stage B (simplify, do first):** normalize `MetricVout`/`LowerVout` so the `VectorCo`
      variant and its two extra propagator branches collapse into the plain `Vector` path

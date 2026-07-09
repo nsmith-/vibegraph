@@ -135,7 +135,8 @@ _Deps: none; done before task 4 so the typed-convention work sits on a clean bas
 ### 4. `typed-repr-conventions` — Make all wavefunction/Lorentz conventions explicit in types
 
 **Status (2026-07-09, `cleanup-refactor`): terminology rename + typed propagator seam + Stage 0
-property-test harness DONE; remaining node/peephole work (Stages A/B) deferred.** Landed:
+property-test harness + kernel factor-out (1-1 `Op`↔`kernel.rs`) DONE; remaining Stage B (simplify)
+then Stage A (fuse) deferred.** Landed:
 - §7 step 1 terminology rename `SpinorFlow`→`DiracAdjoint`/`Ket`/`Bra`, runtime `Flow`→`Adjoint`
   (`84bd2d3`).
 - `VectorWf` variance-parameterized (`aed1a80`).
@@ -155,8 +156,8 @@ off the WWγ vertex → `LowerVout` → massless photon propagator, exercising t
 branch bit-for-bit; `mu+ mu- > w+ w-` hits the same path). See `research/notes/13` §7 and memory
 `lorentz-eval-node-refactor`.
 
-**Staged plan for the remaining work — harness done; NEXT is the kernel factor-out; then
-simplify (Stage B) before fuse (Stage A, deferred pending profiling).**
+**Staged plan for the remaining work — harness + kernel factor-out done; NEXT is Stage B
+(convention simplify) before Stage A (fuse, deferred pending profiling).**
 
 _Design decision (2026-07-09): **drop the two-level `LorentzEvalNode` enum** — nested enums carry
 two discriminants (larger/cache-worse than the flat dataless `Op`), and the variance/adjoint it was
@@ -175,15 +176,16 @@ REVISION + §7._
   pass + `#[should_panic]` disagreement) + a `run.rs` smoke test driving the real private
   `metric_contract` kernel (bilinear symmetry). 175 lib tests green (was 169). Both goals below
   layer on this; they are two *different* equivalence relations sharing this one toolbox.
-- **NEXT (own session) — kernel factor-out + 1-1 `Op` naming.** Move the Lorentz-primitive kernels
-  out of `run.rs` into `kernel.rs`; give each `Op` exactly one entry point named for it. Today's
-  mapping is N-to-1 (`GammaIout`/`GammaOout`→`off_shell_fermion_current`; `ProjM`/`ProjP`→
-  `chiral_project`; `ProjMAmp`/`ProjPAmp`/`IdentityAmp`→`scalar_bilinear_current`) and some Ops are
-  inline in `apply` (`MetricNegI`, `PMom`/`PMomOut`): add thin per-Op wrappers over shared private
-  helpers so `apply` collapses to `kernel::<op>(children)`. Structural/const ops (`External`/`Mul`/
-  `Add`/`Coupling`/…) stay out of scope. Move `prop_harness.rs` alongside; repoint its smoke test
-  off the `metric_contract` name. **Pure structural → bit-for-bit** (175 lib + `validate_helas_mg`
-  11/11). Then checkpoint + record a `benches/amplitude_eval` perf baseline.
+- **Kernel factor-out + 1-1 `Op` naming ✅ Done** (`cleanup-refactor`). Moved the Lorentz-primitive
+  kernels out of `run.rs` into `helas/eval/kernel.rs` (`pub(crate)`); every Lorentz `Op` now maps
+  1-to-1 to a kernel fn named for it, so `run::apply` collapses to a match of `kernel::<op>(children)`.
+  The N-to-1 cases got thin per-Op wrappers over shared private helpers (`gamma_iout`/`gamma_oout`→
+  `off_shell_fermion_current`; `proj_m`/`proj_p`→`chiral_project`; `proj_m_amp`/`proj_p_amp`/
+  `identity_amp`→`scalar_bilinear_current`; `metric_neg_i`; `pmom`/`pmom_out`; `propagate`→
+  `propagate_core`); `metric_contract`→`metric`. Structural/const/algebraic ops stay inline in `apply`.
+  Pure structural → **bit-for-bit** (175 lib + `validate_helas_mg` 11/11, max_rel_diff ≤ 6.25e-13).
+  **Perf baseline** (`benches/amplitude_eval`, ee→μμ, release, N=10k): ~14.0 µs/eval (139.8–142.2
+  ms/10k, this machine) — feeds the Stage-A profiling decision.
 - **Stage B (own session, do BEFORE A) — simplify the generic-kernel conventions.** Normalize
   `LowerVout`/`MetricVout` to emit a fully-reconciled contravariant current (raise + rephase), so
   the `VectorCo` variant and its two extra propagator branches collapse into the plain `Vector`
