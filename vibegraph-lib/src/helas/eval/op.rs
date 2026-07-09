@@ -27,13 +27,11 @@ pub enum Op {
     // ── inputs / structural / algebraic ──
     /// External wavefunction input. Leaf: `{leg_idx, spin, charge}`; child: `[Mass]`.
     External,
-    /// Propagator. Children: `[current, Mass, Width]`.
+    /// Propagator. Children: `[current, Mass, Width]`. Dispatches on the input
+    /// current's variance at runtime (a covariant `MetricVout`/`LowerVout` current
+    /// forms its longitudinal term differently and is raised back), so no separate
+    /// lowered-storage opcode is needed.
     Propagate,
-    /// Propagator on an index-flipped (±g·J) stored vector current
-    /// (`MetricVout`/`LowerVout` outputs): identical to `Propagate` except the
-    /// massive vector's longitudinal term, which must be formed with the
-    /// physical (plain) current. Children: `[current, Mass, Width]`.
-    PropagateLowered,
     /// n-ary product: ≤1 non-scalar child sets the output type, the rest are scalar
     /// factors. Subsumes scalar×wf scaling (coupling·coeff·current) and the Lorentz
     /// tensor product.
@@ -90,7 +88,6 @@ impl Op {
         match self {
             Op::External => "External",
             Op::Propagate => "Propagate",
-            Op::PropagateLowered => "PropagateLowered",
             Op::Mul => "Mul",
             Op::Add => "Add",
             Op::GammaVout => "GammaVout",
@@ -119,7 +116,6 @@ impl Op {
         Some(match s {
             "External" => Op::External,
             "Propagate" => Op::Propagate,
-            "PropagateLowered" => Op::PropagateLowered,
             "Mul" => Op::Mul,
             "Add" => Op::Add,
             "GammaVout" => Op::GammaVout,

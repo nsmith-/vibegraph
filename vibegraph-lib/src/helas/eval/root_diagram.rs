@@ -432,11 +432,6 @@ impl DiagramEvalTree {
                             baked.iter().map(|(_, f)| *f).collect();
                         flows.insert(ri.0, bind);
                         let info = VertexInfo::from_ufo(model, *vertex, Some(ri.0), &flows)?;
-                        let lowered_storage = info
-                            .terms
-                            .iter()
-                            .flat_map(|vt| vt.terms.iter())
-                            .any(|rt| rt.tree.has_flipped_vector_out());
                         let adjoint = bind.map(|lf| lf.adjoint);
                         let current = Self::add(
                             nodes,
@@ -456,7 +451,6 @@ impl DiagramEvalTree {
                                         // flows through this line — read off its baked
                                         // momentum.
                                         t_channel: diagram.prop(rl.prop).is_spacelike(n_in),
-                                        lowered_storage,
                                     },
                                     adjoint,
                                     child: current,
