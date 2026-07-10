@@ -839,22 +839,17 @@ pub fn compile_diagram_ast(
 mod tests {
     use super::*;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
-    use crate::ufo::sm::{sm_model as interned_sm, SMRestrict};
-    use crate::ufo::UFOModel;
-    use std::sync::Arc;
+    use crate::ufo::sm::{sm_model, SMRestrict};
 
-    fn sm_model() -> Arc<UFOModel> {
-        interned_sm(SMRestrict::Default)
-    }
     fn generate(process: &str) -> Vec<DiagramSet> {
         let opts = ParsingOptions::default();
         let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
-        generate_from_proc_card(&card, &sm_model()).unwrap()
+        generate_from_proc_card(&card, &sm_model(SMRestrict::Default)).unwrap()
     }
 
     #[test]
     fn test_walk() {
-        let model = sm_model();
+        let model = sm_model(SMRestrict::Default);
         let sets = generate("e+ e- > mu+ mu-");
         for set in sets {
             for (d, diagram) in set.diagrams.iter().enumerate() {
@@ -876,7 +871,7 @@ mod tests {
     #[test]
     #[ignore]
     fn probe_vertex_leg_binding() {
-        let model = sm_model();
+        let model = sm_model(SMRestrict::Default);
         let sets = generate("e+ e- > mu+ mu- ta+ ta- QCD=0");
         for set in &sets {
             for (d, diagram) in set.diagrams.iter().enumerate() {
@@ -933,7 +928,7 @@ mod tests {
     /// every diagram, across processes with and without initial-state fermion spines.
     #[test]
     fn spine_sign_from_flow_matches_heuristic() {
-        let model = sm_model();
+        let model = sm_model(SMRestrict::Default);
         let processes = [
             "e+ e- > mu+ mu-",
             "e+ e- > e+ e-",

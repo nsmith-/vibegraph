@@ -82,6 +82,7 @@ mod eval_vs_hardcoded {
     use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
     use vibegraph::helas::LorentzVector;
     use vibegraph::ufo::slha::ParamCard;
+    use vibegraph::ufo::EvaluatedModel;
 
     /// Compare the runtime `AmplitudeEvaluator` against the hardcoded `compute_m2_ee_mumu`
     /// reference for e⁺e⁻→μ⁺μ⁻ at multiple angles and CM energies.
@@ -92,7 +93,7 @@ mod eval_vs_hardcoded {
         // param card cannot revive them; use the `lepton_masses` restriction, which
         // keeps the lepton masses settable, then supply the physical values here.
         let model = sm_lepton_masses_model();
-        let sets = generate_with("e+ e- > mu+ mu-", model);
+        let sets = generate_with("e+ e- > mu+ mu-", &model);
         assert!(!sets.is_empty(), "no diagram sets generated for e⁺e⁻→μ⁺μ⁻");
 
         // The `lepton_masses` restriction also keeps the lepton Yukawas non-zero,
@@ -114,10 +115,10 @@ mod eval_vs_hardcoded {
         )
         .parse::<ParamCard>()
         .unwrap();
-        let evaluated = model.evaluate(&card);
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
-        let evaluator =
-            AmplitudeEvaluator::compile(set, model).expect("failed to compile amplitude evaluator");
+        let evaluator = AmplitudeEvaluator::compile(set, &model)
+            .expect("failed to compile amplitude evaluator");
         let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
         assert_eq!(
             evaluator.helicities().len(),
@@ -186,7 +187,7 @@ mod eval_vs_hardcoded {
 #[cfg(feature = "extended-validation")]
 mod extended {
     use std::path::Path;
-    use vibegraph::helas::LorentzVector;
+    use vibegraph::{helas::LorentzVector, ufo::EvaluatedModel};
 
     fn compute_m2_ee_mumu_dynamic(sqrt_s: f64, cos_theta: f64) -> f64 {
         use super::common::{generate_with, sm_lepton_masses_model};
@@ -195,7 +196,7 @@ mod extended {
 
         // Same situation as test_eval_m2_ee_mumu_vs_hardcoded
         let model = sm_lepton_masses_model();
-        let sets = generate_with("e+ e- > mu+ mu-", model);
+        let sets = generate_with("e+ e- > mu+ mu-", &model);
         let set = &sets[0];
         let card = format!(
             "Block MASS\n 11 {}\n 13 {}\nBlock YUKAWA\n 11 0.0\n 13 0.0\n",
@@ -204,13 +205,13 @@ mod extended {
         )
         .parse::<ParamCard>()
         .unwrap();
-        let evaluated = model.evaluate(&card);
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
         let me = evaluated.mass(model.particle_id("e-").unwrap());
         let mmu = evaluated.mass(model.particle_id("mu-").unwrap());
 
-        let evaluator =
-            AmplitudeEvaluator::compile(set, model).expect("failed to compile amplitude evaluator");
+        let evaluator = AmplitudeEvaluator::compile(set, &model)
+            .expect("failed to compile amplitude evaluator");
 
         let e_beam = sqrt_s / 2.0;
         let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();

@@ -1,8 +1,7 @@
 mod common;
 
 use std::f64::consts::PI;
-use vibegraph::ufo::slha::ParamCard;
-use vibegraph::ufo::{UFOModel, UfoError};
+use vibegraph::ufo::{EvaluatedModel, UFOModel, UfoError};
 
 #[test]
 fn test_load_loop_sm() {
@@ -11,17 +10,8 @@ fn test_load_loop_sm() {
         eprintln!("loop_sm UFO not found — skipping");
         return;
     }
-    let result = UFOModel::load(&path, None);
-    if let Err(UfoError::FeynGraph(_)) = &result {
-        eprintln!(
-            "loop_sm: FeynGraph topology parser does not support loop-level \
-             particle attributes (.counterterm, .loop_particles) — skipping"
-        );
-        return;
-    }
-    let model = result.expect("unexpected error loading loop_sm UFO");
-    let empty_card = "".parse::<ParamCard>().unwrap();
-    let ev = model.evaluate(&empty_card);
+    let model = UFOModel::load(&path, None).expect("can load");
+    let ev = EvaluatedModel::from_model(model.clone());
 
     let mz = ev.mass(model.particle_id("Z").expect("no Z in model"));
     assert!((mz - 91.188).abs() < 0.01, "loop_sm MZ = {mz}");
@@ -38,8 +28,7 @@ fn test_load_mssm() {
         return;
     }
     let model = UFOModel::load(&path, None).expect("failed to load MSSM_SLHA2 UFO");
-    let empty_card = "".parse::<ParamCard>().unwrap();
-    let ev = model.evaluate(&empty_card);
+    let ev = EvaluatedModel::from_model(model.clone());
 
     let tb = ev.param_values["tb"].re;
     assert!((tb - 9.74862403).abs() < 1e-6, "MSSM tb = {tb}");
@@ -73,7 +62,7 @@ fn test_load_taudecay() {
         _ => {}
     }
     let model = result.expect("failed to load taudecay UFO");
-    let ev = model.evaluate(&card);
+    let ev = EvaluatedModel::from_model_card(model.clone(), &card);
 
     let mta = ev.mass(model.particle_id("ta__minus__").expect("no tau"));
     assert!((mta - 1.776820).abs() < 1e-4, "taudecay MTA = {mta}");
@@ -93,8 +82,7 @@ fn test_load_sm_ufo() {
         return;
     }
     let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
-    let empty_card = "".parse::<ParamCard>().unwrap();
-    let ev = model.evaluate(&empty_card);
+    let ev = EvaluatedModel::from_model(model.clone());
 
     let as_val = ev.param_values["aS"].re;
     assert!((as_val - 0.118).abs() < 1e-10, "aS = {as_val}");
@@ -124,8 +112,7 @@ fn test_recompute_propagates() {
         return;
     }
     let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
-    let empty_card = "".parse::<ParamCard>().unwrap();
-    let mut ev = model.evaluate(&empty_card);
+    let mut ev = EvaluatedModel::from_model(model.clone());
 
     let new_as = 0.130f64;
     ev.recompute("aS", num_complex::Complex64::new(new_as, 0.0));

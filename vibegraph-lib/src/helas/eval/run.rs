@@ -389,6 +389,7 @@ mod tests {
     use super::*;
     use crate::helas::repr::lorentz::{SpinorRepr, VectorRepr};
     use crate::helas::repr::numbers::Chirality;
+    use crate::ufo::sm::{sm_model, SMRestrict};
     use crate::{
         helas::{
             eval::diagram_eval::{ExtLegInfo, PropInfo, VertexInfo, VertexTerm},
@@ -400,11 +401,6 @@ mod tests {
         ufo::slha::ParamCard,
     };
     use num_complex::ComplexFloat;
-
-    fn sm_model() -> std::sync::Arc<crate::ufo::UFOModel> {
-        use crate::ufo::sm::{sm_model as interned_sm, SMRestrict};
-        interned_sm(SMRestrict::Default)
-    }
 
     /// Uncrossed per-leg binding shorthand for hand-built adjoint vectors (the
     /// hand-built diagrams bind wavefunctions in MG order, so no crossing).
@@ -502,10 +498,8 @@ mod tests {
     /// μ⁺μ⁻ amplitude is also cross-checked against `iovxxx(·, jioxxx(·))`.
     #[test]
     fn test_eval_jioxxx() {
-        let model = sm_model();
-        let model = &*model;
-        let empty_card = "".parse::<ParamCard>().unwrap();
-        let evaluated = model.evaluate(&empty_card);
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
 
         // This doesn't matter so much, it's pure imaginary and just scales the lorentz structure
         let coupling_id = model.coupling_id("GC_3").unwrap();
@@ -573,7 +567,7 @@ mod tests {
             };
             let vertex_info = VertexInfo {
                 terms: vec![VertexTerm::from_ufo(
-                    model,
+                    &model,
                     lorentz_id,
                     "asdf",
                     coupling_id,
@@ -588,7 +582,7 @@ mod tests {
             };
             let amp_info = VertexInfo {
                 terms: vec![VertexTerm::from_ufo(
-                    model,
+                    &model,
                     lorentz_id,
                     "asdf",
                     coupling_id,
@@ -722,9 +716,8 @@ mod tests {
     /// longitudinal subtraction) propagators are checked.
     #[test]
     fn test_eval_ffv2_4_3() {
-        let model = sm_model();
-        let model = &*model;
-        let evaluated = model.evaluate(&"".parse::<ParamCard>().unwrap());
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
 
         let coupling_id = model.coupling_id("GC_3").unwrap();
         let g = evaluated.coupling(coupling_id).im; // real chiral coupling
@@ -754,8 +747,8 @@ mod tests {
         // Two-term vertex: FFV2 (left) ⊕ FFV4 (left + 2·right), both with GC_3.
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "asdf", coupling_id, Some(2), &[]).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "asdf", coupling_id, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv2_id, "asdf", coupling_id, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv4_id, "asdf", coupling_id, Some(2), &[]).unwrap(),
             ],
         };
 
@@ -860,9 +853,8 @@ mod tests {
     /// (`√s = m_Z`) where the longitudinal numerator is largest.
     #[test]
     fn test_longitudinal_z_current_transverse_for_massless_fermions() {
-        let model = sm_model();
-        let model = &*model;
-        let evaluated = model.evaluate(&"".parse::<ParamCard>().unwrap());
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
 
         // Real ℓ̄ℓZ vertex (SM V_107): FFV2·GC_50 (pure left) ⊕ FFV4·GC_59 (left+2·right),
         // i.e. gL = GC_50+GC_59, gR = 2·GC_59 — a parity-violating (gL ≠ gR) current.
@@ -902,8 +894,8 @@ mod tests {
 
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), &[]).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv2_id, "1", gc50, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv4_id, "1", gc59, Some(2), &[]).unwrap(),
             ],
         };
 
@@ -992,9 +984,8 @@ mod tests {
     fn test_eval_off_shell_fermion_vs_fvixxx() {
         use crate::helas::vertex::{fvixxx, fvoxxx};
 
-        let model = sm_model();
-        let model = &*model;
-        let evaluated = model.evaluate(&"".parse::<ParamCard>().unwrap());
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
 
         // Off-shell fermion line propagates an electron.
         let prop_id = model.particle_id("e-").unwrap();
@@ -1695,8 +1686,7 @@ mod tests {
             .and_then(|s| s.parse().ok())
             .unwrap_or(1.0);
 
-        let model = sm_model();
-        let model = &*model;
+        let model = sm_model(SMRestrict::Default);
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let out_dir = std::path::Path::new(&manifest).join("../validation/madgraph/output");
 
@@ -1737,15 +1727,15 @@ mod tests {
             .expect("param_card.dat")
             .parse::<ParamCard>()
             .unwrap();
-        let evaluated = model.evaluate(&card);
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
         let opts = ParsingOptions::default();
         let pc = parse_proc_card(&format!("generate {process_str}"), &opts).unwrap();
-        let sets = generate_from_proc_card(&pc, model).unwrap();
+        let sets = generate_from_proc_card(&pc, &model).unwrap();
         let set = &sets[0];
-        let asts = compile_diagram_ast(set, model).unwrap();
+        let asts = compile_diagram_ast(set, &model).unwrap();
         let n = asts.len();
-        let evaluator = AmplitudeEvaluator::compile(set, model).unwrap();
+        let evaluator = AmplitudeEvaluator::compile(set, &model).unwrap();
         let combos = evaluator.helicities();
         println!(
             "[{name}] {process_str}: {n} diagrams, {} hel combos",
@@ -1954,17 +1944,17 @@ mod tests {
     fn ward_max_ratio(proc: &str, p: &[LorentzVector<f64>], ward_leg: usize) -> f64 {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 
-        let model = sm_model();
-        let model = &*model;
-        let evaluated = model.evaluate(
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model_card(
+            model.clone(),
             &"Block MASS\n 11 0.0\n 13 0.0\n 15 0.0\n"
                 .parse::<ParamCard>()
                 .unwrap(),
         );
         let opts = ParsingOptions::default();
         let card = parse_proc_card(proc, &opts).unwrap();
-        let sets = generate_from_proc_card(&card, model).unwrap();
-        let eval = AmplitudeEvaluator::compile(&sets[0], model).unwrap();
+        let sets = generate_from_proc_card(&card, &model).unwrap();
+        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
         let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
 
         let global_scale = eval
@@ -2092,12 +2082,11 @@ mod tests {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
         use crate::helas::eval::Sym;
 
-        let model = sm_model();
-        let model = &*model;
+        let model = sm_model(SMRestrict::Default);
         let opts = ParsingOptions::default();
         let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
-        let sets = generate_from_proc_card(&card, model).unwrap();
-        let diagrams = compile_diagram_ast(&sets[0], model).unwrap();
+        let sets = generate_from_proc_card(&card, &model).unwrap();
+        let diagrams = compile_diagram_ast(&sets[0], &model).unwrap();
 
         let ast = lower::lower(&diagrams);
         let rendered = ast.to_string();
@@ -2120,19 +2109,19 @@ mod tests {
     fn test_whole_amplitude_equals_diagram_sum_eemumu() {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 
-        let model = sm_model();
-        let model = &*model;
-        let evaluated = model.evaluate(
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model_card(
+            model.clone(),
             &"Block MASS\n 11 0.0\n 13 0.0\n"
                 .parse::<ParamCard>()
                 .unwrap(),
         );
         let opts = ParsingOptions::default();
         let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
-        let sets = generate_from_proc_card(&card, model).unwrap();
-        let eval = AmplitudeEvaluator::compile(&sets[0], model).unwrap();
+        let sets = generate_from_proc_card(&card, &model).unwrap();
+        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
         let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
-        let diagrams = compile_diagram_ast(&sets[0], model).unwrap();
+        let diagrams = compile_diagram_ast(&sets[0], &model).unwrap();
 
         let st = 0.6_f64;
         let ct = (1.0 - st * st).sqrt();
@@ -2171,8 +2160,7 @@ mod tests {
     fn test_z_current_outgoing_mupair_vs_mg() {
         use num_complex::Complex64;
 
-        let model = sm_model();
-        let model = &*model;
+        let model = sm_model(SMRestrict::Default);
         // Use MadGraph's massless-tau param card so couplings match the probe.
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let card_path = std::path::Path::new(&manifest).join(
@@ -2182,7 +2170,7 @@ mod tests {
             .ok()
             .and_then(|s| s.parse::<ParamCard>().ok())
             .expect("param_card_masslesstau.dat not found — run `pixi run -e madgraph build-diagrams` first");
-        let evaluated = model.evaluate(&card);
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
         let gc50 = model.coupling_id("GC_50").unwrap();
         let gc59 = model.coupling_id("GC_59").unwrap();
@@ -2228,8 +2216,8 @@ mod tests {
         // rooted at the Z (vector output leg = leg index 2 in the vertex).
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), &[]).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv2_id, "1", gc50, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv4_id, "1", gc59, Some(2), &[]).unwrap(),
             ],
         };
 
@@ -2331,8 +2319,7 @@ mod tests {
     fn test_espine_eline_z_absorption_ratio_vs_mg() {
         use num_complex::Complex64;
 
-        let model = sm_model();
-        let model = &*model;
+        let model = sm_model(SMRestrict::Default);
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let card_path = std::path::Path::new(&manifest).join(
             "../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards/param_card_masslesstau.dat",
@@ -2341,7 +2328,7 @@ mod tests {
             .ok()
             .and_then(|s| s.parse::<ParamCard>().ok())
             .expect("param_card_masslesstau.dat not found — run `pixi run -e madgraph build-diagrams` first");
-        let evaluated = model.evaluate(&card);
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
         let gc3 = model.coupling_id("GC_3").unwrap();
         let gc50 = model.coupling_id("GC_50").unwrap();
@@ -2442,12 +2429,12 @@ mod tests {
         ];
         let gamma_current = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv1_id, "1", gc3, Some(2), &mu_flows).unwrap(),
+                VertexTerm::from_ufo(&model, ffv1_id, "1", gc3, Some(2), &mu_flows).unwrap(),
             ],
         };
         let gamma_absorb = VertexInfo {
             terms: vec![VertexTerm::from_ufo(
-                model,
+                &model,
                 ffv1_id,
                 "1",
                 gc3,
@@ -2458,14 +2445,14 @@ mod tests {
         };
         let z_current = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(model, ffv2_id, "1", gc50, Some(2), &mu_flows).unwrap(),
-                VertexTerm::from_ufo(model, ffv4_id, "1", gc59, Some(2), &mu_flows).unwrap(),
+                VertexTerm::from_ufo(&model, ffv2_id, "1", gc50, Some(2), &mu_flows).unwrap(),
+                VertexTerm::from_ufo(&model, ffv4_id, "1", gc59, Some(2), &mu_flows).unwrap(),
             ],
         };
         let z_absorb = VertexInfo {
             terms: vec![
                 VertexTerm::from_ufo(
-                    model,
+                    &model,
                     ffv2_id,
                     "1",
                     gc50,
@@ -2474,7 +2461,7 @@ mod tests {
                 )
                 .unwrap(),
                 VertexTerm::from_ufo(
-                    model,
+                    &model,
                     ffv4_id,
                     "1",
                     gc59,

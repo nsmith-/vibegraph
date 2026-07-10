@@ -4,6 +4,9 @@
 //! For the Standard Model this returns the interned [`sm_model`] (no filesystem
 //! access); for other models it falls back to reading a UFO directory under
 //! [`GlobalConfig::ufo_search_path`].
+//!
+//! TODO: future work will support more sophisticated model resolution, including handling
+//! downloading and caching in a user local directory.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -60,7 +63,7 @@ impl GlobalConfig {
                 .as_ref()
                 .map(|v| dir.join(format!("restrict_{v}.dat"))),
         };
-        UFOModel::load(&dir, restrict.as_deref()).map(Arc::new)
+        UFOModel::load(&dir, restrict.as_deref())
     }
 }
 

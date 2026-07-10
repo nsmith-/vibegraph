@@ -23,6 +23,7 @@ use std::time::Instant;
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::LorentzVector;
 use vibegraph::ufo::slha::ParamCard;
+use vibegraph::ufo::EvaluatedModel;
 
 /// Relative tolerance for processes expected to agree (color-free, same SM params).
 ///
@@ -186,9 +187,9 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
         .ok()
         .and_then(|s| s.parse::<ParamCard>().ok())
         .unwrap_or_else(|| "".parse::<ParamCard>().unwrap());
-    let evaluated = model.evaluate(&card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
-    let evaluator = AmplitudeEvaluator::compile(&sets[0], model)
+    let evaluator = AmplitudeEvaluator::compile(&sets[0], &model)
         .map_err(|e| Failed::from(format!("compile: {e}")))?;
     let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
 
