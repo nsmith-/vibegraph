@@ -35,6 +35,10 @@ libtest-mimic = "0.7"
 rayon = "1"
 serde_json = "1.0"
 
+[[bench]]
+name = "eval_strategies"
+harness = false
+
 [[test]]
 name = "validate_madgraph_diagrams"
 harness = false

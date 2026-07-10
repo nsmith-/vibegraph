@@ -15,6 +15,7 @@ use num_traits::FromPrimitive;
 use super::ast::{Ast, AstBuilder};
 use super::op::{Const, Op, Sym};
 use super::tree::Tree;
+use crate::helas::repr::numbers::Charge;
 use crate::helas::repr::{Real, C};
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
@@ -29,6 +30,22 @@ enum RealReq {
     Coeff(u64),
 }
 
+/// One entry of the folded external-leg table: everything an `Op::External` node
+/// needs to build its wavefunction, resolved from the symbolic leaf and its `Mass`
+/// child so the folded node is a bare `Const::Ext(u32)` with no children.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ExtLeg {
+    /// Index into the process's external momenta/helicities.
+    pub leg_idx: u32,
+    /// UFO spin code (2s+1).
+    pub spin: i32,
+    pub charge: Charge,
+    /// Whether this leg is an incoming external (see [`Sym::Ext`]).
+    pub incoming: bool,
+    /// The leg's mass: index into `consts_f`.
+    pub mass: u32,
+}
+
 /// The folded, card-independent skeleton plus the pool specifications that resolve it.
 #[derive(Debug, Clone)]
 pub struct Folded {
@@ -38,16 +55,25 @@ pub struct Folded {
     pool_c: Vec<CouplingId>,
     /// `consts_f[j] = resolve(pool_f[j])`.
     pool_f: Vec<RealReq>,
+    /// `Const::Ext(k)` resolves to `pool_ext[k]`.
+    pool_ext: Vec<ExtLeg>,
 }
 
 impl Folded {
     /// Build the folded skeleton from the symbolic AST, deduping constants into the
-    /// two pool specs.
+    /// pool specs.
+    ///
+    /// An `External`'s symbolic `Mass` child is absorbed into its [`ExtLeg`] table
+    /// entry (as a `consts_f` index), so the folded node is a childless leaf; the
+    /// rebuild keeps only nodes still reachable from the root, dropping the orphaned
+    /// `Mass` nodes from the arena.
     pub fn build(sym: &Ast<Sym>) -> Folded {
         let mut pool_c: Vec<CouplingId> = Vec::new();
         let mut c_index: HashMap<CouplingId, u32> = HashMap::new();
         let mut pool_f: Vec<RealReq> = Vec::new();
         let mut f_index: HashMap<RealReq, u32> = HashMap::new();
+        let mut pool_ext: Vec<ExtLeg> = Vec::new();
+        let mut ext_index: HashMap<ExtLeg, u32> = HashMap::new();
 
         let mut intern_c = |id: CouplingId| -> u32 {
             *c_index.entry(id).or_insert_with(|| {
@@ -62,15 +88,38 @@ impl Folded {
             })
         };
 
+        // Reachability from the root, not descending into `External` (its Mass child
+        // moves into the leg table and would otherwise linger as an orphan node).
+        let mut reachable = vec![false; sym.len()];
+        let mut stack = vec![sym.root()];
+        while let Some(n) = stack.pop() {
+            if std::mem::replace(&mut reachable[n as usize], true) {
+                continue;
+            }
+            if sym.value(n).op != Op::External {
+                stack.extend_from_slice(sym.children_ids(n));
+            }
+        }
+
         let mut builder = AstBuilder::new();
+        // remap[old id] = new id; only meaningful for reachable nodes.
+        let mut remap = vec![u32::MAX; sym.len()];
         for id in sym.iter() {
+            if !reachable[id as usize] {
+                continue;
+            }
             let node = sym.value(id);
-            let children: Vec<_> = sym.children(id).collect();
-            let leaf = match (node.op, node.leaf) {
-                (Op::Coupling, Sym::Coupling(id)) => Const::Complex(intern_c(id)),
-                (Op::Mass, Sym::Particle(id)) => Const::Real(intern_f(RealReq::Mass(id))),
-                (Op::Width, Sym::Particle(id)) => Const::Real(intern_f(RealReq::Width(id))),
-                (Op::Coeff, Sym::Coeff(c)) => Const::Real(intern_f(RealReq::Coeff(c.to_bits()))),
+            let (leaf, children) = match (node.op, node.leaf) {
+                (Op::Coupling, Sym::Coupling(cid)) => (Const::Complex(intern_c(cid)), vec![]),
+                (Op::Mass, Sym::Particle(pid)) => {
+                    (Const::Real(intern_f(RealReq::Mass(pid))), vec![])
+                }
+                (Op::Width, Sym::Particle(pid)) => {
+                    (Const::Real(intern_f(RealReq::Width(pid))), vec![])
+                }
+                (Op::Coeff, Sym::Coeff(c)) => {
+                    (Const::Real(intern_f(RealReq::Coeff(c.to_bits()))), vec![])
+                }
                 (
                     Op::External,
                     Sym::Ext {
@@ -79,21 +128,41 @@ impl Folded {
                         charge,
                         incoming,
                     },
-                ) => Const::Ext {
-                    leg_idx,
-                    spin,
-                    charge,
-                    incoming,
-                },
-                _ => Const::None,
+                ) => {
+                    let mass_child = sym.children_ids(id)[0];
+                    let mass_node = sym.value(mass_child);
+                    let (Op::Mass, Sym::Particle(pid)) = (mass_node.op, mass_node.leaf) else {
+                        panic!("External's child must be a Mass leaf, got {mass_node:?}");
+                    };
+                    let leg = ExtLeg {
+                        leg_idx: leg_idx as u32,
+                        spin,
+                        charge,
+                        incoming,
+                        mass: intern_f(RealReq::Mass(pid)),
+                    };
+                    let k = *ext_index.entry(leg).or_insert_with(|| {
+                        pool_ext.push(leg);
+                        (pool_ext.len() - 1) as u32
+                    });
+                    (Const::Ext(k), vec![])
+                }
+                _ => (
+                    Const::None,
+                    sym.children_ids(id)
+                        .iter()
+                        .map(|&c| remap[c as usize])
+                        .collect(),
+                ),
             };
-            builder.add(node.op, leaf, children);
+            remap[id as usize] = builder.add(node.op, leaf, children);
         }
 
         Folded {
-            ast: builder.finish(sym.root()),
+            ast: builder.finish(remap[sym.root() as usize]),
             pool_c,
             pool_f,
+            pool_ext,
         }
     }
 
@@ -117,6 +186,11 @@ impl Folded {
             })
             .collect();
         (consts_c, consts_f)
+    }
+
+    /// The external-leg table resolving `Const::Ext` indices.
+    pub fn ext_legs(&self) -> &[ExtLeg] {
+        &self.pool_ext
     }
 
     /// Coupling ids referenced by the amplitude (from the complex pool spec).

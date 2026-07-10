@@ -1,0 +1,76 @@
+//! Strategy microbenchmark: memoize-all forward scan (`BoundAmplitude`) vs
+//! post-order stack machine with a shared-node memo pad (`BoundAmplitudeStack`),
+//! across process sizes 2→2 … 2→6 (all-massless externals so plain massless RAMBO
+//! provides the kinematics).
+//!
+//! Run: `cargo bench -p vibegraph-lib --bench eval_strategies`
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+
+use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude, BoundAmplitudeStack};
+use vibegraph::helas::LorentzVector;
+use vibegraph::phasespace::rambo_massless;
+use vibegraph::ufo::sm::{sm_model, SMRestrict};
+use vibegraph::ufo::EvaluatedModel;
+
+const PROCESSES: [(&str, &str); 4] = [
+    ("ee_to_mumu", "e+ e- > mu+ mu-"),
+    ("ee_to_mumua", "e+ e- > mu+ mu- a"),
+    ("ee_to_mumu_tata_qcd0", "e+ e- > mu+ mu- ta+ ta- QCD=0"),
+    ("uux_to_ccx_emmm_qcd0", "u u~ > c c~ e+ e- mu+ mu- QCD=0"),
+];
+
+fn bench_eval_m2(c: &mut Criterion) {
+    let model = sm_model(SMRestrict::Default);
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let opts = ParsingOptions::default();
+    let mut rng = StdRng::seed_from_u64(0xBE7C4);
+    let sqrt_s = 500.0;
+
+    let mut group = c.benchmark_group("eval_m2");
+    group.sample_size(10);
+    for (name, process) in PROCESSES {
+        let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, &model).unwrap();
+        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+        let fwd = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+        let stk = BoundAmplitudeStack::<f64>::bind(&eval, &evaluated);
+        let (nodes, shared, depth) = stk.program().stats();
+        println!("[{name}] nodes={nodes} shared={shared} peak stack={depth}");
+
+        let points: Vec<Vec<LorentzVector<f64>>> = (0..16)
+            .map(|_| {
+                let mut p = vec![
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+                ];
+                p.extend(rambo_massless(sqrt_s, eval.n_ext() - 2, &mut rng));
+                p
+            })
+            .collect();
+
+        let mut scratch = fwd.scratch_space();
+        group.bench_with_input(BenchmarkId::new("forward", name), &points, |b, pts| {
+            b.iter(|| {
+                pts.iter()
+                    .map(|p| fwd.eval_m2(p, &mut scratch))
+                    .sum::<f64>()
+            })
+        });
+        let mut scratch = stk.scratch_space();
+        group.bench_with_input(BenchmarkId::new("stack", name), &points, |b, pts| {
+            b.iter(|| {
+                pts.iter()
+                    .map(|p| stk.eval_m2(p, &mut scratch))
+                    .sum::<f64>()
+            })
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_eval_m2);
+criterion_main!(benches);

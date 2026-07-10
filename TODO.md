@@ -139,14 +139,29 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
   but regresses the forward-scan evaluator (a `res` slot per partial sum), so it
   runs after P4 settles the evaluator → P5 drops to last.
 
-- **P4 (next) — stack evaluator with Store/Load memo pad + program compaction** —
-  parallel `BoundAmplitude` using `Tree::linearize`-style post-order stack eval
-  (small live stack stays in L1) + memo slots for post-CSE shared nodes (measure
-  the shared-node fraction to size the pad); criterion bench vs the memoize-all
-  forward scan across process sizes; adopt the winner. Fold in the cache items:
-  `#[inline]` `children_ids`, `Const::Ext` → `u32` (+ drop `External`'s `Mass`
-  child), and a compact instruction stream if the layout work is already open.
-- **P6 (promoted) — Stage A fusion + inlining survey** (note 13 §7 5a) — the
+- **P4 ✅ (2026-07-10) — stack evaluator with Store/Load memo pad: forward scan wins**
+  — `run_stack.rs`: `StackProgram` linearizes the post-CSE DAG into a post-order
+  instruction stream (`Apply`/`Store`/`Load`; shared nodes get memo slots, first
+  eval `Store`s, later refs `Load`); `BoundAmplitudeStack` mirrors the bind/eval
+  shape; both strategies dispatch through one generic `run::apply` (child accessor
+  + `EvalEnv`), so they agree **bit-for-bit** — enforced by
+  `stack_matches_forward_bit_for_bit`, the first *default-suite* test that
+  evaluates all 11 MG-validated processes (massless-RAMBO points via the new
+  `phasespace::rambo_massless`). Verdict from `benches/eval_strategies.rs`
+  (2→2…2→6): **stack loses uniformly** — +14% (2→2), +23% (2→3), +28% (2→4),
+  +25% (2→6). Per-node slot traffic dominates (post-P2 finding) and the stack
+  machine has strictly *more* 112-B slot moves (pop/push churn + a `Store` copy
+  and `Load` push per shared ref), so the smaller live set (~200 KB stack+memo vs
+  ~1 MB `res` on 2→6) never pays off. Forward scan stays default;
+  `BoundAmplitudeStack` is kept (cheap, oracle-guarded) as the apparatus for P5's
+  balanced-reduction measurement — the 2→6 peak stack (585 slots) is entirely the
+  n-ary root diagram-sum `Add`, exactly what P5 binarization collapses to
+  O(log n). Shared-node fraction 14–28% (2→6: 1,251/8,622). Folded-in layout
+  items: `#[inline]` `children_ids`; `Const::Ext {..}` → `Const::Ext(u32)` into a
+  `Folded` ext-leg table (leg/spin/charge/incoming + mass as a `consts_f` index);
+  `External`'s `Mass` child dropped (fold rebuilds reachable-only). Timing flat vs
+  P2 (±3% run noise) — no regression; MG max_rel_diffs digit-for-digit unchanged.
+- **P6 (next) — Stage A fusion + inlining survey** (note 13 §7 5a) — the
   `Add`/`Mul`/`gamma_vout` shares are the target: fused vertex kernels (FFV
   `[g_L,g_R]` first) collapse the coupling·coeff·structure `Mul`/`Add` scaffolding
   into one node; per-kernel oracle = Stage-0 prop harness — FP reordering inside
@@ -155,10 +170,15 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
   whole 2→6 amplitude). Plus the rustc inlining survey of `LorentzRepr` calls
   and fusion microbenches in `benches/`.
 - **P5 (last) — egg arity groundwork** — binarize `Add`/`Mul` at lowering as a
-  *balanced* tree reduction (O(log n) live slots on the P4 stack evaluator, and
-  pairwise summation is if anything more accurate than the left fold; the ~1e-15
-  reorder drift is far inside `REL_TOL`); egglog engine design is a separate
-  session.
+  *balanced* tree reduction (pairwise summation is if anything more accurate than
+  the left fold; the ~1e-15 reorder drift is far inside `REL_TOL`); egglog engine
+  design is a separate session. Post-P4 note: the forward scan is the production
+  evaluator, and there binarization *materializes a `res` slot per partial sum* —
+  measure via `benches/eval_strategies.rs` and fall back to the flatten pass
+  (re-n-aryfying between the binary `Ast<Sym>` domain and `Folded::build`) if it
+  regresses; the kept `BoundAmplitudeStack` measures the O(log n)-live-stack
+  claim directly. Decide `BoundAmplitudeStack`'s fate here: delete it if balanced
+  reduction still leaves it losing.
 - Backlog: `generate-stream` Part B (deferred from cleanup task 3: lazy
   `generate_*` iterator); `C<F>`-vs-`F` multiply peepholes; **`feyngraph-perf`**
   (submodule `.counts()` hot spot, see its section below) stays a dedicated
@@ -167,19 +187,19 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
 Timing table (dev machine, `--profile profiling`, `--test-threads=1`; rust ns/eval
 per session vs MG MATRIX1 ns/eval):
 
-| process | MG | P1 baseline | P2 |
-|---|---:|---:|---:|
-| ee_to_zh | 206 | 5,479 (27×) | 3,272 (16×) |
-| ee_to_mumu | 328 | 14,093 (43×) | 8,198 (25×) |
-| pp_to_ll_qcd0 | 298 | 14,027 (47×) | 8,335 (28×) |
-| ee_to_ttx | 357 | 14,588 (41×) | 8,520 (24×) |
-| ee_to_ee | 743 | 27,467 (37×) | 15,102 (20×) |
-| ee_to_tatah | 859 | 50,894 (59×) | 21,996 (26×) |
-| ee_to_wpwm | 776 | 64,059 (83×) | 30,145 (39×) |
-| ee_to_mumua | 1,510 | 133,751 (89×) | 58,403 (39×) |
-| ee_to_mumu_tata_qcd0 | 6,404 | 1,319,279 (206×) | 356,126 (56×) |
-| uux_to_ccx_emmm_qcd0 | 100,230 | 216,900,033 (2,164×) | 28,505,729 (284×) |
-| bbx_to_ccx_emmm_qcd0 | 141,430 | 236,382,600 (1,671×) | 29,593,298 (209×) |
+| process | MG | P1 baseline | P2 | P4 |
+|---|---:|---:|---:|---:|
+| ee_to_zh | 206 | 5,479 (27×) | 3,272 (16×) | 3,351 (16×) |
+| ee_to_mumu | 328 | 14,093 (43×) | 8,198 (25×) | 8,127 (25×) |
+| pp_to_ll_qcd0 | 298 | 14,027 (47×) | 8,335 (28×) | 8,313 (28×) |
+| ee_to_ttx | 357 | 14,588 (41×) | 8,520 (24×) | 8,668 (24×) |
+| ee_to_ee | 743 | 27,467 (37×) | 15,102 (20×) | 15,932 (21×) |
+| ee_to_tatah | 859 | 50,894 (59×) | 21,996 (26×) | 22,493 (26×) |
+| ee_to_wpwm | 776 | 64,059 (83×) | 30,145 (39×) | 30,431 (39×) |
+| ee_to_mumua | 1,510 | 133,751 (89×) | 58,403 (39×) | 59,344 (39×) |
+| ee_to_mumu_tata_qcd0 | 6,404 | 1,319,279 (206×) | 356,126 (56×) | 366,581 (57×) |
+| uux_to_ccx_emmm_qcd0 | 100,230 | 216,900,033 (2,164×) | 28,505,729 (284×) | 29,463,222 (294×) |
+| bbx_to_ccx_emmm_qcd0 | 141,430 | 236,382,600 (1,671×) | 29,593,298 (209×) | 30,900,754 (218×) |
 
 P1 samply ground truth: `res.push` ~40% (writes into a fresh multi-MB buffer per
 call — volume set by the un-CSE'd arena width), `kids.extend` ~15% (staging copies

@@ -144,6 +144,23 @@ impl AmplitudeEvaluator {
     }
 }
 
+/// The `validate_helas_mg` process suite (bit-for-bit MG-validated). Keep in sync
+/// with the `PROCESSES` registry in `validation/madgraph/gen_amplitude.py`.
+#[cfg(test)]
+pub(super) const MG_VALIDATED_PROCESSES: [&str; 11] = [
+    "e+ e- > mu+ mu-",
+    "u u~ > mu+ mu-",
+    "e+ e- > e+ e-",
+    "e+ e- > mu+ mu- a",
+    "e+ e- > t t~",
+    "e+ e- > W+ W-",
+    "e+ e- > Z H",
+    "e+ e- > ta+ ta- H",
+    "e+ e- > mu+ mu- ta+ ta- QCD=0",
+    "u u~ > c c~ e+ e- mu+ mu- QCD=0",
+    "b b~ > c c~ e+ e- mu+ mu- QCD=0",
+];
+
 fn helicity_states_for_spin(spin_code: i32, massless: bool) -> Result<Vec<i32>, EvalError> {
     // UFO spin code convention is 2s+1 with negative values reserved for ghosts.
     // A massless vector has no longitudinal mode (and `vxxxxx`'s massless branch
@@ -178,27 +195,11 @@ fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::AmplitudeEvaluator;
+    use super::{AmplitudeEvaluator, MG_VALIDATED_PROCESSES};
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::helas::eval::op::Op;
     use crate::helas::eval::tree::Tree;
     use crate::ufo::sm::{sm_model, SMRestrict};
-
-    /// The `validate_helas_mg` process suite (bit-for-bit MG-validated). Keep in sync
-    /// with the `PROCESSES` registry in `validation/madgraph/gen_amplitude.py`.
-    const MG_VALIDATED_PROCESSES: [&str; 11] = [
-        "e+ e- > mu+ mu-",
-        "u u~ > mu+ mu-",
-        "e+ e- > e+ e-",
-        "e+ e- > mu+ mu- a",
-        "e+ e- > t t~",
-        "e+ e- > W+ W-",
-        "e+ e- > Z H",
-        "e+ e- > ta+ ta- H",
-        "e+ e- > mu+ mu- ta+ ta- QCD=0",
-        "u u~ > c c~ e+ e- mu+ mu- QCD=0",
-        "b b~ > c c~ e+ e- mu+ mu- QCD=0",
-    ];
 
     /// Ops with no MG-validated process coverage. `MetricNegI` needs a diagram whose
     /// *amplitude* contraction is a pure-metric (VVS) vertex — the root-at-`VtxIdx(0)`

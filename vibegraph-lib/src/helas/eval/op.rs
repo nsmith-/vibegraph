@@ -156,20 +156,18 @@ pub enum Sym {
 }
 
 /// Folded leaf payload: deduped indices into the `C<F>` / `F` constant pools.
+///
+/// Kept to a single `u32` payload (8 bytes total) so folded nodes — and the stack
+/// evaluator's instruction stream — stay small; the `External` leg details live in
+/// the folded leg table (see [`super::fold::ExtLeg`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Const {
     /// index into `consts_c` (complex pool) — `Op::Coupling`.
     Complex(u32),
     /// index into `consts_f` (real pool) — `Op::Mass` / `Op::Width` / `Op::Coeff`.
     Real(u32),
-    /// `Op::External` payload (structural, never pooled).
-    Ext {
-        leg_idx: usize,
-        spin: i32,
-        charge: Charge,
-        /// Whether this leg is an incoming external (see [`Sym::Ext`]).
-        incoming: bool,
-    },
+    /// index into the folded external-leg table — `Op::External`.
+    Ext(u32),
     /// Non-leaf op: no payload.
     None,
 }
@@ -211,19 +209,7 @@ impl fmt::Display for Const {
         match self {
             Const::Complex(idx) => write!(f, "(Complex {idx})"),
             Const::Real(idx) => write!(f, "(Real {idx})"),
-            Const::Ext {
-                leg_idx,
-                spin,
-                charge,
-                incoming,
-            } => {
-                write!(
-                    f,
-                    "(ExtLegInfo {leg_idx} {spin} {} {})",
-                    charge.sign(),
-                    *incoming as i32
-                )
-            }
+            Const::Ext(idx) => write!(f, "(Ext {idx})"),
             Const::None => write!(f, "(None)"),
         }
     }
