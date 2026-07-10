@@ -374,15 +374,18 @@ pub(crate) fn metric_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot
     WaveformSlot::Vector(vin)
 }
 
-/// `LowerVout`: [`metric_vout`] without ALOHA's −i vertex factor — the output index
-/// is lowered on the partner vector, nothing else. The vector-output transform of
-/// P-carrying structures (VVV): with the VVS −i·g the whole VVV current comes out
-/// −i relative to the FFV chain convention; pinned per-diagram against MadGraph's
-/// e+e-→W+W- AMP() (validation/madgraph/compare_amps.py).
+/// `LowerVout`: [`metric_vout`] times the momentum-odd structure's −1 — the physical
+/// contravariant current `−g^{μν}V_ν = −V^μ` of each P-carrying (VVV) structure term.
+/// P-less structures (VVS) carry +1 and P-carrying ones −1 relative to the naive
+/// rooted-term sum: the momentum-grade parity of rooting the UFO structure at the
+/// off-shell leg. Pinned per-diagram against MadGraph's e+e-→W+W- AMP()
+/// (validation/madgraph/compare_amps.py).
 pub(crate) fn lower_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let WaveformSlot::Vector(vin) = children[0] else {
         panic!("LowerVout: expected vector input");
     };
-    // g·V: lower the partner's index (musical iso ♭) with no vertex factor.
-    WaveformSlot::VectorCo(vin.lower())
+    WaveformSlot::Vector(VectorWf {
+        eps: -vin.eps,
+        momentum: vin.momentum,
+    })
 }
