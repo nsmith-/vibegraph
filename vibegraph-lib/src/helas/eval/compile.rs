@@ -235,7 +235,7 @@ mod tests {
                 *counts.entry(name).or_insert(0) += n;
             }
         }
-        let missing: Vec<&str> = Op::ALL
+        let missing: Vec<&str> = <Op as strum::VariantArray>::VARIANTS
             .iter()
             .map(|op| op.name())
             .filter(|name| !counts.contains_key(name))

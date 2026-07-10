@@ -22,7 +22,23 @@ pub type NodeId = u32;
 
 /// Opcode tag — carries no data of its own (operands are arena children, constants are
 /// the node's leaf payload).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+///
+/// The s-expression head token is the variant name verbatim; the token ↔ op round-trip
+/// ([`name`](Op::name)/[`from_name`](Op::from_name)) and the full variant list are
+/// derived by `strum` from the enum itself.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    strum::Display,
+    strum::EnumString,
+    strum::IntoStaticStr,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
 pub enum Op {
     // ── inputs / structural / algebraic ──
     /// External wavefunction input. Leaf: `{leg_idx, spin, charge}`; child: `[Mass]`.
@@ -83,89 +99,15 @@ pub enum Op {
 }
 
 impl Op {
-    /// Every opcode, in declaration order. Keep in sync with the enum (the
-    /// [`name`](Op::name)/[`from_name`](Op::from_name) matches are compiler-checked
-    /// exhaustive; this list is pinned against them by `op_names_roundtrip`).
-    pub const ALL: [Op; 22] = [
-        Op::External,
-        Op::Propagate,
-        Op::Mul,
-        Op::Add,
-        Op::GammaVout,
-        Op::GammaIout,
-        Op::GammaOout,
-        Op::ProjM,
-        Op::ProjP,
-        Op::ProjMAmp,
-        Op::ProjPAmp,
-        Op::Metric,
-        Op::MetricNegI,
-        Op::MetricVout,
-        Op::LowerVout,
-        Op::IdentityAmp,
-        Op::PMom,
-        Op::PMomOut,
-        Op::Coupling,
-        Op::Mass,
-        Op::Width,
-        Op::Coeff,
-    ];
-
-    /// The s-expression head token for this op.
+    /// The s-expression head token for this op (the `snake_case` variant name).
     pub fn name(self) -> &'static str {
-        match self {
-            Op::External => "External",
-            Op::Propagate => "Propagate",
-            Op::Mul => "Mul",
-            Op::Add => "Add",
-            Op::GammaVout => "GammaVout",
-            Op::GammaIout => "GammaIout",
-            Op::GammaOout => "GammaOout",
-            Op::ProjM => "ProjM",
-            Op::ProjP => "ProjP",
-            Op::ProjMAmp => "ProjMAmp",
-            Op::ProjPAmp => "ProjPAmp",
-            Op::Metric => "Metric",
-            Op::MetricNegI => "MetricNegI",
-            Op::MetricVout => "MetricVout",
-            Op::LowerVout => "LowerVout",
-            Op::IdentityAmp => "IdentityAmp",
-            Op::PMom => "PMom",
-            Op::PMomOut => "PMomOut",
-            Op::Coupling => "Coupling",
-            Op::Mass => "Mass",
-            Op::Width => "Width",
-            Op::Coeff => "Coeff",
-        }
+        self.into()
     }
 
     /// Parse an op from its s-expression head token.
     pub fn from_name(s: &str) -> Option<Op> {
-        Some(match s {
-            "External" => Op::External,
-            "Propagate" => Op::Propagate,
-            "Mul" => Op::Mul,
-            "Add" => Op::Add,
-            "GammaVout" => Op::GammaVout,
-            "GammaIout" => Op::GammaIout,
-            "GammaOout" => Op::GammaOout,
-            "ProjM" => Op::ProjM,
-            "ProjP" => Op::ProjP,
-            "ProjMAmp" => Op::ProjMAmp,
-            "ProjPAmp" => Op::ProjPAmp,
-            "Metric" => Op::Metric,
-            "MetricNegI" => Op::MetricNegI,
-            "MetricVout" => Op::MetricVout,
-            "LowerVout" => Op::LowerVout,
-            "IdentityAmp" => Op::IdentityAmp,
-            "PMom" => Op::PMom,
-            "PMomOut" => Op::PMomOut,
-            "Coupling" => Op::Coupling,
-            "Mass" => Op::Mass,
-            "Width" => Op::Width,
-            "Coeff" => Op::Coeff,
-            _ => return None,
-        })
+        use std::str::FromStr;
+        Op::from_str(s).ok()
     }
 
     /// Whether this op carries a leaf payload token in the s-expression (a single
@@ -175,12 +117,6 @@ impl Op {
             self,
             Op::External | Op::Coupling | Op::Mass | Op::Width | Op::Coeff
         )
-    }
-}
-
-impl fmt::Display for Op {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
     }
 }
 
@@ -299,18 +235,22 @@ mod tests {
 
     use super::Op;
 
-    /// `Op` ↔ s-expression head token is a bijection: every op round-trips through
-    /// `name`/`from_name`, and no two ops share a name.
+    /// `Op` ↔ s-expression head token is a bijection: strum's `VariantArray` and
+    /// `VariantNames` are index-aligned, every op round-trips through `name`/`from_name`,
+    /// and no two ops share a name.
     #[test]
     fn op_names_roundtrip() {
+        use strum::{VariantArray, VariantNames};
+
+        let ops = <Op as VariantArray>::VARIANTS;
+        let names = <Op as VariantNames>::VARIANTS;
+        assert_eq!(ops.len(), names.len());
+
         let mut seen = HashSet::new();
-        for op in Op::ALL {
-            assert_eq!(Op::from_name(op.name()), Some(op), "round-trip for {op:?}");
-            assert!(
-                seen.insert(op.name()),
-                "duplicate s-expr name {}",
-                op.name()
-            );
+        for (&op, &name) in ops.iter().zip(names) {
+            assert_eq!(op.name(), name, "name for {op:?}");
+            assert_eq!(Op::from_name(name), Some(op), "round-trip for {op:?}");
+            assert!(seen.insert(name), "duplicate s-expr name {name}");
         }
     }
 }
