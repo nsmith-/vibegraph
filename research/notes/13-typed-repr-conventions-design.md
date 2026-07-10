@@ -303,32 +303,34 @@ re-plan (harness first; simplify before optimize; Stage A may defer). Status fla
    stayed inline in `apply`. Harness smoke test repointed off `metric_contract`. **Pure structural →
    bit-for-bit** (175 lib + `validate_helas_mg` 11/11, max_rel_diff ≤ 6.25e-13). Perf baseline
    (`benches/amplitude_eval`, ee→μμ, release, N=10k): ~14.0 µs/eval — the Stage-A profiling anchor.
-5. **Two equivalence stages on the harness — Stage B FIRST, Stage A deferred:**
-   - **5b. Stage B — SCOPE CORRECTED (2026-07-09 design stage): NOT a local simplify; it is a
-     global vector-convention rewrite.** The original plan — "normalize `MetricVout`/`LowerVout` so
-     `VectorCo` + its two extra propagator branches collapse into the plain `Vector` path" — was
-     shown to be *impossible as a producer-only change*:
-     - **Empirical:** routing `VectorCo` through `raise()` + the plain `Vector` branch (everything
-       else unchanged) breaks 5/11 MG processes — `ee_to_wpwm` catastrophically (max_rel_diff 1.72e3,
-       the massless photon via `LowerVout`) and the four massive-vector-current processes at 1–37%
-       (`ee_to_tatah`, `ee_to_mumu_tata`, `uux`, `bbx`).
-     - **Analytic:** the massless `VectorCo` branch *relabels* `ε_μ→ε^μ` (raw components, NO metric
-       raise) ×(−i/q²); the massive branch *raises* (spatial flip) AND uses the opposite propagator
-       phase (+i vs the plain branch's −i). Reproducing both from one contravariant producer output
-       through the plain branches needs producer values differing in the **time-component sign**
-       between the two mass regimes — no single mass-independent producer works. And the propagator
-       + the sink contract (`metric`/`slash`) are **shared with the already-correct FFV (`GammaVout`)
-       chains**, so the propagated `Vector` fed to them can't be changed producer-side.
-     - **⇒ Eliminating `VectorCo` requires moving *every* vector chain to one physical convention at
-       once:** the FFV/VVS/VVV producers, the vector propagator, and the vector contract — a global
-       re-derivation that re-attributes the non-physical −i/+i / MetricVout-−1 chain-phase split to
-       physical per-vertex/per-propagator factors. **Oracle:** the *closed-amplitude* MG net only —
-       a smaller harness "composite" with a fixed contract degenerates to `new_prop == old_prop`
-       (impossible), so `validate_helas_mg` + the per-diagram `compare_amps.py` AMP probe are the
-       real oracles (a produce→propagate→contract sub-composite is NOT faithful for a convention
-       change that alters intermediate currents). Multi-session, note-12-class; verify per-diagram,
-       not just |M|². Payoff: drop `WaveformSlot::VectorCo`, 4 vector-prop branches → 2. Re-checkpoint
-       perf after.
+5. **Two equivalence stages on the harness — Stage B done, Stage A deferred:**
+   - **5b. Stage B ✅ DONE (2026-07-09, `cleanup-refactor` d537e1e/3c60fe0/5c95d5b): one physical
+     contravariant vector convention; `WaveformSlot::VectorCo` deleted.** The corrected-scope
+     analysis (global amplitude-load-bearing rewrite) had shown a *producer-only* change with the
+     producers held at their covariant values fails (5/11 MG broken); what resolved it was choosing
+     the producer *phases* per composite:
+     - `propagate(metric_vout(v), m>0)` ≡ `propagate(Vector(+v), m>0)` and
+       `propagate(lower_vout(v), m>0)` ≡ `propagate(Vector(−v), m>0)` are IEEE-exact sign
+       shuffles — certified **bit-exact** on 10k random inputs with the Stage-0 harness before
+       any rewiring. The old −1(`MetricVout`)/+i(covariant-massive) pair equals the new
+       +1/−i(plain) pair exactly.
+     - The single genuinely inequivalent case, the massless `VectorCo` branch (relabel, no raise),
+       differs from the physical convention only in the propagated current's **time component**;
+       node dumps at the MG validation points show both the conserved sink current's J⁰ (CM
+       s-channel, massless fermions) and the assembled VVV current's time component are exactly
+       0.0, so the amplitudes are bit-identical there. (The old relabel convention was only ever
+       valid on that corner; a future t-channel massless VVV rooting gets the physical — correct —
+       time component.)
+     - **New convention:** every producer emits the physical contravariant current with a
+       momentum-grade sign — +1 for P-less structures (VVS: `MetricVout` = identity, `g^{μν}V_ν
+       = V^μ`), −1 for P-carrying ones (VVV: `LowerVout` = negation) — the UFO coupling carries
+       the vertex i, the propagator its −i. 4 vector-propagator branches → 2; `VectorCo` slot,
+       covariant `propagate_core` arms, `rand_vector_co` all deleted.
+     - **Verification:** per-diagram × per-helicity dumps for ee_to_zh / ee_to_wpwm / ee_to_tatah
+       bit-identical to the pre-Stage-B baseline (ee_to_zh got its own MG AMP probe in
+       build_amplitude.sh); 175 lib + `validate_helas_mg` 11/11, rel_diffs unchanged
+       digit-for-digit; ALOHA pin re-derived (vibegraph VVS current = +i × `VVS1P1N_1`).
+       Perf re-checkpoint ~14.1 µs/eval (unchanged).
    - **5a. Stage A (fuse, deferred pending profiling):** peephole/instruction-selection rewrite +
      coordinate read-off for the §2b catalog; per-kernel oracle `fused(random) == generic(random)`.
      This is a *performance* play. **Profile `run.rs` first** — the forward-pass `Vec` churn,

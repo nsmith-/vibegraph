@@ -135,8 +135,9 @@ _Deps: none; done before task 4 so the typed-convention work sits on a clean bas
 ### 4. `typed-repr-conventions` — Make all wavefunction/Lorentz conventions explicit in types
 
 **Status (2026-07-09, `cleanup-refactor`): terminology rename + typed propagator seam + Stage 0
-property-test harness + kernel factor-out (1-1 `Op`↔`kernel.rs`) DONE; remaining Stage B (simplify)
-then Stage A (fuse) deferred.** Landed:
+property-test harness + kernel factor-out (1-1 `Op`↔`kernel.rs`) + Stage B (one contravariant
+vector convention, `VectorCo` deleted) DONE; only Stage A (fuse) remains, deferred pending
+profiling.** Landed:
 - §7 step 1 terminology rename `SpinorFlow`→`DiracAdjoint`/`Ket`/`Bra`, runtime `Flow`→`Adjoint`
   (`84bd2d3`).
 - `VectorWf` variance-parameterized (`aed1a80`).
@@ -156,8 +157,8 @@ off the WWγ vertex → `LowerVout` → massless photon propagator, exercising t
 branch bit-for-bit; `mu+ mu- > w+ w-` hits the same path). See `research/notes/13` §7 and memory
 `lorentz-eval-node-refactor`.
 
-**Staged plan for the remaining work — harness + kernel factor-out done; NEXT is Stage B
-(convention simplify) before Stage A (fuse, deferred pending profiling).**
+**Staged plan — harness + kernel factor-out + Stage B done; Stage A (fuse) deferred
+pending profiling.**
 
 _Design decision (2026-07-09): **drop the two-level `LorentzEvalNode` enum** — nested enums carry
 two discriminants (larger/cache-worse than the flat dataless `Op`), and the variance/adjoint it was
@@ -186,23 +187,26 @@ REVISION + §7._
   Pure structural → **bit-for-bit** (175 lib + `validate_helas_mg` 11/11, max_rel_diff ≤ 6.25e-13).
   **Perf baseline** (`benches/amplitude_eval`, ee→μμ, release, N=10k): ~14.0 µs/eval (139.8–142.2
   ms/10k, this machine) — feeds the Stage-A profiling decision.
-- **Stage B (own session) — SCOPE CORRECTED (2026-07-09 design stage): a GLOBAL vector-convention
-  rewrite, not a local simplify.** The original framing — normalize `LowerVout`/`MetricVout` so
-  `VectorCo` + its two extra propagator branches collapse into the plain `Vector` path — was proven
-  impossible as a producer-only change. **Empirical:** routing `VectorCo` through `raise()`+the plain
-  `Vector` branch breaks 5/11 MG (`ee_to_wpwm` at 1.72e3 — the massless photon via `LowerVout`; the
-  four massive-vector processes at 1–37%). **Analytic:** the massless branch *relabels* (no metric
-  raise) while the massive branch *raises* + uses the opposite propagator phase (+i vs −i), so a
-  single contravariant producer can't feed both plain branches (the two regimes need producer values
-  differing in the time-component sign); and the propagator + sink contract are *shared with the
-  already-correct FFV (`GammaVout`) chains*, so the propagated `Vector` can't change producer-side.
-  ⇒ Dropping `VectorCo` requires moving *every* vector chain (FFV/VVS/VVV producers + the vector
-  propagator + the vector contract) to one physical convention at once, re-attributing the −i/+i /
-  MetricVout-−1 split to physical per-vertex/per-propagator factors. **Oracle = the closed-amplitude
-  MG net only** (`validate_helas_mg` + per-diagram `compare_amps.py`); a fixed-contract sub-composite
-  degenerates to `new_prop==old_prop` and is NOT a faithful oracle for this. Multi-session,
-  note-12-class; verify per-diagram, not just |M|². Payoff: drop the slot variant, 4 vector-prop
-  branches → 2. Re-checkpoint perf after. See note 13 §7 5b + memory `lorentz-eval-node-refactor`.
+- **Stage B ✅ DONE (2026-07-09, `cleanup-refactor` d537e1e/3c60fe0/5c95d5b): one physical
+  contravariant vector convention; `WaveformSlot::VectorCo` deleted.** The corrected-scope
+  fear (a global amplitude-load-bearing rewrite) dissolved once the composites were checked
+  *with the right producer phases*: `propagate(metric_vout(v))` ≡ `propagate(Vector(+v))` and
+  `propagate(lower_vout(v), m>0)` ≡ `propagate(Vector(−v), m>0)` are IEEE-exact sign shuffles
+  (certified bit-exact on 10k random samples via the Stage-0 harness before rewiring). The one
+  genuinely inequivalent case — the massless `VectorCo` branch's relabel-vs-raise — differs only
+  in the propagated current's *time component*, and every validation point multiplies it by an
+  exactly-zero conserved sink current J⁰ (CM s-channel, massless fermions; verified on real node
+  dumps: both J⁰ and the assembled VVV current's time component are exactly 0.0). New convention:
+  producers emit the physical contravariant current with a momentum-grade sign (+1 P-less VVS,
+  −1 P-carrying VVV), the UFO coupling carries the vertex i, the propagator its −i; `MetricVout`
+  is now an identity, `LowerVout` a negation, 4 vector-prop branches → 2. **Verified per-diagram:**
+  ee_to_zh / ee_to_wpwm / ee_to_tatah [diagram × helicity] dumps bit-identical to the pre-Stage-B
+  baseline (ee_to_zh got its own MG AMP probe, registered in build_amplitude.sh); 175 lib +
+  `validate_helas_mg` 11/11 with rel_diffs unchanged digit-for-digit. Perf re-checkpoint:
+  ~14.1 µs/eval (unchanged; ee→μμ exercises no VVS/VVV chain). NOTE for future rooting work:
+  the massless-vector chain equality leans on sink-current conservation at CM s-channel points —
+  a t-channel massless VVV rooting (not in the current 11-process net) would see the (physical,
+  now-correct) time component; the old relabel convention was only ever valid on that corner.
 - **Stage A (own session, DEFERRED pending profiling) — `fused == generic`.** Peephole/
   instruction-selection layer (note 13 §7 step 5a) + coordinate read-off (FFV → `[g_L,g_R]`, …),
   oracle = the generic path. This is a *performance* play, so **profile `run.rs` first** — the
