@@ -13,8 +13,9 @@ use num_traits::{FromPrimitive, Zero};
 
 use super::ast::Ast;
 use super::compile::AmplitudeEvaluator;
+use super::fold::ExtLeg;
 use super::kernel;
-use super::op::{Const, Node, NodeId, Op};
+use super::op::{Const, Node, Op};
 use super::tree::Tree;
 use super::waveform_slot::WaveformSlot;
 use crate::ufo::EvaluatedModel;
@@ -26,17 +27,33 @@ use super::lower;
 #[cfg(test)]
 use super::root_diagram::{compile_diagram_ast, DiagramEval};
 
-/// Reusable evaluation workspace for a [`BoundAmplitude`].
+/// Reusable evaluation workspace for a [`BoundAmplitude`] /
+/// [`BoundAmplitudeStack`](super::run_stack::BoundAmplitudeStack).
 ///
-/// Owns the forward pass's heap storage so the hot loops (helicity combinations
-/// inside [`BoundAmplitude::eval_m2`], phase-space points outside it) share one
-/// allocation. Create with [`BoundAmplitude::scratch_space`]; any `ScratchSpace` of
-/// matching `F` works with any `BoundAmplitude` (it grows on demand). Opaque so the
-/// evaluation strategy can change without touching the API.
+/// Owns the evaluators' heap storage so the hot loops (helicity combinations
+/// inside `eval_m2`, phase-space points outside it) share one allocation. Create
+/// with the amplitude's `scratch_space()`; any `ScratchSpace` of matching `F` works
+/// with any bound amplitude (it grows on demand). Opaque so the evaluation strategy
+/// can change without touching the API.
 #[derive(Debug, Default)]
 pub struct ScratchSpace<F: Real> {
-    /// One computed slot per arena node, in storage (topological) order.
-    res: Vec<WaveformSlot<F>>,
+    /// Forward scan: one computed slot per arena node, in storage (topological) order.
+    pub(super) res: Vec<WaveformSlot<F>>,
+    /// Stack evaluator: the live post-order value stack.
+    pub(super) stack: Vec<WaveformSlot<F>>,
+    /// Stack evaluator: the Store/Load memo pad for shared (DAG) nodes.
+    pub(super) memo: Vec<WaveformSlot<F>>,
+}
+
+/// The per-evaluation immutable context every node reduction reads: the bound
+/// constant pools and leg table, plus one phase-space point's kinematics.
+pub(super) struct EvalEnv<'a, F: Real> {
+    pub consts_c: &'a [C<F>],
+    pub consts_f: &'a [F],
+    pub ext_legs: &'a [ExtLeg],
+    pub momenta: &'a [LorentzVector<F>],
+    pub helicities: &'a [i32],
+    pub ward_leg: Option<usize>,
 }
 
 /// A compiled amplitude bound to a parameter card at scalar precision `F`.
@@ -86,6 +103,8 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
     pub fn scratch_space(&self) -> ScratchSpace<F> {
         ScratchSpace {
             res: Vec::with_capacity(self.eval.folded().ast.len()),
+            stack: Vec::new(),
+            memo: Vec::new(),
         }
     }
 
@@ -127,15 +146,15 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         ward_leg: Option<usize>,
         scratch: &mut ScratchSpace<F>,
     ) -> C<F> {
-        run_forward(
-            &self.eval.folded().ast,
-            &self.consts_c,
-            &self.consts_f,
+        let env = EvalEnv {
+            consts_c: &self.consts_c,
+            consts_f: &self.consts_f,
+            ext_legs: self.eval.folded().ext_legs(),
             momenta,
             helicities,
             ward_leg,
-            &mut scratch.res,
-        )
+        };
+        run_forward(&self.eval.folded().ast, &env, &mut scratch.res)
     }
 
     /// Test-only: evaluate the amplitude with one external boson's polarisation ε^μ
@@ -159,28 +178,16 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
 /// (the caller-owned result buffer, cleared on entry) by id, so a shared (DAG) node is
 /// evaluated exactly once. For a whole amplitude the root is a scalar; rooting a
 /// sub-tree (tests) can return any slot.
-fn run_forward_slot<F: Real>(
+pub(super) fn run_forward_slot<F: Real>(
     ast: &Ast<Const>,
-    consts_c: &[C<F>],
-    consts_f: &[F],
-    momenta: &[LorentzVector<F>],
-    helicities: &[i32],
-    ward_leg: Option<usize>,
+    env: &EvalEnv<'_, F>,
     res: &mut Vec<WaveformSlot<F>>,
 ) -> WaveformSlot<F> {
     res.clear();
     res.reserve(ast.len());
     for id in ast.iter() {
-        let value = apply(
-            ast.value(id),
-            ast.children_ids(id),
-            res,
-            momenta,
-            helicities,
-            consts_c,
-            consts_f,
-            ward_leg,
-        );
+        let ids = ast.children_ids(id);
+        let value = apply(ast.value(id), ids.len(), |i| res[ids[i] as usize], env);
         res.push(value);
     }
     res[ast.root() as usize]
@@ -188,47 +195,38 @@ fn run_forward_slot<F: Real>(
 
 /// Evaluate the whole-amplitude folded arena in one forward pass, returning the root
 /// scalar = M.
-#[allow(clippy::too_many_arguments)]
 fn run_forward<F: Real>(
     ast: &Ast<Const>,
-    consts_c: &[C<F>],
-    consts_f: &[F],
-    momenta: &[LorentzVector<F>],
-    helicities: &[i32],
-    ward_leg: Option<usize>,
+    env: &EvalEnv<'_, F>,
     res: &mut Vec<WaveformSlot<F>>,
 ) -> C<F> {
-    match run_forward_slot(ast, consts_c, consts_f, momenta, helicities, ward_leg, res) {
+    match run_forward_slot(ast, env, res) {
         WaveformSlot::Scalar(s) => s.value,
         WaveformSlot::Empty => C::new(F::zero(), F::zero()),
         other => panic!("amplitude root is not a scalar: {other:?}"),
     }
 }
 
-/// Reduce one folded node from its children's already-evaluated results, read directly
-/// out of `res` via the node's child-id row (no staging copy). The single match over
-/// `Op`: constant leaves resolve from the pools; `External`/`Propagate` build
-/// wavefunctions; `Mul`/`Add` fold over the ids buffer-free; the fixed-arity Lorentz
-/// primitives stage their ≤3 operands on the stack for the `kernel::` slice interface.
-#[allow(clippy::too_many_arguments)]
-fn apply<F: Real>(
+/// Reduce one folded node from its children's already-evaluated results, read through
+/// the `kid` accessor (no staging copy) — the forward scan indexes its result buffer
+/// by child id, the stack evaluator its value stack by position; both strategies
+/// share this single match over `Op`. Constant leaves resolve from the pools;
+/// `External` reads the leg table; `Mul`/`Add` fold over the accessor buffer-free;
+/// the fixed-arity Lorentz primitives stage their ≤3 operands on the stack for the
+/// `kernel::` slice interface.
+pub(super) fn apply<F: Real>(
     node: &Node<Const>,
-    ids: &[NodeId],
-    res: &[WaveformSlot<F>],
-    momenta: &[LorentzVector<F>],
-    helicities: &[i32],
-    consts_c: &[C<F>],
-    consts_f: &[F],
-    ward_leg: Option<usize>,
+    n_kids: usize,
+    kid: impl Fn(usize) -> WaveformSlot<F>,
+    env: &EvalEnv<'_, F>,
 ) -> WaveformSlot<F> {
-    let kid = |i: usize| res[ids[i] as usize];
     match node.op {
         Op::Coupling => {
             let Const::Complex(i) = node.leaf else {
                 panic!("Coupling node without a complex-pool index");
             };
             WaveformSlot::Scalar(ScalarWf {
-                value: consts_c[i as usize],
+                value: env.consts_c[i as usize],
                 momentum: LorentzVector::zero(),
             })
         }
@@ -236,43 +234,36 @@ fn apply<F: Real>(
             let Const::Real(i) = node.leaf else {
                 panic!("real-const node without a real-pool index");
             };
-            WaveformSlot::Real(consts_f[i as usize])
+            WaveformSlot::Real(env.consts_f[i as usize])
         }
         Op::External => {
-            let Const::Ext {
-                leg_idx,
-                spin,
-                charge,
-                incoming,
-            } = node.leaf
-            else {
-                panic!("External node without leg info");
+            let Const::Ext(i) = node.leaf else {
+                panic!("External node without a leg-table index");
             };
+            let leg = env.ext_legs[i as usize];
+            let leg_idx = leg.leg_idx as usize;
             // Ward-identity gauge substitution (test-only): replace the chosen
             // external boson's polarisation ε^μ with its own 4-momentum q^μ. The
             // coherent diagram sum must then vanish (current conservation).
-            if ward_leg == Some(leg_idx) {
-                let q = momenta[leg_idx];
+            if env.ward_leg == Some(leg_idx) {
+                let q = env.momenta[leg_idx];
                 return WaveformSlot::Vector(VectorWf {
                     eps: ComplexVector::from(q),
                     momentum: q,
                 });
             }
-            let mass = kernel::expect_real(kid(0));
             build_external_core(
-                momenta[leg_idx],
-                helicities[leg_idx],
-                spin,
-                charge,
-                incoming,
-                mass,
+                env.momenta[leg_idx],
+                env.helicities[leg_idx],
+                leg.spin,
+                leg.charge,
+                leg.incoming,
+                env.consts_f[leg.mass as usize],
             )
         }
         Op::Propagate => kernel::propagate(&[kid(0), kid(1), kid(2)]),
-        Op::Add => ids
-            .iter()
-            .fold(WaveformSlot::Empty, |acc, &c| acc + res[c as usize]),
-        Op::Mul => mul_apply(ids.iter().map(|&c| res[c as usize])),
+        Op::Add => (0..n_kids).fold(WaveformSlot::Empty, |acc, i| acc + kid(i)),
+        Op::Mul => mul_apply((0..n_kids).map(kid)),
         // Lorentz primitives: each `Op` maps 1-to-1 to a `kernel::` fn named for it.
         Op::GammaVout => kernel::gamma_vout(&[kid(0), kid(1)]),
         Op::GammaIout => kernel::gamma_iout(&[kid(0), kid(1)]),
@@ -291,12 +282,11 @@ fn apply<F: Real>(
         // so an output-leg momentum reads at most 3 input currents.
         Op::PMomOut => {
             let mut buf = [WaveformSlot::Empty; 3];
-            let n = ids.len();
-            assert!(n <= buf.len(), "PMomOut: >{} vertex inputs", buf.len());
-            for (b, &c) in buf.iter_mut().zip(ids) {
-                *b = res[c as usize];
+            assert!(n_kids <= buf.len(), "PMomOut: >{} vertex inputs", buf.len());
+            for (i, b) in buf.iter_mut().enumerate().take(n_kids) {
+                *b = kid(i);
             }
-            kernel::pmom_out(&buf[..n])
+            kernel::pmom_out(&buf[..n_kids])
         }
     }
 }
@@ -370,15 +360,15 @@ fn eval_single_diagram_slot<F: Real + FromPrimitive>(
     let symbolic = lower::lower(std::slice::from_ref(diagram));
     let folded = Folded::build(&symbolic);
     let (consts_c, consts_f) = folded.pools::<F>(evaluated);
-    run_forward_slot(
-        &folded.ast,
-        &consts_c,
-        &consts_f,
+    let env = EvalEnv {
+        consts_c: &consts_c,
+        consts_f: &consts_f,
+        ext_legs: folded.ext_legs(),
         momenta,
         helicities,
-        None,
-        &mut Vec::new(),
-    )
+        ward_leg: None,
+    };
+    run_forward_slot(&folded.ast, &env, &mut Vec::new())
 }
 
 /// Test helper: the scalar amplitude of a single diagram (see
@@ -1827,7 +1817,15 @@ mod tests {
                 combos
                     .iter()
                     .map(|hel| {
-                        match run_forward_slot(&f.ast, &cc, &cf_pool, &p, hel, None, &mut res) {
+                        let env = EvalEnv {
+                            consts_c: &cc,
+                            consts_f: &cf_pool,
+                            ext_legs: f.ext_legs(),
+                            momenta: &p,
+                            helicities: hel,
+                            ward_leg: None,
+                        };
+                        match run_forward_slot(&f.ast, &env, &mut res) {
                             WaveformSlot::Scalar(s) => s.value,
                             WaveformSlot::Empty => C::new(0.0, 0.0),
                             other => panic!("amplitude root is not a scalar: {other:?}"),

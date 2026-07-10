@@ -38,6 +38,9 @@ mod prop_harness;
 mod root_diagram;
 mod root_lorentz;
 mod run;
+// Post-order stack-machine evaluation strategy (memoizes only shared DAG nodes),
+// benchmarked against `run`'s memoize-all forward scan.
+mod run_stack;
 // `Tree` is used by every arena; `Linearized`/`linearize`/`max_depth` are retained for
 // future passes (e.g. benchmarking the forward scan against a stack walk).
 #[allow(dead_code)]
@@ -51,3 +54,4 @@ pub use op::{Const, Node, Op, Sym};
 pub use root_diagram::compile_diagram_ast;
 pub use root_lorentz::RootLorentzError;
 pub use run::{BoundAmplitude, ScratchSpace};
+pub use run_stack::BoundAmplitudeStack;

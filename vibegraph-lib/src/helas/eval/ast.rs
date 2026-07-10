@@ -40,6 +40,7 @@ impl<T> Ast<T> {
 
     /// A node's children as the contiguous CSR row, without an iterator adapter —
     /// the forward-pass runtime indexes results directly off this slice.
+    #[inline]
     pub fn children_ids(&self, node: NodeId) -> &[NodeId] {
         let i = node as usize;
         let lo = self.children_offsets[i] as usize;
@@ -392,13 +393,7 @@ mod tests {
 
     #[test]
     fn const_display_ext() {
-        let c = Const::Ext {
-            leg_idx: 1,
-            spin: 3,
-            charge: Charge::Antiparticle,
-            incoming: true,
-        };
-        assert_eq!(c.to_string(), "(ExtLegInfo 1 3 -1 1)");
+        assert_eq!(Const::Ext(1).to_string(), "(Ext 1)");
     }
 
     #[test]
