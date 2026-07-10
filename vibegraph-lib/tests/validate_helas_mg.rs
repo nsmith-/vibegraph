@@ -13,6 +13,11 @@
 //! Prerequisites:
 //!   pixi run -e madgraph build-amplitude
 //!   pixi run -e madgraph generate-amplitude
+//!
+//! Each trial also reports an amortized evaluator timing next to MadGraph's
+//! MATRIX1 timing (`output/mg_timings.json`, written by gen_amplitude.py).
+//! Trials run concurrently by default and contend for cores — pass
+//! `--test-threads=1` when the timing numbers matter.
 
 mod common;
 
@@ -95,6 +100,53 @@ fn find_amplitude_csvs() -> Vec<PathBuf> {
 
     paths.sort();
     paths
+}
+
+/// MATRIX1 ns/eval per process, from the timing table gen_amplitude.py writes
+/// alongside the CSVs. Empty if the table is absent (pre-timing reference data).
+fn read_mg_timings() -> std::collections::HashMap<String, f64> {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output/mg_timings.json");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return Default::default();
+    };
+    let Ok(table) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return Default::default();
+    };
+    table
+        .as_object()
+        .map(|m| {
+            m.iter()
+                .filter_map(|(name, t)| Some((name.clone(), t.get("ns_per_eval")?.as_f64()?)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Amortized evaluator timing: repeat the CSV point set until the eval budget is
+/// met, so the short validation samples still give a stable ns/eval. Returns
+/// (evals performed, elapsed).
+fn time_evaluator(
+    bound: &BoundAmplitude<f64>,
+    points: &[AmpPoint],
+) -> (usize, std::time::Duration) {
+    const TARGET_EVALS: usize = 2_000;
+    const MAX_TIME: std::time::Duration = std::time::Duration::from_secs(1);
+    let mut n_evals = 0usize;
+    let mut acc = 0.0f64;
+    let t0 = Instant::now();
+    'outer: loop {
+        for pt in points {
+            acc += bound.eval_m2(&pt.momenta);
+            n_evals += 1;
+            if n_evals >= TARGET_EVALS || t0.elapsed() >= MAX_TIME {
+                break 'outer;
+            }
+        }
+    }
+    let elapsed = t0.elapsed();
+    std::hint::black_box(acc);
+    (n_evals, elapsed)
 }
 
 /// Derive process name from CSV path: "ee_to_mumu_amplitude.csv" → "ee_to_mumu".
@@ -198,7 +250,6 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
     let mut max_rel_diff = 0.0f64;
     let mut panicked = false;
 
-    let t0 = Instant::now();
     for pt in &points {
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| bound.eval_m2(&pt.momenta)));
         match result {
@@ -218,14 +269,23 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
             }
         }
     }
-    // Quick-and-dirty timing for rough performance feedback; not a rigorous benchmark.
-    let elapsed = t0.elapsed();
-    eprintln!(
-        "  [{name}] evaluated {} points in {:.2} ms  ({:.0} ns/eval)",
-        points.len(),
-        elapsed.as_secs_f64() * 1e3,
-        elapsed.as_nanos() as f64 / points.len() as f64
-    );
+
+    if !panicked {
+        // Rough performance feedback vs MadGraph; see the header note on
+        // `--test-threads=1` for meaningful numbers.
+        let (n_evals, elapsed) = time_evaluator(&bound, &points);
+        let rust_ns = elapsed.as_nanos() as f64 / n_evals as f64;
+        match read_mg_timings().get(&name) {
+            Some(mg_ns) => eprintln!(
+                "  [{name}] timing: rust {rust_ns:.0} ns/eval | MG {mg_ns:.0} ns/eval | \
+                 ratio {:.2}x  ({n_evals} evals)",
+                rust_ns / mg_ns
+            ),
+            None => eprintln!(
+                "  [{name}] timing: rust {rust_ns:.0} ns/eval | MG n/a  ({n_evals} evals)"
+            ),
+        }
+    }
 
     if panicked {
         eprintln!(

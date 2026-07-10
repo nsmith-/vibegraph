@@ -6,6 +6,11 @@ subroutine (built by build_amplitude.sh against wrappers/generic.f) over
 RAMBO-sampled phase-space points at one or more collision energies, and writes
   output/PROCESSNAME_amplitude.csv
 
+Also times each process's MATRIX1 over a dedicated `profile_npoints` batch and
+writes the table to output/mg_timings.json
+({name: {n_evals, total_ms, ns_per_eval}}), which validate_helas_mg reads to
+compare vibegraph's evaluator timing against MadGraph's.
+
 CSV schema (momenta-based; the only schema the Rust test reads):
   # process: PROCESS_STRING     <- parsed by vibegraph's process grammar
   # n_ext: N
@@ -28,6 +33,7 @@ Prerequisites:
 """
 
 import importlib
+import json
 import math
 import os
 import sys
@@ -59,6 +65,10 @@ class Process:
     sqrt_s_list: tuple[float, ...]
     npoints: int  # phase-space points per sqrt_s value
     seed: int
+    # Batch size for the MATRIX1 timing measurement (independent of the
+    # validation rows): large enough that the per-call wrapper overhead
+    # amortizes, scaled down for the expensive high-multiplicity processes.
+    profile_npoints: int = 10_000
 
 
 # The uux/eemumutata seeds (7/11) and 50-point single-energy grids predate the
@@ -144,6 +154,7 @@ PROCESSES = [
         sqrt_s_list=(500.0,),
         npoints=50,
         seed=11,
+        profile_npoints=2_000,
     ),
     Process(
         "uux_to_ccx_emmm_qcd0",
@@ -153,6 +164,7 @@ PROCESSES = [
         sqrt_s_list=(500.0,),
         npoints=50,
         seed=7,
+        profile_npoints=500,
     ),
     Process(
         "bbx_to_ccx_emmm_qcd0",
@@ -162,6 +174,7 @@ PROCESSES = [
         sqrt_s_list=(500.0,),
         npoints=50,
         seed=37,
+        profile_npoints=500,
     ),
 ]
 
@@ -247,12 +260,13 @@ def beam_momenta(sqrt_s: float, m1: float, m2: float) -> tuple[list[float], list
     return [e1, 0.0, 0.0, pz], [e2, 0.0, 0.0, -pz]
 
 
-def gen_process(proc: Process) -> tuple[int, list[list[float]]]:
+def gen_process(proc: Process) -> tuple[int, list[list[float]], dict]:
     """Evaluate a process's MadGraph amplitude over its phase-space sample.
 
     Leg order and momenta conventions: leg 1 along +z, leg 2 along -z (both
-    incoming), then the outgoing legs in process order.  Returns (n_ext, rows)
-    where each row is [m2, E0,px0,py0,pz0, E1,...] over all n_ext legs.
+    incoming), then the outgoing legs in process order.  Returns (n_ext, rows,
+    timing) where each row is [m2, E0,px0,py0,pz0, E1,...] over all n_ext legs
+    and timing is the profile_batch record.
     """
     module = importlib.import_module(f"mg_{proc.name}")
     card = param_card_path(proc)
@@ -281,24 +295,39 @@ def gen_process(proc: Process) -> tuple[int, list[list[float]]]:
                 row.extend(float(x) for x in p[:, leg])
             rows.append(row)
 
-    profile_batch(module, proc, card, n_ext, rows)
-    return n_ext, rows
+    timing = profile_batch(module, proc, card, m_in, m_out)
+    return n_ext, rows, timing
 
 
-def profile_batch(module, proc: Process, card: str, n_ext: int, rows: list[list[float]]):
-    """Rough MATRIX1 timing via the batch entry point (not a rigorous benchmark)."""
-    n = len(rows)
-    p_batch = (
-        np.array(rows, dtype=np.float64)[:, 1:].T.reshape(4, n_ext, n, order="F").copy(order="F")
-    )
+def profile_batch(
+    module, proc: Process, card: str, m_in: list[float], m_out: list[float]
+) -> dict:
+    """Rough MATRIX1 timing via the batch entry point (not a rigorous benchmark).
+
+    Times a dedicated RAMBO batch of `proc.profile_npoints` points at the highest
+    registered collision energy, so the Fortran-call overhead amortizes and the
+    ns/eval is comparable to vibegraph's per-point timing in validate_helas_mg.
+    """
+    n = proc.profile_npoints
+    n_ext = len(m_in) + len(m_out)
+    sqrt_s = proc.sqrt_s_list[-1]
+    rng = np.random.default_rng(proc.seed + 1_000_000)  # independent of the CSV stream
+    beam1, beam2 = beam_momenta(sqrt_s, m_in[0], m_in[1])
+    p_batch = np.zeros((4, n_ext, n), dtype=np.float64, order="F")
+    for k in range(n):
+        p_batch[:, 0, k] = beam1
+        p_batch[:, 1, k] = beam2
+        out = rambo(len(m_out), sqrt_s, m_out, rng)
+        for j in range(len(m_out)):
+            p_batch[:, 2 + j, k] = out[j]
     module.mg_eval_m2_batch(p_batch, card)  # warm-up
     t0 = time.perf_counter()
     module.mg_eval_m2_batch(p_batch, card)
     t1 = time.perf_counter()
-    print(
-        f"  MATRIX1 timing [{proc.name}]: {n} evals in {(t1 - t0) * 1e3:.2f} ms"
-        f"  ({(t1 - t0) / n * 1e9:.0f} ns/eval)"
-    )
+    total_ms = (t1 - t0) * 1e3
+    ns_per_eval = (t1 - t0) / n * 1e9
+    print(f"  MATRIX1 timing [{proc.name}]: {n} evals in {total_ms:.2f} ms  ({ns_per_eval:.0f} ns/eval)")
+    return {"n_evals": n, "total_ms": total_ms, "ns_per_eval": ns_per_eval}
 
 
 def write_csv(path: str, proc: Process, n_ext: int, rows: list[list[float]]):
@@ -342,9 +371,11 @@ def sanity_check_ee_mumu(rows: list[list[float]]):
 if __name__ == "__main__":
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    timings: dict[str, dict] = {}
     for proc in PROCESSES:
         print(f"Generating {proc.name} ({proc.process_str})...")
-        n_ext, rows = gen_process(proc)
+        n_ext, rows, timing = gen_process(proc)
+        timings[proc.name] = timing
         if proc.name == "ee_to_mumu":
             sanity_check_ee_mumu(rows)
         write_csv(
@@ -353,5 +384,10 @@ if __name__ == "__main__":
             n_ext,
             rows,
         )
+
+    timings_path = os.path.join(OUTPUT_DIR, "mg_timings.json")
+    with open(timings_path, "w") as f:
+        json.dump(timings, f, indent=2)
+    print(f"Wrote MATRIX1 timing table to {timings_path}")
 
     print("Done.")

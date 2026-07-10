@@ -87,22 +87,55 @@ Collects the validation follow-ups deferred from `cleanup-refactor`:
 - Optional CI job: `gen_sm_blob` + `git diff --exit-code` to catch a stale interned SM
   blob vs the pinned submodule (cleanup task 1 follow-up).
 
-## 🏎️ `performance-sprint` — stub, to be planned
+## 🏎️ `performance-sprint` — IN PROGRESS (branch `performance-sprint`)
 
-Collects the performance follow-ups deferred from `cleanup-refactor`:
+Multi-session evaluator-performance sprint; every session lands bit-for-bit against
+the 11-process `validate_helas_mg` net and re-records the timing table below.
+Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations are
+~half of `validate_helas_mg` time.
 
-- **Profile `run.rs` first** (gate for everything below): forward-pass `Vec` churn,
-  `C<F>`-vs-`F` multiply, arena traversal. Baseline: ~14.0–14.1 µs/eval
-  (`benches/amplitude_eval`, ee→μμ, release, N=10k, dev machine, 2026-07-09).
-- **Stage A fuse** (deferred from cleanup task 4; note 13 §7 step 5a):
-  peephole/instruction-selection layer + coordinate read-off (FFV → `[g_L,g_R]`, …),
-  oracle = the generic path via the Stage-0 harness (`fused == generic` per kernel).
-  Pursue only if profiling shows kernel granularity is the bottleneck.
-- **`generate-stream` Part B** (deferred from cleanup task 3): `generate_*` returns
-  `impl Iterator<Item = Result<DiagramSet, DiagramError>>` so a whole card's
-  subprocesses aren't materialized at once (memory/latency on big multiparticle cards).
-- **`feyngraph-perf`** (adjacent, submodule change; see its section below): the
-  `.counts()` HashMap allocation hot spot in `AssignWorkspace::assign`.
+- **P1 measurement rig ✅ (2026-07-10)** — `gen_amplitude.py` times each MATRIX1
+  over a dedicated `profile_npoints` RAMBO batch (10k / 2k / 500 by multiplicity)
+  and writes `output/mg_timings.json`; `validate_helas_mg` runs an amortized
+  timing pass (≥2k evals or ~1 s) and prints `rust | MG | ratio` per process
+  (`--test-threads=1` for clean numbers). `benches/amplitude_eval.rs` deleted;
+  criterion dev-dep reserved for strategy microbenches (P4/P6).
+- **P2 ScratchSpace + hash-cons CSE** — opaque `ScratchSpace<F>` required by
+  `eval_*` (one heap allocation across helicity/sample loops); CSE pass as the body
+  of `lower::optimize` (future: egglog extract → CSE tree→DAG post-process).
+- **P3 external-wavefunction pool + `Const` shrink** — per-leg×helicity-state pool
+  built once per point in `ScratchSpace`; `Const::Ext` → `u32`, drop `External`'s
+  `Mass` child; evaluator no longer threads momenta/helicities.
+- **P4 stack evaluator with Store/Load memo pad** — parallel `BoundAmplitude` using
+  `Tree::linearize`-style stack eval + memo slots for shared nodes; criterion bench
+  vs the memoize-all forward scan; adopt the winner.
+- **P5 egg arity groundwork** — binarize `Add`/`Mul` at lowering (left-fold keeps
+  summation order ⇒ bit-for-bit); egglog engine design is a separate session.
+- **P6 primitive inlining survey + Stage A fuse gate** (note 13 §7 5a) — check
+  rustc inlining of `LorentzRepr` calls; fusion microbenches (FFV `[g_L,g_R]`
+  first); adopt fused kernels only if kernel granularity remains the bottleneck.
+- Backlog: `generate-stream` Part B (deferred from cleanup task 3: lazy
+  `generate_*` iterator); `C<F>`-vs-`F` multiply peepholes; **`feyngraph-perf`**
+  (submodule `.counts()` hot spot, see its section below) stays a dedicated session.
+
+Baseline (P1, 2026-07-10, dev machine, `--profile profiling`, `--test-threads=1`):
+
+| process | rust ns/eval | MG ns/eval | ratio |
+|---|---:|---:|---:|
+| ee_to_zh | 5,479 | 206 | 27× |
+| ee_to_mumu | 14,093 | 328 | 43× |
+| pp_to_ll_qcd0 | 14,027 | 298 | 47× |
+| ee_to_ttx | 14,588 | 357 | 41× |
+| ee_to_ee | 27,467 | 743 | 37× |
+| ee_to_tatah | 50,894 | 859 | 59× |
+| ee_to_wpwm | 64,059 | 776 | 83× |
+| ee_to_mumua | 133,751 | 1,510 | 89× |
+| ee_to_mumu_tata_qcd0 | 1,319,279 | 6,404 | 206× |
+| uux_to_ccx_emmm_qcd0 | 216,900,033 | 100,230 | 2,164× |
+| bbx_to_ccx_emmm_qcd0 | 236,382,600 | 141,430 | 1,671× |
+
+The ratio grows with diagram count/AST width — consistent with allocation churn ×
+duplicated (un-CSE'd) subtrees dominating, not kernel arithmetic.
 
 ---
 
