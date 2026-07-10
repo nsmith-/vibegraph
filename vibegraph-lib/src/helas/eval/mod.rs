@@ -50,4 +50,4 @@ pub use error::{CompileError, EvalError, RootDiagramError};
 pub use op::{Const, Node, Op, Sym};
 pub use root_diagram::compile_diagram_ast;
 pub use root_lorentz::RootLorentzError;
-pub use run::BoundAmplitude;
+pub use run::{BoundAmplitude, ScratchSpace};

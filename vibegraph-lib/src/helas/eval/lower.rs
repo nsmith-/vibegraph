@@ -13,12 +13,16 @@
 //! Input currents are lowered once and referenced by id, so a current feeding several
 //! summed terms is shared (a DAG), not duplicated.
 
+use std::collections::HashMap;
+
 use super::ast::{Ast, AstBuilder};
 use super::diagram_eval::VertexInfo;
 use super::op::{NodeId, Op, Sym};
 use super::root_diagram::{DiagramEval, DiagramEvalTree, EvalNode, EvalNodeId};
 use super::root_lorentz::{LorentzEvalNode, LorentzEvalTree};
 use super::tree::Tree;
+use crate::ufo::couplings::CouplingId;
+use crate::ufo::particles::ParticleId;
 
 /// Inline every diagram into a single whole-amplitude [`Ast<Sym>`].
 pub fn lower(diagrams: &[DiagramEval]) -> Ast<Sym> {
@@ -35,9 +39,77 @@ pub fn lower(diagrams: &[DiagramEval]) -> Ast<Sym> {
     b.finish(root)
 }
 
-/// Structure-optimization pass (egglog hook). No-op for now.
+/// Structure-optimization pass. Today this is common-subexpression elimination;
+/// the planned egglog rewrite stage will run *before* it (egglog extraction yields
+/// a minimal tree, not a minimal DAG, so CSE stays as the tree→DAG post-process).
 pub fn optimize(ast: Ast<Sym>) -> Ast<Sym> {
-    ast
+    let deduped = cse(&ast);
+    log::debug!(
+        "optimize: {} nodes → {} after CSE",
+        ast.len(),
+        deduped.len()
+    );
+    deduped
+}
+
+/// Hashable identity of a node's leaf payload (`f64` coeffs compare by bit pattern,
+/// so two `Coeff` nodes merge only when they are the same IEEE value).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum LeafKey {
+    Coupling(CouplingId),
+    Particle(ParticleId),
+    Coeff(u64),
+    Ext {
+        leg_idx: usize,
+        spin: i32,
+        sign: i32,
+        incoming: bool,
+    },
+    None,
+}
+
+fn leaf_key(leaf: &Sym) -> LeafKey {
+    match *leaf {
+        Sym::Coupling(id) => LeafKey::Coupling(id),
+        Sym::Particle(id) => LeafKey::Particle(id),
+        Sym::Coeff(c) => LeafKey::Coeff(c.to_bits()),
+        Sym::Ext {
+            leg_idx,
+            spin,
+            charge,
+            incoming,
+        } => LeafKey::Ext {
+            leg_idx,
+            spin,
+            sign: charge.sign(),
+            incoming,
+        },
+        Sym::None => LeafKey::None,
+    }
+}
+
+/// Hash-cons the arena into a DAG: one forward scan (children precede parents, so
+/// each node's children are already remapped) interning every node by
+/// `(op, leaf, remapped children)`. Structurally identical subtrees collapse to one
+/// node; child order is preserved, so evaluation results — and their floating-point
+/// operation order — are unchanged.
+fn cse(ast: &Ast<Sym>) -> Ast<Sym> {
+    let mut b = AstBuilder::new();
+    let mut interned: HashMap<(Op, LeafKey, Vec<NodeId>), NodeId> = HashMap::new();
+    let mut remap: Vec<NodeId> = Vec::with_capacity(ast.len());
+    for id in ast.iter() {
+        let node = ast.value(id);
+        let children: Vec<NodeId> = ast
+            .children_ids(id)
+            .iter()
+            .map(|&c| remap[c as usize])
+            .collect();
+        let new_id = *interned
+            .entry((node.op, leaf_key(&node.leaf), children.clone()))
+            .or_insert_with(|| b.add(node.op, node.leaf, children));
+        remap.push(new_id);
+    }
+    b.finish(remap[ast.root() as usize])
 }
 
 fn sum_or_single(b: &mut AstBuilder<Sym>, mut nodes: Vec<NodeId>) -> NodeId {
@@ -189,5 +261,55 @@ fn lower_lorentz(
             let cs: Vec<NodeId> = children.iter().map(|&c| rec(c, b)).collect();
             b.add(Op::Mul, Sym::None, cs)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Structurally identical subtrees collapse to shared nodes, and the rendered
+    /// s-expression — which re-expands shared subtrees per parent — is unchanged.
+    #[test]
+    fn cse_merges_identical_subtrees() {
+        let mut b = AstBuilder::new();
+        let c1 = b.add(
+            Op::Coupling,
+            Sym::Coupling(CouplingId::from(5usize)),
+            vec![],
+        );
+        let m1 = b.add(Op::Mul, Sym::None, vec![c1]);
+        let c2 = b.add(
+            Op::Coupling,
+            Sym::Coupling(CouplingId::from(5usize)),
+            vec![],
+        );
+        let m2 = b.add(Op::Mul, Sym::None, vec![c2]);
+        let root = b.add(Op::Add, Sym::None, vec![m1, m2]);
+        let ast = b.finish(root);
+        let rendered = ast.to_string();
+
+        let opt = optimize(ast);
+        assert_eq!(opt.len(), 3, "coupling, mul, add");
+        assert_eq!(opt.to_string(), rendered);
+        let kids = opt.children_ids(opt.root());
+        assert_eq!(kids[0], kids[1], "both Add children share one node");
+    }
+
+    /// Nodes differing in leaf value or child order must not merge.
+    #[test]
+    fn cse_keeps_distinct_nodes() {
+        let mut b = AstBuilder::new();
+        let a = b.add(Op::Coeff, Sym::Coeff(1.0), vec![]);
+        let c = b.add(Op::Coeff, Sym::Coeff(2.0), vec![]);
+        let m1 = b.add(Op::Mul, Sym::None, vec![a, c]);
+        let m2 = b.add(Op::Mul, Sym::None, vec![c, a]);
+        let root = b.add(Op::Add, Sym::None, vec![m1, m2]);
+        let ast = b.finish(root);
+        let rendered = ast.to_string();
+
+        let opt = optimize(ast);
+        assert_eq!(opt.len(), 5, "child order distinguishes the two Muls");
+        assert_eq!(opt.to_string(), rendered);
     }
 }

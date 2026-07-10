@@ -14,7 +14,7 @@ use num_traits::{FromPrimitive, Zero};
 use super::ast::Ast;
 use super::compile::AmplitudeEvaluator;
 use super::kernel;
-use super::op::{Const, Node, Op};
+use super::op::{Const, Node, NodeId, Op};
 use super::tree::Tree;
 use super::waveform_slot::WaveformSlot;
 use crate::ufo::EvaluatedModel;
@@ -25,6 +25,19 @@ use super::fold::Folded;
 use super::lower;
 #[cfg(test)]
 use super::root_diagram::{compile_diagram_ast, DiagramEval};
+
+/// Reusable evaluation workspace for a [`BoundAmplitude`].
+///
+/// Owns the forward pass's heap storage so the hot loops (helicity combinations
+/// inside [`BoundAmplitude::eval_m2`], phase-space points outside it) share one
+/// allocation. Create with [`BoundAmplitude::scratch_space`]; any `ScratchSpace` of
+/// matching `F` works with any `BoundAmplitude` (it grows on demand). Opaque so the
+/// evaluation strategy can change without touching the API.
+#[derive(Debug, Default)]
+pub struct ScratchSpace<F: Real> {
+    /// One computed slot per arena node, in storage (topological) order.
+    res: Vec<WaveformSlot<F>>,
+}
 
 /// A compiled amplitude bound to a parameter card at scalar precision `F`.
 ///
@@ -68,28 +81,41 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         self.eval
     }
 
+    /// A workspace sized for this amplitude. Create once and pass to every
+    /// `eval_*` call; reuse across points to keep the hot path allocation-free.
+    pub fn scratch_space(&self) -> ScratchSpace<F> {
+        ScratchSpace {
+            res: Vec::with_capacity(self.eval.folded().ast.len()),
+        }
+    }
+
     /// Evaluate |M|² summed over all helicities.
     ///
     /// `momenta` are the external 4-momenta `[E, px, py, pz]`, incoming legs first then
     /// outgoing. Returns Σ_{helicities} |M|² (summed, not averaged).
-    pub fn eval_m2(&self, momenta: &[LorentzVector<F>]) -> F {
+    pub fn eval_m2(&self, momenta: &[LorentzVector<F>], scratch: &mut ScratchSpace<F>) -> F {
         if momenta.len() != self.eval.n_ext() {
             return F::zero();
         }
         self.eval
             .helicities()
             .iter()
-            .map(|hel| self.run(momenta, hel, None).norm_sqr())
+            .map(|hel| self.run(momenta, hel, None, scratch).norm_sqr())
             .fold(F::zero(), |acc, x| acc + x)
     }
 
     /// Evaluate the complex amplitude M for a single helicity configuration (the
     /// coherent sum over all diagrams).
-    pub fn eval_amplitude(&self, momenta: &[LorentzVector<F>], helicities: &[i32]) -> C<F> {
+    pub fn eval_amplitude(
+        &self,
+        momenta: &[LorentzVector<F>],
+        helicities: &[i32],
+        scratch: &mut ScratchSpace<F>,
+    ) -> C<F> {
         if momenta.len() != self.eval.n_ext() || helicities.len() != self.eval.n_ext() {
             return C::new(F::zero(), F::zero());
         }
-        self.run(momenta, helicities, None)
+        self.run(momenta, helicities, None, scratch)
     }
 
     /// Walk the folded arena for one (momenta, helicity) point. `ward_leg` gauge-
@@ -99,6 +125,7 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         momenta: &[LorentzVector<F>],
         helicities: &[i32],
         ward_leg: Option<usize>,
+        scratch: &mut ScratchSpace<F>,
     ) -> C<F> {
         run_forward(
             &self.eval.folded().ast,
@@ -107,6 +134,7 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
             momenta,
             helicities,
             ward_leg,
+            &mut scratch.res,
         )
     }
 
@@ -118,17 +146,19 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         momenta: &[LorentzVector<F>],
         helicities: &[i32],
         ward_leg: usize,
+        scratch: &mut ScratchSpace<F>,
     ) -> C<F> {
-        self.run(momenta, helicities, Some(ward_leg))
+        self.run(momenta, helicities, Some(ward_leg), scratch)
     }
 }
 
 /// Evaluate the folded arena in one forward pass, returning the root [`WaveformSlot`].
 ///
 /// Nodes are visited in arena (storage) order; since children always have smaller ids
-/// than their parents, each node's children are already computed and read from `res` by
-/// id, so a shared (DAG) node is evaluated exactly once. For a whole amplitude the root
-/// is a scalar; rooting a sub-tree (tests) can return any slot.
+/// than their parents, each node's children are already computed and read from `res`
+/// (the caller-owned result buffer, cleared on entry) by id, so a shared (DAG) node is
+/// evaluated exactly once. For a whole amplitude the root is a scalar; rooting a
+/// sub-tree (tests) can return any slot.
 fn run_forward_slot<F: Real>(
     ast: &Ast<Const>,
     consts_c: &[C<F>],
@@ -136,15 +166,15 @@ fn run_forward_slot<F: Real>(
     momenta: &[LorentzVector<F>],
     helicities: &[i32],
     ward_leg: Option<usize>,
+    res: &mut Vec<WaveformSlot<F>>,
 ) -> WaveformSlot<F> {
-    let mut res: Vec<WaveformSlot<F>> = Vec::with_capacity(ast.len());
-    let mut kids: Vec<WaveformSlot<F>> = Vec::new();
+    res.clear();
+    res.reserve(ast.len());
     for id in ast.iter() {
-        kids.clear();
-        kids.extend(ast.children(id).map(|c| res[c as usize]));
         let value = apply(
             ast.value(id),
-            &kids,
+            ast.children_ids(id),
+            res,
             momenta,
             helicities,
             consts_c,
@@ -158,6 +188,7 @@ fn run_forward_slot<F: Real>(
 
 /// Evaluate the whole-amplitude folded arena in one forward pass, returning the root
 /// scalar = M.
+#[allow(clippy::too_many_arguments)]
 fn run_forward<F: Real>(
     ast: &Ast<Const>,
     consts_c: &[C<F>],
@@ -165,28 +196,32 @@ fn run_forward<F: Real>(
     momenta: &[LorentzVector<F>],
     helicities: &[i32],
     ward_leg: Option<usize>,
+    res: &mut Vec<WaveformSlot<F>>,
 ) -> C<F> {
-    match run_forward_slot(ast, consts_c, consts_f, momenta, helicities, ward_leg) {
+    match run_forward_slot(ast, consts_c, consts_f, momenta, helicities, ward_leg, res) {
         WaveformSlot::Scalar(s) => s.value,
         WaveformSlot::Empty => C::new(F::zero(), F::zero()),
         other => panic!("amplitude root is not a scalar: {other:?}"),
     }
 }
 
-/// Reduce one folded node from its children's already-evaluated results. The single
-/// match over `Op`: constant leaves resolve from the pools; `External`/`Propagate` build
-/// wavefunctions; `Mul`/`Add` are the algebraic combinators; the Lorentz primitives
-/// dispatch to the shared helpers below.
+/// Reduce one folded node from its children's already-evaluated results, read directly
+/// out of `res` via the node's child-id row (no staging copy). The single match over
+/// `Op`: constant leaves resolve from the pools; `External`/`Propagate` build
+/// wavefunctions; `Mul`/`Add` fold over the ids buffer-free; the fixed-arity Lorentz
+/// primitives stage their ≤3 operands on the stack for the `kernel::` slice interface.
 #[allow(clippy::too_many_arguments)]
 fn apply<F: Real>(
     node: &Node<Const>,
-    children: &[WaveformSlot<F>],
+    ids: &[NodeId],
+    res: &[WaveformSlot<F>],
     momenta: &[LorentzVector<F>],
     helicities: &[i32],
     consts_c: &[C<F>],
     consts_f: &[F],
     ward_leg: Option<usize>,
 ) -> WaveformSlot<F> {
+    let kid = |i: usize| res[ids[i] as usize];
     match node.op {
         Op::Coupling => {
             let Const::Complex(i) = node.leaf else {
@@ -223,7 +258,7 @@ fn apply<F: Real>(
                     momentum: q,
                 });
             }
-            let mass = kernel::expect_real(children[0]);
+            let mass = kernel::expect_real(kid(0));
             build_external_core(
                 momenta[leg_idx],
                 helicities[leg_idx],
@@ -233,39 +268,48 @@ fn apply<F: Real>(
                 mass,
             )
         }
-        Op::Propagate => kernel::propagate(children),
-        Op::Add => children
+        Op::Propagate => kernel::propagate(&[kid(0), kid(1), kid(2)]),
+        Op::Add => ids
             .iter()
-            .copied()
-            .fold(WaveformSlot::Empty, |acc, x| acc + x),
-        Op::Mul => mul_apply(children),
+            .fold(WaveformSlot::Empty, |acc, &c| acc + res[c as usize]),
+        Op::Mul => mul_apply(ids.iter().map(|&c| res[c as usize])),
         // Lorentz primitives: each `Op` maps 1-to-1 to a `kernel::` fn named for it.
-        Op::GammaVout => kernel::gamma_vout(children),
-        Op::GammaIout => kernel::gamma_iout(children),
-        Op::GammaOout => kernel::gamma_oout(children),
-        Op::ProjM => kernel::proj_m(children),
-        Op::ProjP => kernel::proj_p(children),
-        Op::ProjMAmp => kernel::proj_m_amp(children),
-        Op::ProjPAmp => kernel::proj_p_amp(children),
-        Op::Metric => kernel::metric(children),
-        Op::MetricNegI => kernel::metric_neg_i(children),
-        Op::MetricVout => kernel::metric_vout(children),
-        Op::LowerVout => kernel::lower_vout(children),
-        Op::IdentityAmp => kernel::identity_amp(children),
-        Op::PMom => kernel::pmom(children),
-        Op::PMomOut => kernel::pmom_out(children),
+        Op::GammaVout => kernel::gamma_vout(&[kid(0), kid(1)]),
+        Op::GammaIout => kernel::gamma_iout(&[kid(0), kid(1)]),
+        Op::GammaOout => kernel::gamma_oout(&[kid(0), kid(1)]),
+        Op::ProjM => kernel::proj_m(&[kid(0)]),
+        Op::ProjP => kernel::proj_p(&[kid(0)]),
+        Op::ProjMAmp => kernel::proj_m_amp(&[kid(0), kid(1)]),
+        Op::ProjPAmp => kernel::proj_p_amp(&[kid(0), kid(1)]),
+        Op::Metric => kernel::metric(&[kid(0), kid(1)]),
+        Op::MetricNegI => kernel::metric_neg_i(&[kid(0), kid(1)]),
+        Op::MetricVout => kernel::metric_vout(&[kid(0)]),
+        Op::LowerVout => kernel::lower_vout(&[kid(0)]),
+        Op::IdentityAmp => kernel::identity_amp(&[kid(0), kid(1)]),
+        Op::PMom => kernel::pmom(&[kid(0)]),
+        // n-ary (all vertex inputs): stage on the stack; UFO vertices are ≤4-point,
+        // so an output-leg momentum reads at most 3 input currents.
+        Op::PMomOut => {
+            let mut buf = [WaveformSlot::Empty; 3];
+            let n = ids.len();
+            assert!(n <= buf.len(), "PMomOut: >{} vertex inputs", buf.len());
+            for (b, &c) in buf.iter_mut().zip(ids) {
+                *b = res[c as usize];
+            }
+            kernel::pmom_out(&buf[..n])
+        }
     }
 }
 
 /// n-ary product (the `Mul` op). Scalar/real children fold into a complex coefficient
 /// (reals kept in `F`); at most one non-scalar child carries the output type and absorbs
 /// the scalar momentum.
-fn mul_apply<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
+fn mul_apply<F: Real>(children: impl IntoIterator<Item = WaveformSlot<F>>) -> WaveformSlot<F> {
     let mut real_acc = F::one();
     let mut cplx_acc = C::new(F::one(), F::zero());
     let mut scalar_mom = LorentzVector::zero();
     let mut non_scalar = WaveformSlot::Empty;
-    for &child in children {
+    for child in children {
         match child {
             WaveformSlot::Real(r) => real_acc = real_acc * r,
             WaveformSlot::Scalar(s) => {
@@ -326,7 +370,15 @@ fn eval_single_diagram_slot<F: Real + FromPrimitive>(
     let symbolic = lower::lower(std::slice::from_ref(diagram));
     let folded = Folded::build(&symbolic);
     let (consts_c, consts_f) = folded.pools::<F>(evaluated);
-    run_forward_slot(&folded.ast, &consts_c, &consts_f, momenta, helicities, None)
+    run_forward_slot(
+        &folded.ast,
+        &consts_c,
+        &consts_f,
+        momenta,
+        helicities,
+        None,
+        &mut Vec::new(),
+    )
 }
 
 /// Test helper: the scalar amplitude of a single diagram (see
@@ -440,7 +492,7 @@ mod tests {
         // VVS1 `Metric(1,2)` rooted at vector leg 1 is a `MetricVout` current on the
         // partner vector V2, with the spectator scalar leg S multiplied in (the `Mul`
         // the rooted tree carries). Both primitives here are the production helpers.
-        let out = mul_apply(&[
+        let out = mul_apply([
             metric_vout(&[WaveformSlot::Vector(v2)]),
             WaveformSlot::Scalar(s),
         ]);
@@ -1771,15 +1823,16 @@ mod tests {
                 let symbolic = lower::lower(std::slice::from_ref(d));
                 let f = Folded::build(&symbolic);
                 let (cc, cf_pool) = f.pools::<f64>(&evaluated);
+                let mut res = Vec::new();
                 combos
                     .iter()
-                    .map(
-                        |hel| match run_forward_slot(&f.ast, &cc, &cf_pool, &p, hel, None) {
+                    .map(|hel| {
+                        match run_forward_slot(&f.ast, &cc, &cf_pool, &p, hel, None, &mut res) {
                             WaveformSlot::Scalar(s) => s.value,
                             WaveformSlot::Empty => C::new(0.0, 0.0),
                             other => panic!("amplitude root is not a scalar: {other:?}"),
-                        },
-                    )
+                        }
+                    })
                     .collect()
             })
             .collect();
@@ -1893,7 +1946,7 @@ mod tests {
                 let s_slot = WaveformSlot::Scalar(s_wf);
 
                 // FFS1: left bilinear × s
-                let WaveformSlot::Scalar(got1) = mul_apply(&[
+                let WaveformSlot::Scalar(got1) = mul_apply([
                     scalar_bilinear_current(&[fi_slot, fo_slot], Chirality::Left),
                     s_slot,
                 ]) else {
@@ -1906,7 +1959,7 @@ mod tests {
                 );
 
                 // FFS3: right bilinear × s
-                let WaveformSlot::Scalar(got3) = mul_apply(&[
+                let WaveformSlot::Scalar(got3) = mul_apply([
                     scalar_bilinear_current(&[fi_slot, fo_slot], Chirality::Right),
                     s_slot,
                 ]) else {
@@ -1957,16 +2010,22 @@ mod tests {
         let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
         let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
 
+        let mut scratch = bound.scratch_space();
         let global_scale = eval
             .helicities()
             .iter()
-            .map(|hel| bound.eval_amplitude(p, hel).norm())
+            .map(|hel| bound.eval_amplitude(p, hel, &mut scratch).norm())
             .fold(0.0_f64, f64::max)
             .max(1e-30);
 
         eval.helicities()
             .iter()
-            .map(|hel| bound.eval_amplitude_ward(p, hel, ward_leg).norm() / global_scale)
+            .map(|hel| {
+                bound
+                    .eval_amplitude_ward(p, hel, ward_leg, &mut scratch)
+                    .norm()
+                    / global_scale
+            })
             .fold(0.0_f64, f64::max)
     }
 
@@ -2132,8 +2191,9 @@ mod tests {
             LorentzVector::new(50.0, -50.0 * st, 0.0, -50.0 * ct),
         ];
 
+        let mut scratch = bound.scratch_space();
         for hel in eval.helicities() {
-            let whole = bound.eval_amplitude(&p, hel);
+            let whole = bound.eval_amplitude(&p, hel, &mut scratch);
             let parts = diagrams
                 .iter()
                 .map(|d| eval_single_diagram(d, &p, hel, &evaluated))

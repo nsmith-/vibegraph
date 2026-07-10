@@ -86,7 +86,7 @@ impl Vegas {
     /// * `rng`   – random number source
     pub fn integrate(
         &mut self,
-        f: impl Fn(&[f64]) -> f64,
+        mut f: impl FnMut(&[f64]) -> f64,
         neval: usize,
         niter: usize,
         rng: &mut impl Rng,
@@ -94,7 +94,7 @@ impl Vegas {
         let mut iter_results: Vec<(f64, f64)> = Vec::with_capacity(niter); // (I, σ²)
 
         for iter_idx in 0..niter {
-            let (integral, var, d) = self.sample_iter(&f, neval, rng);
+            let (integral, var, d) = self.sample_iter(&mut f, neval, rng);
             iter_results.push((integral, var.max(f64::MIN_POSITIVE)));
             // Refine grid before all but the last iteration.
             if iter_idx + 1 < niter {
@@ -131,7 +131,7 @@ impl Vegas {
     /// `d[dim][bin]` accumulates `fval²` for the grid-refinement step.
     fn sample_iter(
         &self,
-        f: &impl Fn(&[f64]) -> f64,
+        f: &mut impl FnMut(&[f64]) -> f64,
         neval: usize,
         rng: &mut impl Rng,
     ) -> (f64, f64, Vec<Vec<f64>>) {
