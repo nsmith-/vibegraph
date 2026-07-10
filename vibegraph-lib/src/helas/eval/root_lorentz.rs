@@ -111,21 +111,22 @@ pub enum LorentzEvalNode {
     ProjPAmp { i: usize, j: usize },
     /// contract two vector indices â scalar (`g_{Î¼Î½} V^Î¼ W^Î½`)
     Metric { mu: usize, nu: usize },
-    /// [`Metric`] times the vertex's âi: the amplitude contraction of a
-    /// pure-metric structure (VVS/VVSS), mirroring the âi `MetricVout` carries
-    /// on the current-rooted side (cf. ALOHA `VVS1_0`). Emitted at most once
-    /// per term. Output: scalar.
+    /// [`Metric`] times the vertex's −i: the amplitude contraction of a
+    /// pure-metric structure (VVS/VVSS). An amplitude root has no propagator
+    /// on its line to carry the chain's −i, so it stays at the vertex here
+    /// (cf. ALOHA `VVS1_0`). Emitted at most once per term. Output: scalar.
     MetricNegI { mu: usize, nu: usize },
-    /// metric with one free index â vector: the off-shell vector current of a
+    /// metric with one free index → vector: the off-shell vector current of a
     /// `Metric(out, v)` structure (e.g. the VVS/HVV vertex rooted at a vector
-    /// leg). Raises the output index on the partner vector `v`; cf. ALOHA
-    /// `VVS1P1N_1`. Output type: vector.
+    /// leg), the physical contravariant `g^{μν}V_ν = V^μ` on the partner vector
+    /// `v` (an identity on contravariant storage); cf. ALOHA `VVS1P1N_1`, whose
+    /// −i lives in vibegraph's vector propagator instead. Output type: vector.
     MetricVout { v: usize },
-    /// [`MetricVout`] without ALOHA's âi vertex factor: index lowering only.
-    /// Used for the vector-output roots of P-carrying structures (VVV1),
-    /// where the âiÂ·g convention of the P-less VVS current overshoots the
-    /// V-chain phase ledger by âi â pinned per-diagram against MadGraph's
-    /// e+e-âW+W- AMP() (validation/madgraph/compare_amps.py). Output: vector.
+    /// [`MetricVout`] times −1: the physical contravariant current `−V^μ` of a
+    /// P-carrying (momentum-odd) structure term rooted at its vector leg (VVV1).
+    /// P-less structures carry +1 and P-carrying ones −1 relative to the naive
+    /// rooted-term sum — pinned per-diagram against MadGraph's e+e-→W+W- AMP()
+    /// (validation/madgraph/compare_amps.py). Output: vector.
     LowerVout { v: usize },
     /// Handle the implicit product over the disconnected structures.
     /// At most one child can be non-scalar (which then implies the output type)
@@ -211,9 +212,9 @@ impl Tree for LorentzEvalTree {
     }
 }
 
-/// The vector-output transform for a rooted structure term: `MetricVout` (ALOHA's
-/// âiÂ·g storage, cf. `VVS1P1N_1`) for P-less structures (VVS), `LowerVout` (g only)
-/// for P-carrying ones (VVV) â see [`LorentzEvalNode::LowerVout`].
+/// The vector-output transform for a rooted structure term: `MetricVout` (`+V^μ`)
+/// for P-less structures (VVS), `LowerVout` (`−V^μ`, the momentum-odd sign) for
+/// P-carrying ones (VVV) — see [`LorentzEvalNode::LowerVout`].
 fn vector_out_node(term: &LorentzTerm, child: usize) -> LorentzEvalNode {
     if term.ops.iter().any(|op| matches!(op, LorentzOp::P { .. })) {
         LorentzEvalNode::LowerVout { v: child }

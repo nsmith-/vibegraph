@@ -299,10 +299,6 @@ fn mul_apply<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
                 v.momentum = v.momentum + scalar_mom;
                 WaveformSlot::Vector(v)
             }
-            WaveformSlot::VectorCo(mut v) => {
-                v.momentum = v.momentum + scalar_mom;
-                WaveformSlot::VectorCo(v)
-            }
             WaveformSlot::FermionIn(mut f) => {
                 f.momentum = f.momentum - scalar_mom;
                 WaveformSlot::FermionIn(f)
