@@ -89,8 +89,11 @@ Collects the validation follow-ups deferred from `cleanup-refactor`:
 
 ## 🏎️ `performance-sprint` — IN PROGRESS (branch `performance-sprint`)
 
-Multi-session evaluator-performance sprint; every session lands bit-for-bit against
-the 11-process `validate_helas_mg` net and re-records the timing table below.
+Multi-session evaluator-performance sprint; every session lands against the
+11-process `validate_helas_mg` net (gate = the enforced `REL_TOL` 1e-10, itself
+≫ double eps — the Fortran reference is compiler-reordered, so transforms may
+reorder FP to first order; order-preserving transforms like P2's get bit-for-bit
+agreement as a free, stronger check) and re-records the timing table below.
 Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations are
 ~half of `validate_helas_mg` time.
 
@@ -129,9 +132,10 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
 - Consequences: the P3 ext-wavefunction pool is **dead** (0.4% cannot pay for it);
   only the `Const::Ext(u32)` node shrink survives, as a cache-locality item inside
   P4's program compaction. The `Add`+`Mul` combinator overhead (~30–38% of eval) is
-  exactly what Stage A fusion removes → P6 rises. P5 binarization would *add* a
-  `res` slot per partial sum, so it lands only with its flatten contingency (or
-  after P4 settles the write path) → P5 drops to last.
+  exactly what Stage A fusion removes → P6 rises. P5 binarization composes with
+  P4's stack evaluator (a *balanced* tree reduction keeps live slots O(log n))
+  but regresses the forward-scan evaluator (a `res` slot per partial sum), so it
+  runs after P4 settles the evaluator → P5 drops to last.
 
 - **P4 (next) — stack evaluator with Store/Load memo pad + program compaction** —
   parallel `BoundAmplitude` using `Tree::linearize`-style post-order stack eval
@@ -143,13 +147,16 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
 - **P6 (promoted) — Stage A fusion + inlining survey** (note 13 §7 5a) — the
   `Add`/`Mul`/`gamma_vout` shares are the target: fused vertex kernels (FFV
   `[g_L,g_R]` first) collapse the coupling·coeff·structure `Mul`/`Add` scaffolding
-  into one node; per-kernel oracle = Stage-0 prop harness, aiming bit-exact (keep
-  the reference FP operation order inside the fused kernel). Plus the rustc
-  inlining survey of `LorentzRepr` calls and fusion microbenches in `benches/`.
-- **P5 (last) — egg arity groundwork** — binarize `Add`/`Mul` at lowering
-  (left-fold keeps summation order ⇒ bit-for-bit); must land with the flatten
-  pass (re-n-aryfying before `Folded::build`) so the runtime never sees the
-  binary chains; egglog engine design is a separate session.
+  into one node; per-kernel oracle = Stage-0 prop harness at tolerance — FP
+  reordering inside a fused kernel is fine (`REL_TOL` ≫ eps; the Fortran
+  reference is itself compiler-reordered — the same license egglog needs). Plus
+  the rustc inlining survey of `LorentzRepr` calls and fusion microbenches in
+  `benches/`.
+- **P5 (last) — egg arity groundwork** — binarize `Add`/`Mul` at lowering as a
+  *balanced* tree reduction (O(log n) live slots on the P4 stack evaluator, and
+  pairwise summation is if anything more accurate than the left fold; the ~1e-15
+  reorder drift is far inside `REL_TOL`); egglog engine design is a separate
+  session.
 - Backlog: `generate-stream` Part B (deferred from cleanup task 3: lazy
   `generate_*` iterator); `C<F>`-vs-`F` multiply peepholes; **`feyngraph-perf`**
   (submodule `.counts()` hot spot, see its section below) stays a dedicated
