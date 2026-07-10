@@ -19,7 +19,13 @@ use super::{ParsedModel, UFOModel, UfoError};
 /// Each selects one `restrict_*.dat` card (`import model sm-<variant>`), which
 /// zeroes a set of parameters and prunes the corresponding zero-coupling vertices.
 /// [`SMRestrict::Default`] is the plain `restrict_default.dat` (`import model sm`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// The `snake_case` variant name is the MadGraph restrict-suffix and card stem
+/// (`restrict_<suffix>.dat`); the suffix ↔ variant round-trip
+/// ([`suffix`](SMRestrict::suffix)/[`from_suffix`](SMRestrict::from_suffix)) is
+/// derived by `strum` from the enum itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumString, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
 pub enum SMRestrict {
     Default,
     CMass,
@@ -50,22 +56,21 @@ impl SMRestrict {
         SMRestrict::ALL.iter().position(|&v| v == self).unwrap()
     }
 
-    /// The MadGraph restrict-suffix for this variant (`None` for the default card).
+    /// This variant's MadGraph restrict-suffix (the `snake_case` variant name);
+    /// `Default` → `"default"`. Inverse of [`from_suffix`](SMRestrict::from_suffix).
+    pub fn suffix(self) -> &'static str {
+        self.into()
+    }
+
+    /// Maps `import model sm-<suffix>` to a variant.
     ///
-    /// Maps `import model sm-<suffix>` to a variant; `sm` (no suffix) → `Default`.
+    /// A missing or empty suffix (`import model sm`) selects `Default`, as does the
+    /// explicit `"default"`; an unrecognized suffix returns `None`.
     pub fn from_suffix(suffix: Option<&str>) -> Option<SMRestrict> {
-        Some(match suffix {
-            None | Some("") | Some("default") => SMRestrict::Default,
-            Some("c_mass") => SMRestrict::CMass,
-            Some("ckm") => SMRestrict::Ckm,
-            Some("lepton_masses") => SMRestrict::LeptonMasses,
-            Some("no_b_mass") => SMRestrict::NoBMass,
-            Some("no_masses") => SMRestrict::NoMasses,
-            Some("no_tau_mass") => SMRestrict::NoTauMass,
-            Some("no_widths") => SMRestrict::NoWidths,
-            Some("zeromass_ckm") => SMRestrict::ZeromassCkm,
-            Some(_) => return None,
-        })
+        match suffix {
+            None | Some("") => Some(SMRestrict::Default),
+            Some(s) => s.parse().ok(),
+        }
     }
 
     /// The raw SLHA text of this variant's restrict card (baked into the binary).
@@ -153,20 +158,10 @@ pub fn regenerate(sm_dir: &std::path::Path, out_dir: &std::path::Path) -> Result
         cause: e,
     })?;
 
-    const CARDS: [&str; 9] = [
-        "restrict_default.dat",
-        "restrict_c_mass.dat",
-        "restrict_ckm.dat",
-        "restrict_lepton_masses.dat",
-        "restrict_no_b_mass.dat",
-        "restrict_no_masses.dat",
-        "restrict_no_tau_mass.dat",
-        "restrict_no_widths.dat",
-        "restrict_zeromass_ckm.dat",
-    ];
-    for card in CARDS {
-        let src = sm_dir.join(card);
-        let dst = out_dir.join(card);
+    for variant in SMRestrict::ALL {
+        let card = format!("restrict_{}.dat", variant.suffix());
+        let src = sm_dir.join(&card);
+        let dst = out_dir.join(&card);
         std::fs::copy(&src, &dst).map_err(|e| UfoError::Io {
             file: src.display().to_string(),
             cause: e,
@@ -239,15 +234,20 @@ mod tests {
 
     #[test]
     fn suffix_mapping_round_trips() {
+        // Every variant round-trips through its `snake_case` suffix, and suffixes are
+        // distinct (so the mapping is a bijection).
+        let mut seen = std::collections::HashSet::new();
+        for v in SMRestrict::ALL {
+            let s = v.suffix();
+            assert!(seen.insert(s), "duplicate suffix {s:?}");
+            assert_eq!(SMRestrict::from_suffix(Some(s)), Some(v));
+        }
+
+        // The default card has no suffix in `import model sm`, and `default` is explicit.
         assert_eq!(SMRestrict::from_suffix(None), Some(SMRestrict::Default));
-        assert_eq!(
-            SMRestrict::from_suffix(Some("no_b_mass")),
-            Some(SMRestrict::NoBMass)
-        );
-        assert_eq!(
-            SMRestrict::from_suffix(Some("zeromass_ckm")),
-            Some(SMRestrict::ZeromassCkm)
-        );
+        assert_eq!(SMRestrict::from_suffix(Some("")), Some(SMRestrict::Default));
+        assert_eq!(SMRestrict::Default.suffix(), "default");
+
         assert_eq!(SMRestrict::from_suffix(Some("bogus")), None);
     }
 }
