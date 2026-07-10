@@ -108,20 +108,52 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
   extract runs before it, CSE stays as the tree→DAG post-process). VEGAS
   integrand relaxed to `FnMut` so it can own a scratch. All 11 max_rel_diffs
   digit-for-digit unchanged. uux/bbx 2→6: 7.6×/8.0× faster; 2→4 3.7×; ee→μμ 1.7×.
-- **P3 external-wavefunction pool + `Const` shrink** — per-leg×helicity-state pool
-  built once per point in `ScratchSpace`; `Const::Ext` → `u32`, drop `External`'s
-  `Mass` child; evaluator no longer threads momenta/helicities.
-- **P4 stack evaluator with Store/Load memo pad** — parallel `BoundAmplitude` using
-  `Tree::linearize`-style stack eval + memo slots for shared nodes; criterion bench
-  vs the memoize-all forward scan; adopt the winner.
-- **P5 egg arity groundwork** — binarize `Add`/`Mul` at lowering (left-fold keeps
-  summation order ⇒ bit-for-bit); egglog engine design is a separate session.
-- **P6 primitive inlining survey + Stage A fuse gate** (note 13 §7 5a) — check
-  rustc inlining of `LorentzRepr` calls; fusion microbenches (FFV `[g_L,g_R]`
-  first); adopt fused kernels only if kernel granularity remains the bottleneck.
+
+**Post-P2 samply findings (2026-07-10) — session order re-prioritized below:**
+
+- Diagram/dataset *generation* is now a visible share of the overall test profile;
+  nearly all of it sits inside feyngraph (a negligible slice in vibegraph), so it
+  stays with the dedicated `feyngraph-perf` session, not this sprint.
+- `eval_m2` split: ~20% `res.push`, ~5% `Ast::children_ids` (likely uninlined —
+  cheap `#[inline]` fix), ~75% `apply`.
+- `apply` split: `Add` and `Mul` ~20–25% *each* — graph-interpretation overhead
+  (enum dispatch + 112-B slot moves per tiny operation), not physics — then
+  `gamma_vout` ~20%, and `propagate` / the `kid()` res-indexing (likely L1 misses:
+  post-CSE `res` for a 2→6 is ~8.6k × 112 B ≈ 1 MB) / `metric` /
+  `off_shell_fermion_current` at 5–8% each. **`build_external_core` is 0.4%.**
+- CSE dedup factor per process ≈ the P2 runtime speedup (ZH 1.2×, ee→μμ 1.5×,
+  2→4 4.0×, uux/bbx 2→6 7.0×/7.1× node cut vs 7.6×/8.0× wall): node count is the
+  cost model; per-node slot traffic dominates. Post-CSE the 2→6s are ~15
+  nodes/diagram — further cuts need *algebraic* rewrites (egglog factoring shared
+  sub-sums across diagrams), which structural hash-consing cannot see.
+- Consequences: the P3 ext-wavefunction pool is **dead** (0.4% cannot pay for it);
+  only the `Const::Ext(u32)` node shrink survives, as a cache-locality item inside
+  P4's program compaction. The `Add`+`Mul` combinator overhead (~30–38% of eval) is
+  exactly what Stage A fusion removes → P6 rises. P5 binarization would *add* a
+  `res` slot per partial sum, so it lands only with its flatten contingency (or
+  after P4 settles the write path) → P5 drops to last.
+
+- **P4 (next) — stack evaluator with Store/Load memo pad + program compaction** —
+  parallel `BoundAmplitude` using `Tree::linearize`-style post-order stack eval
+  (small live stack stays in L1) + memo slots for post-CSE shared nodes (measure
+  the shared-node fraction to size the pad); criterion bench vs the memoize-all
+  forward scan across process sizes; adopt the winner. Fold in the cache items:
+  `#[inline]` `children_ids`, `Const::Ext` → `u32` (+ drop `External`'s `Mass`
+  child), and a compact instruction stream if the layout work is already open.
+- **P6 (promoted) — Stage A fusion + inlining survey** (note 13 §7 5a) — the
+  `Add`/`Mul`/`gamma_vout` shares are the target: fused vertex kernels (FFV
+  `[g_L,g_R]` first) collapse the coupling·coeff·structure `Mul`/`Add` scaffolding
+  into one node; per-kernel oracle = Stage-0 prop harness, aiming bit-exact (keep
+  the reference FP operation order inside the fused kernel). Plus the rustc
+  inlining survey of `LorentzRepr` calls and fusion microbenches in `benches/`.
+- **P5 (last) — egg arity groundwork** — binarize `Add`/`Mul` at lowering
+  (left-fold keeps summation order ⇒ bit-for-bit); must land with the flatten
+  pass (re-n-aryfying before `Folded::build`) so the runtime never sees the
+  binary chains; egglog engine design is a separate session.
 - Backlog: `generate-stream` Part B (deferred from cleanup task 3: lazy
   `generate_*` iterator); `C<F>`-vs-`F` multiply peepholes; **`feyngraph-perf`**
-  (submodule `.counts()` hot spot, see its section below) stays a dedicated session.
+  (submodule `.counts()` hot spot, see its section below) stays a dedicated
+  session — now also motivated by generation's share of the post-P2 profile.
 
 Timing table (dev machine, `--profile profiling`, `--test-threads=1`; rust ns/eval
 per session vs MG MATRIX1 ns/eval):
