@@ -39,6 +39,7 @@ mod validate_vegas {
         let m_in = evaluated.mass(ext[0]);
         let m_out = evaluated.mass(ext[2]);
         let bound = BoundAmplitude::<f64>::bind(evaluator, evaluated);
+        let mut scratch = bound.scratch_space();
 
         let (cos_min, cos_max) = cos_range;
         let prefactor = phasespace::prefactor2(sqrt_s) * (cos_max - cos_min) / 2.0;
@@ -59,7 +60,7 @@ mod validate_vegas {
                     LorentzVector::new(e_beam, -p3_out * sin_theta, 0.0, -p3_out * cos_theta),
                     LorentzVector::new(e_beam, p3_out * sin_theta, 0.0, p3_out * cos_theta),
                 ];
-                bound.eval_m2(&momenta)
+                bound.eval_m2(&momenta, &mut scratch)
             },
             neval,
             niter,

@@ -100,9 +100,14 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
   timing pass (≥2k evals or ~1 s) and prints `rust | MG | ratio` per process
   (`--test-threads=1` for clean numbers). `benches/amplitude_eval.rs` deleted;
   criterion dev-dep reserved for strategy microbenches (P4/P6).
-- **P2 ScratchSpace + hash-cons CSE** — opaque `ScratchSpace<F>` required by
-  `eval_*` (one heap allocation across helicity/sample loops); CSE pass as the body
-  of `lower::optimize` (future: egglog extract → CSE tree→DAG post-process).
+- **P2 ScratchSpace + hash-cons CSE ✅ (2026-07-10)** — opaque `ScratchSpace<F>`
+  required by `eval_*` (`BoundAmplitude::scratch_space()`; one heap allocation
+  across helicity/sample loops); the `kids` staging buffer deleted (`apply` reads
+  children straight out of `res` via the CSR id row — samply had it at ~15%);
+  CSE as the body of `lower::optimize` (hash-cons forward scan; future egglog
+  extract runs before it, CSE stays as the tree→DAG post-process). VEGAS
+  integrand relaxed to `FnMut` so it can own a scratch. All 11 max_rel_diffs
+  digit-for-digit unchanged. uux/bbx 2→6: 7.6×/8.0× faster; 2→4 3.7×; ee→μμ 1.7×.
 - **P3 external-wavefunction pool + `Const` shrink** — per-leg×helicity-state pool
   built once per point in `ScratchSpace`; `Const::Ext` → `u32`, drop `External`'s
   `Mass` child; evaluator no longer threads momenta/helicities.
@@ -118,24 +123,29 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
   `generate_*` iterator); `C<F>`-vs-`F` multiply peepholes; **`feyngraph-perf`**
   (submodule `.counts()` hot spot, see its section below) stays a dedicated session.
 
-Baseline (P1, 2026-07-10, dev machine, `--profile profiling`, `--test-threads=1`):
+Timing table (dev machine, `--profile profiling`, `--test-threads=1`; rust ns/eval
+per session vs MG MATRIX1 ns/eval):
 
-| process | rust ns/eval | MG ns/eval | ratio |
+| process | MG | P1 baseline | P2 |
 |---|---:|---:|---:|
-| ee_to_zh | 5,479 | 206 | 27× |
-| ee_to_mumu | 14,093 | 328 | 43× |
-| pp_to_ll_qcd0 | 14,027 | 298 | 47× |
-| ee_to_ttx | 14,588 | 357 | 41× |
-| ee_to_ee | 27,467 | 743 | 37× |
-| ee_to_tatah | 50,894 | 859 | 59× |
-| ee_to_wpwm | 64,059 | 776 | 83× |
-| ee_to_mumua | 133,751 | 1,510 | 89× |
-| ee_to_mumu_tata_qcd0 | 1,319,279 | 6,404 | 206× |
-| uux_to_ccx_emmm_qcd0 | 216,900,033 | 100,230 | 2,164× |
-| bbx_to_ccx_emmm_qcd0 | 236,382,600 | 141,430 | 1,671× |
+| ee_to_zh | 206 | 5,479 (27×) | 3,272 (16×) |
+| ee_to_mumu | 328 | 14,093 (43×) | 8,198 (25×) |
+| pp_to_ll_qcd0 | 298 | 14,027 (47×) | 8,335 (28×) |
+| ee_to_ttx | 357 | 14,588 (41×) | 8,520 (24×) |
+| ee_to_ee | 743 | 27,467 (37×) | 15,102 (20×) |
+| ee_to_tatah | 859 | 50,894 (59×) | 21,996 (26×) |
+| ee_to_wpwm | 776 | 64,059 (83×) | 30,145 (39×) |
+| ee_to_mumua | 1,510 | 133,751 (89×) | 58,403 (39×) |
+| ee_to_mumu_tata_qcd0 | 6,404 | 1,319,279 (206×) | 356,126 (56×) |
+| uux_to_ccx_emmm_qcd0 | 100,230 | 216,900,033 (2,164×) | 28,505,729 (284×) |
+| bbx_to_ccx_emmm_qcd0 | 141,430 | 236,382,600 (1,671×) | 29,593,298 (209×) |
 
-The ratio grows with diagram count/AST width — consistent with allocation churn ×
-duplicated (un-CSE'd) subtrees dominating, not kernel arithmetic.
+P1 samply ground truth: `res.push` ~40% (writes into a fresh multi-MB buffer per
+call — volume set by the un-CSE'd arena width), `kids.extend` ~15% (staging copies
++ realloc chain up to the widest node, the n_diagrams-ary root `Add`), `apply` ~40%
+(top pieces: `Add`'s fold, `gamma_vout`, `mul_apply`). The P1→P2 ratio flattening
+across process size confirms duplicated-subtree width, not kernel arithmetic, was
+the dominant scaling term.
 
 ---
 

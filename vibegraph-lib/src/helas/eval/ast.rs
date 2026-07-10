@@ -37,6 +37,15 @@ impl<T> Ast<T> {
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
+
+    /// A node's children as the contiguous CSR row, without an iterator adapter —
+    /// the forward-pass runtime indexes results directly off this slice.
+    pub fn children_ids(&self, node: NodeId) -> &[NodeId] {
+        let i = node as usize;
+        let lo = self.children_offsets[i] as usize;
+        let hi = self.children_offsets[i + 1] as usize;
+        &self.children_content[lo..hi]
+    }
 }
 
 /// The arena exposes its shape through [`Tree`]: `value`/`children`/`root` give a node,
@@ -48,10 +57,7 @@ impl<T> Tree for Ast<T> {
     type NodeId = NodeId;
 
     fn children(&self, node: NodeId) -> impl Iterator<Item = NodeId> {
-        let i = node as usize;
-        let lo = self.children_offsets[i] as usize;
-        let hi = self.children_offsets[i + 1] as usize;
-        self.children_content[lo..hi].iter().copied()
+        self.children_ids(node).iter().copied()
     }
 
     fn value(&self, node: NodeId) -> &Node<T> {

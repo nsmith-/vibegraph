@@ -132,12 +132,13 @@ fn time_evaluator(
 ) -> (usize, std::time::Duration) {
     const TARGET_EVALS: usize = 2_000;
     const MAX_TIME: std::time::Duration = std::time::Duration::from_secs(1);
+    let mut scratch = bound.scratch_space();
     let mut n_evals = 0usize;
     let mut acc = 0.0f64;
     let t0 = Instant::now();
     'outer: loop {
         for pt in points {
-            acc += bound.eval_m2(&pt.momenta);
+            acc += bound.eval_m2(&pt.momenta, &mut scratch);
             n_evals += 1;
             if n_evals >= TARGET_EVALS || t0.elapsed() >= MAX_TIME {
                 break 'outer;
@@ -246,12 +247,15 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
     let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
 
     let cf = color_factor(&name);
+    let mut scratch = bound.scratch_space();
     let mut failures = 0usize;
     let mut max_rel_diff = 0.0f64;
     let mut panicked = false;
 
     for pt in &points {
-        let result = std::panic::catch_unwind(AssertUnwindSafe(|| bound.eval_m2(&pt.momenta)));
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            bound.eval_m2(&pt.momenta, &mut scratch)
+        }));
         match result {
             Err(_) => {
                 panicked = true;
