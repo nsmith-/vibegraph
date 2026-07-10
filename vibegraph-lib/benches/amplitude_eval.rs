@@ -12,8 +12,8 @@ use vibegraph::helas::{
     eval::{AmplitudeEvaluator, BoundAmplitude},
     LorentzVector,
 };
-use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
+use vibegraph::ufo::EvaluatedModel;
 
 const N: usize = 10_000;
 
@@ -35,8 +35,7 @@ fn main() {
     let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
     let sets = generate_from_proc_card(&card, &model).unwrap();
 
-    let empty_card = "".parse::<ParamCard>().unwrap();
-    let evaluated = model.evaluate(&empty_card);
+    let evaluated = EvaluatedModel::from_model(model.clone());
     let evaluator = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
     let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
 

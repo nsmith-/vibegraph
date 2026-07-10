@@ -15,18 +15,18 @@ mod validate_vegas {
     const ALPHA_QED_MZ: f64 = 1.0 / 132.507;
     const MDL_MZ: f64 = 91.188;
     use std::f64::consts::PI;
+    use std::sync::Arc;
     use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
     use vibegraph::helas::LorentzVector;
     use vibegraph::phasespace::{self, GEV2_TO_PB};
-    use vibegraph::ufo::slha::ParamCard;
-    use vibegraph::ufo::EvaluatedModel;
+    use vibegraph::ufo::{EvaluatedModel, UFOModel};
 
     /// Compute σ(e⁺e⁻→μ⁺μ⁻) via VEGAS, using `AmplitudeEvaluator::eval_m2` as the integrand.
     ///
     /// Returns `(sigma_GeV2, sigma_err_GeV2)`.  Multiply by `GEV2_TO_PB` for picobarns.
     fn sigma_ee_mumu(
         evaluator: &AmplitudeEvaluator,
-        evaluated: &EvaluatedModel<'_>,
+        evaluated: &EvaluatedModel,
         sqrt_s: f64,
         cos_range: (f64, f64),
         neval: usize,
@@ -69,7 +69,7 @@ mod validate_vegas {
         (result.integral * prefactor, result.std_dev * prefactor)
     }
 
-    fn build_evaluator() -> (AmplitudeEvaluator, vibegraph::ufo::UFOModel) {
+    fn build_evaluator() -> (AmplitudeEvaluator, Arc<UFOModel>) {
         let sets = generate("e+ e- > mu+ mu-");
         let model = sm_model().clone();
         let evaluator = AmplitudeEvaluator::compile(&sets[0], &model)
@@ -88,8 +88,7 @@ mod validate_vegas {
         let sigma_analytic = 4.0 * PI * ALPHA_QED_MZ * ALPHA_QED_MZ / (3.0 * s);
 
         let (evaluator, model) = build_evaluator();
-        let empty_card = "".parse::<ParamCard>().unwrap();
-        let evaluated = model.evaluate(&empty_card);
+        let evaluated = EvaluatedModel::from_model(model.clone());
 
         let (sigma, err) = sigma_ee_mumu(&evaluator, &evaluated, sqrt_s, (-1.0, 1.0), 50_000, 10);
         let sigma_pb = sigma * GEV2_TO_PB;
@@ -123,8 +122,7 @@ mod validate_vegas {
         let cos_max = cos_max_ptl.min(cos_max_eta);
 
         let (evaluator, model) = build_evaluator();
-        let empty_card = "".parse::<ParamCard>().unwrap();
-        let evaluated = model.evaluate(&empty_card);
+        let evaluated = EvaluatedModel::from_model(model.clone());
 
         let (sigma, _err) = sigma_ee_mumu(
             &evaluator,
@@ -163,8 +161,7 @@ mod validate_vegas {
         let cos_max = (1.0 - (PTL_CUT / p_cm).powi(2)).sqrt().min(ETAL_CUT.tanh());
 
         let (evaluator, model) = build_evaluator();
-        let empty_card = "".parse::<ParamCard>().unwrap();
-        let evaluated = model.evaluate(&empty_card);
+        let evaluated = EvaluatedModel::from_model(model.clone());
 
         let (sigma, err) = sigma_ee_mumu(
             &evaluator,

@@ -69,7 +69,7 @@ fn test_generate_uux_to_ddx_weighted_lo() {
         .props
         .first()
         .expect("s-channel propagator");
-    let prop_name = &common::sm_model().particle(prop.particle).name;
+    let prop_name = common::sm_model().particle(prop.particle).name.clone();
     assert_eq!(prop_name, "g", "single diagram should be s-channel gluon");
 }
 

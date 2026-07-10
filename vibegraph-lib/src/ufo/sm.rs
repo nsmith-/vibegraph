@@ -174,7 +174,7 @@ pub fn regenerate(sm_dir: &std::path::Path, out_dir: &std::path::Path) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ufo::slha::ParamCard;
+    use crate::ufo::{slha::ParamCard, EvaluatedModel};
 
     fn sm_submodule_dir() -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -207,8 +207,8 @@ mod tests {
 
         // Same evaluated physics on the empty param card.
         let card = "".parse::<ParamCard>().unwrap();
-        let ev_i = interned.evaluate(&card);
-        let ev_f = fresh.evaluate(&card);
+        let ev_i = EvaluatedModel::from_model_card(interned.clone(), &card);
+        let ev_f = EvaluatedModel::from_model_card(fresh.clone(), &card);
         for name in ["MZ", "MW", "MT", "aS", "G", "ee"] {
             let vi = ev_i.param_values.get(name).map(|c| c.re);
             let vf = ev_f.param_values.get(name).map(|c| c.re);

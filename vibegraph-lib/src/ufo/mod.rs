@@ -18,8 +18,8 @@ use parameters::{parse_parameters, ParameterError, ParameterSet};
 use particles::{parse_particles, Particle, ParticleError, ParticleId};
 use serde::{Deserialize, Serialize};
 use slha::ParamCard;
-use std::collections::HashMap;
 use std::path::Path;
+use std::{collections::HashMap, sync::Arc};
 use thiserror::Error;
 use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
 
@@ -229,7 +229,7 @@ impl UFOModel {
     ///
     /// If `restrict_card` is `None`, automatically looks for `restrict_default.dat`
     /// in the UFO directory. If found, it is used for vertex pruning (zero-coupling vertices are removed).
-    pub fn load(path: &Path, restrict_card: Option<&Path>) -> Result<Self, UfoError> {
+    pub fn load(path: &Path, restrict_card: Option<&Path>) -> Result<Arc<Self>, UfoError> {
         let parsed = ParsedModel::parse(path)?;
 
         // Resolve the restrict card path: explicit, else restrict_default.dat if present.
@@ -256,11 +256,11 @@ impl UFOModel {
             None => None,
         };
 
-        parsed.into_model(card.as_ref())
+        parsed.into_model(card.as_ref()).map(Arc::new)
     }
 
     /// Load with automatic restrict card discovery (equivalent to `load(path, None)`).
-    pub fn load_auto(path: &Path) -> Result<Self, UfoError> {
+    pub fn load_auto(path: &Path) -> Result<Arc<Self>, UfoError> {
         Self::load(path, None)
     }
 
@@ -302,25 +302,6 @@ impl UFOModel {
 
     pub fn vertex_def(&self, id: VertexId) -> &Vertex {
         &self.vertices[id.0]
-    }
-
-    // ── Evaluation ────────────────────────────────────────────────────────────
-
-    /// Evaluate all parameters and coupling constants for the given param_card.
-    pub fn evaluate<'a>(&'a self, param_card: &ParamCard) -> EvaluatedModel<'a> {
-        let param_values = self.params.evaluate(param_card);
-
-        let coupling_values: Vec<Complex64> = self
-            .couplings
-            .values()
-            .map(|c| expr::eval(&c.value, &param_values))
-            .collect();
-
-        EvaluatedModel {
-            model: self,
-            param_values,
-            coupling_values,
-        }
     }
 }
 
@@ -410,8 +391,8 @@ fn resolve_vertices(
 }
 
 /// Evaluated parameter and coupling values for a specific parameter set (e.g. from a param_card).
-pub struct EvaluatedModel<'a> {
-    model: &'a UFOModel,
+pub struct EvaluatedModel {
+    model: Arc<UFOModel>,
     /// All parameter values (external + internal), keyed by parameter name.
     ///
     /// TODO: intern parameter names into UFOModel and use ParameterId here instead of string keys
@@ -421,7 +402,32 @@ pub struct EvaluatedModel<'a> {
     coupling_values: Vec<Complex64>,
 }
 
-impl EvaluatedModel<'_> {
+impl EvaluatedModel {
+    /// Construct an `EvaluatedModel` from a `UFOModel` and a parameter card
+    ///
+    /// Evaluates all parameter values and coupling constants according to the given parameter card.
+    pub fn from_model_card(model: Arc<UFOModel>, param_card: &ParamCard) -> Self {
+        let param_values = model.params.evaluate(&param_card);
+
+        let coupling_values: Vec<Complex64> = model
+            .couplings
+            .values()
+            .map(|c| expr::eval(&c.value, &param_values))
+            .collect();
+
+        EvaluatedModel {
+            model: model,
+            param_values,
+            coupling_values,
+        }
+    }
+
+    /// Construct an `EvaluatedModel` from a `UFOModel` with default parameters
+    pub fn from_model(model: Arc<UFOModel>) -> Self {
+        let empty_card = ParamCard::default();
+        Self::from_model_card(model, &empty_card)
+    }
+
     /// Get the mass of a particle
     pub fn mass(&self, id: ParticleId) -> f64 {
         self.param_values
@@ -535,17 +541,8 @@ mod tests {
             eprintln!("loop_sm UFO not found — skipping");
             return;
         }
-        let result = UFOModel::load(&path, None);
-        if let Err(UfoError::FeynGraph(_)) = &result {
-            eprintln!(
-                "loop_sm: FeynGraph topology parser does not support loop-level \
-                       particle attributes (.counterterm, .loop_particles) — skipping"
-            );
-            return;
-        }
-        let model = result.expect("unexpected error loading loop_sm UFO");
-        let empty_card = "".parse::<ParamCard>().unwrap();
-        let ev = model.evaluate(&empty_card);
+        let model = UFOModel::load(&path, None).expect("can parse");
+        let ev = EvaluatedModel::from_model(model.clone());
 
         let mz = ev.mass(model.particle_id("Z").expect("no Z in model"));
         assert!((mz - 91.188).abs() < 0.01, "loop_sm MZ = {mz}");
@@ -562,8 +559,7 @@ mod tests {
             return;
         }
         let model = UFOModel::load(&path, None).expect("failed to load MSSM_SLHA2 UFO");
-        let empty_card = "".parse::<ParamCard>().unwrap();
-        let ev = model.evaluate(&empty_card);
+        let ev = EvaluatedModel::from_model(model.clone());
 
         let tb = ev.param_values["tb"].re;
         assert!((tb - 9.74862403).abs() < 1e-6, "MSSM tb = {tb}");
@@ -594,7 +590,7 @@ mod tests {
             return;
         }
         let model = result.expect("failed to load taudecay UFO");
-        let ev = model.evaluate(&card);
+        let ev = EvaluatedModel::from_model_card(model.clone(), &card);
 
         let mta = ev.mass(model.particle_id("ta__minus__").expect("no tau"));
         assert!((mta - 1.776820).abs() < 1e-4, "taudecay MTA = {mta}");
@@ -609,9 +605,7 @@ mod tests {
     #[test]
     fn test_load_sm_ufo() {
         let model = sm::sm_model(sm::SMRestrict::Default);
-
-        let empty_card = "".parse::<ParamCard>().unwrap();
-        let ev = model.evaluate(&empty_card);
+        let ev = EvaluatedModel::from_model(model.clone());
 
         let as_val = ev.param_values["aS"].re;
         assert!((as_val - 0.118).abs() < 1e-10, "aS = {as_val}");
@@ -638,8 +632,7 @@ mod tests {
     #[test]
     fn test_recompute_propagates() {
         let model = sm::sm_model(sm::SMRestrict::Default);
-        let empty_card = "".parse::<ParamCard>().unwrap();
-        let mut ev = model.evaluate(&empty_card);
+        let mut ev = EvaluatedModel::from_model(model.clone());
 
         let new_as = 0.130f64;
         ev.recompute("aS", Complex64::new(new_as, 0.0));
