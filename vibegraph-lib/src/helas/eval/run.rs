@@ -475,12 +475,12 @@ mod tests {
         assert_eq!(out.momentum, v2.momentum + s.momentum);
     }
 
-    /// Stage 0 harness smoke test: drive a real (private) eval kernel through the
-    /// `prop_harness` toolbox, proving the generators + `check_agree` driver wire up to the
-    /// production kernels the later stages will certify. `kernel::metric` realises the
-    /// symmetric bilinear `g_{μν} V^μ W^ν`, so contracting two random vectors in either order
-    /// must agree; this exercises the vector generators, the driver, and the scalar comparison
-    /// path. It is a harness self-check, not a Stage A/B equivalence certificate.
+    /// Harness smoke test: drive a real (private) eval kernel through the `prop_harness`
+    /// toolbox, proving the generators + `check_agree` driver wire up to the production
+    /// kernels. `kernel::metric` realises the symmetric bilinear `g_{μν} V^μ W^ν`, so
+    /// contracting two random vectors in either order must agree; this exercises the vector
+    /// generators, the driver, and the scalar comparison path. It is a harness self-check,
+    /// not a kernel-equivalence certificate.
     #[test]
     fn prop_harness_drives_metric_symmetry() {
         use crate::helas::eval::prop_harness::{check_agree, rand_vector};
