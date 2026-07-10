@@ -401,12 +401,9 @@ mod tests {
     };
     use num_complex::ComplexFloat;
 
-    fn sm_model() -> &'static crate::ufo::UFOModel {
+    fn sm_model() -> std::sync::Arc<crate::ufo::UFOModel> {
         use crate::ufo::sm::{sm_model as interned_sm, SMRestrict};
-        use crate::ufo::UFOModel;
-        use std::sync::{Arc, OnceLock};
-        static SM_MODEL: OnceLock<Arc<UFOModel>> = OnceLock::new();
-        SM_MODEL.get_or_init(|| interned_sm(SMRestrict::Default))
+        interned_sm(SMRestrict::Default)
     }
 
     /// Uncrossed per-leg binding shorthand for hand-built adjoint vectors (the
@@ -506,6 +503,7 @@ mod tests {
     #[test]
     fn test_eval_jioxxx() {
         let model = sm_model();
+        let model = &*model;
         let empty_card = "".parse::<ParamCard>().unwrap();
         let evaluated = model.evaluate(&empty_card);
 
@@ -725,6 +723,7 @@ mod tests {
     #[test]
     fn test_eval_ffv2_4_3() {
         let model = sm_model();
+        let model = &*model;
         let evaluated = model.evaluate(&"".parse::<ParamCard>().unwrap());
 
         let coupling_id = model.coupling_id("GC_3").unwrap();
@@ -862,6 +861,7 @@ mod tests {
     #[test]
     fn test_longitudinal_z_current_transverse_for_massless_fermions() {
         let model = sm_model();
+        let model = &*model;
         let evaluated = model.evaluate(&"".parse::<ParamCard>().unwrap());
 
         // Real ℓ̄ℓZ vertex (SM V_107): FFV2·GC_50 (pure left) ⊕ FFV4·GC_59 (left+2·right),
@@ -993,6 +993,7 @@ mod tests {
         use crate::helas::vertex::{fvixxx, fvoxxx};
 
         let model = sm_model();
+        let model = &*model;
         let evaluated = model.evaluate(&"".parse::<ParamCard>().unwrap());
 
         // Off-shell fermion line propagates an electron.
@@ -1695,6 +1696,7 @@ mod tests {
             .unwrap_or(1.0);
 
         let model = sm_model();
+        let model = &*model;
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let out_dir = std::path::Path::new(&manifest).join("../validation/madgraph/output");
 
@@ -1953,6 +1955,7 @@ mod tests {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 
         let model = sm_model();
+        let model = &*model;
         let evaluated = model.evaluate(
             &"Block MASS\n 11 0.0\n 13 0.0\n 15 0.0\n"
                 .parse::<ParamCard>()
@@ -2090,6 +2093,7 @@ mod tests {
         use crate::helas::eval::Sym;
 
         let model = sm_model();
+        let model = &*model;
         let opts = ParsingOptions::default();
         let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
         let sets = generate_from_proc_card(&card, model).unwrap();
@@ -2117,6 +2121,7 @@ mod tests {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 
         let model = sm_model();
+        let model = &*model;
         let evaluated = model.evaluate(
             &"Block MASS\n 11 0.0\n 13 0.0\n"
                 .parse::<ParamCard>()
@@ -2167,6 +2172,7 @@ mod tests {
         use num_complex::Complex64;
 
         let model = sm_model();
+        let model = &*model;
         // Use MadGraph's massless-tau param card so couplings match the probe.
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let card_path = std::path::Path::new(&manifest).join(
@@ -2326,6 +2332,7 @@ mod tests {
         use num_complex::Complex64;
 
         let model = sm_model();
+        let model = &*model;
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let card_path = std::path::Path::new(&manifest).join(
             "../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards/param_card_masslesstau.dat",
