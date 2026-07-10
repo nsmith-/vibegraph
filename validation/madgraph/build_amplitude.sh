@@ -183,6 +183,7 @@ AMP_PROBE_PROCESSES=(
     uux_to_ccx_emmm_qcd0
     ee_to_ee
     ee_to_wpwm
+    ee_to_zh
     ee_to_tatah
     bbx_to_ccx_emmm_qcd0
 )

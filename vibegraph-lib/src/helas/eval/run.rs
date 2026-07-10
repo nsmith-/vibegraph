@@ -426,12 +426,13 @@ mod tests {
     }
 
     /// Cross-check the VVS off-shell *vector* current (`MetricVout` node) against
-    /// ALOHA `VVS1P1N_1.f` times −i. ALOHA's routine (coupling stripped) is
+    /// ALOHA `VVS1P1N_1.f` times +i. ALOHA's routine (coupling stripped) is
     ///   V1(3) = -i·V2(3)·S ;  V1(4..6) = +i·V2(4..6)·S    (i.e. -i·g·V2·S);
-    /// vibegraph splits the V/S chain phase differently: the −i here (→ −g·V2·S)
-    /// with the compensating +i in the scalar propagator (see `metric_vout` /
-    /// `propagate_core`). vibegraph applies the coupling separately, so the bare
-    /// dispatch tree for `Metric(1,2)` rooted at vector leg 1 must reproduce this.
+    /// vibegraph's producer is the bare physical current `g^{μν}V2_ν·S = V2^μ·S`
+    /// (i·ALOHA): the −i ALOHA folds into the vertex routine lives in vibegraph's
+    /// vector propagator instead (see `metric_vout` / `propagate_core`). vibegraph
+    /// applies the coupling separately, so the bare dispatch tree for `Metric(1,2)`
+    /// rooted at vector leg 1 must reproduce this.
     #[test]
     fn test_metric_vout_vs_aloha_vvs1p1n1() {
         let v2 = VectorWf {
@@ -454,15 +455,15 @@ mod tests {
             metric_vout(&[WaveformSlot::Vector(v2)]),
             WaveformSlot::Scalar(s),
         ]);
-        // `MetricVout` emits the index-lowered (covariant) current `ε_μ`.
-        let WaveformSlot::VectorCo(out) = out else {
-            panic!("VVS rooted at a vector leg must produce a covariant vector current");
+        // `MetricVout` emits the physical contravariant current `V2^μ`.
+        let WaveformSlot::Vector(out) = out else {
+            panic!("VVS rooted at a vector leg must produce a contravariant vector current");
         };
 
-        // −i × ALOHA VVS1P1N_1 (coupling stripped): -g·V2 · S.value
+        // +i × ALOHA VVS1P1N_1 (coupling stripped): g·V2 · S.value = V2^μ · S.value
         let sv = s.value;
         let expect = [
-            -v2.eps.component(0) * sv,
+            v2.eps.component(0) * sv,
             v2.eps.component(1) * sv,
             v2.eps.component(2) * sv,
             v2.eps.component(3) * sv,
