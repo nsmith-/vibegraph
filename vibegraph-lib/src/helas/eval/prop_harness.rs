@@ -20,16 +20,14 @@
 //! vector, momentum routing stays consistent without any physical constraint.
 //!
 //! The comparator is strict on the slot *variant* (a `Vector` never compares equal to a
-//! `VectorCo`). Stage B, which deliberately changes a primitive's output variance, must
-//! therefore compose down to a scalar (the contracted observable) before comparing — exactly
-//! the discipline its oracle requires.
+//! `Scalar`); within a variant, every stored component and the routed momentum are compared.
 
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use super::waveform_slot::WaveformSlot;
 use crate::helas::repr::lorentz::{
-    Bispinor, ComplexVector, Contravariant, Covariant, LorentzVector, VectorRepr,
+    Bispinor, ComplexVector, Contravariant, LorentzVector, VectorRepr,
 };
 use crate::helas::repr::C;
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
@@ -95,14 +93,6 @@ pub(crate) fn rand_vector(rng: &mut StdRng) -> WaveformSlot<F> {
     })
 }
 
-/// A random covariant (`ε_μ`) vector current slot — the `MetricVout`/`LowerVout` storage form.
-pub(crate) fn rand_vector_co(rng: &mut StdRng) -> WaveformSlot<F> {
-    WaveformSlot::VectorCo(VectorWf::<F, Covariant> {
-        eps: rand_eps::<Covariant>(rng),
-        momentum: rand_momentum(rng),
-    })
-}
-
 /// A random scalar current slot (arbitrary complex amplitude + momentum).
 pub(crate) fn rand_scalar(rng: &mut StdRng) -> WaveformSlot<F> {
     WaveformSlot::Scalar(ScalarWf {
@@ -143,7 +133,6 @@ fn variant(slot: &WaveformSlot<F>) -> &'static str {
         WaveformSlot::FermionIn(_) => "FermionIn",
         WaveformSlot::FermionOut(_) => "FermionOut",
         WaveformSlot::Vector(_) => "Vector",
-        WaveformSlot::VectorCo(_) => "VectorCo",
         WaveformSlot::Scalar(_) => "Scalar",
         WaveformSlot::Real(_) => "Real",
         WaveformSlot::Empty => "Empty",
@@ -152,10 +141,10 @@ fn variant(slot: &WaveformSlot<F>) -> &'static str {
 
 /// Compare two [`WaveformSlot`]s for approximate equality within `tol`.
 ///
-/// Strict on the variant: differing variants (including `Vector` vs `VectorCo`) are always a
-/// mismatch. Within a variant, every stored component *and* the routed momentum are compared —
-/// a kernel that gets the algebra right but mis-routes momentum is a real defect. Returns a
-/// human-readable description of the first mismatch, so the [`check_agree`] driver can report it.
+/// Strict on the variant: differing variants are always a mismatch. Within a variant,
+/// every stored component *and* the routed momentum are compared — a kernel that gets
+/// the algebra right but mis-routes momentum is a real defect. Returns a human-readable
+/// description of the first mismatch, so the [`check_agree`] driver can report it.
 pub(crate) fn slots_approx_eq(
     a: &WaveformSlot<F>,
     b: &WaveformSlot<F>,
@@ -186,12 +175,6 @@ pub(crate) fn slots_approx_eq(
             Ok(())
         }
         (Vector(x), Vector(y)) => cmp_eps(
-            (0..4).map(|i| (x.eps.component(i), y.eps.component(i))),
-            &x.momentum,
-            &y.momentum,
-            tol,
-        ),
-        (VectorCo(x), VectorCo(y)) => cmp_eps(
             (0..4).map(|i| (x.eps.component(i), y.eps.component(i))),
             &x.momentum,
             &y.momentum,
@@ -290,11 +273,10 @@ mod tests {
     #[test]
     fn comparator_is_reflexive_on_all_variants() {
         let mut rng = seeded_rng(1);
-        let gens: [fn(&mut StdRng) -> WaveformSlot<F>; 7] = [
+        let gens: [fn(&mut StdRng) -> WaveformSlot<F>; 6] = [
             rand_ket,
             rand_bra,
             rand_vector,
-            rand_vector_co,
             rand_scalar,
             rand_real,
             |_| WaveformSlot::Empty,
@@ -307,14 +289,12 @@ mod tests {
         }
     }
 
-    /// Differing variants never compare equal (the `Vector`/`VectorCo` distinction Stage B
-    /// leans on).
+    /// Differing variants never compare equal.
     #[test]
     fn comparator_rejects_variant_mismatch() {
         let mut rng = seeded_rng(2);
         let v = rand_vector(&mut rng);
-        let vco = rand_vector_co(&mut rng);
-        assert!(slots_approx_eq(&v, &vco, TOL).is_err());
+        assert!(slots_approx_eq(&v, &rand_ket(&mut rng), TOL).is_err());
         assert!(slots_approx_eq(&v, &rand_scalar(&mut rng), TOL).is_err());
     }
 

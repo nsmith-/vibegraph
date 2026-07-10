@@ -1,5 +1,4 @@
 //! Runtime wavefunction slot, representing a single particle's wavefunction in a computation.
-use crate::helas::repr::lorentz::Covariant;
 use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use crate::helas::LorentzVector;
@@ -21,15 +20,10 @@ pub enum WaveformSlot<F: Real> {
     /// Bra (row) Dirac spinor or off-shell fermion current
     FermionOut(OutDiracWf<F>),
     /// 4-component polarization / off-shell vector current, index *up* (`ε^μ`).
-    /// External legs, FFV currents (`GammaVout`), momenta and every propagated
-    /// current are contravariant.
+    /// Every vector current is physical contravariant: external legs, momenta,
+    /// vertex producers (`GammaVout`/`MetricVout`/`LowerVout`) and propagated
+    /// currents alike.
     Vector(VectorWf<F>),
-    /// Off-shell vector current with the output index *down* (`ε_μ`): the
-    /// index-lowering vertex kernels (`MetricVout`/`LowerVout`) emit this covariant
-    /// form. It exists only transiently between such a vertex and the propagator on
-    /// its line; the propagator raises it back to a contravariant [`Vector`]. Routing
-    /// the propagator on this variance replaces the old `lowered_storage` bool.
-    VectorCo(VectorWf<F, Covariant>),
     /// Scalar amplitude + momentum
     Scalar(ScalarWf<F>),
     /// A bare real constant (mass / width / coefficient) with no momentum. Kept
@@ -62,16 +56,6 @@ impl<F: Real> Add for WaveformSlot<F> {
                     "Cannot add vector waveforms with different momenta"
                 );
                 WaveformSlot::Vector(VectorWf {
-                    eps: v1.eps + v2.eps,
-                    momentum: v1.momentum,
-                })
-            }
-            (VectorCo(v1), VectorCo(v2)) => {
-                assert_eq!(
-                    v1.momentum, v2.momentum,
-                    "Cannot add vector waveforms with different momenta"
-                );
-                WaveformSlot::VectorCo(VectorWf {
                     eps: v1.eps + v2.eps,
                     momentum: v1.momentum,
                 })
@@ -122,10 +106,6 @@ where
                 eps: v.eps * self,
                 momentum: v.momentum,
             }),
-            VectorCo(v) => VectorCo(VectorWf {
-                eps: v.eps * self,
-                momentum: v.momentum,
-            }),
             FermionIn(f) => FermionIn(InDiracWf::from_spinor(f.spinor * self, f.momentum)),
             FermionOut(f) => FermionOut(OutDiracWf::from_spinor(f.spinor * self, f.momentum)),
         }
@@ -138,7 +118,6 @@ impl<F: Real> WaveformSlot<F> {
             WaveformSlot::FermionIn(f) => Some(f.momentum),
             WaveformSlot::FermionOut(f) => Some(f.momentum),
             WaveformSlot::Vector(v) => Some(v.momentum),
-            WaveformSlot::VectorCo(v) => Some(v.momentum),
             WaveformSlot::Scalar(s) => Some(s.momentum),
             WaveformSlot::Real(_) => None,
             WaveformSlot::Empty => None,

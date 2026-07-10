@@ -34,8 +34,7 @@ pub(crate) fn expect_real<F: Real>(slot: WaveformSlot<F>) -> F {
 // ──────────────────────────── propagator ────────────────────────────
 
 /// `Propagate`: apply a propagator (interned mass/width from the two real children) to the
-/// off-shell current child. The current's variance (`Vector` vs `VectorCo`) selects the
-/// longitudinal convention; the propagator always outputs a contravariant current.
+/// off-shell current child. The propagator outputs a contravariant current.
 pub(crate) fn propagate<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let mass = expect_real(children[1]);
     let width = expect_real(children[2]);
@@ -46,17 +45,6 @@ pub(crate) fn propagate<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F
 /// already carries the conserved routed momentum (matching reference HELAS, where the
 /// off-shell current routines output it: `fvixxx` q=fi−vc, `fvoxxx` q=fo+vc,
 /// `jioxxx` jmom=fo−fi).
-///
-/// A [`WaveformSlot::VectorCo`] input marks a vector current stored index-*down* (`ε_μ`,
-/// the `MetricVout`/`LowerVout` output convention): the massive vector's longitudinal
-/// term is then formed with the *physical* current, `x − (g·q)(x⊙q)/m²`
-/// (= g·[J − q(q·J)/m²] up to the stored sign), instead of the contravariant-storage
-/// `x − q(q·x)/m²`. Every propagated current comes out typed contravariant. The massive
-/// branch raises the covariant index here (its longitudinal term needs the physical
-/// vector); the massless branch defers the raise to the downstream contraction (see the
-/// per-branch notes below) — an asymmetry that is nonetheless MG-validated on both sides
-/// (`ee_to_wpwm`'s lowered photon current for the massless case; the b b̄ 2→6 double-ZZH
-/// diagrams for the massive case, vs MadGraph AMP() in validation/madgraph/compare_amps.py).
 pub(crate) fn propagate_core<F: Real>(
     input: &WaveformSlot<F>,
     mass: F,
@@ -82,7 +70,6 @@ pub(crate) fn propagate_core<F: Real>(
                 ri(-F::one()) * C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
             WaveformSlot::FermionOut(OutDiracWf::from_spinor(num * scale, wf.momentum))
         }
-        // Contravariant current (`ε^μ`: FFV / propagated). Plain-storage longitudinal.
         WaveformSlot::Vector(wf) => {
             let q = wf.momentum;
             if mass == F::zero() {
@@ -99,41 +86,6 @@ pub(crate) fn propagate_core<F: Real>(
                 let cs = wf.eps.dot_lorentz(&q) / vm2;
                 WaveformSlot::Vector(VectorWf {
                     eps: (wf.eps - ComplexVector::from(q) * cs) * ri(-F::one()) / denom,
-                    momentum: q,
-                })
-            }
-        }
-        // Covariant current (`ε_μ`: a `MetricVout`/`LowerVout` output). The propagator's
-        // g^{μν} numerator raises the index back to contravariant (♯); its longitudinal
-        // dot is the natural covariant pairing `q^ν ε_ν = ε·q_μ` (see doc above).
-        WaveformSlot::VectorCo(wf) => {
-            let q = wf.momentum;
-            if mass == F::zero() {
-                // Massless numerator is the bare metric −i g^{μν}/q². The metric raise is
-                // deferred to the downstream contraction (which lowers the *other*
-                // current), so here the stored ε_μ components pass through unchanged, typed
-                // contravariant — unlike the massive branch below, whose explicit
-                // longitudinal term forces it to raise here. This asymmetry is exercised
-                // and MG-validated: `ee_to_wpwm` roots its s-channel photon current off the
-                // WWγ vertex (`LowerVout`), so this branch dresses a lowered photon current
-                // and reproduces MadGraph bit-for-bit. (`mu+ mu- > w+ w-` hits the same
-                // path.)
-                WaveformSlot::Vector(VectorWf {
-                    eps: ComplexVector::new([
-                        wf.eps.component(0),
-                        wf.eps.component(1),
-                        wf.eps.component(2),
-                        wf.eps.component(3),
-                    ]) * ri(-q.m2().recip()),
-                    momentum: q,
-                })
-            } else {
-                let vm2 = mass * mass;
-                let denom = C::new(q.m2() - vm2, mass * width);
-                let raised = wf.eps.raise();
-                let cs = wf.eps.dot_lorentz(&q.lower()) / vm2;
-                WaveformSlot::Vector(VectorWf {
-                    eps: (raised - ComplexVector::from(q) * cs) * ri(F::one()) / denom,
                     momentum: q,
                 })
             }
