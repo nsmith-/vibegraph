@@ -361,23 +361,17 @@ pub(crate) fn metric_neg_i<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlo
 }
 
 /// `MetricVout`: off-shell vector current of a `Metric(out, v)` structure — the metric
-/// lowers the output index on the partner vector `v`, times the vertex factor: `−g·V`
-/// (= −i · ALOHA `VVS1P1N_1`'s `−i·g·V`). The −i share of the V/S chain-phase split
-/// lives here and the +i share in the scalar propagator (see `propagate_core`): the
-/// internal-H chains always pair one `MetricVout` with one scalar propagator (pinned
-/// bit-for-bit by ee→μμττ and uux 2→6), while the external-H VVS current (e+e-→τ+τ-H's
-/// ZZH diagram, pinned per-diagram vs MadGraph AMP()) fixes how the pair splits. A
-/// trailing scalar leg (the Higgs) multiplies in at the enclosing `Mul`.
+/// contracts the output index against the partner vector `v`, `g^{μν}V_ν = V^μ`: the
+/// physical contravariant current, an identity on contravariant storage. The UFO
+/// coupling carries the vertex `i` and the propagator its `−i` (see `propagate_core`),
+/// so no phase lives here (ALOHA's `VVS1P1N_1` = `−i·g·V` folds the propagator's −i
+/// into the vertex routine instead). A trailing scalar leg (the Higgs) multiplies in
+/// at the enclosing `Mul`.
 pub(crate) fn metric_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
     let WaveformSlot::Vector(vin) = children[0] else {
         panic!("MetricVout: expected vector input");
     };
-    // −g·V: lower the partner's index (musical iso ♭) and carry the −1 vertex share.
-    let low = vin.lower();
-    WaveformSlot::VectorCo(VectorWf {
-        eps: -low.eps,
-        momentum: low.momentum,
-    })
+    WaveformSlot::Vector(vin)
 }
 
 /// `LowerVout`: [`metric_vout`] without ALOHA's −i vertex factor — the output index
