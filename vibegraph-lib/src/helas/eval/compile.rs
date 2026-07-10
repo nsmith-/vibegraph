@@ -173,3 +173,77 @@ fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::AmplitudeEvaluator;
+    use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+    use crate::helas::eval::op::Op;
+    use crate::helas::eval::tree::Tree;
+    use crate::ufo::sm::{sm_model, SMRestrict};
+
+    /// The `validate_helas_mg` process suite (bit-for-bit MG-validated). Keep in sync
+    /// with the `PROCESSES` registry in `validation/madgraph/gen_amplitude.py`.
+    const MG_VALIDATED_PROCESSES: [&str; 11] = [
+        "e+ e- > mu+ mu-",
+        "u u~ > mu+ mu-",
+        "e+ e- > e+ e-",
+        "e+ e- > mu+ mu- a",
+        "e+ e- > t t~",
+        "e+ e- > W+ W-",
+        "e+ e- > Z H",
+        "e+ e- > ta+ ta- H",
+        "e+ e- > mu+ mu- ta+ ta- QCD=0",
+        "u u~ > c c~ e+ e- mu+ mu- QCD=0",
+        "b b~ > c c~ e+ e- mu+ mu- QCD=0",
+    ];
+
+    /// Ops with no MG-validated process coverage. `MetricNegI` needs a diagram whose
+    /// *amplitude* contraction is a pure-metric (VVS) vertex — the root-at-`VtxIdx(0)`
+    /// policy never places one there in this suite, which roots every such diagram on a
+    /// fermion line instead. `IdentityAmp` needs a UFO model with an `Identity` scalar
+    /// bilinear; the SM has none (its Yukawas are `ProjM + ProjP`). Both kernels are
+    /// pinned algebraically against MG-covered ops in `kernel::tests`; process-level
+    /// coverage is a validation-sprint item (TODO.md).
+    const KNOWN_UNCOVERED: [Op; 2] = [Op::MetricNegI, Op::IdentityAmp];
+
+    /// Every `Op` outside [`KNOWN_UNCOVERED`] appears in the compiled AST of at least
+    /// one MG-validated process — the bit-for-bit `validate_helas_mg` net exercises the
+    /// whole primitive set. Two-way: an op newly covered by the suite must be removed
+    /// from the allowlist.
+    #[test]
+    fn mg_validated_suite_exercises_every_op() {
+        let model = sm_model(SMRestrict::Default);
+        let opts = ParsingOptions::default();
+        let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+        for process in MG_VALIDATED_PROCESSES {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            assert!(!sets.is_empty(), "no diagrams for '{process}'");
+            let mut per_process: BTreeMap<&'static str, usize> = BTreeMap::new();
+            for set in &sets {
+                let eval = AmplitudeEvaluator::compile(set, &model).unwrap();
+                let ast = &eval.folded().ast;
+                for id in ast.iter() {
+                    *per_process.entry(ast.value(id).op.name()).or_insert(0) += 1;
+                }
+            }
+            println!("[{process}] {per_process:?}");
+            for (name, n) in per_process {
+                *counts.entry(name).or_insert(0) += n;
+            }
+        }
+        let missing: Vec<&str> = Op::ALL
+            .iter()
+            .map(|op| op.name())
+            .filter(|name| !counts.contains_key(name))
+            .collect();
+        let expected_missing: Vec<&str> = KNOWN_UNCOVERED.iter().map(|op| op.name()).collect();
+        assert_eq!(
+            missing, expected_missing,
+            "MG-validated op coverage changed (left: actually missing, right: KNOWN_UNCOVERED)\nop counts: {counts:#?}"
+        );
+    }
+}

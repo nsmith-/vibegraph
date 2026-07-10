@@ -518,11 +518,14 @@ impl LorentzEvalTree {
                     // A pure-metric structure (VVS/VVSS) reaching a scalar sink
                     // carries the vertex factor explicitly, once per term
                     // (Gamma-/P-carrying structures — FFV, VVV — contract
-                    // plainly): −i when contracted into the *amplitude* (pinned
-                    // by e+e-→τ+τ-H's ZZH diagram), −1 when rooted at a scalar
-                    // output leg (the H-current from two Z chains; −1 against
-                    // the −i/D scalar propagator, pinned by the uux 2→6 and
-                    // b b̄ 2→6 H classes vs MadGraph AMP()).
+                    // plainly): −i when contracted into the *amplitude*
+                    // (`MetricNegI` — no MG-validated process currently roots a
+                    // pure-metric vertex at the amplitude, see KNOWN_UNCOVERED in
+                    // `mg_validated_suite_exercises_every_op`; the −i itself is
+                    // pinned bit-exact against `metric` in `kernel::tests`), −1
+                    // when rooted at a scalar output leg (the H-current from two
+                    // Z chains; −1 against the −i/D scalar propagator, pinned by
+                    // the uux 2→6 and b b̄ 2→6 H classes vs MadGraph AMP()).
                     let pure_metric = !term
                         .ops
                         .iter()
