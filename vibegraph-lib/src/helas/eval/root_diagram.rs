@@ -841,16 +841,15 @@ mod tests {
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
     use crate::ufo::sm::{sm_model as interned_sm, SMRestrict};
     use crate::ufo::UFOModel;
-    use std::sync::{Arc, OnceLock};
+    use std::sync::Arc;
 
-    static SM_MODEL: OnceLock<Arc<UFOModel>> = OnceLock::new();
-    fn sm_model() -> &'static UFOModel {
-        SM_MODEL.get_or_init(|| interned_sm(SMRestrict::Default))
+    fn sm_model() -> Arc<UFOModel> {
+        interned_sm(SMRestrict::Default)
     }
     fn generate(process: &str) -> Vec<DiagramSet> {
         let opts = ParsingOptions::default();
         let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
-        generate_from_proc_card(&card, sm_model()).unwrap()
+        generate_from_proc_card(&card, &sm_model()).unwrap()
     }
 
     #[test]
@@ -860,7 +859,7 @@ mod tests {
         for set in sets {
             for (d, diagram) in set.diagrams.iter().enumerate() {
                 println!("Testing diagram {d}");
-                let tree = root_tree(diagram, model).expect("rooting failed");
+                let tree = root_tree(diagram, &model).expect("rooting failed");
                 println!("Generated tree: {tree}");
             }
         }
@@ -924,7 +923,7 @@ mod tests {
                         }
                     }
                 }
-                let tree = root_tree(diagram, model).expect("rooting failed");
+                let tree = root_tree(diagram, &model).expect("rooting failed");
                 println!("  baked: {tree}");
             }
         }
@@ -945,9 +944,9 @@ mod tests {
         for process in processes {
             for set in generate(process) {
                 for (i, diagram) in set.diagrams.iter().enumerate() {
-                    let tree = root_tree(diagram, model).expect("rooting failed");
+                    let tree = root_tree(diagram, &model).expect("rooting failed");
                     let from_flow = spine_sign_from_flow(&tree);
-                    let heuristic = initial_state_spine_sign(diagram, model);
+                    let heuristic = initial_state_spine_sign(diagram, &model);
                     assert_eq!(
                         from_flow, heuristic,
                         "spine sign mismatch in `{process}` diagram {i}: \
