@@ -90,10 +90,12 @@ Collects the validation follow-ups deferred from `cleanup-refactor`:
 ## 🏎️ `performance-sprint` — IN PROGRESS (branch `performance-sprint`)
 
 Multi-session evaluator-performance sprint; every session lands against the
-11-process `validate_helas_mg` net (gate = the enforced `REL_TOL` 1e-10, itself
-≫ double eps — the Fortran reference is compiler-reordered, so transforms may
-reorder FP to first order; order-preserving transforms like P2's get bit-for-bit
-agreement as a free, stronger check) and re-records the timing table below.
+11-process `validate_helas_mg` net (gate = the enforced `REL_TOL`, tightened to
+**1e-12** for the sprint — ~2× the current suite max of 5.4e-13, so genuine
+regressions fail while benign FP reordering passes: the Fortran reference is
+compiler-reordered, so transforms may reorder FP to first order; order-preserving
+transforms like P2's get bit-for-bit agreement as a free, stronger check) and
+re-records the timing table below.
 Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations are
 ~half of `validate_helas_mg` time.
 
@@ -147,11 +149,11 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
 - **P6 (promoted) — Stage A fusion + inlining survey** (note 13 §7 5a) — the
   `Add`/`Mul`/`gamma_vout` shares are the target: fused vertex kernels (FFV
   `[g_L,g_R]` first) collapse the coupling·coeff·structure `Mul`/`Add` scaffolding
-  into one node; per-kernel oracle = Stage-0 prop harness at tolerance — FP
-  reordering inside a fused kernel is fine (`REL_TOL` ≫ eps; the Fortran
-  reference is itself compiler-reordered — the same license egglog needs). Plus
-  the rustc inlining survey of `LorentzRepr` calls and fusion microbenches in
-  `benches/`.
+  into one node; per-kernel oracle = Stage-0 prop harness — FP reordering inside
+  a fused kernel is fine, but the oracle tolerance should be *tighter* than the
+  MG gate (~1e-14: a single kernel has far fewer compounding roundings than a
+  whole 2→6 amplitude). Plus the rustc inlining survey of `LorentzRepr` calls
+  and fusion microbenches in `benches/`.
 - **P5 (last) — egg arity groundwork** — binarize `Add`/`Mul` at lowering as a
   *balanced* tree reduction (O(log n) live slots on the P4 stack evaluator, and
   pairwise summation is if anything more accurate than the left fold; the ~1e-15
