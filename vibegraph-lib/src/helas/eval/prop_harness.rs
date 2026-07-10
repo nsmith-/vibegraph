@@ -1,16 +1,12 @@
-//! Stage 0 property-test harness for the typed-repr-conventions work.
-//!
-//! A reusable toolbox — **not** an equivalence test in itself — shared by two later
-//! stages that certify *different* equivalences over the same machinery:
-//! - Stage A: `fused == generic` (a peephole kernel reproduces the generic composition);
-//! - Stage B: `new_composite == old_composite` (a convention refactor is amplitude-preserving
-//!   at the contracted-observable seam).
-//!
-//! Both consume the same two pieces provided here:
-//! 1. **Typed random-input generators** — ket/bra spinors, `ε` at each [`Variance`], momenta,
-//!    scalars, reals — each already wrapped in the [`WaveformSlot`] currency the eval kernels
-//!    take. Component generators ([`rand_c`], [`rand_momentum`]) are exposed too, so a stage
-//!    can build a bespoke typed input the wrappers don't cover.
+//! Property-test harness for kernel-equivalence certificates (typed-repr-conventions
+//! Stage 0). A reusable toolbox — **not** an equivalence test in itself — for stages
+//! that compare two kernels/compositions over random inputs (Stage B certified its
+//! produce→propagate composites here; Stage A's `fused == generic` is the remaining
+//! planned consumer). Two pieces:
+//! 1. **Typed random-input generators** — ket/bra spinors, `ε`, momenta, scalars,
+//!    reals — each already wrapped in the [`WaveformSlot`] currency the eval kernels
+//!    take. Component generators ([`rand_c`], [`rand_momentum`]) are exposed too, so a
+//!    stage can build a bespoke typed input the wrappers don't cover.
 //! 2. **A comparison + driver core** ([`slots_approx_eq`], [`check_agree`]) that evaluates two
 //!    kernels/subtrees on the same random inputs and asserts their [`WaveformSlot`] outputs agree.
 //!
