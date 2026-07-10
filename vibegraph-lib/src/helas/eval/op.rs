@@ -83,6 +83,34 @@ pub enum Op {
 }
 
 impl Op {
+    /// Every opcode, in declaration order. Keep in sync with the enum (the
+    /// [`name`](Op::name)/[`from_name`](Op::from_name) matches are compiler-checked
+    /// exhaustive; this list is pinned against them by `op_names_roundtrip`).
+    pub const ALL: [Op; 22] = [
+        Op::External,
+        Op::Propagate,
+        Op::Mul,
+        Op::Add,
+        Op::GammaVout,
+        Op::GammaIout,
+        Op::GammaOout,
+        Op::ProjM,
+        Op::ProjP,
+        Op::ProjMAmp,
+        Op::ProjPAmp,
+        Op::Metric,
+        Op::MetricNegI,
+        Op::MetricVout,
+        Op::LowerVout,
+        Op::IdentityAmp,
+        Op::PMom,
+        Op::PMomOut,
+        Op::Coupling,
+        Op::Mass,
+        Op::Width,
+        Op::Coeff,
+    ];
+
     /// The s-expression head token for this op.
     pub fn name(self) -> &'static str {
         match self {
@@ -261,6 +289,28 @@ impl fmt::Display for Const {
                 )
             }
             Const::None => write!(f, "(None)"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::Op;
+
+    /// `Op` ↔ s-expression head token is a bijection: every op round-trips through
+    /// `name`/`from_name`, and no two ops share a name.
+    #[test]
+    fn op_names_roundtrip() {
+        let mut seen = HashSet::new();
+        for op in Op::ALL {
+            assert_eq!(Op::from_name(op.name()), Some(op), "round-trip for {op:?}");
+            assert!(
+                seen.insert(op.name()),
+                "duplicate s-expr name {}",
+                op.name()
+            );
         }
     }
 }

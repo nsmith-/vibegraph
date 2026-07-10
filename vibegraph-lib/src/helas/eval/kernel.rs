@@ -341,3 +341,58 @@ pub(crate) fn lower_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<
         momentum: vin.momentum,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::helas::eval::prop_harness::{check_agree, rand_bra, rand_ket, rand_vector};
+
+    // `MetricNegI` and `IdentityAmp` have no MG-validated process coverage (see
+    // `mg_validated_suite_exercises_every_op`), so their kernels are pinned here
+    // against the ops the MG net does exercise.
+
+    /// `MetricNegI` is exactly −i × [`metric`] — the vertex −i of an amplitude-rooted
+    /// pure-metric (VVS) contraction, and nothing else. Multiplying by −i is a
+    /// component sign-shuffle, so the agreement is bit-exact.
+    #[test]
+    fn metric_neg_i_is_neg_i_times_metric() {
+        check_agree(
+            256,
+            0x11AA01,
+            0.0,
+            |rng| vec![rand_vector(rng), rand_vector(rng)],
+            |c| metric_neg_i(c),
+            |c| match metric(c) {
+                WaveformSlot::Scalar(s) => WaveformSlot::Scalar(ScalarWf {
+                    value: s.value * ri(-1.0),
+                    momentum: s.momentum,
+                }),
+                other => panic!("metric produced a non-scalar: {other:?}"),
+            },
+        );
+    }
+
+    /// `IdentityAmp` (ψ̄ 1 ψ) equals the sum of its chiral halves
+    /// [`proj_m_amp`] + [`proj_p_amp`]: P_L + P_R = 1 and the bilinear is linear in Γ.
+    #[test]
+    fn identity_amp_is_chiral_projector_sum() {
+        check_agree(
+            256,
+            0x11AA02,
+            1e-12,
+            |rng| vec![rand_bra(rng), rand_ket(rng)],
+            |c| identity_amp(c),
+            |c| {
+                let (WaveformSlot::Scalar(m), WaveformSlot::Scalar(p)) =
+                    (proj_m_amp(c), proj_p_amp(c))
+                else {
+                    panic!("chiral bilinears produced non-scalars");
+                };
+                WaveformSlot::Scalar(ScalarWf {
+                    value: m.value + p.value,
+                    momentum: m.momentum,
+                })
+            },
+        );
+    }
+}
