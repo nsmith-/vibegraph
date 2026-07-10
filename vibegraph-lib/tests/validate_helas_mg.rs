@@ -32,13 +32,14 @@ use vibegraph::ufo::EvaluatedModel;
 
 /// Relative tolerance for processes expected to agree (color-free, same SM params).
 ///
-/// vibegraph now evaluates with MadGraph's exact per-process `param_card.dat` (same
+/// vibegraph evaluates with MadGraph's exact per-process `param_card.dat` (same
 /// rounded masses, SM inputs, and decay widths), and the SM model bakes in
-/// `restrict_default.dat`, so the comparison is bit-for-bit: ee→μμ and pp→ll agree
-/// to ~1e-14 (was ~7e-4 when vibegraph used physical lepton masses vs MadGraph's
-/// massless ZERO). The tolerance is kept a few orders above the double-precision
-/// floor to allow for benign summation-order differences across the diagram set.
-const REL_TOL: f64 = 1e-10;
+/// `restrict_default.dat`, so agreement is limited only by summation-order
+/// differences across the diagram set: the suite max is currently 5.4e-13
+/// (`ee_to_mumu_tata_qcd0`), most processes sit at 1e-15..1e-13. The tolerance
+/// rides ~2× above that max so genuine regressions fail while benign FP
+/// reordering (fused kernels, balanced sums, egglog rewrites) passes.
+const REL_TOL: f64 = 1e-12;
 
 /// Processes for which we enforce agreement; others are informational only.
 const EXPECT_MATCH: &[&str] = &[
