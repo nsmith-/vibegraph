@@ -206,7 +206,7 @@ mod tests {
     /// fermion line instead. `IdentityAmp` needs a UFO model with an `Identity` scalar
     /// bilinear; the SM has none (its Yukawas are `ProjM + ProjP`). Both kernels are
     /// pinned algebraically against MG-covered ops in `kernel::tests`; process-level
-    /// coverage is a validation-sprint item (TODO.md).
+    /// coverage remains a future item.
     const KNOWN_UNCOVERED: [Op; 2] = [Op::MetricNegI, Op::IdentityAmp];
 
     /// Every `Op` outside [`KNOWN_UNCOVERED`] appears in the compiled AST of at least

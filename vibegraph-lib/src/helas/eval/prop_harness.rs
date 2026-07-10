@@ -1,16 +1,14 @@
-//! Property-test harness for kernel-equivalence certificates (typed-repr-conventions
-//! Stage 0). A reusable toolbox — **not** an equivalence test in itself — for stages
-//! that compare two kernels/compositions over random inputs (Stage B certified its
-//! produce→propagate composites here; Stage A's `fused == generic` is the remaining
-//! planned consumer). Two pieces:
+//! Property-test harness for kernel-equivalence certificates. A reusable toolbox —
+//! **not** an equivalence test in itself — for tests that compare two kernels or
+//! compositions over random inputs. Two pieces:
 //! 1. **Typed random-input generators** — ket/bra spinors, `ε`, momenta, scalars,
 //!    reals — each already wrapped in the [`WaveformSlot`] currency the eval kernels
 //!    take. Component generators ([`rand_c`], [`rand_momentum`]) are exposed too, so a
-//!    stage can build a bespoke typed input the wrappers don't cover.
+//!    caller can build a bespoke typed input the wrappers don't cover.
 //! 2. **A comparison + driver core** ([`slots_approx_eq`], [`check_agree`]) that evaluates two
 //!    kernels/subtrees on the same random inputs and asserts their [`WaveformSlot`] outputs agree.
 //!
-//! The identities the stages check are *algebraic*, so the generators deliberately produce
+//! The identities callers check are *algebraic*, so the generators deliberately produce
 //! arbitrary (off-shell, EOM-violating) inputs: an identity that holds only on-shell would be
 //! the wrong thing to certify. Because both kernels in a comparison receive the *same* input
 //! vector, momentum routing stays consistent without any physical constraint.

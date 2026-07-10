@@ -56,7 +56,7 @@ For paper references, submodule locations and key paths, and instructions for fe
 
 - **Natural units**: ℏ = c = 1 (GeV is the fundamental energy scale)
 - **Metric signature**: (+, −, −, −)
-- **Comment guidelines**: Avoid narrative comments; add notes only for non-obvious constraints or physics assumptions. Document what the code *does now*, not what it used to do or what was tried before — git history records that, and "the old X" / "no longer Y" framing is just distraction.
+- **Comment guidelines**: Avoid narrative comments; add notes only for non-obvious constraints or physics assumptions. Document what the code *does now*, not what it used to do or what was tried before — git history records that, and "the old X" / "no longer Y" framing is just distraction. Comments must be self-contained: never reference `TODO.md`, planning docs, sprint/task names, or plan "stages"/"sessions" (e.g. "Stage A", "the convention-refactor session"). Those artifacts are temporary and invisible to a future reader of the code, so such comments read as vacuous. Describe the code's behavior and rationale in its own terms; if a follow-up is genuinely worth flagging, describe the work itself, not the plan item that tracks it.
 - **Four-momentum layout**: `[E, px, py, pz]` (energy first, spatial components follow)
 
 ## Build & Test
