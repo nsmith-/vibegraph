@@ -9,6 +9,9 @@ path = "src/lib.rs"
 
 [features]
 extended-validation = []
+# Exposes helas::eval::bench_internals (kernels + random-slot generators) for the
+# kernel-granularity microbenches in benches/. Never enable in normal builds.
+bench-internals = []
 
 [dependencies]
 num-traits = "0.2"
@@ -38,6 +41,11 @@ serde_json = "1.0"
 [[bench]]
 name = "eval_strategies"
 harness = false
+
+[[bench]]
+name = "kernel_fusion"
+harness = false
+required-features = ["bench-internals"]
 
 [[test]]
 name = "validate_madgraph_diagrams"

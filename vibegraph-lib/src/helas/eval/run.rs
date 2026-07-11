@@ -266,6 +266,9 @@ pub(super) fn apply<F: Real>(
         Op::Mul => mul_apply((0..n_kids).map(kid)),
         // Lorentz primitives: each `Op` maps 1-to-1 to a `kernel::` fn named for it.
         Op::GammaVout => kernel::gamma_vout(&[kid(0), kid(1)]),
+        Op::FfvVout => kernel::ffv_vout(&[kid(0), kid(1), kid(2), kid(3)]),
+        Op::FfvIout => kernel::ffv_iout(&[kid(0), kid(1), kid(2), kid(3)]),
+        Op::FfvOout => kernel::ffv_oout(&[kid(0), kid(1), kid(2), kid(3)]),
         Op::GammaIout => kernel::gamma_iout(&[kid(0), kid(1)]),
         Op::GammaOout => kernel::gamma_oout(&[kid(0), kid(1)]),
         Op::ProjM => kernel::proj_m(&[kid(0)]),
@@ -294,7 +297,7 @@ pub(super) fn apply<F: Real>(
 /// n-ary product (the `Mul` op). Scalar/real children fold into a complex coefficient
 /// (reals kept in `F`); at most one non-scalar child carries the output type and absorbs
 /// the scalar momentum.
-fn mul_apply<F: Real>(children: impl IntoIterator<Item = WaveformSlot<F>>) -> WaveformSlot<F> {
+pub fn mul_apply<F: Real>(children: impl IntoIterator<Item = WaveformSlot<F>>) -> WaveformSlot<F> {
     let mut real_acc = F::one();
     let mut cplx_acc = C::new(F::one(), F::zero());
     let mut scalar_mom = LorentzVector::zero();

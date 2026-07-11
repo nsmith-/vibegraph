@@ -28,26 +28,26 @@ use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 
 /// Concrete scalar field for the harness. The identities under test are algebraic and
 /// hold for any field, so we fix `f64` rather than staying generic over [`Real`](crate::helas::repr::Real).
-pub(crate) type F = f64;
+pub type F = f64;
 
 /// A seeded RNG so any failure reproduces from the reported seed.
-pub(crate) fn seeded_rng(seed: u64) -> StdRng {
+pub fn seeded_rng(seed: u64) -> StdRng {
     StdRng::seed_from_u64(seed)
 }
 
 /// A random real in `(-2, 2)` — bounded away from zero-dominated and overflow regimes so
 /// tolerances stay meaningful, but otherwise unconstrained.
-pub(crate) fn rand_re(rng: &mut StdRng) -> F {
+pub fn rand_re(rng: &mut StdRng) -> F {
     rng.random::<F>() * 4.0 - 2.0
 }
 
 /// A random complex number with both parts drawn by [`rand_re`].
-pub(crate) fn rand_c(rng: &mut StdRng) -> C<F> {
+pub fn rand_c(rng: &mut StdRng) -> C<F> {
     C::new(rand_re(rng), rand_re(rng))
 }
 
 /// A random (real) contravariant 4-momentum `p^μ`. Not constrained on-shell.
-pub(crate) fn rand_momentum(rng: &mut StdRng) -> LorentzVector<F, Contravariant> {
+pub fn rand_momentum(rng: &mut StdRng) -> LorentzVector<F, Contravariant> {
     LorentzVector::new(rand_re(rng), rand_re(rng), rand_re(rng), rand_re(rng))
 }
 
@@ -64,7 +64,7 @@ fn rand_bispinor<Adj: crate::helas::repr::lorentz::DiracAdjoint>(
 }
 
 /// A random ket (flow-in / column `u`,`v`) fermion current slot.
-pub(crate) fn rand_ket(rng: &mut StdRng) -> WaveformSlot<F> {
+pub fn rand_ket(rng: &mut StdRng) -> WaveformSlot<F> {
     WaveformSlot::FermionIn(InDiracWf::from_spinor(
         rand_bispinor(rng),
         rand_momentum(rng),
@@ -72,7 +72,7 @@ pub(crate) fn rand_ket(rng: &mut StdRng) -> WaveformSlot<F> {
 }
 
 /// A random bra (flow-out / row `ū`,`v̄`) fermion current slot.
-pub(crate) fn rand_bra(rng: &mut StdRng) -> WaveformSlot<F> {
+pub fn rand_bra(rng: &mut StdRng) -> WaveformSlot<F> {
     WaveformSlot::FermionOut(OutDiracWf::from_spinor(
         rand_bispinor(rng),
         rand_momentum(rng),
@@ -80,7 +80,7 @@ pub(crate) fn rand_bra(rng: &mut StdRng) -> WaveformSlot<F> {
 }
 
 /// A random contravariant (`ε^μ`) vector current slot.
-pub(crate) fn rand_vector(rng: &mut StdRng) -> WaveformSlot<F> {
+pub fn rand_vector(rng: &mut StdRng) -> WaveformSlot<F> {
     WaveformSlot::Vector(VectorWf {
         eps: rand_eps::<Contravariant>(rng),
         momentum: rand_momentum(rng),
@@ -88,7 +88,7 @@ pub(crate) fn rand_vector(rng: &mut StdRng) -> WaveformSlot<F> {
 }
 
 /// A random scalar current slot (arbitrary complex amplitude + momentum).
-pub(crate) fn rand_scalar(rng: &mut StdRng) -> WaveformSlot<F> {
+pub fn rand_scalar(rng: &mut StdRng) -> WaveformSlot<F> {
     WaveformSlot::Scalar(ScalarWf {
         value: rand_c(rng),
         momentum: rand_momentum(rng),
@@ -96,7 +96,7 @@ pub(crate) fn rand_scalar(rng: &mut StdRng) -> WaveformSlot<F> {
 }
 
 /// A random bare real-constant slot (mass/width/coefficient register).
-pub(crate) fn rand_real(rng: &mut StdRng) -> WaveformSlot<F> {
+pub fn rand_real(rng: &mut StdRng) -> WaveformSlot<F> {
     WaveformSlot::Real(rand_re(rng))
 }
 
@@ -139,11 +139,7 @@ fn variant(slot: &WaveformSlot<F>) -> &'static str {
 /// every stored component *and* the routed momentum are compared — a kernel that gets
 /// the algebra right but mis-routes momentum is a real defect. Returns a human-readable
 /// description of the first mismatch, so the [`check_agree`] driver can report it.
-pub(crate) fn slots_approx_eq(
-    a: &WaveformSlot<F>,
-    b: &WaveformSlot<F>,
-    tol: F,
-) -> Result<(), String> {
+pub fn slots_approx_eq(a: &WaveformSlot<F>, b: &WaveformSlot<F>, tol: F) -> Result<(), String> {
     use WaveformSlot::*;
     match (a, b) {
         (Real(x), Real(y)) => {
@@ -237,7 +233,7 @@ fn cmp_spinor(
 /// `lhs`/`rhs` are the two kernels/subtrees under comparison; both receive the *same* input
 /// slice per sample. On the first disagreement this panics with the sample index, seed, the
 /// inputs, and both outputs — everything needed to reproduce and localise the failure.
-pub(crate) fn check_agree<G, L, R>(n: usize, seed: u64, tol: F, mut gen: G, lhs: L, rhs: R)
+pub fn check_agree<G, L, R>(n: usize, seed: u64, tol: F, mut gen: G, lhs: L, rhs: R)
 where
     G: FnMut(&mut StdRng) -> Vec<WaveformSlot<F>>,
     L: Fn(&[WaveformSlot<F>]) -> WaveformSlot<F>,

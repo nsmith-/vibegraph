@@ -81,6 +81,24 @@ pub enum Op {
     LowerVout,
     /// full scalar bilinear ψ̄ δ ψ.
     IdentityAmp,
+    // ── fused chiral FFV kernels ──
+    // A vertex whose structures form a chiral pair (`Gamma·ProjM` / `Gamma·ProjP`
+    // variants of one contraction shape) is fused at lowering into a single node:
+    // the per-chirality effective couplings `g_L`/`g_R` (each a scalar sub-graph
+    // `Σ coupling·coeff`) become operands, and the kernel evaluates
+    // `g_L·(left-handed term) + g_R·(right-handed term)` directly — no `Mul`/`Add`
+    // scaffolding, and no structurally-zero chiral half.
+    /// fused chiral [`GammaVout`](Op::GammaVout): 2 fermions + `g_L` + `g_R` →
+    /// off-shell vector current `g_L J_L^μ + g_R J_R^μ`. Children:
+    /// `[f_i, f_j, gL, gR]` with the projector on the `f_j` position.
+    FfvVout,
+    /// fused chiral [`GammaIout`](Op::GammaIout): vector + flow-in fermion +
+    /// `g_L` + `g_R` → flow-in fermion current `ε̸(g_L ψ_L ⊕ g_R ψ_R)`.
+    /// Children: `[v, f, gL, gR]`.
+    FfvIout,
+    /// fused chiral [`GammaOout`](Op::GammaOout): vector + flow-out fermion +
+    /// `g_L` + `g_R` → flow-out fermion current. Children: `[v, f, gL, gR]`.
+    FfvOout,
     /// 4-momentum of the single child input, as a vector.
     PMom,
     /// 4-momentum of the vertex's *output* leg, as a vector: −Σ (input momenta).
