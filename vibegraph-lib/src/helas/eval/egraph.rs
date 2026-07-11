@@ -9,16 +9,20 @@
 //! op has fixed arity except [`Op::PMomOut`] (a vertex's whole input list), which takes
 //! a `(Vec Node)` and so is declared as a separate `constructor` after the vector sort.
 //!
-//! [`roundtrip`] declares the schema, then encodes the AST as a sequence of
-//! [`Command`]s (a `let $nID …` action per arena node, children before parents so each
-//! binding can reference earlier ones by id — this also preserves DAG sharing instead
-//! of expanding it) followed by an `extract` of the root, and decodes the extracted
-//! [`TermDag`] back into an `Ast<Sym>`. Commands are built directly rather than
-//! rendered to text, so the encoding never round-trips through egglog's parser. With
-//! no rewrite rules registered, extraction returns exactly the inserted term, so the result is
-//! structurally identical to the input. This is the seam the future algebraic-rewrite
-//! and congruence-CSE rules slot into (see `research/notes/14-egglog-notes.md`); the
-//! rules will turn this identity pass into an optimizing one.
+//! [`roundtrip`] declares the schema, then encodes the whole AST as a single `let`
+//! binding whose value is the root constructor call with every child nested inline,
+//! followed by an `extract` of that binding. Evaluating the `let` inserts the entire
+//! tree in one traversal and rebuilds the database once — egglog rebuilds (its parallel
+//! step) after each command, so a node-at-a-time encoding starves that step of work.
+//! The gap between the `let` and the `extract` is where the future rewrite stage will
+//! run its rule schedule. The extracted [`TermDag`] is then decoded back into an
+//! `Ast<Sym>`.
+//! Commands are built directly rather than rendered to text, so the encoding never
+//! round-trips through egglog's parser. With no rewrite rules registered, extraction
+//! returns exactly the inserted term, so the result is structurally identical to the
+//! input. This is the seam the future algebraic-rewrite and congruence-CSE rules slot
+//! into (see `research/notes/14-egglog-notes.md`); the rules will turn this identity
+//! pass into an optimizing one.
 
 use std::collections::HashMap;
 
@@ -103,25 +107,34 @@ pub fn roundtrip(ast: &Ast<Sym>) -> Result<Ast<Sym>, EgraphError> {
 
 // ─────────────────────────────── encode ────────────────────────────────────
 
-/// Build the encoding commands: one `let $nID …` action per arena node in topological
-/// (children-first) order, then an `extract` of the root. Assumes the schema
-/// ([`NODE_SCHEMA`]) has already been declared on the e-graph.
+/// The global bound to the whole encoded amplitude, between insertion and extraction.
+const ROOT_VAR: &str = "$root";
+
+/// Build the encoding commands: one `let` binding the whole AST as a single fully-inlined
+/// expression, then an `extract` of that binding. Evaluating the `let` inserts the entire
+/// tree in one traversal and rebuilds the database once, rather than once per node —
+/// egglog's parallel rebuild has no work to do on a one-node delta. Binding the root
+/// (rather than extracting the expression directly) leaves the seam where the future
+/// rewrite stage inserts its `run` schedule between insertion and extraction. Assumes the
+/// schema ([`NODE_SCHEMA`]) has already been declared on the e-graph.
+///
+/// The lowered arena is a tree (each node has one parent; see [`super::lower::lower`]),
+/// so inlining expands nothing. Were a shared subtree present, egglog would hash-cons
+/// it back together on insert, so the extracted result is unaffected either way.
 fn encode_commands(ast: &Ast<Sym>) -> Vec<Command> {
-    let mut cmds = Vec::with_capacity(ast.len() + 1);
-    for id in 0..ast.len() as NodeId {
-        cmds.push(Command::Action(GenericAction::Let(
+    vec![
+        Command::Action(GenericAction::Let(
             span(),
-            node_var(id),
-            encode_expr(ast, id),
-        )));
-    }
-    // Default variant count (0) — the same expr the s-expr parser fills in for `(extract e)`.
-    cmds.push(Command::Extract(span(), var(node_var(ast.root())), int(0)));
-    cmds
+            ROOT_VAR.to_string(),
+            encode_expr(ast, ast.root()),
+        )),
+        // Default variant count (0) — the same expr the s-expr parser fills in for `(extract e)`.
+        Command::Extract(span(), var(ROOT_VAR.to_string()), int(0)),
+    ]
 }
 
-/// Encode one node as an egglog constructor call `(OpName leaf-fields… $child…)`,
-/// referencing children by their already-bound `$nID` globals.
+/// Encode one node as an egglog constructor call `(OpName leaf-fields… child…)`, its
+/// children inlined as nested expressions.
 fn encode_expr(ast: &Ast<Sym>, id: NodeId) -> Expr {
     let node = ast.value(id);
     let kids = ast.children_ids(id);
@@ -148,21 +161,16 @@ fn encode_expr(ast: &Ast<Sym>, id: NodeId) -> Expr {
     }
     if node.op == Op::PMomOut {
         // The one variable-arity op: children go inside a Vec argument.
-        let elems: Vec<Expr> = kids.iter().map(|&k| var(node_var(k))).collect();
+        let elems: Vec<Expr> = kids.iter().map(|&k| encode_expr(ast, k)).collect();
         args.push(if elems.is_empty() {
             call("vec-empty", vec![])
         } else {
             call("vec-of", elems)
         });
     } else {
-        args.extend(kids.iter().map(|&k| var(node_var(k))));
+        args.extend(kids.iter().map(|&k| encode_expr(ast, k)));
     }
     call(node.op.name(), args)
-}
-
-/// The global-variable name bound to arena node `id` (`$nID`).
-fn node_var(id: NodeId) -> String {
-    format!("$n{id}")
 }
 
 // egglog `Expr`/`Command` constructors carry a source [`Span`] for error reporting;
@@ -385,34 +393,17 @@ mod tests {
         assert_eq!(kids[0], kids[1], "shared child stays a single arena node");
     }
 
-    /// The real payoff: representative MG-validated processes, compiled to their binary
-    /// `Ast<Sym>`, survive the egglog round-trip byte-for-byte. This exercises genuine
-    /// HELAS output — multi-diagram sharing, `PMomOut` from the triple-gauge `W+ W-`
-    /// vertex, fused `Ffv*` kernels, massive externals — not just the hand-written
-    /// fixtures above. Kept to 2→2/2→3 processes: the 2→6 QCD amplitudes lower to tens
-    /// of thousands of nodes, and building + extracting an e-graph that large runs on
-    /// the order of a minute per subprocess — too slow for a default test. That cost is
-    /// egglog's own e-graph construction and extraction, not the encoding: measured on a
-    /// 37k-node `g g > g g g g` subprocess it is the same whether the program is built as
-    /// [`Command`]s or parsed from text. The eventual optimizer will confront it directly
-    /// when it runs egglog on those ASTs.
-    #[test]
-    fn representative_processes_roundtrip() {
+    /// Compile each process to its binary `Ast<Sym>` and assert the egglog round-trip
+    /// returns it byte-for-byte. Shared by the full-suite and the fast rewrite-dev tests.
+    fn assert_processes_roundtrip(processes: &[&str]) {
         use super::super::lower;
         use super::super::root_diagram::compile_diagram_ast;
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
         use crate::ufo::sm::{sm_model, SMRestrict};
 
-        const PROCESSES: [&str; 4] = [
-            "e+ e- > mu+ mu-",   // basic s-channel
-            "e+ e- > mu+ mu- a", // photon radiation: several diagrams, chiral FFV fusion
-            "e+ e- > W+ W-",     // triple-gauge VVV vertex: PMomOut
-            "e+ e- > t t~",      // massive externals
-        ];
-
         let model = sm_model(SMRestrict::Default);
         let opts = ParsingOptions::default();
-        for process in PROCESSES {
+        for &process in processes {
             let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
             let sets = generate_from_proc_card(&pc, &model).unwrap();
             assert!(!sets.is_empty(), "no diagrams for '{process}'");
@@ -428,6 +419,43 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// One representative 2→2, 2→3, and 2→4 process — enough op variety (multi-diagram
+    /// sharing, a radiated photon, fused `Ffv*` kernels, massive externals) to develop
+    /// and regression-test egglog rewrite rules against, while staying fast enough for
+    /// the default `cargo test`. The full validated suite is
+    /// `representative_processes_roundtrip` (gated behind `extended-validation`).
+    #[test]
+    fn rewrite_dev_processes_roundtrip() {
+        assert_processes_roundtrip(&[
+            "e+ e- > mu+ mu-",               // 2→2
+            "e+ e- > mu+ mu- a",             // 2→3
+            "e+ e- > mu+ mu- ta+ ta- QCD=0", // 2→4
+        ]);
+    }
+
+    /// The real payoff: every MG-validated process, compiled to its binary `Ast<Sym>`,
+    /// survives the egglog round-trip byte-for-byte. This exercises genuine HELAS output
+    /// — multi-diagram sharing, `PMomOut` from the triple-gauge `W+ W-` vertex, fused
+    /// `Ffv*` kernels, massive externals — not just the hand-written fixtures above, up
+    /// to the 2→6 EW amplitudes. The full suite round-trips in about a second because the
+    /// whole AST is inserted as one expression (see [`encode_commands`]): egglog rebuilds
+    /// its database once, not once per node. Runs the same `MG_VALIDATED_PROCESSES`
+    /// suite as `validate_helas_mg`, so it never drifts from the validated set.
+    ///
+    /// Gated behind `extended-validation`: egglog is ~100× slower unoptimized (~1s
+    /// release, ~140s debug over the full suite), too heavy for the default `cargo test`.
+    ///
+    /// ```text
+    /// cargo test -p vibegraph-lib --release --features extended-validation \
+    ///   representative_processes_roundtrip
+    /// ```
+    #[cfg(feature = "extended-validation")]
+    #[test]
+    fn representative_processes_roundtrip() {
+        use super::super::compile::MG_VALIDATED_PROCESSES;
+        assert_processes_roundtrip(&MG_VALIDATED_PROCESSES);
     }
 
     /// Every `Op` variant appears as a constructor in the schema, so adding an op forces
