@@ -161,14 +161,39 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
   `Folded` ext-leg table (leg/spin/charge/incoming + mass as a `consts_f` index);
   `External`'s `Mass` child dropped (fold rebuilds reachable-only). Timing flat vs
   P2 (±3% run noise) — no regression; MG max_rel_diffs digit-for-digit unchanged.
-- **P6 (next) — Stage A fusion + inlining survey** (note 13 §7 5a) — the
-  `Add`/`Mul`/`gamma_vout` shares are the target: fused vertex kernels (FFV
-  `[g_L,g_R]` first) collapse the coupling·coeff·structure `Mul`/`Add` scaffolding
-  into one node; per-kernel oracle = Stage-0 prop harness — FP reordering inside
-  a fused kernel is fine, but the oracle tolerance should be *tighter* than the
-  MG gate (~1e-14: a single kernel has far fewer compounding roundings than a
-  whole 2→6 amplitude). Plus the rustc inlining survey of `LorentzRepr` calls
-  and fusion microbenches in `benches/`.
+- **P6 ✅ (2026-07-10) — Stage A FFV fusion + inlining survey: ~2× across the
+  board** (note 13 §7 5a). Three deliverables:
+  1. *Inlining survey*: disassembly of the profiling bench showed the eval loop
+     fully inlines `apply`/`mul_apply`, but `WaveformSlot::add`, `C<F>×WaveformSlot`,
+     `slash`, `vector_bilinear`, `scalar_bilinear` were outlined calls on the hot
+     path. `#[inline(always)]` on those (repr methods + the two `WaveformSlot`
+     operators) gave −17…−20% e2e; semantics-preserving (no fast-math), suite
+     max_rel_diffs moved only in the last digits.
+  2. *Fusion microbench* (`benches/kernel_fusion.rs`, behind the new
+     `bench-internals` feature exposing `helas::eval::bench_internals`): generic
+     kernel chain (with res-buffer slot traffic) vs fused FFV `[g_L,g_R]` —
+     vector-current 60.6→10.0 ns (6.1×), fermion-current 55.7→6.7 ns (8.3×);
+     ~40% of generic cost is slot traffic. Gate met decisively.
+  3. *Stage A adoption*: chiral-pair FFV vertices fuse at `lower_vertex` — terms
+     grouped by rooted-tree shape modulo the ProjM/ProjP tag (groups may span
+     coupling terms, e.g. the Z's `g_L = 2·C58`, `g_R = C58 + C49`); one
+     `FfvVout`/`FfvIout`/`FfvOout` node replaces the coupling·coeff `Mul`/`Add`
+     scaffolding + projector + Gamma, with the per-chirality effective couplings
+     as scalar operands. Outer projectors (`ProjX(GammaXout(..))`) normalize to
+     flipped inner ones — bit-exact in the Weyl basis (slash maps chiral blocks
+     crosswise), certified by `outer_projector_equals_flipped_inner_bit_exactly`
+     (tol 0.0); fused kernels also skip the structurally-zero chiral half that
+     `GammaVout` used to compute on projected inputs. Per-kernel oracles at
+     1e-14 (`ffv_*_matches_generic_chiral_pair`, both operand orders — the
+     reversed case swaps which coupling scales which current). Post-CSE nodes:
+     2→4 449→228, 2→6 8,622→3,876 (−55%). MG suite 11/11, max_rel_diff ≤
+     5.4e-13 (unchanged scale, REL_TOL 1e-12 gate). All legacy ops remain
+     process-covered (photon FFV1 keeps `GammaVout`+`GammaIout`, W's
+     single-chirality FFV2 keeps `ProjM`/`ProjP` paths);
+     `mg_validated_suite_exercises_every_op` enforces the new ops too.
+  Follow-ups spawned: FFS chiral-pair fusion (`ProjMAmp`/`ProjPAmp` Yukawa pairs,
+  same rewrite shape); bind-time constant folding would delete the `g_L`/`g_R`
+  scalar subgraphs entirely (they are card-time constants re-evaluated per point).
 - **P5 (last) — egg arity groundwork** — binarize `Add`/`Mul` at lowering as a
   *balanced* tree reduction (pairwise summation is if anything more accurate than
   the left fold; the ~1e-15 reorder drift is far inside `REL_TOL`); egglog engine
@@ -187,19 +212,19 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
 Timing table (dev machine, `--profile profiling`, `--test-threads=1`; rust ns/eval
 per session vs MG MATRIX1 ns/eval):
 
-| process | MG | P1 baseline | P2 | P4 |
-|---|---:|---:|---:|---:|
-| ee_to_zh | 206 | 5,479 (27×) | 3,272 (16×) | 3,351 (16×) |
-| ee_to_mumu | 328 | 14,093 (43×) | 8,198 (25×) | 8,127 (25×) |
-| pp_to_ll_qcd0 | 298 | 14,027 (47×) | 8,335 (28×) | 8,313 (28×) |
-| ee_to_ttx | 357 | 14,588 (41×) | 8,520 (24×) | 8,668 (24×) |
-| ee_to_ee | 743 | 27,467 (37×) | 15,102 (20×) | 15,932 (21×) |
-| ee_to_tatah | 859 | 50,894 (59×) | 21,996 (26×) | 22,493 (26×) |
-| ee_to_wpwm | 776 | 64,059 (83×) | 30,145 (39×) | 30,431 (39×) |
-| ee_to_mumua | 1,510 | 133,751 (89×) | 58,403 (39×) | 59,344 (39×) |
-| ee_to_mumu_tata_qcd0 | 6,404 | 1,319,279 (206×) | 356,126 (56×) | 366,581 (57×) |
-| uux_to_ccx_emmm_qcd0 | 100,230 | 216,900,033 (2,164×) | 28,505,729 (284×) | 29,463,222 (294×) |
-| bbx_to_ccx_emmm_qcd0 | 141,430 | 236,382,600 (1,671×) | 29,593,298 (209×) | 30,900,754 (218×) |
+| process | MG | P1 baseline | P2 | P4 | P6 |
+|---|---:|---:|---:|---:|---:|
+| ee_to_zh | 206 | 5,479 (27×) | 3,272 (16×) | 3,351 (16×) | 2,173 (11×) |
+| ee_to_mumu | 328 | 14,093 (43×) | 8,198 (25×) | 8,127 (25×) | 4,515 (14×) |
+| pp_to_ll_qcd0 | 298 | 14,027 (47×) | 8,335 (28×) | 8,313 (28×) | 5,164 (17×) |
+| ee_to_ttx | 357 | 14,588 (41×) | 8,520 (24×) | 8,668 (24×) | 5,439 (15×) |
+| ee_to_ee | 743 | 27,467 (37×) | 15,102 (20×) | 15,932 (21×) | 7,727 (10×) |
+| ee_to_tatah | 859 | 50,894 (59×) | 21,996 (26×) | 22,493 (26×) | 12,543 (15×) |
+| ee_to_wpwm | 776 | 64,059 (83×) | 30,145 (39×) | 30,431 (39×) | 23,146 (30×) |
+| ee_to_mumua | 1,510 | 133,751 (89×) | 58,403 (39×) | 59,344 (39×) | 32,932 (22×) |
+| ee_to_mumu_tata_qcd0 | 6,404 | 1,319,279 (206×) | 356,126 (56×) | 366,581 (57×) | 172,621 (27×) |
+| uux_to_ccx_emmm_qcd0 | 100,230 | 216,900,033 (2,164×) | 28,505,729 (284×) | 29,463,222 (294×) | 13,433,690 (134×) |
+| bbx_to_ccx_emmm_qcd0 | 141,430 | 236,382,600 (1,671×) | 29,593,298 (209×) | 30,900,754 (218×) | 14,040,376 (99×) |
 
 P1 samply ground truth: `res.push` ~40% (writes into a fresh multi-MB buffer per
 call — volume set by the un-CSE'd arena width), `kids.extend` ~15% (staging copies

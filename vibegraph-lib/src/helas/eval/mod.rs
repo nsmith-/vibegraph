@@ -32,8 +32,10 @@ mod kernel;
 mod lower;
 mod op;
 // Reusable property-test harness: typed random-input generators + a "compare two
-// kernels on the same random inputs" driver, for kernel-equivalence tests.
-#[cfg(test)]
+// kernels on the same random inputs" driver, for kernel-equivalence tests. Also
+// compiled (without the test driver) for the `bench-internals` microbench facade.
+#[cfg(any(test, feature = "bench-internals"))]
+#[cfg_attr(not(test), allow(dead_code))]
 mod prop_harness;
 mod root_diagram;
 mod root_lorentz;
@@ -46,6 +48,22 @@ mod run_stack;
 #[allow(dead_code)]
 mod tree;
 mod waveform_slot;
+
+/// Internal kernels, slot type, and typed random-slot generators, re-exported for
+/// the kernel-granularity microbenches in `benches/`. Feature-gated and hidden:
+/// not a public API surface.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub mod bench_internals {
+    pub use super::kernel::{
+        gamma_iout, gamma_oout, gamma_vout, metric, proj_m, proj_p, propagate_core,
+    };
+    pub use super::prop_harness::{
+        rand_bra, rand_c, rand_ket, rand_vector, seeded_rng, slots_approx_eq,
+    };
+    pub use super::run::mul_apply;
+    pub use super::waveform_slot::WaveformSlot;
+}
 
 pub use ast::{Ast, ParseAstError};
 pub use compile::AmplitudeEvaluator;

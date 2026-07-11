@@ -5,7 +5,9 @@
 //! - external legs → `External` (with a `Mass` child),
 //! - propagators → `Propagate(current, Mass, Width)`,
 //! - a vertex's `coupling · Σ_k coeff_k · structure_k` → `Mul`/`Add` over `Coupling`/
-//!   `Coeff` leaves and the inlined Lorentz structure,
+//!   `Coeff` leaves and the inlined Lorentz structure; chiral-pair FFV structures
+//!   (`Gamma·ProjM` / `Gamma·ProjP` variants of one shape) fuse into a single `Ffv*`
+//!   node with the per-chirality effective couplings as scalar operands,
 //! - the Lorentz tree's `Leg(i)`/`P{leg}` → the (shared) lowered input child / `PMom`,
 //! - per-diagram `symmetry_factor · fermi_sign` → a `Mul` with a `Coeff` leaf,
 //! - the whole amplitude → one `Add` over the diagram roots.
@@ -14,6 +16,8 @@
 //! summed terms is shared (a DAG), not duplicated.
 
 use std::collections::HashMap;
+
+use indexmap::IndexMap;
 
 use super::ast::{Ast, AstBuilder};
 use super::diagram_eval::VertexInfo;
@@ -168,35 +172,277 @@ fn lower_children(
         .collect()
 }
 
+/// A fusable chiral FFV site in one rooted structure tree: a single `ProjM`/`ProjP`
+/// node adjacent to a `Gamma*` node. Two vertex terms whose trees are identical
+/// except for the projector tag form a chiral pair and fuse into one `Ffv*` node.
+struct ChiralSite {
+    /// The `ProjM`/`ProjP` node index.
+    proj: usize,
+    /// The adjacent `Gamma*` node index.
+    gamma: usize,
+    /// `true` when the projector wraps the Gamma's output (`ProjX(GammaIout(..))`),
+    /// `false` when it sits on the Gamma's fermion input (`GammaIout(.., ProjX(..))`).
+    outer: bool,
+    /// Normalized inner chirality: `true` = this term is the left-handed member.
+    /// An outer projector flips (`ProjX ∘ slash = slash ∘ ProjX̄` — the Weyl slash
+    /// maps chiral storage blocks crosswise, so the identity is exact).
+    left: bool,
+    /// The tree rendered with the projector tag replaced by a hole — the grouping
+    /// key: equal keys ⇒ identical contraction shape modulo chirality.
+    key: String,
+}
+
+/// Analyze one rooted structure tree for a fusable chiral FFV site.
+fn chiral_gamma_site(tree: &LorentzEvalTree) -> Option<ChiralSite> {
+    use LorentzEvalNode as L;
+    let projs: Vec<usize> = tree
+        .iter()
+        .filter(|&n| matches!(tree.value(n), L::ProjM { .. } | L::ProjP { .. }))
+        .collect();
+    let [proj] = projs[..] else {
+        return None;
+    };
+    let proj_is_left = matches!(tree.value(proj), L::ProjM { .. });
+
+    // The fused kernels put the projected fermion at the second operand
+    // (`GammaVout`'s `j`; the continuing fermion of `GammaIout`/`GammaOout`).
+    // A projector on `GammaVout`'s `i` position stays generic.
+    if tree
+        .iter()
+        .any(|n| matches!(tree.value(n), L::GammaVout { i, .. } if *i == proj))
+    {
+        return None;
+    }
+    let inner_parent = tree.iter().find(|&n| match tree.value(n) {
+        L::GammaVout { j, .. } => *j == proj,
+        L::GammaIout { j, .. } => *j == proj,
+        L::GammaOout { i, .. } => *i == proj,
+        _ => false,
+    });
+    let proj_child = tree.value(proj).children()[0];
+    let (gamma, outer, left) = if let Some(g) = inner_parent {
+        (g, false, proj_is_left)
+    } else if matches!(
+        tree.value(proj_child),
+        L::GammaIout { .. } | L::GammaOout { .. }
+    ) {
+        (proj_child, true, !proj_is_left)
+    } else {
+        return None;
+    };
+    let key = render_hole(tree, tree.root(), proj);
+    Some(ChiralSite {
+        proj,
+        gamma,
+        outer,
+        left,
+        key,
+    })
+}
+
+/// Canonical rendering of a rooted structure tree with the projector node at `proj`
+/// replaced by a hole (its subtree still rendered), so a chiral pair's two trees
+/// produce equal strings.
+fn render_hole(lt: &LorentzEvalTree, n: usize, proj: usize) -> String {
+    use LorentzEvalNode as L;
+    let node = lt.value(n);
+    let head = if n == proj {
+        "Proj?".to_string()
+    } else {
+        match node {
+            L::Leg(i) => format!("Leg{i}"),
+            L::P { leg } => format!("P{leg}"),
+            L::POut => "POut".to_string(),
+            L::GammaVout { .. } => "GammaVout".to_string(),
+            L::GammaIout { .. } => "GammaIout".to_string(),
+            L::GammaOout { .. } => "GammaOout".to_string(),
+            L::ProjM { .. } => "ProjM".to_string(),
+            L::ProjP { .. } => "ProjP".to_string(),
+            L::ProjMAmp { .. } => "ProjMAmp".to_string(),
+            L::ProjPAmp { .. } => "ProjPAmp".to_string(),
+            L::Metric { .. } => "Metric".to_string(),
+            L::MetricNegI { .. } => "MetricNegI".to_string(),
+            L::MetricVout { .. } => "MetricVout".to_string(),
+            L::LowerVout { .. } => "LowerVout".to_string(),
+            L::Mul { .. } => "Mul".to_string(),
+            L::IdentityAmp { .. } => "IdentityAmp".to_string(),
+        }
+    };
+    let kids = node
+        .children()
+        .iter()
+        .map(|&c| render_hole(lt, c, proj))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if kids.is_empty() {
+        head
+    } else {
+        format!("({head} {kids})")
+    }
+}
+
+/// The per-chirality effective coupling of a fused group side:
+/// `Σ_members coupling·coeff` as a scalar sub-graph.
+fn chiral_coupling_sum(
+    b: &mut AstBuilder<Sym>,
+    info: &VertexInfo,
+    members: &[(usize, usize)],
+) -> NodeId {
+    let parts = members
+        .iter()
+        .map(|&(ti, ri)| {
+            let coupling = b.add(
+                Op::Coupling,
+                Sym::Coupling(info.terms[ti].coupling_id),
+                vec![],
+            );
+            let coeff = b.add(
+                Op::Coeff,
+                Sym::Coeff(info.terms[ti].terms[ri].coeff),
+                vec![],
+            );
+            b.add(Op::Mul, Sym::None, vec![coupling, coeff])
+        })
+        .collect();
+    sum_or_single(b, parts)
+}
+
 /// Lower `Σ_terms coupling · (Σ_k coeff_k · structure_k)` against the gap-free input
 /// currents `inputs` (vertex legs in order, output omitted).
+///
+/// Chiral-pair FFV structures (same contraction shape, `ProjM` vs `ProjP` tag) are
+/// fused: each pair collapses to one `Ffv*` node carrying the per-chirality
+/// effective couplings as scalar operands (`g_L·left + g_R·right` — distributivity
+/// over the shared structure shape). Everything else lowers generically.
 fn lower_vertex(info: &VertexInfo, inputs: &[NodeId], b: &mut AstBuilder<Sym>) -> NodeId {
+    let sites: Vec<Vec<Option<ChiralSite>>> = info
+        .terms
+        .iter()
+        .map(|vt| {
+            vt.terms
+                .iter()
+                .map(|rt| chiral_gamma_site(&rt.tree))
+                .collect()
+        })
+        .collect();
+
+    let mut groups: IndexMap<&str, Vec<(usize, usize)>> = IndexMap::new();
+    for (ti, row) in sites.iter().enumerate() {
+        for (ri, site) in row.iter().enumerate() {
+            if let Some(s) = site {
+                groups.entry(s.key.as_str()).or_default().push((ti, ri));
+            }
+        }
+    }
+
+    let mut consumed: Vec<Vec<bool>> = sites.iter().map(|row| vec![false; row.len()]).collect();
+    let mut fused_nodes = Vec::new();
+    for members in groups.values() {
+        let site_of = |&(ti, ri): &(usize, usize)| sites[ti][ri].as_ref().unwrap();
+        let s0 = site_of(&members[0]);
+        // A pair needs both chiralities, and (paranoia; equal keys imply it) the
+        // same site anchoring in every member's tree.
+        let fusable = members.iter().any(|m| site_of(m).left)
+            && members.iter().any(|m| !site_of(m).left)
+            && members.iter().all(|m| {
+                let s = site_of(m);
+                (s.proj, s.gamma, s.outer) == (s0.proj, s0.gamma, s0.outer)
+            });
+        if !fusable {
+            continue;
+        }
+        let side = |left: bool| -> Vec<(usize, usize)> {
+            members
+                .iter()
+                .copied()
+                .filter(|m| site_of(m).left == left)
+                .collect()
+        };
+        let gl = chiral_coupling_sum(b, info, &side(true));
+        let gr = chiral_coupling_sum(b, info, &side(false));
+        let (t0, r0) = members[0];
+        let s0 = sites[t0][r0].as_ref().unwrap();
+        let tree = &info.terms[t0].terms[r0].tree;
+        let fuse = FuseCtx {
+            proj: s0.proj,
+            gamma: s0.gamma,
+            outer: s0.outer,
+            gl,
+            gr,
+        };
+        fused_nodes.push(lower_lorentz(tree, tree.root(), inputs, b, Some(&fuse)));
+        for &(ti, ri) in members {
+            consumed[ti][ri] = true;
+        }
+    }
+
     let mut term_nodes = Vec::with_capacity(info.terms.len());
-    for vt in &info.terms {
-        let coupling = b.add(Op::Coupling, Sym::Coupling(vt.coupling_id), vec![]);
+    for (ti, vt) in info.terms.iter().enumerate() {
         let mut structures = Vec::with_capacity(vt.terms.len());
-        for rt in &vt.terms {
+        for (ri, rt) in vt.terms.iter().enumerate() {
+            if consumed[ti][ri] {
+                continue;
+            }
             let coeff = b.add(Op::Coeff, Sym::Coeff(rt.coeff), vec![]);
-            let structure = lower_lorentz(&rt.tree, rt.tree.root(), inputs, b);
+            let structure = lower_lorentz(&rt.tree, rt.tree.root(), inputs, b, None);
             structures.push(b.add(Op::Mul, Sym::None, vec![coeff, structure]));
         }
+        if structures.is_empty() {
+            continue;
+        }
+        let coupling = b.add(Op::Coupling, Sym::Coupling(vt.coupling_id), vec![]);
         let summed = sum_or_single(b, structures);
         term_nodes.push(b.add(Op::Mul, Sym::None, vec![coupling, summed]));
     }
+    term_nodes.extend(fused_nodes);
     sum_or_single(b, term_nodes)
+}
+
+/// A chiral-pair fusion order for one [`lower_lorentz`] walk: when the recursion
+/// reaches the site anchor (the projector for an outer site, the Gamma otherwise),
+/// it emits one fused `Ffv*` node — operands `[a, f, gl, gr]`, projector level
+/// skipped — instead of the generic `Gamma`/`Proj` nodes.
+struct FuseCtx {
+    proj: usize,
+    gamma: usize,
+    outer: bool,
+    gl: NodeId,
+    gr: NodeId,
 }
 
 /// Inline one rooted `LorentzEvalTree`. `Leg(i)` resolves to the shared `inputs[i]`
 /// node; every other node maps to a unified `Op`, recursing on the Lorentz tree's
-/// child node indices.
+/// child node indices. With a `fuse` order, the chiral site emits its fused node
+/// (see [`FuseCtx`]).
 fn lower_lorentz(
     lt: &LorentzEvalTree,
     n: usize,
     inputs: &[NodeId],
     b: &mut AstBuilder<Sym>,
+    fuse: Option<&FuseCtx>,
 ) -> NodeId {
     use LorentzEvalNode as L;
-    let rec = |child: usize, b: &mut AstBuilder<Sym>| lower_lorentz(lt, child, inputs, b);
+    let rec = |child: usize, b: &mut AstBuilder<Sym>| lower_lorentz(lt, child, inputs, b, fuse);
+    if let Some(f) = fuse {
+        let anchor = if f.outer { f.proj } else { f.gamma };
+        if n == anchor {
+            // The projected fermion operand: for an inner site, the projector's
+            // child (the projection folds into the fused kernel); for an outer
+            // site, the Gamma's own fermion child.
+            let unwrap_proj = |p: usize| lt.value(p).children()[0];
+            let (op, a_idx, f_idx) = match (f.outer, lt.value(f.gamma)) {
+                (false, &L::GammaVout { i, j }) => (Op::FfvVout, i, unwrap_proj(j)),
+                (false, &L::GammaIout { mu, j }) => (Op::FfvIout, mu, unwrap_proj(j)),
+                (false, &L::GammaOout { mu, i }) => (Op::FfvOout, mu, unwrap_proj(i)),
+                (true, &L::GammaIout { mu, j }) => (Op::FfvIout, mu, j),
+                (true, &L::GammaOout { mu, i }) => (Op::FfvOout, mu, i),
+                (outer, other) => unreachable!("bad chiral site: outer={outer}, {other:?}"),
+            };
+            let a = rec(a_idx, b);
+            let c = rec(f_idx, b);
+            return b.add(op, Sym::None, vec![a, c, f.gl, f.gr]);
+        }
+    }
     match *lt.value(n) {
         L::Leg(i) => inputs[i],
         L::P { leg } => b.add(Op::PMom, Sym::None, vec![inputs[leg]]),
