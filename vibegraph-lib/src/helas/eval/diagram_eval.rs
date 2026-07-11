@@ -96,7 +96,7 @@ impl VertexTerm {
     pub fn from_ufo(
         model: &UFOModel,
         lorentz_id: LorentzId,
-        _color: &str, // TODO: handle color structures if needed
+        _color: &crate::ufo::color::ColorExpr, // TODO: handle color structures if needed
         coupling_id: CouplingId,
         result_leg_idx: Option<usize>,
         flows: &[Option<LegAdjoint>],
@@ -156,7 +156,7 @@ impl VertexInfo {
                 VertexTerm::from_ufo(
                     model,
                     vertex.lorentz[lorentz_idx],
-                    vertex.color[color_idx].as_str(),
+                    &vertex.color[color_idx],
                     *coupling_id,
                     result_leg_idx,
                     flows,

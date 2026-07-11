@@ -429,9 +429,19 @@ mod tests {
             repr::numbers::Charge,
             OutDiracWf,
         },
+        ufo::color::ColorExpr,
         ufo::slha::ParamCard,
     };
     use num_complex::ComplexFloat;
+
+    /// Placeholder color factor for hand-built `VertexTerm`s in tests that don't
+    /// exercise color at all — `VertexTerm::from_ufo` ignores its `_color` arg.
+    fn no_color() -> ColorExpr {
+        ColorExpr {
+            coeff: 1,
+            atoms: vec![],
+        }
+    }
 
     /// Uncrossed per-leg binding shorthand for hand-built adjoint vectors (the
     /// hand-built diagrams bind wavefunctions in MG order, so no crossing).
@@ -600,7 +610,7 @@ mod tests {
                 terms: vec![VertexTerm::from_ufo(
                     &model,
                     lorentz_id,
-                    "asdf",
+                    &no_color(),
                     coupling_id,
                     Some(2),
                     &[],
@@ -615,7 +625,7 @@ mod tests {
                 terms: vec![VertexTerm::from_ufo(
                     &model,
                     lorentz_id,
-                    "asdf",
+                    &no_color(),
                     coupling_id,
                     None,
                     &[],
@@ -778,8 +788,10 @@ mod tests {
         // Two-term vertex: FFV2 (left) ⊕ FFV4 (left + 2·right), both with GC_3.
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(&model, ffv2_id, "asdf", coupling_id, Some(2), &[]).unwrap(),
-                VertexTerm::from_ufo(&model, ffv4_id, "asdf", coupling_id, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv2_id, &no_color(), coupling_id, Some(2), &[])
+                    .unwrap(),
+                VertexTerm::from_ufo(&model, ffv4_id, &no_color(), coupling_id, Some(2), &[])
+                    .unwrap(),
             ],
         };
 
@@ -925,8 +937,8 @@ mod tests {
 
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(&model, ffv2_id, "1", gc50, Some(2), &[]).unwrap(),
-                VertexTerm::from_ufo(&model, ffv4_id, "1", gc59, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv2_id, &no_color(), gc50, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv4_id, &no_color(), gc59, Some(2), &[]).unwrap(),
             ],
         };
 
@@ -2265,8 +2277,8 @@ mod tests {
         // rooted at the Z (vector output leg = leg index 2 in the vertex).
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(&model, ffv2_id, "1", gc50, Some(2), &[]).unwrap(),
-                VertexTerm::from_ufo(&model, ffv4_id, "1", gc59, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv2_id, &no_color(), gc50, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv4_id, &no_color(), gc59, Some(2), &[]).unwrap(),
             ],
         };
 
@@ -2494,8 +2506,10 @@ mod tests {
         };
         let z_current = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(&model, ffv2_id, "1", gc50, Some(2), &mu_flows).unwrap(),
-                VertexTerm::from_ufo(&model, ffv4_id, "1", gc59, Some(2), &mu_flows).unwrap(),
+                VertexTerm::from_ufo(&model, ffv2_id, &no_color(), gc50, Some(2), &mu_flows)
+                    .unwrap(),
+                VertexTerm::from_ufo(&model, ffv4_id, &no_color(), gc59, Some(2), &mu_flows)
+                    .unwrap(),
             ],
         };
         let z_absorb = VertexInfo {
