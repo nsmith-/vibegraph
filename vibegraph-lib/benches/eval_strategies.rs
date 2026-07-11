@@ -1,7 +1,6 @@
-//! Strategy microbenchmark: memoize-all forward scan (`BoundAmplitude`) vs
-//! post-order stack machine with a shared-node memo pad (`BoundAmplitudeStack`),
-//! across process sizes 2→2 … 2→6 (all-massless externals so plain massless RAMBO
-//! provides the kinematics).
+//! `eval_m2` microbenchmark across process sizes 2→2 … 2→6 (all-massless externals
+//! so plain massless RAMBO provides the kinematics). The per-process before/after
+//! yardstick for evaluator changes.
 //!
 //! Run: `cargo bench -p vibegraph-lib --bench eval_strategies`
 
@@ -10,7 +9,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude, BoundAmplitudeStack};
+use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rambo_massless;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
@@ -37,9 +36,6 @@ fn bench_eval_m2(c: &mut Criterion) {
         let sets = generate_from_proc_card(&pc, &model).unwrap();
         let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
         let fwd = BoundAmplitude::<f64>::bind(&eval, &evaluated);
-        let stk = BoundAmplitudeStack::<f64>::bind(&eval, &evaluated);
-        let (nodes, shared, depth) = stk.program().stats();
-        println!("[{name}] nodes={nodes} shared={shared} peak stack={depth}");
 
         let points: Vec<Vec<LorentzVector<f64>>> = (0..16)
             .map(|_| {
@@ -57,14 +53,6 @@ fn bench_eval_m2(c: &mut Criterion) {
             b.iter(|| {
                 pts.iter()
                     .map(|p| fwd.eval_m2(p, &mut scratch))
-                    .sum::<f64>()
-            })
-        });
-        let mut scratch = stk.scratch_space();
-        group.bench_with_input(BenchmarkId::new("stack", name), &points, |b, pts| {
-            b.iter(|| {
-                pts.iter()
-                    .map(|p| stk.eval_m2(p, &mut scratch))
                     .sum::<f64>()
             })
         });

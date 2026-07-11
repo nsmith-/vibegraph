@@ -10,7 +10,11 @@
 //!   node with the per-chirality effective couplings as scalar operands,
 //! - the Lorentz tree's `Leg(i)`/`P{leg}` → the (shared) lowered input child / `PMom`,
 //! - per-diagram `symmetry_factor · fermi_sign` → a `Mul` with a `Coeff` leaf,
-//! - the whole amplitude → one `Add` over the diagram roots.
+//! - the whole amplitude → a balanced tree of binary `Add`s over the diagram roots.
+//!
+//! Every emitted `Add`/`Mul` has arity 2: multi-term sums and products reduce
+//! pairwise as balanced trees (see [`reduce_balanced`]), the static-arity form an
+//! egg rewrite domain requires.
 //!
 //! Input currents are lowered once and referenced by id, so a current feeding several
 //! summed terms is shared (a DAG), not duplicated.
@@ -43,11 +47,12 @@ pub fn lower(diagrams: &[DiagramEval]) -> Ast<Sym> {
     b.finish(root)
 }
 
-/// Structure-optimization pass. Today this is common-subexpression elimination;
-/// the planned egglog rewrite stage will run *before* it (egglog extraction yields
-/// a minimal tree, not a minimal DAG, so CSE stays as the tree→DAG post-process).
+/// Structure-optimization pass: re-n-aryfy the binary `Add` trees, then
+/// common-subexpression elimination. The planned egglog rewrite stage will run
+/// *before* both, on the binary [`lower`] output (egglog extraction yields a
+/// minimal tree, not a minimal DAG, so CSE stays as the tree→DAG post-process).
 pub fn optimize(ast: Ast<Sym>) -> Ast<Sym> {
-    let deduped = cse(&ast);
+    let deduped = cse(&flatten_adds(&ast));
     log::debug!(
         "optimize: {} nodes → {} after CSE",
         ast.len(),
@@ -116,10 +121,64 @@ fn cse(ast: &Ast<Sym>) -> Ast<Sym> {
     b.finish(remap[ast.root() as usize])
 }
 
-fn sum_or_single(b: &mut AstBuilder<Sym>, mut nodes: Vec<NodeId>) -> NodeId {
-    match nodes.len() {
-        1 => nodes.pop().unwrap(),
-        _ => b.add(Op::Add, Sym::None, nodes),
+/// Re-n-aryfy sums for evaluation: splice a nested `Add`'s operands into its `Add`
+/// parent (operand order preserved), one forward scan. The forward-scan evaluator
+/// materializes a result slot per node, so every binary partial sum would cost a
+/// full `WaveformSlot` of traffic — the balanced binary shape is for the symbolic
+/// rewrite domain only. `Mul` chains are left alone: nested `Mul`s carry the
+/// coupling·coeff·structure shape that predates binarization, and multi-factor
+/// scalar products wide enough to binarize are rare. Spliced-out nodes stay in the
+/// arena unreachable; the reachable-only [`Folded::build`](super::fold::Folded::build)
+/// drops them.
+fn flatten_adds(ast: &Ast<Sym>) -> Ast<Sym> {
+    let mut b = AstBuilder::new();
+    let mut remap: Vec<NodeId> = Vec::with_capacity(ast.len());
+    // Per old node: its flattened operand list (new ids) if it is an `Add`, so an
+    // `Add` parent splices without re-walking; empty for every other op.
+    let mut add_operands: Vec<Vec<NodeId>> = Vec::with_capacity(ast.len());
+    for id in ast.iter() {
+        let node = ast.value(id);
+        let mut children: Vec<NodeId> = Vec::new();
+        for &c in ast.children_ids(id) {
+            if node.op == Op::Add && ast.value(c).op == Op::Add {
+                children.extend_from_slice(&add_operands[c as usize]);
+            } else {
+                children.push(remap[c as usize]);
+            }
+        }
+        add_operands.push(if node.op == Op::Add {
+            children.clone()
+        } else {
+            Vec::new()
+        });
+        remap.push(b.add(node.op, node.leaf, children));
+    }
+    b.finish(remap[ast.root() as usize])
+}
+
+fn sum_or_single(b: &mut AstBuilder<Sym>, nodes: Vec<NodeId>) -> NodeId {
+    reduce_balanced(b, Op::Add, nodes)
+}
+
+/// Combine `nodes` under binary `op` nodes as a balanced tree: each round pairs
+/// adjacent elements (an odd tail carries into the next round), so depth is
+/// ⌈log₂ n⌉. Keeps every `Add`/`Mul` at arity 2 — the static-arity form an egg
+/// rewrite domain requires — and pairwise summation bounds the live-value set of
+/// a post-order evaluation at O(log n) instead of O(n) for a left fold.
+fn reduce_balanced(b: &mut AstBuilder<Sym>, op: Op, mut nodes: Vec<NodeId>) -> NodeId {
+    while nodes.len() > 1 {
+        nodes = nodes
+            .chunks(2)
+            .map(|pair| match *pair {
+                [x, y] => b.add(op, Sym::None, vec![x, y]),
+                [x] => x,
+                _ => unreachable!(),
+            })
+            .collect();
+    }
+    match nodes.pop() {
+        Some(n) => n,
+        None => b.add(op, Sym::None, vec![]),
     }
 }
 
@@ -505,7 +564,7 @@ fn lower_lorentz(
         }
         L::Mul { ref children } => {
             let cs: Vec<NodeId> = children.iter().map(|&c| rec(c, b)).collect();
-            b.add(Op::Mul, Sym::None, cs)
+            reduce_balanced(b, Op::Mul, cs)
         }
     }
 }
@@ -540,6 +599,67 @@ mod tests {
         assert_eq!(opt.to_string(), rendered);
         let kids = opt.children_ids(opt.root());
         assert_eq!(kids[0], kids[1], "both Add children share one node");
+    }
+
+    /// Five terms reduce to a balanced tree of binary `Add`s — adjacent pairing per
+    /// round, odd tail carried — preserving left-to-right term order.
+    #[test]
+    fn reduce_balanced_pairs_adjacent_terms() {
+        let mut b = AstBuilder::new();
+        let leaves: Vec<NodeId> = (1..=5)
+            .map(|i| b.add(Op::Coeff, Sym::Coeff(i as f64), vec![]))
+            .collect();
+        let root = reduce_balanced(&mut b, Op::Add, leaves);
+        let ast = b.finish(root);
+        let coeff = |v: &str| format!("(Coeff (Real {v}))");
+        assert_eq!(
+            ast.to_string(),
+            format!(
+                "(Add (Add (Add {} {}) (Add {} {})) {})",
+                coeff("1.0"),
+                coeff("2.0"),
+                coeff("3.0"),
+                coeff("4.0"),
+                coeff("5.0"),
+            )
+        );
+    }
+
+    /// A single node reduces to itself — no wrapper op.
+    #[test]
+    fn reduce_balanced_single_is_identity() {
+        let mut b = AstBuilder::new();
+        let leaf = b.add(Op::Coeff, Sym::Coeff(7.0), vec![]);
+        let root = reduce_balanced(&mut b, Op::Add, vec![leaf]);
+        assert_eq!(root, leaf);
+    }
+
+    /// `flatten_adds` inverts the balanced binarization: the partial-sum `Add`s are
+    /// spliced away and the root becomes one n-ary `Add` over the original terms in
+    /// their original order. `Mul` structure is untouched.
+    #[test]
+    fn flatten_adds_inverts_binarization() {
+        let mut b = AstBuilder::new();
+        let terms: Vec<NodeId> = (1..=5)
+            .map(|i| {
+                let coeff = b.add(Op::Coeff, Sym::Coeff(i as f64), vec![]);
+                let coup = b.add(Op::Coupling, Sym::Coupling(CouplingId::from(i)), vec![]);
+                b.add(Op::Mul, Sym::None, vec![coeff, coup])
+            })
+            .collect();
+        let root = reduce_balanced(&mut b, Op::Add, terms.clone());
+        let ast = b.finish(root);
+
+        let flat = flatten_adds(&ast);
+        let kids = flat.children_ids(flat.root());
+        assert_eq!(flat.value(flat.root()).op, Op::Add);
+        assert_eq!(kids.len(), 5, "one n-ary Add over the original terms");
+        for (&kid, i) in kids.iter().zip(1..=5) {
+            assert_eq!(flat.value(kid).op, Op::Mul);
+            let mul_kids = flat.children_ids(kid);
+            assert_eq!(mul_kids.len(), 2);
+            assert_eq!(flat.value(mul_kids[0]).leaf, Sym::Coeff(i as f64));
+        }
     }
 
     /// Nodes differing in leaf value or child order must not merge.

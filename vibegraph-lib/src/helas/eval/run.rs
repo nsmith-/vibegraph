@@ -27,22 +27,17 @@ use super::lower;
 #[cfg(test)]
 use super::root_diagram::{compile_diagram_ast, DiagramEval};
 
-/// Reusable evaluation workspace for a [`BoundAmplitude`] /
-/// [`BoundAmplitudeStack`](super::run_stack::BoundAmplitudeStack).
+/// Reusable evaluation workspace for a [`BoundAmplitude`].
 ///
-/// Owns the evaluators' heap storage so the hot loops (helicity combinations
+/// Owns the evaluator's heap storage so the hot loops (helicity combinations
 /// inside `eval_m2`, phase-space points outside it) share one allocation. Create
 /// with the amplitude's `scratch_space()`; any `ScratchSpace` of matching `F` works
 /// with any bound amplitude (it grows on demand). Opaque so the evaluation strategy
 /// can change without touching the API.
 #[derive(Debug, Default)]
 pub struct ScratchSpace<F: Real> {
-    /// Forward scan: one computed slot per arena node, in storage (topological) order.
+    /// One computed slot per arena node, in storage (topological) order.
     pub(super) res: Vec<WaveformSlot<F>>,
-    /// Stack evaluator: the live post-order value stack.
-    pub(super) stack: Vec<WaveformSlot<F>>,
-    /// Stack evaluator: the Store/Load memo pad for shared (DAG) nodes.
-    pub(super) memo: Vec<WaveformSlot<F>>,
 }
 
 /// The per-evaluation immutable context every node reduction reads: the bound
@@ -103,8 +98,6 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
     pub fn scratch_space(&self) -> ScratchSpace<F> {
         ScratchSpace {
             res: Vec::with_capacity(self.eval.folded().ast.len()),
-            stack: Vec::new(),
-            memo: Vec::new(),
         }
     }
 
@@ -209,8 +202,7 @@ fn run_forward<F: Real>(
 
 /// Reduce one folded node from its children's already-evaluated results, read through
 /// the `kid` accessor — the forward scan hands out references into its result buffer
-/// by child id, the stack evaluator into its value stack by position; both strategies
-/// share this single match over `Op`. Constant leaves resolve from the pools;
+/// by child id. Constant leaves resolve from the pools;
 /// `External` reads the leg table; `Mul`/`Add` fold over the accessor; the Lorentz
 /// primitives have their true arity in the `kernel::` signatures, so operands pass
 /// straight through by reference — no staging array, no slice bounds checks in the
@@ -2638,6 +2630,53 @@ mod tests {
                 (zfac.re - 1.0).abs() < 2e-3 && zfac.im.abs() < 2e-3,
                 "{label} Z-path off-shell e: VG/MG={zfac:.4}, expected 1"
             );
+        }
+    }
+
+    /// Every process of the MG-validated suite evaluates end-to-end in the default
+    /// suite (no MG reference data): each helicity amplitude is finite and the
+    /// helicity-summed |M|² is finite and positive. Catches compile-pipeline and
+    /// evaluator panics/NaNs on the full op mix, including the 2→6 processes;
+    /// value-level validation is `validate_helas_mg`. RAMBO kinematics are massless
+    /// (unphysical for the massive-external processes) — irrelevant for a
+    /// finiteness check.
+    #[test]
+    fn mg_suite_forward_eval_is_finite() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        use super::super::compile::MG_VALIDATED_PROCESSES;
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massless;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = crate::ufo::EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let mut rng = StdRng::seed_from_u64(0x0F0F_5EED);
+        let sqrt_s = 500.0;
+        for process in MG_VALIDATED_PROCESSES {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            assert!(!sets.is_empty(), "no diagrams for '{process}'");
+            for set in &sets {
+                let eval = AmplitudeEvaluator::compile(set, &model).unwrap();
+                let amp = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+                let mut scratch = amp.scratch_space();
+                let mut p = vec![
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+                ];
+                p.extend(rambo_massless(sqrt_s, eval.n_ext() - 2, &mut rng));
+                for hel in eval.helicities() {
+                    let a = amp.eval_amplitude(&p, hel, &mut scratch);
+                    assert!(
+                        a.re.is_finite() && a.im.is_finite(),
+                        "[{process}] non-finite amplitude at hel {hel:?}: {a:?}"
+                    );
+                }
+                let m2 = amp.eval_m2(&p, &mut scratch);
+                assert!(m2.is_finite() && m2 > 0.0, "[{process}] bad |M|²: {m2:?}");
+            }
         }
     }
 }

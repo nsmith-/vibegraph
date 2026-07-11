@@ -11,8 +11,9 @@
 //!   `root_diagram.rs` also owns the per-diagram `DiagramEval` + `compile_diagram_ast`.
 //! - `op.rs` — the unified node language (`Op` + `Sym`/`Const` leaves).
 //! - `ast.rs` — the unified `Ast<T>` arena (CSR children, s-expr I/O).
-//! - `lower.rs` — pass 3a: inline all `DiagramEval`s into one `Ast<Sym>` (+ `optimize`
-//!   no-op, the egglog hook).
+//! - `lower.rs` — pass 3a: inline all `DiagramEval`s into one binary-arity `Ast<Sym>`
+//!   (+ `optimize`: sum re-flattening and hash-cons CSE, with the egglog stage to
+//!   slot in before them).
 //! - `fold.rs` — pass 3b: intern couplings/masses/widths/coeffs into deduped pool specs
 //!   → card-independent `Ast<Const>`.
 //! - `compile.rs` — orchestrates passes 1–3 into a card-independent `AmplitudeEvaluator`.
@@ -40,11 +41,8 @@ mod prop_harness;
 mod root_diagram;
 mod root_lorentz;
 mod run;
-// Post-order stack-machine evaluation strategy (memoizes only shared DAG nodes),
-// benchmarked against `run`'s memoize-all forward scan.
-mod run_stack;
-// `Tree` is used by every arena; `Linearized`/`linearize`/`max_depth` are retained for
-// future passes (e.g. benchmarking the forward scan against a stack walk).
+// `Tree` is used by every arena; `Linearized`/`linearize`/`max_depth` are generic
+// traversal utilities no current pass needs.
 #[allow(dead_code)]
 mod tree;
 mod waveform_slot;
@@ -73,4 +71,3 @@ pub use op::{Const, Node, Op, Sym};
 pub use root_diagram::compile_diagram_ast;
 pub use root_lorentz::RootLorentzError;
 pub use run::{BoundAmplitude, ScratchSpace};
-pub use run_stack::BoundAmplitudeStack;
