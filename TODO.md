@@ -25,7 +25,7 @@ three-week continuum bug hunt that got there is written up in
 ## ✅ Closed sprints (merged to `main`)
 
 Detail lives in git history and the linked notes; kept here as one-line anchors plus
-the perf-sprint timing table (still the reference baseline for `egraph-rewrite`).
+the perf-sprint timing table (still the reference baseline for the post-CSE tracks).
 
 - **`cleanup-refactor` ✅ CLOSED 2026-07-10** — post-`mg-validation-coverage`
   structural cleanup, four tasks, all bit-for-bit vs the 11-process net.
@@ -50,7 +50,7 @@ the perf-sprint timing table (still the reference baseline for `egraph-rewrite`)
   (see table). The dominant scaling term was duplicated-subtree width (CSE), then
   per-node combinator/slot overhead (fusion + true-arity kernels); post-CSE the 2→6s
   sit at ~15 nodes/diagram, so **further cuts need algebraic rewrites** structural
-  hash-consing cannot see → `egraph-rewrite` below.
+  hash-consing cannot see → the post-CSE optimization program below.
 
 Timing table (dev machine, `--profile profiling`, `--test-threads=1`; rust ns/eval
 per session vs MG MATRIX1 ns/eval). Final column = merged `main`:
@@ -71,57 +71,117 @@ per session vs MG MATRIX1 ns/eval). Final column = merged `main`:
 
 ---
 
-## 🧬 `egraph-rewrite` — algebraic rewrite stage (branch TBD; **planning**)
+## 🚀 Post-CSE optimization program — 3 tracks (plan: `research/notes/15-eval-optimization-plan.md`)
 
-The successor to the performance sprint: cut per-process node count below what CSE
-alone reaches by factoring shared algebraic structure across diagrams — the lever the
-sprint's samply work isolated (post-CSE 2→6s are ~15 nodes/diagram; the remaining
-cost is real distinct arithmetic that only *algebraic* identities collapse). Because
-this rewrites physics expressions, it must be developed carefully: every rule is a
-place a sign or convention bug can hide, so each lands guarded by the 11-process
-`validate_helas_mg` net (REL_TOL 1e-12) and, where the rewrite is order-preserving,
-bit-for-bit. Design reference: `research/notes/14-egglog-notes.md`.
+Planned 2026-07-11 from the research pass over rooting symmetry, MadGraph's
+optimization stack (helicity recycling = CSE across the unrolled helicity loop,
+arXiv:2102.00773), egglog 2.0 extraction semantics, and measured evaluator layouts
+(`WaveformSlot<f64>` = 104 B, `Node<Const>` = 12 B). Key structural finding: egglog's
+extractor is **tree-cost only**, so every rewrite whose payoff is *sharing* (re-rooting,
+chiral decomposition, coupling factoring) is invisible to it — that blocker is Track 3,
+and the sharing half of `egraph-rewrite` waits on it. Tracks 1 and 2 need no egraph.
 
-Slots into `lower::optimize` as **egg → flatten → CSE → fold** (P5 already put the
-lowered AST in the binary-arity form egg requires; `flatten_adds` inverts it back for
-evaluation).
+### ⚡ Track 1: `eval-layout` — evaluator memory layout & recycling (branch TBD; merge to `main`)
+
+Gate: 11-process `validate_helas_mg` REL_TOL 1e-12; bit-for-bit where order-preserving
+(noted per session). Baseline: the P5 timing table above. `wavefn.rs` is untouched —
+it remains the public hand-built-amplitude component and unit-test vocabulary; the
+runtime grows its own internal storage. Sessions in dependency order (detail in note 15 §2):
+
+- **A0** — instruction-size sensitivity check (pad `Node<Const>` to 16/24/32 B and
+  measure; also the free 12→8 B pack). Informs A3 and the typed egglog constructors.
+- **A1** — static node analysis pass: per-node output type (realizes the
+  `ScalarConst`/`ScalarWf` taxonomy), constness, momentum id (signed external-momentum
+  combination, interned), helicity-support mask. Pure analysis + runtime
+  cross-assertions; everything downstream (and the egraph typed schema) consumes it.
+- **A2** — constant-subgraph folding into bind-time pools (extends `fold.rs`; deletes
+  the per-point re-evaluation of card-constant `g_L`/`g_R` subgraphs — the P6
+  follow-up, formerly slated as the first egglog rule; needs no rules). Bit-for-bit.
+- **A3** — SoA scratch + typed instruction stream: per-type result arenas replace
+  `Vec<WaveformSlot>`; typed operand indices; `Node` repack. Element types keep the
+  `wavefn.rs` structs at first (arithmetic untouched). Bit-for-bit.
+- **A4** — momentum pool: per-point helicity-independent momentum table; SoA elements
+  become bare `Bispinor`/`ComplexVector`/`C<F>`; `mul_apply` momentum routing leaves
+  the hot path; `PMom`/`PMomOut` become table reads. Reassociates momentum sums →
+  REL_TOL gate.
+- **A5** — helicity-support recycling in `eval_m2`: odometer-ordered helicity loop,
+  skip nodes whose support mask misses the changed legs. Bit-for-bit vs A4.
+  (Integration-phase win; final accept/reject samples a *specific* helicity
+  configuration, so see `mg-single-helicity-bench` below for the fair comparison.)
+- **A6** — close-out: re-record the timing table vs MG and the P5 baseline; update
+  TODO + note 15.
+
+### 🌲 Track 2: `rooting-exploration` — throwaway rooting study (branch `explore/rooting`, not merged)
+
+Root choice is currently `VtxIdx(0)` — an accident of feyngraph ordering that
+cross-diagram CSE silently depends on. Over all rootings a diagram has only ~2·E
+distinct directed currents, so the *floor* is computable. Measure post-CSE node count
+(and slot-cost-weighted) across `MG_VALIDATED_PROCESSES` for: baseline; canonical
+heuristics (lowest-leg anchor; most/fewest contributing external momenta — measure
+both directions); greedy iterative rooting (each diagram tries all rootings against
+the cumulatively-interned arena, min new nodes; both diagram orders). Every variant
+runs the full validation net (rootings hit new kernel paths — may incidentally cover
+`MetricNegI`). Results committed on the branch for posterity + tables appended to
+note 15 on `main`. Decision output: if greedy wins big, promote a production
+greedy-rooting pass into Track 1; headroom informs the Track 3 go/no-go.
+
+### 🧮 Track 3: `dag-extraction` — DAG-cost extractor for egglog (investigation)
+
+egglog 2.0 has no sharing-aware extraction (verified in `extract.rs`:
+`TreeAdditiveCostModel`; the `CostModel` trait is tree-shaped). Milestones (note 15 §4):
+**M1** enumerate e-classes/e-nodes from `egglog::EGraph` in Rust; **M2** greedy DAG
+extractor (extraction-gym style) with slot-traffic costs — sanity gate: reproduces the
+input DAG on the rule-free round-trip; ILP in reserve as a quality oracle; **M3** first
+sharing-rule demo — chiral decomposition `FfvVout(a,b,gl,gr) → gl·J_L + gr·J_R` on
+`e+ e- > mu+ mu-` (γ/Z share `J_L`/`J_R`), showing DAG cost picks the shared form and
+tree cost doesn't; **M4** write-up + go/no-go for `egraph-rewrite` integration.
+
+---
+
+## 🧬 `egraph-rewrite` — algebraic rewrite stage (**blocked on Track 3**; scope revised 2026-07-11)
+
+Cut per-process node count below what CSE alone reaches by factoring shared algebraic
+structure across diagrams (post-CSE 2→6s are ~15 nodes/diagram). Every rule is a place
+a sign bug can hide: each lands guarded by the 11-process `validate_helas_mg` net
+(REL_TOL 1e-12), bit-for-bit where order-preserving. Design references:
+`research/notes/14-egglog-notes.md` (language), note 15 (plan + schema decisions).
+
+Slots into `lower::optimize` as **egg → flatten → CSE → fold** (P5 put the lowered AST
+in the binary-arity form egg requires; `flatten_adds` inverts it back for evaluation).
 
 **Landed groundwork (skeleton, on `main`):** `helas/eval/egraph.rs`
 `roundtrip(&Ast<Sym>) -> Ast<Sym>` — encodes the binary-arity AST into an egglog
 `datatype` (one constructor per `Op`, leaf payloads as leading `i64`/`f64` fields;
 `PMomOut` variadic via `(Vec Node)`), built programmatically as `egglog::ast::Command`s:
-the whole tree is emitted as a **single** `let $root = <inlined tree>` then
-`extract $root` (egglog rebuilds its parallel database after every command, so
-node-at-a-time `let`s forced O(nodes) rebuilds — ~90 s over the suite; one command
-drops it to ~1 s release). The `TermDag` is decoded structurally back to `Ast<Sym>`.
-No rules yet ⇒ structural identity; `#[allow(dead_code)]`, not wired into `optimize`.
-The gap between the `let` and the `extract` is the seam the rewrite `run` schedule
-drops into. Round-trip tested byte-for-byte: all-op / all-leaf / DAG-sharing fixtures,
+one `let $root = <inlined tree>` then `extract $root` (node-at-a-time `let`s forced
+O(nodes) rebuilds — ~90 s over the suite; one command drops it to ~1 s release). The
+`TermDag` decodes structurally back to `Ast<Sym>`. No rules ⇒ structural identity;
+`#[allow(dead_code)]`, not wired into `optimize`. The `let`↔`extract` gap is the seam
+for the rule schedule (Track 3 M2's extractor replaces the `extract` side). Round-trip
+tested byte-for-byte: all-op / all-leaf / DAG-sharing fixtures,
 `rewrite_dev_processes_roundtrip` (2→2/2→3/2→4, 0.14 s debug — the fast rule-dev
-harness) ungated, and `representative_processes_roundtrip` (all 11 `MG_VALIDATED_PROCESSES`,
-incl. both 2→6 EW) behind `extended-validation`.
+harness) ungated, and `representative_processes_roundtrip` (all 11
+`MG_VALIDATED_PROCESSES`, incl. both 2→6 EW) behind `extended-validation`.
 
-**Open work (to be planned into sessions):**
-- **Rewrite rules** — the actual `rewrite` / `constructor :cost` set: constant folding
-  (start here; also deletes the P6 follow-up `g_L`/`g_R` scalar subgraphs that are
-  card-time constants re-evaluated per point), coupling regrouping (factor shared
-  sub-sums across diagrams), and chiral-pair fusion recast as an *extraction target*
-  (the FFV fusion P6 did by hand at `lower_vertex`; FFS/`ProjMAmp`/`ProjPAmp` Yukawa
-  pairs are the same shape and a natural first new rule).
-- **Cost model + extraction** — `constructor :cost` reflecting per-node slot traffic
-  (node count was the sprint's cost model); pick/tune the extractor and a saturation
-  schedule.
-- **Wire into `optimize`** and re-record the timing table against the P5 baseline
-  above; gate on `validate_helas_mg`.
-- **Perf posture.** The single-root-insert fix (commit 2637789) settled ingestion:
-  the full 11-process suite round-trips in ~1.2 s release / **142 s debug** (egglog is
-  ~100× slower unoptimized), so `representative_processes_roundtrip` is gated behind
-  `extended-validation` and rule development uses the ungated 2→2/2→3/2→4 harness
-  (0.14 s debug). Consequence for this task: **develop and measure rewrites in
-  release/profiling**, not debug; keep the fast harness for the tight loop. The
-  remaining unknown is once real `rewrite` rules run (not just insert→extract), how
-  saturation + extraction scale on the large 2→6 QCD ASTs — bound the schedule and
-  consider reusing one `EGraph` across subprocesses before turning rules on there.
+**Scope changes (2026-07-11, note 15 §5):**
+- Constant folding **moved out** → Track 1 session A2 (a `fold.rs` constness pass;
+  needs no rules).
+- The remaining rule families are all *sharing* rules — coupling regrouping, chiral
+  decomposition + propagator linearity (γ/Z structure sharing), re-rooting
+  (propagator-commute + per-vertex rotation rules) — and are **blocked on Track 3**
+  (tree-cost extraction cannot see their payoff) and informed by Track 2's headroom.
+- **Schema decisions adopted:** per-kind leaf sorts (`CouplingId`/`ParticleId`/`Real`/
+  `ExtLegInfo` as separate datatypes), `ScalarConst` vs `ScalarWf` sort split (required
+  for soundness — `mul_apply` routes momentum for scalar *wavefunctions*, so
+  scalar-motion rules are restricted to momentum-free scalars by type), typed
+  constructor slots (`(Propagate Node Mass Width)`, `Mul` split by operand class).
+  Apply when Track 3 touches the schema; `schema_covers_every_op` + round-trip suite
+  remain the guard.
+- **Perf posture** (unchanged): full-suite round-trip ~1.2 s release / 142 s debug —
+  develop and measure rewrites in release/profiling; rule-dev tight loop on the
+  ungated 2→2/2→3/2→4 harness. Open question once real rules run: saturation +
+  extraction scaling on the 2→6 QCD ASTs — bound the schedule, consider one `EGraph`
+  reused across subprocesses.
 
 ---
 
@@ -308,6 +368,19 @@ _Depends on: `helas-generalize` (✅)_
 
 Research `uom`/`dimensioned`/`units` crates for typed four-momenta and cross sections.
 
+### `mg-single-helicity-bench` — MG comparison at a fixed helicity configuration (low priority)
+
+The timing table compares against MG MATRIX1, which sums helicities — so MG's
+helicity recycling (CSE across its unrolled helicity loop) is baked into its side of
+the ratio, while vibegraph re-runs the full arena per combination. A parallel
+benchmark evaluating **one fixed helicity configuration** on both sides isolates
+kernel-level performance gaps from missed-CSE / helicity-loop effects. Also the fair
+comparison for the event-generation regime: once the importance-sampling reference
+distribution is established, final accept/reject evaluates a specific helicity
+configuration, where helicity recycling buys nothing (the recycling win belongs to
+the integration-grid phase and its cumulative per-helicity ledger). Natural landing
+spot: alongside `eval-layout` A6 while the timing rig is warm.
+
 ---
 
 ## Dependency graph
@@ -320,5 +393,9 @@ color-flow ──→ mg-validation-coverage #8, hadronic pp→ll               �
 lips-nbody ─────────────────────────────────────────────────────────────┴──→ event-output-lhef
 
 cleanup-refactor (✅ closed 2026-07-10) ──→ validation-sprint, performance-sprint
-performance-sprint (✅ closed 2026-07-11, merged) ──→ egraph-rewrite
+performance-sprint (✅ closed 2026-07-11, merged) ──┬──→ eval-layout (A0→A1→A2→A3→A4→A5→A6)
+                                                    ├──→ rooting-exploration ──┐
+                                                    └──→ dag-extraction ←──────┘ (headroom informs go/no-go)
+dag-extraction ──→ egraph-rewrite (sharing rules)
+eval-layout A6 ──→ mg-single-helicity-bench (optional rider)
 ```
