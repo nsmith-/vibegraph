@@ -155,7 +155,7 @@ impl StackProgram {
                     let base = stack.len() - n;
                     let value = {
                         let kids = &stack[base..];
-                        apply(&Node::new(op, leaf), n, |i| kids[i], env)
+                        apply(&Node::new(op, leaf), n, |i| &kids[i], env)
                     };
                     stack.truncate(base);
                     stack.push(value);

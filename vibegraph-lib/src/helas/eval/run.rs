@@ -187,7 +187,7 @@ pub(super) fn run_forward_slot<F: Real>(
     res.reserve(ast.len());
     for id in ast.iter() {
         let ids = ast.children_ids(id);
-        let value = apply(ast.value(id), ids.len(), |i| res[ids[i] as usize], env);
+        let value = apply(ast.value(id), ids.len(), |i| &res[ids[i] as usize], env);
         res.push(value);
     }
     res[ast.root() as usize]
@@ -208,16 +208,17 @@ fn run_forward<F: Real>(
 }
 
 /// Reduce one folded node from its children's already-evaluated results, read through
-/// the `kid` accessor (no staging copy) — the forward scan indexes its result buffer
-/// by child id, the stack evaluator its value stack by position; both strategies
+/// the `kid` accessor — the forward scan hands out references into its result buffer
+/// by child id, the stack evaluator into its value stack by position; both strategies
 /// share this single match over `Op`. Constant leaves resolve from the pools;
-/// `External` reads the leg table; `Mul`/`Add` fold over the accessor buffer-free;
-/// the fixed-arity Lorentz primitives stage their ≤3 operands on the stack for the
-/// `kernel::` slice interface.
-pub(super) fn apply<F: Real>(
+/// `External` reads the leg table; `Mul`/`Add` fold over the accessor; the Lorentz
+/// primitives have their true arity in the `kernel::` signatures, so operands pass
+/// straight through by reference — no staging array, no slice bounds checks in the
+/// outlined kernels.
+pub(super) fn apply<'a, F: Real + 'a>(
     node: &Node<Const>,
     n_kids: usize,
-    kid: impl Fn(usize) -> WaveformSlot<F>,
+    kid: impl Fn(usize) -> &'a WaveformSlot<F>,
     env: &EvalEnv<'_, F>,
 ) -> WaveformSlot<F> {
     match node.op {
@@ -261,36 +262,29 @@ pub(super) fn apply<F: Real>(
                 env.consts_f[leg.mass as usize],
             )
         }
-        Op::Propagate => kernel::propagate(&[kid(0), kid(1), kid(2)]),
-        Op::Add => (0..n_kids).fold(WaveformSlot::Empty, |acc, i| acc + kid(i)),
-        Op::Mul => mul_apply((0..n_kids).map(kid)),
+        Op::Propagate => kernel::propagate(kid(0), kid(1), kid(2)),
+        Op::Add => (0..n_kids).fold(WaveformSlot::Empty, |acc, i| acc + *kid(i)),
+        Op::Mul => mul_apply((0..n_kids).map(|i| *kid(i))),
         // Lorentz primitives: each `Op` maps 1-to-1 to a `kernel::` fn named for it.
-        Op::GammaVout => kernel::gamma_vout(&[kid(0), kid(1)]),
-        Op::FfvVout => kernel::ffv_vout(&[kid(0), kid(1), kid(2), kid(3)]),
-        Op::FfvIout => kernel::ffv_iout(&[kid(0), kid(1), kid(2), kid(3)]),
-        Op::FfvOout => kernel::ffv_oout(&[kid(0), kid(1), kid(2), kid(3)]),
-        Op::GammaIout => kernel::gamma_iout(&[kid(0), kid(1)]),
-        Op::GammaOout => kernel::gamma_oout(&[kid(0), kid(1)]),
-        Op::ProjM => kernel::proj_m(&[kid(0)]),
-        Op::ProjP => kernel::proj_p(&[kid(0)]),
-        Op::ProjMAmp => kernel::proj_m_amp(&[kid(0), kid(1)]),
-        Op::ProjPAmp => kernel::proj_p_amp(&[kid(0), kid(1)]),
-        Op::Metric => kernel::metric(&[kid(0), kid(1)]),
-        Op::MetricNegI => kernel::metric_neg_i(&[kid(0), kid(1)]),
-        Op::MetricVout => kernel::metric_vout(&[kid(0)]),
-        Op::LowerVout => kernel::lower_vout(&[kid(0)]),
-        Op::IdentityAmp => kernel::identity_amp(&[kid(0), kid(1)]),
-        Op::PMom => kernel::pmom(&[kid(0)]),
-        // n-ary (all vertex inputs): stage on the stack; UFO vertices are ≤4-point,
-        // so an output-leg momentum reads at most 3 input currents.
-        Op::PMomOut => {
-            let mut buf = [WaveformSlot::Empty; 3];
-            assert!(n_kids <= buf.len(), "PMomOut: >{} vertex inputs", buf.len());
-            for (i, b) in buf.iter_mut().enumerate().take(n_kids) {
-                *b = kid(i);
-            }
-            kernel::pmom_out(&buf[..n_kids])
-        }
+        Op::GammaVout => kernel::gamma_vout(kid(0), kid(1)),
+        Op::FfvVout => kernel::ffv_vout(kid(0), kid(1), kid(2), kid(3)),
+        Op::FfvIout => kernel::ffv_iout(kid(0), kid(1), kid(2), kid(3)),
+        Op::FfvOout => kernel::ffv_oout(kid(0), kid(1), kid(2), kid(3)),
+        Op::GammaIout => kernel::gamma_iout(kid(0), kid(1)),
+        Op::GammaOout => kernel::gamma_oout(kid(0), kid(1)),
+        Op::ProjM => kernel::proj_m(kid(0)),
+        Op::ProjP => kernel::proj_p(kid(0)),
+        Op::ProjMAmp => kernel::proj_m_amp(kid(0), kid(1)),
+        Op::ProjPAmp => kernel::proj_p_amp(kid(0), kid(1)),
+        Op::Metric => kernel::metric(kid(0), kid(1)),
+        Op::MetricNegI => kernel::metric_neg_i(kid(0), kid(1)),
+        Op::MetricVout => kernel::metric_vout(kid(0)),
+        Op::LowerVout => kernel::lower_vout(kid(0)),
+        Op::IdentityAmp => kernel::identity_amp(kid(0), kid(1)),
+        Op::PMom => kernel::pmom(kid(0)),
+        // n-ary (all vertex inputs): the one variadic kernel takes the operands as
+        // an iterator of references.
+        Op::PMomOut => kernel::pmom_out((0..n_kids).map(kid)),
     }
 }
 
@@ -486,7 +480,7 @@ mod tests {
         // partner vector V2, with the spectator scalar leg S multiplied in (the `Mul`
         // the rooted tree carries). Both primitives here are the production helpers.
         let out = mul_apply([
-            metric_vout(&[WaveformSlot::Vector(v2)]),
+            metric_vout(&WaveformSlot::Vector(v2)),
             WaveformSlot::Scalar(s),
         ]);
         // `MetricVout` emits the physical contravariant current `V2^μ`.
@@ -527,8 +521,8 @@ mod tests {
             0xC0FFEE,
             1e-11,
             |rng| vec![rand_vector(rng), rand_vector(rng)],
-            |c| metric(&[c[0], c[1]]),
-            |c| metric(&[c[1], c[0]]),
+            |c| metric(&c[0], &c[1]),
+            |c| metric(&c[1], &c[0]),
         );
     }
 
@@ -1058,7 +1052,7 @@ mod tests {
             // ── fvixxx: off-shell current seeded from the ket fermion ──
             let fi = InDiracWf::from_momentum(p_f, mass, hel, charge);
             let vertex =
-                off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionIn(fi));
+                off_shell_fermion_current(&WaveformSlot::Vector(v), &WaveformSlot::FermionIn(fi));
             let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width) else {
                 panic!("expected ket fermion from propagation");
             };
@@ -1082,7 +1076,7 @@ mod tests {
             // itself be bra (a bra) to produce a bra current.
             let fo = fi.to_outgoing();
             let vertex =
-                off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionOut(fo));
+                off_shell_fermion_current(&WaveformSlot::Vector(v), &WaveformSlot::FermionOut(fo));
             let WaveformSlot::FermionOut(got) = propagate_core(&vertex, mass, width) else {
                 panic!("expected bra fermion from propagation");
             };
@@ -1139,8 +1133,8 @@ mod tests {
                 let fi = InDiracWf::from_momentum(p_f, mass, hel, charge);
 
                 // Production composition for the chiral (ProjM) fermion current.
-                let projected = chiral_project(WaveformSlot::FermionIn(fi), Chirality::Left);
-                let vertex = off_shell_fermion_current(WaveformSlot::Vector(v), projected);
+                let projected = chiral_project(&WaveformSlot::FermionIn(fi), Chirality::Left);
+                let vertex = off_shell_fermion_current(&WaveformSlot::Vector(v), &projected);
                 let WaveformSlot::FermionIn(got) = propagate_core(&vertex, mass, width) else {
                     panic!("expected ket fermion from chiral propagation");
                 };
@@ -1175,14 +1169,14 @@ mod tests {
                 // right path and its coefficient): the tree sums the two projected
                 // slashes BEFORE the shared propagator.
                 let WaveformSlot::FermionIn(left) = off_shell_fermion_current(
-                    WaveformSlot::Vector(v),
-                    chiral_project(WaveformSlot::FermionIn(fi), Chirality::Left),
+                    &WaveformSlot::Vector(v),
+                    &chiral_project(&WaveformSlot::FermionIn(fi), Chirality::Left),
                 ) else {
                     unreachable!()
                 };
                 let WaveformSlot::FermionIn(right) = off_shell_fermion_current(
-                    WaveformSlot::Vector(v),
-                    chiral_project(WaveformSlot::FermionIn(fi), Chirality::Right),
+                    &WaveformSlot::Vector(v),
+                    &chiral_project(&WaveformSlot::FermionIn(fi), Chirality::Right),
                 ) else {
                     unreachable!()
                 };
@@ -1294,10 +1288,12 @@ mod tests {
                 };
 
                 // ── FFV2 e-spine current: ProjM(ε̸·ψ) propagated ─────────────────
-                let curr =
-                    off_shell_fermion_current(WaveformSlot::Vector(v), WaveformSlot::FermionIn(fi));
+                let curr = off_shell_fermion_current(
+                    &WaveformSlot::Vector(v),
+                    &WaveformSlot::FermionIn(fi),
+                );
                 let WaveformSlot::FermionIn(got2) =
-                    propagate_core(&chiral_project(curr, Chirality::Left), mass, width)
+                    propagate_core(&chiral_project(&curr, Chirality::Left), mass, width)
                 else {
                     panic!("expected ket fermion from chiral propagation");
                 };
@@ -1313,9 +1309,9 @@ mod tests {
                 // ── FFV4 e-spine current: ProjM(ε̸ψ) + 2·ProjP(ε̸ψ) propagated ───
                 let mk = |chi| {
                     let WaveformSlot::FermionIn(c) = chiral_project(
-                        off_shell_fermion_current(
-                            WaveformSlot::Vector(v),
-                            WaveformSlot::FermionIn(fi),
+                        &off_shell_fermion_current(
+                            &WaveformSlot::Vector(v),
+                            &WaveformSlot::FermionIn(fi),
                         ),
                         chi,
                     ) else {
@@ -1363,8 +1359,8 @@ mod tests {
                 // FFV2 leg-1: ε̸·P_L·ψ propagated.
                 let WaveformSlot::FermionIn(g2b) = propagate_core(
                     &off_shell_fermion_current(
-                        WaveformSlot::Vector(v),
-                        chiral_project(WaveformSlot::FermionIn(fi), Chirality::Left),
+                        &WaveformSlot::Vector(v),
+                        &chiral_project(&WaveformSlot::FermionIn(fi), Chirality::Left),
                     ),
                     mass,
                     width,
@@ -1384,8 +1380,8 @@ mod tests {
                 // after (mirror of `mk`, which projects after the slash for leg-0).
                 let mk1 = |chi| {
                     let WaveformSlot::FermionIn(c) = off_shell_fermion_current(
-                        WaveformSlot::Vector(v),
-                        chiral_project(WaveformSlot::FermionIn(fi), chi),
+                        &WaveformSlot::Vector(v),
+                        &chiral_project(&WaveformSlot::FermionIn(fi), chi),
                     ) else {
                         unreachable!()
                     };
@@ -1535,8 +1531,8 @@ mod tests {
                 // ── Photon (no projector): validates the bra machinery end-to-end ──
                 let WaveformSlot::FermionOut(ph) = propagate_core(
                     &off_shell_fermion_current(
-                        WaveformSlot::Vector(v),
-                        WaveformSlot::FermionOut(fo),
+                        &WaveformSlot::Vector(v),
+                        &WaveformSlot::FermionOut(fo),
                     ),
                     mass,
                     width,
@@ -1557,8 +1553,8 @@ mod tests {
                     // FFV2: single P_L term. FFV4: P_L + 2·P_R.
                     let build = |chi: Chirality| {
                         let WaveformSlot::FermionOut(c) = off_shell_fermion_current(
-                            WaveformSlot::Vector(v),
-                            chiral_project(WaveformSlot::FermionOut(fo.clone()), chi),
+                            &WaveformSlot::Vector(v),
+                            &chiral_project(&WaveformSlot::FermionOut(fo.clone()), chi),
                         ) else {
                             unreachable!()
                         };
@@ -1948,7 +1944,7 @@ mod tests {
 
                 // FFS1: left bilinear × s
                 let WaveformSlot::Scalar(got1) = mul_apply([
-                    scalar_bilinear_current(&[fi_slot, fo_slot], Chirality::Left),
+                    scalar_bilinear_current(&fi_slot, &fo_slot, Chirality::Left),
                     s_slot,
                 ]) else {
                     panic!("FFS1 did not produce a scalar");
@@ -1961,7 +1957,7 @@ mod tests {
 
                 // FFS3: right bilinear × s
                 let WaveformSlot::Scalar(got3) = mul_apply([
-                    scalar_bilinear_current(&[fi_slot, fo_slot], Chirality::Right),
+                    scalar_bilinear_current(&fi_slot, &fo_slot, Chirality::Right),
                     s_slot,
                 ]) else {
                     panic!("FFS3 did not produce a scalar");

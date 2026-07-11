@@ -194,6 +194,15 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
   Follow-ups spawned: FFS chiral-pair fusion (`ProjMAmp`/`ProjPAmp` Yukawa pairs,
   same rewrite shape); bind-time constant folding would delete the `g_L`/`g_R`
   scalar subgraphs entirely (they are card-time constants re-evaluated per point).
+  4. *True-arity kernels* (post-gate addendum): the `&[WaveformSlot]` kernel
+     signatures were not elided — the kernels stay outlined, so every call
+     materialized a staging array and did bounds-checked slice indexing
+     (`gamma_vout` carried two `panic_bounds_check` branches). Kernels now take
+     their true arity as `&WaveformSlot` operands and `apply`'s `kid` accessor
+     hands out references straight into the result buffer (`pmom_out`, the one
+     variadic kernel, takes an iterator of refs); no staging copy, no bounds
+     checks, wrong arity is a compile error. −7…−19% e2e on top of fusion;
+     **bit-for-bit** (max_rel_diffs digit-for-digit unchanged).
 - **P5 (last) — egg arity groundwork** — binarize `Add`/`Mul` at lowering as a
   *balanced* tree reduction (pairwise summation is if anything more accurate than
   the left fold; the ~1e-15 reorder drift is far inside `REL_TOL`); egglog engine
@@ -212,19 +221,19 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
 Timing table (dev machine, `--profile profiling`, `--test-threads=1`; rust ns/eval
 per session vs MG MATRIX1 ns/eval):
 
-| process | MG | P1 baseline | P2 | P4 | P6 |
-|---|---:|---:|---:|---:|---:|
-| ee_to_zh | 206 | 5,479 (27×) | 3,272 (16×) | 3,351 (16×) | 2,173 (11×) |
-| ee_to_mumu | 328 | 14,093 (43×) | 8,198 (25×) | 8,127 (25×) | 4,515 (14×) |
-| pp_to_ll_qcd0 | 298 | 14,027 (47×) | 8,335 (28×) | 8,313 (28×) | 5,164 (17×) |
-| ee_to_ttx | 357 | 14,588 (41×) | 8,520 (24×) | 8,668 (24×) | 5,439 (15×) |
-| ee_to_ee | 743 | 27,467 (37×) | 15,102 (20×) | 15,932 (21×) | 7,727 (10×) |
-| ee_to_tatah | 859 | 50,894 (59×) | 21,996 (26×) | 22,493 (26×) | 12,543 (15×) |
-| ee_to_wpwm | 776 | 64,059 (83×) | 30,145 (39×) | 30,431 (39×) | 23,146 (30×) |
-| ee_to_mumua | 1,510 | 133,751 (89×) | 58,403 (39×) | 59,344 (39×) | 32,932 (22×) |
-| ee_to_mumu_tata_qcd0 | 6,404 | 1,319,279 (206×) | 356,126 (56×) | 366,581 (57×) | 172,621 (27×) |
-| uux_to_ccx_emmm_qcd0 | 100,230 | 216,900,033 (2,164×) | 28,505,729 (284×) | 29,463,222 (294×) | 13,433,690 (134×) |
-| bbx_to_ccx_emmm_qcd0 | 141,430 | 236,382,600 (1,671×) | 29,593,298 (209×) | 30,900,754 (218×) | 14,040,376 (99×) |
+| process | MG | P1 baseline | P2 | P4 | P6 | P6 +arity |
+|---|---:|---:|---:|---:|---:|---:|
+| ee_to_zh | 206 | 5,479 (27×) | 3,272 (16×) | 3,351 (16×) | 2,173 (11×) | 1,931 (9.4×) |
+| ee_to_mumu | 328 | 14,093 (43×) | 8,198 (25×) | 8,127 (25×) | 4,515 (14×) | 3,882 (12×) |
+| pp_to_ll_qcd0 | 298 | 14,027 (47×) | 8,335 (28×) | 8,313 (28×) | 5,164 (17×) | 4,447 (15×) |
+| ee_to_ttx | 357 | 14,588 (41×) | 8,520 (24×) | 8,668 (24×) | 5,439 (15×) | 4,728 (13×) |
+| ee_to_ee | 743 | 27,467 (37×) | 15,102 (20×) | 15,932 (21×) | 7,727 (10×) | 6,447 (8.7×) |
+| ee_to_tatah | 859 | 50,894 (59×) | 21,996 (26×) | 22,493 (26×) | 12,543 (15×) | 11,196 (13×) |
+| ee_to_wpwm | 776 | 64,059 (83×) | 30,145 (39×) | 30,431 (39×) | 23,146 (30×) | 20,710 (27×) |
+| ee_to_mumua | 1,510 | 133,751 (89×) | 58,403 (39×) | 59,344 (39×) | 32,932 (22×) | 28,102 (19×) |
+| ee_to_mumu_tata_qcd0 | 6,404 | 1,319,279 (206×) | 356,126 (56×) | 366,581 (57×) | 172,621 (27×) | 143,596 (22×) |
+| uux_to_ccx_emmm_qcd0 | 100,230 | 216,900,033 (2,164×) | 28,505,729 (284×) | 29,463,222 (294×) | 13,433,690 (134×) | 10,897,954 (109×) |
+| bbx_to_ccx_emmm_qcd0 | 141,430 | 236,382,600 (1,671×) | 29,593,298 (209×) | 30,900,754 (218×) | 14,040,376 (99×) | 11,774,924 (83×) |
 
 P1 samply ground truth: `res.push` ~40% (writes into a fresh multi-MB buffer per
 call — volume set by the un-CSE'd arena width), `kids.extend` ~15% (staging copies

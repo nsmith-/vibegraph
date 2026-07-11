@@ -56,7 +56,8 @@ mod waveform_slot;
 #[doc(hidden)]
 pub mod bench_internals {
     pub use super::kernel::{
-        gamma_iout, gamma_oout, gamma_vout, metric, proj_m, proj_p, propagate_core,
+        ffv_iout, ffv_oout, ffv_vout, gamma_iout, gamma_oout, gamma_vout, metric, proj_m, proj_p,
+        propagate_core,
     };
     pub use super::prop_harness::{
         rand_bra, rand_c, rand_ket, rand_vector, seeded_rng, slots_approx_eq,
