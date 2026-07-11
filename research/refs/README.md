@@ -77,6 +77,7 @@ bash research/refs/fetch-papers.sh
 | `helas` | HELAS manual (KEK-91-11, scanned PDF) | PDF |
 | `vegas` | VEGAS+ adaptive importance sampling | markdown |
 | `mcreview` | Monte Carlo methods review | markdown |
+| `egglog` | egglog: Better Together, Unifying Datalog and Equality Saturation (arXiv:2304.04332) | markdown |
 
 ## OCR for scanned PDFs (HELAS)
 

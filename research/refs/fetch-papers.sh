@@ -38,6 +38,8 @@ PAPERS=(
   "loop_induced_ps|https://ar5iv.org/html/1507.00020|Loop-induced processes and phase-space optimisation in MadGraph5 (arXiv:1507.00020)"
   # UFO / model format extensions:
   "madwidth|https://ar5iv.org/html/1402.1178|MadWidth: automatic decay widths, extends UFO with decay tables (arXiv:1402.1178)"
+  # Equality saturation / term rewriting:
+  "egglog|https://ar5iv.org/html/2304.04332|egglog: Better Together, Unifying Datalog and Equality Saturation (arXiv:2304.04332)"
 )
 
 get_field() { echo "$1" | cut -d'|' -f"$2"; }
