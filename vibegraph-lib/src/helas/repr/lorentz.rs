@@ -448,6 +448,7 @@ impl DiracAdjoint for Ket {
     /// `(σ̄·v) ψ_L`, with
     /// `σ·v  = [[v₀+v₃, v₁−iv₂], [v₁+iv₂, v₀−v₃]]` and
     /// `σ̄·v = [[v₀−v₃, −(v₁−iv₂)], [−(v₁+iv₂), v₀+v₃]]`.
+    #[inline(always)]
     fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4] {
         let i = ri(F::ONE);
         let v0_p_v3 = v[0] + v[3];
@@ -489,6 +490,7 @@ impl DiracAdjoint for Bra {
     /// `σ̄·v` into columns 0–1 and the right block `(ψ̄_R)` multiplies `σ·v` into
     /// columns 2–3. It is the transpose, NOT the chiral-swap, of the ket action,
     /// so that a plain dot with a ket reproduces the Lorentz scalar `ψ̄ v̸ ket`.
+    #[inline(always)]
     fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4] {
         let i = ri(F::one());
         let v0_p_v3 = v[0] + v[3];
@@ -571,6 +573,7 @@ pub trait SpinorRepr<F: Real, Adj: DiracAdjoint = Ket>: LorentzRepr<F> {
     /// - Left (P_L): `J_L^μ = v̄_out γ^μ P_L u_in`
     /// - Right (P_R): `J_R^μ = v̄_out γ^μ P_R u_in`
     /// - Both (Identity): `J^μ = J_L^μ + J_R^μ`
+    #[inline(always)]
     fn vector_bilinear(
         &self,
         fi: &Self::Dual,
@@ -656,6 +659,7 @@ impl<F: Real, Adj: DiracAdjoint> LorentzRepr<F> for Bispinor<F, Adj> {
 impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
     type Dual = Bispinor<F, Adj::Dual>;
 
+    #[inline(always)]
     fn dualize(&self) -> Self::Dual {
         let arr = self.as_array();
         Bispinor::from_array([arr[2].conj(), arr[3].conj(), arr[0].conj(), arr[1].conj()])
@@ -688,6 +692,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
     ///   against `γ^μ` directly, which equals `γ^μ v_μ` only for a **covariant**
     ///   `v`. A contravariant `v` is lowered first, so the result is the same
     ///   physical operator regardless of how the vector was stored.
+    #[inline(always)]
     fn slash<V: Variance>(self, v: &ComplexVector<F, V>) -> Self {
         if V::COVARIANT {
             Bispinor::from_array(Adj::slash_bispinor(&self.0, &v.0))
@@ -716,6 +721,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
     /// | 1 | −σ¹  | `−(fo[2]·fi[1] + fo[3]·fi[0])` |
     /// | 2 | −σ²  | `i(fo[2]·fi[1] − fo[3]·fi[0])` |
     /// | 3 | −σ³  | `−fo[2]·fi[0] + fo[3]·fi[1]` |
+    #[inline(always)]
     fn left_current(&self, fi: &Self::Dual) -> ComplexVector<F, Contravariant>
     where
         Adj: IsBra,
@@ -744,6 +750,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
     /// | 1 | +σ¹ | `fo[0]·fi[3] + fo[1]·fi[2]` |
     /// | 2 | +σ²  | `−i(fo[0]·fi[3] − fo[1]·fi[2])` |
     /// | 3 | +σ³  | `fo[0]·fi[2] − fo[1]·fi[3]` |
+    #[inline(always)]
     fn right_current(&self, fi: &Self::Dual) -> ComplexVector<F, Contravariant>
     where
         Adj: IsBra,
@@ -773,6 +780,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
     /// - Left (P_L):  `ψ̄ P_L ψ = fo[0]·fi[0] + fo[1]·fi[1]`
     /// - Right (P_R): `ψ̄ P_R ψ = fo[2]·fi[2] + fo[3]·fi[3]`
     /// - Both (Identity): the sum of both.
+    #[inline(always)]
     fn scalar_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> C<F>
     where
         Adj: IsBra,

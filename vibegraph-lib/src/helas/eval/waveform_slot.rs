@@ -37,6 +37,7 @@ pub enum WaveformSlot<F: Real> {
 impl<F: Real> Add for WaveformSlot<F> {
     type Output = Self;
 
+    #[inline(always)]
     fn add(self, other: Self) -> Self {
         use WaveformSlot::*;
         match (self, other) {
@@ -88,6 +89,7 @@ where
 {
     type Output = WaveformSlot<F>;
 
+    #[inline(always)]
     fn mul(self, rhs: WaveformSlot<F>) -> WaveformSlot<F> {
         use WaveformSlot::*;
         match rhs {
