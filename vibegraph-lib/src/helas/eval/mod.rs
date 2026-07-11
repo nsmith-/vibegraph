@@ -25,6 +25,11 @@
 mod ast;
 mod compile;
 mod diagram_eval;
+// Skeleton of the egglog rewrite stage: round-trips `Ast<Sym>` through an e-graph.
+// No rules yet (an identity pass); it establishes the encoding the optimization
+// rules will attach to, so it is not yet wired into the `lower::optimize` pipeline.
+#[allow(dead_code)]
+mod egraph;
 mod error;
 mod fold;
 // Lorentz-primitive eval kernels (one `pub(crate)` fn per Lorentz `Op`, named for it);

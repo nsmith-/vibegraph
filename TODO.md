@@ -261,6 +261,38 @@ the dominant scaling term.
 
 ---
 
+## 🧬 `egglog-rewrite-stage` — skeleton landed, rules pending (branch `performance-sprint`)
+
+The rewrite stage that slots into `lower::optimize` between `lower` and
+`flatten_adds`/`cse` (egg → flatten → CSE → fold). Design reference:
+`research/notes/14-egglog-notes.md`.
+
+- **Round-trip skeleton ✅** — `helas/eval/egraph.rs`: `roundtrip(&Ast<Sym>) ->
+  Ast<Sym>` encodes the binary-arity lowered AST into an egglog `datatype` (one
+  constructor per `Op`, names = `Op::name()`; leaf payloads as leading `i64`/`f64`
+  fields; the lone variable-arity op `PMomOut` takes a `(Vec Node)` via a separate
+  `constructor`). The schema is declared from the `NODE_SCHEMA` string; the AST is then
+  encoded as `egglog::ast::Command`s built programmatically (one `let $nID …` action per
+  arena node in topological order, so DAG sharing is preserved, not expanded) plus an
+  `extract` of the root — no text rendering of the AST, so no float-formatting hazard.
+  The returned `TermDag` is decoded structurally back into an `Ast<Sym>`. No rules yet ⇒
+  structural identity; `#[allow(dead_code)]`, not wired into `optimize`. Tests: all-op /
+  all-leaf-flavor / DAG-sharing fixtures via the s-expr `FromStr`/`Display` oracle, plus
+  4 real processes (`ee→μμ`, `ee→μμa`, `ee→W⁺W⁻` for `PMomOut`, `ee→tt̄`) round-tripped
+  byte-for-byte.
+- **Next**: the actual `rewrite`/`constructor :cost` rules (constant folding, coupling
+  regrouping, chiral-pair fusion as an extraction target), a schedule, and wiring into
+  `optimize`. **Perf caveat, measured on the skeleton**: a fresh `EGraph` round-trip is
+  pathologically slow on the 2→6 QCD ASTs (a 37k-node `gg→gggg` subprocess ≈ 1 min;
+  `uu̅→uu̅gg` at 4.7k nodes ≈ 2 s) — the default-suite test is scoped to 2→2/2→3 for that
+  reason. This cost is egglog's own e-graph construction + extraction, **not** encoding:
+  measured identical whether the program is built as `Command`s or parsed from text, so
+  programmatic encoding is a correctness/cleanliness win, not a speed one. The real
+  optimizer must attack extraction/construction cost directly (and can reuse one
+  `EGraph` across subprocesses); the encoding path is no longer the lever.
+
+---
+
 ## 🔴 High — broaden the MadGraph amplitude validation surface
 
 ### `mg-validation-coverage` — New processes for `validate_helas_mg` ✅ Done
