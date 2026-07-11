@@ -27,9 +27,9 @@ use crate::helas::repr::{ri, Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 
 /// Extract a bare real constant from a [`WaveformSlot::Real`] child.
-pub fn expect_real<F: Real>(slot: WaveformSlot<F>) -> F {
+pub fn expect_real<F: Real>(slot: &WaveformSlot<F>) -> F {
     match slot {
-        WaveformSlot::Real(r) => r,
+        WaveformSlot::Real(r) => *r,
         other => panic!("expected a real-constant slot, got {other:?}"),
     }
 }
@@ -37,7 +37,7 @@ pub fn expect_real<F: Real>(slot: WaveformSlot<F>) -> F {
 /// Extract a complex scalar value from a [`WaveformSlot::Scalar`] child (the fused
 /// kernels' effective-coupling operands; their momentum is exactly zero, being sums
 /// of momentum-free `Coupling`/`Coeff` products).
-fn expect_scalar<F: Real>(slot: WaveformSlot<F>) -> C<F> {
+fn expect_scalar<F: Real>(slot: &WaveformSlot<F>) -> C<F> {
     match slot {
         WaveformSlot::Scalar(s) => s.value,
         other => panic!("expected a scalar slot, got {other:?}"),
@@ -46,12 +46,14 @@ fn expect_scalar<F: Real>(slot: WaveformSlot<F>) -> C<F> {
 
 // ──────────────────────────── propagator ────────────────────────────
 
-/// `Propagate`: apply a propagator (interned mass/width from the two real children) to the
-/// off-shell current child. The propagator outputs a contravariant current.
-pub fn propagate<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    let mass = expect_real(children[1]);
-    let width = expect_real(children[2]);
-    propagate_core(&children[0], mass, width)
+/// `Propagate`: apply a propagator (interned mass/width from the two real operands) to
+/// the off-shell current. The propagator outputs a contravariant current.
+pub fn propagate<F: Real>(
+    current: &WaveformSlot<F>,
+    mass: &WaveformSlot<F>,
+    width: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    propagate_core(current, expect_real(mass), expect_real(width))
 }
 
 /// Apply a propagator with interned mass/width to an off-shell current. The current
@@ -127,9 +129,9 @@ pub fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> Wa
 // wavefunction already appears exactly once per term — a P duplicating a leg's momentum
 // would double-count it in the `Mul`/`Metric` bookkeeping.
 
-/// `PMom`: the 4-momentum of the single child input, as a vector current.
-pub fn pmom<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    let momentum = children[0].momentum().expect("PMom: empty slot");
+/// `PMom`: the 4-momentum of the single input, as a vector current.
+pub fn pmom<F: Real>(input: &WaveformSlot<F>) -> WaveformSlot<F> {
+    let momentum = input.momentum().expect("PMom: empty slot");
     WaveformSlot::Vector(VectorWf {
         eps: ComplexVector::from(momentum),
         momentum: LorentzVector::zero(),
@@ -137,9 +139,12 @@ pub fn pmom<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 }
 
 /// `PMomOut`: the 4-momentum of the vertex's *output* leg, `−Σ (input momenta)`, as a
-/// vector current.
-pub fn pmom_out<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    let momentum = -children.iter().fold(LorentzVector::zero(), |acc, c| {
+/// vector current. The only variadic kernel (all vertex inputs), so it takes the
+/// operands as an iterator rather than fixed arity.
+pub fn pmom_out<'a, F: Real + 'a>(
+    children: impl IntoIterator<Item = &'a WaveformSlot<F>>,
+) -> WaveformSlot<F> {
+    let momentum = -children.into_iter().fold(LorentzVector::zero(), |acc, c| {
         acc + c.momentum().expect("PMomOut: empty slot")
     });
     WaveformSlot::Vector(VectorWf {
@@ -160,12 +165,12 @@ pub fn pmom_out<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 /// the line runs against the vertex's defined adjoint; callers use it to apply the
 /// adjoint-reversal sign η_Γ of their Lorentz structure.
 fn resolve_bra_ket<F: Real>(
-    a: WaveformSlot<F>,
-    b: WaveformSlot<F>,
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
 ) -> (OutDiracWf<F>, InDiracWf<F>, bool) {
     match (a, b) {
-        (WaveformSlot::FermionOut(fo), WaveformSlot::FermionIn(fi)) => (fo, fi, false),
-        (WaveformSlot::FermionIn(fi), WaveformSlot::FermionOut(fo)) => (fo, fi, true),
+        (WaveformSlot::FermionOut(fo), WaveformSlot::FermionIn(fi)) => (*fo, *fi, false),
+        (WaveformSlot::FermionIn(fi), WaveformSlot::FermionOut(fo)) => (*fo, *fi, true),
         _ => panic!("a fermion bilinear needs exactly one ket and one bra leg"),
     }
 }
@@ -173,14 +178,14 @@ fn resolve_bra_ket<F: Real>(
 /// `GammaIout`: continue a flow-in (ket) fermion line by slashing it with the vector
 /// current, `ε̸ψ`, q = f.p − v.p (Fortran `fvixxx`). Same kernel as [`gamma_oout`]
 /// because [`off_shell_fermion_current`] follows the input fermion's adjoint.
-pub fn gamma_iout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    off_shell_fermion_current(children[0], children[1])
+pub fn gamma_iout<F: Real>(v: &WaveformSlot<F>, f: &WaveformSlot<F>) -> WaveformSlot<F> {
+    off_shell_fermion_current(v, f)
 }
 
 /// `GammaOout`: continue a flow-out (bra) fermion line by slashing it with the vector
 /// current, `ψ̄ε̸`, q = f.p + v.p (Fortran `fvoxxx`). See [`gamma_iout`].
-pub fn gamma_oout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    off_shell_fermion_current(children[0], children[1])
+pub fn gamma_oout<F: Real>(v: &WaveformSlot<F>, f: &WaveformSlot<F>) -> WaveformSlot<F> {
+    off_shell_fermion_current(v, f)
 }
 
 /// Off-shell fermion current from an FFV `Gamma` vertex (one vector leg `mu` +
@@ -192,8 +197,8 @@ pub fn gamma_oout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 /// `Bispinor::slash` is adjoint-dependent, so the left/right action is automatic.
 /// The propagator `(q̸+m)/D` is applied in a separate `Propagate` step.
 pub fn off_shell_fermion_current<F: Real>(
-    v: WaveformSlot<F>,
-    fermion: WaveformSlot<F>,
+    v: &WaveformSlot<F>,
+    fermion: &WaveformSlot<F>,
 ) -> WaveformSlot<F> {
     let WaveformSlot::Vector(v) = v else {
         panic!("off-shell fermion current: expected vector input");
@@ -212,19 +217,19 @@ pub fn off_shell_fermion_current<F: Real>(
 }
 
 /// `ProjM`: left chiral projection of a continuing fermion current. See [`chiral_project`].
-pub fn proj_m<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    chiral_project(children[0], Chirality::Left)
+pub fn proj_m<F: Real>(f: &WaveformSlot<F>) -> WaveformSlot<F> {
+    chiral_project(f, Chirality::Left)
 }
 
 /// `ProjP`: right chiral projection of a continuing fermion current. See [`chiral_project`].
-pub fn proj_p<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    chiral_project(children[0], Chirality::Right)
+pub fn proj_p<F: Real>(f: &WaveformSlot<F>) -> WaveformSlot<F> {
+    chiral_project(f, Chirality::Right)
 }
 
 /// `ProjM`/`ProjP`: chiral projection on a continuing fermion current, preserving the
 /// input adjoint. `project_left`/`project_right` are adjoint-dependent (a bra projects
 /// different components than a ket), so the same call is correct for both flows.
-pub fn chiral_project<F: Real>(child: WaveformSlot<F>, chirality: Chirality) -> WaveformSlot<F> {
+pub fn chiral_project<F: Real>(child: &WaveformSlot<F>, chirality: Chirality) -> WaveformSlot<F> {
     fn project<F: Real, Fl: DiracAdjoint>(
         s: Bispinor<F, Fl>,
         chirality: Chirality,
@@ -249,8 +254,8 @@ pub fn chiral_project<F: Real>(child: WaveformSlot<F>, chirality: Chirality) -> 
 }
 
 /// `GammaVout`: two fermions → off-shell vector current `ψ̄ γ^μ ψ`.
-pub fn gamma_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    let (fo, fi, reversed) = resolve_bra_ket(children[0], children[1]);
+pub fn gamma_vout<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    let (fo, fi, reversed) = resolve_bra_ket(a, b);
     let eps = fo.vector_bilinear(&fi, Chirality::Both);
     // Reading the fermion line against the vertex's defined adjoint conjugates the
     // structure as C γ^{μT} C⁻¹ = −γ^μ, so the vector current picks up a relative −1.
@@ -270,17 +275,22 @@ pub fn gamma_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 // floating-point operations (couplings scale per-chirality before the sum), so
 // agreement is approximate (≲1e-15 per kernel), certified by the `fused_*` tests.
 
-/// `FfvVout`: fused chiral [`gamma_vout`] — `g_L·GammaVout(f_i, ProjM(f_j)) +
-/// g_R·GammaVout(f_i, ProjP(f_j))` in one step. Children: `[f_i, f_j, gL, gR]`.
+/// `FfvVout`: fused chiral [`gamma_vout`] — `g_L·GammaVout(a, ProjM(b)) +
+/// g_R·GammaVout(a, ProjP(b))` in one step.
 ///
-/// The projector tags refer to the `f_j` child's *storage* blocks: its left block
-/// feeds `J_L` when `f_j` is the ket, but `J_R` when the pair arrives reversed
-/// (`f_j` the bra), so the couplings swap currents in the reversed case — and the
+/// The projector tags refer to the `b` operand's *storage* blocks: its left block
+/// feeds `J_L` when `b` is the ket, but `J_R` when the pair arrives reversed
+/// (`b` the bra), so the couplings swap currents in the reversed case — and the
 /// reversal itself contributes the `C γ^{μT} C⁻¹ = −γ^μ` sign, as in [`gamma_vout`].
-pub fn ffv_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    let gl = expect_scalar(children[2]);
-    let gr = expect_scalar(children[3]);
-    let (fo, fi, reversed) = resolve_bra_ket(children[0], children[1]);
+pub fn ffv_vout<F: Real>(
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+    gl: &WaveformSlot<F>,
+    gr: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    let gl = expect_scalar(gl);
+    let gr = expect_scalar(gr);
+    let (fo, fi, reversed) = resolve_bra_ket(a, b);
     let jl = fo.spinor.left_current(&fi.spinor);
     let jr = fo.spinor.right_current(&fi.spinor);
     let eps = if reversed {
@@ -295,15 +305,25 @@ pub fn ffv_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 }
 
 /// `FfvIout`: fused chiral [`gamma_iout`] — continue a flow-in fermion line through a
-/// chiral-pair FFV vertex. Children: `[v, f, gL, gR]`. See [`fused_chiral_fermion_current`].
-pub fn ffv_iout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    fused_chiral_fermion_current(children)
+/// chiral-pair FFV vertex. See [`fused_chiral_fermion_current`].
+pub fn ffv_iout<F: Real>(
+    v: &WaveformSlot<F>,
+    f: &WaveformSlot<F>,
+    gl: &WaveformSlot<F>,
+    gr: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    fused_chiral_fermion_current(v, f, gl, gr)
 }
 
 /// `FfvOout`: fused chiral [`gamma_oout`] — continue a flow-out fermion line through a
-/// chiral-pair FFV vertex. Children: `[v, f, gL, gR]`. See [`fused_chiral_fermion_current`].
-pub fn ffv_oout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    fused_chiral_fermion_current(children)
+/// chiral-pair FFV vertex. See [`fused_chiral_fermion_current`].
+pub fn ffv_oout<F: Real>(
+    v: &WaveformSlot<F>,
+    f: &WaveformSlot<F>,
+    gl: &WaveformSlot<F>,
+    gr: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    fused_chiral_fermion_current(v, f, gl, gr)
 }
 
 /// Fused chiral off-shell fermion current: `g_L·(ε̸ P_L ψ) + g_R·(ε̸ P_R ψ)` =
@@ -313,12 +333,17 @@ pub fn ffv_oout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 /// storage blocks crosswise, so each weighted input block lands on the output block
 /// the corresponding projected term populates. Momentum routing follows
 /// [`off_shell_fermion_current`] (ket: `f − v`, bra: `f + v`).
-fn fused_chiral_fermion_current<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    let WaveformSlot::Vector(v) = children[0] else {
+fn fused_chiral_fermion_current<F: Real>(
+    v: &WaveformSlot<F>,
+    f: &WaveformSlot<F>,
+    gl: &WaveformSlot<F>,
+    gr: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    let WaveformSlot::Vector(v) = v else {
         panic!("fused chiral fermion current: expected vector input");
     };
-    let gl = expect_scalar(children[2]);
-    let gr = expect_scalar(children[3]);
+    let gl = expect_scalar(gl);
+    let gr = expect_scalar(gr);
     fn weighted<F: Real, Adj: DiracAdjoint>(
         s: &Bispinor<F, Adj>,
         gl: C<F>,
@@ -331,7 +356,7 @@ fn fused_chiral_fermion_current<F: Real>(children: &[WaveformSlot<F>]) -> Wavefo
             s.component(3) * gr,
         ])
     }
-    match children[1] {
+    match f {
         WaveformSlot::FermionIn(fi) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
             weighted(&fi.spinor, gl, gr).slash(&v.eps),
             fi.momentum - v.momentum,
@@ -345,27 +370,28 @@ fn fused_chiral_fermion_current<F: Real>(children: &[WaveformSlot<F>]) -> Wavefo
 }
 
 /// `ProjMAmp`: left chiral scalar bilinear `ψ̄ P_L ψ`. See [`scalar_bilinear_current`].
-pub fn proj_m_amp<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    scalar_bilinear_current(children, Chirality::Left)
+pub fn proj_m_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    scalar_bilinear_current(a, b, Chirality::Left)
 }
 
 /// `ProjPAmp`: right chiral scalar bilinear `ψ̄ P_R ψ`. See [`scalar_bilinear_current`].
-pub fn proj_p_amp<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    scalar_bilinear_current(children, Chirality::Right)
+pub fn proj_p_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    scalar_bilinear_current(a, b, Chirality::Right)
 }
 
 /// `IdentityAmp`: full scalar bilinear `ψ̄ δ ψ`. See [`scalar_bilinear_current`].
-pub fn identity_amp<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    scalar_bilinear_current(children, Chirality::Both)
+pub fn identity_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    scalar_bilinear_current(a, b, Chirality::Both)
 }
 
 /// `ProjMAmp`/`ProjPAmp`/`IdentityAmp`: scalar bilinear `ψ̄ Γ ψ` (`Γ = P_L`, `P_R`, or
 /// `1`); the bra/ket are picked by the legs' actual adjoint.
 pub fn scalar_bilinear_current<F: Real>(
-    children: &[WaveformSlot<F>],
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
     chirality: Chirality,
 ) -> WaveformSlot<F> {
-    let (fo, fi_col, _) = resolve_bra_ket(children[0], children[1]);
+    let (fo, fi_col, _) = resolve_bra_ket(a, b);
     let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, chirality);
     WaveformSlot::Scalar(ScalarWf {
         value,
@@ -376,11 +402,11 @@ pub fn scalar_bilinear_current<F: Real>(
 // ──────────────────────────── metric / vector currents ────────────────────────────
 
 /// `Metric`: contract two vectors → scalar.
-pub fn metric<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    let WaveformSlot::Vector(v1) = children[0] else {
+pub fn metric<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    let WaveformSlot::Vector(v1) = a else {
         panic!("Metric: expected vector input");
     };
-    let WaveformSlot::Vector(v2) = children[1] else {
+    let WaveformSlot::Vector(v2) = b else {
         panic!("Metric: expected vector input");
     };
     WaveformSlot::Scalar(ScalarWf {
@@ -391,8 +417,8 @@ pub fn metric<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 
 /// `MetricNegI`: [`metric`] times the vertex's −i (a pure-metric structure rooted as an
 /// amplitude).
-pub fn metric_neg_i<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    match metric(children) {
+pub fn metric_neg_i<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    match metric(a, b) {
         WaveformSlot::Scalar(s) => WaveformSlot::Scalar(ScalarWf {
             value: s.value * ri(-F::one()),
             momentum: s.momentum,
@@ -408,11 +434,11 @@ pub fn metric_neg_i<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 /// so no phase lives here (ALOHA's `VVS1P1N_1` = `−i·g·V` folds the propagator's −i
 /// into the vertex routine instead). A trailing scalar leg (the Higgs) multiplies in
 /// at the enclosing `Mul`.
-pub fn metric_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    let WaveformSlot::Vector(vin) = children[0] else {
+pub fn metric_vout<F: Real>(v: &WaveformSlot<F>) -> WaveformSlot<F> {
+    let WaveformSlot::Vector(vin) = v else {
         panic!("MetricVout: expected vector input");
     };
-    WaveformSlot::Vector(vin)
+    WaveformSlot::Vector(*vin)
 }
 
 /// `LowerVout`: [`metric_vout`] times the momentum-odd structure's −1 — the physical
@@ -421,8 +447,8 @@ pub fn metric_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
 /// rooted-term sum: the momentum-grade parity of rooting the UFO structure at the
 /// off-shell leg. Pinned per-diagram against MadGraph's e+e-→W+W- AMP()
 /// (validation/madgraph/compare_amps.py).
-pub fn lower_vout<F: Real>(children: &[WaveformSlot<F>]) -> WaveformSlot<F> {
-    let WaveformSlot::Vector(vin) = children[0] else {
+pub fn lower_vout<F: Real>(v: &WaveformSlot<F>) -> WaveformSlot<F> {
+    let WaveformSlot::Vector(vin) = v else {
         panic!("LowerVout: expected vector input");
     };
     WaveformSlot::Vector(VectorWf {
@@ -467,11 +493,10 @@ mod tests {
                     };
                     vec![a, b, scalar_slot(rand_c(rng)), scalar_slot(rand_c(rng))]
                 },
-                |c| ffv_vout(c),
+                |c| ffv_vout(&c[0], &c[1], &c[2], &c[3]),
                 |c| {
-                    let (gl, gr) = (expect_scalar(c[2]), expect_scalar(c[3]));
-                    gl * gamma_vout(&[c[0], proj_m(&[c[1]])])
-                        + gr * gamma_vout(&[c[0], proj_p(&[c[1]])])
+                    let (gl, gr) = (expect_scalar(&c[2]), expect_scalar(&c[3]));
+                    gl * gamma_vout(&c[0], &proj_m(&c[1])) + gr * gamma_vout(&c[0], &proj_p(&c[1]))
                 },
             );
         }
@@ -481,9 +506,15 @@ mod tests {
     /// `g_L·GammaXout(v, ProjM(f)) + g_R·GammaXout(v, ProjP(f))`.
     #[test]
     fn ffv_fermion_out_matches_generic_chiral_pair() {
-        type Kernel = fn(&[WaveformSlot<f64>]) -> WaveformSlot<f64>;
+        type Fused = fn(
+            &WaveformSlot<f64>,
+            &WaveformSlot<f64>,
+            &WaveformSlot<f64>,
+            &WaveformSlot<f64>,
+        ) -> WaveformSlot<f64>;
+        type Kernel = fn(&WaveformSlot<f64>, &WaveformSlot<f64>) -> WaveformSlot<f64>;
         type Gen = fn(&mut rand::rngs::StdRng) -> WaveformSlot<f64>;
-        let cases: [(Kernel, Kernel, Gen, u64); 2] = [
+        let cases: [(Fused, Kernel, Gen, u64); 2] = [
             (ffv_iout, gamma_iout, rand_ket, 0x11FA03),
             (ffv_oout, gamma_oout, rand_bra, 0x11FA04),
         ];
@@ -500,10 +531,10 @@ mod tests {
                         scalar_slot(rand_c(rng)),
                     ]
                 },
-                |c| fused(c),
+                |c| fused(&c[0], &c[1], &c[2], &c[3]),
                 |c| {
-                    let (gl, gr) = (expect_scalar(c[2]), expect_scalar(c[3]));
-                    gl * generic(&[c[0], proj_m(&[c[1]])]) + gr * generic(&[c[0], proj_p(&[c[1]])])
+                    let (gl, gr) = (expect_scalar(&c[2]), expect_scalar(&c[3]));
+                    gl * generic(&c[0], &proj_m(&c[1])) + gr * generic(&c[0], &proj_p(&c[1]))
                 },
             );
         }
@@ -515,7 +546,7 @@ mod tests {
     /// selects exactly the values produced from the opposite projection before it.
     #[test]
     fn outer_projector_equals_flipped_inner_bit_exactly() {
-        type Kernel = fn(&[WaveformSlot<f64>]) -> WaveformSlot<f64>;
+        type Kernel = fn(&WaveformSlot<f64>, &WaveformSlot<f64>) -> WaveformSlot<f64>;
         type Gen = fn(&mut rand::rngs::StdRng) -> WaveformSlot<f64>;
         let cases: [(Kernel, Gen, u64); 2] = [
             (gamma_iout, rand_ket, 0x11FA05),
@@ -527,16 +558,16 @@ mod tests {
                 seed,
                 0.0,
                 move |rng| vec![rand_vector(rng), gen_f(rng)],
-                |c| proj_m(&[gamma(c)]),
-                |c| gamma(&[c[0], proj_p(&[c[1]])]),
+                |c| proj_m(&gamma(&c[0], &c[1])),
+                |c| gamma(&c[0], &proj_p(&c[1])),
             );
             check_agree(
                 512,
                 seed ^ 1,
                 0.0,
                 move |rng| vec![rand_vector(rng), gen_f(rng)],
-                |c| proj_p(&[gamma(c)]),
-                |c| gamma(&[c[0], proj_m(&[c[1]])]),
+                |c| proj_p(&gamma(&c[0], &c[1])),
+                |c| gamma(&c[0], &proj_m(&c[1])),
             );
         }
     }
@@ -555,8 +586,8 @@ mod tests {
             0x11AA01,
             0.0,
             |rng| vec![rand_vector(rng), rand_vector(rng)],
-            |c| metric_neg_i(c),
-            |c| match metric(c) {
+            |c| metric_neg_i(&c[0], &c[1]),
+            |c| match metric(&c[0], &c[1]) {
                 WaveformSlot::Scalar(s) => WaveformSlot::Scalar(ScalarWf {
                     value: s.value * ri(-1.0),
                     momentum: s.momentum,
@@ -575,10 +606,10 @@ mod tests {
             0x11AA02,
             1e-12,
             |rng| vec![rand_bra(rng), rand_ket(rng)],
-            |c| identity_amp(c),
+            |c| identity_amp(&c[0], &c[1]),
             |c| {
                 let (WaveformSlot::Scalar(m), WaveformSlot::Scalar(p)) =
-                    (proj_m_amp(c), proj_p_amp(c))
+                    (proj_m_amp(&c[0], &c[1]), proj_p_amp(&c[0], &c[1]))
                 else {
                     panic!("chiral bilinears produced non-scalars");
                 };
