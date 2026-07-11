@@ -87,7 +87,7 @@ Collects the validation follow-ups deferred from `cleanup-refactor`:
 - Optional CI job: `gen_sm_blob` + `git diff --exit-code` to catch a stale interned SM
   blob vs the pinned submodule (cleanup task 1 follow-up).
 
-## 🏎️ `performance-sprint` — IN PROGRESS (branch `performance-sprint`)
+## 🏎️ `performance-sprint` — sessions complete (branch `performance-sprint`; P1 P2 P4 P6 P5 ✅, P3 cancelled — backlog stubs below remain)
 
 Multi-session evaluator-performance sprint; every session lands against the
 11-process `validate_helas_mg` net (gate = the enforced `REL_TOL`, tightened to
@@ -203,16 +203,30 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
      variadic kernel, takes an iterator of refs); no staging copy, no bounds
      checks, wrong arity is a compile error. −7…−19% e2e on top of fusion;
      **bit-for-bit** (max_rel_diffs digit-for-digit unchanged).
-- **P5 (last) — egg arity groundwork** — binarize `Add`/`Mul` at lowering as a
-  *balanced* tree reduction (pairwise summation is if anything more accurate than
-  the left fold; the ~1e-15 reorder drift is far inside `REL_TOL`); egglog engine
-  design is a separate session. Post-P4 note: the forward scan is the production
-  evaluator, and there binarization *materializes a `res` slot per partial sum* —
-  measure via `benches/eval_strategies.rs` and fall back to the flatten pass
-  (re-n-aryfying between the binary `Ast<Sym>` domain and `Folded::build`) if it
-  regresses; the kept `BoundAmplitudeStack` measures the O(log n)-live-stack
-  claim directly. Decide `BoundAmplitudeStack`'s fate here: delete it if balanced
-  reduction still leaves it losing.
+- **P5 ✅ (2026-07-10) — egg arity groundwork: binary lowering + flatten pass;
+  stack evaluator deleted.** `lower.rs` now emits every `Add`/`Mul` at arity 2
+  (`reduce_balanced`: adjacent pairwise rounds, odd tail carried — ⌈log₂ n⌉ depth),
+  the static-arity form egg requires; enforced across the suite by
+  `lowered_add_mul_are_binary`. Measured raw (no flatten), binarization regressed
+  *both* evaluators — forward +0.5%/+4.3%/+7.1%/+1.7% at 2→2/2→3/2→4/2→6 (a 112-B
+  `res` slot per partial sum; nodes 2→6 3,876→4,453), and the stack machine
+  +3.0%/+3.4%/+5.5%/+6.8% *despite* its peak stack collapsing 583→21 (the O(log n)
+  live-set win is real but per-node slot traffic still dominates) — so the planned
+  flatten contingency shipped as the resolution: `optimize` = `flatten_adds`
+  (splice nested `Add` operands into their `Add` parent, order preserved, one
+  forward scan) → CSE. That exactly inverts the binarization before evaluation —
+  node counts, peak-stack stats, bench times, and the MG suite's max_rel_diffs all
+  match P6 digit-for-digit (suite max still ee_to_mumu_tata's 5.35e-13); the
+  binary shape lives only in the symbolic domain where the egglog stage will
+  operate (egg → flatten → CSE → fold). `Mul` chains are left nested: coupling·
+  coeff·structure nesting predates binarization, and ≥3-factor scalar products
+  (`L::Mul`) don't occur in the suite. **`BoundAmplitudeStack` deleted** per the
+  P4 decision rule — with the balanced-reduction question answered against it,
+  it lost its last purpose (final margin: 32–40% slower than the forward scan
+  across 2→2…2→6). `benches/eval_strategies.rs` stays as the forward-only
+  per-process yardstick (criterion IDs unchanged); the default-suite 11-process
+  net survives as `mg_suite_forward_eval_is_finite` (finiteness smoke, since the
+  bit-for-bit twin-strategy oracle went with the stack).
 - Backlog: `generate-stream` Part B (deferred from cleanup task 3: lazy
   `generate_*` iterator); `C<F>`-vs-`F` multiply peepholes; **`feyngraph-perf`**
   (submodule `.counts()` hot spot, see its section below) stays a dedicated
@@ -221,19 +235,22 @@ Ground truth from samply: `run_forward_slot`'s per-call `res`/`kids` allocations
 Timing table (dev machine, `--profile profiling`, `--test-threads=1`; rust ns/eval
 per session vs MG MATRIX1 ns/eval):
 
-| process | MG | P1 baseline | P2 | P4 | P6 | P6 +arity |
-|---|---:|---:|---:|---:|---:|---:|
-| ee_to_zh | 206 | 5,479 (27×) | 3,272 (16×) | 3,351 (16×) | 2,173 (11×) | 1,931 (9.4×) |
-| ee_to_mumu | 328 | 14,093 (43×) | 8,198 (25×) | 8,127 (25×) | 4,515 (14×) | 3,882 (12×) |
-| pp_to_ll_qcd0 | 298 | 14,027 (47×) | 8,335 (28×) | 8,313 (28×) | 5,164 (17×) | 4,447 (15×) |
-| ee_to_ttx | 357 | 14,588 (41×) | 8,520 (24×) | 8,668 (24×) | 5,439 (15×) | 4,728 (13×) |
-| ee_to_ee | 743 | 27,467 (37×) | 15,102 (20×) | 15,932 (21×) | 7,727 (10×) | 6,447 (8.7×) |
-| ee_to_tatah | 859 | 50,894 (59×) | 21,996 (26×) | 22,493 (26×) | 12,543 (15×) | 11,196 (13×) |
-| ee_to_wpwm | 776 | 64,059 (83×) | 30,145 (39×) | 30,431 (39×) | 23,146 (30×) | 20,710 (27×) |
-| ee_to_mumua | 1,510 | 133,751 (89×) | 58,403 (39×) | 59,344 (39×) | 32,932 (22×) | 28,102 (19×) |
-| ee_to_mumu_tata_qcd0 | 6,404 | 1,319,279 (206×) | 356,126 (56×) | 366,581 (57×) | 172,621 (27×) | 143,596 (22×) |
-| uux_to_ccx_emmm_qcd0 | 100,230 | 216,900,033 (2,164×) | 28,505,729 (284×) | 29,463,222 (294×) | 13,433,690 (134×) | 10,897,954 (109×) |
-| bbx_to_ccx_emmm_qcd0 | 141,430 | 236,382,600 (1,671×) | 29,593,298 (209×) | 30,900,754 (218×) | 14,040,376 (99×) | 11,774,924 (83×) |
+| process | MG | P1 baseline | P2 | P4 | P6 | P6 +arity | P5 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| ee_to_zh | 206 | 5,479 (27×) | 3,272 (16×) | 3,351 (16×) | 2,173 (11×) | 1,931 (9.4×) | 1,947 (9.5×) |
+| ee_to_mumu | 328 | 14,093 (43×) | 8,198 (25×) | 8,127 (25×) | 4,515 (14×) | 3,882 (12×) | 3,980 (12×) |
+| pp_to_ll_qcd0 | 298 | 14,027 (47×) | 8,335 (28×) | 8,313 (28×) | 5,164 (17×) | 4,447 (15×) | 4,551 (15×) |
+| ee_to_ttx | 357 | 14,588 (41×) | 8,520 (24×) | 8,668 (24×) | 5,439 (15×) | 4,728 (13×) | 4,728 (13×) |
+| ee_to_ee | 743 | 27,467 (37×) | 15,102 (20×) | 15,932 (21×) | 7,727 (10×) | 6,447 (8.7×) | 6,419 (8.6×) |
+| ee_to_tatah | 859 | 50,894 (59×) | 21,996 (26×) | 22,493 (26×) | 12,543 (15×) | 11,196 (13×) | 11,327 (13×) |
+| ee_to_wpwm | 776 | 64,059 (83×) | 30,145 (39×) | 30,431 (39×) | 23,146 (30×) | 20,710 (27×) | 20,709 (27×) |
+| ee_to_mumua | 1,510 | 133,751 (89×) | 58,403 (39×) | 59,344 (39×) | 32,932 (22×) | 28,102 (19×) | 28,520 (19×) |
+| ee_to_mumu_tata_qcd0 | 6,404 | 1,319,279 (206×) | 356,126 (56×) | 366,581 (57×) | 172,621 (27×) | 143,596 (22×) | 145,032 (23×) |
+| uux_to_ccx_emmm_qcd0 | 100,230 | 216,900,033 (2,164×) | 28,505,729 (284×) | 29,463,222 (294×) | 13,433,690 (134×) | 10,897,954 (109×) | 10,981,139 (110×) |
+| bbx_to_ccx_emmm_qcd0 | 141,430 | 236,382,600 (1,671×) | 29,593,298 (209×) | 30,900,754 (218×) | 14,040,376 (99×) | 11,774,924 (83×) | 11,821,262 (84×) |
+
+P5 (flatten in place) is flat vs "P6 +arity" — within run noise by construction:
+the evaluated arena is shape-identical, the binary form exists only pre-`optimize`.
 
 P1 samply ground truth: `res.push` ~40% (writes into a fresh multi-MB buffer per
 call — volume set by the un-CSE'd arena width), `kids.extend` ~15% (staging copies

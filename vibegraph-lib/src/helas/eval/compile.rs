@@ -195,6 +195,8 @@ fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
 mod tests {
     use std::collections::BTreeMap;
 
+    use super::super::lower;
+    use super::super::root_diagram::compile_diagram_ast;
     use super::{AmplitudeEvaluator, MG_VALIDATED_PROCESSES};
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::helas::eval::op::Op;
@@ -246,5 +248,35 @@ mod tests {
             missing, expected_missing,
             "MG-validated op coverage changed (left: actually missing, right: KNOWN_UNCOVERED)\nop counts: {counts:#?}"
         );
+    }
+
+    /// Every `Add`/`Mul` node in the symbolic [`lower`](crate::helas::eval::lower::lower)
+    /// output has exactly two children — the static-arity form an egg rewrite stage
+    /// requires. Checked across the full MG-validated suite. (`optimize` then
+    /// re-n-aryfies the sums for evaluation, so the folded arena is intentionally
+    /// *not* binary.)
+    #[test]
+    fn lowered_add_mul_are_binary() {
+        let model = sm_model(SMRestrict::Default);
+        let opts = ParsingOptions::default();
+        for process in MG_VALIDATED_PROCESSES {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            assert!(!sets.is_empty(), "no diagrams for '{process}'");
+            for set in &sets {
+                let diagrams = compile_diagram_ast(set, &model).unwrap();
+                let ast = lower::lower(&diagrams);
+                for id in ast.iter() {
+                    let op = ast.value(id).op;
+                    if matches!(op, Op::Add | Op::Mul) {
+                        assert_eq!(
+                            ast.children_ids(id).len(),
+                            2,
+                            "[{process}] {op:?} node {id} is not binary"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

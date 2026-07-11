@@ -48,11 +48,13 @@ pub enum Op {
     /// forms its longitudinal term differently and is raised back), so no separate
     /// lowered-storage opcode is needed.
     Propagate,
-    /// n-ary product: ≤1 non-scalar child sets the output type, the rest are scalar
+    /// Product: ≤1 non-scalar child sets the output type, the rest are scalar
     /// factors. Subsumes scalar×wf scaling (coupling·coeff·current) and the Lorentz
-    /// tensor product.
+    /// tensor product. Lowering emits arity 2 (multi-factor products reduce as
+    /// balanced binary trees for egg); the evaluator itself accepts any arity.
     Mul,
-    /// n-ary sum (Lorentz-term, vertex-term, and diagram sums).
+    /// Sum (Lorentz-term, vertex-term, and diagram sums). Lowering emits arity 2
+    /// (balanced binary trees); the evaluator itself accepts any arity.
     Add,
     // ── Lorentz primitives (semantics mirror the old `LorentzEvalNode`) ──
     /// 2 fermions → off-shell vector current.
