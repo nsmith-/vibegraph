@@ -1,6 +1,7 @@
 use super::ast_util::{
     call_func_name, extract_attr, extract_int, extract_str, kwarg_str, parse_stmts,
 };
+use super::color::ColorExpr;
 use super::couplings::CouplingId;
 use super::lorentz::LorentzId;
 use super::particles::ParticleId;
@@ -24,8 +25,9 @@ pub struct VertexId(pub usize);
 pub struct Vertex {
     pub name: String,
     pub particles: Vec<ParticleId>,
-    /// Color factor strings, e.g. `["1"]`, `["f(1,2,3)"]`.
-    pub color: Vec<String>,
+    /// Parsed, `Identity`-resolved color factors, one per color structure
+    /// (e.g. `[ColorExpr { atoms: [] }]` for `["1"]`, or a `T`/`f` product).
+    pub color: Vec<ColorExpr>,
     pub lorentz: Vec<LorentzId>,
     /// `(color_idx, lorentz_idx)` → coupling id.
     pub couplings: HashMap<(usize, usize), CouplingId>,

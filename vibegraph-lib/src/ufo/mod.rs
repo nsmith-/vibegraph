@@ -1,4 +1,5 @@
 pub mod ast_util;
+pub mod color;
 pub mod couplings;
 pub mod expr;
 pub mod lorentz;
@@ -337,7 +338,7 @@ fn resolve_vertices(
     input
         .into_iter()
         .map(|rv| {
-            let particle_ids = rv
+            let particle_ids: Vec<ParticleId> = rv
                 .particles
                 .iter()
                 .map(|py_name| {
@@ -378,10 +379,21 @@ fn resolve_vertices(
                 })
                 .collect::<Result<_, _>>()?;
 
+            let particle_colors: Vec<i32> =
+                particle_ids.iter().map(|&id| particles[id].color).collect();
+            let color: Vec<color::ColorExpr> = rv
+                .color
+                .iter()
+                .map(|s| {
+                    color::parse_and_resolve(s, &particle_colors)
+                        .map_err(|e| VertexError::Parse(format!("vertex '{}': {e}", rv.name)))
+                })
+                .collect::<Result<_, _>>()?;
+
             let vertex = Vertex {
                 name: rv.name,
                 particles: particle_ids,
-                color: rv.color,
+                color,
                 lorentz: lorentz_ids,
                 couplings: coupling_ids,
             };
