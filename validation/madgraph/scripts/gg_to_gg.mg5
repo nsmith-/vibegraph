@@ -1,0 +1,24 @@
+# MadGraph5 batch script: g g > g g at LO (QCD).
+#
+# Why this exact process:
+#   - Four external gluons exercise the 4-gluon vertex, the only SM vertex with
+#     k > 1 color structures (expanded x3 per color-index chain), and pure-f
+#     color algebra. full_simplify reduces every f-product to the 6-element
+#     single-trace basis, giving NCOLOR=6 with the standard SU(3) four-gluon
+#     color matrix (diagonal 19/6, reverse-pair 2/3, else -1/3).
+#   - The stress test for the per-chain rooting of multi-structure vertices and
+#     the largest CF contraction in the SM tree-level vocabulary.
+#   - One concrete subprocess => the matrix element is matrix1 (no matrix9).
+#
+# MadEvent output (default): `launch` builds matrix1_optim.f for the timing
+# comparison and integrates the partonic cross section. lpp=0 => fixed-energy
+# partonic gluon beams, so the result is the partonic sigma-hat.
+generate g g > g g
+output gg_to_gg -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

@@ -185,6 +185,24 @@ PROCESSES = [
         npoints=25,
         seed=41,
     ),
+    Process(
+        "gg_to_ttx",
+        "g g > t t~",
+        (21, 21),
+        (6, -6),
+        sqrt_s_list=(400.0, 500.0),
+        npoints=25,
+        seed=43,
+    ),
+    Process(
+        "gg_to_gg",
+        "g g > g g",
+        (21, 21),
+        (21, 21),
+        sqrt_s_list=(50.0, 200.0, 500.0),
+        npoints=25,
+        seed=47,
+    ),
 ]
 
 
