@@ -59,9 +59,11 @@ enum RawNode {
     },
     /// A vertex. `result` is the output (continuation) leg for a non-root vertex, or
     /// `None` for the root. `children` are the input nodes in vertex-leg order, with
-    /// the output-leg position omitted.
+    /// the output-leg position omitted. `vtx` is the diagram vertex index, used to
+    /// select this vertex's color structure from the per-diagram color-index chain.
     Vertex {
         vertex: VertexId,
+        vtx: VtxIdx,
         result: Option<ResultLeg>,
         children: Vec<RawNodeId>,
     },
@@ -197,6 +199,7 @@ impl<'a> RawBuilder<'a> {
 
         Ok(self.add(RawNode::Vertex {
             vertex: self.diagram.vertex(vtx).interaction,
+            vtx,
             result,
             children,
         }))
@@ -347,9 +350,12 @@ impl DiagramEvalTree {
         model: &UFOModel,
         n_in: usize,
         uncross: &HashSet<LegIdx>,
+        chain: &[u8],
     ) -> Result<Self, RootLorentzError> {
         let mut nodes = Vec::with_capacity(raw.nodes.len());
-        let (root, _) = Self::bake_node(raw, raw.root, diagram, model, n_in, uncross, &mut nodes)?;
+        let (root, _) = Self::bake_node(
+            raw, raw.root, diagram, model, n_in, uncross, chain, &mut nodes,
+        )?;
         Ok(DiagramEvalTree { nodes, root })
     }
 
@@ -362,6 +368,7 @@ impl DiagramEvalTree {
     /// propagator on it) inherits the binding of its continuing fermion input. Each leg's
     /// `incoming` flag and each propagator's t-channel classification are read off the
     /// baked momentum (`Leg.incoming`, `Prop::is_spacelike`).
+    #[allow(clippy::too_many_arguments)]
     fn bake_node(
         raw: &RawDiagramTree,
         id: RawNodeId,
@@ -369,6 +376,7 @@ impl DiagramEvalTree {
         model: &UFOModel,
         n_in: usize,
         uncross: &HashSet<LegIdx>,
+        chain: &[u8],
         nodes: &mut Vec<EvalNode>,
     ) -> Result<(EvalNodeId, Option<LegAdjoint>), RootLorentzError> {
         match raw.value(id) {
@@ -403,14 +411,16 @@ impl DiagramEvalTree {
             }
             RawNode::Vertex {
                 vertex,
+                vtx,
                 result,
                 children,
             } => {
                 let baked: Vec<(EvalNodeId, Option<LegAdjoint>)> = children
                     .iter()
-                    .map(|&c| Self::bake_node(raw, c, diagram, model, n_in, uncross, nodes))
+                    .map(|&c| Self::bake_node(raw, c, diagram, model, n_in, uncross, chain, nodes))
                     .collect::<Result<Vec<_>, _>>()?;
                 let child_ids: Vec<EvalNodeId> = baked.iter().map(|(id, _)| *id).collect();
+                let color_idx = chain[vtx.0] as usize;
                 match result {
                     Some(rl) => {
                         // Internal vertex: off-shell current rooted at the output leg,
@@ -431,7 +441,8 @@ impl DiagramEvalTree {
                         let mut flows: Vec<Option<LegAdjoint>> =
                             baked.iter().map(|(_, f)| *f).collect();
                         flows.insert(ri.0, bind);
-                        let info = VertexInfo::from_ufo(model, *vertex, Some(ri.0), &flows)?;
+                        let info =
+                            VertexInfo::from_ufo(model, *vertex, color_idx, Some(ri.0), &flows)?;
                         let adjoint = bind.map(|lf| lf.adjoint);
                         let current = Self::add(
                             nodes,
@@ -464,7 +475,7 @@ impl DiagramEvalTree {
                         // scalar sink, so no fermion output adjoint; every leg is a child.
                         let flows: Vec<Option<LegAdjoint>> =
                             baked.iter().map(|(_, f)| *f).collect();
-                        let info = VertexInfo::from_ufo(model, *vertex, None, &flows)?;
+                        let info = VertexInfo::from_ufo(model, *vertex, color_idx, None, &flows)?;
                         Ok((
                             Self::add(
                                 nodes,
@@ -671,6 +682,7 @@ fn collect_fermion_pairs(
             vertex,
             result,
             children,
+            ..
         } => {
             let mut ends: Vec<LegIdx> = children
                 .iter()
@@ -729,9 +741,13 @@ fn mixed_line_final_legs(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) ->
 /// # Arguments
 /// * `diagram` — the owned, convention-baked diagram
 /// * `model` — UFO model for vertex/particle/coupling lookups
+/// * `chain` — the color-index chain: the chosen color structure per vertex, in
+///   [`VtxIdx`] order (as recorded by `colorize`). Selects which color structure of
+///   each vertex the rooted Lorentz/coupling terms are built from.
 pub(super) fn root_tree(
     diagram: &Diagram,
     model: &UFOModel,
+    chain: &[u8],
 ) -> Result<DiagramEvalTree, CompileError> {
     // Choose an arbitrary root vertex (the first one) and walk the tree from there.
     let mut builder = RawBuilder::new(diagram);
@@ -743,7 +759,9 @@ pub(super) fn root_tree(
 
     let n_in = diagram.n_in;
     let uncross = mixed_line_final_legs(&raw, model, n_in);
-    Ok(DiagramEvalTree::bake(&raw, diagram, model, n_in, &uncross)?)
+    Ok(DiagramEvalTree::bake(
+        &raw, diagram, model, n_in, &uncross, chain,
+    )?)
 }
 
 // ───────────────────────────── Per-diagram artifact ─────────────────────────────
@@ -806,11 +824,12 @@ impl std::fmt::Display for DiagramEval {
 /// attaches the per-diagram metadata (external-leg count, symmetry factor, and the
 /// fermion-adjoint sign, including the initial-state spine correction derived from the
 /// baked spinor adjoint via [`spine_sign_from_flow`]).
-fn compile_single_diagram(
+pub(super) fn compile_single_diagram(
     diagram: &Diagram,
     model: &UFOModel,
+    chain: &[u8],
 ) -> Result<DiagramEval, CompileError> {
-    let tree = root_tree(diagram, model)?;
+    let tree = root_tree(diagram, model, chain)?;
     let fermi_sign = diagram.sign * spine_sign_from_flow(&tree);
     Ok(DiagramEval {
         n_ext: diagram.n_ext(),
@@ -831,7 +850,10 @@ pub fn compile_diagram_ast(
 ) -> Result<Vec<DiagramEval>, CompileError> {
     set.diagrams
         .iter()
-        .map(|diagram| compile_single_diagram(diagram, model))
+        .map(|diagram| {
+            let chain = vec![0u8; diagram.vertices.len()];
+            compile_single_diagram(diagram, model, &chain)
+        })
         .collect()
 }
 
@@ -854,7 +876,8 @@ mod tests {
         for set in sets {
             for (d, diagram) in set.diagrams.iter().enumerate() {
                 println!("Testing diagram {d}");
-                let tree = root_tree(diagram, &model).expect("rooting failed");
+                let chain = vec![0u8; diagram.vertices.len()];
+                let tree = root_tree(diagram, &model, &chain).expect("rooting failed");
                 println!("Generated tree: {tree}");
             }
         }
@@ -918,7 +941,8 @@ mod tests {
                         }
                     }
                 }
-                let tree = root_tree(diagram, &model).expect("rooting failed");
+                let chain = vec![0u8; diagram.vertices.len()];
+                let tree = root_tree(diagram, &model, &chain).expect("rooting failed");
                 println!("  baked: {tree}");
             }
         }
@@ -939,7 +963,8 @@ mod tests {
         for process in processes {
             for set in generate(process) {
                 for (i, diagram) in set.diagrams.iter().enumerate() {
-                    let tree = root_tree(diagram, &model).expect("rooting failed");
+                    let chain = vec![0u8; diagram.vertices.len()];
+                    let tree = root_tree(diagram, &model, &chain).expect("rooting failed");
                     let from_flow = spine_sign_from_flow(&tree);
                     let heuristic = initial_state_spine_sign(diagram, &model);
                     assert_eq!(

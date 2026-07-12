@@ -141,10 +141,20 @@ pub struct VertexInfo {
 }
 
 impl VertexInfo {
-    /// Generate VertexInfo from a UFO vertex definition, given the model and the desired index of the result leg.
+    /// Generate VertexInfo from a UFO vertex definition, restricted to a single
+    /// color structure `color_idx`, given the model and the desired index of the
+    /// result leg.
+    ///
+    /// Only the `(color_idx, lorentz_idx)` couplings whose first component equals
+    /// `color_idx` are summed into the term list, so a vertex with several color
+    /// structures (e.g. the 4-gluon vertex) compiles into a distinct term list per
+    /// color-index chain. For the usual single-structure vertex every coupling key
+    /// has first component `0`, so `color_idx == 0` keeps them all in their original
+    /// iteration order.
     pub fn from_ufo(
         model: &UFOModel,
         id: VertexId,
+        color_idx: usize,
         result_leg_idx: Option<usize>,
         flows: &[Option<LegAdjoint>],
     ) -> Result<Self, RootLorentzError> {
@@ -152,7 +162,8 @@ impl VertexInfo {
         let terms = vertex
             .couplings
             .iter()
-            .map(|(&(color_idx, lorentz_idx), coupling_id)| {
+            .filter(|(&(c, _), _)| c == color_idx)
+            .map(|(&(_, lorentz_idx), coupling_id)| {
                 VertexTerm::from_ufo(
                     model,
                     vertex.lorentz[lorentz_idx],

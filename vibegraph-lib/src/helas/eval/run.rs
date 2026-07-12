@@ -62,6 +62,9 @@ pub struct BoundAmplitude<'a, F: Real> {
     eval: &'a AmplitudeEvaluator,
     consts_c: Box<[C<F>]>,
     consts_f: Box<[F]>,
+    /// The exact color-factor matrix resolved to `F` (row-major,
+    /// `cf[i*n_flows + j] = CF_{ij}`).
+    cf: Box<[F]>,
 }
 
 impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
@@ -70,7 +73,17 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
     /// pools. The same evaluator binds against any card and precision.
     pub fn bind(eval: &'a AmplitudeEvaluator, evaluated: &EvaluatedModel) -> Self {
         let (consts_c, consts_f) = eval.folded().pools::<F>(evaluated);
-        BoundAmplitude::new(eval, consts_c, consts_f)
+        // Resolve the exact rational CF matrix to `F` (each num/den converted before
+        // the division, mirroring the constant-pool rationals).
+        let cf: Box<[F]> = eval
+            .cf_matrix()
+            .iter()
+            .map(|r| {
+                F::from_i64(*r.numer()).expect("CF numerator convertible to scalar")
+                    / F::from_i64(*r.denom()).expect("CF denominator convertible to scalar")
+            })
+            .collect();
+        BoundAmplitude::new(eval, consts_c, consts_f, cf)
     }
 
     /// Build from a compiled evaluator and its card-resolved pools (see [`bind`]).
@@ -80,11 +93,13 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         eval: &'a AmplitudeEvaluator,
         consts_c: Box<[C<F>]>,
         consts_f: Box<[F]>,
+        cf: Box<[F]>,
     ) -> Self {
         BoundAmplitude {
             eval,
             consts_c,
             consts_f,
+            cf,
         }
     }
 
@@ -101,19 +116,47 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         }
     }
 
-    /// Evaluate |M|² summed over all helicities.
+    /// Evaluate the color- and helicity-summed |M|² (MadGraph's MATRIX1 convention,
+    /// not averaged).
     ///
     /// `momenta` are the external 4-momenta `[E, px, py, pz]`, incoming legs first then
-    /// outgoing. Returns Σ_{helicities} |M|² (summed, not averaged).
+    /// outgoing.
+    ///
+    /// For a single color flow (`NCOLOR = 1`) the amplitude root is a scalar `M`, and
+    /// the constant color factor `CF(1,1)` multiplies the helicity sum *after* it is
+    /// formed (`CF · Σ_hel |M|²`) — preserving the exact floating-point operation order
+    /// of a color-free evaluation, since `Σ (CF·x_h) ≠ CF·Σ x_h` bitwise. For several
+    /// flows the per-helicity JAMPs `J_i` are contracted through the CF matrix in
+    /// MadGraph's ZTEMP order, `Σ_i (Σ_j CF_{ji} J_j) · J_i*`, and summed over helicities.
     pub fn eval_m2(&self, momenta: &[LorentzVector<F>], scratch: &mut ScratchSpace<F>) -> F {
         if momenta.len() != self.eval.n_ext() {
             return F::zero();
         }
-        self.eval
-            .helicities()
-            .iter()
-            .map(|hel| self.run(momenta, hel, None, scratch).norm_sqr())
-            .fold(F::zero(), |acc, x| acc + x)
+        let n = self.eval.n_flows();
+        if n == 1 {
+            let hel_sum = self
+                .eval
+                .helicities()
+                .iter()
+                .map(|hel| self.run(momenta, hel, None, scratch).norm_sqr())
+                .fold(F::zero(), |acc, x| acc + x);
+            return hel_sum * self.cf[0];
+        }
+        let mut total = F::zero();
+        for hel in self.eval.helicities() {
+            let jamps = self.run_flows(momenta, hel, scratch);
+            // MATRIX1 += Σ_i ( Σ_j CF_{ji}·J_j ) · conj(J_i); the imaginary parts
+            // cancel over the i-sum (MADGRAPH assigns the complex product to a real
+            // accumulator), so only the real part contributes.
+            for i in 0..n {
+                let mut ztemp = C::new(F::zero(), F::zero());
+                for (j, jamp_j) in jamps.iter().enumerate() {
+                    ztemp = ztemp + *jamp_j * C::new(self.cf[j * n + i], F::zero());
+                }
+                total = total + (ztemp * jamps[i].conj()).re;
+            }
+        }
+        total
     }
 
     /// Evaluate the complex amplitude M for a single helicity configuration (the
@@ -148,6 +191,26 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
             ward_leg,
         };
         run_forward(&self.eval.folded().ast, &env, &mut scratch.res)
+    }
+
+    /// Walk the folded arena for one (momenta, helicity) point, returning the
+    /// per-flow JAMPs `J_i` — the scalar children of the [`Op::Flows`] root. Used by
+    /// the multi-flow [`eval_m2`](Self::eval_m2) path.
+    fn run_flows(
+        &self,
+        momenta: &[LorentzVector<F>],
+        helicities: &[i32],
+        scratch: &mut ScratchSpace<F>,
+    ) -> Vec<C<F>> {
+        let env = EvalEnv {
+            consts_c: &self.consts_c,
+            consts_f: &self.consts_f,
+            ext_legs: self.eval.folded().ext_legs(),
+            momenta,
+            helicities,
+            ward_leg: None,
+        };
+        run_forward_flows(&self.eval.folded().ast, &env, &mut scratch.res)
     }
 
     /// Test-only: evaluate the amplitude with one external boson's polarisation ε^μ
@@ -198,6 +261,39 @@ fn run_forward<F: Real>(
         WaveformSlot::Empty => C::new(F::zero(), F::zero()),
         other => panic!("amplitude root is not a scalar: {other:?}"),
     }
+}
+
+/// Evaluate a folded arena whose root is an [`Op::Flows`] node, returning the scalar
+/// value of each JAMP (the root's children) in flow order.
+///
+/// Every node except the `Flows` root reduces through [`apply`] in the usual forward
+/// scan; the root itself has no scalar reduction, so its children's already-computed
+/// slots are read out directly.
+fn run_forward_flows<F: Real>(
+    ast: &Ast<Const>,
+    env: &EvalEnv<'_, F>,
+    res: &mut Vec<WaveformSlot<F>>,
+) -> Vec<C<F>> {
+    res.clear();
+    res.reserve(ast.len());
+    let root = ast.root();
+    for id in ast.iter() {
+        if id == root && ast.value(id).op == Op::Flows {
+            return ast
+                .children_ids(id)
+                .iter()
+                .map(|&c| match res[c as usize] {
+                    WaveformSlot::Scalar(s) => s.value,
+                    WaveformSlot::Empty => C::new(F::zero(), F::zero()),
+                    other => panic!("JAMP flow child is not a scalar: {other:?}"),
+                })
+                .collect();
+        }
+        let ids = ast.children_ids(id);
+        let value = apply(ast.value(id), ids.len(), |i| &res[ids[i] as usize], env);
+        res.push(value);
+    }
+    panic!("run_forward_flows called on an arena whose root is not Op::Flows");
 }
 
 /// Reduce one folded node from its children's already-evaluated results, read through

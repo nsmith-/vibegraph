@@ -2,9 +2,11 @@
 //! elements for each process covered by the diagram validation suite.
 //!
 //! One named test trial per process, generated dynamically from CSV files in
-//! `validation/madgraph/output/`.  Only color-free processes (ee→μμ) are expected
-//! to pass; colored processes emit an informational message and pass regardless,
-//! since color flow is not yet implemented in vibegraph.
+//! `validation/madgraph/output/`. `eval_m2` returns the full color-summed |M|²
+//! (the CF matrix is computed by the color factorization, not hard-coded), so the
+//! single-color-flow `EXPECT_MATCH` processes are compared bit-for-bit against
+//! MadGraph's MATRIX1. Genuinely multi-flow processes (e.g. `uux_to_uux`) are
+//! informational until their references are enforced.
 //!
 //! Run:
 //!   cargo test -p vibegraph-lib --features extended-validation \
@@ -55,22 +57,6 @@ const EXPECT_MATCH: &[&str] = &[
     "uux_to_ccx_emmm_qcd0",
     "bbx_to_ccx_emmm_qcd0",
 ];
-
-/// Overall color factor relating MadGraph's color-summed |M|² to vibegraph's
-/// color-stripped coherent diagram sum, for single-color-flow processes.
-/// MadGraph computes CF(1,1)·|JAMP|² with JAMP = ±(coherent sum); vibegraph
-/// omits color, so `color_factor * eval_m2_rust == MG`.
-///   colorless (leptons/EW bosons only)                    → 1
-///   one quark line (Nc): pp_to_ll_qcd0, ee_to_ttx         → 3
-///   two quark lines (Nc²): uux/bbx 2→6                    → 9
-/// This is a stand-in until multi-flow color is implemented in vibegraph.
-fn color_factor(name: &str) -> f64 {
-    match name {
-        "pp_to_ll_qcd0" | "ee_to_ttx" => 3.0,
-        "uux_to_ccx_emmm_qcd0" | "bbx_to_ccx_emmm_qcd0" => 9.0,
-        _ => 1.0,
-    }
-}
 
 /// One evaluated phase-space point: external momenta (incoming then outgoing)
 /// and MadGraph's reference Σ_hel Σ_color |M|².
@@ -247,7 +233,6 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
         .map_err(|e| Failed::from(format!("compile: {e}")))?;
     let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
 
-    let cf = color_factor(&name);
     let mut scratch = bound.scratch_space();
     let mut failures = 0usize;
     let mut max_rel_diff = 0.0f64;
@@ -262,8 +247,9 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
                 panicked = true;
                 failures += 1;
             }
-            Ok(raw) => {
-                let m2_rust = cf * raw;
+            Ok(m2_rust) => {
+                // `eval_m2` already applies the exact color-factor contraction (for
+                // NCOLOR=1, `CF(1,1)·Σ_hel|M|²`), so the comparison is direct.
                 let rel = (m2_rust - pt.m2_ref).abs() / pt.m2_ref.max(1e-30);
                 if rel > max_rel_diff {
                     max_rel_diff = rel;
@@ -303,9 +289,10 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
     }
 
     println!(
-        "  [{name}] {} points, color_factor={cf}, max_rel_diff={max_rel_diff:.2e} | \
+        "  [{name}] {} points, n_flows={}, max_rel_diff={max_rel_diff:.2e} | \
          vibegraph legs: {:?} > {:?}",
         points.len(),
+        evaluator.n_flows(),
         sets[0].particles_in,
         sets[0].particles_out
     );
