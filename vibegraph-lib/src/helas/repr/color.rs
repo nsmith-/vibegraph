@@ -46,14 +46,16 @@ pub enum ColorRep {
 
 impl ColorRep {
     /// Map a UFO `color` charge to a representation: `1 → Singlet`,
-    /// `3 → Triplet`, `-3 → AntiTriplet`, `8 → Octet`. Any other value
-    /// (e.g. a sextet `±6`) returns `None`.
+    /// `3 → Triplet`, `-3 → AntiTriplet`, `8 → Octet`. The self-conjugate reps
+    /// also accept their negated charge, which the antiparticle constructor
+    /// produces (`color: -self.color`): `-1 → Singlet`, `-8 → Octet`. Any other
+    /// value (e.g. a sextet `±6`) returns `None`.
     pub fn from_ufo(color: i32) -> Option<Self> {
         match color {
-            1 => Some(ColorRep::Singlet),
+            1 | -1 => Some(ColorRep::Singlet),
             3 => Some(ColorRep::Triplet),
             -3 => Some(ColorRep::AntiTriplet),
-            8 => Some(ColorRep::Octet),
+            8 | -8 => Some(ColorRep::Octet),
             _ => None,
         }
     }
@@ -66,6 +68,40 @@ impl ColorRep {
             ColorRep::AntiTriplet => ColorRep::Triplet,
             ColorRep::Octet => ColorRep::Octet,
         }
+    }
+}
+
+#[cfg(test)]
+mod color_rep_tests {
+    use super::ColorRep;
+
+    /// The antiparticle constructor negates the UFO `color` charge, so the
+    /// self-conjugate reps arrive as `-1` (singlet) and `-8` (octet) on internal
+    /// lines; both must resolve to the same rep as their positive charge.
+    #[test]
+    fn from_ufo_self_conjugate_negated() {
+        assert_eq!(ColorRep::from_ufo(-1), Some(ColorRep::Singlet));
+        assert_eq!(ColorRep::from_ufo(1), Some(ColorRep::Singlet));
+        assert_eq!(ColorRep::from_ufo(-8), Some(ColorRep::Octet));
+        assert_eq!(ColorRep::from_ufo(8), Some(ColorRep::Octet));
+    }
+
+    /// The triplet stays chiral: `3` and `-3` are distinct conjugate reps.
+    #[test]
+    fn from_ufo_triplet_is_chiral() {
+        assert_eq!(ColorRep::from_ufo(3), Some(ColorRep::Triplet));
+        assert_eq!(ColorRep::from_ufo(-3), Some(ColorRep::AntiTriplet));
+        assert_eq!(
+            ColorRep::from_ufo(3).map(ColorRep::anti),
+            ColorRep::from_ufo(-3)
+        );
+    }
+
+    /// Sextets (and any other charge) remain unsupported.
+    #[test]
+    fn from_ufo_sextet_unsupported() {
+        assert_eq!(ColorRep::from_ufo(6), None);
+        assert_eq!(ColorRep::from_ufo(-6), None);
     }
 }
 

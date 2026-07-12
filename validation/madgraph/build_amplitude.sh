@@ -32,6 +32,7 @@ GENERIC_PROCESSES=(
     ee_to_mumu_tata_qcd0
     uux_to_ccx_emmm_qcd0
     bbx_to_ccx_emmm_qcd0
+    uux_to_uux
 )
 
 # subprocess_dir NAME — the single SubProcesses/P1_* directory of a process.
