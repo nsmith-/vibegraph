@@ -127,14 +127,16 @@ build_amp_probe() {
 
 build_amp_probe
 
-# build_amp_dump_probe NAME: per-diagram amplitude probe for any process.
-# matrix1_orig.f (one HELAS call sequence per diagram, AMP(i) == diagram i) is
-# patched at build time with a COMMON/DBG_AMP/ block exposing AMP, then wrapped
-# by wrappers/amp_probe.f.in (f2py entry point; NGRAPHS substituted from the
-# process's matrix1_orig.f).  Consumed by validation/madgraph/compare_amps.py.
+# build_amp_dump_probe NAME: per-diagram amplitude + per-flow JAMP probe for any
+# process.  matrix1_orig.f (one HELAS call sequence per diagram, AMP(i) ==
+# diagram i, then JAMP(i,1) = Σ coeff·AMP per color flow) is patched at build
+# time with COMMON/DBG_AMP/ and COMMON/DBG_JAMP/ blocks exposing AMP and JAMP,
+# then wrapped by wrappers/amp_probe.f.in (f2py entry point; NGRAPHS and NCOLOR
+# substituted from the process's matrix1_orig.f).  Consumed by
+# validation/madgraph/compare_amps.py.
 build_amp_dump_probe() {
     local name="$1"
-    local pdir libdir ngraphs
+    local pdir libdir ngraphs ncolor
     if ! pdir="$(subprocess_dir "$name")"; then
         echo "SKIP amp_probe $name: no unique subprocess dir"
         return 0
@@ -147,24 +149,35 @@ build_amp_dump_probe() {
     fi
 
     ngraphs=$(grep -m1 -o 'NGRAPHS=[0-9]*' "$pdir/matrix1_orig.f" | cut -d= -f2)
-    echo "Building mg_amp_probe_${name} (per-diagram amplitude probe, NGRAPHS=$ngraphs)..."
+    ncolor=$(grep -m1 -o 'NCOLOR=[0-9]*' "$pdir/matrix1_orig.f" | cut -d= -f2)
+    echo "Building mg_amp_probe_${name} (per-diagram AMP + per-flow JAMP probe, NGRAPHS=$ngraphs NCOLOR=$ncolor)..."
 
     # Keep only MATRIX1 (drop SMATRIX1, whose MadEvent deps — DSIG, unwgt,
     # DiscreteSampler — the probe neither needs nor links), then inject the
-    # COMMON/DBG_AMP/ block that copies the per-diagram AMP() out.
+    # COMMON/DBG_AMP/ block copying the per-diagram AMP() and the
+    # COMMON/DBG_JAMP/ block copying the per-flow JAMP(:,1) out (NAMPSO=1 for
+    # every registered process, so the single split-order slot is the JAMP).
     sed -n '/FUNCTION MATRIX1(/,$p' "$pdir/matrix1_orig.f" | awk '
         /^      JAMP\(:,:\) = \(0D0,0D0\)$/ {
             print "      DO I = 1, NGRAPHS"
             print "        AMP_DBG(I) = AMP(I)"
             print "      ENDDO"
         }
+        /^      MATRIX1 = 0.D0$/ {
+            print "      DO I = 1, NCOLOR"
+            print "        JAMP_DBG(I) = JAMP(I,1)"
+            print "      ENDDO"
+        }
         { print }
         /^      COMPLEX\*16 AMP\(NGRAPHS\), JAMP\(NCOLOR,NAMPSO\)$/ {
             print "      COMPLEX*16 AMP_DBG(NGRAPHS)"
             print "      COMMON/DBG_AMP/AMP_DBG"
+            print "      COMPLEX*16 JAMP_DBG(NCOLOR)"
+            print "      COMMON/DBG_JAMP/JAMP_DBG"
         }
     ' > "$pdir/matrix1_ampdbg.f"
-    sed "s/@NGRAPHS@/$ngraphs/" "$WRAPPERS/amp_probe.f.in" > "$pdir/amp_probe_gen.f"
+    sed -e "s/@NGRAPHS@/$ngraphs/" -e "s/@NCOLOR@/$ncolor/" \
+        "$WRAPPERS/amp_probe.f.in" > "$pdir/amp_probe_gen.f"
 
     pushd "$pdir" > /dev/null
     python -m numpy.f2py \
@@ -179,7 +192,7 @@ build_amp_dump_probe() {
     echo "  -> $OUTDIR/mg_amp_probe_${name}*.so"
 }
 
-# Per-diagram oracles for processes under active convention debugging.
+# Per-diagram / per-flow oracles for processes under active convention debugging.
 AMP_PROBE_PROCESSES=(
     uux_to_ccx_emmm_qcd0
     ee_to_ee
@@ -187,6 +200,7 @@ AMP_PROBE_PROCESSES=(
     ee_to_zh
     ee_to_tatah
     bbx_to_ccx_emmm_qcd0
+    uux_to_uux
 )
 for name in "${AMP_PROBE_PROCESSES[@]}"; do
     build_amp_dump_probe "$name"
