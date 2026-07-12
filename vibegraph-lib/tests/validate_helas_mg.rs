@@ -61,6 +61,12 @@ const EXPECT_MATCH: &[&str] = &[
     // identical quarks, |M|² formed by the CF-weighted contraction over both
     // color flows. Agrees with MadGraph's MATRIX1 to max_rel_diff ~5.6e-14.
     "uux_to_uux",
+    // External octets feeding a quark line: the triple-gluon `f(1,2,3)` vertex
+    // (f → trace) mixed with pure T-chain diagrams (NCOLOR=2). Exercises the
+    // fundamental/antifundamental slot convention that keeps the imaginary
+    // f-derived contribution in sign with the rational T-chain terms; agrees
+    // with MadGraph's MATRIX1 to max_rel_diff ~1.9e-15.
+    "gg_to_ttx",
 ];
 
 /// One evaluated phase-space point: external momenta (incoming then outgoing)

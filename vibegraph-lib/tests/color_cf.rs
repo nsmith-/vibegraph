@@ -7,7 +7,7 @@ mod common;
 use num_rational::Ratio;
 
 use vibegraph::diagrams::Diagram;
-use vibegraph::helas::color::{colorize_process, ColorBasis};
+use vibegraph::helas::color::{colorize_process, ColorBasis, TensorKind};
 use vibegraph::ufo::UFOModel;
 
 fn r(n: i64, d: i64) -> Ratio<i64> {
@@ -94,6 +94,44 @@ fn gg_to_bbx_two_flows() {
         &colorize("g g > b b~"),
         &[&[r(16, 3), r(-2, 3)], &[r(-2, 3), r(16, 3)]],
     );
+}
+
+/// `g g > t t~`: the `f(1,2,3)` triple-gluon vertex feeding a quark line, mixing
+/// an `f`-derived (imaginary) color structure with pure T-chain (rational) ones.
+/// The two flows must come out in MadGraph's convention `T(1,2,3,4)` /
+/// `T(2,1,3,4)` — with the external fundamental index (`t`, leg 3) before the
+/// antifundamental (`t~`, leg 4). Reading the string off feyngraph's all-incoming
+/// crossing instead transposes each `T` to `T(1,2,4,3)` / `T(2,1,4,3)`; that
+/// transpose complex-conjugates the string, silently flipping the sign of the
+/// imaginary `f → trace` coefficient relative to the real T-chain terms and
+/// giving a wrong (color-summed) |M|². The CF matrix is transpose-invariant and
+/// cannot catch this, so it is pinned here at the basis-structure level.
+#[test]
+fn gg_to_ttx_flow_structures_untransposed() {
+    let cb = colorize("g g > t t~");
+    assert_eq!(cb.ncolor(), 2, "gg→tt~ must have NCOLOR = 2");
+    let structures: Vec<Vec<(TensorKind, Vec<i32>)>> =
+        cb.elements.iter().map(|e| e.structure.clone()).collect();
+    assert_eq!(
+        structures,
+        vec![
+            vec![(TensorKind::T, vec![1, 2, 3, 4])],
+            vec![(TensorKind::T, vec![2, 1, 3, 4])],
+        ],
+        "gg→tt~ flows must be MadGraph's (untransposed) T(1,2,3,4) / T(2,1,3,4)"
+    );
+
+    // Each flow carries one imaginary (f-derived, s-channel) contribution and one
+    // rational (T-chain) contribution; the f→trace sign is what the |M|² gate
+    // (validate_helas_mg) locks down bit-for-bit.
+    for el in &cb.elements {
+        assert_eq!(el.contributions.len(), 2, "each flow has two contributions");
+        assert_eq!(
+            el.contributions.iter().filter(|c| c.coeff.imag).count(),
+            1,
+            "exactly one f-derived (imaginary) contribution per flow"
+        );
+    }
 }
 
 // ── NCOLOR = 6: the 4-gluon multi-structure stress test ──────────────────────
