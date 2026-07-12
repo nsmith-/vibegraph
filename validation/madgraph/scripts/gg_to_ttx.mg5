@@ -1,0 +1,24 @@
+# MadGraph5 batch script: g g > t t~ at LO (QCD).
+#
+# Why this exact process:
+#   - External octets (gluons) feeding a quark line: the f(1,2,3) triple-gluon
+#     vertex resolves through the f → trace color rules, giving a genuine
+#     NCOLOR=2 amplitude (CF = [[16/3,-2/3],[-2/3,16/3]], same external color
+#     content as pp_to_bb_qcd2/P1_gg_bbx). Complements uux_to_uux (T·T Fierz)
+#     with the f → trace half of the SM color vocabulary.
+#   - Massive final state (top mass in the massive-fermion currents), so
+#     sqrt(s) must clear 2*MT ~ 346 GeV.
+#   - One concrete subprocess => the matrix element is matrix1 (no matrix9).
+#
+# MadEvent output (default): `launch` builds matrix1_optim.f for the timing
+# comparison and integrates the partonic cross section. lpp=0 => fixed-energy
+# partonic gluon beams, so the result is the partonic sigma-hat.
+generate g g > t t~
+output gg_to_ttx -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

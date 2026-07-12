@@ -33,6 +33,8 @@ GENERIC_PROCESSES=(
     uux_to_ccx_emmm_qcd0
     bbx_to_ccx_emmm_qcd0
     uux_to_uux
+    gg_to_ttx
+    gg_to_gg
 )
 
 # subprocess_dir NAME — the single SubProcesses/P1_* directory of a process.
@@ -201,6 +203,8 @@ AMP_PROBE_PROCESSES=(
     ee_to_tatah
     bbx_to_ccx_emmm_qcd0
     uux_to_uux
+    gg_to_ttx
+    gg_to_gg
 )
 for name in "${AMP_PROBE_PROCESSES[@]}"; do
     build_amp_dump_probe "$name"
