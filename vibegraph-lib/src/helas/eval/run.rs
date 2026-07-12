@@ -2503,15 +2503,21 @@ mod tests {
             None,
         ];
         let gamma_current = VertexInfo {
-            terms: vec![
-                VertexTerm::from_ufo(&model, ffv1_id, "1", gc3, Some(2), &mu_flows).unwrap(),
-            ],
+            terms: vec![VertexTerm::from_ufo(
+                &model,
+                ffv1_id,
+                &no_color(),
+                gc3,
+                Some(2),
+                &mu_flows,
+            )
+            .unwrap()],
         };
         let gamma_absorb = VertexInfo {
             terms: vec![VertexTerm::from_ufo(
                 &model,
                 ffv1_id,
-                "1",
+                &no_color(),
                 gc3,
                 Some(1),
                 &[lf(ep_flow), lf(ep_flow), None],
@@ -2531,7 +2537,7 @@ mod tests {
                 VertexTerm::from_ufo(
                     &model,
                     ffv2_id,
-                    "1",
+                    &no_color(),
                     gc50,
                     Some(1),
                     &[lf(ep_flow), lf(ep_flow), None],
@@ -2540,7 +2546,7 @@ mod tests {
                 VertexTerm::from_ufo(
                     &model,
                     ffv4_id,
-                    "1",
+                    &no_color(),
                     gc59,
                     Some(1),
                     &[lf(ep_flow), lf(ep_flow), None],
