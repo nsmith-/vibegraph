@@ -7,11 +7,14 @@
 //! fractions. Instead, the trait uses an associated type `GroupScalar` and
 //! concrete implementations return `num_rational::Ratio<i64>`.
 //!
-//! # TODO: Library choice
-//! Two crates are candidates for the scalar type:
-//! - `num-rational` (current choice): exact rational arithmetic over machine integers.
-//! - `rug` (via GMP/MPFR): arbitrary-precision integers/rationals. More powerful,
-//!   but a heavier dependency. Worth revisiting once the amplitude pipeline matures.
+//! ## Scalar library
+//!
+//! The scalar type is `num_rational::Ratio<i64>`: exact rational arithmetic
+//! over machine integers, with checked operations that panic on overflow (see
+//! the `color` algebra engine). The [`GroupScalar`] trait boundary insulates
+//! downstream code from that choice, so `Ratio<i128>` — or an arbitrary-
+//! precision crate — remains a drop-in escape hatch if the tree-level factors
+//! ever outgrow `i64`.
 //!
 //! ## SU(3) representations
 //!
@@ -23,6 +26,48 @@
 
 use super::{Real, C};
 use num_rational::Ratio;
+
+/// An SU(3) color representation, tagged by its UFO color charge.
+///
+/// This is the lightweight, runtime-value counterpart of the [`ColorRepr`]
+/// marker types: colorize and the `Identity` resolution key off it, and each
+/// marker type names its rep through [`ColorRepr::REP`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ColorRep {
+    /// The trivial **1** (leptons, photon, …).
+    Singlet,
+    /// The fundamental **3** (quarks).
+    Triplet,
+    /// The antifundamental **3̄** (antiquarks).
+    AntiTriplet,
+    /// The adjoint **8** (gluons).
+    Octet,
+}
+
+impl ColorRep {
+    /// Map a UFO `color` charge to a representation: `1 → Singlet`,
+    /// `3 → Triplet`, `-3 → AntiTriplet`, `8 → Octet`. Any other value
+    /// (e.g. a sextet `±6`) returns `None`.
+    pub fn from_ufo(color: i32) -> Option<Self> {
+        match color {
+            1 => Some(ColorRep::Singlet),
+            3 => Some(ColorRep::Triplet),
+            -3 => Some(ColorRep::AntiTriplet),
+            8 => Some(ColorRep::Octet),
+            _ => None,
+        }
+    }
+
+    /// The conjugate representation (`3 ↔ 3̄`; self-conjugate otherwise).
+    pub fn anti(self) -> Self {
+        match self {
+            ColorRep::Singlet => ColorRep::Singlet,
+            ColorRep::Triplet => ColorRep::AntiTriplet,
+            ColorRep::AntiTriplet => ColorRep::Triplet,
+            ColorRep::Octet => ColorRep::Octet,
+        }
+    }
+}
 
 /// Exact rational scalar for group-theoretic constants.
 ///
@@ -47,6 +92,10 @@ impl GroupScalar for i32 {}
 /// representation of G. They do not store numerical data; the data lives in
 /// the `Color` fiber.
 ///
+/// The numeric `Color` fiber (`[C<F>; DIM]`) is the typed vocabulary of
+/// hand-built wavefunction objects; the symbolic color pipeline (the `color`
+/// algebra engine) does not use it — the runtime carries no color vector.
+///
 /// ## Associated items
 /// - `Color` -- the complex vector space carrying the representation
 /// - `GroupScalar` -- exact rational type for group-theoretic constants
@@ -62,6 +111,9 @@ pub trait ColorRepr<F: Real>: Sized + Copy + 'static {
 
     /// Dimension of the representation.
     const DIM: usize;
+
+    /// The runtime-value tag for this representation.
+    const REP: ColorRep;
 
     /// Quadratic Casimir invariant C2(R).
     ///
@@ -94,6 +146,7 @@ impl<F: Real> ColorRepr<F> for SU3Fundamental {
     type Color = [C<F>; 3];
     type GroupScalar = Ratio<i64>;
     const DIM: usize = 3;
+    const REP: ColorRep = ColorRep::Triplet;
 
     fn casimir() -> Ratio<i64> {
         Ratio::new(4, 3)
@@ -118,19 +171,15 @@ impl<F: Real> ColorRepr<F> for SU3Fundamental {
 /// - `C2(A) = 3` (quadratic Casimir for the adjoint)
 /// - `T(A) = 3` (Dynkin index)
 ///
-/// The `f^{abc}` structure constants are stored as an `[[f64; 8]; 8]` constant
-/// array internally.
+/// ## Symbolic color, not numeric structure constants
 ///
-/// # RESEARCH: Symbolic evaluation of color traces
-///
-/// Before performing numerical 8x8 matrix multiplications with the `f^{abc}`
-/// structure constants, it may be possible to simplify color-factor expressions
-/// symbolically using a non-commutative algebra library. Reducing traces of
-/// products of generators to canonical form (via Fierz/Jacobi identities) first
-/// can drastically reduce the number of floating-point operations at evaluation
-/// time. Survey available Rust/Python non-commutative algebra tools and see
-/// whether color-flow decomposition (Mangano-Parke-Xu) can be used to avoid
-/// explicit `f^{abc}` contractions entirely.
+/// Color is factored out of the amplitude *symbolically*: the `color` algebra
+/// engine reduces every color structure to a basis of generalized traces/deltas
+/// with exact rational coefficients, and the constant color matrix is evaluated
+/// once per process. The floating-point runtime therefore never contracts
+/// `f^{abc}` numerically — there is no structure-constant table, and none is
+/// needed. (The Mangano–Parke–Xu leading-Nc flow decomposition is likewise not
+/// used here; it returns only for LHEF color tags, a separate feature.)
 #[derive(Clone, Copy, Debug)]
 pub struct SU3Adjoint;
 
@@ -138,6 +187,7 @@ impl<F: Real> ColorRepr<F> for SU3Adjoint {
     type Color = [C<F>; 8];
     type GroupScalar = Ratio<i64>;
     const DIM: usize = 8;
+    const REP: ColorRep = ColorRep::Octet;
 
     fn casimir() -> Ratio<i64> {
         Ratio::new(3, 1)
@@ -165,6 +215,7 @@ impl<F: Real> ColorRepr<F> for ColorSinglet {
     type Color = C<F>;
     type GroupScalar = Ratio<i64>;
     const DIM: usize = 1;
+    const REP: ColorRep = ColorRep::Singlet;
 
     fn casimir() -> Ratio<i64> {
         Ratio::new(0, 1)

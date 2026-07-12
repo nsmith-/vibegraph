@@ -9,6 +9,7 @@
 //!
 //!
 //!
+pub mod color;
 pub mod eval;
 pub mod repr;
 pub mod vertex;
