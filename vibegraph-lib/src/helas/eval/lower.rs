@@ -68,6 +68,11 @@ enum LeafKey {
     Coupling(CouplingId),
     Particle(ParticleId),
     Coeff(u64),
+    Rational {
+        num: i64,
+        den: i64,
+        imag: bool,
+    },
     Ext {
         leg_idx: usize,
         spin: i32,
@@ -82,6 +87,7 @@ fn leaf_key(leaf: &Sym) -> LeafKey {
         Sym::Coupling(id) => LeafKey::Coupling(id),
         Sym::Particle(id) => LeafKey::Particle(id),
         Sym::Coeff(c) => LeafKey::Coeff(c.to_bits()),
+        Sym::Rational { num, den, imag } => LeafKey::Rational { num, den, imag },
         Sym::Ext {
             leg_idx,
             spin,

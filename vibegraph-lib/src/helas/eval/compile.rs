@@ -209,8 +209,11 @@ mod tests {
     /// fermion line instead. `IdentityAmp` needs a UFO model with an `Identity` scalar
     /// bilinear; the SM has none (its Yukawas are `ProjM + ProjP`). Both kernels are
     /// pinned algebraically against MG-covered ops in `kernel::tests`; process-level
-    /// coverage remains a future item.
-    const KNOWN_UNCOVERED: [Op; 2] = [Op::MetricNegI, Op::IdentityAmp];
+    /// coverage remains a future item. `Flows` and `CoeffRat` are only emitted for
+    /// processes whose color basis has more than one flow (multi-flow color algebra);
+    /// every process in this suite has `NCOLOR = 1`, so lowering never roots a `Flows`
+    /// node or folds a `CoeffRat` leaf.
+    const KNOWN_UNCOVERED: [Op; 4] = [Op::Flows, Op::MetricNegI, Op::IdentityAmp, Op::CoeffRat];
 
     /// Every `Op` outside [`KNOWN_UNCOVERED`] appears in the compiled AST of at least
     /// one MG-validated process — the bit-for-bit `validate_helas_mg` net exercises the

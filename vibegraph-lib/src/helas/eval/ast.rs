@@ -191,6 +191,16 @@ fn parse_sym_leaf(op: Op, toks: &[String]) -> Result<Sym, ParseAstError> {
             let v: f64 = toks[0].parse().map_err(|_| bad(&toks[0]))?;
             Sym::Coeff(v)
         }
+        Op::CoeffRat => {
+            let num: i64 = toks[0].parse().map_err(|_| bad(&toks[0]))?;
+            let den: i64 = toks[1].parse().map_err(|_| bad(&toks[1]))?;
+            let imag: i32 = toks[2].parse().map_err(|_| bad(&toks[2]))?;
+            Sym::Rational {
+                num,
+                den,
+                imag: imag != 0,
+            }
+        }
         Op::External => {
             let leg_idx: usize = toks[0].parse().map_err(|_| bad(&toks[0]))?;
             let spin: i32 = toks[1].parse().map_err(|_| bad(&toks[1]))?;
@@ -349,6 +359,34 @@ mod tests {
     }
 
     #[test]
+    fn coeff_rat_real_leaf() {
+        let ast = leaf_ast(
+            Op::CoeffRat,
+            Sym::Rational {
+                num: 1,
+                den: 3,
+                imag: false,
+            },
+        );
+        assert_eq!(ast.to_string(), "(CoeffRat (Rational 1 3 0))");
+        check_roundtrip(&ast);
+    }
+
+    #[test]
+    fn coeff_rat_imaginary_leaf() {
+        let ast = leaf_ast(
+            Op::CoeffRat,
+            Sym::Rational {
+                num: -2,
+                den: 1,
+                imag: true,
+            },
+        );
+        assert_eq!(ast.to_string(), "(CoeffRat (Rational -2 1 1))");
+        check_roundtrip(&ast);
+    }
+
+    #[test]
     fn external_particle_incoming() {
         let ast = leaf_ast(
             Op::External,
@@ -478,6 +516,36 @@ mod tests {
         assert_eq!(
             ast.to_string(),
             "(Mul (Coupling (CouplingId 5)) (Coeff (Real 1.5)) (External (ExtLegInfo 0 2 1 1) (Mass (ParticleId 11))))"
+        );
+        check_roundtrip(&ast);
+    }
+
+    #[test]
+    fn flows_variadic_root() {
+        let mut b = AstBuilder::new();
+        let c0 = b.add(
+            Op::CoeffRat,
+            Sym::Rational {
+                num: 1,
+                den: 1,
+                imag: false,
+            },
+            vec![],
+        );
+        let c1 = b.add(
+            Op::CoeffRat,
+            Sym::Rational {
+                num: 1,
+                den: 3,
+                imag: false,
+            },
+            vec![],
+        );
+        let root = b.add(Op::Flows, Sym::None, vec![c0, c1]);
+        let ast = b.finish(root);
+        assert_eq!(
+            ast.to_string(),
+            "(Flows (CoeffRat (Rational 1 1 0)) (CoeffRat (Rational 1 3 0)))"
         );
         check_roundtrip(&ast);
     }
