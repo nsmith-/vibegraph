@@ -22,10 +22,12 @@
 //! used downstream to assemble the color basis and the color matrix.
 
 pub mod coeff;
+pub mod colorize;
 pub mod factor;
 pub mod tensor;
 
 pub use coeff::ColorCoeff;
+pub use colorize::{colorize_process, BasisElement, ColorBasis, Contribution};
 pub use factor::{CanonicalString, ColorFactor, ColorString, ImmutableString};
 pub use tensor::{ColorAlgebraError, ColorTensor, Idx, TensorKind};
 
