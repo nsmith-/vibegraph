@@ -188,20 +188,60 @@ fn convert_expr(
 /// for fresh vertex-internal summed indices (one below the most negative
 /// propagator index). External legs get their (positive) leg number; each
 /// propagator gets one shared negative summed index.
-fn slot_indices(diagram: &Diagram) -> (Vec<Vec<Idx>>, Idx) {
+///
+/// The **fundamental/antifundamental slot assignment** follows MadGraph's
+/// convention rather than feyngraph's ray order. MadGraph indexes a `T`'s
+/// fundamental slot `i` by the quark whose fermion-number arrow points *out* of
+/// the vertex and the antifundamental slot `j` by the arrow pointing *in*.
+/// feyngraph instead presents every leg in the all-incoming crossing, which
+/// orders each directed line by its crossed rep — the exact opposite arrow — so
+/// its `3`/`3̄` slots come out uniformly transposed from MadGraph's. That
+/// transpose complex-conjugates the whole color string: invisible for the
+/// purely-rational T-chain contributions, but it flips the sign of the
+/// imaginary `f → trace` coefficients and so corrupts the relative sign between
+/// `f`-derived and T-chain color structures (e.g. `g g > t t~`). Undoing it is a
+/// uniform swap of the single `3` and `3̄` slots at every vertex that has one of
+/// each; octet (gluon) and singlet slots keep feyngraph's order untouched, so
+/// pure-gluon vertices (`g g > g g`) are unaffected.
+fn slot_indices(model: &UFOModel, diagram: &Diagram) -> (Vec<Vec<Idx>>, Idx) {
     // One summed index per propagator, deterministic in PropIdx order.
     let prop_index = |p: PropIdx| -(p.0 as Idx + 1);
     let slots = diagram
         .vertices
         .iter()
-        .map(|v| {
-            v.rays
+        .enumerate()
+        .map(|(vi, v)| {
+            let mut positions: Vec<Idx> = v
+                .rays
                 .iter()
                 .map(|ray| match ray {
                     Ray::Leg(li) => li.0 as Idx + 1,
                     Ray::Prop { prop, .. } => prop_index(*prop),
                 })
-                .collect()
+                .collect();
+
+            // The single 3 and 3̄ slots, if this vertex has exactly one of each.
+            let reps: Vec<Option<ColorRep>> = (0..v.rays.len())
+                .map(|s| slot_rep(model, diagram, VtxIdx(vi), s).ok())
+                .collect();
+            let one_slot = |target: ColorRep| -> Option<usize> {
+                let mut found = None;
+                for (s, r) in reps.iter().enumerate() {
+                    if *r == Some(target) {
+                        if found.is_some() {
+                            return None; // ambiguous (>1) — leave feyngraph order
+                        }
+                        found = Some(s);
+                    }
+                }
+                found
+            };
+            if let (Some(fund), Some(anti)) =
+                (one_slot(ColorRep::Triplet), one_slot(ColorRep::AntiTriplet))
+            {
+                positions.swap(fund, anti);
+            }
+            positions
         })
         .collect();
     let internal_base = -(diagram.props.len() as Idx + 1);
@@ -235,7 +275,7 @@ fn colorize_diagram(
 ) -> Result<Vec<(Vec<u8>, ColorString)>, ColorAlgebraError> {
     check_propagator_reps(model, diagram)?;
 
-    let (slots, internal_base) = slot_indices(diagram);
+    let (slots, internal_base) = slot_indices(model, diagram);
     let used: Vec<Vec<usize>> = diagram
         .vertices
         .iter()
