@@ -75,6 +75,21 @@ impl ColorString {
         }
     }
 
+    /// Reconstruct a unit-coefficient string from an immutable representation
+    /// (the inverse of [`ColorString::to_immutable`]). A lone `ColorOne` entry
+    /// yields an empty tensor product.
+    pub fn from_immutable(rep: &ImmutableString) -> ColorString {
+        let tensors = rep
+            .iter()
+            .filter(|(kind, _)| *kind != TensorKind::One)
+            .map(|(kind, idxs)| ColorTensor::from_immutable(*kind, idxs))
+            .collect();
+        ColorString {
+            coeff: ColorCoeff::one(),
+            tensors,
+        }
+    }
+
     /// The immutable (basis-key) form: `(kind, indices)` pairs, sorted. An
     /// empty product folds to a single `ColorOne` entry.
     pub fn to_immutable(&self) -> ImmutableString {
@@ -119,10 +134,17 @@ impl ColorString {
         self.to_canonical().0
     }
 
-    /// Whether two strings may be added: same canonical structure, same `i`
-    /// flag, same `Nc` power (the rational magnitudes need not match).
+    /// Whether two strings may be added: identical concrete tensor structure
+    /// (same [`to_immutable`](ColorString::to_immutable) form), same `i` flag,
+    /// same `Nc` power (the rational magnitudes need not match).
+    ///
+    /// The comparison is over the concrete indices, not the index-relabelled
+    /// canonical form: `Tr(1,2,3,4)` and `Tr(1,2,4,3)` share a canonical form
+    /// but are distinct color structures and must not be merged. This mirrors
+    /// MadGraph's `is_similar`, whose `to_canonical()` comparison includes the
+    /// index-replacement dict and so is likewise concrete.
     pub fn is_similar(&self, other: &ColorString) -> bool {
-        self.coeff.can_add(&other.coeff) && self.canonical() == other.canonical()
+        self.coeff.can_add(&other.coeff) && self.to_immutable() == other.to_immutable()
     }
 
     /// Full equality used for the fixpoint test: similar *and* equal rational

@@ -90,6 +90,33 @@ impl ColorTensor {
         }
     }
 
+    /// Reconstruct a tensor from its immutable `(kind, indices)` pair (the
+    /// inverse of [`ColorTensor::kind`] + [`ColorTensor::indices`]). For a `T`
+    /// the last two indices are the fundamental/antifundamental pair and the
+    /// rest are the adjoint chain.
+    ///
+    /// # Panics
+    /// If `indices` is too short for `kind` (`T` needs ≥ 2, `F`/`D` need 3).
+    pub fn from_immutable(kind: TensorKind, indices: &[Idx]) -> ColorTensor {
+        match kind {
+            TensorKind::One => ColorTensor::One,
+            TensorKind::T => {
+                let n = indices.len();
+                assert!(n >= 2, "T tensor needs at least two indices");
+                ColorTensor::T(indices[..n - 2].to_vec(), indices[n - 2], indices[n - 1])
+            }
+            TensorKind::Tr => ColorTensor::Tr(indices.to_vec()),
+            TensorKind::F => {
+                assert!(indices.len() == 3, "f tensor needs exactly three indices");
+                ColorTensor::F(indices[0], indices[1], indices[2])
+            }
+            TensorKind::D => {
+                assert!(indices.len() == 3, "d tensor needs exactly three indices");
+                ColorTensor::D(indices[0], indices[1], indices[2])
+            }
+        }
+    }
+
     /// Complex conjugate of a single tensor.
     ///
     /// `T(a,b,c,i,j)* = T(c,b,a,j,i)` (reverse the adjoint chain, swap the two
