@@ -5,8 +5,9 @@
 //! `validation/madgraph/output/`. `eval_m2` returns the full color-summed |M|²
 //! (the CF matrix is computed by the color factorization, not hard-coded), so the
 //! single-color-flow `EXPECT_MATCH` processes are compared bit-for-bit against
-//! MadGraph's MATRIX1. Genuinely multi-flow processes (e.g. `uux_to_uux`) are
-//! informational until their references are enforced.
+//! MadGraph's MATRIX1, and the multi-flow `uux_to_uux` (NCOLOR=2) is enforced at
+//! `REL_TOL` via the CF-weighted contraction. Any process not in `EXPECT_MATCH`
+//! is informational until its reference is enforced.
 //!
 //! Run:
 //!   cargo test -p vibegraph-lib --features extended-validation \
@@ -56,6 +57,10 @@ const EXPECT_MATCH: &[&str] = &[
     "ee_to_mumu_tata_qcd0",
     "uux_to_ccx_emmm_qcd0",
     "bbx_to_ccx_emmm_qcd0",
+    // First multi-flow (NCOLOR=2) enforced process: s⊕t gluon exchange with
+    // identical quarks, |M|² formed by the CF-weighted contraction over both
+    // color flows. Agrees with MadGraph's MATRIX1 to max_rel_diff ~5.6e-14.
+    "uux_to_uux",
 ];
 
 /// One evaluated phase-space point: external momenta (incoming then outgoing)

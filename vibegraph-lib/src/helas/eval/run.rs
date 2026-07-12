@@ -1827,7 +1827,12 @@ mod tests {
     /// count is small, else one flip per propagator-signature class — reporting any
     /// assignment that collapses the residual (instant diagnosis for sign bugs).
     ///
-    /// Run: VG_PROBE_NAME=ee_to_ee VG_PROBE_CF=1 cargo test -p vibegraph-lib --release \
+    /// For a multi-flow process (NCOLOR > 1) it additionally binds the whole
+    /// evaluator and dumps the per-flow JAMPs `J_f` (the [`Op::Flows`] root
+    /// children, one column per helicity) to `output/vibegraph_jamps_<NAME>.txt`,
+    /// matched flow-by-flow against MadGraph's `JAMP()` by `compare_amps.py`.
+    ///
+    /// Run: VG_PROBE_NAME=ee_to_ee cargo test -p vibegraph-lib --features extended-validation \
     ///        --lib helas::eval::run::tests::probe_process_diagrams -- --ignored --nocapture
     #[test]
     #[ignore]
@@ -1836,10 +1841,6 @@ mod tests {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 
         let name = std::env::var("VG_PROBE_NAME").expect("set VG_PROBE_NAME=<process name>");
-        let cf: f64 = std::env::var("VG_PROBE_CF")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(1.0);
 
         let model = sm_model(SMRestrict::Default);
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -1972,7 +1973,59 @@ mod tests {
             println!("wrote {}", out.display());
         }
 
-        // |M|² with a per-diagram sign assignment (subset S of diagrams flipped).
+        // Per-flow JAMP dump (multi-flow processes only): bind the whole
+        // evaluator and read the Op::Flows root's children `J_f` per helicity,
+        // matched flow-by-flow against MadGraph's JAMP() by compare_amps.py.
+        // The flow order is the color basis's sorted-key order (matching MG's
+        // JAMP order), so a permutation/phase surfacing here is a real finding.
+        let n_flows = evaluator.n_flows();
+        if n_flows > 1 {
+            let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
+            let mut js_scratch = bound.scratch_space();
+            let mut jamps: Vec<Vec<C<f64>>> = vec![Vec::with_capacity(combos.len()); n_flows];
+            for hel in combos {
+                let per_flow = bound.run_flows(&p, hel, &mut js_scratch);
+                assert_eq!(
+                    per_flow.len(),
+                    n_flows,
+                    "run_flows returned wrong flow count"
+                );
+                for (f, jf) in per_flow.into_iter().enumerate() {
+                    jamps[f].push(jf);
+                }
+            }
+            use std::fmt::Write as _;
+            let mut s = String::from("#hel");
+            for hel in combos {
+                let cs: Vec<String> = hel.iter().map(|h| h.to_string()).collect();
+                let _ = write!(s, "\t{}", cs.join(","));
+            }
+            s.push('\n');
+            for (f, jrow) in jamps.iter().enumerate() {
+                let _ = write!(s, "{f}\tflow{f}");
+                for j in jrow {
+                    let _ = write!(s, "\t{}\t{}", j.re, j.im);
+                }
+                s.push('\n');
+            }
+            let out = out_dir.join(format!("vibegraph_jamps_{name}.txt"));
+            std::fs::write(&out, s).unwrap();
+            println!("wrote {} ({n_flows} flows)", out.display());
+        }
+
+        // The color-summed |M|² MadGraph reports. For a single flow this is the
+        // scalar diagonal factor CF(1,1) times the coherent diagram sum; for
+        // several flows it is the full CF-weighted contraction (eval_m2), which
+        // the JAMP dump above lets one debug flow-by-flow.
+        let cf = {
+            let r = evaluator.cf_matrix()[0];
+            *r.numer() as f64 / *r.denom() as f64
+        };
+
+        // |M|² with a per-diagram sign assignment (subset S of diagrams flipped);
+        // the single-flow diagnostic — for one color flow, |M|² = CF(1,1)·Σ_hel
+        // |Σ_d amp_d|², so a relative sign error between diagrams shows up as a
+        // subset flip that collapses the residual.
         let m2_flipped = |flip: &dyn Fn(usize) -> bool| -> f64 {
             let mut m2 = 0.0;
             for h in 0..combos.len() {
@@ -1985,14 +2038,27 @@ mod tests {
             cf * m2
         };
 
-        let base = m2_flipped(&|_| false);
+        let base = if n_flows == 1 {
+            m2_flipped(&|_| false)
+        } else {
+            let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
+            let mut sc = bound.scratch_space();
+            bound.eval_m2(&p, &mut sc)
+        };
         println!("MG ref |M|²      = {m2_ref:.10e}");
         println!(
-            "vibegraph ×CF={cf} = {base:.10e}   rel_diff = {:.3e}",
+            "vibegraph |M|²   = {base:.10e}   rel_diff = {:.3e}   (n_flows={n_flows}, CF(1,1)={cf})",
             (base - m2_ref).abs() / m2_ref
         );
 
-        if n <= 16 {
+        // The coherent-sum sign-flip search assumes a single color flow (a scalar
+        // CF); with several flows the CF-weighted JAMP dump is the diagnostic.
+        if n_flows > 1 {
+            println!(
+                "multi-flow process: per-flow JAMP dump is the diagnostic \
+                 (compare_amps.py {name}); skipping single-flow sign-flip search"
+            );
+        } else if n <= 16 {
             // Exhaustive subset flips (diagram 0 held fixed: global sign is irrelevant).
             let mut hits: Vec<(u32, f64)> = (0u32..(1 << (n - 1)))
                 .map(|mask| {
