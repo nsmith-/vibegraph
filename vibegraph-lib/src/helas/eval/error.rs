@@ -55,4 +55,7 @@ pub enum EvalError {
     /// Diagram rooting failed.
     #[error(transparent)]
     Compile(#[from] CompileError),
+    /// Colorizing the subprocess (color basis + CF matrix) failed.
+    #[error(transparent)]
+    Color(#[from] crate::helas::color::ColorAlgebraError),
 }

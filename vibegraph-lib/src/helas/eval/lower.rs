@@ -29,10 +29,14 @@ use super::op::{NodeId, Op, Sym};
 use super::root_diagram::{DiagramEval, DiagramEvalTree, EvalNode, EvalNodeId};
 use super::root_lorentz::{LorentzEvalNode, LorentzEvalTree};
 use super::tree::Tree;
+use crate::helas::color::ColorBasis;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
 
-/// Inline every diagram into a single whole-amplitude [`Ast<Sym>`].
+/// Inline every diagram into a single color-free whole-amplitude [`Ast<Sym>`]
+/// (`Σ_d sym·fermi·amp_d`). Retained for tests that build the amplitude without the
+/// color factorization; the production path is [`lower_flows`].
+#[cfg(test)]
 pub fn lower(diagrams: &[DiagramEval]) -> Ast<Sym> {
     let mut b = AstBuilder::new();
     let mut diagram_roots = Vec::with_capacity(diagrams.len());
@@ -44,6 +48,77 @@ pub fn lower(diagrams: &[DiagramEval]) -> Ast<Sym> {
         diagram_roots.push(b.add(Op::Mul, Sym::None, vec![coeff, amp]));
     }
     let root = sum_or_single(&mut b, diagram_roots);
+    b.finish(root)
+}
+
+/// The number of colors SU(3) color factors are evaluated at (matching
+/// [`crate::helas::color::colorize_process`]).
+const NC: i64 = 3;
+
+/// Inline a color-factorized subprocess into a single whole-amplitude [`Ast<Sym>`]
+/// with one JAMP per color flow under a variadic [`Op::Flows`] root.
+///
+/// For each color-basis element ("flow") `f`, the JAMP is
+/// `Σ_{(d, chain) ∈ f}  colorcoeff · (sym·fermi) · amp_{d,chain}`, where the
+/// amplitude subtree `amp_{d,chain}` is the lowered rooted tree of diagram `d`
+/// built against color-index `chain` (looked up in `evals`). A `(d, chain)` pair
+/// appearing in several flows shares one subtree.
+///
+/// `colorcoeff` is the exact per-contribution color coefficient with `Nc` already
+/// evaluated (an [`Op::CoeffRat`] leaf). A unit real coefficient (`+1`) is omitted,
+/// so a single-flow (`NCOLOR = 1`) process lowers to exactly `Σ_d (sym·fermi)·amp_d`
+/// — bit-identical to a color-free lowering — and its single JAMP becomes the root
+/// with no `Flows` wrapper (the constant color factor is applied after the helicity
+/// sum at runtime instead).
+pub fn lower_flows(basis: &ColorBasis, evals: &HashMap<(usize, Vec<u8>), DiagramEval>) -> Ast<Sym> {
+    let mut b = AstBuilder::new();
+    // One lowered amplitude subtree per (diagram, chain), shared across the flows it
+    // contributes to.
+    let mut amp_cache: HashMap<(usize, Vec<u8>), NodeId> = HashMap::new();
+    let mut jamps = Vec::with_capacity(basis.elements.len());
+    for elem in &basis.elements {
+        let mut terms = Vec::with_capacity(elem.contributions.len());
+        for contrib in &elem.contributions {
+            let key = (contrib.diagram, contrib.chain.clone());
+            let eval = &evals[&key];
+            let amp = match amp_cache.get(&key) {
+                Some(&n) => n,
+                None => {
+                    let n = lower_diagram_node(&eval.tree, eval.tree.root(), &mut b);
+                    amp_cache.insert(key.clone(), n);
+                    n
+                }
+            };
+            let factor = eval.symmetry_factor * (eval.fermi_sign as f64);
+            let sf = b.add(Op::Coeff, Sym::Coeff(factor), vec![]);
+            // The exact color coefficient with `Nc` evaluated. A unit real coefficient
+            // (`num == den`, not imaginary) is dropped so the single-flow path reduces
+            // to today's color-free lowering.
+            let r = contrib.coeff.eval_nc(NC);
+            let (num, den) = (*r.numer(), *r.denom());
+            let mut factors = Vec::with_capacity(3);
+            if contrib.coeff.imag || num != den {
+                factors.push(b.add(
+                    Op::CoeffRat,
+                    Sym::Rational {
+                        num,
+                        den,
+                        imag: contrib.coeff.imag,
+                    },
+                    vec![],
+                ));
+            }
+            factors.push(sf);
+            factors.push(amp);
+            terms.push(reduce_balanced(&mut b, Op::Mul, factors));
+        }
+        jamps.push(sum_or_single(&mut b, terms));
+    }
+    let root = if jamps.len() == 1 {
+        jamps[0]
+    } else {
+        b.add(Op::Flows, Sym::None, jamps)
+    };
     b.finish(root)
 }
 

@@ -11,9 +11,12 @@
 //! [`BoundAmplitude::bind`](super::run::BoundAmplitude::bind), which produces the
 //! runtime [`BoundAmplitude`](super::run::BoundAmplitude).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+
+use num_rational::Ratio;
 
 use crate::diagrams::DiagramSet;
+use crate::helas::color::colorize_process;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
 use crate::ufo::UFOModel;
@@ -21,7 +24,7 @@ use crate::ufo::UFOModel;
 use super::error::EvalError;
 use super::fold::Folded;
 use super::lower;
-use super::root_diagram::compile_diagram_ast;
+use super::root_diagram::{compile_single_diagram, DiagramEval};
 
 /// Compiled amplitude evaluator for a whole process (card- and `F`-independent).
 ///
@@ -44,6 +47,12 @@ pub struct AmplitudeEvaluator {
     ext_particle_ids: Vec<ParticleId>,
     /// All valid helicity combinations (precomputed)
     helicities: Vec<Vec<i32>>,
+    /// Number of color flows (NCOLOR): the JAMP count. `1` for color-free and
+    /// single-color-structure processes.
+    n_flows: usize,
+    /// Exact color-factor matrix `CF_{ij}` (row-major, `cf_matrix[i*n_flows + j]`),
+    /// evaluated at `Nc = 3`. `BoundAmplitude::bind` resolves it to the scalar field.
+    cf_matrix: Vec<Ratio<i64>>,
 }
 
 impl AmplitudeEvaluator {
@@ -65,15 +74,35 @@ impl AmplitudeEvaluator {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let diagrams = compile_diagram_ast(set, model)?;
+        // Pass C: factorize color into a basis of flows + the exact CF matrix. Each
+        // contribution names an amplitude by `(diagram, color-index chain)`.
+        let basis = colorize_process(model, &set.diagrams)?;
+
+        // Root each distinct `(diagram, chain)` amplitude the flows reference. A chain
+        // selects one color structure per vertex; for single-structure vertices this
+        // is the all-zero chain and matches the color-free rooting exactly.
+        let mut evals: HashMap<(usize, Vec<u8>), DiagramEval> = HashMap::new();
+        for elem in &basis.elements {
+            for contrib in &elem.contributions {
+                let key = (contrib.diagram, contrib.chain.clone());
+                if let std::collections::hash_map::Entry::Vacant(slot) = evals.entry(key) {
+                    let eval = compile_single_diagram(
+                        &set.diagrams[contrib.diagram],
+                        model,
+                        &contrib.chain,
+                    )?;
+                    slot.insert(eval);
+                }
+            }
+        }
         let n_ext = ext_particle_ids.len();
 
         // Compile phase should preserve process external-leg count consistency.
-        if let Some(ast) = diagrams.first() {
-            if ast.n_ext != n_ext {
+        if let Some(eval) = evals.values().next() {
+            if eval.n_ext != n_ext {
                 return Err(EvalError::TopologyError(format!(
                     "process has {n_ext}, AST has {}",
-                    ast.n_ext
+                    eval.n_ext
                 )));
             }
         }
@@ -87,10 +116,11 @@ impl AmplitudeEvaluator {
             .collect::<Result<Vec<_>, _>>()?;
         let helicities = cartesian_helicity_product(&helicity_states);
 
-        // Pass 3: inline every diagram into one whole-amplitude AST (structure pass is
-        // a no-op for now), then intern the constants into the folded skeleton.
-        let n_diagrams = diagrams.len();
-        let symbolic = lower::optimize(lower::lower(&diagrams));
+        // Pass 3: inline the color-factorized diagrams into one whole-amplitude AST
+        // (one JAMP per flow under a `Flows` root, or a single scalar root when
+        // `NCOLOR = 1`), then intern the constants into the folded skeleton.
+        let n_diagrams = set.diagrams.len();
+        let symbolic = lower::optimize(lower::lower_flows(&basis, &evals));
         let folded = Folded::build(&symbolic);
 
         Ok(Self {
@@ -100,6 +130,8 @@ impl AmplitudeEvaluator {
             n_diagrams,
             ext_particle_ids,
             helicities,
+            n_flows: basis.ncolor(),
+            cf_matrix: basis.cf_matrix,
         })
     }
 
@@ -131,6 +163,17 @@ impl AmplitudeEvaluator {
     /// Return the valid helicity combinations.
     pub fn helicities(&self) -> &[Vec<i32>] {
         &self.helicities
+    }
+
+    /// Return the number of color flows (NCOLOR).
+    pub fn n_flows(&self) -> usize {
+        self.n_flows
+    }
+
+    /// Return the exact color-factor matrix `CF_{ij}` (row-major,
+    /// `cf_matrix[i*n_flows + j]`, evaluated at `Nc = 3`).
+    pub fn cf_matrix(&self) -> &[Ratio<i64>] {
+        &self.cf_matrix
     }
 
     /// Return all coupling and particle ids needed to evaluate the amplitude.
