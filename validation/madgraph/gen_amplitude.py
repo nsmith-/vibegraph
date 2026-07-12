@@ -176,6 +176,15 @@ PROCESSES = [
         seed=37,
         profile_npoints=500,
     ),
+    Process(
+        "uux_to_uux",
+        "u u~ > u u~",
+        (2, -2),
+        (2, -2),
+        sqrt_s_list=(50.0, 200.0, 500.0),
+        npoints=25,
+        seed=41,
+    ),
 ]
 
 

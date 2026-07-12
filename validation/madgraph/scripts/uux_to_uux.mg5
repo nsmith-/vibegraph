@@ -1,0 +1,23 @@
+# MadGraph5 batch script: u u~ > u u~ at LO (all orders => QCD gluon exchange).
+#
+# Why this exact process:
+#   - Identical-flavor quark lines: s- and t-channel gluon exchange gives a
+#     genuine two-color-flow amplitude (NCOLOR=2), the smallest real test of the
+#     multi-flow CF matrix. The colorize + CF pipeline predicts CF = [[9,3],[3,9]]
+#     (u u~ > u u~ external color content), the first NCOLOR=2 reference that is
+#     generated fresh (rather than borrowed from the pp_to_bb outputs).
+#   - One concrete subprocess => the matrix element is matrix1 (no matrix9).
+#
+# MadEvent output (default), so `launch` builds the helicity-recycled
+# matrix1_optim.f for the timing comparison and integrates the partonic cross
+# section. lpp=0 => fixed-energy partonic beams (u, u~), so the result is the
+# partonic sigma-hat.
+generate u u~ > u u~
+output uux_to_uux -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done
