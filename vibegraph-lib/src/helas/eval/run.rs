@@ -229,6 +229,16 @@ pub(super) fn apply<'a, F: Real + 'a>(
             };
             WaveformSlot::Real(env.consts_f[i as usize])
         }
+        // Folds to `Const::Real` when its rational carries no factor of `i`, else
+        // `Const::Complex` (see `fold::Folded::build`).
+        Op::CoeffRat => match node.leaf {
+            Const::Real(i) => WaveformSlot::Real(env.consts_f[i as usize]),
+            Const::Complex(i) => WaveformSlot::Scalar(ScalarWf {
+                value: env.consts_c[i as usize],
+                momentum: LorentzVector::zero(),
+            }),
+            _ => panic!("CoeffRat node without a resolved pool index"),
+        },
         Op::External => {
             let Const::Ext(i) = node.leaf else {
                 panic!("External node without a leg-table index");
@@ -277,6 +287,10 @@ pub(super) fn apply<'a, F: Real + 'a>(
         // n-ary (all vertex inputs): the one variadic kernel takes the operands as
         // an iterator of references.
         Op::PMomOut => kernel::pmom_out((0..n_kids).map(kid)),
+        // The per-color-flow JAMP list is only ever the amplitude root, and only for
+        // multi-flow color processes: a CF-weighted `eval_m2` (not this per-node,
+        // single-scalar `apply`) is what consumes its children's slots directly.
+        Op::Flows => panic!("Op::Flows has no single-scalar node evaluation"),
     }
 }
 

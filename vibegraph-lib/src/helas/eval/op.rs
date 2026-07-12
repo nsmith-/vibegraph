@@ -56,6 +56,10 @@ pub enum Op {
     /// Sum (Lorentz-term, vertex-term, and diagram sums). Lowering emits arity 2
     /// (balanced binary trees); the evaluator itself accepts any arity.
     Add,
+    /// Variadic root over per-color-flow JAMPs `(Flows jamp_0 jamp_1 … jamp_{n-1})`,
+    /// one child per color-basis element. Modeled on [`Op::PMomOut`]: no leaf, any
+    /// number of children.
+    Flows,
     // ── Lorentz primitives (semantics mirror the old `LorentzEvalNode`) ──
     /// 2 fermions → off-shell vector current.
     GammaVout,
@@ -116,6 +120,10 @@ pub enum Op {
     Width,
     /// real Lorentz-structure coefficient (leaf → `consts_f`).
     Coeff,
+    /// exact color coefficient (leaf → `consts_f` when real, `consts_c` when it
+    /// carries a factor of `i`; the `Nc` power is already evaluated to a rational
+    /// by the time this leaf is built).
+    CoeffRat,
 }
 
 impl Op {
@@ -135,7 +143,7 @@ impl Op {
     pub fn has_leaf_token(self) -> bool {
         matches!(
             self,
-            Op::External | Op::Coupling | Op::Mass | Op::Width | Op::Coeff
+            Op::External | Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat
         )
     }
 }
@@ -162,6 +170,9 @@ pub enum Sym {
     Particle(ParticleId),
     /// `Op::Coeff` payload.
     Coeff(f64),
+    /// `Op::CoeffRat` payload: an exact color coefficient `± i^{imag}·num/den`
+    /// (`Nc` already evaluated into the rational by the caller).
+    Rational { num: i64, den: i64, imag: bool },
     /// `Op::External` payload.
     Ext {
         leg_idx: usize,
@@ -208,6 +219,9 @@ impl fmt::Display for Sym {
             Sym::Coupling(id) => write!(f, "(CouplingId {id})"),
             Sym::Particle(id) => write!(f, "(ParticleId {id})"),
             Sym::Coeff(c) => write!(f, "(Real {c:?})"),
+            Sym::Rational { num, den, imag } => {
+                write!(f, "(Rational {num} {den} {})", *imag as i32)
+            }
             Sym::Ext {
                 leg_idx,
                 spin,

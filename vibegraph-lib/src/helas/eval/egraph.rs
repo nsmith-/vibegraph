@@ -4,10 +4,12 @@
 //! The lowered, binary-arity [`Ast<Sym>`] (see [`super::lower`]) maps onto an egglog
 //! `datatype`: one constructor per [`Op`], its constructor name the same head token
 //! the s-expression I/O uses ([`Op::name`]). Leaf payloads become leading base-sort
-//! fields (`Coupling`/`Mass`/`Width` → `i64`, `Coeff` → `f64`, `External` → the
+//! fields (`Coupling`/`Mass`/`Width` → `i64`, `Coeff` → `f64`, `CoeffRat` → three
+//! leading `i64` fields `num den imag`, `External` → the
 //! `leg spin sign incoming` quadruple); arena children become `Node` arguments. Every
-//! op has fixed arity except [`Op::PMomOut`] (a vertex's whole input list), which takes
-//! a `(Vec Node)` and so is declared as a separate `constructor` after the vector sort.
+//! op has fixed arity except [`Op::PMomOut`] (a vertex's whole input list) and
+//! [`Op::Flows`] (the per-color-flow JAMP list), which take a `(Vec Node)` and so are
+//! declared as separate `constructor`s after the vector sort.
 //!
 //! [`roundtrip`] declares the schema, then encodes the whole AST as a single `let`
 //! binding whose value is the root constructor call with every child nested inline,
@@ -38,7 +40,8 @@ use crate::ufo::particles::ParticleId;
 
 /// The egglog schema for [`Ast<Sym>`]: the `Node` datatype (one constructor per
 /// fixed-arity [`Op`], names matching [`Op::name`]), the `(Vec Node)` sort backing
-/// [`Op::PMomOut`], and `PMomOut` itself as a variable-arity constructor over it.
+/// [`Op::PMomOut`]/[`Op::Flows`], and those two ops as variable-arity constructors
+/// over it.
 const NODE_SCHEMA: &str = "\
 (datatype Node
   (External i64 i64 i64 i64 Node)
@@ -64,9 +67,11 @@ const NODE_SCHEMA: &str = "\
   (Coupling i64)
   (Mass i64)
   (Width i64)
-  (Coeff f64))
+  (Coeff f64)
+  (CoeffRat i64 i64 i64))
 (sort NodeVec (Vec Node))
 (constructor PMomOut (NodeVec) Node)
+(constructor Flows (NodeVec) Node)
 ";
 
 /// A failure encoding, running, or decoding the egglog round-trip.
@@ -143,6 +148,11 @@ fn encode_expr(ast: &Ast<Sym>, id: NodeId) -> Expr {
         (Op::Coupling, Sym::Coupling(c)) => args.push(int(c.index() as i64)),
         (Op::Mass | Op::Width, Sym::Particle(p)) => args.push(int(p.index() as i64)),
         (Op::Coeff, Sym::Coeff(c)) => args.push(float(*c)),
+        (Op::CoeffRat, Sym::Rational { num, den, imag }) => {
+            args.push(int(*num));
+            args.push(int(*den));
+            args.push(int(*imag as i64));
+        }
         (
             Op::External,
             Sym::Ext {
@@ -159,8 +169,8 @@ fn encode_expr(ast: &Ast<Sym>, id: NodeId) -> Expr {
         }
         _ => {}
     }
-    if node.op == Op::PMomOut {
-        // The one variable-arity op: children go inside a Vec argument.
+    if node.op == Op::PMomOut || node.op == Op::Flows {
+        // The variable-arity ops: children go inside a Vec argument.
         let elems: Vec<Expr> = kids.iter().map(|&k| encode_expr(ast, k)).collect();
         args.push(if elems.is_empty() {
             call("vec-empty", vec![])
@@ -233,6 +243,14 @@ fn decode(
             vec![],
         ),
         Op::Coeff => (Sym::Coeff(float_arg(dag, kids, 0)?), vec![]),
+        Op::CoeffRat => {
+            let leaf = Sym::Rational {
+                num: int_arg(dag, kids, 0)?,
+                den: int_arg(dag, kids, 1)?,
+                imag: int_arg(dag, kids, 2)? != 0,
+            };
+            (leaf, vec![])
+        }
         Op::External => {
             let leaf = Sym::Ext {
                 leg_idx: int_arg(dag, kids, 0)? as usize,
@@ -246,6 +264,12 @@ fn decode(
             let vec_id = *kids
                 .first()
                 .ok_or_else(|| decode_err(format_args!("PMomOut without its Vec argument")))?;
+            (Sym::None, vec_elements(dag, vec_id)?)
+        }
+        Op::Flows => {
+            let vec_id = *kids
+                .first()
+                .ok_or_else(|| decode_err(format_args!("Flows without its Vec argument")))?;
             (Sym::None, vec_elements(dag, vec_id)?)
         }
         _ => (Sym::None, kids.to_vec()),
@@ -316,6 +340,24 @@ mod tests {
         assert_roundtrip("(Mass (ParticleId 11))");
         assert_roundtrip("(Width (ParticleId 23))");
         assert_roundtrip("(Coeff (Real 1.5))");
+        assert_roundtrip("(CoeffRat (Rational 1 3 0))");
+    }
+
+    #[test]
+    fn coeff_rat_real_and_imaginary_and_negative() {
+        assert_roundtrip("(CoeffRat (Rational 1 1 0))");
+        assert_roundtrip("(CoeffRat (Rational -1 3 0))");
+        assert_roundtrip("(CoeffRat (Rational 2 9 1))");
+        assert_roundtrip("(CoeffRat (Rational -2 9 1))");
+    }
+
+    #[test]
+    fn flows_variadic_arg() {
+        assert_roundtrip(
+            "(Flows (CoeffRat (Rational 1 1 0)) \
+                     (CoeffRat (Rational 1 3 0)) \
+                     (CoeffRat (Rational -1 3 1)))",
+        );
     }
 
     #[test]
