@@ -59,6 +59,21 @@ For paper references, submodule locations and key paths, and instructions for fe
 - **Comment guidelines**: Avoid narrative comments; add notes only for non-obvious constraints or physics assumptions. Document what the code *does now*, not what it used to do or what was tried before — git history records that, and "the old X" / "no longer Y" framing is just distraction. Comments must be self-contained: never reference `TODO.md`, planning docs, sprint/task names, or plan "stages"/"sessions" (e.g. "Stage A", "the convention-refactor session"). Those artifacts are temporary and invisible to a future reader of the code, so such comments read as vacuous. Describe the code's behavior and rationale in its own terms; if a follow-up is genuinely worth flagging, describe the work itself, not the plan item that tracks it.
 - **Four-momentum layout**: `[E, px, py, pz]` (energy first, spatial components follow)
 
+### Physics Validation
+
+- **Every oracle has a blind spot** — |M|² is blind to global phases; Gram-type
+  matrices (e.g. the color CF matrix) are blind to uniform index transposes;
+  per-diagram amplitude ratios differ by benign phase conventions. Validate new
+  physics features at the finest linear level available (per-diagram, per-flow
+  complex values), and for each test know what error class it provably cannot detect.
+- **Convention claims are hypotheses**: any assertion that a sign/index/phase
+  convention is "automatic" or "comes for free" must be pinned by a test that would
+  fail if it were false — gates that cannot see the convention passing is not
+  confirmation.
+- **Keep a known-wrong informational comparison running** while a feature is under
+  construction (enforce it later): it turns "the feature went live" into an instant
+  end-to-end signal against the reference.
+
 ## Build & Test
 
 ```bash
