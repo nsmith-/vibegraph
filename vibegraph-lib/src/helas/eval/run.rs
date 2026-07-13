@@ -2830,12 +2830,13 @@ mod tests {
     }
 
     /// Every process of the MG-validated suite evaluates end-to-end in the default
-    /// suite (no MG reference data): each helicity amplitude is finite and the
-    /// helicity-summed |M|² is finite and positive. Catches compile-pipeline and
-    /// evaluator panics/NaNs on the full op mix, including the 2→6 processes;
-    /// value-level validation is `validate_helas_mg`. RAMBO kinematics are massless
-    /// (unphysical for the massive-external processes) — irrelevant for a
-    /// finiteness check.
+    /// suite (no MG reference data): each helicity amplitude is finite (per-flow
+    /// JAMPs for multi-flow processes, since those root on `Op::Flows` rather than a
+    /// scalar) and the helicity-summed |M|² is finite and positive. Catches
+    /// compile-pipeline and evaluator panics/NaNs on the full op mix, including the
+    /// 2→6 processes; value-level validation is `validate_helas_mg`. RAMBO kinematics
+    /// are massless (unphysical for the massive-external processes) — irrelevant for
+    /// a finiteness check.
     #[test]
     fn mg_suite_forward_eval_is_finite() {
         use rand::rngs::StdRng;
@@ -2864,11 +2865,24 @@ mod tests {
                 ];
                 p.extend(rambo_massless(sqrt_s, eval.n_ext() - 2, &mut rng));
                 for hel in eval.helicities() {
-                    let a = amp.eval_amplitude(&p, hel, &mut scratch);
-                    assert!(
-                        a.re.is_finite() && a.im.is_finite(),
-                        "[{process}] non-finite amplitude at hel {hel:?}: {a:?}"
-                    );
+                    if eval.n_flows() == 1 {
+                        let a = amp.eval_amplitude(&p, hel, &mut scratch);
+                        assert!(
+                            a.re.is_finite() && a.im.is_finite(),
+                            "[{process}] non-finite amplitude at hel {hel:?}: {a:?}"
+                        );
+                    } else {
+                        // `eval_amplitude` requires a scalar amplitude root; a
+                        // multi-flow process roots on `Op::Flows` instead, so check
+                        // each per-flow JAMP directly.
+                        let jamps = amp.run_flows(&p, hel, &mut scratch);
+                        for (i, j) in jamps.iter().enumerate() {
+                            assert!(
+                                j.re.is_finite() && j.im.is_finite(),
+                                "[{process}] non-finite JAMP[{i}] at hel {hel:?}: {j:?}"
+                            );
+                        }
+                    }
                 }
                 let m2 = amp.eval_m2(&p, &mut scratch);
                 assert!(m2.is_finite() && m2 > 0.0, "[{process}] bad |M|²: {m2:?}");

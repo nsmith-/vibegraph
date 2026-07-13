@@ -187,10 +187,13 @@ impl AmplitudeEvaluator {
     }
 }
 
-/// The `validate_helas_mg` process suite (bit-for-bit MG-validated). Keep in sync
-/// with the `PROCESSES` registry in `validation/madgraph/gen_amplitude.py`.
+/// The `validate_helas_mg` process suite (`EXPECT_MATCH` in
+/// `tests/validate_helas_mg.rs`: bit-for-bit for the 11 `NCOLOR=1` processes,
+/// `REL_TOL`-enforced via the CF-weighted multi-flow contraction for
+/// `uux_to_uux` and `gg_to_ttx`). Keep in sync with the `PROCESSES` registry in
+/// `validation/madgraph/gen_amplitude.py`.
 #[cfg(test)]
-pub(super) const MG_VALIDATED_PROCESSES: [&str; 11] = [
+pub(super) const MG_VALIDATED_PROCESSES: [&str; 13] = [
     "e+ e- > mu+ mu-",
     "u u~ > mu+ mu-",
     "e+ e- > e+ e-",
@@ -202,6 +205,8 @@ pub(super) const MG_VALIDATED_PROCESSES: [&str; 11] = [
     "e+ e- > mu+ mu- ta+ ta- QCD=0",
     "u u~ > c c~ e+ e- mu+ mu- QCD=0",
     "b b~ > c c~ e+ e- mu+ mu- QCD=0",
+    "u u~ > u u~",
+    "g g > t t~",
 ];
 
 fn helicity_states_for_spin(spin_code: i32, massless: bool) -> Result<Vec<i32>, EvalError> {
@@ -254,9 +259,8 @@ mod tests {
     /// pinned algebraically against MG-covered ops in `kernel::tests`; process-level
     /// coverage remains a future item. `Flows` and `CoeffRat` are only emitted for
     /// processes whose color basis has more than one flow (multi-flow color algebra);
-    /// every process in this suite has `NCOLOR = 1`, so lowering never roots a `Flows`
-    /// node or folds a `CoeffRat` leaf.
-    const KNOWN_UNCOVERED: [Op; 4] = [Op::Flows, Op::MetricNegI, Op::IdentityAmp, Op::CoeffRat];
+    /// `uux_to_uux` (`NCOLOR=2`) and `gg_to_ttx` (`NCOLOR=2`) now bit-validate both.
+    const KNOWN_UNCOVERED: [Op; 2] = [Op::MetricNegI, Op::IdentityAmp];
 
     /// Every `Op` outside [`KNOWN_UNCOVERED`] appears in the compiled AST of at least
     /// one MG-validated process — the bit-for-bit `validate_helas_mg` net exercises the
