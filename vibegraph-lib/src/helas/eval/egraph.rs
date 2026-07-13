@@ -26,7 +26,7 @@
 //! into (see `research/notes/14-egglog-notes.md`); the rules will turn this identity
 //! pass into an optimizing one.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use egglog::ast::{Command, Expr, GenericAction, Literal, RustSpan, Span};
 use egglog::{CommandOutput, EGraph, SerializeConfig, Term, TermDag, TermId};
@@ -498,6 +498,417 @@ fn decode_err(args: std::fmt::Arguments) -> EgraphError {
     EgraphError::Decode(args.to_string())
 }
 
+// ───────────────────────── DAG-cost extraction ──────────────────────────────
+
+/// A per-e-node cost assignment, keyed on the node's e-class sort and head op. The
+/// extractor is generic over this so a slot-traffic model and a uniform (or any
+/// future) model plug into the same greedy machinery; the tree- vs DAG-cost choice
+/// is orthogonal (see [`CostKind`]).
+pub trait CostModel {
+    /// Cost charged for selecting `op` in an e-class of the given `sort`.
+    fn node_cost(&self, sort: Option<&str>, op: &str) -> f64;
+}
+
+/// Cost ≈ the bytes of the runtime output slot each op materializes (the "slot
+/// traffic" the evaluator moves per node): off-shell fermion/vector currents are the
+/// hot 96 B majority, scalar bilinears/contractions 16 B, constant leaves and
+/// primitive base-sort values carry no runtime slot, and the variadic containers
+/// (`NodeVec`) pass their cost straight through to their elements.
+///
+/// The algebraic combinators `Mul`/`Add` (and the `Flows` root) have an
+/// operand-dependent output type a per-op map cannot resolve; they predominantly
+/// scale or sum currents in these amplitudes, so they are charged at the current
+/// slot. A future static output-type analysis would refine the scalar-valued cases;
+/// the model is a swappable parameter precisely so that refinement is a drop-in.
+pub struct SlotTrafficCost;
+
+impl CostModel for SlotTrafficCost {
+    fn node_cost(&self, sort: Option<&str>, op: &str) -> f64 {
+        match sort {
+            Some("Node") => op_slot_bytes(op),
+            // NodeVec containers pass through; primitive leaves are free.
+            _ => 0.0,
+        }
+    }
+}
+
+/// The slot-traffic weight of a `Node`-sort constructor, by head op.
+fn op_slot_bytes(op: &str) -> f64 {
+    match Op::from_name(op) {
+        Some(op) => match op {
+            Op::External
+            | Op::Propagate
+            | Op::GammaVout
+            | Op::GammaIout
+            | Op::GammaOout
+            | Op::ProjM
+            | Op::ProjP
+            | Op::MetricVout
+            | Op::LowerVout
+            | Op::FfvVout
+            | Op::FfvIout
+            | Op::FfvOout
+            | Op::PMom
+            | Op::PMomOut => 96.0,
+            Op::Metric | Op::ProjMAmp | Op::ProjPAmp | Op::IdentityAmp => 16.0,
+            Op::Mul | Op::Add | Op::Flows => 96.0,
+            Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat => 0.0,
+        },
+        None => 0.0,
+    }
+}
+
+/// Uniform unit cost (every constructor and container weighs 1, primitives 0) — the
+/// simplest model, handy as an M3 baseline for comparing a rewrite's node-count
+/// effect independent of slot weights.
+pub struct UnitCost;
+
+impl CostModel for UnitCost {
+    fn node_cost(&self, sort: Option<&str>, _op: &str) -> f64 {
+        match sort {
+            Some("Node") | Some("NodeVec") => 1.0,
+            _ => 0.0,
+        }
+    }
+}
+
+/// Whether a candidate's cost counts each shared descendant e-class once
+/// (sharing-aware, [`CostKind::Dag`]) or once per occurrence (tree-shaped,
+/// [`CostKind::Tree`], reproducing egglog's own `TreeAdditiveCostModel`). Both run
+/// the same greedy fixpoint over the same [`CostModel`], so a sharing rule's payoff
+/// is visible to `Dag` and invisible to `Tree` — the comparison the sharing-rule
+/// demos need, with no separate plumbing.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CostKind {
+    /// Cost of the *set* of chosen descendant e-classes (shared classes once).
+    Dag,
+    /// Cost summed over the chosen tree (shared classes per occurrence).
+    Tree,
+}
+
+/// The result of extracting a single e-node from every reachable e-class: the chosen
+/// node index per e-class, and the cost of the root's extraction under the model.
+#[derive(Debug, Clone)]
+pub struct Extraction {
+    /// Chosen e-node index within each costed e-class.
+    choices: HashMap<ClassId, usize>,
+    /// Cost of the first root's extraction under the model and [`CostKind`] used.
+    pub root_cost: f64,
+    /// Which cost interpretation produced this extraction.
+    pub kind: CostKind,
+}
+
+impl Extraction {
+    /// The e-node chosen for `cid`, if that class was reached and costed.
+    pub fn choice(&self, cid: &str) -> Option<usize> {
+        self.choices.get(cid).copied()
+    }
+
+    /// Number of distinct `Node`-sort e-classes reachable from the roots through the
+    /// chosen e-nodes — the size of the extracted DAG in AST nodes (`NodeVec`
+    /// containers and primitive leaves are not AST nodes, so they are not counted).
+    /// On the rule-free graph this equals the input AST's distinct-subterm count.
+    pub fn reachable_node_count(&self, dag: &DagEGraph) -> usize {
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut stack: Vec<&str> = dag.roots.iter().map(|s| s.as_str()).collect();
+        let mut count = 0;
+        while let Some(cid) = stack.pop() {
+            if !seen.insert(cid) {
+                continue;
+            }
+            let Some(class) = dag.class(cid) else {
+                continue;
+            };
+            if class.sort.as_deref() == Some("Node") {
+                count += 1;
+            }
+            if let Some(&idx) = self.choices.get(cid) {
+                for child in &class.nodes[idx].children {
+                    stack.push(child.as_str());
+                }
+            }
+        }
+        count
+    }
+}
+
+/// One class's best extraction so far: the chosen e-node, its total cost, and (for
+/// [`CostKind::Dag`]) the set of descendant e-classes it draws in, each mapped to the
+/// op cost of the node chosen for it. The set is what makes the cost sharing-aware —
+/// a class reachable by two paths appears once, counted once.
+struct CostSet {
+    total: f64,
+    choice: usize,
+    /// Descendant e-classes in this extraction → their per-node op cost. Empty for
+    /// [`CostKind::Tree`], which needs no dedup.
+    set: HashMap<ClassId, f64>,
+}
+
+/// Greedy DAG-cost extraction over a [`DagEGraph`], after the extraction-gym
+/// `faster-greedy-dag` algorithm: iterate a worklist of e-classes to a fixpoint,
+/// each class taking the min-cost node whose children are all already costed, and
+/// re-examining a class's parents whenever its cost improves. A candidate node's DAG
+/// cost is its own op cost plus the cost of the *union* of its children's chosen
+/// descendant sets (shared classes counted once).
+///
+/// **Cycle guard.** A node is only ever costed once every child e-class already has a
+/// finite cost, so a class whose only nodes are (transitively) self-referential never
+/// enters `costs` and is reported as having no finite extraction. As a second guard,
+/// a candidate whose unioned descendant set already contains its own class is
+/// rejected (it would be an extraction that includes itself). Rule-free graphs here
+/// are acyclic, but rewrite rules make them cyclic, and this extractor is the point.
+pub fn extract(
+    dag: &DagEGraph,
+    model: &dyn CostModel,
+    kind: CostKind,
+) -> Result<Extraction, EgraphError> {
+    // For each e-class, the classes that reference it as a child — the wake-up list
+    // when its cost improves.
+    let mut parents: HashMap<&str, Vec<&str>> = HashMap::new();
+    for class in &dag.classes {
+        for node in &class.nodes {
+            for child in &node.children {
+                parents.entry(child).or_default().push(&class.id);
+            }
+        }
+    }
+
+    let mut costs: HashMap<ClassId, CostSet> = HashMap::new();
+    let mut queue: VecDeque<&str> = VecDeque::new();
+    let mut queued: HashSet<&str> = HashSet::new();
+    // Seed with classes that have at least one childless node (the base cases:
+    // primitive leaves and any nullary constructor).
+    for class in &dag.classes {
+        if class.nodes.iter().any(|n| n.children.is_empty()) && queued.insert(&class.id) {
+            queue.push_back(&class.id);
+        }
+    }
+
+    while let Some(cid) = queue.pop_front() {
+        queued.remove(cid);
+        let class = dag.class(cid).expect("queued id resolves");
+        let sort = class.sort.as_deref();
+        let mut best: Option<CostSet> = None;
+        for (idx, node) in class.nodes.iter().enumerate() {
+            if !node.children.iter().all(|c| costs.contains_key(c.as_str())) {
+                continue;
+            }
+            let node_cost = model.node_cost(sort, &node.op);
+            let candidate = match kind {
+                CostKind::Dag => {
+                    let mut set: HashMap<ClassId, f64> = HashMap::new();
+                    for c in &node.children {
+                        for (k, v) in &costs[c.as_str()].set {
+                            set.entry(k.clone()).or_insert(*v);
+                        }
+                    }
+                    // Self-inclusion would make this a cyclic extraction.
+                    if set.contains_key(cid) {
+                        continue;
+                    }
+                    set.insert(cid.to_string(), node_cost);
+                    let total: f64 = set.values().sum();
+                    CostSet {
+                        total,
+                        choice: idx,
+                        set,
+                    }
+                }
+                CostKind::Tree => {
+                    let total = node_cost
+                        + node
+                            .children
+                            .iter()
+                            .map(|c| costs[c.as_str()].total)
+                            .sum::<f64>();
+                    CostSet {
+                        total,
+                        choice: idx,
+                        set: HashMap::new(),
+                    }
+                }
+            };
+            if best.as_ref().is_none_or(|b| candidate.total < b.total) {
+                best = Some(candidate);
+            }
+        }
+
+        if let Some(cand) = best {
+            let improved = costs.get(cid).is_none_or(|old| cand.total < old.total);
+            if improved {
+                costs.insert(cid.to_string(), cand);
+                if let Some(ps) = parents.get(cid) {
+                    for &p in ps {
+                        if queued.insert(p) {
+                            queue.push_back(p);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for r in &dag.roots {
+        if !costs.contains_key(r) {
+            return Err(EgraphError::Decode(format!(
+                "root e-class {r} has no finite extraction (cyclic or unreachable)"
+            )));
+        }
+    }
+    let root_cost = dag
+        .roots
+        .first()
+        .and_then(|r| costs.get(r))
+        .map(|c| c.total)
+        .unwrap_or(0.0);
+    let choices = costs.into_iter().map(|(k, v)| (k, v.choice)).collect();
+    Ok(Extraction {
+        choices,
+        root_cost,
+        kind,
+    })
+}
+
+/// Decode an [`Extraction`] back into an `Ast<Sym>` by walking the chosen e-node of
+/// each e-class from the root, memoized on [`ClassId`] so shared e-classes become
+/// shared arena nodes — the same DAG-preserving decode as [`decode`], sourced from
+/// the extractor's selection instead of a [`TermDag`]. On the rule-free graph the
+/// result is byte-identical to the enumerated AST.
+pub fn decode_extraction(dag: &DagEGraph, ex: &Extraction) -> Result<Ast<Sym>, EgraphError> {
+    let root = dag.roots.first().ok_or(EgraphError::NoExtract)?;
+    let mut b = AstBuilder::new();
+    let mut memo: HashMap<ClassId, NodeId> = HashMap::new();
+    let nid = decode_class(dag, ex, root, &mut b, &mut memo)?;
+    Ok(b.finish(nid))
+}
+
+/// The chosen e-node of e-class `cid`.
+fn chosen<'a>(dag: &'a DagEGraph, ex: &Extraction, cid: &str) -> Result<&'a ENode, EgraphError> {
+    let class = dag
+        .class(cid)
+        .ok_or_else(|| decode_err(format_args!("e-class {cid} does not resolve")))?;
+    let idx = ex
+        .choices
+        .get(cid)
+        .ok_or_else(|| decode_err(format_args!("e-class {cid} was not extracted")))?;
+    class
+        .nodes
+        .get(*idx)
+        .ok_or_else(|| decode_err(format_args!("chosen node {idx} out of range in {cid}")))
+}
+
+/// The `i64` leaf value of a primitive child e-class.
+fn prim_int(dag: &DagEGraph, ex: &Extraction, cid: &str) -> Result<i64, EgraphError> {
+    match &chosen(dag, ex, cid)?.payload {
+        Payload::Int(v) => Ok(*v),
+        other => Err(decode_err(format_args!(
+            "expected an i64 leaf in {cid}, found {other:?}"
+        ))),
+    }
+}
+
+/// The `f64` leaf value of a primitive child e-class.
+fn prim_float(dag: &DagEGraph, ex: &Extraction, cid: &str) -> Result<f64, EgraphError> {
+    match &chosen(dag, ex, cid)?.payload {
+        Payload::Float(v) => Ok(*v),
+        other => Err(decode_err(format_args!(
+            "expected an f64 leaf in {cid}, found {other:?}"
+        ))),
+    }
+}
+
+/// The child e-class at argument position `i`.
+fn child_at<'a>(kids: &'a [ClassId], i: usize, op: &str) -> Result<&'a str, EgraphError> {
+    kids.get(i)
+        .map(|s| s.as_str())
+        .ok_or_else(|| decode_err(format_args!("{op} missing child argument {i}")))
+}
+
+/// The element e-classes of a `NodeVec` container class (`vec-of` / `vec-empty`).
+fn vec_element_classes(
+    dag: &DagEGraph,
+    ex: &Extraction,
+    cid: &str,
+) -> Result<Vec<ClassId>, EgraphError> {
+    let node = chosen(dag, ex, cid)?;
+    match node.op.as_str() {
+        "vec-of" => Ok(node.children.clone()),
+        "vec-empty" => Ok(vec![]),
+        other => Err(decode_err(format_args!(
+            "expected a NodeVec container, found `{other}` in {cid}"
+        ))),
+    }
+}
+
+/// Rebuild the `Ast<Sym>` node for e-class `cid` from its chosen e-node, recursing
+/// into the chosen child e-classes. Memoized on [`ClassId`] so a shared e-class
+/// yields one arena node. Mirrors the argument split of [`decode`], reading leaf
+/// primitives from child base-sort classes rather than `TermDag` literals.
+fn decode_class(
+    dag: &DagEGraph,
+    ex: &Extraction,
+    cid: &str,
+    b: &mut AstBuilder<Sym>,
+    memo: &mut HashMap<ClassId, NodeId>,
+) -> Result<NodeId, EgraphError> {
+    if let Some(&n) = memo.get(cid) {
+        return Ok(n);
+    }
+    let node = chosen(dag, ex, cid)?;
+    let name = node.op.as_str();
+    let op = Op::from_name(name).ok_or_else(|| decode_err(format_args!("unknown op `{name}`")))?;
+    let kids = &node.children;
+
+    let (leaf, child_classes): (Sym, Vec<ClassId>) = match op {
+        Op::Coupling => (
+            Sym::Coupling(CouplingId::from(
+                prim_int(dag, ex, child_at(kids, 0, name)?)? as usize,
+            )),
+            vec![],
+        ),
+        Op::Mass | Op::Width => (
+            Sym::Particle(ParticleId::from(
+                prim_int(dag, ex, child_at(kids, 0, name)?)? as usize,
+            )),
+            vec![],
+        ),
+        Op::Coeff => (
+            Sym::Coeff(prim_float(dag, ex, child_at(kids, 0, name)?)?),
+            vec![],
+        ),
+        Op::CoeffRat => {
+            let leaf = Sym::Rational {
+                num: prim_int(dag, ex, child_at(kids, 0, name)?)?,
+                den: prim_int(dag, ex, child_at(kids, 1, name)?)?,
+                imag: prim_int(dag, ex, child_at(kids, 2, name)?)? != 0,
+            };
+            (leaf, vec![])
+        }
+        Op::External => {
+            let leaf = Sym::Ext {
+                leg_idx: prim_int(dag, ex, child_at(kids, 0, name)?)? as usize,
+                spin: prim_int(dag, ex, child_at(kids, 1, name)?)? as i32,
+                charge: charge_from_sign(prim_int(dag, ex, child_at(kids, 2, name)?)? as i32),
+                incoming: prim_int(dag, ex, child_at(kids, 3, name)?)? != 0,
+            };
+            (leaf, kids.get(4..).unwrap_or_default().to_vec())
+        }
+        Op::PMomOut | Op::Flows => (
+            Sym::None,
+            vec_element_classes(dag, ex, child_at(kids, 0, name)?)?,
+        ),
+        _ => (Sym::None, kids.clone()),
+    };
+
+    let children = child_classes
+        .iter()
+        .map(|c| decode_class(dag, ex, c, b, memo))
+        .collect::<Result<Vec<_>, _>>()?;
+    let nid = b.add(op, leaf, children);
+    memo.insert(cid.to_string(), nid);
+    Ok(nid)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -682,8 +1093,6 @@ mod tests {
     }
 
     // ─────────────────────────── enumeration ───────────────────────────────
-
-    use std::collections::HashSet;
 
     /// Number of structurally-distinct subterms of `ast`: the count egglog's
     /// hash-consing collapses the arena to, computed here independently by
@@ -898,6 +1307,191 @@ mod tests {
                 assert_enumeration_consistent(&ast, process);
             }
         }
+    }
+
+    // ─────────────────────────── extraction ────────────────────────────────
+
+    /// Extract `ast` with the DAG-cost greedy extractor under the slot-traffic model,
+    /// then assert the decoded result reproduces the input exactly: byte-identical
+    /// s-expression and one extracted `Node` per distinct input subterm. On the
+    /// rule-free e-graph every class holds one node, so extraction is forced and this
+    /// is the identity — the M2 acceptance criterion.
+    fn assert_extraction_identity(ast: &Ast<Sym>, ctx: &str) {
+        let dag = enumerate(ast).unwrap_or_else(|e| panic!("[{ctx}] enumerate failed: {e}"));
+        let ex = extract(&dag, &SlotTrafficCost, CostKind::Dag)
+            .unwrap_or_else(|e| panic!("[{ctx}] extract failed: {e}"));
+        let out =
+            decode_extraction(&dag, &ex).unwrap_or_else(|e| panic!("[{ctx}] decode failed: {e}"));
+        assert_eq!(
+            out.to_string(),
+            ast.to_string(),
+            "[{ctx}] extracted AST is not byte-identical to the input",
+        );
+        assert_eq!(
+            ex.reachable_node_count(&dag),
+            distinct_ast_subterms(ast),
+            "[{ctx}] extracted Node count != distinct input subterm count",
+        );
+        // Rule-free extraction has one node per class, so DAG and tree extraction pick
+        // the same nodes and decode identically (they differ only on shared costs).
+        let ex_tree = extract(&dag, &SlotTrafficCost, CostKind::Tree)
+            .unwrap_or_else(|e| panic!("[{ctx}] tree extract failed: {e}"));
+        let out_tree = decode_extraction(&dag, &ex_tree)
+            .unwrap_or_else(|e| panic!("[{ctx}] tree decode failed: {e}"));
+        assert_eq!(
+            out_tree.to_string(),
+            ast.to_string(),
+            "[{ctx}] tree-cost extraction changed the AST",
+        );
+    }
+
+    fn assert_extraction_identity_str(sexpr: &str) {
+        let ast: Ast<Sym> = sexpr.parse().expect("parse input s-expr");
+        assert_extraction_identity(&ast, sexpr);
+    }
+
+    /// The fixtures the round-trip/enumeration tests use, now through the extractor:
+    /// leaves, a nested vertex, a variadic `PMomOut`, a fused `Ffv*`/propagator.
+    #[test]
+    fn extract_identity_fixtures() {
+        assert_extraction_identity_str("(Coupling (CouplingId 5))");
+        assert_extraction_identity_str("(Mass (ParticleId 11))");
+        assert_extraction_identity_str("(Coeff (Real 1.5))");
+        assert_extraction_identity_str("(CoeffRat (Rational -2 9 1))");
+        assert_extraction_identity_str("(External (ExtLegInfo 0 2 1 1) (Mass (ParticleId 11)))");
+        assert_extraction_identity_str(
+            "(Mul (Coupling (CouplingId 5)) (Add \
+               (Mul (Coeff (Real 1.5)) \
+                    (GammaVout (External (ExtLegInfo 0 2 1 1) (Mass (ParticleId 11))) \
+                               (External (ExtLegInfo 1 2 -1 0) (Mass (ParticleId 11))))) \
+               (Mul (Coeff (Real -1.0)) \
+                    (ProjM (External (ExtLegInfo 2 2 1 1) (Mass (ParticleId 0)))))))",
+        );
+        assert_extraction_identity_str(
+            "(Propagate \
+               (FfvVout (External (ExtLegInfo 0 2 1 1) (Mass (ParticleId 11))) \
+                        (External (ExtLegInfo 1 2 -1 0) (Mass (ParticleId 11))) \
+                        (Coupling (CouplingId 3)) (Coupling (CouplingId 4))) \
+               (Mass (ParticleId 23)) (Width (ParticleId 23)))",
+        );
+        assert_extraction_identity_str(
+            "(PMomOut (External (ExtLegInfo 0 2 1 1) (Mass (ParticleId 24))) \
+                      (External (ExtLegInfo 1 2 -1 0) (Mass (ParticleId 24))) \
+                      (External (ExtLegInfo 2 3 1 1) (Mass (ParticleId 23))))",
+        );
+    }
+
+    /// A shared subtree exercises the DAG-vs-tree cost distinction directly: the
+    /// External current feeds both `Add` operands, so the tree cost double-counts it
+    /// while the DAG cost counts it once. Both extractions still decode to the same
+    /// (shared) AST — this is the seam M3's sharing-rule demo measures across.
+    #[test]
+    fn extract_dag_vs_tree_shared_subtree() {
+        let mut b = AstBuilder::new();
+        let mass = b.add(Op::Mass, Sym::Particle(ParticleId::from(11usize)), vec![]);
+        let ext = b.add(
+            Op::External,
+            Sym::Ext {
+                leg_idx: 0,
+                spin: 2,
+                charge: crate::helas::repr::numbers::Charge::Particle,
+                incoming: true,
+            },
+            vec![mass],
+        );
+        let root = b.add(Op::Add, Sym::None, vec![ext, ext]);
+        let ast = b.finish(root);
+
+        assert_extraction_identity(&ast, "shared-subtree");
+
+        let dag = enumerate(&ast).unwrap();
+        let dag_ex = extract(&dag, &SlotTrafficCost, CostKind::Dag).unwrap();
+        let tree_ex = extract(&dag, &SlotTrafficCost, CostKind::Tree).unwrap();
+        // Add(96) + External(96, shared once) + Mass(0) = 192 as a DAG.
+        assert_eq!(dag_ex.root_cost, 192.0);
+        // Tree double-counts the shared External: Add(96) + 2·External(96) = 288.
+        assert_eq!(tree_ex.root_cost, 288.0);
+        assert!(
+            dag_ex.root_cost < tree_ex.root_cost,
+            "DAG cost must reward the shared subterm the tree cost cannot see",
+        );
+        // The extracted DAG still has the shared child as one arena node.
+        let out = decode_extraction(&dag, &dag_ex).unwrap();
+        let kids = out.children_ids(out.root());
+        assert_eq!(kids[0], kids[1]);
+    }
+
+    /// Compile each process to its binary `Ast<Sym>` and assert the DAG extractor
+    /// reproduces it byte-for-byte with the CSE node count intact.
+    fn assert_processes_extract_identity(processes: &[&str]) {
+        use super::super::lower;
+        use super::super::root_diagram::compile_diagram_ast;
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::ufo::sm::{sm_model, SMRestrict};
+
+        let model = sm_model(SMRestrict::Default);
+        let opts = ParsingOptions::default();
+        for &process in processes {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            assert!(!sets.is_empty(), "no diagrams for '{process}'");
+            for set in &sets {
+                let diagrams = compile_diagram_ast(set, &model).unwrap();
+                let ast = lower::lower(&diagrams);
+
+                let dag = enumerate(&ast).unwrap();
+                let t0 = std::time::Instant::now();
+                let ex = extract(&dag, &SlotTrafficCost, CostKind::Dag)
+                    .unwrap_or_else(|e| panic!("[{process}] extract failed: {e}"));
+                let dt = t0.elapsed();
+                let out = decode_extraction(&dag, &ex).unwrap();
+                assert_eq!(
+                    out.to_string(),
+                    ast.to_string(),
+                    "[{process}] extraction changed the lowered AST",
+                );
+                assert_eq!(
+                    ex.reachable_node_count(&dag),
+                    distinct_ast_subterms(&ast),
+                    "[{process}] extracted node count != distinct subterm count",
+                );
+                eprintln!(
+                    "[extract] {process:38} nodes={:5} ({} classes) dag_cost={:9.0} extract={:?}",
+                    ex.reachable_node_count(&dag),
+                    dag.classes.len(),
+                    ex.root_cost,
+                    dt,
+                );
+            }
+        }
+    }
+
+    /// The rule-free identity gate over the fast rewrite-dev processes (2→2 … 2→4):
+    /// the DAG extractor must reproduce each lowered amplitude byte-for-byte.
+    #[test]
+    fn extract_dev_processes_identity() {
+        assert_processes_extract_identity(&[
+            "e+ e- > mu+ mu-",
+            "e+ e- > mu+ mu- a",
+            "e+ e- > mu+ mu- ta+ ta- QCD=0",
+        ]);
+    }
+
+    /// The full validated suite, up to the 2→6 EW amplitudes: every MG-validated
+    /// process's lowered AST survives extraction byte-for-byte, with per-process
+    /// extractor timing printed for the scaling signal. Gated behind
+    /// `extended-validation` (egglog enumeration of the largest ASTs is heavy);
+    /// mirrors `representative_processes_roundtrip`.
+    ///
+    /// ```text
+    /// cargo test -p vibegraph-lib --release --features extended-validation \
+    ///   extract_validated_processes_identity -- --nocapture
+    /// ```
+    #[cfg(feature = "extended-validation")]
+    #[test]
+    fn extract_validated_processes_identity() {
+        use super::super::compile::MG_VALIDATED_PROCESSES;
+        assert_processes_extract_identity(&MG_VALIDATED_PROCESSES);
     }
 
     /// Every `Op` variant appears as a constructor in the schema, so adding an op forces
