@@ -67,6 +67,12 @@ const EXPECT_MATCH: &[&str] = &[
     // f-derived contribution in sign with the rational T-chain terms; agrees
     // with MadGraph's MATRIX1 to max_rel_diff ~1.9e-15.
     "gg_to_ttx",
+    // First NCOLOR=6 process: the 4-gluon contact (VVVV) vertex plus three
+    // triple-gluon exchange diagrams. The propagator-free contact term contracts
+    // a pure-metric structure straight into the amplitude with a real −1 vertex
+    // factor; |M|² formed by the CF-weighted contraction over all six color
+    // flows. Agrees with MadGraph's MATRIX1 to max_rel_diff ~8.25e-14.
+    "gg_to_gg",
 ];
 
 /// One evaluated phase-space point: external momenta (incoming then outgoing)

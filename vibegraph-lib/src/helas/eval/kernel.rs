@@ -415,18 +415,6 @@ pub fn metric<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot
     })
 }
 
-/// `MetricNegI`: [`metric`] times the vertex's −i (a pure-metric structure rooted as an
-/// amplitude).
-pub fn metric_neg_i<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
-    match metric(a, b) {
-        WaveformSlot::Scalar(s) => WaveformSlot::Scalar(ScalarWf {
-            value: s.value * ri(-F::one()),
-            momentum: s.momentum,
-        }),
-        other => panic!("MetricNegI produced a non-scalar: {other:?}"),
-    }
-}
-
 /// `MetricVout`: off-shell vector current of a `Metric(out, v)` structure — the metric
 /// contracts the output index against the partner vector `v`, `g^{μν}V_ν = V^μ`: the
 /// physical contravariant current, an identity on contravariant storage. The UFO
@@ -572,30 +560,9 @@ mod tests {
         }
     }
 
-    // `MetricNegI` and `IdentityAmp` have no MG-validated process coverage (see
-    // `mg_validated_suite_exercises_every_op`), so their kernels are pinned here
+    // `IdentityAmp` has no MG-validated process coverage (see
+    // `mg_validated_suite_exercises_every_op`), so its kernel is pinned here
     // against the ops the MG net does exercise.
-
-    /// `MetricNegI` is exactly −i × [`metric`] — the vertex −i of an amplitude-rooted
-    /// pure-metric (VVS) contraction, and nothing else. Multiplying by −i is a
-    /// component sign-shuffle, so the agreement is bit-exact.
-    #[test]
-    fn metric_neg_i_is_neg_i_times_metric() {
-        check_agree(
-            256,
-            0x11AA01,
-            0.0,
-            |rng| vec![rand_vector(rng), rand_vector(rng)],
-            |c| metric_neg_i(&c[0], &c[1]),
-            |c| match metric(&c[0], &c[1]) {
-                WaveformSlot::Scalar(s) => WaveformSlot::Scalar(ScalarWf {
-                    value: s.value * ri(-1.0),
-                    momentum: s.momentum,
-                }),
-                other => panic!("metric produced a non-scalar: {other:?}"),
-            },
-        );
-    }
 
     /// `IdentityAmp` (ψ̄ 1 ψ) equals the sum of its chiral halves
     /// [`proj_m_amp`] + [`proj_p_amp`]: P_L + P_R = 1 and the bilinear is linear in Γ.
