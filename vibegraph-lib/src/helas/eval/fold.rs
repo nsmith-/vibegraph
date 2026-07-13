@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use num_complex::Complex64;
 use num_traits::FromPrimitive;
 
+use super::analysis::{self, NodeAnalysis};
 use super::ast::{Ast, AstBuilder};
 use super::op::{Const, Op, Sym};
 use super::tree::Tree;
@@ -67,6 +68,9 @@ pub struct Folded {
     pool_f: Vec<RealReq>,
     /// `Const::Ext(k)` resolves to `pool_ext[k]`.
     pool_ext: Vec<ExtLeg>,
+    /// Static per-node annotations of `ast` (output type, constness, momentum id,
+    /// helicity support), computed once from the card-independent skeleton.
+    analysis: NodeAnalysis,
 }
 
 impl Folded {
@@ -177,12 +181,20 @@ impl Folded {
             remap[id as usize] = builder.add(node.op, leaf, children);
         }
 
+        let ast = builder.finish(remap[sym.root() as usize]);
+        let analysis = analysis::analyze(&ast, &pool_ext);
         Folded {
-            ast: builder.finish(remap[sym.root() as usize]),
+            ast,
             pool_c,
             pool_f,
             pool_ext,
+            analysis,
         }
+    }
+
+    /// The static per-node analysis of the folded arena.
+    pub(super) fn analysis(&self) -> &NodeAnalysis {
+        &self.analysis
     }
 
     /// Resolve the two numeric pools for a parameter card at scalar precision `F`.
