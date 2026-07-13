@@ -126,7 +126,13 @@ traffic" figure included adjacent accesses), `Node<Const>` = **12 B**, `Const` =
 
 - The `Const` discriminant is fully redundant — `Op` determines the pool kind
   (Coupling→Complex; Mass/Width/Coeff→Real; External→Ext; else None). `{op: u8,
-  payload: u32}` = 8 B is free.
+  payload: u32}` = 8 B is free. **Correction (A0, 2026-07-13):** op *alone* is not
+  quite sufficient — `CoeffRat` folds to a real **or** complex pool entry, so pool
+  kind is not a pure function of the op. The 8 B pack instead tags `Const` as a
+  4-byte `u32` (2-bit `ConstKind` in the top bits, 30-bit index below), which stays
+  8 B for `Node<Const>` and is fully general. `ConstKind` + `Const::{kind,index,…}`
+  is now the sound source of truth for pool kind (A1's constness analysis and A3's
+  typed encoder should use it rather than re-deriving from the op).
 - **Boxing large slot variants is a dead end:** fermion/vector currents (96 B) are the
   hot *majority*; boxing adds a pointer chase per operand read plus per-node
   allocation churn, to shrink the enum the cold variants don't dominate anyway.
@@ -175,6 +181,20 @@ Sessions, in dependency order:
   `Node<Const>` to 16/24/32 B, re-run the timing rig; also measure the 12→8 B pack.
   Establishes how much instruction-stream width matters before A3's typed (wider)
   instruction stream and §1.6's typed constructors commit to it. Results → this note.
+  **Done 2026-07-13 (branch `eval-layout/a0`, commits `e76717f`/`e7c1075`; merges
+  after A1).** Finding: **instruction-stream width is not a bottleneck** — min
+  ns/eval is flat across 8→32 B within the ±2–3% run-to-run noise floor on every
+  process, including the 2→6 giants (the padding sweep itself establishes that noise
+  floor: a functionally-identical rebuild wandered ee_to_mumu 3937–4152). The hot
+  loop is dominated by 104 B `WaveformSlot` result traffic + kernel arithmetic, as
+  §1.5 predicted. The 8 B pack is a **free, bit-for-bit ~0–3% win** (also drops the
+  enum-discriminant unwrap in `apply`) — kept as an A3 input, not the lever.
+  **Consequences for A3:** adopt typed constructors + typed operand indices freely
+  (no measurable width cost out to 32 B), but prefer the narrowest encoding that
+  expresses them (keep the pack; pack operand indices tightly); spend A3 effort on
+  the SoA result buffers (the slot-traffic side), not on defending instruction width.
+  The `node-pad-16/24/32` Cargo features + `tests/instruction_size_bench.rs` stay on
+  the branch (default-off, zero-cost) so A3 can re-measure any candidate layout.
 - **A1 — static node analysis pass.** One compile-time forward scan annotating every
   node: (i) output type (real const / scalar const / scalar wf / vector / fermion-in /
   fermion-out — mirrors `apply`'s dispatch, and realizes the `ScalarConst`/`ScalarWf`

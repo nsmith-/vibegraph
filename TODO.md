@@ -83,6 +83,11 @@ runtime grows its own internal storage. Sessions in dependency order (detail in 
 
 - **A0** — instruction-size sensitivity check (pad `Node<Const>` to 16/24/32 B and
   measure; also the free 12→8 B pack). Informs A3 and the typed egglog constructors.
+  ✅ Done 2026-07-13 (`eval-layout/a0`, merges after A1): instruction-stream width is
+  **not** a bottleneck (flat 8→32 B within ±2–3% noise); the 8 B pack is a free
+  bit-for-bit ~0–3% win + a sound `ConstKind` pool-kind API. A3 may widen the
+  instruction node for typed operands without a width penalty — spend effort on the
+  SoA result buffers instead. Details in note 15 §1.5/A0.
 - **A1** — static node analysis pass: per-node output type (realizes the
   `ScalarConst`/`ScalarWf` taxonomy), constness, momentum id (signed external-momentum
   combination, interned), helicity-support mask. Pure analysis + runtime
