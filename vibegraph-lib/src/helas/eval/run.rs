@@ -11,17 +11,17 @@ use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use num_traits::{FromPrimitive, Zero};
 
-use super::ast::Ast;
+use super::analysis::NodeAnalysis;
 use super::compile::AmplitudeEvaluator;
-use super::fold::ExtLeg;
+use super::fold::{ExtLeg, Folded};
 use super::kernel;
-use super::op::{Const, Node, Op};
+use super::op::{Const, Node, NodeId, Op};
 use super::tree::Tree;
 use super::waveform_slot::WaveformSlot;
 use crate::ufo::EvaluatedModel;
 
 #[cfg(test)]
-use super::fold::Folded;
+use super::ast::Ast;
 #[cfg(test)]
 use super::lower;
 #[cfg(test)]
@@ -190,7 +190,7 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
             helicities,
             ward_leg,
         };
-        run_forward(&self.eval.folded().ast, &env, &mut scratch.res)
+        run_forward(self.eval.folded(), &env, &mut scratch.res)
     }
 
     /// Walk the folded arena for one (momenta, helicity) point, returning the
@@ -210,7 +210,7 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
             helicities,
             ward_leg: None,
         };
-        run_forward_flows(&self.eval.folded().ast, &env, &mut scratch.res)
+        run_forward_flows(self.eval.folded(), &env, &mut scratch.res)
     }
 
     /// Test-only: evaluate the amplitude with one external boson's polarisation ε^μ
@@ -235,15 +235,23 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
 /// evaluated exactly once. For a whole amplitude the root is a scalar; rooting a
 /// sub-tree (tests) can return any slot.
 pub(super) fn run_forward_slot<F: Real>(
-    ast: &Ast<Const>,
+    folded: &Folded,
     env: &EvalEnv<'_, F>,
     res: &mut Vec<WaveformSlot<F>>,
 ) -> WaveformSlot<F> {
+    let ast = &folded.ast;
     res.clear();
     res.reserve(ast.len());
     for id in ast.iter() {
         let ids = ast.children_ids(id);
         let value = apply(ast.value(id), ids.len(), |i| &res[ids[i] as usize], env);
+        cross_check_node(
+            folded.analysis(),
+            id,
+            &value,
+            env.momenta,
+            env.ward_leg.is_none(),
+        );
         res.push(value);
     }
     res[ast.root() as usize]
@@ -252,11 +260,11 @@ pub(super) fn run_forward_slot<F: Real>(
 /// Evaluate the whole-amplitude folded arena in one forward pass, returning the root
 /// scalar = M.
 fn run_forward<F: Real>(
-    ast: &Ast<Const>,
+    folded: &Folded,
     env: &EvalEnv<'_, F>,
     res: &mut Vec<WaveformSlot<F>>,
 ) -> C<F> {
-    match run_forward_slot(ast, env, res) {
+    match run_forward_slot(folded, env, res) {
         WaveformSlot::Scalar(s) => s.value,
         WaveformSlot::Empty => C::new(F::zero(), F::zero()),
         other => panic!("amplitude root is not a scalar: {other:?}"),
@@ -270,10 +278,11 @@ fn run_forward<F: Real>(
 /// scan; the root itself has no scalar reduction, so its children's already-computed
 /// slots are read out directly.
 fn run_forward_flows<F: Real>(
-    ast: &Ast<Const>,
+    folded: &Folded,
     env: &EvalEnv<'_, F>,
     res: &mut Vec<WaveformSlot<F>>,
 ) -> Vec<C<F>> {
+    let ast = &folded.ast;
     res.clear();
     res.reserve(ast.len());
     let root = ast.root();
@@ -291,9 +300,87 @@ fn run_forward_flows<F: Real>(
         }
         let ids = ast.children_ids(id);
         let value = apply(ast.value(id), ids.len(), |i| &res[ids[i] as usize], env);
+        cross_check_node(folded.analysis(), id, &value, env.momenta, true);
         res.push(value);
     }
     panic!("run_forward_flows called on an arena whose root is not Op::Flows");
+}
+
+/// Cross-check the static [`NodeAnalysis`] against a node's freshly-computed slot: the
+/// predicted output type must match the slot variant, a node marked constant must carry
+/// no momentum, and the predicted momentum combination must resolve to the slot's routed
+/// momentum. Enabled in debug builds and under `extended-validation` (so it runs over the
+/// full unit suite and both MG gate suites); compiled out of release builds.
+#[inline(always)]
+fn cross_check_node<F: Real>(
+    analysis: &NodeAnalysis,
+    id: NodeId,
+    slot: &WaveformSlot<F>,
+    momenta: &[LorentzVector<F>],
+    check_momentum: bool,
+) {
+    #[cfg(any(debug_assertions, feature = "extended-validation"))]
+    {
+        use super::analysis::{MomTable, NodeType};
+        use crate::helas::repr::lorentz::LorentzVector as LV;
+
+        let ty = analysis.out_type(id);
+        let type_ok = match slot {
+            WaveformSlot::Real(_) => ty == NodeType::RealConst,
+            WaveformSlot::Scalar(_) => {
+                matches!(ty, NodeType::ScalarConst | NodeType::ScalarWf)
+            }
+            WaveformSlot::Vector(_) => ty == NodeType::Vector,
+            WaveformSlot::FermionIn(_) => ty == NodeType::FermionIn,
+            WaveformSlot::FermionOut(_) => ty == NodeType::FermionOut,
+            // A structurally-zero node (empty product/sum) leaves the type unconstrained.
+            WaveformSlot::Empty => true,
+        };
+        assert!(
+            type_ok,
+            "analysis node {id}: predicted output type {ty:?} but slot is {slot:?}"
+        );
+
+        // A card-time constant must be momentum-free (Real, or a zero-momentum Scalar).
+        if analysis.is_const(id) {
+            if let Some(m) = slot.momentum() {
+                assert!(
+                    m == LV::zero(),
+                    "analysis node {id}: marked constant but slot carries momentum {m:?}"
+                );
+            }
+        }
+
+        // The predicted momentum combination must resolve to the slot's routed momentum
+        // (up to the reassociation rounding of summing externals in a different order).
+        // Skipped under the Ward gauge substitution, which deliberately overrides an
+        // external boson's stored momentum with its raw `+q` off convention.
+        let predicted = analysis.resolve_mom(id, momenta);
+        match slot.momentum() {
+            _ if !check_momentum => {}
+            Some(actual) => {
+                let tol: F = num_traits::cast(1e-9_f64).expect("tolerance representable");
+                let close =
+                    |x: F, y: F| -> bool { (x - y).abs() <= tol * x.abs().max(y.abs()) + tol };
+                assert!(
+                    close(predicted.e(), actual.e())
+                        && close(predicted.px(), actual.px())
+                        && close(predicted.py(), actual.py())
+                        && close(predicted.pz(), actual.pz()),
+                    "analysis node {id}: predicted momentum {predicted:?} \
+                     disagrees with slot momentum {actual:?}"
+                );
+            }
+            None => assert!(
+                analysis.mom_id(id) == MomTable::ZERO,
+                "analysis node {id}: momentum-free slot but non-zero momentum id"
+            ),
+        }
+    }
+    #[cfg(not(any(debug_assertions, feature = "extended-validation")))]
+    {
+        let _ = (analysis, id, slot, momenta, check_momentum);
+    }
 }
 
 /// Reduce one folded node from its children's already-evaluated results, read through
@@ -466,7 +553,7 @@ fn eval_single_diagram_slot<F: Real + FromPrimitive>(
         helicities,
         ward_leg: None,
     };
-    run_forward_slot(&folded.ast, &env, &mut Vec::new())
+    run_forward_slot(&folded, &env, &mut Vec::new())
 }
 
 /// Test helper: the scalar amplitude of a single diagram (see
@@ -1938,7 +2025,7 @@ mod tests {
                             helicities: hel,
                             ward_leg: None,
                         };
-                        match run_forward_slot(&f.ast, &env, &mut res) {
+                        match run_forward_slot(&f, &env, &mut res) {
                             WaveformSlot::Scalar(s) => s.value,
                             WaveformSlot::Empty => C::new(0.0, 0.0),
                             other => panic!("amplitude root is not a scalar: {other:?}"),
@@ -2887,5 +2974,94 @@ mod tests {
                 assert!(m2.is_finite() && m2 > 0.0, "[{process}] bad |M|²: {m2:?}");
             }
         }
+    }
+
+    /// The static helicity-support mask soundly bounds each node's helicity dependence:
+    /// flipping one external leg's helicity leaves every node whose mask excludes that
+    /// leg byte-for-byte unchanged. (The converse does not hold — a leg in the mask need
+    /// not actually change the slot, e.g. `PMom` reads momentum, not helicity — so only
+    /// the one-directional invariant, the exact property recycling relies on, is
+    /// asserted.) Single-flow processes only, so the arena root is a scalar and the whole
+    /// per-node result buffer is populated.
+    #[test]
+    fn support_mask_bounds_helicity_dependence() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massless;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let mut rng = StdRng::seed_from_u64(0x5A5A_11A5);
+        let sqrt_s = 400.0;
+
+        let mut pairs_checked = 0usize;
+        for process in ["e+ e- > mu+ mu-", "e+ e- > w+ w-", "e+ e- > ta+ ta- h"] {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            for set in &sets {
+                let eval = AmplitudeEvaluator::compile(set, &model).unwrap();
+                if eval.n_flows() != 1 {
+                    continue;
+                }
+                let folded = eval.folded();
+                let analysis = folded.analysis();
+                let (cc, cf) = folded.pools::<f64>(&evaluated);
+                let ext_legs = folded.ext_legs();
+
+                let mut p = vec![
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+                ];
+                p.extend(rambo_massless(sqrt_s, eval.n_ext() - 2, &mut rng));
+
+                let eval_res = |hel: &[i32]| -> Vec<WaveformSlot<f64>> {
+                    let env = EvalEnv {
+                        consts_c: &cc,
+                        consts_f: &cf,
+                        ext_legs,
+                        momenta: &p,
+                        helicities: hel,
+                        ward_leg: None,
+                    };
+                    let mut res = Vec::new();
+                    run_forward_slot(folded, &env, &mut res);
+                    res
+                };
+
+                let combos = eval.helicities();
+                let n_nodes = folded.ast.len();
+                for i in 0..combos.len() {
+                    for j in (i + 1)..combos.len() {
+                        let diff: Vec<usize> = (0..combos[i].len())
+                            .filter(|&k| combos[i][k] != combos[j][k])
+                            .collect();
+                        if diff.len() != 1 {
+                            continue;
+                        }
+                        let leg = diff[0];
+                        let ri = eval_res(&combos[i]);
+                        let rj = eval_res(&combos[j]);
+                        for id in 0..n_nodes as u32 {
+                            if analysis.support(id) & (1u64 << leg) == 0 {
+                                assert_eq!(
+                                    format!("{:?}", ri[id as usize]),
+                                    format!("{:?}", rj[id as usize]),
+                                    "[{process}] node {id}: slot changed under a leg-{leg} \
+                                     helicity flip, but leg {leg} is not in its support mask"
+                                );
+                            }
+                        }
+                        pairs_checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            pairs_checked > 0,
+            "no single-leg-flip helicity pairs were exercised"
+        );
     }
 }
