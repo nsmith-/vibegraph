@@ -4,8 +4,9 @@
 lands behind the MG validation net, a validation pass then hardens the net around
 what the feature exposed, and a performance pass optimizes against the hardened
 gate. Current position: `color-flow` (feature, ✅ merged 2026-07-12) →
-**`validation-sprint`** (now) → post-CSE optimization program (performance) → next
-feature (hadronic pp→ll / event output).
+`validation-sprint` (validation, ✅ closed 2026-07-13) →
+**post-CSE optimization program** (performance, now) → next feature (hadronic
+pp→ll / event output).
 
 ## Pipeline Status
 
@@ -13,43 +14,16 @@ feature (hadronic pp→ll / event output).
 |------|-----------|--------|-------|
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
-| 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 13 processes agree with MadGraph (11 bit-identical ≤6.3e-13, incl. 2→6/VVV/massive externals; `uux_to_uux` 5.61e-14 and `gg_to_ttx` 1.89e-15 via the multi-flow CF-weighted eval); `gg_to_gg` informational only, blocked on a pre-existing VVVV Lorentz phase bug (`validation-sprint`) |
+| 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 14 processes agree with MadGraph (11 bit-identical ≤6.3e-13, incl. 2→6/VVV/massive externals, all NCOLOR=1; `uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS + 2-body LIPS |
 | 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻) | ✅ Done | Lepage VEGAS on `AmplitudeEvaluator::eval_m2`; `validate_vegas.rs`: `sigma_z_pole` σ≈2025 pb at √s=91.2 (<0.1% vs MG), `sigma_qed_limit` (√s=10 vs 4πα²/3s, 3%) |
 | 6 | Unweighted event output (LHEF) | 🔲 Pending | Accept/reject sampling + Les Houches format |
 
 Closed-sprint history (`helas-generalize`, `mg-validation-coverage`,
-`cleanup-refactor`, `performance-sprint`, `color-flow`) lives in git history and
-`research/notes/` (12: continuum bug hunt, 13: typed conventions, 15: eval
-optimization plan, 16: color-flow design + debrief).
-
----
-
-## 🧪 `validation-sprint` — NOW: harden the gate before the optimization program
-
-The post-CSE program rewrites the evaluator against `validate_helas_mg` + the
-op-coverage suite as its gate, so the gate gaps opened by `color-flow` get closed
-first. Two items; everything else from the original stub is deferred to the
-validation backlog under **Later**.
-
-- **Op-coverage bookkeeping — promote multi-flow into the suite lists.**
-  `Op::Flows`/`Op::CoeffRat` are still in `KNOWN_UNCOVERED`
-  (`helas/eval/compile.rs`) even though `uux_to_uux` and `gg_to_ttx` now
-  bit-validate them, because `MG_VALIDATED_PROCESSES` is still the original 11
-  NCOLOR=1 processes. Add the two enforced multi-flow processes to
-  `MG_VALIDATED_PROCESSES` and drop `Flows`/`CoeffRat` from `KNOWN_UNCOVERED`.
-  Every list that iterates `MG_VALIDATED_PROCESSES` picks the coverage up for
-  free — the op-coverage tests, the egglog `representative_processes_roundtrip`,
-  and Track 2's rooting study — which is why this lands before the tracks start.
-
-- **VVVV `GC_12` Lorentz phase bug** (blocks `gg_to_gg` enforcement): the 4-gluon
-  contact diagram's imaginary coupling `GC_12 = i·g²` carries a spurious +90°
-  Lorentz phase relative to the 3 exchange diagrams (pre-existing, not a color
-  bug — the CF matrix and per-flow color coefficients are proven correct against
-  MG, and the exchange diagrams are bit-for-bit). MG reference data + the JAMP
-  probe (`gg_to_gg` registry entry) are already in place; expected to enforce
-  straight to ≤1e-12 once fixed, adding the only NCOLOR=6 pure-gluon process to
-  the gate.
+`cleanup-refactor`, `performance-sprint`, `color-flow`, `validation-sprint`) lives in
+git history and `research/notes/` (12: continuum bug hunt, 13: typed conventions, 15:
+eval optimization plan, 16: color-flow design + debrief, incl. the VVVV phase-bug root
+cause and fix).
 
 ---
 
@@ -63,10 +37,11 @@ extractor is **tree-cost only**, so every rewrite whose payoff is *sharing* (re-
 chiral decomposition, coupling factoring) is invisible to it — that blocker is Track 3,
 and the sharing half of `egraph-rewrite` waits on it. Tracks 1 and 2 need no egraph.
 
-**Revised 2026-07-12 after `color-flow`** — deltas relative to the note-15 plan:
-- The gate is now the **13-process** `validate_helas_mg` net (11 NCOLOR=1
-  bit-identical + `uux_to_uux` ≤5.7e-14 + `gg_to_ttx` ≤2e-15), plus `gg_to_gg` if
-  the `validation-sprint` VVVV fix lands first.
+**Revised 2026-07-13 after `color-flow` + `validation-sprint`** — deltas relative to
+the note-15 plan:
+- The gate is now the **14-process** `validate_helas_mg` net (11 NCOLOR=1
+  bit-identical + `uux_to_uux` ≤5.7e-14 + `gg_to_ttx` ≤2e-15 + `gg_to_gg` ≤8.3e-14,
+  NCOLOR=6, `validation-sprint`'s VVVV phase fix).
 - `eval_m2` is now the CF-weighted multi-flow loop (per-flow JAMPs, MG's ZTEMP
   accumulation order, NCOLOR=1 op-order rule for bit-for-bit) — affects A5.
 - Rooting is per (diagram, color-chain), still anchored at `VtxIdx(0)`; cross-flow
@@ -90,7 +65,7 @@ ns/eval, Rust `main` vs MG MATRIX1 — the `performance-sprint` P5 close-out plu
 | gg_to_ttx | 659 | 9,148 | 13.9× |
 | ee_to_tatah | 859 | 11,327 | 13× |
 | ee_to_wpwm | 776 | 20,709 | 27× |
-| gg_to_gg (informational) | 949 | 24,110 | 25.4× |
+| gg_to_gg | 949 | 24,110 | 25.4× |
 | ee_to_mumua | 1,510 | 28,520 | 19× |
 | ee_to_mumu_tata_qcd0 | 6,404 | 145,032 | 23× |
 | uux_to_ccx_emmm_qcd0 | 100,230 | 10,981,139 | 110× |
@@ -101,7 +76,7 @@ Post-CSE the 2→6s sit at ~15 nodes/diagram, so beyond Track 1's layout wins,
 
 ### ⚡ Track 1: `eval-layout` — evaluator memory layout & recycling (branch TBD; merge to `main`)
 
-Gate: 13-process `validate_helas_mg` REL_TOL 1e-12; bit-for-bit where order-preserving
+Gate: 14-process `validate_helas_mg` REL_TOL 1e-12; bit-for-bit where order-preserving
 (noted per session). Baseline: the timing table above. `wavefn.rs` is untouched —
 it remains the public hand-built-amplitude component and unit-test vocabulary; the
 runtime grows its own internal storage. Sessions in dependency order (detail in note 15 §2):
@@ -145,14 +120,13 @@ consistently, so any candidate heuristic must be applied uniformly across a
 diagram's chains and measured on the multi-flow processes too. Over all rootings a
 diagram has only ~2·E distinct directed currents, so the *floor* is computable.
 Measure post-CSE node count (and slot-cost-weighted) across `MG_VALIDATED_PROCESSES`
-(13 once the `validation-sprint` bookkeeping lands) for: baseline; canonical
-heuristics (lowest-leg anchor; most/fewest contributing external momenta — measure
-both directions); greedy iterative rooting (each diagram tries all rootings against
-the cumulatively-interned arena, min new nodes; both diagram orders). Every variant
-runs the full validation net (rootings hit new kernel paths — may incidentally cover
-`MetricNegI`). Results committed on the branch for posterity + tables appended to
-note 15 on `main`. Decision output: if greedy wins big, promote a production
-greedy-rooting pass into Track 1; headroom informs the Track 3 go/no-go.
+(14) for: baseline; canonical heuristics (lowest-leg anchor; most/fewest contributing
+external momenta — measure both directions); greedy iterative rooting (each diagram
+tries all rootings against the cumulatively-interned arena, min new nodes; both
+diagram orders). Every variant runs the full validation net (rootings hit new kernel
+paths). Results committed on the branch for posterity + tables appended to note 15 on
+`main`. Decision output: if greedy wins big, promote a production greedy-rooting pass
+into Track 1; headroom informs the Track 3 go/no-go.
 
 ### 🧮 Track 3: `dag-extraction` — DAG-cost extractor for egglog (investigation)
 
@@ -171,7 +145,7 @@ tree cost doesn't; **M4** write-up + go/no-go for `egraph-rewrite` integration.
 
 Cut per-process node count below what CSE alone reaches by factoring shared algebraic
 structure across diagrams (post-CSE 2→6s are ~15 nodes/diagram). Every rule is a place
-a sign bug can hide: each lands guarded by the 13-process `validate_helas_mg` net
+a sign bug can hide: each lands guarded by the 14-process `validate_helas_mg` net
 (REL_TOL 1e-12), bit-for-bit where order-preserving. Design references:
 `research/notes/14-egglog-notes.md` (language), note 15 (plan + schema decisions).
 
@@ -220,8 +194,8 @@ all-leaf / DAG-sharing fixtures, `rewrite_dev_processes_roundtrip` (2→2/2→3/
 σ = Σ_q ∫ dx₁ dx₂ f_q(x₁) f_q̄(x₂) σ̂(q q̄ → l⁺ l⁻). `color-flow` unblocked the
 partonic side; remaining blockers: a PDF interface (e.g. LHAPDF — not yet a task) and
 `lips-nbody` for the partonic √ŝ scan. Flavors group by charge type since MG treats
-light quarks as massless. Sequenced after `validation-sprint` + the optimization
-program per the feature→validation→performance loop.
+light quarks as massless. Sequenced after the post-CSE optimization program per the
+feature→validation→performance loop.
 
 ---
 
@@ -243,23 +217,23 @@ work is the CLI wiring of a full proc card end-to-end.
 Deferred to the next validation pass of the loop — none of these guard the surface
 the optimization program touches:
 
-- **`MetricNegI` process-level coverage**: needs a process whose diagrams
-  amplitude-root a pure-metric vertex — e.g. fermion-free externals (`w+ w- > z h`-like)
-  so the `VtxIdx(0)` rooting cannot pick a fermion line, or a rooting-choice override
-  for tests. `color-flow`'s `gg_to_ttx`/`gg_to_gg` did not cover it (note 16 §3 had
-  flagged them as a maybe). Track 2's rooting study may incidentally cover it — check
-  its results before building a dedicated process.
 - **`IdentityAmp` process-level coverage**: needs a non-SM UFO model with an
   `Identity` scalar bilinear (SM has none); could ride on a small dedicated test model.
 - **Rationalize `Coeff(f64)` onto `CoeffRat`** (note 16 §5): now that `Op::CoeffRat`
   exists for color coefficients, the remaining `Coeff(f64)` leaves (Lorentz-structure
   and symmetry/fermi-sign coefficients) could migrate onto it too — optional cleanup,
   not required by anything currently blocked.
-- **Branch-level coverage**: op counts don't see rooting branches — verify the
-  scalar-rooted pure-metric −1 branch (root_lorentz) and, generally, consider
-  rooted-tree pattern assertions per MG-pinned convention (each "pinned by X" comment
-  should have a test that fails if the pinning process stops exercising the branch —
-  the stale `MetricNegI` comment was exactly this failure mode).
+- **Branch-level coverage**: op counts don't see rooting branches. The pure-metric
+  −1 vertex branch (`root_lorentz`) used to fork on amplitude-root vs scalar-root
+  (the latter pinned, the former the unexercised `MetricNegI` op); `validation-sprint`
+  found the fork itself was the bug — `gg_to_gg` amplitude-roots a pure-metric VVVV
+  contact term, and its separate −i lowering was a spurious phase — and collapsed both
+  paths onto one real-−1 branch, now exercised by both `gg_to_gg` (amplitude-rooted)
+  and the 2→6 H-current processes (scalar-rooted). More generally, consider rooted-tree
+  pattern assertions per MG-pinned convention: each "pinned by X" comment should have a
+  test that fails if the pinning process stops exercising the branch — an unexercised
+  branch silently drifting out of sync with its exercised sibling is exactly the
+  failure mode that produced the `gg_to_gg` bug.
 - **Optional CI job**: `gen_sm_blob` + `git diff --exit-code` to catch a stale
   interned SM blob vs the pinned submodule.
 - **`madgraph-diagram-cmp-per-flavor`** — per-flavor subprocess matching in diagram
