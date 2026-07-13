@@ -77,9 +77,6 @@ pub enum Op {
     ProjPAmp,
     /// contract two vectors → scalar.
     Metric,
-    /// contract two vectors → scalar, times the vertex's −i (pure-metric
-    /// structure rooted as an amplitude; see `LorentzEvalNode::MetricNegI`).
-    MetricNegI,
     /// metric with one free index → off-shell vector current.
     MetricVout,
     /// `MetricVout` without the −i vertex factor (index lowering only); the

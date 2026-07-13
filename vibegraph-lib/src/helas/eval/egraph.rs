@@ -56,7 +56,6 @@ const NODE_SCHEMA: &str = "\
   (ProjMAmp Node Node)
   (ProjPAmp Node Node)
   (Metric Node Node)
-  (MetricNegI Node Node)
   (MetricVout Node)
   (LowerVout Node)
   (IdentityAmp Node Node)

@@ -193,7 +193,7 @@ impl AmplitudeEvaluator {
 /// `uux_to_uux` and `gg_to_ttx`). Keep in sync with the `PROCESSES` registry in
 /// `validation/madgraph/gen_amplitude.py`.
 #[cfg(test)]
-pub(super) const MG_VALIDATED_PROCESSES: [&str; 13] = [
+pub(super) const MG_VALIDATED_PROCESSES: [&str; 14] = [
     "e+ e- > mu+ mu-",
     "u u~ > mu+ mu-",
     "e+ e- > e+ e-",
@@ -207,6 +207,7 @@ pub(super) const MG_VALIDATED_PROCESSES: [&str; 13] = [
     "b b~ > c c~ e+ e- mu+ mu- QCD=0",
     "u u~ > u u~",
     "g g > t t~",
+    "g g > g g",
 ];
 
 fn helicity_states_for_spin(spin_code: i32, massless: bool) -> Result<Vec<i32>, EvalError> {
@@ -251,16 +252,14 @@ mod tests {
     use crate::helas::eval::tree::Tree;
     use crate::ufo::sm::{sm_model, SMRestrict};
 
-    /// Ops with no MG-validated process coverage. `MetricNegI` needs a diagram whose
-    /// *amplitude* contraction is a pure-metric (VVS) vertex — the root-at-`VtxIdx(0)`
-    /// policy never places one there in this suite, which roots every such diagram on a
-    /// fermion line instead. `IdentityAmp` needs a UFO model with an `Identity` scalar
-    /// bilinear; the SM has none (its Yukawas are `ProjM + ProjP`). Both kernels are
-    /// pinned algebraically against MG-covered ops in `kernel::tests`; process-level
-    /// coverage remains a future item. `Flows` and `CoeffRat` are only emitted for
-    /// processes whose color basis has more than one flow (multi-flow color algebra);
-    /// `uux_to_uux` (`NCOLOR=2`) and `gg_to_ttx` (`NCOLOR=2`) now bit-validate both.
-    const KNOWN_UNCOVERED: [Op; 2] = [Op::MetricNegI, Op::IdentityAmp];
+    /// Ops with no MG-validated process coverage. `IdentityAmp` needs a UFO model with
+    /// an `Identity` scalar bilinear; the SM has none (its Yukawas are `ProjM + ProjP`).
+    /// Its kernel is pinned algebraically against MG-covered ops in `kernel::tests`;
+    /// process-level coverage remains a future item. `Flows` and `CoeffRat` are only
+    /// emitted for processes whose color basis has more than one flow (multi-flow color
+    /// algebra); `uux_to_uux` (`NCOLOR=2`), `gg_to_ttx` (`NCOLOR=2`) and `gg_to_gg`
+    /// (`NCOLOR=6`) now bit-validate both.
+    const KNOWN_UNCOVERED: [Op; 1] = [Op::IdentityAmp];
 
     /// Every `Op` outside [`KNOWN_UNCOVERED`] appears in the compiled AST of at least
     /// one MG-validated process — the bit-for-bit `validate_helas_mg` net exercises the

@@ -375,7 +375,6 @@ pub(super) fn apply<'a, F: Real + 'a>(
         Op::ProjMAmp => kernel::proj_m_amp(kid(0), kid(1)),
         Op::ProjPAmp => kernel::proj_p_amp(kid(0), kid(1)),
         Op::Metric => kernel::metric(kid(0), kid(1)),
-        Op::MetricNegI => kernel::metric_neg_i(kid(0), kid(1)),
         Op::MetricVout => kernel::metric_vout(kid(0)),
         Op::LowerVout => kernel::lower_vout(kid(0)),
         Op::IdentityAmp => kernel::identity_amp(kid(0), kid(1)),

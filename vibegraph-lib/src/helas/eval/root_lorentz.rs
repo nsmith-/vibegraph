@@ -111,11 +111,6 @@ pub enum LorentzEvalNode {
     ProjPAmp { i: usize, j: usize },
     /// contract two vector indices → scalar (`g_{μν} V^μ W^ν`)
     Metric { mu: usize, nu: usize },
-    /// [`Metric`] times the vertex's −i: the amplitude contraction of a
-    /// pure-metric structure (VVS/VVSS). An amplitude root has no propagator
-    /// on its line to carry the chain's −i, so it stays at the vertex here
-    /// (cf. ALOHA `VVS1_0`). Emitted at most once per term. Output: scalar.
-    MetricNegI { mu: usize, nu: usize },
     /// metric with one free index → vector: the off-shell vector current of a
     /// `Metric(out, v)` structure (e.g. the VVS/HVV vertex rooted at a vector
     /// leg), the physical contravariant `g^{μν}V_ν = V^μ` on the partner vector
@@ -151,9 +146,7 @@ impl LorentzEvalNode {
             LorentzEvalNode::GammaOout { mu, i } => vec![*mu, *i],
             LorentzEvalNode::ProjM { i } | LorentzEvalNode::ProjP { i } => vec![*i],
             LorentzEvalNode::ProjMAmp { i, j } | LorentzEvalNode::ProjPAmp { i, j } => vec![*i, *j],
-            LorentzEvalNode::Metric { mu, nu } | LorentzEvalNode::MetricNegI { mu, nu } => {
-                vec![*mu, *nu]
-            }
+            LorentzEvalNode::Metric { mu, nu } => vec![*mu, *nu],
             LorentzEvalNode::MetricVout { v } | LorentzEvalNode::LowerVout { v } => vec![*v],
             LorentzEvalNode::Mul { children } => children.clone(),
             LorentzEvalNode::P { .. } => vec![],
@@ -174,7 +167,6 @@ impl LorentzEvalNode {
             ProjMAmp { .. } => format!("ProjMAmp({})", body),
             ProjPAmp { .. } => format!("ProjPAmp({})", body),
             Metric { .. } => format!("Metric({})", body),
-            MetricNegI { .. } => format!("MetricNegI({})", body),
             MetricVout { .. } => format!("MetricVout({})", body),
             LowerVout { .. } => format!("LowerVout({})", body),
             Mul { .. } => format!("ScalarProduct({})", body),
@@ -417,10 +409,10 @@ impl LorentzEvalTree {
         let mut sign = 1.0;
         let mut visited_ops = Vec::new(); // LorentzOp is so small that Vec is probably better than HashSet
         let mut term_roots = Vec::new();
-        // Whether this term's once-per-vertex −i (pure-metric amplitude case)
-        // has been emitted; guards against double application for structures
-        // with several Metric ops (VVVV).
-        let mut negi_applied = false;
+        // Whether this term's once-per-vertex pure-metric −1 has been applied;
+        // guards against double application for structures with several Metric
+        // ops (VVVV).
+        let mut metric_vertex_applied = false;
 
         // If idx is specified, build the tree rooted at that leg
         if let Some(root_leg) = idx {
@@ -515,41 +507,28 @@ impl LorentzEvalTree {
                         tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
                     let child_nu =
                         tree.build_child(term, *nu, &mut visited_ops, flows, None, &mut sign)?;
-                    // A pure-metric structure (VVS/VVSS) reaching a scalar sink
-                    // carries the vertex factor explicitly, once per term
-                    // (Gamma-/P-carrying structures — FFV, VVV — contract
-                    // plainly): −i when contracted into the *amplitude*
-                    // (`MetricNegI` — no MG-validated process currently roots a
-                    // pure-metric vertex at the amplitude, see KNOWN_UNCOVERED in
-                    // `mg_validated_suite_exercises_every_op`; the −i itself is
-                    // pinned bit-exact against `metric` in `kernel::tests`), −1
-                    // when rooted at a scalar output leg (the H-current from two
-                    // Z chains; −1 against the −i/D scalar propagator, pinned by
-                    // the uux 2→6 and b b̄ 2→6 H classes vs MadGraph AMP()).
+                    // A pure-metric structure (VVS/VVSS, or the propagator-free
+                    // 4-vector contact VVVV) carries an explicit −1 vertex factor,
+                    // once per term (Gamma-/P-carrying structures — FFV, VVV —
+                    // contract plainly). The sign holds whether the contraction
+                    // sinks into the *amplitude* (the VVVV contact term, which has
+                    // no propagator on its line) or into a scalar output leg (the
+                    // H-current from two Z chains, −1 against the −i/D scalar
+                    // propagator): both are pinned per-diagram against MadGraph
+                    // AMP() — gg→gg for the amplitude root, the uux 2→6 and b b̄ 2→6
+                    // H classes for the output-leg root.
                     let pure_metric = !term
                         .ops
                         .iter()
                         .any(|op| matches!(op, LorentzOp::P { .. } | LorentzOp::Gamma { .. }));
-                    if pure_metric && !negi_applied {
-                        negi_applied = true;
-                        if idx.is_none() {
-                            tree.add_node(LorentzEvalNode::MetricNegI {
-                                mu: child_mu,
-                                nu: child_nu,
-                            })
-                        } else {
-                            sign = -sign;
-                            tree.add_node(LorentzEvalNode::Metric {
-                                mu: child_mu,
-                                nu: child_nu,
-                            })
-                        }
-                    } else {
-                        tree.add_node(LorentzEvalNode::Metric {
-                            mu: child_mu,
-                            nu: child_nu,
-                        })
+                    if pure_metric && !metric_vertex_applied {
+                        metric_vertex_applied = true;
+                        sign = -sign;
                     }
+                    tree.add_node(LorentzEvalNode::Metric {
+                        mu: child_mu,
+                        nu: child_nu,
+                    })
                 }
                 LorentzOp::P { mu, .. } => {
                     // p^μ contracted with the vector leg at the same index
@@ -1159,15 +1138,15 @@ mod tests {
 
     #[test]
     fn test_root_vvs_metric() {
-        // VVS1: Metric(1,2) rooted at amplitude → Metric contraction carrying the
-        // vertex's −i (pure-metric amplitude case, `MetricNegI`).
+        // VVS1: Metric(1,2) rooted at amplitude → plain Metric contraction with the
+        // pure-metric vertex's −1 folded into the term coefficient.
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
         };
         let spins = vec![3, 3, 1];
         let result = root_term(&term, &spins, None, &[]).unwrap();
-        assert_eq!(result.coeff, 1.0);
+        assert_eq!(result.coeff, -1.0);
         // When rooted at amplitude with 2 vector legs, uses Metric to contract them
         assert_eq!(
             result.tree,
@@ -1175,7 +1154,7 @@ mod tests {
                 nodes: vec![
                     LorentzEvalNode::Leg(0),
                     LorentzEvalNode::Leg(1),
-                    LorentzEvalNode::MetricNegI { mu: 0, nu: 1 },
+                    LorentzEvalNode::Metric { mu: 0, nu: 1 },
                     LorentzEvalNode::Leg(2),
                     LorentzEvalNode::Mul {
                         children: vec![2, 3]
