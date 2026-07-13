@@ -200,7 +200,10 @@ Sessions, in dependency order:
   this claim first — inspect the generated code). Investigate *safe* ways to remove
   them: bind-time pre-resolution of operand/result locations into lifetime-bound
   references (aliasing rules block plain `&'a mut T` for shared operands — evaluate
-  `&'a [Cell<T>]` / per-instruction split borrows), or making the checks provably
+  `&'a [Cell<T>]` / per-instruction split borrows), `OnceCell<T>`-element arenas
+  (candidate caveats: the get-path is-initialized check may just replace the
+  bounds-check branch, and A5's cross-helicity slot rewriting needs reset
+  semantics OnceCell lacks), or making the checks provably
   elidable (validate all indices once at bind time, hoist asserts so LLVM drops the
   per-access checks). `unsafe` is out of scope. Deliverable: a short feasibility
   memo with a microbenchmark of the winning candidate, and a go/no-go.
