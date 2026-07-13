@@ -195,6 +195,18 @@ Sessions, in dependency order:
   (from A1); `Node` repack (§1.5) folds in, informed by A0. Element types initially
   stay the `wavefn.rs` structs (momentum still embedded) so arithmetic is untouched →
   **bit-for-bit**. Removes enum tag/padding/variant dispatch (`expect_fermion_*`).
+- **A3b — bounds-check-branch investigation** (added 2026-07-13). Post-A3 the hot
+  loop's remaining branches should be slice bounds checks on arena indexing (verify
+  this claim first — inspect the generated code). Investigate *safe* ways to remove
+  them: bind-time pre-resolution of operand/result locations into lifetime-bound
+  references (aliasing rules block plain `&'a mut T` for shared operands — evaluate
+  `&'a [Cell<T>]` / per-instruction split borrows), or making the checks provably
+  elidable (validate all indices once at bind time, hoist asserts so LLVM drops the
+  per-access checks). `unsafe` is out of scope. Deliverable: a short feasibility
+  memo with a microbenchmark of the winning candidate, and a go/no-go.
+- **A3c — bounds-check elimination** (contingent on A3b go). Production
+  implementation of the chosen mechanism; **bit-for-bit** (no arithmetic change).
+  Serializes with A4 — whichever lands second rebases onto the other.
 - **A4 — momentum pool.** Per-point table of external + internal-line momenta
   computed once (helicity-independent), nodes reference momentum by id; SoA elements
   become bare `Bispinor`/`ComplexVector`/`C<F>`; `mul_apply` momentum routing and
