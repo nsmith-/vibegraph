@@ -6,7 +6,7 @@
 |------|-----------|--------|-------|
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
-| 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 11 processes bit-match MadGraph (≤6e-13, incl. 2→6, VVV, massive externals); single color flow only |
+| 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 13 processes agree with MadGraph (11 bit-identical ≤6.3e-13, incl. 2→6/VVV/massive externals; `uux_to_uux` 5.61e-14 and `gg_to_ttx` 1.89e-15 via the new multi-flow CF-weighted eval); `gg_to_gg` informational only, blocked on a pre-existing VVVV Lorentz phase bug (`validation-sprint`) |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS + 2-body LIPS |
 | 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻) | ✅ Done | Lepage VEGAS on `AmplitudeEvaluator::eval_m2`; `validate_vegas.rs`: `sigma_z_pole` σ≈2025 pb at √s=91.2 (<0.1% vs MG), `sigma_qed_limit` (√s=10 vs 4πα²/3s, 3%) |
 | 6 | Unweighted event output (LHEF) | 🔲 Pending | Accept/reject sampling + Les Houches format |
@@ -94,6 +94,9 @@ runtime grows its own internal storage. Sessions in dependency order (detail in 
   `ScalarConst`/`ScalarWf` taxonomy), constness, momentum id (signed external-momentum
   combination, interned), helicity-support mask. Pure analysis + runtime
   cross-assertions; everything downstream (and the egraph typed schema) consumes it.
+  `color-flow` C4 landed first (`Op::Flows`, `Op::CoeffRat`), so this pass must also
+  classify them: `CoeffRat` is a scalar const (folds like any other rational leaf);
+  `Flows` is a sink (variadic root, never an operand — no output type to assign).
 - **A2** — constant-subgraph folding into bind-time pools (extends `fold.rs`; deletes
   the per-point re-evaluation of card-constant `g_L`/`g_R` subgraphs — the P6
   follow-up, formerly slated as the first egglog rule; needs no rules). Bit-for-bit.
@@ -194,9 +197,26 @@ Collects the validation follow-ups deferred from `cleanup-refactor`:
   `mg_validated_suite_exercises_every_op`:
   - `MetricNegI`: needs a process whose diagrams amplitude-root a pure-metric vertex —
     e.g. fermion-free externals (`w+ w- > z h`-like) so the `VtxIdx(0)` rooting cannot
-    pick a fermion line, or a rooting-choice override for tests.
+    pick a fermion line, or a rooting-choice override for tests. `color-flow`'s
+    `gg_to_ttx`/`gg_to_gg` did not end up covering it either (note 16 §3 had flagged
+    them as a maybe) — the original analysis above stands.
   - `IdentityAmp`: needs a non-SM UFO model with an `Identity` scalar bilinear (SM has
     none); could ride on a small dedicated test model.
+- **`color-flow` op-coverage bookkeeping** (2026-07-12): `Op::Flows`/`Op::CoeffRat` are
+  still in `KNOWN_UNCOVERED` even though `uux_to_uux` and `gg_to_ttx` now bit-validate
+  them — `MG_VALIDATED_PROCESSES` (the op-coverage suite's process list) is still the
+  original 11. A future cleanup: add one multi-flow process to
+  `MG_VALIDATED_PROCESSES` and drop `Flows`/`CoeffRat` from `KNOWN_UNCOVERED`.
+- **Optional: rationalize `Coeff(f64)` onto `CoeffRat`** (note 16 §5, 2026-07-12): now
+  that `Op::CoeffRat` exists for color coefficients, the remaining `Coeff(f64)` leaves
+  (Lorentz-structure and symmetry/fermi-sign coefficients) could migrate onto it too —
+  optional cleanup, not required by anything currently blocked.
+- **`color-flow` VVVV phase bug** (2026-07-12, blocks `gg_to_gg` enforcement): the
+  4-gluon contact diagram's imaginary coupling `GC_12 = i·g²` carries a spurious +90°
+  Lorentz phase relative to the 3 exchange diagrams (pre-existing, not a color bug —
+  the CF matrix and per-flow color coefficients are proven correct against MG). MG
+  reference data + the JAMP probe (`gg_to_gg` registry entry) are already in place;
+  expected to enforce straight to ≤1e-12 once fixed.
 - **Branch-level coverage**: op counts don't see rooting branches — verify the
   scalar-rooted pure-metric −1 branch (root_lorentz) and, generally, consider
   rooted-tree pattern assertions per MG-pinned convention (each "pinned by X" comment
@@ -214,7 +234,8 @@ Collects the validation follow-ups deferred from `cleanup-refactor`:
 ### `mg-validation-coverage` — New processes for `validate_helas_mg` ✅ Done
 
 All 7 single-flow processes are enforced bit-for-bit in `validate_helas_mg`
-(≤6.3e-13); `u u~ > u u~` (#8) remains blocked on color flow. Each added exactly one
+(≤6.3e-13); `u u~ > u u~` (#8, NCOLOR=2) is now also enforced — 5.61e-14 — via the
+`color-flow` sprint's multi-flow CF-weighted evaluator (see below). Each added exactly one
 convention axis; the fixes each landed with a per-diagram AMP-dump cross-check:
 
 1. **`ee_to_ee` (Bhabha)** — s⊕t interference with identical flavors. Needed the
@@ -247,20 +268,62 @@ Infra delivered with this work (the reusable-scripts request):
   per-diagram AMP-dump probe + matcher, replacing the two bespoke note-12 probes.
   Driven by the `probe_process_diagrams` Rust test (`VG_PROBE_NAME`/`VG_PROBE_CF`).
 
-### `color-flow` — Multi-flow color algebra
+### `color-flow` — Multi-flow color algebra ✅ CLOSED 2026-07-12 — branch `color-flow`, not yet merged to `main`, pending review
 
-For NCOLOR=1 processes the scalar color factor `CF(1,1)` suffices (implemented in
-`validate_helas_mg::color_factor`). True multi-flow color (same-flavor `u u~ > u u~`,
-gluon exchange) needs per-flow amplitudes and the color matrix. Prerequisite for
-hadronic cross sections and any QCD≠0 validation.
+Design + session-by-session outcome: `research/notes/16-color-flow-design.md`. Adopted
+MadGraph's factorization: color never touches the float runtime — symbolic SU(3)
+simplification (exact `Ratio<i64>` coefficients, `helas/color/`) yields per-flow JAMPs
+`J_f` + an exact CF matrix, `|M|² = Σ J_f CF_{ff'} J_{f'}*`; the AST grew `Op::Flows`
+(variadic root) and `Op::CoeffRat` (exact rational leaf) to carry it through
+lowering/fold/eval. Six sessions, C1→C6 (commit hashes on `color-flow`):
 
-_Unblocks: `mg-validation-coverage` #8, PDF-weighted pp→ll σ_
+- **C1** `b0a1805`+`11543b3` — typed UFO color parse, rep-resolved `Identity`, SM blob
+  regen.
+- **C2** `be9ad40` — symbolic SU(3) algebra engine (`helas/color/`), exact `Ratio<i64>`
+  coefficients, MG's full rule set, Casimir-oracle tests.
+- **C3** `f8a7114`, `ba89299` — colorize walk + MG-sorted basis + exact CF matrix; CF
+  oracle test parsing `DATA CF` from every `matrix1_orig.f` (all 11 + fresh
+  `uux_to_uux`); fixed a C2 term-merge bug (canonical-form merging falsely cancelled
+  distinct external-leg traces — now merges on concrete indices per MG semantics).
+- **C4** `40610a6`, `c30cd31`, `2b2a3ec` — `Op::Flows`/`Op::CoeffRat` fully plumbed
+  (s-expr bijection, egglog round-trip, `fold.rs` rational pools); per-`color_idx`
+  `VertexInfo`, per-chain rooting, CF-weighted `eval_m2` (MG's ZTEMP order), NCOLOR=1
+  bit-for-bit op-order rule; `color_factor` stand-in deleted.
+- **C5** `c56ad9e`, `877ded7`, `36ec4e9` — JAMP-level probe rig (`amp_probe.f.in` +
+  `compare_amps.py`, flow matching with permutation/phase analysis); `uux_to_uux` and
+  `gg_to_ttx` ENFORCED, `gg_to_gg` informational. C5c found and fixed **the**
+  color-convention bug: colorize read T fund/antifund slots off feyngraph's
+  all-incoming ray order — the opposite of the fermion-flow arrow MG indexes by (i =
+  arrow-out, j = arrow-in) — a uniform transpose that complex-conjugates the color
+  string. Invisible for rational T-chain terms, it flips the sign of the imaginary
+  `f → trace` coefficient relative to T-chain terms, corrupting `g g > t t~`. Fixed
+  with an unconditional 3/3̄ slot swap at directed vertices; regression test
+  `vibegraph-lib/tests/color_cf.rs::gg_to_ttx_flow_structures_untransposed` pins the
+  untransposed structures.
+- **C6** — this close-out (TODO/notes; LHEF color-tag follow-up filed below).
+
+**Final state**: `validate_helas_mg` enforces **13 processes** (11 NCOLOR=1
+bit-identical, `uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15). `gg_to_gg` stays
+informational at 4.44e-1 max_rel_diff — the color side is proven correct (CF matrix +
+coefficients match MG; the 3 exchange diagrams are bit-for-bit vs MG) but a
+**pre-existing** 4-gluon VVVV Lorentz bug blocks enforcement: the imaginary coupling
+`GC_12 = i·g²` carries a spurious +90° phase on the contact diagram relative to the
+exchange diagrams. Filed to `validation-sprint` below; MG references + JAMP probe are
+already in place, so the fix should enforce straight to ≤1e-12.
+
+Timing (dev machine, `--profile profiling`, `--test-threads=1`; ns/eval vs MG MATRIX1):
+`uux_to_uux` 5,121/278 (18.5×), `gg_to_ttx` 9,148/659 (13.9×), `gg_to_gg` 24,110/949
+(25.4×, informational). Cross-flow CSE works as designed: NCOLOR=6 costs ~2× NCOLOR=2,
+≪ naive NCOLOR× scaling.
+
+_Unblocked: `mg-validation-coverage` #8 (✅ done, above); hadronic pp→ll (below, now
+blocked only on a PDF interface + n-body LIPS)._
 
 ### Hadronic pp→ll cross section (after color flow)
 
-σ = Σ_q ∫ dx₁ dx₂ f_q(x₁) f_q̄(x₂) σ̂(q q̄ → l⁺ l⁻). Blocked on: color flow, a PDF
-interface (e.g. LHAPDF), and n-body LIPS for the partonic √ŝ scan. Flavors group by
-charge type since MG treats light quarks as massless.
+σ = Σ_q ∫ dx₁ dx₂ f_q(x₁) f_q̄(x₂) σ̂(q q̄ → l⁺ l⁻). `color-flow` is done; remaining
+blockers: a PDF interface (e.g. LHAPDF) and n-body LIPS for the partonic √ŝ scan.
+Flavors group by charge type since MG treats light quarks as massless.
 
 ---
 
@@ -362,7 +425,12 @@ _Depends on: `xsec-ee-mumu` (✅)_
 Accept/reject sampling with `w(p) = |M(p)|²/w_max`; serialize to Les Houches Event File
 format for downstream tools (Pythia, Herwig, etc.).
 
-_Depends on: `helas-generalize` (✅)_
+LHEF color tags need MG's *leading-Nc* flow decomposition (`color_flow_decomposition`
+/ `get_color_flow_string` in `color_amp.py`) to assign a `(color, anticolor)` integer
+pair per external leg — a separate small feature on top of the trace/δ basis
+`color-flow` built (note 16 §5); not needed for the multi-flow `|M|²` machinery itself.
+
+_Depends on: `helas-generalize` (✅), `color-flow` (✅, for color-tagged output)_
 
 ### `typed-units` — Typed physical units
 
@@ -389,8 +457,9 @@ spot: alongside `eval-layout` A6 while the timing rig is warm.
 feyngraph-ufo-replace (✅) ──→ lorentz-runtime-eval (✅) ──→ helas-generalize (✅) ──→ event-output-lhef
 lorentz-parse (✅) ──────────────────────────────────────┘              │
 diagram-enum (✅) ──────────────────────────────────────────────────────┤
-color-flow ──→ mg-validation-coverage #8, hadronic pp→ll               │
-lips-nbody ─────────────────────────────────────────────────────────────┴──→ event-output-lhef
+color-flow (✅ closed 2026-07-12, branch unmerged) ──→ mg-validation-coverage #8 (✅)
+                                                    └──→ hadronic pp→ll ←── pdf-interface (not yet a task)
+lips-nbody ────────────────────────────────────────────────┴──→ hadronic pp→ll, event-output-lhef
 
 cleanup-refactor (✅ closed 2026-07-10) ──→ validation-sprint, performance-sprint
 performance-sprint (✅ closed 2026-07-11, merged) ──┬──→ eval-layout (A0→A1→A2→A3→A4→A5→A6)
