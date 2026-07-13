@@ -421,3 +421,61 @@ Gate for every session: `cargo test` + the 11-process `validate_helas_mg` net
   onto `CoeffRat` — optional cleanup once `CoeffRat` exists.
 - **PDF interface + n-body LIPS** for hadronic σ (tracked in TODO).
 - **Color-flow sampling** for high multiplicity (Sherpa-style) — not needed.
+
+## 6. Sprint debrief (2026-07-12)
+
+How it ran: nine planned sessions (C3/C4/C5 each split in two for tighter
+checkpointing) plus one inserted debugging session (C5c), each executed as an isolated
+agent with a fixed scope, a hard validation gate, and a stop-rule ("fix only if
+unambiguous, else pin the finding and report"). Every commit landed with the full gate
+green; no session committed a regressing state. The splits paid for themselves: C3a/C3b
+separated pure-Rust work from MG-environment work, and C4a landed the AST plumbing
+provably inert (byte-identical net before/after), so when C4b's evaluator change ran
+into trouble the suspect diff was minimal.
+
+Observations worth carrying into future physics-feature sprints:
+
+1. **Every validation layer has a blind spot; enumerate them up front.** The CF matrix
+   is a Gram matrix, invariant under a uniform index transpose — so the CF oracle
+   (23/23 green) provably could not see the conjugation-convention bug that flipped
+   physical signs. |M|² is blind to global phases; per-diagram AMP ratios are polluted
+   by benign convention spread. The sprint's real bug was found exactly one layer down
+   (per-flow complex JAMPs). When planning oracles, ask of each: *what error class is
+   this one provably unable to detect?* — and make sure some other layer covers it.
+
+2. **Design-note convention claims are hypotheses, not facts.** §2.4's original "the
+   conjugation is automatic" claim read plausibly and survived five sessions' gates —
+   because those gates could not falsify it; the first process mixing f- and
+   T-structures did. Where a design asserts a convention comes for free, schedule the
+   probe that would falsify it early, and treat "all gates green" as "not yet
+   contradicted," never as "confirmed."
+
+3. **Keep a known-wrong informational trial in the net.** `uux_to_uux` sat unenforced
+   in `validate_helas_mg` from C3b onward, visibly wrong by ~0.6 while color was
+   stripped; the moment the multi-flow evaluator went live it snapped to 5.6e-14. A
+   free, always-on end-to-end signal, set up before the feature could possibly work.
+
+4. **Bit-for-bit gates confine debugging.** The NCOLOR=1 op-order rule (CF applied
+   after the helicity sum) kept the 11-process net bit-identical through every
+   evaluator change, so any digit change anywhere was an unambiguous regression
+   signal; REL_TOL judgment stayed reserved for genuinely new processes.
+
+5. **Expect the stress-test process to surface someone else's bug.** The first process
+   to exercise a code path (4-gluon multi-structure expansion, imaginary VVVV
+   coupling) is as likely to find a pre-existing defect as a sprint defect —
+   `gg_to_gg`'s failure decomposed into one of each. An explicit stop-rule for "the
+   residual is not ours" kept the sprint from scope-creeping into Lorentz-layer
+   surgery, and the precise localization made the deferral cheap to pick back up.
+
+6. **Verify the fix arithmetically before implementing it.** C5c reconstructed |M|² by
+   hand from dumped MG amplitudes under candidate colorize hypotheses and confirmed the
+   MG-convention combination reproduced the reference value exactly — before touching
+   production code. This converts "plausible sign fix" into "derived fix" (note-12's
+   oracle-first lesson, restated for symbolic-layer bugs).
+
+7. **Session hand-off notes are load-bearing.** The T-transpose observation traveled
+   C3b → C4b → C5a → C5b as a watch item and was the thread that unraveled the real
+   bug; the "for downstream sessions" section of each report cost little and paid
+   repeatedly. Same for interrupted sessions: resuming from transcript with a
+   mandatory `git status`/`git log` reconciliation step worked cleanly all three times
+   it was needed.
