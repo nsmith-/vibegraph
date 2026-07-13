@@ -22,6 +22,12 @@
 //! - `kernel.rs` — the Lorentz-primitive eval kernels `run::apply` dispatches to
 //!   (one `pub(crate)` fn per Lorentz `Op`, named for it).
 
+// Static per-node analysis (output type, constness, momentum id, helicity support)
+// over a lowered arena. The runtime cross-checks its predictions against every computed
+// slot; the full annotation surface is consumed by the not-yet-landed layout/recycling
+// passes and the egraph schema encoder.
+#[allow(dead_code)]
+mod analysis;
 mod ast;
 mod compile;
 mod diagram_eval;
