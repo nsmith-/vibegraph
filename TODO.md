@@ -217,8 +217,8 @@ work is the CLI wiring of a full proc card end-to-end.
 Deferred to the next validation pass of the loop — none of these guard the surface
 the optimization program touches:
 
-- **`IdentityAmp` process-level coverage**: needs a non-SM UFO model with an
-  `Identity` scalar bilinear (SM has none); could ride on a small dedicated test model.
+- **`IdentityAmp` process-level coverage**: moved to the non-SM UFO boundary
+  list below — it needs a non-SM model, so it rides with that work.
 - **Rationalize `Coeff(f64)` onto `CoeffRat`** (note 16 §5): now that `Op::CoeffRat`
   exists for color coefficients, the remaining `Coeff(f64)` leaves (Lorentz-structure
   and symmetry/fermi-sign coefficients) could migrate onto it too — optional cleanup,
@@ -271,6 +271,43 @@ of the qq4l class):
   definitions and flavor-symmetry pruning align. Validate on a small process (`pp_to_ll`)
   before the qq4l class; a set mismatch here is a real finding, not a test bug, and needs
   physics judgment (note-12 territory: MG-convention reconciliation is a bug magnet).
+
+### `non-sm-ufo` — collected boundaries a non-SM UFO model will hit
+
+The UFO surface is deliberately model-generic, but "generic" currently ends at the
+SM's feature set. None of these block anything (the interned SM avoids them all);
+they are collected here so a future BSM-model task scopes against a checklist
+instead of rediscovering each wall one hard error at a time. A small dedicated
+test model (or a public BSM UFO) would be the natural vehicle for several at once.
+
+- **Color sextets and baryonic epsilons**: the color engine handles
+  Singlet/Triplet/AntiTriplet/Octet only (`helas/repr/color.rs`); the sextet
+  tensors `K6`/`K6Bar`/`T6` (diquark models) and the baryon-number-violating
+  `Epsilon`/`EpsilonBar` (e.g. RPV SUSY) are deliberate hard errors
+  (`ufo/color.rs::SextetUnsupported`, `helas/color/tensor.rs`). Note the two
+  distinct "6"s: NCOLOR=6 (flow-basis dimension, e.g. `gg_to_gg`) is fully
+  supported; the 6-dimensional sextet *representation* is not. MG's reference
+  algebra for the missing tensors lives in `color_algebra.py` (K6/T6/ε
+  Clebsches); support means new `ColorTensor` atoms + trace-basis reduction
+  rules + CF products, validated the color-flow way (CF oracle vs MG's DATA CF,
+  then the JAMP-weighted |M|² gate).
+- **Spin codes beyond {1, 2, 3}**: `helicity_states_for_spin` (`eval/compile.rs`)
+  future-proofs the spin-2 helicity list (code 5), but nothing downstream builds
+  tensor external wavefunctions or propagators; spin-3/2 (code 4, gravitinos) is
+  an `UnsupportedSpin` error. Ghost codes (negative) stay irrelevant at LO.
+- **Majorana fermions** (MSSM neutralinos, gluinos): fermion-flow handling
+  assumes Dirac-continuous lines end to end — there is no flow-flip /
+  charge-conjugation machinery. This is HELAS's classically subtle sign
+  territory; the `color-flow` fermion-flow slot-swap bug shows how delicate the
+  flow conventions are even in the pure-Dirac case.
+- **`IdentityAmp` process-level coverage** (deferred from `validation-sprint`,
+  the last `KNOWN_UNCOVERED` op): needs an `Identity` scalar bilinear in the
+  Lorentz sector, which the SM lacks — a natural rider on whichever small test
+  model lands first.
+- **Loop-level UFOs** (`loop_sm`, NLO models): out of the LO charter. Note 04
+  records the parser history — the Python-AST parser replaced the FeynGraph/PEG
+  split that choked on `loop_sm`'s attribute assignments, but counterterm
+  content (`CT_vertices.py` etc.) has no consumer regardless.
 
 ### `feyngraph-perf` — Fix feyngraph allocation hot spot
 
