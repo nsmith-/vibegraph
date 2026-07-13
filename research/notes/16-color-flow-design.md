@@ -9,16 +9,27 @@ files under `validation/madgraph/output/`, and the current vibegraph eval pipeli
 ## Outcome (2026-07-12, sessions C1–C6 complete on branch `color-flow`)
 
 The design below was implemented as planned; §4's session plan matches what shipped.
-Final state: `validate_helas_mg` enforces **13 processes** — the original 11 (bit-
-identical) plus `uux_to_uux` (5.61e-14) and `gg_to_ttx` (1.89e-15) via the multi-flow
-CF-weighted evaluator built here. `gg_to_gg` (NCOLOR=6, the 4-gluon-vertex stress test)
-stays **informational**: its color side is proven correct — the CF matrix and per-flow
-coefficients match MG, and its 3 pure-exchange diagrams are bit-for-bit — but
-enforcement is blocked by a **pre-existing, unrelated** Lorentz bug: the imaginary
-4-gluon coupling `GC_12 = i·g²` carries a spurious +90° phase on the contact diagram
-relative to the exchange diagrams. That bug is filed to `validation-sprint`
-(`TODO.md`); the MG reference data and JAMP probe built here are already in place, so
-fixing it should enforce `gg_to_gg` straight to ≤1e-12 with no color-side changes.
+Final state: `validate_helas_mg` enforces **14 processes** — the original 11 (bit-
+identical) plus `uux_to_uux` (5.61e-14), `gg_to_ttx` (1.89e-15), and `gg_to_gg`
+(8.25e-14) via the multi-flow CF-weighted evaluator built here. `gg_to_gg` (NCOLOR=6,
+the 4-gluon-vertex stress test) was enforced by `validation-sprint`: its color side was
+always correct — the CF matrix and per-flow coefficients match MG, and its 3
+pure-exchange diagrams are bit-for-bit — the blocker was a **pre-existing, unrelated**
+Lorentz bug in the contact diagram's amplitude-rooted pure-metric structure. The
+contact term has no propagator on its line to carry the per-diagram −i convention that
+cancels in |M|² elsewhere, so lowering it with the `Op::MetricNegI` kernel (a −i
+factor) left a physical +90° phase relative to MadGraph. The fix collapsed the
+amplitude-root branch into the same real −1 sign-flip + plain `Metric` lowering the
+scalar-output branch already used for the identical structure, and `Op::MetricNegI`
+was eliminated end-to-end (op, kernel, run dispatch, lowering, egglog schema). Observed
+max_rel_diff 8.25e-14 against MadGraph's MATRIX1 over 75 phase-space points.
+
+Caveat found while re-checking `gg_to_gg` post-fix: the per-flow JAMP strict-phase
+comparison in `compare_amps.py` does not match MG element-wise even now — vibegraph's
+trace/δ color basis and MG's 6 JAMPs span the same space but are not a 1:1 labeling at
+NCOLOR=6, so a flow-by-flow complex-value diff is not a valid oracle here. The
+CF-weighted |M|² contraction is machine-exact; `validate_helas_mg` enforcement gates on
+|M|² by design, not on the per-flow JAMP labeling.
 
 One correction to the design as originally written: §2.4 below claimed the 3-vs-3̄
 slot pairing across a propagator was "automatic" from the diagram walk. It is not —
@@ -366,7 +377,10 @@ per-diagram/per-flow, don't trust aggregate ratios.
 2. **JAMP-level probe**: extend the `amp_probe.f.in`/`compare_amps.py` rig to dump
    `JAMP(i)` per helicity alongside `AMP(k)`; matching per-flow complex values
    bit-for-bit is the debugging workhorse for C4/C5 (requires matching MG's basis
-   sort order, §2.4).
+   sort order, §2.4). Holds through NCOLOR=2 (`uux_to_uux`, `gg_to_ttx`); at
+   NCOLOR=6 (`gg_to_gg`) vibegraph's basis and MG's 6 JAMPs span the same space but
+   are not a 1:1 labeling, so the element-wise match breaks down there — see
+   Outcome above. The CF-weighted |M|² stays the oracle of record.
 3. **Existing 11-process net**: unchanged results, stand-in `color_factor` deleted
    (CF now computed; NCOLOR=1 path bit-for-bit by the op-order rule in §2.5).
 4. **New reference processes** (registry additions to `gen_amplitude.py` /
@@ -376,8 +390,10 @@ per-diagram/per-flow, don't trust aggregate ratios.
    - `gg_to_ttx` — external octets, `f(1,2,3)` ggg vertex feeding a quark line
      (f→trace rules), NCOLOR=2.
    - `gg_to_gg` — the stress test: 4-gluon vertex = first multi-color-structure
-     vertex (per-vertex chain expansion ×3), NCOLOR=6, pure-f algebra. Also likely
-     to finally exercise `MetricNegI`-adjacent rootings (validation-sprint note).
+     vertex (per-vertex chain expansion ×3), NCOLOR=6, pure-f algebra. Also the
+     first process to root a pure-metric vertex at the amplitude (the
+     `MetricNegI` branch) — this exposed the phase bug `validation-sprint`
+     later fixed (see Outcome above).
 5. **Algebra unit tests**: Casimir/Dynkin closures vs the `repr/color.rs` constants,
    `f f` contraction identities (`f(a,x,y)f(b,x,y) = Nc δ^{ab}` → `2·Nc·Tr(ab)` form),
    canonicalization idempotence, conjugation involution, overflow tripwire.

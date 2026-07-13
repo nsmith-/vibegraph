@@ -190,8 +190,8 @@ impl AmplitudeEvaluator {
 /// The `validate_helas_mg` process suite (`EXPECT_MATCH` in
 /// `tests/validate_helas_mg.rs`: bit-for-bit for the 11 `NCOLOR=1` processes,
 /// `REL_TOL`-enforced via the CF-weighted multi-flow contraction for
-/// `uux_to_uux` and `gg_to_ttx`). Keep in sync with the `PROCESSES` registry in
-/// `validation/madgraph/gen_amplitude.py`.
+/// `uux_to_uux`, `gg_to_ttx`, and `gg_to_gg`). Keep in sync with the `PROCESSES`
+/// registry in `validation/madgraph/gen_amplitude.py`.
 #[cfg(test)]
 pub(super) const MG_VALIDATED_PROCESSES: [&str; 14] = [
     "e+ e- > mu+ mu-",
