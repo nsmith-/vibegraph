@@ -68,7 +68,7 @@ For paper references, submodule locations and key paths, and instructions for fe
   complex values), and for each test know what error class it provably cannot detect.
 - **Convention claims are hypotheses**: any assertion that a sign/index/phase
   convention is "automatic" or "comes for free" must be pinned by a test that would
-  fail if it were false — gates that cannot see the convention passing is not
+  fail if it were false — a passing gate that cannot see the convention is not
   confirmation.
 - **Keep a known-wrong informational comparison running** while a feature is under
   construction (enforce it later): it turns "the feature went live" into an instant
