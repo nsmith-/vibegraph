@@ -97,6 +97,16 @@ runtime grows its own internal storage. Sessions in dependency order (detail in 
 - **A3** — SoA scratch + typed instruction stream: per-type result arenas replace
   `Vec<WaveformSlot>`; typed operand indices; `Node` repack. Element types keep the
   `wavefn.rs` structs at first (arithmetic untouched). Bit-for-bit.
+- **A3b** — bounds-check-branch investigation (added 2026-07-13): A3 removes the
+  enum-unwrap branches from the hot loop, leaving (believed) only slice
+  bounds-check branches on arena indexing. Investigate **safe** mechanisms to
+  eliminate them — e.g. pre-resolving operand/result locations at bind time into
+  lifetime-guaranteed references (`&'a Cell<T>`-style arenas, split borrows), or
+  restructuring so LLVM provably elides the checks (bind-time index validation +
+  hoisted asserts). `unsafe`/`get_unchecked` is out of scope. Deliverable:
+  feasibility memo + microbenchmark, go/no-go.
+- **A3c** — implement the A3b mechanism (only if A3b says go). Bit-for-bit;
+  serializes with A4 (whichever lands second rebases).
 - **A4** — momentum pool: per-point helicity-independent momentum table; SoA elements
   become bare `Bispinor`/`ComplexVector`/`C<F>`; `mul_apply` momentum routing leaves
   the hot path; `PMom`/`PMomOut` become table reads. Reassociates momentum sums →
