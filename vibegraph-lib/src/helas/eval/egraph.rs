@@ -29,7 +29,7 @@
 use std::collections::HashMap;
 
 use egglog::ast::{Command, Expr, GenericAction, Literal, RustSpan, Span};
-use egglog::{CommandOutput, EGraph, Term, TermDag, TermId};
+use egglog::{CommandOutput, EGraph, SerializeConfig, Term, TermDag, TermId};
 use ordered_float::OrderedFloat;
 
 use super::ast::{Ast, AstBuilder};
@@ -107,6 +107,188 @@ pub fn roundtrip(ast: &Ast<Sym>) -> Result<Ast<Sym>, EgraphError> {
     let mut memo: HashMap<TermId, NodeId> = HashMap::new();
     let root = decode(&dag, root_term, &mut b, &mut memo)?;
     Ok(b.finish(root))
+}
+
+// ────────────────────────────── enumerate ──────────────────────────────────
+
+/// A serialized e-class identifier: egglog's `sort-value` tag string (e.g.
+/// `Node-42`, `i64-5`). Stable within one e-graph and consistent with the ids
+/// `extract`/`TermDag` operate over, since both are keyed off the same
+/// canonicalized backend value.
+pub type ClassId = String;
+
+/// The leaf value carried by an e-node whose e-class is a base (primitive) sort.
+/// Constructor e-nodes (those whose e-class sort is `Node`/`NodeVec`) carry
+/// [`Payload::None`]; their leaf data lives in child primitive e-classes.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Payload {
+    /// An ordinary constructor e-node — no primitive value of its own.
+    None,
+    /// A primitive `i64` leaf (a `Coupling`/`Mass`/`External` field, `CoeffRat` term…).
+    Int(i64),
+    /// A primitive `f64` leaf (a `Coeff` value).
+    Float(f64),
+    /// A primitive egglog rendered as neither `i64` nor `f64`.
+    Other(String),
+}
+
+/// One e-node: a function symbol applied to child e-classes. Children are given
+/// as [`ClassId`]s (resolved from the serialized graph's node-id edges), the form
+/// a DAG-cost extractor consumes directly.
+#[derive(Debug, Clone)]
+pub struct ENode {
+    /// The head symbol: an [`Op::name`] for constructor nodes, the rendered value
+    /// for primitive nodes, the container tag for `NodeVec` nodes.
+    pub op: String,
+    /// The e-classes this e-node references, in argument order.
+    pub children: Vec<ClassId>,
+    /// The primitive value, when this e-node is a base-sort leaf.
+    pub payload: Payload,
+    /// Extraction cost egglog assigned this node (constructor cost or 1.0 for
+    /// primitives); carried through for M2 to override with slot-traffic weights.
+    pub cost: f64,
+}
+
+/// One e-class: a set of equivalent e-nodes sharing an id and sort.
+#[derive(Debug, Clone)]
+pub struct EClass {
+    /// The canonical e-class id.
+    pub id: ClassId,
+    /// The egglog sort of this class (`Node`, `NodeVec`, `i64`, `f64`, …).
+    pub sort: Option<String>,
+    /// The e-nodes in this class. With no rewrite rules registered every class
+    /// holds exactly one e-node.
+    pub nodes: Vec<ENode>,
+}
+
+/// A whole e-graph enumerated into owned Rust structures: every e-class, its
+/// e-nodes, and their child e-class ids, plus the root e-class(es). This is the
+/// input format for a sharing-aware (DAG-cost) extractor built outside egglog —
+/// egglog 2.0's own extraction is tree-cost only.
+#[derive(Debug, Clone)]
+pub struct DagEGraph {
+    /// Every e-class, in serialization order.
+    pub classes: Vec<EClass>,
+    /// The e-class(es) the root expression evaluates to (one, for a single AST).
+    pub roots: Vec<ClassId>,
+    index: HashMap<ClassId, usize>,
+}
+
+impl DagEGraph {
+    /// The e-class with id `id`, if present.
+    pub fn class(&self, id: &str) -> Option<&EClass> {
+        self.index.get(id).map(|&i| &self.classes[i])
+    }
+
+    /// Whether an e-class with id `id` exists.
+    pub fn contains(&self, id: &str) -> bool {
+        self.index.contains_key(id)
+    }
+
+    /// The number of e-classes of a given egglog sort.
+    pub fn classes_of_sort(&self, sort: &str) -> usize {
+        self.classes
+            .iter()
+            .filter(|c| c.sort.as_deref() == Some(sort))
+            .count()
+    }
+}
+
+/// Build the e-graph from `ast` exactly as [`roundtrip`] does (schema + a single
+/// inlined insertion), then enumerate every e-class and e-node from egglog's
+/// serialized view into an owned [`DagEGraph`]. No rewrite rules run, so the
+/// result is the hash-consed input DAG: one e-node per e-class, one `Node`-sort
+/// e-class per distinct AST subterm.
+///
+/// The enumeration goes through [`EGraph::serialize`], egglog's supported,
+/// backend-canonicalized export (the same path its GraphViz/JSON tooling uses).
+/// The alternative — iterating each function table via `function_to_dag` — routes
+/// through the tree-cost `Extractor` per row, so it cannot recover raw e-node
+/// child edges without re-imposing an extraction; `serialize` exposes them
+/// directly.
+pub fn enumerate(ast: &Ast<Sym>) -> Result<DagEGraph, EgraphError> {
+    let mut egraph = EGraph::default();
+    egraph
+        .parse_and_run_program(None, NODE_SCHEMA)
+        .map_err(|e| EgraphError::Egglog(e.to_string()))?;
+
+    // Evaluating the fully-inlined root expression inserts every subterm (via each
+    // constructor's get-or-make-set default) and returns the root's canonical
+    // (sort, value) — the handle serialization needs to mark the root e-class.
+    let root_expr = encode_expr(ast, ast.root());
+    let (root_sort, root_value) = egraph
+        .eval_expr(&root_expr)
+        .map_err(|e| EgraphError::Egglog(e.to_string()))?;
+
+    let out = egraph.serialize(SerializeConfig {
+        root_eclasses: vec![(root_sort, root_value)],
+        ..SerializeConfig::default()
+    });
+
+    // Translate egglog's serialized e-graph into owned structures: group nodes by
+    // e-class, resolve each child node-id edge to the e-class it belongs to, and
+    // recover primitive leaf payloads. `out.egraph` is `egraph_serialize::EGraph`
+    // (a transitive dep); working through it by field/method access keeps that
+    // type out of this crate's public surface.
+    let serialized = &out.egraph;
+    let mut classes = Vec::new();
+    let mut index = HashMap::new();
+    for (class_id, class) in serialized.classes() {
+        let sort = serialized
+            .class_data
+            .get(class_id)
+            .and_then(|d| d.typ.clone());
+        let nodes = class
+            .nodes
+            .iter()
+            .map(|node_id| {
+                let node = &serialized[node_id];
+                // A serialized child edge points at a specific node in the child
+                // e-class; the child's e-class id is what a DAG extractor needs.
+                let children = node
+                    .children
+                    .iter()
+                    .map(|child| serialized[child].eclass.to_string())
+                    .collect();
+                ENode {
+                    op: node.op.clone(),
+                    children,
+                    payload: payload_of(sort.as_deref(), &node.op),
+                    cost: node.cost.into_inner(),
+                }
+            })
+            .collect();
+        let id = class_id.to_string();
+        index.insert(id.clone(), classes.len());
+        classes.push(EClass { id, sort, nodes });
+    }
+    let roots = serialized
+        .root_eclasses
+        .iter()
+        .map(|c| c.to_string())
+        .collect();
+    Ok(DagEGraph {
+        classes,
+        roots,
+        index,
+    })
+}
+
+/// Recover the leaf value of a primitive e-node from its rendered op string.
+/// Constructor and container e-classes (`Node`/`NodeVec`) carry no primitive.
+fn payload_of(sort: Option<&str>, op: &str) -> Payload {
+    match sort {
+        None | Some("Node") | Some("NodeVec") => Payload::None,
+        _ => {
+            if let Ok(i) = op.parse::<i64>() {
+                Payload::Int(i)
+            } else if let Ok(f) = op.parse::<f64>() {
+                Payload::Float(f)
+            } else {
+                Payload::Other(op.to_string())
+            }
+        }
+    }
 }
 
 // ─────────────────────────────── encode ────────────────────────────────────
@@ -497,6 +679,225 @@ mod tests {
     fn representative_processes_roundtrip() {
         use super::super::compile::MG_VALIDATED_PROCESSES;
         assert_processes_roundtrip(&MG_VALIDATED_PROCESSES);
+    }
+
+    // ─────────────────────────── enumeration ───────────────────────────────
+
+    use std::collections::HashSet;
+
+    /// Number of structurally-distinct subterms of `ast`: the count egglog's
+    /// hash-consing collapses the arena to, computed here independently by
+    /// assigning each distinct `(op, leaf, child-keys)` a fresh key bottom-up.
+    fn distinct_ast_subterms(ast: &Ast<Sym>) -> usize {
+        fn key(
+            ast: &Ast<Sym>,
+            id: NodeId,
+            keys: &mut HashMap<String, usize>,
+            memo: &mut HashMap<NodeId, usize>,
+        ) -> usize {
+            if let Some(&k) = memo.get(&id) {
+                return k;
+            }
+            let child_keys: Vec<usize> = ast
+                .children_ids(id)
+                .iter()
+                .map(|&c| key(ast, c, keys, memo))
+                .collect();
+            let node = ast.value(id);
+            let s = format!("{}|{:?}|{:?}", node.op.name(), node.leaf, child_keys);
+            let next = keys.len();
+            let k = *keys.entry(s).or_insert(next);
+            memo.insert(id, k);
+            k
+        }
+        let mut keys = HashMap::new();
+        let mut memo = HashMap::new();
+        key(ast, ast.root(), &mut keys, &mut memo);
+        keys.len()
+    }
+
+    /// The set of `Op` head tokens appearing anywhere in `ast`.
+    fn ast_op_names(ast: &Ast<Sym>) -> HashSet<&'static str> {
+        ast.iter().map(|id| ast.value(id).op.name()).collect()
+    }
+
+    /// Enumerate `ast` and assert the result is a consistent view of the rule-free
+    /// (hash-consed identity) e-graph: one `Node` e-class per distinct AST subterm,
+    /// exactly one e-node per class, every AST op present, every child id resolvable,
+    /// and a root that resolves to a `Node` class.
+    fn assert_enumeration_consistent(ast: &Ast<Sym>, ctx: &str) {
+        let dag = enumerate(ast).unwrap_or_else(|e| panic!("[{ctx}] enumerate failed: {e}"));
+
+        // No rules ran, so structural identity: #Node e-classes == #distinct subterms.
+        assert_eq!(
+            dag.classes_of_sort("Node"),
+            distinct_ast_subterms(ast),
+            "[{ctx}] Node e-class count != distinct AST subterm count",
+        );
+
+        // Every child id resolves to a real e-class, and each e-node has a head op.
+        for class in &dag.classes {
+            assert!(
+                !class.nodes.is_empty(),
+                "[{ctx}] empty e-class {}",
+                class.id
+            );
+            for node in &class.nodes {
+                assert!(!node.op.is_empty(), "[{ctx}] e-node with empty op");
+                for child in &node.children {
+                    assert!(
+                        dag.contains(child),
+                        "[{ctx}] child id {child} does not resolve to an e-class",
+                    );
+                }
+            }
+        }
+
+        // With no unions, every e-class holds exactly one e-node.
+        for class in dag
+            .classes
+            .iter()
+            .filter(|c| c.sort.as_deref() == Some("Node"))
+        {
+            assert_eq!(
+                class.nodes.len(),
+                1,
+                "[{ctx}] rule-free Node e-class {} has {} e-nodes",
+                class.id,
+                class.nodes.len(),
+            );
+        }
+
+        // Every op used by the AST shows up as some Node e-node head.
+        let enumerated_ops: HashSet<&str> = dag
+            .classes
+            .iter()
+            .filter(|c| c.sort.as_deref() == Some("Node"))
+            .flat_map(|c| c.nodes.iter().map(|n| n.op.as_str()))
+            .collect();
+        for op in ast_op_names(ast) {
+            assert!(
+                enumerated_ops.contains(op),
+                "[{ctx}] AST op `{op}` absent from the enumerated e-graph",
+            );
+        }
+
+        // The single root resolves and is a Node e-class.
+        assert_eq!(dag.roots.len(), 1, "[{ctx}] expected exactly one root");
+        let root = &dag.roots[0];
+        let root_class = dag
+            .class(root)
+            .unwrap_or_else(|| panic!("[{ctx}] root id {root} does not resolve"));
+        assert_eq!(
+            root_class.sort.as_deref(),
+            Some("Node"),
+            "[{ctx}] root e-class is not a Node",
+        );
+    }
+
+    fn assert_enumeration_str(sexpr: &str) {
+        let ast: Ast<Sym> = sexpr.parse().expect("parse input s-expr");
+        assert_enumeration_consistent(&ast, sexpr);
+    }
+
+    /// Leaf-only fixtures: each is a single `Node` e-class over one or more
+    /// primitive child classes; primitive leaf values decode into [`Payload`].
+    #[test]
+    fn enumerate_leaves_all_flavors() {
+        assert_enumeration_str("(Coupling (CouplingId 5))");
+        assert_enumeration_str("(Mass (ParticleId 11))");
+        assert_enumeration_str("(Coeff (Real 1.5))");
+        assert_enumeration_str("(CoeffRat (Rational 1 3 0))");
+        assert_enumeration_str("(External (ExtLegInfo 0 2 1 1) (Mass (ParticleId 11)))");
+    }
+
+    /// A nested vertex and a variadic `PMomOut` (its children live behind a
+    /// `NodeVec` container e-class): child edges must still resolve.
+    #[test]
+    fn enumerate_nested_and_variadic() {
+        assert_enumeration_str(
+            "(Mul (Coupling (CouplingId 5)) (Add \
+               (Mul (Coeff (Real 1.5)) \
+                    (GammaVout (External (ExtLegInfo 0 2 1 1) (Mass (ParticleId 11))) \
+                               (External (ExtLegInfo 1 2 -1 0) (Mass (ParticleId 11))))) \
+               (Mul (Coeff (Real -1.0)) \
+                    (ProjM (External (ExtLegInfo 2 2 1 1) (Mass (ParticleId 0)))))))",
+        );
+        assert_enumeration_str(
+            "(PMomOut (External (ExtLegInfo 0 2 1 1) (Mass (ParticleId 24))) \
+                      (External (ExtLegInfo 1 2 -1 0) (Mass (ParticleId 24))) \
+                      (External (ExtLegInfo 2 3 1 1) (Mass (ParticleId 23))))",
+        );
+    }
+
+    /// Leaf primitives decode into typed payloads, and a genuine DAG (a shared
+    /// subtree feeding two parents) enumerates to a single shared child e-class,
+    /// not two — so #Node e-classes stays below the arena-node count.
+    #[test]
+    fn enumerate_shared_subtree_dag() {
+        let mut b = AstBuilder::new();
+        let mass = b.add(Op::Mass, Sym::Particle(ParticleId::from(11usize)), vec![]);
+        let ext = b.add(
+            Op::External,
+            Sym::Ext {
+                leg_idx: 0,
+                spin: 2,
+                charge: crate::helas::repr::numbers::Charge::Particle,
+                incoming: true,
+            },
+            vec![mass],
+        );
+        let root = b.add(Op::Add, Sym::None, vec![ext, ext]);
+        let ast = b.finish(root);
+        assert_enumeration_consistent(&ast, "shared-subtree-dag");
+
+        // Add, External, Mass — three distinct subterms despite External appearing twice.
+        let dag = enumerate(&ast).unwrap();
+        assert_eq!(dag.classes_of_sort("Node"), 3);
+        // The External e-class is referenced by the Add node's two children as one id.
+        let add = dag
+            .classes
+            .iter()
+            .find(|c| c.nodes[0].op == "Add")
+            .expect("Add class");
+        assert_eq!(add.nodes[0].children.len(), 2);
+        assert_eq!(add.nodes[0].children[0], add.nodes[0].children[1]);
+
+        // The Mass e-class's i64 child carries an Int payload of 11.
+        let has_int_11 = dag
+            .classes
+            .iter()
+            .flat_map(|c| &c.nodes)
+            .any(|n| n.payload == Payload::Int(11));
+        assert!(has_int_11, "expected a primitive Int(11) payload");
+    }
+
+    /// The real ops: each rewrite-dev process, compiled to its binary `Ast<Sym>`,
+    /// enumerates into a consistent e-graph (the rule-free structural-identity gate
+    /// M2's DAG extractor must reproduce).
+    #[test]
+    fn enumerate_dev_processes() {
+        use super::super::lower;
+        use super::super::root_diagram::compile_diagram_ast;
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::ufo::sm::{sm_model, SMRestrict};
+
+        let model = sm_model(SMRestrict::Default);
+        let opts = ParsingOptions::default();
+        for process in [
+            "e+ e- > mu+ mu-",
+            "e+ e- > mu+ mu- a",
+            "e+ e- > mu+ mu- ta+ ta- QCD=0",
+        ] {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            assert!(!sets.is_empty(), "no diagrams for '{process}'");
+            for set in &sets {
+                let diagrams = compile_diagram_ast(set, &model).unwrap();
+                let ast = lower::lower(&diagrams);
+                assert_enumeration_consistent(&ast, process);
+            }
+        }
     }
 
     /// Every `Op` variant appears as a constructor in the schema, so adding an op forces
