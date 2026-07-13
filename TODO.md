@@ -327,6 +327,34 @@ decomposition (RAMBO-style). Research Rust options before committing to an appro
 `gen_amplitude.py`; the MG-computed partonic σ̂ = 6.556e-7 pb for the uux 2→6 at
 √s=500 is banked as a future `validate-vegas` reference.)
 
+**Design inputs for the sprint plan** (fold into the design note):
+
+- **Abstraction is the point**: structure the phase-space module so sampler,
+  channel mapping, and integrator are separately swappable and composable —
+  flat RAMBO vs. recursive 2-body propagator-pole channels, single- vs.
+  multi-channel weighting, classic VEGAS vs. VEGAS+ stratification should be
+  mix-and-match choices, not rewrites. The known endgame is MG-style
+  per-diagram multi-channel (one channel per diagram parametrised by its
+  propagator poles, combined with the variance-minimising weight `1/Σᵢ(1/Jᵢ)` —
+  note 01 phase-space-optimisation section), and possibly Sherpa-style
+  sampling over color/helicity instead of summing.
+- **Reference implementations** (submodules; key paths in
+  `research/refs/README.md`): Sherpa `PHASIC++/Main/` (multi-channel adaptive
+  integrator with separate `Color_Integrator`/`Helicity_Integrator`; note 03
+  §1.5), POWHEG `integrator.f` (MINT), MG `madgraph/various/rambo.py` (carries
+  the line-218 overflow-warning sign bug documented in note 07).
+- **Hazard catalog**: note 07 "Numerical Precision / Stability" and
+  "Phase-Space / Integration" test lists. MG's sampler bugs (BW mapping,
+  T-channel ordering, threshold kinematics, conflicting-BW configurations)
+  stayed latent 5–10 years because sampler errors shift σ smoothly rather than
+  tripping a bit-exact gate — plan the validation regime alongside the feature.
+- **Validation regime**: bit-for-bit gating exists only with a pinned RNG seed
+  and unchanged sampling order; otherwise gate statistically — σ within quoted
+  MC uncertainty (the `validate_vegas.rs` targets plus the banked σ̂ above) and
+  distribution comparisons, since σ-agreement alone is a weak oracle, blind to
+  mis-sampled regions of small measure. For optimization work the figure of
+  merit is variance × CPU-time at fixed target precision, not ns/point.
+
 _Unblocks: hadronic pp→ll, `event-output-lhef`._
 
 ### `event-output-lhef` — Unweighted events in LHEF format
