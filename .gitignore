@@ -10,7 +10,8 @@
 /validation/madgraph/output
 /validation/madgraph/*.so
 __pycache__/
-.claude
+.claude/*
+!.claude/agents/
 .vscode
 # TODO: add MCP server setup to pixi.toml ?
 .mcp.json
