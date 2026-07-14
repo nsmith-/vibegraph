@@ -5,7 +5,7 @@
 //! phase-space point it walks the arena in storage (topological) order, reducing each
 //! node from its already-computed children via the single [`apply`] match.
 
-use crate::helas::repr::lorentz::{ComplexVector, LorentzVector};
+use crate::helas::repr::lorentz::{Bispinor, Bra, ComplexVector, Ket, LorentzVector};
 use crate::helas::repr::numbers::{Charge, SpinorHelicity};
 use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
@@ -41,17 +41,24 @@ pub struct ScratchSpace<F: Real> {
     /// One result arena per output class (real / scalar / vector / flow-in / flow-out
     /// fermion). Each node writes its result to the arena its statically-known class
     /// selects, and consumers read operands directly from the correct arena — no
-    /// per-value enum tag. Filled in storage (topological) order.
+    /// per-value enum tag. The elements are momentum-stripped (a bare `C`/`ComplexVector`/
+    /// `Bispinor`): a current's routing momentum lives in `moms` instead, keyed by the
+    /// node's momentum id. Filled in storage (topological) order, per helicity.
     reals: Vec<F>,
-    scalars: Vec<ScalarWf<F>>,
-    vectors: Vec<VectorWf<F>>,
-    fin: Vec<InDiracWf<F>>,
-    fout: Vec<OutDiracWf<F>>,
+    scalars: Vec<C<F>>,
+    vectors: Vec<ComplexVector<F>>,
+    fin: Vec<Bispinor<F, Ket>>,
+    fout: Vec<Bispinor<F, Bra>>,
+    /// Per-point momentum pool: `moms[id]` is the external-momentum combination the
+    /// momentum table interns at `id` (`Σ ± p_leg`), resolved once per phase-space point.
+    /// Helicity-independent, so it is reused across the helicity loop inside `eval_m2`.
+    moms: Vec<LorentzVector<F>>,
 }
 
 impl<F: Real> ScratchSpace<F> {
-    /// Clear every arena and reserve each to the program's exact result count, so a run
-    /// fills them by `push` with no reallocation.
+    /// Clear every result arena and reserve each to the program's exact result count, so a
+    /// run fills them by `push` with no reallocation. Leaves `moms` untouched — it is
+    /// resolved once per point by [`resolve_moms`] and reused across the helicity loop.
     #[inline]
     fn reset(&mut self, sizes: &[u32; N_ARENAS]) {
         self.reals.clear();
@@ -145,6 +152,7 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
             vectors: Vec::with_capacity(sizes[2] as usize),
             fin: Vec::with_capacity(sizes[3] as usize),
             fout: Vec::with_capacity(sizes[4] as usize),
+            moms: Vec::with_capacity(self.eval.folded().analysis().mom_table().len()),
         }
     }
 
@@ -164,19 +172,27 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         if momenta.len() != self.eval.n_ext() {
             return F::zero();
         }
+        let folded = self.eval.folded();
+        // The momentum pool is helicity-independent, so resolve it once per phase-space
+        // point and reuse it across the helicity loop below.
+        resolve_moms(folded, momenta, scratch);
         let n = self.eval.n_flows();
         if n == 1 {
             let hel_sum = self
                 .eval
                 .helicities()
                 .iter()
-                .map(|hel| self.run(momenta, hel, None, scratch).norm_sqr())
+                .map(|hel| {
+                    let env = self.eval_env(momenta, hel, None);
+                    run_forward_typed(folded, &env, scratch).norm_sqr()
+                })
                 .fold(F::zero(), |acc, x| acc + x);
             return hel_sum * self.cf[0];
         }
         let mut total = F::zero();
         for hel in self.eval.helicities() {
-            let jamps = self.run_flows(momenta, hel, scratch);
+            let env = self.eval_env(momenta, hel, None);
+            let jamps = run_forward_flows_typed(folded, &env, scratch);
             // MATRIX1 += Σ_i ( Σ_j CF_{ji}·J_j ) · conj(J_i); the imaginary parts
             // cancel over the i-sum (MADGRAPH assigns the complex product to a real
             // accumulator), so only the real part contributes.
@@ -205,6 +221,23 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         self.run(momenta, helicities, None, scratch)
     }
 
+    /// The per-evaluation immutable context for one (momenta, helicity) point.
+    fn eval_env<'e>(
+        &'e self,
+        momenta: &'e [LorentzVector<F>],
+        helicities: &'e [i32],
+        ward_leg: Option<usize>,
+    ) -> EvalEnv<'e, F> {
+        EvalEnv {
+            consts_c: &self.consts_c,
+            consts_f: &self.consts_f,
+            ext_legs: self.eval.folded().ext_legs(),
+            momenta,
+            helicities,
+            ward_leg,
+        }
+    }
+
     /// Walk the folded arena for one (momenta, helicity) point. `ward_leg` gauge-
     /// substitutes one external boson's polarisation with its momentum (test-only).
     fn run(
@@ -214,35 +247,27 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         ward_leg: Option<usize>,
         scratch: &mut ScratchSpace<F>,
     ) -> C<F> {
-        let env = EvalEnv {
-            consts_c: &self.consts_c,
-            consts_f: &self.consts_f,
-            ext_legs: self.eval.folded().ext_legs(),
-            momenta,
-            helicities,
-            ward_leg,
-        };
-        run_forward_typed(self.eval.folded(), &env, scratch)
+        let folded = self.eval.folded();
+        resolve_moms(folded, momenta, scratch);
+        let env = self.eval_env(momenta, helicities, ward_leg);
+        run_forward_typed(folded, &env, scratch)
     }
 
     /// Walk the folded arena for one (momenta, helicity) point, returning the
-    /// per-flow JAMPs `J_i` — the scalar children of the [`Op::Flows`] root. Used by
-    /// the multi-flow [`eval_m2`](Self::eval_m2) path.
+    /// per-flow JAMPs `J_i` — the scalar children of the [`Op::Flows`] root. The
+    /// multi-flow [`eval_m2`](Self::eval_m2) path inlines this (resolving the momentum
+    /// pool once per point); the per-flow JAMP probes call it standalone.
+    #[cfg(test)]
     fn run_flows(
         &self,
         momenta: &[LorentzVector<F>],
         helicities: &[i32],
         scratch: &mut ScratchSpace<F>,
     ) -> Vec<C<F>> {
-        let env = EvalEnv {
-            consts_c: &self.consts_c,
-            consts_f: &self.consts_f,
-            ext_legs: self.eval.folded().ext_legs(),
-            momenta,
-            helicities,
-            ward_leg: None,
-        };
-        run_forward_flows_typed(self.eval.folded(), &env, scratch)
+        let folded = self.eval.folded();
+        resolve_moms(folded, momenta, scratch);
+        let env = self.eval_env(momenta, helicities, None);
+        run_forward_flows_typed(folded, &env, scratch)
     }
 
     /// Test-only: evaluate the amplitude with one external boson's polarisation ε^μ
@@ -288,8 +313,24 @@ pub(super) fn run_forward_slot<F: Real>(
     res[ast.root() as usize]
 }
 
+/// Resolve the per-point momentum pool: `scratch.moms[id]` becomes the external-momentum
+/// combination the momentum table interns at `id`. Helicity-independent, so callers that
+/// loop over helicities (`eval_m2`) resolve it once per point and reuse it.
+fn resolve_moms<F: Real>(
+    folded: &Folded,
+    momenta: &[LorentzVector<F>],
+    scratch: &mut ScratchSpace<F>,
+) {
+    let table = folded.analysis().mom_table();
+    scratch.moms.clear();
+    scratch.moms.reserve(table.len());
+    for id in 0..table.len() as u32 {
+        scratch.moms.push(table.resolve(id, momenta));
+    }
+}
+
 /// Evaluate the whole-amplitude arena through the typed instruction stream, returning the
-/// root scalar = M.
+/// root scalar = M. Assumes [`resolve_moms`] has populated the momentum pool for this point.
 fn run_forward_typed<F: Real>(
     folded: &Folded,
     env: &EvalEnv<'_, F>,
@@ -297,13 +338,14 @@ fn run_forward_typed<F: Real>(
 ) -> C<F> {
     fill_arenas(folded, env, scratch);
     match &folded.program().root {
-        RootKind::Single(loc) => scratch.scalars[*loc as usize].value,
+        RootKind::Single(loc) => scratch.scalars[*loc as usize],
         RootKind::Flows(_) => panic!("run_forward_typed on a Flows-rooted amplitude"),
     }
 }
 
 /// Evaluate a `Flows`-rooted arena through the typed instruction stream, returning each
-/// JAMP scalar (the root's children) in flow order.
+/// JAMP scalar (the root's children) in flow order. Assumes [`resolve_moms`] has populated
+/// the momentum pool for this point.
 fn run_forward_flows_typed<F: Real>(
     folded: &Folded,
     env: &EvalEnv<'_, F>,
@@ -311,10 +353,7 @@ fn run_forward_flows_typed<F: Real>(
 ) -> Vec<C<F>> {
     fill_arenas(folded, env, scratch);
     match &folded.program().root {
-        RootKind::Flows(locs) => locs
-            .iter()
-            .map(|&l| scratch.scalars[l as usize].value)
-            .collect(),
+        RootKind::Flows(locs) => locs.iter().map(|&l| scratch.scalars[l as usize]).collect(),
         RootKind::Single(_) => panic!("run_forward_flows_typed on a non-Flows amplitude"),
     }
 }
@@ -328,65 +367,67 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
     let prog = folded.program();
     scratch.reset(&prog.arena_sizes);
     let ops = &prog.operands;
+    let mom_ops = &prog.mom_operands;
 
     for (id, instr) in prog.instrs.iter().enumerate() {
         match *instr {
-            Instr::ComplexConst { pool } => scratch.scalars.push(ScalarWf {
-                value: env.consts_c[pool as usize],
-                momentum: LorentzVector::zero(),
-            }),
+            Instr::ComplexConst { pool } => scratch.scalars.push(env.consts_c[pool as usize]),
             Instr::RealConst { pool } => scratch.reals.push(env.consts_f[pool as usize]),
             Instr::ExternalScalar { leg } => {
                 let WaveformSlot::Scalar(s) = build_external_slot(env, leg as usize) else {
                     panic!("external scalar leg produced a non-scalar slot");
                 };
-                scratch.scalars.push(s);
+                scratch.scalars.push(s.value);
             }
             Instr::ExternalVector { leg } => {
                 let WaveformSlot::Vector(v) = build_external_slot(env, leg as usize) else {
                     panic!("external vector leg produced a non-vector slot");
                 };
-                scratch.vectors.push(v);
+                scratch.vectors.push(v.eps);
             }
             Instr::ExternalFin { leg } => {
                 let WaveformSlot::FermionIn(f) = build_external_slot(env, leg as usize) else {
                     panic!("external ket leg produced a non-fermion-in slot");
                 };
-                scratch.fin.push(f);
+                scratch.fin.push(f.spinor);
             }
             Instr::ExternalFout { leg } => {
                 let WaveformSlot::FermionOut(f) = build_external_slot(env, leg as usize) else {
                     panic!("external bra leg produced a non-fermion-out slot");
                 };
-                scratch.fout.push(f);
+                scratch.fout.push(f.spinor);
             }
-            Instr::PropagateScalar { input, mass, width } => {
-                let out = kernel::propagate_scalar(
-                    &scratch.scalars[input as usize],
+            Instr::PropagateScalar { input, mass, width, mom } => {
+                let out = kernel::propagate_scalar_bare(
+                    scratch.scalars[input as usize],
+                    scratch.moms[mom as usize],
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
                 scratch.scalars.push(out);
             }
-            Instr::PropagateVector { input, mass, width } => {
-                let out = kernel::propagate_vector(
-                    &scratch.vectors[input as usize],
+            Instr::PropagateVector { input, mass, width, mom } => {
+                let out = kernel::propagate_vector_bare(
+                    scratch.vectors[input as usize],
+                    scratch.moms[mom as usize],
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
                 scratch.vectors.push(out);
             }
-            Instr::PropagateFin { input, mass, width } => {
-                let out = kernel::propagate_fin(
-                    &scratch.fin[input as usize],
+            Instr::PropagateFin { input, mass, width, mom } => {
+                let out = kernel::propagate_fin_bare(
+                    scratch.fin[input as usize],
+                    scratch.moms[mom as usize],
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
                 scratch.fin.push(out);
             }
-            Instr::PropagateFout { input, mass, width } => {
-                let out = kernel::propagate_fout(
-                    &scratch.fout[input as usize],
+            Instr::PropagateFout { input, mass, width, mom } => {
+                let out = kernel::propagate_fout_bare(
+                    scratch.fout[input as usize],
+                    scratch.moms[mom as usize],
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
@@ -394,148 +435,126 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
             }
             Instr::AddScalar { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
-                let first = scratch.scalars[slice[0].index()];
-                let mut value = first.value;
+                let mut value = scratch.scalars[slice[0].index()];
                 for op in &slice[1..] {
-                    value = value + scratch.scalars[op.index()].value;
+                    value = value + scratch.scalars[op.index()];
                 }
-                scratch.scalars.push(ScalarWf {
-                    value,
-                    momentum: first.momentum,
-                });
+                scratch.scalars.push(value);
             }
             Instr::AddVector { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
-                let first = scratch.vectors[slice[0].index()];
-                let mut eps = first.eps;
+                let mut eps = scratch.vectors[slice[0].index()];
                 for op in &slice[1..] {
-                    let v = scratch.vectors[op.index()];
-                    assert_eq!(
-                        v.momentum, first.momentum,
-                        "Cannot add vector waveforms with different momenta"
-                    );
-                    eps = eps + v.eps;
+                    eps = eps + scratch.vectors[op.index()];
                 }
-                scratch.vectors.push(VectorWf {
-                    eps,
-                    momentum: first.momentum,
-                });
+                scratch.vectors.push(eps);
             }
             Instr::AddFin { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
-                let first = scratch.fin[slice[0].index()];
-                let mut spinor = first.spinor;
+                let mut spinor = scratch.fin[slice[0].index()];
                 for op in &slice[1..] {
-                    let f = scratch.fin[op.index()];
-                    assert_eq!(
-                        f.momentum, first.momentum,
-                        "Cannot add fermion waveforms with different momenta"
-                    );
-                    spinor = spinor + f.spinor;
+                    spinor = spinor + scratch.fin[op.index()];
                 }
-                scratch
-                    .fin
-                    .push(InDiracWf::from_spinor(spinor, first.momentum));
+                scratch.fin.push(spinor);
             }
             Instr::AddFout { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
-                let first = scratch.fout[slice[0].index()];
-                let mut spinor = first.spinor;
+                let mut spinor = scratch.fout[slice[0].index()];
                 for op in &slice[1..] {
-                    let f = scratch.fout[op.index()];
-                    assert_eq!(
-                        f.momentum, first.momentum,
-                        "Cannot add fermion waveforms with different momenta"
-                    );
-                    spinor = spinor + f.spinor;
+                    spinor = spinor + scratch.fout[op.index()];
                 }
-                scratch
-                    .fout
-                    .push(OutDiracWf::from_spinor(spinor, first.momentum));
+                scratch.fout.push(spinor);
             }
             Instr::Mul { start, len } => {
                 exec_mul(scratch, &ops[start as usize..(start + len) as usize]);
             }
             Instr::GammaVout { bra, ket, reversed } => {
-                let out =
-                    kernel::gamma_vout_c(&scratch.fout[bra as usize], &scratch.fin[ket as usize], reversed);
+                let out = kernel::gamma_vout_bare(
+                    scratch.fout[bra as usize],
+                    scratch.fin[ket as usize],
+                    reversed,
+                );
                 scratch.vectors.push(out);
             }
             Instr::FfvVout { bra, ket, gl, gr, reversed } => {
-                let out = kernel::ffv_vout_c(
-                    &scratch.fout[bra as usize],
-                    &scratch.fin[ket as usize],
-                    scratch.scalars[gl as usize].value,
-                    scratch.scalars[gr as usize].value,
+                let out = kernel::ffv_vout_bare(
+                    scratch.fout[bra as usize],
+                    scratch.fin[ket as usize],
+                    scratch.scalars[gl as usize],
+                    scratch.scalars[gr as usize],
                     reversed,
                 );
                 scratch.vectors.push(out);
             }
             Instr::GammaFin { v, f } => {
-                let out = kernel::off_shell_fin(&scratch.vectors[v as usize], &scratch.fin[f as usize]);
+                let eps = scratch.vectors[v as usize];
+                let out = kernel::off_shell_fin_bare(&eps, scratch.fin[f as usize]);
                 scratch.fin.push(out);
             }
             Instr::GammaFout { v, f } => {
-                let out = kernel::off_shell_fout(&scratch.vectors[v as usize], &scratch.fout[f as usize]);
+                let eps = scratch.vectors[v as usize];
+                let out = kernel::off_shell_fout_bare(&eps, scratch.fout[f as usize]);
                 scratch.fout.push(out);
             }
             Instr::FfvFin { v, f, gl, gr } => {
-                let out = kernel::ffv_fin(
-                    &scratch.vectors[v as usize],
-                    &scratch.fin[f as usize],
-                    scratch.scalars[gl as usize].value,
-                    scratch.scalars[gr as usize].value,
+                let eps = scratch.vectors[v as usize];
+                let out = kernel::ffv_fin_bare(
+                    &eps,
+                    scratch.fin[f as usize],
+                    scratch.scalars[gl as usize],
+                    scratch.scalars[gr as usize],
                 );
                 scratch.fin.push(out);
             }
             Instr::FfvFout { v, f, gl, gr } => {
-                let out = kernel::ffv_fout(
-                    &scratch.vectors[v as usize],
-                    &scratch.fout[f as usize],
-                    scratch.scalars[gl as usize].value,
-                    scratch.scalars[gr as usize].value,
+                let eps = scratch.vectors[v as usize];
+                let out = kernel::ffv_fout_bare(
+                    &eps,
+                    scratch.fout[f as usize],
+                    scratch.scalars[gl as usize],
+                    scratch.scalars[gr as usize],
                 );
                 scratch.fout.push(out);
             }
             Instr::ProjFin { f, chirality } => {
-                let out = kernel::proj_fin(&scratch.fin[f as usize], chirality);
+                let out = kernel::proj_fin_bare(scratch.fin[f as usize], chirality);
                 scratch.fin.push(out);
             }
             Instr::ProjFout { f, chirality } => {
-                let out = kernel::proj_fout(&scratch.fout[f as usize], chirality);
+                let out = kernel::proj_fout_bare(scratch.fout[f as usize], chirality);
                 scratch.fout.push(out);
             }
             Instr::Bilinear { bra, ket, chirality } => {
-                let out = kernel::scalar_bilinear_c(
-                    &scratch.fout[bra as usize],
-                    &scratch.fin[ket as usize],
+                let out = kernel::scalar_bilinear_bare(
+                    scratch.fout[bra as usize],
+                    scratch.fin[ket as usize],
                     chirality,
                 );
                 scratch.scalars.push(out);
             }
             Instr::Metric { a, b } => {
-                let out = kernel::metric_c(&scratch.vectors[a as usize], &scratch.vectors[b as usize]);
+                let out = kernel::metric_bare(scratch.vectors[a as usize], scratch.vectors[b as usize]);
                 scratch.scalars.push(out);
             }
             Instr::MetricVout { v } => {
-                let out = kernel::metric_vout_c(&scratch.vectors[v as usize]);
+                let out = kernel::metric_vout_bare(scratch.vectors[v as usize]);
                 scratch.vectors.push(out);
             }
             Instr::LowerVout { v } => {
-                let out = kernel::lower_vout_c(&scratch.vectors[v as usize]);
+                let out = kernel::lower_vout_bare(scratch.vectors[v as usize]);
                 scratch.vectors.push(out);
             }
-            Instr::PMom { input } => {
-                let mom = operand_momentum(scratch, input);
-                scratch.vectors.push(kernel::pmom_from_mom(mom));
+            Instr::PMom { mom } => {
+                let out = kernel::pmom_bare(scratch.moms[mom as usize]);
+                scratch.vectors.push(out);
             }
             Instr::PMomOut { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
+                let slice = &mom_ops[start as usize..(start + len) as usize];
                 let mut acc = LorentzVector::zero();
-                for &op in slice {
-                    acc = acc + operand_momentum(scratch, op);
+                for &mid in slice {
+                    acc = acc + scratch.moms[mid as usize];
                 }
-                scratch.vectors.push(kernel::pmom_from_mom(-acc));
+                scratch.vectors.push(kernel::pmom_bare(-acc));
             }
             Instr::Flows => {}
         }
@@ -544,23 +563,19 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
     }
 }
 
-/// n-ary product on typed operands (mirrors [`mul_apply`]): reals fold into `F`, scalars
-/// into a complex coefficient, and the single non-scalar current absorbs the routed
-/// scalar momentum. Pushes the result to the arena its class selects.
+/// n-ary product on bare typed operands (mirrors [`mul_apply`]): reals fold into `F`,
+/// scalars into a complex coefficient, and the single non-scalar current is scaled by the
+/// combined coefficient. Momentum is not routed here — each current's momentum lives in the
+/// pool keyed by its momentum id. Pushes the result to the arena its class selects.
 #[inline]
 fn exec_mul<F: Real>(scratch: &mut ScratchSpace<F>, operands: &[OperandRef]) {
     let mut real_acc = F::one();
     let mut cplx_acc = C::new(F::one(), F::zero());
-    let mut scalar_mom = LorentzVector::zero();
     let mut current = MulCurrent::None;
     for op in operands {
         match op.class() {
             0 => real_acc = real_acc * scratch.reals[op.index()],
-            1 => {
-                let s = scratch.scalars[op.index()];
-                cplx_acc = cplx_acc * s.value;
-                scalar_mom = scalar_mom + s.momentum;
-            }
+            1 => cplx_acc = cplx_acc * scratch.scalars[op.index()],
             2 => {
                 debug_assert!(matches!(current, MulCurrent::None), "Mul: at most one non-scalar child");
                 current = MulCurrent::Vector(scratch.vectors[op.index()]);
@@ -577,48 +592,26 @@ fn exec_mul<F: Real>(scratch: &mut ScratchSpace<F>, operands: &[OperandRef]) {
     }
     let coeff = cplx_acc * real_acc;
     match current {
-        MulCurrent::None => scratch.scalars.push(ScalarWf {
-            value: coeff,
-            momentum: scalar_mom,
-        }),
-        // Route the scalar factors' momentum into the surviving current (ket subtracts,
-        // bra/vector add), matching the HELAS off-shell conventions.
-        MulCurrent::Vector(v) => scratch.vectors.push(VectorWf {
-            eps: v.eps * coeff,
-            momentum: v.momentum + scalar_mom,
-        }),
-        MulCurrent::Fin(f) => scratch
-            .fin
-            .push(InDiracWf::from_spinor(f.spinor * coeff, f.momentum - scalar_mom)),
-        MulCurrent::Fout(f) => scratch
-            .fout
-            .push(OutDiracWf::from_spinor(f.spinor * coeff, f.momentum + scalar_mom)),
+        MulCurrent::None => scratch.scalars.push(coeff),
+        MulCurrent::Vector(eps) => scratch.vectors.push(eps * coeff),
+        MulCurrent::Fin(spinor) => scratch.fin.push(spinor * coeff),
+        MulCurrent::Fout(spinor) => scratch.fout.push(spinor * coeff),
     }
 }
 
 /// The non-scalar current a [`Instr::Mul`] carries (at most one).
 enum MulCurrent<F: Real> {
     None,
-    Vector(VectorWf<F>),
-    Fin(InDiracWf<F>),
-    Fout(OutDiracWf<F>),
+    Vector(ComplexVector<F>),
+    Fin(Bispinor<F, Ket>),
+    Fout(Bispinor<F, Bra>),
 }
 
-/// The routed momentum a `P` read-off takes from its operand current.
-#[inline]
-fn operand_momentum<F: Real>(scratch: &ScratchSpace<F>, op: OperandRef) -> LorentzVector<F> {
-    match op.class() {
-        1 => scratch.scalars[op.index()].momentum,
-        2 => scratch.vectors[op.index()].momentum,
-        3 => scratch.fin[op.index()].momentum,
-        4 => scratch.fout[op.index()].momentum,
-        _ => panic!("P read-off operand is not a momentum-carrying current"),
-    }
-}
-
-/// Reconstruct a node's slot from its typed arena and cross-check it against the static
-/// analysis (debug / extended-validation only), so the typed forward pass carries the
-/// same output-type/constness/momentum guarantees as the generic one.
+/// Reconstruct a node's slot from its bare typed arena — re-attaching the routing momentum
+/// from the pool (keyed by the node's momentum id) — and cross-check it against the static
+/// analysis (debug / extended-validation only), so the typed forward pass carries the same
+/// output-type/constness guarantees as the generic one. With momentum now sourced from the
+/// pool, the momentum-agreement leg of the check confirms pool-indexing consistency.
 #[inline(always)]
 fn cross_check_typed<F: Real>(
     folded: &Folded,
@@ -632,12 +625,23 @@ fn cross_check_typed<F: Real>(
         let an = folded.analysis();
         if let Some(class) = an.out_type(id).storage() {
             let loc = folded.program().loc[id as usize] as usize;
+            let mom = scratch.moms[an.mom_id(id) as usize];
             let slot = match class {
                 Storage::Real => WaveformSlot::Real(scratch.reals[loc]),
-                Storage::Scalar => WaveformSlot::Scalar(scratch.scalars[loc]),
-                Storage::Vector => WaveformSlot::Vector(scratch.vectors[loc]),
-                Storage::FermionIn => WaveformSlot::FermionIn(scratch.fin[loc]),
-                Storage::FermionOut => WaveformSlot::FermionOut(scratch.fout[loc]),
+                Storage::Scalar => WaveformSlot::Scalar(ScalarWf {
+                    value: scratch.scalars[loc],
+                    momentum: mom,
+                }),
+                Storage::Vector => WaveformSlot::Vector(VectorWf {
+                    eps: scratch.vectors[loc],
+                    momentum: mom,
+                }),
+                Storage::FermionIn => {
+                    WaveformSlot::FermionIn(InDiracWf::from_spinor(scratch.fin[loc], mom))
+                }
+                Storage::FermionOut => {
+                    WaveformSlot::FermionOut(OutDiracWf::from_spinor(scratch.fout[loc], mom))
+                }
             };
             cross_check_node(an, id, &slot, env.momenta, env.ward_leg.is_none());
         }
