@@ -12,10 +12,12 @@ use std::collections::HashMap;
 use num_complex::Complex64;
 use num_traits::FromPrimitive;
 
-use super::analysis::{self, NodeAnalysis};
+use super::analysis::{self, NodeAnalysis, NodeType};
 use super::ast::{Ast, AstBuilder};
-use super::op::{Const, Op, Sym};
+use super::op::{Const, NodeId, Op, Sym};
+use super::run::{apply, EvalEnv};
 use super::tree::Tree;
+use super::waveform_slot::WaveformSlot;
 use crate::helas::repr::numbers::Charge;
 use crate::helas::repr::{Real, C};
 use crate::ufo::couplings::CouplingId;
@@ -68,6 +70,18 @@ pub struct Folded {
     pool_f: Vec<RealReq>,
     /// `Const::Ext(k)` resolves to `pool_ext[k]`.
     pool_ext: Vec<ExtLeg>,
+    /// Constant sub-graph arena: every card-time-constant node reachable from a folded
+    /// composite. Its leaves read the base `consts_c`/`consts_f`; a single forward pass
+    /// in [`pools`](Self::pools) resolves the folded-composite values once per card.
+    /// Empty when the amplitude has no foldable constant composite.
+    const_ast: Ast<Const>,
+    /// [`const_ast`](Self::const_ast) node ids whose evaluated complex value appends to
+    /// `consts_c` after the base entries, in the order the folded leaves reference them
+    /// (`consts_c[pool_c.len() + k]` is entry `fold_complex[k]`).
+    fold_complex: Box<[NodeId]>,
+    /// [`const_ast`](Self::const_ast) node ids whose evaluated real value appends to
+    /// `consts_f` after the base entries.
+    fold_real: Box<[NodeId]>,
     /// Static per-node annotations of `ast` (output type, constness, momentum id,
     /// helicity support), computed once from the card-independent skeleton.
     analysis: NodeAnalysis,
@@ -181,13 +195,29 @@ impl Folded {
             remap[id as usize] = builder.add(node.op, leaf, children);
         }
 
-        let ast = builder.finish(remap[sym.root() as usize]);
+        let ast0 = builder.finish(remap[sym.root() as usize]);
+        let an0 = analysis::analyze(&ast0, &pool_ext);
+
+        // Collapse every maximal constant composite (a `Mul`/`Add` subgraph of
+        // card-time constants) into a single pool-read leaf, so it is resolved once
+        // per parameter card rather than re-evaluated at every phase-space point.
+        let folded = fold_constant_subgraphs(&ast0, &an0, pool_c.len() as u32, pool_f.len() as u32);
+        let FoldRewrite {
+            ast,
+            const_ast,
+            fold_complex,
+            fold_real,
+        } = folded;
+
         let analysis = analysis::analyze(&ast, &pool_ext);
         Folded {
             ast,
             pool_c,
             pool_f,
             pool_ext,
+            const_ast,
+            fold_complex,
+            fold_real,
             analysis,
         }
     }
@@ -202,7 +232,7 @@ impl Folded {
         &self,
         evaluated: &EvaluatedModel,
     ) -> (Box<[C<F>]>, Box<[F]>) {
-        let consts_c: Box<[C<F>]> = self
+        let mut consts_c: Vec<C<F>> = self
             .pool_c
             .iter()
             .map(|req| match *req {
@@ -210,7 +240,7 @@ impl Folded {
                 ComplexReq::Rat(num, den) => C::new(F::ZERO, ratio::<F>(num, den)),
             })
             .collect();
-        let consts_f: Box<[F]> = self
+        let mut consts_f: Vec<F> = self
             .pool_f
             .iter()
             .map(|req| match *req {
@@ -220,7 +250,28 @@ impl Folded {
                 RealReq::Rat(num, den) => ratio::<F>(num, den),
             })
             .collect();
-        (consts_c, consts_f)
+
+        // Resolve the folded constant composites: one forward pass over `const_ast`
+        // (its leaves reading the base pools just filled) reproduces exactly the
+        // per-point reduction the collapsed subgraphs used to perform, so the appended
+        // pool entries are bit-for-bit what the runtime computed inline.
+        if !self.fold_complex.is_empty() || !self.fold_real.is_empty() {
+            let slots = eval_const_subgraph(&self.const_ast, &consts_c, &consts_f);
+            let cvals: Vec<C<F>> = self
+                .fold_complex
+                .iter()
+                .map(|&id| scalar_value(&slots[id as usize]))
+                .collect();
+            let rvals: Vec<F> = self
+                .fold_real
+                .iter()
+                .map(|&id| real_value(&slots[id as usize]))
+                .collect();
+            consts_c.extend(cvals);
+            consts_f.extend(rvals);
+        }
+
+        (consts_c.into_boxed_slice(), consts_f.into_boxed_slice())
     }
 
     /// The external-leg table resolving `Const::Ext` indices.
@@ -242,6 +293,198 @@ impl Folded {
             RealReq::Mass(id) | RealReq::Width(id) => Some(*id),
             RealReq::Coeff(_) | RealReq::Rat(..) => None,
         })
+    }
+}
+
+/// The main folded arena with its constant composites collapsed, plus the constant
+/// sub-graph arena and the per-pool lists of its fold-root ids that resolve the leaves.
+struct FoldRewrite {
+    ast: Ast<Const>,
+    const_ast: Ast<Const>,
+    fold_complex: Box<[NodeId]>,
+    fold_real: Box<[NodeId]>,
+}
+
+/// Whether an op is a bare constant-pool leaf (already a single pool read), as opposed
+/// to a constant *composite* (`Mul`/`Add` of constants) worth collapsing.
+fn is_const_leaf_op(op: Op) -> bool {
+    matches!(
+        op,
+        Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat
+    )
+}
+
+/// Rewrite `ast0` so every maximal constant composite becomes one pool-read leaf
+/// (`Op::CoeffRat` over a `Const::Complex`/`Const::Real` index past the base pool).
+///
+/// A *fold root* is a constant composite consumed by at least one non-constant node:
+/// the runtime reads it, but its value is card-time-fixed. Constants used only by other
+/// constants are absorbed into the enclosing fold and dropped from the main arena. The
+/// collapsed subgraphs are copied into `const_ast` (reachable from the fold roots), whose
+/// one bind-time forward pass resolves the appended pool entries.
+fn fold_constant_subgraphs(
+    ast0: &Ast<Const>,
+    an0: &NodeAnalysis,
+    base_c: u32,
+    base_f: u32,
+) -> FoldRewrite {
+    let n = ast0.len();
+
+    // Top-down from the root through non-constant edges: mark every node kept in the
+    // main arena, and every constant composite reached from a non-constant parent as a
+    // fold root (a leaf in the rewritten arena; not descended into).
+    let mut kept = vec![false; n];
+    let mut fold_root = vec![false; n];
+    let root = ast0.root();
+    kept[root as usize] = true;
+    let mut stack = vec![root];
+    while let Some(nid) = stack.pop() {
+        for &c in ast0.children_ids(nid) {
+            if kept[c as usize] {
+                continue;
+            }
+            kept[c as usize] = true;
+            if an0.is_const(c) {
+                // A bare constant leaf stays a pool read; a constant composite folds.
+                if !is_const_leaf_op(ast0.value(c).op) {
+                    fold_root[c as usize] = true;
+                }
+            } else {
+                stack.push(c);
+            }
+        }
+    }
+
+    // Constant sub-graph reachable from the fold roots (all descendants are constant).
+    let mut need = vec![false; n];
+    let mut cstack: Vec<NodeId> = Vec::new();
+    for id in ast0.iter() {
+        if fold_root[id as usize] {
+            need[id as usize] = true;
+            cstack.push(id);
+        }
+    }
+    while let Some(nid) = cstack.pop() {
+        for &c in ast0.children_ids(nid) {
+            if !need[c as usize] {
+                need[c as usize] = true;
+                cstack.push(c);
+            }
+        }
+    }
+
+    // Copy the needed constant nodes into `const_ast`, preserving arena order (children
+    // before parents) so a forward pass evaluates them directly.
+    let mut cbuilder = AstBuilder::new();
+    let mut const_remap = vec![u32::MAX; n];
+    let mut last_const = 0u32;
+    for old in ast0.iter() {
+        if !need[old as usize] {
+            continue;
+        }
+        let node = ast0.value(old);
+        let kids: Vec<NodeId> = ast0
+            .children_ids(old)
+            .iter()
+            .map(|&c| const_remap[c as usize])
+            .collect();
+        let new = cbuilder.add(node.op, node.leaf, kids);
+        const_remap[old as usize] = new;
+        last_const = new;
+    }
+    let const_ast = cbuilder.finish(last_const);
+
+    // Rebuild the main arena: fold roots become pool-read leaves (indexed past the base
+    // pool, in fold-list order); every other kept node is copied with remapped children.
+    let mut mbuilder = AstBuilder::new();
+    let mut main_remap = vec![u32::MAX; n];
+    let mut fold_complex: Vec<NodeId> = Vec::new();
+    let mut fold_real: Vec<NodeId> = Vec::new();
+    for old in ast0.iter() {
+        if !kept[old as usize] {
+            continue;
+        }
+        let new = if fold_root[old as usize] {
+            let cid = const_remap[old as usize];
+            let leaf = match an0.out_type(old) {
+                NodeType::ScalarConst => {
+                    let idx = base_c + fold_complex.len() as u32;
+                    fold_complex.push(cid);
+                    Const::Complex(idx)
+                }
+                NodeType::RealConst => {
+                    let idx = base_f + fold_real.len() as u32;
+                    fold_real.push(cid);
+                    Const::Real(idx)
+                }
+                other => panic!("fold root {old} has non-constant output type {other:?}"),
+            };
+            mbuilder.add(Op::CoeffRat, leaf, vec![])
+        } else {
+            let node = ast0.value(old);
+            let kids: Vec<NodeId> = ast0
+                .children_ids(old)
+                .iter()
+                .map(|&c| main_remap[c as usize])
+                .collect();
+            mbuilder.add(node.op, node.leaf, kids)
+        };
+        main_remap[old as usize] = new;
+    }
+    let ast = mbuilder.finish(main_remap[root as usize]);
+
+    FoldRewrite {
+        ast,
+        const_ast,
+        fold_complex: fold_complex.into_boxed_slice(),
+        fold_real: fold_real.into_boxed_slice(),
+    }
+}
+
+/// Evaluate the constant sub-graph in one forward pass through the runtime [`apply`]
+/// reduction (with no kinematics — constant ops read only the pools), so the resolved
+/// values match the inline per-point evaluation bit-for-bit.
+fn eval_const_subgraph<F: Real + FromPrimitive>(
+    const_ast: &Ast<Const>,
+    consts_c: &[C<F>],
+    consts_f: &[F],
+) -> Vec<WaveformSlot<F>> {
+    let env = EvalEnv {
+        consts_c,
+        consts_f,
+        ext_legs: &[],
+        momenta: &[],
+        helicities: &[],
+        ward_leg: None,
+    };
+    let mut res: Vec<WaveformSlot<F>> = Vec::with_capacity(const_ast.len());
+    for id in const_ast.iter() {
+        let ids = const_ast.children_ids(id);
+        let value = apply(
+            const_ast.value(id),
+            ids.len(),
+            |i| &res[ids[i] as usize],
+            &env,
+        );
+        res.push(value);
+    }
+    res
+}
+
+/// The complex value of a folded scalar-constant subgraph.
+fn scalar_value<F: Real>(slot: &WaveformSlot<F>) -> C<F> {
+    match slot {
+        WaveformSlot::Scalar(s) => s.value,
+        WaveformSlot::Empty => C::new(F::ZERO, F::ZERO),
+        other => panic!("folded scalar constant did not reduce to a scalar: {other:?}"),
+    }
+}
+
+/// The real value of a folded real-constant subgraph.
+fn real_value<F: Real>(slot: &WaveformSlot<F>) -> F {
+    match slot {
+        WaveformSlot::Real(r) => *r,
+        other => panic!("folded real constant did not reduce to a real: {other:?}"),
     }
 }
 
@@ -267,12 +510,11 @@ mod tests {
     use crate::ufo::sm::{sm_model, SMRestrict};
     use crate::ufo::EvaluatedModel;
 
-    /// `Op::Flows`/`Op::CoeffRat` cannot come from `lower()` yet (nothing emits them),
-    /// so the fold mapping is exercised directly against a hand-built AST: a `Flows`
-    /// root over a real rational (`imag == false`) and an imaginary one
-    /// (`imag == true`), plus a repeated leaf to confirm pool dedup.
+    /// Bare `Op::CoeffRat` leaves under a non-constant root stay pool reads (not folded):
+    /// a real rational (`imag == false`) routes to `consts_f`, an imaginary one
+    /// (`imag == true`) to `consts_c`, and a repeated real rational dedups to one entry.
     #[test]
-    fn coeff_rat_folds_to_real_and_complex_pool_entries() {
+    fn coeff_rat_leaves_route_to_real_and_complex_pools() {
         let mut b = AstBuilder::new();
         let real_leaf = b.add(
             Op::CoeffRat,
@@ -292,8 +534,8 @@ mod tests {
             },
             vec![],
         );
-        // A repeat of `real_leaf`'s rational under `Add`, to confirm the real pool
-        // dedups `CoeffRat` requests the same way it dedups `Coeff`.
+        // A repeat of `real_leaf`'s rational, to confirm the real pool dedups `CoeffRat`
+        // requests the same way it dedups `Coeff`.
         let real_leaf_dup = b.add(
             Op::CoeffRat,
             Sym::Rational {
@@ -303,18 +545,23 @@ mod tests {
             },
             vec![],
         );
-        let dup_sum = b.add(Op::Add, Sym::None, vec![real_leaf_dup, imag_leaf]);
-        let root = b.add(Op::Flows, Sym::None, vec![real_leaf, dup_sum]);
+        // A `Flows` root is non-constant, so its constant children are kept as-is rather
+        // than folded — each stays a `CoeffRat` pool-read leaf.
+        let root = b.add(
+            Op::Flows,
+            Sym::None,
+            vec![real_leaf, imag_leaf, real_leaf_dup],
+        );
         let ast = b.finish(root);
 
         let folded = Folded::build(&ast);
 
-        // Structure: the folded root is still `Op::Flows` over its two children,
-        // and the folded leaves keep `Op::CoeffRat` with a resolved `Const`.
         assert_eq!(folded.ast.value(folded.ast.root()).op, Op::Flows);
         let flows_kids = folded.ast.children_ids(folded.ast.root());
-        assert_eq!(flows_kids.len(), 2);
+        assert_eq!(flows_kids.len(), 3);
         let real_node = folded.ast.value(flows_kids[0]);
+        let imag_node = folded.ast.value(flows_kids[1]);
+        let dup_node = folded.ast.value(flows_kids[2]);
         assert_eq!(real_node.op, Op::CoeffRat);
         let Const::Real(real_idx) = real_node.leaf else {
             panic!(
@@ -322,10 +569,12 @@ mod tests {
                 real_node.leaf
             );
         };
-
-        let sum_kids = folded.ast.children_ids(flows_kids[1]);
-        let dup_node = folded.ast.value(sum_kids[0]);
-        let imag_node = folded.ast.value(sum_kids[1]);
+        let Const::Complex(imag_idx) = imag_node.leaf else {
+            panic!(
+                "imaginary CoeffRat leaf must fold to Const::Complex, got {:?}",
+                imag_node.leaf
+            );
+        };
         let Const::Real(dup_idx) = dup_node.leaf else {
             panic!("duplicated real CoeffRat leaf must fold to Const::Real");
         };
@@ -333,12 +582,6 @@ mod tests {
             dup_idx, real_idx,
             "repeated rational must dedup to one pool entry"
         );
-        let Const::Complex(imag_idx) = imag_node.leaf else {
-            panic!(
-                "imaginary CoeffRat leaf must fold to Const::Complex, got {:?}",
-                imag_node.leaf
-            );
-        };
 
         let model = sm_model(SMRestrict::Default);
         let evaluated = EvaluatedModel::from_model(model);
@@ -349,5 +592,68 @@ mod tests {
         // Only one real pool entry: the duplicate rational didn't grow the pool.
         assert_eq!(consts_f.len(), 1);
         assert_eq!(consts_c.len(), 1);
+    }
+
+    /// A constant composite (`Mul(Coupling, Coeff)`) consumed by a non-constant node
+    /// collapses into a single `CoeffRat` pool-read leaf, and its card-time value is
+    /// appended to `consts_c` (past the base coupling entry) as `coupling · coeff`.
+    #[test]
+    fn constant_composite_folds_into_a_pool_entry() {
+        let mut b = AstBuilder::new();
+        // A vector external → non-constant current, so its parent `Mul` is not folded.
+        let mass = b.add(Op::Mass, Sym::Particle(ParticleId::from(23usize)), vec![]);
+        let ext = b.add(
+            Op::External,
+            Sym::Ext {
+                leg_idx: 0,
+                spin: 3,
+                charge: Charge::Particle,
+                incoming: false,
+            },
+            vec![mass],
+        );
+        let coup = b.add(
+            Op::Coupling,
+            Sym::Coupling(CouplingId::from(5usize)),
+            vec![],
+        );
+        let coeff = b.add(Op::Coeff, Sym::Coeff(2.0), vec![]);
+        // Constant composite: folds to one bind-time complex value.
+        let g = b.add(Op::Mul, Sym::None, vec![coup, coeff]);
+        // Non-constant product (scales the external current by the constant).
+        let root = b.add(Op::Mul, Sym::None, vec![ext, g]);
+        let ast = b.finish(root);
+
+        let folded = Folded::build(&ast);
+
+        // The root stays a binary `Mul`; its constant operand is now a childless
+        // `CoeffRat` leaf indexing the complex pool past the base coupling (index 1).
+        let root_kids = folded.ast.children_ids(folded.ast.root());
+        assert_eq!(root_kids.len(), 2);
+        let g_node = folded.ast.value(root_kids[1]);
+        assert_eq!(
+            g_node.op,
+            Op::CoeffRat,
+            "folded composite must be a pool-read leaf"
+        );
+        assert!(
+            folded.ast.children_ids(root_kids[1]).is_empty(),
+            "folded composite must be a leaf (no children)"
+        );
+        let Const::Complex(g_idx) = g_node.leaf else {
+            panic!(
+                "scalar-constant composite must fold to Const::Complex, got {:?}",
+                g_node.leaf
+            );
+        };
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model);
+        let (consts_c, _consts_f): (Box<[C<f64>]>, Box<[f64]>) = folded.pools(&evaluated);
+
+        // consts_c[0] is the base coupling; consts_c[g_idx] is the folded product.
+        let expected = consts_c[0] * 2.0;
+        assert_eq!(consts_c[g_idx as usize], expected);
+        assert_eq!(consts_c.len(), 2, "base coupling + one folded composite");
     }
 }
