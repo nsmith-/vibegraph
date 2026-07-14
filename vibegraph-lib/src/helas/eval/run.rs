@@ -69,7 +69,8 @@ impl<F: Real> ScratchSpace<F> {
         self.scalars.clear();
         self.scalars.resize(sizes[1] as usize, C::zero());
         self.vectors.clear();
-        self.vectors.resize(sizes[2] as usize, ComplexVector::zero());
+        self.vectors
+            .resize(sizes[2] as usize, ComplexVector::zero());
         self.fin.clear();
         self.fin.resize(sizes[3] as usize, Bispinor::zero());
         self.fout.clear();
@@ -519,7 +520,12 @@ fn fill_arenas<F: Real>(
                 };
                 scratch.fout[loc] = f.spinor;
             }
-            Instr::PropagateScalar { input, mass, width, mom } => {
+            Instr::PropagateScalar {
+                input,
+                mass,
+                width,
+                mom,
+            } => {
                 let out = kernel::propagate_scalar_bare(
                     scratch.scalars[input as usize],
                     scratch.moms[mom as usize],
@@ -528,7 +534,12 @@ fn fill_arenas<F: Real>(
                 );
                 scratch.scalars[loc] = out;
             }
-            Instr::PropagateVector { input, mass, width, mom } => {
+            Instr::PropagateVector {
+                input,
+                mass,
+                width,
+                mom,
+            } => {
                 let out = kernel::propagate_vector_bare(
                     scratch.vectors[input as usize],
                     scratch.moms[mom as usize],
@@ -537,7 +548,12 @@ fn fill_arenas<F: Real>(
                 );
                 scratch.vectors[loc] = out;
             }
-            Instr::PropagateFin { input, mass, width, mom } => {
+            Instr::PropagateFin {
+                input,
+                mass,
+                width,
+                mom,
+            } => {
                 let out = kernel::propagate_fin_bare(
                     scratch.fin[input as usize],
                     scratch.moms[mom as usize],
@@ -546,7 +562,12 @@ fn fill_arenas<F: Real>(
                 );
                 scratch.fin[loc] = out;
             }
-            Instr::PropagateFout { input, mass, width, mom } => {
+            Instr::PropagateFout {
+                input,
+                mass,
+                width,
+                mom,
+            } => {
                 let out = kernel::propagate_fout_bare(
                     scratch.fout[input as usize],
                     scratch.moms[mom as usize],
@@ -598,7 +619,13 @@ fn fill_arenas<F: Real>(
                 );
                 scratch.vectors[loc] = out;
             }
-            Instr::FfvVout { bra, ket, gl, gr, reversed } => {
+            Instr::FfvVout {
+                bra,
+                ket,
+                gl,
+                gr,
+                reversed,
+            } => {
                 let out = kernel::ffv_vout_bare(
                     scratch.fout[bra as usize],
                     scratch.fin[ket as usize],
@@ -646,7 +673,11 @@ fn fill_arenas<F: Real>(
                 let out = kernel::proj_fout_bare(scratch.fout[f as usize], chirality);
                 scratch.fout[loc] = out;
             }
-            Instr::Bilinear { bra, ket, chirality } => {
+            Instr::Bilinear {
+                bra,
+                ket,
+                chirality,
+            } => {
                 let out = kernel::scalar_bilinear_bare(
                     scratch.fout[bra as usize],
                     scratch.fin[ket as usize],
@@ -655,7 +686,8 @@ fn fill_arenas<F: Real>(
                 scratch.scalars[loc] = out;
             }
             Instr::Metric { a, b } => {
-                let out = kernel::metric_bare(scratch.vectors[a as usize], scratch.vectors[b as usize]);
+                let out =
+                    kernel::metric_bare(scratch.vectors[a as usize], scratch.vectors[b as usize]);
                 scratch.scalars[loc] = out;
             }
             Instr::MetricVout { v } => {
@@ -700,15 +732,24 @@ fn exec_mul<F: Real>(scratch: &mut ScratchSpace<F>, loc: usize, operands: &[Oper
             0 => real_acc = real_acc * scratch.reals[op.index()],
             1 => cplx_acc = cplx_acc * scratch.scalars[op.index()],
             2 => {
-                debug_assert!(matches!(current, MulCurrent::None), "Mul: at most one non-scalar child");
+                debug_assert!(
+                    matches!(current, MulCurrent::None),
+                    "Mul: at most one non-scalar child"
+                );
                 current = MulCurrent::Vector(scratch.vectors[op.index()]);
             }
             3 => {
-                debug_assert!(matches!(current, MulCurrent::None), "Mul: at most one non-scalar child");
+                debug_assert!(
+                    matches!(current, MulCurrent::None),
+                    "Mul: at most one non-scalar child"
+                );
                 current = MulCurrent::Fin(scratch.fin[op.index()]);
             }
             _ => {
-                debug_assert!(matches!(current, MulCurrent::None), "Mul: at most one non-scalar child");
+                debug_assert!(
+                    matches!(current, MulCurrent::None),
+                    "Mul: at most one non-scalar child"
+                );
                 current = MulCurrent::Fout(scratch.fout[op.index()]);
             }
         }

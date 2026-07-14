@@ -75,40 +75,135 @@ impl std::fmt::Debug for OperandRef {
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Instr {
     /// Complex-pool read (coupling or imaginary rational) → a zero-momentum scalar.
-    ComplexConst { pool: u32 },
+    ComplexConst {
+        pool: u32,
+    },
     /// Real-pool read (mass/width/coeff or real rational) → a bare real.
-    RealConst { pool: u32 },
-    ExternalScalar { leg: u32 },
-    ExternalVector { leg: u32 },
-    ExternalFin { leg: u32 },
-    ExternalFout { leg: u32 },
-    PropagateScalar { input: u32, mass: u32, width: u32, mom: u32 },
-    PropagateVector { input: u32, mass: u32, width: u32, mom: u32 },
-    PropagateFin { input: u32, mass: u32, width: u32, mom: u32 },
-    PropagateFout { input: u32, mass: u32, width: u32, mom: u32 },
-    AddScalar { start: u32, len: u32 },
-    AddVector { start: u32, len: u32 },
-    AddFin { start: u32, len: u32 },
-    AddFout { start: u32, len: u32 },
-    Mul { start: u32, len: u32 },
-    GammaVout { bra: u32, ket: u32, reversed: bool },
-    FfvVout { bra: u32, ket: u32, gl: u32, gr: u32, reversed: bool },
-    GammaFin { v: u32, f: u32 },
-    GammaFout { v: u32, f: u32 },
-    FfvFin { v: u32, f: u32, gl: u32, gr: u32 },
-    FfvFout { v: u32, f: u32, gl: u32, gr: u32 },
-    ProjFin { f: u32, chirality: Chirality },
-    ProjFout { f: u32, chirality: Chirality },
-    Bilinear { bra: u32, ket: u32, chirality: Chirality },
-    Metric { a: u32, b: u32 },
-    MetricVout { v: u32 },
-    LowerVout { v: u32 },
+    RealConst {
+        pool: u32,
+    },
+    ExternalScalar {
+        leg: u32,
+    },
+    ExternalVector {
+        leg: u32,
+    },
+    ExternalFin {
+        leg: u32,
+    },
+    ExternalFout {
+        leg: u32,
+    },
+    PropagateScalar {
+        input: u32,
+        mass: u32,
+        width: u32,
+        mom: u32,
+    },
+    PropagateVector {
+        input: u32,
+        mass: u32,
+        width: u32,
+        mom: u32,
+    },
+    PropagateFin {
+        input: u32,
+        mass: u32,
+        width: u32,
+        mom: u32,
+    },
+    PropagateFout {
+        input: u32,
+        mass: u32,
+        width: u32,
+        mom: u32,
+    },
+    AddScalar {
+        start: u32,
+        len: u32,
+    },
+    AddVector {
+        start: u32,
+        len: u32,
+    },
+    AddFin {
+        start: u32,
+        len: u32,
+    },
+    AddFout {
+        start: u32,
+        len: u32,
+    },
+    Mul {
+        start: u32,
+        len: u32,
+    },
+    GammaVout {
+        bra: u32,
+        ket: u32,
+        reversed: bool,
+    },
+    FfvVout {
+        bra: u32,
+        ket: u32,
+        gl: u32,
+        gr: u32,
+        reversed: bool,
+    },
+    GammaFin {
+        v: u32,
+        f: u32,
+    },
+    GammaFout {
+        v: u32,
+        f: u32,
+    },
+    FfvFin {
+        v: u32,
+        f: u32,
+        gl: u32,
+        gr: u32,
+    },
+    FfvFout {
+        v: u32,
+        f: u32,
+        gl: u32,
+        gr: u32,
+    },
+    ProjFin {
+        f: u32,
+        chirality: Chirality,
+    },
+    ProjFout {
+        f: u32,
+        chirality: Chirality,
+    },
+    Bilinear {
+        bra: u32,
+        ket: u32,
+        chirality: Chirality,
+    },
+    Metric {
+        a: u32,
+        b: u32,
+    },
+    MetricVout {
+        v: u32,
+    },
+    LowerVout {
+        v: u32,
+    },
     /// `P` read-off of an input line: its structure momentum is the momentum-table entry
     /// `mom` (the operand's momentum id), promoted to a vector current.
-    PMom { mom: u32 },
+    PMom {
+        mom: u32,
+    },
     /// `P` read-off of a vertex's output leg: `−Σ` over the input operands' momentum-table
     /// entries, indexed by `[start, start+len)` into [`Program::mom_operands`].
-    PMomOut { start: u32, len: u32 },
+    PMomOut {
+        start: u32,
+        len: u32,
+    },
     /// Variadic per-flow-JAMP amplitude root: computes nothing (its children's scalars
     /// are read out by the multi-flow evaluator).
     Flows,
@@ -207,10 +302,30 @@ impl Program {
                     // momentum id is the routed momentum the propagator sees.
                     let mom = an.mom_id(id);
                     match an.out_type(kids[0]).storage().unwrap() {
-                        Storage::Scalar => Instr::PropagateScalar { input, mass, width, mom },
-                        Storage::Vector => Instr::PropagateVector { input, mass, width, mom },
-                        Storage::FermionIn => Instr::PropagateFin { input, mass, width, mom },
-                        Storage::FermionOut => Instr::PropagateFout { input, mass, width, mom },
+                        Storage::Scalar => Instr::PropagateScalar {
+                            input,
+                            mass,
+                            width,
+                            mom,
+                        },
+                        Storage::Vector => Instr::PropagateVector {
+                            input,
+                            mass,
+                            width,
+                            mom,
+                        },
+                        Storage::FermionIn => Instr::PropagateFin {
+                            input,
+                            mass,
+                            width,
+                            mom,
+                        },
+                        Storage::FermionOut => Instr::PropagateFout {
+                            input,
+                            mass,
+                            width,
+                            mom,
+                        },
                         Storage::Real => panic!("Propagate on a real-constant input"),
                     }
                 }
