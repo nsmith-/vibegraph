@@ -203,3 +203,13 @@ Branch-claim disassembly (release, cross-check compiled out):
 cargo bench -p vibegraph-lib --bench eval_strategies --no-run
 objdump -d target/release/deps/eval_strategies-*  # inspect `fill_arenas`
 ```
+
+## 9. Resolution
+
+**A3c is cancelled.** The evaluator stays 100% safe Rust: the no-`unsafe` scope is a
+hard invariant, and the only mechanism that captures the +7–11% ceiling is
+`get_unchecked` reads + `set_len` writes. The measured headroom is recorded here for
+posterity; effort went to the slot-traffic levers (A4 momentum pool and A5 helicity
+recycling) instead. The `a3b-probe` twin + equality oracle remain on branch
+`eval-layout/a3b` as a compile-once, bit-for-bit regression harness for future
+eval-layout changes.
