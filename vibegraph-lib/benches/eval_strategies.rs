@@ -1,5 +1,6 @@
 //! `eval_m2` microbenchmark across process sizes 2→2 … 2→6 (all-massless externals
-//! so plain massless RAMBO provides the kinematics). The per-process before/after
+//! so plain massless RAMBO provides the kinematics), including colored NCOLOR=2/6 2→2s
+//! that exercise the CF-weighted multi-flow path. The per-process before/after
 //! yardstick for evaluator changes.
 //!
 //! Run: `cargo bench -p vibegraph-lib --bench eval_strategies`
@@ -15,8 +16,11 @@ use vibegraph::phasespace::rambo_massless;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::EvaluatedModel;
 
-const PROCESSES: [(&str, &str); 4] = [
+const PROCESSES: [(&str, &str); 7] = [
     ("ee_to_mumu", "e+ e- > mu+ mu-"),
+    ("ee_to_ee", "e+ e- > e+ e-"),
+    ("uux_to_uux", "u u~ > u u~"),
+    ("gg_to_gg", "g g > g g"),
     ("ee_to_mumua", "e+ e- > mu+ mu- a"),
     ("ee_to_mumu_tata_qcd0", "e+ e- > mu+ mu- ta+ ta- QCD=0"),
     ("uux_to_ccx_emmm_qcd0", "u u~ > c c~ e+ e- mu+ mu- QCD=0"),
