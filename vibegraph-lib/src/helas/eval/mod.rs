@@ -41,6 +41,7 @@ mod fold;
 // Lorentz-primitive eval kernels (one `pub(crate)` fn per Lorentz `Op`, named for it);
 // the `run::apply` dispatch is `kernel::<op>(children)`.
 mod kernel;
+mod layout;
 mod lower;
 mod op;
 // Reusable property-test harness: typed random-input generators + a "compare two
