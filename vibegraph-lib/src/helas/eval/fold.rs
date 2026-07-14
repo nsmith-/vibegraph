@@ -139,22 +139,22 @@ impl Folded {
             let node = sym.value(id);
             let (leaf, children) = match (node.op, node.leaf) {
                 (Op::Coupling, Sym::Coupling(cid)) => {
-                    (Const::Complex(intern_c(ComplexReq::Coupling(cid))), vec![])
+                    (Const::complex(intern_c(ComplexReq::Coupling(cid))), vec![])
                 }
                 (Op::Mass, Sym::Particle(pid)) => {
-                    (Const::Real(intern_f(RealReq::Mass(pid))), vec![])
+                    (Const::real(intern_f(RealReq::Mass(pid))), vec![])
                 }
                 (Op::Width, Sym::Particle(pid)) => {
-                    (Const::Real(intern_f(RealReq::Width(pid))), vec![])
+                    (Const::real(intern_f(RealReq::Width(pid))), vec![])
                 }
                 (Op::Coeff, Sym::Coeff(c)) => {
-                    (Const::Real(intern_f(RealReq::Coeff(c.to_bits()))), vec![])
+                    (Const::real(intern_f(RealReq::Coeff(c.to_bits()))), vec![])
                 }
                 (Op::CoeffRat, Sym::Rational { num, den, imag }) => {
                     if imag {
-                        (Const::Complex(intern_c(ComplexReq::Rat(num, den))), vec![])
+                        (Const::complex(intern_c(ComplexReq::Rat(num, den))), vec![])
                     } else {
-                        (Const::Real(intern_f(RealReq::Rat(num, den))), vec![])
+                        (Const::real(intern_f(RealReq::Rat(num, den))), vec![])
                     }
                 }
                 (
@@ -182,10 +182,10 @@ impl Folded {
                         pool_ext.push(leg);
                         (pool_ext.len() - 1) as u32
                     });
-                    (Const::Ext(k), vec![])
+                    (Const::ext(k), vec![])
                 }
                 _ => (
-                    Const::None,
+                    Const::NONE,
                     sym.children_ids(id)
                         .iter()
                         .map(|&c| remap[c as usize])
@@ -410,12 +410,12 @@ fn fold_constant_subgraphs(
                 NodeType::ScalarConst => {
                     let idx = base_c + fold_complex.len() as u32;
                     fold_complex.push(cid);
-                    Const::Complex(idx)
+                    Const::complex(idx)
                 }
                 NodeType::RealConst => {
                     let idx = base_f + fold_real.len() as u32;
                     fold_real.push(cid);
-                    Const::Real(idx)
+                    Const::real(idx)
                 }
                 other => panic!("fold root {old} has non-constant output type {other:?}"),
             };
@@ -507,6 +507,7 @@ fn cplx<F: Real + FromPrimitive>(x: Complex64) -> C<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::helas::eval::op::ConstKind;
     use crate::ufo::sm::{sm_model, SMRestrict};
     use crate::ufo::EvaluatedModel;
 
@@ -563,21 +564,26 @@ mod tests {
         let imag_node = folded.ast.value(flows_kids[1]);
         let dup_node = folded.ast.value(flows_kids[2]);
         assert_eq!(real_node.op, Op::CoeffRat);
-        let Const::Real(real_idx) = real_node.leaf else {
-            panic!(
-                "real CoeffRat leaf must fold to Const::Real, got {:?}",
-                real_node.leaf
-            );
-        };
-        let Const::Complex(imag_idx) = imag_node.leaf else {
-            panic!(
-                "imaginary CoeffRat leaf must fold to Const::Complex, got {:?}",
-                imag_node.leaf
-            );
-        };
-        let Const::Real(dup_idx) = dup_node.leaf else {
-            panic!("duplicated real CoeffRat leaf must fold to Const::Real");
-        };
+        assert_eq!(
+            real_node.leaf.kind(),
+            ConstKind::Real,
+            "real CoeffRat leaf must fold to a real-pool index, got {:?}",
+            real_node.leaf
+        );
+        let real_idx = real_node.leaf.index();
+        assert_eq!(
+            imag_node.leaf.kind(),
+            ConstKind::Complex,
+            "imaginary CoeffRat leaf must fold to a complex-pool index, got {:?}",
+            imag_node.leaf
+        );
+        let imag_idx = imag_node.leaf.index();
+        assert_eq!(
+            dup_node.leaf.kind(),
+            ConstKind::Real,
+            "duplicated real CoeffRat leaf must fold to a real-pool index"
+        );
+        let dup_idx = dup_node.leaf.index();
         assert_eq!(
             dup_idx, real_idx,
             "repeated rational must dedup to one pool entry"
@@ -640,12 +646,13 @@ mod tests {
             folded.ast.children_ids(root_kids[1]).is_empty(),
             "folded composite must be a leaf (no children)"
         );
-        let Const::Complex(g_idx) = g_node.leaf else {
-            panic!(
-                "scalar-constant composite must fold to Const::Complex, got {:?}",
-                g_node.leaf
-            );
-        };
+        assert_eq!(
+            g_node.leaf.kind(),
+            ConstKind::Complex,
+            "scalar-constant composite must fold to a complex-pool index, got {:?}",
+            g_node.leaf
+        );
+        let g_idx = g_node.leaf.index();
 
         let model = sm_model(SMRestrict::Default);
         let evaluated = EvaluatedModel::from_model(model);

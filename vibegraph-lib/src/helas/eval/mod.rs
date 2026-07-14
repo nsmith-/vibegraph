@@ -78,7 +78,7 @@ pub mod bench_internals {
 pub use ast::{Ast, ParseAstError};
 pub use compile::AmplitudeEvaluator;
 pub use error::{CompileError, EvalError, RootDiagramError};
-pub use op::{Const, Node, Op, Sym};
+pub use op::{Const, ConstKind, Node, Op, Sym};
 pub use root_diagram::compile_diagram_ast;
 pub use root_lorentz::RootLorentzError;
 pub use run::{BoundAmplitude, ScratchSpace};

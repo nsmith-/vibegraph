@@ -421,22 +421,22 @@ mod tests {
 
     #[test]
     fn const_display_complex() {
-        assert_eq!(Const::Complex(7).to_string(), "(Complex 7)");
+        assert_eq!(Const::complex(7).to_string(), "(Complex 7)");
     }
 
     #[test]
     fn const_display_real() {
-        assert_eq!(Const::Real(3).to_string(), "(Real 3)");
+        assert_eq!(Const::real(3).to_string(), "(Real 3)");
     }
 
     #[test]
     fn const_display_ext() {
-        assert_eq!(Const::Ext(1).to_string(), "(Ext 1)");
+        assert_eq!(Const::ext(1).to_string(), "(Ext 1)");
     }
 
     #[test]
     fn const_display_none() {
-        assert_eq!(Const::None.to_string(), "(None)");
+        assert_eq!(Const::NONE.to_string(), "(None)");
     }
 
     // ── structural trees ──────────────────────────────────────────────────────

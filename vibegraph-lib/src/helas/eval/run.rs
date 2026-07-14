@@ -15,7 +15,7 @@ use super::analysis::NodeAnalysis;
 use super::compile::AmplitudeEvaluator;
 use super::fold::{ExtLeg, Folded};
 use super::kernel;
-use super::op::{Const, Node, NodeId, Op};
+use super::op::{Const, ConstKind, Node, NodeId, Op};
 use super::tree::Tree;
 use super::waveform_slot::WaveformSlot;
 use crate::ufo::EvaluatedModel;
@@ -398,35 +398,29 @@ pub(super) fn apply<'a, F: Real + 'a>(
 ) -> WaveformSlot<F> {
     match node.op {
         Op::Coupling => {
-            let Const::Complex(i) = node.leaf else {
-                panic!("Coupling node without a complex-pool index");
-            };
+            debug_assert_eq!(node.leaf.kind(), ConstKind::Complex);
             WaveformSlot::Scalar(ScalarWf {
-                value: env.consts_c[i as usize],
+                value: env.consts_c[node.leaf.index() as usize],
                 momentum: LorentzVector::zero(),
             })
         }
         Op::Mass | Op::Width | Op::Coeff => {
-            let Const::Real(i) = node.leaf else {
-                panic!("real-const node without a real-pool index");
-            };
-            WaveformSlot::Real(env.consts_f[i as usize])
+            debug_assert_eq!(node.leaf.kind(), ConstKind::Real);
+            WaveformSlot::Real(env.consts_f[node.leaf.index() as usize])
         }
-        // Folds to `Const::Real` when its rational carries no factor of `i`, else
-        // `Const::Complex` (see `fold::Folded::build`).
-        Op::CoeffRat => match node.leaf {
-            Const::Real(i) => WaveformSlot::Real(env.consts_f[i as usize]),
-            Const::Complex(i) => WaveformSlot::Scalar(ScalarWf {
-                value: env.consts_c[i as usize],
+        // Folds to a real-pool index when its rational carries no factor of `i`, else
+        // a complex-pool index (see `fold::Folded::build`).
+        Op::CoeffRat => match node.leaf.kind() {
+            ConstKind::Real => WaveformSlot::Real(env.consts_f[node.leaf.index() as usize]),
+            ConstKind::Complex => WaveformSlot::Scalar(ScalarWf {
+                value: env.consts_c[node.leaf.index() as usize],
                 momentum: LorentzVector::zero(),
             }),
             _ => panic!("CoeffRat node without a resolved pool index"),
         },
         Op::External => {
-            let Const::Ext(i) = node.leaf else {
-                panic!("External node without a leg-table index");
-            };
-            let leg = env.ext_legs[i as usize];
+            debug_assert_eq!(node.leaf.kind(), ConstKind::Ext);
+            let leg = env.ext_legs[node.leaf.index() as usize];
             let leg_idx = leg.leg_idx as usize;
             // Ward-identity gauge substitution (test-only): replace the chosen
             // external boson's polarisation ε^μ with its own 4-momentum q^μ. The

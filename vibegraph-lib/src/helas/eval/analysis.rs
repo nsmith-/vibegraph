@@ -30,7 +30,7 @@ use num_traits::Zero;
 
 use super::ast::Ast;
 use super::fold::ExtLeg;
-use super::op::{Const, NodeId, Op, Sym};
+use super::op::{Const, ConstKind, NodeId, Op, Sym};
 use super::tree::Tree;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::numbers::Charge;
@@ -310,14 +310,18 @@ pub fn analyze(ast: &Ast<Const>, ext_legs: &[ExtLeg]) -> NodeAnalysis {
     analyze_core(ast, n_legs, |id| match ast.value(id).op {
         Op::Coupling => LeafKind::ScalarConst,
         Op::Mass | Op::Width | Op::Coeff => LeafKind::RealConst,
-        Op::CoeffRat => match ast.value(id).leaf {
-            Const::Complex(_) => LeafKind::ScalarConst,
+        Op::CoeffRat => match ast.value(id).leaf.kind() {
+            ConstKind::Complex => LeafKind::ScalarConst,
             _ => LeafKind::RealConst,
         },
         Op::External => {
-            let Const::Ext(i) = ast.value(id).leaf else {
-                panic!("External node without a leg-table index");
-            };
+            let leaf = ast.value(id).leaf;
+            assert_eq!(
+                leaf.kind(),
+                ConstKind::Ext,
+                "External node without a leg-table index"
+            );
+            let i = leaf.index();
             let leg = ext_legs[i as usize];
             LeafKind::External {
                 leg_idx: leg.leg_idx as usize,
