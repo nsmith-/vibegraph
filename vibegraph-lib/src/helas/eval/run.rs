@@ -56,21 +56,24 @@ pub struct ScratchSpace<F: Real> {
 }
 
 impl<F: Real> ScratchSpace<F> {
-    /// Clear every result arena and reserve each to the program's exact result count, so a
-    /// run fills them by `push` with no reallocation. Leaves `moms` untouched — it is
-    /// resolved once per point by [`resolve_moms`] and reused across the helicity loop.
+    /// Size every result arena to the program's exact result count, zero-filled, so each
+    /// node writes its result by direct index (`arena[loc]`). Leaves `moms` untouched — it
+    /// is resolved once per point by [`resolve_moms`] and reused across the helicity loop.
+    ///
+    /// A fresh full pass seeds every slot; a subsequent recycling pass overwrites only the
+    /// slots whose helicity-leg support changed, so the sizing must persist across the loop.
     #[inline]
-    fn reset(&mut self, sizes: &[u32; N_ARENAS]) {
+    fn resize_all(&mut self, sizes: &[u32; N_ARENAS]) {
         self.reals.clear();
+        self.reals.resize(sizes[0] as usize, F::zero());
         self.scalars.clear();
+        self.scalars.resize(sizes[1] as usize, C::zero());
         self.vectors.clear();
+        self.vectors.resize(sizes[2] as usize, ComplexVector::zero());
         self.fin.clear();
+        self.fin.resize(sizes[3] as usize, Bispinor::zero());
         self.fout.clear();
-        self.reals.reserve(sizes[0] as usize);
-        self.scalars.reserve(sizes[1] as usize);
-        self.vectors.reserve(sizes[2] as usize);
-        self.fin.reserve(sizes[3] as usize);
-        self.fout.reserve(sizes[4] as usize);
+        self.fout.resize(sizes[4] as usize, Bispinor::zero());
     }
 }
 
@@ -177,22 +180,52 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         // point and reuse it across the helicity loop below.
         resolve_moms(folded, momenta, scratch);
         let n = self.eval.n_flows();
+        let hels = self.eval.helicities();
+
+        // Debug / extended-validation only: a shadow workspace that fully recomputes every
+        // helicity combination, so each recycled arena can be checked slot-for-slot against
+        // a from-scratch evaluation — catching any stale-slot reuse the skip predicate could
+        // introduce. Compiled out of release builds, so the hot path stays clean.
+        #[cfg(any(debug_assertions, feature = "extended-validation"))]
+        let mut shadow = self.scratch_space();
+
+        // Helicity combinations arrive in odometer order (last leg varies fastest), so
+        // consecutive combinations differ in the fewest legs. Each combination recomputes
+        // only the nodes whose helicity-leg support intersects the legs that flipped; every
+        // other arena slot retains the previous combination's value.
+        let mut prev: Option<&[i32]> = None;
+
         if n == 1 {
-            let hel_sum = self
-                .eval
-                .helicities()
-                .iter()
-                .map(|hel| {
-                    let env = self.eval_env(momenta, hel, None);
-                    run_forward_typed(folded, &env, scratch).norm_sqr()
-                })
-                .fold(F::zero(), |acc, x| acc + x);
+            let mut hel_sum = F::zero();
+            for hel in hels {
+                let mode = fill_mode(prev, hel);
+                let env = self.eval_env(momenta, hel, None);
+                fill_arenas(folded, &env, scratch, mode);
+                #[cfg(any(debug_assertions, feature = "extended-validation"))]
+                assert_recycled_matches_full(folded, &env, scratch, &mut shadow);
+                let m = match &folded.program().root {
+                    RootKind::Single(loc) => scratch.scalars[*loc as usize],
+                    RootKind::Flows(_) => panic!("eval_m2 single-flow on a Flows-rooted amplitude"),
+                };
+                hel_sum = hel_sum + m.norm_sqr();
+                prev = Some(hel);
+            }
             return hel_sum * self.cf[0];
         }
+
         let mut total = F::zero();
-        for hel in self.eval.helicities() {
+        for hel in hels {
+            let mode = fill_mode(prev, hel);
             let env = self.eval_env(momenta, hel, None);
-            let jamps = run_forward_flows_typed(folded, &env, scratch);
+            fill_arenas(folded, &env, scratch, mode);
+            #[cfg(any(debug_assertions, feature = "extended-validation"))]
+            assert_recycled_matches_full(folded, &env, scratch, &mut shadow);
+            let jamps: Vec<C<F>> = match &folded.program().root {
+                RootKind::Flows(locs) => {
+                    locs.iter().map(|&l| scratch.scalars[l as usize]).collect()
+                }
+                RootKind::Single(_) => panic!("eval_m2 multi-flow on a non-Flows amplitude"),
+            };
             // MATRIX1 += Σ_i ( Σ_j CF_{ji}·J_j ) · conj(J_i); the imaginary parts
             // cancel over the i-sum (MADGRAPH assigns the complex product to a real
             // accumulator), so only the real part contributes.
@@ -203,6 +236,7 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
                 }
                 total = total + (ztemp * jamps[i].conj()).re;
             }
+            prev = Some(hel);
         }
         total
     }
@@ -336,7 +370,7 @@ fn run_forward_typed<F: Real>(
     env: &EvalEnv<'_, F>,
     scratch: &mut ScratchSpace<F>,
 ) -> C<F> {
-    fill_arenas(folded, env, scratch);
+    fill_arenas(folded, env, scratch, FillMode::Full);
     match &folded.program().root {
         RootKind::Single(loc) => scratch.scalars[*loc as usize],
         RootKind::Flows(_) => panic!("run_forward_typed on a Flows-rooted amplitude"),
@@ -345,57 +379,145 @@ fn run_forward_typed<F: Real>(
 
 /// Evaluate a `Flows`-rooted arena through the typed instruction stream, returning each
 /// JAMP scalar (the root's children) in flow order. Assumes [`resolve_moms`] has populated
-/// the momentum pool for this point.
+/// the momentum pool for this point. The multi-flow [`eval_m2`](BoundAmplitude::eval_m2)
+/// reads the JAMPs directly from the recycled arenas; this standalone helper backs the
+/// per-flow JAMP probes.
+#[cfg(test)]
 fn run_forward_flows_typed<F: Real>(
     folded: &Folded,
     env: &EvalEnv<'_, F>,
     scratch: &mut ScratchSpace<F>,
 ) -> Vec<C<F>> {
-    fill_arenas(folded, env, scratch);
+    fill_arenas(folded, env, scratch, FillMode::Full);
     match &folded.program().root {
         RootKind::Flows(locs) => locs.iter().map(|&l| scratch.scalars[l as usize]).collect(),
         RootKind::Single(_) => panic!("run_forward_flows_typed on a non-Flows amplitude"),
     }
 }
 
+/// How a forward pass populates the result arenas.
+#[derive(Clone, Copy)]
+enum FillMode {
+    /// Seed every node into freshly sized (zero-filled) arenas — a standalone point, or the
+    /// first helicity combination of a recycling loop.
+    Full,
+    /// Recompute only the nodes whose helicity-leg support intersects `changed`; every other
+    /// arena slot retains the value the previous helicity combination wrote in place.
+    Recycle { changed: u64 },
+}
+
+/// The fill mode for a helicity combination given the previous one: the seed combination
+/// (`prev == None`) recomputes everything; otherwise only the legs whose helicity flipped
+/// (a bitmask indexed by leg index) need recomputing.
+fn fill_mode(prev: Option<&[i32]>, cur: &[i32]) -> FillMode {
+    match prev {
+        None => FillMode::Full,
+        Some(p) => {
+            let mut changed = 0u64;
+            for (leg, (&a, &b)) in p.iter().zip(cur).enumerate() {
+                if a != b {
+                    changed |= 1u64 << leg;
+                }
+            }
+            FillMode::Recycle { changed }
+        }
+    }
+}
+
+/// Debug / extended-validation guard: recompute every node from scratch into `shadow` and
+/// assert the recycled arenas match it slot-for-slot, proving the skip predicate never
+/// retained a stale value. The momentum pool is helicity-independent, so it is copied rather
+/// than re-resolved.
+#[cfg(any(debug_assertions, feature = "extended-validation"))]
+fn assert_recycled_matches_full<F: Real>(
+    folded: &Folded,
+    env: &EvalEnv<'_, F>,
+    scratch: &ScratchSpace<F>,
+    shadow: &mut ScratchSpace<F>,
+) {
+    shadow.moms.clone_from(&scratch.moms);
+    fill_arenas(folded, env, shadow, FillMode::Full);
+    assert!(
+        scratch.reals == shadow.reals,
+        "recycled reals arena diverged from a full recompute"
+    );
+    assert!(
+        scratch.scalars == shadow.scalars,
+        "recycled scalars arena diverged from a full recompute"
+    );
+    assert!(
+        scratch.vectors == shadow.vectors,
+        "recycled vectors arena diverged from a full recompute"
+    );
+    assert!(
+        scratch.fin == shadow.fin,
+        "recycled fin arena diverged from a full recompute"
+    );
+    assert!(
+        scratch.fout == shadow.fout,
+        "recycled fout arena diverged from a full recompute"
+    );
+}
+
 /// Run the typed instruction stream, filling the per-class result arenas. Every node
-/// writes its result to the arena its statically-known output class selects; operands are
-/// read directly from the arena their class fixes, so no per-value type dispatch happens
-/// on the hot path. The remaining per-iteration branches are the instruction dispatch and
-/// the slice bounds checks on arena indexing.
-fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut ScratchSpace<F>) {
+/// writes its result — by direct index (`arena[loc]`) — to the arena its statically-known
+/// output class selects; operands are read directly from the arena their class fixes, so no
+/// per-value type dispatch happens on the hot path. The remaining per-iteration branches are
+/// the instruction dispatch and the slice bounds checks on arena indexing.
+///
+/// [`FillMode::Full`] sizes the arenas and computes every node; [`FillMode::Recycle`] leaves
+/// the arenas sized from a prior pass and recomputes only the nodes whose helicity-leg
+/// support intersects the changed legs — every skipped node's slot retains its value, so a
+/// helicity flip touches only the currents that actually depend on it.
+fn fill_arenas<F: Real>(
+    folded: &Folded,
+    env: &EvalEnv<'_, F>,
+    scratch: &mut ScratchSpace<F>,
+    mode: FillMode,
+) {
     let prog = folded.program();
-    scratch.reset(&prog.arena_sizes);
+    let an = folded.analysis();
+    if let FillMode::Full = mode {
+        scratch.resize_all(&prog.arena_sizes);
+    }
     let ops = &prog.operands;
     let mom_ops = &prog.mom_operands;
 
     for (id, instr) in prog.instrs.iter().enumerate() {
+        if let FillMode::Recycle { changed } = mode {
+            // A node's slot depends only on the helicities of the legs in its support; if
+            // none of those flipped, the previous combination's slot is still exact.
+            if an.support(id as NodeId) & changed == 0 {
+                continue;
+            }
+        }
+        let loc = prog.loc[id] as usize;
         match *instr {
-            Instr::ComplexConst { pool } => scratch.scalars.push(env.consts_c[pool as usize]),
-            Instr::RealConst { pool } => scratch.reals.push(env.consts_f[pool as usize]),
+            Instr::ComplexConst { pool } => scratch.scalars[loc] = env.consts_c[pool as usize],
+            Instr::RealConst { pool } => scratch.reals[loc] = env.consts_f[pool as usize],
             Instr::ExternalScalar { leg } => {
                 let WaveformSlot::Scalar(s) = build_external_slot(env, leg as usize) else {
                     panic!("external scalar leg produced a non-scalar slot");
                 };
-                scratch.scalars.push(s.value);
+                scratch.scalars[loc] = s.value;
             }
             Instr::ExternalVector { leg } => {
                 let WaveformSlot::Vector(v) = build_external_slot(env, leg as usize) else {
                     panic!("external vector leg produced a non-vector slot");
                 };
-                scratch.vectors.push(v.eps);
+                scratch.vectors[loc] = v.eps;
             }
             Instr::ExternalFin { leg } => {
                 let WaveformSlot::FermionIn(f) = build_external_slot(env, leg as usize) else {
                     panic!("external ket leg produced a non-fermion-in slot");
                 };
-                scratch.fin.push(f.spinor);
+                scratch.fin[loc] = f.spinor;
             }
             Instr::ExternalFout { leg } => {
                 let WaveformSlot::FermionOut(f) = build_external_slot(env, leg as usize) else {
                     panic!("external bra leg produced a non-fermion-out slot");
                 };
-                scratch.fout.push(f.spinor);
+                scratch.fout[loc] = f.spinor;
             }
             Instr::PropagateScalar { input, mass, width, mom } => {
                 let out = kernel::propagate_scalar_bare(
@@ -404,7 +526,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
-                scratch.scalars.push(out);
+                scratch.scalars[loc] = out;
             }
             Instr::PropagateVector { input, mass, width, mom } => {
                 let out = kernel::propagate_vector_bare(
@@ -413,7 +535,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
-                scratch.vectors.push(out);
+                scratch.vectors[loc] = out;
             }
             Instr::PropagateFin { input, mass, width, mom } => {
                 let out = kernel::propagate_fin_bare(
@@ -422,7 +544,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
-                scratch.fin.push(out);
+                scratch.fin[loc] = out;
             }
             Instr::PropagateFout { input, mass, width, mom } => {
                 let out = kernel::propagate_fout_bare(
@@ -431,7 +553,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
-                scratch.fout.push(out);
+                scratch.fout[loc] = out;
             }
             Instr::AddScalar { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
@@ -439,7 +561,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 for op in &slice[1..] {
                     value = value + scratch.scalars[op.index()];
                 }
-                scratch.scalars.push(value);
+                scratch.scalars[loc] = value;
             }
             Instr::AddVector { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
@@ -447,7 +569,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 for op in &slice[1..] {
                     eps = eps + scratch.vectors[op.index()];
                 }
-                scratch.vectors.push(eps);
+                scratch.vectors[loc] = eps;
             }
             Instr::AddFin { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
@@ -455,7 +577,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 for op in &slice[1..] {
                     spinor = spinor + scratch.fin[op.index()];
                 }
-                scratch.fin.push(spinor);
+                scratch.fin[loc] = spinor;
             }
             Instr::AddFout { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
@@ -463,10 +585,10 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 for op in &slice[1..] {
                     spinor = spinor + scratch.fout[op.index()];
                 }
-                scratch.fout.push(spinor);
+                scratch.fout[loc] = spinor;
             }
             Instr::Mul { start, len } => {
-                exec_mul(scratch, &ops[start as usize..(start + len) as usize]);
+                exec_mul(scratch, loc, &ops[start as usize..(start + len) as usize]);
             }
             Instr::GammaVout { bra, ket, reversed } => {
                 let out = kernel::gamma_vout_bare(
@@ -474,7 +596,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                     scratch.fin[ket as usize],
                     reversed,
                 );
-                scratch.vectors.push(out);
+                scratch.vectors[loc] = out;
             }
             Instr::FfvVout { bra, ket, gl, gr, reversed } => {
                 let out = kernel::ffv_vout_bare(
@@ -484,17 +606,17 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                     scratch.scalars[gr as usize],
                     reversed,
                 );
-                scratch.vectors.push(out);
+                scratch.vectors[loc] = out;
             }
             Instr::GammaFin { v, f } => {
                 let eps = scratch.vectors[v as usize];
                 let out = kernel::off_shell_fin_bare(&eps, scratch.fin[f as usize]);
-                scratch.fin.push(out);
+                scratch.fin[loc] = out;
             }
             Instr::GammaFout { v, f } => {
                 let eps = scratch.vectors[v as usize];
                 let out = kernel::off_shell_fout_bare(&eps, scratch.fout[f as usize]);
-                scratch.fout.push(out);
+                scratch.fout[loc] = out;
             }
             Instr::FfvFin { v, f, gl, gr } => {
                 let eps = scratch.vectors[v as usize];
@@ -504,7 +626,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                     scratch.scalars[gl as usize],
                     scratch.scalars[gr as usize],
                 );
-                scratch.fin.push(out);
+                scratch.fin[loc] = out;
             }
             Instr::FfvFout { v, f, gl, gr } => {
                 let eps = scratch.vectors[v as usize];
@@ -514,15 +636,15 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                     scratch.scalars[gl as usize],
                     scratch.scalars[gr as usize],
                 );
-                scratch.fout.push(out);
+                scratch.fout[loc] = out;
             }
             Instr::ProjFin { f, chirality } => {
                 let out = kernel::proj_fin_bare(scratch.fin[f as usize], chirality);
-                scratch.fin.push(out);
+                scratch.fin[loc] = out;
             }
             Instr::ProjFout { f, chirality } => {
                 let out = kernel::proj_fout_bare(scratch.fout[f as usize], chirality);
-                scratch.fout.push(out);
+                scratch.fout[loc] = out;
             }
             Instr::Bilinear { bra, ket, chirality } => {
                 let out = kernel::scalar_bilinear_bare(
@@ -530,23 +652,23 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                     scratch.fin[ket as usize],
                     chirality,
                 );
-                scratch.scalars.push(out);
+                scratch.scalars[loc] = out;
             }
             Instr::Metric { a, b } => {
                 let out = kernel::metric_bare(scratch.vectors[a as usize], scratch.vectors[b as usize]);
-                scratch.scalars.push(out);
+                scratch.scalars[loc] = out;
             }
             Instr::MetricVout { v } => {
                 let out = kernel::metric_vout_bare(scratch.vectors[v as usize]);
-                scratch.vectors.push(out);
+                scratch.vectors[loc] = out;
             }
             Instr::LowerVout { v } => {
                 let out = kernel::lower_vout_bare(scratch.vectors[v as usize]);
-                scratch.vectors.push(out);
+                scratch.vectors[loc] = out;
             }
             Instr::PMom { mom } => {
                 let out = kernel::pmom_bare(scratch.moms[mom as usize]);
-                scratch.vectors.push(out);
+                scratch.vectors[loc] = out;
             }
             Instr::PMomOut { start, len } => {
                 let slice = &mom_ops[start as usize..(start + len) as usize];
@@ -554,7 +676,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 for &mid in slice {
                     acc = acc + scratch.moms[mid as usize];
                 }
-                scratch.vectors.push(kernel::pmom_bare(-acc));
+                scratch.vectors[loc] = kernel::pmom_bare(-acc);
             }
             Instr::Flows => {}
         }
@@ -566,9 +688,10 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
 /// n-ary product on bare typed operands (mirrors [`mul_apply`]): reals fold into `F`,
 /// scalars into a complex coefficient, and the single non-scalar current is scaled by the
 /// combined coefficient. Momentum is not routed here — each current's momentum lives in the
-/// pool keyed by its momentum id. Pushes the result to the arena its class selects.
+/// pool keyed by its momentum id. Writes the result to index `loc` of the arena its class
+/// selects.
 #[inline]
-fn exec_mul<F: Real>(scratch: &mut ScratchSpace<F>, operands: &[OperandRef]) {
+fn exec_mul<F: Real>(scratch: &mut ScratchSpace<F>, loc: usize, operands: &[OperandRef]) {
     let mut real_acc = F::one();
     let mut cplx_acc = C::new(F::one(), F::zero());
     let mut current = MulCurrent::None;
@@ -592,10 +715,10 @@ fn exec_mul<F: Real>(scratch: &mut ScratchSpace<F>, operands: &[OperandRef]) {
     }
     let coeff = cplx_acc * real_acc;
     match current {
-        MulCurrent::None => scratch.scalars.push(coeff),
-        MulCurrent::Vector(eps) => scratch.vectors.push(eps * coeff),
-        MulCurrent::Fin(spinor) => scratch.fin.push(spinor * coeff),
-        MulCurrent::Fout(spinor) => scratch.fout.push(spinor * coeff),
+        MulCurrent::None => scratch.scalars[loc] = coeff,
+        MulCurrent::Vector(eps) => scratch.vectors[loc] = eps * coeff,
+        MulCurrent::Fin(spinor) => scratch.fin[loc] = spinor * coeff,
+        MulCurrent::Fout(spinor) => scratch.fout[loc] = spinor * coeff,
     }
 }
 
