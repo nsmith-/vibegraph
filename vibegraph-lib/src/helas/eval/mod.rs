@@ -41,6 +41,7 @@ mod fold;
 // Lorentz-primitive eval kernels (one `pub(crate)` fn per Lorentz `Op`, named for it);
 // the `run::apply` dispatch is `kernel::<op>(children)`.
 mod kernel;
+mod layout;
 mod lower;
 mod op;
 // Reusable property-test harness: typed random-input generators + a "compare two
@@ -78,7 +79,7 @@ pub mod bench_internals {
 pub use ast::{Ast, ParseAstError};
 pub use compile::AmplitudeEvaluator;
 pub use error::{CompileError, EvalError, RootDiagramError};
-pub use op::{Const, Node, Op, Sym};
+pub use op::{Const, ConstKind, Node, Op, Sym};
 pub use root_diagram::compile_diagram_ast;
 pub use root_lorentz::RootLorentzError;
 pub use run::{BoundAmplitude, ScratchSpace};

@@ -145,16 +145,41 @@ impl Op {
     }
 }
 
+/// Dead padding that inflates [`Node`] to a target width for the instruction-stream
+/// width-sensitivity measurement. Byte counts are tuned so the natural-layout struct
+/// size lands on 16/24/32 B; zero-length (the default build) leaves the node
+/// untouched. Never enable more than one at once.
+#[cfg(feature = "node-pad-32")]
+type NodePad = [u8; 20];
+#[cfg(all(feature = "node-pad-24", not(feature = "node-pad-32")))]
+type NodePad = [u8; 12];
+#[cfg(all(
+    feature = "node-pad-16",
+    not(any(feature = "node-pad-24", feature = "node-pad-32"))
+))]
+type NodePad = [u8; 4];
+#[cfg(not(any(
+    feature = "node-pad-16",
+    feature = "node-pad-24",
+    feature = "node-pad-32"
+)))]
+type NodePad = [u8; 0];
+
 /// A node: opcode tag + typed leaf payload. Children live in the arena's CSR table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Node<T> {
     pub op: Op,
     pub leaf: T,
+    _pad: NodePad,
 }
 
 impl<T> Node<T> {
     pub fn new(op: Op, leaf: T) -> Self {
-        Node { op, leaf }
+        Node {
+            op,
+            leaf,
+            _pad: NodePad::default(),
+        }
     }
 }
 
@@ -183,21 +208,83 @@ pub enum Sym {
     None,
 }
 
-/// Folded leaf payload: deduped indices into the `C<F>` / `F` constant pools.
-///
-/// Kept to a single `u32` payload (8 bytes total) so folded nodes — and the stack
-/// evaluator's instruction stream — stay small; the `External` leg details live in
-/// the folded leg table (see [`super::fold::ExtLeg`]).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Const {
+/// Which constant pool a [`Const`] leaf indexes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConstKind {
     /// index into `consts_c` (complex pool) — `Op::Coupling`.
-    Complex(u32),
+    Complex,
     /// index into `consts_f` (real pool) — `Op::Mass` / `Op::Width` / `Op::Coeff`.
-    Real(u32),
+    Real,
     /// index into the folded external-leg table — `Op::External`.
-    Ext(u32),
+    Ext,
     /// Non-leaf op: no payload.
     None,
+}
+
+/// Folded leaf payload: a deduped index into the `C<F>` / `F` constant pools tagged
+/// with its [`ConstKind`], packed into a single `u32` (kind in the top 2 bits, index
+/// in the low 30). This keeps [`Node<Const>`](Node) at 8 bytes — the opcode's own
+/// alignment padding absorbs the kind, so the leaf costs no extra word beyond the
+/// index. The `External` leg details live in the folded leg table (see
+/// [`super::fold::ExtLeg`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Const(u32);
+
+impl Const {
+    const KIND_SHIFT: u32 = 30;
+    const INDEX_MASK: u32 = (1 << Self::KIND_SHIFT) - 1;
+
+    /// Non-leaf op: no payload.
+    pub const NONE: Const = Const(0);
+
+    fn packed(kind_bits: u32, index: u32) -> Const {
+        debug_assert!(
+            index <= Self::INDEX_MASK,
+            "constant-pool index {index} overflows the 30-bit Const payload"
+        );
+        Const((kind_bits << Self::KIND_SHIFT) | (index & Self::INDEX_MASK))
+    }
+
+    /// A complex-pool (`consts_c`) index.
+    pub fn complex(index: u32) -> Const {
+        Const::packed(1, index)
+    }
+
+    /// A real-pool (`consts_f`) index.
+    pub fn real(index: u32) -> Const {
+        Const::packed(2, index)
+    }
+
+    /// A folded external-leg-table index.
+    pub fn ext(index: u32) -> Const {
+        Const::packed(3, index)
+    }
+
+    /// Which pool this leaf indexes.
+    pub fn kind(self) -> ConstKind {
+        match self.0 >> Self::KIND_SHIFT {
+            1 => ConstKind::Complex,
+            2 => ConstKind::Real,
+            3 => ConstKind::Ext,
+            _ => ConstKind::None,
+        }
+    }
+
+    /// The pool index (meaningless for [`ConstKind::None`]).
+    pub fn index(self) -> u32 {
+        self.0 & Self::INDEX_MASK
+    }
+}
+
+impl fmt::Debug for Const {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind() {
+            ConstKind::Complex => write!(f, "Complex({})", self.index()),
+            ConstKind::Real => write!(f, "Real({})", self.index()),
+            ConstKind::Ext => write!(f, "Ext({})", self.index()),
+            ConstKind::None => write!(f, "None"),
+        }
+    }
 }
 
 /// Decode a charge from its HELAS `nsf` sign (the s-expr encoding of [`Charge::sign`]).
@@ -237,11 +324,11 @@ impl fmt::Display for Sym {
 
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Const::Complex(idx) => write!(f, "(Complex {idx})"),
-            Const::Real(idx) => write!(f, "(Real {idx})"),
-            Const::Ext(idx) => write!(f, "(Ext {idx})"),
-            Const::None => write!(f, "(None)"),
+        match self.kind() {
+            ConstKind::Complex => write!(f, "(Complex {})", self.index()),
+            ConstKind::Real => write!(f, "(Real {})", self.index()),
+            ConstKind::Ext => write!(f, "(Ext {})", self.index()),
+            ConstKind::None => write!(f, "(None)"),
         }
     }
 }
