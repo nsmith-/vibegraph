@@ -14,6 +14,7 @@ use num_traits::FromPrimitive;
 
 use super::analysis::{self, NodeAnalysis, NodeType};
 use super::ast::{Ast, AstBuilder};
+use super::layout::Program;
 use super::op::{Const, NodeId, Op, Sym};
 use super::run::{apply, EvalEnv};
 use super::tree::Tree;
@@ -62,7 +63,11 @@ pub struct ExtLeg {
 /// The folded, card-independent skeleton plus the pool specifications that resolve it.
 #[derive(Debug, Clone)]
 pub struct Folded {
-    /// Same structure as the symbolic AST, with leaves rewritten to pool indices.
+    /// Same structure as the symbolic AST, with leaves rewritten to pool indices. The
+    /// canonical folded arena the analysis and typed instruction stream are derived from;
+    /// the runtime executes the derived [`Program`], so this is otherwise read only by the
+    /// structural tests and op-coverage checks.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub ast: Ast<Const>,
     /// `consts_c[i] = resolve(pool_c[i])`.
     pool_c: Vec<ComplexReq>,
@@ -85,6 +90,9 @@ pub struct Folded {
     /// Static per-node annotations of `ast` (output type, constness, momentum id,
     /// helicity support), computed once from the card-independent skeleton.
     analysis: NodeAnalysis,
+    /// The typed instruction stream the runtime executes against per-class result
+    /// arenas, lowered once from `ast` + `analysis`.
+    program: Program,
 }
 
 impl Folded {
@@ -210,6 +218,7 @@ impl Folded {
         } = folded;
 
         let analysis = analysis::analyze(&ast, &pool_ext);
+        let program = Program::build(&ast, &analysis);
         Folded {
             ast,
             pool_c,
@@ -219,12 +228,18 @@ impl Folded {
             fold_complex,
             fold_real,
             analysis,
+            program,
         }
     }
 
     /// The static per-node analysis of the folded arena.
     pub(super) fn analysis(&self) -> &NodeAnalysis {
         &self.analysis
+    }
+
+    /// The typed instruction stream lowered from the folded arena.
+    pub(super) fn program(&self) -> &Program {
+        &self.program
     }
 
     /// Resolve the two numeric pools for a parameter card at scalar precision `F`.

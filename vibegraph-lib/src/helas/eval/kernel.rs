@@ -62,61 +62,69 @@ pub fn propagate<F: Real>(
 /// `jioxxx` jmom=fo−fi).
 pub fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> WaveformSlot<F> {
     match input {
-        // Dirac propagator: -i (q̸ + m) / (q² - m² + i m Γ). The -i puts the fermion
-        // chain in phase with the vector chain (which is bit-validated against
-        // MadGraph's W-arrays), so every off-shell chain type carries the same
-        // phase relative to MadGraph and diagram classes with different chain
-        // contents interfere correctly; pinned by the uux 2→6 per-diagram oracle
-        // (validation/madgraph/compare_amps.py), where continuum diagrams
-        // (two fermion propagators) meet H diagrams (one scalar propagator).
-        WaveformSlot::FermionIn(wf) => {
-            let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
-            let scale =
-                ri(-F::one()) * C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
-            WaveformSlot::FermionIn(InDiracWf::from_spinor(num * scale, wf.momentum))
-        }
-        WaveformSlot::FermionOut(wf) => {
-            let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
-            let scale =
-                ri(-F::one()) * C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
-            WaveformSlot::FermionOut(OutDiracWf::from_spinor(num * scale, wf.momentum))
-        }
-        WaveformSlot::Vector(wf) => {
-            let q = wf.momentum;
-            if mass == F::zero() {
-                WaveformSlot::Vector(VectorWf {
-                    // -i / q^2
-                    eps: wf.eps * ri(-q.m2().recip()),
-                    momentum: q,
-                })
-            } else {
-                let vm2 = mass * mass;
-                let denom = C::new(q.m2() - vm2, mass * width);
-                // -i (g - q q / m²) / (q² - m² + i m Γ). Real m² in the subtraction,
-                // like ALOHA's OM3 = 1/M3².
-                let cs = wf.eps.dot_lorentz(&q) / vm2;
-                WaveformSlot::Vector(VectorWf {
-                    eps: (wf.eps - ComplexVector::from(q) * cs) * ri(-F::one()) / denom,
-                    momentum: q,
-                })
-            }
-        }
-        WaveformSlot::Scalar(wf) => {
-            // Scalar propagator: -i / (q² - m² + i m Γ) — the same -i/D phase as
-            // the vector and Dirac propagators, so every chain type propagates
-            // uniformly. The compensating signs live in the scalar-sink vertex
-            // roots (see `build_at_leg`'s scalar-root arms); the combination is
-            // pinned per-diagram by the internal-H chains (ee→μμττ, uux 2→6, and
-            // the b b̄ 2→6 spine-Yukawa diagrams) and the external-H chains
-            // (e+e-→τ+τ-H) against MadGraph AMP().
-            let denom = C::new(wf.momentum.m2() - mass * mass, mass * width);
-            WaveformSlot::Scalar(ScalarWf {
-                value: wf.value * ri(-F::one()) / denom,
-                momentum: wf.momentum,
-            })
-        }
+        WaveformSlot::FermionIn(wf) => WaveformSlot::FermionIn(propagate_fin(wf, mass, width)),
+        WaveformSlot::FermionOut(wf) => WaveformSlot::FermionOut(propagate_fout(wf, mass, width)),
+        WaveformSlot::Vector(wf) => WaveformSlot::Vector(propagate_vector(wf, mass, width)),
+        WaveformSlot::Scalar(wf) => WaveformSlot::Scalar(propagate_scalar(wf, mass, width)),
         WaveformSlot::Real(_) => panic!("propagate step read a real-constant slot"),
         WaveformSlot::Empty => panic!("propagate step read an empty slot"),
+    }
+}
+
+// The Dirac propagator -i (q̸ + m) / (q² - m² + i m Γ) puts the fermion chain in phase
+// with the vector chain (bit-validated against MadGraph's W-arrays), so every off-shell
+// chain type carries the same phase relative to MadGraph and diagram classes with
+// different chain contents interfere correctly; pinned by the uux 2→6 per-diagram oracle
+// (validation/madgraph/compare_amps.py), where continuum diagrams (two fermion
+// propagators) meet H diagrams (one scalar propagator).
+
+/// Dirac propagator on a flow-in (ket) off-shell current.
+pub fn propagate_fin<F: Real>(wf: &InDiracWf<F>, mass: F, width: F) -> InDiracWf<F> {
+    let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
+    let scale = ri(-F::one()) * C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
+    InDiracWf::from_spinor(num * scale, wf.momentum)
+}
+
+/// Dirac propagator on a flow-out (bra) off-shell current.
+pub fn propagate_fout<F: Real>(wf: &OutDiracWf<F>, mass: F, width: F) -> OutDiracWf<F> {
+    let num = wf.spinor.slash(&wf.momentum.into()) + wf.spinor * mass;
+    let scale = ri(-F::one()) * C::new(wf.momentum.m2() - mass * mass, mass * width).recip();
+    OutDiracWf::from_spinor(num * scale, wf.momentum)
+}
+
+/// Vector propagator on an off-shell vector current.
+pub fn propagate_vector<F: Real>(wf: &VectorWf<F>, mass: F, width: F) -> VectorWf<F> {
+    let q = wf.momentum;
+    if mass == F::zero() {
+        VectorWf {
+            // -i / q^2
+            eps: wf.eps * ri(-q.m2().recip()),
+            momentum: q,
+        }
+    } else {
+        let vm2 = mass * mass;
+        let denom = C::new(q.m2() - vm2, mass * width);
+        // -i (g - q q / m²) / (q² - m² + i m Γ). Real m² in the subtraction,
+        // like ALOHA's OM3 = 1/M3².
+        let cs = wf.eps.dot_lorentz(&q) / vm2;
+        VectorWf {
+            eps: (wf.eps - ComplexVector::from(q) * cs) * ri(-F::one()) / denom,
+            momentum: q,
+        }
+    }
+}
+
+/// Scalar propagator on an off-shell scalar current: -i / (q² - m² + i m Γ) — the same
+/// -i/D phase as the vector and Dirac propagators, so every chain type propagates
+/// uniformly. The compensating signs live in the scalar-sink vertex roots (see
+/// `build_at_leg`'s scalar-root arms); the combination is pinned per-diagram by the
+/// internal-H chains (ee→μμττ, uux 2→6, and the b b̄ 2→6 spine-Yukawa diagrams) and the
+/// external-H chains (e+e-→τ+τ-H) against MadGraph AMP().
+pub fn propagate_scalar<F: Real>(wf: &ScalarWf<F>, mass: F, width: F) -> ScalarWf<F> {
+    let denom = C::new(wf.momentum.m2() - mass * mass, mass * width);
+    ScalarWf {
+        value: wf.value * ri(-F::one()) / denom,
+        momentum: wf.momentum,
     }
 }
 
@@ -132,10 +140,16 @@ pub fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> Wa
 /// `PMom`: the 4-momentum of the single input, as a vector current.
 pub fn pmom<F: Real>(input: &WaveformSlot<F>) -> WaveformSlot<F> {
     let momentum = input.momentum().expect("PMom: empty slot");
-    WaveformSlot::Vector(VectorWf {
+    WaveformSlot::Vector(pmom_from_mom(momentum))
+}
+
+/// A structure momentum promoted to a vector current with zero routing momentum (see the
+/// `PMom`/`PMomOut` note above): the `P` slots carry no routing momentum of their own.
+pub fn pmom_from_mom<F: Real>(momentum: LorentzVector<F>) -> VectorWf<F> {
+    VectorWf {
         eps: ComplexVector::from(momentum),
         momentum: LorentzVector::zero(),
-    })
+    }
 }
 
 /// `PMomOut`: the 4-momentum of the vertex's *output* leg, `−Σ (input momenta)`, as a
@@ -147,10 +161,7 @@ pub fn pmom_out<'a, F: Real + 'a>(
     let momentum = -children.into_iter().fold(LorentzVector::zero(), |acc, c| {
         acc + c.momentum().expect("PMomOut: empty slot")
     });
-    WaveformSlot::Vector(VectorWf {
-        eps: ComplexVector::from(momentum),
-        momentum: LorentzVector::zero(),
-    })
+    WaveformSlot::Vector(pmom_from_mom(momentum))
 }
 
 // ──────────────────────────── fermion currents ────────────────────────────
@@ -204,16 +215,22 @@ pub fn off_shell_fermion_current<F: Real>(
         panic!("off-shell fermion current: expected vector input");
     };
     match fermion {
-        WaveformSlot::FermionIn(fi) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
-            fi.spinor.slash(&v.eps),
-            fi.momentum - v.momentum,
-        )),
-        WaveformSlot::FermionOut(fo) => WaveformSlot::FermionOut(OutDiracWf::from_spinor(
-            fo.spinor.slash(&v.eps),
-            fo.momentum + v.momentum,
-        )),
+        WaveformSlot::FermionIn(fi) => WaveformSlot::FermionIn(off_shell_fin(v, fi)),
+        WaveformSlot::FermionOut(fo) => WaveformSlot::FermionOut(off_shell_fout(v, fo)),
         _ => panic!("off-shell fermion current: expected fermion input"),
     }
+}
+
+/// Continue a flow-in (ket) fermion line by slashing it with the vector current, `ε̸ψ`,
+/// q = f.p − v.p (Fortran `fvixxx`).
+pub fn off_shell_fin<F: Real>(v: &VectorWf<F>, fi: &InDiracWf<F>) -> InDiracWf<F> {
+    InDiracWf::from_spinor(fi.spinor.slash(&v.eps), fi.momentum - v.momentum)
+}
+
+/// Continue a flow-out (bra) fermion line by slashing it with the vector current, `ψ̄ε̸`,
+/// q = f.p + v.p (Fortran `fvoxxx`).
+pub fn off_shell_fout<F: Real>(v: &VectorWf<F>, fo: &OutDiracWf<F>) -> OutDiracWf<F> {
+    OutDiracWf::from_spinor(fo.spinor.slash(&v.eps), fo.momentum + v.momentum)
 }
 
 /// `ProjM`: left chiral projection of a continuing fermion current. See [`chiral_project`].
@@ -230,40 +247,52 @@ pub fn proj_p<F: Real>(f: &WaveformSlot<F>) -> WaveformSlot<F> {
 /// input adjoint. `project_left`/`project_right` are adjoint-dependent (a bra projects
 /// different components than a ket), so the same call is correct for both flows.
 pub fn chiral_project<F: Real>(child: &WaveformSlot<F>, chirality: Chirality) -> WaveformSlot<F> {
-    fn project<F: Real, Fl: DiracAdjoint>(
-        s: Bispinor<F, Fl>,
-        chirality: Chirality,
-    ) -> Bispinor<F, Fl> {
-        match chirality {
-            Chirality::Left => s.project_left(),
-            Chirality::Right => s.project_right(),
-            Chirality::Both => s,
-        }
-    }
     match child {
-        WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
-            project(f.spinor, chirality),
-            f.momentum,
-        )),
-        WaveformSlot::FermionOut(f) => WaveformSlot::FermionOut(OutDiracWf::from_spinor(
-            project(f.spinor, chirality),
-            f.momentum,
-        )),
+        WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(proj_fin(f, chirality)),
+        WaveformSlot::FermionOut(f) => WaveformSlot::FermionOut(proj_fout(f, chirality)),
         _ => panic!("chiral projection: expected fermion input"),
     }
+}
+
+/// Chiral projection of a stored spinor block (`project_left`/`project_right` are
+/// adjoint-dependent, so the same call is correct for both flows).
+fn project_spinor<F: Real, Fl: DiracAdjoint>(
+    s: Bispinor<F, Fl>,
+    chirality: Chirality,
+) -> Bispinor<F, Fl> {
+    match chirality {
+        Chirality::Left => s.project_left(),
+        Chirality::Right => s.project_right(),
+        Chirality::Both => s,
+    }
+}
+
+/// Chiral projection of a flow-in fermion current, preserving the flow.
+pub fn proj_fin<F: Real>(f: &InDiracWf<F>, chirality: Chirality) -> InDiracWf<F> {
+    InDiracWf::from_spinor(project_spinor(f.spinor, chirality), f.momentum)
+}
+
+/// Chiral projection of a flow-out fermion current, preserving the flow.
+pub fn proj_fout<F: Real>(f: &OutDiracWf<F>, chirality: Chirality) -> OutDiracWf<F> {
+    OutDiracWf::from_spinor(project_spinor(f.spinor, chirality), f.momentum)
 }
 
 /// `GammaVout`: two fermions → off-shell vector current `ψ̄ γ^μ ψ`.
 pub fn gamma_vout<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     let (fo, fi, reversed) = resolve_bra_ket(a, b);
-    let eps = fo.vector_bilinear(&fi, Chirality::Both);
-    // Reading the fermion line against the vertex's defined adjoint conjugates the
-    // structure as C γ^{μT} C⁻¹ = −γ^μ, so the vector current picks up a relative −1.
-    // (Scalar/pseudoscalar structures have +1 and need no flip.)
-    WaveformSlot::Vector(VectorWf {
+    WaveformSlot::Vector(gamma_vout_c(&fo, &fi, reversed))
+}
+
+/// `GammaVout` on resolved bra/ket currents: two fermions → off-shell vector current
+/// `ψ̄ γ^μ ψ`. Reading the fermion line against the vertex's defined adjoint conjugates
+/// the structure as C γ^{μT} C⁻¹ = −γ^μ, so a `reversed` line picks up a relative −1.
+/// (Scalar/pseudoscalar structures have +1 and need no flip.)
+pub fn gamma_vout_c<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, reversed: bool) -> VectorWf<F> {
+    let eps = fo.vector_bilinear(fi, Chirality::Both);
+    VectorWf {
         eps: if reversed { -eps } else { eps },
         momentum: fo.momentum - fi.momentum,
-    })
+    }
 }
 
 // ──────────────────────────── fused chiral FFV kernels ────────────────────────────
@@ -291,6 +320,17 @@ pub fn ffv_vout<F: Real>(
     let gl = expect_scalar(gl);
     let gr = expect_scalar(gr);
     let (fo, fi, reversed) = resolve_bra_ket(a, b);
+    WaveformSlot::Vector(ffv_vout_c(&fo, &fi, gl, gr, reversed))
+}
+
+/// `FfvVout` on resolved bra/ket currents and effective couplings.
+pub fn ffv_vout_c<F: Real>(
+    fo: &OutDiracWf<F>,
+    fi: &InDiracWf<F>,
+    gl: C<F>,
+    gr: C<F>,
+    reversed: bool,
+) -> VectorWf<F> {
     let jl = fo.spinor.left_current(&fi.spinor);
     let jr = fo.spinor.right_current(&fi.spinor);
     let eps = if reversed {
@@ -298,10 +338,10 @@ pub fn ffv_vout<F: Real>(
     } else {
         jl * gl + jr * gr
     };
-    WaveformSlot::Vector(VectorWf {
+    VectorWf {
         eps,
         momentum: fo.momentum - fi.momentum,
-    })
+    }
 }
 
 /// `FfvIout`: fused chiral [`gamma_iout`] — continue a flow-in fermion line through a
@@ -344,29 +384,54 @@ fn fused_chiral_fermion_current<F: Real>(
     };
     let gl = expect_scalar(gl);
     let gr = expect_scalar(gr);
-    fn weighted<F: Real, Adj: DiracAdjoint>(
-        s: &Bispinor<F, Adj>,
-        gl: C<F>,
-        gr: C<F>,
-    ) -> Bispinor<F, Adj> {
-        Bispinor::from_components([
-            s.component(0) * gl,
-            s.component(1) * gl,
-            s.component(2) * gr,
-            s.component(3) * gr,
-        ])
-    }
     match f {
-        WaveformSlot::FermionIn(fi) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
-            weighted(&fi.spinor, gl, gr).slash(&v.eps),
-            fi.momentum - v.momentum,
-        )),
-        WaveformSlot::FermionOut(fo) => WaveformSlot::FermionOut(OutDiracWf::from_spinor(
-            weighted(&fo.spinor, gl, gr).slash(&v.eps),
-            fo.momentum + v.momentum,
-        )),
+        WaveformSlot::FermionIn(fi) => WaveformSlot::FermionIn(ffv_fin(v, fi, gl, gr)),
+        WaveformSlot::FermionOut(fo) => WaveformSlot::FermionOut(ffv_fout(v, fo, gl, gr)),
         _ => panic!("fused chiral fermion current: expected fermion input"),
     }
+}
+
+/// The `[gl, gl, gr, gr]` chiral weighting of a spinor's storage blocks before a single
+/// slash. The same weighting is correct for both adjoints: in the Weyl basis the slash
+/// maps storage blocks crosswise, so each weighted input block lands on the output block
+/// the corresponding projected term populates.
+fn chiral_weighted<F: Real, Adj: DiracAdjoint>(
+    s: &Bispinor<F, Adj>,
+    gl: C<F>,
+    gr: C<F>,
+) -> Bispinor<F, Adj> {
+    Bispinor::from_components([
+        s.component(0) * gl,
+        s.component(1) * gl,
+        s.component(2) * gr,
+        s.component(3) * gr,
+    ])
+}
+
+/// Fused chiral off-shell current for a flow-in fermion (ket routing `f − v`).
+pub fn ffv_fin<F: Real>(
+    v: &VectorWf<F>,
+    fi: &InDiracWf<F>,
+    gl: C<F>,
+    gr: C<F>,
+) -> InDiracWf<F> {
+    InDiracWf::from_spinor(
+        chiral_weighted(&fi.spinor, gl, gr).slash(&v.eps),
+        fi.momentum - v.momentum,
+    )
+}
+
+/// Fused chiral off-shell current for a flow-out fermion (bra routing `f + v`).
+pub fn ffv_fout<F: Real>(
+    v: &VectorWf<F>,
+    fo: &OutDiracWf<F>,
+    gl: C<F>,
+    gr: C<F>,
+) -> OutDiracWf<F> {
+    OutDiracWf::from_spinor(
+        chiral_weighted(&fo.spinor, gl, gr).slash(&v.eps),
+        fo.momentum + v.momentum,
+    )
 }
 
 /// `ProjMAmp`: left chiral scalar bilinear `ψ̄ P_L ψ`. See [`scalar_bilinear_current`].
@@ -392,11 +457,20 @@ pub fn scalar_bilinear_current<F: Real>(
     chirality: Chirality,
 ) -> WaveformSlot<F> {
     let (fo, fi_col, _) = resolve_bra_ket(a, b);
-    let value = Bispinor::scalar_bilinear(&fo.spinor, &fi_col.spinor, chirality);
-    WaveformSlot::Scalar(ScalarWf {
+    WaveformSlot::Scalar(scalar_bilinear_c(&fo, &fi_col, chirality))
+}
+
+/// Scalar bilinear `ψ̄ Γ ψ` on resolved bra/ket currents (`Γ = P_L`, `P_R`, or `1`).
+pub fn scalar_bilinear_c<F: Real>(
+    fo: &OutDiracWf<F>,
+    fi: &InDiracWf<F>,
+    chirality: Chirality,
+) -> ScalarWf<F> {
+    let value = Bispinor::scalar_bilinear(&fo.spinor, &fi.spinor, chirality);
+    ScalarWf {
         value,
-        momentum: fo.momentum - fi_col.momentum,
-    })
+        momentum: fo.momentum - fi.momentum,
+    }
 }
 
 // ──────────────────────────── metric / vector currents ────────────────────────────
@@ -409,10 +483,15 @@ pub fn metric<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot
     let WaveformSlot::Vector(v2) = b else {
         panic!("Metric: expected vector input");
     };
-    WaveformSlot::Scalar(ScalarWf {
+    WaveformSlot::Scalar(metric_c(v1, v2))
+}
+
+/// `Metric`: contract two vectors → scalar.
+pub fn metric_c<F: Real>(v1: &VectorWf<F>, v2: &VectorWf<F>) -> ScalarWf<F> {
+    ScalarWf {
         value: v1.eps.dot(&v2.eps.lower()),
         momentum: v1.momentum + v2.momentum,
-    })
+    }
 }
 
 /// `MetricVout`: off-shell vector current of a `Metric(out, v)` structure — the metric
@@ -426,7 +505,13 @@ pub fn metric_vout<F: Real>(v: &WaveformSlot<F>) -> WaveformSlot<F> {
     let WaveformSlot::Vector(vin) = v else {
         panic!("MetricVout: expected vector input");
     };
-    WaveformSlot::Vector(*vin)
+    WaveformSlot::Vector(metric_vout_c(vin))
+}
+
+/// `MetricVout`: the contravariant current `g^{μν}V_ν = V^μ` — an identity on
+/// contravariant storage.
+pub fn metric_vout_c<F: Real>(vin: &VectorWf<F>) -> VectorWf<F> {
+    *vin
 }
 
 /// `LowerVout`: [`metric_vout`] times the momentum-odd structure's −1 — the physical
@@ -439,10 +524,16 @@ pub fn lower_vout<F: Real>(v: &WaveformSlot<F>) -> WaveformSlot<F> {
     let WaveformSlot::Vector(vin) = v else {
         panic!("LowerVout: expected vector input");
     };
-    WaveformSlot::Vector(VectorWf {
+    WaveformSlot::Vector(lower_vout_c(vin))
+}
+
+/// `LowerVout`: the contravariant current `−g^{μν}V_ν = −V^μ` of each P-carrying (VVV)
+/// structure term (see [`lower_vout`]).
+pub fn lower_vout_c<F: Real>(vin: &VectorWf<F>) -> VectorWf<F> {
+    VectorWf {
         eps: -vin.eps,
         momentum: vin.momentum,
-    })
+    }
 }
 
 #[cfg(test)]
