@@ -139,7 +139,10 @@ pub fn ffv_vout_bare<F: Real>(
 }
 
 /// Continue a bare ket line by slashing with the vector polarisation, `ε̸ψ`.
-pub fn off_shell_fin_bare<F: Real>(eps: &ComplexVector<F>, fi: Bispinor<F, Ket>) -> Bispinor<F, Ket> {
+pub fn off_shell_fin_bare<F: Real>(
+    eps: &ComplexVector<F>,
+    fi: Bispinor<F, Ket>,
+) -> Bispinor<F, Ket> {
     fi.slash(eps)
 }
 
@@ -373,13 +376,19 @@ pub fn off_shell_fermion_current<F: Real>(
 /// Continue a flow-in (ket) fermion line by slashing it with the vector current, `ε̸ψ`,
 /// q = f.p − v.p (Fortran `fvixxx`).
 pub fn off_shell_fin<F: Real>(v: &VectorWf<F>, fi: &InDiracWf<F>) -> InDiracWf<F> {
-    InDiracWf::from_spinor(off_shell_fin_bare(&v.eps, fi.spinor), fi.momentum - v.momentum)
+    InDiracWf::from_spinor(
+        off_shell_fin_bare(&v.eps, fi.spinor),
+        fi.momentum - v.momentum,
+    )
 }
 
 /// Continue a flow-out (bra) fermion line by slashing it with the vector current, `ψ̄ε̸`,
 /// q = f.p + v.p (Fortran `fvoxxx`).
 pub fn off_shell_fout<F: Real>(v: &VectorWf<F>, fo: &OutDiracWf<F>) -> OutDiracWf<F> {
-    OutDiracWf::from_spinor(off_shell_fout_bare(&v.eps, fo.spinor), fo.momentum + v.momentum)
+    OutDiracWf::from_spinor(
+        off_shell_fout_bare(&v.eps, fo.spinor),
+        fo.momentum + v.momentum,
+    )
 }
 
 /// `ProjM`: left chiral projection of a continuing fermion current. See [`chiral_project`].
@@ -550,12 +559,7 @@ fn chiral_weighted<F: Real, Adj: DiracAdjoint>(
 }
 
 /// Fused chiral off-shell current for a flow-in fermion (ket routing `f − v`).
-pub fn ffv_fin<F: Real>(
-    v: &VectorWf<F>,
-    fi: &InDiracWf<F>,
-    gl: C<F>,
-    gr: C<F>,
-) -> InDiracWf<F> {
+pub fn ffv_fin<F: Real>(v: &VectorWf<F>, fi: &InDiracWf<F>, gl: C<F>, gr: C<F>) -> InDiracWf<F> {
     InDiracWf::from_spinor(
         ffv_fin_bare(&v.eps, fi.spinor, gl, gr),
         fi.momentum - v.momentum,
@@ -563,12 +567,7 @@ pub fn ffv_fin<F: Real>(
 }
 
 /// Fused chiral off-shell current for a flow-out fermion (bra routing `f + v`).
-pub fn ffv_fout<F: Real>(
-    v: &VectorWf<F>,
-    fo: &OutDiracWf<F>,
-    gl: C<F>,
-    gr: C<F>,
-) -> OutDiracWf<F> {
+pub fn ffv_fout<F: Real>(v: &VectorWf<F>, fo: &OutDiracWf<F>, gl: C<F>, gr: C<F>) -> OutDiracWf<F> {
     OutDiracWf::from_spinor(
         ffv_fout_bare(&v.eps, fo.spinor, gl, gr),
         fo.momentum + v.momentum,
