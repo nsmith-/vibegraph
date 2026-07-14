@@ -271,6 +271,63 @@ note on `main` in a docs commit.
   into Track 1's scope; (b) informs the go/no-go on Track 3 (the e-graph re-rooting
   formulation only makes sense if the headroom is real *and* greedy leaves a gap).
 
+### 3.1 Results (branch `explore/rooting` @ `9bb8e14`; full tables in `rooting-study-results.md`)
+
+Done 2026-07-13. Per-diagram root override (`root_diagram::set_root_override`, test-only;
+production stays `const VtxIdx(0)`, byte-identical), 6 variants × 14 processes, each under
+the full `validate_helas_mg` REL_TOL gate. Σ over the 14 processes:
+
+| variant | Σ nodes | vs base | Σ weighted B | vs base | gate |
+|---|--:|--:|--:|--:|---|
+| baseline `VtxIdx(0)` | 9111 | — | 534976 | — | PASS 14/14 |
+| canon: lowest-leg anchor | 9111 | 0% | 534976 | 0% | PASS 14/14 |
+| canon: most ext legs | 10564 | +15.9% | 673824 | +25.9% | FAIL 4/14 |
+| canon: fewest ext legs | 7287 | −20.0% | 361072 | −32.5% | FAIL 5/14 |
+| greedy: as-generated | 7200 | −21.0% | 354080 | −33.8% | FAIL 5/14 |
+| greedy: largest-first | 7200 | −21.0% | 354080 | −33.8% | FAIL 5/14 |
+
+**Two findings, both load-bearing for Track 3:**
+
+1. **The headroom is real but small-lever:** greedy cuts −21% nodes / −34% slot traffic
+   vs baseline; the cheap "fewest ext legs" canonical heuristic captures nearly all of it
+   (−20%), so greedy's per-diagram trial machinery buys only ~1% over a one-line heuristic.
+   "Most ext legs" moves the wrong way (+16% — central high-degree roots duplicate
+   currents). Diagram order (as-generated vs largest-first) makes no difference. The
+   deduped `(edge,direction)` "floor" overcounts (both directions of every edge, ~3× the
+   currents any single rooting realizes) — not a reachable target; the honest share metric
+   is `#Propagate` vs the no-share `sum_edges` bound, where baseline already shares heavily
+   (642/2895) and greedy pushes to 275/2895. `lowest-leg anchor` reproduces baseline
+   exactly — feyngraph's `VtxIdx(0)` *is* the lowest-leg-anchored vertex, i.e. the status
+   quo is already the best zero-cost canonical choice.
+
+2. **⚠️ The reductions are currently UNREALIZABLE — silent orientation-dependence in the
+   rooting primitives.** Every node-reducing rooting *silently corrupts the amplitude*
+   (max_rel up to **1.7e+3**, 50/50 points wrong — gross wrong values, not benign
+   phase/reassociation) on `e+e-→W+W-`, `e+e-→τ+τ-H`, `e+e-→μμττ`, and both 2→6 QCD=0
+   processes. These compile and evaluate with no panic and no missing-op error: momentum
+   routing (`mul_apply` bra-add/ket-subtract), Lorentz-output rooting, and the fermion-spine
+   sign are only *validated* for the `VtxIdx(0)` orientation feyngraph happens to emit, and
+   are **not invariant under edge reversal**. This is the same class of bug as the
+   `gg_to_gg` VVVV phase (an unexercised branch drifting out of sync) — see the
+   `validation-sprint` "branch-level coverage" backlog item. Not a live bug (production is
+   `VtxIdx(0)`, gate 14/14), but a hard prerequisite for any rooting change.
+
+**Decisions:**
+- **(a) Do NOT promote a production greedy/canonical rooting pass into Track 1 now.** The
+  headroom is real but blocked on first making rooting **orientation-independent** — a
+  correctness fix, not a perf pass. And the realizable win over the free `lowest-leg`
+  status quo is only ~21%, small next to the slot-traffic wins A3/A4 target.
+- **(b) Track 3 e-graph re-rooting rule family: conditional GO, correctness-first.** The
+  payoff exists (−21%/−34% vs the greedy oracle), so it *could* justify DAG-cost
+  extraction — but the propagator-commute + per-vertex-rotation rewrites (§1.3) **cannot be
+  assumed correctness-preserving** with today's primitives. The soundness fix — a
+  `rooting-soundness` spike, first test: assert *all V rootings* of every diagram pass the
+  gate (the `set_root_override` hook is ready for exactly this fuzz) — is the real
+  prerequisite, ahead of building the re-rooting extractor. The *chiral-decomposition* rule
+  family (M3) is unaffected — it does not re-root.
+- No new op coverage: the failures are wrong values, not `MetricNegI`/`IdentityAmp` hits,
+  so the `KNOWN_UNCOVERED` gap is untouched.
+
 ## 4. Track 3 — `dag-extraction` investigation
 
 What it takes to extract with a **DAG (sharing-aware) cost** from egglog 2.0, since

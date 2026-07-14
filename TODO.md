@@ -126,7 +126,21 @@ runtime grows its own internal storage. Sessions in dependency order (detail in 
 - **A6** — close-out: re-record the timing table vs MG and the baseline above; update
   TODO + note 15.
 
-### 🌲 Track 2: `rooting-exploration` — throwaway rooting study (branch `explore/rooting`, not merged)
+### 🌲 Track 2: `rooting-exploration` — throwaway rooting study ✅ DONE 2026-07-13 (branch `explore/rooting` @ `9bb8e14`, not merged; results `research/notes/rooting-study-results.md` + note 15 §3.1)
+
+**Outcome:** headroom is real (greedy −21% nodes / −34% slot traffic; cheap "fewest ext
+legs" heuristic captures −20% of it, so greedy buys only ~1% over a one-liner; `VtxIdx(0)`
+already == the free `lowest-leg` optimum) **but currently unrealizable** — every
+node-reducing rooting *silently corrupts the amplitude* (max_rel up to 1.7e+3) on
+multi-boson + ≥6-point processes, a latent orientation-dependence in the rooting primitives
+(`mul_apply` momentum routing / Lorentz-output rooting / fermion-spine sign validated only
+for feyngraph's `VtxIdx(0)` orientation). **Decisions:** (a) do NOT promote a production
+rooting pass now — blocked on a `rooting-soundness` fix (see below), and the realizable win
+over the free status quo is small next to A3/A4's slot-traffic targets; (b) Track 3
+re-rooting rule family = conditional GO, **correctness-first** (soundness spike precedes the
+extractor). The M3 chiral-decomposition family is unaffected (it doesn't re-root).
+
+<details><summary>original Track 2 plan (for reference)</summary>
 
 Root choice is currently `VtxIdx(0)` per (diagram, color-chain) — an accident of
 feyngraph ordering that cross-diagram CSE silently depends on; post-`color-flow`,
@@ -142,6 +156,20 @@ diagram orders). Every variant runs the full validation net (rootings hit new ke
 paths). Results committed on the branch for posterity + tables appended to note 15 on
 `main`. Decision output: if greedy wins big, promote a production greedy-rooting pass
 into Track 1; headroom informs the Track 3 go/no-go.
+
+</details>
+
+#### `rooting-soundness` — make re-rooting orientation-independent (prerequisite, surfaced by Track 2)
+
+Blocks any production rooting change AND the Track 3 re-rooting rule family. Today the
+amplitude is correct only for feyngraph's `VtxIdx(0)` edge orientation; reversing an
+internal edge silently changes the value (Track 2: max_rel up to 1.7e+3 on multi-boson /
+≥6-point). Fix the momentum-routing (`mul_apply` bra-add/ket-subtract), Lorentz-output
+rooting, and fermion-spine sign to be invariant under root choice. **First test** (the
+`set_root_override` hook from `explore/rooting` is ready for it): assert *all V rootings* of
+every diagram in `MG_VALIDATED_PROCESSES` pass the `validate_helas_mg` gate. This is
+`gg_to_gg`-VVVV-class territory (an unexercised branch drifting out of sync) — a bug magnet;
+sequence it as its own spike before the re-rooting extractor, not folded into a perf pass.
 
 ### 🧮 Track 3: `dag-extraction` — DAG-cost extractor for egglog (investigation)
 
