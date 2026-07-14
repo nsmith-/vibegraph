@@ -82,10 +82,10 @@ pub(super) enum Instr {
     ExternalVector { leg: u32 },
     ExternalFin { leg: u32 },
     ExternalFout { leg: u32 },
-    PropagateScalar { input: u32, mass: u32, width: u32 },
-    PropagateVector { input: u32, mass: u32, width: u32 },
-    PropagateFin { input: u32, mass: u32, width: u32 },
-    PropagateFout { input: u32, mass: u32, width: u32 },
+    PropagateScalar { input: u32, mass: u32, width: u32, mom: u32 },
+    PropagateVector { input: u32, mass: u32, width: u32, mom: u32 },
+    PropagateFin { input: u32, mass: u32, width: u32, mom: u32 },
+    PropagateFout { input: u32, mass: u32, width: u32, mom: u32 },
     AddScalar { start: u32, len: u32 },
     AddVector { start: u32, len: u32 },
     AddFin { start: u32, len: u32 },
@@ -103,7 +103,11 @@ pub(super) enum Instr {
     Metric { a: u32, b: u32 },
     MetricVout { v: u32 },
     LowerVout { v: u32 },
-    PMom { input: OperandRef },
+    /// `P` read-off of an input line: its structure momentum is the momentum-table entry
+    /// `mom` (the operand's momentum id), promoted to a vector current.
+    PMom { mom: u32 },
+    /// `P` read-off of a vertex's output leg: `−Σ` over the input operands' momentum-table
+    /// entries, indexed by `[start, start+len)` into [`Program::mom_operands`].
     PMomOut { start: u32, len: u32 },
     /// Variadic per-flow-JAMP amplitude root: computes nothing (its children's scalars
     /// are read out by the multi-flow evaluator).
@@ -131,6 +135,9 @@ pub(super) struct Program {
     pub(super) arena_sizes: [u32; N_ARENAS],
     /// Shared operand table for the variadic/mixed-class instructions.
     pub(super) operands: Box<[OperandRef]>,
+    /// Momentum-table ids for the `PMomOut` operand slices — the momenta whose negated sum
+    /// is the vertex output leg's structure momentum.
+    pub(super) mom_operands: Box<[u32]>,
     pub(super) root: RootKind,
 }
 
@@ -142,6 +149,7 @@ impl Program {
         let mut loc = vec![0u32; n];
         let mut counts = [0u32; N_ARENAS];
         let mut operands: Vec<OperandRef> = Vec::new();
+        let mut mom_operands: Vec<u32> = Vec::new();
 
         // The (bra = flow-out, ket = flow-in, reversed) resolution of a two-fermion
         // bilinear, mirroring the runtime `resolve_bra_ket`: `reversed` is set when the
@@ -195,11 +203,14 @@ impl Program {
                     let input = li(kids[0]);
                     let mass = li(kids[1]);
                     let width = li(kids[2]);
+                    // A propagator preserves its input's momentum, so this node's own
+                    // momentum id is the routed momentum the propagator sees.
+                    let mom = an.mom_id(id);
                     match an.out_type(kids[0]).storage().unwrap() {
-                        Storage::Scalar => Instr::PropagateScalar { input, mass, width },
-                        Storage::Vector => Instr::PropagateVector { input, mass, width },
-                        Storage::FermionIn => Instr::PropagateFin { input, mass, width },
-                        Storage::FermionOut => Instr::PropagateFout { input, mass, width },
+                        Storage::Scalar => Instr::PropagateScalar { input, mass, width, mom },
+                        Storage::Vector => Instr::PropagateVector { input, mass, width, mom },
+                        Storage::FermionIn => Instr::PropagateFin { input, mass, width, mom },
+                        Storage::FermionOut => Instr::PropagateFout { input, mass, width, mom },
                         Storage::Real => panic!("Propagate on a real-constant input"),
                     }
                 }
@@ -298,12 +309,12 @@ impl Program {
                 Op::MetricVout => Instr::MetricVout { v: li(kids[0]) },
                 Op::LowerVout => Instr::LowerVout { v: li(kids[0]) },
                 Op::PMom => Instr::PMom {
-                    input: opref(kids[0], &loc),
+                    mom: an.mom_id(kids[0]),
                 },
                 Op::PMomOut => {
-                    let start = operands.len() as u32;
+                    let start = mom_operands.len() as u32;
                     for &k in kids {
-                        operands.push(opref(k, &loc));
+                        mom_operands.push(an.mom_id(k));
                     }
                     Instr::PMomOut {
                         start,
@@ -339,6 +350,7 @@ impl Program {
             loc: loc.into_boxed_slice(),
             arena_sizes: counts,
             operands: operands.into_boxed_slice(),
+            mom_operands: mom_operands.into_boxed_slice(),
             root,
         }
     }
