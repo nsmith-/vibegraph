@@ -331,29 +331,114 @@ the full `validate_helas_mg` REL_TOL gate. Σ over the 14 processes:
 ## 4. Track 3 — `dag-extraction` investigation
 
 What it takes to extract with a **DAG (sharing-aware) cost** from egglog 2.0, since
-the crate doesn't provide it (§1.2). Milestones:
+the crate doesn't provide it (§1.2). The investigation is complete; the decision
+record is §4.1. All extractor code lives in `helas/eval/egraph.rs`.
 
-- **M1 — e-graph enumeration.** Find the supported path to enumerate e-classes and
-  e-nodes from `egglog::EGraph` in Rust (function-table iteration / serialization);
-  the extraction seam in `egraph.rs::roundtrip` is where it plugs in.
-- **M2 — greedy DAG extractor.** Implement extraction-gym-style greedy DAG extraction
-  (à la `faster-greedy-dag`) with per-op costs ≈ slot traffic. Sanity gate: on the
-  rule-free round-trip it must reproduce the input DAG (current CSE node counts) over
-  the validated suite. Keep ILP (e.g. `good-lp`) in reserve for small graphs / as an
-  oracle for greedy quality.
-- **M3 — first sharing-rule demo.** Chiral decomposition (§1.4) on `e+ e- > mu+ mu-`:
-  show DAG-cost extraction picks the shared `J_L`/`J_R` form and tree-cost extraction
-  doesn't. Requires the pure-chiral kernel ops (or unit-coupling `Ffv*` forms) and the
-  §1.6 schema updates.
-- **M4 — write-up + go/no-go** for wiring into `egraph-rewrite` proper: extractor
-  performance on the 2→6 ASTs, greedy-vs-ILP quality, and the integration design.
+- **M1 — e-graph enumeration (done).** `enumerate(&Ast<Sym>) -> DagEGraph` goes through
+  egglog's supported `EGraph::serialize` export (the same backend-canonicalized path
+  its GraphViz/JSON tooling uses) and translates the serialized view into owned
+  structures (`DagEGraph`/`EClass`/`ENode`/`Payload`): e-classes with their e-nodes,
+  each child node-id edge resolved to the e-class it belongs to, primitive leaf
+  payloads recovered. The function-table (`function_to_dag`) alternative routes through
+  the tree-cost extractor per row and cannot recover raw child edges, so `serialize` is
+  the seam.
+- **M2 — greedy DAG extractor (done).** `trait CostModel` (per-op `node_cost`),
+  `enum CostKind{Dag,Tree}`, and `extract(&DagEGraph, &dyn CostModel, CostKind)` — an
+  extraction-gym `faster-greedy-dag`-style worklist fixpoint: each e-class takes its
+  min-cost node whose children are all costed, a candidate's DAG cost is its op cost
+  plus the cost of the *union* of its children's chosen descendant sets (shared classes
+  counted once), and a class's parents are re-examined when its cost improves.
+  `decode_extraction` walks the chosen e-nodes back into an `Ast<Sym>`, memoized on
+  e-class id so shared classes become shared arena nodes. Cost models: `SlotTrafficCost`
+  (per-op ≈ output-slot bytes) and `UnitCost`. Sanity gate met: on the rule-free
+  round-trip the DAG extractor reproduces the input DAG byte-for-byte with the CSE node
+  count intact, over the dev processes (ungated) and all of `MG_VALIDATED_PROCESSES`
+  (behind `extended-validation`). ILP (`good-lp`) was held in reserve as a quality
+  oracle; §4.1 promotes it to a prerequisite.
+- **M3 — chiral-decomposition sharing demo (no-go, nothing committed).** The demo
+  target was `FfvVout(a,b,gl,gr) → gl·J_L(a,b) + gr·J_R(a,b)` on `e+ e- > mu+ mu-`,
+  expecting DAG-cost extraction to pick the shared `J_L`/`J_R` form where tree-cost
+  picks the fused current. It does not, for two independent structural reasons (§4.1);
+  the rule was built as throwaway instrumentation, measured, and reverted.
+- **M4 — write-up + go/no-go (this section).**
+
+### 4.1 Go/no-go for `egraph-rewrite` sharing-rule integration — **NO-GO under current scope**
+
+Sharing-payoff rewrites (chiral decomposition, coupling factoring, re-rooting) cannot
+be demonstrated, let alone shipped, with the M2 greedy extractor + `SlotTrafficCost`.
+Two findings, both structural, not tuning:
+
+1. **Greedy cannot realize cross-diagram sharing, under any cost model.** M2's greedy
+   decides each e-class independently, taking the locally-min-cost node. Chiral sharing
+   is only cheaper *globally* — both diagrams must co-commit so `J_L`/`J_R` are the same
+   e-classes; at any single current class in isolation the split form is strictly more
+   expensive than the fused one. Greedy therefore never takes the locally-worse move
+   that the global optimum requires. Measured on `e+ e- > mu+ mu-`: greedy picked the
+   fused form at **0 of 4** decomposable current classes, DAG cost unchanged. This is
+   the direct answer to the greedy-vs-ILP question the milestone posed: **greedy DAG
+   extraction is insufficient for any sharing-*payoff* rewrite; a global/ILP extractor
+   is required.**
+2. **`SlotTrafficCost` makes the rewrite a net loss even at the global optimum.**
+   Forcing the split at every decomposable class (the best a global extractor could do)
+   gave root_cost **2816 vs 2048–2144 fused** — worse. Slot-traffic charges a
+   pure-chiral half-current the same output-slot bytes (~96 B) as a full current, so
+   splitting only adds recombination scaffolding with no offsetting saving. The "split
+   wins when the pure current is shared ≥2×" premise (§1.4) holds only under a
+   **compute-aware / work cost model** where a chiral half-current is materially cheaper
+   to produce than a full one. Under a prototype `WorkCost` the optimum is real: split
+   **935 vs 1080 fused** (~13%) — but finding #1 still blocks greedy from reaching it.
+
+3. **`e+ e- > mu+ mu-` is the marginal case.** Exactly two consumers (γ, Z) share each
+   spinor pair, so even under `WorkCost` the win is only ~13%. A process with **≥3
+   consumers** of the same pure current would separate the shared and fused forms
+   decisively and is the right demo target for a future attempt.
+
+**Path to yes (all three required before re-attempting the demo):**
+- **(a) A global / ILP extractor.** The ILP oracle note 15 held "in reserve" (M2) must
+  be promoted to a *prerequisite* — greedy provably cannot express the co-commit.
+- **(b) A compute-aware cost model.** `SlotTrafficCost` cannot see the payoff; a
+  `WorkCost` that charges a pure-chiral half-current less than a full current is needed.
+  This intersects the §1.6 "static output-type analysis" work (A1 output types feed the
+  per-op work estimate), so it is not free-standing.
+- **(c) A ≥3-consumer demo process** so the payoff is non-marginal.
+
+Until (a)+(b)+(c) exist, the sharing half of `egraph-rewrite` stays blocked; the
+re-rooting rule family additionally waits on the `rooting-soundness` fix (§3.1). M1/M2
+stand as the reusable DAG-cost extraction substrate for when the prerequisites land —
+they are correct and gated, just not sufficient on their own.
+
+### 4.2 Known issue — run-to-run AST cost variance is **upstream of `egraph.rs`**
+
+`enumerate()` → `extract()` is **deterministic relative to its input**: on the rule-free
+graph every e-class holds exactly one e-node (no extraction ties), the greedy choice is
+forced, and the identity gate (`extract_dev_processes_identity`) reproduces the input
+DAG byte-for-byte without flaking. What varies run-to-run is the **lowered AST itself**:
+`compile_diagram_ast` + `lower` emit a 37- or 38-subterm AST for `e+ e- > mu+ mu-`
+depending on the process's hash seed (constant within one process, differing across
+process invocations), which the extractor then faithfully reproduces — so the DAG cost
+tracks it exactly (37↔2048, 38↔2144 under `SlotTrafficCost`). The origin is a
+`HashSet`/`HashMap` iteration in the diagram-lowering path (`root_diagram`/`lower`)
+selecting between structurally-equivalent node emissions, which changes what CSE can
+merge by ±1 node. It is **correctness-neutral** — both ASTs evaluate to the same |M|²
+and pass `validate_helas_mg` — a missed-CSE reproducibility wart, not a wrong value, and
+**not in the extractor**. Consequences: (i) M3's attribution of the variance to the
+"serialization/greedy path" is incorrect — the extractor is not the source; (ii) any
+DAG-cost comparison used as an extraction oracle must compile the AST **once** and reuse
+it (the extract tests already do), or the upstream lowering order must be pinned; (iii)
+the fix belongs to the `eval-layout` / lowering owners (a `HashSet`→`BTreeSet` or
+sorted-iteration change in `root_diagram`/`lower`), not to `egraph.rs`, and is out of
+Track 3's scope.
 
 ## 5. Consequences for `egraph-rewrite`
 
 - Constant folding **moves out** (Track 1, A2 — no rules needed).
 - All sharing rules — coupling regrouping, chiral decomposition, propagator
-  linearity, re-rooting — are **blocked on Track 3** (and informed by Track 2's
-  headroom numbers).
+  linearity, re-rooting — are **NO-GO under current scope** (§4.1): Track 3 shipped a
+  correct DAG-cost extraction substrate (M1/M2) but proved greedy + `SlotTrafficCost`
+  cannot realize a sharing payoff. Reviving them requires all three of a global/ILP
+  extractor, a compute-aware `WorkCost` model, and a ≥3-consumer demo process
+  (re-rooting additionally waits on the `rooting-soundness` fix, §3.1). Informed by
+  Track 2's headroom numbers.
 - Schema updates decided (§1.6): per-kind leaf sorts, `ExtLegInfo` wrapper,
   `ScalarConst`/`ScalarWf` split, typed constructor slots. Apply when Track 3 touches
   the schema; keep `schema_covers_every_op` and the round-trip suite as the guard.

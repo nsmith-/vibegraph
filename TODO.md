@@ -171,16 +171,34 @@ every diagram in `MG_VALIDATED_PROCESSES` pass the `validate_helas_mg` gate. Thi
 `gg_to_gg`-VVVV-class territory (an unexercised branch drifting out of sync) — a bug magnet;
 sequence it as its own spike before the re-rooting extractor, not folded into a perf pass.
 
-### 🧮 Track 3: `dag-extraction` — DAG-cost extractor for egglog (investigation)
+### 🧮 Track 3: `dag-extraction` — DAG-cost extractor for egglog ✅ DONE 2026-07-13 → **NO-GO** (decision record: note 15 §4)
 
 egglog 2.0 has no sharing-aware extraction (verified in `extract.rs`:
-`TreeAdditiveCostModel`; the `CostModel` trait is tree-shaped). Milestones (note 15 §4):
-**M1** enumerate e-classes/e-nodes from `egglog::EGraph` in Rust; **M2** greedy DAG
-extractor (extraction-gym style) with slot-traffic costs — sanity gate: reproduces the
-input DAG on the rule-free round-trip; ILP in reserve as a quality oracle; **M3** first
-sharing-rule demo — chiral decomposition `FfvVout(a,b,gl,gr) → gl·J_L + gr·J_R` on
-`e+ e- > mu+ mu-` (γ/Z share `J_L`/`J_R`), showing DAG cost picks the shared form and
-tree cost doesn't; **M4** write-up + go/no-go for `egraph-rewrite` integration.
+`TreeAdditiveCostModel`; the `CostModel` trait is tree-shaped). Outcome by milestone:
+- **M1** ✅ `enumerate(&Ast) -> DagEGraph` via `EGraph::serialize` (`egraph.rs`).
+- **M2** ✅ greedy DAG extractor (`faster-greedy-dag`-style `extract` + `CostModel`/
+  `CostKind{Dag,Tree}`/`SlotTrafficCost`/`UnitCost`/`decode_extraction`); sanity gate
+  met — reproduces the input DAG byte-for-byte on the rule-free round-trip over the
+  dev processes + `MG_VALIDATED_PROCESSES` (`extended-validation`).
+- **M3** ✅→ no-go, nothing committed. Chiral-decomposition demo on `e+ e- > mu+ mu-`
+  fails for two structural reasons: (1) greedy decides each e-class independently and
+  never takes the locally-worse split the *global* co-commit needs (0/4 classes split,
+  DAG cost unchanged) → **any sharing-payoff rewrite needs a global/ILP extractor, not
+  greedy**; (2) under `SlotTrafficCost` the split is a net loss even at the global
+  optimum (forced-split 2816 > fused 2048–2144) — a half-current is charged full output
+  slot bytes; the ≥2×-share premise only holds under a compute-aware `WorkCost` (split
+  935 < fused 1080, ~13%). `e+ e- > mu+ mu-` is marginal (2 consumers).
+- **M4** ✅ write-up + go/no-go (this + note 15 §4).
+
+**Go/no-go: NO-GO under current scope.** Path to yes needs all three: **(a)** a
+global/ILP extractor (the reserved ILP oracle promoted to a prerequisite); **(b)** a
+compute-aware `WorkCost` model (intersects the §1.6 static output-type analysis / A1);
+**(c)** a **≥3-consumer** demo process for a non-marginal payoff. M1/M2 stand as the
+reusable extraction substrate. Known issue (note 15 §4.2): the run-to-run DAG-cost
+variance is **upstream of `egraph.rs`** (a `HashSet` iteration in `root_diagram`/`lower`
+emits a ±1-CSE-node AST per hash seed; correctness-neutral, gate passes), **not** in the
+extractor — a cost oracle must compile the AST once and reuse it; the fix belongs to the
+lowering owners.
 
 ---
 
@@ -215,8 +233,12 @@ all-leaf / DAG-sharing fixtures, `rewrite_dev_processes_roundtrip` (2→2/2→3/
   needs no rules).
 - The remaining rule families are all *sharing* rules — coupling regrouping, chiral
   decomposition + propagator linearity (γ/Z structure sharing), re-rooting
-  (propagator-commute + per-vertex rotation rules) — and are **blocked on Track 3**
-  (tree-cost extraction cannot see their payoff) and informed by Track 2's headroom.
+  (propagator-commute + per-vertex rotation rules). Track 3 resolved to **NO-GO** (note
+  15 §4.1): its DAG-cost extractor (M1/M2) is correct but greedy + `SlotTrafficCost`
+  provably cannot realize a sharing payoff. Reviving these rules needs all of a
+  global/ILP extractor, a compute-aware `WorkCost`, and a ≥3-consumer demo process;
+  re-rooting additionally needs the `rooting-soundness` fix. Informed by Track 2's
+  headroom.
 - **Schema decisions adopted:** per-kind leaf sorts (`CouplingId`/`ParticleId`/`Real`/
   `ExtLegInfo` as separate datatypes), `ScalarConst` vs `ScalarWf` sort split (required
   for soundness — `mul_apply` routes momentum for scalar *wavefunctions*, so
