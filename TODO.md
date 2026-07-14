@@ -5,8 +5,8 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate. Current position: `color-flow` (feature, ✅ merged 2026-07-12) →
 `validation-sprint` (validation, ✅ closed 2026-07-13) →
-**post-CSE optimization program** (performance, now) → next feature (hadronic
-pp→ll / event output).
+**post-CSE optimization program** (performance, ✅ closed 2026-07-14) → **next: hadronic
+pp→ll / event output** (feature).
 
 ## Pipeline Status
 
@@ -27,7 +27,17 @@ cause and fix).
 
 ---
 
-## 🚀 Post-CSE optimization program — 3 tracks (plan: `research/notes/15-eval-optimization-plan.md`)
+## 🚀 Post-CSE optimization program — 3 tracks ✅ CLOSED 2026-07-14 (plan: `research/notes/15-eval-optimization-plan.md`; close-out: note 15 §2.1)
+
+**Outcome:** Track 1 (`eval-layout`) shipped A0–A5 to `main` (A3c cancelled — eval stays
+100% safe Rust); Tracks 2 (`rooting-exploration`) and 3 (`dag-extraction`) both closed
+**NO-GO**. Cumulative honest evaluator speedup over the P5 baseline `7a1a66d` is
+**1.4×–2.1×** (typically ~1.8×) across 2→2…2→6, narrowing the vs-MG gap to **4.9×–68×**
+(from ~9×–124× at P5). Re-recorded honest table below (§2.1 has the full ledger).
+Forward perf work now needs algebraic rewrites CSE cannot see (`egraph-rewrite`, blocked
+on a global/ILP extractor + compute-aware cost model + ≥3-consumer demo) or the
+`rooting-soundness` correctness fix — neither is in the feature→validation→performance
+critical path; next up is the hadronic pp→ll / event-output feature.
 
 Planned 2026-07-11 from the research pass over rooting symmetry, MadGraph's
 optimization stack (helicity recycling = CSE across the unrolled helicity loop,
@@ -50,9 +60,14 @@ the note-15 plan:
 - `fold.rs` already carries exact-rational pools for `CoeffRat` (C4) — A2 extends
   the same file; the egglog schema + round-trip already cover `Flows`/`CoeffRat`.
 
-Baseline timing table (dev machine, `--profile profiling`, `--test-threads=1`;
+Pre-program baseline table (dev machine, `--profile profiling`, `--test-threads=1`;
 ns/eval, Rust `main` vs MG MATRIX1 — the `performance-sprint` P5 close-out plus the
-`color-flow` close-out rows; A6 re-records against this):
+`color-flow` close-out rows). ⚠️ These `main` figures were taken through the
+`validate_helas_mg` timing report, which A3 later made **non-representative** — its
+`extended-validation` per-node cross-check (`cross_check_node`) compiles into the
+`eval_m2` loop and roughly doubles ns/eval. The A6 re-record below uses the honest
+release `eval_strategies` bench instead (cross-checks compiled out); numbers are not
+directly comparable across the two tables.
 
 | process | MG | main | ratio |
 |---|---:|---:|---:|
@@ -71,15 +86,34 @@ ns/eval, Rust `main` vs MG MATRIX1 — the `performance-sprint` P5 close-out plu
 | uux_to_ccx_emmm_qcd0 | 100,230 | 10,981,139 | 110× |
 | bbx_to_ccx_emmm_qcd0 | 141,430 | 11,821,262 | 84× |
 
+**A6 re-record (2026-07-14, honest release `eval_strategies` bench).** ns per `eval_m2`
+(criterion median), P5 baseline `7a1a66d` vs post-A5 `main`, MG from `mg_timings.json`.
+Covers the 7 all-massless-external `MG_VALIDATED_PROCESSES` (massive-external ones need
+mass-aware kinematics the massless-RAMBO bench lacks — not re-measured):
+
+| process | mult | MG | P5 `7a1a66d` | post-A5 `main` | P5→A5 | A5 vs MG |
+|---|:--:|--:|--:|--:|--:|--:|
+| ee_to_mumu | 2→2 | 283 | 4,000 | 1,930 | 2.07× | 6.8× |
+| ee_to_ee | 2→2 | 731 | 6,619 | 3,609 | 1.83× | 4.9× |
+| uux_to_uux | 2→2 | 278 | 4,158 | 2,936 | 1.42× | 10.6× |
+| gg_to_gg | 2→2 | 949 | 22,646 | 11,365 | 1.99× | 12.0× |
+| ee_to_mumua | 2→3 | 1,438 | 28,826 | 15,188 | 1.90× | 10.6× |
+| ee_to_mumu_tata_qcd0 | 2→4 | 6,337 | 149,569 | 82,550 | 1.81× | 13.0× |
+| uux_to_ccx_emmm_qcd0 | 2→6 | 97,172 | 12,075,000 | 6,649,375 | 1.82× | 68.4× |
+
 Post-CSE the 2→6s sit at ~15 nodes/diagram, so beyond Track 1's layout wins,
 **further cuts need algebraic rewrites** structural hash-consing cannot see.
 
-### ⚡ Track 1: `eval-layout` — evaluator memory layout & recycling (branch TBD; merge to `main`)
+### ⚡ Track 1: `eval-layout` — evaluator memory layout & recycling ✅ CLOSED 2026-07-14 (merged to `main`)
 
-Gate: 14-process `validate_helas_mg` REL_TOL 1e-12; bit-for-bit where order-preserving
-(noted per session). Baseline: the timing table above. `wavefn.rs` is untouched —
-it remains the public hand-built-amplitude component and unit-test vocabulary; the
-runtime grows its own internal storage. Sessions in dependency order (detail in note 15 §2):
+All sessions landed on `main`: A0 ✅, A1 ✅, A2 ✅, A3 ✅, A3b ✅ (memo, note 17),
+**A3c ❌ cancelled** (no safe bounds-check-elimination mechanism), A4 ✅, A5 ✅, A6 ✅
+(close-out, note 15 §2.1 + the re-record table above). Cumulative honest eval speedup
+1.4×–2.1× over P5 `7a1a66d`. Gate held 14/14 throughout: 14-process `validate_helas_mg`
+REL_TOL 1e-12, bit-for-bit where order-preserving (A0/A2/A3/A5 bit-for-bit; A4 REL_TOL
+for reassociated momentum sums). `wavefn.rs` untouched (still the public
+hand-built-amplitude + unit-test vocabulary; the runtime grew its own internal storage).
+Original per-session plan (design record, detail in note 15 §2):
 
 - **A0** — instruction-size sensitivity check (pad `Node<Const>` to 16/24/32 B and
   measure; also the free 12→8 B pack). Informs A3 and the typed egglog constructors.
@@ -459,5 +493,15 @@ kernel-level performance gaps from missed-CSE / helicity-loop effects. Also the 
 comparison for the event-generation regime: once the importance-sampling reference
 distribution is established, final accept/reject evaluates a specific helicity
 configuration, where helicity recycling buys nothing (the recycling win belongs to
-the integration-grid phase and its cumulative per-helicity ledger). Natural landing
-spot: alongside `eval-layout` A6 while the timing rig is warm.
+the integration-grid phase and its cumulative per-helicity ledger).
+
+**A6 go/no-go (2026-07-14): DEFER — not pulled in.** The vibegraph half
+(`eval_amplitude` at one fixed helicity) is a cheap bench addition, but the *fair*
+comparison needs an MG single-helicity timing, and MG's MATRIX1 driver hardcodes the
+helicity-sum loop — a single-config timing means editing the generated Fortran driver +
+the `gen_amplitude.py` timing harness and regenerating reference data (a
+reference-data/Fortran task, not a warm-rig freebie), and a vibegraph-only number is
+half an oracle. No live consumer until `event-output-lhef` accept/reject makes
+single-helicity the actual hot path. Recommendation: land it **alongside
+`event-output-lhef`**, when the comparison has a consumer and the MG-harness change is
+on the critical path anyway.

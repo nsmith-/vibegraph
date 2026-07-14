@@ -244,7 +244,86 @@ Sessions, in dependency order:
   see §1.1 caveat re: unweighting.)
 - **A6 — close-out.** Re-record the timing table vs MG and vs the P5 baseline; update
   `TODO.md` and this note; decide whether `mg-single-helicity-bench` (backlog) is
-  worth pulling in while the timing rig is warm.
+  worth pulling in while the timing rig is warm. **Done 2026-07-14 (§2.1).**
+
+### 2.1 Close-out results (A6, 2026-07-14)
+
+Track 1 delivered A0–A5; A3c was cancelled. The final measurement uses the honest
+release hot path — the `eval_strategies` criterion bench (release profile, per-node
+cross-checks compiled out) — **not** the `validate_helas_mg` timing report, whose
+`required-features = ["extended-validation"]` forces the shadow-workspace cross-check
+(`cross_check_node`) into the `eval_m2` loop and roughly doubles the ns/eval (the A4/A5
+sessions flagged this; the honest bench reproduces the recorded P5 table here, confirming
+the harness is the non-representative one). Each process's AST is compiled once per bench
+run — the lowering path emits a ±1-node AST per hash seed (§4.2) — so the numbers carry
+≈±2–3% run-to-run noise, well below the measured wins.
+
+**Cumulative evaluator speedup, P5 baseline `7a1a66d` → post-A5 `main`.** ns per
+`eval_m2` (helicity-summed |M|², one phase-space point), criterion median; MG = MATRIX1
+`ns_per_eval` from `validation/madgraph/output/mg_timings.json`:
+
+| process | mult | NCOLOR | MG | P5 `7a1a66d` | post-A5 `main` | P5→A5 | A5 vs MG |
+|---|:--:|:--:|--:|--:|--:|--:|--:|
+| ee_to_mumu | 2→2 | 1 | 283 | 4,000 | 1,930 | 2.07× | 6.8× |
+| ee_to_ee | 2→2 | 1 | 731 | 6,619 | 3,609 | 1.83× | 4.9× |
+| uux_to_uux | 2→2 | 2 | 278 | 4,158 | 2,936 | 1.42× | 10.6× |
+| gg_to_gg | 2→2 | 6 | 949 | 22,646 | 11,365 | 1.99× | 12.0× |
+| ee_to_mumua | 2→3 | 1 | 1,438 | 28,826 | 15,188 | 1.90× | 10.6× |
+| ee_to_mumu_tata_qcd0 | 2→4 | 1 | 6,337 | 149,569 | 82,550 | 1.81× | 13.0× |
+| uux_to_ccx_emmm_qcd0 | 2→6 | 1 | 97,172 | 12,075,000 | 6,649,375 | 1.82× | 68.4× |
+
+Cumulative eval speedup **1.4×–2.1×** (typically ~1.8×) across 2→2…2→6; the honest
+post-A5 gap to MG is **4.9×–68×** (vs ~9×–124× at P5 on the same honest bench).
+`uux_to_uux` gains least (1.42×) — a small NCOLOR=2 QCD process has few constant
+subgraphs for A2 to fold and little slot traffic for A3/A4 to compress. The heavy
+processes (gg_to_gg 1.99×, the 2→6 1.82×) gain most, as the layout program targeted.
+
+The bench covers 7 of the 14 `MG_VALIDATED_PROCESSES` — every all-massless-external one
+(so plain massless RAMBO supplies the kinematics), including both colored 2→2s
+(NCOLOR=2/6, the CF-weighted multi-flow `eval_m2` A5 recycles across). The 7
+massive-external processes (ee_to_zh/ttx/wpwm/tatah, gg_to_ttx, the bbx 2→6,
+pp_to_ll_qcd0) are absent from the honest bench (they need mass-aware kinematics), so
+their pre-program figures in the `TODO.md` baseline table were not honestly re-measured;
+the layout wins are process-structural, so the same ~1.8× is expected but unverified here.
+
+**Per-session ledger** (gate = 14-process `validate_helas_mg`):
+- **A0** — 8 B tagged `Const` pack + instruction-width sensitivity harness. Bit-for-bit.
+  Finding: instruction-stream width is not a bottleneck (flat 8→32 B); the pack is a free
+  ~0–3% win and a sound `ConstKind` pool-kind API.
+- **A1** — static per-node analysis (output type, constness, momentum id, helicity-support
+  mask). Pure analysis, no behavior change.
+- **A2** — constant-composite folding into bind-time pools. Bit-for-bit. Node counts
+  −29% (ee→tt) / −15% (ee→μμ); gg→gg ~flat.
+- **A3** — SoA per-type result arenas + typed instruction stream (folds in A0's pack).
+  Bit-for-bit. −8% gg→gg, −5% on the 2→6 at the session measurement.
+- **A4** — per-point momentum pool + bare SoA elements; momentum resolved once before the
+  helicity loop. REL_TOL (momentum sums reassociate 1–3 ULP; 14/14 unchanged to 3 sig figs).
+- **A5** — helicity-support recycling in `eval_m2` (skip nodes whose support mask misses
+  the changed legs; FillMode Full/Recycle). Bit-for-bit vs A4. Integration-phase eval_m2
+  speedup 1.29× (2→2) → 1.08× (2→6); the recompute fraction rises with multiplicity, so
+  fine node granularity caps the win below MG's wavefunction-level ~2×.
+- **A3b/A3c** — bounds-check-elimination feasibility (note 17): a +7–11% ceiling is real
+  but no *safe* mechanism captures it, so **A3c was cancelled** (eval stays 100% safe Rust,
+  user decision). Probe/equality-twin harness parked on `eval-layout/a3b`.
+
+**Tracks 2 and 3 both closed NO-GO** (details unchanged in §3.1 / §4.1): Track 2 (rooting)
+found −21% node headroom that is currently unrealizable — the rooting primitives are
+orientation-dependent, so a `rooting-soundness` correctness fix must precede any rooting
+pass; Track 3 (dag-extraction) shipped a correct DAG-cost extractor (M1/M2) but proved
+greedy + `SlotTrafficCost` cannot realize a sharing payoff. The sharing half of
+`egraph-rewrite` stays blocked on a global/ILP extractor + a compute-aware cost model +
+a ≥3-consumer demo process.
+
+**`mg-single-helicity-bench`: recommend defer (not pulled in).** The vibegraph half
+(`eval_amplitude` at one fixed helicity) is cheap to bench, but the *fair* comparison
+needs an MG single-helicity timing, and MG's MATRIX1 driver hardcodes the helicity-sum
+loop — extracting a single-config timing means editing the generated Fortran driver and
+the `gen_amplitude.py` timing harness and regenerating reference data. That is a
+reference-data/Fortran task, not a warm-rig freebie, and a vibegraph-only number is half
+an oracle. It also has no live consumer until unweighted-event accept/reject
+(`event-output-lhef`) makes single-helicity the actual hot path. Kept as a scoped backlog
+entry; land it alongside `event-output-lhef`, when the comparison has a consumer and the
+MG-harness change is on the critical path anyway.
 
 ## 3. Track 2 — `rooting-exploration` (throwaway, branch `explore/rooting`)
 
