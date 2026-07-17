@@ -84,13 +84,19 @@ schema, and implementation detail.
 
 ---
 
-## 🔴 High — next feature: hadronic pp→ll cross section
+## 🔴 High — next feature: hadronic pp→ll cross section (**planned — note 18**)
 
-σ = Σ_q ∫ dx₁ dx₂ f_q(x₁) f_q̄(x₂) σ̂(q q̄ → l⁺ l⁻). `color-flow` unblocked the
-partonic side; remaining blockers: a PDF interface (e.g. LHAPDF — not yet a task) and
-`lips-nbody` for the partonic √ŝ scan. Flavors group by charge type since MG treats
-light quarks as massless. Sequenced after the post-CSE optimization program per the
-feature→validation→performance loop.
+σ = Σ_q ∫ dx₁ dx₂ f_q(x₁) f_q̄(x₂) σ̂(q q̄ → l⁺ l⁻). Sprint design + session plan in
+`research/notes/18-hadronic-xsec-design.md` (branch `hadronic-xsec`): H1/H2 pure-Rust
+LHAPDF6 PDF module (parton-oracle-gated, scirs2-interpolate trial with in-house
+bicubic fallback), H3 massive RAMBO generic over `F: Real` + splittable ChaCha8
+substreams (first stage of `lips-nbody`), H4 SIMD lane-batched `eval_m2` via
+`numeric-array`, H5 serde-split two-phase VEGAS (adapt/save grid, frozen sample;
+deterministic rayon), H6 MG run-card parser on `GlobalConfig` + compiled cuts
+filter (MG's default lepton cuts are active out of the box; unimplemented-but-
+active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a shared
+run card, H8 minimal `integrate` CLI, H9 close-out.
+Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 
 ---
 
@@ -229,6 +235,10 @@ peepholes.
 
 Generalize phase-space sampling to 3+ final-state particles using recursive 2-body
 decomposition (RAMBO-style). Research Rust options before committing to an approach.
+**First stage pulled into the `hadronic-xsec` sprint** (note 18, session H3): massive
+RAMBO generic over `F: Real` with the KSE weight, splittable-substream RNG, and the
+banked σ̂ flat-MC check below. Remaining scope here = channel mappings + multi-channel
+weights on top of those seams.
 (The MG validation side already generates n-body points via RAMBO in
 `gen_amplitude.py`; the MG-computed partonic σ̂ = 6.556e-7 pb for the uux 2→6 at
 √s=500 is banked as a future `validate-vegas` reference.)
