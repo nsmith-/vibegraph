@@ -325,6 +325,77 @@ an oracle. It also has no live consumer until unweighted-event accept/reject
 entry; land it alongside `event-output-lhef`, when the comparison has a consumer and the
 MG-harness change is on the critical path anyway.
 
+### 2.2 Helicity-expansion session (2026-07-16, merged to `main`)
+
+A5's recycling underdelivered (1.29× → 1.08× with multiplicity) for two structural
+reasons: (i) the Recycle scan still walked *every* instruction per combination (support
+load + branch even when skipping, O(n_nodes × n_combos) regardless of skip fraction),
+and (ii) odometer recycling reuses only the *previous* combination's slots — a node
+whose support contains the fastest-varying leg recomputes on every combination even
+though it takes only `2^|support|` distinct values. The fix is the trick §1.1 credits
+MadGraph with (arXiv 2102.00773), done through our own hash-consing instead of call
+restructuring: **bake every helicity combination into one arena at compile time**
+(`Folded::expand_helicities`, `Op::Hels` root, `External` leaves specialized to
+`(leg, hel)` entries) and intern nodes across combinations, so each distinct current
+is computed **exactly once** per phase-space point — the FLOP minimum — in one linear
+pass with no skip predicate. `PMom`/`PMomOut` read only routed (helicity-independent)
+momenta, so they are memoized per pre-expansion node and shared outright.
+
+Two companion changes made it viable:
+- **Liveness slot allocation** in `Program::build`: a slot is recycled once its last
+  arena read has executed (roots pinned live-to-end; an instruction never writes over
+  its own operands). Peak live width, not node count, sizes the arenas — the 2→6
+  holds 543k nodes but peaks at ~27k live slots (~1.7 MB total, cache-resident).
+  Arenas are no longer cleared per pass (every slot is written before read).
+- The expansion is **lazy** (`OnceLock` on `AmplitudeEvaluator`): only `eval_m2`
+  forces it (one-time cost: ~150 ms for the 2→6, µs–ms elsewhere);
+  `eval_amplitude`/Ward/probes keep the unexpanded program.
+
+Sharing measured (expanded vs combinations × base nodes): 2.8× (ee_to_mumu, 16
+combos), 2.0× (gg_to_gg), 2.3× (2→4, 64 combos), 1.8× (2→6, 256 combos: 543k vs
+990k). The A5 support-mask machinery (FillMode, shadow-recompute assert,
+`NodeAnalysis::support`) is deleted; the multi-flow CF contraction now scales JAMPs
+by the real CF entry (matching MADGRAPH's real×complex product) and reads them
+straight from the arena (no per-combination `Vec`).
+
+**Exactness**: the expansion copies each node's arithmetic verbatim, so `eval_m2` is
+**bit-for-bit** against the per-helicity sum through the unexpanded program — pinned
+by `expanded_eval_m2_matches_per_helicity_sum` (exact `assert_eq!` across colorless,
+massive-external, NCOLOR=2 and NCOLOR=6 processes). Gate 14/14 with `max_rel_diff`
+identical to the §2.1 record (uux_to_uux 5.61e-14, gg_to_ttx 1.89e-15, gg_to_gg
+8.25e-14).
+
+**Honest bench** (release `eval_strategies`, criterion median ns/eval; includes the
+same-day by-reference bare-kernel + cleanup merges):
+
+| process | mult | MG | post-A5 | now | A5→now | now vs MG |
+|---|:--:|--:|--:|--:|--:|--:|
+| ee_to_mumu | 2→2 | 283 | 1,930 | 765 | 2.52× | 2.7× |
+| ee_to_ee | 2→2 | 731 | 3,609 | 1,390 | 2.60× | 1.9× |
+| uux_to_uux | 2→2 | 278 | 2,936 | 1,224 | 2.40× | 4.4× |
+| gg_to_gg | 2→2 | 949 | 11,365 | 6,765 | 1.68× | 7.1× |
+| ee_to_mumua | 2→3 | 1,438 | 15,188 | 5,824 | 2.61× | 4.1× |
+| ee_to_mumu_tata_qcd0 | 2→4 | 6,337 | 82,550 | 27,908 | 2.96× | 4.4× |
+| uux_to_ccx_emmm_qcd0 | 2→6 | 97,172 | 6,649,375 | 2,429,125 | 2.74× | 25.0× |
+
+Cumulative vs the P5 baseline this is ~3.7×–5.4×; the vs-MG gap narrows from
+4.9×–68× (post-A5) to **1.9×–25×**. gg_to_gg gains least (1.68×) — 16 combos over an
+NCOLOR=6 flow basis leaves less cross-combination sharing (2.0×) than the leptonic
+processes.
+
+⚠️ The `validate_helas_mg` timing report is now even *less* representative than §2.1
+warned: its `extended-validation` build compiles `cross_check_typed` (per-node slot
+reconstruction + momentum-table resolve + type/momentum asserts) into the expanded
+pass — ~543k cross-checks per 2→6 `eval_m2` — putting its printed ns/eval at ~4–5×
+the honest bench (e.g. 2→6: 9.69 ms there vs 2.43 ms honest). Release/bench builds
+compile the checks out entirely (verified: no `cross_check` symbols in the bench
+binary). Use `eval_strategies` for timing claims, always.
+
+**Deferred**: expansion-aware `mg-single-helicity-bench` framing still lands with
+`event-output-lhef` (accept/reject samples one helicity, where the *unexpanded*
+program is the hot path); a smarter-than-hash-consing expansion (e.g. factoring the
+CF contraction across combinations) has no identified headroom yet.
+
 ## 3. Track 2 — `rooting-exploration` (throwaway, branch `explore/rooting`)
 
 Goal: quantify how much post-CSE node count depends on rooting choice, cheaply, before
