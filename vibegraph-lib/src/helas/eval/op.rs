@@ -44,7 +44,7 @@ pub enum Op {
     /// External wavefunction input. Leaf: `{leg_idx, spin, charge}`; child: `[Mass]`.
     External,
     /// Propagator. Children: `[current, Mass, Width]`. Dispatches on the input
-    /// current's variance at runtime (a covariant `MetricVout`/`LowerVout` current
+    /// current's variance at runtime (a covariant `MetricVout`/`NegVout` current
     /// forms its longitudinal term differently and is raised back), so no separate
     /// lowered-storage opcode is needed.
     Propagate,
@@ -79,9 +79,10 @@ pub enum Op {
     Metric,
     /// metric with one free index → off-shell vector current.
     MetricVout,
-    /// `MetricVout` without the −i vertex factor (index lowering only); the
-    /// vector-output transform of P-carrying structures (VVV).
-    LowerVout,
+    /// `MetricVout` times the momentum-odd parity sign that P-carrying (VVV)
+    /// structures pick up when rooted at the off-shell leg: the negated
+    /// contravariant current `−V^μ`.
+    NegVout,
     /// full scalar bilinear ψ̄ δ ψ.
     IdentityAmp,
     // ── fused chiral FFV kernels ──
@@ -213,7 +214,7 @@ impl Const {
     pub const NONE: Const = Const(0);
 
     fn packed(kind_bits: u32, index: u32) -> Const {
-        debug_assert!(
+        assert!(
             index <= Self::INDEX_MASK,
             "constant-pool index {index} overflows the 30-bit Const payload"
         );

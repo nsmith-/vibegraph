@@ -122,7 +122,7 @@ pub enum LorentzEvalNode {
     /// P-less structures carry +1 and P-carrying ones −1 relative to the naive
     /// rooted-term sum — pinned per-diagram against MadGraph's e+e-→W+W- AMP()
     /// (validation/madgraph/compare_amps.py). Output: vector.
-    LowerVout { v: usize },
+    NegVout { v: usize },
     /// Handle the implicit product over the disconnected structures.
     /// At most one child can be non-scalar (which then implies the output type)
     Mul { children: Vec<usize> },
@@ -147,7 +147,7 @@ impl LorentzEvalNode {
             LorentzEvalNode::ProjM { i } | LorentzEvalNode::ProjP { i } => vec![*i],
             LorentzEvalNode::ProjMAmp { i, j } | LorentzEvalNode::ProjPAmp { i, j } => vec![*i, *j],
             LorentzEvalNode::Metric { mu, nu } => vec![*mu, *nu],
-            LorentzEvalNode::MetricVout { v } | LorentzEvalNode::LowerVout { v } => vec![*v],
+            LorentzEvalNode::MetricVout { v } | LorentzEvalNode::NegVout { v } => vec![*v],
             LorentzEvalNode::Mul { children } => children.clone(),
             LorentzEvalNode::P { .. } => vec![],
             LorentzEvalNode::POut => vec![],
@@ -168,7 +168,7 @@ impl LorentzEvalNode {
             ProjPAmp { .. } => format!("ProjPAmp({})", body),
             Metric { .. } => format!("Metric({})", body),
             MetricVout { .. } => format!("MetricVout({})", body),
-            LowerVout { .. } => format!("LowerVout({})", body),
+            NegVout { .. } => format!("NegVout({})", body),
             Mul { .. } => format!("ScalarProduct({})", body),
             P { .. } => format!("P({})", body),
             POut => "POut".to_string(), // leaf node
@@ -205,11 +205,11 @@ impl Tree for LorentzEvalTree {
 }
 
 /// The vector-output transform for a rooted structure term: `MetricVout` (`+V^μ`)
-/// for P-less structures (VVS), `LowerVout` (`−V^μ`, the momentum-odd sign) for
-/// P-carrying ones (VVV) — see [`LorentzEvalNode::LowerVout`].
+/// for P-less structures (VVS), `NegVout` (`−V^μ`, the momentum-odd sign) for
+/// P-carrying ones (VVV) — see [`LorentzEvalNode::NegVout`].
 fn vector_out_node(term: &LorentzTerm, child: usize) -> LorentzEvalNode {
     if term.ops.iter().any(|op| matches!(op, LorentzOp::P { .. })) {
-        LorentzEvalNode::LowerVout { v: child }
+        LorentzEvalNode::NegVout { v: child }
     } else {
         LorentzEvalNode::MetricVout { v: child }
     }
