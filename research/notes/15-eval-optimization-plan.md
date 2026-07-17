@@ -1,8 +1,11 @@
 # 15 — Post-CSE Evaluator Optimization: Research Findings & 3-Track Plan
 
-**Status:** Plan of record (2026-07-11). Successor planning to the closed
-`performance-sprint` (see `TODO.md` timing table — the reference baseline). Companion
-to `research/notes/14-egglog-notes.md` (egglog language reference).
+**Status:** CLOSED 2026-07-17 — the program is complete and this note is its design
+and measurement record. Planned 2026-07-11 as successor to the closed
+`performance-sprint`; §2.1 (layout tracks close-out), §2.2 (helicity expansion), and
+§2.3 (helicity filtering) record the outcomes, and the pre-program baseline table
+lives at the end of §2.1. Deferred items are summarized in `TODO.md`. Companion to
+`research/notes/14-egglog-notes.md` (egglog language reference).
 
 The perf sprint left the evaluator 8.6×–110× slower than MG MATRIX1 with post-CSE
 2→6s at ~15 nodes/diagram. This note records the research that scoped what comes
@@ -283,8 +286,32 @@ The bench covers 7 of the 14 `MG_VALIDATED_PROCESSES` — every all-massless-ext
 (NCOLOR=2/6, the CF-weighted multi-flow `eval_m2` A5 recycles across). The 7
 massive-external processes (ee_to_zh/ttx/wpwm/tatah, gg_to_ttx, the bbx 2→6,
 pp_to_ll_qcd0) are absent from the honest bench (they need mass-aware kinematics), so
-their pre-program figures in the `TODO.md` baseline table were not honestly re-measured;
+their pre-program figures in the baseline table below were not honestly re-measured;
 the layout wins are process-structural, so the same ~1.8× is expected but unverified here.
+
+**Pre-program baseline** (recorded 2026-07-13; dev machine, `--profile profiling`,
+`--test-threads=1`, ns/eval — the `performance-sprint` P5 close-out plus the
+`color-flow` close-out rows). ⚠️ Taken through the `validate_helas_mg` timing report,
+which compiles the per-node cross-check into the loop — **not comparable** to the
+honest `eval_strategies` tables in this note. Kept as the program's starting record
+and the only figures covering the 7 massive-external processes:
+
+| process | MG | pre-program `main` | ratio |
+|---|---:|---:|---:|
+| ee_to_zh | 206 | 1,947 | 9.5× |
+| ee_to_mumu | 328 | 3,980 | 12× |
+| pp_to_ll_qcd0 | 298 | 4,551 | 15× |
+| ee_to_ttx | 357 | 4,728 | 13× |
+| uux_to_uux | 278 | 5,121 | 18.5× |
+| ee_to_ee | 743 | 6,419 | 8.6× |
+| gg_to_ttx | 659 | 9,148 | 13.9× |
+| ee_to_tatah | 859 | 11,327 | 13× |
+| ee_to_wpwm | 776 | 20,709 | 27× |
+| gg_to_gg | 949 | 24,110 | 25.4× |
+| ee_to_mumua | 1,510 | 28,520 | 19× |
+| ee_to_mumu_tata_qcd0 | 6,404 | 145,032 | 23× |
+| uux_to_ccx_emmm_qcd0 | 100,230 | 10,981,139 | 110× |
+| bbx_to_ccx_emmm_qcd0 | 141,430 | 11,821,262 | 84× |
 
 **Per-session ledger** (gate = 14-process `validate_helas_mg`):
 - **A0** — 8 B tagged `Const` pack + instruction-width sensitivity harness. Bit-for-bit.
@@ -395,6 +422,36 @@ binary). Use `eval_strategies` for timing claims, always.
 `event-output-lhef` (accept/reject samples one helicity, where the *unexpanded*
 program is the hot path); a smarter-than-hash-consing expansion (e.g. factoring the
 CF contraction across combinations) has no identified headroom yet.
+
+**CF-factoring analysis (2026-07-17, program wrap-up)** — the "no identified
+headroom" verdict, worked out. The candidate restructure accumulates the Hermitian
+flow matrix `M_ij = Σ_hel JAMP_i·JAMP_j*` across combinations and contracts
+`Σ_ij CF_ij·M_ij` once at the end, instead of `eval_m2`'s per-combination quadratic
+form. Counting the arithmetic, it rebalances rather than shrinks: the CF multiply
+leaves the helicity loop but an NCOLOR² complex outer-product accumulation enters
+it — the same O(N_hel·NCOLOR²) multiply-adds with similar constants (Hermitian
+halving is available to both forms). And it reorders the |M|² floating-point sum,
+so the bit-for-bit gate would drop to REL_TOL on every multi-flow process. Shelved
+without a measured win to justify that; if headroom exists anywhere it is the
+colored 2→2s (gg_to_gg 3.5× vs MG — NCOLOR=6 makes the per-combination contraction
+relatively expensive).
+
+The **diagonal** of that matrix has an independent consumer: `M_ii = Σ_hel
+|JAMP_i|²` is exactly MadGraph's `JAMP2` array. madevent's `MATRIX1` accumulates it
+per helicity call (`JAMP2(I) = JAMP2(I) + DABS(DBLE(JAMP(I,M)*DCONJG(JAMP(I,N))))`,
+summed over good helicities at the phase-space point) and `SELECT_COLOR` draws the
+event's color flow `i` with probability ∝ `JAMP2(i)` — the leading-color flow
+assignment that LHEF color tags need. The off-diagonals play no role there by
+construction: flow interference is 1/N²-suppressed and not sign-definite, so it
+cannot be a flow probability. Crucially this dual use does **not** strengthen the
+factoring case — the diagonal alone is an O(N_hel·NCOLOR) accumulator bolted onto
+the existing per-combination loop, leaving the |M|² operation order (and the
+bit-for-bit gate) untouched. That bolt-on rides with `event-output-lhef`, together
+with pinning the flow-index → color-string dictionary against MG's
+`SELECT_COLOR`/`color_flow_decomposition` conventions (the gg_to_gg NCOLOR=6
+flow-basis ordering caveat applies; a transposed dictionary is invisible to any
+|M|²-level gate). In the accept/reject regime one helicity is sampled, so `JAMP2`
+degenerates to that combination's `|JAMP_i|²` — equally valid at leading color.
 
 ### 2.3 Helicity filtering (`prune_zero_helicities`, 2026-07-17)
 
