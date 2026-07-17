@@ -435,6 +435,31 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
 
 ## 5. Decision records (to be filled by sessions)
 
+- H1: the pinned NNPDF23_lo_as_0130_qed member files parse as a **single**
+  `lhagrid1` subgrid (nx=100, nq=50, 14 flavors spanning x∈[1e-9,1], Q∈[1,100]
+  GeV) — not the multi-subgrid, flavor-threshold-seam layout §2.1/§3 describe
+  for the general format. `gen_oracle.py`'s `seam` category therefore reduces
+  to the grid's global QMin/QMax edge for this set; real internal-seam
+  coverage (the subgrid walk's "first in-range hit" logic) needs either a
+  second, genuinely multi-subgrid reference set or a synthetic multi-block
+  `.dat` fixture — `pdf::grid`'s parser already handles N≥1 subgrids and is
+  unit-tested against a synthetic 2-subgrid fixture (`grid.rs`
+  `parses_multiple_subgrids`), so this is an H2 test-coverage gap, not a
+  parser gap. Also: the `.info` file's `XMin`/`QMin`/etc. use bare exponent
+  notation (`1e-09`) which PyYAML's default resolver does **not** auto-type as
+  a float (it needs a decimal point, e.g. `1.0e-09`) — `gen_oracle.py` coerces
+  with `float(...)` explicitly; Rust's `f64::from_str` has no such gap.
+  Separately, `parton`'s top-level `PDF.xfxQ2` wrapper doesn't run under
+  current numpy/scipy: `grid=False` mismatches shapes through
+  `MyRectBivariateSpline`, and its size-1-result `float(res)` collapse is
+  rejected by numpy ≥2.0 for non-0-d arrays. `gen_oracle.py` calls each
+  `PDFGrid.xfxQ2(..., grid=True)` directly and replicates the "first non-NaN
+  subgrid wins" walk itself instead of using `PDF.xfxQ2` — same values, same
+  subgrid-walk policy, just not through the (version-drifted) top-level
+  entrypoint. H2 should know this before trusting `parton` as an interior/seam
+  oracle: verify the same workaround if calling `parton` again, and treat the
+  discrepancy as a `parton`-repo compatibility issue, not a grid-format
+  question.
 - H2: scirs2-interpolate adopted / rejected because …
 - H3: `rambo_massless` kept bit-compatible / regenerated goldens because …
 - H4: `Real` bounds relaxed / newtype introduced; default lane width N = …;

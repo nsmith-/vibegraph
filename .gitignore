@@ -9,6 +9,10 @@
 /validation/helas/reference.*
 /validation/madgraph/output
 /validation/madgraph/*.so
+# Fetched LHAPDF6 set + generated parton oracle
+/validation/pdf/NNPDF23_lo_as_0130_qed/
+/validation/pdf/*.tar.gz
+/validation/pdf/oracle.json
 __pycache__/
 .claude/*
 !.claude/agents/
