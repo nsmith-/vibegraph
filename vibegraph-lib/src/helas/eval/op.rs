@@ -60,6 +60,13 @@ pub enum Op {
     /// one child per color-basis element. Modeled on [`Op::PMomOut`]: no leaf, any
     /// number of children.
     Flows,
+    /// Variadic root over per-helicity-combination amplitude roots
+    /// `(Hels root_0 root_1 … root_{n-1})`, one child per helicity combination (each
+    /// child the combination's scalar amplitude, or its `Flows` node for a multi-flow
+    /// color basis). Emitted only by the helicity expansion of a folded arena
+    /// (`Folded::expand_helicities`); like [`Op::Flows`], it computes nothing itself —
+    /// the helicity-summed |M|² reads its children's scalars out of the arena.
+    Hels,
     // ── Lorentz primitives (semantics mirror the old `LorentzEvalNode`) ──
     /// 2 fermions → off-shell vector current.
     GammaVout,
@@ -203,7 +210,7 @@ pub enum ConstKind {
 /// alignment padding absorbs the kind, so the leaf costs no extra word beyond the
 /// index. The `External` leg details live in the folded leg table (see
 /// [`super::fold::ExtLeg`]).
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Const(u32);
 
 impl Const {

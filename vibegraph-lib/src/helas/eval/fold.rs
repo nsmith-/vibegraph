@@ -58,6 +58,10 @@ pub struct ExtLeg {
     pub incoming: bool,
     /// The leg's mass: index into `consts_f`.
     pub mass: u32,
+    /// Baked helicity of this entry, or `None` to read the per-evaluation helicity
+    /// assignment. `Some` entries are produced only by [`Folded::expand_helicities`],
+    /// which specializes each `External` leaf to one `(leg, helicity)` pair.
+    pub hel: Option<i8>,
 }
 
 /// The folded, card-independent skeleton plus the pool specifications that resolve it.
@@ -185,6 +189,7 @@ impl Folded {
                         charge,
                         incoming,
                         mass: intern_f(RealReq::Mass(pid)),
+                        hel: None,
                     };
                     let k = *ext_index.entry(leg).or_insert_with(|| {
                         pool_ext.push(leg);
@@ -240,6 +245,94 @@ impl Folded {
     /// The typed instruction stream lowered from the folded arena.
     pub(super) fn program(&self) -> &Program {
         &self.program
+    }
+
+    /// Bake every helicity combination into one arena under an [`Op::Hels`] root:
+    /// child `c` is this amplitude's root with every `External` leaf specialized to a
+    /// `(leg, hels[c][leg])` entry of the extended leg table. Nodes are hash-consed
+    /// across combinations, so a subtree is duplicated only per distinct assignment of
+    /// the helicities it actually depends on — each distinct current is computed
+    /// exactly once per phase-space point, the FLOP minimum for a full helicity sum
+    /// (the sharing MadGraph's helicity recycling extracts by restructuring calls).
+    ///
+    /// `PMom`/`PMomOut` read only routed momenta, which are helicity-independent, so
+    /// they are memoized by their pre-expansion node rather than by (helicity-dependent)
+    /// children — sharing them and everything built purely on top of them.
+    ///
+    /// Per-node arithmetic is unchanged (same kernels, same operand order), so each
+    /// combination's amplitude is bit-identical to running the unexpanded arena at that
+    /// helicity assignment. The numeric pools are shared with the unexpanded arena:
+    /// leaf pool indices are copied verbatim, so one [`pools`](Self::pools) resolution
+    /// serves both.
+    pub(super) fn expand_helicities(&self, hels: &[Vec<i32>]) -> Folded {
+        let ast = &self.ast;
+        let n = ast.len();
+
+        let mut b = AstBuilder::new();
+        let mut interned: HashMap<(Op, Const, Vec<NodeId>), NodeId> = HashMap::new();
+        // Extended leg table: one entry per (pre-expansion leg entry, baked helicity).
+        let mut pool_ext: Vec<ExtLeg> = Vec::new();
+        let mut ext_index: HashMap<ExtLeg, u32> = HashMap::new();
+        // Momentum read-offs shared across combinations, keyed by pre-expansion id.
+        let mut mom_shared: Vec<Option<NodeId>> = vec![None; n];
+
+        let mut combo_roots = Vec::with_capacity(hels.len());
+        let mut remap = vec![0 as NodeId; n];
+        for combo in hels {
+            for id in ast.iter() {
+                let node = ast.value(id);
+                if let Some(shared) = mom_shared[id as usize] {
+                    remap[id as usize] = shared;
+                    continue;
+                }
+                let leaf = if node.op == Op::External {
+                    let orig = self.pool_ext[node.leaf.index() as usize];
+                    let baked = ExtLeg {
+                        hel: Some(
+                            i8::try_from(combo[orig.leg_idx as usize])
+                                .expect("helicity fits in i8"),
+                        ),
+                        ..orig
+                    };
+                    let k = *ext_index.entry(baked).or_insert_with(|| {
+                        pool_ext.push(baked);
+                        (pool_ext.len() - 1) as u32
+                    });
+                    Const::ext(k)
+                } else {
+                    node.leaf
+                };
+                let children: Vec<NodeId> = ast
+                    .children_ids(id)
+                    .iter()
+                    .map(|&c| remap[c as usize])
+                    .collect();
+                let new_id = *interned
+                    .entry((node.op, leaf, children.clone()))
+                    .or_insert_with(|| b.add(node.op, leaf, children));
+                remap[id as usize] = new_id;
+                if matches!(node.op, Op::PMom | Op::PMomOut) {
+                    mom_shared[id as usize] = Some(new_id);
+                }
+            }
+            combo_roots.push(remap[ast.root() as usize]);
+        }
+        let root = b.add(Op::Hels, Const::NONE, combo_roots);
+        let expanded = b.finish(root);
+
+        let analysis = analysis::analyze(&expanded, &pool_ext);
+        let program = Program::build(&expanded, &analysis);
+        Folded {
+            ast: expanded,
+            pool_c: self.pool_c.clone(),
+            pool_f: self.pool_f.clone(),
+            pool_ext,
+            const_ast: self.const_ast.clone(),
+            fold_complex: self.fold_complex.clone(),
+            fold_real: self.fold_real.clone(),
+            analysis,
+            program,
+        }
     }
 
     /// Resolve the two numeric pools for a parameter card at scalar precision `F`.
