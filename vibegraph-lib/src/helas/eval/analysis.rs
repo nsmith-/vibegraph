@@ -217,6 +217,11 @@ impl NodeAnalysis {
         self.support[id as usize]
     }
 
+    /// The helicity-support masks of all nodes, in node-id order (see [`support`](Self::support)).
+    pub(super) fn supports(&self) -> &[u64] {
+        &self.support
+    }
+
     /// The interned momentum table shared by all nodes.
     pub fn mom_table(&self) -> &MomTable {
         &self.moms
