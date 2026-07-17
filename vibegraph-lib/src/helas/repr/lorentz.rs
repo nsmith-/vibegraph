@@ -172,6 +172,22 @@ impl<F: Real> LorentzVector<F, Contravariant> {
     pub fn lower(self) -> LorentzVector<F, Covariant> {
         self.dualize()
     }
+
+    /// Active Lorentz boost by velocity `beta = [βx, βy, βz]` (|β| < 1):
+    /// `E' = γ(E + β⃗·p⃗)`, `p⃗' = p⃗ + β⃗ (γ²/(γ+1) β⃗·p⃗ + γE)`.
+    #[inline]
+    pub fn boost(self, beta: [F; 3]) -> Self {
+        let b2 = beta[0] * beta[0] + beta[1] * beta[1] + beta[2] * beta[2];
+        let gamma = F::ONE / (F::ONE - b2).sqrt();
+        let bp = beta[0] * self.px() + beta[1] * self.py() + beta[2] * self.pz();
+        let coef = gamma * gamma / (gamma + F::ONE) * bp + gamma * self.e();
+        Self::new(
+            gamma * (self.e() + bp),
+            self.px() + coef * beta[0],
+            self.py() + coef * beta[1],
+            self.pz() + coef * beta[2],
+        )
+    }
 }
 
 impl<F: Real, V: Variance> LorentzVector<F, V> {

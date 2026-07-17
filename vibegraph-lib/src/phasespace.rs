@@ -109,6 +109,59 @@ pub fn rambo_massless(sqrt_s: f64, n: usize, rng: &mut impl Rng) -> Vec<LorentzV
         .collect()
 }
 
+/// Massive RAMBO: `n = masses.len()` on-shell four-momenta with the given masses
+/// and total momentum `(√s, 0, 0, 0)`.
+///
+/// Runs [`rambo_massless`] and applies the standard massive-RAMBO momentum
+/// rescaling: solve `ξ` in `Σᵢ √(mᵢ² + ξ²|p⃗ᵢ|²) = √s` (Newton; the left side is
+/// monotonic in `ξ`, and `ξ = 1` iff all masses vanish), then
+/// `kᵢ = (√(mᵢ² + ξ²|p⃗ᵢ|²), ξ p⃗ᵢ)`. Requires `√s > Σ mᵢ`.
+///
+/// The rescaled points are exactly on-shell and momentum-conserving but no longer
+/// carry a uniform phase-space weight — they serve as generic kinematics, not as
+/// an unbiased flat sample.
+pub fn rambo_massive(sqrt_s: f64, masses: &[f64], rng: &mut impl Rng) -> Vec<LorentzVector<f64>> {
+    let m_sum: f64 = masses.iter().sum();
+    assert!(
+        sqrt_s > m_sum,
+        "rambo_massive: sqrt_s = {sqrt_s} at or below the mass threshold {m_sum}"
+    );
+    let p = rambo_massless(sqrt_s, masses.len(), rng);
+    if masses.iter().all(|&m| m == 0.0) {
+        return p;
+    }
+    let p2: Vec<f64> = p
+        .iter()
+        .map(|q| q.px() * q.px() + q.py() * q.py() + q.pz() * q.pz())
+        .collect();
+    let mut xi = (1.0 - (m_sum / sqrt_s).powi(2)).max(1e-12).sqrt();
+    for _ in 0..100 {
+        let mut f = -sqrt_s;
+        let mut df = 0.0;
+        for (m, &pp2) in masses.iter().zip(&p2) {
+            let e = (m * m + xi * xi * pp2).sqrt();
+            f += e;
+            df += xi * pp2 / e;
+        }
+        if f.abs() < 1e-13 * sqrt_s {
+            break;
+        }
+        xi -= f / df;
+    }
+    masses
+        .iter()
+        .zip(p.iter().zip(&p2))
+        .map(|(m, (q, &pp2))| {
+            LorentzVector::new(
+                (m * m + xi * xi * pp2).sqrt(),
+                xi * q.px(),
+                xi * q.py(),
+                xi * q.pz(),
+            )
+        })
+        .collect()
+}
+
 /// Returns the differential 2-body LIPS weight `dΦ₂/d(cosθ)` in the CM frame.
 ///
 /// For massless final-state particles this is `|p_cm| / (8π √s)`, which
@@ -149,4 +202,44 @@ pub fn u_to_costheta(u: f64) -> f64 {
 pub fn prefactor2(sqrt_s: f64) -> f64 {
     let s = sqrt_s * sqrt_s;
     1.0 / (64.0 * PI * s)
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    use super::*;
+
+    /// Massive RAMBO points are on-shell to the Newton tolerance and conserve the
+    /// total four-momentum `(√s, 0, 0, 0)`.
+    #[test]
+    fn rambo_massive_on_shell_and_conserving() {
+        let mut rng = StdRng::seed_from_u64(0xC0FFEE);
+        let sqrt_s = 500.0;
+        for masses in [
+            vec![0.0, 0.0, 91.19],
+            vec![173.0, 173.0],
+            vec![1.777, 1.777, 0.0, 0.0, 125.0],
+        ] {
+            let p = rambo_massive(sqrt_s, &masses, &mut rng);
+            let mut tot = [0.0f64; 4];
+            for (q, m) in p.iter().zip(&masses) {
+                let m2 = q.e() * q.e() - q.px() * q.px() - q.py() * q.py() - q.pz() * q.pz();
+                assert!(
+                    (m2 - m * m).abs() < 1e-9 * sqrt_s * sqrt_s,
+                    "off-shell: m² = {m2}, expected {}",
+                    m * m
+                );
+                tot[0] += q.e();
+                tot[1] += q.px();
+                tot[2] += q.py();
+                tot[3] += q.pz();
+            }
+            assert!((tot[0] - sqrt_s).abs() < 1e-9 * sqrt_s);
+            for c in &tot[1..] {
+                assert!(c.abs() < 1e-9 * sqrt_s, "momentum not conserved: {tot:?}");
+            }
+        }
+    }
 }

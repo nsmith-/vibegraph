@@ -250,6 +250,15 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
         .map_err(|e| Failed::from(format!("compile: {e}")))?;
     let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
 
+    // Helicity-filtered evaluator (the production eval_m2 configuration): must be
+    // bit-for-bit against the unpruned one on every reference point — every pruned
+    // combination contributes below rounding.
+    let mut evaluator_pruned = AmplitudeEvaluator::compile(&sets[0], &model)
+        .map_err(|e| Failed::from(format!("compile: {e}")))?;
+    let n_dropped = evaluator_pruned.prune_zero_helicities(&evaluated);
+    let bound_pruned = BoundAmplitude::<f64>::bind(&evaluator_pruned, &evaluated);
+    let mut scratch_pruned = bound_pruned.scratch_space();
+
     let mut scratch = bound.scratch_space();
     let mut failures = 0usize;
     let mut max_rel_diff = 0.0f64;
@@ -274,23 +283,38 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
                 if rel > REL_TOL {
                     failures += 1;
                 }
+                let m2_pruned = bound_pruned.eval_m2(&pt.momenta, &mut scratch_pruned);
+                if m2_pruned.to_bits() != m2_rust.to_bits() {
+                    return Err(format!(
+                        "helicity-pruned eval_m2 diverged from unpruned: \
+                         {m2_pruned:e} vs {m2_rust:e} ({n_dropped} combinations pruned)"
+                    )
+                    .into());
+                }
             }
         }
     }
 
     if !panicked {
         // Rough performance feedback vs MadGraph; see the header note on
-        // `--test-threads=1` for meaningful numbers.
-        let (n_evals, elapsed) = time_evaluator(&bound, &points);
+        // `--test-threads=1` for meaningful numbers. Times the helicity-pruned
+        // evaluator — MadGraph's MATRIX1 column is its helicity-recycled code,
+        // which bakes in the same filter.
+        let (n_evals, elapsed) = time_evaluator(&bound_pruned, &points);
         let rust_ns = elapsed.as_nanos() as f64 / n_evals as f64;
+        let hels = format!(
+            "hels {}/{}",
+            evaluator_pruned.helicities().len(),
+            evaluator.helicities().len()
+        );
         match read_mg_timings().get(&name) {
             Some(mg_ns) => eprintln!(
                 "  [{name}] timing: rust {rust_ns:.0} ns/eval | MG {mg_ns:.0} ns/eval | \
-                 ratio {:.2}x  ({n_evals} evals)",
+                 ratio {:.2}x | {hels}  ({n_evals} evals)",
                 rust_ns / mg_ns
             ),
             None => eprintln!(
-                "  [{name}] timing: rust {rust_ns:.0} ns/eval | MG n/a  ({n_evals} evals)"
+                "  [{name}] timing: rust {rust_ns:.0} ns/eval | MG n/a | {hels}  ({n_evals} evals)"
             ),
         }
     }

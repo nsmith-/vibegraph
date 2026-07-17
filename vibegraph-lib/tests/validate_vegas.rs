@@ -73,8 +73,10 @@ mod validate_vegas {
     fn build_evaluator() -> (AmplitudeEvaluator, Arc<UFOModel>) {
         let sets = generate("e+ e- > mu+ mu-");
         let model = sm_model().clone();
-        let evaluator = AmplitudeEvaluator::compile(&sets[0], &model)
+        let mut evaluator = AmplitudeEvaluator::compile(&sets[0], &model)
             .expect("failed to compile AmplitudeEvaluator for e+e-→μ+μ-");
+        // Production configuration: helicity-filtered (bit-for-bit with unpruned).
+        evaluator.prune_zero_helicities(&EvaluatedModel::from_model(model.clone()));
         (evaluator, model)
     }
 

@@ -7,7 +7,12 @@ gate. Current position: `color-flow` (feature, ✅ merged 2026-07-12) →
 `validation-sprint` (validation, ✅ closed 2026-07-13) →
 **post-CSE optimization program** (performance, ✅ closed 2026-07-14) →
 **helicity-expansion session** (performance follow-on, ✅ merged 2026-07-16, note 15
-§2.2) → **next: hadronic pp→ll / event output** (feature).
+§2.2) → **helicity filtering** (performance follow-on, ✅ 2026-07-17, note 15 §2.3:
+`prune_zero_helicities` reproduces MadGraph's `GOODHEL`/`LIMHEL` filter as a
+compile-level probe + re-expansion over surviving combinations, bit-for-bit, gate
+14/14; vs-MG gap now **1.2×–3.5×**, 2→6 down from 25× to 2.5×; pruned evaluators
+take partonic-CM beams-along-±z momenta — MadGraph's own contract) →
+**next: hadronic pp→ll / event output** (feature).
 
 ## Pipeline Status
 
@@ -128,6 +133,12 @@ Honest bench (release `eval_strategies`, ns/eval; cumulative table in note 15 §
 2,429,125 (2.74×). **Gap to MG now 1.9×–25×** (was 4.9×–68× post-A5, ~9×–124× at P5).
 ⚠️ `validate_helas_mg`'s printed timings now run ~4–5× the honest bench (per-node
 cross-checks over the expanded arena); never quote them.
+
+**Superseded 2026-07-17 by helicity filtering (note 15 §2.3)**:
+`prune_zero_helicities` drops the identically-zero combinations MadGraph's filter
+drops (survivor counts pinned against its generated `NHEL` tables), bit-for-bit,
+narrowing the gap to **1.2×–3.5×** (2→6: 240,925 ns/eval, 2.5× vs MG). The widest
+remaining gaps are the colored 2→2s (uux_to_uux 2.5×, gg_to_gg 3.5×).
 
 ### ⚡ Track 1: `eval-layout` — evaluator memory layout & recycling ✅ CLOSED 2026-07-14 (merged to `main`)
 

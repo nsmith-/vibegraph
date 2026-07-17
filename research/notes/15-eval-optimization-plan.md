@@ -396,6 +396,86 @@ binary). Use `eval_strategies` for timing claims, always.
 program is the hot path); a smarter-than-hash-consing expansion (e.g. factoring the
 CF contraction across combinations) has no identified headroom yet.
 
+### 2.3 Helicity filtering (`prune_zero_helicities`, 2026-07-17)
+
+The §2.2 expansion still evaluated *every* helicity combination; MadGraph does not.
+Research findings on how MadGraph decides which to skip:
+
+- **Runtime (standalone `SMATRIX`)**: first 20 calls evaluate all `NCOMB`
+  combinations; `GOODHEL(IHEL)` is latched by the exact test `T .NE. 0D0`;
+  afterwards only good ones run. Filter disabled for `NEXTERNAL ≤ 3` (spin-2/frame
+  caveat).
+- **Runtime (madevent)**: same loop but with a relative threshold
+  `DABS(TS(I)) .GT. ANS*LIMHEL/NCOMB`, `LIMHEL = 1e-8` (run-card default).
+- **Codegen (helicity recycling, MG ≥3.x)**: `gen_ximprove.get_helicity` runs a
+  `madevent_forhel` init-mode survey (~1000 points, the LIMHEL criterion) and the
+  generated `matrix1_optim.f` bakes in only the surviving `NHEL` rows (plus
+  per-(hel,diagram) `ZEROAMP` skipping). **Our timed MG column is this code** — the
+  gap we'd been chasing included a structural handicap of evaluating 4–16× more
+  combinations than MG (e.g. 16/64 for the 2→4, 16/256 for the 2→6).
+
+An easy *symbolic* zero test was considered and rejected: the arena ops are
+slot-level HELAS kernels, so zero-structure propagation would need a hand-written
+zero-mask transfer function per op (~20 new convention hypotheses, each needing its
+own pinning test). The numeric probe is equivalent in detection power
+(Schwartz–Zippel: a rational function of the momenta that vanishes at generic random
+points vanishes on the whole manifold, a.s.) and matches MG's semantics exactly.
+
+**Implementation** (`AmplitudeEvaluator::prune_zero_helicities(&mut self,
+&EvaluatedModel)`): probe the full expansion at 10 deterministic generic CM points
+(massive RAMBO — new `phasespace::rambo_massive` — at two √s scales, seeded RNG),
+mark combinations by the MG criterion with `HEL_PRUNE_REL = 1e-24`, retain the
+survivors in order, and re-expand (`expand_helicities` already took the combo list;
+the pruned program *is* the expansion of the surviving subset). `eval_m2` unchanged.
+
+Two measured facts anchor the threshold and the frame contract
+(`helicity_contribution_spectrum`, ignored diagnostic):
+
+- The per-combination spectrum is **bimodal**: chirality-forbidden combinations are
+  exact `0.0` (massless-spinor structural zeros propagate through the kernels);
+  MHV-type zeros (all-plus gluons) cancel *across* diagrams leaving O(ε²) residues
+  ≲ 2.6e-31 of the sum; the smallest genuine contribution observed is ~1e-5, with
+  a conservative floor ≳1e-12 for doubly mass-suppressed combinations. `1e-24` sits
+  mid-gap, and dropped terms are below half an ulp of every partial sum — so the
+  pruned sum is **bit-for-bit** the unpruned one (MG's own `LIMHEL=1e-8` would not
+  guarantee that).
+- Some zeros are **frame-bound, not identities**: `g g > t t~` same-helicity gluons
+  with opposite-helicity tops vanish by J_z conservation about the beam axis in the
+  partonic CM only — massive-particle helicity is not boost invariant (a z-boost
+  raises those combinations from 1e-32 to 3e-3 of the sum). MG prunes them, so its
+  (and now our) contract is: **pruned matrix elements take partonic-CM momenta with
+  beams along ±z**. The probe set is therefore pure-CM; transverse or longitudinal
+  boosted inputs are out of contract on a pruned evaluator.
+
+**Validation**: survivor counts pinned against MG's generated `NHEL` tables for 7
+processes (`prune_zero_helicities_matches_madgraph_filter_bitwise`: ee_to_mumu
+16→4, ee_to_zh 12→6, uux_to_uux 16→6, gg_to_gg 16→6, gg_to_ttx 16→12, ee_to_wpwm
+36→16, 2→4 64→16) plus bitwise pruned-vs-unpruned equality there and — enforced per
+reference point — in the 14/14 `validate_helas_mg` gate, which now also times the
+pruned evaluator and reports `hels kept/total`. All MG-reported counts agree,
+including 2→6 16/256 (uux) and 32/256 (bbx: massive b keeps helicity-flip combos).
+
+**Honest bench** (release `eval_strategies`, criterion median ns/eval; bench now
+prunes after compile, matching MG's filtered MATRIX1 like-for-like):
+
+| process | mult | MG | §2.2 | now | gain | now vs MG | hels |
+|---|:--:|--:|--:|--:|--:|--:|:--:|
+| ee_to_mumu | 2→2 | 283 | 765 | 342 | 2.24× | 1.2× | 4/16 |
+| ee_to_ee | 2→2 | 731 | 1,390 | 952 | 1.46× | 1.3× | 6/16 |
+| uux_to_uux | 2→2 | 278 | 1,224 | 696 | 1.76× | 2.5× | 6/16 |
+| gg_to_gg | 2→2 | 949 | 6,765 | 3,341 | 2.02× | 3.5× | 6/16 |
+| ee_to_mumua | 2→3 | 1,438 | 5,824 | 2,393 | 2.43× | 1.7× | 8/32 |
+| ee_to_mumu_tata_qcd0 | 2→4 | 6,337 | 27,908 | 10,965 | 2.55× | 1.7× | 16/64 |
+| uux_to_ccx_emmm_qcd0 | 2→6 | 97,172 | 2,429,125 | 240,925 | 10.1× | 2.5× | 16/256 |
+
+The vs-MG gap narrows from **1.9×–25×** to **1.2×–3.5×**; the 2→6 collapse (25× →
+2.5×) is the expansion finally being compared against MG on equal combination
+counts. The colored 2→2s (uux 2.5×, gg 3.5×) are now the widest gaps.
+
+**Deferred**: per-(hel,diagram) `ZEROAMP` skipping inside surviving combinations
+(MG's second filter layer) — would need probed-zero node elimination in the
+expanded arena; unmeasured headroom, likely small next to the combination filter.
+
 ## 3. Track 2 — `rooting-exploration` (throwaway, branch `explore/rooting`)
 
 Goal: quantify how much post-CSE node count depends on rooting choice, cheaply, before
