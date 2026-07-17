@@ -483,16 +483,22 @@ fn fill_arenas<F: Real>(
     }
     let ops = &prog.operands;
     let mom_ops = &prog.mom_operands;
+    let supports = an.supports();
 
-    for (id, instr) in prog.instrs.iter().enumerate() {
+    for ((id, instr), (&loc, &support)) in prog
+        .instrs
+        .iter()
+        .enumerate()
+        .zip(prog.loc.iter().zip(supports))
+    {
         if let FillMode::Recycle { changed } = mode {
             // A node's slot depends only on the helicities of the legs in its support; if
             // none of those flipped, the previous combination's slot is still exact.
-            if an.support(id as NodeId) & changed == 0 {
+            if support & changed == 0 {
                 continue;
             }
         }
-        let loc = prog.loc[id] as usize;
+        let loc = loc as usize;
         match *instr {
             Instr::ComplexConst { pool } => scratch.scalars[loc] = env.consts_c[pool as usize],
             Instr::RealConst { pool } => scratch.reals[loc] = env.consts_f[pool as usize],
@@ -528,7 +534,7 @@ fn fill_arenas<F: Real>(
             } => {
                 let out = kernel::propagate_scalar_bare(
                     scratch.scalars[input as usize],
-                    scratch.moms[mom as usize],
+                    &scratch.moms[mom as usize],
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
@@ -541,8 +547,8 @@ fn fill_arenas<F: Real>(
                 mom,
             } => {
                 let out = kernel::propagate_vector_bare(
-                    scratch.vectors[input as usize],
-                    scratch.moms[mom as usize],
+                    &scratch.vectors[input as usize],
+                    &scratch.moms[mom as usize],
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
@@ -555,8 +561,8 @@ fn fill_arenas<F: Real>(
                 mom,
             } => {
                 let out = kernel::propagate_fin_bare(
-                    scratch.fin[input as usize],
-                    scratch.moms[mom as usize],
+                    &scratch.fin[input as usize],
+                    &scratch.moms[mom as usize],
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
@@ -569,8 +575,8 @@ fn fill_arenas<F: Real>(
                 mom,
             } => {
                 let out = kernel::propagate_fout_bare(
-                    scratch.fout[input as usize],
-                    scratch.moms[mom as usize],
+                    &scratch.fout[input as usize],
+                    &scratch.moms[mom as usize],
                     scratch.reals[mass as usize],
                     scratch.reals[width as usize],
                 );
@@ -613,8 +619,8 @@ fn fill_arenas<F: Real>(
             }
             Instr::GammaVout { bra, ket, reversed } => {
                 let out = kernel::gamma_vout_bare(
-                    scratch.fout[bra as usize],
-                    scratch.fin[ket as usize],
+                    &scratch.fout[bra as usize],
+                    &scratch.fin[ket as usize],
                     reversed,
                 );
                 scratch.vectors[loc] = out;
@@ -627,8 +633,8 @@ fn fill_arenas<F: Real>(
                 reversed,
             } => {
                 let out = kernel::ffv_vout_bare(
-                    scratch.fout[bra as usize],
-                    scratch.fin[ket as usize],
+                    &scratch.fout[bra as usize],
+                    &scratch.fin[ket as usize],
                     scratch.scalars[gl as usize],
                     scratch.scalars[gr as usize],
                     reversed,
@@ -637,19 +643,19 @@ fn fill_arenas<F: Real>(
             }
             Instr::GammaFin { v, f } => {
                 let eps = scratch.vectors[v as usize];
-                let out = kernel::off_shell_fin_bare(&eps, scratch.fin[f as usize]);
+                let out = kernel::off_shell_fin_bare(&eps, &scratch.fin[f as usize]);
                 scratch.fin[loc] = out;
             }
             Instr::GammaFout { v, f } => {
                 let eps = scratch.vectors[v as usize];
-                let out = kernel::off_shell_fout_bare(&eps, scratch.fout[f as usize]);
+                let out = kernel::off_shell_fout_bare(&eps, &scratch.fout[f as usize]);
                 scratch.fout[loc] = out;
             }
             Instr::FfvFin { v, f, gl, gr } => {
                 let eps = scratch.vectors[v as usize];
                 let out = kernel::ffv_fin_bare(
                     &eps,
-                    scratch.fin[f as usize],
+                    &scratch.fin[f as usize],
                     scratch.scalars[gl as usize],
                     scratch.scalars[gr as usize],
                 );
@@ -659,18 +665,18 @@ fn fill_arenas<F: Real>(
                 let eps = scratch.vectors[v as usize];
                 let out = kernel::ffv_fout_bare(
                     &eps,
-                    scratch.fout[f as usize],
+                    &scratch.fout[f as usize],
                     scratch.scalars[gl as usize],
                     scratch.scalars[gr as usize],
                 );
                 scratch.fout[loc] = out;
             }
             Instr::ProjFin { f, chirality } => {
-                let out = kernel::proj_fin_bare(scratch.fin[f as usize], chirality);
+                let out = kernel::proj_fin_bare(&scratch.fin[f as usize], chirality);
                 scratch.fin[loc] = out;
             }
             Instr::ProjFout { f, chirality } => {
-                let out = kernel::proj_fout_bare(scratch.fout[f as usize], chirality);
+                let out = kernel::proj_fout_bare(&scratch.fout[f as usize], chirality);
                 scratch.fout[loc] = out;
             }
             Instr::Bilinear {
@@ -679,27 +685,27 @@ fn fill_arenas<F: Real>(
                 chirality,
             } => {
                 let out = kernel::scalar_bilinear_bare(
-                    scratch.fout[bra as usize],
-                    scratch.fin[ket as usize],
+                    &scratch.fout[bra as usize],
+                    &scratch.fin[ket as usize],
                     chirality,
                 );
                 scratch.scalars[loc] = out;
             }
             Instr::Metric { a, b } => {
                 let out =
-                    kernel::metric_bare(scratch.vectors[a as usize], scratch.vectors[b as usize]);
+                    kernel::metric_bare(&scratch.vectors[a as usize], &scratch.vectors[b as usize]);
                 scratch.scalars[loc] = out;
             }
             Instr::MetricVout { v } => {
-                let out = kernel::metric_vout_bare(scratch.vectors[v as usize]);
+                let out = kernel::metric_vout_bare(&scratch.vectors[v as usize]);
                 scratch.vectors[loc] = out;
             }
             Instr::LowerVout { v } => {
-                let out = kernel::lower_vout_bare(scratch.vectors[v as usize]);
+                let out = kernel::lower_vout_bare(&scratch.vectors[v as usize]);
                 scratch.vectors[loc] = out;
             }
             Instr::PMom { mom } => {
-                let out = kernel::pmom_bare(scratch.moms[mom as usize]);
+                let out = kernel::pmom_bare(&scratch.moms[mom as usize]);
                 scratch.vectors[loc] = out;
             }
             Instr::PMomOut { start, len } => {
@@ -708,7 +714,8 @@ fn fill_arenas<F: Real>(
                 for &mid in slice {
                     acc = acc + scratch.moms[mid as usize];
                 }
-                scratch.vectors[loc] = kernel::pmom_bare(-acc);
+                let neg = -acc;
+                scratch.vectors[loc] = kernel::pmom_bare(&neg);
             }
             Instr::Flows => {}
         }
