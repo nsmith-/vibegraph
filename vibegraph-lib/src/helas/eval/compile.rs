@@ -15,17 +15,22 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use num_rational::Ratio;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 use crate::diagrams::DiagramSet;
 use crate::helas::color::colorize_process;
+use crate::helas::repr::lorentz::LorentzVector;
+use crate::phasespace::rambo_massive;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
-use crate::ufo::UFOModel;
+use crate::ufo::{EvaluatedModel, UFOModel};
 
 use super::error::EvalError;
 use super::fold::Folded;
 use super::lower;
 use super::root_diagram::{compile_single_diagram, DiagramEval};
+use super::run::BoundAmplitude;
 
 /// Compiled amplitude evaluator for a whole process (card- and `F`-independent).
 ///
@@ -190,6 +195,100 @@ impl AmplitudeEvaluator {
         &self.cf_matrix
     }
 
+    /// MadGraph-style helicity filtering: drop the helicity combinations whose
+    /// amplitude is identically zero, so `eval_m2` never evaluates them. Returns
+    /// the number of combinations dropped.
+    ///
+    /// MadGraph filters numerically: its runtime `GOODHEL` loop evaluates every
+    /// combination for the first phase-space points and keeps the contributing
+    /// ones, and its helicity-recycling codegen bakes the same filter into the
+    /// generated source via an init-mode survey (criterion
+    /// `DABS(TS(I)) .GT. ANS*LIMHEL/NCOMB`, `LIMHEL = 1e-8`), emitting only the
+    /// surviving `NHEL` rows. This method reproduces that filter against this
+    /// parameter card: it probes the full helicity expansion on a deterministic
+    /// set of generic on-shell points (two energy scales, CM and boosted frames),
+    /// keeps every combination over threshold at any point, and re-expands the
+    /// arena over the survivors.
+    ///
+    /// The threshold ([`HEL_PRUNE_REL`]) is far below MadGraph's `LIMHEL`, in the
+    /// gap of the strongly bimodal per-combination spectrum: identically-zero
+    /// combinations sit at exact `0.0` (chirality-forbidden ones propagate the
+    /// structural zeros of the massless-spinor components) or below ~1e-30 of the
+    /// helicity sum (MHV-type zeros cancel across diagrams, leaving O(ε²)
+    /// residues), while the smallest genuine contributions observed are ≳1e-12
+    /// even for doubly mass-suppressed combinations. A combination that
+    /// contributes anywhere on the on-shell manifold is (almost surely, over
+    /// random probe momenta) over threshold at every probe point. Because every
+    /// dropped term is ≲1e-30 of the sum — far below half an ulp of any partial
+    /// sum it enters — the pruned helicity sum is bit-for-bit the unpruned one.
+    ///
+    /// A pruned evaluator adopts MadGraph's kinematic contract: `eval_m2` momenta
+    /// must be **partonic-CM kinematics with the beams along ±z** — the frame
+    /// madevent, the VEGAS driver, and the validation samples all evaluate in.
+    /// Some pruned combinations (e.g. same-helicity gluons with opposite-helicity
+    /// massive quarks in `g g > t t~`) vanish by J_z conservation about the beam
+    /// axis in that frame rather than identically: massive-particle helicity is
+    /// not boost invariant (even under z-boosts), so those combinations contribute
+    /// in any other frame and the pruned helicity sum would come out low there.
+    /// The probe set is therefore pure-CM, matching MadGraph's survey.
+    ///
+    /// Filtering is skipped (returning 0) when `n_ext ≤ 3` (MadGraph disables the
+    /// filter there too — near-degenerate 2→1 kinematics), when the process is not
+    /// 2→n, and when no combination survives (a degenerate card zeroing the whole
+    /// amplitude should stay visible rather than be pruned away).
+    pub fn prune_zero_helicities(&mut self, evaluated: &EvaluatedModel) -> usize {
+        if self.n_ext <= 3 || self.n_in != 2 {
+            return 0;
+        }
+        let masses: Vec<f64> = self
+            .ext_particle_ids
+            .iter()
+            .map(|&pid| evaluated.mass(pid))
+            .collect();
+        let (m_in, m_out) = masses.split_at(self.n_in);
+
+        let mut good = vec![false; self.helicities.len()];
+        {
+            let bound = BoundAmplitude::<f64>::bind(self, evaluated);
+            let mut scratch = bound.scratch_space();
+            let mut rng = StdRng::seed_from_u64(0x600D_4E15);
+            // Two scales guard against a kinematic coincidence at one energy; the
+            // non-round multipliers avoid special mass ratios.
+            let threshold = (m_in.iter().sum::<f64>())
+                .max(m_out.iter().sum::<f64>())
+                .max(1.0);
+            for scale in [3.7, 11.3] {
+                let sqrt_s = scale * threshold;
+                let s = sqrt_s * sqrt_s;
+                let e1 = (s + m_in[0] * m_in[0] - m_in[1] * m_in[1]) / (2.0 * sqrt_s);
+                let pz = (e1 * e1 - m_in[0] * m_in[0]).max(0.0).sqrt();
+                for _ in 0..5 {
+                    let mut p = vec![
+                        LorentzVector::new(e1, 0.0, 0.0, pz),
+                        LorentzVector::new(sqrt_s - e1, 0.0, 0.0, -pz),
+                    ];
+                    p.extend(rambo_massive(sqrt_s, m_out, &mut rng));
+                    bound.mark_contributing_helicities(&p, HEL_PRUNE_REL, &mut scratch, &mut good);
+                }
+            }
+        }
+
+        let n_good = good.iter().filter(|&&g| g).count();
+        if n_good == 0 || n_good == self.helicities.len() {
+            return 0;
+        }
+        let dropped = self.helicities.len() - n_good;
+        self.helicities = self
+            .helicities
+            .iter()
+            .zip(&good)
+            .filter(|(_, &g)| g)
+            .map(|(h, _)| h.clone())
+            .collect();
+        self.folded_hel = OnceLock::new();
+        dropped
+    }
+
     /// Return all coupling and particle ids needed to evaluate the amplitude.
     ///
     /// Can be used for prefetching from EvaluatedModel if desired.
@@ -223,6 +322,15 @@ pub(super) const MG_VALIDATED_PROCESSES: [&str; 14] = [
     "g g > t t~",
     "g g > g g",
 ];
+
+/// Helicity-filter threshold: a combination whose CF-contracted |M_c|² stays below
+/// `Σ_c |M_c|² · HEL_PRUNE_REL / NCOMB` at every probe point is dropped (MadGraph's
+/// `LIMHEL` criterion, tightened from its 1e-8 into the bimodal gap between
+/// cancellation residues (≲1e-30 of the sum) and the smallest genuine
+/// contributions (≳1e-12), so pruning provably cannot touch a contributing
+/// combination and the pruned sum stays bit-for-bit; see
+/// [`AmplitudeEvaluator::prune_zero_helicities`]).
+const HEL_PRUNE_REL: f64 = 1e-24;
 
 fn helicity_states_for_spin(spin_code: i32, massless: bool) -> Result<Vec<i32>, EvalError> {
     // UFO spin code convention is 2s+1 with negative values reserved for ghosts.
