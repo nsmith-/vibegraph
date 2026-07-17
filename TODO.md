@@ -98,6 +98,19 @@ active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a
 run card, H8 minimal `integrate` CLI, H9 close-out.
 Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 
+- **H1 — `pdf-grid-io` ✅ done (branch `hx/h1-pdf-grid-io`).** `pdf::grid` parses
+  LHAPDF6 `.info` + member `.dat` (`lhagrid1` format) into `SetInfo`/`SubGrid`;
+  `pdf::PdfSet`/`PdfMember` skeleton + 0↔21 gluon-alias flavor indexing; no
+  interpolation. Gated by a `parton`-generated oracle (`pixi run -e
+  pdf-validation fetch-pdf` then `generate-pdf-oracle` then `validate-pdf-grid`);
+  on-knot x·f values match exactly, malformed input hits typed `GridError`
+  variants. **Finding for H2**: the pinned NNPDF23_lo_as_0130_qed set ships as a
+  *single* subgrid (nx=100, nq=50, 14 flavors, no internal Q² threshold split) —
+  the oracle's `seam` category degenerates to the global QMin/QMax edge rather
+  than an internal flavor-threshold seam; H2 needs a second, genuinely
+  multi-subgrid set (or a synthetic fixture) if it wants seam-walk coverage
+  beyond edge behavior.
+
 ---
 
 ## 🟡 Medium — CLI integration
