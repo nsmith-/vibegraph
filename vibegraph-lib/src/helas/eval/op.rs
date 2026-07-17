@@ -145,41 +145,16 @@ impl Op {
     }
 }
 
-/// Dead padding that inflates [`Node`] to a target width for the instruction-stream
-/// width-sensitivity measurement. Byte counts are tuned so the natural-layout struct
-/// size lands on 16/24/32 B; zero-length (the default build) leaves the node
-/// untouched. Never enable more than one at once.
-#[cfg(feature = "node-pad-32")]
-type NodePad = [u8; 20];
-#[cfg(all(feature = "node-pad-24", not(feature = "node-pad-32")))]
-type NodePad = [u8; 12];
-#[cfg(all(
-    feature = "node-pad-16",
-    not(any(feature = "node-pad-24", feature = "node-pad-32"))
-))]
-type NodePad = [u8; 4];
-#[cfg(not(any(
-    feature = "node-pad-16",
-    feature = "node-pad-24",
-    feature = "node-pad-32"
-)))]
-type NodePad = [u8; 0];
-
 /// A node: opcode tag + typed leaf payload. Children live in the arena's CSR table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Node<T> {
     pub op: Op,
     pub leaf: T,
-    _pad: NodePad,
 }
 
 impl<T> Node<T> {
     pub fn new(op: Op, leaf: T) -> Self {
-        Node {
-            op,
-            leaf,
-            _pad: NodePad::default(),
-        }
+        Node { op, leaf }
     }
 }
 
