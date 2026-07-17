@@ -5,8 +5,9 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate. Current position: `color-flow` (feature, ✅ merged 2026-07-12) →
 `validation-sprint` (validation, ✅ closed 2026-07-13) →
-**post-CSE optimization program** (performance, ✅ closed 2026-07-14) → **next: hadronic
-pp→ll / event output** (feature).
+**post-CSE optimization program** (performance, ✅ closed 2026-07-14) →
+**helicity-expansion session** (performance follow-on, ✅ merged 2026-07-16, note 15
+§2.2) → **next: hadronic pp→ll / event output** (feature).
 
 ## Pipeline Status
 
@@ -102,7 +103,31 @@ mass-aware kinematics the massless-RAMBO bench lacks — not re-measured):
 | uux_to_ccx_emmm_qcd0 | 2→6 | 97,172 | 12,075,000 | 6,649,375 | 1.82× | 68.4× |
 
 Post-CSE the 2→6s sit at ~15 nodes/diagram, so beyond Track 1's layout wins,
-**further cuts need algebraic rewrites** structural hash-consing cannot see.
+**further cuts need algebraic rewrites** structural hash-consing cannot see. (One
+exception surfaced after close-out: the helicity dimension — see the follow-on
+session below.)
+
+## ⚡ Helicity-expansion session ✅ MERGED TO MAIN 2026-07-16 (note 15 §2.2)
+
+A5's recycling replaced wholesale: `Folded::expand_helicities` bakes every helicity
+combination into one hash-consed arena under an `Op::Hels` root (`External` leaves
+specialized per `(leg, helicity)`; `PMom`/`PMomOut` shared outright), so each
+distinct current is computed exactly once per point and `eval_m2` is a single linear
+pass — no support masks, no skip scan, no shadow-recompute assert (all deleted).
+Result slots are liveness-allocated (2→6: 543k nodes, ~27k peak live slots ≈ 1.7 MB);
+expansion is lazy (`OnceLock`, ~150 ms one-time for the 2→6). **Bit-for-bit** vs the
+per-helicity sum through the unexpanded program (pinned by
+`expanded_eval_m2_matches_per_helicity_sum`); gate 14/14 with `max_rel_diff`
+unchanged. Same-day companions: bare kernels by reference (the by-value ABI copies
+were real, ~9% on big amplitudes), `LowerVout`→`NegVout` rename + stale-doc fix,
+node-pad scaffolding removed, packed-index asserts hardened, `egraph.rs` marked
+parked.
+
+Honest bench (release `eval_strategies`, ns/eval; cumulative table in note 15 §2.2):
+2→2s 765–6,765 (2.4–2.6× over post-A5; gg_to_gg 1.68×), 2→4 27,908 (2.96×), 2→6
+2,429,125 (2.74×). **Gap to MG now 1.9×–25×** (was 4.9×–68× post-A5, ~9×–124× at P5).
+⚠️ `validate_helas_mg`'s printed timings now run ~4–5× the honest bench (per-node
+cross-checks over the expanded arena); never quote them.
 
 ### ⚡ Track 1: `eval-layout` — evaluator memory layout & recycling ✅ CLOSED 2026-07-14 (merged to `main`)
 
@@ -485,15 +510,16 @@ Research `uom`/`dimensioned`/`units` crates for typed four-momenta and cross sec
 
 ### `mg-single-helicity-bench` — MG comparison at a fixed helicity configuration (low priority)
 
-The timing table compares against MG MATRIX1, which sums helicities — so MG's
-helicity recycling (CSE across its unrolled helicity loop) is baked into its side of
-the ratio, while vibegraph re-runs the full arena per combination. A parallel
-benchmark evaluating **one fixed helicity configuration** on both sides isolates
-kernel-level performance gaps from missed-CSE / helicity-loop effects. Also the fair
-comparison for the event-generation regime: once the importance-sampling reference
-distribution is established, final accept/reject evaluates a specific helicity
-configuration, where helicity recycling buys nothing (the recycling win belongs to
-the integration-grid phase and its cumulative per-helicity ledger).
+The timing table compares against MG MATRIX1, which sums helicities. Since the
+helicity-expansion session (2026-07-16) both sides now share currents across the
+helicity loop — MG via its restructured-call recycling, vibegraph via the baked
+`Op::Hels` expansion — so the helicity-sum ratio is a fair like-for-like; a parallel
+benchmark evaluating **one fixed helicity configuration** on both sides still
+isolates kernel-level gaps from expansion/sharing effects. It is also the relevant
+comparison for the event-generation regime: final accept/reject evaluates a specific
+helicity configuration through the *unexpanded* program, where the expansion buys
+nothing (its win belongs to the integration-grid phase and its helicity-summed
+`eval_m2`).
 
 **A6 go/no-go (2026-07-14): DEFER — not pulled in.** The vibegraph half
 (`eval_amplitude` at one fixed helicity) is a cheap bench addition, but the *fair*
