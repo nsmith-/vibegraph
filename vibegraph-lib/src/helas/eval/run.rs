@@ -700,8 +700,8 @@ fn fill_arenas<F: Real>(
                 let out = kernel::metric_vout_bare(&scratch.vectors[v as usize]);
                 scratch.vectors[loc] = out;
             }
-            Instr::LowerVout { v } => {
-                let out = kernel::lower_vout_bare(&scratch.vectors[v as usize]);
+            Instr::NegVout { v } => {
+                let out = kernel::neg_vout_bare(&scratch.vectors[v as usize]);
                 scratch.vectors[loc] = out;
             }
             Instr::PMom { mom } => {
@@ -980,7 +980,7 @@ pub(super) fn apply<'a, F: Real + 'a>(
         Op::ProjPAmp => kernel::proj_p_amp(kid(0), kid(1)),
         Op::Metric => kernel::metric(kid(0), kid(1)),
         Op::MetricVout => kernel::metric_vout(kid(0)),
-        Op::LowerVout => kernel::lower_vout(kid(0)),
+        Op::NegVout => kernel::neg_vout(kid(0)),
         Op::IdentityAmp => kernel::identity_amp(kid(0), kid(1)),
         Op::PMom => kernel::pmom(kid(0)),
         // n-ary (all vertex inputs): the one variadic kernel takes the operands as

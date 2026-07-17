@@ -25,6 +25,12 @@
 //! input. This is the seam the future algebraic-rewrite and congruence-CSE rules slot
 //! into (see `research/notes/14-egglog-notes.md`); the rules will turn this identity
 //! pass into an optimizing one.
+//!
+//! No production code consumes this module: measurement showed a greedy extractor
+//! over the slot-traffic cost model cannot realize a sharing payoff on these
+//! amplitudes, so extraction is not wired into the compile pipeline. The
+//! enumeration and cost scaffolding here are kept for a future global (ILP-style)
+//! extractor with a compute-aware cost model.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -57,7 +63,7 @@ const NODE_SCHEMA: &str = "\
   (ProjPAmp Node Node)
   (Metric Node Node)
   (MetricVout Node)
-  (LowerVout Node)
+  (NegVout Node)
   (IdentityAmp Node Node)
   (FfvVout Node Node Node Node)
   (FfvIout Node Node Node Node)
@@ -544,7 +550,7 @@ fn op_slot_bytes(op: &str) -> f64 {
             | Op::ProjM
             | Op::ProjP
             | Op::MetricVout
-            | Op::LowerVout
+            | Op::NegVout
             | Op::FfvVout
             | Op::FfvIout
             | Op::FfvOout

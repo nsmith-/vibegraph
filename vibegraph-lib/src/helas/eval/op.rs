@@ -44,7 +44,7 @@ pub enum Op {
     /// External wavefunction input. Leaf: `{leg_idx, spin, charge}`; child: `[Mass]`.
     External,
     /// Propagator. Children: `[current, Mass, Width]`. Dispatches on the input
-    /// current's variance at runtime (a covariant `MetricVout`/`LowerVout` current
+    /// current's variance at runtime (a covariant `MetricVout`/`NegVout` current
     /// forms its longitudinal term differently and is raised back), so no separate
     /// lowered-storage opcode is needed.
     Propagate,
@@ -79,9 +79,10 @@ pub enum Op {
     Metric,
     /// metric with one free index → off-shell vector current.
     MetricVout,
-    /// `MetricVout` without the −i vertex factor (index lowering only); the
-    /// vector-output transform of P-carrying structures (VVV).
-    LowerVout,
+    /// `MetricVout` times the momentum-odd parity sign that P-carrying (VVV)
+    /// structures pick up when rooted at the off-shell leg: the negated
+    /// contravariant current `−V^μ`.
+    NegVout,
     /// full scalar bilinear ψ̄ δ ψ.
     IdentityAmp,
     // ── fused chiral FFV kernels ──
@@ -145,41 +146,16 @@ impl Op {
     }
 }
 
-/// Dead padding that inflates [`Node`] to a target width for the instruction-stream
-/// width-sensitivity measurement. Byte counts are tuned so the natural-layout struct
-/// size lands on 16/24/32 B; zero-length (the default build) leaves the node
-/// untouched. Never enable more than one at once.
-#[cfg(feature = "node-pad-32")]
-type NodePad = [u8; 20];
-#[cfg(all(feature = "node-pad-24", not(feature = "node-pad-32")))]
-type NodePad = [u8; 12];
-#[cfg(all(
-    feature = "node-pad-16",
-    not(any(feature = "node-pad-24", feature = "node-pad-32"))
-))]
-type NodePad = [u8; 4];
-#[cfg(not(any(
-    feature = "node-pad-16",
-    feature = "node-pad-24",
-    feature = "node-pad-32"
-)))]
-type NodePad = [u8; 0];
-
 /// A node: opcode tag + typed leaf payload. Children live in the arena's CSR table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Node<T> {
     pub op: Op,
     pub leaf: T,
-    _pad: NodePad,
 }
 
 impl<T> Node<T> {
     pub fn new(op: Op, leaf: T) -> Self {
-        Node {
-            op,
-            leaf,
-            _pad: NodePad::default(),
-        }
+        Node { op, leaf }
     }
 }
 
@@ -238,7 +214,7 @@ impl Const {
     pub const NONE: Const = Const(0);
 
     fn packed(kind_bits: u32, index: u32) -> Const {
-        debug_assert!(
+        assert!(
             index <= Self::INDEX_MASK,
             "constant-pool index {index} overflows the 30-bit Const payload"
         );
