@@ -12,6 +12,7 @@
 //! runtime [`BoundAmplitude`](super::run::BoundAmplitude).
 
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
 use num_rational::Ratio;
 
@@ -37,6 +38,11 @@ use super::root_diagram::{compile_single_diagram, DiagramEval};
 pub struct AmplitudeEvaluator {
     /// Folded whole-amplitude AST + constant-pool specs.
     folded: Folded,
+    /// Helicity-expanded arena (every combination baked in under an `Op::Hels` root,
+    /// hash-consed across combinations), built on first use — `eval_m2` is its only
+    /// consumer, so compile-only and single-helicity users never pay the expansion.
+    /// Shares the numeric pools with `folded`, so one `bind` serves both.
+    folded_hel: OnceLock<Folded>,
     /// Number of external particles
     n_ext: usize,
     /// Number of incoming external particles
@@ -125,6 +131,7 @@ impl AmplitudeEvaluator {
 
         Ok(Self {
             folded,
+            folded_hel: OnceLock::new(),
             n_ext,
             n_in: set.particles_in.len(),
             n_diagrams,
@@ -138,6 +145,13 @@ impl AmplitudeEvaluator {
     /// The folded whole-amplitude skeleton (arena + pool specs).
     pub(super) fn folded(&self) -> &Folded {
         &self.folded
+    }
+
+    /// The helicity-expanded skeleton (see [`Folded::expand_helicities`]), built on
+    /// first use and cached.
+    pub(super) fn folded_hel(&self) -> &Folded {
+        self.folded_hel
+            .get_or_init(|| self.folded.expand_helicities(&self.helicities))
     }
 
     /// Return the number of external legs.
@@ -252,14 +266,18 @@ mod tests {
     use crate::helas::eval::tree::Tree;
     use crate::ufo::sm::{sm_model, SMRestrict};
 
-    /// Ops with no MG-validated process coverage. `IdentityAmp` needs a UFO model with
-    /// an `Identity` scalar bilinear; the SM has none (its Yukawas are `ProjM + ProjP`).
-    /// Its kernel is pinned algebraically against MG-covered ops in `kernel::tests`;
-    /// process-level coverage remains a future item. `Flows` and `CoeffRat` are only
-    /// emitted for processes whose color basis has more than one flow (multi-flow color
-    /// algebra); `uux_to_uux` (`NCOLOR=2`), `gg_to_ttx` (`NCOLOR=2`) and `gg_to_gg`
-    /// (`NCOLOR=6`) now bit-validate both.
-    const KNOWN_UNCOVERED: [Op; 1] = [Op::IdentityAmp];
+    /// Ops absent from the *compiled* (`folded().ast`) arenas this test scans.
+    /// `IdentityAmp` needs a UFO model with an `Identity` scalar bilinear; the SM has
+    /// none (its Yukawas are `ProjM + ProjP`). Its kernel is pinned algebraically
+    /// against MG-covered ops in `kernel::tests`; process-level coverage remains a
+    /// future item. `Hels` is never emitted at compile time at all — it is the root
+    /// the helicity expansion (`Folded::expand_helicities`) derives from every one of
+    /// these arenas, and `eval_m2` reads it on every MG-gated |M|² comparison, so it
+    /// is exercised by the same net through a different door. `Flows` and `CoeffRat`
+    /// are only emitted for processes whose color basis has more than one flow
+    /// (multi-flow color algebra); `uux_to_uux` (`NCOLOR=2`), `gg_to_ttx` (`NCOLOR=2`)
+    /// and `gg_to_gg` (`NCOLOR=6`) now bit-validate both.
+    const KNOWN_UNCOVERED: [Op; 2] = [Op::Hels, Op::IdentityAmp];
 
     /// Every `Op` outside [`KNOWN_UNCOVERED`] appears in the compiled AST of at least
     /// one MG-validated process — the bit-for-bit `validate_helas_mg` net exercises the

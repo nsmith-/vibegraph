@@ -207,6 +207,9 @@ pub(super) enum Instr {
     /// Variadic per-flow-JAMP amplitude root: computes nothing (its children's scalars
     /// are read out by the multi-flow evaluator).
     Flows,
+    /// Variadic per-helicity-combination root: computes nothing (its children's scalars
+    /// are read out by the helicity-summed evaluator).
+    Hels,
 }
 
 /// Where the amplitude value(s) live after a run.
@@ -214,8 +217,15 @@ pub(super) enum Instr {
 pub(super) enum RootKind {
     /// Single scalar amplitude at this index of the scalar arena.
     Single(u32),
-    /// Per-flow JAMP scalars, at these indices of the scalar arena.
-    Flows(Box<[u32]>),
+    /// Per-flow JAMP scalars, at these indices of the scalar arena. Only the
+    /// per-flow JAMP test probes read these locations (the production helicity sum
+    /// reads [`RootKind::Hels`] instead).
+    Flows(#[cfg_attr(not(test), allow(dead_code))] Box<[u32]>),
+    /// Helicity-expanded amplitude: `locs` holds the scalar-arena indices of every
+    /// combination's per-flow JAMPs, combination-major (`locs[c*n_flows + i]` is
+    /// combination `c`'s flow-`i` JAMP; `n_flows = 1` stores each combination's
+    /// single amplitude scalar).
+    Hels { n_flows: u32, locs: Box<[u32]> },
 }
 
 /// A folded arena lowered to a typed instruction stream.
@@ -226,7 +236,9 @@ pub(super) struct Program {
     /// Per-node index within its result arena (`loc[id]`); used to reconstruct a slot for
     /// the debug/extended-validation cross-check, and to locate the root.
     pub(super) loc: Box<[u32]>,
-    /// Number of results each arena holds after a full run (`arena_sizes[class]`).
+    /// Slots each arena needs for a run (`arena_sizes[class]`): the peak number of
+    /// simultaneously live results of that class, not the node count — slots are
+    /// recycled once their last reader has executed.
     pub(super) arena_sizes: [u32; N_ARENAS],
     /// Shared operand table for the variadic/mixed-class instructions.
     pub(super) operands: Box<[OperandRef]>,
@@ -236,8 +248,25 @@ pub(super) struct Program {
     pub(super) root: RootKind,
 }
 
+/// The operand nodes an instruction actually reads from the result arenas: all
+/// children, except that `PMom`/`PMomOut` read only their operands' momentum-table
+/// ids and the variadic roots' children are read out by the evaluator *after* the
+/// pass (kept live to the end instead).
+fn arena_reads(op: Op, kids: &[NodeId]) -> &[NodeId] {
+    match op {
+        Op::PMom | Op::PMomOut | Op::Flows | Op::Hels => &[],
+        _ => kids,
+    }
+}
+
 impl Program {
     /// Lower a folded arena + its analysis into a typed instruction stream.
+    ///
+    /// Result slots are allocated by liveness: a node's slot is recycled once its last
+    /// arena read has executed, so `arena_sizes` is the peak number of simultaneously
+    /// live values per class, not the node count. A node's own slot is never one of its
+    /// operands' (operands release only after the instruction's slot is assigned), and
+    /// the root scalars the evaluator reads after the pass stay live to the end.
     pub(super) fn build(ast: &Ast<Const>, an: &NodeAnalysis) -> Program {
         let n = ast.len();
         let mut instrs: Vec<Instr> = Vec::with_capacity(n);
@@ -245,6 +274,53 @@ impl Program {
         let mut counts = [0u32; N_ARENAS];
         let mut operands: Vec<OperandRef> = Vec::new();
         let mut mom_operands: Vec<u32> = Vec::new();
+
+        // ── liveness ── last arena read of each node (its own position if never read).
+        let mut last_use: Vec<NodeId> = (0..n as NodeId).collect();
+        for id in 0..n as NodeId {
+            for &k in arena_reads(ast.value(id).op, ast.children_ids(id)) {
+                last_use[k as usize] = id;
+            }
+        }
+        // Root scalars read out by the evaluator after the pass.
+        let mut live_end = vec![false; n];
+        {
+            let root_id = ast.root();
+            match ast.value(root_id).op {
+                Op::Hels => {
+                    for &c in ast.children_ids(root_id) {
+                        if ast.value(c).op == Op::Flows {
+                            for &j in ast.children_ids(c) {
+                                live_end[j as usize] = true;
+                            }
+                        } else {
+                            live_end[c as usize] = true;
+                        }
+                    }
+                }
+                Op::Flows => {
+                    for &c in ast.children_ids(root_id) {
+                        live_end[c as usize] = true;
+                    }
+                }
+                _ => live_end[root_id as usize] = true,
+            }
+        }
+        // CSR of nodes by expiry position, so the main loop can release slots in O(1).
+        let mut expiry_off = vec![0u32; n + 1];
+        for &lu in &last_use {
+            expiry_off[lu as usize + 1] += 1;
+        }
+        for i in 0..n {
+            expiry_off[i + 1] += expiry_off[i];
+        }
+        let mut expiry = vec![0 as NodeId; n];
+        let mut cursor = expiry_off.clone();
+        for (k, &lu) in last_use.iter().enumerate() {
+            expiry[cursor[lu as usize] as usize] = k as NodeId;
+            cursor[lu as usize] += 1;
+        }
+        let mut free: [Vec<u32>; N_ARENAS] = Default::default();
 
         // The (bra = flow-out, ket = flow-in, reversed) resolution of a two-fermion
         // bilinear, mirroring the runtime `resolve_bra_ket`: `reversed` is set when the
@@ -437,27 +513,65 @@ impl Program {
                     }
                 }
                 Op::Flows => Instr::Flows,
+                Op::Hels => Instr::Hels,
             };
             instrs.push(instr);
 
-            // This node's result lands at the next free slot of its arena.
+            // This node's result lands at a recycled slot of its arena, else a fresh one.
             if let Some(s) = an.out_type(id).storage() {
                 let ai = arena_index(s);
-                loc[id as usize] = counts[ai];
-                counts[ai] += 1;
+                loc[id as usize] = free[ai].pop().unwrap_or_else(|| {
+                    counts[ai] += 1;
+                    counts[ai] - 1
+                });
+            }
+            // Release slots whose last read was this instruction — after this node's own
+            // slot is assigned, so an instruction never writes over one of its operands.
+            for k in expiry_off[id as usize]..expiry_off[id as usize + 1] {
+                let dead = expiry[k as usize];
+                if live_end[dead as usize] {
+                    continue;
+                }
+                if let Some(s) = an.out_type(dead).storage() {
+                    free[arena_index(s)].push(loc[dead as usize]);
+                }
             }
         }
 
         let root_id = ast.root();
-        let root = if ast.value(root_id).op == Op::Flows {
-            let flows: Box<[u32]> = ast
-                .children_ids(root_id)
-                .iter()
-                .map(|&c| loc[c as usize])
-                .collect();
-            RootKind::Flows(flows)
-        } else {
-            RootKind::Single(loc[root_id as usize])
+        let root = match ast.value(root_id).op {
+            Op::Hels => {
+                let mut n_flows = 0u32;
+                let mut locs: Vec<u32> = Vec::new();
+                for &c in ast.children_ids(root_id) {
+                    let combo_flows = if ast.value(c).op == Op::Flows {
+                        let jamps = ast.children_ids(c);
+                        locs.extend(jamps.iter().map(|&j| loc[j as usize]));
+                        jamps.len() as u32
+                    } else {
+                        locs.push(loc[c as usize]);
+                        1
+                    };
+                    assert!(
+                        n_flows == 0 || n_flows == combo_flows,
+                        "helicity combinations disagree on flow count"
+                    );
+                    n_flows = combo_flows;
+                }
+                RootKind::Hels {
+                    n_flows,
+                    locs: locs.into_boxed_slice(),
+                }
+            }
+            Op::Flows => {
+                let flows: Box<[u32]> = ast
+                    .children_ids(root_id)
+                    .iter()
+                    .map(|&c| loc[c as usize])
+                    .collect();
+                RootKind::Flows(flows)
+            }
+            _ => RootKind::Single(loc[root_id as usize]),
         };
 
         Program {
