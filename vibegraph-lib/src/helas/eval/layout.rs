@@ -45,7 +45,7 @@ impl OperandRef {
     const INDEX_MASK: u32 = (1 << Self::CLASS_SHIFT) - 1;
 
     fn new(class: Storage, index: u32) -> OperandRef {
-        debug_assert!(index <= Self::INDEX_MASK, "operand index {index} overflows");
+        assert!(index <= Self::INDEX_MASK, "operand index {index} overflows");
         OperandRef(((arena_index(class) as u32) << Self::CLASS_SHIFT) | index)
     }
 
@@ -190,7 +190,7 @@ pub(super) enum Instr {
     MetricVout {
         v: u32,
     },
-    LowerVout {
+    NegVout {
         v: u32,
     },
     /// `P` read-off of an input line: its structure momentum is the momentum-table entry
@@ -422,7 +422,7 @@ impl Program {
                     b: li(kids[1]),
                 },
                 Op::MetricVout => Instr::MetricVout { v: li(kids[0]) },
-                Op::LowerVout => Instr::LowerVout { v: li(kids[0]) },
+                Op::NegVout => Instr::NegVout { v: li(kids[0]) },
                 Op::PMom => Instr::PMom {
                     mom: an.mom_id(kids[0]),
                 },

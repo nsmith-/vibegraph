@@ -12,12 +12,6 @@ extended-validation = []
 # Exposes helas::eval::bench_internals (kernels + random-slot generators) for the
 # kernel-granularity microbenches in benches/. Never enable in normal builds.
 bench-internals = []
-# Throwaway measurement knobs: inflate the eval instruction node `Node<Const>` to a
-# target width with dead padding, to measure hot-loop sensitivity to instruction
-# stream width. At most one may be enabled; none = the natural node width.
-node-pad-16 = []
-node-pad-24 = []
-node-pad-32 = []
 
 [dependencies]
 num-traits = "0.2"
@@ -70,6 +64,3 @@ name = "color_cf_oracle"
 harness = false
 required-features = ["extended-validation"]
 
-[[test]]
-name = "instruction_size_bench"
-required-features = ["extended-validation"]
