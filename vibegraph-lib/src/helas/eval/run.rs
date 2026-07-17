@@ -43,7 +43,8 @@ pub struct ScratchSpace<F: Real> {
     /// selects, and consumers read operands directly from the correct arena — no
     /// per-value enum tag. The elements are momentum-stripped (a bare `C`/`ComplexVector`/
     /// `Bispinor`): a current's routing momentum lives in `moms` instead, keyed by the
-    /// node's momentum id. Filled in storage (topological) order, per helicity.
+    /// node's momentum id. Filled in storage (topological) order; every slot is written
+    /// before it is read within a pass, so arenas are never cleared between passes.
     reals: Vec<F>,
     scalars: Vec<C<F>>,
     vectors: Vec<ComplexVector<F>>,
@@ -51,30 +52,33 @@ pub struct ScratchSpace<F: Real> {
     fout: Vec<Bispinor<F, Bra>>,
     /// Per-point momentum pool: `moms[id]` is the external-momentum combination the
     /// momentum table interns at `id` (`Σ ± p_leg`), resolved once per phase-space point.
-    /// Helicity-independent, so it is reused across the helicity loop inside `eval_m2`.
     moms: Vec<LorentzVector<F>>,
 }
 
 impl<F: Real> ScratchSpace<F> {
-    /// Size every result arena to the program's exact result count, zero-filled, so each
-    /// node writes its result by direct index (`arena[loc]`). Leaves `moms` untouched — it
-    /// is resolved once per point by [`resolve_moms`] and reused across the helicity loop.
-    ///
-    /// A fresh full pass seeds every slot; a subsequent recycling pass overwrites only the
-    /// slots whose helicity-leg support changed, so the sizing must persist across the loop.
+    /// Grow every result arena to at least the program's slot count, so each node
+    /// writes its result by direct index (`arena[loc]`). Stale values from a previous
+    /// pass are never read — within a pass, every slot is written by the node the
+    /// allocator assigned it to before any consumer reads it — so nothing is cleared.
+    /// Leaves `moms` untouched — it is resolved per point by [`resolve_moms`].
     #[inline]
-    fn resize_all(&mut self, sizes: &[u32; N_ARENAS]) {
-        self.reals.clear();
-        self.reals.resize(sizes[0] as usize, F::zero());
-        self.scalars.clear();
-        self.scalars.resize(sizes[1] as usize, C::zero());
-        self.vectors.clear();
-        self.vectors
-            .resize(sizes[2] as usize, ComplexVector::zero());
-        self.fin.clear();
-        self.fin.resize(sizes[3] as usize, Bispinor::zero());
-        self.fout.clear();
-        self.fout.resize(sizes[4] as usize, Bispinor::zero());
+    fn ensure_sizes(&mut self, sizes: &[u32; N_ARENAS]) {
+        if self.reals.len() < sizes[0] as usize {
+            self.reals.resize(sizes[0] as usize, F::zero());
+        }
+        if self.scalars.len() < sizes[1] as usize {
+            self.scalars.resize(sizes[1] as usize, C::zero());
+        }
+        if self.vectors.len() < sizes[2] as usize {
+            self.vectors
+                .resize(sizes[2] as usize, ComplexVector::zero());
+        }
+        if self.fin.len() < sizes[3] as usize {
+            self.fin.resize(sizes[3] as usize, Bispinor::zero());
+        }
+        if self.fout.len() < sizes[4] as usize {
+            self.fout.resize(sizes[4] as usize, Bispinor::zero());
+        }
     }
 }
 
@@ -166,78 +170,56 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
     /// `momenta` are the external 4-momenta `[E, px, py, pz]`, incoming legs first then
     /// outgoing.
     ///
-    /// For a single color flow (`NCOLOR = 1`) the amplitude root is a scalar `M`, and
-    /// the constant color factor `CF(1,1)` multiplies the helicity sum *after* it is
-    /// formed (`CF · Σ_hel |M|²`) — preserving the exact floating-point operation order
-    /// of a color-free evaluation, since `Σ (CF·x_h) ≠ CF·Σ x_h` bitwise. For several
-    /// flows the per-helicity JAMPs `J_i` are contracted through the CF matrix in
-    /// MadGraph's ZTEMP order, `Σ_i (Σ_j CF_{ji} J_j) · J_i*`, and summed over helicities.
+    /// Runs the helicity-expanded program (see `Folded::expand_helicities`): every
+    /// combination's currents live in one arena, hash-consed so a current shared
+    /// between combinations is computed exactly once per phase-space point, and one
+    /// linear pass fills them all. The per-combination amplitudes are then read off
+    /// the [`RootKind::Hels`] root scalars in combination order.
+    ///
+    /// For a single color flow (`NCOLOR = 1`) each combination's root is a scalar `M`,
+    /// and the constant color factor `CF(1,1)` multiplies the helicity sum *after* it
+    /// is formed (`CF · Σ_hel |M|²`) — preserving the exact floating-point operation
+    /// order of a color-free evaluation, since `Σ (CF·x_h) ≠ CF·Σ x_h` bitwise. For
+    /// several flows the per-combination JAMPs `J_i` are contracted through the CF
+    /// matrix in MadGraph's ZTEMP order, `Σ_i (Σ_j CF_{ji} J_j) · J_i*`, and summed
+    /// over combinations. The CF weights scale each JAMP as a real factor, matching
+    /// MADGRAPH's real-matrix × complex-JAMP product.
     pub fn eval_m2(&self, momenta: &[LorentzVector<F>], scratch: &mut ScratchSpace<F>) -> F {
         if momenta.len() != self.eval.n_ext() {
             return F::zero();
         }
-        let folded = self.eval.folded();
-        // The momentum pool is helicity-independent, so resolve it once per phase-space
-        // point and reuse it across the helicity loop below.
+        let folded = self.eval.folded_hel();
         resolve_moms(folded, momenta, scratch);
-        let n = self.eval.n_flows();
-        let hels = self.eval.helicities();
+        // Baked-helicity externals never read the per-evaluation helicity assignment.
+        let env = self.eval_env(folded, momenta, &[], None);
+        fill_arenas(folded, &env, scratch);
 
-        // Debug / extended-validation only: a shadow workspace that fully recomputes every
-        // helicity combination, so each recycled arena can be checked slot-for-slot against
-        // a from-scratch evaluation — catching any stale-slot reuse the skip predicate could
-        // introduce. Compiled out of release builds, so the hot path stays clean.
-        #[cfg(any(debug_assertions, feature = "extended-validation"))]
-        let mut shadow = self.scratch_space();
-
-        // Helicity combinations arrive in odometer order (last leg varies fastest), so
-        // consecutive combinations differ in the fewest legs. Each combination recomputes
-        // only the nodes whose helicity-leg support intersects the legs that flipped; every
-        // other arena slot retains the previous combination's value.
-        let mut prev: Option<&[i32]> = None;
+        let RootKind::Hels { n_flows, locs } = &folded.program().root else {
+            panic!("eval_m2 on a program without a helicity-expanded root");
+        };
+        let n = *n_flows as usize;
+        debug_assert_eq!(n, self.eval.n_flows());
 
         if n == 1 {
             let mut hel_sum = F::zero();
-            for hel in hels {
-                let mode = fill_mode(prev, hel);
-                let env = self.eval_env(momenta, hel, None);
-                fill_arenas(folded, &env, scratch, mode);
-                #[cfg(any(debug_assertions, feature = "extended-validation"))]
-                assert_recycled_matches_full(folded, &env, scratch, &mut shadow);
-                let m = match &folded.program().root {
-                    RootKind::Single(loc) => scratch.scalars[*loc as usize],
-                    RootKind::Flows(_) => panic!("eval_m2 single-flow on a Flows-rooted amplitude"),
-                };
-                hel_sum = hel_sum + m.norm_sqr();
-                prev = Some(hel);
+            for &l in locs.iter() {
+                hel_sum = hel_sum + scratch.scalars[l as usize].norm_sqr();
             }
             return hel_sum * self.cf[0];
         }
 
+        // MATRIX1 += Σ_i ( Σ_j CF_{ji}·J_j ) · conj(J_i); the imaginary parts cancel
+        // over the i-sum (MADGRAPH assigns the complex product to a real accumulator),
+        // so only the real part contributes.
         let mut total = F::zero();
-        for hel in hels {
-            let mode = fill_mode(prev, hel);
-            let env = self.eval_env(momenta, hel, None);
-            fill_arenas(folded, &env, scratch, mode);
-            #[cfg(any(debug_assertions, feature = "extended-validation"))]
-            assert_recycled_matches_full(folded, &env, scratch, &mut shadow);
-            let jamps: Vec<C<F>> = match &folded.program().root {
-                RootKind::Flows(locs) => {
-                    locs.iter().map(|&l| scratch.scalars[l as usize]).collect()
-                }
-                RootKind::Single(_) => panic!("eval_m2 multi-flow on a non-Flows amplitude"),
-            };
-            // MATRIX1 += Σ_i ( Σ_j CF_{ji}·J_j ) · conj(J_i); the imaginary parts
-            // cancel over the i-sum (MADGRAPH assigns the complex product to a real
-            // accumulator), so only the real part contributes.
+        for jamps in locs.chunks_exact(n) {
             for i in 0..n {
                 let mut ztemp = C::new(F::zero(), F::zero());
-                for (j, jamp_j) in jamps.iter().enumerate() {
-                    ztemp = ztemp + *jamp_j * C::new(self.cf[j * n + i], F::zero());
+                for (j, &lj) in jamps.iter().enumerate() {
+                    ztemp = ztemp + scratch.scalars[lj as usize].scale(self.cf[j * n + i]);
                 }
-                total = total + (ztemp * jamps[i].conj()).re;
+                total = total + (ztemp * scratch.scalars[jamps[i] as usize].conj()).re;
             }
-            prev = Some(hel);
         }
         total
     }
@@ -256,9 +238,11 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         self.run(momenta, helicities, None, scratch)
     }
 
-    /// The per-evaluation immutable context for one (momenta, helicity) point.
+    /// The per-evaluation immutable context for one (momenta, helicity) point,
+    /// reading `folded`'s external-leg table (the base or helicity-expanded arena).
     fn eval_env<'e>(
         &'e self,
+        folded: &'e Folded,
         momenta: &'e [LorentzVector<F>],
         helicities: &'e [i32],
         ward_leg: Option<usize>,
@@ -266,7 +250,7 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         EvalEnv {
             consts_c: &self.consts_c,
             consts_f: &self.consts_f,
-            ext_legs: self.eval.folded().ext_legs(),
+            ext_legs: folded.ext_legs(),
             momenta,
             helicities,
             ward_leg,
@@ -284,14 +268,14 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
     ) -> C<F> {
         let folded = self.eval.folded();
         resolve_moms(folded, momenta, scratch);
-        let env = self.eval_env(momenta, helicities, ward_leg);
+        let env = self.eval_env(folded, momenta, helicities, ward_leg);
         run_forward_typed(folded, &env, scratch)
     }
 
     /// Walk the folded arena for one (momenta, helicity) point, returning the
-    /// per-flow JAMPs `J_i` — the scalar children of the [`Op::Flows`] root. The
-    /// multi-flow [`eval_m2`](Self::eval_m2) path inlines this (resolving the momentum
-    /// pool once per point); the per-flow JAMP probes call it standalone.
+    /// per-flow JAMPs `J_i` — the scalar children of the [`Op::Flows`] root. Backs the
+    /// per-flow JAMP probes ([`eval_m2`](Self::eval_m2) reads its JAMPs from the
+    /// helicity-expanded root instead).
     #[cfg(test)]
     fn run_flows(
         &self,
@@ -301,7 +285,7 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
     ) -> Vec<C<F>> {
         let folded = self.eval.folded();
         resolve_moms(folded, momenta, scratch);
-        let env = self.eval_env(momenta, helicities, None);
+        let env = self.eval_env(folded, momenta, helicities, None);
         run_forward_flows_typed(folded, &env, scratch)
     }
 
@@ -371,93 +355,27 @@ fn run_forward_typed<F: Real>(
     env: &EvalEnv<'_, F>,
     scratch: &mut ScratchSpace<F>,
 ) -> C<F> {
-    fill_arenas(folded, env, scratch, FillMode::Full);
+    fill_arenas(folded, env, scratch);
     match &folded.program().root {
         RootKind::Single(loc) => scratch.scalars[*loc as usize],
-        RootKind::Flows(_) => panic!("run_forward_typed on a Flows-rooted amplitude"),
+        _ => panic!("run_forward_typed on a multi-root amplitude"),
     }
 }
 
 /// Evaluate a `Flows`-rooted arena through the typed instruction stream, returning each
 /// JAMP scalar (the root's children) in flow order. Assumes [`resolve_moms`] has populated
-/// the momentum pool for this point. The multi-flow [`eval_m2`](BoundAmplitude::eval_m2)
-/// reads the JAMPs directly from the recycled arenas; this standalone helper backs the
-/// per-flow JAMP probes.
+/// the momentum pool for this point. Backs the per-flow JAMP probes.
 #[cfg(test)]
 fn run_forward_flows_typed<F: Real>(
     folded: &Folded,
     env: &EvalEnv<'_, F>,
     scratch: &mut ScratchSpace<F>,
 ) -> Vec<C<F>> {
-    fill_arenas(folded, env, scratch, FillMode::Full);
+    fill_arenas(folded, env, scratch);
     match &folded.program().root {
         RootKind::Flows(locs) => locs.iter().map(|&l| scratch.scalars[l as usize]).collect(),
-        RootKind::Single(_) => panic!("run_forward_flows_typed on a non-Flows amplitude"),
+        _ => panic!("run_forward_flows_typed on a non-Flows amplitude"),
     }
-}
-
-/// How a forward pass populates the result arenas.
-#[derive(Clone, Copy)]
-enum FillMode {
-    /// Seed every node into freshly sized (zero-filled) arenas — a standalone point, or the
-    /// first helicity combination of a recycling loop.
-    Full,
-    /// Recompute only the nodes whose helicity-leg support intersects `changed`; every other
-    /// arena slot retains the value the previous helicity combination wrote in place.
-    Recycle { changed: u64 },
-}
-
-/// The fill mode for a helicity combination given the previous one: the seed combination
-/// (`prev == None`) recomputes everything; otherwise only the legs whose helicity flipped
-/// (a bitmask indexed by leg index) need recomputing.
-fn fill_mode(prev: Option<&[i32]>, cur: &[i32]) -> FillMode {
-    match prev {
-        None => FillMode::Full,
-        Some(p) => {
-            let mut changed = 0u64;
-            for (leg, (&a, &b)) in p.iter().zip(cur).enumerate() {
-                if a != b {
-                    changed |= 1u64 << leg;
-                }
-            }
-            FillMode::Recycle { changed }
-        }
-    }
-}
-
-/// Debug / extended-validation guard: recompute every node from scratch into `shadow` and
-/// assert the recycled arenas match it slot-for-slot, proving the skip predicate never
-/// retained a stale value. The momentum pool is helicity-independent, so it is copied rather
-/// than re-resolved.
-#[cfg(any(debug_assertions, feature = "extended-validation"))]
-fn assert_recycled_matches_full<F: Real>(
-    folded: &Folded,
-    env: &EvalEnv<'_, F>,
-    scratch: &ScratchSpace<F>,
-    shadow: &mut ScratchSpace<F>,
-) {
-    shadow.moms.clone_from(&scratch.moms);
-    fill_arenas(folded, env, shadow, FillMode::Full);
-    assert!(
-        scratch.reals == shadow.reals,
-        "recycled reals arena diverged from a full recompute"
-    );
-    assert!(
-        scratch.scalars == shadow.scalars,
-        "recycled scalars arena diverged from a full recompute"
-    );
-    assert!(
-        scratch.vectors == shadow.vectors,
-        "recycled vectors arena diverged from a full recompute"
-    );
-    assert!(
-        scratch.fin == shadow.fin,
-        "recycled fin arena diverged from a full recompute"
-    );
-    assert!(
-        scratch.fout == shadow.fout,
-        "recycled fout arena diverged from a full recompute"
-    );
 }
 
 /// Run the typed instruction stream, filling the per-class result arenas. Every node
@@ -465,33 +383,13 @@ fn assert_recycled_matches_full<F: Real>(
 /// output class selects; operands are read directly from the arena their class fixes, so no
 /// per-value type dispatch happens on the hot path. The remaining per-iteration branches are
 /// the instruction dispatch and the slice bounds checks on arena indexing.
-///
-/// [`FillMode::Full`] sizes the arenas and computes every node; [`FillMode::Recycle`] leaves
-/// the arenas sized from a prior pass and recomputes only the nodes whose helicity-leg
-/// support intersects the changed legs — every skipped node's slot retains its value, so a
-/// helicity flip touches only the currents that actually depend on it.
-fn fill_arenas<F: Real>(
-    folded: &Folded,
-    env: &EvalEnv<'_, F>,
-    scratch: &mut ScratchSpace<F>,
-    mode: FillMode,
-) {
+fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut ScratchSpace<F>) {
     let prog = folded.program();
-    let an = folded.analysis();
-    if let FillMode::Full = mode {
-        scratch.resize_all(&prog.arena_sizes);
-    }
+    scratch.ensure_sizes(&prog.arena_sizes);
     let ops = &prog.operands;
     let mom_ops = &prog.mom_operands;
 
     for (id, instr) in prog.instrs.iter().enumerate() {
-        if let FillMode::Recycle { changed } = mode {
-            // A node's slot depends only on the helicities of the legs in its support; if
-            // none of those flipped, the previous combination's slot is still exact.
-            if an.support(id as NodeId) & changed == 0 {
-                continue;
-            }
-        }
         let loc = prog.loc[id] as usize;
         match *instr {
             Instr::ComplexConst { pool } => scratch.scalars[loc] = env.consts_c[pool as usize],
@@ -710,7 +608,7 @@ fn fill_arenas<F: Real>(
                 }
                 scratch.vectors[loc] = kernel::pmom_bare(-acc);
             }
-            Instr::Flows => {}
+            Instr::Flows | Instr::Hels => {}
         }
 
         cross_check_typed(folded, id as NodeId, scratch, env);
@@ -817,7 +715,9 @@ fn cross_check_typed<F: Real>(
 }
 
 /// Build one external wavefunction slot from the folded leg table, applying the
-/// (test-only) Ward gauge substitution when this leg is the chosen one.
+/// (test-only) Ward gauge substitution when this leg is the chosen one. A leg entry
+/// with a baked helicity (helicity-expanded arenas) uses it; otherwise the helicity
+/// comes from the per-evaluation assignment.
 fn build_external_slot<F: Real>(env: &EvalEnv<'_, F>, leg_table_idx: usize) -> WaveformSlot<F> {
     let leg = env.ext_legs[leg_table_idx];
     let leg_idx = leg.leg_idx as usize;
@@ -831,9 +731,13 @@ fn build_external_slot<F: Real>(env: &EvalEnv<'_, F>, leg_table_idx: usize) -> W
             momentum: q,
         });
     }
+    let helicity = match leg.hel {
+        Some(h) => i32::from(h),
+        None => env.helicities[leg_idx],
+    };
     build_external_core(
         env.momenta[leg_idx],
-        env.helicities[leg_idx],
+        helicity,
         leg.spin,
         leg.charge,
         leg.incoming,
@@ -979,10 +883,11 @@ pub(super) fn apply<'a, F: Real + 'a>(
         // n-ary (all vertex inputs): the one variadic kernel takes the operands as
         // an iterator of references.
         Op::PMomOut => kernel::pmom_out((0..n_kids).map(kid)),
-        // The per-color-flow JAMP list is only ever the amplitude root, and only for
-        // multi-flow color processes: a CF-weighted `eval_m2` (not this per-node,
-        // single-scalar `apply`) is what consumes its children's slots directly.
+        // The variadic roots are only ever amplitude roots: the CF-weighted /
+        // helicity-summed `eval_m2` (not this per-node, single-scalar `apply`) is
+        // what consumes their children's slots directly.
         Op::Flows => panic!("Op::Flows has no single-scalar node evaluation"),
+        Op::Hels => panic!("Op::Hels has no single-scalar node evaluation"),
     }
 }
 
@@ -3486,15 +3391,14 @@ mod tests {
         }
     }
 
-    /// The static helicity-support mask soundly bounds each node's helicity dependence:
-    /// flipping one external leg's helicity leaves every node whose mask excludes that
-    /// leg byte-for-byte unchanged. (The converse does not hold — a leg in the mask need
-    /// not actually change the slot, e.g. `PMom` reads momentum, not helicity — so only
-    /// the one-directional invariant, the exact property recycling relies on, is
-    /// asserted.) Single-flow processes only, so the arena root is a scalar and the whole
-    /// per-node result buffer is populated.
+    /// The helicity-expanded `eval_m2` equals the per-combination sum through the
+    /// unexpanded program, **bit-for-bit**: the expansion copies each node's arithmetic
+    /// verbatim (same kernels, same operand order), so every combination's amplitude —
+    /// and the identically-ordered CF-weighted sum over combinations — is the same
+    /// float. Covers single-flow (colorless + massive-external) and multi-flow
+    /// (NCOLOR=2 and NCOLOR=6) processes.
     #[test]
-    fn support_mask_bounds_helicity_dependence() {
+    fn expanded_eval_m2_matches_per_helicity_sum() {
         use rand::rngs::StdRng;
         use rand::SeedableRng;
 
@@ -3507,19 +3411,19 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0x5A5A_11A5);
         let sqrt_s = 400.0;
 
-        let mut pairs_checked = 0usize;
-        for process in ["e+ e- > mu+ mu-", "e+ e- > w+ w-", "e+ e- > ta+ ta- h"] {
+        for process in [
+            "e+ e- > mu+ mu-",
+            "e+ e- > w+ w-",
+            "e+ e- > ta+ ta- h",
+            "u u~ > u u~",
+            "g g > g g",
+        ] {
             let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
             let sets = generate_from_proc_card(&pc, &model).unwrap();
             for set in &sets {
                 let eval = AmplitudeEvaluator::compile(set, &model).unwrap();
-                if eval.n_flows() != 1 {
-                    continue;
-                }
-                let folded = eval.folded();
-                let analysis = folded.analysis();
-                let (cc, cf) = folded.pools::<f64>(&evaluated);
-                let ext_legs = folded.ext_legs();
+                let amp = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+                let mut scratch = amp.scratch_space();
 
                 let mut p = vec![
                     LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
@@ -3527,51 +3431,88 @@ mod tests {
                 ];
                 p.extend(rambo_massless(sqrt_s, eval.n_ext() - 2, &mut rng));
 
-                let eval_res = |hel: &[i32]| -> Vec<WaveformSlot<f64>> {
-                    let env = EvalEnv {
-                        consts_c: &cc,
-                        consts_f: &cf,
-                        ext_legs,
-                        momenta: &p,
-                        helicities: hel,
-                        ward_leg: None,
-                    };
-                    let mut res = Vec::new();
-                    run_forward_slot(folded, &env, &mut res);
-                    res
+                let expanded = amp.eval_m2(&p, &mut scratch);
+
+                // The same sum through the unexpanded program, one combination at a
+                // time, replicating eval_m2's accumulation order exactly.
+                let n = eval.n_flows();
+                let reference = if n == 1 {
+                    let mut hel_sum = 0.0f64;
+                    for hel in eval.helicities() {
+                        let m = amp.eval_amplitude(&p, hel, &mut scratch);
+                        hel_sum += m.norm_sqr();
+                    }
+                    hel_sum * amp.cf[0]
+                } else {
+                    let mut total = 0.0f64;
+                    for hel in eval.helicities() {
+                        let jamps = amp.run_flows(&p, hel, &mut scratch);
+                        for i in 0..n {
+                            let mut ztemp = C::new(0.0, 0.0);
+                            for (j, jamp_j) in jamps.iter().enumerate() {
+                                ztemp += jamp_j.scale(amp.cf[j * n + i]);
+                            }
+                            total += (ztemp * jamps[i].conj()).re;
+                        }
+                    }
+                    total
                 };
 
-                let combos = eval.helicities();
-                let n_nodes = folded.ast.len();
-                for i in 0..combos.len() {
-                    for j in (i + 1)..combos.len() {
-                        let diff: Vec<usize> = (0..combos[i].len())
-                            .filter(|&k| combos[i][k] != combos[j][k])
-                            .collect();
-                        if diff.len() != 1 {
-                            continue;
-                        }
-                        let leg = diff[0];
-                        let ri = eval_res(&combos[i]);
-                        let rj = eval_res(&combos[j]);
-                        for id in 0..n_nodes as u32 {
-                            if analysis.support(id) & (1u64 << leg) == 0 {
-                                assert_eq!(
-                                    format!("{:?}", ri[id as usize]),
-                                    format!("{:?}", rj[id as usize]),
-                                    "[{process}] node {id}: slot changed under a leg-{leg} \
-                                     helicity flip, but leg {leg} is not in its support mask"
-                                );
-                            }
-                        }
-                        pairs_checked += 1;
-                    }
-                }
+                assert_eq!(
+                    expanded, reference,
+                    "[{process}] expanded eval_m2 diverged from the per-helicity sum"
+                );
             }
         }
-        assert!(
-            pairs_checked > 0,
-            "no single-leg-flip helicity pairs were exercised"
-        );
+    }
+}
+
+#[cfg(test)]
+mod hel_expand_stats {
+    use super::*;
+    use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+    use crate::ufo::sm::{sm_model, SMRestrict};
+
+    /// Size/shape probe of the helicity expansion (`--ignored --nocapture` to read the
+    /// numbers): the expanded arena must be strictly smaller than combinations × base
+    /// nodes (hash-consing shares something on every process), and the liveness
+    /// allocator must keep each result arena well below one slot per node.
+    #[test]
+    #[ignore]
+    fn expansion_shares_nodes_and_bounds_arenas() {
+        let model = sm_model(SMRestrict::Default);
+        let opts = ParsingOptions::default();
+        for process in [
+            "e+ e- > mu+ mu-",
+            "g g > g g",
+            "e+ e- > mu+ mu- ta+ ta- QCD=0",
+            "u u~ > c c~ e+ e- mu+ mu- QCD=0",
+        ] {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+            let base = eval.folded();
+            let n_combos = eval.helicities().len();
+            let t0 = std::time::Instant::now();
+            let hel = eval.folded_hel();
+            let dt = t0.elapsed();
+            println!(
+                "{process}: combos={n_combos} base_nodes={} expanded_nodes={} (naive {}), \
+                 base_arenas={:?} hel_arenas={:?}, expand_time={dt:?}",
+                base.ast.len(),
+                hel.ast.len(),
+                base.ast.len() * n_combos,
+                base.program().arena_sizes,
+                hel.program().arena_sizes,
+            );
+            assert!(hel.ast.len() < n_combos * base.ast.len());
+            let peak: u32 = hel.program().arena_sizes.iter().sum();
+            assert!(
+                (peak as usize) < hel.ast.len() / 2,
+                "[{process}] liveness allocation degenerated: peak {peak} live slots \
+                 for {} nodes",
+                hel.ast.len()
+            );
+        }
     }
 }

@@ -1,28 +1,24 @@
 //! Static per-node analysis over a lowered [`Ast`] arena.
 //!
 //! A single forward scan (children precede parents in arena order) annotates every
-//! node with four card-independent, helicity-independent facts:
+//! node with three card-independent, helicity-independent facts:
 //!
 //! 1. **Output type** ([`NodeType`]) — which [`WaveformSlot`](super::waveform_slot::WaveformSlot)
 //!    variant the node reduces to, mirroring the [`apply`](super::run::apply) dispatch
 //!    (which panics on a mismatch — the runtime source of truth). The scalar slot is
 //!    split into a momentum-free constant ([`NodeType::ScalarConst`]) and a
-//!    momentum-carrying current ([`NodeType::ScalarWf`]); `Op::Flows` is a variadic
-//!    root that is never an operand and so carries no output type ([`NodeType::Sink`]).
+//!    momentum-carrying current ([`NodeType::ScalarWf`]); the variadic roots
+//!    `Op::Flows`/`Op::Hels` are never operands and so carry no output type
+//!    ([`NodeType::Sink`]).
 //! 2. **Constness** — a node all of whose descendants are `Coupling`/`Coeff`/`CoeffRat`/
 //!    `Mass`/`Width` leaves is a card-time constant (resolvable once per parameter card).
 //! 3. **Momentum id** — the signed external-momentum combination the node's slot carries,
 //!    interned into a [`MomTable`]. Every current's routing momentum is a compile-time
 //!    combination `Σ ± p_leg`, independent of helicity.
-//! 4. **Helicity-support mask** — the set of external legs in the node's subtree, as a
-//!    bitmask. A node's slot can depend only on the helicities of legs in this set, so a
-//!    helicity flip of any leg outside it leaves the slot unchanged (the recycling
-//!    invariant).
 //!
 //! Downstream consumers: constant-subgraph folding reads [`NodeAnalysis::is_const`]; the
 //! typed instruction stream / SoA arenas read [`NodeType::storage`]; the momentum pool
-//! reads [`NodeAnalysis::mom_id`] and the [`MomTable`]; helicity recycling reads
-//! [`NodeAnalysis::support`].
+//! reads [`NodeAnalysis::mom_id`] and the [`MomTable`].
 
 use std::collections::HashMap;
 
@@ -39,7 +35,8 @@ use crate::helas::repr::Real;
 /// The output taxonomy realized by the evaluator's [`apply`](super::run::apply) dispatch.
 ///
 /// Every node reduces to exactly one [`WaveformSlot`](super::waveform_slot::WaveformSlot)
-/// variant, except `Op::Flows` (a [`Sink`](NodeType::Sink)). The scalar slot is refined
+/// variant, except the variadic roots `Op::Flows`/`Op::Hels` (a [`Sink`](NodeType::Sink)).
+/// The scalar slot is refined
 /// into a momentum-free constant and a momentum-carrying wavefunction — the
 /// `ScalarConst`/`ScalarWf` split that keeps momentum-motion rewrites well-typed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,7 +55,7 @@ pub enum NodeType {
     FermionIn,
     /// Flow-out (bra) fermion current — `WaveformSlot::FermionOut`.
     FermionOut,
-    /// `Op::Flows`: the variadic per-flow-JAMP amplitude root. Never an operand, so it
+    /// `Op::Flows`/`Op::Hels`: a variadic amplitude root. Never an operand, so it
     /// has no output slot.
     Sink,
 }
@@ -191,7 +188,6 @@ pub struct NodeAnalysis {
     out_type: Box<[NodeType]>,
     is_const: Box<[bool]>,
     mom_id: Box<[u32]>,
-    support: Box<[u64]>,
     moms: MomTable,
 }
 
@@ -209,12 +205,6 @@ impl NodeAnalysis {
     /// The interned momentum id of node `id`'s slot (index into [`mom_table`](Self::mom_table)).
     pub fn mom_id(&self, id: NodeId) -> u32 {
         self.mom_id[id as usize]
-    }
-
-    /// The helicity-support mask of node `id`: bit `leg` set iff external leg `leg` is
-    /// in the node's subtree.
-    pub fn support(&self, id: NodeId) -> u64 {
-        self.support[id as usize]
     }
 
     /// The interned momentum table shared by all nodes.
@@ -379,7 +369,6 @@ fn analyze_core<T>(
     let mut out_type = vec![NodeType::Sink; n];
     let mut is_const = vec![false; n];
     let mut mom_id = vec![MomTable::ZERO; n];
-    let mut support = vec![0u64; n];
     let mut moms = MomTable::new(n_legs);
     let mut buf = vec![0i8; n_legs];
 
@@ -390,7 +379,7 @@ fn analyze_core<T>(
 
         // ── output type ──
         let out = match op {
-            Op::Flows => NodeType::Sink,
+            Op::Flows | Op::Hels => NodeType::Sink,
             _ => match leaf {
                 LeafKind::External { out, .. } => out,
                 LeafKind::RealConst => NodeType::RealConst,
@@ -400,20 +389,16 @@ fn analyze_core<T>(
         };
 
         // ── constness ──
-        // The `Flows` sink is never a foldable constant, even in the degenerate case of
-        // all-constant JAMP operands: it is the variadic amplitude root, not a value.
+        // The `Flows`/`Hels` sinks are never foldable constants, even in the degenerate
+        // case of all-constant operands: they are variadic amplitude roots, not values.
         let cst = match leaf {
             LeafKind::External { .. } => false,
             LeafKind::RealConst | LeafKind::ScalarConst => true,
             LeafKind::NonLeaf => {
-                op != Op::Flows && !kids.is_empty() && kids.iter().all(|&k| is_const[k as usize])
+                !matches!(op, Op::Flows | Op::Hels)
+                    && !kids.is_empty()
+                    && kids.iter().all(|&k| is_const[k as usize])
             }
-        };
-
-        // ── helicity-support mask ──
-        let mask = match leaf {
-            LeafKind::External { leg_idx, .. } => 1u64 << leg_idx,
-            _ => kids.iter().fold(0u64, |acc, &k| acc | support[k as usize]),
         };
 
         // ── momentum combination ──
@@ -431,14 +416,12 @@ fn analyze_core<T>(
         out_type[id as usize] = out;
         is_const[id as usize] = cst;
         mom_id[id as usize] = mid;
-        support[id as usize] = mask;
     }
 
     NodeAnalysis {
         out_type: out_type.into_boxed_slice(),
         is_const: is_const.into_boxed_slice(),
         mom_id: mom_id.into_boxed_slice(),
-        support: support.into_boxed_slice(),
         moms,
     }
 }
@@ -548,7 +531,8 @@ fn momentum_into(
         | Op::CoeffRat
         | Op::PMom
         | Op::PMomOut
-        | Op::Flows => {}
+        | Op::Flows
+        | Op::Hels => {}
         // Momentum-preserving unary transforms.
         Op::Propagate | Op::ProjM | Op::ProjP | Op::MetricVout | Op::LowerVout => {
             add(buf, kids[0], 1)
@@ -650,7 +634,6 @@ mod tests {
             assert!(an.is_const(id), "node {id} should be constant");
             assert!(an.out_type(id).is_const(), "node {id} const type");
             assert_eq!(an.mom_id(id), MomTable::ZERO, "node {id} zero momentum");
-            assert_eq!(an.support(id), 0, "node {id} empty support");
         }
         assert_eq!(an.out_type(coeff), NodeType::RealConst);
         assert_eq!(an.out_type(coup), NodeType::ScalarConst);
@@ -712,9 +695,9 @@ mod tests {
     }
 
     /// A multi-leg current: two external fermions → `GammaVout` vector, whose momentum
-    /// is `p_bra − p_ket` and whose support covers both legs.
+    /// is `p_bra − p_ket`.
     #[test]
-    fn multi_leg_current_type_momentum_support() {
+    fn multi_leg_current_type_momentum() {
         let mut b = AstBuilder::new();
         // leg 0: incoming particle fermion → ket (FermionIn).
         let mass0 = sym(
@@ -761,7 +744,6 @@ mod tests {
         assert_eq!(an.out_type(p_in), NodeType::FermionOut);
         assert_eq!(an.out_type(vout), NodeType::Vector);
         assert!(!an.is_const(vout));
-        assert_eq!(an.support(vout), 0b11);
         // bra(leg1, antiparticle → −p₁) − ket(leg0, particle → +p₀): coeffs [−1, −1].
         assert_eq!(an.mom_table().coeffs(an.mom_id(vout)), &[-1, -1]);
     }
