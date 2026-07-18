@@ -101,6 +101,14 @@ active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a
 run card, H8 minimal `integrate` CLI, H9 close-out.
 Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 
+- **H5 — `vegas-serde-split` ✅ done (branch `hx/h5-vegas-serde-split`).**
+  `VegasGrid` (serde + validating deserialize) with `adapt`/`sample_frozen`
+  split, batched-integrand variants (bit-identical to unbatched for any batch
+  size), and deterministic-parallel `adapt_parallel`/`sample_frozen_parallel`
+  (ChaCha8 substream per chunk, 1-vs-N-thread bit-identity); `Vegas::integrate`
+  kept as a compat shim, pinned-seed bit goldens guard the refactor. serde_json
+  `float_roundtrip` footgun recorded in note 18 §5.
+
 - **H3 — `rambo-real-generic` ✅ done (branch `hx/h3-rambo-real-generic`).**
   `phasespace/` module tree — `rng.rs` ChaCha8 substreams + bits→`F` uniform
   rule, `rambo.rs` massive `rambo::<F>` with KSE weight; uniforms-replay oracle
