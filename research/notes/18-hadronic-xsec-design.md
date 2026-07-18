@@ -442,6 +442,27 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
 - H6: implemented cut families = …; cuts.f convention pins (η definition, ΔR) at
   lines …; any inventory param found beyond §1.5 …
 - H7: x-mapping kept `ln x` / switched to (τ, y) because …
+- H5: `VegasGrid::adapt`/`sample_frozen` stayed generic over `rng: &mut impl
+  Rng` per §2.4; the deterministic-rayon path landed as separate
+  `adapt_parallel`/`sample_frozen_parallel` methods taking `(seed: u64,
+  chunk_size: usize)` instead of an `impl Rng` — a generic RNG can't be split
+  into independent substreams, so the parallel entry points construct
+  `ChaCha8Rng` internally per chunk and require `f: Fn + Sync` (vs. `FnMut`
+  for the sequential/batched paths, since chunks run concurrently). Batched
+  variants (`adapt_batched`/`sample_frozen_batched`) are single-threaded only
+  this sprint — no batched+parallel cross product; `adapt`/`sample_frozen`
+  are implemented as `adapt_batched`/`sample_frozen_batched` with
+  `batch_size = 1`, which gives batched/unbatched bit-identity for free
+  (same code path; draw order and accumulation order are independent of
+  batch grouping by construction). `rayon` moved from `vibegraph-lib`
+  dev-dependencies to dependencies (needed by library code, not just
+  tests/benches); `rand_chacha = "0.9"` added as a dependency.
+  **Footgun for downstream JSON-round-trip work (H6/H7/H8)**: `serde_json`'s
+  default float parser is not correctly-rounded — round-tripping a `VegasGrid`
+  through `serde_json` silently moved bits by 1 ULP on some values until the
+  `float_roundtrip` cargo feature was enabled on the `serde_json`
+  dev-dependency. Any bincode/JSON round-trip test asserting bit-for-bit
+  equality on `f64` payloads needs this feature (or an explicit tolerance).
 
 ## 6. Deferred follow-ups
 
