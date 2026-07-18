@@ -351,10 +351,10 @@ impl<F: Real, V: Variance> From<LorentzVector<F, V>> for ComplexVector<F, V> {
     fn from(lv: LorentzVector<F, V>) -> Self {
         ComplexVector(
             [
-                C::new(lv.0[0], F::ZERO),
-                C::new(lv.0[1], F::ZERO),
-                C::new(lv.0[2], F::ZERO),
-                C::new(lv.0[3], F::ZERO),
+                C::new(lv.0[0], F::zero()),
+                C::new(lv.0[1], F::zero()),
+                C::new(lv.0[2], F::zero()),
+                C::new(lv.0[3], F::zero()),
             ],
             PhantomData,
         )
@@ -450,7 +450,7 @@ impl DiracAdjoint for Ket {
     /// `σ̄·v = [[v₀−v₃, −(v₁−iv₂)], [−(v₁+iv₂), v₀+v₃]]`.
     #[inline(always)]
     fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4] {
-        let i = ri(F::ONE);
+        let i = ri(F::one());
         let v0_p_v3 = v[0] + v[3];
         let v0_m_v3 = v[0] - v[3];
         let v1_m_iv2 = v[1] - i * v[2];
@@ -670,7 +670,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
     fn project_left(self) -> Self {
         // For either adjoint, the left projection is the same, because P_L doesn't "commute" with Dirac adjoint
         let psi = self.as_array();
-        Bispinor::from_array([psi[0], psi[1], C::ZERO, C::ZERO])
+        Bispinor::from_array([psi[0], psi[1], C::zero(), C::zero()])
     }
 
     /// Right projection: zero the left-chiral (indices 0-1) components, keeping right-chiral (2-3).
@@ -678,7 +678,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
     fn project_right(self) -> Self {
         // For either adjoint, the right projection is the same, because P_R doesn't "commute" with Dirac adjoint
         let psi = self.as_array();
-        Bispinor::from_array([C::ZERO, C::ZERO, psi[2], psi[3]])
+        Bispinor::from_array([C::zero(), C::zero(), psi[2], psi[3]])
     }
 
     /// Apply the gamma-slash `v̸ = γ^μ v_μ`.
@@ -732,7 +732,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
             [
                 fo[2] * fi[0] + fo[3] * fi[1],
                 -(fo[2] * fi[1] + fo[3] * fi[0]),
-                ri(F::ONE) * (fo[2] * fi[1] - fo[3] * fi[0]),
+                ri(F::one()) * (fo[2] * fi[1] - fo[3] * fi[0]),
                 -fo[2] * fi[0] + fo[3] * fi[1],
             ],
             PhantomData,
@@ -905,16 +905,16 @@ fn weyl_ixxxxx<F: Real>(
     nhel: SpinorHelicity,
     nsf: Charge,
 ) -> [C<F>; 4] {
-    let two = F::ONE + F::ONE;
+    let two = F::one() + F::one();
     let nh = nhel.sign() * nsf.sign();
     let nsf_i = nsf.sign();
 
-    let mut fi = [C::new(F::ZERO, F::ZERO); 4];
+    let mut fi = [C::new(F::zero(), F::zero()); 4];
 
-    if mass != F::ZERO {
+    if mass != F::zero() {
         let pp = p.p3().min(p.e());
 
-        if pp == F::ZERO {
+        if pp == F::zero() {
             // ── at rest ───────────────────────────────────────────────────
             let sqm0 = mass.abs().sqrt();
             let sqm1 = sqm0 * mass.signum();
@@ -943,9 +943,9 @@ fn weyl_ixxxxx<F: Real>(
 
             let sfomeg = [r(sf[0] * omega[ip]), r(sf[1] * omega[im])];
 
-            let pp3 = (pp + p.pz()).max(F::ZERO);
+            let pp3 = (pp + p.pz()).max(F::zero());
             let chi0 = r((pp3 / (two * pp)).sqrt());
-            let chi1 = if pp3 > F::ZERO {
+            let chi1 = if pp3 > F::zero() {
                 C::new(F::from(nh).unwrap() * p.px(), p.py()) / r((two * pp * pp3).sqrt())
             } else {
                 r(F::from(-nh).unwrap())
@@ -959,28 +959,28 @@ fn weyl_ixxxxx<F: Real>(
         }
     } else {
         // ── massless ──────────────────────────────────────────────────────
-        let sqp0p3 = if p.px() == F::ZERO && p.py() == F::ZERO && p.pz() < F::ZERO {
-            F::ZERO
+        let sqp0p3 = if p.px() == F::zero() && p.py() == F::zero() && p.pz() < F::zero() {
+            F::zero()
         } else {
-            (p.e() + p.pz()).max(F::ZERO).sqrt() * F::from(nsf_i).unwrap()
+            (p.e() + p.pz()).max(F::zero()).sqrt() * F::from(nsf_i).unwrap()
         };
         let chi0 = r(sqp0p3);
-        let chi1 = if sqp0p3 == F::ZERO {
+        let chi1 = if sqp0p3 == F::zero() {
             r(F::from(-nhel.sign()).unwrap() * (two * p.e()).sqrt())
         } else {
             C::new(F::from(nh).unwrap() * p.px(), p.py()) / r(sqp0p3)
         };
 
         if nh == 1 {
-            fi[0] = C::ZERO;
-            fi[1] = C::ZERO;
+            fi[0] = C::zero();
+            fi[1] = C::zero();
             fi[2] = chi0;
             fi[3] = chi1;
         } else {
             fi[0] = chi1;
             fi[1] = chi0;
-            fi[2] = C::ZERO;
-            fi[3] = C::ZERO;
+            fi[2] = C::zero();
+            fi[3] = C::zero();
         }
     }
 
@@ -992,6 +992,7 @@ mod tests {
     use std::array;
 
     use itertools::{iproduct, Itertools};
+    use num_traits::One;
 
     use super::*;
 
@@ -1224,9 +1225,9 @@ mod tests {
                 let v: ComplexVector<f64, Contravariant> =
                     ComplexVector::from_array(array::from_fn(|i| {
                         if i == basis {
-                            C::ONE
+                            C::one()
                         } else {
-                            C::ZERO
+                            C::zero()
                         }
                     }));
                 let expected = v.lower().dot(&current); // v_μ J^μ

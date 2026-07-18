@@ -345,7 +345,7 @@ impl Folded {
             .iter()
             .map(|req| match *req {
                 ComplexReq::Coupling(id) => cplx::<F>(evaluated.coupling(id)),
-                ComplexReq::Rat(num, den) => C::new(F::ZERO, ratio::<F>(num, den)),
+                ComplexReq::Rat(num, den) => C::new(F::zero(), ratio::<F>(num, den)),
             })
             .collect();
         let mut consts_f: Vec<F> = self
@@ -583,7 +583,7 @@ fn eval_const_subgraph<F: Real + FromPrimitive>(
 fn scalar_value<F: Real>(slot: &WaveformSlot<F>) -> C<F> {
     match slot {
         WaveformSlot::Scalar(s) => s.value,
-        WaveformSlot::Empty => C::new(F::ZERO, F::ZERO),
+        WaveformSlot::Empty => C::new(F::zero(), F::zero()),
         other => panic!("folded scalar constant did not reduce to a scalar: {other:?}"),
     }
 }
