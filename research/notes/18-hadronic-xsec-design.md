@@ -534,10 +534,13 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
     but rapidity is the enforced definition. ΔR² = Δφ² + Δy²
     (`kin_functions.f:42` `R2`) with Δφ = `acos(clamp(·, ±0.99999999))`
     (`kin_functions.f:180` `DELTA_PHI`), opening angle in [0,π] so φ-wrap is
-    intrinsic. **The `dr{...}` threshold is stored un-squared and compared
-    against ΔR²** (`setcuts.f:348`, `cuts.f:442`) — i.e. the effective ΔR bound
-    is `√dr`; contrast the mass/`ptll` thresholds which are stored as signed
-    squares `x·|x|` (`setcuts.f:399,479`). Class membership at `setcuts.f:217`
+    intrinsic. **The `dr{...}` threshold is squared once before use**:
+    `setcuts.f:345` stores the raw `dr` value, then the `cuts.f` FIRSTTIME block
+    squares it (`r2min = r2min·|r2min|`, `cuts.f:219-221`, "Since r2 returns
+    distance squared") before the `r2(...) < r2min` comparison (`cuts.f:429`), so
+    the effective bound is the standard `ΔR ≥ dr`. Mirrored in Rust as a signed
+    square `dr·|dr|`, exactly like the mass/`ptll` thresholds `x·|x|`
+    (`setcuts.f:399,479`). Class membership at `setcuts.f:217`
     (jet = `|pdg|≤min(maxjetflavor,6)` or 21; b = `maxjetflavor<|pdg|≤5`;
     l = {11,13,15}; a = pdg 22; ν = {12,14,16}); single-leg cuts skipped for ν
     and mass>20 GeV (`setcuts.f:212`); E-min is a strict `≤` reject
@@ -549,10 +552,10 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
   - **Inventory note beyond §1.5**: `etajmin`/`etaamin` carry `cut='a'` in
     banner.py (harmless — value 0, and `etaXmin` is class-keyed by `setcuts.f`);
     `misset`/`ptheavy` are the n/H single-leg cuts but are parse-and-detect this
-    sprint (no ν/heavy final state in pp→e⁺e⁻). The `dr` un-squared comparison
-    is the one convention H7's σ gate must confirm against a real MG run — it is
-    surprising but faithful to the reference; flagged for the informational
-    comparison.
+    sprint (no ν/heavy final state in pp→e⁺e⁻). The `dr` threshold is squared
+    once at first call (`cuts.f:219-221`), giving the standard `ΔR ≥ dr` bound —
+    mirrored in Rust as signed squares like `mm`/`ptll`; H7's σ gate confirms it
+    end-to-end against a real MG run.
 - H3: **`rambo_massless` kept bit-compatible.** `phasespace.rs` became a
   `phasespace/` tree: `mod.rs` (2-body LIPS helpers + `GEV2_TO_PB`, unchanged;
   re-exports `rambo`/`rambo_massless`/`RamboPoint`), `rng.rs`, `rambo.rs`. The
