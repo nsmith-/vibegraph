@@ -16,10 +16,12 @@
 //! - **ΔR² = Δφ² + Δy²** (`kin_functions.f:42` `R2`), with
 //!   `Δφ = acos(clamp((px₁px₂+py₁py₂)/(|pt₁||pt₂|), ±0.99999999))`
 //!   (`kin_functions.f:180` `DELTA_PHI`) — the azimuthal opening angle in
-//!   `[0, π]`, so wrap-around is intrinsic. The `dr{...}` threshold is compared
-//!   **against ΔR² un-squared** (`setcuts.f:348` stores `drll` as-is; `cuts.f:442`
-//!   compares `r2(...) < r2min`), unlike the mass/ptll thresholds which are
-//!   stored as signed squares.
+//!   `[0, π]`, so wrap-around is intrinsic. `setcuts.f:345` stores the raw `dr`
+//!   value, but the `cuts.f` FIRSTTIME block squares it once
+//!   (`r2min = r2min·|r2min|`, `cuts.f:219-221`, "Since r2 returns distance
+//!   squared") before the `r2(...) < r2min` comparison (`cuts.f:429`), so the
+//!   effective bound is the standard `ΔR ≥ dr`. Stored here as a signed square
+//!   `dr·|dr|`, exactly like the mass/ptll thresholds.
 //! - **Invariant-mass / ptll thresholds are signed squares.** `mm{...}` is
 //!   stored as `mm·|mm|` and compared against `(p_i+p_j)²`
 //!   (`setcuts.f:399`, `cuts.f:485`); `ptll` as `ptll·|ptll|` against
@@ -121,10 +123,10 @@ struct SingleLegCut {
 struct PairCut {
     i: usize,
     j: usize,
-    /// ΔR² lower bound (raw `dr` param); 0 = inactive.
-    dr_min: f64,
-    /// ΔR² upper bound (raw `dr` param); < 0 = inactive.
-    dr_max: f64,
+    /// signed-square ΔR lower bound (`dr·|dr|`); 0 = inactive.
+    dr2_min: f64,
+    /// signed-square ΔR upper bound (`dr·|dr|`); < 0 = inactive.
+    dr2_max: f64,
     /// signed-square invariant-mass lower bound; 0 = inactive.
     m2_min: f64,
     /// signed-square invariant-mass upper bound; < 0 = inactive.
@@ -137,8 +139,8 @@ struct PairCut {
 
 impl PairCut {
     fn is_active(&self) -> bool {
-        self.dr_min > 0.0
-            || self.dr_max >= 0.0
+        self.dr2_min > 0.0
+            || self.dr2_max >= 0.0
             || self.m2_min != 0.0
             || self.m2_max >= 0.0
             || self.ptll2_min > 0.0
@@ -278,14 +280,14 @@ impl Cuts {
             for b in (a + 1)..infos.len() {
                 let li = infos[a];
                 let lj = infos[b];
-                let (dr_min, dr_max) = pair_dr(rc, li, lj);
+                let (dr2_min, dr2_max) = pair_dr(rc, li, lj);
                 let (m2_min, m2_max) = pair_mass(rc, li, lj);
                 let (ptll2_min, ptll2_max) = pair_ptll(rc, li, lj);
                 let pc = PairCut {
                     i: li.idx,
                     j: lj.idx,
-                    dr_min,
-                    dr_max,
+                    dr2_min,
+                    dr2_max,
                     m2_min,
                     m2_max,
                     ptll2_min,
@@ -390,12 +392,12 @@ impl Cuts {
         for pc in &self.pairs {
             let pi = momenta[pc.i];
             let pj = momenta[pc.j];
-            if pc.dr_min > 0.0 || pc.dr_max >= 0.0 {
+            if pc.dr2_min > 0.0 || pc.dr2_max >= 0.0 {
                 let r2 = delta_r2(pi, pj);
-                if r2 < c::<F>(pc.dr_min) {
+                if r2 < c::<F>(pc.dr2_min) {
                     return false;
                 }
-                if pc.dr_max >= 0.0 && r2 > c::<F>(pc.dr_max) {
+                if pc.dr2_max >= 0.0 && r2 > c::<F>(pc.dr2_max) {
                     return false;
                 }
             }
@@ -531,9 +533,13 @@ fn pair_dr(rc: &RunCard, li: LegInfo, lj: LegInfo) -> (f64, f64) {
     let Some(tag) = pair_tag(la, lb) else {
         return (0.0, -1.0);
     };
+    // MG stores the raw `dr` value (setcuts.f:345) then squares it once in the
+    // cuts.f FIRSTTIME block (`r2min = r2min*dabs(r2min)`, cuts.f:219-221) before
+    // comparing against the distance-squared `r2`. Mirror that as a signed square,
+    // which also preserves the -1 disabled sentinel for the `max` threshold.
     (
-        rc.float(&format!("dr{tag}")),
-        rc.float(&format!("dr{tag}max")),
+        signed_sq(rc.float(&format!("dr{tag}"))),
+        signed_sq(rc.float(&format!("dr{tag}max"))),
     )
 }
 
@@ -797,12 +803,14 @@ mod tests {
 
     // ── pairwise ΔR incl. φ wrap-around ─────────────────────────────────
     #[test]
-    fn delta_r_boundary_squared_convention() {
-        // drll default 0.4 is compared against ΔR² (MG stores dr un-squared).
-        // Δy = 0 ⇒ ΔR² = Δφ². Δφ = 0.5 ⇒ 0.25 < 0.4 fails; 0.7 ⇒ 0.49 passes.
+    fn delta_r_boundary() {
+        // drll defaults to 0.4; the stored bound is the signed square dr·|dr| =
+        // 0.16, compared against ΔR² (cuts.f FIRSTTIME squaring). With Δy = 0 the
+        // effective cut is the standard ΔR ≥ 0.4: Δφ = 0.3 ⇒ ΔR² = 0.09 < 0.16
+        // fails; Δφ = 0.5 ⇒ ΔR² = 0.25 > 0.16 passes.
         let cuts = Cuts::compile(&card("0 = ptl\n-1 = etal\n"), &dy_legs()).unwrap();
-        assert!(!cuts.pass(&dy_momenta(lep(30.0, 0.0, 0.0), lep(30.0, 0.0, 0.5))));
-        assert!(cuts.pass(&dy_momenta(lep(30.0, 0.0, 0.0), lep(30.0, 0.0, 0.7))));
+        assert!(!cuts.pass(&dy_momenta(lep(30.0, 0.0, 0.0), lep(30.0, 0.0, 0.3))));
+        assert!(cuts.pass(&dy_momenta(lep(30.0, 0.0, 0.0), lep(30.0, 0.0, 0.5))));
     }
 
     #[test]
@@ -813,8 +821,9 @@ mod tests {
         let a = lep(30.0, 0.0, 0.1);
         let b = lep(30.0, 0.0, 6.2); // ≈ 2π − 0.083
         assert!(!cuts.pass(&dy_momenta(a, b)));
-        // Sanity: the naive |Δφ| would be ~6.1, whose square exceeds 0.4.
-        assert!(delta_r2(a, b) < 0.4);
+        // Sanity: the true opening angle ≈ 0.18 gives ΔR² well below the drll=0.4
+        // bound (0.4² = 0.16), so it is rejected; the naive |Δφ| ≈ 6.1 would not.
+        assert!(delta_r2(a, b) < 0.4 * 0.4);
     }
 
     // ── pairwise invariant mass ─────────────────────────────────────────
