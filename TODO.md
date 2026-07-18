@@ -98,6 +98,14 @@ active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a
 run card, H8 minimal `integrate` CLI, H9 close-out.
 Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 
+**H6 landed** (branch `hx/h6-run-card-cuts`): `runcard.rs` (typed parser + MG LO
+defaults table, banner.py JSON oracle via `pixi run -e madgraph
+dump-runcard-defaults`), `cuts.rs` (compiled letter-class filter: ŝ window,
+single-leg pT/E/η, pairwise ΔR + mass, `ptll`, `mmnl`; everything else
+parse-and-detect → `CutError::UnimplementedCutActive`), `GlobalConfig::load_run_card`
+seam. cuts.f convention pins + decision record in note 18 §5. Cuts consume
+`ExternalLeg { pdg, mass, is_final }` — H7 builds these from subprocess metadata.
+
 ---
 
 ## 🟡 Medium — CLI integration
