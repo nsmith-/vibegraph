@@ -3,18 +3,59 @@
 //! that exercise the CF-weighted multi-flow path. The per-process before/after
 //! yardstick for evaluator changes.
 //!
+//! The `forward` benchmark is the scalar `eval_m2`; `lanes{N}` runs the SIMD
+//! lane-batched [`eval_m2_lanes`] with `F = NumericArray<f64, N>` over the same
+//! points, chunked `N` at a time. Comparing `lanes{N}` to `forward` at equal
+//! per-point work measures the SIMD speedup and the best width `N` for the host.
+//!
 //! Run: `cargo bench -p vibegraph-lib --bench eval_strategies`
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
+use numeric_array::generic_array::typenum::Const;
+use numeric_array::generic_array::IntoArrayLength;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
+use vibegraph::helas::eval::{eval_m2_lanes, AmplitudeEvaluator, BoundAmplitude, LaneField};
+use vibegraph::helas::repr::Real;
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rambo_massless;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::EvaluatedModel;
+
+/// Register a `lanes{N}` benchmark: rebind onto an `N`-wide lane pack once, then sum
+/// `eval_m2_lanes` over the points chunked `N` at a time (points count is a multiple
+/// of every swept `N`).
+fn bench_lanes<const N: usize>(
+    group: &mut BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    name: &str,
+    amp: &BoundAmplitude<'_, f64>,
+    points: &[Vec<LorentzVector<f64>>],
+) where
+    Const<N>: IntoArrayLength,
+    LaneField<N>: Real,
+{
+    let lane_amp = amp.broadcast_lanes::<N>();
+    let mut scratch = lane_amp.scratch_space();
+    group.bench_with_input(
+        BenchmarkId::new(format!("lanes{N}"), name),
+        points,
+        |b, pts| {
+            b.iter(|| {
+                let mut acc = 0.0;
+                for chunk in pts.chunks_exact(N) {
+                    let refs: [&[LorentzVector<f64>]; N] =
+                        std::array::from_fn(|k| chunk[k].as_slice());
+                    acc += eval_m2_lanes(&lane_amp, &refs, &mut scratch)
+                        .iter()
+                        .sum::<f64>();
+                }
+                acc
+            })
+        },
+    );
+}
 
 const PROCESSES: [(&str, &str); 7] = [
     ("ee_to_mumu", "e+ e- > mu+ mu-"),
@@ -60,6 +101,10 @@ fn bench_eval_m2(c: &mut Criterion) {
                     .sum::<f64>()
             })
         });
+
+        bench_lanes::<2>(&mut group, name, &fwd, &points);
+        bench_lanes::<4>(&mut group, name, &fwd, &points);
+        bench_lanes::<8>(&mut group, name, &fwd, &points);
     }
     group.finish();
 }

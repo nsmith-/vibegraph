@@ -11,10 +11,15 @@ use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use num_traits::{FromPrimitive, Zero};
 
+use numeric_array::generic_array::typenum::Const as LaneLen;
+use numeric_array::generic_array::IntoArrayLength;
+use numeric_array::NumericArray;
+
 use super::analysis::NodeAnalysis;
 use super::compile::AmplitudeEvaluator;
 use super::fold::{ExtLeg, Folded};
 use super::kernel;
+use super::lanes::{transpose_points, unpack, LaneField};
 use super::layout::{Instr, OperandRef, RootKind, N_ARENAS};
 use super::op::{Const, ConstKind, Node, NodeId, Op};
 #[cfg(test)]
@@ -127,7 +132,9 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
             .collect();
         BoundAmplitude::new(eval, consts_c, consts_f, cf)
     }
+}
 
+impl<'a, F: Real> BoundAmplitude<'a, F> {
     /// Build from a compiled evaluator and its card-resolved pools (see [`bind`]).
     ///
     /// [`bind`]: BoundAmplitude::bind
@@ -301,6 +308,54 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
     ) -> C<F> {
         self.run(momenta, helicities, Some(ward_leg), scratch)
     }
+}
+
+impl<'a> BoundAmplitude<'a, f64> {
+    /// Rebind this scalar amplitude onto an `N`-wide SIMD lane pack, splatting each
+    /// card constant across all lanes. The lane amplitude borrows the same compiled
+    /// evaluator; build it once, pair it with its own
+    /// [`scratch_space`](BoundAmplitude::scratch_space), and evaluate `N` points at a
+    /// time with [`eval_m2_lanes`] to keep the hot loop allocation-free.
+    ///
+    /// [`eval_m2_lanes`]: fn@eval_m2_lanes
+    pub fn broadcast_lanes<const N: usize>(&self) -> BoundAmplitude<'a, LaneField<N>>
+    where
+        LaneLen<N>: IntoArrayLength,
+        LaneField<N>: Real,
+    {
+        let consts_c = self
+            .consts_c
+            .iter()
+            .map(|z| C::new(NumericArray::splat(z.re), NumericArray::splat(z.im)))
+            .collect();
+        let consts_f = self
+            .consts_f
+            .iter()
+            .map(|&x| NumericArray::splat(x))
+            .collect();
+        let cf = self.cf.iter().map(|&x| NumericArray::splat(x)).collect();
+        BoundAmplitude::new(self.eval, consts_c, consts_f, cf)
+    }
+}
+
+/// Color- and helicity-summed |M|² for `N` phase-space points in one lane-batched
+/// pass. `points[k]` is the external 4-momenta of point `k` in [`eval_m2`] order;
+/// the returned lane `k` is bit-identical to the scalar [`eval_m2`] at `points[k]`,
+/// provided the batch is kinematically homogeneous (see the [`lanes`](super::lanes)
+/// contract). `amp` is a lane amplitude from [`BoundAmplitude::broadcast_lanes`].
+///
+/// [`eval_m2`]: BoundAmplitude::eval_m2
+pub fn eval_m2_lanes<const N: usize>(
+    amp: &BoundAmplitude<'_, LaneField<N>>,
+    points: &[&[LorentzVector<f64>]; N],
+    scratch: &mut ScratchSpace<LaneField<N>>,
+) -> [f64; N]
+where
+    LaneLen<N>: IntoArrayLength,
+    LaneField<N>: Real,
+{
+    let momenta = transpose_points(points);
+    unpack(amp.eval_m2(&momenta, scratch))
 }
 
 /// Test helper: evaluate the folded arena through the generic [`WaveformSlot`] forward
@@ -3390,6 +3445,165 @@ mod tests {
                 assert!(m2.is_finite() && m2 > 0.0, "[{process}] bad |M|²: {m2:?}");
             }
         }
+    }
+
+    /// Each extracted lane of the SIMD-batched [`eval_m2_lanes`] is **bit-identical**
+    /// (equal f64 bits) to the scalar [`eval_m2`](BoundAmplitude::eval_m2) at the same
+    /// point, for every process in the MG-validated suite, across three kinematically
+    /// homogeneous batch regimes: partonic-CM z-beams, generic off-axis momenta, and
+    /// threshold-adjacent (near-rest final-state) z-beams. Homogeneity keeps every
+    /// data-dependent branch in the external-wavefunction builders lane-uniform (see
+    /// the [`lanes`](super::lanes) contract), so the elementwise lane arithmetic
+    /// reproduces the scalar float sequence with no reassociation. This pins the
+    /// lane-uniformity claim: a mixed-branch batch would silently apply one branch to
+    /// all lanes and break the assertion.
+    #[test]
+    fn eval_m2_lanes_bit_identical_to_scalar() {
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        use super::super::compile::MG_VALIDATED_PROCESSES;
+        use super::eval_m2_lanes;
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massless;
+
+        // Two lanes suffice to pin bit-identity: `transpose_points`/`eval_m2_lanes`
+        // are generic over the width, so N=2 exercises the full pack/eval/unpack path.
+        // (`lanes4_lanes8_pack_unpack_bit_identical` covers the wider widths on one
+        // small process.)
+        const N: usize = 2;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = crate::ufo::EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let mut rng = StdRng::seed_from_u64(0x51D_1DE0);
+
+        // One fully-random timelike, off-axis 4-momentum: E is strictly larger than
+        // |p⃗| (so `pp = |p⃗|`), and a generic direction keeps every leg off the
+        // z-axis. Physical on-shell-ness is irrelevant — the same momenta feed both
+        // the scalar and lane paths — but the off-axis, timelike form drives the
+        // "generic moving" branch of every wavefunction builder on all lanes.
+        let mut random_mom = |rng: &mut StdRng| {
+            let px = rng.random_range(-100.0..100.0);
+            let py = rng.random_range(-100.0..100.0);
+            let pz = rng.random_range(-100.0..100.0);
+            let p3 = (px * px + py * py + pz * pz).sqrt();
+            let e = p3 + rng.random_range(1.0..100.0);
+            LorentzVector::new(e, px, py, pz)
+        };
+
+        for process in MG_VALIDATED_PROCESSES {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            assert!(!sets.is_empty(), "no diagrams for '{process}'");
+            for set in &sets {
+                let eval = AmplitudeEvaluator::compile(set, &model).unwrap();
+                let n_ext = eval.n_ext();
+                let amp = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+                let lane_amp = amp.broadcast_lanes::<N>();
+                let mut scratch = amp.scratch_space();
+                let mut lane_scratch = lane_amp.scratch_space();
+
+                // z-beam partonic CM at √s, threshold-adjacent at a small √s (slow
+                // finals), and fully generic off-axis momenta.
+                let z_beam = |rng: &mut StdRng, sqrt_s: f64| {
+                    let mut p = vec![
+                        LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                        LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+                    ];
+                    p.extend(rambo_massless(sqrt_s, n_ext - 2, rng));
+                    p
+                };
+
+                let regimes: [Box<dyn Fn(&mut StdRng) -> Vec<LorentzVector<f64>>>; 3] = [
+                    Box::new(|rng: &mut StdRng| z_beam(rng, 500.0)),
+                    Box::new(|rng: &mut StdRng| z_beam(rng, 12.0)),
+                    Box::new(|rng: &mut StdRng| (0..n_ext).map(|_| random_mom(rng)).collect()),
+                ];
+
+                // The 2→6 arenas are heavy in debug; the smaller processes (which
+                // include every external-wavefunction branch class — massless/massive
+                // vectors, massive fermions) carry the off-axis and threshold regimes,
+                // so the 8-leg processes only run the production z-beam regime.
+                let n_regimes = if n_ext >= 8 { 1 } else { regimes.len() };
+                for (r, make_point) in regimes.iter().enumerate().take(n_regimes) {
+                    let batch: [Vec<LorentzVector<f64>>; N] =
+                        std::array::from_fn(|_| make_point(&mut rng));
+                    let point_refs: [&[LorentzVector<f64>]; N] =
+                        std::array::from_fn(|k| batch[k].as_slice());
+
+                    let scalar: [f64; N] =
+                        std::array::from_fn(|k| amp.eval_m2(&batch[k], &mut scratch));
+                    let lanes = eval_m2_lanes(&lane_amp, &point_refs, &mut lane_scratch);
+
+                    for k in 0..N {
+                        assert_eq!(
+                            scalar[k].to_bits(),
+                            lanes[k].to_bits(),
+                            "[{process}] regime {r} lane {k}: scalar {} vs lane {} not bit-identical",
+                            scalar[k],
+                            lanes[k]
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The lane pack/eval/unpack path is bit-identical to scalar at the wider widths
+    /// `N ∈ {4, 8}` too, on one light process — the width-4/8 counterpart to the
+    /// full-suite N=2 gate above (which pins every process at N=2).
+    #[test]
+    fn lanes4_lanes8_pack_unpack_bit_identical() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        use super::eval_m2_lanes;
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massless;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = crate::ufo::EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let mut rng = StdRng::seed_from_u64(0xC0FFEE_11);
+
+        let pc = parse_proc_card("generate e+ e- > mu+ mu- a", &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, &model).unwrap();
+        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+        let n_ext = eval.n_ext();
+        let amp = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+
+        let mut point = |rng: &mut StdRng| {
+            let mut p = vec![
+                LorentzVector::new(250.0, 0.0, 0.0, 250.0),
+                LorentzVector::new(250.0, 0.0, 0.0, -250.0),
+            ];
+            p.extend(rambo_massless(500.0, n_ext - 2, rng));
+            p
+        };
+
+        fn check<const M: usize>(
+            amp: &BoundAmplitude<'_, f64>,
+            batch: &[Vec<LorentzVector<f64>>; M],
+        ) where
+            LaneLen<M>: IntoArrayLength,
+            LaneField<M>: Real,
+        {
+            let lane_amp = amp.broadcast_lanes::<M>();
+            let mut lscratch = lane_amp.scratch_space();
+            let mut sscratch = amp.scratch_space();
+            let refs: [&[LorentzVector<f64>]; M] = std::array::from_fn(|k| batch[k].as_slice());
+            let lanes = eval_m2_lanes(&lane_amp, &refs, &mut lscratch);
+            for k in 0..M {
+                let scalar = amp.eval_m2(&batch[k], &mut sscratch);
+                assert_eq!(scalar.to_bits(), lanes[k].to_bits(), "N={M} lane {k}");
+            }
+        }
+
+        let batch4: [Vec<LorentzVector<f64>>; 4] = std::array::from_fn(|_| point(&mut rng));
+        check::<4>(&amp, &batch4);
+        let batch8: [Vec<LorentzVector<f64>>; 8] = std::array::from_fn(|_| point(&mut rng));
+        check::<8>(&amp, &batch8);
     }
 
     /// The helicity-expanded `eval_m2` equals the per-combination sum through the

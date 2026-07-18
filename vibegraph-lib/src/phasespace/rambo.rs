@@ -55,15 +55,15 @@ pub fn rambo<F: Real>(sqrt_s: F, masses: &[F], u: &[F]) -> RamboPoint<F> {
     let massless = massless_momenta(sqrt_s, u);
     let volume = massless_volume(sqrt_s, n);
 
-    if masses.iter().all(|&m| m == F::ZERO) {
+    if masses.iter().all(|&m| m == F::zero()) {
         return RamboPoint {
             momenta: massless,
             weight: volume,
-            xi: F::ONE,
+            xi: F::one(),
         };
     }
 
-    let mass_sum = masses.iter().fold(F::ZERO, |acc, &m| acc + m);
+    let mass_sum = masses.iter().fold(F::zero(), |acc, &m| acc + m);
     assert!(
         mass_sum < sqrt_s,
         "RAMBO mass threshold exceeds available energy"
@@ -76,11 +76,11 @@ pub fn rambo<F: Real>(sqrt_s: F, masses: &[F], u: &[F]) -> RamboPoint<F> {
 
     let ratio = mass_sum / sqrt_s;
     let floor = F::from(1e-12).unwrap();
-    let mut xi = (F::ONE - ratio * ratio).max(floor).sqrt();
+    let mut xi = (F::one() - ratio * ratio).max(floor).sqrt();
     let tol = F::from(1e-13).unwrap() * sqrt_s;
     for _ in 0..100 {
         let mut f = -sqrt_s;
-        let mut df_denom = F::ZERO;
+        let mut df_denom = F::zero();
         for (&p2i, &m2i) in p2.iter().zip(&m2) {
             let e = (m2i + xi * xi * p2i).sqrt();
             f = f + e;
@@ -127,19 +127,19 @@ pub fn rambo_massless(sqrt_s: f64, n: usize, rng: &mut impl Rng) -> Vec<LorentzV
 /// uniforms, via the isotropic-`q` + single-boost RAMBO construction.
 fn massless_momenta<F: Real>(sqrt_s: F, u: &[F]) -> Vec<LorentzVector<F>> {
     let n = u.len() / 4;
-    let two = F::ONE + F::ONE;
+    let two = F::one() + F::one();
     // Isotropic null vectors q_i with q⁰ ~ Gamma(2): q⁰ = −ln(r₃·r₄).
     let q: Vec<[F; 4]> = (0..n)
         .map(|i| {
-            let c = two * u[4 * i] - F::ONE;
+            let c = two * u[4 * i] - F::one();
             let phi = two * F::PI() * u[4 * i + 1];
             let e = -(u[4 * i + 2] * u[4 * i + 3]).ln();
-            let st = (F::ONE - c * c).sqrt();
+            let st = (F::one() - c * c).sqrt();
             [e, e * st * phi.cos(), e * st * phi.sin(), e * c]
         })
         .collect();
     // Boost + scale the ensemble into the CM frame of total energy √ŝ.
-    let tot = q.iter().fold([F::ZERO; 4], |acc, qi| {
+    let tot = q.iter().fold([F::zero(); 4], |acc, qi| {
         [
             acc[0] + qi[0],
             acc[1] + qi[1],
@@ -150,7 +150,7 @@ fn massless_momenta<F: Real>(sqrt_s: F, u: &[F]) -> Vec<LorentzVector<F>> {
     let m = (tot[0] * tot[0] - tot[1] * tot[1] - tot[2] * tot[2] - tot[3] * tot[3]).sqrt();
     let b = [-tot[1] / m, -tot[2] / m, -tot[3] / m];
     let gamma = tot[0] / m;
-    let a = F::ONE / (F::ONE + gamma);
+    let a = F::one() / (F::one() + gamma);
     let x = sqrt_s / m;
     q.into_iter()
         .map(|qi| {
@@ -171,7 +171,7 @@ fn massless_momenta<F: Real>(sqrt_s: F, u: &[F]) -> Vec<LorentzVector<F>> {
 /// `R_n = (π/2)^{n-1} · ŝ^{n-2} / ((n-1)!·(n-2)!)`.
 fn massless_volume<F: Real>(sqrt_s: F, n: usize) -> F {
     let s = sqrt_s * sqrt_s;
-    let half_pi = F::PI() / (F::ONE + F::ONE);
+    let half_pi = F::PI() / (F::one() + F::one());
     let numer = half_pi.powi(n as i32 - 1) * s.powi(n as i32 - 2);
     numer / (factorial::<F>(n - 1) * factorial::<F>(n - 2))
 }
@@ -182,9 +182,9 @@ fn massless_volume<F: Real>(sqrt_s: F, n: usize) -> F {
 /// final (rescaled) momenta `k`. Reduces to `1` in the massless limit.
 fn massive_jacobian<F: Real>(sqrt_s: F, k: &[LorentzVector<F>]) -> F {
     let n = k.len();
-    let mut sum_p = F::ZERO;
-    let mut sum_p2_over_e = F::ZERO;
-    let mut prod_p_over_e = F::ONE;
+    let mut sum_p = F::zero();
+    let mut sum_p2_over_e = F::zero();
+    let mut prod_p_over_e = F::one();
     for ki in k {
         let p = ki.p3();
         let e = ki.e();
@@ -196,7 +196,7 @@ fn massive_jacobian<F: Real>(sqrt_s: F, k: &[LorentzVector<F>]) -> F {
 }
 
 fn factorial<F: Real>(k: usize) -> F {
-    (1..=k).fold(F::ONE, |acc, j| acc * F::from(j).unwrap())
+    (1..=k).fold(F::one(), |acc, j| acc * F::from(j).unwrap())
 }
 
 #[cfg(test)]
@@ -205,7 +205,7 @@ mod tests {
     use crate::phasespace::rng::SubStream;
 
     fn total_momentum<F: Real>(momenta: &[LorentzVector<F>]) -> [F; 4] {
-        momenta.iter().fold([F::ZERO; 4], |acc, p| {
+        momenta.iter().fold([F::zero(); 4], |acc, p| {
             [
                 acc[0] + p.e(),
                 acc[1] + p.px(),
