@@ -2,7 +2,9 @@
 //!
 //! Implements the Lorentz-invariant phase space (LIPS) measure for 2-body
 //! final states in the CM frame, and provides the unit-hypercube mapping used
-//! by the VEGAS integrator.
+//! by the VEGAS integrator. The [`rambo`] submodule generalizes to `n`-body
+//! flat sampling over an arbitrary scalar field, and [`rng`] supplies the
+//! counter-based uniform substreams that feed it.
 //!
 //! # 2-body phase space
 //!
@@ -53,61 +55,15 @@
 
 use std::f64::consts::PI;
 
-use rand::Rng;
+pub mod rambo;
+pub mod rng;
 
-use crate::helas::repr::lorentz::LorentzVector;
+pub use rambo::{rambo, rambo_massless, RamboPoint};
 
 /// Conversion factor: 1 GeV⁻² = 3.893793721×10⁸ pb.
 ///
 /// Derived from (ℏc)² = 0.3893793721 GeV²·mb and 1 mb = 10⁹ pb.
 pub const GEV2_TO_PB: f64 = 3.893_793_721e8;
-
-/// Massless RAMBO: `n` isotropic massless four-momenta with total momentum
-/// `(√s, 0, 0, 0)` (Kleiss–Stirling–Ellis flat phase space, no mass rescale).
-///
-/// The phase-space weight is uniform, so the points serve as unbiased kinematics
-/// for evaluator tests and benchmarks; pair with beam momenta `(√s/2, 0, 0, ±√s/2)`
-/// for a full 2 → n external set.
-pub fn rambo_massless(sqrt_s: f64, n: usize, rng: &mut impl Rng) -> Vec<LorentzVector<f64>> {
-    assert!(n >= 2, "RAMBO needs at least two final-state momenta");
-    // Isotropic null vectors q_i with q⁰ ~ Gamma(2): q⁰ = −ln(r₁·r₂).
-    let q: Vec<[f64; 4]> = (0..n)
-        .map(|_| {
-            let c = 2.0 * rng.random::<f64>() - 1.0;
-            let phi = 2.0 * PI * rng.random::<f64>();
-            let e = -(rng.random::<f64>() * rng.random::<f64>()).ln();
-            let st = (1.0 - c * c).sqrt();
-            [e, e * st * phi.cos(), e * st * phi.sin(), e * c]
-        })
-        .collect();
-    // Boost + scale the ensemble into the CM frame of total energy √s.
-    let tot = q.iter().fold([0.0f64; 4], |acc, qi| {
-        [
-            acc[0] + qi[0],
-            acc[1] + qi[1],
-            acc[2] + qi[2],
-            acc[3] + qi[3],
-        ]
-    });
-    let m = (tot[0] * tot[0] - tot[1] * tot[1] - tot[2] * tot[2] - tot[3] * tot[3]).sqrt();
-    let b = [-tot[1] / m, -tot[2] / m, -tot[3] / m];
-    let gamma = tot[0] / m;
-    let a = 1.0 / (1.0 + gamma);
-    let x = sqrt_s / m;
-    q.into_iter()
-        .map(|qi| {
-            let bq = b[0] * qi[1] + b[1] * qi[2] + b[2] * qi[3];
-            let e = x * (gamma * qi[0] + bq);
-            let f = x * (qi[0] + a * bq);
-            LorentzVector::new(
-                e,
-                x * qi[1] + f * b[0],
-                x * qi[2] + f * b[1],
-                x * qi[3] + f * b[2],
-            )
-        })
-        .collect()
-}
 
 /// Returns the differential 2-body LIPS weight `dΦ₂/d(cosθ)` in the CM frame.
 ///

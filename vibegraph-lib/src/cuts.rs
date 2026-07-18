@@ -346,7 +346,7 @@ impl Cuts {
     pub fn pass<F: Real>(&self, momenta: &[LorentzVector<F>]) -> bool {
         // ŝ window.
         if self.shat_min_sq > 0.0 || self.shat_max_sq >= 0.0 {
-            let mut sum = LorentzVector::<F>::new(F::ZERO, F::ZERO, F::ZERO, F::ZERO);
+            let mut sum = LorentzVector::<F>::new(F::zero(), F::zero(), F::zero(), F::zero());
             for &i in &self.incoming {
                 sum = sum + momenta[i];
             }
@@ -418,7 +418,7 @@ impl Cuts {
 
         // mmnl: mass of the combined lepton + neutrino system.
         if let Some(m) = &self.mmnl {
-            let mut sum = LorentzVector::<F>::new(F::ZERO, F::ZERO, F::ZERO, F::ZERO);
+            let mut sum = LorentzVector::<F>::new(F::zero(), F::zero(), F::zero(), F::zero());
             for &i in &m.members {
                 sum = sum + momenta[i];
             }

@@ -51,6 +51,7 @@ use crate::helas::repr::lorentz::{
 };
 use crate::helas::repr::numbers::{Charge, Chirality, SpinorHelicity};
 use crate::helas::repr::{Real, C};
+use num_traits::Zero;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Spinor wavefunction
@@ -239,10 +240,10 @@ impl<F: Real> VectorWf<F, Contravariant> {
             if pp == F::zero() {
                 // At rest: use special case
                 [
-                    C::ZERO,
-                    C::new(-hel * sqh, F::ZERO),
-                    C::new(F::ZERO, nsvahl * sqh),
-                    C::new(hel0, F::ZERO),
+                    C::zero(),
+                    C::new(-hel * sqh, F::zero()),
+                    C::new(F::zero(), nsvahl * sqh),
+                    C::new(hel0, F::zero()),
                 ]
             } else {
                 // Moving particle
