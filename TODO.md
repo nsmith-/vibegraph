@@ -101,15 +101,22 @@ Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 - **H1 — `pdf-grid-io` ✅ done (branch `hx/h1-pdf-grid-io`).** `pdf::grid` parses
   LHAPDF6 `.info` + member `.dat` (`lhagrid1` format) into `SetInfo`/`SubGrid`;
   `pdf::PdfSet`/`PdfMember` skeleton + 0↔21 gluon-alias flavor indexing; no
-  interpolation. Gated by a `parton`-generated oracle (`pixi run -e
-  pdf-validation fetch-pdf` then `generate-pdf-oracle` then `validate-pdf-grid`);
-  on-knot x·f values match exactly, malformed input hits typed `GridError`
-  variants. **Finding for H2**: the pinned NNPDF23_lo_as_0130_qed set ships as a
-  *single* subgrid (nx=100, nq=50, 14 flavors, no internal Q² threshold split) —
-  the oracle's `seam` category degenerates to the global QMin/QMax edge rather
-  than an internal flavor-threshold seam; H2 needs a second, genuinely
-  multi-subgrid set (or a synthetic fixture) if it wants seam-walk coverage
-  beyond edge behavior.
+  interpolation. Gated by an **LHAPDF C++** oracle (`validation/pdf/gen_oracle.cpp`,
+  built + run in the `madgraph` env against MG's bundled LHAPDF 6.5.6): `pixi run
+  -e madgraph fetch-pdf` → `build-pdf-oracle` → `generate-pdf-oracle` →
+  `validate-pdf-grid`. On-knot x·f values match **bit-for-bit** (rel 0.0, gate at
+  ≤1e-12), malformed input hits typed `GridError` variants. The oracle backend
+  is LHAPDF (not parton) because MG evaluates PDFs through LHAPDF and its
+  log-bicubic is the correct off-knot reference; the parton/`pdf-validation`
+  python env is removed. **Findings for H2**: (1) the pinned NNPDF23_lo_as_0130_qed
+  set ships as a *single* subgrid (nx=100, nq=50, 14 flavors, no internal Q²
+  threshold split) — the oracle's `seam` category degenerates to the global
+  QMin/QMax edge, so seam-walk coverage needs a genuinely multi-subgrid set or a
+  synthetic fixture. (2) The H2 target is LHAPDF's **log-bicubic**, not a
+  scipy-style B-spline: scirs2's `RectBivariateSpline` is a different algorithm
+  and will likely miss the 1e-9 off-knot bar (LHAPDF-vs-scipy diverged ~120% at
+  some interior points) — budget for the in-house log-bicubic fallback (note 18
+  §5).
 
 ---
 

@@ -315,10 +315,9 @@ pub fn parse_info_file(path: &Path) -> Result<SetInfo, GridError> {
 
 // ── member `.dat` parsing ───────────────────────────────────────────────────
 
-/// Split `.dat` content on `---` separator lines. Mirrors the reference
-/// `parton` package's `re.split(r'\n\s*---\s*\n?', contents)`: block 0 is the
-/// YAML header, the remaining non-empty blocks are subgrid bodies, and a
-/// trailing empty block (from a closing `---` at EOF) is dropped.
+/// Split `.dat` content on `---` separator lines. In the `lhagrid1` format
+/// block 0 is the YAML header, the remaining non-empty blocks are subgrid
+/// bodies, and a trailing empty block (from a closing `---` at EOF) is dropped.
 fn split_dat_blocks(content: &str) -> Vec<String> {
     let mut blocks = Vec::new();
     let mut current = String::new();
