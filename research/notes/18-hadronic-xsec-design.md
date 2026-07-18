@@ -634,6 +634,51 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
   (8-leg processes z-beam only for debug runtime), plus
   `lanes4_lanes8_pack_unpack_bit_identical` for the wider widths. The scalar
   14-process `validate_helas_mg` net is untouched.
+
+  **AVX-512 rerun kit.** The table above is NEON-only — 2×f64 is the least
+  favorable width, so the open question is whether 8-wide lanes clear the
+  interpreter overhead on AVX-512 silicon. To rerun there (plain cargo, no pixi
+  env needed):
+
+  1. Confirm the box: `grep -m1 -o 'avx512[a-z0-9]*' /proc/cpuinfo` must show at
+     least `avx512f` (plus ideally `avx512dq`/`avx512vl`).
+  2. `export RUSTFLAGS="-C target-cpu=native"` — the x86-64 default baseline is
+     SSE2, so without this rustc emits **no** AVX/AVX-512 at all. Keep the same
+     `RUSTFLAGS` for every step below so the scalar and lane paths share
+     codegen (they are compared against each other).
+  3. Correctness gate first:
+     `cargo test -p vibegraph-lib --release --lib lanes`
+     runs `eval_m2_lanes_bit_identical_to_scalar` (all 14 processes at N=2) and
+     `lanes4_lanes8_pack_unpack_bit_identical` (N=4/8). Bit-identity is
+     expected to survive `target-cpu=native`: elementwise vectorization is
+     value-preserving and rustc never contracts mul+add into FMA implicitly.
+     A failure here under some flag set is a finding, not noise — record it.
+  4. Benchmark: `cargo bench -p vibegraph-lib --bench eval_strategies` —
+     `forward` (scalar) vs `lanes{2,4,8}` per process at equal per-point work;
+     compare the ratios against the NEON table above. If N=8 wins, a 16-wide
+     row is a one-line `bench_lanes::<16>` addition in
+     `benches/eval_strategies.rs`.
+  5. SIMD confirmation: `scripts/dump_lane_asm.sh` (same `RUSTFLAGS`) builds
+     the bench, disassembles it, and censuses the hot-path monomorphizations
+     (Lorentz kernels, `vxxxxx`/`weyl_ixxxxx` wavefunction builders,
+     `fill_arenas`, `eval_m2_lanes`), reporting packed-double instruction
+     counts and xmm/ymm/zmm register usage per function; full disassembly
+     lands in `target/lane-asm/`. How to read it:
+     - The signal is packed-double mnemonics (`…pd`) on **zmm** registers —
+       genuine 8-lane AVX-512. xmm presence alone means nothing (scalar x86-64
+       float math also lives in xmm, with `…sd` mnemonics).
+     - ymm-but-no-zmm despite `avx512f` is LLVM's prefer-256-bit tuning
+       (Skylake-X-era downclock heuristic); retry with
+       `-C target-cpu=znver4` / `znver5` / `x86-64-v4`, where 512-bit vectors
+       are preferred.
+     - Legacy Rust mangling omits generic arguments from symbol names, so each
+       kernel appears once per monomorphization (f64 + each lane width),
+       distinguished only by hash suffix; the widest-register instance is the
+       widest N, and the f64 sibling doubles as the scalar baseline row.
+
+  Bank the outcome (bench ratio table + census verdict line) in this record
+  alongside the NEON numbers, and revisit the parked `lanes` wiring only if
+  the measured ratio actually clears 1.
 - H5: `VegasGrid::adapt`/`sample_frozen` stayed generic over `rng: &mut impl
   Rng` per §2.4; the deterministic-rayon path landed as separate
   `adapt_parallel`/`sample_frozen_parallel` methods taking `(seed: u64,
