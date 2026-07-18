@@ -512,7 +512,52 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
   sketched. This is a corrected target, not an H2 redesign: still trait-behind,
   still scirs2-trial-first, but expect the log-bicubic to be the adopted path.
 - H2: scirs2-interpolate adopted / rejected because …
-- H3: `rambo_massless` kept bit-compatible / regenerated goldens because …
+- H3: **`rambo_massless` kept bit-compatible.** `phasespace.rs` became a
+  `phasespace/` tree: `mod.rs` (2-body LIPS helpers + `GEV2_TO_PB`, unchanged;
+  re-exports `rambo`/`rambo_massless`/`RamboPoint`), `rng.rs`, `rambo.rs`. The
+  massless construction is now a shared `massless_momenta::<F>` core; the public
+  `rambo_massless(sqrt_s, n, &mut rng)` is a thin wrapper that draws `4n`
+  uniforms from the RNG (same call order as before) and calls that core with the
+  identical arithmetic, so its output is bit-for-bit unchanged — no goldens
+  needed and all existing callers (`benches/eval_strategies.rs`,
+  `helas/eval/run.rs` sanity tests) keep the `phasespace::rambo_massless` path
+  with no edits. The massive-capable `rambo::<F: Real>(sqrt_s, &masses, &u)`
+  consumes exactly `4n` uniforms and returns a `RamboPoint { momenta, weight,
+  xi }`. Weight = massless volume `(π/2)^{n-1} ŝ^{n-2}/((n-1)!(n-2)!)` × massive
+  rescale Jacobian (KSE 1986); the `(2π)^{4-3n}` measure factors live in the
+  cross-section prefactor, not the weight. `masses` all zero takes a fast path
+  (no Newton solve, `xi = 1`, weight = massless volume). ξ Newton uses an
+  `F`-relative tolerance `1e-13·√ŝ`.
+- H3: **RNG = `rand_chacha::ChaCha8Rng`, `(stream, position)` addressing.**
+  `SubStream::new(seed, stream, position)` seeds via `seed_from_u64`, then
+  `set_stream(stream)` and `set_word_pos(2·position)` (a 64-bit draw = two 32-bit
+  ChaCha words, so the draw counter maps to word position ×2). `position()`
+  reports `word_pos/2`. **bits→`F` uniform rule** (`u64_to_uniform`): take the
+  top 53 bits of the draw as an `f64` mantissa, `(bits >> 11) as f64 / 2^53`,
+  then cast into `F` — a function of the integer bits alone, so lane-batched
+  `f64` sampling matches scalar `f64` bit-for-bit and an f32 rule is a one-line
+  variant. Pinned by conversion goldens (0→0, `u64::MAX`→(2⁵³−1)/2⁵³,
+  half/quarter, low-11-bits discarded) and an end-to-end seeded draw golden.
+- H3: **Validation results.** Uniforms-replay oracle (`rambo_oracle.rs`,
+  8 cases from the pure-stdlib Python dump `validation/rambo/`): worst momentum
+  rel 1.3e-15, worst weight rel 3.4e-16 (both ≤ the 1e-13 / 1e-12 gates).
+  Invariant fuzz (conservation + on-shell over random `(n, masses, √ŝ)` incl.
+  threshold-adjacent mass sums) green.
+  **Weight normalization pinned decisively at the finest analytically-known
+  level:** `flat_mc_two_body_normalization` integrates σ(e⁺e⁻→μ⁺μ⁻) at √s = 10
+  GeV via flat `rambo` (n=2, smooth ⇒ low variance) and matches the QED analytic
+  σ = 4πα²/(3s) to **rel 6e-4** (929.4 ± 0.5 pb vs 928.9 pb, N=2e5) — confirming
+  the `R_n` volume and the `(2π)^{4-3n}` measure factor are exactly right.
+  The banked-σ̂ flat-MC (`flat_mc_partonic_sigma`, `#[ignore]`, N env-tunable) for
+  `u u~ > c c~ e+ e- mu+ mu-` at √ŝ = 500 GeV gives, at N=2e4 over four seeds,
+  σ̂ ∈ {1.13, 2.38, 4.47, 5.30}e-6 pb (naive errors 0.19–2.73e-6) vs banked MG
+  6.556e-7 pb — a factor-of-several scatter, all above banked. This is the
+  expected heavy-tail behaviour of flat sampling on the collinear-peaked
+  lepton-pair integrand (naive σ/√N understates the true error; MG reaches
+  6.556e-7 with importance sampling and, likely, default lepton cuts that this
+  uncut/default-coupling estimate omits). It is therefore an order-of-magnitude
+  end-to-end check only (its assertion is a same-order band, not a σ-pull); the
+  0.06% ee→μμ result is the real normalization gate.
 - H4: `Real` bounds relaxed / newtype introduced; default lane width N = …;
   divergence inventory location …
 - H6: implemented cut families = …; cuts.f convention pins (η definition, ΔR) at
