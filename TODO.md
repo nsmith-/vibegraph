@@ -91,20 +91,58 @@ schema, and implementation detail.
 LHAPDF6 PDF module (parton-oracle-gated, scirs2-interpolate trial with in-house
 bicubic fallback), H3 massive RAMBO generic over `F: Real` + splittable ChaCha8
 substreams (first stage of `lips-nbody`), H4 SIMD lane-batched `eval_m2` via
-`numeric-array`, H5 serde-split two-phase VEGAS (adapt/save grid, frozen sample;
+`numeric-array` (**done — negative result: 1.4–2.7× *slower* on NEON, the
+indexed-arena interpreter does not auto-vectorize; infra landed + parked, `Real`
+relaxed to method-based `Zero`/`One`, bit-identity gate green; H7 stays scalar —
+see note 18 §5**), H5 serde-split two-phase VEGAS (adapt/save grid, frozen sample;
 deterministic rayon), H6 MG run-card parser on `GlobalConfig` + compiled cuts
 filter (MG's default lepton cuts are active out of the box; unimplemented-but-
 active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a shared
 run card, H8 minimal `integrate` CLI, H9 close-out.
 Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 
-**H6 landed** (branch `hx/h6-run-card-cuts`): `runcard.rs` (typed parser + MG LO
-defaults table, banner.py JSON oracle via `pixi run -e madgraph
-dump-runcard-defaults`), `cuts.rs` (compiled letter-class filter: ŝ window,
-single-leg pT/E/η, pairwise ΔR + mass, `ptll`, `mmnl`; everything else
-parse-and-detect → `CutError::UnimplementedCutActive`), `GlobalConfig::load_run_card`
-seam. cuts.f convention pins + decision record in note 18 §5. Cuts consume
-`ExternalLeg { pdg, mass, is_final }` — H7 builds these from subprocess metadata.
+- **H6 — `run-card-cuts` ✅ done (branch `hx/h6-run-card-cuts`).**
+  `runcard.rs` (typed parser + MG LO defaults table, banner.py JSON oracle via
+  `pixi run -e madgraph dump-runcard-defaults`), `cuts.rs` (compiled letter-class
+  filter: ŝ window, single-leg pT/E/η, pairwise ΔR + mass, `ptll`, `mmnl`;
+  everything else parse-and-detect → `CutError::UnimplementedCutActive`),
+  `GlobalConfig::load_run_card` seam. cuts.f convention pins + decision record in
+  note 18 §5. Cuts consume `ExternalLeg { pdg, mass, is_final }` — H7 builds these
+  from subprocess metadata.
+
+- **H5 — `vegas-serde-split` ✅ done (branch `hx/h5-vegas-serde-split`).**
+  `VegasGrid` (serde + validating deserialize) with `adapt`/`sample_frozen`
+  split, batched-integrand variants (bit-identical to unbatched for any batch
+  size), and deterministic-parallel `adapt_parallel`/`sample_frozen_parallel`
+  (ChaCha8 substream per chunk, 1-vs-N-thread bit-identity); `Vegas::integrate`
+  kept as a compat shim, pinned-seed bit goldens guard the refactor. serde_json
+  `float_roundtrip` footgun recorded in note 18 §5.
+
+- **H3 — `rambo-real-generic` ✅ done (branch `hx/h3-rambo-real-generic`).**
+  `phasespace/` module tree — `rng.rs` ChaCha8 substreams + bits→`F` uniform
+  rule, `rambo.rs` massive `rambo::<F>` with KSE weight; uniforms-replay oracle
+  ≤1e-13, invariant fuzz, banked-σ̂ flat-MC check; `rambo_massless` kept
+  bit-compatible.
+
+- **H1 — `pdf-grid-io` ✅ done (branch `hx/h1-pdf-grid-io`).** `pdf::grid` parses
+  LHAPDF6 `.info` + member `.dat` (`lhagrid1` format) into `SetInfo`/`SubGrid`;
+  `pdf::PdfSet`/`PdfMember` skeleton + 0↔21 gluon-alias flavor indexing; no
+  interpolation. Gated by an **LHAPDF C++** oracle (`validation/pdf/gen_oracle.cpp`,
+  built + run in the `madgraph` env against MG's bundled LHAPDF 6.5.6): `pixi run
+  -e madgraph fetch-pdf` → `build-pdf-oracle` → `generate-pdf-oracle` →
+  `validate-pdf-grid`. On-knot x·f values match **bit-for-bit** (rel 0.0, gate at
+  ≤1e-12), malformed input hits typed `GridError` variants. The oracle backend
+  is LHAPDF (not parton) because MG evaluates PDFs through LHAPDF and its
+  log-bicubic is the correct off-knot reference; the parton/`pdf-validation`
+  python env is removed. **Findings for H2**: (1) the pinned NNPDF23_lo_as_0130_qed
+  set ships as a *single* subgrid (nx=100, nq=50, 14 flavors, no internal Q²
+  threshold split) — the oracle's `seam` category degenerates to the global
+  QMin/QMax edge, so seam-walk coverage needs a genuinely multi-subgrid set or a
+  synthetic fixture. (2) The H2 target is LHAPDF's **log-bicubic**, not a
+  scipy-style B-spline: scirs2's `RectBivariateSpline` is a different algorithm
+  and will likely miss the 1e-9 off-knot bar (LHAPDF-vs-scipy diverged ~120% at
+  some interior points) — budget for the in-house log-bicubic fallback (note 18
+  §5).
 
 ---
 
@@ -249,7 +287,8 @@ banked σ̂ flat-MC check below. Remaining scope here = channel mappings + multi
 weights on top of those seams.
 (The MG validation side already generates n-body points via RAMBO in
 `gen_amplitude.py`; the MG-computed partonic σ̂ = 6.556e-7 pb for the uux 2→6 at
-√s=500 is banked as a future `validate-vegas` reference.)
+√s=500 is **now consumed** by H3's flat-MC weight-normalization check
+`rambo_oracle::flat_mc_partonic_sigma`.)
 
 **Design inputs for the sprint plan** (fold into the design note):
 

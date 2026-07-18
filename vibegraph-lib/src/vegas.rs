@@ -18,6 +18,14 @@
 //! Multiple iterations are combined with `1/σ²` weighting; the χ²/dof
 //! across iterations diagnoses convergence.
 //!
+//! # Two-phase usage: adapt, then freeze
+//!
+//! [`VegasGrid::adapt`] both estimates the integral and reshapes the grid.
+//! Once a grid has converged it can be serialized ([`VegasGrid`] implements
+//! `Serialize`/`Deserialize`), shipped elsewhere, and reused for importance
+//! sampling with no further refinement via [`VegasGrid::sample_frozen`] — the
+//! primitive a distributed event-generation phase builds on.
+//!
 //! # Quick start
 //!
 //! ```rust
@@ -31,23 +39,92 @@
 //! assert!((result.integral - 1.0).abs() < 0.01);
 //! ```
 
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
+use rayon::prelude::*;
+use serde::{Deserialize, Deserializer, Serialize};
 
-/// VEGAS adaptive importance-sampling grid and integrator.
+/// One evaluation point handed to a batched integrand callback.
+///
+/// `u` is the `ndim`-length point in `[0,1]^ndim` after grid remapping (the
+/// same coordinate the unbatched integrand receives), borrowed from the
+/// batch's internal buffer.
+#[derive(Debug, Clone, Copy)]
+pub struct SamplePoint<'a> {
+    pub u: &'a [f64],
+}
+
+/// Errors rejected by [`VegasGrid::from_raw`] (and hence by `Deserialize`).
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum VegasGridError {
+    #[error("VegasGrid: ndim must be nonzero")]
+    ZeroDims,
+    #[error("VegasGrid: nbins must be nonzero")]
+    ZeroBins,
+    #[error("VegasGrid: xi has {got} dimension(s), expected ndim = {expected}")]
+    ShapeMismatch { expected: usize, got: usize },
+    #[error("VegasGrid: xi[{dim}] has {got} edge(s), expected nbins+1 = {expected}")]
+    BinCountMismatch {
+        dim: usize,
+        expected: usize,
+        got: usize,
+    },
+    #[error("VegasGrid: xi[{dim}][{which}] = {value}, expected {expected}")]
+    BadEndpoint {
+        dim: usize,
+        which: &'static str,
+        value: f64,
+        expected: f64,
+    },
+    #[error(
+        "VegasGrid: xi[{dim}] is not strictly increasing at bin edge {bin} ({prev} >= {next})"
+    )]
+    NonMonotone {
+        dim: usize,
+        bin: usize,
+        prev: f64,
+        next: f64,
+    },
+}
+
+/// VEGAS adaptive importance-sampling grid.
 ///
 /// The grid `xi[d][k]` stores the `k`-th bin boundary in dimension `d`,
 /// with `xi[d][0] = 0` and `xi[d][nbins] = 1`.
-pub struct Vegas {
+///
+/// `Deserialize` runs the same validation as [`VegasGrid::from_raw`]
+/// (monotone edges, `0`/`1` endpoints, shape consistency) so a corrupt grid
+/// is rejected at deserialize time rather than surfacing as silent
+/// mis-sampling later.
+#[derive(Debug, Clone, Serialize)]
+pub struct VegasGrid {
     ndim: usize,
     nbins: usize,
-    /// Grid-adaptation damping exponent.  Lepage recommends `α = 1.5`;
-    /// reduce toward `0.5` for noisy integrands to slow adaptation.
     alpha: f64,
-    /// Bin edges per dimension: `xi[d]` has length `nbins + 1`.
     xi: Vec<Vec<f64>>,
 }
 
-/// Result returned by [`Vegas::integrate`].
+/// Plain deserialization target; validated into a [`VegasGrid`] afterward.
+#[derive(Debug, Deserialize)]
+struct VegasGridRaw {
+    ndim: usize,
+    nbins: usize,
+    alpha: f64,
+    xi: Vec<Vec<f64>>,
+}
+
+impl<'de> Deserialize<'de> for VegasGrid {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = VegasGridRaw::deserialize(deserializer)?;
+        VegasGrid::from_raw(raw.ndim, raw.nbins, raw.alpha, raw.xi)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// Result returned by a VEGAS integration pass (adapt or frozen).
 #[derive(Debug, Clone, Copy)]
 pub struct VegasResult {
     /// Best estimate of the integral (weighted combination of all iterations).
@@ -56,12 +133,12 @@ pub struct VegasResult {
     pub std_dev: f64,
     /// χ²/dof across iterations.  Values near 1 indicate consistency between
     /// iterations; large values warn of poor convergence or a pathological
-    /// integrand.
+    /// integrand.  `0` for a single-iteration (e.g. frozen-grid) pass.
     pub chi2_per_dof: f64,
 }
 
-impl Vegas {
-    /// Create a new VEGAS integrator with a uniform initial grid.
+impl VegasGrid {
+    /// Create a new VEGAS grid with a uniform initial bin layout.
     ///
     /// * `ndim`  – integration dimensions
     /// * `nbins` – bins per dimension (50–100 is typical)
@@ -70,7 +147,7 @@ impl Vegas {
         let xi = (0..ndim)
             .map(|_| (0..=nbins).map(|i| i as f64 / nbins as f64).collect())
             .collect();
-        Vegas {
+        VegasGrid {
             ndim,
             nbins,
             alpha,
@@ -78,86 +155,326 @@ impl Vegas {
         }
     }
 
-    /// Integrate `f` over `[0, 1]^ndim`.
+    /// Build a grid from raw parts, validating shape and bin-edge invariants.
+    ///
+    /// Used directly and by `Deserialize`. Rejects: zero `ndim`/`nbins`,
+    /// `xi.len() != ndim`, any `xi[d].len() != nbins + 1`, endpoints other
+    /// than `0.0`/`1.0`, and non-strictly-increasing edges.
+    pub fn from_raw(
+        ndim: usize,
+        nbins: usize,
+        alpha: f64,
+        xi: Vec<Vec<f64>>,
+    ) -> Result<Self, VegasGridError> {
+        if ndim == 0 {
+            return Err(VegasGridError::ZeroDims);
+        }
+        if nbins == 0 {
+            return Err(VegasGridError::ZeroBins);
+        }
+        if xi.len() != ndim {
+            return Err(VegasGridError::ShapeMismatch {
+                expected: ndim,
+                got: xi.len(),
+            });
+        }
+        for (dim, edges) in xi.iter().enumerate() {
+            if edges.len() != nbins + 1 {
+                return Err(VegasGridError::BinCountMismatch {
+                    dim,
+                    expected: nbins + 1,
+                    got: edges.len(),
+                });
+            }
+            if edges[0] != 0.0 {
+                return Err(VegasGridError::BadEndpoint {
+                    dim,
+                    which: "first",
+                    value: edges[0],
+                    expected: 0.0,
+                });
+            }
+            if edges[nbins] != 1.0 {
+                return Err(VegasGridError::BadEndpoint {
+                    dim,
+                    which: "last",
+                    value: edges[nbins],
+                    expected: 1.0,
+                });
+            }
+            for (bin, w) in edges.windows(2).enumerate() {
+                if !(w[0] < w[1]) {
+                    return Err(VegasGridError::NonMonotone {
+                        dim,
+                        bin,
+                        prev: w[0],
+                        next: w[1],
+                    });
+                }
+            }
+        }
+        Ok(VegasGrid {
+            ndim,
+            nbins,
+            alpha,
+            xi,
+        })
+    }
+
+    pub fn ndim(&self) -> usize {
+        self.ndim
+    }
+
+    pub fn nbins(&self) -> usize {
+        self.nbins
+    }
+
+    pub fn alpha(&self) -> f64 {
+        self.alpha
+    }
+
+    /// Bin edges per dimension: `xi()[d]` has length `nbins() + 1`.
+    pub fn xi(&self) -> &[Vec<f64>] {
+        &self.xi
+    }
+
+    // ── Adapt phase ──────────────────────────────────────────────────────
+
+    /// Integrate `f` over `[0, 1]^ndim`, refining the grid between iterations.
     ///
     /// * `f`     – integrand; receives a `&[f64]` of length `ndim`
     /// * `neval` – integrand evaluations per iteration
     /// * `niter` – number of adaptation iterations
     /// * `rng`   – random number source
-    pub fn integrate(
+    pub fn adapt(
         &mut self,
         mut f: impl FnMut(&[f64]) -> f64,
         neval: usize,
         niter: usize,
         rng: &mut impl Rng,
     ) -> VegasResult {
-        let mut iter_results: Vec<(f64, f64)> = Vec::with_capacity(niter); // (I, σ²)
+        self.adapt_batched(
+            |points, out| {
+                for (p, o) in points.iter().zip(out.iter_mut()) {
+                    *o = f(p.u);
+                }
+            },
+            neval,
+            niter,
+            1,
+            rng,
+        )
+    }
 
+    /// Batched-integrand form of [`VegasGrid::adapt`].
+    ///
+    /// `f` is invoked once per batch of up to `batch_size` points, writing
+    /// each point's raw integrand value (before the VEGAS Jacobian weight)
+    /// into the matching slot of the output slice — the seam a lane-batched
+    /// evaluator plugs into. Draw order and accumulation order are
+    /// independent of `batch_size`: the result is bit-identical to
+    /// [`VegasGrid::adapt`] for any `batch_size`.
+    pub fn adapt_batched<Fb>(
+        &mut self,
+        mut f: Fb,
+        neval: usize,
+        niter: usize,
+        batch_size: usize,
+        rng: &mut impl Rng,
+    ) -> VegasResult
+    where
+        Fb: FnMut(&[SamplePoint], &mut [f64]),
+    {
+        let mut iter_results: Vec<(f64, f64)> = Vec::with_capacity(niter);
         for iter_idx in 0..niter {
-            let (integral, var, d) = self.sample_iter(&mut f, neval, rng);
+            let (integral, var, d) = self.run_iter_batched(&mut f, neval, batch_size, rng);
             iter_results.push((integral, var.max(f64::MIN_POSITIVE)));
-            // Refine grid before all but the last iteration.
             if iter_idx + 1 < niter {
                 self.refine_grid(&d, neval);
             }
         }
-
-        // Combine iterations with 1/σ² weighting.
-        let weight: f64 = iter_results.iter().map(|(_, v)| 1.0 / v).sum();
-        let integral: f64 = iter_results.iter().map(|(i, v)| i / v).sum::<f64>() / weight;
-        let std_dev = (1.0 / weight).sqrt();
-
-        let chi2_per_dof = if niter > 1 {
-            iter_results
-                .iter()
-                .map(|(i, v)| (i - integral).powi(2) / v)
-                .sum::<f64>()
-                / (niter - 1) as f64
-        } else {
-            0.0
-        };
-
-        VegasResult {
-            integral,
-            std_dev,
-            chi2_per_dof,
-        }
+        combine_iterations(&iter_results)
     }
 
-    // ── Private helpers ────────────────────────────────────────────────────────
-
-    /// Draw `neval` samples, return `(integral_estimate, variance, d)`.
+    /// Deterministic-parallel form of [`VegasGrid::adapt`].
     ///
-    /// `d[dim][bin]` accumulates `fval²` for the grid-refinement step.
-    fn sample_iter(
+    /// `neval` samples per iteration are split into fixed-size chunks of
+    /// `chunk_size`, each evaluated on its own [`ChaCha8Rng`] substream
+    /// (stream id keyed by `(iteration, chunk_index)`, word position `0`;
+    /// see [`substream_id`]) and reduced sequentially in chunk order — so
+    /// the result is bit-identical regardless of the rayon thread-pool
+    /// size. `f` must be `Sync` since chunks run concurrently.
+    pub fn adapt_parallel<Fp>(
+        &mut self,
+        f: Fp,
+        neval: usize,
+        niter: usize,
+        seed: u64,
+        chunk_size: usize,
+    ) -> VegasResult
+    where
+        Fp: Fn(&[f64]) -> f64 + Sync,
+    {
+        let mut iter_results: Vec<(f64, f64)> = Vec::with_capacity(niter);
+        for iter_idx in 0..niter {
+            let (integral, var, d) =
+                self.run_iter_parallel(&f, neval, chunk_size, iter_idx as u32, seed);
+            iter_results.push((integral, var.max(f64::MIN_POSITIVE)));
+            if iter_idx + 1 < niter {
+                self.refine_grid(&d, neval);
+            }
+        }
+        combine_iterations(&iter_results)
+    }
+
+    // ── Frozen phase (no grid refinement) ───────────────────────────────
+
+    /// One importance-sampling pass over `f` with **no** grid refinement —
+    /// the distributed-generation phase primitive: sample against a
+    /// previously adapted (and possibly deserialized) grid.
+    pub fn sample_frozen(
         &self,
-        f: &mut impl FnMut(&[f64]) -> f64,
+        mut f: impl FnMut(&[f64]) -> f64,
+        neval: usize,
+        rng: &mut impl Rng,
+    ) -> VegasResult {
+        self.sample_frozen_batched(
+            |points, out| {
+                for (p, o) in points.iter().zip(out.iter_mut()) {
+                    *o = f(p.u);
+                }
+            },
+            neval,
+            1,
+            rng,
+        )
+    }
+
+    /// Batched-integrand form of [`VegasGrid::sample_frozen`]. See
+    /// [`VegasGrid::adapt_batched`] for the batching/ordering contract.
+    pub fn sample_frozen_batched<Fb>(
+        &self,
+        mut f: Fb,
+        neval: usize,
+        batch_size: usize,
+        rng: &mut impl Rng,
+    ) -> VegasResult
+    where
+        Fb: FnMut(&[SamplePoint], &mut [f64]),
+    {
+        let (integral, var, _d) = self.run_iter_batched(&mut f, neval, batch_size, rng);
+        combine_iterations(&[(integral, var.max(f64::MIN_POSITIVE))])
+    }
+
+    /// Deterministic-parallel form of [`VegasGrid::sample_frozen`]. See
+    /// [`VegasGrid::adapt_parallel`] for the substream addressing contract.
+    pub fn sample_frozen_parallel<Fp>(
+        &self,
+        f: Fp,
+        neval: usize,
+        seed: u64,
+        chunk_size: usize,
+    ) -> VegasResult
+    where
+        Fp: Fn(&[f64]) -> f64 + Sync,
+    {
+        let (integral, var, _d) = self.run_iter_parallel(&f, neval, chunk_size, 0, seed);
+        combine_iterations(&[(integral, var.max(f64::MIN_POSITIVE))])
+    }
+
+    // ── Private helpers ──────────────────────────────────────────────────
+
+    /// Draw one point: fill `x` (length `ndim`) and `ks` (length `ndim`,
+    /// bin index per dimension) and return the VEGAS Jacobian weight.
+    fn draw_point(&self, rng: &mut impl Rng, x: &mut [f64], ks: &mut [usize]) -> f64 {
+        let nbins = self.nbins;
+        let mut wgt = 1.0_f64;
+        for dim in 0..self.ndim {
+            let u: f64 = rng.random();
+            let pos = u * nbins as f64;
+            let k = (pos as usize).min(nbins - 1);
+            let r = pos - k as f64;
+            let lo = self.xi[dim][k];
+            let hi = self.xi[dim][k + 1];
+            x[dim] = lo + r * (hi - lo);
+            wgt *= nbins as f64 * (hi - lo); // Jacobian dx/du = bin_width, wgt = 1/p(x)
+            ks[dim] = k;
+        }
+        wgt
+    }
+
+    /// Draw `neval` samples in batches, evaluating `f` once per batch.
+    /// Returns `(integral_estimate, variance, d)`, `d[dim][bin]` accumulating
+    /// `fval²` for grid refinement.
+    fn run_iter_batched<Fb>(
+        &self,
+        f: &mut Fb,
+        neval: usize,
+        batch_size: usize,
+        rng: &mut impl Rng,
+    ) -> (f64, f64, Vec<Vec<f64>>)
+    where
+        Fb: FnMut(&[SamplePoint], &mut [f64]),
+    {
+        let batch_size = batch_size.max(1);
+        let mut d = vec![vec![0.0_f64; self.nbins]; self.ndim];
+        let mut sum = 0.0_f64;
+        let mut sum2 = 0.0_f64;
+
+        let mut flat_x = vec![0.0_f64; batch_size * self.ndim];
+        let mut flat_ks = vec![0_usize; batch_size * self.ndim];
+        let mut wgts = vec![0.0_f64; batch_size];
+        let mut fvals = vec![0.0_f64; batch_size];
+
+        let mut remaining = neval;
+        while remaining > 0 {
+            let this_batch = remaining.min(batch_size);
+            for i in 0..this_batch {
+                let x = &mut flat_x[i * self.ndim..(i + 1) * self.ndim];
+                let ks = &mut flat_ks[i * self.ndim..(i + 1) * self.ndim];
+                wgts[i] = self.draw_point(rng, x, ks);
+            }
+            let points: Vec<SamplePoint> = flat_x[..this_batch * self.ndim]
+                .chunks_exact(self.ndim)
+                .map(|u| SamplePoint { u })
+                .collect();
+            f(&points, &mut fvals[..this_batch]);
+
+            for i in 0..this_batch {
+                let fval = fvals[i] * wgts[i];
+                let fval2 = fval * fval;
+                sum += fval;
+                sum2 += fval2;
+                let ks = &flat_ks[i * self.ndim..(i + 1) * self.ndim];
+                for dim in 0..self.ndim {
+                    d[dim][ks[dim]] += fval2;
+                }
+            }
+            remaining -= this_batch;
+        }
+
+        let n = neval as f64;
+        let mean = sum / n;
+        let variance = ((sum2 / n - mean * mean) / (n - 1.0)).max(0.0);
+        (mean, variance, d)
+    }
+
+    /// Sequential accumulation of `neval` points for one chunk of the
+    /// deterministic-parallel path.
+    fn accumulate_points(
+        &self,
+        f: &(impl Fn(&[f64]) -> f64 + Sync),
         neval: usize,
         rng: &mut impl Rng,
     ) -> (f64, f64, Vec<Vec<f64>>) {
-        let nbins = self.nbins;
-        let mut d = vec![vec![0.0_f64; nbins]; self.ndim];
+        let mut d = vec![vec![0.0_f64; self.nbins]; self.ndim];
         let mut x = vec![0.0_f64; self.ndim];
         let mut ks = vec![0_usize; self.ndim];
-
         let mut sum = 0.0_f64;
         let mut sum2 = 0.0_f64;
 
         for _ in 0..neval {
-            let mut wgt = 1.0_f64;
-
-            for dim in 0..self.ndim {
-                let u: f64 = rng.random();
-                let pos = u * nbins as f64;
-                let k = (pos as usize).min(nbins - 1);
-                let r = pos - k as f64;
-                let lo = self.xi[dim][k];
-                let hi = self.xi[dim][k + 1];
-                x[dim] = lo + r * (hi - lo);
-                wgt *= nbins as f64 * (hi - lo); // Jacobian dx/du = bin_width, wgt = 1/p(x)
-                ks[dim] = k;
-            }
-
+            let wgt = self.draw_point(rng, &mut x, &mut ks);
             let fval = f(&x) * wgt;
             let fval2 = fval * fval;
             sum += fval;
@@ -167,11 +484,57 @@ impl Vegas {
             }
         }
 
+        (sum, sum2, d)
+    }
+
+    /// Split `neval` into fixed-size chunks, each on its own `(iter,
+    /// chunk_idx)`-keyed `ChaCha8Rng` substream, evaluated in parallel and
+    /// reduced sequentially in chunk order.
+    fn run_iter_parallel<Fp>(
+        &self,
+        f: &Fp,
+        neval: usize,
+        chunk_size: usize,
+        iter_idx: u32,
+        seed: u64,
+    ) -> (f64, f64, Vec<Vec<f64>>)
+    where
+        Fp: Fn(&[f64]) -> f64 + Sync,
+    {
+        let chunk_size = chunk_size.max(1);
+        let nchunks = neval.div_ceil(chunk_size);
+
+        let chunk_results: Vec<(f64, f64, Vec<Vec<f64>>)> = (0..nchunks)
+            .into_par_iter()
+            .map(|chunk_idx| {
+                let this_chunk = if chunk_idx + 1 == nchunks {
+                    neval - chunk_idx * chunk_size
+                } else {
+                    chunk_size
+                };
+                let mut rng = ChaCha8Rng::seed_from_u64(seed);
+                rng.set_stream(substream_id(iter_idx, chunk_idx as u32));
+                rng.set_word_pos(0);
+                self.accumulate_points(f, this_chunk, &mut rng)
+            })
+            .collect();
+
+        let mut sum = 0.0_f64;
+        let mut sum2 = 0.0_f64;
+        let mut d = vec![vec![0.0_f64; self.nbins]; self.ndim];
+        for (chunk_sum, chunk_sum2, chunk_d) in &chunk_results {
+            sum += chunk_sum;
+            sum2 += chunk_sum2;
+            for (d_dim, chunk_d_dim) in d.iter_mut().zip(chunk_d) {
+                for (v, cv) in d_dim.iter_mut().zip(chunk_d_dim) {
+                    *v += cv;
+                }
+            }
+        }
+
         let n = neval as f64;
         let mean = sum / n;
-        // Unbiased variance of the estimator of the mean.
         let variance = ((sum2 / n - mean * mean) / (n - 1.0)).max(0.0);
-
         (mean, variance, d)
     }
 
@@ -242,6 +605,71 @@ impl Vegas {
 
             self.xi[dim] = new_xi;
         }
+    }
+}
+
+/// Combine per-iteration `(integral, variance)` pairs with `1/σ²` weighting.
+fn combine_iterations(iter_results: &[(f64, f64)]) -> VegasResult {
+    let weight: f64 = iter_results.iter().map(|(_, v)| 1.0 / v).sum();
+    let integral: f64 = iter_results.iter().map(|(i, v)| i / v).sum::<f64>() / weight;
+    let std_dev = (1.0 / weight).sqrt();
+
+    let niter = iter_results.len();
+    let chi2_per_dof = if niter > 1 {
+        iter_results
+            .iter()
+            .map(|(i, v)| (i - integral).powi(2) / v)
+            .sum::<f64>()
+            / (niter - 1) as f64
+    } else {
+        0.0
+    };
+
+    VegasResult {
+        integral,
+        std_dev,
+        chi2_per_dof,
+    }
+}
+
+/// Substream id for `ChaCha8Rng::set_stream`, keyed by `(iteration,
+/// chunk_index)`. `ChaCha8Rng` exposes 2⁶⁴ independent streams selectable
+/// by a `u64` id, so packing `iter_idx` into the high 32 bits and
+/// `chunk_idx` into the low 32 bits gives every `(iteration, chunk)` pair
+/// its own structurally independent stream with no collisions for
+/// realistic iteration/chunk counts. The same addressing scheme extends to
+/// multi-machine sharding: a shard is just a chunk-index range.
+fn substream_id(iter_idx: u32, chunk_idx: u32) -> u64 {
+    ((iter_idx as u64) << 32) | chunk_idx as u64
+}
+
+/// Compatibility shim preserving the pre-split `Vegas::new` / `integrate`
+/// API as a thin wrapper over [`VegasGrid::adapt`].
+pub struct Vegas {
+    grid: VegasGrid,
+}
+
+impl Vegas {
+    /// Create a new VEGAS integrator with a uniform initial grid.
+    ///
+    /// * `ndim`  – integration dimensions
+    /// * `nbins` – bins per dimension (50–100 is typical)
+    /// * `alpha` – grid-damping exponent (Lepage: 1.5)
+    pub fn new(ndim: usize, nbins: usize, alpha: f64) -> Self {
+        Vegas {
+            grid: VegasGrid::new(ndim, nbins, alpha),
+        }
+    }
+
+    /// Integrate `f` over `[0, 1]^ndim`. See [`VegasGrid::adapt`].
+    pub fn integrate(
+        &mut self,
+        f: impl FnMut(&[f64]) -> f64,
+        neval: usize,
+        niter: usize,
+        rng: &mut impl Rng,
+    ) -> VegasResult {
+        self.grid.adapt(f, neval, niter, rng)
     }
 }
 
@@ -328,5 +756,298 @@ mod tests {
         let mut rng = seeded_rng();
         let r = v.integrate(|u| u[0] + u[1], 20_000, 5, &mut rng);
         assert!((r.integral - 1.0).abs() < 0.02, "2d: {:.6}", r.integral);
+    }
+
+    /// Pinned-seed regression golden, captured from the pre-split
+    /// monolithic `Vegas::integrate` implementation. Guards the refactor:
+    /// any change to draw order, accumulation order, or the refinement
+    /// algorithm would move these bits.
+    #[test]
+    fn test_pinned_seed_regression_shim() {
+        let mut v = Vegas::new(2, 50, 1.5);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(999);
+        let r = v.integrate(|u| u[0] * u[0] + u[1], 5000, 4, &mut rng);
+        assert_eq!(r.integral.to_bits(), 4605706486304428084);
+        assert_eq!(r.std_dev.to_bits(), 4564401184564159150);
+        assert_eq!(r.chi2_per_dof.to_bits(), 4605496727683902589);
+    }
+
+    /// Same golden, driven directly through `VegasGrid::adapt` (bypassing
+    /// the `Vegas` shim) to pin the new entry point independently.
+    #[test]
+    fn test_pinned_seed_regression_grid_adapt() {
+        let mut grid = VegasGrid::new(2, 50, 1.5);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(999);
+        let r = grid.adapt(|u| u[0] * u[0] + u[1], 5000, 4, &mut rng);
+        assert_eq!(r.integral.to_bits(), 4605706486304428084);
+        assert_eq!(r.std_dev.to_bits(), 4564401184564159150);
+        assert_eq!(r.chi2_per_dof.to_bits(), 4605496727683902589);
+    }
+
+    // ── Serde round-trip / validation ───────────────────────────────────
+
+    #[test]
+    fn test_serde_roundtrip_bincode() {
+        let mut grid = VegasGrid::new(2, 20, 1.5);
+        let mut rng = seeded_rng();
+        grid.adapt(|u| u[0] + u[1], 2_000, 3, &mut rng);
+
+        let bytes = bincode::serialize(&grid).expect("bincode serialize");
+        let restored: VegasGrid = bincode::deserialize(&bytes).expect("bincode deserialize");
+        assert_eq!(restored.ndim(), grid.ndim());
+        assert_eq!(restored.nbins(), grid.nbins());
+        assert_eq!(restored.alpha(), grid.alpha());
+        assert_eq!(restored.xi(), grid.xi());
+    }
+
+    #[test]
+    fn test_serde_roundtrip_json() {
+        let mut grid = VegasGrid::new(2, 20, 1.5);
+        let mut rng = seeded_rng();
+        grid.adapt(|u| u[0] + u[1], 2_000, 3, &mut rng);
+
+        let json = serde_json::to_string(&grid).expect("json serialize");
+        let restored: VegasGrid = serde_json::from_str(&json).expect("json deserialize");
+        assert_eq!(restored.ndim(), grid.ndim());
+        assert_eq!(restored.nbins(), grid.nbins());
+        assert_eq!(restored.alpha(), grid.alpha());
+        assert_eq!(restored.xi(), grid.xi());
+    }
+
+    #[test]
+    fn test_from_raw_rejects_non_monotone() {
+        let err = VegasGrid::from_raw(1, 3, 1.5, vec![vec![0.0, 0.9, 0.5, 1.0]]).unwrap_err();
+        assert!(matches!(err, VegasGridError::NonMonotone { .. }));
+    }
+
+    #[test]
+    fn test_from_raw_rejects_bad_endpoint() {
+        let err = VegasGrid::from_raw(1, 2, 1.5, vec![vec![0.1, 0.5, 1.0]]).unwrap_err();
+        assert!(matches!(err, VegasGridError::BadEndpoint { .. }));
+
+        let err = VegasGrid::from_raw(1, 2, 1.5, vec![vec![0.0, 0.5, 0.9]]).unwrap_err();
+        assert!(matches!(err, VegasGridError::BadEndpoint { .. }));
+    }
+
+    #[test]
+    fn test_from_raw_rejects_shape_mismatch() {
+        let err = VegasGrid::from_raw(2, 2, 1.5, vec![vec![0.0, 0.5, 1.0]]).unwrap_err();
+        assert!(matches!(err, VegasGridError::ShapeMismatch { .. }));
+    }
+
+    #[test]
+    fn test_from_raw_rejects_bin_count_mismatch() {
+        let err = VegasGrid::from_raw(1, 3, 1.5, vec![vec![0.0, 0.5, 1.0]]).unwrap_err();
+        assert!(matches!(err, VegasGridError::BinCountMismatch { .. }));
+    }
+
+    #[test]
+    fn test_from_raw_rejects_zero_dims_or_bins() {
+        assert!(matches!(
+            VegasGrid::from_raw(0, 2, 1.5, vec![]).unwrap_err(),
+            VegasGridError::ZeroDims
+        ));
+        assert!(matches!(
+            VegasGrid::from_raw(1, 0, 1.5, vec![vec![]]).unwrap_err(),
+            VegasGridError::ZeroBins
+        ));
+    }
+
+    /// Mirrors `VegasGridRaw`'s field order/types so a corrupt payload can
+    /// be constructed without going through the validating constructor.
+    #[derive(Serialize)]
+    struct RawGridForTest {
+        ndim: usize,
+        nbins: usize,
+        alpha: f64,
+        xi: Vec<Vec<f64>>,
+    }
+
+    #[test]
+    fn test_deserialize_rejects_corrupt_bincode() {
+        let bad = RawGridForTest {
+            ndim: 1,
+            nbins: 3,
+            alpha: 1.5,
+            xi: vec![vec![0.0, 0.9, 0.5, 1.0]], // non-monotone
+        };
+        let bytes = bincode::serialize(&bad).unwrap();
+        let result: Result<VegasGrid, _> = bincode::deserialize(&bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_rejects_corrupt_json() {
+        let json = r#"{"ndim":1,"nbins":3,"alpha":1.5,"xi":[[0.0,0.9,0.5,1.0]]}"#;
+        let result: Result<VegasGrid, _> = serde_json::from_str(json);
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("increasing") || err.contains("monoton"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    // ── Frozen-grid sampling vs adapt-phase estimate ────────────────────
+
+    #[test]
+    fn test_frozen_agrees_with_adapt() {
+        let mut grid = VegasGrid::new(1, 50, 1.5);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+        let adapt_result = grid.adapt(|u| 3.0 * u[0] * u[0], 20_000, 8, &mut rng);
+
+        let mut frozen_rng = rand::rngs::StdRng::seed_from_u64(1234);
+        let frozen_result = grid.sample_frozen(|u| 3.0 * u[0] * u[0], 50_000, &mut frozen_rng);
+
+        assert!(
+            (adapt_result.integral - 1.0).abs() < 0.02,
+            "adapt: {:.6}",
+            adapt_result.integral
+        );
+        assert!(
+            (frozen_result.integral - 1.0).abs() < 0.02,
+            "frozen: {:.6}",
+            frozen_result.integral
+        );
+        let combined_err = (adapt_result.std_dev.powi(2) + frozen_result.std_dev.powi(2)).sqrt();
+        assert!(
+            (adapt_result.integral - frozen_result.integral).abs() < 5.0 * combined_err,
+            "adapt {:.6} vs frozen {:.6}, combined_err {:.6}",
+            adapt_result.integral,
+            frozen_result.integral,
+            combined_err
+        );
+    }
+
+    // ── Batched vs unbatched bit-identity ───────────────────────────────
+
+    #[test]
+    fn test_adapt_batched_matches_unbatched() {
+        let seed = 42;
+        let f = |u: &[f64]| u[0] * u[0] + 2.0 * u[1];
+
+        let mut grid_scalar = VegasGrid::new(2, 30, 1.5);
+        let mut rng_scalar = rand::rngs::StdRng::seed_from_u64(seed);
+        let r_scalar = grid_scalar.adapt(f, 4000, 3, &mut rng_scalar);
+
+        for batch_size in [2usize, 7, 64, 4000] {
+            let mut grid_batched = VegasGrid::new(2, 30, 1.5);
+            let mut rng_batched = rand::rngs::StdRng::seed_from_u64(seed);
+            let r_batched = grid_batched.adapt_batched(
+                |points, out| {
+                    for (p, o) in points.iter().zip(out.iter_mut()) {
+                        *o = f(p.u);
+                    }
+                },
+                4000,
+                3,
+                batch_size,
+                &mut rng_batched,
+            );
+            assert_eq!(
+                r_scalar.integral.to_bits(),
+                r_batched.integral.to_bits(),
+                "batch_size={batch_size}"
+            );
+            assert_eq!(
+                r_scalar.std_dev.to_bits(),
+                r_batched.std_dev.to_bits(),
+                "batch_size={batch_size}"
+            );
+            assert_eq!(
+                grid_scalar.xi(),
+                grid_batched.xi(),
+                "batch_size={batch_size}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sample_frozen_batched_matches_unbatched() {
+        let grid = VegasGrid::new(1, 40, 1.5);
+        let f = |u: &[f64]| (u[0] - 0.5).abs();
+        let seed = 314;
+
+        let mut rng_scalar = rand::rngs::StdRng::seed_from_u64(seed);
+        let r_scalar = grid.sample_frozen(f, 3000, &mut rng_scalar);
+
+        for batch_size in [1usize, 8, 3000] {
+            let mut rng_batched = rand::rngs::StdRng::seed_from_u64(seed);
+            let r_batched = grid.sample_frozen_batched(
+                |points, out| {
+                    for (p, o) in points.iter().zip(out.iter_mut()) {
+                        *o = f(p.u);
+                    }
+                },
+                3000,
+                batch_size,
+                &mut rng_batched,
+            );
+            assert_eq!(
+                r_scalar.integral.to_bits(),
+                r_batched.integral.to_bits(),
+                "batch_size={batch_size}"
+            );
+        }
+    }
+
+    // ── Thread-count bit-identity ────────────────────────────────────────
+
+    fn run_with_threads<T>(nthreads: usize, work: impl FnOnce() -> T + Send) -> T
+    where
+        T: Send,
+    {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(nthreads)
+            .build()
+            .unwrap();
+        pool.install(work)
+    }
+
+    #[test]
+    fn test_adapt_parallel_thread_count_invariant() {
+        let f = |u: &[f64]| u[0] * u[0] + 2.0 * u[1] * u[1];
+        let seed = 2026;
+
+        let r1 = run_with_threads(1, || {
+            let mut grid = VegasGrid::new(2, 25, 1.5);
+            grid.adapt_parallel(f, 5000, 3, seed, 128)
+        });
+        let r4 = run_with_threads(4, || {
+            let mut grid = VegasGrid::new(2, 25, 1.5);
+            grid.adapt_parallel(f, 5000, 3, seed, 128)
+        });
+
+        assert_eq!(r1.integral.to_bits(), r4.integral.to_bits());
+        assert_eq!(r1.std_dev.to_bits(), r4.std_dev.to_bits());
+        assert_eq!(r1.chi2_per_dof.to_bits(), r4.chi2_per_dof.to_bits());
+    }
+
+    #[test]
+    fn test_sample_frozen_parallel_thread_count_invariant() {
+        let f = |u: &[f64]| (u[0] - 0.3).abs() + u[1];
+        let seed = 777;
+        let grid = VegasGrid::new(2, 25, 1.5);
+
+        let r1 = run_with_threads(1, || grid.sample_frozen_parallel(f, 6000, seed, 97));
+        let r8 = run_with_threads(8, || grid.sample_frozen_parallel(f, 6000, seed, 97));
+
+        assert_eq!(r1.integral.to_bits(), r8.integral.to_bits());
+        assert_eq!(r1.std_dev.to_bits(), r8.std_dev.to_bits());
+    }
+
+    #[test]
+    fn test_parallel_agrees_with_sequential_statistically() {
+        let f = |u: &[f64]| 3.0 * u[0] * u[0];
+        let seed = 55;
+
+        let mut grid_seq = VegasGrid::new(1, 50, 1.5);
+        let mut rng_seq = rand::rngs::StdRng::seed_from_u64(seed);
+        let r_seq = grid_seq.adapt(f, 20_000, 5, &mut rng_seq);
+
+        let mut grid_par = VegasGrid::new(1, 50, 1.5);
+        let r_par = grid_par.adapt_parallel(f, 20_000, 5, seed, 500);
+
+        assert!((r_seq.integral - 1.0).abs() < 0.02);
+        assert!((r_par.integral - 1.0).abs() < 0.02);
     }
 }

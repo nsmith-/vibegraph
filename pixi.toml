@@ -55,6 +55,16 @@ generate-amplitude = { cmd = "python validation/madgraph/gen_amplitude.py", depe
 validate-helas-mg = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_helas_mg", depends-on = ["generate-amplitude"] }
 # Dump the RunCardLO defaults to JSON — the transcription oracle for the Rust run-card defaults table
 dump-runcard-defaults = "python validation/madgraph/dump_runcard_defaults.py"
+# Fetch the pinned NNPDF23_lo_as_0130_qed set from the LHAPDF data server
+fetch-pdf = "bash validation/pdf/fetch.sh"
+# Compile the LHAPDF C++ PDF-grid oracle generator (rpath makes it self-contained;
+# system c++/clang++ from /usr/bin is used when the env ships no compiler)
+build-pdf-oracle = "c++ -std=c++17 -O2 validation/pdf/gen_oracle.cpp $(lhapdf-config --cflags --ldflags) -lLHAPDF -Wl,-rpath,$(lhapdf-config --libdir) -o validation/pdf/gen_oracle"
+# Run the LHAPDF C++ oracle over the fetched set, dumping oracle.json (MG's own
+# PDF library, so its log-bicubic interpolation is the reference for matching MG)
+generate-pdf-oracle = { cmd = "validation/pdf/gen_oracle validation/pdf NNPDF23_lo_as_0130_qed 0 validation/pdf/oracle.json", depends-on = ["fetch-pdf", "build-pdf-oracle"] }
+# Full pipeline: fetch the set, build+run the oracle, run the Rust comparison test
+validate-pdf-grid = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_pdf_grid", depends-on = ["generate-pdf-oracle"] }
 
 # --- helas-validation: Fortran77 HELAS compiled via f2py for amplitude cross-checks ---
 [feature.helas-validation.dependencies]
