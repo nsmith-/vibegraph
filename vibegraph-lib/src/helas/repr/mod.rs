@@ -49,35 +49,25 @@ pub mod vectorspace;
 /// Blanket trait alias for the real floating-point scalar used throughout.
 ///
 /// Requires:
-///    - [`num_traits::Float`] (arithmetic, sqrt, etc.)
-///    - [`num_traits::ConstZero`] and [`num_traits::ConstOne`] (for zero/one literals)
+///    - [`num_traits::Float`] (arithmetic, sqrt, etc.; supplies `Zero`/`One` via
+///      its `Num` supertrait, so zero/one are the method-based `F::zero()`/`F::one()`)
 ///    - [`num_traits::FloatConst`] (for π, etc.)
 ///    - [`Copy`] these should be cheap to copy for intermediate values
 ///    - `'static` no non-static references, can be used in trait objects without lifetime parameters
 ///    - [`std::fmt::Debug`] for diagnostic output.
 ///
+/// The zero/one bounds are method-based (`Zero`/`One`, inherited through `Float`)
+/// rather than the associated-const `ConstZero`/`ConstOne`: SIMD lane types whose
+/// width is a runtime-length array (`numeric_array::NumericArray`) cannot supply a
+/// `const ZERO`/`const ONE`, but do implement the method forms, so batching one
+/// `eval_m2` call over several phase-space points needs only this weaker bound.
+///
 /// Both `f32` and `f64` implement this automatically.
 pub trait Real:
-    num_traits::Float
-    + num_traits::ConstZero
-    + num_traits::ConstOne
-    + num_traits::FloatConst
-    + Copy
-    + 'static
-    + std::fmt::Debug
+    num_traits::Float + num_traits::FloatConst + Copy + 'static + std::fmt::Debug
 {
 }
-impl<
-        F: num_traits::Float
-            + num_traits::ConstZero
-            + num_traits::ConstOne
-            + num_traits::FloatConst
-            + Copy
-            + 'static
-            + std::fmt::Debug,
-    > Real for F
-{
-}
+impl<F: num_traits::Float + num_traits::FloatConst + Copy + 'static + std::fmt::Debug> Real for F {}
 
 /// Complex number over a [`Real`] scalar. Alias for [`num_complex::Complex`].
 pub type C<F> = num_complex::Complex<F>;
@@ -95,5 +85,5 @@ pub fn r<F: Real>(x: F) -> C<F> {
 /// Convenience shorthand for `C::new(0, x)`.
 #[inline(always)]
 pub fn ri<F: Real>(x: F) -> C<F> {
-    C::I * x
+    C::i() * x
 }

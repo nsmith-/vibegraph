@@ -200,7 +200,7 @@ pub fn ffv2_3<F: Real>(
     let q = f2.momentum - f1.momentum;
     let (p0, p1, p2, p3) = (q.e(), q.px(), q.py(), q.pz());
 
-    let ci: C<F> = C::I;
+    let ci: C<F> = C::i();
     let om3 = if m3 == F::zero() {
         F::zero()
     } else {
@@ -237,7 +237,7 @@ pub fn ffv4_3<F: Real>(
     let q = f2.momentum - f1.momentum;
     let (p0, p1, p2, p3) = (q.e(), q.px(), q.py(), q.pz());
 
-    let ci: C<F> = C::I;
+    let ci: C<F> = C::i();
     let two = r(F::one() + F::one());
     let half = r(F::one() / (F::one() + F::one()));
     let om3 = if m3 == F::zero() {
@@ -329,7 +329,7 @@ pub fn ffv2_2<F: Real>(
     ];
     let q = f1.momentum - v.momentum;
     let (p0, p1, p2, p3) = (q.e(), q.px(), q.py(), q.pz());
-    let ci = C::I;
+    let ci = C::i();
     let denom = coup / C::new(q.m2() - m2 * m2, m2 * w2);
 
     // F1(3..6) = a[0..4];  V3(3..6) = w[0..4];  P2 = q.
@@ -381,7 +381,7 @@ pub fn ffv4_2<F: Real>(
     ];
     let q = f1.momentum - v.momentum;
     let (p0, p1, p2, p3) = (q.e(), q.px(), q.py(), q.pz());
-    let ci = C::I;
+    let ci = C::i();
     let two = r(F::one() + F::one());
     let half = r(F::one() / (F::one() + F::one()));
     let m = r(m2);

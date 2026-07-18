@@ -91,7 +91,10 @@ schema, and implementation detail.
 LHAPDF6 PDF module (parton-oracle-gated, scirs2-interpolate trial with in-house
 bicubic fallback), H3 massive RAMBO generic over `F: Real` + splittable ChaCha8
 substreams (first stage of `lips-nbody`), H4 SIMD lane-batched `eval_m2` via
-`numeric-array`, H5 serde-split two-phase VEGAS (adapt/save grid, frozen sample;
+`numeric-array` (**done — negative result: 1.4–2.7× *slower* on NEON, the
+indexed-arena interpreter does not auto-vectorize; infra landed + parked, `Real`
+relaxed to method-based `Zero`/`One`, bit-identity gate green; H7 stays scalar —
+see note 18 §5**), H5 serde-split two-phase VEGAS (adapt/save grid, frozen sample;
 deterministic rayon), H6 MG run-card parser on `GlobalConfig` + compiled cuts
 filter (MG's default lepton cuts are active out of the box; unimplemented-but-
 active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a shared

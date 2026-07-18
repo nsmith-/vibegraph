@@ -558,8 +558,82 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
   uncut/default-coupling estimate omits). It is therefore an order-of-magnitude
   end-to-end check only (its assertion is a same-order band, not a σ-pull); the
   0.06% ee→μμ result is the real normalization gate.
-- H4: `Real` bounds relaxed / newtype introduced; default lane width N = …;
-  divergence inventory location …
+- H4 — **SIMD lane-batching: negative result (measured). Infrastructure landed,
+  parked, not wired into any hot path; H7 ships scalar-only.**
+
+  **Bounds decision: `Real` relaxed to method-based `Zero`/`One` (not a newtype).**
+  `numeric_array::NumericArray<f64, N>` (0.6.1) implements `Float`, `FloatConst`,
+  `Num`, `NumCast` elementwise but *not* `ConstZero`/`ConstOne`/`FromPrimitive`.
+  The const-based traits are structurally impossible for a runtime-length SIMD
+  array: `ConstZero` needs a `const ZERO: Self`, but there is no const constructor
+  for a zero `GenericArray` of arbitrary typenum length — so a *generic* newtype
+  cannot supply it either (the wall is identical for both paths). The fix was to
+  drop `ConstZero`/`ConstOne` from `Real`: they were **redundant** with `Float`'s
+  `Num` supertrait, which already supplies method-based `zero()`/`one()`. For `f64`
+  the method forms are bit-identical to the consts (`0.0`/`1.0`), so the scalar
+  path is unchanged (256 unit tests + the finite/expanded-sum gates all green,
+  bit-for-bit). The generic-`F` literal sites (`F::ZERO`, `C::I`, …) became method
+  calls; concrete `f64` sites (`Complex64::ZERO`) were untouched. `FromPrimitive`
+  is sidestepped entirely: the lane amplitude is built by `broadcast_lanes::<N>()`,
+  which splats an already-`bind`-resolved `BoundAmplitude<f64>`'s pools across lanes
+  — so the lane scalar never needs card resolution and `eval_m2` moved to an
+  `impl<F: Real>` block (only `bind` keeps the `FromPrimitive` bound).
+
+  **Default N: none — lanes are slower at every width.** Criterion sweep on the dev
+  machine (Apple Silicon, NEON 128-bit = 2×f64), µs per 16-point sweep, median;
+  `forward` = scalar `eval_m2`:
+
+  | process | forward | lanes2 | lanes4 | lanes8 | best lane vs scalar |
+  |---|---|---|---|---|---|
+  | e+e-→µ+µ- (2→2) | 12.1 | 43.6 | 33.3 | 30.9 | **0.39× (2.6× slower)** |
+  | e+e-→e+e- (2→2) | 22.2 | 85.7 | 65.0 | 60.7 | 0.37× (2.7× slower) |
+  | uu~→uu~ (2→2, NC=2) | 19.4 | 51.2 | 39.9 | 36.2 | 0.54× (1.9× slower) |
+  | gg→gg (2→2, NC=6) | 108.4 | 228.3 | 169.5 | 151.1 | 0.72× (1.4× slower) |
+  | e+e-→µ+µ-a (2→3) | 93.1 | 308.1 | 232.5 | 215.8 | 0.43× (2.3× slower) |
+
+  Wider N monotonically *reduces* the penalty (l8 < l4 < l2) but never reaches
+  parity — the classic signature of a path that is **overhead-bound, not
+  SIMD-accelerated**: widening only amortizes per-call cost. numeric-array's
+  elementwise ops do not auto-vectorize through `eval_m2`'s indexed-arena
+  interpreter (gather/scatter into typed result arenas, `Complex<F>` arithmetic,
+  hash-consed DAG walk) — the design-note premise ("LLVM auto-vectorizes fixed-size
+  elementwise ops") holds for straight-line kernels but not for this interpreter
+  loop, where each `NumericArray` op degrades to a scalar element-loop plus array
+  overhead and wider memory traffic. On 2-wide NEON the ideal ceiling is 2× anyway;
+  a genuine win would need AVX-512 (8×f64) *and* a straight-line (non-interpreter)
+  kernel. Least-bad width if ever forced: N=8.
+
+  **Divergence inventory location**: the lane-uniformity contract summary lives in
+  the `helas::eval::lanes` module doc; the full enumerated inventory is the table
+  below. Every data-dependent branch on `F` reachable from `eval_m2`:
+
+  | # | site | predicate | class | argument |
+  |---|---|---|---|---|
+  | 1 | `kernel::propagate_vector_bare` | `mass == 0` | (a) uniform | mass is a broadcast card constant — identical on every lane |
+  | 2 | `repr::lorentz::weyl_ixxxxx` | `mass != 0` | (a) uniform | broadcast card constant |
+  | 3 | `weyl_ixxxxx` (massive) | `pp == 0` (at rest) | (c) excluded | measure-zero exact rest; threshold-adjacent is nonzero → moving branch uniformly |
+  | 4 | `weyl_ixxxxx` (massive) | `pp3 > 0` | (a) uniform | `pp+pz`; zero only for a leg exactly on −z (beam, uniform per lane) |
+  | 5 | `weyl_ixxxxx` (massless) | `px==0 && py==0 && pz<0` | (a) uniform | tests −z axis; a leg is beam-on-axis or produced-off-axis, same across a batch |
+  | 6 | `weyl_ixxxxx` (massless) | `sqp0p3 == 0` | (a) uniform | follows from #5 |
+  | 7 | `wavefn::vxxxxx` | `vmass != 0` | (a) uniform | broadcast card constant |
+  | 8 | `vxxxxx` (massive) | `pp == 0` (at rest) | (c) excluded | as #3 |
+  | 9 | `vxxxxx` | `pt != 0` | (a) uniform | tests z-axis; beam legs `pt=0` for all lanes, produced legs `pt≠0` for all lanes (bar measure-zero collinear) |
+  | 10 | `vxxxxx` | `p3 >= 0` (sign) | (a) uniform | only reached inside `pt==0` (beam); a beam has a definite ±z sign for all lanes |
+
+  All 10 are (a)-uniform-by-construction or (c)-excluded-measure-zero; **none
+  needed a (b) branchless rewrite**. `min`/`max`/`abs`/`signum`/`sqrt` on
+  `NumericArray` are elementwise (per-lane) and not branches. The `if`-predicate
+  reductions (`==`/`<`/`>=`) collapse the whole pack to one lexicographic `bool`,
+  which is why homogeneity is required and pinned by the bit-identity gate. Off the
+  `eval_m2` hot path: `DiracWf::charge()` (`e().is_sign_positive()`) and the
+  `vertex.rs` mass forks are test-only oracles, not batched.
+
+  **Gate**: `eval_m2_lanes_bit_identical_to_scalar` — every lane bit-identical
+  (`assert_eq!` on f64 bits) to scalar `eval_m2` across all 14
+  `MG_VALIDATED_PROCESSES` at N=2 on z-beam / off-axis / threshold-adjacent batches
+  (8-leg processes z-beam only for debug runtime), plus
+  `lanes4_lanes8_pack_unpack_bit_identical` for the wider widths. The scalar
+  14-process `validate_helas_mg` net is untouched.
 - H6: implemented cut families = …; cuts.f convention pins (η definition, ΔR) at
   lines …; any inventory param found beyond §1.5 …
 - H7: x-mapping kept `ln x` / switched to (τ, y) because …

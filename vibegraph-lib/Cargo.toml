@@ -33,6 +33,7 @@ zstd = "0.13"
 strum = { version = "0.28.0", features = ["derive"] }
 egglog = "2.0.0"
 ordered-float = "5"
+numeric-array = "0.6.1"
 
 [dev-dependencies]
 criterion = "0.5"
