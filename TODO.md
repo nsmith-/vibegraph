@@ -98,6 +98,11 @@ active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a
 run card, H8 minimal `integrate` CLI, H9 close-out.
 Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 
+Session status: **H3 ✅ done** (`phasespace/` module tree — `rng.rs` ChaCha8
+substreams + bits→`F` uniform rule, `rambo.rs` massive `rambo::<F>` with KSE
+weight; uniforms-replay oracle ≤1e-13, invariant fuzz, banked-σ̂ flat-MC check;
+`rambo_massless` kept bit-compatible). Remaining sessions unstarted.
+
 ---
 
 ## 🟡 Medium — CLI integration
@@ -241,7 +246,8 @@ banked σ̂ flat-MC check below. Remaining scope here = channel mappings + multi
 weights on top of those seams.
 (The MG validation side already generates n-body points via RAMBO in
 `gen_amplitude.py`; the MG-computed partonic σ̂ = 6.556e-7 pb for the uux 2→6 at
-√s=500 is banked as a future `validate-vegas` reference.)
+√s=500 is **now consumed** by H3's flat-MC weight-normalization check
+`rambo_oracle::flat_mc_partonic_sigma`.)
 
 **Design inputs for the sprint plan** (fold into the design note):
 
