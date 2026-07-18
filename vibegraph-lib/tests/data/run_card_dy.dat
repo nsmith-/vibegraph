@@ -1,0 +1,41 @@
+#*********************************************************************
+#                       MadGraph5_aMC@NLO                            *
+#                     run_card.dat MadEvent                          *
+#  mind the format:   value    = variable     ! comment             *
+#*********************************************************************
+  tag_1     = run_tag ! name of the run
+  10000 = nevents ! Number of unweighted events requested
+      0       = iseed   ! rnd seed (0=assigned automatically=default))
+#*********************************************************************
+# Collider type and energy
+#*********************************************************************
+     1        = lpp1    ! beam 1 type
+     1        = lpp2    ! beam 2 type
+     6500.0     = ebeam1  ! beam 1 total energy in GeV
+     6500.0     = ebeam2  ! beam 2 total energy in GeV
+#*********************************************************************
+# PDF CHOICE
+#*********************************************************************
+     lhapdf    = pdlabel     ! PDF set
+     230000    = lhaid     ! if pdlabel=lhapdf, this is the lhapdf number
+#*********************************************************************
+# Renormalization and factorization scales
+#*********************************************************************
+ False = fixed_ren_scale  ! if .true. use fixed ren scale
+ True  = fixed_fac_scale  ! if .true. use fixed fac scale
+ 91.1880  = scale            ! fixed ren scale
+ 91.1880  = dsqrt_q2fact1    ! fixed fact scale for pdf1
+ 91.1880  = dsqrt_q2fact2    ! fixed fact scale for pdf2
+#*********************************************************************
+# Standard Cuts
+#*********************************************************************
+ 0.0  = dsqrt_shat ! minimal shat for full process
+   20.0  = ptj       ! minimum pt for the jets
+   10.0  = ptl       ! minimum pt for the charged leptons
+   5.0   = etaj      ! max rap for the jets
+   2.5   = etal      ! max rap for the charged leptons
+   0.4   = drjj      ! min distance between jets
+   0.4   = drll      ! min distance between leptons
+   0.0   = mmll      ! min invariant mass of l+l- (same flavour) lepton pair
+   -1.0  = mmllmax   ! max invariant mass of l+l- (same flavour) lepton pair
+   4     = maxjetflavor ! Maximum jet pdg code

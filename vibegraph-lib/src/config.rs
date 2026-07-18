@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::diagrams::ModelImport;
+use crate::runcard::{RunCard, RunCardError};
 use crate::ufo::sm::{sm_model, SMRestrict};
 use crate::ufo::{UFOModel, UfoError};
 
@@ -24,6 +25,8 @@ pub struct GlobalConfig {
     /// Explicit restrict-card path, overriding a directive's `-<variant>` suffix
     /// and the default `restrict_default.dat` discovery (non-SM models only).
     pub restrict_path_override: Option<PathBuf>,
+    /// Optional MadGraph `run_card.dat`; absent → MadGraph LO defaults.
+    pub run_card_path: Option<PathBuf>,
 }
 
 impl GlobalConfig {
@@ -65,6 +68,15 @@ impl GlobalConfig {
         };
         UFOModel::load(&dir, restrict.as_deref())
     }
+
+    /// Resolve the run card: parse [`run_card_path`](Self::run_card_path) if set,
+    /// otherwise return the MadGraph LO defaults (an empty card).
+    pub fn load_run_card(&self) -> Result<RunCard, RunCardError> {
+        match &self.run_card_path {
+            Some(path) => RunCard::parse_file(path),
+            None => Ok(RunCard::default()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -75,6 +87,7 @@ mod tests {
         GlobalConfig {
             ufo_search_path: PathBuf::from("/nonexistent"),
             restrict_path_override: None,
+            run_card_path: None,
         }
     }
 
@@ -103,6 +116,15 @@ mod tests {
             }))
             .unwrap();
         assert!(Arc::ptr_eq(&m, &sm_model(SMRestrict::LeptonMasses)));
+    }
+
+    #[test]
+    fn load_run_card_defaults_when_absent() {
+        let cfg = config();
+        let rc = cfg.load_run_card().unwrap();
+        // An absent card yields the MadGraph LO defaults.
+        assert_eq!(rc.ebeam1, 6500.0);
+        assert_eq!(rc.float("ptl"), 10.0);
     }
 
     #[test]
