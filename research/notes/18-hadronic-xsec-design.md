@@ -634,9 +634,6 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
   (8-leg processes z-beam only for debug runtime), plus
   `lanes4_lanes8_pack_unpack_bit_identical` for the wider widths. The scalar
   14-process `validate_helas_mg` net is untouched.
-- H6: implemented cut families = …; cuts.f convention pins (η definition, ΔR) at
-  lines …; any inventory param found beyond §1.5 …
-- H7: x-mapping kept `ln x` / switched to (τ, y) because …
 - H5: `VegasGrid::adapt`/`sample_frozen` stayed generic over `rng: &mut impl
   Rng` per §2.4; the deterministic-rayon path landed as separate
   `adapt_parallel`/`sample_frozen_parallel` methods taking `(seed: u64,
@@ -658,6 +655,51 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
   `float_roundtrip` cargo feature was enabled on the `serde_json`
   dev-dependency. Any bincode/JSON round-trip test asserting bit-for-bit
   equality on `f64` payloads needs this feature (or an explicit tolerance).
+- H6 (`run-card-cuts`, DONE): `runcard.rs` parses `<value> = <name> ! comment`
+  into a `RunCard` whose 209-entry defaults table transcribes every scalar param
+  of `RunCardLO.default_setup`; validated per-param against a banner.py JSON dump
+  (`validation/madgraph/dump_runcard_defaults.py`, pixi task
+  `dump-runcard-defaults`, snapshot `validation/madgraph/runcard_defaults.json`)
+  — 218 params dumped, 209 scalars matched, the 9 unmatched are `system=True`
+  internals (`pdg_cut`, `ptmin4pdg`, … never written to a user card). Unknown
+  names hard-error; only `lpp1=lpp2=1` accepted; recognized-but-unconsumed params
+  retained by name. `GlobalConfig::load_run_card` mirrors the `load_ufo` seam.
+  - **Implemented cut families**: ŝ window (`dsqrt_shat`/`dsqrt_shatmax`),
+    single-leg pT/E/η min+max for classes j/b/a/l, pairwise ΔR, pairwise
+    invariant mass, `ptll`, `mmnl`. Everything else `cut=`-tagged is
+    parse-and-detect: `Cuts::compile` returns `CutError::UnimplementedCutActive`
+    if the value deviates from its MG default (list in `cuts.rs`
+    `UNIMPLEMENTED_CUTS`).
+  - **cuts.f convention pins** (LO template `Template/LO/`): single-leg η and the
+    ΔR separation both use **rapidity** `rap = ½·ln((E+pz)/(E−pz))`
+    (`Source/kin_functions.f:95`; applied as `abs(rap)` in
+    `SubProcesses/cuts.f:426`) — *not* pseudorapidity; equal for massless legs
+    but rapidity is the enforced definition. ΔR² = Δφ² + Δy²
+    (`kin_functions.f:42` `R2`) with Δφ = `acos(clamp(·, ±0.99999999))`
+    (`kin_functions.f:180` `DELTA_PHI`), opening angle in [0,π] so φ-wrap is
+    intrinsic. **The `dr{...}` threshold is squared once before use**:
+    `setcuts.f:345` stores the raw `dr` value, then the `cuts.f` FIRSTTIME block
+    squares it (`r2min = r2min·|r2min|`, `cuts.f:219-221`, "Since r2 returns
+    distance squared") before the `r2(...) < r2min` comparison (`cuts.f:429`), so
+    the effective bound is the standard `ΔR ≥ dr`. Mirrored in Rust as a signed
+    square `dr·|dr|`, exactly like the mass/`ptll` thresholds `x·|x|`
+    (`setcuts.f:399,479`). Class membership at `setcuts.f:217`
+    (jet = `|pdg|≤min(maxjetflavor,6)` or 21; b = `maxjetflavor<|pdg|≤5`;
+    l = {11,13,15}; a = pdg 22; ν = {12,14,16}); single-leg cuts skipped for ν
+    and mass>20 GeV (`setcuts.f:212`); E-min is a strict `≤` reject
+    (`cuts.f:413`). `mmll`/`ptll` apply only to same-flavour opposite-charge
+    lepton pairs (`setcuts.f:396,473`).
+  - **`shat_min()` hint**: `max(dsqrt_shat², mmll² if an l⁺l⁻ pair present,
+    (2·ptl)² if exactly two final leptons)` — all provably ≤ ŝ of a surviving
+    point (§2.5).
+  - **Inventory note beyond §1.5**: `etajmin`/`etaamin` carry `cut='a'` in
+    banner.py (harmless — value 0, and `etaXmin` is class-keyed by `setcuts.f`);
+    `misset`/`ptheavy` are the n/H single-leg cuts but are parse-and-detect this
+    sprint (no ν/heavy final state in pp→e⁺e⁻). The `dr` threshold is squared
+    once at first call (`cuts.f:219-221`), giving the standard `ΔR ≥ dr` bound —
+    mirrored in Rust as signed squares like `mm`/`ptll`; H7's σ gate confirms it
+    end-to-end against a real MG run.
+- H7: x-mapping kept `ln x` / switched to (τ, y) because …
 
 ## 6. Deferred follow-ups
 

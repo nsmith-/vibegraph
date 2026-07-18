@@ -1,7 +1,9 @@
 pub mod config;
+pub mod cuts;
 pub mod diagrams;
 pub mod helas;
 pub mod pdf;
 pub mod phasespace;
+pub mod runcard;
 pub mod ufo;
 pub mod vegas;
