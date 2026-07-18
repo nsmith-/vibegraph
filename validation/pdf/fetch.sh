@@ -2,7 +2,7 @@
 # Fetch the pinned LHAPDF6 set (NNPDF23_lo_as_0130_qed, MG5's LO default
 # `nn23lo1`) from the LHAPDF data server and extract it into this directory.
 #
-# Usage: bash fetch.sh   (or: pixi run -e pdf-validation fetch-pdf)
+# Usage: bash fetch.sh   (or: pixi run -e madgraph fetch-pdf)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
