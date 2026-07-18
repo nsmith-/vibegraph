@@ -2084,7 +2084,6 @@ dependencies = [
  "criterion",
  "egglog",
  "feyngraph",
- "generic-array",
  "indexmap",
  "itertools 0.14.0",
  "libm",

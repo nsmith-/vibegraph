@@ -36,7 +36,6 @@ numeric-array = "0.6.1"
 
 [dev-dependencies]
 criterion = "0.5"
-generic-array = "1"
 libm = "0.2"
 libtest-mimic = "0.7"
 rayon = "1"

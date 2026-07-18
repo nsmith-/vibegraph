@@ -41,6 +41,9 @@ mod fold;
 // Lorentz-primitive eval kernels (one `pub(crate)` fn per Lorentz `Op`, named for it);
 // the `run::apply` dispatch is `kernel::<op>(children)`.
 mod kernel;
+// SIMD lane batching: `F = NumericArray<f64, N>` runs one `eval_m2` pass over N
+// phase-space points. See the module doc for the lane-uniformity contract.
+mod lanes;
 mod layout;
 mod lower;
 mod op;
@@ -79,7 +82,8 @@ pub mod bench_internals {
 pub use ast::{Ast, ParseAstError};
 pub use compile::AmplitudeEvaluator;
 pub use error::{CompileError, EvalError, RootDiagramError};
+pub use lanes::LaneField;
 pub use op::{Const, ConstKind, Node, Op, Sym};
 pub use root_diagram::compile_diagram_ast;
 pub use root_lorentz::RootLorentzError;
-pub use run::{BoundAmplitude, ScratchSpace};
+pub use run::{eval_m2_lanes, BoundAmplitude, ScratchSpace};
