@@ -193,9 +193,20 @@ pub struct DrellYanIntegrand<'a> {
     s_had: f64,
     /// Factorization scale squared `μF²`.
     mu_f2: f64,
-    /// Lower `x` support of the logarithmic map, `ŝ_min / s`.
-    x_min: f64,
-    ln_inv_x_min: f64,
+    /// Lower support of the logarithmic τ = ŝ/s map, `ŝ_min / s`.
+    tau_min: f64,
+    ln_inv_tau_min: f64,
+}
+
+/// A VEGAS point mapped to Drell–Yan kinematics via `(τ, y)`.
+struct MappedPoint {
+    x1: f64,
+    x2: f64,
+    sqrt_shat: f64,
+    cos_theta: f64,
+    /// Phase-space Jacobian `dτ dy / (du₁ du₂)` with the `1/τ` from
+    /// `f = (x·f)/x` on both legs already divided out.
+    jac: f64,
 }
 
 impl<'a> DrellYanIntegrand<'a> {
@@ -220,7 +231,7 @@ impl<'a> DrellYanIntegrand<'a> {
         mu_f: f64,
     ) -> Self {
         let s_had = sqrt_s_had * sqrt_s_had;
-        let x_min = cuts.shat_min() / s_had;
+        let tau_min = cuts.shat_min() / s_had;
         DrellYanIntegrand {
             up_scratch: RefCell::new(up.scratch_space()),
             down_scratch: RefCell::new(down.scratch_space()),
@@ -232,14 +243,40 @@ impl<'a> DrellYanIntegrand<'a> {
             down_flavors,
             s_had,
             mu_f2: mu_f * mu_f,
-            x_min,
-            ln_inv_x_min: (1.0 / x_min).ln(),
+            tau_min,
+            ln_inv_tau_min: (1.0 / tau_min).ln(),
         }
     }
 
-    /// Lower `x` support of the logarithmic map.
-    pub fn x_min(&self) -> f64 {
-        self.x_min
+    /// Lower support `ŝ_min / s` of the logarithmic τ map.
+    pub fn tau_min(&self) -> f64 {
+        self.tau_min
+    }
+
+    /// Map a VEGAS point `u ∈ [0,1]³` to Drell–Yan kinematics.
+    ///
+    /// `τ = ŝ/s` is sampled logarithmically over `[τ_min, 1]`
+    /// (`τ = τ_min^(1−u₁)`, so `τ ≥ τ_min` makes `ŝ ≥ ŝ_min` automatic — no
+    /// low-side rejection band). The parton rapidity `y = ½ ln(x₁/x₂)` is
+    /// sampled uniformly over its kinematic range `|y| ≤ ½ ln(1/τ)`, which keeps
+    /// `x₁, x₂ ∈ [τ, 1]`. With this change of variables the mass window is a
+    /// one-dimensional bound on `τ` that VEGAS resolves far better than the thin
+    /// diagonal band the direct `(x₁, x₂)` map produces. `cosθ = 2u₃ − 1`.
+    fn map_point(&self, u: &[f64]) -> MappedPoint {
+        let tau = self.tau_min.powf(1.0 - u[0]);
+        let sqrt_tau = tau.sqrt();
+        let y_max = -0.5 * tau.ln();
+        let y = (2.0 * u[1] - 1.0) * y_max;
+        // dτ/du₁ = τ ln(1/τ_min); dy/du₂ = 2 y_max. The `1/τ` from `f = (x·f)/x`
+        // on both legs cancels the τ, leaving ln(1/τ_min)·2·y_max.
+        let jac = self.ln_inv_tau_min * 2.0 * y_max;
+        MappedPoint {
+            x1: sqrt_tau * y.exp(),
+            x2: sqrt_tau * (-y).exp(),
+            sqrt_shat: (tau * self.s_had).sqrt(),
+            cos_theta: 2.0 * u[2] - 1.0,
+            jac,
+        }
     }
 
     /// The integrand value at a VEGAS point `u ∈ [0,1]³`, in natural units
@@ -247,37 +284,29 @@ impl<'a> DrellYanIntegrand<'a> {
     /// `ŝ` falls below the cut window or whose lab-frame momenta fail a cut
     /// contribute exactly zero.
     pub fn value(&self, u: &[f64]) -> f64 {
-        let x1 = self.x_min.powf(1.0 - u[0]);
-        let x2 = self.x_min.powf(1.0 - u[1]);
-        let cos_theta = 2.0 * u[2] - 1.0;
+        let m = self.map_point(u);
 
-        let shat = x1 * x2 * self.s_had;
-        if shat < self.cuts.shat_min() {
+        let Kinematics { cm, lab } =
+            build_kinematics(m.sqrt_shat, m.cos_theta, m.x1, m.x2, self.s_had);
+        if !self.cuts.pass(&lab) {
             return 0.0;
         }
-        let sqrt_shat = shat.sqrt();
 
-        let Kinematics { cm, lab } = build_kinematics(sqrt_shat, cos_theta, x1, x2, self.s_had);
-        if !self.cuts.pass(&lab) {
+        let lum_up = self.luminosity(&self.up_flavors, m.x1, m.x2);
+        let lum_down = self.luminosity(&self.down_flavors, m.x1, m.x2);
+        if lum_up == 0.0 && lum_down == 0.0 {
             return 0.0;
         }
 
         // Partonic prefactor: flux 1/(2ŝ), spin average 1/4, color average 1/9,
         // and the 2-body LIPS Jacobian for the cosθ ↔ u₃ map — all but the 1/9 in
         // `prefactor2`, which is written for the initial-state-spin-summed 2→2.
-        let phat = prefactor2(sqrt_shat) / 9.0;
-
-        let lum_up = self.luminosity(&self.up_flavors, x1, x2);
-        let lum_down = self.luminosity(&self.down_flavors, x1, x2);
-        if lum_up == 0.0 && lum_down == 0.0 {
-            return 0.0;
-        }
+        let phat = prefactor2(m.sqrt_shat) / 9.0;
 
         let m2_up = self.up.eval_m2(&cm, &mut self.up_scratch.borrow_mut());
         let m2_down = self.down.eval_m2(&cm, &mut self.down_scratch.borrow_mut());
 
-        let jac = self.ln_inv_x_min * self.ln_inv_x_min;
-        jac * phat * (m2_up * lum_up + m2_down * lum_down)
+        m.jac * phat * (m2_up * lum_up + m2_down * lum_down)
     }
 
     /// Summed PDF luminosity for one coupling class:
@@ -334,9 +363,7 @@ impl<'a> DrellYanIntegrand<'a> {
                 rng.random::<f64>(),
                 rng.random::<f64>(),
             ];
-            let x1 = self.x_min.powf(1.0 - u[0]);
-            let x2 = self.x_min.powf(1.0 - u[1]);
-            let mll = (x1 * x2 * self.s_had).sqrt();
+            let mll = self.map_point(&u).sqrt_shat;
             if mll < m_lo || mll >= m_hi {
                 continue;
             }
@@ -475,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn shat_window_and_cuts_zero_the_integrand_out_of_range() {
+    fn cut_indicator_zeros_the_integrand() {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
         let fc = dy_flavor_classes(&m).unwrap();
@@ -484,9 +511,9 @@ mod tests {
         let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
         let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
 
-        // Default DY cuts; no PDF needed for the shat-window / cut-indicator path,
-        // but `value` calls the PDF only after the shat check, so a below-window
-        // point must return before touching it. Use a tiny synthetic PDF member.
+        // Default DY cuts. `value` applies the cut indicator before consuming the
+        // PDF, so a cut-failing point returns before touching it; use a tiny
+        // synthetic PDF member.
         let rc = RunCard::default();
         let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
         let pdf = tiny_pdf();
@@ -501,8 +528,11 @@ mod tests {
             13000.0,
             91.188,
         );
-        // u→(x₁,x₂) with both u small ⇒ x near x_min ⇒ ŝ ≈ x_min²·s ≪ ŝ_min ⇒ 0.
-        assert_eq!(integ.value(&[0.0, 0.0, 0.5]), 0.0);
+        // cosθ → 1 (u₃ ≈ 1) sends the leptons collinear with the beam: pT → 0
+        // fails the ptl = 10 GeV cut, so the indicator zeros the integrand.
+        assert_eq!(integ.value(&[0.5, 0.5, 0.99999]), 0.0);
+        // A central, well-clear point at the ŝ floor is nonzero.
+        assert!(integ.value(&[0.0, 0.5, 0.5]) > 0.0);
     }
 
     fn tiny_pdf() -> PdfMember {

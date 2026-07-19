@@ -55,6 +55,8 @@ generate-amplitude = { cmd = "python validation/madgraph/gen_amplitude.py", depe
 validate-helas-mg = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_helas_mg", depends-on = ["generate-amplitude"] }
 # Dump the RunCardLO defaults to JSON — the transcription oracle for the Rust run-card defaults table
 dump-runcard-defaults = "python validation/madgraph/dump_runcard_defaults.py"
+# Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards
+generate-hadronic-sigma = "bash validation/madgraph/gen_hadronic_sigma.sh"
 # Fetch the pinned NNPDF23_lo_as_0130_qed set from the LHAPDF data server
 fetch-pdf = "bash validation/pdf/fetch.sh"
 # Compile the LHAPDF C++ PDF-grid oracle generator (rpath makes it self-contained;
