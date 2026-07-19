@@ -7,11 +7,14 @@
 //! card reproduces MadGraph's out-of-the-box behavior and a reference MadGraph
 //! run can share the literal same file.
 //!
-//! Unknown parameter names are rejected (typo protection). Beam settings other
-//! than proton–proton (`lpp1 == lpp2 == 1`) are rejected because no other beam
-//! PDF is supported yet. Recognized parameters that are not consumed as typed
-//! fields are still parsed and retained by name so the compiled cut filter
-//! ([`crate::cuts`]) can read cut thresholds and so nothing is silently dropped.
+//! Unknown parameter names are rejected (typo protection). Two beam
+//! configurations are accepted: proton–proton (`lpp1 == lpp2 == 1`, PDF
+//! convolution) and fixed-energy partonic beams (`lpp1 == lpp2 == 0`, no PDF,
+//! the incoming particles *are* the beam particles at `ebeam1`/`ebeam2`). Any
+//! other combination is rejected because no other beam handling is supported.
+//! Recognized parameters that are not consumed as typed fields are still parsed
+//! and retained by name so the compiled cut filter ([`crate::cuts`]) can read
+//! cut thresholds and so nothing is silently dropped.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -125,9 +128,20 @@ pub enum RunCardError {
         line: usize,
     },
     #[error(
-        "unsupported beam configuration lpp1={lpp1}, lpp2={lpp2}: only proton-proton (1,1) is supported"
+        "unsupported beam configuration lpp1={lpp1}, lpp2={lpp2}: only proton-proton (1,1) \
+         and fixed-energy partonic beams (0,0) are supported"
     )]
     UnsupportedLpp { lpp1: i64, lpp2: i64 },
+}
+
+/// How the incoming state of a run is prepared.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BeamMode {
+    /// Proton beams (`lpp = 1`): parton momenta drawn from PDFs, √ŝ = x₁x₂ s.
+    Proton,
+    /// Fixed-energy partonic beams (`lpp = 0`): the incoming particles are the
+    /// beam particles themselves, √ŝ = ebeam1 + ebeam2, no PDF convolution.
+    FixedEnergy,
 }
 
 /// A run card resolved against the MadGraph LO defaults.
@@ -166,6 +180,15 @@ impl Default for RunCard {
 }
 
 impl RunCard {
+    /// The beam preparation implied by `lpp1`/`lpp2`. The parser only admits the
+    /// two supported combinations, so this never encounters an invalid pair.
+    pub fn beam_mode(&self) -> BeamMode {
+        match (self.lpp1, self.lpp2) {
+            (0, 0) => BeamMode::FixedEnergy,
+            _ => BeamMode::Proton,
+        }
+    }
+
     /// Look up a resolved parameter by name. `None` only for names absent from
     /// the recognized inventory.
     pub fn get(&self, name: &str) -> Option<&ParamValue> {
@@ -244,7 +267,7 @@ impl RunCard {
 
         let lpp1 = i("lpp1");
         let lpp2 = i("lpp2");
-        if lpp1 != 1 || lpp2 != 1 {
+        if (lpp1, lpp2) != (1, 1) && (lpp1, lpp2) != (0, 0) {
             return Err(RunCardError::UnsupportedLpp { lpp1, lpp2 });
         }
 
@@ -641,12 +664,27 @@ mod tests {
     }
 
     #[test]
-    fn non_pp_beams_rejected() {
+    fn mixed_beams_rejected() {
+        // A single lpp flipped to 0 leaves an unsupported (0, 1) pair.
         let err = RunCard::parse("  0 = lpp1\n").unwrap_err();
         assert!(matches!(
             err,
             RunCardError::UnsupportedLpp { lpp1: 0, lpp2: 1 }
         ));
+    }
+
+    #[test]
+    fn fixed_energy_beams_accepted() {
+        let rc =
+            RunCard::parse("  0 = lpp1\n  0 = lpp2\n  250 = ebeam1\n  250 = ebeam2\n").unwrap();
+        assert_eq!(rc.beam_mode(), BeamMode::FixedEnergy);
+        assert_eq!(rc.ebeam1, 250.0);
+        assert_eq!(rc.ebeam2, 250.0);
+    }
+
+    #[test]
+    fn proton_beams_are_default_mode() {
+        assert_eq!(RunCard::default().beam_mode(), BeamMode::Proton);
     }
 
     #[test]

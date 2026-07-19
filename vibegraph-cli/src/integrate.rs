@@ -1,37 +1,50 @@
-//! `vibegraph integrate` — compute the hadronic Drell–Yan cross section and
-//! persist the adapted VEGAS grid for a later sampling phase.
+//! `vibegraph integrate` — compute a leading-order cross section for an
+//! MG-validated process and persist the adapted VEGAS grid for a later sampling
+//! phase.
 //!
-//! The process is fixed to `p p → e⁺ e⁻` this release (full proc-card option
-//! coverage is a separate work item); the proc card supplies the `import model`
-//! directive and is checked to describe that process. Beam energy and the fixed
-//! factorization scale are read from the run card, so the same card file drives
-//! both this integration and a MadGraph reference run.
+//! The process, model, beams, scales, and cuts are driven by the proc card
+//! (`import model` + `generate`) and the run card, so the same card files drive
+//! both this integration and a MadGraph reference run. Two beam modes are
+//! supported, selected by the run card's `lpp1`/`lpp2`:
+//!
+//! * `lpp = 1` (proton beams) — the hadronic Drell–Yan `p p → e⁺ e⁻` process,
+//!   PDF-convolved over a `(τ, y) × cosθ` map.
+//! * `lpp = 0` (fixed-energy partonic beams) — an arbitrary process with no PDF
+//!   convolution and a flat-RAMBO phase-space map over any final multiplicity.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Args;
 use vibegraph::artifact::{IntegrateArtifact, FORMAT_VERSION};
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::Cuts;
-use vibegraph::diagrams::{parse_proc_card_file, ParsingOptions};
-use vibegraph::hadronic::{compile_class, dy_external_legs, dy_flavor_classes, DrellYanIntegrand};
+use vibegraph::diagrams::{
+    generate_from_proc_card, parse_proc_card_file, ParsedProcCard, ParsingOptions,
+};
+use vibegraph::hadronic::{
+    compile_class, compile_subprocesses, dy_flavor_classes, generate_dy_subprocesses,
+    initial_spin_color_average, process_external_legs, DrellYanIntegrand, FixedBeamIntegrand,
+};
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::PdfSet;
 use vibegraph::phasespace::GEV2_TO_PB;
-use vibegraph::runcard::RunCard;
-use vibegraph::ufo::EvaluatedModel;
+use vibegraph::runcard::{BeamMode, RunCard};
+use vibegraph::ufo::{EvaluatedModel, UFOModel};
+use vibegraph::vegas::{VegasGrid, VegasResult};
 
-/// Default LHAPDF set — the only one wired through the pipeline this release
-/// (MG5's LO default `nn23lo1`, lhaid 247000).
+/// Default LHAPDF set — the one wired through the hadronic pipeline (MG5's LO
+/// default `nn23lo1`, lhaid 247000).
 const DEFAULT_PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
 /// PDF member index (central value; error members are not consumed at LO).
 const PDF_MEMBER: u32 = 0;
+/// Sentinel `pdf_set` recorded in the artifact for a no-PDF (fixed-energy) run.
+const NO_PDF: &str = "none";
 /// Artifact filename written inside the output directory.
 const GRID_FILENAME: &str = "grid.bin.zst";
 
 #[derive(Args, Debug)]
 pub struct IntegrateArgs {
-    /// Process card selecting the model (the process is Drell–Yan `p p > e+ e-`).
+    /// Process card selecting the model and process (`import model` + `generate`).
     pub proc_card: PathBuf,
 
     /// MadGraph `run_card.dat`; absent → MadGraph LO defaults.
@@ -46,7 +59,7 @@ pub struct IntegrateArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// LHAPDF set name.
+    /// LHAPDF set name (proton beams only).
     #[arg(long, default_value = DEFAULT_PDF_SET)]
     pub pdf_set: String,
 
@@ -100,39 +113,12 @@ fn resolve_pdf_dir(args: &IntegrateArgs) -> PathBuf {
     PathBuf::from("validation/pdf")
 }
 
-/// Verify the proc card describes the supported Drell–Yan process and return its
-/// canonical string for the artifact metadata.
-fn dy_process_string(proc_card: &Path) -> Result<String, IntegrateError> {
-    let opts = ParsingOptions::default();
-    let card = parse_proc_card_file(proc_card, &opts).map_err(|e| {
-        err(format!(
-            "failed to parse proc card {}: {e}",
-            proc_card.display()
-        ))
-    })?;
-    let spec = card
+/// The canonical string of the proc card's first process, for artifact metadata.
+fn process_string(parsed: &ParsedProcCard) -> Result<String, IntegrateError> {
+    let spec = parsed
         .processes
         .first()
-        .ok_or_else(|| err(format!("proc card {} has no process", proc_card.display())))?;
-
-    let initial: Vec<String> = spec
-        .initial
-        .iter()
-        .flat_map(|leg| std::iter::repeat(leg.name.to_lowercase()).take(leg.count.max(1)))
-        .collect();
-    let final_state: Vec<String> = spec
-        .final_state
-        .iter()
-        .flat_map(|leg| std::iter::repeat(leg.name.to_lowercase()).take(leg.count.max(1)))
-        .collect();
-
-    let is_dy = initial == ["p", "p"] && final_state == ["e+", "e-"];
-    if !is_dy {
-        return Err(err(format!(
-            "`integrate` supports only Drell–Yan `p p > e+ e-` this release; \
-             proc card describes `{spec}`"
-        )));
-    }
+        .ok_or_else(|| err("proc card has no process"))?;
     Ok(format!("{spec}"))
 }
 
@@ -148,6 +134,16 @@ fn factorization_scale(rc: &RunCard) -> Result<f64, IntegrateError> {
     Ok(rc.dsqrt_q2fact1)
 }
 
+/// The metadata printed and banked for a completed run, independent of beam mode.
+struct RunOutput {
+    process: String,
+    pdf_set: String,
+    mu_f: f64,
+    sqrt_s: f64,
+    grid: VegasGrid,
+    result: VegasResult,
+}
+
 pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
     // Refuse to clobber an existing artifact before spending the integration.
     let out_path = args.out.join(GRID_FILENAME);
@@ -158,12 +154,11 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
         )));
     }
 
-    let process = dy_process_string(&args.proc_card)?;
-
-    // Model resolution reuses the proc card's `import model` directive.
     let opts = ParsingOptions::default();
     let parsed = parse_proc_card_file(&args.proc_card, &opts)
         .map_err(|e| err(format!("failed to parse proc card: {e}")))?;
+    let process = process_string(&parsed)?;
+
     let config = GlobalConfig {
         ufo_search_path: PathBuf::from("."),
         restrict_path_override: None,
@@ -172,11 +167,74 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
     let model = config
         .load_ufo(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
-
     let rc = config
         .load_run_card()
         .map_err(|e| err(format!("failed to load run card: {e}")))?;
-    let mu_f = factorization_scale(&rc)?;
+
+    let evaluated = EvaluatedModel::from_model(model.clone());
+
+    let output = match rc.beam_mode() {
+        BeamMode::Proton => integrate_proton(args, &parsed, &model, &evaluated, &rc, process)?,
+        BeamMode::FixedEnergy => {
+            integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process)?
+        }
+    };
+
+    let sigma_pb = output.result.integral * GEV2_TO_PB;
+    let sigma_err_pb = output.result.std_dev * GEV2_TO_PB;
+
+    println!("process:  {}", output.process);
+    println!("PDF set:  {} (member {PDF_MEMBER})", output.pdf_set);
+    println!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
+    println!(
+        "VEGAS:    {} evals × {} iters, seed {} (χ²/dof = {:.3})",
+        args.neval, args.niter, args.seed, output.result.chi2_per_dof
+    );
+    println!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb");
+
+    let artifact = IntegrateArtifact {
+        format_version: FORMAT_VERSION,
+        process: output.process,
+        pdf_set: output.pdf_set,
+        pdf_member: PDF_MEMBER,
+        mu_f: output.mu_f,
+        sqrt_s_had: output.sqrt_s,
+        neval: args.neval,
+        niter: args.niter,
+        seed: args.seed,
+        run_card: rc,
+        grid: output.grid,
+        sigma_pb,
+        sigma_err_pb,
+        chi2_per_dof: output.result.chi2_per_dof,
+    };
+
+    std::fs::create_dir_all(&args.out).map_err(|e| {
+        err(format!(
+            "cannot create output directory {}: {e}",
+            args.out.display()
+        ))
+    })?;
+    artifact
+        .write_to_path(&out_path, args.force)
+        .map_err(|e| err(e.to_string()))?;
+    println!("wrote {}", out_path.display());
+
+    Ok(())
+}
+
+/// Hadronic Drell–Yan (`lpp = 1`): PDF-convolved `(τ, y) × cosθ` integration. The
+/// subprocesses are generated from the caller's proc card and partitioned into
+/// the up/down coupling classes; a non-Drell–Yan process is rejected there.
+fn integrate_proton(
+    args: &IntegrateArgs,
+    _parsed: &ParsedProcCard,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+    process: String,
+) -> Result<RunOutput, IntegrateError> {
+    let mu_f = factorization_scale(rc)?;
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
     // Locate and load the PDF set.
@@ -195,21 +253,24 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
         .member(PDF_MEMBER)
         .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;
 
-    // Assemble the Drell–Yan integrand: two coupling-class amplitudes bound to
-    // the model, the compiled cuts, and the PDF luminosity.
-    let evaluated = EvaluatedModel::from_model(model.clone());
-    let fc = dy_flavor_classes(&model)
-        .map_err(|e| err(format!("failed to classify Drell–Yan flavors: {e}")))?;
-    let up = compile_class(&fc.up_set, &model, &evaluated)
+    let sets =
+        generate_dy_subprocesses(model).map_err(|e| err(format!("failed to enumerate: {e}")))?;
+    let fc = dy_flavor_classes(sets, model).map_err(|e| {
+        err(format!(
+            "proton beams currently support only Drell–Yan `p p > e+ e-`: {e}"
+        ))
+    })?;
+    let up = compile_class(&fc.up_set, model, evaluated)
         .map_err(|e| err(format!("failed to compile up-type class: {e}")))?;
-    let down = compile_class(&fc.down_set, &model, &evaluated)
+    let down = compile_class(&fc.down_set, model, evaluated)
         .map_err(|e| err(format!("failed to compile down-type class: {e}")))?;
-    let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
-    let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
+    let b_up = BoundAmplitude::<f64>::bind(&up, evaluated);
+    let b_down = BoundAmplitude::<f64>::bind(&down, evaluated);
 
-    let cuts = Cuts::compile(&rc, &dy_external_legs(2))
+    let cuts = Cuts::compile(rc, &process_external_legs(&up, model, evaluated))
         .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
 
+    let spin_color_avg = initial_spin_color_average(&up, model, evaluated);
     let integ = DrellYanIntegrand::new(
         &b_up,
         &b_down,
@@ -219,48 +280,61 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
         fc.down_flavors,
         sqrt_s_had,
         mu_f,
+        spin_color_avg,
     );
 
     let (grid, result) = integ.adapt_grid(args.neval, args.niter, args.seed);
-    let sigma_pb = result.integral * GEV2_TO_PB;
-    let sigma_err_pb = result.std_dev * GEV2_TO_PB;
-
-    println!("process:  {process}");
-    println!("PDF set:  {} (member {PDF_MEMBER})", args.pdf_set);
-    println!("√s:       {sqrt_s_had} GeV,  μF = {mu_f} GeV");
-    println!(
-        "VEGAS:    {} evals × {} iters, seed {} (χ²/dof = {:.3})",
-        args.neval, args.niter, args.seed, result.chi2_per_dof
-    );
-    println!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb");
-
-    let artifact = IntegrateArtifact {
-        format_version: FORMAT_VERSION,
+    Ok(RunOutput {
         process,
         pdf_set: args.pdf_set.clone(),
-        pdf_member: PDF_MEMBER,
         mu_f,
-        sqrt_s_had,
-        neval: args.neval,
-        niter: args.niter,
-        seed: args.seed,
-        run_card: rc,
+        sqrt_s: sqrt_s_had,
         grid,
-        sigma_pb,
-        sigma_err_pb,
-        chi2_per_dof: result.chi2_per_dof,
-    };
+        result,
+    })
+}
 
-    std::fs::create_dir_all(&args.out).map_err(|e| {
-        err(format!(
-            "cannot create output directory {}: {e}",
-            args.out.display()
-        ))
-    })?;
-    artifact
-        .write_to_path(&out_path, args.force)
-        .map_err(|e| err(e.to_string()))?;
-    println!("wrote {}", out_path.display());
+/// Fixed-energy partonic beams (`lpp = 0`): flat-RAMBO integration with no PDF.
+/// The subprocess(es) and their external state are generated from the caller's
+/// proc card.
+fn integrate_fixed_energy(
+    args: &IntegrateArgs,
+    parsed: &ParsedProcCard,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+    process: String,
+) -> Result<RunOutput, IntegrateError> {
+    let sqrt_s = rc.ebeam1 + rc.ebeam2;
 
-    Ok(())
+    let sets = generate_from_proc_card(parsed, model)
+        .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
+    let evals = compile_subprocesses(&sets, model, evaluated)
+        .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
+    let bounds: Vec<_> = evals
+        .iter()
+        .map(|e| BoundAmplitude::<f64>::bind(e, evaluated))
+        .collect();
+
+    let rep = &evals[0];
+    let legs = process_external_legs(rep, model, evaluated);
+    let cuts = Cuts::compile(rc, &legs).map_err(|e| err(format!("failed to compile cuts: {e}")))?;
+    let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+        .iter()
+        .map(|&id| evaluated.mass(id))
+        .collect();
+    let spin_color_avg = initial_spin_color_average(rep, model, evaluated);
+
+    let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+    let integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+
+    let (grid, result) = integ.adapt_grid(args.neval, args.niter, args.seed);
+    Ok(RunOutput {
+        process,
+        pdf_set: NO_PDF.to_string(),
+        mu_f: 0.0,
+        sqrt_s,
+        grid,
+        result,
+    })
 }

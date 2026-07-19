@@ -26,7 +26,8 @@ mod validate_hadronic {
 
     use vibegraph::cuts::Cuts;
     use vibegraph::hadronic::{
-        compile_class, dy_external_legs, dy_flavor_classes, DrellYanIntegrand,
+        compile_class, dy_external_legs, dy_flavor_classes, generate_dy_subprocesses,
+        initial_spin_color_average, DrellYanIntegrand,
     };
     use vibegraph::helas::eval::BoundAmplitude;
     use vibegraph::pdf::{PdfMember, PdfSet};
@@ -60,7 +61,11 @@ mod validate_hadronic {
     fn run_sigma(run_card_path: &Path, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
         let model = super::common::sm_model();
         let evaluated = EvaluatedModel::from_model(model.clone());
-        let fc = dy_flavor_classes(&model).expect("classify DY");
+        let fc = dy_flavor_classes(
+            generate_dy_subprocesses(&model).expect("generate DY"),
+            &model,
+        )
+        .expect("classify DY");
         let up = compile_class(&fc.up_set, &model, &evaluated).expect("up class");
         let down = compile_class(&fc.down_set, &model, &evaluated).expect("down class");
         let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
@@ -70,6 +75,7 @@ mod validate_hadronic {
         let cuts = Cuts::compile(&rc, &dy_external_legs(2)).expect("compile cuts");
         let pdf = load_pdf();
 
+        let spin_color_avg = initial_spin_color_average(&up, &model, &evaluated);
         let integ = DrellYanIntegrand::new(
             &b_up,
             &b_down,
@@ -79,6 +85,7 @@ mod validate_hadronic {
             fc.down_flavors,
             SQRT_S_HAD,
             MU_F,
+            spin_color_avg,
         );
         integ.integrate(neval, niter, seed)
     }
@@ -169,7 +176,11 @@ mod validate_hadronic {
             .expect("parse committed param card");
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
-        let fc = dy_flavor_classes(&model).expect("classify DY");
+        let fc = dy_flavor_classes(
+            generate_dy_subprocesses(&model).expect("generate DY"),
+            &model,
+        )
+        .expect("classify DY");
         let up = compile_class(&fc.up_set, &model, &evaluated).expect("up class");
         let down = compile_class(&fc.down_set, &model, &evaluated).expect("down class");
         let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
@@ -178,6 +189,7 @@ mod validate_hadronic {
         let rc = RunCard::parse_file(&validation_dir().join("dy13_default_run_card.dat")).unwrap();
         let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
         let pdf = load_pdf();
+        let spin_color_avg = initial_spin_color_average(&up, &model, &evaluated);
         let integ = DrellYanIntegrand::new(
             &b_up,
             &b_down,
@@ -187,6 +199,7 @@ mod validate_hadronic {
             fc.down_flavors,
             SQRT_S_HAD,
             MU_F,
+            spin_color_avg,
         );
 
         const TOL: f64 = 1e-9;
@@ -251,7 +264,7 @@ mod validate_hadronic {
 
         let model = super::common::sm_model();
         let evaluated = EvaluatedModel::from_model(model.clone());
-        let fc = dy_flavor_classes(&model).unwrap();
+        let fc = dy_flavor_classes(generate_dy_subprocesses(&model).unwrap(), &model).unwrap();
         let up = compile_class(&fc.up_set, &model, &evaluated).unwrap();
         let down = compile_class(&fc.down_set, &model, &evaluated).unwrap();
         let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
@@ -259,6 +272,7 @@ mod validate_hadronic {
         let rc = RunCard::parse_file(&validation_dir().join("dy13_default_run_card.dat")).unwrap();
         let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
         let pdf = load_pdf();
+        let spin_color_avg = initial_spin_color_average(&up, &model, &evaluated);
         let integ = DrellYanIntegrand::new(
             &b_up,
             &b_down,
@@ -268,6 +282,7 @@ mod validate_hadronic {
             fc.down_flavors,
             SQRT_S_HAD,
             MU_F,
+            spin_color_avg,
         );
 
         let (m_lo, m_hi, nbins) = (20.0_f64, 200.0_f64, 36);
