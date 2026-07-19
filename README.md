@@ -65,6 +65,45 @@ cd vibegraph
 cargo build
 ```
 
+## Command line
+
+### `vibegraph integrate` — hadronic cross section
+
+Computes the leading-order Drell–Yan cross section σ(pp → e⁺e⁻) and saves the
+adapted [VEGAS](https://inspirehep.net/literature/119196) grid so a later
+sampling phase can reuse it:
+
+```bash
+vibegraph integrate <proc_card> [--run-card <run_card.dat>] [--out <dir>]
+```
+
+The proc card supplies the model import (`import model sm`) and must describe
+`p p > e+ e-` — the only process wired through this pipeline so far. Beam energy
+and the fixed factorization scale μF are read from the MadGraph `run_card.dat`
+(omit `--run-card` for the MadGraph LO defaults), so the same card file can
+drive both this integration and a MadGraph reference run.
+
+The command prints `σ ± err` (pb) and writes `<out>/grid.bin.zst` — a
+bincode + zstd artifact holding the trained grid plus the run metadata (process,
+PDF set, μF, √s, seed, evaluation counts, and the resolved run card) that a
+downstream sampling phase needs to detect a mismatched input. It refuses to
+overwrite an existing artifact without `--force`.
+
+The PDF grid files are fetched separately (they are gitignored):
+
+```bash
+pixi run -e madgraph fetch-pdf          # into validation/pdf/<set>/
+vibegraph integrate validation/madgraph/dy13_proc_card.dat \
+  --run-card validation/madgraph/dy13_default_run_card.dat --out run/
+```
+
+`vibegraph integrate` locates the PDF data via `--pdf-dir`, else the
+`VIBEGRAPH_PDF_DIR` environment variable, else `validation/pdf` under the
+current directory; `--pdf-set` selects the set (default
+`NNPDF23_lo_as_0130_qed`). Key options: `--neval` / `--niter` (VEGAS evaluations
+per iteration / iteration count) and `--seed` (reproducible RNG). Run
+`vibegraph integrate --help` for the full list.
+
 To regenerate the HELAS OCR output from the scanned PDF:
 
 ```bash
