@@ -149,6 +149,31 @@ active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a
 run card, H8 minimal `integrate` CLI, H9 close-out.
 Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 
+- **H8 — `cli-integrate` ✅ done (branch `hx/h8-cli-integrate`).**
+  `vibegraph integrate <proc_card> [--run-card …] [--out <dir>] [--force]
+  [--pdf-set/--pdf-dir] [--neval/--niter/--seed]` — assembles the H7 Drell–Yan
+  integrand, adapts the VEGAS grid, prints σ ± err, and writes
+  `<out>/grid.bin.zst`: `artifact::IntegrateArtifact` (bincode + zstd, like the
+  SM blob — bit-exact `f64`, so no serde_json `float_roundtrip` footgun) holding
+  the trained grid + run metadata (process, PDF set, μF, √s, seed, neval/niter,
+  the resolved `RunCard`) for a later sampling phase to refuse a mismatched
+  input. **μF from the run card** (`dsqrt_q2fact1` when `fixed_fac_scale`,
+  dynamical → hard error), **√s = ebeam1+ebeam2** — nothing kinematic hard-coded;
+  the shared card drives both vibegraph and MG. PDF-dir resolves `--pdf-dir` →
+  `$VIBEGRAPH_PDF_DIR` → `validation/pdf`, hard-erroring toward `fetch-pdf` when
+  absent. **Refuses to overwrite without `--force`** (pre-flighted before the
+  integration). **Sequential VEGAS** (`adapt_grid` wraps `adapt`; the H7
+  `RefCell` scratch integrand is `FnMut`, not `Fn + Sync`, so the parallel path
+  is a recorded follow-up — ~2 s single-threaded). Extended-validation
+  `cli_integrate` test drives the binary end-to-end: cold-start on the committed
+  `dy13_proc_card.dat` + each reference run card reproduces the H7 σ bit-for-bit
+  (default **934.416 ± 0.870** vs MG 933.11±0.45, mmll[60,120] **644.855 ± 0.570**
+  vs MG 644.42±0.32), the reloaded grid's `sample_frozen` reproduces the adapted
+  estimate, and the `--force` refusal holds; grid round-trip bit-identity pinned
+  by a synthetic default-suite unit test. README documents the command; decision
+  record in note 18 §5. Full proc-card coverage stays with `cli-proc-card`; the
+  `generate` phase lands with `event-output-lhef`.
+
 - **H7 — `hadronic-sigma` ✅ done (branch `hx/h7-hadronic-sigma`).**
   `hadronic.rs` assembles σ(pp→e⁺e⁻): up/down flavor classes resolved from the
   `p p > e+ e-` enumeration and asserted against it (u/c, d/s; no b, no gluon),

@@ -851,6 +851,48 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
     (committed `dy13_param_card.dat`) so its |M|² comparison is at rounding level
     (1e-14), and additionally pins the **down-type** `d d~ > e+ e-` |M|² against MG
     standalone, which the up-type-only `validate_helas_mg` net does not cover.
+- H8 (`cli-integrate`, DONE): `vibegraph integrate <proc_card> [--run-card …]`
+  assembles the H7 Drell–Yan integrand, adapts the VEGAS grid, prints σ ± err,
+  and persists the grid + run metadata. **CLI surface**: positional `<proc_card>`
+  (model import + a `p p > e+ e-` process check); `--run-card` (MG `run_card.dat`;
+  absent → MG LO defaults); `--out <dir>` (artifact at `<out>/grid.bin.zst`,
+  default `.`); `--force`; `--pdf-set` (default `NNPDF23_lo_as_0130_qed`);
+  `--pdf-dir`; `--neval`/`--niter`/`--seed` (defaults 120000 / 12 / 20260719 —
+  chosen to match the H7 σ gate so a cold-start run reproduces it exactly).
+  - **Artifact format/layout**: bincode + zstd (level 19), the same pairing as
+    the interned SM model blob — *not* `serde_json`, so the H5 `float_roundtrip`
+    footgun does not apply (bincode writes `f64` as raw bytes, bit-exact). The
+    payload is `artifact::IntegrateArtifact { format_version, process, pdf_set,
+    pdf_member, mu_f, sqrt_s_had, neval, niter, seed, run_card, grid, sigma_pb,
+    sigma_err_pb, chi2_per_dof }` — the trained `VegasGrid` plus enough run
+    metadata (including the resolved `RunCard`, now `Serialize`/`Deserialize`) for
+    a later `generate` phase to refuse a mismatched input. `write_to_path` refuses
+    to clobber without `force`; the CLI additionally pre-flights the existence
+    check *before* the integration so a refusal is instant, not after the run.
+    `FORMAT_VERSION = 1` guards future shape changes.
+  - **Sequential vs parallel**: **sequential** (`DrellYanIntegrand::adapt_grid`
+    wraps `VegasGrid::adapt` with the existing `RefCell<ScratchSpace>` `FnMut`
+    integrand). The parallel `adapt_parallel`/`sample_frozen_parallel` path needs
+    `Fn + Sync`, which the H7 integrand's per-class `RefCell` scratch does not
+    satisfy; reworking scratch to per-thread was out of scope for a CLI-plumbing
+    session (the whole default-cut run is ~2 s single-threaded). Recorded as a
+    follow-up: wire the parallel path once the integrand's scratch is made
+    `Sync` (`thread_local`/per-chunk), which also unlocks multi-machine sharding.
+  - **PDF-dir resolution**: `--pdf-dir` → `$VIBEGRAPH_PDF_DIR` → `validation/pdf`
+    (relative to cwd); the set lives at `<pdf-dir>/<pdf-set>/`. Absent data is a
+    hard error pointing at `pixi run -e madgraph fetch-pdf`. μF comes from the run
+    card (`dsqrt_q2fact1` when `fixed_fac_scale`; a dynamical scale is a hard
+    error), √s from `ebeam1 + ebeam2` — so nothing kinematic is hard-coded in the
+    CLI; the shared card drives both sides.
+  - **Cold-start reproduction (measured)**: default cuts **934.416 ± 0.870 pb**
+    (MG 933.110 ± 0.447, 1.3σ, 0.14 %), mmll[60,120] **644.855 ± 0.570 pb** (MG
+    644.420 ± 0.315, 0.7σ, 0.07 %) — bit-identical to the H7 in-process σ under
+    the shared seed. The reloaded grid's `sample_frozen` reproduces the adapted
+    estimate within MC error; grid round-trip bit-identity is pinned by a
+    synthetic default-suite unit test (`artifact::tests`).
+  - **Scope boundary**: full proc-card option coverage stays with the
+    `cli-proc-card` backlog item; the `generate` (event-output) phase lands with
+    `event-output-lhef`. This session ships only `integrate`.
 
 ## 6. Deferred follow-ups
 

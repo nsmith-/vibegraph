@@ -62,6 +62,11 @@ use crate::vegas::{VegasGrid, VegasResult};
 
 type V = LorentzVector<f64>;
 
+/// VEGAS integration dimensions for the `(τ, y, cosθ)` map (§2.5).
+pub const VEGAS_NDIM: usize = 3;
+pub const VEGAS_NBINS: usize = 64;
+pub const VEGAS_ALPHA: f64 = 1.5;
+
 #[derive(Debug, Error)]
 pub enum HadronicError {
     #[error("diagram enumeration failed: {0}")]
@@ -398,9 +403,16 @@ impl<'a> DrellYanIntegrand<'a> {
 
     /// The raw VEGAS result (natural units, GeV⁻²), grid discarded.
     pub fn integrate_raw(&self, neval: usize, niter: usize, seed: u64) -> VegasResult {
-        let mut grid = VegasGrid::new(3, 64, 1.5);
+        self.adapt_grid(neval, niter, seed).1
+    }
+
+    /// Run VEGAS adaptation, returning the trained grid alongside the result —
+    /// the primitive the `integrate` CLI command serializes into its artifact.
+    pub fn adapt_grid(&self, neval: usize, niter: usize, seed: u64) -> (VegasGrid, VegasResult) {
+        let mut grid = VegasGrid::new(VEGAS_NDIM, VEGAS_NBINS, VEGAS_ALPHA);
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-        grid.adapt(|u| self.value(u), neval, niter, &mut rng)
+        let result = grid.adapt(|u| self.value(u), neval, niter, &mut rng);
+        (grid, result)
     }
 
     /// Differential cross section `dσ/dm_ℓℓ` (pb/GeV) on a uniform `m_ℓℓ` grid

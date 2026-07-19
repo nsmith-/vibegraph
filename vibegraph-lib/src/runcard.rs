@@ -16,11 +16,12 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// A parsed parameter value. The variant also records the parameter's kind,
 /// which drives how a card line's text is interpreted.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ParamValue {
     Float(f64),
     Int(i64),
@@ -134,7 +135,7 @@ pub enum RunCardError {
 /// Typed fields expose the non-cut parameters consumed by the generator; every
 /// parameter (including all cut thresholds and recognized-but-unconsumed
 /// bookkeeping params) is retained in [`RunCard::values`] keyed by name.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunCard {
     pub nevents: i64,
     pub iseed: i64,
