@@ -149,6 +149,27 @@ active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a
 run card, H8 minimal `integrate` CLI, H9 close-out.
 Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 
+- **H7 — `hadronic-sigma` ✅ done (branch `hx/h7-hadronic-sigma`).**
+  `hadronic.rs` assembles σ(pp→e⁺e⁻): up/down flavor classes resolved from the
+  `p p > e+ e-` enumeration and asserted against it (u/c, d/s; no b, no gluon),
+  the "one σ̂ per class" premise pinned by a u ū == c c̄ |M|² test. |M|² evaluated
+  in the partonic CM (pruned-eval frame contract); cuts applied to lab-frame
+  momenta boosted by the parton-system rapidity. **Switched the VEGAS variables
+  from (x₁,x₂) to (τ=ŝ/s, y): the mass window becomes a 1-D bound on τ, killing a
+  ~6% VEGAS-convergence bias on the mmll run** (note 18 §5). MG reference
+  generation (`pixi run -e madgraph generate-hadronic-sigma` → banked
+  `hadronic_sigma_reference.json`) drives `p p > e+ e-` at 13 TeV from the shared
+  committed run cards `dy13_*_run_card.dat`; **PDF pinned to lhaid 247000 =
+  NNPDF23_lo_as_0130_qed** (the note's 244600 is the NLO_qed set, run_card_dy.dat's
+  230000 is NNPDF23_nlo_as_0119 — both wrong). Both runs *enforced* in
+  `validate_hadronic` within combined MC error: default 934.4±0.9 vs MG
+  933.11±0.45 pb (0.14%), mmll[60,120] 644.9±0.6 vs MG 644.42±0.32 pb (0.07%).
+  Pointwise integrand oracle (`generate-dy-oracle`: LHAPDF xfxQ2 × MG standalone
+  MATRIX1/MATRIX2) pins PDF×flux×|M|² + cut indicator at 10 points (incl. two
+  straddling pT_ℓ=10) to worst rel **1.15e-14**. Informational dσ/dm_ℓℓ table
+  `dy_dsigma_dmll.md` (γ* continuum + Z peak) committed. MG-LHAPDF link bug
+  (conda LDFLAGS suppresses MG's `-lc++`) worked around in the gen script.
+
 - **H2 — `pdf-interpolate` ✅ done (branch `hx/h2-pdf-interpolate`).**
   `pdf::interp` — local **log-bicubic** in `(ln x, ln Q²)` replicating LHAPDF6's
   `LogBicubicInterpolator` (precomputed x-cubic Hermite coeffs `[a,b,c,d]` per
