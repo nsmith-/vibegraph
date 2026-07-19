@@ -9,10 +9,8 @@ program** (performance, ✅ closed 2026-07-17: post-CSE 3-track program + helici
 expansion + helicity filtering; vs-MG gap 8.6×–110× → **1.2×–3.5×**; summary below,
 full record note 15) → **hadronic-xsec** (feature, ✅ closed 2026-07-19: PDF
 convolution + run-card cuts + two-phase VEGAS give σ(pp→e⁺e⁻) vs MG within
-0.14%/0.07%; summary below, full record note 18) → **next: a validation pass**
-over what this sprint exposed (pruned-frame contract guard, multi-subgrid PDF
-seam coverage, and the pre-existing NHEL-table/flow-dictionary/timing-print
-items — collected in the validation backlog below).
+0.14%/0.07%; summary below, full record note 18) → **`validation-2`** (validation,
+🔵 ACTIVE, plan drafted 2026-07-19: sprint section below, full plan note 19).
 
 ## Pipeline Status
 
@@ -33,6 +31,34 @@ optimization program incl. its §2 close-outs, 16: color-flow design + debrief
 incl. the VVVV phase-bug root cause and fix, 17: bounds-check-elimination memo,
 18: hadronic cross-section design + outcome, `rooting-study-results.md`: rooting
 headroom study).
+
+---
+
+## 🔎 `validation-2` sprint 🔵 ACTIVE (full plan: `research/notes/19-validation-pass-plan.md`)
+
+Clears the unblocked validation backlog from the eval performance program,
+`hadronic-xsec`, and the `validation-sprint` leftovers, and adds σ-level
+integration coverage for all 14 `MG_VALIDATED_PROCESSES`. Key survey finding
+(note 19 §2): every `validation/madgraph/scripts/*.mg5` already `launch`es and
+all 19 output dirs hold completed runs with σ ± err — the σ references are
+already banked on disk, and `output/*/Cards/run_card.dat` pins the exact
+beams + cuts MG used.
+
+| Session | Scope | Status |
+|---|---|---|
+| V1 | Quick guards: pruned-frame contract assertion + boosted-point test; interned-SM CI diff check | 🔲 |
+| V2 | NHEL-table pinning 7 → 14/14 (incl. in-test 2→6 survivor counts) | 🔲 |
+| V3a | Generalize `vibegraph integrate` (absorbs `cli-proc-card`): proc-card-driven assembly, `lpp=(0,0)` beams, flat-RAMBO n-body path | 🔲 |
+| V3b | 14-process σ gate through the CLI vs banked MG run σ (pull-based statistical gate, run card as single source of truth); retire the `validate_helas_mg` timing print + document `--profile profiling`/samply recipe on the new test | 🔲 |
+| V4 | Multi-subgrid PDF seam: real multi-Q²-subgrid set + `gen_oracle.cpp` seam description | 🔲 |
+| V5 | `rooting-soundness` spike: root-invariant momentum routing / Lorentz rooting / fermion-spine sign; failing all-rootings gate test first | 🔲 |
+| V6 | Branch-level coverage: rooted-tree pattern assertions per MG-pinned convention | 🔲 |
+| V7 | Per-flavor diagram matching (design in note 19 §3; optional tail) | 🔲 |
+
+Order: V1 → V2 → V3a → V3b; V4 free-floating; V5 → V6; V7 optional.
+Out of scope (blocked): flow→LHEF dictionary + `mg-single-helicity-bench`
+(ride with `event-output-lhef`), `IdentityAmp` (rides with `non-sm-ufo`),
+`Coeff(f64)`→`CoeffRat` (optional cleanup, no consumer).
 
 ---
 
@@ -96,7 +122,8 @@ our interpreter doesn't) is untested. Rerun kit for other boxes:
   15 §5. Known issue for any cost oracle: lowering emits a ±1-CSE-node AST per hash
   seed (`HashSet` iteration in `root_diagram`/`lower`) — compile once and reuse;
   the fix belongs to the lowering owners.
-- **`rooting-soundness`** (prerequisite surfaced by Track 2, note 15 §3 +
+- **`rooting-soundness`** → picked up as **`validation-2` session V5**
+  (prerequisite surfaced by Track 2, note 15 §3 +
   `rooting-study-results.md`): the amplitude is correct only for feyngraph's
   `VtxIdx(0)` edge orientation — every node-reducing rooting silently corrupts
   multi-boson/≥6-point amplitudes (max_rel up to 1.7e+3). Fix momentum routing,
@@ -112,28 +139,18 @@ our interpreter doesn't) is untested. Rerun kit for other boxes:
 - Long-tail perf backlog (Later section): `feyngraph-perf` allocation hot spot,
   `generate-stream` Part B, `C<F>`-vs-`F` multiply peepholes.
 
-### New validation follow-ups (fold into the next validation pass)
+### New validation follow-ups
 
-- **Pruned-frame contract guard**: nothing enforces the partonic-CM ±z-beam
-  requirement of a pruned evaluator — a boosted input silently revives
-  J_z-forbidden combinations (up to 3e-3 of the sum, note 15 §2.3). Before
-  `lips-nbody`/hadronic pp→ll route boosted momenta anywhere near `eval_m2`, add a
-  debug-build frame assertion (or an explicit boost-to-CM seam) plus a test that a
-  boosted point on a pruned evaluator is caught.
-- **`NHEL`-table pinning coverage**:
-  `prune_zero_helicities_matches_madgraph_filter_bitwise` pins survivor sets for 7
-  processes; extend toward the full `MG_VALIDATED_PROCESSES` list (the 2→6 counts —
-  16/256 uux, 32/256 bbx — were checked against MG's reports and deserve the same
-  in-test pinning as reference tables are generated).
+Pruned-frame contract guard (→ V1), NHEL-table pinning (→ V2), and the
+`validate_helas_mg` timing-print retirement (→ V3b, which lands its samply
+replacement) are **folded into the `validation-2` sprint** above. Still deferred:
+
 - **Flow→LHEF color-string dictionary** (rides with `event-output-lhef`):
   leading-color assignment = sample flow `i` ∝ `JAMP2(i)`, then map the flow index
   to a color string. Pin the mapping against MG's
   `SELECT_COLOR`/`color_flow_decomposition` conventions — the gg_to_gg NCOLOR=6
   flow-basis ordering caveat applies, and a transposed dictionary is invisible to
   any |M|²-level gate.
-- **Retire (or label) the `validate_helas_mg` timing print**: it is
-  non-representative by construction and has now misled twice (note 15 §2.1/§2.2
-  warnings); the honest bench is `eval_strategies`.
 
 ---
 
@@ -214,41 +231,28 @@ integrand oracle **1.15e-14**.
 - `cli-proc-card`, `event-output-lhef`, and `lips-nbody`'s remaining scope
   (channel mappings + multi-channel weights) — updated in place below.
 
-### New validation follow-ups (fold into the next validation pass)
+### New validation follow-ups
 
-- **Pruned-frame contract guard**: nothing enforces the partonic-CM ±z-beam
-  requirement of a pruned evaluator (surfaced by the eval performance program,
-  note 15 §2.3); `hadronic.rs` satisfies it by construction (it builds CM
-  momenta directly) but that's convention, not enforcement — add a debug-build
-  frame assertion (or an explicit boost-to-CM seam) before any future caller
-  routes boosted momenta near `eval_m2`.
-- **Multi-subgrid PDF seam behavior**: the LHAPDF oracle only covers the
-  pinned NNPDF23_lo_as_0130_qed set, which ships as a *single* subgrid — the
-  subgrid-walk's "first in-range band" logic and the two-Q²-knot bilinear
-  fallback are pinned only by synthetic fixtures (`grid.rs::parses_multiple_subgrids`),
-  not a real multi-subgrid reference, and `gen_oracle.cpp` hard-errors on
-  repeated Q² knots rather than describing the seam-derivative-flattening
-  behavior LHAPDF actually has there. Needs a genuine multi-subgrid set or a
-  richer synthetic fixture.
-- **NHEL-table pinning coverage** (pre-existing, eval performance program):
-  still only 7 of 14 `MG_VALIDATED_PROCESSES` have pinned survivor sets.
-- **Flow→LHEF color-string dictionary** (pre-existing, rides with
-  `event-output-lhef`): still unimplemented.
-- **Retire or label the `validate_helas_mg` timing print** (pre-existing,
-  non-representative by construction): still open.
+All folded into the **`validation-2` sprint** above: pruned-frame contract
+guard (→ V1; `hadronic.rs` satisfies the frame contract by construction, but
+that's convention, not enforcement), multi-subgrid PDF seam behavior (→ V4;
+the oracle-covered NNPDF23_lo_as_0130_qed set is single-subgrid, so the
+subgrid-walk and two-Q²-knot fallback are pinned only by synthetic fixtures),
+NHEL-table pinning (→ V2), timing print (→ V3b). The flow→LHEF dictionary
+stays deferred with `event-output-lhef` (see the eval-program section above).
 
 ---
 
 ## 🟡 Medium — CLI integration
 
-### `cli-proc-card` — wire a full process card through the CLI
+### `cli-proc-card` — wire a full process card through the CLI → absorbed into `validation-2` V3a
 
 `config::GlobalConfig::load_ufo(&Option<ModelImport>) -> Arc<UFOModel>` (landed with
 `intern-sm-model`) already provides the `ParsedProcCard` → `UFOModel` seam: interned
-SM for `import model sm[-variant]`, else a UFO dir under `ufo_search_path`. Remaining
-work is the CLI wiring of a full proc card end-to-end. `vibegraph integrate`
-(`hadronic-xsec` H8) hard-codes the `p p > e+ e-` process — a real consumer that
-this item's full proc-card coverage would generalize.
+SM for `import model sm[-variant]`, else a UFO dir under `ufo_search_path`. The
+remaining CLI wiring of a full proc card end-to-end is now **session V3a of the
+`validation-2` sprint** (note 19 §3), which generalizes `vibegraph integrate`
+beyond its hard-coded `p p > e+ e-` process.
 
 ---
 
@@ -256,8 +260,10 @@ this item's full proc-card coverage would generalize.
 
 ### Validation backlog (deferred from `validation-sprint`)
 
-Deferred to the next validation pass of the loop — none of these guard the surface
-the optimization program touches:
+Most of this list moved into the **`validation-2` sprint** (top of file):
+branch-level coverage / rooted-tree pattern assertions → V6, the
+`gen_sm_blob` CI diff check → V1, and `madgraph-diagram-cmp-per-flavor` → V7
+(its full design now lives in note 19 §3). Still parked here:
 
 - **`IdentityAmp` process-level coverage**: moved to the non-SM UFO boundary
   list below — it needs a non-SM model, so it rides with that work.
@@ -265,54 +271,6 @@ the optimization program touches:
   exists for color coefficients, the remaining `Coeff(f64)` leaves (Lorentz-structure
   and symmetry/fermi-sign coefficients) could migrate onto it too — optional cleanup,
   not required by anything currently blocked.
-- **Branch-level coverage**: op counts don't see rooting branches. The pure-metric
-  −1 vertex branch (`root_lorentz`) used to fork on amplitude-root vs scalar-root
-  (the latter pinned, the former the unexercised `MetricNegI` op); `validation-sprint`
-  found the fork itself was the bug — `gg_to_gg` amplitude-roots a pure-metric VVVV
-  contact term, and its separate −i lowering was a spurious phase — and collapsed both
-  paths onto one real-−1 branch, now exercised by both `gg_to_gg` (amplitude-rooted)
-  and the 2→6 H-current processes (scalar-rooted). More generally, consider rooted-tree
-  pattern assertions per MG-pinned convention: each "pinned by X" comment should have a
-  test that fails if the pinning process stops exercising the branch — an unexercised
-  branch silently drifting out of sync with its exercised sibling is exactly the
-  failure mode that produced the `gg_to_gg` bug.
-- **Optional CI job**: `gen_sm_blob` + `git diff --exit-code` to catch a stale
-  interned SM blob vs the pinned submodule.
-- **`madgraph-diagram-cmp-per-flavor`** — per-flavor subprocess matching in diagram
-  validation (design below).
-
-#### `madgraph-diagram-cmp-per-flavor` — Match subprocesses by flavor in diagram validation
-
-An independent, verification-heavy refactor (Python extractor + Rust matching + JSON
-regen). The `validate_madgraph_diagrams` reference count now uses the representative
-subprocess's true Feynman-diagram count (`NGRAPHS` from `matrix1_orig.f`), not
-`MAPCONFIG(0)` from `configs.inc` (which counts the phase-space integration-channel
-*union* across all flavor variants in a P-class — e.g. 2672 vs the actual 2316 for
-`u u~ > u u~ l+ l- l+ l-`).
-
-**Remaining gap**: the comparison (`count_mg_style_topologies` in
-`vibegraph-lib/tests/validate_madgraph_diagrams.rs`) still collapses vibegraph subprocesses
-into coarse particle-type classes (`quark`/`lepton`/…) and compares one representative per
-class against the summed `total_diagrams`. Fragile: it assumes vibegraph's first-enumerated
-subprocess in each class matches MadGraph's `matrix1` representative.
-
-**Design for the refinement** (per-flavor matching, validates *all* variants incl. the 40
-of the qq4l class):
-- **Robust flavor source — the matrix-file header, not `IDUP`.** Each
-  `SubProcesses/P*/matrix<N>_orig.f` carries `C     Process: u u~ > u u~ e+ e- e+ e- QCD=0 @1`
-  comment lines — one per concrete flavor process sharing that variant's `NGRAPHS` (u/c and
-  e/mu are grouped). Parse these directly: it avoids reverse-engineering MG's fragile
-  `matrix<N> ↔ IDUP(I,J,K)` 3-index mapping in `leshouche.inc`. `extract_diagrams.py` grows
-  a per-concrete-process `{in:[pdg…], out:[pdg…], ngraphs}` list (name→PDG via a bounded SM
-  dict: the full token set is `a b b~ c c~ d d~ e± g h mu± s s~ t t~ ta± u u~ w± z`).
-- **Rust side**: key each MG entry and each vibegraph subprocess by
-  `(sorted initial PDGs, sorted final PDGs)`; look up and compare per-subprocess
-  (`set.diagrams.len()` vs `ngraphs`).
-- **Known risk to resolve first**: this exposes whether vibegraph enumerates the *same set*
-  of concrete subprocesses as MG's `C Process:` union — i.e. whether the multiparticle `p`/`l`
-  definitions and flavor-symmetry pruning align. Validate on a small process (`pp_to_ll`)
-  before the qq4l class; a set mismatch here is a real finding, not a test bug, and needs
-  physics judgment (note-12 territory: MG-convention reconciliation is a bug magnet).
 
 ### `non-sm-ufo` — collected boundaries a non-SM UFO model will hit
 
