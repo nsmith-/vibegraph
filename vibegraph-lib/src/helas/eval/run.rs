@@ -3547,7 +3547,7 @@ mod tests {
         // z-axis. Physical on-shell-ness is irrelevant — the same momenta feed both
         // the scalar and lane paths — but the off-axis, timelike form drives the
         // "generic moving" branch of every wavefunction builder on all lanes.
-        let mut random_mom = |rng: &mut StdRng| {
+        let random_mom = |rng: &mut StdRng| {
             let px = rng.random_range(-100.0..100.0);
             let py = rng.random_range(-100.0..100.0);
             let pz = rng.random_range(-100.0..100.0);
@@ -3637,7 +3637,7 @@ mod tests {
         let n_ext = eval.n_ext();
         let amp = BoundAmplitude::<f64>::bind(&eval, &evaluated);
 
-        let mut point = |rng: &mut StdRng| {
+        let point = |rng: &mut StdRng| {
             let mut p = vec![
                 LorentzVector::new(250.0, 0.0, 0.0, 250.0),
                 LorentzVector::new(250.0, 0.0, 0.0, -250.0),
