@@ -1,14 +1,17 @@
-//! LHAPDF6 grid access: parsed set metadata, per-member subgrids, and PDG
-//! flavor indexing.
+//! LHAPDF6 grid access: parsed set metadata, per-member subgrids, PDG flavor
+//! indexing, and log-bicubic `x·f(x, Q²)` interpolation.
 //!
-//! Evaluation (`xfx_q2`) is not implemented here — this module only exposes
-//! the raw parsed grid data; interpolation lives behind its own seam.
+//! Interpolation lives behind the [`interp`] seam ([`interp::Bicubic2D`]); the
+//! backend that matches LHAPDF6 (and hence MadGraph) is [`interp::LogBicubic`].
 
 pub mod grid;
+pub mod interp;
 
 use std::path::{Path, PathBuf};
 
+use crate::helas::repr::Real;
 use grid::{GridError, SetInfo, SubGrid};
+use interp::{Bicubic2D, LogBicubic, OutOfRange};
 
 /// LHAPDF's flavor alias: PDG code 0 means the gluon (21) in `.dat` flavor lists.
 pub fn normalize_flavor_pdg(pdg: i32) -> i32 {
@@ -60,14 +63,40 @@ impl PdfSet {
         }
         let dat_path = self.dir.join(format!("{}_{id:04}.dat", self.name));
         let subgrids = grid::parse_member_dat(&dat_path)?;
-        Ok(PdfMember { subgrids })
+        let interp = LogBicubic::build(&subgrids);
+        Ok(PdfMember { subgrids, interp })
     }
 }
 
-/// One PDF member's parsed subgrids, in file order.
+/// One PDF member's parsed subgrids (in file order) plus its precomputed
+/// log-bicubic interpolator.
 #[derive(Debug)]
 pub struct PdfMember {
     pub subgrids: Vec<SubGrid>,
+    interp: LogBicubic,
+}
+
+impl PdfMember {
+    /// Build a member directly from parsed subgrids (precomputing the
+    /// interpolator). Mainly useful for tests with in-memory grids.
+    pub fn from_subgrids(subgrids: Vec<SubGrid>) -> Self {
+        let interp = LogBicubic::build(&subgrids);
+        PdfMember { subgrids, interp }
+    }
+
+    /// `x·f(x, Q²)` for PDG code `pdg` (0 aliases the gluon 21), interpolated
+    /// with the LHAPDF-matching log-bicubic scheme. Returns
+    /// [`OutOfRange`](interp::OutOfRange) if the point lies outside every
+    /// subgrid's support (extrapolation is a deliberate non-goal).
+    pub fn try_xfx_q2<F: Real>(&self, pdg: i32, x: F, q2: F) -> Result<F, OutOfRange> {
+        self.interp.xfx_q2(pdg, x, q2)
+    }
+
+    /// Like [`PdfMember::try_xfx_q2`] but panics on an out-of-grid point.
+    pub fn xfx_q2<F: Real>(&self, pdg: i32, x: F, q2: F) -> F {
+        self.try_xfx_q2(pdg, x, q2)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
 }
 
 #[cfg(test)]

@@ -149,6 +149,24 @@ active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a
 run card, H8 minimal `integrate` CLI, H9 close-out.
 Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 
+- **H2 — `pdf-interpolate` ✅ done (branch `hx/h2-pdf-interpolate`).**
+  `pdf::interp` — local **log-bicubic** in `(ln x, ln Q²)` replicating LHAPDF6's
+  `LogBicubicInterpolator` (precomputed x-cubic Hermite coeffs `[a,b,c,d]` per
+  `(x-interval, Q²-knot, flavor)` à la `KnotArray::coeff` + `GridPDF::_ddx`,
+  Q²-direction Hermite assembled at eval with one-sided/central FD slopes),
+  behind a minimal `Bicubic2D` trait; `PdfMember::xfx_q2::<F: Real>`/`try_xfx_q2`
+  with subgrid walk (first in-range band) + 0↔21 gluon alias, out-of-grid →
+  typed `OutOfRange` (extrapolation a recorded non-goal). Coeff tables in `f64`,
+  arithmetic cast to `F` per point. **scirs2 rejected** (note 18 §5): trialled
+  `scirs2-interpolate::RectBivariateSpline` (kx=ky=3, s=0) against the LHAPDF
+  oracle — worst rel **9.86e-1** on interior off_knot (charm), a global B-spline
+  is the wrong algorithm, and it drags ~40 crates (nalgebra/ndarray/oxiblas
+  BLAS-LAPACK/simba/statrs). In-house log-bicubic vs LHAPDF oracle: off_knot
+  **1.3e-15**, seam 1.3e-16, x→1 tail 2.0e-11, corner ≤1e-9, on-knot |Δ| 2.7e-20
+  — all far under the 1e-9 bar (`validate_pdf_grid`, extended-validation). Walk +
+  flavor-alias + analytic bilinear-in-log oracle unit-tested in the default
+  suite.
+
 - **H6 — `run-card-cuts` ✅ done (branch `hx/h6-run-card-cuts`).**
   `runcard.rs` (typed parser + MG LO defaults table, banner.py JSON oracle via
   `pixi run -e madgraph dump-runcard-defaults`), `cuts.rs` (compiled letter-class

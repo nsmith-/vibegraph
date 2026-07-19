@@ -511,7 +511,58 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
   `madgraph` env's LHAPDF headers), not the not-a-knot B-spline §1.2 originally
   sketched. This is a corrected target, not an H2 redesign: still trait-behind,
   still scirs2-trial-first, but expect the log-bicubic to be the adopted path.
-- H2: scirs2-interpolate adopted / rejected because …
+- H2 (`pdf-interpolate`, DONE): **scirs2 rejected; in-house log-bicubic adopted.**
+  `pdf::interp` implements LHAPDF6's `LogBicubicInterpolator` (the `lhagrid1`
+  `logcubic` default) exactly: x-direction cubic Hermite in `ln x` with
+  finite-difference knot derivatives, precomputed once per member as four
+  polynomial coefficients `[a, b, c, d]` per `(x-interval, Q²-knot, flavor)`
+  (mirroring `GridPDF::_computePolynomialCoefficients(logspace=true)` +
+  `_ddx` + `KnotArray::coeff`), then a Q²-direction Hermite assembled at
+  evaluation time from the x-interpolated values on the four bracketing Q²
+  knots (LHAPDF's `_interpolate`: forward/backward/central FD slopes at the
+  lower/upper/interior Q² edge, bilinear fallback only for a two-Q²-knot band).
+  Index lookup mirrors `indexbelow` (`upper_bound − 1`, clamped so `i+1` is
+  valid). Coefficient + log-knot tables are held in `f64`; evaluation is
+  generic over `F: Real` and casts the tables into `F` per point (index lookup
+  uses `x.to_f64()`). Public surface: `PdfMember::xfx_q2::<F>` / `try_xfx_q2`
+  behind a minimal `Bicubic2D` trait (the swappable-backend seam), with the
+  subgrid walk (first band whose `(x, Q²)` support contains the point), 0↔21
+  gluon aliasing, absent-flavor → exactly 0, and out-of-grid → typed
+  `OutOfRange` (extrapolation is a recorded non-goal; the panicking `xfx_q2`
+  wraps the `Result`).
+  - **scirs2 trial (measured, rejected on both halves of the §1.2 rule).**
+    Added `scirs2-interpolate` 0.6.1 + built `RectBivariateSpline` (kx=ky=3,
+    s=0, scipy's cubic default) over the pinned NNPDF23_lo set's raw grid in
+    `(ln x, ln Q²)`, per flavor, and compared to the LHAPDF oracle's `off_knot`
+    interior points. **Worst relative error 9.86e-1** (98.6%, charm pdg ±4);
+    every flavor ≥ 3% (down/up ~3.4%, gluon ~9%, strange ~5%). That is ~8 orders
+    of magnitude past the 1e-9 bar and confirms the §5 premise correction (a
+    *global* B-spline is a different algorithm from LHAPDF's *local* log-bicubic;
+    the H1 follow-up's ~120% figure and this 98.6% agree). **Compile weight**
+    independently disqualifying: `scirs2-interpolate` transitively pulls ~40
+    crates — `scirs2-core`/`-linalg`/`-spatial`, `nalgebra`, `ndarray`,
+    `oxiblas-{core,blas,lapack,matrix,ndarray}` (a full BLAS/LAPACK stack),
+    `simba`, `statrs`, `ndarray-rand`, three `rand_distr` versions, `wide` — for
+    what the in-house scheme does in ~250 lines. Trial deps reverted;
+    `Cargo.toml`/`Cargo.lock` are clean of scirs2.
+  - **In-house log-bicubic vs LHAPDF oracle (accept bar ≤1e-9 rel interior).**
+    Because the Rust arithmetic mirrors LHAPDF's exact per-point operation
+    order, agreement is at libm-`log`-rounding level, far tighter than the bar:
+    `off_knot` worst rel **1.32e-15** (224 pts), `seam` 1.34e-16 (28), `corner`
+    ≤1e-9 (60), `x_to_one_tail` **1.95e-11** (56 — inflated only by a ~1e-19
+    near-zero antitop value; absolute error negligible), and an added on-knot
+    *interpolation* self-consistency check at worst `|Δ| = 2.7e-20` (168 pts;
+    uses an atol+rtol bar because vanishing nodes like `x·f→0` at `x=1` make a
+    pure relative error meaningless against an exact-zero reference). Gated in
+    `validate_pdf_grid` (extended-validation). **Gate blind spots**: the oracle
+    only covers the *single-subgrid* pinned set, so the multi-subgrid **walk**
+    (first-in-range band selection, seam-lands-in-lower-band) is pinned instead
+    by default-suite unit tests on a synthetic 2-band fixture; and an
+    algorithm-independent **analytic** oracle (data bilinear in `(ln x, ln Q²)`
+    is reproduced exactly, since a local Hermite with FD slopes is exact for
+    functions linear in each log coordinate) catches an x/Q² transpose or a
+    linear-in-x-vs-ln-x coordinate bug that the LHAPDF comparison alone cannot
+    isolate.
 - H3: **`rambo_massless` kept bit-compatible.** `phasespace.rs` became a
   `phasespace/` tree: `mod.rs` (2-body LIPS helpers + `GEV2_TO_PB`, unchanged;
   re-exports `rambo`/`rambo_massless`/`RamboPoint`), `rng.rs`, `rambo.rs`. The
