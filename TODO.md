@@ -68,6 +68,12 @@ Follow-up performance work is limited to the deferred `mg-single-helicity-bench`
 `event-output-lhef`, since unweighted event generation evaluates one helicity configuration
 through the unexpanded program.
 
+All vs-MG ratios are single-host (Apple M3 Max) measurements; whether they hold on other
+microarchitectures (esp. AVX-512 x86, where MG's straight-line Fortran auto-vectorizes and
+our interpreter doesn't) is untested. Rerun kit for other boxes:
+`scripts/mg_perf_compare.sh` + recipe in note 15 §2.4 (regenerate MG reference natively →
+14/14 gate → bench-vs-MATRIX1 ratio table with host fingerprint, banked in `target/mg-perf/`).
+
 ---
 
 ## 🧬 `egraph-rewrite` — algebraic rewrite stage (**blocked**)

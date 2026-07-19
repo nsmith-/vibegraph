@@ -396,6 +396,49 @@ binary). Use `eval_strategies` for timing claims, always.
 program is the hot path); a smarter-than-hash-consing expansion (e.g. factoring the
 CF contraction across combinations) has no identified headroom yet.
 
+### 2.4 Cross-platform rerun kit (vs-MG comparison)
+
+(§2.3, the helicity-filter close-out, lands with the `eval-hel/helicity-filter`
+merge.)
+
+Every vs-MG ratio in this note was measured on one Apple-Silicon host (M3 Max,
+NEON). The two sides need not scale together across microarchitectures: MG's
+MATRIX1 is straight-line gfortran `-O3` Fortran that auto-vectorizers and wide
+x86 FMA units can feed directly, while our indexed-arena interpreter does not
+auto-vectorize (note 18 §5), so on AVX-512 silicon the gap could plausibly widen
+— the recorded 1.2×–3.5× is a per-platform measurement, not a constant. To rerun
+the comparison on another box:
+
+1. **Rebuild the MG side natively**: `pixi run -e madgraph generate-amplitude`.
+   The checked-in `mg_*.so` f2py modules and `output/mg_timings.json` are
+   host-specific artifacts of the recording machine; the ratios are meaningless
+   until both are regenerated on the target host (slow — chains the MG5
+   `build-diagrams` launch on first run).
+2. **Correctness gate before any timing claim**:
+   `pixi run --skip-deps -e madgraph validate-helas-mg` must pass 14/14. A
+   REL_TOL failure on new silicon is a finding, not noise — record it.
+3. **`scripts/mg_perf_compare.sh`** runs the honest bench (the
+   `eval_m2/forward/*` criterion rows only) and joins the medians against
+   `mg_timings.json`, printing per-process ns/eval, the vg/MG ratio column, the
+   geomean, and a host fingerprint (CPU, rustc, RUSTFLAGS, git HEAD, MG-timing
+   mtime); the same lands as markdown + TSV in `target/mg-perf/` for banking
+   here. `--skip-bench` re-joins existing criterion results (each row prints
+   its measurement date, so stale joins are visible).
+4. **Codegen fairness**: the recorded tables use default codegen on both sides
+   (rustc default `target-cpu`, f2py's default gfortran `-O3`, no
+   `-march=native` anywhere). Keep it that way, or raise both sides together —
+   `RUSTFLAGS="-C target-cpu=native"` *and* `-march=native` in
+   `build_amplitude.sh`'s `--f77flags` — never one side only. The SIMD
+   lane-width question (`lanes{N}` rows) is the separate AVX-512 kit
+   (note 18 §5, `scripts/dump_lane_asm.sh`).
+5. **Reading the result**: compare the *ratio* column against the recorded
+   tables, never absolute ns (clocks differ). The Rust side carries the ±2–3%
+   criterion/AST-seed noise floor; the MG side is a single warm-up + one-shot
+   batch, not a rigorous benchmark — treat ratio shifts under ~10% as noise.
+   The bench's pruning state must match the table you compare against
+   (unpruned §2.2 vs pruned §2.3 — the fingerprint's git HEAD pins which).
+   Bank the emitted table + fingerprint in this section.
+
 ## 3. Track 2 — `rooting-exploration` (throwaway, branch `explore/rooting`)
 
 Goal: quantify how much post-CSE node count depends on rooting choice, cheaply, before
