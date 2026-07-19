@@ -1,7 +1,18 @@
-//! Hadronic leading-order Drell–Yan cross section: `p p → e⁺ e⁻` assembled from
-//! the parton distributions ([`crate::pdf`]), the compiled helicity amplitude
-//! ([`crate::helas::eval`]), the run-card cut filter ([`crate::cuts`]), and the
-//! VEGAS integrator ([`crate::vegas`]).
+//! Leading-order cross-section integrands built from the compiled helicity
+//! amplitude ([`crate::helas::eval`]), the run-card cut filter ([`crate::cuts`]),
+//! and the VEGAS integrator ([`crate::vegas`]):
+//!
+//! * [`DrellYanIntegrand`] — proton beams (`lpp = 1`), the hadronic Drell–Yan
+//!   `p p → e⁺ e⁻` process convolved with parton distributions ([`crate::pdf`])
+//!   over a `(τ, y) × cosθ` map (documented below).
+//! * [`FixedBeamIntegrand`] — fixed-energy partonic beams (`lpp = 0`), an
+//!   arbitrary MG-validated process with no PDF convolution and a flat-RAMBO
+//!   phase-space map over any final-state multiplicity.
+//!
+//! The initial-state flux and spin×colour averaging factors are derived per
+//! process from its incoming legs ([`initial_spin_color_average`]).
+//!
+//! # Drell–Yan master formula
 //!
 //! # Master formula
 //!
@@ -45,6 +56,7 @@
 //! z-boost invariant.
 
 use std::cell::RefCell;
+use std::f64::consts::PI;
 
 use rand::SeedableRng;
 use thiserror::Error;
@@ -56,7 +68,7 @@ use crate::diagrams::{
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::PdfMember;
-use crate::phasespace::{prefactor2, GEV2_TO_PB};
+use crate::phasespace::{lips2_jacobian_u, rambo, GEV2_TO_PB};
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::vegas::{VegasGrid, VegasResult};
 
@@ -82,6 +94,13 @@ pub enum HadronicError {
     UnexpectedFlavors { up: Vec<i32>, down: Vec<i32> },
     #[error("no diagrams generated for the up-type or down-type Drell–Yan subprocess")]
     MissingClass,
+    #[error("proc card generated no non-empty subprocess")]
+    NoSubprocess,
+    #[error(
+        "fixed-energy beams require every subprocess to share the same external \
+         particle content, but the generated subprocesses differ"
+    )]
+    InconsistentExternals,
 }
 
 /// The Z/γ coupling classes of LO Drell–Yan, resolved from the `p p > e+ e-`
@@ -97,14 +116,23 @@ pub struct FlavorClasses {
     pub down_flavors: Vec<i32>,
 }
 
-/// Enumerate `p p → e⁺ e⁻` and partition the quark-initiated subprocesses into
-/// up-type and down-type Z/γ coupling classes, asserting the partition matches
-/// the expected massless 4-flavor content.
-pub fn dy_flavor_classes(model: &UFOModel) -> Result<FlavorClasses, HadronicError> {
+/// Generate the `p p → e⁺ e⁻` subprocesses — the input [`dy_flavor_classes`]
+/// partitions. Kept separate so the assembly is driven by generated diagram sets
+/// (from the caller's proc card) rather than a re-parsed hard-coded string.
+pub fn generate_dy_subprocesses(model: &UFOModel) -> Result<Vec<DiagramSet>, HadronicError> {
     let opts = ParsingOptions::default();
     let card = parse_proc_card("generate p p > e+ e-", &opts)?;
-    let sets = generate_from_proc_card(&card, model)?;
+    Ok(generate_from_proc_card(&card, model)?)
+}
 
+/// Partition the quark-initiated subprocesses of a `p p → e⁺ e⁻` enumeration into
+/// up-type and down-type Z/γ coupling classes, asserting the partition matches
+/// the expected massless 4-flavor content. `sets` come from the caller's proc
+/// card (e.g. via [`generate_dy_subprocesses`]).
+pub fn dy_flavor_classes(
+    sets: Vec<DiagramSet>,
+    model: &UFOModel,
+) -> Result<FlavorClasses, HadronicError> {
     let mut up_flavors: Vec<i32> = Vec::new();
     let mut down_flavors: Vec<i32> = Vec::new();
     let mut up_set: Option<DiagramSet> = None;
@@ -198,6 +226,9 @@ pub struct DrellYanIntegrand<'a> {
     cuts: &'a Cuts,
     up_flavors: Vec<i32>,
     down_flavors: Vec<i32>,
+    /// Initial-state spin×colour averaging factor, derived from the incoming
+    /// quark–antiquark pair (`1/(2·2·3·3) = 1/36`).
+    spin_color_avg: f64,
     /// Total hadronic invariant `s = (E₁+E₂)²` (head-on beams).
     s_had: f64,
     /// Factorization scale squared `μF²`.
@@ -223,7 +254,8 @@ pub struct PointFactors {
     pub m2_up: f64,
     /// Down-type color+helicity-summed |M|².
     pub m2_down: f64,
-    /// Partonic prefactor `prefactor2(√ŝ)/9` (flux · spin·color average · LIPS).
+    /// Partonic prefactor `1/(2ŝ) · LIPS · spin·colour average` (flux, the
+    /// 2-body LIPS Jacobian, and the process-derived initial-state average `1/36`).
     pub phat: f64,
     /// `(τ, y)` phase-space Jacobian (the `1/τ` already divided out).
     pub jac: f64,
@@ -254,6 +286,10 @@ impl<'a> DrellYanIntegrand<'a> {
     /// * `up_flavors` / `down_flavors` — positive quark PDG codes per class.
     /// * `sqrt_s_had` — total collider energy `√s = E₁ + E₂`.
     /// * `mu_f` — factorization scale.
+    ///
+    /// The initial-state spin×colour averaging factor is derived from the up-type
+    /// class's incoming legs ([`initial_spin_color_average`]); both classes share
+    /// the same quark–antiquark initial state.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         up: &'a BoundAmplitude<'a, f64>,
@@ -264,6 +300,7 @@ impl<'a> DrellYanIntegrand<'a> {
         down_flavors: Vec<i32>,
         sqrt_s_had: f64,
         mu_f: f64,
+        spin_color_avg: f64,
     ) -> Self {
         let s_had = sqrt_s_had * sqrt_s_had;
         let tau_min = cuts.shat_min() / s_had;
@@ -276,6 +313,7 @@ impl<'a> DrellYanIntegrand<'a> {
             cuts,
             up_flavors,
             down_flavors,
+            spin_color_avg,
             s_had,
             mu_f2: mu_f * mu_f,
             tau_min,
@@ -286,6 +324,14 @@ impl<'a> DrellYanIntegrand<'a> {
     /// Lower support `ŝ_min / s` of the logarithmic τ map.
     pub fn tau_min(&self) -> f64 {
         self.tau_min
+    }
+
+    /// Partonic prefactor `flux · LIPS · spin·colour average` for the 2→2
+    /// integrand: `1/(2ŝ)` flux, the 2-body LIPS Jacobian for the `cosθ ↔ u₃`
+    /// map, and the process-derived initial-state average.
+    fn partonic_prefactor(&self, sqrt_shat: f64) -> f64 {
+        let flux = 1.0 / (2.0 * sqrt_shat * sqrt_shat);
+        flux * lips2_jacobian_u(sqrt_shat) * self.spin_color_avg
     }
 
     /// Map a VEGAS point `u ∈ [0,1]³` to Drell–Yan kinematics.
@@ -333,10 +379,7 @@ impl<'a> DrellYanIntegrand<'a> {
             return 0.0;
         }
 
-        // Partonic prefactor: flux 1/(2ŝ), spin average 1/4, color average 1/9,
-        // and the 2-body LIPS Jacobian for the cosθ ↔ u₃ map — all but the 1/9 in
-        // `prefactor2`, which is written for the initial-state-spin-summed 2→2.
-        let phat = prefactor2(m.sqrt_shat) / 9.0;
+        let phat = self.partonic_prefactor(m.sqrt_shat);
 
         let m2_up = self.up.eval_m2(&cm, &mut self.up_scratch.borrow_mut());
         let m2_down = self.down.eval_m2(&cm, &mut self.down_scratch.borrow_mut());
@@ -354,7 +397,7 @@ impl<'a> DrellYanIntegrand<'a> {
         let pass = self.cuts.pass(&lab);
         let lum_up = self.luminosity(&self.up_flavors, m.x1, m.x2);
         let lum_down = self.luminosity(&self.down_flavors, m.x1, m.x2);
-        let phat = prefactor2(m.sqrt_shat) / 9.0;
+        let phat = self.partonic_prefactor(m.sqrt_shat);
         let m2_up = self.up.eval_m2(&cm, &mut self.up_scratch.borrow_mut());
         let m2_down = self.down.eval_m2(&cm, &mut self.down_scratch.borrow_mut());
         let value = if pass {
@@ -522,6 +565,223 @@ pub fn compile_class(
     Ok(evaluator)
 }
 
+/// Number of spin (helicity / polarization) states of a particle, from its UFO
+/// spin code (`2s+1`) and whether it is massless. A massless vector has no
+/// longitudinal mode, so it carries two states rather than three.
+fn spin_state_count(spin_code: i32, massless: bool) -> usize {
+    match spin_code.abs() {
+        1 => 1,                          // scalar
+        2 => 2,                          // fermion
+        3 => usize::from(!massless) + 2, // vector: 2 (massless) or 3 (massive)
+        5 => 5,                          // spin-2
+        other => panic!("unsupported spin code {other} for the spin average"),
+    }
+}
+
+/// The initial-state spin×colour averaging factor `1 / Π_a (n_spin,a · n_colour,a)`
+/// over the incoming legs of a compiled process.
+///
+/// Derived from the UFO particle data — spin code and colour-representation
+/// dimension (`|color|`: singlet 1, fundamental 3, adjoint 8) — and the resolved
+/// masses, so a process supplies its own averaging denominator instead of a
+/// hand-coded constant (`1/(2·2·3·3) = 1/36` for a quark–antiquark initial state,
+/// `1/(2·2) = 1/4` for `e⁺e⁻`, `1/(2·8·2·8) = 1/256` for `gg`).
+pub fn initial_spin_color_average(
+    eval: &AmplitudeEvaluator,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> f64 {
+    let mut denom = 1.0f64;
+    for &id in eval.external_particles().iter().take(eval.n_in()) {
+        let particle = model.particle(id);
+        let massless = evaluated.mass(id) == 0.0;
+        let n_spin = spin_state_count(particle.spin, massless);
+        let n_color = particle.color.unsigned_abs() as usize;
+        denom *= (n_spin * n_color) as f64;
+    }
+    1.0 / denom
+}
+
+/// Build the [`ExternalLeg`] list (incoming legs first, then outgoing) for a
+/// compiled process, reading PDG codes and pole masses from the model — the
+/// input [`Cuts::compile`] classifies.
+pub fn process_external_legs(
+    eval: &AmplitudeEvaluator,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Vec<ExternalLeg> {
+    eval.external_particles()
+        .iter()
+        .enumerate()
+        .map(|(i, &id)| {
+            let pdg = model.particle(id).pdg_code as i32;
+            let mass = evaluated.mass(id);
+            if i < eval.n_in() {
+                ExternalLeg::incoming(pdg, mass)
+            } else {
+                ExternalLeg::outgoing(pdg, mass)
+            }
+        })
+        .collect()
+}
+
+/// Compile every non-empty subprocess of a generated proc card into a
+/// helicity-pruned evaluator, requiring that they share one external-particle
+/// sequence so a single RAMBO mass list and one cut filter serve them all.
+pub fn compile_subprocesses(
+    sets: &[DiagramSet],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Result<Vec<AmplitudeEvaluator>, HadronicError> {
+    let mut evals = Vec::new();
+    for set in sets {
+        if set.diagrams.is_empty() {
+            continue;
+        }
+        evals.push(compile_class(set, model, evaluated)?);
+    }
+    if evals.is_empty() {
+        return Err(HadronicError::NoSubprocess);
+    }
+    let first: Vec<_> = evals[0].external_particles().to_vec();
+    if evals[1..]
+        .iter()
+        .any(|e| e.external_particles() != first.as_slice())
+    {
+        return Err(HadronicError::InconsistentExternals);
+    }
+    Ok(evals)
+}
+
+/// One compiled subprocess feeding a summed matrix element: a bound amplitude and
+/// its own evaluation scratch (behind [`RefCell`] so the integrand is `Fn`).
+struct BoundSubprocess<'a> {
+    amp: &'a BoundAmplitude<'a, f64>,
+    scratch: RefCell<ScratchSpace<f64>>,
+}
+
+/// A ready-to-integrate cross section for a **fixed-energy, no-PDF** beam
+/// configuration (`lpp = 0`) and an arbitrary final-state multiplicity, sampled
+/// with flat RAMBO under VEGAS.
+///
+/// The incoming particles *are* the beam particles: `√ŝ = E₁ + E₂` is fixed, so
+/// there is no `τ`/`x` sampling and no PDF luminosity. RAMBO maps the `4n` VEGAS
+/// uniforms to `n` on-shell final-state momenta summing to `(√ŝ, 0, 0, 0)` and
+/// supplies the invariant-volume weight; the two beams sit at `√ŝ/2` along ±z, so
+/// the full external set is already the partonic-CM, ±z-beam frame the
+/// helicity-pruned [`BoundAmplitude::eval_m2`] requires, and (for symmetric
+/// beams) the lab frame coincides with it — the same momenta feed the cut filter.
+///
+/// Flat RAMBO carries no importance mapping, so VEGAS converges slowly on peaked
+/// integrands; channel/importance maps are a separate concern.
+///
+/// # Master formula
+///
+/// ```text
+/// σ̂ = 1/(2ŝ) · ⟨spin·colour avg⟩ · ∫ dΦ_n Σ|M|²
+///    = 1/(2ŝ) · avg · (2π)^{4−3n} · ⟨weight_RAMBO · Σ_sub |M_sub|²⟩_uniform
+/// ```
+///
+/// where `Σ|M|²` is the colour+helicity-summed matrix element ([`eval_m2`]) and
+/// the `(2π)^{4−3n}` factor turns RAMBO's invariant volume `R_n` into the full
+/// `dΦ_n` measure.
+///
+/// [`eval_m2`]: BoundAmplitude::eval_m2
+pub struct FixedBeamIntegrand<'a> {
+    subs: Vec<BoundSubprocess<'a>>,
+    cuts: &'a Cuts,
+    sqrt_s: f64,
+    /// Final-state masses in outgoing-leg order, for the RAMBO map.
+    final_masses: Vec<f64>,
+    /// `1 / Π_a (n_spin · n_colour)` over the incoming legs.
+    spin_color_avg: f64,
+    /// The `(2π)^{4−3n}` measure factor.
+    lips_2pi: f64,
+    /// Beam energy `√ŝ/2`.
+    beam_e: f64,
+}
+
+impl<'a> FixedBeamIntegrand<'a> {
+    /// Build the integrand from one or more bound subprocess amplitudes sharing
+    /// the same external state.
+    ///
+    /// * `amps` — bound amplitudes whose colour+helicity-summed |M|² are added
+    ///   (a single subprocess for a fully-specified initial state).
+    /// * `cuts` — the compiled cut filter.
+    /// * `sqrt_s` — the fixed partonic energy `E₁ + E₂`.
+    /// * `final_masses` — outgoing pole masses in leg order (the RAMBO targets).
+    /// * `spin_color_avg` — the initial-state average ([`initial_spin_color_average`]).
+    pub fn new(
+        amps: Vec<&'a BoundAmplitude<'a, f64>>,
+        cuts: &'a Cuts,
+        sqrt_s: f64,
+        final_masses: Vec<f64>,
+        spin_color_avg: f64,
+    ) -> Self {
+        let n = final_masses.len();
+        let subs = amps
+            .into_iter()
+            .map(|amp| BoundSubprocess {
+                amp,
+                scratch: RefCell::new(amp.scratch_space()),
+            })
+            .collect();
+        FixedBeamIntegrand {
+            subs,
+            cuts,
+            sqrt_s,
+            final_masses,
+            spin_color_avg,
+            lips_2pi: (2.0 * PI).powi(4 - 3 * n as i32),
+            beam_e: sqrt_s / 2.0,
+        }
+    }
+
+    /// VEGAS dimensionality: the `4n` RAMBO uniforms for `n` final-state momenta.
+    pub fn vegas_ndim(&self) -> usize {
+        4 * self.final_masses.len()
+    }
+
+    /// The integrand value at a VEGAS point `u ∈ [0,1]^{4n}`, in natural units
+    /// (GeV⁻²); its VEGAS integral is the partonic cross section. Points whose
+    /// momenta fail a cut contribute exactly zero.
+    pub fn value(&self, u: &[f64]) -> f64 {
+        let point = rambo(self.sqrt_s, &self.final_masses, u);
+
+        let mut ext: Vec<V> = Vec::with_capacity(2 + self.final_masses.len());
+        ext.push(V::new(self.beam_e, 0.0, 0.0, self.beam_e));
+        ext.push(V::new(self.beam_e, 0.0, 0.0, -self.beam_e));
+        ext.extend(point.momenta);
+
+        if !self.cuts.pass(&ext) {
+            return 0.0;
+        }
+
+        let mut m2 = 0.0;
+        for sub in &self.subs {
+            m2 += sub.amp.eval_m2(&ext, &mut sub.scratch.borrow_mut());
+        }
+
+        let flux = 1.0 / (2.0 * self.sqrt_s * self.sqrt_s);
+        flux * self.spin_color_avg * self.lips_2pi * point.weight * m2
+    }
+
+    /// Integrate the cross section with VEGAS, returning `(σ, Δσ)` in picobarns.
+    pub fn integrate(&self, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
+        let result = self.adapt_grid(neval, niter, seed).1;
+        (result.integral * GEV2_TO_PB, result.std_dev * GEV2_TO_PB)
+    }
+
+    /// Run VEGAS adaptation, returning the trained grid alongside the result — the
+    /// primitive the `integrate` CLI command serializes into its artifact.
+    pub fn adapt_grid(&self, neval: usize, niter: usize, seed: u64) -> (VegasGrid, VegasResult) {
+        let mut grid = VegasGrid::new(self.vegas_ndim(), VEGAS_NBINS, VEGAS_ALPHA);
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        let result = grid.adapt(|u| self.value(u), neval, niter, &mut rng);
+        (grid, result)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,7 +795,7 @@ mod tests {
     #[test]
     fn dy_flavor_classes_partition_matches_enumeration() {
         let m = model();
-        let fc = dy_flavor_classes(&m).expect("classify DY");
+        let fc = dy_flavor_classes(generate_dy_subprocesses(&m).unwrap(), &m).expect("classify DY");
         assert_eq!(fc.up_flavors, vec![2, 4]);
         assert_eq!(fc.down_flavors, vec![1, 3]);
         // The representative subprocess has the quark on beam 1.
@@ -581,7 +841,7 @@ mod tests {
     fn cut_indicator_zeros_the_integrand() {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
-        let fc = dy_flavor_classes(&m).unwrap();
+        let fc = dy_flavor_classes(generate_dy_subprocesses(&m).unwrap(), &m).unwrap();
         let up = compile_class(&fc.up_set, &m, &evaluated).unwrap();
         let down = compile_class(&fc.down_set, &m, &evaluated).unwrap();
         let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
@@ -594,6 +854,7 @@ mod tests {
         let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
         let pdf = tiny_pdf();
 
+        let avg = initial_spin_color_average(&up, &m, &evaluated);
         let integ = DrellYanIntegrand::new(
             &b_up,
             &b_down,
@@ -603,12 +864,72 @@ mod tests {
             fc.down_flavors,
             13000.0,
             91.188,
+            avg,
         );
         // cosθ → 1 (u₃ ≈ 1) sends the leptons collinear with the beam: pT → 0
         // fails the ptl = 10 GeV cut, so the indicator zeros the integrand.
         assert_eq!(integ.value(&[0.5, 0.5, 0.99999]), 0.0);
         // A central, well-clear point at the ŝ floor is nonzero.
         assert!(integ.value(&[0.0, 0.5, 0.5]) > 0.0);
+    }
+
+    fn build_evaluator(proc: &str, m: &UFOModel, evaluated: &EvaluatedModel) -> AmplitudeEvaluator {
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card(&format!("generate {proc}"), &opts).unwrap();
+        let sets = generate_from_proc_card(&card, m).unwrap();
+        let set = sets.into_iter().find(|s| !s.diagrams.is_empty()).unwrap();
+        compile_class(&set, m, evaluated).unwrap()
+    }
+
+    #[test]
+    fn spin_color_average_is_process_derived() {
+        // The averaging denominator must fall out of the incoming legs' spin code
+        // and colour dimension — not a hand-coded constant. These pin that
+        // hypothesis: a miscount of spin states or colour dimension fails here.
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+
+        // q q̄: 2 spin × 3 colour, twice.
+        let uu = build_evaluator("u u~ > e+ e-", &m, &evaluated);
+        assert_eq!(initial_spin_color_average(&uu, &m, &evaluated), 1.0 / 36.0);
+        // e⁺e⁻: 2 spin, colour singlet, twice.
+        let ee = build_evaluator("e+ e- > mu+ mu-", &m, &evaluated);
+        assert_eq!(initial_spin_color_average(&ee, &m, &evaluated), 1.0 / 4.0);
+        // gg: massless vector (2 spin) × adjoint colour (8), twice.
+        let gg = build_evaluator("g g > t t~", &m, &evaluated);
+        assert_eq!(initial_spin_color_average(&gg, &m, &evaluated), 1.0 / 256.0);
+    }
+
+    #[test]
+    fn fixed_beam_integrand_finite_positive_2to2() {
+        // The flat-RAMBO fixed-energy path on a clean s-channel 2→2 process:
+        // a finite, positive σ, with the CM kinematics satisfying the pruned
+        // evaluator's ±z-beam frame contract (it would assert otherwise).
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+
+        let legs = process_external_legs(&evals[0], &m, &evaluated);
+        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let masses: Vec<f64> = evals[0].external_particles()[evals[0].n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(&evals[0], &m, &evaluated);
+
+        let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+        let integ = FixedBeamIntegrand::new(amps, &cuts, 500.0, masses, avg);
+        assert_eq!(integ.vegas_ndim(), 8);
+        let (sigma, err) = integ.integrate(20_000, 4, 0x5EED);
+        assert!(sigma.is_finite() && sigma > 0.0, "sigma = {sigma}");
+        assert!(err.is_finite() && err >= 0.0, "err = {err}");
     }
 
     fn tiny_pdf() -> PdfMember {

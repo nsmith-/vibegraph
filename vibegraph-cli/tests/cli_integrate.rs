@@ -17,7 +17,10 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use vibegraph::artifact::IntegrateArtifact;
 use vibegraph::cuts::Cuts;
-use vibegraph::hadronic::{compile_class, dy_external_legs, dy_flavor_classes, DrellYanIntegrand};
+use vibegraph::hadronic::{
+    compile_class, dy_external_legs, dy_flavor_classes, generate_dy_subprocesses,
+    initial_spin_color_average, DrellYanIntegrand,
+};
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::GEV2_TO_PB;
@@ -113,13 +116,14 @@ fn check_run(run: &str, run_card: &str) {
     let rc = RunCard::parse_file(&validation_dir().join(run_card)).unwrap();
     let model = sm_model(SMRestrict::Default);
     let evaluated = EvaluatedModel::from_model(model.clone());
-    let fc = dy_flavor_classes(&model).unwrap();
+    let fc = dy_flavor_classes(generate_dy_subprocesses(&model).unwrap(), &model).unwrap();
     let up = compile_class(&fc.up_set, &model, &evaluated).unwrap();
     let down = compile_class(&fc.down_set, &model, &evaluated).unwrap();
     let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
     let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
     let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
     let pdf = load_pdf();
+    let spin_color_avg = initial_spin_color_average(&up, &model, &evaluated);
     let integ = DrellYanIntegrand::new(
         &b_up,
         &b_down,
@@ -129,6 +133,7 @@ fn check_run(run: &str, run_card: &str) {
         fc.down_flavors,
         artifact.sqrt_s_had,
         artifact.mu_f,
+        spin_color_avg,
     );
 
     let mut rng = ChaCha8Rng::seed_from_u64(0xF202E0);
