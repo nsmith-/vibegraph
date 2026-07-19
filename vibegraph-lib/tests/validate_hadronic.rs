@@ -31,6 +31,7 @@ mod validate_hadronic {
     use vibegraph::helas::eval::BoundAmplitude;
     use vibegraph::pdf::{PdfMember, PdfSet};
     use vibegraph::runcard::RunCard;
+    use vibegraph::ufo::slha::ParamCard;
     use vibegraph::ufo::EvaluatedModel;
 
     const MU_F: f64 = 91.1880;
@@ -132,5 +133,107 @@ mod validate_hadronic {
     #[test]
     fn sigma_mmll_window_vs_mg() {
         check_run("mmll_60_120", "dy13_mmll_run_card.dat");
+    }
+
+    /// Pointwise integrand oracle: at ~10 pinned `(x₁, x₂, cosθ)` points
+    /// (including two straddling the pT_ℓ = 10 GeV cut boundary), every factor
+    /// of vibegraph's integrand — PDF luminosity, |M|², flux prefactor, the
+    /// (τ,y) Jacobian, the cut indicator, and their product — must match the
+    /// independent Python oracle (LHAPDF `xfxQ2` × MadGraph standalone |M|²)
+    /// to ≤ 1e-9 relative. Regenerate with `pixi run -e madgraph
+    /// generate-dy-oracle`.
+    #[test]
+    fn pointwise_integrand_oracle() {
+        let oracle_path = validation_dir().join("dy_integrand_oracle.json");
+        let text = std::fs::read_to_string(&oracle_path).unwrap_or_else(|e| {
+            panic!(
+                "missing {}: {e}\n run `pixi run -e madgraph generate-dy-oracle`",
+                oracle_path.display()
+            )
+        });
+        let oracle: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let points = oracle["points"].as_array().expect("points array");
+
+        // Bind vibegraph with MadGraph's exact param card (committed alongside the
+        // oracle) so the |M|² comparison is at rounding level, not the ~1e-3 param
+        // floor.
+        let model = super::common::sm_model();
+        let card_path = validation_dir().join(
+            oracle["param_card"]
+                .as_str()
+                .unwrap_or("dy13_param_card.dat"),
+        );
+        let card = std::fs::read_to_string(&card_path)
+            .ok()
+            .and_then(|s| s.parse::<ParamCard>().ok())
+            .expect("parse committed param card");
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+
+        let fc = dy_flavor_classes(&model).expect("classify DY");
+        let up = compile_class(&fc.up_set, &model, &evaluated).expect("up class");
+        let down = compile_class(&fc.down_set, &model, &evaluated).expect("down class");
+        let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
+        let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
+
+        let rc = RunCard::parse_file(&validation_dir().join("dy13_default_run_card.dat")).unwrap();
+        let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
+        let pdf = load_pdf();
+        let integ = DrellYanIntegrand::new(
+            &b_up,
+            &b_down,
+            &pdf,
+            &cuts,
+            fc.up_flavors,
+            fc.down_flavors,
+            SQRT_S_HAD,
+            MU_F,
+        );
+
+        const TOL: f64 = 1e-9;
+        // A relative comparison with a small absolute floor for near-zero factors
+        // (e.g. the integrand value at the far tail, ~1e-9 GeV⁻²).
+        let rel = |a: f64, b: f64| (a - b).abs() / b.abs().max(1e-30);
+
+        let mut worst = 0.0f64;
+        for (i, p) in points.iter().enumerate() {
+            let u: Vec<f64> = p["u"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_f64().unwrap())
+                .collect();
+            let f = integ.debug_factors(&u);
+            let g = |k: &str| p[k].as_f64().unwrap();
+
+            assert_eq!(
+                f.pass,
+                p["pass"].as_bool().unwrap(),
+                "cut indicator, point {i}"
+            );
+            for (name, got, want) in [
+                ("x1", f.x1, g("x1")),
+                ("x2", f.x2, g("x2")),
+                ("sqrt_shat", f.sqrt_shat, g("sqrt_shat")),
+                ("lum_up", f.lum_up, g("lum_up")),
+                ("lum_down", f.lum_down, g("lum_down")),
+                ("m2_up", f.m2_up, g("m2_up")),
+                ("m2_down", f.m2_down, g("m2_down")),
+                ("phat", f.phat, g("phat")),
+                ("jac", f.jac, g("jac")),
+                ("value", f.value, g("value")),
+            ] {
+                let r = rel(got, want);
+                worst = worst.max(r);
+                assert!(
+                    r <= TOL,
+                    "point {i} factor '{name}': vibegraph {got:.12e} vs oracle {want:.12e}, \
+                     rel = {r:.2e} > {TOL:.0e}"
+                );
+            }
+        }
+        eprintln!(
+            "[pointwise oracle] {} points, worst rel = {worst:.2e}",
+            points.len()
+        );
     }
 }
