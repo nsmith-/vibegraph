@@ -236,4 +236,113 @@ mod validate_hadronic {
             points.len()
         );
     }
+
+    /// Emit the informational dσ/dm_ℓℓ comparison table (committed, not gated):
+    /// vibegraph's Drell–Yan mass spectrum under default cuts, with the two
+    /// banked MadGraph σ values as integral anchors (full range and the
+    /// [60,120] window). Run explicitly to regenerate the committed artifact:
+    ///
+    ///   cargo test -p vibegraph-lib --features extended-validation \
+    ///     --test validate_hadronic emit_dsigma_dmll -- --ignored --nocapture
+    #[test]
+    #[ignore = "writes the committed dσ/dm_ll artifact; run manually"]
+    fn emit_dsigma_dmll_table() {
+        use std::fmt::Write as _;
+
+        let model = super::common::sm_model();
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let fc = dy_flavor_classes(&model).unwrap();
+        let up = compile_class(&fc.up_set, &model, &evaluated).unwrap();
+        let down = compile_class(&fc.down_set, &model, &evaluated).unwrap();
+        let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
+        let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
+        let rc = RunCard::parse_file(&validation_dir().join("dy13_default_run_card.dat")).unwrap();
+        let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
+        let pdf = load_pdf();
+        let integ = DrellYanIntegrand::new(
+            &b_up,
+            &b_down,
+            &pdf,
+            &cuts,
+            fc.up_flavors,
+            fc.down_flavors,
+            SQRT_S_HAD,
+            MU_F,
+        );
+
+        let (m_lo, m_hi, nbins) = (20.0_f64, 200.0_f64, 36);
+        let bin_w = (m_hi - m_lo) / nbins as f64;
+        let dens = integ.dsigma_dmll(m_lo, m_hi, nbins, 8_000_000, 424242);
+
+        let (mg_default, _) = banked("default").unwrap_or((f64::NAN, 0.0));
+        let (mg_window, _) = banked("mmll_60_120").unwrap_or((f64::NAN, 0.0));
+        let sig_window: f64 = dens
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                let lo = m_lo + *i as f64 * bin_w;
+                lo >= 60.0 && lo < 120.0
+            })
+            .map(|(_, d)| d * bin_w)
+            .sum();
+        let sig_20_200: f64 = dens.iter().map(|d| d * bin_w).sum();
+
+        let mut out = String::new();
+        writeln!(
+            out,
+            "# Drell–Yan dσ/dm_ℓℓ — vibegraph vs MadGraph (informational)\n"
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "pp → e⁺e⁻ at √s = 13 TeV, LO, NNPDF23_lo_as_0130_qed (μF = m_Z), \
+             default cuts (pT_ℓ > 10 GeV, |η_ℓ| < 2.5). vibegraph spectrum from \
+             8×10⁶ Monte-Carlo samples of the (τ,y,cosθ) integrand; MadGraph σ \
+             values from `hadronic_sigma_reference.json` anchor the integral.\n"
+        )
+        .unwrap();
+        writeln!(out, "| m_ℓℓ bin (GeV) | dσ/dm_ℓℓ (pb/GeV) | bin σ (pb) |").unwrap();
+        writeln!(out, "|---|---|---|").unwrap();
+        for (i, d) in dens.iter().enumerate() {
+            let lo = m_lo + i as f64 * bin_w;
+            writeln!(
+                out,
+                "| {lo:.0}–{:.0} | {d:.4} | {:.3} |",
+                lo + bin_w,
+                d * bin_w
+            )
+            .unwrap();
+        }
+        writeln!(
+            out,
+            "\n## Integral cross-checks (vibegraph vs banked MadGraph)\n"
+        )
+        .unwrap();
+        writeln!(out, "| range | vibegraph σ (pb) | MadGraph σ (pb) | rel |").unwrap();
+        writeln!(out, "|---|---|---|---|").unwrap();
+        writeln!(
+            out,
+            "| m_ℓℓ ∈ [60,120] | {sig_window:.2} | {mg_window:.2} | {:.3} |",
+            (sig_window - mg_window).abs() / mg_window
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "| m_ℓℓ ∈ [20,200] | {sig_20_200:.2} | (full-range MG {mg_default:.2}) | — |"
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "\n(The full MadGraph σ = {mg_default:.2} pb covers all m_ℓℓ ≥ 2·pT_ℓ, so it \
+             exceeds the [20,200] vibegraph integral by the m_ℓℓ > 200 tail.)"
+        )
+        .unwrap();
+
+        let path = validation_dir().join("dy_dsigma_dmll.md");
+        std::fs::write(&path, out).unwrap();
+        eprintln!(
+            "wrote {} ; [60,120] vibegraph {sig_window:.2} vs MG {mg_window:.2} pb",
+            path.display()
+        );
+    }
 }
