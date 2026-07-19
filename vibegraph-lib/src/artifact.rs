@@ -174,4 +174,46 @@ mod tests {
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();
     }
+
+    /// The grid survives the bincode+zstd round trip bit-for-bit, so a frozen
+    /// sampling pass on the reloaded grid reproduces the in-memory grid's
+    /// estimate exactly under the same seed — the property a later
+    /// distributed sampling phase relies on.
+    #[test]
+    fn reloaded_grid_sample_frozen_reproduces() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+
+        // Adapt a grid on a smooth synthetic integrand (no PDF dependency).
+        let integrand = |u: &[f64]| 3.0 * u[0] * u[0] + 2.0 * u[1];
+        let mut grid = VegasGrid::new(2, 48, 1.5);
+        let mut rng = ChaCha8Rng::seed_from_u64(7);
+        grid.adapt(integrand, 5000, 6, &mut rng);
+
+        let mut artifact = sample_artifact();
+        artifact.grid = grid.clone();
+
+        let dir = std::env::temp_dir().join(format!(
+            "vibegraph-artifact-test-frozen-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("frozen.bin.zst");
+        let _ = std::fs::remove_file(&path);
+        artifact.write_to_path(&path, true).unwrap();
+        let reloaded = IntegrateArtifact::read_from_path(&path).unwrap();
+
+        // Same seed, in-memory vs reloaded grid → bit-identical estimate.
+        let sample = |g: &VegasGrid| {
+            let mut r = ChaCha8Rng::seed_from_u64(99);
+            g.sample_frozen(integrand, 4000, &mut r)
+        };
+        let before = sample(&grid);
+        let after = sample(&reloaded.grid);
+        assert_eq!(before.integral.to_bits(), after.integral.to_bits());
+        assert_eq!(before.std_dev.to_bits(), after.std_dev.to_bits());
+
+        std::fs::remove_file(&path).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
 }
