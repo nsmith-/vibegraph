@@ -795,7 +795,62 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
     once at first call (`cuts.f:219-221`), giving the standard `ΔR ≥ dr` bound —
     mirrored in Rust as signed squares like `mm`/`ptll`; H7's σ gate confirms it
     end-to-end against a real MG run.
-- H7: x-mapping kept `ln x` / switched to (τ, y) because …
+- H7 (`hadronic-sigma`, DONE): σ(pp→e⁺e⁻) assembled in `hadronic.rs` from the PDF
+  luminosity, the two coupling-class amplitudes, the compiled cuts, and VEGAS.
+  Both reference runs enforced within combined MC error; pointwise oracle at
+  1.15e-14. Banked MG σ (fixed μF=μR=m_Z, NNPDF23_lo_as_0130_qed):
+  - **default cuts**: MG **933.11 ± 0.447 pb**, vibegraph **934.42 ± 0.87 pb**
+    (Δ = 1.31 pb, 1.3σ, **0.14 %**).
+  - **m_ll ∈ [60,120]**: MG **644.42 ± 0.315 pb**, vibegraph **644.86 ± 0.57 pb**
+    (Δ = 0.44 pb, 0.7σ, **0.07 %**).
+  - **x-mapping: switched from the `ln x`(x₁,x₂) map to (τ = ŝ/s, y = ½ln(x₁/x₂)).**
+    The §2.5 direct `xᵢ = x_min^(1−uᵢ)` map makes the dilepton-mass window a *thin
+    diagonal band* `x₁x₂ ∈ [ŝ_min, ŝ_max]/s` in the (u₁,u₂) square; VEGAS could not
+    resolve it and the mmll[60,120] run came out **−6 % (−5.8σ)** biased low (with
+    the default run also mis-converged, +0.78 %). Under (τ,y) the window is a
+    one-dimensional bound on τ (`τ ∈ [ŝ_min, ŝ_max]/s`), which VEGAS resolves
+    trivially — both runs then land at ~0.1 % with ~10× smaller MC error. The
+    Jacobian identity survives: `dx₁dx₂ = dτ dy`, and with τ log-sampled
+    (`τ = τ_min^(1−u₁)`, `τ_min = ŝ_min/s`) the `1/τ` from `f = (x·f)/x` on both
+    legs cancels `dτ/du₁ = τ·ln(1/τ_min)`, leaving `jac = ln(1/τ_min)·2·y_max`
+    with `y_max = ½ln(1/τ)`. τ ≥ τ_min makes ŝ ≥ ŝ_min automatic, so there is *no*
+    low-side rejection band (the note's "reject points outside the window" is only
+    needed on the high-mass side, handled by the mmll-max cut). This is the
+    "recorded alternative if adaption struggles" of §2.5 — adaption struggled, so
+    it was taken.
+  - **PDF lhaid convention surprise.** The pinned NNPDF23_lo_as_0130_qed set is
+    **lhaid 247000**, not 244600 (§3/§4 guess — that is NNPDF23_nlo_as_0118_qed)
+    and not 230000 (the value in the `run_card_dy.dat` parser fixture — that is
+    NNPDF23_nlo_as_0119, a different, NLO, non-QED set). Both MG (`pdlabel=lhapdf`,
+    `lhaid=247000`) and vibegraph consume this exact set, so the interpolation
+    scheme is identical (LHAPDF log-bicubic, per H2) — no interpolation systematic.
+  - **Averaging/flux convention.** `eval_m2` is MATRIX1-summed (color+helicity),
+    so the integrand carries flux `1/(2ŝ)`, spin-average `1/4`, **and** the qq̄
+    color average `1/9` — the last one *on top of* `phasespace::prefactor2`
+    (written for the initial-spin-summed 2→2, i.e. `1/(2s)·1/4·1/(8π)`), giving the
+    net DY color factor `1/3` once the color-summed `eval_m2` (which already
+    carries the factor-3 color sum) is folded in. The cosθ↔u₃ map's factor of 2
+    lives inside `prefactor2`; VEGAS integrates the bare `du₃`.
+  - **Cut frame (the wave-1 lesson applied).** `eval_m2` runs in the partonic CM
+    (±z beams — the pruned-evaluator contract), but `Cuts::pass` operates on
+    **lab-frame** momenta (its rapidity/pT observables are not z-boost invariant,
+    and `cuts.f` boosts by the parton-system rapidity). So the final leptons are
+    boosted along z by `y = ½ln(x₁/x₂)` before the cut; |M|² stays in the CM. The
+    back-to-back LO leptons have Δφ = π (a z-boost preserves px,py), so `drll=0.4`
+    never fires — consistent with the `shat_min()` hint using `2·ptl`, not drll.
+  - **MG–LHAPDF link workaround.** MadEvent's madevent failed to link LHAPDF
+    (`__cxa_throw`, `__gxx_personality_v0` unresolved): the conda activation
+    exports its own `LDFLAGS`, so MG's `make_opts` `ifeq($(origin LDFLAGS),undefined)`
+    guard sees LDFLAGS as set and drops its `STDLIB=-lc++`. Fix (in
+    `gen_hadronic_sigma.sh`): run `generate_events` with `LDFLAGS="$LDFLAGS -lc++"`
+    appended. Read the surrounding control flow, not just the cited make line —
+    same lesson as the cuts.f `dr`-squaring.
+  - **Param card.** The enforced σ tests bind vibegraph with `from_model`
+    (restrict_default) — the 0.1 % agreement absorbs the tiny coupling difference
+    vs MG's param card. The **pointwise oracle** binds with MG's *exact* param card
+    (committed `dy13_param_card.dat`) so its |M|² comparison is at rounding level
+    (1e-14), and additionally pins the **down-type** `d d~ > e+ e-` |M|² against MG
+    standalone, which the up-type-only `validate_helas_mg` net does not cover.
 
 ## 6. Deferred follow-ups
 
