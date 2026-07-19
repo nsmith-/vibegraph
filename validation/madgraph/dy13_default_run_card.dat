@@ -1,0 +1,40 @@
+#*********************************************************************
+#  H7 hadronic-sigma reference run card: p p > e+ e- at 13 TeV, LO
+#  default MadGraph lepton cuts. Shared verbatim by the MadGraph
+#  reference generation and by vibegraph's integrand, so cut/beam/PDF
+#  settings cannot drift between the two sides.
+#*********************************************************************
+  tag_1   = run_tag  ! name of the run
+  200000  = nevents  ! number of unweighted events requested
+  33      = iseed    ! rnd seed (fixed for reproducibility)
+#*********************************************************************
+# Collider: 13 TeV proton-proton
+#*********************************************************************
+  1       = lpp1
+  1       = lpp2
+  6500.0  = ebeam1
+  6500.0  = ebeam2
+#*********************************************************************
+# PDF: LHAPDF NNPDF23_lo_as_0130_qed (lhaid 247000 = MG5 nn23lo1 LO+QED),
+# the exact set vibegraph's pdf module reads from validation/pdf/.
+#*********************************************************************
+  lhapdf  = pdlabel
+  247000  = lhaid
+#*********************************************************************
+# Fixed factorization and renormalization scales at mu = m_Z
+#*********************************************************************
+  True    = fixed_ren_scale
+  True    = fixed_fac_scale
+  91.1880 = scale
+  91.1880 = dsqrt_q2fact1
+  91.1880 = dsqrt_q2fact2
+#*********************************************************************
+# Standard cuts (MadGraph LO defaults for charged leptons)
+#*********************************************************************
+  0.0   = dsqrt_shat
+  10.0  = ptl
+  2.5   = etal
+  0.4   = drll
+  0.0   = mmll
+  -1.0  = mmllmax
+  4     = maxjetflavor

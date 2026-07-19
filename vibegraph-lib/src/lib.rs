@@ -1,6 +1,7 @@
 pub mod config;
 pub mod cuts;
 pub mod diagrams;
+pub mod hadronic;
 pub mod helas;
 pub mod pdf;
 pub mod phasespace;
