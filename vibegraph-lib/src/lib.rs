@@ -1,3 +1,4 @@
+pub mod artifact;
 pub mod config;
 pub mod cuts;
 pub mod diagrams;
