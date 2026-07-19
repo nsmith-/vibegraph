@@ -122,7 +122,7 @@ impl Index<LorentzId> for IndexMap<String, LorentzStructure> {
 }
 
 /// A Lorentz tensor structure from `lorentz.py`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LorentzStructure {
     /// Python variable name, e.g. `"FFV1"`.
     pub python_name: String,

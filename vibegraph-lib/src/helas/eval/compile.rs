@@ -64,6 +64,11 @@ pub struct AmplitudeEvaluator {
     /// Exact color-factor matrix `CF_{ij}` (row-major, `cf_matrix[i*n_flows + j]`),
     /// evaluated at `Nc = 3`. `BoundAmplitude::bind` resolves it to the scalar field.
     cf_matrix: Vec<Ratio<i64>>,
+    /// Set by [`prune_zero_helicities`](Self::prune_zero_helicities) once it has
+    /// actually dropped combinations. `eval_m2` on a pruned evaluator only sums the
+    /// survivors, so it is correct only under that method's kinematic contract
+    /// (partonic-CM momenta, beams along ±z) — see [`Self::is_pruned`].
+    pruned: bool,
 }
 
 impl AmplitudeEvaluator {
@@ -144,6 +149,7 @@ impl AmplitudeEvaluator {
             helicities,
             n_flows: basis.ncolor(),
             cf_matrix: basis.cf_matrix,
+            pruned: false,
         })
     }
 
@@ -193,6 +199,14 @@ impl AmplitudeEvaluator {
     /// `cf_matrix[i*n_flows + j]`, evaluated at `Nc = 3`).
     pub fn cf_matrix(&self) -> &[Ratio<i64>] {
         &self.cf_matrix
+    }
+
+    /// Whether [`prune_zero_helicities`](Self::prune_zero_helicities) has dropped
+    /// any combinations. `eval_m2` on a pruned evaluator only sums the survivors
+    /// and is correct only for partonic-CM momenta with beams along ±z (see that
+    /// method's doc for why: some survivors are frame-bound zeros, not identities).
+    pub(super) fn is_pruned(&self) -> bool {
+        self.pruned
     }
 
     /// MadGraph-style helicity filtering: drop the helicity combinations whose
@@ -286,6 +300,7 @@ impl AmplitudeEvaluator {
             .map(|(h, _)| h.clone())
             .collect();
         self.folded_hel = OnceLock::new();
+        self.pruned = true;
         dropped
     }
 

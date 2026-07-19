@@ -34,7 +34,7 @@ pub enum ParamNature {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Parameter {
     pub name: String,
     /// `true` if `type = 'complex'`
@@ -43,7 +43,7 @@ pub struct Parameter {
 }
 
 /// A complete set of parsed parameters, ready for evaluation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParameterSet {
     /// External parameters (no deps on other params).
     pub externals: Vec<Parameter>,

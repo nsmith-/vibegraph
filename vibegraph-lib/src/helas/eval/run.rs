@@ -200,6 +200,9 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         if momenta.len() != self.eval.n_ext() {
             return F::zero();
         }
+        if self.eval.is_pruned() {
+            assert_partonic_cm_beams_along_z(momenta, self.eval.n_in());
+        }
         let folded = self.eval.folded_hel();
         resolve_moms(folded, momenta, scratch);
         // Baked-helicity externals never read the per-evaluation helicity assignment.
@@ -449,6 +452,56 @@ pub(super) fn run_forward_slot<F: Real>(
         res.push(value);
     }
     res[ast.root() as usize]
+}
+
+/// Check the kinematic contract a helicity-pruned evaluator requires: two incoming
+/// legs, each along the z axis (zero transverse momentum), with zero total incoming
+/// 3-momentum (partonic CM). A combination `prune_zero_helicities` drops can be an
+/// exact identity in this frame yet contribute at the ~1e-3 level once the event is
+/// boosted — massive-particle helicity is not boost invariant, so J_z conservation
+/// about the beam axis (which zeroes those combinations) only holds in the frame the
+/// pruning survey used. Compiled into debug builds and `extended-validation` only;
+/// released binaries pay nothing for it.
+#[inline]
+fn assert_partonic_cm_beams_along_z<F: Real>(momenta: &[LorentzVector<F>], n_in: usize) {
+    #[cfg(any(debug_assertions, feature = "extended-validation"))]
+    {
+        assert_eq!(
+            n_in, 2,
+            "pruned evaluator has {n_in} incoming legs; the pruning survey only \
+             probes 2 → n kinematics"
+        );
+        let tol: F = num_traits::cast(1e-6_f64).expect("tolerance representable");
+        let scale = momenta[0].e().abs().max(momenta[1].e().abs()).max(F::one());
+        let small = |x: F| x.abs() <= tol * scale;
+
+        assert!(
+            small(momenta[0].px())
+                && small(momenta[0].py())
+                && small(momenta[1].px())
+                && small(momenta[1].py()),
+            "pruned evaluator requires beams along the z axis; got incoming transverse \
+             momenta ({:?}, {:?}) and ({:?}, {:?})",
+            momenta[0].px(),
+            momenta[0].py(),
+            momenta[1].px(),
+            momenta[1].py(),
+        );
+
+        let px_tot = momenta[0].px() + momenta[1].px();
+        let py_tot = momenta[0].py() + momenta[1].py();
+        let pz_tot = momenta[0].pz() + momenta[1].pz();
+        assert!(
+            small(px_tot) && small(py_tot) && small(pz_tot),
+            "pruned evaluator requires partonic-CM kinematics (zero total incoming \
+             3-momentum); got ({px_tot:?}, {py_tot:?}, {pz_tot:?}) — a boosted input \
+             silently revives helicity combinations the pruning survey dropped"
+        );
+    }
+    #[cfg(not(any(debug_assertions, feature = "extended-validation")))]
+    {
+        let _ = (momenta, n_in);
+    }
 }
 
 /// Resolve the per-point momentum pool: `scratch.moms[id]` becomes the external-momentum
@@ -3906,6 +3959,57 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A pruned evaluator's `eval_m2` requires partonic-CM momenta with beams along
+    /// ±z (`prune_zero_helicities` docs): `g g > t t~` drops same-helicity-gluon /
+    /// opposite-helicity-top combinations that vanish by J_z conservation about the
+    /// beam axis only in that frame. Feeding it a z-boosted point (physically valid
+    /// kinematics, just the wrong frame for a pruned evaluator) must be caught
+    /// rather than silently under-counting the sum. Without the frame guard in
+    /// `eval_m2` this call would return a low-by-~3e-3 result instead of panicking.
+    #[test]
+    #[should_panic(expected = "partonic-CM kinematics")]
+    fn eval_m2_pruned_rejects_boosted_frame() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massive;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let mut rng = StdRng::seed_from_u64(0xB005_1E5);
+        let sqrt_s = 500.0;
+
+        let pc = parse_proc_card("generate g g > t t~", &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, &model).unwrap();
+        let mut eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+        let dropped = eval.prune_zero_helicities(&evaluated);
+        assert!(
+            dropped > 0,
+            "expected g g > t t~ to prune some combinations"
+        );
+        assert!(eval.is_pruned());
+
+        let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+        let mut scratch = bound.scratch_space();
+        let m_out: Vec<f64> = eval.external_particles()[eval.n_in()..]
+            .iter()
+            .map(|&pid| evaluated.mass(pid))
+            .collect();
+        let mut p = vec![
+            LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+            LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+        ];
+        p.extend(rambo_massive(sqrt_s, &m_out, &mut rng));
+
+        // Boost the whole event along the beam axis: still on-shell, momentum-
+        // conserving kinematics, but no longer the partonic-CM frame the pruning
+        // survey assumed.
+        let boosted: Vec<LorentzVector<f64>> =
+            p.iter().map(|q| q.boost([0.0, 0.0, 0.43])).collect();
+        bound.eval_m2(&boosted, &mut scratch);
     }
 }
 

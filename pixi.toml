@@ -13,6 +13,16 @@ install-samply = "which samply || cargo install --locked samply"
 profile-diagrams = { cmd = "bash scripts/profile.sh validate_madgraph_diagrams", depends-on = ["install-samply"] }
 # Custom command to build docs with MathJax support for rendering LaTeX in docstrings
 docs = "RUSTDOCFLAGS=\"--html-in-header doc-include/mathjax-header.html\" cargo doc --no-deps"
+# Ensure the SM UFO submodule is checked out (offline once the object cache exists)
+init-sm-submodule = "git submodule update --init research/refs/mg5amcnlo"
+# Fail if the committed interned SM blob (src/ufo/sm_assets/, written by the
+# gen_sm_blob dev binary) disagrees with a fresh parse of the pinned submodule —
+# catches a stale blob after a submodule bump or an SM UFO source edit. A bare
+# `cargo test` skips this check when the submodule isn't checked out, so this task
+# inits it first.
+check-sm-blob-fresh = { cmd = "cargo test -p vibegraph-lib --lib ufo::sm::tests::interned_blob_matches_submodule_exactly -- --exact", depends-on = [
+    "init-sm-submodule",
+] }
 
 
 # --- nougat: scientific PDF OCR ---
