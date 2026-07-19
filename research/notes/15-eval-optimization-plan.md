@@ -1,8 +1,11 @@
 # 15 — Post-CSE Evaluator Optimization: Research Findings & 3-Track Plan
 
-**Status:** Plan of record (2026-07-11). Successor planning to the closed
-`performance-sprint` (see `TODO.md` timing table — the reference baseline). Companion
-to `research/notes/14-egglog-notes.md` (egglog language reference).
+**Status:** CLOSED 2026-07-17 — the program is complete and this note is its design
+and measurement record. Planned 2026-07-11 as successor to the closed
+`performance-sprint`; §2.1 (layout tracks close-out), §2.2 (helicity expansion), and
+§2.3 (helicity filtering) record the outcomes, and the pre-program baseline table
+lives at the end of §2.1. Deferred items are summarized in `TODO.md`. Companion to
+`research/notes/14-egglog-notes.md` (egglog language reference).
 
 The perf sprint left the evaluator 8.6×–110× slower than MG MATRIX1 with post-CSE
 2→6s at ~15 nodes/diagram. This note records the research that scoped what comes
@@ -283,8 +286,32 @@ The bench covers 7 of the 14 `MG_VALIDATED_PROCESSES` — every all-massless-ext
 (NCOLOR=2/6, the CF-weighted multi-flow `eval_m2` A5 recycles across). The 7
 massive-external processes (ee_to_zh/ttx/wpwm/tatah, gg_to_ttx, the bbx 2→6,
 pp_to_ll_qcd0) are absent from the honest bench (they need mass-aware kinematics), so
-their pre-program figures in the `TODO.md` baseline table were not honestly re-measured;
+their pre-program figures in the baseline table below were not honestly re-measured;
 the layout wins are process-structural, so the same ~1.8× is expected but unverified here.
+
+**Pre-program baseline** (recorded 2026-07-13; dev machine, `--profile profiling`,
+`--test-threads=1`, ns/eval — the `performance-sprint` P5 close-out plus the
+`color-flow` close-out rows). ⚠️ Taken through the `validate_helas_mg` timing report,
+which compiles the per-node cross-check into the loop — **not comparable** to the
+honest `eval_strategies` tables in this note. Kept as the program's starting record
+and the only figures covering the 7 massive-external processes:
+
+| process | MG | pre-program `main` | ratio |
+|---|---:|---:|---:|
+| ee_to_zh | 206 | 1,947 | 9.5× |
+| ee_to_mumu | 328 | 3,980 | 12× |
+| pp_to_ll_qcd0 | 298 | 4,551 | 15× |
+| ee_to_ttx | 357 | 4,728 | 13× |
+| uux_to_uux | 278 | 5,121 | 18.5× |
+| ee_to_ee | 743 | 6,419 | 8.6× |
+| gg_to_ttx | 659 | 9,148 | 13.9× |
+| ee_to_tatah | 859 | 11,327 | 13× |
+| ee_to_wpwm | 776 | 20,709 | 27× |
+| gg_to_gg | 949 | 24,110 | 25.4× |
+| ee_to_mumua | 1,510 | 28,520 | 19× |
+| ee_to_mumu_tata_qcd0 | 6,404 | 145,032 | 23× |
+| uux_to_ccx_emmm_qcd0 | 100,230 | 10,981,139 | 110× |
+| bbx_to_ccx_emmm_qcd0 | 141,430 | 11,821,262 | 84× |
 
 **Per-session ledger** (gate = 14-process `validate_helas_mg`):
 - **A0** — 8 B tagged `Const` pack + instruction-width sensitivity harness. Bit-for-bit.
@@ -396,10 +423,117 @@ binary). Use `eval_strategies` for timing claims, always.
 program is the hot path); a smarter-than-hash-consing expansion (e.g. factoring the
 CF contraction across combinations) has no identified headroom yet.
 
-### 2.4 Cross-platform rerun kit (vs-MG comparison)
+**CF-factoring analysis (2026-07-17, program wrap-up)** — the "no identified
+headroom" verdict, worked out. The candidate restructure accumulates the Hermitian
+flow matrix `M_ij = Σ_hel JAMP_i·JAMP_j*` across combinations and contracts
+`Σ_ij CF_ij·M_ij` once at the end, instead of `eval_m2`'s per-combination quadratic
+form. Counting the arithmetic, it rebalances rather than shrinks: the CF multiply
+leaves the helicity loop but an NCOLOR² complex outer-product accumulation enters
+it — the same O(N_hel·NCOLOR²) multiply-adds with similar constants (Hermitian
+halving is available to both forms). And it reorders the |M|² floating-point sum,
+so the bit-for-bit gate would drop to REL_TOL on every multi-flow process. Shelved
+without a measured win to justify that; if headroom exists anywhere it is the
+colored 2→2s (gg_to_gg 3.5× vs MG — NCOLOR=6 makes the per-combination contraction
+relatively expensive).
 
-(§2.3, the helicity-filter close-out, lands with the `eval-hel/helicity-filter`
-merge.)
+The **diagonal** of that matrix has an independent consumer: `M_ii = Σ_hel
+|JAMP_i|²` is exactly MadGraph's `JAMP2` array. madevent's `MATRIX1` accumulates it
+per helicity call (`JAMP2(I) = JAMP2(I) + DABS(DBLE(JAMP(I,M)*DCONJG(JAMP(I,N))))`,
+summed over good helicities at the phase-space point) and `SELECT_COLOR` draws the
+event's color flow `i` with probability ∝ `JAMP2(i)` — the leading-color flow
+assignment that LHEF color tags need. The off-diagonals play no role there by
+construction: flow interference is 1/N²-suppressed and not sign-definite, so it
+cannot be a flow probability. Crucially this dual use does **not** strengthen the
+factoring case — the diagonal alone is an O(N_hel·NCOLOR) accumulator bolted onto
+the existing per-combination loop, leaving the |M|² operation order (and the
+bit-for-bit gate) untouched. That bolt-on rides with `event-output-lhef`, together
+with pinning the flow-index → color-string dictionary against MG's
+`SELECT_COLOR`/`color_flow_decomposition` conventions (the gg_to_gg NCOLOR=6
+flow-basis ordering caveat applies; a transposed dictionary is invisible to any
+|M|²-level gate). In the accept/reject regime one helicity is sampled, so `JAMP2`
+degenerates to that combination's `|JAMP_i|²` — equally valid at leading color.
+
+### 2.3 Helicity filtering (`prune_zero_helicities`, 2026-07-17)
+
+The §2.2 expansion still evaluated *every* helicity combination; MadGraph does not.
+Research findings on how MadGraph decides which to skip:
+
+- **Runtime (standalone `SMATRIX`)**: first 20 calls evaluate all `NCOMB`
+  combinations; `GOODHEL(IHEL)` is latched by the exact test `T .NE. 0D0`;
+  afterwards only good ones run. Filter disabled for `NEXTERNAL ≤ 3` (spin-2/frame
+  caveat).
+- **Runtime (madevent)**: same loop but with a relative threshold
+  `DABS(TS(I)) .GT. ANS*LIMHEL/NCOMB`, `LIMHEL = 1e-8` (run-card default).
+- **Codegen (helicity recycling, MG ≥3.x)**: `gen_ximprove.get_helicity` runs a
+  `madevent_forhel` init-mode survey (~1000 points, the LIMHEL criterion) and the
+  generated `matrix1_optim.f` bakes in only the surviving `NHEL` rows (plus
+  per-(hel,diagram) `ZEROAMP` skipping). **Our timed MG column is this code** — the
+  gap we'd been chasing included a structural handicap of evaluating 4–16× more
+  combinations than MG (e.g. 16/64 for the 2→4, 16/256 for the 2→6).
+
+An easy *symbolic* zero test was considered and rejected: the arena ops are
+slot-level HELAS kernels, so zero-structure propagation would need a hand-written
+zero-mask transfer function per op (~20 new convention hypotheses, each needing its
+own pinning test). The numeric probe is equivalent in detection power
+(Schwartz–Zippel: a rational function of the momenta that vanishes at generic random
+points vanishes on the whole manifold, a.s.) and matches MG's semantics exactly.
+
+**Implementation** (`AmplitudeEvaluator::prune_zero_helicities(&mut self,
+&EvaluatedModel)`): probe the full expansion at 10 deterministic generic CM points
+(massive RAMBO — new `phasespace::rambo_massive` — at two √s scales, seeded RNG),
+mark combinations by the MG criterion with `HEL_PRUNE_REL = 1e-24`, retain the
+survivors in order, and re-expand (`expand_helicities` already took the combo list;
+the pruned program *is* the expansion of the surviving subset). `eval_m2` unchanged.
+
+Two measured facts anchor the threshold and the frame contract
+(`helicity_contribution_spectrum`, ignored diagnostic):
+
+- The per-combination spectrum is **bimodal**: chirality-forbidden combinations are
+  exact `0.0` (massless-spinor structural zeros propagate through the kernels);
+  MHV-type zeros (all-plus gluons) cancel *across* diagrams leaving O(ε²) residues
+  ≲ 2.6e-31 of the sum; the smallest genuine contribution observed is ~1e-5, with
+  a conservative floor ≳1e-12 for doubly mass-suppressed combinations. `1e-24` sits
+  mid-gap, and dropped terms are below half an ulp of every partial sum — so the
+  pruned sum is **bit-for-bit** the unpruned one (MG's own `LIMHEL=1e-8` would not
+  guarantee that).
+- Some zeros are **frame-bound, not identities**: `g g > t t~` same-helicity gluons
+  with opposite-helicity tops vanish by J_z conservation about the beam axis in the
+  partonic CM only — massive-particle helicity is not boost invariant (a z-boost
+  raises those combinations from 1e-32 to 3e-3 of the sum). MG prunes them, so its
+  (and now our) contract is: **pruned matrix elements take partonic-CM momenta with
+  beams along ±z**. The probe set is therefore pure-CM; transverse or longitudinal
+  boosted inputs are out of contract on a pruned evaluator.
+
+**Validation**: survivor counts pinned against MG's generated `NHEL` tables for 7
+processes (`prune_zero_helicities_matches_madgraph_filter_bitwise`: ee_to_mumu
+16→4, ee_to_zh 12→6, uux_to_uux 16→6, gg_to_gg 16→6, gg_to_ttx 16→12, ee_to_wpwm
+36→16, 2→4 64→16) plus bitwise pruned-vs-unpruned equality there and — enforced per
+reference point — in the 14/14 `validate_helas_mg` gate, which now also times the
+pruned evaluator and reports `hels kept/total`. All MG-reported counts agree,
+including 2→6 16/256 (uux) and 32/256 (bbx: massive b keeps helicity-flip combos).
+
+**Honest bench** (release `eval_strategies`, criterion median ns/eval; bench now
+prunes after compile, matching MG's filtered MATRIX1 like-for-like):
+
+| process | mult | MG | §2.2 | now | gain | now vs MG | hels |
+|---|:--:|--:|--:|--:|--:|--:|:--:|
+| ee_to_mumu | 2→2 | 283 | 765 | 342 | 2.24× | 1.2× | 4/16 |
+| ee_to_ee | 2→2 | 731 | 1,390 | 952 | 1.46× | 1.3× | 6/16 |
+| uux_to_uux | 2→2 | 278 | 1,224 | 696 | 1.76× | 2.5× | 6/16 |
+| gg_to_gg | 2→2 | 949 | 6,765 | 3,341 | 2.02× | 3.5× | 6/16 |
+| ee_to_mumua | 2→3 | 1,438 | 5,824 | 2,393 | 2.43× | 1.7× | 8/32 |
+| ee_to_mumu_tata_qcd0 | 2→4 | 6,337 | 27,908 | 10,965 | 2.55× | 1.7× | 16/64 |
+| uux_to_ccx_emmm_qcd0 | 2→6 | 97,172 | 2,429,125 | 240,925 | 10.1× | 2.5× | 16/256 |
+
+The vs-MG gap narrows from **1.9×–25×** to **1.2×–3.5×**; the 2→6 collapse (25× →
+2.5×) is the expansion finally being compared against MG on equal combination
+counts. The colored 2→2s (uux 2.5×, gg 3.5×) are now the widest gaps.
+
+**Deferred**: per-(hel,diagram) `ZEROAMP` skipping inside surviving combinations
+(MG's second filter layer) — would need probed-zero node elimination in the
+expanded arena; unmeasured headroom, likely small next to the combination filter.
+
+### 2.4 Cross-platform rerun kit (vs-MG comparison)
 
 Every vs-MG ratio in this note was measured on one Apple-Silicon host (M3 Max,
 NEON). The two sides need not scale together across microarchitectures: MG's

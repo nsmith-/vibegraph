@@ -123,6 +123,17 @@ pub fn rambo_massless(sqrt_s: f64, n: usize, rng: &mut impl Rng) -> Vec<LorentzV
     massless_momenta(sqrt_s, &u)
 }
 
+/// Massive RAMBO: `n = masses.len()` on-shell four-momenta with the given masses
+/// and total momentum `(√s, 0, 0, 0)`, drawing its `4n` uniforms from `rng`.
+///
+/// RNG-driven convenience form of [`rambo`] with the weight discarded: the points
+/// are exactly on-shell and momentum-conserving generic kinematics, not an
+/// unbiased flat sample. Requires `√s > Σ mᵢ`.
+pub fn rambo_massive(sqrt_s: f64, masses: &[f64], rng: &mut impl Rng) -> Vec<LorentzVector<f64>> {
+    let u: Vec<f64> = (0..4 * masses.len()).map(|_| rng.random::<f64>()).collect();
+    rambo(sqrt_s, masses, &u).momenta
+}
+
 /// Build `n = u.len()/4` massless momenta summing to `(√ŝ, 0, 0, 0)` from `4n`
 /// uniforms, via the isotropic-`q` + single-boost RAMBO construction.
 fn massless_momenta<F: Real>(sqrt_s: F, u: &[F]) -> Vec<LorentzVector<F>> {

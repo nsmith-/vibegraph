@@ -191,6 +191,11 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
     /// matrix in MadGraph's ZTEMP order, `Σ_i (Σ_j CF_{ji} J_j) · J_i*`, and summed
     /// over combinations. The CF weights scale each JAMP as a real factor, matching
     /// MADGRAPH's real-matrix × complex-JAMP product.
+    ///
+    /// On a helicity-filtered evaluator (see
+    /// [`AmplitudeEvaluator::prune_zero_helicities`]) the sum runs over the
+    /// surviving combinations only — bit-for-bit with the full sum, but under that
+    /// method's kinematic contract: partonic-CM momenta with the beams along ±z.
     pub fn eval_m2(&self, momenta: &[LorentzVector<F>], scratch: &mut ScratchSpace<F>) -> F {
         if momenta.len() != self.eval.n_ext() {
             return F::zero();
@@ -229,6 +234,65 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             }
         }
         total
+    }
+
+    /// Mark the helicity combinations that contribute at this phase-space point:
+    /// sets `good[c] = true` for every combination whose |M_c|² (CF-contracted, as
+    /// `eval_m2` forms it) exceeds `Σ_c |M_c|² · rel_threshold / NCOMB`; other
+    /// entries are left untouched, so repeated calls accumulate across probe points.
+    ///
+    /// This is MadGraph's helicity-filter criterion (`DABS(TS(I)) .GT.
+    /// ANS*LIMHEL/NCOMB` in its init-mode survey). A relative threshold — rather
+    /// than an exact-zero test — is needed because identically-zero combinations
+    /// come in two kinds: chirality-forbidden ones propagate the *structural* zeros
+    /// of the massless-spinor components and evaluate to exact `0.0`, but
+    /// MHV-type zeros (e.g. all-plus gluons) cancel *across* diagrams and leave
+    /// O(ε²) floating-point residues in |M_c|².
+    /// Backs [`AmplitudeEvaluator::prune_zero_helicities`], which chooses the
+    /// threshold. Marks nothing when the point's total is zero or non-finite.
+    pub(super) fn mark_contributing_helicities(
+        &self,
+        momenta: &[LorentzVector<F>],
+        rel_threshold: F,
+        scratch: &mut ScratchSpace<F>,
+        good: &mut [bool],
+    ) {
+        let folded = self.eval.folded_hel();
+        resolve_moms(folded, momenta, scratch);
+        let env = self.eval_env(folded, momenta, &[], None);
+        fill_arenas(folded, &env, scratch);
+        let RootKind::Hels { n_flows, locs } = &folded.program().root else {
+            panic!("helicity probe on a program without a helicity-expanded root");
+        };
+        let n = *n_flows as usize;
+        debug_assert_eq!(locs.len(), good.len() * n);
+
+        // Per-combination T_c: the CF-contracted |M_c|² (nonnegative — CF is
+        // positive semidefinite). For a single flow the constant CF(1,1) factor is
+        // omitted; it cancels in the relative test.
+        let mut ts = vec![F::zero(); good.len()];
+        for (t, jamps) in ts.iter_mut().zip(locs.chunks_exact(n)) {
+            if n == 1 {
+                *t = scratch.scalars[jamps[0] as usize].norm_sqr();
+            } else {
+                for i in 0..n {
+                    let mut ztemp = C::new(F::zero(), F::zero());
+                    for (j, &lj) in jamps.iter().enumerate() {
+                        ztemp = ztemp + scratch.scalars[lj as usize].scale(self.cf[j * n + i]);
+                    }
+                    *t = *t + (ztemp * scratch.scalars[jamps[i] as usize].conj()).re;
+                }
+            }
+        }
+        let ans = ts.iter().fold(F::zero(), |acc, &t| acc + t);
+        if !(ans > F::zero()) {
+            return;
+        }
+        let ncomb = num_traits::cast::<usize, F>(good.len()).expect("NCOMB representable");
+        let cut = ans * rel_threshold / ncomb;
+        for (g, &t) in good.iter_mut().zip(&ts) {
+            *g = *g || t > cut;
+        }
     }
 
     /// Evaluate the complex amplitude M for a single helicity configuration (the
@@ -3676,6 +3740,169 @@ mod tests {
                 assert_eq!(
                     expanded, reference,
                     "[{process}] expanded eval_m2 diverged from the per-helicity sum"
+                );
+            }
+        }
+    }
+
+    /// Diagnostic (`--ignored --nocapture`): per-combination relative contribution
+    /// spectrum, to see the gap between contributing combinations and the
+    /// floating-point residues of identically-zero ones.
+    #[test]
+    #[ignore]
+    fn helicity_contribution_spectrum() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massive;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let mut rng = StdRng::seed_from_u64(0x5BEC7);
+        let sqrt_s = 500.0;
+
+        for process in [
+            "g g > g g",
+            "g g > t t~",
+            "e+ e- > w+ w-",
+            "e+ e- > z h",
+            "e+ e- > mu+ mu- ta+ ta- QCD=0",
+        ] {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+            let amp = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+            let mut scratch = amp.scratch_space();
+            let m_out: Vec<f64> = eval.external_particles()[eval.n_in()..]
+                .iter()
+                .map(|&pid| evaluated.mass(pid))
+                .collect();
+            let mut p = vec![
+                LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+            ];
+            p.extend(rambo_massive(sqrt_s, &m_out, &mut rng));
+
+            let n = eval.n_flows();
+            let mut ts: Vec<f64> = Vec::new();
+            for hel in eval.helicities() {
+                let t = if n == 1 {
+                    amp.eval_amplitude(&p, hel, &mut scratch).norm_sqr() * amp.cf[0]
+                } else {
+                    let jamps = amp.run_flows(&p, hel, &mut scratch);
+                    let mut total = 0.0f64;
+                    for i in 0..n {
+                        let mut ztemp = C::new(0.0, 0.0);
+                        for (j, jamp_j) in jamps.iter().enumerate() {
+                            ztemp += jamp_j.scale(amp.cf[j * n + i]);
+                        }
+                        total += (ztemp * jamps[i].conj()).re;
+                    }
+                    total
+                };
+                ts.push(t);
+            }
+            let ans: f64 = ts.iter().sum();
+            let mut rel: Vec<f64> = ts.iter().map(|t| t / ans).collect();
+            rel.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let shown: Vec<String> = rel.iter().map(|r| format!("{r:.2e}")).collect();
+            println!("{process}: ncomb={} rel spectrum = {shown:?}", rel.len());
+
+            // z-boosted variant of the same point
+            let boosted: Vec<LorentzVector<f64>> =
+                p.iter().map(|q| q.boost([0.0, 0.0, 0.43])).collect();
+            let mut ts2: Vec<f64> = Vec::new();
+            for hel in eval.helicities() {
+                let t = if n == 1 {
+                    amp.eval_amplitude(&boosted, hel, &mut scratch).norm_sqr() * amp.cf[0]
+                } else {
+                    let jamps = amp.run_flows(&boosted, hel, &mut scratch);
+                    let mut total = 0.0f64;
+                    for i in 0..n {
+                        let mut ztemp = C::new(0.0, 0.0);
+                        for (j, jamp_j) in jamps.iter().enumerate() {
+                            ztemp += jamp_j.scale(amp.cf[j * n + i]);
+                        }
+                        total += (ztemp * jamps[i].conj()).re;
+                    }
+                    total
+                };
+                ts2.push(t);
+            }
+            let ans2: f64 = ts2.iter().sum();
+            let mut rel2: Vec<f64> = ts2.iter().map(|t| t / ans2).collect();
+            rel2.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let shown2: Vec<String> = rel2.iter().map(|r| format!("{r:.2e}")).collect();
+            println!("  z-boosted: {shown2:?}");
+        }
+    }
+
+    /// `prune_zero_helicities` keeps exactly the combination counts MadGraph's own
+    /// helicity filter bakes into its helicity-recycled sources (the `NCOMB` of each
+    /// process's generated `matrix1_optim.f`), and the pruned `eval_m2` equals the
+    /// unpruned one **bit-for-bit** on fresh phase-space points — every dropped
+    /// combination contributed exactly `+0.0` to the helicity sum.
+    #[test]
+    fn prune_zero_helicities_matches_madgraph_filter_bitwise() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massive;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let mut rng = StdRng::seed_from_u64(0xF117E5);
+        let sqrt_s = 500.0;
+
+        // (process, combinations, survivors): survivor counts pinned against
+        // MadGraph's generated helicity-recycled sources.
+        for (process, n_all, n_good) in [
+            ("e+ e- > mu+ mu-", 16, 4),
+            ("e+ e- > z h", 12, 6),
+            ("u u~ > u u~", 16, 6),
+            ("g g > g g", 16, 6),
+            ("g g > t t~", 16, 12),
+            ("e+ e- > w+ w-", 36, 16),
+            ("e+ e- > mu+ mu- ta+ ta- QCD=0", 64, 16),
+        ] {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            let eval_full = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+            let mut eval_pruned = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+            assert_eq!(eval_full.helicities().len(), n_all, "[{process}] combos");
+
+            let dropped = eval_pruned.prune_zero_helicities(&evaluated);
+            assert_eq!(
+                eval_pruned.helicities().len(),
+                n_good,
+                "[{process}] survivors (dropped {dropped})"
+            );
+            assert_eq!(dropped, n_all - n_good, "[{process}] dropped");
+
+            let full = BoundAmplitude::<f64>::bind(&eval_full, &evaluated);
+            let pruned = BoundAmplitude::<f64>::bind(&eval_pruned, &evaluated);
+            let mut scratch_full = full.scratch_space();
+            let mut scratch_pruned = pruned.scratch_space();
+            let m_out: Vec<f64> = eval_full.external_particles()[eval_full.n_in()..]
+                .iter()
+                .map(|&pid| evaluated.mass(pid))
+                .collect();
+            for _ in 0..8 {
+                let mut p = vec![
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+                ];
+                p.extend(rambo_massive(sqrt_s, &m_out, &mut rng));
+                let a = full.eval_m2(&p, &mut scratch_full);
+                let b = pruned.eval_m2(&p, &mut scratch_pruned);
+                assert_eq!(
+                    a.to_bits(),
+                    b.to_bits(),
+                    "[{process}] pruned eval_m2 diverged: {a:e} vs {b:e}"
                 );
             }
         }

@@ -79,7 +79,10 @@ fn bench_eval_m2(c: &mut Criterion) {
     for (name, process) in PROCESSES {
         let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
         let sets = generate_from_proc_card(&pc, &model).unwrap();
-        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+        let mut eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+        // MG's timed MATRIX1 is its helicity-recycled code with the helicity filter
+        // baked in; prune here so the comparison is like-for-like.
+        eval.prune_zero_helicities(&evaluated);
         let fwd = BoundAmplitude::<f64>::bind(&eval, &evaluated);
 
         let points: Vec<Vec<LorentzVector<f64>>> = (0..16)

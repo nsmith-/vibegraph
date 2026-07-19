@@ -58,7 +58,7 @@ use std::f64::consts::PI;
 pub mod rambo;
 pub mod rng;
 
-pub use rambo::{rambo, rambo_massless, RamboPoint};
+pub use rambo::{rambo, rambo_massive, rambo_massless, RamboPoint};
 
 /// Conversion factor: 1 GeV⁻² = 3.893793721×10⁸ pb.
 ///
@@ -105,4 +105,44 @@ pub fn u_to_costheta(u: f64) -> f64 {
 pub fn prefactor2(sqrt_s: f64) -> f64 {
     let s = sqrt_s * sqrt_s;
     1.0 / (64.0 * PI * s)
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    use super::*;
+
+    /// Massive RAMBO points are on-shell to the Newton tolerance and conserve the
+    /// total four-momentum `(√s, 0, 0, 0)`.
+    #[test]
+    fn rambo_massive_on_shell_and_conserving() {
+        let mut rng = StdRng::seed_from_u64(0xC0FFEE);
+        let sqrt_s = 500.0;
+        for masses in [
+            vec![0.0, 0.0, 91.19],
+            vec![173.0, 173.0],
+            vec![1.777, 1.777, 0.0, 0.0, 125.0],
+        ] {
+            let p = rambo_massive(sqrt_s, &masses, &mut rng);
+            let mut tot = [0.0f64; 4];
+            for (q, m) in p.iter().zip(&masses) {
+                let m2 = q.e() * q.e() - q.px() * q.px() - q.py() * q.py() - q.pz() * q.pz();
+                assert!(
+                    (m2 - m * m).abs() < 1e-9 * sqrt_s * sqrt_s,
+                    "off-shell: m² = {m2}, expected {}",
+                    m * m
+                );
+                tot[0] += q.e();
+                tot[1] += q.px();
+                tot[2] += q.py();
+                tot[3] += q.pz();
+            }
+            assert!((tot[0] - sqrt_s).abs() < 1e-9 * sqrt_s);
+            for c in &tot[1..] {
+                assert!(c.abs() < 1e-9 * sqrt_s, "momentum not conserved: {tot:?}");
+            }
+        }
+    }
 }
