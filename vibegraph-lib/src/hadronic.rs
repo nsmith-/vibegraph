@@ -19,17 +19,21 @@
 //!
 //! # Change of variables
 //!
-//! VEGAS samples `(u₁, u₂, u₃) ∈ [0,1]³`, mapped to `(x₁, x₂, cosθ)` by
+//! VEGAS samples `(u₁, u₂, u₃) ∈ [0,1]³`, mapped to `(τ, y, cosθ)` by
 //!
 //! ```text
-//! xᵢ = x_min^(1−uᵢ)   (ln xᵢ uniform),   dxᵢ/duᵢ = xᵢ · ln(1/x_min)
-//! cosθ = 2u₃ − 1,                        d(cosθ)/du₃ = 2
+//! τ = τ_min^(1−u₁)   (ln τ uniform),   dτ/du₁ = τ · ln(1/τ_min)
+//! y = (2u₂ − 1)·y_max,  y_max = ½ ln(1/τ),   dy/du₂ = 2·y_max
+//! cosθ = 2u₃ − 1,                            d(cosθ)/du₃ = 2
 //! ```
 //!
-//! with `x_min = ŝ_min / s` from the cut hint ([`Cuts::shat_min`]). Because the
-//! LHAPDF grid returns `x·f(x)` and the logarithmic map carries a Jacobian factor
-//! `xᵢ`, the `1/xᵢ` in `f = (x·f)/x` cancels: the luminosity is built directly
-//! from `x·f` products and each x-integration contributes a bare `ln(1/x_min)`.
+//! where `τ = ŝ/s = x₁x₂` and `y = ½ ln(x₁/x₂)`, with `τ_min = ŝ_min / s` from
+//! the cut hint ([`Cuts::shat_min`]) — so a dilepton mass window is a
+//! one-dimensional bound on `τ` rather than a thin diagonal band in `(x₁, x₂)`.
+//! Because the LHAPDF grid returns `x·f(x)` and `x₁x₂ = τ` matches the `dτ`
+//! Jacobian factor, the `1/x₁x₂` in `f = (x·f)/x` cancels the `τ`: the
+//! luminosity is built directly from `x·f` products and the phase-space weight
+//! is the bare `ln(1/τ_min) · 2·y_max`.
 //!
 //! # Frames
 //!
