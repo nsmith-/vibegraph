@@ -4,10 +4,10 @@
 lands behind the MG validation net, a validation pass then hardens the net around
 what the feature exposed, and a performance pass optimizes against the hardened
 gate. Current position: `color-flow` (feature, ✅ merged 2026-07-12) →
-`validation-sprint` (validation, ✅ closed 2026-07-13) →
-**post-CSE optimization program** (performance, ✅ closed 2026-07-14) →
-**helicity-expansion session** (performance follow-on, ✅ merged 2026-07-16, note 15
-§2.2) → **next: hadronic pp→ll / event output** (feature).
+`validation-sprint` (validation, ✅ closed 2026-07-13) → **eval performance
+program** (performance, ✅ closed 2026-07-17: post-CSE 3-track program + helicity
+expansion + helicity filtering; vs-MG gap 8.6×–110× → **1.2×–3.5×**; summary below,
+full record note 15) → **next: hadronic pp→ll / event output** (feature).
 
 ## Pipeline Status
 
@@ -21,52 +21,45 @@ gate. Current position: `color-flow` (feature, ✅ merged 2026-07-12) →
 | 6 | Unweighted event output (LHEF) | 🔲 Pending | Accept/reject sampling + Les Houches format |
 
 Closed-sprint history (`helas-generalize`, `mg-validation-coverage`,
-`cleanup-refactor`, `performance-sprint`, `color-flow`, `validation-sprint`) lives in
-git history and `research/notes/` (12: continuum bug hunt, 13: typed conventions, 15:
-eval optimization plan, 16: color-flow design + debrief, incl. the VVVV phase-bug root
-cause and fix).
+`cleanup-refactor`, `performance-sprint`, `color-flow`, `validation-sprint`, the
+**eval performance program**) lives in git history and `research/notes/` (12:
+continuum bug hunt, 13: typed conventions, 15: eval optimization program incl. its
+§2 close-outs, 16: color-flow design + debrief incl. the VVVV phase-bug root cause
+and fix, 17: bounds-check-elimination memo, `rooting-study-results.md`: rooting
+headroom study).
 
 ---
 
-## 🚀 Post-CSE optimization program ✅ CLOSED 2026-07-14
+## ⚡ Eval performance program ✅ CLOSED 2026-07-17 (full record: `research/notes/15-eval-optimization-plan.md`)
 
-The completed evaluator-layout work delivered a cumulative honest `eval_m2` speedup of
-**1.4×–2.1×** over P5 across the benchmark suite while retaining the 14-process MadGraph
-gate; the full plan, measurements, and close-out ledger are in
-`research/notes/15-eval-optimization-plan.md` §2.1. The rooting study and DAG-cost
-extractor were both no-go: useful re-rooting remains blocked by `rooting-soundness`, and
-sharing-oriented algebraic rewrites need a global/ILP extractor, compute-aware cost model,
-and a ≥3-consumer demonstration before `egraph-rewrite` can resume. These are deferred
-follow-ups, outside the feature→validation→performance critical path.
+Three phases, all behind the 14-process `validate_helas_mg` gate, all merged to
+`main` (phase 3 via `eval-hel/helicity-filter`, 2026-07-18):
 
-### `rooting-soundness` — make diagram rooting orientation-independent
+1. **Post-CSE 3-track program** (2026-07-11 → 07-14, note 15 §2.1): Track 1
+   `eval-layout` shipped A0–A5 — instruction pack, static node analysis,
+   constant-subgraph folding, SoA typed arenas, momentum pool, helicity recycling
+   (A3c bounds-check elimination cancelled: eval stays 100% safe Rust, note 17).
+   Tracks 2 (`rooting-exploration`, branch `explore/rooting` +
+   `rooting-study-results.md`) and 3 (`dag-extraction`, egglog DAG-cost extractor)
+   both closed **NO-GO**. Cumulative 1.4×–2.1× over the P5 baseline.
+2. **Helicity expansion** (2026-07-16, note 15 §2.2): `Folded::expand_helicities`
+   bakes every helicity combination into one hash-consed arena (liveness-allocated
+   slots, lazy `OnceLock`), replacing A5's recycling — each distinct current
+   computed exactly once per point. Bit-for-bit; a further 2.4×–3×.
+3. **Helicity filtering** (2026-07-17, note 15 §2.3): `prune_zero_helicities`
+   reproduces MadGraph's `GOODHEL`/`LIMHEL` filter as a compile-level numeric probe
+   + re-expansion over the surviving combinations, survivor counts pinned against
+   MG's generated `NHEL` tables. Bit-for-bit (dropped terms < ½ ulp of every
+   partial sum).
 
-The `explore/rooting` study found a real greedy-rooting headroom (−21% nodes, −34% slot
-traffic), but every node-reducing alternate root silently corrupts amplitudes: the current
-momentum routing, Lorentz-output rooting, and fermion-spine signs are only sound for
-feyngraph's default `VtxIdx(0)` orientation. This is not a production bug while that
-orientation remains fixed, but it is a hard correctness prerequisite for any canonical,
-greedy, or e-graph re-rooting.
-
-Use the existing test-only `root_diagram::set_root_override` hook as the initial fuzz
-harness: assert that **every vertex rooting of every diagram** in all 14
-`MG_VALIDATED_PROCESSES` passes `validate_helas_mg` (REL_TOL). Diagnose and repair the
-orientation-dependent primitives before promoting any rooting strategy or adding
-propagator-commute/per-vertex rotation rewrites. The gate must distinguish gross
-value-level corruption, not just $|M|^2$-blind global phases. See note 15 §3.1 and
-`research/notes/rooting-study-results.md`.
-
-## ⚡ Helicity-expansion session ✅ MERGED TO MAIN 2026-07-16
-
-Helicity expansion bakes the surviving nonzero configurations into one hash-consed
-`Op::Hels` arena with liveness-allocated result slots, making `eval_m2` one linear pass
-and preserving bit-for-bit agreement with the unexpanded per-helicity sum. The
-`prune_zero_helicities` probe matches MadGraph's filter, removing the structural
-combination-count handicap and narrowing the honest gap to **1.2×–3.5×** (2→6:
-**25× → 2.5×**); see note 15 §§2.2–2.3 for the implementation and benchmark tables.
-Follow-up performance work is limited to the deferred `mg-single-helicity-bench` alongside
-`event-output-lhef`, since unweighted event generation evaluates one helicity configuration
-through the unexpanded program.
+**End state**: honest gap to MG MATRIX1 (release `eval_strategies` bench) went
+8.6×–110× → **1.2×–3.5×**; the 2→6 sits at 240,925 ns/eval (2.5× vs MG), and the
+widest remaining gaps are the colored 2→2s (uux_to_uux 2.5×, gg_to_gg 3.5× —
+NCOLOR=6 makes the per-combination CF contraction relatively expensive). **Contract
+change**: pruned evaluators require partonic-CM beams-along-±z momenta (frame-bound
+J_z zeros — MG's own contract). ⚠️ Timing claims come from `eval_strategies` only;
+the `validate_helas_mg` printed timings compile per-node cross-checks into the loop
+and run ~4–5× hot.
 
 All vs-MG ratios are single-host (Apple M3 Max) measurements; whether they hold on other
 microarchitectures (esp. AVX-512 x86, where MG's straight-line Fortran auto-vectorizes and
@@ -74,19 +67,67 @@ our interpreter doesn't) is untested. Rerun kit for other boxes:
 `scripts/mg_perf_compare.sh` + recipe in note 15 §2.4 (regenerate MG reference natively →
 14/14 gate → bench-vs-MATRIX1 ratio table with host fingerprint, banked in `target/mg-perf/`).
 
----
+### Deferred performance work
 
-## 🧬 `egraph-rewrite` — algebraic rewrite stage (**blocked**)
+- **Per-(hel,diagram) `ZEROAMP` skipping** (MG's second filter layer, note 15 §2.3):
+  inside surviving combinations, individual diagram amplitudes can still be
+  identically zero for that helicity; skipping them needs probed-zero *node*
+  elimination in the expanded arena (a rewrite pass, not a filtered re-expansion).
+  Unmeasured headroom, likely small — the combination filter already removed most
+  zeros, and elimination only reclaims nodes private to a zero diagram.
+- **CF-factoring across combinations** — analyzed and shelved 2026-07-17 (note 15
+  §2.2): accumulating `M_ij = Σ_hel JAMP_i·JAMP_j*` and contracting CF once
+  rebalances the arithmetic rather than shrinking it, and reordering the |M|² sum
+  breaks bit-for-bit. Its diagonal is MG's `JAMP2` (the leading-color flow-sampling
+  input), but that dual use is served by a cheap diagonal-only accumulator in the
+  existing `eval_m2` loop — rides with `event-output-lhef`, no restructure needed.
+- **`egraph-rewrite`** (blocked; notes 14 + 15 §4–5): the remaining rule families
+  (coupling regrouping, chiral decomposition, re-rooting) are all *sharing*
+  rewrites, invisible to tree-cost extraction. Path to yes needs a global/ILP
+  extractor **and** a compute-aware `WorkCost` model **and** a ≥3-consumer demo
+  process. Substrate on `main`: the egglog round-trip skeleton (`egraph.rs`,
+  parked) and Track 3's M1/M2 DAG-cost extractor; adopted schema decisions in note
+  15 §5. Known issue for any cost oracle: lowering emits a ±1-CSE-node AST per hash
+  seed (`HashSet` iteration in `root_diagram`/`lower`) — compile once and reuse;
+  the fix belongs to the lowering owners.
+- **`rooting-soundness`** (prerequisite surfaced by Track 2, note 15 §3 +
+  `rooting-study-results.md`): the amplitude is correct only for feyngraph's
+  `VtxIdx(0)` edge orientation — every node-reducing rooting silently corrupts
+  multi-boson/≥6-point amplitudes (max_rel up to 1.7e+3). Fix momentum routing,
+  Lorentz-output rooting, and fermion-spine sign to be root-invariant; first test
+  asserts all V rootings of every `MG_VALIDATED_PROCESSES` diagram pass the gate
+  (`set_root_override` hook ready on `explore/rooting`). The measured prize is −21%
+  nodes / −34% slot traffic, so this is a correctness spike with a modest perf
+  payoff — sequence it as its own spike, blocking any production rooting change and
+  the Track 3 re-rooting rule family.
+- **`mg-single-helicity-bench`** — still deferred to `event-output-lhef` (entry in
+  the Later section), where single-helicity evaluation through the *unexpanded*
+  program becomes the actual hot path.
+- Long-tail perf backlog (Later section): `feyngraph-perf` allocation hot spot,
+  `generate-stream` Part B, `C<F>`-vs-`F` multiply peepholes.
 
-The parked `helas/eval/egraph.rs` round-trip skeleton preserves the future rewrite seam,
-but every remaining rule targets cross-diagram sharing beyond CSE; constant folding is
-already complete. Resuming requires a global/ILP extractor, compute-aware `WorkCost`, and
-a ≥3-consumer demonstration; re-rooting also requires `rooting-soundness`. Apply the
-adopted typed schema (per-kind leaf sorts, `ScalarConst`/`ScalarWf`, typed constructor
-slots), bound saturation on 2→6 QCD ASTs, and guard each rule with the 14-process
-`validate_helas_mg` net plus byte-for-byte round trips where order-preserving. See
-`research/notes/14-egglog-notes.md` and note 15 §§4–5 for the extractor decision,
-schema, and implementation detail.
+### New validation follow-ups (fold into the next validation pass)
+
+- **Pruned-frame contract guard**: nothing enforces the partonic-CM ±z-beam
+  requirement of a pruned evaluator — a boosted input silently revives
+  J_z-forbidden combinations (up to 3e-3 of the sum, note 15 §2.3). Before
+  `lips-nbody`/hadronic pp→ll route boosted momenta anywhere near `eval_m2`, add a
+  debug-build frame assertion (or an explicit boost-to-CM seam) plus a test that a
+  boosted point on a pruned evaluator is caught.
+- **`NHEL`-table pinning coverage**:
+  `prune_zero_helicities_matches_madgraph_filter_bitwise` pins survivor sets for 7
+  processes; extend toward the full `MG_VALIDATED_PROCESSES` list (the 2→6 counts —
+  16/256 uux, 32/256 bbx — were checked against MG's reports and deserve the same
+  in-test pinning as reference tables are generated).
+- **Flow→LHEF color-string dictionary** (rides with `event-output-lhef`):
+  leading-color assignment = sample flow `i` ∝ `JAMP2(i)`, then map the flow index
+  to a color string. Pin the mapping against MG's
+  `SELECT_COLOR`/`color_flow_decomposition` conventions — the gg_to_gg NCOLOR=6
+  flow-basis ordering caveat applies, and a transposed dictionary is invisible to
+  any |M|²-level gate.
+- **Retire (or label) the `validate_helas_mg` timing print**: it is
+  non-representative by construction and has now misled twice (note 15 §2.1/§2.2
+  warnings); the honest bench is `eval_strategies`.
 
 ---
 
@@ -336,6 +377,10 @@ LHEF color tags need MG's *leading-Nc* flow decomposition (`color_flow_decomposi
 / `get_color_flow_string` in `color_amp.py`) to assign a `(color, anticolor)` integer
 pair per external leg — a separate small feature on top of the trace/δ basis
 `color-flow` built (note 16 §5); not needed for the multi-flow `|M|²` machinery itself.
+The per-event flow is sampled ∝ `JAMP2(i) = Σ_hel |JAMP_i|²` (MG's `SELECT_COLOR`
+input) — a cheap diagonal accumulator on the `eval_m2` combination loop, note 15
+§2.2; the flow→string dictionary must be pinned against MG's conventions (see the
+performance-program validation follow-ups).
 
 _Depends on: `lips-nbody` (n-body final states)._
 
