@@ -13,11 +13,12 @@
 //!   pixi run -e madgraph fetch-pdf
 //!   pixi run -e madgraph generate-pdf-oracle
 //!
-//! Only the oracle's "knot" category is gated here: on a grid knot, x·f is
-//! read directly out of the raw array on both the Rust and oracle side (no
-//! interpolation involved), so parser correctness is the only thing under
-//! test. Off-knot/seam/tail/corner points are banked in the same oracle file
-//! for the interpolation session to consume.
+//! Two gates share the one oracle file. The parser gate compares the "knot"
+//! category, where x·f is read directly out of the raw array on both sides (no
+//! interpolation), isolating parser correctness. The interpolation gate feeds
+//! the off_knot/seam/x_to_one_tail/corner categories through the public
+//! `xfx_q2` log-bicubic and requires ≤1e-9 relative agreement with LHAPDF's own
+//! `LogBicubicInterpolator` — the algorithm MadGraph evaluates PDFs through.
 
 #[cfg(feature = "extended-validation")]
 mod validate_pdf_grid {
@@ -167,5 +168,128 @@ mod validate_pdf_grid {
                 );
             }
         }
+    }
+
+    /// Relative error of the Rust log-bicubic value against the LHAPDF oracle,
+    /// or 0 when both are exactly zero (absent-flavor / vanishing knots).
+    fn rel_err(got: f64, want: f64) -> f64 {
+        let denom = got.abs().max(want.abs());
+        if denom == 0.0 {
+            0.0
+        } else {
+            (got - want).abs() / denom
+        }
+    }
+
+    /// Worst relative error over all oracle points in `category`, plus the
+    /// point where it occurs, computed through the public `xfx_q2` API.
+    fn worst_in_category(
+        member: &vibegraph::pdf::PdfMember,
+        oracle: &Oracle,
+        category: &str,
+    ) -> f64 {
+        let mut worst = 0.0f64;
+        let mut worst_at = None;
+        let mut count = 0usize;
+        for p in oracle.points.iter().filter(|p| p.category == category) {
+            let got: f64 = member.xfx_q2(p.pdg, p.x, p.q2);
+            let e = rel_err(got, p.xf);
+            if e > worst {
+                worst = e;
+                worst_at = Some((p, got));
+            }
+            count += 1;
+        }
+        assert!(count > 0, "oracle has no '{category}' points");
+        if let Some((p, got)) = worst_at {
+            eprintln!(
+                "category '{category}': {count} points, worst rel {worst:.3e} at \
+                 pdg={} x={} Q²={} (rust={got:.17e} oracle={:.17e})",
+                p.pdg, p.x, p.q2, p.xf
+            );
+        } else {
+            eprintln!("category '{category}': {count} points, worst rel 0 (all exact)");
+        }
+        worst
+    }
+
+    /// The accept bar: interior (off-knot) interpolation reproduces LHAPDF's
+    /// log-bicubic to ≤1e-9 relative. Because the Rust scheme replicates
+    /// LHAPDF's exact per-point arithmetic, the observed agreement is far
+    /// tighter (~1e-13); the loose bar leaves headroom for platform libm
+    /// differences in `log`.
+    #[test]
+    fn off_knot_interpolation_matches_lhapdf() {
+        let oracle = load_oracle();
+        let set = load_set(&oracle);
+        let member = set.member(oracle.member).expect("member load");
+        let worst = worst_in_category(&member, &oracle, "off_knot");
+        assert!(worst <= 1e-9, "off_knot worst rel {worst:.3e} exceeds 1e-9");
+    }
+
+    /// Grid corners and the x→1 tail exercise the one-sided finite-difference
+    /// derivative branches (lower/upper Q² edge, last x-interval). Same exact
+    /// algorithm, so the same ≤1e-9 bar holds. The `corner` category also
+    /// probes the gluon under both PDG spellings (21 and the 0 alias).
+    #[test]
+    fn edge_and_tail_interpolation_matches_lhapdf() {
+        let oracle = load_oracle();
+        let set = load_set(&oracle);
+        let member = set.member(oracle.member).expect("member load");
+        for category in ["seam", "x_to_one_tail", "corner"] {
+            let worst = worst_in_category(&member, &oracle, category);
+            assert!(
+                worst <= 1e-9,
+                "{category} worst rel {worst:.3e} exceeds 1e-9"
+            );
+        }
+    }
+
+    /// On-knot points must interpolate back to the tabulated `x·f` value: at a
+    /// knot the local Hermite reproduces the node (up to libm `log` rounding),
+    /// a self-consistency the raw-parser gate cannot see since it reads the
+    /// array directly rather than going through interpolation. The oracle's
+    /// `knot` category holds the *raw* grid value, so vanishing nodes (e.g.
+    /// x·f→0 at x=1) need an absolute floor: the Hermite sum of large cancelling
+    /// coefficients lands at ~1e-20 rather than a bit-exact 0, which is a pure
+    /// relative error of 1 against a zero node but a negligible absolute one.
+    /// Bar: `|Δ| ≤ 1e-11 + 1e-9·|want|` (numpy-style atol+rtol).
+    #[test]
+    fn on_knot_interpolation_reproduces_node() {
+        let oracle = load_oracle();
+        let set = load_set(&oracle);
+        let member = set.member(oracle.member).expect("member load");
+        let mut worst_abs = 0.0f64;
+        let mut count = 0usize;
+        for p in oracle.points.iter().filter(|p| p.category == "knot") {
+            let got: f64 = member.xfx_q2(p.pdg, p.x, p.q2);
+            let delta = (got - p.xf).abs();
+            let bound = 1e-11 + 1e-9 * p.xf.abs();
+            assert!(
+                delta <= bound,
+                "on-knot interpolation off at pdg={} x={} Q²={}: rust={got:.17e} \
+                 oracle={:.17e} |Δ|={delta:.3e} > {bound:.3e}",
+                p.pdg,
+                p.x,
+                p.q2,
+                p.xf
+            );
+            worst_abs = worst_abs.max(delta);
+            count += 1;
+        }
+        eprintln!("on-knot interpolation: {count} points, worst |Δ| {worst_abs:.3e}");
+    }
+
+    /// Points outside the grid support are a hard error rather than a silent
+    /// extrapolation. Blind spot: this pins the *policy* (refuse), not any
+    /// extrapolated value — extrapolation is a deliberate non-goal.
+    #[test]
+    fn out_of_range_is_error() {
+        let oracle = load_oracle();
+        let set = load_set(&oracle);
+        let member = set.member(oracle.member).expect("member load");
+        // Far below XMin=1e-9 in x and above QMax in Q².
+        assert!(member.try_xfx_q2(2, 1e-12_f64, 1e6_f64).is_err());
+        assert!(member.try_xfx_q2(2, 2.0_f64, 100.0_f64).is_err());
     }
 }
