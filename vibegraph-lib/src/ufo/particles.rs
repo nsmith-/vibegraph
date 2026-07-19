@@ -45,7 +45,7 @@ impl Index<ParticleId> for IndexMap<String, Particle> {
 }
 
 /// A UFO particle with full field data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Particle {
     /// Python variable name, e.g. `"e__minus__"` or `"W__plus__"`.
     pub python_name: String,

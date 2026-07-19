@@ -221,6 +221,89 @@ mod tests {
         );
     }
 
+    /// Full-field parity between `gen_sm_blob`'s committed output and a fresh parse
+    /// of the pinned submodule: every particle/Lorentz-structure/coupling/vertex
+    /// entry (both key order and value contents), the parameter set, and the
+    /// coupling-order hierarchy, plus every restrict card byte-for-byte. Catches a
+    /// stale interned blob after the submodule is bumped or its SM model edited;
+    /// a bare `cargo test` skips it when the submodule isn't checked out, but the
+    /// `check-sm-blob-fresh` pixi task inits the submodule first so the check always
+    /// runs there.
+    #[test]
+    fn interned_blob_matches_submodule_exactly() {
+        let dir = sm_submodule_dir();
+        if !dir.exists() {
+            eprintln!("SM submodule not present — skipping interned-blob staleness check");
+            return;
+        }
+        let fresh = ParsedModel::parse(&dir).expect("parse SM UFO source from submodule");
+        let interned = sm_parsed();
+
+        assert_eq!(
+            interned.particles.keys().collect::<Vec<_>>(),
+            fresh.particles.keys().collect::<Vec<_>>(),
+            "particle key order drifted from the submodule"
+        );
+        assert_eq!(
+            interned.particles.values().collect::<Vec<_>>(),
+            fresh.particles.values().collect::<Vec<_>>(),
+            "particle data drifted from the submodule"
+        );
+
+        assert_eq!(
+            interned.lorentz.keys().collect::<Vec<_>>(),
+            fresh.lorentz.keys().collect::<Vec<_>>(),
+            "Lorentz-structure key order drifted from the submodule"
+        );
+        assert_eq!(
+            interned.lorentz.values().collect::<Vec<_>>(),
+            fresh.lorentz.values().collect::<Vec<_>>(),
+            "Lorentz-structure data drifted from the submodule"
+        );
+
+        assert_eq!(
+            interned.couplings.keys().collect::<Vec<_>>(),
+            fresh.couplings.keys().collect::<Vec<_>>(),
+            "coupling key order drifted from the submodule"
+        );
+        assert_eq!(
+            interned.couplings.values().collect::<Vec<_>>(),
+            fresh.couplings.values().collect::<Vec<_>>(),
+            "coupling data drifted from the submodule"
+        );
+
+        assert_eq!(
+            interned.vertices.keys().collect::<Vec<_>>(),
+            fresh.vertices.keys().collect::<Vec<_>>(),
+            "vertex key order drifted from the submodule"
+        );
+        assert_eq!(
+            interned.vertices.values().collect::<Vec<_>>(),
+            fresh.vertices.values().collect::<Vec<_>>(),
+            "vertex data drifted from the submodule"
+        );
+
+        assert_eq!(
+            interned.params, fresh.params,
+            "parameter set drifted from the submodule"
+        );
+        assert_eq!(
+            interned.order_hierarchy, fresh.order_hierarchy,
+            "coupling-order hierarchy drifted from the submodule"
+        );
+
+        for variant in SMRestrict::ALL {
+            let card = format!("restrict_{}.dat", variant.suffix());
+            let on_disk = std::fs::read_to_string(dir.join(&card))
+                .unwrap_or_else(|e| panic!("read {card} from submodule: {e}"));
+            assert_eq!(
+                variant.restrict_card_text(),
+                on_disk,
+                "interned {card} is stale vs the submodule"
+            );
+        }
+    }
+
     #[test]
     fn all_variants_load_and_cache() {
         for v in SMRestrict::ALL {

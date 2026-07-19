@@ -21,7 +21,7 @@ pub enum VertexError {
 pub struct VertexId(pub usize);
 
 /// A fully resolved interaction vertex.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Vertex {
     pub name: String,
     pub particles: Vec<ParticleId>,

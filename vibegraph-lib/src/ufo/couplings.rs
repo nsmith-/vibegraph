@@ -56,7 +56,7 @@ impl Index<CouplingId> for Vec<Complex64> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Coupling {
     /// Python variable name, e.g. `"GC_10"`.
     pub python_name: String,
