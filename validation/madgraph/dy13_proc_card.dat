@@ -1,0 +1,7 @@
+#*********************************************************************
+#  Drell–Yan proc card: p p > e+ e- in the Standard Model.
+#  Consumed by `vibegraph integrate` (model import + process check);
+#  shares the beam/PDF/cut settings of the dy13_*_run_card.dat files.
+#*********************************************************************
+import model sm
+generate p p > e+ e-
