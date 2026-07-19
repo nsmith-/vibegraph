@@ -3915,12 +3915,19 @@ mod tests {
         // MadGraph's generated helicity-recycled sources.
         for (process, n_all, n_good) in [
             ("e+ e- > mu+ mu-", 16, 4),
-            ("e+ e- > z h", 12, 6),
-            ("u u~ > u u~", 16, 6),
-            ("g g > g g", 16, 6),
-            ("g g > t t~", 16, 12),
+            ("u u~ > mu+ mu-", 16, 4),
+            ("e+ e- > e+ e-", 16, 6),
+            ("e+ e- > mu+ mu- a", 32, 8),
+            ("e+ e- > t t~", 16, 8),
             ("e+ e- > w+ w-", 36, 16),
+            ("e+ e- > z h", 12, 6),
+            ("e+ e- > ta+ ta- h", 16, 8),
             ("e+ e- > mu+ mu- ta+ ta- QCD=0", 64, 16),
+            ("u u~ > c c~ e+ e- mu+ mu- QCD=0", 256, 16),
+            ("b b~ > c c~ e+ e- mu+ mu- QCD=0", 256, 32),
+            ("u u~ > u u~", 16, 6),
+            ("g g > t t~", 16, 12),
+            ("g g > g g", 16, 6),
         ] {
             let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
             let sets = generate_from_proc_card(&pc, &model).unwrap();
