@@ -7,7 +7,12 @@ gate. Current position: `color-flow` (feature, ✅ merged 2026-07-12) →
 `validation-sprint` (validation, ✅ closed 2026-07-13) → **eval performance
 program** (performance, ✅ closed 2026-07-17: post-CSE 3-track program + helicity
 expansion + helicity filtering; vs-MG gap 8.6×–110× → **1.2×–3.5×**; summary below,
-full record note 15) → **next: hadronic pp→ll / event output** (feature).
+full record note 15) → **hadronic-xsec** (feature, ✅ closed 2026-07-19: PDF
+convolution + run-card cuts + two-phase VEGAS give σ(pp→e⁺e⁻) vs MG within
+0.14%/0.07%; summary below, full record note 18) → **next: a validation pass**
+over what this sprint exposed (pruned-frame contract guard, multi-subgrid PDF
+seam coverage, and the pre-existing NHEL-table/flow-dictionary/timing-print
+items — collected in the validation backlog below).
 
 ## Pipeline Status
 
@@ -16,16 +21,17 @@ full record note 15) → **next: hadronic pp→ll / event output** (feature).
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 14 processes agree with MadGraph (11 bit-identical ≤6.3e-13, incl. 2→6/VVV/massive externals, all NCOLOR=1; `uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) |
-| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS + 2-body LIPS |
-| 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻) | ✅ Done | Lepage VEGAS on `AmplitudeEvaluator::eval_m2`; `validate_vegas.rs`: `sigma_z_pole` σ≈2025 pb at √s=91.2 (<0.1% vs MG), `sigma_qed_limit` (√s=10 vs 4πα²/3s, 3%) |
-| 6 | Unweighted event output (LHEF) | 🔲 Pending | Accept/reject sampling + Les Houches format |
+| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS, now a two-phase serde object (`adapt`/`sample_frozen` split, deterministic rayon chunking) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams; channel mappings + multi-channel weights remain (`lips-nbody`) |
+| 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻, pp→e⁺e⁻ Drell–Yan) | ✅ Done | Leptonic: `validate_vegas.rs` `sigma_z_pole` σ≈2025 pb at √s=91.2 (<0.1% vs MG), `sigma_qed_limit` (√s=10 vs 4πα²/3s, 3%). Hadronic: PDF-convolved σ(pp→e⁺e⁻) via a pure-Rust LHAPDF6 grid parser + log-bicubic interpolation (`pdf/`) and compiled MG run-card cuts (`runcard.rs`/`cuts.rs`), integrated over (τ,y); vs MG within 0.14% (default cuts, 934.42±0.87 vs 933.11±0.447 pb) / 0.07% (m_ℓℓ∈[60,120], 644.86±0.57 vs 644.42±0.315 pb); `vibegraph integrate` CLI drives proc-card + run-card → σ + persisted VEGAS grid artifact |
+| 6 | Unweighted event output (LHEF) | 🔲 Pending | Accept/reject sampling + Les Houches format; substrate now in place (frozen VEGAS grid, RAMBO, cuts accept-gate — see `event-output-lhef` below); still depends on `lips-nbody` channel mappings for genuine n-body final states |
 
 Closed-sprint history (`helas-generalize`, `mg-validation-coverage`,
 `cleanup-refactor`, `performance-sprint`, `color-flow`, `validation-sprint`, the
-**eval performance program**) lives in git history and `research/notes/` (12:
-continuum bug hunt, 13: typed conventions, 15: eval optimization program incl. its
-§2 close-outs, 16: color-flow design + debrief incl. the VVVV phase-bug root cause
-and fix, 17: bounds-check-elimination memo, `rooting-study-results.md`: rooting
+**eval performance program**, **`hadronic-xsec`**) lives in git history and
+`research/notes/` (12: continuum bug hunt, 13: typed conventions, 15: eval
+optimization program incl. its §2 close-outs, 16: color-flow design + debrief
+incl. the VVVV phase-bug root cause and fix, 17: bounds-check-elimination memo,
+18: hadronic cross-section design + outcome, `rooting-study-results.md`: rooting
 headroom study).
 
 ---
@@ -131,130 +137,105 @@ our interpreter doesn't) is untested. Rerun kit for other boxes:
 
 ---
 
-## 🔴 High — next feature: hadronic pp→ll cross section (**planned — note 18**)
+## 🧬 Hadronic pp→ℓ⁺ℓ⁻ cross section ✅ CLOSED 2026-07-19 (full record: `research/notes/18-hadronic-xsec-design.md`)
 
-σ = Σ_q ∫ dx₁ dx₂ f_q(x₁) f_q̄(x₂) σ̂(q q̄ → l⁺ l⁻). Sprint design + session plan in
-`research/notes/18-hadronic-xsec-design.md` (branch `hadronic-xsec`): H1/H2 pure-Rust
-LHAPDF6 PDF module (parton-oracle-gated, scirs2-interpolate trial with in-house
-bicubic fallback), H3 massive RAMBO generic over `F: Real` + splittable ChaCha8
-substreams (first stage of `lips-nbody`), H4 SIMD lane-batched `eval_m2` via
-`numeric-array` (**done — negative result: 1.4–2.7× *slower* on NEON, the
-indexed-arena interpreter does not auto-vectorize; infra landed + parked, `Real`
-relaxed to method-based `Zero`/`One`, bit-identity gate green; H7 stays scalar —
-see note 18 §5, incl. the AVX-512 rerun kit w/ `scripts/dump_lane_asm.sh`**),
-H5 serde-split two-phase VEGAS (adapt/save grid, frozen sample;
-deterministic rayon), H6 MG run-card parser on `GlobalConfig` + compiled cuts
-filter (MG's default lepton cuts are active out of the box; unimplemented-but-
-active cut = hard error), H7 the convolution + MG σ(pp→e⁺e⁻) gate under a shared
-run card, H8 minimal `integrate` CLI, H9 close-out.
-Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
+σ = Σ_q ∫ dx₁ dx₂ f_q(x₁) f_q̄(x₂) σ̂(q q̄ → l⁺ l⁻), the first hadron-collider
+observable. Eight sessions on branch `hadronic-xsec`, all behind the 14-process
+`validate_helas_mg` net (only H4 touched evaluator-adjacent code, gated by its
+own bit-exact test), merged to `main` in waves {H1,H3,H4,H5,H6}+H2 on
+2026-07-18 and H7+H8 on 2026-07-19:
 
-- **H8 — `cli-integrate` ✅ done (branch `hx/h8-cli-integrate`).**
-  `vibegraph integrate <proc_card> [--run-card …] [--out <dir>] [--force]
-  [--pdf-set/--pdf-dir] [--neval/--niter/--seed]` — assembles the H7 Drell–Yan
-  integrand, adapts the VEGAS grid, prints σ ± err, and writes
-  `<out>/grid.bin.zst`: `artifact::IntegrateArtifact` (bincode + zstd, like the
-  SM blob — bit-exact `f64`, so no serde_json `float_roundtrip` footgun) holding
-  the trained grid + run metadata (process, PDF set, μF, √s, seed, neval/niter,
-  the resolved `RunCard`) for a later sampling phase to refuse a mismatched
-  input. **μF from the run card** (`dsqrt_q2fact1` when `fixed_fac_scale`,
-  dynamical → hard error), **√s = ebeam1+ebeam2** — nothing kinematic hard-coded;
-  the shared card drives both vibegraph and MG. PDF-dir resolves `--pdf-dir` →
-  `$VIBEGRAPH_PDF_DIR` → `validation/pdf`, hard-erroring toward `fetch-pdf` when
-  absent. **Refuses to overwrite without `--force`** (pre-flighted before the
-  integration). **Sequential VEGAS** (`adapt_grid` wraps `adapt`; the H7
-  `RefCell` scratch integrand is `FnMut`, not `Fn + Sync`, so the parallel path
-  is a recorded follow-up — ~2 s single-threaded). Extended-validation
-  `cli_integrate` test drives the binary end-to-end: cold-start on the committed
-  `dy13_proc_card.dat` + each reference run card reproduces the H7 σ bit-for-bit
-  (default **934.416 ± 0.870** vs MG 933.11±0.45, mmll[60,120] **644.855 ± 0.570**
-  vs MG 644.42±0.32), the reloaded grid's `sample_frozen` reproduces the adapted
-  estimate, and the `--force` refusal holds; grid round-trip bit-identity pinned
-  by a synthetic default-suite unit test. README documents the command; decision
-  record in note 18 §5. Full proc-card coverage stays with `cli-proc-card`; the
-  `generate` phase lands with `event-output-lhef`.
+1. **H1 `pdf-grid-io`**: pure-Rust LHAPDF6 `.info`/`.dat` parser (`pdf::grid`) →
+   `SetInfo`/`SubGrid`/`PdfSet`/`PdfMember` skeleton, 0↔21 gluon alias. Gated by
+   an **LHAPDF C++** oracle (`validation/pdf/gen_oracle.cpp`, built + run
+   against MG's own bundled LHAPDF 6.5.6 — swapped in from an initial `parton`/
+   scipy trial once it was clear MG evaluates PDFs through LHAPDF's log-bicubic,
+   not scipy's B-spline); on-knot x·f values match bit-for-bit.
+2. **H2 `pdf-interpolate`**: `pdf::interp` — in-house log-bicubic exactly
+   replicating LHAPDF6's `LogBicubicInterpolator`, off-knot rel **1.3e-15**
+   vs the oracle. `scirs2-interpolate::RectBivariateSpline` trialled and
+   **rejected** (worst rel 9.86e-1 — a global B-spline is the wrong algorithm
+   class off-knot — plus ~40 extra transitive crates for a BLAS/LAPACK stack).
+3. **H3 `rambo-real-generic`**: `phasespace/` module tree; massive
+   `rambo::<F: Real>` with the KSE weight, splittable `ChaCha8Rng` substreams
+   (`(stream, position)` addressing, a documented bits→`F` uniform rule); the
+   first stage of `lips-nbody`. Uniforms-replay oracle ≤1.3e-15, QED flat-MC
+   normalization check 6e-4.
+4. **H4 `eval-simd-lanes` — negative result.** `numeric-array` lane-batched
+   `eval_m2` measured 1.4–2.7× *slower* than scalar on NEON at every width
+   tried (N=2/4/8): the indexed-arena interpreter doesn't auto-vectorize, so
+   widening only amortizes call overhead rather than winning SIMD throughput.
+   Infrastructure lands parked and bit-identical to scalar; `Real`'s
+   `ConstZero`/`ConstOne` relaxed to method-based `Zero`/`One` (a real,
+   permanent simplification — both are structurally impossible for a
+   runtime-length SIMD array). H7 ships scalar-only; an AVX-512 rerun kit
+   (`scripts/dump_lane_asm.sh`) is recorded in case wider hardware changes the
+   verdict.
+5. **H5 `vegas-serde-split`**: `VegasGrid` (serde + validating deserialize)
+   split into `adapt`/`sample_frozen` phases, batched-integrand variants, and
+   deterministic `adapt_parallel`/`sample_frozen_parallel` (ChaCha8 substream
+   per rayon chunk, 1-vs-N-thread bit-identity).
+6. **H6 `run-card-cuts`**: `runcard.rs` (MG `run_card.dat` parser, 209-entry
+   defaults table pinned against a `banner.py` JSON dump) + `cuts.rs` (compiled
+   filter: ŝ window, single-leg pT/E/η, pairwise ΔR + mass, `ptll`, `mmnl`;
+   everything else parse-and-detect, hard-erroring if active and
+   unimplemented). Convention pins vs `cuts.f`: rapidity (not pseudorapidity)
+   for η and ΔR, and the `dr` threshold is squared once at first use.
+7. **H7 `hadronic-sigma`**: `hadronic.rs` assembles σ(pp→e⁺e⁻) — PDF luminosity
+   × up/down coupling classes (asserted against the `p p > e+ e-` enumeration)
+   × compiled cuts × VEGAS. |M|² evaluated in the partonic CM (pruned-eval
+   frame contract); cuts applied to lab-frame momenta boosted by the
+   parton-system rapidity. **Switching the VEGAS variables from (x₁,x₂) to
+   (τ=ŝ/s, y) fixed a ~6% convergence bias** on the mass-windowed run (the
+   direct x-map makes the mass window a thin diagonal band VEGAS can't
+   resolve; τ makes it a 1-D bound). Corrected the pinned PDF set's `lhaid` to
+   **247000** (NNPDF23_lo_as_0130_qed) — 244600 and 230000 are different, wrong
+   sets. Found and worked around a conda-`LDFLAGS` bug that silently dropped
+   MG's `-lc++` link flag when generating the MG reference.
+8. **H8 `cli-integrate`**: `vibegraph integrate <proc_card> [--run-card …]
+   [--out <dir>] [--force] [--pdf-set/--pdf-dir] [--neval/--niter/--seed]` —
+   assembles the H7 integrand, adapts the grid, prints σ±err, persists
+   `artifact::IntegrateArtifact` (bincode+zstd: trained grid + run metadata).
+   Cold-start reproduces the H7 σ bit-for-bit.
 
-- **H7 — `hadronic-sigma` ✅ done (branch `hx/h7-hadronic-sigma`).**
-  `hadronic.rs` assembles σ(pp→e⁺e⁻): up/down flavor classes resolved from the
-  `p p > e+ e-` enumeration and asserted against it (u/c, d/s; no b, no gluon),
-  the "one σ̂ per class" premise pinned by a u ū == c c̄ |M|² test. |M|² evaluated
-  in the partonic CM (pruned-eval frame contract); cuts applied to lab-frame
-  momenta boosted by the parton-system rapidity. **Switched the VEGAS variables
-  from (x₁,x₂) to (τ=ŝ/s, y): the mass window becomes a 1-D bound on τ, killing a
-  ~6% VEGAS-convergence bias on the mmll run** (note 18 §5). MG reference
-  generation (`pixi run -e madgraph generate-hadronic-sigma` → banked
-  `hadronic_sigma_reference.json`) drives `p p > e+ e-` at 13 TeV from the shared
-  committed run cards `dy13_*_run_card.dat`; **PDF pinned to lhaid 247000 =
-  NNPDF23_lo_as_0130_qed** (the note's 244600 is the NLO_qed set, run_card_dy.dat's
-  230000 is NNPDF23_nlo_as_0119 — both wrong). Both runs *enforced* in
-  `validate_hadronic` within combined MC error: default 934.4±0.9 vs MG
-  933.11±0.45 pb (0.14%), mmll[60,120] 644.9±0.6 vs MG 644.42±0.32 pb (0.07%).
-  Pointwise integrand oracle (`generate-dy-oracle`: LHAPDF xfxQ2 × MG standalone
-  MATRIX1/MATRIX2) pins PDF×flux×|M|² + cut indicator at 10 points (incl. two
-  straddling pT_ℓ=10) to worst rel **1.15e-14**. Informational dσ/dm_ℓℓ table
-  `dy_dsigma_dmll.md` (γ* continuum + Z peak) committed. MG-LHAPDF link bug
-  (conda LDFLAGS suppresses MG's `-lc++`) worked around in the gen script.
+**Headline** (σ(pp→e⁺e⁻) at 13 TeV, NNPDF23_lo_as_0130_qed, μF=μR=m_Z):
+default cuts **934.42±0.87** vs MG **933.11±0.447 pb** (0.14%); m_ℓℓ∈[60,120]
+**644.86±0.57** vs MG **644.42±0.315 pb** (0.07%); pointwise PDF×flux×|M|²
+integrand oracle **1.15e-14**.
 
-- **H2 — `pdf-interpolate` ✅ done (branch `hx/h2-pdf-interpolate`).**
-  `pdf::interp` — local **log-bicubic** in `(ln x, ln Q²)` replicating LHAPDF6's
-  `LogBicubicInterpolator` (precomputed x-cubic Hermite coeffs `[a,b,c,d]` per
-  `(x-interval, Q²-knot, flavor)` à la `KnotArray::coeff` + `GridPDF::_ddx`,
-  Q²-direction Hermite assembled at eval with one-sided/central FD slopes),
-  behind a minimal `Bicubic2D` trait; `PdfMember::xfx_q2::<F: Real>`/`try_xfx_q2`
-  with subgrid walk (first in-range band) + 0↔21 gluon alias, out-of-grid →
-  typed `OutOfRange` (extrapolation a recorded non-goal). Coeff tables in `f64`,
-  arithmetic cast to `F` per point. **scirs2 rejected** (note 18 §5): trialled
-  `scirs2-interpolate::RectBivariateSpline` (kx=ky=3, s=0) against the LHAPDF
-  oracle — worst rel **9.86e-1** on interior off_knot (charm), a global B-spline
-  is the wrong algorithm, and it drags ~40 crates (nalgebra/ndarray/oxiblas
-  BLAS-LAPACK/simba/statrs). In-house log-bicubic vs LHAPDF oracle: off_knot
-  **1.3e-15**, seam 1.3e-16, x→1 tail 2.0e-11, corner ≤1e-9, on-knot |Δ| 2.7e-20
-  — all far under the 1e-9 bar (`validate_pdf_grid`, extended-validation). Walk +
-  flavor-alias + analytic bilinear-in-log oracle unit-tested in the default
-  suite.
+### Deferred engineering work
 
-- **H6 — `run-card-cuts` ✅ done (branch `hx/h6-run-card-cuts`).**
-  `runcard.rs` (typed parser + MG LO defaults table, banner.py JSON oracle via
-  `pixi run -e madgraph dump-runcard-defaults`), `cuts.rs` (compiled letter-class
-  filter: ŝ window, single-leg pT/E/η, pairwise ΔR + mass, `ptll`, `mmnl`;
-  everything else parse-and-detect → `CutError::UnimplementedCutActive`),
-  `GlobalConfig::load_run_card` seam. cuts.f convention pins + decision record in
-  note 18 §5. Cuts consume `ExternalLeg { pdg, mass, is_final }` — H7 builds these
-  from subprocess metadata.
+- **DY integrand parallelism**: `hadronic.rs`'s per-flavor-class integrand
+  scratch is `RefCell`-based `FnMut`, so H5's `adapt_parallel`/
+  `sample_frozen_parallel` (which need `Fn + Sync`) can't be used yet —
+  reworking the scratch to per-thread (`thread_local`/per-chunk) unlocks both
+  multi-threaded local runs and the distributed-sharding design (§2.4, note
+  18); not pulled in since the whole default-cut run is only ~2s single-threaded.
+- `cli-proc-card`, `event-output-lhef`, and `lips-nbody`'s remaining scope
+  (channel mappings + multi-channel weights) — updated in place below.
 
-- **H5 — `vegas-serde-split` ✅ done (branch `hx/h5-vegas-serde-split`).**
-  `VegasGrid` (serde + validating deserialize) with `adapt`/`sample_frozen`
-  split, batched-integrand variants (bit-identical to unbatched for any batch
-  size), and deterministic-parallel `adapt_parallel`/`sample_frozen_parallel`
-  (ChaCha8 substream per chunk, 1-vs-N-thread bit-identity); `Vegas::integrate`
-  kept as a compat shim, pinned-seed bit goldens guard the refactor. serde_json
-  `float_roundtrip` footgun recorded in note 18 §5.
+### New validation follow-ups (fold into the next validation pass)
 
-- **H3 — `rambo-real-generic` ✅ done (branch `hx/h3-rambo-real-generic`).**
-  `phasespace/` module tree — `rng.rs` ChaCha8 substreams + bits→`F` uniform
-  rule, `rambo.rs` massive `rambo::<F>` with KSE weight; uniforms-replay oracle
-  ≤1e-13, invariant fuzz, banked-σ̂ flat-MC check; `rambo_massless` kept
-  bit-compatible.
-
-- **H1 — `pdf-grid-io` ✅ done (branch `hx/h1-pdf-grid-io`).** `pdf::grid` parses
-  LHAPDF6 `.info` + member `.dat` (`lhagrid1` format) into `SetInfo`/`SubGrid`;
-  `pdf::PdfSet`/`PdfMember` skeleton + 0↔21 gluon-alias flavor indexing; no
-  interpolation. Gated by an **LHAPDF C++** oracle (`validation/pdf/gen_oracle.cpp`,
-  built + run in the `madgraph` env against MG's bundled LHAPDF 6.5.6): `pixi run
-  -e madgraph fetch-pdf` → `build-pdf-oracle` → `generate-pdf-oracle` →
-  `validate-pdf-grid`. On-knot x·f values match **bit-for-bit** (rel 0.0, gate at
-  ≤1e-12), malformed input hits typed `GridError` variants. The oracle backend
-  is LHAPDF (not parton) because MG evaluates PDFs through LHAPDF and its
-  log-bicubic is the correct off-knot reference; the parton/`pdf-validation`
-  python env is removed. **Findings for H2**: (1) the pinned NNPDF23_lo_as_0130_qed
-  set ships as a *single* subgrid (nx=100, nq=50, 14 flavors, no internal Q²
-  threshold split) — the oracle's `seam` category degenerates to the global
-  QMin/QMax edge, so seam-walk coverage needs a genuinely multi-subgrid set or a
-  synthetic fixture. (2) The H2 target is LHAPDF's **log-bicubic**, not a
-  scipy-style B-spline: scirs2's `RectBivariateSpline` is a different algorithm
-  and will likely miss the 1e-9 off-knot bar (LHAPDF-vs-scipy diverged ~120% at
-  some interior points) — budget for the in-house log-bicubic fallback (note 18
-  §5).
+- **Pruned-frame contract guard**: nothing enforces the partonic-CM ±z-beam
+  requirement of a pruned evaluator (surfaced by the eval performance program,
+  note 15 §2.3); `hadronic.rs` satisfies it by construction (it builds CM
+  momenta directly) but that's convention, not enforcement — add a debug-build
+  frame assertion (or an explicit boost-to-CM seam) before any future caller
+  routes boosted momenta near `eval_m2`.
+- **Multi-subgrid PDF seam behavior**: the LHAPDF oracle only covers the
+  pinned NNPDF23_lo_as_0130_qed set, which ships as a *single* subgrid — the
+  subgrid-walk's "first in-range band" logic and the two-Q²-knot bilinear
+  fallback are pinned only by synthetic fixtures (`grid.rs::parses_multiple_subgrids`),
+  not a real multi-subgrid reference, and `gen_oracle.cpp` hard-errors on
+  repeated Q² knots rather than describing the seam-derivative-flattening
+  behavior LHAPDF actually has there. Needs a genuine multi-subgrid set or a
+  richer synthetic fixture.
+- **NHEL-table pinning coverage** (pre-existing, eval performance program):
+  still only 7 of 14 `MG_VALIDATED_PROCESSES` have pinned survivor sets.
+- **Flow→LHEF color-string dictionary** (pre-existing, rides with
+  `event-output-lhef`): still unimplemented.
+- **Retire or label the `validate_helas_mg` timing print** (pre-existing,
+  non-representative by construction): still open.
 
 ---
 
@@ -265,7 +246,9 @@ Waves: {H1,H3,H4,H5,H6} → H2 → H7 → H8 → H9.
 `config::GlobalConfig::load_ufo(&Option<ModelImport>) -> Arc<UFOModel>` (landed with
 `intern-sm-model`) already provides the `ParsedProcCard` → `UFOModel` seam: interned
 SM for `import model sm[-variant]`, else a UFO dir under `ufo_search_path`. Remaining
-work is the CLI wiring of a full proc card end-to-end.
+work is the CLI wiring of a full proc card end-to-end. `vibegraph integrate`
+(`hadronic-xsec` H8) hard-codes the `p p > e+ e-` process — a real consumer that
+this item's full proc-card coverage would generalize.
 
 ---
 
@@ -393,10 +376,12 @@ peepholes.
 
 Generalize phase-space sampling to 3+ final-state particles using recursive 2-body
 decomposition (RAMBO-style). Research Rust options before committing to an approach.
-**First stage pulled into the `hadronic-xsec` sprint** (note 18, session H3): massive
-RAMBO generic over `F: Real` with the KSE weight, splittable-substream RNG, and the
-banked σ̂ flat-MC check below. Remaining scope here = channel mappings + multi-channel
-weights on top of those seams.
+**First stage shipped in the `hadronic-xsec` sprint** (✅ closed 2026-07-19, note 18
+session H3): massive RAMBO generic over `F: Real` with the KSE weight,
+splittable-substream RNG, and the banked σ̂ flat-MC check below. `hadronic-xsec`'s own
+σ(pp→e⁺e⁻) integrand is 2→2 and used a direct 2-body LIPS map, not RAMBO, so it
+didn't need the channel-mapping generalization — **remaining scope here** = channel
+mappings + multi-channel weights on top of the RAMBO/RNG seams.
 (The MG validation side already generates n-body points via RAMBO in
 `gen_amplitude.py`; the MG-computed partonic σ̂ = 6.556e-7 pb for the uux 2→6 at
 √s=500 is **now consumed** by H3's flat-MC weight-normalization check
@@ -430,12 +415,22 @@ weights on top of those seams.
   mis-sampled regions of small measure. For optimization work the figure of
   merit is variance × CPU-time at fixed target precision, not ns/point.
 
-_Unblocks: hadronic pp→ll, `event-output-lhef`._
+_Unblocks: `event-output-lhef` (n-body final states)._
 
 ### `event-output-lhef` — Unweighted events in LHEF format
 
 Accept/reject sampling with `w(p) = |M(p)|²/w_max`; serialize to Les Houches Event File
-format for downstream tools (Pythia, Herwig, etc.).
+format for downstream tools (Pythia, Herwig, etc.). `hadronic-xsec` (✅ closed
+2026-07-19) built most of the non-n-body substrate this needs: H5's frozen VEGAS
+grid (`sample_frozen`/`sample_frozen_parallel`, no further adaptation — the
+accept/reject primitive), H3's RAMBO + splittable RNG, and H6's compiled `Cuts`
+(already an accept-gate shape, `cuts.pass(&momenta) -> bool`). H8's
+`IntegrateArtifact` (bincode+zstd: trained grid + run metadata) is the natural
+handoff format from the `integrate` phase into a future `generate` phase, which
+would deserialize it and refuse a mismatched run rather than take raw CLI flags
+again. Still missing: the `generate` CLI phase itself, and genuine n-body final
+states (depends on `lips-nbody`'s channel-mapping scope, since accept/reject
+against a single flat map is a poor sampler once propagator peaks appear).
 
 LHEF color tags need MG's *leading-Nc* flow decomposition (`color_flow_decomposition`
 / `get_color_flow_string` in `color_amp.py`) to assign a `(color, anticolor)` integer
@@ -444,7 +439,7 @@ pair per external leg — a separate small feature on top of the trace/δ basis
 The per-event flow is sampled ∝ `JAMP2(i) = Σ_hel |JAMP_i|²` (MG's `SELECT_COLOR`
 input) — a cheap diagonal accumulator on the `eval_m2` combination loop, note 15
 §2.2; the flow→string dictionary must be pinned against MG's conventions (see the
-performance-program validation follow-ups).
+validation backlog).
 
 _Depends on: `lips-nbody` (n-body final states)._
 
