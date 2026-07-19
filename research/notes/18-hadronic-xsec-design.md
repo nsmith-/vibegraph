@@ -916,3 +916,108 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
 - **f32 lanes**: doubles SIMD width; precision impact on |M|² unstudied — needs
   its own validation pass against the f64 gate.
 - **Lab-frame kinematics + rapidity distributions**: with event output, not σ.
+
+## Outcome
+
+Eight sessions, branch `hadronic-xsec`: wave 1 ({H1, H3, H4, H5, H6}) and H2
+merged to `main` 2026-07-18, H7 and H8 merged 2026-07-19. Every session stayed
+behind the 14-process `validate_helas_mg` gate; only H4 touched
+evaluator-adjacent code, under its own bit-exact lane-vs-scalar test.
+
+**Headline**: σ(pp→e⁺e⁻) at 13 TeV, NNPDF23_lo_as_0130_qed, μF=μR=m_Z, both
+enforced within combined MC error against a MadGraph reference generated from
+the same shared run card —
+
+- default cuts: vibegraph **934.42 ± 0.87 pb** vs MG **933.11 ± 0.447 pb**
+  (Δ 1.3σ, **0.14%**).
+- m_ℓℓ ∈ [60, 120]: vibegraph **644.86 ± 0.57 pb** vs MG **644.42 ± 0.315 pb**
+  (Δ 0.7σ, **0.07%**).
+- pointwise PDF×flux×|M|²×cut-indicator integrand oracle (LHAPDF `xfxQ2` × MG
+  standalone MATRIX1/MATRIX2, independent of the VEGAS/PDF-set machinery):
+  worst rel **1.15e-14**.
+
+**Load-bearing findings** (the ones a future session needs to know about, not
+just the per-session decision records in §5):
+
+- **The (τ, y) remap replacing the direct x-map** (H7). VEGAS on
+  `(u₁,u₂) → (x₁,x₂) = x_min^{1-u}` makes a dilepton mass window a thin
+  diagonal band in the unit square; VEGAS could not resolve it, and the
+  mmll[60,120] run came out **6% low (5.8σ)** before the fix (the default-cut
+  run also mis-converged, +0.78%). Switching to `τ = ŝ/s` (log-sampled) and
+  `y = ½ln(x₁/x₂)` turns the mass window into a one-dimensional bound on τ,
+  which VEGAS resolves trivially — both runs then land at ~0.1% with ~10×
+  smaller MC error. Any future VEGAS integrand with a similarly thin
+  kinematic cut band should reach for a variable change before more
+  iterations or adaptation tuning.
+- **`lhaid` correction**: the pinned NNPDF23_lo_as_0130_qed set is **247000**.
+  The design note's original guess (244600) is NNPDF23_nlo_as_0118_qed, and
+  the value already sitting in the `run_card_dy.dat` parser fixture (230000)
+  is NNPDF23_nlo_as_0119 — both NLO, non-QED, and simply wrong sets. Both MG
+  and vibegraph now consume the exact same 247000 set, so the σ agreement
+  above carries no interpolation-scheme systematic.
+- **scirs2 rejection, by the numbers** (H2): `scirs2-interpolate`'s
+  `RectBivariateSpline` (scipy-compatible global B-spline, kx=ky=3, s=0)
+  measured worst relative error **9.86e-1** against the LHAPDF oracle's
+  off-knot interior points (every flavor ≥3%, charm the worst at 98.6%) —
+  eight orders of magnitude past the 1e-9 bar — confirming the mid-sprint
+  premise correction that LHAPDF's interpolation is a *local* log-bicubic, not
+  a global spline. The in-house replica of LHAPDF's own algorithm then landed
+  at off-knot rel 1.3e-15. scirs2 was also independently disqualified on
+  compile weight (~40 transitive crates for a full BLAS/LAPACK stack).
+- **H4 SIMD negative result**: lane-batching `eval_m2` via `numeric-array`
+  measured 1.4–2.7× *slower* than scalar on NEON at every width tried
+  (N=2/4/8) — the indexed-arena interpreter's gather/scatter and hash-consed
+  DAG walk do not auto-vectorize the way the design note's premise assumed
+  for straight-line kernels. Widening N monotonically reduced but never
+  eliminated the penalty, the signature of overhead-bound rather than
+  SIMD-accelerated code. The infrastructure (bit-identical to scalar,
+  `Real`'s `ConstZero`/`ConstOne` relaxed to method-based `Zero`/`One`) is
+  parked on `main`, not wired into any hot path; H7 ships scalar-only. An
+  AVX-512 rerun kit is recorded (§5) in case wider, non-interpreter-bound
+  hardware changes the verdict, but the working assumption for any future
+  session is that lane-batching this evaluator is not a win.
+- **Lab-frame cuts vs partonic-CM |M|²** (H7): `eval_m2`'s pruned-evaluator
+  frame contract requires ±z partonic-CM beams, but MG's `cuts.f` cuts (η,
+  ΔR, pT) are lab-frame observables, not boost-invariant. `hadronic.rs`
+  evaluates |M|² in the CM and separately boosts the final-state leptons
+  along z by the parton-system rapidity `y = ½ln(x₁/x₂)` before handing them
+  to `Cuts::pass`. A boost changes lab-frame η/ΔR but not a back-to-back LO
+  pair's Δφ = π, so `drll=0.4` never fires for this process — a fact worth
+  knowing before assuming any given default cut is exercising real logic
+  here.
+- **MG–LHAPDF link workaround**: MadEvent's `generate_events` failed to link
+  LHAPDF (`__cxa_throw`/`__gxx_personality_v0` unresolved) because the conda
+  environment's own exported `LDFLAGS` defeats `make_opts`'s
+  `ifeq($(origin LDFLAGS),undefined)` guard, silently dropping MG's
+  `STDLIB=-lc++`. Fixed by appending `-lc++` to `LDFLAGS` around the
+  `generate_events` call in `gen_hadronic_sigma.sh`. General lesson repeated
+  from the cuts.f `dr`-squaring surprise: read the surrounding control flow
+  of a reference toolchain's build/generation scripts, not just the cited
+  line.
+
+**§6 deferred-follow-ups reconciliation**:
+
+- Multi-channel phase space (`lips-nbody` main body) — **still deferred**,
+  as planned; this sprint's RAMBO/RNG/frozen-grid seams are its substrate.
+- `event-output-lhef` — **still deferred**, now genuinely unblocked: H5's
+  `sample_frozen`/`sample_frozen_parallel` (no further adaptation), H3's
+  RAMBO + splittable RNG, and H6's compiled `Cuts` (already an accept-gate
+  shape) are all in place; H8's `IntegrateArtifact` is the natural
+  grid-handoff format into a future `generate` phase. The leading-Nc
+  color-tag dictionary and `mg-single-helicity-bench` remain unimplemented,
+  as planned.
+- Remaining run-card cut families — **still deferred**, as planned;
+  parse-and-detect (`CutError::UnimplementedCutActive`) continues to mark
+  exactly when a real jet/photon/VBF process needs one implemented.
+- α_s from `.info` / running couplings + dynamical scales — **still
+  deferred**, as planned; no QCD final state has needed it yet.
+- PDF error members / multiple sets — **still deferred**, as planned; `pdf::grid`'s
+  `member > 0` plumbing exists with no consumer.
+- f32 lanes — **still deferred**, and now a weaker candidate than when
+  written: H4 found f64 lane-batching itself a net loss on NEON before f32
+  even enters the picture, so this item's premise (double the width, keep
+  the interpreter) is undermined by the same overhead-bound finding: a
+  future attempt should first establish a non-interpreter kernel path is
+  viable at all, on AVX-512 hardware, before spending on f32 specifically.
+- Lab-frame kinematics + rapidity distributions — **still deferred**, as
+  planned; rides with event output.
