@@ -57,6 +57,8 @@ validate-helas-mg = { cmd = "cargo test -p vibegraph-lib --profile profiling --f
 dump-runcard-defaults = "python validation/madgraph/dump_runcard_defaults.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards
 generate-hadronic-sigma = "bash validation/madgraph/gen_hadronic_sigma.sh"
+# Build the MG |M|^2 probe and (re)generate the pointwise DY integrand oracle
+generate-dy-oracle = { cmd = "bash validation/madgraph/gen_dy_oracle.sh", depends-on = ["fetch-pdf"] }
 # Fetch the pinned NNPDF23_lo_as_0130_qed set from the LHAPDF data server
 fetch-pdf = "bash validation/pdf/fetch.sh"
 # Compile the LHAPDF C++ PDF-grid oracle generator (rpath makes it self-contained;

@@ -198,6 +198,32 @@ pub struct DrellYanIntegrand<'a> {
     ln_inv_tau_min: f64,
 }
 
+/// The Drell–Yan integrand decomposed into physical factors at one VEGAS point,
+/// for the pointwise integrand oracle ([`DrellYanIntegrand::debug_factors`]).
+#[derive(Clone, Copy, Debug)]
+pub struct PointFactors {
+    pub x1: f64,
+    pub x2: f64,
+    pub cos_theta: f64,
+    pub sqrt_shat: f64,
+    /// Up-type PDF luminosity `Σ_{q∈{u,c}} [x·f_q(x₁)·x·f_q̄(x₂) + (x₁↔x₂)]`.
+    pub lum_up: f64,
+    /// Down-type PDF luminosity `Σ_{q∈{d,s}} [...]`.
+    pub lum_down: f64,
+    /// Up-type color+helicity-summed |M|² (MadGraph MATRIX1 convention).
+    pub m2_up: f64,
+    /// Down-type color+helicity-summed |M|².
+    pub m2_down: f64,
+    /// Partonic prefactor `prefactor2(√ŝ)/9` (flux · spin·color average · LIPS).
+    pub phat: f64,
+    /// `(τ, y)` phase-space Jacobian (the `1/τ` already divided out).
+    pub jac: f64,
+    /// Whether the lab-frame momenta pass every compiled cut.
+    pub pass: bool,
+    /// The integrand value (`0` when the cut fails).
+    pub value: f64,
+}
+
 /// A VEGAS point mapped to Drell–Yan kinematics via `(τ, y)`.
 struct MappedPoint {
     x1: f64,
@@ -307,6 +333,40 @@ impl<'a> DrellYanIntegrand<'a> {
         let m2_down = self.down.eval_m2(&cm, &mut self.down_scratch.borrow_mut());
 
         m.jac * phat * (m2_up * lum_up + m2_down * lum_down)
+    }
+
+    /// The integrand decomposed into its physical factors at a VEGAS point — the
+    /// target of the pointwise integrand oracle. `value` equals
+    /// `jac · phat · (m2_up·lum_up + m2_down·lum_down)` when `pass`, else `0`.
+    pub fn debug_factors(&self, u: &[f64]) -> PointFactors {
+        let m = self.map_point(u);
+        let Kinematics { cm, lab } =
+            build_kinematics(m.sqrt_shat, m.cos_theta, m.x1, m.x2, self.s_had);
+        let pass = self.cuts.pass(&lab);
+        let lum_up = self.luminosity(&self.up_flavors, m.x1, m.x2);
+        let lum_down = self.luminosity(&self.down_flavors, m.x1, m.x2);
+        let phat = prefactor2(m.sqrt_shat) / 9.0;
+        let m2_up = self.up.eval_m2(&cm, &mut self.up_scratch.borrow_mut());
+        let m2_down = self.down.eval_m2(&cm, &mut self.down_scratch.borrow_mut());
+        let value = if pass {
+            m.jac * phat * (m2_up * lum_up + m2_down * lum_down)
+        } else {
+            0.0
+        };
+        PointFactors {
+            x1: m.x1,
+            x2: m.x2,
+            cos_theta: m.cos_theta,
+            sqrt_shat: m.sqrt_shat,
+            lum_up,
+            lum_down,
+            m2_up,
+            m2_down,
+            phat,
+            jac: m.jac,
+            pass,
+            value,
+        }
     }
 
     /// Summed PDF luminosity for one coupling class:
