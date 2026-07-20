@@ -51,7 +51,7 @@ beams + cuts MG used.
 | V3a | Generalize `vibegraph integrate` (absorbs `cli-proc-card`): proc-card-driven assembly, `lpp=(0,0)` beams, flat-RAMBO n-body path | 🔲 |
 | V3b | 14-process σ gate through the CLI vs banked MG run σ (pull-based statistical gate, run card as single source of truth); retire the `validate_helas_mg` timing print + document `--profile profiling`/samply recipe on the new test | 🔲 |
 | V4 | Multi-subgrid PDF seam: real multi-Q²-subgrid set + `gen_oracle.cpp` seam description | 🔲 |
-| V5 | `rooting-soundness` spike: root-invariant momentum routing / Lorentz rooting / fermion-spine sign; failing all-rootings gate test first | 🔲 |
+| V5 | `rooting-soundness` spike: root-invariant momentum routing / Lorentz rooting / fermion-spine sign; failing all-rootings gate test first | 🟡 failing gate landed (`rooting_soundness.rs`, 21/133 fail); 3-pronged sign fix separable (note 19 §V5) |
 | V6 | Branch-level coverage: rooted-tree pattern assertions per MG-pinned convention | 🔲 |
 | V7 | Per-flavor diagram matching (design in note 19 §3; optional tail) | 🔲 |
 

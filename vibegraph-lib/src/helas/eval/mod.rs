@@ -55,6 +55,8 @@ mod op;
 mod prop_harness;
 mod root_diagram;
 mod root_lorentz;
+#[cfg(test)]
+mod rooting_soundness;
 mod run;
 // `Tree` is used by every arena; `Linearized`/`linearize`/`max_depth` are generic
 // traversal utilities no current pass needs.

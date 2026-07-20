@@ -147,6 +147,46 @@ every `MG_VALIDATED_PROCESSES` diagram pass the gate, via the
 production rooting change and the Track-3 re-rooting rule family; the perf
 prize (−21 % nodes / −34 % slot traffic) is secondary to the correctness fix.
 
+**Status (2026-07-20): failing gate landed.** The `set_root_override` hook is
+ported into the current `root_diagram.rs` (`#[cfg(test)]`, transparent by
+construction — `root_override_hook_is_transparent` proves an explicit
+`VtxIdx(0)` override reproduces the default |M|² bit-for-bit and runs under
+default `cargo test`). The soundness gate lives in
+`vibegraph-lib/src/helas/eval/rooting_soundness.rs` as
+`all_rootings_preserve_amplitude` (`#[ignore]`): per-diagram root isolation for
+processes with ≤40 diagrams, whole-process re-rooting for the two 579/615-diagram
+8-point processes, oracle = the baseline `VtxIdx(0)` |M|² (already MG-pinned),
+`REL_TOL = 1e-12`, 6 reference momenta/process. Run: `RUST_MIN_STACK=134217728
+cargo test -p vibegraph-lib --features extended-validation --lib
+rooting_soundness::all_rootings_preserve_amplitude -- --ignored --nocapture
+--test-threads=1` (~52 s). It **FAILS 21/133 re-rootings across 6 processes**,
+sorting cleanly into the three loci the fix must address:
+
+1. **Momentum-odd boson-vertex sign** (the dominant, gross failure). VVV/VVVV
+   structures use a fixed `NegVout` (`−V^μ`) momentum-odd sign
+   (`root_lorentz.rs`) calibrated to the `VtxIdx(0)` output leg; re-rooting a
+   boson vertex to a different output leg flips the momentum-odd structure
+   uncompensated. `ee→W+W-` max_rel 4.2–6.8, `gg→ttx` diagram 0 root 1 = 3.65,
+   the ≥6-pt QCD `uux/bbx` whole-process shifts = 0.1–0.37.
+2. **Fermion-spine sign** (`spine_sign_from_flow`, derived from the baked spinor
+   adjoint / output-leg direction). Re-rooting a fermion line moves the sink,
+   flipping the spine sign: `ee→ττH` diagrams 0–4 = 1.3e-3…3.4e-3, `ee→μμττ`
+   diagram 16 = 6.5e-5.
+3. **Benign FP reassociation** (correct amplitude, just over `REL_TOL`).
+   `POut = −Σ inputs` momentum routing *is* orientation-aware, so re-rooting only
+   reorders the momentum sums: `ee→ττH` diag 4 root 2 = 2.16e-11, `ee→μμττ`
+   diags 18/23/24 ≈ 1.1–1.5e-12. Not a soundness bug; a sound fix will still trip
+   `REL_TOL` here, so the eventual pass criterion for class 3 should widen the
+   tolerance or compare against a per-diagram symbolic invariant rather than |M|².
+
+The fix is a genuine three-pronged sign-convention rewrite (note-12 bug-magnet
+territory), separable from this gate and best done as its own session against the
+gate now in place: (a) make the momentum-odd `MetricVout`/`NegVout` selection a
+function of the *actual* output-leg momentum orientation, not the enumeration
+root; (b) make `spine_sign_from_flow` invariant to which end of a fermion line is
+the sink; (c) decide class-3's tolerance/oracle. Recommend not promoting any
+production rooting change until (a)+(b) land and the gate goes green.
+
 ### V6 — Branch-level coverage (after V5; same code territory)
 
 Rooted-tree pattern assertions per MG-pinned convention: every "pinned by
