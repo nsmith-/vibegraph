@@ -402,7 +402,6 @@ fn render_hole(lt: &LorentzEvalTree, n: usize, proj: usize) -> String {
             L::ProjPAmp { .. } => "ProjPAmp".to_string(),
             L::Metric { .. } => "Metric".to_string(),
             L::MetricVout { .. } => "MetricVout".to_string(),
-            L::NegVout { .. } => "NegVout".to_string(),
             L::Mul { .. } => "Mul".to_string(),
             L::IdentityAmp { .. } => "IdentityAmp".to_string(),
         }
@@ -627,10 +626,6 @@ fn lower_lorentz(
         L::MetricVout { v } => {
             let a = rec(v, b);
             b.add(Op::MetricVout, Sym::None, vec![a])
-        }
-        L::NegVout { v } => {
-            let a = rec(v, b);
-            b.add(Op::NegVout, Sym::None, vec![a])
         }
         L::IdentityAmp { i, j } => {
             let a = rec(i, b);

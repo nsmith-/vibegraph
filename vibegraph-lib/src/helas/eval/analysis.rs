@@ -440,9 +440,7 @@ fn out_type_nonleaf(op: Op, kids: &[NodeId], out: &[NodeType]) -> NodeType {
         // Chiral projection preserves the fermion flow.
         Op::ProjM | Op::ProjP => ty(0),
         // Vector producers.
-        Op::GammaVout | Op::FfvVout | Op::MetricVout | Op::NegVout | Op::PMom | Op::PMomOut => {
-            NodeType::Vector
-        }
+        Op::GammaVout | Op::FfvVout | Op::MetricVout | Op::PMom | Op::PMomOut => NodeType::Vector,
         // Off-shell fermion currents follow the fermion input's flow (operand 1).
         Op::GammaIout | Op::GammaOout | Op::FfvIout | Op::FfvOout => ty(1),
         // Scalar bilinears.
@@ -534,9 +532,7 @@ fn momentum_into(
         | Op::Flows
         | Op::Hels => {}
         // Momentum-preserving unary transforms.
-        Op::Propagate | Op::ProjM | Op::ProjP | Op::MetricVout | Op::NegVout => {
-            add(buf, kids[0], 1)
-        }
+        Op::Propagate | Op::ProjM | Op::ProjP | Op::MetricVout => add(buf, kids[0], 1),
         // Scalar contraction: sum of the two vectors' momenta.
         Op::Metric => {
             add(buf, kids[0], 1);

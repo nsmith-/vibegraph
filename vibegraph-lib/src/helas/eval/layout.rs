@@ -190,9 +190,6 @@ pub(super) enum Instr {
     MetricVout {
         v: u32,
     },
-    NegVout {
-        v: u32,
-    },
     /// `P` read-off of an input line: its structure momentum is the momentum-table entry
     /// `mom` (the operand's momentum id), promoted to a vector current.
     PMom {
@@ -498,7 +495,6 @@ impl Program {
                     b: li(kids[1]),
                 },
                 Op::MetricVout => Instr::MetricVout { v: li(kids[0]) },
-                Op::NegVout => Instr::NegVout { v: li(kids[0]) },
                 Op::PMom => Instr::PMom {
                     mom: an.mom_id(kids[0]),
                 },

@@ -21,7 +21,7 @@ pub enum WaveformSlot<F: Real> {
     FermionOut(OutDiracWf<F>),
     /// 4-component polarization / off-shell vector current, index *up* (`ε^μ`).
     /// Every vector current is physical contravariant: external legs, momenta,
-    /// vertex producers (`GammaVout`/`MetricVout`/`NegVout`) and propagated
+    /// vertex producers (`GammaVout`/`MetricVout`) and propagated
     /// currents alike.
     Vector(VectorWf<F>),
     /// Scalar amplitude + momentum
