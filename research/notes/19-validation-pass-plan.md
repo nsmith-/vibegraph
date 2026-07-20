@@ -181,11 +181,42 @@ sorting cleanly into the three loci the fix must address:
 
 The fix is a genuine three-pronged sign-convention rewrite (note-12 bug-magnet
 territory), separable from this gate and best done as its own session against the
-gate now in place: (a) make the momentum-odd `MetricVout`/`NegVout` selection a
-function of the *actual* output-leg momentum orientation, not the enumeration
-root; (b) make `spine_sign_from_flow` invariant to which end of a fermion line is
-the sink; (c) decide class-3's tolerance/oracle. Recommend not promoting any
-production rooting change until (a)+(b) land and the gate goes green.
+gate now in place: (a) the boson-vector-propagator sign (below); (b) make
+`spine_sign_from_flow` invariant to which end of a fermion line is the sink;
+(c) decide class-3's tolerance/oracle. Recommend not promoting any production
+rooting change until (a)+(b) land and the gate goes green.
+
+**Locus (a) — refined mechanism (2026-07-20 probe, arithmetic).** Rendered the
+`ee→W+W-` VVV diagram (legs 0,1 = W's, 2 = internal γ/Z) rooted at both vertices:
+
+- *Output-leg mode* (VVV produces the propagated γ/Z vector current) emits every
+  term through `NegVout` (`−`) with `POut = −Σ inputs`; expanding, it equals
+  **−(textbook Yang-Mills current for the output leg)**.
+- *Sink mode* (VVV at the amplitude root, all three vectors are inputs) contracts
+  to **+(textbook Yang-Mills)**, no sign.
+
+Both are individually MG-**correct in baseline**: `ee→WW` baseline propagates the
+VVV output current (−, `NegVout`) into the ee sink, and — critically — `gg→ttx`
+baseline does the *opposite*, rooting the ggg VVV at the sink (+) and propagating
+the **FFV** gluon current from tt̄g, which emits `GammaVout` with **+1, no sign**.
+So for the *same* vector propagator, a VVV output current carries −1 while an FFV
+output current carries +1. Baseline never lets both feed one propagator, so it is
+never caught; re-rooting `ee→WW`'s VVV to the sink makes the propagated γ current
+come from the FFV (ee) side (+1) while the VVV sink is +1 too — losing the −1 that
+baseline carried → the diagram flips sign → max_rel ~4–7. **The −1 is a
+vector-propagator sign misattributed to the VVV output**, not a VVV vertex
+convention. *Falsified attempt (do not repeat):* adding a blanket −1 to
+P-carrying structures at the scalar sink regresses `gg→ttx`/`gg→gg` baseline
+(3.72 / 0.888) — because their VVV-at-sink is already correct at +1. The correct
+fix must attribute the −1 to the **vector propagator** (or equivalently make *all*
+vector-output currents — `GammaVout`, `FfvVout`, `MetricVout`, `NegVout` — share
+one momentum-flow sign convention through a given `Propagate`), so the total is
+independent of which vertex is the current's source. Verify against `gg→ttx`
+(FFV-output ⊕ VVV-sink) and `ee→WW` (VVV-output ⊕ FFV-sink) simultaneously — they
+pin the two directions and any candidate must hold both. The `dump_ee_ww_rootings`
+diagnostic (a per-root `DiagramEval` render; removed after use, trivially
+reconstructable) plus a `P{leg}` render tweak in `root_lorentz.rs::render` were
+how this was traced.
 
 ### V6 — Branch-level coverage (after V5; same code territory)
 
