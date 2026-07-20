@@ -1,0 +1,23 @@
+# MadGraph5 batch script: u u~ > mu+ mu- at LO (partonic Drell-Yan).
+#
+# Why this exact process:
+#   - Colored initial state (u u~) with a purely electroweak s-channel
+#     (gamma*/Z) amplitude: exercises the initial-state colour average (1/9) and
+#     the N_c colour sum on a process whose matrix element carries no alpha_s,
+#     giving a fixed-coupling cross section directly comparable to an integration
+#     with no coupling running.
+#   - Fixed-energy partonic beams (lpp=0, u and u~ at 250+250 GeV) put
+#     sqrt(s-hat) = 500 GeV well above the Z pole, so the s-channel propagator is
+#     smooth (no Breit-Wigner peak to sample) — a clean 2->2 angular integral.
+#
+# This is the dedicated lpp=0 reference for u u~ > mu+ mu-; the PDF-convolved
+# p p > l+ l- path is covered separately by the hadronic cross-section reference.
+generate u u~ > mu+ mu-
+output uux_to_mumu -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

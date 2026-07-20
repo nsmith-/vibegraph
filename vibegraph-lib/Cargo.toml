@@ -66,3 +66,7 @@ name = "color_cf_oracle"
 harness = false
 required-features = ["extended-validation"]
 
+[[test]]
+name = "validate_sigma"
+required-features = ["extended-validation"]
+

@@ -7,7 +7,11 @@
 //! card reproduces MadGraph's out-of-the-box behavior and a reference MadGraph
 //! run can share the literal same file.
 //!
-//! Unknown parameter names are rejected (typo protection). Two beam
+//! Parameter names are matched case-insensitively (MadGraph writes some
+//! parameters in a different case than its internal `default_setup` name — e.g.
+//! `sde_strategy` in the card vs `SDE_strategy` in `banner.py`), resolving to the
+//! canonical name of the defaults table. Genuinely unknown names are still
+//! rejected (typo protection). Two beam
 //! configurations are accepted: proton–proton (`lpp1 == lpp2 == 1`, PDF
 //! convolution) and fixed-energy partonic beams (`lpp1 == lpp2 == 0`, no PDF,
 //! the incoming particles *are* the beam particles at `ebeam1`/`ebeam2`). Any
@@ -229,22 +233,22 @@ impl RunCard {
             let Some((value_tok, name)) = split_line(raw) else {
                 continue;
             };
-            let default = match values.get(name) {
-                Some(v) => v,
-                None => {
-                    return Err(RunCardError::UnknownParam {
-                        name: name.to_string(),
-                        line: line_no,
-                    })
-                }
-            };
-            let parsed =
-                parse_value(value_tok, default.kind()).ok_or_else(|| RunCardError::BadValue {
+            let Some(canonical) = canonical_name(name) else {
+                return Err(RunCardError::UnknownParam {
                     name: name.to_string(),
-                    value: value_tok.to_string(),
                     line: line_no,
-                })?;
-            values.insert(name.to_string(), parsed);
+                });
+            };
+            let kind = values
+                .get(canonical)
+                .expect("canonical name present")
+                .kind();
+            let parsed = parse_value(value_tok, kind).ok_or_else(|| RunCardError::BadValue {
+                name: name.to_string(),
+                value: value_tok.to_string(),
+                line: line_no,
+            })?;
+            values.insert(canonical.to_string(), parsed);
         }
 
         Self::from_values(values)
@@ -318,7 +322,14 @@ fn parse_value(tok: &str, kind: Kind) -> Option<ParamValue> {
         Kind::Int => parse_i64(tok).map(ParamValue::Int),
         Kind::Bool => parse_fortran_bool(tok).map(ParamValue::Bool),
         Kind::Str => Some(ParamValue::Str(strip_quotes(tok).to_string())),
-        Kind::Opaque => Some(ParamValue::Opaque(tok.to_string())),
+        // An empty dict/list is MadGraph's "unset" spelling for a list/dict-valued
+        // parameter (real cards write `{}`); normalize it to the empty default so
+        // it compares equal to the table default rather than reading as an active
+        // override (which the cut detector would reject).
+        Kind::Opaque => {
+            let payload = if matches!(tok, "{}" | "[]") { "" } else { tok };
+            Some(ParamValue::Opaque(payload.to_string()))
+        }
     }
 }
 
@@ -608,6 +619,17 @@ pub fn param_default(name: &str) -> Option<ParamValue> {
         .map(|(_, v)| v.to_value())
 }
 
+/// Resolve a card-line parameter name to its canonical [`PARAM_DEFAULTS`] name,
+/// matching case-insensitively. MadGraph writes some parameters in a different
+/// case than their internal name (`sde_strategy` vs `SDE_strategy`,
+/// `e_min_pdg` vs `E_min_pdg`), so an exact match would spuriously reject them.
+fn canonical_name(name: &str) -> Option<&'static str> {
+    PARAM_DEFAULTS
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+        .map(|(n, _)| *n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -655,6 +677,27 @@ mod tests {
         assert_eq!(rc.float("etal"), 3.0);
         assert_eq!(rc.pdlabel, "lhapdf");
         assert!(rc.fixed_fac_scale);
+    }
+
+    #[test]
+    fn param_names_match_case_insensitively() {
+        // Real MadGraph cards write these in a different case than banner.py's
+        // internal name; they must resolve to the canonical key, not be rejected.
+        let rc = RunCard::parse("  2 = sde_strategy\n").unwrap();
+        assert_eq!(rc.int("SDE_strategy"), 2);
+        let rc = RunCard::parse("  {6: 100} = e_min_pdg\n").unwrap();
+        assert_eq!(rc.get("E_min_pdg").unwrap().as_str(), "{6: 100}");
+    }
+
+    #[test]
+    fn empty_dict_opaque_normalizes_to_default() {
+        // `{}` is MG's unset spelling for a per-pdg dict cut; it must read as the
+        // empty default, not as an active override.
+        let rc = RunCard::parse("  {} = pt_min_pdg\n").unwrap();
+        assert_eq!(rc.get("pt_min_pdg"), param_default("pt_min_pdg").as_ref());
+        // A non-empty dict is retained verbatim (and would trip the cut detector).
+        let rc = RunCard::parse("  {6: 100} = pt_min_pdg\n").unwrap();
+        assert_eq!(rc.get("pt_min_pdg").unwrap().as_str(), "{6: 100}");
     }
 
     #[test]

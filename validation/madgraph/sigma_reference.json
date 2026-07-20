@@ -1,0 +1,100 @@
+{
+  "bbx_to_ccx_emmm_qcd0": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "b b~ > c c~ e+ e- mu+ mu- QCD=0",
+    "sigma_err_pb": 4.8404e-09,
+    "sigma_pb": 1.6053e-06
+  },
+  "ee_to_ee": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > e+ e-",
+    "sigma_err_pb": 0.20956,
+    "sigma_pb": 155.77
+  },
+  "ee_to_mumu": {
+    "ebeam1": 45.6,
+    "ebeam2": 45.6,
+    "process": "e+ e- > mu+ mu-",
+    "sigma_err_pb": 1.1155,
+    "sigma_pb": 2025.2
+  },
+  "ee_to_mumu_tata_qcd0": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > mu+ mu- ta+ ta- QCD=0",
+    "sigma_err_pb": 2.8039e-06,
+    "sigma_pb": 0.0013373
+  },
+  "ee_to_mumua": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > mu+ mu- a",
+    "sigma_err_pb": 0.0003865,
+    "sigma_pb": 0.10063
+  },
+  "ee_to_tatah": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > ta+ ta- h",
+    "sigma_err_pb": 2.405e-06,
+    "sigma_pb": 0.0018835
+  },
+  "ee_to_ttx": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > t t~",
+    "sigma_err_pb": 0.00032917,
+    "sigma_pb": 0.54855
+  },
+  "ee_to_wpwm": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > w+ w-",
+    "sigma_err_pb": 0.021688,
+    "sigma_pb": 7.1551
+  },
+  "ee_to_zh": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > z h",
+    "sigma_err_pb": 2.0676e-05,
+    "sigma_pb": 0.057234
+  },
+  "gg_to_gg": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "g g > g g",
+    "sigma_err_pb": 252.35,
+    "sigma_pb": 168830.0
+  },
+  "gg_to_ttx": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "g g > t t~",
+    "sigma_err_pb": 0.037425,
+    "sigma_pb": 15.953
+  },
+  "uux_to_ccx_emmm_qcd0": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "u u~ > c c~ e+ e- mu+ mu- QCD=0",
+    "sigma_err_pb": 1.6111e-09,
+    "sigma_pb": 6.5557e-07
+  },
+  "uux_to_mumu": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "u u~ > mu+ mu-",
+    "sigma_err_pb": 7.4187e-05,
+    "sigma_pb": 0.076768
+  },
+  "uux_to_uux": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "u u~ > u u~",
+    "sigma_err_pb": 52.113,
+    "sigma_pb": 33428.0
+  }
+}
