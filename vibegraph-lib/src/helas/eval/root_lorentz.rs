@@ -170,7 +170,7 @@ impl LorentzEvalNode {
             MetricVout { .. } => format!("MetricVout({})", body),
             NegVout { .. } => format!("NegVout({})", body),
             Mul { .. } => format!("ScalarProduct({})", body),
-            P { .. } => format!("P({})", body),
+            P { leg } => format!("P{leg}"),
             POut => "POut".to_string(), // leaf node
             IdentityAmp { .. } => format!("IdentityAmp({})", body),
         }

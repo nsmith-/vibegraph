@@ -186,37 +186,123 @@ gate now in place: (a) the boson-vector-propagator sign (below); (b) make
 (c) decide class-3's tolerance/oracle. Recommend not promoting any production
 rooting change until (a)+(b) land and the gate goes green.
 
-**Locus (a) — refined mechanism (2026-07-20 probe, arithmetic).** Rendered the
-`ee→W+W-` VVV diagram (legs 0,1 = W's, 2 = internal γ/Z) rooted at both vertices:
+**Locus (a) — mechanism NAILED numerically (2026-07-20, second probe session).**
+The first-session "arithmetic probe" reading below (kept for the record but now
+partly *superseded*) held that the −1 is a mislocated *vector-propagator* sign,
+fixable by making all vector-output currents share one momentum-flow sign. **That
+blanket framing is falsified.** Hard per-diagram complex-amplitude numerics (via a
+temporary `eval_single_diagram` probe over `ee→WW` diag0 and `gg→ttx` diag0, all
+helicities, real CSV momenta) established:
 
-- *Output-leg mode* (VVV produces the propagated γ/Z vector current) emits every
-  term through `NegVout` (`−`) with `POut = −Σ inputs`; expanding, it equals
-  **−(textbook Yang-Mills current for the output leg)**.
-- *Sink mode* (VVV at the amplitude root, all three vectors are inputs) contracts
-  to **+(textbook Yang-Mills)**, no sign.
+1. **The re-rooting flips the per-diagram amplitude by EXACTLY −1** (ratio
+   `−1.0000` for every helicity, both processes) — a clean global per-diagram sign,
+   not a partial-term effect. Universally: **VVV source-mode = −(honest Yang-Mills
+   current); VVV sink-mode = +(honest)** — the −1 is purely the `NegVout` node
+   (`= MetricVout × −1`, momentum unchanged, same contravariant `Vector` storage, so
+   it carries *no* variance/propagator role and can be folded into a coeff).
+2. **The sign is NOT a function of leg position.** A baseline VVV-vertex scan across
+   all 14 MG processes shows source VVVs at `out_leg=2` using `NegVout` (−1) and
+   matching MG (the uux/bbx EW VVVs) — yet `gg→ttx` needs **+1** at position 2. Any
+   `f(internal_leg_position)` rule is therefore ruled out. (The internal-leg position
+   *is* rooting-invariant, which is why it looked promising — but it doesn't set the
+   sign.)
+3. **The needed sign is an intrinsic per-vertex `σ_V`**: MG wants `σ_V·(honest)`,
+   with **`σ_V = −1` for EW-VVV (γWW/ZWW), `σ_V = +1` for the color-antisymmetric
+   ggg (f^{abc}) vertex.** Confirmed by experiment `CAND_C` (add −1 to *every*
+   VVV sink): it sends `ee→WW` root0-vs-root1 to ratio +1 **and leaves the `ee→WW`
+   MG baseline bit-unchanged** (`max_rel 4.24e-14`), while **regressing `gg→ttx`
+   baseline to 3.72** — precisely because the ggg sink must stay +1. Symmetrically,
+   `CAND_A` (drop `NegVout` → all vector-outputs +honest) fixes the ratios but
+   **breaks `ee→WW` baseline to 1.72e3**, since EW-VVV genuinely needs −honest.
+   So neither a uniform source change nor a uniform sink change can work — the two
+   baselines *demand opposite intrinsic signs*, resolvable only per-vertex.
+4. This is the **color↔Lorentz antisymmetry interplay** (note-16 §6 `gg_to_gg`-VVVV
+   class): the physical vertex is `f^{abc}·V^{μνρ}` (antisymmetric × antisymmetric =
+   symmetric); vibegraph factorizes color and Lorentz and roots them separately, and
+   the ggg color `f` supplies the extra sign that the EW-VVV (trivial color) lacks.
+   It is **diagram/color-flow-specific** — `gg→ttx` diag0 fails one re-rooting, but
+   `uux→uux` (also ggg) and `gg→gg` (VVVV+ggg) do *not* appear in the 21 failures at
+   all. So `σ_V` is not simply "ggg ⇒ +1" globally; the correct rule must track the
+   color-flow sign under rooting, not just the vertex species.
 
-Both are individually MG-**correct in baseline**: `ee→WW` baseline propagates the
-VVV output current (−, `NegVout`) into the ee sink, and — critically — `gg→ttx`
-baseline does the *opposite*, rooting the ggg VVV at the sink (+) and propagating
-the **FFV** gluon current from tt̄g, which emits `GammaVout` with **+1, no sign**.
-So for the *same* vector propagator, a VVV output current carries −1 while an FFV
-output current carries +1. Baseline never lets both feed one propagator, so it is
-never caught; re-rooting `ee→WW`'s VVV to the sink makes the propagated γ current
-come from the FFV (ee) side (+1) while the VVV sink is +1 too — losing the −1 that
-baseline carried → the diagram flips sign → max_rel ~4–7. **The −1 is a
-vector-propagator sign misattributed to the VVV output**, not a VVV vertex
-convention. *Falsified attempt (do not repeat):* adding a blanket −1 to
-P-carrying structures at the scalar sink regresses `gg→ttx`/`gg→gg` baseline
-(3.72 / 0.888) — because their VVV-at-sink is already correct at +1. The correct
-fix must attribute the −1 to the **vector propagator** (or equivalently make *all*
-vector-output currents — `GammaVout`, `FfvVout`, `MetricVout`, `NegVout` — share
-one momentum-flow sign convention through a given `Propagate`), so the total is
-independent of which vertex is the current's source. Verify against `gg→ttx`
-(FFV-output ⊕ VVV-sink) and `ee→WW` (VVV-output ⊕ FFV-sink) simultaneously — they
-pin the two directions and any candidate must hold both. The `dump_ee_ww_rootings`
-diagnostic (a per-root `DiagramEval` render; removed after use, trivially
-reconstructable) plus a `P{leg}` render tweak in `root_lorentz.rs::render` were
-how this was traced.
+**Correct fix direction (for the next implementation session):** apply
+`σ_V·(honest)` per VVV vertex in **both** source and sink modes, with `σ_V`
+determined by the vertex's color-structure antisymmetry / the rooted color-flow
+sign — *not* by rooting orientation or leg position. **Any candidate must
+re-validate bit-exact across all 14 `validate_helas_mg` processes AND every color
+flow** (the `gg→ttx`/`uux→uux`/`gg→gg` NCOLOR≥2 flows are the trap — a fix green on
+the rooting gate can still silently break an unexercised flow). *Falsified, do not
+repeat:* blanket `NegVout` removal (`CAND_A`, breaks EW), blanket sink −1 (`CAND_C`,
+breaks ggg), blanket propagator −1 (breaks FFV-source), position-based `f`.
+
+**Recommended architecture — sign-neutral rooting + pre-rooting `σ_V` (parallel to
+color).** The cleanest form of the fix *separates the two concerns the current code
+entangles.* Today the Lorentz sign is not derived *after* rooting — it is derived
+*from* the rooting: `NegVout(−1)`-if-source / `+1`-if-sink reads the vertex's
+antisymmetric sign off its rooted *role*, so it only lands at the baseline root.
+Instead:
+
+1. **Rooting mechanics → sign-neutral.** Always build the honest current
+   (`MetricVout`/`+textbook`); drop the role-dependent `NegVout`. The honest current
+   is *already* rooting-invariant — plain tensor contraction with consistent momenta,
+   no added sign — which is exactly why `CAND_A` (drop `NegVout`) drove the `ee→WW`
+   and `gg→ttx` root0-vs-root1 ratios to `+1`. (Verified only for those two; the
+   multi-internal 2→6 VVVs still need checking under honest rooting.)
+2. **Antisymmetric vertex sign → computed pre-rooting**, from the vertex's fixed
+   ray/leg ordering (the *same* input `slot_indices` consumes on the color side), and
+   applied as a rooting-invariant scalar `σ_V` on the vertex — architecturally the
+   mirror of how color already derives its factor from the undirected topology.
+
+This *deletes* the entangled `NegVout`/sink-sign logic instead of adding a second
+special case, and makes `total = σ_V·honest` root-invariant by construction. **The
+real work is `σ_V`'s formula, and it is NOT free:** it is a *permutation parity of
+that instance's leg→slot assignment* (diagram/flow-specific — `gg→ttx` diag0 fails a
+re-rooting, `uux→uux` (also ggg) fails none), the same kind of quantity
+`slot_indices` computes (`3/3̄` transpose, imaginary-`f` sign). It also can't be
+*only* the color parity — EW-VVV has trivial color yet needs `σ_V = −1`, so the
+Lorentz structure carries an intrinsic antisymmetric sign that must be *combined*
+with the color parity. Deriving that combined parity (best shared with / cross-checked
+against the color `slot_indices` machinery) is the substance; the decomposition only
+makes the surrounding code clean. Implementation-wise, `σ_V` is a per-vertex scalar:
+source mode has `result_leg_idx`, but since `σ_V` is now rooting-*invariant* it is
+cleanest to compute it once per vertex from the diagram at `root_diagram::bake_node`
+(where the ray/prop/color-flow info lives) and fold it into the vertex coeff for both
+the `OffShellCurrent` and `ContractAmplitude` cases.
+
+**Root cause CONFIRMED — color and Lorentz use *different* rootings.** The color
+factorization is **rooting-invariant**: `colorize_process`/`colorize_diagram`
+(`helas/color/colorize.rs`) read the owned `Diagram`'s fixed `rays`/`props`
+(`slot_indices`, vertices in `VtxIdx` order) and **never** call `choose_root` /
+`root_tree` / `set_root_override` (grep across `helas/color/` is empty). Rooting only
+drives the *Lorentz* `root_tree` walk; it does not touch the diagram's rays/props, so
+the color coefficient is the same number for every root. `lower_flows` then forms each
+JAMP as `Σ colorcoeff · (sym·fermi) · amp_{d,chain}` = **rooting-invariant color factor
+× rooted Lorentz amplitude**. For `M_f = colorcoeff_f · amp_f` to be root-invariant
+with `colorcoeff_f` fixed, `amp_f` *must* be root-invariant — but the VVV Lorentz sign
+flips (source − / sink +), so the product flips by −1. That is exactly the measured
+per-diagram −1. It also explains why `σ_V` is color-tied: the physical `f^{abc}·V^{μνρ}`
+splits its antisymmetry between the (invariant) color `f` — including the `3/3̄` slot
+transpose and imaginary-`f` coefficient sign `slot_indices` documents — and the Lorentz
+`V^{μνρ}`; trivial-color EW-VVV puts the whole sign on Lorentz (−honest = `NegVout` at
+baseline), ggg lets the color `f` carry part (Lorentz +honest). **Fix belongs on the
+Lorentz side** (make the VVV Lorentz sign a rooting-invariant function of the vertex's
+color/particle content, so `colorcoeff × amp` is root-independent and still matches MG);
+rooting the *color* to match would only cancel one orientation-dependence with another —
+the color factor is a genuine algebraic invariant and must stay one.
+
+*Landed this session:* only the `P { leg } => "P{leg}"` render tweak in
+`root_lorentz.rs::render` (keeps future `DiagramEval` traces legible). All probe
+harness (`eval_single_diagram` visibility, `dump_rootings`/`probe_diagram_ratios`/
+`scan_vvv_positions` tests, `VVV_DEBUG`/`CAND_*` env hooks) was reverted; trivially
+reconstructable from this note. The failing gate stays red by design.
+
+*Superseded first-session reading (kept for context):* rendered the `ee→W+W-` VVV
+diagram rooted both ways and read *output-leg mode = −textbook via `NegVout`*,
+*sink mode = +textbook*; concluded the −1 was "a vector-propagator sign misattributed
+to the VVV output" and proposed attributing it to the vector `Propagate` / a shared
+vector-output sign. Point (3) above shows that blanket framing fails (`gg→ttx` needs
++1, `ee→WW` needs −1 for the *same* propagator species), so the −1 is a per-vertex
+color-tied sign, not a propagator sign.
 
 ### V6 — Branch-level coverage (after V5; same code territory)
 
