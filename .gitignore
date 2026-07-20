@@ -9,10 +9,12 @@
 /validation/helas/reference.*
 /validation/madgraph/output
 /validation/madgraph/*.so
-# Fetched LHAPDF6 set, generated oracle, and compiled oracle generator
+# Fetched LHAPDF6 sets, generated oracles, and compiled oracle generator
 /validation/pdf/NNPDF23_lo_as_0130_qed/
+/validation/pdf/NNPDF31_lo_as_0130/
 /validation/pdf/*.tar.gz
 /validation/pdf/oracle.json
+/validation/pdf/oracle_multigrid.json
 /validation/pdf/gen_oracle
 __pycache__/
 .claude/*
