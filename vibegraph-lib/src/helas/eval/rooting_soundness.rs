@@ -1,0 +1,401 @@
+//! Rooting-soundness gate.
+//!
+//! Every Feynman diagram is a tree; choosing which vertex to root it at orients its
+//! internal edges but must not change the physics. Production roots every diagram at
+//! `VtxIdx(0)` (feyngraph's first vertex) and the whole amplitude machinery — momentum
+//! routing, Lorentz-output rooting, fermion-spine signs — is validated only for *that*
+//! orientation. This module drives the [`super::root_diagram`] test hook to re-root
+//! diagrams and asserts the |M|² is invariant under the root choice.
+//!
+//! The oracle is the baseline (`VtxIdx(0)`) |M|² itself, not MadGraph: `VtxIdx(0)` is
+//! already pinned bit-for-bit against MG by `tests/validate_helas_mg.rs`, so any rooting
+//! that reproduces the baseline is correct and any that does not is a soundness bug. The
+//! comparison uses `REL_TOL`, since re-rooting reassociates momentum sums and is never
+//! bit-for-bit even when it is correct.
+//!
+//! Full sweep (currently FAILS — the invariance it asserts is not yet a property of the
+//! production rooting; see `research/notes/19`):
+//! ```text
+//! RUST_MIN_STACK=134217728 cargo test -p vibegraph-lib --features extended-validation \
+//!     --lib helas::eval::rooting_soundness::all_rootings_preserve_amplitude \
+//!     -- --ignored --nocapture --test-threads=1
+//! ```
+
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::panic::AssertUnwindSafe;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use super::compile::{AmplitudeEvaluator, MG_VALIDATED_PROCESSES};
+use super::root_diagram::{clear_root_override, set_root_override};
+use super::run::BoundAmplitude;
+
+use crate::diagrams::diagram::{Diagram, VtxIdx};
+use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
+use crate::helas::LorentzVector;
+use crate::ufo::slha::ParamCard;
+use crate::ufo::sm::{sm_model, SMRestrict};
+use crate::ufo::{EvaluatedModel, UFOModel};
+
+/// Relative tolerance for the invariance check, matching `tests/validate_helas_mg.rs`.
+/// A correct re-rooting reassociates momentum sums, so agreement against the baseline is
+/// never bit-for-bit; this rides ~2× above the suite's benign FP-reordering floor.
+const REL_TOL: f64 = 1e-12;
+
+/// Reference momenta cap per process: enough to expose both failure regimes the study
+/// found (gross wrong amplitude at max_rel 1e-2…1e+3, and benign over-tolerance
+/// reassociation at ~1e-11), without paying for all 50 CSV points on every re-rooting.
+const MAX_POINTS: usize = 6;
+
+/// Diagram-count ceiling for per-diagram root isolation. Above it, a process re-roots
+/// whole-process instead (see [`all_rootings_preserve_amplitude`]); this keeps the two
+/// 579/615-diagram 8-point processes out of the O(Σ vertices)-compiles regime.
+const PER_DIAGRAM_MAX: usize = 40;
+
+// ───────────────────────────── reference-point plumbing ─────────────────────────────
+
+/// A structural fingerprint of a diagram, stable within a process. Used to target the
+/// root override at one specific diagram (all others stay at `VtxIdx(0)`), isolating
+/// which diagram a soundness failure lives in.
+fn diagram_key(d: &Diagram) -> u64 {
+    let mut h = DefaultHasher::new();
+    format!("{d:?}").hash(&mut h);
+    h.finish()
+}
+
+fn normalize(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn generate(process: &str) -> Vec<DiagramSet> {
+    let opts = ParsingOptions::default();
+    let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+    generate_from_proc_card(&card, &sm_model(SMRestrict::Default)).unwrap()
+}
+
+/// Reference external momenta (incoming then outgoing) from a `_amplitude.csv`, capped at
+/// [`MAX_POINTS`]. The reference |M|² column is ignored: the baseline vibegraph |M|² is
+/// the oracle here, not MadGraph's.
+fn read_momenta(path: &Path) -> Vec<Vec<LorentzVector<f64>>> {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let mut n_ext: Option<usize> = None;
+    let mut header_skipped = false;
+    let mut out = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("# n_ext:") {
+            n_ext = rest.trim().parse().ok();
+        } else if line.starts_with('#') || line.is_empty() {
+            continue;
+        } else if !header_skipped {
+            header_skipped = true;
+        } else if let Some(n) = n_ext {
+            let cols: Vec<f64> = line
+                .split(',')
+                .filter_map(|c| c.trim().parse().ok())
+                .collect();
+            if cols.len() == 1 + 4 * n {
+                out.push(
+                    (0..n)
+                        .map(|i| {
+                            let b = 1 + 4 * i;
+                            LorentzVector::new(cols[b], cols[b + 1], cols[b + 2], cols[b + 3])
+                        })
+                        .collect(),
+                );
+            }
+            if out.len() >= MAX_POINTS {
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// Map normalized process string → (csv path, short name) over the reference CSVs.
+fn csv_index() -> HashMap<String, (PathBuf, String)> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output");
+    let mut map = HashMap::new();
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return map;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        let name = p
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_owned();
+        if !name.ends_with("_amplitude") {
+            continue;
+        }
+        let short = name.trim_end_matches("_amplitude").to_owned();
+        // The process string lives in a `# process:` header; read just that.
+        let content = std::fs::read_to_string(&p).unwrap_or_default();
+        if let Some(proc) = content
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("# process:"))
+        {
+            map.insert(normalize(proc.trim()), (p, short));
+        }
+    }
+    map
+}
+
+/// Load MadGraph's per-process `param_card.dat`, so the evaluated model matches the
+/// reference exactly (masses, SM inputs, widths); falls back to the baked restrict
+/// defaults when absent.
+fn evaluated_model(model: &Arc<UFOModel>, short: &str) -> EvaluatedModel {
+    let card_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/output")
+        .join(short)
+        .join("Cards/param_card.dat");
+    let card = std::fs::read_to_string(&card_path)
+        .ok()
+        .and_then(|s| s.parse::<ParamCard>().ok())
+        .unwrap_or_else(|| "".parse::<ParamCard>().unwrap());
+    EvaluatedModel::from_model_card(model.clone(), &card)
+}
+
+/// Compile `set` under whatever root override is currently installed and evaluate |M|² at
+/// every reference point. `Err` carries a compile error or a caught panic message.
+fn eval_m2_all(
+    set: &DiagramSet,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    points: &[Vec<LorentzVector<f64>>],
+) -> Result<Vec<f64>, String> {
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let evaluator =
+            AmplitudeEvaluator::compile(set, model).map_err(|e| format!("compile: {e}"))?;
+        let bound = BoundAmplitude::<f64>::bind(&evaluator, evaluated);
+        let mut scratch = bound.scratch_space();
+        Ok(points
+            .iter()
+            .map(|m| bound.eval_m2(m, &mut scratch))
+            .collect::<Vec<f64>>())
+    }));
+    match result {
+        Ok(inner) => inner,
+        Err(_) => Err("PANIC".to_owned()),
+    }
+}
+
+/// Largest relative deviation of `cand` from `base` over the point set.
+fn max_rel(base: &[f64], cand: &[f64]) -> f64 {
+    base.iter()
+        .zip(cand)
+        .map(|(&b, &c)| (c - b).abs() / b.abs().max(1e-30))
+        .fold(0.0f64, f64::max)
+}
+
+// ───────────────────────────── the gate ─────────────────────────────
+
+/// One diagram re-rooted at one non-baseline vertex, and how badly it broke.
+/// `diagram == usize::MAX` marks a whole-process re-rooting (no single-diagram locus).
+struct Failure {
+    process: &'static str,
+    diagram: usize,
+    n_vertices: usize,
+    root: usize,
+    detail: String,
+}
+
+/// Compare one re-rooted evaluation against the baseline and push a [`Failure`] if it
+/// panicked or drifted past `REL_TOL`.
+fn record(
+    failures: &mut Vec<Failure>,
+    process: &'static str,
+    diagram: usize,
+    n_vertices: usize,
+    root: usize,
+    base: &[f64],
+    cand: Result<Vec<f64>, String>,
+) {
+    let detail = match cand {
+        Err(e) => e,
+        Ok(cand) => {
+            let mr = max_rel(base, &cand);
+            if mr <= REL_TOL {
+                return;
+            }
+            format!("max_rel={mr:.2e}")
+        }
+    };
+    failures.push(Failure {
+        process,
+        diagram,
+        n_vertices,
+        root,
+        detail,
+    });
+}
+
+/// Sweep every vertex of every diagram of every MG-validated process as an alternative
+/// root (all *other* diagrams held at `VtxIdx(0)`), and require the resulting |M|² to
+/// match the baseline within `REL_TOL`. A correct amplitude is root-invariant; a
+/// deviation is a soundness bug in momentum routing / Lorentz-output rooting /
+/// fermion-spine signs (see `research/notes/19` §V5).
+///
+/// Ignored: it currently FAILS (that is the point — it captures the known
+/// orientation-dependence), and the full sweep is slow.
+#[test]
+#[ignore = "rooting-soundness gate: currently FAILS by design; run explicitly with --ignored"]
+fn all_rootings_preserve_amplitude() {
+    let model = Arc::new(sm_model(SMRestrict::Default));
+    let csvs = csv_index();
+    let mut failures: Vec<Failure> = Vec::new();
+    let mut swept = 0usize;
+
+    for process in MG_VALIDATED_PROCESSES {
+        let sets = generate(process);
+        let set = &sets[0];
+        let (csv, short) = match csvs.get(&normalize(process)) {
+            Some(v) => v.clone(),
+            None => {
+                eprintln!("SKIP {process}: no reference CSV");
+                continue;
+            }
+        };
+        let points = read_momenta(&csv);
+        if points.is_empty() {
+            eprintln!("SKIP {process}: no reference momenta");
+            continue;
+        }
+        let evaluated = evaluated_model(&model, &short);
+
+        // Baseline oracle: production rooting.
+        clear_root_override();
+        let base = match eval_m2_all(set, &model, &evaluated, &points) {
+            Ok(v) => v,
+            Err(e) => {
+                failures.push(Failure {
+                    process,
+                    diagram: usize::MAX,
+                    n_vertices: 0,
+                    root: 0,
+                    detail: format!("baseline eval failed: {e}"),
+                });
+                continue;
+            }
+        };
+
+        // Per candidate re-rooting we recompile the *whole* amplitude, so per-diagram
+        // isolation costs O(Σ vertices) full compiles — fine for the small processes,
+        // where it pinpoints the offending diagram, but prohibitive for the 579/615-
+        // diagram 8-point processes. Those fall back to whole-process re-rooting (root
+        // *every* diagram at the same vertex position, ~max_vertices compiles), which
+        // still detects orientation-dependence, just without the per-diagram locus.
+        if set.diagrams.len() <= PER_DIAGRAM_MAX {
+            for di in 0..set.diagrams.len() {
+                let n_vertices = set.diagrams[di].vertices.len();
+                let target = diagram_key(&set.diagrams[di]);
+                for r in 1..n_vertices {
+                    // Re-root only the target diagram; leave the rest at VtxIdx(0).
+                    set_root_override(Box::new(move |d| {
+                        if diagram_key(d) == target {
+                            VtxIdx(r)
+                        } else {
+                            VtxIdx(0)
+                        }
+                    }));
+                    let cand = eval_m2_all(set, &model, &evaluated, &points);
+                    clear_root_override();
+                    swept += 1;
+                    record(&mut failures, process, di, n_vertices, r, &base, cand);
+                }
+            }
+        } else {
+            let max_v = set
+                .diagrams
+                .iter()
+                .map(|d| d.vertices.len())
+                .max()
+                .unwrap_or(1);
+            for s in 1..max_v {
+                // Root every diagram at vertex position `s` (clamped into range).
+                set_root_override(Box::new(move |d| VtxIdx(s.min(d.vertices.len() - 1))));
+                let cand = eval_m2_all(set, &model, &evaluated, &points);
+                clear_root_override();
+                swept += 1;
+                record(&mut failures, process, usize::MAX, max_v, s, &base, cand);
+            }
+        }
+    }
+    clear_root_override();
+
+    // Report a compact per-process tally plus the worst few loci.
+    let mut per_process: HashMap<&str, usize> = HashMap::new();
+    for f in &failures {
+        *per_process.entry(f.process).or_insert(0) += 1;
+    }
+    println!(
+        "\nrooting-soundness sweep: {swept} re-rootings, {} failures across {} processes\n",
+        failures.len(),
+        per_process.len()
+    );
+    let mut tally: Vec<_> = per_process.iter().collect();
+    tally.sort_by_key(|(p, _)| *p);
+    for (p, n) in tally {
+        println!("  {p}: {n} failing re-rootings");
+    }
+    for f in failures.iter().take(40) {
+        let locus = if f.diagram == usize::MAX {
+            format!("whole-process, all diagrams at vertex position {}", f.root)
+        } else {
+            format!(
+                "diagram {}/{} root VtxIdx({})",
+                f.diagram,
+                f.n_vertices.saturating_sub(1),
+                f.root
+            )
+        };
+        println!("  FAIL {} {locus}: {}", f.process, f.detail);
+    }
+
+    assert!(
+        failures.is_empty(),
+        "{} re-rootings changed |M|² — production rooting is orientation-dependent",
+        failures.len()
+    );
+}
+
+/// Fast guard (runs under default `cargo test`): the override hook is wired into the
+/// production compile path and an explicit `VtxIdx(0)` override reproduces the baseline
+/// |M|² bit-for-bit — i.e. the hook itself is transparent. Keeps the machinery honest
+/// without the slow, currently-failing full sweep.
+#[test]
+fn root_override_hook_is_transparent() {
+    let model = Arc::new(sm_model(SMRestrict::Default));
+    let csvs = csv_index();
+    for process in ["e+ e- > mu+ mu-", "e+ e- > e+ e-"] {
+        let sets = generate(process);
+        let set = &sets[0];
+        let Some((csv, short)) = csvs.get(&normalize(process)) else {
+            continue;
+        };
+        let points = read_momenta(csv);
+        if points.is_empty() {
+            continue;
+        }
+        let evaluated = evaluated_model(&model, short);
+
+        clear_root_override();
+        let base = eval_m2_all(set, &model, &evaluated, &points).expect("baseline eval");
+
+        set_root_override(Box::new(|_| VtxIdx(0)));
+        let forced = eval_m2_all(set, &model, &evaluated, &points).expect("forced-0 eval");
+        clear_root_override();
+
+        for (b, f) in base.iter().zip(&forced) {
+            assert_eq!(
+                b.to_bits(),
+                f.to_bits(),
+                "explicit VtxIdx(0) override diverged from default rooting for {process}"
+            );
+        }
+    }
+    clear_root_override();
+}

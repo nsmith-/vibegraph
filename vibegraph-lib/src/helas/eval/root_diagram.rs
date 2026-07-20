@@ -731,6 +731,40 @@ fn mixed_line_final_legs(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) ->
 
 // ───────────────────────────── Rooting entry point ─────────────────────────────
 
+/// The root vertex [`root_tree`] walks from. Production always roots at `VtxIdx(0)`
+/// (feyngraph's first vertex, adjacent to the lowest-index external leg).
+#[cfg(not(test))]
+fn choose_root(_diagram: &Diagram) -> VtxIdx {
+    VtxIdx(0)
+}
+
+#[cfg(test)]
+thread_local! {
+    static ROOT_OVERRIDE: std::cell::RefCell<Option<Box<dyn Fn(&Diagram) -> VtxIdx>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Install a per-diagram root-vertex chooser consulted by [`root_tree`] on the current
+/// thread. Lets a soundness harness re-root diagrams without touching the production
+/// walk. `None` (the default) roots every diagram at `VtxIdx(0)`.
+#[cfg(test)]
+pub(crate) fn set_root_override(f: Box<dyn Fn(&Diagram) -> VtxIdx>) {
+    ROOT_OVERRIDE.with(|c| *c.borrow_mut() = Some(f));
+}
+
+/// Remove any installed root chooser, restoring the `VtxIdx(0)` default.
+#[cfg(test)]
+pub(crate) fn clear_root_override() {
+    ROOT_OVERRIDE.with(|c| *c.borrow_mut() = None);
+}
+
+#[cfg(test)]
+fn choose_root(diagram: &Diagram) -> VtxIdx {
+    ROOT_OVERRIDE
+        .with(|c| c.borrow().as_ref().map(|f| f(diagram)))
+        .unwrap_or(VtxIdx(0))
+}
+
 /// Root a diagram into an evaluable tree.
 ///
 /// Walk from an arbitrary root vertex to build the raw topology tree (Pass 1), then
@@ -749,9 +783,10 @@ pub(super) fn root_tree(
     model: &UFOModel,
     chain: &[u8],
 ) -> Result<DiagramEvalTree, CompileError> {
-    // Choose an arbitrary root vertex (the first one) and walk the tree from there.
+    // Walk the tree from the chosen root vertex. Production always roots at `VtxIdx(0)`;
+    // a test-only override may select another vertex to probe rooting soundness.
     let mut builder = RawBuilder::new(diagram);
-    let raw_root = builder.walk_vertex(VtxIdx(0), None)?;
+    let raw_root = builder.walk_vertex(choose_root(diagram), None)?;
     let raw = RawDiagramTree {
         nodes: builder.nodes,
         root: raw_root,
