@@ -117,12 +117,6 @@ pub enum LorentzEvalNode {
     /// `v` (an identity on contravariant storage); cf. ALOHA `VVS1P1N_1`, whose
     /// −i lives in vibegraph's vector propagator instead. Output type: vector.
     MetricVout { v: usize },
-    /// [`MetricVout`] times −1: the physical contravariant current `−V^μ` of a
-    /// P-carrying (momentum-odd) structure term rooted at its vector leg (VVV1).
-    /// P-less structures carry +1 and P-carrying ones −1 relative to the naive
-    /// rooted-term sum — pinned per-diagram against MadGraph's e+e-→W+W- AMP()
-    /// (validation/madgraph/compare_amps.py). Output: vector.
-    NegVout { v: usize },
     /// Handle the implicit product over the disconnected structures.
     /// At most one child can be non-scalar (which then implies the output type)
     Mul { children: Vec<usize> },
@@ -147,7 +141,7 @@ impl LorentzEvalNode {
             LorentzEvalNode::ProjM { i } | LorentzEvalNode::ProjP { i } => vec![*i],
             LorentzEvalNode::ProjMAmp { i, j } | LorentzEvalNode::ProjPAmp { i, j } => vec![*i, *j],
             LorentzEvalNode::Metric { mu, nu } => vec![*mu, *nu],
-            LorentzEvalNode::MetricVout { v } | LorentzEvalNode::NegVout { v } => vec![*v],
+            LorentzEvalNode::MetricVout { v } => vec![*v],
             LorentzEvalNode::Mul { children } => children.clone(),
             LorentzEvalNode::P { .. } => vec![],
             LorentzEvalNode::POut => vec![],
@@ -168,7 +162,6 @@ impl LorentzEvalNode {
             ProjPAmp { .. } => format!("ProjPAmp({})", body),
             Metric { .. } => format!("Metric({})", body),
             MetricVout { .. } => format!("MetricVout({})", body),
-            NegVout { .. } => format!("NegVout({})", body),
             Mul { .. } => format!("ScalarProduct({})", body),
             P { leg } => format!("P{leg}"),
             POut => "POut".to_string(), // leaf node
@@ -204,15 +197,19 @@ impl Tree for LorentzEvalTree {
     }
 }
 
-/// The vector-output transform for a rooted structure term: `MetricVout` (`+V^μ`)
-/// for P-less structures (VVS), `NegVout` (`−V^μ`, the momentum-odd sign) for
-/// P-carrying ones (VVV) — see [`LorentzEvalNode::NegVout`].
-fn vector_out_node(term: &LorentzTerm, child: usize) -> LorentzEvalNode {
-    if term.ops.iter().any(|op| matches!(op, LorentzOp::P { .. })) {
-        LorentzEvalNode::NegVout { v: child }
-    } else {
-        LorentzEvalNode::MetricVout { v: child }
-    }
+/// The vector-output transform for a rooted structure term: the honest
+/// contravariant current `+V^μ` ([`LorentzEvalNode::MetricVout`]), for every
+/// vector-output structure alike.
+///
+/// This current is rooting-invariant by construction — a plain tensor contraction
+/// with consistent momenta and no added sign. The momentum-odd −1 that the
+/// Yang-Mills (VVV) vertex needs relative to it is *not* a property of the rooted
+/// current (which would make it depend on the output-leg choice); it is a
+/// rooting-invariant per-vertex sign carried at the diagram level by
+/// [`super::root_diagram::yang_mills_vvv_sign`], applied once per non-root VVV
+/// vertex so `σ_V·(honest current)` matches MadGraph independent of the root.
+fn vector_out_node(child: usize) -> LorentzEvalNode {
+    LorentzEvalNode::MetricVout { v: child }
 }
 
 impl LorentzEvalTree {
@@ -347,7 +344,7 @@ impl LorentzEvalTree {
                     unreachable!("Metric op should involve idx {}", idx);
                 };
                 let child = self.build_child(term, other, visited_ops, flows, out_adjoint, sign)?;
-                Ok(self.add_node(vector_out_node(term, child)))
+                Ok(self.add_node(vector_out_node(child)))
             }
             LorentzOp::P { mu, leg } => {
                 // mu == idx (guaranteed by involves_vector fix); leg is the momentum source particle
@@ -435,7 +432,7 @@ impl LorentzEvalTree {
                 // P(1,2)·Metric(2,3) rooted at leg 1) emits a bare momentum vector.
                 // Wrap it in the term's vector-output transform so the mixed
                 // Metric-/P-rooted terms of the structure stay coherent.
-                let wrapped = tree.add_node(vector_out_node(term, node_idx));
+                let wrapped = tree.add_node(vector_out_node(node_idx));
                 term_roots.push(wrapped);
             } else {
                 term_roots.push(node_idx);

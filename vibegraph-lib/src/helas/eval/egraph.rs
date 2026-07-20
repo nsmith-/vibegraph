@@ -63,7 +63,6 @@ const NODE_SCHEMA: &str = "\
   (ProjPAmp Node Node)
   (Metric Node Node)
   (MetricVout Node)
-  (NegVout Node)
   (IdentityAmp Node Node)
   (FfvVout Node Node Node Node)
   (FfvIout Node Node Node Node)
@@ -545,7 +544,6 @@ fn op_slot_bytes(op: &str) -> f64 {
             | Op::ProjM
             | Op::ProjP
             | Op::MetricVout
-            | Op::NegVout
             | Op::FfvVout
             | Op::FfvIout
             | Op::FfvOout

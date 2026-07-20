@@ -208,11 +208,6 @@ pub fn metric_vout_bare<F: Real>(vin: &ComplexVector<F>) -> ComplexVector<F> {
     *vin
 }
 
-/// `NegVout`: the negated contravariant current `−V^μ` (see [`neg_vout`]).
-pub fn neg_vout_bare<F: Real>(vin: &ComplexVector<F>) -> ComplexVector<F> {
-    -*vin
-}
-
 // ──────────────────────────── propagator ────────────────────────────
 
 /// `Propagate`: apply a propagator (interned mass/width from the two real operands) to
@@ -656,28 +651,6 @@ pub fn metric_vout<F: Real>(v: &WaveformSlot<F>) -> WaveformSlot<F> {
 /// contravariant storage.
 pub fn metric_vout_c<F: Real>(vin: &VectorWf<F>) -> VectorWf<F> {
     *vin
-}
-
-/// `NegVout`: [`metric_vout`] times the momentum-odd parity sign that P-carrying
-/// (VVV) structures pick up when rooted at the off-shell leg — the negated
-/// contravariant current `−V^μ` of each such structure term. P-less structures
-/// (VVS) carry +1 and P-carrying ones −1 relative to the naive rooted-term sum.
-/// Pinned per-diagram against MadGraph's e+e-→W+W- AMP()
-/// (validation/madgraph/compare_amps.py).
-pub fn neg_vout<F: Real>(v: &WaveformSlot<F>) -> WaveformSlot<F> {
-    let WaveformSlot::Vector(vin) = v else {
-        panic!("NegVout: expected vector input");
-    };
-    WaveformSlot::Vector(neg_vout_c(vin))
-}
-
-/// `NegVout`: the negated contravariant current `−V^μ` of each P-carrying (VVV)
-/// structure term (see [`neg_vout`]).
-pub fn neg_vout_c<F: Real>(vin: &VectorWf<F>) -> VectorWf<F> {
-    VectorWf {
-        eps: neg_vout_bare(&vin.eps),
-        momentum: vin.momentum,
-    }
 }
 
 #[cfg(test)]

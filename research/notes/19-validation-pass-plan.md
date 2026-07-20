@@ -162,16 +162,22 @@ rooting_soundness::all_rootings_preserve_amplitude -- --ignored --nocapture
 --test-threads=1` (~52 s). It **FAILS 21/133 re-rootings across 6 processes**,
 sorting cleanly into the three loci the fix must address:
 
-1. **Momentum-odd boson-vertex sign** (the dominant, gross failure). VVV/VVVV
-   structures use a fixed `NegVout` (`−V^μ`) momentum-odd sign
-   (`root_lorentz.rs`) calibrated to the `VtxIdx(0)` output leg; re-rooting a
-   boson vertex to a different output leg flips the momentum-odd structure
-   uncompensated. `ee→W+W-` max_rel 4.2–6.8, `gg→ttx` diagram 0 root 1 = 3.65,
-   the ≥6-pt QCD `uux/bbx` whole-process shifts = 0.1–0.37.
+1. **Momentum-odd boson-vertex sign** (the dominant, gross failure) — **FIXED,
+   see the LANDED block below.** VVV structures used a fixed `NegVout` (`−V^μ`)
+   momentum-odd sign (`root_lorentz.rs`) calibrated to the `VtxIdx(0)` output leg;
+   re-rooting a boson vertex to a different output leg flipped it uncompensated.
+   `ee→W+W-` max_rel 4.2–6.8, `gg→ttx` diagram 0 root 1 = 3.65. **The ≥6-pt QCD
+   `uux/bbx` whole-process shifts (0.1–0.37) were MIS-ATTRIBUTED here**: those
+   processes are QCD=0 and contain **zero VVV vertices** (verified by direct
+   count — 0/579 and 0/615 diagrams), so the locus-(a) fix is a no-op for them
+   and they still fail. They belong to locus (b) below — a whole-process
+   re-rooting moves fermion sinks across the 4 fermion lines, and the colour
+   interference amplifies the spine-sign flip into the 0.1–0.37 range.
 2. **Fermion-spine sign** (`spine_sign_from_flow`, derived from the baked spinor
    adjoint / output-leg direction). Re-rooting a fermion line moves the sink,
    flipping the spine sign: `ee→ττH` diagrams 0–4 = 1.3e-3…3.4e-3, `ee→μμττ`
-   diagram 16 = 6.5e-5.
+   diagram 16 = 6.5e-5, and (per the reclassification above) the `uux/bbx` 2→6
+   whole-process shifts 0.1–0.37.
 3. **Benign FP reassociation** (correct amplitude, just over `REL_TOL`).
    `POut = −Σ inputs` momentum routing *is* orientation-aware, so re-rooting only
    reorders the momentum sums: `ee→ττH` diag 4 root 2 = 2.16e-11, `ee→μμττ`
@@ -185,6 +191,54 @@ gate now in place: (a) the boson-vector-propagator sign (below); (b) make
 `spine_sign_from_flow` invariant to which end of a fermion line is the sink;
 (c) decide class-3's tolerance/oracle. Recommend not promoting any production
 rooting change until (a)+(b) land and the gate goes green.
+
+**Locus (a) — FIXED AND LANDED (2026-07-20).** The two probe write-ups below are
+kept for the derivation record but are now *superseded by the implementation*. The
+fix is the note's recommended architecture, with the σ_V formula pinned down:
+
+- **Rooting mechanics → sign-neutral.** `root_lorentz::vector_out_node` now always
+  emits the honest contravariant current `MetricVout` (`+V^μ`); the `NegVout`
+  branch is gone. `Op::NegVout` / `Instr::NegVout` / `LorentzEvalNode::NegVout` and
+  the `kernel::neg_vout*` routines are **deleted** across the eval pipeline (op,
+  layout, lower, analysis, run, kernel, egraph grammar) — the entangled
+  role-dependent sign is removed, not special-cased. The honest current is
+  rooting-invariant by construction.
+- **Antisymmetric vertex sign → rooting-invariant scalar `σ_V`**, in
+  `root_diagram::yang_mills_vvv_sign`: `σ_V = (−1)^(number of Yang-Mills VVV
+  vertices at diagram indices 1..)`, folded into the per-diagram `fermi_sign`. A
+  "Yang-Mills VVV" is an all-vector vertex whose Lorentz structure carries a `P`
+  op (`is_yang_mills_vvv`); the VVVV contact is excluded (all-vector but
+  momentum-free — its −1 is the pure-metric factor already applied symmetrically).
+
+*Why this is the correct σ_V and why it is provably safe.* Production roots at
+`VtxIdx(0)`, so the VVV vertices at indices `1..` are exactly the ones that were
+*sources* (rooted at a vector output) and each fired one `NegVout` = −1; the root
+vertex (index 0) was the sink and fired none. Computing the sign from the **fixed
+diagram** (vertex 0 = canonical root) rather than the live rooting decouples it
+from the root choice. At production rooting, `σ_V·(honest current)` reproduces the
+old `NegVout` amplitude **bit-for-bit** — the −1 is exact in FP and moving it from
+inside the current to the diagram-level coeff is linear — so all 14
+`validate_helas_mg` processes and *every* colour flow stay bit-exact by
+construction (confirmed: `gg→gg` n_flows=6 8.25e-14, `uux→uux` n_flows=2 5.61e-14,
+`gg→ttx` 1.89e-15, all unchanged). For any other rooting the honest current is
+invariant and `σ_V` is fixed, so the product is root-invariant.
+
+*Gate result.* `all_rootings_preserve_amplitude` drops 21→18 failures: **every
+locus-(a) failure is eliminated** (`ee→WW` 4.2–6.8 → pass, `gg→ttx` diag0 3.65 →
+pass). The 18 that remain are locus (b) (`ee→ττH`, `ee→μμττ`, and the reclassified
+`uux/bbx` 2→6) and locus (c) (benign FP ~1e-11), both separate sessions.
+
+*This resolves the "opposite intrinsic signs" puzzle the probes hit.* The two
+baselines demand opposite signs (EW-VVV −1, `gg→ttx` ggg +1) **not** because of an
+intrinsic per-species colour sign, but because the canonical `VtxIdx(0)` root lands
+on the ggg vertex in `gg→ttx` diag0 (that VVV is the sink, 0 sources → +1) while it
+lands on the FFV vertex in `ee→WW` (the VVV is a source, 1 source → −1). The
+falsified `CAND_A`/`CAND_C` are the two constant-per-VVV rules that ignore the
+`[root is VVV]` term; `σ_V = (−1)^(#VVV at idx 1..)` carries it exactly. (The colour
+factorisation is genuinely rooting-invariant and untouched — the fix lives entirely
+on the Lorentz side, as the root-cause analysis below concluded.)
+
+────────────────────────────────────────────────────────────────────────
 
 **Locus (a) — mechanism NAILED numerically (2026-07-20, second probe session).**
 The first-session "arithmetic probe" reading below (kept for the record but now

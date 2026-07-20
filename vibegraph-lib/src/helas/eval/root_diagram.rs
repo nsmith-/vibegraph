@@ -853,19 +853,66 @@ impl std::fmt::Display for DiagramEval {
     }
 }
 
+/// True iff `interaction` is a Yang-Mills triple-vector (VVV) vertex: an all-vector
+/// vertex whose Lorentz structure carries a momentum (`P`) factor. Its rooted vector
+/// current ([`super::root_lorentz`]) is now built honestly (`+V^μ`), so relative to
+/// MadGraph it needs a −1 at every rooting where the vertex is a *source* (off-shell
+/// vector current), supplied rooting-invariantly by [`yang_mills_vvv_sign`]. The
+/// 4-vector contact (VVVV) is all-vector but momentum-free, so it is excluded — its
+/// −1 is the pure-metric vertex factor already applied symmetrically in both source
+/// and sink modes.
+fn is_yang_mills_vvv(model: &UFOModel, interaction: VertexId) -> bool {
+    use crate::ufo::lorentz::LorentzOp;
+    let def = model.vertex_def(interaction);
+    def.particles.iter().all(|&p| model.particle(p).spin == 3)
+        && def.lorentz.iter().any(|&lid| {
+            model
+                .lorentz_struct(lid)
+                .expr
+                .iter()
+                .any(|t| t.ops.iter().any(|op| matches!(op, LorentzOp::P { .. })))
+        })
+}
+
+/// The rooting-invariant sign a diagram picks up from its Yang-Mills (VVV) vertices.
+///
+/// The honest vector current is root-invariant, but a VVV vertex needs a −1 relative
+/// to it whenever it sits at a vector *output* (source) leg rather than the amplitude
+/// sink. Production roots at `VtxIdx(0)`, so exactly the VVV vertices at indices `1..`
+/// are sources; each contributes a −1. Deriving the sign from the *fixed* diagram
+/// (vertex 0 is the canonical root) rather than the live evaluation rooting decouples
+/// it from the root choice: the honest current handles the tensor contraction root-
+/// invariantly and this scalar carries the antisymmetric-vertex sign, so their product
+/// reproduces the `VtxIdx(0)` amplitude bit-for-bit for every re-rooting.
+fn yang_mills_vvv_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
+    let sources = diagram
+        .vertices
+        .iter()
+        .skip(1)
+        .filter(|v| is_yang_mills_vvv(model, v.interaction))
+        .count();
+    if sources % 2 == 0 {
+        1
+    } else {
+        -1
+    }
+}
+
 /// Compile a single diagram into an evaluable [`DiagramEval`].
 ///
 /// Roots the diagram into its evaluation tree (topology + Lorentz structures) and
 /// attaches the per-diagram metadata (external-leg count, symmetry factor, and the
 /// fermion-adjoint sign, including the initial-state spine correction derived from the
-/// baked spinor adjoint via [`spine_sign_from_flow`]).
+/// baked spinor adjoint via [`spine_sign_from_flow`], plus the Yang-Mills VVV vertex
+/// sign from [`yang_mills_vvv_sign`]).
 pub(super) fn compile_single_diagram(
     diagram: &Diagram,
     model: &UFOModel,
     chain: &[u8],
 ) -> Result<DiagramEval, CompileError> {
     let tree = root_tree(diagram, model, chain)?;
-    let fermi_sign = diagram.sign * spine_sign_from_flow(&tree);
+    let fermi_sign =
+        diagram.sign * spine_sign_from_flow(&tree) * yang_mills_vvv_sign(diagram, model);
     Ok(DiagramEval {
         n_ext: diagram.n_ext(),
         tree,
@@ -981,6 +1028,41 @@ mod tests {
                 println!("  baked: {tree}");
             }
         }
+    }
+
+    /// The Yang-Mills VVV sign fires only where a triple-vector vertex is a source: a
+    /// process with a VVV vertex off the canonical root exercises a −1, a VVV-free
+    /// process is uniformly +1, and a process whose canonical root *is* the VVV (all
+    /// its VVVs at index 0) stays +1. Guards `is_yang_mills_vvv`'s detection and the
+    /// index-`1..` source count that make the fix bit-exact at production rooting.
+    #[test]
+    fn yang_mills_vvv_sign_fires_only_for_source_vvv() {
+        let model = sm_model(SMRestrict::Default);
+
+        // e+ e- > W+ W-: the s-channel γ/Z→WW diagram has the VVV as a non-root source.
+        let signs: Vec<i8> = generate("e+ e- > W+ W-")
+            .iter()
+            .flat_map(|set| set.diagrams.iter())
+            .map(|d| yang_mills_vvv_sign(d, &model))
+            .collect();
+        assert!(
+            signs.contains(&-1),
+            "e+ e- > W+ W- must exercise a −1 from a VVV source, got {signs:?}"
+        );
+
+        // e+ e- > mu+ mu-: no VVV vertex anywhere → uniformly +1.
+        for set in generate("e+ e- > mu+ mu-") {
+            for d in &set.diagrams {
+                assert_eq!(
+                    yang_mills_vvv_sign(d, &model),
+                    1,
+                    "VVV-free process must stay +1"
+                );
+            }
+        }
+        // The all-vector-but-momentum-free 4-gluon contact (VVVV) must not be counted
+        // as a Yang-Mills VVV; that it isn't is pinned bit-for-bit by g g > g g in
+        // `tests/validate_helas_mg.rs` (miscounting it would flip that amplitude).
     }
 
     /// The adjoint-derived spine sign must agree with the `spin_map`-tracing heuristic for
