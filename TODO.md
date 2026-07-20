@@ -375,6 +375,28 @@ mappings + multi-channel weights on top of the RAMBO/RNG seams.
 
 _Unblocks: `event-output-lhef` (n-body final states)._
 
+### `dynamical-scales` — running αs and per-event renormalization/factorization scales
+
+`integrate` currently evaluates couplings at a single fixed scale (the param-card
+αs), so the cross section of any αs-dependent process differs from MadGraph by the
+scale running. Surfaced concretely by the `validation-2` σ gate (note 19 V3b):
+`g g > t t~` integrates to 21.76 pb vs MG's 15.95 pb — a 1.364 ratio quantitatively
+consistent with MG running αs to a dynamical scale (~260 GeV) under the reference
+run cards' `fixed_ren_scale = False` / `dynamical_scale_choice = -1`, while vibegraph
+uses fixed αs = 0.13. The bit-exact `validate_helas_mg` net is blind to this (it
+compares |M|² at the fixed param-card αs); the σ gate runs `gg→ttx`, `gg→gg`,
+`uux→uux` **informationally** (printed, not asserted) precisely because of it.
+
+Scope: implement the MG dynamical-scale choices (at minimum `dynamical_scale_choice`
+= −1 "sum of transverse masses / 2" and the fixed-scale modes), evaluate αs (and μF)
+per event, and thread the running through the coupling evaluation the amplitude
+consumes. Two-loop αs running with correct flavor thresholds is the reference target;
+match MG's `Running` module conventions.
+
+_Unblocks: promoting the 3 QCD processes in `validate_sigma.rs` from `Plan::Info` to
+`Plan::Gate` (flip the arm + tighten `rel_tol`); a genuine σ check of any
+αs-dependent process._
+
 ### `event-output-lhef` — Unweighted events in LHEF format
 
 Accept/reject sampling with `w(p) = |M(p)|²/w_max`; serialize to Les Houches Event File
