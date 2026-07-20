@@ -11,6 +11,9 @@ version = "0.1.0"
 [tasks]
 install-samply = "which samply || cargo install --locked samply"
 profile-diagrams = { cmd = "bash scripts/profile.sh validate_madgraph_diagrams", depends-on = ["install-samply"] }
+# Profile the sigma gate under samply: per-process time is weighted by how hard
+# each process is to integrate (unlike a fixed-N eval micro-benchmark)
+profile-sigma = { cmd = "bash scripts/profile.sh validate_sigma", depends-on = ["install-samply"] }
 # Custom command to build docs with MathJax support for rendering LaTeX in docstrings
 docs = "RUSTDOCFLAGS=\"--html-in-header doc-include/mathjax-header.html\" cargo doc --no-deps"
 # Ensure the SM UFO submodule is checked out (offline once the object cache exists)
@@ -63,6 +66,14 @@ build-amplitude = { cmd = "bash validation/madgraph/build_amplitude.sh", depends
 generate-amplitude = { cmd = "python validation/madgraph/gen_amplitude.py", depends-on = ["build-amplitude"] }
 # Full pipeline: build amplitudes, generate reference CSVs, run Rust comparison tests
 validate-helas-mg = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_helas_mg", depends-on = ["generate-amplitude"] }
+# Bank the fixed-energy MadGraph cross sections (sigma +- err) into the committed
+# sigma reference consumed by the sigma-level integration gate
+extract-sigma = { cmd = "python validation/madgraph/extract_sigma.py", depends-on = ["build-diagrams"] }
+# Cross-section (sigma) gate: integrate each fixed-energy process through the
+# library path with its real run card and compare against the banked MG sigma.
+# Runs under --profile profiling; build/samply the same target to weight time by
+# integration difficulty (see validate_sigma.rs / README).
+validate-sigma = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_sigma -- --nocapture", depends-on = ["extract-sigma"] }
 # Dump the RunCardLO defaults to JSON — the transcription oracle for the Rust run-card defaults table
 dump-runcard-defaults = "python validation/madgraph/dump_runcard_defaults.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards

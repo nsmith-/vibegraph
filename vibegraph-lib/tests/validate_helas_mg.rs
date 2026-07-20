@@ -17,17 +17,16 @@
 //!   pixi run -e madgraph build-amplitude
 //!   pixi run -e madgraph generate-amplitude
 //!
-//! Each trial also reports an amortized evaluator timing next to MadGraph's
-//! MATRIX1 timing (`output/mg_timings.json`, written by gen_amplitude.py).
-//! Trials run concurrently by default and contend for cores — pass
-//! `--test-threads=1` when the timing numbers matter.
+//! This is a correctness gate only. For evaluator/integration performance,
+//! profile the sigma gate (`pixi run validate-sigma`) under `--profile
+//! profiling` with `samply` — its per-process time is weighted by how hard each
+//! process is to *integrate*, unlike a fixed-N micro-benchmark.
 
 mod common;
 
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::LorentzVector;
 use vibegraph::ufo::slha::ParamCard;
@@ -104,54 +103,6 @@ fn find_amplitude_csvs() -> Vec<PathBuf> {
 
     paths.sort();
     paths
-}
-
-/// MATRIX1 ns/eval per process, from the timing table gen_amplitude.py writes
-/// alongside the CSVs. Empty if the table is absent (pre-timing reference data).
-fn read_mg_timings() -> std::collections::HashMap<String, f64> {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output/mg_timings.json");
-    let Ok(content) = std::fs::read_to_string(&path) else {
-        return Default::default();
-    };
-    let Ok(table) = serde_json::from_str::<serde_json::Value>(&content) else {
-        return Default::default();
-    };
-    table
-        .as_object()
-        .map(|m| {
-            m.iter()
-                .filter_map(|(name, t)| Some((name.clone(), t.get("ns_per_eval")?.as_f64()?)))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// Amortized evaluator timing: repeat the CSV point set until the eval budget is
-/// met, so the short validation samples still give a stable ns/eval. Returns
-/// (evals performed, elapsed).
-fn time_evaluator(
-    bound: &BoundAmplitude<f64>,
-    points: &[AmpPoint],
-) -> (usize, std::time::Duration) {
-    const TARGET_EVALS: usize = 2_000;
-    const MAX_TIME: std::time::Duration = std::time::Duration::from_secs(1);
-    let mut scratch = bound.scratch_space();
-    let mut n_evals = 0usize;
-    let mut acc = 0.0f64;
-    let t0 = Instant::now();
-    'outer: loop {
-        for pt in points {
-            acc += bound.eval_m2(&pt.momenta, &mut scratch);
-            n_evals += 1;
-            if n_evals >= TARGET_EVALS || t0.elapsed() >= MAX_TIME {
-                break 'outer;
-            }
-        }
-    }
-    let elapsed = t0.elapsed();
-    std::hint::black_box(acc);
-    (n_evals, elapsed)
 }
 
 /// Derive process name from CSV path: "ee_to_mumu_amplitude.csv" → "ee_to_mumu".
@@ -292,30 +243,6 @@ fn run_trial(csv_path: PathBuf) -> Result<(), Failed> {
                     .into());
                 }
             }
-        }
-    }
-
-    if !panicked {
-        // Rough performance feedback vs MadGraph; see the header note on
-        // `--test-threads=1` for meaningful numbers. Times the helicity-pruned
-        // evaluator — MadGraph's MATRIX1 column is its helicity-recycled code,
-        // which bakes in the same filter.
-        let (n_evals, elapsed) = time_evaluator(&bound_pruned, &points);
-        let rust_ns = elapsed.as_nanos() as f64 / n_evals as f64;
-        let hels = format!(
-            "hels {}/{}",
-            evaluator_pruned.helicities().len(),
-            evaluator.helicities().len()
-        );
-        match read_mg_timings().get(&name) {
-            Some(mg_ns) => eprintln!(
-                "  [{name}] timing: rust {rust_ns:.0} ns/eval | MG {mg_ns:.0} ns/eval | \
-                 ratio {:.2}x | {hels}  ({n_evals} evals)",
-                rust_ns / mg_ns
-            ),
-            None => eprintln!(
-                "  [{name}] timing: rust {rust_ns:.0} ns/eval | MG n/a | {hels}  ({n_evals} evals)"
-            ),
         }
     }
 
