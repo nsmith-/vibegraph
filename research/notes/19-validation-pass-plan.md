@@ -523,9 +523,9 @@ sweep; the "currently FAILS by design" framing is removed from the module + test
 **Status: locus (b) CLOSED.** Every rooting-dependent sign — build-convention (VVS/FFS,
 increment 1), spine (increment 1), and reversed-bilinear (increment 2) — is now lifted to
 `fermi_sign` at the canonical `VtxIdx(0)` rooting; the honest currents are rooting-
-invariant tensors. Remaining validation-pass items (V6 branch asserts, V7 per-flavor,
-the deferred Path A/Path B resolver merge, and the perf removal of the runtime
-`resolve_bra_ket` order check) are independent of the sign work. Not yet committed.
+invariant tensors. Remaining validation-pass items (V6 branch asserts ✅ done 2026-07-21,
+V7 per-flavor, the deferred Path A/Path B resolver merge, and the perf removal of the
+runtime `resolve_bra_ket` order check) are independent of the sign work.
 
 **Locus (a) — FIXED AND LANDED (2026-07-20).** The two probe write-ups below are
 kept for the derivation record but are now *superseded by the implementation*. The
@@ -693,13 +693,45 @@ vector-output sign. Point (3) above shows that blanket framing fails (`gg→ttx`
 +1, `ee→WW` needs −1 for the *same* propagator species), so the −1 is a per-vertex
 color-tied sign, not a propagator sign.
 
-### V6 — Branch-level coverage (after V5; same code territory)
+### V6 — Branch-level coverage (after V5; same code territory) ✅ DONE (2026-07-21)
 
 Rooted-tree pattern assertions per MG-pinned convention: every "pinned by
 process X" claim gets a test that fails if X stops exercising that branch —
 an unexercised branch silently drifting out of sync with its exercised
 sibling is exactly the failure mode that produced the `gg_to_gg` VVVV bug
 (note 16 §6).
+
+**Outcome.** The rooting-convention signs V5 lifted into `fermi_sign` are the
+branches that matter here (each depends on the rooted output leg; a refactor
+that stopped a process exercising one would rot silently against its
+still-exercised sibling — exactly the note-16 §6 mode). A census over the
+default-suite processes (temporary probe, per-diagram counts at the canonical
+`VtxIdx(0)` rooting) mapped which process fires each channel:
+
+| channel | fires in (small suite) | guard process chosen |
+|---|---|---|
+| VVV `σ_V` (`yang_mills_vvv_sign<0`) | `e+e-→W+W-` (2), `gg→gg` (3) | `e+e-→W+W-` |
+| spine (`spine_sign_from_flow<0`) | most fermion procs; `e+e-→e+e-` (2, crossed) | `e+e-→e+e-` |
+| build `−1`, **VVVV pure-metric** (`build_convention_sign<0`) | **only `gg→gg`** (1) | `g g > g g` |
+| build `−1`, FFS/crossed scalar-sink | `e+e-→ta+ta-H` (4) | `e+e-→ta+ta-H` |
+| reversed-bilinear (`reversed_convention_sign<0`) | most fermion procs; `e+e-→mu+mu-` (2); **never** `gg→gg`/`gg→ttx` | `e+e-→mu+mu-` |
+
+The single-process branch is the VVVV pure-metric build sign — `g g > g g` is
+the *only* small process with no fermion or scalar externals, so its 4-gluon
+contact is the sole source of a build sign there, and it is precisely the
+note-16 §6 branch. New default-suite test
+`mg_guard_processes_exercise_every_convention_channel` (`root_diagram.rs`)
+asserts each channel's count `>0` for its guard process; the deeper per-channel
+properties (VVV +1-uniformity + VVVV-not-counted; spine vs the `spin_map`
+oracle) stay in their dedicated tests, which the census doc cross-references.
+
+**One sub-branch no default-suite process reaches**: the VVS pure-metric `−1`
+with the *scalar* leg as output (H produced from two vector chains), which only
+appears in the 2→6 H classes. Pinned cheaply at the primitive level by
+`root_lorentz::tests::test_root_vvs_metric_scalar_out` (the same VVS `Metric`
+as `test_root_vvs_metric`, rooted at the scalar leg instead of the amplitude),
+and bit-for-bit by `u u~/b b~ > … QCD=0` in `tests/validate_helas_mg.rs`. So no
+slow 2→6 compile is needed in the default suite.
 
 ### V7 — Per-flavor diagram matching (optional tail)
 

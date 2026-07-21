@@ -1219,6 +1219,35 @@ mod tests {
     }
 
     #[test]
+    fn test_root_vvs_metric_scalar_out() {
+        // Same VVS1 Metric(0,1), now rooted at the *scalar* leg (idx 2): the two vectors
+        // become inputs contracted by the Metric, and the scalar is the output current
+        // (H produced from two vector chains). The pure-metric −1 fires just as it does
+        // at the amplitude sink — this is the branch reached only by the 2→6 H classes in
+        // the process suite, pinned here at the primitive level.
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
+        };
+        let spins = vec![3, 3, 1];
+        let result = root_term(&term, &spins, Some(2), &[None, None, None]).unwrap();
+        assert_eq!(result.coeff, 1.0);
+        assert_eq!(result.build_sign, -1);
+        assert_eq!(result.reversed_sign, 1);
+        assert_eq!(
+            result.tree,
+            LorentzEvalTree {
+                nodes: vec![
+                    LorentzEvalNode::Leg(0),
+                    LorentzEvalNode::Leg(1),
+                    LorentzEvalNode::Metric { mu: 0, nu: 1 },
+                ],
+                root: Some(2)
+            }
+        )
+    }
+
+    #[test]
     fn test_root_sss_scalar() {
         // SSS1: Empty ops (all scalars) rooted at amplitude → ScalarProduct
         let term = LorentzTerm {
