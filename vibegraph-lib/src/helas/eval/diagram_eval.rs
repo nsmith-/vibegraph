@@ -112,6 +112,36 @@ impl VertexTerm {
         Ok(VertexTerm { terms, coupling_id })
     }
 
+    /// The rooting-convention sign shared by this vertex-term's Lorentz terms (see
+    /// [`RootedTerm::build_sign`]). Every term of a vertex carries the same sign — the
+    /// convention −1 is a property of the vertex current, not of an individual coupling
+    /// term — so a chiral `ProjM`+`ProjP` pair flips together (verified across the
+    /// MG-validated set: no vertex has mixed per-term build signs). Empty term list → `+1`.
+    fn build_sign(&self) -> i8 {
+        let mut it = self.terms.iter().map(|t| t.build_sign);
+        let Some(first) = it.next() else { return 1 };
+        assert!(
+            it.all(|s| s == first),
+            "a vertex's Lorentz terms carry mixed rooting-convention signs — the \
+             per-vertex sign factorization does not hold for this structure"
+        );
+        first
+    }
+
+    /// The runtime `reversed`-bilinear parity shared by this vertex-term's Lorentz terms
+    /// (see [`RootedTerm::reversed_sign`]). Uniform across the terms for the same reason
+    /// as [`build_sign`](Self::build_sign) (they share the vertex's fermion legs). Empty
+    /// term list → `+1`.
+    fn reversed_sign(&self) -> i8 {
+        let mut it = self.terms.iter().map(|t| t.reversed_sign);
+        let Some(first) = it.next() else { return 1 };
+        assert!(
+            it.all(|s| s == first),
+            "a vertex's Lorentz terms carry mixed reversed-bilinear parities"
+        );
+        first
+    }
+
     /// Convert the rooted term
     fn render_term(&self) -> String {
         self.terms
@@ -175,6 +205,33 @@ impl VertexInfo {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(VertexInfo { terms })
+    }
+
+    /// The rooting-convention sign of this vertex, common to all its `(color, lorentz)`
+    /// terms (see [`VertexTerm::build_sign`]). Product of these over a diagram's vertices,
+    /// evaluated at the canonical `VtxIdx(0)` rooting, is the diagram's
+    /// [`build_convention_sign`](super::root_diagram::DiagramEvalTree::build_convention_sign).
+    pub(super) fn build_sign(&self) -> i8 {
+        let mut it = self.terms.iter().map(|t| t.build_sign());
+        let Some(first) = it.next() else { return 1 };
+        assert!(
+            it.all(|s| s == first),
+            "a vertex's couplings carry mixed rooting-convention signs"
+        );
+        first
+    }
+
+    /// The reversed-bilinear parity of this vertex, common to all its terms (see
+    /// [`VertexTerm::reversed_sign`]). Product over a diagram's vertices at the canonical
+    /// rooting is [`reversed_convention_sign`](super::root_diagram::DiagramEvalTree::reversed_convention_sign).
+    pub(super) fn reversed_sign(&self) -> i8 {
+        let mut it = self.terms.iter().map(|t| t.reversed_sign());
+        let Some(first) = it.next() else { return 1 };
+        assert!(
+            it.all(|s| s == first),
+            "a vertex's couplings carry mixed reversed-bilinear parities"
+        );
+        first
     }
 }
 

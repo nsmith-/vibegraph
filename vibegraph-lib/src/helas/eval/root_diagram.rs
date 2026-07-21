@@ -500,6 +500,49 @@ impl DiagramEvalTree {
             self.root,
         )
     }
+
+    /// The diagram's rooting-convention sign: the product over its vertices of each
+    /// vertex's [`build_sign`](super::diagram_eval::VertexInfo::build_sign) (VVS
+    /// `pure_metric`, FFS scalar-sink, crossed-pair). Each vertex's sign depends on which
+    /// leg the rooting made its output, so this is only rooting-invariant when read off a
+    /// tree built at the canonical `VtxIdx(0)` rooting — which [`compile_single_diagram`]
+    /// does, folding the result into `fermi_sign` so the honest (sign-free) currents stay
+    /// root-invariant. Mirrors [`yang_mills_vvv_sign`], which carries the VVV vertex sign
+    /// the same way.
+    pub(super) fn build_convention_sign(&self) -> i8 {
+        let mut sign = 1i8;
+        for id in self.iter() {
+            let info = match self.value(id) {
+                EvalNode::OffShellCurrent { info, .. }
+                | EvalNode::ContractAmplitude { info, .. } => info,
+                _ => continue,
+            };
+            sign *= info.build_sign();
+        }
+        sign
+    }
+
+    /// The diagram's runtime `reversed`-bilinear parity: the product over its vertices of
+    /// each vertex's [`reversed_sign`](super::diagram_eval::VertexInfo::reversed_sign).
+    /// Like [`build_convention_sign`](Self::build_convention_sign), it depends on the
+    /// rooting (a fermion→vector sink under one rooting is a fermion-continuing current
+    /// under another), so [`compile_single_diagram`] folds `P_canonical · P_live` into
+    /// `fermi_sign`: `P_live` cancels the parity the runtime `resolve_bra_ket` actually
+    /// applies on the live tree, and `P_canonical` reinstates the canonical one. In
+    /// production (`live == canonical`) the two are equal and the factor is `+1` — the
+    /// runtime reversed sign is untouched and the amplitude is bit-identical.
+    pub(super) fn reversed_convention_sign(&self) -> i8 {
+        let mut sign = 1i8;
+        for id in self.iter() {
+            let info = match self.value(id) {
+                EvalNode::OffShellCurrent { info, .. }
+                | EvalNode::ContractAmplitude { info, .. } => info,
+                _ => continue,
+            };
+            sign *= info.reversed_sign();
+        }
+        sign
+    }
 }
 
 impl std::fmt::Display for DiagramEvalTree {
@@ -785,8 +828,21 @@ pub(super) fn root_tree(
 ) -> Result<DiagramEvalTree, CompileError> {
     // Walk the tree from the chosen root vertex. Production always roots at `VtxIdx(0)`;
     // a test-only override may select another vertex to probe rooting soundness.
+    root_tree_at(diagram, model, chain, choose_root(diagram))
+}
+
+/// Root a diagram at an explicit vertex (bypassing [`choose_root`]). Used to build the
+/// canonical `VtxIdx(0)` tree for the rooting-invariant convention sign
+/// ([`DiagramEvalTree::build_convention_sign`], [`spine_sign_from_flow`]) even while a
+/// soundness harness has re-rooted the *evaluation* tree elsewhere.
+pub(super) fn root_tree_at(
+    diagram: &Diagram,
+    model: &UFOModel,
+    chain: &[u8],
+    root: VtxIdx,
+) -> Result<DiagramEvalTree, CompileError> {
     let mut builder = RawBuilder::new(diagram);
-    let raw_root = builder.walk_vertex(choose_root(diagram), None)?;
+    let raw_root = builder.walk_vertex(root, None)?;
     let raw = RawDiagramTree {
         nodes: builder.nodes,
         root: raw_root,
@@ -911,8 +967,28 @@ pub(super) fn compile_single_diagram(
     chain: &[u8],
 ) -> Result<DiagramEval, CompileError> {
     let tree = root_tree(diagram, model, chain)?;
-    let fermi_sign =
-        diagram.sign * spine_sign_from_flow(&tree) * yang_mills_vvv_sign(diagram, model);
+    // The rooting-convention signs (`build_convention_sign`, `spine_sign_from_flow`) depend
+    // on the output-leg orientation the rooting chose, but the honest currents do not. To
+    // keep the amplitude root-invariant, read those signs off the *canonical* `VtxIdx(0)`
+    // tree rather than the live evaluation tree (identical to it in production, where the
+    // walk always roots at `VtxIdx(0)`; different only under the soundness-test override).
+    let canonical_owned;
+    let canonical = if choose_root(diagram) == VtxIdx(0) {
+        &tree
+    } else {
+        canonical_owned = root_tree_at(diagram, model, chain, VtxIdx(0))?;
+        &canonical_owned
+    };
+    // The runtime `resolve_bra_ket` applies the live tree's reversed-bilinear parity
+    // (`tree.reversed_convention_sign()`); multiplying by it cancels that and by the
+    // canonical parity reinstates the rooting-invariant one. In production the two trees
+    // are the same, so the product is `+1` and the runtime sign is left untouched.
+    let fermi_sign = diagram.sign
+        * spine_sign_from_flow(canonical)
+        * yang_mills_vvv_sign(diagram, model)
+        * canonical.build_convention_sign()
+        * canonical.reversed_convention_sign()
+        * tree.reversed_convention_sign();
     Ok(DiagramEval {
         n_ext: diagram.n_ext(),
         tree,
