@@ -1,14 +1,16 @@
 //! Rooting-soundness gate.
 //!
 //! Every Feynman diagram is a tree; choosing which vertex to root it at orients its
-//! internal edges but must not change the physics. Production roots every diagram at
-//! `VtxIdx(0)` (feyngraph's first vertex) and the whole amplitude machinery — momentum
-//! routing, Lorentz-output rooting, fermion-spine signs — is validated only for *that*
-//! orientation. This module drives the [`super::root_diagram`] test hook to re-root
-//! diagrams and asserts the |M|² is invariant under the root choice.
+//! internal edges but must not change the physics. The whole amplitude machinery —
+//! momentum routing, Lorentz-output rooting, fermion-spine signs — was originally
+//! validated only for feyngraph's `VtxIdx(0)` orientation; the convention signs are read
+//! off that canonical rooting so the honest currents stay root-invariant. This module
+//! drives the [`super::root_diagram`] test hook to re-root diagrams and asserts the |M|²
+//! is invariant under the root choice, which is what lets production root each diagram at
+//! [`canonical_root`](super::root_diagram) instead.
 //!
-//! The oracle is the baseline (`VtxIdx(0)`) |M|² itself, not MadGraph: `VtxIdx(0)` is
-//! already pinned bit-for-bit against MG by `tests/validate_helas_mg.rs`, so any rooting
+//! The oracle is the baseline (unoverridden) |M|² itself, not MadGraph: the production
+//! rooting is already pinned against MG by `tests/validate_helas_mg.rs`, so any rooting
 //! that reproduces the baseline is correct and any that does not is a soundness bug. The
 //! comparison uses `REL_TOL`, since re-rooting reassociates momentum sums and is never
 //! bit-for-bit even when it is correct.

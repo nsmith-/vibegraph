@@ -528,9 +528,10 @@ impl DiagramEvalTree {
     /// rooting (a fermion→vector sink under one rooting is a fermion-continuing current
     /// under another), so [`compile_single_diagram`] folds `P_canonical · P_live` into
     /// `fermi_sign`: `P_live` cancels the parity the runtime `resolve_bra_ket` actually
-    /// applies on the live tree, and `P_canonical` reinstates the canonical one. In
-    /// production (`live == canonical`) the two are equal and the factor is `+1` — the
-    /// runtime reversed sign is untouched and the amplitude is bit-identical.
+    /// applies on the live tree, and `P_canonical` reinstates the canonical one. When the
+    /// live rooting coincides with the canonical `VtxIdx(0)` (every diagram whose chosen
+    /// root is vertex 0) the two are equal and the factor is `+1`; when they differ this
+    /// correction is what keeps the re-rooted amplitude equal to the canonical one.
     pub(super) fn reversed_convention_sign(&self) -> i8 {
         let mut sign = 1i8;
         for id in self.iter() {
@@ -774,11 +775,41 @@ fn mixed_line_final_legs(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) ->
 
 // ───────────────────────────── Rooting entry point ─────────────────────────────
 
-/// The root vertex [`root_tree`] walks from. Production always roots at `VtxIdx(0)`
-/// (feyngraph's first vertex, adjacent to the lowest-index external leg).
+/// Number of external legs directly attached to a vertex.
+fn ext_leg_count(vertex: &crate::diagrams::diagram::Vertex) -> usize {
+    vertex
+        .rays
+        .iter()
+        .filter(|r| matches!(r, Ray::Leg(_)))
+        .count()
+}
+
+/// The canonical production root: the vertex with the fewest directly-attached external
+/// legs, ties broken toward the lowest vertex index.
+///
+/// Rooting a diagram at a low-degree-in-externals vertex leaves the tree's off-shell
+/// currents shared across more diagrams: a deep, few-external anchor keeps the sub-currents
+/// closer to the canonical `(edge, direction)` signatures cross-diagram CSE deduplicates,
+/// whereas rooting at a high-external hub duplicates them. The amplitude is
+/// rooting-invariant (`rooting_soundness`), so this only reshapes the shared arena, not the
+/// physics.
+fn canonical_root(diagram: &Diagram) -> VtxIdx {
+    let mut best_vi = 0usize;
+    let mut best_c = ext_leg_count(&diagram.vertices[0]);
+    for (vi, v) in diagram.vertices.iter().enumerate().skip(1) {
+        let c = ext_leg_count(v);
+        if c < best_c {
+            best_c = c;
+            best_vi = vi;
+        }
+    }
+    VtxIdx(best_vi)
+}
+
+/// The root vertex [`root_tree`] walks from.
 #[cfg(not(test))]
-fn choose_root(_diagram: &Diagram) -> VtxIdx {
-    VtxIdx(0)
+fn choose_root(diagram: &Diagram) -> VtxIdx {
+    canonical_root(diagram)
 }
 
 #[cfg(test)]
@@ -789,13 +820,13 @@ thread_local! {
 
 /// Install a per-diagram root-vertex chooser consulted by [`root_tree`] on the current
 /// thread. Lets a soundness harness re-root diagrams without touching the production
-/// walk. `None` (the default) roots every diagram at `VtxIdx(0)`.
+/// walk. With no override installed, rooting falls back to [`canonical_root`].
 #[cfg(test)]
 pub(crate) fn set_root_override(f: Box<dyn Fn(&Diagram) -> VtxIdx>) {
     ROOT_OVERRIDE.with(|c| *c.borrow_mut() = Some(f));
 }
 
-/// Remove any installed root chooser, restoring the `VtxIdx(0)` default.
+/// Remove any installed root chooser, restoring the [`canonical_root`] default.
 #[cfg(test)]
 pub(crate) fn clear_root_override() {
     ROOT_OVERRIDE.with(|c| *c.borrow_mut() = None);
@@ -805,7 +836,7 @@ pub(crate) fn clear_root_override() {
 fn choose_root(diagram: &Diagram) -> VtxIdx {
     ROOT_OVERRIDE
         .with(|c| c.borrow().as_ref().map(|f| f(diagram)))
-        .unwrap_or(VtxIdx(0))
+        .unwrap_or_else(|| canonical_root(diagram))
 }
 
 /// Root a diagram into an evaluable tree.
@@ -826,15 +857,16 @@ pub(super) fn root_tree(
     model: &UFOModel,
     chain: &[u8],
 ) -> Result<DiagramEvalTree, CompileError> {
-    // Walk the tree from the chosen root vertex. Production always roots at `VtxIdx(0)`;
-    // a test-only override may select another vertex to probe rooting soundness.
+    // Walk the tree from the chosen root vertex ([`canonical_root`]); a test-only override
+    // may select another vertex to probe rooting soundness.
     root_tree_at(diagram, model, chain, choose_root(diagram))
 }
 
 /// Root a diagram at an explicit vertex (bypassing [`choose_root`]). Used to build the
 /// canonical `VtxIdx(0)` tree for the rooting-invariant convention sign
-/// ([`DiagramEvalTree::build_convention_sign`], [`spine_sign_from_flow`]) even while a
-/// soundness harness has re-rooted the *evaluation* tree elsewhere.
+/// ([`DiagramEvalTree::build_convention_sign`], [`spine_sign_from_flow`]) whenever the
+/// live evaluation tree is rooted elsewhere — either by [`canonical_root`] in production
+/// or by a soundness-harness override.
 pub(super) fn root_tree_at(
     diagram: &Diagram,
     model: &UFOModel,
@@ -934,9 +966,9 @@ fn is_yang_mills_vvv(model: &UFOModel, interaction: VertexId) -> bool {
 ///
 /// The honest vector current is root-invariant, but a VVV vertex needs a −1 relative
 /// to it whenever it sits at a vector *output* (source) leg rather than the amplitude
-/// sink. Production roots at `VtxIdx(0)`, so exactly the VVV vertices at indices `1..`
-/// are sources; each contributes a −1. Deriving the sign from the *fixed* diagram
-/// (vertex 0 is the canonical root) rather than the live evaluation rooting decouples
+/// sink. The convention reference roots at `VtxIdx(0)`, so exactly the VVV vertices at
+/// indices `1..` are sources; each contributes a −1. Deriving the sign from the *fixed*
+/// diagram (vertex 0 is the canonical root) rather than the live evaluation rooting decouples
 /// it from the root choice: the honest current handles the tensor contraction root-
 /// invariantly and this scalar carries the antisymmetric-vertex sign, so their product
 /// reproduces the `VtxIdx(0)` amplitude bit-for-bit for every re-rooting.
@@ -970,8 +1002,10 @@ pub(super) fn compile_single_diagram(
     // The rooting-convention signs (`build_convention_sign`, `spine_sign_from_flow`) depend
     // on the output-leg orientation the rooting chose, but the honest currents do not. To
     // keep the amplitude root-invariant, read those signs off the *canonical* `VtxIdx(0)`
-    // tree rather than the live evaluation tree (identical to it in production, where the
-    // walk always roots at `VtxIdx(0)`; different only under the soundness-test override).
+    // tree rather than the live evaluation tree. The live tree coincides with the canonical
+    // one for every diagram whose chosen root ([`canonical_root`]) is vertex 0 (all 2→2
+    // processes, whose vertices tie on external-leg count); it diverges when the chosen
+    // root is elsewhere, and then the separate canonical tree carries the signs.
     let canonical_owned;
     let canonical = if choose_root(diagram) == VtxIdx(0) {
         &tree
@@ -981,8 +1015,9 @@ pub(super) fn compile_single_diagram(
     };
     // The runtime `resolve_bra_ket` applies the live tree's reversed-bilinear parity
     // (`tree.reversed_convention_sign()`); multiplying by it cancels that and by the
-    // canonical parity reinstates the rooting-invariant one. In production the two trees
-    // are the same, so the product is `+1` and the runtime sign is left untouched.
+    // canonical parity reinstates the rooting-invariant one. When the live tree is the
+    // canonical one the product is `+1` and the runtime sign is left untouched; otherwise
+    // it re-expresses the live parity in the canonical frame.
     let fermi_sign = diagram.sign
         * spine_sign_from_flow(canonical)
         * yang_mills_vvv_sign(diagram, model)
