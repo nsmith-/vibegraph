@@ -180,7 +180,7 @@ fn massless_momenta<F: Real>(sqrt_s: F, u: &[F]) -> Vec<LorentzVector<F>> {
 
 /// Invariant massless phase-space volume
 /// `R_n = (π/2)^{n-1} · ŝ^{n-2} / ((n-1)!·(n-2)!)`.
-fn massless_volume<F: Real>(sqrt_s: F, n: usize) -> F {
+pub(crate) fn massless_volume<F: Real>(sqrt_s: F, n: usize) -> F {
     let s = sqrt_s * sqrt_s;
     let half_pi = F::PI() / (F::one() + F::one());
     let numer = half_pi.powi(n as i32 - 1) * s.powi(n as i32 - 2);

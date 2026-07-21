@@ -59,10 +59,12 @@
 use std::f64::consts::PI;
 
 pub mod channel;
+pub mod diagram_channel;
 pub mod rambo;
 pub mod rng;
 
 pub use channel::{Channel, Combiner, Lips2Channel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel};
+pub use diagram_channel::{DiagramChannel, Resonance, TChannel};
 pub use rambo::{rambo, rambo_massive, rambo_massless, RamboPoint};
 
 /// Conversion factor: 1 GeV⁻² = 3.893793721×10⁸ pb.
