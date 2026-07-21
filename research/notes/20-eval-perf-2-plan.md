@@ -124,11 +124,20 @@ re-expansion.
 **Bit-for-bit.** Only exact zeros and sub-half-ulp residues are dropped (same
 threshold discipline as the combination filter), so the pruned sum stays byte-equal.
 
-**Headroom.** Unmeasured, expected small — the combination filter already removed
-most zeros, and elimination only reclaims nodes reachable solely through a zero
-diagram. **First deliverable is the measurement** (node-count reduction per process
-+ `eval_strategies` delta); if the win is within `eval_strategies` noise (±2–3%),
-land the measurement and stop rather than carrying complexity for nothing.
+**Outcome (`5a4c4cc`, DONE — beat the prior).** The "expected small" guess was wrong:
+`forward` improved **−17%…−32%** on exactly the colored 2→2s that were the widest
+gaps vs MG (ee_to_ee −32%, uux_to_uux −27%, gg_to_gg −17%), neutral elsewhere (no
+regressions). Node reductions: ee_to_ee 165→109, uux 138→98, gg_to_gg 775→625,
+gg_to_ttx 447→277 (−38%), ee_to_wpwm −10%, bbx 2→6 −3%. Implemented as
+`Folded::prune_zero_scalar_operands` (fold.rs) run by `prune_zero_helicities` after
+the combination filter, detecting exact zeros at the **scalar `Add`-operand** level
+(sufficient — dropping a zero scalar diagram-amplitude operand DCEs its entire private
+vector/spinor subtree without repr-internal access) over the shared
+`generic_probe_points`. Only *exact* zeros qualify (MHV residues are non-zero at this
+level, so the sub-ulp case never arises); each modified `Add` is re-folded over its
+survivors at every probe point and **reverted unless byte-identical**, closing the
+`−0.0`+`+0.0` sign hazard. Bit-exact 14/14 (independently re-run). Getter
+`AmplitudeEvaluator::zeroamp_node_reduction()` exposes before/after counts.
 
 ### S4 — `rooting-cse` (release-perf; depends on S1; unblocked by V5)
 
