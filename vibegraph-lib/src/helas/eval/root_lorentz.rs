@@ -61,6 +61,18 @@ pub struct LegAdjoint {
 pub struct RootedTerm {
     /// Coefficient carried from the UFO LorentzTerm.coeff (real, since couplings are stored separately).
     pub coeff: f64,
+    /// The ±1 rooting-convention sign this term picked up from [`LorentzEvalTree::build_at_leg`]
+    /// (VVS `pure_metric`, FFS scalar-sink, crossed-pair). It is **not** folded into `coeff`,
+    /// because it depends on the output-leg (rooting) choice; the honest tensor `tree` is
+    /// rooting-invariant. All terms of a vertex share this sign, so it is lifted to a
+    /// per-diagram scalar computed from the *canonical* `VtxIdx(0)` rooting
+    /// ([`DiagramEvalTree::build_convention_sign`]) and carried in the diagram's `fermi_sign`.
+    pub build_sign: i8,
+    /// The ±1 runtime `reversed`-bilinear parity this term's fermion→vector sink
+    /// contributes (see [`term_reversed_parity`]). Like `build_sign` it depends on the
+    /// rooting and is common to a vertex's terms, so it is lifted to a per-diagram scalar
+    /// at the canonical rooting ([`DiagramEvalTree::reversed_convention_sign`]).
+    pub reversed_sign: i8,
     /// Resolved primitive with output fiber fixed.
     pub tree: LorentzEvalTree,
 }
@@ -396,9 +408,10 @@ impl LorentzEvalTree {
         spins: &[i32],
         idx: Option<usize>,
         flows: &[Option<LegAdjoint>],
-    ) -> Result<(Self, f64), RootLorentzError> {
+    ) -> Result<(Self, f64, i8), RootLorentzError> {
         let out_adjoint = idx.and_then(|i| flows.get(i).copied().flatten().map(|lf| lf.adjoint));
         let idx = correct_spin_index_for_flow(spins, idx, out_adjoint)?;
+        let reversed_parity = term_reversed_parity(term, idx, flows);
         let mut tree = LorentzEvalTree {
             nodes: vec![],
             root: None,
@@ -610,7 +623,7 @@ impl LorentzEvalTree {
             }
         }
 
-        Ok((tree, sign))
+        Ok((tree, sign, reversed_parity))
     }
 
     fn render_expression(&self) -> String {
@@ -645,6 +658,43 @@ fn standalone_projector_crossed(idx: isize, wrapped: isize, flows: &[Option<LegA
             flows.get(wrapped as usize).copied().flatten(),
             Some(lf) if lf.crossed
         )
+}
+
+/// The runtime `reversed`-bilinear parity this rooted term contributes.
+///
+/// A `Gamma` op becomes a fermion→vector sink (`GammaVout`, later fused to `FfvVout`)
+/// unless the term is rooted at one of the gamma's own fermion legs — then it is a
+/// fermion-continuing `GammaIout`/`GammaOout`, which takes no reversed sign. At a
+/// `GammaVout` the runtime [`super::kernel::resolve_bra_ket`] reads `reversed = true`
+/// when the first operand (the gamma's UFO row index `i`) is a *ket*; the C-conjugation
+/// `Cγ^{μT}C⁻¹ = −γ^μ` then flips the current's sign. That flag is fixed by the baked
+/// leg adjoint in `flows`, so it is knowable at compile time here. `idx` is the corrected
+/// output leg (post [`correct_spin_index_for_flow`]), matching the routing `build_child`
+/// performs. Like the build-convention sign, this depends on the rooting, so it is lifted
+/// to a per-diagram scalar evaluated at the canonical `VtxIdx(0)` rooting
+/// ([`DiagramEvalTree::reversed_convention_sign`]).
+fn term_reversed_parity(
+    term: &LorentzTerm,
+    idx: Option<usize>,
+    flows: &[Option<LegAdjoint>],
+) -> i8 {
+    let mut parity = 1i8;
+    for op in &term.ops {
+        let LorentzOp::Gamma { i, j, .. } = op else {
+            continue;
+        };
+        // Rooted at a fermion leg → GammaIout/GammaOout, no reversed bilinear.
+        if idx == Some(*i as usize) || idx == Some(*j as usize) {
+            continue;
+        }
+        // GammaVout{i, j}: reversed iff the first operand (UFO index i) is a ket.
+        if let Some(Some(lf)) = flows.get(*i as usize) {
+            if lf.adjoint == Adjoint::Ket {
+                parity = -parity;
+            }
+        }
+    }
+    parity
 }
 
 fn pair_crossed(i: isize, j: isize, flows: &[Option<LegAdjoint>]) -> bool {
@@ -793,9 +843,12 @@ pub fn root_term(
     result_leg_idx: Option<usize>,
     flows: &[Option<LegAdjoint>],
 ) -> Result<RootedTerm, RootLorentzError> {
-    let (tree, sign) = LorentzEvalTree::build_at_leg(term, spins, result_leg_idx, flows)?;
+    let (tree, sign, reversed_sign) =
+        LorentzEvalTree::build_at_leg(term, spins, result_leg_idx, flows)?;
     Ok(RootedTerm {
-        coeff: term.coeff * sign,
+        coeff: term.coeff,
+        build_sign: if sign < 0.0 { -1 } else { 1 },
+        reversed_sign,
         tree,
     })
 }
@@ -841,7 +894,7 @@ mod tests {
 
         // Output = vector leg 0: current = (other vector) × (scalar), both compacted
         // into 0..n_inputs.
-        let (t0, _) = LorentzEvalTree::build_at_leg(&term, &spins, Some(0), &[]).unwrap();
+        let (t0, _, _) = LorentzEvalTree::build_at_leg(&term, &spins, Some(0), &[]).unwrap();
         assert!(
             max_leg(&t0).is_some_and(|m| m < n_inputs),
             "VVS rooted at leg 0 must only index the gap-free inputs: {t0:?}"
@@ -853,14 +906,14 @@ mod tests {
         );
 
         // Output = vector leg 2 (idx 1): same invariant.
-        let (t1, _) = LorentzEvalTree::build_at_leg(&term, &spins, Some(1), &[]).unwrap();
+        let (t1, _, _) = LorentzEvalTree::build_at_leg(&term, &spins, Some(1), &[]).unwrap();
         assert!(
             max_leg(&t1).is_some_and(|m| m < n_inputs),
             "VVS rooted at leg 1 must only index the gap-free inputs: {t1:?}"
         );
 
         // Output = scalar leg 3 (idx 2): unchanged — a Metric contraction → scalar H.
-        let (t2, _) = LorentzEvalTree::build_at_leg(&term, &spins, Some(2), &[]).unwrap();
+        let (t2, _, _) = LorentzEvalTree::build_at_leg(&term, &spins, Some(2), &[]).unwrap();
         assert!(
             matches!(t2.root_value(), LorentzEvalNode::Metric { .. }),
             "VVS rooted at the scalar leg must contract the two vectors: {:?}",
@@ -1135,15 +1188,18 @@ mod tests {
 
     #[test]
     fn test_root_vvs_metric() {
-        // VVS1: Metric(1,2) rooted at amplitude → plain Metric contraction with the
-        // pure-metric vertex's −1 folded into the term coefficient.
+        // VVS1: Metric(1,2) rooted at amplitude → plain Metric contraction. The
+        // pure-metric vertex's −1 is the rooting-convention `build_sign`, carried
+        // separately from `coeff` (it is lifted per-vertex into the diagram's
+        // `fermi_sign` at the canonical rooting).
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
         };
         let spins = vec![3, 3, 1];
         let result = root_term(&term, &spins, None, &[]).unwrap();
-        assert_eq!(result.coeff, -1.0);
+        assert_eq!(result.coeff, 1.0);
+        assert_eq!(result.build_sign, -1);
         // When rooted at amplitude with 2 vector legs, uses Metric to contract them
         assert_eq!(
             result.tree,

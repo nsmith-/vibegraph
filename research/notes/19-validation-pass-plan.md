@@ -135,7 +135,18 @@ synthetic fixtures. Pick a real multi-Q²-subgrid LHAPDF set, extend
 flattening behavior instead of hard-erroring on repeated Q² knots, and pin
 the walk + fallback against it.
 
-### V5 — `rooting-soundness` spike
+### V5 — `rooting-soundness` spike ✅ DONE (2026-07-20)
+
+**CLOSED: the gate is green — `all_rootings_preserve_amplitude` passes 0/133
+re-rootings.** All three rooting-dependent sign classes are lifted to the diagram's
+`fermi_sign` at the canonical `VtxIdx(0)` rooting, so the honest currents are
+rooting-invariant tensors: locus (a) VVV `σ_V`, locus (b) build-convention (VVS
+`pure_metric` / FFS scalar-sink / crossed) + spine, and the reversed-bilinear parity.
+`validate_helas_mg` stays 14/14 bit-exact throughout; `REL_TOL` relaxed 1e-12 → 1e-10
+(benign momentum-sum FP floor 2.2e-11). Full derivation + implementation record in the
+"Locus (a)/(b)" write-ups below. Remaining follow-ups are independent of V5: the Path
+A/Path B resolver merge and the perf removal of the runtime `resolve_bra_ket` order
+check.
 
 Per note 15 §3 + `rooting-study-results.md`: the amplitude is correct only
 for feyngraph's `VtxIdx(0)` edge orientation — every node-reducing rooting
@@ -191,6 +202,330 @@ gate now in place: (a) the boson-vector-propagator sign (below); (b) make
 `spine_sign_from_flow` invariant to which end of a fermion line is the sink;
 (c) decide class-3's tolerance/oracle. Recommend not promoting any production
 rooting change until (a)+(b) land and the gate goes green.
+
+**Locus (b) — DIAGNOSED, NOT the fermion-spine sign (2026-07-20, inline probe
+session; tree left clean, no code committed).** The note-19 attribution above —
+"make `spine_sign_from_flow` invariant" — is **falsified**, the third
+mis-attribution in this taxonomy (after uux/bbx → locus (a), and the whole "spine"
+framing). Hard per-diagram complex-amplitude probes (temporary `eval_single_diagram`
++ `REVERSED_FIRES`/`SWAP_GAMMA` counters over `ee→ττH` all diags/roots, real CSV
+momenta, all helicities) established:
+
+1. **The re-rooting flips the per-diagram amplitude by EXACTLY −1** (ratio `−1.0000`
+   for every helicity; massive-tau propagator invariant, so it is a Dirac/convention
+   sign, not a momentum-routing effect).
+2. **It is NOT the spine sign.** `fermi_sign` (= `diagram.sign ·
+   spine_sign_from_flow · yang_mills_vvv_sign`) is **identical** in base and every
+   re-root; a direct `spine_sign_from_flow` re-root probe never flips. `spine_sign_
+   from_flow` is already root-invariant.
+3. **It is NOT the runtime `reversed` flag** (`resolve_bra_ket` → `gamma_vout`/
+   `ffv_vout` −1): the reversed-fire count is **identical** (1) in base and re-root —
+   the −1 just lands on a different vertex.
+4. **It is NOT a γ^μ fermion-continuation / `correct_spin_index_for_flow` swap**:
+   `ee→ττH` has **zero** gamma-chained swaps in *every* rooting yet still flips, and
+   `ee→μμττ` diag 16 (a real flip) also has zero swaps. Injecting a −1 per swapped
+   continuation is a no-op on `ee→ττH` (0 swaps) and **regresses baseline**
+   (`ee→WW` 1.72e3, `ee→μμa`, 2→6) on the processes that *do* swap at
+   `VtxIdx(0)` — so swap-parity is not the discriminator.
+
+**Mechanism (confirmed for `ee→ττH`): amplitude-SINK convention signs keyed to
+which vertex is the root.** `root_lorentz::build_at_leg` bakes the *root* vertex with
+`idx = None` (scalar amplitude sink) and applies a cluster of −1s there —
+`ProjM/ProjP/Identity` scalar-sink −1 ("−1 against the −i/D scalar propagator",
+lines ~472/488/544), the `pair_crossed` −1, and the `pure_metric` vertex −1 — while
+a *non-root* vertex is baked with `idx = Some(output leg)` and gets a different sign
+set. In `ee→ττH` diag 0 the canonical `VtxIdx(0)` root is the electron FFV, so the
+amplitude root is a **photon `Metric`** (no scalar-sink −1); re-rooting to the
+Yukawa (`root VtxIdx(2)`) makes the **`ProjMAmp` Yukawa scalar** the amplitude sink,
+firing the scalar-sink −1 → the observed −1. `ee→μμ` never flips because its
+amplitude root is *always* a photon `Metric` (no scalar bilinear can become the
+sink). This is **the same class as locus (a)** (a role-dependent source/sink sign),
+now for FFS/FFV *amplitude sinks* rather than VVV. `ee→μμττ` diag 16 flips with **0
+scalars and 0 swaps**, so at least one more amplitude-root sign (a `pair_crossed`/
+adjoint case in the `idx=None` branch) is in play — the locus (b) fix must sweep the
+whole `build_at_leg` `idx=None` sign cluster, not just the scalar-sink −1.
+
+**Fix direction (next session).** Mirror locus (a): make every amplitude-sink sign
+rooting-invariant. Either (i) compute the sink-sign cluster from the *fixed* diagram
+(canonical root) and fold it into the per-diagram `fermi_sign`, decoupled from the
+live root — as `yang_mills_vvv_sign` does — or (ii) apply each convention −1 at a
+rooting-invariant locus (the physical vertex/leg it belongs to) regardless of whether
+that vertex is the current root. Must re-verify **14/14 `validate_helas_mg`
+bit-exact across every color flow** (the `build_at_leg` signs are pinned per-diagram
+against MG AMP() for `gg→gg`/uux 2→6/bbx 2→6 — see the in-code comments — so a wrong
+generalization silently breaks a flow). The current gate stays **18 failures** (13
+gross locus (b): `ee→ttH` ×5, `ee→μμττ` diag16 ×2, uux 2→6 ×2, bbx 2→6 ×5; +5
+benign FP locus (c) ~1e-11..1e-3 mixed in — re-triage after the sink-sign fix, since
+some "gross" bbx entries at 4.8e-3/1.7e-2 may be additional sink cases).
+
+**Locus (b) — first implementation attempt + KEY counter-example (2026-07-20, inline;
+all code reverted, tree clean).** User endorsed option (i) with the principle
+*"textbook structure at every vertex, then compute the relative sign on the undirected
+graph."* First attempt: treat the scalar-sink −1 as a **per-scalar-propagator**
+convention — remove it from `build_at_leg` (FFS `ProjM/ProjP/Identity` scalar-sink and
+the VVS `pure_metric` scalar-out −1, the latter shown to *also* be rooting-dependent:
+it fires only when the VVS output leg is the scalar) and fold `(−1)^{#scalar props}`
+into `fermi_sign` via `scalar_propagator_sign`. Result: **13/14 bit-exact** (`ee→ττH`
+✓, `uux 2→6` ✓) but **`bbx 2→6` breaks (1.99e0)**. `uux` only *appeared* fixed — its
+`H`-from-`uu` diagrams are ~0 (tiny u-Yukawa), hiding the sign; the massive-`b` Yukawa
+makes `bbx`'s `H` diagrams non-zero and exposes it.
+
+**The counter-example (`bbx→ccx eemm`, the two diagrams with a scalar propagator):**
+- **diag 72**: `H` (scalar prop, `ParticleId(33)`) is **VVS-produced** (`CouplingId(80)·
+  Metric` of two vector currents) and **consumed by an FFS as a fermion-out current**.
+  Net old sign = −1 (VVS `pure_metric` only). `scalar_propagator_sign` = −1. **Match.**
+- **diag 121**: the *same* `H` prop is **VVS-produced** *and* **consumed by the `bbH`
+  Yukawa at the amplitude root** (`ProjMAmp+ProjPAmp`), which fires its *own* scalar-sink
+  −1 *on top of* the VVS −1. Net old sign = (−1)(−1) = **+1**. `scalar_propagator_sign`
+  = −1. **MISMATCH → diag 121 flips → `bbx` wrong.**
+
+**Conclusion: the scalar-production sign is genuinely per-vertex-ROLE, not
+per-propagator.** VVS-scalar-out fires −1 *and* FFS-scalar-sink fires −1 *independently*;
+the same propagator nets −1 or +1 depending on how its consuming end is rooted. So
+`(−1)^{#scalar props}` cannot reproduce it, and neither can any "apply once per
+propagator" rule (checked both producer- and consumer-end placement — both fail diag
+121). This is the concrete proof that locus (b) is a **role/phase-convention** problem,
+not a topological-count problem.
+
+**Refined fix plan.** The role-dependent ±1s that must ALL move off the vertices for a
+textbook tree: (1) FFS scalar-sink −1, (2) VVS `pure_metric` scalar-out −1 (keep only
+the all-vector VVVV-contact −1, which `gg→gg` shows is already root-invariant), (3) the
+runtime FFV/gamma `reversed` −1 (`resolve_bra_ket` → `gamma_vout`/`ffv_vout`; the
+user's perf target), and (4) whatever drives `ee→μμττ` diag16 (0 scalars, 0 swaps —
+still uncharacterized). A **textbook tree is NOT rooting-invariant on its own** (an
+earlier check: dropping just the FFV `reversed` gives base `−A`, reroot `+A`), so the
+per-diagram graph sign must capture *all* of (1)–(4) together. The only *robust* way to
+compute that graph sign and stay bit-exact is to evaluate it at the **canonical
+`VtxIdx(0)` rooting** (which is what production always uses and what MG is pinned to),
+independent of the live root — i.e. either re-derive each vertex's canonical role from
+the fixed diagram, or bake the sign once at a forced `VtxIdx(0)` and reuse it. This is a
+genuine multi-vertex phase-convention refactor (note-12 territory), not a one-liner;
+budget it as a dedicated session with the 14/14 bit-exact gate (esp. `bbx 2→6`, the
+sharpest oracle) run after every increment. `ee→μμττ` diag16 must be characterized
+*first* — it is the one confirmed locus-(b) flip with neither a scalar nor a swap, so it
+reveals the residual role-sign that (1)–(3) don't cover.
+
+**Locus (b) — `ee→μμττ` diag16 CHARACTERIZED (2026-07-20, inline probe; all code
+reverted, tree clean). The "0 scalars, 0 swaps, uncharacterized residual" premise
+above is FALSIFIED — diag16 is NOT a new residual role-sign; it is case (2), the VVS
+`pure_metric` sign, one more instance of the exact same mechanism as `bbx` diag 121.**
+Per-diagram complex-amplitude probe (temporary `REVERSED_FIRES` counter, a compile-time
+`BUILD_SIGN` product, and per-locus `sign_tag`s in `build_at_leg`/`build_child`, driven
+through `set_root_override` + `compile_single_diagram` over all 4 rootings at the
+largest-amplitude helicity):
+
+- **diag16 is a Higgs diagram**, propagators `[Z + H + Z]`: `e⁺e⁻ → Z*`, `Z* → Z H`
+  via the **HZZ VVS vertex** (`CouplingId(80)·Metric`), `Z → μ⁺μ⁻`, `H → τ⁺τ⁻` (the
+  ττH Yukawa). The earlier "0 scalars" reading was simply **wrong** — there *is* an
+  `H` propagator and a VVS vertex. (The prior probe's "scalar/swap" counters missed it;
+  the ττH Yukawa *does* fire `ProjMAmp+ProjPAmp` scalar-sink −1s.)
+- **The flip is exactly the HZZ `pure_metric` −1, and nothing else.** `BUILD_SIGN`
+  tracks the amplitude flip bit-for-bit; `fermi_sign` (+1) and the `reversed` parity (1)
+  are **invariant** across all 4 rootings. Per-locus tags:
+  - root0 (base, no flip): `projM/projP_scalar_sink` + `projM/projP_pair_crossed`
+    (the ττH Yukawa) — **no `pure_metric`**. HZZ is rooted at a *vector* (Z) output →
+    `MetricVout` vector current, no sign.
+  - root2 (no flip): identical tag set, no `pure_metric`.
+  - root1 (FLIP −1): same Yukawa tags **+ `pure_metric`** — HZZ is the **amplitude
+    sink** (`-1*ScalarProduct(Metric(Leg0,Leg1),Leg2)`), so its bare `Metric` fires the
+    scalar-sink `pure_metric` −1.
+  - root3 (FLIP −1): same Yukawa tags **+ `pure_metric`** — the amplitude sink is the
+    ττH Yukawa, and HZZ is now rooted at its **scalar (H) output leg**, which also fires
+    `pure_metric` (scalar-out).
+  The Yukawa scalar-sink/pair-crossed −1s are present in *all four* rootings → they net
+  a constant sign, not the flip. **The sole rooting-dependent contribution is the HZZ
+  `pure_metric` −1, which fires iff the VVS is rooted at a scalar leg or the amplitude
+  sink, and is absent iff it is rooted at a vector leg** — identical to the `bbx`
+  diag-121 finding (`VVS-scalar-out −1` vs `VVS-into-amplitude −1`).
+
+**Consequence for the fix plan.** Item (4) collapses into item (2): there is **no
+fourth, uncharacterized residual role-sign**. The complete role-dependent ±1 set for a
+textbook tree is just (1) FFS scalar-sink −1, (2) VVS `pure_metric` −1 (scalar-out *and*
+amplitude-sink), and (3) the runtime FFV/gamma `reversed` −1. All three are the *same
+kind* of role-dependent convention sign; fixing (1)+(2) rooting-invariantly (compute
+from the canonical `VtxIdx(0)` role, fold into a per-diagram scalar à la
+`yang_mills_vvv_sign`) should close both `ee→ttH`/`ee→μμττ` (FFS/VVS) and the `bbx`/uux
+scalar classes together. Keep (3) for the perf-motivated same-refactor cleanup. Sharpest
+oracle after every increment remains **`bbx 2→6`** (massive-b Yukawa exposes the VVS
+sign that `uux` hides).
+
+**Perf aside (user, 2026-07-20): removing the runtime `reversed` branch in
+`gamma_vout`/`ffv_vout` is desirable.** It is *orthogonal* to locus (b) (not its
+cause — the reversed count is root-invariant), but it is a valid hot-path cleanup and
+folds naturally into option (i): if the FFV/gamma reversal sign is also lifted to a
+compile-time per-diagram scalar, both `resolve_bra_ket` branches disappear. Do it in
+the same refactor, gated by the same 14/14 bit-exact check.
+
+**Locus (b) — the Path A / Path B bifurcation (user, 2026-07-20; DEFERRED cleanup,
+not the sign fix).** The rooting-dependent sign enters through *two* code paths in
+`root_lorentz` that handle the same `LorentzOp` differently:
+- **Path A** — the scalar/amplitude-sink `while` loop in `build_at_leg` (~L442+,
+  `idx=None` or leftover disconnected factors): `Metric`→`pure_metric` −1,
+  `ProjM/ProjP/Identity`→`scalar_sink` + `pair_crossed` −1.
+- **Path B** — `build_child` rooted at a real output leg (~L270+): `Metric`→
+  `MetricVout` (no sign), `ProjM/ProjP`→`standalone_projector_crossed` only (a
+  *different* rule). `Gamma` carries no compile sign in either path (the orientation
+  −1 is applied at runtime by `reversed`, which is why reversed-parity is
+  root-invariant).
+Which path a vertex takes is decided by the rooting, so the two disagreeing sign
+rules ARE the rooting-dependence. **Agreed direction:** collapse the per-op semantics
+into a single sign-free resolver keyed on the output fiber
+(`VectorOut(idx)`/`FermionOut(idx,adjoint)`/`ScalarSink`) — the node *type* still
+differs by fiber (`MetricVout` vs `Metric`, `ProjM` vs `ProjMAmp`), but there is one
+`match op` body and **no `sign` in it**. Structural merge is a *follow-up cleanup*;
+the sign extraction below is the actual gate fix and does not require it. NOTED, not
+yet done.
+
+**Locus (b) — SIGN-EXTRACTION design (2026-07-20). Make `root_term`/`build_at_leg`
+sign-free and carry a per-diagram convention sign `S` computed from the canonical
+`VtxIdx(0)` bake — the `yang_mills_vvv_sign` template generalized.** Mechanics:
+`build_at_leg` currently returns a per-term `sign` folded into `RootedTerm.coeff`
+(diagram_eval.rs:109); the sign never touches the tensor tree, only the scalar coeff.
+So IF re-rooting multiplies each *diagram's* amplitude by a global ±1 (equal to the
+change in the product of all its term signs), the extraction is: strip the sign from
+`build_at_leg` (coeff = `term.coeff`), compute `S` = product of term signs from a
+forced-`VtxIdx(0)` bake, fold `S` into `fermi_sign`. Bit-exact at `VtxIdx(0)` by
+construction (`S` ≡ the canonical build product), root-invariant elsewhere (build
+carries no sign). diag16 already shows this shape (amp ratio = build-sign ratio =
+−1, exactly).
+
+**FACTORABILITY — VERIFIED GREEN, with a critical refinement (2026-07-20, inline
+`probe_factorability_sweep`; all probe code reverted, tree clean).** Swept every
+diagram of every ≤60-diagram MG process at every non-canonical rooting, all helicities,
+1583 (diagram,root,helicity) checks. Result: **0 shape violations** (every re-rooting
+changes each per-diagram amplitude by exactly a global ±1 — unit modulus, so the honest
+tensor value IS root-invariant and a per-diagram scalar can absorb the rest) and, after
+the refinement below, **0 predict violations** (the ±1 is fully reproduced from the
+canonical bake). The strip-and-refold architecture is sound.
+
+**THE REFINEMENT — the convention sign is per-VERTEX-current, NOT per-term. A
+product-over-terms accounting is WRONG.** First sweep left 32 unexplained −1s, all in
+`ee→ττH` at `root2` (the ttH Yukawa as amplitude sink), with build/reversed/`fermi_sign`
+all reading +1. Tree dump of `ee→ττH` diag0 showed why: the chiral Yukawa has **two**
+Lorentz terms (`ProjM`+`ProjP`), and re-rooting flips **both together** —
+`-1*ProjM + -1*ProjP` (root0, off-shell fermion current) → `+1*ProjMAmp + +1*ProjPAmp`
+(root2, scalar sink). The *current* flips by −1, but a product over its two terms reads
+(−1)²=+1 and misses it. Fixing the instrument to fold **one sign per vertex** (after
+asserting all its terms agree) closed all 32 and confirmed **0 non-uniform vertices**
+across the whole sweep — every vertex's Lorentz terms do share a single build sign, so
+the per-vertex sign is well-defined. Implementation consequence: the extracted sign must
+be applied **once per vertex** (a common factor of the vertex's summed terms), exactly
+as `yang_mills_vvv_sign` counts vertices — NOT `(-1)^{#terms}` or any per-term product,
+which cancels on even-term vertices (every chiral FFV/FFS: `ProjM`+`ProjP`).
+
+**Complete set of rooting-dependent sign sources (all ±1, all canonical-bake
+computable):** (a) the **per-vertex build sign** from `build_at_leg` (VVS `pure_metric`,
+FFS `scalar_sink`/`pair_crossed`, `standalone_projector_crossed`), applied once per
+vertex; (b) the **fermion `reversed`** sign at fermion→vector sinks
+(`gamma_vout`/`ffv_vout`), a runtime parity; (c) **`spine_sign_from_flow`** inside
+`fermi_sign` — tree-dependent, so it too can flip on re-rooting (contrary to an earlier
+claim in this note that it is root-invariant; it was simply invariant on the diagrams
+first probed). The scalar bilinear (`scalar_bilinear_current`) discards `reversed` and is
+genuinely order-independent (ψ̄Γψ), so it contributes no value sign — instrumented and
+confirmed parity-invariant across the sweep.
+
+**Implementation plan (validated, ready).** (1) Make `build_at_leg`/`root_term`
+sign-free (drop the `sign` return; `coeff = term.coeff`). (2) Compute a per-diagram
+convention scalar `S` = Π_vertices (that vertex's build sign at its **canonical
+`VtxIdx(0)` role**) × the canonical `reversed`/spine contributions — reusing the fixed
+diagram's canonical rooting so `S` is decoupled from the live root. (3) Fold `S` into
+`fermi_sign` (which already carries `spine`+`yang_mills`; this generalizes the same
+mechanism). Bit-exact at `VtxIdx(0)` by construction; root-invariant elsewhere. Gate:
+14/14 `validate_helas_mg` bit-exact across every color flow after each increment,
+sharpest oracle `bbx 2→6`. Extend the sweep past the ≤60-diagram cap to the `bbx`/uux
+2→6 topologies before declaring done (they were skipped here for cost, but carry the VVS
++ FFS scalar classes the fix most needs to get right).
+
+**Locus (b) — INCREMENT 1 IMPLEMENTED: per-vertex build sign + canonical spine
+extracted (2026-07-20, on branch validation-2, NOT yet committed).** Changes:
+- `RootedTerm` gains a `build_sign: i8` field; `root_term` sets `coeff = term.coeff`
+  (sign-free) and `build_sign` from `build_at_leg`'s returned sign. The honest tensor
+  `tree` now carries no rooting-convention −1.
+- `VertexTerm::build_sign()` / `VertexInfo::build_sign()` return the vertex's common
+  sign, **asserting per-vertex uniformity** (panics if a vertex's terms disagree — the
+  factorization guard).
+- `DiagramEvalTree::build_convention_sign()` = Π over vertex nodes of `VertexInfo::
+  build_sign()`.
+- `root_tree` split into `root_tree_at(diagram, model, chain, root)`; `compile_single_
+  diagram` builds the **canonical `VtxIdx(0)`** tree (identical to the live tree in
+  production, where `choose_root == VtxIdx(0)`; rebuilt only under the soundness-test
+  override) and reads *both* `spine_sign_from_flow` **and** `build_convention_sign` off
+  it, folding them into `fermi_sign` alongside `diagram.sign`/`yang_mills_vvv_sign`.
+
+**Why bit-exact in production:** moving a per-vertex ±1 from a term `coeff` to the
+diagram's `fermi_sign` is exact — ±1 multiply has no rounding, and pulling a current's
+common −1 out of its summed terms (`(−a)+(−b) = −(a+b)`) and out of a product of
+currents is exact in IEEE. **Verified: `validate_helas_mg` 14/14 bit-exact**, all
+`max_rel_diff` unchanged (gg→gg 8.25e-14, bbx 5.63e-14, ee→ttH 3.86e-13, …).
+
+**Soundness gate: 18 → 8 failures.** Every per-diagram gross sign flip is gone. The 8
+remaining: **4 benign FP** (`ee→ττH` diag4 root2 2.16e-11 — already class-(c) pre-fix;
+`ee→μμττ` ×3 at ~1e-12, just over the strict `REL_TOL=1e-12`) and **4 gross `bbx 2→6`**
+— but only in *whole-process* re-rooting (bbx >40 diagrams).
+
+**Locus (b) — INCREMENT 2 CHARACTERIZED, the reversed residual (2026-07-20; probe
+reverted, tree clean).** With build+spine now canonical, the only remaining
+rooting-dependent sign is the runtime `reversed`. Confirmed on `bbx`: **96480
+(diagram,root,helicity) checks, 0 shape violations (every re-rooting is exactly ±1, bbx
+IS factorable), and the ±1 equals the *combined* gamma+ffv reversed parity with 0
+mismatches.** Split counter: `gamma_vout` and `ffv_vout` each fire ~75k times and each
+drive **576 of the 1152** flips. **Subtlety for the fix:** `gamma_vout` reversed is a
+pure −1, but `ffv_vout` reversed *also swaps `gl↔gr`* (`-(jr·gl + jl·gr)` vs
+`jl·gl + jr·gr`) — a value change, not just a sign. Yet the net per-diagram effect is
+*still* exactly ±1 (= reversed parity), so the swap's value effect is root-invariant in
+aggregate and only the parity matters. Therefore reversed CANNOT be extracted by naively
+stripping the runtime branch (that would drop the swap and corrupt values); the fix must
+make each fermion→vector sink use its **canonical** reversed flag. Design: bake the
+canonical reversed bool per `GammaVout`/`FfvVout` sink at compile time (from the
+canonical tree's baked adjoints — `resolve_bra_ket`'s `fo`/`fi` typing is order-
+independent; only the `reversed` bool depends on operand order, which the rooting flips),
+and have the runtime use the baked flag instead of re-deriving it from live operand
+order. This keeps the swap+sign canonical and doubles as the perf-motivated removal of
+the runtime `resolve_bra_ket` order check. This is a hot-path change (touches
+`gamma_vout`/`ffv_vout` and the fused/SIMD paths) — a distinct increment, gated by the
+same 14/14 bit-exact + soundness checks. The 4 benign-FP soundness failures are a
+separate class-(c) `REL_TOL` question, independent of increment 2.
+
+**Locus (b) — INCREMENT 2 IMPLEMENTED: reversed-bilinear parity extracted; ROOTING-
+SOUNDNESS GATE NOW GREEN (2026-07-20, branch validation-2, NOT yet committed).**
+Chosen approach: a **per-diagram scalar**, *not* a per-node baked flag. A per-node flag
+can't be made canonical because a vertex is a fermion→vector sink (`GammaVout`, carrying
+`reversed`) under one rooting but a fermion-continuing current (`GammaIout`/`GammaOout`,
+no `reversed`) under another — live nodes have no canonical counterpart. So, mirroring
+`build_convention_sign`:
+- `RootedTerm` gains `reversed_sign: i8`; `term_reversed_parity(term, idx, flows)`
+  computes it analytically from the *corrected* output leg + baked leg adjoints: a
+  `Gamma` is a `GammaVout` sink unless rooted at one of its own fermion legs, and the
+  runtime `resolve_bra_ket` reads `reversed = true` iff the first operand (UFO row index
+  `i`) is a ket. `build_at_leg` returns it as a third tuple element.
+- `VertexTerm/VertexInfo::reversed_sign()` (per-vertex common, asserted uniform) →
+  `DiagramEvalTree::reversed_convention_sign()` = Π over vertices.
+- `compile_single_diagram` folds **`canonical.reversed_convention_sign() ·
+  live.reversed_convention_sign()`** into `fermi_sign`: the runtime `resolve_bra_ket`
+  still applies the *live* parity `P_l` (keeping `ffv_vout`'s `gl↔gr` swap intact — the
+  swap's value effect is root-invariant, only its parity flips), and this factor multiplies
+  by `P_l·P_c` so the net is `P_c` (canonical). **In production `live == canonical`, so
+  the factor is `P_c² = +1` — the runtime reversed branch is untouched and the amplitude
+  is bit-identical.** The runtime kernel is NOT modified (removing the runtime
+  `resolve_bra_ket` order check for perf is a *separate* follow-up, not needed for
+  root-invariance).
+
+**Validation.** `validate_helas_mg` **14/14 bit-exact** (all `max_rel_diff` unchanged).
+Rooting-soundness gate **8 → 5 → 0 gross**: the `bbx 2→6` whole-process failures dropped
+from 1.67e-2/3.11e-2 to 1.04e-12 (benign FP). The analytic `term_reversed_parity` is
+validated by the gate itself — bbx fixed, no new failures, so `P_l(analytic) ==
+P_runtime` everywhere. The 5 residuals were all pure double-precision momentum-sum
+reassociation (≤2.2e-11); `REL_TOL` raised 1e-12 → **1e-10** (well above the 2.2e-11
+floor, enormously below any O(1) sign error), and **`all_rootings_preserve_amplitude` now
+passes** (0/133 re-rootings deviate). Its `#[ignore]` is kept only for the slow full
+sweep; the "currently FAILS by design" framing is removed from the module + test docs.
+
+**Status: locus (b) CLOSED.** Every rooting-dependent sign — build-convention (VVS/FFS,
+increment 1), spine (increment 1), and reversed-bilinear (increment 2) — is now lifted to
+`fermi_sign` at the canonical `VtxIdx(0)` rooting; the honest currents are rooting-
+invariant tensors. Remaining validation-pass items (V6 branch asserts, V7 per-flavor,
+the deferred Path A/Path B resolver merge, and the perf removal of the runtime
+`resolve_bra_ket` order check) are independent of the sign work. Not yet committed.
 
 **Locus (a) — FIXED AND LANDED (2026-07-20).** The two probe write-ups below are
 kept for the derivation record but are now *superseded by the implementation*. The
