@@ -11,6 +11,43 @@ Two of the four sessions are unblocked *because* of `validation-2` V5
 1e-10, which together turn the rooting-CSE headroom (S4) from "silently corrupts
 the amplitude" into a realizable win.
 
+## Sprint outcome — ✅ CLOSED 2026-07-21 (all four sessions merged to `main`, HEAD `ee6be0e`)
+
+All four sessions landed. **Cumulative** `eval_strategies/forward` speedup, measured
+clean end-to-end (pre-sprint `0707f48` → post-S4 `ee6be0e`, release, Apple M3 Max,
+criterion median; times are per 16-eval batch):
+
+| process | before | after | speedup | Δ |
+|---|--:|--:|--:|--:|
+| ee_to_mumu (2→2) | 5.51 µs | 4.66 µs | **1.18×** | −16% |
+| ee_to_ee (2→2) | 15.56 µs | 8.50 µs | **1.83×** | −45% |
+| uux_to_uux (2→2, NCOLOR=2) | 11.24 µs | 6.40 µs | **1.76×** | −43% |
+| gg_to_gg (2→2, NCOLOR=6) | 54.78 µs | 25.07 µs | **2.19×** | −54% |
+| ee_to_mumua (2→3) | 38.72 µs | 24.26 µs | **1.60×** | −37% |
+| ee_to_mumu_tata (2→4) | 175.9 µs | 114.2 µs | **1.54×** | −35% |
+| uux_to_ccx_emmm (2→6) | 3901 µs | 2194 µs | **1.78×** | −44% |
+
+Every benchmarked process improved (1.18×–2.19×), on top of the earlier eval program's
+8.6×–110× → 1.2×–3.5× vs MG — this narrows that residual gap further (a fresh vs-MG
+ratio needs the `scripts/mg_perf_compare.sh` rerun kit; not re-run here). Session
+contributions:
+
+- **S1 `mul-split`** (`fa65c23`): the broad base win — helped every process (−13…−44%),
+  biggest on the Mul-heavy `gg_to_gg`. Bit-exact.
+- **S2 `dag-validate-once`** (`a8cfe29`): no release change (validation is `cfg`'d out);
+  retired the "extended-validation timings run ~4–5× hot" caveat (3.1×–5.4× faster there).
+- **S3 `zeroamp-skip`** (`5a4c4cc`): the colored-2→2 win (ee_to_ee, uux, gg_to_gg) —
+  beat its "likely small" prior. Bit-exact.
+- **S4 `rooting-cse`** (`ee6be0e`): the multi-leg win (2→3/2→4/2→6, −18…−26%), neutral on
+  2→2 (their vertices tie on external-leg count, so no re-rooting). Reassociating (values
+  shift) but **`validate_helas_mg` stayed at its tight 1e-12** — the plan's feared
+  "1e-14 → 1e-10 agreement cost" did **not** materialize (shorter/more-shared current
+  chains actually reduced FP drift; several processes improved to ~1e-14). Only the
+  `rooting_soundness.rs` all-rootings gate uses 1e-10.
+
+Not pursued: greedy rooting (marginal ~1% over the canonical `fewest-ext-legs` rule).
+Deferred backlog below unchanged.
+
 ## Measured motivation for S1 (histogrammed 2026-07-21)
 
 Instruction census over all 14 pruned, helicity-expanded programs (the real hot
@@ -170,6 +207,21 @@ against the current baseline — gate at `REL_TOL` 1e-10 (the V5 floor) via
 `validate_helas_mg` + `all_rootings_preserve_amplitude`, not byte-equality. Sequence
 S4 last: it is the highest-risk/highest-variance session and benefits from S1's
 instruction census already in place.
+
+**Outcome (`ee6be0e`, KEEP).** Production `choose_root` now returns the vertex with
+the **fewest directly-attached external legs** (ties → lowest vertex index):
+`canonical_root` in `root_diagram.rs`, wired into both production and test `choose_root`.
+Soundness confirmed (`all_rootings_preserve_amplitude` 0/133 at 1e-10, both before and
+after). `forward` −19% (2→3) / −18% (2→4) / −26% (2→6); 2→2 neutral (vertices tie →
+`canonical_root == VtxIdx(0)`, no re-rooting). The convention signs still read off the
+canonical `VtxIdx(0)` tree (V5), which is what keeps re-rooting sound. **Key close-out
+finding: `validate_helas_mg` stayed at 1e-12** — values shift (genuine reassociation)
+but agreement is unchanged-or-better (ee_to_mumua 3.92e-13 → 1.62e-14), so the plan's
+anticipated agreement-loosening tradeoff was a non-issue; `REL_TOL` was **not** relaxed
+in the production gate. S3's ZEROAMP pass re-verified intact under the new rooting; the
+partonic-CM ±z frame contract untouched. The `egraph-rewrite` backlog's "manual rooting
+win a future DAG-cost extractor must beat" bar is now −19…−26% ns/eval on the post-S1/S3
+program.
 
 ---
 
