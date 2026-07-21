@@ -69,6 +69,12 @@ pub struct AmplitudeEvaluator {
     /// survivors, so it is correct only under that method's kinematic contract
     /// (partonic-CM momenta, beams along ±z) — see [`Self::is_pruned`].
     pruned: bool,
+    /// Helicity-expanded arena node counts before and after the zero-amplitude
+    /// elimination pass (the second helicity-filter layer run by
+    /// [`prune_zero_helicities`](Self::prune_zero_helicities)); both `0` until it runs.
+    /// A diagnostic for how much the per-`(helicity, diagram)` skipping reclaims.
+    zeroamp_nodes_before: usize,
+    zeroamp_nodes_after: usize,
 }
 
 impl AmplitudeEvaluator {
@@ -150,6 +156,8 @@ impl AmplitudeEvaluator {
             n_flows: basis.ncolor(),
             cf_matrix: basis.cf_matrix,
             pruned: false,
+            zeroamp_nodes_before: 0,
+            zeroamp_nodes_after: 0,
         })
     }
 
@@ -254,36 +262,14 @@ impl AmplitudeEvaluator {
         if self.n_ext <= 3 || self.n_in != 2 {
             return 0;
         }
-        let masses: Vec<f64> = self
-            .ext_particle_ids
-            .iter()
-            .map(|&pid| evaluated.mass(pid))
-            .collect();
-        let (m_in, m_out) = masses.split_at(self.n_in);
+        let points = self.generic_probe_points(evaluated);
 
         let mut good = vec![false; self.helicities.len()];
         {
             let bound = BoundAmplitude::<f64>::bind(self, evaluated);
             let mut scratch = bound.scratch_space();
-            let mut rng = StdRng::seed_from_u64(0x600D_4E15);
-            // Two scales guard against a kinematic coincidence at one energy; the
-            // non-round multipliers avoid special mass ratios.
-            let threshold = (m_in.iter().sum::<f64>())
-                .max(m_out.iter().sum::<f64>())
-                .max(1.0);
-            for scale in [3.7, 11.3] {
-                let sqrt_s = scale * threshold;
-                let s = sqrt_s * sqrt_s;
-                let e1 = (s + m_in[0] * m_in[0] - m_in[1] * m_in[1]) / (2.0 * sqrt_s);
-                let pz = (e1 * e1 - m_in[0] * m_in[0]).max(0.0).sqrt();
-                for _ in 0..5 {
-                    let mut p = vec![
-                        LorentzVector::new(e1, 0.0, 0.0, pz),
-                        LorentzVector::new(sqrt_s - e1, 0.0, 0.0, -pz),
-                    ];
-                    p.extend(rambo_massive(sqrt_s, m_out, &mut rng));
-                    bound.mark_contributing_helicities(&p, HEL_PRUNE_REL, &mut scratch, &mut good);
-                }
+            for p in &points {
+                bound.mark_contributing_helicities(p, HEL_PRUNE_REL, &mut scratch, &mut good);
             }
         }
 
@@ -301,7 +287,74 @@ impl AmplitudeEvaluator {
             .collect();
         self.folded_hel = OnceLock::new();
         self.pruned = true;
+
+        // Second helicity-filter layer: within the surviving combinations, reclaim the
+        // per-diagram amplitudes that are still identically zero (MadGraph's `ZEROAMP`).
+        self.prune_zero_amplitudes(evaluated, &points);
         dropped
+    }
+
+    /// A deterministic set of generic on-shell partonic-CM probe points: two incoming
+    /// legs along ±z at two energy scales, the outgoing legs from seeded massive RAMBO.
+    /// Two scales guard against a kinematic coincidence at one energy; the non-round
+    /// multipliers avoid special mass ratios. Shared by both helicity-filter layers so
+    /// they probe identical kinematics.
+    fn generic_probe_points(&self, evaluated: &EvaluatedModel) -> Vec<Vec<LorentzVector<f64>>> {
+        let masses: Vec<f64> = self
+            .ext_particle_ids
+            .iter()
+            .map(|&pid| evaluated.mass(pid))
+            .collect();
+        let (m_in, m_out) = masses.split_at(self.n_in);
+        let mut rng = StdRng::seed_from_u64(0x600D_4E15);
+        let threshold = (m_in.iter().sum::<f64>())
+            .max(m_out.iter().sum::<f64>())
+            .max(1.0);
+        let mut points = Vec::with_capacity(10);
+        for scale in [3.7, 11.3] {
+            let sqrt_s = scale * threshold;
+            let s = sqrt_s * sqrt_s;
+            let e1 = (s + m_in[0] * m_in[0] - m_in[1] * m_in[1]) / (2.0 * sqrt_s);
+            let pz = (e1 * e1 - m_in[0] * m_in[0]).max(0.0).sqrt();
+            for _ in 0..5 {
+                let mut p = vec![
+                    LorentzVector::new(e1, 0.0, 0.0, pz),
+                    LorentzVector::new(sqrt_s - e1, 0.0, 0.0, -pz),
+                ];
+                p.extend(rambo_massive(sqrt_s, m_out, &mut rng));
+                points.push(p);
+            }
+        }
+        points
+    }
+
+    /// Reclaim the identically-zero per-diagram amplitude contributions inside the
+    /// surviving helicity combinations (see
+    /// [`Folded::prune_zero_scalar_operands`](super::fold::Folded::prune_zero_scalar_operands)),
+    /// replacing the helicity-expanded arena with the dead-code-eliminated one. The
+    /// removal is byte-for-byte with the full expansion (only structural zeros drop),
+    /// so `eval_m2` is unchanged. Only meaningful after the combination filter has run
+    /// (`pruned`), under whose partonic-CM contract the probe points sit.
+    fn prune_zero_amplitudes(
+        &mut self,
+        evaluated: &EvaluatedModel,
+        points: &[Vec<LorentzVector<f64>>],
+    ) {
+        let expanded = self.folded.expand_helicities(&self.helicities);
+        let (consts_c, consts_f) = expanded.pools::<f64>(evaluated);
+        let (pruned, before, after) =
+            expanded.prune_zero_scalar_operands(&consts_c, &consts_f, points);
+        self.zeroamp_nodes_before = before;
+        self.zeroamp_nodes_after = after;
+        self.folded_hel = OnceLock::new();
+        let _ = self.folded_hel.set(pruned);
+    }
+
+    /// Helicity-expanded arena node counts `(before, after)` the zero-amplitude
+    /// elimination pass, or `(0, 0)` if [`prune_zero_helicities`](Self::prune_zero_helicities)
+    /// has not run. A diagnostic for the per-`(helicity, diagram)` skipping headroom.
+    pub fn zeroamp_node_reduction(&self) -> (usize, usize) {
+        (self.zeroamp_nodes_before, self.zeroamp_nodes_after)
     }
 
     /// Return all coupling and particle ids needed to evaluate the amplitude.
@@ -467,6 +520,100 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// The zero-amplitude elimination pass is bit-for-bit: on colored processes that
+    /// carry per-diagram structural zeros inside their surviving helicity combinations,
+    /// the pruned evaluator's helicity-summed |M|² equals the unpruned one to the byte
+    /// at generic partonic-CM points, and the pass actually reclaims arena nodes.
+    #[test]
+    fn zeroamp_pass_is_bit_exact_and_fires() {
+        use crate::helas::eval::BoundAmplitude;
+        use crate::helas::LorentzVector;
+        use crate::phasespace::rambo_massless;
+        use crate::ufo::EvaluatedModel;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let mut rng = StdRng::seed_from_u64(0x2E20_A11F);
+        let sqrt_s = 500.0;
+
+        // Colored 2→2s carry ZEROAMP contributions within surviving combinations; the
+        // color-singlet 2→3 exercises a single-flow amplitude sum.
+        let processes = ["u u~ > u u~", "g g > g g", "e+ e- > mu+ mu- a"];
+        let mut any_fired = false;
+        for process in processes {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            assert!(!sets.is_empty(), "no diagrams for '{process}'");
+
+            let unpruned = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+            let bound = BoundAmplitude::<f64>::bind(&unpruned, &evaluated);
+            let mut scratch = bound.scratch_space();
+
+            let mut pruned = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+            pruned.prune_zero_helicities(&evaluated);
+            let bound_pruned = BoundAmplitude::<f64>::bind(&pruned, &evaluated);
+            let mut scratch_pruned = bound_pruned.scratch_space();
+
+            let (before, after) = pruned.zeroamp_node_reduction();
+            assert!(
+                after <= before,
+                "[{process}] node count grew: {before} -> {after}"
+            );
+            any_fired |= after < before;
+
+            for _ in 0..32 {
+                let mut p = vec![
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+                ];
+                p.extend(rambo_massless(sqrt_s, unpruned.n_ext() - 2, &mut rng));
+                let m2 = bound.eval_m2(&p, &mut scratch);
+                let m2_pruned = bound_pruned.eval_m2(&p, &mut scratch_pruned);
+                assert_eq!(
+                    m2.to_bits(),
+                    m2_pruned.to_bits(),
+                    "[{process}] zeroamp pruning changed |M|²: {m2:e} vs {m2_pruned:e}"
+                );
+            }
+        }
+        assert!(
+            any_fired,
+            "zero-amplitude pass reclaimed no nodes on any probed process — it is inert"
+        );
+    }
+
+    /// Diagnostic (run with `--ignored --nocapture`): per-process helicity-expanded node
+    /// count before and after the zero-amplitude elimination pass.
+    #[test]
+    #[ignore]
+    fn zeroamp_node_reduction_table() {
+        use crate::ufo::EvaluatedModel;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        println!(
+            "{:<34} {:>10} {:>10} {:>8}",
+            "process", "before", "after", "drop%"
+        );
+        for process in MG_VALIDATED_PROCESSES {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            let mut eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+            eval.prune_zero_helicities(&evaluated);
+            let (before, after) = eval.zeroamp_node_reduction();
+            let pct = if before > 0 {
+                100.0 * (before - after) as f64 / before as f64
+            } else {
+                0.0
+            };
+            println!("{process:<34} {before:>10} {after:>10} {pct:>7.2}%");
         }
     }
 }

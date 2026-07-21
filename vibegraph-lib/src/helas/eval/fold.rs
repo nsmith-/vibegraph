@@ -19,6 +19,7 @@ use super::op::{Const, NodeId, Op, Sym};
 use super::run::{apply, EvalEnv};
 use super::tree::Tree;
 use super::waveform_slot::WaveformSlot;
+use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::numbers::Charge;
 use crate::helas::repr::{Real, C};
 use crate::ufo::couplings::CouplingId;
@@ -335,6 +336,164 @@ impl Folded {
         }
     }
 
+    /// Eliminate diagram-amplitude contributions that are structurally zero over a set
+    /// of generic probe points, returning the pruned arena and the `(before, after)`
+    /// node counts.
+    ///
+    /// A scalar operand of a scalar `Add` (a per-diagram / per-term contribution to a
+    /// helicity combination's amplitude or JAMP, or a nested scalar sub-sum) that
+    /// evaluates to exactly `0.0` at every probe point is a structural zero: a rational
+    /// function of the momenta that vanishes at generic points vanishes identically
+    /// (Schwartz–Zippel), so it contributes `+0` to its sum at every kinematic point.
+    /// Dropping it and dead-code-eliminating the arena nodes reachable only through it
+    /// reproduces MadGraph's per-`(helicity, diagram)` `ZEROAMP` skipping. Because the
+    /// hash-consed expansion shares subtrees across combinations, only nodes private to
+    /// a zero contribution are reclaimed.
+    ///
+    /// The removal is guarded to stay bit-for-bit: each modified `Add` is re-folded over
+    /// its surviving operands at every probe point and reverted unless the result is
+    /// byte-identical to the full sum (catching the sole floating-point hazard, a
+    /// `-0.0` seed whose sign a dropped `+0.0` would flip). A pruned arena therefore
+    /// evaluates every combination's amplitude byte-for-byte as the unpruned expansion.
+    ///
+    /// The probe momenta are the caller's generic partonic-CM points (see
+    /// [`AmplitudeEvaluator::prune_zero_helicities`](super::compile::AmplitudeEvaluator::prune_zero_helicities)),
+    /// so a contribution zeroed only in that frame is dropped within that method's
+    /// kinematic contract — the same contract the surviving-combination sum already
+    /// assumes.
+    pub(super) fn prune_zero_scalar_operands(
+        &self,
+        consts_c: &[C<f64>],
+        consts_f: &[f64],
+        points: &[Vec<LorentzVector<f64>>],
+    ) -> (Folded, usize, usize) {
+        let ast = &self.ast;
+        let n = ast.len();
+        let before = n;
+
+        // Pass 1: a scalar node is a drop candidate only if it is exactly `0.0` at every
+        // probe point. Non-scalar nodes and any scalar that is ever non-zero are excluded.
+        let mut scalar_zero = vec![true; n];
+        let mut is_scalar = vec![false; n];
+        let mut slots: Vec<WaveformSlot<f64>> = Vec::with_capacity(n);
+        for p in points {
+            eval_probe(ast, self.ext_legs(), consts_c, consts_f, p, &mut slots);
+            for (id, slot) in slots.iter().enumerate() {
+                match slot {
+                    WaveformSlot::Scalar(s) => {
+                        is_scalar[id] = true;
+                        if s.value.re != 0.0 || s.value.im != 0.0 {
+                            scalar_zero[id] = false;
+                        }
+                    }
+                    _ => scalar_zero[id] = false,
+                }
+            }
+        }
+        for id in 0..n {
+            if !is_scalar[id] {
+                scalar_zero[id] = false;
+            }
+        }
+
+        // Candidate operand filters: for each scalar `Add`, drop the zero-marked
+        // operands, keeping the surviving ones in order (and at least one).
+        let mut new_kids: Vec<Option<Vec<NodeId>>> = vec![None; n];
+        for id in 0..n as NodeId {
+            let idx = id as usize;
+            if ast.value(id).op != Op::Add || !is_scalar[idx] {
+                continue;
+            }
+            let kids = ast.children_ids(id);
+            let survivors: Vec<NodeId> = kids
+                .iter()
+                .copied()
+                .filter(|&k| !scalar_zero[k as usize])
+                .collect();
+            if !survivors.is_empty() && survivors.len() < kids.len() {
+                new_kids[idx] = Some(survivors);
+            }
+        }
+
+        // Pass 2: a modified `Add` is only pruned if re-folding over its survivors is
+        // byte-identical to the full sum at every probe point.
+        if new_kids.iter().any(Option::is_some) {
+            for p in points {
+                eval_probe(ast, self.ext_legs(), consts_c, consts_f, p, &mut slots);
+                for id in 0..n {
+                    let revert = match &new_kids[id] {
+                        Some(surv) => {
+                            let WaveformSlot::Scalar(full) = &slots[id] else {
+                                unreachable!("modified Add is scalar");
+                            };
+                            let acc = surv
+                                .iter()
+                                .fold(WaveformSlot::Empty, |acc, &k| acc + slots[k as usize]);
+                            let got = match acc {
+                                WaveformSlot::Scalar(s) => s.value,
+                                WaveformSlot::Empty => C::new(0.0, 0.0),
+                                _ => unreachable!("scalar Add survivors sum to a scalar"),
+                            };
+                            got.re.to_bits() != full.value.re.to_bits()
+                                || got.im.to_bits() != full.value.im.to_bits()
+                        }
+                        None => false,
+                    };
+                    if revert {
+                        new_kids[id] = None;
+                    }
+                }
+            }
+        }
+
+        // Reachability from the root through the filtered edges, then rebuild in arena
+        // order (children keep smaller ids than parents, so one ascending pass suffices).
+        let eff_kids = |id: NodeId| -> &[NodeId] {
+            new_kids[id as usize]
+                .as_deref()
+                .unwrap_or_else(|| ast.children_ids(id))
+        };
+        let mut reachable = vec![false; n];
+        reachable[ast.root() as usize] = true;
+        let mut stack = vec![ast.root()];
+        while let Some(id) = stack.pop() {
+            for &c in eff_kids(id) {
+                if !reachable[c as usize] {
+                    reachable[c as usize] = true;
+                    stack.push(c);
+                }
+            }
+        }
+
+        let mut b = AstBuilder::new();
+        let mut remap = vec![u32::MAX; n];
+        for id in 0..n as NodeId {
+            if !reachable[id as usize] {
+                continue;
+            }
+            let node = ast.value(id);
+            let kids: Vec<NodeId> = eff_kids(id).iter().map(|&c| remap[c as usize]).collect();
+            remap[id as usize] = b.add(node.op, node.leaf, kids);
+        }
+        let expanded = b.finish(remap[ast.root() as usize]);
+        let after = expanded.len();
+
+        let analysis = analysis::analyze(&expanded, self.ext_legs());
+        let program = Program::build(&expanded, &analysis);
+        let pruned = Folded {
+            ast: expanded,
+            pool_c: self.pool_c.clone(),
+            pool_f: self.pool_f.clone(),
+            pool_ext: self.pool_ext.clone(),
+            const_ast: self.const_ast.clone(),
+            fold_complex: self.fold_complex.clone(),
+            fold_real: self.fold_real.clone(),
+            analysis,
+            program,
+        };
+        (pruned, before, after)
+    }
+
     /// Resolve the two numeric pools for a parameter card at scalar precision `F`.
     pub fn pools<F: Real + FromPrimitive>(
         &self,
@@ -546,6 +705,42 @@ fn fold_constant_subgraphs(
         const_ast,
         fold_complex: fold_complex.into_boxed_slice(),
         fold_real: fold_real.into_boxed_slice(),
+    }
+}
+
+/// Evaluate every node of a helicity-expanded arena at one probe point through the
+/// generic [`apply`] reduction, writing each node's slot into `out` (indexed by node id,
+/// no recycling). The variadic roots ([`Op::Hels`]/[`Op::Flows`]) hold no value of their
+/// own, so they read as [`WaveformSlot::Empty`]. Because `apply` shares the runtime
+/// kernels, each node's value is bit-identical to the compiled [`Program`] at that point.
+fn eval_probe(
+    ast: &Ast<Const>,
+    ext_legs: &[ExtLeg],
+    consts_c: &[C<f64>],
+    consts_f: &[f64],
+    momenta: &[LorentzVector<f64>],
+    out: &mut Vec<WaveformSlot<f64>>,
+) {
+    let env = EvalEnv {
+        consts_c,
+        consts_f,
+        ext_legs,
+        momenta,
+        helicities: &[],
+        ward_leg: None,
+    };
+    out.clear();
+    out.reserve(ast.len());
+    for id in ast.iter() {
+        let node = ast.value(id);
+        let value = match node.op {
+            Op::Hels | Op::Flows => WaveformSlot::Empty,
+            _ => {
+                let ids = ast.children_ids(id);
+                apply(node, ids.len(), |i| &out[ids[i] as usize], &env)
+            }
+        };
+        out.push(value);
     }
 }
 
