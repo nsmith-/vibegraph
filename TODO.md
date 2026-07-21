@@ -13,7 +13,10 @@ convolution + run-card cuts + two-phase VEGAS give σ(pp→e⁺e⁻) vs MG withi
 ✅ closed 2026-07-21 on V1–V6, V7 deferred: quick guards + NHEL pinning +
 proc-card `integrate` + σ-level gate + multi-subgrid PDF seam + rooting-soundness
 (all rooting-convention signs lifted to `fermi_sign`, 0/133 re-rootings) + branch-
-level convention coverage; sprint section below, full plan note 19).
+level convention coverage; sprint section below, full plan note 19) →
+**`eval-perf-2`** (performance, 🔲 planned: mul-split typed-scale ops +
+one-shot DAG validation + per-(hel,diagram) ZEROAMP skipping + rooting-CSE spike
+now that V5 unblocked re-rooting; sprint section below, full plan note 20).
 
 ## Pipeline Status
 
@@ -68,6 +71,27 @@ Out of scope (blocked): flow→LHEF dictionary + `mg-single-helicity-bench`
 
 ---
 
+## ⚡ `eval-perf-2` sprint 🔲 PLANNED (full plan: `research/notes/20-eval-perf-2-plan.md`)
+
+Second evaluator performance pass against the same figure of merit (release
+`eval_strategies` ns/eval), all sessions behind the 14-process `validate_helas_mg`
+gate. Motivation (histogrammed 2026-07-21): **`Mul` is 57.6% of all eval-time
+instructions and every one is binary** — 86% pure scalar-coefficient products,
+14% single-current scales.
+
+| Session | Scope | Status |
+|---|---|---|
+| S1 | `mul-split`: binary `Mul` → 8 typed variants (`MulScalarR/C`, `ScaleVec/Fin/Fout×R/C`) in `Program::build`. Binary-Mul is a production invariant, so the enumeration is **total** — `Instr::Mul`/`exec_mul`/`MulCurrent` are **deleted** (no fallback); `build` asserts arity==2/≤1-non-scalar/no-real×real. Drops the operand loop, enum, and two identity multiplies per node; `…R` arms use real-scale. Test-only generic `apply` oracle stays variadic. | ✅ **DONE** (`fa65c23`, branch `eval-perf-2`, not merged) — bit-exact 14/14 `validate-helas-mg`; `eval_strategies/forward` **−13%…−44%** across all 7 (gg_to_gg −44%, uux 2→6 −24%), no regressions (M3 Max) |
+| S2 | `dag-validate-once`: per-node `cross_check_typed` removed from `fill_arenas`; one-shot `validate_arenas` after the loop, latched by a `cfg`-gated `ScratchSpace.validated` flag (waits for first in-contract point — `ward_leg.is_none()` — so a Ward-first scratch still gets its momentum leg checked). `cross_check_node` kept intact (shared with the test-only generic oracle). Dev/timing only. | ✅ **DONE** (`a8cfe29`) — bit-exact 14/14; negative test `one_shot_validation_catches_corrupted_momentum_route` proves the routing check still bites; extended-validation `eval_strategies` **3.1×–5.4× faster** → note-15 "4–5× hot" caveat retired; no release change (cfg'd out) |
+| S3 | `zeroamp-skip`: MG's second helicity-filter layer — probed-zero node-elimination pass over the expanded arena to drop diagram amplitudes identically zero within a *surviving* combination. Bit-for-bit; headroom likely small (**measurement is the first deliverable**). | 🔲 |
+| S4 | `rooting-cse`: re-rooting headroom (−21% nodes / −34% traffic, `rooting-study-results.md`) is **unblocked by V5** — re-root diagrams to a node-minimizing rooting (`fewest ext legs` canonical), gate at `REL_TOL` 1e-10 (not bit-exact). Exploratory spike: confirm soundness, productionize a rooting-choice pass, measure ns/eval. | 🔲 |
+
+Order: S1 → then S2/S3/S4 (independent, all depend only on S1). Dispatch S1,
+measure, decide the rest from its result. Deferred backlog recorded in note 20 §
+"Deferred perf backlog".
+
+---
+
 ## ⚡ Eval performance program ✅ CLOSED 2026-07-17 (full record: `research/notes/15-eval-optimization-plan.md`)
 
 Three phases, all behind the 14-process `validate_helas_mg` gate, all merged to
@@ -107,12 +131,12 @@ our interpreter doesn't) is untested. Rerun kit for other boxes:
 
 ### Deferred performance work
 
-- **Per-(hel,diagram) `ZEROAMP` skipping** (MG's second filter layer, note 15 §2.3):
-  inside surviving combinations, individual diagram amplitudes can still be
-  identically zero for that helicity; skipping them needs probed-zero *node*
+- **Per-(hel,diagram) `ZEROAMP` skipping** (MG's second filter layer, note 15 §2.3)
+  → picked up as **`eval-perf-2` session S3** (note 20): probed-zero *node*
   elimination in the expanded arena (a rewrite pass, not a filtered re-expansion).
   Unmeasured headroom, likely small — the combination filter already removed most
-  zeros, and elimination only reclaims nodes private to a zero diagram.
+  zeros, and elimination only reclaims nodes private to a zero diagram; measurement
+  is S3's first deliverable.
 - **CF-factoring across combinations** — analyzed and shelved 2026-07-17 (note 15
   §2.2): accumulating `M_ij = Σ_hel JAMP_i·JAMP_j*` and contracting CF once
   rebalances the arithmetic rather than shrinking it, and reordering the |M|² sum
@@ -333,8 +357,9 @@ Vibegraph-side mitigations already applied:
   assignment (11,520 → ~1,664 for pp→qq̃4l).
 
 Also deferred perf backlog (from `cleanup-refactor`/`performance-sprint`):
-`generate-stream` Part B (lazy `generate_*` iterator) and `C<F>`-vs-`F` multiply
-peepholes.
+`generate-stream` Part B (lazy `generate_*` iterator). The `C<F>`-vs-`F` multiply
+peepholes are now **`eval-perf-2` session S1** (note 20, sized: `Mul` is 57.6% of
+eval-time instructions).
 
 ### `lips-nbody` — n-body LIPS phase-space generator
 
