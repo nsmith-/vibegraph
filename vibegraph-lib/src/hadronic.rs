@@ -68,7 +68,7 @@ use crate::diagrams::{
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::PdfMember;
-use crate::phasespace::{lips2_jacobian_u, rambo, GEV2_TO_PB};
+use crate::phasespace::{lips2_jacobian_u, PhaseSpaceMap, RamboChannel, GEV2_TO_PB};
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::vegas::{VegasGrid, VegasResult};
 
@@ -691,8 +691,8 @@ pub struct FixedBeamIntegrand<'a> {
     subs: Vec<BoundSubprocess<'a>>,
     cuts: &'a Cuts,
     sqrt_s: f64,
-    /// Final-state masses in outgoing-leg order, for the RAMBO map.
-    final_masses: Vec<f64>,
+    /// Flat RAMBO map over the outgoing legs, on the fixed `√ŝ` and masses.
+    channel: RamboChannel<f64>,
     /// `1 / Π_a (n_spin · n_colour)` over the incoming legs.
     spin_color_avg: f64,
     /// The `(2π)^{4−3n}` measure factor.
@@ -730,7 +730,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             subs,
             cuts,
             sqrt_s,
-            final_masses,
+            channel: RamboChannel::new(sqrt_s, final_masses),
             spin_color_avg,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n as i32),
             beam_e: sqrt_s / 2.0,
@@ -739,16 +739,16 @@ impl<'a> FixedBeamIntegrand<'a> {
 
     /// VEGAS dimensionality: the `4n` RAMBO uniforms for `n` final-state momenta.
     pub fn vegas_ndim(&self) -> usize {
-        4 * self.final_masses.len()
+        self.channel.ndim()
     }
 
     /// The integrand value at a VEGAS point `u ∈ [0,1]^{4n}`, in natural units
     /// (GeV⁻²); its VEGAS integral is the partonic cross section. Points whose
     /// momenta fail a cut contribute exactly zero.
     pub fn value(&self, u: &[f64]) -> f64 {
-        let point = rambo(self.sqrt_s, &self.final_masses, u);
+        let point = self.channel.sample(u);
 
-        let mut ext: Vec<V> = Vec::with_capacity(2 + self.final_masses.len());
+        let mut ext: Vec<V> = Vec::with_capacity(2 + point.momenta.len());
         ext.push(V::new(self.beam_e, 0.0, 0.0, self.beam_e));
         ext.push(V::new(self.beam_e, 0.0, 0.0, -self.beam_e));
         ext.extend(point.momenta);
