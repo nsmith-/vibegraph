@@ -1141,6 +1141,79 @@ mod tests {
         // `tests/validate_helas_mg.rs` (miscounting it would flip that amplitude).
     }
 
+    /// Number of diagrams of `process` whose canonical `VtxIdx(0)` tree fires each
+    /// rooting-convention sign channel. Rooting at the canonical vertex is what
+    /// production uses and what the `fermi_sign` lift reads, so a channel that fires
+    /// here is a channel [`compile_single_diagram`] genuinely carries.
+    fn channel_counts(model: &UFOModel, process: &str) -> (usize, usize, usize, usize) {
+        let (mut vvv, mut spine, mut build, mut reversed) = (0, 0, 0, 0);
+        for set in generate(process) {
+            for diagram in &set.diagrams {
+                let chain = vec![0u8; diagram.vertices.len()];
+                let t = root_tree_at(diagram, model, &chain, VtxIdx(0)).unwrap();
+                vvv += (yang_mills_vvv_sign(diagram, model) < 0) as usize;
+                spine += (spine_sign_from_flow(&t) < 0) as usize;
+                build += (t.build_convention_sign() < 0) as usize;
+                reversed += (t.reversed_convention_sign() < 0) as usize;
+            }
+        }
+        (vvv, spine, build, reversed)
+    }
+
+    /// Coverage map for the rooting-convention sign channels lifted into `fermi_sign`
+    /// (`research/notes/19` §V5): each channel is exercised by a *named* process, so a
+    /// refactor or enumeration change that silently stops exercising a branch fails here
+    /// rather than rotting undetected against its still-exercised sibling — the failure
+    /// mode that produced the `g g > g g` VVVV phase bug (note 16 §6).
+    ///
+    /// This is the non-vacuity half of the map; the deeper per-channel properties live in
+    /// dedicated tests — [`yang_mills_vvv_sign_fires_only_for_source_vvv`] (VVV `σ_V`,
+    /// with the +1-uniform and VVVV-not-counted arms) and
+    /// [`spine_sign_from_flow_matches_heuristic`] (spine sign vs the `spin_map` oracle).
+    /// The one sub-branch no default-suite process reaches — the VVS pure-metric −1 with
+    /// the *scalar* leg as output (H produced from two vectors, only in the 2→6 H
+    /// classes) — is pinned at the primitive level by
+    /// `root_lorentz::tests::test_root_vvs_metric_scalar_out` and bit-for-bit by
+    /// `u u~/b b~ > … QCD=0` in `tests/validate_helas_mg.rs`.
+    #[test]
+    fn mg_guard_processes_exercise_every_convention_channel() {
+        let model = sm_model(SMRestrict::Default);
+
+        // VVV σ_V: the s-channel γ/Z → W+W- vertex is a non-root vector source.
+        assert!(
+            channel_counts(&model, "e+ e- > W+ W-").0 > 0,
+            "e+ e- > W+ W- must exercise the Yang-Mills VVV source sign"
+        );
+        // Spine sign: Bhabha's s-channel has one crossed (final-final) fermion line.
+        assert!(
+            channel_counts(&model, "e+ e- > e+ e-").1 > 0,
+            "e+ e- > e+ e- must exercise the crossed-line spine sign"
+        );
+        // Build-convention −1, VVVV pure-metric arm: g g > g g has no fermion or scalar
+        // externals, so its 4-gluon contact is the *only* source of a build sign — this
+        // is the single-process branch of the note-16 §6 bug.
+        assert!(
+            channel_counts(&model, "g g > g g").2 > 0,
+            "g g > g g must exercise the VVVV pure-metric build sign"
+        );
+        // Build-convention −1, FFS/crossed scalar-sink arm: e+ e- > ta+ ta- H has no
+        // pure-vector vertex, so its build sign comes only from the τ-Yukawa scalar
+        // bilinear (ProjM/ProjP scalar-sink + the crossed-τ standalone projector).
+        assert!(
+            channel_counts(&model, "e+ e- > ta+ ta- H").2 > 0,
+            "e+ e- > ta+ ta- H must exercise the scalar-bilinear build sign"
+        );
+        // Reversed-bilinear parity: e+ e- > mu+ mu- has a reversed FFV bilinear, so the
+        // per-diagram `reversed_convention_sign` is non-trivial — i.e. the runtime
+        // `resolve_bra_ket` parity cancellation folded into `fermi_sign` is load-bearing,
+        // not a global no-op. (Pure-gauge g g > g g / g g > t t~ never reverse a
+        // bilinear, so this channel would go unexercised without a fermion process.)
+        assert!(
+            channel_counts(&model, "e+ e- > mu+ mu-").3 > 0,
+            "e+ e- > mu+ mu- must exercise the reversed-bilinear parity channel"
+        );
+    }
+
     /// The adjoint-derived spine sign must agree with the `spin_map`-tracing heuristic for
     /// every diagram, across processes with and without initial-state fermion spines.
     #[test]
