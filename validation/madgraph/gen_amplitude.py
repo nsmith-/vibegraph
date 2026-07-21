@@ -354,7 +354,7 @@ def profile_batch(
     total_ms = (t1 - t0) * 1e3
     ns_per_eval = (t1 - t0) / n * 1e9
     print(f"  MATRIX1 timing [{proc.name}]: {n} evals in {total_ms:.2f} ms  ({ns_per_eval:.0f} ns/eval)")
-    return {"n_evals": n, "total_ms": total_ms, "ns_per_eval": ns_per_eval}
+    return {"process_str": proc.process_str, "n_evals": n, "total_ms": total_ms, "ns_per_eval": ns_per_eval}
 
 
 def write_csv(path: str, proc: Process, n_ext: int, rows: list[list[float]]):

@@ -57,14 +57,25 @@ fn bench_lanes<const N: usize>(
     );
 }
 
-const PROCESSES: [(&str, &str); 7] = [
+/// List of processes to benchmark: (internal name, MadGraph-style process card)
+///
+/// Keep in sync with validation/madgraph/gen_amplitude.py PROCESSES
+/// and vibegraph-lib/test/validate_helas_mg.rs
+const PROCESSES: [(&str, &str); 14] = [
     ("ee_to_mumu", "e+ e- > mu+ mu-"),
+    ("pp_to_ll_qcd0", "u u~ > mu+ mu-"),
     ("ee_to_ee", "e+ e- > e+ e-"),
-    ("uux_to_uux", "u u~ > u u~"),
-    ("gg_to_gg", "g g > g g"),
     ("ee_to_mumua", "e+ e- > mu+ mu- a"),
+    ("ee_to_ttx", "e+ e- > t t~"),
+    ("ee_to_wpwm", "e+ e- > w+ w-"),
+    ("ee_to_zh", "e+ e- > z h"),
+    ("ee_to_tatah", "e+ e- > ta+ ta- h"),
     ("ee_to_mumu_tata_qcd0", "e+ e- > mu+ mu- ta+ ta- QCD=0"),
     ("uux_to_ccx_emmm_qcd0", "u u~ > c c~ e+ e- mu+ mu- QCD=0"),
+    ("bbx_to_ccx_emmm_qcd0", "b b~ > c c~ e+ e- mu+ mu- QCD=0"),
+    ("uux_to_uux", "u u~ > u u~"),
+    ("gg_to_ttx", "g g > t t~"),
+    ("gg_to_gg", "g g > g g"),
 ];
 
 fn bench_eval_m2(c: &mut Criterion) {
