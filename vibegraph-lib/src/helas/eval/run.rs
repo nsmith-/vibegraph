@@ -20,7 +20,7 @@ use super::compile::AmplitudeEvaluator;
 use super::fold::{ExtLeg, Folded};
 use super::kernel;
 use super::lanes::{transpose_points, unpack, LaneField};
-use super::layout::{Instr, OperandRef, RootKind, N_ARENAS};
+use super::layout::{Instr, RootKind, N_ARENAS};
 use super::op::{Const, ConstKind, Node, NodeId, Op};
 #[cfg(test)]
 use super::tree::Tree;
@@ -678,8 +678,30 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 }
                 scratch.fout[loc] = spinor;
             }
-            Instr::Mul { start, len } => {
-                exec_mul(scratch, loc, &ops[start as usize..(start + len) as usize]);
+            Instr::MulScalarC { a, b } => {
+                scratch.scalars[loc] = scratch.scalars[a as usize] * scratch.scalars[b as usize];
+            }
+            Instr::MulScalarR { s, r } => {
+                scratch.scalars[loc] = scratch.scalars[s as usize] * scratch.reals[r as usize];
+            }
+            Instr::ScaleVecC { v, scale } => {
+                scratch.vectors[loc] =
+                    scratch.vectors[v as usize] * scratch.scalars[scale as usize];
+            }
+            Instr::ScaleVecR { v, scale } => {
+                scratch.vectors[loc] = scratch.vectors[v as usize] * scratch.reals[scale as usize];
+            }
+            Instr::ScaleFinC { f, scale } => {
+                scratch.fin[loc] = scratch.fin[f as usize] * scratch.scalars[scale as usize];
+            }
+            Instr::ScaleFinR { f, scale } => {
+                scratch.fin[loc] = scratch.fin[f as usize] * scratch.reals[scale as usize];
+            }
+            Instr::ScaleFoutC { f, scale } => {
+                scratch.fout[loc] = scratch.fout[f as usize] * scratch.scalars[scale as usize];
+            }
+            Instr::ScaleFoutR { f, scale } => {
+                scratch.fout[loc] = scratch.fout[f as usize] * scratch.reals[scale as usize];
             }
             Instr::GammaVout { bra, ket, reversed } => {
                 let out = kernel::gamma_vout_bare(
@@ -782,60 +804,6 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
 
         cross_check_typed(folded, id as NodeId, scratch, env);
     }
-}
-
-/// n-ary product on bare typed operands (mirrors [`mul_apply`]): reals fold into `F`,
-/// scalars into a complex coefficient, and the single non-scalar current is scaled by the
-/// combined coefficient. Momentum is not routed here — each current's momentum lives in the
-/// pool keyed by its momentum id. Writes the result to index `loc` of the arena its class
-/// selects.
-#[inline]
-fn exec_mul<F: Real>(scratch: &mut ScratchSpace<F>, loc: usize, operands: &[OperandRef]) {
-    let mut real_acc = F::one();
-    let mut cplx_acc = C::new(F::one(), F::zero());
-    let mut current = MulCurrent::None;
-    for op in operands {
-        match op.class() {
-            0 => real_acc = real_acc * scratch.reals[op.index()],
-            1 => cplx_acc = cplx_acc * scratch.scalars[op.index()],
-            2 => {
-                debug_assert!(
-                    matches!(current, MulCurrent::None),
-                    "Mul: at most one non-scalar child"
-                );
-                current = MulCurrent::Vector(scratch.vectors[op.index()]);
-            }
-            3 => {
-                debug_assert!(
-                    matches!(current, MulCurrent::None),
-                    "Mul: at most one non-scalar child"
-                );
-                current = MulCurrent::Fin(scratch.fin[op.index()]);
-            }
-            _ => {
-                debug_assert!(
-                    matches!(current, MulCurrent::None),
-                    "Mul: at most one non-scalar child"
-                );
-                current = MulCurrent::Fout(scratch.fout[op.index()]);
-            }
-        }
-    }
-    let coeff = cplx_acc * real_acc;
-    match current {
-        MulCurrent::None => scratch.scalars[loc] = coeff,
-        MulCurrent::Vector(eps) => scratch.vectors[loc] = eps * coeff,
-        MulCurrent::Fin(spinor) => scratch.fin[loc] = spinor * coeff,
-        MulCurrent::Fout(spinor) => scratch.fout[loc] = spinor * coeff,
-    }
-}
-
-/// The non-scalar current a [`Instr::Mul`] carries (at most one).
-enum MulCurrent<F: Real> {
-    None,
-    Vector(ComplexVector<F>),
-    Fin(Bispinor<F, Ket>),
-    Fout(Bispinor<F, Bra>),
 }
 
 /// Reconstruct a node's slot from its bare typed arena — re-attaching the routing momentum
