@@ -58,6 +58,12 @@ pub struct ScratchSpace<F: Real> {
     /// Per-point momentum pool: `moms[id]` is the external-momentum combination the
     /// momentum table interns at `id` (`Σ ± p_leg`), resolved once per phase-space point.
     moms: Vec<LorentzVector<F>>,
+    /// Set once the one-shot compiled-DAG cross-check ([`validate_arenas`]) has passed for
+    /// this workspace, so it runs a single time rather than per point. The checked
+    /// properties (output type, constness, momentum-routing / pool-index consistency) are
+    /// invariant across phase-space points. Debug / `extended-validation` only.
+    #[cfg(any(debug_assertions, feature = "extended-validation"))]
+    validated: bool,
 }
 
 impl<F: Real> ScratchSpace<F> {
@@ -168,6 +174,8 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             fin: Vec::with_capacity(sizes[3] as usize),
             fout: Vec::with_capacity(sizes[4] as usize),
             moms: Vec::with_capacity(self.eval.folded().analysis().mom_table().len()),
+            #[cfg(any(debug_assertions, feature = "extended-validation"))]
+            validated: false,
         }
     }
 
@@ -561,7 +569,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
     let ops = &prog.operands;
     let mom_ops = &prog.mom_operands;
 
-    for ((id, instr), &loc) in prog.instrs.iter().enumerate().zip(prog.loc.iter()) {
+    for (instr, &loc) in prog.instrs.iter().zip(prog.loc.iter()) {
         let loc = loc as usize;
         match *instr {
             Instr::ComplexConst { pool } => scratch.scalars[loc] = env.consts_c[pool as usize],
@@ -801,29 +809,39 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
             }
             Instr::Flows | Instr::Hels => {}
         }
-
-        cross_check_typed(folded, id as NodeId, scratch, env);
     }
+
+    validate_arenas(folded, env, scratch);
 }
 
-/// Reconstruct a node's slot from its bare typed arena — re-attaching the routing momentum
-/// from the pool (keyed by the node's momentum id) — and cross-check it against the static
-/// analysis (debug / extended-validation only), so the typed forward pass carries the same
-/// output-type/constness guarantees as the generic one. With momentum now sourced from the
-/// pool, the momentum-agreement leg of the check confirms pool-indexing consistency.
-#[inline(always)]
-fn cross_check_typed<F: Real>(
-    folded: &Folded,
-    id: NodeId,
-    scratch: &ScratchSpace<F>,
-    env: &EvalEnv<'_, F>,
-) {
+/// One-shot cross-check of the whole compiled typed stream against the static analysis:
+/// reconstructs every node's slot — re-attaching the routing momentum from the per-point
+/// pool (keyed by the node's momentum id) — and runs [`cross_check_node`] (output type,
+/// constness, momentum-routing / pool-index consistency). The reconstructed slot's *value*
+/// is never inspected (only its class and pool momentum are), so slot recycling in the
+/// value arenas is immaterial and reading a recycled slot is harmless.
+///
+/// The checked properties are compiled-DAG invariants — independent of the phase-space
+/// point — so this runs once per workspace (guarded by `scratch.validated`) instead of per
+/// node per point, off the hot loop. It waits for an in-contract point (`ward_leg` unset,
+/// so the momentum leg is active) before latching, so a workspace first exercised under the
+/// Ward gauge substitution is still fully validated on its first real point. Debug /
+/// `extended-validation` only; compiled out of release.
+#[inline]
+fn validate_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut ScratchSpace<F>) {
     #[cfg(any(debug_assertions, feature = "extended-validation"))]
     {
         use super::analysis::Storage;
+        if scratch.validated {
+            return;
+        }
         let an = folded.analysis();
-        if let Some(class) = an.out_type(id).storage() {
-            let loc = folded.program().loc[id as usize] as usize;
+        let prog = folded.program();
+        for id in 0..prog.instrs.len() as NodeId {
+            let Some(class) = an.out_type(id).storage() else {
+                continue;
+            };
+            let loc = prog.loc[id as usize] as usize;
             let mom = scratch.moms[an.mom_id(id) as usize];
             let slot = match class {
                 Storage::Real => WaveformSlot::Real(scratch.reals[loc]),
@@ -844,10 +862,13 @@ fn cross_check_typed<F: Real>(
             };
             cross_check_node(an, id, &slot, env.momenta, env.ward_leg.is_none());
         }
+        if env.ward_leg.is_none() {
+            scratch.validated = true;
+        }
     }
     #[cfg(not(any(debug_assertions, feature = "extended-validation")))]
     {
-        let _ = (folded, id, scratch, env);
+        let _ = (folded, env, scratch);
     }
 }
 
@@ -3980,6 +4001,57 @@ mod tests {
         let boosted: Vec<LorentzVector<f64>> =
             p.iter().map(|q| q.boost([0.0, 0.0, 0.43])).collect();
         bound.eval_m2(&boosted, &mut scratch);
+    }
+
+    /// The one-shot compiled-DAG validation still catches a broken momentum route after
+    /// being lifted off the per-node hot loop: corrupting a momentum-pool entry so a
+    /// node's routed momentum no longer matches the analysis's directly-resolved
+    /// combination must make the check panic. Pins that the pool-index-consistency leg is
+    /// live, not silently dropped when the check moved out of the forward scan. Compiled
+    /// only where the cross-check itself is (debug / extended-validation).
+    #[test]
+    #[cfg(any(debug_assertions, feature = "extended-validation"))]
+    #[should_panic(expected = "disagrees with slot momentum")]
+    fn one_shot_validation_catches_corrupted_momentum_route() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let sqrt_s = 500.0;
+
+        let pc = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, &model).unwrap();
+        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+        let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+        let mut scratch = bound.scratch_space();
+
+        let p = vec![
+            LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+            LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+            LorentzVector::new(sqrt_s / 2.0, sqrt_s / 2.0, 0.0, 0.0),
+            LorentzVector::new(sqrt_s / 2.0, -sqrt_s / 2.0, 0.0, 0.0),
+        ];
+
+        let folded = eval.folded_hel();
+        // A clean pass validates and latches the flag.
+        resolve_moms(folded, &p, &mut scratch);
+        let env = bound.eval_env(folded, &p, &[], None);
+        fill_arenas(folded, &env, &mut scratch);
+        assert!(
+            scratch.validated,
+            "clean pass should latch the validation flag"
+        );
+
+        // Break every non-trivial routed momentum (index 0 is the zero-momentum slot),
+        // then force a re-validation: at least one momentum-carrying node now disagrees
+        // with its analysis-predicted combination.
+        let bogus = LorentzVector::new(1.0, 2.0, 3.0, 4.0);
+        for m in scratch.moms.iter_mut().skip(1) {
+            *m = *m + bogus;
+        }
+        scratch.validated = false;
+        validate_arenas(folded, &env, &mut scratch);
     }
 }
 
