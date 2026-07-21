@@ -10,7 +10,10 @@ expansion + helicity filtering; vs-MG gap 8.6×–110× → **1.2×–3.5×**; s
 full record note 15) → **hadronic-xsec** (feature, ✅ closed 2026-07-19: PDF
 convolution + run-card cuts + two-phase VEGAS give σ(pp→e⁺e⁻) vs MG within
 0.14%/0.07%; summary below, full record note 18) → **`validation-2`** (validation,
-🔵 ACTIVE, plan drafted 2026-07-19: sprint section below, full plan note 19).
+✅ closed 2026-07-21 on V1–V6, V7 deferred: quick guards + NHEL pinning +
+proc-card `integrate` + σ-level gate + multi-subgrid PDF seam + rooting-soundness
+(all rooting-convention signs lifted to `fermi_sign`, 0/133 re-rootings) + branch-
+level convention coverage; sprint section below, full plan note 19).
 
 ## Pipeline Status
 
@@ -34,7 +37,10 @@ headroom study).
 
 ---
 
-## 🔎 `validation-2` sprint 🔵 ACTIVE (full plan: `research/notes/19-validation-pass-plan.md`)
+## 🔎 `validation-2` sprint ✅ CLOSED 2026-07-21 (full plan: `research/notes/19-validation-pass-plan.md`)
+
+Closed on V1–V6 (V7 deferred, table below). All six sessions landed on branch
+`validation-2` and ff-merge to `main` at close-out.
 
 Clears the unblocked validation backlog from the eval performance program,
 `hadronic-xsec`, and the `validation-sprint` leftovers, and adds σ-level
@@ -46,14 +52,14 @@ beams + cuts MG used.
 
 | Session | Scope | Status |
 |---|---|---|
-| V1 | Quick guards: pruned-frame contract assertion + boosted-point test; interned-SM CI diff check | 🔲 |
-| V2 | NHEL-table pinning 7 → 14/14 (incl. in-test 2→6 survivor counts) | 🔲 |
-| V3a | Generalize `vibegraph integrate` (absorbs `cli-proc-card`): proc-card-driven assembly, `lpp=(0,0)` beams, flat-RAMBO n-body path | 🔲 |
-| V3b | 14-process σ gate through the CLI vs banked MG run σ (pull-based statistical gate, run card as single source of truth); retire the `validate_helas_mg` timing print + document `--profile profiling`/samply recipe on the new test | 🔲 |
-| V4 | Multi-subgrid PDF seam: real multi-Q²-subgrid set + `gen_oracle.cpp` seam description | 🔲 |
+| V1 | Quick guards: pruned-frame contract assertion + boosted-point test; interned-SM CI diff check | ✅ **DONE** (`41499fc`) — `assert_partonic_cm_beams_along_z` in `eval_m2` (debug/extended only) + `eval_m2_pruned_rejects_boosted_frame`; interned-SM checked semantically (`interned_blob_matches_submodule_exactly` + `check-sm-blob-fresh`) since bincode of a `std::HashMap` byte-diffs nondeterministically |
+| V2 | NHEL-table pinning 7 → 14/14 (incl. in-test 2→6 survivor counts) | ✅ **DONE** (`44f64a2`) — `prune_zero_helicities_matches_madgraph_filter_bitwise` pins all 14 processes' (NCOMB, survivors) vs MG matrix1_orig/optim |
+| V3a | Generalize `vibegraph integrate` (absorbs `cli-proc-card`): proc-card-driven assembly, `lpp=(0,0)` beams, flat-RAMBO n-body path | ✅ **DONE** (`82de679`) — `hadronic.rs` `FixedBeamIntegrand` + `integrate_fixed_energy`; ee→ttx √ŝ500 σ=0.5512pb vs MG 0.47%; DY σ unchanged |
+| V3b | 14-process σ gate through the CLI vs banked MG run σ (pull-based statistical gate, run card as single source of truth); retire the `validate_helas_mg` timing print + document `--profile profiling`/samply recipe on the new test | ✅ **DONE** (`7ff2992`) — `validate_sigma.rs` (pixi `validate-sigma`): 14 banked / 14 driven / 6 σ-asserted (smooth EW), QCD INFO-only (running-αs gap), resonant/2→6 SKIP-with-reason; `sigma_reference.json`; timing print → `profile-sigma` task |
+| V4 | Multi-subgrid PDF seam: real multi-Q²-subgrid set + `gen_oracle.cpp` seam description | ✅ **DONE** (`8acee85`) — NNPDF31_lo_as_0130 (2 Q²-subgrids); `gen_oracle.cpp` recovers per-band knots + emits seam probes; `validate-pdf-grid` 12/12; library interp UNCHANGED (V4 just added real-oracle pinning) |
 | V5 | `rooting-soundness` spike: root-invariant momentum routing / Lorentz rooting / fermion-spine sign; failing all-rootings gate test first | ✅ **DONE** — `all_rootings_preserve_amplitude` passes 0/133 re-rootings. All rooting-dependent signs lifted to `fermi_sign` at the canonical `VtxIdx(0)` rooting: (a) VVV `σ_V`, (b) build-convention (VVS `pure_metric`/FFS scalar-sink/crossed) + spine via `build_convention_sign`, (c) reversed-bilinear parity via `reversed_convention_sign` (per-diagram `P_canonical·P_live`, `+1` no-op in production). 14/14 `validate_helas_mg` bit-exact throughout; `REL_TOL` 1e-12→1e-10 (FP floor 2.2e-11). Note 19 §V5. Follow-ups (independent): Path A/B resolver merge, perf removal of runtime `resolve_bra_ket` order check |
 | V6 | Branch-level coverage: rooted-tree pattern assertions per MG-pinned convention | ✅ **DONE** — `mg_guard_processes_exercise_every_convention_channel` (root_diagram.rs) makes each rooting-convention channel's "pinned by process X" claim load-bearing: VVV σ_V←`e+e-→W+W-`, spine←`e+e-→e+e-`, VVVV pure-metric build sign←`g g > g g` (the single-process note-16 §6 branch), FFS/crossed scalar-sink build sign←`e+e-→ta+ta-H`, reversed-bilinear parity←`e+e-→mu+mu-`. VVS pure-metric scalar-out (only in the 2→6 H classes) pinned at the primitive level by `root_lorentz::tests::test_root_vvs_metric_scalar_out`. Complements the deeper dedicated tests (`yang_mills_vvv_sign_fires_only_for_source_vvv`, `spine_sign_from_flow_matches_heuristic`). |
-| V7 | Per-flavor diagram matching (design in note 19 §3; optional tail) | 🔲 |
+| V7 | Per-flavor diagram matching (design in note 19 §3; optional tail) | ⏭️ **DEFERRED** to a future pass — the sprint closed on V1–V6; V7 is an independent, verification-heavy refactor (Python extractor + Rust (sorted-PDG) matching + JSON regen) with a real-finding risk (whether vibegraph enumerates MG's exact concrete-subprocess union). Design preserved in note 19 §3 / §V7. |
 
 Order: V1 → V2 → V3a → V3b; V4 free-floating; V5 → V6; V7 optional.
 Out of scope (blocked): flow→LHEF dictionary + `mg-single-helicity-bench`
