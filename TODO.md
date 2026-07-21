@@ -14,10 +14,10 @@ convolution + run-card cuts + two-phase VEGAS give σ(pp→e⁺e⁻) vs MG withi
 proc-card `integrate` + σ-level gate + multi-subgrid PDF seam + rooting-soundness
 (all rooting-convention signs lifted to `fermi_sign`, 0/133 re-rootings) + branch-
 level convention coverage; sprint section below, full plan note 19) →
-**`eval-perf-2`** (performance, 🔄 in progress: S1 mul-split + S2 one-shot DAG
-validation + S3 ZEROAMP skipping ✅ merged to main (S3 `forward` −17%…−32% on
-colored 2→2s); S4 rooting-CSE spike remaining now that V5 unblocked re-rooting;
-sprint section below, full plan note 20).
+**`eval-perf-2`** (performance, ✅ closed + merged 2026-07-21, HEAD `ee6be0e`: S1
+mul-split + S2 one-shot DAG validation + S3 ZEROAMP skipping + S4 fewest-ext-leg
+rooting; cumulative `forward` **1.18×–2.19×** every benchmarked process, all bit-exact
+or ≤1e-12 vs MG; sprint section below, full plan note 20).
 
 ## Pipeline Status
 
@@ -72,7 +72,7 @@ Out of scope (blocked): flow→LHEF dictionary + `mg-single-helicity-bench`
 
 ---
 
-## ⚡ `eval-perf-2` sprint 🔲 PLANNED (full plan: `research/notes/20-eval-perf-2-plan.md`)
+## ⚡ `eval-perf-2` sprint ✅ CLOSED + MERGED 2026-07-21 (ff, HEAD `ee6be0e`; full plan: `research/notes/20-eval-perf-2-plan.md`)
 
 Second evaluator performance pass against the same figure of merit (release
 `eval_strategies` ns/eval), all sessions behind the 14-process `validate_helas_mg`
@@ -80,16 +80,21 @@ gate. Motivation (histogrammed 2026-07-21): **`Mul` is 57.6% of all eval-time
 instructions and every one is binary** — 86% pure scalar-coefficient products,
 14% single-current scales.
 
+**Cumulative `forward` speedup** (pre-sprint `0707f48` → post-S4 `ee6be0e`, release,
+M3 Max): ee_to_mumu **1.18×**, ee_to_ee **1.83×**, uux_to_uux **1.76×**, gg_to_gg
+**2.19×**, ee_to_mumua **1.60×**, ee_to_mumu_tata **1.54×**, uux_to_ccx 2→6 **1.78×** —
+every process improved, on top of the earlier eval program's 1.2×–3.5× vs MG (full
+table + per-session breakdown in note 20 "Sprint outcome").
+
 | Session | Scope | Status |
 |---|---|---|
 | S1 | `mul-split`: binary `Mul` → 8 typed variants (`MulScalarR/C`, `ScaleVec/Fin/Fout×R/C`) in `Program::build`. Binary-Mul is a production invariant, so the enumeration is **total** — `Instr::Mul`/`exec_mul`/`MulCurrent` are **deleted** (no fallback); `build` asserts arity==2/≤1-non-scalar/no-real×real. Drops the operand loop, enum, and two identity multiplies per node; `…R` arms use real-scale. Test-only generic `apply` oracle stays variadic. | ✅ **DONE** (`fa65c23`, branch `eval-perf-2`, not merged) — bit-exact 14/14 `validate-helas-mg`; `eval_strategies/forward` **−13%…−44%** across all 7 (gg_to_gg −44%, uux 2→6 −24%), no regressions (M3 Max) |
 | S2 | `dag-validate-once`: per-node `cross_check_typed` removed from `fill_arenas`; one-shot `validate_arenas` after the loop, latched by a `cfg`-gated `ScratchSpace.validated` flag (waits for first in-contract point — `ward_leg.is_none()` — so a Ward-first scratch still gets its momentum leg checked). `cross_check_node` kept intact (shared with the test-only generic oracle). Dev/timing only. | ✅ **DONE** (`a8cfe29`) — bit-exact 14/14; negative test `one_shot_validation_catches_corrupted_momentum_route` proves the routing check still bites; extended-validation `eval_strategies` **3.1×–5.4× faster** → note-15 "4–5× hot" caveat retired; no release change (cfg'd out) |
 | S3 | `zeroamp-skip`: MG's second helicity-filter layer — probed-zero node-elimination (`Folded::prune_zero_scalar_operands`, scalar `Add`-operand level, shared probe points, per-`Add` re-fold self-guard) run by `prune_zero_helicities` after the combination filter. | ✅ **DONE** (`5a4c4cc`) — beat the "small" prior: `forward` **−17%…−32%** on colored 2→2s (ee_to_ee −32%, uux −27%, gg_to_gg −17%; the widest vs-MG gaps), neutral elsewhere; bit-exact 14/14; `zeroamp_node_reduction()` getter |
-| S4 | `rooting-cse`: re-rooting headroom (−21% nodes / −34% traffic, `rooting-study-results.md`) is **unblocked by V5** — re-root diagrams to a node-minimizing rooting (`fewest ext legs` canonical), gate at `REL_TOL` 1e-10 (not bit-exact). Exploratory spike: confirm soundness, productionize a rooting-choice pass, measure ns/eval. | 🔲 |
+| S4 | `rooting-cse`: production `choose_root` → **fewest-external-leg vertex** (`canonical_root`), unblocked by V5's root-invariant signs. Reassociating (values shift) but **`validate_helas_mg` stayed at its tight 1e-12** — the feared "1e-14→1e-10 agreement cost" was a non-issue (shorter chains *reduced* FP drift). Only `rooting_soundness.rs` uses 1e-10. | ✅ **DONE** (`ee6be0e`) — soundness 0/133; `forward` **−19%/−18%/−26%** on 2→3/2→4/2→6, neutral on 2→2 (vertices tie → no re-rooting); S3 ZEROAMP re-verified intact; greedy not pursued (marginal ~1%) |
 
-Order: S1 → then S2/S3/S4 (independent, all depend only on S1). Dispatch S1,
-measure, decide the rest from its result. Deferred backlog recorded in note 20 §
-"Deferred perf backlog".
+Order: S1 → then S2/S3/S4 (independent, all depend only on S1). All four merged to
+`main`. Deferred backlog recorded in note 20 § "Deferred perf backlog".
 
 ---
 
