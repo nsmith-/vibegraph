@@ -206,6 +206,23 @@ fn massive_jacobian<F: Real>(sqrt_s: F, k: &[LorentzVector<F>]) -> F {
     (sum_p / sqrt_s).powi(2 * n as i32 - 3) / sum_p2_over_e * sqrt_s * prod_p_over_e
 }
 
+/// The flat RAMBO phase-space weight for an arbitrary configuration of `n`
+/// on-shell momenta with the given `masses` at CM energy `√ŝ`.
+///
+/// Equal to the `weight` [`rambo`] returns when handed a point with these
+/// momenta: `R_n` in the massless case, and `R_n · massive_jacobian` otherwise.
+/// The massive rescale Jacobian depends only on the final momenta, so this is
+/// well defined for any on-shell configuration, not only ones RAMBO produced —
+/// the quantity a channel reports as the density it would assign to that point.
+pub(crate) fn flat_weight<F: Real>(sqrt_s: F, masses: &[F], momenta: &[LorentzVector<F>]) -> F {
+    let volume = massless_volume(sqrt_s, masses.len());
+    if masses.iter().all(|&m| m == F::zero()) {
+        volume
+    } else {
+        volume * massive_jacobian(sqrt_s, momenta)
+    }
+}
+
 fn factorial<F: Real>(k: usize) -> F {
     (1..=k).fold(F::one(), |acc, j| acc * F::from(j).unwrap())
 }

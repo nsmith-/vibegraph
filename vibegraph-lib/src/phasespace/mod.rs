@@ -4,7 +4,10 @@
 //! final states in the CM frame, and provides the unit-hypercube mapping used
 //! by the VEGAS integrator. The [`rambo`] submodule generalizes to `n`-body
 //! flat sampling over an arbitrary scalar field, and [`rng`] supplies the
-//! counter-based uniform substreams that feed it.
+//! counter-based uniform substreams that feed it. The [`channel`] submodule is
+//! the abstraction seam — [`PhaseSpaceMap`]/[`Channel`]/[`Combiner`] — that lets
+//! the sampler, channel map, and integrator be swapped independently; flat RAMBO
+//! and the 2-body LIPS map sit behind it as [`RamboChannel`] and [`Lips2Channel`].
 //!
 //! # 2-body phase space
 //!
@@ -55,9 +58,11 @@
 
 use std::f64::consts::PI;
 
+pub mod channel;
 pub mod rambo;
 pub mod rng;
 
+pub use channel::{Channel, Combiner, Lips2Channel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel};
 pub use rambo::{rambo, rambo_massive, rambo_massless, RamboPoint};
 
 /// Conversion factor: 1 GeV⁻² = 3.893793721×10⁸ pb.
