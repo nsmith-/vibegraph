@@ -17,7 +17,9 @@ level convention coverage; sprint section below, full plan note 19) →
 **`eval-perf-2`** (performance, ✅ closed + merged 2026-07-21, HEAD `ee6be0e`: S1
 mul-split + S2 one-shot DAG validation + S3 ZEROAMP skipping + S4 fewest-ext-leg
 rooting; cumulative `forward` **1.18×–2.19×** every benchmarked process, all bit-exact
-or ≤1e-12 vs MG; sprint section below, full plan note 20).
+or ≤1e-12 vs MG; sprint section below, full plan note 20) → **`resonance-sampling`**
+(feature, 🔲 planned: multichannel phase space, `lips-nbody` remainder; Sprint A of the
+resonance-sampling→events program, sprint section + note 21 below).
 
 ## Pipeline Status
 
@@ -38,6 +40,42 @@ optimization program incl. its §2 close-outs, 16: color-flow design + debrief
 incl. the VVVV phase-bug root cause and fix, 17: bounds-check-elimination memo,
 18: hadronic cross-section design + outcome, `rooting-study-results.md`: rooting
 headroom study).
+
+---
+
+## 🌊 `resonance-sampling` sprint 🔲 PLANNED (full plan: `research/notes/21-resonance-sampling-and-events-plan.md`)
+
+**Sprint A of a two-sprint program** (A = resonance-aware sampling, then B =
+`event-output-lhef`; program plan in note 21). Completes the `lips-nbody`
+remainder: MadGraph-style **multichannel phase space** — per-diagram
+propagator-pole channels + Breit-Wigner mappings + variance-minimising weight
+`1/Σᵢ(1/Jᵢ)` + α-adaptation. Figure of merit is **variance × CPU at fixed
+precision**. Every session stays behind the 14-process `validate_helas_mg`
+bit-exact net (the sampler doesn't touch |M|²) and adds a phase-space gate.
+
+The per-diagram `Prop { particle, momentum, is_spacelike }` topology already on
+the owned `Diagram` is the raw material for channels — no new diagram plumbing
+needed; the model supplies each propagator's mass/width.
+
+| Session | Scope | Status |
+|---|---|---|
+| L1 | `phasespace-abstraction`: trait seam (`Channel`/`Sampler`/combiner) so sampler, channel map, integrator swap independently; refactor flat RAMBO + 2-body LIPS behind it. **Pure refactor** — DY σ + banked partonic σ̂ bit-for-bit. | 🔲 |
+| L2 | `diagram-channels`: `Diagram` → recursive 2-body-decomposition channel tree from the `Prop` chain (s/t via `is_spacelike`, propagator mass/width); flat parametrisation first. Gate: on-shell + momentum-conserving; flat Jacobian reproduces the RAMBO phase-space volume 2→2…2→6. | 🔲 |
+| L3 | `bw-invariant-map`: Breit-Wigner tan-substitution for timelike invariants (`m²`, `mΓ`) + massless/massive t-channel maps, exact Jacobians. Gate: 1-D Jacobians vs analytic BW/t-channel; single-channel sampler beats flat RAMBO variance on the Z pole; invariant-mass histogram matches analytic BW. | 🔲 |
+| L4 | `multichannel-weight`: draw channel ∝ αᵢ, weight `1/Σⱼ(1/Jⱼ)`; wire as VEGAS's integrand map. Gate: resonant/multi-peak σ within MC error, variance strictly below single-channel + flat at fixed N. | 🔲 |
+| L5 | `alpha-adaptation`: MG-style survey/refine of channel weights + the **distribution-level validation regime** (invariant-mass/angular histograms vs MG, not σ alone) + note-07 sampler-bug hazard tests (BW, T-channel ordering, threshold, overlapping resonances). | 🔲 |
+
+Order: L1 → L2 → L3 → L4 → L5 (strictly linear). **Validation regime is
+load-bearing** (note 21 §"Validation regime"): σ-agreement is a weak oracle
+(MG's own sampler bugs stayed latent 5–10 years because mis-sampling shifts σ
+smoothly), so gate finest-first — bit-for-bit where seed+order allow,
+distribution histograms next, σ-within-MC as a coarse backstop only.
+
+**Sprint B — `event-output-lhef`** (E1 `jamp2-flow-select` → E2 `accept-reject`
++ `mg-single-helicity-bench` → E3 `lhef-writer` → E4 `generate-cli`) follows A;
+outlined in note 21, expanded into its own note at open. Depends on A. Optional
+tail folded in: `mg-single-helicity-bench` rides with E2. **Not** in scope:
+`dynamical-scales` (separate feature; still the blocker on a real QCD σ gate).
 
 ---
 
@@ -376,7 +414,8 @@ session H3): massive RAMBO generic over `F: Real` with the KSE weight,
 splittable-substream RNG, and the banked σ̂ flat-MC check below. `hadronic-xsec`'s own
 σ(pp→e⁺e⁻) integrand is 2→2 and used a direct 2-body LIPS map, not RAMBO, so it
 didn't need the channel-mapping generalization — **remaining scope here** = channel
-mappings + multi-channel weights on top of the RAMBO/RNG seams.
+mappings + multi-channel weights on top of the RAMBO/RNG seams. **Now planned as the
+`resonance-sampling` sprint** (Sprint A, sessions L1–L5; top of file + note 21).
 (The MG validation side already generates n-body points via RAMBO in
 `gen_amplitude.py`; the MG-computed partonic σ̂ = 6.556e-7 pb for the uux 2→6 at
 √s=500 is **now consumed** by H3's flat-MC weight-normalization check
@@ -448,6 +487,9 @@ would deserialize it and refuse a mismatched run rather than take raw CLI flags
 again. Still missing: the `generate` CLI phase itself, and genuine n-body final
 states (depends on `lips-nbody`'s channel-mapping scope, since accept/reject
 against a single flat map is a poor sampler once propagator peaks appear).
+**Now planned as Sprint B** (sessions E1–E4, `mg-single-helicity-bench` folded into
+E2) of the resonance-sampling→events program; outlined in note 21 (top of file),
+own note at open, opens after the `resonance-sampling` sprint.
 
 LHEF color tags need MG's *leading-Nc* flow decomposition (`color_flow_decomposition`
 / `get_color_flow_string` in `color_amp.py`) to assign a `(color, anticolor)` integer
