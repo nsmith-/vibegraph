@@ -134,9 +134,45 @@ pub(super) enum Instr {
         start: u32,
         len: u32,
     },
-    Mul {
-        start: u32,
-        len: u32,
+    /// scalar × scalar → scalar: one complex multiply.
+    MulScalarC {
+        a: u32,
+        b: u32,
+    },
+    /// scalar × real → scalar: real-scale the complex value (two real muls).
+    MulScalarR {
+        s: u32,
+        r: u32,
+    },
+    /// scalar × vector: complex-scale the current.
+    ScaleVecC {
+        v: u32,
+        scale: u32,
+    },
+    /// real × vector: real-scale the current.
+    ScaleVecR {
+        v: u32,
+        scale: u32,
+    },
+    /// scalar × flow-in current: complex-scale.
+    ScaleFinC {
+        f: u32,
+        scale: u32,
+    },
+    /// real × flow-in current: real-scale.
+    ScaleFinR {
+        f: u32,
+        scale: u32,
+    },
+    /// scalar × flow-out current: complex-scale.
+    ScaleFoutC {
+        f: u32,
+        scale: u32,
+    },
+    /// real × flow-out current: real-scale.
+    ScaleFoutR {
+        f: u32,
+        scale: u32,
     },
     GammaVout {
         bra: u32,
@@ -417,13 +453,44 @@ impl Program {
                     }
                 }
                 Op::Mul => {
-                    let start = operands.len() as u32;
-                    for &k in kids {
-                        operands.push(opref(k, &loc));
-                    }
-                    Instr::Mul {
-                        start,
-                        len: kids.len() as u32,
+                    // Production Muls are binary with at most one non-scalar operand and
+                    // never real × real (every real-class node is a card constant, so an
+                    // all-real product is folded away). Each case maps to exactly one typed
+                    // variant; a violation is a compile-DAG bug, so it panics rather than
+                    // falling back to a generic path.
+                    assert_eq!(kids.len(), 2, "production Mul must be binary");
+                    let s0 = an
+                        .out_type(kids[0])
+                        .storage()
+                        .expect("Mul operand has no result class");
+                    let s1 = an
+                        .out_type(kids[1])
+                        .storage()
+                        .expect("Mul operand has no result class");
+                    let (a, b) = (li(kids[0]), li(kids[1]));
+                    match (s0, s1) {
+                        (Storage::Scalar, Storage::Scalar) => Instr::MulScalarC { a, b },
+                        (Storage::Scalar, Storage::Real) => Instr::MulScalarR { s: a, r: b },
+                        (Storage::Real, Storage::Scalar) => Instr::MulScalarR { s: b, r: a },
+                        (Storage::Scalar, Storage::Vector) => Instr::ScaleVecC { v: b, scale: a },
+                        (Storage::Vector, Storage::Scalar) => Instr::ScaleVecC { v: a, scale: b },
+                        (Storage::Real, Storage::Vector) => Instr::ScaleVecR { v: b, scale: a },
+                        (Storage::Vector, Storage::Real) => Instr::ScaleVecR { v: a, scale: b },
+                        (Storage::Scalar, Storage::FermionIn) => Instr::ScaleFinC { f: b, scale: a },
+                        (Storage::FermionIn, Storage::Scalar) => Instr::ScaleFinC { f: a, scale: b },
+                        (Storage::Real, Storage::FermionIn) => Instr::ScaleFinR { f: b, scale: a },
+                        (Storage::FermionIn, Storage::Real) => Instr::ScaleFinR { f: a, scale: b },
+                        (Storage::Scalar, Storage::FermionOut) => {
+                            Instr::ScaleFoutC { f: b, scale: a }
+                        }
+                        (Storage::FermionOut, Storage::Scalar) => {
+                            Instr::ScaleFoutC { f: a, scale: b }
+                        }
+                        (Storage::Real, Storage::FermionOut) => Instr::ScaleFoutR { f: b, scale: a },
+                        (Storage::FermionOut, Storage::Real) => Instr::ScaleFoutR { f: a, scale: b },
+                        (x, y) => panic!(
+                            "Mul invariant violated: unsupported operand storage classes {x:?} × {y:?}"
+                        ),
                     }
                 }
                 Op::GammaVout => {
