@@ -170,9 +170,12 @@ fn mc_estimate(
 
 /// A [`MultiChannel`] combiner assembled from every diagram of a real process
 /// integrates unbiasedly — it agrees with flat RAMBO on the phase-space volume `V_n`
-/// — and, on the µ⁺µ⁻ Z-pole its diagram channels resonate on, resolves the pole at
-/// variance strictly below flat RAMBO at fixed `N`. This exercises the combiner over
-/// heterogeneous `from_diagram` channels, not just controlled topologies.
+/// — and resolves *both* the µ⁺µ⁻ and the τ⁺τ⁻ Z-pole its diagram channels resonate
+/// on at variance strictly below flat RAMBO at fixed `N`. The τ pole is the payload:
+/// its s-channel line is stored on the both-beam complement side of feyngraph's
+/// momentum routing, so before the routing-aware relabel no channel resonated on
+/// `s(τ⁺τ⁻)` and this probe could not beat flat RAMBO. This exercises the combiner
+/// over heterogeneous `from_diagram` channels, not just controlled topologies.
 #[test]
 fn multichannel_over_real_diagrams_unbiased_and_resonant() {
     let model = common::sm_model();
@@ -213,24 +216,28 @@ fn multichannel_over_real_diagrams_unbiased_and_resonant() {
         "combiner V_n {v_m:.6e} disagrees with flat RAMBO {v_f:.6e}"
     );
 
-    // Resolves the real µ⁺µ⁻ Z pole below flat RAMBO.
+    // Resolves both the µ⁺µ⁻ (outgoing slots 0,1) and τ⁺τ⁻ (slots 2,3) Z poles
+    // below flat RAMBO. The τ pair rides the non-prefix (both-beam) s-channel line
+    // that only resonates after the routing-aware relabel.
     let (m2, mg) = (mz * mz, mz * gz);
     let bw = move |s: f64| 1.0 / ((s - m2).powi(2) + mg * mg);
-    let f01 = move |p: &[LorentzVector<f64>]| bw(s_pair(p, 0, 1));
-    let (sig_m, var_m) = mc_estimate(&multi, 0xB11, 45, n, f01);
-    let (sig_f, var_f) = mc_estimate(&flat, 0xB12, 47, n, f01);
-    let err = ((var_m + var_f) / n as f64).sqrt();
-    eprintln!(
-        "real µµ Z-pole: multi {sig_m:.6e} (var {var_m:.3e}) vs flat {sig_f:.6e} \
-         (var {var_f:.3e}), variance ratio {:.1}×",
-        var_f / var_m
-    );
-    assert!(
-        (sig_m - sig_f).abs() < 6.0 * err,
-        "combiner σ {sig_m:.6e} disagrees with flat {sig_f:.6e} on the Z pole"
-    );
-    assert!(
-        var_m < var_f,
-        "combiner variance {var_m:.3e} not below flat RAMBO {var_f:.3e}"
-    );
+    for (name, i, j, seed) in [("µµ", 0usize, 1usize, 0xB11u64), ("ττ", 2, 3, 0xB21)] {
+        let probe = move |p: &[LorentzVector<f64>]| bw(s_pair(p, i, j));
+        let (sig_m, var_m) = mc_estimate(&multi, seed, 45, n, probe);
+        let (sig_f, var_f) = mc_estimate(&flat, seed + 1, 47, n, probe);
+        let err = ((var_m + var_f) / n as f64).sqrt();
+        eprintln!(
+            "real {name} Z-pole: multi {sig_m:.6e} (var {var_m:.3e}) vs flat {sig_f:.6e} \
+             (var {var_f:.3e}), variance ratio {:.1}×",
+            var_f / var_m
+        );
+        assert!(
+            (sig_m - sig_f).abs() < 6.0 * err,
+            "{name}: combiner σ {sig_m:.6e} disagrees with flat {sig_f:.6e} on the Z pole"
+        );
+        assert!(
+            var_m < var_f,
+            "{name}: combiner variance {var_m:.3e} not below flat RAMBO {var_f:.3e}"
+        );
+    }
 }

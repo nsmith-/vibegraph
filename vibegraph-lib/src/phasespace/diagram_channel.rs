@@ -2,10 +2,13 @@
 //! `n`-body final state read off a [`Diagram`]'s propagator chain.
 //!
 //! A tree Feynman diagram organises its final state into a nested set of
-//! subsystems. Each timelike (s-channel) internal line that carries no beam
-//! momentum bounds one subsystem — the set of outgoing legs whose momenta sum to
-//! that line's momentum — and those subsystems form a laminar family, i.e. a
-//! tree. [`DiagramChannel`] turns that tree into a chain of 2-body decays: the
+//! subsystems. Each timelike (s-channel) internal line bounds one subsystem — the
+//! final-state legs on the beam-free side of the cut it makes — and those
+//! subsystems form a laminar family, i.e. a tree. Reading that subsystem off the
+//! stored momentum takes care: feyngraph's momentum routing eliminates the
+//! highest-indexed external, so the beam-free side is the complementary final
+//! state whenever the stored coefficients happen to carry both beams (see
+//! [`subsystem_mask`]). [`DiagramChannel`] turns that tree into a chain of 2-body decays: the
 //! total system `(√ŝ, 0, 0, 0)` splits into two daughters, each daughter with a
 //! fixed mass (a single outgoing particle) or a sampled invariant mass (a
 //! composite subsystem), and each composite daughter recurses.
@@ -240,24 +243,46 @@ impl<F: Real> Channel<F> for DiagramChannel<F> {
 
 // ── Tree construction ────────────────────────────────────────────────────────
 
-/// The set of outgoing-leg slots a timelike, beam-free line separates, as a
-/// bitmask over `0..n_out`. `None` if the line carries a beam (spacelike or the
-/// s-channel core) or does not bound a proper subsystem.
+/// The set of outgoing-leg slots a timelike (s-channel) internal line bounds, as a
+/// bitmask over `0..n_out`. `None` for a spacelike (t-channel) transfer, for the
+/// s-channel core (whose subsystem is the whole final state), and for a line that
+/// bounds a single leg rather than a composite subsystem.
+///
+/// The stored `momentum` is not a plain "which externals sit on this side"
+/// indicator: feyngraph routes momenta by eliminating the highest-indexed
+/// external through global conservation, so a stored coefficient vector is the
+/// signed combination for the cut side *away from* that external. Its raw beam
+/// coefficients are therefore gauge-dependent and cannot be read as "is this the
+/// beam side". The convention-robust classifier is the beam content of the cut: a
+/// genuine final-state s-channel subsystem is the side of the cut carrying *no*
+/// beam. That zero-beam side is the stored side when the stored coefficients touch
+/// no beam, and the complementary final-state set when they touch every beam (the
+/// non-prefix case the elimination produces). A cut whose two sides each carry a
+/// beam is a spacelike momentum transfer and bounds no subsystem here.
 fn subsystem_mask(momentum: &[i8], n_in: usize, n_ext: usize) -> Option<u64> {
-    if momentum[..n_in].iter().any(|&c| c != 0) {
-        return None;
-    }
-    let mut mask = 0u64;
-    let mut count = 0usize;
+    let n_out = n_ext - n_in;
+    let beams = momentum[..n_in].iter().filter(|&&c| c != 0).count();
+    let mut stored = 0u64;
     for i in n_in..n_ext {
         if momentum[i] != 0 {
-            mask |= 1 << (i - n_in);
-            count += 1;
+            stored |= 1 << (i - n_in);
         }
     }
-    let n_out = n_ext - n_in;
+    let full = if n_out >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << n_out) - 1
+    };
+    let subsystem = if beams == 0 {
+        stored
+    } else if beams == n_in {
+        full & !stored
+    } else {
+        return None;
+    };
+    let count = subsystem.count_ones() as usize;
     if count >= 2 && count < n_out {
-        Some(mask)
+        Some(subsystem)
     } else {
         None
     }
@@ -591,9 +616,13 @@ fn cast<F: Real>(x: f64) -> F {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagrams::diagram::{Diagram, LegIdx, Ray};
+    use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::phasespace::rambo::massless_volume;
     use crate::phasespace::rng::SubStream;
     use crate::phasespace::RamboChannel;
+    use crate::ufo::sm::{sm_model, SMRestrict};
+    use crate::ufo::EvaluatedModel;
 
     /// A spread of topologies for the volume and kinematics checks, each as
     /// `(√ŝ, masses, subsystems)`.
@@ -850,6 +879,13 @@ mod tests {
                 vec![0.0; 4],
                 vec![(vec![0, 1], z), (vec![2, 3], None)],
             ),
+            // A Breit–Wigner on the *second* pair — the non-prefix subsystem the
+            // routing-aware classifier recovers — must be volume-neutral too.
+            (
+                600.0,
+                vec![0.0; 4],
+                vec![(vec![0, 1], None), (vec![2, 3], z)],
+            ),
             (
                 700.0,
                 vec![0.0; 5],
@@ -1024,5 +1060,196 @@ mod tests {
             "sampled line shape departs from analytic BW: χ²/dof = {:.2}",
             chi2 / dof
         );
+    }
+
+    // ── Diagram classification against the momentum-routing convention ──────────
+
+    /// The externals attached to the connected component of `prop[cut]`'s first
+    /// endpoint after `prop[cut]` is removed — an independent, momentum-free
+    /// derivation of one side of the cut, from the vertex/propagator adjacency
+    /// alone. Cross-checking it against the stored-momentum reading catches a
+    /// future feyngraph routing-convention change in either derivation.
+    fn cut_side_externals(d: &Diagram, cut: usize) -> Vec<usize> {
+        let nv = d.vertices.len();
+        let mut adj: Vec<Vec<usize>> = vec![Vec::new(); nv];
+        for (pi, p) in d.props.iter().enumerate() {
+            if pi == cut {
+                continue;
+            }
+            let (a, b) = (p.endpoints[0].0, p.endpoints[1].0);
+            adj[a.0].push(b.0);
+            adj[b.0].push(a.0);
+        }
+        let start = d.props[cut].endpoints[0].0 .0;
+        let mut seen = vec![false; nv];
+        let mut stack = vec![start];
+        seen[start] = true;
+        while let Some(v) = stack.pop() {
+            for &w in &adj[v] {
+                if !seen[w] {
+                    seen[w] = true;
+                    stack.push(w);
+                }
+            }
+        }
+        let mut ext = Vec::new();
+        for (vi, vtx) in d.vertices.iter().enumerate() {
+            if !seen[vi] {
+                continue;
+            }
+            for ray in &vtx.rays {
+                if let Ray::Leg(LegIdx(li)) = ray {
+                    ext.push(*li);
+                }
+            }
+        }
+        ext.sort_unstable();
+        ext
+    }
+
+    /// Classify `prop[cut]` from the graph cut alone: the outgoing-slot subsystem
+    /// it bounds (the beam-free side, under the same `2 ≤ count < n_out` guard),
+    /// together with whether the cut splits the two beams (a spacelike transfer).
+    fn classify_by_cut(d: &Diagram, cut: usize) -> (Option<u64>, bool) {
+        let n_in = d.n_in;
+        let n_ext = d.n_ext();
+        let n_out = n_ext - n_in;
+        let side_a = cut_side_externals(d, cut);
+        let mut in_a = vec![false; n_ext];
+        for &e in &side_a {
+            in_a[e] = true;
+        }
+        let beams_a = (0..n_in).filter(|&e| in_a[e]).count();
+        let splits_beams = beams_a != 0 && beams_a != n_in;
+        if splits_beams {
+            return (None, true);
+        }
+        let mut mask = 0u64;
+        let mut count = 0usize;
+        for e in n_in..n_ext {
+            // The beam-free side is `side_a` when it holds no beam, else its
+            // complement; either way, take its outgoing legs.
+            let on_zero_beam_side = if beams_a == 0 { in_a[e] } else { !in_a[e] };
+            if on_zero_beam_side {
+                mask |= 1 << (e - n_in);
+                count += 1;
+            }
+        }
+        let subsystem = if count >= 2 && count < n_out {
+            Some(mask)
+        } else {
+            None
+        };
+        (subsystem, false)
+    }
+
+    /// The τ⁺τ⁻ s-channel line in `e+ e- > mu+ mu- ta+ ta-` is stored on the
+    /// both-beam complement side (feyngraph eliminates the highest external, τ⁺),
+    /// so the routing-aware classifier must relabel it onto the τ outgoing slots
+    /// `{2,3}` and drive a Z Breit–Wigner node there. This pins the convention
+    /// directly: it fails if feyngraph's routing changes or the relabel regresses,
+    /// with no reliance on a cross section.
+    #[test]
+    fn tautau_non_prefix_s_channel_recovered() {
+        let m = sm_model(SMRestrict::Default);
+        let ev = EvaluatedModel::from_model(m.clone());
+        let z_mass = ev.mass(m.particle_id("Z").expect("SM model has a Z"));
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate e+ e- > mu+ mu- ta+ ta-", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, &m).unwrap();
+        let set = sets.into_iter().find(|s| !s.diagrams.is_empty()).unwrap();
+        assert_eq!(set.particles_out, vec!["mu+", "mu-", "ta+", "ta-"]);
+
+        // Legs: 0=e+ 1=e- 2=mu- 3=mu+ 4=ta- 5=ta+; the τ pair is externals {4,5}
+        // = outgoing slots {2,3}. External 5 (τ⁺) is the eliminated one, so a Z on
+        // the τ pair is stored on the complementary {0,1,2,3} side with both beams.
+        const TAU_MASK: u64 = (1 << 2) | (1 << 3);
+        let mut z_tau_diag = None;
+        for d in &set.diagrams {
+            let n_in = d.n_in;
+            let n_ext = d.n_ext();
+            for p in &d.props {
+                if m.particle(p.particle).pdg_code != 23 {
+                    continue;
+                }
+                if subsystem_mask(&p.momentum, n_in, n_ext) != Some(TAU_MASK) {
+                    continue;
+                }
+                // The stored routing: both beams present, τ slots zero.
+                assert_eq!(
+                    p.momentum,
+                    vec![1, 1, -1, -1, 0, 0],
+                    "unexpected stored routing for the τ-pair Z line"
+                );
+                assert_eq!(
+                    p.momentum[..n_in].iter().filter(|&&c| c != 0).count(),
+                    2,
+                    "τ-pair s-channel line must carry both beams in the stored routing"
+                );
+                assert!(
+                    !p.is_spacelike(n_in),
+                    "τ-pair s-channel line must not be classed spacelike"
+                );
+                z_tau_diag = Some(d);
+            }
+        }
+        let d = z_tau_diag.expect("no τ-pair Z line recovered onto outgoing slots {2,3}");
+
+        // The recovered subsystem installs a Z Breit–Wigner node in the built channel.
+        assert!(
+            (z_mass - 91.1876).abs() < 0.5,
+            "model Z mass {z_mass} not ~M_Z"
+        );
+        let ch = DiagramChannel::<f64>::from_diagram(d, &ev, 500.0);
+        assert!(
+            ch.resonances()
+                .iter()
+                .any(|r| (r.mass - z_mass).abs() < 1e-9),
+            "built channel has no Z resonance on the recovered τ-pair subsystem"
+        );
+    }
+
+    /// The stored-momentum classifier agrees with the independent graph cut on
+    /// every propagator of a spread of processes — including genuine t-channels
+    /// (Bhabha, `u u~ > u u~`) and the non-prefix s-channel of the τ-pair process.
+    /// Two derivations of the same partition pin the routing convention from both
+    /// sides.
+    #[test]
+    fn subsystem_classification_matches_graph_cut() {
+        let m = sm_model(SMRestrict::Default);
+        let opts = ParsingOptions::default();
+        for proc in ["e+ e- > mu+ mu- ta+ ta-", "e+ e- > e+ e-", "u u~ > u u~"] {
+            let card = parse_proc_card(&format!("generate {proc}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&card, &m).unwrap();
+            let mut checked = 0usize;
+            let mut spacelike_seen = false;
+            for set in &sets {
+                for d in &set.diagrams {
+                    let n_in = d.n_in;
+                    let n_ext = d.n_ext();
+                    for (pi, p) in d.props.iter().enumerate() {
+                        let via_mom = subsystem_mask(&p.momentum, n_in, n_ext);
+                        let (via_cut, splits_beams) = classify_by_cut(d, pi);
+                        assert_eq!(
+                            via_mom, via_cut,
+                            "{proc}: prop {pi} subsystem disagrees (mom {:?})",
+                            p.momentum
+                        );
+                        assert_eq!(
+                            p.is_spacelike(n_in),
+                            splits_beams,
+                            "{proc}: prop {pi} spacelike flag disagrees (mom {:?})",
+                            p.momentum
+                        );
+                        spacelike_seen |= splits_beams;
+                        checked += 1;
+                    }
+                }
+            }
+            assert!(checked > 0, "{proc}: no propagators exercised");
+            if proc != "e+ e- > mu+ mu- ta+ ta-" {
+                assert!(spacelike_seen, "{proc}: expected a t-channel propagator");
+            }
+        }
     }
 }

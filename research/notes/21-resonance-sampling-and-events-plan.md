@@ -102,6 +102,55 @@ threshold kinematics `s → (m₁+m₂)²`, overlapping resonances) gets a test 
 would fire if the map were wrong — a passing σ is never accepted as confirmation
 of a convention (AGENTS.md "convention claims are hypotheses").
 
+### Addendum — non-prefix s-channel recovery (momentum-routing convention)
+
+While wiring the per-diagram channels (`DiagramChannel::from_diagram`), the
+subsystem classifier that reads each internal line's stored `Prop.momentum`
+(`Vec<i8>`, a signed external-momentum combination) was found to miss a class of
+genuine final-state s-channel poles. Root cause is a **feyngraph momentum-routing
+convention**:
+
+- feyngraph assigns each external the unit momentum indicator, then **eliminates
+  the highest-indexed external** via global conservation (`assign_momenta`
+  last-external elimination). The stored vector for an internal line is therefore
+  the signed combination for the cut side **away from** that highest external —
+  the raw beam coefficients are **gauge-dependent** and cannot be read as "is this
+  the beam side".
+- The convention-robust classifier is the **beam content of the cut**: a genuine
+  final-state s-channel subsystem is the side carrying **no beam**. That zero-beam
+  side is the stored side when the stored coefficients touch no beam (`beams == 0`,
+  the "prefix" case that already worked), and the **complementary** final-state set
+  when they touch every beam (`beams == n_in`, the case that was missed). A cut
+  whose two sides each carry a beam (`beams == 1` for a 2→n process) is a spacelike
+  transfer and bounds no subsystem — that is genuine t-channel, and it is **left
+  untouched here** (its importance map is a separate, still-deferred concern).
+
+Concrete instance, `e+ e- > mu+ mu- ta+ ta-` (externals `0=e+,1=e-,2=mu-,3=mu+,
+4=ta-,5=ta+`; feyngraph eliminates `5=τ⁺`): the τ⁺τ⁻ Z line is genuinely timelike
+(a real s-channel pole on the `{ta⁻,ta⁺}` pair) but is stored as
+`[1,1,-1,-1,0,0]` — both beams present, τ slots zero. The previous "any beam
+coefficient nonzero ⇒ not a subsystem" test dropped it, so `from_diagram`
+resonated only on the µ⁺µ⁻ pair (stored `[0,0,1,1,0,0]`, zero beams) and never on
+τ⁺τ⁻. The µµ line is stored as a zero-beam indicator only because µ⁻,µ⁺ are not
+the eliminated external; the τ line's both-beam form is a pure artifact of the
+elimination, not a physical difference between the two pairs.
+
+Note the empirical stored vector is `[1,1,-1,-1,0,0]`, **not** a bare indicator
+`[1,1,1,1,0,0]`: feyngraph stores the *signed* momentum-flow combination, so the
+individual coefficients carry flow signs. Only the **nonzero pattern** is
+load-bearing for classification (the beam count and the outgoing-slot set), and
+that pattern confirms the model exactly — both beams nonzero, τ slots zero.
+
+Fix (relabel only): when the stored side carries every beam, return the
+**complement** of its outgoing-slot set as the subsystem, under the same
+`2 ≤ count < n_out` guard (which still excludes the s-channel core, whose
+zero-beam complement is the whole final state). No new node type, no Jacobian,
+kinematics, or sampler change — the recovered poles flow through the existing
+L3 Breit-Wigner `draw_invariant`/`invariant_measure` machinery unchanged. The
+classification is cross-checked against an **independent graph-cut** derivation
+of the same partition (connected components after removing the line), so a future
+feyngraph routing-convention change trips a test in either derivation.
+
 ---
 
 ## Helicity & color handling (both sprints)
