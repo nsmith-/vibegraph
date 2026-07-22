@@ -10,12 +10,15 @@
 //! fixed mass (a single outgoing particle) or a sampled invariant mass (a
 //! composite subsystem), and each composite daughter recurses.
 //!
-//! Every internal invariant is sampled **flat** over its kinematically allowed
-//! range here; the Breit–Wigner mapping for a timelike pole and the importance
-//! map for a spacelike (t-channel) transfer are a separate concern. Each node
-//! still records the propagator particle's mass and width and whether its line is
-//! spacelike, so a resonance-aware map can later replace the flat sampling of a
-//! chosen invariant without changing the tree.
+//! A timelike (s-channel) invariant whose subsystem carries a finite-width pole is
+//! drawn through the Breit–Wigner tan-substitution `s = m² + mΓ·tan θ`, so the
+//! sampling density concentrates on the resonance as `1/((s−m²)²+(mΓ)²)`; a
+//! subsystem with no pole (or a zero-width/massless one) keeps the flat draw over
+//! its kinematic range. The importance map for a spacelike (t-channel) transfer is
+//! a separate concern — such lines drive no node in this all-timelike decay tree
+//! and are kept as metadata only. Each node records the propagator particle's mass
+//! and width, so the resonance-aware draw of a chosen invariant slots in without
+//! changing the tree.
 //!
 //! The weight is the exact product of the 2-body LIPS factors `R_2 = π|p*|/√s`
 //! and the flat invariant-range measures, so a flat Monte-Carlo average of
@@ -32,8 +35,8 @@ use crate::ufo::EvaluatedModel;
 
 use super::channel::{Channel, PhaseSpaceMap, PhaseSpacePoint};
 
-/// The propagator pole a subsystem's invariant sits on, kept for a later
-/// resonance-aware invariant map: the timelike line's mass and width.
+/// The propagator pole a subsystem's invariant sits on: the timelike line's mass
+/// and width, driving the Breit–Wigner importance map for that invariant.
 #[derive(Clone, Copy, Debug)]
 pub struct Resonance<F: Real> {
     pub mass: F,
@@ -149,6 +152,35 @@ impl<F: Real> DiagramChannel<F> {
             .map(|s| s.iter().fold(0u64, |m, &i| m | (1 << i)))
             .collect();
         let root = build_root(n_out, &masses, &masks, &BTreeMap::new());
+        DiagramChannel {
+            sqrt_s,
+            n_out,
+            root,
+            t_channels: Vec::new(),
+        }
+    }
+
+    /// Build a channel from an explicit subsystem list, attaching an optional
+    /// [`Resonance`] to each subsystem so its invariant is Breit–Wigner-mapped — the
+    /// same tree as [`from_topology`](Self::from_topology) but with resonance-aware
+    /// invariant draws, for exercising the pole map on a controlled topology.
+    pub fn from_topology_resonant(
+        sqrt_s: F,
+        masses: Vec<F>,
+        subsystems: &[(Vec<usize>, Option<Resonance<F>>)],
+    ) -> Self {
+        let n_out = masses.len();
+        assert!(n_out >= 2, "a 2-body decomposition needs at least two legs");
+        let mut masks = Vec::with_capacity(subsystems.len());
+        let mut resonances: BTreeMap<u64, Resonance<F>> = BTreeMap::new();
+        for (slots, res) in subsystems {
+            let mask = slots.iter().fold(0u64, |m, &i| m | (1 << i));
+            masks.push(mask);
+            if let Some(r) = res {
+                resonances.insert(mask, *r);
+            }
+        }
+        let root = build_root(n_out, &masses, &masks, &resonances);
         DiagramChannel {
             sqrt_s,
             n_out,
@@ -374,6 +406,49 @@ fn safe_boost<F: Real>(v: LorentzVector<F>, p_lab: LorentzVector<F>) -> LorentzV
     v.boost(beta)
 }
 
+/// The Breit–Wigner scale `(m², mΓ)` a resonance imposes on its invariant draw,
+/// or `None` when the pole cannot shape the draw — no resonance, or a
+/// zero-width/massless pole (`mΓ ≤ 0`), for which the flat draw stands.
+fn bw_scale<F: Real>(res: Option<Resonance<F>>) -> Option<(F, F)> {
+    let r = res?;
+    let mg = r.mass * r.width;
+    if mg > F::zero() {
+        Some((r.mass * r.mass, mg))
+    } else {
+        None
+    }
+}
+
+/// Map `x ∈ [0,1]` to an invariant `s ∈ [lo, hi]`. A finite-width pole importance-
+/// samples the relativistic Breit–Wigner via `s = m² + mΓ·tan θ`, with `θ` uniform
+/// over `[atan((lo−m²)/mΓ), atan((hi−m²)/mΓ)]`; otherwise the draw is flat.
+fn draw_invariant<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, x: F) -> F {
+    match bw_scale(res) {
+        Some((m2, mg)) => {
+            let theta_lo = ((lo - m2) / mg).atan();
+            let theta_hi = ((hi - m2) / mg).atan();
+            let theta = theta_lo + (theta_hi - theta_lo) * x;
+            m2 + mg * theta.tan()
+        }
+        None => lo + (hi - lo) * x,
+    }
+}
+
+/// The invariant-draw measure `ds/dx` at the realised `s`: the flat range length
+/// `hi − lo`, or, for the Breit–Wigner map, `[(s−m²)²/(mΓ) + mΓ]·(θ_hi−θ_lo)` — the
+/// exact `ds/dθ · dθ/dx`, whose reciprocal is a sampling density `∝ BW(s)`.
+fn invariant_measure<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, s: F) -> F {
+    match bw_scale(res) {
+        Some((m2, mg)) => {
+            let theta_lo = ((lo - m2) / mg).atan();
+            let theta_hi = ((hi - m2) / mg).atan();
+            let d = s - m2;
+            (d * d / mg + mg) * (theta_hi - theta_lo)
+        }
+        None => hi - lo,
+    }
+}
+
 /// Draw the invariants and angles of one 2-body split and recurse into composite
 /// daughters. `s` is the (fixed) invariant mass² of the system this branch
 /// decays; `p_lab` is its four-momentum in the CM frame.
@@ -392,23 +467,23 @@ fn sample_branch<F: Real>(
 
     let sl = match &branch.left {
         Node::Leaf { mass, .. } => *mass * *mass,
-        Node::Branch(_) => {
+        Node::Branch(b) => {
             let lo = mu_l * mu_l;
             let hi = (sqrt_s - mu_r).powi(2);
             let x = u[*cursor];
             *cursor += 1;
-            lo + (hi - lo) * x
+            draw_invariant(lo, hi, b.resonance, x)
         }
     };
     let sqrt_sl = sl.sqrt();
     let sr = match &branch.right {
         Node::Leaf { mass, .. } => *mass * *mass,
-        Node::Branch(_) => {
+        Node::Branch(b) => {
             let lo = mu_r * mu_r;
             let hi = (sqrt_s - sqrt_sl).powi(2);
             let x = u[*cursor];
             *cursor += 1;
-            lo + (hi - lo) * x
+            draw_invariant(lo, hi, b.resonance, x)
         }
     };
 
@@ -489,15 +564,15 @@ fn branch_jacobian<F: Real>(branch: &Branch<F>, s: F, momenta: &[LorentzVector<F
     let sr = node_invariant(&branch.right, momenta);
 
     let mut f = F::one();
-    if let Node::Branch(_) = &branch.left {
+    if let Node::Branch(b) = &branch.left {
         let lo = mu_l * mu_l;
         let hi = (sqrt_s - mu_r).powi(2);
-        f = f * (hi - lo);
+        f = f * invariant_measure(lo, hi, b.resonance, sl);
     }
-    if let Node::Branch(_) = &branch.right {
+    if let Node::Branch(b) = &branch.right {
         let lo = mu_r * mu_r;
         let hi = (sqrt_s - sqrt_sl).powi(2);
-        f = f * (hi - lo);
+        f = f * invariant_measure(lo, hi, b.resonance, sr);
     }
     f = f * r2_factor(s, sqrt_s, sl, sr);
     if let Node::Branch(b) = &branch.left {
@@ -690,5 +765,264 @@ mod tests {
                 "n={n}: channel V_n {m_ch:.6e} disagrees with flat RAMBO {m_rb:.6e}"
             );
         }
+    }
+
+    /// Z-boson pole parameters used across the resonance tests.
+    const M_Z: f64 = 91.1876;
+    const G_Z: f64 = 2.4952;
+
+    fn z_resonance() -> Resonance<f64> {
+        Resonance {
+            mass: M_Z,
+            width: G_Z,
+        }
+    }
+
+    /// Invariant mass² of the outgoing pair `(0, 1)`.
+    fn s01(momenta: &[LorentzVector<f64>]) -> f64 {
+        let (a, b) = (&momenta[0], &momenta[1]);
+        let e = a.e() + b.e();
+        let px = a.px() + b.px();
+        let py = a.py() + b.py();
+        let pz = a.pz() + b.pz();
+        e * e - px * px - py * py - pz * pz
+    }
+
+    /// The Breit–Wigner draw is measure-preserving: averaging its `ds/dx` over
+    /// uniform `x` reproduces the flat range integral `∫ ds = hi − lo`, since the
+    /// Jacobian exactly cancels the sampling density. A wrong `ds/dθ` misses it.
+    #[test]
+    fn bw_map_is_measure_preserving() {
+        let res = Some(z_resonance());
+        let (lo, hi) = (0.0_f64, 250_000.0);
+        let mut stream = SubStream::from_stream(0xB011, 9);
+        let n = 400_000;
+        let (mut sum, mut sum_sq) = (0.0, 0.0);
+        for _ in 0..n {
+            let x = stream.uniforms::<f64>(1)[0];
+            let s = draw_invariant(lo, hi, res, x);
+            let w = invariant_measure(lo, hi, res, s);
+            sum += w;
+            sum_sq += w * w;
+        }
+        let mean = sum / n as f64;
+        let err = ((sum_sq / n as f64 - mean * mean).max(0.0) / n as f64).sqrt();
+        eprintln!("BW ∫ds = {mean:.6e} ± {err:.2e}, want {:.6e}", hi - lo);
+        assert!(
+            (mean - (hi - lo)).abs() < 5.0 * err,
+            "BW measure not preserving: ∫ds = {mean:.6e} ± {err:.2e} vs {:.6e}",
+            hi - lo
+        );
+    }
+
+    /// The Breit–Wigner map turns `∫ ds · BW(s)` into a constant integrand: with
+    /// the exact `ds/dθ`, `measure(s)·BW(s)` equals the analytic
+    /// `∫BW ds = (θ_hi−θ_lo)/mΓ` at every `x`, so the estimator has zero variance.
+    /// A wrong Jacobian breaks the constancy — the sharpest pin on `ds/dθ`.
+    #[test]
+    fn bw_map_zero_variance_on_bw_integrand() {
+        let res = Some(z_resonance());
+        let (lo, hi) = (100.0_f64, 250_000.0);
+        let (m2, mg) = (M_Z * M_Z, M_Z * G_Z);
+        let bw = |s: f64| 1.0 / ((s - m2).powi(2) + mg * mg);
+        let analytic = (((hi - m2) / mg).atan() - ((lo - m2) / mg).atan()) / mg;
+        for k in 0..=40 {
+            let x = k as f64 / 40.0;
+            let s = draw_invariant(lo, hi, res, x);
+            let est = invariant_measure(lo, hi, res, s) * bw(s);
+            assert!(
+                (est - analytic).abs() < 1e-12 * analytic,
+                "measure·BW = {est:.12e} not constant at analytic ∫BW = {analytic:.12e}"
+            );
+        }
+    }
+
+    /// Importance sampling reshapes variance, not volume: a channel with
+    /// Breit–Wigner invariant maps installed still integrates to the massless
+    /// phase-space volume `V_n`. A draw/measure mismatch would bias this.
+    #[test]
+    fn resonant_channel_volume_still_v_n() {
+        let z = Some(z_resonance());
+        let cases: Vec<(f64, Vec<f64>, Vec<(Vec<usize>, Option<Resonance<f64>>)>)> = vec![
+            (500.0, vec![0.0; 3], vec![(vec![0, 1], z)]),
+            (
+                600.0,
+                vec![0.0; 4],
+                vec![(vec![0, 1], z), (vec![2, 3], None)],
+            ),
+            (
+                700.0,
+                vec![0.0; 5],
+                vec![
+                    (vec![1, 2, 3, 4], None),
+                    (vec![3, 4], z),
+                    (vec![1, 2], None),
+                ],
+            ),
+        ];
+        for (sqrt_s, masses, subs) in cases {
+            let n = masses.len();
+            let ch = DiagramChannel::from_topology_resonant(sqrt_s, masses.clone(), &subs);
+            let (mean, err) = mc_volume(&ch, 0xF11D, 2_000_000);
+            let analytic: f64 = massless_volume(sqrt_s, n);
+            let tol = (6.0 * err).max(1e-9 * analytic);
+            eprintln!(
+                "n={n}: resonant V_n = {mean:.6e} ± {err:.2e}, analytic {analytic:.6e}, \
+                 diff {:.2e}",
+                (mean - analytic).abs()
+            );
+            assert!(
+                (mean - analytic).abs() < tol,
+                "n={n}: resonant channel V_n {mean:.6e} ± {err:.2e} vs analytic {analytic:.6e}"
+            );
+        }
+    }
+
+    /// Monte-Carlo estimate of `∫ dΦ_n f` and the sample variance of the per-point
+    /// estimator `weight·f`, for a resonant integrand `f`.
+    fn mc_integrand(
+        ch: &DiagramChannel<f64>,
+        seed: u64,
+        n: usize,
+        f: impl Fn(&[LorentzVector<f64>]) -> f64,
+    ) -> (f64, f64) {
+        let mut stream = SubStream::from_stream(seed, 13);
+        let ndim = ch.ndim();
+        let (mut sum, mut sum_sq) = (0.0, 0.0);
+        for _ in 0..n {
+            let u = stream.uniforms::<f64>(ndim);
+            let pt = ch.sample(&u);
+            let v = pt.weight * f(&pt.momenta);
+            sum += v;
+            sum_sq += v * v;
+        }
+        let mean = sum / n as f64;
+        let var = (sum_sq / n as f64 - mean * mean).max(0.0);
+        (mean, var)
+    }
+
+    /// On a Z-pole process (`2 → 3` with a `{0,1}` resonant pair recoiling against a
+    /// massless leg), the Breit–Wigner channel and flat RAMBO estimate the same
+    /// resonant cross section, but the BW channel's per-point variance is far below
+    /// flat RAMBO's at fixed `N` — the point of the importance map.
+    #[test]
+    fn z_pole_lower_variance_than_flat_rambo() {
+        let (m2, mg) = (M_Z * M_Z, M_Z * G_Z);
+        let bw = |p: &[LorentzVector<f64>]| 1.0 / ((s01(p) - m2).powi(2) + mg * mg);
+        let sqrt_s = 500.0;
+        let masses = vec![0.0; 3];
+
+        let ch = DiagramChannel::from_topology_resonant(
+            sqrt_s,
+            masses.clone(),
+            &[(vec![0, 1], Some(z_resonance()))],
+        );
+        let rb = DiagramChannel::from_topology(sqrt_s, masses.clone(), &[vec![0, 1]]);
+
+        let n = 400_000;
+        let (mean_ch, var_ch) = mc_integrand(&ch, 0x2110, n, bw);
+        let (mean_rb, var_rb) = mc_integrand(&rb, 0x2111, n, bw);
+
+        let err = ((var_ch + var_rb) / n as f64).sqrt();
+        eprintln!(
+            "Z-pole σ: BW {mean_ch:.6e} (var {var_ch:.3e}) vs flat {mean_rb:.6e} \
+             (var {var_rb:.3e}); var ratio {:.2e}",
+            var_ch / var_rb
+        );
+        assert!(
+            (mean_ch - mean_rb).abs() < 6.0 * err,
+            "resonant σ disagrees: BW {mean_ch:.6e} vs flat {mean_rb:.6e} (err {err:.2e})"
+        );
+        assert!(
+            var_ch < var_rb,
+            "BW variance {var_ch:.3e} not below flat RAMBO variance {var_rb:.3e}"
+        );
+    }
+
+    /// The sampled invariant-mass distribution of the resonant pair reproduces the
+    /// analytic Breit–Wigner line shape. The differential cross section of a
+    /// resonant integrand factorises as `dσ/ds ∝ (ŝ − s)·BW(s)` (the two-body
+    /// phase-space factor times the pole); binning `weight·BW` from the channel must
+    /// track that curve. A mis-sampled pole would distort the line shape even where
+    /// σ stays unchanged.
+    #[test]
+    fn z_pole_histogram_matches_breit_wigner() {
+        let (m2, mg) = (M_Z * M_Z, M_Z * G_Z);
+        let bw = |p: &[LorentzVector<f64>]| 1.0 / ((s01(p) - m2).powi(2) + mg * mg);
+        let sqrt_s = 500.0;
+        let s_hat = sqrt_s * sqrt_s;
+        let masses = vec![0.0; 3];
+        let ch = DiagramChannel::from_topology_resonant(
+            sqrt_s,
+            masses.clone(),
+            &[(vec![0, 1], Some(z_resonance()))],
+        );
+
+        let window = 30.0 * mg;
+        let (win_lo, win_hi) = (m2 - window, m2 + window);
+        let nbins = 24usize;
+        let bin_w = (win_hi - win_lo) / nbins as f64;
+        let mut hist = vec![0.0_f64; nbins];
+        let mut hist_sq = vec![0.0_f64; nbins];
+        let mut count = vec![0usize; nbins];
+
+        let mut stream = SubStream::from_stream(0x2112, 17);
+        let n = 2_000_000;
+        for _ in 0..n {
+            let u = stream.uniforms::<f64>(ch.ndim());
+            let pt = ch.sample(&u);
+            let s = s01(&pt.momenta);
+            if s < win_lo || s >= win_hi {
+                continue;
+            }
+            let k = ((s - win_lo) / bin_w) as usize;
+            let v = pt.weight * bw(&pt.momenta);
+            hist[k] += v;
+            hist_sq[k] += v * v;
+            count[k] += 1;
+        }
+
+        // Analytic antiderivative of `(ŝ − s)·BW(s)`:
+        //   A(s) = (ŝ−m²)/mΓ · atan((s−m²)/mΓ) − ½·ln((s−m²)²+(mΓ)²).
+        let anti = |s: f64| {
+            (s_hat - m2) / mg * ((s - m2) / mg).atan() - 0.5 * ((s - m2).powi(2) + mg * mg).ln()
+        };
+
+        let mut mc: Vec<f64> = Vec::new();
+        let mut mc_err: Vec<f64> = Vec::new();
+        let mut an: Vec<f64> = Vec::new();
+        for k in 0..nbins {
+            if count[k] < 200 {
+                continue;
+            }
+            let mean = hist[k] / n as f64;
+            let err = ((hist_sq[k] / n as f64 - mean * mean).max(0.0) / n as f64).sqrt();
+            let lo = win_lo + k as f64 * bin_w;
+            mc.push(mean);
+            mc_err.push(err);
+            an.push(anti(lo + bin_w) - anti(lo));
+        }
+        assert!(mc.len() >= 12, "too few populated bins: {}", mc.len());
+
+        let s_mc: f64 = mc.iter().sum();
+        let s_an: f64 = an.iter().sum();
+        let mut chi2 = 0.0;
+        for i in 0..mc.len() {
+            let p_mc = mc[i] / s_mc;
+            let p_an = an[i] / s_an;
+            let e = (mc_err[i] / s_mc).max(1e-12);
+            chi2 += ((p_mc - p_an) / e).powi(2);
+        }
+        let dof = mc.len() as f64;
+        eprintln!(
+            "Z-pole line shape: {} bins, χ²/dof = {:.2}",
+            mc.len(),
+            chi2 / dof
+        );
+        assert!(
+            chi2 / dof < 3.0,
+            "sampled line shape departs from analytic BW: χ²/dof = {:.2}",
+            chi2 / dof
+        );
     }
 }
