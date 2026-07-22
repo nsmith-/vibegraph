@@ -7,7 +7,9 @@
 //! counter-based uniform substreams that feed it. The [`channel`] submodule is
 //! the abstraction seam — [`PhaseSpaceMap`]/[`Channel`]/[`Combiner`] — that lets
 //! the sampler, channel map, and integrator be swapped independently; flat RAMBO
-//! and the 2-body LIPS map sit behind it as [`RamboChannel`] and [`Lips2Channel`].
+//! and the 2-body LIPS map sit behind it as [`RamboChannel`] and [`Lips2Channel`],
+//! and [`MultiChannel`] combines per-diagram channels into one variance-minimising
+//! [`Combiner`].
 //!
 //! # 2-body phase space
 //!
@@ -63,7 +65,9 @@ pub mod diagram_channel;
 pub mod rambo;
 pub mod rng;
 
-pub use channel::{Channel, Combiner, Lips2Channel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel};
+pub use channel::{
+    Channel, Combiner, Lips2Channel, MultiChannel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel,
+};
 pub use diagram_channel::{DiagramChannel, Resonance, TChannel};
 pub use rambo::{rambo, rambo_massive, rambo_massless, RamboPoint};
 

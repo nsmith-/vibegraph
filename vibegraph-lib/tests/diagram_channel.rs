@@ -11,7 +11,7 @@ mod common;
 use vibegraph::diagrams::diagram::Diagram;
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rng::SubStream;
-use vibegraph::phasespace::{Channel, DiagramChannel, PhaseSpaceMap};
+use vibegraph::phasespace::{Channel, DiagramChannel, MultiChannel, PhaseSpaceMap, RamboChannel};
 use vibegraph::ufo::EvaluatedModel;
 
 fn total(momenta: &[LorentzVector<f64>]) -> [f64; 4] {
@@ -133,4 +133,104 @@ fn t_channel_metadata_populated_for_spacelike_exchange() {
             .is_empty()
     });
     assert!(any_t, "no t-channel line recorded for u u~ > u u~");
+}
+
+/// Invariant mass² of the outgoing pair `(i, j)`.
+fn s_pair(p: &[LorentzVector<f64>], i: usize, j: usize) -> f64 {
+    let (a, b) = (&p[i], &p[j]);
+    let e = a.e() + b.e();
+    let px = a.px() + b.px();
+    let py = a.py() + b.py();
+    let pz = a.pz() + b.pz();
+    e * e - px * px - py * py - pz * pz
+}
+
+/// Monte-Carlo mean and per-point estimator variance of `weight·f` over a map.
+fn mc_estimate(
+    map: &dyn PhaseSpaceMap<f64>,
+    seed: u64,
+    stream: u64,
+    n: usize,
+    f: impl Fn(&[LorentzVector<f64>]) -> f64,
+) -> (f64, f64) {
+    let mut s = SubStream::from_stream(seed, stream);
+    let ndim = map.ndim();
+    let (mut sum, mut sum_sq) = (0.0, 0.0);
+    for _ in 0..n {
+        let u = s.uniforms::<f64>(ndim);
+        let pt = map.sample(&u);
+        let v = pt.weight * f(&pt.momenta);
+        sum += v;
+        sum_sq += v * v;
+    }
+    let mean = sum / n as f64;
+    let var = (sum_sq / n as f64 - mean * mean).max(0.0);
+    (mean, var)
+}
+
+/// A [`MultiChannel`] combiner assembled from every diagram of a real process
+/// integrates unbiasedly — it agrees with flat RAMBO on the phase-space volume `V_n`
+/// — and, on the µ⁺µ⁻ Z-pole its diagram channels resonate on, resolves the pole at
+/// variance strictly below flat RAMBO at fixed `N`. This exercises the combiner over
+/// heterogeneous `from_diagram` channels, not just controlled topologies.
+#[test]
+fn multichannel_over_real_diagrams_unbiased_and_resonant() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let z = model.particle_id("Z").expect("Z in model");
+    let (mz, gz) = (evaluated.mass(z), evaluated.width(z));
+    assert!(mz > 0.0 && gz > 0.0, "expected a massive, finite-width Z");
+    let sqrt_s = 500.0;
+
+    let sets = common::generate("e+ e- > mu+ mu- ta+ ta-");
+    let diagrams = &sets[0].diagrams;
+    let masses = out_masses(&diagrams[0], &evaluated);
+    let n_out = masses.len();
+
+    let channels: Vec<Box<dyn Channel<f64>>> = diagrams
+        .iter()
+        .map(|d| {
+            Box::new(DiagramChannel::from_diagram(d, &evaluated, sqrt_s)) as Box<dyn Channel<f64>>
+        })
+        .collect();
+    let n_ch = channels.len();
+    let multi = MultiChannel::uniform(channels);
+    assert_eq!(multi.ndim(), 1 + (3 * n_out - 4));
+
+    let flat = RamboChannel::new(sqrt_s, masses.clone());
+    let n = 400_000;
+
+    // Unbiased volume: the combiner and flat RAMBO agree on V_n.
+    let (v_m, var_vm) = mc_estimate(&multi, 0xA11, 41, n, |_| 1.0);
+    let (v_f, var_vf) = mc_estimate(&flat, 0xA12, 43, n, |_| 1.0);
+    let (e_m, e_f) = ((var_vm / n as f64).sqrt(), (var_vf / n as f64).sqrt());
+    let ev = (e_m * e_m + e_f * e_f).sqrt();
+    eprintln!(
+        "real V_n ({n_ch} channels): multi {v_m:.6e} ± {e_m:.2e} vs flat {v_f:.6e} ± {e_f:.2e}"
+    );
+    assert!(
+        (v_m - v_f).abs() < 6.0 * ev,
+        "combiner V_n {v_m:.6e} disagrees with flat RAMBO {v_f:.6e}"
+    );
+
+    // Resolves the real µ⁺µ⁻ Z pole below flat RAMBO.
+    let (m2, mg) = (mz * mz, mz * gz);
+    let bw = move |s: f64| 1.0 / ((s - m2).powi(2) + mg * mg);
+    let f01 = move |p: &[LorentzVector<f64>]| bw(s_pair(p, 0, 1));
+    let (sig_m, var_m) = mc_estimate(&multi, 0xB11, 45, n, f01);
+    let (sig_f, var_f) = mc_estimate(&flat, 0xB12, 47, n, f01);
+    let err = ((var_m + var_f) / n as f64).sqrt();
+    eprintln!(
+        "real µµ Z-pole: multi {sig_m:.6e} (var {var_m:.3e}) vs flat {sig_f:.6e} \
+         (var {var_f:.3e}), variance ratio {:.1}×",
+        var_f / var_m
+    );
+    assert!(
+        (sig_m - sig_f).abs() < 6.0 * err,
+        "combiner σ {sig_m:.6e} disagrees with flat {sig_f:.6e} on the Z pole"
+    );
+    assert!(
+        var_m < var_f,
+        "combiner variance {var_m:.3e} not below flat RAMBO {var_f:.3e}"
+    );
 }
