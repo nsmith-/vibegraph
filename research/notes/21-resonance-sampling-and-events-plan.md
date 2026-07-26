@@ -365,6 +365,61 @@ then the row stays informational rather than gated to a loosened tolerance.
 
 ---
 
+### Addendum — one VEGAS grid vs. MadGraph's grid-per-channel
+
+vibegraph runs **one** VEGAS grid over `ndim = 1 + channel_ndim`, with `u[0]`
+selecting the channel by cumulative `α` (`MultiChannel::sample`) and `u[1..]`
+feeding the chosen channel. MadEvent instead splits the integral by channel —
+one job, one grid, one σⱼ ± Δσⱼ per configuration (`G<config>/` directories) —
+and sums. Both are unbiased; the difference is what the grid can learn.
+
+**Why MG's split is the stronger arrangement.**
+
+1. *Coordinate semantics differ per channel.* `u[k]` is a Breit-Wigner-mapped
+   invariant in one channel and a t-channel `t` in another. A shared grid learns
+   the α-weighted **average** density in each coordinate slot, which is not the
+   right refinement for any single channel; the per-channel structure a grid
+   could exploit (the residual `|M|²` angular shape, cut boundaries, the
+   non-resonant background under a peak) is averaged away.
+2. *VEGAS is a product density, and the selection coordinate is exactly the
+   correlation it cannot represent.* The optimal conditional density of `u[1..]`
+   depends on which channel `u[0]` picked. A separable `∏ᵢ gᵢ(uᵢ)` grid has no
+   way to express that, so refinement on `u[0]` is at best a second, blunter
+   copy of the α-adaptation and at worst fights it.
+3. *Per-channel error estimates* let sample budget be allocated by channel
+   variance, and give per-channel `w_max` for unweighting — which is how MG gets
+   a usable unweighting efficiency (Sprint B, E2). A single global `w_max` over
+   a mixture is set by the worst channel.
+
+**Why it has not bitten us yet.** The channel maps already flatten the poles they
+were built for, so the residual integrand in the hypercube is nearly featureless
+— which is precisely the regime where the grid has little left to learn and where
+over-adaptation is the live risk (`VEGAS_ALPHA_MAPPED = 0.5`, Defect 2 above).
+The current arrangement is therefore *cheap and adequate*, not wrong.
+
+**Cost of switching.** Moderate, and structurally clean, because the estimator
+already decomposes exactly the way the split needs:
+
+```text
+∫dΦ f = Σⱼ ∫dΦ f·αⱼgⱼ/g = Σⱼ E_{p∼gⱼ}[ αⱼ·f(p)/g(p) ]
+```
+
+so term `j` is *this* integrand with the channel index frozen and an extra `αⱼ`:
+sample `Channel j` directly (`ndim = channel_ndim`, no selection coordinate),
+weight by the same `1/g` the combiner already computes over all channels. The
+work is: a channel-frozen integrand wrapper; `Vec<VegasGrid>` in place of the
+single grid, with per-channel `neval` allocation; summing σⱼ with errors in
+quadrature; and — the part that reaches outside the sampler — the
+`IntegrateArtifact` schema and its frozen-grid replay path become per-channel.
+Estimate ~1–2 sessions. The α-adaptation survives unchanged (α still sets both
+the weight denominator and the natural sample allocation).
+
+**Sequencing.** The artifact-schema change is the reason to do this *before* the
+frozen-grid consumer in Sprint B E2/E4 hardens around a single grid, not after;
+and E2's unweighting efficiency is the concrete payoff. Deferred, not dismissed.
+
+---
+
 **Next: Sprint B — `event-output-lhef`** (E1 → E4, `mg-single-helicity-bench`
 folded into E2). Unweighted event output via accept/reject over the frozen VEGAS
 grid + this sprint's peak-resolving sampler, serialised to LHEF; expanded into its

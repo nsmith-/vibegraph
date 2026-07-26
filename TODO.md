@@ -22,7 +22,10 @@ or ≤1e-12 vs MG; sprint section below, full plan note 20) → **`resonance-sam
 phase space — per-diagram propagator-pole channels, Breit-Wigner + t-channel + massless
 log maps, variance-minimising weight, Kleiss-Pittau α-adaptation — now driving the
 production `integrate` path; two resonant σ rows flat RAMBO could not sample flipped
-SKIP→GATE; sprint section + note 21 below). **Next: Sprint B `event-output-lhef`.**
+SKIP→GATE; sprint section + note 21 below). **Next: `dynamical-scales` (feature,
+D1–D4 + optional D5, plan in note 22), then Sprint B `event-output-lhef`** —
+re-sequenced 2026-07-26: the per-event scale and `αs(μ)` are LHE `<event>` fields
+(`SCALUP`/`AQCDUP`), so running couplings land before the writer that must emit them.
 
 ## Pipeline Status
 
@@ -110,7 +113,8 @@ shrinking, it is a bug.
 | **Multi-rung t-channel spine (Session T Part 2)** | Ladder topologies (VBF/DIS, ≥2 spacelike lines). The ordering Jacobian cannot be pinned by `Vₙ`/σ in-session, so it was deferred rather than committed unvalidated. Hand-off design is written up (`Spine → rungs: Vec`, running `q_i = p_a − Σp`, note-07 §2.9.0 ordering firing test). | note 21 §"Deferred — multi-rung spine" |
 | **MG-plot distribution comparison** | L5 validated sampled histograms against *analytic* BW/t-channel oracles (exact) with MG σ as the coarse backstop. Comparing sampled invariant-mass/angular histograms against MG's own `.lhe`/plots needs the MG toolchain. Would also be the vehicle for `low-mll-reconciliation` above. | note 21 close-out |
 | **Massless-t-channel fiducial cut** | A massless beam pins `t_max = 0` (collinear edge), where the t-map falls back to flat. Whether a fiducial cut is wanted there instead of the flat fallback is unresolved for a physical massless-initial-state t-channel. | note 21 close-out |
-| **`dynamical-scales`** | Unchanged and out of this sprint's scope: MG runs αs to a per-event scale, so the 3 QCD `validate_sigma` rows stay informational. Still the blocker on a real QCD σ gate. | separate feature |
+| **`dynamical-scales`** | Out of this sprint's scope: MG runs αs to a per-event scale, so the 3 QCD `validate_sigma` rows stay informational. Still the blocker on a real QCD σ gate — **now the next sprint** (D1–D4, plan in note 22). | note 22 |
+| **Per-channel VEGAS grids** | vibegraph runs one grid over `1 + channel_ndim` with `u[0]` selecting the channel; MG splits the integral per channel, one grid each. A shared grid can only learn the α-weighted *average* density per coordinate slot, and the `u[0]`↔`u[1..]` correlation is exactly what a separable VEGAS density cannot express. Not biting yet (the channel maps already flatten the poles), but it also costs per-channel `w_max` for unweighting. ~1–2 sessions; changes the `IntegrateArtifact` schema, so **better before Sprint B E2/E4 hardens around a single grid than after**. | note 21 § "Addendum — one VEGAS grid vs. MadGraph's grid-per-channel" |
 | **2→6 σ rows** | `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` remain `Plan::Skip` — ~1 ms/eval over a 24-dim map is too slow to gate, a cost issue rather than a sampling one. | `validate_sigma.rs` |
 
 ### Next
