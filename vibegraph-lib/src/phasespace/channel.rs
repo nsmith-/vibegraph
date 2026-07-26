@@ -20,6 +20,7 @@ use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
 
 use super::rambo::{flat_weight, rambo};
+use super::rng::SubStream;
 use super::{lips2_jacobian_u, u_to_costheta};
 
 /// A generated phase-space point: `n` on-shell momenta in the CM frame (total
@@ -115,6 +116,43 @@ pub struct MultiChannel<F: Real> {
     channel_ndim: usize,
 }
 
+/// The record of a survey→refine α-adaptation pass ([`MultiChannel::adapt_alphas`]).
+///
+/// The channel selection weights `αⱼ` are driven toward the variance-minimising
+/// mixture by the Kleiss–Pittau reallocation rule (R. Kleiss, R. Pittau,
+/// *Weight optimization in multichannel Monte Carlo*, Comput. Phys. Commun. 83
+/// (1994) 141; the survey/refine "job strategy" of MG's phase-space appendix,
+/// note 01 §A). Each survey estimates every channel's contribution to the
+/// estimator variance,
+///
+/// ```text
+/// Wⱼ = ∫ f(p)²·gⱼ(p)/g(p)² dΦ = E_g[(f/g)²·gⱼ/g],   g = Σₖ αₖ gₖ,
+/// ```
+///
+/// and reallocates weight toward the channels carrying more of it,
+///
+/// ```text
+/// αⱼ ← αⱼ·Wⱼ^β / Σₖ αₖ·Wₖ^β   (β = ½, the standard exponent).
+/// ```
+///
+/// The stationary point of this map is `Wⱼ = const` over channels with `αⱼ > 0`
+/// — exactly the condition `∂(∫f²/g)/∂αⱼ = −Wⱼ = −λ` that minimises the estimator
+/// variance `∫ f²/g dΦ − I²` under `Σⱼ αⱼ = 1`. So a converged α *equalises the
+/// per-channel variance share*: no reallocation of samples across channels lowers
+/// the variance further.
+#[derive(Clone, Debug)]
+pub struct AlphaAdaptation<F: Real> {
+    /// The α vector before each survey, plus the converged vector installed on the
+    /// combiner: `trajectory[0]` is the starting α, `trajectory[k]` the α used in
+    /// survey `k`, and the last entry the final α. Reports the whole refinement
+    /// path so convergence can be read off directly.
+    pub trajectory: Vec<Vec<F>>,
+    /// The per-channel variance contribution `Wⱼ` estimated on the final survey. At
+    /// the variance-minimising fixed point these are equal across channels carrying
+    /// weight — the "variance share" the reallocation equalises.
+    pub variance_shares: Vec<F>,
+}
+
 impl<F: Real> MultiChannel<F> {
     /// Combine `channels` under explicit selection weights `alphas` (`Σ αⱼ = 1`,
     /// each `> 0`). All channels must share one [`ndim`](PhaseSpaceMap::ndim) — they
@@ -168,6 +206,89 @@ impl<F: Real> MultiChannel<F> {
         );
         self.alphas = alphas;
         self.assert_normalized();
+    }
+
+    /// Refine the selection weights `αⱼ` toward the variance-minimising channel
+    /// mixture by a survey→refine loop, installing the converged weights on the
+    /// combiner and returning the refinement path ([`AlphaAdaptation`]).
+    ///
+    /// Each of `n_iter` iterations opens an independent, replayable substream
+    /// (`stream + iteration` of `seed`), draws `n_survey` points from the combiner
+    /// under the *current* α, and estimates every channel's variance contribution
+    /// `Wⱼ = E_g[(f/g)²·gⱼ/g]` from those points (each point informs every channel,
+    /// so the α estimate itself is low-variance). It then reallocates weight by the
+    /// Kleiss–Pittau rule `αⱼ ← αⱼ·Wⱼ^damping`, renormalised, with `damping = ½`
+    /// the standard exponent. The per-point cost and the estimator are unchanged —
+    /// α-adaptation reshapes only the channel mixture, not the integral — so a
+    /// converged combiner is handed straight to VEGAS as its integrand map (VEGAS
+    /// refines the per-channel unit hypercube with α frozen).
+    ///
+    /// A survey that finds the integrand identically zero (or leaves the weights
+    /// non-finite) leaves α untouched and stops. Otherwise every weight is floored
+    /// strictly positive before reinstalling, so one under-sampled survey never
+    /// permanently kills a channel.
+    pub fn adapt_alphas(
+        &mut self,
+        integrand: impl Fn(&[LorentzVector<F>]) -> F,
+        seed: u64,
+        stream: u64,
+        n_survey: usize,
+        n_iter: usize,
+        damping: F,
+    ) -> AlphaAdaptation<F> {
+        let n = self.channels.len();
+        let ndim = self.ndim();
+        let inv_survey = F::one() / F::from(n_survey).expect("survey size fits the scalar field");
+        let floor_frac = F::from(1e-12).expect("floor fits the scalar field");
+
+        let mut trajectory = vec![self.alphas.clone()];
+        let mut variance_shares = vec![F::zero(); n];
+
+        for it in 0..n_iter {
+            let mut s = SubStream::from_stream(seed, stream + it as u64);
+            let mut w = vec![F::zero(); n];
+            for _ in 0..n_survey {
+                let u = s.uniforms::<F>(ndim);
+                let pt = self.sample(&u);
+                // g(p) = 1/weight is the combined density; est = weight·f = f/g.
+                let g = F::one() / pt.weight;
+                let est = pt.weight * integrand(&pt.momenta);
+                let est2 = est * est;
+                for (wj, ch) in w.iter_mut().zip(&self.channels) {
+                    *wj = *wj + est2 * ch.density(&pt.momenta) / g;
+                }
+            }
+            for wj in &mut w {
+                *wj = *wj * inv_survey;
+            }
+            variance_shares = w.clone();
+
+            let mut raw: Vec<F> = self
+                .alphas
+                .iter()
+                .zip(&w)
+                .map(|(&a, &wj)| a * wj.powf(damping))
+                .collect();
+            let sum = raw.iter().fold(F::zero(), |acc, &x| acc + x);
+            if !(sum > F::zero()) || !sum.is_finite() {
+                break;
+            }
+            let floor = floor_frac * sum;
+            for r in &mut raw {
+                *r = r.max(floor);
+            }
+            let renorm = F::one() / raw.iter().fold(F::zero(), |acc, &x| acc + x);
+            for r in &mut raw {
+                *r = *r * renorm;
+            }
+            self.set_alphas(raw.clone());
+            trajectory.push(raw);
+        }
+
+        AlphaAdaptation {
+            trajectory,
+            variance_shares,
+        }
     }
 
     /// The combined sampling density `g(p) = Σⱼ αⱼ gⱼ(p)` at `momenta` — the
@@ -575,6 +696,360 @@ mod tests {
         assert!(
             var_m < var_f,
             "combiner variance {var_m:.3e} not below flat RAMBO {var_f:.3e}"
+        );
+    }
+
+    // ── α-adaptation (survey → refine of the channel mixture) ─────────────────
+
+    /// The two-channel combiner for the asymmetric multi-peak process: channel A
+    /// resonates on the `{0,1}` pair, channel B on `{1,2}`, both on the Z pole. A
+    /// fresh set of boxed channels each call (the boxed channels are not `Clone`).
+    fn two_peak_combiner(sqrt_s: f64) -> MultiChannel<f64> {
+        let masses = vec![0.0; 3];
+        let a = DiagramChannel::from_topology_resonant(
+            sqrt_s,
+            masses.clone(),
+            &[(vec![0, 1], Some(z_res()))],
+        );
+        let b =
+            DiagramChannel::from_topology_resonant(sqrt_s, masses, &[(vec![1, 2], Some(z_res()))]);
+        MultiChannel::uniform(vec![Box::new(a), Box::new(b)])
+    }
+
+    /// The survey→refine loop drives α toward the variance-minimising mixture: the
+    /// trajectory converges, the per-channel variance shares `Wⱼ` equalise, and on
+    /// an integrand whose `{0,1}` peak is weighted four times heavier the weight
+    /// shifts onto the channel that covers it. A wrong reallocation would neither
+    /// converge nor equalise the shares.
+    #[test]
+    fn alpha_adaptation_converges_and_tracks_variance_share() {
+        let (m2, mg) = (M_Z * M_Z, M_Z * G_Z);
+        let bw = move |s: f64| 1.0 / ((s - m2).powi(2) + mg * mg);
+        // Peak on the {0,1} pair (channel A) four times heavier than the {1,2}
+        // peak (channel B): the optimum must shift weight onto A.
+        let f = move |p: &[LorentzVector<f64>]| 4.0 * bw(s_pair(p, 0, 1)) + bw(s_pair(p, 1, 2));
+
+        let mut multi = two_peak_combiner(500.0);
+        let report = multi.adapt_alphas(f, 0xA1FA, 61, 40_000, 10, 0.5);
+
+        let traj = &report.trajectory;
+        eprintln!("α trajectory:");
+        for (k, a) in traj.iter().enumerate() {
+            eprintln!("  iter {k}: [{:.4}, {:.4}]", a[0], a[1]);
+        }
+        let (wa, wb) = (report.variance_shares[0], report.variance_shares[1]);
+        eprintln!("final variance shares W = [{wa:.4e}, {wb:.4e}]");
+
+        // Converged: the last two α vectors barely move.
+        let last = traj.last().unwrap();
+        let prev = &traj[traj.len() - 2];
+        let step = (last[0] - prev[0]).abs() + (last[1] - prev[1]).abs();
+        assert!(step < 1e-2, "α not converged: last step {step:.3e}");
+
+        // The variance-minimising fixed point equalises the per-channel shares.
+        let share_gap = (wa - wb).abs() / wa.max(wb);
+        assert!(
+            share_gap < 0.15,
+            "variance shares not equalised: W = [{wa:.4e}, {wb:.4e}], gap {share_gap:.3}"
+        );
+
+        // Weight shifted onto the channel covering the heavier peak.
+        assert!(
+            last[0] > 0.55 && last[0] > last[1],
+            "α did not shift toward the heavier {{0,1}} peak: {last:?}"
+        );
+    }
+
+    /// The figure of merit: on the asymmetric multi-peak process the adapted-α
+    /// combiner (L5) has strictly lower per-point estimator variance than the
+    /// fixed uniform-α combiner (L4) at the same `N`. Since α-adaptation leaves the
+    /// per-point cost unchanged (same channels evaluated), the variance ratio *is*
+    /// the variance×CPU improvement at fixed precision; the survey is a one-off
+    /// pre-conditioning cost, reported separately. Both estimators agree on the
+    /// integral.
+    ///
+    /// This integrand is a linear combination of the two channels' Breit–Wigner
+    /// shapes, so the variance-matched α approaches the zero-variance
+    /// importance-sampling optimum and the win is large (best case); a real `|M|²`
+    /// with continuum and interference is only approximately channel-shaped, so the
+    /// practical win is smaller. The load-bearing claim the test pins is the
+    /// *direction and strict inequality*, not the magnitude.
+    #[test]
+    fn alpha_adaptation_beats_uniform_variance_cpu() {
+        use std::time::Instant;
+
+        let (m2, mg) = (M_Z * M_Z, M_Z * G_Z);
+        let bw = move |s: f64| 1.0 / ((s - m2).powi(2) + mg * mg);
+        let f = move |p: &[LorentzVector<f64>]| 4.0 * bw(s_pair(p, 0, 1)) + bw(s_pair(p, 1, 2));
+
+        let uniform = two_peak_combiner(500.0);
+
+        let mut adapted = two_peak_combiner(500.0);
+        let t_survey = Instant::now();
+        let report = adapted.adapt_alphas(f, 0xA2FA, 71, 40_000, 10, 0.5);
+        let survey_ns = t_survey.elapsed().as_secs_f64() * 1e9;
+        let survey_pts = 40_000.0 * report.trajectory.len().saturating_sub(1) as f64;
+
+        let n = 400_000;
+        let t_u = Instant::now();
+        let (mean_u, var_u) = mc_estimate(&uniform, 0xB1A5, 73, n, f);
+        let ns_u = t_u.elapsed().as_secs_f64() * 1e9 / n as f64;
+        let t_a = Instant::now();
+        let (mean_a, var_a) = mc_estimate(&adapted, 0xB1A6, 75, n, f);
+        let ns_a = t_a.elapsed().as_secs_f64() * 1e9 / n as f64;
+
+        eprintln!(
+            "variance×CPU (L4 uniform vs L5 adapted): \
+             uniform σ={mean_u:.6e} var={var_u:.3e} ({ns_u:.0} ns/pt) | \
+             adapted σ={mean_a:.6e} var={var_a:.3e} ({ns_a:.0} ns/pt) | \
+             var ratio {:.2}× | survey {survey_pts:.0} pts in {survey_ns:.2e} ns \
+             (α = {:?})",
+            var_u / var_a,
+            adapted.alphas(),
+        );
+
+        // Unbiased: adapted α integrates to the same σ as uniform α.
+        let err = ((var_u + var_a) / n as f64).sqrt();
+        assert!(
+            (mean_u - mean_a).abs() < 6.0 * err,
+            "adapted σ {mean_a:.6e} disagrees with uniform σ {mean_u:.6e} (err {err:.2e})"
+        );
+        // The deliverable: strictly lower variance at fixed N.
+        assert!(
+            var_a < var_u,
+            "adapted variance {var_a:.3e} not below uniform variance {var_u:.3e}"
+        );
+    }
+
+    /// α-adaptation reshapes variance, not the integral: the adapted-α combiner
+    /// reproduces the analytic massless volume `V₃` on a flat integrand and agrees
+    /// with the uniform-α combiner on the resonant integral, both within MC error.
+    #[test]
+    fn alpha_adaptation_preserves_integral() {
+        let (m2, mg) = (M_Z * M_Z, M_Z * G_Z);
+        let bw = move |s: f64| 1.0 / ((s - m2).powi(2) + mg * mg);
+        let f = move |p: &[LorentzVector<f64>]| 4.0 * bw(s_pair(p, 0, 1)) + bw(s_pair(p, 1, 2));
+        let sqrt_s = 500.0;
+
+        let mut adapted = two_peak_combiner(sqrt_s);
+        adapted.adapt_alphas(f, 0xA3FA, 81, 40_000, 8, 0.5);
+
+        // Volume neutrality: the adapted mixture still integrates dΦ₃ to V₃.
+        let n = 600_000;
+        let (vol, var_vol) = mc_estimate(&adapted, 0xC0DE, 83, n, |_| 1.0);
+        let err_vol = (var_vol / n as f64).sqrt();
+        let analytic = massless_volume(sqrt_s, 3);
+        eprintln!(
+            "adapted V₃ = {vol:.6e} ± {err_vol:.2e}, analytic {analytic:.6e}, diff {:.2e}",
+            (vol - analytic).abs()
+        );
+        assert!(
+            (vol - analytic).abs() < 5.0 * err_vol,
+            "adapted-α combiner biased the volume: {vol:.6e} vs {analytic:.6e}"
+        );
+
+        // Integral neutrality: adapted and uniform agree on the resonant integrand.
+        let uniform = two_peak_combiner(sqrt_s);
+        let (mean_a, var_a) = mc_estimate(&adapted, 0xC0D1, 85, n, f);
+        let (mean_u, var_u) = mc_estimate(&uniform, 0xC0D2, 87, n, f);
+        let err = ((var_a + var_u) / n as f64).sqrt();
+        assert!(
+            (mean_a - mean_u).abs() < 6.0 * err,
+            "adapted σ {mean_a:.6e} disagrees with uniform σ {mean_u:.6e} (err {err:.2e})"
+        );
+    }
+
+    /// note-07 conflicting-resonance hazard: two nearby timelike poles on the *same*
+    /// invariant `s₀₁` — a Z at `M_Z` and a heavier pole at 140 GeV, widths broad
+    /// enough that their tails overlap. Each pole needs its own Breit–Wigner
+    /// channel; the combiner must resolve *both* and sum their densities correctly
+    /// in the overlap valley. Firing content: (1) the sampled double-peak line shape
+    /// matches the analytic `(ŝ−s)·[BW₁+BW₂]` (a wrong combined density distorts the
+    /// valley), and (2) a single channel mapping only the first pole starves the
+    /// second peak of samples — dropping the conflicting channel is visible as a
+    /// coverage collapse there.
+    #[test]
+    fn overlapping_resonances_double_peak_resolved() {
+        let sqrt_s = 500.0;
+        let s_hat = sqrt_s * sqrt_s;
+        let masses = vec![0.0; 3];
+        let (m1, g1) = (M_Z, 5.0_f64);
+        let (m2r, g2) = (140.0_f64, 8.0_f64);
+        let (m1sq, mg1) = (m1 * m1, m1 * g1);
+        let (m2sq, mg2) = (m2r * m2r, m2r * g2);
+        let bw1 = move |s: f64| 1.0 / ((s - m1sq).powi(2) + mg1 * mg1);
+        let bw2 = move |s: f64| 1.0 / ((s - m2sq).powi(2) + mg2 * mg2);
+        let f = move |p: &[LorentzVector<f64>]| {
+            let s = s_pair(p, 0, 1);
+            bw1(s) + bw2(s)
+        };
+
+        // Two channels, each Breit–Wigner-mapping the {0,1} invariant at its own pole.
+        let ch1 = DiagramChannel::from_topology_resonant(
+            sqrt_s,
+            masses.clone(),
+            &[(
+                vec![0, 1],
+                Some(Resonance {
+                    mass: m1,
+                    width: g1,
+                }),
+            )],
+        );
+        let ch2 = DiagramChannel::from_topology_resonant(
+            sqrt_s,
+            masses.clone(),
+            &[(
+                vec![0, 1],
+                Some(Resonance {
+                    mass: m2r,
+                    width: g2,
+                }),
+            )],
+        );
+        let combiner = MultiChannel::uniform(vec![Box::new(ch1), Box::new(ch2)]);
+
+        // Analytic antiderivative of `(ŝ−s)·BW(s; m², mΓ)`.
+        let anti_one = move |s: f64, msq: f64, mg: f64| {
+            (s_hat - msq) / mg * ((s - msq) / mg).atan() - 0.5 * ((s - msq).powi(2) + mg * mg).ln()
+        };
+        let anti = move |s: f64| anti_one(s, m1sq, mg1) + anti_one(s, m2sq, mg2);
+
+        // Histogram the combiner's `weight·f` across a window spanning both peaks.
+        let (win_lo, win_hi) = (m1sq - 40.0 * mg1, m2sq + 40.0 * mg2);
+        let nbins = 30usize;
+        let bin_w = (win_hi - win_lo) / nbins as f64;
+        let mut hist = vec![0.0_f64; nbins];
+        let mut hist_sq = vec![0.0_f64; nbins];
+        let mut count = vec![0usize; nbins];
+
+        // Coverage counters within a few widths of the second (conflicting) pole.
+        let peak2_lo = m2sq - 3.0 * mg2;
+        let peak2_hi = m2sq + 3.0 * mg2;
+        let mut combiner_in_peak2 = 0usize;
+
+        let n = 2_000_000;
+        let mut stream = SubStream::from_stream(0x0FF5, 91);
+        for _ in 0..n {
+            let u = stream.uniforms::<f64>(combiner.ndim());
+            let pt = combiner.sample(&u);
+            let s = s_pair(&pt.momenta, 0, 1);
+            if (peak2_lo..peak2_hi).contains(&s) {
+                combiner_in_peak2 += 1;
+            }
+            if s < win_lo || s >= win_hi {
+                continue;
+            }
+            let k = ((s - win_lo) / bin_w) as usize;
+            let v = pt.weight * f(&pt.momenta);
+            hist[k] += v;
+            hist_sq[k] += v * v;
+            count[k] += 1;
+        }
+
+        let (mut mc, mut mc_err, mut an) = (Vec::new(), Vec::new(), Vec::new());
+        for k in 0..nbins {
+            if count[k] < 200 {
+                continue;
+            }
+            let mean = hist[k] / n as f64;
+            let err = ((hist_sq[k] / n as f64 - mean * mean).max(0.0) / n as f64).sqrt();
+            let lo = win_lo + k as f64 * bin_w;
+            mc.push(mean);
+            mc_err.push(err);
+            an.push(anti(lo + bin_w) - anti(lo));
+        }
+        assert!(mc.len() >= 16, "too few populated bins: {}", mc.len());
+
+        let (s_mc, s_an): (f64, f64) = (mc.iter().sum(), an.iter().sum());
+        let mut chi2 = 0.0;
+        for i in 0..mc.len() {
+            let e = (mc_err[i] / s_mc).max(1e-12);
+            chi2 += ((mc[i] / s_mc - an[i] / s_an) / e).powi(2);
+        }
+        let chi2_dof = chi2 / mc.len() as f64;
+        eprintln!(
+            "double-peak line shape: {} bins, χ²/dof = {:.2}",
+            mc.len(),
+            chi2_dof
+        );
+        assert!(
+            chi2_dof < 3.0,
+            "combiner double-peak line shape departs from analytic: χ²/dof = {chi2_dof:.2}"
+        );
+
+        // Firing: a single channel mapping only the first pole starves the second
+        // peak. Its coverage there collapses relative to the two-channel combiner.
+        let single = DiagramChannel::from_topology_resonant(
+            sqrt_s,
+            masses.clone(),
+            &[(
+                vec![0, 1],
+                Some(Resonance {
+                    mass: m1,
+                    width: g1,
+                }),
+            )],
+        );
+        let mut sstream = SubStream::from_stream(0x0FF6, 93);
+        let mut single_in_peak2 = 0usize;
+        for _ in 0..n {
+            let u = sstream.uniforms::<f64>(single.ndim());
+            let pt = single.sample(&u);
+            let s = s_pair(&pt.momenta, 0, 1);
+            if (peak2_lo..peak2_hi).contains(&s) {
+                single_in_peak2 += 1;
+            }
+        }
+        eprintln!(
+            "second-pole coverage: combiner {combiner_in_peak2} vs single-channel {single_in_peak2}"
+        );
+        assert!(
+            combiner_in_peak2 > 20 * single_in_peak2.max(1),
+            "dropping the second channel did not collapse coverage of the conflicting \
+             pole: combiner {combiner_in_peak2} vs single {single_in_peak2}"
+        );
+    }
+
+    /// α-adaptation composes with VEGAS: the adapted combiner is handed to a VEGAS
+    /// grid as its integrand map (α frozen, VEGAS refining the per-channel unit
+    /// hypercube). The composed integral agrees with the direct combiner MC estimate
+    /// within the combined error — the two adaptations compose without bias.
+    #[test]
+    fn alpha_adapted_combiner_composes_with_vegas() {
+        use crate::vegas::VegasGrid;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let (m2, mg) = (M_Z * M_Z, M_Z * G_Z);
+        let bw = move |s: f64| 1.0 / ((s - m2).powi(2) + mg * mg);
+        let f = move |p: &[LorentzVector<f64>]| 4.0 * bw(s_pair(p, 0, 1)) + bw(s_pair(p, 1, 2));
+
+        let mut multi = two_peak_combiner(500.0);
+        multi.adapt_alphas(f, 0xA4FA, 101, 40_000, 8, 0.5);
+
+        // Direct MC estimate from the adapted combiner, as the reference integral.
+        let n = 400_000;
+        let (mean_mc, var_mc) = mc_estimate(&multi, 0xD0E1, 103, n, f);
+        let err_mc = (var_mc / n as f64).sqrt();
+
+        // VEGAS refines the per-channel hypercube on top of the frozen mixture.
+        let mut grid = VegasGrid::new(multi.ndim(), 40, 1.5);
+        let mut rng = StdRng::seed_from_u64(0x5EEDBEEF);
+        let integrand = |u: &[f64]| {
+            let pt = multi.sample(u);
+            pt.weight * f(&pt.momenta)
+        };
+        let res = grid.adapt(integrand, 40_000, 6, &mut rng);
+        eprintln!(
+            "VEGAS∘α-adapt σ = {:.6e} ± {:.2e} (χ²/dof {:.2}); combiner MC {mean_mc:.6e} ± {err_mc:.2e}",
+            res.integral, res.std_dev, res.chi2_per_dof
+        );
+        let err = (err_mc * err_mc + res.std_dev * res.std_dev).sqrt();
+        assert!(
+            (res.integral - mean_mc).abs() < 6.0 * err,
+            "VEGAS∘α-adapt σ {:.6e} disagrees with combiner MC {mean_mc:.6e} (err {err:.2e})",
+            res.integral
         );
     }
 }

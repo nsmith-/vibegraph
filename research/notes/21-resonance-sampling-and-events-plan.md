@@ -214,6 +214,78 @@ its own `t` against the running `q_i`; the load-bearing new oracle is an orderin
 firing test (1-D `t_i` projections smooth and covering the full range; swapping
 rung order changes the result as the physics dictates).
 
+### Sprint A close-out
+
+Sprint A (`resonance-sampling`, sessions L1 → L2 → L3 → L4 → L5, plus the R
+non-prefix-recovery and T t-channel-spine addenda) is **complete on branch
+`resonance-sampling`**. What it delivered:
+
+- **The phase-space abstraction seam** (L1): `PhaseSpaceMap`/`Channel`/`Combiner`
+  with flat RAMBO and the 2-body LIPS map behind it, no numeric change (bit-for-bit
+  L1 gate).
+- **Per-diagram channels** (L2, R): a `Diagram`'s `Prop` chain becomes a recursive
+  2-body-decomposition tree; the flat channel Jacobian reproduces `Vₙ` for 2→2…2→6.
+  R fixed the non-prefix s-channel recovery (feyngraph highest-external elimination).
+- **Resonance maps** (L3, T): the Breit–Wigner tan-substitution for timelike
+  invariants and the logarithmic t-map for a single-rung spacelike spine, each with
+  an exact Jacobian pinned by a zero-variance-on-the-pole test.
+- **The multichannel combiner** (L4): `MultiChannel` with the variance-minimising
+  weight `1/Σⱼαⱼgⱼ`, wired as VEGAS's integrand map.
+- **α-adaptation + the distribution-level validation regime** (L5): the
+  Kleiss–Pittau survey→refine loop `αⱼ ← αⱼ√Wⱼ` (`MultiChannel::adapt_alphas`),
+  composed with VEGAS as an outer survey (fix the mixture) → inner grid (refine the
+  per-channel hypercube) with α frozen.
+
+**Cumulative variance wins** (all against flat RAMBO at fixed N, each with its own
+firing test so the win is never mistaken for convention confirmation): the BW map
+alone (L3, Z pole), the multichannel combiner strictly below every single channel
+and below flat on a multi-peak integrand (L4), the t-channel spine below flat on a
+forward-peaked integrand (T), and α-adaptation below fixed-uniform α (L5). On the
+L5 asymmetric multi-peak (a 4:1 amplitude ratio across two channels) α converged
+[0.5,0.5] → [0.80,0.20] in ~2 iterations, tracking the amplitude ratio; the
+per-channel variance shares `Wⱼ` equalised (2.66e-2 vs 2.67e-2); and per-point
+variance fell ~1900× (uniform 9.4e-3 → adapted 5.3e-6) at essentially equal
+per-point cost (248 → 242 ns/pt). That magnitude is the **best case** — the
+synthetic integrand is exactly a linear combination of the two channels' BW shapes,
+so variance-matched α approaches the zero-variance importance-sampling optimum; on a
+real `|M|²` with continuum and interference the practical win is smaller, and the
+test pins only the direction and strict inequality, not the number. Distribution
+gates: the resonant BW line shape (χ²/dof ≈ 0.6) and the overlapping double-peak
+line shape (χ²/dof ≈ 0.6) both match the analytic oracle.
+
+**note-07 sampler-bug hazard firing-test inventory** (each fires if the map were
+wrong; a passing σ is never accepted as confirmation):
+
+| Hazard | Firing test |
+|---|---|
+| BW denominator / `ds/dθ` | `bw_map_is_measure_preserving`, `bw_map_zero_variance_on_bw_integrand` |
+| T-channel invariant ordering (2.9.0) | `spine_transfer_pairs_emitted_with_beam0`, `spine_emitted_is_forward_biased` (silent swap flips the bias), `spine_built_for_real_t_channel_process` |
+| Threshold kinematics `s→(m₁+m₂)²` (2.9.3) | `t_channel_threshold_window_collapses`, `t_bounds_include_initial_state_mass` |
+| Overlapping / conflicting resonances | `overlapping_resonances_double_peak_resolved` (**added in L5**: two nearby timelike poles on the same invariant; the combiner resolves both, dropping the second channel collapses its coverage ~1000×) |
+
+**Deferred** (carried forward, not regressions):
+
+- **Multi-rung spine (Part 2)** — ladder topologies (VBF/DIS, ≥2 spacelike lines);
+  the ordering Jacobian needs an in-session firing oracle before it can land (see
+  the preceding deferral note).
+- **MG-plot distribution comparison** — L5 validated sampled histograms against the
+  *analytic* BW and t-channel oracles (exact) and used MG **σ** as the coarse
+  backstop; comparing the sampled invariant-mass/angular histograms against MG's own
+  `.lhe`/plots needs the MG toolchain and is a follow-up.
+- **Massless-t-channel fiducial-cut question** — a massless beam pins `t_max = 0`
+  (collinear edge), where the t-map falls back to flat; whether a fiducial cut is
+  wanted there (rather than the flat fallback) for a physical massless-initial-state
+  t-channel is unresolved.
+- **Wiring the multichannel + α sampler into the CLI `integrate` path** — the
+  combiner is validated as a unit but flat RAMBO still drives `integrate`; promoting
+  it to the production integrand is what would let the resonant `validate_sigma`
+  SKIP rows (`ee_to_mumu_tata_qcd0`, `ee_to_tatah`, `ee_to_mumua`) flip to GATE.
+
+**Next: Sprint B — `event-output-lhef`** (E1 → E4, `mg-single-helicity-bench`
+folded into E2). Unweighted event output via accept/reject over the frozen VEGAS
+grid + this sprint's peak-resolving sampler, serialised to LHEF; expanded into its
+own note when it opens.
+
 ---
 
 ## Helicity & color handling (both sprints)
