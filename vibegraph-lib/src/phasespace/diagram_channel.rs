@@ -17,11 +17,20 @@
 //! drawn through the Breit–Wigner tan-substitution `s = m² + mΓ·tan θ`, so the
 //! sampling density concentrates on the resonance as `1/((s−m²)²+(mΓ)²)`; a
 //! subsystem with no pole (or a zero-width/massless one) keeps the flat draw over
-//! its kinematic range. The importance map for a spacelike (t-channel) transfer is
-//! a separate concern — such lines drive no node in this all-timelike decay tree
-//! and are kept as metadata only. Each node records the propagator particle's mass
-//! and width, so the resonance-aware draw of a chosen invariant slots in without
+//! its kinematic range. Each node records the propagator particle's mass and
+//! width, so the resonance-aware draw of a chosen invariant slots in without
 //! changing the tree.
+//!
+//! A spacelike (t-channel) line is peripheral, not a subsystem mass: it carries a
+//! momentum transfer `t = (p_beam − p_emitted)² ≤ 0`. A diagram with a single
+//! spacelike line building a `2 → 2` final state is decomposed as a [`Spine`]
+//! instead of an all-timelike tree — a top-level peripheral emission off one beam
+//! whose polar angle is fixed by `t` (only the azimuth is free), with the emitted
+//! and recoil subsystems recursing into the same 2-body-decay machinery. The
+//! transfer is importance-sampled through the logarithmic substitution
+//! `t = m² − (m²−t_min)·exp(−x·N)` (density `∝ 1/(m²−t)`), and a spacelike line
+//! carries no width. Genuine multi-spacelike-line (ladder) topologies are not yet
+//! given a spine; their spacelike lines are kept as metadata only.
 //!
 //! The weight is the exact product of the 2-body LIPS factors `R_2 = π|p*|/√s`
 //! and the flat invariant-range measures, so a flat Monte-Carlo average of
@@ -85,12 +94,40 @@ impl<F: Real> Node<F> {
     }
 }
 
+/// A t-channel spine: the peripheral emission a single spacelike line drives.
+///
+/// One beam (the `emitted` subsystem's anchor, beam `0` here) emits the `emitted`
+/// subsystem against the spacelike propagator of mass² `t_mass2`; the `recoil`
+/// subsystem balances it. The polar angle of the emission is fixed by the sampled
+/// momentum transfer `t`, so only its azimuth is free. Each subsystem is a
+/// [`Node`] that recurses into the timelike 2-body-decay machinery unchanged. This
+/// carries one spacelike rung; a ladder of several spacelike lines would extend it
+/// to an ordered chain of rungs.
+#[derive(Clone, Debug)]
+struct Spine<F: Real> {
+    emitted: Node<F>,
+    recoil: Node<F>,
+    /// The spacelike propagator's mass²; its width is zero by construction.
+    t_mass2: F,
+}
+
+/// The top-level structure of a channel: an all-timelike decay tree, or a
+/// peripheral t-channel spine with timelike subsystems hanging off it.
+#[derive(Clone, Debug)]
+enum ChannelTopology<F: Real> {
+    Timelike(Branch<F>),
+    Spine(Spine<F>),
+}
+
 /// A single-diagram phase-space channel on a fixed `√ŝ` and outgoing-mass set.
 #[derive(Clone, Debug)]
 pub struct DiagramChannel<F: Real> {
     sqrt_s: F,
     n_out: usize,
-    root: Branch<F>,
+    /// The two incoming beam four-momenta in the CM frame (beam `0` along `+z`),
+    /// the reference for a spacelike line's momentum transfer `t`.
+    beams: [LorentzVector<F>; 2],
+    topology: ChannelTopology<F>,
     t_channels: Vec<TChannel<F>>,
 }
 
@@ -112,13 +149,19 @@ impl<F: Real> DiagramChannel<F> {
                 cast(model.mass(particle))
             })
             .collect();
+        let beams = beam_momenta(
+            sqrt_s,
+            cast(model.mass(diagram.legs[0].particle)),
+            cast(model.mass(diagram.legs[1].particle)),
+        );
 
-        // Subsystems bounded by timelike, beam-free internal lines, plus the
-        // spacelike lines kept aside for a later t-channel map.
+        // Timelike subsystems drive the decay tree; spacelike lines are peripheral.
         let mut resonances: BTreeMap<u64, Resonance<F>> = BTreeMap::new();
         let mut t_channels = Vec::new();
-        for prop in &diagram.props {
+        let mut spacelike: Vec<usize> = Vec::new();
+        for (pi, prop) in diagram.props.iter().enumerate() {
             if prop.is_spacelike(n_in) {
+                spacelike.push(pi);
                 t_channels.push(TChannel {
                     mass: cast(model.mass(prop.particle)),
                     width: cast(model.width(prop.particle)),
@@ -134,11 +177,29 @@ impl<F: Real> DiagramChannel<F> {
         }
 
         let subsystems: Vec<u64> = resonances.keys().copied().collect();
-        let root = build_root(n_out, &masses, &subsystems, &resonances);
+        // A single spacelike line building a 2→2 final state is peripheral: it is
+        // decomposed as a t-channel spine rather than an all-timelike tree. Ladder
+        // topologies (several spacelike lines) and single spacelike lines inside a
+        // higher-multiplicity final state stay all-timelike for now.
+        let topology = if spacelike.len() == 1 && n_out == 2 {
+            let prop = &diagram.props[spacelike[0]];
+            let (emitted_mask, recoil_mask) = spine_partition(&prop.momentum, n_in, n_ext);
+            ChannelTopology::Spine(Spine {
+                emitted: build_node(emitted_mask, &masses, &subsystems, &resonances),
+                recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
+                t_mass2: {
+                    let m: F = cast(model.mass(prop.particle));
+                    m * m
+                },
+            })
+        } else {
+            ChannelTopology::Timelike(build_root(n_out, &masses, &subsystems, &resonances))
+        };
         DiagramChannel {
             sqrt_s,
             n_out,
-            root,
+            beams,
+            topology,
             t_channels,
         }
     }
@@ -158,7 +219,8 @@ impl<F: Real> DiagramChannel<F> {
         DiagramChannel {
             sqrt_s,
             n_out,
-            root,
+            beams: beam_momenta(sqrt_s, F::zero(), F::zero()),
+            topology: ChannelTopology::Timelike(root),
             t_channels: Vec::new(),
         }
     }
@@ -187,7 +249,61 @@ impl<F: Real> DiagramChannel<F> {
         DiagramChannel {
             sqrt_s,
             n_out,
-            root,
+            beams: beam_momenta(sqrt_s, F::zero(), F::zero()),
+            topology: ChannelTopology::Timelike(root),
+            t_channels: Vec::new(),
+        }
+    }
+
+    /// Build a single-rung t-channel spine directly, without a diagram, for
+    /// exercising the peripheral kinematics on a controlled topology. `beam_masses`
+    /// are the two incoming masses; `emitted` and `recoil` are disjoint outgoing-leg
+    /// slot sets partitioning `0..masses.len()` across the spacelike cut (`emitted`
+    /// anchored to beam `0`), each optionally carrying a [`Resonance`] on its own
+    /// invariant. `t_mass` is the spacelike propagator mass (width zero).
+    pub fn from_topology_tchannel(
+        sqrt_s: F,
+        beam_masses: [F; 2],
+        masses: Vec<F>,
+        emitted: (Vec<usize>, Option<Resonance<F>>),
+        recoil: (Vec<usize>, Option<Resonance<F>>),
+        t_mass: F,
+    ) -> Self {
+        let n_out = masses.len();
+        assert!(n_out >= 2, "a 2-body decomposition needs at least two legs");
+        let mut resonances: BTreeMap<u64, Resonance<F>> = BTreeMap::new();
+        let mut masks = Vec::new();
+        let mut mask_of = |slots: &[usize], res: Option<Resonance<F>>| -> u64 {
+            let mask = slots.iter().fold(0u64, |m, &i| m | (1 << i));
+            if let Some(r) = res {
+                resonances.insert(mask, r);
+            }
+            masks.push(mask);
+            mask
+        };
+        let emitted_mask = mask_of(&emitted.0, emitted.1);
+        let recoil_mask = mask_of(&recoil.0, recoil.1);
+        assert_eq!(
+            emitted_mask | recoil_mask,
+            (1u64 << n_out) - 1,
+            "emitted and recoil slots must partition the final state"
+        );
+        assert_eq!(
+            emitted_mask & recoil_mask,
+            0,
+            "emitted and recoil slots must be disjoint"
+        );
+        let subsystems: Vec<u64> = resonances.keys().copied().collect();
+        let spine = Spine {
+            emitted: build_node(emitted_mask, &masses, &subsystems, &resonances),
+            recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
+            t_mass2: t_mass * t_mass,
+        };
+        DiagramChannel {
+            sqrt_s,
+            n_out,
+            beams: beam_momenta(sqrt_s, beam_masses[0], beam_masses[1]),
+            topology: ChannelTopology::Spine(spine),
             t_channels: Vec::new(),
         }
     }
@@ -201,7 +317,13 @@ impl<F: Real> DiagramChannel<F> {
     /// resonance-aware invariant map.
     pub fn resonances(&self) -> Vec<Resonance<F>> {
         let mut out = Vec::new();
-        collect_resonances(&self.root, &mut out);
+        match &self.topology {
+            ChannelTopology::Timelike(root) => collect_resonances(root, &mut out),
+            ChannelTopology::Spine(spine) => {
+                collect_node_resonances(&spine.emitted, &mut out);
+                collect_node_resonances(&spine.recoil, &mut out);
+            }
+        }
         out
     }
 
@@ -222,7 +344,14 @@ impl<F: Real> PhaseSpaceMap<F> for DiagramChannel<F> {
         let total = LorentzVector::new(self.sqrt_s, F::zero(), F::zero(), F::zero());
         let mut slots: Vec<Option<LorentzVector<F>>> = vec![None; self.n_out];
         let mut cursor = 0usize;
-        sample_branch(&self.root, s, total, u, &mut cursor, &mut slots);
+        match &self.topology {
+            ChannelTopology::Timelike(root) => {
+                sample_branch(root, s, total, u, &mut cursor, &mut slots)
+            }
+            ChannelTopology::Spine(spine) => {
+                sample_spine(spine, s, &self.beams, total, u, &mut cursor, &mut slots)
+            }
+        }
         let momenta: Vec<LorentzVector<F>> = slots
             .into_iter()
             .map(|m| m.expect("every outgoing slot is filled"))
@@ -237,7 +366,11 @@ impl<F: Real> PhaseSpaceMap<F> for DiagramChannel<F> {
 impl<F: Real> Channel<F> for DiagramChannel<F> {
     fn density(&self, momenta: &[LorentzVector<F>]) -> F {
         let s = self.sqrt_s * self.sqrt_s;
-        F::one() / branch_jacobian(&self.root, s, momenta)
+        let jac = match &self.topology {
+            ChannelTopology::Timelike(root) => branch_jacobian(root, s, momenta),
+            ChannelTopology::Spine(spine) => spine_jacobian(spine, s, &self.beams, momenta),
+        };
+        F::one() / jac
     }
 }
 
@@ -390,6 +523,50 @@ fn collect_resonances<F: Real>(branch: &Branch<F>, out: &mut Vec<Resonance<F>>) 
     if let Node::Branch(b) = &branch.right {
         collect_resonances(b, out);
     }
+}
+
+fn collect_node_resonances<F: Real>(node: &Node<F>, out: &mut Vec<Resonance<F>>) {
+    if let Node::Branch(b) = node {
+        collect_resonances(b, out);
+    }
+}
+
+/// The two incoming beam four-momenta in the CM frame at `sqrt_s` for beam masses
+/// `ma`, `mb`: beam `0` along `+z`, beam `1` along `−z`, both on shell.
+fn beam_momenta<F: Real>(sqrt_s: F, ma: F, mb: F) -> [LorentzVector<F>; 2] {
+    let two = F::one() + F::one();
+    let s = sqrt_s * sqrt_s;
+    let (ma2, mb2) = (ma * ma, mb * mb);
+    let e_a = (s + ma2 - mb2) / (two * sqrt_s);
+    let e_b = (s + mb2 - ma2) / (two * sqrt_s);
+    let k = kallen(s, ma2, mb2).max(F::zero()).sqrt() / (two * sqrt_s);
+    [
+        LorentzVector::new(e_a, F::zero(), F::zero(), k),
+        LorentzVector::new(e_b, F::zero(), F::zero(), -k),
+    ]
+}
+
+/// Split the outgoing legs across a spacelike line into `(emitted, recoil)` masks,
+/// `emitted` on beam `0`'s side. The stored `momentum` marks the externals on one
+/// side of the cut (feyngraph's routing sign-decorates them, so only the nonzero
+/// pattern is read); a spacelike line carries exactly one beam on that side. The
+/// emitted subsystem is the outgoing legs sharing beam `0`'s side.
+fn spine_partition(momentum: &[i8], n_in: usize, n_ext: usize) -> (u64, u64) {
+    let n_out = n_ext - n_in;
+    let full = (1u64 << n_out) - 1;
+    let stored_has_beam0 = momentum[0] != 0;
+    let mut stored_out = 0u64;
+    for i in n_in..n_ext {
+        if momentum[i] != 0 {
+            stored_out |= 1 << (i - n_in);
+        }
+    }
+    let emitted = if stored_has_beam0 {
+        stored_out
+    } else {
+        full & !stored_out
+    };
+    (emitted, full & !emitted)
 }
 
 // ── Sampling & Jacobian ──────────────────────────────────────────────────────
@@ -605,6 +782,228 @@ fn branch_jacobian<F: Real>(branch: &Branch<F>, s: F, momenta: &[LorentzVector<F
     }
     if let Node::Branch(b) = &branch.right {
         f = f * branch_jacobian(b, sr, momenta);
+    }
+    f
+}
+
+// ── T-channel spine ──────────────────────────────────────────────────────────
+
+/// Whether the propagator `1/(t − m²)` can shape the draw over `[t_min, t_max]`:
+/// both endpoints strictly below the pole `m²`, and a non-degenerate window. A
+/// massless line whose window reaches the collinear edge (`t_max = m²`) cannot —
+/// the density would diverge — so the draw falls back to flat, exactly as a
+/// zero-width timelike pole keeps the flat invariant draw.
+fn t_pole_shapes<F: Real>(a: F, b: F) -> bool {
+    a > F::zero() && b > F::zero() && a != b
+}
+
+/// Map `x ∈ [0,1]` to a spacelike momentum transfer `t ∈ [t_min, t_max]` (both
+/// `≤ 0`) importance-sampling the propagator `1/(t − m²)`: density `∝ 1/(m² − t)`,
+/// realised by `t = m² − (m²−t_min)·exp(−x·N)` with `N = ln[(m²−t_min)/(m²−t_max)]`.
+/// A spacelike line has no width, so `m²` is its bare mass². When the pole cannot
+/// shape the draw (a massless line at the collinear edge `t_max = m²`, or a
+/// threshold-degenerate window) the draw is flat over `[t_min, t_max]`, which makes
+/// the spine reduce to the isotropic 2-body split there.
+fn draw_t<F: Real>(t_min: F, t_max: F, t_mass2: F, x: F) -> F {
+    let a = t_mass2 - t_min;
+    let b = t_mass2 - t_max;
+    if t_pole_shapes(a, b) {
+        let n = (a / b).ln();
+        t_mass2 - a * (-x * n).exp()
+    } else {
+        t_min + (t_max - t_min) * x
+    }
+}
+
+/// The t-draw measure `dt/dx` at the realised `t`: `N·(m² − t)` with
+/// `N = ln[(m²−t_min)/(m²−t_max)]`, whose reciprocal is the sampling density
+/// `∝ 1/(m² − t)`; or the flat range `t_max − t_min` where the pole cannot shape
+/// the draw. Its reciprocal is the spine's sampling density in `t`.
+fn t_measure<F: Real>(t_min: F, t_max: F, t_mass2: F, t: F) -> F {
+    let a = t_mass2 - t_min;
+    let b = t_mass2 - t_max;
+    if t_pole_shapes(a, b) {
+        let n = (a / b).ln();
+        n * (t_mass2 - t)
+    } else {
+        t_max - t_min
+    }
+}
+
+/// The peripheral 2-body kinematics of a system of invariant `s` scattering beam
+/// masses² `ma2`, `mb2` into subsystems of invariant `s1` (emitted, beam-`0` side)
+/// and `s2` (recoil).
+struct TKin<F: Real> {
+    /// Bounds of the spacelike transfer `t`, both `≤ 0`, at `cosθ = ∓1`.
+    t_min: F,
+    t_max: F,
+    /// `t` at `cosθ = 0`: `t = center + 2·k·p*·cosθ`.
+    center: F,
+    /// Beam and emitted-subsystem CM momentum magnitudes.
+    k: F,
+    pstar: F,
+    /// Emitted / recoil CM energies.
+    e1: F,
+    e2: F,
+}
+
+fn t_kinematics<F: Real>(s: F, ma2: F, mb2: F, s1: F, s2: F) -> TKin<F> {
+    let two = F::one() + F::one();
+    let sqrt_s = s.sqrt();
+    let inv = F::one() / (two * sqrt_s);
+    let ea = (s + ma2 - mb2) * inv;
+    let e1 = (s + s1 - s2) * inv;
+    let e2 = (s + s2 - s1) * inv;
+    let k = kallen(s, ma2, mb2).max(F::zero()).sqrt() * inv;
+    let pstar = kallen(s, s1, s2).max(F::zero()).sqrt() * inv;
+    // t = ma² + s1 − 2(Ea·E1 − k·p*·cosθ); the beam is along +z, so cosθ is the
+    // emitted subsystem's polar angle from beam 0.
+    let center = ma2 + s1 - two * ea * e1;
+    let span = two * k * pstar;
+    TKin {
+        t_min: center - span,
+        t_max: center + span,
+        center,
+        k,
+        pstar,
+        e1,
+        e2,
+    }
+}
+
+/// The peripheral 2-body factor `π·(dt/dx)/(4√s·k)` a spine rung contributes: the
+/// solid-angle LIPS `R_2` reparametrised from `(cosθ, φ)` to `(t, φ)` via
+/// `dcosθ = dt/(2k·p*)`, with the azimuth's `2π` folded in and `p*` cancelling.
+fn peripheral_factor<F: Real>(s: F, k: F, t_measure_val: F) -> F {
+    let sqrt_s = s.sqrt();
+    let four = F::from(4).expect("4 fits the scalar field");
+    if k > F::zero() && sqrt_s > F::zero() {
+        F::PI() * t_measure_val / (four * sqrt_s * k)
+    } else {
+        F::zero()
+    }
+}
+
+/// The invariant `(pa − p1)²` — the momentum transfer between a beam and an emitted
+/// subsystem, evaluated frame-independently so the spine density is well-defined on
+/// a configuration the channel did not itself generate.
+fn transfer_invariant<F: Real>(pa: LorentzVector<F>, p1: LorentzVector<F>) -> F {
+    let de = pa.e() - p1.e();
+    let dx = pa.px() - p1.px();
+    let dy = pa.py() - p1.py();
+    let dz = pa.pz() - p1.pz();
+    de * de - dx * dx - dy * dy - dz * dz
+}
+
+/// Draw the emitted/recoil invariants, the transfer `t`, and the azimuth of one
+/// peripheral emission, then recurse into each subsystem's decay tree. `s` is the
+/// scattering system's invariant mass²; `p_lab` its CM four-momentum; `beams` the
+/// incoming beams in that frame (beam `0` along `+z`).
+#[allow(clippy::too_many_arguments)]
+fn sample_spine<F: Real>(
+    spine: &Spine<F>,
+    s: F,
+    beams: &[LorentzVector<F>; 2],
+    p_lab: LorentzVector<F>,
+    u: &[F],
+    cursor: &mut usize,
+    slots: &mut [Option<LorentzVector<F>>],
+) {
+    let two = F::one() + F::one();
+    let sqrt_s = s.sqrt();
+    let mu_e = spine.emitted.mu();
+    let mu_r = spine.recoil.mu();
+
+    let s1 = match &spine.emitted {
+        Node::Leaf { mass, .. } => *mass * *mass,
+        Node::Branch(b) => {
+            let lo = mu_e * mu_e;
+            let hi = (sqrt_s - mu_r).powi(2);
+            let x = u[*cursor];
+            *cursor += 1;
+            draw_invariant(lo, hi, b.resonance, x)
+        }
+    };
+    let sqrt_s1 = s1.sqrt();
+    let s2 = match &spine.recoil {
+        Node::Leaf { mass, .. } => *mass * *mass,
+        Node::Branch(b) => {
+            let lo = mu_r * mu_r;
+            let hi = (sqrt_s - sqrt_s1).powi(2);
+            let x = u[*cursor];
+            *cursor += 1;
+            draw_invariant(lo, hi, b.resonance, x)
+        }
+    };
+
+    let tk = t_kinematics(s, beams[0].m2(), beams[1].m2(), s1, s2);
+    let t = draw_t(tk.t_min, tk.t_max, spine.t_mass2, u[*cursor]);
+    *cursor += 1;
+    let phi = two * F::PI() * u[*cursor];
+    *cursor += 1;
+
+    let span = two * tk.k * tk.pstar;
+    let cos = if span > F::zero() {
+        ((t - tk.center) / span).max(-F::one()).min(F::one())
+    } else {
+        F::zero()
+    };
+    let sin = (F::one() - cos * cos).max(F::zero()).sqrt();
+    let (dx, dy, dz) = (sin * phi.cos(), sin * phi.sin(), cos);
+    let pstar = tk.pstar;
+    let pe_rest = LorentzVector::new(tk.e1, pstar * dx, pstar * dy, pstar * dz);
+    let pr_rest = LorentzVector::new(tk.e2, -pstar * dx, -pstar * dy, -pstar * dz);
+
+    let pe = safe_boost(pe_rest, p_lab);
+    let pr = safe_boost(pr_rest, p_lab);
+
+    match &spine.emitted {
+        Node::Leaf { slot, .. } => slots[*slot] = Some(pe),
+        Node::Branch(b) => sample_branch(b, s1, pe, u, cursor, slots),
+    }
+    match &spine.recoil {
+        Node::Leaf { slot, .. } => slots[*slot] = Some(pr),
+        Node::Branch(b) => sample_branch(b, s2, pr, u, cursor, slots),
+    }
+}
+
+/// The spine's phase-space Jacobian at an arbitrary configuration: the emitted /
+/// recoil invariant measures, the peripheral `t` factor (with `t` recomputed as the
+/// beam-`0`-to-emitted transfer), and each subsystem's own decay-tree Jacobian.
+fn spine_jacobian<F: Real>(
+    spine: &Spine<F>,
+    s: F,
+    beams: &[LorentzVector<F>; 2],
+    momenta: &[LorentzVector<F>],
+) -> F {
+    let sqrt_s = s.sqrt();
+    let mu_e = spine.emitted.mu();
+    let mu_r = spine.recoil.mu();
+    let s1 = node_invariant(&spine.emitted, momenta);
+    let sqrt_s1 = s1.sqrt();
+    let s2 = node_invariant(&spine.recoil, momenta);
+
+    let tk = t_kinematics(s, beams[0].m2(), beams[1].m2(), s1, s2);
+    let p_emitted = subtree_momentum(&spine.emitted, momenta);
+    let t = transfer_invariant(beams[0], p_emitted);
+
+    let mut f = F::one();
+    if let Node::Branch(b) = &spine.emitted {
+        let lo = mu_e * mu_e;
+        let hi = (sqrt_s - mu_r).powi(2);
+        f = f * invariant_measure(lo, hi, b.resonance, s1);
+    }
+    if let Node::Branch(b) = &spine.recoil {
+        let lo = mu_r * mu_r;
+        let hi = (sqrt_s - sqrt_s1).powi(2);
+        f = f * invariant_measure(lo, hi, b.resonance, s2);
+    }
+    f = f * peripheral_factor(s, tk.k, t_measure(tk.t_min, tk.t_max, spine.t_mass2, t));
+    if let Node::Branch(b) = &spine.emitted {
+        f = f * branch_jacobian(b, s1, momenta);
+    }
+    if let Node::Branch(b) = &spine.recoil {
+        f = f * branch_jacobian(b, s2, momenta);
     }
     f
 }
@@ -1060,6 +1459,378 @@ mod tests {
             "sampled line shape departs from analytic BW: χ²/dof = {:.2}",
             chi2 / dof
         );
+    }
+
+    // ── T-channel spine ─────────────────────────────────────────────────────────
+
+    /// A massive-beam t-channel window with both endpoints strictly below zero,
+    /// the regime where the peripheral map is well-defined (a massless beam pins
+    /// `t_max = 0`, the collinear edge).
+    fn t_window() -> (f64, f64, f64) {
+        // √s = 500, equal 80 GeV beams, massless final state: t_max < 0.
+        let tk = t_kinematics(500.0 * 500.0, 80.0 * 80.0, 80.0 * 80.0, 0.0, 0.0);
+        (tk.t_min, tk.t_max, 0.0)
+    }
+
+    /// The t-draw is measure-preserving: averaging `dt/dx` over uniform `x`
+    /// reproduces the flat range integral `∫ dt = t_max − t_min`, since the
+    /// Jacobian exactly cancels the sampling density. A wrong `dt/dx` misses it.
+    #[test]
+    fn t_map_is_measure_preserving() {
+        let (t_min, t_max, m2) = t_window();
+        assert!(t_max < 0.0 && t_min < t_max, "window must be spacelike");
+        let mut stream = SubStream::from_stream(0x7C01, 41);
+        let n = 400_000;
+        let (mut sum, mut sum_sq) = (0.0, 0.0);
+        for _ in 0..n {
+            let x = stream.uniforms::<f64>(1)[0];
+            let t = draw_t(t_min, t_max, m2, x);
+            assert!(t <= 0.0, "sampled t = {t} not spacelike");
+            let w = t_measure(t_min, t_max, m2, t);
+            sum += w;
+            sum_sq += w * w;
+        }
+        let mean = sum / n as f64;
+        let err = ((sum_sq / n as f64 - mean * mean).max(0.0) / n as f64).sqrt();
+        let want = t_max - t_min;
+        eprintln!("t-map ∫dt = {mean:.6e} ± {err:.2e}, want {want:.6e}");
+        assert!(
+            (mean - want).abs() < 5.0 * err,
+            "t measure not preserving: ∫dt = {mean:.6e} ± {err:.2e} vs {want:.6e}"
+        );
+    }
+
+    /// With the exact `dt/dx`, `measure(t)·(1/(t−m²))` is a constant at every `x`:
+    /// the map's density is exactly `∝ 1/(m²−t)`, so an estimator of `∫ dt/(t−m²)`
+    /// has zero variance. A wrong Jacobian breaks the constancy — the sharpest pin
+    /// on `dt/dx`, tested for a massless and a massive spacelike propagator.
+    #[test]
+    fn t_map_zero_variance_on_propagator() {
+        let (t_min, t_max, _) = t_window();
+        for m2 in [0.0_f64, 91.1876 * 91.1876] {
+            let analytic = ((m2 - t_min) / (m2 - t_max)).ln() * (-1.0);
+            for k in 0..=40 {
+                let x = k as f64 / 40.0;
+                let t = draw_t(t_min, t_max, m2, x);
+                let est = t_measure(t_min, t_max, m2, t) * (1.0 / (t - m2));
+                assert!(
+                    (est - analytic).abs() < 1e-10 * analytic.abs(),
+                    "measure·1/(t−m²) = {est:.12e} not constant at {analytic:.12e} (m²={m2})"
+                );
+            }
+        }
+    }
+
+    /// Beam mass moves the spacelike bounds: a massless beam pins `t_max = 0` (the
+    /// collinear edge), while a massive initial state pushes `t_max` strictly below
+    /// zero — the boundary condition note-07 2.9.3 flags as the classic wrong
+    /// default. Both bounds stay `≤ 0`.
+    #[test]
+    fn t_bounds_include_initial_state_mass() {
+        let s = 500.0_f64 * 500.0;
+        let massless = t_kinematics(s, 0.0, 0.0, 0.0, 0.0);
+        assert!(
+            massless.t_max.abs() < 1e-6,
+            "massless beam should pin t_max = 0, got {}",
+            massless.t_max
+        );
+        let massive = t_kinematics(s, 80.0 * 80.0, 80.0 * 80.0, 0.0, 0.0);
+        assert!(
+            massive.t_max < -1.0,
+            "massive initial state must push t_max below 0, got {}",
+            massive.t_max
+        );
+        assert!(massive.t_min < massive.t_max && massive.t_max <= 0.0);
+    }
+
+    /// Threshold kinematics: as `√s → (m₁+m₂)` the emitted momentum `p*` vanishes,
+    /// so the whole spacelike window collapses to a point. A map that ignored the
+    /// threshold would keep sampling a finite range and bias the integral.
+    #[test]
+    fn t_channel_threshold_window_collapses() {
+        let (m1, m2) = (40.0_f64, 40.0);
+        let (s1, s2) = (m1 * m1, m2 * m2);
+        // Light beams so √s can approach the final-state threshold from above.
+        let wide = t_kinematics(300.0 * 300.0, 0.0, 0.0, s1, s2);
+        let near = t_kinematics((m1 + m2 + 0.01).powi(2), 0.0, 0.0, s1, s2);
+        assert!(
+            near.pstar < 1e-2 * wide.pstar,
+            "p* did not collapse near threshold: {} vs {}",
+            near.pstar,
+            wide.pstar
+        );
+        let (wide_w, near_w) = (wide.t_max - wide.t_min, near.t_max - near.t_min);
+        assert!(
+            near_w < 1e-2 * wide_w,
+            "spacelike window {near_w:.3e} did not collapse near threshold (wide {wide_w:.3e})"
+        );
+    }
+
+    /// A single-rung spine at √s = 500 with 80 GeV beams and massless final legs.
+    fn spine_channel() -> DiagramChannel<f64> {
+        DiagramChannel::from_topology_tchannel(
+            500.0,
+            [80.0, 80.0],
+            vec![0.0, 0.0],
+            (vec![0], None),
+            (vec![1], None),
+            0.0,
+        )
+    }
+
+    /// Every generated spine point is on shell, momentum-conserving, and its
+    /// reconstructed transfer `t = (p_beam − p_emitted)²` is spacelike (`≤ 0`,
+    /// note-07 2.8.0). A positive `t` would signal a broken bound or map.
+    #[test]
+    fn spine_on_shell_and_spacelike() {
+        let ch = spine_channel();
+        assert_eq!(ch.ndim(), 2);
+        let beams = beam_momenta::<f64>(500.0, 80.0, 80.0);
+        let mut stream = SubStream::from_stream(0x7C02, 43);
+        for _ in 0..5000 {
+            let u = stream.uniforms::<f64>(ch.ndim());
+            let pt = ch.sample(&u);
+            let tot = total(&pt.momenta);
+            assert!((tot[0] - 500.0).abs() < 1e-6 * 500.0, "energy: {}", tot[0]);
+            for c in &tot[1..] {
+                assert!(c.abs() < 1e-6 * 500.0, "3-momentum: {c}");
+            }
+            for p in &pt.momenta {
+                assert!(p.m2().abs() < 1e-4, "off shell: m² = {}", p.m2());
+            }
+            let t = transfer_invariant(beams[0], pt.momenta[0]);
+            assert!(t <= 1e-6, "reconstructed t = {t} not spacelike");
+            assert!(pt.weight > 0.0 && pt.weight.is_finite());
+        }
+    }
+
+    /// Importance sampling reshapes variance, not volume: the peripheral spine still
+    /// integrates to the analytic massless phase-space volume `V_2`, independent of
+    /// the beam mass that shapes its `t` window.
+    #[test]
+    fn t_channel_volume_still_v2() {
+        let ch = spine_channel();
+        let (mean, err) = mc_volume(&ch, 0x7C03, 400_000);
+        let analytic = massless_volume(500.0, 2);
+        eprintln!(
+            "spine V_2 = {mean:.6e} ± {err:.2e}, analytic {analytic:.6e}, diff {:.2e}",
+            (mean - analytic).abs()
+        );
+        // A 2→2 spine has a single sampled invariant `t`; its weight varies, so use
+        // the MC error bar with a floor.
+        let tol = (6.0 * err).max(1e-9 * analytic);
+        assert!(
+            (mean - analytic).abs() < tol,
+            "spine V_2 {mean:.6e} ± {err:.2e} vs analytic {analytic:.6e}"
+        );
+    }
+
+    /// The spine density is the exact reciprocal of the weight it assigns to a point
+    /// it generated, and stays finite and non-negative on a foreign on-shell
+    /// configuration (here a flat-RAMBO point) — the contract the multichannel
+    /// combiner relies on.
+    #[test]
+    fn spine_density_reciprocal_and_foreign() {
+        let ch = spine_channel();
+        let mut stream = SubStream::from_stream(0x7C04, 45);
+        for _ in 0..2000 {
+            let u = stream.uniforms::<f64>(ch.ndim());
+            let pt = ch.sample(&u);
+            let recip = 1.0 / pt.weight;
+            assert!(
+                (ch.density(&pt.momenta) - recip).abs() <= 1e-9 * recip,
+                "spine density {} not reciprocal of weight {}",
+                ch.density(&pt.momenta),
+                pt.weight
+            );
+        }
+        // Foreign on-shell points the spine did not generate: density stays finite,
+        // non-negative, and reads the same transfer off the momenta.
+        let rambo = RamboChannel::new(500.0, vec![0.0, 0.0]);
+        let mut fstream = SubStream::from_stream(0x7C05, 47);
+        for _ in 0..2000 {
+            let u = fstream.uniforms::<f64>(rambo.ndim());
+            let pt = rambo.sample(&u);
+            let g = ch.density(&pt.momenta);
+            assert!(
+                g.is_finite() && g >= 0.0,
+                "foreign spine density {g} invalid"
+            );
+        }
+    }
+
+    /// The transfer of the emitted subsystem, evaluated frame-independently from the
+    /// final momenta, matches the transfer against the *recoil* side by momentum
+    /// conservation: `(p_a − p_emitted)² = (p_recoil − p_b)²`. This pins that the
+    /// emitted blob is paired with beam 0 (not beam 1 — that would read the crossed
+    /// `u`-channel invariant), the note-07 2.9.0 ordering hazard.
+    #[test]
+    fn spine_transfer_pairs_emitted_with_beam0() {
+        let ch = spine_channel();
+        let beams = beam_momenta::<f64>(500.0, 80.0, 80.0);
+        let mut stream = SubStream::from_stream(0x7C06, 49);
+        for _ in 0..2000 {
+            let u = stream.uniforms::<f64>(ch.ndim());
+            let pt = ch.sample(&u);
+            let t_beam0 = transfer_invariant(beams[0], pt.momenta[0]);
+            let t_beam1 = transfer_invariant(beams[1], pt.momenta[1]);
+            assert!(
+                (t_beam0 - t_beam1).abs() < 1e-6 * t_beam0.abs().max(1.0),
+                "emitted/recoil transfer mismatch: {t_beam0} vs {t_beam1}"
+            );
+        }
+    }
+
+    /// Ordering firing test (note-07 2.9.0): the peripheral map is forward-peaked
+    /// along the anchoring beam, so the emitted subsystem drifts toward beam 0
+    /// (`⟨p_z⟩ > 0`) and the recoil toward beam 1 (`⟨p_z⟩ < 0`). Swapping which leg
+    /// the rung emits flips both signs — a silent swap of the rung's emitted/recoil
+    /// assignment changes the physics, so the test fails under the wrong ordering.
+    #[test]
+    fn spine_emitted_is_forward_biased() {
+        let forward = |ch: &DiagramChannel<f64>, seed: u64| -> (f64, f64) {
+            let mut stream = SubStream::from_stream(seed, 51);
+            let (mut pz0, mut pz1) = (0.0, 0.0);
+            let n = 200_000;
+            for _ in 0..n {
+                let u = stream.uniforms::<f64>(ch.ndim());
+                let pt = ch.sample(&u);
+                pz0 += pt.momenta[0].pz();
+                pz1 += pt.momenta[1].pz();
+            }
+            (pz0 / n as f64, pz1 / n as f64)
+        };
+        let (pz0, pz1) = forward(&spine_channel(), 0x7C07);
+        eprintln!("emitted ⟨pz⟩ = {pz0:.3}, recoil ⟨pz⟩ = {pz1:.3}");
+        assert!(
+            pz0 > 1.0,
+            "emitted subsystem not forward-biased: ⟨pz⟩ = {pz0}"
+        );
+        assert!(
+            pz1 < -1.0,
+            "recoil subsystem not backward-biased: ⟨pz⟩ = {pz1}"
+        );
+
+        // Swapping the emitted leg flips the bias — the ordering is load-bearing.
+        let swapped = DiagramChannel::from_topology_tchannel(
+            500.0,
+            [80.0, 80.0],
+            vec![0.0, 0.0],
+            (vec![1], None),
+            (vec![0], None),
+            0.0,
+        );
+        let (spz0, spz1) = forward(&swapped, 0x7C08);
+        assert!(
+            spz0 < -1.0 && spz1 > 1.0,
+            "swapped ordering did not flip the forward bias: {spz0}, {spz1}"
+        );
+    }
+
+    /// The payoff: on a forward-peaked t-channel integrand `1/(t−m_t²)²`, the
+    /// peripheral spine's per-point variance is far below flat RAMBO's at fixed `N`,
+    /// while both agree on the integral. Per AGENTS.md this variance win does *not*
+    /// confirm the ordering convention — the firing tests above do that.
+    #[test]
+    fn t_channel_beats_flat_rambo_variance() {
+        let beams = beam_momenta::<f64>(500.0, 80.0, 80.0);
+        let m_t2 = 0.0_f64;
+        let integrand = move |p: &[LorentzVector<f64>]| {
+            let t = transfer_invariant(beams[0], p[0]);
+            1.0 / (t - m_t2).powi(2)
+        };
+        let ch = spine_channel();
+        let rb = RamboChannel::new(500.0, vec![0.0, 0.0]);
+
+        let n = 400_000;
+        let (mean_ch, var_ch) = mc_integrand(&ch, 0x7C09, n, integrand);
+        let (mean_rb, var_rb) = {
+            let mut stream = SubStream::from_stream(0x7C0A, 53);
+            let (mut sum, mut sum_sq) = (0.0, 0.0);
+            for _ in 0..n {
+                let u = stream.uniforms::<f64>(rb.ndim());
+                let pt = rb.sample(&u);
+                let v = pt.weight * integrand(&pt.momenta);
+                sum += v;
+                sum_sq += v * v;
+            }
+            let mean = sum / n as f64;
+            (mean, (sum_sq / n as f64 - mean * mean).max(0.0))
+        };
+        let err = ((var_ch + var_rb) / n as f64).sqrt();
+        eprintln!(
+            "t-channel σ: spine {mean_ch:.6e} (var {var_ch:.3e}) vs flat {mean_rb:.6e} \
+             (var {var_rb:.3e}); var ratio {:.2e}",
+            var_rb / var_ch
+        );
+        assert!(
+            (mean_ch - mean_rb).abs() < 6.0 * err,
+            "t-channel σ disagrees: spine {mean_ch:.6e} vs flat {mean_rb:.6e} (err {err:.2e})"
+        );
+        assert!(
+            var_ch < var_rb,
+            "spine variance {var_ch:.3e} not below flat RAMBO {var_rb:.3e}"
+        );
+    }
+
+    /// `from_diagram` builds a t-channel spine for a real 2→2 process (`u u~ > u u~`,
+    /// t-channel gluon), and the emitted subsystem it pairs with beam 0 matches the
+    /// independent graph cut of the spacelike line. This pins the peripheral
+    /// pairing directly off the diagram, with no reliance on a cross section.
+    #[test]
+    fn spine_built_for_real_t_channel_process() {
+        let m = sm_model(SMRestrict::Default);
+        let ev = EvaluatedModel::from_model(m.clone());
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate u u~ > u u~", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, &m).unwrap();
+        let mut spines = 0usize;
+        for set in &sets {
+            for d in &set.diagrams {
+                let n_in = d.n_in;
+                let n_ext = d.n_ext();
+                let spacelike: Vec<usize> = (0..d.props.len())
+                    .filter(|&pi| d.props[pi].is_spacelike(n_in))
+                    .collect();
+                if spacelike.len() != 1 || n_ext - n_in != 2 {
+                    continue;
+                }
+                // The momentum-based emitted mask must match the graph cut's
+                // beam-0-side outgoing legs.
+                let (emitted, _) = spine_partition(&d.props[spacelike[0]].momentum, n_in, n_ext);
+                let side0 = cut_side_externals(d, spacelike[0]);
+                let has_beam0 = side0.contains(&0);
+                let mut want = 0u64;
+                for e in n_in..n_ext {
+                    let on_beam0_side = if has_beam0 {
+                        side0.contains(&e)
+                    } else {
+                        !side0.contains(&e)
+                    };
+                    if on_beam0_side {
+                        want |= 1 << (e - n_in);
+                    }
+                }
+                assert_eq!(
+                    emitted, want,
+                    "emitted mask disagrees with graph cut (mom {:?})",
+                    d.props[spacelike[0]].momentum
+                );
+
+                let ch = DiagramChannel::<f64>::from_diagram(d, &ev, 500.0);
+                assert_eq!(ch.ndim(), 2, "a 2→2 spine channel has ndim 2");
+                let beams = beam_momenta::<f64>(500.0, 0.0, 0.0);
+                let mut stream = SubStream::from_stream(0x7C0B, 55);
+                for _ in 0..500 {
+                    let u = stream.uniforms::<f64>(ch.ndim());
+                    let pt = ch.sample(&u);
+                    let t = transfer_invariant(beams[0], pt.momenta[0]);
+                    assert!(t <= 1e-6, "u u~ spine t = {t} not spacelike");
+                }
+                spines += 1;
+            }
+        }
+        assert!(spines > 0, "no t-channel spine built for u u~ > u u~");
     }
 
     // ── Diagram classification against the momentum-routing convention ──────────

@@ -151,6 +151,69 @@ classification is cross-checked against an **independent graph-cut** derivation
 of the same partition (connected components after removing the line), so a future
 feyngraph routing-convention change trips a test in either derivation.
 
+### Addendum — t-channel spine (single spacelike line, `2 → 2`)
+
+Genuine spacelike lines are no longer metadata-only for the simplest case. A
+diagram with **exactly one spacelike line building a `2 → 2` final state** is
+decomposed as a peripheral **spine** rather than an all-timelike tree.
+
+- **New peripheral node type.** `DiagramChannel` now holds a
+  `ChannelTopology` — `Timelike(Branch)` (the existing decay tree, unchanged) or
+  `Spine(Spine)`. A `Spine` carries an `emitted` and a `recoil` `Node` plus the
+  spacelike propagator's `t_mass2` (width forced to zero — note-07 2.8.0/2.9.3:
+  a spacelike line has no Breit-Wigner). The emitted/recoil subsystems recurse
+  into the **existing** `sample_branch`/`branch_jacobian` machinery unchanged, so
+  timelike subtrees hang off the spine with no duplication.
+- **Beam-frame state.** `DiagramChannel` now stores `beams: [LorentzVector; 2]`
+  (beam 0 along `+z` in the CM), computed from `√ŝ` and the incoming masses. This
+  is the reference for the transfer `t`; the timelike tree never needed it. It is
+  the *only* new channel state, and `channel.rs` is untouched — the spine still
+  satisfies `Channel::density`.
+- **The `t` map (`draw_t`/`t_measure`).** Importance-samples the propagator
+  `1/(t − m²)` with density `∝ 1/(m² − t)` via the logarithmic substitution
+  `t = m² − (m²−t_min)·exp(−x·N)`, `N = ln[(m²−t_min)/(m²−t_max)]`, exact Jacobian
+  `dt/dx = N·(m² − t)`. Both endpoints are `≤ 0`; a massless beam pins `t_max = 0`
+  (collinear edge) and a massive initial state pushes `t_max < 0` (2.9.3). At the
+  collinear edge or a threshold-degenerate window the pole cannot shape the draw,
+  so it **falls back to flat in `t`** (the spine then reduces to the isotropic
+  2-body split) — the exact analogue of the BW map's zero-width flat fallback.
+- **Peripheral kinematics.** The emitted subsystem's polar angle is fixed by `t`
+  (`t = m_a² + s₁ − 2E_aE₁ + 2k·p*·cosθ`), only `φ` free. The 2-body LIPS `R₂` is
+  reparametrised from `(cosθ, φ)` to `(t, φ)` via `dcosθ = dt/(2k·p*)`, giving the
+  rung factor `π·(dt/dx)/(4√ŝ·k)` (the `p*` cancels) — a different Jacobian from
+  the timelike `r2_factor = π|p*|/√ŝ`.
+- **`density` off the channel's own points.** Each rung's `t` is recomputed as the
+  frame-independent invariant `(beams[0] − p_emitted)²` from the final momenta plus
+  the stored beam, and `s₁,s₂` from the subsystem masses — so `Channel::density`
+  stays well-defined on foreign configs (the L4 contract).
+- **Spine ordering strategy (and why).** The emitted subsystem is anchored to
+  **beam 0** and is the final-state legs on beam 0's side of the spacelike cut,
+  read from the stored `Prop.momentum` nonzero pattern (the same convention-robust
+  reading as `subsystem_mask`, cross-checked against the independent graph cut).
+  Pairing the emitted blob with the wrong beam would read the crossed `u`-channel
+  invariant; this is pinned by a firing test (emitted/recoil transfer consistency
+  by momentum conservation, and a forward-bias test that a silent emitted/recoil
+  swap flips). For the single-rung case the spine's `t_mass2` **supersedes** the
+  old `t_channels` mass/width metadata as the kinematic driver; the `t_channels`
+  accessor is retained only for higher-multiplicity/ladder diagrams that still
+  fall back to the all-timelike tree.
+
+**Deferred — multi-rung spine (Part 2).** A genuine multi-spacelike-line ladder
+(VBF/DIS, `≥ 2` t-channel lines) needs an **explicit ordered chain of rungs** —
+which final-state blobs attach to which rung, in what order along
+`q_i = p_a − (p₁+…+p_i)` — derived from the `Prop` chain, superseding the
+unordered `t_channels` metadata. This is note-07 2.9.0 ("four ordering strategies;
+wrong default for many processes"), the session's stated bug magnet. It was
+**deferred rather than committed** because its ordering Jacobian cannot be pinned
+against an analytic/independent oracle in-session (volume `Vₙ` and a passing σ are
+both blind to a wrong-but-valid ordering — AGENTS.md "a passing gate that cannot
+see the convention is not confirmation"), and a single spacelike line inside a
+`2 → n>2` final state is folded into the same deferral. Hand-off: extend `Spine`
+to `rungs: Vec<SpineRung>` + a terminal `recoil`, each rung emitting one blob with
+its own `t` against the running `q_i`; the load-bearing new oracle is an ordering
+firing test (1-D `t_i` projections smooth and covering the full range; swapping
+rung order changes the result as the physics dictates).
+
 ---
 
 ## Helicity & color handling (both sprints)
