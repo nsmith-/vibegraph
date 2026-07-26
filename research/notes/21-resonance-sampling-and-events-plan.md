@@ -276,10 +276,12 @@ wrong; a passing σ is never accepted as confirmation):
   (collinear edge), where the t-map falls back to flat; whether a fiducial cut is
   wanted there (rather than the flat fallback) for a physical massless-initial-state
   t-channel is unresolved.
-- **Wiring the multichannel + α sampler into the CLI `integrate` path** — the
-  combiner is validated as a unit but flat RAMBO still drives `integrate`; promoting
-  it to the production integrand is what would let the resonant `validate_sigma`
-  SKIP rows (`ee_to_mumu_tata_qcd0`, `ee_to_tatah`, `ee_to_mumua`) flip to GATE.
+- ~~**Wiring the multichannel + α sampler into the CLI `integrate` path**~~ — **done**
+  in session P (addendum below); `ee_to_tatah` and `ee_to_mumua` flipped to GATE,
+  `ee_to_mumu_tata_qcd0` is informational on an open +3.0% offset.
+- **Low-`m_ll` reconciliation** (new, from session P) — `ee_to_mumu_tata_qcd0` sits
+  +3.0% above the banked MG σ, entirely below `m_ll ≈ 20 GeV`. Needs a differential
+  `dσ/dm_ll` comparison against MG; the scalar σ cannot decide which side is right.
 
 ### Addendum — putting the sampler into production (`sampler-in-production`)
 

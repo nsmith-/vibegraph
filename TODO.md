@@ -18,8 +18,11 @@ level convention coverage; sprint section below, full plan note 19) →
 mul-split + S2 one-shot DAG validation + S3 ZEROAMP skipping + S4 fewest-ext-leg
 rooting; cumulative `forward` **1.18×–2.19×** every benchmarked process, all bit-exact
 or ≤1e-12 vs MG; sprint section below, full plan note 20) → **`resonance-sampling`**
-(feature, 🔲 planned: multichannel phase space, `lips-nbody` remainder; Sprint A of the
-resonance-sampling→events program, sprint section + note 21 below).
+(feature, ✅ closed + merged 2026-07-26, HEAD `fcf5ded`: MadGraph-style multichannel
+phase space — per-diagram propagator-pole channels, Breit-Wigner + t-channel + massless
+log maps, variance-minimising weight, Kleiss-Pittau α-adaptation — now driving the
+production `integrate` path; two resonant σ rows flat RAMBO could not sample flipped
+SKIP→GATE; sprint section + note 21 below). **Next: Sprint B `event-output-lhef`.**
 
 ## Pipeline Status
 
@@ -28,22 +31,24 @@ resonance-sampling→events program, sprint section + note 21 below).
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 14 processes agree with MadGraph (11 bit-identical ≤6.3e-13, incl. 2→6/VVV/massive externals, all NCOLOR=1; `uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) |
-| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS, now a two-phase serde object (`adapt`/`sample_frozen` split, deterministic rayon chunking) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams; channel mappings + multi-channel weights remain (`lips-nbody`) |
+| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS, a two-phase serde object (`adapt`/`sample_frozen` split, deterministic rayon chunking) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams. `lips-nbody` remainder now closed by `resonance-sampling`: per-diagram channel trees, Breit-Wigner/t-channel/massless-log invariant maps, variance-minimising multichannel weight and α-adaptation, driving `integrate`. Deferred: multi-rung t-channel ladders (note 21) |
 | 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻, pp→e⁺e⁻ Drell–Yan) | ✅ Done | Leptonic: `validate_vegas.rs` `sigma_z_pole` σ≈2025 pb at √s=91.2 (<0.1% vs MG), `sigma_qed_limit` (√s=10 vs 4πα²/3s, 3%). Hadronic: PDF-convolved σ(pp→e⁺e⁻) via a pure-Rust LHAPDF6 grid parser + log-bicubic interpolation (`pdf/`) and compiled MG run-card cuts (`runcard.rs`/`cuts.rs`), integrated over (τ,y); vs MG within 0.14% (default cuts, 934.42±0.87 vs 933.11±0.447 pb) / 0.07% (m_ℓℓ∈[60,120], 644.86±0.57 vs 644.42±0.315 pb); `vibegraph integrate` CLI drives proc-card + run-card → σ + persisted VEGAS grid artifact |
-| 6 | Unweighted event output (LHEF) | 🔲 Pending | Accept/reject sampling + Les Houches format; substrate now in place (frozen VEGAS grid, RAMBO, cuts accept-gate — see `event-output-lhef` below); still depends on `lips-nbody` channel mappings for genuine n-body final states |
+| 6 | Unweighted event output (LHEF) | 🔲 Pending — **unblocked** | Accept/reject sampling + Les Houches format. Substrate complete: frozen VEGAS grid, RAMBO, cuts accept-gate, and — as of `resonance-sampling` — the peak-resolving n-body sampler its unweighting efficiency depends on. Now the next sprint (`event-output-lhef`, E1–E4 below) |
 
 Closed-sprint history (`helas-generalize`, `mg-validation-coverage`,
 `cleanup-refactor`, `performance-sprint`, `color-flow`, `validation-sprint`, the
-**eval performance program**, **`hadronic-xsec`**) lives in git history and
+**eval performance program**, **`hadronic-xsec`**, **`validation-2`**,
+**`eval-perf-2`**, **`resonance-sampling`**) lives in git history and
 `research/notes/` (12: continuum bug hunt, 13: typed conventions, 15: eval
 optimization program incl. its §2 close-outs, 16: color-flow design + debrief
 incl. the VVVV phase-bug root cause and fix, 17: bounds-check-elimination memo,
-18: hadronic cross-section design + outcome, `rooting-study-results.md`: rooting
-headroom study).
+18: hadronic cross-section design + outcome, 19: validation pass, 20: eval-perf-2,
+21: resonance-sampling → events program incl. the production-wiring addendum,
+`rooting-study-results.md`: rooting headroom study).
 
 ---
 
-## 🌊 `resonance-sampling` sprint ✅ SESSIONS COMPLETE, awaiting merge (full plan: `research/notes/21-resonance-sampling-and-events-plan.md`)
+## 🌊 `resonance-sampling` sprint ✅ CLOSED + MERGED TO MAIN 2026-07-26 (ff, HEAD `fcf5ded`; full plan: `research/notes/21-resonance-sampling-and-events-plan.md`)
 
 **Sprint A of a two-sprint program** (A = resonance-aware sampling, then B =
 `event-output-lhef`; program plan in note 21). Completes the `lips-nbody`
@@ -77,27 +82,46 @@ load-bearing** (note 21 §"Validation regime"): σ-agreement is a weak oracle
 smoothly), so gate finest-first — bit-for-bit where seed+order allow,
 distribution histograms next, σ-within-MC as a coarse backstop only.
 
-**Open follow-up — `low-mll-reconciliation`.** `ee_to_mumu_tata_qcd0`
-(`e+ e- > mu+ mu- ta+ ta-`) integrates stably — five seeds within 0.6% of each
-other, χ²/dof 0.36–2.02 — but sits **+3.0% above** the banked MG σ (pull
-+7.9…+9.5). The offset is entirely below `m_ll ≈ 20 GeV`: re-integrating with
-`mmll = 20 GeV` agrees with MG to −0.1%. The *sign* rules out under-coverage on
-this side (missing the photon pole would read low, not high), so the open question
-is whether MG under-counts there — its massless-pole grid floor
-`xo = min(10/stot, …)` in `set_peaks` truncates the same region — or whether this
-sampler over-weights it. A scalar σ cannot decide it: this needs a differential
-`dσ/dm_ll` comparison against MG, i.e. the L5 distribution-level regime pointed at
-a new observable. Row stays `Plan::Info` (never a loosened tolerance) until
-resolved. Probes are in place and `#[ignore]`d in `validate_sigma.rs`
-(`probe_resonant_seed_stability`, `probe_photon_pole_is_the_instability`,
-`probe_vegas_iteration_path`, `probe_grid_adaptation_is_the_residue`,
-`probe_alpha_collapse`).
+### What the sprint delivered
+
+Full MadGraph-style multichannel phase space, live on the production `vibegraph
+integrate` path. Cumulative variance wins vs flat RAMBO at fixed N, each with its
+own firing test: BW map ~540,000×, multichannel up to ~1e8× (synthetic multi-peak),
+t-channel spine 196×, α-adaptation ~1900× vs L4 (best-case caveat: the α figure is
+measured on a near-zero-variance linear-combination integrand; real |M|² is less).
+σ-level effect: two resonant `validate_sigma` rows that flat RAMBO could not sample
+at all are now hard gates.
+
+**The sprint's most transferable lesson** (note 21 addendum, and why session P cost
+more than the wiring it nominally was): a **fixed-seed pull cannot validate a
+sampler**. VEGAS combines iterations by `1/σ²`, so an iteration that *misses* a
+narrow region reports a small integral **and** a small variance, dominates the
+weighted mean, and shrinks the quoted error with it. The failure is a *confidently
+wrong* σ, not a noisy one — observed at 25× low quoted to 5%. Seed sweeps are now
+part of the gate's evidence. Corollary that separates "needs more points" from "is a
+bug": if extra budget makes the failure **migrate between seeds** instead of
+shrinking, it is a bug.
+
+### Deferred / open (carried forward, not regressions)
+
+| Item | Why it is open | Where |
+|---|---|---|
+| **`low-mll-reconciliation`** | `ee_to_mumu_tata_qcd0` samples stably (5 seeds within 0.6%, χ²/dof 0.36–2.02) but sits **+3.0% above** banked MG (pull +7.9…+9.5). Entirely below `m_ll ≈ 20 GeV` — cutting there agrees to −0.1%. The *sign* rules out under-coverage on this side (missing the photon pole reads low, not high), so either MG under-counts (its massless-pole grid floor `xo = min(10/stot, …)` in `set_peaks` truncates the same region) or this sampler over-weights it. **A scalar σ cannot decide it** — needs a differential `dσ/dm_ll` comparison, i.e. the L5 distribution-level regime aimed at a new observable. Row stays `Plan::Info`, never a loosened tolerance. | `validate_sigma.rs`; 5 `#[ignore]`d probes in place (`probe_resonant_seed_stability`, `probe_photon_pole_is_the_instability`, `probe_vegas_iteration_path`, `probe_grid_adaptation_is_the_residue`, `probe_alpha_collapse`) |
+| **Multi-rung t-channel spine (Session T Part 2)** | Ladder topologies (VBF/DIS, ≥2 spacelike lines). The ordering Jacobian cannot be pinned by `Vₙ`/σ in-session, so it was deferred rather than committed unvalidated. Hand-off design is written up (`Spine → rungs: Vec`, running `q_i = p_a − Σp`, note-07 §2.9.0 ordering firing test). | note 21 §"Deferred — multi-rung spine" |
+| **MG-plot distribution comparison** | L5 validated sampled histograms against *analytic* BW/t-channel oracles (exact) with MG σ as the coarse backstop. Comparing sampled invariant-mass/angular histograms against MG's own `.lhe`/plots needs the MG toolchain. Would also be the vehicle for `low-mll-reconciliation` above. | note 21 close-out |
+| **Massless-t-channel fiducial cut** | A massless beam pins `t_max = 0` (collinear edge), where the t-map falls back to flat. Whether a fiducial cut is wanted there instead of the flat fallback is unresolved for a physical massless-initial-state t-channel. | note 21 close-out |
+| **`dynamical-scales`** | Unchanged and out of this sprint's scope: MG runs αs to a per-event scale, so the 3 QCD `validate_sigma` rows stay informational. Still the blocker on a real QCD σ gate. | separate feature |
+| **2→6 σ rows** | `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` remain `Plan::Skip` — ~1 ms/eval over a 24-dim map is too slow to gate, a cost issue rather than a sampling one. | `validate_sigma.rs` |
+
+### Next
 
 **Sprint B — `event-output-lhef`** (E1 `jamp2-flow-select` → E2 `accept-reject`
-+ `mg-single-helicity-bench` → E3 `lhef-writer` → E4 `generate-cli`) follows A;
-outlined in note 21, expanded into its own note at open. Depends on A. Optional
-tail folded in: `mg-single-helicity-bench` rides with E2. **Not** in scope:
-`dynamical-scales` (separate feature; still the blocker on a real QCD σ gate).
++ `mg-single-helicity-bench` → E3 `lhef-writer` → E4 `generate-cli`). Sprint A's
+dependency is now satisfied *and* live in production, which matters for B: E2's
+accept/reject rides on this sampler, so its unweighting efficiency is a direct
+beneficiary of the peak resolution landed here. Outlined in note 21, expanded into
+its own note at open. Optional tail folded in: `mg-single-helicity-bench` rides
+with E2.
 
 ---
 
@@ -427,7 +451,7 @@ Also deferred perf backlog (from `cleanup-refactor`/`performance-sprint`):
 peepholes are now **`eval-perf-2` session S1** (note 20, sized: `Mul` is 57.6% of
 eval-time instructions).
 
-### `lips-nbody` — n-body LIPS phase-space generator
+### `lips-nbody` — n-body LIPS phase-space generator ✅ CLOSED 2026-07-26
 
 Generalize phase-space sampling to 3+ final-state particles using recursive 2-body
 decomposition (RAMBO-style). Research Rust options before committing to an approach.
@@ -435,9 +459,11 @@ decomposition (RAMBO-style). Research Rust options before committing to an appro
 session H3): massive RAMBO generic over `F: Real` with the KSE weight,
 splittable-substream RNG, and the banked σ̂ flat-MC check below. `hadronic-xsec`'s own
 σ(pp→e⁺e⁻) integrand is 2→2 and used a direct 2-body LIPS map, not RAMBO, so it
-didn't need the channel-mapping generalization — **remaining scope here** = channel
-mappings + multi-channel weights on top of the RAMBO/RNG seams. **Now planned as the
-`resonance-sampling` sprint** (Sprint A, sessions L1–L5; top of file + note 21).
+didn't need the channel-mapping generalization — remaining scope here was channel
+mappings + multi-channel weights on top of the RAMBO/RNG seams. **Delivered by the
+`resonance-sampling` sprint** (✅ closed + merged 2026-07-26, HEAD `fcf5ded`; sprint
+section at top of file + note 21), which is now live on the production `integrate`
+path. Only deferred remainder: multi-rung t-channel ladders (note 21).
 (The MG validation side already generates n-body points via RAMBO in
 `gen_amplitude.py`; the MG-computed partonic σ̂ = 6.556e-7 pb for the uux 2→6 at
 √s=500 is **now consumed** by H3's flat-MC weight-normalization check
@@ -507,11 +533,12 @@ accept/reject primitive), H3's RAMBO + splittable RNG, and H6's compiled `Cuts`
 handoff format from the `integrate` phase into a future `generate` phase, which
 would deserialize it and refuse a mismatched run rather than take raw CLI flags
 again. Still missing: the `generate` CLI phase itself, and genuine n-body final
-states (depends on `lips-nbody`'s channel-mapping scope, since accept/reject
-against a single flat map is a poor sampler once propagator peaks appear).
-**Now planned as Sprint B** (sessions E1–E4, `mg-single-helicity-bench` folded into
-E2) of the resonance-sampling→events program; outlined in note 21 (top of file),
-own note at open, opens after the `resonance-sampling` sprint.
+states. That second dependency is **now satisfied**: `resonance-sampling` (✅ closed
+2026-07-26) supplies the peak-resolving n-body sampler, which matters directly here —
+accept/reject against a single flat map is a poor sampler once propagator peaks
+appear, so unweighting efficiency rides on it. **This is now the next sprint**
+(Sprint B, sessions E1–E4, `mg-single-helicity-bench` folded into E2); outlined in
+note 21 (top of file), own note at open.
 
 LHEF color tags need MG's *leading-Nc* flow decomposition (`color_flow_decomposition`
 / `get_color_flow_string` in `color_amp.py`) to assign a `(color, anticolor)` integer
@@ -522,7 +549,7 @@ input) — a cheap diagonal accumulator on the `eval_m2` combination loop, note 
 §2.2; the flow→string dictionary must be pinned against MG's conventions (see the
 validation backlog).
 
-_Depends on: `lips-nbody` (n-body final states)._
+_Depends on: `lips-nbody` (n-body final states) — ✅ satisfied 2026-07-26._
 
 ### `typed-units` — Typed physical units
 
