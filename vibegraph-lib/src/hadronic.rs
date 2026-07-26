@@ -6,8 +6,10 @@
 //!   `p p → e⁺ e⁻` process convolved with parton distributions ([`crate::pdf`])
 //!   over a `(τ, y) × cosθ` map (documented below).
 //! * [`FixedBeamIntegrand`] — fixed-energy partonic beams (`lpp = 0`), an
-//!   arbitrary MG-validated process with no PDF convolution and a flat-RAMBO
-//!   phase-space map over any final-state multiplicity.
+//!   arbitrary MG-validated process with no PDF convolution over any final-state
+//!   multiplicity, sampled with flat RAMBO or — once
+//!   [`FixedBeamIntegrand::use_multichannel`] has run — a resonance-aware
+//!   per-diagram multichannel map that resolves Breit–Wigner peaks.
 //!
 //! The initial-state flux and spin×colour averaging factors are derived per
 //! process from its incoming legs ([`initial_spin_color_average`]).
@@ -62,13 +64,17 @@ use rand::SeedableRng;
 use thiserror::Error;
 
 use crate::cuts::{CutError, Cuts, ExternalLeg};
+use crate::diagrams::diagram::Diagram;
 use crate::diagrams::{
     generate_from_proc_card, parse_proc_card, DiagramError, DiagramSet, ParsingOptions,
 };
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::PdfMember;
-use crate::phasespace::{lips2_jacobian_u, PhaseSpaceMap, RamboChannel, GEV2_TO_PB};
+use crate::phasespace::{
+    lips2_jacobian_u, AlphaAdaptation, Channel, DiagramChannel, MultiChannel, PhaseSpaceMap,
+    RamboChannel, GEV2_TO_PB,
+};
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::vegas::{VegasGrid, VegasResult};
 
@@ -78,6 +84,29 @@ type V = LorentzVector<f64>;
 pub const VEGAS_NDIM: usize = 3;
 pub const VEGAS_NBINS: usize = 64;
 pub const VEGAS_ALPHA: f64 = 1.5;
+
+/// Grid-damping exponent used once a resonance-aware multichannel map is
+/// installed, in place of the [`VEGAS_ALPHA`] Lepage recommends for a raw
+/// integrand.
+///
+/// Lepage's `1.5` assumes the grid must *discover* the integrand's structure. A
+/// converged multichannel map has already flattened the peaks it knows about, so
+/// what remains in the unit hypercube is close to featureless and the per-bin `f²`
+/// statistics are dominated by sampling noise. At `1.5` the refinement amplifies
+/// that noise: the grid concentrates into a spurious bin, later iterations sample
+/// a narrow region where the integrand is smooth and so report a small integral
+/// with a small variance, and — since iterations are combined by `1/σ²` — those
+/// confident, wrong iterations dominate the result. Measured on
+/// `e+ e- > mu+ mu- ta+ ta-` (25 channels), `1.5` collapses one seed in five to 36%
+/// of the banked sigma with `chi2/dof ≈ 580`, while `0.5` is stable across every
+/// seed *and* halves the error — the grid still absorbing the residual structure
+/// the channel maps do not cover.
+pub const VEGAS_ALPHA_MAPPED: f64 = 0.5;
+
+/// RNG substream index the multichannel α-adaptation survey draws on, kept distinct
+/// from the VEGAS integration substreams so the survey and the integral neither
+/// share nor correlate their sampling sequences.
+const MULTICHANNEL_ADAPT_STREAM: u64 = 0xA1FA_5EED;
 
 #[derive(Debug, Error)]
 pub enum HadronicError {
@@ -662,28 +691,35 @@ struct BoundSubprocess<'a> {
 
 /// A ready-to-integrate cross section for a **fixed-energy, no-PDF** beam
 /// configuration (`lpp = 0`) and an arbitrary final-state multiplicity, sampled
-/// with flat RAMBO under VEGAS.
+/// under VEGAS.
 ///
 /// The incoming particles *are* the beam particles: `√ŝ = E₁ + E₂` is fixed, so
-/// there is no `τ`/`x` sampling and no PDF luminosity. RAMBO maps the `4n` VEGAS
-/// uniforms to `n` on-shell final-state momenta summing to `(√ŝ, 0, 0, 0)` and
-/// supplies the invariant-volume weight; the two beams sit at `√ŝ/2` along ±z, so
-/// the full external set is already the partonic-CM, ±z-beam frame the
-/// helicity-pruned [`BoundAmplitude::eval_m2`] requires, and (for symmetric
-/// beams) the lab frame coincides with it — the same momenta feed the cut filter.
+/// there is no `τ`/`x` sampling and no PDF luminosity. The phase-space
+/// [`PhaseSpaceMap`] maps the VEGAS uniforms to `n` on-shell final-state momenta
+/// summing to `(√ŝ, 0, 0, 0)` and supplies the invariant-volume weight; the two
+/// beams sit at `√ŝ/2` along ±z, so the full external set is already the
+/// partonic-CM, ±z-beam frame the helicity-pruned [`BoundAmplitude::eval_m2`]
+/// requires, and (for symmetric beams) the lab frame coincides with it — the same
+/// momenta feed the cut filter.
 ///
-/// Flat RAMBO carries no importance mapping, so VEGAS converges slowly on peaked
-/// integrands; channel/importance maps are a separate concern.
+/// The map is flat [`RamboChannel`] by default. [`use_multichannel`] swaps in a
+/// resonance-aware per-diagram [`MultiChannel`] combiner, α-adapted to this very
+/// integrand, so a narrow Breit–Wigner peak (which flat RAMBO under-samples) is
+/// importance-mapped and the integral converges at far lower variance. Both maps
+/// carry the *same* invariant-volume weight normalisation (`R_n`, no `2π`), so the
+/// master formula below is unchanged — only the sampling density is.
+///
+/// [`use_multichannel`]: FixedBeamIntegrand::use_multichannel
 ///
 /// # Master formula
 ///
 /// ```text
 /// σ̂ = 1/(2ŝ) · ⟨spin·colour avg⟩ · ∫ dΦ_n Σ|M|²
-///    = 1/(2ŝ) · avg · (2π)^{4−3n} · ⟨weight_RAMBO · Σ_sub |M_sub|²⟩_uniform
+///    = 1/(2ŝ) · avg · (2π)^{4−3n} · ⟨weight · Σ_sub |M_sub|²⟩_uniform
 /// ```
 ///
 /// where `Σ|M|²` is the colour+helicity-summed matrix element ([`eval_m2`]) and
-/// the `(2π)^{4−3n}` factor turns RAMBO's invariant volume `R_n` into the full
+/// the `(2π)^{4−3n}` factor turns the map's invariant volume `R_n` into the full
 /// `dΦ_n` measure.
 ///
 /// [`eval_m2`]: BoundAmplitude::eval_m2
@@ -691,14 +727,22 @@ pub struct FixedBeamIntegrand<'a> {
     subs: Vec<BoundSubprocess<'a>>,
     cuts: &'a Cuts,
     sqrt_s: f64,
-    /// Flat RAMBO map over the outgoing legs, on the fixed `√ŝ` and masses.
-    channel: RamboChannel<f64>,
+    /// Unit-hypercube → phase-space map over the outgoing legs, on the fixed `√ŝ`
+    /// and masses: flat [`RamboChannel`] by default, a resonance-aware
+    /// [`MultiChannel`] once [`use_multichannel`](Self::use_multichannel) has run.
+    sampler: Box<dyn PhaseSpaceMap<f64>>,
+    /// The outgoing pole masses in leg order, the map's targets.
+    final_masses: Vec<f64>,
     /// `1 / Π_a (n_spin · n_colour)` over the incoming legs.
     spin_color_avg: f64,
     /// The `(2π)^{4−3n}` measure factor.
     lips_2pi: f64,
     /// Beam energy `√ŝ/2`.
     beam_e: f64,
+    /// Grid-damping exponent for the VEGAS pass, following the active sampler:
+    /// [`VEGAS_ALPHA`] over the raw flat map, [`VEGAS_ALPHA_MAPPED`] once a
+    /// multichannel map has already flattened the integrand's known peaks.
+    vegas_alpha: f64,
 }
 
 impl<'a> FixedBeamIntegrand<'a> {
@@ -726,32 +770,37 @@ impl<'a> FixedBeamIntegrand<'a> {
                 scratch: RefCell::new(amp.scratch_space()),
             })
             .collect();
+        let sampler = Box::new(RamboChannel::new(sqrt_s, final_masses.clone()));
         FixedBeamIntegrand {
             subs,
             cuts,
             sqrt_s,
-            channel: RamboChannel::new(sqrt_s, final_masses),
+            sampler,
+            final_masses,
             spin_color_avg,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n as i32),
             beam_e: sqrt_s / 2.0,
+            vegas_alpha: VEGAS_ALPHA,
         }
     }
 
-    /// VEGAS dimensionality: the `4n` RAMBO uniforms for `n` final-state momenta.
+    /// VEGAS dimensionality — the uniforms the active phase-space map consumes.
+    /// `4n` for flat RAMBO; `3n − 3` (one channel-selection coordinate plus the
+    /// `3n − 4` invariant/angle coordinates) for the multichannel combiner.
     pub fn vegas_ndim(&self) -> usize {
-        self.channel.ndim()
+        self.sampler.ndim()
     }
 
-    /// The integrand value at a VEGAS point `u ∈ [0,1]^{4n}`, in natural units
-    /// (GeV⁻²); its VEGAS integral is the partonic cross section. Points whose
-    /// momenta fail a cut contribute exactly zero.
-    pub fn value(&self, u: &[f64]) -> f64 {
-        let point = self.channel.sample(u);
-
-        let mut ext: Vec<V> = Vec::with_capacity(2 + point.momenta.len());
+    /// The colour+helicity-summed `Σ|M|²` at the outgoing momenta `momenta`, in the
+    /// partonic-CM frame, with the beams prepended and the cut filter applied — the
+    /// matrix-element part of the integrand as a function of the phase-space point.
+    /// A configuration failing a cut returns exactly `0.0`, so it drops out of both
+    /// the cross section and the α-adaptation survey.
+    fn matrix_element(&self, momenta: &[V]) -> f64 {
+        let mut ext: Vec<V> = Vec::with_capacity(2 + momenta.len());
         ext.push(V::new(self.beam_e, 0.0, 0.0, self.beam_e));
         ext.push(V::new(self.beam_e, 0.0, 0.0, -self.beam_e));
-        ext.extend(point.momenta);
+        ext.extend_from_slice(momenta);
 
         if !self.cuts.pass(&ext) {
             return 0.0;
@@ -761,9 +810,74 @@ impl<'a> FixedBeamIntegrand<'a> {
         for sub in &self.subs {
             m2 += sub.amp.eval_m2(&ext, &mut sub.scratch.borrow_mut());
         }
+        m2
+    }
 
+    /// The integrand value at a VEGAS point `u ∈ [0,1]^ndim`, in natural units
+    /// (GeV⁻²); its VEGAS integral is the partonic cross section. Points whose
+    /// momenta fail a cut contribute exactly zero.
+    pub fn value(&self, u: &[f64]) -> f64 {
+        let point = self.sampler.sample(u);
+        let m2 = self.matrix_element(&point.momenta);
+        if m2 == 0.0 {
+            return 0.0;
+        }
         let flux = 1.0 / (2.0 * self.sqrt_s * self.sqrt_s);
         flux * self.spin_color_avg * self.lips_2pi * point.weight * m2
+    }
+
+    /// Replace flat RAMBO with a resonance-aware per-diagram [`MultiChannel`] built
+    /// from `diagrams` (one [`DiagramChannel`] each, its propagator poles read from
+    /// `model`), then α-adapt the channel mixture to *this* integrand and install
+    /// the adapted combiner as the sampler.
+    ///
+    /// The α-adaptation surveys the combiner under the process's own `Σ|M|²` (the
+    /// [`matrix_element`](Self::matrix_element) shape, cut included), so weight
+    /// flows to the channels that carry the integrand's variance. Constant
+    /// prefactors (flux, spin/colour average, the `2π` measure) are omitted from
+    /// the survey integrand: they scale every channel's variance share equally and
+    /// so leave the Kleiss–Pittau reallocation unchanged, while keeping the survey
+    /// cheaper. The combiner shares RAMBO's `R_n` weight normalisation, so the
+    /// master formula and every prefactor are untouched — only the sampling density
+    /// changes, and the estimator stays unbiased for the same `σ̂`.
+    ///
+    /// Returns the α refinement path, or `None` if `diagrams` is empty (the flat
+    /// sampler is then left in place).
+    pub fn use_multichannel(
+        &mut self,
+        diagrams: &[Diagram],
+        model: &EvaluatedModel,
+        n_survey: usize,
+        n_iter: usize,
+        seed: u64,
+    ) -> Option<AlphaAdaptation<f64>> {
+        let channels: Vec<Box<dyn Channel<f64>>> = diagrams
+            .iter()
+            .map(|d| {
+                Box::new(DiagramChannel::from_diagram(d, model, self.sqrt_s))
+                    as Box<dyn Channel<f64>>
+            })
+            .collect();
+        if channels.is_empty() {
+            return None;
+        }
+        let mut combiner = MultiChannel::uniform(channels);
+        let report = combiner.adapt_alphas(
+            |momenta| self.matrix_element(momenta),
+            seed,
+            MULTICHANNEL_ADAPT_STREAM,
+            n_survey,
+            n_iter,
+            0.5,
+        );
+        self.sampler = Box::new(combiner);
+        self.vegas_alpha = VEGAS_ALPHA_MAPPED;
+        Some(report)
+    }
+
+    /// The final-state pole masses in outgoing-leg order.
+    pub fn final_masses(&self) -> &[f64] {
+        &self.final_masses
     }
 
     /// Integrate the cross section with VEGAS, returning `(σ, Δσ)` in picobarns.
@@ -775,7 +889,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// Run VEGAS adaptation, returning the trained grid alongside the result — the
     /// primitive the `integrate` CLI command serializes into its artifact.
     pub fn adapt_grid(&self, neval: usize, niter: usize, seed: u64) -> (VegasGrid, VegasResult) {
-        let mut grid = VegasGrid::new(self.vegas_ndim(), VEGAS_NBINS, VEGAS_ALPHA);
+        let mut grid = VegasGrid::new(self.vegas_ndim(), VEGAS_NBINS, self.vegas_alpha);
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
         let result = grid.adapt(|u| self.value(u), neval, niter, &mut rng);
         (grid, result)
@@ -930,6 +1044,234 @@ mod tests {
         let (sigma, err) = integ.integrate(20_000, 4, 0x5EED);
         assert!(sigma.is_finite() && sigma > 0.0, "sigma = {sigma}");
         assert!(err.is_finite() && err >= 0.0, "err = {err}");
+    }
+
+    /// Build the fixed-energy integrand builder + diagram list for a fixed-energy
+    /// process at `sqrt_s`, holding the amplitude/cut/model state the closure borrows.
+    fn fixed_energy_case(
+        proc: &str,
+    ) -> (
+        std::sync::Arc<UFOModel>,
+        EvaluatedModel,
+        Vec<DiagramSet>,
+        Vec<Diagram>,
+    ) {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card(&format!("generate {proc}"), &opts).unwrap();
+        let sets = generate_from_proc_card(&card, &m).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        (m, evaluated, sets, diagrams)
+    }
+
+    /// Diagnostic: does the `from_diagram` multichannel reproduce the *phase-space
+    /// volume* (integrand ≡ 1) for a real process? An unbiased combiner must, for
+    /// any channel set — so a volume that departs from the analytic massless `V_n`
+    /// localises a density/reciprocity bug in the per-diagram tree, independent of
+    /// |M|². Run with `--ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn probe_from_diagram_volume() {
+        use crate::phasespace::rambo::massless_volume;
+        use crate::phasespace::rng::SubStream;
+        use crate::phasespace::{PhaseSpaceMap, RamboChannel};
+
+        for proc in [
+            "e+ e- > mu+ mu-",
+            "e+ e- > ta+ ta- H",
+            "e+ e- > mu+ mu- a",
+            "e+ e- > mu+ mu- ta+ ta-",
+        ] {
+            let (m, evaluated, _sets, diagrams) = fixed_energy_case(proc);
+            let rep_set = crate::diagrams::generate_from_proc_card(
+                &parse_proc_card(&format!("generate {proc}"), &ParsingOptions::default()).unwrap(),
+                &m,
+            )
+            .unwrap();
+            let n_out = rep_set[0].particles_out.len();
+            let sqrt_s = 500.0;
+            let masses: Vec<f64> = vec![0.0; n_out];
+
+            let channels: Vec<Box<dyn Channel<f64>>> = diagrams
+                .iter()
+                .map(|d| {
+                    Box::new(DiagramChannel::from_diagram(d, &evaluated, sqrt_s))
+                        as Box<dyn Channel<f64>>
+                })
+                .collect();
+            let multi = MultiChannel::uniform(channels);
+            let flat = RamboChannel::new(sqrt_s, masses.clone());
+            let analytic = massless_volume(sqrt_s, n_out);
+
+            let mc_vol = |map: &dyn PhaseSpaceMap<f64>, stream: u64| -> (f64, f64) {
+                let mut s = SubStream::from_stream(0x5107, stream);
+                let (mut sum, mut sq) = (0.0, 0.0);
+                let nsamp = 2_000_000usize;
+                for _ in 0..nsamp {
+                    let u = s.uniforms::<f64>(map.ndim());
+                    let w = map.sample(&u).weight;
+                    sum += w;
+                    sq += w * w;
+                }
+                let mean = sum / nsamp as f64;
+                let err = ((sq / nsamp as f64 - mean * mean).max(0.0) / nsamp as f64).sqrt();
+                (mean, err)
+            };
+
+            let (v_multi, e_multi) = mc_vol(&multi, 1);
+            let (v_flat, e_flat) = mc_vol(&flat, 2);
+            eprintln!(
+                "[{proc}] n={n_out} {} diag | analytic V={analytic:.6e} | \
+                 multi {v_multi:.6e} ± {e_multi:.2e} (dev {:+.2e}) | \
+                 flat {v_flat:.6e} ± {e_flat:.2e} (dev {:+.2e})",
+                diagrams.len(),
+                v_multi / analytic - 1.0,
+                v_flat / analytic - 1.0,
+            );
+        }
+    }
+
+    /// The production wiring's efficiency win: on a genuinely resonant fixed-energy
+    /// process (`e+ e- > ta+ ta- h` at √s = 500 GeV, a Z → τ⁺τ⁻ pole in the τ-pair
+    /// invariant) the per-diagram α-adapted [`MultiChannel`] sampler converges to a
+    /// sharp σ̂ at a budget where flat RAMBO cannot resolve the pole at all.
+    ///
+    /// Flat RAMBO is the known-wrong baseline kept running alongside: because it
+    /// almost never lands on the narrow peak, at an equal budget it under-counts σ̂ by
+    /// orders of magnitude *and* its relative error stays large — the exact failure
+    /// that lists this process SKIP for the flat sampler. The load-bearing figure of
+    /// merit is therefore *relative* precision at equal budget (a peak-missing flat
+    /// run has a small absolute error precisely because its samples are all ≈ 0), and
+    /// the multichannel is orders of magnitude more precise. A wrong multichannel
+    /// density would show up as a σ̂ that fails to match the (independently
+    /// MG-banked) value in the σ gate, not here.
+    #[test]
+    fn multichannel_resolves_resonant_pole_flat_rambo_misses() {
+        let (m, evaluated, sets, diagrams) = fixed_energy_case("e+ e- > ta+ ta- h");
+        assert!(!diagrams.is_empty(), "process must enumerate diagrams");
+
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let sqrt_s = 500.0;
+
+        let build = || {
+            let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+            FixedBeamIntegrand::new(amps, &cuts, sqrt_s, masses.clone(), avg)
+        };
+
+        // Flat RAMBO (the known-wrong baseline for a narrow pole) at a matched budget.
+        let flat = build();
+        let (sigma_flat, err_flat) = flat.integrate(60_000, 8, 0x5EED_1);
+
+        // Per-diagram multichannel, α-adapted to this integrand, at the same budget.
+        let mut multi = build();
+        let report = multi
+            .use_multichannel(&diagrams, &evaluated, 20_000, 6, 0x5EED_2)
+            .expect("resonant process yields channels");
+        let (sigma_mc, err_mc) = multi.integrate(60_000, 8, 0x5EED_3);
+
+        let rel_flat = err_flat / sigma_flat.abs().max(1e-300);
+        let rel_mc = err_mc / sigma_mc.abs().max(1e-300);
+        eprintln!(
+            "resonant σ̂(e+e- > ta+ ta- h): flat RAMBO {sigma_flat:.6e} ± {err_flat:.2e} pb \
+             ({} dim, rel {rel_flat:.2e}) | multichannel {sigma_mc:.6e} ± {err_mc:.2e} pb \
+             ({} dim, {} channels, rel {rel_mc:.2e}) | α = {:?}",
+            flat.vegas_ndim(),
+            multi.vegas_ndim(),
+            diagrams.len(),
+            report.trajectory.last().unwrap(),
+        );
+
+        assert!(
+            sigma_mc.is_finite() && sigma_mc > 0.0,
+            "multichannel σ̂ finite positive: {sigma_mc}"
+        );
+        // The multichannel converged to a sharp estimate.
+        assert!(
+            rel_mc < 1e-2,
+            "multichannel did not converge: rel error {rel_mc:.2e}"
+        );
+        // The efficiency win at equal budget: the multichannel is far more precise
+        // relative to its own estimate than flat RAMBO, which fails to resolve the pole.
+        assert!(
+            rel_mc < 0.1 * rel_flat,
+            "multichannel not decisively more precise than flat RAMBO: \
+             rel_mc {rel_mc:.2e} vs rel_flat {rel_flat:.2e}"
+        );
+        // And flat RAMBO visibly under-counts by missing the peak — the known-wrong
+        // baseline firing.
+        assert!(
+            sigma_flat < 0.5 * sigma_mc,
+            "flat RAMBO did not under-count the resonant σ̂ as expected: \
+             flat {sigma_flat:.6e} vs multichannel {sigma_mc:.6e}"
+        );
+    }
+
+    /// The production wiring's unbiasedness: on a fixed-energy process where flat
+    /// RAMBO *does* converge (`e+ e- > mu+ mu-` at √s = 200 GeV, smooth and
+    /// off-resonance), the per-diagram multichannel sampler integrates to the same
+    /// σ̂ within the combined Monte-Carlo error. Swapping the flat map for the
+    /// resonance-aware combiner must not move the cross section.
+    #[test]
+    fn multichannel_unbiased_vs_flat_where_both_converge() {
+        let (m, evaluated, sets, diagrams) = fixed_energy_case("e+ e- > mu+ mu-");
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let sqrt_s = 200.0;
+
+        let build = || {
+            let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+            FixedBeamIntegrand::new(amps, &cuts, sqrt_s, masses.clone(), avg)
+        };
+
+        let flat = build();
+        let (sigma_flat, err_flat) = flat.integrate(60_000, 8, 0x5EED_4);
+
+        let mut multi = build();
+        multi
+            .use_multichannel(&diagrams, &evaluated, 20_000, 6, 0x5EED_5)
+            .expect("process yields channels");
+        let (sigma_mc, err_mc) = multi.integrate(60_000, 8, 0x5EED_6);
+
+        eprintln!(
+            "convergent σ̂(e+e- > mu+ mu- @200): flat RAMBO {sigma_flat:.6e} ± {err_flat:.2e} pb | \
+             multichannel {sigma_mc:.6e} ± {err_mc:.2e} pb ({} channels)",
+            diagrams.len(),
+        );
+
+        let comb = (err_flat * err_flat + err_mc * err_mc).sqrt();
+        assert!(
+            (sigma_flat - sigma_mc).abs() < 5.0 * comb,
+            "multichannel σ̂ {sigma_mc:.6e} ± {err_mc:.2e} disagrees with flat RAMBO \
+             {sigma_flat:.6e} ± {err_flat:.2e} (5σ = {:.2e})",
+            5.0 * comb
+        );
     }
 
     fn tiny_pdf() -> PdfMember {

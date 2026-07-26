@@ -281,6 +281,88 @@ wrong; a passing σ is never accepted as confirmation):
   it to the production integrand is what would let the resonant `validate_sigma`
   SKIP rows (`ee_to_mumu_tata_qcd0`, `ee_to_tatah`, `ee_to_mumua`) flip to GATE.
 
+### Addendum — putting the sampler into production (`sampler-in-production`)
+
+Wiring the multichannel into `validate_sigma`'s fixed-energy path — the step that
+promotes the resonant rows from `Plan::Skip` to real gates — surfaced two defects
+the sprint's own unit gates could not see. Both were found by **sweeping RNG
+seeds**, not by a fixed-seed pull: the first fixed-seed run of
+`ee_to_mumu_tata_qcd0` showed pull `+3.19`, which looks like an ordinary
+few-sigma miss and would have ridden into production as a passing gate.
+
+**Why a fixed-seed pull was not enough.** Both defects produce a *confidently
+wrong* σ rather than a visibly noisy one, because VEGAS combines iterations by
+`1/σ²` (`combine_iterations`, `vegas.rs`). An iteration that misses a narrow
+region reports a small integral **and** a small variance, so it dominates the
+weighted mean and shrinks the quoted error. Worst observed: σ 25× low quoted as
+`5.48e-5 ± 2.79e-6` — a 5% error bar on an answer off by a factor 25. Seed
+sweeps are now part of the gate's evidence (`probe_resonant_seed_stability`).
+
+**Defect 1 — the massless timelike pole kept the flat draw.** `bw_scale` returned
+`None` for `mΓ ≤ 0`, so a zero-width propagator (the `γ* → l⁺l⁻` of a lepton-pair
+subsystem) was drawn *flat* against a `1/(s−m²)²` rise. The estimator's variance
+is then dominated by the kinematic edge. Diagnosis was by elimination, each step
+refuting a cheaper hypothesis:
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| α-adaptation collapsed a channel | `probe_alpha_collapse` | **Refuted** — 0 channels at the floor; *uniform* α collapses too (seed 44 → 5e-7) |
+| Survey budget too small | 30k → 300k survey | **Refuted** — rescues seed 33, breaks seed 44; the failure moves, it does not converge away |
+| The low-`m_ll` photon pole | `probe_photon_pole_is_the_instability` | **Confirmed** — `mmll` 0→20 GeV takes the 5-seed spread from 24.96× to 1.01×, χ²/dof 1159 → 1.18 |
+
+MadEvent's counterpart is `set_peaks` (`myamp.f`): a zero-width s-channel
+propagator gets its grid pre-shaped to a `1/x` profile by `setgrid` (`dsample.f`,
+`grid = xo^(1−i/ngu)`, logarithmic bins), with an **invented floor** when the pole
+is massless (`xo = min(10/stot, stot/50, 0.5)`) and ~10% of bins reserved to reach
+below it. Note MG does *not* do this in `gen_s`, which is flat for `spole = 0` —
+the importance sampling lives in the grid, not the map. vibegraph does it as an
+analytic map instead (`log_scale`/`draw_invariant`), which does not depend on
+having a per-channel grid.
+
+**Defect 2 — VEGAS over-adapts on top of a good map.** With the log map in,
+4/5 seeds converged but one still collapsed. `probe_vegas_iteration_path` showed
+the tell: iterations 1–3 agree at 1.357e-3 (χ²≈0.1), then iteration 4 drops to
+4.8e-4 and *stays* — a grid collapsing into a corner, not a sampler missing a
+spike. `probe_grid_adaptation_is_the_residue` isolated the cause by sweeping the
+damping exponent:
+
+| `vegas_alpha` | 5 seeds | error |
+|---|---|---|
+| 0.0 (frozen) | all stable, χ²≈1 | 1.15e-5 |
+| 0.5 | all stable, χ²≈1 | **5.1e-6** |
+| 1.5 (Lepage) | one seed −64%, χ²=580 | — |
+
+Lepage's `1.5` assumes the grid must *discover* the integrand's structure. After a
+converged multichannel map the hypercube is nearly featureless, the per-bin `f²`
+statistics are noise-dominated, and a high exponent amplifies that noise into a
+real distortion. Hence `VEGAS_ALPHA_MAPPED = 0.5`, selected by the *sampler*
+(`FixedBeamIntegrand::vegas_alpha`), leaving the raw-RAMBO and Drell–Yan paths on
+`1.5` so their banked numbers are untouched.
+
+**A degenerate case the fix had to handle.** When the kinematic edge already sits
+above the floor there is no sub-floor region, and allotting the linear piece its
+10% of `x` maps that share onto a zero-width interval carrying zero measure —
+infinite weights, and zero density for any channel evaluating a foreign point.
+`LogMap::frac` drops to zero there so the logarithmic piece takes the whole draw
+(`log_map_without_subfloor_region_stays_finite`).
+
+**Dispositions.** `ee_to_tatah` and `ee_to_mumua` flip `Skip → Gate`: |pull| ≤ 0.89
+and ≤ 1.66 respectively, χ²/dof ≈ 1, across five seeds. `ee_to_mumu_tata_qcd0`
+becomes `Plan::Info`, **not** because it is unstable — it is now the tightest of
+the three, five seeds within 0.6% of each other — but because a genuine **+3.0%
+offset vs MadGraph** is now exposed (pull +7.9…+9.5) that the broken error bar
+previously hid. The offset is entirely localised below `m_ll ≈ 20 GeV` (cutting
+there agrees to −0.1%), and its **sign rules out under-coverage on this side**:
+missing the photon pole reads low, not high.
+
+_Open question for a follow-up:_ whether MG is the side under-counting — its `xo`
+floor truncates the same region — or whether this sampler over-weights it. The
+scalar σ cannot answer this; it needs a differential `dσ/dm_ll` comparison against
+MG, which is the L5 distribution-level regime pointed at a new observable. Until
+then the row stays informational rather than gated to a loosened tolerance.
+
+---
+
 **Next: Sprint B — `event-output-lhef`** (E1 → E4, `mg-single-helicity-bench`
 folded into E2). Unweighted event output via accept/reject over the frozen VEGAS
 grid + this sprint's peak-resolving sampler, serialised to LHEF; expanded into its

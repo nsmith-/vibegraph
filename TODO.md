@@ -43,7 +43,7 @@ headroom study).
 
 ---
 
-## 🌊 `resonance-sampling` sprint 🔲 PLANNED (full plan: `research/notes/21-resonance-sampling-and-events-plan.md`)
+## 🌊 `resonance-sampling` sprint ✅ SESSIONS COMPLETE, awaiting merge (full plan: `research/notes/21-resonance-sampling-and-events-plan.md`)
 
 **Sprint A of a two-sprint program** (A = resonance-aware sampling, then B =
 `event-output-lhef`; program plan in note 21). Completes the `lips-nbody`
@@ -59,17 +59,39 @@ needed; the model supplies each propagator's mass/width.
 
 | Session | Scope | Status |
 |---|---|---|
-| L1 | `phasespace-abstraction`: trait seam (`Channel`/`Sampler`/combiner) so sampler, channel map, integrator swap independently; refactor flat RAMBO + 2-body LIPS behind it. **Pure refactor** — DY σ + banked partonic σ̂ bit-for-bit. | 🔲 |
-| L2 | `diagram-channels`: `Diagram` → recursive 2-body-decomposition channel tree from the `Prop` chain (s/t via `is_spacelike`, propagator mass/width); flat parametrisation first. Gate: on-shell + momentum-conserving; flat Jacobian reproduces the RAMBO phase-space volume 2→2…2→6. | 🔲 |
-| L3 | `bw-invariant-map`: Breit-Wigner tan-substitution for timelike invariants (`m²`, `mΓ`) + massless/massive t-channel maps, exact Jacobians. Gate: 1-D Jacobians vs analytic BW/t-channel; single-channel sampler beats flat RAMBO variance on the Z pole; invariant-mass histogram matches analytic BW. | 🔲 |
-| L4 | `multichannel-weight`: draw channel ∝ αᵢ, weight `1/Σⱼ(1/Jⱼ)`; wire as VEGAS's integrand map. Gate: resonant/multi-peak σ within MC error, variance strictly below single-channel + flat at fixed N. | 🔲 |
-| L5 | `alpha-adaptation`: MG-style survey/refine of channel weights + the **distribution-level validation regime** (invariant-mass/angular histograms vs MG, not σ alone) + note-07 sampler-bug hazard tests (BW, T-channel ordering, threshold, overlapping resonances). | 🔲 |
+| L1 | `phasespace-abstraction`: trait seam (`Channel`/`Sampler`/combiner) so sampler, channel map, integrator swap independently; refactor flat RAMBO + 2-body LIPS behind it. **Pure refactor** — DY σ + banked partonic σ̂ bit-for-bit. | ✅ |
+| L2 | `diagram-channels`: `Diagram` → recursive 2-body-decomposition channel tree from the `Prop` chain (s/t via `is_spacelike`, propagator mass/width); flat parametrisation first. Gate: on-shell + momentum-conserving; flat Jacobian reproduces the RAMBO phase-space volume 2→2…2→6. | ✅ |
+| L3 | `bw-invariant-map`: Breit-Wigner tan-substitution for timelike invariants (`m²`, `mΓ`) + massless/massive t-channel maps, exact Jacobians. Gate: 1-D Jacobians vs analytic BW/t-channel; single-channel sampler beats flat RAMBO variance on the Z pole; invariant-mass histogram matches analytic BW. | ✅ |
+| L4 | `multichannel-weight`: draw channel ∝ αᵢ, weight `1/Σⱼ(1/Jⱼ)`; wire as VEGAS's integrand map. Gate: resonant/multi-peak σ within MC error, variance strictly below single-channel + flat at fixed N. | ✅ |
+| L5 | `alpha-adaptation`: MG-style survey/refine of channel weights + the **distribution-level validation regime** (invariant-mass/angular histograms vs MG, not σ alone) + note-07 sampler-bug hazard tests (BW, T-channel ordering, threshold, overlapping resonances). | ✅ |
+| P | `sampler-in-production`: wire the multichannel into `FixedBeamIntegrand` (the `vibegraph integrate` engine) and promote the resonant `validate_sigma` rows off `Skip`. Surfaced + fixed two defects the unit gates could not see — the massless timelike pole kept a flat draw, and VEGAS over-adapts on top of a converged map (note 21 addendum). | ✅ |
 
-Order: L1 → L2 → L3 → L4 → L5 (strictly linear). **Validation regime is
+Result: `ee_to_tatah` and `ee_to_mumua` are now hard GATEs (|pull| ≤ 0.89 / ≤ 1.66,
+χ²/dof ≈ 1, stable over five RNG seeds). `ee_to_mumu_tata_qcd0` is `Plan::Info`
+pending the follow-up below — it samples stably but carries a genuine +3.0% offset
+vs MG that the previously-broken error bar hid.
+
+Order: L1 → L2 → L3 → L4 → L5 → P (strictly linear). **Validation regime is
 load-bearing** (note 21 §"Validation regime"): σ-agreement is a weak oracle
 (MG's own sampler bugs stayed latent 5–10 years because mis-sampling shifts σ
 smoothly), so gate finest-first — bit-for-bit where seed+order allow,
 distribution histograms next, σ-within-MC as a coarse backstop only.
+
+**Open follow-up — `low-mll-reconciliation`.** `ee_to_mumu_tata_qcd0`
+(`e+ e- > mu+ mu- ta+ ta-`) integrates stably — five seeds within 0.6% of each
+other, χ²/dof 0.36–2.02 — but sits **+3.0% above** the banked MG σ (pull
++7.9…+9.5). The offset is entirely below `m_ll ≈ 20 GeV`: re-integrating with
+`mmll = 20 GeV` agrees with MG to −0.1%. The *sign* rules out under-coverage on
+this side (missing the photon pole would read low, not high), so the open question
+is whether MG under-counts there — its massless-pole grid floor
+`xo = min(10/stot, …)` in `set_peaks` truncates the same region — or whether this
+sampler over-weights it. A scalar σ cannot decide it: this needs a differential
+`dσ/dm_ll` comparison against MG, i.e. the L5 distribution-level regime pointed at
+a new observable. Row stays `Plan::Info` (never a loosened tolerance) until
+resolved. Probes are in place and `#[ignore]`d in `validate_sigma.rs`
+(`probe_resonant_seed_stability`, `probe_photon_pole_is_the_instability`,
+`probe_vegas_iteration_path`, `probe_grid_adaptation_is_the_residue`,
+`probe_alpha_collapse`).
 
 **Sprint B — `event-output-lhef`** (E1 `jamp2-flow-select` → E2 `accept-reject`
 + `mg-single-helicity-bench` → E3 `lhef-writer` → E4 `generate-cli`) follows A;
