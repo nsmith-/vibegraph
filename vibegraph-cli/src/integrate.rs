@@ -42,6 +42,14 @@ const NO_PDF: &str = "none";
 /// Artifact filename written inside the output directory.
 const GRID_FILENAME: &str = "grid.bin.zst";
 
+/// Points per survey iteration when α-adapting the fixed-energy multichannel
+/// combiner, clamped to `[MIN, MAX]` around the integration budget: enough to
+/// resolve each channel's variance share, capped so the one-off survey stays cheap.
+const MIN_ADAPT_SURVEY: usize = 10_000;
+const MAX_ADAPT_SURVEY: usize = 40_000;
+/// Survey→refine iterations for the α-adaptation.
+const ADAPT_ITERS: usize = 6;
+
 #[derive(Args, Debug)]
 pub struct IntegrateArgs {
     /// Process card selecting the model and process (`import model` + `generate`).
@@ -294,9 +302,11 @@ fn integrate_proton(
     })
 }
 
-/// Fixed-energy partonic beams (`lpp = 0`): flat-RAMBO integration with no PDF.
-/// The subprocess(es) and their external state are generated from the caller's
-/// proc card.
+/// Fixed-energy partonic beams (`lpp = 0`): resonance-aware multichannel integration
+/// with no PDF. The subprocess(es) and their external state are generated from the
+/// caller's proc card, and a per-diagram [`MultiChannel`] combiner — α-adapted to the
+/// process's own `Σ|M|²` — replaces flat RAMBO as the VEGAS integrand map so narrow
+/// Breit–Wigner peaks converge (unbiased, same σ̂; flat RAMBO under-samples them).
 fn integrate_fixed_energy(
     args: &IntegrateArgs,
     parsed: &ParsedProcCard,
@@ -325,8 +335,15 @@ fn integrate_fixed_energy(
         .collect();
     let spin_color_avg = initial_spin_color_average(rep, model, evaluated);
 
+    let diagrams: Vec<_> = sets
+        .iter()
+        .flat_map(|s| s.diagrams.iter().cloned())
+        .collect();
+
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
+    integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, args.seed);
 
     let (grid, result) = integ.adapt_grid(args.neval, args.niter, args.seed);
     Ok(RunOutput {

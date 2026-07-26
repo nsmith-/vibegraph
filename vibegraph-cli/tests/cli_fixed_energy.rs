@@ -1,12 +1,13 @@
 //! End-to-end test of `vibegraph integrate` on fixed-energy (`lpp = 0`) proc
-//! cards driven through the flat-RAMBO phase-space path.
+//! cards driven through the resonance-aware multichannel phase-space path.
 //!
 //! Unlike the hadronic `cli_integrate` gate, these need no PDF set and no banked
 //! reference data — only the interned SM model — so they run in the default test
 //! suite. They demonstrate the two generalizations of the CLI: `lpp = 0` beams
-//! (no PDF convolution, √ŝ = ebeam1 + ebeam2) and n-body final states through
-//! RAMBO. The σ checks are smoke-level (finite, positive); pinning σ statistically
-//! against banked MadGraph values is left to a dedicated σ gate.
+//! (no PDF convolution, √ŝ = ebeam1 + ebeam2) and n-body final states through the
+//! per-diagram multichannel combiner. The σ checks are smoke-level (finite,
+//! positive); pinning σ statistically against banked MadGraph values is left to a
+//! dedicated σ gate.
 
 use std::process::Command;
 
@@ -14,7 +15,9 @@ use vibegraph::artifact::IntegrateArtifact;
 
 /// Drive `vibegraph integrate` on a fixed-energy proc/run card pair written to a
 /// tempdir, with symmetric beams of energy `ebeam` (√ŝ = 2·ebeam). `expected_ndim`
-/// pins the `4n` RAMBO VEGAS dimensionality baked into the persisted grid.
+/// pins the multichannel VEGAS dimensionality baked into the persisted grid: one
+/// channel-selection coordinate plus the `3n − 4` per-channel invariant/angle
+/// coordinates, i.e. `3n − 3`.
 fn run_fixed_energy(process: &str, ebeam: f64, expected_ndim: usize) -> IntegrateArtifact {
     let tmp = tempfile::tempdir().unwrap();
     let proc_path = tmp.path().join("proc_card.dat");
@@ -61,19 +64,19 @@ fn run_fixed_energy(process: &str, ebeam: f64, expected_ndim: usize) -> Integrat
         artifact.sigma_err_pb
     );
     eprintln!(
-        "[{process}] fixed-energy σ = {:.4e} ± {:.2e} pb (RAMBO ndim {expected_ndim})",
+        "[{process}] fixed-energy σ = {:.4e} ± {:.2e} pb (multichannel ndim {expected_ndim})",
         artifact.sigma_pb, artifact.sigma_err_pb
     );
     artifact
 }
 
-/// 2→2 fixed-energy final state through flat RAMBO (n = 2 → 8 VEGAS dims). At
-/// √ŝ = 500 GeV this is the MG-validated `ee_to_ttx` point (σ_MG ≈ 0.549 pb);
-/// flat RAMBO on this non-resonant 2→2 tracks it closely.
+/// 2→2 fixed-energy final state (n = 2 → 3 multichannel VEGAS dims). At
+/// √ŝ = 500 GeV this is the MG-validated `ee_to_ttx` point (σ_MG ≈ 0.549 pb); the
+/// multichannel sampler on this smooth 2→2 tracks it closely.
 #[test]
 fn fixed_energy_2to2_finite_sigma() {
-    let a = run_fixed_energy("e+ e- > t t~", 250.0, 8);
-    // A smooth 2→2: flat RAMBO lands in the ballpark of the banked MG σ.
+    let a = run_fixed_energy("e+ e- > t t~", 250.0, 3);
+    // A smooth 2→2: the integral lands in the ballpark of the banked MG σ.
     assert!(
         (0.3..0.9).contains(&a.sigma_pb),
         "e+e- > t t~ σ = {} pb outside the plausible band",
@@ -81,10 +84,10 @@ fn fixed_energy_2to2_finite_sigma() {
     );
 }
 
-/// n-body (2→3) fixed-energy final state through flat RAMBO (n = 3 → 12 dims).
-/// Run below the Z pole (√ŝ = 200 GeV, so m_ττ < √ŝ − m_H ≈ 75 GeV) to keep the
-/// integrand off the sharp Z resonance that flat RAMBO samples poorly.
+/// n-body (2→3) fixed-energy final state (n = 3 → 6 multichannel VEGAS dims). The
+/// per-diagram combiner resolves the Z → τ⁺τ⁻ Breit–Wigner pole, so — unlike flat
+/// RAMBO — the integral converges even when the τ-pair invariant can reach the Z.
 #[test]
 fn fixed_energy_nbody_finite_sigma() {
-    run_fixed_energy("e+ e- > ta+ ta- H", 100.0, 12);
+    run_fixed_energy("e+ e- > ta+ ta- H", 100.0, 6);
 }

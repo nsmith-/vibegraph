@@ -15,11 +15,22 @@
 //!
 //! A timelike (s-channel) invariant whose subsystem carries a finite-width pole is
 //! drawn through the Breit–Wigner tan-substitution `s = m² + mΓ·tan θ`, so the
-//! sampling density concentrates on the resonance as `1/((s−m²)²+(mΓ)²)`; a
-//! subsystem with no pole (or a zero-width/massless one) keeps the flat draw over
-//! its kinematic range. Each node records the propagator particle's mass and
-//! width, so the resonance-aware draw of a chosen invariant slots in without
-//! changing the tree.
+//! sampling density concentrates on the resonance as `1/((s−m²)²+(mΓ)²)`. A
+//! *zero-width* pole at or below the kinematic floor — the massless `γ*` of a
+//! lepton-pair subsystem, above all — instead contributes a `1/(s−m²)²` rise
+//! toward that floor, with no width to regulate it; its invariant is drawn
+//! logarithmically in `t = s − m²` down to a floor, the two-piece map of
+//! [`log_scale`]. A subsystem with no pole at all keeps the flat draw over its
+//! kinematic range. Each node records the propagator particle's mass and width, so
+//! the resonance-aware draw of a chosen invariant slots in without changing the
+//! tree.
+//!
+//! Leaving that zero-width rise on a flat draw is not a mere inefficiency: the
+//! estimator acquires a tail heavy enough that a run either misses the region
+//! (collapsing `σ̂`) or catches it (inflating `σ̂`), and because VEGAS combines its
+//! iterations by `1/σ²`, the iterations that miss report a small integral *and* a
+//! small variance and go on to dominate the result. The failure is therefore
+//! silent — a confidently wrong cross section, not a visibly noisy one.
 //!
 //! A spacelike (t-channel) line is peripheral, not a subsystem mass: it carries a
 //! momentum transfer `t = (p_beam − p_emitted)² ≤ 0`. A diagram with a single
@@ -33,7 +44,7 @@
 //! given a spine; their spacelike lines are kept as metadata only.
 //!
 //! The weight is the exact product of the 2-body LIPS factors `R_2 = π|p*|/√s`
-//! and the flat invariant-range measures, so a flat Monte-Carlo average of
+//! and each invariant's draw measure `ds/dx`, so a flat Monte-Carlo average of
 //! `weight · f` estimates `∫ dR_n f` over the same invariant volume `R_n` that
 //! flat RAMBO integrates — the channel is a different parametrisation of the same
 //! phase space.
@@ -609,8 +620,8 @@ fn safe_boost<F: Real>(v: LorentzVector<F>, p_lab: LorentzVector<F>) -> LorentzV
 }
 
 /// The Breit–Wigner scale `(m², mΓ)` a resonance imposes on its invariant draw,
-/// or `None` when the pole cannot shape the draw — no resonance, or a
-/// zero-width/massless pole (`mΓ ≤ 0`), for which the flat draw stands.
+/// or `None` when the line carries no finite-width pole (`mΓ ≤ 0`) — a zero-width
+/// or massless line, whose rise is handled by [`log_scale`] instead.
 fn bw_scale<F: Real>(res: Option<Resonance<F>>) -> Option<(F, F)> {
     let r = res?;
     let mg = r.mass * r.width;
@@ -621,34 +632,133 @@ fn bw_scale<F: Real>(res: Option<Resonance<F>>) -> Option<(F, F)> {
     }
 }
 
-/// Map `x ∈ [0,1]` to an invariant `s ∈ [lo, hi]`. A finite-width pole importance-
-/// samples the relativistic Breit–Wigner via `s = m² + mΓ·tan θ`, with `θ` uniform
-/// over `[atan((lo−m²)/mΓ), atan((hi−m²)/mΓ)]`; otherwise the draw is flat.
-fn draw_invariant<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, x: F) -> F {
-    match bw_scale(res) {
-        Some((m2, mg)) => {
-            let theta_lo = ((lo - m2) / mg).atan();
-            let theta_hi = ((hi - m2) / mg).atan();
-            let theta = theta_lo + (theta_hi - theta_lo) * x;
-            m2 + mg * theta.tan()
-        }
-        None => lo + (hi - lo) * x,
-    }
+/// Absolute floor (GeV²) on the shifted invariant `t = s − m²` below which a
+/// zero-width pole's `1/t` rise is no longer chased, mirroring the `10/stot` term
+/// of MadEvent's `set_peaks` (`myamp.f`). A massless pole has no kinematic lower
+/// edge of its own, so without a floor the log map has no normalisable lower
+/// limit.
+const LOG_MAP_FLOOR_GEV2: f64 = 10.0;
+/// Fraction of the draw spent covering `[t_lo, t0]` — the region below the log
+/// map's floor — linearly, so the map keeps full support and the estimator stays
+/// unbiased. MadEvent reserves the same tenth of its grid bins (`ngd = ng − 0.9·ng`
+/// in `setgrid`, `dsample.f`) to reach down past `xo`.
+const LOG_MAP_TAIL_FRACTION: f64 = 0.1;
+
+/// The logarithmic map a **zero-width** timelike line imposes on its invariant
+/// draw, in the shifted variable `t = s − m²`.
+#[derive(Clone, Copy, Debug)]
+struct LogMap<F: Real> {
+    /// Pole location `m²`; the draw is logarithmic in `t = s − m²`.
+    m2: F,
+    /// Kinematic lower edge `lo − m²`.
+    t_lo: F,
+    /// Where the logarithmic piece starts: `max(t_lo, floor)`.
+    t0: F,
+    /// Upper edge `hi − m²`.
+    t_hi: F,
+    /// Share of `x` spent covering `[t_lo, t0]` linearly. Zero when the kinematic
+    /// edge already sits at or above the floor, in which case there is no
+    /// sub-floor region and the logarithmic piece takes the whole draw — the
+    /// linear piece would otherwise be a zero-width interval carrying zero
+    /// measure, collapsing the weight.
+    frac: F,
 }
 
-/// The invariant-draw measure `ds/dx` at the realised `s`: the flat range length
-/// `hi − lo`, or, for the Breit–Wigner map, `[(s−m²)²/(mΓ) + mΓ]·(θ_hi−θ_lo)` — the
-/// exact `ds/dθ · dθ/dx`, whose reciprocal is a sampling density `∝ BW(s)`.
-fn invariant_measure<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, s: F) -> F {
-    match bw_scale(res) {
-        Some((m2, mg)) => {
-            let theta_lo = ((lo - m2) / mg).atan();
-            let theta_hi = ((hi - m2) / mg).atan();
-            let d = s - m2;
-            (d * d / mg + mg) * (theta_hi - theta_lo)
-        }
-        None => hi - lo,
+/// The [`LogMap`] parameters a **zero-width** timelike line imposes on its
+/// invariant draw, or `None` when the map does not apply.
+///
+/// A zero-width propagator contributes `1/(s − m²)²` to `|M|²`, which rises without
+/// bound toward the kinematic edge `s → lo`. A flat draw over `[lo, hi]` therefore
+/// samples an integrand whose variance is dominated by the edge — the estimator
+/// acquires a heavy tail, and a run either misses the spike (collapsing `σ̂`) or
+/// catches it (inflating `σ̂`). Sampling `∝ 1/t` — uniform in `ln t` — flattens
+/// that rise.
+///
+/// The pole must sit at or below the kinematic floor (`m² ≤ lo`) for `1/(s − m²)`
+/// to be a monotone rise toward `lo`; a zero-width pole *inside* the range is a
+/// genuine singularity this map does not regulate, and the flat draw stands.
+fn log_scale<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>) -> Option<LogMap<F>> {
+    let r = res?;
+    if r.mass * r.width > F::zero() {
+        return None;
     }
+    let m2 = r.mass * r.mass;
+    if m2 > lo {
+        return None;
+    }
+    let t_lo = lo - m2;
+    let t_hi = hi - m2;
+    // MadEvent's floor is `min(10/stot, stot/50, 0.5)` in units of `stot`; the
+    // second term keeps the floor inside a range narrower than the absolute one.
+    let floor = cast::<F>(LOG_MAP_FLOOR_GEV2).min(t_hi / cast(50.0));
+    let t0 = t_lo.max(floor);
+    // Negated comparisons, so a NaN bound falls back to the flat draw rather than
+    // reaching `ln`/`powf` — the positive form would let NaN through.
+    if !(t_hi > t0) || !(t0 > F::zero()) {
+        return None;
+    }
+    let frac = if t0 > t_lo {
+        cast(LOG_MAP_TAIL_FRACTION)
+    } else {
+        F::zero()
+    };
+    Some(LogMap {
+        m2,
+        t_lo,
+        t0,
+        t_hi,
+        frac,
+    })
+}
+
+/// Map `x ∈ [0,1]` to an invariant `s ∈ [lo, hi]`.
+///
+/// A finite-width pole importance-samples the relativistic Breit–Wigner via
+/// `s = m² + mΓ·tan θ`, with `θ` uniform over `[atan((lo−m²)/mΓ), atan((hi−m²)/mΓ)]`.
+/// A zero-width pole instead gets the two-piece map of [`log_scale`]: the last
+/// `1 − LOG_MAP_TAIL_FRACTION` of `x` is uniform in `ln t` over `[t0, t_hi]`,
+/// importance-sampling the `1/t` rise, and the leading fraction covers the
+/// remaining `[t_lo, t0]` linearly so the map still reaches the kinematic edge.
+/// With neither, the draw is flat.
+fn draw_invariant<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, x: F) -> F {
+    if let Some((m2, mg)) = bw_scale(res) {
+        let theta_lo = ((lo - m2) / mg).atan();
+        let theta_hi = ((hi - m2) / mg).atan();
+        let theta = theta_lo + (theta_hi - theta_lo) * x;
+        return m2 + mg * theta.tan();
+    }
+    if let Some(m) = log_scale(lo, hi, res) {
+        return if m.frac > F::zero() && x < m.frac {
+            m.m2 + m.t_lo + (m.t0 - m.t_lo) * (x / m.frac)
+        } else {
+            let y = (x - m.frac) / (F::one() - m.frac);
+            m.m2 + m.t0 * (m.t_hi / m.t0).powf(y)
+        };
+    }
+    lo + (hi - lo) * x
+}
+
+/// The invariant-draw measure `ds/dx` at the realised `s`, whose reciprocal is the
+/// sampling density: the flat range length `hi − lo`; for the Breit–Wigner map
+/// `[(s−m²)²/(mΓ) + mΓ]·(θ_hi−θ_lo)`, the exact `ds/dθ · dθ/dx`; and for the
+/// zero-width log map the piecewise `(t0 − t_lo)/frac` below the floor and
+/// `t·ln(t_hi/t0)/(1 − frac)` above it — a density `∝ 1/t` over the rise.
+fn invariant_measure<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, s: F) -> F {
+    if let Some((m2, mg)) = bw_scale(res) {
+        let theta_lo = ((lo - m2) / mg).atan();
+        let theta_hi = ((hi - m2) / mg).atan();
+        let d = s - m2;
+        return (d * d / mg + mg) * (theta_hi - theta_lo);
+    }
+    if let Some(m) = log_scale(lo, hi, res) {
+        let t = s - m.m2;
+        return if m.frac > F::zero() && t < m.t0 {
+            (m.t0 - m.t_lo) / m.frac
+        } else {
+            t * (m.t_hi / m.t0).ln() / (F::one() - m.frac)
+        };
+    }
+    hi - lo
 }
 
 /// Draw the invariants and angles of one 2-body split and recurse into composite
@@ -1240,6 +1350,129 @@ mod tests {
             (mean - (hi - lo)).abs() < 5.0 * err,
             "BW measure not preserving: ∫ds = {mean:.6e} ± {err:.2e} vs {:.6e}",
             hi - lo
+        );
+    }
+
+    /// A massless zero-width pole (the `gamma* -> l+ l-` case) at the kinematic
+    /// edge `lo = 0`. Its invariant is the pair mass², drawn over the full range.
+    fn photon_resonance() -> Resonance<f64> {
+        Resonance {
+            mass: 0.0,
+            width: 0.0,
+        }
+    }
+
+    /// The zero-width log map is measure-preserving, exactly as the Breit–Wigner
+    /// map is: averaging `ds/dx` over uniform `x` must reproduce `∫ ds = hi − lo`.
+    /// This is what pins the *two-piece* Jacobian — a map that silently dropped the
+    /// sub-floor linear piece, or mismatched the `1/(1−frac)` normalisation on the
+    /// log piece, would bias every cross section using it.
+    #[test]
+    fn log_map_is_measure_preserving() {
+        let res = Some(photon_resonance());
+        let (lo, hi) = (0.0_f64, 250_000.0);
+        let mut stream = SubStream::from_stream(0xF07E, 3);
+        let n = 400_000;
+        let (mut sum, mut sum_sq) = (0.0, 0.0);
+        for _ in 0..n {
+            let x = stream.uniforms::<f64>(1)[0];
+            let s = draw_invariant(lo, hi, res, x);
+            let w = invariant_measure(lo, hi, res, s);
+            sum += w;
+            sum_sq += w * w;
+        }
+        let mean = sum / n as f64;
+        let err = ((sum_sq / n as f64 - mean * mean).max(0.0) / n as f64).sqrt();
+        eprintln!("log ∫ds = {mean:.6e} ± {err:.2e}, want {:.6e}", hi - lo);
+        assert!(
+            (mean - (hi - lo)).abs() < 5.0 * err,
+            "log measure not preserving: ∫ds = {mean:.6e} ± {err:.2e} vs {:.6e}",
+            hi - lo
+        );
+    }
+
+    /// Above its floor the log map turns the `1/s` rise of a massless pole into a
+    /// *constant* integrand — `measure(s)/s = ln(t_hi/t0)/(1−frac)` at every `x` —
+    /// so the estimator has zero variance there. This is the sharpest pin on
+    /// `ds/dx`, and the property the flat draw lacked: against `1/s` a flat draw's
+    /// estimator spans the full dynamic range of the propagator.
+    #[test]
+    fn log_map_zero_variance_on_one_over_s() {
+        let res = Some(photon_resonance());
+        let (lo, hi) = (0.0_f64, 250_000.0);
+        let m = log_scale(lo, hi, res).expect("massless pole takes the log map");
+        let analytic = (m.t_hi / m.t0).ln() / (1.0 - LOG_MAP_TAIL_FRACTION);
+        // Sample strictly above the floor fraction, where the log piece applies.
+        for k in 0..=40 {
+            let x = LOG_MAP_TAIL_FRACTION + (1.0 - LOG_MAP_TAIL_FRACTION) * k as f64 / 40.0;
+            let s = draw_invariant(lo, hi, res, x);
+            let est = invariant_measure(lo, hi, res, s) / s;
+            assert!(
+                (est - analytic).abs() < 1e-12 * analytic,
+                "measure/s = {est:.12e} not constant at analytic {analytic:.12e}"
+            );
+        }
+    }
+
+    /// A kinematic edge already at or above the floor leaves no sub-floor region,
+    /// so the logarithmic piece must take the whole draw. Were the linear piece
+    /// still allotted its share of `x`, that share would map onto the zero-width
+    /// interval `[t_lo, t0]` and carry zero measure — every point drawn there gets
+    /// an infinite weight, and any channel evaluating its density at such a point
+    /// reports zero. Both are caught here: the measure stays finite and positive,
+    /// and the draw stays inside `[lo, hi]`, right across the `x` range the linear
+    /// piece would otherwise have claimed.
+    #[test]
+    fn log_map_without_subfloor_region_stays_finite() {
+        // `lo` above the 10 GeV^2 floor: `t_lo = lo > floor`, so `frac = 0`.
+        let (lo, hi) = (400.0_f64, 250_000.0);
+        let res = Some(photon_resonance());
+        let m = log_scale(lo, hi, res).expect("massless pole above the floor still log-maps");
+        assert_eq!(m.frac, 0.0, "no sub-floor region means no linear piece");
+        assert_eq!(m.t0, m.t_lo, "the log piece starts at the kinematic edge");
+        for k in 0..=100 {
+            let x = k as f64 / 100.0;
+            let s = draw_invariant(lo, hi, res, x);
+            let w = invariant_measure(lo, hi, res, s);
+            assert!(
+                (lo..=hi).contains(&s),
+                "draw left the range at x = {x}: s = {s:.6e}"
+            );
+            assert!(
+                w > 0.0 && w.is_finite(),
+                "measure not finite and positive at x = {x}: s = {s:.6e}, w = {w:.6e}"
+            );
+        }
+    }
+
+    /// The log map only claims the draw when the pole sits at or below the
+    /// kinematic floor and the range is wide enough to hold the floor. A
+    /// finite-width pole must still route to the Breit–Wigner branch, and a
+    /// zero-width pole *inside* the range must fall back to the flat draw rather
+    /// than take a log map whose shifted lower limit would be negative.
+    #[test]
+    fn log_map_claims_only_zero_width_poles_below_threshold() {
+        let hi = 250_000.0_f64;
+        assert!(
+            log_scale(0.0, hi, Some(z_resonance())).is_none(),
+            "a finite-width pole belongs to the Breit-Wigner branch"
+        );
+        assert!(
+            log_scale(0.0, hi, None).is_none(),
+            "a line with no pole keeps the flat draw"
+        );
+        // Zero-width pole above the kinematic floor: singularity inside the range.
+        let heavy = Resonance {
+            mass: 100.0,
+            width: 0.0,
+        };
+        assert!(
+            log_scale(0.0, hi, Some(heavy)).is_none(),
+            "a zero-width pole inside the range is not regulated by the log map"
+        );
+        assert!(
+            log_scale(100.0 * 100.0, hi, Some(heavy)).is_some(),
+            "the same pole at the kinematic floor does take the log map"
         );
     }
 
