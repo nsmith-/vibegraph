@@ -120,6 +120,31 @@ impl ParameterSet {
         }
     }
 
+    /// Every parameter whose value transitively depends on `changed`.
+    ///
+    /// The set [`recompute`](Self::recompute) re-evaluates, exposed on its own so a
+    /// caller can ask *which* parameters a change moves without performing it. A
+    /// parameter locked to zero by a restriction moves nothing, so the set is empty.
+    pub fn dependents(&self, changed: &str) -> HashSet<String> {
+        let mut affected: HashSet<String> = HashSet::new();
+        if self.zeros.contains(changed) {
+            return affected;
+        }
+        let mut queue: VecDeque<&str> = VecDeque::new();
+        queue.push_back(changed);
+        while let Some(name) = queue.pop_front() {
+            let Some(children) = self.rdeps.get(name) else {
+                continue;
+            };
+            for child in children {
+                if affected.insert(child.clone()) {
+                    queue.push_back(child.as_str());
+                }
+            }
+        }
+        affected
+    }
+
     /// Re-evaluate only the transitive dependents of `changed` in place.
     pub fn recompute(&self, changed: &str, current: &mut HashMap<String, Complex64>) {
         if self.zeros.contains(changed) {

@@ -70,3 +70,7 @@ required-features = ["extended-validation"]
 name = "validate_sigma"
 required-features = ["extended-validation"]
 
+[[test]]
+name = "validate_scale_couplings"
+required-features = ["extended-validation"]
+

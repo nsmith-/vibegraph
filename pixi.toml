@@ -83,6 +83,9 @@ validate-alphas = { cmd = "cargo test -p vibegraph-lib --features extended-valid
 # Per-event scale gate: the renormalisation and factorisation scales replayed against
 # SCALUP, <rscale> and <pdfrwt> for every event of every banked LHE
 validate-scales = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_scales -- --nocapture", depends-on = ["build-diagrams"] }
+# Per-event coupling gate: the constant-pool scaling path against a full model
+# re-evaluation, entry by entry at 100 random alpha_s, for all 14 amplitude-gate processes
+validate-scale-couplings = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_scale_couplings -- --nocapture", depends-on = ["build-diagrams"] }
 # Dump the RunCardLO defaults to JSON — the transcription oracle for the Rust run-card defaults table
 dump-runcard-defaults = "python validation/madgraph/dump_runcard_defaults.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards

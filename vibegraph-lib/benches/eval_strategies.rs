@@ -8,6 +8,10 @@
 //! points, chunked `N` at a time. Comparing `lanes{N}` to `forward` at equal
 //! per-point work measures the SIMD speedup and the best width `N` for the host.
 //!
+//! `set_alpha_s` moves the same amplitude to as many strong couplings as `forward`
+//! evaluates points, so the price of a per-event renormalisation scale reads off as the
+//! ratio of the two bars.
+//!
 //! Run: `cargo bench -p vibegraph-lib --bench eval_strategies`
 
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
@@ -17,7 +21,9 @@ use rand::SeedableRng;
 use numeric_array::generic_array::typenum::Const;
 use numeric_array::generic_array::IntoArrayLength;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-use vibegraph::helas::eval::{eval_m2_lanes, AmplitudeEvaluator, BoundAmplitude, LaneField};
+use vibegraph::helas::eval::{
+    eval_m2_lanes, AmplitudeEvaluator, BoundAmplitude, LaneField, ScaleAwareAmplitude,
+};
 use vibegraph::helas::repr::Real;
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rambo_massless;
@@ -119,6 +125,23 @@ fn bench_eval_m2(c: &mut Criterion) {
         bench_lanes::<2>(&mut group, name, &fwd, &points);
         bench_lanes::<4>(&mut group, name, &fwd, &points);
         bench_lanes::<8>(&mut group, name, &fwd, &points);
+
+        // Moving the amplitude to a new strong coupling, over as many couplings as
+        // `forward` evaluates points, so the per-event price of a dynamic
+        // renormalisation scale is the ratio of the two bars.
+        let mut scaled = ScaleAwareAmplitude::<f64>::new(&eval, &evaluated);
+        let couplings: Vec<f64> = (0..points.len()).map(|k| 0.08 + 0.01 * k as f64).collect();
+        group.bench_with_input(
+            BenchmarkId::new("set_alpha_s", name),
+            &couplings,
+            |b, cs| {
+                b.iter(|| {
+                    for &c in cs {
+                        scaled.set_alpha_s(c);
+                    }
+                })
+            },
+        );
     }
     group.finish();
 }
