@@ -80,6 +80,9 @@ generate-alphas-reference = "bash validation/alphas/gen_reference.sh"
 # Running-alpha_s gate: the reference grid bit-for-bit, plus the per-event AQCDUP
 # field of every banked LHE and the asmz/nloop source rule against the MG run logs
 validate-alphas = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_alphas -- --nocapture", depends-on = ["generate-alphas-reference", "build-diagrams"] }
+# Per-event scale gate: the renormalisation and factorisation scales replayed against
+# SCALUP, <rscale> and <pdfrwt> for every event of every banked LHE
+validate-scales = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_scales -- --nocapture", depends-on = ["build-diagrams"] }
 # Dump the RunCardLO defaults to JSON — the transcription oracle for the Rust run-card defaults table
 dump-runcard-defaults = "python validation/madgraph/dump_runcard_defaults.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards

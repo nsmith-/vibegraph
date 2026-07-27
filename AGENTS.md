@@ -121,6 +121,23 @@ Individual steps are also available:
 - `pixi run -e madgraph build-diagrams` — generate MadGraph output
 - `pixi run -e madgraph extract-diagrams` — extract diagram counts to JSON
 
+#### Running Coupling and Per-Event Scales
+
+`validate_alphas` checks the strong coupling's RGE evolution; `validate_scales` checks
+the renormalisation and factorisation scales chosen per event. Both replay the banked
+MadGraph `.lhe` files event by event, comparing against the printed `SCALUP`, `AQCDUP`,
+`<rscale>` and `<pdfrwt>` fields rather than against a cross section.
+
+**When to run:** after modifying `coupling/`, or after rebanking any MadGraph run.
+
+```bash
+pixi run -e madgraph validate-alphas   # RGE grid vs MG's own Fortran, plus AQCDUP
+pixi run -e madgraph validate-scales   # per-event mu_R and per-beam mu_F
+```
+
+`validate-alphas` regenerates `validation/alphas/reference.csv` by linking MadGraph's
+unmodified `alfas_functions.f`; use `--skip-deps` to skip that when it is already fresh.
+
 ## Agent Tooling Guidelines
 
 ### Rust Code Exploration
