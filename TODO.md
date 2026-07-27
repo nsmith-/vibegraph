@@ -525,6 +525,11 @@ _Unblocks: promoting the 3 QCD processes in `validate_sigma.rs` from `Plan::Info
 `Plan::Gate` (flip the arm + tighten `rel_tol`); a genuine σ check of any
 αs-dependent process._
 
+**Session status** (branch `dynamical-scales`): D1 `alphas-running` ✅ —
+`coupling::alphas` ports `ALPHAS`/`NEWTON1` bit-exactly against MG's own Fortran
+(792-point grid, `nloop` 1–3) and resolves `asmz`/`nloop` from the run card,
+gated on the `AQCDUP` field of 180k banked LHE events. D2/D3/D4 open.
+
 ### `event-output-lhef` — Unweighted events in LHEF format
 
 Accept/reject sampling with `w(p) = |M(p)|²/w_max`; serialize to Les Houches Event File

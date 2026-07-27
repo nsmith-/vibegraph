@@ -1,5 +1,6 @@
 pub mod artifact;
 pub mod config;
+pub mod coupling;
 pub mod cuts;
 pub mod diagrams;
 pub mod hadronic;
