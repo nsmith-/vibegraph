@@ -20,6 +20,8 @@ use rand::SeedableRng;
 
 use crate::diagrams::DiagramSet;
 use crate::helas::color::colorize_process;
+use crate::helas::color::flow_tags::{color_flow_tags, ColorFlowTags, LegColor};
+use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::phasespace::rambo_massive;
 use crate::ufo::couplings::CouplingId;
@@ -64,6 +66,9 @@ pub struct AmplitudeEvaluator {
     /// Exact color-factor matrix `CF_{ij}` (row-major, `cf_matrix[i*n_flows + j]`),
     /// evaluated at `Nc = 3`. `BoundAmplitude::bind` resolves it to the scalar field.
     cf_matrix: Vec<Ratio<i64>>,
+    /// Per-flow Les Houches `(color, anticolor)` line labels for every external leg,
+    /// derived from the same basis keys the flows are indexed by.
+    color_flow_tags: ColorFlowTags,
     /// Set by [`prune_zero_helicities`](Self::prune_zero_helicities) once it has
     /// actually dropped combinations. `eval_m2` on a pruned evaluator only sums the
     /// survivors, so it is correct only under that method's kinematic contract
@@ -145,16 +150,40 @@ impl AmplitudeEvaluator {
         let symbolic = lower::optimize(lower::lower_flows(&basis, &evals));
         let folded = Folded::build(&symbolic);
 
+        // Read each flow's basis key back as color lines, giving the Les Houches
+        // `(color, anticolor)` labels an event record carries per leg.
+        let n_in = set.particles_in.len();
+        let leg_colors = ext_particle_ids
+            .iter()
+            .enumerate()
+            .map(|(leg, &pid)| {
+                let charge = model.particle(pid).color;
+                ColorRep::from_ufo(charge)
+                    .map(|rep| LegColor {
+                        rep,
+                        incoming: leg < n_in,
+                    })
+                    .ok_or_else(|| {
+                        EvalError::TopologyError(format!(
+                            "external leg {} has unsupported color charge {charge}",
+                            leg + 1
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let color_flow_tags = color_flow_tags(&basis, &leg_colors)?;
+
         Ok(Self {
             folded,
             folded_hel: OnceLock::new(),
             n_ext,
-            n_in: set.particles_in.len(),
+            n_in,
             n_diagrams,
             ext_particle_ids,
             helicities,
             n_flows: basis.ncolor(),
             cf_matrix: basis.cf_matrix,
+            color_flow_tags,
             pruned: false,
             zeroamp_nodes_before: 0,
             zeroamp_nodes_after: 0,
@@ -207,6 +236,12 @@ impl AmplitudeEvaluator {
     /// `cf_matrix[i*n_flows + j]`, evaluated at `Nc = 3`).
     pub fn cf_matrix(&self) -> &[Ratio<i64>] {
         &self.cf_matrix
+    }
+
+    /// Return the per-flow Les Houches `(color, anticolor)` line labels, in the
+    /// same flow order as the JAMPs and the CF matrix.
+    pub fn color_flow_tags(&self) -> &ColorFlowTags {
+        &self.color_flow_tags
     }
 
     /// Whether [`prune_zero_helicities`](Self::prune_zero_helicities) has dropped

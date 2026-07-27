@@ -110,6 +110,82 @@ the diagonal is not the contraction — so assert the relation that actually hol
 `Σ_hel Σᵢⱼ CF_{ij} JAMPᵢ* JAMPⱼ = |M|²`, and use the mismatch as the test that the
 accumulator reads the right slots).
 
+### E1 outcome (2026-07-27) ✅
+
+**E1a.** `BoundAmplitude::eval_jamp2(momenta, scratch, &mut jamp2)` walks the same
+`RootKind::Hels` `locs.chunks_exact(n_flows)` the CF contraction walks and
+accumulates `norm_sqr()` per flow. It is a separate entry point — `eval_m2` is
+untouched, so the integration path pays nothing. No `n_flows == 1` special case
+was needed: the diagonal carries no CF weight, so the general loop already
+degenerates correctly to `JAMP2(0) = Σ_hel |M|²` (the constant `CF(1,1)` is
+deliberately left off; it cancels in the selection probability).
+
+The correctness test (`eval_jamp2_is_the_diagonal_of_the_slots_eval_m2_contracts`)
+pins the slots through one shared per-`(combination, flow)` JAMP dump: its CF
+contraction reproduces `eval_m2` bit-for-bit, and its diagonal reproduces
+`eval_jamp2` bit-for-bit. It also asserts `Σᵢ JAMP2(i) ≠ |M|²` on the
+non-orthogonal processes, so a later "simplification" that returns the
+contraction cannot pass.
+
+**E1b.** `helas/color/flow_tags.rs` derives, per basis key, the flow's colour
+lines from its `T`/`Tr` chains and emits one `(colour, anticolour)` pair per leg
+(`ColorFlowTags`), plus `select_flow`/`ColorFlowTags::select` for the
+`∝ JAMP2(i)` categorical draw. `AmplitudeEvaluator` computes the table at compile
+time and exposes it as `color_flow_tags()`.
+
+Two conventions came out of the derivation, both now pinned:
+
+1. **The chain reading.** `T([a₁…aₙ], i, j)` links `(leg i, 3) — (a₁, 3̄)`,
+   `(a_k, 3) — (a_{k+1}, 3̄)`, `(aₙ, 3) — (leg j, 3̄)`; `Tr` closes the same links
+   cyclically.
+2. **The crossing rule.** MadGraph's colour structure treats every leg as
+   outgoing, so a leg's index rep is its particle's rep when outgoing and the
+   conjugate when incoming, while `ICOLUP` slot 1/2 are the *physical*
+   colour/anticolour. `color_flow_tags` therefore checks per flow that the
+   occupied slots are exactly the ones the leg's particle rep allows; flipping
+   the rule puts an incoming quark's line in its anticolour slot and the check
+   fires (unit test `crossing_rule_is_not_free`).
+
+**The `gg_to_gg` NCOLOR=6 row landed in the STRONG form, not informational.** The
+plan above (following note 16) expected it not to. It was wrong about *what* note
+16's caveat covers: the caveat is that the per-flow JAMP *values* do not match MG
+element-wise, but the basis *keys* do — the CF oracle's ordering cross-check
+reports no `ORDER-DIFF` for `g g > g g`, i.e. vibegraph's six sorted keys are
+`Tr(1,2,3,4), Tr(1,2,4,3), Tr(1,3,2,4), Tr(1,3,4,2), Tr(1,4,2,3), Tr(1,4,3,2)`,
+exactly MadGraph's six CF structure comments in order. So flow indices are
+directly comparable and `color_flow_tags_oracle` asserts connectivity
+element-wise per flow index for all 24 MG subprocesses.
+
+What the oracle deliberately cannot detect: the colour-line **integers**. It
+compares the induced connectivity (the set of `(leg, slot)` endpoint pairs
+sharing a label), because any consistent relabelling is the same event. Label
+equality is reported as information — 20/24 subprocesses come out identical to
+MadGraph's 501-based numbering; the 4 gluon-initiated ones (`gg_to_gg`,
+`gg_to_ttx`, both `gg_bbx`) are relabellings. A byte-level `.lhe` diff in E3 must
+therefore normalise colour labels rather than compare them literally.
+
+Mutation-checked: permuting flows 0↔1 in the derived table fails 7 subprocesses
+including `gg_to_gg`, so the oracle really is sensitive to the flow labelling
+that |M|² provably cannot see.
+
+**Carried to E2.** vibegraph's per-flow JAMPs are *not* known to match MadGraph's
+element-wise at NCOLOR=6 (note 16's caveat, still open — the `compare_amps.py`
+strict-phase JAMP diff fails there while the CF-contracted |M|² is machine-exact
+at 8.25e-14). Since `JAMP2` *is* the colour-selection weight, a per-flow phase or
+normalisation difference would leave |M|² and σ untouched while shifting the
+colour-flow **statistics** of the emitted events for `g g > g g`. The CF matrix
+is positive-definite there (eigenvalues 5/2, 9/2), so the difference cannot be a
+CF-null vector; the open candidates are a per-flow phase/normalisation convention
+or a CF-symmetry flow permutation in MadGraph's JAMP assembly. Worth resolving
+before the colour tags are trusted for a shower handoff on pure-gluon processes;
+everything with NCOLOR ≤ 2 is unaffected (those JAMPs do match element-wise).
+
+**Gate observed.** `cargo test` all green (440 lib + integration suites);
+`validate_helas_mg` **14/14 bit-exact/at-tolerance, unchanged** (`uux_to_uux`
+5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14); `validate_sigma` 11 GATE
+rows unchanged; `validate_diagrams` 16/16; `validate_helas` 2/2;
+`color_cf_oracle` 24/24; new `color_flow_tags_oracle` 24/24.
+
 ## E2 — `accept-reject` (+ `mg-single-helicity-bench`)
 
 Unweighting over the frozen grid + Sprint-A multichannel sampler:

@@ -272,6 +272,83 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         total
     }
 
+    /// Fill `jamp2` with the per-flow helicity-summed diagonal
+    /// `JAMP2(i) = Σ_hel |JAMPᵢ(p)|²` — MadGraph's `SELECT_COLOR` input.
+    ///
+    /// This is *not* a decomposition of |M|²: the color-flow basis is not
+    /// orthogonal, so `Σᵢ JAMP2(i)` differs from the CF contraction
+    /// [`eval_m2`](Self::eval_m2) returns. It is the categorical weight vector a
+    /// per-event color-flow selection draws from, and it enters nothing else — no
+    /// integrand, no cross section.
+    ///
+    /// Kept separate from `eval_m2` so the integration path never forms it: the
+    /// consumer is per accepted event, not per probe. `jamp2` must hold one entry
+    /// per flow; for `NCOLOR = 1` the single entry is `Σ_hel |M|²` with the
+    /// constant color factor left off (it cancels in the selection probability).
+    ///
+    /// On a helicity-filtered evaluator the sum runs over the surviving
+    /// combinations only, under the same partonic-CM kinematic contract
+    /// [`eval_m2`](Self::eval_m2) documents.
+    pub fn eval_jamp2(
+        &self,
+        momenta: &[LorentzVector<F>],
+        scratch: &mut ScratchSpace<F>,
+        jamp2: &mut [F],
+    ) {
+        assert_eq!(
+            jamp2.len(),
+            self.eval.n_flows(),
+            "jamp2 buffer must hold one entry per color flow"
+        );
+        for slot in jamp2.iter_mut() {
+            *slot = F::zero();
+        }
+        if momenta.len() != self.eval.n_ext() {
+            return;
+        }
+        if self.eval.is_pruned() {
+            assert_partonic_cm_beams_along_z(momenta, self.eval.n_in());
+        }
+        let folded = self.eval.folded_hel();
+        resolve_moms(folded, momenta, scratch);
+        let env = self.eval_env(folded, momenta, &[], None);
+        fill_arenas(folded, &env, scratch);
+
+        let RootKind::Hels { n_flows, locs } = &folded.program().root else {
+            panic!("eval_jamp2 on a program without a helicity-expanded root");
+        };
+        let n = *n_flows as usize;
+        debug_assert_eq!(n, self.eval.n_flows());
+
+        for jamps in locs.chunks_exact(n) {
+            for (acc, &l) in jamp2.iter_mut().zip(jamps) {
+                *acc = *acc + scratch.scalars[l as usize].norm_sqr();
+            }
+        }
+    }
+
+    /// The per-flow JAMPs of every helicity combination, `out[combo][flow]`, read
+    /// off the helicity-expanded root — the same scratch slots
+    /// [`eval_m2`](Self::eval_m2) and [`eval_jamp2`](Self::eval_jamp2) accumulate
+    /// from. Allocates; a validation handle, not a hot path.
+    #[cfg(test)]
+    fn hel_jamps(
+        &self,
+        momenta: &[LorentzVector<F>],
+        scratch: &mut ScratchSpace<F>,
+    ) -> Vec<Vec<C<F>>> {
+        let folded = self.eval.folded_hel();
+        resolve_moms(folded, momenta, scratch);
+        let env = self.eval_env(folded, momenta, &[], None);
+        fill_arenas(folded, &env, scratch);
+        let RootKind::Hels { n_flows, locs } = &folded.program().root else {
+            panic!("hel_jamps on a program without a helicity-expanded root");
+        };
+        locs.chunks_exact(*n_flows as usize)
+            .map(|jamps| jamps.iter().map(|&l| scratch.scalars[l as usize]).collect())
+            .collect()
+    }
+
     /// Mark the helicity combinations that contribute at this phase-space point:
     /// sets `good[c] = true` for every combination whose |M_c|² (CF-contracted, as
     /// `eval_m2` forms it) exceeds `Σ_c |M_c|² · rel_threshold / NCOMB`; other
@@ -3803,6 +3880,119 @@ mod tests {
                     expanded, reference,
                     "[{process}] expanded eval_m2 diverged from the per-helicity sum"
                 );
+            }
+        }
+    }
+
+    /// `eval_jamp2` accumulates the diagonal of the *same* JAMP slots `eval_m2`
+    /// contracts.
+    ///
+    /// The two are different numbers — the color-flow basis is not orthogonal, so
+    /// `Σᵢ JAMP2(i)` is not |M|² and asserting that would be wrong. What does hold
+    /// is the pair of relations against one shared per-`(combination, flow)` JAMP
+    /// dump read off the helicity-expanded root:
+    ///
+    /// - `Σ_hel Σᵢⱼ CF_{ij} JAMPᵢ* JAMPⱼ` reproduces `eval_m2` bit-for-bit, which
+    ///   pins the dump to the slots `eval_m2` reads;
+    /// - `Σ_hel |JAMPᵢ|²` reproduces `eval_jamp2` bit-for-bit, which pins the
+    ///   accumulator to the same slots.
+    ///
+    /// A wrong slot (or a flow-index transpose) in either breaks one of the two.
+    /// The test also asserts the diagonal sum and |M|² *differ* on the
+    /// non-orthogonal processes, so a future "simplification" that quietly makes
+    /// `eval_jamp2` return the contraction cannot pass.
+    #[test]
+    fn eval_jamp2_is_the_diagonal_of_the_slots_eval_m2_contracts() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massless;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let mut rng = StdRng::seed_from_u64(0x1EA7_7A22);
+        let sqrt_s = 500.0;
+
+        for process in [
+            "e+ e- > mu+ mu-",
+            "u u~ > e+ e- g",
+            "u u~ > u u~",
+            "g g > g g",
+        ] {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            for set in &sets {
+                let eval = AmplitudeEvaluator::compile(set, &model).unwrap();
+                let amp = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+                let mut scratch = amp.scratch_space();
+                let n = eval.n_flows();
+
+                let mut p = vec![
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+                ];
+                p.extend(rambo_massless(sqrt_s, eval.n_ext() - 2, &mut rng));
+
+                let m2 = amp.eval_m2(&p, &mut scratch);
+                let mut jamp2 = vec![0.0f64; n];
+                amp.eval_jamp2(&p, &mut scratch, &mut jamp2);
+                let jamps = amp.hel_jamps(&p, &mut scratch);
+
+                // The CF contraction of the dumped JAMPs, in eval_m2's order.
+                let contracted = if n == 1 {
+                    jamps.iter().map(|j| j[0].norm_sqr()).sum::<f64>() * amp.cf[0]
+                } else {
+                    let mut total = 0.0f64;
+                    for combo in &jamps {
+                        for i in 0..n {
+                            let mut ztemp = C::new(0.0, 0.0);
+                            for (j, jamp_j) in combo.iter().enumerate() {
+                                ztemp += jamp_j.scale(amp.cf[j * n + i]);
+                            }
+                            total += (ztemp * combo[i].conj()).re;
+                        }
+                    }
+                    total
+                };
+                assert_eq!(
+                    contracted, m2,
+                    "[{process}] CF contraction of the dumped JAMPs is not eval_m2"
+                );
+
+                let mut diagonal = vec![0.0f64; n];
+                for combo in &jamps {
+                    for (acc, j) in diagonal.iter_mut().zip(combo) {
+                        *acc += j.norm_sqr();
+                    }
+                }
+                assert_eq!(
+                    diagonal, jamp2,
+                    "[{process}] eval_jamp2 is not the diagonal of those JAMPs"
+                );
+
+                assert!(
+                    jamp2.iter().all(|w| w.is_finite() && *w >= 0.0),
+                    "[{process}] JAMP2 weights must be finite and nonnegative"
+                );
+                assert!(
+                    jamp2.iter().sum::<f64>() > 0.0,
+                    "[{process}] JAMP2 weights carry no probability"
+                );
+
+                // Off-diagonal CF entries make the diagonal sum a genuinely
+                // different number from |M|²; only the trivial NCOLOR=1 basis is
+                // orthogonal (and there the constant CF(1,1) still separates them
+                // unless it is 1).
+                if n > 1 {
+                    let sum = jamp2.iter().sum::<f64>();
+                    assert!(
+                        (sum - m2).abs() > 1e-6 * m2.abs(),
+                        "[{process}] Σ JAMP2 coincides with |M|²; the diagonal is \
+                         being confused with the contraction"
+                    );
+                }
             }
         }
     }
