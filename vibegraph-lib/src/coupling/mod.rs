@@ -9,5 +9,10 @@
 //! [`scales`] is the other half: the scale the coupling is evaluated *at*, and
 //! the per-beam factorisation scale the same run-card prescription fixes with it.
 
+//! [`topology`] supplies the one input [`scales`] does not take from the run
+//! card — the facts about a process's diagrams that MadGraph's clustering
+//! consults — by reading them off the enumerated diagrams.
+
 pub mod alphas;
 pub mod scales;
+pub mod topology;

@@ -57,24 +57,28 @@
 //! `y = ½ ln(x₁/x₂)` before [`Cuts::pass`], whose rapidity/pT observables are not
 //! z-boost invariant.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
 
 use rand::SeedableRng;
 use thiserror::Error;
 
+use crate::coupling::alphas::{AlphaSError, RunningAlphaS};
+use crate::coupling::scales::{ClusterTopology, EventScales, ScaleChoice, ScaleError, ScaleEvent};
+use crate::coupling::topology::cluster_topology;
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::{
     generate_from_proc_card, parse_proc_card, DiagramError, DiagramSet, ParsingOptions,
 };
-use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScratchSpace};
+use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::PdfMember;
 use crate::phasespace::{
     lips2_jacobian_u, AlphaAdaptation, Channel, DiagramChannel, MultiChannel, PhaseSpaceMap,
     RamboChannel, GEV2_TO_PB,
 };
+use crate::runcard::RunCard;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::vegas::{VegasGrid, VegasResult};
 
@@ -108,6 +112,11 @@ pub const VEGAS_ALPHA_MAPPED: f64 = 0.5;
 /// share nor correlate their sampling sequences.
 const MULTICHANNEL_ADAPT_STREAM: u64 = 0xA1FA_5EED;
 
+/// RNG seed and draw budget for the setup-time probe that resolves a dynamic scale
+/// once before integration begins.
+const SCALE_PROBE_SEED: u64 = 0x5CA1_E9E0;
+const SCALE_PROBE_DRAWS: usize = 64;
+
 #[derive(Debug, Error)]
 pub enum HadronicError {
     #[error("diagram enumeration failed: {0}")]
@@ -130,6 +139,143 @@ pub enum HadronicError {
          particle content, but the generated subprocesses differ"
     )]
     InconsistentExternals,
+    #[error("run card scale prescription: {0}")]
+    Scale(#[from] ScaleError),
+    #[error("running strong coupling: {0}")]
+    AlphaS(#[from] AlphaSError),
+    #[error("parameter card supplies no strong coupling to run from")]
+    MissingAlphaS,
+}
+
+/// The run card's per-event scale prescription, bound to one process.
+///
+/// Holds the compiled [`ScaleChoice`], the [`ClusterTopology`] its clustering
+/// branch consults, and the running coupling that turns `μR` into `αs(μR)`.
+///
+/// The coupling is constructed only on request. `coupling::alphas` refuses a
+/// `pdlabel` whose `αs` MadGraph delegates to LHAPDF, and a matrix element with no
+/// strong coupling in it has no reason to meet that refusal, so a caller whose
+/// amplitudes report [`ScaleAwareAmplitude::depends_on_alpha_s`] false asks for no
+/// coupling and runs regardless of the label.
+#[derive(Clone, Debug)]
+pub struct EventScaleSource {
+    kind: ScaleSourceKind,
+    alpha_s: Option<RunningAlphaS>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ScaleSourceKind {
+    /// Every scale is a constant, so no event kinematics are read at all.
+    Constant(EventScales),
+    PerEvent {
+        choice: ScaleChoice,
+        topology: Option<ClusterTopology>,
+    },
+}
+
+impl EventScaleSource {
+    /// One constant scale on both beams and no running coupling — the prescription
+    /// a caller that supplies `μF` directly is asking for.
+    pub fn constant(mu: f64) -> Self {
+        EventScaleSource {
+            kind: ScaleSourceKind::Constant(EventScales {
+                mu_r: mu,
+                mu_f: [mu, mu],
+            }),
+            alpha_s: None,
+        }
+    }
+
+    /// Compile a run card's prescription. `topology` is consulted only by the
+    /// clustering branch; `needs_alpha_s` decides whether a running coupling is
+    /// built at all.
+    pub fn from_run_card(
+        card: &RunCard,
+        param_card_as: f64,
+        topology: Option<ClusterTopology>,
+        needs_alpha_s: bool,
+    ) -> Result<Self, HadronicError> {
+        let choice = ScaleChoice::from_run_card(card)?;
+        let alpha_s = needs_alpha_s
+            .then(|| RunningAlphaS::from_run_card(card, param_card_as))
+            .transpose()?;
+        let kind = if choice.is_fully_fixed() {
+            // A fully fixed prescription returns the card's constants without
+            // reading the event, so any event resolves it.
+            ScaleSourceKind::Constant(choice.scales(&ScaleEvent {
+                incoming: [[0.0; 4]; 2],
+                outgoing: &[],
+                topology: None,
+            })?)
+        } else {
+            ScaleSourceKind::PerEvent { choice, topology }
+        };
+        Ok(EventScaleSource { kind, alpha_s })
+    }
+
+    /// The scales, when they are the same on every event.
+    pub fn constant_scales(&self) -> Option<EventScales> {
+        match self.kind {
+            ScaleSourceKind::Constant(scales) => Some(scales),
+            ScaleSourceKind::PerEvent { .. } => None,
+        }
+    }
+
+    /// The running coupling, or `None` when none was asked for.
+    pub fn running_alpha_s(&self) -> Option<&RunningAlphaS> {
+        self.alpha_s.as_ref()
+    }
+
+    /// The topology the clustering branch consults.
+    pub fn topology(&self) -> Option<ClusterTopology> {
+        match self.kind {
+            ScaleSourceKind::Constant(_) => None,
+            ScaleSourceKind::PerEvent { topology, .. } => topology,
+        }
+    }
+
+    /// The scales for one event, from lab-frame momenta.
+    pub fn scales(
+        &self,
+        incoming: [[f64; 4]; 2],
+        outgoing: &[[f64; 4]],
+    ) -> Result<EventScales, ScaleError> {
+        match self.kind {
+            ScaleSourceKind::Constant(scales) => Ok(scales),
+            ScaleSourceKind::PerEvent { choice, topology } => choice.scales(&ScaleEvent {
+                incoming,
+                outgoing,
+                topology,
+            }),
+        }
+    }
+}
+
+/// What installing a run card's per-event scale did to one integrand.
+#[derive(Clone, Debug)]
+pub struct RunningCouplingReport {
+    /// Whether any subprocess's matrix element moves with the strong coupling. When
+    /// false no running coupling was constructed and the amplitudes are left where
+    /// they were bound.
+    pub depends_on_alpha_s: bool,
+    /// The topology derived for the clustering branch.
+    pub topology: Option<ClusterTopology>,
+    /// The scales, when the prescription resolves to constants — then no event
+    /// kinematics are read and the coupling is applied once rather than per point.
+    pub constant_scales: Option<EventScales>,
+    /// The coupling at that constant renormalisation scale.
+    pub constant_alpha_s: Option<f64>,
+    /// The coupling the amplitudes were bound at.
+    pub alpha_s_ref: Option<f64>,
+    /// Why a subprocess must re-evaluate the whole model on each scale change
+    /// instead of scaling its constant pools — roughly two orders of magnitude
+    /// slower per event, so it is reported rather than absorbed.
+    pub fallbacks: Vec<String>,
+}
+
+/// Components in the `[E, px, py, pz]` layout the scale prescription reads.
+fn components(p: &V) -> [f64; 4] {
+    [p.e(), p.px(), p.py(), p.pz()]
 }
 
 /// The Z/γ coupling classes of LO Drell–Yan, resolved from the `p p > e+ e-`
@@ -247,10 +393,7 @@ fn push_unique(v: &mut Vec<i32>, x: i32) {
 /// Borrows the two class amplitudes, the PDF member, and the compiled cuts; owns
 /// per-class evaluation scratch (behind [`RefCell`] so the integrand is `Fn`).
 pub struct DrellYanIntegrand<'a> {
-    up: &'a BoundAmplitude<'a, f64>,
-    down: &'a BoundAmplitude<'a, f64>,
-    up_scratch: RefCell<ScratchSpace<f64>>,
-    down_scratch: RefCell<ScratchSpace<f64>>,
+    subs: [BoundSubprocess<'a>; 2],
     pdf: &'a PdfMember,
     cuts: &'a Cuts,
     up_flavors: Vec<i32>,
@@ -260,12 +403,22 @@ pub struct DrellYanIntegrand<'a> {
     spin_color_avg: f64,
     /// Total hadronic invariant `s = (E₁+E₂)²` (head-on beams).
     s_had: f64,
-    /// Factorization scale squared `μF²`.
-    mu_f2: f64,
+    /// The renormalisation scale the coupling follows and the *per-beam*
+    /// factorisation scale the parton distributions are read at. A run card that
+    /// fixes both leaves this a constant, and then no event kinematics are read.
+    scales: EventScaleSource,
+    /// Reused marshalling buffer for the lab-frame outgoing momenta the scale
+    /// prescription reads.
+    scale_buf: RefCell<Vec<[f64; 4]>>,
     /// Lower support of the logarithmic τ = ŝ/s map, `ŝ_min / s`.
     tau_min: f64,
     ln_inv_tau_min: f64,
 }
+
+/// Index of the up-type and down-type coupling class in [`DrellYanIntegrand`]'s
+/// subprocess pair.
+const DY_UP: usize = 0;
+const DY_DOWN: usize = 1;
 
 /// The Drell–Yan integrand decomposed into physical factors at one VEGAS point,
 /// for the pointwise integrand oracle ([`DrellYanIntegrand::debug_factors`]).
@@ -314,7 +467,9 @@ impl<'a> DrellYanIntegrand<'a> {
     /// * `cuts` — the compiled cut filter (its [`Cuts::shat_min`] sets `x_min`).
     /// * `up_flavors` / `down_flavors` — positive quark PDG codes per class.
     /// * `sqrt_s_had` — total collider energy `√s = E₁ + E₂`.
-    /// * `mu_f` — factorization scale.
+    /// * `mu_f` — a constant factorization scale on both beams, replaced by the
+    ///   run card's prescription by
+    ///   [`use_run_card_scales`](Self::use_run_card_scales).
     ///
     /// The initial-state spin×colour averaging factor is derived from the up-type
     /// class's incoming legs ([`initial_spin_color_average`]); both classes share
@@ -334,20 +489,54 @@ impl<'a> DrellYanIntegrand<'a> {
         let s_had = sqrt_s_had * sqrt_s_had;
         let tau_min = cuts.shat_min() / s_had;
         DrellYanIntegrand {
-            up_scratch: RefCell::new(up.scratch_space()),
-            down_scratch: RefCell::new(down.scratch_space()),
-            up,
-            down,
+            subs: [BoundSubprocess::fixed(up), BoundSubprocess::fixed(down)],
             pdf,
             cuts,
             up_flavors,
             down_flavors,
             spin_color_avg,
             s_had,
-            mu_f2: mu_f * mu_f,
+            scales: EventScaleSource::constant(mu_f),
+            scale_buf: RefCell::new(Vec::with_capacity(2)),
             tau_min,
             ln_inv_tau_min: (1.0 / tau_min).ln(),
         }
+    }
+
+    /// Take the renormalisation and per-beam factorisation scales from the run card
+    /// instead of the constant `μF` [`new`](Self::new) was given.
+    ///
+    /// `diagrams` are the up-type class's, from which the
+    /// [`ClusterTopology`](crate::coupling::scales::ClusterTopology) the `-1` scale
+    /// consults is derived; both classes are the same colour-singlet annihilation
+    /// off quark beams, so one declaration serves them.
+    ///
+    /// A run card that fixes both scales leaves the prescription a constant, and the
+    /// integrand then reads the parton distributions at exactly the scale it did
+    /// before — which is what keeps a cross section banked against such a card where
+    /// it was.
+    pub fn use_run_card_scales(
+        &mut self,
+        diagrams: &[Diagram],
+        model: &UFOModel,
+        evaluated: &EvaluatedModel,
+        card: &RunCard,
+    ) -> Result<RunningCouplingReport, HadronicError> {
+        let awareness = make_subs_scale_aware(&mut self.subs, evaluated);
+        // Unlike a fixed-beam run, the factorisation scale here has a consumer
+        // whatever the matrix element is made of, so the prescription is compiled
+        // even when nothing moves with the strong coupling.
+        let source = compile_scale_source(
+            self.subs[DY_UP].evaluator(),
+            diagrams,
+            model,
+            evaluated,
+            card,
+            awareness.depends_on_alpha_s,
+        )?;
+        let report = constant_scale_report(&self.subs, Some(&source), awareness);
+        self.scales = source;
+        Ok(report)
     }
 
     /// Lower support `ŝ_min / s` of the logarithmic τ map.
@@ -402,18 +591,47 @@ impl<'a> DrellYanIntegrand<'a> {
             return 0.0;
         }
 
-        let lum_up = self.luminosity(&self.up_flavors, m.x1, m.x2);
-        let lum_down = self.luminosity(&self.down_flavors, m.x1, m.x2);
+        let scales = self.event_scales(&lab);
+        let lum_up = self.luminosity(&self.up_flavors, m.x1, m.x2, scales.mu_f);
+        let lum_down = self.luminosity(&self.down_flavors, m.x1, m.x2, scales.mu_f);
         if lum_up == 0.0 && lum_down == 0.0 {
             return 0.0;
         }
 
         let phat = self.partonic_prefactor(m.sqrt_shat);
 
-        let m2_up = self.up.eval_m2(&cm, &mut self.up_scratch.borrow_mut());
-        let m2_down = self.down.eval_m2(&cm, &mut self.down_scratch.borrow_mut());
+        self.apply_scale(scales.mu_r);
+        let m2_up = self.subs[DY_UP].eval_m2(&cm);
+        let m2_down = self.subs[DY_DOWN].eval_m2(&cm);
 
         m.jac * phat * (m2_up * lum_up + m2_down * lum_down)
+    }
+
+    /// The scales at one event, from the lab-frame momenta the prescription is
+    /// defined in. A run card that fixes them reads no kinematics at all.
+    fn event_scales(&self, lab: &[V]) -> EventScales {
+        if let Some(fixed) = self.scales.constant_scales() {
+            return fixed;
+        }
+        let mut buf = self.scale_buf.borrow_mut();
+        buf.clear();
+        buf.extend(lab[2..].iter().map(components));
+        self.scales
+            .scales([components(&lab[0]), components(&lab[1])], &buf)
+            .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
+    }
+
+    /// Move both class amplitudes to the coupling `mu_r` implies. A Drell–Yan
+    /// matrix element carries no strong coupling, so no running coupling is built
+    /// for it and this returns without touching the pools.
+    fn apply_scale(&self, mu_r: f64) {
+        let Some(running) = self.scales.running_alpha_s() else {
+            return;
+        };
+        let alpha_s = running.eval(mu_r);
+        for sub in &self.subs {
+            sub.set_alpha_s(alpha_s);
+        }
     }
 
     /// The integrand decomposed into its physical factors at a VEGAS point — the
@@ -424,11 +642,13 @@ impl<'a> DrellYanIntegrand<'a> {
         let Kinematics { cm, lab } =
             build_kinematics(m.sqrt_shat, m.cos_theta, m.x1, m.x2, self.s_had);
         let pass = self.cuts.pass(&lab);
-        let lum_up = self.luminosity(&self.up_flavors, m.x1, m.x2);
-        let lum_down = self.luminosity(&self.down_flavors, m.x1, m.x2);
+        let scales = self.event_scales(&lab);
+        let lum_up = self.luminosity(&self.up_flavors, m.x1, m.x2, scales.mu_f);
+        let lum_down = self.luminosity(&self.down_flavors, m.x1, m.x2, scales.mu_f);
         let phat = self.partonic_prefactor(m.sqrt_shat);
-        let m2_up = self.up.eval_m2(&cm, &mut self.up_scratch.borrow_mut());
-        let m2_down = self.down.eval_m2(&cm, &mut self.down_scratch.borrow_mut());
+        self.apply_scale(scales.mu_r);
+        let m2_up = self.subs[DY_UP].eval_m2(&cm);
+        let m2_down = self.subs[DY_DOWN].eval_m2(&cm);
         let value = if pass {
             m.jac * phat * (m2_up * lum_up + m2_down * lum_down)
         } else {
@@ -452,13 +672,18 @@ impl<'a> DrellYanIntegrand<'a> {
 
     /// Summed PDF luminosity for one coupling class:
     /// `Σ_q [ (x·f_q)(x₁) (x·f_q̄)(x₂) + (x·f_q̄)(x₁) (x·f_q)(x₂) ]`.
-    fn luminosity(&self, flavors: &[i32], x1: f64, x2: f64) -> f64 {
+    ///
+    /// `mu_f` is per beam, in beam order: MadGraph carries `q2fact(1)` and
+    /// `q2fact(2)` separately and its clustering can put them at different values,
+    /// so `x₁` is read at beam 1's scale and `x₂` at beam 2's.
+    fn luminosity(&self, flavors: &[i32], x1: f64, x2: f64, mu_f: [f64; 2]) -> f64 {
+        let q2 = [mu_f[0] * mu_f[0], mu_f[1] * mu_f[1]];
         let mut acc = 0.0;
         for &q in flavors {
-            let fq1 = self.pdf.xfx_q2(q, x1, self.mu_f2);
-            let fq2 = self.pdf.xfx_q2(q, x2, self.mu_f2);
-            let fqb1 = self.pdf.xfx_q2(-q, x1, self.mu_f2);
-            let fqb2 = self.pdf.xfx_q2(-q, x2, self.mu_f2);
+            let fq1 = self.pdf.xfx_q2(q, x1, q2[0]);
+            let fq2 = self.pdf.xfx_q2(q, x2, q2[1]);
+            let fqb1 = self.pdf.xfx_q2(-q, x1, q2[0]);
+            let fqb2 = self.pdf.xfx_q2(-q, x2, q2[1]);
             acc += fq1 * fqb2 + fqb1 * fq2;
         }
         acc
@@ -631,6 +856,26 @@ pub fn initial_spin_color_average(
     1.0 / denom
 }
 
+/// The final-state identical-particle symmetry factor `1 / Π_s n_s!`.
+///
+/// A phase-space map covers the whole of `dΦ_n`, which counts every permutation of
+/// a set of identical outgoing particles as a distinct configuration, while the
+/// cross section counts each such configuration once. `g g → g g` is the case that
+/// makes the difference visible: without the `1/2!` its cross section comes out
+/// exactly twice MadGraph's, with everything else — the bit-exact `|M|²`, the flux,
+/// and the `1/256` initial-state average — already agreeing.
+pub fn final_state_symmetry_factor(eval: &AmplitudeEvaluator) -> f64 {
+    let out = &eval.external_particles()[eval.n_in()..];
+    // Each leg contributes the next factor of its own species' factorial, counted
+    // by how many earlier legs it matches, so one pass builds `Π_s n_s!`.
+    let multiplicities: f64 = out
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (out[..i].iter().filter(|&other| other == id).count() + 1) as f64)
+        .product();
+    1.0 / multiplicities
+}
+
 /// Build the [`ExternalLeg`] list (incoming legs first, then outgoing) for a
 /// compiled process, reading PDG codes and pole masses from the model — the
 /// input [`Cuts::compile`] classifies.
@@ -682,11 +927,149 @@ pub fn compile_subprocesses(
     Ok(evals)
 }
 
-/// One compiled subprocess feeding a summed matrix element: a bound amplitude and
-/// its own evaluation scratch (behind [`RefCell`] so the integrand is `Fn`).
+/// One compiled subprocess feeding a summed matrix element: an amplitude and its
+/// own evaluation scratch (behind [`RefCell`] so the integrand is `Fn`).
 struct BoundSubprocess<'a> {
-    amp: &'a BoundAmplitude<'a, f64>,
+    amp: SubAmplitude<'a>,
     scratch: RefCell<ScratchSpace<f64>>,
+}
+
+/// A subprocess amplitude, held at the parameter card's own strong coupling or at
+/// the one each event's renormalisation scale implies.
+///
+/// The scale-aware form owns its constant pools, so it is mutable state. It lives
+/// behind the integrand's [`RefCell`]s, which makes the integrand `!Sync` and so
+/// makes the failure a shared pool would produce — two threads reading each
+/// other's coupling, giving a silently wrong `|M|²` with no panic and no NaN —
+/// unrepresentable rather than merely avoided. A parallel driver builds one
+/// integrand per thread, each forking its own amplitudes.
+enum SubAmplitude<'a> {
+    Fixed(&'a BoundAmplitude<'a, f64>),
+    Running(RefCell<ScaleAwareAmplitude<'a, f64>>),
+}
+
+impl<'a> BoundSubprocess<'a> {
+    fn fixed(amp: &'a BoundAmplitude<'a, f64>) -> Self {
+        BoundSubprocess {
+            scratch: RefCell::new(amp.scratch_space()),
+            amp: SubAmplitude::Fixed(amp),
+        }
+    }
+
+    /// The bound evaluator this subprocess was built from, the input a scale-aware
+    /// copy is derived from.
+    fn evaluator(&self) -> &'a AmplitudeEvaluator {
+        match &self.amp {
+            SubAmplitude::Fixed(amp) => amp.evaluator(),
+            SubAmplitude::Running(amp) => amp.borrow().amplitude().evaluator(),
+        }
+    }
+
+    /// Replace the amplitude by a scale-aware copy of itself, bound against
+    /// `evaluated`. The copy starts at the parameter card's own coupling, with
+    /// pools bit-for-bit those of the amplitude it replaces.
+    fn make_scale_aware(&mut self, evaluated: &EvaluatedModel) {
+        let amp = ScaleAwareAmplitude::<f64>::new(self.evaluator(), evaluated);
+        self.amp = SubAmplitude::Running(RefCell::new(amp));
+    }
+
+    fn scale_aware(&self) -> Option<&RefCell<ScaleAwareAmplitude<'a, f64>>> {
+        match &self.amp {
+            SubAmplitude::Fixed(_) => None,
+            SubAmplitude::Running(amp) => Some(amp),
+        }
+    }
+
+    fn set_alpha_s(&self, alpha_s: f64) {
+        if let SubAmplitude::Running(amp) = &self.amp {
+            amp.borrow_mut().set_alpha_s(alpha_s);
+        }
+    }
+
+    fn eval_m2(&self, momenta: &[V]) -> f64 {
+        let scratch = &mut self.scratch.borrow_mut();
+        match &self.amp {
+            SubAmplitude::Fixed(amp) => amp.eval_m2(momenta, scratch),
+            SubAmplitude::Running(amp) => amp.borrow().eval_m2(momenta, scratch),
+        }
+    }
+}
+
+/// What turning a set of subprocesses scale-aware revealed about them.
+struct ScaleAwareness {
+    depends_on_alpha_s: bool,
+    fallbacks: Vec<String>,
+    alpha_s_ref: Option<f64>,
+}
+
+/// Replace every subprocess amplitude by a scale-aware copy of itself.
+fn make_subs_scale_aware(
+    subs: &mut [BoundSubprocess<'_>],
+    evaluated: &EvaluatedModel,
+) -> ScaleAwareness {
+    for sub in subs.iter_mut() {
+        sub.make_scale_aware(evaluated);
+    }
+    let scale_aware = || subs.iter().filter_map(BoundSubprocess::scale_aware);
+    ScaleAwareness {
+        depends_on_alpha_s: scale_aware().any(|a| a.borrow().depends_on_alpha_s()),
+        fallbacks: scale_aware()
+            .filter_map(|a| a.borrow().fallback().map(|f| f.to_string()))
+            .collect(),
+        alpha_s_ref: scale_aware().next().map(|a| a.borrow().alpha_s_ref()),
+    }
+}
+
+/// Compile the run card's prescription for a process, deriving the topology its
+/// clustering branch consults from the process's own diagrams.
+///
+/// The running coupling is built only when some subprocess actually moves with it,
+/// which is what keeps a matrix element with no QCD in it away from a `pdlabel`
+/// whose `αs` `coupling::alphas` refuses to supply.
+fn compile_scale_source(
+    rep: &AmplitudeEvaluator,
+    diagrams: &[Diagram],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    card: &RunCard,
+    needs_alpha_s: bool,
+) -> Result<EventScaleSource, HadronicError> {
+    let topology = cluster_topology(
+        diagrams,
+        rep.external_particles(),
+        rep.n_in(),
+        model,
+        card.maxjetflavor,
+    );
+    let param_card_as = evaluated.alpha_s().ok_or(HadronicError::MissingAlphaS)?;
+    EventScaleSource::from_run_card(card, param_card_as, Some(topology), needs_alpha_s)
+}
+
+/// Hold every subprocess at the coupling a constant prescription implies, and
+/// assemble the report describing what was installed.
+fn constant_scale_report(
+    subs: &[BoundSubprocess<'_>],
+    source: Option<&EventScaleSource>,
+    awareness: ScaleAwareness,
+) -> RunningCouplingReport {
+    let constant_scales = source.and_then(EventScaleSource::constant_scales);
+    let constant_alpha_s = match (constant_scales, source.and_then(|s| s.running_alpha_s())) {
+        (Some(scales), Some(running)) => Some(running.eval(scales.mu_r)),
+        _ => None,
+    };
+    if let Some(alpha_s) = constant_alpha_s {
+        for sub in subs {
+            sub.set_alpha_s(alpha_s);
+        }
+    }
+    RunningCouplingReport {
+        depends_on_alpha_s: awareness.depends_on_alpha_s,
+        topology: source.and_then(EventScaleSource::topology),
+        constant_scales,
+        constant_alpha_s,
+        alpha_s_ref: awareness.alpha_s_ref,
+        fallbacks: awareness.fallbacks,
+    }
 }
 
 /// A ready-to-integrate cross section for a **fixed-energy, no-PDF** beam
@@ -714,13 +1097,15 @@ struct BoundSubprocess<'a> {
 /// # Master formula
 ///
 /// ```text
-/// σ̂ = 1/(2ŝ) · ⟨spin·colour avg⟩ · ∫ dΦ_n Σ|M|²
-///    = 1/(2ŝ) · avg · (2π)^{4−3n} · ⟨weight · Σ_sub |M_sub|²⟩_uniform
+/// σ̂ = 1/(2ŝ) · ⟨spin·colour avg⟩ · S · ∫ dΦ_n Σ|M|²
+///    = 1/(2ŝ) · avg · S · (2π)^{4−3n} · ⟨weight · Σ_sub |M_sub|²⟩_uniform
 /// ```
 ///
-/// where `Σ|M|²` is the colour+helicity-summed matrix element ([`eval_m2`]) and
-/// the `(2π)^{4−3n}` factor turns the map's invariant volume `R_n` into the full
-/// `dΦ_n` measure.
+/// where `Σ|M|²` is the colour+helicity-summed matrix element ([`eval_m2`]), the
+/// `(2π)^{4−3n}` factor turns the map's invariant volume `R_n` into the full
+/// `dΦ_n` measure, and `S = 1/Π_s n_s!` is the identical-particle symmetry factor
+/// ([`final_state_symmetry_factor`]) that undoes `dΦ_n`'s over-counting of the
+/// permutations of identical outgoing legs.
 ///
 /// [`eval_m2`]: BoundAmplitude::eval_m2
 pub struct FixedBeamIntegrand<'a> {
@@ -735,6 +1120,9 @@ pub struct FixedBeamIntegrand<'a> {
     final_masses: Vec<f64>,
     /// `1 / Π_a (n_spin · n_colour)` over the incoming legs.
     spin_color_avg: f64,
+    /// The final-state identical-particle factor `1 / Π_s n_s!`, derived from the
+    /// process's outgoing legs ([`final_state_symmetry_factor`]).
+    symmetry_factor: f64,
     /// The `(2π)^{4−3n}` measure factor.
     lips_2pi: f64,
     /// Beam energy `√ŝ/2`.
@@ -743,6 +1131,18 @@ pub struct FixedBeamIntegrand<'a> {
     /// [`VEGAS_ALPHA`] over the raw flat map, [`VEGAS_ALPHA_MAPPED`] once a
     /// multichannel map has already flattened the integrand's known peaks.
     vegas_alpha: f64,
+    /// The run card's per-event renormalisation scale, once
+    /// [`use_running_coupling`](Self::use_running_coupling) has installed it.
+    /// `None`, or a prescription that resolves to a constant, leaves every
+    /// subprocess at one coupling and costs nothing per point.
+    scales: Option<EventScaleSource>,
+    /// Reused marshalling buffer for the outgoing momenta the scale reads.
+    scale_buf: RefCell<Vec<[f64; 4]>>,
+    /// The last `(μR, αs(μR))` pair, so a repeated scale does not repeat the
+    /// coupling's Newton solve. The prescription can be dynamic and still land on
+    /// one value every event — a fixed-beam `2 → 2` clusters to `√ŝ/2` whatever the
+    /// point — and that case is only visible per event, not from the run card.
+    last_coupling: Cell<(f64, f64)>,
 }
 
 impl<'a> FixedBeamIntegrand<'a> {
@@ -763,13 +1163,8 @@ impl<'a> FixedBeamIntegrand<'a> {
         spin_color_avg: f64,
     ) -> Self {
         let n = final_masses.len();
-        let subs = amps
-            .into_iter()
-            .map(|amp| BoundSubprocess {
-                amp,
-                scratch: RefCell::new(amp.scratch_space()),
-            })
-            .collect();
+        let symmetry_factor = final_state_symmetry_factor(amps[0].evaluator());
+        let subs = amps.into_iter().map(BoundSubprocess::fixed).collect();
         let sampler = Box::new(RamboChannel::new(sqrt_s, final_masses.clone()));
         FixedBeamIntegrand {
             subs,
@@ -778,9 +1173,133 @@ impl<'a> FixedBeamIntegrand<'a> {
             sampler,
             final_masses,
             spin_color_avg,
+            symmetry_factor,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n as i32),
             beam_e: sqrt_s / 2.0,
             vegas_alpha: VEGAS_ALPHA,
+            scales: None,
+            scale_buf: RefCell::new(Vec::with_capacity(n)),
+            last_coupling: Cell::new((f64::NAN, f64::NAN)),
+        }
+    }
+
+    /// Evaluate the matrix element at the strong coupling the run card's per-event
+    /// renormalisation scale implies, instead of at the parameter card's own.
+    ///
+    /// Each subprocess is replaced by a scale-aware copy owning its constant pools;
+    /// the [`ClusterTopology`](crate::coupling::scales::ClusterTopology) the `-1`
+    /// scale consults is derived from `diagrams` rather than declared per process.
+    /// A fixed-beam run has no parton distributions, so only `μR` is consumed here —
+    /// the per-beam `μF` the same prescription produces has nothing to feed.
+    ///
+    /// Call this **before** [`use_multichannel`](Self::use_multichannel), so the
+    /// α-adaptation survey sees the integrand the integration will see.
+    ///
+    /// The scale is resolved once here on a sampled, cut-passing phase-space point,
+    /// so a prescription this crate refuses — an unimplemented clustering above all —
+    /// stops the run at setup instead of at the first VEGAS point.
+    pub fn use_running_coupling(
+        &mut self,
+        diagrams: &[Diagram],
+        model: &UFOModel,
+        evaluated: &EvaluatedModel,
+        card: &RunCard,
+    ) -> Result<RunningCouplingReport, HadronicError> {
+        let awareness = make_subs_scale_aware(&mut self.subs, evaluated);
+        // With no parton distributions to read and no strong coupling in the matrix
+        // element, neither scale the prescription produces has a consumer, so the
+        // prescription is not compiled at all — a process whose cluster scale this
+        // crate refuses still integrates, because its cross section does not depend
+        // on the scale that was refused.
+        if !awareness.depends_on_alpha_s {
+            self.scales = None;
+            return Ok(constant_scale_report(&self.subs, None, awareness));
+        }
+        let source = compile_scale_source(
+            self.subs[0].evaluator(),
+            diagrams,
+            model,
+            evaluated,
+            card,
+            true,
+        )?;
+        if source.constant_scales().is_none() {
+            self.probe_scale(&source)?;
+        }
+        let report = constant_scale_report(&self.subs, Some(&source), awareness);
+        self.scales = Some(source);
+        Ok(report)
+    }
+
+    /// Resolve the scale on the first cut-passing point of a fixed pseudo-random
+    /// draw, so a refusal that would otherwise surface mid-integration surfaces at
+    /// setup.
+    ///
+    /// The draw goes through the cut filter because the scale is only ever asked for
+    /// on points that pass it: an unphysical configuration — a leg carrying no
+    /// energy, say — has no beam measure to compare, and refusing on one would say
+    /// nothing about the process.
+    fn probe_scale(&self, source: &EventScaleSource) -> Result<(), HadronicError> {
+        use rand::Rng;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(SCALE_PROBE_SEED);
+        for _ in 0..SCALE_PROBE_DRAWS {
+            let u: Vec<f64> = (0..self.sampler.ndim())
+                .map(|_| rng.random::<f64>())
+                .collect();
+            let point = self.sampler.sample(&u);
+            let mut ext: Vec<V> = Vec::with_capacity(2 + point.momenta.len());
+            ext.push(V::new(self.beam_e, 0.0, 0.0, self.beam_e));
+            ext.push(V::new(self.beam_e, 0.0, 0.0, -self.beam_e));
+            ext.extend_from_slice(&point.momenta);
+            if self.cuts.pass(&ext) {
+                self.event_scales_of(source, &point.momenta)?;
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    /// The scales at one phase-space point, from the beams and the outgoing momenta.
+    fn event_scales_of(
+        &self,
+        source: &EventScaleSource,
+        momenta: &[V],
+    ) -> Result<EventScales, ScaleError> {
+        let mut buf = self.scale_buf.borrow_mut();
+        buf.clear();
+        buf.extend(momenta.iter().map(components));
+        let beams = [
+            [self.beam_e, 0.0, 0.0, self.beam_e],
+            [self.beam_e, 0.0, 0.0, -self.beam_e],
+        ];
+        source.scales(beams, &buf)
+    }
+
+    /// Move every subprocess to the coupling this point's renormalisation scale
+    /// implies. A constant prescription was applied once at installation, and a
+    /// matrix element with no strong coupling in it has no coupling to move, so
+    /// both return here without touching the momenta.
+    fn apply_scale(&self, momenta: &[V]) {
+        let Some(source) = &self.scales else { return };
+        if source.constant_scales().is_some() {
+            return;
+        }
+        let Some(running) = source.running_alpha_s() else {
+            return;
+        };
+        let scales = self
+            .event_scales_of(source, momenta)
+            .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"));
+        let (last_mu_r, last_alpha_s) = self.last_coupling.get();
+        let alpha_s = if scales.mu_r == last_mu_r {
+            last_alpha_s
+        } else {
+            let alpha_s = running.eval(scales.mu_r);
+            self.last_coupling.set((scales.mu_r, alpha_s));
+            alpha_s
+        };
+        for sub in &self.subs {
+            sub.set_alpha_s(alpha_s);
         }
     }
 
@@ -805,10 +1324,11 @@ impl<'a> FixedBeamIntegrand<'a> {
         if !self.cuts.pass(&ext) {
             return 0.0;
         }
+        self.apply_scale(momenta);
 
         let mut m2 = 0.0;
         for sub in &self.subs {
-            m2 += sub.amp.eval_m2(&ext, &mut sub.scratch.borrow_mut());
+            m2 += sub.eval_m2(&ext);
         }
         m2
     }
@@ -823,7 +1343,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             return 0.0;
         }
         let flux = 1.0 / (2.0 * self.sqrt_s * self.sqrt_s);
-        flux * self.spin_color_avg * self.lips_2pi * point.weight * m2
+        flux * self.spin_color_avg * self.symmetry_factor * self.lips_2pi * point.weight * m2
     }
 
     /// Replace flat RAMBO with a resonance-aware per-diagram [`MultiChannel`] built
@@ -1012,6 +1532,22 @@ mod tests {
         // gg: massless vector (2 spin) × adjoint colour (8), twice.
         let gg = build_evaluator("g g > t t~", &m, &evaluated);
         assert_eq!(initial_spin_color_average(&gg, &m, &evaluated), 1.0 / 256.0);
+    }
+
+    /// The identical-particle factor must fall out of the outgoing legs, not out of
+    /// a table: `g g → g g` is the only MG-validated process with a repeated
+    /// outgoing particle, and it is exactly the row whose cross section comes out
+    /// twice MadGraph's without the factor.
+    #[test]
+    fn final_state_symmetry_factor_counts_identical_legs() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let factor =
+            |proc: &str| final_state_symmetry_factor(&build_evaluator(proc, &m, &evaluated));
+        assert_eq!(factor("g g > g g"), 0.5);
+        assert_eq!(factor("g g > t t~"), 1.0);
+        assert_eq!(factor("u u~ > u u~"), 1.0);
+        assert_eq!(factor("e+ e- > mu+ mu-"), 1.0);
     }
 
     #[test]

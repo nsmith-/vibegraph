@@ -35,7 +35,7 @@ re-sequenced 2026-07-26: the per-event scale and `αs(μ)` are LHE `<event>` fie
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 14 processes agree with MadGraph (11 bit-identical ≤6.3e-13, incl. 2→6/VVV/massive externals, all NCOLOR=1; `uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS, a two-phase serde object (`adapt`/`sample_frozen` split, deterministic rayon chunking) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams. `lips-nbody` remainder now closed by `resonance-sampling`: per-diagram channel trees, Breit-Wigner/t-channel/massless-log invariant maps, variance-minimising multichannel weight and α-adaptation, driving `integrate`. Deferred: multi-rung t-channel ladders (note 21) |
-| 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻, pp→e⁺e⁻ Drell–Yan) | ✅ Done | Leptonic: `validate_vegas.rs` `sigma_z_pole` σ≈2025 pb at √s=91.2 (<0.1% vs MG), `sigma_qed_limit` (√s=10 vs 4πα²/3s, 3%). Hadronic: PDF-convolved σ(pp→e⁺e⁻) via a pure-Rust LHAPDF6 grid parser + log-bicubic interpolation (`pdf/`) and compiled MG run-card cuts (`runcard.rs`/`cuts.rs`), integrated over (τ,y); vs MG within 0.14% (default cuts, 934.42±0.87 vs 933.11±0.447 pb) / 0.07% (m_ℓℓ∈[60,120], 644.86±0.57 vs 644.42±0.315 pb); `vibegraph integrate` CLI drives proc-card + run-card → σ + persisted VEGAS grid artifact |
+| 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻, pp→e⁺e⁻ Drell–Yan, QCD 2→2) | ✅ Done | Leptonic: `validate_vegas.rs` `sigma_z_pole` σ≈2025 pb at √s=91.2 (<0.1% vs MG), `sigma_qed_limit` (√s=10 vs 4πα²/3s, 3%). Hadronic: PDF-convolved σ(pp→e⁺e⁻) via a pure-Rust LHAPDF6 grid parser + log-bicubic interpolation (`pdf/`) and compiled MG run-card cuts (`runcard.rs`/`cuts.rs`), integrated over (τ,y); vs MG within 0.14% (default cuts, 934.42±0.87 vs 933.11±0.447 pb) / 0.07% (m_ℓℓ∈[60,120], 644.86±0.57 vs 644.42±0.315 pb); `vibegraph integrate` CLI drives proc-card + run-card → σ + persisted VEGAS grid artifact |
 | 6 | Unweighted event output (LHEF) | 🔲 Pending — **unblocked** | Accept/reject sampling + Les Houches format. Substrate complete: frozen VEGAS grid, RAMBO, cuts accept-gate, and — as of `resonance-sampling` — the peak-resolving n-body sampler its unweighting efficiency depends on. Now the next sprint (`event-output-lhef`, E1–E4 below) |
 
 Closed-sprint history (`helas-generalize`, `mg-validation-coverage`,
@@ -113,7 +113,9 @@ shrinking, it is a bug.
 | **Multi-rung t-channel spine (Session T Part 2)** | Ladder topologies (VBF/DIS, ≥2 spacelike lines). The ordering Jacobian cannot be pinned by `Vₙ`/σ in-session, so it was deferred rather than committed unvalidated. Hand-off design is written up (`Spine → rungs: Vec`, running `q_i = p_a − Σp`, note-07 §2.9.0 ordering firing test). | note 21 §"Deferred — multi-rung spine" |
 | **MG-plot distribution comparison** | L5 validated sampled histograms against *analytic* BW/t-channel oracles (exact) with MG σ as the coarse backstop. Comparing sampled invariant-mass/angular histograms against MG's own `.lhe`/plots needs the MG toolchain. Would also be the vehicle for `low-mll-reconciliation` above. | note 21 close-out |
 | **Massless-t-channel fiducial cut** | A massless beam pins `t_max = 0` (collinear edge), where the t-map falls back to flat. Whether a fiducial cut is wanted there instead of the flat fallback is unresolved for a physical massless-initial-state t-channel. | note 21 close-out |
-| **`dynamical-scales`** | Out of this sprint's scope: MG runs αs to a per-event scale, so the 3 QCD `validate_sigma` rows stay informational. Still the blocker on a real QCD σ gate — **now the next sprint** (D1–D4, plan in note 22). | note 22 |
+| **`uux_to_uux` residual bias** | Now a hard σ GATE, but the five-seed sweep leaves a ~0.15% *negative* mean against banked MG — smaller than the 2% tolerance and shrinking with budget (worst \|rel\| 7.4e-3 → 3.9e-3 at 4×), yet larger than the seed spread alone explains, and its worst seed reaches \|pull\| 2.92 against the 3.5 limit. The spacelike collinear region a single-rung t-channel spine under-resolves is where to look. | `validate_sigma.rs` `probe_qcd_seed_stability`; ties to the multi-rung spine row above |
+| **Per-event scale hot-path cost** | The run card's scale + coupling move costs ~100 ns/point on top of a 0.5–1.7 µs matrix element (+6% on `gg_to_gg`, +21% on `uux_to_uux`), measured by `probe_scale_cost`. Memoising `αs(μR)` across repeats accounted for only ~15 ns of it; the rest is the scale itself, where `ScaleChoice::clustered` heap-allocates its beam–leg candidate list once per event. Not urgent — it is a fraction of the matrix element — but it is the obvious first cut. | `coupling/scales.rs`; `validate_sigma.rs` `probe_scale_cost` |
+| **μF ≥ 2 GeV event veto** | `reweight.f:1185` makes `setclscales` *fail* — vetoing the point — when a hadronic beam's `q2fact` drops below 4. `coupling::scales` reports the scale and does not implement the veto, and no gate needs it: the banked hadronic reference cards fix μF at 91.188 and the QCD σ rows are `lpp = 0`. A hadronic run with a *dynamic* μF that can reach below 2 GeV needs it applied alongside the cuts or its σ will differ from MadGraph's. | note 22 §4; `coupling/scales.rs` |
 | **Per-channel VEGAS grids** | vibegraph runs one grid over `1 + channel_ndim` with `u[0]` selecting the channel; MG splits the integral per channel, one grid each. A shared grid can only learn the α-weighted *average* density per coordinate slot, and the `u[0]`↔`u[1..]` correlation is exactly what a separable VEGAS density cannot express. Not biting yet (the channel maps already flatten the poles), but it also costs per-channel `w_max` for unweighting. ~1–2 sessions; changes the `IntegrateArtifact` schema, so **better before Sprint B E2/E4 hardens around a single grid than after**. | note 21 § "Addendum — one VEGAS grid vs. MadGraph's grid-per-channel" |
 | **2→6 σ rows** | `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` remain `Plan::Skip` — ~1 ms/eval over a 24-dim map is too slow to gate, a cost issue rather than a sampling one. | `validate_sigma.rs` |
 
@@ -521,9 +523,8 @@ per event, and thread the running through the coupling evaluation the amplitude
 consumes. Two-loop αs running with correct flavor thresholds is the reference target;
 match MG's `Running` module conventions.
 
-_Unblocks: promoting the 3 QCD processes in `validate_sigma.rs` from `Plan::Info` to
-`Plan::Gate` (flip the arm + tighten `rel_tol`); a genuine σ check of any
-αs-dependent process._
+_Unblocked (D4): the 3 QCD processes in `validate_sigma.rs` are `Plan::Gate`, and
+any αs-dependent process now gets a genuine σ check._
 
 **Session status** (branch `dynamical-scales`): D1 `alphas-running` ✅ —
 `coupling::alphas` ports `ALPHAS`/`NEWTON1` bit-exactly against MG's own Fortran
@@ -553,9 +554,39 @@ expression — and the pools return bit-for-bit to the bound ones at the card's 
 process carry a power of `G` (11 of 14 carry none), so `set_alpha_s` costs 12.2 ns
 against `gg_to_gg`'s 1.56 µs per point, and 3.2 ns on an amplitude with no strong
 coupling. Pools are per-thread by ownership (`fork`), never shared mutably.
-D4 open. Note 22 §1.2/§1.3/§1.4/§4 carry D2's corrections to the survey; the
-one that matters downstream is that the banked hadronic σ reference cards fix
-*both* scales at 91.188, so those numbers must not move.
+D4 `dynamic-scale-in-integrator` ✅ — D1–D3 wired into `FixedBeamIntegrand` and
+`DrellYanIntegrand`. Per point the momenta give `μR` and a per-beam `μF`; `μF`
+feeds the two PDF calls separately (`q2fact(1)`/`q2fact(2)` can differ), `μR`
+feeds the coupling move, both before the matrix element. The
+`ClusterTopology` the `-1` scale needs is **derived** from the process rather
+than declared per run: `coupling::topology` reads the t-channel from the
+diagrams' momentum routing (`Prop::is_spacelike` — vertex adjacency alone would
+miss `e⁺e⁻ → μ⁺μ⁻τ⁺τ⁻`'s `ZZ` diagram), the beam↔leg merge mask from vertex
+adjacency, colour from the model, and `isjet` from `maxjetflavor`; it reproduces
+every declaration `validate_scales.rs` makes by hand for the processes the σ gate
+covers. Short-circuits: a fully fixed prescription resolves once at setup and
+reads no kinematics, a fixed-beam process whose matrix element carries no strong
+coupling compiles no prescription at all (which is also what keeps Drell-Yan away
+from D1's `pdlabel = lhapdf` refusal), and `αs(μR)` is memoised across repeats.
+Cost `probe_scale_cost`: ~100 ns/point against a 0.5–1.7 µs matrix element.
+
+**The three QCD σ rows are now hard GATEs**: `gg_to_ttx` pull +0.20 (rel 4.9e-4),
+`gg_to_gg` −0.64 (2.0e-3), `uux_to_uux` −0.63 (1.6e-3), each stable over five
+seeds with the deviation shrinking as the budget grows (`probe_qcd_seed_stability`).
+Drell-Yan did not move, as note 22 §4 requires — both reference cards fix both
+scales at 91.188, now asserted in `validate_hadronic.rs` rather than assumed.
+
+Promoting `gg_to_gg` uncovered a **missing final-state identical-particle
+symmetry factor** in `FixedBeamIntegrand`: `dΦ_n` counts both orderings of the two
+outgoing gluons, so its σ was exactly twice MadGraph's. It is the only
+MG-validated process with a repeated outgoing particle, and its `Plan::Info`
+status had been hiding the factor of 2 behind the running-αs gap.
+`final_state_symmetry_factor` now derives `1/Π_s n_s!` from the evaluator's
+outgoing legs.
+
+Note 22 §1.2/§1.3/§1.4/§4 carry D2's corrections to the survey; the one that
+mattered downstream is that the banked hadronic σ reference cards fix *both*
+scales at 91.188, so those numbers must not move — and they did not.
 
 ### `event-output-lhef` — Unweighted events in LHEF format
 
