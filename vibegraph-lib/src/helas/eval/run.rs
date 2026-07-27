@@ -110,7 +110,10 @@ pub(super) struct EvalEnv<'a, F: Real> {
 /// [`AmplitudeEvaluator`] and owns the resolved constant pools (`consts_c` couplings,
 /// `consts_f` masses/widths/coeffs), so evaluation is pure kinematics — no parameter
 /// lookups on the hot path.
-#[derive(Debug)]
+///
+/// `Clone` duplicates the pools while sharing the evaluator, which is how a caller
+/// that rewrites the pools per event gets one independent copy per thread.
+#[derive(Debug, Clone)]
 pub struct BoundAmplitude<'a, F: Real> {
     eval: &'a AmplitudeEvaluator,
     consts_c: Box<[C<F>]>,
@@ -161,6 +164,28 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
     /// The compiled (card-independent) evaluator this amplitude is bound to.
     pub fn evaluator(&self) -> &'a AmplitudeEvaluator {
         self.eval
+    }
+
+    /// The card-resolved constant pools, `(couplings, masses/widths/coeffs)`, in the
+    /// layout the folded skeleton indexes them by.
+    ///
+    /// Exposed so a validation oracle can compare two ways of resolving the same card
+    /// entry by entry, which is a far finer comparison than |M|².
+    pub fn pools(&self) -> (&[C<F>], &[F]) {
+        (&self.consts_c, &self.consts_f)
+    }
+
+    /// Replace both constant pools in place (same layout, new values).
+    pub(super) fn set_pools(&mut self, consts_c: Box<[C<F>]>, consts_f: Box<[F]>) {
+        debug_assert_eq!(consts_c.len(), self.consts_c.len());
+        debug_assert_eq!(consts_f.len(), self.consts_f.len());
+        self.consts_c = consts_c;
+        self.consts_f = consts_f;
+    }
+
+    /// Mutable access to both constant pools, for in-place rewriting.
+    pub(super) fn pools_mut(&mut self) -> (&mut [C<F>], &mut [F]) {
+        (&mut self.consts_c, &mut self.consts_f)
     }
 
     /// A workspace sized for this amplitude. Create once and pass to every

@@ -112,6 +112,14 @@ fn sm_parsed() -> &'static ParsedModel {
     PARSED.get_or_init(|| deserialize_parsed(SM_PARSED_BLOB))
 }
 
+/// A copy of the interned pre-restriction SM, for callers that need a model the baked
+/// restrict variants do not cover — deriving a deliberately altered model to test how
+/// the rest of the pipeline reacts to it, for instance. Restricting it with
+/// [`ParsedModel::into_model`] reproduces exactly what [`sm_model`] caches.
+pub fn sm_parsed_model() -> ParsedModel {
+    sm_parsed().clone()
+}
+
 /// The interned Standard Model, restricted per `restrict` and cached per variant.
 ///
 /// Deserializes the baked blob and applies the variant's restrict card (parameter

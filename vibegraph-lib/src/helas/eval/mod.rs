@@ -47,6 +47,10 @@ mod lanes;
 mod layout;
 mod lower;
 mod op;
+// Per-event strong coupling: `ScaleAwareAmplitude` owns a bound amplitude's constant
+// pools and moves them to another `alpha_s`, either by scaling the tagged powers of `G`
+// or by re-evaluating the model.
+mod rescale;
 // Reusable property-test harness: typed random-input generators + a "compare two
 // kernels on the same random inputs" driver, for kernel-equivalence tests. Also
 // compiled (without the test driver) for the `bench-internals` microbench facade.
@@ -86,6 +90,7 @@ pub use compile::AmplitudeEvaluator;
 pub use error::{CompileError, EvalError, RootDiagramError};
 pub use lanes::LaneField;
 pub use op::{Const, ConstKind, Node, Op, Sym};
+pub use rescale::{PoolTagCensus, RescaleFallback, ScaleAwareAmplitude};
 pub use root_diagram::compile_diagram_ast;
 pub use root_lorentz::RootLorentzError;
 pub use run::{eval_m2_lanes, BoundAmplitude, ScratchSpace};

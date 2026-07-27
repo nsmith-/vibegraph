@@ -7,7 +7,7 @@
 //! `consts_c` (complex couplings) and `consts_f` (real masses/widths/coeffs) are kept
 //! separate so real chains multiply in `F`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use num_complex::Complex64;
 use num_traits::FromPrimitive;
@@ -15,7 +15,7 @@ use num_traits::FromPrimitive;
 use super::analysis::{self, NodeAnalysis, NodeType};
 use super::ast::{Ast, AstBuilder};
 use super::layout::Program;
-use super::op::{Const, NodeId, Op, Sym};
+use super::op::{Const, ConstKind, NodeId, Op, Sym};
 use super::run::{apply, EvalEnv};
 use super::tree::Tree;
 use super::waveform_slot::WaveformSlot;
@@ -23,8 +23,9 @@ use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::numbers::Charge;
 use crate::helas::repr::{Real, C};
 use crate::ufo::couplings::CouplingId;
+use crate::ufo::expr::{BinOp, Expr};
 use crate::ufo::particles::ParticleId;
-use crate::ufo::EvaluatedModel;
+use crate::ufo::{EvaluatedModel, UFOModel};
 
 /// A request for one entry of the real pool. `Coeff` stores the `f64` bit pattern so the
 /// request is hashable/dedupable.
@@ -560,6 +561,152 @@ impl Folded {
             RealReq::Mass(id) | RealReq::Width(id) => Some(*id),
             RealReq::Coeff(_) | RealReq::Rat(..) => None,
         })
+    }
+
+    /// The power of `G` every constant-pool entry carries, in the layout
+    /// [`pools`](Self::pools) produces (base entries first, folded composites after).
+    ///
+    /// `driven` is the set of parameter names a change of the strong coupling moves,
+    /// including the driving parameter itself; a value reached through any of them
+    /// other than `G` is not expressible as a power of `G` and is left untagged.
+    pub(super) fn g_powers(&self, model: &UFOModel, driven: &HashSet<String>) -> GPowers {
+        let g_is_driven = driven.contains("G");
+        let param_power = |name: &str| -> GPower {
+            if name == "G" && g_is_driven {
+                Some(1)
+            } else if driven.contains(name) {
+                None
+            } else {
+                Some(0)
+            }
+        };
+
+        let mut complex: Vec<GPower> = self
+            .pool_c
+            .iter()
+            .map(|req| match *req {
+                ComplexReq::Coupling(id) => {
+                    g_power_expr(&model.coupling_def(id).value, driven, g_is_driven)
+                }
+                ComplexReq::Rat(..) => Some(0),
+            })
+            .collect();
+        let mut real: Vec<GPower> = self
+            .pool_f
+            .iter()
+            .map(|req| match *req {
+                RealReq::Mass(id) => param_power(&model.particle(id).mass_param),
+                RealReq::Width(id) => param_power(&model.particle(id).width_param),
+                RealReq::Coeff(_) | RealReq::Rat(..) => Some(0),
+            })
+            .collect();
+
+        if self.fold_complex.is_empty() && self.fold_real.is_empty() {
+            return GPowers { complex, real };
+        }
+
+        // `const_ast` leaves index the base pools only (the composites it feeds are
+        // extracted from it, never referenced inside it), so one forward pass in arena
+        // order resolves every node from entries already tagged above.
+        let leaf_power = |leaf: Const| -> GPower {
+            let idx = leaf.index() as usize;
+            match leaf.kind() {
+                ConstKind::Complex => complex.get(idx).copied().flatten(),
+                ConstKind::Real => real.get(idx).copied().flatten(),
+                ConstKind::Ext | ConstKind::None => None,
+            }
+        };
+        let mut node: Vec<GPower> = Vec::with_capacity(self.const_ast.len());
+        for id in self.const_ast.iter() {
+            let n = self.const_ast.value(id);
+            let kids = self.const_ast.children_ids(id);
+            let power = match n.op {
+                Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat => {
+                    leaf_power(n.leaf)
+                }
+                // A product of monomials is a monomial of the summed power.
+                Op::Mul => kids.iter().try_fold(0i32, |acc, &k| {
+                    node[k as usize].map(|p: i32| acc.saturating_add(p))
+                }),
+                // A sum is a monomial only if every term carries the same power.
+                Op::Add => {
+                    let mut it = kids.iter().map(|&k| node[k as usize]);
+                    match it.next().flatten() {
+                        Some(first) => it.all(|p| p == Some(first)).then_some(first),
+                        None => None,
+                    }
+                }
+                _ => None,
+            };
+            node.push(power);
+        }
+
+        complex.extend(self.fold_complex.iter().map(|&id| node[id as usize]));
+        real.extend(self.fold_real.iter().map(|&id| node[id as usize]));
+        GPowers { complex, real }
+    }
+}
+
+/// The power of the strong coupling `G` a constant-pool entry carries, when the entry
+/// is a monomial `k·G^n` with `k` independent of the strong coupling.
+///
+/// `None` marks an entry whose dependence is not a single power — a sum of unequal
+/// powers, a non-integer power, or a value reached through an operation this analysis
+/// does not model. Such an entry cannot be moved by scaling and is left for the caller
+/// to resolve by re-evaluating the model.
+pub(super) type GPower = Option<i32>;
+
+/// [`GPower`] per constant-pool entry, parallel to the pools
+/// [`Folded::pools`] resolves.
+pub(super) struct GPowers {
+    pub complex: Vec<GPower>,
+    pub real: Vec<GPower>,
+}
+
+/// The power of `G` a UFO value expression carries, or `None` if it is not a monomial
+/// in `G`.
+pub(super) fn g_power_expr(expr: &Expr, driven: &HashSet<String>, g_is_driven: bool) -> GPower {
+    match expr {
+        Expr::Num(_) | Expr::Pi => Some(0),
+        Expr::Param(name) => {
+            if name == "G" && g_is_driven {
+                Some(1)
+            } else if driven.contains(name.as_str()) {
+                None
+            } else {
+                Some(0)
+            }
+        }
+        Expr::Neg(inner) => g_power_expr(inner, driven, g_is_driven),
+        Expr::BinOp(op, lhs, rhs) => {
+            let l = g_power_expr(lhs, driven, g_is_driven)?;
+            let r = g_power_expr(rhs, driven, g_is_driven)?;
+            match op {
+                BinOp::Mul => Some(l + r),
+                BinOp::Div => Some(l - r),
+                BinOp::Add | BinOp::Sub => (l == r).then_some(l),
+                // Only a literal integer exponent keeps the value a monomial; the
+                // exponent itself must not move with the coupling.
+                BinOp::Pow => match (l, rhs.as_ref()) {
+                    (0, _) => (r == 0).then_some(0),
+                    (_, Expr::Num(k)) if k.fract() == 0.0 && r == 0 => Some(l * (*k as i32)),
+                    _ => None,
+                },
+            }
+        }
+        // A function of a `G`-dependent argument is not a power of `G`; of a
+        // `G`-independent one it is a constant.
+        Expr::Call(_, args) => args
+            .iter()
+            .all(|a| g_power_expr(a, driven, g_is_driven) == Some(0))
+            .then_some(0),
+        // `complex(re, im)` takes the real part of each side, which is not a
+        // multiplicative operation on a monomial.
+        Expr::Complex(re, im) => {
+            let r = g_power_expr(re, driven, g_is_driven)?;
+            let i = g_power_expr(im, driven, g_is_driven)?;
+            (r == 0 && i == 0).then_some(0)
+        }
     }
 }
 

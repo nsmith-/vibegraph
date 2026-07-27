@@ -403,6 +403,11 @@ fn resolve_vertices(
 }
 
 /// Evaluated parameter and coupling values for a specific parameter set (e.g. from a param_card).
+///
+/// `Clone` is cheap in the model itself (an `Arc` bump) and copies the parameter and
+/// coupling value tables, so a thread that moves parameters per event owns its own
+/// copy rather than sharing one.
+#[derive(Clone)]
 pub struct EvaluatedModel {
     model: Arc<UFOModel>,
     /// All parameter values (external + internal), keyed by parameter name.
@@ -438,6 +443,27 @@ impl EvaluatedModel {
     pub fn from_model(model: Arc<UFOModel>) -> Self {
         let empty_card = ParamCard::default();
         Self::from_model_card(model, &empty_card)
+    }
+
+    /// The model these values were evaluated from.
+    pub fn model(&self) -> &Arc<UFOModel> {
+        &self.model
+    }
+
+    /// The strong coupling these values were evaluated at, or `None` for a model
+    /// with no `aS` parameter.
+    pub fn alpha_s(&self) -> Option<f64> {
+        self.param_values.get("aS").map(|v| v.re)
+    }
+
+    /// Move the strong coupling to `alpha_s`, re-evaluating every parameter and
+    /// coupling that depends on it.
+    ///
+    /// The model-level half of MadGraph's per-event `update_as_param`: `G` and the
+    /// couplings built from it follow `aS` through the UFO expressions themselves, so
+    /// the result is exact for any model, at the cost of walking the parameter graph.
+    pub fn set_alpha_s(&mut self, alpha_s: f64) {
+        self.recompute("aS", Complex64::new(alpha_s, 0.0));
     }
 
     /// Get the mass of a particle

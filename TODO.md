@@ -536,7 +536,24 @@ s-channel-only tree at any multiplicity), with everything else an explicit
 refusal. Gated per event on the banked LHE at the fields' own printed precision —
 400k comparisons over 140k events in 14 runs, worst 1.000 of budget — and the 6
 runs needing the general kT clustering are asserted as refused, not skipped.
-D3/D4 open. Note 22 §1.2/§1.3/§1.4/§4 carry D2's corrections to the survey; the
+D3 `scale-aware-couplings` ✅ — `ScaleAwareAmplitude` (`helas/eval/rescale.rs`)
+owns a bound amplitude's constant pools and moves them to a per-event `αs` two
+ways: re-evaluating the model (`EvaluatedModel::set_alpha_s` + `Folded::pools`,
+exact for any parameter graph) or scaling each entry by `rⁿ` from its power of
+`G`, read symbolically off the UFO expressions and propagated through the folded
+constant subgraph (`Mul` adds exponents, `Add` requires them equal). A sum of
+unequal powers, a function of `G`, or any other `aS`-driven parameter goes
+untagged and sends the whole amplitude down the reference path. Gated entry by
+entry, scaling against reference, at 100 random `αs` for all 14 amplitude-gate
+processes (`validate-scale-couplings`): every pool entry tagged, no process needs
+the fallback, worst 5 ulp — bit equality is unreachable, the two paths being
+different floating-point routes to the same value rather than the same
+expression — and the pools return bit-for-bit to the bound ones at the card's own
+`αs`, which is what leaves `validate_helas_mg` untouched. Only 1–3 entries per
+process carry a power of `G` (11 of 14 carry none), so `set_alpha_s` costs 12.2 ns
+against `gg_to_gg`'s 1.56 µs per point, and 3.2 ns on an amplitude with no strong
+coupling. Pools are per-thread by ownership (`fork`), never shared mutably.
+D4 open. Note 22 §1.2/§1.3/§1.4/§4 carry D2's corrections to the survey; the
 one that matters downstream is that the banked hadronic σ reference cards fix
 *both* scales at 91.188, so those numbers must not move.
 
