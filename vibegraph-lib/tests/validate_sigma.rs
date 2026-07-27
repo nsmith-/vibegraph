@@ -35,28 +35,27 @@
 //! against it is the seed sweep below plus the distribution-level gates in the
 //! phase-space unit tests, never this scalar on its own.
 //!
-//! This gate is also blind
-//! to differences in *couplings evaluated outside the matrix element*: MadGraph
-//! runs alpha_s to a per-event dynamical scale (`fixed_ren_scale = False`),
-//! whereas this integration uses the fixed param-card alpha_s, so the sigma of an
-//! alpha_s-dependent (QCD) process differs by the running even when its |M|^2 is
-//! bit-exact. The bit-exact net remains the fine instrument; agreement here
-//! confirms the *normalisation and averaging* of the electroweak cross sections.
+//! The coupling *is* now part of what this gate compares. Each process is driven
+//! at the strong coupling its run card's per-event renormalisation scale implies
+//! (`FixedBeamIntegrand::use_running_coupling`), the way MadGraph does, rather
+//! than at the param card's alpha_s, so a QCD cross section is compared on the
+//! same footing as an electroweak one. That closes what used to be this gate's
+//! largest blind spot and is what lets the QCD rows be asserted at all.
 //!
 //! # Which processes are asserted
 //!
-//! The electroweak final states are gated with an assertion, now including the
+//! The electroweak final states are gated with an assertion, including the
 //! sharply resonant `e+ e- > ta+ ta- h` and `e+ e- > mu+ mu- a`: the multichannel
 //! sampler resolves the Z/gamma* Breit-Wigner peaks flat RAMBO under-sampled, so
-//! they converge to the banked sigma and hold across independent RNG seeds.
+//! they converge to the banked sigma and hold across independent RNG seeds. The
+//! three QCD processes are gated too, now that they run alpha_s to the same scale
+//! MadGraph does.
 //!
-//! Three classes are integrated *informationally* (printed, not asserted). The QCD
-//! processes differ from the banked value by the dynamical-scale alpha_s running
-//! described above. `e+ e- > mu+ mu- ta+ ta-` samples stably but sits ~3.0% above
-//! the banked sigma, an offset localised at low lepton-pair mass and not yet
-//! reconciled (see its `Plan::Info` reason). The 2->6 states are not integrated at
-//! all — their ~1 ms matrix-element cost over a 24-dim map makes a meaningful
-//! integral prohibitively slow.
+//! Two classes remain informational. `e+ e- > mu+ mu- ta+ ta-` samples stably but
+//! sits ~3.0% above the banked sigma, an offset localised at low lepton-pair mass
+//! and not yet reconciled (see its `Plan::Info` reason). The 2->6 states are not
+//! integrated at all — their ~1 ms matrix-element cost over a 24-dim map makes a
+//! meaningful integral prohibitively slow.
 //!
 //! Every process is driven through the same run-card-pinned setup, so the cut
 //! compiler and beam handling are exercised for all of them.
@@ -151,13 +150,11 @@ enum Plan {
 ///
 /// Gated (asserted) processes are the electroweak final states — the smooth ones
 /// and, via the multichannel sampler, the resonant `ee_to_tatah` and `ee_to_mumua`,
-/// whose Z/gamma* Breit-Wigner peaks flat RAMBO could not reach. Their budgets are
+/// whose Z/gamma* Breit-Wigner peaks flat RAMBO could not reach — together with the
+/// three QCD processes, which are now driven at the run card's own per-event
+/// renormalisation scale rather than at the param card's alpha_s. Their budgets are
 /// sized to bring `err_vg` near the banked MG error while keeping the default test
-/// suite fast. QCD processes are
-/// informational — MadGraph runs alpha_s to a per-event dynamical scale, so their
-/// banked sigma differs from a fixed-alpha_s integral by the running (a difference
-/// invisible to the bit-exact net, which compares |M|^2 at the fixed param-card
-/// alpha_s). The 2->6 states cost ~1 ms per matrix-element evaluation over a
+/// suite fast. The 2->6 states cost ~1 ms per matrix-element evaluation over a
 /// 24-dim map, too slow to integrate meaningfully.
 fn plan_for(dir: &str) -> Plan {
     match dir {
@@ -193,22 +190,36 @@ fn plan_for(dir: &str) -> Plan {
             niter: 10,
             rel_tol: 0.04,
         },
-        // ── QCD, informational (dynamical-scale alpha_s mismatch) ───────────
-        "gg_to_ttx" => Plan::Info {
+        // ── QCD, asserted at the run card's own renormalisation scale ───────
+        // These three read alpha_s at the scale MadGraph's clustering picks for
+        // them, which for a fixed-beam 2 -> 2 is sqrt(s-hat)/2 on every event.
+        //
+        // Their tolerances are set by the t-channel-peaked integrand, not by the
+        // coupling. Over five seeds at these budgets (`probe_qcd_seed_stability`)
+        // `gg_to_ttx` holds |pull| <= 0.37 and |rel| <= 8.8e-4, `gg_to_gg` |pull| <=
+        // 1.57 and |rel| <= 4.7e-3, and `uux_to_uux` |pull| <= 2.92 and |rel| <=
+        // 7.4e-3 — the thinnest margin of the three against PULL_LIMIT. Quadrupling
+        // the budget shrinks every one of those (worst |rel| 4.7e-3 -> 2.1e-3 and
+        // 7.4e-3 -> 3.9e-3), which is what says the residual is sampling and not a
+        // defect: a bug makes the failure migrate between seeds rather than shrink.
+        // `uux_to_uux` does keep a ~0.15% negative mean over the sweep, small
+        // against this tolerance but larger than the seed spread explains, and the
+        // spacelike collinear region a single-rung t-channel spine under-resolves is
+        // the place to look for it.
+        "gg_to_ttx" => Plan::Gate {
             neval: 60_000,
             niter: 8,
-            reason:
-                "QCD: MG runs alpha_s to a dynamical scale; vibegraph uses fixed param-card alpha_s",
+            rel_tol: 0.02,
         },
-        "gg_to_gg" => Plan::Info {
+        "gg_to_gg" => Plan::Gate {
             neval: 40_000,
             niter: 6,
-            reason: "QCD: dynamical-scale alpha_s running, plus a t-channel-peaked integrand",
+            rel_tol: 0.03,
         },
-        "uux_to_uux" => Plan::Info {
+        "uux_to_uux" => Plan::Gate {
             neval: 40_000,
             niter: 6,
-            reason: "QCD: dynamical-scale alpha_s running, plus a t-channel-peaked integrand",
+            rel_tol: 0.02,
         },
         // ── sharply resonant electroweak, asserted via the multichannel sampler ──
         // The per-diagram Breit–Wigner combiner resolves the Z/γ* peaks flat RAMBO
@@ -397,6 +408,20 @@ fn integrate_probe(
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    // Evaluate alpha_s at the run card's own per-event renormalisation scale, the way
+    // MadGraph does, rather than at the param card's value. Installed before the
+    // multichannel adaptation so the alpha survey sees the integrand the integration
+    // will see. The topology the clustering scale consults is derived from the
+    // diagrams, so a process needing the general kT clustering stops here rather than
+    // integrating at a plausible wrong scale.
+    let scale_report = integ
+        .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+        .unwrap_or_else(|e| panic!("[{dir}] cannot run alpha_s to the run card's scale: {e}"));
+    assert!(
+        scale_report.fallbacks.is_empty(),
+        "[{dir}] a subprocess must re-evaluate the model per scale change: {:?}",
+        scale_report.fallbacks
+    );
     // Promote flat RAMBO to the resonance-aware per-diagram multichannel — the same
     // production sampler `vibegraph integrate` drives — so the narrow electroweak
     // peaks that flat RAMBO under-samples converge. α is adapted to this process's
@@ -456,6 +481,131 @@ fn probe_resonant_seed_stability() {
                  rel {:+.2e} | chi2/dof {chi2:.2}",
                 s / e.sigma_pb - 1.0,
             );
+        }
+    }
+}
+
+/// What the per-event scale costs, against the matrix element it sits in front of.
+///
+/// The scale prescription runs on every phase-space point the cuts admit, inside
+/// the VEGAS loop, so "negligible" is a measurement rather than a design claim. The
+/// same integrand is timed with and without the wiring installed, over one fixed
+/// set of uniforms, so the difference is the marshalling, the cluster scale, the
+/// `alpha_s` solve and the constant-pool move together. Run with
+/// `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_scale_cost() {
+    use std::time::Instant;
+    for (dir, process) in [
+        ("gg_to_gg", "g g > g g"),
+        ("gg_to_ttx", "g g > t t~"),
+        ("uux_to_uux", "u u~ > u u~"),
+    ] {
+        let card_path = output_dir().join(dir).join("Cards/run_card.dat");
+        let run_card = RunCard::parse_file(&card_path).expect("run card parses");
+        let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
+        let model = common::sm_model();
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let sets = common::generate(process);
+        let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &model, &evaluated);
+        let cuts = Cuts::compile(&run_card, &legs).expect("compile cuts");
+        let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &model, &evaluated);
+        let diagrams: Vec<_> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+
+        let build = || {
+            let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+            FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg)
+        };
+        let plain = build();
+        let mut scaled = build();
+        scaled
+            .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+            .expect("scale prescription compiles");
+
+        let mut rng = ChaCha8Rng::seed_from_u64(SEED);
+        let points: Vec<Vec<f64>> = (0..20_000)
+            .map(|_| {
+                (0..plain.vegas_ndim())
+                    .map(|_| rand::Rng::random::<f64>(&mut rng))
+                    .collect()
+            })
+            .collect();
+
+        let time = |integ: &FixedBeamIntegrand| {
+            let start = Instant::now();
+            let mut acc = 0.0;
+            for u in &points {
+                acc += integ.value(u);
+            }
+            std::hint::black_box(acc);
+            start.elapsed().as_secs_f64() / points.len() as f64 * 1e9
+        };
+        // One warm pass each so neither timing pays for a cold cache.
+        time(&plain);
+        time(&scaled);
+        let ns_plain = time(&plain);
+        let ns_scaled = time(&scaled);
+        eprintln!(
+            "[{dir}] {ns_plain:8.1} ns/point fixed coupling | {ns_scaled:8.1} ns/point at the \
+             run card's scale | scale + rescale {:+.1} ns ({:+.2}%)",
+            ns_scaled - ns_plain,
+            (ns_scaled / ns_plain - 1.0) * 100.0,
+        );
+    }
+}
+
+/// Seed-stability sweep for the three QCD rows, the evidence their hard gate rests
+/// on.
+///
+/// A single-seed pull cannot distinguish a converged integral from a sampler that
+/// occasionally misses a region: an iteration that misses reports a small integral
+/// *and* a small variance, and VEGAS's `1/sigma^2` combination then lets those
+/// iterations dominate — a confidently wrong sigma rather than a noisy one. The
+/// diagnostic that separates the two is what happens when the budget grows: genuine
+/// under-sampling shrinks with it, while a bug makes the failure migrate between
+/// seeds. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_qcd_seed_stability() {
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let seeds = [SEED, 11, 22, 33, 44];
+    for (dir, neval, niter) in [
+        ("gg_to_ttx", 60_000usize, 8usize),
+        ("gg_to_gg", 40_000, 6),
+        ("uux_to_uux", 40_000, 6),
+    ] {
+        let e = &banked[dir];
+        eprintln!(
+            "── {dir} (MG {:.6e} ± {:.2e}) ──",
+            e.sigma_pb, e.sigma_err_pb
+        );
+        for budget in [1usize, 4] {
+            for seed in seeds {
+                let (s, err, chi2) = integrate(dir, &e.process, neval * budget, niter, seed);
+                let pull = (s - e.sigma_pb) / (err * err + e.sigma_err_pb * e.sigma_err_pb).sqrt();
+                eprintln!(
+                    "  {:>7} seed {seed:>10}: vg {s:.6e} ± {err:.3e} | pull {pull:+8.2} | \
+                     rel {:+.2e} | chi2/dof {chi2:.2}",
+                    format!("{}x", budget),
+                    s / e.sigma_pb - 1.0,
+                );
+            }
         }
     }
 }

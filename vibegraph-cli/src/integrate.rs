@@ -24,6 +24,7 @@ use vibegraph::diagrams::{
 use vibegraph::hadronic::{
     compile_class, compile_subprocesses, dy_flavor_classes, generate_dy_subprocesses,
     initial_spin_color_average, process_external_legs, DrellYanIntegrand, FixedBeamIntegrand,
+    RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::PdfSet;
@@ -130,16 +131,14 @@ fn process_string(parsed: &ParsedProcCard) -> Result<String, IntegrateError> {
     Ok(format!("{spec}"))
 }
 
-/// Factorization scale μF (GeV) from the run card. Only a fixed scale is
-/// supported; a dynamical/running scale is rejected.
-fn factorization_scale(rc: &RunCard) -> Result<f64, IntegrateError> {
-    if !rc.fixed_fac_scale {
-        return Err(err(
-            "only a fixed factorization scale is supported (set `fixed_fac_scale = True`); \
-             dynamical scale choices are not implemented",
-        ));
+/// The factorization scale the run artifact records: the run card's constant when
+/// it fixes one on both beams, and `0` when the scale is chosen per event and no
+/// single number describes the run.
+fn recorded_mu_f(report: &RunningCouplingReport) -> f64 {
+    match report.constant_scales {
+        Some(scales) if scales.mu_f[0] == scales.mu_f[1] => scales.mu_f[0],
+        _ => 0.0,
     }
-    Ok(rc.dsqrt_q2fact1)
 }
 
 /// The metadata printed and banked for a completed run, independent of beam mode.
@@ -242,7 +241,6 @@ fn integrate_proton(
     rc: &RunCard,
     process: String,
 ) -> Result<RunOutput, IntegrateError> {
-    let mu_f = factorization_scale(rc)?;
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
     // Locate and load the PDF set.
@@ -279,7 +277,7 @@ fn integrate_proton(
         .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
 
     let spin_color_avg = initial_spin_color_average(&up, model, evaluated);
-    let integ = DrellYanIntegrand::new(
+    let mut integ = DrellYanIntegrand::new(
         &b_up,
         &b_down,
         &pdf,
@@ -287,15 +285,20 @@ fn integrate_proton(
         fc.up_flavors,
         fc.down_flavors,
         sqrt_s_had,
-        mu_f,
+        rc.dsqrt_q2fact1,
         spin_color_avg,
     );
+    // Both scales come from the run card: a fixed card leaves them constant, a
+    // dynamic one has the parton distributions read per event and per beam.
+    let scale_report = integ
+        .use_run_card_scales(&fc.up_set.diagrams, model, evaluated, rc)
+        .map_err(|e| err(format!("run card scale prescription: {e}")))?;
 
     let (grid, result) = integ.adapt_grid(args.neval, args.niter, args.seed);
     Ok(RunOutput {
         process,
         pdf_set: args.pdf_set.clone(),
-        mu_f,
+        mu_f: recorded_mu_f(&scale_report),
         sqrt_s: sqrt_s_had,
         grid,
         result,
@@ -342,6 +345,12 @@ fn integrate_fixed_energy(
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    // The strong coupling follows the run card's per-event renormalisation scale.
+    // Installed before the α-adaptation so the survey sees the same integrand the
+    // integration will.
+    integ
+        .use_running_coupling(&diagrams, model, evaluated, rc)
+        .map_err(|e| err(format!("run card scale prescription: {e}")))?;
     let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
     integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, args.seed);
 
@@ -349,6 +358,7 @@ fn integrate_fixed_energy(
     Ok(RunOutput {
         process,
         pdf_set: NO_PDF.to_string(),
+        // No parton distributions, so no factorisation scale enters the integral.
         mu_f: 0.0,
         sqrt_s,
         grid,

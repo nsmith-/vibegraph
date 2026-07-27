@@ -76,7 +76,7 @@ mod validate_hadronic {
         let pdf = load_pdf();
 
         let spin_color_avg = initial_spin_color_average(&up, &model, &evaluated);
-        let integ = DrellYanIntegrand::new(
+        let mut integ = DrellYanIntegrand::new(
             &b_up,
             &b_down,
             &pdf,
@@ -86,6 +86,27 @@ mod validate_hadronic {
             SQRT_S_HAD,
             MU_F,
             spin_color_avg,
+        );
+        // Take both scales from the run card rather than from MU_F. Both reference
+        // cards fix them at m_Z, so the prescription resolves to a constant and the
+        // parton distributions are read exactly where they were before — the cross
+        // section must not move. A card that freed either scale would change these
+        // numbers, which is why the constancy is asserted here and not assumed.
+        let report = integ
+            .use_run_card_scales(&fc.up_set.diagrams, &model, &evaluated, &rc)
+            .expect("run card scale prescription compiles");
+        let constant = report.constant_scales.unwrap_or_else(|| {
+            panic!("reference run card no longer fixes both scales: {report:?}")
+        });
+        assert_eq!(
+            (constant.mu_r, constant.mu_f),
+            (MU_F, [MU_F, MU_F]),
+            "reference run card no longer fixes both scales at m_Z"
+        );
+        assert!(
+            !report.depends_on_alpha_s,
+            "Drell-Yan at this order carries no strong coupling; a matrix element that \
+             did would need one, and `pdlabel = lhapdf` refuses to supply it"
         );
         integ.integrate(neval, niter, seed)
     }
