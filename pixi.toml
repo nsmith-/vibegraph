@@ -74,6 +74,12 @@ extract-sigma = { cmd = "python validation/madgraph/extract_sigma.py", depends-o
 # Runs under --profile profiling; build/samply the same target to weight time by
 # integration difficulty (see validate_sigma.rs / README).
 validate-sigma = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_sigma -- --nocapture", depends-on = ["extract-sigma"] }
+# Link MadGraph's own alfas_functions.f against a driver and write the committed
+# running-alpha_s reference grid (validation/alphas/reference.csv)
+generate-alphas-reference = "bash validation/alphas/gen_reference.sh"
+# Running-alpha_s gate: the reference grid bit-for-bit, plus the per-event AQCDUP
+# field of every banked LHE and the asmz/nloop source rule against the MG run logs
+validate-alphas = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_alphas -- --nocapture", depends-on = ["generate-alphas-reference", "build-diagrams"] }
 # Dump the RunCardLO defaults to JSON — the transcription oracle for the Rust run-card defaults table
 dump-runcard-defaults = "python validation/madgraph/dump_runcard_defaults.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards
