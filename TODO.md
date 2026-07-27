@@ -528,7 +528,17 @@ _Unblocks: promoting the 3 QCD processes in `validate_sigma.rs` from `Plan::Info
 **Session status** (branch `dynamical-scales`): D1 `alphas-running` ✅ —
 `coupling::alphas` ports `ALPHAS`/`NEWTON1` bit-exactly against MG's own Fortran
 (792-point grid, `nloop` 1–3) and resolves `asmz`/`nloop` from the run card,
-gated on the `AQCDUP` field of 180k banked LHE events. D2/D3/D4 open.
+gated on the `AQCDUP` field of 180k banked LHE events. D2 `scale-choice` ✅ —
+`coupling::scales` compiles a run card into `μR` and a **per-beam** `μF`: the
+fixed branches, `dynamical_scale_choice` 1–5, and the `-1` clustering cases that
+collapse to a closed form (a t-channel 2→2 with equal-`djb` legs; an
+s-channel-only tree at any multiplicity), with everything else an explicit
+refusal. Gated per event on the banked LHE at the fields' own printed precision —
+400k comparisons over 140k events in 14 runs, worst 1.000 of budget — and the 6
+runs needing the general kT clustering are asserted as refused, not skipped.
+D3/D4 open. Note 22 §1.2/§1.3/§1.4/§4 carry D2's corrections to the survey; the
+one that matters downstream is that the banked hadronic σ reference cards fix
+*both* scales at 91.188, so those numbers must not move.
 
 ### `event-output-lhef` — Unweighted events in LHEF format
 

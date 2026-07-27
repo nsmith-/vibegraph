@@ -47,38 +47,93 @@ the same operation, already implemented at the model layer.
 
 `SubProcesses/setscales.f` implements `dynamical_scale_choice` 1–5 as closed
 forms over the final-state momenta (total `E_T`; Σ transverse mass; Σ`m_T`/2;
-`√ŝ`; decaying-particle mass), each then multiplied by `scalefact`. The **default
-`-1`** is not in that file: it is the kT-clustering scale — cluster the event down
-to a 2→2 topology and use the central vertex's transverse mass
-(`SubProcesses/reweight.f:551 setclscales`, with `cluster.f`). Reproducing the
-general clustering is a subproject of its own and is **out of scope**; what is in
-scope is the set of cases the banked runs pin, where clustering is degenerate.
+`√ŝ`; decaying-particle mass). The **default `-1`** is not in that file: it is the
+kT-clustering scale — cluster the event down to a 2→2 topology and read the scale
+off the central vertex (`SubProcesses/reweight.f:551 setclscales`, with
+`cluster.f`). Reproducing the general clustering is a subproject of its own and is
+**out of scope**; what is in scope is the set of cases the banked runs pin, where
+clustering is degenerate.
 
-All 19 banked runs use `dynamical_scale_choice = -1`, `fixed_ren_scale = False`,
-`fixed_fac_scale = False`, `scalefact = 1.0`.
+There is one factorisation scale **per beam** — `q2fact(1)`, `q2fact(2)`, with
+independent `fixed_fac_scale1` / `fixed_fac_scale2` guards; the older single
+`fixed_fac_scale` fills in for whichever of them a card leaves alone.
+
+**Correction (D2): where `scalefact` lands is not uniform.** `cuts.f:1220` calls
+`set_ren_scale` only when `fixed_ren_scale` is false, so a *fixed* scale never
+sees `scalefact` at all. A dynamic 1–5 scale sees it once, and `set_fac_scale`
+squares that already-multiplied value into `q2fact`, so `μF` carries exactly one
+factor too. Under `-1` it is `reweight.f` that applies it — once to `scale`
+(`:1148`), once to each `q2fact` (`:1118`) — except in the branch where no colour
+line reaches the beams, where `q2fact(2) = scalefact²·q2fact(1)` is built from an
+already-scaled `q2fact(1)` and beam 2 picks the factor up **twice** (`:1215`).
+Every banked run has `scalefact = 1.0`, so none of this is pinned by reference
+data; it is pinned only against a reading of the Fortran, in `coupling::scales`'
+unit tests.
+
+All **20** banked runs use `dynamical_scale_choice = -1`, `fixed_ren_scale =
+False`, `fixed_fac_scale = False`, `scalefact = 1.0`.
 
 ### 1.3 What `-1` collapses to, measured on the banked events
 
-| run | beams | `SCALUP` over 10k events |
-|---|---|---|
-| `gg_to_gg`, `gg_to_ttx`, `uux_to_uux` | `lpp = 0`, `ebeam = 250` | **exactly `250.0`, every event** (`αs = 0.1113305`) |
-| `pp_to_bb_qcd2` | `lpp = 1` | varies per event; one event checked exactly: `5.1491350` = `√(m_T(b)·m_T(b̄))`, `m_T = √(m²+p_T²)` — the "s-channel QCD → geometric average of the transverse masses" branch (`reweight.f:1012` comment) |
-| `pp_to_ll_qcd0` | `lpp = 1` | varies per event; formula to be pinned in D2 (colour-singlet central line) |
+Everything below is now pinned per-event over all 20 runs by D2's
+`validate_scales.rs`; the original entries are superseded where they disagree.
 
-So with no PDF the scale is just the beam energy (`= √ŝ/2`), constant — which
-means the three fixed-beam QCD σ rows need only a *correct constant* `αs(250)`,
-not the full dynamic machinery. The dynamic path is what the hadronic rows and
-the LHE `SCALUP` field need.
+The whole of `-1` for these runs turns on one function, `djb`
+(`Source/kin_functions.f:397`) — the scale a single leg carries with respect to
+the beams. **With a PDF on either beam it is the transverse mass squared,
+`(E − p_z)(E + p_z)`; with neither beam carrying a PDF it is `E²`.** That switch,
+not the beam energy, is what makes fixed-beam runs look constant.
+
+| run | beams | `-1` collapses to |
+|---|---|---|
+| `gg_to_gg`, `gg_to_ttx`, `uux_to_uux` | `lpp = 0` | `(djb₃·djb₄)^¼ = √ŝ/2 = 250` — a t-channel merges a beam with a leg first, and `djb = E²` in the partonic CM makes every vertex the same number. `uux_to_uux` is the exception that pins the tie-break: flavour locks each leg to one beam, and in **10 of its 10000 events** both locked pairs are crossed, so `cluster.f`'s `1 + 1e-6` inflation survives and `SCALUP` reads `250.0001` |
+| `ee_to_ee`, `ee_to_wpwm` | `lpp = 0` | same form, `250` every event — but with colourless beams, which changes which vertex the scale is read off |
+| `ee_to_mumu`, `ee_to_ttx`, `ee_to_zh`, `ee_to_tatah`, `uux_to_mumu` | `lpp = 0` | `√(djb(Σp_out)) = √ŝ = 500` every event: no diagram lets a beam reach the final state, so it collapses to one propagator. `ee_to_ttx` is the discriminating row — a *coloured* final state that still takes this branch, because the central line is a `γ/Z` |
+| `pp_to_bb`, `pp_to_bb_qcd2` | `lpp = 1` | `(djb₃·djb₄)^¼ = √(m_T(b)·m_T(b̄))`, e.g. `5.1491350` on the first event |
+| `pp_to_ll`, `pp_to_ll_qcd0` | `lpp = 1` | `√(djb(p₃+p₄)) = m(ℓℓ)`, and `μF` on **both** beams is the same number |
+| `pp_to_llj{,_qcd2_qed2}`, `ee_to_mumua`, `ee_to_mumu_tata_qcd0`, `bbx_to_ccx_emmm_qcd0`, `uux_to_ccx_emmm_qcd0` | both | no closed form — the general clustering |
+
+**Correction: "`lpp = 0` ⇒ constant scale" is false.** `bbx_to_ccx_emmm_qcd0` has
+`lpp = 0` and a fixed `√ŝ = 500` and still shows 8720 distinct `SCALUP` values
+over 10k events; `ee_to_ttx` has `lpp = 0` and sits at `500`, not `250`. The
+constancy is a property of a 2→2 with equal-mass legs, not of the beams.
+
+**Correction: `pp_to_bb_qcd2` does not take the `mt2last` branch.** For its `g g`
+channel a beam–leg merge wins the clustering outright, so the geometric-mean
+comment at `reweight.f:1012` is not what produces `5.1491350`; the two routes
+agree because the legs are equal-mass. Which also means the *form* of the
+geometric mean is unpinned by any banked run: for a 2→2 the two transverse momenta
+are equal and opposite, so equal-mass legs make `(djb₃·djb₄)^¼` and either leg's
+own `√djb` the same number.
+
+So the three fixed-beam QCD σ rows need only a *correct constant* `αs(250)`, not
+the full dynamic machinery. The dynamic path is what the hadronic rows and the LHE
+`SCALUP` field need.
 
 ### 1.4 The oracle this sprint gets to use
 
 Every banked run has `Events/run_01/unweighted_events.lhe.gz` with 10k events.
 Each `<event>` line carries `SCALUP`, `AQEDUP`, **`AQCDUP`** alongside the
-momenta, and the `<mgrwt>` block adds `<rscale>` and per-beam
-`<pdfrwt>` (`x`, `μF`). That is a **per-event, finest-level oracle** for all three
-new quantities — scale function, `αs(μ)`, and the `μF` fed to the PDF — not a
-σ-level backstop. Per AGENTS.md's validation regime this is the gate to build
-first; σ agreement is the coarse confirmation afterwards.
+momenta. That is a **per-event, finest-level oracle** for all three new
+quantities — scale function, `αs(μ)`, and the `μF` fed to the PDF — not a σ-level
+backstop. Per AGENTS.md's validation regime this is the gate to build first; σ
+agreement is the coarse confirmation afterwards.
+
+**Correction (D2): `<mgrwt>` exists in only 6 of the 20 runs**, not all of them —
+it is written under `use_syst`, which is set in `pp_to_bb`, `pp_to_bb_qcd2`,
+`pp_to_ll`, `pp_to_ll_qcd0`, `pp_to_llj`, `pp_to_llj_qcd2_qed2`. Those six give a
+direct per-event `μR` (`<rscale>`, `E15.8`) and per-beam `μF` (`<pdfrwt>`:
+flavour, `x`, `μF`, also `E15.8`). The other fourteen are pinned by `SCALUP`
+(`e15.7`) plus `AQCDUP`.
+
+**Correction (D2): `SCALUP` is the factorisation scale, not `μR`.** `unwgt.f:686`
+fills it with `sqrt(max(q2fact(1), q2fact(2)))`. It doubles as `μR` only where the
+clustering reads both off the same vertex — true in 18 of the 20 runs and false in
+the two `2→6` ones, which is the mechanism behind D1's asserted
+`SCALUP_IS_THE_RENORMALISATION_SCALE` partition. Independently of any scale field,
+`AQCDUP` recovers `μR` to about `1e-6` relative (`dαs/αs ≈ −0.1·dQ/Q` with seven
+printed digits), which is the second oracle D2 uses for the fourteen runs without
+`<mgrwt>`.
 
 (`AQEDUP = 7.5467710e-3 = 1/132.507` in every run: **α_EW does not run** in MG's
 LO path. Restricting dynamic running to QCD, as proposed, matches MG exactly.)
@@ -152,9 +207,20 @@ all three. D5 pairs with D3 (its gate (b) is a D3 cross-check) but blocks nothin
 - **`-1` in general needs clustering.** We implement the degenerate cases and
   refuse the rest. The refusal must be loud: an unimplemented scale that quietly
   returns `√ŝ` would produce a plausible, wrong, smooth σ.
-- **DY moves.** `μF` becomes dynamic where it was fixed at `91.188`; the 0.14%
-  agreement was partly luck (the Z peak sits at the fixed scale). Expect the
-  number to change and re-derive it.
+- **DY must *not* move (correction, D2).** The banked hadronic σ reference — the
+  0.14% / 0.07% numbers — was generated with
+  `validation/madgraph/dy13_default_run_card.dat` and `dy13_mmll_run_card.dat`,
+  and **both set `fixed_ren_scale = True` and `fixed_fac_scale = True` at
+  `91.188`**. Honouring the fixed branches therefore leaves those numbers exactly
+  where they are; anything that moves them is a bug in the fixed branch, not an
+  expected re-derivation. `validate_scales.rs` asserts both cards still compile to
+  constants. Note that `vibegraph-lib/tests/data/run_card_dy.dat` disagrees with
+  them (`fixed_ren_scale = False`, `fixed_fac_scale = True`) — asserted, not
+  silently aligned, so a future disagreement says which card it came from.
+- **The fixed branches are load-bearing.** They are not a rarely-taken path: the
+  cards behind the banked hadronic reference take them, while *no* banked LHE run
+  does. So the fixed branches and the `-1` branches are pinned by disjoint
+  evidence, and neither gate covers the other.
 - **Hot-path cost.** Per-event coupling rescale sits inside the VEGAS loop.
   Measure it (`eval_strategies`, `profile-sigma`); the fast path exists so that
   the answer is "negligible", but that must be shown, not assumed.
@@ -162,6 +228,16 @@ all three. D5 pairs with D3 (its gate (b) is a D3 cross-check) but blocks nothin
   (§2) or `adapt_parallel` silently races.
 - **Scale ≠ only `αs`.** The same choice drives `μF`; treat them as one object
   with two outputs (MG allows them to differ per beam — `q2fact(1)`, `q2fact(2)`).
+- **`pdlabel = lhapdf` (for D4).** D1's `RunningAlphaS::from_run_card` refuses it,
+  because MadGraph then links `alfas_functions_lhapdf.f` and forwards to
+  `alphasPDF`. Both `dy13` cards and `run_card_dy.dat` use it. DY at `qcd0` has no
+  `αs` in the matrix element, so this only bites if D4 constructs the coupling
+  unconditionally rather than on demand.
+- **`μF ≥ 2 GeV` is an event veto, not a scale (for D4).** `reweight.f:1185` makes
+  `setclscales` *fail* — rejecting the phase-space point — when a hadronic beam's
+  `q2fact` falls below `4`. `coupling::scales` reports the scale and does not
+  implement the veto; a hadronic run that can reach `μF < 2` needs it applied
+  alongside the cuts or its σ will differ from MadGraph's.
 
 ## 5. Out of scope
 
