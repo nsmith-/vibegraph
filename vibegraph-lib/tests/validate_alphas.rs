@@ -243,15 +243,28 @@ mod banked {
     /// Runs whose per-event `SCALUP` *is* the renormalisation scale, so that
     /// `AQCDUP = αs(SCALUP)` event by event.
     ///
-    /// The two `2 → 6` runs are absent: MadGraph's default clustering scale
-    /// choice gives them a renormalisation scale that differs from the `SCALUP`
-    /// it writes out (for one `bbx_to_ccx_emmm_qcd0` event, `SCALUP = 169.2305`
-    /// against an `AQCDUP` of `0.1185837`, which this evolution reaches nearer
-    /// `Q ≈ 162`), and they miss by up to 9% — four orders of magnitude outside
-    /// the printing budget, so the partition is unambiguous. Recovering that
-    /// scale is the scale-choice problem, not this module's. The partition is
-    /// asserted rather than assumed, so the day it changes is a test failure and
-    /// not a silent reclassification.
+    /// `SCALUP` is not the renormalisation scale by construction: `unwgt.f:686`
+    /// fills it with `sqrt(max(q2fact(1), q2fact(2)))`, the larger
+    /// **factorisation** scale. It doubles as `μR` only where MadGraph's
+    /// clustering reads both off the same vertex, which is what the runs listed
+    /// here have in common.
+    ///
+    /// The two `2 → 6` runs are where the two part company, and they miss by up
+    /// to 9% — four orders of magnitude outside the printing budget, so the
+    /// partition is a measurement rather than a judgement call. Inverting this
+    /// evolution against their `AQCDUP` puts `μR` between `0.50` and `1.00` of the
+    /// `SCALUP` they print, and exactly the events at the top of that range —
+    /// 1237 of `bbx_to_ccx_emmm_qcd0`'s 10000, the ones whose `SCALUP` is the full
+    /// `√ŝ = 500` — are the ones that do reproduce `AQCDUP`. That evidence is kept
+    /// running in `validate_scales.rs`
+    /// (`scalup_is_not_the_renormalisation_scale`), which also derives the scale
+    /// for fourteen of the runs listed here from the momenta rather than from a
+    /// printed field, and reaches the same `AQCDUP`.
+    ///
+    /// Recovering a `2 → 6` scale needs the general kT clustering of `cluster.f`,
+    /// which `coupling::scales` refuses rather than approximates, so the two stay
+    /// outside. The partition is asserted rather than assumed, so the day it
+    /// changes is a test failure and not a silent reclassification.
     const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
         "ee_to_ee",
         "ee_to_mumu",
