@@ -208,6 +208,7 @@
 | 2.0.2 | `<init>` block: wrong format for >100 subprocesses or PDF ID > 10^6 | Complicated multiprocess generation | Test `<init>` block parsing with 200 subprocess entries and large PDF IDs |
 | 1.5.9 | Wrong propagator PDGs in event file for symmetric diagrams | Symmetric final states (ZZj, etc.) | Test all propagator PDGs against expected resonance topology |
 | 1.4.2 | Matching broken for >9 final-state particles due to buffer size in event output | ≥10 final-state particles | Test event parsing and matching for 10-particle events |
+| 3.5.7, found here | `AQCDUP` written with π truncated to 8 digits while `g` was built from full-precision π, so the field is `αs·π/3.1415926` — biased `+1.7e-8` relative, in one direction. See the appendix entry | Every LHE file MadGraph writes | Reproduce the truncation before comparing against `AQCDUP`; never read the field as `αs` |
 | lhe_parser.py | `color2` field parsed as `float` (never cast to `int`) — causes subtle integer-comparison bugs | Any LHE file with color tags | In vibegraph, store color tags as integers; test round-trip integer↔string |
 
 ---
@@ -350,6 +351,43 @@
 ---
 
 ## Appendix: Code-Level Observations from Source Survey
+
+### `SubProcesses/unwgt.f` — Direct Bug Found (truncated π in `AQCDUP`)
+
+The LHE `<event>` line's `AQCDUP` field is the strong coupling every downstream
+consumer reads. `SubProcesses/unwgt.f:694-695` fills it, and its electroweak
+counterpart, as
+
+```fortran
+      aaqcd = g*g/4d0/3.1415926d0
+      aaqed = gal(1)*gal(1)/4d0/3.1415926d0
+```
+
+while `g` was built as `g = √(4π·αs)` from full double-precision π
+(`Source/MODEL/couplings.f`). The two πs do not cancel, so the field is not `αs` but
+
+```
+    AQCDUP = αs · π/3.1415926 = αs · (1 + 1.7e-8)
+```
+
+Both coupling fields are affected — `AQEDUP` carries the same truncation.
+
+This is not a rounding artifact of the seven-significant-digit output format. The
+truncated constant is baked into the value *before* printing, so the bias is
+systematic and one-directional — it would survive widening the field. At the format's
+precision it is about a sixth of the last printed digit, enough to move the rounding
+of roughly one event in twenty.
+
+Found by replaying the banked events against our own running-`αs` implementation.
+Modelling the truncation took the fraction of events reproducing MadGraph's printed
+digits exactly from ~95% to 100% on constant-scale runs. It is invisible at any
+tolerance looser than ~1e-8, which is why gating on reproducing the *printed digits*
+rather than on a chosen tolerance is what exposed it.
+
+Separately, `Source/rw_events.f:182` writes the event line as
+`(i2,i5,e16.7e3,3e15.7)`, so `SCALUP`, `AQEDUP` and `AQCDUP` carry seven significant
+digits in a nine-digit field — digits 9–10 verified `0` across all 10k events of all
+20 banked runs.
 
 ### `madgraph/various/rambo.py` — Direct Bug Found
 

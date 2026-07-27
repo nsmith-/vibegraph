@@ -22,10 +22,14 @@ or ≤1e-12 vs MG; sprint section below, full plan note 20) → **`resonance-sam
 phase space — per-diagram propagator-pole channels, Breit-Wigner + t-channel + massless
 log maps, variance-minimising weight, Kleiss-Pittau α-adaptation — now driving the
 production `integrate` path; two resonant σ rows flat RAMBO could not sample flipped
-SKIP→GATE; sprint section + note 21 below). **Next: `dynamical-scales` (feature,
-D1–D4 + optional D5, plan in note 22), then Sprint B `event-output-lhef`** —
-re-sequenced 2026-07-26: the per-event scale and `αs(μ)` are LHE `<event>` fields
-(`SCALUP`/`AQCDUP`), so running couplings land before the writer that must emit them.
+SKIP→GATE; sprint section + note 21 below) → **`dynamical-scales`** (feature,
+✅ closed 2026-07-27 on D1–D4, D5 not needed: MadGraph's `αs` RGE, its per-event
+renormalisation and per-beam factorisation scales, and a per-event coupling move
+through the constant pools; **the three QCD σ rows are now hard GATEs** and
+Drell-Yan did not move; sprint section below, full plan note 22). **Next: Sprint B
+`event-output-lhef` (E1–E4)** — the per-event scale and `αs(μ)` it must emit as
+`SCALUP`/`AQCDUP` are now computed, which is why running couplings were sequenced
+ahead of the writer.
 
 ## Pipeline Status
 
@@ -505,7 +509,41 @@ path. Only deferred remainder: multi-rung t-channel ladders (note 21).
 
 _Unblocks: `event-output-lhef` (n-body final states)._
 
-### `dynamical-scales` — running αs and per-event renormalization/factorization scales
+### `dynamical-scales` ✅ CLOSED 2026-07-27 (branch `dynamical-scales`, HEAD `5b1258f`; full plan: `research/notes/22-dynamical-scales-plan.md`)
+
+**USER DECIDES THE MERGE** — the branch is ready to fast-forward onto `main`.
+
+What the sprint closed: `integrate` evaluated every coupling at the param-card αs,
+so any αs-dependent σ differed from MadGraph by the scale running. All four required
+sessions landed (D5 stayed optional and was not needed — §2 of the plan explains why
+per-diagram coupling orders are not a dependency: the power of `G` lives in each
+vertex's coupling and a diagram's total power emerges from the product).
+
+**Two MadGraph defects found first-hand**, both written up in note 07:
+- `unwgt.f:694-695` truncates π to eight digits when filling the LHE `AQCDUP` and
+  `AQEDUP` fields, while `g` was built from full-precision π. The fields are the
+  coupling times `π/3.1415926` — a systematic `+1.7e-8`, baked in before printing,
+  so it is not an artifact of the seven-digit output format and would survive
+  widening the field. Only visible because the gate reproduced *printed digits*
+  rather than meeting a chosen tolerance.
+- The `-1` scale MadGraph writes as `SCALUP` is the *factorisation* scale
+  (`unwgt.f:686`, `sqrt(max(q2fact(1), q2fact(2)))`), and parts company with `μR`
+  on ≥2→3 topologies; inverting `αs` against `AQCDUP` puts the true `μR` at
+  0.50–1.00 of the printed `SCALUP` on the two 2→6 runs.
+
+**Deferred / open** (carried forward, not regressions):
+
+| Item | Why it is open | Where |
+|---|---|---|
+| General kT clustering for `dynamical_scale_choice = -1` | Out of scope by plan §5, and a subproject in its own right (it is also what MLM matching needs). 6 banked runs are asserted as refused rather than skipped. **This is now a hard prerequisite for gating any QCD process beyond 2→2** — the short-circuit that lets `e⁺e⁻ → μ⁺μ⁻a` integrate without a prescription stops covering it the moment the matrix element carries a strong coupling | `coupling/scales.rs`, `validate_scales.rs` |
+| `uux_to_uux` ~0.15% negative mean | Stable over five seeds and shrinking with budget, so sampling rather than a defect, but larger than the seed spread alone explains. The spacelike collinear region a single-rung t-channel spine under-resolves is where to look — pairs with note 21's deferred multi-rung spine | `validate_sigma.rs` |
+| `μF ≥ 2 GeV` event veto | `reweight.f:1185` makes `setclscales` *fail* below it — a veto, not a scale. Not implemented; bites nothing today (the QCD gate rows have no PDF, the hadronic reference cards fix μF at 91.188), but a hadronic run with a dynamic μF reaching below 2 GeV will disagree with MG | filed here |
+| Per-event scale cost ~100 ns/point | 6–20% of the matrix element depending on process — reported, not hidden. `ScaleChoice::clustered` heap-allocates its beam–leg candidate `Vec` once per event; that is the obvious first cut | `coupling/scales.rs` |
+| Per-lane scales | With pool mutation, `eval_m2_lanes` can only batch points sharing one `αs`. Nothing needs it today (the integrands are scalar), but a SIMD-batched dynamic-scale integrator would need the scaling fused into the constant loads instead | `helas/eval/rescale.rs` |
+| `ee_to_wpwm` topology mask | D4's derivation and D2's hand declaration disagree on which beam pairs with which W. Unpinned either way — with colourless beams the tie-break never reaches the scale — so both pass. Matters only if that mask is ever made load-bearing | `coupling/topology.rs` vs `validate_scales.rs` |
+| `run_card_dy.dat` vs the `dy13` cards | The test fixture sets `fixed_ren_scale = False` where both banked reference cards set it True. Asserted as a known discrepancy rather than silently aligned, since a banked σ depends on those cards | `validate_scales.rs` |
+
+### Original scope (for the record)
 
 `integrate` currently evaluates couplings at a single fixed scale (the param-card
 αs), so the cross section of any αs-dependent process differs from MadGraph by the
