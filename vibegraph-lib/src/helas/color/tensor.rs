@@ -29,6 +29,12 @@ pub enum ColorAlgebraError {
     /// encountered; these are outside the tree-level SM color vocabulary.
     #[error("unsupported color structure '{0}': sextet/baryonic tensors are not implemented")]
     Unsupported(String),
+    /// A color basis key did not read as a consistent set of color lines over the
+    /// process's external legs (see [`color_flow_tags`]).
+    ///
+    /// [`color_flow_tags`]: super::flow_tags::color_flow_tags
+    #[error("inconsistent color flow: {0}")]
+    InconsistentColorFlow(String),
 }
 
 /// Class tag used to order tensors inside an immutable/canonical form.

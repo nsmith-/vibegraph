@@ -67,6 +67,11 @@ harness = false
 required-features = ["extended-validation"]
 
 [[test]]
+name = "color_flow_tags_oracle"
+harness = false
+required-features = ["extended-validation"]
+
+[[test]]
 name = "validate_sigma"
 required-features = ["extended-validation"]
 

@@ -20,15 +20,21 @@
 //! variants, trace values, and conjugation). [`ColorString::to_immutable`] and
 //! [`ColorString::to_canonical`] give the basis-key and index-canonical forms
 //! used downstream to assemble the color basis and the color matrix.
+//!
+//! [`flow_tags`] reads the resulting basis keys back as color *lines*, giving the
+//! `(color, anticolor)` label pair per external leg that a Les Houches event
+//! record carries.
 
 pub mod coeff;
 pub mod colorize;
 pub mod factor;
+pub mod flow_tags;
 pub mod tensor;
 
 pub use coeff::ColorCoeff;
 pub use colorize::{colorize_process, BasisElement, ColorBasis, Contribution};
 pub use factor::{CanonicalString, ColorFactor, ColorString, ImmutableString};
+pub use flow_tags::{color_flow_tags, select_flow, ColorFlowTags, LegColor};
 pub use tensor::{ColorAlgebraError, ColorTensor, Idx, TensorKind};
 
 #[cfg(test)]
