@@ -55,6 +55,30 @@ incl. the VVVV phase-bug root cause and fix, 17: bounds-check-elimination memo,
 
 ---
 
+## 📤 `event-output-lhef` sprint 🚧 OPEN 2026-07-27 (branch `event-output-lhef`; full plan: `research/notes/23-event-output-lhef-plan.md`)
+
+**Sprint B** of the events program (Sprint A `resonance-sampling` ✅ merged
+2026-07-26). Unweighted events via accept/reject over the frozen VEGAS grid +
+Sprint A's multichannel sampler, serialised to LHEF. Dependency check at open:
+n-body peak-resolving sampler ✅, `sample_frozen` ✅, `Cuts::pass` accept-gate ✅,
+`IntegrateArtifact` handoff ✅, per-event `SCALUP`/`AQCDUP` ✅ (`dynamical-scales`),
+multi-flow JAMPs + exact CF ✅, and the flow→colour-tag oracle ✅ (MG's generated
+`Source/leshouche.inc` is already banked per process). **No blockers.**
+
+| Session | Scope | Status |
+|---|---|---|
+| E1 | `jamp2-flow-select`: `JAMP2(i) = Σ_hel \|JAMPᵢ\|²` diagonal on the `eval_m2` combination loop (σ untouched), then the flow → `(colour, anticolour)` LHEF tag dictionary **derived from vibegraph's own basis keys** and checked against MG's `leshouche.inc` — element-wise where the bases coincide (NCOLOR≤2), connectivity/basis-change form at `gg_to_gg` NCOLOR=6, where note 16 records the two 6-flow bases are *not* a 1:1 labelling. A transposed dictionary is invisible to every \|M\|²-level gate. | 🔲 |
+| E2 | `accept-reject` + `mg-single-helicity-bench`: `w_max` estimation, overweight bookkeeping, unweighting efficiency; per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) **selection**, zero effect on σ. Gate: unweighted sample reproduces σ + L5 distributions within MC error (seed-swept). | 🔲 |
+| E3 | `lhef-writer`: `<init>` + `<event>` serialiser incl. E1 colour tags and `SCALUP`/`AQCDUP` from `coupling::scales` (mind the recorded MG `SCALUP` ≠ μR defect, note 07). Pin byte-level against the banked `unweighted_events.lhe.gz`. | 🔲 |
+| E4 | `generate-cli`: `vibegraph generate <artifact> [--nevents …]`, refusing a proc/run-card mismatch against the grid that was trained. Gate: `.lhe` parses downstream; σ from event weights matches `integrate` σ. | 🔲 |
+
+Order: **E1 → E2 → E3 → E4** (strictly linear). **Open decision due before E2:**
+per-channel VEGAS grids (note 21 addendum) — a single global `w_max` over a
+channel mixture is set by the worst channel, and the change alters the
+`IntegrateArtifact` schema E2/E4 would otherwise harden around. ~1–2 sessions.
+
+---
+
 ## 🌊 `resonance-sampling` sprint ✅ CLOSED + MERGED TO MAIN 2026-07-26 (ff, HEAD `fcf5ded`; full plan: `research/notes/21-resonance-sampling-and-events-plan.md`)
 
 **Sprint A of a two-sprint program** (A = resonance-aware sampling, then B =
