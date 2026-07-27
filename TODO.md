@@ -375,6 +375,38 @@ stays deferred with `event-output-lhef` (see the eval-program section above).
 
 ## 🟡 Medium — CLI integration
 
+### `identical-particle-permutation` — make the symmetry factor a property of the phase-space map
+
+`dΦ_n` integrates over momentum assignments to *labelled* outgoing slots, so a final
+state with `n_s` identical particles of species `s` is counted `Π_s n_s!` times over.
+`dynamical-scales` added `final_state_symmetry_factor` (`hadronic.rs`) when
+promoting `g g → g g` — whose σ was **exactly twice** MadGraph's — but it landed as a
+per-integrand scalar, which is the wrong home for it.
+
+Two consequences, neither reachable by anything gated today, both of which would show
+up as a smooth factor-of-`n!` error in σ rather than a crash:
+
+- `FixedBeamIntegrand::new` derives the factor once from `amps[0]` and applies it to
+  the sum over every subprocess. The struct already assumes a shared final state
+  (`final_masses` is one list), but the symmetry factor is the first quantity that can
+  differ between subprocesses whose *mass* lists agree: in `p p > j j`, `gg→gg` needs
+  `1/2` while `qq̄→qq̄` needs `1`, and both are `[0, 0]`.
+- `DrellYanIntegrand` carries no factor at all — an implicit `1`, correct for
+  `pp → ℓ⁺ℓ⁻` and every subprocess it currently handles, but assumed rather than
+  derived.
+
+The correction belongs with the phase-space map, which is what over-counts, rather
+than with each integrand that consumes one: the map knows its own outgoing multiset,
+so every consumer gets it right by construction and no new integrand can forget it.
+Doing it there also settles the multichannel question — whether per-diagram channels
+over a final state with identical particles need the permutations as distinct channels
+or as one channel with the factor folded in.
+
+Worth pairing with a gate that would have caught the original: a process with a
+repeated outgoing particle in the σ set. `g g → g g` is currently the **only** one
+among the MG-validated processes, which is exactly why the factor of 2 survived —
+it sat behind the running-αs gap while that row was `Plan::Info`.
+
 ### `cli-proc-card` — wire a full process card through the CLI → absorbed into `validation-2` V3a
 
 `config::GlobalConfig::load_ufo(&Option<ModelImport>) -> Arc<UFOModel>` (landed with
