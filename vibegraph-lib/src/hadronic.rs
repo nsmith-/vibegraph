@@ -71,6 +71,7 @@ use crate::diagrams::diagram::Diagram;
 use crate::diagrams::{
     generate_from_proc_card, parse_proc_card, DiagramError, DiagramSet, ParsingOptions,
 };
+use crate::helas::color::flow_tags::select_flow;
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::PdfMember;
@@ -79,7 +80,9 @@ use crate::phasespace::{
     PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
 };
 use crate::runcard::RunCard;
+use crate::select::select_index;
 use crate::ufo::{EvaluatedModel, UFOModel};
+use crate::unweight::ChannelIntegrand;
 use crate::vegas::{VegasGrid, VegasResult};
 
 type V = LorentzVector<f64>;
@@ -1004,6 +1007,27 @@ impl<'a> BoundSubprocess<'a> {
             SubAmplitude::Running(amp) => amp.borrow().eval_m2(momenta, scratch),
         }
     }
+
+    /// The per-combination `|M_c|²` and per-flow `JAMP2` diagonals at the current
+    /// coupling — the two categorical weight vectors an event record's helicity and
+    /// colour flow are drawn from. Neither enters `eval_m2`, so neither moves the
+    /// cross section.
+    fn eval_diagonals(&self, momenta: &[V], hel_m2: &mut [f64], jamp2: &mut [f64]) {
+        let scratch = &mut self.scratch.borrow_mut();
+        // The running form's own amplitude carries the pools the current scale set,
+        // so both diagonals are read at the coupling `eval_m2` was taken at.
+        match &self.amp {
+            SubAmplitude::Fixed(amp) => {
+                amp.eval_hel_m2(momenta, scratch, hel_m2);
+                amp.eval_jamp2(momenta, scratch, jamp2);
+            }
+            SubAmplitude::Running(running) => {
+                let amp = running.borrow();
+                amp.amplitude().eval_hel_m2(momenta, scratch, hel_m2);
+                amp.amplitude().eval_jamp2(momenta, scratch, jamp2);
+            }
+        }
+    }
 }
 
 /// What turning a set of subprocesses scale-aware revealed about them.
@@ -1201,6 +1225,24 @@ pub struct ChannelIntegration {
     pub grid: VegasGrid,
     /// This term's integral and error, in natural units (GeV⁻²).
     pub result: VegasResult,
+}
+
+/// The discrete labels an accepted event carries besides its momenta, drawn by
+/// [`FixedBeamIntegrand::select_event`].
+///
+/// Every one of them is summed over in the cross section, so none of them is a
+/// sampling channel: they are read off diagonal accumulators after the fact, to
+/// fill in an event record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventSelection {
+    /// Index into the integrand's subprocesses
+    /// ([`FixedBeamIntegrand::subprocess_evaluator`]).
+    pub subprocess: usize,
+    /// The helicity of each external leg, in process order.
+    pub helicity: Vec<i32>,
+    /// Index into the subprocess's colour-flow basis, and so into its
+    /// [`ColorFlowTags`](crate::helas::color::flow_tags::ColorFlowTags) table.
+    pub flow: usize,
 }
 
 /// Sum the per-channel terms: integrals add, errors add in quadrature, and the
@@ -1418,11 +1460,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// A configuration failing a cut returns exactly `0.0`, so it drops out of both
     /// the cross section and the α-adaptation survey.
     fn matrix_element(&self, momenta: &[V]) -> f64 {
-        let mut ext: Vec<V> = Vec::with_capacity(2 + momenta.len());
-        ext.push(V::new(self.beam_e, 0.0, 0.0, self.beam_e));
-        ext.push(V::new(self.beam_e, 0.0, 0.0, -self.beam_e));
-        ext.extend_from_slice(momenta);
-
+        let ext = self.externals(momenta);
         if !self.cuts.pass(&ext) {
             return 0.0;
         }
@@ -1588,6 +1626,65 @@ impl<'a> FixedBeamIntegrand<'a> {
         ]
     }
 
+    /// The external momenta an amplitude is evaluated at: the beams, then the
+    /// outgoing legs.
+    fn externals(&self, momenta: &[V]) -> Vec<V> {
+        let mut ext = Vec::with_capacity(2 + momenta.len());
+        ext.extend_from_slice(&self.beams());
+        ext.extend_from_slice(momenta);
+        ext
+    }
+
+    /// The subprocesses whose `|M|²` this integrand adds.
+    pub fn subprocess_count(&self) -> usize {
+        self.subs.len()
+    }
+
+    /// The compiled evaluator of one subprocess — the source of the external
+    /// particle ids, the helicity combinations and the colour-flow tag table an
+    /// event record is written from.
+    pub fn subprocess_evaluator(&self, subprocess: usize) -> &'a AmplitudeEvaluator {
+        self.subs[subprocess].evaluator()
+    }
+
+    /// Fill in an accepted event's discrete labels: which subprocess produced it,
+    /// which helicity combination, and which colour flow.
+    ///
+    /// `momenta` are the accepted point's outgoing momenta and `u` three
+    /// independent uniforms. The subprocess is drawn `∝ |M_s|²` (the incoherent sum
+    /// this integrand forms), then within it the helicity `∝ |M_c|²`
+    /// (MadGraph's `SELECT_HEL`) and the colour flow `∝ JAMP2(i)`
+    /// (`SELECT_COLOR`).
+    ///
+    /// All three are *selections*, not sampling channels: the cross section sums
+    /// over subprocesses, helicities and flows, and this reads accumulators that
+    /// decomposition already contains. It enters no integrand and moves no cross
+    /// section — a caller may skip it entirely and integrate the same number.
+    ///
+    /// `None` when the point carries no weight at all (outside the cuts, or a
+    /// vanishing matrix element), where no label is defined.
+    pub fn select_event(&self, momenta: &[V], u: [f64; 3]) -> Option<EventSelection> {
+        let ext = self.externals(momenta);
+        // The diagonals are read at the event's own coupling, the one its |M|² was
+        // taken at.
+        self.apply_scale(momenta);
+
+        let m2: Vec<f64> = self.subs.iter().map(|s| s.eval_m2(&ext)).collect();
+        let subprocess = select_index(&m2, u[0])?;
+        let sub = &self.subs[subprocess];
+        let eval = sub.evaluator();
+
+        let mut hel_m2 = vec![0.0; eval.helicities().len()];
+        let mut jamp2 = vec![0.0; eval.n_flows()];
+        sub.eval_diagonals(&ext, &mut hel_m2, &mut jamp2);
+
+        Some(EventSelection {
+            subprocess,
+            helicity: eval.select_helicity(&hel_m2, u[1])?.to_vec(),
+            flow: select_flow(&jamp2, u[2])?,
+        })
+    }
+
     /// The final-state pole masses in outgoing-leg order.
     pub fn final_masses(&self) -> &[f64] {
         &self.final_masses
@@ -1668,6 +1765,23 @@ impl<'a> FixedBeamIntegrand<'a> {
         }
         let total = combine_channels(&per_channel, niter);
         (per_channel, total)
+    }
+}
+
+/// The seam an accept/reject pass drives this integrand through: the channels its
+/// integral is split across, and one term's value at a point of that channel's own
+/// grid.
+impl ChannelIntegrand for FixedBeamIntegrand<'_> {
+    fn channel_count(&self) -> usize {
+        FixedBeamIntegrand::channel_count(self)
+    }
+
+    fn channel_grid_ndim(&self) -> usize {
+        FixedBeamIntegrand::channel_grid_ndim(self)
+    }
+
+    fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
+        FixedBeamIntegrand::value_in_channel(self, channel, u)
     }
 }
 
@@ -2063,6 +2177,213 @@ mod tests {
              {sigma_flat:.6e} ± {err_flat:.2e} (5σ = {:.2e})",
             5.0 * comb
         );
+    }
+
+    /// Build the flat-map fixed-energy integrand for a coloured `2 → 2` process,
+    /// returning it alongside the amplitude the selections are checked against.
+    fn colored_2to2_case(
+        m: &UFOModel,
+        evaluated: &EvaluatedModel,
+        sqrt_s: f64,
+    ) -> (Vec<AmplitudeEvaluator>, Cuts, Vec<f64>, f64) {
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate u u~ > u u~", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, m).unwrap();
+        let evals = compile_subprocesses(&sets, m, evaluated).unwrap();
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, m, evaluated);
+        // The default card's jet cuts keep the t-channel singularity out of the
+        // sampled region, so the probe point below is an ordinary phase-space point.
+        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, m, evaluated);
+        let _ = sqrt_s;
+        (evals, cuts, masses, avg)
+    }
+
+    /// The per-event helicity and colour-flow draws must reproduce the diagonals
+    /// they read — the property `SELECT_HEL` and `SELECT_COLOR` rest on, and the one
+    /// a wrong accumulator or a mis-indexed draw would break while still returning
+    /// perfectly plausible labels.
+    #[test]
+    fn selected_helicity_and_flow_frequencies_follow_the_diagonals() {
+        use crate::phasespace::rng::SubStream;
+
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let sqrt_s = 500.0;
+        let (evals, cuts, masses, avg) = colored_2to2_case(&m, &evaluated, sqrt_s);
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+        let integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, masses, avg);
+
+        // One ordinary phase-space point of the flat map.
+        let u: Vec<f64> = (0..integ.channel_grid_ndim())
+            .map(|k| 0.11 + 0.07 * (k as f64 % 7.0))
+            .collect();
+        let mut momenta = Vec::new();
+        let value = integ.event_in_channel(0, &u, &mut momenta);
+        assert!(value > 0.0, "the probe point must pass the cuts");
+
+        // The diagonals the draws are supposed to follow, taken directly.
+        let eval = integ.subprocess_evaluator(0);
+        let mut scratch = bounds[0].scratch_space();
+        let mut ext = integ.beams().to_vec();
+        ext.extend_from_slice(&momenta);
+        let mut hel_m2 = vec![0.0; eval.helicities().len()];
+        let mut jamp2 = vec![0.0; eval.n_flows()];
+        bounds[0].eval_hel_m2(&ext, &mut scratch, &mut hel_m2);
+        bounds[0].eval_jamp2(&ext, &mut scratch, &mut jamp2);
+        assert!(
+            eval.n_flows() > 1,
+            "a single flow makes the colour draw vacuous"
+        );
+        assert!(
+            hel_m2.iter().filter(|&&w| w > 0.0).count() > 1,
+            "a single contributing helicity makes the helicity draw vacuous"
+        );
+
+        let n = 200_000;
+        let mut hel_counts = vec![0usize; hel_m2.len()];
+        let mut flow_counts = vec![0usize; jamp2.len()];
+        let mut s = SubStream::from_stream(0x5E1E_C701, 3);
+        for _ in 0..n {
+            let sel = integ
+                .select_event(
+                    &momenta,
+                    [
+                        s.next_uniform::<f64>(),
+                        s.next_uniform::<f64>(),
+                        s.next_uniform::<f64>(),
+                    ],
+                )
+                .expect("a point with weight carries labels");
+            let c = eval
+                .helicities()
+                .iter()
+                .position(|h| h.as_slice() == sel.helicity.as_slice())
+                .expect("a selected helicity is one of the combinations");
+            hel_counts[c] += 1;
+            flow_counts[sel.flow] += 1;
+        }
+
+        let check = |counts: &[usize], weights: &[f64], what: &str| {
+            let total: f64 = weights.iter().sum();
+            for (i, (&c, &w)) in counts.iter().zip(weights).enumerate() {
+                let p = w / total;
+                let f = c as f64 / n as f64;
+                let sigma = (p * (1.0 - p) / n as f64).sqrt();
+                assert!(
+                    (f - p).abs() <= 5.0 * sigma + 1e-12,
+                    "{what} {i}: frequency {f:.5} vs {p:.5} (5σ = {:.5})",
+                    5.0 * sigma
+                );
+            }
+        };
+        check(&hel_counts, &hel_m2, "helicity");
+        check(&flow_counts, &jamp2, "flow");
+    }
+
+    /// Selection must be provably neutral, not neutral by construction: the same
+    /// accept/reject pass, driven from the same RNG, must produce bit-for-bit the
+    /// same trials, the same accepted points and the same cross section whether or
+    /// not every accepted event is labelled along the way.
+    ///
+    /// This fires on the two ways a selection can leak — consuming from the
+    /// sampling stream, and leaving the amplitude's per-event state (its coupling,
+    /// its scratch) different from how the integrand left it.
+    #[test]
+    fn labelling_events_moves_neither_the_trials_nor_the_cross_section() {
+        use crate::phasespace::rng::SubStream;
+        use crate::unweight::Unweighter;
+
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let sqrt_s = 500.0;
+        let (evals, cuts, masses, avg) = colored_2to2_case(&m, &evaluated, sqrt_s);
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+        let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, masses, avg);
+        let card = parse_proc_card("generate u u~ > u u~", &ParsingOptions::default()).unwrap();
+        let diagrams: Vec<Diagram> = generate_from_proc_card(&card, &m)
+            .unwrap()
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        integ.use_multichannel(&diagrams, &evaluated, 5_000, 4, 0x5EED_0);
+
+        let (channels, _) = integ.adapt_grids(4_000, 3, 0x5EED);
+        let build = || {
+            Unweighter::scan(
+                &integ,
+                channels.iter().map(|c| (&c.grid, 20_000)),
+                0x5CA7_0FF1,
+            )
+        };
+
+        let mut labelled = build();
+        let mut plain = build();
+        let mut rng_a = rand_chacha::ChaCha8Rng::seed_from_u64(0xE7E7);
+        let mut rng_b = rand_chacha::ChaCha8Rng::seed_from_u64(0xE7E7);
+        // The labels ride on their own stream, the discipline a generator follows.
+        let mut labels = SubStream::from_stream(0x5E1E_C702, 3);
+        let mut momenta = Vec::new();
+        let mut seen_helicities = std::collections::BTreeSet::new();
+        let mut seen_flows = std::collections::BTreeSet::new();
+
+        for _ in 0..20_000 {
+            let a = labelled.trial(&integ, &mut rng_a);
+            let b = plain.trial(&integ, &mut rng_b);
+            match (&a, &b) {
+                (Some(x), Some(y)) => {
+                    assert_eq!(x.channel, y.channel);
+                    assert_eq!(x.u, y.u);
+                    assert_eq!(x.weight, y.weight);
+                }
+                (None, None) => {}
+                _ => panic!("labelling changed which trials were accepted"),
+            }
+            if let Some(point) = a {
+                integ.event_in_channel(point.channel, &point.u, &mut momenta);
+                let sel = integ
+                    .select_event(
+                        &momenta,
+                        [
+                            labels.next_uniform::<f64>(),
+                            labels.next_uniform::<f64>(),
+                            labels.next_uniform::<f64>(),
+                        ],
+                    )
+                    .expect("an accepted point carries labels");
+                seen_helicities.insert(sel.helicity.clone());
+                seen_flows.insert(sel.flow);
+            }
+        }
+
+        let (sa, sb) = (labelled.stats(), plain.stats());
+        assert_eq!(sa.trials, sb.trials);
+        assert_eq!(sa.accepted, sb.accepted);
+        assert_eq!(sa.ratio_sum, sb.ratio_sum, "the weight sum moved");
+        assert_eq!(
+            labelled.sigma_from_events(),
+            plain.sigma_from_events(),
+            "labelling moved the cross section"
+        );
+        assert!(
+            sa.accepted > 100,
+            "too few events for the check to mean much"
+        );
+        // A run that only ever produced one label would satisfy the above vacuously.
+        assert!(seen_helicities.len() > 1 && seen_flows.len() > 1);
     }
 
     fn tiny_pdf() -> PdfMember {

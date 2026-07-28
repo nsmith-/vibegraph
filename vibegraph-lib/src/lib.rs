@@ -10,4 +10,5 @@ pub mod phasespace;
 pub mod runcard;
 pub mod select;
 pub mod ufo;
+pub mod unweight;
 pub mod vegas;
