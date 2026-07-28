@@ -28,9 +28,8 @@ criterion median; times are per 16-eval batch):
 | uux_to_ccx_emmm (2→6) | 3901 µs | 2194 µs | **1.78×** | −44% |
 
 Every benchmarked process improved (1.18×–2.19×), on top of the earlier eval program's
-8.6×–110× → 1.2×–3.5× vs MG — this narrows that residual gap further (a fresh vs-MG
-ratio needs the `scripts/mg_perf_compare.sh` rerun kit; not re-run here). Session
-contributions:
+8.6×–110× → 1.2×–3.5× vs MG — the fresh vs-MG measurement (§ below, 2026-07-28) puts
+the residual gap at **0.72×–1.69×, geomean 1.24×**. Session contributions:
 
 - **S1 `mul-split`** (`fa65c23`): the broad base win — helped every process (−13…−44%),
   biggest on the Mul-heavy `gg_to_gg`. Bit-exact.
@@ -47,6 +46,38 @@ contributions:
 
 Not pursued: greedy rooting (marginal ~1% over the canonical `fewest-ext-legs` rule).
 Deferred backlog below unchanged.
+
+### Fresh vs-MG measurement (2026-07-28, `scripts/mg_perf_compare.sh`)
+
+The direct joint rerun the close-out deferred. Fingerprint: Darwin arm64
+(Apple M3 Max), rustc 1.94.1, RUSTFLAGS unset (default codegen, both sides),
+`mg_timings.json` of 2026-07-21 (same host, MG side unchanged since), vibegraph
+at `ba9b4a8` (+doc-only edits). All **14 gated processes**, `eval_m2/forward`
+criterion medians:
+
+| process | MG ns/eval | vg ns/eval | vg/MG |
+|---|--:|--:|--:|
+| ee_to_zh | 206 | 242 | 1.17× |
+| uux_to_uux | 278 | 399 | 1.44× |
+| ee_to_mumu | 287 | 289 | 1.01× |
+| pp_to_ll_qcd0 | 292 | 288 | 0.99× |
+| ee_to_ttx | 343 | 480 | 1.40× |
+| gg_to_ttx | 655 | 928 | 1.42× |
+| ee_to_ee | 724 | 519 | **0.72×** |
+| ee_to_wpwm | 756 | 1,199 | 1.59× |
+| ee_to_tatah | 837 | 946 | 1.13× |
+| gg_to_gg | 941 | 1,550 | 1.65× |
+| ee_to_mumua | 1,443 | 1,514 | 1.05× |
+| ee_to_mumu_tata_qcd0 | 6,260 | 6,982 | 1.12× |
+| uux_to_ccx_emmm_qcd0 | 97,107 | 135,962 | 1.40× |
+| bbx_to_ccx_emmm_qcd0 | 135,073 | 227,831 | **1.69×** |
+
+**Geomean 1.24×, range 0.72×–1.69×.** Composing this note's cumulative speedups
+with note 15 §2.3's per-process ratios predicts the measurement closely (ee_to_ee
+0.73 vs 0.72, gg_to_gg 1.65 vs 1.65, uux_to_uux 1.44 vs 1.44) — the two passes'
+benches stayed mutually consistent. `ee_to_ee` now beats MG outright; the widest
+gaps are no longer a colored-2→2 story alone (`ee_to_wpwm` 1.59×, massive-b 2→6
+1.69×). Per-platform caveat from note 15 §2.4 still applies.
 
 ## Measured motivation for S1 (histogrammed 2026-07-21)
 
