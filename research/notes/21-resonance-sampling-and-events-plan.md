@@ -418,6 +418,74 @@ the weight denominator and the natural sample allocation).
 frozen-grid consumer in Sprint B E2/E4 hardens around a single grid, not after;
 and E2's unweighting efficiency is the concrete payoff. Deferred, not dismissed.
 
+#### Outcome — implemented, one session (`per-channel-vegas`, 2026-07-27)
+
+Landed as designed: `MultiChannel::sample_channel(j, u)` draws from channel `j`
+alone over `channel_ndim` coordinates and weights by `αⱼ/g`,
+`FixedBeamIntegrand::adapt_grids` runs one VEGAS pass per channel on a budget
+`αⱼ·neval` (floored at 512 so no channel goes unsampled) and sums the terms with
+their errors in quadrature, and `IntegrateArtifact` (`format_version` 1 → 2)
+banks `Vec<ChannelGrid>` — grid, `αⱼ`, `nevalⱼ`, `σⱼ ± Δσⱼ`, `χ²/dofⱼ` — with the
+version checked from the payload prefix before the body is decoded. α-adaptation
+is untouched: it still surveys the mixture, and its α now sets the weight
+denominator *and* the sample allocation.
+
+**Variance × CPU** (`probe_per_channel_grid_variance_cpu`, both arrangements on
+the same built integrand, four seeds, gate budgets), as
+`(Δσ²·T)_shared / (Δσ²·T)_split`:
+
+| process | channels | Δσ ratio | err²·CPU |
+|---|---|---|---|
+| `ee_to_mumua` | 8 | 1.28–1.37× | **1.68×** |
+| `ee_to_mumu_tata_qcd0` | 25 | 1.24–1.36× | **1.46×** |
+| `gg_to_ttx` | 3 | 1.16× | **1.39×** |
+| `uux_to_uux` | 2 | 1.01–1.33× | **1.36×** |
+| `ee_to_tatah` | 5 | 1.05× | **1.07×** |
+
+The win is real but modest, and it is smallest where one channel already carries
+almost all of `α` (`ee_to_tatah`) — which is what the addendum predicted: the
+split buys a *conditional* density, and there is nothing conditional to learn
+when the mixture is effectively one channel. CPU is within ±13% of the shared
+arrangement (the split pays the evaluation floor and per-grid bookkeeping), so
+the figure of merit is carried almost entirely by the variance.
+
+**Per-channel `w_max`** (`probe_unweighting_weight_max`). With events drawn from
+channel `j` ∝ `σⱼ` and unweighted against that channel's own maximum, the overall
+efficiency is `σ / Σⱼ w_maxⱼ` against `σ / w_max` for the single grid:
+
+| process | global `w_max` eff | per-channel eff | gain | largest channel's share of `Σ w_maxⱼ` |
+|---|---|---|---|---|
+| `ee_to_mumua` | 3.3e-3 | 9.3e-3 | **2.86×** | 29% |
+| `gg_to_ttx` | 7.1e-2 | 1.7e-1 | **2.37×** | 38% |
+| `ee_to_mumu_tata_qcd0` | 5.0e-3 | 1.0e-2 | **2.04×** | 24% |
+| `uux_to_uux` | 1.6e-2 | 2.7e-2 | **1.69×** | 90% |
+| `ee_to_tatah` | 4.6e-2 | 4.2e-2 | **0.91×** | 100% |
+
+`ee_to_tatah` is the honest negative: one channel is the whole sum, so there is
+no worst-channel penalty to remove, and its own maximum comes out slightly
+*above* the mixture's because the per-channel scan spends all its draws where
+that channel lives and therefore finds a higher extremum. The efficiency gain
+tracks the largest channel's share of the sum — which is the number to watch, not
+the channel count.
+
+**σ agreement.** All 11 `validate_sigma` GATE rows still pass, with every `Δσ`
+smaller at the same budget (0.74–0.96× the shared-grid error). Seed sweeps:
+`ee_to_tatah` |pull| ≤ 0.94, `ee_to_mumua` ≤ 1.00, `gg_to_ttx` ≤ 0.35,
+`gg_to_gg` ≤ 1.63, `uux_to_uux` ≤ 2.69. `ee_to_mumu_tata_qcd0` stays
+informational; its offset *shrank* from +3.0% to +2.2%, and its seed spread from
+0.6% to 0.45% — a data point for the low-`m_ll` reconciliation, not a resolution
+of it. Drell–Yan is untouched (single grid, same seed, same integrand): σ
+reproduces bit-for-bit at 0.14% / 0.07% vs banked MG.
+
+**The one regression.** `uux_to_uux`'s known negative mean bias roughly doubled:
+−0.17% under one shared grid to −0.30% split (same four seeds), and it does not
+shrink with budget (−0.25% at 4×). The row still gates (worst |pull| 2.69 vs the
+3.5 limit) but with a thinner mean margin. Reading: sharper per-channel grids stop
+compromising with each other and so cover the spacelike collinear tail *less*
+than the shared grid did — the same under-resolved region the single-rung
+t-channel spine already accounts for, now more visible. It is evidence for the
+multi-rung spine work, not a new defect.
+
 ---
 
 **Next: Sprint B — `event-output-lhef`** (E1 → E4, `mg-single-helicity-bench`

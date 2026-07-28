@@ -1,5 +1,5 @@
 //! `vibegraph integrate` — compute a leading-order cross section for an
-//! MG-validated process and persist the adapted VEGAS grid for a later sampling
+//! MG-validated process and persist the adapted VEGAS grids for a later sampling
 //! phase.
 //!
 //! The process, model, beams, scales, and cuts are driven by the proc card
@@ -8,14 +8,16 @@
 //! supported, selected by the run card's `lpp1`/`lpp2`:
 //!
 //! * `lpp = 1` (proton beams) — the hadronic Drell–Yan `p p → e⁺ e⁻` process,
-//!   PDF-convolved over a `(τ, y) × cosθ` map.
+//!   PDF-convolved over a `(τ, y) × cosθ` map, banked as a single grid.
 //! * `lpp = 0` (fixed-energy partonic beams) — an arbitrary process with no PDF
-//!   convolution and a flat-RAMBO phase-space map over any final multiplicity.
+//!   convolution over any final multiplicity, sampled by a resonance-aware
+//!   per-diagram multichannel map whose integral is split channel by channel, one
+//!   VEGAS grid each.
 
 use std::path::PathBuf;
 
 use clap::Args;
-use vibegraph::artifact::{IntegrateArtifact, FORMAT_VERSION};
+use vibegraph::artifact::{ChannelGrid, IntegrateArtifact, FORMAT_VERSION};
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{
@@ -23,15 +25,15 @@ use vibegraph::diagrams::{
 };
 use vibegraph::hadronic::{
     compile_class, compile_subprocesses, dy_flavor_classes, generate_dy_subprocesses,
-    initial_spin_color_average, process_external_legs, DrellYanIntegrand, FixedBeamIntegrand,
-    RunningCouplingReport,
+    initial_spin_color_average, process_external_legs, ChannelIntegration, DrellYanIntegrand,
+    FixedBeamIntegrand, RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::PdfSet;
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
-use vibegraph::vegas::{VegasGrid, VegasResult};
+use vibegraph::vegas::VegasResult;
 
 /// Default LHAPDF set — the one wired through the hadronic pipeline (MG5's LO
 /// default `nn23lo1`, lhaid 247000).
@@ -147,8 +149,22 @@ struct RunOutput {
     pdf_set: String,
     mu_f: f64,
     sqrt_s: f64,
-    grid: VegasGrid,
+    /// One trained grid per phase-space channel, in channel order.
+    channels: Vec<ChannelGrid>,
     result: VegasResult,
+}
+
+/// Convert one channel's integration into the artifact record, with its term's
+/// integral and error in picobarns.
+fn bank_channel(c: &ChannelIntegration) -> ChannelGrid {
+    ChannelGrid {
+        alpha: c.alpha,
+        neval: c.neval,
+        grid: c.grid.clone(),
+        sigma_pb: c.result.integral * GEV2_TO_PB,
+        sigma_err_pb: c.result.std_dev * GEV2_TO_PB,
+        chi2_per_dof: c.result.chi2_per_dof,
+    }
 }
 
 pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
@@ -197,6 +213,14 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
         "VEGAS:    {} evals × {} iters, seed {} (χ²/dof = {:.3})",
         args.neval, args.niter, args.seed, output.result.chi2_per_dof
     );
+    if output.channels.len() > 1 {
+        let total_neval: usize = output.channels.iter().map(|c| c.neval).sum();
+        println!(
+            "channels: {} grids, {} evals/iter allocated by α",
+            output.channels.len(),
+            total_neval
+        );
+    }
     println!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb");
 
     let artifact = IntegrateArtifact {
@@ -210,7 +234,7 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
         niter: args.niter,
         seed: args.seed,
         run_card: rc,
-        grid: output.grid,
+        channels: output.channels,
         sigma_pb,
         sigma_err_pb,
         chi2_per_dof: output.result.chi2_per_dof,
@@ -295,12 +319,19 @@ fn integrate_proton(
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
 
     let (grid, result) = integ.adapt_grid(args.neval, args.niter, args.seed);
+    // No channel decomposition on the Drell-Yan map: one grid over `(tau, y, cos)`.
+    let channels = vec![bank_channel(&ChannelIntegration {
+        alpha: 1.0,
+        neval: args.neval,
+        grid,
+        result,
+    })];
     Ok(RunOutput {
         process,
         pdf_set: args.pdf_set.clone(),
         mu_f: recorded_mu_f(&scale_report),
         sqrt_s: sqrt_s_had,
-        grid,
+        channels,
         result,
     })
 }
@@ -354,14 +385,14 @@ fn integrate_fixed_energy(
     let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
     integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, args.seed);
 
-    let (grid, result) = integ.adapt_grid(args.neval, args.niter, args.seed);
+    let (per_channel, result) = integ.adapt_grids(args.neval, args.niter, args.seed);
     Ok(RunOutput {
         process,
         pdf_set: NO_PDF.to_string(),
         // No parton distributions, so no factorisation scale enters the integral.
         mu_f: 0.0,
         sqrt_s,
-        grid,
+        channels: per_channel.iter().map(bank_channel).collect(),
         result,
     })
 }

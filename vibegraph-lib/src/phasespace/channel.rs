@@ -110,6 +110,23 @@ pub trait Combiner<F: Real>: PhaseSpaceMap<F> {
 /// toward each channel's variance share is a separate concern that reads and
 /// rewrites [`alphas`](MultiChannel::alphas)/[`set_alphas`](MultiChannel::set_alphas)
 /// without touching the estimator.
+///
+/// # Splitting the estimator by channel
+///
+/// The mixture above is one integral over `1 + channel_ndim` coordinates. The same
+/// estimator also splits into one integral per channel,
+///
+/// ```text
+/// ∫ dΦ f = Σⱼ ∫ dΦ f·αⱼgⱼ/g = Σⱼ E_{p∼gⱼ}[ αⱼ·f(p)/g(p) ]
+/// ```
+///
+/// whose `j`-th term is [`sample_channel`](Self::sample_channel): draw from channel
+/// `j` alone over `channel_ndim` coordinates — no selection coordinate — and weight
+/// by `αⱼ/g` with the *same* combined `g` the mixture uses. Summing the terms
+/// recovers the same integral, so the two arrangements differ only in how sampling
+/// effort and any importance grid in front of them are organised: a grid per term
+/// can learn a density conditional on the channel, which a single separable grid
+/// over the mixture cannot express.
 pub struct MultiChannel<F: Real> {
     channels: Vec<Box<dyn Channel<F>>>,
     alphas: Vec<F>,
@@ -299,6 +316,36 @@ impl<F: Real> MultiChannel<F> {
             g = g + *alpha * ch.density(momenta);
         }
         g
+    }
+
+    /// The uniforms one channel consumes on its own — [`ndim`](PhaseSpaceMap::ndim)
+    /// less the coordinate the mixture reserves for its channel draw.
+    pub fn channel_ndim(&self) -> usize {
+        self.channel_ndim
+    }
+
+    /// Draw from channel `j` alone: `u ∈ [0,1]^channel_ndim` (no selection
+    /// coordinate), weighted by `αⱼ/g(p)` with `g = Σₖ αₖ gₖ` the same combined
+    /// density the mixture divides by.
+    ///
+    /// The flat average of `weight · f` over the uniforms estimates the `j`-th term
+    /// of the channel-split estimator, `∫ dΦ f·αⱼgⱼ/g`, so summing that average over
+    /// all channels estimates `∫ dΦ f` — the same integral
+    /// [`sample`](PhaseSpaceMap::sample) estimates from the mixture, at the same
+    /// per-point cost.
+    ///
+    /// # Panics
+    ///
+    /// If `j` is not a channel index.
+    pub fn sample_channel(&self, j: usize, u: &[F]) -> PhaseSpacePoint<F> {
+        assert!(j < self.channels.len(), "channel index out of range");
+        let pt = self.channels[j].sample(u);
+        let g = self.density(&pt.momenta);
+        debug_assert!(g > F::zero(), "combined density must be positive");
+        PhaseSpacePoint {
+            momenta: pt.momenta,
+            weight: self.alphas[j] / g,
+        }
     }
 
     /// The channel `u0 ∈ [0,1)` selects, by cumulative selection weight.
@@ -697,6 +744,121 @@ mod tests {
             var_m < var_f,
             "combiner variance {var_m:.3e} not below flat RAMBO {var_f:.3e}"
         );
+    }
+
+    /// Monte-Carlo mean and per-point variance of `weight·f` over one frozen
+    /// channel of a combiner, drawing `channel_ndim` uniforms per point.
+    fn mc_estimate_channel(
+        multi: &MultiChannel<f64>,
+        j: usize,
+        seed: u64,
+        stream: u64,
+        n: usize,
+        f: impl Fn(&[LorentzVector<f64>]) -> f64,
+    ) -> (f64, f64) {
+        let mut s = SubStream::from_stream(seed, stream);
+        let (mut sum, mut sum_sq) = (0.0, 0.0);
+        for _ in 0..n {
+            let u = s.uniforms::<f64>(multi.channel_ndim());
+            let pt = multi.sample_channel(j, &u);
+            let v = pt.weight * f(&pt.momenta);
+            sum += v;
+            sum_sq += v * v;
+        }
+        let mean = sum / n as f64;
+        let var = (sum_sq / n as f64 - mean * mean).max(0.0);
+        (mean, var)
+    }
+
+    /// The channel-split estimator sums to the same integral the mixture estimates:
+    /// `Σⱼ E_{gⱼ}[αⱼf/g] = E_g[f/g]`. Pinned on a flat integrand against the analytic
+    /// massless volume (which fixes the absolute normalisation, so a missing or
+    /// double-counted `αⱼ` is visible) and on the resonant integrand against the
+    /// mixture estimate.
+    #[test]
+    fn channel_split_sums_to_the_mixture_integral() {
+        let sqrt_s = 500.0;
+        let (m2, mg) = (M_Z * M_Z, M_Z * G_Z);
+        let bw = move |s: f64| 1.0 / ((s - m2).powi(2) + mg * mg);
+        let f = move |p: &[LorentzVector<f64>]| 4.0 * bw(s_pair(p, 0, 1)) + bw(s_pair(p, 1, 2));
+
+        // A non-uniform α, so a term that forgot its αⱼ cannot pass by symmetry.
+        let mut multi = two_peak_combiner(sqrt_s);
+        multi.set_alphas(vec![0.7, 0.3]);
+
+        let n = 400_000;
+        for (name, integrand) in [
+            (
+                "flat",
+                &(|_: &[LorentzVector<f64>]| 1.0) as &dyn Fn(&[LorentzVector<f64>]) -> f64,
+            ),
+            ("resonant", &f as &dyn Fn(&[LorentzVector<f64>]) -> f64),
+        ] {
+            let (mean_mix, var_mix) = mc_estimate(&multi, 0x5911, 41, n, |p| integrand(p));
+            let mut split = 0.0;
+            let mut var_split = 0.0;
+            for j in 0..multi.channels().len() {
+                let (mean_j, var_j) =
+                    mc_estimate_channel(&multi, j, 0x5912, 43 + j as u64, n, |p| integrand(p));
+                split += mean_j;
+                var_split += var_j;
+            }
+            let err = ((var_mix + var_split) / n as f64).sqrt();
+            eprintln!(
+                "{name}: mixture {mean_mix:.6e} vs channel-split {split:.6e} (err {err:.2e})"
+            );
+            assert!(
+                (split - mean_mix).abs() < 6.0 * err,
+                "{name}: channel-split {split:.6e} disagrees with mixture {mean_mix:.6e} \
+                 (err {err:.2e})"
+            );
+        }
+
+        // Absolute normalisation: the split reproduces V₃ on the flat integrand.
+        // Breit–Wigner-mapped channels sample a flat integrand at high variance, so
+        // the comparison is made against the measured error rather than a fixed
+        // relative band.
+        let (mut vol, mut var_vol) = (0.0, 0.0);
+        for j in 0..multi.channels().len() {
+            let (mean_j, var_j) = mc_estimate_channel(&multi, j, 0x5913, 51 + j as u64, n, |_| 1.0);
+            vol += mean_j;
+            var_vol += var_j;
+        }
+        let err_vol = (var_vol / n as f64).sqrt();
+        let analytic = massless_volume(sqrt_s, 3);
+        eprintln!("channel-split V₃ = {vol:.6e} ± {err_vol:.2e}, analytic {analytic:.6e}");
+        assert!(
+            (vol - analytic).abs() < 5.0 * err_vol,
+            "channel-split V₃ {vol:.6e} ± {err_vol:.2e} vs analytic {analytic:.6e}"
+        );
+    }
+
+    /// A channel-frozen draw produces the channel's own momenta, and its weight is
+    /// the mixture weight scaled by that channel's `αⱼ` — the identity the split
+    /// estimator rests on.
+    #[test]
+    fn sample_channel_weight_is_alpha_times_mixture_weight() {
+        let mut multi = two_peak_combiner(500.0);
+        multi.set_alphas(vec![0.25, 0.75]);
+        let mut s = SubStream::from_stream(0x5914, 61);
+        for _ in 0..500 {
+            let u = s.uniforms::<f64>(multi.channel_ndim());
+            for j in 0..multi.channels().len() {
+                let pt = multi.sample_channel(j, &u);
+                let direct = multi.channels()[j].sample(&u);
+                for (a, b) in pt.momenta.iter().zip(&direct.momenta) {
+                    assert_eq!(a.e(), b.e());
+                    assert_eq!(a.pz(), b.pz());
+                }
+                let mixture_weight = 1.0 / multi.density(&pt.momenta);
+                let expected = multi.alphas()[j] * mixture_weight;
+                assert!(
+                    (pt.weight - expected).abs() <= 1e-12 * expected,
+                    "channel {j}: weight {} != αⱼ·(1/g) {expected}",
+                    pt.weight
+                );
+            }
+        }
     }
 
     // ── α-adaptation (survey → refine of the channel mixture) ─────────────────

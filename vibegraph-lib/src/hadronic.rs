@@ -75,8 +75,8 @@ use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::PdfMember;
 use crate::phasespace::{
-    lips2_jacobian_u, AlphaAdaptation, Channel, DiagramChannel, MultiChannel, PhaseSpaceMap,
-    RamboChannel, GEV2_TO_PB,
+    lips2_jacobian_u, AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel,
+    PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
 };
 use crate::runcard::RunCard;
 use crate::ufo::{EvaluatedModel, UFOModel};
@@ -111,6 +111,17 @@ pub const VEGAS_ALPHA_MAPPED: f64 = 0.5;
 /// from the VEGAS integration substreams so the survey and the integral neither
 /// share nor correlate their sampling sequences.
 const MULTICHANNEL_ADAPT_STREAM: u64 = 0xA1FA_5EED;
+
+/// First `ChaCha8Rng` stream id of the per-channel integrations, offset by the
+/// channel index. Channel `j` draws from stream `CHANNEL_STREAM_BASE + j`, so the
+/// terms of the channel-split estimator sample structurally independent sequences
+/// under one seed and each replays on its own.
+const CHANNEL_STREAM_BASE: u64 = 0xC7A0_0000;
+
+/// Floor on a channel's per-iteration evaluation count, so a channel whose
+/// selection weight rounds to nothing still gets a grid it can refine and a term
+/// it can estimate. Sample budget is otherwise split as `αⱼ · neval`.
+const MIN_CHANNEL_NEVAL: usize = 512;
 
 /// RNG seed and draw budget for the setup-time probe that resolves a dynamic scale
 /// once before integration begins.
@@ -1115,7 +1126,7 @@ pub struct FixedBeamIntegrand<'a> {
     /// Unit-hypercube → phase-space map over the outgoing legs, on the fixed `√ŝ`
     /// and masses: flat [`RamboChannel`] by default, a resonance-aware
     /// [`MultiChannel`] once [`use_multichannel`](Self::use_multichannel) has run.
-    sampler: Box<dyn PhaseSpaceMap<f64>>,
+    sampler: Sampler,
     /// The outgoing pole masses in leg order, the map's targets.
     final_masses: Vec<f64>,
     /// `1 / Π_a (n_spin · n_colour)` over the incoming legs.
@@ -1145,6 +1156,91 @@ pub struct FixedBeamIntegrand<'a> {
     last_coupling: Cell<(f64, f64)>,
 }
 
+/// The phase-space map a [`FixedBeamIntegrand`] draws through.
+///
+/// Held as a closed set rather than a trait object because the two arms are
+/// integrated differently: the flat map is one integral over one grid, while the
+/// combiner's integral splits into one term — and one grid — per channel.
+enum Sampler {
+    Flat(RamboChannel<f64>),
+    Multi(MultiChannel<f64>),
+}
+
+impl Sampler {
+    fn ndim(&self) -> usize {
+        match self {
+            Sampler::Flat(c) => c.ndim(),
+            Sampler::Multi(c) => c.ndim(),
+        }
+    }
+
+    fn sample(&self, u: &[f64]) -> PhaseSpacePoint<f64> {
+        match self {
+            Sampler::Flat(c) => c.sample(u),
+            Sampler::Multi(c) => c.sample(u),
+        }
+    }
+}
+
+/// One channel's share of a per-channel integration
+/// ([`FixedBeamIntegrand::adapt_grids`]).
+///
+/// The integral is estimated as `Σⱼ ∫ dΦ f·αⱼgⱼ/g` — one VEGAS pass per term,
+/// each over its channel's own `channel_ndim` coordinates — so every channel
+/// carries its own trained grid, its own σⱼ ± Δσⱼ, and the sample budget it was
+/// given. A run sampled by the flat map is the one-term case: `alpha = 1` and the
+/// whole budget on a single grid.
+#[derive(Debug, Clone)]
+pub struct ChannelIntegration {
+    /// The channel's selection weight `αⱼ` — both the weight in its term's
+    /// integrand and the share of the sample budget it was allocated.
+    pub alpha: f64,
+    /// Evaluations per iteration this channel actually received.
+    pub neval: usize,
+    /// The grid trained on this channel's term.
+    pub grid: VegasGrid,
+    /// This term's integral and error, in natural units (GeV⁻²).
+    pub result: VegasResult,
+}
+
+/// Sum the per-channel terms: integrals add, errors add in quadrature, and the
+/// χ²/dof is the pooled statistic (`Σ χ²ⱼ` over `Σ dofⱼ`) rather than any single
+/// channel's.
+fn combine_channels(per_channel: &[ChannelIntegration], niter: usize) -> VegasResult {
+    let integral: f64 = per_channel.iter().map(|c| c.result.integral).sum();
+    let variance: f64 = per_channel
+        .iter()
+        .map(|c| c.result.std_dev * c.result.std_dev)
+        .sum();
+    let dof_each = niter.saturating_sub(1);
+    let chi2_per_dof = if dof_each > 0 && !per_channel.is_empty() {
+        per_channel
+            .iter()
+            .map(|c| c.result.chi2_per_dof)
+            .sum::<f64>()
+            / per_channel.len() as f64
+    } else {
+        0.0
+    };
+    VegasResult {
+        integral,
+        std_dev: variance.sqrt(),
+        chi2_per_dof,
+    }
+}
+
+/// A channel's per-iteration evaluation count: its share `αⱼ · neval` of the
+/// budget, floored so no channel goes unsampled.
+fn channel_neval(alpha: f64, neval: usize) -> usize {
+    let share = (alpha * neval as f64).round();
+    let share = if share.is_finite() && share > 0.0 {
+        share as usize
+    } else {
+        0
+    };
+    share.max(MIN_CHANNEL_NEVAL)
+}
+
 impl<'a> FixedBeamIntegrand<'a> {
     /// Build the integrand from one or more bound subprocess amplitudes sharing
     /// the same external state.
@@ -1165,7 +1261,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         let n = final_masses.len();
         let symmetry_factor = final_state_symmetry_factor(amps[0].evaluator());
         let subs = amps.into_iter().map(BoundSubprocess::fixed).collect();
-        let sampler = Box::new(RamboChannel::new(sqrt_s, final_masses.clone()));
+        let sampler = Sampler::Flat(RamboChannel::new(sqrt_s, final_masses.clone()));
         FixedBeamIntegrand {
             subs,
             cuts,
@@ -1303,9 +1399,15 @@ impl<'a> FixedBeamIntegrand<'a> {
         }
     }
 
-    /// VEGAS dimensionality — the uniforms the active phase-space map consumes.
-    /// `4n` for flat RAMBO; `3n − 3` (one channel-selection coordinate plus the
-    /// `3n − 4` invariant/angle coordinates) for the multichannel combiner.
+    /// The uniforms the active phase-space map consumes as one mixture: `4n` for
+    /// flat RAMBO, and `3n − 3` for the multichannel combiner (one
+    /// channel-selection coordinate plus the `3n − 4` invariant/angle
+    /// coordinates).
+    ///
+    /// This is the dimensionality of the single grid
+    /// [`adapt_grid`](Self::adapt_grid) builds. The per-channel grids
+    /// [`adapt_grids`](Self::adapt_grids) builds are over
+    /// [`channel_grid_ndim`](Self::channel_grid_ndim) instead.
     pub fn vegas_ndim(&self) -> usize {
         self.sampler.ndim()
     }
@@ -1342,8 +1444,15 @@ impl<'a> FixedBeamIntegrand<'a> {
         if m2 == 0.0 {
             return 0.0;
         }
+        self.prefactor() * point.weight * m2
+    }
+
+    /// The constants in front of `weight · Σ|M|²`: the `1/(2ŝ)` flux, the
+    /// initial-state spin×colour average, the identical-particle symmetry factor,
+    /// and the `(2π)^{4−3n}` measure factor.
+    fn prefactor(&self) -> f64 {
         let flux = 1.0 / (2.0 * self.sqrt_s * self.sqrt_s);
-        flux * self.spin_color_avg * self.symmetry_factor * self.lips_2pi * point.weight * m2
+        flux * self.spin_color_avg * self.symmetry_factor * self.lips_2pi
     }
 
     /// Replace flat RAMBO with a resonance-aware per-diagram [`MultiChannel`] built
@@ -1390,9 +1499,61 @@ impl<'a> FixedBeamIntegrand<'a> {
             n_iter,
             0.5,
         );
-        self.sampler = Box::new(combiner);
+        self.sampler = Sampler::Multi(combiner);
         self.vegas_alpha = VEGAS_ALPHA_MAPPED;
         Some(report)
+    }
+
+    /// The channels the integral is split across: one per diagram once a
+    /// multichannel combiner is installed, and `1` under the flat map.
+    pub fn channel_count(&self) -> usize {
+        match &self.sampler {
+            Sampler::Flat(_) => 1,
+            Sampler::Multi(c) => c.channels().len(),
+        }
+    }
+
+    /// The converged channel selection weights, or `[1.0]` under the flat map.
+    pub fn channel_alphas(&self) -> Vec<f64> {
+        match &self.sampler {
+            Sampler::Flat(_) => vec![1.0],
+            Sampler::Multi(c) => c.alphas().to_vec(),
+        }
+    }
+
+    /// The uniforms one channel's grid is built over: `channel_ndim` for the
+    /// combiner (no channel-selection coordinate — the channel is frozen), and the
+    /// full map dimension under flat RAMBO.
+    pub fn channel_grid_ndim(&self) -> usize {
+        match &self.sampler {
+            Sampler::Flat(c) => c.ndim(),
+            Sampler::Multi(c) => c.channel_ndim(),
+        }
+    }
+
+    /// The `j`-th term of the channel-split estimator at `u ∈ [0,1]^channel_ndim`,
+    /// in natural units (GeV⁻²): the point is drawn from channel `j` alone and
+    /// weighted by `αⱼ/g`, so the sum over channels of these terms' integrals is
+    /// the same cross section [`value`](Self::value) integrates from the mixture.
+    ///
+    /// Under the flat map there is one channel and this is [`value`](Self::value).
+    ///
+    /// # Panics
+    ///
+    /// If `channel` is not a channel index ([`channel_count`](Self::channel_count)).
+    pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
+        let point = match &self.sampler {
+            Sampler::Flat(c) => {
+                assert_eq!(channel, 0, "the flat map has a single channel");
+                c.sample(u)
+            }
+            Sampler::Multi(c) => c.sample_channel(channel, u),
+        };
+        let m2 = self.matrix_element(&point.momenta);
+        if m2 == 0.0 {
+            return 0.0;
+        }
+        self.prefactor() * point.weight * m2
     }
 
     /// The final-state pole masses in outgoing-leg order.
@@ -1402,17 +1563,79 @@ impl<'a> FixedBeamIntegrand<'a> {
 
     /// Integrate the cross section with VEGAS, returning `(σ, Δσ)` in picobarns.
     pub fn integrate(&self, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
-        let result = self.adapt_grid(neval, niter, seed).1;
+        let result = self.adapt_grids(neval, niter, seed).1;
         (result.integral * GEV2_TO_PB, result.std_dev * GEV2_TO_PB)
     }
 
-    /// Run VEGAS adaptation, returning the trained grid alongside the result — the
-    /// primitive the `integrate` CLI command serializes into its artifact.
+    /// Run VEGAS adaptation over the mixture map as a single integral, returning
+    /// the one trained grid alongside the result.
+    ///
+    /// The combiner's channel selection then occupies a coordinate of that grid.
+    /// [`adapt_grids`](Self::adapt_grids) is what the cross section is taken
+    /// from; this is the undivided comparison point.
     pub fn adapt_grid(&self, neval: usize, niter: usize, seed: u64) -> (VegasGrid, VegasResult) {
         let mut grid = VegasGrid::new(self.vegas_ndim(), VEGAS_NBINS, self.vegas_alpha);
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
         let result = grid.adapt(|u| self.value(u), neval, niter, &mut rng);
         (grid, result)
+    }
+
+    /// Run one VEGAS adaptation **per channel**, returning each channel's trained
+    /// grid and term alongside their sum — the primitive the `integrate` CLI
+    /// command serializes into its artifact.
+    ///
+    /// Channel `j` is integrated over its own `channel_ndim` coordinates with the
+    /// channel frozen ([`value_in_channel`](Self::value_in_channel)), on a sample
+    /// budget of `αⱼ · neval` per iteration and its own RNG substream. The terms sum
+    /// to the same cross section the mixture integrates, but each grid now refines a
+    /// density *conditional* on its channel — the correlation a single separable
+    /// grid over the mixture cannot represent, since the useful shape of the
+    /// remaining coordinates depends on which channel was selected.
+    ///
+    /// Under the flat map this is a single full-budget pass, identical to
+    /// [`adapt_grid`](Self::adapt_grid).
+    pub fn adapt_grids(
+        &self,
+        neval: usize,
+        niter: usize,
+        seed: u64,
+    ) -> (Vec<ChannelIntegration>, VegasResult) {
+        self.adapt_grids_with(neval, niter, seed, self.vegas_alpha)
+    }
+
+    /// [`adapt_grids`](Self::adapt_grids) with the VEGAS grid-damping exponent
+    /// supplied instead of taken from the active sampler — the seam a study of the
+    /// refinement's own stability drives.
+    pub fn adapt_grids_with(
+        &self,
+        neval: usize,
+        niter: usize,
+        seed: u64,
+        vegas_alpha: f64,
+    ) -> (Vec<ChannelIntegration>, VegasResult) {
+        let alphas = self.channel_alphas();
+        let ndim = self.channel_grid_ndim();
+        let mut per_channel = Vec::with_capacity(alphas.len());
+        for (j, &alpha) in alphas.iter().enumerate() {
+            let n_j = if alphas.len() == 1 {
+                neval
+            } else {
+                channel_neval(alpha, neval)
+            };
+            let mut grid = VegasGrid::new(ndim, VEGAS_NBINS, vegas_alpha);
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            rng.set_stream(CHANNEL_STREAM_BASE + j as u64);
+            rng.set_word_pos(0);
+            let result = grid.adapt(|u| self.value_in_channel(j, u), n_j, niter, &mut rng);
+            per_channel.push(ChannelIntegration {
+                alpha,
+                neval: n_j,
+                grid,
+                result,
+            });
+        }
+        let total = combine_channels(&per_channel, niter);
+        (per_channel, total)
     }
 }
 

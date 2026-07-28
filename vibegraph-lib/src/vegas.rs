@@ -384,21 +384,45 @@ impl VegasGrid {
 
     // ── Private helpers ──────────────────────────────────────────────────
 
+    /// Draw one point against the grid: fill `x` (length `ndim`) and return the
+    /// VEGAS Jacobian weight `1/p(x)`.
+    ///
+    /// The weight an accept/reject pass over a frozen grid divides by: a point's
+    /// full sampling weight is this Jacobian times the integrand there, so the
+    /// per-point maximum of that product is what unweighting is normalised
+    /// against. Draws the same sequence [`sample_frozen`](Self::sample_frozen)
+    /// draws from the same `rng` state.
+    pub fn draw(&self, rng: &mut impl Rng, x: &mut [f64]) -> f64 {
+        self.draw_into(rng, x, |_, _| {})
+    }
+
     /// Draw one point: fill `x` (length `ndim`) and `ks` (length `ndim`,
     /// bin index per dimension) and return the VEGAS Jacobian weight.
     fn draw_point(&self, rng: &mut impl Rng, x: &mut [f64], ks: &mut [usize]) -> f64 {
+        self.draw_into(rng, x, |dim, k| ks[dim] = k)
+    }
+
+    /// The draw itself, reporting each dimension's bin index to `record` — so a
+    /// caller that needs the bins for grid refinement and one that needs only the
+    /// point share a single definition of the sampling.
+    fn draw_into(
+        &self,
+        rng: &mut impl Rng,
+        x: &mut [f64],
+        mut record: impl FnMut(usize, usize),
+    ) -> f64 {
         let nbins = self.nbins;
         let mut wgt = 1.0_f64;
-        for dim in 0..self.ndim {
+        for (dim, (xd, edges)) in x.iter_mut().zip(&self.xi).enumerate() {
             let u: f64 = rng.random();
             let pos = u * nbins as f64;
             let k = (pos as usize).min(nbins - 1);
             let r = pos - k as f64;
-            let lo = self.xi[dim][k];
-            let hi = self.xi[dim][k + 1];
-            x[dim] = lo + r * (hi - lo);
+            let lo = edges[k];
+            let hi = edges[k + 1];
+            *xd = lo + r * (hi - lo);
             wgt *= nbins as f64 * (hi - lo); // Jacobian dx/du = bin_width, wgt = 1/p(x)
-            ks[dim] = k;
+            record(dim, k);
         }
         wgt
     }
@@ -1001,6 +1025,33 @@ mod tests {
             .build()
             .unwrap();
         pool.install(work)
+    }
+
+    /// The public per-point draw reproduces the sampling `sample_frozen` performs
+    /// internally: same points, and a mean of `weight · f` equal to the frozen
+    /// pass's integral. A `draw` that diverged from the internal one would make an
+    /// accept/reject pass sample a different density than the integral it is
+    /// normalised against.
+    #[test]
+    fn test_draw_matches_sample_frozen() {
+        let mut grid = VegasGrid::new(2, 40, 1.5);
+        let mut warm = rand::rngs::StdRng::seed_from_u64(5);
+        grid.adapt(|u| 3.0 * u[0] * u[0] + u[1], 5_000, 5, &mut warm);
+
+        let f = |u: &[f64]| 3.0 * u[0] * u[0] + u[1];
+        let n = 20_000;
+
+        let mut rng_frozen = rand::rngs::StdRng::seed_from_u64(31);
+        let frozen = grid.sample_frozen(f, n, &mut rng_frozen);
+
+        let mut rng_draw = rand::rngs::StdRng::seed_from_u64(31);
+        let mut x = vec![0.0; grid.ndim()];
+        let mut sum = 0.0;
+        for _ in 0..n {
+            let w = grid.draw(&mut rng_draw, &mut x);
+            sum += w * f(&x);
+        }
+        assert_eq!((sum / n as f64).to_bits(), frozen.integral.to_bits());
     }
 
     #[test]

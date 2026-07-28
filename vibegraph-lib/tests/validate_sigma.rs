@@ -25,6 +25,12 @@
 //! (`FixedBeamIntegrand::use_multichannel`, the production `vibegraph integrate`
 //! path), so the resonant electroweak states converge and are gated too.
 //!
+//! The integral is taken channel by channel (`FixedBeamIntegrand::adapt_grids`):
+//! each channel is integrated over its own coordinates with its own VEGAS grid, on
+//! a share `alpha_j` of the sample budget, and the terms are summed with their
+//! errors in quadrature. That is what the production `vibegraph integrate` does, so
+//! it is what this gate measures.
+//!
 //! Being unbiased *in expectation* is not the same as being safe at finite N, and
 //! this gate must not be read as if it were. An under-covered region does not
 //! merely inflate the variance: iterations that miss it report a small integral
@@ -52,7 +58,7 @@
 //! MadGraph does.
 //!
 //! Two classes remain informational. `e+ e- > mu+ mu- ta+ ta-` samples stably but
-//! sits ~3.0% above the banked sigma, an offset localised at low lepton-pair mass
+//! sits ~2.2% above the banked sigma, an offset localised at low lepton-pair mass
 //! and not yet reconciled (see its `Plan::Info` reason). The 2->6 states are not
 //! integrated at all — their ~1 ms matrix-element cost over a 24-dim map makes a
 //! meaningful integral prohibitively slow.
@@ -98,14 +104,12 @@ use rand_chacha::ChaCha8Rng;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
-    VEGAS_NBINS,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
-use vibegraph::vegas::VegasGrid;
 
 mod common;
 
@@ -196,16 +200,19 @@ fn plan_for(dir: &str) -> Plan {
         //
         // Their tolerances are set by the t-channel-peaked integrand, not by the
         // coupling. Over five seeds at these budgets (`probe_qcd_seed_stability`)
-        // `gg_to_ttx` holds |pull| <= 0.37 and |rel| <= 8.8e-4, `gg_to_gg` |pull| <=
-        // 1.57 and |rel| <= 4.7e-3, and `uux_to_uux` |pull| <= 2.92 and |rel| <=
-        // 7.4e-3 — the thinnest margin of the three against PULL_LIMIT. Quadrupling
-        // the budget shrinks every one of those (worst |rel| 4.7e-3 -> 2.1e-3 and
-        // 7.4e-3 -> 3.9e-3), which is what says the residual is sampling and not a
+        // `gg_to_ttx` holds |pull| <= 0.35 and |rel| <= 8.3e-4, `gg_to_gg` |pull| <=
+        // 1.63 and |rel| <= 4.9e-3, and `uux_to_uux` |pull| <= 2.69 and |rel| <=
+        // 6.4e-3 — the thinnest margin of the three against PULL_LIMIT. Quadrupling
+        // the budget shrinks every one of those (worst |rel| 4.9e-3 -> 2.7e-3 and
+        // 6.4e-3 -> 3.5e-3), which is what says the residual is sampling and not a
         // defect: a bug makes the failure migrate between seeds rather than shrink.
-        // `uux_to_uux` does keep a ~0.15% negative mean over the sweep, small
-        // against this tolerance but larger than the seed spread explains, and the
+        // `uux_to_uux` does keep a negative mean over the sweep — ~0.30% at these
+        // budgets, ~0.25% at four times them, so it is not the seed spread — and the
         // spacelike collinear region a single-rung t-channel spine under-resolves is
-        // the place to look for it.
+        // the place to look for it. Sharpening the grids channel by channel roughly
+        // doubled that mean (one shared grid over the mixture gives ~0.17% on the
+        // same seeds), which is what an under-covered tail does when each channel's
+        // grid stops compromising with the others.
         "gg_to_ttx" => Plan::Gate {
             neval: 60_000,
             niter: 8,
@@ -238,9 +245,9 @@ fn plan_for(dir: &str) -> Plan {
             rel_tol: 0.03,
         },
         // Stable but carrying an unexplained offset, so informational rather than
-        // gated. The estimator itself is sound — five seeds agree within 0.6% of
-        // each other with chi2/dof in 0.36-2.02 — but every seed sits ~3.0% *above*
-        // the banked sigma (pull +7.9 to +9.5), an offset that no longer hides
+        // gated. The estimator itself is sound — five seeds agree within 0.45% of
+        // each other with chi2/dof in 0.97-1.21 — but every seed sits ~2.2% *above*
+        // the banked sigma (pull +6.7 to +8.3), an offset that no longer hides
         // inside the error bar now that the sampler converges.
         //
         // The offset is entirely localised at low lepton-pair mass: re-integrating
@@ -259,7 +266,7 @@ fn plan_for(dir: &str) -> Plan {
         "ee_to_mumu_tata_qcd0" => Plan::Info {
             neval: 100_000,
             niter: 8,
-            reason: "stable across seeds (spread 0.6%) but +3.0% vs banked, localised at \
+            reason: "stable across seeds (spread 0.45%) but +2.2% vs banked, localised at \
                      low m_ll (agrees to -0.1% with mmll = 20 GeV); the sign rules out \
                      under-coverage on this side",
         },
@@ -352,6 +359,49 @@ fn integrate_probe(
     mmll_override: Option<f64>,
     vegas_alpha: Option<f64>,
 ) -> (f64, f64, f64, Vec<f64>) {
+    with_integrand(
+        dir,
+        process,
+        seed,
+        n_survey,
+        n_adapt_iter,
+        mmll_override,
+        |integ, alphas| {
+            let result = match vegas_alpha {
+                None => integ.adapt_grids(neval, niter, seed).1,
+                // Same run, but with the grid-damping exponent under the probe's
+                // control: `alpha = 0` freezes the grids, reducing VEGAS to an
+                // iteration-averager over the multichannel sampler alone.
+                Some(a) => integ.adapt_grids_with(neval, niter, seed, a).1,
+            };
+            (
+                result.integral * GEV2_TO_PB,
+                result.std_dev * GEV2_TO_PB,
+                result.chi2_per_dof,
+                alphas.to_vec(),
+            )
+        },
+    )
+}
+
+/// Build the fixed-energy integrand for a banked process — its run card, param
+/// card, cuts, amplitudes, per-event renormalisation scale and the α-adapted
+/// per-diagram multichannel sampler — and hand it to `f` along with the converged
+/// α vector. Everything the integrand borrows lives for the duration of the call,
+/// so a caller can drive the same fully-built integrand more than once.
+///
+/// `mmll_override` patches the run card's minimum same-flavour lepton-pair mass
+/// before the cuts are compiled. It is a *diagnostic*: it changes the physics, so
+/// a result taken under it no longer compares to the banked MadGraph value.
+fn with_integrand<R>(
+    dir: &str,
+    process: &str,
+    seed: u64,
+    n_survey: usize,
+    n_adapt_iter: usize,
+    mmll_override: Option<f64>,
+    f: impl FnOnce(&FixedBeamIntegrand, &[f64]) -> R,
+) -> R {
     let card_path = output_dir().join(dir).join("Cards/run_card.dat");
     let card_path = match mmll_override {
         None => card_path,
@@ -430,23 +480,7 @@ fn integrate_probe(
     let alphas = report
         .map(|r| r.trajectory.last().cloned().unwrap_or_default())
         .unwrap_or_default();
-    let result = match vegas_alpha {
-        None => integ.adapt_grid(neval, niter, seed).1,
-        // Same run, but with the grid-damping exponent under the probe's control:
-        // `alpha = 0` freezes the grid, reducing VEGAS to an iteration-averager
-        // over the multichannel sampler alone.
-        Some(a) => {
-            let mut grid = VegasGrid::new(integ.vegas_ndim(), VEGAS_NBINS, a);
-            let mut rng = ChaCha8Rng::seed_from_u64(seed);
-            grid.adapt(|u| integ.value(u), neval, niter, &mut rng)
-        }
-    };
-    (
-        result.integral * GEV2_TO_PB,
-        result.std_dev * GEV2_TO_PB,
-        result.chi2_per_dof,
-        alphas,
-    )
+    f(&integ, &alphas)
 }
 
 /// Seed-stability sweep for the resonant multichannel rows: integrate each across
@@ -482,6 +516,195 @@ fn probe_resonant_seed_stability() {
                 s / e.sigma_pb - 1.0,
             );
         }
+    }
+}
+
+/// The processes the per-channel-grid studies below sweep: a spread of channel
+/// counts over resonant and non-resonant integrands, at their gate budgets.
+const GRID_STUDY_ROWS: [(&str, usize, usize); 5] = [
+    ("ee_to_mumua", 80_000, 8),
+    ("ee_to_tatah", 60_000, 8),
+    ("ee_to_mumu_tata_qcd0", 100_000, 8),
+    ("gg_to_ttx", 60_000, 8),
+    ("uux_to_uux", 40_000, 6),
+];
+
+/// The figure of merit for the per-channel grid split: **error squared times CPU**
+/// at a fixed budget, not time per point.
+///
+/// One VEGAS grid over the channel mixture and one grid per channel estimate the
+/// same integral at (nearly) the same per-point cost, so what separates them is how
+/// much variance each buys per second. The two arrangements are run back to back on
+/// the *same* fully-built integrand and the same alpha, across seeds, and the quoted
+/// ratio is `(dsigma^2 * T)_shared / (dsigma^2 * T)_per-channel` — above 1 means
+/// splitting wins.
+///
+/// The split also spends a little more than the nominal budget: each channel's
+/// share `alpha_j * neval` is floored so no channel goes unsampled, so the
+/// evaluation counts are reported rather than assumed equal. Run with
+/// `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_per_channel_grid_variance_cpu() {
+    use std::time::Instant;
+
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let seeds = [SEED, 11, 22, 33];
+
+    for (dir, neval, niter) in GRID_STUDY_ROWS {
+        let e = &banked[dir];
+        eprintln!(
+            "-- {dir} (MG {:.6e} +- {:.2e}, {neval}x{niter}) --",
+            e.sigma_pb, e.sigma_err_pb
+        );
+        let mut fom_ratios = Vec::new();
+        for seed in seeds {
+            with_integrand(
+                dir,
+                &e.process,
+                seed,
+                MULTICHANNEL_SURVEY,
+                MULTICHANNEL_ITERS,
+                None,
+                |integ, _alphas| {
+                    let t0 = Instant::now();
+                    let (_, shared) = integ.adapt_grid(neval, niter, seed);
+                    let t_shared = t0.elapsed().as_secs_f64();
+
+                    let t1 = Instant::now();
+                    let (channels, split) = integ.adapt_grids(neval, niter, seed);
+                    let t_split = t1.elapsed().as_secs_f64();
+
+                    let evals_shared = neval * niter;
+                    let evals_split: usize =
+                        channels.iter().map(|c| c.neval).sum::<usize>() * niter;
+                    let (s_shared, d_shared) =
+                        (shared.integral * GEV2_TO_PB, shared.std_dev * GEV2_TO_PB);
+                    let (s_split, d_split) =
+                        (split.integral * GEV2_TO_PB, split.std_dev * GEV2_TO_PB);
+                    let fom_shared = d_shared * d_shared * t_shared;
+                    let fom_split = d_split * d_split * t_split;
+                    fom_ratios.push(fom_shared / fom_split);
+                    eprintln!(
+                        "  seed {seed:>10} | shared   sigma {s_shared:.6e} +- {d_shared:.3e} \
+                         ({t_shared:.2} s, {evals_shared} evals, chi2/dof {:.2})",
+                        shared.chi2_per_dof
+                    );
+                    eprintln!(
+                        "  {:>15} | {:>3} chan sigma {s_split:.6e} +- {d_split:.3e} \
+                         ({t_split:.2} s, {evals_split} evals, chi2/dof {:.2})",
+                        "",
+                        channels.len(),
+                        split.chi2_per_dof
+                    );
+                    eprintln!(
+                        "  {:>15} | err ratio {:.3}x | err^2*CPU {fom_shared:.3e} vs \
+                         {fom_split:.3e} -> {:.2}x better split",
+                        "",
+                        d_shared / d_split,
+                        fom_shared / fom_split
+                    );
+                },
+            );
+        }
+        let mean: f64 = fom_ratios.iter().sum::<f64>() / fom_ratios.len() as f64;
+        eprintln!(
+            "  [{dir}] mean err^2*CPU improvement over {} seeds: {mean:.2}x",
+            fom_ratios.len()
+        );
+    }
+}
+
+/// The unweighting normalisation each arrangement hands to an accept/reject pass:
+/// a single global `w_max` over the channel mixture versus one `w_max` per channel.
+///
+/// With events drawn from channel `j` in proportion to `sigma_j` and unweighted
+/// against that channel's own maximum, the overall efficiency is
+/// `sigma / sum_j w_max_j`, against `sigma / w_max` for the single grid — so the
+/// ratio `w_max / sum_j w_max_j` *is* the efficiency change, and the spread of the
+/// `w_max_j` says how much of the mixture's maximum was set by one channel. Both
+/// maxima are estimated by frozen sampling against the adapted grids, with each
+/// channel drawing its production share of the points. Run with
+/// `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_unweighting_weight_max() {
+    // Frozen draws used to estimate a maximum weight.
+    const WMAX_DRAWS: usize = 400_000;
+    // Floor on one channel's share of them, so a low-alpha channel's maximum is
+    // still estimated from a usable sample.
+    const MIN_CHANNEL_DRAWS: usize = 2_000;
+    // Seed for the frozen weight scan, distinct from the integration seed.
+    const WMAX_SEED: u64 = 0x5CA7_0FF0;
+
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+
+    for (dir, neval, niter) in GRID_STUDY_ROWS {
+        let e = &banked[dir];
+        with_integrand(
+            dir,
+            &e.process,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+            None,
+            |integ, _alphas| {
+                // One grid over the mixture: the maximum is taken over every
+                // channel's points at once, so the worst channel sets it.
+                let (grid, shared) = integ.adapt_grid(neval, niter, SEED);
+                let mut rng = ChaCha8Rng::seed_from_u64(WMAX_SEED);
+                let mut x = vec![0.0; grid.ndim()];
+                let mut w_max_shared = 0.0f64;
+                for _ in 0..WMAX_DRAWS {
+                    let jac = grid.draw(&mut rng, &mut x);
+                    w_max_shared = w_max_shared.max(jac * integ.value(&x) * GEV2_TO_PB);
+                }
+
+                // One grid per channel: each channel is unweighted against its own
+                // maximum, and the efficiency is set by their sum.
+                let (channels, split) = integ.adapt_grids(neval, niter, SEED);
+                let total_neval: usize = channels.iter().map(|c| c.neval).sum();
+                let mut w_max_each = Vec::with_capacity(channels.len());
+                for (j, ch) in channels.iter().enumerate() {
+                    let draws = (WMAX_DRAWS * ch.neval / total_neval).max(MIN_CHANNEL_DRAWS);
+                    let mut rng = ChaCha8Rng::seed_from_u64(WMAX_SEED);
+                    rng.set_stream(1 + j as u64);
+                    let mut x = vec![0.0; ch.grid.ndim()];
+                    let mut w_max = 0.0f64;
+                    for _ in 0..draws {
+                        let jac = ch.grid.draw(&mut rng, &mut x);
+                        w_max = w_max.max(jac * integ.value_in_channel(j, &x) * GEV2_TO_PB);
+                    }
+                    w_max_each.push(w_max);
+                }
+
+                let sigma_shared = shared.integral * GEV2_TO_PB;
+                let sigma_split = split.integral * GEV2_TO_PB;
+                let w_max_sum: f64 = w_max_each.iter().sum();
+                let w_hi = w_max_each.iter().cloned().fold(0.0f64, f64::max);
+                let w_lo = w_max_each
+                    .iter()
+                    .cloned()
+                    .filter(|w| *w > 0.0)
+                    .fold(f64::INFINITY, f64::min);
+                let eff_shared = sigma_shared / w_max_shared;
+                let eff_split = sigma_split / w_max_sum;
+                eprintln!(
+                    "-- {dir} ({} channels) --\n  \
+                     global   w_max     = {w_max_shared:.4e} pb -> unweighting eff {eff_shared:.2e}\n  \
+                     per-chan sum w_max = {w_max_sum:.4e} pb -> unweighting eff {eff_split:.2e} \
+                     ({:.2}x the global)\n  \
+                     per-channel w_max spread: max {w_hi:.4e}, min {w_lo:.4e} (ratio {:.1e}), \
+                     largest channel is {:.0}% of the sum",
+                    channels.len(),
+                    eff_split / eff_shared,
+                    w_hi / w_lo.max(f64::MIN_POSITIVE),
+                    100.0 * w_hi / w_max_sum,
+                );
+            },
+        );
     }
 }
 
