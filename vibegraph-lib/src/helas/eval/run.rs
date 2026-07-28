@@ -460,8 +460,13 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
     /// per-flow JAMPs `J_i` — the scalar children of the [`Op::Flows`] root. Backs the
     /// per-flow JAMP probes ([`eval_m2`](Self::eval_m2) reads its JAMPs from the
     /// helicity-expanded root instead).
-    #[cfg(test)]
-    fn run_flows(
+    ///
+    /// This is the finest linear object the evaluator exposes, and the only one at
+    /// which a per-flow phase, a per-flow normalisation, or a permutation of the
+    /// colour basis is observable: [`eval_m2`](Self::eval_m2) contracts the flows
+    /// through CF and [`eval_jamp2`](Self::eval_jamp2) squares them, so both are
+    /// blind to a phase. Allocates per call; a validation handle, not a hot path.
+    pub fn run_flows(
         &self,
         momenta: &[LorentzVector<F>],
         helicities: &[i32],
@@ -647,7 +652,6 @@ fn run_forward_typed<F: Real>(
 /// Evaluate a `Flows`-rooted arena through the typed instruction stream, returning each
 /// JAMP scalar (the root's children) in flow order. Assumes [`resolve_moms`] has populated
 /// the momentum pool for this point. Backs the per-flow JAMP probes.
-#[cfg(test)]
 fn run_forward_flows_typed<F: Real>(
     folded: &Folded,
     env: &EvalEnv<'_, F>,

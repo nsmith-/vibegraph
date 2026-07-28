@@ -121,6 +121,25 @@ Individual steps are also available:
 - `pixi run -e madgraph build-diagrams` — generate MadGraph output
 - `pixi run -e madgraph extract-diagrams` — extract diagram counts to JSON
 
+#### Colour-Flow JAMP / JAMP2
+
+The `color_jamp_oracle` test compares vibegraph's per-flow JAMPs — and the `JAMP2`
+weights a colour-flow selection draws from — against banked MadGraph `JAMP()` values,
+element-wise and complex. This is the level the CF-contracted |M|² is blind to: a
+per-flow phase, a per-flow normalisation, or a permutation of the colour basis leaves
+|M|² and σ exact while skewing the emitted colour-flow statistics.
+
+**When to run:** after modifying `helas/color/`, the flow root, or anything that could
+reorder the colour basis.
+
+```bash
+pixi run -e madgraph validate-color-jamp
+```
+
+The reference (`validation/madgraph/jamp_reference.json`) is committed; regenerate with
+`pixi run -e madgraph generate-jamp-reference` only when the banked phase-space points
+or the process list change.
+
 #### Running Coupling and Per-Event Scales
 
 `validate_alphas` checks the strong coupling's RGE evolution; `validate_scales` checks

@@ -13,9 +13,15 @@ global sign/phase, factored out and reported separately).
 For a multi-flow process the same matcher is run over the per-flow JAMPs
 (vibegraph_jamps_<name>.txt, written by the probe for NCOLOR > 1) against
 MadGraph's JAMP(1:NCOLOR). Because both sides order flows by the color basis's
-sorted keys, the auto-matched (vg_flow -> mg_flow) pairing should be the
-identity; any permutation, global phase, or conjugation it reveals is a real
-finding about the basis convention, not a display artifact.
+sorted keys, the (vg_flow -> mg_flow) pairing should be the identity, and the
+matcher takes the identity whenever it fits at least as well as any other
+pairing — see greedy_match for why overlap alone cannot decide.
+
+This script is a diagnosis tool, not a gate. The enforcing per-flow JAMP oracle
+is vibegraph-lib/tests/color_jamp_oracle.rs, which compares against banked
+MadGraph JAMP values element-wise under the identity pairing at a fixed
+tolerance; use this script when that oracle fails and you need the per-diagram
+breakdown behind it.
 
 Usage:
   pixi run -e madgraph python validation/madgraph/compare_amps.py <name>
@@ -58,7 +64,17 @@ def read_vg_dump(path):
 
 def greedy_match(vg, mg):
     """Greedy 1-1 matching of vg rows to mg rows by normalized overlap. Returns
-    (pairs sorted by vg index, overlap matrix)."""
+    (pairs sorted by vg index, overlap matrix).
+
+    Overlap alone does not determine a pairing when the rows are linearly
+    dependent, and for colour flows they routinely are: the tree-level four-gluon
+    amplitude is MHV, so every colour-ordered partial carries the same helicity
+    dependence (Parke-Taylor) and `g g > g g`'s [flow x helicity] JAMP matrix is
+    rank 1. Every pair of rows then has overlap exactly 1 and greedy max-overlap
+    picks a pairing arbitrarily, reporting a spurious permutation and spurious
+    |r| values. Since the expected answer is the identity (both sides order flows
+    by the colour basis's sorted keys), the identity pairing wins any tie; a
+    reported permutation then means the identity genuinely fits worse."""
     vgn = np.linalg.norm(vg, axis=1)
     mgn = np.linalg.norm(mg, axis=1)
     overlap = np.abs(vg.conj() @ mg.T) / np.outer(
@@ -81,6 +97,11 @@ def greedy_match(vg, mg):
         used_mg.add(best[1])
         pairs.append(best)
     pairs.sort()
+    if vg.shape[0] == mg.shape[0]:
+        identity = [(i, i) for i in range(vg.shape[0])]
+        score = lambda ps: sum(overlap[i, j] for i, j in ps)
+        if score(identity) >= score(pairs) - 1e-9:
+            pairs = identity
     return pairs, overlap
 
 
@@ -105,9 +126,15 @@ def report_match(label, vg, mg, sigs, name, strict_phase):
     phases = np.array([np.angle(r) for r in ratios.values()])
     global_phase = np.median(phases)
     identity = all(i == j for i, j in pairs)
+    # Row counts differ only for the per-diagram AMP comparison, where MadGraph
+    # splits a multi-structure vertex across several AMP() slots vibegraph keeps
+    # in one diagram root (the 4-gluon vertex's three colour structures). The
+    # numbering cannot line up there, so a permutation is expected, not a finding.
+    same_shape = vg.shape[0] == mg.shape[0]
     print(f" global phase (median arg r) = {np.degrees(global_phase):+.2f} deg")
     print(f" flow/diagram map is identity: {identity}"
-          + ("" if identity else "   <-- PERMUTATION"))
+          + ("" if identity or not same_shape else "   <-- PERMUTATION")
+          + ("" if same_shape else "   (row counts differ; numbering cannot align)"))
     print(f" vg   mg   overlap    |r|        arg(r)-global [deg]   label")
     mag_ok = True
     phase_ok = True
@@ -129,7 +156,7 @@ def report_match(label, vg, mg, sigs, name, strict_phase):
             f" {i:3}  {j:3}  {overlap[i, j]:.6f}  {np.abs(r):.6f}  {rel_phase:+10.4f}"
             f"        [{sigs[i]}]{flag}"
         )
-    ok = identity and mag_ok and (phase_ok or not strict_phase)
+    ok = (identity or not same_shape) and mag_ok and (phase_ok or not strict_phase)
     note = ""
     if ok and not phase_ok:
         note = " (per-diagram phase conventions differ; absorbed at JAMP level)"

@@ -74,7 +74,10 @@ to re-run MG's Python.
 `ColorBasis::elements` is documented as MadGraph's JAMP order
 (`sorted(ColorBasis.keys())`), and that holds through NCOLOR=2 — but note 16 §"JAMP-level
 probe" records that at **NCOLOR=6 (`gg_to_gg`) vibegraph's basis and MG's 6 JAMPs
-span the same space without being a 1:1 labelling**. An index-keyed transcription
+span the same space without being a 1:1 labelling**. (That premise turned out to be
+false — see §E1c — but the conclusion below stands on its own: a transcribed table
+agrees with MadGraph by construction and so cannot detect a mislabelling, whether or
+not one exists.) An index-keyed transcription
 would therefore be silently wrong exactly where it matters most, and — per the
 AGENTS.md rule — a transposed or permuted dictionary is invisible to every
 |M|²-level gate we own, because |M|² contracts the flows away.
@@ -168,23 +171,75 @@ Mutation-checked: permuting flows 0↔1 in the derived table fails 7 subprocesse
 including `gg_to_gg`, so the oracle really is sensitive to the flow labelling
 that |M|² provably cannot see.
 
-**Carried to E2.** vibegraph's per-flow JAMPs are *not* known to match MadGraph's
-element-wise at NCOLOR=6 (note 16's caveat, still open — the `compare_amps.py`
-strict-phase JAMP diff fails there while the CF-contracted |M|² is machine-exact
-at 8.25e-14). Since `JAMP2` *is* the colour-selection weight, a per-flow phase or
-normalisation difference would leave |M|² and σ untouched while shifting the
-colour-flow **statistics** of the emitted events for `g g > g g`. The CF matrix
-is positive-definite there (eigenvalues 5/2, 9/2), so the difference cannot be a
-CF-null vector; the open candidates are a per-flow phase/normalisation convention
-or a CF-symmetry flow permutation in MadGraph's JAMP assembly. Worth resolving
-before the colour tags are trusted for a shower handoff on pure-gluon processes;
-everything with NCOLOR ≤ 2 is unaffected (those JAMPs do match element-wise).
+**Carried to E2 — resolved, see E1c below.**
 
 **Gate observed.** `cargo test` all green (440 lib + integration suites);
 `validate_helas_mg` **14/14 bit-exact/at-tolerance, unchanged** (`uux_to_uux`
 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14); `validate_sigma` 11 GATE
 rows unchanged; `validate_diagrams` 16/16; `validate_helas` 2/2;
 `color_cf_oracle` 24/24; new `color_flow_tags_oracle` 24/24.
+
+### E1c — the NCOLOR=6 JAMP question, closed (2026-07-27) ✅
+
+Diagnosis session on the caveat E1 carried forward. **There is no discrepancy.**
+vibegraph's per-flow JAMPs equal MadGraph's element-wise under the identity flow
+pairing — every flow, every helicity, all 5 banked phase-space points — up to a
+single global phase `g` (`-i` for `uux_to_uux` and `gg_to_gg`, `+i` for
+`gg_to_ttx`), the same `i`-placement convention already visible at the
+per-diagram `AMP()` level. Max element-wise deviation 3.7e-16 at NCOLOR=6.
+
+The caveat was an artifact of `compare_amps.py`'s greedy overlap matcher. At tree
+level the four-gluon amplitude is MHV, so by Parke–Taylor every colour-ordered
+partial carries the same helicity dependence ⟨ij⟩⁴ and the `[flow × helicity]`
+JAMP matrix is **rank 1**. Every pair of rows then has overlap exactly 1, greedy
+max-overlap pairs them arbitrarily, and the `|r|` values it prints are the norm
+ratios of mismatched rows. (`gg_to_ttx` is rank 1 too and passed only by luck of
+enumeration order — the rig was never sound for either.) The matcher now prefers
+the identity pairing on ties, and all three multi-flow processes report MATCH.
+
+**`JAMP2` is unaffected, so E2's colour selection is sound at NCOLOR=6.**
+`|g| = 1` to 4.4e-16, and a phase dies in `norm_sqr`; `eval_jamp2` reproduces
+`Σ_hel |JAMPᵢ^mg|²` to 1.1e-15 for `gg_to_gg`. E2 needs no compensation and no
+NCOLOR≤2 restriction.
+
+Pinned by `vibegraph-lib/tests/color_jamp_oracle.rs` (new, `extended-validation`,
+3/3), against `validation/madgraph/jamp_reference.json` — MadGraph `JAMP()` values
+banked by `gen_jamp_reference.py`, committed since the MG output tree is
+gitignored. `g` is fitted once per process by least squares over every
+(point, helicity, flow) entry, so it has nowhere to hide per-flow structure, and
+`|g| = 1` is asserted separately — without that, a uniform rescaling would be
+absorbed by the fit and would silently rescale every selection weight.
+Mutation-checked against the four error classes |M|² cannot see: a per-flow phase
+(0.1 rad → 6.7e-2), a per-flow rescale (1.001 → 6.7e-4), a flow permutation
+(2↔3 → 1.1e0) and a global rescale (→ the `|g|` assertion) each trip it.
+
+Two claims verified rather than assumed:
+- CF at NCOLOR=6 is `(7/2)I + P − (1/3)J` with `P` the trace-reversal involution
+  `(1,6)(2,4)(3,5)`; eigenvalues 5/2 (×4), 9/2 (×2) — positive definite, so a
+  CF-null flow combination does not exist. The danger was never a null vector, it
+  was CF's large automorphism group, which permutes `JAMP2` while fixing |M|².
+- `color_cf_oracle` reports no `ORDER-DIFF` for `g g > g g`, so the basis ordering
+  really is the identity and the element-wise comparison is meaningful.
+
+**Known blind spot, documented not closed.** For `gg_to_gg` the trace-reversal
+partners carry *identical* JAMPs (`J₁ = J₆`, `J₂ = J₄`, `J₃ = J₅`, read straight
+off MadGraph's `JAMP(1,1) = JAMP(6,1) = 2·(AMP(3)+AMP(6)−AMP(1)−AMP(4))`).
+Swapping such a pair is invisible to the JAMP values, to `JAMP2` and to |M|² —
+but not to `color_flow_tags_oracle`, whose `leshouche.inc` connectivity comparison
+distinguishes the two orientations. The pair ambiguity is covered there.
+
+**Consequence for E3.** None beyond what E1b already recorded: the flow → `ICOLUP`
+dictionary is unchanged, and the label-relabelling caveat for gluon-initiated
+processes still stands (normalise colour labels before any byte-level `.lhe`
+diff). What changes is that pure-gluon colour-flow *statistics* are now known
+correct, not merely unfalsified — so a shower handoff on `g g > g g` is on the
+same footing as NCOLOR≤2.
+
+**Gate observed.** `cargo test` all green (440 lib tests + integration suites);
+`validate_helas_mg` **14/14 unchanged** (`uux_to_uux` 5.61e-14, `gg_to_ttx`
+1.89e-15, `gg_to_gg` 8.25e-14); `color_cf_oracle` 24/24;
+`color_flow_tags_oracle` 24/24; `color_jamp_oracle` 3/3 (`uux_to_uux` 2.4e-16,
+`gg_to_ttx` 2.7e-15, `gg_to_gg` 3.7e-16 element-wise; JAMP2 ≤ 1.8e-15).
 
 ## E2 — `accept-reject` (+ `mg-single-helicity-bench`)
 
