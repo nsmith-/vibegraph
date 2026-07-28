@@ -1,6 +1,6 @@
 //! On-disk artifact for a completed `vibegraph integrate` run: the adapted
 //! VEGAS grids plus enough run metadata (seed, evaluation counts, process,
-//! PDF set, the resolved run card) for a later phase to detect a mismatched
+//! model, PDF set, the resolved run card) for a later phase to detect a mismatched
 //! input rather than silently sampling against the wrong grid.
 //!
 //! Encoding is bincode, zstd-compressed — the same pairing already used for
@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::runcard::RunCard;
+use crate::ufo::identity::ModelIdentity;
 use crate::vegas::VegasGrid;
 
 /// Bumped whenever [`IntegrateArtifact`]'s shape changes in a way that would
@@ -22,7 +23,11 @@ use crate::vegas::VegasGrid;
 /// the channel mixture, with each channel's selection weight and its share of the
 /// integral alongside — so a reader can neither mistake a channel's grid for the
 /// whole map nor reweight a term without its `αⱼ`.
-pub const FORMAT_VERSION: u32 = 2;
+///
+/// `3` adds [`IntegrateArtifact::model`], so a later phase can tell which model the
+/// grids were trained under instead of inferring it from a process string that two
+/// different models spell the same way.
+pub const FORMAT_VERSION: u32 = 3;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -68,11 +73,48 @@ pub struct ChannelGrid {
 
 /// The result of one `vibegraph integrate` run: the trained [`VegasGrid`]s plus
 /// the inputs that produced them.
+///
+/// # A compiled-program cache would key on `(model, process)`
+///
+/// [`model`](Self::model) and [`process`](Self::process) together are the whole
+/// input to amplitude compilation: model assets → diagram enumeration → HELAS
+/// evaluator. A cache that let `generate` load a compiled
+/// [`AmplitudeEvaluator`](crate::helas::eval::AmplitudeEvaluator) instead of
+/// recompiling would key on exactly `(model.digest, process, compiler schema
+/// version)` — the first two banked here, the third belonging to the cache entry
+/// (it says which compiler wrote the program, which this artifact cannot know).
+/// So no field is reserved for it: the key is already derivable, and adding the
+/// cache needs no schema bump.
+///
+/// Nothing loads such a cache today, and the measurement says not to build one
+/// yet: compilation costs 0.05–0.29 s for every process the CLI can run, against
+/// ~13 s for a 20k-event `generate`. Three things would have to be settled first,
+/// and none is a `derive`:
+///
+/// * **Nothing in `helas::eval` is serde-serialisable.** `Op`, `Node<T>`, `Sym`,
+///   `Const`, `Folded` and the layout/constant-pool specs would all need it, and
+///   their own schema version — the arena's encoding is an internal representation
+///   that has changed repeatedly for performance, so it cannot ride the artifact's
+///   version.
+/// * **"The compiled program" is not one fixed object.** `folded_hel` is an
+///   `OnceLock` built lazily on first `eval_m2`, and it is the large part. Whether
+///   the expanded arena travels with a cached program, or is rebuilt on load, is a
+///   decision about what the cache is even for.
+/// * **A pruned evaluator carries a kinematic contract.** `prune_zero_helicities`
+///   mutates the evaluator and is correct only for partonic-CM momenta with beams
+///   along ±z; replayed under other kinematics it is silently wrong. The pruned
+///   flag must not travel unless the contract travels with it and is rechecked on
+///   load.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntegrateArtifact {
     pub format_version: u32,
     /// The process string this artifact was integrated for (`"p p > e+ e-"`).
     pub process: String,
+    /// The model the amplitudes were compiled from. A process string is not a
+    /// model: `import model sm` and `import model sm-no_b_mass` spell the same
+    /// `generate` line while giving different physics, so the model is banked and
+    /// compared rather than assumed.
+    pub model: ModelIdentity,
     pub pdf_set: String,
     pub pdf_member: u32,
     /// Factorization scale μF (GeV).
@@ -152,6 +194,7 @@ impl IntegrateArtifact {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ufo::sm::SMRestrict;
     use crate::vegas::VegasGrid;
 
     fn one_channel(grid: VegasGrid) -> ChannelGrid {
@@ -169,6 +212,7 @@ mod tests {
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
             process: "p p > e+ e-".to_string(),
+            model: ModelIdentity::interned_sm(SMRestrict::Default),
             pdf_set: "NNPDF23_lo_as_0130_qed".to_string(),
             pdf_member: 0,
             mu_f: 91.1880,
@@ -198,6 +242,7 @@ mod tests {
 
         assert_eq!(reloaded.format_version, artifact.format_version);
         assert_eq!(reloaded.process, artifact.process);
+        assert_eq!(reloaded.model, artifact.model);
         assert_eq!(reloaded.pdf_set, artifact.pdf_set);
         assert_eq!(reloaded.pdf_member, artifact.pdf_member);
         assert_eq!(reloaded.mu_f.to_bits(), artifact.mu_f.to_bits());
@@ -338,8 +383,10 @@ mod tests {
 
     /// An artifact written under a different schema version is refused by version,
     /// not decoded into whatever the current field order accepts. The payload here
-    /// is the previous schema — a single `grid` where `channels` now sits — which
-    /// is exactly the shape a silent misread would consume.
+    /// is the previous schema — no `model`, so every field after `process` sits one
+    /// slot early — which is exactly the shape a silent misread would consume: a
+    /// positional decode would take the PDF set's bytes for a model name and carry
+    /// on.
     #[test]
     fn read_refuses_a_foreign_format_version() {
         #[derive(Serialize)]
@@ -354,7 +401,7 @@ mod tests {
             niter: usize,
             seed: u64,
             run_card: RunCard,
-            grid: VegasGrid,
+            channels: Vec<ChannelGrid>,
             sigma_pb: f64,
             sigma_err_pb: f64,
             chi2_per_dof: f64,
@@ -371,7 +418,7 @@ mod tests {
             niter: 2,
             seed: 42,
             run_card: RunCard::default(),
-            grid: VegasGrid::new(3, 64, 1.5),
+            channels: vec![one_channel(VegasGrid::new(3, 64, 1.5))],
             sigma_pb: 934.42,
             sigma_err_pb: 0.87,
             chi2_per_dof: 1.02,
