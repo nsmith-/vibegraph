@@ -92,6 +92,16 @@ impl SMRestrict {
 /// The compressed, serialized pre-restriction SM [`ParsedModel`] blob.
 static SM_PARSED_BLOB: &[u8] = include_bytes!("sm_assets/sm_parsed.bin.zst");
 
+/// The interned bytes a variant's [`sm_model`] is built from: the shared
+/// pre-restriction blob and that variant's restrict card.
+///
+/// Together these are the model's whole input, so a digest over them identifies
+/// the model more sharply than its name does — two builds whose restrict cards
+/// were regenerated with different contents under the same name differ here.
+pub fn sm_assets(restrict: SMRestrict) -> [&'static [u8]; 2] {
+    [SM_PARSED_BLOB, restrict.restrict_card_text().as_bytes()]
+}
+
 /// zstd + bincode (de)serialization of the pre-restriction parsed model.
 ///
 /// Shared by the runtime loader and the `gen_sm_blob` dev binary so both agree

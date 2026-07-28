@@ -425,6 +425,21 @@ fn a_card_that_did_not_train_the_grid_is_refused() {
         "a proc card for a different process",
     );
 
+    // The same `generate` line under a different model: nothing the process string
+    // or the run card can see moves, only the model does. The artifact's own model
+    // identity is the only thing standing between this and a sample produced from
+    // a different model than the grids were trained on.
+    let other_model = run.dir.join("other_model_proc_card.dat");
+    std::fs::write(
+        &other_model,
+        format!("import model sm-no_b_mass\ngenerate {PROCESS}\n"),
+    )
+    .unwrap();
+    expect_refusal(
+        run.refuse(&other_model, Some(&run.run_card), "never.lhe"),
+        "a proc card importing a different restrict variant",
+    );
+
     // An omitted run card resolves to the MadGraph LO defaults — proton beams —
     // and must not pass as "no card given, so nothing to disagree with".
     expect_refusal(

@@ -2,6 +2,7 @@ pub mod ast_util;
 pub mod color;
 pub mod couplings;
 pub mod expr;
+pub mod identity;
 pub mod lorentz;
 pub mod parameters;
 pub mod particles;
@@ -25,6 +26,22 @@ use thiserror::Error;
 use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
 
 use topo::build_feyngraph_model;
+
+/// UFO source files [`ParsedModel::parse`] requires, in read order.
+///
+/// Shared with [`identity::ModelIdentity::from_ufo_dir`] so a model's digest covers
+/// exactly the files its parse consumed.
+pub const REQUIRED_SOURCE_FILES: [&str; 5] = [
+    "particles.py",
+    "lorentz.py",
+    "couplings.py",
+    "parameters.py",
+    "vertices.py",
+];
+
+/// UFO source files [`ParsedModel::parse`] reads when present, falling back to a
+/// built-in default when absent.
+pub const OPTIONAL_SOURCE_FILES: [&str; 1] = ["coupling_orders.py"];
 
 // Default SM coupling hierarchy: QCD (strong) counts once, QED (electroweak) counts twice.
 // Used when coupling_orders.py is absent or contains no hierarchy data.
@@ -135,11 +152,13 @@ impl ParsedModel {
             })
         };
 
-        let particles_src = read("particles.py")?;
-        let lorentz_src = read("lorentz.py")?;
-        let couplings_src = read("couplings.py")?;
-        let params_src = read("parameters.py")?;
-        let vertices_src = read("vertices.py")?;
+        let [particles_src, lorentz_src, couplings_src, params_src, vertices_src] =
+            REQUIRED_SOURCE_FILES.map(read);
+        let particles_src = particles_src?;
+        let lorentz_src = lorentz_src?;
+        let couplings_src = couplings_src?;
+        let params_src = params_src?;
+        let vertices_src = vertices_src?;
 
         let particles: IndexMap<String, Particle> = parse_particles(&particles_src)?
             .into_iter()
@@ -163,7 +182,7 @@ impl ParsedModel {
 
         // Parse coupling_orders.py for the WEIGHTED order hierarchy.
         // Fall back to SM defaults (QCD=1, QED=2) if the file is absent or unparseable.
-        let order_hierarchy = match std::fs::read_to_string(path.join("coupling_orders.py")) {
+        let order_hierarchy = match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[0])) {
             Ok(src) => {
                 let parsed = parse_coupling_orders_hierarchy(&src);
                 if parsed.is_empty() {

@@ -2,10 +2,11 @@
 //! unweighted event sample, serialised as a Les Houches Event File.
 //!
 //! The grid artifact is the run: it carries the trained per-channel VEGAS grids,
-//! the channel selection weights they were trained under, the resolved run card
-//! and the process string. What it does **not** carry is the compiled amplitude,
-//! so the proc card has to be supplied again — and is then checked against the
-//! artifact rather than trusted. A grid trained on one process and replayed
+//! the channel selection weights they were trained under, the resolved run card,
+//! the process string and the identity of the model behind it. What it does
+//! **not** carry is the compiled amplitude, so the proc card has to be supplied
+//! again — and is then checked against the artifact rather than trusted. A grid
+//! trained on one process, or on the same process in another model, and replayed
 //! against another samples a perfectly plausible-looking wrong distribution, so
 //! the mismatch is refused instead of being taken as new input.
 //!
@@ -32,6 +33,7 @@ use vibegraph::lhef::emit::{
 use vibegraph::lhef::write::generator_element;
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::runcard::{BeamMode, RunCard};
+use vibegraph::ufo::identity::ModelIdentity;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::Unweighter;
 
@@ -113,8 +115,8 @@ pub struct CardMismatch {
     pub given: String,
 }
 
-/// Every difference between the cards this run was given and the ones banked in
-/// the artifact.
+/// Every difference between the inputs this run was given and the ones banked in
+/// the artifact: the model, the process, and every run-card parameter.
 ///
 /// The comparison is exact and covers every run-card parameter, including the ones
 /// no physics reads: the card is a fingerprint of the run, an unexplained
@@ -123,12 +125,33 @@ pub struct CardMismatch {
 /// grid gets sampled anyway. Float parameters are compared for equality rather
 /// than within a tolerance for the same reason — both sides are the same parser's
 /// output, so any difference is a real one.
+///
+/// The model is compared twice over. Its `import model` label catches the case a
+/// reader would recognise (`sm` versus `sm-no_b_mass` under an identical `generate`
+/// line, which the process string alone spells the same way); its digest catches
+/// the case no label can see, a model whose assets changed underneath an unchanged
+/// name. A differing label already implies a differing digest, so only the label is
+/// reported then — the digest check is what has teeth when the labels agree.
 pub fn card_mismatches(
     artifact: &IntegrateArtifact,
+    model: &ModelIdentity,
     process: &str,
     run_card: &RunCard,
 ) -> Vec<CardMismatch> {
     let mut out = Vec::new();
+    if artifact.model.label() != model.label() {
+        out.push(CardMismatch {
+            what: "model".to_string(),
+            banked: artifact.model.label(),
+            given: model.label(),
+        });
+    } else if artifact.model.digest != model.digest {
+        out.push(CardMismatch {
+            what: format!("model `{}` contents", model.label()),
+            banked: artifact.model.digest.clone(),
+            given: model.digest.clone(),
+        });
+    }
     if artifact.process != process {
         out.push(CardMismatch {
             what: "process".to_string(),
@@ -172,7 +195,7 @@ fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), IntegrateError>
         return Ok(());
     }
     let mut msg = String::from(
-        "the cards do not match the ones the grid was trained on; \
+        "the inputs do not match the ones the grid was trained on; \
          re-integrate, or pass the cards that produced this artifact\n",
     );
     for m in mismatches {
@@ -320,14 +343,14 @@ pub fn run(args: &GenerateArgs) -> Result<(), IntegrateError> {
         restrict_path_override: None,
         run_card_path: args.run_card.clone(),
     };
-    let model = config
-        .load_ufo(&parsed.model)
+    let (model, model_id) = config
+        .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
     let rc = config
         .load_run_card()
         .map_err(|e| err(format!("failed to load run card: {e}")))?;
 
-    refuse_on_mismatch(&card_mismatches(&artifact, &process, &rc))?;
+    refuse_on_mismatch(&card_mismatches(&artifact, &model_id, &process, &rc))?;
 
     if rc.beam_mode() != BeamMode::FixedEnergy {
         return Err(err(
@@ -587,12 +610,18 @@ fn report(
 mod tests {
     use super::*;
     use vibegraph::artifact::{ChannelGrid, FORMAT_VERSION};
+    use vibegraph::ufo::sm::SMRestrict;
     use vibegraph::vegas::VegasGrid;
+
+    fn sm() -> ModelIdentity {
+        ModelIdentity::interned_sm(SMRestrict::Default)
+    }
 
     fn artifact(process: &str, run_card: RunCard) -> IntegrateArtifact {
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
             process: process.to_string(),
+            model: sm(),
             pdf_set: "none".to_string(),
             pdf_member: 0,
             mu_f: 0.0,
@@ -629,12 +658,44 @@ mod tests {
         let banked = artifact("e+ e- > mu+ mu-", card(BASE_CARD));
         // The matching case first, so a check that refuses everything is not
         // mistaken for one that works.
-        assert!(card_mismatches(&banked, "e+ e- > mu+ mu-", &card(BASE_CARD)).is_empty());
+        assert!(card_mismatches(&banked, &sm(), "e+ e- > mu+ mu-", &card(BASE_CARD)).is_empty());
 
         let moved = card("  0 = lpp1\n  0 = lpp2\n  100.0 = ebeam1\n  45.6 = ebeam2\n");
-        let found = card_mismatches(&banked, "e+ e- > mu+ mu-", &moved);
+        let found = card_mismatches(&banked, &sm(), "e+ e- > mu+ mu-", &moved);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].what, "run card `ebeam1`");
+        assert!(refuse_on_mismatch(&found).is_err());
+    }
+
+    /// The gap this check exists for: `import model sm-no_b_mass` writes the same
+    /// `generate` line and the same run card, so nothing else in the comparison
+    /// moves — only the model does.
+    #[test]
+    fn a_different_restrict_variant_is_refused() {
+        let banked = artifact("e+ e- > mu+ mu-", card(BASE_CARD));
+        let other = ModelIdentity::interned_sm(SMRestrict::NoBMass);
+        let found = card_mismatches(&banked, &other, "e+ e- > mu+ mu-", &card(BASE_CARD));
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].what, "model");
+        assert_eq!(found[0].banked, "sm-default");
+        assert_eq!(found[0].given, "sm-no_b_mass");
+        assert!(refuse_on_mismatch(&found).is_err());
+    }
+
+    /// The case the name provably cannot see: same model, same restrict-card name,
+    /// different card contents. Only the digest separates these, so this is the
+    /// test that fails if the digest comparison is dropped.
+    #[test]
+    fn a_restrict_card_that_changed_under_its_name_is_refused() {
+        let banked = artifact("e+ e- > mu+ mu-", card(BASE_CARD));
+        let mut altered = sm();
+        assert_eq!(altered.label(), banked.model.label());
+        altered.digest = vibegraph::ufo::identity::digest(&[b"a different restrict card"]);
+
+        let found = card_mismatches(&banked, &altered, "e+ e- > mu+ mu-", &card(BASE_CARD));
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].what, "model `sm-default` contents");
+        assert_ne!(found[0].banked, found[0].given);
         assert!(refuse_on_mismatch(&found).is_err());
     }
 
@@ -644,7 +705,7 @@ mod tests {
     fn a_changed_cut_is_refused_too() {
         let banked = artifact("e+ e- > mu+ mu-", card(BASE_CARD));
         let recut = card(&format!("{BASE_CARD}  25.0 = ptl\n"));
-        let found = card_mismatches(&banked, "e+ e- > mu+ mu-", &recut);
+        let found = card_mismatches(&banked, &sm(), "e+ e- > mu+ mu-", &recut);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].what, "run card `ptl`");
     }
@@ -652,7 +713,7 @@ mod tests {
     #[test]
     fn a_different_process_is_refused() {
         let banked = artifact("e+ e- > mu+ mu-", card(BASE_CARD));
-        let found = card_mismatches(&banked, "e+ e- > ta+ ta-", &card(BASE_CARD));
+        let found = card_mismatches(&banked, &sm(), "e+ e- > ta+ ta-", &card(BASE_CARD));
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].what, "process");
         assert_eq!(found[0].banked, "e+ e- > mu+ mu-");
@@ -665,7 +726,7 @@ mod tests {
     #[test]
     fn omitting_the_run_card_does_not_pass_as_a_match() {
         let banked = artifact("e+ e- > mu+ mu-", card(BASE_CARD));
-        let found = card_mismatches(&banked, "e+ e- > mu+ mu-", &RunCard::default());
+        let found = card_mismatches(&banked, &sm(), "e+ e- > mu+ mu-", &RunCard::default());
         assert!(
             found.iter().any(|m| m.what == "run card `lpp1`"),
             "{found:?}"

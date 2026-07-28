@@ -187,8 +187,8 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
         restrict_path_override: None,
         run_card_path: args.run_card.clone(),
     };
-    let model = config
-        .load_ufo(&parsed.model)
+    let (model, model_id) = config
+        .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
     let rc = config
         .load_run_card()
@@ -207,6 +207,7 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
     let sigma_err_pb = output.result.std_dev * GEV2_TO_PB;
 
     println!("process:  {}", output.process);
+    println!("model:    {} ({})", model_id.label(), model_id.digest);
     println!("PDF set:  {} (member {PDF_MEMBER})", output.pdf_set);
     println!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
     println!(
@@ -226,6 +227,7 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
         process: output.process,
+        model: model_id,
         pdf_set: output.pdf_set,
         pdf_member: PDF_MEMBER,
         mu_f: output.mu_f,

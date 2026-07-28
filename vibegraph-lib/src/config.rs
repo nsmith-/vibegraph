@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use crate::diagrams::ModelImport;
 use crate::runcard::{RunCard, RunCardError};
+use crate::ufo::identity::ModelIdentity;
 use crate::ufo::sm::{sm_model, SMRestrict};
 use crate::ufo::{UFOModel, UfoError};
 
@@ -36,8 +37,23 @@ impl GlobalConfig {
     /// - `sm` (with optional `-<variant>` suffix) → the interned SM variant.
     /// - Any other model name → loaded from `ufo_search_path/<name>/`.
     pub fn load_ufo(&self, spec: &Option<ModelImport>) -> Result<Arc<UFOModel>, UfoError> {
+        self.load_ufo_with_identity(spec).map(|(model, _)| model)
+    }
+
+    /// Resolve an `import model` directive to a loaded model together with the
+    /// [`ModelIdentity`] of the assets it was built from.
+    ///
+    /// Loading and identifying share this one resolution so the digest can never
+    /// describe a different model than the one returned.
+    pub fn load_ufo_with_identity(
+        &self,
+        spec: &Option<ModelImport>,
+    ) -> Result<(Arc<UFOModel>, ModelIdentity), UfoError> {
         let Some(import) = spec else {
-            return Ok(sm_model(SMRestrict::Default));
+            return Ok((
+                sm_model(SMRestrict::Default),
+                ModelIdentity::interned_sm(SMRestrict::Default),
+            ));
         };
 
         if import.name == "sm" {
@@ -54,7 +70,7 @@ impl GlobalConfig {
                         ),
                     }
                 })?;
-            return Ok(sm_model(restrict));
+            return Ok((sm_model(restrict), ModelIdentity::interned_sm(restrict)));
         }
 
         // Non-SM model: read from the UFO search path.
@@ -66,7 +82,10 @@ impl GlobalConfig {
                 .as_ref()
                 .map(|v| dir.join(format!("restrict_{v}.dat"))),
         };
-        UFOModel::load(&dir, restrict.as_deref())
+        let model = UFOModel::load(&dir, restrict.as_deref())?;
+        let label = import.restrict_variant.as_deref().unwrap_or("default");
+        let identity = ModelIdentity::from_ufo_dir(&import.name, label, &dir, restrict.as_deref())?;
+        Ok((model, identity))
     }
 
     /// Resolve the run card: parse [`run_card_path`](Self::run_card_path) if set,
@@ -116,6 +135,25 @@ mod tests {
             }))
             .unwrap();
         assert!(Arc::ptr_eq(&m, &sm_model(SMRestrict::LeptonMasses)));
+    }
+
+    /// The identity handed back describes the variant that was actually resolved,
+    /// down to the restrict card's bytes — the property a later run's refusal
+    /// rests on. It cannot detect a digest that is wrong in the *same* way on both
+    /// sides of a comparison; `ufo::identity` pins the digest's inputs instead.
+    #[test]
+    fn identity_follows_the_resolved_variant() {
+        let cfg = config();
+        let (_, default) = cfg.load_ufo_with_identity(&None).unwrap();
+        let (_, no_b) = cfg
+            .load_ufo_with_identity(&Some(ModelImport {
+                name: "sm".into(),
+                restrict_variant: Some("no_b_mass".into()),
+            }))
+            .unwrap();
+        assert_eq!(default.label(), "sm-default");
+        assert_eq!(no_b.label(), "sm-no_b_mass");
+        assert_ne!(default.digest, no_b.digest);
     }
 
     #[test]
