@@ -726,12 +726,15 @@ unchanged name. Resolution and identification share one path
 (`GlobalConfig::load_ufo_with_identity`), so a banked digest can never describe a
 different model than the one that was loaded.
 
-The digest is a 128-bit FNV-1a over length-framed parts, written out in the
-crate. Neither a cryptographic hash crate nor a stable non-crypto one is in the
-dependency set, and `std`'s `DefaultHasher` is documented as unstable between
-releases — which for a value banked to disk and compared by a later run would mean
-spurious refusals after a toolchain bump. The threat model is an accidental
-mismatch, not a forged one.
+The digest is **SHA-256** (`sha2`) over length-framed parts. It first landed as a
+hand-written 128-bit FNV-1a, on the grounds that no hash crate was in the
+dependency set; that was the wrong trade — a hash function is not something to
+write in-tree when a standard one is a dependency away. What the digest actually
+needs is stability across builds and platforms, which is what rules out `std`'s
+`DefaultHasher` (documented as unstable between releases, so a value banked to
+disk would produce spurious refusals after a toolchain bump). `digest` is pinned
+by known answers against `shasum -a 256`, since a digest that changed silently
+would refuse every artifact written before the change.
 
 **Any artifact written before this must be regenerated** — the prefix version
 check refuses it by name before the body is decoded, as it does for any other
