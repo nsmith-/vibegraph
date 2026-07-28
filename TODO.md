@@ -68,7 +68,7 @@ multi-flow JAMPs + exact CF ✅, and the flow→colour-tag oracle ✅ (MG's gene
 | Session | Scope | Status |
 |---|---|---|
 | E1 | `jamp2-flow-select`: `JAMP2(i) = Σ_hel \|JAMPᵢ\|²` diagonal on the `eval_m2` combination loop (σ untouched), then the flow → `(colour, anticolour)` LHEF tag dictionary **derived from vibegraph's own basis keys** and checked against MG's `leshouche.inc` — element-wise where the bases coincide (NCOLOR≤2), connectivity/basis-change form at `gg_to_gg` NCOLOR=6, where note 16 records the two 6-flow bases are *not* a 1:1 labelling. A transposed dictionary is invisible to every \|M\|²-level gate. | ✅ Landed in the **strong** form everywhere: `color_flow_tags_oracle` asserts derived-vs-`leshouche.inc` line connectivity element-wise per flow index for all **24** MG subprocesses **including `gg_to_gg` NCOLOR=6** — vibegraph's sorted basis keys turn out to reproduce MG's per-flow structure comments 1:1 there (note 16's caveat is about JAMP *values*, not the basis labelling). Labels come out identical to MG's 501-pool on 20/24; the 4 gluon-initiated ones are relabellings of the same connectivity. `eval_jamp2` is a separate entry point (hot path untouched), `validate_helas_mg` 14/14 unchanged, `validate_sigma` rows unchanged. |
-| E2 | `accept-reject` + `mg-single-helicity-bench`: `w_max` estimation, overweight bookkeeping, unweighting efficiency; per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) **selection**, zero effect on σ. Gate: unweighted sample reproduces σ + L5 distributions within MC error (seed-swept). | 🔲 |
+| E2 | `accept-reject` + `mg-single-helicity-bench`: `w_max` estimation, overweight bookkeeping, unweighting efficiency; per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) **selection**, zero effect on σ. Gate: unweighted sample reproduces σ + L5 distributions within MC error (seed-swept). | ✅ `unweight::Unweighter` — frozen per-channel scan for `w_maxⱼ`, channel drawn **`∝ w_maxⱼ`** rather than `∝ σⱼ`: only that rule leaves the kept events `∝ σⱼ` without a compensating per-event weight (plan corrected, note 23 §E2). Overweights are kept at weight `>1` and counted as a rate *and* a cross-section share. Measured efficiency reproduces the predicted `σ/Σⱼw_maxⱼ` to ≤1%, ranging 2.9e-2 (`ee_to_mumua`) – 2.3e-1 (`gg_to_ttx`). `FixedBeamIntegrand::select_event` draws subprocess/helicity/flow off the diagonals. New gate `validate_unweighting` (5 processes × 4 seeds, ~6 s): σ from events vs VEGAS \|pull\| ≤ 1.6, vs an independent weighted reference ≤ 2.1, shape χ²/dof ≤ 1.2. `validate_helas_mg` 14/14 unchanged, 11 σ GATE rows unchanged. **`mg-single-helicity-bench` deferred** — it still needs the MG generated-driver + `gen_amplitude.py` edit and had no bearing on the deliverable. |
 | E3 | `lhef-writer`: `<init>` + `<event>` serialiser incl. E1 colour tags and `SCALUP`/`AQCDUP` from `coupling::scales` (mind the recorded MG `SCALUP` ≠ μR defect, note 07). Pin byte-level against the banked `unweighted_events.lhe.gz`. | 🔲 |
 | E4 | `generate-cli`: `vibegraph generate <artifact> [--nevents …]`, refusing a proc/run-card mismatch against the grid that was trained. Gate: `.lhe` parses downstream; σ from event weights matches `integrate` σ. | 🔲 |
 
@@ -291,9 +291,11 @@ our interpreter doesn't) is untested. Rerun kit for other boxes:
   nodes / −34% slot traffic, so this is a correctness spike with a modest perf
   payoff — sequence it as its own spike, blocking any production rooting change and
   the Track 3 re-rooting rule family.
-- **`mg-single-helicity-bench`** — still deferred to `event-output-lhef` (entry in
-  the Later section), where single-helicity evaluation through the *unexpanded*
-  program becomes the actual hot path.
+- **`mg-single-helicity-bench`** — still deferred, and no longer expected from
+  `event-output-lhef`: E2's accept/reject evaluates helicity-summed |M|² per trial
+  and reads the per-helicity diagonal off the *expanded* program per accepted
+  event, so single-helicity evaluation never became the hot path (entry in the
+  Later section, with the E2 outcome recorded).
 - Long-tail perf backlog (Later section): `feyngraph-perf` allocation hot spot,
   `generate-stream` Part B, `C<F>`-vs-`F` multiply peepholes.
 
@@ -743,3 +745,11 @@ half an oracle. No live consumer until `event-output-lhef` accept/reject makes
 single-helicity the actual hot path. Recommendation: land it **alongside
 `event-output-lhef`**, when the comparison has a consumer and the MG-harness change is
 on the critical path anyway.
+
+**E2 outcome (2026-07-28): still not pulled in.** The consumer did not materialise
+the way A6 predicted. Per-event helicity is a *selection* off the
+`eval_hel_m2` diagonal — one full helicity-summed evaluation per accepted event,
+not a single-helicity one — so accept/reject never made single-helicity evaluation
+the hot path. The MG-harness cost is unchanged and there is still no live consumer;
+E3/E4 will not create one either. Re-sequence it under whatever first needs a
+single fixed helicity in a loop.
