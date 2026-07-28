@@ -16,9 +16,14 @@
 //! through its *effect* rather than its text.
 //!
 //! The digest has to be stable across builds and platforms, which rules out
-//! `std`'s `DefaultHasher` (documented as unstable between releases). Serializing
-//! is deterministic because every collection in `ParsedModel` is an `IndexMap`,
-//! which preserves the parser's insertion order.
+//! `std`'s `DefaultHasher` (documented as unstable between releases). It also
+//! requires that serializing a model be deterministic, so nothing reachable from
+//! [`ParsedModel`] may be a `HashMap`/`HashSet`: their iteration order varies per
+//! map instance and per process. The name-keyed collections are `IndexMap`s
+//! (insertion-ordered, and their order is semantic — `ParticleId`/`CouplingId`
+//! index by it); everything else is a `BTreeMap`/`BTreeSet`, whose key order is
+//! canonical, so a change in parse or traversal order cannot invalidate a banked
+//! digest.
 
 use std::fmt::Write as _;
 
@@ -106,9 +111,10 @@ mod tests {
 
     /// A model's serialized form survives a bincode round trip unchanged, which is
     /// what lets a digest banked during integration be compared against a model
-    /// deserialized later. `ParsedModel`'s collections are `IndexMap`s, so the
-    /// parser's order is preserved; a `HashMap` anywhere in it would make the
-    /// digest depend on iteration order and refuse artifacts at random.
+    /// deserialized later. A `HashMap`/`HashSet` anywhere in `ParsedModel` breaks
+    /// this — its iteration order differs per map instance and per process, so the
+    /// digest would refuse artifacts at random. This test is the guard for that;
+    /// `cli_generate` covers the cross-process case end to end.
     #[test]
     fn the_digest_survives_a_serialization_round_trip() {
         let parsed = super::super::sm::sm_parsed_model();
