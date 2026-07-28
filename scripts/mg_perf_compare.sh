@@ -26,7 +26,8 @@
 # joins are visible).
 #
 # Output: fingerprint + table on stdout; the same as markdown + TSV in
-# target/mg-perf/mg_compare_<os>_<arch>.{md,tsv} for banking in note 15.
+# target/mg-perf/mg_compare_<os>_<arch>.{md,tsv} for banking in the perf
+# notes (15, 20).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

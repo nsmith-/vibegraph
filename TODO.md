@@ -120,11 +120,29 @@ One line each; the note is the full record. Earlier sprints
   deferred rather than committed unvalidated; hand-off design written up
   (`Spine → rungs: Vec`, running `q_i = p_a − Σp`, note-07 §2.9.0 ordering firing
   test). Also where the `uux_to_uux` bias evidence points. (Note 21.)
-- **General kT clustering for `dynamical_scale_choice = -1`** — a subproject in
-  its own right (also what MLM matching needs). 6 banked runs asserted as
-  refused. **Hard prerequisite for gating any QCD process beyond 2→2** — the
+- **`kt-clustering`** — general kT clustering for `dynamical_scale_choice = -1`
+  (sprint sketch; also what MLM matching needs). 6 banked runs are asserted as
+  refused; **hard prerequisite for gating any QCD process beyond 2→2** — the
   no-strong-coupling short-circuit stops covering it the moment the matrix
-  element carries `G`. (`coupling/scales.rs`, `validate_scales.rs`.)
+  element carries `G`. Note 22 §1.3 pins the degenerate closed-form cases;
+  this sprint builds the general path. Sessions:
+  1. **Design note** — read MG's `cluster.f`/`setscales.f`/`reweight.f` path
+     end to end and pin the algorithm: the `djb`/kT measure, which merges are
+     admissible (graph-guided — only vertices the process's diagrams contain),
+     the tie-break order (including the `1 + 1e-6` beam-crossing inflation
+     note 22 §1.3 caught in `uux_to_uux`), and how the cluster sequence maps
+     to μR (the geometric-mean prescription) and per-beam μF.
+  2. **Clustering engine** — diagram-guided kT clustering of an event's
+     external momenta down to a 2→2 core, building on the `ClusterTopology`
+     derivation from the `dynamical-scales` sprint.
+  3. **Scale synthesis + wiring** — replace the closed-form-only `-1` branches
+     in `ScaleChoice` with the general path; the degenerate cases become
+     consistency checks (the general code must reproduce them exactly on the
+     already-gated runs).
+  4. **Gate** — flip the 6 asserted-refused rows in `validate_scales` to
+     enforced per-event replays (`SCALUP`/`<rscale>`/`<pdfrwt>`), then gate a
+     first beyond-2→2 QCD σ row (`pp_to_llj` is already banked).
+  (`coupling/scales.rs`, `validate_scales.rs`, note 22 §1.3/§5.)
 - **Proton-beam (`lpp = 1`) event generation** — the Drell–Yan map has no channel
   decomposition, so no `ChannelIntegrand`; `generate` refuses it by name.
   (Note 23 close-out; `vibegraph-cli/src/generate.rs`.)

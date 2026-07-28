@@ -26,11 +26,15 @@ UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALO
                                                           (multichannel VEGAS)
 ```
 
-"Arbitrary" currently ends at the SM's feature set: a few tensor-coupling
-representations (color sextets, baryonic epsilons, spin ≥ 3/2, Majorana
-fermions) are deliberate hard errors rather than silent gaps, and a handful of
-validation items remain open — both detailed in the sections below and tracked
-in [`TODO.md`](TODO.md).
+"Arbitrary" currently carries two caveats. On the model side it ends at the
+SM's feature set: a few tensor-coupling representations (color sextets,
+baryonic epsilons, spin ≥ 3/2, Majorana fermions) are deliberate hard errors
+rather than silent gaps. On the process side, QCD processes beyond 2→2 are not
+yet gated: MadGraph's default scale prescription there
+(`dynamical_scale_choice = -1`) requires general kT clustering, which
+vibegraph refuses rather than approximates. Both — plus a handful of open
+validation items — are detailed in the sections below and tracked in
+[`TODO.md`](TODO.md).
 
 **Future scope may include**: LO MLM-style matching + merging, and NLO event
 generation.
@@ -235,10 +239,12 @@ loosened tolerances.
 
 ## Performance
 
-Per-point matrix-element evaluation currently sits **within ~1.2×–3.5×** of
-MadGraph's generated, helicity-filtered Fortran (`matrix1_optim.f`) across
-2→2 through 2→6 processes, with a further **1.18×–2.19×** per-process gain
-landed since that measurement. The hadronic Drell–Yan σ run completes in ~2 s
+Per-point matrix-element evaluation currently runs at **0.72×–1.69×** the
+cost of MadGraph's generated, helicity-filtered Fortran (`matrix1_optim.f`) —
+**geometric mean 1.24×** over all 14 gated processes, 2→2 through 2→6.
+Six processes sit at parity (within ~15%), `e+ e- > e+ e-` runs ~1.4×
+*faster* than MadGraph, and the widest gaps are `g g > g g` (1.65×) and the
+massive-b 2→6 (1.69×). The hadronic Drell–Yan σ run completes in ~2 s
 single-threaded. Not bad for a runtime evaluator built at model-load time
 against code MadGraph generates and compiles per process.
 
@@ -258,7 +264,8 @@ The path there (full record in notes 15, 17, 20):
    it put the comparison on equal combination counts (e.g. 16/256 for a 2→6)
    and collapsed the 2→6 gap from 25× to 2.5×. Gap after: **1.2×–3.5×**.
 5. **Second pass** — four independent sessions, cumulatively **1.18×–2.19×**
-   on every benchmarked process, still ≤ 1e-12 vs MadGraph:
+   on every benchmarked process, still ≤ 1e-12 vs MadGraph — landing at the
+   headline range above:
    - *Multiply splitting*: one generic complex `Mul` op became eight typed
      variants specialised by operand kind (real×scalar, scalar×vector, …),
      since ~86% of hot multiplies had a cheaper shape than the general
@@ -279,7 +286,8 @@ The path there (full record in notes 15, 17, 20):
      more-shared current chains actually reduced FP drift.
 
 Caveats: ratios are single-host (Apple M3 Max) measurements, not constants —
-`scripts/mg_perf_compare.sh` is a rerun kit for other platforms. Pruned
+`scripts/mg_perf_compare.sh` is the rerun kit that re-derives the full ratio
+table directly on any platform (the headline is its 2026-07-28 output). Pruned
 evaluators inherit MadGraph's frame contract (partonic-CM momenta, beams along
 ±z). The remaining gap is largest on colored 2→2s, where NCOLOR-flow
 contraction dominates; candidate next steps (e-graph sharing extraction,
