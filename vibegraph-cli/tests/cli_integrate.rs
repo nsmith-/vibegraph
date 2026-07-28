@@ -137,9 +137,12 @@ fn check_run(run: &str, run_card: &str) {
     );
 
     let mut rng = ChaCha8Rng::seed_from_u64(0xF202E0);
-    let frozen = artifact
-        .grid
-        .sample_frozen(|u| integ.value(u), 200_000, &mut rng);
+    // The Drell–Yan map is not split across channels, so the artifact banks one
+    // grid and the frozen pass replays it directly.
+    let grid = artifact
+        .sole_grid()
+        .unwrap_or_else(|| panic!("[{run}] Drell–Yan artifact banked more than one grid"));
+    let frozen = grid.sample_frozen(|u| integ.value(u), 200_000, &mut rng);
     let sigma_frozen = frozen.integral * GEV2_TO_PB;
     let err_frozen = frozen.std_dev * GEV2_TO_PB;
     let d = (sigma_frozen - artifact.sigma_pb).abs();

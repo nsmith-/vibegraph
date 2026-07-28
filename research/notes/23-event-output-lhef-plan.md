@@ -288,17 +288,51 @@ event weights matches the `integrate` σ within MC error.
 
 ---
 
-## Open decision — per-channel VEGAS grids, before or after E2?
+## Decided and done — per-channel VEGAS grids (before E2)
 
-Note 21's addendum argues vibegraph's single grid over `1 + channel_ndim` (with
-`u[0]` selecting the channel) should become `Vec<VegasGrid>`, one per channel, as
-MG does. Two reasons it bears on *this* sprint: a single global `w_max` over a
-channel mixture is set by the worst channel (directly costing E2's unweighting
-efficiency), and the change alters the `IntegrateArtifact` schema — which E2/E4
-are about to harden around. Estimated ~1–2 sessions.
+Note 21's addendum argued vibegraph's single grid over `1 + channel_ndim` (with
+`u[0]` selecting the channel) should become one grid per channel, as MG does. Two
+reasons it bore on *this* sprint: a single global `w_max` over a channel mixture
+is set by the worst channel (directly costing E2's unweighting efficiency), and
+the change alters the `IntegrateArtifact` schema — which E2/E4 are about to
+harden around.
 
-Deferred, not dismissed. E1 is unaffected either way; the decision is due before
-E2 opens.
+**Done in one session**, ahead of E2. Measurements and the full close-out are in
+note 21 §"Addendum — one VEGAS grid vs. MadGraph's grid-per-channel". What E2
+inherits:
+
+- **`FixedBeamIntegrand::adapt_grids(neval, niter, seed)`** returns
+  `Vec<ChannelIntegration>` (grid, `αⱼ`, `nevalⱼ`, per-term `VegasResult`) plus
+  their sum, and is what `vibegraph integrate` now drives. `adapt_grid` (one grid
+  over the mixture) survives as the comparison point the studies use.
+- **`FixedBeamIntegrand::value_in_channel(j, u)`** — the `j`-th term's integrand
+  over `channel_grid_ndim()` coordinates, the channel frozen. This is the
+  function accept/reject samples.
+- **`VegasGrid::draw(rng, x)`** — one point against a frozen grid plus its
+  Jacobian weight, so a per-point weight `jac · value_in_channel(j, x)` is
+  available without going through `sample_frozen`'s internal accumulation. This
+  is the accept/reject primitive.
+- **`IntegrateArtifact` is `format_version = 2`**, banking `channels:
+  Vec<ChannelGrid>` (grid, `alpha`, `neval`, `sigma_pb`, `sigma_err_pb`,
+  `chi2_per_dof`). A file at any other version is refused by
+  `ArtifactError::UnsupportedVersion` — the version is read from the payload
+  prefix *before* the body is decoded. `sole_grid()` is the accessor for a
+  single-grid (Drell–Yan) run. Every artifact written before this session must be
+  regenerated.
+
+**Consequences for E2.** Unweighting efficiency improves by 1.7–2.9× on four of
+the five processes measured and is 0.91× on `ee_to_tatah`, where a single channel
+carries the entire `Σⱼ w_maxⱼ`. So E2 should:
+
+- draw the channel per event `∝ σⱼ` (banked per channel in the artifact) and
+  unweight against that channel's own `w_maxⱼ`; the overall efficiency is then
+  `σ / Σⱼ w_maxⱼ`, which is the quantity to report;
+- estimate each `w_maxⱼ` by a frozen scan on that channel's grid, budgeting
+  draws by `nevalⱼ` — the per-channel maximum is an extremum estimate and is
+  biased low at small sample counts, which is what the overweight bookkeeping is
+  for;
+- expect no benefit where one channel dominates `α`; the diagnostic to print is
+  the largest channel's share of `Σⱼ w_maxⱼ`, not the channel count.
 
 ## Execution notes
 
