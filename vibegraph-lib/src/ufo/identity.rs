@@ -6,37 +6,31 @@
 //! identity carries both — a human-readable label for error messages, and a digest
 //! over the source bytes the model was actually built from.
 //!
-//! The digest is a 128-bit FNV-1a over length-framed parts. It guards against an
-//! accidental mismatch, not a forged one; what it needs is to be stable across
+//! The digest is SHA-256 over length-framed parts. It has to be stable across
 //! builds and platforms, which rules out `std`'s `DefaultHasher` (documented as
 //! unstable between releases).
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use super::sm::{sm_assets, SMRestrict};
 use super::{UfoError, OPTIONAL_SOURCE_FILES, REQUIRED_SOURCE_FILES};
 
-const FNV_OFFSET_BASIS: u128 = 0x6c62272e07bb014262b821756295c58d;
-const FNV_PRIME: u128 = 0x0000000001000000000000000000013b;
-
-fn absorb(state: &mut u128, bytes: &[u8]) {
-    for &byte in bytes {
-        *state ^= byte as u128;
-        *state = state.wrapping_mul(FNV_PRIME);
-    }
-}
-
-/// 128-bit FNV-1a over `parts`, each prefixed by its length so that a different
-/// split of the same concatenated bytes gives a different digest.
+/// SHA-256 over `parts`, each prefixed by its length so that a different split of
+/// the same concatenated bytes gives a different digest.
 pub fn digest(parts: &[&[u8]]) -> String {
-    let mut state = FNV_OFFSET_BASIS;
+    let mut hasher = Sha256::new();
     for part in parts {
-        absorb(&mut state, &(part.len() as u64).to_le_bytes());
-        absorb(&mut state, part);
+        hasher.update((part.len() as u64).to_le_bytes());
+        hasher.update(part);
     }
-    format!("{state:032x}")
+    hasher.finalize().iter().fold(String::new(), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
 }
 
 /// The model a run was built from: the `import model` directive that selected it,
@@ -144,7 +138,22 @@ mod tests {
         assert_ne!(digest(&[b"ab", b"c"]), digest(&[b"a", b"bc"]));
         assert_ne!(digest(&[b"abc"]), digest(&[b"ab", b"c"]));
         assert_eq!(digest(&[b"ab", b"c"]), digest(&[b"ab", b"c"]));
-        assert_eq!(digest(&[]).len(), 32);
+        assert_eq!(digest(&[]).len(), 64);
+    }
+
+    /// Known answers against `shasum -a 256`, so the banked value is pinned to
+    /// SHA-256 of the framed bytes and not merely to whatever this build computes.
+    /// A digest that changed silently would refuse every artifact written before it.
+    #[test]
+    fn digest_matches_sha256_of_the_framed_bytes() {
+        assert_eq!(
+            digest(&[]),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            digest(&[b"abc"]),
+            "ce91dc5eec0139adf091900d225971d6ad246a845bad791b5693a9d0d55dd391"
+        );
     }
 
     /// Every interned SM variant has a distinct identity. The digest is over the

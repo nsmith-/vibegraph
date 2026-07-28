@@ -36,6 +36,7 @@ egglog = "2.0.0"
 ordered-float = "5"
 numeric-array = "0.6.1"
 quick-xml = "0.32.0"
+sha2 = "0.11.0"
 
 [dev-dependencies]
 criterion = "0.5"
