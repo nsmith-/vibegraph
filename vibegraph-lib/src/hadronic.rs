@@ -1413,6 +1413,26 @@ impl<'a> FixedBeamIntegrand<'a> {
         source.scales(beams, &buf)
     }
 
+    /// The scales this integrand evaluates a point at, when a prescription was
+    /// installed by [`use_running_coupling`](Self::use_running_coupling).
+    ///
+    /// An event record has to report the scale its matrix element actually ran
+    /// at, so it reads it from here rather than compiling a second prescription
+    /// off the same run card and hoping the two agree. `None` when nothing in the
+    /// matrix element moves with the strong coupling and so no prescription was
+    /// installed at all — a record then takes its factorisation scale from the run
+    /// card directly, no cross section having depended on it.
+    pub fn event_scales(&self, momenta: &[V]) -> Option<Result<EventScales, ScaleError>> {
+        let source = self.scales.as_ref()?;
+        Some(self.event_scales_of(source, momenta))
+    }
+
+    /// The running coupling an event record's `AQCDUP` is evaluated from, when
+    /// one was built.
+    pub fn running_alpha_s(&self) -> Option<&RunningAlphaS> {
+        self.scales.as_ref()?.running_alpha_s()
+    }
+
     /// Move every subprocess to the coupling this point's renormalisation scale
     /// implies. A constant prescription was applied once at installation, and a
     /// matrix element with no strong coupling in it has no coupling to move, so
