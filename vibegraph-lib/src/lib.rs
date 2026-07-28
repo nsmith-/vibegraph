@@ -5,6 +5,7 @@ pub mod cuts;
 pub mod diagrams;
 pub mod hadronic;
 pub mod helas;
+pub mod lhef;
 pub mod pdf;
 pub mod phasespace;
 pub mod runcard;

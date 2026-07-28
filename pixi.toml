@@ -83,6 +83,10 @@ validate-sigma = { cmd = "cargo test -p vibegraph-lib --profile profiling --feat
 # grids, with the event sample compared against the weighted estimator over the
 # same grids — in sigma (swept over generation seeds) and in binned distributions
 validate-unweighting = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_unweighting -- --nocapture", depends-on = ["build-diagrams"] }
+# Les Houches output gate: MadGraph's own banked events re-serialised byte-for-byte
+# through our record types (the format oracle), the mutation checks that make that
+# round-trip evidence, and a generated sample written out and read back
+validate-lhef = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_lhef -- --nocapture", depends-on = ["build-diagrams"] }
 # Link MadGraph's own alfas_functions.f against a driver and write the committed
 # running-alpha_s reference grid (validation/alphas/reference.csv)
 generate-alphas-reference = "bash validation/alphas/gen_reference.sh"
