@@ -85,7 +85,7 @@ drive both this integration and a MadGraph reference run.
 
 The command prints `σ ± err` (pb) and writes `<out>/grid.bin.zst` — a
 bincode + zstd artifact holding the trained grid plus the run metadata (process,
-PDF set, μF, √s, seed, evaluation counts, and the resolved run card) that a
+model, PDF set, μF, √s, seed, evaluation counts, and the resolved run card) that a
 downstream sampling phase needs to detect a mismatched input. It refuses to
 overwrite an existing artifact without `--force`.
 
