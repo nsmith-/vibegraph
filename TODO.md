@@ -26,10 +26,16 @@ SKIP→GATE; sprint section + note 21 below) → **`dynamical-scales`** (feature
 ✅ closed 2026-07-27 on D1–D4, D5 not needed: MadGraph's `αs` RGE, its per-event
 renormalisation and per-beam factorisation scales, and a per-event coupling move
 through the constant pools; **the three QCD σ rows are now hard GATEs** and
-Drell-Yan did not move; sprint section below, full plan note 22). **Next: Sprint B
-`event-output-lhef` (E1–E4)** — the per-event scale and `αs(μ)` it must emit as
-`SCALUP`/`AQCDUP` are now computed, which is why running couplings were sequenced
-ahead of the writer.
+Drell-Yan did not move; sprint section below, full plan note 22) →
+**`event-output-lhef`** (feature, ✅ closed 2026-07-28 on E1–E4, pending the user's
+merge decision: JAMP2 colour-flow selection + the `leshouche.inc`-checked `ICOLUP`
+dictionary, accept/reject unweighting over the frozen per-channel grids, a Les
+Houches writer/reader pinned byte-for-byte against 20 banked MadGraph runs, and
+`vibegraph generate` with a swappable weight strategy; **the pipeline now runs end
+to end to an unweighted event file**; sprint section below, full plan note 23).
+**Next: a validation pass** — the deferred rows below (a downstream shower actually
+consuming the emitted `.lhe`, and the event-sample-vs-MadGraph statistical
+comparison) are its natural content.
 
 ## Pipeline Status
 
@@ -40,7 +46,7 @@ ahead of the writer.
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 14 processes agree with MadGraph (11 bit-identical ≤6.3e-13, incl. 2→6/VVV/massive externals, all NCOLOR=1; `uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS, a two-phase serde object (`adapt`/`sample_frozen` split, deterministic rayon chunking) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams. `lips-nbody` remainder now closed by `resonance-sampling`: per-diagram channel trees, Breit-Wigner/t-channel/massless-log invariant maps, variance-minimising multichannel weight and α-adaptation, driving `integrate`. Deferred: multi-rung t-channel ladders (note 21) |
 | 5 | Cross-section integration (e⁺e⁻→μ⁺μ⁻, pp→e⁺e⁻ Drell–Yan, QCD 2→2) | ✅ Done | Leptonic: `validate_vegas.rs` `sigma_z_pole` σ≈2025 pb at √s=91.2 (<0.1% vs MG), `sigma_qed_limit` (√s=10 vs 4πα²/3s, 3%). Hadronic: PDF-convolved σ(pp→e⁺e⁻) via a pure-Rust LHAPDF6 grid parser + log-bicubic interpolation (`pdf/`) and compiled MG run-card cuts (`runcard.rs`/`cuts.rs`), integrated over (τ,y); vs MG within 0.14% (default cuts, 934.42±0.87 vs 933.11±0.447 pb) / 0.07% (m_ℓℓ∈[60,120], 644.86±0.57 vs 644.42±0.315 pb); `vibegraph integrate` CLI drives proc-card + run-card → σ + persisted VEGAS grid artifact |
-| 6 | Unweighted event output (LHEF) | 🔲 Pending — **unblocked** | Accept/reject sampling + Les Houches format. Substrate complete: frozen VEGAS grid, RAMBO, cuts accept-gate, and — as of `resonance-sampling` — the peak-resolving n-body sampler its unweighting efficiency depends on. Now the next sprint (`event-output-lhef`, E1–E4 below) |
+| 6 | Unweighted event output (LHEF) | ✅ Done | `event-output-lhef` (E1–E4): accept/reject over the frozen per-channel VEGAS grids with the channel drawn `∝ w_maxⱼ` (efficiency 2.9e-2–2.3e-1, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) and colour-flow (`∝ JAMP2`) **selection** with the flow → `ICOLUP` dictionary checked element-wise against MG's `leshouche.inc` (24/24 subprocesses, `gg_to_gg` NCOLOR=6 included), `SCALUP`/`AQCDUP` from `coupling::scales`, and a four-layer `lhef/` writer/reader that re-serialises all 20 banked MadGraph `unweighted_events.lhe.gz` **byte-for-byte** (198 747 events). `vibegraph generate <artifact> <proc-card>` drives it, refusing a proc/run-card that did not train the grid, with a swappable weight strategy (`Buffer`, `IDWTUP = -4`; `StochasticRounding`, `IDWTUP = +3`, streaming). Deferred: downstream-shower consumption of the file, event-sample-vs-MG statistics, `lpp = 1` beams |
 
 Closed-sprint history (`helas-generalize`, `mg-validation-coverage`,
 `cleanup-refactor`, `performance-sprint`, `color-flow`, `validation-sprint`, the
@@ -55,7 +61,7 @@ incl. the VVVV phase-bug root cause and fix, 17: bounds-check-elimination memo,
 
 ---
 
-## 📤 `event-output-lhef` sprint 🚧 OPEN 2026-07-27 (branch `event-output-lhef`; full plan: `research/notes/23-event-output-lhef-plan.md`)
+## 📤 `event-output-lhef` sprint ✅ CLOSED 2026-07-28 — merge decision is the user's (branch `event-output-lhef`, HEAD `2df978b`; full plan: `research/notes/23-event-output-lhef-plan.md`)
 
 **Sprint B** of the events program (Sprint A `resonance-sampling` ✅ merged
 2026-07-26). Unweighted events via accept/reject over the frozen VEGAS grid +
@@ -70,7 +76,7 @@ multi-flow JAMPs + exact CF ✅, and the flow→colour-tag oracle ✅ (MG's gene
 | E1 | `jamp2-flow-select`: `JAMP2(i) = Σ_hel \|JAMPᵢ\|²` diagonal on the `eval_m2` combination loop (σ untouched), then the flow → `(colour, anticolour)` LHEF tag dictionary **derived from vibegraph's own basis keys** and checked against MG's `leshouche.inc` — element-wise where the bases coincide (NCOLOR≤2), connectivity/basis-change form at `gg_to_gg` NCOLOR=6, where note 16 records the two 6-flow bases are *not* a 1:1 labelling. A transposed dictionary is invisible to every \|M\|²-level gate. | ✅ Landed in the **strong** form everywhere: `color_flow_tags_oracle` asserts derived-vs-`leshouche.inc` line connectivity element-wise per flow index for all **24** MG subprocesses **including `gg_to_gg` NCOLOR=6** — vibegraph's sorted basis keys turn out to reproduce MG's per-flow structure comments 1:1 there (note 16's caveat is about JAMP *values*, not the basis labelling). Labels come out identical to MG's 501-pool on 20/24; the 4 gluon-initiated ones are relabellings of the same connectivity. `eval_jamp2` is a separate entry point (hot path untouched), `validate_helas_mg` 14/14 unchanged, `validate_sigma` rows unchanged. |
 | E2 | `accept-reject` + `mg-single-helicity-bench`: `w_max` estimation, overweight bookkeeping, unweighting efficiency; per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) **selection**, zero effect on σ. Gate: unweighted sample reproduces σ + L5 distributions within MC error (seed-swept). | ✅ `unweight::Unweighter` — frozen per-channel scan for `w_maxⱼ`, channel drawn **`∝ w_maxⱼ`** rather than `∝ σⱼ`: only that rule leaves the kept events `∝ σⱼ` without a compensating per-event weight (plan corrected, note 23 §E2). Overweights are kept at weight `>1` and counted as a rate *and* a cross-section share. Measured efficiency reproduces the predicted `σ/Σⱼw_maxⱼ` to ≤1%, ranging 2.9e-2 (`ee_to_mumua`) – 2.3e-1 (`gg_to_ttx`). `FixedBeamIntegrand::select_event` draws subprocess/helicity/flow off the diagonals. New gate `validate_unweighting` (5 processes × 4 seeds, ~6 s): σ from events vs VEGAS \|pull\| ≤ 1.6, vs an independent weighted reference ≤ 2.1, shape χ²/dof ≤ 1.2. `validate_helas_mg` 14/14 unchanged, 11 σ GATE rows unchanged. **`mg-single-helicity-bench` deferred** — it still needs the MG generated-driver + `gen_amplitude.py` edit and had no bearing on the deliverable. |
 | E3 | `lhef-writer`: `<init>` + `<event>` serialiser incl. E1 colour tags and `SCALUP`/`AQCDUP` from `coupling::scales` (mind the recorded MG `SCALUP` ≠ μR defect, note 07). Pin byte-level against the banked `unweighted_events.lhe.gz`. | ✅ `lhef/` in four layers (`record`/`write`/`parse`/`build`) + streaming `LheWriter`. **Two plan corrections** (note 23 §E3): (1) the byte-level pin of event *content* against MG is impossible — we do not share MG's RNG, so its events are not ours; **statistical comparison of the two samples is deferred to a validation pass** (row below). What replaced it is MG as a **format oracle**: all 20 banked runs' `<init>` + every `<event>` parse into our record types and re-serialise **byte-identical** (198 747 events / 1 020 299 particle lines), and 8 mutations of the fields no \|M\|²-level gate can see (MOTHUP presence/order, ISTUP sign, ICOLUP slot 1↔2, incoming-momentum crossing, the `px py pz E` permutation, mass, SPINUP) each break it. (2) The banked layout is **`lhe_parser.py`'s Python format, not `rw_events.f`'s `(i2,i5,e16.7e3,3e15.7)`** — MG rewrites the delivered file in Python, and a writer built against the Fortran disagrees on every line. Conventions pinned: `SCALUP` = larger **μF** (not μR — pinned by a hand-built case since every closed-form clustering has them equal), `AQCDUP` = **untruncated** αs(μR) (MG's π-truncation is a defect, asserted at 1.7e-8 rather than tolerated), `IDWTUP = -4` so overweight events are representable. XML structure via **quick-xml 0.32** (new dep), lenient end-tag matching; the `<init>`/`<event>` bodies stay explicit fixed-format records. New gate `validate_lhef` 3/3; standing gates unmoved. |
-| E4 | `generate-cli`: `vibegraph generate <artifact> [--nevents …]`, refusing a proc/run-card mismatch against the grid that was trained. Gate: `.lhe` parses downstream; σ from event weights matches `integrate` σ. | 🔲 |
+| E4 | `generate-cli`: `vibegraph generate <artifact> [--nevents …]`, refusing a proc/run-card mismatch against the grid that was trained. Gate: `.lhe` parses downstream; σ from event weights matches `integrate` σ. | ✅ `vibegraph generate <artifact> <proc-card> [--run-card] [--nevents] [-o] [--strategy] [--seed]`. Physics comes from the artifact, never re-taken as flags; the cards supplied are compared **exactly** against the banked process string and every run-card parameter, and any difference is refused with the names listed (tested on 4 mismatches — beam energy, a `ptl` cut, a different process, an omitted `--run-card` — each with the matching case as control). Channel weights are **replayed** from the artifact (`use_multichannel_with_alphas`) rather than re-surveyed, pinned bit-for-bit against the adapted integrand. Output mode is a generic `lhef::emit::UnweightStrategy` over a replayable `EventSource`: **`Buffer`** (default, `IDWTUP = -4`, sample held, `XSECUP` = the *sample's* σ, `XMAXUP` = largest weight written) and **`StochasticRounding`** (`IDWTUP = +3`, unit weights, `k = floor(w)+Bernoulli(frac w)`, single streaming pass, no buffer/seek). Measured on `e+ e- > mu+ mu-` ×20 000: buffered σ **+0.610%** vs `integrate` (band ±2.9%), mean `XWGTUP` = `XSECUP` to <1e-6, the two strategies agree on `cosθ` at **χ²/dof 0.952 / 10 bins, worst pull 1.83** (independent seeds — a shared seed would be a tautology). **Two plan notes** (note 23 §E4): the "downstream tool" is our own `lhef::parse` by decision, which cannot see a self-consistently wrong format (deferred row below); and E2/E3's claim that `-4` is *needed* for overweight events is **false** — stochastic rounding represents them unbiasedly at unit weight (correction recorded in note 23 and in the `WeightStrategy` doc). Standing gates unmoved. |
 
 Order: **E1 → E2 → E3 → E4** (strictly linear). **Detour taken before E2 and
 done:** per-channel VEGAS grids (note 21 addendum) — the integral is now split
@@ -80,6 +86,38 @@ unweighting efficiency 1.7×–2.9× on four of five processes measured (0.91× 
 `ee_to_tatah`, where one channel is the whole `Σⱼ w_maxⱼ`). E2 inherits
 `value_in_channel`, `VegasGrid::draw`, and per-channel `σⱼ`/`w_maxⱼ`; see note 23
 §"Decided and done" for what that changes in E2's plan.
+
+### What the sprint delivered
+
+The pipeline now runs end to end to an unweighted event file: UFO model →
+diagrams → HELAS amplitudes → multichannel phase space + VEGAS → σ and banked
+per-channel grids (`vibegraph integrate`) → accept/reject unweighting with
+per-event helicity and colour-flow selection → a Les Houches file
+(`vibegraph generate`).
+
+Three convention hazards were closed rather than assumed. The flow → `ICOLUP`
+dictionary is **derived** from vibegraph's own basis keys and checked against MG's
+`leshouche.inc` element-wise for all 24 subprocesses (a transposed dictionary is
+invisible to every |M|²-level gate); the note-16 NCOLOR=6 JAMP caveat turned out to
+be an artifact of a greedy overlap matcher on a rank-1 MHV amplitude, not a real
+basis mismatch (E1c); and the delivered `.lhe` layout is `lhe_parser.py`'s Python
+format, **not** the Fortran `rw_events.f` specifier the earlier notes pointed at —
+caught by the round-trip, and a writer built against the Fortran would disagree
+with a shower's input on every line.
+
+Two plan corrections are recorded in note 23 rather than silently applied: the
+channel must be drawn `∝ w_maxⱼ` and not `∝ σⱼ` (E2), and `IDWTUP = -4` is *not*
+required to represent overweight events — stochastic rounding carries them
+unbiasedly at unit weight (E4).
+
+### Deferred / open (carried forward, not regressions)
+
+Filed in the `resonance-sampling` deferred table below: **downstream-shower
+validation of the emitted `.lhe`**, the **event-sample vs MG statistical
+comparison**, and the **E4 leftovers** row (streaming `-4` by two-pass replay, the
+model import in the artifact fingerprint, `lpp = 1` event generation).
+`mg-single-helicity-bench` was re-sequenced out of E2 — accept/reject never made
+single-helicity evaluation the hot path, so it still has no consumer.
 
 ---
 
@@ -151,16 +189,18 @@ shrinking, it is a bug.
 | ~~**Per-channel VEGAS grids**~~ | ✅ **Done 2026-07-27**, one session, on `event-output-lhef` ahead of E2. The integral is split channel by channel (`FixedBeamIntegrand::adapt_grids`), one VEGAS grid each on a budget `αⱼ·neval`, summed with errors in quadrature; `IntegrateArtifact` is `format_version = 2` with `channels: Vec<ChannelGrid>` and refuses any other version. err²·CPU 1.07×–1.68×, unweighting efficiency 1.7×–2.9× on 4 of 5 processes (0.91× on `ee_to_tatah`, one channel = the whole `Σⱼ w_maxⱼ`). All 11 σ GATE rows hold with smaller `Δσ`; `ee_to_mumu_tata_qcd0`'s offset fell +3.0% → +2.2%; `uux_to_uux`'s negative bias roughly doubled (row above). | note 21 § "Addendum — one VEGAS grid vs. MadGraph's grid-per-channel" (outcome subsection) |
 | **2→6 σ rows** | `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` remain `Plan::Skip` — ~1 ms/eval over a 24-dim map is too slow to gate, a cost issue rather than a sampling one. | `validate_sigma.rs` |
 | **Event-sample vs MG statistical comparison** | Deferred out of E3 by decision, 2026-07-28. We do not share MadGraph's RNG, so our events are not its events and no *per-event* comparison against `unweighted_events.lhe.gz` exists — the E3 gate uses MG only as a **format** oracle (byte-for-byte round-trip). What is still owed is a **distribution-level** comparison of our unweighted sample against MG's banked one: invariant masses, angles, and — the fields nothing else covers — the empirical `SPINUP` helicity frequencies and `ICOLUP` flow frequencies, which E1/E2 pin only as *rules* (`∝ \|M_hel\|²`, `∝ JAMP2`) and never against MG's own realised sample. Needs designing properly (binning, which observables, per-process statistics), which is why it is a validation pass and not a sprint session. Overlaps the **MG-plot distribution comparison** row above — same machinery, and it would also serve `low-mll-reconciliation`. | note 23 §E3 outcome; `validate_lhef.rs` module doc lists what E3 provably cannot detect |
+| **Downstream-shower validation of the emitted `.lhe` (Pythia via pixi)** | Deferred out of E4 by decision, 2026-07-28. The E4 gate reads `vibegraph generate`'s own output back with **our** `lhef::parse`, so reader and writer share their assumptions and a **self-consistently wrong format is invisible to it** — a file both agree on but a shower rejects would pass. E3's byte-for-byte round trip of MadGraph's banked files is the real format evidence, and it covers only the fields MadGraph itself writes. What is owed is a shower actually consuming our file: Pythia8 is pixi-installable, so the shape is a `pixi run` task that hands an emitted `.lhe` to `Pythia::init` (LHEF reader) and requires it to read every event and reconstruct the hard process — the colour lines in particular, which no other gate exercises as *input* to anything. | note 23 §E4 outcome; `vibegraph-cli/tests/cli_generate.rs` module doc |
+| **E4 leftovers** | Three small ones, all recorded in note 23's close-out. (1) **Streaming `IDWTUP = -4`** by deterministic two-pass replay — the interface hook (`EventSource::restart`) is in place and contract-tested, only the strategy is missing; not needed while 100k-event runs buffer in ~42 MB. (2) **Model import in the artifact fingerprint** — `card_mismatches` compares the process string and every run-card parameter exactly, but the artifact banks no model name or restrict card, so `import model sm-no_b_mass` with the same `generate` line is not caught; fixing it is an `IntegrateArtifact` `format_version` bump. (3) **Proton-beam (`lpp = 1`) event generation** — the Drell–Yan map has no channel decomposition, so no `ChannelIntegrand`; `generate` refuses it by name. | note 23 §"Sprint close-out"; `vibegraph-cli/src/generate.rs` |
 
 ### Next
 
-**Sprint B — `event-output-lhef`** (E1 `jamp2-flow-select` → E2 `accept-reject`
-+ `mg-single-helicity-bench` → E3 `lhef-writer` → E4 `generate-cli`). Sprint A's
-dependency is now satisfied *and* live in production, which matters for B: E2's
-accept/reject rides on this sampler, so its unweighting efficiency is a direct
-beneficiary of the peak resolution landed here. Outlined in note 21, expanded into
-its own note at open. Optional tail folded in: `mg-single-helicity-bench` rides
-with E2.
+Sprint B (`event-output-lhef`) is ✅ **closed**; see its section above. Per the
+feature → validation → performance rhythm the next pass is a **validation** one,
+and the two rows immediately above it (downstream-shower consumption of the
+emitted `.lhe`, and the event-sample-vs-MadGraph statistical comparison) are its
+natural content — together with the older `low-mll-reconciliation` and
+**MG-plot distribution comparison** rows, which want the same differential
+machinery.
 
 ---
 

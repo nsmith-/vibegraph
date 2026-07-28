@@ -327,6 +327,26 @@ needs a single fixed helicity in a loop.
 unchanged (`uux_to_uux` pull −1.94, `gg_to_gg` −0.53), `color_cf_oracle` 24/24,
 `color_flow_tags_oracle` 24/24, `color_jamp_oracle` 3/3.
 
+### E2 correction (made in E4, 2026-07-28)
+
+E2 and E3 both recorded that `IDWTUP = -4` is *needed* because a strictly unit
+weight cannot represent an overweight event. **That reasoning is wrong**, and the
+claim is corrected here rather than quietly rewritten, because it is the kind of
+"this convention comes for free" assertion the project treats as a hypothesis.
+
+A unit-weight file represents the overweight tail perfectly well, as
+**multiplicity** instead of weight: write an event `k = floor(w) + Bernoulli(frac
+w)` times and `E[k] = w` exactly, so the sample it describes is the same one. What
+`-4` actually buys is that the tail stays *visible per event* — a consumer reads
+`w = 8.4` rather than seeing eight or nine copies of one point — and that the file
+length is exactly the number of events asked for. What it costs is that `XMAXUP`
+and the normalising mean are properties of the realised sample, so a `-4` writer
+cannot stream without either holding the sample or replaying it.
+
+E4 implements both, so the choice is now a flag rather than a necessity. The
+`WeightStrategy::MeanCrossSectionPb` doc comment carried the same false claim and
+was corrected with it.
+
 **For E3:** events carry subprocess, helicity combination, colour flow index and
 momenta from `FixedBeamIntegrand::select_event`; colour tags come from E1's
 `ColorFlowTags`. Remember the E1b caveat — 4 gluon-initiated subprocesses use
@@ -533,6 +553,184 @@ that trained the grid (rather than re-taking raw flags), drive E2 → E3.
 
 **Gate:** the emitted `.lhe` parses in a downstream tool, and σ recovered from the
 event weights matches the `integrate` σ within MC error.
+
+### E4 outcome (2026-07-28) ✅
+
+`vibegraph generate <artifact> <proc-card> [--run-card …] [--nevents N]
+[-o events.lhe] [--strategy …] [--seed …]`, plus the generic
+`lhef::emit::UnweightStrategy` the output mode is chosen through. Commit
+`2df978b`.
+
+**The proc card is an argument, not an inference.** The artifact banks the
+process string and the resolved run card, but not the compiled amplitude and not
+the model import, so the process has to be re-enumerated from a card the caller
+supplies — which is then *checked* rather than trusted. `card_mismatches` compares
+the process string and **every** run-card parameter exactly, including the ones no
+physics reads, and a difference is refused with the offending names listed. The
+policy is deliberately blunt: the card is the fingerprint of the run, and deciding
+case by case which differences are harmless is how a mismatched grid gets sampled
+anyway. Refusal is tested on four separate mismatches (beam energy, a lepton `pT`
+cut, a different process, an omitted `--run-card` falling back to the MG proton
+defaults), each with the matching case as the control — a check that refuses
+everything would otherwise pass a "matching cards work" test just as well.
+
+**Replay is exact, not re-derived.** `αⱼ` enters each channel's weight, so an
+integrand whose channel weights were *re-surveyed* would only match the one the
+grids were trained on by accident.
+`FixedBeamIntegrand::use_multichannel_with_alphas` installs the banked weights
+directly, and `banked_channel_weights_rebuild_the_integrand_bit_for_bit` pins
+`value_in_channel` bit-for-bit against the adapted integrand. Two traps found
+while writing it, both now guarded inside the test:
+
+- On a **two-channel** process the α-adaptation converges to uniform, where `αⱼ`
+  cancels between a channel's weight and the mixture density — the comparison is
+  then blind to whether the weights were installed at all. It failed to detect the
+  obvious mutation (drop `set_alphas`) on `e+ e- > mu+ mu-`. The test now runs on
+  `e+ e- > ta+ ta- h` (5 channels) and asserts the converged weights are *not*
+  uniform before comparing.
+- It also installs a deliberately skewed weight set and requires the same probes
+  to move, so "the weights reach the mixture" is evidence rather than assumption.
+  With both in place the `set_alphas` mutation fires.
+
+**The weight-strategy interface.** `UnweightStrategy::emit(source, plan, sink)`
+owns the generation loop rather than filtering events, because that is where the
+two modes differ: `<init>` precedes the first event and carries `XSECUP`,
+`XERRUP`, `XMAXUP`, so a strategy whose `<init>` depends on the realised sample
+cannot stream.
+
+| | `Buffer` (default) | `StochasticRounding` |
+|---|---|---|
+| `IDWTUP` | `-4` | `+3` |
+| `XWGTUP` | pb, σ = their mean | `1` |
+| `XSECUP` | the **sample's** σ (the accept/reject estimator) | the artifact's VEGAS σ |
+| `XMAXUP` | largest weight actually written | `1` |
+| overweight tail | kept as a weight `> 1` | kept as `floor(w) + Bernoulli(frac w)` copies |
+| passes | one, sample held (~424 B/event at 2→2, ~42 MB at 100k) | one, streaming, no buffer, no seekable sink |
+
+`Buffer` declaring the *sample's* σ rather than the integration's is what makes
+the gate below a real comparison instead of a restatement of its own input.
+
+Stochastic rounding's variance is `f(1−f) ≤ ¼` with `f = frac(w)`, strictly below
+the `Var = w` of a Poisson resample with the same mean, and exactly zero on the
+integer weights that are almost the whole sample; for `w ≤ 1` it degenerates to
+plain accept/reject, so it touches only the tail. That is a distributional claim,
+so it is pinned on controlled weights (`the_rounding_rule_is_not_free`): mean
+`1.300` against `floor`/`ceil`/`round`, observed variance against `f(1−f)`, and
+`< ½·w` against Poisson. The physics-level gate cannot see it — almost every event
+of a real sample carries weight exactly `1`, where all four rules agree.
+
+**The third mode is deferred and would be nearly free.** Streaming `IDWTUP = -4`
+by deterministic two-pass replay needs only `EventSource::restart`, which is on
+the trait and contract-tested (`restarting_the_source_replays_the_same_events`:
+40 records and weights identical after a restart, accumulators reset with the
+stream, and the mutation of dropping the reseed fires). A future implementation
+measures the sample on the first pass, restarts, and writes on the second, with no
+change to `emit`'s signature.
+
+**Gate — the plan's "parses in a downstream tool" was narrowed by decision.** The
+reader used is our own `lhef::parse`, and the weakness that accepts is explicit:
+our reader and writer share their assumptions, so a **self-consistently wrong
+format is invisible to it**. What carries the format evidence is E3's byte-for-byte
+round trip of MadGraph's own banked files; a run through a real shower (Pythia via
+pixi) is filed as deferred work, not claimed here.
+
+Observed on `e+ e- > mu+ mu-` at √s = 91.2 GeV, 20 000 events per strategy
+(`cli_generate`, 13 s in the default `cargo test`):
+
+| | buffered | stochastic rounding |
+|---|---|---|
+| efficiency | 2.2429e-1 | 2.2269e-1 |
+| overweight rate / share | 6.73e-5 / 3.04e-4 | 3.34e-5 / 1.52e-4 |
+| largest `w/w_max` | 1.009 | 1.008 |
+| σ(sample) | 2.034961e3 pb | 2.036752e3 pb |
+| declared `XSECUP` | 2.034961e3 pb | 2.022623e3 pb |
+
+against `integrate` σ = 2.022623e3 ± 1.75 pb: the buffered file's mean `XWGTUP`
+sits **+0.610%** away, inside the ±2.915% band (`4/√N` for the sample plus the
+integration's own error). Mean `XWGTUP` equals the declared `XSECUP` to `< 1e-6`,
+which is what `IDWTUP = -4` promises a consumer, and `XMAXUP` bounds the largest
+weight written. The two strategies, run on **independent seeds** (with a shared
+seed the source hands them the same accepted events and the comparison would be a
+tautology), agree on the `cosθ` shape at **χ²/dof = 0.952 over 10 bins, worst pull
+1.83**.
+
+**What the E4 gate provably cannot detect.**
+
+- **A self-consistently wrong file format** (above).
+- **Anything wrong with the integrand.** A wrong matrix element, cut or sampler is
+  replayed faithfully and agrees with itself. `validate_helas_mg`,
+  `validate_sigma`, `validate_unweighting` cover those.
+- **The event labels.** Helicity and colour-flow selection move no weight, so a
+  mislabelled event is invisible to every comparison here.
+- **σ from a unit-weight file.** `XSECUP` is carried from the integration, so
+  recovering σ from the `+3` file is exact by construction. The buffered file is
+  where the σ comparison has teeth; the `+3` half is checked on shape and on unit
+  weights instead.
+- **The rounding rule on real events.** Almost every weight is exactly `1`, where
+  every plausible rule agrees; the rule is pinned only on controlled weights.
+- **A different model behind the same process string.** The artifact banks no
+  model name or restrict card, so `import model sm-no_b_mass` versus
+  `import model sm` with the same `generate` line is *not* caught. Fixing it means
+  banking the model import, i.e. an artifact `format_version` bump — filed, not
+  done.
+
+**Scope notes.** `generate` covers fixed-energy partonic beams (`lpp = 0`) only
+and refuses `lpp = 1` by name: the Drell–Yan map is integrated but not split into
+sampling channels, so there is no `ChannelIntegrand` for it. `<init>` carries one
+process entry (`LPRUP = 1`) and requires every subprocess to share an initial
+state, which a fixed-beam run does by construction. `EBMUP` is `√s/2` per beam —
+what the integrand actually generates — rather than the run card's `ebeam1/ebeam2`,
+which would disagree on an asymmetric card.
+
+**Gate observed.** `cargo test` green — 483 lib + 6 CLI unit + 3 `cli_generate` + 2
+`cli_fixed_energy` + every other suite (baseline was 477 lib; +6 = 5 `lhef::emit` +
+1 `hadronic`). `validate_helas_mg` **14/14 bit-exact/at-tolerance, unchanged**
+(`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14);
+`validate_sigma` 11 GATE rows unchanged (`uux_to_uux` −1.94, `gg_to_gg` −0.53,
+`ee_to_mumu_tata_qcd0` still INFO at +2.2%); `color_cf_oracle` 24/24;
+`color_flow_tags_oracle` 24/24; `color_jamp_oracle` 3/3;
+`validate_unweighting` unchanged (`ee_to_mumua` eff 2.872e-2, max `w/w_max` 8.393,
+pull +1.63); `validate_lhef` 3/3 (198 747 events / 1 020 299 particle lines
+byte-identical across 20 runs, 8/8 mutations detected). `cargo clippy` adds no new
+finding beyond the pre-existing error in `coupling/alphas.rs:210`.
+
+---
+
+## Sprint close-out (2026-07-28) ✅
+
+**E1 → E2 → E3 → E4 all complete**, on branch `event-output-lhef`. The pipeline
+now runs end to end: UFO model → diagrams → HELAS amplitudes → multichannel phase
+space + VEGAS → σ + banked grids (`vibegraph integrate`) → unweighted events
+(`vibegraph generate`) → a Les Houches file.
+
+| Session | Commit(s) |
+|---|---|
+| sprint opened | `4e9f337` |
+| E1 `jamp2-flow-select` | `059918c` |
+| E1c NCOLOR=6 JAMP diagnosis | `5b7f79e` |
+| per-channel VEGAS grids (detour, before E2) | `9afcbe4` |
+| E2 `accept-reject` | `6c36411`, `6f1b226`, `bd0755e` |
+| E3 `lhef-writer` | `2154222`, `8d9a337` |
+| E4 `generate-cli` | `2df978b` |
+
+**What the sprint delivered.** `eval_jamp2` and the `leshouche.inc`-checked
+flow → `ICOLUP` dictionary (24/24 subprocesses, strong form including
+`gg_to_gg` NCOLOR=6); the `color_jamp_oracle` that closed the note-16 NCOLOR=6
+caveat as an artifact of a greedy matcher rather than a real discrepancy; the
+`Unweighter` and its `∝ w_maxⱼ` channel rule with overweight bookkeeping; the
+four-layer `lhef/` writer/reader pinned byte-for-byte against 20 banked MadGraph
+runs; and the `generate` CLI with a swappable weight strategy.
+
+**Deferred out of this sprint.**
+
+| Item | Why |
+|---|---|
+| **Downstream-shower validation of the emitted `.lhe`** (Pythia via pixi) | The E4 gate reads its own output with `lhef::parse`, which cannot see a self-consistently wrong format. E3's MadGraph round trip is the real format evidence; a shower actually consuming our file is the missing one. |
+| **Event-sample vs MadGraph statistical comparison** | Filed in E3. Distribution-level, including the empirical `SPINUP` and `ICOLUP` frequencies that E1/E2 pin only as rules. Needs designing as a validation pass. |
+| **Streaming `IDWTUP = -4` (two-pass replay)** | Interface in place (`EventSource::restart`), implementation not needed while 100k-event runs buffer comfortably. |
+| **Model import in the artifact fingerprint** | A `format_version` bump; the card check is otherwise exact. |
+| **Proton-beam (`lpp = 1`) event generation** | The Drell–Yan map has no channel decomposition, so no `ChannelIntegrand`. |
+| **`mg-single-helicity-bench`** | Re-sequenced in E2: accept/reject never made single-helicity evaluation the hot path, so it has no consumer yet. |
 
 ---
 

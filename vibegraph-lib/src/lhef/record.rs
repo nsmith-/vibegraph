@@ -15,9 +15,14 @@ pub enum WeightStrategy {
     UnitWeight,
     /// `-4`: `XWGTUP` is a cross section in picobarns and the total is the
     /// **mean** of the event weights, not their sum. This is what MadGraph writes
-    /// for an unweighted sample, and what an accept/reject pass that keeps
-    /// overweight events at a weight above one needs — a strictly unit weight
-    /// cannot represent them.
+    /// for an unweighted sample, and it is what keeps the overweight events an
+    /// accept/reject pass hands over at a weight above one visible *as* weights.
+    ///
+    /// It is not the only way to carry them: stochastic rounding
+    /// ([`emit::StochasticRounding`](super::emit::StochasticRounding)) represents
+    /// the same tail unbiasedly with unit weights, by writing an event
+    /// `floor(w) + Bernoulli(frac(w))` times. The choice is between a visible
+    /// weight and a multiplicity, not between representable and not.
     MeanCrossSectionPb,
     /// Any other value, kept verbatim.
     Other(i32),
