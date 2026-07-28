@@ -139,6 +139,27 @@ One line each; the note is the full record. Earlier sprints
   (collinear edge) where the t-map falls back to flat; whether a fiducial cut is
   wanted instead is unresolved for a physical massless-initial-state t-channel.
   (Note 21 close-out.)
+- **`user-distribution`** — package the CLI for non-developer users (sprint
+  sketch). Today the only path is a source build plus manual
+  `pixi run fetch-pdf`; a user should get from a download to an `.lhe` file
+  with no toolchain. Sessions:
+  1. **Release binaries** — CI workflow cross-compiling `vibegraph` for
+     macOS arm64/x86_64 + Linux x86_64 and attaching them to GitHub releases;
+     `--version` reports the git tag.
+  2. **Interned default PDF set** — embed (or first-use fetch + verify) the
+     LO default `NNPDF23_lo_as_0130_qed` so `integrate` on a hadronic card
+     works out of the box; check the set's license permits redistribution
+     before embedding.
+  3. **User-local cache `~/.vibegraph`** — library utilities resolving UFO
+     models and LHAPDF sets by name: look up the well-known URLs (LHAPDF
+     `pdfsets` index; FeynRules model database), prompt on first use before
+     downloading, store under `~/.vibegraph/{ufo,pdf}/`, and pin each
+     download by checksum (the model digest already exists for UFOs).
+     Resolution order becomes explicit flag → env var → `~/.vibegraph` →
+     repo-local `validation/pdf`.
+  4. **First-run UX** — `import model <name>` on an uncached model and a
+     missing PDF set produce a "fetch it now?" prompt (with a
+     `--no-network`/CI-safe refusal path) instead of a hard error.
 - **`typed-units`** — research `uom`/`dimensioned`/`units` crates for typed
   four-momenta and cross sections.
 
