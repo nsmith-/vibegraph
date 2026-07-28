@@ -82,9 +82,9 @@ impl GlobalConfig {
                 .as_ref()
                 .map(|v| dir.join(format!("restrict_{v}.dat"))),
         };
-        let model = UFOModel::load(&dir, restrict.as_deref())?;
+        let (model, digest) = UFOModel::load_with_digest(&dir, restrict.as_deref())?;
         let label = import.restrict_variant.as_deref().unwrap_or("default");
-        let identity = ModelIdentity::from_ufo_dir(&import.name, label, &dir, restrict.as_deref())?;
+        let identity = ModelIdentity::from_loaded(&import.name, label, digest);
         Ok((model, identity))
     }
 

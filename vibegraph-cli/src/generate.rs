@@ -690,7 +690,7 @@ mod tests {
         let banked = artifact("e+ e- > mu+ mu-", card(BASE_CARD));
         let mut altered = sm();
         assert_eq!(altered.label(), banked.model.label());
-        altered.digest = vibegraph::ufo::identity::digest(&[b"a different restrict card"]);
+        altered.digest = vibegraph::ufo::identity::digest_bytes(b"a different restrict card");
 
         let found = card_mismatches(&banked, &altered, "e+ e- > mu+ mu-", &card(BASE_CARD));
         assert_eq!(found.len(), 1, "{found:?}");

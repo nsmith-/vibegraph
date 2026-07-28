@@ -726,15 +726,41 @@ unchanged name. Resolution and identification share one path
 (`GlobalConfig::load_ufo_with_identity`), so a banked digest can never describe a
 different model than the one that was loaded.
 
-The digest is **SHA-256** (`sha2`) over length-framed parts. It first landed as a
-hand-written 128-bit FNV-1a, on the grounds that no hash crate was in the
+The digest is **SHA-256** (`sha2`) over the model's **own serialized form** — the
+bincode encoding of the restricted `ParsedModel`, the same encoding the interned
+SM blob holds — and not over the UFO source files it was parsed from. Two source
+trees that parse to the same particles, couplings, vertices and parameters are
+the same model whatever the Python around them said, so a reworded comment or
+reformatted whitespace must not refuse an artifact. The restriction is baked in
+before hashing (`ParsedModel::apply_restriction`, split out of `into_model`), so
+the restrict card contributes through its *effect* rather than its text, and the
+directory path no longer re-reads the source files after the parser has already
+read them. `UFOModel::load_with_digest` is the single path that loads and
+identifies together.
+
+Two false starts are worth recording. It first landed as a hand-written 128-bit
+FNV-1a over the raw source bytes, on the grounds that no hash crate was in the
 dependency set; that was the wrong trade — a hash function is not something to
 write in-tree when a standard one is a dependency away. What the digest actually
 needs is stability across builds and platforms, which is what rules out `std`'s
-`DefaultHasher` (documented as unstable between releases, so a value banked to
-disk would produce spurious refusals after a toolchain bump). `digest` is pinned
-by known answers against `shasum -a 256`, since a digest that changed silently
-would refuse every artifact written before the change.
+`DefaultHasher` (documented as unstable between releases). `digest_bytes` is
+pinned by known answers against `shasum -a 256`, since a digest that changed
+silently would refuse every artifact written before the change.
+
+**The serialized-model digest then exposed a real defect.** Five collections
+reachable from `ParsedModel` were `HashMap`/`HashSet` — `ParsedModel::
+order_hierarchy`, `Coupling::orders`, `Vertex::couplings`, `ParameterSet::rdeps`
+and `ParameterSet::zeros`. Their iteration order varies per map instance and per
+process, so the serialized bytes — and therefore the digest — were **not
+reproducible**: `vibegraph generate` would have refused artifacts written by
+`vibegraph integrate` at random, for no physical reason. All five are now
+`BTreeMap`/`BTreeSet`. Every use of them is a lookup, a membership test, a
+`values()` scan or an insertion into another map, so the change is
+behaviour-preserving; the bincode wire format for maps is unchanged, so the
+committed SM blob still deserializes without regeneration. The guard is
+`the_digest_survives_a_serialization_round_trip`, which is what caught it — and
+`cli_generate` covers the cross-process case end to end, since it banks a digest
+in one process and compares it in another.
 
 **Any artifact written before this must be regenerated** — the prefix version
 check refuses it by name before the body is decoded, as it does for any other

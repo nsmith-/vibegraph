@@ -11,6 +11,7 @@
 
 use std::sync::{Arc, OnceLock};
 
+use super::identity::model_digest;
 use super::slha::ParamCard;
 use super::{ParsedModel, UFOModel, UfoError};
 
@@ -92,14 +93,24 @@ impl SMRestrict {
 /// The compressed, serialized pre-restriction SM [`ParsedModel`] blob.
 static SM_PARSED_BLOB: &[u8] = include_bytes!("sm_assets/sm_parsed.bin.zst");
 
-/// The interned bytes a variant's [`sm_model`] is built from: the shared
-/// pre-restriction blob and that variant's restrict card.
+/// The digest identifying an interned SM variant, computed once per variant.
 ///
-/// Together these are the model's whole input, so a digest over them identifies
-/// the model more sharply than its name does — two builds whose restrict cards
-/// were regenerated with different contents under the same name differ here.
-pub fn sm_assets(restrict: SMRestrict) -> [&'static [u8]; 2] {
-    [SM_PARSED_BLOB, restrict.restrict_card_text().as_bytes()]
+/// Over the variant's *restricted* parsed model, so it separates two builds whose
+/// restrict cards were regenerated with different contents under the same name —
+/// while ignoring anything that does not survive parsing.
+pub fn sm_digest(restrict: SMRestrict) -> &'static str {
+    static CACHE: [OnceLock<String>; SMRestrict::ALL.len()] =
+        [const { OnceLock::new() }; SMRestrict::ALL.len()];
+
+    CACHE[restrict.index()].get_or_init(|| {
+        let card: ParamCard = restrict
+            .restrict_card_text()
+            .parse()
+            .expect("parse interned SM restrict card");
+        let mut parsed = sm_parsed().clone();
+        parsed.apply_restriction(&card);
+        model_digest(&parsed)
+    })
 }
 
 /// zstd + bincode (de)serialization of the pre-restriction parsed model.
