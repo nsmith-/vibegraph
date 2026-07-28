@@ -2,10 +2,11 @@
 //!
 //! A [`record`] layer holding one `<init>` block and one `<event>` block as data,
 //! a [`write`] layer serialising them in the fixed column layout a downstream
-//! shower expects, a [`parse`] layer reading the same layout back, and a
+//! shower expects, a [`parse`] layer reading the same layout back, a
 //! [`build`] layer that assembles an event record out of what the generator
 //! produces — the accepted point's momenta, the helicity combination and colour
-//! flow selected for it, and the scales it was evaluated at.
+//! flow selected for it, and the scales it was evaluated at — and an [`emit`]
+//! layer choosing how the accept/reject pass's weights become a file's events.
 //!
 //! # The column layout is MadGraph's, not an invention
 //!
@@ -62,6 +63,7 @@
 use thiserror::Error;
 
 pub mod build;
+pub mod emit;
 pub mod parse;
 pub mod record;
 pub mod write;

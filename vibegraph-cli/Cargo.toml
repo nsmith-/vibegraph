@@ -14,12 +14,12 @@ extended-validation = ["vibegraph-lib/extended-validation"]
 [dependencies]
 vibegraph-lib = { path = "../vibegraph-lib" }
 clap = { version = "4", features = ["derive"] }
+rand = "0.9"
+rand_chacha = "0.9"
 
 [dev-dependencies]
 tempfile = "3"
 serde_json = "1.0"
-rand = "0.9"
-rand_chacha = "0.9"
 
 [[test]]
 name = "cli_integrate"
