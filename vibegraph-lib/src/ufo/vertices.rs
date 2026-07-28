@@ -7,7 +7,7 @@ use super::lorentz::LorentzId;
 use super::particles::ParticleId;
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -30,7 +30,7 @@ pub struct Vertex {
     pub color: Vec<ColorExpr>,
     pub lorentz: Vec<LorentzId>,
     /// `(color_idx, lorentz_idx)` → coupling id.
-    pub couplings: HashMap<(usize, usize), CouplingId>,
+    pub couplings: BTreeMap<(usize, usize), CouplingId>,
 }
 
 /// Intermediate form from the Python AST parse; names not yet resolved to IDs.
@@ -39,7 +39,7 @@ pub(crate) struct RawVertex {
     pub particles: Vec<String>,
     pub color: Vec<String>,
     pub lorentz: Vec<String>,
-    pub couplings: HashMap<(usize, usize), String>,
+    pub couplings: BTreeMap<(usize, usize), String>,
 }
 
 /// Parse `vertices.py` content into raw vertices (names, not IDs).
@@ -93,7 +93,7 @@ pub(crate) fn parse_vertices(src: &str) -> Result<Vec<RawVertex>, VertexError> {
             particles,
             color,
             lorentz,
-            couplings,
+            couplings: couplings.into_iter().collect(),
         });
     }
 

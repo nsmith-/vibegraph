@@ -7,7 +7,7 @@ use num_complex::Complex64;
 use num_traits::Zero;
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -50,9 +50,9 @@ pub struct ParameterSet {
     /// Internal parameters in topo-sorted evaluation order.
     pub internals: Vec<Parameter>,
     /// Reverse dependency map: name → list of parameter names that depend on it.
-    pub rdeps: HashMap<String, Vec<String>>,
+    pub rdeps: BTreeMap<String, Vec<String>>,
     /// Const-zero parameters (set by restrictions)
-    pub zeros: HashSet<String>,
+    pub zeros: BTreeSet<String>,
 }
 
 impl ParameterSet {
@@ -234,7 +234,7 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
 
     let internals = toposort_internals(raw_internals)?;
 
-    let mut rdeps: HashMap<String, Vec<String>> = HashMap::new();
+    let mut rdeps: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for p in &internals {
         if let ParamNature::Internal { deps, .. } = &p.nature {
             for dep in deps {
@@ -247,7 +247,7 @@ pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
         externals,
         internals,
         rdeps,
-        zeros: HashSet::new(),
+        zeros: BTreeSet::new(),
     })
 }
 

@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 use num_complex::Complex64;
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ops::Index;
 use thiserror::Error;
 
@@ -65,7 +65,7 @@ pub struct Coupling {
     /// Symbolic expression for the coupling constant value.
     pub value: Expr,
     /// Coupling order dict, e.g. `{"QCD": 1}`.
-    pub orders: HashMap<String, usize>,
+    pub orders: BTreeMap<String, usize>,
     /// Parameter names this coupling directly depends on.
     pub deps: Vec<String>,
 }
@@ -114,13 +114,13 @@ pub fn parse_couplings(src: &str) -> Result<Vec<Coupling>, CouplingError> {
 }
 
 /// Extract the `order = {'QCD': 1, ...}` dict from keyword arguments.
-fn extract_orders(keywords: &[ast::Keyword]) -> HashMap<String, usize> {
+fn extract_orders(keywords: &[ast::Keyword]) -> BTreeMap<String, usize> {
     use super::ast_util::get_kwarg;
     let Some(val) = get_kwarg(keywords, "order") else {
-        return HashMap::new();
+        return BTreeMap::new();
     };
     let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = val else {
-        return HashMap::new();
+        return BTreeMap::new();
     };
 
     keys.iter()

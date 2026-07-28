@@ -6,31 +6,45 @@
 //! identity carries both — a human-readable label for error messages, and a digest
 //! over the source bytes the model was actually built from.
 //!
-//! The digest is SHA-256 over length-framed parts. It has to be stable across
-//! builds and platforms, which rules out `std`'s `DefaultHasher` (documented as
-//! unstable between releases).
+//! The digest is SHA-256 over the model's **own serialized form** — the same
+//! bincode encoding of a restricted [`ParsedModel`] that the interned SM blob
+//! holds — not over the UFO source files it was parsed from. Two models that
+//! parse to the same particles, couplings, vertices and parameters are the same
+//! model, whatever the Python around them said: a reworded comment, reordered
+//! imports or reformatted whitespace must not refuse an artifact. Equally, the
+//! restriction is baked in before hashing, so the restrict card contributes
+//! through its *effect* rather than its text.
+//!
+//! The digest has to be stable across builds and platforms, which rules out
+//! `std`'s `DefaultHasher` (documented as unstable between releases). Serializing
+//! is deterministic because every collection in `ParsedModel` is an `IndexMap`,
+//! which preserves the parser's insertion order.
 
 use std::fmt::Write as _;
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::sm::{sm_assets, SMRestrict};
-use super::{UfoError, OPTIONAL_SOURCE_FILES, REQUIRED_SOURCE_FILES};
+use super::sm::{sm_digest, SMRestrict};
+use super::ParsedModel;
 
-/// SHA-256 over `parts`, each prefixed by its length so that a different split of
-/// the same concatenated bytes gives a different digest.
-pub fn digest(parts: &[&[u8]]) -> String {
-    let mut hasher = Sha256::new();
-    for part in parts {
-        hasher.update((part.len() as u64).to_le_bytes());
-        hasher.update(part);
-    }
-    hasher.finalize().iter().fold(String::new(), |mut hex, b| {
-        let _ = write!(hex, "{b:02x}");
-        hex
-    })
+/// SHA-256 of `bytes`, lowercase hex.
+pub fn digest_bytes(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .fold(String::new(), |mut hex, b| {
+            let _ = write!(hex, "{b:02x}");
+            hex
+        })
+}
+
+/// SHA-256 over a parsed model's serialized form.
+///
+/// Callers pass the model with its restriction already applied
+/// ([`ParsedModel::apply_restriction`]), so the digest identifies the model that
+/// was actually built rather than the pre-restriction one every variant shares.
+pub fn model_digest(model: &ParsedModel) -> String {
+    digest_bytes(&bincode::serialize(model).expect("serialize ParsedModel"))
 }
 
 /// The model a run was built from: the `import model` directive that selected it,
@@ -41,9 +55,7 @@ pub struct ModelIdentity {
     pub name: String,
     /// Restrict-card selector; `"default"` for a bare `import model sm`.
     pub restrict: String,
-    /// [`digest`] over the model's source bytes: for the interned SM, the
-    /// compressed pre-restriction blob and the restrict card's raw text; for a UFO
-    /// directory, every source file the loader reads plus the restrict card.
+    /// [`model_digest`] over the restricted model this run was built from.
     pub digest: String,
 }
 
@@ -53,76 +65,23 @@ impl ModelIdentity {
         format!("{}-{}", self.name, self.restrict)
     }
 
-    /// Identity of an interned SM variant, digesting the assets [`sm_model`]
-    /// builds it from.
-    ///
-    /// [`sm_model`]: super::sm::sm_model
+    /// Identity of an interned SM variant.
     pub fn interned_sm(restrict: SMRestrict) -> Self {
         ModelIdentity {
             name: "sm".to_string(),
             restrict: restrict.suffix().to_string(),
-            digest: digest(&sm_assets(restrict)),
+            digest: sm_digest(restrict).to_string(),
         }
     }
 
-    /// Identity of a model loaded from a UFO directory, digesting every source
-    /// file [`ParsedModel::parse`] reads plus the restrict card
-    /// [`UFOModel::load`] resolves — so the digest covers exactly the bytes the
-    /// loaded model was derived from.
-    ///
-    /// Optional files and the restrict card contribute a presence marker as well
-    /// as their bytes, so "absent" and "present but empty" are distinct.
-    ///
-    /// [`ParsedModel::parse`]: super::ParsedModel::parse
-    /// [`UFOModel::load`]: super::UFOModel::load
-    pub fn from_ufo_dir(
-        name: &str,
-        restrict: &str,
-        dir: &Path,
-        restrict_card: Option<&Path>,
-    ) -> Result<Self, UfoError> {
-        let read = |path: &Path| -> Result<Vec<u8>, UfoError> {
-            std::fs::read(path).map_err(|cause| UfoError::Io {
-                file: path.display().to_string(),
-                cause,
-            })
-        };
-
-        let mut parts: Vec<Vec<u8>> = Vec::new();
-        for file in REQUIRED_SOURCE_FILES {
-            parts.push(read(&dir.join(file))?);
-        }
-        for file in OPTIONAL_SOURCE_FILES {
-            let path = dir.join(file);
-            // The loader treats an unreadable optional file as absent, so the
-            // digest has to as well.
-            parts.push(std::fs::read(&path).unwrap_or_default());
-            parts.push(vec![path.exists() as u8]);
-        }
-
-        // Mirrors the loader's resolution: the explicit card, else
-        // `restrict_default.dat` when the directory has one, else no restriction.
-        let card_path = match restrict_card {
-            Some(path) => Some(path.to_path_buf()),
-            None => {
-                let default = dir.join("restrict_default.dat");
-                default.exists().then_some(default)
-            }
-        };
-        match card_path {
-            Some(path) => {
-                parts.push(read(&path)?);
-                parts.push(vec![1]);
-            }
-            None => parts.push(vec![0]),
-        }
-
-        let refs: Vec<&[u8]> = parts.iter().map(|p| p.as_slice()).collect();
-        Ok(ModelIdentity {
+    /// Identity of a model loaded from a UFO directory, given the digest the
+    /// loader computed from the restricted model it built.
+    pub fn from_loaded(name: &str, restrict: &str, digest: String) -> Self {
+        ModelIdentity {
             name: name.to_string(),
             restrict: restrict.to_string(),
-            digest: digest(&refs),
-        })
+            digest,
+        }
     }
 }
 
@@ -130,36 +89,53 @@ impl ModelIdentity {
 mod tests {
     use super::*;
 
-    /// The digest separates its parts: a different split of the same concatenated
-    /// bytes must not collide, or a restrict card could be made to look like a
-    /// longer model blob with a shorter card.
+    /// Known answers against `shasum -a 256`, so a banked value is pinned to
+    /// SHA-256 and not merely to whatever this build computes. A digest that
+    /// changed silently would refuse every artifact written before it.
     #[test]
-    fn digest_is_framed_not_concatenated() {
-        assert_ne!(digest(&[b"ab", b"c"]), digest(&[b"a", b"bc"]));
-        assert_ne!(digest(&[b"abc"]), digest(&[b"ab", b"c"]));
-        assert_eq!(digest(&[b"ab", b"c"]), digest(&[b"ab", b"c"]));
-        assert_eq!(digest(&[]).len(), 64);
-    }
-
-    /// Known answers against `shasum -a 256`, so the banked value is pinned to
-    /// SHA-256 of the framed bytes and not merely to whatever this build computes.
-    /// A digest that changed silently would refuse every artifact written before it.
-    #[test]
-    fn digest_matches_sha256_of_the_framed_bytes() {
+    fn digest_bytes_matches_sha256() {
         assert_eq!(
-            digest(&[]),
+            digest_bytes(b""),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
         assert_eq!(
-            digest(&[b"abc"]),
-            "ce91dc5eec0139adf091900d225971d6ad246a845bad791b5693a9d0d55dd391"
+            digest_bytes(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
     }
 
+    /// A model's serialized form survives a bincode round trip unchanged, which is
+    /// what lets a digest banked during integration be compared against a model
+    /// deserialized later. `ParsedModel`'s collections are `IndexMap`s, so the
+    /// parser's order is preserved; a `HashMap` anywhere in it would make the
+    /// digest depend on iteration order and refuse artifacts at random.
+    #[test]
+    fn the_digest_survives_a_serialization_round_trip() {
+        let parsed = super::super::sm::sm_parsed_model();
+        let encoded = bincode::serialize(&parsed).unwrap();
+        let decoded: ParsedModel = bincode::deserialize(&encoded).unwrap();
+        assert_eq!(model_digest(&parsed), model_digest(&decoded));
+        assert_eq!(model_digest(&parsed), model_digest(&parsed.clone()));
+    }
+
+    /// Dropping a single vertex is a different model and must digest differently —
+    /// the check that `model_digest` reads the model's contents rather than some
+    /// stable-but-empty summary of it.
+    #[test]
+    fn a_changed_model_digests_differently() {
+        let parsed = super::super::sm::sm_parsed_model();
+        let base = model_digest(&parsed);
+
+        let mut fewer = parsed.clone();
+        let victim = fewer.vertices.keys().next().unwrap().clone();
+        fewer.vertices.shift_remove(&victim);
+        assert_ne!(model_digest(&fewer), base, "vertex removal is invisible");
+    }
+
     /// Every interned SM variant has a distinct identity. The digest is over the
-    /// shared blob plus the variant's own card, so this is really a check that the
-    /// card bytes reach the digest at all — a digest over the blob alone would
-    /// make all nine variants identical.
+    /// variant's *restricted* model, so this checks that the restriction reaches it
+    /// at all — a digest over the shared pre-restriction blob would make all nine
+    /// variants identical.
     #[test]
     fn every_interned_variant_has_its_own_digest() {
         let mut seen = std::collections::HashSet::new();
@@ -185,57 +161,5 @@ mod tests {
                 ModelIdentity::interned_sm(variant)
             );
         }
-    }
-
-    /// A UFO directory's digest moves when any source file's bytes move, including
-    /// the restrict card — the case a name comparison provably cannot see.
-    #[test]
-    fn a_directory_digest_follows_every_source_file() {
-        let tmp = std::env::temp_dir().join(format!(
-            "vibegraph-model-identity-{}-{}",
-            std::process::id(),
-            line!()
-        ));
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-        for file in REQUIRED_SOURCE_FILES {
-            std::fs::write(tmp.join(file), b"# empty\n").unwrap();
-        }
-        std::fs::write(tmp.join("restrict_default.dat"), b"BLOCK MASS\n  5 0.0\n").unwrap();
-
-        let base = ModelIdentity::from_ufo_dir("toy", "default", &tmp, None).unwrap();
-        assert_eq!(base.label(), "toy-default");
-
-        for file in REQUIRED_SOURCE_FILES {
-            let path = tmp.join(file);
-            let original = std::fs::read(&path).unwrap();
-            std::fs::write(&path, b"# changed\n").unwrap();
-            assert_ne!(
-                ModelIdentity::from_ufo_dir("toy", "default", &tmp, None)
-                    .unwrap()
-                    .digest,
-                base.digest,
-                "{file} does not reach the digest"
-            );
-            std::fs::write(&path, original).unwrap();
-        }
-
-        // Same name, different card contents.
-        std::fs::write(tmp.join("restrict_default.dat"), b"BLOCK MASS\n  5 4.7\n").unwrap();
-        let recard = ModelIdentity::from_ufo_dir("toy", "default", &tmp, None).unwrap();
-        assert_eq!(recard.label(), base.label());
-        assert_ne!(recard.digest, base.digest);
-
-        // An optional file appearing is a real change too.
-        std::fs::write(tmp.join("restrict_default.dat"), b"BLOCK MASS\n  5 0.0\n").unwrap();
-        std::fs::write(tmp.join(OPTIONAL_SOURCE_FILES[0]), b"# orders\n").unwrap();
-        assert_ne!(
-            ModelIdentity::from_ufo_dir("toy", "default", &tmp, None)
-                .unwrap()
-                .digest,
-            base.digest
-        );
-
-        std::fs::remove_dir_all(&tmp).ok();
     }
 }

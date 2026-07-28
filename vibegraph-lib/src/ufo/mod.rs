@@ -13,6 +13,7 @@ pub mod vertices;
 
 use couplings::{parse_couplings, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
+use identity::model_digest;
 use indexmap::IndexMap;
 use lorentz::{parse_lorentz, LorentzError, LorentzId, LorentzStructure};
 use num_complex::Complex64;
@@ -21,16 +22,16 @@ use particles::{parse_particles, Particle, ParticleError, ParticleId};
 use serde::{Deserialize, Serialize};
 use slha::ParamCard;
 use std::path::Path;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 use thiserror::Error;
 use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
 
 use topo::build_feyngraph_model;
 
 /// UFO source files [`ParsedModel::parse`] requires, in read order.
-///
-/// Shared with [`identity::ModelIdentity::from_ufo_dir`] so a model's digest covers
-/// exactly the files its parse consumed.
 pub const REQUIRED_SOURCE_FILES: [&str; 5] = [
     "particles.py",
     "lorentz.py",
@@ -45,7 +46,7 @@ pub const OPTIONAL_SOURCE_FILES: [&str; 1] = ["coupling_orders.py"];
 
 // Default SM coupling hierarchy: QCD (strong) counts once, QED (electroweak) counts twice.
 // Used when coupling_orders.py is absent or contains no hierarchy data.
-fn default_sm_hierarchy() -> HashMap<String, u32> {
+fn default_sm_hierarchy() -> BTreeMap<String, u32> {
     [("QCD".to_owned(), 1u32), ("QED".to_owned(), 2u32)]
         .into_iter()
         .collect()
@@ -55,15 +56,15 @@ fn default_sm_hierarchy() -> HashMap<String, u32> {
 ///
 /// Each line of the form `VAR = CouplingOrder(name='X', hierarchy=N, ...)` contributes
 /// one entry. Returns an empty map on parse failure (caller should fall back to defaults).
-fn parse_coupling_orders_hierarchy(src: &str) -> HashMap<String, u32> {
+fn parse_coupling_orders_hierarchy(src: &str) -> BTreeMap<String, u32> {
     use ast_util::{call_func_name, kwarg_int, kwarg_str, parse_stmts};
     use rustpython_parser::ast;
 
     let Ok(stmts) = parse_stmts(src) else {
-        return HashMap::new();
+        return BTreeMap::new();
     };
 
-    let mut map = HashMap::new();
+    let mut map = BTreeMap::new();
     for stmt in &stmts {
         let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
             continue;
@@ -122,7 +123,7 @@ pub struct UFOModel {
     pub topo: TopoModel,
     /// Coupling order hierarchy from `coupling_orders.py` (e.g. QCD→1, QED→2).
     /// Used to compute the WEIGHTED coupling order for automatic order selection.
-    pub order_hierarchy: HashMap<String, u32>,
+    pub order_hierarchy: BTreeMap<String, u32>,
 }
 
 /// The parsed, pre-restriction UFO model data.
@@ -138,7 +139,7 @@ pub struct ParsedModel {
     pub couplings: IndexMap<String, Coupling>,
     pub vertices: IndexMap<String, Vertex>,
     pub params: ParameterSet,
-    pub order_hierarchy: HashMap<String, u32>,
+    pub order_hierarchy: BTreeMap<String, u32>,
 }
 
 impl ParsedModel {
@@ -204,24 +205,30 @@ impl ParsedModel {
         })
     }
 
-    /// Apply a restrict card (bake its zeroed parameters, prune zero-coupling
-    /// vertices) and build the feyngraph topology model.
+    /// Bake a restrict card into the parsed model: lock the parameters it zeroes
+    /// and drop the vertices whose couplings vanish under them.
+    ///
+    /// The zeroed parameters (light masses/Yukawas, CKM mixing) are locked rather
+    /// than merely set — MadGraph does this on `import model` and prunes
+    /// vertices/diagrams against it, so a later param card must not revive them.
+    /// See `apply_restrict`.
+    pub fn apply_restriction(&mut self, restrict_card: &ParamCard) {
+        self.params.apply_restrict(restrict_card);
+
+        let restrict_values =
+            evaluate_couplings_for_restrict(&self.params, &self.couplings, restrict_card);
+
+        self.vertices.retain(|_name, vertex| {
+            !is_zero_coupling_vertex(vertex, &self.couplings, &restrict_values)
+        });
+    }
+
+    /// Apply a restrict card and build the feyngraph topology model.
     ///
     /// With `restrict = None`, no pruning happens — the full vertex set is kept.
     pub fn into_model(mut self, restrict: Option<&ParamCard>) -> Result<UFOModel, UfoError> {
         if let Some(restrict_card) = restrict {
-            // Lock the restriction's zeroed parameters (light masses/Yukawas, CKM
-            // mixing) to zero — MadGraph does this on `import model` and uses it to
-            // prune vertices/diagrams, so a later param card must not revive them.
-            // See `apply_restrict`.
-            self.params.apply_restrict(restrict_card);
-
-            let restrict_values =
-                evaluate_couplings_for_restrict(&self.params, &self.couplings, restrict_card);
-
-            self.vertices.retain(|_name, vertex| {
-                !is_zero_coupling_vertex(vertex, &self.couplings, &restrict_values)
-            });
+            self.apply_restriction(restrict_card);
         }
 
         // Build the feyngraph model using vibegraph's parsed UFO data
@@ -250,7 +257,19 @@ impl UFOModel {
     /// If `restrict_card` is `None`, automatically looks for `restrict_default.dat`
     /// in the UFO directory. If found, it is used for vertex pruning (zero-coupling vertices are removed).
     pub fn load(path: &Path, restrict_card: Option<&Path>) -> Result<Arc<Self>, UfoError> {
-        let parsed = ParsedModel::parse(path)?;
+        Self::load_with_digest(path, restrict_card).map(|(model, _)| model)
+    }
+
+    /// [`load`](Self::load), also returning the [`model_digest`] of the restricted
+    /// model it built.
+    ///
+    /// Loading and identifying share this one path so the digest can never
+    /// describe a different model than the one returned.
+    pub fn load_with_digest(
+        path: &Path,
+        restrict_card: Option<&Path>,
+    ) -> Result<(Arc<Self>, String), UfoError> {
+        let mut parsed = ParsedModel::parse(path)?;
 
         // Resolve the restrict card path: explicit, else restrict_default.dat if present.
         let restrict_card_path = match restrict_card {
@@ -276,7 +295,13 @@ impl UFOModel {
             None => None,
         };
 
-        parsed.into_model(card.as_ref()).map(Arc::new)
+        if let Some(card) = card.as_ref() {
+            parsed.apply_restriction(card);
+        }
+        let digest = model_digest(&parsed);
+        // The restriction is already baked in, so `into_model` only builds topology.
+        let model = parsed.into_model(None)?;
+        Ok((Arc::new(model), digest))
     }
 
     /// Load with automatic restrict card discovery (equivalent to `load(path, None)`).
