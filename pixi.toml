@@ -79,6 +79,10 @@ extract-sigma = { cmd = "python validation/madgraph/extract_sigma.py", depends-o
 # Runs under --profile profiling; build/samply the same target to weight time by
 # integration difficulty (see validate_sigma.rs / README).
 validate-sigma = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_sigma -- --nocapture", depends-on = ["extract-sigma"] }
+# Unweighting gate: accept/reject over each process's frozen per-channel VEGAS
+# grids, with the event sample compared against the weighted estimator over the
+# same grids — in sigma (swept over generation seeds) and in binned distributions
+validate-unweighting = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_unweighting -- --nocapture", depends-on = ["build-diagrams"] }
 # Link MadGraph's own alfas_functions.f against a driver and write the committed
 # running-alpha_s reference grid (validation/alphas/reference.csv)
 generate-alphas-reference = "bash validation/alphas/gen_reference.sh"
