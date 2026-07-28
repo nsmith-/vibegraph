@@ -264,6 +264,75 @@ Unweighting over the frozen grid + Sprint-A multichannel sampler:
 (invariant-mass / angular histograms) within MC error. Per the seed-sweep lesson,
 sweep seeds before trusting the σ agreement.
 
+### E2 outcome (2026-07-28) ✅
+
+`unweight::Unweighter` (`vibegraph-lib/src/unweight.rs`) + the
+`validate_unweighting` gate. Landed in two commits (`6c36411` selection
+primitives, `6f1b226` accept/reject) — the session was interrupted twice by
+infrastructure failures, and committing at the seam is why nothing was lost.
+
+**Plan correction — the channel draw.** The brief said draw the channel
+`∝ σⱼ`; that is wrong. The channel must be drawn **`∝ w_maxⱼ`**. Only that rule
+leaves the *kept* events distributed `∝ σⱼ` without a compensating per-event
+weight: a channel offered a share of trials `∝ w_maxⱼ` and accepting at rate
+`σⱼ/w_maxⱼ` contributes kept events `∝ σⱼ`, which is the whole point of
+unweighting. Drawing `∝ σⱼ` would require re-weighting every accepted event and
+would not be an unweighted sample at all. Overall efficiency is then
+`σ / Σⱼ w_maxⱼ`, exactly the quantity the per-channel-grid session measured.
+
+**Overweight treatment.** Overweights are *kept* at weight `> 1` (not clipped)
+and counted three ways: rate, cross-section share, and excess share. Clipping
+would bias σ low invisibly; keeping them preserves the estimator and puts the
+distortion on the record.
+
+**Measured** (`validate_unweighting`, 5 processes × 4 seeds, ~6 s, profiling
+profile). Efficiency reproduces the predicted `σ/Σⱼw_maxⱼ` to ≤1% everywhere:
+
+| process | chan | eff (pred) | largest chan share | overwt frac | wt share | max `w/w_max` | σ(events) vs VEGAS |
+|---|---|---|---|---|---|---|---|
+| `ee_to_mumu` | 2 | 2.224e-1 (2.226e-1) | 50% | 6.5e-5 | 2.9e-4 | 1.014 | pull −0.49, −0.100% |
+| `uux_to_uux` | 2 | 1.210e-1 (1.206e-1) | 54% | 2.3e-5 | 2.0e-4 | 1.081 | pull +0.58, +0.310% |
+| `gg_to_ttx` | 3 | 2.333e-1 (2.335e-1) | 38% | 1.5e-4 | 6.3e-4 | 1.031 | pull −0.60, −0.105% |
+| `ee_to_tatah` | 5 | 1.064e-1 (1.060e-1) | 100% | 2.3e-5 | 2.5e-4 | 1.575 | pull +1.17, +0.356% |
+| `ee_to_mumua` | 8 | 2.872e-2 (2.854e-2) | 29% | 1.5e-4 | 9.3e-3 | **8.393** | pull +1.63, +1.024% |
+
+Shape agreement `χ²/dof` 0.42–1.18 over 7–16 bins, worst single-bin pull 2.14.
+Seed spreads 0.42%–1.30%.
+
+**The oracle is deliberately not self-referential**: σ from events is compared
+both to the VEGAS σ *and* to an independent weighted estimator over the same
+grids that uses a **different channel-selection rule**, so the reference cannot
+share the generator's mistake.
+
+**`ee_to_mumua` is the one to watch.** Its overweight tail is two orders of
+magnitude heavier than every other process (weight share 9.3e-3, excess share
+4.0e-3, a single event at **8.4×** its channel's assumed maximum), and its σ runs
++1.0% high with the widest seed spread. This is the photon-pole process that
+`validate_sigma::probe_photon_pole_is_the_instability` already flags, so the
+reading is that the finite-sample `w_max` scan under-resolves the same
+photon-pole region the sampler struggles with — the extremum is biased low, and
+badly so where the integrand has a near-singular spike. Not a blocker (the row
+gates), but E4 should surface the overweight share per run rather than bury it,
+and the honest fix is better pole coverage, not a fudged `w_max`.
+
+**`mg-single-helicity-bench` deferred, and re-sequenced away from this sprint.**
+The A6 go/no-go predicted accept/reject would make single-helicity evaluation the
+hot path. It did not: per-event helicity is a *selection* off the `eval_hel_m2`
+diagonal — one helicity-summed evaluation per accepted event, read off the
+*expanded* program — so the unexpanded single-helicity path never became hot.
+E3/E4 will not create that consumer either. Re-sequence it under whatever first
+needs a single fixed helicity in a loop.
+
+**Standing gates unmoved:** `validate_helas_mg` 14/14 bit-exact, 11 σ GATE rows
+unchanged (`uux_to_uux` pull −1.94, `gg_to_gg` −0.53), `color_cf_oracle` 24/24,
+`color_flow_tags_oracle` 24/24, `color_jamp_oracle` 3/3.
+
+**For E3:** events carry subprocess, helicity combination, colour flow index and
+momenta from `FixedBeamIntegrand::select_event`; colour tags come from E1's
+`ColorFlowTags`. Remember the E1b caveat — 4 gluon-initiated subprocesses use
+different colour *integers* than MadGraph's 501 pool for the same connectivity,
+so normalise colour labels before any byte-level `.lhe` diff.
+
 ## E3 — `lhef-writer`
 
 LHE serialiser: `<init>` (beams, PDF ids, process ids, `XSECUP`/`XERRUP`/`XMAXUP`,
