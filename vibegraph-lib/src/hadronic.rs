@@ -1562,6 +1562,49 @@ impl<'a> FixedBeamIntegrand<'a> {
         Some(report)
     }
 
+    /// Install the same per-diagram [`MultiChannel`] with selection weights taken
+    /// from a completed integration instead of re-surveyed.
+    ///
+    /// A sampling phase that replays trained grids has to reproduce the *exact*
+    /// integrand those grids were trained on, and `αⱼ` enters a channel's weight —
+    /// so re-running the α-adaptation would reproduce it only by accident, and
+    /// would silently stop doing so the moment the survey budget changed. Reading
+    /// the converged weights back is exact by construction and costs no survey.
+    ///
+    /// `Err` carries the channel count actually built when it disagrees with
+    /// `alphas` — which is what a proc card describing a different process looks
+    /// like from here. `None` if `diagrams` is empty, leaving the flat sampler in
+    /// place.
+    ///
+    /// # Panics
+    ///
+    /// If `alphas` are not a normalised set of positive selection weights.
+    pub fn use_multichannel_with_alphas(
+        &mut self,
+        diagrams: &[Diagram],
+        model: &EvaluatedModel,
+        alphas: &[f64],
+    ) -> Option<Result<(), usize>> {
+        let channels: Vec<Box<dyn Channel<f64>>> = diagrams
+            .iter()
+            .map(|d| {
+                Box::new(DiagramChannel::from_diagram(d, model, self.sqrt_s))
+                    as Box<dyn Channel<f64>>
+            })
+            .collect();
+        if channels.is_empty() {
+            return None;
+        }
+        if channels.len() != alphas.len() {
+            return Some(Err(channels.len()));
+        }
+        let mut combiner = MultiChannel::uniform(channels);
+        combiner.set_alphas(alphas.to_vec());
+        self.sampler = Sampler::Multi(combiner);
+        self.vegas_alpha = VEGAS_ALPHA_MAPPED;
+        Some(Ok(()))
+    }
+
     /// The channels the integral is split across: one per diagram once a
     /// multichannel combiner is installed, and `1` under the flat map.
     pub fn channel_count(&self) -> usize {
@@ -2404,6 +2447,111 @@ mod tests {
         );
         // A run that only ever produced one label would satisfy the above vacuously.
         assert!(seen_helicities.len() > 1 && seen_flows.len() > 1);
+    }
+
+    /// Replaying banked channel weights must rebuild the *same* integrand, not a
+    /// similar one: a sampling phase draws against grids trained on it, and `αⱼ`
+    /// enters every channel's weight. Bit-for-bit is the right bar — anything
+    /// looser would let a re-survey pass while the grids no longer fit.
+    #[test]
+    fn banked_channel_weights_rebuild_the_integrand_bit_for_bit() {
+        // A resonant multi-channel process, so the adaptation converges somewhere
+        // far from uniform. On a two-channel process it converges *to* uniform,
+        // where `αⱼ` cancels between a channel's weight and the mixture density and
+        // the comparison below cannot see whether the weights were installed at all.
+        let (m, evaluated, sets, diagrams) = fixed_energy_case("e+ e- > ta+ ta- h");
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let build = || {
+            let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+            FixedBeamIntegrand::new(amps, &cuts, 500.0, masses.clone(), avg)
+        };
+
+        let mut adapted = build();
+        adapted
+            .use_multichannel(&diagrams, &evaluated, 3_000, 4, 0x5EED_A)
+            .expect("channels");
+        let alphas = adapted.channel_alphas();
+        let uniform = 1.0 / alphas.len() as f64;
+        assert!(
+            alphas.iter().any(|a| (a - uniform).abs() > 0.05),
+            "the adaptation left the weights uniform ({alphas:?}), where they cancel out of the \
+             mixture and the comparison below would be blind to them"
+        );
+
+        let mut replayed = build();
+        replayed
+            .use_multichannel_with_alphas(&diagrams, &evaluated, &alphas)
+            .expect("channels")
+            .expect("one weight per channel");
+
+        assert_eq!(replayed.channel_count(), adapted.channel_count());
+        assert_eq!(replayed.channel_grid_ndim(), adapted.channel_grid_ndim());
+        let ndim = adapted.channel_grid_ndim();
+        let mut compared = 0;
+        for channel in 0..adapted.channel_count() {
+            for step in 1..=7 {
+                let u: Vec<f64> = (0..ndim)
+                    .map(|d| ((step * (d + 3) + channel) % 9) as f64 / 10.0 + 0.05)
+                    .collect();
+                let a = adapted.value_in_channel(channel, &u);
+                let b = replayed.value_in_channel(channel, &u);
+                assert_eq!(
+                    a.to_bits(),
+                    b.to_bits(),
+                    "channel {channel} at {u:?}: {a} vs {b}"
+                );
+                compared += usize::from(a > 0.0);
+            }
+        }
+        assert!(
+            compared > 0,
+            "every probe was cut away, so nothing was compared"
+        );
+
+        // The comparison above is only evidence if the weights reach the mixture:
+        // installing different ones has to move the same probes.
+        let mut skewed = build();
+        let mut other = vec![0.1 / (alphas.len() - 1) as f64; alphas.len()];
+        other[0] = 0.9;
+        skewed
+            .use_multichannel_with_alphas(&diagrams, &evaluated, &other)
+            .expect("channels")
+            .expect("one weight per channel");
+        let mut moved = 0;
+        for channel in 0..adapted.channel_count() {
+            for step in 1..=7 {
+                let u: Vec<f64> = (0..ndim)
+                    .map(|d| ((step * (d + 3) + channel) % 9) as f64 / 10.0 + 0.05)
+                    .collect();
+                let a = adapted.value_in_channel(channel, &u);
+                moved += usize::from(a.to_bits() != skewed.value_in_channel(channel, &u).to_bits());
+            }
+        }
+        assert!(
+            moved > 0,
+            "the selection weights are not reaching the mixture, so replaying them proves nothing"
+        );
+
+        // A weight list of the wrong length is what a proc card for a different
+        // process looks like from here, and is reported rather than installed.
+        let mut wrong = build();
+        let short = &alphas[..alphas.len() - 1];
+        assert_eq!(
+            wrong.use_multichannel_with_alphas(&diagrams, &evaluated, short),
+            Some(Err(diagrams.len()))
+        );
     }
 
     fn tiny_pdf() -> PdfMember {

@@ -125,7 +125,7 @@ fn resolve_pdf_dir(args: &IntegrateArgs) -> PathBuf {
 }
 
 /// The canonical string of the proc card's first process, for artifact metadata.
-fn process_string(parsed: &ParsedProcCard) -> Result<String, IntegrateError> {
+pub fn process_string(parsed: &ParsedProcCard) -> Result<String, IntegrateError> {
     let spec = parsed
         .processes
         .first()
