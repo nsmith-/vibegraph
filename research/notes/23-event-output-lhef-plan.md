@@ -672,7 +672,7 @@ tautology), agree on the `cosθ` shape at **χ²/dof = 0.952 over 10 bins, worst
   model name or restrict card, so `import model sm-no_b_mass` versus
   `import model sm` with the same `generate` line is *not* caught. Fixing it means
   banking the model import, i.e. an artifact `format_version` bump — filed, not
-  done.
+  done. **Closed straight after E4**; see the next section.
 
 **Scope notes.** `generate` covers fixed-energy partonic beams (`lpp = 0`) only
 and refuses `lpp = 1` by name: the Drell–Yan map is integrated but not split into
@@ -696,12 +696,127 @@ finding beyond the pre-existing error in `coupling/alphas.rs:210`.
 
 ---
 
+## Post-E4 correctness fix — model identity in the artifact (2026-07-28) ✅
+
+**The gap.** `generate` refused a proc card or run card that did not match the one
+that trained the grid, but `IntegrateArtifact` banked no model identity, and a
+process string is not a model. `import model sm-no_b_mass` with a byte-identical
+`generate` line and run card passed every check and produced events from a
+different model than the grids came from. E4 filed it as a known blind spot rather
+than improvising the schema bump; this session closes it.
+
+**What now catches it.** `IntegrateArtifact` is `format_version = 3`, carrying
+
+```rust
+pub struct ModelIdentity { name: String, restrict: String, digest: String }
+```
+
+— the `import model` label (`sm-no_b_mass`) for the error message, and a digest of
+the bytes the model was actually built from: for the interned SM, the compressed
+pre-restriction blob plus that variant's restrict-card text
+(`ufo::sm::sm_assets`); for a UFO directory, every source file the parser reads
+(`ufo::REQUIRED_SOURCE_FILES`, now shared between the parser and the digest, so
+they cannot drift) plus the restrict card the loader resolves.
+
+`card_mismatches` compares both. A differing **label** is reported by name, in the
+same style as the run-card mismatches. When the labels agree, a differing
+**digest** is reported instead — that is the case the digest exists for and a name
+provably cannot see: a restrict card regenerated with different contents under an
+unchanged name. Resolution and identification share one path
+(`GlobalConfig::load_ufo_with_identity`), so a banked digest can never describe a
+different model than the one that was loaded.
+
+The digest is a 128-bit FNV-1a over length-framed parts, written out in the
+crate. Neither a cryptographic hash crate nor a stable non-crypto one is in the
+dependency set, and `std`'s `DefaultHasher` is documented as unstable between
+releases — which for a value banked to disk and compared by a later run would mean
+spurious refusals after a toolchain bump. The threat model is an accidental
+mismatch, not a forged one.
+
+**Any artifact written before this must be regenerated** — the prefix version
+check refuses it by name before the body is decoded, as it does for any other
+schema. Nothing in the repo, in `pixi.toml`, or in a test consumes a committed
+artifact: every test writes its own with `vibegraph integrate`, so there was
+nothing to regenerate.
+
+**Tests, and what each provably cannot detect.**
+
+| Test | Pins | Blind to |
+|---|---|---|
+| `generate::tests::a_different_restrict_variant_is_refused` | `sm` vs `sm-no_b_mass` under an identical `generate` line and run card is refused, reported as `model` | A digest that is wrong the same way on both sides — it never reaches the digest branch |
+| `generate::tests::a_restrict_card_that_changed_under_its_name_is_refused` | Same label, different digest is refused | Whether the digest's *inputs* are the right bytes — it plants the digest directly |
+| `ufo::identity::a_directory_digest_follows_every_source_file` | Each source file, and the restrict card's contents under an unchanged name, reach the digest | Whether the parser reads the same file set — that is why the list is a shared const |
+| `ufo::identity::every_interned_variant_has_its_own_digest` | The restrict card reaches the SM digest (a blob-only digest would make all nine variants identical) | A blob that is stale — `interned_blob_matches_submodule_exactly` covers that |
+| `ufo::identity::digest_is_framed_not_concatenated` | `("ab","c")` and `("a","bc")` differ | Collisions in general; 128 bits is the argument, not a test |
+| `config::identity_follows_the_resolved_variant` | The identity handed back is the variant that was resolved | A digest that is wrong the same way on both sides |
+| `cli_generate::a_card_that_did_not_train_the_grid_is_refused` (new case) | End to end: a proc card importing a different restrict variant is refused by the binary | Everything the unit tests above are blind to |
+
+**Mutation checks** (each applied, run, reverted):
+
+| Mutation | Result |
+|---|---|
+| label comparison → `if false` | `a_different_restrict_variant_is_refused` FAILS (the digest still refuses the run, but by the wrong name) |
+| digest comparison → `else if false` | `a_restrict_card_that_changed_under_its_name_is_refused` FAILS |
+| both comparisons deleted | `cli_generate::a_card_that_did_not_train_the_grid_is_refused` FAILS — and the accepted wrong-model run wrote 10 events at **σ = 2061.99 pb against the banked 2022.62 pb, +1.95%**, which is what the check is standing in front of |
+
+### The compiled-program cache slot — designed, not built
+
+The motivation: if diagram enumeration or the e-graph extraction work ever gets
+expensive, `generate` should load a compiled `AmplitudeEvaluator` rather than
+recompiling one. **Measured today it is not expensive** — 0.05–0.29 s of setup for
+every process the CLI can currently run, against ~13 s for a 20k-event `generate`.
+So this is prospective, and nothing was built.
+
+**The key such a cache matches on** is `(model digest, process string, compiler
+schema version)`. The first two are already banked side by side in the artifact —
+they are the whole input to compilation — and the third belongs to the *cache
+entry*, not to the artifact: it says which compiler wrote the program, which the
+artifact cannot know. **No field was reserved.** A reserved field would be dead
+storage in every artifact ever written for a consumer that may never exist, while
+the key is already derivable from what is banked, so the cache costs no schema
+bump when it arrives. The derivation is recorded in the doc comment on
+`IntegrateArtifact` so the next person does not re-derive it.
+
+Three things make it more than a `derive`, and all three are recorded with it:
+
+1. **Nothing in `helas::eval` implements serde.** `Op`, `Node<T>`, `Sym`, `Const`,
+   `Folded` and the layout/constant-pool specs would all need it, plus a schema
+   version of their own — the arena encoding is an internal representation that has
+   changed repeatedly for performance (three sprints running), so it cannot ride
+   the artifact's version.
+2. **"The compiled program" is not one fixed object.** `AmplitudeEvaluator::folded_hel`
+   is an `OnceLock` built lazily on first `eval_m2`, and it is the large part.
+   Whether the expanded arena travels with a cached program or is rebuilt on load
+   is a decision about what the cache is for, not a detail.
+3. **A pruned evaluator carries a kinematic contract.** `prune_zero_helicities`
+   mutates the evaluator and is correct only for partonic-CM momenta with beams
+   along ±z; replayed under other kinematics it is silently wrong — no error, just
+   a missing set of helicities. The `pruned` flag must not travel unless the
+   contract travels with it and is rechecked on load.
+
+**Gate observed.** `cargo test` green — **488 lib** (+5: 4 `ufo::identity`, 1
+`config`) + **8 CLI unit** (+2 `generate`) + 3 `cli_generate` + 2
+`cli_fixed_energy` + every other suite; `cli_integrate` 3/3 under
+`extended-validation`. `validate_helas_mg` **14/14
+bit-exact/at-tolerance, unchanged** (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15,
+`gg_to_gg` 8.25e-14); `validate_sigma` **11 GATE rows unchanged** (`uux_to_uux`
+−1.94, `gg_to_gg` −0.53, `ee_to_mumu_tata_qcd0` still INFO at +2.2%);
+`color_cf_oracle` 24/24; `color_flow_tags_oracle` 24/24; `color_jamp_oracle` 3/3
+(`gg_to_gg` JAMP max_rel 3.65e-16); `validate_unweighting` unchanged
+(`ee_to_mumua` eff 2.872e-2, max `w/w_max` 8.393, pull +1.63); `validate_lhef` 3/3
+(198 747 events / 1 020 299 particle lines byte-identical across 20 runs).
+`cargo clippy` adds no new finding beyond the pre-existing error in
+`coupling/alphas.rs:210`.
+
+---
+
 ## Sprint close-out (2026-07-28) ✅
 
-**E1 → E2 → E3 → E4 all complete**, on branch `event-output-lhef`. The pipeline
-now runs end to end: UFO model → diagrams → HELAS amplitudes → multichannel phase
-space + VEGAS → σ + banked grids (`vibegraph integrate`) → unweighted events
-(`vibegraph generate`) → a Les Houches file.
+**E1 → E2 → E3 → E4 plus one post-E4 correctness fix, all complete**, on branch
+`event-output-lhef`. The pipeline now runs end to end: UFO model → diagrams →
+HELAS amplitudes → multichannel phase space + VEGAS → σ + banked grids
+(`vibegraph integrate`) → unweighted events (`vibegraph generate`) → a Les Houches
+file.
 
 | Session | Commit(s) |
 |---|---|
@@ -711,7 +826,8 @@ space + VEGAS → σ + banked grids (`vibegraph integrate`) → unweighted event
 | per-channel VEGAS grids (detour, before E2) | `9afcbe4` |
 | E2 `accept-reject` | `6c36411`, `6f1b226`, `bd0755e` |
 | E3 `lhef-writer` | `2154222`, `8d9a337` |
-| E4 `generate-cli` | `2df978b` |
+| E4 `generate-cli` | `2df978b`, `a349878` |
+| post-E4 model identity in the artifact | `fc11526` |
 
 **What the sprint delivered.** `eval_jamp2` and the `leshouche.inc`-checked
 flow → `ICOLUP` dictionary (24/24 subprocesses, strong form including
@@ -719,7 +835,9 @@ flow → `ICOLUP` dictionary (24/24 subprocesses, strong form including
 caveat as an artifact of a greedy matcher rather than a real discrepancy; the
 `Unweighter` and its `∝ w_maxⱼ` channel rule with overweight bookkeeping; the
 four-layer `lhef/` writer/reader pinned byte-for-byte against 20 banked MadGraph
-runs; and the `generate` CLI with a swappable weight strategy.
+runs; the `generate` CLI with a swappable weight strategy; and
+`IntegrateArtifact` `format_version = 3`, which banks the model a grid was trained
+under so a replay against a different one is refused rather than silently sampled.
 
 **Deferred out of this sprint.**
 
@@ -728,7 +846,7 @@ runs; and the `generate` CLI with a swappable weight strategy.
 | **Downstream-shower validation of the emitted `.lhe`** (Pythia via pixi) | The E4 gate reads its own output with `lhef::parse`, which cannot see a self-consistently wrong format. E3's MadGraph round trip is the real format evidence; a shower actually consuming our file is the missing one. |
 | **Event-sample vs MadGraph statistical comparison** | Filed in E3. Distribution-level, including the empirical `SPINUP` and `ICOLUP` frequencies that E1/E2 pin only as rules. Needs designing as a validation pass. |
 | **Streaming `IDWTUP = -4` (two-pass replay)** | Interface in place (`EventSource::restart`), implementation not needed while 100k-event runs buffer comfortably. |
-| **Model import in the artifact fingerprint** | A `format_version` bump; the card check is otherwise exact. |
+| **Compiled-program cache in the artifact** | Designed above, deliberately not built: compilation is 0.05–0.29 s against ~13 s for a 20k-event `generate`. **Trigger:** setup climbing to a noticeable share of a generation run — richer diagram enumeration, or e-graph extraction becoming part of compilation. The key it would match on is already banked; the three obstacles are recorded with it. |
 | **Proton-beam (`lpp = 1`) event generation** | The Drell–Yan map has no channel decomposition, so no `ChannelIntegrand`. |
 | **`mg-single-helicity-bench`** | Re-sequenced in E2: accept/reject never made single-helicity evaluation the hot path, so it has no consumer yet. |
 
