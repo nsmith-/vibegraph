@@ -1,5 +1,9 @@
 # `event-output-lhef` — unweighted event output (sprint plan)
 
+**✅ CLOSED 2026-07-28, merged to `main` (ff, HEAD `073f482`; the model-digest
+hardening continued on `main` through `5849241`).** Close-out with session
+outcomes and the deferred table in §"Sprint close-out" below.
+
 Sprint B of the two-sprint events program opened in note 21 (Sprint A =
 `resonance-sampling`, ✅ closed + merged 2026-07-26). Four sessions, **E1 → E4**,
 strictly linear. `mg-single-helicity-bench` folds into E2.

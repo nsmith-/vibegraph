@@ -1,5 +1,9 @@
 # `dynamical-scales` — running couplings and the per-event scale (sprint plan)
 
+**✅ CLOSED 2026-07-27, merged to `main` (ff, HEAD `3a98900`).** D1–D4 landed;
+D5 stayed optional and was not needed. Close-out with session outcomes at the
+end of this note.
+
 Feature sprint, 4 sessions + 1 optional (D1–D4, D5 optional). Sequenced **before**
 Sprint B `event-output-lhef`, because the per-event renormalisation scale and
 `αs` at that scale are LHE `<event>`-line fields (`SCALUP`, `AQCDUP`), so B would
@@ -256,3 +260,111 @@ Same regime as the last three sprints: **`feature-dev`** agent (Opus; never
 general-purpose), one session per agent, worktrees pre-created off `main` by hand
 with the validation data COW-cloned, hard `cd`-verify before each agent acts.
 Every session stays behind the 14-process `validate_helas_mg` bit-exact net.
+
+---
+
+## Sprint close-out (2026-07-27) ✅
+
+All four required sessions landed on branch `dynamical-scales` (HEAD `5b1258f`)
+and fast-forwarded onto `main` (HEAD `3a98900`). D5 was not needed — §2 explains
+why per-diagram coupling orders are not a dependency: the power of `G` lives in
+each vertex's coupling and a diagram's total power emerges from the product.
+
+### Session outcomes
+
+**D1 `alphas-running` ✅** — `coupling::alphas` ports `ALPHAS`/`NEWTON1`
+bit-exactly against MG's own Fortran (792-point grid, `nloop` 1–3) and resolves
+`asmz`/`nloop` from the run card, gated on the `AQCDUP` field of 180k banked
+LHE events.
+
+**D2 `scale-choice` ✅** — `coupling::scales` compiles a run card into `μR` and a
+**per-beam** `μF`: the fixed branches, `dynamical_scale_choice` 1–5, and the
+`-1` clustering cases that collapse to a closed form (a t-channel 2→2 with
+equal-`djb` legs; an s-channel-only tree at any multiplicity), with everything
+else an explicit refusal. Gated per event on the banked LHE at the fields' own
+printed precision — 400k comparisons over 140k events in 14 runs, worst 1.000
+of budget — and the 6 runs needing the general kT clustering are asserted as
+refused, not skipped. D2's corrections to the survey are folded into
+§1.2/§1.3/§1.4/§4 above; the one that mattered downstream is that the banked
+hadronic σ reference cards fix *both* scales at 91.188, so those numbers must
+not move — and they did not.
+
+**D3 `scale-aware-couplings` ✅** — `ScaleAwareAmplitude`
+(`helas/eval/rescale.rs`) owns a bound amplitude's constant pools and moves them
+to a per-event `αs` two ways: re-evaluating the model
+(`EvaluatedModel::set_alpha_s` + `Folded::pools`, exact for any parameter graph)
+or scaling each entry by `rⁿ` from its power of `G`, read symbolically off the
+UFO expressions and propagated through the folded constant subgraph (`Mul` adds
+exponents, `Add` requires them equal). A sum of unequal powers, a function of
+`G`, or any other `aS`-driven parameter goes untagged and sends the whole
+amplitude down the reference path. Gated entry by entry, scaling against
+reference, at 100 random `αs` for all 14 amplitude-gate processes
+(`validate-scale-couplings`): every pool entry tagged, no process needs the
+fallback, worst 5 ulp — bit equality is unreachable, the two paths being
+different floating-point routes to the same value rather than the same
+expression — and the pools return bit-for-bit to the bound ones at the card's
+own `αs`, which is what leaves `validate_helas_mg` untouched. Only 1–3 entries
+per process carry a power of `G` (11 of 14 carry none), so `set_alpha_s` costs
+12.2 ns against `gg_to_gg`'s 1.56 µs per point, and 3.2 ns on an amplitude with
+no strong coupling. Pools are per-thread by ownership (`fork`), never shared
+mutably.
+
+**D4 `dynamic-scale-in-integrator` ✅** — D1–D3 wired into `FixedBeamIntegrand`
+and `DrellYanIntegrand`. Per point the momenta give `μR` and a per-beam `μF`;
+`μF` feeds the two PDF calls separately (`q2fact(1)`/`q2fact(2)` can differ),
+`μR` feeds the coupling move, both before the matrix element. The
+`ClusterTopology` the `-1` scale needs is **derived** from the process rather
+than declared per run: `coupling::topology` reads the t-channel from the
+diagrams' momentum routing (`Prop::is_spacelike` — vertex adjacency alone would
+miss `e⁺e⁻ → μ⁺μ⁻τ⁺τ⁻`'s `ZZ` diagram), the beam↔leg merge mask from vertex
+adjacency, colour from the model, and `isjet` from `maxjetflavor`; it reproduces
+every declaration `validate_scales.rs` makes by hand for the processes the σ
+gate covers. Short-circuits: a fully fixed prescription resolves once at setup
+and reads no kinematics, a fixed-beam process whose matrix element carries no
+strong coupling compiles no prescription at all (which is also what keeps
+Drell-Yan away from D1's `pdlabel = lhapdf` refusal), and `αs(μR)` is memoised
+across repeats. Cost `probe_scale_cost`: ~100 ns/point against a 0.5–1.7 µs
+matrix element.
+
+### Headline
+
+**The three QCD σ rows are now hard GATEs**: `gg_to_ttx` pull +0.20 (rel
+4.9e-4), `gg_to_gg` −0.64 (2.0e-3), `uux_to_uux` −0.63 (1.6e-3), each stable
+over five seeds with the deviation shrinking as the budget grows
+(`probe_qcd_seed_stability`). Drell-Yan did not move, as §4 requires — both
+reference cards fix both scales at 91.188, now asserted in
+`validate_hadronic.rs` rather than assumed.
+
+**Two MadGraph defects found first-hand**, both written up in note 07:
+`unwgt.f:694-695` truncates π to eight digits when filling the LHE `AQCDUP` and
+`AQEDUP` fields while `g` was built from full-precision π — a systematic
+`+1.7e-8` baked in before printing, so it is not an artifact of the seven-digit
+output format and would survive widening the field; and the `-1` scale MadGraph
+writes as `SCALUP` is the *factorisation* scale (`unwgt.f:686`,
+`sqrt(max(q2fact(1), q2fact(2)))`), which parts company with `μR` on ≥2→3
+topologies — inverting `αs` against `AQCDUP` puts the true `μR` at 0.50–1.00 of
+the printed `SCALUP` on the two 2→6 runs.
+
+### Found along the way — the missing identical-particle symmetry factor
+
+Promoting `gg_to_gg` uncovered a **missing final-state identical-particle
+symmetry factor** in `FixedBeamIntegrand`: `dΦ_n` counts both orderings of the
+two outgoing gluons, so its σ was exactly twice MadGraph's. It is the only
+MG-validated process with a repeated outgoing particle, and its `Plan::Info`
+status had been hiding the factor of 2 behind the running-αs gap.
+`final_state_symmetry_factor` now derives `1/Π_s n_s!` from the evaluator's
+outgoing legs — but it landed as a per-integrand scalar, which is the wrong
+home; the follow-up (make the factor a property of the phase-space map, which
+is what over-counts) is filed in TODO.md as `identical-particle-permutation`.
+
+### Deferred / open at close (carried forward in TODO.md, not regressions)
+
+| Item | Why it is open | Where |
+|---|---|---|
+| General kT clustering for `dynamical_scale_choice = -1` | Out of scope by §5, and a subproject in its own right (it is also what MLM matching needs). 6 banked runs are asserted as refused rather than skipped. **This is now a hard prerequisite for gating any QCD process beyond 2→2** — the short-circuit that lets `e⁺e⁻ → μ⁺μ⁻a` integrate without a prescription stops covering it the moment the matrix element carries a strong coupling | `coupling/scales.rs`, `validate_scales.rs` |
+| `uux_to_uux` ~0.15% negative mean | Stable over five seeds and shrinking with budget, so sampling rather than a defect, but larger than the seed spread alone explains. The spacelike collinear region a single-rung t-channel spine under-resolves is where to look — pairs with note 21's deferred multi-rung spine | `validate_sigma.rs` |
+| `μF ≥ 2 GeV` event veto | `reweight.f:1185` makes `setclscales` *fail* below it — a veto, not a scale. Not implemented; bites nothing today (the QCD gate rows have no PDF, the hadronic reference cards fix μF at 91.188), but a hadronic run with a dynamic μF reaching below 2 GeV will disagree with MG | `coupling/scales.rs` (§4 above) |
+| Per-event scale cost ~100 ns/point | 6–20% of the matrix element depending on process — reported, not hidden. `ScaleChoice::clustered` heap-allocates its beam–leg candidate `Vec` once per event; that is the obvious first cut | `coupling/scales.rs`, `validate_sigma.rs` `probe_scale_cost` |
+| Per-lane scales | With pool mutation, `eval_m2_lanes` can only batch points sharing one `αs`. Nothing needs it today (the integrands are scalar), but a SIMD-batched dynamic-scale integrator would need the scaling fused into the constant loads instead | `helas/eval/rescale.rs` |
+| `ee_to_wpwm` topology mask | D4's derivation and D2's hand declaration disagree on which beam pairs with which W. Unpinned either way — with colourless beams the tie-break never reaches the scale — so both pass. Matters only if that mask is ever made load-bearing | `coupling/topology.rs` vs `validate_scales.rs` |
+| `run_card_dy.dat` vs the `dy13` cards | The test fixture sets `fixed_ren_scale = False` where both banked reference cards set it True. Asserted as a known discrepancy rather than silently aligned, since a banked σ depends on those cards | `validate_scales.rs` |

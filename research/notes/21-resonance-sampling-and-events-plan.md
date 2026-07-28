@@ -1,5 +1,9 @@
 # Resonance-aware sampling → event generation (program plan)
 
+**✅ PROGRAM COMPLETE 2026-07-28.** Sprint A `resonance-sampling` closed +
+merged 2026-07-26 (close-out below); Sprint B `event-output-lhef` closed +
+merged 2026-07-28 (own note, 23).
+
 The last two remaining pipeline features, planned as **two sequenced feature
 sprints** under the standing feature → validation → performance rhythm:
 
