@@ -24,12 +24,58 @@ scalar-output branch already used for the identical structure, and `Op::MetricNe
 was eliminated end-to-end (op, kernel, run dispatch, lowering, egglog schema). Observed
 max_rel_diff 8.25e-14 against MadGraph's MATRIX1 over 75 phase-space points.
 
-Caveat found while re-checking `gg_to_gg` post-fix: the per-flow JAMP strict-phase
-comparison in `compare_amps.py` does not match MG element-wise even now — vibegraph's
-trace/δ color basis and MG's 6 JAMPs span the same space but are not a 1:1 labeling at
-NCOLOR=6, so a flow-by-flow complex-value diff is not a valid oracle here. The
-CF-weighted |M|² contraction is machine-exact; `validate_helas_mg` enforcement gates on
-|M|² by design, not on the per-flow JAMP labeling.
+### The NCOLOR=6 JAMP caveat, resolved (2026-07-27)
+
+This note previously carried a caveat that at NCOLOR=6 (`gg_to_gg`) vibegraph's per-flow
+JAMPs "do not match MG element-wise", and concluded that the two bases were not a 1:1
+labeling. **That conclusion was wrong.** vibegraph's per-flow JAMPs equal MadGraph's
+element-wise under the *identity* flow pairing, at every helicity and every phase-space
+point, up to a single global phase:
+
+```
+JAMP_i^vg(p, h) = g · JAMP_i^mg(p, h),   g = -i  (uux_to_uux, gg_to_gg),  +i (gg_to_ttx)
+```
+
+with max element-wise deviation 3.7e-16 (`gg_to_gg`), 2.4e-16 (`uux_to_uux`), 2.7e-15
+(`gg_to_ttx`). `g` is one constant per process, not per flow and not per point; it is
+the same `i`-placement convention already visible at the per-diagram `AMP()` level
+(MadGraph's `AMP()` omits the `i` vibegraph bakes into its diagram roots).
+
+The caveat was an artifact of `compare_amps.py`'s greedy overlap matcher. At tree level
+the four-gluon amplitude is MHV, so by Parke–Taylor every colour-ordered partial
+amplitude carries the *same* helicity dependence ⟨ij⟩⁴ and differs only by its
+ordering-dependent denominator. The `[flow × helicity]` JAMP matrix is therefore
+**rank 1**: every pair of rows has overlap exactly 1, greedy max-overlap picks a pairing
+arbitrarily, and the resulting `|r|` values are just the norm ratios of mismatched rows.
+`gg_to_ttx` is rank 1 too and passed only by luck of enumeration order.  The matcher now
+takes the identity pairing whenever it fits at least as well as any other.
+
+Consequences for the flow-resolved outputs:
+
+- **`JAMP2(i) = Σ_hel |JAMPᵢ|²` is unaffected.** `|g| = 1` to 4.4e-16, so `norm_sqr`
+  kills the phase; `eval_jamp2` reproduces `Σ_hel |JAMPᵢ^mg|²` to 1.1e-15 at NCOLOR=6.
+  The colour-flow selection weight is sound at NCOLOR=6.
+- The claim is now enforced, not merely observed: `color_jamp_oracle` compares against
+  banked MadGraph `JAMP()` values (`validation/madgraph/jamp_reference.json`,
+  `gen_jamp_reference.py`) with a single least-squares-fitted `g` per process, and
+  separately asserts `|g| = 1` — without which a uniform rescaling would be absorbed by
+  the fit and would silently rescale every weight. Mutation-checked: a per-flow phase,
+  a per-flow rescale, a flow permutation and a global rescale each trip it.
+
+`|M|²` could never have seen any of this. The `gg_to_gg` CF matrix is `(7/2)I + P −
+(1/3)J` with `P` the trace-reversal involution `(1,6)(2,4)(3,5)`; its eigenvalues are
+5/2 (×4) and 9/2 (×2), so it is positive definite and has **no null direction** — a
+flow combination invisible to the contraction does not exist. What CF *does* have is a
+large automorphism group, and any permutation in it leaves |M|² exact while permuting
+`JAMP2`. That is the blind spot this oracle closes.
+
+One residual degeneracy, documented rather than closed: for `gg_to_gg` the
+trace-reversal partners carry *identical* JAMPs (`J₁ = J₆`, `J₂ = J₄`, `J₃ = J₅` — read
+straight off MadGraph's own `JAMP(1,1) = JAMP(6,1) = 2·(AMP(3)+AMP(6)−AMP(1)−AMP(4))`
+and friends). Swapping such a pair is invisible to the JAMP values, to `JAMP2`, and to
+|M|². It is *not* invisible to `color_flow_tags_oracle`, which compares each flow's
+colour-line connectivity against `leshouche.inc` and sees the two orientations as
+different — so the pair ambiguity is covered there.
 
 One correction to the design as originally written: §2.4 below claimed the 3-vs-3̄
 slot pairing across a propagator was "automatic" from the diagram walk. It is not —

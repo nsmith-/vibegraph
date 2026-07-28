@@ -66,6 +66,11 @@ build-amplitude = { cmd = "bash validation/madgraph/build_amplitude.sh", depends
 generate-amplitude = { cmd = "python validation/madgraph/gen_amplitude.py", depends-on = ["build-amplitude"] }
 # Full pipeline: build amplitudes, generate reference CSVs, run Rust comparison tests
 validate-helas-mg = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_helas_mg", depends-on = ["generate-amplitude"] }
+# Bank MadGraph's per-flow JAMP() values into the committed colour-flow reference
+generate-jamp-reference = { cmd = "python validation/madgraph/gen_jamp_reference.py", depends-on = ["generate-amplitude"] }
+# Per-flow JAMP / JAMP2 gate: the linear level the CF-contracted |M|² is blind to
+# (per-flow phase, per-flow normalisation, colour-basis permutation)
+validate-color-jamp = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test color_jamp_oracle -- --nocapture", depends-on = ["build-amplitude"] }
 # Bank the fixed-energy MadGraph cross sections (sigma +- err) into the committed
 # sigma reference consumed by the sigma-level integration gate
 extract-sigma = { cmd = "python validation/madgraph/extract_sigma.py", depends-on = ["build-diagrams"] }
