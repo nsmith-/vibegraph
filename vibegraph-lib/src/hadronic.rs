@@ -1542,18 +1542,50 @@ impl<'a> FixedBeamIntegrand<'a> {
     ///
     /// If `channel` is not a channel index ([`channel_count`](Self::channel_count)).
     pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
-        let point = match &self.sampler {
-            Sampler::Flat(c) => {
-                assert_eq!(channel, 0, "the flat map has a single channel");
-                c.sample(u)
-            }
-            Sampler::Multi(c) => c.sample_channel(channel, u),
-        };
+        let point = self.sample_channel(channel, u);
         let m2 = self.matrix_element(&point.momenta);
         if m2 == 0.0 {
             return 0.0;
         }
         self.prefactor() * point.weight * m2
+    }
+
+    /// [`value_in_channel`](Self::value_in_channel) with the outgoing momenta kept:
+    /// `momenta` is overwritten with the point the value was taken at, in
+    /// outgoing-leg order and in the partonic-CM frame.
+    ///
+    /// An accept/reject pass needs the momenta only for the points it keeps, so the
+    /// trial loop runs on `value_in_channel` and reconstructs an accepted point
+    /// through this — the same map at the same `u`, hence the same weight.
+    pub fn event_in_channel(&self, channel: usize, u: &[f64], momenta: &mut Vec<V>) -> f64 {
+        let point = self.sample_channel(channel, u);
+        momenta.clear();
+        momenta.extend_from_slice(&point.momenta);
+        let m2 = self.matrix_element(&point.momenta);
+        if m2 == 0.0 {
+            return 0.0;
+        }
+        self.prefactor() * point.weight * m2
+    }
+
+    /// Draw the phase-space point channel `channel` maps `u` to, with its weight.
+    fn sample_channel(&self, channel: usize, u: &[f64]) -> PhaseSpacePoint<f64> {
+        match &self.sampler {
+            Sampler::Flat(c) => {
+                assert_eq!(channel, 0, "the flat map has a single channel");
+                c.sample(u)
+            }
+            Sampler::Multi(c) => c.sample_channel(channel, u),
+        }
+    }
+
+    /// The two incoming momenta: `√ŝ/2` along ±z, the beam configuration every
+    /// evaluation in this integrand is made in.
+    pub fn beams(&self) -> [V; 2] {
+        [
+            V::new(self.beam_e, 0.0, 0.0, self.beam_e),
+            V::new(self.beam_e, 0.0, 0.0, -self.beam_e),
+        ]
     }
 
     /// The final-state pole masses in outgoing-leg order.

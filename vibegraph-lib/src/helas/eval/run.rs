@@ -327,6 +327,79 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         }
     }
 
+    /// Fill `hel_m2` with the per-combination squared matrix element `|M_c(p)|²`,
+    /// colour-contracted through CF — MadGraph's `SELECT_HEL` input.
+    ///
+    /// This *is* a decomposition of |M|²: the CF contraction is a sum over helicity
+    /// combinations, so `Σ_c hel_m2[c]` is the value [`eval_m2`](Self::eval_m2)
+    /// returns (to rounding — the two associate the same terms differently). It is
+    /// the categorical weight vector a per-event helicity selection draws from, and
+    /// it enters nothing else: no integrand, no cross section.
+    ///
+    /// Kept separate from `eval_m2` for the same reason
+    /// [`eval_jamp2`](Self::eval_jamp2) is — the consumer is per accepted event, not
+    /// per probe, so the integration path never forms it. `hel_m2` must hold one
+    /// entry per *surviving* helicity combination
+    /// ([`AmplitudeEvaluator::helicities`](crate::helas::eval::AmplitudeEvaluator::helicities)),
+    /// which on a helicity-filtered evaluator is the pruned set, under the same
+    /// partonic-CM kinematic contract [`eval_m2`](Self::eval_m2) documents.
+    pub fn eval_hel_m2(
+        &self,
+        momenta: &[LorentzVector<F>],
+        scratch: &mut ScratchSpace<F>,
+        hel_m2: &mut [F],
+    ) {
+        assert_eq!(
+            hel_m2.len(),
+            self.eval.helicities().len(),
+            "hel_m2 buffer must hold one entry per helicity combination"
+        );
+        for slot in hel_m2.iter_mut() {
+            *slot = F::zero();
+        }
+        if momenta.len() != self.eval.n_ext() {
+            return;
+        }
+        if self.eval.is_pruned() {
+            assert_partonic_cm_beams_along_z(momenta, self.eval.n_in());
+        }
+        let folded = self.eval.folded_hel();
+        resolve_moms(folded, momenta, scratch);
+        let env = self.eval_env(folded, momenta, &[], None);
+        fill_arenas(folded, &env, scratch);
+        self.contract_per_combination(folded, scratch, hel_m2);
+    }
+
+    /// Contract the filled helicity-expanded root into one CF-weighted `|M_c|²` per
+    /// helicity combination, `out[c]`. The arenas must already hold this point's
+    /// values.
+    ///
+    /// Each entry is non-negative: CF is positive semidefinite, and the imaginary
+    /// parts cancel over the flow sum, so only the real part contributes (the same
+    /// combination `eval_m2` accumulates over, per combination instead of pooled).
+    fn contract_per_combination(&self, folded: &Folded, scratch: &ScratchSpace<F>, out: &mut [F]) {
+        let RootKind::Hels { n_flows, locs } = &folded.program().root else {
+            panic!("per-helicity |M|² on a program without a helicity-expanded root");
+        };
+        let n = *n_flows as usize;
+        debug_assert_eq!(locs.len(), out.len() * n);
+
+        for (t, jamps) in out.iter_mut().zip(locs.chunks_exact(n)) {
+            if n == 1 {
+                *t = scratch.scalars[jamps[0] as usize].norm_sqr() * self.cf[0];
+                continue;
+            }
+            *t = F::zero();
+            for i in 0..n {
+                let mut ztemp = C::new(F::zero(), F::zero());
+                for (j, &lj) in jamps.iter().enumerate() {
+                    ztemp = ztemp + scratch.scalars[lj as usize].scale(self.cf[j * n + i]);
+                }
+                *t = *t + (ztemp * scratch.scalars[jamps[i] as usize].conj()).re;
+            }
+        }
+    }
+
     /// The per-flow JAMPs of every helicity combination, `out[combo][flow]`, read
     /// off the helicity-expanded root — the same scratch slots
     /// [`eval_m2`](Self::eval_m2) and [`eval_jamp2`](Self::eval_jamp2) accumulate
@@ -374,29 +447,12 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         resolve_moms(folded, momenta, scratch);
         let env = self.eval_env(folded, momenta, &[], None);
         fill_arenas(folded, &env, scratch);
-        let RootKind::Hels { n_flows, locs } = &folded.program().root else {
-            panic!("helicity probe on a program without a helicity-expanded root");
-        };
-        let n = *n_flows as usize;
-        debug_assert_eq!(locs.len(), good.len() * n);
 
-        // Per-combination T_c: the CF-contracted |M_c|² (nonnegative — CF is
-        // positive semidefinite). For a single flow the constant CF(1,1) factor is
-        // omitted; it cancels in the relative test.
+        // Per-combination T_c: the CF-contracted |M_c|², nonnegative because CF is
+        // positive semidefinite. The threshold below is relative to their sum, so a
+        // common positive factor on every T_c leaves the filter unchanged.
         let mut ts = vec![F::zero(); good.len()];
-        for (t, jamps) in ts.iter_mut().zip(locs.chunks_exact(n)) {
-            if n == 1 {
-                *t = scratch.scalars[jamps[0] as usize].norm_sqr();
-            } else {
-                for i in 0..n {
-                    let mut ztemp = C::new(F::zero(), F::zero());
-                    for (j, &lj) in jamps.iter().enumerate() {
-                        ztemp = ztemp + scratch.scalars[lj as usize].scale(self.cf[j * n + i]);
-                    }
-                    *t = *t + (ztemp * scratch.scalars[jamps[i] as usize].conj()).re;
-                }
-            }
-        }
+        self.contract_per_combination(folded, scratch, &mut ts);
         let ans = ts.iter().fold(F::zero(), |acc, &t| acc + t);
         if !(ans > F::zero()) {
             return;

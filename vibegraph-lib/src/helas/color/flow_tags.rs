@@ -43,6 +43,7 @@ use super::colorize::ColorBasis;
 use super::factor::ImmutableString;
 use super::tensor::{ColorAlgebraError, Idx, TensorKind};
 use crate::helas::repr::color::ColorRep;
+use crate::select::select_index;
 
 /// The label given to the first colour line of a flow, matching MadGraph's pool.
 pub const FIRST_COLOR_LINE: u32 = 501;
@@ -130,22 +131,11 @@ impl ColorFlowTags {
 ///
 /// This is a categorical draw off a diagonal accumulator (MadGraph's
 /// `SELECT_COLOR`); it selects a flow for the event record and never enters the
-/// integrand, so it has no effect on the cross section.
+/// integrand, so it has no effect on the cross section. It is the same draw the
+/// per-event helicity selection makes off `|M_hel|²`, so both share one
+/// definition ([`select_index`]).
 pub fn select_flow(jamp2: &[f64], u: f64) -> Option<usize> {
-    let total: f64 = jamp2.iter().sum();
-    if !(total > 0.0) || !total.is_finite() {
-        return None;
-    }
-    let target = u * total;
-    let mut acc = 0.0;
-    for (i, &w) in jamp2.iter().enumerate() {
-        acc += w;
-        if target < acc {
-            return Some(i);
-        }
-    }
-    // Only reachable through rounding at `u → 1`; the last flow with weight wins.
-    jamp2.iter().rposition(|&w| w > 0.0)
+    select_index(jamp2, u)
 }
 
 /// Derive the per-leg `(colour, anticolour)` tags of every flow in `basis`.

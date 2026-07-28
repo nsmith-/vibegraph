@@ -24,6 +24,7 @@ use crate::helas::color::flow_tags::{color_flow_tags, ColorFlowTags, LegColor};
 use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::phasespace::rambo_massive;
+use crate::select::select_index;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
 use crate::ufo::{EvaluatedModel, UFOModel};
@@ -225,6 +226,27 @@ impl AmplitudeEvaluator {
     /// Return the valid helicity combinations.
     pub fn helicities(&self) -> &[Vec<i32>] {
         &self.helicities
+    }
+
+    /// The helicity combination drawn with probability
+    /// `|M_c(p)|² / Σ_d |M_d(p)|²` from a uniform variate `u ∈ [0, 1)`, off the
+    /// per-combination diagonal
+    /// [`BoundAmplitude::eval_hel_m2`](super::run::BoundAmplitude::eval_hel_m2)
+    /// fills; `None` when the weights carry no probability.
+    ///
+    /// This is MadGraph's `SELECT_HEL`: a categorical draw that fills in an event
+    /// record's helicities once a phase-space point has been accepted. It has no
+    /// effect on the cross section, which sums over the combinations.
+    pub fn select_helicity(&self, hel_m2: &[f64], u: f64) -> Option<&[i32]> {
+        // Asserted rather than debug-asserted: a short weight vector would draw from
+        // a prefix of the combinations and return a helicity that looks valid, which
+        // nothing downstream can detect.
+        assert_eq!(
+            hel_m2.len(),
+            self.helicities.len(),
+            "helicity weights must cover the surviving combinations"
+        );
+        select_index(hel_m2, u).map(|c| self.helicities[c].as_slice())
     }
 
     /// Return the number of color flows (NCOLOR).
