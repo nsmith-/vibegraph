@@ -1,0 +1,54 @@
+name: ci
+
+# The default `cargo test` suite only, deliberately not `--features
+# extended-validation`: verified by running the full suite against a tree
+# built from `git ls-files` alone (no submodules, no untracked/gitignored
+# validation/ data — the same view a fresh runner checkout has). Two
+# independent mechanisms make that tree pass clean, not one:
+#
+# - The slow MadGraph/HELAS cross-check gates (color/CF/JAMP oracles, sigma
+#   validation, the amplitude/diagram MG comparisons) carry `required-features
+#   = ["extended-validation"]` in the two `Cargo.toml`s, or internal
+#   `#[cfg(feature = "extended-validation")]`, so they are absent from the
+#   default-feature test binaries entirely (0 tests registered, not skipped at
+#   runtime).
+# - A handful of default-suite tests reach for `research/refs/mg5amcnlo`
+#   (an uninitialized git submodule here — checkout below does not fetch it)
+#   or `validation/madgraph/output` (gitignored, MG-run-generated). Those
+#   check existence first and soft-skip with an eprintln! when the path is
+#   absent (`ufo::mod::tests::test_load_mssm`/`test_load_loop_sm`,
+#   `ufo::sm::tests::interned_default_matches_submodule` and its
+#   `_exactly` sibling, `helas::eval::rooting_soundness::
+#   root_override_hook_is_transparent`) — they report "ok" on CI having
+#   made zero real assertions, which is a known blind spot, not a bug: the
+#   coverage they'd add is owed to `extended-validation` runs instead.
+#
+# Everything else the default suite runs reads only tracked fixtures
+# (`validation/alphas/reference.csv`, `validation/rambo/rambo_fixture.json`,
+# `validation/madgraph/runcard_defaults.json`, `tests/data/*`) or the
+# `include_bytes!`-interned SM model, so it is real coverage, not a soft-skip.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ci-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ci-
+
+      - run: cargo build --locked --workspace
+      - run: cargo test --locked --workspace
