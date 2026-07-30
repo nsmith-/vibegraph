@@ -967,3 +967,282 @@ means, so it is the only one that needs pinning.
   U3's caveat that `feynrules_download_url` is an unverified template still
   stands — there is no `PINNED_UFO_MODELS` table, and adding one needs a real
   FeynRules URL confirmed against a live download first.
+
+### U4 outcome
+
+Branch `user-dist/u4` (worktree `vibegraph-u4`), branched off `user-dist/u2`
+with `user-dist/u1` merged in, so all three prior Track U sessions were in the
+base. **The merged base was verified green before anything was written**:
+`cargo build` clean, `cargo test` = 512 lib + 8 CLI unit + `color_cf` 7 +
+`diagram_channel` 4 + `diagrams` 10/1 ignored + `rambo_oracle` 1 + `ufo` 4/1 +
+`validate_alphas` 2 + `validate_helas` 1 + `validate_scales` 2 +
+`cli_fixed_energy` 2 + `cli_generate` 3 + `cli_integrate` 4 + `cli_pdf_cache`
+4/1 ignored + doc-tests 1, **0 failures**. Nothing about the merge needed
+fixing.
+
+Two commits: `feat(cli): ask before downloading, and refuse by default without
+a terminal` and `feat(ci): add Acceptance A — a released binary, cards in,
+events out`.
+
+#### The interaction policy, as implemented
+
+The plan asked for a prompt, a `--no-network` flag and a non-TTY default of
+refusal. What landed is those three plus one addition (below), expressed as a
+tri-state resolved once in `main` and threaded down:
+
+```
+NetworkPolicy::{ Deny(Denial::{Flag,Env}), Ask, Allow }
+```
+
+- `--no-network` → `Deny(Flag)`; `$VIBEGRAPH_NO_NETWORK` → `Deny(Env)`. Per U2's
+  correction the flag folds into the existing kill switch rather than adding a
+  second one; the two are distinguished only so a refusal can name the one
+  switch the user actually has to change (naming "drop `--no-network`" while the
+  environment variable is still set would be advice that does not work).
+- `--yes` / `-y` → `Allow`. **This is the plan addition.** It is on the same
+  axis as `--no-network` but the opposite direction, and it is unavoidable: with
+  "non-TTY ⇒ refuse" as the default, Acceptance A — whose whole purpose is to
+  download a PDF set from a runner with no terminal — has no way to say yes.
+  The instruction it might appear to violate ("do not add a second switch") is
+  about the *deny* axis, and is honoured there. Refusal outranks consent in
+  every combination, so a `--yes` inherited from a wrapper script cannot undo an
+  offline environment (`refusal_outranks_consent_however_it_is_expressed`,
+  `the_kill_switch_outranks_explicit_consent`).
+- Default → `Ask`, and **asking without a terminal is a refusal**. Both `stdin`
+  and `stderr` must be terminals: a redirected `stdin` cannot answer and a
+  redirected `stderr` hides the question. The prompt goes to `stderr` so piping
+  `stdout` never swallows it.
+
+Every refusal states the URL, the size, the SHA-256 **and the destination
+directory** — the last added because "here is what to download" without "here is
+where to put it" is only half an instruction. `PinnedPdfSet` already carried the
+first three (U2 assembled them for exactly this), and the destination is
+`Located::dir` from U3's resolution, which is already computed at that point.
+
+**CI-safety is structural, not just behavioural.** `HttpFetch` is now
+constructed in exactly one place in the codebase — the branch immediately after
+`network::confirm` returned `Granted` — and every other call into the cache
+layer passes U3's `RefusingFetch`. A resolution step that was not supposed to
+fetch therefore cannot fetch even if `pdf_set_is_cached` is wrong about it. That
+is the invariant worth keeping; the predicate is only the fast path.
+
+Tests: 13 new unit tests (`network` 9, `assets` 4), all pure — the decision
+function takes its terminal-ness and its input stream as parameters, and the UFO
+resolution has a fully-injectable inner function, so **nothing new mutates
+process environment or the working directory** (U3's stated reason for leaving
+`locate_from_env` untested applies equally here and was respected). Plus 5 new
+CLI-level tests in `vibegraph-cli/tests/cli_first_run.rs`.
+
+Three of those CLI tests deliberately run under the *default* policy with
+`$VIBEGRAPH_NO_NETWORK` unset, because "an unattended run refuses" is the
+property under test and setting the kill switch would test the kill switch
+instead. That is the exact configuration that cost U2 an accidental 27 MB fetch,
+so it carries a second guard: `$ALL_PROXY=http://127.0.0.1:1`, which `ureq`
+reads from the environment by default (`Config` builds its proxy from
+`Proxy::try_from_env`, checked in the vendored source). If the refusal ever
+regresses, the fetch under it fails in milliseconds against a closed local port
+instead of pulling from CERN — and the assertion fails either way, since a
+successful download means a zero exit where a refusal was expected.
+
+#### `check-events`, and why a third subcommand exists
+
+Acceptance A has to "validate the emitted `.lhe` by re-parsing it" on a machine
+with no toolchain. The library has the reader (`lhef::parse::LheFile`); the
+binary had no way to reach it. The alternatives were a Python re-implementation
+in the CI job — a second, unvalidated LHEF parser, plainly worse — or exposing
+the one that exists. So `vibegraph check-events <file>` landed: momentum balance
+over initial minus final legs (intermediates excluded), mass shells referenced
+to `E²`, `XWGTUP` bounded by `XMAXUP`, unit weights actually unit when
+`IDWTUP = +3`, `IDPRUP` cross-referencing a declared `<init>` process, mother
+indices in range, `--min-events`. Default tolerance `1e-6`, three orders of
+magnitude of headroom over the writer's ~11 significant digits.
+
+Its blind spots, stated rather than discovered later: it shares its assumptions
+with the writer, so a **self-consistently wrong format** passes (`validate_lhef`'s
+byte round trip of MadGraph's own files is the format evidence; a real shower is
+still owed); and it is entirely blind to the physics — a wrong matrix element,
+cut or sampler produces events that satisfy every one of these identities. It
+catches damage, not error. `a_generated_sample_passes_check_events_and_a_damaged_one_does_not`
+keeps it from being vacuous by re-emitting a valid sample with one leg's `pz`
+displaced by a GeV and requiring the rejection.
+
+#### Acceptance A: what it covers today, and what it cannot see
+
+`scripts/acceptance.sh` + `.github/workflows/acceptance.yml`. The script takes
+no dependency on this repository beyond being stored in it — it writes its own
+cards and downloads its own binary — so it is simultaneously the CI job and the
+documented clean-VM reproduction. `curl`, `tar` and a POSIX shell are the whole
+dependency list.
+
+**Deviation from the plan, forced: the acceptance is two legs, not one.** The
+plan's shape ("`integrate` + `generate` on cards with PDF/model resolution
+through U2/U3, validate the `.lhe`") assumes one process can do both halves.
+None can today: `generate` refuses `lpp = 1` by name (`generate.rs`: "event
+generation currently covers fixed-energy partonic beams (lpp = 0) only"), which
+is P4's scope. So:
+
+| Leg | Process | Commands | What it proves |
+|---|---|---|---|
+| hadronic | `p p > e+ e-` | `integrate` ×3 | unattended refusal on the shipped binary; consented download verified against the compiled-in pin; published into the cache where resolution looks; a second run served from cache **with no consent needed** |
+| events | `e+ e- > mu+ mu-` | `integrate`, `generate`, `check-events` | cards → `.lhe` → survives being read back, with `--no-network` set throughout |
+
+The two collapse into one `p p > e+ e- j` run when P4 lands — that flip is the
+sprint's last commit and was not made here.
+
+Also checked, since the binary is in hand anyway: the release tarball's
+`SHA256SUMS` entry, and that `THIRD-PARTY-NOTICES` is present in the tarball
+(U1's licence obligation — a release without it should not have shipped).
+
+**Verified for real**, against a locally built release binary, including a live
+27 MB download from CERN:
+
+```
+$ bash scripts/acceptance.sh --binary target/release/vibegraph
+=== version
+vibegraph 42d4eed
+=== an unattended run refuses to download the PDF set
+refused, naming --yes and the URL
+=== with consent, the PDF set is downloaded, verified and cached
+σ = 927.562233 ± 6.589028 pb          (p p > e+ e-, 13 TeV, 20000×4)
+=== a second run is served from the cache, with no consent needed
+served from cache
+=== integrating a fixed-energy process
+σ = 2022.623188 ± 1.747453 pb
+=== generating events / reading the events back
+events 2000, IDWTUP -4, XSECUP 2041.872000 pb, mean XWGTUP 2041.872300 pb
+ACCEPTANCE PASSED
+real 0m7.559s
+```
+
+The σ from the script's *self-written* DY card (927.6 ± 6.6 pb at deliberately
+low statistics) is not a physics gate and is not compared to anything — the
+banked comparison is `cli_integrate`'s, against MG's H7 reference. What this run
+demonstrates is that a card typed from the README reaches a number at all.
+
+**What Acceptance A cannot see.**
+
+1. **Nothing until a release exists.** It has never run in CI: there is no
+   published release for it to download (`--repo nsmith-/vibegraph` returns 404
+   on `releases/latest/download/...`, verified). Its `release: published`
+   trigger and its GitHub-side behaviour are unexercised, exactly like U1's
+   workflow. The script itself *is* exercised, via `--binary`.
+2. **Not that the pipeline is one pipeline.** Two legs meeting separately is
+   strictly weaker than one run doing both: nothing here would catch a break in
+   "hadronic integration → hadronic event generation", because that path does
+   not exist yet. This is the gap the llj flip closes.
+3. **Nothing about the physics.** Every number it prints is unchecked against a
+   reference; the σ gates live in `cli_integrate`, `validate_hadronic` and
+   `validate_sigma`.
+4. **Nothing about macOS.** One runner (Linux/musl), because `release.yml`
+   already smoke-tests all three natively and the data path here is not
+   platform-specific.
+5. **Not that the pin still matches upstream** on a cache *hit* — but on the
+   miss path it does, and that is what this job takes: it downloads and verifies
+   against the compiled-in SHA-256 every run. It is therefore a second detector
+   for U2's "CERN repackages the archive" risk, alongside the `#[ignore]`d
+   `pinned_checksums_match_the_upstream_archives`, **once it runs on a timer**.
+   A weekly `schedule` trigger is the obvious follow-up and is documented in the
+   workflow's header comment, left off until a first release exists because
+   until then it can only fail.
+
+**Trigger choice, deliberate:** `release: published` + `workflow_dispatch`, not
+push and not PR. Its input is a published release asset, which a branch does not
+have; and it pulls 27 MB every run on purpose (caching the PDF set would remove
+the path under test). Day-to-day changes are covered offline by `ci.yml`, whose
+suite now includes the consent, resolution and event-file logic. What this job
+adds is the only thing those cannot see: that the artifact a user downloads
+works on a machine that never built it.
+
+#### The UFO decision: no fetching, and the URL template removed
+
+The session was told to either verify `store::feynrules_download_url` against a
+live download or leave UFO fetch unimplemented. **Verification was attempted and
+it failed — worse than expected.** Probing the FeynRules server directly:
+
+```
+$ curl -o /dev/null -w "%{http_code}" .../raw-attachment/wiki/SM/SM.tar.gz              404
+$ ... /wiki/HAHM_variableMW_v5/HAHM_variableMW_v5.tar.gz                                404
+$ ... /wiki/EWdim6/EWdim6.tar.gz                                                        404
+$ ... /wiki/DMsimp_s_spin0/DMsimp_s_spin0.tar.gz                                        404
+```
+
+The server is alive (those are real 404 pages, ~5 kB each) and the *shape*
+`/raw-attachment/wiki/<page>/<file>` is right — it is what the model pages
+themselves link. What is wrong is the mapping. The model database is a Trac
+wiki, one page per model, with hand-attached files; the page name is not the UFO
+model name, and the attachment name follows no rule. The 2HDM page alone carries
+
+```
+/raw-attachment/wiki/2HDM/2HDM.tar.gz          ← FeynRules Mathematica sources
+/raw-attachment/wiki/2HDM/2HDM_UFO.tar.gz      ← the UFO
+/raw-attachment/wiki/2HDM/2HDM_UFO.tar.2.gz    ← a second revision of it
+/raw-attachment/wiki/2HDM/2HDM_NLO.tar.gz, 2HDM5F_NLO.tar.gz, 2HDMtII_NLO.tar.gz, …
+```
+
+and the template resolves to the **first** of those. Downloaded it to be sure:
+`http=200`, 7,552 bytes, contents `2HDM.fr HiggsBasis.fr Lag.fr Params.fr
+SMParts.fr`. So the template is not merely unverified — it is wrong in two
+distinct ways at once: it 404s for most names, and where it succeeds it returns
+FeynRules source rather than a UFO directory. U3's "unparseable UFO archive is
+never published" guard would catch the second case, but only after a download
+and with a confusing error.
+
+**Decision: UFO models are never downloaded, and `feynrules_download_url` is
+deleted.** Nothing called it; leaving a proven-wrong URL builder in a shipped
+binary is an invitation for a later session to wire it. Its docstring is
+replaced by a comment in `store.rs` recording the above, so the finding survives
+where the next person will look for it. `cache_ufo_model` is *kept* — the
+mechanism (fetch → extract → load-and-digest → publish atomically) is sound and
+takes its URL from the caller; it is only *deriving* that URL from a name that
+nothing can do today.
+
+What landed instead is the resolution half, which was missing entirely: a
+`--ufo-dir` flag on both `integrate` and `generate`, and model resolution routed
+through U3's `locate` (`--ufo-dir` → `$VIBEGRAPH_UFO_DIR` → `~/.vibegraph/ufo/`
+→ the working directory, which is the pre-existing behaviour kept as the last
+step). The interned SM short-circuits before any of it, so an SM run never
+depends on `$HOME` being readable. A model that resolves nowhere is an error
+naming the cache directory to unpack into, the flag, the variable, and the fact
+that no download will be attempted:
+
+```
+error: model `NoSuchModel` was not found, and vibegraph does not download UFO
+models (FeynRules publishes no per-model index a name could be resolved
+through, so there is no URL this build could pin). Download the model's UFO
+archive yourself and unpack it so that `~/.vibegraph/ufo/NoSuchModel/particles.py`
+exists, or point --ufo-dir / $VIBEGRAPH_UFO_DIR at the directory containing it.
+```
+
+One subtlety worth recording because it is silently wrong if missed:
+`GlobalConfig::ufo_search_path` is the *parent* a model name is joined onto,
+while `locate` returns the model directory itself. Resolution therefore hands
+back `located.dir.parent()`, and getting it backwards resolves models to
+`<dir>/<name>/<name>`. `a_located_model_becomes_its_parent_directory` pins it on
+both the flag and the cache step, whose directories are built differently.
+
+#### Plan corrections recorded
+
+1. **Acceptance A is two legs until P4.** The plan's single-run shape is not
+   available today because `generate` refuses `lpp = 1`. Recorded rather than
+   absorbed because the llj flip is not just "change the cards" — it merges two
+   legs into one and deletes the `e+ e- > mu+ mu-` scaffolding leg.
+2. **`--yes` is a new switch the plan did not anticipate.** "Non-TTY defaults to
+   refusal" and "a CI job downloads a PDF set" are only compatible with an
+   explicit non-interactive consent. See the policy section above.
+3. **The FeynRules URL template is wrong, not merely unconfirmed** (evidence
+   above), and is removed rather than annotated. U3's caveat can be closed.
+4. **U4 does not close the sprint.** Track U's own deliverables are done, but
+   Acceptance A has never executed in CI, for want of a published release. The
+   sprint close needs a real tagged release — which also first exercises U1's
+   `release.yml`, still unrun.
+
+#### Not done / left for the close-out
+
+- No push, no tag (per the session brief). The first tagged release is the
+  user's call and is what turns three unrun workflows into evidence.
+- `TODO.md` untouched (close-out's job). The rows it will want: the quick start
+  is no longer "planned"; `check-events` exists; the weekly-`schedule` follow-up
+  on `acceptance.yml`.
+- The interned-SM `--restrict` path still has no `--ufo-dir` equivalent for its
+  restrict card; `restrict_path_override` remains `None` from both subcommands,
+  as before this session.
