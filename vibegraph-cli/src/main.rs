@@ -12,7 +12,7 @@ mod integrate;
 #[command(
     name = "vibegraph",
     about = "Toy leading-order Monte-Carlo event generator",
-    version
+    version = env!("VIBEGRAPH_VERSION")
 )]
 struct Cli {
     #[command(subcommand)]
