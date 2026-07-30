@@ -90,6 +90,13 @@
     "sigma_err_pb": 0.00022118,
     "sigma_pb": 0.11812
   },
+  "gux_to_epemux": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "g u~ > e+ e- u~ QCD=2 QED=2",
+    "sigma_err_pb": 0.00025564,
+    "sigma_pb": 0.11816
+  },
   "uux_to_ccx_emmm_qcd0": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,

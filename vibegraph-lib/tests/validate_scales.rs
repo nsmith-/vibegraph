@@ -262,7 +262,7 @@ mod banked {
                 ..COLOURLESS_ANNIHILATION
             }),
             // A jet off a quark line, and six-leg QCD: the general clustering.
-            // The three `*_epemg` / `gu_to_*` runs are single concrete flavour
+            // The four `*_epemg` / `gu*_to_*` runs are single concrete flavour
             // assignments out of the llj process, banked at partonic beams for
             // the amplitude oracles; their clustering is the llj one.
             "pp_to_llj"
@@ -270,6 +270,7 @@ mod banked {
             | "uux_to_epemg"
             | "ddx_to_epemg"
             | "gu_to_epemu"
+            | "gux_to_epemux"
             | "bbx_to_ccx_emmm_qcd0"
             | "uux_to_ccx_emmm_qcd0" => Refused(ClusterTopology {
                 beam_connections: BeamConnections::TChannel {
@@ -313,6 +314,7 @@ mod banked {
         "ee_to_mumu_tata_qcd0",
         "ee_to_mumua",
         "gu_to_epemu",
+        "gux_to_epemux",
         "pp_to_llj",
         "pp_to_llj_qcd2_qed2",
         "uux_to_ccx_emmm_qcd0",

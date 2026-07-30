@@ -1,0 +1,26 @@
+# MadGraph5 batch script: g u~ > e+ e- u~ at LO, QCD=2 QED=2.
+#
+# The antiquark half of the `g q > l+ l- q` class of
+# `p p > l+ l- j QCD=2 QED=2` (MadGraph's P1_gq_llq group).
+#
+# Why this exact process:
+#   - `g u > e+ e- u` pins the gluon-plus-quark initial state, but only with the
+#     quark line entering as a *particle*. Here the same line enters as an
+#     antiparticle, so the colour flow into the gluon's adjoint index runs the
+#     other way round and the fermion line is traversed in the opposite sense.
+#     The two are the two orientations of one topology, and a slot assignment
+#     that is right for one and wrong for the other leaves the gu row clean.
+#   - It is the crossing of `d d~ > e+ e- g`'s partner class under
+#     `q~ <-> g` exchange between the beams, so the same analytic functions are
+#     evaluated with the adjoint leg incoming rather than outgoing.
+#
+# lpp=0 => fixed-energy partonic beams (g, u~).
+generate g u~ > e+ e- u~ QCD=2 QED=2
+output gux_to_epemux -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

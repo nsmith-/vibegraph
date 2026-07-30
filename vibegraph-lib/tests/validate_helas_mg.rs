@@ -72,6 +72,31 @@ const EXPECT_MATCH: &[&str] = &[
     // factor; |M|² formed by the CF-weighted contraction over all six color
     // flows. Agrees with MadGraph's MATRIX1 to max_rel_diff ~8.25e-14.
     "gg_to_gg",
+    // The `p p > l+ l- j` subprocess representatives — the first 2→3 processes in
+    // the gate, and the first with a coloured 2→3 flow basis (`T(a,i,j)`,
+    // NCOLOR=1). Each pins a convention channel at the per-diagram level in
+    // `tests/amp_diagram_oracle.rs`; |M|² alone would not see any of them.
+    //
+    // `q q~ > l+ l- g`: a gluon radiated off an annihilating quark line, so the
+    // reversed-FFV-bilinear parity channel fires on all four diagrams, now with a
+    // coloured spine rather than the leptonic one `e+ e- > mu+ mu-` covers. The
+    // two attachments (before/after the electroweak vertex) differ by the internal
+    // quark propagator's momentum sign, and the down-type partner varies only the
+    // initial flavour so a disagreement localises. 1.2e-14 / 1.4e-14.
+    "uux_to_epemg",
+    "ddx_to_epemg",
+    // `g q > l+ l- q`: the first *mixed* adjoint+fundamental initial state. The
+    // crossed-line spine sign fires on all four diagrams (the quark line runs from
+    // an incoming to an outgoing leg through a spacelike propagator), which no
+    // previously enforced coloured process exercises. 3.2e-14.
+    "gu_to_epemu",
+    // `g q~ > l+ l- q~`: the antiquark orientation of the same topology, where
+    // MadGraph's colour structure flips to `T(1,2,5)` and its JAMP coefficients to
+    // −1. That overall sign is invisible to |M|² = CF·|JAMP|²; the flow's colour
+    // -line connectivity is pinned by `color_flow_tags_oracle` against
+    // `leshouche.inc`, and the coefficient itself by the coherent-amplitude arm of
+    // `amp_diagram_oracle`.
+    "gux_to_epemux",
 ];
 
 /// One evaluated phase-space point: external momenta (incoming then outgoing)

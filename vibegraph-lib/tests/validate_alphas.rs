@@ -297,6 +297,7 @@ mod banked {
         "gg_to_gg",
         "gg_to_ttx",
         "gu_to_epemu",
+        "gux_to_epemux",
         "pp_to_bb",
         "pp_to_bb_qcd2",
         "pp_to_ll",
