@@ -594,3 +594,122 @@ misremembered later as "the set was too big to embed" — it was not.
 (`name`, `url`, `sha256`, `archive_bytes`), not a config file, so a user
 cannot silently drift onto different data than the build was validated
 against. Wired to U3's `Fetch` seam without changing its contract.
+
+#### What landed
+
+`vibegraph-lib/src/cache/pinned.rs` (new, library):
+
+- `PINNED_PDF_SETS: &[PinnedPdfSet]` — `{ name, url, sha256, archive_bytes }`,
+  currently one entry, plus `DEFAULT_PDF_SET` (moved here from the CLI, which
+  previously held its own copy of the name).
+- `VerifiedFetch<'a>` — a `Fetch` that wraps another `Fetch` and rejects bytes
+  that miss an expected SHA-256. **Verification interposes at the seam rather
+  than checking after the fact**, so `store::cache_pdf_set` never sees bad
+  bytes and U3's "a failed fetch writes nothing" guarantee extends unchanged to
+  a corrupted or substituted download. It records the mismatch so the caller
+  can tell "the download was wrong" (a tamper signal) from "the download
+  failed" (a network signal) after the error has flattened into
+  `StoreError::Fetch`.
+- `ensure_pdf_set(cache_root, name, &dyn Fetch)` → `Ensured { dir, checksum,
+  fetched }`, and `ensure_pdf_set_pinned(...)` taking an explicit pin so tests
+  can drive synthetic pins. An entry whose `.vibegraph-checksum` sidecar is
+  absent or different is treated as stale and refetched — that is what makes
+  the compiled-in pin authoritative rather than advisory.
+
+`vibegraph-cli/src/fetch.rs` (new): `HttpFetch`, a `ureq` implementation of
+`Fetch`, deliberately in the CLI crate so `vibegraph-lib` acquires no HTTP or
+TLS stack and keeps the "no network I/O in this module" property U3 established.
+
+`vibegraph-cli/src/integrate.rs`: `resolve_pdf_dir`'s hand-rolled three-step
+lookup is replaced by `cache::resolve::locate_from_env`, so `integrate` now
+walks the full order and falls through to a download. Two environment hooks
+were added:
+
+- `$VIBEGRAPH_HOME` — cache-root override. U3 left `cache_root` an explicit
+  parameter precisely as an injection point; this is the CLI exposing it, and
+  it is what lets tests exercise the cache without touching a real `~/.vibegraph`.
+- `$VIBEGRAPH_NO_NETWORK` — any value swaps `HttpFetch` for U3's
+  `RefusingFetch`, and a missing set becomes a refusal naming the URL, size,
+  and checksum it *would* have fetched.
+
+**The pin binds only on the cache step.** A set reached via `--pdf-dir`,
+`$VIBEGRAPH_PDF_DIR`, or the dev fallback is used as found and never
+checksum-checked: those are data the caller is deliberately pointing at, and
+that is also what keeps sets this build has no pin for usable at all. The cache
+step is the only one that decides on the user's behalf what a bare set name
+means, so it is the only one that needs pinning.
+
+#### Verified
+
+- **Acceptance, the real thing**: from an empty working directory (no
+  `validation/pdf` reachable) with an empty cache root and no `--pdf-dir`, the
+  binary downloaded the set, verified it against the pin, published it, and
+  integrated: `σ = 907.955368 ± 176.640435 pb` at a deliberately tiny
+  `--neval 2000 --niter 2`. A second run took 0.19 s with no download — cache
+  hit. The published sidecar contains exactly the compiled-in SHA-256.
+- **Cross-check worth recording**: that σ is *bit-identical* to the σ from a
+  run served out of a pre-populated cache entry built from the dev checkout's
+  member 0. Two independent provenances for the grid data agreeing to the last
+  digit is decent evidence the download/extract path delivers the same bytes
+  LHAPDF's own tarball did.
+- **No regression on the enforced gates**: `cli_integrate` (DY σ vs the banked
+  MG H7 reference) 3/3 pass, and `validate_hadronic` 3/3 pass — both reach the
+  PDF set through `--pdf-dir`, the path this session rerouted.
+- Full default suite green (the repo's pre-commit hook runs `cargo fmt --check`
+  + `cargo test` on every commit, so all three commits are gated).
+- `cargo clippy` clean on every file this session added or touched. The
+  pre-existing `deny(clippy::approx_constant)` failure in `coupling/alphas.rs:210`
+  that U3 recorded still blocks a whole-workspace clippy run; not touched.
+
+#### Not verified / known gaps
+
+1. **The pin's own correctness is checked by an `#[ignore]`d test.** The
+   default suite cannot confirm that `60d3c1d…` is still what CERN serves
+   without downloading 27.6 MB, and committing that archive to pin it offline
+   was not acceptable. `pinned_checksums_match_the_upstream_archives` in
+   `vibegraph-cli/tests/cli_pdf_cache.rs` does exactly that check against the
+   live data server; run it (`cargo test -p vibegraph --test cli_pdf_cache --
+   --ignored`) after any pin change. It was run once during this session and
+   passed by construction — the pin was computed from that download.
+2. **Upstream repackaging is a live operational risk.** If CERN re-tars the
+   set, every user gets a hard checksum failure rather than a silent
+   substitution. That is the correct failure direction, but it is a failure,
+   and the `#[ignore]`d test is the only detector.
+3. **The "already cached, no refetch" path is pinned at unit level, not CLI
+   level, for the *default* set.** The CLI-level cache-serves test uses a
+   deliberately unpinned synthetic set name, because populating the cache with
+   anything under the real name would not match the compiled-in pin and would
+   (correctly) trigger a 27.6 MB download inside the test suite. This was found
+   the hard way: a first draft of that test did exactly that.
+4. **Only `integrate` is wired.** `generate` reads a saved grid and loads no
+   PDF, so it needed nothing.
+
+#### Plan corrections
+
+- The plan's "NNPDF sets are CC-BY-4.0" premise is wrong for this set (see the
+  license section above). Fetch-at-first-use is now forced rather than chosen.
+- The plan put `--no-network` in U4. A minimal `$VIBEGRAPH_NO_NETWORK` kill
+  switch landed here instead, because wiring the download without one made it
+  possible — and briefly actual — for a test run to pull 27.6 MB from CERN. U4
+  still owns the interaction *policy* (the interactive prompt, the
+  `--no-network` flag, the non-TTY default); this is the mechanism underneath
+  it, and U4 should fold the flag into it rather than add a second switch.
+
+#### For U4
+
+- **The `Fetch` trait contract is unchanged.** `VerifiedFetch` is an
+  implementation of it, not a modification, so anything written against U3's
+  signature still compiles.
+- `ensure_pdf_set` is the entry point to call after a prompt says yes;
+  `pdf_set_is_cached(root, name)` answers "would this prompt at all?" without
+  side effects, which is what gates showing the prompt.
+- `PinnedPdfSet` carries `url`, `sha256`, and `archive_bytes` precisely because
+  the plan's prompt text wants "[URL, size, checksum]" — that data is already
+  assembled.
+- `RefusingFetch` is what `--no-network` should install; the refusal message
+  currently names `$VIBEGRAPH_NO_NETWORK` and should be extended to name the
+  flag too.
+- The UFO half is untouched. `cache_ufo_model` exists but nothing calls it, and
+  U3's caveat that `feynrules_download_url` is an unverified template still
+  stands — there is no `PINNED_UFO_MODELS` table, and adding one needs a real
+  FeynRules URL confirmed against a live download first.
