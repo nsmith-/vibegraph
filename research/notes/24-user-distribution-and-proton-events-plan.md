@@ -371,3 +371,127 @@ flavor-assignment pinning test checks the rule, not MG's realised frequencies.
   (P1, P2), invoke the `extended-validation` skill for the gate map.
 - Session outcomes get an "### Px/Ux outcome" section appended to this note,
   as in notes 21–23; plan corrections are recorded, not silently absorbed.
+
+### U3 outcome
+
+Branch `user-dist/u3` (worktree `vibegraph-u3`), library-only — no CLI files
+touched. New module `vibegraph::cache` (`vibegraph-lib/src/cache/{mod,resolve,store}.rs`),
+14 new unit tests, all offline (`std::env::temp_dir()` only — nothing under
+this crate's tests ever calls `dirs::home_dir()` or touches a real
+`~/.vibegraph`).
+
+**API landed**
+
+- `cache::AssetKind::{Ufo, Pdf}` — `cache_subdir()` (`"ufo"`/`"pdf"`) and
+  `env_var()` (`"VIBEGRAPH_UFO_DIR"`/`"VIBEGRAPH_PDF_DIR"`).
+- `cache::default_cache_root() -> Option<PathBuf>` — `dirs::home_dir().join(".vibegraph")`,
+  for the CLI to call; nothing in this crate calls it.
+- `cache::resolve::locate(kind, name, flag, env, cache_root, dev_fallback) -> Located`
+  — the pure, fully-injectable resolution function (no env/home access), plus
+  `locate_from_env(...)` as a thin convenience wrapper that reads the real
+  `VIBEGRAPH_UFO_DIR`/`VIBEGRAPH_PDF_DIR` and defaults the cache root to
+  `default_cache_root()` unless overridden. `Located { dir, source, found }`
+  reports both *where* (`Source::{Flag,Env,Cache,DevFallback}`) and whether
+  the directory actually exists, so a caller can distinguish "resolved from
+  cache" from "nothing found, here's where a fetch should write."
+- `cache::store::Fetch` — the fetch trait (contract below), plus
+  `cache_pdf_set(cache_root, name, url, &dyn Fetch) -> Result<Cached, StoreError>`
+  and `cache_ufo_model(...)` (same signature), each returning
+  `Cached { dir, checksum }`. `store::read_pin(dir) -> Option<String>` reads
+  back a previously-pinned checksum. `store::FixedFetch`/`RefusingFetch` are
+  public stub `Fetch` impls for downstream tests (mirrors the existing
+  `PdfMember::from_subgrids` "public test double" pattern).
+- `store::lhapdf_download_url(name)` / `store::LHAPDF_INDEX_URL` — the exact
+  URL pattern `validation/pdf/fetch.sh` already uses, so this is a reuse, not
+  a guess. `store::feynrules_download_url(name)` — see caveat below.
+
+**Resolution order implemented** (identical for both kinds): `--flag` base
+dir → env var base dir → `<cache_root>/<kind>/<name>/` → `dev_fallback/<name>/`
+→ (nothing found: report the cache path as the write target, `found: false`).
+Flag/env are trusted unconditionally (no existence probe blocks them, matching
+today's `--pdf-dir`/`VIBEGRAPH_PDF_DIR` behavior) but still report accurate
+`found` so a caller can tell "explicit but wrong path" from "nothing
+configured." Six tests in `cache::resolve::tests` each pin one precedence
+edge (flag-over-all, env-over-cache/dev, cache-over-dev, dev-only-when-cache-
+misses, nothing-found write target, flag-path-not-on-disk) — each would fail
+if that specific ordering step were wrong, per the session's "explicit and
+tested end to end" instruction.
+
+**Fetch trait contract for U4**
+
+```rust
+pub trait Fetch {
+    fn fetch(&self, url: &str) -> Result<Vec<u8>, FetchError>;
+}
+```
+
+One method: given a URL, return the raw `.tar.gz` bytes or a `FetchError`
+(opaque `String` message — this module never inspects the cause, so a real
+implementation can wrap any HTTP client's error as a `Display`). U4 owns
+*when* `fetch` is called (the interactive prompt, the `--no-network`
+refusal — `store::RefusingFetch` is exactly what a `--no-network` path should
+plug in) and *what* URL to pass (`lhapdf_download_url`/`feynrules_download_url`,
+or `Located::dir`'s implied name for a retry). U3 owns everything downstream
+of the returned bytes: `.tar.gz` extraction (via `tar`+`flate2`, added as
+plain deps — nothing hand-rolled), unwrapping a single top-level wrapping
+directory if the archive has one (LHAPDF's own tarballs are packaged this
+way), checksumming, and an atomic publish (`rename` into `<cache_root>/<kind>/<name>/`
+only after the whole entry — including its pin file — is staged and valid; a
+failed/interrupted fetch never leaves a half-written entry `locate` would
+treat as cached). PDF's checksum is SHA-256 of the fetched archive bytes
+(`sha2` via the existing `ufo::identity::digest_bytes`, not a new hasher);
+UFO's checksum is the existing `ufo::identity::model_digest`, recomputed by
+actually loading the extracted directory (`UFOModel::load_with_digest`) — so
+a re-packaged tarball of an unchanged model pins identically, and a UFO
+archive that fails to parse is never published under its final name
+(`unparseable_ufo_archive_is_not_published`). Both are pinned in a hidden
+sidecar file inside the entry directory (`.vibegraph-checksum`, `store::PIN_FILENAME`).
+
+**Deviations from the plan / decisions the plan left open**
+
+1. **FeynRules URL is unverified.** Unlike the LHAPDF pattern (reused
+   verbatim from `fetch.sh`, so effectively already exercised), FeynRules has
+   no single stable per-model index endpoint the way LHAPDF's data server
+   does. `feynrules_download_url` is a best-effort template
+   (`.../raw-attachment/wiki/<model>/<model>.tar.gz`) documented in code as
+   unconfirmed against a live download. Whoever wires the real network
+   `Fetch` (U4 or later) must check it against an actual FeynRules model page
+   before trusting it, or override it outright.
+2. **No UFO dev fallback exists to wire up.** `validation/pdf` is a real,
+   populated repo-local fallback for PDF sets; there is no equivalent
+   committed UFO source tree (`research/refs/mg5amcnlo`'s UFO directories are
+   an uninitialized submodule, and the SM itself is interned, not loaded from
+   `.py` files at runtime — see `ufo/sm.rs`). `resolve::locate`'s
+   `dev_fallback` parameter is generic and works identically for both kinds,
+   but U4 has nothing to pass for UFO's dev-fallback slot today; passing
+   `None` is the correct call until/unless a real one exists.
+3. **Archive format standardized on `.tar.gz` for both kinds**, with a
+   "single top-level directory gets unwrapped" heuristic (common
+   packaging-tool convention) so `<name>/<name>/payload` never happens
+   regardless of whether the archive already self-prefixes with `<name>/`
+   (LHAPDF's do) or not. Not specified in the plan; recorded here since a
+   different archive format would need a different `store` implementation.
+4. **New deps**: `dirs = "6"` (home-directory resolution — no hand-rolled
+   `$HOME` logic), `tar = "0.4"`, `flate2 = "1"` (`.tar.gz` extraction). All
+   plain `crates.io` deps, no vendoring.
+5. **Untested-by-construction**: `locate_from_env`'s environment-reading
+   branch (it is a two-line pass-through to the fully-tested pure `locate`;
+   testing it would mean mutating real process env vars across parallel
+   tests, which is unsound) and `feynrules_download_url` (no network — the
+   URL format itself is what's unverified, not the string formatting).
+
+**Gate**: `cargo build --workspace` clean; `cargo test --workspace` — every
+suite passes (`vibegraph-lib` 503 passed/8 ignored + `color_cf` 7 + `diagram_channel`
+4 + `diagrams` 10/1 ignored + `rambo_oracle` 1 + `ufo` 4/1 ignored +
+`validate_alphas` 2 + `validate_helas` 1 + `validate_scales` 2 + doc-tests 1,
+including this session's 14 new `cache::` tests), `vibegraph-cli` unit 8 +
+`cli_fixed_energy` 2 + `cli_generate` 3 — all green, no regressions. No
+amplitude/color/coupling/diagram-enumeration code touched, so the
+`extended-validation` MG gate does not apply to this session (per its own
+when-to-run map) and was not run. `cargo fmt` clean. `cargo clippy` surfaces
+one pre-existing `deny(clippy::approx_constant)` failure in
+`coupling/alphas.rs:210` (unrelated to this session, not touched here — the
+MG π-truncation constant per note 07) that already blocks a clean clippy run
+on `main`; not fixed here as out of scope.
+
+Commit: `feat(cache): add ~/.vibegraph resolution and checksum-pinned fetch/store layer` — see `git log user-dist/u3`.
