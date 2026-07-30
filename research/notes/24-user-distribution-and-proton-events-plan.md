@@ -1044,6 +1044,25 @@ regresses, the fetch under it fails in milliseconds against a closed local port
 instead of pulling from CERN — and the assertion fails either way, since a
 successful download means a zero exit where a refusal was expected.
 
+**The prompt itself was exercised on a real terminal**, not only through the
+injected-stream unit tests, by running the binary under `script(1)` with a
+pty (and `$ALL_PROXY` pointed at a closed port, so a wrong answer could not
+have cost 27 MB):
+
+```
+PDF set NNPDF23_lo_as_0130_qed is not available locally. It can be downloaded now:
+  source:  https://lhapdfsets.web.cern.ch/current/NNPDF23_lo_as_0130_qed.tar.gz
+  size:    26.3 MB
+  sha256:  60d3c1df1c31e5840f91f4217163ae30a256b9291a5adc894882e86607ef5d63
+  unpacks to: /…/home/pdf/NNPDF23_lo_as_0130_qed
+Download it? [y/N] n
+error: … the download was declined; … To allow it, answer `y` or pass --yes.
+```
+
+A pty whose input stream closes before the answer arrives takes the
+"prompt could not be read" branch and refuses, also observed live — a closed
+stream is never read as a yes.
+
 #### `check-events`, and why a third subcommand exists
 
 Acceptance A has to "validate the emitted `.lhe` by re-parsing it" on a machine
