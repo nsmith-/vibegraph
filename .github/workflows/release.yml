@@ -92,6 +92,12 @@ jobs:
           asset="vibegraph-${{ matrix.target }}"
           mkdir -p "$asset"
           cp "target/${{ matrix.target }}/release/vibegraph" "$asset/"
+          # THIRD-PARTY-NOTICES travels inside every tarball, not just the repo:
+          # the interned SM model (vibegraph-lib/src/ufo/sm_assets/) is
+          # MadGraph5_aMC@NLO material compiled into this binary, and its
+          # license's redistribution-in-binary-form clause requires the notice
+          # to accompany the distributed binary itself.
+          cp THIRD-PARTY-NOTICES "$asset/"
           tar czf "dist/$asset.tar.gz" "$asset"
 
       - uses: actions/upload-artifact@v4
