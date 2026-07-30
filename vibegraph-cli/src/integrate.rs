@@ -14,7 +14,7 @@
 //!   per-diagram multichannel map whose integral is split channel by channel, one
 //!   VEGAS grid each.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Args;
 use vibegraph::artifact::{ChannelGrid, IntegrateArtifact, FORMAT_VERSION};
@@ -35,13 +35,9 @@ use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::vegas::VegasResult;
 
-use crate::fetch::HttpFetch;
-use vibegraph::cache::pinned::{
-    ensure_pdf_set, pdf_set_is_cached, pinned_pdf_set, DEFAULT_PDF_SET,
-};
-use vibegraph::cache::resolve::{locate_from_env, Source};
-use vibegraph::cache::store::{Fetch, RefusingFetch};
-use vibegraph::cache::AssetKind;
+use crate::assets;
+use crate::network::NetworkPolicy;
+use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 
 /// PDF member index (central value; error members are not consumed at LO).
 const PDF_MEMBER: u32 = 0;
@@ -80,10 +76,16 @@ pub struct IntegrateArgs {
     pub pdf_set: String,
 
     /// Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then
-    /// the `~/.vibegraph` cache (downloading the set if absent), then
+    /// the `~/.vibegraph` cache (offering to download the set if absent), then
     /// `validation/pdf` under the current directory.
     #[arg(long)]
     pub pdf_dir: Option<PathBuf>,
+
+    /// Directory containing the proc card's UFO model directory; defaults to
+    /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
+    /// directory. Unused for the built-in Standard Model.
+    #[arg(long)]
+    pub ufo_dir: Option<PathBuf>,
 
     /// VEGAS evaluations per adaptation iteration.
     #[arg(long, default_value_t = 120_000)]
@@ -117,117 +119,6 @@ impl std::error::Error for IntegrateError {}
 
 fn err(msg: impl Into<String>) -> IntegrateError {
     IntegrateError::Message(msg.into())
-}
-
-/// Repo-local PDF data, tried last. Relative to the working directory, so it
-/// only ever resolves inside a dev checkout and is simply absent for a user
-/// running an installed binary.
-const DEV_PDF_FALLBACK: &str = "validation/pdf";
-
-/// Environment override for the asset cache root, otherwise `~/.vibegraph`.
-const CACHE_ROOT_VAR: &str = "VIBEGRAPH_HOME";
-
-/// Set to any value to forbid downloads, so a missing asset becomes a refusal
-/// naming what would have been fetched. Anything that must stay offline —
-/// a test run, a sandboxed build — sets this and cannot then reach the network
-/// by accident.
-const NO_NETWORK_VAR: &str = "VIBEGRAPH_NO_NETWORK";
-
-fn cache_root() -> Option<PathBuf> {
-    std::env::var_os(CACHE_ROOT_VAR)
-        .map(PathBuf::from)
-        .or_else(vibegraph::cache::default_cache_root)
-}
-
-fn network_allowed() -> bool {
-    std::env::var_os(NO_NETWORK_VAR).is_none()
-}
-
-fn fetcher() -> Box<dyn Fetch> {
-    if network_allowed() {
-        Box::new(HttpFetch::default())
-    } else {
-        Box::new(RefusingFetch)
-    }
-}
-
-/// Resolve the directory holding `<pdf_set>.info` and its members, downloading
-/// the set into the cache if the resolution order turns up nothing.
-///
-/// A set reached through `--pdf-dir`, `$VIBEGRAPH_PDF_DIR`, or the dev fallback
-/// is used as found and never checksum-checked: those name data the caller is
-/// pointing at deliberately, which is also what keeps sets this build has no pin
-/// for usable. The cache step is the one that decides on the user's behalf what
-/// a bare set name means, so there the compiled-in pin is authoritative — an
-/// entry pinned to anything else is refetched rather than trusted.
-fn resolve_pdf_set_dir(args: &IntegrateArgs) -> Result<PathBuf, IntegrateError> {
-    let root = cache_root().ok_or_else(|| {
-        err(format!(
-            "cannot locate a home directory for the asset cache; \
-             set ${CACHE_ROOT_VAR} or pass --pdf-dir"
-        ))
-    })?;
-    let located = locate_from_env(
-        AssetKind::Pdf,
-        &args.pdf_set,
-        args.pdf_dir.as_deref(),
-        Some(&root),
-        Some(Path::new(DEV_PDF_FALLBACK)),
-    )
-    .ok_or_else(|| err("cannot resolve the PDF cache root"))?;
-
-    match located.source {
-        Source::Flag | Source::Env if located.found => return Ok(located.dir),
-        Source::Flag | Source::Env => {
-            return Err(err(format!(
-                "PDF set {} not found at {}",
-                args.pdf_set,
-                located.dir.display()
-            )))
-        }
-        Source::DevFallback => return Ok(located.dir),
-        Source::Cache => {}
-    }
-
-    let Some(pin) = pinned_pdf_set(&args.pdf_set) else {
-        if located.found {
-            return Ok(located.dir);
-        }
-        return Err(err(format!(
-            "PDF set {} is not present locally and this build has no download pin for it; \
-             fetch it yourself and point --pdf-dir / ${} at the directory containing it",
-            args.pdf_set,
-            AssetKind::Pdf.env_var()
-        )));
-    };
-
-    let needs_fetch = !pdf_set_is_cached(&root, &args.pdf_set);
-    if needs_fetch {
-        if !network_allowed() {
-            return Err(err(format!(
-                "PDF set {} is not in the cache and downloads are disabled by ${}; \
-                 it would be fetched from {} ({:.1} MB, sha256 {})",
-                pin.name,
-                NO_NETWORK_VAR,
-                pin.url,
-                pin.archive_bytes as f64 / (1024.0 * 1024.0),
-                pin.sha256
-            )));
-        }
-        eprintln!(
-            "PDF set {} not available locally; downloading {} ({:.1} MB, sha256 {})",
-            pin.name,
-            pin.url,
-            pin.archive_bytes as f64 / (1024.0 * 1024.0),
-            pin.sha256
-        );
-    }
-    let ensured = ensure_pdf_set(&root, &args.pdf_set, fetcher().as_ref())
-        .map_err(|e| err(format!("cannot obtain PDF set {}: {e}", args.pdf_set)))?;
-    if ensured.fetched {
-        eprintln!("PDF set cached at {}", ensured.dir.display());
-    }
-    Ok(ensured.dir)
 }
 
 /// The canonical string of the proc card's first process, for artifact metadata.
@@ -273,7 +164,7 @@ fn bank_channel(c: &ChannelIntegration) -> ChannelGrid {
     }
 }
 
-pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
+pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), IntegrateError> {
     // Refuse to clobber an existing artifact before spending the integration.
     let out_path = args.out.join(GRID_FILENAME);
     if !args.force && out_path.exists() {
@@ -289,7 +180,11 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
     let process = process_string(&parsed)?;
 
     let config = GlobalConfig {
-        ufo_search_path: PathBuf::from("."),
+        ufo_search_path: assets::resolve_ufo_search_path(
+            parsed.model.as_ref(),
+            args.ufo_dir.as_deref(),
+        )
+        .map_err(err)?,
         restrict_path_override: None,
         run_card_path: args.run_card.clone(),
     };
@@ -303,7 +198,9 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
     let evaluated = EvaluatedModel::from_model(model.clone());
 
     let output = match rc.beam_mode() {
-        BeamMode::Proton => integrate_proton(args, &parsed, &model, &evaluated, &rc, process)?,
+        BeamMode::Proton => {
+            integrate_proton(args, &parsed, &model, &evaluated, &rc, process, network)?
+        }
         BeamMode::FixedEnergy => {
             integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process)?
         }
@@ -372,11 +269,13 @@ fn integrate_proton(
     evaluated: &EvaluatedModel,
     rc: &RunCard,
     process: String,
+    network: NetworkPolicy,
 ) -> Result<RunOutput, IntegrateError> {
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
-    // Locate and load the PDF set.
-    let set_dir = resolve_pdf_set_dir(args)?;
+    // Locate and load the PDF set, which may mean asking to download it.
+    let set_dir = assets::resolve_pdf_set_dir(&args.pdf_set, args.pdf_dir.as_deref(), network)
+        .map_err(err)?;
     let set = PdfSet::load(&set_dir, &args.pdf_set).map_err(|e| {
         err(format!(
             "cannot load PDF set {} from {}: {e}",

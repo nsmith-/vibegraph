@@ -70,17 +70,16 @@ pub fn lhapdf_download_url(set_name: &str) -> String {
 /// offer suggestions before attempting the set's own download.
 pub const LHAPDF_INDEX_URL: &str = "https://lhapdfsets.web.cern.ch/current/pdfsets.index";
 
-/// FeynRules model-database URL template for a model's UFO `.tar.gz`.
-///
-/// Unlike the LHAPDF pattern above, this is not reused from an existing,
-/// exercised script — the FeynRules wiki has no single stable per-model
-/// index endpoint the way LHAPDF's data server does, so this is a best-effort
-/// template (FeynRules' own attachment-download convention) rather than a
-/// confirmed one. Whoever wires a real network [`Fetch`] against it should
-/// verify (or override) this pattern against a live download first.
-pub fn feynrules_download_url(model_name: &str) -> String {
-    format!("https://feynrules.irmp.ucl.ac.be/raw-attachment/wiki/{model_name}/{model_name}.tar.gz")
-}
+// There is no UFO counterpart to `lhapdf_download_url`, and it is not an
+// omission. UFO models are published on the FeynRules wiki, one page per model,
+// with hand-attached files: `/raw-attachment/wiki/<page>/<file>`, where the page
+// is not the model name and the file follows no rule — the 2HDM page alone
+// carries `2HDM.tar.gz`, `2HDM_UFO.tar.gz` and `2HDM_UFO.tar.2.gz`, of which
+// only the middle one is a UFO directory and the first is FeynRules Mathematica
+// source. A URL derived from a model name is therefore not merely unverified: it
+// 404s for most names, and for some it succeeds and returns the wrong kind of
+// archive. [`cache_ufo_model`] below takes a URL from its caller and is ready
+// for a real one; deriving that URL from a name is what nothing can do today.
 
 /// A cached entry after a successful fetch: its directory and the checksum
 /// pinned alongside it ([`PIN_FILENAME`]).
