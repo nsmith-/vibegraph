@@ -234,6 +234,17 @@ PROCESSES = [
         npoints=25,
         seed=61,
     ),
+    # The antiquark orientation of the mixed gluon+quark initial state: same
+    # topology as gu_to_epemu with the fermion line traversed the other way.
+    Process(
+        "gux_to_epemux",
+        "g u~ > e+ e- u~ QCD=2 QED=2",
+        (21, -2),
+        (-11, 11, -2),
+        sqrt_s_list=(50.0, 200.0, 500.0),
+        npoints=25,
+        seed=67,
+    ),
 ]
 
 
