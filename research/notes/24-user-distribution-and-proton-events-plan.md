@@ -455,6 +455,87 @@ none of the default suite needs one.
 
 Amended on `user-dist/u1` after the original U1 commit, same session.
 
+**Follow-up (2026-07-30): third-party notice for the interned MG5 SM model.**
+`vibegraph-lib/src/ufo/sm_assets/` bakes MadGraph5_aMC@NLO's `models/sm` into
+every binary via `include_str!`/`include_bytes!`
+(`vibegraph-lib/src/ufo/sm.rs`): the nine `restrict_*.dat` cards verbatim,
+plus `sm_parsed.bin.zst` — a serialized parse of the rest of `models/sm`
+(`particles.py`, `parameters.py`, `vertices.py`, `lorentz.py`, `couplings.py`,
+and the other `.py` sources `regenerate` reads), produced by the `gen_sm_blob`
+dev binary. MG5's license (an NCSA-adapted Open Source License, `LICENSE` at
+the root of the `research/refs/mg5amcnlo` submodule, Copyright (c) 2009, 2013
+the MadTeam) grants redistribution but clause 2 conditions redistribution *in
+binary form* on reproducing the copyright notice, the conditions, and the
+disclaimer alongside the distribution. The repo had no `LICENSE`, `NOTICE`,
+or MadTeam attribution anywhere outside the submodule, so the first tagged
+release would have shipped that material without the required notice.
+
+Added `THIRD-PARTY-NOTICES` at the repo root: states plainly what is
+redistributed (the nine restrict cards verbatim, `sm_parsed.bin.zst` as a
+derivative of the rest of `models/sm`), names the source
+(`https://github.com/mg5amcnlo/mg5amcnlo`, `models/sm`, pinned at the commit
+the interned assets were last regenerated from —
+`b7687064b9a013317ca164aa1395bc9c0e39ae1e`, with a note to update that
+pointer if the assets are regenerated from a newer submodule checkout), and
+reproduces the license
+text. The license text was fetched directly from
+`raw.githubusercontent.com/mg5amcnlo/mg5amcnlo/<that commit>/LICENSE` (the
+submodule is uninitialized in this worktree, so the actual file on disk
+wasn't readable locally; the pinned-commit raw fetch is the same bytes git
+would have checked out) and diffed byte-for-byte against what's embedded —
+identical except for the raw fetch's missing trailing newline, which is not
+part of the license text. `release.yml`'s `package` step now copies
+`THIRD-PARTY-NOTICES` into every platform tarball alongside the binary
+(comment there explains why); verified locally by running that exact
+packaging step against a real `cargo build --release` binary:
+
+```
+$ tar tzvf dist/vibegraph-local-verify.tar.gz
+drwxr-xr-x  0 ncsmith admin       0 ... vibegraph-local-verify/
+-rw-r--r--  0 ncsmith admin    4417 ... vibegraph-local-verify/THIRD-PARTY-NOTICES
+-rwxr-xr-x  0 ncsmith admin 6790416 ... vibegraph-local-verify/vibegraph
+$ tar xzf ... && diff THIRD-PARTY-NOTICES <extracted copy>   # byte-identical
+$ ./extracted/vibegraph --version
+vibegraph 246ae4e-dirty
+```
+
+**Whether anything else shipped needs the same treatment**, checked and not
+guessed at:
+
+- `vibegraph --version`/`--help`: the license's clause 2 only requires the
+  notice accompany "the documentation or other materials provided with the
+  distribution" — it does not require runtime display. `THIRD-PARTY-NOTICES`
+  travelling in the tarball satisfies the clause as written; no CLI change
+  made. (A `--help` pointer to the file would be harmless but is a product
+  decision, not a license obligation — left to the user.)
+- `assets/badger.png`: no attribution, source, or generation info anywhere in
+  the repo (checked the file, its one commit's log message, README, AGENTS.md,
+  TODO.md) — its origin cannot be established from the repo, so nothing is
+  claimed about it one way or the other. It is not compiled into the binary
+  or touched by `release.yml` regardless (it exists only for GitHub's README
+  rendering), so it carries no binary-redistribution obligation even if it
+  did have a third-party origin.
+- `validation/madgraph/dy13_*.dat` run/proc/param cards: header comments are
+  vibegraph-authored ("Shared verbatim by the MadGraph reference generation
+  and by vibegraph's integrand..."), not copied MG5 templates, and in any
+  case `validation/` is never packaged by `release.yml` — no binary-form
+  obligation here either.
+- One fixture *is* an actual MG5-generated file kept verbatim in source form:
+  `vibegraph-lib/tests/data/run_card_dy.dat`'s header literally reads
+  "MadGraph5_aMC@NLO / run_card.dat MadEvent". It is `#[cfg(test)]`-only
+  (`vibegraph-lib/src/runcard.rs:754`), so it never reaches a compiled
+  binary and sits outside the scope of this session's binary-redistribution
+  fix — but it is a source-form copy of MG5 output living in the git history
+  without any notice pointing back to MG5, which arguably falls under the
+  license's clause 1 (source-form redistributions must retain the notice).
+  Flagging it rather than acting on it: extending `THIRD-PARTY-NOTICES` (or a
+  separate source-tree notice) to cover source-form fixtures is a broader
+  question than "what ships in the release tarball," and is the user's call.
+
+Files: `THIRD-PARTY-NOTICES` (new), `.github/workflows/release.yml` (package
+step). No `Cargo.toml` `license` field added, no vibegraph-own `LICENSE`
+added — out of scope per instruction, left to the user.
+
 ### U2 — default PDF set out of the box
 
 - **License check first**: confirm `NNPDF23_lo_as_0130_qed`'s LHAPDF
