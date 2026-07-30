@@ -1,0 +1,60 @@
+name: acceptance
+
+# Acceptance A: a released binary, a set of cards, and nothing else — does a
+# `.lhe` file come out, and does the binary read it back? The whole run is
+# `scripts/acceptance.sh`, which takes no dependency on this repository beyond
+# being stored in it: it writes its own cards and downloads its own binary, so
+# the same script is what to run on a clean VM to reproduce this by hand.
+#
+# # When this runs, and why not more often
+#
+# On a published release, and on demand. Not on pushes and not on pull
+# requests, for two reasons that point the same way:
+#
+#   * its input is a *published release asset*, which a branch or a PR does not
+#     have — there is nothing for it to test before `release.yml` has run;
+#   * it downloads ~27 MB of PDF grids every time, on purpose (the download is
+#     the path under test, so caching it away would remove the point).
+#
+# What guards the day-to-day changes instead is `ci.yml`, whose suite covers the
+# same resolution, consent and event-file logic offline, against a binary built
+# from the branch. This job is the one that can see what those cannot: that the
+# artifact a user actually downloads works on a machine that has never built it.
+#
+# Worth turning on once releases are routine: a weekly `schedule` trigger. The
+# PDF pin is a checksum against an archive CERN could repackage at any time, and
+# today the only detector for that is an `#[ignore]`d test nobody runs on a
+# timer. A weekly run of this job would be the second one. It is left off until
+# a first release exists, since until then it can only fail.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to test; empty means the latest release."
+        required: false
+        default: ""
+
+jobs:
+  acceptance:
+    # One platform, not three. `release.yml` already builds and smoke-tests each
+    # platform's binary natively on that platform; what this job adds is the
+    # data path — PDF resolution, the download, the cache, cards to events —
+    # and none of that is platform-specific. Three runs would triple the
+    # downloads to re-test the same code.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: acceptance
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          args=(--repo "${{ github.repository }}")
+          if [ -n "${TAG}" ]; then
+            args+=(--tag "${TAG}")
+          fi
+          bash scripts/acceptance.sh "${args[@]}"
