@@ -1,0 +1,32 @@
+name: ci
+
+# The default `cargo test` suite only. The slow MadGraph/HELAS cross-check
+# gates (color/CF/JAMP oracles, sigma validation, ...) all sit behind the
+# `extended-validation` cargo feature and need fetched PDF data + banked
+# MadGraph output that do not exist on a CI runner, so plain `cargo test`
+# already skips them by construction — nothing extra to gate here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ci-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ci-
+
+      - run: cargo build --locked --workspace
+      - run: cargo test --locked --workspace
