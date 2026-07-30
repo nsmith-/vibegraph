@@ -371,3 +371,274 @@ flavor-assignment pinning test checks the rule, not MG's realised frequencies.
   (P1, P2), invoke the `extended-validation` skill for the gate map.
 - Session outcomes get an "### Px/Ux outcome" section appended to this note,
   as in notes 21–23; plan corrections are recorded, not silently absorbed.
+
+---
+
+## P0 outcome (2026-07-30) ✅
+
+Branch `proton-events`. Rebank, amplitude bank, gate wiring and the spacelike-map
+probe all landed; two plan corrections are recorded below rather than absorbed.
+
+### What was banked
+
+**`pp_to_llj_fixed`** — `validation/madgraph/scripts/pp_to_llj_fixed.mg5`, built
+through the usual `build-diagrams` path in the main checkout.
+
+The proc card is *not* byte-identical to `pp_to_llj_qcd2_qed2`'s and cannot be:
+MadGraph writes the output directory name into `proc_card_mg5.dat`, so the two
+differ on exactly that one line (`output pp_to_llj_fixed -nojpeg`) and agree
+everywhere else — same `generate p p > l+ l- j QCD=2 QED=2`, same five
+multiparticle `define`s, same `set` preamble.
+
+Run-card deltas from the banked dynamical run, all confirmed in the written card:
+
+| key | dynamical bank | `pp_to_llj_fixed` |
+|---|---|---|
+| `fixed_ren_scale` | False | **True** |
+| `fixed_fac_scale1` / `fixed_fac_scale2` | False | **True** |
+| `scale`, `dsqrt_q2fact1`, `dsqrt_q2fact2` | 91.188 (unused) | 91.188 (**used**) |
+| `pdlabel1`/`pdlabel2` | `nn23lo1` | `pdlabel = lhapdf` |
+| `lhaid` | 230000 | **247000** |
+| `mmll` | 0.0 | **50.0** |
+
+Everything else is untouched: 13 TeV, `ptj = 20`, `ptl = 10`, `etaj = 5`,
+`etal = 2.5`, `drll = drjl = 0.4`, `maxjetflavor = 4`, `use_syst = True`,
+`dynamical_scale_choice = -1` (inert once the three scales are fixed),
+`scalefact = 1`.
+
+Banked result: **σ = 422.84 ± 1.80 pb**, 10 000 unweighted events, subprocess
+groups `P1_qq_llg` and `P1_gq_llq` each with their `leshouche.inc`. `use_syst`
+is on, so every event carries `<rscale>` and per-beam `<pdfrwt>` alongside
+`SCALUP` — all three print `91.188`.
+
+**Amplitude bank** — three concrete subprocesses, one per class plus a flavour
+control, each a single-subprocess `lpp = 0` run at `√ŝ = 500` so `launch` builds
+both `matrix1_optim.f` (the |M|² oracle) and `matrix1_orig.f` (the per-diagram
+`AMP` / per-flow `JAMP` oracle):
+
+| run | process | NGRAPHS | NCOLOR | varies vs the baseline |
+|---|---|---|---|---|
+| `uux_to_epemg` | `u u~ > e+ e- g` | 4 | 1 | — (baseline) |
+| `gu_to_epemu` | `g u > e+ e- u` | 4 | 1 | colour arrangement |
+| `ddx_to_epemg` | `d d~ > e+ e- g` | 4 | 1 | initial flavour |
+
+Registered in `build_amplitude.sh` (both `GENERIC_PROCESSES` and
+`AMP_PROBE_PROCESSES`, so `mg_amp_probe_<name>` exists for
+`compare_amps.py` / a future JAMP reference) and in `gen_amplitude.py`
+(75 points each at `√ŝ = 50 / 200 / 500`).
+
+They are **already informational rows in `validate_helas_mg`** and already agree:
+`uux_to_epemg` 1.20e-14, `ddx_to_epemg` 1.43e-14, `gu_to_epemu` 3.18e-14
+max relative difference. That is |M|²-level only — blind to per-diagram phase and
+to the flow conventions P1 is there to pin — but it means P1 starts from a live
+end-to-end comparison rather than from nothing.
+
+### Gate wiring
+
+- `validate_scales` gained a `Coverage::Fixed` arm and `FIXED_SCALE_RUNS`.
+  `pp_to_llj_fixed` is replayed with **no** topology supplied (a fixed scale must
+  not be allowed to hide behind a clustering result) and passes:
+  **50 000 scale comparisons over 10 000 events, worst 0.000 of the printing
+  budget** — the first llj scales row, and a GATE.
+- The two dynamical llj runs stay asserted-refused with
+  `ClusteringNotDegenerate`, unchanged. The refusal message already names the kT
+  clustering of `cluster.f`.
+- Registering an amplitude process also creates a *banked run*: `launch` is what
+  builds `matrix1_optim.f`, and it writes 10 000 events. The three new partonic
+  runs therefore entered the scales/alphas inventories and were classified —
+  `Refused` (same 2→3 clustering as llj), so `CLUSTERING_REQUIRED_RUNS` went
+  6 → 9, and added to `validate_alphas`'
+  `SCALUP_IS_THE_RENORMALISATION_SCALE`. **Future sessions adding an amplitude
+  process must expect to classify a run too.**
+- `sigma_reference.json` regenerated (`extract-sigma` banks every `lpp = 0` run):
+  the three new partonic σ̂ entries are committed. `validate_sigma` skips them via
+  its catch-all `Plan::Skip("no evaluation plan for this directory")`; the 11
+  asserted rows are unchanged. Adding partonic σ̂ rows for the llj subprocesses is
+  a cheap follow-up for P1/P2, not owed here.
+
+### Plan correction 1 — `pdlabel = lhapdf` puts αs outside our coupling layer
+
+`lhaid = 247000` was the right call for the PDF, but it has a consequence note 24
+did not anticipate. With `pdlabel = lhapdf` MadGraph links
+`alfas_functions_lhapdf.f`, whose `ALPHAS(Q)` forwards to LHAPDF's
+`alphasPDF(Q)`, and `RunningAlphaS::from_run_card` **refuses** such a card
+(`AlphaSError::LhapdfRunning`) rather than substituting its own beta-function
+solve. The run log is explicit:
+
+```
+ Old value of alpha_s from param_card:   0.13000280000000003
+ New value of alpha_s from PDF lhapdf :  0.13000271085472234
+ alpha_s for scale    91.188000000000002       is   0.13000271085472237
+```
+
+The refusal is load-bearing, not bookkeeping: the printed `AQCDUP` is
+`1.300027e-01`, while the parameter card's own αs would print `1.300028e-01` —
+**2.0× the field's printing budget, and digit-distinguishable on all 10 000
+events**. This is now pinned by
+`the_grid_alpha_s_runs_are_refused_for_a_measurable_reason`, and both `AQCDUP`
+oracles step over the run through an explicit `GRID_ALPHA_S_RUNS` list rather
+than by omission. `banked_run_logs_pin_the_alpha_s_source_rule` still checks the
+parameter-card half of the source rule for it and asserts that the grid override
+is a real change.
+
+**What P3 needs.** σ(pp→ℓℓj) carries one power of αs, so the gate cannot be run
+without αs at μR, and the parsed metadata is *not* enough to supply it. Checked
+against the set itself:
+
+- `pdf/grid.rs` parses `AlphaSInfo` — `mz`, `order`, `kind`, `qs`, `vals`,
+  `lambda4`, `lambda5` — and nothing outside its own parse test reads any of it.
+  There is no interpolator.
+- The set's `AlphaS_MZ: 0.130003` is six digits, and the 51-knot table brackets
+  `91.188` between `Q = 91.1876` (`αs = 0.1300028`) and `Q = 109.8541`
+  (`αs = 0.1262725`) at seven digits each. MadGraph's
+  `αs(91.188) = 0.13000271085472237` is therefore *not* a tabulated number: it
+  is `AlphaS_Type: ipol`'s cubic interpolation in `log Q²` over those knots.
+  Reproducing it exactly means writing that consumer.
+- Reproducing it *well enough* does not. The bracketing knot at `Q = 91.1876` is
+  within `9e-8` relative of MadGraph's value — five orders below any σ tolerance
+  — so P3 can pin the single value against the banked run log's
+  `alpha_s for scale 91.188... is 0.13000271085472237` line (which
+  `validate_alphas` already knows how to read) and defer the interpolator.
+- What P3 must **not** do is inherit the current default: `hadronic.rs:1079`
+  takes αs from the parameter card (`evaluated.alpha_s()`). For Drell-Yan that
+  is harmless — pp→ℓℓ carries no αs at LO — but for llj it is the wrong source,
+  giving `0.1300028` where MadGraph used `0.13000271085`. Negligible in σ today,
+  and wrong in kind: it would grow with any move off `μ = M_Z`.
+
+### Plan correction 2 — hazard 1 was understated
+
+Note 24 called the 2→3 spacelike map "the sprint's principal physics risk" and
+offered the mitigation that "multichannel is unbiased under a bad map". The probe
+found the risk is **not** a bad map but a *biased* one, which that mitigation does
+not cover. Detail below.
+
+### Probe verdict: **extend the spine — and floor its spacelike draw**
+
+Not "works as is", and not "fall back to flat". Evidence, all now standing as
+tests in `vibegraph-lib/tests/diagram_channel.rs`:
+
+**1. The topology.** `u u~ > e+ e- g` — **4 of 4** diagrams carry exactly one
+spacelike line; the cuts are `({g} | {ℓ⁺ℓ⁻})` twice and `({ℓ⁺ℓ⁻} | {g})` twice
+(the gluon comes off beam 0's line or beam 1's; either way the recorded transfer
+is the same invariant). `g u > e+ e- u` — **2 of 4**; the other two route the
+internal quark through the full ŝ, which is timelike and bounds no subsystem.
+In every case the spacelike line separates the lepton pair from the jet, and the
+Z/γ* pole sits on the lepton-pair side. So llj is exactly one spacelike rung in a
+three-body final state, with a *composite* subsystem on one side — one step
+beyond the 2→2 the spine was built for.
+
+**2. Nothing is built for it today.** `DiagramChannel::from_diagram` guards on
+`spacelike.len() == 1 && n_out == 2`; every llj diagram falls through to the
+all-timelike tree.
+
+**3. The machinery is dimension-generic.** `sample_spine` / `spine_jacobian`
+recurse into composite emitted/recoil nodes and the dimension count works out
+(`3·n_out − 4`). Built by hand from each diagram's own cut through the public
+`from_topology_tchannel`, a three-body spine produces on-shell, conserving points
+and integrates `V_3` to flat RAMBO's value for all six cuts — **provided its
+spacelike pole is regulated**.
+
+**4. Unregulated, it is biased — by a factor of three.** With the model's
+massless quark exchange the three-body spine overstates `V_3` by
+**3.09×–3.48×**. The mechanism: for a massless spacelike line the transfer's
+upper edge is `t_max = m² = 0` analytically, but it is computed as a cancelling
+difference of two large quantities built from *different* expressions. Over
+20 000 recoil invariants at `s = 2.5e5` it lands below zero 6 131 times, above
+6 218 times, and exactly zero only 7 651 times, with `|t_max| ≤ 4e-8`. When it
+lands just below zero, `t_pole_shapes` switches the propagator draw on with
+`N = ln(|t_min|/|t_max|) ≈ 30` e-folds reaching `|t| ~ 1e-11` — while
+`density()` recomputes `t` from the momenta with a cancellation error of the same
+size. Since `sample()` takes its weight from `density()`, the sampling density
+and the weighting density then describe different maps, and the estimator is
+biased rather than merely noisy. **This is what invalidates the "multichannel is
+unbiased under a bad map" mitigation: the map is not bad, it is wrong.**
+
+The existing 2→2 spine is *not* affected, for two different reasons depending on
+the process. With massive final legs (`e+ e- > W+ W-`) the edge sits strictly
+below the pole and the propagator draw is well posed. With massless ones
+(`u u~ > u u~`) both invariants are the fixed constant `0`, so `center` and
+`span` reduce to identical floating-point products and cancel to exactly zero for
+every `s` tested — the flat fallback then fires deterministically. The
+degeneracy needs a *drawn* invariant on one side, which first appears at
+`n_out ≥ 3`. The 2→2 case is safe by arithmetic accident, not by design.
+
+**5. Regulated, it is worth having.** With the pole at `√ŝ/100 = 5 GeV`, on a toy
+integrand carrying the two structures an llj matrix element has (the Z
+Breit–Wigner on `s_ℓℓ`, a `1/(m₀²−t)²` peripheral factor), over five seeds:
+
+| map | worst seed pull | per-point variance | verdict |
+|---|---|---|---|
+| regulated spine | 0.4 – 1.3 | 1.1e-16 – 1.0e-14 | self-consistent |
+| all-timelike (what `from_diagram` builds today) | up to 4.9 | 5× – 2800× larger | lands up to **3.7×** away |
+| flat RAMBO | up to **91.8** | up to 4e5× larger | confidently wrong |
+
+The comparison is deliberately a seed sweep and not a single run: this is the
+`uux_to_uux` collinear-tail failure mode, and both alternatives display it —
+flat RAMBO returns e.g. `1.29e-8` where the spine returns `5.82e-9`, with a
+reported error that does not admit the difference. A single-seed number from
+either would have been believed.
+
+### What P2 must take from this
+
+1. **Lifting the `n_out == 2` guard is necessary but not sufficient.** Shipping
+   it alone makes llj *worse* than the status quo: a biased map replaces an
+   under-covering one. The spacelike draw needs a floor, the way `log_scale`
+   already floors a zero-width timelike pole.
+2. **The floor is process data, not model data.** The natural scale is the jet
+   transverse-momentum cut (`ptj = 20` ⇒ `|t| ≳ 400 GeV²`, eleven orders above
+   the 4e-8 noise). That means the channel derivation needs a cut scale as an
+   input — a new coupling between `Cuts` and `diagram_channel` that P2's design
+   has to accommodate, and which note 24 did not plan for.
+3. **The `density == 1/weight` checks are vacuous.** `sample()` *defines* the
+   weight as `1.0 / self.density(&momenta)`, so reciprocity holds by
+   construction and cannot detect a sampling/weighting mismatch — the exact
+   defect above. Both sites (`assert_valid` in the integration test and the
+   in-crate `density_is_reciprocal_weight`) now carry a comment stating what they
+   can and cannot see, so they read as a declared blind spot rather than as
+   coverage; the assertions themselves are unchanged, since they still pin that
+   the density is finite and non-zero on every generated point. **Closing the
+   blind spot is a P2 item**: it needs `sample` to accumulate its own path
+   weight as it walks, and compare that against `density` — until then, any new
+   map must be checked by an integrated quantity (`V_n` against flat RAMBO, or a
+   seed sweep), which is what actually caught this.
+4. Half the `g q` diagrams have no spacelike line at all (the internal quark
+   carries the full ŝ). The channel set for that group is therefore mixed:
+   peripheral spines plus all-timelike trees, which the `MultiChannel` combiner
+   already handles heterogeneously.
+
+### Gate results
+
+`cargo test --workspace` 539 passed / 0 failed. Extended validation, all green:
+
+| gate | result |
+|---|---|
+| `validate-helas-mg` | 17 passed (14 enforced unchanged; 3 new llj rows informational) |
+| `validate-scales` | 7 passed — `pp_to_llj_fixed` 50 000 comparisons, worst 0.000 of budget |
+| `validate-alphas` | 4 passed — source rule pinned against 24 run logs |
+| `validate-color-jamp` | 3 passed |
+| `validate-diagrams` | 16 passed |
+| `validate-sigma` | 11 rows asserted, unchanged (3 new dirs auto-skip) |
+| `validate-lhef` | 3 passed |
+| `validate-unweighting` | 1 passed |
+| `validate-scale-couplings` | 1 passed |
+
+No tolerance was changed anywhere.
+
+### Files and commands
+
+- Bank: `validation/madgraph/scripts/pp_to_llj_fixed.mg5`,
+  `uux_to_epemg.mg5`, `gu_to_epemu.mg5`, `ddx_to_epemg.mg5`;
+  registrations in `validation/madgraph/build_amplitude.sh` and
+  `gen_amplitude.py`; `validation/madgraph/sigma_reference.json`.
+  Regenerate with `pixi run -e madgraph build-diagrams` then
+  `generate-amplitude` and `extract-sigma` (`validation/madgraph/output/` is
+  git-ignored, as for every other run).
+- Gates: `vibegraph-lib/tests/validate_scales.rs`,
+  `vibegraph-lib/tests/validate_alphas.rs`.
+- Probe: `vibegraph-lib/tests/diagram_channel.rs` (five new tests, in the
+  default `cargo test` gate).
+
+One MG-side detail worth keeping: `build.sh` must run with `LDFLAGS` carrying
+`-lc++` for an LHAPDF run to link on macOS, the same workaround
+`gen_hadronic_sigma.sh` documents. `pp_to_llj_fixed` is the first `build.sh`
+process that needs it.
