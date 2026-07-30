@@ -495,3 +495,102 @@ MG π-truncation constant per note 07) that already blocks a clean clippy run
 on `main`; not fixed here as out of scope.
 
 Commit: `feat(cache): add ~/.vibegraph resolution and checksum-pinned fetch/store layer` — see `git log user-dist/u3`.
+
+### U2 outcome
+
+Branch `user-dist/u2` (worktree `vibegraph-u2`), branched off `user-dist/u3`
+so the pin layer sits directly on U3's resolution/store code.
+
+#### License finding — **NOT SETTLED**, and this is a plan correction
+
+The plan asserted "NNPDF sets are CC-BY-4.0; verify for this set
+specifically". **Verification failed to confirm that, and turned up no
+redistribution grant of any kind for `NNPDF23_lo_as_0130_qed`.** Sources
+checked, each an authoritative distribution point rather than a summary:
+
+| Source | What it says about redistribution |
+|---|---|
+| The set's own archive (`NNPDF23_lo_as_0130_qed.tar.gz`, fetched from the LHAPDF data server) | Contains exactly 101 `.dat` members + 1 `.info` file. **No `LICENSE`, no `COPYING`, no copyright notice, no terms file.** |
+| The set's `.info` metadata | Fields are `SetDesc`, `SetIndex`, `Authors`, `Reference` (empty), plus physics parameters. **The LHAPDF6 `.info` format carries no license field at all.** |
+| `lhapdf.org` front page and `lhapdf.org/pdfsets.html` (the set index) | No terms of use, no redistribution statement, no ownership statement for the data. Only a request to cite the LHAPDF6 paper. |
+| `gitlab.com/hepcedar/lhapdf` `COPYING` | Plain GPLv3, **covering the LHAPDF source code**. The text is the unmodified GPLv3 template with no clause addressing the PDF grid files the tool downloads. LHAPDF's code license does not propagate to third-party data it distributes. |
+| `nnpdf.mi.infn.it/nnpdf2-3qed/` (NNPDF's own NNPDF2.3QED distribution page) | Download links and install instructions only. **No license, copyright, or terms statement.** |
+| `nnpdf.mi.infn.it/for-users/unpolarized-pdf-sets/` | Same: set listings and paper links, no legal terms. |
+| arXiv:1308.0598, "Parton distributions with QED corrections" (Ball et al.) — the set's reference publication | Submitted under the **arXiv non-exclusive distribution license**, *not* CC-BY. And in any case this licenses the paper, not the grids. |
+
+Two things are worth separating. NNPDF's *code* (the fitting framework,
+`github.com/NNPDF/nnpdf`) is GPLv3, and NNPDF's *recent* publications are
+often CC-BY — both are true and both are almost certainly where the
+plan's "NNPDF sets are CC-BY-4.0" belief came from. Neither covers a 2014
+grid file. For this specific set the honest finding is that **no explicit
+license was ever attached to the data**, so there is no affirmative
+permission to redistribute it. "Freely downloadable" is not a license.
+
+Per the session's standing instruction — *if the terms are ambiguous or
+cannot be established from an authoritative source, choose fetch-at-first-use,
+not embedding* — this settles the mechanism: **fetch, do not redistribute.**
+Note that embedding member 0 alone would have been a *partial* redistribution
+of the set, which is if anything more license-sensitive than shipping it
+whole, not less.
+
+Attribution text that would need to ship *if* redistribution were ever
+established (and which is worth carrying anyway, since citation is the one
+thing every source above does ask for):
+
+> Parton distributions: NNPDF2.3 (`NNPDF23_lo_as_0130_qed`, LHAPDF ID
+> 247000), NNPDF Collaboration — R. D. Ball, V. Bertone, S. Carrazza,
+> L. Del Debbio, S. Forte, A. Guffanti, N. P. Hartland, J. Rojo,
+> "Parton distributions with QED corrections", Nucl. Phys. B877 (2013) 290,
+> arXiv:1308.0598. Delivered via LHAPDF6 — A. Buckley et al.,
+> Eur. Phys. J. C75 (2015) 132, arXiv:1412.7420.
+
+**Confidence.** High that no license grant is *published* at any of the
+distribution points above — that is a direct negative observation, not an
+inference. Not a legal opinion on whether the data is copyrightable at all
+(numerical tables may well not be, in some jurisdictions); the point is that
+the project cannot demonstrate permission, so it does not act as if it has
+it. **The license question is left open, deliberately.** Anyone who later
+obtains an explicit grant from the NNPDF collaboration can revisit the
+embed decision; the size numbers below say embedding would otherwise be
+comfortable.
+
+#### Measured sizes
+
+Measured on the archive actually fetched from
+`https://lhapdfsets.web.cern.ch/current/NNPDF23_lo_as_0130_qed.tar.gz`
+on 2026-07-30:
+
+| Quantity | Bytes | Human |
+|---|---|---|
+| Full archive (`.tar.gz`) | 27,625,668 | 27.6 MB |
+| Full set extracted (101 members + `.info`) | ~106,000,000 | 101 MB |
+| Member 0 (`..._0000.dat`) raw | 1,052,028 | 1.05 MB |
+| `.info` raw | 2,138 | 2.1 kB |
+| Member 0 + `.info` as `.tar.gz` | 276,628 | 277 kB |
+| Member 0 alone, `gzip -9` | 268,875 | 269 kB |
+| Member 0 alone, `zstd -19` | 211,046 | 211 kB |
+
+Archive SHA-256:
+`60d3c1df1c31e5840f91f4217163ae30a256b9291a5adc894882e86607ef5d63`.
+
+Only member 0 is ever consumed (`PDF_MEMBER = 0`; error replicas are not used
+at LO), so the embeddable unit is 277 kB `.tar.gz` / 211 kB zstd, not 27.6 MB.
+
+#### Decision: fetch at first use
+
+**Threshold applied: ~1 MB of added release-binary weight.** Rationale: the
+current stripped binary is a few MB, so ~200–300 kB is a <10% increase and
+invisible on a download — whereas the full 27.6 MB archive is a 5–10×
+blow-up and plainly disqualifying. On size alone, **211–277 kB passes
+comfortably and the decision would have been to embed member 0.**
+
+The size test passed; the **license test is what forced fetch-at-first-use**.
+Recording that explicitly because it is the kind of thing that gets
+misremembered later as "the set was too big to embed" — it was not.
+
+#### Where the pin lives
+
+`vibegraph-lib/src/cache/pinned.rs` — a compiled-in `PINNED_PDF_SETS` table
+(`name`, `url`, `sha256`, `archive_bytes`), not a config file, so a user
+cannot silently drift onto different data than the build was validated
+against. Wired to U3's `Fetch` seam without changing its contract.
