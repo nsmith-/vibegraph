@@ -394,6 +394,67 @@ a tag ref) can also be triggered without tagging anything, via the Actions tab
 → `release` → "Run workflow" (the `workflow_dispatch` trigger), against any
 branch.
 
+**Follow-up (2026-07-30): does `ci.yml` actually pass on a fresh runner's
+checkout?** The first pass of this session ran `cargo test` inside the
+worktree, which had untracked MG `.so` probes COW-cloned in and sat next to a
+main checkout with its own generated bank data — neither is what a GitHub
+runner sees (`git ls-files` content only, no submodules initialized). Checked
+by building a tree from `git ls-files -z` alone (same recipe as the
+non-git `--version` fallback test above), confirming it has no `.git` above
+it, and running the exact `ci.yml` commands there:
+
+```
+$ git -C vibegraph-ci-sim rev-parse --show-toplevel
+fatal: not a git repository (or any of the parent directories): .git
+$ git -C vibegraph-ci-sim submodule status   # not run — no .git; equivalent: nothing initialized
+$ ls vibegraph-ci-sim/validation/madgraph/output   # does not exist (gitignored, MG-generated)
+$ cargo test --locked --workspace   # inside vibegraph-ci-sim
+...
+test result: ok. 489 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 50.30s
+...
+test result: ok. 7 passed; 0 failed; 0 ignored...   (color_cf.rs)
+test result: ok. 4 passed; 0 failed; 0 ignored...   (diagram_channel.rs)
+test result: ok. 10 passed; 0 failed; 1 ignored...  (diagrams.rs)
+test result: ok. 1 passed; 0 failed; 0 ignored...   (rambo_oracle.rs)
+test result: ok. 4 passed; 0 failed; 1 ignored...   (ufo.rs)
+test result: ok. 2 passed; 0 failed; 0 ignored...   (validate_alphas.rs)
+test result: ok. 0 passed; 0 failed; 0 ignored...   (validate_hadronic.rs — extended-validation-gated)
+test result: ok. 1 passed; 0 failed; 0 ignored...   (validate_helas.rs)
+test result: ok. 0 passed; 0 failed; 0 ignored...   (validate_pdf_grid.rs — gated)
+test result: ok. 2 passed; 0 failed; 0 ignored...   (validate_scales.rs)
+test result: ok. 0 passed; 0 failed; 0 ignored...   (validate_vegas.rs — gated)
++ vibegraph-cli: 8 unittests + 2 (cli_fixed_energy) + 3 (cli_generate), all ok
+```
+
+Identical pass/fail counts to the earlier (COW-cloned) worktree run, so nothing
+was quietly relying on the leaked local data. Two independent reasons, not
+one: (1) the MG-heavy oracle tests (`color_cf_oracle`, `color_flow_tags_oracle`,
+`color_jamp_oracle`, `validate_helas_mg`, `validate_madgraph_diagrams`,
+`validate_sigma`, `validate_scale_couplings`, `validate_unweighting`,
+`validate_lhef`) all carry `required-features = ["extended-validation"]` in
+one of the two `Cargo.toml`s (my first pass mis-read a truncated `grep -A2`
+and thought five of these were ungated — they aren't; re-read the full file);
+(2) a handful of default-suite tests reach for the uninitialized
+`research/refs/mg5amcnlo` submodule or `validation/madgraph/output` and
+soft-skip with an `eprintln!` + early return when the path doesn't exist
+(`ufo::mod::tests::test_load_mssm`/`test_load_loop_sm`,
+`ufo::sm::tests::interned_default_matches_submodule` + `_exactly`,
+`helas::eval::rooting_soundness::root_override_hook_is_transparent` via its
+`read_dir`-absent-returns-empty `csv_index()`) — these report "ok" on CI
+having made zero real assertions, a pre-existing and already-documented
+pattern (`ufo/sm.rs`'s own doc comment: "a bare `cargo test` skips it when the
+submodule isn't checked out"), not something this session introduced or needs
+to fix.
+
+`ci.yml` itself needed no logic change — `cargo test --locked --workspace`
+was already honest — but its comment was rewritten to name both mechanisms
+and list the soft-skipping tests explicitly, so a future reader isn't
+surprised that CI green on those particular tests means "ran with zero
+assertions," not "verified." No PDF/network/submodule step was added, since
+none of the default suite needs one.
+
+Amended on `user-dist/u1` after the original U1 commit, same session.
+
 ### U2 — default PDF set out of the box
 
 - **License check first**: confirm `NNPDF23_lo_as_0130_qed`'s LHAPDF
