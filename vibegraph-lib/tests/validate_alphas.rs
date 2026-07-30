@@ -202,13 +202,32 @@ mod banked {
         runs
     }
 
+    /// Runs whose `αs` MadGraph reads out of the PDF grid: `pdlabel = lhapdf`
+    /// links `alfas_functions_lhapdf.f`, whose `ALPHAS(Q)` is LHAPDF's
+    /// `alphasPDF(Q)` and not the beta-function solve this file validates. Their
+    /// `AQCDUP` is therefore outside this oracle; what stays inside is the
+    /// parameter-card half of the source rule, which
+    /// [`banked_run_logs_pin_the_alpha_s_source_rule`] still checks.
+    const GRID_ALPHA_S_RUNS: &[&str] = &["pp_to_llj_fixed"];
+
     /// The evolution MadGraph used for `run`, resolved the way `setrun.f` does
-    /// from the run card and the parameter card.
-    fn resolve(run: &Path) -> RunningAlphaS {
+    /// from the run card and the parameter card. `None` for a run whose `αs` the
+    /// PDF grid supplies; the refusal is asserted against [`GRID_ALPHA_S_RUNS`]
+    /// rather than swallowed.
+    fn resolve(name: &str, run: &Path) -> Option<RunningAlphaS> {
         let card = RunCard::parse_file(&run.join("Cards/run_card.dat")).expect("run card");
         let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
         let a_s = params.get("sminputs", &[3]).expect("aS in SMINPUTS");
-        RunningAlphaS::from_run_card(&card, a_s).expect("supported alpha_s source")
+        match RunningAlphaS::from_run_card(&card, a_s) {
+            Ok(running) => Some(running),
+            Err(err) => {
+                assert!(
+                    GRID_ALPHA_S_RUNS.contains(&name),
+                    "{name}: unexpected alpha_s source refusal: {err}"
+                );
+                None
+            }
+        }
     }
 
     /// `(scalup, aqcdup)` for every `<event>` of a run.
@@ -258,7 +277,7 @@ mod banked {
     /// `√ŝ = 500` — are the ones that do reproduce `AQCDUP`. That evidence is kept
     /// running in `validate_scales.rs`
     /// (`scalup_is_not_the_renormalisation_scale`), which also derives the scale
-    /// for fourteen of the runs listed here from the momenta rather than from a
+    /// for most of the runs listed here from the momenta rather than from a
     /// printed field, and reaches the same `AQCDUP`.
     ///
     /// Recovering a `2 → 6` scale needs the general kT clustering of `cluster.f`,
@@ -266,6 +285,7 @@ mod banked {
     /// outside. The partition is asserted rather than assumed, so the day it
     /// changes is a test failure and not a silent reclassification.
     const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
+        "ddx_to_epemg",
         "ee_to_ee",
         "ee_to_mumu",
         "ee_to_mumu_tata_qcd0",
@@ -276,12 +296,14 @@ mod banked {
         "ee_to_zh",
         "gg_to_gg",
         "gg_to_ttx",
+        "gu_to_epemu",
         "pp_to_bb",
         "pp_to_bb_qcd2",
         "pp_to_ll",
         "pp_to_ll_qcd0",
         "pp_to_llj",
         "pp_to_llj_qcd2_qed2",
+        "uux_to_epemg",
         "uux_to_mumu",
         "uux_to_uux",
     ];
@@ -331,7 +353,10 @@ mod banked {
         let mut worst_run = String::new();
 
         for (name, run) in banked_runs() {
-            let running = resolve(&run);
+            let Some(running) = resolve(&name, &run) else {
+                println!("{name}: alpha_s supplied by the PDF grid, outside this oracle");
+                continue;
+            };
             let events = event_scales(&run);
             let mut run_worst = 0.0f64;
             let mut outside = 0usize;
@@ -401,7 +426,7 @@ mod banked {
             let params =
                 ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
             let a_s = params.get("sminputs", &[3]).expect("aS in SMINPUTS");
-            let running = resolve(&run);
+            let running = resolve(&name, &run);
 
             let has_pdf = card.lpp1 != 0 || card.lpp2 != 0;
             let (from_card_tag, final_tag) = if has_pdf {
@@ -426,6 +451,22 @@ mod banked {
 
             let final_value = printed_after(&text, final_tag)
                 .unwrap_or_else(|| panic!("{name}: no '{final_tag}' line in {log:?}"));
+            let Some(running) = running else {
+                // The grid supplies the value the label would otherwise impose.
+                // The override is real and not a rounding of the card's own value,
+                // so the log line is the reference a grid-running implementation
+                // has to land on.
+                assert_ne!(
+                    final_value, from_card,
+                    "{name}: the PDF grid's alpha_s(M_Z) now equals the parameter card's, so \
+                     this run no longer distinguishes the two"
+                );
+                println!(
+                    "{name}: alpha_s(M_Z) overridden by the PDF grid, {from_card} -> {final_value}"
+                );
+                checked += 1;
+                continue;
+            };
             assert_eq!(
                 running.asmz(),
                 final_value,

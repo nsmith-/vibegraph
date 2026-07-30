@@ -46,10 +46,17 @@
 //! * **`scalefact`.** Every banked run has `scalefact = 1`, so where MadGraph
 //!   applies it — and the one place it applies it twice — is pinned only by the
 //!   unit tests in the module, against a reading of the Fortran.
-//! * **A fixed scale.** No banked run sets one. The fixed branches are exercised
-//!   instead by `validation/madgraph/dy13_*_run_card.dat`, which the hadronic
-//!   cross-section reference was generated with, and asserted here to still
-//!   compile to the constants that reference assumed
+//! * **Whether a fixed scale is right for the *reason* it is right.** One banked
+//!   run (`pp_to_llj_fixed`) pins all three scales at `m_Z`, so its replay
+//!   confirms that the fixed branch reaches every printed field and that the
+//!   run-card constant is the one that lands there — but a constant cannot
+//!   distinguish `μR` from `μF`, and no perturbation of the momenta can move it,
+//!   so the run says nothing about the kinematic dependence the other runs pin.
+//!   Its value is the complementary one: it is the same `p p → l+ l- j` process
+//!   whose dynamical siblings are refused, so it separates the refusal from the
+//!   process. The `dy13_*_run_card.dat` cards the hadronic cross-section
+//!   reference was generated with are asserted to still compile to the constants
+//!   that reference assumed
 //!   ([`the_banked_cross_section_cards_are_fixed_scale`]).
 
 use std::path::{Path, PathBuf};
@@ -119,7 +126,7 @@ mod banked {
 
     use std::process::Command;
 
-    use vibegraph::coupling::alphas::RunningAlphaS;
+    use vibegraph::coupling::alphas::{asmz_from_param_card, RunningAlphaS};
     use vibegraph::coupling::scales::{
         BeamConnections, ClusterTopology, DynamicalChoice, ScaleError,
     };
@@ -175,6 +182,9 @@ mod banked {
         /// refusal has to come out of a truthful declaration, not out of leaving
         /// the run off a list.
         Refused(ClusterTopology),
+        /// The run card fixes both scales, so no clustering topology enters and
+        /// the printed fields are run-card constants.
+        Fixed,
     }
 
     /// Every banked run, with the topology facts its process definition implies.
@@ -183,8 +193,13 @@ mod banked {
     /// clustering tree, and a row that claims the wrong shape fails against 10k
     /// events rather than passing quietly.
     fn coverage(run: &str) -> Coverage {
-        use Coverage::{Closed, Refused};
+        use Coverage::{Closed, Fixed, Refused};
         match run {
+            // The same `p p -> l+ l- j` process as the two refused runs below,
+            // banked with all three scales pinned at m_Z. Its clustering tree is
+            // just as far out of reach; nothing has to reach it, because a fixed
+            // scale never consults one.
+            "pp_to_llj_fixed" => Fixed,
             // Coloured 2 -> 2 with t-channel exchange. `g g -> g g` and
             // `g g -> t t~` put a colour line between either beam and either leg;
             // `u u~ -> u u~` has only the diagonal, since no diagram joins the
@@ -247,8 +262,14 @@ mod banked {
                 ..COLOURLESS_ANNIHILATION
             }),
             // A jet off a quark line, and six-leg QCD: the general clustering.
+            // The three `*_epemg` / `gu_to_*` runs are single concrete flavour
+            // assignments out of the llj process, banked at partonic beams for
+            // the amplitude oracles; their clustering is the llj one.
             "pp_to_llj"
             | "pp_to_llj_qcd2_qed2"
+            | "uux_to_epemg"
+            | "ddx_to_epemg"
+            | "gu_to_epemu"
             | "bbx_to_ccx_emmm_qcd0"
             | "uux_to_ccx_emmm_qcd0" => Refused(ClusterTopology {
                 beam_connections: BeamConnections::TChannel {
@@ -288,12 +309,29 @@ mod banked {
     /// The runs whose cluster scale needs the kT clustering of `cluster.f`.
     const CLUSTERING_REQUIRED_RUNS: &[&str] = &[
         "bbx_to_ccx_emmm_qcd0",
+        "ddx_to_epemg",
         "ee_to_mumu_tata_qcd0",
         "ee_to_mumua",
+        "gu_to_epemu",
         "pp_to_llj",
         "pp_to_llj_qcd2_qed2",
         "uux_to_ccx_emmm_qcd0",
+        "uux_to_epemg",
     ];
+
+    /// The runs whose `αs` MadGraph reads out of the PDF grid rather than solving
+    /// for: with `pdlabel = lhapdf` it links `alfas_functions_lhapdf.f`, whose
+    /// `ALPHAS(Q)` forwards to LHAPDF's `alphasPDF(Q)`. `RunningAlphaS` refuses
+    /// those cards, so every `AQCDUP` oracle here has to step over them —
+    /// [`the_grid_alpha_s_runs_are_refused_for_a_measurable_reason`] is what keeps
+    /// the step from being a convenience.
+    const GRID_ALPHA_S_RUNS: &[&str] = &["pp_to_llj_fixed"];
+
+    /// The runs whose scales are run-card constants. `pp_to_llj_fixed` is the same
+    /// process as two of the refused runs above, so the pair is a controlled
+    /// comparison: what separates a replayable run from an unreachable one is the
+    /// `fixed_*_scale` flags alone, not the final state.
+    const FIXED_SCALE_RUNS: &[&str] = &["pp_to_llj_fixed"];
 
     /// Every banked run directory carrying an unweighted event file.
     fn banked_runs() -> Vec<(String, PathBuf)> {
@@ -313,7 +351,7 @@ mod banked {
         runs.sort();
         assert_eq!(
             runs.len(),
-            CLOSED_FORM_RUNS.len() + CLUSTERING_REQUIRED_RUNS.len(),
+            CLOSED_FORM_RUNS.len() + CLUSTERING_REQUIRED_RUNS.len() + FIXED_SCALE_RUNS.len(),
             "the banked run inventory changed"
         );
         runs
@@ -449,7 +487,7 @@ mod banked {
     /// leg's `(E − p_z)(E + p_z)` cancels most of the digits it was given.
     fn momentum_spread(
         choice: &ScaleChoice,
-        topology: ClusterTopology,
+        topology: Option<ClusterTopology>,
         event: &Event,
         base: MuTriple,
     ) -> MuTriple {
@@ -494,14 +532,14 @@ mod banked {
 
     fn evaluate(
         choice: &ScaleChoice,
-        topology: ClusterTopology,
+        topology: Option<ClusterTopology>,
         incoming: &[[f64; 4]; 2],
         outgoing: &[[f64; 4]],
     ) -> Result<MuTriple, ScaleError> {
         let scales = choice.scales(&ScaleEvent {
             incoming: *incoming,
             outgoing,
-            topology: Some(topology),
+            topology,
         })?;
         Ok(MuTriple([scales.mu_r, scales.mu_f[0], scales.mu_f[1]]))
     }
@@ -510,9 +548,13 @@ mod banked {
         RunCard::parse_file(&run.join("Cards/run_card.dat")).expect("run card")
     }
 
-    /// Every banked run uses the clustering default, unmodified. Asserted so that
-    /// the replay below cannot be quietly reading a different prescription than the
-    /// one it claims to validate.
+    /// Every banked run leaves `dynamical_scale_choice` and `scalefact` at their
+    /// defaults, so the replay below cannot be quietly reading a different
+    /// prescription than the one it claims to validate. The `fixed_*_scale` flags
+    /// are what separate the two regimes, and each run must land in the regime its
+    /// [`coverage`] row claims — a run listed in [`FIXED_SCALE_RUNS`] whose card
+    /// stopped fixing a scale would otherwise silently start taking the clustering
+    /// branch.
     #[test]
     fn every_banked_run_uses_the_clustering_default() {
         for (name, run) in banked_runs() {
@@ -524,17 +566,28 @@ mod banked {
                 "{name}: dynamical_scale_choice"
             );
             assert_eq!(choice.scalefact(), 1.0, "{name}: scalefact");
-            assert!(choice.needs_topology(), "{name}: no scale is fixed");
+            let fixed = FIXED_SCALE_RUNS.contains(&name.as_str());
+            assert_eq!(
+                choice.is_fully_fixed(),
+                fixed,
+                "{name}: fixed-scale classification disagrees with the card"
+            );
+            assert_eq!(
+                choice.needs_topology(),
+                !fixed,
+                "{name}: topology requirement disagrees with the card"
+            );
         }
     }
 
-    /// Per-event replay: the scales this crate derives from the momenta against
-    /// every scale MadGraph printed, for every event of every run whose clustering
-    /// collapses to a closed form.
+    /// Per-event replay: the scales this crate derives against every scale
+    /// MadGraph printed, for every event of every run whose clustering collapses
+    /// to a closed form or whose card fixes the scales outright.
     #[test]
     fn banked_events_reproduce_every_printed_scale() {
         let mut closed: Vec<String> = Vec::new();
         let mut refused: Vec<String> = Vec::new();
+        let mut fixed: Vec<String> = Vec::new();
         let mut total_events = 0usize;
         let mut total_comparisons = 0usize;
         let mut worst = (0.0f64, String::new(), String::new());
@@ -545,8 +598,13 @@ mod banked {
             let events = parse_events(&run);
             let topology = match coverage(&name) {
                 Coverage::Refused(topology) => {
-                    let err = evaluate(&choice, topology, &events[0].incoming, &events[0].outgoing)
-                        .expect_err("must be refused, not approximated");
+                    let err = evaluate(
+                        &choice,
+                        Some(topology),
+                        &events[0].incoming,
+                        &events[0].outgoing,
+                    )
+                    .expect_err("must be refused, not approximated");
                     assert!(
                         matches!(err, ScaleError::ClusteringNotDegenerate { .. }),
                         "{name}: refused for the wrong reason: {err}"
@@ -555,7 +613,14 @@ mod banked {
                     refused.push(name);
                     continue;
                 }
-                Coverage::Closed(topology) => topology,
+                Coverage::Closed(topology) => Some(topology),
+                // A fixed scale reads no kinematics, so the replay hands it no
+                // topology at all: passing one would let a clustering bug hide
+                // behind the constant.
+                Coverage::Fixed => {
+                    fixed.push(name.clone());
+                    None
+                }
             };
 
             let mut run_worst = (0.0f64, "all fields".to_string());
@@ -633,7 +698,9 @@ mod banked {
             }
             total_events += events.len();
             total_comparisons += comparisons;
-            closed.push(name);
+            if topology.is_some() {
+                closed.push(name);
+            }
         }
 
         assert_eq!(
@@ -644,15 +711,20 @@ mod banked {
             refused, CLUSTERING_REQUIRED_RUNS,
             "the set of runs needing the general clustering changed"
         );
+        assert_eq!(
+            fixed, FIXED_SCALE_RUNS,
+            "the set of runs whose scales are run-card constants changed"
+        );
         println!(
             "scales: {total_comparisons} comparisons over {total_events} events in {} runs \
              within their printing budget, worst {:.3} of budget ({} in {}); \
-             {} runs refused as needing the general clustering",
-            closed.len(),
+             {} runs refused as needing the general clustering, {} fixed-scale",
+            closed.len() + fixed.len(),
             worst.0,
             worst.2,
             worst.1,
-            refused.len()
+            refused.len(),
+            fixed.len()
         );
     }
 
@@ -663,22 +735,38 @@ mod banked {
     /// `SCALUP`'s own rounding. Feeding the scale computed from the momenta through
     /// [`RunningAlphaS`] and landing inside the field's printing budget therefore
     /// confirms the scale independently of the field that names it.
+    ///
+    /// Runs listed in [`GRID_ALPHA_S_RUNS`] cannot take part: their `αs` comes
+    /// from the PDF grid, not from this evolution.
     #[test]
     fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
         let mut runs_checked = 0usize;
         let mut events_checked = 0usize;
         let mut worst = (0.0f64, String::new());
+        let mut grid_alpha_s: Vec<String> = Vec::new();
 
         for (name, run) in banked_runs() {
-            let Coverage::Closed(topology) = coverage(&name) else {
-                continue;
+            let topology = match coverage(&name) {
+                Coverage::Closed(topology) => Some(topology),
+                Coverage::Fixed => None,
+                Coverage::Refused(_) => continue,
             };
             let card = run_card(&run);
             let choice = ScaleChoice::from_run_card(&card).expect("compiled");
             let params =
                 ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
             let a_s = params.get("sminputs", &[3]).expect("aS in SMINPUTS");
-            let running = RunningAlphaS::from_run_card(&card, a_s).expect("supported alpha_s");
+            let running = match RunningAlphaS::from_run_card(&card, a_s) {
+                Ok(running) => running,
+                Err(err) => {
+                    assert!(
+                        GRID_ALPHA_S_RUNS.contains(&name.as_str()),
+                        "{name}: unexpected alpha_s source refusal: {err}"
+                    );
+                    grid_alpha_s.push(name);
+                    continue;
+                }
+            };
 
             let mut run_worst = 0.0f64;
             let mut outside = 0usize;
@@ -707,12 +795,76 @@ mod banked {
             runs_checked += 1;
         }
 
-        assert_eq!(runs_checked, CLOSED_FORM_RUNS.len());
+        assert_eq!(grid_alpha_s, GRID_ALPHA_S_RUNS);
+        assert_eq!(
+            runs_checked,
+            CLOSED_FORM_RUNS.len() + FIXED_SCALE_RUNS.len() - GRID_ALPHA_S_RUNS.len()
+        );
         println!(
             "AQCDUP from the computed scale: {events_checked} events across {runs_checked} runs, \
              worst {:.3} of budget (in {})",
             worst.0, worst.1
         );
+    }
+
+    /// The refusal of [`GRID_ALPHA_S_RUNS`] is a measurement, not a convention.
+    ///
+    /// Those runs fix `μR` at the run card's `scale`, which sits within `1e-5`
+    /// relative of `M_Z`, so any evolution from `M_Z` to `μR` is negligible at the
+    /// field's seven digits and `AQCDUP` is essentially `αs(M_Z)` as the run used
+    /// it. Substituting the parameter card's `αs(M_Z)` — the only value available
+    /// without the grid's own running — therefore isolates the grid's override,
+    /// and it misses the printed field by well over its printing budget on every
+    /// event. Adopting the parameter-card value as an approximation would be a
+    /// visible error, which is why the refusal stands rather than a fallback.
+    #[test]
+    fn the_grid_alpha_s_runs_are_refused_for_a_measurable_reason() {
+        let mut checked = 0usize;
+        for name in GRID_ALPHA_S_RUNS {
+            let run = output_dir().join(name);
+            let card = run_card(&run);
+            let params =
+                ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
+            let a_s = params.get("sminputs", &[3]).expect("aS in SMINPUTS");
+            assert!(
+                matches!(
+                    RunningAlphaS::from_run_card(&card, a_s),
+                    Err(vibegraph::coupling::alphas::AlphaSError::LhapdfRunning { .. })
+                ),
+                "{name}: expected the grid-running refusal"
+            );
+            assert!(
+                (card.scale / 91.1876 - 1.0).abs() < 1e-4,
+                "{name}: mu_R is no longer close enough to M_Z for this argument"
+            );
+
+            let from_param_card = aqcdup_from_alpha_s(asmz_from_param_card(a_s));
+            let mut worst = 0.0f64;
+            let mut redigitised = 0usize;
+            let events = parse_events(&run);
+            for event in &events {
+                let budget = printed_half_ulp(event.aqcdup, 7);
+                worst = worst.max((from_param_card - event.aqcdup).abs() / budget);
+                if format!("{from_param_card:.6e}") == format!("{:.6e}", event.aqcdup) {
+                    redigitised += 1;
+                }
+            }
+            assert!(
+                worst > 1.0 && redigitised == 0,
+                "{name}: the parameter card's alpha_s reproduces AQCDUP to {worst:.2} of budget \
+                 ({redigitised} events digit-exact), so the grid override may no longer be \
+                 observable here"
+            );
+            println!(
+                "{name}: AQCDUP over {} events misses the parameter card's alpha_s by up to \
+                 {worst:.1}x its printing budget, on none of which the printed digits agree \
+                 (param card {from_param_card:.9e} vs printed {:.9e})",
+                events.len(),
+                events[0].aqcdup
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, GRID_ALPHA_S_RUNS.len());
     }
 
     /// `unwgt.f:694` fills `AQCDUP` as `g*g/4d0/3.1415926d0`, with π truncated at
