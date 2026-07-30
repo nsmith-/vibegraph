@@ -203,6 +203,37 @@ PROCESSES = [
         npoints=25,
         seed=47,
     ),
+    # The three llj subprocess representatives. The energies bracket the Z pole
+    # from below and above so the lepton pair's invariant mass sweeps across it
+    # rather than sitting on one side; the leg order is MadGraph's, which is the
+    # order the .mg5 generate line was written in.
+    Process(
+        "uux_to_epemg",
+        "u u~ > e+ e- g QCD=2 QED=2",
+        (2, -2),
+        (-11, 11, 21),
+        sqrt_s_list=(50.0, 200.0, 500.0),
+        npoints=25,
+        seed=53,
+    ),
+    Process(
+        "gu_to_epemu",
+        "g u > e+ e- u QCD=2 QED=2",
+        (21, 2),
+        (-11, 11, 2),
+        sqrt_s_list=(50.0, 200.0, 500.0),
+        npoints=25,
+        seed=59,
+    ),
+    Process(
+        "ddx_to_epemg",
+        "d d~ > e+ e- g QCD=2 QED=2",
+        (1, -1),
+        (-11, 11, 21),
+        sqrt_s_list=(50.0, 200.0, 500.0),
+        npoints=25,
+        seed=61,
+    ),
 ]
 
 

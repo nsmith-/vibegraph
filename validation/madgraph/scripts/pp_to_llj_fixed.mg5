@@ -1,0 +1,37 @@
+# MadGraph5 batch script: p p > l+ l- j QCD=2 QED=2 at a fixed scale.
+#
+# Same process content as pp_to_llj_qcd2_qed2 (identical generate line and
+# multiparticle definitions, so the proc card differs only in the output
+# directory name); the run card differs in four places:
+#
+#   - fixed_ren_scale / fixed_fac_scale1 / fixed_fac_scale2 = True, all three
+#     scales at m_Z. The dynamical default (dynamical_scale_choice = -1) needs
+#     the general kT clustering for a 2 -> 3, which coupling::scales refuses
+#     rather than approximates; a constant scale takes the branch that has a
+#     closed form, so this run's per-event SCALUP / <rscale> / <pdfrwt> can be
+#     replayed exactly.
+#   - pdlabel = lhapdf with lhaid 247000 (NNPDF23_lo_as_0130_qed). The
+#     MG-internal nn23lo1 of the dynamical runs is not an LHAPDF6 grid, so it
+#     cannot be read by this crate's PDF layer; 247000 is the same set the
+#     Drell-Yan cross-section reference already uses.
+#   - mmll = 50, above the region where the Drell-Yan comparison carries a
+#     standing few-percent discrepancy, so a cross section gated against this
+#     run does not inherit it.
+#
+# Everything else (13 TeV, ptj 20, ptl 10, etaj 5, etal 2.5, drll = drjl = 0.4,
+# use_syst) is left at the values the dynamical run used.
+generate p p > l+ l- j QCD=2 QED=2
+output pp_to_llj_fixed -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set fixed_ren_scale True
+  set fixed_fac_scale1 True
+  set fixed_fac_scale2 True
+  set scale 91.188
+  set dsqrt_q2fact1 91.188
+  set dsqrt_q2fact2 91.188
+  set pdlabel lhapdf
+  set lhaid 247000
+  set mmll 50
+  done

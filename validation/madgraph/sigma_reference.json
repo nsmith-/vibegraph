@@ -6,6 +6,13 @@
     "sigma_err_pb": 4.8404e-09,
     "sigma_pb": 1.6053e-06
   },
+  "ddx_to_epemg": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "d d~ > e+ e- g QCD=2 QED=2",
+    "sigma_err_pb": 0.0015512,
+    "sigma_pb": 0.67104
+  },
   "ee_to_ee": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
@@ -76,12 +83,26 @@
     "sigma_err_pb": 0.037425,
     "sigma_pb": 15.953
   },
+  "gu_to_epemu": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "g u > e+ e- u QCD=2 QED=2",
+    "sigma_err_pb": 0.00022118,
+    "sigma_pb": 0.11812
+  },
   "uux_to_ccx_emmm_qcd0": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "u u~ > c c~ e+ e- mu+ mu- QCD=0",
     "sigma_err_pb": 1.6111e-09,
     "sigma_pb": 6.5557e-07
+  },
+  "uux_to_epemg": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "u u~ > e+ e- g QCD=2 QED=2",
+    "sigma_err_pb": 0.0013581,
+    "sigma_pb": 0.60043
   },
   "uux_to_mumu": {
     "ebeam1": 250.0,

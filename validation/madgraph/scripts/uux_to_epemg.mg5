@@ -1,0 +1,30 @@
+# MadGraph5 batch script: u u~ > e+ e- g at LO, QCD=2 QED=2.
+#
+# One concrete flavour assignment out of the `q q~ > l+ l- g` class of
+# `p p > l+ l- j QCD=2 QED=2` (MadGraph's P1_qq_llg group), so the matrix
+# element is matrix1 and a per-diagram AMP dump means one diagram per row.
+#
+# Why this exact process:
+#   - The baseline of a three-point design over the llj subprocess classes:
+#     u u~ > e+ e- g (here), g u > e+ e- u (colour arrangement varied) and
+#     d d~ > e+ e- g (initial flavour varied). Each partner changes exactly one
+#     variable against this row, so a disagreement localises.
+#   - A gluon radiated off an annihilating quark line: the single colour
+#     structure T^a_{ij} (NCOLOR=1), with the gluon attaching either before or
+#     after the electroweak vertex. The two attachments differ by the sign of
+#     the internal quark propagator's momentum, which is where a fermion-flow
+#     or spine-parity convention error shows up per diagram while |M|^2 stays
+#     unmoved only if both signs are wrong together.
+#
+# lpp=0 => fixed-energy partonic beams, so `launch` integrates sigma-hat and
+# builds matrix1_optim.f (the |M|^2 oracle) alongside matrix1_orig.f (the
+# per-diagram AMP oracle).
+generate u u~ > e+ e- g QCD=2 QED=2
+output uux_to_epemg -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

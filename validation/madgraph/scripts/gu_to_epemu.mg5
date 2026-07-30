@@ -1,0 +1,28 @@
+# MadGraph5 batch script: g u > e+ e- u at LO, QCD=2 QED=2.
+#
+# One concrete flavour assignment out of the `g q > l+ l- q` class of
+# `p p > l+ l- j QCD=2 QED=2` (MadGraph's P1_gq_llq group).
+#
+# Why this exact process:
+#   - The first *mixed* incoming colour arrangement in the amplitude gate: one
+#     coloured beam is a gluon (adjoint) and the other a quark (fundamental),
+#     with the quark line running from the incoming quark through a spacelike
+#     propagator to the outgoing quark. Every previously banked coloured
+#     process has either two fundamental beams or two adjoint beams, so the
+#     gluon-plus-quark initial state's colour-flow slot assignment and the
+#     fermion flow through a spacelike line are unpinned before this row.
+#   - Crossing of u u~ > e+ e- g, so its per-diagram amplitudes are the same
+#     analytic functions at crossed momenta: a convention error that is a
+#     property of the *arrangement* rather than of the functions shows up here
+#     and not in the uux row.
+#
+# lpp=0 => fixed-energy partonic beams (g, u).
+generate g u > e+ e- u QCD=2 QED=2
+output gu_to_epemu -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done
