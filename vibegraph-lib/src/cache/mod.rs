@@ -16,7 +16,12 @@
 //! the seam a caller supplies bytes through, so the interaction policy around
 //! *when* to fetch (prompting, a `--no-network` refusal) lives with the
 //! caller, not here.
+//!
+//! [`pinned`] adds the other half of that seam: which URL a known set name
+//! downloads from and what its archive must hash to, compiled in rather than
+//! configured.
 
+pub mod pinned;
 pub mod resolve;
 pub mod store;
 
