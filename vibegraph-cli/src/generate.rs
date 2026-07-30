@@ -81,6 +81,12 @@ pub struct GenerateArgs {
     #[arg(long)]
     pub run_card: Option<PathBuf>,
 
+    /// Directory containing the proc card's UFO model directory; defaults to
+    /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
+    /// directory. Unused for the built-in Standard Model.
+    #[arg(long)]
+    pub ufo_dir: Option<PathBuf>,
+
     /// Events to write; defaults to the run card's `nevents`.
     #[arg(long)]
     pub nevents: Option<usize>,
@@ -339,7 +345,11 @@ pub fn run(args: &GenerateArgs) -> Result<(), IntegrateError> {
     let process = process_string(&parsed)?;
 
     let config = GlobalConfig {
-        ufo_search_path: PathBuf::from("."),
+        ufo_search_path: crate::assets::resolve_ufo_search_path(
+            parsed.model.as_ref(),
+            args.ufo_dir.as_deref(),
+        )
+        .map_err(err)?,
         restrict_path_override: None,
         run_card_path: args.run_card.clone(),
     };
