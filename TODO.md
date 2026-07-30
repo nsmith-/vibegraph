@@ -6,11 +6,14 @@ what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
 **Current position**: `event-output-lhef` (feature) ✅ closed + merged 2026-07-28 —
-the pipeline now runs end to end to an unweighted event file. **Next: a
-validation pass**; its natural content is the top of the validation backlog below
-(downstream-shower consumption of the emitted `.lhe`, the event-sample-vs-MG
-statistical comparison, and the older distribution-level rows that want the same
-differential machinery).
+the pipeline now runs end to end to an unweighted event file. **Next (planned
+2026-07-30, note 24): the `user-distribution` + `proton-events` two-track feature
+sprint** — hadronic multichannel + `lpp = 1` event generation gated on a
+fixed-scale MG rebank of `p p > l+ l- j`, plus the packaging track (release
+binaries, default PDF, `~/.vibegraph` cache, first-run UX); exit criterion is
+cards → `.lhe` for llj from a clean environment. The validation pass
+(shower consumption + event-sample statistics, top of the validation backlog)
+queues behind it and gains a second waiting process.
 
 ## Pipeline Status
 
@@ -143,9 +146,11 @@ One line each; the note is the full record. Earlier sprints
      enforced per-event replays (`SCALUP`/`<rscale>`/`<pdfrwt>`), then gate a
      first beyond-2→2 QCD σ row (`pp_to_llj` is already banked).
   (`coupling/scales.rs`, `validate_scales.rs`, note 22 §1.3/§5.)
-- **Proton-beam (`lpp = 1`) event generation** — the Drell–Yan map has no channel
-  decomposition, so no `ChannelIntegrand`; `generate` refuses it by name.
-  (Note 23 close-out; `vibegraph-cli/src/generate.rs`.)
+- **Proton-beam (`lpp = 1`) event generation** — ▶ **promoted to the active
+  sprint plan (note 24, Track P `proton-events`)**: hadronic `ChannelIntegrand`
+  (τ,y outer map + per-event-ŝ multichannel), generalized flavor classes,
+  `integrate`/`generate` at `lpp = 1`, gated on a fixed-scale MG rebank of
+  `p p > l+ l- j` (fixed scale sidesteps the `kt-clustering` prerequisite).
 - **Streaming `IDWTUP = -4`** by deterministic two-pass replay — the interface
   hook (`EventSource::restart`) is in place and contract-tested; not needed while
   100k-event runs buffer in ~42 MB. (Note 23 close-out.)
@@ -157,27 +162,11 @@ One line each; the note is the full record. Earlier sprints
   (collinear edge) where the t-map falls back to flat; whether a fiducial cut is
   wanted instead is unresolved for a physical massless-initial-state t-channel.
   (Note 21 close-out.)
-- **`user-distribution`** — package the CLI for non-developer users (sprint
-  sketch). Today the only path is a source build plus manual
-  `pixi run fetch-pdf`; a user should get from a download to an `.lhe` file
-  with no toolchain. Sessions:
-  1. **Release binaries** — CI workflow cross-compiling `vibegraph` for
-     macOS arm64/x86_64 + Linux x86_64 and attaching them to GitHub releases;
-     `--version` reports the git tag.
-  2. **Interned default PDF set** — embed (or first-use fetch + verify) the
-     LO default `NNPDF23_lo_as_0130_qed` so `integrate` on a hadronic card
-     works out of the box; check the set's license permits redistribution
-     before embedding.
-  3. **User-local cache `~/.vibegraph`** — library utilities resolving UFO
-     models and LHAPDF sets by name: look up the well-known URLs (LHAPDF
-     `pdfsets` index; FeynRules model database), prompt on first use before
-     downloading, store under `~/.vibegraph/{ufo,pdf}/`, and pin each
-     download by checksum (the model digest already exists for UFOs).
-     Resolution order becomes explicit flag → env var → `~/.vibegraph` →
-     repo-local `validation/pdf`.
-  4. **First-run UX** — `import model <name>` on an uncached model and a
-     missing PDF set produce a "fetch it now?" prompt (with a
-     `--no-network`/CI-safe refusal path) instead of a hard error.
+- **`user-distribution`** — ▶ **promoted to the active sprint plan (note 24,
+  Track U)**: release binaries (CI), default-PDF interning (license check
+  first), `~/.vibegraph` name-resolution cache, first-run fetch-prompt UX;
+  acceptance is driving Track P's fixed-scale `p p > l+ l- j` from a clean
+  environment, cards → `.lhe`. Session detail lives in the note.
 - **`typed-units`** — research `uom`/`dimensioned`/`units` crates for typed
   four-momenta and cross sections.
 
