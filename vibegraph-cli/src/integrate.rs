@@ -14,7 +14,7 @@
 //!   per-diagram multichannel map whose integral is split channel by channel, one
 //!   VEGAS grid each.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Args;
 use vibegraph::artifact::{ChannelGrid, IntegrateArtifact, FORMAT_VERSION};
@@ -35,9 +35,14 @@ use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::vegas::VegasResult;
 
-/// Default LHAPDF set — the one wired through the hadronic pipeline (MG5's LO
-/// default `nn23lo1`, lhaid 247000).
-const DEFAULT_PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
+use crate::fetch::HttpFetch;
+use vibegraph::cache::pinned::{
+    ensure_pdf_set, pdf_set_is_cached, pinned_pdf_set, DEFAULT_PDF_SET,
+};
+use vibegraph::cache::resolve::{locate_from_env, Source};
+use vibegraph::cache::store::{Fetch, RefusingFetch};
+use vibegraph::cache::AssetKind;
+
 /// PDF member index (central value; error members are not consumed at LO).
 const PDF_MEMBER: u32 = 0;
 /// Sentinel `pdf_set` recorded in the artifact for a no-PDF (fixed-energy) run.
@@ -75,6 +80,7 @@ pub struct IntegrateArgs {
     pub pdf_set: String,
 
     /// Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then
+    /// the `~/.vibegraph` cache (downloading the set if absent), then
     /// `validation/pdf` under the current directory.
     #[arg(long)]
     pub pdf_dir: Option<PathBuf>,
@@ -113,15 +119,115 @@ fn err(msg: impl Into<String>) -> IntegrateError {
     IntegrateError::Message(msg.into())
 }
 
-/// Resolve the directory holding `<pdf_set>/<pdf_set>.info`.
-fn resolve_pdf_dir(args: &IntegrateArgs) -> PathBuf {
-    if let Some(dir) = &args.pdf_dir {
-        return dir.clone();
+/// Repo-local PDF data, tried last. Relative to the working directory, so it
+/// only ever resolves inside a dev checkout and is simply absent for a user
+/// running an installed binary.
+const DEV_PDF_FALLBACK: &str = "validation/pdf";
+
+/// Environment override for the asset cache root, otherwise `~/.vibegraph`.
+const CACHE_ROOT_VAR: &str = "VIBEGRAPH_HOME";
+
+/// Set to any value to forbid downloads, so a missing asset becomes a refusal
+/// naming what would have been fetched. Anything that must stay offline —
+/// a test run, a sandboxed build — sets this and cannot then reach the network
+/// by accident.
+const NO_NETWORK_VAR: &str = "VIBEGRAPH_NO_NETWORK";
+
+fn cache_root() -> Option<PathBuf> {
+    std::env::var_os(CACHE_ROOT_VAR)
+        .map(PathBuf::from)
+        .or_else(vibegraph::cache::default_cache_root)
+}
+
+fn network_allowed() -> bool {
+    std::env::var_os(NO_NETWORK_VAR).is_none()
+}
+
+fn fetcher() -> Box<dyn Fetch> {
+    if network_allowed() {
+        Box::new(HttpFetch::default())
+    } else {
+        Box::new(RefusingFetch)
     }
-    if let Some(env_dir) = std::env::var_os("VIBEGRAPH_PDF_DIR") {
-        return PathBuf::from(env_dir);
+}
+
+/// Resolve the directory holding `<pdf_set>.info` and its members, downloading
+/// the set into the cache if the resolution order turns up nothing.
+///
+/// A set reached through `--pdf-dir`, `$VIBEGRAPH_PDF_DIR`, or the dev fallback
+/// is used as found and never checksum-checked: those name data the caller is
+/// pointing at deliberately, which is also what keeps sets this build has no pin
+/// for usable. The cache step is the one that decides on the user's behalf what
+/// a bare set name means, so there the compiled-in pin is authoritative — an
+/// entry pinned to anything else is refetched rather than trusted.
+fn resolve_pdf_set_dir(args: &IntegrateArgs) -> Result<PathBuf, IntegrateError> {
+    let root = cache_root().ok_or_else(|| {
+        err(format!(
+            "cannot locate a home directory for the asset cache; \
+             set ${CACHE_ROOT_VAR} or pass --pdf-dir"
+        ))
+    })?;
+    let located = locate_from_env(
+        AssetKind::Pdf,
+        &args.pdf_set,
+        args.pdf_dir.as_deref(),
+        Some(&root),
+        Some(Path::new(DEV_PDF_FALLBACK)),
+    )
+    .ok_or_else(|| err("cannot resolve the PDF cache root"))?;
+
+    match located.source {
+        Source::Flag | Source::Env if located.found => return Ok(located.dir),
+        Source::Flag | Source::Env => {
+            return Err(err(format!(
+                "PDF set {} not found at {}",
+                args.pdf_set,
+                located.dir.display()
+            )))
+        }
+        Source::DevFallback => return Ok(located.dir),
+        Source::Cache => {}
     }
-    PathBuf::from("validation/pdf")
+
+    let Some(pin) = pinned_pdf_set(&args.pdf_set) else {
+        if located.found {
+            return Ok(located.dir);
+        }
+        return Err(err(format!(
+            "PDF set {} is not present locally and this build has no download pin for it; \
+             fetch it yourself and point --pdf-dir / ${} at the directory containing it",
+            args.pdf_set,
+            AssetKind::Pdf.env_var()
+        )));
+    };
+
+    let needs_fetch = !pdf_set_is_cached(&root, &args.pdf_set);
+    if needs_fetch {
+        if !network_allowed() {
+            return Err(err(format!(
+                "PDF set {} is not in the cache and downloads are disabled by ${}; \
+                 it would be fetched from {} ({:.1} MB, sha256 {})",
+                pin.name,
+                NO_NETWORK_VAR,
+                pin.url,
+                pin.archive_bytes as f64 / (1024.0 * 1024.0),
+                pin.sha256
+            )));
+        }
+        eprintln!(
+            "PDF set {} not available locally; downloading {} ({:.1} MB, sha256 {})",
+            pin.name,
+            pin.url,
+            pin.archive_bytes as f64 / (1024.0 * 1024.0),
+            pin.sha256
+        );
+    }
+    let ensured = ensure_pdf_set(&root, &args.pdf_set, fetcher().as_ref())
+        .map_err(|e| err(format!("cannot obtain PDF set {}: {e}", args.pdf_set)))?;
+    if ensured.fetched {
+        eprintln!("PDF set cached at {}", ensured.dir.display());
+    }
+    Ok(ensured.dir)
 }
 
 /// The canonical string of the proc card's first process, for artifact metadata.
@@ -270,13 +376,10 @@ fn integrate_proton(
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
     // Locate and load the PDF set.
-    let pdf_dir = resolve_pdf_dir(args);
-    let set_dir = pdf_dir.join(&args.pdf_set);
+    let set_dir = resolve_pdf_set_dir(args)?;
     let set = PdfSet::load(&set_dir, &args.pdf_set).map_err(|e| {
         err(format!(
-            "cannot load PDF set {} from {}: {e}\n\
-             fetch it with `pixi run -e madgraph fetch-pdf` \
-             or point --pdf-dir / $VIBEGRAPH_PDF_DIR at the data directory",
+            "cannot load PDF set {} from {}: {e}",
             args.pdf_set,
             set_dir.display()
         ))
