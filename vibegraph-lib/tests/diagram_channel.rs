@@ -5,13 +5,24 @@
 //! that the propagator chain yields on-shell, momentum-conserving kinematics and
 //! that the s-channel resonance / t-channel metadata a resonance-aware map will
 //! consume is populated from the model.
+//!
+//! The last group measures what a peripheral (t-channel spine) map would do for a
+//! `p p → l+ l- j` subprocess, whose single spacelike line sits in a three-body
+//! final state rather than the two-body one the spine was introduced for. Built by
+//! hand from each diagram's own cut, such a map integrates that diagram's peaked
+//! structure far better than anything currently derived for it — but only once its
+//! spacelike pole is regulated: with the model's massless quark exchange the map is
+//! numerically degenerate at the collinear edge and comes out biased, which is
+//! asserted here rather than left to be discovered downstream.
 
 mod common;
 
 use vibegraph::diagrams::diagram::Diagram;
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rng::SubStream;
-use vibegraph::phasespace::{Channel, DiagramChannel, MultiChannel, PhaseSpaceMap, RamboChannel};
+use vibegraph::phasespace::{
+    Channel, DiagramChannel, MultiChannel, PhaseSpaceMap, RamboChannel, Resonance,
+};
 use vibegraph::ufo::EvaluatedModel;
 
 fn total(momenta: &[LorentzVector<f64>]) -> [f64; 4] {
@@ -56,6 +67,12 @@ fn assert_valid(ch: &DiagramChannel<f64>, sqrt_s: f64, masses: &[f64], seed: u64
             assert!(p.e() > 0.0 && p.e().is_finite());
         }
         assert!(pt.weight > 0.0 && pt.weight.is_finite());
+        // Holds by construction — `sample` defines the weight as `1/density` at
+        // the realised configuration — so it confirms only that the density stays
+        // finite and non-zero there. It cannot see the error class that matters
+        // most for a map: a sampling density that differs from the weighting one.
+        // Only an integrated quantity can (`V_n` against flat RAMBO, or a seed
+        // sweep), which is what actually caught the peripheral bias below.
         assert_eq!(ch.density(&pt.momenta), 1.0 / pt.weight);
     }
 }
@@ -240,4 +257,463 @@ fn multichannel_over_real_diagrams_unbiased_and_resonant() {
             "{name}: combiner variance {var_m:.3e} not below flat RAMBO {var_f:.3e}"
         );
     }
+}
+
+// ── Spacelike lines in a three-body final state ──────────────────────────────
+
+/// The `p p > l+ l- j` subprocess classes, as one concrete flavour assignment each.
+const LLJ_SUBPROCESSES: [&str; 2] = ["u u~ > e+ e- g QCD=2 QED=2", "g u > e+ e- u QCD=2 QED=2"];
+
+/// The outgoing-slot split a spacelike line induces, read the way the channel
+/// derivation reads it: the emitted subsystem is the outgoing legs sharing beam
+/// `0`'s side of the cut. `momentum` sign-decorates the externals on one side, so
+/// only the nonzero pattern matters.
+fn spine_partition(momentum: &[i8], n_in: usize, n_ext: usize) -> (Vec<usize>, Vec<usize>) {
+    let stored: Vec<usize> = (n_in..n_ext)
+        .filter(|&i| momentum[i] != 0)
+        .map(|i| i - n_in)
+        .collect();
+    let emitted = if momentum[0] != 0 {
+        stored
+    } else {
+        (0..n_ext - n_in).filter(|s| !stored.contains(s)).collect()
+    };
+    let recoil = (0..n_ext - n_in)
+        .filter(|s| !emitted.contains(s))
+        .collect::<Vec<_>>();
+    (emitted, recoil)
+}
+
+/// One `llj` diagram reduced to the facts a peripheral map would be built from,
+/// alongside the channel the derivation actually produces for it today.
+struct SpacelikeCut {
+    emitted: Vec<usize>,
+    recoil: Vec<usize>,
+    /// Mass of the spacelike propagator.
+    t_mass: f64,
+    /// Resonance on whichever side is the lepton pair, if the diagram has one.
+    lepton_pair_resonance: Option<Resonance<f64>>,
+    /// What `from_diagram` builds for this diagram.
+    derived: DiagramChannel<f64>,
+}
+
+/// Every single-spacelike-line diagram of `process`, with its cut.
+fn spacelike_cuts(
+    process: &str,
+    model: &EvaluatedModel,
+    sqrt_s: f64,
+) -> (Vec<SpacelikeCut>, usize, Vec<f64>) {
+    let sets = common::generate(process);
+    let diagrams = &sets[0].diagrams;
+    let masses = out_masses(&diagrams[0], model);
+    let mut cuts = Vec::new();
+    for d in diagrams {
+        let n_ext = d.n_ext();
+        let spacelike: Vec<_> = d
+            .props
+            .iter()
+            .filter(|p| p.is_spacelike(d.n_in))
+            .collect::<Vec<_>>();
+        if spacelike.len() != 1 {
+            continue;
+        }
+        let (emitted, recoil) = spine_partition(&spacelike[0].momentum, d.n_in, n_ext);
+        // The lepton pair is the two outgoing leptons; its timelike line is the
+        // only resonance a `2 -> 3` llj diagram carries.
+        let derived = DiagramChannel::<f64>::from_diagram(d, model, sqrt_s);
+        cuts.push(SpacelikeCut {
+            emitted,
+            recoil,
+            t_mass: model.mass(spacelike[0].particle),
+            lepton_pair_resonance: derived.resonances().first().copied(),
+            derived,
+        });
+    }
+    (cuts, diagrams.len(), masses)
+}
+
+/// Both `llj` subprocess classes put a *single* spacelike line into a three-body
+/// final state, and that line always separates the lepton pair from the jet.
+///
+/// This is the shape the peripheral map would have to handle, and it is one step
+/// beyond the single spacelike line in a `2 → 2` the [`DiagramChannel`] spine was
+/// built for: one of the two sides is now a composite subsystem carrying its own
+/// invariant, not a single on-shell leg.
+#[test]
+fn llj_diagrams_cut_a_three_body_final_state_with_one_spacelike_line() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let z = model.particle_id("Z").expect("Z in model");
+    let mz = evaluated.mass(z);
+
+    for process in LLJ_SUBPROCESSES {
+        let (cuts, n_diagrams, masses) = spacelike_cuts(process, &evaluated, 500.0);
+        assert_eq!(
+            masses.len(),
+            3,
+            "{process}: expected a three-body final state"
+        );
+        assert!(
+            masses.iter().all(|&m| m == 0.0),
+            "{process}: every outgoing leg should be massless here"
+        );
+        assert!(
+            !cuts.is_empty(),
+            "{process}: no diagram carries a spacelike line"
+        );
+        let mut resonant = 0usize;
+        for cut in &cuts {
+            let mut both: Vec<usize> = cut.emitted.iter().chain(&cut.recoil).copied().collect();
+            both.sort_unstable();
+            assert_eq!(both, vec![0, 1, 2], "{process}: cut does not partition");
+            // Outgoing slots 0 and 1 are the leptons in both process strings.
+            let pair_side = if cut.emitted.contains(&0) {
+                &cut.emitted
+            } else {
+                &cut.recoil
+            };
+            let mut pair = pair_side.clone();
+            pair.sort_unstable();
+            assert_eq!(
+                pair,
+                vec![0, 1],
+                "{process}: the spacelike line does not separate the lepton pair from the jet"
+            );
+            assert_eq!(
+                cut.t_mass, 0.0,
+                "{process}: the spacelike line is expected to be a massless quark"
+            );
+            if let Some(r) = cut.lepton_pair_resonance {
+                if (r.mass - mz).abs() < 1e-6 {
+                    resonant += 1;
+                }
+            }
+        }
+        assert!(
+            resonant > 0,
+            "{process}: no Z-pole subsystem alongside the spacelike line"
+        );
+        eprintln!(
+            "{process}: {}/{n_diagrams} diagrams carry exactly one spacelike line, \
+             {resonant} of them alongside the Z pole; cuts (emitted|recoil) = {:?}",
+            cuts.len(),
+            cuts.iter()
+                .map(|c| (c.emitted.clone(), c.recoil.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+/// Build the peripheral map an `llj` cut implies, with the lepton pair's Z pole on
+/// whichever side carries it, and `t_mass` standing in for the spacelike line's
+/// mass so the pole can be regulated independently of the model value.
+fn build_spine(
+    sqrt_s: f64,
+    masses: &[f64],
+    cut: &SpacelikeCut,
+    t_mass: f64,
+) -> DiagramChannel<f64> {
+    let pair_is_emitted = cut.emitted.contains(&0);
+    let res = cut.lepton_pair_resonance;
+    DiagramChannel::from_topology_tchannel(
+        sqrt_s,
+        [0.0, 0.0],
+        masses.to_vec(),
+        (
+            cut.emitted.clone(),
+            pair_is_emitted.then_some(res).flatten(),
+        ),
+        (
+            cut.recoil.clone(),
+            (!pair_is_emitted).then_some(res).flatten(),
+        ),
+        t_mass,
+    )
+}
+
+/// The upper edge of the spacelike transfer, spelled exactly as the peripheral
+/// kinematics spell it: `t_max = m_a² + s₁ − 2·E_a·E₁ + 2·k·p*`, each factor built
+/// from the Källén function the same way.
+fn t_max_as_computed(s: f64, s1: f64, s2: f64) -> f64 {
+    fn kallen(a: f64, b: f64, c: f64) -> f64 {
+        a * a + b * b + c * c - 2.0 * (a * b + b * c + c * a)
+    }
+    let sqrt_s = s.sqrt();
+    let inv = 1.0 / (2.0 * sqrt_s);
+    let ea = s * inv;
+    let e1 = (s + s1 - s2) * inv;
+    let k = kallen(s, 0.0, 0.0).max(0.0).sqrt() * inv;
+    let pstar = kallen(s, s1, s2).max(0.0).sqrt() * inv;
+    (s1 - 2.0 * ea * e1) + 2.0 * k * pstar
+}
+
+/// With a massless spacelike line and a massless subsystem on one side of it, the
+/// transfer's upper edge sits *exactly* on the pole: `t_max = m² = 0`. Analytically
+/// that is a clean statement; numerically it is a difference of two large equal
+/// quantities, and the two are built from different expressions, so it lands on
+/// either side of zero at the rounding scale.
+///
+/// This decides whether the peripheral draw importance-samples the propagator or
+/// falls back to flat — a choice that therefore turns over on floating-point noise
+/// rather than on kinematics. Both signs really occur, which is what makes
+/// [`the_unregulated_three_body_spine_is_biased_at_the_collinear_edge`] a defect and
+/// not a tolerance question.
+#[test]
+fn a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise() {
+    let s = 250_000.0;
+    let (mut negative, mut positive, mut exact) = (0usize, 0usize, 0usize);
+    let mut worst = 0.0f64;
+    // The recoil invariants a run actually sees are whatever the invariant draw
+    // returns, so the sweep uses arbitrary values rather than tidy fractions of
+    // `s` — the latter cancel exactly and would hide the effect.
+    let n = 20_000;
+    let mut stream = SubStream::from_stream(0x7EDBE, 5);
+    let draws = stream.uniforms::<f64>(n);
+    for &x in &draws {
+        let s2 = s * x;
+        let t_max = t_max_as_computed(s, 0.0, s2);
+        worst = worst.max(t_max.abs());
+        match t_max.partial_cmp(&0.0).expect("finite") {
+            std::cmp::Ordering::Less => negative += 1,
+            std::cmp::Ordering::Greater => positive += 1,
+            std::cmp::Ordering::Equal => exact += 1,
+        }
+    }
+    eprintln!(
+        "massless t edge over {n} recoil invariants: {negative} below zero, {positive} above, \
+         {exact} exactly zero; worst |t_max| = {worst:.3e} (s = {s})"
+    );
+    assert!(
+        negative > 0 && positive > 0,
+        "the transfer edge no longer straddles zero, so the pole/flat decision may have \
+         stopped depending on rounding"
+    );
+    assert!(
+        worst < 1e-9 * s,
+        "|t_max| reached {worst:.3e}, far more than rounding: the edge is no longer the \
+         analytic zero this argument assumes"
+    );
+    // Over the same draws, a spacelike line given a mass well above that noise
+    // keeps the edge strictly below the pole, which is what makes the pole usable.
+    let m2 = 25.0;
+    for &x in &draws {
+        assert!(
+            m2 - t_max_as_computed(s, 0.0, s * x) > 0.0,
+            "a massive spacelike line should keep the whole window below its pole"
+        );
+    }
+}
+
+/// A three-body peripheral spine built from an `llj` cut, with its spacelike pole
+/// regulated above the rounding scale, is a valid map: on-shell, conserving, and
+/// integrating the flat volume `V_3` to the same number as flat RAMBO.
+///
+/// Nothing in the spine machinery assumes the `2 → 2` shape it was introduced for —
+/// either side may be a composite subsystem with its own invariant and decay tree,
+/// and the dimension count works out. What it does assume is a usable pole.
+#[test]
+fn a_regulated_three_body_spine_from_an_llj_cut_is_a_valid_map() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let sqrt_s = 500.0;
+    let regulator = sqrt_s / 100.0;
+
+    let mut checked = 0usize;
+    for process in LLJ_SUBPROCESSES {
+        let (cuts, _, masses) = spacelike_cuts(process, &evaluated, sqrt_s);
+        for (i, cut) in cuts.iter().enumerate() {
+            let spine = build_spine(sqrt_s, &masses, cut, regulator);
+            assert_valid(&spine, sqrt_s, &masses, 0x5D1CE + i as u64);
+
+            let flat = RamboChannel::new(sqrt_s, masses.clone());
+            let n = 200_000;
+            let (v_s, var_s) = mc_estimate(&spine, 0xC01 + i as u64, 61, n, |_| 1.0);
+            let (v_f, var_f) = mc_estimate(&flat, 0xC02 + i as u64, 63, n, |_| 1.0);
+            let err = ((var_s + var_f) / n as f64).sqrt();
+            eprintln!(
+                "{process} cut {i} (t pole regulated at {regulator} GeV): V_3 spine {v_s:.6e} \
+                 vs flat {v_f:.6e} (+-{err:.1e})"
+            );
+            assert!(
+                (v_s - v_f).abs() < 6.0 * err,
+                "{process} cut {i}: spine V_3 {v_s:.6e} disagrees with flat RAMBO {v_f:.6e}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no llj cut was exercised");
+}
+
+/// The same spine with the model's own massless spacelike line does **not**
+/// integrate `V_3` correctly — asserted as the disagreement it is, rather than
+/// left for a later session to trip over.
+///
+/// The mechanism is
+/// [`a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise`]: on the
+/// draws where the edge lands just below zero the propagator map switches on with a
+/// span of some thirty e-folds reaching down to `|t| ~ 1e-11`, while the density is
+/// re-evaluated from a transfer recomputed out of the momenta, whose own
+/// cancellation error is the same size. Sampling density and weighting density then
+/// describe different maps and the estimator is biased — not merely noisy.
+///
+/// A peripheral map for `llj` therefore needs the spacelike draw floored the way a
+/// zero-width timelike pole already is, at a scale set by the process (the jet
+/// transverse-momentum cut), before it can be trusted. Regulating the pole is what
+/// [`a_regulated_three_body_spine_from_an_llj_cut_is_a_valid_map`] then confirms is
+/// enough.
+#[test]
+fn the_unregulated_three_body_spine_is_biased_at_the_collinear_edge() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let sqrt_s = 500.0;
+
+    let mut worst_ratio = 1.0f64;
+    for process in LLJ_SUBPROCESSES {
+        let (cuts, _, masses) = spacelike_cuts(process, &evaluated, sqrt_s);
+        for (i, cut) in cuts.iter().enumerate() {
+            assert_eq!(
+                cut.t_mass, 0.0,
+                "{process} cut {i}: expected a massless line"
+            );
+            let spine = build_spine(sqrt_s, &masses, cut, 0.0);
+            let flat = RamboChannel::new(sqrt_s, masses.clone());
+            let n = 200_000;
+            let (v_s, var_s) = mc_estimate(&spine, 0xC01 + i as u64, 61, n, |_| 1.0);
+            let (v_f, var_f) = mc_estimate(&flat, 0xC02 + i as u64, 63, n, |_| 1.0);
+            let err = ((var_s + var_f) / n as f64).sqrt();
+            let ratio = v_s / v_f;
+            eprintln!(
+                "{process} cut {i} (massless t pole): V_3 spine {v_s:.6e} vs flat {v_f:.6e} \
+                 (+-{err:.1e}), ratio {ratio:.3}"
+            );
+            // Judged on the ratio rather than on the reported error: the estimator
+            // whose bias is in question is the same one supplying that error, and
+            // its per-point spread is heavy-tailed here, so its own uncertainty is
+            // not a reliable yardstick. A factor of two is far outside anything
+            // sampling noise produces on a volume.
+            assert!(
+                ratio > 2.0,
+                "{process} cut {i}: the unregulated spine now reproduces flat RAMBO's V_3 to \
+                 {ratio:.3} — if the spacelike draw grew a floor, retire this test and enforce \
+                 the agreement instead"
+            );
+            worst_ratio = worst_ratio.max(ratio);
+        }
+    }
+    eprintln!("unregulated three-body spine overstates V_3 by up to {worst_ratio:.2}x");
+}
+
+/// Does a three-body peripheral map earn its place? On a toy integrand carrying the
+/// two structures an `llj` matrix element has — the lepton pair's Z pole and the
+/// spacelike propagator — the regulated spine is compared against the all-timelike
+/// channel the derivation builds for the very same diagram, and against flat RAMBO.
+///
+/// The comparison is a seed sweep, not a single run, because a single run cannot
+/// tell a converged estimate from an under-covered one: a map that misses the
+/// peripheral region reports a small integral *and* a small variance, and looks
+/// perfectly stable from the inside. What separates them is whether independent
+/// seeds land within the error each of them claims. The spine's do; the other two
+/// maps' do not, and they disagree with the spine by factors, so the assertion here
+/// is *not* that the three agree — it is that only the spine is self-consistent.
+#[test]
+fn a_regulated_three_body_spine_beats_the_all_timelike_channel_on_a_peripheral_integrand() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let z = model.particle_id("Z").expect("Z in model");
+    let (mz, gz) = (evaluated.mass(z), evaluated.width(z));
+    let sqrt_s = 500.0;
+    let regulator = sqrt_s / 100.0;
+    let m0_2 = regulator * regulator;
+    // Beam 0 along +z in the partonic CM, as the peripheral map anchors it.
+    let beam0 = [sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0];
+
+    let (m2, mg) = (mz * mz, mz * gz);
+    let mut compared = 0usize;
+    let mut worst_alternative_pull = 0.0f64;
+    let mut worst_miss = 1.0f64;
+    for process in LLJ_SUBPROCESSES {
+        let (cuts, _, masses) = spacelike_cuts(process, &evaluated, sqrt_s);
+        for (i, cut) in cuts.iter().enumerate() {
+            let emitted = cut.emitted.clone();
+            let probe = |p: &[LorentzVector<f64>]| {
+                let s_ll = s_pair(p, 0, 1);
+                let [mut e, mut px, mut py, mut pz] = beam0;
+                for &slot in &emitted {
+                    e -= p[slot].e();
+                    px -= p[slot].px();
+                    py -= p[slot].py();
+                    pz -= p[slot].pz();
+                }
+                let t = e * e - px * px - py * py - pz * pz;
+                1.0 / (((s_ll - m2).powi(2) + mg * mg) * (m0_2 - t).powi(2))
+            };
+
+            let spine = build_spine(sqrt_s, &masses, cut, regulator);
+            let flat = RamboChannel::new(sqrt_s, masses.clone());
+            let maps: [(&str, &dyn PhaseSpaceMap<f64>); 3] = [
+                ("spine", &spine),
+                ("all-timelike", &cut.derived),
+                ("flat", &flat),
+            ];
+            let n = 60_000;
+
+            let mut pulls = Vec::new();
+            let mut variances = Vec::new();
+            for (label, map) in maps {
+                let runs: Vec<(f64, f64)> = (0..5)
+                    .map(|seed| {
+                        mc_estimate(map, 0xD00 + 16 * seed + i as u64, 71 + seed, n, &probe)
+                    })
+                    .collect();
+                let mean = runs.iter().map(|r| r.0).sum::<f64>() / runs.len() as f64;
+                let var = runs.iter().map(|r| r.1).sum::<f64>() / runs.len() as f64;
+                let err = (var / n as f64).sqrt();
+                // The largest deviation any one seed shows, in units of the error
+                // that seed's own run claims.
+                let pull = runs
+                    .iter()
+                    .map(|r| (r.0 - mean).abs() / (r.1 / n as f64).sqrt())
+                    .fold(0.0f64, f64::max);
+                eprintln!(
+                    "{process} cut {i} {label}: {mean:.6e} +- {err:.1e} over 5 seeds, \
+                     worst seed pull {pull:.1}, per-point variance {var:.2e}"
+                );
+                pulls.push((label, pull));
+                variances.push((label, var, mean));
+            }
+
+            let spine_pull = pulls[0].1;
+            assert!(
+                spine_pull < 5.0,
+                "{process} cut {i}: the spine's seeds scatter by {spine_pull:.1} of their own \
+                 claimed error, so it is not covering the integrand either"
+            );
+            let (_, spine_var, spine_mean) = variances[0];
+            for (label, var, mean) in &variances[1..] {
+                assert!(
+                    spine_var < *var,
+                    "{process} cut {i}: the peripheral map does not reduce variance against \
+                     {label} ({spine_var:.2e} vs {var:.2e})"
+                );
+                worst_miss = worst_miss.max((mean / spine_mean).max(spine_mean / mean));
+            }
+            worst_alternative_pull = pulls[1..]
+                .iter()
+                .fold(worst_alternative_pull, |w, (_, p)| w.max(*p));
+            compared += 1;
+        }
+    }
+    assert!(compared > 0, "no llj cut was compared");
+    // Neither alternative is merely slower here: on at least one cut each of them
+    // is off by a factor while reporting an error that does not admit it. That is
+    // the failure a single-seed run would have accepted as an answer.
+    eprintln!(
+        "peripheral probe over {compared} cuts: worst alternative-map seed pull \
+         {worst_alternative_pull:.1}, worst factor away from the spine {worst_miss:.2}x"
+    );
+    assert!(
+        worst_alternative_pull > 5.0 && worst_miss > 2.0,
+        "no alternative map under-covers any more (worst pull {worst_alternative_pull:.1}, \
+         worst factor {worst_miss:.2}) — the comparison has lost its control"
+    );
 }
