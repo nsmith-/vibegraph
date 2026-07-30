@@ -5,24 +5,6 @@
 Implement a toy LO (leading-order, tree-level) Monte Carlo event generator in Rust,
 studying the standard HEP event simulation toolchain step by step.
 
-## Toolchain Pipeline
-
-```
-UFO model data
-     │
-     ▼
-Feynman diagram enumeration  (cf. MadGraph, feyngraph crate)
-     │
-     ▼
-Helicity amplitude construction  (cf. HELAS/ALOHA)
-     │
-     ▼
-Phase-space sampling  (cf. VEGAS adaptive Monte Carlo)
-     │
-     ▼
-Cross-section integral + weighted event sample
-```
-
 ## Planning & Progress
 
 **Before starting any new feature or task**, read `TODO.md` — the prioritized task
@@ -76,86 +58,10 @@ For paper references, submodule locations and key paths, and instructions for fe
 
 ## Build & Test
 
-```bash
-cargo build          # Compile the library and binary
-cargo test           # Run all tests
-```
-
-### Extended Validation Tests
-
-Extended validation tests are comprehensive but slow integration tests, **not run by default**.
-They are gated behind the `extended-validation` feature and require specific dependencies.
-
-**Skipping regeneration:** these tasks chain `depends-on` steps that regenerate reference data
-(MadGraph/HELAS output), which dominates the runtime. When you know the generated outputs are
-already fresh — e.g. you only touched Rust and reran the same task — pass `--skip-deps` to run
-just the final step: `pixi run --skip-deps validate-helas-mg`.
-
-#### Fortran HELAS Cross-check
-
-The `helas_validation` test compares Rust HELAS amplitudes against Fortran77 reference data.
-
-**When to run:** after modifying `helas/` representation layer or amplitude computations.
-
-```bash
-# Generate reference data (one-time per environment)
-pixi run -e helas-validation build-helas
-pixi run -e helas-validation generate-helas
-
-# Run the validation test
-pixi run -e helas-validation validate-helas
-```
-
-#### MadGraph Diagram Validation
-
-The `validate_madgraph_diagrams` test compares vibegraph diagram enumeration against MadGraph5_aMC@NLO reference output.
-
-**When to run:** after modifying diagram enumeration logic or subprocess classification.
-
-```bash
-# Build MadGraph reference data and run validation
-pixi run -e madgraph validate-diagrams
-```
-
-Individual steps are also available:
-- `pixi run -e madgraph build-diagrams` — generate MadGraph output
-- `pixi run -e madgraph extract-diagrams` — extract diagram counts to JSON
-
-#### Colour-Flow JAMP / JAMP2
-
-The `color_jamp_oracle` test compares vibegraph's per-flow JAMPs — and the `JAMP2`
-weights a colour-flow selection draws from — against banked MadGraph `JAMP()` values,
-element-wise and complex. This is the level the CF-contracted |M|² is blind to: a
-per-flow phase, a per-flow normalisation, or a permutation of the colour basis leaves
-|M|² and σ exact while skewing the emitted colour-flow statistics.
-
-**When to run:** after modifying `helas/color/`, the flow root, or anything that could
-reorder the colour basis.
-
-```bash
-pixi run -e madgraph validate-color-jamp
-```
-
-The reference (`validation/madgraph/jamp_reference.json`) is committed; regenerate with
-`pixi run -e madgraph generate-jamp-reference` only when the banked phase-space points
-or the process list change.
-
-#### Running Coupling and Per-Event Scales
-
-`validate_alphas` checks the strong coupling's RGE evolution; `validate_scales` checks
-the renormalisation and factorisation scales chosen per event. Both replay the banked
-MadGraph `.lhe` files event by event, comparing against the printed `SCALUP`, `AQCDUP`,
-`<rscale>` and `<pdfrwt>` fields rather than against a cross section.
-
-**When to run:** after modifying `coupling/`, or after rebanking any MadGraph run.
-
-```bash
-pixi run -e madgraph validate-alphas   # RGE grid vs MG's own Fortran, plus AQCDUP
-pixi run -e madgraph validate-scales   # per-event mu_R and per-beam mu_F
-```
-
-`validate-alphas` regenerates `validation/alphas/reference.csv` by linking MadGraph's
-unmodified `alfas_functions.f`; use `--skip-deps` to skip that when it is already fresh.
+Standard `cargo build` / `cargo test`. The slow, feature-gated MadGraph/HELAS
+cross-check gates — which one to run after which kind of change, and the
+`--skip-deps` regeneration semantics — live in the `extended-validation` skill;
+invoke it after modifying amplitudes, color, coupling, or diagram enumeration.
 
 ## Agent Tooling Guidelines
 
