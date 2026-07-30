@@ -642,3 +642,217 @@ One MG-side detail worth keeping: `build.sh` must run with `LDFLAGS` carrying
 `-lc++` for an LHAPDF run to link on macOS, the same workaround
 `gen_hadronic_sigma.sh` documents. `pp_to_llj_fixed` is the first `build.sh`
 process that needs it.
+
+---
+
+## P1 outcome (2026-07-30) ✅
+
+Branch `proton-events`. All four llj amplitude rows are enforced, the `q̄ g`
+coverage gap is closed, and a new per-diagram oracle carries the enforcement at
+the finest linear level MadGraph exposes for a single-flow process. No tolerance
+was changed anywhere.
+
+### Rows enforced, and what each pins
+
+`validate_helas_mg`'s `EXPECT_MATCH` went 14 → 18 (all at `REL_TOL = 1e-12`):
+
+| row | max rel vs MG | convention channel it exercises |
+|---|---|---|
+| `uux_to_epemg` (`u u~ > e+ e- g`) | 1.20e-14 | reversed-FFV-bilinear parity, on all 4 diagrams, now on a **coloured** spine (previously only `e+ e- > mu+ mu-`'s leptonic one) |
+| `ddx_to_epemg` (`d d~ > e+ e- g`) | 1.43e-14 | same channel, initial flavour varied — a disagreement localises against the row above |
+| `gu_to_epemu` (`g u > e+ e- u`) | 3.18e-14 | crossed-line **spine sign**, on all 4 diagrams, in the first mixed adjoint+fundamental initial state |
+| `gux_to_epemux` (`g u~ > e+ e- u~`) | 1.14e-14 | the same, with the fermion line entering as an antiparticle: MadGraph's colour structure flips `T(1,5,2)` → `T(1,2,5)` and its JAMP coefficients `+1` → `−1` |
+
+Channel counts (`(vvv, spine, build, reversed)` over the canonical rooting, the
+quantity `mg_guard_processes_exercise_every_convention_channel` reads):
+`u u~ > e+ e- g` and `d d~ > e+ e- g` are `(0, 0, 0, 4)`; `g u > e+ e- u` and
+`g u~ > e+ e- u~` are both `(0, 4, 0, 4)`. So the `q q̄` and `g q` classes differ
+in exactly one channel, the spine sign — and it fires **uniformly**, which
+matters below.
+
+### The `q̄ g` gap, closed
+
+`validation/madgraph/scripts/gux_to_epemux.mg5`, banked exactly as P0 costed it:
+one `.mg5` script plus registrations in `build_amplitude.sh` (both lists) and
+`gen_amplitude.py`. NGRAPHS=4, NCOLOR=1, σ̂ = 0.11816 ± 0.00026 pb at √ŝ = 500
+against `gu_to_epemu`'s 0.11812 ± 0.00022.
+
+P0's warning held: registering an amplitude process banks a run.
+`CLUSTERING_REQUIRED_RUNS` went 9 → 10, `SCALUP_IS_THE_RENORMALISATION_SCALE`
+gained the run, and `sigma_reference.json` gained its σ̂ (auto-skipped by
+`validate_sigma`, as its three siblings are). The `-lc++` `LDFLAGS` workaround was
+not needed — it is an LHAPDF-link requirement, and this is an `lpp = 0` run.
+
+MadGraph's own colour data for the four:
+
+| run | structure | JAMP coefficients | CF |
+|---|---|---|---|
+| `uux_to_epemg`, `ddx_to_epemg` | `T(5,2,1)` | `(+1, +1, +1, +1)` | 4 |
+| `gu_to_epemu` | `T(1,5,2)` | `(+1, +1, +1, +1)` | 4 |
+| `gux_to_epemux` | `T(1,2,5)` | `(−1, −1, −1, −1)` | 4 |
+
+### New gate: `amp_diagram_oracle`
+
+`validate_helas_mg` compares one real number per point. `jamp_reference.json` does
+not apply at NCOLOR=1 (a single flow's JAMP is the coherent sum, which adds only a
+global phase over |M|²), so the finest available oracle is `AMP(1:NGRAPHS)` per
+helicity. `gen_amp_reference.py` banks it — plus the colour coefficients that
+build `JAMP(1)` out of it — into `amp_reference.json`;
+`vibegraph-lib/tests/amp_diagram_oracle.rs` consumes it. Pixi:
+`generate-amp-reference`, `validate-amp-diagram`.
+
+**Plan correction: the comparable object is `c_i · AMP(i)`, not `AMP(i)`.** The
+first cut of the oracle compared diagram roots against raw `AMP(i)` and
+immediately failed on `e+ e- > e+ e-` with a contaminated fit constant. The cause
+is a convention split note 24 did not anticipate: **MadGraph puts the
+annihilation/exchange relative sign in the colour coefficient** (`e+ e- > e+ e-`
+carries `c = (−1, −1, +1, +1)`) **where vibegraph puts it in the diagram root**
+(`fermi_sign`, colour coefficients uniformly +1). Neither is observable alone;
+the product is. Comparing against `c_i · AMP(i)` makes the relation uniform across
+all seven banked processes with a single constant each. The parse of the
+`JAMP(1,1) = Σ c_i AMP(i)` statement is verified numerically against the probe's
+own `JAMP(1)` at every banked point, so a mis-parse cannot pass.
+
+What is asserted, per process: the helicity set equals MadGraph's `NHEL` table and
+the diagram count equals `NGRAPHS`; **one** complex constant `G` fitted over every
+(point, helicity, diagram) entry satisfies `A_i^vg = G · c_j · AMP_j^mg`
+element-wise; `|G| = 1` **and `Re G = 0`** — the constant is `±i` and nothing
+else, which pins the single factor of `i` vibegraph's roots carry and MadGraph's
+`AMP()` does not; and the coherent amplitude follows the *same* `G`, which is what
+pins vibegraph's own colour coefficients against MadGraph's.
+
+Three already-enforced processes ride along as controls, one per rooting-sign
+channel: `ee_to_ee` (crossed-line spine, and the only banked process with
+non-uniform colour coefficients), `ee_to_wpwm` (Yang-Mills VVV), `ee_to_tatah`
+(scalar bilinear). Results, worst 8.09e-15 over all seven:
+
+```
+  [ee_to_ee]      NGRAPHS=4: per-diagram 8.09e-15, coherent 7.83e-15 (G = -1i)
+  [ee_to_wpwm]    NGRAPHS=3: per-diagram 1.28e-15, coherent 7.62e-16 (G = +1i)
+  [ee_to_tatah]   NGRAPHS=5: per-diagram 5.81e-15, coherent 5.81e-15 (G = -1i)
+  [uux_to_epemg]  NGRAPHS=4: per-diagram 1.37e-16, coherent 2.16e-16 (G = +1i)
+  [ddx_to_epemg]  NGRAPHS=4: per-diagram 1.34e-15, coherent 1.20e-15 (G = +1i)
+  [gu_to_epemu]   NGRAPHS=4: per-diagram 1.42e-15, coherent 1.30e-15 (G = -1i)
+  [gux_to_epemux] NGRAPHS=4: per-diagram 3.92e-16, coherent 1.38e-15 (G = +1i)
+```
+
+**Second finding: the two enumeration orders are not always the same.** They agree
+for six of the seven; `e+ e- > ta+ ta- H` does not, and its pairing `[3,4,1,2,0]`
+is banked in `MG_DIAGRAM_ORDER` rather than searched for at run time, so a
+reordering on either side fails the gate instead of being silently re-matched.
+The pairing is over-determined by what it has to reproduce (5 points × 16
+helicities × 5 diagrams under one constant), so banking it is not fitting it.
+
+### Everything passed first try — so, what would have been caught?
+
+Four mutation experiments, each reverted, run against the whole amplitude/colour
+suite. This is the answer to "a gate that cannot see the convention is not
+confirmation of it".
+
+**1. Transpose the `T` chain's two fundamental ends in the flow derivation.**
+Caught by `color_flow_tags_oracle` (22/30), `validate_helas_mg` (10/18, all four
+llj rows among them), `amp_diagram_oracle` (all four llj rows),
+`color_jamp_oracle` (2/3) and `validate_lhef`. `color_cf_oracle` is blind — a
+uniform transpose is exactly its documented blind spot.
+
+**2. Remove the historical MadGraph fermion slot swap in `slot_indices`** — i.e.
+reintroduce the note-16 §6 bug class. Caught by `validate_helas_mg` (10/18,
+including all four llj rows), `amp_diagram_oracle` (4/7, the four llj rows),
+`color_flow_tags_oracle` (22/30), `color_jamp_oracle` (2/3). `color_cf_oracle`
+blind again. So the new rows are live detectors of the colour-flow slot
+convention, not passengers.
+
+**3. Drop the spine sign from `fermi_sign` — a measured blind spot of all four new
+rows.** Caught by `validate_helas_mg` on 7 rows (`ee_to_ee`, `ee_to_wpwm`,
+`uux_to_uux`, `ee_to_mumua`, `ee_to_mumu_tata_qcd0`, `uux_to_ccx_emmm_qcd0`,
+`bbx_to_ccx_emmm_qcd0`) and by `amp_diagram_oracle` on `ee_to_ee` and
+`ee_to_wpwm` — and by **none of the four llj rows**. The reason is the channel
+count above: the spine sign fires on *all four* diagrams of `g q → ℓℓq`, so
+dropping it is a global sign, and a global sign is unobservable in |M|² and
+absorbed into `G` by construction. The channel is pinned non-uniformly elsewhere
+(`e+ e- > e+ e-` fires it on 2 of 4) and cross-checked by
+`spine_sign_from_flow_matches_heuristic`. **The llj rows do not pin the spine
+sign; do not claim they do.**
+
+**4. A slot rule wrong only for the arrangement `g u~` uniquely introduces**
+(adjoint index incoming *and* fundamental end incoming). Caught by exactly one
+trial in each of three gates, and it is `gux_to_epemux` every time; 29 other
+flow-tag trials, all of `color_cf_oracle`, all of `color_jamp_oracle` and all of
+`validate_lhef` pass. Before this session that defect had no detector at all.
+
+**But experiment 4 also exposes a limit worth stating.** It surfaces as a hard
+`inconsistent color flow` compile error, not as a numerical disagreement with
+MadGraph — because for a single-flow structure with one adjoint index there are
+exactly two colour lines and the leg reps determine them completely. So
+`color_flow_tags_oracle` has essentially **no free convention to check** on any of
+the four llj rows: its connectivity comparison is forced, and only its
+report-only label comparison (`labels=identical to MG`) carries information.
+The colour arrangement of `g q̄ → ℓℓ q̄` is pinned by construction, not by
+comparison. What the row genuinely adds is its per-diagram spinor content in that
+arrangement, checked against MadGraph at 3.9e-16, and its |M|² at 1.14e-14.
+
+Stated the other way: `T(1,2,5)` versus `T(1,5,2)` with the same `CF = 4` and the
+same forced connectivity is a relabelling with no observable consequence at
+NCOLOR=1 — which is why MadGraph is free to flip the JAMP sign, and why
+`amp_diagram_oracle`'s `G` legitimately comes out `+i` for `g u~` where it is
+`−i` for `g u`.
+
+### Gate results
+
+`cargo test --workspace`: 539 passed / 0 failed (unchanged from P0). Extended
+validation, all green:
+
+| gate | result |
+|---|---|
+| `validate-helas-mg` | **18 passed** (14 unchanged + 4 llj rows now enforced) |
+| `validate-amp-diagram` | **7 passed** (new), worst 8.09e-15 |
+| `validate-color-cf` | 30 passed (new pixi task for an existing gate) |
+| `validate-color-flow-tags` | 30 passed (new pixi task for an existing gate) |
+| `validate-color-jamp` | 3 passed |
+| `validate-diagrams` | 16 passed |
+| `validate-scales` | 7 passed |
+| `validate-alphas` | 4 passed |
+| `validate-sigma` | 11 rows asserted, unchanged |
+| `validate-lhef` | 3 passed |
+| `validate-unweighting` | 1 passed |
+| `validate-scale-couplings` | 1 passed |
+
+`color_cf_oracle` and `color_flow_tags_oracle` had no pixi entry, so the
+`extended-validation` skill's colour instruction could not actually be followed
+for two of the three colour gates; both now have one.
+
+### What P2 must take from this
+
+1. **Every llj subprocess class now has an enforced amplitude row**, so the
+   hadronic integrand can be built against a matrix element that is pinned
+   per-diagram, not just per-|M|². The four banked partonic runs (`√ŝ = 50 / 200
+   / 500`, 75 points each) are also ready-made fixed-ŝ slices for P2's
+   "PDF layer off ↔ factor of luminosity" in-session check.
+2. **`g q` and `g q̄` are separate rows and separate flavour-class members.** They
+   have the same σ̂ to within MC error and the same CF, but different colour
+   structures and different `G`. When P2 derives flavour classes from the diagram
+   sets, `q ↔ q̄` reflections may be grouped by |M|² equality — that grouping is
+   sound here, and the gate above is what makes it checkable rather than assumed.
+3. **Do not lean on `color_flow_tags_oracle` for llj colour correctness.** As
+   measured above it is forced by the leg reps for these single-flow,
+   one-adjoint processes. If P4 emits llj events, the ICOLUP it writes is
+   determined; nothing about it is being validated by comparison.
+4. A cheap follow-up neither P0 nor P1 owed: partonic σ̂ rows for the four llj
+   subprocesses (`sigma_reference.json` already holds the numbers,
+   `validate_sigma` skips them for want of an evaluation plan). That would give
+   P2 a σ-level check at fixed ŝ before the PDF layer goes on.
+
+### Files and commands
+
+- New: `validation/madgraph/scripts/gux_to_epemux.mg5`,
+  `validation/madgraph/gen_amp_reference.py`,
+  `validation/madgraph/amp_reference.json`,
+  `vibegraph-lib/tests/amp_diagram_oracle.rs`.
+- Modified: `validation/madgraph/build_amplitude.sh`,
+  `validation/madgraph/gen_amplitude.py`,
+  `validation/madgraph/sigma_reference.json`, `pixi.toml`,
+  `vibegraph-lib/Cargo.toml`, `vibegraph-lib/tests/validate_helas_mg.rs`,
+  `vibegraph-lib/tests/validate_scales.rs`,
+  `vibegraph-lib/tests/validate_alphas.rs`.
+- Regenerate: `pixi run -e madgraph build-diagrams`, then `generate-amplitude`,
+  `generate-amp-reference`, `extract-sigma`.
