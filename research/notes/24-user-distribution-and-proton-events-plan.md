@@ -282,6 +282,118 @@ scope if cheap, it is not the deliverable):
   `--version` and a partonic `integrate` smoke on its platform (macOS x86_64
   via Rosetta or CI runner).
 
+### U1 outcome (2026-07-30) ✅
+
+Landed on `user-dist/u1` (worktree `vibegraph-u1`, off `main`): two workflow
+files, one build script, two small edits.
+
+**Files:**
+
+- `.github/workflows/release.yml` — the deliverable. Matrix job (macOS arm64,
+  macOS x86_64, Linux x86_64-musl) builds, smoke-tests, and packages a
+  `.tar.gz` per target on `push: tags: v*.*.*` (plus `workflow_dispatch` for a
+  manual dry run against an arbitrary ref); a second `publish` job, gated on
+  the tag push, downloads all three artifacts, writes a `SHA256SUMS`, and
+  calls `gh release create` with `--generate-notes`.
+- `.github/workflows/ci.yml` — the optional PR workflow, judged cheap enough to
+  ride along (measured locally: ~2 min for the full default `cargo test`
+  suite, see below). One job: `cargo build --locked --workspace` +
+  `cargo test --locked --workspace` on push to `main` and on PRs, with
+  `actions/cache` over `~/.cargo` + `target` keyed on `Cargo.lock`.
+- `vibegraph-cli/build.rs` (new) — runs `git describe --tags --always
+  --dirty=-dirty`, falling back to `CARGO_PKG_VERSION` when git is unavailable
+  (no `.git`, or no `git` binary); emits `VIBEGRAPH_VERSION` via
+  `cargo:rustc-env`. Emits `cargo:rerun-if-changed` on the git common dir's
+  `HEAD`/`refs` when one exists, so a local rebuild picks up a moved tag
+  without touching a tracked file — best-effort, skipped cleanly outside a
+  checkout.
+- `vibegraph-cli/Cargo.toml` — `build = "build.rs"`.
+- `vibegraph-cli/src/main.rs` — `#[command(version = env!("VIBEGRAPH_VERSION"))]`
+  in place of the bare `version` flag (which would have reported
+  `CARGO_PKG_VERSION` unconditionally).
+
+**Linux target decision: musl, not a glibc floor.** The only C dependency
+anywhere in `Cargo.lock` is `zstd-sys` (checked: no `openssl`, `native-tls`,
+or other system-library build-dependency in the lock file), and it links its
+*bundled* zstd source via `cc`, not a system `libzstd` — `pkg-config` appears
+only as an optional probe `zstd-sys`'s build script tries first. That means
+`x86_64-unknown-linux-musl` costs nothing beyond `musl-tools` (for
+`musl-gcc`) on the build runner, and buys a single fully static binary with no
+"which glibc does this distro ship" support matrix — the better fit for "a
+user with no dev toolchain." A glibc floor would have needed either an old
+enough runner or a manylinux-style container to set the floor, for no
+offsetting benefit here.
+
+**Deviation from the design note: no Rosetta.** The note anticipated "macOS
+x86_64 via Rosetta or CI runner" for the smoke test. GitHub-hosted
+`macos-13` is still real Intel hardware (`macos-14`/`macos-latest` moved to
+Apple Silicon), so the matrix builds `x86_64-apple-darwin` natively on
+`macos-13` and `aarch64-apple-darwin` natively on `macos-14` — both are
+native builds and native smoke-test runs, no cross-compilation or Rosetta
+involved on either leg. Pinned to the explicit `macos-13`/`macos-14` labels
+rather than `macos-latest`, since that alias's target architecture is exactly
+the kind of thing that has moved before and would silently change what "macOS
+x86_64" means here.
+
+**Verified locally (real output, not claimed):**
+
+- `cargo build --release --locked -p vibegraph` on this host (aarch64-apple-darwin) — succeeds, ~22s warm / ~1.4s incremental.
+- `cargo build --locked --workspace` and `cargo test --locked --workspace` (no
+  `--features extended-validation`) both pass with no network and no MG data:
+  489 lib tests + 8 CLI tests, `finished in 54.19s` (lib) / a few more seconds
+  for the CLI crate, ~2 min wall total. Confirms the repo's existing
+  feature-gating (`required-features = ["extended-validation"]` in the two
+  `Cargo.toml`s, plus internal `#[cfg(feature = "extended-validation")]` on
+  the rest, plus the `harness = false` MG-diagram trials that print a hint and
+  exit 0 with zero trials when `validation/madgraph/output/` doesn't exist)
+  already makes a bare `cargo test` CI-safe — nothing extra needed in
+  `ci.yml`.
+- `--version`, in-git, no tag: `vibegraph 246ae4e-dirty` (matches
+  `git describe --tags --always --dirty=-dirty` on this checkout, which has no
+  tags yet).
+- `--version`, in-git, with a local test tag: created `v0.1.0-test-u1`
+  (unpushed, deleted immediately after), rebuilt, got
+  `vibegraph v0.1.0-test-u1-dirty`; deleted the tag. Confirms the tag flows
+  through end to end.
+- `--version`, non-git build (the fallback path): copied every `git
+  ls-files`-tracked file (i.e. exactly what a GitHub source-tarball download
+  contains) into a directory with no `.git` anywhere above it, confirmed
+  `git rev-parse --show-toplevel` fails there, ran
+  `cargo build --release --locked -p vibegraph`: succeeds, and
+  `--version` reports exactly `vibegraph 0.1.0` — the clean
+  `CARGO_PKG_VERSION` fallback, not a build failure or a stale/wrong string.
+- Partonic `integrate` smoke, with the exact command the workflow runs
+  (`e+ e- > t t~` at `ebeam = 250`, `--neval 5000 --niter 2`, no PDF, no
+  network — the SM model is `include_bytes!`-compiled into the binary): exits
+  0 in 0.061s wall, `σ = 0.552256 ± 0.001928 pb`, writes `grid.bin.zst`.
+
+**Not verified (needs a real CI run — outward-facing, left to the user):**
+whether `macos-13`/`macos-14`/`ubuntu-latest` images actually resolve as
+expected, whether `musl-tools` installs cleanly and `musl-gcc` is what `cc-rs`
+picks up on a fresh Ubuntu runner, the `actions/cache` hit/miss behavior, and
+the `gh release create` / `softprops`-free asset upload path (no third-party
+release action used — plain `gh` CLI, preinstalled and pre-authenticated on
+GitHub-hosted runners).
+
+**Exact commands to cut a test release** (for the user to run deliberately —
+this session did not push anything):
+
+```bash
+git checkout main   # or wherever release.yml has landed
+git tag v0.1.0-test1
+git push origin v0.1.0-test1
+# … watch the Actions tab; the `publish` job needs `build` green on all 3 legs.
+# To delete a bad test release+tag afterward:
+gh release delete v0.1.0-test1 --yes
+git push origin :refs/tags/v0.1.0-test1
+git tag -d v0.1.0-test1
+```
+
+A dry run of just the matrix (no release published, since `publish` requires
+a tag ref) can also be triggered without tagging anything, via the Actions tab
+→ `release` → "Run workflow" (the `workflow_dispatch` trigger), against any
+branch.
+
 ### U2 — default PDF set out of the box
 
 - **License check first**: confirm `NNPDF23_lo_as_0130_qed`'s LHAPDF
