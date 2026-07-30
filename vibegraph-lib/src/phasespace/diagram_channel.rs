@@ -1206,6 +1206,13 @@ mod tests {
 
     /// The channel density is the exact reciprocal of the weight it assigns to a
     /// point it generated.
+    ///
+    /// True by construction — [`DiagramChannel::sample`] forms the weight as
+    /// `1/density` — so what this pins is that the density is finite and non-zero
+    /// on every generated point, and that the walk's own cursor arithmetic leaves
+    /// a configuration the density can be evaluated at. It is blind to the walk
+    /// having sampled from a different density than the one that weights it; only
+    /// an integrated quantity sees that (`flat_volume_matches_flat_rambo` below).
     #[test]
     fn density_is_reciprocal_weight() {
         let mut stream = SubStream::from_stream(0xD1A7, 5);
