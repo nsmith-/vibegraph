@@ -47,14 +47,7 @@ validate = { cmd = "cargo test --workspace --profile release-debug --features vi
 
 # The oracle layer's vibegraph side: the runs too heavy for the banked budget.
 # A stub until those rows have a driver.
-validate-deep = """
-echo 'The oracle layer will run the long-tier cells of validation/manifest.toml:'
-echo '  - the 2 -> 6 sigma and sample rows (uux_to_ccx_emmm_qcd0, bbx_to_ccx_emmm_qcd0)'
-echo '  - the full seed sweep and budget ladder for the multi-channel sigma rows'
-echo '  - the full rooting-soundness sweep over every candidate re-rooting'
-echo 'No driver yet; the ignored tests are the closest thing meanwhile:'
-echo '  cargo test --workspace --profile release-debug --features vibegraph/extended-validation -- --ignored --nocapture'
-"""
+validate-deep = '''printf '%s\n' "The oracle layer will run the long-tier cells of validation/manifest.toml:" "  - the 2 -> 6 sigma and sample rows (uux_to_ccx_emmm_qcd0, bbx_to_ccx_emmm_qcd0)" "  - the full seed sweep and budget ladder for the multi-channel sigma rows" "  - the full rooting-soundness sweep over every candidate re-rooting" "No driver yet; the ignored tests are the closest thing meanwhile:" "  cargo test --workspace --profile release-debug --features vibegraph/extended-validation -- --ignored --nocapture"'''
 
 
 # --- nougat: scientific PDF OCR ---
@@ -177,13 +170,7 @@ validate-pdf-grid = { cmd = "cargo test -p vibegraph-lib --features extended-val
 # The oracle layer's reference generation: one entry point over every generator.
 # The per-stage scripts stay as internals and keep their own caching, so a rerun
 # regenerates only what the local work area lacks.
-generate-references = { cmd = """
-echo 'Regenerated every committed reference under validation/ from the local MadGraph work area.'
-echo 'Not reached by this entry point yet:'
-echo '  - the HELAS f77 grid: pixi run -e helas-validation generate-helas'
-echo '  - per-process amplitude tables evaluated on MadGraph banked events'
-echo '  - the banked-reference bundle'
-""", depends-on = [
+generate-references = { cmd = '''printf '%s\n' "Regenerated every committed reference under validation/ from the local MadGraph work area." "Not reached by this entry point yet:" "  - the HELAS f77 grid: pixi run -e helas-validation generate-helas" "  - per-process amplitude tables evaluated on MadGraph's own banked events" "  - the banked-reference bundle"''', depends-on = [
     "extract-diagrams",
     "generate-amplitude",
     "generate-amp-reference",
