@@ -1,7 +1,19 @@
-# MadGraph5 batch script: p p > l+ l- j with fixed orders QCD=2 QED=2
-# Explicitly constrains: exactly 2 QCD couplings (initial state), exactly 2 QED (dilepton)
-# Suppresses higher-order diagrams (e.g., with extra gluon interactions)
-
+# MadGraph5 batch script: p p > l+ l- j with the orders stated: QCD=2 QED=2.
+#
+# Why this exact process:
+#   - The stated-order half of the llj pair: exactly two strong and two
+#     electroweak couplings, which is what the default selection is claimed to
+#     choose for this final state. Holding the generate line fixed and moving
+#     only the constraint is what separates an order-semantics error from a
+#     diagram-enumeration error.
+#   - Its concrete subprocesses are the four banked llj parton rows
+#     (u u~ > e+ e- g, d d~ > e+ e- g, g u > e+ e- u, g u~ > e+ e- u~), so the
+#     group's amplitude content is claimed there, at per-diagram and per-flow
+#     level, rather than here.
+#
+# Not used for cross sections or event samples: like the default-order script it
+# carries a dynamical scale, which the scale layer refuses; pp_to_llj_fixed is
+# the same generate line with a fixed-scale run card and is the gated subject.
 generate p p > l+ l- j QCD=2 QED=2
 output pp_to_llj_qcd2_qed2 -nojpeg
 launch

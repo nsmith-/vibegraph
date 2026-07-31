@@ -1,7 +1,16 @@
-# MadGraph5 batch script: p p > b b~ with fixed order QCD=2
-# Explicitly constrains to leading-order strong production
-# Suppresses any higher-order or purely electroweak contributions
-
+# MadGraph5 batch script: p p > b b~ with the order stated: QCD=2.
+#
+# Why this exact process:
+#   - The stated-order half of the b b~ pair. A group whose default selection is
+#     already purely strong is the case where an explicit constraint should
+#     change nothing at all, which is worth asserting precisely because it is
+#     the case a selector bug would most plausibly survive: the two scripts must
+#     produce the same diagram content, and a constraint that quietly dropped or
+#     admitted a topology shows up as one count moving.
+#
+# Not used for amplitudes, cross sections or event samples, for the same reasons
+# as pp_to_bb: no banked b b~ parton row, and a dynamical-scale run card the
+# scale layer refuses.
 generate p p > b b~ QCD=2
 output pp_to_bb_qcd2 -nojpeg
 launch

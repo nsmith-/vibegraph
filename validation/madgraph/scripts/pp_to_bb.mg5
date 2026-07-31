@@ -1,6 +1,21 @@
-# MadGraph5 batch script: p p > b b~ at LO (default order)
-# Default: QCD=2 (for pair production of heavy quarks)
-
+# MadGraph5 batch script: p p > b b~ at LO (default coupling orders).
+#
+# Why this exact process:
+#   - The only purely strong group in the set. Its flavour union spans both
+#     q q~ and g g initial states, so the diagram content reaches colour
+#     structures no electroweak-core group does — the s-, t- and u-channel
+#     gluon topologies and the triple-gluon vertex feeding a massive quark line
+#     — over a proton beam rather than at one fixed flavour assignment.
+#   - Massive final-state quarks, so the group also covers the case where the
+#     final-state mass, not a cut, is what regulates the phase space.
+#
+# Not used for amplitudes: no banked b b~ parton row exists. The same colour
+# structures are pinned per-diagram and per-flow at other flavours by
+# uux_to_uux (q q~ initial state) and gg_to_ttx (g g initial state).
+#
+# Not used for cross sections or event samples: the run card takes the
+# dynamical scale, which the scale layer refuses for want of general kT
+# clustering, so both cells are blocked on that feature.
 generate p p > b b~
 output pp_to_bb -nojpeg
 launch

@@ -1,177 +1,82 @@
-# MadGraph Diagram Validation
+# MadGraph reference data
 
-Validation of vibegraph's diagram enumeration against MadGraph5_aMC@NLO reference output.
+The MadGraph5_aMC@NLO side of the validation suite: the batch scripts that
+produce the reference runs, the generators that reduce those runs to committed
+reference files, and the work area both live in.
 
-## Directory Structure
+**The per-process list lives in [`../manifest.toml`](../manifest.toml), not here.**
+One row per process: the process string, the script that builds it, which
+validation categories cover it, in which dependency layer, and why the process is
+in the set at all. Adding a process means adding a row there and a script in
+`scripts/` — this file deliberately carries no second copy of that list.
+
+## Layout
 
 ```
-validation/madgraph/
-├── scripts/           # MadGraph batch scripts (.mg5 files)
-├── build.sh          # Script to run all mg5_aMC processes
-├── extract_diagrams.py # Python script to extract diagram counts from output
-├── output/           # Generated MadGraph process directories (created by build.sh)
-└── README.md         # This file
+scripts/*.mg5             one batch script per reference run
+wrappers/*.f              Fortran shims f2py compiles against the generated code
+build.sh                  runs the scripts that have no output directory yet
+build_amplitude.sh        compiles matrix elements into f2py modules
+gen_*.py, extract_*.py    reduce the work area to the committed reference files
+assemble_bundle.sh        packs the banked outputs into the fetchable bundle
+output/                   the work area (gitignored, ~1 GB)
+  <process>/                a MadGraph process directory
+  <process>.json            diagram counts + configs.inc topologies
+  <process>_amplitude.csv   |M|² on the fixed kinematic grid
+  f2py/                     compiled matrix-element extension modules
+  bundle/                   the assembled banked-reference archive
 ```
 
-## Processes Covered
+Committed reference files, each the output of one generator:
 
-### Default Order (leading-order diagrams)
+| file | generator | consumed by |
+|---|---|---|
+| `diagrams.json` | `extract_diagrams.py` | the diagram-count gate |
+| `sigma_reference.json` | `extract_sigma.py` | the fixed-energy σ gate |
+| `amp_reference.json` | `gen_amp_reference.py` | the per-diagram AMP gate |
+| `jamp_reference.json` | `gen_jamp_reference.py` | the per-flow JAMP gate |
+| `hadronic_sigma_reference.json` | `gen_hadronic_sigma.sh` | the hadronic σ gate |
+| `dy_integrand_oracle.json` | `gen_dy_oracle.sh` | the pointwise Drell-Yan oracle |
+| `runcard_defaults.json` | `dump_runcard_defaults.py` | the run-card defaults transcription |
+| `dy13_*_card.dat` | copied verbatim into the runs | both sides of the hadronic σ gate |
 
-- **ee_to_mumu.mg5**: `e+ e- > mu+ mu-`
-  - Pure QED at tree level
-  - Reference: 1 photon-exchange diagram
+## Regenerating
 
-- **pp_to_ll.mg5**: `p p > l+ l-`
-  - Dilepton production at hadron collider
-  - Includes both QCD initial-state and QED dilepton
+One entry point, staged, over every generator here and in the sibling
+directories:
 
-- **pp_to_llj.mg5**: `p p > l+ l- j`
-  - Dilepton + jet production
-  - With one additional gluon radiation
-
-- **pp_to_bb.mg5**: `p p > b b~`
-  - Heavy quark pair production
-  - QCD-dominant process
-
-### Explicit Order Constraints
-
-- **pp_to_ll_qcd0.mg5**: `p p > l+ l- QCD=0`
-  - Pure electroweak: no strong coupling
-  - Tests order constraint filtering
-
-- **pp_to_llj_qcd2_qed2.mg5**: `p p > l+ l- j QCD=2 QED=2`
-  - Fixed coupling orders
-  - Tests order constraint enforcement
-
-- **pp_to_bb_qcd2.mg5**: `p p > b b~ QCD=2`
-  - Fixed QCD order
-  - Tests order selectivity
-
-## Usage
-
-### 1. Generate MadGraph Reference Output
-
-Requires pixi with the `madgraph` environment configured:
-
-```bash
-pixi run -e madgraph build-diagrams
+```sh
+pixi run generate-references              # deps → madgraph → refs → bundle
+pixi run generate-references refs bundle  # a subset
 ```
 
-This:
-- Runs each `.mg5` script via `mg5_aMC`
-- Creates output directories under `validation/madgraph/output/`
-- Each directory contains `SubProcesses/P*/` with diagram files
+**The work area is the cache.** A process directory that exists is never
+rebuilt, a compiled f2py module that exists is never recompiled, and the banked
+cross-section runs are not repeated once their answer is written; `VG_FORCE=1`
+overrides. The extraction steps are cheap and pure functions of the work area, so
+they always rerun — which is what makes a reference that moved show up as a diff.
 
-Expected output structure:
-```
-output/
-├── ee_to_mumu_lo/
-│   ├── proc_card.dat
-│   ├── SubProcesses/
-│   │   ├── P0_ee_mumu/
-│   │   │   ├── *.ps        (diagram PostScript files)
-│   │   │   └── ...
-│   └── ...
-├── pp_to_ll_lo/
-│   └── ...
-└── ...
-```
+Regenerating from a populated work area reproduces every committed file
+byte-for-byte, the bundle archive included.
 
-### 2. Extract Diagram Metadata
+## Using the reference data without MadGraph
 
-```bash
-pixi run -e madgraph extract-diagrams
+Everything the banked validation layer reads is either committed here or in the
+bundle `assemble_bundle.sh` builds — the event files with their banners and logs,
+the cards, each subprocess's `leshouche.inc` and `matrix1_orig.f`, the combined
+`results.dat`, and the amplitude tables. It unpacks *into* `output/`, so a
+checkout that fetched it and a machine that generated the runs present the gates
+with identical paths:
+
+```sh
+pixi run fetch-refdata      # pinned URL + SHA-256 from ../manifest.toml
+pixi run --skip-deps validate
 ```
 
-This:
-- Reads each `proc_card.dat` and counts `.ps` files in `SubProcesses/`
-- Writes `validation/madgraph/output/diagrams.json` with counts per process
-- Example output:
-  ```json
-  {
-    "ee_to_mumu_lo": {
-      "process": "e+ e- > mu+ mu-",
-      "total_diagrams": 1,
-      "diagrams_by_subprocess": {
-        "P0_ee_mumu": 1
-      }
-    },
-    "pp_to_ll_lo": {
-      "process": "p p > l+ l-",
-      "total_diagrams": 4,
-      "diagrams_by_subprocess": {
-        "P0_qq_ll": 2,
-        "P1_qq_ll": 2
-      }
-    }
-  }
-  ```
+`VIBEGRAPH_REFDATA_SOURCE=/path/to/vibegraph-refdata-1.tar.zst` takes the archive
+from a local file instead; the pinned checksum is enforced either way.
 
-### 3. Run Validation Tests
+## Coupling-order semantics
 
-With `diagrams.json` in place, run the Rust test suite:
-
-```bash
-cargo test -p vibegraph-lib --test validate_madgraph_diagrams
-```
-
-Each test:
-- Parses a process string with vibegraph
-- Generates diagrams using the SM UFO model
-- Compares count against MadGraph reference
-- Reports match/mismatch
-
-Example output:
-```
-test validate_ee_to_mumu ... ok
-test validate_pp_to_ll ... ok
-test validate_pp_to_llj ... ok
-test validate_pp_to_bb ... ok
-test validate_pp_to_ll_qcd0 ... ok
-test validate_pp_to_llj_explicit_orders ... ok
-test validate_pp_to_bb_qcd2 ... ok
-```
-
-## Order Constraint Semantics
-
-### Default Behavior
-
-When no coupling order is specified, MadGraph generates all tree-level contributions:
-
-- **`e+ e- > mu+ mu-`**: QED=2 (photon)
-- **`p p > l+ l-`**: QCD=2 (from initial quarks) + QED=2 (dilepton)
-- **`p p > b b~`**: QCD=2 (strong production)
-
-### Explicit Constraints
-
-- **`QCD=0`**: Suppress strong coupling; keep only electroweak diagrams
-- **`QCD=2 QED=2`**: Exactly 2 of each coupling (rejects higher-order combinations)
-
-The PEG parser in `vibegraph-lib/src/diagrams/parse.rs` handles these constraints;
-the selector in `vibegraph-lib/src/diagrams/selector.rs` filters diagrams accordingly.
-
-## Troubleshooting
-
-### MadGraph runs produce no diagrams
-
-- Verify MadGraph is installed: `pixi run -e madgraph mg5_aMC --version`
-- Check that `SubProcesses/P*/` directories exist in output
-- MadGraph may refuse to overwrite existing directories; delete old output and retry
-
-### `diagrams.json` not found
-
-Run `pixi run -e madgraph extract-diagrams` (which depends on `build-diagrams`).
-
-### Diagram count mismatches
-
-- Check that vibegraph's order constraint parsing matches MadGraph's interpretation
-- See `research/notes/06-process-grammar.md` for coupling order semantics
-- Verify UFO model is correctly loaded (see test for path)
-
-## Future Extensions
-
-- [ ] Add decay processes (e.g., `p p > w+ w- > l+ l- nu nu`)
-- [ ] Test NLO processes (virtual + real)
-- [ ] Cross-check against LHE event file decay chains
-- [ ] Validate color-flow assignments in event output
-- [ ] Compare running times / optimization opportunities
+`ORDERS.md` derives what MadGraph's default and explicit coupling-order
+constraints select, and which scripts pin which half of that behaviour.

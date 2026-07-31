@@ -1,7 +1,21 @@
-# MadGraph5 batch script: p p > l+ l- j at LO (default order)
-# Default: one additional QCD coupling for the extra jet
-# Tree-level: QCD=2 (from initial state quarks), QED=2 (dilepton)
-
+# MadGraph5 batch script: p p > l+ l- j at LO (default coupling orders).
+#
+# Why this exact process:
+#   - The default-order half of the llj pair. One extra QCD coupling for the
+#     jet takes the order selection past the trivial case, so this and
+#     pp_to_llj_qcd2_qed2 together pin what "default orders" means once more
+#     than one power of a coupling is in play: the two must select the same
+#     diagram content, and a change to the selector that broke that would show
+#     up as one count moving.
+#   - Its run card takes MadGraph's dynamical scale choice, which the scale
+#     layer refuses rather than approximates (a 2 -> 3 needs general kT
+#     clustering for the cluster scale). That refusal is itself asserted, so
+#     this row is the negative case of the scale gate: a scale we decline to
+#     claim, stated as such rather than left untested.
+#
+# Not used for cross sections or event samples: the refusal above blocks them.
+# pp_to_llj_fixed has the same generate line with all three scales fixed at m_Z,
+# and it is the integrals, samples and event-generation subject of the triple.
 generate p p > l+ l- j
 output pp_to_llj -nojpeg
 launch

@@ -1,7 +1,19 @@
-# MadGraph5 batch script: p p > l+ l- at LO with QCD=0
-# Pure electroweak: no strong coupling, only photon/Z exchange
-# Selects only the QED diagrams (gluon exchange suppressed)
-
+# MadGraph5 batch script: p p > l+ l- at LO with QCD=0.
+#
+# Why this exact process:
+#   - The stated-order half of the Drell-Yan pair. Forbidding the strong
+#     coupling outright must select exactly what the default order choice
+#     selects for this final state; the two scripts differing only in that
+#     constraint is what makes an order-semantics change visible as a diagram
+#     count moving on one row and not the other.
+#   - Its representative subprocess is u u~ > mu+ mu-, so this is the run whose
+#     compiled matrix element every partonic Drell-Yan amplitude check reads:
+#     the banked per-helicity table belongs to this row even though the script
+#     names a group.
+#
+# Not used for cross sections or event samples: those are the default-order
+# script's dy13 cards, which carry the run cards the hadronic gate shares with
+# vibegraph.
 generate p p > l+ l- QCD=0
 output pp_to_ll_qcd0 -nojpeg
 launch
