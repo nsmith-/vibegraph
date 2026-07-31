@@ -1574,3 +1574,242 @@ point's momenta, its `(x₁, x₂)`, its group, its concrete member (`member_lum
 the draw P2c left ready), its helicity and its colour flow are all P4's. The lab-frame
 momenta the record needs are already built per point inside `shape`; exposing them is
 the natural first step.
+
+## P3 outcome (2026-07-30) ✅ — the σ gate at `lpp = 1`
+
+Branch `proton-events`, two commits: `d35fc98` (routing + artifact schema) and
+`02e009a` (the gate). P2/P3's design stands; the corrections below are recorded
+rather than absorbed.
+
+### The routing, and a latent bug it uncovered
+
+`integrate_proton` now dispatches. The general path builds the flavour-group
+decomposition from **the proc card's own enumeration**, binds one amplitude per
+group, adapts the channel weights on the hadronic mixture, and banks one grid per
+`(group, diagram)` channel.
+
+**The bug the dispatch replaced.** The old `lpp = 1` branch called
+`generate_dy_subprocesses(model)`, which parses `generate p p > e+ e-` itself and
+**ignores the caller's proc card entirely** — the `_parsed` argument was unused. So
+`vibegraph integrate` on the llj cards would have integrated Drell–Yan and printed
+`p p > l+ l- j` over it, with no error anywhere. Nothing detected this before P3
+because nothing but Drell–Yan had ever been run at `lpp = 1`.
+
+Drell–Yan is dispatched by an **exact match with no modifiers**, not by "the general
+path failed": one process spec, no coupling constraint, no required or forbidden
+s-channel, no forbidden propagator, and the printed process `p p > e+ e-`. The
+modifier check is not decoration — `Display for ProcessSpec` drops modifiers, so
+`p p > e+ e- QED=2 QCD=0 / a` and `p p > z > e+ e-` both *print* as the Drell–Yan
+string over a different diagram set, and the bespoke integrand would have silently
+ignored the difference. Pinned in
+`only_an_unmodified_drell_yan_card_takes_the_bespoke_path`, in both directions.
+
+### Artifact schema: `fv3 → fv4`, with the `fv3` reader kept
+
+P2d's warning holds and is now the schema's stated reason: **a grid's coordinate
+count does not identify its channel space.** `ChannelGrid` gains
+
+```rust
+pub enum ChannelKey {
+    Whole,                                        // one grid over the whole map
+    Diagram { diagram: usize },                   // fixed-energy per-diagram multichannel
+    GroupDiagram { group: usize, diagram: usize },// hadronic, pooled across groups
+}
+```
+
+and `FORMAT_VERSION` goes to `4`. The *dimension* needed no new field —
+`VegasGrid::ndim()` already carries it — so what the bump adds is the identity, which
+was genuinely underivable.
+
+`read_from_path` dispatches on the version prefix: `4` decodes directly, `3` decodes
+through `artifact::v3` and upgrades, anything else is refused by name with the
+readable range in the message. The upgrade is not a guess: only two writers could
+produce an `fv3` file — the Drell–Yan integrand's single grid over the whole map, and
+the fixed-energy multichannel's grids in diagram order — so a lone channel becomes
+`Whole` and several become `Diagram { j }`, and **no `fv3` channel can upgrade to a
+hadronic key**. Model-identity fields carry over unchanged.
+
+The version-refusal test had to be rewritten rather than left alone: it wrote
+`FORMAT_VERSION - 1`, which is now a *supported* version, so it would have quietly
+become a test of the upgrade path. It now writes version 2's own shape (no `model`
+field, so every field after `process` sits one slot early — the exact payload a
+silent positional misread would consume) and asserts the refusal, with the fv3
+upgrade covered by its own test.
+
+### THE GATE — σ(pp → ℓ⁺ℓ⁻ j), fixed scale
+
+`validate_hadronic::sigma_llj_fixed_scale_vs_mg`. Reference: the banked
+`pp_to_llj_fixed` run, **σ = 422.840 ± 1.805 pb**, read out of that run's own
+`SubProcesses/results.dat` rather than copied into a committed JSON — the number
+cannot then drift from the run it came from. The run card is read from the same
+run's `Cards/run_card.dat`, so MadGraph and this crate consume the identical file.
+
+Five seeds, at `neval = 300 000 × 10` iterations after a `8 000 × 5` α-survey:
+
+| seed | σ (pb) | rel | pull |
+|---|---|---|---|
+| 20260730 | 423.059 ± 0.439 | +0.0005 | +0.12 |
+| 20260731 | 423.558 ± 0.424 | +0.0017 | +0.39 |
+| 20260732 | 422.526 ± 0.425 | −0.0007 | −0.17 |
+| 20260733 | 423.081 ± 0.411 | +0.0006 | +0.13 |
+| 20260734 | 422.051 ± 0.417 | −0.0019 | −0.43 |
+| **inverse-variance mean** | **422.850 ± 0.189** | **+0.00002** | **+0.01** |
+
+χ²/dof of the five about their mean: **1.90**. Wall clock **117 s** for the sweep,
+**118 s** for the whole `validate_hadronic` suite.
+
+### The five-seed sweep was necessary and *not sufficient* — the budget scan is the finding
+
+This is the sharpest thing P3 measured, and it is a correction to how the sweep was
+briefed.
+
+The first budget tried was `neval = 60 000`, and it **passed a single-seed check, a
+five-seed check, and the seed-scatter check** while being **1.0% low**:
+
+| `neval`/iter | 5-seed mean (pb) | rel vs MG | χ²/dof | wall |
+|---|---|---|---|---|
+| 60 000 | 418.476 ± 0.438 | **−1.03%** | 1.55 | 27 s |
+| 150 000 | 421.658 ± 0.270 | −0.28% | 0.47 | 61 s |
+| 300 000 | 422.850 ± 0.189 | +0.002% | 1.90 | 117 s |
+| 600 000 | 423.524 ± 0.133 | +0.16% | 0.37 | 229 s |
+
+At 60 000 the five seeds were **mutually consistent** (pulls −2.36, −2.11, −2.67,
+−2.33, −1.08; χ²/dof 1.55 about their own mean) and **collectively wrong**. A sweep
+detects a seed that missed a region; it cannot detect a bias every seed shares,
+because the seeds do not disagree about it. Seed spread and budget convergence are
+two axes, and only the second one moved this number.
+
+**Where the bias comes from.** `VegasGrid::adapt` puts *every* iteration into
+`combine_iterations`' `1/σ²` weighted mean, including the first ones on an unadapted
+grid. An early iteration that undersamples the peak returns both a low integral and
+a low variance, so it is weighted *up*. The steps halve as the budget doubles
+(−3.18, −1.19, −0.67 pb), the signature of an `O(1/N)` bias, so the limit is around
+`424` pb — inside MadGraph's own `±1.805` (0.43%) at every budget from 150 000 up.
+
+This is a property of the integrator, not of the hadronic integrand: the same
+combination runs the fixed-beam path. It is visible here first because the llj
+integrand has 24 pooled channels each carrying a 7-dimensional grid, so a given
+`neval` buys each channel far fewer points than a partonic 2 → 2 run does — and
+`MIN_CHANNEL_NEVAL = 512` is not a fix, it is the floor that makes the small
+channels' grids the noisiest part of the sum. **Worth filing**: discard-first-`k`
+iterations (or an unweighted final pass over the trained grids) would remove it, and
+would let this gate run at a quarter of the budget.
+
+**The bound, and why it is where it is.** `LLJ_MAX_REL = 0.005`, above MadGraph's own
+0.43% error (no agreement tighter than the reference's precision is meaningful) and
+below the 1.0% an under-converged budget produces (which is what it is there to
+catch). The whole measured budget family — 0.28%, 0.002%, 0.16% — sits inside it, so
+the bound brackets a family and not one number. The scatter bound `χ²/dof < 4` sits
+above all four measured values (1.55, 0.47, 1.90, 0.37). **No existing tolerance was
+touched.** The 300 000 budget was chosen for cost; the near-perfect 0.002% at exactly
+that budget is where the rising estimator happens to cross MadGraph's number and
+should not be read as more than the 0.2% the family supports.
+
+### What the gate proves, and what it cannot see
+
+**Proves**, on real parton distributions, a real run card and MadGraph's own number
+for the same cards: the whole hadronic chain for a process with a **coloured initial
+state, a three-body final state, a jet cut and a strong coupling** — the four things
+every Drell–Yan row is blind to. Specifically: that the six flavour groups and their
+24 members sum to MadGraph's own 24 subprocesses (`auto_dsig.f` lists exactly the
+same 16 + 8), that both beam orderings are counted once each, that the spacelike
+floor's reshaped spine leaves the estimator unbiased, that `αs` off the PDF grid at
+`μR = m_Z` is the coupling MadGraph used, and that the `(τ, y)` map's `τ_min` hint
+does not clip real phase space.
+
+**Cannot see**, and this is the whole of the σ level's blindness:
+
+- Anything σ integrates over. A per-diagram phase, a colour-flow relabelling, a
+  helicity-by-helicity error — all leave `Σ|M|²` and hence σ exactly alone. Those are
+  pinned at the amplitude level by P1's `validate_helas_mg` and `amp_diagram_oracle`
+  rows for `uux_to_epemg`, `gu_to_epemu`, `ddx_to_epemg`.
+- A map whose weight and density are both wrong by one common factor: the phase-space
+  map is compared against nothing here, only used.
+- Any *distribution*. Agreement of one number is agreement of one number; the shapes
+  are the next validation pass's content.
+- Whether `mmll = 50` hides anything. The standing `low-mll-reconciliation` entry says
+  the Drell–Yan comparison carries a few-percent discrepancy below the `Z` window, and
+  this run was banked at `mmll = 50` precisely so as not to inherit it. **The optional
+  `mmll = 0` informational row was not built** — it needs its own MadGraph rebank,
+  which is a P0-shaped session, not a line in this one.
+
+### Plan corrections
+
+1. **The five-seed sweep is a floor, not a gate.** As above: seeds agreeing with each
+   other is not seeds agreeing with the truth. Any future σ gate on a
+   many-channel/high-dimension integrand needs a **budget scan** alongside the seed
+   sweep, and the budget it settles on should be recorded with the scan that chose it.
+   `LLJ_NEVAL`'s doc comment carries the scan for exactly that reason.
+2. **The `lpp = 1` branch ignored its proc card.** Recorded above; it was a real
+   latent bug, not a design choice, and the dispatch is what closes it.
+3. **`validate_hadronic` needed a pixi task and an optimised profile.** It had neither
+   — its module doc named a bare `cargo test`, which for the llj sweep means *hours*
+   unoptimised against 2 minutes under `--profile profiling`.
+   `pixi run -e madgraph validate-hadronic` now exists, depending on `fetch-pdf`,
+   `generate-hadronic-sigma` and `build-diagrams`.
+4. **The banked llj σ is read from the run, not banked into JSON.**
+   `hadronic_sigma_reference.json` is regenerated wholesale by
+   `gen_hadronic_sigma.sh`, which does not know about llj; an llj entry added to it
+   would be silently dropped on the next Drell–Yan rebank. `results.dat` is the same
+   pair of fields that script itself parses, so nothing is lost by reading it directly
+   and the number cannot desynchronise from its run.
+5. **P2d's operational facts all held.** `set_channel_alphas` was not needed (this
+   session surveys, it does not replay), and every other item —`PdfSet` not
+   `PdfMember`, the 12 288-evaluation floor, `αs` from the grid, the 7.5% of `τ` draws
+   returning zero — behaved exactly as recorded. The dynamical llj card's refusal
+   naming `kt-clustering` stays asserted in
+   `a_dynamical_scale_is_refused_where_the_fixed_one_resolves`.
+
+### Gate results
+
+`cargo build` clean. `cargo test --workspace` **520 lib passed / 0 failed** (519 at
+P2d's close + the `fv3` upgrade test; the version-refusal test was rewritten, not
+added) plus the CLI suites — the binary's own **9** (8 + the dispatch test),
+`cli_fixed_energy` 2, `cli_generate` 3.
+
+| gate | result |
+|---|---|
+| `validate_hadronic` | **5 passed** — llj **422.850 ± 0.189** vs MG **422.840 ± 1.805** (0.01 combined σ, rel 2e-5) |
+| ↳ Drell–Yan anchor | σ default **934.416 ± 0.870**, mmll window **644.855 ± 0.570**, pointwise **1.15e-14** — **identical to P2b, P2c and P2d** |
+| ↳ DY general-path info row | 933.706 ± 1.843, rel 0.0006 — unmoved |
+| `cli_integrate` (extended) | 3 passed — CLI σ **934.415866 ± 0.869944** and **644.855362 ± 0.569603**, bit-for-bit as banked |
+| `validate-helas-mg` | 18 passed |
+| `validate-amp-diagram` | 7 passed |
+| `validate-color-cf` | 30 passed |
+| `validate-color-flow-tags` | 30 passed |
+| `validate-color-jamp` | 3 passed |
+| `validate-diagrams` | 16 passed |
+| `validate-alphas` | 5 passed |
+| `validate-scales` | 7 passed |
+| `validate-sigma` | 11 rows asserted, unchanged |
+| `validate-lhef` | 3 passed |
+| `validate-unweighting` | 1 passed |
+| `validate-scale-couplings` | 1 passed |
+| `validate-pdf-grid` | still not runnable here (`validation/pdf/oracle*.json` gitignored and absent, as P2b–P2d recorded) |
+
+### What P4 must know
+
+1. **The artifact is ready and `generate` is not.** An `fv4` hadronic artifact carries
+   `ChannelKey::GroupDiagram { group, diagram }` per grid, in the integrand's channel
+   order — which is `channel_ids()`' order, group-major. `generate` must rebuild the
+   decomposition from the same proc card and check that the derived `channel_ids()`
+   match the banked keys **pairwise**, not just in count: two orderings with the same
+   multiset of keys would load the wrong grid onto each channel with no other symptom.
+2. **Replay must go through `set_channel_alphas`**, still. P3 did not exercise it (it
+   surveys); P4 is the first consumer and the first place a re-survey would silently
+   produce different weights.
+3. **The event side is still unbuilt**, exactly as P2d left it —
+   `event_in_channel` / `select_event` have no `ProtonIntegrand` counterpart, and the
+   lab-frame momenta `shape` already builds per point are the natural first thing to
+   expose. The concrete-flavour draw (`FlavorGroup::member_luminosity`) is ready and
+   unused.
+4. **`generate` refuses `lpp != 0` by name** (`generate.rs`, `rc.beam_mode() !=
+   BeamMode::FixedEnergy`); that refusal is what P4 replaces.
+5. **The convergence bias reaches P4 too.** `generate`'s accept/reject runs over the
+   *frozen* banked grids, so it inherits whatever those grids were trained to — but
+   `w_max` scanning and the unweighting efficiency will both be set by the same
+   under-sampled small channels. Budget the banked integration accordingly, and do not
+   assume a `neval` that gave a good σ gives a good `w_max`.
+6. **`ICOLUP` for coloured incoming legs is genuinely new writer output** and the
+   `leshouche.inc` of `P1_qq_llg` and `P1_gq_llq` in the banked run is the oracle,
+   per the P4 plan. Nothing in P3 touched colour.
