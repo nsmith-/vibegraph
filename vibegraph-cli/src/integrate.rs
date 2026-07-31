@@ -39,9 +39,10 @@ use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::vegas::VegasResult;
 
-/// Default LHAPDF set — the one wired through the hadronic pipeline (MG5's LO
-/// default `nn23lo1`, lhaid 247000).
-pub(crate) const DEFAULT_PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
+use crate::assets;
+use crate::network::NetworkPolicy;
+use vibegraph::cache::pinned::DEFAULT_PDF_SET;
+
 /// PDF member index (central value; error members are not consumed at LO).
 pub(crate) const PDF_MEMBER: u32 = 0;
 /// Sentinel `pdf_set` recorded in the artifact for a no-PDF (fixed-energy) run.
@@ -90,9 +91,16 @@ pub struct IntegrateArgs {
     pub pdf_set: String,
 
     /// Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then
+    /// the `~/.vibegraph` cache (offering to download the set if absent), then
     /// `validation/pdf` under the current directory.
     #[arg(long)]
     pub pdf_dir: Option<PathBuf>,
+
+    /// Directory containing the proc card's UFO model directory; defaults to
+    /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
+    /// directory. Unused for the built-in Standard Model.
+    #[arg(long)]
+    pub ufo_dir: Option<PathBuf>,
 
     /// VEGAS evaluations per adaptation iteration.
     #[arg(long, default_value_t = 120_000)]
@@ -128,26 +136,17 @@ fn err(msg: impl Into<String>) -> IntegrateError {
     IntegrateError::Message(msg.into())
 }
 
-/// Resolve the directory holding `<pdf_set>/<pdf_set>.info`.
-pub(crate) fn resolve_pdf_dir(override_dir: Option<&PathBuf>) -> PathBuf {
-    if let Some(dir) = override_dir {
-        return dir.clone();
-    }
-    if let Some(env_dir) = std::env::var_os("VIBEGRAPH_PDF_DIR") {
-        return PathBuf::from(env_dir);
-    }
-    PathBuf::from("validation/pdf")
-}
-
-/// Load a PDF set by name from the resolved data directory, with the message a
-/// caller who has not fetched it needs.
-pub(crate) fn load_pdf_set(dir: &PathBuf, name: &str) -> Result<PdfSet, IntegrateError> {
-    let set_dir = dir.join(name);
+/// Locate and load a PDF set by name, which may mean asking to download it.
+pub(crate) fn load_pdf_set(
+    name: &str,
+    pdf_dir: Option<&PathBuf>,
+    network: NetworkPolicy,
+) -> Result<PdfSet, IntegrateError> {
+    let set_dir =
+        assets::resolve_pdf_set_dir(name, pdf_dir.map(|p| p.as_path()), network).map_err(err)?;
     PdfSet::load(&set_dir, name).map_err(|e| {
         err(format!(
-            "cannot load PDF set {name} from {}: {e}\n\
-             fetch it with `pixi run -e madgraph fetch-pdf` \
-             or point --pdf-dir / $VIBEGRAPH_PDF_DIR at the data directory",
+            "cannot load PDF set {name} from {}: {e}",
             set_dir.display()
         ))
     })
@@ -197,7 +196,7 @@ fn bank_channel(key: ChannelKey, c: &ChannelIntegration) -> ChannelGrid {
     }
 }
 
-pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
+pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), IntegrateError> {
     // Refuse to clobber an existing artifact before spending the integration.
     let out_path = args.out.join(GRID_FILENAME);
     if !args.force && out_path.exists() {
@@ -213,7 +212,11 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
     let process = process_string(&parsed)?;
 
     let config = GlobalConfig {
-        ufo_search_path: PathBuf::from("."),
+        ufo_search_path: assets::resolve_ufo_search_path(
+            parsed.model.as_ref(),
+            args.ufo_dir.as_deref(),
+        )
+        .map_err(err)?,
         restrict_path_override: None,
         run_card_path: args.run_card.clone(),
     };
@@ -227,7 +230,9 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
     let evaluated = EvaluatedModel::from_model(model.clone());
 
     let output = match rc.beam_mode() {
-        BeamMode::Proton => integrate_proton(args, &parsed, &model, &evaluated, &rc, process)?,
+        BeamMode::Proton => {
+            integrate_proton(args, &parsed, &model, &evaluated, &rc, process, network)?
+        }
         BeamMode::FixedEnergy => {
             integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process)?
         }
@@ -312,8 +317,9 @@ fn integrate_proton(
     evaluated: &EvaluatedModel,
     rc: &RunCard,
     process: String,
+    network: NetworkPolicy,
 ) -> Result<RunOutput, IntegrateError> {
-    let set = load_pdf_set(&resolve_pdf_dir(args.pdf_dir.as_ref()), &args.pdf_set)?;
+    let set = load_pdf_set(&args.pdf_set, args.pdf_dir.as_ref(), network)?;
     let pdf = set
         .member(PDF_MEMBER)
         .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;

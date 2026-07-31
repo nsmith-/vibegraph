@@ -1,4 +1,5 @@
 pub mod artifact;
+pub mod cache;
 pub mod config;
 pub mod coupling;
 pub mod cuts;

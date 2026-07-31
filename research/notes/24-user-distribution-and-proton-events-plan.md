@@ -2083,3 +2083,903 @@ MadGraph's own printing budget for the field.
 6. **Deferred, unchanged**: Pythia consumption of the emitted `.lhe`, and
    distribution-level event-sample-vs-MadGraph statistics. Both now have two
    processes waiting.
+---
+
+## U1 outcome (2026-07-30) ✅
+
+Landed on `user-dist/u1` (worktree `vibegraph-u1`, off `main`): two workflow
+files, one build script, two small edits.
+
+**Files:**
+
+- `.github/workflows/release.yml` — the deliverable. Matrix job (macOS arm64,
+  macOS x86_64, Linux x86_64-musl) builds, smoke-tests, and packages a
+  `.tar.gz` per target on `push: tags: v*.*.*` (plus `workflow_dispatch` for a
+  manual dry run against an arbitrary ref); a second `publish` job, gated on
+  the tag push, downloads all three artifacts, writes a `SHA256SUMS`, and
+  calls `gh release create` with `--generate-notes`.
+- `.github/workflows/ci.yml` — the optional PR workflow, judged cheap enough to
+  ride along (measured locally: ~2 min for the full default `cargo test`
+  suite, see below). One job: `cargo build --locked --workspace` +
+  `cargo test --locked --workspace` on push to `main` and on PRs, with
+  `actions/cache` over `~/.cargo` + `target` keyed on `Cargo.lock`.
+- `vibegraph-cli/build.rs` (new) — runs `git describe --tags --always
+  --dirty=-dirty`, falling back to `CARGO_PKG_VERSION` when git is unavailable
+  (no `.git`, or no `git` binary); emits `VIBEGRAPH_VERSION` via
+  `cargo:rustc-env`. Emits `cargo:rerun-if-changed` on the git common dir's
+  `HEAD`/`refs` when one exists, so a local rebuild picks up a moved tag
+  without touching a tracked file — best-effort, skipped cleanly outside a
+  checkout.
+- `vibegraph-cli/Cargo.toml` — `build = "build.rs"`.
+- `vibegraph-cli/src/main.rs` — `#[command(version = env!("VIBEGRAPH_VERSION"))]`
+  in place of the bare `version` flag (which would have reported
+  `CARGO_PKG_VERSION` unconditionally).
+
+**Linux target decision: musl, not a glibc floor.** The only C dependency
+anywhere in `Cargo.lock` is `zstd-sys` (checked: no `openssl`, `native-tls`,
+or other system-library build-dependency in the lock file), and it links its
+*bundled* zstd source via `cc`, not a system `libzstd` — `pkg-config` appears
+only as an optional probe `zstd-sys`'s build script tries first. That means
+`x86_64-unknown-linux-musl` costs nothing beyond `musl-tools` (for
+`musl-gcc`) on the build runner, and buys a single fully static binary with no
+"which glibc does this distro ship" support matrix — the better fit for "a
+user with no dev toolchain." A glibc floor would have needed either an old
+enough runner or a manylinux-style container to set the floor, for no
+offsetting benefit here.
+
+**Deviation from the design note: no Rosetta.** The note anticipated "macOS
+x86_64 via Rosetta or CI runner" for the smoke test. GitHub-hosted
+`macos-13` is still real Intel hardware (`macos-14`/`macos-latest` moved to
+Apple Silicon), so the matrix builds `x86_64-apple-darwin` natively on
+`macos-13` and `aarch64-apple-darwin` natively on `macos-14` — both are
+native builds and native smoke-test runs, no cross-compilation or Rosetta
+involved on either leg. Pinned to the explicit `macos-13`/`macos-14` labels
+rather than `macos-latest`, since that alias's target architecture is exactly
+the kind of thing that has moved before and would silently change what "macOS
+x86_64" means here.
+
+**Verified locally (real output, not claimed):**
+
+- `cargo build --release --locked -p vibegraph` on this host (aarch64-apple-darwin) — succeeds, ~22s warm / ~1.4s incremental.
+- `cargo build --locked --workspace` and `cargo test --locked --workspace` (no
+  `--features extended-validation`) both pass with no network and no MG data:
+  489 lib tests + 8 CLI tests, `finished in 54.19s` (lib) / a few more seconds
+  for the CLI crate, ~2 min wall total. Confirms the repo's existing
+  feature-gating (`required-features = ["extended-validation"]` in the two
+  `Cargo.toml`s, plus internal `#[cfg(feature = "extended-validation")]` on
+  the rest, plus the `harness = false` MG-diagram trials that print a hint and
+  exit 0 with zero trials when `validation/madgraph/output/` doesn't exist)
+  already makes a bare `cargo test` CI-safe — nothing extra needed in
+  `ci.yml`.
+- `--version`, in-git, no tag: `vibegraph 246ae4e-dirty` (matches
+  `git describe --tags --always --dirty=-dirty` on this checkout, which has no
+  tags yet).
+- `--version`, in-git, with a local test tag: created `v0.1.0-test-u1`
+  (unpushed, deleted immediately after), rebuilt, got
+  `vibegraph v0.1.0-test-u1-dirty`; deleted the tag. Confirms the tag flows
+  through end to end.
+- `--version`, non-git build (the fallback path): copied every `git
+  ls-files`-tracked file (i.e. exactly what a GitHub source-tarball download
+  contains) into a directory with no `.git` anywhere above it, confirmed
+  `git rev-parse --show-toplevel` fails there, ran
+  `cargo build --release --locked -p vibegraph`: succeeds, and
+  `--version` reports exactly `vibegraph 0.1.0` — the clean
+  `CARGO_PKG_VERSION` fallback, not a build failure or a stale/wrong string.
+- Partonic `integrate` smoke, with the exact command the workflow runs
+  (`e+ e- > t t~` at `ebeam = 250`, `--neval 5000 --niter 2`, no PDF, no
+  network — the SM model is `include_bytes!`-compiled into the binary): exits
+  0 in 0.061s wall, `σ = 0.552256 ± 0.001928 pb`, writes `grid.bin.zst`.
+
+**Not verified (needs a real CI run — outward-facing, left to the user):**
+whether `macos-13`/`macos-14`/`ubuntu-latest` images actually resolve as
+expected, whether `musl-tools` installs cleanly and `musl-gcc` is what `cc-rs`
+picks up on a fresh Ubuntu runner, the `actions/cache` hit/miss behavior, and
+the `gh release create` / `softprops`-free asset upload path (no third-party
+release action used — plain `gh` CLI, preinstalled and pre-authenticated on
+GitHub-hosted runners).
+
+**Exact commands to cut a test release** (for the user to run deliberately —
+this session did not push anything):
+
+```bash
+git checkout main   # or wherever release.yml has landed
+git tag v0.1.0-test1
+git push origin v0.1.0-test1
+# … watch the Actions tab; the `publish` job needs `build` green on all 3 legs.
+# To delete a bad test release+tag afterward:
+gh release delete v0.1.0-test1 --yes
+git push origin :refs/tags/v0.1.0-test1
+git tag -d v0.1.0-test1
+```
+
+A dry run of just the matrix (no release published, since `publish` requires
+a tag ref) can also be triggered without tagging anything, via the Actions tab
+→ `release` → "Run workflow" (the `workflow_dispatch` trigger), against any
+branch.
+
+**Follow-up (2026-07-30): does `ci.yml` actually pass on a fresh runner's
+checkout?** The first pass of this session ran `cargo test` inside the
+worktree, which had untracked MG `.so` probes COW-cloned in and sat next to a
+main checkout with its own generated bank data — neither is what a GitHub
+runner sees (`git ls-files` content only, no submodules initialized). Checked
+by building a tree from `git ls-files -z` alone (same recipe as the
+non-git `--version` fallback test above), confirming it has no `.git` above
+it, and running the exact `ci.yml` commands there:
+
+```
+$ git -C vibegraph-ci-sim rev-parse --show-toplevel
+fatal: not a git repository (or any of the parent directories): .git
+$ git -C vibegraph-ci-sim submodule status   # not run — no .git; equivalent: nothing initialized
+$ ls vibegraph-ci-sim/validation/madgraph/output   # does not exist (gitignored, MG-generated)
+$ cargo test --locked --workspace   # inside vibegraph-ci-sim
+...
+test result: ok. 489 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 50.30s
+...
+test result: ok. 7 passed; 0 failed; 0 ignored...   (color_cf.rs)
+test result: ok. 4 passed; 0 failed; 0 ignored...   (diagram_channel.rs)
+test result: ok. 10 passed; 0 failed; 1 ignored...  (diagrams.rs)
+test result: ok. 1 passed; 0 failed; 0 ignored...   (rambo_oracle.rs)
+test result: ok. 4 passed; 0 failed; 1 ignored...   (ufo.rs)
+test result: ok. 2 passed; 0 failed; 0 ignored...   (validate_alphas.rs)
+test result: ok. 0 passed; 0 failed; 0 ignored...   (validate_hadronic.rs — extended-validation-gated)
+test result: ok. 1 passed; 0 failed; 0 ignored...   (validate_helas.rs)
+test result: ok. 0 passed; 0 failed; 0 ignored...   (validate_pdf_grid.rs — gated)
+test result: ok. 2 passed; 0 failed; 0 ignored...   (validate_scales.rs)
+test result: ok. 0 passed; 0 failed; 0 ignored...   (validate_vegas.rs — gated)
++ vibegraph-cli: 8 unittests + 2 (cli_fixed_energy) + 3 (cli_generate), all ok
+```
+
+Identical pass/fail counts to the earlier (COW-cloned) worktree run, so nothing
+was quietly relying on the leaked local data. Two independent reasons, not
+one: (1) the MG-heavy oracle tests (`color_cf_oracle`, `color_flow_tags_oracle`,
+`color_jamp_oracle`, `validate_helas_mg`, `validate_madgraph_diagrams`,
+`validate_sigma`, `validate_scale_couplings`, `validate_unweighting`,
+`validate_lhef`) all carry `required-features = ["extended-validation"]` in
+one of the two `Cargo.toml`s (my first pass mis-read a truncated `grep -A2`
+and thought five of these were ungated — they aren't; re-read the full file);
+(2) a handful of default-suite tests reach for the uninitialized
+`research/refs/mg5amcnlo` submodule or `validation/madgraph/output` and
+soft-skip with an `eprintln!` + early return when the path doesn't exist
+(`ufo::mod::tests::test_load_mssm`/`test_load_loop_sm`,
+`ufo::sm::tests::interned_default_matches_submodule` + `_exactly`,
+`helas::eval::rooting_soundness::root_override_hook_is_transparent` via its
+`read_dir`-absent-returns-empty `csv_index()`) — these report "ok" on CI
+having made zero real assertions, a pre-existing and already-documented
+pattern (`ufo/sm.rs`'s own doc comment: "a bare `cargo test` skips it when the
+submodule isn't checked out"), not something this session introduced or needs
+to fix.
+
+`ci.yml` itself needed no logic change — `cargo test --locked --workspace`
+was already honest — but its comment was rewritten to name both mechanisms
+and list the soft-skipping tests explicitly, so a future reader isn't
+surprised that CI green on those particular tests means "ran with zero
+assertions," not "verified." No PDF/network/submodule step was added, since
+none of the default suite needs one.
+
+Amended on `user-dist/u1` after the original U1 commit, same session.
+
+**Follow-up (2026-07-30): third-party notice for the interned MG5 SM model.**
+`vibegraph-lib/src/ufo/sm_assets/` bakes MadGraph5_aMC@NLO's `models/sm` into
+every binary via `include_str!`/`include_bytes!`
+(`vibegraph-lib/src/ufo/sm.rs`): the nine `restrict_*.dat` cards verbatim,
+plus `sm_parsed.bin.zst` — a serialized parse of the rest of `models/sm`
+(`particles.py`, `parameters.py`, `vertices.py`, `lorentz.py`, `couplings.py`,
+and the other `.py` sources `regenerate` reads), produced by the `gen_sm_blob`
+dev binary. MG5's license (an NCSA-adapted Open Source License, `LICENSE` at
+the root of the `research/refs/mg5amcnlo` submodule, Copyright (c) 2009, 2013
+the MadTeam) grants redistribution but clause 2 conditions redistribution *in
+binary form* on reproducing the copyright notice, the conditions, and the
+disclaimer alongside the distribution. The repo had no `LICENSE`, `NOTICE`,
+or MadTeam attribution anywhere outside the submodule, so the first tagged
+release would have shipped that material without the required notice.
+
+Added `THIRD-PARTY-NOTICES` at the repo root: states plainly what is
+redistributed (the nine restrict cards verbatim, `sm_parsed.bin.zst` as a
+derivative of the rest of `models/sm`), names the source
+(`https://github.com/mg5amcnlo/mg5amcnlo`, `models/sm`, pinned at the commit
+the interned assets were last regenerated from —
+`b7687064b9a013317ca164aa1395bc9c0e39ae1e`, with a note to update that
+pointer if the assets are regenerated from a newer submodule checkout), and
+reproduces the license
+text. The license text was fetched directly from
+`raw.githubusercontent.com/mg5amcnlo/mg5amcnlo/<that commit>/LICENSE` (the
+submodule is uninitialized in this worktree, so the actual file on disk
+wasn't readable locally; the pinned-commit raw fetch is the same bytes git
+would have checked out) and diffed byte-for-byte against what's embedded —
+identical except for the raw fetch's missing trailing newline, which is not
+part of the license text. `release.yml`'s `package` step now copies
+`THIRD-PARTY-NOTICES` into every platform tarball alongside the binary
+(comment there explains why); verified locally by running that exact
+packaging step against a real `cargo build --release` binary:
+
+```
+$ tar tzvf dist/vibegraph-local-verify.tar.gz
+drwxr-xr-x  0 ncsmith admin       0 ... vibegraph-local-verify/
+-rw-r--r--  0 ncsmith admin    4417 ... vibegraph-local-verify/THIRD-PARTY-NOTICES
+-rwxr-xr-x  0 ncsmith admin 6790416 ... vibegraph-local-verify/vibegraph
+$ tar xzf ... && diff THIRD-PARTY-NOTICES <extracted copy>   # byte-identical
+$ ./extracted/vibegraph --version
+vibegraph 246ae4e-dirty
+```
+
+**Whether anything else shipped needs the same treatment**, checked and not
+guessed at:
+
+- `vibegraph --version`/`--help`: the license's clause 2 only requires the
+  notice accompany "the documentation or other materials provided with the
+  distribution" — it does not require runtime display. `THIRD-PARTY-NOTICES`
+  travelling in the tarball satisfies the clause as written; no CLI change
+  made. (A `--help` pointer to the file would be harmless but is a product
+  decision, not a license obligation — left to the user.)
+- `assets/badger.png`: no attribution, source, or generation info anywhere in
+  the repo (checked the file, its one commit's log message, README, AGENTS.md,
+  TODO.md) — its origin cannot be established from the repo, so nothing is
+  claimed about it one way or the other. It is not compiled into the binary
+  or touched by `release.yml` regardless (it exists only for GitHub's README
+  rendering), so it carries no binary-redistribution obligation even if it
+  did have a third-party origin.
+- `validation/madgraph/dy13_*.dat` run/proc/param cards: header comments are
+  vibegraph-authored ("Shared verbatim by the MadGraph reference generation
+  and by vibegraph's integrand..."), not copied MG5 templates, and in any
+  case `validation/` is never packaged by `release.yml` — no binary-form
+  obligation here either.
+- One fixture *is* an actual MG5-generated file kept verbatim in source form:
+  `vibegraph-lib/tests/data/run_card_dy.dat`'s header literally reads
+  "MadGraph5_aMC@NLO / run_card.dat MadEvent". It is `#[cfg(test)]`-only
+  (`vibegraph-lib/src/runcard.rs:754`), so it never reaches a compiled
+  binary and sits outside the scope of this session's binary-redistribution
+  fix — but it is a source-form copy of MG5 output living in the git history
+  without any notice pointing back to MG5, which arguably falls under the
+  license's clause 1 (source-form redistributions must retain the notice).
+  Flagging it rather than acting on it: extending `THIRD-PARTY-NOTICES` (or a
+  separate source-tree notice) to cover source-form fixtures is a broader
+  question than "what ships in the release tarball," and is the user's call.
+
+Files: `THIRD-PARTY-NOTICES` (new), `.github/workflows/release.yml` (package
+step). No `Cargo.toml` `license` field added, no vibegraph-own `LICENSE`
+added — out of scope per instruction, left to the user.
+---
+
+## U2 outcome
+
+Branch `user-dist/u2` (worktree `vibegraph-u2`), branched off `user-dist/u3`
+so the pin layer sits directly on U3's resolution/store code.
+
+### License finding — **NOT SETTLED**, and this is a plan correction
+
+The plan asserted "NNPDF sets are CC-BY-4.0; verify for this set
+specifically". **Verification failed to confirm that, and turned up no
+redistribution grant of any kind for `NNPDF23_lo_as_0130_qed`.** Sources
+checked, each an authoritative distribution point rather than a summary:
+
+| Source | What it says about redistribution |
+|---|---|
+| The set's own archive (`NNPDF23_lo_as_0130_qed.tar.gz`, fetched from the LHAPDF data server) | Contains exactly 101 `.dat` members + 1 `.info` file. **No `LICENSE`, no `COPYING`, no copyright notice, no terms file.** |
+| The set's `.info` metadata | Fields are `SetDesc`, `SetIndex`, `Authors`, `Reference` (empty), plus physics parameters. **The LHAPDF6 `.info` format carries no license field at all.** |
+| `lhapdf.org` front page and `lhapdf.org/pdfsets.html` (the set index) | No terms of use, no redistribution statement, no ownership statement for the data. Only a request to cite the LHAPDF6 paper. |
+| `gitlab.com/hepcedar/lhapdf` `COPYING` | Plain GPLv3, **covering the LHAPDF source code**. The text is the unmodified GPLv3 template with no clause addressing the PDF grid files the tool downloads. LHAPDF's code license does not propagate to third-party data it distributes. |
+| `nnpdf.mi.infn.it/nnpdf2-3qed/` (NNPDF's own NNPDF2.3QED distribution page) | Download links and install instructions only. **No license, copyright, or terms statement.** |
+| `nnpdf.mi.infn.it/for-users/unpolarized-pdf-sets/` | Same: set listings and paper links, no legal terms. |
+| arXiv:1308.0598, "Parton distributions with QED corrections" (Ball et al.) — the set's reference publication | Submitted under the **arXiv non-exclusive distribution license**, *not* CC-BY. And in any case this licenses the paper, not the grids. |
+
+Two things are worth separating. NNPDF's *code* (the fitting framework,
+`github.com/NNPDF/nnpdf`) is GPLv3, and NNPDF's *recent* publications are
+often CC-BY — both are true and both are almost certainly where the
+plan's "NNPDF sets are CC-BY-4.0" belief came from. Neither covers a 2014
+grid file. For this specific set the honest finding is that **no explicit
+license was ever attached to the data**, so there is no affirmative
+permission to redistribute it. "Freely downloadable" is not a license.
+
+Per the session's standing instruction — *if the terms are ambiguous or
+cannot be established from an authoritative source, choose fetch-at-first-use,
+not embedding* — this settles the mechanism: **fetch, do not redistribute.**
+Note that embedding member 0 alone would have been a *partial* redistribution
+of the set, which is if anything more license-sensitive than shipping it
+whole, not less.
+
+Attribution text that would need to ship *if* redistribution were ever
+established (and which is worth carrying anyway, since citation is the one
+thing every source above does ask for):
+
+> Parton distributions: NNPDF2.3 (`NNPDF23_lo_as_0130_qed`, LHAPDF ID
+> 247000), NNPDF Collaboration — R. D. Ball, V. Bertone, S. Carrazza,
+> L. Del Debbio, S. Forte, A. Guffanti, N. P. Hartland, J. Rojo,
+> "Parton distributions with QED corrections", Nucl. Phys. B877 (2013) 290,
+> arXiv:1308.0598. Delivered via LHAPDF6 — A. Buckley et al.,
+> Eur. Phys. J. C75 (2015) 132, arXiv:1412.7420.
+
+**Confidence.** High that no license grant is *published* at any of the
+distribution points above — that is a direct negative observation, not an
+inference. Not a legal opinion on whether the data is copyrightable at all
+(numerical tables may well not be, in some jurisdictions); the point is that
+the project cannot demonstrate permission, so it does not act as if it has
+it. **The license question is left open, deliberately.** Anyone who later
+obtains an explicit grant from the NNPDF collaboration can revisit the
+embed decision; the size numbers below say embedding would otherwise be
+comfortable.
+
+### Measured sizes
+
+Measured on the archive actually fetched from
+`https://lhapdfsets.web.cern.ch/current/NNPDF23_lo_as_0130_qed.tar.gz`
+on 2026-07-30:
+
+| Quantity | Bytes | Human |
+|---|---|---|
+| Full archive (`.tar.gz`) | 27,625,668 | 27.6 MB |
+| Full set extracted (101 members + `.info`) | ~106,000,000 | 101 MB |
+| Member 0 (`..._0000.dat`) raw | 1,052,028 | 1.05 MB |
+| `.info` raw | 2,138 | 2.1 kB |
+| Member 0 + `.info` as `.tar.gz` | 276,628 | 277 kB |
+| Member 0 alone, `gzip -9` | 268,875 | 269 kB |
+| Member 0 alone, `zstd -19` | 211,046 | 211 kB |
+
+Archive SHA-256:
+`60d3c1df1c31e5840f91f4217163ae30a256b9291a5adc894882e86607ef5d63`.
+
+Only member 0 is ever consumed (`PDF_MEMBER = 0`; error replicas are not used
+at LO), so the embeddable unit is 277 kB `.tar.gz` / 211 kB zstd, not 27.6 MB.
+
+### Decision: fetch at first use
+
+**Threshold applied: ~1 MB of added release-binary weight.** Rationale: the
+current stripped binary is a few MB, so ~200–300 kB is a <10% increase and
+invisible on a download — whereas the full 27.6 MB archive is a 5–10×
+blow-up and plainly disqualifying. On size alone, **211–277 kB passes
+comfortably and the decision would have been to embed member 0.**
+
+The size test passed; the **license test is what forced fetch-at-first-use**.
+Recording that explicitly because it is the kind of thing that gets
+misremembered later as "the set was too big to embed" — it was not.
+
+### Where the pin lives
+
+`vibegraph-lib/src/cache/pinned.rs` — a compiled-in `PINNED_PDF_SETS` table
+(`name`, `url`, `sha256`, `archive_bytes`), not a config file, so a user
+cannot silently drift onto different data than the build was validated
+against. Wired to U3's `Fetch` seam without changing its contract.
+
+### What landed
+
+`vibegraph-lib/src/cache/pinned.rs` (new, library):
+
+- `PINNED_PDF_SETS: &[PinnedPdfSet]` — `{ name, url, sha256, archive_bytes }`,
+  currently one entry, plus `DEFAULT_PDF_SET` (moved here from the CLI, which
+  previously held its own copy of the name).
+- `VerifiedFetch<'a>` — a `Fetch` that wraps another `Fetch` and rejects bytes
+  that miss an expected SHA-256. **Verification interposes at the seam rather
+  than checking after the fact**, so `store::cache_pdf_set` never sees bad
+  bytes and U3's "a failed fetch writes nothing" guarantee extends unchanged to
+  a corrupted or substituted download. It records the mismatch so the caller
+  can tell "the download was wrong" (a tamper signal) from "the download
+  failed" (a network signal) after the error has flattened into
+  `StoreError::Fetch`.
+- `ensure_pdf_set(cache_root, name, &dyn Fetch)` → `Ensured { dir, checksum,
+  fetched }`, and `ensure_pdf_set_pinned(...)` taking an explicit pin so tests
+  can drive synthetic pins. An entry whose `.vibegraph-checksum` sidecar is
+  absent or different is treated as stale and refetched — that is what makes
+  the compiled-in pin authoritative rather than advisory.
+
+`vibegraph-cli/src/fetch.rs` (new): `HttpFetch`, a `ureq` implementation of
+`Fetch`, deliberately in the CLI crate so `vibegraph-lib` acquires no HTTP or
+TLS stack and keeps the "no network I/O in this module" property U3 established.
+
+`vibegraph-cli/src/integrate.rs`: `resolve_pdf_dir`'s hand-rolled three-step
+lookup is replaced by `cache::resolve::locate_from_env`, so `integrate` now
+walks the full order and falls through to a download. Two environment hooks
+were added:
+
+- `$VIBEGRAPH_HOME` — cache-root override. U3 left `cache_root` an explicit
+  parameter precisely as an injection point; this is the CLI exposing it, and
+  it is what lets tests exercise the cache without touching a real `~/.vibegraph`.
+- `$VIBEGRAPH_NO_NETWORK` — any value swaps `HttpFetch` for U3's
+  `RefusingFetch`, and a missing set becomes a refusal naming the URL, size,
+  and checksum it *would* have fetched.
+
+**The pin binds only on the cache step.** A set reached via `--pdf-dir`,
+`$VIBEGRAPH_PDF_DIR`, or the dev fallback is used as found and never
+checksum-checked: those are data the caller is deliberately pointing at, and
+that is also what keeps sets this build has no pin for usable at all. The cache
+step is the only one that decides on the user's behalf what a bare set name
+means, so it is the only one that needs pinning.
+
+### Verified
+
+- **Acceptance, the real thing**: from an empty working directory (no
+  `validation/pdf` reachable) with an empty cache root and no `--pdf-dir`, the
+  binary downloaded the set, verified it against the pin, published it, and
+  integrated: `σ = 907.955368 ± 176.640435 pb` at a deliberately tiny
+  `--neval 2000 --niter 2`. A second run took 0.19 s with no download — cache
+  hit. The published sidecar contains exactly the compiled-in SHA-256.
+- **Cross-check worth recording**: that σ is *bit-identical* to the σ from a
+  run served out of a pre-populated cache entry built from the dev checkout's
+  member 0. Two independent provenances for the grid data agreeing to the last
+  digit is decent evidence the download/extract path delivers the same bytes
+  LHAPDF's own tarball did.
+- **No regression on the enforced gates**: `cli_integrate` (DY σ vs the banked
+  MG H7 reference) 3/3 pass, and `validate_hadronic` 3/3 pass — both reach the
+  PDF set through `--pdf-dir`, the path this session rerouted.
+- Full default suite green (the repo's pre-commit hook runs `cargo fmt --check`
+  + `cargo test` on every commit, so all three commits are gated).
+- `cargo clippy` clean on every file this session added or touched. The
+  pre-existing `deny(clippy::approx_constant)` failure in `coupling/alphas.rs:210`
+  that U3 recorded still blocks a whole-workspace clippy run; not touched.
+
+### Not verified / known gaps
+
+1. **The pin's own correctness is checked by an `#[ignore]`d test.** The
+   default suite cannot confirm that `60d3c1d…` is still what CERN serves
+   without downloading 27.6 MB, and committing that archive to pin it offline
+   was not acceptable. `pinned_checksums_match_the_upstream_archives` in
+   `vibegraph-cli/tests/cli_pdf_cache.rs` does exactly that check against the
+   live data server; run it (`cargo test -p vibegraph --test cli_pdf_cache --
+   --ignored`) after any pin change. It was run once during this session and
+   passed by construction — the pin was computed from that download.
+2. **Upstream repackaging is a live operational risk.** If CERN re-tars the
+   set, every user gets a hard checksum failure rather than a silent
+   substitution. That is the correct failure direction, but it is a failure,
+   and the `#[ignore]`d test is the only detector.
+3. **The "already cached, no refetch" path is pinned at unit level, not CLI
+   level, for the *default* set.** The CLI-level cache-serves test uses a
+   deliberately unpinned synthetic set name, because populating the cache with
+   anything under the real name would not match the compiled-in pin and would
+   (correctly) trigger a 27.6 MB download inside the test suite. This was found
+   the hard way: a first draft of that test did exactly that.
+4. **Only `integrate` is wired.** `generate` reads a saved grid and loads no
+   PDF, so it needed nothing.
+
+### Plan corrections
+
+- The plan's "NNPDF sets are CC-BY-4.0" premise is wrong for this set (see the
+  license section above). Fetch-at-first-use is now forced rather than chosen.
+- The plan put `--no-network` in U4. A minimal `$VIBEGRAPH_NO_NETWORK` kill
+  switch landed here instead, because wiring the download without one made it
+  possible — and briefly actual — for a test run to pull 27.6 MB from CERN. U4
+  still owns the interaction *policy* (the interactive prompt, the
+  `--no-network` flag, the non-TTY default); this is the mechanism underneath
+  it, and U4 should fold the flag into it rather than add a second switch.
+
+### For U4
+
+- **The `Fetch` trait contract is unchanged.** `VerifiedFetch` is an
+  implementation of it, not a modification, so anything written against U3's
+  signature still compiles.
+- `ensure_pdf_set` is the entry point to call after a prompt says yes;
+  `pdf_set_is_cached(root, name)` answers "would this prompt at all?" without
+  side effects, which is what gates showing the prompt.
+- `PinnedPdfSet` carries `url`, `sha256`, and `archive_bytes` precisely because
+  the plan's prompt text wants "[URL, size, checksum]" — that data is already
+  assembled.
+- `RefusingFetch` is what `--no-network` should install; the refusal message
+  currently names `$VIBEGRAPH_NO_NETWORK` and should be extended to name the
+  flag too.
+- The UFO half is untouched. `cache_ufo_model` exists but nothing calls it, and
+  U3's caveat that `feynrules_download_url` is an unverified template still
+  stands — there is no `PINNED_UFO_MODELS` table, and adding one needs a real
+  FeynRules URL confirmed against a live download first.
+
+---
+
+## U3 outcome
+
+Branch `user-dist/u3` (worktree `vibegraph-u3`), library-only — no CLI files
+touched. New module `vibegraph::cache` (`vibegraph-lib/src/cache/{mod,resolve,store}.rs`),
+14 new unit tests, all offline (`std::env::temp_dir()` only — nothing under
+this crate's tests ever calls `dirs::home_dir()` or touches a real
+`~/.vibegraph`).
+
+**API landed**
+
+- `cache::AssetKind::{Ufo, Pdf}` — `cache_subdir()` (`"ufo"`/`"pdf"`) and
+  `env_var()` (`"VIBEGRAPH_UFO_DIR"`/`"VIBEGRAPH_PDF_DIR"`).
+- `cache::default_cache_root() -> Option<PathBuf>` — `dirs::home_dir().join(".vibegraph")`,
+  for the CLI to call; nothing in this crate calls it.
+- `cache::resolve::locate(kind, name, flag, env, cache_root, dev_fallback) -> Located`
+  — the pure, fully-injectable resolution function (no env/home access), plus
+  `locate_from_env(...)` as a thin convenience wrapper that reads the real
+  `VIBEGRAPH_UFO_DIR`/`VIBEGRAPH_PDF_DIR` and defaults the cache root to
+  `default_cache_root()` unless overridden. `Located { dir, source, found }`
+  reports both *where* (`Source::{Flag,Env,Cache,DevFallback}`) and whether
+  the directory actually exists, so a caller can distinguish "resolved from
+  cache" from "nothing found, here's where a fetch should write."
+- `cache::store::Fetch` — the fetch trait (contract below), plus
+  `cache_pdf_set(cache_root, name, url, &dyn Fetch) -> Result<Cached, StoreError>`
+  and `cache_ufo_model(...)` (same signature), each returning
+  `Cached { dir, checksum }`. `store::read_pin(dir) -> Option<String>` reads
+  back a previously-pinned checksum. `store::FixedFetch`/`RefusingFetch` are
+  public stub `Fetch` impls for downstream tests (mirrors the existing
+  `PdfMember::from_subgrids` "public test double" pattern).
+- `store::lhapdf_download_url(name)` / `store::LHAPDF_INDEX_URL` — the exact
+  URL pattern `validation/pdf/fetch.sh` already uses, so this is a reuse, not
+  a guess. `store::feynrules_download_url(name)` — see caveat below.
+
+**Resolution order implemented** (identical for both kinds): `--flag` base
+dir → env var base dir → `<cache_root>/<kind>/<name>/` → `dev_fallback/<name>/`
+→ (nothing found: report the cache path as the write target, `found: false`).
+Flag/env are trusted unconditionally (no existence probe blocks them, matching
+today's `--pdf-dir`/`VIBEGRAPH_PDF_DIR` behavior) but still report accurate
+`found` so a caller can tell "explicit but wrong path" from "nothing
+configured." Six tests in `cache::resolve::tests` each pin one precedence
+edge (flag-over-all, env-over-cache/dev, cache-over-dev, dev-only-when-cache-
+misses, nothing-found write target, flag-path-not-on-disk) — each would fail
+if that specific ordering step were wrong, per the session's "explicit and
+tested end to end" instruction.
+
+**Fetch trait contract for U4**
+
+```rust
+pub trait Fetch {
+    fn fetch(&self, url: &str) -> Result<Vec<u8>, FetchError>;
+}
+```
+
+One method: given a URL, return the raw `.tar.gz` bytes or a `FetchError`
+(opaque `String` message — this module never inspects the cause, so a real
+implementation can wrap any HTTP client's error as a `Display`). U4 owns
+*when* `fetch` is called (the interactive prompt, the `--no-network`
+refusal — `store::RefusingFetch` is exactly what a `--no-network` path should
+plug in) and *what* URL to pass (`lhapdf_download_url`/`feynrules_download_url`,
+or `Located::dir`'s implied name for a retry). U3 owns everything downstream
+of the returned bytes: `.tar.gz` extraction (via `tar`+`flate2`, added as
+plain deps — nothing hand-rolled), unwrapping a single top-level wrapping
+directory if the archive has one (LHAPDF's own tarballs are packaged this
+way), checksumming, and an atomic publish (`rename` into `<cache_root>/<kind>/<name>/`
+only after the whole entry — including its pin file — is staged and valid; a
+failed/interrupted fetch never leaves a half-written entry `locate` would
+treat as cached). PDF's checksum is SHA-256 of the fetched archive bytes
+(`sha2` via the existing `ufo::identity::digest_bytes`, not a new hasher);
+UFO's checksum is the existing `ufo::identity::model_digest`, recomputed by
+actually loading the extracted directory (`UFOModel::load_with_digest`) — so
+a re-packaged tarball of an unchanged model pins identically, and a UFO
+archive that fails to parse is never published under its final name
+(`unparseable_ufo_archive_is_not_published`). Both are pinned in a hidden
+sidecar file inside the entry directory (`.vibegraph-checksum`, `store::PIN_FILENAME`).
+
+**Deviations from the plan / decisions the plan left open**
+
+1. **FeynRules URL is unverified.** Unlike the LHAPDF pattern (reused
+   verbatim from `fetch.sh`, so effectively already exercised), FeynRules has
+   no single stable per-model index endpoint the way LHAPDF's data server
+   does. `feynrules_download_url` is a best-effort template
+   (`.../raw-attachment/wiki/<model>/<model>.tar.gz`) documented in code as
+   unconfirmed against a live download. Whoever wires the real network
+   `Fetch` (U4 or later) must check it against an actual FeynRules model page
+   before trusting it, or override it outright.
+2. **No UFO dev fallback exists to wire up.** `validation/pdf` is a real,
+   populated repo-local fallback for PDF sets; there is no equivalent
+   committed UFO source tree (`research/refs/mg5amcnlo`'s UFO directories are
+   an uninitialized submodule, and the SM itself is interned, not loaded from
+   `.py` files at runtime — see `ufo/sm.rs`). `resolve::locate`'s
+   `dev_fallback` parameter is generic and works identically for both kinds,
+   but U4 has nothing to pass for UFO's dev-fallback slot today; passing
+   `None` is the correct call until/unless a real one exists.
+3. **Archive format standardized on `.tar.gz` for both kinds**, with a
+   "single top-level directory gets unwrapped" heuristic (common
+   packaging-tool convention) so `<name>/<name>/payload` never happens
+   regardless of whether the archive already self-prefixes with `<name>/`
+   (LHAPDF's do) or not. Not specified in the plan; recorded here since a
+   different archive format would need a different `store` implementation.
+4. **New deps**: `dirs = "6"` (home-directory resolution — no hand-rolled
+   `$HOME` logic), `tar = "0.4"`, `flate2 = "1"` (`.tar.gz` extraction). All
+   plain `crates.io` deps, no vendoring.
+5. **Untested-by-construction**: `locate_from_env`'s environment-reading
+   branch (it is a two-line pass-through to the fully-tested pure `locate`;
+   testing it would mean mutating real process env vars across parallel
+   tests, which is unsound) and `feynrules_download_url` (no network — the
+   URL format itself is what's unverified, not the string formatting).
+
+**Gate**: `cargo build --workspace` clean; `cargo test --workspace` — every
+suite passes (`vibegraph-lib` 503 passed/8 ignored + `color_cf` 7 + `diagram_channel`
+4 + `diagrams` 10/1 ignored + `rambo_oracle` 1 + `ufo` 4/1 ignored +
+`validate_alphas` 2 + `validate_helas` 1 + `validate_scales` 2 + doc-tests 1,
+including this session's 14 new `cache::` tests), `vibegraph-cli` unit 8 +
+`cli_fixed_energy` 2 + `cli_generate` 3 — all green, no regressions. No
+amplitude/color/coupling/diagram-enumeration code touched, so the
+`extended-validation` MG gate does not apply to this session (per its own
+when-to-run map) and was not run. `cargo fmt` clean. `cargo clippy` surfaces
+one pre-existing `deny(clippy::approx_constant)` failure in
+`coupling/alphas.rs:210` (unrelated to this session, not touched here — the
+MG π-truncation constant per note 07) that already blocks a clean clippy run
+on `main`; not fixed here as out of scope.
+
+Commit: `feat(cache): add ~/.vibegraph resolution and checksum-pinned fetch/store layer` — see `git log user-dist/u3`.
+
+---
+
+## U4 outcome
+
+Branch `user-dist/u4` (worktree `vibegraph-u4`), branched off `user-dist/u2`
+with `user-dist/u1` merged in, so all three prior Track U sessions were in the
+base. **The merged base was verified green before anything was written**:
+`cargo build` clean, `cargo test` = 512 lib + 8 CLI unit + `color_cf` 7 +
+`diagram_channel` 4 + `diagrams` 10/1 ignored + `rambo_oracle` 1 + `ufo` 4/1 +
+`validate_alphas` 2 + `validate_helas` 1 + `validate_scales` 2 +
+`cli_fixed_energy` 2 + `cli_generate` 3 + `cli_integrate` 4 + `cli_pdf_cache`
+4/1 ignored + doc-tests 1, **0 failures**. Nothing about the merge needed
+fixing.
+
+Two commits: `feat(cli): ask before downloading, and refuse by default without
+a terminal` and `feat(ci): add Acceptance A — a released binary, cards in,
+events out`.
+
+### The interaction policy, as implemented
+
+The plan asked for a prompt, a `--no-network` flag and a non-TTY default of
+refusal. What landed is those three plus one addition (below), expressed as a
+tri-state resolved once in `main` and threaded down:
+
+```
+NetworkPolicy::{ Deny(Denial::{Flag,Env}), Ask, Allow }
+```
+
+- `--no-network` → `Deny(Flag)`; `$VIBEGRAPH_NO_NETWORK` → `Deny(Env)`. Per U2's
+  correction the flag folds into the existing kill switch rather than adding a
+  second one; the two are distinguished only so a refusal can name the one
+  switch the user actually has to change (naming "drop `--no-network`" while the
+  environment variable is still set would be advice that does not work).
+- `--yes` / `-y` → `Allow`. **This is the plan addition.** It is on the same
+  axis as `--no-network` but the opposite direction, and it is unavoidable: with
+  "non-TTY ⇒ refuse" as the default, Acceptance A — whose whole purpose is to
+  download a PDF set from a runner with no terminal — has no way to say yes.
+  The instruction it might appear to violate ("do not add a second switch") is
+  about the *deny* axis, and is honoured there. Refusal outranks consent in
+  every combination, so a `--yes` inherited from a wrapper script cannot undo an
+  offline environment (`refusal_outranks_consent_however_it_is_expressed`,
+  `the_kill_switch_outranks_explicit_consent`).
+- Default → `Ask`, and **asking without a terminal is a refusal**. Both `stdin`
+  and `stderr` must be terminals: a redirected `stdin` cannot answer and a
+  redirected `stderr` hides the question. The prompt goes to `stderr` so piping
+  `stdout` never swallows it.
+
+Every refusal states the URL, the size, the SHA-256 **and the destination
+directory** — the last added because "here is what to download" without "here is
+where to put it" is only half an instruction. `PinnedPdfSet` already carried the
+first three (U2 assembled them for exactly this), and the destination is
+`Located::dir` from U3's resolution, which is already computed at that point.
+
+**CI-safety is structural, not just behavioural.** `HttpFetch` is now
+constructed in exactly one place in the codebase — the branch immediately after
+`network::confirm` returned `Granted` — and every other call into the cache
+layer passes U3's `RefusingFetch`. A resolution step that was not supposed to
+fetch therefore cannot fetch even if `pdf_set_is_cached` is wrong about it. That
+is the invariant worth keeping; the predicate is only the fast path.
+
+Tests: 13 new unit tests (`network` 9, `assets` 4), all pure — the decision
+function takes its terminal-ness and its input stream as parameters, and the UFO
+resolution has a fully-injectable inner function, so **nothing new mutates
+process environment or the working directory** (U3's stated reason for leaving
+`locate_from_env` untested applies equally here and was respected). Plus 5 new
+CLI-level tests in `vibegraph-cli/tests/cli_first_run.rs`.
+
+Three of those CLI tests deliberately run under the *default* policy with
+`$VIBEGRAPH_NO_NETWORK` unset, because "an unattended run refuses" is the
+property under test and setting the kill switch would test the kill switch
+instead. That is the exact configuration that cost U2 an accidental 27 MB fetch,
+so it carries a second guard: `$ALL_PROXY=http://127.0.0.1:1`, which `ureq`
+reads from the environment by default (`Config` builds its proxy from
+`Proxy::try_from_env`, checked in the vendored source). If the refusal ever
+regresses, the fetch under it fails in milliseconds against a closed local port
+instead of pulling from CERN — and the assertion fails either way, since a
+successful download means a zero exit where a refusal was expected.
+
+**The prompt itself was exercised on a real terminal**, not only through the
+injected-stream unit tests, by running the binary under `script(1)` with a
+pty (and `$ALL_PROXY` pointed at a closed port, so a wrong answer could not
+have cost 27 MB):
+
+```
+PDF set NNPDF23_lo_as_0130_qed is not available locally. It can be downloaded now:
+  source:  https://lhapdfsets.web.cern.ch/current/NNPDF23_lo_as_0130_qed.tar.gz
+  size:    26.3 MB
+  sha256:  60d3c1df1c31e5840f91f4217163ae30a256b9291a5adc894882e86607ef5d63
+  unpacks to: /…/home/pdf/NNPDF23_lo_as_0130_qed
+Download it? [y/N] n
+error: … the download was declined; … To allow it, answer `y` or pass --yes.
+```
+
+A pty whose input stream closes before the answer arrives takes the
+"prompt could not be read" branch and refuses, also observed live — a closed
+stream is never read as a yes.
+
+### `check-events`, and why a third subcommand exists
+
+Acceptance A has to "validate the emitted `.lhe` by re-parsing it" on a machine
+with no toolchain. The library has the reader (`lhef::parse::LheFile`); the
+binary had no way to reach it. The alternatives were a Python re-implementation
+in the CI job — a second, unvalidated LHEF parser, plainly worse — or exposing
+the one that exists. So `vibegraph check-events <file>` landed: momentum balance
+over initial minus final legs (intermediates excluded), mass shells referenced
+to `E²`, `XWGTUP` bounded by `XMAXUP`, unit weights actually unit when
+`IDWTUP = +3`, `IDPRUP` cross-referencing a declared `<init>` process, mother
+indices in range, `--min-events`. Default tolerance `1e-6`, three orders of
+magnitude of headroom over the writer's ~11 significant digits.
+
+Its blind spots, stated rather than discovered later: it shares its assumptions
+with the writer, so a **self-consistently wrong format** passes (`validate_lhef`'s
+byte round trip of MadGraph's own files is the format evidence; a real shower is
+still owed); and it is entirely blind to the physics — a wrong matrix element,
+cut or sampler produces events that satisfy every one of these identities. It
+catches damage, not error. `a_generated_sample_passes_check_events_and_a_damaged_one_does_not`
+keeps it from being vacuous by re-emitting a valid sample with one leg's `pz`
+displaced by a GeV and requiring the rejection.
+
+### Acceptance A: what it covers today, and what it cannot see
+
+`scripts/acceptance.sh` + `.github/workflows/acceptance.yml`. The script takes
+no dependency on this repository beyond being stored in it — it writes its own
+cards and downloads its own binary — so it is simultaneously the CI job and the
+documented clean-VM reproduction. `curl`, `tar` and a POSIX shell are the whole
+dependency list.
+
+**Deviation from the plan, forced: the acceptance is two legs, not one.** The
+plan's shape ("`integrate` + `generate` on cards with PDF/model resolution
+through U2/U3, validate the `.lhe`") assumes one process can do both halves.
+None can today: `generate` refuses `lpp = 1` by name (`generate.rs`: "event
+generation currently covers fixed-energy partonic beams (lpp = 0) only"), which
+is P4's scope. So:
+
+| Leg | Process | Commands | What it proves |
+|---|---|---|---|
+| hadronic | `p p > e+ e-` | `integrate` ×3 | unattended refusal on the shipped binary; consented download verified against the compiled-in pin; published into the cache where resolution looks; a second run served from cache **with no consent needed** |
+| events | `e+ e- > mu+ mu-` | `integrate`, `generate`, `check-events` | cards → `.lhe` → survives being read back, with `--no-network` set throughout |
+
+The two collapse into one `p p > e+ e- j` run when P4 lands — that flip is the
+sprint's last commit and was not made here.
+
+Also checked, since the binary is in hand anyway: the release tarball's
+`SHA256SUMS` entry, and that `THIRD-PARTY-NOTICES` is present in the tarball
+(U1's licence obligation — a release without it should not have shipped).
+
+**Verified for real**, against a locally built release binary, including a live
+27 MB download from CERN:
+
+```
+$ bash scripts/acceptance.sh --binary target/release/vibegraph
+=== version
+vibegraph 42d4eed
+=== an unattended run refuses to download the PDF set
+refused, naming --yes and the URL
+=== with consent, the PDF set is downloaded, verified and cached
+σ = 927.562233 ± 6.589028 pb          (p p > e+ e-, 13 TeV, 20000×4)
+=== a second run is served from the cache, with no consent needed
+served from cache
+=== integrating a fixed-energy process
+σ = 2022.623188 ± 1.747453 pb
+=== generating events / reading the events back
+events 2000, IDWTUP -4, XSECUP 2041.872000 pb, mean XWGTUP 2041.872300 pb
+ACCEPTANCE PASSED
+real 0m7.559s
+```
+
+The σ from the script's *self-written* DY card (927.6 ± 6.6 pb at deliberately
+low statistics) is not a physics gate and is not compared to anything — the
+banked comparison is `cli_integrate`'s, against MG's H7 reference. What this run
+demonstrates is that a card typed from the README reaches a number at all.
+
+**What Acceptance A cannot see.**
+
+1. **Nothing until a release exists.** It has never run in CI: there is no
+   published release for it to download (`--repo nsmith-/vibegraph` returns 404
+   on `releases/latest/download/...`, verified). Its `release: published`
+   trigger and its GitHub-side behaviour are unexercised, exactly like U1's
+   workflow. The script itself *is* exercised, via `--binary`.
+2. **Not that the pipeline is one pipeline.** Two legs meeting separately is
+   strictly weaker than one run doing both: nothing here would catch a break in
+   "hadronic integration → hadronic event generation", because that path does
+   not exist yet. This is the gap the llj flip closes.
+3. **Nothing about the physics.** Every number it prints is unchecked against a
+   reference; the σ gates live in `cli_integrate`, `validate_hadronic` and
+   `validate_sigma`.
+4. **Nothing about macOS.** One runner (Linux/musl), because `release.yml`
+   already smoke-tests all three natively and the data path here is not
+   platform-specific.
+5. **Not that the pin still matches upstream** on a cache *hit* — but on the
+   miss path it does, and that is what this job takes: it downloads and verifies
+   against the compiled-in SHA-256 every run. It is therefore a second detector
+   for U2's "CERN repackages the archive" risk, alongside the `#[ignore]`d
+   `pinned_checksums_match_the_upstream_archives`, **once it runs on a timer**.
+   A weekly `schedule` trigger is the obvious follow-up and is documented in the
+   workflow's header comment, left off until a first release exists because
+   until then it can only fail.
+
+**Trigger choice, deliberate:** `release: published` + `workflow_dispatch`, not
+push and not PR. Its input is a published release asset, which a branch does not
+have; and it pulls 27 MB every run on purpose (caching the PDF set would remove
+the path under test). Day-to-day changes are covered offline by `ci.yml`, whose
+suite now includes the consent, resolution and event-file logic. What this job
+adds is the only thing those cannot see: that the artifact a user downloads
+works on a machine that never built it.
+
+### The UFO decision: no fetching, and the URL template removed
+
+The session was told to either verify `store::feynrules_download_url` against a
+live download or leave UFO fetch unimplemented. **Verification was attempted and
+it failed — worse than expected.** Probing the FeynRules server directly:
+
+```
+$ curl -o /dev/null -w "%{http_code}" .../raw-attachment/wiki/SM/SM.tar.gz              404
+$ ... /wiki/HAHM_variableMW_v5/HAHM_variableMW_v5.tar.gz                                404
+$ ... /wiki/EWdim6/EWdim6.tar.gz                                                        404
+$ ... /wiki/DMsimp_s_spin0/DMsimp_s_spin0.tar.gz                                        404
+```
+
+The server is alive (those are real 404 pages, ~5 kB each) and the *shape*
+`/raw-attachment/wiki/<page>/<file>` is right — it is what the model pages
+themselves link. What is wrong is the mapping. The model database is a Trac
+wiki, one page per model, with hand-attached files; the page name is not the UFO
+model name, and the attachment name follows no rule. The 2HDM page alone carries
+
+```
+/raw-attachment/wiki/2HDM/2HDM.tar.gz          ← FeynRules Mathematica sources
+/raw-attachment/wiki/2HDM/2HDM_UFO.tar.gz      ← the UFO
+/raw-attachment/wiki/2HDM/2HDM_UFO.tar.2.gz    ← a second revision of it
+/raw-attachment/wiki/2HDM/2HDM_NLO.tar.gz, 2HDM5F_NLO.tar.gz, 2HDMtII_NLO.tar.gz, …
+```
+
+and the template resolves to the **first** of those. Downloaded it to be sure:
+`http=200`, 7,552 bytes, contents `2HDM.fr HiggsBasis.fr Lag.fr Params.fr
+SMParts.fr`. So the template is not merely unverified — it is wrong in two
+distinct ways at once: it 404s for most names, and where it succeeds it returns
+FeynRules source rather than a UFO directory. U3's "unparseable UFO archive is
+never published" guard would catch the second case, but only after a download
+and with a confusing error.
+
+**Decision: UFO models are never downloaded, and `feynrules_download_url` is
+deleted.** Nothing called it; leaving a proven-wrong URL builder in a shipped
+binary is an invitation for a later session to wire it. Its docstring is
+replaced by a comment in `store.rs` recording the above, so the finding survives
+where the next person will look for it. `cache_ufo_model` is *kept* — the
+mechanism (fetch → extract → load-and-digest → publish atomically) is sound and
+takes its URL from the caller; it is only *deriving* that URL from a name that
+nothing can do today.
+
+What landed instead is the resolution half, which was missing entirely: a
+`--ufo-dir` flag on both `integrate` and `generate`, and model resolution routed
+through U3's `locate` (`--ufo-dir` → `$VIBEGRAPH_UFO_DIR` → `~/.vibegraph/ufo/`
+→ the working directory, which is the pre-existing behaviour kept as the last
+step). The interned SM short-circuits before any of it, so an SM run never
+depends on `$HOME` being readable. A model that resolves nowhere is an error
+naming the cache directory to unpack into, the flag, the variable, and the fact
+that no download will be attempted:
+
+```
+error: model `NoSuchModel` was not found, and vibegraph does not download UFO
+models (FeynRules publishes no per-model index a name could be resolved
+through, so there is no URL this build could pin). Download the model's UFO
+archive yourself and unpack it so that `~/.vibegraph/ufo/NoSuchModel/particles.py`
+exists, or point --ufo-dir / $VIBEGRAPH_UFO_DIR at the directory containing it.
+```
+
+One subtlety worth recording because it is silently wrong if missed:
+`GlobalConfig::ufo_search_path` is the *parent* a model name is joined onto,
+while `locate` returns the model directory itself. Resolution therefore hands
+back `located.dir.parent()`, and getting it backwards resolves models to
+`<dir>/<name>/<name>`. `a_located_model_becomes_its_parent_directory` pins it on
+both the flag and the cache step, whose directories are built differently.
+
+### Plan corrections recorded
+
+1. **Acceptance A is two legs until P4.** The plan's single-run shape is not
+   available today because `generate` refuses `lpp = 1`. Recorded rather than
+   absorbed because the llj flip is not just "change the cards" — it merges two
+   legs into one and deletes the `e+ e- > mu+ mu-` scaffolding leg.
+2. **`--yes` is a new switch the plan did not anticipate.** "Non-TTY defaults to
+   refusal" and "a CI job downloads a PDF set" are only compatible with an
+   explicit non-interactive consent. See the policy section above.
+3. **The FeynRules URL template is wrong, not merely unconfirmed** (evidence
+   above), and is removed rather than annotated. U3's caveat can be closed.
+4. **U4 does not close the sprint.** Track U's own deliverables are done, but
+   Acceptance A has never executed in CI, for want of a published release. The
+   sprint close needs a real tagged release — which also first exercises U1's
+   `release.yml`, still unrun.
+
+### Not done / left for the close-out
+
+- No push, no tag (per the session brief). The first tagged release is the
+  user's call and is what turns three unrun workflows into evidence.
+- `TODO.md` untouched (close-out's job). The rows it will want: the quick start
+  is no longer "planned"; `check-events` exists; the weekly-`schedule` follow-up
+  on `acceptance.yml`.
+- The interned-SM `--restrict` path still has no `--ufo-dir` equivalent for its
+  restrict card; `restrict_path_override` remains `None` from both subcommands,
+  as before this session.
