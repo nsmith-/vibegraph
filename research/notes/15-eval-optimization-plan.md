@@ -289,7 +289,7 @@ pp_to_ll_qcd0) are absent from the honest bench (they need mass-aware kinematics
 their pre-program figures in the baseline table below were not honestly re-measured;
 the layout wins are process-structural, so the same ~1.8× is expected but unverified here.
 
-**Pre-program baseline** (recorded 2026-07-13; dev machine, `--profile profiling`,
+**Pre-program baseline** (recorded 2026-07-13; dev machine, `--profile release-debug`,
 `--test-threads=1`, ns/eval — the `performance-sprint` P5 close-out plus the
 `color-flow` close-out rows). ⚠️ Taken through the `validate_helas_mg` timing report,
 which compiles the per-node cross-check into the loop — **not comparable** to the

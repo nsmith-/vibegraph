@@ -37,464 +37,492 @@
 //! whose interpolant matches LHAPDF, not that any particular internal data
 //! structure was traversed.
 
-#[cfg(feature = "extended-validation")]
-mod validate_pdf_grid {
-    use serde::Deserialize;
-    use std::path::{Path, PathBuf};
-    use vibegraph::pdf::PdfSet;
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
+use vibegraph::pdf::PdfSet;
 
-    /// Both sides parse the same ASCII float tokens independently (Rust's
-    /// `f64::from_str` vs. LHAPDF's C++ reader); this tolerance absorbs any
-    /// last-bit rounding difference between the two parsers without hiding a
-    /// real mismatch. In practice the on-knot agreement is exact (both use
-    /// strtod-family parsing of identical tokens).
-    const REL_TOL: f64 = 1e-12;
+/// Both sides parse the same ASCII float tokens independently (Rust's
+/// `f64::from_str` vs. LHAPDF's C++ reader); this tolerance absorbs any
+/// last-bit rounding difference between the two parsers without hiding a
+/// real mismatch. In practice the on-knot agreement is exact (both use
+/// strtod-family parsing of identical tokens).
+const REL_TOL: f64 = 1e-12;
 
-    #[derive(Deserialize)]
-    struct Oracle {
-        set: String,
-        member: u32,
-        #[serde(default)]
-        seams: Vec<f64>,
-        subgrids: Vec<OracleSubgrid>,
-        points: Vec<OraclePoint>,
-    }
+#[derive(Deserialize)]
+struct Oracle {
+    set: String,
+    member: u32,
+    #[serde(default)]
+    seams: Vec<f64>,
+    subgrids: Vec<OracleSubgrid>,
+    points: Vec<OraclePoint>,
+}
 
-    #[derive(Deserialize)]
-    struct OracleSubgrid {
-        nx: usize,
-        nq: usize,
-        flavors: Vec<i32>,
-    }
+#[derive(Deserialize)]
+struct OracleSubgrid {
+    nx: usize,
+    nq: usize,
+    flavors: Vec<i32>,
+}
 
-    #[derive(Deserialize)]
-    struct OraclePoint {
-        category: String,
-        pdg: i32,
-        x: f64,
-        q2: f64,
-        xf: f64,
-    }
+#[derive(Deserialize)]
+struct OraclePoint {
+    category: String,
+    pdg: i32,
+    x: f64,
+    q2: f64,
+    xf: f64,
+}
 
-    fn validation_dir() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf")
-    }
+fn validation_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf")
+}
 
-    fn load_oracle_named(name: &str) -> Oracle {
-        let path = validation_dir().join(name);
-        let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read {}: {e}\n\
-                 run `pixi run -e madgraph generate-pdf-oracle` first",
-                path.display()
-            )
-        });
+/// `None` when the dump is absent, which every test here reports through the
+/// skip accounting rather than failing on: the dumps are not committed and the
+/// banked layer does not build LHAPDF to produce them.
+fn load_oracle_named(name: &str) -> Option<Oracle> {
+    let path = validation_dir().join(name);
+    let content = std::fs::read_to_string(&path).ok()?;
+    Some(
         serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()))
+            .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display())),
+    )
+}
+
+fn load_oracle() -> Option<Oracle> {
+    load_oracle_named("oracle.json")
+}
+
+fn load_multigrid_oracle() -> Option<Oracle> {
+    load_oracle_named("oracle_multigrid.json")
+}
+
+/// Report that this binary had no oracle to compare against.
+fn no_oracle(name: &str) {
+    vibegraph::validation::skip(
+        "validate_pdf_grid",
+        "lhapdf grid oracle dump",
+        format_args!("{name} (run `pixi run generate-pdf-oracle`)"),
+    );
+}
+
+fn load_set(oracle: &Oracle) -> PdfSet {
+    let set_dir = validation_dir().join(&oracle.set);
+    PdfSet::load(&set_dir, &oracle.set).unwrap_or_else(|e| {
+        panic!(
+            "failed to load PDF set at {}: {e}\n\
+             run `pixi run -e madgraph fetch-pdf` first",
+            set_dir.display()
+        )
+    })
+}
+
+fn rel_close(a: f64, b: f64) -> bool {
+    (a - b).abs() <= REL_TOL * a.abs().max(b.abs()).max(f64::MIN_POSITIVE)
+}
+
+#[test]
+fn subgrid_structure_matches_oracle() {
+    let Some(oracle) = load_oracle() else {
+        return no_oracle("oracle.json");
+    };
+    let set = load_set(&oracle);
+    let member = set
+        .member(oracle.member)
+        .expect("failed to load reference member");
+
+    assert_eq!(
+        member.subgrids.len(),
+        oracle.subgrids.len(),
+        "subgrid count mismatch"
+    );
+    for (i, (sg, osg)) in member.subgrids.iter().zip(&oracle.subgrids).enumerate() {
+        assert_eq!(sg.nx(), osg.nx, "subgrid {i}: x-knot count mismatch");
+        assert_eq!(sg.nq(), osg.nq, "subgrid {i}: Q-knot count mismatch");
+        assert_eq!(sg.flavors, osg.flavors, "subgrid {i}: flavor list mismatch");
     }
+}
 
-    fn load_oracle() -> Oracle {
-        load_oracle_named("oracle.json")
-    }
+#[test]
+fn on_knot_values_match_oracle_exactly() {
+    let Some(oracle) = load_oracle() else {
+        return no_oracle("oracle.json");
+    };
+    let set = load_set(&oracle);
+    let member = set
+        .member(oracle.member)
+        .expect("failed to load reference member");
 
-    fn load_multigrid_oracle() -> Oracle {
-        load_oracle_named("oracle_multigrid.json")
-    }
+    let knot_points: Vec<&OraclePoint> = oracle
+        .points
+        .iter()
+        .filter(|p| p.category == "knot")
+        .collect();
+    assert!(!knot_points.is_empty(), "oracle has no on-knot points");
 
-    fn load_set(oracle: &Oracle) -> PdfSet {
-        let set_dir = validation_dir().join(&oracle.set);
-        PdfSet::load(&set_dir, &oracle.set).unwrap_or_else(|e| {
-            panic!(
-                "failed to load PDF set at {}: {e}\n\
-                 run `pixi run -e madgraph fetch-pdf` first",
-                set_dir.display()
-            )
-        })
-    }
-
-    fn rel_close(a: f64, b: f64) -> bool {
-        (a - b).abs() <= REL_TOL * a.abs().max(b.abs()).max(f64::MIN_POSITIVE)
-    }
-
-    #[test]
-    fn subgrid_structure_matches_oracle() {
-        let oracle = load_oracle();
-        let set = load_set(&oracle);
-        let member = set
-            .member(oracle.member)
-            .expect("failed to load reference member");
-
-        assert_eq!(
-            member.subgrids.len(),
-            oracle.subgrids.len(),
-            "subgrid count mismatch"
-        );
-        for (i, (sg, osg)) in member.subgrids.iter().zip(&oracle.subgrids).enumerate() {
-            assert_eq!(sg.nx(), osg.nx, "subgrid {i}: x-knot count mismatch");
-            assert_eq!(sg.nq(), osg.nq, "subgrid {i}: Q-knot count mismatch");
-            assert_eq!(sg.flavors, osg.flavors, "subgrid {i}: flavor list mismatch");
-        }
-    }
-
-    #[test]
-    fn on_knot_values_match_oracle_exactly() {
-        let oracle = load_oracle();
-        let set = load_set(&oracle);
-        let member = set
-            .member(oracle.member)
-            .expect("failed to load reference member");
-
-        let knot_points: Vec<&OraclePoint> = oracle
-            .points
+    let mut checked = 0usize;
+    for p in &knot_points {
+        let sg = member
+            .subgrids
             .iter()
-            .filter(|p| p.category == "knot")
-            .collect();
-        assert!(!knot_points.is_empty(), "oracle has no on-knot points");
+            .find(|sg| {
+                sg.x.iter().any(|&xv| rel_close(xv, p.x))
+                    && sg.q2.iter().any(|&qv| rel_close(qv, p.q2))
+            })
+            .unwrap_or_else(|| panic!("no subgrid contains knot x={} q2={}", p.x, p.q2));
 
-        let mut checked = 0usize;
-        for p in &knot_points {
-            let sg = member
-                .subgrids
-                .iter()
-                .find(|sg| {
-                    sg.x.iter().any(|&xv| rel_close(xv, p.x))
-                        && sg.q2.iter().any(|&qv| rel_close(qv, p.q2))
-                })
-                .unwrap_or_else(|| panic!("no subgrid contains knot x={} q2={}", p.x, p.q2));
+        let ix = sg.x.iter().position(|&xv| rel_close(xv, p.x)).unwrap();
+        let iq = sg.q2.iter().position(|&qv| rel_close(qv, p.q2)).unwrap();
+        let ifl = sg
+            .flavor_index(p.pdg)
+            .unwrap_or_else(|| panic!("flavor {} not found in subgrid", p.pdg));
 
-            let ix = sg.x.iter().position(|&xv| rel_close(xv, p.x)).unwrap();
-            let iq = sg.q2.iter().position(|&qv| rel_close(qv, p.q2)).unwrap();
-            let ifl = sg
-                .flavor_index(p.pdg)
-                .unwrap_or_else(|| panic!("flavor {} not found in subgrid", p.pdg));
-
-            let got = sg.xf_at(ix, iq, ifl);
-            assert!(
-                rel_close(got, p.xf),
-                "xf mismatch at pdg={} x={} q2={}: rust={got} oracle={}",
-                p.pdg,
-                p.x,
-                p.q2,
-                p.xf
-            );
-            checked += 1;
-        }
-        eprintln!("checked {checked} on-knot (pdg, x, Q²) points against the LHAPDF oracle");
-    }
-
-    #[test]
-    fn info_flavors_cover_dat_flavors() {
-        let oracle = load_oracle();
-        let set = load_set(&oracle);
-        for osg in &oracle.subgrids {
-            for &f in &osg.flavors {
-                assert!(
-                    set.info.flavors.contains(&f),
-                    "subgrid flavor {f} not listed in {}.info Flavors",
-                    oracle.set
-                );
-            }
-        }
-    }
-
-    /// Relative error of the Rust log-bicubic value against the LHAPDF oracle,
-    /// screened by an absolute floor on the *oracle* value: where LHAPDF's
-    /// reference is at or below `atol`, the point is treated as agreeing. This
-    /// keys on `want`, not on both sides, because a positivity-clamped set floors
-    /// its own output there while vibegraph evaluates the raw log-bicubic, whose
-    /// un-clamped value can overshoot to a small non-zero of either sign — so
-    /// the magnitudes need not both be tiny even though the point is negligible.
-    /// `atol == 0` recovers a pure relative error where only an exact oracle zero
-    /// (an absent flavor, which vibegraph also returns as zero) is agreement.
-    fn rel_err(got: f64, want: f64, atol: f64) -> f64 {
-        if want.abs() <= atol {
-            return 0.0;
-        }
-        let denom = got.abs().max(want.abs());
-        (got - want).abs() / denom
-    }
-
-    /// Worst relative error over all oracle points in `category`, plus the
-    /// point where it occurs, computed through the public `xfx_q2` API. Points
-    /// at or below `atol` in magnitude on both sides are treated as agreeing.
-    fn worst_in_category(
-        member: &vibegraph::pdf::PdfMember,
-        oracle: &Oracle,
-        category: &str,
-        atol: f64,
-    ) -> f64 {
-        let mut worst = 0.0f64;
-        let mut worst_at = None;
-        let mut count = 0usize;
-        for p in oracle.points.iter().filter(|p| p.category == category) {
-            let got: f64 = member.xfx_q2(p.pdg, p.x, p.q2);
-            let e = rel_err(got, p.xf, atol);
-            if e > worst {
-                worst = e;
-                worst_at = Some((p, got));
-            }
-            count += 1;
-        }
-        assert!(count > 0, "oracle has no '{category}' points");
-        if let Some((p, got)) = worst_at {
-            eprintln!(
-                "category '{category}': {count} points, worst rel {worst:.3e} at \
-                 pdg={} x={} Q²={} (rust={got:.17e} oracle={:.17e})",
-                p.pdg, p.x, p.q2, p.xf
-            );
-        } else {
-            eprintln!("category '{category}': {count} points, worst rel 0 (all exact)");
-        }
-        worst
-    }
-
-    /// The accept bar: interior (off-knot) interpolation reproduces LHAPDF's
-    /// log-bicubic to ≤1e-9 relative. Because the Rust scheme replicates
-    /// LHAPDF's exact per-point arithmetic, the observed agreement is far
-    /// tighter (~1e-13); the loose bar leaves headroom for platform libm
-    /// differences in `log`.
-    #[test]
-    fn off_knot_interpolation_matches_lhapdf() {
-        let oracle = load_oracle();
-        let set = load_set(&oracle);
-        let member = set.member(oracle.member).expect("member load");
-        let worst = worst_in_category(&member, &oracle, "off_knot", 0.0);
-        assert!(worst <= 1e-9, "off_knot worst rel {worst:.3e} exceeds 1e-9");
-    }
-
-    /// Grid corners and the x→1 tail exercise the one-sided finite-difference
-    /// derivative branches (lower/upper Q² edge, last x-interval). Same exact
-    /// algorithm, so the same ≤1e-9 bar holds. The `corner` category also
-    /// probes the gluon under both PDG spellings (21 and the 0 alias).
-    #[test]
-    fn edge_and_tail_interpolation_matches_lhapdf() {
-        let oracle = load_oracle();
-        let set = load_set(&oracle);
-        let member = set.member(oracle.member).expect("member load");
-        for category in ["seam", "x_to_one_tail", "corner"] {
-            let worst = worst_in_category(&member, &oracle, category, 0.0);
-            assert!(
-                worst <= 1e-9,
-                "{category} worst rel {worst:.3e} exceeds 1e-9"
-            );
-        }
-    }
-
-    /// On-knot points must interpolate back to the tabulated `x·f` value: at a
-    /// knot the local Hermite reproduces the node (up to libm `log` rounding),
-    /// a self-consistency the raw-parser gate cannot see since it reads the
-    /// array directly rather than going through interpolation. The oracle's
-    /// `knot` category holds the *raw* grid value, so vanishing nodes (e.g.
-    /// x·f→0 at x=1) need an absolute floor: the Hermite sum of large cancelling
-    /// coefficients lands at ~1e-20 rather than a bit-exact 0, which is a pure
-    /// relative error of 1 against a zero node but a negligible absolute one.
-    /// Bar: `|Δ| ≤ 1e-11 + 1e-9·|want|` (numpy-style atol+rtol).
-    #[test]
-    fn on_knot_interpolation_reproduces_node() {
-        let oracle = load_oracle();
-        let set = load_set(&oracle);
-        let member = set.member(oracle.member).expect("member load");
-        let mut worst_abs = 0.0f64;
-        let mut count = 0usize;
-        for p in oracle.points.iter().filter(|p| p.category == "knot") {
-            let got: f64 = member.xfx_q2(p.pdg, p.x, p.q2);
-            let delta = (got - p.xf).abs();
-            let bound = 1e-11 + 1e-9 * p.xf.abs();
-            assert!(
-                delta <= bound,
-                "on-knot interpolation off at pdg={} x={} Q²={}: rust={got:.17e} \
-                 oracle={:.17e} |Δ|={delta:.3e} > {bound:.3e}",
-                p.pdg,
-                p.x,
-                p.q2,
-                p.xf
-            );
-            worst_abs = worst_abs.max(delta);
-            count += 1;
-        }
-        eprintln!("on-knot interpolation: {count} points, worst |Δ| {worst_abs:.3e}");
-    }
-
-    /// Points outside the grid support are a hard error rather than a silent
-    /// extrapolation. Blind spot: this pins the *policy* (refuse), not any
-    /// extrapolated value — extrapolation is a deliberate non-goal.
-    #[test]
-    fn out_of_range_is_error() {
-        let oracle = load_oracle();
-        let set = load_set(&oracle);
-        let member = set.member(oracle.member).expect("member load");
-        // Far below XMin=1e-9 in x and above QMax in Q².
-        assert!(member.try_xfx_q2(2, 1e-12_f64, 1e6_f64).is_err());
-        assert!(member.try_xfx_q2(2, 2.0_f64, 100.0_f64).is_err());
-    }
-
-    // ── Multi-Q²-subgrid coverage (MSHT20lo_as130) ─────────────────────────
-    //
-    // A single-subgrid set never exercises the subgrid walk or the one-sided
-    // Q²-derivative each band takes at an internal seam. These gates pin both
-    // against real LHAPDF values on a three-band set.
-
-    #[test]
-    fn multigrid_subgrid_structure_matches_oracle() {
-        let oracle = load_multigrid_oracle();
+        let got = sg.xf_at(ix, iq, ifl);
         assert!(
-            oracle.subgrids.len() >= 2,
-            "the multi-subgrid oracle must carry ≥2 Q²-subgrids, got {}",
-            oracle.subgrids.len()
+            rel_close(got, p.xf),
+            "xf mismatch at pdg={} x={} q2={}: rust={got} oracle={}",
+            p.pdg,
+            p.x,
+            p.q2,
+            p.xf
         );
-        let set = load_set(&oracle);
-        let member = set
-            .member(oracle.member)
-            .expect("failed to load reference member");
+        checked += 1;
+    }
+    eprintln!("checked {checked} on-knot (pdg, x, Q²) points against the LHAPDF oracle");
+}
 
-        assert_eq!(
-            member.subgrids.len(),
-            oracle.subgrids.len(),
-            "subgrid count mismatch"
-        );
-        for (i, (sg, osg)) in member.subgrids.iter().zip(&oracle.subgrids).enumerate() {
-            assert_eq!(sg.nx(), osg.nx, "subgrid {i}: x-knot count mismatch");
-            assert_eq!(sg.nq(), osg.nq, "subgrid {i}: Q-knot count mismatch");
-            // Compare flavors as a set, not a sequence: LHAPDF canonicalizes the
-            // flavor order (gluon last) in its KnotArray, while the parser keeps
-            // the `.dat` file order (gluon mid-list for this set). Both index x·f
-            // by PDG code, so the ordering is an internal detail; the invariant
-            // that must hold is that the same flavors are present.
-            let mut got = sg.flavors.clone();
-            let mut want = osg.flavors.clone();
-            got.sort_unstable();
-            want.sort_unstable();
-            assert_eq!(got, want, "subgrid {i}: flavor set mismatch");
+#[test]
+fn info_flavors_cover_dat_flavors() {
+    let Some(oracle) = load_oracle() else {
+        return no_oracle("oracle.json");
+    };
+    let set = load_set(&oracle);
+    for osg in &oracle.subgrids {
+        for &f in &osg.flavors {
+            assert!(
+                set.info.flavors.contains(&f),
+                "subgrid flavor {f} not listed in {}.info Flavors",
+                oracle.set
+            );
         }
+    }
+}
 
-        // Each declared seam is the shared upper/lower Q² knot of two adjacent
-        // parsed bands.
+/// Relative error of the Rust log-bicubic value against the LHAPDF oracle,
+/// screened by an absolute floor on the *oracle* value: where LHAPDF's
+/// reference is at or below `atol`, the point is treated as agreeing. This
+/// keys on `want`, not on both sides, because a positivity-clamped set floors
+/// its own output there while vibegraph evaluates the raw log-bicubic, whose
+/// un-clamped value can overshoot to a small non-zero of either sign — so
+/// the magnitudes need not both be tiny even though the point is negligible.
+/// `atol == 0` recovers a pure relative error where only an exact oracle zero
+/// (an absent flavor, which vibegraph also returns as zero) is agreement.
+fn rel_err(got: f64, want: f64, atol: f64) -> f64 {
+    if want.abs() <= atol {
+        return 0.0;
+    }
+    let denom = got.abs().max(want.abs());
+    (got - want).abs() / denom
+}
+
+/// Worst relative error over all oracle points in `category`, plus the
+/// point where it occurs, computed through the public `xfx_q2` API. Points
+/// at or below `atol` in magnitude on both sides are treated as agreeing.
+fn worst_in_category(
+    member: &vibegraph::pdf::PdfMember,
+    oracle: &Oracle,
+    category: &str,
+    atol: f64,
+) -> f64 {
+    let mut worst = 0.0f64;
+    let mut worst_at = None;
+    let mut count = 0usize;
+    for p in oracle.points.iter().filter(|p| p.category == category) {
+        let got: f64 = member.xfx_q2(p.pdg, p.x, p.q2);
+        let e = rel_err(got, p.xf, atol);
+        if e > worst {
+            worst = e;
+            worst_at = Some((p, got));
+        }
+        count += 1;
+    }
+    assert!(count > 0, "oracle has no '{category}' points");
+    if let Some((p, got)) = worst_at {
+        eprintln!(
+            "category '{category}': {count} points, worst rel {worst:.3e} at \
+             pdg={} x={} Q²={} (rust={got:.17e} oracle={:.17e})",
+            p.pdg, p.x, p.q2, p.xf
+        );
+    } else {
+        eprintln!("category '{category}': {count} points, worst rel 0 (all exact)");
+    }
+    worst
+}
+
+/// The accept bar: interior (off-knot) interpolation reproduces LHAPDF's
+/// log-bicubic to ≤1e-9 relative. Because the Rust scheme replicates
+/// LHAPDF's exact per-point arithmetic, the observed agreement is far
+/// tighter (~1e-13); the loose bar leaves headroom for platform libm
+/// differences in `log`.
+#[test]
+fn off_knot_interpolation_matches_lhapdf() {
+    let Some(oracle) = load_oracle() else {
+        return no_oracle("oracle.json");
+    };
+    let set = load_set(&oracle);
+    let member = set.member(oracle.member).expect("member load");
+    let worst = worst_in_category(&member, &oracle, "off_knot", 0.0);
+    assert!(worst <= 1e-9, "off_knot worst rel {worst:.3e} exceeds 1e-9");
+}
+
+/// Grid corners and the x→1 tail exercise the one-sided finite-difference
+/// derivative branches (lower/upper Q² edge, last x-interval). Same exact
+/// algorithm, so the same ≤1e-9 bar holds. The `corner` category also
+/// probes the gluon under both PDG spellings (21 and the 0 alias).
+#[test]
+fn edge_and_tail_interpolation_matches_lhapdf() {
+    let Some(oracle) = load_oracle() else {
+        return no_oracle("oracle.json");
+    };
+    let set = load_set(&oracle);
+    let member = set.member(oracle.member).expect("member load");
+    for category in ["seam", "x_to_one_tail", "corner"] {
+        let worst = worst_in_category(&member, &oracle, category, 0.0);
         assert!(
-            !oracle.seams.is_empty(),
-            "oracle declares no internal seams"
+            worst <= 1e-9,
+            "{category} worst rel {worst:.3e} exceeds 1e-9"
         );
-        for &seam in &oracle.seams {
-            let bordering = member
-                .subgrids
-                .iter()
-                .filter(|sg| {
-                    rel_close(*sg.q2.first().unwrap(), seam)
-                        || rel_close(*sg.q2.last().unwrap(), seam)
-                })
-                .count();
-            assert!(
-                bordering >= 2,
-                "seam Q²={seam} does not border two bands (found {bordering})"
-            );
-        }
     }
+}
 
-    #[test]
-    fn multigrid_on_knot_values_match_oracle_exactly() {
-        let oracle = load_multigrid_oracle();
-        let set = load_set(&oracle);
-        let member = set
-            .member(oracle.member)
-            .expect("failed to load reference member");
-
-        let mut checked = 0usize;
-        for p in oracle.points.iter().filter(|p| p.category == "knot") {
-            let sg = member
-                .subgrids
-                .iter()
-                .find(|sg| {
-                    sg.x.iter().any(|&xv| rel_close(xv, p.x))
-                        && sg.q2.iter().any(|&qv| rel_close(qv, p.q2))
-                })
-                .unwrap_or_else(|| panic!("no subgrid contains knot x={} q2={}", p.x, p.q2));
-            let ix = sg.x.iter().position(|&xv| rel_close(xv, p.x)).unwrap();
-            let iq = sg.q2.iter().position(|&qv| rel_close(qv, p.q2)).unwrap();
-            let ifl = sg
-                .flavor_index(p.pdg)
-                .unwrap_or_else(|| panic!("flavor {} not in subgrid", p.pdg));
-            let got = sg.xf_at(ix, iq, ifl);
-            assert!(
-                rel_close(got, p.xf),
-                "xf mismatch at pdg={} x={} q2={}: rust={got} oracle={}",
-                p.pdg,
-                p.x,
-                p.q2,
-                p.xf
-            );
-            checked += 1;
-        }
-        eprintln!("multigrid: checked {checked} on-knot points against the LHAPDF oracle");
-    }
-
-    /// This set carries `ForcePositive: 2` in its `.info`, so LHAPDF clamps its
-    /// interpolated x·f up to a ~1e-10 floor; vibegraph applies no such clamp,
-    /// evaluating the raw log-bicubic. The two therefore diverge only where the
-    /// PDF is physically negligible (heavy-flavor tails at large x, where x·f
-    /// underflows the floor) — a clamp the gate deliberately does not test. The
-    /// `atol` screens exactly that sub-floor region; every physical value (≳1e-4
-    /// at these points) is compared at full relative precision. Blind spot: the
-    /// gate does not verify LHAPDF's positivity clamp, which vibegraph omits by
-    /// design.
-    const FORCE_POSITIVE_FLOOR: f64 = 1e-8;
-
-    #[test]
-    fn multigrid_off_knot_interpolation_matches_lhapdf() {
-        let oracle = load_multigrid_oracle();
-        let set = load_set(&oracle);
-        let member = set.member(oracle.member).expect("member load");
-        let worst = worst_in_category(&member, &oracle, "off_knot", FORCE_POSITIVE_FLOOR);
-        assert!(worst <= 1e-9, "off_knot worst rel {worst:.3e} exceeds 1e-9");
-    }
-
-    /// The load-bearing seam gate. Each "seam" oracle point sits either inside
-    /// the lower band's last Q² interval, inside the upper band's first
-    /// interval, or exactly on the shared seam knot. Reproducing LHAPDF at all
-    /// three pins that the subgrid walk selects the band LHAPDF uses *and* that
-    /// each band takes the same one-sided Q²-derivative LHAPDF's flattened
-    /// (duplicated-knot) array forces there. Blind spot: agreement here shows
-    /// the walk lands each probe in a band whose interpolant matches LHAPDF; it
-    /// does not, on its own, distinguish the exact-seam value's band since the
-    /// value is continuous across the seam by construction.
-    #[test]
-    fn multigrid_seam_interpolation_matches_lhapdf() {
-        let oracle = load_multigrid_oracle();
+/// On-knot points must interpolate back to the tabulated `x·f` value: at a
+/// knot the local Hermite reproduces the node (up to libm `log` rounding),
+/// a self-consistency the raw-parser gate cannot see since it reads the
+/// array directly rather than going through interpolation. The oracle's
+/// `knot` category holds the *raw* grid value, so vanishing nodes (e.g.
+/// x·f→0 at x=1) need an absolute floor: the Hermite sum of large cancelling
+/// coefficients lands at ~1e-20 rather than a bit-exact 0, which is a pure
+/// relative error of 1 against a zero node but a negligible absolute one.
+/// Bar: `|Δ| ≤ 1e-11 + 1e-9·|want|` (numpy-style atol+rtol).
+#[test]
+fn on_knot_interpolation_reproduces_node() {
+    let Some(oracle) = load_oracle() else {
+        return no_oracle("oracle.json");
+    };
+    let set = load_set(&oracle);
+    let member = set.member(oracle.member).expect("member load");
+    let mut worst_abs = 0.0f64;
+    let mut count = 0usize;
+    for p in oracle.points.iter().filter(|p| p.category == "knot") {
+        let got: f64 = member.xfx_q2(p.pdg, p.x, p.q2);
+        let delta = (got - p.xf).abs();
+        let bound = 1e-11 + 1e-9 * p.xf.abs();
         assert!(
-            !oracle.seams.is_empty(),
-            "expected ≥1 internal seam, got {}",
-            oracle.seams.len()
+            delta <= bound,
+            "on-knot interpolation off at pdg={} x={} Q²={}: rust={got:.17e} \
+             oracle={:.17e} |Δ|={delta:.3e} > {bound:.3e}",
+            p.pdg,
+            p.x,
+            p.q2,
+            p.xf
         );
-        let set = load_set(&oracle);
-        let member = set.member(oracle.member).expect("member load");
-        let worst = worst_in_category(&member, &oracle, "seam", FORCE_POSITIVE_FLOOR);
-        assert!(worst <= 1e-9, "seam worst rel {worst:.3e} exceeds 1e-9");
+        worst_abs = worst_abs.max(delta);
+        count += 1;
+    }
+    eprintln!("on-knot interpolation: {count} points, worst |Δ| {worst_abs:.3e}");
+}
+
+/// Points outside the grid support are a hard error rather than a silent
+/// extrapolation. Blind spot: this pins the *policy* (refuse), not any
+/// extrapolated value — extrapolation is a deliberate non-goal.
+#[test]
+fn out_of_range_is_error() {
+    let Some(oracle) = load_oracle() else {
+        return no_oracle("oracle.json");
+    };
+    let set = load_set(&oracle);
+    let member = set.member(oracle.member).expect("member load");
+    // Far below XMin=1e-9 in x and above QMax in Q².
+    assert!(member.try_xfx_q2(2, 1e-12_f64, 1e6_f64).is_err());
+    assert!(member.try_xfx_q2(2, 2.0_f64, 100.0_f64).is_err());
+}
+
+// ── Multi-Q²-subgrid coverage (MSHT20lo_as130) ─────────────────────────
+//
+// A single-subgrid set never exercises the subgrid walk or the one-sided
+// Q²-derivative each band takes at an internal seam. These gates pin both
+// against real LHAPDF values on a three-band set.
+
+#[test]
+fn multigrid_subgrid_structure_matches_oracle() {
+    let Some(oracle) = load_multigrid_oracle() else {
+        return no_oracle("oracle_multigrid.json");
+    };
+    assert!(
+        oracle.subgrids.len() >= 2,
+        "the multi-subgrid oracle must carry ≥2 Q²-subgrids, got {}",
+        oracle.subgrids.len()
+    );
+    let set = load_set(&oracle);
+    let member = set
+        .member(oracle.member)
+        .expect("failed to load reference member");
+
+    assert_eq!(
+        member.subgrids.len(),
+        oracle.subgrids.len(),
+        "subgrid count mismatch"
+    );
+    for (i, (sg, osg)) in member.subgrids.iter().zip(&oracle.subgrids).enumerate() {
+        assert_eq!(sg.nx(), osg.nx, "subgrid {i}: x-knot count mismatch");
+        assert_eq!(sg.nq(), osg.nq, "subgrid {i}: Q-knot count mismatch");
+        // Compare flavors as a set, not a sequence: LHAPDF canonicalizes the
+        // flavor order (gluon last) in its KnotArray, while the parser keeps
+        // the `.dat` file order (gluon mid-list for this set). Both index x·f
+        // by PDG code, so the ordering is an internal detail; the invariant
+        // that must hold is that the same flavors are present.
+        let mut got = sg.flavors.clone();
+        let mut want = osg.flavors.clone();
+        got.sort_unstable();
+        want.sort_unstable();
+        assert_eq!(got, want, "subgrid {i}: flavor set mismatch");
     }
 
-    /// Crossing an internal seam is a derivative kink, not a value jump: the
-    /// x·f value is continuous while its Q²-derivative changes as the walk hands
-    /// off between bands. Probe just below, at, and just above each seam and
-    /// require the value to move continuously — a gross band mix-up (reading the
-    /// wrong band's offset) would show up as a step here.
-    #[test]
-    fn multigrid_value_is_continuous_across_seams() {
-        let oracle = load_multigrid_oracle();
-        let set = load_set(&oracle);
-        let member = set.member(oracle.member).expect("member load");
-        let x = 0.05_f64;
-        for &seam in &oracle.seams {
-            let below = seam * (1.0 - 1e-7);
-            let above = seam * (1.0 + 1e-7);
-            let v_below: f64 = member.xfx_q2(2, x, below);
-            let v_at: f64 = member.xfx_q2(2, x, seam);
-            let v_above: f64 = member.xfx_q2(2, x, above);
-            let scale = v_at.abs().max(1e-12);
-            assert!(
-                (v_at - v_below).abs() <= 1e-4 * scale,
-                "value jumps below seam Q²={seam}: {v_below} vs {v_at}"
-            );
-            assert!(
-                (v_above - v_at).abs() <= 1e-4 * scale,
-                "value jumps above seam Q²={seam}: {v_at} vs {v_above}"
-            );
-        }
+    // Each declared seam is the shared upper/lower Q² knot of two adjacent
+    // parsed bands.
+    assert!(
+        !oracle.seams.is_empty(),
+        "oracle declares no internal seams"
+    );
+    for &seam in &oracle.seams {
+        let bordering = member
+            .subgrids
+            .iter()
+            .filter(|sg| {
+                rel_close(*sg.q2.first().unwrap(), seam) || rel_close(*sg.q2.last().unwrap(), seam)
+            })
+            .count();
+        assert!(
+            bordering >= 2,
+            "seam Q²={seam} does not border two bands (found {bordering})"
+        );
+    }
+}
+
+#[test]
+fn multigrid_on_knot_values_match_oracle_exactly() {
+    let Some(oracle) = load_multigrid_oracle() else {
+        return no_oracle("oracle_multigrid.json");
+    };
+    let set = load_set(&oracle);
+    let member = set
+        .member(oracle.member)
+        .expect("failed to load reference member");
+
+    let mut checked = 0usize;
+    for p in oracle.points.iter().filter(|p| p.category == "knot") {
+        let sg = member
+            .subgrids
+            .iter()
+            .find(|sg| {
+                sg.x.iter().any(|&xv| rel_close(xv, p.x))
+                    && sg.q2.iter().any(|&qv| rel_close(qv, p.q2))
+            })
+            .unwrap_or_else(|| panic!("no subgrid contains knot x={} q2={}", p.x, p.q2));
+        let ix = sg.x.iter().position(|&xv| rel_close(xv, p.x)).unwrap();
+        let iq = sg.q2.iter().position(|&qv| rel_close(qv, p.q2)).unwrap();
+        let ifl = sg
+            .flavor_index(p.pdg)
+            .unwrap_or_else(|| panic!("flavor {} not in subgrid", p.pdg));
+        let got = sg.xf_at(ix, iq, ifl);
+        assert!(
+            rel_close(got, p.xf),
+            "xf mismatch at pdg={} x={} q2={}: rust={got} oracle={}",
+            p.pdg,
+            p.x,
+            p.q2,
+            p.xf
+        );
+        checked += 1;
+    }
+    eprintln!("multigrid: checked {checked} on-knot points against the LHAPDF oracle");
+}
+
+/// This set carries `ForcePositive: 2` in its `.info`, so LHAPDF clamps its
+/// interpolated x·f up to a ~1e-10 floor; vibegraph applies no such clamp,
+/// evaluating the raw log-bicubic. The two therefore diverge only where the
+/// PDF is physically negligible (heavy-flavor tails at large x, where x·f
+/// underflows the floor) — a clamp the gate deliberately does not test. The
+/// `atol` screens exactly that sub-floor region; every physical value (≳1e-4
+/// at these points) is compared at full relative precision. Blind spot: the
+/// gate does not verify LHAPDF's positivity clamp, which vibegraph omits by
+/// design.
+const FORCE_POSITIVE_FLOOR: f64 = 1e-8;
+
+#[test]
+fn multigrid_off_knot_interpolation_matches_lhapdf() {
+    let Some(oracle) = load_multigrid_oracle() else {
+        return no_oracle("oracle_multigrid.json");
+    };
+    let set = load_set(&oracle);
+    let member = set.member(oracle.member).expect("member load");
+    let worst = worst_in_category(&member, &oracle, "off_knot", FORCE_POSITIVE_FLOOR);
+    assert!(worst <= 1e-9, "off_knot worst rel {worst:.3e} exceeds 1e-9");
+}
+
+/// The load-bearing seam gate. Each "seam" oracle point sits either inside
+/// the lower band's last Q² interval, inside the upper band's first
+/// interval, or exactly on the shared seam knot. Reproducing LHAPDF at all
+/// three pins that the subgrid walk selects the band LHAPDF uses *and* that
+/// each band takes the same one-sided Q²-derivative LHAPDF's flattened
+/// (duplicated-knot) array forces there. Blind spot: agreement here shows
+/// the walk lands each probe in a band whose interpolant matches LHAPDF; it
+/// does not, on its own, distinguish the exact-seam value's band since the
+/// value is continuous across the seam by construction.
+#[test]
+fn multigrid_seam_interpolation_matches_lhapdf() {
+    let Some(oracle) = load_multigrid_oracle() else {
+        return no_oracle("oracle_multigrid.json");
+    };
+    assert!(
+        !oracle.seams.is_empty(),
+        "expected ≥1 internal seam, got {}",
+        oracle.seams.len()
+    );
+    let set = load_set(&oracle);
+    let member = set.member(oracle.member).expect("member load");
+    let worst = worst_in_category(&member, &oracle, "seam", FORCE_POSITIVE_FLOOR);
+    assert!(worst <= 1e-9, "seam worst rel {worst:.3e} exceeds 1e-9");
+}
+
+/// Crossing an internal seam is a derivative kink, not a value jump: the
+/// x·f value is continuous while its Q²-derivative changes as the walk hands
+/// off between bands. Probe just below, at, and just above each seam and
+/// require the value to move continuously — a gross band mix-up (reading the
+/// wrong band's offset) would show up as a step here.
+#[test]
+fn multigrid_value_is_continuous_across_seams() {
+    let Some(oracle) = load_multigrid_oracle() else {
+        return no_oracle("oracle_multigrid.json");
+    };
+    let set = load_set(&oracle);
+    let member = set.member(oracle.member).expect("member load");
+    let x = 0.05_f64;
+    for &seam in &oracle.seams {
+        let below = seam * (1.0 - 1e-7);
+        let above = seam * (1.0 + 1e-7);
+        let v_below: f64 = member.xfx_q2(2, x, below);
+        let v_at: f64 = member.xfx_q2(2, x, seam);
+        let v_above: f64 = member.xfx_q2(2, x, above);
+        let scale = v_at.abs().max(1e-12);
+        assert!(
+            (v_at - v_below).abs() <= 1e-4 * scale,
+            "value jumps below seam Q²={seam}: {v_below} vs {v_at}"
+        );
+        assert!(
+            (v_above - v_at).abs() <= 1e-4 * scale,
+            "value jumps above seam Q²={seam}: {v_at} vs {v_above}"
+        );
     }
 }

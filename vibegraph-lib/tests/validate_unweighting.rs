@@ -369,17 +369,21 @@ fn weighted_reference(
 #[test]
 fn unweighted_sample_reproduces_the_integration_it_came_from() {
     if !output_dir().exists() {
-        eprintln!(
-            "skipping: {} absent (run `pixi run -e madgraph build-diagrams`)",
-            output_dir().display()
+        return vibegraph::validation::skip(
+            "unweighted_sample_reproduces_the_integration_it_came_from",
+            "madgraph output tree",
+            output_dir().display(),
         );
-        return;
     }
 
     let mut failures: Vec<String> = Vec::new();
     for row in ROWS {
         if !output_dir().join(row.dir).exists() {
-            eprintln!("-- {} -- skipped: no banked MadGraph output", row.dir);
+            vibegraph::validation::skip(
+                "unweighted_sample_reproduces_the_integration_it_came_from",
+                "banked madgraph run",
+                row.dir,
+            );
             continue;
         }
         with_integrand(row, |integ| {

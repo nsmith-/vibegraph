@@ -27,10 +27,19 @@ tar = "0.4.46"
 flate2 = "1.1.9"
 ureq = "3.3.0"
 
+# `required-features` is how a test declares its dependency layer: everything
+# listed here needs a fetched PDF set or a frozen MadGraph run, so it is absent
+# from a default-feature build rather than deciding at runtime whether it has
+# anything to do. See validation/manifest.toml.
+
 [[test]]
 name = "cli_integrate"
 required-features = ["extended-validation"]
 
 [[test]]
 name = "cli_generate_proton"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "cli_pdf_cache_fetched"
 required-features = ["extended-validation"]

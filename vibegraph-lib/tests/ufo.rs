@@ -1,15 +1,35 @@
+//! UFO models the interned SM blob cannot stand in for.
+//!
+//! Every model here is read from the `mg5amcnlo` submodule's own `models/`
+//! tree, so this is the only place the parser meets a model it was not tuned on
+//! — a different coupling-order hierarchy (`loop_sm`), a different SLHA card
+//! layout (`MSSM_SLHA2`), and the SM UFO's Python source rather than the
+//! interned blob built from it.
+//!
+//! Banked layer: the submodule is a declared dependency, so a missing model is
+//! a failure here, not a reason to skip.
+
 mod common;
 
 use std::f64::consts::PI;
 use vibegraph::ufo::{EvaluatedModel, UFOModel, UfoError};
 
+/// Panics naming the model and the command that would produce it, so an
+/// uninitialised submodule reads as the setup error it is.
+fn model_dir(model: &str) -> std::path::PathBuf {
+    let path = common::ufo_path(model);
+    assert!(
+        path.is_dir(),
+        "UFO model `{model}` not found at {} \
+         (run `pixi run init-sm-submodule`)",
+        path.display()
+    );
+    path
+}
+
 #[test]
 fn test_load_loop_sm() {
-    let path = common::ufo_path("loop_sm");
-    if !path.exists() {
-        eprintln!("loop_sm UFO not found — skipping");
-        return;
-    }
+    let path = model_dir("loop_sm");
     let model = UFOModel::load(&path, None).expect("can load");
     let ev = EvaluatedModel::from_model(model.clone());
 
@@ -22,11 +42,7 @@ fn test_load_loop_sm() {
 
 #[test]
 fn test_load_mssm() {
-    let path = common::ufo_path("MSSM_SLHA2");
-    if !path.exists() {
-        eprintln!("MSSM_SLHA2 UFO not found — skipping");
-        return;
-    }
+    let path = model_dir("MSSM_SLHA2");
     let model = UFOModel::load(&path, None).expect("failed to load MSSM_SLHA2 UFO");
     let ev = EvaluatedModel::from_model(model.clone());
 
@@ -44,11 +60,7 @@ fn test_load_mssm() {
 #[test]
 #[ignore = "the FFCT2 operator in the lorentz structure is a custom fortran routine in this model's functions.f"]
 fn test_load_taudecay() {
-    let path = common::ufo_path("taudecay_UFO");
-    if !path.exists() {
-        eprintln!("taudecay_UFO not found — skipping");
-        return;
-    }
+    let path = model_dir("taudecay_UFO");
     let param_card_path = path.join("param_card.dat");
     let card = vibegraph::ufo::slha::ParamCard::from_file(&param_card_path)
         .expect("failed to load taudecay param_card.dat");
@@ -76,11 +88,7 @@ fn test_load_taudecay() {
 
 #[test]
 fn test_load_sm_ufo() {
-    let path = common::ufo_path("sm");
-    if !path.exists() {
-        eprintln!("SM UFO not found at {path:?} — skipping");
-        return;
-    }
+    let path = model_dir("sm");
     let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
     let ev = EvaluatedModel::from_model(model.clone());
 
@@ -107,10 +115,7 @@ fn test_load_sm_ufo() {
 
 #[test]
 fn test_recompute_propagates() {
-    let path = common::ufo_path("sm");
-    if !path.exists() {
-        return;
-    }
+    let path = model_dir("sm");
     let model = UFOModel::load(&path, None).expect("failed to load SM UFO");
     let mut ev = EvaluatedModel::from_model(model.clone());
 

@@ -57,6 +57,11 @@ name = "kernel_fusion"
 harness = false
 required-features = ["bench-internals"]
 
+# `required-features` is how a test declares its dependency layer: everything
+# listed here needs the mg5amcnlo submodule, a fetched PDF set or a frozen
+# MadGraph run, so it is absent from a default-feature build rather than
+# deciding at runtime whether it has anything to do. See validation/manifest.toml.
+
 [[test]]
 name = "validate_madgraph_diagrams"
 harness = false
@@ -101,5 +106,41 @@ required-features = ["extended-validation"]
 
 [[test]]
 name = "validate_lhef"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "validate_helas"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "validate_alphas"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "validate_scales"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "validate_pdf_grid"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "validate_hadronic"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "validate_vegas"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "rambo_flat_mc"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "ufo"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "sm_interned_blob"
 required-features = ["extended-validation"]
 

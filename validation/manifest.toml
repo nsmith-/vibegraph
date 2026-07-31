@@ -1,0 +1,606 @@
+# vibegraph validation manifest.
+#
+# One row per validated process: what it is, which script builds its MadGraph
+# reference, which artifacts that reference consists of, why the process is in
+# the set at all, and — per validation category — which dependency layer the
+# check runs in. This is the single source of truth the reference generators,
+# the report driver and the `validation/madgraph` index read from, so a process
+# is added here once rather than in five places.
+#
+# ## Layers
+#
+# A check declares its layer by *where it is registered*, never at runtime:
+#
+#   hermetic  Runs on a bare clone — no git submodule, no fetched data, no pixi
+#             environment, no network. `cargo test` with default features is
+#             exactly this set, and it is complete there: it never skips.
+#   banked    May assume the `mg5amcnlo` submodule checked out, the fetched PDF
+#             sets, and the frozen MadGraph reference runs. May *not* run
+#             MadGraph. Registered with `required-features = ["extended-validation"]`
+#             in the crate manifests; driven by `pixi run validate`.
+#   oracle    May run `mg5_aMC`, LHAPDF and f2py. Holds all reference generation
+#             plus the vibegraph-side runs too heavy for the banked budget.
+#             Driven by `pixi run generate-references` / `pixi run validate-deep`.
+#
+# The one structural exception to "registration is the mechanism": a library
+# unit test lives in the `--lib` target, which has no per-test registration, so
+# the handful of `--lib` tests that need banked inputs carry
+# `#[cfg(feature = "extended-validation")]` instead. Integration tests never do.
+#
+# Any runtime skip inside the banked layer goes through
+# `vibegraph::validation::skip`, which refuses to skip for a reason not listed
+# in its `EXPECTED_SKIPS` table.
+#
+# ## Categories and cell tiers
+#
+# Four per-process categories: `diagrams` (same Feynman diagrams as MadGraph),
+# `amplitudes` (per-point × per-helicity × per-flow complex amplitudes),
+# `integrals` (sigma against banked MadGraph), `samples` (unweighted-event
+# distributions against MadGraph's banked event samples).
+#
+# Each cell carries a `tier`:
+#
+#   hermetic / banked / long   the layer the cell's gate runs in ("long" is the
+#                              oracle layer, entered for cost rather than for
+#                              dependencies)
+#   blocked                    not runnable until `blocker` lands
+#   covered-by                 deliberately not measured here; `rows` names the
+#                              rows that cover the same physics
+#   uncovered                  a named gap: nothing measures this and nothing
+#                              claims to; `note` says what would fill it
+#
+# and a `mode`: `gate` (a failure fails the suite) or `info` (measured and
+# reported, never enforced). `blocked` / `covered-by` / `uncovered` cells carry
+# no mode.
+#
+# `status = "planned"` marks a row whose reference run does not exist yet.
+
+schema = 1
+
+# ─────────────────────────── single-channel rows ────────────────────────────
+#
+# One concrete subprocess each, so the matrix element is MadGraph's `matrix1`
+# and a per-diagram or per-flow dump means one diagram (one flow) per row.
+# Validating concrete subprocesses is deliberate: MadGraph's grouping of
+# subprocesses is optimization-inspired, not physics-motivated, and we owe
+# agreement with it only where it affects our ability to validate.
+
+[[process]]
+key = "ee_to_mumu"
+process = "e+ e- > mu+ mu-"
+script = "validation/madgraph/scripts/ee_to_mumu.mg5"
+class = "single-channel"
+n_final = 2
+rationale = "The smallest complete amplitude: colourless massless s-channel gamma*/Z, the reference point every convention change is re-measured against."
+artifacts = ["output/ee_to_mumu", "output/ee_to_mumu.json", "output/ee_to_mumu_amplitude.csv", "sigma_reference.json#ee_to_mumu"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "ee_to_ee"
+process = "e+ e- > e+ e-"
+script = "validation/madgraph/scripts/ee_to_ee.mg5"
+class = "single-channel"
+n_final = 2
+rationale = "Bhabha: s+t interference with identical initial/final flavours, the sharpest regression for crossed-line conjugation and the relative sign between crossed diagram classes."
+artifacts = ["output/ee_to_ee", "output/ee_to_ee.json", "output/ee_to_ee_amplitude.csv", "sigma_reference.json#ee_to_ee", "amp_reference.json#ee_to_ee"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate", note = "the run-card lepton pT cut regulates the t-channel divergence" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "ee_to_ttx"
+process = "e+ e- > t t~"
+script = "validation/madgraph/scripts/ee_to_ttx.mg5"
+class = "single-channel"
+n_final = 2
+rationale = "Massive external fermions: the massive-fermion spinor conventions in ixxxxx/oxxxxx that no massless continuum process touches. Beams at 500 GeV clear 2*MT."
+artifacts = ["output/ee_to_ttx", "output/ee_to_ttx.json", "output/ee_to_ttx_amplitude.csv", "sigma_reference.json#ee_to_ttx"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "ee_to_wpwm"
+process = "e+ e- > w+ w-"
+script = "validation/madgraph/scripts/ee_to_wpwm.mg5"
+class = "single-channel"
+n_final = 2
+rationale = "Triple-gauge (VVV) vertex plus massive charged vector externals (three helicity states each) and t-channel neutrino exchange: where the V-chain phase ledger first meets VVV."
+artifacts = ["output/ee_to_wpwm", "output/ee_to_wpwm.json", "output/ee_to_wpwm_amplitude.csv", "sigma_reference.json#ee_to_wpwm", "amp_reference.json#ee_to_wpwm"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "ee_to_zh"
+process = "e+ e- > z h"
+script = "validation/madgraph/scripts/ee_to_zh.mg5"
+class = "single-channel"
+n_final = 2
+rationale = "Higgsstrahlung: external scalar wavefunction (sxxxxx) on an on-shell VVS vertex, complementing the internal-Higgs ZZH class of the 2->6 continuum."
+artifacts = ["output/ee_to_zh", "output/ee_to_zh.json", "output/ee_to_zh_amplitude.csv", "sigma_reference.json#ee_to_zh"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "uux_to_mumu"
+process = "u u~ > mu+ mu-"
+script = "validation/madgraph/scripts/uux_to_mumu.mg5"
+class = "single-channel"
+n_final = 2
+rationale = "Partonic Drell-Yan: a coloured initial state with an alpha_s-free matrix element, so the initial-state colour average (1/9) and the N_c sum are exercised at fixed coupling. Partonic beams at 250+250 GeV keep the s-channel propagator off the Z pole."
+artifacts = ["output/uux_to_mumu", "sigma_reference.json#uux_to_mumu"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate", note = "the banked amplitude table is pp_to_ll_qcd0's; that row is this process's concrete subprocess" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "uux_to_uux"
+process = "u u~ > u u~"
+script = "validation/madgraph/scripts/uux_to_uux.mg5"
+class = "single-channel"
+n_final = 2
+rationale = "Identical-flavour quark lines: s- and t-channel gluon exchange give a genuine NCOLOR=2 amplitude, the smallest real test of the multi-flow CF matrix (CF = [[9,3],[3,9]]) and of the T.T Fierz half of the colour vocabulary."
+artifacts = ["output/uux_to_uux", "output/uux_to_uux_amplitude.csv", "sigma_reference.json#uux_to_uux", "jamp_reference.json#uux_to_uux"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate", note = "carries a standing -0.30% bias against the banked sigma; resolution is the multi-rung spine feature, and the cell stays visible until then" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "gg_to_ttx"
+process = "g g > t t~"
+script = "validation/madgraph/scripts/gg_to_ttx.mg5"
+class = "single-channel"
+n_final = 2
+rationale = "External octets feeding a quark line: the f(1,2,3) triple-gluon vertex resolved through the f -> trace colour rules, giving NCOLOR=2 with CF = [[16/3,-2/3],[-2/3,16/3]]. Complements uux_to_uux with the other half of the SM colour vocabulary."
+artifacts = ["output/gg_to_ttx", "output/gg_to_ttx_amplitude.csv", "sigma_reference.json#gg_to_ttx", "jamp_reference.json#gg_to_ttx"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "gg_to_gg"
+process = "g g > g g"
+script = "validation/madgraph/scripts/gg_to_gg.mg5"
+class = "single-channel"
+n_final = 2
+rationale = "The four-gluon vertex — the only SM vertex with more than one colour structure — and pure-f colour algebra reduced to the six-element single-trace basis (NCOLOR=6). The stress test for per-chain rooting of multi-structure vertices and the largest CF contraction in the tree-level vocabulary."
+artifacts = ["output/gg_to_gg", "output/gg_to_gg_amplitude.csv", "sigma_reference.json#gg_to_gg", "jamp_reference.json#gg_to_gg"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate", factorized = true, note = "our six-flow basis is a permutation/recombination of MadGraph's JAMP basis, so the per-helicity (flow-summed) and per-flow (helicity-summed) projections are compared rather than the full outer product" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "ee_to_mumua"
+process = "e+ e- > mu+ mu- a"
+script = "validation/madgraph/scripts/ee_to_mumua.mg5"
+class = "single-channel"
+n_final = 3
+rationale = "First external vector wavefunction (vxxxxx) compared against MadGraph; a massless photon has exactly two physical helicity states, so the state list itself is under test."
+artifacts = ["output/ee_to_mumua", "output/ee_to_mumua.json", "output/ee_to_mumua_amplitude.csv", "sigma_reference.json#ee_to_mumua"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate", note = "run-card photon pT/isolation cuts regulate the soft and collinear divergences" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "ee_to_tatah"
+process = "e+ e- > ta+ ta- h"
+script = "validation/madgraph/scripts/ee_to_tatah.mg5"
+class = "single-channel"
+n_final = 3
+rationale = "External FFS Yukawa emission: the Higgs radiated off a massive tau line, so an external scalar meets the fermion chain — untested by the VVS-only zh channel."
+artifacts = ["output/ee_to_tatah", "output/ee_to_tatah.json", "output/ee_to_tatah_amplitude.csv", "sigma_reference.json#ee_to_tatah", "amp_reference.json#ee_to_tatah"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "uux_to_epemg"
+process = "u u~ > e+ e- g QCD=2 QED=2"
+script = "validation/madgraph/scripts/uux_to_epemg.mg5"
+class = "single-channel"
+n_final = 3
+rationale = "Baseline of a three-point design over the llj subprocess classes (this row, gu_to_epemu varying the colour arrangement, ddx_to_epemg varying the initial flavour). A gluon radiated off an annihilating quark line, single colour structure T^a_{ij}; the two attachments differ by the sign of the internal quark propagator's momentum, where a fermion-flow error shows up per diagram while |M|^2 stays unmoved."
+artifacts = ["output/uux_to_epemg", "output/uux_to_epemg_amplitude.csv", "sigma_reference.json#uux_to_epemg", "amp_reference.json#uux_to_epemg"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "ddx_to_epemg"
+process = "d d~ > e+ e- g QCD=2 QED=2"
+script = "validation/madgraph/scripts/ddx_to_epemg.mg5"
+class = "single-channel"
+n_final = 3
+rationale = "The down-type partner of uux_to_epemg: identical topology and colour structure, different electroweak couplings. Holding everything but the initial flavour fixed makes a coupling-table error separable from a topology or flow-convention error."
+artifacts = ["output/ddx_to_epemg", "output/ddx_to_epemg_amplitude.csv", "sigma_reference.json#ddx_to_epemg", "amp_reference.json#ddx_to_epemg"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "gu_to_epemu"
+process = "g u > e+ e- u QCD=2 QED=2"
+script = "validation/madgraph/scripts/gu_to_epemu.mg5"
+class = "single-channel"
+n_final = 3
+rationale = "The first mixed incoming colour arrangement: one adjoint beam and one fundamental beam, with the quark line running through a spacelike propagator. Also the crossing of uux_to_epemg, so a convention error that is a property of the arrangement rather than of the functions shows up here and not there."
+artifacts = ["output/gu_to_epemu", "output/gu_to_epemu_amplitude.csv", "sigma_reference.json#gu_to_epemu", "amp_reference.json#gu_to_epemu"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "gux_to_epemux"
+process = "g u~ > e+ e- u~ QCD=2 QED=2"
+script = "validation/madgraph/scripts/gux_to_epemux.mg5"
+class = "single-channel"
+n_final = 3
+rationale = "The antiquark orientation of gu_to_epemu: the colour flow into the gluon's adjoint index runs the other way and the fermion line is traversed in the opposite sense, so a slot assignment right for one orientation and wrong for the other leaves the gu row clean."
+artifacts = ["output/gux_to_epemux", "output/gux_to_epemux_amplitude.csv", "sigma_reference.json#gux_to_epemux", "amp_reference.json#gux_to_epemux"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "ee_to_mumu_tata_qcd0"
+process = "e+ e- > mu+ mu- ta+ ta- QCD=0"
+script = "validation/madgraph/scripts/ee_to_mumu_tata_qcd0.mg5"
+class = "single-channel"
+n_final = 4
+rationale = "Minimal pure-EW process with a chained off-shell fermion current: the incoming e-line absorbs two internal gamma*/Z propagators in series. Colourless, three distinct fermion lines, no identical final-state particles — the 2->6 continuum's phase structure in a process small enough for a per-diagram AMP dump."
+artifacts = ["output/ee_to_mumu_tata_qcd0", "output/ee_to_mumu_tata_qcd0.json", "output/ee_to_mumu_tata_qcd0_amplitude.csv", "sigma_reference.json#ee_to_mumu_tata_qcd0"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "banked", mode = "info", note = "the low-m_ll disagreement is decided in `samples`, where the binned distribution says which side under-covers; the scalar sigma cannot" }
+samples = { tier = "banked", mode = "gate", note = "carries the m_ll-to-threshold binning that decides the low-m_ll reconciliation" }
+
+[[process]]
+key = "uux_to_ccx_emmm_qcd0"
+process = "u u~ > c c~ e+ e- mu+ mu- QCD=0"
+script = "validation/madgraph/scripts/uux_to_ccx_emmm_qcd0.mg5"
+class = "single-channel"
+n_final = 6
+rationale = "Different-flavour quark lines with diagonal CKM leave only the s-channel EW connection, so NCOLOR=1 and the coherent diagram sum needs no colour-flow code; distinct leptons make IDEN pure spin*colour averaging with no symmetry factor."
+artifacts = ["output/uux_to_ccx_emmm_qcd0", "output/uux_to_ccx_emmm_qcd0.json", "output/uux_to_ccx_emmm_qcd0_amplitude.csv", "sigma_reference.json#uux_to_ccx_emmm_qcd0"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "long", mode = "gate", note = "~1 ms per evaluation over a 24-dimensional integral: a cost problem, not a dependency problem" }
+samples = { tier = "long", mode = "gate" }
+
+[[process]]
+key = "bbx_to_ccx_emmm_qcd0"
+process = "b b~ > c c~ e+ e- mu+ mu- QCD=0"
+script = "validation/madgraph/scripts/bbx_to_ccx_emmm_qcd0.mg5"
+class = "single-channel"
+n_final = 6
+rationale = "Massive-initial-spine variant of uux_to_ccx_emmm_qcd0: a two-propagator initial spine with massive internal fermions, which is what would catch a spine-parity derivation that assumed the massless S(-q) = -S(q) identity."
+artifacts = ["output/bbx_to_ccx_emmm_qcd0", "output/bbx_to_ccx_emmm_qcd0.json", "output/bbx_to_ccx_emmm_qcd0_amplitude.csv", "sigma_reference.json#bbx_to_ccx_emmm_qcd0"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
+integrals = { tier = "long", mode = "gate" }
+samples = { tier = "long", mode = "gate" }
+
+# ──────────────────────────── multi-channel rows ─────────────────────────────
+#
+# Proton beams and multiparticle labels, so one row is a group of concrete
+# subprocesses. The `diagrams` cell matches the per-flavour union against
+# MadGraph's; `amplitudes` is generally covered by the single-channel rows that
+# are the group's concrete subprocesses, stated here rather than left implicit.
+
+[[process]]
+key = "pp_to_ll"
+process = "p p > l+ l-"
+script = "validation/madgraph/scripts/pp_to_ll.mg5"
+class = "multi-channel"
+n_final = 2
+rationale = "Drell-Yan at default coupling orders: the flavour-group path over a proton beam, and — through the two committed dy13 run cards (default cuts, and the m_ll in [60,120] window) — the hadronic cross-section reference that pins the PDF luminosity, the flux and the cuts together."
+artifacts = ["output/pp_to_ll", "output/pp_to_ll.json", "output/dy13_default", "output/dy13_mmll_60_120", "hadronic_sigma_reference.json", "dy13_default_run_card.dat", "dy13_mmll_run_card.dat", "dy13_proc_card.dat", "dy13_param_card.dat"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union, not only the count" }
+amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"] }
+integrals = { tier = "banked", mode = "gate", note = "two cards, both through the general proton path; no bespoke integrand" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "pp_to_ll_qcd0"
+process = "p p > l+ l- QCD=0"
+script = "validation/madgraph/scripts/pp_to_ll_qcd0.mg5"
+class = "multi-channel"
+n_final = 2
+rationale = "Drell-Yan with the strong coupling forbidden: the order-constraint counterpart of pp_to_ll, and the group whose banked amplitude table is the concrete u u~ > mu+ mu- subprocess every partonic Drell-Yan check reads."
+artifacts = ["output/pp_to_ll_qcd0", "output/pp_to_ll_qcd0.json", "output/pp_to_ll_qcd0_amplitude.csv"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
+amplitudes = { tier = "hermetic", mode = "gate", note = "its banked table is the u u~ > mu+ mu- subprocess" }
+integrals = { tier = "covered-by", rows = ["pp_to_ll"] }
+samples = { tier = "covered-by", rows = ["pp_to_ll"] }
+
+[[process]]
+key = "pp_to_bb"
+process = "p p > b b~"
+script = "validation/madgraph/scripts/pp_to_bb.mg5"
+class = "multi-channel"
+n_final = 2
+rationale = "A pure-QCD group at default coupling orders: the flavour union spans both q q~ and g g initial states, which is diagram content no electroweak-core group reaches."
+artifacts = ["output/pp_to_bb", "output/pp_to_bb.json"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
+amplitudes = { tier = "uncovered", note = "no banked b b~ parton row exists; the single-channel colour rows (uux_to_uux, gg_to_ttx) cover the same colour structures at other flavours" }
+integrals = { tier = "blocked", blocker = "kt-clustering", note = "the run card takes the dynamical scale, which needs general kT clustering for the scale choice" }
+samples = { tier = "blocked", blocker = "kt-clustering" }
+
+[[process]]
+key = "pp_to_bb_qcd2"
+process = "p p > b b~ QCD=2"
+script = "validation/madgraph/scripts/pp_to_bb_qcd2.mg5"
+class = "multi-channel"
+n_final = 2
+rationale = "The explicit-order counterpart of pp_to_bb: pinning that a stated QCD=2 constraint reproduces what the default order selection chooses, so an order-semantics change cannot pass unnoticed."
+artifacts = ["output/pp_to_bb_qcd2", "output/pp_to_bb_qcd2.json"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
+amplitudes = { tier = "uncovered", note = "same gap as pp_to_bb" }
+integrals = { tier = "blocked", blocker = "kt-clustering" }
+samples = { tier = "blocked", blocker = "kt-clustering" }
+
+[[process]]
+key = "pp_to_bb_fixed"
+process = "p p > b b~ QCD=2"
+script = "validation/madgraph/scripts/pp_to_bb_fixed.mg5"
+class = "multi-channel"
+n_final = 2
+status = "planned"
+rationale = "Same generate line as pp_to_bb_qcd2 with a fixed-scale run card, so the sigma and the event sample of a purely QCD-initiated group become measurable without kT clustering. The only multi-channel row whose hard process carries no electroweak core, and the first gated consumer of the mirrored beam ordering."
+artifacts = ["output/pp_to_bb_fixed"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "uncovered", note = "would be covered-by new b b~ parton rows if those are added" }
+integrals = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "gate" }
+
+[[process]]
+key = "pp_to_llj_fixed"
+process = "p p > l+ l- j QCD=2 QED=2"
+script = "validation/madgraph/scripts/pp_to_llj_fixed.mg5"
+class = "multi-channel"
+n_final = 3
+rationale = "The integrals/samples/events subject of the llj triple: same generate line as pp_to_llj_qcd2_qed2 with all three scales fixed at m_Z and an LHAPDF grid (lhaid 247000), so every per-event scale field can be replayed exactly and the cross section does not inherit the low-m_ll discrepancy (mmll = 50)."
+artifacts = ["output/pp_to_llj_fixed", "output/pp_to_llj_fixed/Events/run_01/unweighted_events.lhe.gz"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
+amplitudes = { tier = "covered-by", rows = ["uux_to_epemg", "ddx_to_epemg", "gu_to_epemu", "gux_to_epemux"] }
+integrals = { tier = "banked", mode = "gate", note = "three seeds at 300k in this layer; the full seed sweep and the budget ladder are oracle-layer" }
+samples = { tier = "banked", mode = "gate", note = "carries the flavour-group frequency chi-squared as well as the continuous observables" }
+
+[[process]]
+key = "pp_to_llj"
+process = "p p > l+ l- j"
+script = "validation/madgraph/scripts/pp_to_llj.mg5"
+class = "multi-channel"
+n_final = 3
+rationale = "llj at default coupling orders. Kept alongside the explicit-order script because the pair is what pins order-constraint semantics: the two must select the same diagram content, and this row is the asserted-refused case in the scale gate (its dynamical scale choice is refused rather than approximated)."
+artifacts = ["output/pp_to_llj", "output/pp_to_llj.json"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour union; the point of the row is the order-selection semantics" }
+amplitudes = { tier = "uncovered", note = "an order-semantics row: its content is pinned in `diagrams`, and the amplitudes of its QCD=2 QED=2 subprocesses are covered by the four llj parton rows" }
+integrals = { tier = "blocked", blocker = "kt-clustering", note = "the dynamical scale is refused, and that refusal is itself asserted" }
+samples = { tier = "blocked", blocker = "kt-clustering" }
+
+[[process]]
+key = "pp_to_llj_qcd2_qed2"
+process = "p p > l+ l- j QCD=2 QED=2"
+script = "validation/madgraph/scripts/pp_to_llj_qcd2_qed2.mg5"
+class = "multi-channel"
+n_final = 3
+rationale = "llj with the orders stated explicitly: the other half of the order-constraint pair, and the dynamical-scale run whose refusal is asserted."
+artifacts = ["output/pp_to_llj_qcd2_qed2", "output/pp_to_llj_qcd2_qed2.json"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour union" }
+amplitudes = { tier = "covered-by", rows = ["uux_to_epemg", "ddx_to_epemg", "gu_to_epemu", "gux_to_epemux"] }
+integrals = { tier = "blocked", blocker = "kt-clustering" }
+samples = { tier = "blocked", blocker = "kt-clustering" }
+
+# ─────────────────────────── standalone gates ────────────────────────────────
+#
+# Process-independent checks, run once per invocation of their layer and
+# reported as a list beside the per-process table rather than as cells in it.
+
+[[standalone]]
+key = "alphas-grid"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/alphas_reference_grid.rs"]
+inputs = ["validation/alphas/reference.csv"]
+rationale = "The running alpha_s against MadGraph's own alfas_functions.f, bit-for-bit: both sides run the same Newton iteration to the same tolerance, so agreeing on the iterate is stronger than agreeing on the root."
+
+[[standalone]]
+key = "alphas-events"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_alphas.rs"]
+inputs = ["banked LHE events (AQCDUP)", "MadGraph run logs"]
+rationale = "AQCDUP replayed from the printed SCALUP for every event of every banked run, plus the asmz/nloop source rule against the run logs: a per-event oracle over 180k events rather than a single scalar."
+
+[[standalone]]
+key = "pdf-grid"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_pdf_grid.rs"]
+inputs = ["validation/pdf/oracle.json", "validation/pdf/oracle_multigrid.json"]
+rationale = "The log-bicubic interpolation and the multi-subgrid walk against LHAPDF's own values — the library MadGraph evaluates PDFs through. The two sets differ in shape on purpose: one rectangular Q^2 subgrid, and two bands joined at a seam."
+status = "oracle-json-absent"
+note = "The oracle JSONs are not committed and not present, so the gate currently records an expected skip. Committing them is what makes this gate live."
+
+[[standalone]]
+key = "helas-kernels"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/helas_kernel_composition.rs"]
+inputs = []
+rationale = "The compiled evaluator against a hand-composed chain of this crate's own HELAS kernels over a dense (sqrt(s), cos theta) grid: independent of MadGraph, so it separates a compiler/rooting error from a kernel error."
+
+[[standalone]]
+key = "helas-fortran"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_helas.rs"]
+inputs = ["validation/helas/reference.csv"]
+rationale = "The same chain against the original Fortran77 HELAS routines compiled through f2py — the ancestor library, not MadGraph's generated code."
+
+[[standalone]]
+key = "rambo-fixture"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/rambo_oracle.rs"]
+inputs = ["validation/rambo/rambo_fixture.json"]
+rationale = "Momenta and weights replayed against a committed fixture dumped from the reference RAMBO implementation, so the weight's R_n and (2pi)^(4-3n) factors are pinned without a Monte-Carlo run."
+
+[[standalone]]
+key = "rambo-flat-mc"
+layer = "banked"
+targets = ["vibegraph-lib/tests/rambo_flat_mc.rs"]
+inputs = []
+rationale = "The RAMBO weight normalisation through a flat Monte-Carlo cross section against the QED analytic sigma: banked for cost, not for dependencies."
+
+[[standalone]]
+key = "runcard-defaults"
+layer = "hermetic"
+targets = ["vibegraph-lib/src/runcard.rs (unit tests)"]
+inputs = ["validation/madgraph/runcard_defaults.json"]
+rationale = "Every run-card default this crate transcribes, against a dump of MadGraph's own RunCardLO defaults: a transcription table is exactly the kind of thing that rots silently."
+
+[[standalone]]
+key = "color-cf"
+layer = "banked"
+targets = ["vibegraph-lib/tests/color_cf_oracle.rs"]
+inputs = ["MadGraph-generated matrix1_orig.f DATA CF blocks"]
+rationale = "The colour-factor matrix and NCOLOR against every generated matrix element's DATA CF block. Reads MadGraph Fortran sources rather than events, so it stays a standalone gate."
+
+[[standalone]]
+key = "color-flow-tags"
+layer = "banked"
+targets = ["vibegraph-lib/tests/color_flow_tags_oracle.rs"]
+inputs = ["leshouche.inc per subprocess"]
+rationale = "Each flow's Les Houches ICOLUP connectivity against leshouche.inc — the colour information an event file carries, which |M|^2 is blind to."
+
+[[standalone]]
+key = "lhef-roundtrip"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_lhef.rs"]
+inputs = ["banked .lhe.gz runs"]
+rationale = "MadGraph's own banked events re-serialised byte-for-byte through our record types (the format oracle), the mutation checks that make that round-trip evidence, and a generated sample written and read back."
+
+[[standalone]]
+key = "scales-replay"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_scales.rs"]
+inputs = ["banked LHE events (SCALUP, <rscale>, <pdfrwt>)"]
+rationale = "The renormalisation and factorisation scales replayed per event against three fields at two precisions, each event judged against a bound built from the printed precision of the momenta that formed it rather than a chosen tolerance."
+
+[[standalone]]
+key = "scale-couplings"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_scale_couplings.rs"]
+inputs = ["MadGraph process directories"]
+rationale = "The constant-pool scaling path against a full model re-evaluation, entry by entry at 100 random alpha_s values, for every amplitude-gate process."
+
+[[standalone]]
+key = "sm-interned-blob"
+layer = "banked"
+targets = ["vibegraph-lib/tests/sm_interned_blob.rs"]
+inputs = ["research/refs/mg5amcnlo submodule"]
+rationale = "The committed interned SM model against a fresh parse of the pinned submodule, field by field plus every restrict card byte-for-byte. The committed blob is the hermetic truth; this is what catches it going stale after a submodule bump."
+
+[[standalone]]
+key = "ufo-models"
+layer = "banked"
+targets = ["vibegraph-lib/tests/ufo.rs"]
+inputs = ["research/refs/mg5amcnlo submodule"]
+rationale = "Loading UFO models the interned SM blob cannot stand in for (loop_sm, MSSM_SLHA2, the SM source tree itself), which is the only check that the parser handles a model it was not tuned on."
+
+[[standalone]]
+key = "diagram-counts"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_madgraph_diagrams.rs"]
+inputs = ["output/<process>.json"]
+rationale = "Per-process diagram counts against MadGraph's own enumeration. Moves to the hermetic layer once diagrams.json is committed."
+
+[[standalone]]
+key = "amplitudes-mg"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_helas_mg.rs", "vibegraph-lib/tests/amp_diagram_oracle.rs", "vibegraph-lib/tests/color_jamp_oracle.rs"]
+inputs = ["output/<process>_amplitude.csv", "amp_reference.json", "jamp_reference.json"]
+rationale = "The per-process amplitude gates as they stand today: |M|^2 on a fixed grid, per-diagram AMP for the single-flow processes, per-flow JAMP for the multi-flow ones. These fold into one hermetic gate over a committed per-process amplitude table."
+
+[[standalone]]
+key = "hadronic-sigma"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_hadronic.rs"]
+inputs = ["fetched PDF set", "hadronic_sigma_reference.json", "output/pp_to_llj_fixed"]
+rationale = "The hadronic cross sections, assembled from the PDF luminosity, the amplitude, the run-card cuts and VEGAS, driven by the same cards and PDF set MadGraph was given. Reported per process in the `integrals` column."
+
+[[standalone]]
+key = "cli-integrate"
+layer = "banked"
+targets = ["vibegraph-cli/tests/cli_integrate.rs"]
+inputs = ["fetched PDF set", "hadronic_sigma_reference.json"]
+rationale = "The shipped binary reproducing the library's banked cross sections from cards alone, which is the only check that the CLI's card handling and the library path agree."
+
+[[standalone]]
+key = "cli-generate-proton"
+layer = "banked"
+targets = ["vibegraph-cli/tests/cli_generate_proton.rs"]
+inputs = ["fetched PDF set", "output/pp_to_llj_fixed"]
+rationale = "Cards to an unweighted .lhe at proton beams, with every event's flavour assignment and colour connectivity checked against MadGraph's leshouche.inc and its own event sample."
+
+[[standalone]]
+key = "cli-pdf-cache-fetched"
+layer = "banked"
+targets = ["vibegraph-cli/tests/cli_pdf_cache_fetched.rs"]
+inputs = ["fetched PDF set"]
+rationale = "The cache and --pdf-dir resolution routes exercised with a real PDF set, from a working directory where no dev fallback can resolve. The refusal paths need no set and stay hermetic."
+
+[[standalone]]
+key = "vegas-sigma"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_vegas.rs"]
+inputs = []
+rationale = "sigma(e+e- -> mu+mu-) through the evaluator and VEGAS against both the QED analytic formula and the banked MadGraph value: banked for cost (about 10^5 integrand evaluations), not for dependencies."
+
+[[standalone]]
+key = "rooting-soundness"
+layer = "banked"
+targets = ["vibegraph-lib/src/helas/eval/rooting_soundness.rs"]
+inputs = ["output/<process>_amplitude.csv"]
+rationale = "Re-rooting every diagram and requiring |M|^2 to be invariant. The oracle is the production rooting's own value, which is itself pinned against MadGraph, so any rooting that reproduces it is correct. The full sweep is oracle-layer; a fast transparency guard on the override hook runs in the banked layer."

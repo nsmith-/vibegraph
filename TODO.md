@@ -8,9 +8,13 @@ gate.
 **Current position**: `user-distribution` + `proton-events` (feature) ✅ closed +
 merged 2026-07-31 — cards → `.lhe` for `p p > l+ l- j` from a clean environment,
 release/CI/acceptance workflows in place, and the project dual-licensed
-`MIT OR Apache-2.0`. **Next: the validation pass** — planned as `validation-3`
-in note 25 (three-layer suite delineation + per-process × per-category report;
-shower consumption and event-sample statistics land as the `samples` category).
+`MIT OR Apache-2.0`. **In progress: the validation pass** — `validation-3`,
+planned in note 25 (three-layer suite delineation + per-process × per-category
+report; shower consumption and event-sample statistics land as the `samples`
+category). L0 has landed: `validation/manifest.toml` is the per-process source of
+truth, `required-features` is the only mechanism deciding layer membership, and
+`cargo test` on a bare clone is complete with zero skips. `pixi run validate` is
+the banked layer; `validate-deep` / `generate-references` are the oracle layer.
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
 ## Pipeline Status
@@ -123,21 +127,27 @@ Small, independent, each one a gate that is weaker than it looks.
   file to notice. Make the resulting skip **loud** when the submodule is absent
   (see the row below): a fixture that silently vanishes is the failure mode this
   trades into.
-- **Silent soft-skip tests** — several default-suite tests reach for the
-  uninitialized `research/refs/mg5amcnlo` submodule or `validation/madgraph/output`
-  and return early with an `eprintln!`, reporting `ok` having asserted nothing.
-  Green then means "data absent", not "verified", and CI cannot tell the two
-  apart. Known members: `ufo::mod::tests::test_load_mssm` / `test_load_loop_sm`,
-  `ufo::sm::tests::interned_default_matches_submodule` (+ `_exactly`),
-  `helas::eval::rooting_soundness::root_override_hook_is_transparent` (via
-  `csv_index()`'s absent-`read_dir`-returns-empty). Wanted: skips distinguishable
-  from passes — a shared helper that marks the run, and a CI assertion on the
-  expected skip count. (Note 24 §U1.)
-- **`validate-pdf-grid` is not runnable in-checkout** — `validation/pdf/oracle*.json`
-  are gitignored and absent, so the task covers nothing and has covered nothing
-  for four sessions running. Either regenerate the oracles in-checkout (needs the
-  LHAPDF C++ build and a second set fetched) or document the regeneration step
-  where the task is defined. (`pixi.toml`, note 24 §P2b–P4.)
+- ~~**Silent soft-skip tests**~~ ✅ **resolved structurally.** Every test that
+  needed the submodule, a fetched PDF set or a banked MadGraph run is registered
+  behind `required-features` and absent from the default build, so the category
+  "runs by default but quietly needs data" no longer exists: `cargo test` on a
+  bare clone is complete with zero skips. The banked layer's remaining skips go
+  through `vibegraph::validation::skip`, which refuses any reason not in
+  `EXPECTED_SKIPS` and prints a `VALIDATION-SKIP` marker. The `ufo` and
+  `ufo::sm` members moved to `tests/ufo.rs` and `tests/sm_interned_blob.rs`,
+  where a missing submodule is now a failure, not a skip.
+- **Two reference files are still generated rather than committed**, so both
+  gates below currently record an expected skip on a machine that has not built
+  the producing toolchain, and both `EXPECTED_SKIPS` entries want deleting when
+  the file lands in git:
+  - `validation/pdf/oracle*.json` (`validate_pdf_grid`, 12 tests). Note: run as
+    part of a whole-suite `--features extended-validation` invocation before the
+    layering, these 12 did not merely cover nothing — they **failed**, since
+    nothing had ever run the binary outside its own pixi task. Producing them
+    needs the LHAPDF C++ build and a second set fetched.
+  - `validation/helas/reference.{csv,npz}` (`validate_helas`, 1 test). Produced
+    by the separate `helas-validation` environment (gfortran + f2py), which the
+    banked layer does not build.
 - **`clippy::approx_constant` deny at `coupling/alphas.rs:224`** — the one error
   in a whole-workspace `cargo clippy`, which three sessions worked around rather
   than fixed. `const PI: f64 = 3.141592653589793` is deliberate: it is π *as

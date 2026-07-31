@@ -77,10 +77,9 @@ fn run_cli(out_dir: &Path, run_card: &str) -> IntegrateArtifact {
     IntegrateArtifact::read_from_path(&out_dir.join("grid.bin.zst")).expect("reload artifact")
 }
 
-fn check_run(run: &str, run_card: &str) {
+fn check_run(test: &str, run: &str, run_card: &str) {
     let Some((mg, mg_err)) = banked(run) else {
-        eprintln!("[{run}] skipped: no banked MG reference (run generate-hadronic-sigma)");
-        return;
+        return vibegraph::validation::skip(test, "banked hadronic sigma reference", run);
     };
 
     let tmp = tempfile::tempdir().unwrap();
@@ -163,12 +162,20 @@ fn check_run(run: &str, run_card: &str) {
 
 #[test]
 fn integrate_default_cuts_reproduces_h7_sigma() {
-    check_run("default", "dy13_default_run_card.dat");
+    check_run(
+        "integrate_default_cuts_reproduces_h7_sigma",
+        "default",
+        "dy13_default_run_card.dat",
+    );
 }
 
 #[test]
 fn integrate_mmll_window_reproduces_h7_sigma() {
-    check_run("mmll_60_120", "dy13_mmll_run_card.dat");
+    check_run(
+        "integrate_mmll_window_reproduces_h7_sigma",
+        "mmll_60_120",
+        "dy13_mmll_run_card.dat",
+    );
 }
 
 /// The artifact refuses to overwrite an existing grid unless `--force` is given.

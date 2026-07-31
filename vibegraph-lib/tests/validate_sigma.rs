@@ -1073,19 +1073,18 @@ fn sigma_gate_matches_madgraph() {
         serde_json::from_str(&text).expect("sigma_reference.json parses");
 
     if !output_dir().exists() {
-        eprintln!(
-            "MadGraph output/ tree absent — sigma gate skipped (regenerate with \
-             `pixi run extract-sigma` or copy the reference output tree)"
+        return vibegraph::validation::skip(
+            "sigma_gate_matches_madgraph",
+            "madgraph output tree",
+            output_dir().display(),
         );
-        return;
     }
 
     let mut failures = Vec::new();
     let mut asserted = 0usize;
     for (dir, entry) in &banked {
-        // A banked process whose run card is missing from output/ is skipped.
         if !output_dir().join(dir).join("Cards/run_card.dat").exists() {
-            eprintln!("[{dir}] SKIP (run card absent from output/)");
+            vibegraph::validation::skip("sigma_gate_matches_madgraph", "banked run card", dir);
             continue;
         }
         if matches!(plan_for(dir), Plan::Gate { .. }) {

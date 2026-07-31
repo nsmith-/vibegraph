@@ -16,6 +16,8 @@ edition = "2021"
 [profile.dev]
 opt-level = 2
 
-[profile.profiling]
+# Release codegen with debug info kept: the compilation profile of every heavy
+# validation gate, and what `scripts/profile.sh` records under samply.
+[profile.release-debug]
 inherits = "release"
 debug = 1

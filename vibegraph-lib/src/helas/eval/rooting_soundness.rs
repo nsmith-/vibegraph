@@ -268,13 +268,21 @@ fn all_rootings_preserve_amplitude() {
         let (csv, short) = match csvs.get(&normalize(process)) {
             Some(v) => v.clone(),
             None => {
-                eprintln!("SKIP {process}: no reference CSV");
+                crate::validation::skip(
+                    "all_rootings_preserve_amplitude",
+                    "banked amplitude reference csv",
+                    process,
+                );
                 continue;
             }
         };
         let points = read_momenta(&csv);
         if points.is_empty() {
-            eprintln!("SKIP {process}: no reference momenta");
+            crate::validation::skip(
+                "all_rootings_preserve_amplitude",
+                "banked amplitude reference csv",
+                format_args!("{process} (no momenta)"),
+            );
             continue;
         }
         let evaluated = evaluated_model(&model, &short);
@@ -387,10 +395,20 @@ fn root_override_hook_is_transparent() {
         let sets = generate(process);
         let set = &sets[0];
         let Some((csv, short)) = csvs.get(&normalize(process)) else {
+            crate::validation::skip(
+                "root_override_hook_is_transparent",
+                "banked amplitude reference csv",
+                process,
+            );
             continue;
         };
         let points = read_momenta(csv);
         if points.is_empty() {
+            crate::validation::skip(
+                "root_override_hook_is_transparent",
+                "banked amplitude reference csv",
+                format_args!("{process} (no momenta)"),
+            );
             continue;
         }
         let evaluated = evaluated_model(&model, short);
