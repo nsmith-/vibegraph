@@ -1371,3 +1371,206 @@ above.
    that puts beam 0 on `−z`; the implementation reflects the outgoing legs only,
    which is the same rotation composed with the beam-slot swap and keeps the
    partonic-CM contract the pruned evaluator asserts.
+
+---
+
+## P2d outcome (2026-07-30) ✅ — the integrand
+
+Branch `proton-events`, three commits (`f9fe0fc`, `8840e63`, `613af41`). This is the
+last slice of P2: resume items 4, 5 and 6 — `ProtonIntegrand`, the joint
+α-adaptation, and the in-session validation. P2's design stands; the corrections
+below are recorded rather than absorbed.
+
+### `ProtonIntegrand`, as built
+
+In `vibegraph-lib/src/proton.rs`, alongside the decomposition it consumes. It
+implements `ChannelIntegrand`, so `UnweightPass::scan`, the frozen-grid machinery and
+`generate`'s accept/reject need no hadronic special case.
+
+```text
+σ = ∫ dτ dy dΦ_n  Σ_g avg_g · [ L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|² ] · Θ_cuts(q) / (2ŝ)
+```
+
+- **Outer map**: Drell–Yan's exactly — `τ = τ_min^(1−u₀)`, `y` flat over `|y| ≤ ½ln(1/τ)`,
+  Jacobian `ln(1/τ_min)·2y_max` with the `1/x₁x₂` already cancelled against `dτ`.
+  `τ_min = Cuts::shat_min()/s`.
+- **Inner map**: one `ScaledMultiChannel` over **the pooled channels of every group** —
+  `p p > l+ l- j` gives 24 = 6 × 4 — sampled at the event's own `√ŝ = √(τs)`.
+  `channel_grid_ndim = 2 + 5 = 7`; the undivided mixture form (`value`) adds a channel-
+  selection coordinate, `vegas_ndim = 8`.
+- **Frames**: `|M|²` in the partonic CM with the beams on ±z (the pruned evaluator's
+  contract, and the frame the channels generate in); the cut filter and the scale
+  prescription in the lab frame, the outgoing legs boosted along z by `y`. Split
+  exactly as DY's.
+- **Floor**: `cuts().spacelike_floor()` = 400 GeV² for the llj card. **16 of the 24
+  channels carry a peripheral spine at that floor and 0 of 24 do at floor zero** —
+  measured in `every_diagram_of_every_group_becomes_a_floored_channel`, which is what
+  makes "passed because the three-body spine wants it" a fact rather than a caption.
+- **Scales**: `use_run_card_scales(model, evaluated, card, Option<&AlphaSInfo>)`, taking
+  the set's `αs` tabulation (P2b's `AlphaSSource`). A non-constant prescription is
+  resolved once at setup on a cut-passing draw, so a refusal surfaces there.
+- Symmetry factor identically 1, guaranteed by `derive_flavor_groups`' refusal.
+
+### Joint α-adaptation
+
+`adapt_alphas(seed, n_survey, n_iter, damping)` runs `MultiChannel::adapt_alphas`'
+survey→refine loop **from outside the combiner**, because the integrand owns the
+`(τ, y)` coordinates and so owns the energy each draw is made at. `kleiss_pittau_step`
+is shared; the surveyed `f` is the whole hadronic shape (Jacobian, flux, cut,
+luminosity-weighted group sum), so weight flows to the channels carrying variance *of
+the hadronic integral*.
+
+Measured on llj: the weights spread by **81.9×** over 6 surveys of 4000 points, and the
+mixture estimator's standard error at 30 000 draws falls to **0.77×** the uniform
+mixture's, with the integral unmoved (0.7 combined standard errors).
+
+**Plan correction — the adaptation must be measured on the mixture, not on
+`adapt_grids`.** The first cut of that test compared uniform against adapted through
+`adapt_grids` and the adapted run came out *noisier* (1.8e-10 against 1.6e-10). The
+comparison is not budget-matched: `channel_neval(αⱼ, neval)` allocates `αⱼ·neval` under
+a `MIN_CHANNEL_NEVAL = 512` floor, so a uniform 24-channel run at `neval = 4000` gives
+every channel the floor while an adapted one gives the leading channels more and the
+rest the same floor — different sample counts and different conditional densities per
+grid. The estimator the weights actually minimise the variance of is the mixture one,
+and on it the improvement is unambiguous.
+
+### In-session validation — what it proves, and what it cannot see
+
+| check | measurement |
+|---|---|
+| pointwise, against an independently assembled point | worst **8.12e-14** over 400 draws (85 inside the cuts, 315 cut-rejected) |
+| fixed-`ŝ` slice vs `FixedBeamIntegrand`, `√ŝ = 200` | **0.31%**, pull 0.75 |
+| fixed-`ŝ` slice vs `FixedBeamIntegrand`, `√ŝ = 500` | **0.63%**, pull 1.32 |
+| Drell–Yan through the general path vs `DrellYanIntegrand` (synthetic PDF) | **0.28%**, pull −0.72 |
+| Drell–Yan through the general path vs MadGraph (real PDF, real card) | **933.706 ± 1.843** vs **933.110 ± 0.447**, 0.3 combined σ, rel **0.0006** |
+
+**The pointwise oracle** re-derives the `(τ, y)` map, both frames, the flux and the `2π`
+measure, forms each member's `x·f` product directly from the parton distribution, and
+takes the mirrored ordering from an **explicitly enumerated `b a > …` subprocess
+evaluated at the unreflected point**. It therefore shares neither
+`FlavorGroup::luminosity` nor `FlavorGroup::mirror_into` with the integrand: a dropped
+mirror, a mirror at the wrong argument, a swapped beam ordering or a lost spin/colour
+average all move it, and the mirror is measured to carry up to the whole of a group's
+term at these points. *It cannot see* the phase-space weight (taken from its own copy
+of the same channel construction) or an error the cut filter and the parton
+distribution both share.
+
+**The fixed-ŝ slice** freezes `(τ, y)` at `y = 0`, where the lab frame coincides with
+the partonic CM and one cut filter therefore applies to both sides, and compares the
+integrand's inner integral against `Σ_g (L^direct + L^mirror)_g · σ̂_g(ŝ)` with `σ̂_g`
+from `FixedBeamIntegrand` through its **own** all-timelike per-diagram map. So the
+flux, the `2π` measure, the spin/colour average and the symmetry factor are compared
+across two independent phase-space maps, at two energies so the `√ŝ` dependence is a
+shape and not one normalisation. *It cannot see* the rapidity boost (switched off) or
+the mirror's *argument*: at `y = 0` the two orderings carry equal luminosity and
+`∫|M(Rq)|²Θ(q)dΦ = ∫|M(q)|²Θ(q)dΦ` because `R` preserves the measure and every
+observable the filter cuts on, so a mirror evaluated at the wrong point would still
+integrate correctly here. The pointwise oracle is what pins the argument.
+
+**The Drell–Yan row** is the "keep a known-wrong informational comparison running"
+convention discharged: it is the one process the general path can already do end to end
+against MadGraph, and it is where the two treatments of the mirrored ordering meet —
+DY sums both luminosities against a *single* `|M(q)|²`, which is only right once the
+angles are integrated, while the general path evaluates `|M(Rq)|²` pointwise. *It cannot
+see* anything specific to a coloured initial state or a three-body final state: no
+gluon-initiated group, no peripheral channel, no strong coupling, no jet cut.
+
+**Tolerances.** The slice bounds (`rel < 3%`, `|pull| < 4`) sit above a measured
+four-seed sweep at `√ŝ = 500` — rel `{1.31%, 0.16%, 0.05%, 0.39%}`, pulls
+`{2.73, −0.33, 0.11, 0.82}` — and far below anything a lost factor produces; the
+smallest normalisation error the test exists to catch is a factor of two. Raising the
+partonic budget five-fold brings those same seeds to **0.04%–0.46%**, so the residual is
+where the two Monte Carlos have converged to, not a disagreement between them. The
+informational DY row asserts only `rel < 2%`. No existing tolerance was touched.
+
+**Measured while building the oracle, worth keeping:** flat RAMBO is *not* a usable
+partonic reference for llj at `√ŝ = 500`. At 40 000 points per group it undershoots the
+multichannel result by **8%–18%** on every seed — it misses the `Z` pole inside the
+`mmll = 50` window. The partonic side of the slice therefore uses
+`use_multichannel` + VEGAS, and its own convergence was checked by raising the budget.
+
+### Plan corrections
+
+1. **`ln(1/τ_min) = 11.12`, not 18.9, and the waste is 7.5%, not 4%.** The hint
+   (`ŝ_min = 2500`) against the true threshold (`(√(mmll²+ptj²)+ptj)² = 5454.1`) is loose
+   by **2.18×** — P2's ratio was right — but that is `0.78` out of `11.12`, so **7.5% of
+   `τ` draws land below threshold**, measured over 4000 draws, every one of them
+   returning exactly `0.0`. Confirmed acceptable and left alone; tightening it would
+   have to leave DY's number bit-identical.
+2. **One cut filter across *groups* is a new requirement, and it is now enforced.**
+   `derive_flavor_groups` checks the filter only *within* a group; the per-point shape
+   needs a single `Θ`, so `ProtonIntegrand::new` refuses `GroupCutsDiffer`. A process
+   whose groups are cut differently needs one indicator per group and a wider design.
+3. **`has_mirror()` needs no branch in the integrand.** `FlavorGroup::luminosity`
+   already returns a zero mirror for a same-parton initial state without touching the
+   parton distribution, so `reflected != 0.0` *is* the skip P2c asked for; a `gg` group
+   costs one matrix element per point, not two.
+4. **The bound-amplitude ↔ group pairing needed a guard P2c's API did not specify.**
+   `ProtonIntegrand::new` checks `std::ptr::eq(amp.evaluator(), group.evaluator())` per
+   position. Crossing the pairing weights one group's matrix element with another's
+   luminosity — a smooth shift of σ with no other symptom — and is pinned by a test that
+   swaps two amplitudes.
+5. **The α-adaptation measurement**, as above.
+
+### Gate results
+
+`cargo build` clean. `cargo test --workspace` **519 lib passed / 0 failed** (511 at
+P2c's close + 8 new) plus the CLI suites; `validate_hadronic` **4 passed** (3 + the new
+informational row). No tolerance was loosened anywhere.
+
+| gate | result |
+|---|---|
+| `validate_hadronic` (DY anchor) | 4 passed — σ default **934.416 ± 0.870** vs MG 933.110, mmll window **644.855 ± 0.570** vs 644.420, pointwise **1.15e-14** — **identical to P2b and P2c**; new informational general-path row 933.706 ± 1.843 |
+| `validate-helas-mg` | 18 passed |
+| `validate-amp-diagram` | 7 passed |
+| `validate-color-cf` | 30 passed |
+| `validate-color-flow-tags` | 30 passed |
+| `validate-color-jamp` | 3 passed |
+| `validate-diagrams` | 16 passed |
+| `validate-alphas` | 5 passed |
+| `validate-scales` | 7 passed |
+| `validate-sigma` | 11 rows asserted |
+| `validate-lhef` | 3 passed |
+| `validate-unweighting` | 1 passed |
+| `validate-scale-couplings` | 1 passed |
+| `validate-pdf-grid` | still not runnable here (`validation/pdf/oracle*.json` gitignored and absent, as P2b and P2c recorded) |
+
+### What P3 must know
+
+1. **The API.** `ProtonIntegrand::{new, use_run_card_scales, adapt_alphas,
+   set_channel_alphas, channel_alphas, channel_ids, channel_count, channel_grid_ndim,
+   value_in_channel, value, vegas_ndim, adapt_grids, integrate, tau_min,
+   spacelike_floor, alpha_s_source}`, plus `impl ChannelIntegrand`. `adapt_grids`
+   returns `Vec<ChannelIntegration>` and a combined `VegasResult`, the same shapes the
+   fixed-beam path banks.
+2. **Artifact keying.** A channel is a `ChannelId { group, diagram }`, not a diagram
+   index — 24 of them for llj. The per-channel grid is over **7** coordinates where the
+   fixed-beam path's is over `3n−4`, so the schema has to carry the dimension and the
+   ids, and an `fv3` artifact cannot be read as a hadronic one by shape alone.
+3. **Replay exactness.** Re-installing banked weights must go through
+   `set_channel_alphas`; re-running `adapt_alphas` reproduces them only by accident, and
+   `αⱼ` enters every channel's weight.
+4. **Budget floor.** `MIN_CHANNEL_NEVAL = 512` × 24 channels = **12 288 evaluations per
+   iteration** minimum, whatever `neval` says. Each point costs up to 12 amplitude
+   evaluations (6 direct + 6 mirror) and 24 channel densities.
+5. **Sweep the seeds.** Both the slice and the α tests show single-seed pulls up to
+   2.7 on quantities that agree to a few per mille; a single-seed σ gate is not a pass.
+6. **`ProtonIntegrand` needs the `PdfSet`**, not just the member — `set.info.alpha_s` is
+   what `use_run_card_scales` wants (P2b's warning, now a signature).
+7. **The dynamical llj card is refused at setup**, by the probe, with the clustering
+   message; pinned in `a_dynamical_scale_is_refused_where_the_fixed_one_resolves`. The
+   same test pins that the fixed card resolves to constants *and* that the coupling
+   installed is the grid's (0.1300028) and not the parameter card's.
+8. **Deduplication is still open.** Channels are heavily duplicated across groups (the
+   up- and down-type groups build identical maps), so 24 channels carry fewer than 24
+   distinct densities. Harmless — α just splits — but it is the first lever if P3's gate
+   runs long.
+
+### What P4 must know
+
+The event side is **not** built. `ProtonIntegrand` has no counterpart to
+`FixedBeamIntegrand::{event_in_channel, select_event}`: reconstructing an accepted
+point's momenta, its `(x₁, x₂)`, its group, its concrete member (`member_luminosity` is
+the draw P2c left ready), its helicity and its colour flow are all P4's. The lab-frame
+momenta the record needs are already built per point inside `shape`; exposing them is
+the natural first step.
