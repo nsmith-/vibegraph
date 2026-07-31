@@ -17,12 +17,14 @@
 
 mod common;
 
+use vibegraph::cuts::{Cuts, ExternalLeg};
 use vibegraph::diagrams::diagram::Diagram;
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rng::SubStream;
 use vibegraph::phasespace::{
     Channel, DiagramChannel, MultiChannel, PhaseSpaceMap, RamboChannel, Resonance,
 };
+use vibegraph::runcard::RunCard;
 use vibegraph::ufo::EvaluatedModel;
 
 fn total(momenta: &[LorentzVector<f64>]) -> [f64; 4] {
@@ -836,5 +838,115 @@ fn a_regulated_three_body_spine_beats_the_all_timelike_channel_on_a_peripheral_i
         worst_alternative_pull > 5.0 && worst_miss > 2.0,
         "no alternative map under-covers any more (worst pull {worst_alternative_pull:.1}, \
          worst factor {worst_miss:.2}) — the comparison has lost its control"
+    );
+}
+
+// ── The floor a run card implies, and what a zero one must leave alone ───────
+
+/// Where the regulator's scale comes from: the process's own cuts, not the model.
+///
+/// The banked `p p > l+ l- j` card holds every jet above `ptj = 20`, and a
+/// peripheral rung that produces a leg at transverse momentum `pT` transfers at
+/// least `pT²`, so `|t| ≳ 400 GeV²` — ten orders above the `4e-8` cancellation
+/// noise the unregulated edge sits on
+/// ([`a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise`]).
+#[test]
+fn the_llj_run_card_supplies_the_scale_the_spacelike_pole_is_floored_at() {
+    let legs = vec![
+        ExternalLeg::incoming(2, 0.0),
+        ExternalLeg::incoming(-2, 0.0),
+        ExternalLeg::outgoing(-11, 0.0),
+        ExternalLeg::outgoing(11, 0.0),
+        ExternalLeg::outgoing(21, 0.0),
+    ];
+    let cuts = Cuts::compile(&RunCard::default(), &legs).expect("llj cuts compile");
+    assert_eq!(cuts.spacelike_floor(), 400.0);
+    let noise = 4e-8;
+    assert!(
+        cuts.spacelike_floor() / noise >= 1e10,
+        "the floor no longer clears the transfer's cancellation noise by orders"
+    );
+}
+
+/// A zero floor is the identity map on the channel derivation.
+///
+/// Every `lpp = 0` caller reaches the derivation through
+/// [`DiagramChannel::from_diagram`], which supplies floor `0`, so a partonic run's
+/// channels have to be bit-for-bit what they were before a regulator existed — the
+/// banked `σ̂` artifacts depend on it. Asserted on the sampled momenta and the
+/// densities rather than on the constructor arguments, since those are what a run
+/// actually consumes.
+///
+/// The second half is what keeps the first from being vacuous: with the floor the
+/// `llj` run card implies, the same derivation produces *different* channels. Note
+/// that this holds for `2 → 2` spacelike diagrams too — the floor raises their pole
+/// as well, so it is a per-process input and not a global constant.
+#[test]
+fn a_zero_spacelike_floor_leaves_every_channel_bit_identical() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let sqrt_s = 500.0;
+    let floor = 400.0;
+
+    let processes = [
+        "e+ e- > mu+ mu-",
+        "u u~ > u u~",
+        "u u~ > d d~ g",
+        LLJ_SUBPROCESSES[0],
+        LLJ_SUBPROCESSES[1],
+    ];
+
+    let draw = |ch: &DiagramChannel<f64>, seed: u64| -> Vec<(Vec<[u64; 4]>, u64, u64)> {
+        let mut stream = SubStream::from_stream(seed, 5);
+        (0..200)
+            .map(|_| {
+                let u = stream.uniforms::<f64>(ch.ndim());
+                let pt = ch.sample(&u);
+                let bits: Vec<[u64; 4]> = pt
+                    .momenta
+                    .iter()
+                    .map(|p| {
+                        [
+                            p.e().to_bits(),
+                            p.px().to_bits(),
+                            p.py().to_bits(),
+                            p.pz().to_bits(),
+                        ]
+                    })
+                    .collect();
+                let density = ch.density(&pt.momenta).to_bits();
+                (bits, pt.weight.to_bits(), density)
+            })
+            .collect()
+    };
+
+    let mut compared = 0usize;
+    let mut moved_by_floor = 0usize;
+    for process in processes {
+        let sets = common::generate(process);
+        for (i, d) in sets[0].diagrams.iter().enumerate() {
+            let seed = 0x510E + i as u64;
+            let plain = DiagramChannel::<f64>::from_diagram(d, &evaluated, sqrt_s);
+            let zero = DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, 0.0);
+            assert_eq!(
+                draw(&plain, seed),
+                draw(&zero, seed),
+                "{process} diagram {i}: a zero floor moved the channel"
+            );
+            let floored =
+                DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, floor);
+            if draw(&floored, seed) != draw(&plain, seed) {
+                moved_by_floor += 1;
+            }
+            compared += 1;
+        }
+    }
+    eprintln!(
+        "{compared} diagram channels bit-identical at floor 0; {moved_by_floor} move when floored \
+         at {floor} GeV²"
+    );
+    assert!(
+        moved_by_floor > 0,
+        "no channel responds to the floor at all — the identity above is vacuous"
     );
 }
