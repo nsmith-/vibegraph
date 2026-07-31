@@ -27,7 +27,13 @@ use crate::vegas::VegasGrid;
 /// `3` adds [`IntegrateArtifact::model`], so a later phase can tell which model the
 /// grids were trained under instead of inferring it from a process string that two
 /// different models spell the same way.
-pub const FORMAT_VERSION: u32 = 3;
+///
+/// `4` adds [`ChannelGrid::key`], naming the channel space each grid belongs to.
+/// Version 3 files are still read, through [`v3`], and upgrade to it.
+pub const FORMAT_VERSION: u32 = 4;
+
+/// The oldest schema version [`IntegrateArtifact::read_from_path`] still decodes.
+pub const OLDEST_READABLE_VERSION: u32 = 3;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -42,12 +48,37 @@ pub enum ArtifactError {
     #[error("failed to decode artifact: {0}")]
     Decode(bincode::Error),
     #[error(
-        "artifact format version {found}, but this build reads version {expected} \
+        "artifact format version {found}, but this build reads versions {oldest}..={expected} \
          (regenerate it with `vibegraph integrate`)"
     )]
-    UnsupportedVersion { found: u32, expected: u32 },
+    UnsupportedVersion {
+        found: u32,
+        oldest: u32,
+        expected: u32,
+    },
     #[error("zstd (de)compression failed: {0}")]
     Zstd(io::Error),
+}
+
+/// Which channel of which decomposition a banked grid was trained on.
+///
+/// A grid's coordinate count does not identify its channel space. A hadronic run
+/// prepends the two outer `(τ, y)` coordinates to each channel's own `3n − 4`, so
+/// its per-channel grids can carry the same number of coordinates as a
+/// fixed-energy run's at a different final multiplicity, and a channel index alone
+/// does not say whether the channels came from one subprocess's diagrams or from
+/// the pooled diagrams of several flavour groups. The key is banked so a reader
+/// takes that from the file instead of inferring it from a shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChannelKey {
+    /// The whole map, undecomposed: one grid carrying the entire integral.
+    Whole,
+    /// One diagram's channel of a per-diagram multichannel over a single
+    /// subprocess (fixed-energy beams).
+    Diagram { diagram: usize },
+    /// One diagram of one flavour group of a hadronic decomposition, whose
+    /// channels are pooled across groups into a single mixture.
+    GroupDiagram { group: usize, diagram: usize },
 }
 
 /// One phase-space channel's trained grid and its share of the integral.
@@ -58,6 +89,8 @@ pub enum ArtifactError {
 /// entry with `alpha = 1`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelGrid {
+    /// The channel this grid belongs to, in its own decomposition's terms.
+    pub key: ChannelKey,
     /// The channel selection weight `αⱼ` its term carries.
     pub alpha: f64,
     /// Evaluations per iteration this channel received.
@@ -142,6 +175,95 @@ struct VersionHeader {
     format_version: u32,
 }
 
+/// Schema version 3, kept so artifacts banked before the channel key exists still
+/// load.
+///
+/// A version-3 file could only have been written by one of two paths: the
+/// Drell–Yan integrand, which banks a single grid over the whole map, or the
+/// fixed-energy per-diagram multichannel, which banks one grid per diagram in
+/// diagram order. The upgrade reads the key off that, which is exactly as much as
+/// the older file knows — it is not a guess about a hadronic run, because no
+/// version-3 writer could produce one.
+pub mod v3 {
+    use serde::Deserialize;
+
+    use crate::runcard::RunCard;
+    use crate::ufo::identity::ModelIdentity;
+    use crate::vegas::VegasGrid;
+
+    #[derive(Debug, Deserialize)]
+    pub(super) struct ChannelGrid {
+        pub alpha: f64,
+        pub neval: usize,
+        pub grid: VegasGrid,
+        pub sigma_pb: f64,
+        pub sigma_err_pb: f64,
+        pub chi2_per_dof: f64,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub(super) struct IntegrateArtifact {
+        /// Present so the positional decode consumes the version prefix; the
+        /// version itself was already read and dispatched on.
+        #[allow(dead_code)]
+        pub format_version: u32,
+        pub process: String,
+        pub model: ModelIdentity,
+        pub pdf_set: String,
+        pub pdf_member: u32,
+        pub mu_f: f64,
+        pub sqrt_s_had: f64,
+        pub neval: usize,
+        pub niter: usize,
+        pub seed: u64,
+        pub run_card: RunCard,
+        pub channels: Vec<ChannelGrid>,
+        pub sigma_pb: f64,
+        pub sigma_err_pb: f64,
+        pub chi2_per_dof: f64,
+    }
+}
+
+impl v3::IntegrateArtifact {
+    fn upgrade(self) -> IntegrateArtifact {
+        let sole = self.channels.len() == 1;
+        IntegrateArtifact {
+            format_version: FORMAT_VERSION,
+            process: self.process,
+            model: self.model,
+            pdf_set: self.pdf_set,
+            pdf_member: self.pdf_member,
+            mu_f: self.mu_f,
+            sqrt_s_had: self.sqrt_s_had,
+            neval: self.neval,
+            niter: self.niter,
+            seed: self.seed,
+            run_card: self.run_card,
+            channels: self
+                .channels
+                .into_iter()
+                .enumerate()
+                .map(|(j, c)| ChannelGrid {
+                    key: if sole {
+                        ChannelKey::Whole
+                    } else {
+                        ChannelKey::Diagram { diagram: j }
+                    },
+                    alpha: c.alpha,
+                    neval: c.neval,
+                    grid: c.grid,
+                    sigma_pb: c.sigma_pb,
+                    sigma_err_pb: c.sigma_err_pb,
+                    chi2_per_dof: c.chi2_per_dof,
+                })
+                .collect(),
+            sigma_pb: self.sigma_pb,
+            sigma_err_pb: self.sigma_err_pb,
+            chi2_per_dof: self.chi2_per_dof,
+        }
+    }
+}
+
 impl IntegrateArtifact {
     /// The single trained grid of a run that was not split across channels.
     pub fn sole_grid(&self) -> Option<&VegasGrid> {
@@ -170,10 +292,10 @@ impl IntegrateArtifact {
 
     /// Read and decode a previously written artifact.
     ///
-    /// The format version is read from the payload's prefix and checked before the
-    /// body is decoded, so a file written by another schema version is refused by
-    /// name rather than misread into whatever the current field order happens to
-    /// accept.
+    /// The format version is read from the payload's prefix and dispatched on before
+    /// the body is decoded, so a file written by another schema version is either
+    /// decoded through that version's own reader or refused by name — never misread
+    /// into whatever the current field order happens to accept.
     pub fn read_from_path(path: &Path) -> Result<Self, ArtifactError> {
         let compressed = std::fs::read(path).map_err(|source| ArtifactError::Io {
             path: path.display().to_string(),
@@ -181,24 +303,31 @@ impl IntegrateArtifact {
         })?;
         let raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
-        if header.format_version != FORMAT_VERSION {
-            return Err(ArtifactError::UnsupportedVersion {
-                found: header.format_version,
+        match header.format_version {
+            FORMAT_VERSION => bincode::deserialize(&raw).map_err(ArtifactError::Decode),
+            3 => bincode::deserialize::<v3::IntegrateArtifact>(&raw)
+                .map_err(ArtifactError::Decode)
+                .map(v3::IntegrateArtifact::upgrade),
+            found => Err(ArtifactError::UnsupportedVersion {
+                found,
+                oldest: OLDEST_READABLE_VERSION,
                 expected: FORMAT_VERSION,
-            });
+            }),
         }
-        bincode::deserialize(&raw).map_err(ArtifactError::Decode)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::ufo::sm::SMRestrict;
     use crate::vegas::VegasGrid;
 
     fn one_channel(grid: VegasGrid) -> ChannelGrid {
         ChannelGrid {
+            key: ChannelKey::Whole,
             alpha: 1.0,
             neval: 1000,
             grid,
@@ -349,6 +478,10 @@ mod tests {
         let mut artifact = sample_artifact();
         artifact.channels = (0..4)
             .map(|j| ChannelGrid {
+                key: ChannelKey::GroupDiagram {
+                    group: j / 2,
+                    diagram: j % 2,
+                },
                 alpha: 0.1 * (j + 1) as f64,
                 neval: 1000 * (j + 1),
                 grid: VegasGrid::new(2 + j, 16, 0.5),
@@ -381,16 +514,132 @@ mod tests {
         std::fs::remove_dir(&dir).ok();
     }
 
-    /// An artifact written under a different schema version is refused by version,
-    /// not decoded into whatever the current field order accepts. The payload here
-    /// is the previous schema — no `model`, so every field after `process` sits one
-    /// slot early — which is exactly the shape a silent misread would consume: a
-    /// positional decode would take the PDF set's bytes for a model name and carry
-    /// on.
+    /// Version 3's channel record, so the tests below can write a genuine version-3
+    /// payload rather than the current one with a stamped-down version number.
+    #[derive(Serialize)]
+    struct V3ChannelGrid {
+        alpha: f64,
+        neval: usize,
+        grid: VegasGrid,
+        sigma_pb: f64,
+        sigma_err_pb: f64,
+        chi2_per_dof: f64,
+    }
+
+    #[derive(Serialize)]
+    struct V3Artifact {
+        format_version: u32,
+        process: String,
+        model: ModelIdentity,
+        pdf_set: String,
+        pdf_member: u32,
+        mu_f: f64,
+        sqrt_s_had: f64,
+        neval: usize,
+        niter: usize,
+        seed: u64,
+        run_card: RunCard,
+        channels: Vec<V3ChannelGrid>,
+        sigma_pb: f64,
+        sigma_err_pb: f64,
+        chi2_per_dof: f64,
+    }
+
+    fn v3_channel(alpha: f64, grid: VegasGrid) -> V3ChannelGrid {
+        V3ChannelGrid {
+            alpha,
+            neval: 1000,
+            grid,
+            sigma_pb: 934.42,
+            sigma_err_pb: 0.87,
+            chi2_per_dof: 1.02,
+        }
+    }
+
+    fn write_v3(path: &Path, channels: Vec<V3ChannelGrid>) {
+        let legacy = V3Artifact {
+            format_version: 3,
+            process: "p p > e+ e-".to_string(),
+            model: ModelIdentity::interned_sm(SMRestrict::Default),
+            pdf_set: "NNPDF23_lo_as_0130_qed".to_string(),
+            pdf_member: 0,
+            mu_f: 91.1880,
+            sqrt_s_had: 13000.0,
+            neval: 1000,
+            niter: 2,
+            seed: 42,
+            run_card: RunCard::default(),
+            channels,
+            sigma_pb: 934.42,
+            sigma_err_pb: 0.87,
+            chi2_per_dof: 1.02,
+        };
+        let raw = bincode::serialize(&legacy).unwrap();
+        let compressed = zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap();
+        std::fs::write(path, compressed).unwrap();
+    }
+
+    fn scratch_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "vibegraph-artifact-test-{tag}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// A version-3 artifact still loads, and its channels take the key the writer
+    /// that produced it implies: a lone grid is the whole map, several are one
+    /// subprocess's diagrams in diagram order. Nothing older could have written a
+    /// hadronic decomposition, so no version-3 channel upgrades to one.
     #[test]
-    fn read_refuses_a_foreign_format_version() {
+    fn a_version_3_artifact_upgrades_to_the_current_schema() {
+        let dir = scratch_dir("v3");
+
+        let sole = dir.join("v3-sole.bin.zst");
+        write_v3(&sole, vec![v3_channel(1.0, VegasGrid::new(3, 64, 1.5))]);
+        let upgraded = IntegrateArtifact::read_from_path(&sole).expect("version 3 reads");
+        assert_eq!(upgraded.format_version, FORMAT_VERSION);
+        assert_eq!(upgraded.channels[0].key, ChannelKey::Whole);
+        assert!(upgraded.sole_grid().is_some());
+        assert_eq!(upgraded.sigma_pb.to_bits(), 934.42f64.to_bits());
+
+        let multi = dir.join("v3-multi.bin.zst");
+        write_v3(
+            &multi,
+            (0..3)
+                .map(|j| v3_channel(0.25 * (j + 1) as f64, VegasGrid::new(5, 16, 0.5)))
+                .collect(),
+        );
+        let upgraded = IntegrateArtifact::read_from_path(&multi).expect("version 3 reads");
+        let keys: Vec<ChannelKey> = upgraded.channels.iter().map(|c| c.key).collect();
+        assert_eq!(
+            keys,
+            vec![
+                ChannelKey::Diagram { diagram: 0 },
+                ChannelKey::Diagram { diagram: 1 },
+                ChannelKey::Diagram { diagram: 2 },
+            ]
+        );
+        for (j, c) in upgraded.channels.iter().enumerate() {
+            assert_eq!(c.alpha.to_bits(), (0.25 * (j + 1) as f64).to_bits());
+        }
+
+        std::fs::remove_file(&sole).ok();
+        std::fs::remove_file(&multi).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
+
+    /// An artifact written under a schema version with no reader is refused by
+    /// version, not decoded into whatever the current field order accepts. The
+    /// payload here is version 2's shape — no `model`, so every field after
+    /// `process` sits one slot early — which is exactly the shape a silent misread
+    /// would consume: a positional decode would take the PDF set's bytes for a
+    /// model name and carry on.
+    #[test]
+    fn read_refuses_a_format_version_with_no_reader() {
         #[derive(Serialize)]
-        struct LegacyArtifact {
+        struct V2Artifact {
             format_version: u32,
             process: String,
             pdf_set: String,
@@ -401,14 +650,14 @@ mod tests {
             niter: usize,
             seed: u64,
             run_card: RunCard,
-            channels: Vec<ChannelGrid>,
+            channels: Vec<V3ChannelGrid>,
             sigma_pb: f64,
             sigma_err_pb: f64,
             chi2_per_dof: f64,
         }
 
-        let legacy = LegacyArtifact {
-            format_version: FORMAT_VERSION - 1,
+        let legacy = V2Artifact {
+            format_version: OLDEST_READABLE_VERSION - 1,
             process: "p p > e+ e-".to_string(),
             pdf_set: "NNPDF23_lo_as_0130_qed".to_string(),
             pdf_member: 0,
@@ -418,31 +667,27 @@ mod tests {
             niter: 2,
             seed: 42,
             run_card: RunCard::default(),
-            channels: vec![one_channel(VegasGrid::new(3, 64, 1.5))],
+            channels: vec![v3_channel(1.0, VegasGrid::new(3, 64, 1.5))],
             sigma_pb: 934.42,
             sigma_err_pb: 0.87,
             chi2_per_dof: 1.02,
         };
 
-        let dir = std::env::temp_dir().join(format!(
-            "vibegraph-artifact-test-version-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = scratch_dir("version");
         let path = dir.join("legacy.bin.zst");
         let raw = bincode::serialize(&legacy).unwrap();
         let compressed = zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap();
         std::fs::write(&path, compressed).unwrap();
 
         let err = IntegrateArtifact::read_from_path(&path)
-            .expect_err("a foreign format version must not decode");
+            .expect_err("a format version with no reader must not decode");
         assert!(
             matches!(
                 err,
-                ArtifactError::UnsupportedVersion {
-                    found,
-                    expected
-                } if found == FORMAT_VERSION - 1 && expected == FORMAT_VERSION
+                ArtifactError::UnsupportedVersion { found, oldest, expected }
+                    if found == OLDEST_READABLE_VERSION - 1
+                        && oldest == OLDEST_READABLE_VERSION
+                        && expected == FORMAT_VERSION
             ),
             "expected a version refusal, got {err}"
         );
