@@ -1179,3 +1179,195 @@ is unchanged and no tolerance was loosened anywhere.
    any amplitude, so P2's measured design facts (24 subprocesses, one ordering per
    unordered initial state, the mirror identity `A(b,a;k) = A(a,b;Rk)`, the group-by-
    measured-|M|² rule) all still stand as written.
+
+---
+
+## P2c outcome (2026-07-30) ✅ — the flavour-group derivation
+
+Branch `proton-events`, one commit `0670068`. Resume item 3 of P2's order: the
+`(subprocess-group, flavour-class)` decomposition, in a new
+`vibegraph-lib/src/proton.rs`. Items 4–6 (`ProtonIntegrand`, α-adaptation, the
+fixed-ŝ validation) are untouched and their design stands.
+
+### The grouping rule, as implemented
+
+`derive_flavor_groups(sets, model, evaluated, card)` takes the enumerated
+`DiagramSet`s of one proc card and returns `FlavorGroups`. The partition is
+**measured, not listed**: each non-empty subprocess is compiled, then evaluated at
+12 shared probe points — flat RAMBO over the outgoing legs, massless beams along
+±z, at `3×`, `5×` and `13×` a scale set by the outgoing pole masses (`100 GeV`
+floor, so `300 / 500 / 1300` for `llj`). Two subprocesses share a group when their
+whole `|M|²` trace agrees to `GROUP_REL_TOL = 1e-10`.
+
+`p p > l+ l- j QCD=2 QED=2` partitions into **6 groups of 4**, exactly as P2
+predicted, with **zero** within-group disagreement (bit-for-bit) and a **0.74**
+worst-case separation between the closest two groups:
+
+| group | members | initial states | `spin_color_average` |
+|---|---|---|---|
+| `g u > e+ e- u` | 4 | `g u`, `g c` × `e`, `mu` | 1/96 |
+| `g d > e+ e- d` | 4 | `g d`, `g s` × `e`, `mu` | 1/96 |
+| `g u~ > e+ e- u~` | 4 | `g u~`, `g c~` × `e`, `mu` | 1/96 |
+| `g d~ > e+ e- d~` | 4 | `g d~`, `g s~` × `e`, `mu` | 1/96 |
+| `u u~ > e+ e- g` | 4 | `u u~`, `c c~` × `e`, `mu` | 1/36 |
+| `d d~ > e+ e- g` | 4 | `d d~`, `s s~` × `e`, `mu` | 1/36 |
+
+The `e`/`mu` multiplicity needs no special case: the two lepton flavours are
+*distinct members with the same initial state*, so the luminosity sum over members
+supplies the factor of two by itself.
+
+**`|M|²` equality alone is not enough, and the module says so.** It is a sum, so it
+is blind to a global phase and would not move if two members' colour bases differed
+by a relabelling. A group is therefore refused unless its members also share
+
+- the outgoing pole masses (one phase-space map serves the group),
+- an equal compiled `Cuts` (one cut indicator does) — `Cuts` gained `PartialEq`,
+  which is equality of the *filter*: every field is a leg index and a threshold,
+  the PDG codes having been consumed by `compile`,
+- an equal colour basis (`n_flows` + `cf_matrix`), so an event's flow can be read
+  off the representative,
+
+and unless two distinct groups separate by more than `GROUP_SEPARATION_MIN = 1e-6`
+— a partition produced by two traces landing either side of the tolerance by
+rounding is a failed measurement, not a decomposition.
+
+Both extra requirements are pinned against a case where they differ rather than
+left as guards that might be vacuous: `a_group_sharing_one_cut_filter_is_a_real_requirement`
+shows a `pdg = 5` leg compiles to a *different* filter from a light jet at
+`maxjetflavor = 4` and the *same* one at `5`; the colour check is exercised in
+`p p > t t~ QED=0`, where the two groups' `(n_flows, cf_matrix)` differ (both have
+`n_flows = 2`, so the CF matrix is what separates them — `n_flows` alone would not
+have).
+
+### The mirror term, and what its test can and cannot catch
+
+The identity, as implemented in `FlavorGroup::mirror_into`:
+
+```text
+|M_{b a}(p₁, p₂, q)|² = |M_{a b}(p₁, p₂, R q)|²,   R: (E, pₓ, p_y, p_z) ↦ (E, pₓ, −p_y, −p_z)
+```
+
+**The beams are left where they are and only the outgoing legs are reflected.**
+That is the practically important refinement on P2's `A(b,a;k) = A(a,b;Rk)`:
+reflecting *everything* would send beam 0 to `−z`, and the pruned evaluator's
+partonic-CM contract wants the beams on the axis. Since `R p₁ = p₂`, reflecting the
+outgoing legs alone is the same rotation with the beam slots swapped back.
+`FlavorGroup::luminosity` returns `[direct, mirror]`, and a member whose beams
+carry the *same* parton contributes to `direct` only — one ordering, not two.
+
+`the_mirrored_beam_ordering_needs_the_reflected_matrix_element` enumerates the
+mirrored subprocess of every group explicitly (`u~ u > e+ e- g`, `u g > e+ e- u`,
+…), compiles it, and compares, over 36 points at three energies:
+
+| what | measured |
+|---|---|
+| reflected representative vs the explicitly mirrored subprocess | **5.4e-13** worst |
+| *dropping* the mirror (evaluating at the unreflected point) | wrong by **≥ 7.4e-2** at **every** point, up to 200× |
+| a reflection in the `xz` plane alone (`p_y ↦ −p_y`) | **7.7e-16** — no change at all |
+
+- **What it catches.** A dropped mirror term, at any point — this is the failure
+  that would silently halve the `g q` contribution, and the margin never closes.
+  A reflection that does not reverse `p_z` (the load-bearing part of `R`), since
+  such a map reproduces the *direct* value to 1e-16 and so fails the first row by
+  the whole 7.4e-2.
+- **What it cannot catch.** The sign of `p_y`. `|M|²` is invariant under the extra
+  `xz` reflection, so `R` is pinned only up to it — measured, and asserted as a
+  measurement, not assumed. Nothing depends on the difference: both maps are
+  correct implementations of the mirror.
+- **The 5.4e-13, and why the bound is 1e-11.** It is one point of 36 — the RAMBO
+  draw that is `8e-10` off the light cone and `2e-12` off momentum conservation,
+  where two independently compiled programs route the gauge-dependent parts
+  differently. Every other point agrees to `4.4e-15`. This is a property of the
+  *test* — the integrand evaluates one program at both arguments — and the earlier
+  cut of the probe, run at a deliberately off-shell point, produced a 73%
+  "disagreement" that was entirely this effect. **Any future mirror-type check
+  must use an on-shell, conserving point or it will measure gauge dependence.**
+
+### `q ↔ q̄` grouping: checked, not asserted
+
+P1 left this open with the note that `g q` and `g q̄` have the same σ̂ within MC
+error. The probe **separates** them: `a_quark_and_its_antiquark_against_a_gluon_do_not_share_a_matrix_element`
+measures a pointwise `|M|²` difference of up to **0.93**, on both the up and down
+classes, and asserts they land in different groups.
+
+That is the session's clearest illustration of the "every oracle has a blind spot"
+rule: the banked partonic σ̂ at `√ŝ = 500` are `0.11812 ± 0.00022 pb` for
+`g u > e+ e- u` and `0.11816 ± 0.00026 pb` for `g u~ > e+ e- u~` — indistinguishable
+— so **a grouping criterion built on σ̂ would have merged them**, summing the
+antiquark's luminosity against the quark's matrix element and the quark's colour
+structure. The pointwise criterion is what makes the grouping sound, and P1's
+per-diagram rows are what make each side individually trustworthy.
+
+### Symmetry factor: asserted, and the `amps[0]` pattern deliberately not extended
+
+`derive_flavor_groups` **refuses** any subprocess whose
+`final_state_symmetry_factor` is not 1, with an error stating why: a matrix element
+summed over subprocesses has no single owner for a final-state factor, so each term
+would have to carry its own. All 24 `llj` subprocesses pass; the refusal is pinned
+non-vacuously by `u u~ > g g` (factor 0.5), which is rejected.
+
+`FixedBeamIntegrand::new`'s `amps[0]` shortcut was **not** extended to the hadronic
+sum. The latent `identical-particle-permutation` item in the feature backlog is
+untouched and unaggravated: `ProtonIntegrand` will multiply by 1 per group and the
+refusal above is what keeps that honest.
+
+### Gate results
+
+`cargo build` clean, `cargo test --workspace` **564 passed / 0 failed** (556 at
+P2b's close + 8 new; the pre-existing test inventory is byte-identical, checked by
+listing tests before and after: 569 → 576 including ignored). No tolerance was
+loosened anywhere; the only tolerances added are new ones with the measurements
+above.
+
+| gate | result |
+|---|---|
+| `validate_hadronic` (DY anchor) | 3 passed — σ default **934.416 ± 0.870** vs MG 933.110 (rel 0.0014), mmll window **644.855 ± 0.570** vs 644.420 (rel 0.0007), pointwise **1.15e-14** — identical to P2b |
+| `validate-helas-mg` | 18 passed |
+| `validate-amp-diagram` | 7 passed |
+| `validate-color-cf` | 30 passed |
+| `validate-color-flow-tags` | 30 passed |
+| `validate-color-jamp` | 3 passed |
+| `validate-diagrams` | 16 passed |
+| `validate-alphas` | 5 passed |
+| `validate-scales` | 7 passed |
+| `validate-sigma` | 11 rows asserted |
+| `validate-lhef` | 3 passed |
+| `validate-unweighting` | 1 passed |
+| `validate-scale-couplings` | 1 passed |
+| `validate-pdf-grid` | still not runnable here (`validation/pdf/oracle*.json` gitignored and absent, as P2b recorded) |
+
+### What the `ProtonIntegrand` session must know
+
+1. **The API it consumes.** Per group: `evaluator()`, `diagrams()` (the channel
+   derivation's input), `external_legs()`, `cuts()`, `final_masses()`,
+   `spin_color_average()`, `members()`, `has_mirror()`, `mirror_into(k, &mut buf)`
+   and `luminosity(pdf, x1, x2, mu_f) -> [direct, mirror]` /
+   `member_luminosity(i, …)` for P4's per-event flavour draw. The per-point shape is
+
+   ```text
+   Σ_groups avg_g · ( L_direct · |M_g(q)|²  +  L_mirror · |M_g(R q)|² ) · Θ_cuts(q)
+   ```
+
+   with **one** cut indicator on the unreflected final state, and the symmetry
+   factor identically 1.
+2. **`cuts()` comes with the group**, compiled from the run card handed to
+   `derive_flavor_groups`, so `cuts().spacelike_floor()` is already available where
+   the channels are built. P2b's warning still applies: pass the floor because the
+   three-body spine wants it, not as a blanket default.
+3. **`derive_flavor_groups` refuses a heterogeneous outgoing mass list** across
+   subprocesses (`UnequalFinalMasses`), because one phase-space map has to serve the
+   whole sum. `llj` and `t t~` are both uniform; a process where they are not needs
+   a per-group map and a wider design than this returns.
+4. **Cost.** Enumeration of `llj` is 37 ms and compiling all 24 subprocesses is
+   7 ms, so deriving the decomposition is not a startup concern — but note it
+   compiles **all 24** and keeps only the 6 representatives. Amplitude evaluations
+   per integrand point are `2 × 6 = 12` (direct + mirror per group), which is P2's
+   estimate confirmed.
+5. **`has_mirror()` is worth branching on** for a future `g g`-initiated process:
+   its mirror luminosity is identically zero and the second `|M|²` evaluation is
+   pure waste.
+6. **Plan correction recorded rather than absorbed:** P2 wrote the mirror as
+   `A(b,a;k) = A(a,b;Rk)` with `R` applied to the whole point. Applied literally
+   that puts beam 0 on `−z`; the implementation reflects the outgoing legs only,
+   which is the same rotation composed with the beam-slot swap and keeps the
+   partonic-CM contract the pruned evaluator asserts.
