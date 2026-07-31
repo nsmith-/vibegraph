@@ -41,11 +41,11 @@ use vibegraph::vegas::VegasResult;
 
 /// Default LHAPDF set — the one wired through the hadronic pipeline (MG5's LO
 /// default `nn23lo1`, lhaid 247000).
-const DEFAULT_PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
+pub(crate) const DEFAULT_PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
 /// PDF member index (central value; error members are not consumed at LO).
-const PDF_MEMBER: u32 = 0;
+pub(crate) const PDF_MEMBER: u32 = 0;
 /// Sentinel `pdf_set` recorded in the artifact for a no-PDF (fixed-energy) run.
-const NO_PDF: &str = "none";
+pub(crate) const NO_PDF: &str = "none";
 /// Artifact filename written inside the output directory.
 const GRID_FILENAME: &str = "grid.bin.zst";
 
@@ -129,14 +129,28 @@ fn err(msg: impl Into<String>) -> IntegrateError {
 }
 
 /// Resolve the directory holding `<pdf_set>/<pdf_set>.info`.
-fn resolve_pdf_dir(args: &IntegrateArgs) -> PathBuf {
-    if let Some(dir) = &args.pdf_dir {
+pub(crate) fn resolve_pdf_dir(override_dir: Option<&PathBuf>) -> PathBuf {
+    if let Some(dir) = override_dir {
         return dir.clone();
     }
     if let Some(env_dir) = std::env::var_os("VIBEGRAPH_PDF_DIR") {
         return PathBuf::from(env_dir);
     }
     PathBuf::from("validation/pdf")
+}
+
+/// Load a PDF set by name from the resolved data directory, with the message a
+/// caller who has not fetched it needs.
+pub(crate) fn load_pdf_set(dir: &PathBuf, name: &str) -> Result<PdfSet, IntegrateError> {
+    let set_dir = dir.join(name);
+    PdfSet::load(&set_dir, name).map_err(|e| {
+        err(format!(
+            "cannot load PDF set {name} from {}: {e}\n\
+             fetch it with `pixi run -e madgraph fetch-pdf` \
+             or point --pdf-dir / $VIBEGRAPH_PDF_DIR at the data directory",
+            set_dir.display()
+        ))
+    })
 }
 
 /// The canonical string of the proc card's first process, for artifact metadata.
@@ -278,7 +292,7 @@ pub fn run(args: &IntegrateArgs) -> Result<(), IntegrateError> {
 /// A coupling-order constraint or a forbidden propagator gives a different set of
 /// diagrams under the same printed process string, and the bespoke integrand would
 /// silently ignore it, so those go the general route.
-fn is_drell_yan(parsed: &ParsedProcCard) -> bool {
+pub(crate) fn is_drell_yan(parsed: &ParsedProcCard) -> bool {
     let [spec] = parsed.processes.as_slice() else {
         return false;
     };
@@ -299,17 +313,7 @@ fn integrate_proton(
     rc: &RunCard,
     process: String,
 ) -> Result<RunOutput, IntegrateError> {
-    let pdf_dir = resolve_pdf_dir(args);
-    let set_dir = pdf_dir.join(&args.pdf_set);
-    let set = PdfSet::load(&set_dir, &args.pdf_set).map_err(|e| {
-        err(format!(
-            "cannot load PDF set {} from {}: {e}\n\
-             fetch it with `pixi run -e madgraph fetch-pdf` \
-             or point --pdf-dir / $VIBEGRAPH_PDF_DIR at the data directory",
-            args.pdf_set,
-            set_dir.display()
-        ))
-    })?;
+    let set = load_pdf_set(&resolve_pdf_dir(args.pdf_dir.as_ref()), &args.pdf_set)?;
     let pdf = set
         .member(PDF_MEMBER)
         .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;

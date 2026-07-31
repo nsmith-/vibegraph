@@ -17,7 +17,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
-use vibegraph::artifact::IntegrateArtifact;
+use vibegraph::artifact::{ChannelKey, IntegrateArtifact};
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card_file, ParsingOptions};
@@ -31,16 +31,23 @@ use vibegraph::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, StochasticRounding, UnweightStrategy, WeightedEvent,
 };
 use vibegraph::lhef::write::generator_element;
+use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::GEV2_TO_PB;
+use vibegraph::proton::{
+    derive_flavor_groups, BeamOrdering, FlavorGroups, ProtonIntegrand, ProtonSelection,
+};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::identity::ModelIdentity;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
-use vibegraph::unweight::Unweighter;
+use vibegraph::unweight::{UnweightStats, Unweighter};
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
-use crate::integrate::{process_string, IntegrateError};
+use crate::integrate::{
+    is_drell_yan, load_pdf_set, process_string, resolve_pdf_dir, IntegrateError, DEFAULT_PDF_SET,
+    NO_PDF, PDF_MEMBER,
+};
 
 type V = LorentzVector<f64>;
 
@@ -100,6 +107,16 @@ pub struct GenerateArgs {
     /// RNG seed for the generation. Same seed, same sample.
     #[arg(long, default_value_t = 20_260_728)]
     pub seed: u64,
+
+    /// LHAPDF set name (proton beams only). A set other than the one the artifact
+    /// was integrated with is refused.
+    #[arg(long, default_value = DEFAULT_PDF_SET)]
+    pub pdf_set: String,
+
+    /// Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then
+    /// `validation/pdf` under the current directory.
+    #[arg(long)]
+    pub pdf_dir: Option<PathBuf>,
 }
 
 fn err(msg: impl Into<String>) -> IntegrateError {
@@ -190,6 +207,37 @@ pub fn card_mismatches(
     out
 }
 
+/// The differences between the parton distributions this run would read and the
+/// ones the artifact was integrated with.
+///
+/// The run card pins the LHAPDF *id*, but the set a run actually loads is named
+/// by a flag, so an artifact and a command line can agree on every card and still
+/// disagree about which tabulation the luminosities came from. Nothing downstream
+/// notices: the grids replay, the events come out, and every weight is taken
+/// against a different parton distribution than the one that trained them.
+pub fn pdf_mismatches(
+    artifact: &IntegrateArtifact,
+    pdf_set: &str,
+    pdf_member: u32,
+) -> Vec<CardMismatch> {
+    let mut out = Vec::new();
+    if artifact.pdf_set != pdf_set {
+        out.push(CardMismatch {
+            what: "PDF set".to_string(),
+            banked: artifact.pdf_set.clone(),
+            given: pdf_set.to_string(),
+        });
+    }
+    if artifact.pdf_member != pdf_member {
+        out.push(CardMismatch {
+            what: "PDF member".to_string(),
+            banked: artifact.pdf_member.to_string(),
+            given: pdf_member.to_string(),
+        });
+    }
+    out
+}
+
 fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), IntegrateError> {
     if mismatches.is_empty() {
         return Ok(());
@@ -252,10 +300,6 @@ impl<'a> SampleSource<'a> {
 
     fn stats(&self) -> &vibegraph::unweight::UnweightStats {
         self.unweighter.stats()
-    }
-
-    fn efficiency(&self) -> f64 {
-        self.unweighter.stats().efficiency()
     }
 }
 
@@ -350,14 +394,13 @@ pub fn run(args: &GenerateArgs) -> Result<(), IntegrateError> {
         .load_run_card()
         .map_err(|e| err(format!("failed to load run card: {e}")))?;
 
-    refuse_on_mismatch(&card_mismatches(&artifact, &model_id, &process, &rc))?;
-
-    if rc.beam_mode() != BeamMode::FixedEnergy {
-        return Err(err(
-            "event generation currently covers fixed-energy partonic beams (lpp = 0) only; \
-             the PDF-convolved map is integrated but not yet split into sampling channels",
-        ));
-    }
+    let hadronic = rc.beam_mode() == BeamMode::Proton;
+    let mut mismatches = card_mismatches(&artifact, &model_id, &process, &rc);
+    // A fixed-energy run reads no parton distributions, and the artifact says so;
+    // the flag is only meaningful on the hadronic path.
+    let pdf_set = if hadronic { &args.pdf_set } else { NO_PDF };
+    mismatches.extend(pdf_mismatches(&artifact, pdf_set, PDF_MEMBER));
+    refuse_on_mismatch(&mismatches)?;
 
     let evaluated = EvaluatedModel::from_model(model.clone());
     let nevents = args
@@ -367,7 +410,27 @@ pub fn run(args: &GenerateArgs) -> Result<(), IntegrateError> {
         return Err(err("no events requested"));
     }
 
-    generate_sample(args, &artifact, &parsed, &model, &evaluated, &rc, nevents)?;
+    if hadronic {
+        // The bespoke Drell-Yan integrand banks a single grid over its whole
+        // `(tau, y) x cos` map, which is not a channel decomposition, so there is
+        // nothing for the accept/reject pass to draw a channel from.
+        if is_drell_yan(&parsed) {
+            return Err(err(
+                "event generation at proton beams covers the general flavour-group path; \
+                 `p p > e+ e-` is integrated by the bespoke Drell-Yan map, which banks one \
+                 grid over the whole map rather than per-channel grids to unweight against",
+            ));
+        }
+        let set = load_pdf_set(&resolve_pdf_dir(args.pdf_dir.as_ref()), &args.pdf_set)?;
+        let pdf = set
+            .member(PDF_MEMBER)
+            .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;
+        generate_proton_sample(
+            args, &artifact, &parsed, &model, &evaluated, &rc, nevents, &set, &pdf,
+        )?;
+    } else {
+        generate_sample(args, &artifact, &parsed, &model, &evaluated, &rc, nevents)?;
+    }
     println!("wrote {}", args.out.display());
     Ok(())
 }
@@ -457,16 +520,7 @@ fn generate_sample(
         artifact.channels.iter().map(|c| (&c.grid, c.neval)),
         args.seed ^ SCAN_SEED_OFFSET,
     );
-    let empty = scan.empty_channels();
-    if !empty.is_empty() {
-        eprintln!(
-            "warning: {} of {} channels produced no point in the weight scan and will never be \
-             drawn from ({empty:?}); their share of the banked cross section is missing from the \
-             sample",
-            empty.len(),
-            artifact.channels.len()
-        );
-    }
+    warn_on_empty_channels(&scan, artifact);
 
     // A model with no strong coupling installs no per-event scale prescription, and
     // no cross section depended on a factorisation scale; the run card's own is
@@ -487,12 +541,7 @@ fn generate_sample(
         alpha_qed,
     );
 
-    let strategy: Box<dyn UnweightStrategy> = match args.strategy {
-        Strategy::Buffer => Box::new(Buffer),
-        Strategy::StochasticRounding => {
-            Box::new(StochasticRounding::new(args.seed ^ ROUNDING_SEED_OFFSET))
-        }
-    };
+    let strategy = weight_strategy(args);
     let plan = EmitPlan {
         nevents,
         sigma_pb: artifact.sigma_pb,
@@ -508,26 +557,377 @@ fn generate_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
-        header: Some(format!(
-            "process {}\nartifact {}\nintegration sigma {:.6e} +- {:.6e} pb\nseed {}\n{}",
-            artifact.process,
-            args.artifact.display(),
-            artifact.sigma_pb,
-            artifact.sigma_err_pb,
-            args.seed,
-            strategy.describe(),
-        )),
+        header: Some(file_header(args, artifact, strategy.as_ref())),
     };
 
+    let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
+    report(
+        artifact,
+        source.stats(),
+        source.sigma_pb(),
+        &summary,
+        strategy.as_ref(),
+    );
+    Ok(summary)
+}
+
+/// A channel the frozen scan never reached is never drawn from, so its share of the
+/// banked cross section is simply missing from the sample. That is a property of the
+/// run worth saying out loud rather than a failure.
+fn warn_on_empty_channels(scan: &Unweighter, artifact: &IntegrateArtifact) {
+    let empty = scan.empty_channels();
+    if !empty.is_empty() {
+        eprintln!(
+            "warning: {} of {} channels produced no point in the weight scan and will never be \
+             drawn from ({empty:?}); their share of the banked cross section is missing from the \
+             sample",
+            empty.len(),
+            artifact.channels.len()
+        );
+    }
+}
+
+fn weight_strategy(args: &GenerateArgs) -> Box<dyn UnweightStrategy> {
+    match args.strategy {
+        Strategy::Buffer => Box::new(Buffer),
+        Strategy::StochasticRounding => {
+            Box::new(StochasticRounding::new(args.seed ^ ROUNDING_SEED_OFFSET))
+        }
+    }
+}
+
+/// The provenance block the file carries in its `<header>`.
+fn file_header(
+    args: &GenerateArgs,
+    artifact: &IntegrateArtifact,
+    strategy: &dyn UnweightStrategy,
+) -> String {
+    format!(
+        "process {}\nartifact {}\nintegration sigma {:.6e} +- {:.6e} pb\nseed {}\n{}",
+        artifact.process,
+        args.artifact.display(),
+        artifact.sigma_pb,
+        artifact.sigma_err_pb,
+        args.seed,
+        strategy.describe(),
+    )
+}
+
+fn emit_to(
+    args: &GenerateArgs,
+    source: &mut dyn EventSource,
+    plan: &EmitPlan,
+    strategy: &dyn UnweightStrategy,
+) -> Result<EmitSummary, IntegrateError> {
     let file = std::fs::File::create(&args.out)
         .map_err(|e| err(format!("cannot create {}: {e}", args.out.display())))?;
     let mut sink = std::io::BufWriter::new(file);
-    let summary = strategy
-        .emit(&mut source, &plan, &mut sink)
-        .map_err(|e| err(e.to_string()))?;
+    strategy
+        .emit(source, plan, &mut sink)
+        .map_err(|e| err(e.to_string()))
+}
 
-    report(artifact, &source, &summary, strategy.as_ref());
+/// Every concrete flavour assignment of every group, under both beam orderings, as
+/// the record layer sees it: `[group][member][ordering]`, with the exchanged slot
+/// absent where the two beams carry the same parton and there is only one ordering.
+type FlavorRecords = Vec<Vec<[Option<SubprocessRecord>; 2]>>;
+
+/// The record slot an ordering occupies.
+fn ordering_slot(ordering: BeamOrdering) -> usize {
+    usize::from(ordering == BeamOrdering::Exchanged)
+}
+
+/// Resolve the record layer's view of every flavour a group's events can be
+/// labelled with.
+///
+/// One compiled amplitude serves the whole group, so each member is that
+/// amplitude's record relabelled: the PDG codes are the member's, and an exchanged
+/// beam ordering additionally trades the two incoming legs of every per-leg field.
+fn flavor_records(
+    groups: &FlavorGroups,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Result<FlavorRecords, IntegrateError> {
+    let mut out = Vec::with_capacity(groups.groups().len());
+    for group in groups.groups() {
+        let base = SubprocessRecord::new(group.evaluator(), model, evaluated)
+            .map_err(|e| err(format!("cannot build a subprocess record: {e}")))?;
+        let mut members = Vec::with_capacity(group.members().len());
+        for (i, member) in group.members().iter().enumerate() {
+            let mut slots = [None, None];
+            for ordering in [BeamOrdering::Direct, BeamOrdering::Exchanged] {
+                if ordering == BeamOrdering::Exchanged && !member.has_mirror() {
+                    continue;
+                }
+                let (pdg, order) = group.event_legs(i, ordering);
+                slots[ordering_slot(ordering)] = Some(
+                    base.relabelled(&order, &pdg)
+                        .map_err(|e| err(format!("cannot relabel {pdg:?}: {e}")))?,
+                );
+            }
+            members.push(slots);
+        }
+        out.push(members);
+    }
+    Ok(out)
+}
+
+/// The artifact's channels, matched to this process's **position by position**.
+///
+/// A hadronic channel is a `(group, diagram)` pair and the grids are banked in the
+/// integrand's own channel order, so the same set of keys in another order would
+/// install every grid on the wrong channel — a run that samples a perfectly
+/// plausible wrong distribution with nothing else to show for it. Comparing counts,
+/// or comparing the keys as a set, would not see it.
+fn check_channel_keys(
+    artifact: &IntegrateArtifact,
+    integ: &ProtonIntegrand<'_>,
+) -> Result<(), IntegrateError> {
+    let derived: Vec<ChannelKey> = integ
+        .channel_ids()
+        .iter()
+        .map(|id| ChannelKey::GroupDiagram {
+            group: id.group,
+            diagram: id.diagram,
+        })
+        .collect();
+    if artifact.channels.len() != derived.len() {
+        return Err(err(format!(
+            "the artifact banks {} channel grids but this process has {} (group, diagram) \
+             channels: the grids were trained on a different process",
+            artifact.channels.len(),
+            derived.len()
+        )));
+    }
+    for (j, (banked, want)) in artifact.channels.iter().zip(&derived).enumerate() {
+        if banked.key != *want {
+            return Err(err(format!(
+                "the artifact's channel {j} is {:?} but this process's channel {j} is {want:?}: \
+                 the grids were trained on a different process, or on the same one in a \
+                 different channel order",
+                banked.key
+            )));
+        }
+        if banked.grid.ndim() != integ.channel_grid_ndim() {
+            return Err(err(format!(
+                "channel {j}'s banked grid is over {} coordinates, this process's channels over \
+                 {}: the grids were trained on a different process",
+                banked.grid.ndim(),
+                integ.channel_grid_ndim()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The accept/reject pass over a hadronic integrand as a replayable source.
+///
+/// The difference from a fixed-beam run is entirely in what an accepted point
+/// carries: its own beam momentum fractions, its own scales, and a concrete flavour
+/// assignment drawn from the parton luminosities at those fractions.
+struct ProtonSampleSource<'a> {
+    integrand: &'a ProtonIntegrand<'a>,
+    records: &'a FlavorRecords,
+    pristine: Unweighter,
+    unweighter: Unweighter,
+    rng: ChaCha8Rng,
+    seed: u64,
+    alpha_qed: f64,
+}
+
+impl<'a> ProtonSampleSource<'a> {
+    fn new(
+        integrand: &'a ProtonIntegrand<'a>,
+        records: &'a FlavorRecords,
+        unweighter: Unweighter,
+        seed: u64,
+        alpha_qed: f64,
+    ) -> Self {
+        ProtonSampleSource {
+            integrand,
+            records,
+            pristine: unweighter.clone(),
+            unweighter,
+            rng: ChaCha8Rng::seed_from_u64(seed),
+            seed,
+            alpha_qed,
+        }
+    }
+
+    fn record(&self, selection: &ProtonSelection) -> Option<&SubprocessRecord> {
+        self.records[selection.group][selection.member][ordering_slot(selection.ordering)].as_ref()
+    }
+}
+
+impl EventSource for ProtonSampleSource<'_> {
+    fn next_event(&mut self) -> Option<WeightedEvent> {
+        let point =
+            self.unweighter
+                .next_event(self.integrand, &mut self.rng, MAX_TRIALS_PER_EVENT)?;
+        let event = self.integrand.event_in_channel(point.channel, &point.u)?;
+        let selection = self.integrand.select_event(
+            &event,
+            [
+                self.rng.random(),
+                self.rng.random(),
+                self.rng.random(),
+                self.rng.random(),
+            ],
+        )?;
+        let externals: Vec<[f64; 4]> = event
+            .lab
+            .iter()
+            .map(|p| [p.e(), p.px(), p.py(), p.pz()])
+            .collect();
+        // The coupling the matrix element itself ran at, off the PDF set's own
+        // tabulation — the one the densities were fitted with.
+        let alpha_qcd = self
+            .integrand
+            .alpha_s_source()
+            .map(|source| source.eval(event.scales.mu_r))
+            .unwrap_or(0.0);
+        let header = EventHeader {
+            process_id: PROCESS_ID,
+            // The strategy imposes the file's weight convention; this slot is
+            // overwritten before the record is written.
+            weight: 0.0,
+            scale: scalup(&event.scales),
+            alpha_qed: self.alpha_qed,
+            alpha_qcd,
+        };
+        let record = self
+            .record(&selection)?
+            .event(&externals, &selection.helicity, selection.flow, header)
+            .ok()?;
+        Some(WeightedEvent {
+            record,
+            weight: point.weight,
+        })
+    }
+
+    fn restart(&mut self) {
+        self.unweighter = self.pristine.clone();
+        self.rng = ChaCha8Rng::seed_from_u64(self.seed);
+    }
+
+    fn sigma_pb(&self) -> f64 {
+        self.unweighter.sigma_from_events() * GEV2_TO_PB
+    }
+}
+
+/// Rebuild the hadronic integrand the artifact describes, unweight against its
+/// frozen grids, and write the file.
+///
+/// Every physics input is taken from the cards the artifact was checked against;
+/// the channel selection weights are *installed* from the artifact rather than
+/// re-surveyed, because a survey reproduces them only by accident and `alpha_j`
+/// enters every channel's weight.
+#[allow(clippy::too_many_arguments)]
+fn generate_proton_sample(
+    args: &GenerateArgs,
+    artifact: &IntegrateArtifact,
+    parsed: &vibegraph::diagrams::ParsedProcCard,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+    nevents: usize,
+    set: &PdfSet,
+    pdf: &PdfMember,
+) -> Result<EmitSummary, IntegrateError> {
+    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
+
+    let sets = generate_from_proc_card(parsed, model)
+        .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
+    let groups = derive_flavor_groups(sets, model, evaluated, rc)
+        .map_err(|e| err(format!("failed to decompose into flavour groups: {e}")))?;
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), evaluated))
+        .collect();
+
+    let mut integ =
+        ProtonIntegrand::new(&groups, &amps, evaluated, pdf, sqrt_s_had, rc.dsqrt_q2fact1)
+            .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
+    integ
+        .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
+        .map_err(|e| err(format!("run card scale prescription: {e}")))?;
+
+    check_channel_keys(artifact, &integ)?;
+    let alphas: Vec<f64> = artifact.channels.iter().map(|c| c.alpha).collect();
+    check_alphas(&alphas)?;
+    integ.set_channel_alphas(alphas);
+
+    let records = flavor_records(&groups, model, evaluated)?;
+    let beam_pdg = hadron_beam_pdg(rc)?;
+
+    let scan = Unweighter::scan(
+        &integ,
+        artifact.channels.iter().map(|c| (&c.grid, c.neval)),
+        args.seed ^ SCAN_SEED_OFFSET,
+    );
+    warn_on_empty_channels(&scan, artifact);
+
+    let alpha_qed = evaluated
+        .param_values
+        .get("aEW")
+        .map(|v| v.re)
+        .unwrap_or(0.0);
+    let mut source = ProtonSampleSource::new(
+        &integ,
+        &records,
+        scan,
+        args.seed ^ GEN_SEED_OFFSET,
+        alpha_qed,
+    );
+
+    let strategy = weight_strategy(args);
+    let plan = EmitPlan {
+        nevents,
+        sigma_pb: artifact.sigma_pb,
+        sigma_err_pb: artifact.sigma_err_pb,
+        beam_pdg,
+        beam_energy: [rc.ebeam1, rc.ebeam2],
+        // MadGraph writes the LHAPDF id in `PDFSUP` and leaves `PDFGUP` at zero,
+        // the accord's "the set is named by its LHAPDF id alone" spelling.
+        pdf_group: [0, 0],
+        pdf_set: [rc.lhaid as i32; 2],
+        process_id: PROCESS_ID,
+        trailer: vec![generator_element(
+            "vibegraph",
+            env!("CARGO_PKG_VERSION"),
+            "",
+        )],
+        header: Some(file_header(args, artifact, strategy.as_ref())),
+    };
+
+    let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
+    report(
+        artifact,
+        source.unweighter.stats(),
+        source.sigma_pb(),
+        &summary,
+        strategy.as_ref(),
+    );
     Ok(summary)
+}
+
+/// `IDBMUP` for a hadron-collider run, from the run card's beam labels.
+fn hadron_beam_pdg(rc: &RunCard) -> Result<[i32; 2], IntegrateError> {
+    let mut out = [0i32; 2];
+    for (slot, lpp) in out.iter_mut().zip([rc.lpp1, rc.lpp2]) {
+        *slot = match lpp {
+            1 => 2212,
+            -1 => -2212,
+            other => {
+                return Err(err(format!(
+                    "beam label lpp = {other} is not a proton beam; event generation covers \
+                     lpp = 0 (fixed-energy partons) and lpp = ±1 (protons)"
+                )))
+            }
+        };
+    }
+    Ok(out)
 }
 
 /// `IDBMUP` for a fixed-beam run: the incoming legs' PDG codes, which every
@@ -570,11 +970,11 @@ fn check_alphas(alphas: &[f64]) -> Result<(), IntegrateError> {
 
 fn report(
     artifact: &IntegrateArtifact,
-    source: &SampleSource<'_>,
+    stats: &UnweightStats,
+    sample_sigma: f64,
     summary: &EmitSummary,
     strategy: &dyn UnweightStrategy,
 ) {
-    let stats = source.stats();
     println!("process:  {}", artifact.process);
     println!("strategy: {}", strategy.describe());
     println!(
@@ -582,7 +982,7 @@ fn report(
         summary.written,
         summary.drawn,
         stats.trials,
-        source.efficiency()
+        stats.efficiency()
     );
     println!(
         "overweight: rate {:.3e}, cross-section share {:.3e}, largest w/w_max {:.3}",
@@ -590,7 +990,6 @@ fn report(
         stats.overweight_weight_share(),
         stats.ratio_max
     );
-    let sample_sigma = source.sigma_pb();
     println!(
         "σ:        {sample_sigma:.6} pb from the sample vs {:.6} ± {:.6} pb from the integration \
          ({:+.3}%)",

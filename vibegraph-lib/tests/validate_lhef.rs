@@ -134,6 +134,12 @@ fn banked_files_round_trip_byte_for_byte() {
 
     let mut total_events = 0usize;
     let mut total_particles = 0usize;
+    // The corpus has to reach the layouts this crate's own writer emits, or the
+    // format evidence stops where the fixed-energy runs stop. A hadron-collider run
+    // is the one that carries proton beam ids, an LHAPDF set id in `PDFSUP` and
+    // colour lines on the incoming legs; nothing in a lepton-beam file does.
+    let mut hadronic_init = None;
+    let mut coloured_incoming = None;
     for (name, run) in &runs {
         let text = banked_text(run);
         let file = LheFile::parse(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -152,6 +158,17 @@ fn banked_files_round_trip_byte_for_byte() {
                  wrote    {got:?}\n  MadGraph {want:?}"
             );
         }
+        if file.init.beam_pdg == [2212, 2212] && file.init.pdf_set != [0, 0] {
+            hadronic_init.get_or_insert_with(|| name.clone());
+        }
+        if file.events.iter().any(|e| {
+            e.particles
+                .iter()
+                .take(2)
+                .any(|p| p.color != [0, 0] && p.status == STATUS_INCOMING)
+        }) {
+            coloured_incoming.get_or_insert_with(|| name.clone());
+        }
         let particles: usize = file.events.iter().map(|e| e.nup()).sum();
         println!(
             "{name}: {} events, {particles} legs, {} process entries -- byte-identical",
@@ -161,9 +178,18 @@ fn banked_files_round_trip_byte_for_byte() {
         total_events += file.events.len();
         total_particles += particles;
     }
+    let hadronic_init = hadronic_init.expect(
+        "no banked run carries a hadron-collider <init> block, so the round trip does not cover \
+         the layout this crate writes at proton beams",
+    );
+    let coloured_incoming = coloured_incoming.expect(
+        "no banked run carries colour lines on an incoming leg, so the round trip does not cover \
+         the ICOLUP layout this crate writes for a coloured initial state",
+    );
     println!(
         "LHE format: {total_events} events / {total_particles} particle lines across {} banked \
-         runs re-serialise byte-for-byte",
+         runs re-serialise byte-for-byte (hadronic <init> covered by {hadronic_init}, incoming \
+         colour lines by {coloured_incoming})",
         runs.len()
     );
 }
