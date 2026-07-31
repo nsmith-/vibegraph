@@ -856,3 +856,173 @@ for two of the three colour gates; both now have one.
   `vibegraph-lib/tests/validate_alphas.rs`.
 - Regenerate: `pixi run -e madgraph build-diagrams`, then `generate-amplitude`,
   `generate-amp-reference`, `extract-sigma`.
+
+---
+
+## P2 outcome (partial, 2026-07-30) ⚠️ INCOMPLETE — one commit landed, integrand not built
+
+Branch `proton-events`, commit `1d8e9bf`. The session was cut off twice by
+infrastructure stalls; the phase-space groundwork is committed and green, the
+hadronic integrand itself is **not started**. This section records what is proven,
+what the design settled on, and the order a successor should resume in.
+
+### Landed: `1d8e9bf` — per-energy channels, spacelike floor, real weight check
+
+Three changes to `phasespace`, all with every existing caller unchanged and the
+default `cargo test` gate green (`cargo build` clean, 489 lib + 10 diagram-channel
++ CLI suites passing; no tolerance loosened).
+
+1. **`ScaledChannel` / `ScaledMultiChannel`** (`phasespace/channel.rs`). `ndim` is
+   *not* restated on `ScaledChannel` — it is a **subtrait of `PhaseSpaceMap`**, so
+   exactly one `ndim` is in scope and no call site needs disambiguation. (The first
+   cut declared `ndim` on both traits and produced ten E0034 ambiguities; the
+   subtrait shape is the fix, not disambiguation syntax.) `DiagramChannel` stores
+   `beam_masses` instead of pre-built `beams` and rebuilds them at the draw's
+   energy. `kleiss_pittau_step` and `select_channel` are factored out as free
+   functions so the reallocation rule is written once for both combiners.
+2. **`from_diagram_regulated(d, model, sqrt_s, floor)`** floors the peripheral
+   rung at `max(m², floor)`. A spine is built for `n_out > 2` **only** when a
+   positive floor is supplied, so every existing `lpp = 0` caller (floor `0`)
+   keeps bit-identical channels and the banked σ artifacts are untouched.
+3. **`sample` accumulates its own path weight** as it walks, from the invariants
+   it drew, instead of returning `1/self.density(momenta)`.
+
+### Plan correction 3 — P0's bias was an artefact of the weight definition
+
+This is the session's main finding and it **supersedes P0's "extend the spine —
+and floor its spacelike draw" verdict in its stated form**.
+
+With `sample` weighting by its own walk, the *unregulated* three-body spine
+reproduces flat RAMBO's `V_3` to **1.003**. P0's measured 3.09×–3.48× overstatement
+was produced by `sample` taking its weight from `density()`, which recomputes `t`
+from the momenta with a cancellation error the drawn `t` does not have. P0's test
+`the_unregulated_three_body_spine_is_biased_at_the_collinear_edge` therefore no
+longer holds and has been replaced.
+
+**The floor is still required, one level up.** `MultiChannel::sample_channel` and
+`MultiChannel::sample` *discard* the channel's own weight and use
+`αⱼ / Σₖ αₖ gₖ`, every `gₖ` from `Channel::density`. So the combiner — the only
+form the hadronic integrand will use — is exposed to exactly the mismatch the walk
+weight avoids. Measured over the six llj cuts at `√ŝ = 500`:
+
+| spacelike pole | worst walk-vs-density gap | non-positive self-densities |
+|---|---|---|
+| unregulated (`m = 0`) | **3.99e4** | **145** of 800 000 |
+| floored at 5 GeV | 1.2e-8 | 0 |
+
+A non-positive density at a point the channel itself generated is a zero in the
+combiner's denominator, not a mis-normalisation: an unfloored spine trips
+`MultiChannel`'s `debug_assert!(g > 0)` outright. So the correct statement is
+*"the unfloored spine breaks the density contract a combiner rests on"*, not
+*"the unfloored spine is biased"*. Two tests in
+`vibegraph-lib/tests/diagram_channel.rs` assert this:
+`an_unregulated_three_body_spine_breaks_the_density_a_combiner_weights_by` and
+`an_unregulated_spine_breaks_the_positive_density_contract`.
+
+Both P0-annotated "vacuous reciprocity" sites lost their blind-spot comments,
+because the blind spot is gone: the check now compares two independent
+computations. New bound `WALK_DENSITY_TOL = 1e-7`, above the measured 7.1e-9
+(worst over every diagram channel) and 1.2e-8 (floored llj spine), and twelve
+orders below the 4e4 it exists to catch.
+
+### Not started
+
+Everything else in the P2 brief: `Cuts`-sourced floor, flavour groups, the
+integrand, αs from the grid, the DY informational row, the fixed-ŝ slices.
+
+### Design decisions already made — a successor should not re-derive these
+
+Measured during the session (enumeration run against `sm-default`), all of it
+input to the integrand's shape:
+
+- **`p p > l+ l- j QCD=2 QED=2` enumerates 24 non-empty subprocesses**, and the
+  enumerator emits **one ordering per unordered initial state**: `g u`, `g u~`,
+  `u u~` are present; `u g`, `u~ g`, `u~ u` are **not**. `l+ l-` expands to `e`
+  and `mu` (opposite-flavour pairs have no diagrams), so each initial state
+  appears twice. Every subprocess has 4 diagrams and
+  `final_state_symmetry_factor == 1`.
+- **The mirror term is mandatory and is not a symmetry assumption.** DY gets away
+  with summing both luminosity orderings against one `|M|²` because its map is
+  symmetric; llj does not. The exact identity is `A(b,a; k) = A(a,b; Rk)` with `R`
+  the rotation by π about x (`py, pz → −py, −pz`), since `Rp₁ = p₂`. So each group
+  contributes `xf_a(x₁)xf_b(x₂)·|M(k)|² + xf_b(x₁)xf_a(x₂)·|M(Rk)|²`, both under
+  the *same* cut indicator (the final state is the same). **This is a convention
+  claim and needs a pinning test**: compare against an explicitly generated
+  `u~ u > e+ e- g` amplitude, which P1's enforced rows make meaningful.
+- **Group by measured `|M|²` equality, not by a hand-listed flavour table.**
+  Probe every compiled subprocess at a few shared fixed phase-space points and
+  group on relative agreement; assert within-group agreement at fresh points *and*
+  cross-group disagreement, so the partition is neither assumed nor vacuous. This
+  puts `u`/`c` together, `d`/`s` together, `e`/`mu` together (same initial state →
+  the luminosity sum handles the multiplicity of 2 uniformly), and separates the
+  up/down coupling classes. Whether `g q` and `g q̄` coincide pointwise is
+  **unmeasured** — P1 only showed equal σ̂ within MC error — so let the probe decide
+  the group count (expect 6, possibly 8).
+- **Channel coverage across groups is already adequate; no mirrored channels
+  needed.** `u u~ > e+ e- g` has 4/4 diagrams spacelike with partitions
+  `emitted = {jet}` twice and `emitted = {ℓℓ}` twice; `g u > e+ e- u` has 2/4, both
+  `emitted = {jet}`. The `g q` group's *mirror* peak is at small `(p_b1 − p_jet)²`,
+  which by momentum conservation **equals** `(p_b0 − p_ℓℓ)²` — covered by the `q q̄`
+  groups' `emitted = {ℓℓ}` spines. Since all channels pool into one `g = Σ αₖ gₖ`,
+  coverage is fine. Channels are heavily duplicated across groups (up/down produce
+  identical maps); harmless, α just splits, but worth a dedup follow-up.
+- **The floor value.** `ptj = 20 ⇒ |t| ≳ 400 GeV²`, eleven orders above the 4e-8
+  cancellation noise. Derive it as the largest single-leg pT threshold the cuts
+  impose on a final-state leg (momentum balance forces the recoiling system to
+  carry at least that). It is a **density regulator**: any positive value leaves
+  the estimator unbiased, so its size is an efficiency-and-well-posedness choice,
+  not a correctness one. A run with no active pT cut gets floor 0 and falls back
+  to the all-timelike tree — the honest failure mode.
+- **`τ_min` is loose by ≈2.2× and that is acceptable.** `Cuts::shat_min_hint`
+  fires only its `mmll` branch for llj (the `2·ptl` branch needs exactly two final
+  legs), giving `ŝ_min = 2500`. The true bound is
+  `(√(mmll² + ptj²) + ptj)² ≈ 5454`. In a `ln τ` map that is 0.79 out of
+  `ln(1/τ_min) ≈ 18.9`, i.e. ~4% of draws below threshold. Tightening it is
+  optional; if done, keep DY's number **exactly** unchanged (DY is the
+  bit-reproducibility anchor and `DrellYanIntegrand` is the only other consumer).
+- **αs from the grid is a ~10-line interpolator, and log-linear is enough here.**
+  `NNPDF23_lo_as_0130_qed` brackets `Q = 91.188` between knots 91.1876
+  (`αs = 0.1300028`) and 109.8541 (`αs = 0.1262725`). Linear in `ln Q²` gives
+  `0.13000271217` against MadGraph's `0.13000271085472237` — **1.0e-8 relative**,
+  five orders below any σ tolerance. Mid-interval the cubic `ipol` and the linear
+  interpolant differ by ~1.7e-4 relative, which is precisely why this suffices for
+  a *fixed* scale sitting on a knot and would not for a dynamical one. Put
+  `GridAlphaS` in `pdf/`, select it over `RunningAlphaS` when the card says
+  `pdlabel = lhapdf` (mirroring MadGraph's own linking decision), and pin the single
+  value against the banked run log.
+- **Module placement:** put the new integrand in a new `vibegraph-lib/src/proton.rs`
+  rather than growing `hadronic.rs` (already 2573 lines), making `BoundSubprocess`,
+  `EventScaleSource` and friends `pub(crate)`. That keeps DY genuinely untouched.
+- **`validation/pdf/NNPDF23_lo_as_0130_qed/` is not fetched in this checkout.**
+  It was populated during the session by copying
+  `.pixi/envs/madgraph/share/LHAPDF/NNPDF23_lo_as_0130_qed` (gitignored, 101 MB);
+  `bash validation/pdf/fetch.sh` does the same from the network.
+
+### Resume order
+
+1. `Cuts::spacelike_floor()` (GeV²) + its unit tests. Cheap, self-contained, commit.
+2. `GridAlphaS` in `pdf/` + `AlphaSSource` selection + the pinning test against the
+   banked `alpha_s for scale 91.188... is 0.13000271085472237` run-log line. Commit.
+3. Flavour-group derivation in `proton.rs` (probe-and-group, with the
+   within-group/cross-group tests and the `symmetry_factor == 1` assert), plus the
+   `A(b,a;k) = A(a,b;Rk)` pinning test against an explicitly generated `u~ u`
+   subprocess. Commit — this is the largest single piece and stands alone.
+4. `ProtonIntegrand`: `(τ, y)` outer map exactly as DY (keep `hadronic.rs`'s
+   `1/x₁x₂`-vs-`dτ` arithmetic), inner `ScaledMultiChannel` at `√ŝ = √(τs)`,
+   `channel_grid_ndim = 2 + 5 = 7`, `impl ChannelIntegrand`. Per-group prefactor
+   `avg_g · S_g` inside the sum (the `g q` average is `1/96`, `q q̄` is `1/36`).
+   Commit.
+5. Joint α-adaptation over the `(group, diagram)` channel space, driven by the
+   integrand (the outer map means it cannot live in the combiner);
+   `kleiss_pittau_step` is already factored out for this.
+6. In-session validation: fixed-ŝ slices vs `FixedBeamIntegrand` on P1's four
+   banked partonic runs, and the DY informational row. Then the
+   `extended-validation` skill.
+
+### What P3 must know regardless
+
+- The `(group, channel)` space is ~24 channels for llj, each wanting its own VEGAS
+  grid; `MIN_CHANNEL_NEVAL = 512` puts a floor of ~12 000 evals/iter on the run.
+- Every point evaluates one `|M|²` per group **twice** (direct + mirror), so ~12
+  amplitude evaluations per point for llj. If P3's gate runs long, that is the
+  reason, and channel dedup is the first lever.
