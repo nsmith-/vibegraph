@@ -11,7 +11,7 @@
 #   vibegraph: the honest release bench — criterion median ns/iter of the
 #              `eval_m2/forward/*` rows of benches/eval_strategies.rs, divided
 #              by the bench's points-per-iteration batch size. Never the
-#              `validate_helas_mg` timing report (its extended-validation build
+#              `amplitude_oracle` timing report (its extended-validation build
 #              compiles per-node cross-checks into the eval loop).
 #
 # Runs the forward (scalar) bench rows only; SIMD lane-width questions are the

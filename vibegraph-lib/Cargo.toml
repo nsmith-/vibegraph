@@ -57,6 +57,13 @@ name = "kernel_fusion"
 harness = false
 required-features = ["bench-internals"]
 
+# The amplitude gate reads committed per-process tables and needs nothing else,
+# so it is hermetic; `harness = false` is only because it names one trial per
+# process.
+[[test]]
+name = "amplitude_oracle"
+harness = false
+
 # `required-features` is how a test declares its dependency layer: everything
 # listed here needs the mg5amcnlo submodule, a fetched PDF set or a frozen
 # MadGraph run, so it is absent from a default-feature build rather than
@@ -68,27 +75,12 @@ harness = false
 required-features = ["extended-validation"]
 
 [[test]]
-name = "validate_helas_mg"
-harness = false
-required-features = ["extended-validation"]
-
-[[test]]
 name = "color_cf_oracle"
 harness = false
 required-features = ["extended-validation"]
 
 [[test]]
 name = "color_flow_tags_oracle"
-harness = false
-required-features = ["extended-validation"]
-
-[[test]]
-name = "color_jamp_oracle"
-harness = false
-required-features = ["extended-validation"]
-
-[[test]]
-name = "amp_diagram_oracle"
 harness = false
 required-features = ["extended-validation"]
 

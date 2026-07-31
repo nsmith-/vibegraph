@@ -1075,7 +1075,7 @@ mod tests {
     /// to the 2→6 EW amplitudes. The full suite round-trips in about a second because the
     /// whole AST is inserted as one expression (see [`encode_commands`]): egglog rebuilds
     /// its database once, not once per node. Runs the same `MG_VALIDATED_PROCESSES`
-    /// suite as `validate_helas_mg`, so it never drifts from the validated set.
+    /// suite as `amplitude_oracle`, so it never drifts from the validated set.
     ///
     /// Gated behind `extended-validation`: egglog is ~100× slower unoptimized (~1s
     /// release, ~140s debug over the full suite), too heavy for the default `cargo test`.
