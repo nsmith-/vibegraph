@@ -6,6 +6,13 @@ name: acceptance
 # being stored in it: it writes its own cards and downloads its own binary, so
 # the same script is what to run on a clean VM to reproduce this by hand.
 #
+# The process is `p p > l+ l- j`: hadronic, so the PDF resolution, the consent
+# prompt, the pinned download and the cache all sit on the path under test, and
+# supported by `generate`, so one set of cards reaches an event file. The
+# script's budget is small on purpose — this asks whether the shipped artifact
+# runs, not whether the cross section is right, which is what the repository's
+# own MadGraph-gated suite answers.
+#
 # # When this runs, and why not more often
 #
 # On a published release, and on demand. Not on pushes and not on pull
