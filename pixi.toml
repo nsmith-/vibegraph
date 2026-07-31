@@ -50,6 +50,10 @@ fetch-refdata = "bash validation/fetch_refdata.sh"
 # MadGraph, which is what lets it run on a machine that has never built a process
 # directory. `--nocapture` so the VALIDATION-SKIP lines are visible; a skip that
 # is not in vibegraph::validation::EXPECTED_SKIPS fails the run.
+#
+# One banked gate sits outside it: `validate-pythia` needs Pythia 8, so it runs
+# in its own environment (`pixi run -e pythia validate-pythia`) and this task
+# stays runnable without it.
 validate = { cmd = "cargo test --workspace --profile release-debug --features vibegraph/extended-validation,vibegraph-lib/extended-validation -- --nocapture", depends-on = [
     "init-sm-submodule",
     "fetch-pdf",
@@ -211,6 +215,32 @@ pylhe = ">=0.9"
 # validation/madgraph/events/, verifying the round trip as it goes.
 compact-events = "python validation/madgraph/compact_events.py"
 
+# --- pythia: read our emitted Les Houches files with a real shower generator ---
+# The one gate whose oracle is a downstream consumer rather than MadGraph: Pythia
+# parses the file we wrote, reconstructs the hard process from it and checks its
+# colour lines and masses before it showers anything. Kept out of the default and
+# MadGraph environments — nothing else in the suite links Pythia.
+[feature.pythia.dependencies]
+python = ">=3.11,<3.13"
+pythia8 = ">=8.3"
+
+# The gate compares what Pythia reconstructed against what we wrote, so it needs
+# to read the file itself — through the same third-party reader the rest of the
+# suite uses rather than a hand-written parser.
+[feature.pythia.pypi-dependencies]
+pylhe = ">=0.9"
+
+[feature.pythia.tasks]
+# Integrate and unweight the two proton card sets this gate feeds to Pythia.
+generate-pythia-samples = { cmd = "bash validation/pythia/generate_samples.sh", depends-on = [
+    "fetch-pdf",
+    "fetch-refdata",
+] }
+# Read every event of every emitted sample through Pythia and report n/n consumed.
+validate-pythia = { cmd = "python validation/pythia/consume.py", depends-on = [
+    "generate-pythia-samples",
+] }
+
 # --- MarkItDown: CLI tool for converting to markdown files ---
 [feature.markitdown.dependencies]
 python = ">=3.10,<3.12"
@@ -221,4 +251,5 @@ nougat = { features = ["nougat"], solve-group = "nougat" }
 madgraph = { features = ["madgraph"], solve-group = "madgraph" }
 helas-validation = { features = ["helas-validation"], solve-group = "helas-validation" }
 lhe-compact = { features = ["lhe-compact"], solve-group = "lhe-compact" }
+pythia = { features = ["pythia"], solve-group = "pythia" }
 markitdown = { features = ["markitdown"], solve-group = "markitdown" }
