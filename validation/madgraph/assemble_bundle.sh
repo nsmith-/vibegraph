@@ -62,6 +62,9 @@ vg_say ">>> selecting banked files under $WORK_AREA"
     find "$proc/SubProcesses" -maxdepth 1 -type f -name results.dat 2>/dev/null || true
     find "$proc/SubProcesses" -maxdepth 2 -type f \
       \( -name leshouche.inc -o -name matrix1_orig.f \) 2>/dev/null || true
+    # Per-channel integration logs: where MadGraph prints the alpha_s source rule
+    # and its own alpha_s at the scales the run evaluated.
+    find "$proc/SubProcesses" -maxdepth 3 -type f -name 'run_*_log.txt' 2>/dev/null || true
   done
   # The fixed-grid amplitude tables sit beside the process directories.
   find . -maxdepth 1 -type f -name '*_amplitude.csv' 2>/dev/null | sed 's|^\./||'

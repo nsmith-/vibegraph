@@ -116,7 +116,9 @@ stage_bundle() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 STAGES=("$@")
-[ ${#STAGES[@]} -eq 0 ] && STAGES=(deps madgraph refs bundle)
+if [ ${#STAGES[@]} -eq 0 ]; then
+  STAGES=(deps madgraph refs bundle)
+fi
 
 for stage in "${STAGES[@]}"; do
   case "$stage" in
