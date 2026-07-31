@@ -1,0 +1,161 @@
+{
+  "_comment": "Per-process Feynman-diagram counts from MadGraph's own enumeration: the NGRAPHS of each P-class's representative subprocess, summed. Written by validation/madgraph/extract_diagrams.py from the local MadGraph work area and committed, so the diagram gate runs against a checkout that has never run MadGraph. The per-process files beside the work-area process directories carry the same counts plus the configs.inc topologies, which the gate prints for debugging when they are present. Keys are the .mg5 script names; the process string each one generates is in validation/manifest.toml and in the script itself.",
+  "processes": {
+    "bbx_to_ccx_emmm_qcd0": {
+      "diagrams_by_subprocess": {
+        "P1_bbx_qqllll": 615
+      },
+      "total_diagrams": 615
+    },
+    "ddx_to_epemg": {
+      "diagrams_by_subprocess": {
+        "P1_qq_llg": 4
+      },
+      "total_diagrams": 4
+    },
+    "ee_to_ee": {
+      "diagrams_by_subprocess": {
+        "P1_ll_ll": 4
+      },
+      "total_diagrams": 4
+    },
+    "ee_to_mumu": {
+      "diagrams_by_subprocess": {
+        "P1_ll_ll": 2
+      },
+      "total_diagrams": 2
+    },
+    "ee_to_mumu_tata_qcd0": {
+      "diagrams_by_subprocess": {
+        "P1_ll_lltaptam": 25
+      },
+      "total_diagrams": 25
+    },
+    "ee_to_mumua": {
+      "diagrams_by_subprocess": {
+        "P1_ll_lla": 8
+      },
+      "total_diagrams": 8
+    },
+    "ee_to_tatah": {
+      "diagrams_by_subprocess": {
+        "P1_ll_taptamh": 5
+      },
+      "total_diagrams": 5
+    },
+    "ee_to_ttx": {
+      "diagrams_by_subprocess": {
+        "P1_ll_ttx": 2
+      },
+      "total_diagrams": 2
+    },
+    "ee_to_wpwm": {
+      "diagrams_by_subprocess": {
+        "P1_ll_wpwm": 3
+      },
+      "total_diagrams": 3
+    },
+    "ee_to_zh": {
+      "diagrams_by_subprocess": {
+        "P1_ll_zh": 1
+      },
+      "total_diagrams": 1
+    },
+    "gg_to_gg": {
+      "diagrams_by_subprocess": {
+        "P1_gg_gg": 6
+      },
+      "total_diagrams": 6
+    },
+    "gg_to_ttx": {
+      "diagrams_by_subprocess": {
+        "P1_gg_ttx": 3
+      },
+      "total_diagrams": 3
+    },
+    "gu_to_epemu": {
+      "diagrams_by_subprocess": {
+        "P1_gq_llq": 4
+      },
+      "total_diagrams": 4
+    },
+    "gux_to_epemux": {
+      "diagrams_by_subprocess": {
+        "P1_gq_llq": 4
+      },
+      "total_diagrams": 4
+    },
+    "pp_to_bb": {
+      "diagrams_by_subprocess": {
+        "P1_gg_bbx": 3,
+        "P1_qq_bbx": 1
+      },
+      "total_diagrams": 4
+    },
+    "pp_to_bb_qcd2": {
+      "diagrams_by_subprocess": {
+        "P1_gg_bbx": 3,
+        "P1_qq_bbx": 3
+      },
+      "total_diagrams": 6
+    },
+    "pp_to_ll": {
+      "diagrams_by_subprocess": {
+        "P1_qq_ll": 2
+      },
+      "total_diagrams": 2
+    },
+    "pp_to_ll_qcd0": {
+      "diagrams_by_subprocess": {
+        "P1_qq_ll": 2
+      },
+      "total_diagrams": 2
+    },
+    "pp_to_llj": {
+      "diagrams_by_subprocess": {
+        "P1_gq_llq": 4,
+        "P1_qq_llg": 4
+      },
+      "total_diagrams": 8
+    },
+    "pp_to_llj_fixed": {
+      "diagrams_by_subprocess": {
+        "P1_gq_llq": 4,
+        "P1_qq_llg": 4
+      },
+      "total_diagrams": 8
+    },
+    "pp_to_llj_qcd2_qed2": {
+      "diagrams_by_subprocess": {
+        "P1_gq_llq": 4,
+        "P1_qq_llg": 4
+      },
+      "total_diagrams": 8
+    },
+    "uux_to_ccx_emmm_qcd0": {
+      "diagrams_by_subprocess": {
+        "P1_qq_qqllll": 579
+      },
+      "total_diagrams": 579
+    },
+    "uux_to_epemg": {
+      "diagrams_by_subprocess": {
+        "P1_qq_llg": 4
+      },
+      "total_diagrams": 4
+    },
+    "uux_to_mumu": {
+      "diagrams_by_subprocess": {
+        "P1_qq_ll": 2
+      },
+      "total_diagrams": 2
+    },
+    "uux_to_uux": {
+      "diagrams_by_subprocess": {
+        "P1_qq_qq": 2
+      },
+      "total_diagrams": 2
+    }
+  },
+  "schema": 1
+}

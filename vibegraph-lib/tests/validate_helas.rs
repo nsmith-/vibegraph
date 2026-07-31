@@ -6,10 +6,11 @@
 //! composition. The composition is pinned separately and hermetically in
 //! `helas_kernel_composition.rs`, against a hand-built chain of the same kernels.
 //!
-//! Reference data (`validation/helas/reference.csv`) comes from the
-//! `helas-validation` pixi environment:
+//! The reference grid (`validation/helas/reference.csv`) is committed, so this
+//! runs on a bare clone and needs neither gfortran nor f2py. Regenerating it —
+//! which recompiles the Fortran — is the one step that does:
 //!
-//!     pixi run -e helas-validation validate-helas
+//!     pixi run -e helas-validation generate-helas
 
 mod common;
 
@@ -85,14 +86,6 @@ fn read_reference_csv(path: &Path) -> Vec<(f64, f64, f64)> {
 #[test]
 fn helas_matches_fortran_reference() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/helas/reference.csv");
-
-    if !csv_path.exists() {
-        return vibegraph::validation::skip(
-            "helas_matches_fortran_reference",
-            "fortran77 helas reference grid",
-            "pixi run -e helas-validation validate-helas",
-        );
-    }
 
     let rows = read_reference_csv(&csv_path);
     assert!(!rows.is_empty(), "reference.csv is empty");

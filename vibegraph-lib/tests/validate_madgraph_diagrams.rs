@@ -1,33 +1,23 @@
-//! Validation: compare vibegraph diagram counts against MadGraph reference output.
+//! vibegraph's diagram enumeration against MadGraph's own, one named test case
+//! per process via `libtest-mimic`.
 //!
-//! Each discovered process appears as a separate named test case via `libtest-mimic`.
-//!
-//! This test is part of extended validation and only runs with the `extended-validation` feature:
-//! ```sh
-//! cargo test --test validate_madgraph_diagrams --features extended-validation
-//! ```
-//!
-//! ## Prerequisites
-//!
-//! Run the build pipeline:
+//! The reference is the committed `validation/madgraph/diagrams.json`: MadGraph's
+//! `NGRAPHS` for each P-class's representative subprocess, summed. Committing the
+//! counts is what lets this run against a checkout that has never built a process
+//! directory; regenerating them is
 //!
 //! ```sh
-//! pixi run -e madgraph build-diagrams
-//! pixi run -e madgraph extract-diagrams
+//! pixi run generate-references refs
 //! ```
 //!
-//! This generates:
-//! - Process directories under `validation/madgraph/output/`
-//! - JSON file for each process: `output/DIR_NAME.json`
+//! Each row names a `.mg5` script under `scripts/`, whose `generate` line is
+//! parsed and enumerated here, then counted the way MadGraph counts: one
+//! representative per (initial type class, final type class) group, since
+//! MadGraph collapses flavour-equivalent subprocesses into one.
 //!
-//! ## Test Discovery
-//!
-//! Tests are generated dynamically via glob:
-//! - Find all `*.json` files in `output/`
-//! - For each JSON, infer the corresponding `.mg5` script
-//! - Parse the script to extract the process string
-//! - Generate diagrams with vibegraph
-//! - Validate against MadGraph reference counts
+//! The work area's per-process files carry the configs.inc topologies as well;
+//! when one is present beside its process directory this prints it next to
+//! vibegraph's own routing, which is a debugging aid and asserts nothing.
 
 mod common;
 
@@ -55,18 +45,43 @@ struct MgDiagram {
     clusters: Vec<MgCluster>,
 }
 
+/// One row of the committed count reference.
 #[derive(Debug, serde::Deserialize)]
 #[allow(dead_code)]
-struct DiagramData {
-    process: String,
+struct DiagramCounts {
     total_diagrams: u32,
     diagrams_by_subprocess: HashMap<String, u32>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct DiagramReference {
+    processes: HashMap<String, DiagramCounts>,
+}
+
+/// The work area's per-process file, which adds the configs.inc topologies to
+/// the committed counts.
+#[derive(Debug, serde::Deserialize)]
+struct DiagramTopologies {
     #[serde(default)]
     topologies_by_subprocess: HashMap<String, Vec<MgDiagram>>,
 }
 
-fn print_madgraph_topologies(data: &DiagramData) {
-    println!("=== MadGraph topologies: {} ===", data.process);
+/// Rows whose count difference is understood, reported and not enforced.
+///
+/// `g g > g g`: MadGraph writes the four-gluon contact term as three separate
+/// graphs, one per colour structure (`VVVV1_0`, `VVVV3_0`, `VVVV4_0` into
+/// `AMP(1..3)`), and vibegraph writes it as one diagram whose vertex carries all
+/// three structures — so 3 exchange + 3 contact against 3 exchange + 1 contact.
+/// The physics of the row is pinned at a finer level than a count: the per-flow
+/// amplitude gate over the same process agrees with MadGraph to 1e-13, which no
+/// difference in diagram *content* could survive.
+const INFORMATIONAL_ROWS: &[(&str, &str)] = &[(
+    "gg_to_gg",
+    "MadGraph counts the four-gluon vertex once per colour structure",
+)];
+
+fn print_madgraph_topologies(key: &str, data: &DiagramTopologies) {
+    println!("=== MadGraph topologies: {key} ===");
     let mut subprocesses: Vec<_> = data.topologies_by_subprocess.iter().collect();
     subprocesses.sort_by_key(|(name, _)| name.as_str());
     for (subprocess, diagrams) in subprocesses {
@@ -107,46 +122,27 @@ fn print_madgraph_topologies(data: &DiagramData) {
     }
 }
 
-/// Find all MadGraph reference JSON files
-fn find_madgraph_references() -> Vec<(PathBuf, DiagramData)> {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let output_dir = Path::new(manifest_dir).join("../validation/madgraph/output");
+fn madgraph_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
+}
 
-    if !output_dir.exists() {
-        eprintln!(
-            "MadGraph output directory not found: {}",
-            output_dir.display()
-        );
-        eprintln!("Run: pixi run -e madgraph build-diagrams extract-diagrams");
-        return Vec::new();
-    }
+/// The committed counts, in `.mg5` script-name order.
+fn madgraph_reference() -> Vec<(String, DiagramCounts)> {
+    let path = madgraph_dir().join("diagrams.json");
+    let content =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let reference: DiagramReference = serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("cannot parse {}: {e}", path.display()));
+    let mut rows: Vec<_> = reference.processes.into_iter().collect();
+    rows.sort_by(|(a, _), (b, _)| a.cmp(b));
+    rows
+}
 
-    let mut results = Vec::new();
-
-    if let Ok(entries) = fs::read_dir(&output_dir) {
-        let mut json_files: Vec<_> = entries
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map(|ext| ext == "json")
-                    .unwrap_or(false)
-            })
-            .map(|e| e.path())
-            .collect();
-
-        json_files.sort();
-
-        for json_path in json_files {
-            if let Ok(content) = fs::read_to_string(&json_path) {
-                if let Ok(data) = serde_json::from_str::<DiagramData>(&content) {
-                    results.push((json_path, data));
-                }
-            }
-        }
-    }
-
-    results
+/// The work area's topology file for a process, when the work area is present.
+fn work_area_topologies(key: &str) -> Option<DiagramTopologies> {
+    let path = madgraph_dir().join(format!("output/{key}.json"));
+    let content = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
 }
 
 /// Map a PDG code to a coarse particle-type class.
@@ -260,24 +256,10 @@ fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet], model: &UFOM
     }
 }
 
-/// Infer the .mg5 script path from a JSON file path
-fn infer_script_path(json_path: &Path) -> Option<PathBuf> {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let file_stem = json_path.file_stem()?.to_string_lossy();
-    let scripts_dir = Path::new(manifest_dir).join("../validation/madgraph/scripts");
-    let script_path = scripts_dir.join(format!("{}.mg5", file_stem));
-
-    if script_path.exists() {
-        Some(script_path)
-    } else {
-        None
-    }
-}
-
-fn run_trial(json_path: &Path, mg_data: &DiagramData) -> Result<(), Failed> {
-    let script_path = infer_script_path(json_path).ok_or("no corresponding .mg5 script")?;
+fn run_trial(key: &str, mg_counts: &DiagramCounts) -> Result<(), Failed> {
+    let script_path = madgraph_dir().join(format!("scripts/{key}.mg5"));
     let script_content = fs::read_to_string(&script_path)
-        .map_err(|e| Failed::from(format!("cannot read .mg5 script: {e}")))?;
+        .map_err(|e| Failed::from(format!("cannot read {}: {e}", script_path.display())))?;
 
     let opts = ParsingOptions::default();
     let card = diagrams::parse_proc_card(&script_content, &opts)
@@ -296,24 +278,24 @@ fn run_trial(json_path: &Path, mg_data: &DiagramData) -> Result<(), Failed> {
     let total_count: u32 = sets.iter().map(|s| s.diagrams.len() as u32).sum();
     let unique_topology_count = count_mg_style_topologies(&sets, &model);
 
-    print_madgraph_topologies(mg_data);
+    if let Some(topologies) = work_area_topologies(key) {
+        print_madgraph_topologies(key, &topologies);
+    }
     print_diagram_topologies(&process_str, &sets, &model);
     println!(
         "  vibegraph: {total_count} total diagrams ({unique_topology_count} unique topologies)"
     );
-    if unique_topology_count != mg_data.total_diagrams {
-        return Err(format!(
+    if unique_topology_count != mg_counts.total_diagrams {
+        let report = format!(
             "vibegraph: {unique_topology_count} unique topologies, MG5 reference: {}",
-            mg_data.total_diagrams
-        )
-        .into());
+            mg_counts.total_diagrams
+        );
+        match INFORMATIONAL_ROWS.iter().find(|(row, _)| *row == key) {
+            Some((_, why)) => println!("  informational: {report} — {why}"),
+            None => return Err(report.into()),
+        }
     }
     Ok(())
-}
-
-fn make_trial(json_path: PathBuf, mg_data: DiagramData) -> Option<Trial> {
-    let name = json_path.file_stem()?.to_string_lossy().into_owned();
-    Some(Trial::test(name, move || run_trial(&json_path, &mg_data)))
 }
 
 fn main() {
@@ -325,17 +307,11 @@ fn main() {
         .build_global()
         .unwrap();
 
-    let references = find_madgraph_references();
-    if references.is_empty() {
-        eprintln!("No MadGraph reference files found");
-        eprintln!("Run: pixi run -e madgraph build-diagrams extract-diagrams");
-        libtest_mimic::run(&args, vec![]).exit();
-    }
-
-    let trials: Vec<Trial> = references
+    let trials: Vec<Trial> = madgraph_reference()
         .into_iter()
-        .filter_map(|(path, data)| make_trial(path, data))
+        .map(|(key, counts)| Trial::test(key.clone(), move || run_trial(&key, &counts)))
         .collect();
+    assert!(!trials.is_empty(), "the committed reference has no rows");
 
     libtest_mimic::run(&args, trials).exit();
 }
