@@ -153,8 +153,8 @@ Small, independent, each one a gate that is weaker than it looks.
   dependencies).
 - **Publish the `refdata-1` release asset and make the CI banked job gating** —
   user step. `validation/madgraph/assemble_bundle.sh` builds
-  `vibegraph-refdata-1.tar.zst` (90 333 614 bytes, sha256
-  `9cc0cfd2…6cfda831`, pinned in `validation/manifest.toml`) reproducibly from
+  `vibegraph-refdata-1.tar.zst` (1736 files, 90 597 923 bytes, sha256
+  `1afeadfa…cc447e50`, pinned in `validation/manifest.toml`) reproducibly from
   the work area, and `validation/fetch_common.sh` fetches and verifies it; the
   URL it points at is a `refdata-1` tag that does not exist yet, so the path is
   exercised through `$VIBEGRAPH_REFDATA_SOURCE` meanwhile. Tag + upload the
