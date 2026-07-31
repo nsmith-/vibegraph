@@ -1,6 +1,6 @@
 //! End-to-end test of `vibegraph integrate` on the Drell–Yan pp→e⁺e⁻ proc card
 //! + reference run cards: a cold-start run must reproduce the banked MadGraph
-//! reference σ (the H7 gate), and the persisted grid must reload and drive a
+//! reference σ, and the persisted per-channel grids must reload and drive a
 //! frozen sampling pass that reproduces the adapted estimate.
 //!
 //! Gated behind `extended-validation`; needs the fetched PDF set and the banked
@@ -16,14 +16,11 @@ use std::process::Command;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use vibegraph::artifact::IntegrateArtifact;
-use vibegraph::cuts::Cuts;
-use vibegraph::hadronic::{
-    compile_class, dy_external_legs, dy_flavor_classes, generate_dy_subprocesses,
-    initial_spin_color_average, DrellYanIntegrand,
-};
+use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::BoundAmplitude;
-use vibegraph::pdf::{PdfMember, PdfSet};
+use vibegraph::pdf::PdfSet;
 use vibegraph::phasespace::GEV2_TO_PB;
+use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::EvaluatedModel;
@@ -38,15 +35,14 @@ fn pdf_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf")
 }
 
-fn load_pdf() -> PdfMember {
+fn load_pdf_set() -> PdfSet {
     let dir = pdf_dir().join(PDF_SET);
-    let set = PdfSet::load(&dir, PDF_SET).unwrap_or_else(|e| {
+    PdfSet::load(&dir, PDF_SET).unwrap_or_else(|e| {
         panic!(
             "cannot load PDF set {PDF_SET} from {}: {e}\n run `pixi run -e madgraph fetch-pdf`",
             dir.display()
         )
-    });
-    set.member(0).expect("PDF member 0")
+    })
 }
 
 /// Banked MG σ ± Δσ for one run, or `None` if the reference JSON is absent.
@@ -109,41 +105,59 @@ fn check_run(test: &str, run: &str, run_card: &str) {
     assert_eq!(artifact.sqrt_s_had, 13000.0);
     assert_eq!(artifact.mu_f, 91.1880);
 
-    // (3) The reloaded grid drives a frozen sampling pass that reproduces the
-    // adapted estimate within the single-pass MC error (the distributed-phase
-    // primitive against the persisted grid).
+    // (3) The reloaded per-channel grids drive a frozen sampling pass that
+    // reproduces the adapted estimate within the single-pass MC error (the
+    // distributed-phase primitive against the persisted grids).
     let rc = RunCard::parse_file(&validation_dir().join(run_card)).unwrap();
     let model = sm_model(SMRestrict::Default);
     let evaluated = EvaluatedModel::from_model(model.clone());
-    let fc = dy_flavor_classes(generate_dy_subprocesses(&model).unwrap(), &model).unwrap();
-    let up = compile_class(&fc.up_set, &model, &evaluated).unwrap();
-    let down = compile_class(&fc.down_set, &model, &evaluated).unwrap();
-    let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
-    let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
-    let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
-    let pdf = load_pdf();
-    let spin_color_avg = initial_spin_color_average(&up, &model, &evaluated);
-    let integ = DrellYanIntegrand::new(
-        &b_up,
-        &b_down,
+    let opts = ParsingOptions::default();
+    let proc_card = parse_proc_card("generate p p > e+ e-", &opts).expect("proc card");
+    let sets = generate_from_proc_card(&proc_card, &model).expect("enumeration");
+    let groups = derive_flavor_groups(sets, &model, &evaluated, &rc).expect("flavour groups");
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+    let mut integ = ProtonIntegrand::new(
+        &groups,
+        &amps,
+        &evaluated,
         &pdf,
-        &cuts,
-        fc.up_flavors,
-        fc.down_flavors,
         artifact.sqrt_s_had,
         artifact.mu_f,
-        spin_color_avg,
+    )
+    .expect("hadronic integrand");
+    integ
+        .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+        .expect("run card scale prescription compiles");
+    // The banked selection weights, not a re-survey: they enter every channel
+    // term's value, so a re-adapted alpha would replay a different integrand.
+    integ.set_channel_alphas(artifact.channels.iter().map(|c| c.alpha).collect());
+    assert_eq!(
+        artifact.channels.len(),
+        integ.channel_count(),
+        "[{run}] the artifact banks {} grids but the process has {} channels",
+        artifact.channels.len(),
+        integ.channel_count()
     );
 
-    let mut rng = ChaCha8Rng::seed_from_u64(0xF202E0);
-    // The Drell–Yan map is not split across channels, so the artifact banks one
-    // grid and the frozen pass replays it directly.
-    let grid = artifact
-        .sole_grid()
-        .unwrap_or_else(|| panic!("[{run}] Drell–Yan artifact banked more than one grid"));
-    let frozen = grid.sample_frozen(|u| integ.value(u), 200_000, &mut rng);
-    let sigma_frozen = frozen.integral * GEV2_TO_PB;
-    let err_frozen = frozen.std_dev * GEV2_TO_PB;
+    // Each channel's term is replayed on its own grid and its own RNG stream, and
+    // the terms are summed the way the integration summed them.
+    let mut sigma_frozen = 0.0;
+    let mut var_frozen = 0.0;
+    for (j, ch) in artifact.channels.iter().enumerate() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0xF202E0 + j as u64);
+        let frozen = ch
+            .grid
+            .sample_frozen(|u| integ.value_in_channel(j, u), 100_000, &mut rng);
+        sigma_frozen += frozen.integral * GEV2_TO_PB;
+        var_frozen += (frozen.std_dev * GEV2_TO_PB).powi(2);
+    }
+    let err_frozen = var_frozen.sqrt();
     let d = (sigma_frozen - artifact.sigma_pb).abs();
     let comb = (err_frozen * err_frozen + artifact.sigma_err_pb.powi(2)).sqrt();
     eprintln!(

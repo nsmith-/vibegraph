@@ -29,8 +29,13 @@ use crate::vegas::VegasGrid;
 /// different models spell the same way.
 ///
 /// `4` adds [`ChannelGrid::key`], naming the channel space each grid belongs to.
-/// Version 3 files are still read, through [`v3`], and upgrade to it.
-pub const FORMAT_VERSION: u32 = 4;
+///
+/// `5` adds [`ChannelGrid::sampler`], the summary of what the rule-based channel
+/// composition chose for that channel — the map it draws through and the
+/// propagator poles that map is shaped by. Versions 3 and 4 are still read,
+/// through [`v3`] and [`v4`], and upgrade with no sampler recorded (`None`),
+/// which is what those writers knew.
+pub const FORMAT_VERSION: u32 = 5;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] still decodes.
 pub const OLDEST_READABLE_VERSION: u32 = 3;
@@ -81,6 +86,76 @@ pub enum ChannelKey {
     GroupDiagram { group: usize, diagram: usize },
 }
 
+/// The map a channel's coordinates are drawn through, as the rule-based
+/// composition derived it from the channel's diagram.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SamplerTopology {
+    /// An all-timelike decay tree: every drawn invariant is a subsystem mass.
+    Timelike,
+    /// A peripheral t-channel spine: one spacelike rung with timelike subsystems
+    /// hanging off it.
+    Spine,
+}
+
+/// One propagator pole a channel's map is shaped by, in GeV.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SamplerPole {
+    pub mass: f64,
+    pub width: f64,
+}
+
+/// What the rule-based channel composition chose for one sampling channel.
+///
+/// The composition is derived from the channel's diagram rather than declared, so
+/// a process whose poles or topology move — a changed width in the model, a
+/// spacelike floor the cuts imply differently, a diagram that stopped being
+/// peripheral — samples differently while still reporting the same cross section.
+/// Recording the choice makes that visible in the run's own record instead of
+/// only in a re-derivation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChannelSampler {
+    pub topology: SamplerTopology,
+    /// The timelike poles the drawn subsystem invariants sit on, driving each
+    /// invariant's Breit-Wigner importance map.
+    pub resonances: Vec<SamplerPole>,
+    /// The spacelike lines of the channel's diagram.
+    pub t_channels: Vec<SamplerPole>,
+    /// The pole location `t_mass²` (GeV²) a peripheral channel draws its momentum
+    /// transfer against, *after* the regulating floor — so it differs from the
+    /// corresponding `t_channels` entry wherever the floor bound. `None` for an
+    /// all-timelike tree.
+    pub spine_pole_gev2: Option<f64>,
+}
+
+impl ChannelSampler {
+    /// Read the composition off a built channel.
+    pub fn of(channel: &crate::phasespace::DiagramChannel<f64>) -> Self {
+        ChannelSampler {
+            topology: match channel.spine_pole() {
+                Some(_) => SamplerTopology::Spine,
+                None => SamplerTopology::Timelike,
+            },
+            resonances: channel
+                .resonances()
+                .iter()
+                .map(|r| SamplerPole {
+                    mass: r.mass,
+                    width: r.width,
+                })
+                .collect(),
+            t_channels: channel
+                .t_channels()
+                .iter()
+                .map(|t| SamplerPole {
+                    mass: t.mass,
+                    width: t.width,
+                })
+                .collect(),
+            spine_pole_gev2: channel.spine_pole(),
+        }
+    }
+}
+
 /// One phase-space channel's trained grid and its share of the integral.
 ///
 /// The cross section is estimated as `Σⱼ ∫ dΦ f·αⱼgⱼ/g`, one VEGAS pass per
@@ -102,6 +177,10 @@ pub struct ChannelGrid {
     pub sigma_pb: f64,
     pub sigma_err_pb: f64,
     pub chi2_per_dof: f64,
+    /// What the rule-based composition chose for this channel, where the writer
+    /// knew it. `None` in a file upgraded from a schema version that predates the
+    /// field — a writer that recorded nothing, not a channel with no composition.
+    pub sampler: Option<ChannelSampler>,
 }
 
 /// The result of one `vibegraph integrate` run: the trained [`VegasGrid`]s plus
@@ -224,6 +303,86 @@ pub mod v3 {
     }
 }
 
+/// Schema version 4, kept so artifacts banked before the sampler summary exists
+/// still load. Every field is version 5's but for [`ChannelGrid::sampler`], which
+/// a version-4 writer did not record and the upgrade therefore leaves `None`.
+pub mod v4 {
+    use serde::Deserialize;
+
+    use super::ChannelKey;
+    use crate::runcard::RunCard;
+    use crate::ufo::identity::ModelIdentity;
+    use crate::vegas::VegasGrid;
+
+    #[derive(Debug, Deserialize)]
+    pub(super) struct ChannelGrid {
+        pub key: ChannelKey,
+        pub alpha: f64,
+        pub neval: usize,
+        pub grid: VegasGrid,
+        pub sigma_pb: f64,
+        pub sigma_err_pb: f64,
+        pub chi2_per_dof: f64,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub(super) struct IntegrateArtifact {
+        /// Present so the positional decode consumes the version prefix; the
+        /// version itself was already read and dispatched on.
+        #[allow(dead_code)]
+        pub format_version: u32,
+        pub process: String,
+        pub model: ModelIdentity,
+        pub pdf_set: String,
+        pub pdf_member: u32,
+        pub mu_f: f64,
+        pub sqrt_s_had: f64,
+        pub neval: usize,
+        pub niter: usize,
+        pub seed: u64,
+        pub run_card: RunCard,
+        pub channels: Vec<ChannelGrid>,
+        pub sigma_pb: f64,
+        pub sigma_err_pb: f64,
+        pub chi2_per_dof: f64,
+    }
+}
+
+impl v4::IntegrateArtifact {
+    fn upgrade(self) -> IntegrateArtifact {
+        IntegrateArtifact {
+            format_version: FORMAT_VERSION,
+            process: self.process,
+            model: self.model,
+            pdf_set: self.pdf_set,
+            pdf_member: self.pdf_member,
+            mu_f: self.mu_f,
+            sqrt_s_had: self.sqrt_s_had,
+            neval: self.neval,
+            niter: self.niter,
+            seed: self.seed,
+            run_card: self.run_card,
+            channels: self
+                .channels
+                .into_iter()
+                .map(|c| ChannelGrid {
+                    key: c.key,
+                    alpha: c.alpha,
+                    neval: c.neval,
+                    grid: c.grid,
+                    sigma_pb: c.sigma_pb,
+                    sigma_err_pb: c.sigma_err_pb,
+                    chi2_per_dof: c.chi2_per_dof,
+                    sampler: None,
+                })
+                .collect(),
+            sigma_pb: self.sigma_pb,
+            sigma_err_pb: self.sigma_err_pb,
+            chi2_per_dof: self.chi2_per_dof,
+        }
+    }
+}
+
 impl v3::IntegrateArtifact {
     fn upgrade(self) -> IntegrateArtifact {
         let sole = self.channels.len() == 1;
@@ -255,6 +414,7 @@ impl v3::IntegrateArtifact {
                     sigma_pb: c.sigma_pb,
                     sigma_err_pb: c.sigma_err_pb,
                     chi2_per_dof: c.chi2_per_dof,
+                    sampler: None,
                 })
                 .collect(),
             sigma_pb: self.sigma_pb,
@@ -305,6 +465,9 @@ impl IntegrateArtifact {
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         match header.format_version {
             FORMAT_VERSION => bincode::deserialize(&raw).map_err(ArtifactError::Decode),
+            4 => bincode::deserialize::<v4::IntegrateArtifact>(&raw)
+                .map_err(ArtifactError::Decode)
+                .map(v4::IntegrateArtifact::upgrade),
             3 => bincode::deserialize::<v3::IntegrateArtifact>(&raw)
                 .map_err(ArtifactError::Decode)
                 .map(v3::IntegrateArtifact::upgrade),
@@ -334,6 +497,7 @@ mod tests {
             sigma_pb: 934.42,
             sigma_err_pb: 0.87,
             chi2_per_dof: 1.02,
+            sampler: None,
         }
     }
 
@@ -488,6 +652,18 @@ mod tests {
                 sigma_pb: 1.5 * (j + 1) as f64,
                 sigma_err_pb: 0.01 * (j + 1) as f64,
                 chi2_per_dof: 0.9,
+                sampler: Some(ChannelSampler {
+                    topology: SamplerTopology::Spine,
+                    resonances: vec![SamplerPole {
+                        mass: 91.1876,
+                        width: 2.4952,
+                    }],
+                    t_channels: vec![SamplerPole {
+                        mass: 0.0,
+                        width: 0.0,
+                    }],
+                    spine_pole_gev2: Some(100.0),
+                }),
             })
             .collect();
         assert!(artifact.sole_grid().is_none());
@@ -508,6 +684,7 @@ mod tests {
             assert_eq!(rc.neval, ac.neval, "channel {j}");
             assert_eq!(rc.grid.ndim(), ac.grid.ndim(), "channel {j}");
             assert_eq!(rc.sigma_pb.to_bits(), ac.sigma_pb.to_bits(), "channel {j}");
+            assert_eq!(rc.sampler, ac.sampler, "channel {j}");
         }
 
         std::fs::remove_file(&path).ok();
@@ -627,6 +804,98 @@ mod tests {
 
         std::fs::remove_file(&sole).ok();
         std::fs::remove_file(&multi).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
+
+    /// A version-4 artifact still loads. Every field it carried survives; the
+    /// sampler summary it never held reads back as `None`, which says the writer
+    /// recorded nothing rather than that the channel had no composition.
+    #[test]
+    fn a_version_4_artifact_upgrades_to_the_current_schema() {
+        #[derive(Serialize)]
+        struct V4ChannelGrid {
+            key: ChannelKey,
+            alpha: f64,
+            neval: usize,
+            grid: VegasGrid,
+            sigma_pb: f64,
+            sigma_err_pb: f64,
+            chi2_per_dof: f64,
+        }
+
+        #[derive(Serialize)]
+        struct V4Artifact {
+            format_version: u32,
+            process: String,
+            model: ModelIdentity,
+            pdf_set: String,
+            pdf_member: u32,
+            mu_f: f64,
+            sqrt_s_had: f64,
+            neval: usize,
+            niter: usize,
+            seed: u64,
+            run_card: RunCard,
+            channels: Vec<V4ChannelGrid>,
+            sigma_pb: f64,
+            sigma_err_pb: f64,
+            chi2_per_dof: f64,
+        }
+
+        let legacy = V4Artifact {
+            format_version: 4,
+            process: "p p > e+ e-".to_string(),
+            model: ModelIdentity::interned_sm(SMRestrict::Default),
+            pdf_set: "NNPDF23_lo_as_0130_qed".to_string(),
+            pdf_member: 0,
+            mu_f: 91.1880,
+            sqrt_s_had: 13000.0,
+            neval: 1000,
+            niter: 2,
+            seed: 42,
+            run_card: RunCard::default(),
+            channels: (0..3)
+                .map(|j| V4ChannelGrid {
+                    key: ChannelKey::GroupDiagram {
+                        group: j / 2,
+                        diagram: j % 2,
+                    },
+                    alpha: 0.25 * (j + 1) as f64,
+                    neval: 1000,
+                    grid: VegasGrid::new(4, 16, 0.5),
+                    sigma_pb: 934.42,
+                    sigma_err_pb: 0.87,
+                    chi2_per_dof: 1.02,
+                })
+                .collect(),
+            sigma_pb: 934.42,
+            sigma_err_pb: 0.87,
+            chi2_per_dof: 1.02,
+        };
+
+        let dir = scratch_dir("v4");
+        let path = dir.join("v4.bin.zst");
+        let raw = bincode::serialize(&legacy).unwrap();
+        let compressed = zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap();
+        std::fs::write(&path, compressed).unwrap();
+
+        let upgraded = IntegrateArtifact::read_from_path(&path).expect("version 4 reads");
+        assert_eq!(upgraded.format_version, FORMAT_VERSION);
+        assert_eq!(upgraded.channels.len(), 3);
+        for (j, c) in upgraded.channels.iter().enumerate() {
+            assert_eq!(
+                c.key,
+                ChannelKey::GroupDiagram {
+                    group: j / 2,
+                    diagram: j % 2
+                }
+            );
+            assert_eq!(c.alpha.to_bits(), (0.25 * (j + 1) as f64).to_bits());
+            assert_eq!(c.sampler, None, "channel {j}");
+        }
+        assert_eq!(upgraded.sigma_pb.to_bits(), 934.42f64.to_bits());
+
+        std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();
     }
 

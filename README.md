@@ -229,17 +229,12 @@ default), which is downloaded on first use as described in the
 resolution falls back to last — so a dev tree that has already fetched one
 never reaches for the network.
 
-Drell–Yan (`p p > e+ e-`) is the one exception, and it integrates only:
+Drell–Yan is one such process and takes no special route:
 
 ```bash
 vibegraph integrate validation/madgraph/dy13_proc_card.dat \
   --run-card validation/madgraph/dy13_default_run_card.dat --out run/
 ```
-
-An unmodified Drell–Yan card takes a bespoke `(τ, y) × cosθ` map that banks a
-single grid rather than per-channel grids, so there is no channel for the
-accept/reject pass to draw from; `generate` refuses it by name rather than
-sampling something it cannot unweight.
 
 ### The grid artifact, and easy parallelization
 
@@ -281,9 +276,8 @@ Run `vibegraph <cmd> --help` for the full option list.
 
 Notable current boundaries (all hard errors or tracked rows, not silent
 wrongness): color sextets / baryonic epsilon tensors, spin-3/2 and spin-2
-wavefunctions, Majorana fermions, loop-level UFOs (out of the LO charter),
-event generation off the bespoke Drell–Yan map, and kT-clustered dynamical
-scales (`dynamical_scale_choice = -1`). See the backlogs in
+wavefunctions, Majorana fermions, loop-level UFOs (out of the LO charter), and
+kT-clustered dynamical scales (`dynamical_scale_choice = -1`). See the backlogs in
 [`TODO.md`](TODO.md) and the design notes in
 [`research/notes/`](research/notes/).
 

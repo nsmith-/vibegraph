@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod report;
+
 use std::sync::Arc;
 
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
