@@ -283,7 +283,7 @@ impl EventSource for SampleSource<'_> {
             Some(Ok(scales)) => {
                 let alpha_s = self
                     .integrand
-                    .running_alpha_s()
+                    .alpha_s_source()
                     .map(|r| r.eval(scales.mu_r))
                     .unwrap_or(0.0);
                 (scalup(&scales), alpha_s)

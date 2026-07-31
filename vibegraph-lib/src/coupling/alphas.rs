@@ -34,9 +34,16 @@
 //! the grid's own running, with the grid's own thresholds and order. Nothing in
 //! this module applies to such a run, and [`RunningAlphaS::from_run_card`]
 //! refuses it rather than returning a plausible wrong number.
+//!
+//! [`AlphaSSource`] is what a caller asks instead when it does not already know
+//! which of the two a card selects: it resolves the same field the way MadGraph's
+//! link step does, and hands the refused case to
+//! [`GridAlphaS`](crate::pdf::alphas::GridAlphaS).
 
 use thiserror::Error;
 
+use crate::pdf::alphas::{GridAlphaS, GridAlphaSError};
+use crate::pdf::grid::AlphaSInfo;
 use crate::runcard::RunCard;
 
 /// Charm threshold used for `nf = 4 → 3` switching (`COMMON/QMASS/`, `CMASS`).
@@ -110,6 +117,13 @@ pub enum AlphaSError {
          plausible-looking value for an arbitrary set and is not adopted here"
     )]
     UnknownPdLabel { label: String },
+    #[error(
+        "run card selects pdlabel = 'lhapdf' (lhaid {lhaid}), so alpha_s belongs to the PDF set \
+         the beams read, but no set's alpha_s metadata was supplied"
+    )]
+    GridUnavailable { lhaid: i64 },
+    #[error("PDF set's tabulated alpha_s: {0}")]
+    Grid(#[from] GridAlphaSError),
 }
 
 /// `αs` evolved from `M_Z` by MadGraph's `ALPHAS`, for one `(asmz, nloop)` pair.
@@ -300,6 +314,77 @@ fn f3(a: f64, c1: f64, c2: f64, del: f64) -> f64 {
         - (c1 * c1 - 2.0 * c2) / del * ((2.0 * c2 * a + c1) / del).atan()
 }
 
+/// Where a run's `αs(Q)` comes from: the β-function evolution of this module, or
+/// the PDF set's own tabulation.
+///
+/// The choice is not a preference, it is a property of the run card, and MadGraph
+/// makes it at link time: `pdlabel = lhapdf` links `alfas_functions_lhapdf.f` and
+/// every `ALPHAS(Q)` in the run becomes LHAPDF's `alphasPDF(Q)`, while every other
+/// label links `alfas_functions.f` and gets the solve implemented here.
+/// [`AlphaSSource::from_run_card`] reproduces that decision from the same field,
+/// so a run reads its coupling from the same place MadGraph read it.
+///
+/// The difference is small and systematic rather than negligible: for the banked
+/// `NNPDF23_lo_as_0130_qed` run the two sources are `0.1300027` and `0.1300028` at
+/// `M_Z`, which is `2×` the `<event>` line's printing budget for `AQCDUP` and grows
+/// with any move off `M_Z`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AlphaSSource {
+    Running(RunningAlphaS),
+    Grid(GridAlphaS),
+}
+
+impl AlphaSSource {
+    /// The `αs` source MadGraph would link for `card`.
+    ///
+    /// `grid` is the `AlphaS_*` metadata of the set the run's beams read their
+    /// densities from, and is consulted only on the branch that needs it — a card
+    /// whose label names its own `αs(M_Z)` resolves without one. When that branch is
+    /// taken and no set was supplied, the result is
+    /// [`AlphaSError::GridUnavailable`] rather than a fall back to the
+    /// beta-function solve, which would silently substitute a different coupling
+    /// than the one the densities were fitted with.
+    pub fn from_run_card(
+        card: &RunCard,
+        param_card_as: f64,
+        grid: Option<&AlphaSInfo>,
+    ) -> Result<Self, AlphaSError> {
+        match RunningAlphaS::from_run_card(card, param_card_as) {
+            Ok(running) => Ok(AlphaSSource::Running(running)),
+            Err(AlphaSError::LhapdfRunning { lhaid }) => {
+                let info = grid.ok_or(AlphaSError::GridUnavailable { lhaid })?;
+                Ok(AlphaSSource::Grid(GridAlphaS::from_info(info)?))
+            }
+            Err(other) => Err(other),
+        }
+    }
+
+    /// `αs(q)`.
+    pub fn eval(&self, q: f64) -> f64 {
+        match self {
+            AlphaSSource::Running(running) => running.eval(q),
+            AlphaSSource::Grid(grid) => grid.eval(q),
+        }
+    }
+
+    /// The evolution, when the source is one. `None` for a tabulated source, whose
+    /// `asmz`/`nloop` describe a fit rather than a solve this module would run.
+    pub fn running(&self) -> Option<&RunningAlphaS> {
+        match self {
+            AlphaSSource::Running(running) => Some(running),
+            AlphaSSource::Grid(_) => None,
+        }
+    }
+
+    /// The tabulation, when the source is one.
+    pub fn grid(&self) -> Option<&GridAlphaS> {
+        match self {
+            AlphaSSource::Running(_) => None,
+            AlphaSSource::Grid(grid) => Some(grid),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,6 +525,86 @@ mod tests {
             Err(AlphaSError::UnknownPdLabel {
                 label: "ct14lo".to_string()
             })
+        );
+    }
+
+    /// A two-knot stand-in for a set's `AlphaS_*` block, bracketing `M_Z`.
+    fn grid_info() -> AlphaSInfo {
+        AlphaSInfo {
+            mz: 0.130,
+            order_qcd: 0,
+            kind: "ipol".to_string(),
+            qs: vec![ZMASS, 2.0 * ZMASS],
+            vals: vec![0.13, 0.12],
+            lambda4: 0.276,
+            lambda5: 0.166,
+        }
+    }
+
+    /// The label MadGraph links `alfas_functions_lhapdf.f` for is the label that
+    /// sends this to the set's own table — and the value that comes back is the
+    /// table's, not the parameter card's.
+    #[test]
+    fn the_lhapdf_label_takes_alpha_s_from_the_set() {
+        let c = card("1 = lpp1\n1 = lpp2\nlhapdf = pdlabel\n247000 = lhaid\n");
+        let info = grid_info();
+        let source = AlphaSSource::from_run_card(&c, 0.118, Some(&info)).unwrap();
+        assert!(source.running().is_none());
+        assert_eq!(source.eval(ZMASS), 0.13);
+        assert_eq!(source.grid().unwrap().knots(), 2);
+    }
+
+    /// Every other label keeps the beta-function solve, and supplying a set does
+    /// not divert it: the run card decides the source, not what the caller has
+    /// loaded.
+    #[test]
+    fn a_named_label_keeps_the_beta_function_solve_even_with_a_set_at_hand() {
+        let c = card("1 = lpp1\n1 = lpp2\nnn23lo1 = pdlabel\n");
+        let info = grid_info();
+        for grid in [None, Some(&info)] {
+            let source = AlphaSSource::from_run_card(&c, 0.118, grid).unwrap();
+            assert_eq!(source.running().unwrap().asmz(), 0.130);
+            assert_eq!(
+                source.eval(ZMASS),
+                RunningAlphaS::new(0.130, NLoop::Two).unwrap().eval(ZMASS)
+            );
+        }
+    }
+
+    /// With no PDF on either beam there is no set to read, and `setrun.f` has
+    /// already overwritten the label — so `lhapdf` on a partonic card resolves
+    /// without a grid rather than demanding one.
+    #[test]
+    fn a_partonic_card_needs_no_set_whatever_its_label_says() {
+        let c = card("0 = lpp1\n0 = lpp2\nlhapdf = pdlabel\n247000 = lhaid\n");
+        let source = AlphaSSource::from_run_card(&c, 0.118, None).unwrap();
+        assert_eq!(source.running().unwrap().asmz(), 0.118);
+    }
+
+    /// The branch that needs a set and has none stops, rather than falling back to
+    /// the evolution — which would run the set's densities against a coupling the
+    /// set was not fitted with.
+    #[test]
+    fn a_missing_set_is_refused_rather_than_evolved_around() {
+        let c = card("1 = lpp1\n1 = lpp2\nlhapdf = pdlabel\n247000 = lhaid\n");
+        assert_eq!(
+            AlphaSSource::from_run_card(&c, 0.118, None),
+            Err(AlphaSError::GridUnavailable { lhaid: 247000 })
+        );
+    }
+
+    /// A set whose table this cannot read is refused with the reason, not read
+    /// anyway.
+    #[test]
+    fn an_unreadable_table_propagates_its_own_error() {
+        let c = card("1 = lpp1\n1 = lpp2\nlhapdf = pdlabel\n247000 = lhaid\n");
+        let mut info = grid_info();
+        info.kind = "analytic".to_string();
+        assert_eq!(
+            AlphaSSource::from_run_card(&c, 0.118, Some(&info)),
+            Err(AlphaSError::Grid(GridAlphaSError::UnsupportedType {
+                kind: "analytic".to_string()
+            }))
         );
     }
 }
