@@ -25,9 +25,9 @@ use super::AssetKind;
 
 /// A source of an asset's raw archive bytes. The only seam through which
 /// this module reaches outside the local filesystem; implementations choose
-/// how — or whether — to perform network I/O. `U4` (the CLI's first-run UX)
-/// owns *when* this is called: the fetch prompt and `--no-network` refusal
-/// both live upstream of this trait, not behind it.
+/// how — or whether — to perform network I/O. The CLI owns *when* this is
+/// called: the fetch prompt and `--no-network` refusal both live upstream of
+/// this trait, not behind it.
 pub trait Fetch {
     /// Fetch `url`'s raw bytes (the `.tar.gz` archive).
     fn fetch(&self, url: &str) -> Result<Vec<u8>, FetchError>;
@@ -322,7 +322,7 @@ mod tests {
     }
 
     /// Fetch failure propagates as [`StoreError::Fetch`] without touching the
-    /// filesystem — the `--no-network` refusal path U4 will build on.
+    /// filesystem — what the CLI's `--no-network` refusal path rests on.
     #[test]
     fn fetch_failure_propagates_without_writing_anything() {
         let cache_root = scratch("pdf-refuse-root");
