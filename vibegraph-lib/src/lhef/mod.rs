@@ -81,6 +81,11 @@ pub enum LhefError {
     FlowOutOfRange { flow: usize, n_flows: usize },
     #[error("external leg {leg} carries PDG code {pdg}, which does not fit a Les Houches IDUP")]
     PdgOutOfRange { leg: usize, pdg: i64 },
+    #[error(
+        "leg relabelling {order:?} is not a permutation of {n_ext} external legs that keeps the \
+         incoming ones incoming, or does not come with one PDG code per leg"
+    )]
+    LegOrder { order: Vec<usize>, n_ext: usize },
     #[error("line {line}: {reason}")]
     Malformed { line: usize, reason: String },
     #[error("no <init> block")]
