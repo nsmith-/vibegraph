@@ -18,20 +18,18 @@
 # to exercise — so `$VIBEGRAPH_HOME` points at a scratch directory rather than
 # the caller's real cache.
 #
-# Two legs, because the pipeline is not yet one:
+# One process, `p p > l+ l- j`, carries the whole run: it is hadronic, so it
+# resolves a PDF set by name, refuses to fetch it unattended, downloads it
+# against the compiled-in checksum pin when told to, and then serves a second
+# command from the cache; and it is a process `generate` supports at proton
+# beams, so the same cards go on to produce a Les Houches file the binary reads
+# back.
 #
-#   hadronic  `p p > e+ e-` — `integrate` only. This is the leg that resolves a
-#             PDF set by name, prompts for it, downloads it against the
-#             compiled-in checksum pin, and serves the second run from cache.
-#             Event generation for proton beams is not wired yet.
-#   events    `e+ e- > mu+ mu-` — `integrate`, `generate`, `check-events`. This
-#             is the leg that produces and re-reads a file, on a process that
-#             needs no PDF set at all.
-#
-# The two collapse into one when proton-beam event generation lands: a single
-# `p p > e+ e- j` run doing both halves. Until then, "cards in, `.lhe` out" and
-# "a PDF set arrives over the network" are demonstrated side by side rather than
-# in one command.
+# Drell–Yan (`p p > e+ e-`) is deliberately not the process here. It is
+# integrated by a bespoke map that banks a single grid over the whole `(τ, y) ×
+# cosθ` domain rather than one grid per channel, so `generate` has nothing to
+# unweight against and refuses it — it is the one hadronic process that cannot
+# reach an event file.
 
 set -euo pipefail
 
@@ -46,7 +44,7 @@ while [ $# -gt 0 ]; do
     --tag)    tag="$2";    shift 2 ;;
     --repo)   repo="$2";   shift 2 ;;
     --keep)   keep=1;      shift ;;
-    -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -122,7 +120,7 @@ download_release() {
   binary="$work/vibegraph-${target}/vibegraph"
   [ -x "$binary" ] || fail "the tarball contains no executable at vibegraph-${target}/vibegraph"
 
-  # U1 puts the third-party notice in every tarball because the interned MG5 SM
+  # Every tarball carries the third-party notice because the interned MG5 SM
   # model is redistributed inside the binary; a tarball without it is a release
   # that should not have shipped.
   [ -f "$work/vibegraph-${target}/THIRD-PARTY-NOTICES" ] \
@@ -134,6 +132,9 @@ if [ -z "$binary" ]; then
   download_release
 else
   [ -x "$binary" ] || fail "$binary is not executable"
+  # Every run below happens inside the work directory, so a relative `--binary`
+  # would stop resolving the moment this script changed directory.
+  binary="$(cd "$(dirname "$binary")" && pwd)/$(basename "$binary")"
   step "using the binary at $binary"
 fi
 
@@ -147,12 +148,14 @@ step "version"
 cards="$work/cards"
 mkdir -p "$cards"
 
-cat > "$cards/dy_proc_card.dat" <<'EOF'
+cat > "$cards/proc_card.dat" <<'EOF'
 import model sm
-generate p p > e+ e-
+generate p p > l+ l- j QCD=2 QED=2
 EOF
 
-cat > "$cards/dy_run_card.dat" <<'EOF'
+# The scales are fixed rather than dynamical: a 2 -> 3 dynamical scale needs kT
+# clustering, which this generator refuses rather than approximates.
+cat > "$cards/run_card.dat" <<'EOF'
   1       = lpp1
   1       = lpp2
   6500.0  = ebeam1
@@ -160,25 +163,18 @@ cat > "$cards/dy_run_card.dat" <<'EOF'
   lhapdf  = pdlabel
   247000  = lhaid
   True    = fixed_ren_scale
-  True    = fixed_fac_scale
-  91.1880 = scale
-  91.1880 = dsqrt_q2fact1
-  91.1880 = dsqrt_q2fact2
+  True    = fixed_fac_scale1
+  True    = fixed_fac_scale2
+  91.188  = scale
+  91.188  = dsqrt_q2fact1
+  91.188  = dsqrt_q2fact2
+  50.0    = mmll
+  20.0    = ptj
   10.0    = ptl
+  5.0     = etaj
   2.5     = etal
   0.4     = drll
-EOF
-
-cat > "$cards/ee_proc_card.dat" <<'EOF'
-import model sm
-generate e+ e- > mu+ mu-
-EOF
-
-cat > "$cards/ee_run_card.dat" <<'EOF'
-  0    = lpp1
-  0    = lpp2
-  45.6 = ebeam1
-  45.6 = ebeam2
+  0.4     = drjl
 EOF
 
 # A scratch cache root, so this never reads or writes the caller's real
@@ -192,14 +188,22 @@ echo "cache root: $VIBEGRAPH_HOME"
 # fallback cannot quietly satisfy a resolution that ought to reach the cache.
 cd "$work"
 
-# ------------------------------------------------- hadronic leg: PDF fetching
+# ------------------------------------------------------------- the four steps
+
+# Budget: small on purpose. This job answers "does the shipped artifact work at
+# all", not "is the cross section right" — that is the repository's own gated
+# comparison against MadGraph, which runs a far larger budget against a banked
+# reference. Here the wall clock should stay dominated by the 27 MB download.
+NEVAL=20000
+NITER=4
+NEVENTS=2000
 
 step "an unattended run refuses to download the PDF set"
 # This script has no terminal, so the default policy must refuse — the property
 # that keeps a CI job from silently pulling 27 MB. It has to hold on the shipped
 # binary, not just in the test suite.
-if "$binary" integrate "$cards/dy_proc_card.dat" \
-     --run-card "$cards/dy_run_card.dat" --out "$work/dy" \
+if "$binary" integrate "$cards/proc_card.dat" \
+     --run-card "$cards/run_card.dat" --out "$work/refused" \
      --neval 2000 --niter 2 >"$work/refusal.out" 2>&1; then
   fail "the binary downloaded a PDF set without being asked"
 fi
@@ -212,45 +216,27 @@ grep -q "lhapdfsets.web.cern.ch" "$work/refusal.out" \
 echo "refused, naming --yes and the URL"
 
 step "with consent, the PDF set is downloaded, verified and cached"
-"$binary" --yes integrate "$cards/dy_proc_card.dat" \
-  --run-card "$cards/dy_run_card.dat" --out "$work/dy" \
-  --neval 20000 --niter 4 2>&1 | tee "$work/dy.out" \
+"$binary" --yes integrate "$cards/proc_card.dat" \
+  --run-card "$cards/run_card.dat" --out "$work/llj" \
+  --neval "$NEVAL" --niter "$NITER" 2>&1 | tee "$work/integrate.out" \
   || fail "the hadronic integration failed"
-[ -f "$work/dy/grid.bin.zst" ] || fail "no grid artifact was written"
+[ -f "$work/llj/grid.bin.zst" ] || fail "no grid artifact was written"
 [ -f "$VIBEGRAPH_HOME/pdf/NNPDF23_lo_as_0130_qed/NNPDF23_lo_as_0130_qed_0000.dat" ] \
   || fail "the PDF set is not in the cache where resolution looks for it"
-grep -q "^σ = " "$work/dy.out" || fail "the run printed no cross section"
+grep -q "^σ = " "$work/integrate.out" || fail "the run printed no cross section"
 
-step "a second run is served from the cache, with no consent needed"
-# No --yes this time: if the cache did not take, the default policy refuses and
-# this fails — which is exactly the signal wanted.
-"$binary" integrate "$cards/dy_proc_card.dat" \
-  --run-card "$cards/dy_run_card.dat" --out "$work/dy2" \
-  --neval 2000 --niter 2 >"$work/dy2.out" 2>&1 \
-  || fail "the cached PDF set did not serve a second run"
-if grep -qi "downloading" "$work/dy2.out"; then
-  fail "the second run downloaded again"
-fi
-echo "served from cache"
-
-# ------------------------------------------------- events leg: cards to .lhe
-
-step "integrating a fixed-energy process"
-"$binary" --no-network integrate "$cards/ee_proc_card.dat" \
-  --run-card "$cards/ee_run_card.dat" --out "$work/ee" \
-  --neval 20000 --niter 4 2>&1 | tee "$work/ee.out" \
-  || fail "the fixed-energy integration failed"
-[ -f "$work/ee/grid.bin.zst" ] || fail "no grid artifact was written"
-
-step "generating events"
-"$binary" --no-network generate "$work/ee/grid.bin.zst" "$cards/ee_proc_card.dat" \
-  --run-card "$cards/ee_run_card.dat" --nevents 2000 --seed 1 \
+step "generating events, with the PDF set served from the cache"
+# `--no-network`, and generation needs the same PDF set the integration used: if
+# the cache did not take, nothing is allowed to fetch it and this fails. That is
+# the cache-hit check and the event generation in one command.
+"$binary" --no-network generate "$work/llj/grid.bin.zst" "$cards/proc_card.dat" \
+  --run-card "$cards/run_card.dat" --nevents "$NEVENTS" --seed 1 \
   -o "$work/events.lhe" 2>&1 | tee "$work/gen.out" \
-  || fail "event generation failed"
+  || fail "event generation failed (a cached PDF set is part of what this needs)"
 [ -s "$work/events.lhe" ] || fail "the event file is empty"
 
 step "reading the events back"
-"$binary" check-events "$work/events.lhe" --min-events 2000 \
+"$binary" check-events "$work/events.lhe" --min-events "$NEVENTS" \
   || fail "the emitted event file did not survive being read back"
 
 printf '\nACCEPTANCE PASSED\n'
