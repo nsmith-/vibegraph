@@ -475,6 +475,12 @@ samples = { tier = "blocked", blocker = "kt-clustering" }
 #
 # Process-independent checks, run once per invocation of their layer and
 # reported as a list beside the per-process table rather than as cells in it.
+#
+# `targets` names the files a gate lives in, and a Rust gate needs nothing more:
+# the banked task compiles the workspace and runs them all. A gate whose driver
+# is not a Rust test carries two further keys — `task`, the pixi task that runs
+# it, and `environment`, the pixi environment that task needs — and writes its
+# verdict to `row`, under `target/validation-report/standalone/`.
 
 [[standalone]]
 key = "alphas-grid"
@@ -637,3 +643,14 @@ layer = "hermetic"
 targets = ["vibegraph-lib/src/helas/eval/rooting_soundness.rs"]
 inputs = ["validation/madgraph/amplitudes/<process>.json"]
 rationale = "Re-rooting every diagram and requiring |M|^2 to be invariant. The oracle is the production rooting's own value, which is itself pinned against MadGraph, so any rooting that reproduces it is correct. It evaluates at the committed amplitude tables' points; the full sweep stays oracle-layer for cost (marked `#[ignore]`), and the fast transparency guard on the override hook runs by default."
+
+[[standalone]]
+key = "pythia-consumption"
+layer = "banked"
+task = "validate-pythia"
+environment = "pythia"
+row = "pythia_consumption.json"
+targets = ["validation/pythia/generate_samples.sh", "validation/pythia/consume.py"]
+inputs = ["fetched PDF set", "output/pp_to_llj_fixed/Cards/run_card.dat", "dy13_proc_card.dat", "dy13_default_run_card.dat"]
+rationale = "Every event of two freshly generated samples read back through Pythia 8. The only gate whose oracle is a downstream consumer rather than MadGraph, and the only place the colour lines we write are used as input rather than compared as data. Metric: n/n events consumed at the process level, where a refusal is about the file; shower-level failures are reported apart and never gate."
+note = "It generates its own samples rather than reading a banked one, so it needs the cards but not MadGraph. A negative control — one event rewritten with a dangling colour index, which Pythia must reject and its neighbours must survive — keeps n/n from being consistent with a reader that ignores colour. Its own environment, so `pixi run validate` does not need Pythia installed."
