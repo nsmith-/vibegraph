@@ -1026,3 +1026,156 @@ input to the integrand's shape:
 - Every point evaluates one `|M|²` per group **twice** (direct + mirror), so ~12
   amplitude evaluations per point for llj. If P3's gate runs long, that is the
   reason, and channel dedup is the first lever.
+
+---
+
+## P2b outcome (2026-07-30) ✅ — the first two resume items
+
+Branch `proton-events`, two commits. This session took items 1 and 2 of P2's resume
+order: the cut-derived spacelike floor, and `αs` from the PDF grid. Items 3–6
+(flavour groups, `ProtonIntegrand`, α-adaptation, the fixed-ŝ validation) are
+untouched and their design in the P2 section stands.
+
+### 1. `Cuts::spacelike_floor()` — the floor's scale is process data
+
+`Cuts` already compiles the run card's single-leg `pT` thresholds into a per-leg
+check list, so it is the object that can state the scale, and reading it off the
+*compiled* cuts means class membership decides which legs contribute: a `pdg = 5`
+leg carries `ptj = 20` at `maxjetflavor = 5` and nothing at `4`, where MadGraph
+makes it a b with `ptb = 0`.
+
+```
+spacelike_floor() = (max over compiled single-leg cuts of pt_min)²
+```
+
+`ptj = 20` over `ptl = 10` gives **400 GeV²** for `p p > l+ l- j`, and `0` for a card
+with no active `pT` cut — which leaves a peripheral spine unbuilt past two outgoing
+legs rather than building an ill-posed one.
+
+**The derivation, as implemented.** A peripheral rung off a massless beam that puts
+a massless system at transverse momentum `pT` transfers
+`|t| = 2E_beam(m² + pT²)/(E + p_z) ≥ pT²`. That is a *bound* wherever transverse
+balance ties the two sides of the rung together — for a three-body final state it
+always does, since the system opposite the jet carries the jet's own `pT` — and it
+degrades to a *scale* past three outgoing legs, where a partition can balance
+internally. The bound itself is pinned by
+`a_transverse_momentum_threshold_bounds_the_transfer_it_implies`, which computes `t`
+from momenta over 40 rapidities × 3 collision energies rather than asserting the
+algebra. The degradation costs nothing: the floor enters `draw_t` and `t_measure`
+alike, so any non-negative value leaves the estimator unbiased and only the
+efficiency (and the well-posedness of the draw) depends on the size.
+
+**`lpp = 0` is bit-identical, measured not assumed.**
+`a_zero_spacelike_floor_leaves_every_channel_bit_identical` draws 200 points from
+each of **17** channels over five processes (`e+ e- > mu+ mu-`, `u u~ > u u~`,
+`u u~ > d d~ g`, both llj classes) through `from_diagram` and through
+`from_diagram_regulated(…, 0.0)` and compares **bits** — momenta, walk weight and
+density. All 17 identical. **9 of the 17 move** when floored at 400, which is what
+stops the identity from being vacuous.
+
+**Correction worth carrying forward:** the floor is applied as
+`t_mass2 = max(m², floor)` for *any* spine, including the `2 → 2` ones that are
+built without a floor. So handing a positive floor to a hadronic `2 → 2` process
+changes its channels (unbiased, but not the banked map). `ProtonIntegrand` should
+pass `cuts.spacelike_floor()` because it wants the three-body spine, not as a
+blanket default.
+
+### 2. `GridAlphaS` + `AlphaSSource` — the source, pinned in two places
+
+`vibegraph-lib/src/pdf/alphas.rs` reads a set's `AlphaS_Qs` / `AlphaS_Vals` knots
+with a linear interpolant in `log Q²`: endpoint-exact (a knot returns its tabulated
+value bit-for-bit), refusing a scale outside the table and refusing any
+`AlphaS_Type` other than `ipol` — an `analytic` set derives `αs` from `Λ_QCD` and
+reading its table would report the wrong source. Since `log Q² = 2 log Q` the factor
+of two cancels out of the interpolation parameter, so this is also linear in `log Q`;
+the `log Q²` spelling is LHAPDF's.
+
+`coupling::alphas::AlphaSSource` makes the choice, from the same field MadGraph
+makes it from — it calls `RunningAlphaS::from_run_card` and routes only its
+`LhapdfRunning` refusal to the grid, so there is one statement of the source rule
+rather than two. Two new refusals: `GridUnavailable` (the label wants a set and none
+was supplied — *not* a fall back to the β-function solve, which would run the set's
+densities against a coupling the set was not fitted with) and `Grid(..)`.
+
+Wired through `EventScaleSource`, which now holds `Option<AlphaSSource>` and takes
+the set's `AlphaS_*` metadata in `from_run_card`; `running_alpha_s()` →
+`alpha_s()` / `alpha_s_source()` on the two integrands, since the thing is no longer
+necessarily a running one. **DY and the fixed-beam path pass `None` and are
+unmoved**: DY carries no `αs` at LO so no source is built at all, and an `lpp = 0`
+card never reaches the branch (`setrun.f` overwrites `pdlabel` with `none`, which
+`no_pdf_ignores_the_cards_pdf_label` already pins). No production caller supplies a
+grid yet — `ProtonIntegrand` is the first, and **it will need the `PdfSet`, not just
+the `PdfMember`**: the tabulation lives in `set.info.alpha_s` and `DrellYanIntegrand`
+holds only a member.
+
+**The pin, and what it can see.** Two levels, both in `validate_alphas`:
+
+| oracle | measurement |
+|---|---|
+| the run log's `alpha_s for scale 91.188… is 0.13000271085472237` (17 digits) | reproduced to **9.86e-9** relative |
+| the log's `New value of alpha_s from PDF lhapdf` line at `M_Z` | same **9.86e-9** |
+| `pp_to_llj_fixed`'s 10 000 `<event>` lines | **10 000 / 10 000** reproduce the printed `AQCDUP` digits exactly, worst **0.281** of the printing budget |
+
+The third is the one with teeth, and it is new: P0 recorded these events as *outside*
+the `AQCDUP` oracle because the β-function solve refuses the card. With the grid as
+the source they are inside it, so `pp_to_llj_fixed` joins
+`SCALUP_IS_THE_RENORMALISATION_SCALE` (23 runs, 230 000 events). The parameter card
+is the source it replaces, and the test asserts at each scale that the two are
+*further apart than half a printed digit* — `0.1300027` against `0.1300028`, twice
+the budget — so a silent revert to the card's value fails the gate on all 10 000
+events rather than passing unnoticed.
+
+`GRID_ALPHA_S_TOL = 1e-7`, ten times the measured residual. It is deliberately not
+tighter: LHAPDF interpolates these knots with a cubic and this reads them with a
+straight line, so the residual is a property of *where the scale sits in its knot
+interval*, not of the arithmetic. Tightening the bound would pin the knot spacing.
+
+**What none of this can detect.**
+
+- **Scale dependence.** This run fixes `μR = 91.188`, which *is* `M_Z`, so evaluating
+  at `μR` and evaluating at the reference scale return the same number and nothing
+  here separates them. A second banked run at another fixed scale would.
+- **The interpolation shape.** `91.188` sits `2.4e-5` of the way into
+  `[91.1876, 109.8541]`, where linear and cubic readings of the same knots agree to
+  `1e-8`; mid-interval they differ by `~1.7e-4`. A dynamical scale needs the real
+  `ipol` consumer *and* an LHAPDF-generated reference to gate it — neither exists
+  yet, and `GRID_ALPHA_S_TOL` would correctly fail if a dynamical scale were wired
+  in against the linear reading.
+- **How `αs` enters σ.** There is no llj cross section yet. The power of `αs` in the
+  llj integrand is unvalidated until item 4 lands and its σ meets the P0 rebank.
+
+### Gate results
+
+`cargo build` clean, `cargo test --workspace` **556 passed / 0 failed** — 539 at P1's
+close, 546 after the floor commit, 556 with the `αs` tests. Every pre-existing test
+is unchanged and no tolerance was loosened anywhere.
+
+| gate | result |
+|---|---|
+| `validate-alphas` | **5 passed** (was 4): new grid-source row; `AQCDUP` now 230 000 events across **23** runs (was 220 000 / 22), worst 0.999 of budget |
+| `validate-scales` | 7 passed, unchanged |
+| `validate-sigma` | 11 rows asserted, unchanged |
+| `validate_hadronic` (DY anchor) | 3 passed — σ default 934.416 ± 0.870 vs MG 933.110 ± 0.447 (rel 0.0014), mmll window 644.855 ± 0.570 vs 644.420 ± 0.315 (rel 0.0007), pointwise oracle worst 1.15e-14 — **the same numbers as before** |
+| `validate-lhef` | 3 passed |
+| `validate-unweighting` | 1 passed |
+| `validate-scale-couplings` | 1 passed |
+| `validate-helas-mg` | 18 passed, unchanged |
+| `validate-pdf-grid` | **not runnable in this checkout** — `validation/pdf/oracle*.json` are gitignored and absent; the failure is a missing input file, unrelated to any code here. Regenerating needs the LHAPDF C++ oracle build and a second set fetched from the network. |
+
+### What the next session (flavour groups) must know
+
+1. **`Cuts` is now an input to the channel derivation.** The coupling note 24 did not
+   plan for exists and is one method call; pass `cuts.spacelike_floor()` to
+   `from_diagram_regulated` for the llj channels.
+2. **`AlphaSSource` is ready but unwired to any integrand.** `ProtonIntegrand` builds
+   its `EventScaleSource` with `Some(&set.info.alpha_s)`, which means it must hold or
+   be handed the `PdfSet` — a small signature difference from `DrellYanIntegrand`.
+3. **A grid-sourced bank is now classified in two lists.** P0's warning that
+   registering an amplitude process banks a run gains a corollary: a
+   `pdlabel = lhapdf` run belongs in `GRID_ALPHA_S_RUNS` *and*, once its `AQCDUP`
+   reproduces, in `SCALUP_IS_THE_RENORMALISATION_SCALE`. Both are asserted, so
+   neither can be forgotten silently.
+4. Nothing in this session touched the `MultiChannel` combiner, the enumeration, or
+   any amplitude, so P2's measured design facts (24 subprocesses, one ordering per
+   unordered initial state, the mirror identity `A(b,a;k) = A(a,b;Rk)`, the group-by-
+   measured-|M|² rule) all still stand as written.
