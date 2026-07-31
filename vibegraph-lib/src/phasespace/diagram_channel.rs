@@ -34,20 +34,52 @@
 //!
 //! A spacelike (t-channel) line is peripheral, not a subsystem mass: it carries a
 //! momentum transfer `t = (p_beam − p_emitted)² ≤ 0`. A diagram with a single
-//! spacelike line building a `2 → 2` final state is decomposed as a [`Spine`]
-//! instead of an all-timelike tree — a top-level peripheral emission off one beam
-//! whose polar angle is fixed by `t` (only the azimuth is free), with the emitted
-//! and recoil subsystems recursing into the same 2-body-decay machinery. The
-//! transfer is importance-sampled through the logarithmic substitution
-//! `t = m² − (m²−t_min)·exp(−x·N)` (density `∝ 1/(m²−t)`), and a spacelike line
-//! carries no width. Genuine multi-spacelike-line (ladder) topologies are not yet
-//! given a spine; their spacelike lines are kept as metadata only.
+//! spacelike line is decomposed as a [`Spine`] instead of an all-timelike tree — a
+//! top-level peripheral emission off one beam whose polar angle is fixed by `t`
+//! (only the azimuth is free), with the emitted and recoil subsystems recursing
+//! into the same 2-body-decay machinery. The transfer is importance-sampled through
+//! the logarithmic substitution `t = m² − (m²−t_min)·exp(−x·N)` (density
+//! `∝ 1/(m²−t)`), and a spacelike line carries no width. Genuine
+//! multi-spacelike-line (ladder) topologies are not yet given a spine; their
+//! spacelike lines are kept as metadata only.
+//!
+//! # Regulating the spacelike pole
+//!
+//! With a *massless* exchanged line and a massless subsystem on one side, the
+//! transfer's upper edge sits analytically on the pole (`t_max = m² = 0`) but is
+//! computed as a cancelling difference of two large quantities built from different
+//! expressions, so it lands on either side of zero at the rounding scale. A draw
+//! that then switches the propagator map on reaches `|t| ~ 1e-11` while the density
+//! recomputes `t` from the momenta with a cancellation error of the same size:
+//! sampling density and weighting density describe different maps, and the
+//! estimator is *biased*, not merely noisy. In a `2 → 2` final state both
+//! invariants are fixed constants and the cancellation is exact, so the edge is a
+//! hard zero and the flat fallback fires deterministically; the degeneracy needs a
+//! *drawn* invariant on one side, which first appears at three outgoing legs.
+//!
+//! [`DiagramChannel::from_diagram_regulated`] therefore takes a **floor** on the
+//! pole location, `t_mass² ← max(m², floor)`. The floor moves only the sampling
+//! density — `draw_t` and `t_measure` read the same `t_mass2`, so the estimator is
+//! unbiased for any non-negative value — and a floor far above the cancellation
+//! scale is what makes the propagator draw well posed. A spine is built for a
+//! final state of more than two legs only when such a floor is supplied.
 //!
 //! The weight is the exact product of the 2-body LIPS factors `R_2 = π|p*|/√s`
 //! and each invariant's draw measure `ds/dx`, so a flat Monte-Carlo average of
 //! `weight · f` estimates `∫ dR_n f` over the same invariant volume `R_n` that
 //! flat RAMBO integrates — the channel is a different parametrisation of the same
-//! phase space.
+//! phase space. [`PhaseSpaceMap::sample`] accumulates that product **as it walks**,
+//! independently of [`Channel::density`], which recomputes it from the realised
+//! momenta; the two agreeing is then a real check on the map rather than an
+//! identity the code arranged.
+//!
+//! # Energy
+//!
+//! The tree is a `√ŝ`-independent structure: masks, masses, resonances and the
+//! spacelike pole do not move with the collision energy. The fixed-energy
+//! [`PhaseSpaceMap`]/[`Channel`] impls use the `sqrt_s` a channel was built at;
+//! [`ScaledChannel`] takes it per draw, which is what lets one channel set serve a
+//! hadronic run whose `ŝ = τ s` changes every event.
 
 use std::collections::BTreeMap;
 
@@ -56,7 +88,7 @@ use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
 use crate::ufo::EvaluatedModel;
 
-use super::channel::{Channel, PhaseSpaceMap, PhaseSpacePoint};
+use super::channel::{Channel, PhaseSpaceMap, PhaseSpacePoint, ScaledChannel};
 
 /// The propagator pole a subsystem's invariant sits on: the timelike line's mass
 /// and width, driving the Breit–Wigner importance map for that invariant.
@@ -130,25 +162,48 @@ enum ChannelTopology<F: Real> {
     Spine(Spine<F>),
 }
 
-/// A single-diagram phase-space channel on a fixed `√ŝ` and outgoing-mass set.
+/// A single-diagram phase-space channel on one outgoing-mass set.
+///
+/// `sqrt_s` is the energy the fixed-energy [`PhaseSpaceMap`]/[`Channel`] impls
+/// draw at; [`ScaledChannel`] takes the energy per draw instead and leaves this
+/// field unread.
 #[derive(Clone, Debug)]
 pub struct DiagramChannel<F: Real> {
     sqrt_s: F,
     n_out: usize,
-    /// The two incoming beam four-momenta in the CM frame (beam `0` along `+z`),
-    /// the reference for a spacelike line's momentum transfer `t`.
-    beams: [LorentzVector<F>; 2],
+    /// Pole masses of the two incoming legs, from which the CM beam momenta (beam
+    /// `0` along `+z`) — the reference for a spacelike line's momentum transfer
+    /// `t` — are rebuilt at whatever energy a draw is made at.
+    beam_masses: [F; 2],
     topology: ChannelTopology<F>,
     t_channels: Vec<TChannel<F>>,
 }
 
 impl<F: Real> DiagramChannel<F> {
-    /// Build the channel from a diagram's propagator chain at CM energy `sqrt_s`.
+    /// Build the channel from a diagram's propagator chain at CM energy `sqrt_s`,
+    /// with an unregulated spacelike pole.
     ///
     /// Outgoing-leg masses and each internal line's mass/width are read from
     /// `model`. Only meaningful for a `2 → n` process; the beams are externals
     /// `0..n_in`.
     pub fn from_diagram(diagram: &Diagram, model: &EvaluatedModel, sqrt_s: F) -> Self {
+        Self::from_diagram_regulated(diagram, model, sqrt_s, F::zero())
+    }
+
+    /// [`from_diagram`](Self::from_diagram) with the spacelike propagator's pole
+    /// floored at `spacelike_floor` (GeV²), so a massless exchanged line still
+    /// gives a well-posed peripheral draw.
+    ///
+    /// The floor enters `draw_t` and `t_measure` alike, so it reshapes the sampling
+    /// density and nothing else. Without one, a spacelike line inside a final state
+    /// of more than two legs is left to the all-timelike tree: the module docs
+    /// record why an unfloored three-body spine is biased rather than merely noisy.
+    pub fn from_diagram_regulated(
+        diagram: &Diagram,
+        model: &EvaluatedModel,
+        sqrt_s: F,
+        spacelike_floor: F,
+    ) -> Self {
         let n_in = diagram.n_in;
         let n_ext = diagram.n_ext();
         let n_out = n_ext - n_in;
@@ -160,11 +215,10 @@ impl<F: Real> DiagramChannel<F> {
                 cast(model.mass(particle))
             })
             .collect();
-        let beams = beam_momenta(
-            sqrt_s,
+        let beam_masses = [
             cast(model.mass(diagram.legs[0].particle)),
             cast(model.mass(diagram.legs[1].particle)),
-        );
+        ];
 
         // Timelike subsystems drive the decay tree; spacelike lines are peripheral.
         let mut resonances: BTreeMap<u64, Resonance<F>> = BTreeMap::new();
@@ -188,11 +242,13 @@ impl<F: Real> DiagramChannel<F> {
         }
 
         let subsystems: Vec<u64> = resonances.keys().copied().collect();
-        // A single spacelike line building a 2→2 final state is peripheral: it is
-        // decomposed as a t-channel spine rather than an all-timelike tree. Ladder
-        // topologies (several spacelike lines) and single spacelike lines inside a
-        // higher-multiplicity final state stay all-timelike for now.
-        let topology = if spacelike.len() == 1 && n_out == 2 {
+        // A single spacelike line is peripheral: it is decomposed as a t-channel
+        // spine rather than an all-timelike tree. Past two outgoing legs the
+        // transfer's upper edge is a cancelling difference of drawn invariants, so
+        // the spine is built only when a floor keeps the pole clear of it. Ladder
+        // topologies (several spacelike lines) stay all-timelike for now.
+        let regulated = spacelike_floor > F::zero();
+        let topology = if spacelike.len() == 1 && (n_out == 2 || regulated) {
             let prop = &diagram.props[spacelike[0]];
             let (emitted_mask, recoil_mask) = spine_partition(&prop.momentum, n_in, n_ext);
             ChannelTopology::Spine(Spine {
@@ -200,7 +256,7 @@ impl<F: Real> DiagramChannel<F> {
                 recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
                 t_mass2: {
                     let m: F = cast(model.mass(prop.particle));
-                    m * m
+                    (m * m).max(spacelike_floor)
                 },
             })
         } else {
@@ -209,7 +265,7 @@ impl<F: Real> DiagramChannel<F> {
         DiagramChannel {
             sqrt_s,
             n_out,
-            beams,
+            beam_masses,
             topology,
             t_channels,
         }
@@ -230,7 +286,7 @@ impl<F: Real> DiagramChannel<F> {
         DiagramChannel {
             sqrt_s,
             n_out,
-            beams: beam_momenta(sqrt_s, F::zero(), F::zero()),
+            beam_masses: [F::zero(), F::zero()],
             topology: ChannelTopology::Timelike(root),
             t_channels: Vec::new(),
         }
@@ -260,7 +316,7 @@ impl<F: Real> DiagramChannel<F> {
         DiagramChannel {
             sqrt_s,
             n_out,
-            beams: beam_momenta(sqrt_s, F::zero(), F::zero()),
+            beam_masses: [F::zero(), F::zero()],
             topology: ChannelTopology::Timelike(root),
             t_channels: Vec::new(),
         }
@@ -313,7 +369,7 @@ impl<F: Real> DiagramChannel<F> {
         DiagramChannel {
             sqrt_s,
             n_out,
-            beams: beam_momenta(sqrt_s, beam_masses[0], beam_masses[1]),
+            beam_masses,
             topology: ChannelTopology::Spine(spine),
             t_channels: Vec::new(),
         }
@@ -343,6 +399,64 @@ impl<F: Real> DiagramChannel<F> {
     pub fn t_channels(&self) -> &[TChannel<F>] {
         &self.t_channels
     }
+
+    /// The pole location `t_mass²` of the peripheral rung, or `None` for an
+    /// all-timelike tree — the floor a regulated channel actually installed.
+    pub fn spine_pole(&self) -> Option<F> {
+        match &self.topology {
+            ChannelTopology::Timelike(_) => None,
+            ChannelTopology::Spine(spine) => Some(spine.t_mass2),
+        }
+    }
+
+    /// The CM beam momenta at energy `sqrt_s`, beam `0` along `+z`.
+    fn beams_at(&self, sqrt_s: F) -> [LorentzVector<F>; 2] {
+        beam_momenta(sqrt_s, self.beam_masses[0], self.beam_masses[1])
+    }
+}
+
+impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
+    fn sample_at(&self, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F> {
+        let s = sqrt_s * sqrt_s;
+        let total = LorentzVector::new(sqrt_s, F::zero(), F::zero(), F::zero());
+        let mut slots: Vec<Option<LorentzVector<F>>> = vec![None; self.n_out];
+        let mut cursor = 0usize;
+        // Accumulated as the walk draws, from the drawn invariants rather than from
+        // the momenta they produce — an independent computation of the same
+        // Jacobian `density_at` reconstructs, so the two agreeing is a check.
+        let mut weight = F::one();
+        match &self.topology {
+            ChannelTopology::Timelike(root) => {
+                sample_branch(root, s, total, u, &mut cursor, &mut slots, &mut weight)
+            }
+            ChannelTopology::Spine(spine) => sample_spine(
+                spine,
+                s,
+                &self.beams_at(sqrt_s),
+                total,
+                u,
+                &mut cursor,
+                &mut slots,
+                &mut weight,
+            ),
+        }
+        let momenta: Vec<LorentzVector<F>> = slots
+            .into_iter()
+            .map(|m| m.expect("every outgoing slot is filled"))
+            .collect();
+        PhaseSpacePoint { momenta, weight }
+    }
+
+    fn density_at(&self, sqrt_s: F, momenta: &[LorentzVector<F>]) -> F {
+        let s = sqrt_s * sqrt_s;
+        let jac = match &self.topology {
+            ChannelTopology::Timelike(root) => branch_jacobian(root, s, momenta),
+            ChannelTopology::Spine(spine) => {
+                spine_jacobian(spine, s, &self.beams_at(sqrt_s), momenta)
+            }
+        };
+        F::one() / jac
+    }
 }
 
 impl<F: Real> PhaseSpaceMap<F> for DiagramChannel<F> {
@@ -351,37 +465,13 @@ impl<F: Real> PhaseSpaceMap<F> for DiagramChannel<F> {
     }
 
     fn sample(&self, u: &[F]) -> PhaseSpacePoint<F> {
-        let s = self.sqrt_s * self.sqrt_s;
-        let total = LorentzVector::new(self.sqrt_s, F::zero(), F::zero(), F::zero());
-        let mut slots: Vec<Option<LorentzVector<F>>> = vec![None; self.n_out];
-        let mut cursor = 0usize;
-        match &self.topology {
-            ChannelTopology::Timelike(root) => {
-                sample_branch(root, s, total, u, &mut cursor, &mut slots)
-            }
-            ChannelTopology::Spine(spine) => {
-                sample_spine(spine, s, &self.beams, total, u, &mut cursor, &mut slots)
-            }
-        }
-        let momenta: Vec<LorentzVector<F>> = slots
-            .into_iter()
-            .map(|m| m.expect("every outgoing slot is filled"))
-            .collect();
-        // Reciprocal of the density at the realised configuration: exactly the
-        // phase-space Jacobian this walk carried.
-        let weight = F::one() / self.density(&momenta);
-        PhaseSpacePoint { momenta, weight }
+        self.sample_at(self.sqrt_s, u)
     }
 }
 
 impl<F: Real> Channel<F> for DiagramChannel<F> {
     fn density(&self, momenta: &[LorentzVector<F>]) -> F {
-        let s = self.sqrt_s * self.sqrt_s;
-        let jac = match &self.topology {
-            ChannelTopology::Timelike(root) => branch_jacobian(root, s, momenta),
-            ChannelTopology::Spine(spine) => spine_jacobian(spine, s, &self.beams, momenta),
-        };
-        F::one() / jac
+        self.density_at(self.sqrt_s, momenta)
     }
 }
 
@@ -763,7 +853,9 @@ fn invariant_measure<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, s: F) -> 
 
 /// Draw the invariants and angles of one 2-body split and recurse into composite
 /// daughters. `s` is the (fixed) invariant mass² of the system this branch
-/// decays; `p_lab` is its four-momentum in the CM frame.
+/// decays; `p_lab` is its four-momentum in the CM frame. `weight` accumulates the
+/// draw measures and LIPS factors of the walk.
+#[allow(clippy::too_many_arguments)]
 fn sample_branch<F: Real>(
     branch: &Branch<F>,
     s: F,
@@ -771,6 +863,7 @@ fn sample_branch<F: Real>(
     u: &[F],
     cursor: &mut usize,
     slots: &mut [Option<LorentzVector<F>>],
+    weight: &mut F,
 ) {
     let two = F::one() + F::one();
     let sqrt_s = s.sqrt();
@@ -784,7 +877,9 @@ fn sample_branch<F: Real>(
             let hi = (sqrt_s - mu_r).powi(2);
             let x = u[*cursor];
             *cursor += 1;
-            draw_invariant(lo, hi, b.resonance, x)
+            let s = draw_invariant(lo, hi, b.resonance, x);
+            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
+            s
         }
     };
     let sqrt_sl = sl.sqrt();
@@ -795,9 +890,12 @@ fn sample_branch<F: Real>(
             let hi = (sqrt_s - sqrt_sl).powi(2);
             let x = u[*cursor];
             *cursor += 1;
-            draw_invariant(lo, hi, b.resonance, x)
+            let s = draw_invariant(lo, hi, b.resonance, x);
+            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
+            s
         }
     };
+    *weight = *weight * r2_factor(s, sqrt_s, sl, sr);
 
     let cos = two * u[*cursor] - F::one();
     *cursor += 1;
@@ -829,11 +927,11 @@ fn sample_branch<F: Real>(
 
     match &branch.left {
         Node::Leaf { slot, .. } => slots[*slot] = Some(pl),
-        Node::Branch(b) => sample_branch(b, sl, pl, u, cursor, slots),
+        Node::Branch(b) => sample_branch(b, sl, pl, u, cursor, slots, weight),
     }
     match &branch.right {
         Node::Leaf { slot, .. } => slots[*slot] = Some(pr),
-        Node::Branch(b) => sample_branch(b, sr, pr, u, cursor, slots),
+        Node::Branch(b) => sample_branch(b, sr, pr, u, cursor, slots, weight),
     }
 }
 
@@ -1018,6 +1116,7 @@ fn sample_spine<F: Real>(
     u: &[F],
     cursor: &mut usize,
     slots: &mut [Option<LorentzVector<F>>],
+    weight: &mut F,
 ) {
     let two = F::one() + F::one();
     let sqrt_s = s.sqrt();
@@ -1031,7 +1130,9 @@ fn sample_spine<F: Real>(
             let hi = (sqrt_s - mu_r).powi(2);
             let x = u[*cursor];
             *cursor += 1;
-            draw_invariant(lo, hi, b.resonance, x)
+            let s = draw_invariant(lo, hi, b.resonance, x);
+            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
+            s
         }
     };
     let sqrt_s1 = s1.sqrt();
@@ -1042,13 +1143,16 @@ fn sample_spine<F: Real>(
             let hi = (sqrt_s - sqrt_s1).powi(2);
             let x = u[*cursor];
             *cursor += 1;
-            draw_invariant(lo, hi, b.resonance, x)
+            let s = draw_invariant(lo, hi, b.resonance, x);
+            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
+            s
         }
     };
 
     let tk = t_kinematics(s, beams[0].m2(), beams[1].m2(), s1, s2);
     let t = draw_t(tk.t_min, tk.t_max, spine.t_mass2, u[*cursor]);
     *cursor += 1;
+    *weight = *weight * peripheral_factor(s, tk.k, t_measure(tk.t_min, tk.t_max, spine.t_mass2, t));
     let phi = two * F::PI() * u[*cursor];
     *cursor += 1;
 
@@ -1069,11 +1173,11 @@ fn sample_spine<F: Real>(
 
     match &spine.emitted {
         Node::Leaf { slot, .. } => slots[*slot] = Some(pe),
-        Node::Branch(b) => sample_branch(b, s1, pe, u, cursor, slots),
+        Node::Branch(b) => sample_branch(b, s1, pe, u, cursor, slots, weight),
     }
     match &spine.recoil {
         Node::Leaf { slot, .. } => slots[*slot] = Some(pr),
-        Node::Branch(b) => sample_branch(b, s2, pr, u, cursor, slots),
+        Node::Branch(b) => sample_branch(b, s2, pr, u, cursor, slots, weight),
     }
 }
 
@@ -1204,26 +1308,41 @@ mod tests {
         }
     }
 
-    /// The channel density is the exact reciprocal of the weight it assigns to a
-    /// point it generated.
+    /// The weight the walk accumulated and the density reconstructed from the
+    /// realised momenta are reciprocal — a check with content, because the two are
+    /// computed from different inputs.
     ///
-    /// True by construction — [`DiagramChannel::sample`] forms the weight as
-    /// `1/density` — so what this pins is that the density is finite and non-zero
-    /// on every generated point, and that the walk's own cursor arithmetic leaves
-    /// a configuration the density can be evaluated at. It is blind to the walk
-    /// having sampled from a different density than the one that weights it; only
-    /// an integrated quantity sees that (`flat_volume_matches_flat_rambo` below).
+    /// `sample` multiplies each draw measure and LIPS factor in as it draws, from
+    /// the invariants it *drew*; `density` re-derives every one of them from the
+    /// momenta the walk produced. A walk that sampled from one density and weighted
+    /// by another — the failure a floorless spacelike pole produces, where the two
+    /// disagree by orders of magnitude — separates them here. Agreement is not
+    /// exact: the two arithmetic paths multiply the same factors in different
+    /// orders, and the deepest tree here (`2 → 6`) accumulates ~1e-12 of relative
+    /// reordering noise. The bound sits above that and some nine orders below the
+    /// defect class it exists to catch, so it distinguishes a structural mismatch
+    /// from rounding without being a fitted number.
     #[test]
     fn density_is_reciprocal_weight() {
         let mut stream = SubStream::from_stream(0xD1A7, 5);
+        let mut worst = 0.0f64;
         for (sqrt_s, masses, subs) in topologies() {
             let ch = DiagramChannel::from_topology(sqrt_s, masses.clone(), &subs);
             for _ in 0..50 {
                 let u = stream.uniforms::<f64>(ch.ndim());
                 let pt = ch.sample(&u);
-                assert_eq!(ch.density(&pt.momenta), 1.0 / pt.weight);
+                let recip = 1.0 / ch.density(&pt.momenta);
+                assert!(pt.weight > 0.0 && pt.weight.is_finite());
+                let rel = (pt.weight - recip).abs() / recip;
+                worst = worst.max(rel);
+                assert!(
+                    rel < 1e-9,
+                    "walk weight {} vs 1/density {recip} (rel {rel:.3e})",
+                    pt.weight
+                );
             }
         }
+        eprintln!("walk-weight vs density: worst relative disagreement {worst:.3e}");
     }
 
     /// Monte-Carlo estimate of a channel's flat-weight average, with its standard
@@ -1865,10 +1984,15 @@ mod tests {
         );
     }
 
-    /// The spine density is the exact reciprocal of the weight it assigns to a point
-    /// it generated, and stays finite and non-negative on a foreign on-shell
-    /// configuration (here a flat-RAMBO point) — the contract the multichannel
-    /// combiner relies on.
+    /// The spine's walk-accumulated weight is the reciprocal of the density read
+    /// back off the momenta, and that density stays finite and non-negative on a
+    /// foreign on-shell configuration (here a flat-RAMBO point) — the contract the
+    /// multichannel combiner relies on.
+    ///
+    /// The first half is the peripheral rung's share of
+    /// [`density_is_reciprocal_weight`]: `sample` accumulates `dt/dx` at the `t` it
+    /// drew, `density` recomputes `t` from the emitted subsystem's momenta. A rung
+    /// whose draw and weight describe different maps fails here.
     #[test]
     fn spine_density_reciprocal_and_foreign() {
         let ch = spine_channel();

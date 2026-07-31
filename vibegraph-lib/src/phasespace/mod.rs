@@ -66,8 +66,8 @@ pub mod rambo;
 pub mod rng;
 
 pub use channel::{
-    AlphaAdaptation, Channel, Combiner, Lips2Channel, MultiChannel, PhaseSpaceMap, PhaseSpacePoint,
-    RamboChannel,
+    kleiss_pittau_step, select_channel, AlphaAdaptation, Channel, Combiner, Lips2Channel,
+    MultiChannel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel, ScaledChannel, ScaledMultiChannel,
 };
 pub use diagram_channel::{DiagramChannel, Resonance, TChannel};
 pub use rambo::{rambo, rambo_massive, rambo_massless, RamboPoint};
