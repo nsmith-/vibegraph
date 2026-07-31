@@ -28,7 +28,7 @@ branch. Your job: implement it, measure it, validate it, commit it, report back.
   *reassociating* changes (momentum-sum reordering, balanced sums, rewrites) gate
   at REL_TOL 1e-12. State the classification in your report; a bit-for-bit claim
   that silently became REL_TOL is a red flag, not a rounding detail.
-- **Measure, don't reason.** Timing protocol: `--profile profiling`,
+- **Measure, don't reason.** Timing protocol: `--profile release-debug`,
   `--test-threads=1`, ns/eval amortized, compared against the baseline table in
   `TODO.md` and MG's MATRIX1 timings (`validation/madgraph/output/mg_timings.json`).
   Report before/after numbers for every process you claim to speed up, and note

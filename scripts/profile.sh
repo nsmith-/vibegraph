@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: profile.sh <test-name> [test-filter] [-- samply-args...]
-# Builds the given integration test with the profiling profile and records it with samply.
+# Builds the given integration test with the release-debug profile and records it with samply.
 # The test name must match a file in tests/ (e.g. validate_madgraph_diagrams).
 # An optional test-filter narrows which test cases run (passed to the test binary).
 # Arguments after -- are forwarded to samply record.
@@ -24,7 +24,7 @@ if [[ $# -gt 0 && "$1" == "--" ]]; then
     shift
 fi
 
-BUILD_OUTPUT=$(cargo test --profile profiling --test "$TEST_NAME" --features extended-validation --no-run 2>&1)
+BUILD_OUTPUT=$(cargo test --profile release-debug --test "$TEST_NAME" --features extended-validation --no-run 2>&1)
 echo "$BUILD_OUTPUT"
 
 EXECUTABLE=$(echo "$BUILD_OUTPUT" | tail -1 | sed -n 's/.*Executable[^(]*(//;s/).*//p')

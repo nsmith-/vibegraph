@@ -346,8 +346,11 @@ fn banked_initial_roles() -> BTreeSet<(i32, i32)> {
 #[test]
 fn generated_proton_events_are_coherent_and_madgraph_labelled() {
     if !banked_present() {
-        eprintln!("skipping: no banked {RUN} run or no fetched PDF set");
-        return;
+        return vibegraph::validation::skip(
+            "generated_proton_events_are_coherent_and_madgraph_labelled",
+            "banked madgraph run or fetched pdf set",
+            RUN,
+        );
     }
     let run = integrated();
     let file = run.generate(NEVENTS, "events.lhe");
@@ -542,8 +545,11 @@ fn banked_alpha_s() -> f64 {
 #[test]
 fn a_different_pdf_set_is_refused() {
     if !banked_present() {
-        eprintln!("skipping: no banked {RUN} run or no fetched PDF set");
-        return;
+        return vibegraph::validation::skip(
+            "a_different_pdf_set_is_refused",
+            "banked madgraph run or fetched pdf set",
+            RUN,
+        );
     }
     let run = integrated();
     let out = run
@@ -577,8 +583,11 @@ fn a_different_pdf_set_is_refused() {
 #[test]
 fn a_dynamical_scale_card_is_still_refused() {
     if !banked_present() {
-        eprintln!("skipping: no banked {RUN} run or no fetched PDF set");
-        return;
+        return vibegraph::validation::skip(
+            "a_dynamical_scale_card_is_still_refused",
+            "banked madgraph run or fetched pdf set",
+            RUN,
+        );
     }
     let run = integrated();
     let dynamical = run.dir.join("dynamical_run_card.dat");

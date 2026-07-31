@@ -123,11 +123,11 @@ fn serialise(file: &LheFile) -> String {
 #[test]
 fn banked_files_round_trip_byte_for_byte() {
     if !output_dir().exists() {
-        eprintln!(
-            "skipping: {} absent (run `pixi run -e madgraph build-diagrams`)",
-            output_dir().display()
+        return vibegraph::validation::skip(
+            "banked_files_round_trip_byte_for_byte",
+            "madgraph output tree",
+            output_dir().display(),
         );
-        return;
     }
     let runs = banked_runs();
     assert!(!runs.is_empty(), "no banked runs with an event file");
@@ -200,15 +200,21 @@ fn banked_files_round_trip_byte_for_byte() {
 #[test]
 fn the_round_trip_is_sensitive_to_every_convention_sensitive_field() {
     if !output_dir().exists() {
-        eprintln!("skipping: no banked MadGraph output");
-        return;
+        return vibegraph::validation::skip(
+            "the_round_trip_is_sensitive_to_every_convention_sensitive_field",
+            "madgraph output tree",
+            output_dir().display(),
+        );
     }
     // A gluon-initiated process, so every leg carries colour in both slots and a
     // slot swap is visible on every line.
     let run = output_dir().join("gg_to_ttx");
     if !run.exists() {
-        eprintln!("skipping: gg_to_ttx not banked");
-        return;
+        return vibegraph::validation::skip(
+            "the_round_trip_is_sensitive_to_every_convention_sensitive_field",
+            "banked madgraph run",
+            "gg_to_ttx",
+        );
     }
     let text = banked_text(&run);
     let file = LheFile::parse(&text).expect("parse");
@@ -368,12 +374,19 @@ fn param_card(dir: &str) -> ParamCard {
 #[test]
 fn generated_events_serialise_into_a_coherent_file() {
     if !output_dir().exists() {
-        eprintln!("skipping: no banked MadGraph output");
-        return;
+        return vibegraph::validation::skip(
+            "generated_events_serialise_into_a_coherent_file",
+            "madgraph output tree",
+            output_dir().display(),
+        );
     }
     for row in ROWS {
         if !output_dir().join(row.dir).exists() {
-            eprintln!("-- {} -- skipped: not banked", row.dir);
+            vibegraph::validation::skip(
+                "generated_events_serialise_into_a_coherent_file",
+                "banked madgraph run",
+                row.dir,
+            );
             continue;
         }
         generate_and_check(row);

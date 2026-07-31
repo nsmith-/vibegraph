@@ -1,32 +1,24 @@
 name: ci
 
-# The default `cargo test` suite only, deliberately not `--features
-# extended-validation`: verified by running the full suite against a tree
-# built from `git ls-files` alone (no submodules, no untracked/gitignored
-# validation/ data — the same view a fresh runner checkout has). Two
-# independent mechanisms make that tree pass clean, not one:
+# Two of the three dependency layers described in `validation/manifest.toml`.
 #
-# - The slow MadGraph/HELAS cross-check gates (color/CF/JAMP oracles, sigma
-#   validation, the amplitude/diagram MG comparisons) carry `required-features
-#   = ["extended-validation"]` in the two `Cargo.toml`s, or internal
-#   `#[cfg(feature = "extended-validation")]`, so they are absent from the
-#   default-feature test binaries entirely (0 tests registered, not skipped at
-#   runtime).
-# - A handful of default-suite tests reach for `research/refs/mg5amcnlo`
-#   (an uninitialized git submodule here — checkout below does not fetch it)
-#   or `validation/madgraph/output` (gitignored, MG-run-generated). Those
-#   check existence first and soft-skip with an eprintln! when the path is
-#   absent (`ufo::mod::tests::test_load_mssm`/`test_load_loop_sm`,
-#   `ufo::sm::tests::interned_default_matches_submodule` and its
-#   `_exactly` sibling, `helas::eval::rooting_soundness::
-#   root_override_hook_is_transparent`) — they report "ok" on CI having
-#   made zero real assertions, which is a known blind spot, not a bug: the
-#   coverage they'd add is owed to `extended-validation` runs instead.
+# `test` is the **hermetic** layer: `cargo test` with no features, against a
+# checkout with no submodules and none of the fetched or MadGraph-generated data
+# under `validation/`. It is *complete* there — every test the default-feature
+# build registers runs and asserts, and none of them skips. One mechanism keeps
+# it that way: a test needing the `mg5amcnlo` submodule, a fetched PDF set or a
+# frozen MadGraph run carries `required-features = ["extended-validation"]` in
+# its crate's `Cargo.toml`, so it is absent from this build entirely rather than
+# deciding at runtime whether it has anything to do. (The structural exception is
+# the `--lib` target, which has no per-test registration; the few library unit
+# tests needing banked inputs use `#[cfg(feature = "extended-validation")]`.)
 #
-# Everything else the default suite runs reads only tracked fixtures
-# (`validation/alphas/reference.csv`, `validation/rambo/rambo_fixture.json`,
-# `validation/madgraph/runcard_defaults.json`, `tests/data/*`) or the
-# `include_bytes!`-interned SM model, so it is real coverage, not a soft-skip.
+# `banked` is the **banked** layer: submodule checked out, reference data
+# fetched, `pixi run validate`. It is not a merge gate yet — a fresh runner has
+# no way to obtain the frozen MadGraph runs until the reference bundle has a
+# fetch seam, so most of the layer would record expected skips rather than
+# assert. `continue-on-error` marks that; removing it belongs with the bundle
+# fetch and the report driver.
 on:
   push:
     branches: [main]
@@ -52,3 +44,38 @@ jobs:
 
       - run: cargo build --locked --workspace
       - run: cargo test --locked --workspace
+
+  banked:
+    needs: test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: prefix-dev/setup-pixi@v0.9.0
+        with:
+          environments: default
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            validation/pdf
+          key: banked-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            banked-
+
+      # Downloads are a step of their own rather than something a test triggers
+      # by reaching for a file it cannot find, so what this job pulls from the
+      # network is visible in the log without reading any Rust.
+      - name: Fetch reference data
+        run: pixi run fetch-pdf
+
+      - name: Banked validation layer
+        run: pixi run --skip-deps validate

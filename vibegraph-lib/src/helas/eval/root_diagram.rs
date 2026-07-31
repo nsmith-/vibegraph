@@ -807,12 +807,16 @@ fn canonical_root(diagram: &Diagram) -> VtxIdx {
 }
 
 /// The root vertex [`root_tree`] walks from.
-#[cfg(not(test))]
+///
+/// The override hook below exists only for the rooting-soundness harness, which
+/// needs the banked amplitude references, so it is compiled only where that
+/// harness is.
+#[cfg(not(all(test, feature = "extended-validation")))]
 fn choose_root(diagram: &Diagram) -> VtxIdx {
     canonical_root(diagram)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "extended-validation"))]
 thread_local! {
     static ROOT_OVERRIDE: std::cell::RefCell<Option<Box<dyn Fn(&Diagram) -> VtxIdx>>> =
         const { std::cell::RefCell::new(None) };
@@ -821,18 +825,18 @@ thread_local! {
 /// Install a per-diagram root-vertex chooser consulted by [`root_tree`] on the current
 /// thread. Lets a soundness harness re-root diagrams without touching the production
 /// walk. With no override installed, rooting falls back to [`canonical_root`].
-#[cfg(test)]
+#[cfg(all(test, feature = "extended-validation"))]
 pub(crate) fn set_root_override(f: Box<dyn Fn(&Diagram) -> VtxIdx>) {
     ROOT_OVERRIDE.with(|c| *c.borrow_mut() = Some(f));
 }
 
 /// Remove any installed root chooser, restoring the [`canonical_root`] default.
-#[cfg(test)]
+#[cfg(all(test, feature = "extended-validation"))]
 pub(crate) fn clear_root_override() {
     ROOT_OVERRIDE.with(|c| *c.borrow_mut() = None);
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "extended-validation"))]
 fn choose_root(diagram: &Diagram) -> VtxIdx {
     ROOT_OVERRIDE
         .with(|c| c.borrow().as_ref().map(|f| f(diagram)))
