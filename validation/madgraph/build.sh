@@ -49,7 +49,13 @@ for script_path in "$SCRIPTS_DIR"/*.mg5; do
 
   # Run mg5_aMC in the output directory to keep things organized
   cd "$OUTPUT_BASE"
-  mg5_aMC "$script_path" > "tmp.log" 2>&1
+  # The conda activation exports its own LDFLAGS, which suppresses MadGraph's
+  # make_opts `STDLIB=-lc++` (its `ifeq($(origin LDFLAGS),undefined)` guard sees
+  # LDFLAGS as already set), so a `pdlabel = lhapdf` run leaves the LHAPDF C++
+  # runtime symbols unresolved when madevent links libpdf.a. Appending -lc++ is
+  # what gen_hadronic_sigma.sh already does for the same reason; it is inert for a
+  # script that links no C++.
+  LDFLAGS="${LDFLAGS:-} -lc++" mg5_aMC "$script_path" > "tmp.log" 2>&1
   mv tmp.log "$output_dir/build.log"
   cd - > /dev/null
 

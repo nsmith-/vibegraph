@@ -128,20 +128,173 @@ impl IntegralsRow {
     /// plus the variant, so two measurements of one row do not overwrite each
     /// other and a re-run overwrites its own file.
     pub fn write(&self) {
-        let dir = report_dir().join(self.category);
-        std::fs::create_dir_all(&dir).unwrap_or_else(|e| {
-            panic!("cannot create the report directory {}: {e}", dir.display())
-        });
-        let name = match &self.variant {
-            Some(v) => format!("{}__{v}.json", self.row),
-            None => format!("{}.json", self.row),
-        };
-        let path = dir.join(name);
-        let text = serde_json::to_string_pretty(self).expect("row serialises");
-        std::fs::write(&path, text + "\n")
-            .unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
-        eprintln!("[report] wrote {}", path.display());
+        write_row(self.category, &self.row, self.variant.as_deref(), self);
     }
+}
+
+/// One observable's Kolmogorov–Smirnov comparison.
+#[derive(Debug, Clone, Serialize)]
+pub struct KsCell {
+    pub observable: String,
+    /// The largest gap between the two weighted empirical CDFs.
+    pub d: f64,
+    pub p: f64,
+}
+
+/// One categorical column's χ² homogeneity comparison.
+#[derive(Debug, Clone, Serialize)]
+pub struct Chi2Cell {
+    /// `SPINUP`, `ICOLUP` or `flavour`.
+    pub column: String,
+    pub chi2: f64,
+    pub dof: usize,
+    pub p: f64,
+    /// Categories that carried their own χ² term, including the pooled residual.
+    pub categories: usize,
+    /// Distinct keys the two samples showed between them, before pooling — the
+    /// difference from `categories` is how much of the column was too sparse to
+    /// compare on its own.
+    pub distinct_keys: usize,
+    /// The share of the combined counts that landed in the pooled residual.
+    pub pooled_share: f64,
+    /// The two samples' effective counts per category, for a column with few
+    /// enough of them to read. A χ² is one number and says only *that* two
+    /// frequency tables differ; this is what says which category moved, and it is
+    /// the whole evidence an informational cell carries.
+    pub detail: Vec<CategoryCount>,
+}
+
+/// One category's effective count on each side.
+#[derive(Debug, Clone, Serialize)]
+pub struct CategoryCount {
+    pub key: String,
+    pub ours: f64,
+    pub theirs: f64,
+}
+
+/// One generation seed's comparison against the banked sample.
+#[derive(Debug, Clone, Serialize)]
+pub struct SeedSample {
+    pub seed: u64,
+    pub events: usize,
+    /// The cross section this seed's accept/reject pass recovered, in picobarns.
+    pub sigma_pb: f64,
+    pub ks: Vec<KsCell>,
+    pub chi2: Vec<Chi2Cell>,
+}
+
+/// One measured `samples` cell.
+///
+/// The metric a table renders is `min_ks_p` (and `min_chi2_p` for the discrete
+/// columns) — the smallest p-value over every observable and every generation
+/// seed. It is a *minimum over many draws*, so it is not itself a p-value, and
+/// `p_floor` records the threshold that was chosen for the number of draws taken.
+#[derive(Debug, Clone, Serialize)]
+pub struct SamplesRow {
+    pub schema: u32,
+    pub row: String,
+    pub variant: Option<String>,
+    pub category: &'static str,
+    pub mode: &'static str,
+    pub status: &'static str,
+    pub process: String,
+    /// `fine` when every event of both samples carries one final-state species
+    /// multiset, `coarse` when the row is a flavour group and its legs are named
+    /// by class.
+    pub labelling: &'static str,
+    /// Banked MadGraph events compared against, and the cross section they carry.
+    pub mg_events: usize,
+    pub sigma_mg_pb: f64,
+    pub p_floor: f64,
+    pub min_ks_p: f64,
+    pub min_chi2_p: f64,
+    /// The observable and column the minima came from.
+    pub worst_ks_observable: String,
+    pub worst_chi2_column: String,
+    /// Observables that are constants of the process and so have no distribution
+    /// to compare — named rather than silently dropped.
+    pub constant_observables: Vec<String>,
+    /// Categorical columns with a single category, where a homogeneity test has
+    /// no degrees of freedom (a colourless process has one colour flow).
+    pub single_category: Vec<String>,
+    pub per_seed: Vec<SeedSample>,
+    pub note: Option<String>,
+}
+
+impl SamplesRow {
+    pub fn new(row: &str, process: &str, mode: &'static str) -> Self {
+        SamplesRow {
+            schema: SCHEMA,
+            row: row.to_string(),
+            variant: None,
+            category: "samples",
+            mode,
+            status: if mode == "gate" { "pass" } else { "info" },
+            process: process.to_string(),
+            labelling: "fine",
+            mg_events: 0,
+            sigma_mg_pb: 0.0,
+            p_floor: 0.0,
+            min_ks_p: 1.0,
+            min_chi2_p: 1.0,
+            worst_ks_observable: String::new(),
+            worst_chi2_column: String::new(),
+            constant_observables: Vec::new(),
+            single_category: Vec::new(),
+            per_seed: Vec::new(),
+            note: None,
+        }
+    }
+
+    pub fn with_variant(mut self, variant: &str) -> Self {
+        self.variant = Some(variant.to_string());
+        self
+    }
+
+    /// Reduce the per-seed cells to the row's metric: the smallest p-value over
+    /// every observable and every seed, and which column it came from.
+    pub fn finish(&mut self) {
+        let ks = self
+            .per_seed
+            .iter()
+            .flat_map(|s| &s.ks)
+            .min_by(|a, b| a.p.total_cmp(&b.p));
+        if let Some(cell) = ks {
+            self.min_ks_p = cell.p;
+            self.worst_ks_observable = cell.observable.clone();
+        }
+        let chi2 = self
+            .per_seed
+            .iter()
+            .flat_map(|s| &s.chi2)
+            .min_by(|a, b| a.p.total_cmp(&b.p));
+        if let Some(cell) = chi2 {
+            self.min_chi2_p = cell.p;
+            self.worst_chi2_column = cell.column.clone();
+        }
+        self.single_category.sort();
+        self.single_category.dedup();
+    }
+
+    pub fn write(&self) {
+        write_row(self.category, &self.row, self.variant.as_deref(), self);
+    }
+}
+
+/// One `<category>/<row>[__<variant>].json` under the report directory.
+fn write_row(category: &str, row: &str, variant: Option<&str>, value: &impl Serialize) {
+    let dir = report_dir().join(category);
+    std::fs::create_dir_all(&dir)
+        .unwrap_or_else(|e| panic!("cannot create the report directory {}: {e}", dir.display()));
+    let name = match variant {
+        Some(v) => format!("{row}__{v}.json"),
+        None => format!("{row}.json"),
+    };
+    let path = dir.join(name);
+    let text = serde_json::to_string_pretty(value).expect("row serialises");
+    std::fs::write(&path, text + "\n")
+        .unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
+    eprintln!("[report] wrote {}", path.display());
 }
 
 /// `<target>/validation-report`, honouring `CARGO_TARGET_DIR` so a run with a
