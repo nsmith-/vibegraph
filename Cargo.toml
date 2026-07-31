@@ -6,6 +6,16 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 
+# The test suite is physics: VEGAS adaptations, amplitude evaluations and
+# phase-space sweeps that run millions of floating-point operations per test. At
+# `opt-level = 0` the arithmetic, not the compiler, is what a `cargo test` waits
+# on. Optimising the dev profile trades a slower rebuild for a much shorter run
+# and keeps `debug-assertions` and `overflow-checks` on, so nothing the suite
+# asserts is weakened — unlike testing under `release`, which silently drops
+# every `debug_assert!`.
+[profile.dev]
+opt-level = 2
+
 [profile.profiling]
 inherits = "release"
 debug = 1
