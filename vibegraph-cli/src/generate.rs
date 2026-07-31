@@ -45,9 +45,10 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::integrate::{
-    is_drell_yan, load_pdf_set, process_string, resolve_pdf_dir, IntegrateError, DEFAULT_PDF_SET,
-    NO_PDF, PDF_MEMBER,
+    is_drell_yan, load_pdf_set, process_string, IntegrateError, NO_PDF, PDF_MEMBER,
 };
+use crate::network::NetworkPolicy;
+use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 
 type V = LorentzVector<f64>;
 
@@ -88,6 +89,12 @@ pub struct GenerateArgs {
     #[arg(long)]
     pub run_card: Option<PathBuf>,
 
+    /// Directory containing the proc card's UFO model directory; defaults to
+    /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
+    /// directory. Unused for the built-in Standard Model.
+    #[arg(long)]
+    pub ufo_dir: Option<PathBuf>,
+
     /// Events to write; defaults to the run card's `nevents`.
     #[arg(long)]
     pub nevents: Option<usize>,
@@ -114,6 +121,7 @@ pub struct GenerateArgs {
     pub pdf_set: String,
 
     /// Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then
+    /// the `~/.vibegraph` cache (offering to download the set if absent), then
     /// `validation/pdf` under the current directory.
     #[arg(long)]
     pub pdf_dir: Option<PathBuf>,
@@ -366,7 +374,7 @@ impl EventSource for SampleSource<'_> {
     }
 }
 
-pub fn run(args: &GenerateArgs) -> Result<(), IntegrateError> {
+pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateError> {
     if !args.force && args.out.exists() {
         return Err(err(format!(
             "{} already exists (pass --force to overwrite)",
@@ -383,7 +391,11 @@ pub fn run(args: &GenerateArgs) -> Result<(), IntegrateError> {
     let process = process_string(&parsed)?;
 
     let config = GlobalConfig {
-        ufo_search_path: PathBuf::from("."),
+        ufo_search_path: crate::assets::resolve_ufo_search_path(
+            parsed.model.as_ref(),
+            args.ufo_dir.as_deref(),
+        )
+        .map_err(err)?,
         restrict_path_override: None,
         run_card_path: args.run_card.clone(),
     };
@@ -421,7 +433,7 @@ pub fn run(args: &GenerateArgs) -> Result<(), IntegrateError> {
                  grid over the whole map rather than per-channel grids to unweight against",
             ));
         }
-        let set = load_pdf_set(&resolve_pdf_dir(args.pdf_dir.as_ref()), &args.pdf_set)?;
+        let set = load_pdf_set(&args.pdf_set, args.pdf_dir.as_ref(), network)?;
         let pdf = set
             .member(PDF_MEMBER)
             .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;

@@ -1,0 +1,87 @@
+Third-party notices for vibegraph
+==================================
+
+This file lists third-party material redistributed with vibegraph binaries,
+as required by that material's own license. It covers the *packaged
+distribution* (the release tarballs built by `.github/workflows/release.yml`
+and anything derived from them); it does not attempt to license vibegraph
+itself, which is a separate question the project has not yet settled.
+
+MadGraph5_aMC@NLO Standard Model UFO model (models/sm)
+--------------------------------------------------------
+
+vibegraph interns two kinds of material derived from the `models/sm`
+directory of MadGraph5_aMC@NLO (https://github.com/mg5amcnlo/mg5amcnlo),
+committed at `vibegraph-lib/src/ufo/sm_assets/` and compiled directly into
+every `vibegraph` binary via `include_str!`/`include_bytes!`
+(`vibegraph-lib/src/ufo/sm.rs`):
+
+  * The nine `restrict_*.dat` SM restriction cards
+    (`restrict_default.dat`, `restrict_c_mass.dat`, `restrict_ckm.dat`,
+    `restrict_lepton_masses.dat`, `restrict_no_b_mass.dat`,
+    `restrict_no_masses.dat`, `restrict_no_tau_mass.dat`,
+    `restrict_no_widths.dat`, `restrict_zeromass_ckm.dat`) are copied
+    verbatim, byte for byte, from `models/sm/restrict_*.dat`.
+  * `sm_parsed.bin.zst` is a compressed serialization of vibegraph's own
+    parse of the rest of `models/sm` (`particles.py`, `parameters.py`,
+    `vertices.py`, `lorentz.py`, `couplings.py`, `coupling_orders.py`,
+    `function_library.py`, `decays.py`, `object_library.py`,
+    `build_restrict.py`, `write_param_card.py`) — a derivative work of that
+    UFO model definition, produced by the `gen_sm_blob` dev binary
+    (`vibegraph-lib/src/ufo/sm.rs::regenerate`) and checked in.
+
+`models/sm` carries no license of its own; it is covered by the license at
+the root of the mg5amcnlo repository, reproduced below in full (this repo
+vendors mg5amcnlo as the `research/refs/mg5amcnlo` git submodule; the assets
+above were last regenerated from commit `b7687064b9a013317ca164aa1395bc9c0e39ae1e`
+of that submodule — rerun `gen_sm_blob` and update that commit reference
+here if the assets are regenerated from a newer checkout).
+
+The MadGraph5_aMC@NLO license
+------------------------------
+
+    The MadGraph5_aMC@NLO software comes with the following Open Source License, 
+    adapted from the University of Illinois/NCSA license.
+    
+    Copyright (c) 2009, 2013, the MadTeam.  All rights reserved.
+    
+    Developed by the "MadTeam", i.e. 
+    
+    Johan ALWALL
+    Rikkert FREDERIX
+    Stefano FRIXIONE
+    Michel HERQUET
+    Valentin HIRSCHI
+    Fabio MALTONI
+    Olivier MATTELAER
+    Tim STELZER
+    Paolo TORRIELLI
+    Marco ZARO
+    
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to
+    deal with the Software without restriction, including without limitation the
+    rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+    sell copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+      1. Redistributions of source code must retain the above copyright notice,
+         this list of conditions and the following disclaimers.
+      2. Redistributions in binary form must reproduce the above copyright
+         notice, this list of conditions and the following disclaimers in the
+         documentation and/or other materials provided with the distribution.
+      3. Neither the name "MadTeam", the names of the authors, their institution, 
+         nor the names of its contributors may be used to endorse or promote 
+         products derived from this Software without specific prior written 
+         permission.
+    
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+    CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+    WITH THE SOFTWARE.
+
+(reproduced verbatim from `LICENSE` at the root of
+https://github.com/mg5amcnlo/mg5amcnlo, commit
+`b7687064b9a013317ca164aa1395bc9c0e39ae1e`)

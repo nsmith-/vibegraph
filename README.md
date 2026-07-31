@@ -41,14 +41,78 @@ generation.
 
 ## Getting started
 
-### For users
+### Quick start — no toolchain required
 
-A packaged distribution is planned (tracked in `TODO.md`): precompiled
-binaries hosted on the GitHub releases page with a default PDF set interned,
-plus utilities that download UFO models and PDF sets from their canonical URLs
-into a local cache (`~/.vibegraph`, prompting on first use). Until that lands,
-build from source as below — the only extra step is fetching a PDF set for
-hadronic runs.
+Precompiled binaries for macOS (Apple Silicon and Intel) and Linux x86\_64 are
+attached to every [release](../../releases). The Linux build is statically
+linked; none of them needs a Rust toolchain, a Python installation, or LHAPDF.
+
+```bash
+# 1. Download and unpack (pick the archive matching your platform)
+curl -fsSLO https://github.com/nsmith-/vibegraph/releases/latest/download/vibegraph-aarch64-apple-darwin.tar.gz
+tar xzf vibegraph-aarch64-apple-darwin.tar.gz
+cd vibegraph-aarch64-apple-darwin
+./vibegraph --version
+```
+
+```bash
+# 2. Write two MadGraph-format cards
+cat > proc_card.dat <<'EOF'
+import model sm
+generate e+ e- > mu+ mu-
+EOF
+
+cat > run_card.dat <<'EOF'
+  0    = lpp1
+  0    = lpp2
+  45.6 = ebeam1
+  45.6 = ebeam2
+EOF
+```
+
+```bash
+# 3. Integrate, generate, and read the events back
+./vibegraph integrate proc_card.dat --run-card run_card.dat --out run/
+./vibegraph generate run/grid.bin.zst proc_card.dat --run-card run_card.dat \
+  --nevents 10000 --seed 1 -o events.lhe
+./vibegraph check-events events.lhe
+```
+
+`events.lhe` is a standard Les Houches event file. `check-events` re-reads it
+and checks momentum balance, mass shells, weight bounds and the `<init>`
+cross-references — a self-read, so it catches a damaged or truncated file but
+not a format both the writer and the reader agree on wrongly.
+
+#### Data the binary does not carry
+
+The Standard Model is compiled in, so the run above needs nothing else. Two
+kinds of data are resolved on demand, each in the order
+`--flag` → environment variable → `~/.vibegraph/` → the working directory:
+
+| Data | Flag | Environment | Cached at |
+|---|---|---|---|
+| PDF sets (proton beams) | `--pdf-dir` | `$VIBEGRAPH_PDF_DIR` | `~/.vibegraph/pdf/<set>/` |
+| UFO models (non-SM) | `--ufo-dir` | `$VIBEGRAPH_UFO_DIR` | `~/.vibegraph/ufo/<model>/` |
+
+A **PDF set** that is not there can be downloaded: vibegraph shows the URL, the
+size and the SHA-256 it will be checked against, and asks. The checksum is
+compiled into the binary, so the data a set name resolves to cannot drift from
+what the build was validated against.
+
+**Nothing is ever downloaded without consent.** Without a terminal to ask on —
+a script, a CI job, a container build — the answer is no, and the run fails
+with a message naming the URL, the checksum, and the directory to unpack it
+into by hand. Pass `--yes` to consent up front, `--no-network` (or set
+`$VIBEGRAPH_NO_NETWORK`) to forbid downloads outright; a refusal always wins
+over `--yes`. Set `$VIBEGRAPH_HOME` to move the cache off `~/.vibegraph`.
+
+**UFO models are never downloaded.** FeynRules publishes no per-model index
+that a model name could be resolved through, so there is no URL to pin;
+unpack the model's UFO directory into `~/.vibegraph/ufo/<model>/` yourself,
+or point `--ufo-dir` at whatever directory holds it.
+
+`scripts/acceptance.sh` runs this whole path — download the binary, write the
+cards, fetch a PDF set, emit events, read them back — on a clean machine.
 
 ### For developers
 
@@ -73,8 +137,11 @@ artifact, mirroring MadGraph's survey/refine-then-generate structure:
 2. `vibegraph generate` — reload the artifact, unweight against the frozen
    grids by accept/reject, and write a Les Houches event file.
 
-Both consume MadGraph card formats, so the same cards can drive a MadGraph
-reference run unchanged.
+A third command, `vibegraph check-events`, reads an emitted file back and
+checks it against itself.
+
+Both phases consume MadGraph card formats, so the same cards can drive a
+MadGraph reference run unchanged.
 
 ### Example: fixed-energy lepton collider
 
@@ -107,20 +174,22 @@ Overweighted points are kept at weight > 1 and counted, never silently clipped.
 ### Example: hadronic Drell–Yan
 
 `integrate` also covers PDF-convolved proton–proton Drell–Yan
-(`p p > e+ e-`), using a pure-Rust LHAPDF6 grid reader. Fetch the PDF set
-first (gitignored):
+(`p p > e+ e-`), using a pure-Rust LHAPDF6 grid reader:
 
 ```bash
-pixi run -e madgraph fetch-pdf     # into validation/pdf/<set>/
 vibegraph integrate validation/madgraph/dy13_proc_card.dat \
   --run-card validation/madgraph/dy13_default_run_card.dat --out run/
 ```
 
-The PDF directory resolves via `--pdf-dir`, else `$VIBEGRAPH_PDF_DIR`, else
-`validation/pdf`; `--pdf-set` selects the set (default
-`NNPDF23_lo_as_0130_qed`, MG5's LO default). Event generation for proton beams
-(`lpp = 1`) is not wired yet — `generate` refuses it by name; the fixed-energy
-path above is the full pipeline.
+`--pdf-set` selects the set (default `NNPDF23_lo_as_0130_qed`, MG5's LO
+default), which is downloaded on first use as described in the
+[quick start](#data-the-binary-does-not-carry). Inside a checkout,
+`pixi run -e madgraph fetch-pdf` puts a set in `validation/pdf/<set>/`, which
+resolution falls back to last — so a dev tree that has already fetched one
+never reaches for the network.
+
+Event generation for proton beams (`lpp = 1`) is not wired yet — `generate`
+refuses it by name; the fixed-energy path above is the full pipeline.
 
 ### The grid artifact, and easy parallelization
 
@@ -303,12 +372,12 @@ pixi run -e madgraph profile-sigma   # samply profile of the σ gate
 ```
 vibegraph-lib/        Library: ufo/, diagrams/, helas/, phasespace/, vegas,
                       coupling/, pdf/, hadronic, cuts, unweight, lhef/, artifact
-vibegraph-cli/        The `vibegraph` binary (integrate, generate)
+vibegraph-cli/        The `vibegraph` binary (integrate, generate, check-events)
 validation/           MadGraph/HELAS/PDF reference generation + banked references
 research/notes/       Numbered design + close-out notes (the project's real record)
 research/refs/        Reference code as submodules (mg5amcnlo, feyngraph) — see
                       research/refs/README.md
-scripts/              Profiling and cross-platform perf-comparison kits
+scripts/              Acceptance run + profiling and perf-comparison kits
 ```
 
 `TODO.md` holds the prioritized backlogs and pipeline status; the notes in
