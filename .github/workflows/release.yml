@@ -92,6 +92,10 @@ jobs:
           asset="vibegraph-${{ matrix.target }}"
           mkdir -p "$asset"
           cp "target/${{ matrix.target }}/release/vibegraph" "$asset/"
+          # Both licenses travel inside every tarball: vibegraph is dual-licensed
+          # `MIT OR Apache-2.0`, and each arm requires its own text to accompany
+          # a binary distribution (MIT's "included in all copies", Apache 4(a)).
+          cp LICENSE-MIT LICENSE-APACHE "$asset/"
           # THIRD-PARTY-NOTICES travels inside every tarball, not just the repo:
           # the interned SM model (vibegraph-lib/src/ufo/sm_assets/) is
           # MadGraph5_aMC@NLO material compiled into this binary, and its

@@ -29,12 +29,13 @@ UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALO
 "Arbitrary" currently carries two caveats. On the model side it ends at the
 SM's feature set: a few tensor-coupling representations (color sextets,
 baryonic epsilons, spin ≥ 3/2, Majorana fermions) are deliberate hard errors
-rather than silent gaps. On the process side, QCD processes beyond 2→2 are not
-yet gated: MadGraph's default scale prescription there
-(`dynamical_scale_choice = -1`) requires general kT clustering, which
-vibegraph refuses rather than approximates. Both — plus a handful of open
-validation items — are detailed in the sections below and tracked in
-[`TODO.md`](TODO.md).
+rather than silent gaps. On the process side, the limit is the **scale
+choice**, not the multiplicity: `p p > l+ l- j` is gated against MadGraph at a
+fixed scale, but MadGraph's *default* prescription for a QCD process
+(`dynamical_scale_choice = -1`) requires general kT clustering, which vibegraph
+refuses rather than approximates — so a run card asking for it is an error, at
+any multiplicity. Both — plus a handful of open validation items — are detailed
+in the sections below and tracked in [`TODO.md`](TODO.md).
 
 **Future scope may include**: LO MLM-style matching + merging, and NLO event
 generation.
@@ -111,8 +112,10 @@ that a model name could be resolved through, so there is no URL to pin;
 unpack the model's UFO directory into `~/.vibegraph/ufo/<model>/` yourself,
 or point `--ufo-dir` at whatever directory holds it.
 
-`scripts/acceptance.sh` runs this whole path — download the binary, write the
-cards, fetch a PDF set, emit events, read them back — on a clean machine.
+`scripts/acceptance.sh` runs this whole path on a clean machine, on the harder
+process `p p > l+ l- j`: download the binary, write the cards, watch an
+unattended run *refuse* to fetch, consent, fetch and verify the PDF set, emit
+events off the cache, read them back.
 
 ### For developers
 
@@ -171,15 +174,53 @@ vibegraph generate run/grid.bin.zst proc_card.dat --run-card run_card.dat \
 `--strategy stochastic-rounding` for unit-weight events (`IDWTUP = +3`).
 Overweighted points are kept at weight > 1 and counted, never silently clipped.
 
-### Example: hadronic Drell–Yan
+### Example: proton beams
 
-`integrate` also covers PDF-convolved proton–proton Drell–Yan
-(`p p > e+ e-`), using a pure-Rust LHAPDF6 grid reader:
+Both phases run at `lpp = 1`, PDF-convolved through a pure-Rust LHAPDF6 grid
+reader, over an arbitrary process. Cards to events for `p p > l+ l- j`:
 
 ```bash
-vibegraph integrate validation/madgraph/dy13_proc_card.dat \
-  --run-card validation/madgraph/dy13_default_run_card.dat --out run/
+# proc_card.dat
+import model sm
+generate p p > l+ l- j QCD=2 QED=2
 ```
+
+```bash
+# run_card.dat — 13 TeV proton beams, fixed scales, jet and lepton cuts
+  1       = lpp1
+  1       = lpp2
+  6500.0  = ebeam1
+  6500.0  = ebeam2
+  lhapdf  = pdlabel
+  247000  = lhaid
+  True    = fixed_ren_scale
+  True    = fixed_fac_scale1
+  True    = fixed_fac_scale2
+  91.188  = scale
+  91.188  = dsqrt_q2fact1
+  91.188  = dsqrt_q2fact2
+  50.0    = mmll
+  20.0    = ptj
+  10.0    = ptl
+  5.0     = etaj
+  2.5     = etal
+  0.4     = drll
+  0.4     = drjl
+```
+
+The scales are fixed rather than dynamical: a 2→3 dynamical scale needs kT
+clustering, which vibegraph refuses rather than approximates.
+
+```bash
+vibegraph integrate proc_card.dat --run-card run_card.dat --out run/
+vibegraph generate run/grid.bin.zst proc_card.dat --run-card run_card.dat \
+  --nevents 2000 --seed 1 -o events.lhe
+```
+
+Concrete subprocesses that share a matrix element are grouped — the grouping is
+*measured* pointwise, not listed — and each group's parton luminosity is summed
+over its members and both beam orderings, so one compiled program serves the
+whole group.
 
 `--pdf-set` selects the set (default `NNPDF23_lo_as_0130_qed`, MG5's LO
 default), which is downloaded on first use as described in the
@@ -188,8 +229,17 @@ default), which is downloaded on first use as described in the
 resolution falls back to last — so a dev tree that has already fetched one
 never reaches for the network.
 
-Event generation for proton beams (`lpp = 1`) is not wired yet — `generate`
-refuses it by name; the fixed-energy path above is the full pipeline.
+Drell–Yan (`p p > e+ e-`) is the one exception, and it integrates only:
+
+```bash
+vibegraph integrate validation/madgraph/dy13_proc_card.dat \
+  --run-card validation/madgraph/dy13_default_run_card.dat --out run/
+```
+
+An unmodified Drell–Yan card takes a bespoke `(τ, y) × cosθ` map that banks a
+single grid rather than per-channel grids, so there is no channel for the
+accept/reject pass to draw from; `generate` refuses it by name rather than
+sampling something it cannot unweight.
 
 ### The grid artifact, and easy parallelization
 
@@ -226,15 +276,15 @@ Run `vibegraph <cmd> --help` for the full option list.
 | Feynman diagram enumeration | ✅ [feyngraph](https://github.com/Jens-Braun/FeynGraph) topology generation + a MadGraph-style process grammar (`p p > e+ e-`, coupling-order constraints, multiparticle labels); validated against MadGraph's diagram counts |
 | Helicity amplitudes | ✅ HELAS-style evaluation compiled directly from UFO Lorentz structures (the ALOHA role), topology-driven for arbitrary processes; exact color-factor \|M\|² via per-flow JAMPs; per-helicity program expansion with MadGraph-matched helicity filtering |
 | Phase-space sampling | ✅ Lepage VEGAS (deterministic parallel chunking, serde-frozen grids) + n-body LIPS/RAMBO generic over the scalar type, and MadGraph-style **multichannel**: per-diagram propagator-pole channel trees, Breit–Wigner / t-channel / massless-log maps, variance-minimising weights with α-adaptation, one grid per channel |
-| Cross section + running couplings | ✅ Leptonic and hadronic (PDF-convolved) σ with compiled MadGraph run-card cuts; MadGraph's αs RGE and per-event μR / per-beam μF prescriptions |
-| Unweighted event output | ✅ Accept/reject over the frozen grids; per-event helicity (∝ \|M_hel\|²) and colour-flow (∝ JAMP2) selection with a flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; a four-layer LHEF writer/reader |
+| Cross section + running couplings | ✅ Leptonic and hadronic (PDF-convolved) σ with compiled MadGraph run-card cuts; MadGraph's αs RGE and per-event μR / per-beam μF prescriptions; at proton beams, an arbitrary process through measured flavour groups summed over both beam orderings |
+| Unweighted event output | ✅ Accept/reject over the frozen grids at fixed-energy **and** proton beams; per-event helicity (∝ \|M_hel\|²) and colour-flow (∝ JAMP2) selection with a flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; a four-layer LHEF writer/reader |
 
 Notable current boundaries (all hard errors or tracked rows, not silent
 wrongness): color sextets / baryonic epsilon tensors, spin-3/2 and spin-2
 wavefunctions, Majorana fermions, loop-level UFOs (out of the LO charter),
-proton-beam event generation, and kT-clustered dynamical scales
-(`dynamical_scale_choice = -1`) — the prerequisite for gating QCD beyond 2→2.
-See the backlogs in [`TODO.md`](TODO.md) and the design notes in
+event generation off the bespoke Drell–Yan map, and kT-clustered dynamical
+scales (`dynamical_scale_choice = -1`). See the backlogs in
+[`TODO.md`](TODO.md) and the design notes in
 [`research/notes/`](research/notes/).
 
 ## Validation
@@ -253,29 +303,37 @@ the αs RGE is **bit-exact** against a reference built from MadGraph's own
 unmodified `alfas_functions.f`; helicity-filter survivor sets match MadGraph's
 generated `NHEL` tables bitwise (and the pruned \|M\|² sum stays bit-for-bit
 equal to the unpruned one); the colour-flow `ICOLUP` dictionary matches
-`leshouche.inc` for 24/24 subprocesses. The LHEF layer also re-serialises all
-20 banked MadGraph `.lhe.gz` files byte-for-byte (198,747 events) — a format
+`leshouche.inc` for 30/30 subprocesses. The LHEF layer also re-serialises all
+25 banked MadGraph `.lhe.gz` files byte-for-byte (248,747 events) — a format
 pin on the writer, not a physics statement.
 
 **Floating-point-reassociation level (≤ 1e-12 relative).** Per-point \|M\|² is
 compared against MadGraph's generated Fortran at `REL_TOL = 1e-12` — a budget
 sized for summation-order differences only, since both sides use the identical
-`param_card.dat`. All 14 gated processes pass: the 11 color-free ones (up to
-2→6, massive externals, VVV couplings) sit at ≤ 6.3e-13 with many points
-bit-identical, and the three colored ones — where the CF-weighted flow
-contraction genuinely reassociates — at 5.6e-14 (`u u~ > u u~`), 1.9e-15
-(`g g > t t~`), and 8.3e-14 (`g g > g g`, NCOLOR=6). Beneath that, the
-per-flow **JAMP oracle** compares complex per-flow amplitudes element-wise
-against banked MadGraph `JAMP()` values — the level a color-summed \|M\|² is
-blind to (per-flow phases, basis permutations).
+`param_card.dat`. All 18 gated processes pass: the 15 single-flow ones (up to
+2→6, massive externals, VVV couplings, and the four `p p > l+ l- j`
+subprocesses at ≤ 3.2e-14) sit at ≤ 6.3e-13 with many points bit-identical,
+and the three multi-flow ones — where the CF-weighted flow contraction
+genuinely reassociates — at 5.6e-14 (`u u~ > u u~`), 1.9e-15 (`g g > t t~`),
+and 8.3e-14 (`g g > g g`, NCOLOR=6). Beneath that sit two finer oracles, each
+reaching a level a color-summed \|M\|² is blind to: the per-flow **JAMP
+oracle** compares complex per-flow amplitudes element-wise against banked
+MadGraph `JAMP()` values (per-flow phases, basis permutations), and where a
+process has one flow and JAMP therefore says nothing, the **per-diagram
+oracle** compares MadGraph's `AMP(1:NGRAPHS)` per helicity.
 
 **Statistical level.** Integrated cross sections carry Monte Carlo error, so
-the σ gate compares against banked MadGraph values statistically: 11 processes
-gated (including resonant Z-pole rows and the three QCD 2→2s), with hadronic
-Drell–Yan agreeing to 0.14% / 0.07% on two cut configurations. Because VEGAS's
+the σ gate compares against banked MadGraph values statistically: 11 partonic
+processes gated (including resonant Z-pole rows and the three QCD 2→2s), plus
+hadronic Drell–Yan agreeing to 0.14% / 0.07% on two cut configurations and
+σ(`p p > l+ l- j`) at a fixed scale — 422.850 ± 0.189 pb over five seeds
+against MadGraph's 422.840 ± 1.805, a 0.01σ difference. Because VEGAS's
 1/σ² iteration-combining can make a missed phase-space region *confidently*
-wrong, sampler gates run **seed sweeps**, never a single fixed-seed pull.
-Unweighted samples are checked to reproduce the integrated σ.
+wrong, sampler gates run **seed sweeps**, never a single fixed-seed pull — and
+llj showed that a sweep is necessary but not sufficient: at a quarter of the
+gate's budget all five seeds agreed with each other and were collectively 1.0%
+low, so the budget is scanned as a second axis. Unweighted samples are checked
+to reproduce the integrated σ.
 
 **Self-consistency, independent of MadGraph.** Convention claims ("this sign
 is automatic") are treated as hypotheses to be pinned: a rooting-soundness
@@ -291,10 +349,13 @@ when the reference is fresh):
 pixi run -e madgraph validate-diagrams     # diagram counts vs MG
 pixi run -e madgraph validate-helas-mg     # per-point |M|², bit / 1e-12
 pixi run -e madgraph validate-color-jamp   # per-flow complex JAMPs
+pixi run -e madgraph validate-amp-diagram  # per-diagram AMP(), single-flow processes
 pixi run -e madgraph validate-alphas       # αs RGE + per-event AQCDUP
 pixi run -e madgraph validate-scales       # per-event μR, per-beam μF
-pixi run -e madgraph validate-sigma        # σ gate (statistical)
+pixi run -e madgraph validate-sigma        # partonic σ gate (statistical)
+pixi run -e madgraph validate-hadronic     # proton-beam σ: Drell–Yan and llj
 pixi run -e madgraph validate-unweighting  # accept/reject machinery
+pixi run -e madgraph validate-generate-proton  # cards → .lhe at lpp = 1
 pixi run -e madgraph validate-lhef         # LHEF byte round-trip
 pixi run -e helas-validation validate-helas  # Fortran77 HELAS kernel cross-check
 ```
@@ -310,7 +371,8 @@ loosened tolerances.
 
 Per-point matrix-element evaluation currently runs at **0.72×–1.69×** the
 cost of MadGraph's generated, helicity-filtered Fortran (`matrix1_optim.f`) —
-**geometric mean 1.24×** over all 14 gated processes, 2→2 through 2→6.
+**geometric mean 1.24×** over the 14 processes the comparison kit covers, 2→2
+through 2→6.
 Six processes sit at parity (within ~15%), `e+ e- > e+ e-` runs ~1.4×
 *faster* than MadGraph, and the widest gaps are `g g > g g` (1.65×) and the
 massive-b 2→6 (1.69×). The hadronic Drell–Yan σ run completes in ~2 s
@@ -371,7 +433,8 @@ pixi run -e madgraph profile-sigma   # samply profile of the σ gate
 
 ```
 vibegraph-lib/        Library: ufo/, diagrams/, helas/, phasespace/, vegas,
-                      coupling/, pdf/, hadronic, cuts, unweight, lhef/, artifact
+                      coupling/, pdf/, hadronic, proton, cuts, unweight,
+                      lhef/, artifact
 vibegraph-cli/        The `vibegraph` binary (integrate, generate, check-events)
 validation/           MadGraph/HELAS/PDF reference generation + banked references
 research/notes/       Numbered design + close-out notes (the project's real record)
@@ -382,3 +445,21 @@ scripts/              Acceptance run + profiling and perf-comparison kits
 
 `TODO.md` holds the prioritized backlogs and pipeline status; the notes in
 `research/notes/` record each sprint's design, bugs, and close-out in full.
+
+## License
+
+vibegraph's own code is dual-licensed under either
+
+* the MIT license ([`LICENSE-MIT`](LICENSE-MIT)), or
+* the Apache License, Version 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE)),
+
+at your option — the Rust ecosystem's convention. Unless you state otherwise,
+any contribution you intentionally submit for inclusion in this work is
+dual-licensed on the same terms, with no additional conditions.
+
+Not everything shipped is vibegraph's own code. The MadGraph5\_aMC@NLO
+Standard Model assets interned into the binary keep their own NCSA-derived
+license; [`THIRD-PARTY-NOTICES`](THIRD-PARTY-NOTICES) identifies exactly what
+is redistributed and reproduces those terms, and it travels inside every
+release tarball alongside both license texts. PDF grids are fetched at run
+time, never redistributed.

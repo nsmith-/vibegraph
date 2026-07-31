@@ -5,15 +5,13 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: `event-output-lhef` (feature) ✅ closed + merged 2026-07-28 —
-the pipeline now runs end to end to an unweighted event file. **Next (planned
-2026-07-30, note 24): the `user-distribution` + `proton-events` two-track feature
-sprint** — hadronic multichannel + `lpp = 1` event generation gated on a
-fixed-scale MG rebank of `p p > l+ l- j`, plus the packaging track (release
-binaries, default PDF, `~/.vibegraph` cache, first-run UX); exit criterion is
-cards → `.lhe` for llj from a clean environment. The validation pass
-(shower consumption + event-sample statistics, top of the validation backlog)
-queues behind it and gains a second waiting process.
+**Current position**: `user-distribution` + `proton-events` (feature) ✅ closed +
+merged 2026-07-31 — cards → `.lhe` for `p p > l+ l- j` from a clean environment,
+release/CI/acceptance workflows in place, and the project dual-licensed
+`MIT OR Apache-2.0`. **Next: the validation pass** (shower consumption +
+event-sample statistics, top of the validation backlog), which now has two
+waiting processes rather than one. Unrun until the user pushes a first tag:
+`release.yml` and `acceptance.yml`.
 
 ## Pipeline Status
 
@@ -21,10 +19,10 @@ queues behind it and gains a second waiting process.
 |------|-----------|--------|-------|
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params; model identity (label + SHA-256 over the parsed model) banked into artifacts |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
-| 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 14 processes agree with MadGraph (11 bit-identical ≤6.3e-13, incl. 2→6/VVV/massive externals, all NCOLOR=1; `uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) |
-| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation). Deferred: multi-rung t-channel ladders (note 21) |
-| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv3, model identity). σ gate: 11 GATE rows incl. the 3 QCD 2→2s |
-| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) selection with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (24/24 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 20 banked MG `.lhe.gz` byte-for-byte (198 747 events). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). Deferred: shower consumption, event-sample-vs-MG statistics, `lpp = 1` |
+| 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 18 processes agree with MadGraph (15 at ≤6.3e-13, many points bit-identical, incl. 2→6/VVV/massive externals and the 4 `llj` subprocesses at ≤3.2e-14, all NCOLOR=1; `uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6). Beneath: per-flow JAMP oracle (multi-flow) and per-diagram `AMP()` oracle (single-flow, where JAMP says nothing) |
+| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. Deferred: multi-rung t-channel ladders (note 21) |
+| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv4, model identity). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 11 partonic GATE rows incl. the 3 QCD 2→2s, plus σ(pp→ℓ⁺ℓ⁻j) fixed-scale **422.850 ± 0.189 pb** over five seeds vs MG 422.840 ± 1.805 (Δ = 0.01σ). Deferred: `dynamical_scale_choice = -1` (needs `kt-clustering`) |
+| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) selection with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 25 banked MG `.lhe.gz` byte-for-byte (248 747 events). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` is refused by name — the bespoke DY map banks one grid, so there is no channel to unweight against. Deferred: shower consumption, event-sample-vs-MG statistics |
 
 ## Closed-sprint history
 
@@ -41,12 +39,18 @@ One line each; the note is the full record. Earlier sprints
 - **`resonance-sampling`** (feature, closed + merged 2026-07-26) — MadGraph-style multichannel in production; 2 resonant σ rows SKIP→GATE. Transferable lesson: a fixed-seed pull cannot validate a sampler — VEGAS's 1/σ² combination makes a missed region *confidently wrong*, so seed sweeps are part of the gate; note 21.
 - **`dynamical-scales`** (feature, closed + merged 2026-07-27) — MG's `αs` RGE + per-event `μR`/per-beam `μF` through the constant pools; 3 QCD σ rows GATE, DY unmoved; found MG's `AQCDUP` π-truncation and `SCALUP` ≠ μR defects (note 07) and the missing `gg→gg` symmetry factor; note 22.
 - **`event-output-lhef`** (feature, closed + merged 2026-07-28) — JAMP2 flow selection + `leshouche.inc`-checked `ICOLUP` dictionary, accept/reject unweighting, byte-pinned LHEF writer/reader, `vibegraph generate`, model identity in the artifact (fv3); two plan corrections recorded (channel draw `∝ w_maxⱼ`; `IDWTUP=-4` not required for overweights); note 23.
+- **`user-distribution` + `proton-events`** (feature, two tracks, closed + merged 2026-07-31) — Track P: llj amplitude rows 14→18 plus a per-diagram `AMP()` oracle, measured flavour groups, `ProtonIntegrand`, σ(pp→ℓ⁺ℓ⁻j) and `generate` gated at `lpp = 1` (artifact fv3→fv4). Track U: release/CI/acceptance workflows, `~/.vibegraph` cache, consent-gated pinned PDF fetch, `check-events`. Transferable lesson: **a seed sweep is necessary and not sufficient** — five mutually-consistent seeds were collectively 1.0% low, so budget convergence is a second axis. Also `[profile.dev] opt-level = 2` cut `cargo test` 3m16s → 1m05s with nothing weakened; note 24.
 
 ---
 
 ## 🔎 Validation backlog
 
 ### Next validation pass — natural content
+
+Both rows below now have **two** waiting processes, not one: fixed-energy
+`e+ e- > mu+ mu-` and hadronic `p p > l+ l- j`. llj is the more informative
+subject — coloured initial state, three-body final state, a jet cut, and colour
+lines an `e+ e-` sample does not have.
 
 - **Downstream-shower validation of the emitted `.lhe` (Pythia via pixi)** —
   deferred out of E4 by decision. The E4 gate reads `generate`'s output back with
@@ -62,8 +66,10 @@ One line each; the note is the full record. Earlier sprints
   one: invariant masses, angles, and — the fields nothing else covers — the
   empirical `SPINUP` helicity and `ICOLUP` flow frequencies, which E1/E2 pin only
   as *rules* (`∝ |M_hel|²`, `∝ JAMP2`), never against MG's realised sample. Needs
-  designing (binning, observables, per-process statistics). (Note 23 §E3 outcome;
-  `validate_lhef.rs` module doc lists what E3 provably cannot detect.)
+  designing (binning, observables, per-process statistics). For llj add the
+  **flavour-group frequencies** — pinned only as the rule `∝ luminosity × σ̂`.
+  (Note 23 §E3 outcome; `validate_lhef.rs` module doc lists what E3 provably
+  cannot detect.)
 - **MG-plot distribution comparison** — L5 validated histograms against *analytic*
   BW/t-channel oracles with MG σ as coarse backstop; comparing against MG's own
   `.lhe`/plots needs the MG toolchain. Same machinery as the row above, and the
@@ -95,10 +101,54 @@ One line each; the note is the full record. Earlier sprints
 - **`IdentityAmp` process-level coverage** — the last `KNOWN_UNCOVERED` op; needs
   an `Identity` scalar bilinear the SM lacks, so it rides with `non-sm-ufo`
   (feature backlog).
+- **Flavour-group probe coverage** — `derive_flavor_groups` partitions on `|M|²`
+  measured at 12 shared points whose energy floor is **100 GeV**, while the
+  integrator routinely visits ŝ below it, and no point is deliberately placed on
+  a resonance. A pair of subprocesses agreeing over the probe set and differing
+  below it would be merged silently. Interim hardening (widen the energy ladder
+  downward, add an on-`m_Z` point, assert the observed inter-group separation
+  stays ≫ tolerance) until the s-expression identity criterion replaces the
+  sampled one. (`proton.rs`, note 24 §P2c.)
 - **Minor pinned discrepancies** (note 22 close-out): `ee_to_wpwm` topology mask
   unpinned between D4's derivation and D2's declaration (tie-break never reaches
   the scale); `run_card_dy.dat` fixture disagrees with the banked `dy13` cards on
   `fixed_ren_scale` (asserted, not aligned).
+
+### Gate + tooling hygiene
+
+Small, independent, each one a gate that is weaker than it looks.
+
+- **`run_card_dy.dat` is a verbatim MG5 copy** — delete it and read the card from
+  the `mg5amcnlo` submodule instead, so there is one source and no third-party
+  file to notice. Make the resulting skip **loud** when the submodule is absent
+  (see the row below): a fixture that silently vanishes is the failure mode this
+  trades into.
+- **Silent soft-skip tests** — several default-suite tests reach for the
+  uninitialized `research/refs/mg5amcnlo` submodule or `validation/madgraph/output`
+  and return early with an `eprintln!`, reporting `ok` having asserted nothing.
+  Green then means "data absent", not "verified", and CI cannot tell the two
+  apart. Known members: `ufo::mod::tests::test_load_mssm` / `test_load_loop_sm`,
+  `ufo::sm::tests::interned_default_matches_submodule` (+ `_exactly`),
+  `helas::eval::rooting_soundness::root_override_hook_is_transparent` (via
+  `csv_index()`'s absent-`read_dir`-returns-empty). Wanted: skips distinguishable
+  from passes — a shared helper that marks the run, and a CI assertion on the
+  expected skip count. (Note 24 §U1.)
+- **`validate-pdf-grid` is not runnable in-checkout** — `validation/pdf/oracle*.json`
+  are gitignored and absent, so the task covers nothing and has covered nothing
+  for four sessions running. Either regenerate the oracles in-checkout (needs the
+  LHAPDF C++ build and a second set fetched) or document the regeneration step
+  where the task is defined. (`pixi.toml`, note 24 §P2b–P4.)
+- **`clippy::approx_constant` deny at `coupling/alphas.rs:224`** — the one error
+  in a whole-workspace `cargo clippy`, which three sessions worked around rather
+  than fixed. `const PI: f64 = 3.141592653589793` is deliberate: it is π *as
+  spelled in* `Source/MODEL/couplings.f`, so the constant tracks MadGraph's
+  source rather than Rust's (it happens to round to the same `f64`, so the
+  lint's suggestion is a style change, not a numerical one). A targeted
+  `#[allow]` carrying that rationale restores the workspace lint.
+- **Weekly `schedule` trigger on `acceptance.yml`** — left off because it can only
+  fail until a first release exists. Turn it on once one does: it is also the
+  second detector for the "CERN repackages the PDF archive" risk, whose only
+  other detector is an `#[ignore]`d test nobody runs on a timer. (Note 24 §U2.)
 
 ---
 
@@ -112,7 +162,10 @@ One line each; the note is the full record. Earlier sprints
   derives the factor from `amps[0]` and applies it to every subprocess, but in
   `p p > j j` the factor differs between subprocesses whose mass lists agree
   (`gg→gg` needs 1/2, `qq̄→qq̄` needs 1, both `[0,0]`); `DrellYanIntegrand`
-  carries an implicit 1, assumed rather than derived. The map knows its own
+  carries an implicit 1, assumed rather than derived. `ProtonIntegrand`
+  deliberately did not extend the `amps[0]` pattern — it *asserts* the factor is
+  1 for every group member and would refuse a group where it is not, which is
+  the right shape but only defers the question. The map knows its own
   outgoing multiset, so deriving it there makes every consumer right by
   construction, and settles whether multichannel treats permutations as distinct
   channels or one channel with the factor folded in. Pair with a gate process
@@ -125,9 +178,11 @@ One line each; the note is the full record. Earlier sprints
   test). Also where the `uux_to_uux` bias evidence points. (Note 21.)
 - **`kt-clustering`** — general kT clustering for `dynamical_scale_choice = -1`
   (sprint sketch; also what MLM matching needs). 6 banked runs are asserted as
-  refused; **hard prerequisite for gating any QCD process beyond 2→2** — the
-  no-strong-coupling short-circuit stops covering it the moment the matrix
-  element carries `G`. Note 22 §1.3 pins the degenerate closed-form cases;
+  refused; **hard prerequisite for gating any QCD process at MadGraph's default
+  scale choice** — the no-strong-coupling short-circuit stops covering it the
+  moment the matrix element carries `G`. (Multiplicity is not the barrier:
+  `p p > l+ l- j` is gated at a *fixed* scale.) Note 22 §1.3 pins the degenerate
+  closed-form cases;
   this sprint builds the general path. Sessions:
   1. **Design note** — read MG's `cluster.f`/`setscales.f`/`reweight.f` path
      end to end and pin the algorithm: the `djb`/kT measure, which merges are
@@ -143,14 +198,59 @@ One line each; the note is the full record. Earlier sprints
      consistency checks (the general code must reproduce them exactly on the
      already-gated runs).
   4. **Gate** — flip the 6 asserted-refused rows in `validate_scales` to
-     enforced per-event replays (`SCALUP`/`<rscale>`/`<pdfrwt>`), then gate a
-     first beyond-2→2 QCD σ row (`pp_to_llj` is already banked).
+     enforced per-event replays (`SCALUP`/`<rscale>`/`<pdfrwt>`), then re-gate
+     σ(pp→ℓ⁺ℓ⁻j) against a *dynamical*-scale MG run — the fixed-scale row is
+     already enforced, so the whole rest of that chain is held fixed and only
+     the scale moves.
   (`coupling/scales.rs`, `validate_scales.rs`, note 22 §1.3/§5.)
-- **Proton-beam (`lpp = 1`) event generation** — ▶ **promoted to the active
-  sprint plan (note 24, Track P `proton-events`)**: hadronic `ChannelIntegrand`
-  (τ,y outer map + per-event-ŝ multichannel), generalized flavor classes,
-  `integrate`/`generate` at `lpp = 1`, gated on a fixed-scale MG rebank of
-  `p p > l+ l- j` (fixed scale sidesteps the `kt-clustering` prerequisite).
+- **s-expression program identity for flavour grouping** — a dedicated future
+  sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by
+  sampled `|M|²` agreement: **complete but unsound** — two programs that differ
+  only where the probe does not look are merged, and the merge is silent.
+  Replace it with a sound-but-conservative criterion: two subprocesses share a
+  group iff their compiled programs are *identical as s-expressions*. Three
+  prerequisites, in order:
+  1. **Universal constant ids.** Compare UFO-stable coupling/particle
+     identities, never per-compilation pool slot indices — flavour-dependent
+     couplings can share a slot, so slot-index equality would be **unsound**,
+     the exact failure the new criterion exists to remove.
+  2. **Canonicalization of the un-optimized s-expression.** Lowering carries a
+     ±1-CSE-node nondeterminism (note 15 §4–5) and diagram order is unstable
+     (cf. `MG_DIAGRAM_ORDER`), so the comparison must run on a canonical form,
+     before optimization, with a deterministic diagram ordering.
+  3. **Colour folded into the s-expr language**, so the colour basis is part of
+     the compared term rather than a side condition checked separately.
+  Being conservative, it can only *split* groups that are genuinely equal —
+  costing compiled programs, never correctness. Keep the sampled criterion as an
+  independent cross-check when it lands: they should agree, and a disagreement
+  is a finding. (`proton.rs`, note 24 §P2c.)
+- **VEGAS first-iteration convergence bias** — `VegasGrid::adapt` feeds *every*
+  iteration into `combine_iterations`' `1/σ²` weighted mean, including the first
+  ones on an unadapted grid. An early iteration that undersamples the peak
+  returns a low integral **and** a low variance, so it is weighted *up*. Measured
+  on llj (five seeds each): −1.03% at 30k/iter, −0.28% at 150k, +0.002% at 300k,
+  +0.16% at 600k — steps halving as the budget doubles, the `O(1/N)` signature.
+  Not hadronic-specific; the same combination runs the fixed-beam path, and llj
+  exposes it because 24 pooled channels × a 7-dim grid each buys every channel
+  far fewer points than a partonic 2→2 does. Independent confirmation: the
+  accept/reject pass is a *single* pass over frozen grids, does not go through
+  `combine_iterations`, and converges to the true σ — at 100k the emitted
+  sample's own σ sits +1.25% above the banked integral, and at 300k they agree.
+  Fix: discard the first `k` iterations (or an unweighted final pass over the
+  trained grids). Would let the llj gate run at a quarter of its budget.
+  (`vegas.rs`, note 24 §P3.)
+- **`w_max` scan budget decoupled from the integration budget** — a frozen scan
+  estimates each channel's maximum on that channel's share of the *integration*
+  budget, so it inherits the same undersampled small channels. On llj the share
+  of σ above the maxima runs 3.2e-2 → 1.5e-2 → 8.4e-3 → 5.3e-3 over
+  30k → 100k → 300k → 600k and is **still falling**, against 3.04e-4 for a
+  fixed-beam process — 20–100× worse, and nowhere near converged at any budget
+  the gate can afford. The estimator stays unbiased (overweights are kept at
+  weight > 1), so what this costs is unweighting efficiency and sample
+  lumpiness under `IDWTUP = +3`, not correctness. Wanted: a scan budget set
+  independently of `neval`. Note the largest `w/w_max` moves non-monotonically
+  (23.5, 9.4, 15.0, 11.1) because it is an extremum estimate — do not read it as
+  a convergence measure. (`unweight`, note 24 §P4.)
 - **Streaming `IDWTUP = -4`** by deterministic two-pass replay — the interface
   hook (`EventSource::restart`) is in place and contract-tested; not needed while
   100k-event runs buffer in ~42 MB. (Note 23 close-out.)
@@ -162,11 +262,6 @@ One line each; the note is the full record. Earlier sprints
   (collinear edge) where the t-map falls back to flat; whether a fiducial cut is
   wanted instead is unresolved for a physical massless-initial-state t-channel.
   (Note 21 close-out.)
-- **`user-distribution`** — ▶ **promoted to the active sprint plan (note 24,
-  Track U)**: release binaries (CI), default-PDF interning (license check
-  first), `~/.vibegraph` name-resolution cache, first-run fetch-prompt UX;
-  acceptance is driving Track P's fixed-scale `p p > l+ l- j` from a clean
-  environment, cards → `.lhe`. Session detail lives in the note.
 - **`typed-units`** — research `uom`/`dimensioned`/`units` crates for typed
   four-momenta and cross sections.
 
