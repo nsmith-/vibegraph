@@ -443,7 +443,7 @@ fn pointwise_integrand_oracle() {
 /// What it cannot see: anything the cross section integrates over. A per-diagram
 /// phase, a colour-flow relabelling and a helicity-by-helicity error all leave
 /// `Σ|M|²` and hence σ alone — those are pinned at the amplitude level by
-/// `validate_helas_mg` and `amp_diagram_oracle`. It also cannot separate the
+/// `amplitude_oracle`. It also cannot separate the
 /// phase-space map from the matrix element: a map whose weight and density were
 /// both wrong by one factor would integrate correctly.
 #[test]

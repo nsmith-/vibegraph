@@ -123,7 +123,7 @@ fn gg_to_ttx_flow_structures_untransposed() {
 
     // Each flow carries one imaginary (f-derived, s-channel) contribution and one
     // rational (T-chain) contribution; the f→trace sign is what the |M|² gate
-    // (validate_helas_mg) locks down bit-for-bit.
+    // (amplitude_oracle) locks down bit-for-bit.
     for el in &cb.elements {
         assert_eq!(el.contributions.len(), 2, "each flow has two contributions");
         assert_eq!(

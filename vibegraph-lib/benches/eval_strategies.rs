@@ -66,7 +66,7 @@ fn bench_lanes<const N: usize>(
 /// List of processes to benchmark: (internal name, MadGraph-style process card)
 ///
 /// Keep in sync with validation/madgraph/gen_amplitude.py PROCESSES
-/// and vibegraph-lib/test/validate_helas_mg.rs
+/// and vibegraph-lib/tests/amplitude_oracle.rs
 const PROCESSES: [(&str, &str); 14] = [
     ("ee_to_mumu", "e+ e- > mu+ mu-"),
     ("pp_to_ll_qcd0", "u u~ > mu+ mu-"),

@@ -33,8 +33,7 @@ Committed reference files, each the output of one generator:
 |---|---|---|
 | `diagrams.json` | `extract_diagrams.py` | the diagram-count gate |
 | `sigma_reference.json` | `extract_sigma.py` | the fixed-energy σ gate |
-| `amp_reference.json` | `gen_amp_reference.py` | the per-diagram AMP gate |
-| `jamp_reference.json` | `gen_jamp_reference.py` | the per-flow JAMP gate |
+| `amplitudes/<process>.json` | `gen_amplitude_tables.py` | the amplitude gate |
 | `hadronic_sigma_reference.json` | `gen_hadronic_sigma.sh` | the hadronic σ gate |
 | `dy_integrand_oracle.json` | `gen_dy_oracle.sh` | the pointwise Drell-Yan oracle |
 | `runcard_defaults.json` | `dump_runcard_defaults.py` | the run-card defaults transcription |

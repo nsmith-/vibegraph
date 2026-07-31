@@ -425,11 +425,13 @@ impl AmplitudeEvaluator {
     }
 }
 
-/// The `validate_helas_mg` process suite (`EXPECT_MATCH` in
-/// `tests/validate_helas_mg.rs`: bit-for-bit for the 11 `NCOLOR=1` processes,
-/// `REL_TOL`-enforced via the CF-weighted multi-flow contraction for
-/// `uux_to_uux`, `gg_to_ttx`, and `gg_to_gg`). Keep in sync with the `PROCESSES`
-/// registry in `validation/madgraph/gen_amplitude.py`.
+/// The processes these library-level sweeps compile, all of them gated against
+/// MadGraph by `tests/amplitude_oracle.rs`.
+///
+/// It is a subset of that gate's suite, not all of it: the four `p p > l+ l- j`
+/// subprocess rows are absent, so a sweep driven by this list does not reach a
+/// coloured 2 -> 3 amplitude. Extending it costs another full re-rooting sweep to
+/// re-verify.
 #[cfg(test)]
 pub(super) const MG_VALIDATED_PROCESSES: [&str; 14] = [
     "e+ e- > mu+ mu-",
@@ -513,7 +515,7 @@ mod tests {
     const KNOWN_UNCOVERED: [Op; 2] = [Op::Hels, Op::IdentityAmp];
 
     /// Every `Op` outside [`KNOWN_UNCOVERED`] appears in the compiled AST of at least
-    /// one MG-validated process — the bit-for-bit `validate_helas_mg` net exercises the
+    /// one MG-validated process — the bit-for-bit `amplitude_oracle` net exercises the
     /// whole primitive set. Two-way: an op newly covered by the suite must be removed
     /// from the allowlist.
     #[test]

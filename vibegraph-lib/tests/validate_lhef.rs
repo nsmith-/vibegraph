@@ -23,7 +23,7 @@
 //!   MadGraph chose, so it is blind to every physics field being filled with the
 //!   wrong number; and the end-to-end test compares our record against our own
 //!   generator, so it is blind to a wrong matrix element, cut or sampler. Those
-//!   are covered by `validate_helas_mg`, `validate_sigma` and
+//!   are covered by `amplitude_oracle`, `validate_sigma` and
 //!   `validate_unweighting`.
 //! * **The colour-line integers.** Only the connectivity they induce is physical,
 //!   and 4 of MadGraph's 24 banked subprocesses relabel the same connectivity, so

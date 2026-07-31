@@ -35,6 +35,7 @@ already_built() {
 GENERIC_PROCESSES=(
     ee_to_mumu
     pp_to_ll_qcd0
+    uux_to_mumu
     ee_to_ee
     ee_to_mumua
     ee_to_ttx
@@ -187,23 +188,35 @@ build_amp_dump_probe() {
     # COMMON/DBG_AMP/ block copying the per-diagram AMP() and the
     # COMMON/DBG_JAMP/ block copying the per-flow JAMP(:,1) out (NAMPSO=1 for
     # every registered process, so the single split-order slot is the JAMP).
-    sed -n '/FUNCTION MATRIX1(/,$p' "$pdir/matrix1_orig.f" | awk '
-        /^      JAMP\(:,:\) = \(0D0,0D0\)$/ {
+    #
+    # A source that already carries one of the two blocks keeps it: declaring
+    # the same COMMON member twice makes f2py emit a setup function with
+    # duplicate parameters, which does not compile.
+    local has_amp=0 has_jamp=0
+    grep -q 'COMMON/DBG_AMP/' "$pdir/matrix1_orig.f" && has_amp=1
+    grep -q 'COMMON/DBG_JAMP/' "$pdir/matrix1_orig.f" && has_jamp=1
+    sed -n '/FUNCTION MATRIX1(/,$p' "$pdir/matrix1_orig.f" |
+        awk -v has_amp="$has_amp" -v has_jamp="$has_jamp" '
+        /^      JAMP\(:,:\) = \(0D0,0D0\)$/ && has_amp == 0 {
             print "      DO I = 1, NGRAPHS"
             print "        AMP_DBG(I) = AMP(I)"
             print "      ENDDO"
         }
-        /^      MATRIX1 = 0.D0$/ {
+        /^      MATRIX1 = 0.D0$/ && has_jamp == 0 {
             print "      DO I = 1, NCOLOR"
             print "        JAMP_DBG(I) = JAMP(I,1)"
             print "      ENDDO"
         }
         { print }
         /^      COMPLEX\*16 AMP\(NGRAPHS\), JAMP\(NCOLOR,NAMPSO\)$/ {
-            print "      COMPLEX*16 AMP_DBG(NGRAPHS)"
-            print "      COMMON/DBG_AMP/AMP_DBG"
-            print "      COMPLEX*16 JAMP_DBG(NCOLOR)"
-            print "      COMMON/DBG_JAMP/JAMP_DBG"
+            if (has_amp == 0) {
+                print "      COMPLEX*16 AMP_DBG(NGRAPHS)"
+                print "      COMMON/DBG_AMP/AMP_DBG"
+            }
+            if (has_jamp == 0) {
+                print "      COMPLEX*16 JAMP_DBG(NCOLOR)"
+                print "      COMMON/DBG_JAMP/JAMP_DBG"
+            }
         }
     ' > "$pdir/matrix1_ampdbg.f"
     sed -e "s/@NGRAPHS@/$ngraphs/" -e "s/@NCOLOR@/$ncolor/" \
@@ -222,22 +235,10 @@ build_amp_dump_probe() {
     echo "  -> $OUTDIR/mg_amp_probe_${name}*.so"
 }
 
-# Per-diagram / per-flow oracles for processes under active convention debugging.
-AMP_PROBE_PROCESSES=(
-    uux_to_ccx_emmm_qcd0
-    ee_to_ee
-    ee_to_wpwm
-    ee_to_zh
-    ee_to_tatah
-    bbx_to_ccx_emmm_qcd0
-    uux_to_uux
-    gg_to_ttx
-    gg_to_gg
-    uux_to_epemg
-    gu_to_epemu
-    ddx_to_epemg
-    gux_to_epemux
-)
+# Per-diagram / per-flow oracle for every validated process: the committed
+# amplitude tables carry AMP() and JAMP() per helicity, which is the finest
+# linear level MadGraph exposes and the level the gate compares at.
+AMP_PROBE_PROCESSES=("${GENERIC_PROCESSES[@]}")
 for name in "${AMP_PROBE_PROCESSES[@]}"; do
     build_amp_dump_probe "$name"
 done

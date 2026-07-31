@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate MadGraph amplitude reference CSVs for validate_helas_mg.
+"""Generate MadGraph amplitude reference CSVs on a fixed kinematic grid.
 
 For each registered process, evaluates MadGraph's compiled MATRIX1 Fortran
 subroutine (built by build_amplitude.sh against wrappers/generic.f) over
@@ -8,8 +8,7 @@ RAMBO-sampled phase-space points at one or more collision energies, and writes
 
 Also times each process's MATRIX1 over a dedicated `profile_npoints` batch and
 writes the table to output/mg_timings.json
-({name: {n_evals, total_ms, ns_per_eval}}), which validate_helas_mg reads to
-compare vibegraph's evaluator timing against MadGraph's.
+({name: {n_evals, total_ms, ns_per_eval}}).
 
 CSV schema (momenta-based; the only schema the Rust test reads):
   # process: PROCESS_STRING     <- parsed by vibegraph's process grammar
@@ -377,7 +376,7 @@ def profile_batch(
 
     Times a dedicated RAMBO batch of `proc.profile_npoints` points at the highest
     registered collision energy, so the Fortran-call overhead amortizes and the
-    ns/eval is comparable to vibegraph's per-point timing in validate_helas_mg.
+    ns/eval is comparable to vibegraph's own per-point evaluation timing.
     """
     n = proc.profile_npoints
     n_ext = len(m_in) + len(m_out)
