@@ -42,10 +42,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-# Allow importing compiled mg_*.so modules from this directory
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(HERE, "output")
 
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+# The compiled mg_*.so matrix elements are build products, so they live in the
+# work area rather than beside the sources that import them.
+sys.path.insert(0, os.path.join(OUTPUT_DIR, "f2py"))
 
 
 @dataclass

@@ -26,9 +26,19 @@ init-sm-submodule = "git submodule update --init research/refs/mg5amcnlo"
 check-sm-blob-fresh = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test sm_interned_blob", depends-on = [
     "init-sm-submodule",
 ] }
-# Fetch the pinned NNPDF23_lo_as_0130_qed set from the LHAPDF data server. Plain
-# curl + tar, so it belongs to every environment rather than to the MadGraph one.
+# The banked layer's fetched inputs. All of them go through
+# validation/fetch_common.sh — the one place that may download, and that asks
+# first — so they belong to every environment rather than to the MadGraph one.
+#
+# The pinned NNPDF23_lo_as_0130_qed set (MG5's LO default), a single-Q²-subgrid
+# set, from the LHAPDF data server.
 fetch-pdf = "bash validation/pdf/fetch.sh"
+# A genuinely multi-Q²-subgrid LO set: two bands joined at one seam, which is
+# what lets the PDF grid oracle reach the subgrid walk and the seam interpolation.
+fetch-pdf-multigrid = "bash validation/pdf/fetch.sh NNPDF31_lo_as_0130"
+# The frozen MadGraph reference runs, unpacked into validation/madgraph/output/.
+# A no-op on a machine whose work area already holds process directories.
+fetch-refdata = "bash validation/fetch_refdata.sh"
 
 # --- validation layers (see validation/manifest.toml) ---
 #
@@ -43,6 +53,8 @@ fetch-pdf = "bash validation/pdf/fetch.sh"
 validate = { cmd = "cargo test --workspace --profile release-debug --features vibegraph/extended-validation,vibegraph-lib/extended-validation -- --nocapture", depends-on = [
     "init-sm-submodule",
     "fetch-pdf",
+    "fetch-pdf-multigrid",
+    "fetch-refdata",
 ] }
 
 # The oracle layer's vibegraph side: the runs too heavy for the banked budget.
@@ -150,38 +162,26 @@ validate-hadronic = { cmd = "cargo test -p vibegraph-lib --profile release-debug
 validate-generate-proton = { cmd = "cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_generate_proton -- --nocapture --test-threads 1", depends-on = ["fetch-pdf", "build-diagrams"] }
 # Build the MG |M|^2 probe and (re)generate the pointwise DY integrand oracle
 generate-dy-oracle = { cmd = "bash validation/madgraph/gen_dy_oracle.sh", depends-on = ["fetch-pdf"] }
-# Fetch a genuinely multi-Q²-subgrid LO set (two bands joined at one seam);
-# the DY oracle still needs NNPDF23, so this is additive, not a replacement
-fetch-pdf-multigrid = "bash validation/pdf/fetch.sh NNPDF31_lo_as_0130"
-# Compile the LHAPDF C++ PDF-grid oracle generator (rpath makes it self-contained;
-# system c++/clang++ from /usr/bin is used when the env ships no compiler)
-build-pdf-oracle = "c++ -std=c++17 -O2 validation/pdf/gen_oracle.cpp $(lhapdf-config --cflags --ldflags) -lLHAPDF -Wl,-rpath,$(lhapdf-config --libdir) -o validation/pdf/gen_oracle"
-# Run the LHAPDF C++ oracle over the fetched set, dumping oracle.json (MG's own
-# PDF library, so its log-bicubic interpolation is the reference for matching MG)
-generate-pdf-oracle = { cmd = "validation/pdf/gen_oracle validation/pdf NNPDF23_lo_as_0130_qed 0 validation/pdf/oracle.json", depends-on = ["fetch-pdf", "build-pdf-oracle"] }
-# Run the same oracle over the multi-subgrid set, dumping oracle_multigrid.json
-# (subgrid-walk + seam-interpolation reference)
-generate-pdf-oracle-multigrid = { cmd = "validation/pdf/gen_oracle validation/pdf NNPDF31_lo_as_0130 0 validation/pdf/oracle_multigrid.json", depends-on = ["fetch-pdf-multigrid", "build-pdf-oracle"] }
-# Full pipeline: fetch both sets, build+run the oracle over each, run the Rust
-# comparison test (single- and multi-subgrid paths)
-validate-pdf-grid = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_pdf_grid", depends-on = ["generate-pdf-oracle", "generate-pdf-oracle-multigrid"] }
+# Build the LHAPDF C++ oracle and dump the committed reference values for both
+# grid shapes (one rectangular subgrid; two bands joined at a seam)
+generate-pdf-oracle = { cmd = "bash validation/pdf/gen_oracle.sh", depends-on = ["fetch-pdf", "fetch-pdf-multigrid"] }
+# PDF grid gate: our log-bicubic interpolation and subgrid walk against the
+# committed LHAPDF values, over the fetched sets
+validate-pdf-grid = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test validate_pdf_grid", depends-on = ["fetch-pdf", "fetch-pdf-multigrid"] }
 
 
-# The oracle layer's reference generation: one entry point over every generator.
-# The per-stage scripts stay as internals and keep their own caching, so a rerun
-# regenerates only what the local work area lacks.
-generate-references = { cmd = '''printf '%s\n' "Regenerated every committed reference under validation/ from the local MadGraph work area." "Not reached by this entry point yet:" "  - the HELAS f77 grid: pixi run -e helas-validation generate-helas" "  - per-process amplitude tables evaluated on MadGraph's own banked events" "  - the banked-reference bundle"''', depends-on = [
-    "extract-diagrams",
-    "generate-amplitude",
-    "generate-amp-reference",
-    "generate-jamp-reference",
-    "extract-sigma",
-    "generate-alphas-reference",
-    "generate-hadronic-sigma",
-    "dump-runcard-defaults",
-    "generate-pdf-oracle",
-    "generate-pdf-oracle-multigrid",
-] }
+# The oracle layer's reference generation: one entry point over every generator,
+# staged deps -> madgraph -> refs -> bundle. The MadGraph work area is the cache
+# — an existing process directory is never rebuilt — while the extractions, which
+# are cheap and pure functions of it, always rerun so a reference that moved
+# shows up as a diff. Pass stage names to run a subset:
+#
+#   pixi run generate-references              # all four stages
+#   pixi run generate-references refs bundle  # re-extract and re-archive
+#
+# The per-stage scripts survive as internals; what is consolidated here is the
+# entry point, the process list and the caching policy.
+generate-references = "bash validation/generate_references.sh"
 
 # --- helas-validation: Fortran77 HELAS compiled via f2py for amplitude cross-checks ---
 [feature.helas-validation.dependencies]
@@ -192,10 +192,12 @@ gfortran = "*"
 [feature.helas-validation.tasks]
 # Compile HELAS .F files into a Python extension module (helas_f.so)
 build-helas = "cd validation/helas && bash build.sh"
-# Generate HELAS reference data: produces reference.npz and reference.csv
+# Regenerate the committed reference grid (reference.npz + reference.csv). The
+# gate that reads it is hermetic — `cargo test --test validate_helas` — so this
+# environment exists only to rebuild the grid, not to run the comparison.
 generate-helas = { cmd = "cd validation/helas && python gen_reference.py", depends-on = ["build-helas"] }
-# Full pipeline: build f2py extension, generate reference data, then run extended Rust tests
-validate-helas = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_helas", depends-on = ["generate-helas"] }
+# Rebuild the grid and immediately re-run the gate against it
+validate-helas = { cmd = "cargo test -p vibegraph-lib --test validate_helas", depends-on = ["generate-helas"] }
 
 # --- MarkItDown: CLI tool for converting to markdown files ---
 [feature.markitdown.dependencies]

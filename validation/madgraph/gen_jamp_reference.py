@@ -38,7 +38,8 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, "output")
-sys.path.insert(0, HERE)
+# The compiled mg_*.so matrix elements are build products in the work area.
+sys.path.insert(0, os.path.join(HERE, "output", "f2py"))
 
 # Every process with NCOLOR > 1 that has a compiled `mg_amp_probe_<name>` module.
 PROCESSES = ["uux_to_uux", "gg_to_ttx", "gg_to_gg"]

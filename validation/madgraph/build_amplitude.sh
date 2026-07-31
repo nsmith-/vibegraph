@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # Compile MadGraph Fortran matrix elements into f2py Python extension modules.
 #
-# Each compiled module mg_PROCESS.so is placed in validation/madgraph/ so that
-# gen_amplitude.py can import it via sys.path.
+# Each compiled module mg_PROCESS.so lands in the work area under output/f2py/,
+# which the generators put on sys.path — a compiled artifact of the generated
+# Fortran, so it belongs with the rest of the work area rather than beside the
+# scripts that import it.
+#
+# Compiling is the expensive part, so a module that is already there is left
+# alone; VG_FORCE=1 rebuilds everything.
 #
 # Usage:
 #   bash validation/madgraph/build_amplitude.sh
@@ -14,7 +19,14 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 MG_OUTPUT="$REPO_ROOT/validation/madgraph/output"
 WRAPPERS="$REPO_ROOT/validation/madgraph/wrappers"
-OUTDIR="$REPO_ROOT/validation/madgraph"
+OUTDIR="$MG_OUTPUT/f2py"
+FORCE="${VG_FORCE:-0}"
+mkdir -p "$OUTDIR"
+
+# already_built MODULE — true when the work area holds this extension module.
+already_built() {
+    [ "$FORCE" != 1 ] && compgen -G "$OUTDIR/$1*.so" > /dev/null
+}
 
 # All amplitude-validation processes build against the shared wrappers/generic.f
 # (SETPARA reads couplings from param_card.dat; libmodel.a supplies the model
@@ -62,6 +74,10 @@ subprocess_dir() {
 compile_process_generic() {
     local name="$1"
     local pdir libdir
+    if already_built "mg_${name}"; then
+        echo "⊘ mg_${name} already built"
+        return 0
+    fi
     if ! pdir="$(subprocess_dir "$name")"; then
         echo "SKIP $name: no unique subprocess dir (did build-diagrams run?)"
         return 0
@@ -108,6 +124,10 @@ done
 # generated matrix1_optim.f, plus wrappers/ee_amp_probe.f (f2py entry points).
 build_amp_probe() {
     local name="ee_to_mumu_tata_qcd0"
+    if already_built "mg_ee_amp_probe"; then
+        echo "⊘ mg_ee_amp_probe already built"
+        return 0
+    fi
     local subproc="P1_ll_lltaptam"
     local pdir="$MG_OUTPUT/$name/SubProcesses/$subproc"
     local libdir="$MG_OUTPUT/$name/lib"
@@ -143,6 +163,10 @@ build_amp_probe
 build_amp_dump_probe() {
     local name="$1"
     local pdir libdir ngraphs ncolor
+    if already_built "mg_amp_probe_${name}"; then
+        echo "⊘ mg_amp_probe_${name} already built"
+        return 0
+    fi
     if ! pdir="$(subprocess_dir "$name")"; then
         echo "SKIP amp_probe $name: no unique subprocess dir"
         return 0

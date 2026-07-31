@@ -17,13 +17,11 @@ call `debug_factors(u)` directly); they are chosen from physical
 pt_l = 10 GeV cut boundary.
 
 Prerequisites:
-  pixi run -e madgraph fetch-pdf
+  pixi run fetch-pdf
   pixi run -e madgraph generate-hadronic-sigma   # builds output/dy13_default
-  # build the |M|^2 probe module (once):
-  (cd output/dy13_default/SubProcesses/P1_qq_ll && \
-   python -m numpy.f2py -c --f77flags='-fallow-argument-mismatch -ffixed-line-length-132 -I.' \
-     matrix1_optim.f matrix2_optim.f ../../../../wrappers/dy_probe.f \
-     -L../../lib -lmodel -ldhelas -m mg_dy_probe && mv mg_dy_probe*.so ../../../../)
+
+gen_dy_oracle.sh compiles the |M|^2 probe module into output/f2py/ once, then
+runs this.
 
 Usage: pixi run -e madgraph generate-dy-oracle
 """
@@ -37,7 +35,8 @@ import sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
+# The compiled mg_*.so matrix elements are build products in the work area.
+sys.path.insert(0, os.path.join(HERE, "output", "f2py"))
 
 import lhapdf  # noqa: E402
 import mg_dy_probe  # noqa: E402
