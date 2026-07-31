@@ -40,10 +40,13 @@ fn out_masses(d: &Diagram, model: &EvaluatedModel) -> Vec<f64> {
         .collect()
 }
 
-fn assert_valid(ch: &DiagramChannel<f64>, sqrt_s: f64, masses: &[f64], seed: u64) {
+/// Assert a channel's points are physical and its two weight computations agree,
+/// returning the worst relative disagreement seen so a caller can report it.
+fn assert_valid(ch: &DiagramChannel<f64>, sqrt_s: f64, masses: &[f64], seed: u64) -> f64 {
     let n_out = masses.len();
     assert_eq!(ch.ndim(), 3 * n_out - 4);
     let mut stream = SubStream::from_stream(seed, 3);
+    let mut worst = 0.0f64;
     for _ in 0..300 {
         let u = stream.uniforms::<f64>(ch.ndim());
         let pt = ch.sample(&u);
@@ -67,15 +70,35 @@ fn assert_valid(ch: &DiagramChannel<f64>, sqrt_s: f64, masses: &[f64], seed: u64
             assert!(p.e() > 0.0 && p.e().is_finite());
         }
         assert!(pt.weight > 0.0 && pt.weight.is_finite());
-        // Holds by construction — `sample` defines the weight as `1/density` at
-        // the realised configuration — so it confirms only that the density stays
-        // finite and non-zero there. It cannot see the error class that matters
-        // most for a map: a sampling density that differs from the weighting one.
-        // Only an integrated quantity can (`V_n` against flat RAMBO, or a seed
-        // sweep), which is what actually caught the peripheral bias below.
-        assert_eq!(ch.density(&pt.momenta), 1.0 / pt.weight);
+        // `sample` accumulates this weight from the invariants it drew; `density`
+        // rebuilds it from the momenta they produced. The two are separate
+        // computations, so their agreement does see a sampling density that
+        // differs from the weighting one — the defect an unfloored peripheral
+        // rung carries. It remains a pointwise check: how well the density
+        // *matches the integrand* is a question only an integrated quantity
+        // answers (`V_n` against flat RAMBO, or a seed sweep).
+        let recip = 1.0 / ch.density(&pt.momenta);
+        let rel = (pt.weight - recip).abs() / recip;
+        worst = worst.max(rel);
+        assert!(
+            rel < WALK_DENSITY_TOL,
+            "walk weight {} vs 1/density {recip} (rel {rel:.3e})",
+            pt.weight
+        );
     }
+    worst
 }
+
+/// Bound on the relative gap between the weight [`DiagramChannel`]'s walk
+/// accumulates and the one its density reconstructs from the realised momenta.
+///
+/// The two multiply the same factors in different orders and rebuild each
+/// invariant from different inputs, so they agree only to rounding: worst measured
+/// 7.1e-9 over every diagram-derived channel here, and 1.2e-8 on a floored llj
+/// spine, both from near-threshold configurations where the Källén functions cancel
+/// hardest. The bound sits above those and some twelve orders below the mismatch it
+/// exists to catch — an unfloored spine reaches 4e4 on the same measure.
+const WALK_DENSITY_TOL: f64 = 1e-7;
 
 /// Channels built from real diagrams of a spread of processes emit valid points.
 #[test]
@@ -90,6 +113,7 @@ fn diagram_channels_are_on_shell_and_conserving() {
         "e+ e- > mu+ mu- ta+ ta-",
         "u u~ > d d~ g",
     ];
+    let mut worst = 0.0f64;
     for process in processes {
         let sets = common::generate(process);
         assert!(!sets.is_empty(), "no diagrams for {process}");
@@ -98,9 +122,10 @@ fn diagram_channels_are_on_shell_and_conserving() {
         for (i, d) in diagrams.iter().enumerate() {
             let masses = out_masses(d, &evaluated);
             let ch = DiagramChannel::from_diagram(d, &evaluated, sqrt_s);
-            assert_valid(&ch, sqrt_s, &masses, 0xC0DE + i as u64);
+            worst = worst.max(assert_valid(&ch, sqrt_s, &masses, 0xC0DE + i as u64));
         }
     }
+    eprintln!("walk weight vs 1/density over every diagram channel: worst {worst:.3e} relative");
 }
 
 /// The s-channel resonance metadata is read off the propagator chain: every mass
@@ -544,30 +569,35 @@ fn a_regulated_three_body_spine_from_an_llj_cut_is_a_valid_map() {
     assert!(checked > 0, "no llj cut was exercised");
 }
 
-/// The same spine with the model's own massless spacelike line does **not**
-/// integrate `V_3` correctly — asserted as the disagreement it is, rather than
-/// left for a later session to trip over.
+/// An unregulated three-body spine samples from a density its own
+/// [`Channel::density`] does not describe — and *that*, not the walk, is what a
+/// multichannel combiner weights by.
 ///
 /// The mechanism is
 /// [`a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise`]: on the
 /// draws where the edge lands just below zero the propagator map switches on with a
-/// span of some thirty e-folds reaching down to `|t| ~ 1e-11`, while the density is
-/// re-evaluated from a transfer recomputed out of the momenta, whose own
-/// cancellation error is the same size. Sampling density and weighting density then
-/// describe different maps and the estimator is biased — not merely noisy.
+/// span of some thirty e-folds reaching down to `|t| ~ 1e-11`, while `density`
+/// re-derives the transfer from the momenta with a cancellation error of the same
+/// size. The walk knows which `t` it drew, so a standalone draw weighted by its own
+/// accumulated Jacobian stays consistent; `density` evaluated at the realised
+/// momenta does not, and a combiner discards the walk weight in favour of
+/// `αⱼ / Σₖ αₖ gₖ`, built from `density` alone.
 ///
-/// A peripheral map for `llj` therefore needs the spacelike draw floored the way a
-/// zero-width timelike pole already is, at a scale set by the process (the jet
-/// transverse-momentum cut), before it can be trusted. Regulating the pole is what
-/// [`a_regulated_three_body_spine_from_an_llj_cut_is_a_valid_map`] then confirms is
-/// enough.
+/// So the two halves are asserted separately: the per-point gap between the two
+/// weightings blows up to O(1) or worse unregulated and collapses to rounding once
+/// floored, and the floor is what the combiner path therefore requires. That the
+/// floored map is otherwise a faithful one is
+/// [`a_regulated_three_body_spine_from_an_llj_cut_is_a_valid_map`].
 #[test]
-fn the_unregulated_three_body_spine_is_biased_at_the_collinear_edge() {
+fn an_unregulated_three_body_spine_breaks_the_density_a_combiner_weights_by() {
     let model = common::sm_model();
     let evaluated = EvaluatedModel::from_model(model.clone());
     let sqrt_s = 500.0;
+    let regulator = sqrt_s / 100.0;
 
-    let mut worst_ratio = 1.0f64;
+    let mut worst_unregulated = 0.0f64;
+    let mut worst_regulated = 0.0f64;
+    let mut compared = 0usize;
     for process in LLJ_SUBPROCESSES {
         let (cuts, _, masses) = spacelike_cuts(process, &evaluated, sqrt_s);
         for (i, cut) in cuts.iter().enumerate() {
@@ -575,32 +605,123 @@ fn the_unregulated_three_body_spine_is_biased_at_the_collinear_edge() {
                 cut.t_mass, 0.0,
                 "{process} cut {i}: expected a massless line"
             );
-            let spine = build_spine(sqrt_s, &masses, cut, 0.0);
-            let flat = RamboChannel::new(sqrt_s, masses.clone());
-            let n = 200_000;
-            let (v_s, var_s) = mc_estimate(&spine, 0xC01 + i as u64, 61, n, |_| 1.0);
-            let (v_f, var_f) = mc_estimate(&flat, 0xC02 + i as u64, 63, n, |_| 1.0);
-            let err = ((var_s + var_f) / n as f64).sqrt();
-            let ratio = v_s / v_f;
+            // The largest relative gap between the weight the walk accumulated and
+            // the one `density` reconstructs, over a fixed draw sequence.
+            let gap = |floor: f64, seed: u64| -> f64 {
+                let spine = build_spine(sqrt_s, &masses, cut, floor);
+                let mut stream = SubStream::from_stream(seed, 67);
+                let mut worst = 0.0f64;
+                for _ in 0..50_000 {
+                    let u = stream.uniforms::<f64>(spine.ndim());
+                    let pt = spine.sample(&u);
+                    let recip = 1.0 / spine.density(&pt.momenta);
+                    if recip > 0.0 && recip.is_finite() {
+                        worst = worst.max((pt.weight - recip).abs() / recip);
+                    }
+                }
+                worst
+            };
+            let bad = gap(0.0, 0xDEF0 + i as u64);
+            let good = gap(regulator, 0xDEF0 + i as u64);
             eprintln!(
-                "{process} cut {i} (massless t pole): V_3 spine {v_s:.6e} vs flat {v_f:.6e} \
-                 (+-{err:.1e}), ratio {ratio:.3}"
+                "{process} cut {i}: walk-vs-density gap {bad:.2e} unregulated, \
+                 {good:.2e} floored at {regulator} GeV"
             );
-            // Judged on the ratio rather than on the reported error: the estimator
-            // whose bias is in question is the same one supplying that error, and
-            // its per-point spread is heavy-tailed here, so its own uncertainty is
-            // not a reliable yardstick. A factor of two is far outside anything
-            // sampling noise produces on a volume.
             assert!(
-                ratio > 2.0,
-                "{process} cut {i}: the unregulated spine now reproduces flat RAMBO's V_3 to \
-                 {ratio:.3} — if the spacelike draw grew a floor, retire this test and enforce \
-                 the agreement instead"
+                bad > 1e-3,
+                "{process} cut {i}: the unregulated spine's two weightings now agree to \
+                 {bad:.2e} — if the transfer edge stopped straddling the pole, this test has \
+                 lost its subject"
             );
-            worst_ratio = worst_ratio.max(ratio);
+            assert!(
+                good < WALK_DENSITY_TOL,
+                "{process} cut {i}: the floored spine's weightings disagree by {good:.2e}"
+            );
+            worst_unregulated = worst_unregulated.max(bad);
+            worst_regulated = worst_regulated.max(good);
+            compared += 1;
         }
     }
-    eprintln!("unregulated three-body spine overstates V_3 by up to {worst_ratio:.2}x");
+    assert!(compared > 0, "no llj cut was exercised");
+    eprintln!(
+        "over {compared} llj cuts: worst walk-vs-density gap {worst_unregulated:.2e} \
+         unregulated, {worst_regulated:.2e} floored"
+    );
+}
+
+/// The consequence of the gap above, at the contract a combiner actually rests on:
+/// an *unregulated* three-body spine returns a non-positive [`Channel::density`] at
+/// points it generated itself, and a floored one never does.
+///
+/// A combiner weights every point by `αⱼ / Σₖ αₖ gₖ` with each `gₖ` read from
+/// `density`, so a channel that reports zero density where it just placed a point
+/// does not merely mis-normalise the mixture — it puts a zero in the denominator.
+/// "Multichannel is unbiased under a bad map" does not cover a map that breaks the
+/// density contract, which is the sense in which the unfloored spine is wrong
+/// rather than bad. The floored map's V_3 through the combiner is checked against
+/// flat RAMBO here too, since the unregulated one cannot be run at all.
+#[test]
+fn an_unregulated_spine_breaks_the_positive_density_contract() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let sqrt_s = 500.0;
+    let regulator = sqrt_s / 100.0;
+    let n = 200_000;
+
+    let (cuts, _, masses) = spacelike_cuts(LLJ_SUBPROCESSES[0], &evaluated, sqrt_s);
+
+    // How often a spine's own density comes out non-positive or non-finite on the
+    // points it generated.
+    let degenerate = |floor: f64, seed: u64| -> usize {
+        let mut bad = 0usize;
+        for (i, cut) in cuts.iter().enumerate() {
+            let spine = build_spine(sqrt_s, &masses, cut, floor);
+            let mut stream = SubStream::from_stream(seed + i as u64, 73);
+            for _ in 0..n {
+                let u = stream.uniforms::<f64>(spine.ndim());
+                let pt = spine.sample(&u);
+                let g = spine.density(&pt.momenta);
+                if !(g > 0.0) || !g.is_finite() {
+                    bad += 1;
+                }
+            }
+        }
+        bad
+    };
+
+    let bad_unregulated = degenerate(0.0, 0xB1A5);
+    let bad_floored = degenerate(regulator, 0xB1A6);
+    let drawn = n * cuts.len();
+    eprintln!(
+        "self-density over {drawn} points on {} llj spines: {bad_unregulated} non-positive \
+         unregulated, {bad_floored} floored at {regulator} GeV",
+        cuts.len()
+    );
+    assert!(
+        bad_unregulated > 0,
+        "the unregulated spine no longer breaks its own density contract — if the spacelike \
+         draw grew a floor of its own, retire this test and enforce the agreement instead"
+    );
+    assert_eq!(
+        bad_floored, 0,
+        "the floored spine reported a non-positive density on a point it generated"
+    );
+
+    // With the contract restored, the combiner runs and reproduces the volume.
+    let channels: Vec<Box<dyn Channel<f64>>> = cuts
+        .iter()
+        .map(|c| Box::new(build_spine(sqrt_s, &masses, c, regulator)) as Box<dyn Channel<f64>>)
+        .collect();
+    let combiner = MultiChannel::uniform(channels);
+    let flat = RamboChannel::new(sqrt_s, masses.clone());
+    let (reference, var_ref) = mc_estimate(&flat, 0xB1A7, 75, n, |_| 1.0);
+    let (v_good, var_good) = mc_estimate(&combiner, 0xB1A8, 77, n, |_| 1.0);
+    let err = ((var_good + var_ref) / n as f64).sqrt();
+    eprintln!("floored combiner V_3 = {v_good:.6e}, flat RAMBO {reference:.6e} ± {err:.2e}");
+    assert!(
+        (v_good - reference).abs() < 6.0 * err,
+        "floored combiner V_3 {v_good:.6e} vs flat RAMBO {reference:.6e} ± {err:.2e}"
+    );
 }
 
 /// Does a three-body peripheral map earn its place? On a toy integrand carrying the
