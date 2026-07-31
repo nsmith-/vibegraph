@@ -41,7 +41,8 @@ import sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
+# The compiled mg_*.so matrix elements are build products in the work area.
+sys.path.insert(0, os.path.join(HERE, "output", "f2py"))
 
 
 def read_vg_dump(path):

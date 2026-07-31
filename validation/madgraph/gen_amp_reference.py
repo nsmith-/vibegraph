@@ -38,7 +38,8 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, "output")
-sys.path.insert(0, HERE)
+# The compiled mg_*.so matrix elements are build products in the work area.
+sys.path.insert(0, os.path.join(HERE, "output", "f2py"))
 
 # NCOLOR = 1 processes with a compiled `mg_amp_probe_<name>` module and a diagram
 # count small enough that the two sides' diagram orderings can be compared one

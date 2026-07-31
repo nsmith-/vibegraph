@@ -19,7 +19,7 @@ if [ ! -f "$PDIR/matrix1_optim.f" ] || [ ! -f "$LIBDIR/libmodel.a" ]; then
   exit 1
 fi
 
-if ! ls "$HERE"/mg_dy_probe*.so >/dev/null 2>&1; then
+if ! ls "$HERE"/output/f2py/mg_dy_probe*.so >/dev/null 2>&1; then
   echo ">>> building mg_dy_probe (MATRIX1 = u u~, MATRIX2 = d d~) ..."
   pushd "$PDIR" >/dev/null
   python -m numpy.f2py -c \
@@ -27,7 +27,8 @@ if ! ls "$HERE"/mg_dy_probe*.so >/dev/null 2>&1; then
     matrix1_optim.f matrix2_optim.f "$HERE/wrappers/dy_probe.f" \
     -L"$LIBDIR" -lmodel -ldhelas \
     -m mg_dy_probe
-  mv mg_dy_probe*.so "$HERE/"
+  mkdir -p "$HERE/output/f2py"
+  mv mg_dy_probe*.so "$HERE/output/f2py/"
   popd >/dev/null
 fi
 

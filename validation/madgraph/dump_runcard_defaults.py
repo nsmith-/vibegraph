@@ -6,8 +6,8 @@ default) and writes a flat ``{name: value}`` map to
 ``validation/madgraph/runcard_defaults.json``. The Rust ``runcard`` defaults
 table is compared against this file per-parameter.
 
-Run in the ``madgraph`` pixi environment (``mg5amcnlo`` provides ``madgraph``).
-If ``madgraph`` is not importable, set ``MG5AMCNLO_PATH`` to a checkout root.
+Reads the pinned ``research/refs/mg5amcnlo`` submodule, whose run-card parameter
+set this transcription tracks; ``MG5AMCNLO_PATH`` overrides the checkout root.
 """
 
 import json
@@ -18,6 +18,22 @@ _here = os.path.dirname(os.path.abspath(__file__))
 _out = os.path.join(_here, "runcard_defaults.json")
 
 
+def _candidate_roots():
+    """Checkout roots to try, after a plain import.
+
+    ``$MG5AMCNLO_PATH`` first, then the pinned ``research/refs/mg5amcnlo``
+    submodule. The submodule is the version this transcription is meant to
+    track — it is what every other model-level check in the project reads —
+    and the two are not interchangeable: the conda ``mg5amcnlo`` package is a
+    different release and defines a different set of run-card parameters, so
+    generating this file from it would silently retarget the oracle.
+    """
+    extra = os.environ.get("MG5AMCNLO_PATH")
+    if extra:
+        yield extra
+    yield os.path.join(_here, "..", "..", "research", "refs", "mg5amcnlo")
+
+
 def _import_run_card_lo():
     try:
         from madgraph.various.banner import RunCardLO  # noqa: E402
@@ -25,15 +41,16 @@ def _import_run_card_lo():
         return RunCardLO
     except Exception:
         pass
-    extra = os.environ.get("MG5AMCNLO_PATH")
-    if extra:
-        sys.path.insert(0, extra)
+    for root in _candidate_roots():
+        if not os.path.isdir(os.path.join(root, "madgraph")):
+            continue
+        sys.path.insert(0, os.path.abspath(root))
         from madgraph.various.banner import RunCardLO  # noqa: E402
 
         return RunCardLO
     raise SystemExit(
-        "cannot import madgraph.various.banner.RunCardLO; run in the madgraph "
-        "pixi env or set MG5AMCNLO_PATH to an mg5amcnlo checkout root"
+        "cannot import madgraph.various.banner.RunCardLO; check out the "
+        "research/refs/mg5amcnlo submodule or set MG5AMCNLO_PATH"
     )
 
 
