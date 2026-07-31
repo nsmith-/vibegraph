@@ -1,27 +1,36 @@
-//! Extended validation: the hadronic LO Drell–Yan cross section σ(pp → e⁺e⁻),
-//! assembled by [`vibegraph::hadronic`] from the PDF luminosity, the compiled
-//! amplitude, the run-card cuts, and VEGAS, against a banked MadGraph5 reference
-//! generated with the *same* run-card file (`validation/madgraph/dy13_*.dat`),
-//! PDF set (NNPDF23_lo_as_0130_qed / lhaid 247000), and fixed scale μF = m_Z.
+//! Extended validation: hadronic LO cross sections against banked MadGraph5
+//! reference runs, assembled from the PDF luminosity, the compiled amplitude, the
+//! run-card cuts, and VEGAS, and driven by the *same* run-card files, PDF set
+//! (NNPDF23_lo_as_0130_qed / lhaid 247000) and fixed scale μF = m_Z MadGraph was
+//! given.
 //!
-//! Two reference runs are enforced: default lepton cuts, and the m_ll ∈ [60,120]
-//! window. Both must agree within combined Monte-Carlo error (target < 1%).
+//! Two σ(pp → e⁺e⁻) reference runs are enforced through the bespoke Drell–Yan
+//! integrand ([`vibegraph::hadronic`]): default lepton cuts, and the
+//! m_ll ∈ [60,120] window. Both must agree within combined Monte-Carlo error
+//! (target < 1%).
 //!
-//! The same default run is also taken through the **general** hadronic path
-//! ([`vibegraph::proton`]) as an informational row, so a process the general path can
-//! already do keeps an end-to-end comparison against MadGraph running while it is
-//! under construction. The enforced rows are the bespoke integrand's and stay there.
+//! σ(pp → ℓ⁺ℓ⁻ j) is enforced through the **general** hadronic path
+//! ([`vibegraph::proton`]) against the banked `pp_to_llj_fixed` run — the first
+//! cross section here for a coloured initial state, a three-body final state, a jet
+//! cut and a strong coupling. It is measured over five seeds, because VEGAS's
+//! `1/σ²` iteration combination reports an under-sampled region confidently.
+//!
+//! The Drell–Yan default run is *also* taken through the general path as an
+//! informational row, so the two treatments of the mirrored beam ordering keep
+//! meeting on a process both paths can do. The enforced Drell–Yan rows are the
+//! bespoke integrand's and stay there.
 //!
 //! A pointwise integrand oracle pins the PDF × flux × |M|² factors at fixed
 //! `(x₁, x₂, cosθ)` points (including points just inside/outside a cut boundary)
 //! against an independent Python computation (`validation/madgraph/gen_dy_oracle.py`).
 //!
-//! Gated behind `extended-validation`; the σ tests need the fetched PDF set and
-//! the banked reference JSON:
+//! Gated behind `extended-validation`; the σ tests need the fetched PDF set, the
+//! banked reference JSON and the banked `pp_to_llj_fixed` run:
 //!
-//!     pixi run -e madgraph fetch-pdf
-//!     pixi run -e madgraph generate-hadronic-sigma   # banks the MG σ reference
-//!     cargo test -p vibegraph-lib --features extended-validation --test validate_hadronic
+//!     pixi run -e madgraph validate-hadronic
+//!
+//! Run it under `--profile profiling` if invoking cargo directly: the five-seed llj
+//! sweep is minutes optimised and hours unoptimised.
 
 mod common;
 
@@ -43,6 +52,44 @@ mod validate_hadronic {
     const MU_F: f64 = 91.1880;
     const SQRT_S_HAD: f64 = 13000.0;
     const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
+
+    /// The process of the banked `pp_to_llj_fixed` run, spelled as its `.mg5` script
+    /// spells it — the coupling orders included, since they set the diagram content.
+    const LLJ_PROCESS: &str = "p p > l+ l- j QCD=2 QED=2";
+
+    /// Independent seeds the ℓℓj cross section is measured on. Five runs rather than
+    /// one because VEGAS's `1/σ²` iteration combination reports an under-sampled
+    /// region as a confident number, which one seed cannot distinguish from a
+    /// converged one.
+    const LLJ_SEEDS: &[u64] = &[20260730, 20260731, 20260732, 20260733, 20260734];
+    /// Points per survey iteration, and iterations, of the channel-weight adaptation.
+    const LLJ_ADAPT_SURVEY: usize = 8_000;
+    const LLJ_ADAPT_ITERS: usize = 5;
+    /// VEGAS budget per seed, chosen from a measured budget scan and not from cost
+    /// alone. The estimator approaches its limit **from below** — the unadapted early
+    /// iterations enter the `1/σ²` combination with underestimated variances — so the
+    /// five-seed mean rises with `neval` per iteration: `418.5` at 60 000, `421.7` at
+    /// 150 000, `422.9` here, `423.5` at 600 000, each step about half the last. Below
+    /// 150 000 the residual exceeds MadGraph's own error and the sweep would be
+    /// measuring this crate's convergence rather than an agreement.
+    ///
+    /// The per-channel allocation floors at 512 points a channel, so the 24 pooled
+    /// `(group, diagram)` channels spend at least 12 288 evaluations an iteration
+    /// whatever this says.
+    const LLJ_NEVAL: usize = 300_000;
+    const LLJ_NITER: usize = 10;
+    /// Largest relative distance from the banked MadGraph σ the sweep may show.
+    ///
+    /// Above MadGraph's own `0.43%` Monte-Carlo error, which is the floor: no
+    /// agreement tighter than the reference's precision is meaningful. Below the
+    /// `1.0%` an under-converged budget produces, which is what it exists to catch.
+    /// The whole measured budget family — `0.28%`, `0.00%`, `0.16%` at 150 000,
+    /// 300 000 and 600 000 — sits inside it, so it is not a bound around one number.
+    const LLJ_MAX_REL: f64 = 0.005;
+    /// Scatter the five estimates are allowed about their own mean, in units of their
+    /// quoted errors. Measured over the same budget family: `1.55`, `0.47`, `1.90`,
+    /// `0.37`.
+    const LLJ_MAX_CHI2_PER_DOF: f64 = 4.0;
 
     fn validation_dir() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
@@ -117,6 +164,27 @@ mod validate_hadronic {
              did would need one, and `pdlabel = lhapdf` refuses to supply it"
         );
         integ.integrate(neval, niter, seed)
+    }
+
+    /// MadGraph's combined `(σ, Δσ)` in pb for a banked `madevent` run: fields 1 and
+    /// 2 of `SubProcesses/results.dat`, the same pair `gen_hadronic_sigma.sh` banks
+    /// into the Drell–Yan reference JSON. Read from the run rather than copied into
+    /// a committed file, so the number cannot drift from the run it came out of.
+    fn banked_llj_sigma(run_dir: &Path) -> (f64, f64) {
+        let path = run_dir.join("SubProcesses/results.dat");
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!(
+                "cannot read {}: {e}\n\
+                 bank the run with `pixi run -e madgraph build-diagrams`",
+                path.display()
+            )
+        });
+        let mut fields = text.split_whitespace();
+        let parse = |f: Option<&str>| -> f64 {
+            f.and_then(|s| s.replace(['E', 'D'], "e").parse::<f64>().ok())
+                .unwrap_or_else(|| panic!("cannot parse a cross section from {}", path.display()))
+        };
+        (parse(fields.next()), parse(fields.next()))
     }
 
     /// Banked MG σ ± Δσ for one run, or `None` when the reference JSON is absent.
@@ -356,6 +424,134 @@ mod validate_hadronic {
         eprintln!(
             "[pointwise oracle] {} points, worst rel = {worst:.2e}",
             points.len()
+        );
+    }
+
+    /// σ(p p → ℓ⁺ℓ⁻ j) at a fixed scale, through the general hadronic path, against
+    /// the banked `pp_to_llj_fixed` MadGraph run.
+    ///
+    /// This is the first cross section this crate computes for a process with a
+    /// coloured initial state, a three-body final state, a jet cut and a strong
+    /// coupling — everything the Drell–Yan rows above are blind to. The comparison
+    /// is against MadGraph's own number for the same cards: the same proc card
+    /// content, the same run card file, the same PDF set and the same fixed scales.
+    ///
+    /// **Five seeds, not one.** VEGAS combines its iterations by `1/σ²`, so a run
+    /// that under-samples a region reports a confidently wrong integral with a small
+    /// error rather than a large one, and a single seed agreeing is then not
+    /// evidence. Five independent runs are compared individually and through their
+    /// inverse-variance mean, and it is the mean the gate is on.
+    ///
+    /// What it cannot see: anything the cross section integrates over. A per-diagram
+    /// phase, a colour-flow relabelling and a helicity-by-helicity error all leave
+    /// `Σ|M|²` and hence σ alone — those are pinned at the amplitude level by
+    /// `validate_helas_mg` and `amp_diagram_oracle`. It also cannot separate the
+    /// phase-space map from the matrix element: a map whose weight and density were
+    /// both wrong by one factor would integrate correctly.
+    #[test]
+    fn sigma_llj_fixed_scale_vs_mg() {
+        use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
+
+        let run_dir = validation_dir().join("output/pp_to_llj_fixed");
+        let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).unwrap_or_else(|e| {
+            panic!(
+                "cannot read the banked run card at {}: {e}\n\
+                 bank the run with `pixi run -e madgraph build-diagrams`",
+                run_dir.display()
+            )
+        });
+        let (mg, mg_err) = banked_llj_sigma(&run_dir);
+
+        let model = super::common::sm_model();
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let proc_card =
+            parse_proc_card(&format!("generate {LLJ_PROCESS}"), &opts).expect("proc card");
+        let sets = generate_from_proc_card(&proc_card, &model).expect("enumeration");
+        let groups = derive_flavor_groups(sets, &model, &evaluated, &rc).expect("flavour groups");
+
+        let set = load_pdf_set();
+        let pdf = set.member(0).expect("PDF member 0");
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+
+        let mut runs: Vec<(u64, f64, f64)> = Vec::new();
+        for &seed in LLJ_SEEDS {
+            let mut integ =
+                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                    .expect("hadronic integrand");
+            let report = integ
+                .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+                .expect("run card scale prescription compiles");
+            let constant = report.constant_scales.unwrap_or_else(|| {
+                panic!("the banked llj run card no longer fixes both scales: {report:?}")
+            });
+            assert_eq!(
+                (constant.mu_r, constant.mu_f),
+                (MU_F, [MU_F, MU_F]),
+                "the banked llj run card no longer fixes both scales at m_Z"
+            );
+            assert!(
+                report.depends_on_alpha_s,
+                "a QCD ℓℓj matrix element must carry the strong coupling; one that did \
+                 not would be missing its gluon vertex"
+            );
+
+            integ.adapt_alphas(seed, LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, 0.5);
+            let (sigma, err) = integ.integrate(LLJ_NEVAL, LLJ_NITER, seed);
+            eprintln!(
+                "[llj_fixed seed {seed}] vibegraph σ = {sigma:.3} ± {err:.3} pb | \
+                 rel = {:+.4} | pull = {:+.2}",
+                (sigma - mg) / mg,
+                (sigma - mg) / (err * err + mg_err * mg_err).sqrt()
+            );
+            runs.push((seed, sigma, err));
+        }
+
+        // Inverse-variance mean of the independent runs, the estimator with the
+        // seed-to-seed scatter averaged out.
+        let inv_var: f64 = runs.iter().map(|(_, _, e)| 1.0 / (e * e)).sum();
+        let mean: f64 = runs.iter().map(|(_, s, e)| s / (e * e)).sum::<f64>() / inv_var;
+        let mean_err = inv_var.sqrt().recip();
+        // Scatter of the five estimates about their mean, in units of their own
+        // quoted errors: a run that missed a region reports a small error, so the
+        // scatter and not the error is what shows it.
+        let chi2: f64 = runs
+            .iter()
+            .map(|(_, s, e)| ((s - mean) / e).powi(2))
+            .sum::<f64>()
+            / (runs.len() - 1) as f64;
+
+        let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
+        let delta = mean - mg;
+        let rel = delta.abs() / mg;
+        eprintln!(
+            "[llj_fixed] vibegraph σ = {mean:.3} ± {mean_err:.3} pb ({} seeds, \
+             χ²/dof = {chi2:.2}) | MG σ = {mg:.3} ± {mg_err:.3} pb | \
+             Δ = {delta:.3} pb ({:.2} combined σ), rel = {rel:.4}",
+            runs.len(),
+            delta / combined
+        );
+
+        assert!(
+            delta.abs() < 3.0 * combined,
+            "[llj_fixed] σ disagreement: vibegraph {mean:.3}±{mean_err:.3} vs \
+             MG {mg:.3}±{mg_err:.3} pb, Δ = {delta:.3} pb = {:.1}σ",
+            delta / combined
+        );
+        assert!(
+            rel < LLJ_MAX_REL,
+            "[llj_fixed] σ disagreement: vibegraph {mean:.3}±{mean_err:.3} vs \
+             MG {mg:.3}±{mg_err:.3} pb, rel = {rel:.4} > {LLJ_MAX_REL}"
+        );
+        assert!(
+            chi2 < LLJ_MAX_CHI2_PER_DOF,
+            "[llj_fixed] the five seeds scatter by more than they claim: \
+             χ²/dof = {chi2:.2} over {runs:?}"
         );
     }
 
