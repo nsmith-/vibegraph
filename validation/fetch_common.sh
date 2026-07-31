@@ -34,7 +34,6 @@ vg_die() { printf '!!! %s\n' "$*" >&2; exit 1; }
 # `[TABLE]` table of the manifest. Only the flat string keys the shell layer
 # needs; anything structured is read by the Rust and Python consumers.
 vg_manifest_value() {
-  local table="$1" key="$2"
   awk -v table="[$1]" -v key="$2" '
     /^\[/ { in_table = ($0 == table); next }
     in_table && $1 == key {

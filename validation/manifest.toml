@@ -61,8 +61,9 @@ schema = 1
 #
 # What the banked layer fetches instead of running MadGraph: the frozen event
 # files with their banners and logs, the run and parameter cards, each
-# subprocess's `leshouche.inc` and `matrix1_orig.f`, the combined `results.dat`,
-# and the fixed-grid amplitude tables. It unpacks into
+# subprocess's `leshouche.inc` and `matrix1_orig.f`, the per-channel integration
+# logs the `alpha_s` source rule is read out of, the combined `results.dat`, and
+# the fixed-grid amplitude tables. It unpacks into
 # `validation/madgraph/output/`, so a fetching checkout and a machine that
 # generated the runs itself present the gates with the same paths.
 #
@@ -76,8 +77,8 @@ schema = 1
 version = 1
 archive = "vibegraph-refdata-1.tar.zst"
 url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-1/vibegraph-refdata-1.tar.zst"
-sha256 = "9cc0cfd20d49cd7df93af9360db724c59b78deea3ce45833170b50da6cfda831"
-size_bytes = 90333614
+sha256 = "1afeadfad69d954f3295df32c4527e872e462855eda8e9fc1e827ee6cc447e50"
+size_bytes = 90597923
 unpacks_to = "validation/madgraph/output"
 # The archive is assembled and pinned, but no release carries it yet, so `url`
 # resolves to nothing until the `refdata-1` tag is published. Until then the
