@@ -77,6 +77,7 @@ use std::f64::consts::PI;
 use rand::SeedableRng;
 use thiserror::Error;
 
+use crate::artifact::ChannelSampler;
 use crate::coupling::alphas::AlphaSSource;
 use crate::coupling::scales::{EventScales, ScaleError};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
@@ -656,13 +657,17 @@ pub struct ProtonSelection {
 }
 
 /// A VEGAS point's outer coordinates, mapped to the partonic system.
-struct OuterPoint {
-    x1: f64,
-    x2: f64,
-    sqrt_shat: f64,
+#[derive(Clone, Copy, Debug)]
+pub struct OuterPoint {
+    /// Beam-1 momentum fraction.
+    pub x1: f64,
+    /// Beam-2 momentum fraction.
+    pub x2: f64,
+    /// The partonic collision energy `√ŝ = √(x₁x₂ s)`.
+    pub sqrt_shat: f64,
     /// `dτ dy / (du₀ du₁)` with the `1/τ` from `f = (x·f)/x` on both legs already
     /// divided out.
-    jac: f64,
+    pub jac: f64,
 }
 
 /// A ready-to-integrate hadronic cross section for an arbitrary flavour-decomposed
@@ -685,9 +690,9 @@ struct OuterPoint {
 ///
 /// # Change of variables
 ///
-/// The outer two coordinates are Drell–Yan's, and for the same reason: a dilepton
-/// mass window is a one-dimensional bound on `τ` rather than a thin diagonal band in
-/// `(x₁, x₂)`.
+/// The outer two coordinates are `(τ, y)` rather than `(x₁, x₂)`: a dilepton mass
+/// window is a one-dimensional bound on `τ` rather than a thin diagonal band in
+/// `(x₁, x₂)`, and VEGAS resolves the former far better.
 ///
 /// ```text
 /// τ = τ_min^(1−u₀)   (ln τ uniform),   dτ/du₀ = τ · ln(1/τ_min)
@@ -718,6 +723,10 @@ pub struct ProtonIntegrand<'a> {
     cuts: &'a Cuts,
     combiner: ScaledMultiChannel<f64>,
     channel_ids: Vec<ChannelId>,
+    /// What the composition rule chose for each channel, read off the channel as
+    /// it was built and kept because the built channels are type-erased behind
+    /// [`ScaledChannel`] afterwards.
+    channel_samplers: Vec<ChannelSampler>,
     /// Total hadronic invariant `s = (E₁+E₂)²` (head-on beams).
     s_had: f64,
     sqrt_s_had: f64,
@@ -790,14 +799,15 @@ impl<'a> ProtonIntegrand<'a> {
         let floor = cuts.spacelike_floor();
         let mut channels: Vec<Box<dyn ScaledChannel<f64>>> = Vec::new();
         let mut channel_ids = Vec::new();
+        let mut channel_samplers = Vec::new();
         for (gi, g) in groups.groups().iter().enumerate() {
             for (di, d) in g.diagrams().iter().enumerate() {
                 // The baked-in energy is unread through `ScaledChannel`, which takes
                 // the event's own; the collider energy is the well-formed value to
                 // leave it at.
-                channels.push(Box::new(DiagramChannel::from_diagram_regulated(
-                    d, model, sqrt_s_had, floor,
-                )));
+                let channel = DiagramChannel::from_diagram_regulated(d, model, sqrt_s_had, floor);
+                channel_samplers.push(ChannelSampler::of(&channel));
+                channels.push(Box::new(channel));
                 channel_ids.push(ChannelId {
                     group: gi,
                     diagram: di,
@@ -815,6 +825,7 @@ impl<'a> ProtonIntegrand<'a> {
             cuts,
             combiner: ScaledMultiChannel::uniform(channels),
             channel_ids,
+            channel_samplers,
             s_had,
             sqrt_s_had,
             tau_min,
@@ -906,10 +917,26 @@ impl<'a> ProtonIntegrand<'a> {
         self.cuts.spacelike_floor()
     }
 
+    /// What the rule-based composition chose for each sampling channel, in channel
+    /// order — the map kind and the propagator poles that shaped it.
+    pub fn channel_samplers(&self) -> &[ChannelSampler] {
+        &self.channel_samplers
+    }
+
     /// Which diagram of which group each sampling channel came from, in channel
     /// order — the key a per-channel grid is banked under.
     pub fn channel_ids(&self) -> &[ChannelId] {
         &self.channel_ids
+    }
+
+    /// The partonic system the outer coordinates `u[0], u[1]` map to — the `(τ, y)`
+    /// map every channel term shares, with its Jacobian.
+    ///
+    /// Exposed so a pointwise oracle can drive the production map at pinned
+    /// coordinates instead of reimplementing it; the integration reads the same
+    /// function.
+    pub fn outer_point(&self, u: &[f64]) -> OuterPoint {
+        self.map_point(u)
     }
 
     /// The channels the integral is split across: one per diagram of every group,
@@ -1362,6 +1389,7 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::artifact::SamplerTopology;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::pdf::grid::SubGrid;
     use crate::ufo::sm::{sm_model, SMRestrict};
@@ -1689,8 +1717,9 @@ mod tests {
         );
     }
 
-    /// The generalisation lands on Drell–Yan's hand-derived classes, and its two
-    /// orderings sum to the luminosity `DrellYanIntegrand` documents.
+    /// The flavour partition of `p p > e+ e-` lands on the two Z/gamma* coupling
+    /// classes — up-type `{u, c}` and down-type `{d, s}` — and each group's two
+    /// beam orderings sum to that class's parton luminosity.
     #[test]
     fn drell_yan_classes_and_their_two_orderings_are_reproduced() {
         let m = model();
@@ -1964,6 +1993,64 @@ mod tests {
             floored > 0,
             "no channel carries a peripheral spine, so the floor is doing nothing here"
         );
+
+        // The banked summary reports what the composition actually chose. Compared
+        // against the channels re-derived above rather than against a hand-written
+        // expectation, so it cannot pass by both sides agreeing on a default: the
+        // topology, the floored pole and the propagator poles all have to line up
+        // channel by channel.
+        let samplers = integ.channel_samplers();
+        assert_eq!(samplers.len(), integ.channel_count());
+        let mut spines = 0;
+        let mut resonant = 0;
+        let mut k = 0;
+        for g in groups.groups() {
+            for d in g.diagrams() {
+                let built = DiagramChannel::<f64>::from_diagram_regulated(
+                    d,
+                    &evaluated,
+                    SQRT_S_HAD,
+                    integ.spacelike_floor(),
+                );
+                assert_eq!(samplers[k], ChannelSampler::of(&built), "channel {k}");
+                match samplers[k].topology {
+                    SamplerTopology::Spine => {
+                        assert_eq!(samplers[k].spine_pole_gev2, Some(400.0));
+                        assert_eq!(samplers[k].t_channels.len(), 1);
+                        spines += 1;
+                    }
+                    SamplerTopology::Timelike => {
+                        assert_eq!(samplers[k].spine_pole_gev2, None);
+                        assert!(samplers[k].t_channels.is_empty());
+                    }
+                }
+                // Every llj channel draws one dilepton invariant, on the photon
+                // pole or on the Z's; a summary that lost the widths would report
+                // the Z as massless.
+                assert_eq!(samplers[k].resonances.len(), 1, "channel {k}");
+                let pole = samplers[k].resonances[0];
+                if pole.mass != 0.0 {
+                    assert_eq!(pole.mass, evaluated.mass(z_id(&m)));
+                    assert_eq!(pole.width, evaluated.width(z_id(&m)));
+                    resonant += 1;
+                } else {
+                    assert_eq!(pole.width, 0.0);
+                }
+                k += 1;
+            }
+        }
+        assert_eq!(spines, floored);
+        assert!(
+            resonant > 0 && resonant < samplers.len(),
+            "the summary reports the same pole on every channel, so it cannot be \
+             distinguishing the Z exchange from the photon"
+        );
+    }
+
+    /// The model's own particle id for the Z, so the summary's poles are compared
+    /// against the model rather than against transcribed numbers.
+    fn z_id(m: &UFOModel) -> crate::ufo::particles::ParticleId {
+        m.particle_id("Z").expect("the model has a Z")
     }
 
     /// The integrand's value at a point, against an assembly built from the process
@@ -2391,81 +2478,6 @@ mod tests {
                 "the two sides differ by {pull:.2} combined standard errors at {sqrt_shat}"
             );
         }
-    }
-
-    /// Drell-Yan through the general path reproduces the cross section
-    /// [`DrellYanIntegrand`] integrates.
-    ///
-    /// The bespoke Drell-Yan integrand is the pipeline's bit-reproducibility anchor
-    /// and is not touched by any of this, so it is the informational comparison the
-    /// hadronic path is built against: same process, same cuts, same parton
-    /// distribution, two independent phase-space maps — `(τ, y, cosθ)` with a fixed
-    /// azimuth against `(τ, y)` × a per-diagram multichannel.
-    ///
-    /// It is also the one place the two treatments of the mirrored beam ordering meet.
-    /// Drell-Yan sums both orderings' luminosities against a *single* `|M(q)|²`, which
-    /// is only right once the azimuth and polar angle are integrated over; the general
-    /// path evaluates `|M(Rq)|²` pointwise. The two must therefore agree on σ and need
-    /// not agree point by point.
-    #[test]
-    fn drell_yan_through_the_general_path_reproduces_its_own_integrand() {
-        use crate::hadronic::{
-            dy_external_legs, dy_flavor_classes, generate_dy_subprocesses, DrellYanIntegrand,
-        };
-
-        let m = model();
-        let evaluated = EvaluatedModel::from_model(m.clone());
-        let card = llj_card();
-        let pdf = probe_pdf();
-
-        let fc = dy_flavor_classes(generate_dy_subprocesses(&m).expect("subprocesses"), &m)
-            .expect("classes");
-        let up = compile_class(&fc.up_set, &m, &evaluated).expect("up class");
-        let down = compile_class(&fc.down_set, &m, &evaluated).expect("down class");
-        let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
-        let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
-        let dy_cuts = Cuts::compile(&card, &dy_external_legs(2)).expect("cuts");
-        let dy = DrellYanIntegrand::new(
-            &b_up,
-            &b_down,
-            &pdf,
-            &dy_cuts,
-            fc.up_flavors,
-            fc.down_flavors,
-            SQRT_S_HAD,
-            MU_F,
-            initial_spin_color_average(&up, &m, &evaluated),
-        );
-        let (sigma_dy, err_dy) = dy.integrate(60_000, 6, 0xD4_0001);
-
-        let groups = derive_flavor_groups(enumerate("p p > e+ e-", &m), &m, &evaluated, &card)
-            .expect("flavour groups");
-        assert_eq!(groups.groups().len(), 2);
-        assert_eq!(
-            groups.groups()[0].cuts(),
-            &dy_cuts,
-            "the two paths compile different cut filters, so this comparison is not of \
-             the same cross section"
-        );
-        let amps = bind_all(&groups, &evaluated);
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
-        assert_eq!(integ.channel_count(), 4);
-        assert_eq!(integ.tau_min(), dy.tau_min());
-        integ.adapt_alphas(0xD4_0002, 4000, 5, 0.5);
-        let (sigma, err) = integ.integrate(20_000, 6, 0xD4_0003);
-
-        let combined = (err * err + err_dy * err_dy).sqrt();
-        let pull = (sigma - sigma_dy) / combined;
-        eprintln!(
-            "p p > e+ e-: general path {sigma:.5} ± {err:.5} pb, Drell-Yan integrand \
-             {sigma_dy:.5} ± {err_dy:.5} pb, rel {:.3e}, pull {pull:.2}",
-            (sigma - sigma_dy).abs() / sigma_dy
-        );
-        assert!(
-            pull.abs() < 4.0,
-            "the two paths differ by {pull:.2} combined standard errors"
-        );
     }
 
     /// The mixture estimator's mean and standard error over `n` draws — the quantity

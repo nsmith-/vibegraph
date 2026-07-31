@@ -1,61 +1,24 @@
 //! Leading-order cross-section integrands built from the compiled helicity
 //! amplitude ([`crate::helas::eval`]), the run-card cut filter ([`crate::cuts`]),
-//! and the VEGAS integrator ([`crate::vegas`]):
+//! and the VEGAS integrator ([`crate::vegas`]).
 //!
-//! * [`DrellYanIntegrand`] — proton beams (`lpp = 1`), the hadronic Drell–Yan
-//!   `p p → e⁺ e⁻` process convolved with parton distributions ([`crate::pdf`])
-//!   over a `(τ, y) × cosθ` map (documented below).
-//! * [`FixedBeamIntegrand`] — fixed-energy partonic beams (`lpp = 0`), an
-//!   arbitrary MG-validated process with no PDF convolution over any final-state
-//!   multiplicity, sampled with flat RAMBO or — once
-//!   [`FixedBeamIntegrand::use_multichannel`] has run — a resonance-aware
-//!   per-diagram multichannel map that resolves Breit–Wigner peaks.
+//! [`FixedBeamIntegrand`] covers fixed-energy partonic beams (`lpp = 0`): an
+//! arbitrary MG-validated process with no PDF convolution over any final-state
+//! multiplicity, sampled with flat RAMBO or — once
+//! [`FixedBeamIntegrand::use_multichannel`] has run — a resonance-aware
+//! per-diagram multichannel map that resolves Breit–Wigner peaks. Proton beams
+//! (`lpp = 1`) are [`crate::proton`]'s flavour-group path, which shares this
+//! module's subprocess compilation, scale prescription and averaging factors.
 //!
 //! The initial-state flux and spin×colour averaging factors are derived per
 //! process from its incoming legs ([`initial_spin_color_average`]).
 //!
-//! # Drell–Yan master formula
-//!
-//! # Master formula
-//!
-//! ```text
-//! σ = Σ_q ∫ dx₁ dx₂ dcosθ  [ f_q(x₁,μF) f_q̄(x₂,μF) + f_q̄(x₁,μF) f_q(x₂,μF) ]
-//!       · dσ̂_qq̄→ℓℓ/dcosθ (ŝ = x₁x₂ s)  · Θ_cuts
-//! ```
-//!
-//! At LO the two lepton legs are back-to-back, so a single partonic differential
-//! cross section per Z/γ coupling class (up-type `q ∈ {u, c}`, down-type
-//! `q ∈ {d, s}`; MadGraph's 4-flavor proton has no `b` and no gluon-initiated
-//! diagram at this order) covers every flavor in the class. Two amplitude
-//! evaluators are built, one per class; the PDF luminosity is summed over the
-//! flavors of each class and over both proton orderings.
-//!
-//! # Change of variables
-//!
-//! VEGAS samples `(u₁, u₂, u₃) ∈ [0,1]³`, mapped to `(τ, y, cosθ)` by
-//!
-//! ```text
-//! τ = τ_min^(1−u₁)   (ln τ uniform),   dτ/du₁ = τ · ln(1/τ_min)
-//! y = (2u₂ − 1)·y_max,  y_max = ½ ln(1/τ),   dy/du₂ = 2·y_max
-//! cosθ = 2u₃ − 1,                            d(cosθ)/du₃ = 2
-//! ```
-//!
-//! where `τ = ŝ/s = x₁x₂` and `y = ½ ln(x₁/x₂)`, with `τ_min = ŝ_min / s` from
-//! the cut hint ([`Cuts::shat_min`]) — so a dilepton mass window is a
-//! one-dimensional bound on `τ` rather than a thin diagonal band in `(x₁, x₂)`.
-//! Because the LHAPDF grid returns `x·f(x)` and `x₁x₂ = τ` matches the `dτ`
-//! Jacobian factor, the `1/x₁x₂` in `f = (x·f)/x` cancels the `τ`: the
-//! luminosity is built directly from `x·f` products and the phase-space weight
-//! is the bare `ln(1/τ_min) · 2·y_max`.
-//!
 //! # Frames
 //!
-//! The matrix element is evaluated in the **partonic CM** with the beams along
+//! A matrix element is evaluated in the **partonic CM** with the beams along
 //! ±z — the frame the helicity-pruned [`BoundAmplitude::eval_m2`] requires — where
-//! `|M|²` is a Lorentz invariant. The cut filter operates in the **lab frame**,
-//! so the final-state momenta are boosted along z by the partonic-system rapidity
-//! `y = ½ ln(x₁/x₂)` before [`Cuts::pass`], whose rapidity/pT observables are not
-//! z-boost invariant.
+//! `|M|²` is a Lorentz invariant. A cut filter operates in the **lab frame**,
+//! whose rapidity/pT observables are not z-boost invariant.
 
 use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
@@ -63,22 +26,20 @@ use std::f64::consts::PI;
 use rand::SeedableRng;
 use thiserror::Error;
 
+use crate::artifact::ChannelSampler;
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::scales::{ClusterTopology, EventScales, ScaleChoice, ScaleError, ScaleEvent};
 use crate::coupling::topology::cluster_topology;
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
-use crate::diagrams::{
-    generate_from_proc_card, parse_proc_card, DiagramError, DiagramSet, ParsingOptions,
-};
+use crate::diagrams::{DiagramError, DiagramSet};
 use crate::helas::color::flow_tags::select_flow;
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::grid::AlphaSInfo;
-use crate::pdf::PdfMember;
 use crate::phasespace::{
-    lips2_jacobian_u, AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel,
-    PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
+    AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel, PhaseSpaceMap,
+    PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
 };
 use crate::runcard::RunCard;
 use crate::select::select_index;
@@ -88,8 +49,6 @@ use crate::vegas::{VegasGrid, VegasResult};
 
 type V = LorentzVector<f64>;
 
-/// VEGAS integration dimensions for the `(τ, y, cosθ)` map (§2.5).
-pub const VEGAS_NDIM: usize = 3;
 pub const VEGAS_NBINS: usize = 64;
 pub const VEGAS_ALPHA: f64 = 1.5;
 
@@ -140,13 +99,6 @@ pub enum HadronicError {
     Cut(#[from] CutError),
     #[error("amplitude compilation failed: {0}")]
     Compile(String),
-    #[error(
-        "unexpected Drell–Yan flavor content: up-type {up:?}, down-type {down:?} \
-         (expected up {{2,4}}, down {{1,3}}, no b, no gluon-initiated diagrams)"
-    )]
-    UnexpectedFlavors { up: Vec<i32>, down: Vec<i32> },
-    #[error("no diagrams generated for the up-type or down-type Drell–Yan subprocess")]
-    MissingClass,
     #[error("proc card generated no non-empty subprocess")]
     NoSubprocess,
     #[error(
@@ -294,535 +246,12 @@ pub(crate) fn components(p: &V) -> [f64; 4] {
     [p.e(), p.px(), p.py(), p.pz()]
 }
 
-/// The Z/γ coupling classes of LO Drell–Yan, resolved from the `p p > e+ e-`
-/// diagram enumeration rather than hand-coded flavor lists.
-///
-/// The representative subprocess of each class has its beams ordered
-/// `[q, q̄, e⁺, e⁻]` (quark on beam 1); `up_flavors` / `down_flavors` are the
-/// positive quark PDG codes whose PDF luminosities feed the class.
-pub struct FlavorClasses {
-    pub up_set: DiagramSet,
-    pub down_set: DiagramSet,
-    pub up_flavors: Vec<i32>,
-    pub down_flavors: Vec<i32>,
-}
-
-/// Generate the `p p → e⁺ e⁻` subprocesses — the input [`dy_flavor_classes`]
-/// partitions. Kept separate so the assembly is driven by generated diagram sets
-/// (from the caller's proc card) rather than a re-parsed hard-coded string.
-pub fn generate_dy_subprocesses(model: &UFOModel) -> Result<Vec<DiagramSet>, HadronicError> {
-    let opts = ParsingOptions::default();
-    let card = parse_proc_card("generate p p > e+ e-", &opts)?;
-    Ok(generate_from_proc_card(&card, model)?)
-}
-
-/// Partition the quark-initiated subprocesses of a `p p → e⁺ e⁻` enumeration into
-/// up-type and down-type Z/γ coupling classes, asserting the partition matches
-/// the expected massless 4-flavor content. `sets` come from the caller's proc
-/// card (e.g. via [`generate_dy_subprocesses`]).
-pub fn dy_flavor_classes(
-    sets: Vec<DiagramSet>,
-    model: &UFOModel,
-) -> Result<FlavorClasses, HadronicError> {
-    let mut up_flavors: Vec<i32> = Vec::new();
-    let mut down_flavors: Vec<i32> = Vec::new();
-    let mut up_set: Option<DiagramSet> = None;
-    let mut down_set: Option<DiagramSet> = None;
-
-    for set in sets {
-        if set.diagrams.is_empty() {
-            continue;
-        }
-        // A Drell–Yan subprocess is a quark–antiquark pair annihilating to the
-        // charged-lepton pair. Skip anything else (identical-flavor gg, etc.).
-        let Some(pdgs) = incoming_pdgs(model, &set) else {
-            continue;
-        };
-        let (a, b) = (pdgs[0], pdgs[1]);
-        if a != -b || a == 0 {
-            continue;
-        }
-        let quark = a.abs();
-        // Canonical orientation: quark (positive PDG) on beam 1.
-        let quark_first = a > 0;
-
-        match quark {
-            2 | 4 => {
-                push_unique(&mut up_flavors, quark);
-                if quark == 2 && quark_first && up_set.is_none() {
-                    up_set = Some(set);
-                }
-            }
-            1 | 3 => {
-                push_unique(&mut down_flavors, quark);
-                if quark == 1 && quark_first && down_set.is_none() {
-                    down_set = Some(set);
-                }
-            }
-            _ => {
-                // b-quark or any other flavor with a surviving diagram violates
-                // the massless 4-flavor assumption.
-                up_flavors.push(-quark);
-            }
-        }
-    }
-
-    up_flavors.sort_unstable();
-    down_flavors.sort_unstable();
-    if up_flavors != [2, 4] || down_flavors != [1, 3] {
-        return Err(HadronicError::UnexpectedFlavors {
-            up: up_flavors,
-            down: down_flavors,
-        });
-    }
-    let (Some(up_set), Some(down_set)) = (up_set, down_set) else {
-        return Err(HadronicError::MissingClass);
-    };
-
-    Ok(FlavorClasses {
-        up_set,
-        down_set,
-        up_flavors,
-        down_flavors,
-    })
-}
-
-fn incoming_pdgs(model: &UFOModel, set: &DiagramSet) -> Option<[i32; 2]> {
-    if set.particles_in.len() != 2 {
-        return None;
-    }
-    let pdg = |name: &str| -> Option<i32> {
-        let id = model.particle_id(name)?;
-        Some(model.particle(id).pdg_code as i32)
-    };
-    Some([pdg(&set.particles_in[0])?, pdg(&set.particles_in[1])?])
-}
-
-fn push_unique(v: &mut Vec<i32>, x: i32) {
-    if !v.contains(&x) {
-        v.push(x);
-    }
-}
-
-/// A ready-to-integrate Drell–Yan integrand over `(x₁, x₂, cosθ)`.
-///
-/// Borrows the two class amplitudes, the PDF member, and the compiled cuts; owns
-/// per-class evaluation scratch (behind [`RefCell`] so the integrand is `Fn`).
-pub struct DrellYanIntegrand<'a> {
-    subs: [BoundSubprocess<'a>; 2],
-    pdf: &'a PdfMember,
-    cuts: &'a Cuts,
-    up_flavors: Vec<i32>,
-    down_flavors: Vec<i32>,
-    /// Initial-state spin×colour averaging factor, derived from the incoming
-    /// quark–antiquark pair (`1/(2·2·3·3) = 1/36`).
-    spin_color_avg: f64,
-    /// Total hadronic invariant `s = (E₁+E₂)²` (head-on beams).
-    s_had: f64,
-    /// The renormalisation scale the coupling follows and the *per-beam*
-    /// factorisation scale the parton distributions are read at. A run card that
-    /// fixes both leaves this a constant, and then no event kinematics are read.
-    scales: EventScaleSource,
-    /// Reused marshalling buffer for the lab-frame outgoing momenta the scale
-    /// prescription reads.
-    scale_buf: RefCell<Vec<[f64; 4]>>,
-    /// Lower support of the logarithmic τ = ŝ/s map, `ŝ_min / s`.
-    tau_min: f64,
-    ln_inv_tau_min: f64,
-}
-
-/// Index of the up-type and down-type coupling class in [`DrellYanIntegrand`]'s
-/// subprocess pair.
-const DY_UP: usize = 0;
-const DY_DOWN: usize = 1;
-
-/// The Drell–Yan integrand decomposed into physical factors at one VEGAS point,
-/// for the pointwise integrand oracle ([`DrellYanIntegrand::debug_factors`]).
-#[derive(Clone, Copy, Debug)]
-pub struct PointFactors {
-    pub x1: f64,
-    pub x2: f64,
-    pub cos_theta: f64,
-    pub sqrt_shat: f64,
-    /// Up-type PDF luminosity `Σ_{q∈{u,c}} [x·f_q(x₁)·x·f_q̄(x₂) + (x₁↔x₂)]`.
-    pub lum_up: f64,
-    /// Down-type PDF luminosity `Σ_{q∈{d,s}} [...]`.
-    pub lum_down: f64,
-    /// Up-type color+helicity-summed |M|² (MadGraph MATRIX1 convention).
-    pub m2_up: f64,
-    /// Down-type color+helicity-summed |M|².
-    pub m2_down: f64,
-    /// Partonic prefactor `1/(2ŝ) · LIPS · spin·colour average` (flux, the
-    /// 2-body LIPS Jacobian, and the process-derived initial-state average `1/36`).
-    pub phat: f64,
-    /// `(τ, y)` phase-space Jacobian (the `1/τ` already divided out).
-    pub jac: f64,
-    /// Whether the lab-frame momenta pass every compiled cut.
-    pub pass: bool,
-    /// The integrand value (`0` when the cut fails).
-    pub value: f64,
-}
-
-/// A VEGAS point mapped to Drell–Yan kinematics via `(τ, y)`.
-struct MappedPoint {
-    x1: f64,
-    x2: f64,
-    sqrt_shat: f64,
-    cos_theta: f64,
-    /// Phase-space Jacobian `dτ dy / (du₁ du₂)` with the `1/τ` from
-    /// `f = (x·f)/x` on both legs already divided out.
-    jac: f64,
-}
-
-impl<'a> DrellYanIntegrand<'a> {
-    /// Build the integrand.
-    ///
-    /// * `up` / `down` — bound amplitudes for the up-/down-type representative
-    ///   subprocess, each with legs ordered `[q, q̄, e⁺, e⁻]`.
-    /// * `pdf` — the PDF member evaluated at `μF`.
-    /// * `cuts` — the compiled cut filter (its [`Cuts::shat_min`] sets `x_min`).
-    /// * `up_flavors` / `down_flavors` — positive quark PDG codes per class.
-    /// * `sqrt_s_had` — total collider energy `√s = E₁ + E₂`.
-    /// * `mu_f` — a constant factorization scale on both beams, replaced by the
-    ///   run card's prescription by
-    ///   [`use_run_card_scales`](Self::use_run_card_scales).
-    ///
-    /// The initial-state spin×colour averaging factor is derived from the up-type
-    /// class's incoming legs ([`initial_spin_color_average`]); both classes share
-    /// the same quark–antiquark initial state.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        up: &'a BoundAmplitude<'a, f64>,
-        down: &'a BoundAmplitude<'a, f64>,
-        pdf: &'a PdfMember,
-        cuts: &'a Cuts,
-        up_flavors: Vec<i32>,
-        down_flavors: Vec<i32>,
-        sqrt_s_had: f64,
-        mu_f: f64,
-        spin_color_avg: f64,
-    ) -> Self {
-        let s_had = sqrt_s_had * sqrt_s_had;
-        let tau_min = cuts.shat_min() / s_had;
-        DrellYanIntegrand {
-            subs: [BoundSubprocess::fixed(up), BoundSubprocess::fixed(down)],
-            pdf,
-            cuts,
-            up_flavors,
-            down_flavors,
-            spin_color_avg,
-            s_had,
-            scales: EventScaleSource::constant(mu_f),
-            scale_buf: RefCell::new(Vec::with_capacity(2)),
-            tau_min,
-            ln_inv_tau_min: (1.0 / tau_min).ln(),
-        }
-    }
-
-    /// Take the renormalisation and per-beam factorisation scales from the run card
-    /// instead of the constant `μF` [`new`](Self::new) was given.
-    ///
-    /// `diagrams` are the up-type class's, from which the
-    /// [`ClusterTopology`](crate::coupling::scales::ClusterTopology) the `-1` scale
-    /// consults is derived; both classes are the same colour-singlet annihilation
-    /// off quark beams, so one declaration serves them.
-    ///
-    /// A run card that fixes both scales leaves the prescription a constant, and the
-    /// integrand then reads the parton distributions at exactly the scale it did
-    /// before — which is what keeps a cross section banked against such a card where
-    /// it was.
-    pub fn use_run_card_scales(
-        &mut self,
-        diagrams: &[Diagram],
-        model: &UFOModel,
-        evaluated: &EvaluatedModel,
-        card: &RunCard,
-    ) -> Result<RunningCouplingReport, HadronicError> {
-        let awareness = make_subs_scale_aware(&mut self.subs, evaluated);
-        // Unlike a fixed-beam run, the factorisation scale here has a consumer
-        // whatever the matrix element is made of, so the prescription is compiled
-        // even when nothing moves with the strong coupling.
-        // Drell-Yan carries no strong coupling at LO, so no source is built and the
-        // set's own alpha_s tabulation is never consulted.
-        let source = compile_scale_source(
-            self.subs[DY_UP].evaluator(),
-            diagrams,
-            model,
-            evaluated,
-            card,
-            None,
-            awareness.depends_on_alpha_s,
-        )?;
-        let report = constant_scale_report(&self.subs, Some(&source), awareness);
-        self.scales = source;
-        Ok(report)
-    }
-
-    /// Lower support `ŝ_min / s` of the logarithmic τ map.
-    pub fn tau_min(&self) -> f64 {
-        self.tau_min
-    }
-
-    /// Partonic prefactor `flux · LIPS · spin·colour average` for the 2→2
-    /// integrand: `1/(2ŝ)` flux, the 2-body LIPS Jacobian for the `cosθ ↔ u₃`
-    /// map, and the process-derived initial-state average.
-    fn partonic_prefactor(&self, sqrt_shat: f64) -> f64 {
-        let flux = 1.0 / (2.0 * sqrt_shat * sqrt_shat);
-        flux * lips2_jacobian_u(sqrt_shat) * self.spin_color_avg
-    }
-
-    /// Map a VEGAS point `u ∈ [0,1]³` to Drell–Yan kinematics.
-    ///
-    /// `τ = ŝ/s` is sampled logarithmically over `[τ_min, 1]`
-    /// (`τ = τ_min^(1−u₁)`, so `τ ≥ τ_min` makes `ŝ ≥ ŝ_min` automatic — no
-    /// low-side rejection band). The parton rapidity `y = ½ ln(x₁/x₂)` is
-    /// sampled uniformly over its kinematic range `|y| ≤ ½ ln(1/τ)`, which keeps
-    /// `x₁, x₂ ∈ [τ, 1]`. With this change of variables the mass window is a
-    /// one-dimensional bound on `τ` that VEGAS resolves far better than the thin
-    /// diagonal band the direct `(x₁, x₂)` map produces. `cosθ = 2u₃ − 1`.
-    fn map_point(&self, u: &[f64]) -> MappedPoint {
-        let tau = self.tau_min.powf(1.0 - u[0]);
-        let sqrt_tau = tau.sqrt();
-        let y_max = -0.5 * tau.ln();
-        let y = (2.0 * u[1] - 1.0) * y_max;
-        // dτ/du₁ = τ ln(1/τ_min); dy/du₂ = 2 y_max. The `1/τ` from `f = (x·f)/x`
-        // on both legs cancels the τ, leaving ln(1/τ_min)·2·y_max.
-        let jac = self.ln_inv_tau_min * 2.0 * y_max;
-        MappedPoint {
-            x1: sqrt_tau * y.exp(),
-            x2: sqrt_tau * (-y).exp(),
-            sqrt_shat: (tau * self.s_had).sqrt(),
-            cos_theta: 2.0 * u[2] - 1.0,
-            jac,
-        }
-    }
-
-    /// The integrand value at a VEGAS point `u ∈ [0,1]³`, in natural units
-    /// (GeV⁻²); its VEGAS integral is the hadronic cross section. Points whose
-    /// `ŝ` falls below the cut window or whose lab-frame momenta fail a cut
-    /// contribute exactly zero.
-    pub fn value(&self, u: &[f64]) -> f64 {
-        let m = self.map_point(u);
-
-        let Kinematics { cm, lab } =
-            build_kinematics(m.sqrt_shat, m.cos_theta, m.x1, m.x2, self.s_had);
-        if !self.cuts.pass(&lab) {
-            return 0.0;
-        }
-
-        let scales = self.event_scales(&lab);
-        let lum_up = self.luminosity(&self.up_flavors, m.x1, m.x2, scales.mu_f);
-        let lum_down = self.luminosity(&self.down_flavors, m.x1, m.x2, scales.mu_f);
-        if lum_up == 0.0 && lum_down == 0.0 {
-            return 0.0;
-        }
-
-        let phat = self.partonic_prefactor(m.sqrt_shat);
-
-        self.apply_scale(scales.mu_r);
-        let m2_up = self.subs[DY_UP].eval_m2(&cm);
-        let m2_down = self.subs[DY_DOWN].eval_m2(&cm);
-
-        m.jac * phat * (m2_up * lum_up + m2_down * lum_down)
-    }
-
-    /// The scales at one event, from the lab-frame momenta the prescription is
-    /// defined in. A run card that fixes them reads no kinematics at all.
-    fn event_scales(&self, lab: &[V]) -> EventScales {
-        if let Some(fixed) = self.scales.constant_scales() {
-            return fixed;
-        }
-        let mut buf = self.scale_buf.borrow_mut();
-        buf.clear();
-        buf.extend(lab[2..].iter().map(components));
-        self.scales
-            .scales([components(&lab[0]), components(&lab[1])], &buf)
-            .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
-    }
-
-    /// Move both class amplitudes to the coupling `mu_r` implies. A Drell–Yan
-    /// matrix element carries no strong coupling, so no running coupling is built
-    /// for it and this returns without touching the pools.
-    fn apply_scale(&self, mu_r: f64) {
-        let Some(running) = self.scales.alpha_s() else {
-            return;
-        };
-        let alpha_s = running.eval(mu_r);
-        for sub in &self.subs {
-            sub.set_alpha_s(alpha_s);
-        }
-    }
-
-    /// The integrand decomposed into its physical factors at a VEGAS point — the
-    /// target of the pointwise integrand oracle. `value` equals
-    /// `jac · phat · (m2_up·lum_up + m2_down·lum_down)` when `pass`, else `0`.
-    pub fn debug_factors(&self, u: &[f64]) -> PointFactors {
-        let m = self.map_point(u);
-        let Kinematics { cm, lab } =
-            build_kinematics(m.sqrt_shat, m.cos_theta, m.x1, m.x2, self.s_had);
-        let pass = self.cuts.pass(&lab);
-        let scales = self.event_scales(&lab);
-        let lum_up = self.luminosity(&self.up_flavors, m.x1, m.x2, scales.mu_f);
-        let lum_down = self.luminosity(&self.down_flavors, m.x1, m.x2, scales.mu_f);
-        let phat = self.partonic_prefactor(m.sqrt_shat);
-        self.apply_scale(scales.mu_r);
-        let m2_up = self.subs[DY_UP].eval_m2(&cm);
-        let m2_down = self.subs[DY_DOWN].eval_m2(&cm);
-        let value = if pass {
-            m.jac * phat * (m2_up * lum_up + m2_down * lum_down)
-        } else {
-            0.0
-        };
-        PointFactors {
-            x1: m.x1,
-            x2: m.x2,
-            cos_theta: m.cos_theta,
-            sqrt_shat: m.sqrt_shat,
-            lum_up,
-            lum_down,
-            m2_up,
-            m2_down,
-            phat,
-            jac: m.jac,
-            pass,
-            value,
-        }
-    }
-
-    /// Summed PDF luminosity for one coupling class:
-    /// `Σ_q [ (x·f_q)(x₁) (x·f_q̄)(x₂) + (x·f_q̄)(x₁) (x·f_q)(x₂) ]`.
-    ///
-    /// `mu_f` is per beam, in beam order: MadGraph carries `q2fact(1)` and
-    /// `q2fact(2)` separately and its clustering can put them at different values,
-    /// so `x₁` is read at beam 1's scale and `x₂` at beam 2's.
-    fn luminosity(&self, flavors: &[i32], x1: f64, x2: f64, mu_f: [f64; 2]) -> f64 {
-        let q2 = [mu_f[0] * mu_f[0], mu_f[1] * mu_f[1]];
-        let mut acc = 0.0;
-        for &q in flavors {
-            let fq1 = self.pdf.xfx_q2(q, x1, q2[0]);
-            let fq2 = self.pdf.xfx_q2(q, x2, q2[1]);
-            let fqb1 = self.pdf.xfx_q2(-q, x1, q2[0]);
-            let fqb2 = self.pdf.xfx_q2(-q, x2, q2[1]);
-            acc += fq1 * fqb2 + fqb1 * fq2;
-        }
-        acc
-    }
-
-    /// Integrate the cross section with VEGAS, returning `(σ, Δσ)` in picobarns.
-    ///
-    /// `niter` adaptation iterations of `neval` points each; `seed` drives a
-    /// reproducible RNG.
-    pub fn integrate(&self, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
-        let result = self.integrate_raw(neval, niter, seed);
-        (result.integral * GEV2_TO_PB, result.std_dev * GEV2_TO_PB)
-    }
-
-    /// The raw VEGAS result (natural units, GeV⁻²), grid discarded.
-    pub fn integrate_raw(&self, neval: usize, niter: usize, seed: u64) -> VegasResult {
-        self.adapt_grid(neval, niter, seed).1
-    }
-
-    /// Run VEGAS adaptation, returning the trained grid alongside the result —
-    /// the primitive the `integrate` CLI command serializes into its artifact.
-    pub fn adapt_grid(&self, neval: usize, niter: usize, seed: u64) -> (VegasGrid, VegasResult) {
-        let mut grid = VegasGrid::new(VEGAS_NDIM, VEGAS_NBINS, VEGAS_ALPHA);
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-        let result = grid.adapt(|u| self.value(u), neval, niter, &mut rng);
-        (grid, result)
-    }
-
-    /// Differential cross section `dσ/dm_ℓℓ` (pb/GeV) on a uniform `m_ℓℓ` grid
-    /// over `[m_lo, m_hi]`, by plain Monte-Carlo binning of the integrand — an
-    /// informational shape diagnostic, not a gated quantity.
-    pub fn dsigma_dmll(
-        &self,
-        m_lo: f64,
-        m_hi: f64,
-        nbins: usize,
-        neval: usize,
-        seed: u64,
-    ) -> Vec<f64> {
-        use rand::Rng;
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-        let mut bins = vec![0.0f64; nbins];
-        let bin_w = (m_hi - m_lo) / nbins as f64;
-        // Each sample contributes value(u) (already the full GeV⁻² integrand) /
-        // neval to the estimate of σ; distribute it into the m_ℓℓ bin and divide
-        // by the bin width to form a density.
-        for _ in 0..neval {
-            let u = [
-                rng.random::<f64>(),
-                rng.random::<f64>(),
-                rng.random::<f64>(),
-            ];
-            let mll = self.map_point(&u).sqrt_shat;
-            if mll < m_lo || mll >= m_hi {
-                continue;
-            }
-            let w = self.value(&u);
-            if w == 0.0 {
-                continue;
-            }
-            let bin = (((mll - m_lo) / bin_w) as usize).min(nbins - 1);
-            bins[bin] += w;
-        }
-        for b in &mut bins {
-            *b *= GEV2_TO_PB / (neval as f64 * bin_w);
-        }
-        bins
-    }
-}
-
-struct Kinematics {
-    /// Partonic-CM momenta `[q, q̄, e⁺, e⁻]` with beams along ±z.
-    cm: Vec<V>,
-    /// Lab-frame momenta `[q, q̄, e⁺, e⁻]` (CM boosted along z by the parton
-    /// system rapidity), for the cut filter.
-    lab: Vec<V>,
-}
-
-/// Build the partonic-CM and lab-frame external momenta for a back-to-back
-/// dilepton event. `cos_theta` is the CM polar angle of `e⁺`; the azimuth is
-/// fixed (the total cross section is azimuthally symmetric and the two leptons
-/// stay diametrically opposed in φ under a z-boost, so `Δφ = π` never trips the
-/// `drll` cut).
-fn build_kinematics(sqrt_shat: f64, cos_theta: f64, x1: f64, x2: f64, s_had: f64) -> Kinematics {
-    let half = sqrt_shat / 2.0;
-    let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
-
-    let q = V::new(half, 0.0, 0.0, half);
-    let qbar = V::new(half, 0.0, 0.0, -half);
-    let ep = V::new(half, half * sin_theta, 0.0, half * cos_theta);
-    let em = V::new(half, -half * sin_theta, 0.0, -half * cos_theta);
-    let cm = vec![q, qbar, ep, em];
-
-    // Parton-system boost from CM to lab along z: β = (x₁−x₂)/(x₁+x₂).
-    let beta = (x1 - x2) / (x1 + x2);
-    let e_beam = s_had.sqrt() / 2.0;
-    let q_lab = V::new(x1 * e_beam, 0.0, 0.0, x1 * e_beam);
-    let qbar_lab = V::new(x2 * e_beam, 0.0, 0.0, -x2 * e_beam);
-    let lab = vec![q_lab, qbar_lab, boost_z(ep, beta), boost_z(em, beta)];
-
-    Kinematics { cm, lab }
-}
-
 /// Boost a four-momentum along z with velocity `beta` (CM → lab for `beta > 0`).
 pub(crate) fn boost_z(p: V, beta: f64) -> V {
     let gamma = 1.0 / (1.0 - beta * beta).sqrt();
     let e = gamma * (p.e() + beta * p.pz());
     let pz = gamma * (p.pz() + beta * p.e());
     V::new(e, p.px(), p.py(), pz)
-}
-
-/// Build the four external legs `[q, q̄, e⁺, e⁻]` for a Drell–Yan subprocess,
-/// for [`Cuts::compile`]. The quark carries `quark_pdg` (positive), massless.
-pub fn dy_external_legs(quark_pdg: i32) -> Vec<ExternalLeg> {
-    vec![
-        ExternalLeg::incoming(quark_pdg, 0.0),
-        ExternalLeg::incoming(-quark_pdg, 0.0),
-        ExternalLeg::outgoing(-11, 0.0),
-        ExternalLeg::outgoing(11, 0.0),
-    ]
 }
 
 /// Compile and helicity-prune a class amplitude from its representative
@@ -1159,6 +588,11 @@ pub struct FixedBeamIntegrand<'a> {
     /// and masses: flat [`RamboChannel`] by default, a resonance-aware
     /// [`MultiChannel`] once [`use_multichannel`](Self::use_multichannel) has run.
     sampler: Sampler,
+    /// What the composition rule chose for each channel of an installed
+    /// multichannel map, read off the channels as they were built and kept
+    /// because they are type-erased behind [`Channel`] afterwards. Empty under
+    /// flat RAMBO, which is not a rule-based composition.
+    channel_samplers: Vec<ChannelSampler>,
     /// The outgoing pole masses in leg order, the map's targets.
     final_masses: Vec<f64>,
     /// `1 / Π_a (n_spin · n_colour)` over the incoming legs.
@@ -1317,6 +751,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             cuts,
             sqrt_s,
             sampler,
+            channel_samplers: Vec::new(),
             final_masses,
             spin_color_avg,
             symmetry_factor,
@@ -1548,16 +983,18 @@ impl<'a> FixedBeamIntegrand<'a> {
         n_iter: usize,
         seed: u64,
     ) -> Option<AlphaAdaptation<f64>> {
-        let channels: Vec<Box<dyn Channel<f64>>> = diagrams
+        let built: Vec<DiagramChannel<f64>> = diagrams
             .iter()
-            .map(|d| {
-                Box::new(DiagramChannel::from_diagram(d, model, self.sqrt_s))
-                    as Box<dyn Channel<f64>>
-            })
+            .map(|d| DiagramChannel::from_diagram(d, model, self.sqrt_s))
             .collect();
-        if channels.is_empty() {
+        if built.is_empty() {
             return None;
         }
+        let samplers: Vec<ChannelSampler> = built.iter().map(ChannelSampler::of).collect();
+        let channels: Vec<Box<dyn Channel<f64>>> = built
+            .into_iter()
+            .map(|c| Box::new(c) as Box<dyn Channel<f64>>)
+            .collect();
         let mut combiner = MultiChannel::uniform(channels);
         let report = combiner.adapt_alphas(
             |momenta| self.matrix_element(momenta),
@@ -1568,6 +1005,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             0.5,
         );
         self.sampler = Sampler::Multi(combiner);
+        self.channel_samplers = samplers;
         self.vegas_alpha = VEGAS_ALPHA_MAPPED;
         Some(report)
     }
@@ -1595,22 +1033,25 @@ impl<'a> FixedBeamIntegrand<'a> {
         model: &EvaluatedModel,
         alphas: &[f64],
     ) -> Option<Result<(), usize>> {
-        let channels: Vec<Box<dyn Channel<f64>>> = diagrams
+        let built: Vec<DiagramChannel<f64>> = diagrams
             .iter()
-            .map(|d| {
-                Box::new(DiagramChannel::from_diagram(d, model, self.sqrt_s))
-                    as Box<dyn Channel<f64>>
-            })
+            .map(|d| DiagramChannel::from_diagram(d, model, self.sqrt_s))
             .collect();
-        if channels.is_empty() {
+        if built.is_empty() {
             return None;
         }
+        let samplers: Vec<ChannelSampler> = built.iter().map(ChannelSampler::of).collect();
+        let channels: Vec<Box<dyn Channel<f64>>> = built
+            .into_iter()
+            .map(|c| Box::new(c) as Box<dyn Channel<f64>>)
+            .collect();
         if channels.len() != alphas.len() {
             return Some(Err(channels.len()));
         }
         let mut combiner = MultiChannel::uniform(channels);
         combiner.set_alphas(alphas.to_vec());
         self.sampler = Sampler::Multi(combiner);
+        self.channel_samplers = samplers;
         self.vegas_alpha = VEGAS_ALPHA_MAPPED;
         Some(Ok(()))
     }
@@ -1622,6 +1063,13 @@ impl<'a> FixedBeamIntegrand<'a> {
             Sampler::Flat(_) => 1,
             Sampler::Multi(c) => c.channels().len(),
         }
+    }
+
+    /// What the rule-based composition chose for each channel, in channel order.
+    /// Empty under flat RAMBO, whose single channel is not composed from a
+    /// diagram's propagator structure.
+    pub fn channel_samplers(&self) -> &[ChannelSampler] {
+        &self.channel_samplers
     }
 
     /// The converged channel selection weights, or `[1.0]` under the flat map.
@@ -1861,6 +1309,7 @@ impl ChannelIntegrand for FixedBeamIntegrand<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::runcard::RunCard;
     use crate::ufo::sm::{sm_model, SMRestrict};
 
@@ -1868,15 +1317,18 @@ mod tests {
         sm_model(SMRestrict::Default)
     }
 
-    #[test]
-    fn dy_flavor_classes_partition_matches_enumeration() {
-        let m = model();
-        let fc = dy_flavor_classes(generate_dy_subprocesses(&m).unwrap(), &m).expect("classify DY");
-        assert_eq!(fc.up_flavors, vec![2, 4]);
-        assert_eq!(fc.down_flavors, vec![1, 3]);
-        // The representative subprocess has the quark on beam 1.
-        assert_eq!(fc.up_set.particles_in.len(), 2);
-        assert_eq!(fc.down_set.particles_in.len(), 2);
+    /// Partonic-CM external momenta `[q, q̄, e⁺, e⁻]` of a back-to-back dilepton
+    /// configuration, beams along ±z. `cos_theta` is the CM polar angle of `e⁺`
+    /// and the azimuth is fixed, which the total cross section is symmetric in.
+    fn dilepton_cm(sqrt_shat: f64, cos_theta: f64) -> Vec<V> {
+        let half = sqrt_shat / 2.0;
+        let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
+        vec![
+            V::new(half, 0.0, 0.0, half),
+            V::new(half, 0.0, 0.0, -half),
+            V::new(half, half * sin_theta, 0.0, half * cos_theta),
+            V::new(half, -half * sin_theta, 0.0, -half * cos_theta),
+        ]
     }
 
     #[test]
@@ -1902,51 +1354,15 @@ mod tests {
 
         let sqrt_shat = 200.0;
         for &cos in &[-0.7, -0.2, 0.3, 0.85] {
-            let k = build_kinematics(sqrt_shat, cos, 0.02, 0.01, (13000.0f64).powi(2));
-            let a = b_uu.eval_m2(&k.cm, &mut s_uu);
-            let b = b_cc.eval_m2(&k.cm, &mut s_cc);
+            let cm = dilepton_cm(sqrt_shat, cos);
+            let a = b_uu.eval_m2(&cm, &mut s_uu);
+            let b = b_cc.eval_m2(&cm, &mut s_cc);
             let rel = (a - b).abs() / a.abs().max(1e-30);
             assert!(
                 rel < 1e-12,
                 "u ū vs c c̄ |M|² differ: {a} vs {b} (rel {rel:.2e})"
             );
         }
-    }
-
-    #[test]
-    fn cut_indicator_zeros_the_integrand() {
-        let m = model();
-        let evaluated = EvaluatedModel::from_model(m.clone());
-        let fc = dy_flavor_classes(generate_dy_subprocesses(&m).unwrap(), &m).unwrap();
-        let up = compile_class(&fc.up_set, &m, &evaluated).unwrap();
-        let down = compile_class(&fc.down_set, &m, &evaluated).unwrap();
-        let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
-        let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
-
-        // Default DY cuts. `value` applies the cut indicator before consuming the
-        // PDF, so a cut-failing point returns before touching it; use a tiny
-        // synthetic PDF member.
-        let rc = RunCard::default();
-        let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
-        let pdf = tiny_pdf();
-
-        let avg = initial_spin_color_average(&up, &m, &evaluated);
-        let integ = DrellYanIntegrand::new(
-            &b_up,
-            &b_down,
-            &pdf,
-            &cuts,
-            fc.up_flavors,
-            fc.down_flavors,
-            13000.0,
-            91.188,
-            avg,
-        );
-        // cosθ → 1 (u₃ ≈ 1) sends the leptons collinear with the beam: pT → 0
-        // fails the ptl = 10 GeV cut, so the indicator zeros the integrand.
-        assert_eq!(integ.value(&[0.5, 0.5, 0.99999]), 0.0);
-        // A central, well-clear point at the ŝ floor is nonzero.
-        assert!(integ.value(&[0.0, 0.5, 0.5]) > 0.0);
     }
 
     fn build_evaluator(proc: &str, m: &UFOModel, evaluated: &EvaluatedModel) -> AmplitudeEvaluator {
@@ -2562,22 +1978,5 @@ mod tests {
             wrong.use_multichannel_with_alphas(&diagrams, &evaluated, short),
             Some(Err(diagrams.len()))
         );
-    }
-
-    fn tiny_pdf() -> PdfMember {
-        use crate::pdf::grid::SubGrid;
-        // A single-knot-band synthetic grid covering the DY x/Q² region with a
-        // constant x·f; only used where the integrand must short-circuit before
-        // consuming the PDF, so the values are immaterial.
-        let flavors = vec![-4, -3, -2, -1, 1, 2, 3, 4, 21];
-        let nx = 2;
-        let nq = 2;
-        let xf = vec![0.1; nx * nq * flavors.len()];
-        PdfMember::from_subgrids(vec![SubGrid {
-            x: vec![1e-7, 1.0],
-            q2: vec![1.0, 1e8],
-            flavors,
-            xf,
-        }])
     }
 }

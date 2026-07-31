@@ -10,8 +10,6 @@
 //! * `lpp = 1` (proton beams) — an arbitrary process, PDF-convolved over a
 //!   `(τ, y)` outer map with a per-diagram multichannel inner map pooled across
 //!   the process's flavour groups, one VEGAS grid per `(group, diagram)` channel.
-//!   Drell–Yan `p p → e⁺ e⁻` is dispatched to a bespoke integrand over a
-//!   `(τ, y) × cosθ` map banked as a single grid instead.
 //! * `lpp = 0` (fixed-energy partonic beams) — an arbitrary process with no PDF
 //!   convolution over any final multiplicity, sampled by a resonance-aware
 //!   per-diagram multichannel map whose integral is split channel by channel, one
@@ -20,15 +18,16 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use vibegraph::artifact::{ChannelGrid, ChannelKey, IntegrateArtifact, FORMAT_VERSION};
+use vibegraph::artifact::{
+    ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, FORMAT_VERSION,
+};
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{
     generate_from_proc_card, parse_proc_card_file, ParsedProcCard, ParsingOptions,
 };
 use vibegraph::hadronic::{
-    compile_class, compile_subprocesses, dy_flavor_classes, generate_dy_subprocesses,
-    initial_spin_color_average, process_external_legs, ChannelIntegration, DrellYanIntegrand,
+    compile_subprocesses, initial_spin_color_average, process_external_legs, ChannelIntegration,
     FixedBeamIntegrand, RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
@@ -59,15 +58,6 @@ const MAX_ADAPT_SURVEY: usize = 40_000;
 const ADAPT_ITERS: usize = 6;
 /// Kleiss–Pittau exponent the α-reallocation is damped by.
 const ADAPT_DAMPING: f64 = 0.5;
-
-/// The one process the bespoke Drell–Yan integrand computes.
-///
-/// It is dispatched by an exact match on the proc card rather than by whether the
-/// general hadronic path happens to fail on it: that integrand is the pipeline's
-/// bit-reproducibility anchor, and it derives its own subprocesses instead of
-/// reading the card's, so anything else reaching it would be integrated as
-/// Drell–Yan under another process's name.
-const DRELL_YAN_PROCESS: &str = "p p > e+ e-";
 
 #[derive(Args, Debug)]
 pub struct IntegrateArgs {
@@ -183,8 +173,12 @@ struct RunOutput {
 }
 
 /// Convert one channel's integration into the artifact record, with its term's
-/// integral and error in picobarns.
-fn bank_channel(key: ChannelKey, c: &ChannelIntegration) -> ChannelGrid {
+/// integral and error in picobarns and the composition its map was built by.
+fn bank_channel(
+    key: ChannelKey,
+    c: &ChannelIntegration,
+    sampler: Option<ChannelSampler>,
+) -> ChannelGrid {
     ChannelGrid {
         key,
         alpha: c.alpha,
@@ -193,6 +187,7 @@ fn bank_channel(key: ChannelKey, c: &ChannelIntegration) -> ChannelGrid {
         sigma_pb: c.result.integral * GEV2_TO_PB,
         sigma_err_pb: c.result.std_dev * GEV2_TO_PB,
         chi2_per_dof: c.result.chi2_per_dof,
+        sampler,
     }
 }
 
@@ -291,25 +286,8 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     Ok(())
 }
 
-/// Whether the proc card asks for exactly the process the bespoke Drell–Yan
-/// integrand computes, with no modifier that would change its diagram content.
-///
-/// A coupling-order constraint or a forbidden propagator gives a different set of
-/// diagrams under the same printed process string, and the bespoke integrand would
-/// silently ignore it, so those go the general route.
-pub(crate) fn is_drell_yan(parsed: &ParsedProcCard) -> bool {
-    let [spec] = parsed.processes.as_slice() else {
-        return false;
-    };
-    spec.coupling_constraints.is_empty()
-        && spec.required_s_channels.is_empty()
-        && spec.forbidden_particles.is_empty()
-        && spec.forbidden_s_channels.is_empty()
-        && spec.forbidden_onsh_s_channels.is_empty()
-        && format!("{spec}") == DRELL_YAN_PROCESS
-}
-
-/// Proton beams (`lpp = 1`): load the PDF set both paths need, then dispatch.
+/// Proton beams (`lpp = 1`): load the PDF set and integrate over the flavour
+/// decomposition.
 fn integrate_proton(
     args: &IntegrateArgs,
     parsed: &ParsedProcCard,
@@ -324,83 +302,7 @@ fn integrate_proton(
         .member(PDF_MEMBER)
         .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;
 
-    if is_drell_yan(parsed) {
-        integrate_drell_yan(args, model, evaluated, rc, &pdf, process)
-    } else {
-        integrate_hadronic(args, parsed, model, evaluated, rc, &set, &pdf, process)
-    }
-}
-
-/// Hadronic Drell–Yan (`lpp = 1`): PDF-convolved `(τ, y) × cosθ` integration over
-/// the up/down coupling classes, banked as a single grid.
-///
-/// This is the pipeline's bit-reproducibility anchor and stays a separate path from
-/// the general flavour-group decomposition, which reaches the same cross section by
-/// a different map.
-fn integrate_drell_yan(
-    args: &IntegrateArgs,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-    rc: &RunCard,
-    pdf: &PdfMember,
-    process: String,
-) -> Result<RunOutput, IntegrateError> {
-    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
-
-    let sets =
-        generate_dy_subprocesses(model).map_err(|e| err(format!("failed to enumerate: {e}")))?;
-    let fc = dy_flavor_classes(sets, model).map_err(|e| {
-        err(format!(
-            "failed to classify the Drell–Yan subprocesses: {e}"
-        ))
-    })?;
-    let up = compile_class(&fc.up_set, model, evaluated)
-        .map_err(|e| err(format!("failed to compile up-type class: {e}")))?;
-    let down = compile_class(&fc.down_set, model, evaluated)
-        .map_err(|e| err(format!("failed to compile down-type class: {e}")))?;
-    let b_up = BoundAmplitude::<f64>::bind(&up, evaluated);
-    let b_down = BoundAmplitude::<f64>::bind(&down, evaluated);
-
-    let cuts = Cuts::compile(rc, &process_external_legs(&up, model, evaluated))
-        .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
-
-    let spin_color_avg = initial_spin_color_average(&up, model, evaluated);
-    let mut integ = DrellYanIntegrand::new(
-        &b_up,
-        &b_down,
-        pdf,
-        &cuts,
-        fc.up_flavors,
-        fc.down_flavors,
-        sqrt_s_had,
-        rc.dsqrt_q2fact1,
-        spin_color_avg,
-    );
-    // Both scales come from the run card: a fixed card leaves them constant, a
-    // dynamic one has the parton distributions read per event and per beam.
-    let scale_report = integ
-        .use_run_card_scales(&fc.up_set.diagrams, model, evaluated, rc)
-        .map_err(|e| err(format!("run card scale prescription: {e}")))?;
-
-    let (grid, result) = integ.adapt_grid(args.neval, args.niter, args.seed);
-    // No channel decomposition on the Drell-Yan map: one grid over `(tau, y, cos)`.
-    let channels = vec![bank_channel(
-        ChannelKey::Whole,
-        &ChannelIntegration {
-            alpha: 1.0,
-            neval: args.neval,
-            grid,
-            result,
-        },
-    )];
-    Ok(RunOutput {
-        process,
-        pdf_set: args.pdf_set.clone(),
-        mu_f: recorded_mu_f(&scale_report),
-        sqrt_s: sqrt_s_had,
-        channels,
-        result,
-    })
+    integrate_hadronic(args, parsed, model, evaluated, rc, &set, &pdf, process)
 }
 
 /// Proton beams over an arbitrary process (`lpp = 1`): the proc card's enumeration
@@ -450,14 +352,16 @@ fn integrate_hadronic(
     let channels = integ
         .channel_ids()
         .iter()
+        .zip(integ.channel_samplers())
         .zip(&per_channel)
-        .map(|(id, c)| {
+        .map(|((id, sampler), c)| {
             bank_channel(
                 ChannelKey::GroupDiagram {
                     group: id.group,
                     diagram: id.diagram,
                 },
                 c,
+                Some(sampler.clone()),
             )
         })
         .collect();
@@ -530,46 +434,14 @@ fn integrate_fixed_energy(
         channels: per_channel
             .iter()
             .enumerate()
-            .map(|(j, c)| bank_channel(ChannelKey::Diagram { diagram: j }, c))
+            .map(|(j, c)| {
+                bank_channel(
+                    ChannelKey::Diagram { diagram: j },
+                    c,
+                    integ.channel_samplers().get(j).cloned(),
+                )
+            })
             .collect(),
         result,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use vibegraph::diagrams::parse_proc_card;
-
-    fn dispatches_to_drell_yan(card: &str) -> bool {
-        let parsed = parse_proc_card(card, &ParsingOptions::default()).expect("proc card");
-        is_drell_yan(&parsed)
-    }
-
-    /// The bespoke Drell–Yan integrand computes one process and reads none of the
-    /// proc card, so the dispatch has to be exact in both directions. A card whose
-    /// modifiers change the diagram content spells the same process string, which
-    /// is why the modifiers are checked and not just the string.
-    #[test]
-    fn only_an_unmodified_drell_yan_card_takes_the_bespoke_path() {
-        assert!(dispatches_to_drell_yan(
-            "import model sm\ngenerate p p > e+ e-"
-        ));
-
-        for card in [
-            // A different process entirely.
-            "import model sm\ngenerate p p > l+ l- j QCD=2 QED=2",
-            // Same printed process, fewer diagrams: no photon exchange.
-            "import model sm\ngenerate p p > e+ e- QED=2 QCD=0 / a",
-            // Same printed process, forced through the Z only.
-            "import model sm\ngenerate p p > z > e+ e-",
-            // A second process the bespoke integrand would silently drop.
-            "import model sm\ngenerate p p > e+ e-\nadd process p p > mu+ mu-",
-        ] {
-            assert!(
-                !dispatches_to_drell_yan(card),
-                "took the Drell-Yan path for `{card}`"
-            );
-        }
-    }
 }
