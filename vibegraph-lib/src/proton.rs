@@ -984,6 +984,34 @@ impl<'a> ProtonIntegrand<'a> {
         shape * point.weight
     }
 
+    /// The uniforms the whole map consumes as one mixture: the two outer coordinates,
+    /// one channel-selection coordinate, and the channel's own `3n − 4`.
+    pub fn vegas_ndim(&self) -> usize {
+        self.channel_grid_ndim() + 1
+    }
+
+    /// The integrand at `u ∈ [0,1]^vegas_ndim` drawn through the mixture rather than
+    /// one frozen channel, in natural units (GeV⁻²): `u[2]` selects the channel and
+    /// the point is weighted by `1/g`.
+    ///
+    /// Its integral is the same cross section the channel-split terms sum to; this is
+    /// the undivided form, and the estimator whose variance the selection weights are
+    /// adapted to minimise.
+    pub fn value(&self, u: &[f64]) -> f64 {
+        let m = self.map_point(u);
+        let j = self.combiner.select(u[OUTER_NDIM]);
+        let point = self
+            .combiner
+            .sample_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
+        let shape = self.shape(&m, &point.momenta);
+        if shape == 0.0 {
+            return 0.0;
+        }
+        // `sample_channel_at` weights by `αⱼ/g`, and the mixture that drew this point
+        // has density `g`.
+        shape * point.weight / self.combiner.alphas()[j]
+    }
+
     /// Refine the channel selection weights toward the variance-minimising mixture,
     /// jointly over the `(group, diagram)` channel space.
     ///
@@ -2007,6 +2035,280 @@ mod tests {
             share < 0.1,
             "{:.1}% of draws are wasted below threshold; the hint is too loose to leave alone",
             100.0 * share
+        );
+    }
+
+    /// A plain-Monte-Carlo estimate of `Σⱼ ∫ duᵢ value_in_channel(j, ·)` with the two
+    /// outer coordinates frozen, and its standard error.
+    fn inner_integral(
+        integ: &ProtonIntegrand<'_>,
+        outer: [f64; 2],
+        n: usize,
+        seed: u64,
+    ) -> [f64; 2] {
+        let ndim = integ.channel_grid_ndim();
+        let (mut total, mut var) = (0.0, 0.0);
+        for j in 0..integ.channel_count() {
+            let mut stream = SubStream::from_stream(seed, j as u64);
+            let (mut sum, mut sum2) = (0.0, 0.0);
+            for _ in 0..n {
+                let mut u = vec![outer[0], outer[1]];
+                u.extend(stream.uniforms::<f64>(ndim - 2));
+                let v = integ.value_in_channel(j, &u);
+                sum += v;
+                sum2 += v * v;
+            }
+            let mean = sum / n as f64;
+            total += mean;
+            var += (sum2 / n as f64 - mean * mean).max(0.0) / n as f64;
+        }
+        [total, var.sqrt()]
+    }
+
+    /// At a frozen partonic energy and zero rapidity the integrand is the partonic
+    /// cross section of every group times that group's parton luminosity — the
+    /// statement that the PDF layer contributes exactly a factor of luminosity.
+    ///
+    /// Zero rapidity is what makes the comparison exact: the lab frame then coincides
+    /// with the partonic CM, so the two sides apply one cut filter to the same
+    /// configuration. The partonic side is [`FixedBeamIntegrand`], sampled through its
+    /// *own* map (all-timelike per-diagram channels at fixed `√ŝ`) rather than this
+    /// integrand's floored spines, so the flux, the `2π` measure, the spin/colour
+    /// average and the identical-particle factor are compared across two independent
+    /// phase-space maps.
+    ///
+    /// What it cannot see: the rapidity boost, since it is switched off, and the
+    /// mirrored matrix element's *argument* — at `y = 0` the two beam orderings carry
+    /// equal luminosity and `∫|M(Rq)|²Θ(q)dΦ = ∫|M(q)|²Θ(q)dΦ`, so a mirror evaluated
+    /// at the wrong point would still integrate here. The pointwise oracle is what
+    /// pins the argument.
+    #[test]
+    fn at_fixed_energy_the_integrand_is_the_partonic_cross_section_times_luminosity() {
+        use crate::hadronic::FixedBeamIntegrand;
+
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("integrand");
+
+        let cuts = groups.groups()[0].cuts();
+        let masses = groups.groups()[0].final_masses();
+        // Two energies, so the `1/(2ŝ)` flux and the `√ŝ` dependence of the map are
+        // pinned as a shape and not only as one normalisation.
+        for sqrt_shat in [200.0f64, 500.0] {
+            let tau = sqrt_shat * sqrt_shat / (SQRT_S_HAD * SQRT_S_HAD);
+            let u0 = 1.0 - tau.ln() / integ.tau_min().ln();
+            let y_max = -0.5 * tau.ln();
+            let jac = (1.0 / integ.tau_min()).ln() * 2.0 * y_max;
+            let x = tau.sqrt();
+
+            let seed = 0x5115_0001 + sqrt_shat as u64;
+            let [hadronic, hadronic_err] = inner_integral(&integ, [u0, 0.5], 3000, seed);
+
+            let (mut partonic, mut partonic_var) = (0.0, 0.0);
+            for (g, amp) in groups.groups().iter().zip(&amps) {
+                let mut fixed = FixedBeamIntegrand::new(
+                    vec![amp],
+                    cuts,
+                    sqrt_shat,
+                    masses.clone(),
+                    g.spin_color_average(),
+                );
+                fixed.use_multichannel(g.diagrams(), &evaluated, 3000, 4, 0xA55E_7000);
+                let (sigma, err) = fixed.integrate(20_000, 5, seed + 1);
+                let [direct, mirror] = g.luminosity(&pdf, x, x, [MU_F, MU_F]);
+                // Both orderings weight the same partonic cross section: `R` is a
+                // rotation about the beam-perpendicular x axis, so it preserves the
+                // measure and every observable this filter cuts on.
+                let lum = direct + mirror;
+                partonic += lum * sigma / GEV2_TO_PB;
+                partonic_var += (lum * err / GEV2_TO_PB).powi(2);
+            }
+            let expected = jac * partonic;
+            let expected_err = jac * partonic_var.sqrt();
+            let combined = (hadronic_err * hadronic_err + expected_err * expected_err).sqrt();
+            let pull = (hadronic - expected) / combined;
+            let rel = (hadronic - expected).abs() / expected;
+            eprintln!(
+                "sqrt(shat) = {sqrt_shat}: hadronic {hadronic:.6e} ± {hadronic_err:.1e}, \
+                 luminosity × partonic {expected:.6e} ± {expected_err:.1e}, rel {rel:.3e}, \
+                 pull {pull:.2}"
+            );
+            assert!(
+                hadronic > 0.0 && expected > 0.0,
+                "one side vanished at {sqrt_shat}: {hadronic} vs {expected}"
+            );
+            // Both bounds are above a measured four-seed sweep (worst 1.31% and 2.73
+            // combined errors) and far below anything a lost factor could produce: the
+            // smallest normalisation this test exists to catch is a factor of two.
+            // Raising the partonic budget five-fold brings the same seeds to
+            // 0.04%-0.46%, so the residual is where the two Monte Carlos have
+            // converged to, not a disagreement between them.
+            assert!(
+                rel < 0.03,
+                "the two sides differ by {rel:.3e} at {sqrt_shat}"
+            );
+            assert!(
+                pull.abs() < 4.0,
+                "the two sides differ by {pull:.2} combined standard errors at {sqrt_shat}"
+            );
+        }
+    }
+
+    /// Drell-Yan through the general path reproduces the cross section
+    /// [`DrellYanIntegrand`] integrates.
+    ///
+    /// The bespoke Drell-Yan integrand is the pipeline's bit-reproducibility anchor
+    /// and is not touched by any of this, so it is the informational comparison the
+    /// hadronic path is built against: same process, same cuts, same parton
+    /// distribution, two independent phase-space maps — `(τ, y, cosθ)` with a fixed
+    /// azimuth against `(τ, y)` × a per-diagram multichannel.
+    ///
+    /// It is also the one place the two treatments of the mirrored beam ordering meet.
+    /// Drell-Yan sums both orderings' luminosities against a *single* `|M(q)|²`, which
+    /// is only right once the azimuth and polar angle are integrated over; the general
+    /// path evaluates `|M(Rq)|²` pointwise. The two must therefore agree on σ and need
+    /// not agree point by point.
+    #[test]
+    fn drell_yan_through_the_general_path_reproduces_its_own_integrand() {
+        use crate::hadronic::{
+            dy_external_legs, dy_flavor_classes, generate_dy_subprocesses, DrellYanIntegrand,
+        };
+
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let pdf = probe_pdf();
+
+        let fc = dy_flavor_classes(generate_dy_subprocesses(&m).expect("subprocesses"), &m)
+            .expect("classes");
+        let up = compile_class(&fc.up_set, &m, &evaluated).expect("up class");
+        let down = compile_class(&fc.down_set, &m, &evaluated).expect("down class");
+        let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
+        let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
+        let dy_cuts = Cuts::compile(&card, &dy_external_legs(2)).expect("cuts");
+        let dy = DrellYanIntegrand::new(
+            &b_up,
+            &b_down,
+            &pdf,
+            &dy_cuts,
+            fc.up_flavors,
+            fc.down_flavors,
+            SQRT_S_HAD,
+            MU_F,
+            initial_spin_color_average(&up, &m, &evaluated),
+        );
+        let (sigma_dy, err_dy) = dy.integrate(60_000, 6, 0xD4_0001);
+
+        let groups = derive_flavor_groups(enumerate("p p > e+ e-", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        assert_eq!(groups.groups().len(), 2);
+        assert_eq!(
+            groups.groups()[0].cuts(),
+            &dy_cuts,
+            "the two paths compile different cut filters, so this comparison is not of \
+             the same cross section"
+        );
+        let amps = bind_all(&groups, &evaluated);
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("integrand");
+        assert_eq!(integ.channel_count(), 4);
+        assert_eq!(integ.tau_min(), dy.tau_min());
+        integ.adapt_alphas(0xD4_0002, 4000, 5, 0.5);
+        let (sigma, err) = integ.integrate(20_000, 6, 0xD4_0003);
+
+        let combined = (err * err + err_dy * err_dy).sqrt();
+        let pull = (sigma - sigma_dy) / combined;
+        eprintln!(
+            "p p > e+ e-: general path {sigma:.5} ± {err:.5} pb, Drell-Yan integrand \
+             {sigma_dy:.5} ± {err_dy:.5} pb, rel {:.3e}, pull {pull:.2}",
+            (sigma - sigma_dy).abs() / sigma_dy
+        );
+        assert!(
+            pull.abs() < 4.0,
+            "the two paths differ by {pull:.2} combined standard errors"
+        );
+    }
+
+    /// The mixture estimator's mean and standard error over `n` draws — the quantity
+    /// the selection weights exist to make cheap.
+    fn mixture_estimate(integ: &ProtonIntegrand<'_>, n: usize, seed: u64) -> [f64; 2] {
+        let mut stream = SubStream::from_stream(seed, 5);
+        let (mut sum, mut sum2) = (0.0, 0.0);
+        for _ in 0..n {
+            let u = stream.uniforms::<f64>(integ.vegas_ndim());
+            let v = integ.value(&u);
+            sum += v;
+            sum2 += v * v;
+        }
+        let mean = sum / n as f64;
+        [
+            mean,
+            ((sum2 / n as f64 - mean * mean).max(0.0) / n as f64).sqrt(),
+        ]
+    }
+
+    /// The channel weights adapt jointly over the whole `(group, diagram)` space, and
+    /// the adaptation moves only the sampling: the same integral, at lower variance.
+    ///
+    /// Both sides are measured on the *mixture* estimator at one fixed sample count,
+    /// which is what the Kleiss-Pittau reallocation minimises. A per-channel VEGAS
+    /// comparison would not answer the same question: the budget split `αⱼ · neval`
+    /// and the `MIN_CHANNEL_NEVAL` floor make the two runs draw different numbers of
+    /// points, and each grid then refines a different conditional density.
+    #[test]
+    fn joint_alpha_adaptation_lowers_the_variance_without_moving_the_integral() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("integrand");
+
+        let [uniform, uniform_err] = mixture_estimate(&integ, 30_000, 0x9E77_0001);
+        let report = integ.adapt_alphas(0xADAB_7000, 4000, 6, 0.5);
+        let [adapted, adapted_err] = mixture_estimate(&integ, 30_000, 0x9E77_0001);
+
+        let alphas = integ.channel_alphas();
+        assert_eq!(alphas.len(), 24);
+        assert_eq!(alphas.len(), report.variance_shares.len());
+        let spread = alphas.iter().fold(0.0f64, |a, &x| a.max(x))
+            / alphas.iter().fold(f64::INFINITY, |a, &x| a.min(x));
+        eprintln!(
+            "alpha spread {spread:.1}x after {} surveys; mixture estimate \
+             {uniform:.5e} ± {uniform_err:.2e} (uniform) vs {adapted:.5e} ± {adapted_err:.2e} \
+             (adapted), error ratio {:.2}",
+            report.trajectory.len() - 1,
+            adapted_err / uniform_err
+        );
+        assert!(
+            spread > 10.0,
+            "the weights stayed within {spread:.2}x of each other, so this run does not \
+             show the adaptation doing anything"
+        );
+        assert!(
+            (alphas.iter().sum::<f64>() - 1.0).abs() < 1e-12,
+            "the selection weights stopped being a distribution"
+        );
+        let combined = (uniform_err * uniform_err + adapted_err * adapted_err).sqrt();
+        let pull = (adapted - uniform) / combined;
+        assert!(
+            pull.abs() < 4.0,
+            "the adaptation moved the integral by {pull:.2} combined standard errors: \
+             {uniform} vs {adapted}"
+        );
+        assert!(
+            adapted_err < uniform_err,
+            "the adapted mixture is noisier ({adapted_err:.2e}) than the uniform one \
+             ({uniform_err:.2e})"
         );
     }
 }
