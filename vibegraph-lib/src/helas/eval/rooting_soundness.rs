@@ -10,7 +10,7 @@
 //! [`canonical_root`](super::root_diagram) instead.
 //!
 //! The oracle is the baseline (unoverridden) |M|² itself, not MadGraph: the production
-//! rooting is already pinned against MG by `tests/validate_helas_mg.rs`, so any rooting
+//! rooting is already pinned against MG by `tests/amplitude_oracle.rs`, so any rooting
 //! that reproduces the baseline is correct and any that does not is a soundness bug. The
 //! comparison uses `REL_TOL`, since re-rooting reassociates momentum sums and is never
 //! bit-for-bit even when it is correct.
@@ -18,7 +18,7 @@
 //! Full sweep (passes — the rooting-dependent convention signs are lifted to the
 //! diagram's `fermi_sign` at the canonical rooting; see `research/notes/19` §V5):
 //! ```text
-//! RUST_MIN_STACK=134217728 cargo test -p vibegraph-lib --features extended-validation \
+//! RUST_MIN_STACK=134217728 cargo test -p vibegraph-lib \
 //!     --lib helas::eval::rooting_soundness::all_rootings_preserve_amplitude \
 //!     -- --ignored --nocapture --test-threads=1
 //! ```
@@ -46,7 +46,7 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 /// A correct re-rooting reassociates the momentum sums that route each propagator (the
 /// off-shell current momenta are accumulated in a different order), so agreement against
 /// the baseline is never bit-for-bit and the floor is *looser* than the amplitude-level
-/// reordering `tests/validate_helas_mg.rs` pins at 1e-12. The rooting-dependent **signs**
+/// reordering `tests/amplitude_oracle.rs` pins at 1e-12. The rooting-dependent **signs**
 /// are all lifted to the diagram's `fermi_sign` (build-convention, spine, reversed-
 /// bilinear — all computed at the canonical `VtxIdx(0)` rooting), so a surviving
 /// deviation here is pure double-precision reassociation: the observed worst case across
@@ -85,88 +85,72 @@ fn generate(process: &str) -> Vec<DiagramSet> {
     generate_from_proc_card(&card, &sm_model(SMRestrict::Default)).unwrap()
 }
 
-/// Reference external momenta (incoming then outgoing) from a `_amplitude.csv`, capped at
-/// [`MAX_POINTS`]. The reference |M|² column is ignored: the baseline vibegraph |M|² is
-/// the oracle here, not MadGraph's.
-fn read_momenta(path: &Path) -> Vec<Vec<LorentzVector<f64>>> {
-    let content = std::fs::read_to_string(path).unwrap_or_default();
-    let mut n_ext: Option<usize> = None;
-    let mut header_skipped = false;
-    let mut out = Vec::new();
-    for line in content.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix("# n_ext:") {
-            n_ext = rest.trim().parse().ok();
-        } else if line.starts_with('#') || line.is_empty() {
-            continue;
-        } else if !header_skipped {
-            header_skipped = true;
-        } else if let Some(n) = n_ext {
-            let cols: Vec<f64> = line
-                .split(',')
-                .filter_map(|c| c.trim().parse().ok())
-                .collect();
-            if cols.len() == 1 + 4 * n {
-                out.push(
-                    (0..n)
-                        .map(|i| {
-                            let b = 1 + 4 * i;
-                            LorentzVector::new(cols[b], cols[b + 1], cols[b + 2], cols[b + 3])
-                        })
-                        .collect(),
-                );
-            }
-            if out.len() >= MAX_POINTS {
-                break;
-            }
-        }
-    }
-    out
+/// One process's committed amplitude table, reduced to what a re-rooting sweep
+/// needs: the first [`MAX_POINTS`] phase-space points and the param card
+/// MadGraph evaluated them with. MadGraph's own `|M|²` column is not read — the
+/// oracle here is the baseline vibegraph value, not MadGraph's.
+struct Reference {
+    momenta: Vec<Vec<LorentzVector<f64>>>,
+    card: ParamCard,
 }
 
-/// Map normalized process string → (csv path, short name) over the reference CSVs.
-fn csv_index() -> HashMap<String, (PathBuf, String)> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output");
+/// Map normalised process string -> its committed table.
+///
+/// Two tables can carry the same process string (`u u~ > mu+ mu-` is generated
+/// both on its own and as the concrete subprocess of a group), so the first in
+/// filename order wins and the choice does not depend on directory order.
+fn table_index() -> HashMap<String, Reference> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/amplitudes");
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .collect();
+    paths.sort();
+
     let mut map = HashMap::new();
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return map;
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        let name = p
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_owned();
-        if !name.ends_with("_amplitude") {
+    for path in paths {
+        let text = std::fs::read_to_string(&path).expect("amplitude table");
+        let json: serde_json::Value = serde_json::from_str(&text).expect("amplitude table");
+        let process = normalize(json["process"].as_str().expect("process"));
+        if map.contains_key(&process) {
             continue;
         }
-        let short = name.trim_end_matches("_amplitude").to_owned();
-        // The process string lives in a `# process:` header; read just that.
-        let content = std::fs::read_to_string(&p).unwrap_or_default();
-        if let Some(proc) = content
-            .lines()
-            .find_map(|l| l.trim().strip_prefix("# process:"))
-        {
-            map.insert(normalize(proc.trim()), (p, short));
-        }
+        let momenta = json["points"]
+            .as_array()
+            .expect("points")
+            .iter()
+            .take(MAX_POINTS)
+            .map(|pt| {
+                pt["momenta"]
+                    .as_array()
+                    .expect("momenta")
+                    .iter()
+                    .map(|m| {
+                        let c: Vec<f64> = m
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|v| v.as_f64().unwrap())
+                            .collect();
+                        LorentzVector::new(c[0], c[1], c[2], c[3])
+                    })
+                    .collect()
+            })
+            .collect();
+        let card = json["param_card"]
+            .as_array()
+            .expect("param_card")
+            .iter()
+            .map(|l| l.as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .parse::<ParamCard>()
+            .expect("param_card");
+        map.insert(process, Reference { momenta, card });
     }
     map
-}
-
-/// Load MadGraph's per-process `param_card.dat`, so the evaluated model matches the
-/// reference exactly (masses, SM inputs, widths); falls back to the baked restrict
-/// defaults when absent.
-fn evaluated_model(model: &Arc<UFOModel>, short: &str) -> EvaluatedModel {
-    let card_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../validation/madgraph/output")
-        .join(short)
-        .join("Cards/param_card.dat");
-    let card = std::fs::read_to_string(&card_path)
-        .ok()
-        .and_then(|s| s.parse::<ParamCard>().ok())
-        .unwrap_or_else(|| "".parse::<ParamCard>().unwrap());
-    EvaluatedModel::from_model_card(model.clone(), &card)
 }
 
 /// Compile `set` under whatever root override is currently installed and evaluate |M|² at
@@ -258,34 +242,18 @@ fn record(
 #[ignore = "rooting-soundness gate: slow full sweep; run explicitly with --ignored"]
 fn all_rootings_preserve_amplitude() {
     let model = Arc::new(sm_model(SMRestrict::Default));
-    let csvs = csv_index();
+    let tables = table_index();
     let mut failures: Vec<Failure> = Vec::new();
     let mut swept = 0usize;
 
     for process in MG_VALIDATED_PROCESSES {
         let sets = generate(process);
         let set = &sets[0];
-        let (csv, short) = match csvs.get(&normalize(process)) {
-            Some(v) => v.clone(),
-            None => {
-                crate::validation::skip(
-                    "all_rootings_preserve_amplitude",
-                    "banked amplitude reference csv",
-                    process,
-                );
-                continue;
-            }
-        };
-        let points = read_momenta(&csv);
-        if points.is_empty() {
-            crate::validation::skip(
-                "all_rootings_preserve_amplitude",
-                "banked amplitude reference csv",
-                format_args!("{process} (no momenta)"),
-            );
-            continue;
-        }
-        let evaluated = evaluated_model(&model, &short);
+        let reference = tables
+            .get(&normalize(process))
+            .unwrap_or_else(|| panic!("no committed amplitude table for '{process}'"));
+        let points = &reference.momenta;
+        let evaluated = EvaluatedModel::from_model_card((*model).clone(), &reference.card);
 
         // Baseline oracle: production rooting.
         clear_root_override();
@@ -390,28 +358,15 @@ fn all_rootings_preserve_amplitude() {
 #[test]
 fn root_override_hook_is_transparent() {
     let model = Arc::new(sm_model(SMRestrict::Default));
-    let csvs = csv_index();
+    let tables = table_index();
     for process in ["e+ e- > mu+ mu-", "e+ e- > e+ e-"] {
         let sets = generate(process);
         let set = &sets[0];
-        let Some((csv, short)) = csvs.get(&normalize(process)) else {
-            crate::validation::skip(
-                "root_override_hook_is_transparent",
-                "banked amplitude reference csv",
-                process,
-            );
-            continue;
-        };
-        let points = read_momenta(csv);
-        if points.is_empty() {
-            crate::validation::skip(
-                "root_override_hook_is_transparent",
-                "banked amplitude reference csv",
-                format_args!("{process} (no momenta)"),
-            );
-            continue;
-        }
-        let evaluated = evaluated_model(&model, short);
+        let reference = tables
+            .get(&normalize(process))
+            .unwrap_or_else(|| panic!("no committed amplitude table for '{process}'"));
+        let points = &reference.momenta;
+        let evaluated = EvaluatedModel::from_model_card((*model).clone(), &reference.card);
 
         clear_root_override();
         let base = eval_m2_all(set, &model, &evaluated, &points).expect("baseline eval");

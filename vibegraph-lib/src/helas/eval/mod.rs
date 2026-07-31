@@ -59,9 +59,7 @@ mod rescale;
 mod prop_harness;
 mod root_diagram;
 mod root_lorentz;
-// The oracle is the banked per-process amplitude tables, so this is banked-layer
-// coverage; a `--lib` target has no per-test registration, hence the cfg.
-#[cfg(all(test, feature = "extended-validation"))]
+#[cfg(test)]
 mod rooting_soundness;
 mod run;
 // `Tree` is used by every arena; `Linearized`/`linearize`/`max_depth` are generic
