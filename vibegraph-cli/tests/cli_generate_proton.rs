@@ -57,10 +57,17 @@ const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
 /// The run card fixes both scales at `m_Z`, so every event reports the same
 /// `SCALUP` and the same `AQCDUP`.
 const SCALE: f64 = 91.188;
-/// `αs(m_Z)` off the set's own tabulation. MadGraph's banked files carry
-/// `1.30002700e-01` in `AQCDUP`, which is its own value divided by a `π` truncated
-/// to eight digits; the residual gap is the two interpolations of the same grid.
-const ALPHA_S_TOLERANCE: f64 = 1e-6;
+/// How far `AQCDUP` may sit from `αs(m_Z)` off the set's own tabulation.
+///
+/// The bound is MadGraph's own printing budget for the field, not a chosen number:
+/// `%e` gives seven significant digits, so half a unit in the last one is `5e-8`
+/// absolute on a coupling of `0.13`, and anything inside that is invisible in
+/// MadGraph's file. The observed gap is `1.1e-7` relative — `validate_alphas`
+/// reports the same number as `0.281` of this budget for this run — and comes from
+/// the two interpolations of the same `αs` grid. (MadGraph's field additionally
+/// carries a `+1.7e-8` bias from a `π` truncated to eight digits in `unwgt.f`,
+/// which the reference below undoes.)
+const ALPHA_S_TOLERANCE: f64 = 4e-7;
 
 /// Integration budget, chosen by a scan rather than for the wall clock alone.
 ///
