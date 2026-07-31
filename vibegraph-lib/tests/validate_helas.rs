@@ -60,7 +60,7 @@ fn compute_m2_ee_mumu_dynamic(sqrt_s: f64, cos_theta: f64) -> f64 {
 }
 
 /// Relative tolerance for comparing Rust |M|² against Fortran reference.
-/// TODO: Understand why we don't achieve machine precision as we do in validate_helas_mg
+/// TODO: Understand why we don't achieve machine precision as we do in amplitude_oracle
 const REL_TOL: f64 = 3e-6;
 
 /// Parse the CSV reference file and return rows as (sqrt_s, cos_theta, M2).

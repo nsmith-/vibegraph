@@ -3654,7 +3654,7 @@ mod tests {
     /// JAMPs for multi-flow processes, since those root on `Op::Flows` rather than a
     /// scalar) and the helicity-summed |M|² is finite and positive. Catches
     /// compile-pipeline and evaluator panics/NaNs on the full op mix, including the
-    /// 2→6 processes; value-level validation is `validate_helas_mg`. RAMBO kinematics
+    /// 2→6 processes; value-level validation is `amplitude_oracle`. RAMBO kinematics
     /// are massless (unphysical for the massive-external processes) — irrelevant for
     /// a finiteness check.
     #[test]

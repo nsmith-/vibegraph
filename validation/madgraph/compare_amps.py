@@ -18,7 +18,7 @@ matcher takes the identity whenever it fits at least as well as any other
 pairing — see greedy_match for why overlap alone cannot decide.
 
 This script is a diagnosis tool, not a gate. The enforcing per-flow JAMP oracle
-is vibegraph-lib/tests/color_jamp_oracle.rs, which compares against banked
+is vibegraph-lib/tests/amplitude_oracle.rs, which compares against banked
 MadGraph JAMP values element-wise under the identity pairing at a fixed
 tolerance; use this script when that oracle fails and you need the per-diagram
 breakdown behind it.

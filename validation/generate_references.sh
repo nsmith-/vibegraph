@@ -73,10 +73,11 @@ stage_refs() {
   vg_say ">>> f2py matrix-element modules (cached per process)"
   bash "$MG/build_amplitude.sh"
 
-  vg_say ">>> fixed-grid amplitude tables, amp_reference.json, jamp_reference.json"
+  vg_say ">>> fixed-grid amplitude CSVs"
   python "$MG/gen_amplitude.py"
-  python "$MG/gen_amp_reference.py"
-  python "$MG/gen_jamp_reference.py"
+
+  vg_say ">>> amplitudes/<process>.json — |M|^2, AMP() and JAMP() at events + grid"
+  python "$MG/gen_amplitude_tables.py"
 
   vg_say ">>> sigma_reference.json — banked fixed-energy cross sections"
   python "$MG/extract_sigma.py"

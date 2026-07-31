@@ -808,15 +808,14 @@ fn canonical_root(diagram: &Diagram) -> VtxIdx {
 
 /// The root vertex [`root_tree`] walks from.
 ///
-/// The override hook below exists only for the rooting-soundness harness, which
-/// needs the banked amplitude references, so it is compiled only where that
-/// harness is.
-#[cfg(not(all(test, feature = "extended-validation")))]
+/// The override hook below exists only for the rooting-soundness harness, so it
+/// is compiled only into test builds.
+#[cfg(not(test))]
 fn choose_root(diagram: &Diagram) -> VtxIdx {
     canonical_root(diagram)
 }
 
-#[cfg(all(test, feature = "extended-validation"))]
+#[cfg(test)]
 thread_local! {
     static ROOT_OVERRIDE: std::cell::RefCell<Option<Box<dyn Fn(&Diagram) -> VtxIdx>>> =
         const { std::cell::RefCell::new(None) };
@@ -825,18 +824,18 @@ thread_local! {
 /// Install a per-diagram root-vertex chooser consulted by [`root_tree`] on the current
 /// thread. Lets a soundness harness re-root diagrams without touching the production
 /// walk. With no override installed, rooting falls back to [`canonical_root`].
-#[cfg(all(test, feature = "extended-validation"))]
+#[cfg(test)]
 pub(crate) fn set_root_override(f: Box<dyn Fn(&Diagram) -> VtxIdx>) {
     ROOT_OVERRIDE.with(|c| *c.borrow_mut() = Some(f));
 }
 
 /// Remove any installed root chooser, restoring the [`canonical_root`] default.
-#[cfg(all(test, feature = "extended-validation"))]
+#[cfg(test)]
 pub(crate) fn clear_root_override() {
     ROOT_OVERRIDE.with(|c| *c.borrow_mut() = None);
 }
 
-#[cfg(all(test, feature = "extended-validation"))]
+#[cfg(test)]
 fn choose_root(diagram: &Diagram) -> VtxIdx {
     ROOT_OVERRIDE
         .with(|c| c.borrow().as_ref().map(|f| f(diagram)))
@@ -1177,7 +1176,7 @@ mod tests {
         }
         // The all-vector-but-momentum-free 4-gluon contact (VVVV) must not be counted
         // as a Yang-Mills VVV; that it isn't is pinned bit-for-bit by g g > g g in
-        // `tests/validate_helas_mg.rs` (miscounting it would flip that amplitude).
+        // `tests/amplitude_oracle.rs` (miscounting it would flip that amplitude).
     }
 
     /// Number of diagrams of `process` whose canonical `VtxIdx(0)` tree fires each
@@ -1213,7 +1212,7 @@ mod tests {
     /// the *scalar* leg as output (H produced from two vectors, only in the 2→6 H
     /// classes) — is pinned at the primitive level by
     /// `root_lorentz::tests::test_root_vvs_metric_scalar_out` and bit-for-bit by
-    /// `u u~/b b~ > … QCD=0` in `tests/validate_helas_mg.rs`.
+    /// `u u~/b b~ > … QCD=0` in `tests/amplitude_oracle.rs`.
     #[test]
     fn mg_guard_processes_exercise_every_convention_channel() {
         let model = sm_model(SMRestrict::Default);

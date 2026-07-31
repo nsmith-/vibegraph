@@ -24,7 +24,11 @@ on a machine with no MadGraph at all. `pixi run validate` is the banked layer;
 compact in-repo alternative to that bundle and **rejected it**: projecting the
 banked events onto the fields the gates read is exact, but bottoms out at 27.5 MB
 against a 5–10 MB target, so the fetched bundle stands and no reader changed
-(note 26).
+(note 26). L2 has landed: the `amplitudes` category is
+hermetic for all 19 rows — one committed table per process (|M|² at every point,
+per-diagram `AMP()` and per-flow `JAMP()` per helicity at six of them), evaluated
+at MadGraph's own banked events projected exactly on shell as well as at the fixed
+grid, gated by a single `amplitude_oracle` binary in 1.1 s.
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
 ## Pipeline Status
@@ -33,7 +37,7 @@ Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 |------|-----------|--------|-------|
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params; model identity (label + SHA-256 over the parsed model) banked into artifacts |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
-| 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 18 processes agree with MadGraph (15 at ≤6.3e-13, many points bit-identical, incl. 2→6/VVV/massive externals and the 4 `llj` subprocesses at ≤3.2e-14, all NCOLOR=1; `uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6). Beneath: per-flow JAMP oracle (multi-flow) and per-diagram `AMP()` oracle (single-flow, where JAMP says nothing) |
+| 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. Deferred: multi-rung t-channel ladders (note 21) |
 | 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv4, model identity). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 11 partonic GATE rows incl. the 3 QCD 2→2s, plus σ(pp→ℓ⁺ℓ⁻j) fixed-scale **422.850 ± 0.189 pb** over five seeds vs MG 422.840 ± 1.805 (Δ = 0.01σ). Deferred: `dynamical_scale_choice = -1` (needs `kt-clustering`) |
 | 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) selection with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 25 banked MG `.lhe.gz` byte-for-byte (248 747 events). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` is refused by name — the bespoke DY map banks one grid, so there is no channel to unweight against. Deferred: shower consumption, event-sample-vs-MG statistics |
@@ -112,6 +116,12 @@ lines an `e+ e-` sample does not have.
   extractor + Rust sorted-PDG matching + JSON regen, with a real-finding risk
   (whether vibegraph enumerates MG's exact concrete-subprocess union). Design
   preserved in note 19 §3 / §V7.
+- **`MG_VALIDATED_PROCESSES` is 14 of the gate's 18 process strings** — the
+  library-level sweeps driven by it (rooting soundness, op coverage, egraph
+  round-trip and extraction identity) never reach a coloured 2→3 amplitude: the
+  four `p p > l+ l- j` subprocess rows are absent from the list, though every one
+  of them is gated by `amplitude_oracle`. Extending it is a one-line change plus a
+  re-verified full re-rooting sweep (currently 133 re-rootings, 0 failures).
 - **`IdentityAmp` process-level coverage** — the last `KNOWN_UNCOVERED` op; needs
   an `Identity` scalar bilinear the SM lacks, so it rides with `non-sm-ufo`
   (feature backlog).
@@ -132,6 +142,13 @@ lines an `e+ e-` sample does not have.
 
 Small, independent, each one a gate that is weaker than it looks.
 
+- **One work-area `matrix1_orig.f` is hand-patched** — the
+  `ee_to_mumu_tata_qcd0` subprocess carries a `COMMON/DBG_AMP/` block added by an
+  old debugging session, so that file is not what MadGraph would write. The probe
+  build now detects an existing block instead of adding a second one (a duplicate
+  `COMMON` member makes f2py emit uncompilable C), but the work area is the
+  bundle's source, so regenerating that process directory is owed before the next
+  `refdata` bump.
 - **`run_card_dy.dat` is a verbatim MG5 copy** — delete it and read the card from
   the `mg5amcnlo` submodule instead, so there is one source and no third-party
   file to notice. Make the resulting skip **loud** when the submodule is absent
