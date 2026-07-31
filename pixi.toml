@@ -121,6 +121,11 @@ generate-hadronic-sigma = "bash validation/madgraph/gen_hadronic_sigma.sh"
 # five seeds. Runs under --profile profiling: the llj sweep is minutes optimised
 # and hours unoptimised.
 validate-hadronic = { cmd = "cargo test -p vibegraph-lib --profile profiling --features extended-validation --test validate_hadronic -- --nocapture", depends-on = ["fetch-pdf", "generate-hadronic-sigma", "build-diagrams"] }
+# Event-generation gate at proton beams: the banked pp_to_llj_fixed cards
+# integrated and replayed into an unweighted .lhe, with every event's flavour
+# assignment and colour connectivity checked against MadGraph's own leshouche.inc
+# and its own event sample. Runs under --profile profiling.
+validate-generate-proton = { cmd = "cargo test -p vibegraph --profile profiling --features extended-validation --test cli_generate_proton -- --nocapture --test-threads 1", depends-on = ["fetch-pdf", "build-diagrams"] }
 # Build the MG |M|^2 probe and (re)generate the pointwise DY integrand oracle
 generate-dy-oracle = { cmd = "bash validation/madgraph/gen_dy_oracle.sh", depends-on = ["fetch-pdf"] }
 # Fetch the pinned NNPDF23_lo_as_0130_qed set from the LHAPDF data server
