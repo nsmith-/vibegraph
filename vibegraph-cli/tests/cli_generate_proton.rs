@@ -36,8 +36,8 @@
 //!
 //! It is also blind, as every self-comparison is, to anything the integrand gets
 //! wrong: a wrong matrix element, cut or sampler is replayed faithfully into the
-//! file and agrees with itself. `validate_hadronic`, `validate_helas_mg` and
-//! `amp_diagram_oracle` cover those.
+//! file and agrees with itself. `validate_hadronic` and `amplitude_oracle`
+//! cover those.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

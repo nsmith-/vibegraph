@@ -34,7 +34,7 @@
 //!
 //! It compares the event sample against the integrand it was drawn from, so it is
 //! blind to everything wrong with that integrand — a wrong matrix element, flux,
-//! or cut is reproduced faithfully on both sides. `validate_helas_mg` and
+//! or cut is reproduced faithfully on both sides. `amplitude_oracle` and
 //! `validate_sigma` are what cover those. It is also blind to the *labels* an
 //! event carries: helicity and colour-flow selection move no weight, so a
 //! mislabelled event is invisible here by construction. Those are pinned by the

@@ -17,7 +17,7 @@
 //!
 //! It is also blind to everything the integrand gets wrong: a wrong matrix
 //! element, cut or sampler is replayed faithfully into the file and agrees with
-//! itself. `validate_helas_mg`, `validate_sigma` and `validate_unweighting` cover
+//! itself. `amplitude_oracle`, `validate_sigma` and `validate_unweighting` cover
 //! those. And it says nothing about an event's discrete labels — helicity and
 //! colour-flow selection move no weight, so a mislabelled event is invisible to
 //! every comparison here (`color_flow_tags_oracle` and `validate_lhef` cover them).

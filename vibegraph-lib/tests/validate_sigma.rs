@@ -9,7 +9,7 @@
 //!
 //! # What this gate covers that the bit-exact net cannot
 //!
-//! The per-point `validate_helas_mg` net is blind to everything *outside* the
+//! The per-point `amplitude_oracle` net is blind to everything *outside* the
 //! matrix element: the flux factor `1/(2 s-hat)`, the initial-state spin/colour
 //! average, identical-particle and phase-space symmetry factors, the cut filter,
 //! and the beam/phase-space measure. A wrong constant in any of those leaves the
@@ -92,7 +92,7 @@
 //! relative-tolerance bound.
 //!
 //! Runs only when the gitignored MadGraph `output/` tree is present (same
-//! contract as `validate_helas_mg`); otherwise every process is skipped.
+//! contract as `amplitude_oracle`); otherwise every process is skipped.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
