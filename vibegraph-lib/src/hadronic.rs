@@ -63,7 +63,7 @@ use std::f64::consts::PI;
 use rand::SeedableRng;
 use thiserror::Error;
 
-use crate::coupling::alphas::{AlphaSError, RunningAlphaS};
+use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::scales::{ClusterTopology, EventScales, ScaleChoice, ScaleError, ScaleEvent};
 use crate::coupling::topology::cluster_topology;
 use crate::cuts::{CutError, Cuts, ExternalLeg};
@@ -74,6 +74,7 @@ use crate::diagrams::{
 use crate::helas::color::flow_tags::select_flow;
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
+use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::PdfMember;
 use crate::phasespace::{
     lips2_jacobian_u, AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel,
@@ -174,7 +175,7 @@ pub enum HadronicError {
 #[derive(Clone, Debug)]
 pub struct EventScaleSource {
     kind: ScaleSourceKind,
-    alpha_s: Option<RunningAlphaS>,
+    alpha_s: Option<AlphaSSource>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -206,12 +207,13 @@ impl EventScaleSource {
     pub fn from_run_card(
         card: &RunCard,
         param_card_as: f64,
+        grid: Option<&AlphaSInfo>,
         topology: Option<ClusterTopology>,
         needs_alpha_s: bool,
     ) -> Result<Self, HadronicError> {
         let choice = ScaleChoice::from_run_card(card)?;
         let alpha_s = needs_alpha_s
-            .then(|| RunningAlphaS::from_run_card(card, param_card_as))
+            .then(|| AlphaSSource::from_run_card(card, param_card_as, grid))
             .transpose()?;
         let kind = if choice.is_fully_fixed() {
             // A fully fixed prescription returns the card's constants without
@@ -235,8 +237,8 @@ impl EventScaleSource {
         }
     }
 
-    /// The running coupling, or `None` when none was asked for.
-    pub fn running_alpha_s(&self) -> Option<&RunningAlphaS> {
+    /// The strong coupling's source, or `None` when none was asked for.
+    pub fn alpha_s(&self) -> Option<&AlphaSSource> {
         self.alpha_s.as_ref()
     }
 
@@ -540,12 +542,15 @@ impl<'a> DrellYanIntegrand<'a> {
         // Unlike a fixed-beam run, the factorisation scale here has a consumer
         // whatever the matrix element is made of, so the prescription is compiled
         // even when nothing moves with the strong coupling.
+        // Drell-Yan carries no strong coupling at LO, so no source is built and the
+        // set's own alpha_s tabulation is never consulted.
         let source = compile_scale_source(
             self.subs[DY_UP].evaluator(),
             diagrams,
             model,
             evaluated,
             card,
+            None,
             awareness.depends_on_alpha_s,
         )?;
         let report = constant_scale_report(&self.subs, Some(&source), awareness);
@@ -639,7 +644,7 @@ impl<'a> DrellYanIntegrand<'a> {
     /// matrix element carries no strong coupling, so no running coupling is built
     /// for it and this returns without touching the pools.
     fn apply_scale(&self, mu_r: f64) {
-        let Some(running) = self.scales.running_alpha_s() else {
+        let Some(running) = self.scales.alpha_s() else {
             return;
         };
         let alpha_s = running.eval(mu_r);
@@ -1058,15 +1063,18 @@ fn make_subs_scale_aware(
 /// Compile the run card's prescription for a process, deriving the topology its
 /// clustering branch consults from the process's own diagrams.
 ///
-/// The running coupling is built only when some subprocess actually moves with it,
-/// which is what keeps a matrix element with no QCD in it away from a `pdlabel`
-/// whose `αs` `coupling::alphas` refuses to supply.
+/// The coupling is built only when some subprocess actually moves with it, which is
+/// what keeps a matrix element with no QCD in it away from a `pdlabel` whose
+/// `αs` lives in a PDF set the caller may not have loaded. `grid` is that set's
+/// `AlphaS_*` metadata, for the label that demands it.
+#[allow(clippy::too_many_arguments)]
 fn compile_scale_source(
     rep: &AmplitudeEvaluator,
     diagrams: &[Diagram],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     card: &RunCard,
+    grid: Option<&AlphaSInfo>,
     needs_alpha_s: bool,
 ) -> Result<EventScaleSource, HadronicError> {
     let topology = cluster_topology(
@@ -1077,7 +1085,7 @@ fn compile_scale_source(
         card.maxjetflavor,
     );
     let param_card_as = evaluated.alpha_s().ok_or(HadronicError::MissingAlphaS)?;
-    EventScaleSource::from_run_card(card, param_card_as, Some(topology), needs_alpha_s)
+    EventScaleSource::from_run_card(card, param_card_as, grid, Some(topology), needs_alpha_s)
 }
 
 /// Hold every subprocess at the coupling a constant prescription implies, and
@@ -1088,7 +1096,7 @@ fn constant_scale_report(
     awareness: ScaleAwareness,
 ) -> RunningCouplingReport {
     let constant_scales = source.and_then(EventScaleSource::constant_scales);
-    let constant_alpha_s = match (constant_scales, source.and_then(|s| s.running_alpha_s())) {
+    let constant_alpha_s = match (constant_scales, source.and_then(|s| s.alpha_s())) {
         (Some(scales), Some(running)) => Some(running.eval(scales.mu_r)),
         _ => None,
     };
@@ -1353,12 +1361,15 @@ impl<'a> FixedBeamIntegrand<'a> {
             self.scales = None;
             return Ok(constant_scale_report(&self.subs, None, awareness));
         }
+        // A fixed-beam run has no parton distributions, so `pdlabel` never reaches
+        // the branch that would want a set's alpha_s tabulation.
         let source = compile_scale_source(
             self.subs[0].evaluator(),
             diagrams,
             model,
             evaluated,
             card,
+            None,
             true,
         )?;
         if source.constant_scales().is_none() {
@@ -1427,10 +1438,9 @@ impl<'a> FixedBeamIntegrand<'a> {
         Some(self.event_scales_of(source, momenta))
     }
 
-    /// The running coupling an event record's `AQCDUP` is evaluated from, when
-    /// one was built.
-    pub fn running_alpha_s(&self) -> Option<&RunningAlphaS> {
-        self.scales.as_ref()?.running_alpha_s()
+    /// The source an event record's `AQCDUP` is evaluated from, when one was built.
+    pub fn alpha_s_source(&self) -> Option<&AlphaSSource> {
+        self.scales.as_ref()?.alpha_s()
     }
 
     /// Move every subprocess to the coupling this point's renormalisation scale
@@ -1442,7 +1452,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         if source.constant_scales().is_some() {
             return;
         }
-        let Some(running) = source.running_alpha_s() else {
+        let Some(running) = source.alpha_s() else {
             return;
         };
         let scales = self

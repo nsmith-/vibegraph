@@ -443,7 +443,7 @@ fn generate_and_check(row: &Row) {
             Some(scales) => {
                 let scales = scales.expect("the scale prescription accepts a sampled point");
                 let alpha_s = integ
-                    .running_alpha_s()
+                    .alpha_s_source()
                     .map(|r| r.eval(scales.mu_r))
                     .expect("a scale-aware run has a running coupling");
                 (scalup(&scales), alpha_s)

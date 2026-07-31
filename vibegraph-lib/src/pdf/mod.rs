@@ -3,7 +3,11 @@
 //!
 //! Interpolation lives behind the [`interp`] seam ([`interp::Bicubic2D`]); the
 //! backend that matches LHAPDF6 (and hence MadGraph) is [`interp::LogBicubic`].
+//!
+//! A set also carries the strong coupling it was fitted at ([`alphas::GridAlphaS`]),
+//! which is the coupling a run reading these densities has to use.
 
+pub mod alphas;
 pub mod grid;
 pub mod interp;
 
