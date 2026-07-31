@@ -13,8 +13,14 @@ planned in note 25 (three-layer suite delineation + per-process × per-category
 report; shower consumption and event-sample statistics land as the `samples`
 category). L0 has landed: `validation/manifest.toml` is the per-process source of
 truth, `required-features` is the only mechanism deciding layer membership, and
-`cargo test` on a bare clone is complete with zero skips. `pixi run validate` is
-the banked layer; `validate-deep` / `generate-references` are the oracle layer.
+`cargo test` on a bare clone is complete with zero skips. L1 has landed:
+`pixi run generate-references` is one staged entry point over every generator and
+reproduces every committed reference — the bundle archive included — byte-for-byte
+from a populated work area; `validation/fetch_common.sh` is the one place that may
+download; the diagram counts, the HELAS grid and the two LHAPDF oracles are now
+committed; and the banked layer runs off a fetched `vibegraph-refdata-1.tar.zst`
+on a machine with no MadGraph at all. `pixi run validate` is the banked layer;
+`validate-deep` / `generate-references` are the oracle layer.
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
 ## Pipeline Status
@@ -136,18 +142,41 @@ Small, independent, each one a gate that is weaker than it looks.
   `EXPECTED_SKIPS` and prints a `VALIDATION-SKIP` marker. The `ufo` and
   `ufo::sm` members moved to `tests/ufo.rs` and `tests/sm_interned_blob.rs`,
   where a missing submodule is now a failure, not a skip.
-- **Two reference files are still generated rather than committed**, so both
-  gates below currently record an expected skip on a machine that has not built
-  the producing toolchain, and both `EXPECTED_SKIPS` entries want deleting when
-  the file lands in git:
-  - `validation/pdf/oracle*.json` (`validate_pdf_grid`, 12 tests). Note: run as
-    part of a whole-suite `--features extended-validation` invocation before the
-    layering, these 12 did not merely cover nothing — they **failed**, since
-    nothing had ever run the binary outside its own pixi task. Producing them
-    needs the LHAPDF C++ build and a second set fetched.
-  - `validation/helas/reference.{csv,npz}` (`validate_helas`, 1 test). Produced
-    by the separate `helas-validation` environment (gfortran + f2py), which the
-    banked layer does not build.
+- ~~**Two reference files are still generated rather than committed**~~ ✅
+  **resolved.** `validation/pdf/oracle{,_multigrid}.json` (51 + 71 KB) and
+  `validation/helas/reference.{csv,npz}` (27 KB) are committed, both
+  `EXPECTED_SKIPS` entries are deleted, and the two gates read the committed
+  files. `validate_helas` needs nothing external any more and moved to the
+  hermetic layer (0.25 s); `validate_pdf_grid`'s 12 tests are live and stay
+  banked because the *other* side of the comparison is the two fetched PDF sets,
+  which `pixi run validate` now acquires (`fetch-pdf-multigrid` joined its
+  dependencies).
+- **Publish the `refdata-1` release asset and make the CI banked job gating** —
+  user step. `validation/madgraph/assemble_bundle.sh` builds
+  `vibegraph-refdata-1.tar.zst` (90 333 614 bytes, sha256
+  `9cc0cfd2…6cfda831`, pinned in `validation/manifest.toml`) reproducibly from
+  the work area, and `validation/fetch_common.sh` fetches and verifies it; the
+  URL it points at is a `refdata-1` tag that does not exist yet, so the path is
+  exercised through `$VIBEGRAPH_REFDATA_SOURCE` meanwhile. Tag + upload the
+  asset, flip `[refdata].published`, then drop `continue-on-error` from
+  `ci.yml`'s `banked` job and add `pixi run fetch-refdata` to its fetch step —
+  the reason it is non-gating is exactly that a fresh runner could not obtain the
+  MadGraph runs.
+- **`g g > g g` diagram count: 6 against 4** — exposed by L1, informational, not
+  chased. MadGraph writes the four-gluon contact term as three graphs, one per
+  colour structure (`VVVV1_0`/`VVVV3_0`/`VVVV4_0` into `AMP(1..3)`); we write one
+  diagram whose vertex carries all three. So 3 exchange + 3 contact against
+  3 + 1. The physics is pinned far below a count — the per-flow amplitude gate on
+  this process agrees with MadGraph at 8.25e-14 — so the question is only whether
+  our count should be reported in MadGraph's per-structure convention. Decide
+  that with the report driver, not by changing enumeration.
+- **`diagrams.json` carries counts only, not the per-flavour union** — the
+  committed reference is what the existing extractor produces, so the
+  multi-channel `diagrams` cells assert a summed count and not the concrete
+  subprocess list the manifest describes. Filling that in is the deferred V7
+  design (note 19 §3/§V7) reaching `extract_diagrams.py`; until then the
+  manifest's "includes the per-flavour concrete-subprocess union" notes describe
+  the intent, not the current assertion.
 - **`clippy::approx_constant` deny at `coupling/alphas.rs:224`** — the one error
   in a whole-workspace `cargo clippy`, which three sessions worked around rather
   than fixed. `const PI: f64 = 3.141592653589793` is deliberate: it is π *as

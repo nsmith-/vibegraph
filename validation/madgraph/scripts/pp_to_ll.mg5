@@ -1,6 +1,22 @@
-# MadGraph5 batch script: p p > l+ l- at LO (default order)
-# Default: QCD=2 (from initial state), QED=2 (dilepton)
-
+# MadGraph5 batch script: p p > l+ l- at LO (default coupling orders).
+#
+# Why this exact process:
+#   - Drell-Yan over a proton beam with multiparticle labels on both sides: one
+#     script is a *group* of concrete subprocesses, which is what exercises the
+#     flavour-group path — the per-flavour union of diagrams, the initial-state
+#     flavour sum and the PDF luminosity that goes with it.
+#   - Default orders here admit both the QED core and the QCD-mediated
+#     contributions, so the group's diagram content is the one the order
+#     selection chooses rather than one stated by hand; pp_to_ll_qcd0 is the
+#     stated-order counterpart, and the pair pins the selection semantics.
+#   - Its run is also the hadronic cross-section reference: the two committed
+#     dy13 run cards (default cuts, and m_ll in [60,120]) are handed verbatim to
+#     both MadGraph and vibegraph, so the PDF luminosity, the flux and the cuts
+#     are pinned together rather than one at a time.
+#
+# Not used for amplitudes: a group has no single matrix element to dump per
+# diagram, and the concrete subprocess underneath it — u u~ > mu+ mu- — is a row
+# of its own. Per-helicity and per-flow agreement is claimed there, not here.
 generate p p > l+ l-
 output pp_to_ll -nojpeg
 launch

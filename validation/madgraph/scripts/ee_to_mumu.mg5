@@ -1,7 +1,23 @@
-# MadGraph5 batch script: e+ e- > mu+ mu- at LO (default order)
-# Default behavior: all couplings at leading order
-# At tree level: QED=2 (two photon couplings)
-
+# MadGraph5 batch script: e+ e- > mu+ mu- at LO (default coupling orders).
+#
+# Why this exact process:
+#   - The smallest complete amplitude in the set: two massless colourless
+#     fermion lines joined by an s-channel gamma*/Z, one diagram, one colour
+#     flow. Nothing is entangled with anything else, so when a convention change
+#     moves a number this is the row that says whether the change was in the
+#     spinors, the propagator or the couplings.
+#   - It is the reference point every other row is measured against: the
+#     |M|^2 grid, the analytic QED cross section and the VEGAS sigma all meet
+#     here, which is why it is also the process the kernel-composition and
+#     Fortran77-HELAS gates use.
+#   - Beams at 45.6 + 45.6 GeV put sqrt(s) on the Z pole, where the gamma*/Z
+#     interference is largest and a wrong relative sign between the two
+#     mediators cannot hide inside the photon term.
+#
+# Default orders at tree level are QED=2; there is no QCD contribution to
+# constrain, so this script has no explicit-order counterpart.
+#
+# lpp defaults to 0 for lepton beams: fixed-energy partonic kinematics.
 generate e+ e- > mu+ mu-
 output ee_to_mumu -nojpeg
 launch
