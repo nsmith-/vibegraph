@@ -12,16 +12,12 @@
 //!     behavior the single-subgrid set cannot reach, and which was otherwise
 //!     covered only by synthetic in-crate fixtures.
 //!
-//! Gated behind the `extended-validation` cargo feature (requires the fetched
-//! PDF sets + generated oracle JSONs).
+//! Both oracle files are committed. What keeps this in the banked layer is the
+//! other side of the comparison: the fetched PDF sets themselves, which is what
+//! `pixi run validate` acquires before it runs.
 //!
 //!     cargo test -p vibegraph-lib --features extended-validation \
 //!                --test validate_pdf_grid
-//!
-//! Prerequisites:
-//!   pixi run -e madgraph fetch-pdf                 # NNPDF23
-//!   pixi run -e madgraph fetch-pdf-multigrid       # NNPDF31_lo
-//!   pixi run -e madgraph generate-pdf-oracle       # both oracle JSONs
 //!
 //! Per oracle, two kinds of gate share the file. The parser gate compares the
 //! "knot" category, where x·f is read directly out of the raw array on both
@@ -78,33 +74,24 @@ fn validation_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf")
 }
 
-/// `None` when the dump is absent, which every test here reports through the
-/// skip accounting rather than failing on: the dumps are not committed and the
-/// banked layer does not build LHAPDF to produce them.
-fn load_oracle_named(name: &str) -> Option<Oracle> {
+/// Both dumps are committed — LHAPDF's values on a fixed set of probe points do
+/// not change — so an absent one is a broken checkout, not a missing optional
+/// input. Regenerating them needs the LHAPDF C++ build:
+/// `pixi run generate-references refs`.
+fn load_oracle_named(name: &str) -> Oracle {
     let path = validation_dir().join(name);
-    let content = std::fs::read_to_string(&path).ok()?;
-    Some(
-        serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display())),
-    )
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()))
 }
 
-fn load_oracle() -> Option<Oracle> {
+fn load_oracle() -> Oracle {
     load_oracle_named("oracle.json")
 }
 
-fn load_multigrid_oracle() -> Option<Oracle> {
+fn load_multigrid_oracle() -> Oracle {
     load_oracle_named("oracle_multigrid.json")
-}
-
-/// Report that this binary had no oracle to compare against.
-fn no_oracle(name: &str) {
-    vibegraph::validation::skip(
-        "validate_pdf_grid",
-        "lhapdf grid oracle dump",
-        format_args!("{name} (run `pixi run generate-pdf-oracle`)"),
-    );
 }
 
 fn load_set(oracle: &Oracle) -> PdfSet {
@@ -124,9 +111,7 @@ fn rel_close(a: f64, b: f64) -> bool {
 
 #[test]
 fn subgrid_structure_matches_oracle() {
-    let Some(oracle) = load_oracle() else {
-        return no_oracle("oracle.json");
-    };
+    let oracle = load_oracle();
     let set = load_set(&oracle);
     let member = set
         .member(oracle.member)
@@ -146,9 +131,7 @@ fn subgrid_structure_matches_oracle() {
 
 #[test]
 fn on_knot_values_match_oracle_exactly() {
-    let Some(oracle) = load_oracle() else {
-        return no_oracle("oracle.json");
-    };
+    let oracle = load_oracle();
     let set = load_set(&oracle);
     let member = set
         .member(oracle.member)
@@ -194,9 +177,7 @@ fn on_knot_values_match_oracle_exactly() {
 
 #[test]
 fn info_flavors_cover_dat_flavors() {
-    let Some(oracle) = load_oracle() else {
-        return no_oracle("oracle.json");
-    };
+    let oracle = load_oracle();
     let set = load_set(&oracle);
     for osg in &oracle.subgrids {
         for &f in &osg.flavors {
@@ -267,9 +248,7 @@ fn worst_in_category(
 /// differences in `log`.
 #[test]
 fn off_knot_interpolation_matches_lhapdf() {
-    let Some(oracle) = load_oracle() else {
-        return no_oracle("oracle.json");
-    };
+    let oracle = load_oracle();
     let set = load_set(&oracle);
     let member = set.member(oracle.member).expect("member load");
     let worst = worst_in_category(&member, &oracle, "off_knot", 0.0);
@@ -282,9 +261,7 @@ fn off_knot_interpolation_matches_lhapdf() {
 /// probes the gluon under both PDG spellings (21 and the 0 alias).
 #[test]
 fn edge_and_tail_interpolation_matches_lhapdf() {
-    let Some(oracle) = load_oracle() else {
-        return no_oracle("oracle.json");
-    };
+    let oracle = load_oracle();
     let set = load_set(&oracle);
     let member = set.member(oracle.member).expect("member load");
     for category in ["seam", "x_to_one_tail", "corner"] {
@@ -307,9 +284,7 @@ fn edge_and_tail_interpolation_matches_lhapdf() {
 /// Bar: `|Δ| ≤ 1e-11 + 1e-9·|want|` (numpy-style atol+rtol).
 #[test]
 fn on_knot_interpolation_reproduces_node() {
-    let Some(oracle) = load_oracle() else {
-        return no_oracle("oracle.json");
-    };
+    let oracle = load_oracle();
     let set = load_set(&oracle);
     let member = set.member(oracle.member).expect("member load");
     let mut worst_abs = 0.0f64;
@@ -338,9 +313,7 @@ fn on_knot_interpolation_reproduces_node() {
 /// extrapolated value — extrapolation is a deliberate non-goal.
 #[test]
 fn out_of_range_is_error() {
-    let Some(oracle) = load_oracle() else {
-        return no_oracle("oracle.json");
-    };
+    let oracle = load_oracle();
     let set = load_set(&oracle);
     let member = set.member(oracle.member).expect("member load");
     // Far below XMin=1e-9 in x and above QMax in Q².
@@ -356,9 +329,7 @@ fn out_of_range_is_error() {
 
 #[test]
 fn multigrid_subgrid_structure_matches_oracle() {
-    let Some(oracle) = load_multigrid_oracle() else {
-        return no_oracle("oracle_multigrid.json");
-    };
+    let oracle = load_multigrid_oracle();
     assert!(
         oracle.subgrids.len() >= 2,
         "the multi-subgrid oracle must carry ≥2 Q²-subgrids, got {}",
@@ -412,9 +383,7 @@ fn multigrid_subgrid_structure_matches_oracle() {
 
 #[test]
 fn multigrid_on_knot_values_match_oracle_exactly() {
-    let Some(oracle) = load_multigrid_oracle() else {
-        return no_oracle("oracle_multigrid.json");
-    };
+    let oracle = load_multigrid_oracle();
     let set = load_set(&oracle);
     let member = set
         .member(oracle.member)
@@ -462,9 +431,7 @@ const FORCE_POSITIVE_FLOOR: f64 = 1e-8;
 
 #[test]
 fn multigrid_off_knot_interpolation_matches_lhapdf() {
-    let Some(oracle) = load_multigrid_oracle() else {
-        return no_oracle("oracle_multigrid.json");
-    };
+    let oracle = load_multigrid_oracle();
     let set = load_set(&oracle);
     let member = set.member(oracle.member).expect("member load");
     let worst = worst_in_category(&member, &oracle, "off_knot", FORCE_POSITIVE_FLOOR);
@@ -482,9 +449,7 @@ fn multigrid_off_knot_interpolation_matches_lhapdf() {
 /// value is continuous across the seam by construction.
 #[test]
 fn multigrid_seam_interpolation_matches_lhapdf() {
-    let Some(oracle) = load_multigrid_oracle() else {
-        return no_oracle("oracle_multigrid.json");
-    };
+    let oracle = load_multigrid_oracle();
     assert!(
         !oracle.seams.is_empty(),
         "expected ≥1 internal seam, got {}",
@@ -503,9 +468,7 @@ fn multigrid_seam_interpolation_matches_lhapdf() {
 /// wrong band's offset) would show up as a step here.
 #[test]
 fn multigrid_value_is_continuous_across_seams() {
-    let Some(oracle) = load_multigrid_oracle() else {
-        return no_oracle("oracle_multigrid.json");
-    };
+    let oracle = load_multigrid_oracle();
     let set = load_set(&oracle);
     let member = set.member(oracle.member).expect("member load");
     let x = 0.05_f64;

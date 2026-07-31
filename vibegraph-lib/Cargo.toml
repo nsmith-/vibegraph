@@ -109,10 +109,6 @@ name = "validate_lhef"
 required-features = ["extended-validation"]
 
 [[test]]
-name = "validate_helas"
-required-features = ["extended-validation"]
-
-[[test]]
 name = "validate_alphas"
 required-features = ["extended-validation"]
 

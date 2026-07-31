@@ -14,7 +14,14 @@ Expected structure:
     pp_to_ll_lo/
       ...
 
-Output: Creates output/DIR.json for each directory with:
+Two outputs. The committed one is ``diagrams.json`` beside this script: the
+per-process counts alone, which is what the diagram gate asserts against and
+what lets it run on a checkout with no work area. The per-directory
+``output/DIR.json`` files additionally carry the configs.inc topologies (large
+for the 2 -> 6 processes, and printed by the gate for debugging when present),
+so they stay in the work area.
+
+Per-directory ``output/DIR.json`` shape:
   {
     "process": "inferred from directory name",
     "total_diagrams": count,
@@ -311,8 +318,21 @@ def infer_process_from_dirname(dir_name: str) -> str:
     return result.strip()
 
 
+COMMITTED_HEADER = (
+    "Per-process Feynman-diagram counts from MadGraph's own enumeration: the "
+    "NGRAPHS of each P-class's representative subprocess, summed. Written by "
+    "validation/madgraph/extract_diagrams.py from the local MadGraph work area "
+    "and committed, so the diagram gate runs against a checkout that has never "
+    "run MadGraph. The per-process files beside the work-area process "
+    "directories carry the same counts plus the configs.inc topologies, which "
+    "the gate prints for debugging when they are present. Keys are the .mg5 "
+    "script names; the process string each one generates is in "
+    "validation/manifest.toml and in the script itself."
+)
+
+
 def main():
-    """Extract diagrams from all output directories and write per-directory JSON files."""
+    """Write the per-directory topology files and the committed count reference."""
     script_dir = Path(__file__).parent
     output_base = script_dir / "output"
 
@@ -323,9 +343,10 @@ def main():
 
     extracted_count = 0
     failed_count = 0
+    counts: Dict[str, Any] = {}
 
     for output_dir in sorted(output_base.glob("*/")):
-        if not output_dir.is_dir():
+        if not (output_dir / "SubProcesses").is_dir():
             continue
 
         dir_name = output_dir.name
@@ -338,6 +359,11 @@ def main():
             with open(json_path, "w") as f:
                 json.dump(diagram_info, f, indent=2)
 
+            counts[dir_name] = {
+                "total_diagrams": diagram_info["total_diagrams"],
+                "diagrams_by_subprocess": diagram_info["diagrams_by_subprocess"],
+            }
+
             n = diagram_info["total_diagrams"]
             print(f"  ✓ {n} diagrams found", file=sys.stderr)
             print(f"    Wrote: {dir_name}.json", file=sys.stderr)
@@ -347,10 +373,21 @@ def main():
             print(f"  ✗ {e}", file=sys.stderr)
             failed_count += 1
 
+    committed = script_dir / "diagrams.json"
+    with open(committed, "w") as f:
+        json.dump(
+            {"_comment": COMMITTED_HEADER, "schema": 1, "processes": counts},
+            f,
+            indent=2,
+            sort_keys=True,
+        )
+        f.write("\n")
+
     print(
         f"\n✓ Extracted {extracted_count} process(es) ({failed_count} failed)",
         file=sys.stderr,
     )
+    print(f"  Wrote: {committed.relative_to(script_dir.parent.parent)}", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -111,20 +111,6 @@ pub const EXPECTED_SKIPS: &[ExpectedSkip] = &[
         because: "the llj reference run is produced locally and the PDF set is fetched on consent",
     },
     ExpectedSkip {
-        test: "validate_pdf_grid",
-        input: "lhapdf grid oracle dump",
-        because: "the LHAPDF oracle dumps are neither committed nor produced by the banked layer, \
-                  so every test in this binary is currently inert; committing them is what makes \
-                  the gate live",
-    },
-    ExpectedSkip {
-        test: "helas_matches_fortran_reference",
-        input: "fortran77 helas reference grid",
-        because: "the grid is produced by the `helas-validation` environment (gfortran + f2py), \
-                  which the banked layer does not build; committing it is what makes the gate \
-                  independent of that toolchain",
-    },
-    ExpectedSkip {
         test: "root_override_hook_is_transparent",
         input: "banked amplitude reference csv",
         because:
