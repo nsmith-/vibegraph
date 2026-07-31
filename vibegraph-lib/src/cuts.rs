@@ -343,6 +343,41 @@ impl Cuts {
         self.shat_min_hint
     }
 
+    /// A regulator scale (GeV²) for the spacelike propagator pole of a peripheral
+    /// phase-space channel: the square of the largest single-leg transverse-momentum
+    /// threshold the active cuts impose on a final-state leg, or `0` when no such
+    /// threshold is active.
+    ///
+    /// A peripheral emission off a massless beam that puts a massless system at
+    /// transverse momentum `pT` transfers `|t| = 2E_beam(m² + pT²)/(E + p_z) ≥ pT²`,
+    /// so a leg held above `pT_min` holds the transfer of the rung that produced it
+    /// above `pT_min²`. Transverse balance carries the same scale to the *other*
+    /// side of the rung whenever the recoil is the only thing balancing that leg,
+    /// which for a three-body final state is always: the system opposite the jet
+    /// carries the jet's own `pT`. Past three outgoing legs a partition can balance
+    /// internally, so this stops being a bound and stays a scale.
+    ///
+    /// That is enough, because the floor is a *density regulator*, not a kinematic
+    /// limit. It enters the channel's `t` draw and its `t` measure alike
+    /// ([`DiagramChannel::from_diagram_regulated`]), so any non-negative value
+    /// leaves the estimator unbiased and only its efficiency — and the
+    /// well-posedness of a draw whose pole would otherwise sit on the transfer's own
+    /// rounding noise — depends on the size. A run with no active single-leg `pT`
+    /// cut therefore gets `0`, which leaves peripheral channels unbuilt beyond two
+    /// outgoing legs rather than building an ill-posed one.
+    ///
+    /// [`DiagramChannel::from_diagram_regulated`]:
+    ///     crate::phasespace::diagram_channel::DiagramChannel::from_diagram_regulated
+    pub fn spacelike_floor(&self) -> f64 {
+        let pt_min = self
+            .single
+            .iter()
+            .map(|c| c.pt_min)
+            .fold(0.0f64, f64::max)
+            .max(0.0);
+        pt_min * pt_min
+    }
+
     /// Phase-space indicator: `true` iff `momenta` (all external legs, in the
     /// order given to [`Cuts::compile`]) pass every compiled cut.
     pub fn pass<F: Real>(&self, momenta: &[LorentzVector<F>]) -> bool {
@@ -934,6 +969,89 @@ mod tests {
         // ptl bound when the others are small.
         let c3 = Cuts::compile(&card("25 = ptl\n"), &dy_legs()).unwrap();
         assert_eq!(c3.shat_min(), 2500.0); // (2·25)²
+    }
+
+    // ── spacelike floor ─────────────────────────────────────────────────
+
+    /// `p p > l+ l- j` external legs: `[u, u~, e+, e-, g]`.
+    fn llj_legs() -> Vec<ExternalLeg> {
+        vec![
+            ExternalLeg::incoming(2, 0.0),
+            ExternalLeg::incoming(-2, 0.0),
+            ExternalLeg::outgoing(-11, 0.0),
+            ExternalLeg::outgoing(11, 0.0),
+            ExternalLeg::outgoing(21, 0.0),
+        ]
+    }
+
+    #[test]
+    fn spacelike_floor_is_the_hardest_single_leg_pt_squared() {
+        // The banked llj card: ptj = 20 over ptl = 10 ⇒ |t| ≳ 400 GeV².
+        let llj = Cuts::compile(&RunCard::default(), &llj_legs()).unwrap();
+        assert_eq!(llj.spacelike_floor(), 400.0);
+
+        // The jet is what carries it: raise the lepton threshold past the jet's
+        // and the floor follows the leptons instead.
+        let leptonic = Cuts::compile(&card("30 = ptl\n"), &llj_legs()).unwrap();
+        assert_eq!(leptonic.spacelike_floor(), 900.0);
+
+        // Drell-Yan has no jet, so its floor is the lepton threshold.
+        let dy = Cuts::compile(&RunCard::default(), &dy_legs()).unwrap();
+        assert_eq!(dy.spacelike_floor(), 100.0);
+    }
+
+    /// A run with no active single-leg `pT` cut has no scale to regulate with, and
+    /// says so rather than inventing one — the honest failure mode, since a zero
+    /// floor leaves a peripheral channel unbuilt beyond two outgoing legs.
+    #[test]
+    fn spacelike_floor_is_zero_without_an_active_pt_cut() {
+        let none = Cuts::compile(&card("0 = ptj\n0 = ptl\n"), &llj_legs()).unwrap();
+        assert_eq!(none.spacelike_floor(), 0.0);
+    }
+
+    /// The floor is read off the *compiled* cuts, so a leg that MadGraph exempts
+    /// from single-leg cuts contributes no scale. A `pdg = 5` final leg is a b at
+    /// `maxjetflavor = 4` (`ptb = 0`) and a jet at `5` (`ptj = 20`).
+    #[test]
+    fn spacelike_floor_follows_class_membership() {
+        let legs = vec![
+            ExternalLeg::incoming(2, 0.0),
+            ExternalLeg::incoming(-2, 0.0),
+            ExternalLeg::outgoing(5, 0.0),
+            ExternalLeg::outgoing(-5, 0.0),
+        ];
+        let as_b = Cuts::compile(&card("4 = maxjetflavor\n"), &legs).unwrap();
+        assert_eq!(as_b.spacelike_floor(), 0.0);
+        let as_jet = Cuts::compile(&card("5 = maxjetflavor\n"), &legs).unwrap();
+        assert_eq!(as_jet.spacelike_floor(), 400.0);
+    }
+
+    /// The transfer bound the floor is derived from: a massless beam emitting a
+    /// massless leg at transverse momentum `pT` transfers at least `pT²`. Checked
+    /// against `t` computed from the momenta, over a spread of rapidities and
+    /// collision energies, so the derivation is pinned rather than asserted.
+    #[test]
+    fn a_transverse_momentum_threshold_bounds_the_transfer_it_implies() {
+        let pt = 20.0;
+        for &sqrt_s in &[100.0, 500.0, 13000.0] {
+            let (b1, _) = beams(0.5 * sqrt_s);
+            for i in 0..40 {
+                let y = -4.0 + 0.2 * f64::from(i);
+                let emitted = lep(pt, y, 0.7);
+                // Only rapidities the collision energy can actually reach.
+                if emitted.e() > 0.5 * sqrt_s {
+                    continue;
+                }
+                let t = (b1 - emitted).m2();
+                assert!(t <= 0.0, "the rung is spacelike: t = {t}");
+                assert!(
+                    -t >= pt * pt - 1e-9,
+                    "sqrt_s = {sqrt_s}, y = {y}: |t| = {} below pT² = {}",
+                    -t,
+                    pt * pt
+                );
+            }
+        }
     }
 
     // ── class membership via maxjetflavor boundary ──────────────────────
