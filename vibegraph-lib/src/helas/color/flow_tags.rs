@@ -116,6 +116,33 @@ impl ColorFlowTags {
         &self.tags[f * self.n_ext..(f + 1) * self.n_ext]
     }
 
+    /// The same flows read on reordered external legs: leg `i` of the result
+    /// carries the tags of leg `order[i]` of `self`.
+    ///
+    /// Line labels travel with their legs, so every flow keeps the connectivity it
+    /// had — this relabels which leg an endpoint sits on, it does not recolour
+    /// anything. `None` unless `order` is a permutation of the legs.
+    pub fn permuted(&self, order: &[usize]) -> Option<ColorFlowTags> {
+        if order.len() != self.n_ext {
+            return None;
+        }
+        let mut seen = vec![false; self.n_ext];
+        for &leg in order {
+            if std::mem::replace(seen.get_mut(leg)?, true) {
+                return None;
+            }
+        }
+        let mut tags = Vec::with_capacity(self.tags.len());
+        for f in 0..self.n_flows() {
+            let flow = self.flow(f);
+            tags.extend(order.iter().map(|&leg| flow[leg]));
+        }
+        Some(ColorFlowTags {
+            n_ext: self.n_ext,
+            tags,
+        })
+    }
+
     /// The flow tags of a colour flow drawn with probability
     /// `JAMP2(i) / Σⱼ JAMP2(j)`; `None` when the weights carry no probability
     /// (all zero, negative, or non-finite).

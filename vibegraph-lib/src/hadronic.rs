@@ -1017,7 +1017,7 @@ impl<'a> BoundSubprocess<'a> {
     /// coupling — the two categorical weight vectors an event record's helicity and
     /// colour flow are drawn from. Neither enters `eval_m2`, so neither moves the
     /// cross section.
-    fn eval_diagonals(&self, momenta: &[V], hel_m2: &mut [f64], jamp2: &mut [f64]) {
+    pub(crate) fn eval_diagonals(&self, momenta: &[V], hel_m2: &mut [f64], jamp2: &mut [f64]) {
         let scratch = &mut self.scratch.borrow_mut();
         // The running form's own amplitude carries the pools the current scale set,
         // so both diagonals are read at the coupling `eval_m2` was taken at.

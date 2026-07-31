@@ -143,6 +143,47 @@ impl SubprocessRecord {
         })
     }
 
+    /// The same compiled subprocess read on reordered, relabelled external legs:
+    /// leg `i` of the result is leg `order[i]` of `self`, carrying PDG code
+    /// `pdg[i]`.
+    ///
+    /// A hadron-collider event needs this because one compiled amplitude serves
+    /// several concrete flavour assignments and both beam orderings. The colour
+    /// flows and the pole masses travel with the legs and only the codes change:
+    /// the flavours sharing an amplitude are the ones whose legs carry the same
+    /// masses, and exchanging the two beams exchanges their momenta along with
+    /// everything else the record says about them.
+    ///
+    /// The incoming/outgoing split is `self`'s, so a permutation that moves a leg
+    /// across it is refused.
+    pub fn relabelled(&self, order: &[usize], pdg: &[i32]) -> Result<Self, LhefError> {
+        let n_ext = self.n_ext();
+        let well_formed = order.len() == n_ext
+            && pdg.len() == n_ext
+            && order.iter().enumerate().all(|(i, &leg)| {
+                leg < n_ext && (i < self.n_in) == (leg < self.n_in) && !order[..i].contains(&leg)
+            });
+        if !well_formed {
+            return Err(LhefError::LegOrder {
+                order: order.to_vec(),
+                n_ext,
+            });
+        }
+        let flows = self
+            .flows
+            .permuted(order)
+            .ok_or_else(|| LhefError::LegOrder {
+                order: order.to_vec(),
+                n_ext,
+            })?;
+        Ok(SubprocessRecord {
+            pdg: pdg.to_vec(),
+            mass: order.iter().map(|&leg| self.mass[leg]).collect(),
+            n_in: self.n_in,
+            flows,
+        })
+    }
+
     /// The number of external legs.
     pub fn n_ext(&self) -> usize {
         self.pdg.len()

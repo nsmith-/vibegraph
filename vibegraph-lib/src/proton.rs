@@ -89,6 +89,7 @@ use crate::hadronic::{
     EventScaleSource, HadronicError, RunningCouplingReport, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS,
     SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED, VEGAS_NBINS,
 };
+use crate::helas::color::flow_tags::select_flow;
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::grid::AlphaSInfo;
@@ -99,6 +100,7 @@ use crate::phasespace::{
     ScaledChannel, ScaledMultiChannel, GEV2_TO_PB,
 };
 use crate::runcard::RunCard;
+use crate::select::select_index;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{VegasGrid, VegasResult};
@@ -143,6 +145,22 @@ impl Subprocess {
     pub fn has_mirror(&self) -> bool {
         self.incoming[0] != self.incoming[1]
     }
+}
+
+/// Which of a member's two beam orderings an event was assigned to.
+///
+/// The enumeration produces one ordering of each unordered initial state, so the
+/// other is reached through the mirror identity rather than through a second
+/// compiled subprocess.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BeamOrdering {
+    /// The enumerated ordering: beam 1 carries [`Subprocess::incoming`]`[0]`, and
+    /// the shared matrix element is evaluated at the point as drawn.
+    Direct,
+    /// The exchanged ordering: beam 1 carries [`Subprocess::incoming`]`[1]`, and
+    /// the shared matrix element is evaluated at the rotated argument
+    /// ([`FlavorGroup::mirror_into`]).
+    Exchanged,
 }
 
 /// A set of subprocesses sharing one matrix element, one phase-space map and one
@@ -269,6 +287,35 @@ impl FlavorGroup {
             pdf.xfx_q2(b, x1, q2[0]) * pdf.xfx_q2(a, x2, q2[1])
         };
         [direct, mirror]
+    }
+
+    /// The external legs one member carries under one beam ordering, as an event
+    /// record sees them: the PDG code of every leg in **physical** order (beam 1
+    /// first), and the permutation `order[physical] = representative` that carries
+    /// the shared amplitude's per-leg data onto those legs.
+    ///
+    /// Under [`BeamOrdering::Exchanged`] the two beams trade places. The mirrored
+    /// term evaluates the shared amplitude at the rotated argument
+    /// ([`mirror_into`](Self::mirror_into)), and that rotation maps each beam
+    /// momentum onto the other's, so everything the representative says about its
+    /// leg 0 — colour lines, helicity, mass — describes the event's *second* beam.
+    /// The rotation is a proper one, so a helicity is carried across unchanged.
+    /// The outgoing legs are untouched: the mirror is an argument to the matrix
+    /// element, not a second final state.
+    pub fn event_legs(&self, member: usize, ordering: BeamOrdering) -> (Vec<i32>, Vec<usize>) {
+        let m = &self.members[member];
+        let mut order: Vec<usize> = (0..self.legs.len()).collect();
+        let mut incoming = m.incoming;
+        if ordering == BeamOrdering::Exchanged {
+            order.swap(0, 1);
+            incoming.swap(0, 1);
+        }
+        let pdg = incoming
+            .iter()
+            .chain(m.outgoing.iter())
+            .copied()
+            .collect::<Vec<i32>>();
+        (pdg, order)
     }
 }
 
@@ -560,6 +607,52 @@ const ADAPT_STREAM: u64 = 0xA1FA_9110;
 pub struct ChannelId {
     pub group: usize,
     pub diagram: usize,
+}
+
+/// An accepted point, reconstructed from the coordinates it was drawn at.
+///
+/// The two frames are both kept because both are load-bearing: the record carries
+/// the lab-frame momenta, while the labels are read off diagonals of the matrix
+/// element, which lives in the partonic CM.
+#[derive(Clone, Debug)]
+pub struct ProtonEvent {
+    /// The channel term's value here, the number
+    /// [`value_in_channel`](ProtonIntegrand::value_in_channel) returns at the same
+    /// coordinates.
+    pub weight: f64,
+    /// Beam momentum fractions `(x₁, x₂)`.
+    pub x: [f64; 2],
+    /// The scales the matrix element was evaluated at.
+    pub scales: EventScales,
+    /// Lab-frame external momenta, beams first — what the event record reports.
+    pub lab: Vec<V>,
+    /// Partonic-CM external momenta, beams first — the frame `|M|²` is taken in.
+    pub cm: Vec<V>,
+}
+
+/// The discrete labels an accepted hadronic event carries besides its momenta.
+///
+/// Every one of them is summed over in the cross section, so none is a sampling
+/// channel: they are read off accumulators after the fact, to fill in a record.
+/// The concrete flavour is the one label with no fixed-beam counterpart — a
+/// hadronic group is a sum over flavours, and which of them an event is labelled
+/// with is decided by their parton-luminosity shares at the event's own `(x₁, x₂)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProtonSelection {
+    /// Index into [`FlavorGroups::groups`].
+    pub group: usize,
+    /// Index into that group's [`FlavorGroup::members`].
+    pub member: usize,
+    /// Which beam carries which of the member's two partons.
+    pub ordering: BeamOrdering,
+    /// The helicity of each external leg, in the **physical** leg order — the same
+    /// order [`FlavorGroup::event_legs`] returns codes in, so an exchanged
+    /// ordering's beam helicities are already swapped.
+    pub helicity: Vec<i32>,
+    /// Index into the group representative's colour-flow basis. The bases of a
+    /// group's members are equal by construction, and a beam exchange permutes the
+    /// legs of a flow rather than the flows.
+    pub flow: usize,
 }
 
 /// A VEGAS point's outer coordinates, mapped to the partonic system.
@@ -984,6 +1077,126 @@ impl<'a> ProtonIntegrand<'a> {
         shape * point.weight
     }
 
+    /// [`value_in_channel`](Self::value_in_channel) with the point kept: the two
+    /// frames, the beam momentum fractions and the scales the matrix element ran
+    /// at, for a point that carries weight.
+    ///
+    /// An accept/reject pass needs all of that only for the points it keeps, so the
+    /// trial loop runs on `value_in_channel` and reconstructs an accepted point
+    /// through this — the same map at the same `u`, hence the same weight. `None`
+    /// where the cuts reject the point or no group carries luminosity, which is
+    /// where the trial would have carried no weight either.
+    pub fn event_in_channel(&self, channel: usize, u: &[f64]) -> Option<ProtonEvent> {
+        let m = self.map_point(u);
+        let point = self
+            .combiner
+            .sample_channel_at(channel, m.sqrt_shat, &u[OUTER_NDIM..]);
+        let shape = self.shape(&m, &point.momenta);
+        if shape == 0.0 {
+            return None;
+        }
+        Some(ProtonEvent {
+            weight: shape * point.weight,
+            x: [m.x1, m.x2],
+            scales: self.event_scales(),
+            lab: self.lab_buf.borrow().clone(),
+            cm: self.cm_buf.borrow().clone(),
+        })
+    }
+
+    /// Fill in an accepted event's discrete labels: which flavour group produced
+    /// it, which concrete flavour assignment inside that group, which way round the
+    /// beams carry it, which helicity combination and which colour flow.
+    ///
+    /// The four uniforms are consumed in that order. The draws are nested rather
+    /// than independent, and each is proportional to the term of the point's own
+    /// value that the label names:
+    ///
+    /// * the group `∝ avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)`;
+    /// * the `(flavour, beam ordering)` pair inside it `∝ L_i^o · |M(q or Rq)|²`,
+    ///   which at fixed ordering is the member's share of the group's summed
+    ///   parton luminosity at this event's `(x₁, x₂)` — the whole of what
+    ///   distinguishes one member of a group from another, since they share the
+    ///   matrix element exactly;
+    /// * the helicity `∝ |M_c|²` and the flow `∝ JAMP2(i)`, both evaluated at the
+    ///   argument the drawn ordering implies, as on a fixed-beam run.
+    ///
+    /// All of them are selections, not sampling channels: the cross section sums
+    /// over every one, and this reads accumulators that sum already contains. A
+    /// caller may skip it entirely and integrate the same number.
+    ///
+    /// `None` when the point carries no weight, where no label is defined.
+    pub fn select_event(&self, event: &ProtonEvent, u: [f64; 4]) -> Option<ProtonSelection> {
+        // The diagonals are read at the event's own coupling, the one its |M|² was
+        // taken at.
+        self.apply_scale(event.scales.mu_r);
+        let mut mirror = Vec::with_capacity(event.cm.len());
+
+        let mut m2 = Vec::with_capacity(self.subs.len());
+        let mut terms = Vec::with_capacity(self.subs.len());
+        for (g, sub) in self.groups.groups().iter().zip(&self.subs) {
+            let lumi = g.luminosity(self.pdf, event.x[0], event.x[1], event.scales.mu_f);
+            let direct = if lumi[0] != 0.0 {
+                sub.eval_m2(&event.cm)
+            } else {
+                0.0
+            };
+            let reflected = if lumi[1] != 0.0 {
+                g.mirror_into(&event.cm, &mut mirror);
+                sub.eval_m2(&mirror)
+            } else {
+                0.0
+            };
+            m2.push([direct, reflected]);
+            terms.push(g.spin_color_average() * (lumi[0] * direct + lumi[1] * reflected));
+        }
+        let group = select_index(&terms, u[0])?;
+        let g = &self.groups.groups()[group];
+
+        // One categorical draw over the group's `(member, ordering)` terms: the
+        // matrix element is common to the members, so within an ordering this is the
+        // luminosity share and nothing else.
+        let weights: Vec<f64> = (0..g.members().len())
+            .flat_map(|i| {
+                let lumi =
+                    g.member_luminosity(i, self.pdf, event.x[0], event.x[1], event.scales.mu_f);
+                [lumi[0] * m2[group][0], lumi[1] * m2[group][1]]
+            })
+            .collect();
+        let picked = select_index(&weights, u[1])?;
+        let (member, ordering) = (
+            picked / 2,
+            if picked % 2 == 0 {
+                BeamOrdering::Direct
+            } else {
+                BeamOrdering::Exchanged
+            },
+        );
+
+        let argument = match ordering {
+            BeamOrdering::Direct => &event.cm,
+            BeamOrdering::Exchanged => {
+                g.mirror_into(&event.cm, &mut mirror);
+                &mirror
+            }
+        };
+        let sub = &self.subs[group];
+        let eval = sub.evaluator();
+        let mut hel_m2 = vec![0.0; eval.helicities().len()];
+        let mut jamp2 = vec![0.0; eval.n_flows()];
+        sub.eval_diagonals(argument, &mut hel_m2, &mut jamp2);
+        let drawn = eval.select_helicity(&hel_m2, u[2])?;
+        let (_, order) = g.event_legs(member, ordering);
+
+        Some(ProtonSelection {
+            group,
+            member,
+            ordering,
+            helicity: order.iter().map(|&leg| drawn[leg]).collect(),
+            flow: select_flow(&jamp2, u[3])?,
+        })
+    }
+
     /// The uniforms the whole map consumes as one mixture: the two outer coordinates,
     /// one channel-selection coordinate, and the channel's own `3n − 4`.
     pub fn vegas_ndim(&self) -> usize {
@@ -1226,6 +1439,26 @@ mod tests {
                 for ifl in 0..flavors.len() {
                     let shape = 1.0 + ix as f64 * 0.1 * (ifl + 1) as f64;
                     xf.push(0.01 * (ifl + 1) as f64 * shape * (1.0 + 0.5 * iq as f64));
+                }
+            }
+        }
+        PdfMember::from_subgrids(vec![SubGrid { x, q2, flavors, xf }])
+    }
+
+    /// A probe distribution whose `x` shape differs *sharply* per flavour, so which
+    /// beam a momentum fraction belongs to changes the luminosity shares by a wide
+    /// margin. [`probe_pdf`] is flat enough in `x` that exchanging `x₁` and `x₂`
+    /// barely moves them, which would leave the beam orientation unpinned.
+    fn beam_asymmetric_pdf() -> PdfMember {
+        let flavors = vec![-4, -3, -2, -1, 1, 2, 3, 4, 21];
+        let x = vec![1e-7, 1e-4, 1e-2, 1.0];
+        let q2 = vec![1.0, 1e8];
+        let mut xf = Vec::new();
+        for ix in 0..x.len() {
+            for iq in 0..q2.len() {
+                for ifl in 0..flavors.len() {
+                    let slope = (1.0 + ix as f64).powi(ifl as i32 + 1);
+                    xf.push(0.01 * (ifl + 1) as f64 * slope * (1.0 + 0.5 * iq as f64));
                 }
             }
         }
@@ -2310,5 +2543,391 @@ mod tests {
             "the adapted mixture is noisier ({adapted_err:.2e}) than the uniform one \
              ({uniform_err:.2e})"
         );
+    }
+    /// A helper for the event-side tests: the integrand, its groups and their
+    /// amplitudes, kept alive together.
+    fn llj_setup(m: &Arc<UFOModel>, evaluated: &EvaluatedModel) -> (FlavorGroups, PdfMember) {
+        let card = llj_card();
+        let groups =
+            derive_flavor_groups(enumerate(LLJ, m), m, evaluated, &card).expect("flavour groups");
+        (groups, probe_pdf())
+    }
+
+    /// The first cut-passing point a fixed stream produces that `wanted` accepts,
+    /// with the coordinates it was drawn at.
+    fn find_event(
+        integ: &ProtonIntegrand<'_>,
+        seed: u64,
+        wanted: impl Fn(&ProtonEvent) -> bool,
+    ) -> (usize, Vec<f64>, ProtonEvent) {
+        let mut stream = SubStream::from_stream(seed, 11);
+        for trial in 0..40_000 {
+            let u = stream.uniforms::<f64>(integ.channel_grid_ndim());
+            let channel = trial % integ.channel_count();
+            if let Some(event) = integ.event_in_channel(channel, &u) {
+                if wanted(&event) {
+                    return (channel, u, event);
+                }
+            }
+        }
+        panic!("no point inside the cuts met the condition");
+    }
+
+    /// An accepted point has to come back as the point its weight was taken at, in
+    /// both frames: the trial loop runs on `value_in_channel` and only the kept
+    /// points are reconstructed, so a reconstruction at a different point would
+    /// write events that carry another point's weight.
+    #[test]
+    fn an_accepted_point_reconstructs_the_value_it_was_drawn_at() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let (groups, pdf) = llj_setup(&m, &evaluated);
+        let amps = bind_all(&groups, &evaluated);
+        let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("integrand");
+
+        let e_beam = SQRT_S_HAD / 2.0;
+        let mut stream = SubStream::from_stream(0x4E4E_7000, 3);
+        let (mut kept, mut empty, mut worst_balance, mut worst_shat) = (0, 0, 0.0f64, 0.0f64);
+        for trial in 0..400 {
+            let u = stream.uniforms::<f64>(integ.channel_grid_ndim());
+            let channel = trial % integ.channel_count();
+            let value = integ.value_in_channel(channel, &u);
+            let Some(event) = integ.event_in_channel(channel, &u) else {
+                assert_eq!(value, 0.0, "a point with weight was not reconstructed");
+                empty += 1;
+                continue;
+            };
+            kept += 1;
+            assert_eq!(
+                event.weight.to_bits(),
+                value.to_bits(),
+                "the reconstructed point carries a different weight"
+            );
+
+            // The beams are the collider's, at this point's own momentum fractions,
+            // head-on along the axis.
+            for (beam, (x, sign)) in event.lab[..2]
+                .iter()
+                .zip([(event.x[0], 1.0), (event.x[1], -1.0)])
+            {
+                assert!((beam.e() - x * e_beam).abs() < 1e-9 * e_beam);
+                assert!((beam.pz() - sign * x * e_beam).abs() < 1e-9 * e_beam);
+                assert_eq!([beam.px(), beam.py()], [0.0, 0.0]);
+            }
+            for component in 0..4 {
+                let of = |p: &V| [p.e(), p.px(), p.py(), p.pz()][component];
+                let balance: f64 = event.lab[..2].iter().map(of).sum::<f64>()
+                    - event.lab[2..].iter().map(of).sum::<f64>();
+                worst_balance = worst_balance.max(balance.abs() / (event.x[0] * e_beam));
+            }
+            // The other frame is the partonic CM of the same event: back-to-back
+            // beams carrying the whole of `ŝ = x₁ x₂ s`.
+            let shat = 4.0 * event.cm[0].e() * event.cm[0].e();
+            worst_shat = worst_shat
+                .max((shat / (event.x[0] * event.x[1] * SQRT_S_HAD * SQRT_S_HAD) - 1.0).abs());
+            assert!((event.cm[0].pz() + event.cm[1].pz()).abs() < 1e-9 * event.cm[0].e());
+        }
+        eprintln!(
+            "{kept} reconstructed points ({empty} carrying no weight); lab balance \
+             {worst_balance:.2e} of a beam, partonic invariant {worst_shat:.2e}"
+        );
+        assert!(kept > 30 && empty > 0, "{kept} kept, {empty} empty");
+        assert!(worst_balance < 1e-12 && worst_shat < 1e-12);
+    }
+
+    /// The per-event step with no fixed-beam counterpart: **which concrete flavour**
+    /// inside a group an event is labelled with.
+    ///
+    /// The members of a group share their matrix element exactly, so at a fixed beam
+    /// ordering the whole of what separates them is their parton luminosity at the
+    /// event's own `(x₁, x₂)` — and that is what the draw has to follow. The oracle
+    /// forms each member's `x·f` product straight from the parton distribution, so it
+    /// shares no code with [`FlavorGroup::member_luminosity`].
+    ///
+    /// The uniform is *swept* rather than sampled, so the measured shares are the
+    /// rule's own and carry no Monte Carlo error: the only residual is the sweep's
+    /// grid, and every margin below is quoted in units of it.
+    ///
+    /// What it cannot see: which of `x₁`, `x₂` belongs to which beam is pinned only as
+    /// far as the probe distribution separates them, so the margin against the
+    /// exchanged assignment is measured and asserted rather than assumed. It also says
+    /// nothing about *realised* frequencies over a generated sample against MadGraph's
+    /// — that is the deferred validation pass's content.
+    #[test]
+    fn a_members_share_of_the_draw_is_its_share_of_the_parton_luminosity() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let (groups, _) = llj_setup(&m, &evaluated);
+        let pdf = beam_asymmetric_pdf();
+        let amps = bind_all(&groups, &evaluated);
+        let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("integrand");
+        // A point well off central rapidity, so the two beams sit at different
+        // momentum fractions and the shares can tell them apart at all.
+        let (_, _, event) = find_event(&integ, 0x51A2_E000, |e| e.x[0] > 5.0 * e.x[1]);
+        let q2 = [MU_F * MU_F; 2];
+        const SWEEP: usize = 4_001;
+
+        // A `u₀` landing in each group, so the conditional draw below is taken at a
+        // known group. The group index rises with `u₀` (it is read off a cumulative
+        // distribution), so each group's interval is found by bisection rather than
+        // by a sweep fine enough to land inside the smallest of them.
+        let group_at = |u0: f64| {
+            integ
+                .select_event(&event, [u0, 0.5, 0.5, 0.5])
+                .expect("an accepted point has labels")
+                .group
+        };
+        let mut entry: Vec<Option<f64>> = Vec::with_capacity(groups.groups().len());
+        let mut floor = 0.0f64;
+        for gi in 0..groups.groups().len() {
+            if group_at(floor) != gi {
+                entry.push(None);
+                continue;
+            }
+            let (mut inside, mut outside) = (floor, 1.0);
+            for _ in 0..60 {
+                let mid = 0.5 * (inside + outside);
+                if group_at(mid) <= gi {
+                    inside = mid;
+                } else {
+                    outside = mid;
+                }
+            }
+            entry.push(Some(0.5 * (floor + inside)));
+            floor = outside;
+        }
+
+        let (mut worst, mut worst_uniform, mut swap_margin, mut orderings) =
+            (0.0f64, f64::INFINITY, 0.0f64, [0usize; 2]);
+        for (gi, g) in groups.groups().iter().enumerate() {
+            let Some(u0) = entry[gi] else {
+                continue;
+            };
+            let mut counts = vec![[0usize; 2]; g.members().len()];
+            for k in 0..SWEEP {
+                let u1 = (k as f64 + 0.5) / SWEEP as f64;
+                let s = integ
+                    .select_event(&event, [u0, u1, 0.5, 0.5])
+                    .expect("an accepted point has labels");
+                assert_eq!(s.group, gi, "the group draw moved with the flavour draw");
+                counts[s.member][usize::from(s.ordering == BeamOrdering::Exchanged)] += 1;
+            }
+
+            // The luminosity share, formed from the parton distribution directly, and
+            // the same shares with the two beams exchanged — the assignment this test
+            // has to be able to rule out.
+            let share = |swapped: bool, ordering: usize| -> Vec<f64> {
+                let (xa, xb) = if swapped {
+                    (event.x[1], event.x[0])
+                } else {
+                    (event.x[0], event.x[1])
+                };
+                g.members()
+                    .iter()
+                    .map(|s| {
+                        let [a, b] = if ordering == 0 {
+                            s.incoming
+                        } else {
+                            [s.incoming[1], s.incoming[0]]
+                        };
+                        if ordering == 1 && s.incoming[0] == s.incoming[1] {
+                            return 0.0;
+                        }
+                        pdf.xfx_q2(a, xa, q2[0]) * pdf.xfx_q2(b, xb, q2[1])
+                    })
+                    .collect()
+            };
+
+            for ordering in 0..2 {
+                let drawn: usize = counts.iter().map(|c| c[ordering]).sum();
+                if drawn == 0 {
+                    continue;
+                }
+                orderings[ordering] += 1;
+                let expected = share(false, ordering);
+                let total: f64 = expected.iter().sum();
+                let swapped = share(true, ordering);
+                let swapped_total: f64 = swapped.iter().sum();
+                let uniform = 1.0 / expected.len() as f64;
+                // The sweep resolves each cell to one step, and the counts are
+                // renormalised within their ordering, so a cell's share is known to
+                // about `(1 + cells)/drawn`. Everything below is measured against that
+                // resolution rather than against a flat number, so an ordering the
+                // luminosities make rare is held to its own accuracy.
+                let resolution = (1.0 + expected.len() as f64) / drawn as f64;
+                for (i, want) in expected.iter().map(|w| w / total).enumerate() {
+                    let got = counts[i][ordering] as f64 / drawn as f64;
+                    worst = worst.max((got - want).abs() / resolution);
+                    worst_uniform = worst_uniform.min((want - uniform).abs() / resolution);
+                    swap_margin =
+                        swap_margin.max((swapped[i] / swapped_total - want).abs() / resolution);
+                }
+            }
+        }
+        eprintln!(
+            "flavour draw: worst deviation from the luminosity share {worst:.2} of the sweep's \
+             own resolution; a uniform draw would be off by at least {worst_uniform:.1} of it, an \
+             exchanged-beam one by up to {swap_margin:.1}; {} groups drew both orderings",
+            orderings[1]
+        );
+        assert!(
+            worst < 1.0,
+            "the flavour draw is not the luminosity share: {worst:.2} resolutions off"
+        );
+        assert_eq!(
+            orderings,
+            [groups.groups().len(); 2],
+            "every group must be reached and must draw both beam orderings"
+        );
+        assert!(
+            worst_uniform > 5.0,
+            "the probe luminosities are within {worst_uniform:.2} resolutions of uniform, so this \
+             test could not tell the rule from a uniform draw"
+        );
+        assert!(
+            swap_margin > 5.0,
+            "exchanging the two beams moves the shares by at most {swap_margin:.2} resolutions, \
+             so this test cannot see which `x` belongs to which beam"
+        );
+    }
+
+    /// The exchanged beam ordering carries the *same* per-leg record fields with the
+    /// two incoming legs traded, and nothing else moved.
+    ///
+    /// The claim is that the mirror identity extends from `|M|²` to the accumulators an
+    /// event record is filled from: the rotation `R` maps each beam momentum onto the
+    /// other's, so the representative's leg 0 describes the event's *second* beam.
+    /// That is a convention claim about helicity labels and colour lines, which no
+    /// cross-section-level check can see, so it is pinned against the mirrored
+    /// subprocess compiled from **its own** proc card.
+    ///
+    /// What it cannot see: `p p → ℓℓj` has one colour flow per subprocess, so the flow
+    /// *index* is unpermutable here and only the per-leg tags of that one flow are
+    /// compared. A process whose mirrored basis reordered its flows would need the flow
+    /// map pinned too.
+    #[test]
+    fn an_exchanged_ordering_relabels_the_beams_of_every_per_leg_field() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let (groups, _) = llj_setup(&m, &evaluated);
+        let points = fresh_points(&groups.groups()[0].final_masses());
+
+        let (mut worst_hel, mut worst_jamp, mut flows) = (0.0f64, 0.0f64, 0);
+        for g in groups.groups() {
+            let set = g.diagram_set();
+            let swapped = format!(
+                "{} {} > {} QCD=2 QED=2",
+                set.particles_in[1],
+                set.particles_in[0],
+                set.particles_out.join(" ")
+            );
+            let mirror_set = enumerate(&swapped, &m)
+                .into_iter()
+                .find(|s| !s.diagrams.is_empty())
+                .expect("the mirrored ordering enumerates");
+            let mirror_eval = compile_class(&mirror_set, &m, &evaluated).expect("mirror compiles");
+
+            // The permutation the record layer applies, taken from the group rather
+            // than rebuilt, so this measures the mapping the generator uses.
+            let member = g
+                .members()
+                .iter()
+                .position(Subprocess::has_mirror)
+                .expect("a mirrored ordering exists");
+            let (pdg, order) = g.event_legs(member, BeamOrdering::Exchanged);
+            assert_eq!(
+                pdg[..2],
+                [
+                    g.members()[member].incoming[1],
+                    g.members()[member].incoming[0]
+                ],
+                "the exchanged ordering did not trade the beam flavours"
+            );
+
+            let rep = BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated);
+            let mut rep_scratch = rep.scratch_space();
+            let mirror = BoundAmplitude::<f64>::bind(&mirror_eval, &evaluated);
+            let mut mirror_scratch = mirror.scratch_space();
+
+            // The colour lines of the exchanged ordering are the representative's on
+            // permuted legs, and they must be the mirrored subprocess's own.
+            let permuted = g
+                .evaluator()
+                .color_flow_tags()
+                .permuted(&order)
+                .expect("the beam exchange is a permutation");
+            assert_eq!(
+                permuted.n_flows(),
+                mirror_eval.n_flows(),
+                "{swapped} has a different number of colour flows"
+            );
+            for f in 0..permuted.n_flows() {
+                assert_eq!(
+                    connectivity(permuted.flow(f)),
+                    connectivity(mirror_eval.color_flow_tags().flow(f)),
+                    "{swapped}: flow {f}\u{2019}s colour lines are not the exchanged ordering\u{2019}s"
+                );
+                flows += 1;
+            }
+
+            let mut reflected = Vec::new();
+            for k in &points {
+                g.mirror_into(k, &mut reflected);
+                let mut rep_hel = vec![0.0; g.evaluator().helicities().len()];
+                let mut rep_jamp = vec![0.0; g.evaluator().n_flows()];
+                rep.eval_hel_m2(&reflected, &mut rep_scratch, &mut rep_hel);
+                rep.eval_jamp2(&reflected, &mut rep_scratch, &mut rep_jamp);
+
+                let mut mirror_hel = vec![0.0; mirror_eval.helicities().len()];
+                let mut mirror_jamp = vec![0.0; mirror_eval.n_flows()];
+                mirror.eval_hel_m2(k, &mut mirror_scratch, &mut mirror_hel);
+                mirror.eval_jamp2(k, &mut mirror_scratch, &mut mirror_jamp);
+
+                let scale: f64 = mirror_hel.iter().sum();
+                for (c, combination) in g.evaluator().helicities().iter().enumerate() {
+                    let physical: Vec<i32> = order.iter().map(|&leg| combination[leg]).collect();
+                    let target = mirror_eval
+                        .helicities()
+                        .iter()
+                        .position(|h| *h == physical)
+                        .map(|i| mirror_hel[i])
+                        .unwrap_or(0.0);
+                    worst_hel = worst_hel.max((rep_hel[c] - target).abs() / scale);
+                }
+                for (f, &jamp) in mirror_jamp.iter().enumerate() {
+                    worst_jamp = worst_jamp.max((rep_jamp[f] - jamp).abs() / scale);
+                }
+            }
+        }
+        eprintln!(
+            "exchanged ordering: per-helicity {worst_hel:.2e}, per-flow {worst_jamp:.2e} relative \
+             to the summed |M|\u{b2}, over {flows} colour flows"
+        );
+        // The bound is the probe points\u{2019}, as for the `|M|\u{b2}` mirror identity: one of the
+        // RAMBO draws is far enough off the light cone that two independently compiled
+        // programs route the gauge-dependent parts differently.
+        assert!(
+            worst_hel < 1e-11,
+            "per-helicity disagreement {worst_hel:.2e}"
+        );
+        assert!(worst_jamp < 1e-11, "per-flow disagreement {worst_jamp:.2e}");
+    }
+
+    /// The colour lines a set of tags induces: the `(leg, slot)` endpoints sharing a
+    /// label, with the label itself discarded because any consistent relabelling is
+    /// the same event.
+    fn connectivity(tags: &[[u32; 2]]) -> BTreeSet<Vec<(usize, usize)>> {
+        let mut lines: std::collections::BTreeMap<u32, Vec<(usize, usize)>> =
+            std::collections::BTreeMap::new();
+        for (leg, pair) in tags.iter().enumerate() {
+            for (slot, &label) in pair.iter().enumerate() {
+                if label != 0 {
+                    lines.entry(label).or_default().push((leg, slot));
+                }
+            }
+        }
+        lines.into_values().collect()
     }
 }
