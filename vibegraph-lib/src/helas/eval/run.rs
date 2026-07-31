@@ -827,7 +827,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
 /// so the momentum leg is active) before latching, so a workspace first exercised under the
 /// Ward gauge substitution is still fully validated on its first real point. Debug /
 /// `extended-validation` only; compiled out of release.
-#[inline]
+#[inline(never)]
 fn validate_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut ScratchSpace<F>) {
     #[cfg(any(debug_assertions, feature = "extended-validation"))]
     {

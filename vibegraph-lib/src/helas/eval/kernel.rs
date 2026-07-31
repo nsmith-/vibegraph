@@ -55,6 +55,7 @@ fn expect_scalar<F: Real>(slot: &WaveformSlot<F>) -> C<F> {
 // and the unit cross-checks.
 
 /// Dirac propagator on a bare ket spinor with routed momentum `q`.
+#[inline]
 pub fn propagate_fin_bare<F: Real>(
     spinor: &Bispinor<F, Ket>,
     q: &LorentzVector<F>,
@@ -67,6 +68,7 @@ pub fn propagate_fin_bare<F: Real>(
 }
 
 /// Dirac propagator on a bare bra spinor with routed momentum `q`.
+#[inline]
 pub fn propagate_fout_bare<F: Real>(
     spinor: &Bispinor<F, Bra>,
     q: &LorentzVector<F>,
@@ -79,6 +81,7 @@ pub fn propagate_fout_bare<F: Real>(
 }
 
 /// Vector propagator on a bare contravariant polarisation with routed momentum `q`.
+#[inline]
 pub fn propagate_vector_bare<F: Real>(
     eps: &ComplexVector<F>,
     q: &LorentzVector<F>,
@@ -113,6 +116,7 @@ pub fn pmom_bare<F: Real>(q: &LorentzVector<F>) -> ComplexVector<F> {
 
 /// `GammaVout` on bare spinors: two fermions → off-shell vector `ψ̄ γ^μ ψ`; a line read
 /// against the vertex's defined adjoint picks up the `C γ^{μT} C⁻¹ = −γ^μ` sign.
+#[inline]
 pub fn gamma_vout_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
     fi: &Bispinor<F, Ket>,
@@ -127,6 +131,7 @@ pub fn gamma_vout_bare<F: Real>(
 }
 
 /// `FfvVout` on bare spinors and effective couplings (see [`ffv_vout_c`]).
+#[inline]
 pub fn ffv_vout_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
     fi: &Bispinor<F, Ket>,
@@ -160,6 +165,7 @@ pub fn off_shell_fout_bare<F: Real>(
 }
 
 /// Fused chiral off-shell current on a bare ket line (see [`ffv_fin`]).
+#[inline]
 pub fn ffv_fin_bare<F: Real>(
     eps: &ComplexVector<F>,
     fi: &Bispinor<F, Ket>,
@@ -170,6 +176,7 @@ pub fn ffv_fin_bare<F: Real>(
 }
 
 /// Fused chiral off-shell current on a bare bra line (see [`ffv_fout`]).
+#[inline]
 pub fn ffv_fout_bare<F: Real>(
     eps: &ComplexVector<F>,
     fo: &Bispinor<F, Bra>,
