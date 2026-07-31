@@ -199,6 +199,24 @@ generate-helas = { cmd = "cd validation/helas && python gen_reference.py", depen
 # Rebuild the grid and immediately re-run the gate against it
 validate-helas = { cmd = "cargo test -p vibegraph-lib --test validate_helas", depends-on = ["generate-helas"] }
 
+# --- lhe-compact: project banked Les Houches events into columnar Parquet ---
+# Reads the frozen `unweighted_events.lhe.gz` through pylhe (never a hand-written
+# parser), keeps only the fields the gates consume, and writes one Parquet file
+# per run. Reference-generation tooling, so it lives outside the default
+# environment.
+[feature.lhe-compact.dependencies]
+python = ">=3.11,<3.13"
+pyarrow = ">=15"
+awkward = ">=2"
+
+[feature.lhe-compact.pypi-dependencies]
+pylhe = ">=0.9"
+
+[feature.lhe-compact.tasks]
+# Rewrite every banked run's event file as Parquet under
+# validation/madgraph/events/, verifying the round trip as it goes.
+compact-events = "python validation/madgraph/compact_events.py"
+
 # --- MarkItDown: CLI tool for converting to markdown files ---
 [feature.markitdown.dependencies]
 python = ">=3.10,<3.12"
@@ -208,4 +226,5 @@ markitdown = "*"
 nougat = { features = ["nougat"], solve-group = "nougat" }
 madgraph = { features = ["madgraph"], solve-group = "madgraph" }
 helas-validation = { features = ["helas-validation"], solve-group = "helas-validation" }
+lhe-compact = { features = ["lhe-compact"], solve-group = "lhe-compact" }
 markitdown = { features = ["markitdown"], solve-group = "markitdown" }
