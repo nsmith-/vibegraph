@@ -149,10 +149,10 @@ validate-scale-couplings = { cmd = "cargo test -p vibegraph-lib --profile releas
 dump-runcard-defaults = "python validation/madgraph/dump_runcard_defaults.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards
 generate-hadronic-sigma = "bash validation/madgraph/gen_hadronic_sigma.sh"
-# Hadronic cross-section gate: sigma(pp->e+e-) through the bespoke Drell-Yan
-# integrand against the banked MG reference, and sigma(pp->l+l-j) through the
-# general flavour-group path against the banked pp_to_llj_fixed run, swept over
-# five seeds. Runs under --profile release-debug: the llj sweep is minutes optimised
+# Hadronic cross-section gate: sigma(pp->e+e-) on both dy13 run cards against the
+# banked MG reference, and sigma(pp->l+l-j) against the banked pp_to_llj_fixed
+# run — all of them through the general flavour-group path, each swept over three
+# seeds. Runs under --profile release-debug: the llj sweep is minutes optimised
 # and hours unoptimised.
 validate-hadronic = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_hadronic -- --nocapture", depends-on = ["fetch-pdf", "generate-hadronic-sigma", "build-diagrams"] }
 # Event-generation gate at proton beams: the banked pp_to_llj_fixed cards

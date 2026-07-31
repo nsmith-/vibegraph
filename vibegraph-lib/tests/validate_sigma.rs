@@ -113,6 +113,8 @@ use vibegraph::ufo::EvaluatedModel;
 
 mod common;
 
+use common::report::{ChannelSummary, IntegralsRow, SeedResult};
+
 /// A pull magnitude above this fails the gate. The banked runs and the vibegraph
 /// integral are independent Monte-Carlo estimates, so a few-sigma spread is
 /// expected; 3.5 leaves headroom over the nominal 3-sigma target without
@@ -270,6 +272,19 @@ fn plan_for(dir: &str) -> Plan {
                      low m_ll (agrees to -0.1% with mmll = 20 GeV); the sign rules out \
                      under-coverage on this side",
         },
+        // ── llj partonic subprocesses, blocked on the clustering scale ──────
+        // Each is banked with a cross section and each is cheap enough to
+        // integrate, but all four run cards leave both scales free at
+        // `dynamical_scale_choice = -1`, and their topology — a t-channel
+        // propagator into a three-leg final state — is the case whose cluster
+        // scale depends on the merge order. The prescription is refused rather
+        // than approximated, so there is no scale at which this side could
+        // reproduce MadGraph's number; a fixed-scale re-run of the same process
+        // would be a different cross section. Same blocker as `pp_to_llj`.
+        "uux_to_epemg" | "ddx_to_epemg" | "gu_to_epemu" | "gux_to_epemux" => Plan::Skip(
+            "the banked run card takes the dynamical scale, which needs the general kT \
+             clustering (`kt-clustering`) for a t-channel topology into three legs",
+        ),
         // ── 2->6, not integrated ────────────────────────────────────────────
         "uux_to_ccx_emmm_qcd0" | "bbx_to_ccx_emmm_qcd0" => {
             Plan::Skip("2->6 final state: 24-dim flat RAMBO at ~1 ms/eval is too slow to gate")
@@ -316,6 +331,44 @@ fn integrate(dir: &str, process: &str, neval: usize, niter: usize, seed: u64) ->
         MULTICHANNEL_ITERS,
     );
     (s, e, c)
+}
+
+/// [`integrate`] with the composition the multichannel map was built by, one
+/// entry per sampling channel — the summary the report reprints beside the cross
+/// section.
+fn integrate_reported(
+    dir: &str,
+    process: &str,
+    neval: usize,
+    niter: usize,
+    seed: u64,
+) -> (f64, f64, f64, Vec<ChannelSummary>) {
+    with_integrand(
+        dir,
+        process,
+        seed,
+        MULTICHANNEL_SURVEY,
+        MULTICHANNEL_ITERS,
+        None,
+        |integ, _| {
+            let result = integ.adapt_grids(neval, niter, seed).1;
+            let summary = integ
+                .channel_samplers()
+                .iter()
+                .enumerate()
+                .map(|(j, s)| ChannelSummary {
+                    channel: format!("diagram {j}"),
+                    sampler: s.clone(),
+                })
+                .collect();
+            (
+                result.integral * GEV2_TO_PB,
+                result.std_dev * GEV2_TO_PB,
+                result.chi2_per_dof,
+                summary,
+            )
+        },
+    )
 }
 
 /// `integrate` with the α-adaptation budget exposed, additionally returning the
@@ -1001,66 +1054,99 @@ fn probe_grid_adaptation_is_the_residue() {
     }
 }
 
-/// `(pull, relative_deviation)` of a vibegraph integral against a banked value.
+/// The signed `(pull, relative_deviation)` of a vibegraph integral against a
+/// banked value. Signed, because a table of magnitudes hides whether a family of
+/// rows leans the same way; the gate asserts on the magnitudes.
 fn compare(sigma_vg: f64, err_vg: f64, banked: &BankedSigma) -> (f64, f64) {
     let denom = (err_vg * err_vg + banked.sigma_err_pb * banked.sigma_err_pb).sqrt();
     let pull = (sigma_vg - banked.sigma_pb) / denom;
-    let rel = (sigma_vg / banked.sigma_pb - 1.0).abs();
+    let rel = sigma_vg / banked.sigma_pb - 1.0;
     (pull, rel)
 }
 
 /// Drive the gate for one banked directory. `Ok(())` on pass, skip, or info;
 /// `Err(reason)` only on a failed assertion.
+///
+/// Every non-skipped row writes its measurement to the report directory,
+/// including a failing one: the report is what ran, not what passed.
 fn gate_dir(dir: &str, banked: &BankedSigma) -> Result<(), String> {
-    match plan_for(dir) {
+    let (neval, niter, mode, reason, rel_tol) = match plan_for(dir) {
         Plan::Skip(reason) => {
             eprintln!("[{dir}] SKIP ({reason})");
-            Ok(())
+            return Ok(());
         }
         Plan::Info {
             neval,
             niter,
             reason,
-        } => {
-            let (sigma_vg, err_vg, chi2) = integrate(dir, &banked.process, neval, niter, SEED);
-            let (pull, rel) = compare(sigma_vg, err_vg, banked);
-            eprintln!(
-                "[{dir}] INFO vg = {sigma_vg:.6e} +- {err_vg:.3e} pb | MG = {:.6e} +- {:.3e} pb | \
-                 pull = {pull:+.2} | rel = {rel:.2e} | chi2/dof = {chi2:.2} ({neval}x{niter})  <{reason}>",
-                banked.sigma_pb, banked.sigma_err_pb
-            );
-            Ok(())
-        }
+        } => (neval, niter, "info", Some(reason), None),
         Plan::Gate {
             neval,
             niter,
             rel_tol,
-        } => {
-            let (sigma_vg, err_vg, chi2) = integrate(dir, &banked.process, neval, niter, SEED);
-            let (pull, rel) = compare(sigma_vg, err_vg, banked);
-            eprintln!(
-                "[{dir}] GATE vg = {sigma_vg:.6e} +- {err_vg:.3e} pb | MG = {:.6e} +- {:.3e} pb | \
-                 pull = {pull:+.2} | rel = {rel:.2e} | chi2/dof = {chi2:.2} ({neval}x{niter})",
-                banked.sigma_pb, banked.sigma_err_pb
-            );
-            if pull.abs() > PULL_LIMIT {
-                return Err(format!(
-                    "[{dir}] |pull| = {:.2} exceeds {PULL_LIMIT} \
-                     (vg {sigma_vg:.6e} +- {err_vg:.3e} vs MG {:.6e} +- {:.3e})",
-                    pull.abs(),
-                    banked.sigma_pb,
-                    banked.sigma_err_pb
-                ));
-            }
-            if rel > rel_tol {
-                return Err(format!(
-                    "[{dir}] relative deviation {rel:.2e} exceeds tol {rel_tol:.2e} \
-                     (vg {sigma_vg:.6e} vs MG {:.6e})",
-                    banked.sigma_pb
-                ));
-            }
-            Ok(())
+        } => (neval, niter, "gate", None, Some(rel_tol)),
+    };
+
+    let (sigma_vg, err_vg, chi2, subsampler) =
+        integrate_reported(dir, &banked.process, neval, niter, SEED);
+    let (pull, rel) = compare(sigma_vg, err_vg, banked);
+    eprintln!(
+        "[{dir}] {} vg = {sigma_vg:.6e} +- {err_vg:.3e} pb | MG = {:.6e} +- {:.3e} pb | \
+         pull = {pull:+.2} | rel = {rel:+.2e} | chi2/dof = {chi2:.2} ({neval}x{niter}){}",
+        mode.to_uppercase(),
+        banked.sigma_pb,
+        banked.sigma_err_pb,
+        reason.map(|r| format!("  <{r}>")).unwrap_or_default()
+    );
+
+    let failure = rel_tol.and_then(|tol| {
+        if pull.abs() > PULL_LIMIT {
+            Some(format!(
+                "[{dir}] |pull| = {:.2} exceeds {PULL_LIMIT} \
+                 (vg {sigma_vg:.6e} +- {err_vg:.3e} vs MG {:.6e} +- {:.3e})",
+                pull.abs(),
+                banked.sigma_pb,
+                banked.sigma_err_pb
+            ))
+        } else if rel.abs() > tol {
+            Some(format!(
+                "[{dir}] relative deviation {rel:+.2e} exceeds tol {tol:.2e} \
+                 (vg {sigma_vg:.6e} vs MG {:.6e})",
+                banked.sigma_pb
+            ))
+        } else {
+            None
         }
+    });
+
+    let mut row = IntegralsRow::new(dir, &banked.process, mode);
+    row.status = match (mode, &failure) {
+        ("gate", None) => "pass",
+        ("gate", Some(_)) => "fail",
+        _ => "info",
+    };
+    row.sigma_vg_pb = sigma_vg;
+    row.sigma_vg_err_pb = err_vg;
+    row.sigma_mg_pb = banked.sigma_pb;
+    row.sigma_mg_err_pb = banked.sigma_err_pb;
+    row.pull = pull;
+    row.rel = rel;
+    row.chi2_dof = chi2;
+    row.seeds = vec![SEED];
+    row.per_seed = vec![SeedResult {
+        seed: SEED,
+        sigma_pb: sigma_vg,
+        sigma_err_pb: err_vg,
+    }];
+    row.neval = neval;
+    row.niter = niter;
+    row.subsampler = subsampler;
+    row.note = reason.map(str::to_string);
+    row.write();
+
+    match failure {
+        Some(e) => Err(e),
+        None => Ok(()),
     }
 }
 

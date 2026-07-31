@@ -258,7 +258,7 @@ artifacts = ["output/uux_to_epemg", "output/uux_to_epemg_amplitude.csv", "sigma_
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate" }
-integrals = { tier = "banked", mode = "gate" }
+integrals = { tier = "blocked", blocker = "kt-clustering", note = "banked with a cross section and cheap to integrate, but the run card leaves both scales free at dynamical_scale_choice = -1 and a t-channel propagator into a three-leg final state is exactly the topology whose cluster scale depends on the merge order; the prescription is refused rather than approximated, so no scale on this side reproduces MadGraph's number" }
 samples = { tier = "banked", mode = "gate" }
 
 [[process]]
@@ -272,7 +272,7 @@ artifacts = ["output/ddx_to_epemg", "output/ddx_to_epemg_amplitude.csv", "sigma_
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate" }
-integrals = { tier = "banked", mode = "gate" }
+integrals = { tier = "blocked", blocker = "kt-clustering", note = "banked with a cross section and cheap to integrate, but the run card leaves both scales free at dynamical_scale_choice = -1 and a t-channel propagator into a three-leg final state is exactly the topology whose cluster scale depends on the merge order; the prescription is refused rather than approximated, so no scale on this side reproduces MadGraph's number" }
 samples = { tier = "banked", mode = "gate" }
 
 [[process]]
@@ -286,7 +286,7 @@ artifacts = ["output/gu_to_epemu", "output/gu_to_epemu_amplitude.csv", "sigma_re
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate" }
-integrals = { tier = "banked", mode = "gate" }
+integrals = { tier = "blocked", blocker = "kt-clustering", note = "banked with a cross section and cheap to integrate, but the run card leaves both scales free at dynamical_scale_choice = -1 and a t-channel propagator into a three-leg final state is exactly the topology whose cluster scale depends on the merge order; the prescription is refused rather than approximated, so no scale on this side reproduces MadGraph's number" }
 samples = { tier = "banked", mode = "gate" }
 
 [[process]]
@@ -300,7 +300,7 @@ artifacts = ["output/gux_to_epemux", "output/gux_to_epemux_amplitude.csv", "sigm
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate" }
-integrals = { tier = "banked", mode = "gate" }
+integrals = { tier = "blocked", blocker = "kt-clustering", note = "banked with a cross section and cheap to integrate, but the run card leaves both scales free at dynamical_scale_choice = -1 and a t-channel propagator into a three-leg final state is exactly the topology whose cluster scale depends on the merge order; the prescription is refused rather than approximated, so no scale on this side reproduces MadGraph's number" }
 samples = { tier = "banked", mode = "gate" }
 
 [[process]]
@@ -363,7 +363,7 @@ artifacts = ["output/pp_to_ll", "output/pp_to_ll.json", "output/dy13_default", "
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union, not only the count" }
 amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"] }
-integrals = { tier = "banked", mode = "gate", note = "two cards, both through the general proton path; no bespoke integrand" }
+integrals = { tier = "banked", mode = "gate", note = "two cards, both through the general proton path; no bespoke integrand. Three seeds each: pull +0.25 (rel +0.02%) on the default card, -1.35 (rel -0.10%) on the m_ll window" }
 samples = { tier = "banked", mode = "gate" }
 
 [[process]]

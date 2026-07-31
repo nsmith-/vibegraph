@@ -4,69 +4,88 @@
 //! (NNPDF23_lo_as_0130_qed / lhaid 247000) and fixed scale μF = m_Z MadGraph was
 //! given.
 //!
-//! Two σ(pp → e⁺e⁻) reference runs are enforced through the bespoke Drell–Yan
-//! integrand ([`vibegraph::hadronic`]): default lepton cuts, and the
-//! m_ll ∈ [60,120] window. Both must agree within combined Monte-Carlo error
-//! (target < 1%).
+//! Every cross section here runs through the **general** hadronic path
+//! ([`vibegraph::proton`]): the process's flavour-group decomposition convolved
+//! over `(τ, y)` with a per-diagram multichannel inner map, one VEGAS grid per
+//! `(group, diagram)` channel. There is no per-process integrand.
 //!
-//! σ(pp → ℓ⁺ℓ⁻ j) is enforced through the **general** hadronic path
-//! ([`vibegraph::proton`]) against the banked `pp_to_llj_fixed` run — the first
-//! cross section here for a coloured initial state, a three-body final state, a jet
-//! cut and a strong coupling. It is measured over five seeds, because VEGAS's
-//! `1/σ²` iteration combination reports an under-sampled region confidently.
+//! Two σ(pp → e⁺e⁻) reference runs are enforced — default lepton cuts, and the
+//! m_ll ∈ [60,120] window — and σ(pp → ℓ⁺ℓ⁻ j) against the banked
+//! `pp_to_llj_fixed` run, the one row with a coloured initial state, a three-body
+//! final state, a jet cut and a strong coupling. The ℓℓj row is measured over
+//! several seeds, because VEGAS's `1/σ²` iteration combination reports an
+//! under-sampled region confidently.
 //!
-//! The Drell–Yan default run is *also* taken through the general path as an
-//! informational row, so the two treatments of the mirrored beam ordering keep
-//! meeting on a process both paths can do. The enforced Drell–Yan rows are the
-//! bespoke integrand's and stay there.
+//! A pointwise integrand oracle pins the factors of the hadronic assembly — the
+//! `(τ, y)` map and its Jacobian, the per-group parton luminosity, the group
+//! amplitudes and the cut indicator — at fixed `(x₁, x₂, cosθ)` points against an
+//! independent Python computation (`validation/madgraph/gen_dy_oracle.py`).
 //!
-//! A pointwise integrand oracle pins the PDF × flux × |M|² factors at fixed
-//! `(x₁, x₂, cosθ)` points (including points just inside/outside a cut boundary)
-//! against an independent Python computation (`validation/madgraph/gen_dy_oracle.py`).
+//! Each gate writes its measurement to `target/validation-report/integrals/`
+//! (see `common::report`), so the report table is assembled from what ran.
 //!
 //! Gated behind `extended-validation`; the σ tests need the fetched PDF set, the
 //! banked reference JSON and the banked `pp_to_llj_fixed` run:
 //!
 //!     pixi run -e madgraph validate-hadronic
 //!
-//! Run it under `--profile profiling` if invoking cargo directly: the five-seed llj
+//! Run it under `--profile release-debug` if invoking cargo directly: the ℓℓj
 //! sweep is minutes optimised and hours unoptimised.
 
 mod common;
 
 use std::path::{Path, PathBuf};
 
-use vibegraph::cuts::Cuts;
-use vibegraph::hadronic::{
-    compile_class, dy_external_legs, dy_flavor_classes, generate_dy_subprocesses,
-    initial_spin_color_average, DrellYanIntegrand,
-};
+use common::report::{ChannelSummary, IntegralsRow, SeedResult};
+use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::BoundAmplitude;
+use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::pdf::{PdfMember, PdfSet};
+use vibegraph::proton::{derive_flavor_groups, FlavorGroups, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
-use vibegraph::ufo::EvaluatedModel;
+use vibegraph::ufo::{EvaluatedModel, UFOModel};
+
+type V = LorentzVector<f64>;
 
 const MU_F: f64 = 91.1880;
 const SQRT_S_HAD: f64 = 13000.0;
 const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
 
+/// The Drell–Yan process both banked run cards were generated for.
+const DY_PROCESS: &str = "p p > e+ e-";
+
 /// The process of the banked `pp_to_llj_fixed` run, spelled as its `.mg5` script
 /// spells it — the coupling orders included, since they set the diagram content.
 const LLJ_PROCESS: &str = "p p > l+ l- j QCD=2 QED=2";
 
-/// Independent seeds the ℓℓj cross section is measured on. Five runs rather than
-/// one because VEGAS's `1/σ²` iteration combination reports an under-sampled
+/// VEGAS budget of the Drell–Yan rows, per seed.
+const DY_NEVAL: usize = 120_000;
+const DY_NITER: usize = 12;
+/// Points per survey iteration, and iterations, of the Drell–Yan channel-weight
+/// adaptation.
+const DY_ADAPT_SURVEY: usize = 20_000;
+const DY_ADAPT_ITERS: usize = 6;
+/// Independent seeds each Drell–Yan row is measured on. Three rather than one for
+/// the reason the ℓℓj sweep gives below; the row is cheap enough to afford them.
+const DY_SEEDS: &[u64] = &[20260719, 20260720, 20260721];
+
+/// Independent seeds the ℓℓj cross section is measured on. Several runs rather
+/// than one because VEGAS's `1/σ²` iteration combination reports an under-sampled
 /// region as a confident number, which one seed cannot distinguish from a
 /// converged one.
-const LLJ_SEEDS: &[u64] = &[20260730, 20260731, 20260732, 20260733, 20260734];
+///
+/// Three seeds here, not the five of the oracle-layer sweep: three already
+/// separates a seed-unstable coverage defect from a converged estimate, and the
+/// full sweep with its budget ladder is what the deeper layer is for.
+const LLJ_SEEDS: &[u64] = &[20260730, 20260731, 20260732];
 /// Points per survey iteration, and iterations, of the channel-weight adaptation.
 const LLJ_ADAPT_SURVEY: usize = 8_000;
 const LLJ_ADAPT_ITERS: usize = 5;
 /// VEGAS budget per seed, chosen from a measured budget scan and not from cost
 /// alone. The estimator approaches its limit **from below** — the unadapted early
 /// iterations enter the `1/σ²` combination with underestimated variances — so the
-/// five-seed mean rises with `neval` per iteration: `418.5` at 60 000, `421.7` at
+/// sweep mean rises with `neval` per iteration: `418.5` at 60 000, `421.7` at
 /// 150 000, `422.9` here, `423.5` at 600 000, each step about half the last. Below
 /// 150 000 the residual exceeds MadGraph's own error and the sweep would be
 /// measuring this crate's convergence rather than an agreement.
@@ -76,7 +95,7 @@ const LLJ_ADAPT_ITERS: usize = 5;
 /// whatever this says.
 const LLJ_NEVAL: usize = 300_000;
 const LLJ_NITER: usize = 10;
-/// Largest relative distance from the banked MadGraph σ the sweep may show.
+/// Largest relative distance from the banked MadGraph σ the ℓℓj sweep may show.
 ///
 /// Above MadGraph's own `0.43%` Monte-Carlo error, which is the floor: no
 /// agreement tighter than the reference's precision is meaningful. Below the
@@ -84,10 +103,24 @@ const LLJ_NITER: usize = 10;
 /// The whole measured budget family — `0.28%`, `0.00%`, `0.16%` at 150 000,
 /// 300 000 and 600 000 — sits inside it, so it is not a bound around one number.
 const LLJ_MAX_REL: f64 = 0.005;
-/// Scatter the five estimates are allowed about their own mean, in units of their
+/// Scatter the estimates are allowed about their own mean, in units of their
 /// quoted errors. Measured over the same budget family: `1.55`, `0.47`, `1.90`,
 /// `0.37`.
 const LLJ_MAX_CHI2_PER_DOF: f64 = 4.0;
+
+/// Largest relative distance from the banked MadGraph σ a Drell–Yan row may show.
+///
+/// The rows sit far inside it: `+0.02%` on the default card and `−0.10%` on the
+/// m_ll window, over three seeds, against per-seed spreads of `0.17%` and
+/// `0.22%`. The bound is disjoined with a three-standard-deviation pull because
+/// the Monte-Carlo errors here are small enough (`~0.06%` on the mean) that a
+/// pull alone would be the tighter of the two and would be reading floating-point
+/// reproducibility across machines rather than an agreement.
+const DY_MAX_REL: f64 = 0.01;
+/// Scatter the seeds are allowed about their own mean, in units of their quoted
+/// errors — the guard the scalar pull cannot be: a run that missed a region
+/// reports a small integral *and* a small error. Measured `0.74` and `1.19`.
+const DY_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 fn validation_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
@@ -104,64 +137,6 @@ fn load_pdf_set() -> PdfSet {
             dir.display()
         )
     })
-}
-
-fn load_pdf() -> PdfMember {
-    load_pdf_set().member(0).expect("PDF member 0")
-}
-
-/// Run the full VEGAS integration for a given run card, returning (σ, Δσ) in pb.
-fn run_sigma(run_card_path: &Path, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
-    let model = common::sm_model();
-    let evaluated = EvaluatedModel::from_model(model.clone());
-    let fc = dy_flavor_classes(
-        generate_dy_subprocesses(&model).expect("generate DY"),
-        &model,
-    )
-    .expect("classify DY");
-    let up = compile_class(&fc.up_set, &model, &evaluated).expect("up class");
-    let down = compile_class(&fc.down_set, &model, &evaluated).expect("down class");
-    let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
-    let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
-
-    let rc = RunCard::parse_file(run_card_path).expect("parse run card");
-    let cuts = Cuts::compile(&rc, &dy_external_legs(2)).expect("compile cuts");
-    let pdf = load_pdf();
-
-    let spin_color_avg = initial_spin_color_average(&up, &model, &evaluated);
-    let mut integ = DrellYanIntegrand::new(
-        &b_up,
-        &b_down,
-        &pdf,
-        &cuts,
-        fc.up_flavors,
-        fc.down_flavors,
-        SQRT_S_HAD,
-        MU_F,
-        spin_color_avg,
-    );
-    // Take both scales from the run card rather than from MU_F. Both reference
-    // cards fix them at m_Z, so the prescription resolves to a constant and the
-    // parton distributions are read exactly where they were before — the cross
-    // section must not move. A card that freed either scale would change these
-    // numbers, which is why the constancy is asserted here and not assumed.
-    let report = integ
-        .use_run_card_scales(&fc.up_set.diagrams, &model, &evaluated, &rc)
-        .expect("run card scale prescription compiles");
-    let constant = report
-        .constant_scales
-        .unwrap_or_else(|| panic!("reference run card no longer fixes both scales: {report:?}"));
-    assert_eq!(
-        (constant.mu_r, constant.mu_f),
-        (MU_F, [MU_F, MU_F]),
-        "reference run card no longer fixes both scales at m_Z"
-    );
-    assert!(
-        !report.depends_on_alpha_s,
-        "Drell-Yan at this order carries no strong coupling; a matrix element that \
-         did would need one, and `pdlabel = lhapdf` refuses to supply it"
-    );
-    integ.integrate(neval, niter, seed)
 }
 
 /// MadGraph's combined `(σ, Δσ)` in pb for a banked `madevent` run: fields 1 and
@@ -197,56 +172,107 @@ fn banked(run: &str) -> Option<(f64, f64)> {
     ))
 }
 
-fn check_run(run: &str, card: &str) {
-    let card_path = validation_dir().join(card);
-    let (sigma, err) = run_sigma(&card_path, 120_000, 12, 20260719);
-    match banked(run) {
-        Some((mg, mg_err)) => {
-            let combined = (err * err + mg_err * mg_err).sqrt();
-            let delta = (sigma - mg).abs();
-            let rel = delta / mg;
-            eprintln!(
-                "[{run}] vibegraph σ = {sigma:.3} ± {err:.3} pb | \
-                 MG σ = {mg:.3} ± {mg_err:.3} pb | Δ = {delta:.3} pb \
-                 ({} combined σ), rel = {rel:.4}",
-                delta / combined
-            );
-            assert!(
-                delta < 3.0 * combined || rel < 0.01,
-                "[{run}] σ disagreement: vibegraph {sigma:.3}±{err:.3} vs MG {mg:.3}±{mg_err:.3} pb, \
-                 Δ = {delta:.3} pb = {:.1}σ, rel = {rel:.4}",
-                delta / combined
-            );
-        }
-        None => {
-            // Known-wrong informational mode until the MG reference is banked.
-            eprintln!(
-                "[{run}] INFO (no banked MG reference yet): vibegraph σ = {sigma:.3} ± {err:.3} pb"
-            );
-        }
-    }
+/// The flavour decomposition of one process under one run card.
+fn groups_for(
+    process: &str,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+) -> FlavorGroups {
+    let opts = ParsingOptions::default();
+    let proc_card = parse_proc_card(&format!("generate {process}"), &opts).expect("proc card");
+    let sets = generate_from_proc_card(&proc_card, model).expect("enumeration");
+    derive_flavor_groups(sets, model, evaluated, rc).expect("flavour groups")
 }
 
-#[test]
-fn sigma_default_cuts_vs_mg() {
-    check_run("default", "dy13_default_run_card.dat");
+/// What the rule-based channel composition chose, one entry per channel — the
+/// summary the report reprints beside the cross section.
+fn subsampler_summary(integ: &ProtonIntegrand<'_>) -> Vec<ChannelSummary> {
+    integ
+        .channel_ids()
+        .iter()
+        .zip(integ.channel_samplers())
+        .map(|(id, s)| ChannelSummary {
+            channel: format!("group {} diagram {}", id.group, id.diagram),
+            sampler: s.clone(),
+        })
+        .collect()
 }
 
-#[test]
-fn sigma_mmll_window_vs_mg() {
-    check_run("mmll_60_120", "dy13_mmll_run_card.dat");
-}
-
-/// Drell–Yan through the **general** hadronic path — the flavour-group
-/// decomposition convolved over `(τ, y)` with a per-diagram multichannel inner
-/// map — against the same banked MadGraph reference the bespoke integrand is
-/// gated on.
+/// One seed's `(σ, Δσ)` in pb through the general path, with the run card's own
+/// scale prescription installed and the channel weights adapted on that seed's
+/// own survey substream.
 ///
-/// **Informational.** The enforced Drell–Yan rows above are the pipeline's
-/// bit-reproducibility anchor and stay exactly where they are; this row exists so
-/// that a general path under construction has a known-good end-to-end comparison
-/// running against a process it can already do. Whether the bespoke path is later
-/// retired in its favour is a separate decision.
+/// `expect_alpha_s` says whether the process's matrix element must carry the
+/// strong coupling. It is asserted rather than observed: a QCD process whose
+/// amplitude had lost its gluon vertex would integrate to a plausible number.
+#[allow(clippy::too_many_arguments)]
+fn run_seed(
+    groups: &FlavorGroups,
+    amps: &[BoundAmplitude<'_, f64>],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    set: &PdfSet,
+    pdf: &PdfMember,
+    rc: &RunCard,
+    budget: (usize, usize, usize, usize),
+    seed: u64,
+    expect_alpha_s: bool,
+    summary: &mut Vec<ChannelSummary>,
+) -> (f64, f64) {
+    let (survey, adapt_iters, neval, niter) = budget;
+    let mut integ = ProtonIntegrand::new(groups, amps, evaluated, pdf, SQRT_S_HAD, MU_F)
+        .expect("hadronic integrand");
+    let report = integ
+        .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
+        .expect("run card scale prescription compiles");
+    let constant = report.constant_scales.unwrap_or_else(|| {
+        panic!("the reference run card no longer fixes both scales: {report:?}")
+    });
+    assert_eq!(
+        (constant.mu_r, constant.mu_f),
+        (MU_F, [MU_F, MU_F]),
+        "the reference run card no longer fixes both scales at m_Z"
+    );
+    assert_eq!(
+        report.depends_on_alpha_s, expect_alpha_s,
+        "the matrix element's dependence on the strong coupling is not what this \
+         process's diagram content implies"
+    );
+    if summary.is_empty() {
+        *summary = subsampler_summary(&integ);
+    }
+    integ.adapt_alphas(seed, survey, adapt_iters, 0.5);
+    integ.integrate(neval, niter, seed)
+}
+
+/// The inverse-variance mean of independent seeds, its error, and the scatter of
+/// the seeds about that mean in units of their own quoted errors.
+///
+/// The scatter and not the error is what shows a missed region: a run that misses
+/// one reports a small integral *and* a small variance, which the mean alone
+/// cannot distinguish from convergence.
+fn combine_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
+    let inv_var: f64 = runs
+        .iter()
+        .map(|r| 1.0 / (r.sigma_err_pb * r.sigma_err_pb))
+        .sum();
+    let mean: f64 = runs
+        .iter()
+        .map(|r| r.sigma_pb / (r.sigma_err_pb * r.sigma_err_pb))
+        .sum::<f64>()
+        / inv_var;
+    let mean_err = inv_var.sqrt().recip();
+    let dof = runs.len().saturating_sub(1).max(1) as f64;
+    let chi2: f64 = runs
+        .iter()
+        .map(|r| ((r.sigma_pb - mean) / r.sigma_err_pb).powi(2))
+        .sum::<f64>()
+        / dof;
+    (mean, mean_err, chi2)
+}
+
+/// σ(p p → e⁺e⁻) through the general hadronic path against a banked MadGraph run.
 ///
 /// What it proves: the whole assembled chain — the `(τ, y)` map and its Jacobian,
 /// the `x·f` luminosity, the flux and `2π` measure, the cut filter in the lab
@@ -256,22 +282,17 @@ fn sigma_mmll_window_vs_mg() {
 /// What it cannot see: anything specific to a coloured initial state or a
 /// three-body final state. Drell–Yan has no gluon-initiated group, no peripheral
 /// channel, no strong coupling and no jet cut, so the spacelike floor, the grid
-/// `αs` and the three-body spine are all untouched by it.
-#[test]
-fn sigma_default_cuts_through_the_general_path() {
-    use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-    use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
+/// `αs` and the three-body spine are all untouched by it — those are the ℓℓj
+/// row's. Being a single scalar it is also blind to a mis-sampled region of small
+/// measure, which the seed sweep and not the pull is what guards.
+fn check_dy_run(run: &str, card: &str) {
+    let (mg, mg_err) = banked(run).expect("banked Drell-Yan reference");
+    let card_path = validation_dir().join(card);
+    let rc = RunCard::parse_file(&card_path).expect("parse run card");
 
     let model = common::sm_model();
     let evaluated = EvaluatedModel::from_model(model.clone());
-    let rc = RunCard::parse_file(&validation_dir().join("dy13_default_run_card.dat"))
-        .expect("parse run card");
-
-    let opts = ParsingOptions::default();
-    let proc_card = parse_proc_card("generate p p > e+ e-", &opts).expect("proc card");
-    let sets = generate_from_proc_card(&proc_card, &model).expect("enumeration");
-    let groups = derive_flavor_groups(sets, &model, &evaluated, &rc).expect("flavour groups");
-
+    let groups = groups_for(DY_PROCESS, &model, &evaluated, &rc);
     let set = load_pdf_set();
     let pdf = set.member(0).expect("PDF member 0");
     let amps: Vec<BoundAmplitude<f64>> = groups
@@ -279,51 +300,152 @@ fn sigma_default_cuts_through_the_general_path() {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-        .expect("hadronic integrand");
-    let report = integ
-        .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
-        .expect("run card scale prescription compiles");
-    let constant = report
-        .constant_scales
-        .unwrap_or_else(|| panic!("reference run card no longer fixes both scales: {report:?}"));
-    assert_eq!(
-        (constant.mu_r, constant.mu_f),
-        (MU_F, [MU_F, MU_F]),
-        "reference run card no longer fixes both scales at m_Z"
-    );
-    assert!(
-        !report.depends_on_alpha_s,
-        "Drell-Yan at this order carries no strong coupling"
-    );
 
-    integ.adapt_alphas(20260730, 8_000, 5, 0.5);
-    let (sigma, err) = integ.integrate(40_000, 10, 20260719);
+    let mut summary = Vec::new();
+    let mut runs = Vec::new();
+    for &seed in DY_SEEDS {
+        let (sigma, err) = run_seed(
+            &groups,
+            &amps,
+            &model,
+            &evaluated,
+            &set,
+            &pdf,
+            &rc,
+            (DY_ADAPT_SURVEY, DY_ADAPT_ITERS, DY_NEVAL, DY_NITER),
+            seed,
+            // Drell-Yan at this order carries no strong coupling; a matrix element
+            // that did would need one, and `pdlabel = lhapdf` refuses to supply it.
+            false,
+            &mut summary,
+        );
+        eprintln!(
+            "[{run} seed {seed}] vibegraph σ = {sigma:.3} ± {err:.3} pb | rel = {:+.4}",
+            sigma / mg - 1.0
+        );
+        runs.push(SeedResult {
+            seed,
+            sigma_pb: sigma,
+            sigma_err_pb: err,
+        });
+    }
 
-    let (mg, mg_err) = banked("default").expect("banked MG reference");
-    let combined = (err * err + mg_err * mg_err).sqrt();
-    let delta = sigma - mg;
-    let rel = delta.abs() / mg;
+    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
+    let pull = (mean - mg) / combined;
+    let rel = mean / mg - 1.0;
     eprintln!(
-        "[default/general-path] INFO vibegraph σ = {sigma:.3} ± {err:.3} pb | \
-         MG σ = {mg:.3} ± {mg_err:.3} pb | Δ = {delta:.3} pb ({:.1} combined σ), \
-         rel = {rel:.4}",
-        delta / combined
+        "[{run}] GATE vibegraph σ = {mean:.3} ± {mean_err:.3} pb ({} seeds, \
+         χ²/dof = {chi2:.2}) | MG σ = {mg:.3} ± {mg_err:.3} pb | \
+         pull = {pull:+.2} | rel = {rel:+.4}",
+        runs.len()
+    );
+
+    let ok = pull.abs() < 3.0 || rel.abs() < DY_MAX_REL;
+    let mut row = IntegralsRow::new("pp_to_ll", DY_PROCESS, "gate").with_variant(run);
+    row.status = if ok && chi2 < DY_MAX_CHI2_PER_DOF {
+        "pass"
+    } else {
+        "fail"
+    };
+    row.sigma_vg_pb = mean;
+    row.sigma_vg_err_pb = mean_err;
+    row.sigma_mg_pb = mg;
+    row.sigma_mg_err_pb = mg_err;
+    row.pull = pull;
+    row.rel = rel;
+    row.chi2_dof = chi2;
+    row.seeds = runs.iter().map(|r| r.seed).collect();
+    row.per_seed = runs.clone();
+    row.neval = DY_NEVAL;
+    row.niter = DY_NITER;
+    row.subsampler = summary;
+    row.write();
+
+    assert!(
+        ok,
+        "[{run}] σ disagreement: vibegraph {mean:.3}±{mean_err:.3} vs \
+         MG {mg:.3}±{mg_err:.3} pb, pull = {pull:+.2}, rel = {rel:+.4}"
     );
     assert!(
-        rel < 0.02,
-        "[default/general-path] σ disagreement: vibegraph {sigma:.3}±{err:.3} vs \
-         MG {mg:.3}±{mg_err:.3} pb, rel = {rel:.4}"
+        chi2 < DY_MAX_CHI2_PER_DOF,
+        "[{run}] the seeds scatter by more than they claim: χ²/dof = {chi2:.2} over {runs:?}"
     );
 }
 
-/// Pointwise integrand oracle: at ~10 pinned `(x₁, x₂, cosθ)` points
-/// (including two straddling the pT_ℓ = 10 GeV cut boundary), every factor
-/// of vibegraph's integrand — PDF luminosity, |M|², flux prefactor, the
-/// (τ,y) Jacobian, the cut indicator, and their product — must match the
-/// independent Python oracle (LHAPDF `xfxQ2` × MadGraph standalone |M|²)
-/// to ≤ 1e-9 relative. Regenerate with `pixi run -e madgraph
-/// generate-dy-oracle`.
+#[test]
+fn sigma_default_cuts_vs_mg() {
+    check_dy_run("default", "dy13_default_run_card.dat");
+}
+
+#[test]
+fn sigma_mmll_window_vs_mg() {
+    check_dy_run("mmll_60_120", "dy13_mmll_run_card.dat");
+}
+
+/// Partonic-CM external momenta `[q, q̄, e⁺, e⁻]` of a back-to-back dilepton
+/// configuration at `(√ŝ, cosθ)`, beams along ±z and the azimuth fixed — the
+/// configuration `gen_dy_oracle.py` evaluates MadGraph's standalone matrix
+/// element at. Built here rather than taken from the library, so the two sides of
+/// the comparison construct the point independently.
+fn dilepton_cm(sqrt_shat: f64, cos_theta: f64) -> Vec<V> {
+    let half = sqrt_shat / 2.0;
+    let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
+    vec![
+        V::new(half, 0.0, 0.0, half),
+        V::new(half, 0.0, 0.0, -half),
+        V::new(half, half * sin_theta, 0.0, half * cos_theta),
+        V::new(half, -half * sin_theta, 0.0, -half * cos_theta),
+    ]
+}
+
+/// The same configuration in the lab frame, the frame the cut filter reads: the
+/// beams at their momentum fractions and the leptons boosted along z by the
+/// parton system's rapidity.
+fn dilepton_lab(cm: &[V], x1: f64, x2: f64) -> Vec<V> {
+    let beta = (x1 - x2) / (x1 + x2);
+    let gamma = 1.0 / (1.0 - beta * beta).sqrt();
+    let boost = |p: &V| {
+        V::new(
+            gamma * (p.e() + beta * p.pz()),
+            p.px(),
+            p.py(),
+            gamma * (p.pz() + beta * p.e()),
+        )
+    };
+    let e_beam = SQRT_S_HAD / 2.0;
+    vec![
+        V::new(x1 * e_beam, 0.0, 0.0, x1 * e_beam),
+        V::new(x2 * e_beam, 0.0, 0.0, -x2 * e_beam),
+        boost(&cm[2]),
+        boost(&cm[3]),
+    ]
+}
+
+/// Pointwise integrand oracle: at ~10 pinned `(x₁, x₂, cosθ)` points (including
+/// two straddling the pT_ℓ = 10 GeV cut boundary), the factors of vibegraph's
+/// hadronic assembly must match an independent Python oracle (LHAPDF `xfxQ2` ×
+/// MadGraph standalone |M|²) to ≤ 1e-9 relative. Regenerate the oracle with
+/// `pixi run -e madgraph generate-dy-oracle`.
+///
+/// The factors compared are the ones that belong to the *physics* of the point
+/// and not to a phase-space map: the `(τ, y)` outer map's `x₁, x₂, √ŝ` and its
+/// Jacobian, each flavour group's summed parton luminosity over both beam
+/// orderings, each group's `|M(q)|²` at the point, and the cut indicator on the
+/// lab-frame configuration.
+///
+/// What it deliberately does not compare is the assembled integrand value. The
+/// oracle's `phat` and `value` columns carry the flat-`cosθ` two-body measure the
+/// bespoke Drell–Yan map used; the general path draws the same physical point
+/// through a per-diagram multichannel whose weight is a sampling density, so the
+/// two assembled values differ by exactly that ratio and agreeing on it would
+/// test the ratio rather than the integrand. The two paths' assembled values meet
+/// after integration, which is what the σ gates above are.
+///
+/// It is also blind to anything the mirrored beam ordering does pointwise: the
+/// oracle sums both orderings' luminosities against a single `|M(q)|²`, which is
+/// right only once the polar angle is integrated over, so `lum` here is checked
+/// against the summed pair and `m2` against the unreflected argument.
 #[test]
 fn pointwise_integrand_oracle() {
     let oracle_path = validation_dir().join("dy_integrand_oracle.json");
@@ -351,38 +473,55 @@ fn pointwise_integrand_oracle() {
         .expect("parse committed param card");
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
-    let fc = dy_flavor_classes(
-        generate_dy_subprocesses(&model).expect("generate DY"),
-        &model,
-    )
-    .expect("classify DY");
-    let up = compile_class(&fc.up_set, &model, &evaluated).expect("up class");
-    let down = compile_class(&fc.down_set, &model, &evaluated).expect("down class");
-    let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
-    let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
-
     let rc = RunCard::parse_file(&validation_dir().join("dy13_default_run_card.dat")).unwrap();
-    let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
-    let pdf = load_pdf();
-    let spin_color_avg = initial_spin_color_average(&up, &model, &evaluated);
-    let integ = DrellYanIntegrand::new(
-        &b_up,
-        &b_down,
-        &pdf,
-        &cuts,
-        fc.up_flavors,
-        fc.down_flavors,
-        SQRT_S_HAD,
-        MU_F,
-        spin_color_avg,
+    let groups = groups_for(DY_PROCESS, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+    let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+        .expect("hadronic integrand");
+
+    // The oracle's two coupling classes, located by the flavour content of the
+    // groups rather than by group order, so a reordering of the decomposition
+    // cannot silently swap which |M|² is compared against which.
+    let is_up = |g: &vibegraph::proton::FlavorGroup| {
+        g.members()
+            .iter()
+            .all(|m| matches!(m.incoming[0].abs(), 2 | 4))
+    };
+    let up = groups
+        .groups()
+        .iter()
+        .position(is_up)
+        .expect("up-type group");
+    let down = groups
+        .groups()
+        .iter()
+        .position(|g| !is_up(g))
+        .expect("down-type group");
+    assert_eq!(
+        groups.groups().len(),
+        2,
+        "Drell-Yan decomposes into two coupling classes"
     );
 
-    const TOL: f64 = 1e-9;
-    // A relative comparison with a small absolute floor for near-zero factors
-    // (e.g. the integrand value at the far tail, ~1e-9 GeV⁻²).
-    let rel = |a: f64, b: f64| (a - b).abs() / b.abs().max(1e-30);
+    let mut scratch: Vec<_> = amps.iter().map(|a| a.scratch_space()).collect();
 
+    const TOL: f64 = 1e-9;
+    let rel = |a: f64, b: f64| (a - b).abs() / b.abs().max(1e-30);
     let mut worst = 0.0f64;
+
+    assert!(
+        rel(integ.tau_min(), oracle["tau_min"].as_f64().unwrap()) <= TOL,
+        "the tau map's lower support moved: {} vs oracle {}",
+        integ.tau_min(),
+        oracle["tau_min"]
+    );
+
     for (i, p) in points.iter().enumerate() {
         let u: Vec<f64> = p["u"]
             .as_array()
@@ -390,25 +529,36 @@ fn pointwise_integrand_oracle() {
             .iter()
             .map(|v| v.as_f64().unwrap())
             .collect();
-        let f = integ.debug_factors(&u);
         let g = |k: &str| p[k].as_f64().unwrap();
 
+        // The outer map takes the oracle's first two coordinates; its third is the
+        // bespoke map's `cosθ = 2u₃ − 1`, which the oracle also banks directly.
+        let outer = integ.outer_point(&u);
+        let cos_theta = g("cos_theta");
+        let cm = dilepton_cm(outer.sqrt_shat, cos_theta);
+        let lab = dilepton_lab(&cm, outer.x1, outer.x2);
+
+        let lum = |gi: usize| {
+            let [direct, mirror] =
+                groups.groups()[gi].luminosity(&pdf, outer.x1, outer.x2, [MU_F, MU_F]);
+            direct + mirror
+        };
+        let m2 = |gi: usize, scratch: &mut Vec<_>| amps[gi].eval_m2(&cm, &mut scratch[gi]);
+
         assert_eq!(
-            f.pass,
+            groups.groups()[0].cuts().pass(&lab),
             p["pass"].as_bool().unwrap(),
             "cut indicator, point {i}"
         );
         for (name, got, want) in [
-            ("x1", f.x1, g("x1")),
-            ("x2", f.x2, g("x2")),
-            ("sqrt_shat", f.sqrt_shat, g("sqrt_shat")),
-            ("lum_up", f.lum_up, g("lum_up")),
-            ("lum_down", f.lum_down, g("lum_down")),
-            ("m2_up", f.m2_up, g("m2_up")),
-            ("m2_down", f.m2_down, g("m2_down")),
-            ("phat", f.phat, g("phat")),
-            ("jac", f.jac, g("jac")),
-            ("value", f.value, g("value")),
+            ("x1", outer.x1, g("x1")),
+            ("x2", outer.x2, g("x2")),
+            ("sqrt_shat", outer.sqrt_shat, g("sqrt_shat")),
+            ("jac", outer.jac, g("jac")),
+            ("lum_up", lum(up), g("lum_up")),
+            ("lum_down", lum(down), g("lum_down")),
+            ("m2_up", m2(up, &mut scratch), g("m2_up")),
+            ("m2_down", m2(down, &mut scratch), g("m2_down")),
         ] {
             let r = rel(got, want);
             worst = worst.max(r);
@@ -428,17 +578,17 @@ fn pointwise_integrand_oracle() {
 /// σ(p p → ℓ⁺ℓ⁻ j) at a fixed scale, through the general hadronic path, against
 /// the banked `pp_to_llj_fixed` MadGraph run.
 ///
-/// This is the first cross section this crate computes for a process with a
-/// coloured initial state, a three-body final state, a jet cut and a strong
-/// coupling — everything the Drell–Yan rows above are blind to. The comparison
-/// is against MadGraph's own number for the same cards: the same proc card
-/// content, the same run card file, the same PDF set and the same fixed scales.
+/// This is the only cross section here for a process with a coloured initial
+/// state, a three-body final state, a jet cut and a strong coupling — everything
+/// the Drell–Yan rows above are blind to. The comparison is against MadGraph's
+/// own number for the same cards: the same proc card content, the same run card
+/// file, the same PDF set and the same fixed scales.
 ///
-/// **Five seeds, not one.** VEGAS combines its iterations by `1/σ²`, so a run
+/// **Several seeds, not one.** VEGAS combines its iterations by `1/σ²`, so a run
 /// that under-samples a region reports a confidently wrong integral with a small
 /// error rather than a large one, and a single seed agreeing is then not
-/// evidence. Five independent runs are compared individually and through their
-/// inverse-variance mean, and it is the mean the gate is on.
+/// evidence. The runs are compared individually and through their inverse-variance
+/// mean, and it is the mean the gate is on.
 ///
 /// What it cannot see: anything the cross section integrates over. A per-diagram
 /// phase, a colour-flow relabelling and a helicity-by-helicity error all leave
@@ -448,9 +598,6 @@ fn pointwise_integrand_oracle() {
 /// both wrong by one factor would integrate correctly.
 #[test]
 fn sigma_llj_fixed_scale_vs_mg() {
-    use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-    use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
-
     let run_dir = validation_dir().join("output/pp_to_llj_fixed");
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).unwrap_or_else(|e| {
         panic!(
@@ -463,11 +610,7 @@ fn sigma_llj_fixed_scale_vs_mg() {
 
     let model = common::sm_model();
     let evaluated = EvaluatedModel::from_model(model.clone());
-    let opts = ParsingOptions::default();
-    let proc_card = parse_proc_card(&format!("generate {LLJ_PROCESS}"), &opts).expect("proc card");
-    let sets = generate_from_proc_card(&proc_card, &model).expect("enumeration");
-    let groups = derive_flavor_groups(sets, &model, &evaluated, &rc).expect("flavour groups");
-
+    let groups = groups_for(LLJ_PROCESS, &model, &evaluated, &rc);
     let set = load_pdf_set();
     let pdf = set.member(0).expect("PDF member 0");
     let amps: Vec<BoundAmplitude<f64>> = groups
@@ -476,188 +619,83 @@ fn sigma_llj_fixed_scale_vs_mg() {
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
 
-    let mut runs: Vec<(u64, f64, f64)> = Vec::new();
+    let mut summary = Vec::new();
+    let mut runs: Vec<SeedResult> = Vec::new();
     for &seed in LLJ_SEEDS {
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("hadronic integrand");
-        let report = integ
-            .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
-            .expect("run card scale prescription compiles");
-        let constant = report.constant_scales.unwrap_or_else(|| {
-            panic!("the banked llj run card no longer fixes both scales: {report:?}")
-        });
-        assert_eq!(
-            (constant.mu_r, constant.mu_f),
-            (MU_F, [MU_F, MU_F]),
-            "the banked llj run card no longer fixes both scales at m_Z"
+        let (sigma, err) = run_seed(
+            &groups,
+            &amps,
+            &model,
+            &evaluated,
+            &set,
+            &pdf,
+            &rc,
+            (LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, LLJ_NEVAL, LLJ_NITER),
+            seed,
+            // A QCD ℓℓj matrix element must carry the strong coupling; one that
+            // did not would be missing its gluon vertex.
+            true,
+            &mut summary,
         );
-        assert!(
-            report.depends_on_alpha_s,
-            "a QCD ℓℓj matrix element must carry the strong coupling; one that did \
-             not would be missing its gluon vertex"
-        );
-
-        integ.adapt_alphas(seed, LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, 0.5);
-        let (sigma, err) = integ.integrate(LLJ_NEVAL, LLJ_NITER, seed);
         eprintln!(
             "[llj_fixed seed {seed}] vibegraph σ = {sigma:.3} ± {err:.3} pb | \
              rel = {:+.4} | pull = {:+.2}",
-            (sigma - mg) / mg,
+            sigma / mg - 1.0,
             (sigma - mg) / (err * err + mg_err * mg_err).sqrt()
         );
-        runs.push((seed, sigma, err));
+        runs.push(SeedResult {
+            seed,
+            sigma_pb: sigma,
+            sigma_err_pb: err,
+        });
     }
 
-    // Inverse-variance mean of the independent runs, the estimator with the
-    // seed-to-seed scatter averaged out.
-    let inv_var: f64 = runs.iter().map(|(_, _, e)| 1.0 / (e * e)).sum();
-    let mean: f64 = runs.iter().map(|(_, s, e)| s / (e * e)).sum::<f64>() / inv_var;
-    let mean_err = inv_var.sqrt().recip();
-    // Scatter of the five estimates about their mean, in units of their own
-    // quoted errors: a run that missed a region reports a small error, so the
-    // scatter and not the error is what shows it.
-    let chi2: f64 = runs
-        .iter()
-        .map(|(_, s, e)| ((s - mean) / e).powi(2))
-        .sum::<f64>()
-        / (runs.len() - 1) as f64;
-
+    let (mean, mean_err, chi2) = combine_seeds(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
-    let delta = mean - mg;
-    let rel = delta.abs() / mg;
+    let pull = (mean - mg) / combined;
+    let rel = mean / mg - 1.0;
     eprintln!(
-        "[llj_fixed] vibegraph σ = {mean:.3} ± {mean_err:.3} pb ({} seeds, \
+        "[llj_fixed] GATE vibegraph σ = {mean:.3} ± {mean_err:.3} pb ({} seeds, \
          χ²/dof = {chi2:.2}) | MG σ = {mg:.3} ± {mg_err:.3} pb | \
-         Δ = {delta:.3} pb ({:.2} combined σ), rel = {rel:.4}",
-        runs.len(),
-        delta / combined
+         pull = {pull:+.2} | rel = {rel:+.4}",
+        runs.len()
     );
 
+    let ok = pull.abs() < 3.0 && rel.abs() < LLJ_MAX_REL && chi2 < LLJ_MAX_CHI2_PER_DOF;
+    let mut row = IntegralsRow::new("pp_to_llj_fixed", LLJ_PROCESS, "gate");
+    row.status = if ok { "pass" } else { "fail" };
+    row.sigma_vg_pb = mean;
+    row.sigma_vg_err_pb = mean_err;
+    row.sigma_mg_pb = mg;
+    row.sigma_mg_err_pb = mg_err;
+    row.pull = pull;
+    row.rel = rel;
+    row.chi2_dof = chi2;
+    row.seeds = runs.iter().map(|r| r.seed).collect();
+    row.per_seed = runs.clone();
+    row.neval = LLJ_NEVAL;
+    row.niter = LLJ_NITER;
+    row.subsampler = summary;
+    row.note = Some(
+        "three seeds at 300k in this layer; the full seed sweep and the budget \
+         ladder are oracle-layer"
+            .to_string(),
+    );
+    row.write();
+
     assert!(
-        delta.abs() < 3.0 * combined,
+        pull.abs() < 3.0,
         "[llj_fixed] σ disagreement: vibegraph {mean:.3}±{mean_err:.3} vs \
-         MG {mg:.3}±{mg_err:.3} pb, Δ = {delta:.3} pb = {:.1}σ",
-        delta / combined
+         MG {mg:.3}±{mg_err:.3} pb, pull = {pull:+.2}"
     );
     assert!(
-        rel < LLJ_MAX_REL,
+        rel.abs() < LLJ_MAX_REL,
         "[llj_fixed] σ disagreement: vibegraph {mean:.3}±{mean_err:.3} vs \
-         MG {mg:.3}±{mg_err:.3} pb, rel = {rel:.4} > {LLJ_MAX_REL}"
+         MG {mg:.3}±{mg_err:.3} pb, rel = {rel:+.4} > {LLJ_MAX_REL}"
     );
     assert!(
         chi2 < LLJ_MAX_CHI2_PER_DOF,
-        "[llj_fixed] the five seeds scatter by more than they claim: \
+        "[llj_fixed] the seeds scatter by more than they claim: \
          χ²/dof = {chi2:.2} over {runs:?}"
-    );
-}
-
-/// Emit the informational dσ/dm_ℓℓ comparison table (committed, not gated):
-/// vibegraph's Drell–Yan mass spectrum under default cuts, with the two
-/// banked MadGraph σ values as integral anchors (full range and the
-/// [60,120] window). Run explicitly to regenerate the committed artifact:
-///
-///   cargo test -p vibegraph-lib --features extended-validation \
-///     --test validate_hadronic emit_dsigma_dmll -- --ignored --nocapture
-#[test]
-#[ignore = "writes the committed dσ/dm_ll artifact; run manually"]
-fn emit_dsigma_dmll_table() {
-    use std::fmt::Write as _;
-
-    let model = common::sm_model();
-    let evaluated = EvaluatedModel::from_model(model.clone());
-    let fc = dy_flavor_classes(generate_dy_subprocesses(&model).unwrap(), &model).unwrap();
-    let up = compile_class(&fc.up_set, &model, &evaluated).unwrap();
-    let down = compile_class(&fc.down_set, &model, &evaluated).unwrap();
-    let b_up = BoundAmplitude::<f64>::bind(&up, &evaluated);
-    let b_down = BoundAmplitude::<f64>::bind(&down, &evaluated);
-    let rc = RunCard::parse_file(&validation_dir().join("dy13_default_run_card.dat")).unwrap();
-    let cuts = Cuts::compile(&rc, &dy_external_legs(2)).unwrap();
-    let pdf = load_pdf();
-    let spin_color_avg = initial_spin_color_average(&up, &model, &evaluated);
-    let integ = DrellYanIntegrand::new(
-        &b_up,
-        &b_down,
-        &pdf,
-        &cuts,
-        fc.up_flavors,
-        fc.down_flavors,
-        SQRT_S_HAD,
-        MU_F,
-        spin_color_avg,
-    );
-
-    let (m_lo, m_hi, nbins) = (20.0_f64, 200.0_f64, 36);
-    let bin_w = (m_hi - m_lo) / nbins as f64;
-    let dens = integ.dsigma_dmll(m_lo, m_hi, nbins, 8_000_000, 424242);
-
-    let (mg_default, _) = banked("default").unwrap_or((f64::NAN, 0.0));
-    let (mg_window, _) = banked("mmll_60_120").unwrap_or((f64::NAN, 0.0));
-    let sig_window: f64 = dens
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| {
-            let lo = m_lo + *i as f64 * bin_w;
-            lo >= 60.0 && lo < 120.0
-        })
-        .map(|(_, d)| d * bin_w)
-        .sum();
-    let sig_20_200: f64 = dens.iter().map(|d| d * bin_w).sum();
-
-    let mut out = String::new();
-    writeln!(
-        out,
-        "# Drell–Yan dσ/dm_ℓℓ — vibegraph vs MadGraph (informational)\n"
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "pp → e⁺e⁻ at √s = 13 TeV, LO, NNPDF23_lo_as_0130_qed (μF = m_Z), \
-         default cuts (pT_ℓ > 10 GeV, |η_ℓ| < 2.5). vibegraph spectrum from \
-         8×10⁶ Monte-Carlo samples of the (τ,y,cosθ) integrand; MadGraph σ \
-         values from `hadronic_sigma_reference.json` anchor the integral.\n"
-    )
-    .unwrap();
-    writeln!(out, "| m_ℓℓ bin (GeV) | dσ/dm_ℓℓ (pb/GeV) | bin σ (pb) |").unwrap();
-    writeln!(out, "|---|---|---|").unwrap();
-    for (i, d) in dens.iter().enumerate() {
-        let lo = m_lo + i as f64 * bin_w;
-        writeln!(
-            out,
-            "| {lo:.0}–{:.0} | {d:.4} | {:.3} |",
-            lo + bin_w,
-            d * bin_w
-        )
-        .unwrap();
-    }
-    writeln!(
-        out,
-        "\n## Integral cross-checks (vibegraph vs banked MadGraph)\n"
-    )
-    .unwrap();
-    writeln!(out, "| range | vibegraph σ (pb) | MadGraph σ (pb) | rel |").unwrap();
-    writeln!(out, "|---|---|---|---|").unwrap();
-    writeln!(
-        out,
-        "| m_ℓℓ ∈ [60,120] | {sig_window:.2} | {mg_window:.2} | {:.3} |",
-        (sig_window - mg_window).abs() / mg_window
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "| m_ℓℓ ∈ [20,200] | {sig_20_200:.2} | (full-range MG {mg_default:.2}) | — |"
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "\n(The full MadGraph σ = {mg_default:.2} pb covers all m_ℓℓ ≥ 2·pT_ℓ, so it \
-         exceeds the [20,200] vibegraph integral by the m_ℓℓ > 200 tail.)"
-    )
-    .unwrap();
-
-    let path = validation_dir().join("dy_dsigma_dmll.md");
-    std::fs::write(&path, out).unwrap();
-    eprintln!(
-        "wrote {} ; [60,120] vibegraph {sig_window:.2} vs MG {mg_window:.2} pb",
-        path.display()
     );
 }
