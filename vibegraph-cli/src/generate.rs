@@ -609,7 +609,7 @@ fn report(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vibegraph::artifact::{ChannelGrid, FORMAT_VERSION};
+    use vibegraph::artifact::{ChannelGrid, ChannelKey, FORMAT_VERSION};
     use vibegraph::ufo::sm::SMRestrict;
     use vibegraph::vegas::VegasGrid;
 
@@ -631,6 +631,7 @@ mod tests {
             seed: 1,
             run_card,
             channels: vec![ChannelGrid {
+                key: ChannelKey::Whole,
                 alpha: 1.0,
                 neval: 1000,
                 grid: VegasGrid::new(2, 16, 1.5),
