@@ -44,9 +44,7 @@ use vibegraph::unweight::{UnweightStats, Unweighter};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
-use crate::integrate::{
-    is_drell_yan, load_pdf_set, process_string, IntegrateError, NO_PDF, PDF_MEMBER,
-};
+use crate::integrate::{load_pdf_set, process_string, IntegrateError, NO_PDF, PDF_MEMBER};
 use crate::network::NetworkPolicy;
 use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 
@@ -423,16 +421,6 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
     }
 
     if hadronic {
-        // The bespoke Drell-Yan integrand banks a single grid over its whole
-        // `(tau, y) x cos` map, which is not a channel decomposition, so there is
-        // nothing for the accept/reject pass to draw a channel from.
-        if is_drell_yan(&parsed) {
-            return Err(err(
-                "event generation at proton beams covers the general flavour-group path; \
-                 `p p > e+ e-` is integrated by the bespoke Drell-Yan map, which banks one \
-                 grid over the whole map rather than per-channel grids to unweight against",
-            ));
-        }
         let set = load_pdf_set(&args.pdf_set, args.pdf_dir.as_ref(), network)?;
         let pdf = set
             .member(PDF_MEMBER)
@@ -1049,6 +1037,7 @@ mod tests {
                 sigma_pb: 1.0,
                 sigma_err_pb: 0.01,
                 chi2_per_dof: 1.0,
+                sampler: None,
             }],
             sigma_pb: 1.0,
             sigma_err_pb: 0.01,

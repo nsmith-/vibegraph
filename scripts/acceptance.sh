@@ -25,11 +25,10 @@
 # beams, so the same cards go on to produce a Les Houches file the binary reads
 # back.
 #
-# Drell–Yan (`p p > e+ e-`) is deliberately not the process here. It is
-# integrated by a bespoke map that banks a single grid over the whole `(τ, y) ×
-# cosθ` domain rather than one grid per channel, so `generate` has nothing to
-# unweight against and refuses it — it is the one hadronic process that cannot
-# reach an event file.
+# Drell–Yan (`p p > e+ e-`) is deliberately not the process here, though the
+# binary would run it: its final state carries no colour, so an acceptance run on
+# it would exercise neither the colour-flow selection nor the `ICOLUP` lines a
+# downstream shower reads.
 
 set -euo pipefail
 

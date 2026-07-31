@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Pointwise integrand oracle for the hadronic Drell-Yan cross section (H7).
+"""Pointwise integrand oracle for the hadronic Drell-Yan cross section.
 
-Independently recomputes vibegraph's `DrellYanIntegrand` factors at a handful of
-pinned kinematic points, from:
+Independently recomputes the factors of vibegraph's hadronic integrand at a
+handful of pinned kinematic points, from:
   * LHAPDF `xfxQ2` for the PDF luminosity (NNPDF23_lo_as_0130_qed, member 0),
   * MadGraph's standalone matrix elements for |M|^2 (mg_dy_probe: MATRIX1 = u u~,
     MATRIX2 = d d~, from the built p p > e+ e- subprocess),
@@ -11,10 +11,16 @@ pinned kinematic points, from:
 and writes dy_integrand_oracle.json for validate_hadronic's Rust oracle test to
 pin vibegraph against at <= 1e-9 on each factor.
 
-The points are addressed in VEGAS coordinates u in [0,1]^3 (so the Rust side can
-call `debug_factors(u)` directly); they are chosen from physical
-(sqrt_shat, y_parton, cos_theta) triples, including two points straddling the
-pt_l = 10 GeV cut boundary.
+The points are addressed both in VEGAS coordinates u in [0,1]^3 and in the
+physical (sqrt_shat, y_parton, cos_theta) triples they were chosen from,
+including two straddling the pt_l = 10 GeV cut boundary. u[0] and u[1] are the
+(tau, y) outer map's, which the Rust side drives directly through
+`ProtonIntegrand::outer_point`; u[2] is the flat cos_theta coordinate of the map
+this file's `phat` and `value` columns are assembled with. Those two columns
+therefore carry a two-body measure the general path does not sample against, and
+the Rust oracle compares the map-independent factors (x1, x2, sqrt_shat, jac, the
+per-class luminosities, the per-class |M|^2 and the cut indicator) rather than the
+assembled value.
 
 Prerequisites:
   pixi run fetch-pdf
@@ -71,7 +77,7 @@ def u_from_physical(sqrt_shat, y_parton, cos_theta):
 
 
 def map_point(u):
-    """Mirror DrellYanIntegrand::map_point exactly."""
+    """The (tau, y) outer map, mirroring ProtonIntegrand::outer_point exactly."""
     tau = TAU_MIN ** (1.0 - u[0])
     sqrt_tau = math.sqrt(tau)
     y_max = -0.5 * math.log(tau)
