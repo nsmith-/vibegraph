@@ -120,7 +120,7 @@ const MULTICHANNEL_ADAPT_STREAM: u64 = 0xA1FA_5EED;
 /// channel index. Channel `j` draws from stream `CHANNEL_STREAM_BASE + j`, so the
 /// terms of the channel-split estimator sample structurally independent sequences
 /// under one seed and each replays on its own.
-const CHANNEL_STREAM_BASE: u64 = 0xC7A0_0000;
+pub(crate) const CHANNEL_STREAM_BASE: u64 = 0xC7A0_0000;
 
 /// Floor on a channel's per-iteration evaluation count, so a channel whose
 /// selection weight rounds to nothing still gets a grid it can refine and a term
@@ -129,8 +129,8 @@ const MIN_CHANNEL_NEVAL: usize = 512;
 
 /// RNG seed and draw budget for the setup-time probe that resolves a dynamic scale
 /// once before integration begins.
-const SCALE_PROBE_SEED: u64 = 0x5CA1_E9E0;
-const SCALE_PROBE_DRAWS: usize = 64;
+pub(crate) const SCALE_PROBE_SEED: u64 = 0x5CA1_E9E0;
+pub(crate) const SCALE_PROBE_DRAWS: usize = 64;
 
 #[derive(Debug, Error)]
 pub enum HadronicError {
@@ -290,7 +290,7 @@ pub struct RunningCouplingReport {
 }
 
 /// Components in the `[E, px, py, pz]` layout the scale prescription reads.
-fn components(p: &V) -> [f64; 4] {
+pub(crate) fn components(p: &V) -> [f64; 4] {
     [p.e(), p.px(), p.py(), p.pz()]
 }
 
@@ -807,7 +807,7 @@ fn build_kinematics(sqrt_shat: f64, cos_theta: f64, x1: f64, x2: f64, s_had: f64
 }
 
 /// Boost a four-momentum along z with velocity `beta` (CM → lab for `beta > 0`).
-fn boost_z(p: V, beta: f64) -> V {
+pub(crate) fn boost_z(p: V, beta: f64) -> V {
     let gamma = 1.0 / (1.0 - beta * beta).sqrt();
     let e = gamma * (p.e() + beta * p.pz());
     let pz = gamma * (p.pz() + beta * p.e());
@@ -948,7 +948,7 @@ pub fn compile_subprocesses(
 
 /// One compiled subprocess feeding a summed matrix element: an amplitude and its
 /// own evaluation scratch (behind [`RefCell`] so the integrand is `Fn`).
-struct BoundSubprocess<'a> {
+pub(crate) struct BoundSubprocess<'a> {
     amp: SubAmplitude<'a>,
     scratch: RefCell<ScratchSpace<f64>>,
 }
@@ -968,7 +968,7 @@ enum SubAmplitude<'a> {
 }
 
 impl<'a> BoundSubprocess<'a> {
-    fn fixed(amp: &'a BoundAmplitude<'a, f64>) -> Self {
+    pub(crate) fn fixed(amp: &'a BoundAmplitude<'a, f64>) -> Self {
         BoundSubprocess {
             scratch: RefCell::new(amp.scratch_space()),
             amp: SubAmplitude::Fixed(amp),
@@ -977,7 +977,7 @@ impl<'a> BoundSubprocess<'a> {
 
     /// The bound evaluator this subprocess was built from, the input a scale-aware
     /// copy is derived from.
-    fn evaluator(&self) -> &'a AmplitudeEvaluator {
+    pub(crate) fn evaluator(&self) -> &'a AmplitudeEvaluator {
         match &self.amp {
             SubAmplitude::Fixed(amp) => amp.evaluator(),
             SubAmplitude::Running(amp) => amp.borrow().amplitude().evaluator(),
@@ -999,13 +999,13 @@ impl<'a> BoundSubprocess<'a> {
         }
     }
 
-    fn set_alpha_s(&self, alpha_s: f64) {
+    pub(crate) fn set_alpha_s(&self, alpha_s: f64) {
         if let SubAmplitude::Running(amp) = &self.amp {
             amp.borrow_mut().set_alpha_s(alpha_s);
         }
     }
 
-    fn eval_m2(&self, momenta: &[V]) -> f64 {
+    pub(crate) fn eval_m2(&self, momenta: &[V]) -> f64 {
         let scratch = &mut self.scratch.borrow_mut();
         match &self.amp {
             SubAmplitude::Fixed(amp) => amp.eval_m2(momenta, scratch),
@@ -1036,14 +1036,14 @@ impl<'a> BoundSubprocess<'a> {
 }
 
 /// What turning a set of subprocesses scale-aware revealed about them.
-struct ScaleAwareness {
-    depends_on_alpha_s: bool,
+pub(crate) struct ScaleAwareness {
+    pub(crate) depends_on_alpha_s: bool,
     fallbacks: Vec<String>,
     alpha_s_ref: Option<f64>,
 }
 
 /// Replace every subprocess amplitude by a scale-aware copy of itself.
-fn make_subs_scale_aware(
+pub(crate) fn make_subs_scale_aware(
     subs: &mut [BoundSubprocess<'_>],
     evaluated: &EvaluatedModel,
 ) -> ScaleAwareness {
@@ -1068,7 +1068,7 @@ fn make_subs_scale_aware(
 /// `αs` lives in a PDF set the caller may not have loaded. `grid` is that set's
 /// `AlphaS_*` metadata, for the label that demands it.
 #[allow(clippy::too_many_arguments)]
-fn compile_scale_source(
+pub(crate) fn compile_scale_source(
     rep: &AmplitudeEvaluator,
     diagrams: &[Diagram],
     model: &UFOModel,
@@ -1090,7 +1090,7 @@ fn compile_scale_source(
 
 /// Hold every subprocess at the coupling a constant prescription implies, and
 /// assemble the report describing what was installed.
-fn constant_scale_report(
+pub(crate) fn constant_scale_report(
     subs: &[BoundSubprocess<'_>],
     source: Option<&EventScaleSource>,
     awareness: ScaleAwareness,
@@ -1256,7 +1256,7 @@ pub struct EventSelection {
 /// Sum the per-channel terms: integrals add, errors add in quadrature, and the
 /// χ²/dof is the pooled statistic (`Σ χ²ⱼ` over `Σ dofⱼ`) rather than any single
 /// channel's.
-fn combine_channels(per_channel: &[ChannelIntegration], niter: usize) -> VegasResult {
+pub(crate) fn combine_channels(per_channel: &[ChannelIntegration], niter: usize) -> VegasResult {
     let integral: f64 = per_channel.iter().map(|c| c.result.integral).sum();
     let variance: f64 = per_channel
         .iter()
@@ -1281,7 +1281,7 @@ fn combine_channels(per_channel: &[ChannelIntegration], niter: usize) -> VegasRe
 
 /// A channel's per-iteration evaluation count: its share `αⱼ · neval` of the
 /// budget, floored so no channel goes unsampled.
-fn channel_neval(alpha: f64, neval: usize) -> usize {
+pub(crate) fn channel_neval(alpha: f64, neval: usize) -> usize {
     let share = (alpha * neval as f64).round();
     let share = if share.is_finite() && share > 0.0 {
         share as usize
