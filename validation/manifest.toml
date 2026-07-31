@@ -57,6 +57,33 @@
 
 schema = 1
 
+# ──────────────────────── the banked-reference bundle ────────────────────────
+#
+# What the banked layer fetches instead of running MadGraph: the frozen event
+# files with their banners and logs, the run and parameter cards, each
+# subprocess's `leshouche.inc` and `matrix1_orig.f`, the combined `results.dat`,
+# and the fixed-grid amplitude tables. It unpacks into
+# `validation/madgraph/output/`, so a fetching checkout and a machine that
+# generated the runs itself present the gates with the same paths.
+#
+# `sha256` is the contract. `validation/madgraph/assemble_bundle.sh` rebuilds the
+# archive byte-identically from a given work area, and
+# `validation/fetch_common.sh` verifies the hash wherever the bytes came from —
+# a release asset, or a local file named by $VIBEGRAPH_REFDATA_SOURCE. Changing
+# the reference runs means a new `n`, a new archive and a new pin here.
+
+[refdata]
+version = 1
+archive = "vibegraph-refdata-1.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-1/vibegraph-refdata-1.tar.zst"
+sha256 = "9cc0cfd20d49cd7df93af9360db724c59b78deea3ce45833170b50da6cfda831"
+size_bytes = 90333614
+unpacks_to = "validation/madgraph/output"
+# The archive is assembled and pinned, but no release carries it yet, so `url`
+# resolves to nothing until the `refdata-1` tag is published. Until then the
+# fetch path is exercised through $VIBEGRAPH_REFDATA_SOURCE.
+published = false
+
 # ─────────────────────────── single-channel rows ────────────────────────────
 #
 # One concrete subprocess each, so the matrix element is MadGraph's `matrix1`
@@ -186,7 +213,7 @@ n_final = 2
 rationale = "The four-gluon vertex — the only SM vertex with more than one colour structure — and pure-f colour algebra reduced to the six-element single-trace basis (NCOLOR=6). The stress test for per-chain rooting of multi-structure vertices and the largest CF contraction in the tree-level vocabulary."
 artifacts = ["output/gg_to_gg", "output/gg_to_gg_amplitude.csv", "sigma_reference.json#gg_to_gg", "jamp_reference.json#gg_to_gg"]
 [process.categories]
-diagrams = { tier = "hermetic", mode = "gate" }
+diagrams = { tier = "hermetic", mode = "info", note = "6 against 4: MadGraph writes the four-gluon contact term as one graph per colour structure (VVVV1_0/VVVV3_0/VVVV4_0 into AMP(1..3)) where we write one diagram whose vertex carries all three, so 3 + 3 against 3 + 1. Reported, not enforced — the amplitudes cell pins the same process at a finer level than a count." }
 amplitudes = { tier = "hermetic", mode = "gate", factorized = true, note = "our six-flow basis is a permutation/recombination of MadGraph's JAMP basis, so the per-helicity (flow-summed) and per-flow (helicity-summed) projections are compared rather than the full outer product" }
 integrals = { tier = "banked", mode = "gate" }
 samples = { tier = "banked", mode = "gate" }
@@ -462,8 +489,7 @@ layer = "banked"
 targets = ["vibegraph-lib/tests/validate_pdf_grid.rs"]
 inputs = ["validation/pdf/oracle.json", "validation/pdf/oracle_multigrid.json"]
 rationale = "The log-bicubic interpolation and the multi-subgrid walk against LHAPDF's own values — the library MadGraph evaluates PDFs through. The two sets differ in shape on purpose: one rectangular Q^2 subgrid, and two bands joined at a seam."
-status = "oracle-json-absent"
-note = "The oracle JSONs are not committed and not present, so the gate currently records an expected skip. Committing them is what makes this gate live."
+note = "The oracle dumps are committed; what keeps the gate in this layer is the other side of the comparison, the two fetched PDF sets."
 
 [[standalone]]
 key = "helas-kernels"
@@ -474,10 +500,10 @@ rationale = "The compiled evaluator against a hand-composed chain of this crate'
 
 [[standalone]]
 key = "helas-fortran"
-layer = "banked"
+layer = "hermetic"
 targets = ["vibegraph-lib/tests/validate_helas.rs"]
 inputs = ["validation/helas/reference.csv"]
-rationale = "The same chain against the original Fortran77 HELAS routines compiled through f2py — the ancestor library, not MadGraph's generated code."
+rationale = "The same chain against the original Fortran77 HELAS routines compiled through f2py — the ancestor library, not MadGraph's generated code. The grid is committed, so only its regeneration needs gfortran and f2py."
 
 [[standalone]]
 key = "rambo-fixture"
@@ -553,8 +579,8 @@ rationale = "Loading UFO models the interned SM blob cannot stand in for (loop_s
 key = "diagram-counts"
 layer = "banked"
 targets = ["vibegraph-lib/tests/validate_madgraph_diagrams.rs"]
-inputs = ["output/<process>.json"]
-rationale = "Per-process diagram counts against MadGraph's own enumeration. Moves to the hermetic layer once diagrams.json is committed."
+inputs = ["validation/madgraph/diagrams.json"]
+rationale = "Per-process diagram counts against MadGraph's own enumeration. The counts are committed, so nothing external is left; what keeps the binary registered here is the enumeration cost of the two 2 -> 6 rows against the hermetic budget."
 
 [[standalone]]
 key = "amplitudes-mg"
