@@ -2983,3 +2983,176 @@ both the flag and the cache step, whose directories are built differently.
 - The interned-SM `--restrict` path still has no `--ufo-dir` equivalent for its
   restrict card; `restrict_path_override` remains `None` from both subcommands,
   as before this session.
+
+---
+
+## Sprint close-out (2026-07-31) ✅
+
+Track U merged into Track P on `main`, Acceptance A flipped to the llj cards,
+and the commit-time regression fixed. Four commits: `bb395c5` (merge), `38acc52`
+(dev profile), `6e59311` (comment cleanup), `2653602` (Acceptance A).
+
+### The merge
+
+`git merge user-dist/u4` (which already carried U1+U2+U3) left three files
+conflicted and three more auto-merged into something that needed checking.
+Every conflict was semantic, not textual — both sides had done real work on the
+same lines.
+
+**`vibegraph-cli/src/integrate.rs`.** Track P replaced the `lpp = 1` branch with
+a Drell–Yan-vs-general dispatch; Track U replaced the PDF lookup with a
+cache-and-consent resolution. Both survive:
+
+- the dispatch keeps its exact, modifier-free match on the proc card, still
+  pinned by `only_an_unmodified_drell_yan_card_takes_the_bespoke_path`;
+- Track P's `resolve_pdf_dir` + `load_pdf_set` pair (flag → `$VIBEGRAPH_PDF_DIR`
+  → `validation/pdf`) collapses into one `load_pdf_set(name, dir, policy)` that
+  calls `assets::resolve_pdf_set_dir`, which is Track U's superset: it adds the
+  `~/.vibegraph` cache step, the download prompt and the pin check.
+
+Track U's version of the function also opened with `let sqrt_s_had = …`, a
+leftover from when that function *was* the Drell–Yan body. Under Track P's shape
+it resolves nothing and was dropped.
+
+**`vibegraph-cli/src/generate.rs`** auto-merged but did not compile as merged:
+Track P had given it a PDF set to load through the helper Track U deleted. It
+now takes a `NetworkPolicy` too (`main.rs` passes the same one `integrate` gets)
+and goes through `assets`. That keeps Track U's structural invariant intact —
+`HttpFetch` is constructed in exactly one place in the whole binary
+(`assets.rs:108`, immediately after `Consent::Granted`), and everything else
+passes `RefusingFetch`, so a resolution step that was not supposed to fetch
+cannot. Verified by grep after the merge, not assumed.
+
+**`vibegraph-lib/src/lib.rs`, both `Cargo.toml`s** — unioned, no judgement
+needed.
+
+**Note 24** — both sides had appended outcome sections. All twelve are kept and
+reordered P0, P1, P2 (partial), P2b, P2c, P2d, P3, P4, U1, U2, U3, U4. U1's had
+been written *inside* the plan body (between the U1 and U2 plan sections) rather
+than after it; it was moved out so the document reads plan-then-outcomes. Heading
+levels in the U sections were promoted one level to match the P sections.
+
+### Gates on the merge
+
+Every anchor the merge could have moved is unmoved:
+
+| Gate | Result |
+|---|---|
+| `cargo test` (default) | **624 passed, 0 failed** |
+| `validate-hadronic` | 5 passed. σ(pp→e⁺e⁻) **934.416 ± 0.870** and **644.855 ± 0.570** pb vs MG 933.110 ± 0.447 / 644.420 ± 0.315; pointwise oracle worst rel **1.15e-14**; σ(pp→ℓ⁺ℓ⁻j) **422.850 ± 0.189** pb over five seeds (χ²/dof 1.90) vs MG 422.840 ± 1.805, Δ = 0.01σ |
+| `cli_integrate` | 3 passed. **934.415866 ± 0.869944** and **644.855362 ± 0.569603** pb — bit-for-bit |
+| `validate-lhef` | 3 passed. 248 747 events / 1 314 204 particle lines across **25 banked runs, byte-for-byte** |
+| `validate-helas-mg` | 18 passed |
+| `validate-generate-proton` | 3 passed |
+
+### Acceptance A: one process, cards to events
+
+`p p > l+ l- j` replaces the two-leg scaffolding. This is now forced, not
+cosmetic: P4 established that `generate` **cannot** do Drell–Yan — the bespoke
+integrand banks a single grid over its whole `(τ, y) × cosθ` map, so there is no
+channel decomposition to unweight against, and `p p > e+ e-` is the one hadronic
+process that refuses to reach an event file. Leaving it as the acceptance subject
+would have meant an acceptance whose subject is "cards in, `.lhe` out" running a
+process that structurally cannot produce one.
+
+Four steps, down from six, and each does more:
+
+1. unattended `integrate` refuses, naming `--yes` and the URL, leaving no cache
+   entry;
+2. `--yes integrate` downloads 27 MB, verifies it against the compiled-in
+   SHA-256, publishes it into the cache, prints a σ;
+3. `--no-network generate` writes the event file — and because generation needs
+   the same PDF set and nothing is allowed to fetch it, this *is* the cache-hit
+   check. The separate "second run served from cache" step is gone, folded into
+   a step that also produces the deliverable;
+4. `check-events` reads the file back.
+
+Budget **20 000 × 4, 2 000 events**, chosen so the wall clock stays dominated by
+the download rather than by the integration — this job asks whether the shipped
+artifact runs, not whether σ is right, which the MG-gated suite answers at
+300 000. Measured end to end against a locally built release binary with a live
+CERN download: **26.9 s wall, 3.4 s CPU**.
+
+```
+=== an unattended run refuses to download the PDF set
+refused, naming --yes and the URL
+=== with consent, the PDF set is downloaded, verified and cached
+σ = 414.414896 ± 2.985338 pb   (p p > l+ l- j, 13 TeV, 20000×4, 24 channels)
+=== generating events, with the PDF set served from the cache
+2000 events from 2000 accepted points in 160289 trials (efficiency 1.2477e-2)
+overweight: rate 2.246e-4, cross-section share 4.492e-2, largest w/w_max 17.616
+=== reading the events back
+events 2000, IDWTUP -4, XSECUP 416.350900 pb, mean XWGTUP 416.350894 pb
+ACCEPTANCE PASSED
+```
+
+σ = 414.4 pb here against the gated 422.850 is the low-budget bias P4 measured
+(416.9 at 30 000, 419.9 at 100 000, 423.7 at 300 000), not a disagreement: this
+budget is a tenth of the gate's and the number is compared to nothing.
+
+**A bug fixed on the way.** A relative `--binary` path stopped resolving the
+moment the script `cd`s into its work directory, so the documented invocation
+`bash scripts/acceptance.sh --binary target/release/vibegraph` died on step one
+with "No such file or directory" — which the step then reported as "the refusal
+does not name the flag", since the refusal file held a shell error. The path is
+made absolute before the `cd`. Consequence worth recording: **the U4 outcome's
+"verified for real" transcript cannot have come from the committed script**
+(it also reports 7.5 s for a run including a 27 MB download and two hadronic
+integrations, where the real figure is ~27 s). Treat that transcript as
+unverified; this one is reproducible.
+
+### The commit-time regression
+
+**The 18m46s was not what it looked like.** Measured on this tree, warm target
+directory, running exactly what `.git/hooks/pre-commit` runs
+(`cargo fmt --check && cargo test`) after touching `vibegraph-lib/src/lib.rs`:
+**3m16.2s**, not 18m46s. The larger figure is consistent with a *cold* `target/`
+— a fresh sprint worktree paying a full dependency build — and P0's "~3 min"
+matches the warm main checkout exactly. So the sprint's new tests cost real time
+but the alarming number was mostly worktree isolation, which is worth knowing
+before the next sprint pre-creates four of them.
+
+3m16s is still worth fixing, and the cause was not any one test: the default
+suite is physics, and at `opt-level = 0` the arithmetic — not the compiler — is
+what it waits on. `[profile.dev] opt-level = 2` in the workspace `Cargo.toml`
+buys the run back:
+
+| | before | after |
+|---|---|---|
+| **whole hook (touch + fmt + test)** | **3m16.2s** | **1m05.0s** |
+| lib unit tests (546) | 88.95 s | 4.45 s |
+| `diagram_channel` (12) | 28.06 s | 1.89 s |
+| `cli_generate` (3) | 10.56 s | 0.84 s |
+| `cli_fixed_energy` (2) | 6.89 s | 0.30 s |
+| test execution, all binaries | ~141 s | ~10 s |
+
+**Nothing was gated off, ignored, or weakened** — 624 tests before, 624 after,
+same names, same assertions. The dev profile keeps `debug-assertions` and
+`overflow-checks` on, which is why this is not the same as running the suite
+under `release` or the existing `profiling` profile: those silently drop all 20
+`debug_assert!`s in the tree. The one-time cost is a full rebuild when the
+profile changes (measured 3m45s), and the remaining minute is now dominated by
+the optimised rebuild, not by the tests — `debug = 1` on the same profile is the
+next lever if that minute ever matters.
+
+`ci.yml` inherits the change for free; it runs the same default `cargo test`.
+
+### Left open
+
+- **No push, no tag, no release.** All three remain the user's call, and they are
+  what turns `release.yml` and `acceptance.yml` from unrun workflows into
+  evidence. Acceptance A has still never executed in CI: it downloads a
+  *published release asset*, and none exists.
+- **`TODO.md` untouched** — outside this session's brief. Rows it wants: the
+  quick start is no longer "planned"; `check-events` exists; the weekly
+  `schedule` trigger on `acceptance.yml`; the unweighting-scan-budget item P4
+  opened; and `README.md`'s "QCD processes beyond 2→2 are not yet gated", which
+  P3 made stale (llj *is* gated, at a fixed scale — what still refuses is the
+  dynamical scale).
+- **No `LICENSE`, no `license` field** — the user is deciding that separately.
+  `THIRD-PARTY-NOTICES` covers only the packaged distribution; U2's finding that
+  source-form fixtures may need their own notice is still open.
+- Deferred from the tracks themselves and unchanged: Pythia consumption of the
+  emitted `.lhe`, distribution-level event-sample-vs-MadGraph statistics (now
+  with two processes waiting), the unweighting scan budget, and the interned-SM
+  `--restrict` path's missing `--ufo-dir` equivalent.
