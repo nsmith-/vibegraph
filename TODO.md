@@ -8,10 +8,10 @@ gate.
 **Current position**: `user-distribution` + `proton-events` (feature) ✅ closed +
 merged 2026-07-31 — cards → `.lhe` for `p p > l+ l- j` from a clean environment,
 release/CI/acceptance workflows in place, and the project dual-licensed
-`MIT OR Apache-2.0`. **Next: the validation pass** (shower consumption +
-event-sample statistics, top of the validation backlog), which now has two
-waiting processes rather than one. Unrun until the user pushes a first tag:
-`release.yml` and `acceptance.yml`.
+`MIT OR Apache-2.0`. **Next: the validation pass** — planned as `validation-3`
+in note 25 (three-layer suite delineation + per-process × per-category report;
+shower consumption and event-sample statistics land as the `samples` category).
+Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
 ## Pipeline Status
 
