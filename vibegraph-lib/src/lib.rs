@@ -8,6 +8,7 @@ pub mod helas;
 pub mod lhef;
 pub mod pdf;
 pub mod phasespace;
+pub mod proton;
 pub mod runcard;
 pub mod select;
 pub mod ufo;
