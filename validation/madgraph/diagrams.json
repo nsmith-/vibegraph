@@ -92,6 +92,13 @@
       },
       "total_diagrams": 4
     },
+    "pp_to_bb_fixed": {
+      "diagrams_by_subprocess": {
+        "P1_gg_bbx": 3,
+        "P1_qq_bbx": 3
+      },
+      "total_diagrams": 6
+    },
     "pp_to_bb_qcd2": {
       "diagrams_by_subprocess": {
         "P1_gg_bbx": 3,

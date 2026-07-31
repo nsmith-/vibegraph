@@ -699,3 +699,68 @@ fn sigma_llj_fixed_scale_vs_mg() {
          χ²/dof = {chi2:.2} over {runs:?}"
     );
 }
+
+/// The process of the banked `pp_to_bb_fixed` run, spelled as its `.mg5` script
+/// spells it.
+const BB_PROCESS: &str = "p p > b b~ QCD=2";
+
+/// What stops `p p > b b~` from being integrated through the general hadronic
+/// path, measured rather than assumed.
+///
+/// The `(τ, y)` map draws `τ` logarithmically between `τ_min` and 1, so it needs
+/// a positive lower bound on `ŝ`. [`Cuts::shat_min`] derives one from the active
+/// cuts, and every bound it knows is a *lepton* bound: `dsqrt_shat`, the
+/// same-flavour dilepton mass cut, and the back-to-back `2·ptl` bound for a
+/// two-lepton final state. A purely hadronic final state activates none of them,
+/// so `τ_min = 0`, `ln(1/τ_min)` is infinite and the first PDF call is asked for
+/// `x = NaN`.
+///
+/// The bound this row is missing is not subtle — two back-to-back b quarks each
+/// above `ptb` give `m_bb ≥ 2·ptb`, the same argument the lepton branch already
+/// makes, and the final-state masses give `ŝ ≥ (2·m_b)²` besides. Supplying it is
+/// a change to the sampler, which is why this row records the blocker instead:
+/// its `integrals` and `samples` cells are blocked on `hadronic-shat-floor` and
+/// the fix is a backlog item. What is measured here is the blocker itself, so the
+/// cells cannot stay blocked after it goes away.
+///
+/// The flavour census is printed because it is the part of this row that does
+/// work: it is the first group whose mirrored members carry a large share of the
+/// cross section, which is what the row was banked for.
+#[test]
+fn bb_fixed_has_no_shat_floor_for_the_general_path() {
+    let run_dir = validation_dir().join("output/pp_to_bb_fixed");
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).unwrap_or_else(|e| {
+        panic!(
+            "cannot read the banked run card at {}: {e}\n\
+             bank the run with `pixi run -e madgraph build-diagrams`",
+            run_dir.display()
+        )
+    });
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(BB_PROCESS, &model, &evaluated, &rc);
+    let mirrored = groups.groups().iter().filter(|g| g.has_mirror()).count();
+    eprintln!(
+        "[bb_fixed] banked MG σ = {mg:.1} ± {mg_err:.1} pb | {} flavour groups, \
+         {mirrored} mirrored, {} subprocesses",
+        groups.groups().len(),
+        groups.subprocess_count()
+    );
+
+    let cuts = groups.groups()[0].cuts();
+    eprintln!(
+        "[bb_fixed] the run card's ptb = {} leaves shat_min = {} GeV^2, so the \
+         (tau, y) map has no floor and the general path cannot integrate this row",
+        rc.float("ptb"),
+        cuts.shat_min()
+    );
+    assert_eq!(
+        cuts.shat_min(),
+        0.0,
+        "[bb_fixed] the cuts now supply a shat floor: this row is no longer \
+         blocked on `hadronic-shat-floor` and its integrals and samples cells \
+         should be measured"
+    );
+}
