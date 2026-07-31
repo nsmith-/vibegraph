@@ -108,7 +108,7 @@ struct LegInfo {
     do_cuts: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct SingleLegCut {
     idx: usize,
     pt_min: f64,
@@ -119,7 +119,7 @@ struct SingleLegCut {
     eta_max: f64,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct PairCut {
     i: usize,
     j: usize,
@@ -149,7 +149,7 @@ impl PairCut {
 }
 
 /// Combined-lepton-plus-neutrino invariant-mass window (`mmnl`).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct MmnlCut {
     min: f64,
     max: f64,
@@ -158,7 +158,13 @@ struct MmnlCut {
 }
 
 /// A compiled, process-specific cut filter.
-#[derive(Clone, Debug)]
+///
+/// Equality is equality of the filter, not of the process it was compiled for:
+/// every field is a leg *index* and a threshold, with the PDG codes and the
+/// [`Letter`] classes already consumed by [`Cuts::compile`]. Two processes whose
+/// legs classify the same way therefore compile to equal filters, which is what
+/// lets a caller check that a set of subprocesses shares one cut indicator.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Cuts {
     /// Indices of incoming legs (their momentum sum defines ŝ).
     incoming: Vec<usize>,
