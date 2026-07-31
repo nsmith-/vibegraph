@@ -34,7 +34,13 @@ the bespoke `DrellYanIntegrand` is deleted, `p p > e+ e-` gates through the
 general path on both dy13 cards (pull +0.25 / −1.35 over three seeds), and DY is
 generatable as a side effect; the integration artifact carries a per-channel
 subsampler summary (fv5); and every `integrals` gate writes its measurement to
-`target/validation-report/integrals/<row>.json` for the L7 collator.
+`target/validation-report/integrals/<row>.json` for the L7 collator. L5 has
+landed: `pixi run -e pythia validate-pythia` generates the llj and dy13 samples
+from their own cards and reads every event back through Pythia 8.312 —
+**2000/2000 consumed on both**, with a colour-mutation negative control that
+Pythia rejects (`ProcessLevel::checkColours: unphysical colour flow`) so the
+count is not consistent with a colour-blind reader. It is a standalone banked
+gate in its own pixi environment, so `pixi run validate` still needs no Pythia.
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
 ## Pipeline Status
@@ -46,7 +52,7 @@ Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. Deferred: multi-rung t-channel ladders (note 21) |
 | 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 11 partonic GATE rows incl. the 3 QCD 2→2s, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). Deferred: `dynamical_scale_choice = -1` (needs `kt-clustering`), which also blocks the four llj partonic σ rows |
-| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) selection with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 25 banked MG `.lhe.gz` byte-for-byte (248 747 events). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Deferred: shower consumption, event-sample-vs-MG statistics |
+| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) selection with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 25 banked MG `.lhe.gz` byte-for-byte (248 747 events). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Deferred: event-sample-vs-MG statistics |
 
 ## Closed-sprint history
 
@@ -76,14 +82,11 @@ Both rows below now have **two** waiting processes, not one: fixed-energy
 subject — coloured initial state, three-body final state, a jet cut, and colour
 lines an `e+ e-` sample does not have.
 
-- **Downstream-shower validation of the emitted `.lhe` (Pythia via pixi)** —
-  deferred out of E4 by decision. The E4 gate reads `generate`'s output back with
-  **our** `lhef::parse`, so a self-consistently wrong format is invisible to it;
-  E3's byte-for-byte MG round trip covers only fields MG itself writes. Shape: a
-  `pixi run` task handing an emitted `.lhe` to `Pythia::init`, requiring it to
-  read every event and reconstruct the hard process — the colour lines in
-  particular, which no other gate exercises as *input*. (Note 23 §E4 outcome;
-  `vibegraph-cli/tests/cli_generate.rs` module doc.)
+- ~~**Downstream-shower validation of the emitted `.lhe` (Pythia via pixi)**~~ —
+  **closed**: `pixi run -e pythia validate-pythia` reads both emitted samples end
+  to end through Pythia 8.312 (`pythia-consumption` in `validation/manifest.toml`).
+  What it does *not* yet cover is filed under **Pythia consumption gate — what it
+  cannot see** in *Deferred coverage*.
 - **Event-sample vs MG statistical comparison** — deferred out of E3 by decision.
   We do not share MG's RNG, so no per-event comparison exists; owed is a
   **distribution-level** comparison of our unweighted sample against MG's banked
@@ -160,6 +163,18 @@ lines an `e+ e-` sample does not have.
   downward, add an on-`m_Z` point, assert the observed inter-group separation
   stays ≫ tolerance) until the s-expression identity criterion replaces the
   sampled one. (`proton.rs`, note 24 §P2c.)
+- **Pythia consumption gate — what it cannot see.** The gate reads both emitted
+  samples n/n and its negative control proves it is not colour-blind, but four
+  things stay outside it. (a) Only the `Buffer` strategy (`IDWTUP = -4`) is fed
+  to Pythia; `StochasticRounding` (`+3`) writes a different `<init>` header and
+  is unexercised. (b) The reconstruction check compares the *multiset of outgoing
+  PDG codes* against the file, so a permuted or corrupted momentum would be
+  consumed silently — comparing Pythia's `process` four-momenta against the
+  record's would close that. (c) The negative control mutates `ICOLUP(1)` only,
+  on one event, so an error confined to `ICOLUP(2)` or to the beam-side
+  connectivity is not shown to be detectable. (d) Nothing checks Pythia's
+  interpretation of `SCALUP`, `AQCDUP` or the `<init>` cross section — the file
+  is proven *readable*, not proven to mean what we intended.
 - **Minor pinned discrepancies** (note 22 close-out): `ee_to_wpwm` topology mask
   unpinned between D4's derivation and D2's declaration (tie-break never reaches
   the scale); `run_card_dy.dat` fixture disagrees with the banked `dy13` cards on
