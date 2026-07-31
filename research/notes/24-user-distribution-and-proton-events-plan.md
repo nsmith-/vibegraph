@@ -1813,3 +1813,273 @@ added) plus the CLI suites — the binary's own **9** (8 + the dispatch test),
 6. **`ICOLUP` for coloured incoming legs is genuinely new writer output** and the
    `leshouche.inc` of `P1_qq_llg` and `P1_gq_llq` in the banked run is the oracle,
    per the P4 plan. Nothing in P3 touched colour.
+
+## P4 outcome (2026-07-31) ✅ — `generate` at `lpp = 1`
+
+Branch `proton-events`. `vibegraph generate` now covers proton beams for the path
+P2/P3 built, and the sprint's exit criterion — cards to `.lhe` for `ℓℓj` — is
+reached. P4's design stands; the corrections below are recorded rather than
+absorbed.
+
+### What was built
+
+**Library.** `ProtonIntegrand` gains the event side `FixedBeamIntegrand` already
+had. `event_in_channel(channel, u)` returns the accepted point in both frames
+together with its `(x₁, x₂)` and the scales the matrix element ran at;
+`select_event(event, [u₀…u₃])` draws the labels a record needs. Two supporting
+pieces on the record layer: `ColorFlowTags::permuted` and
+`SubprocessRecord::relabelled`, which is how one compiled amplitude serves 24
+concrete subprocesses under two beam orderings.
+
+**CLI.** `generate` dispatches on beam mode. The hadronic path rebuilds the
+flavour decomposition from the proc card, installs the banked selection weights
+through `set_channel_alphas` (P4 is that method's first consumer, as P3 warned),
+scans the frozen grids and emits. `--pdf-set` / `--pdf-dir` are new flags, and
+the PDF set is compared against the artifact's before anything is loaded.
+
+### The flavour draw, and the test that pins it
+
+Within a drawn group the concrete flavour and the beam ordering are one
+categorical draw over `(member, ordering)` with weight
+`L_i^o(x₁, x₂) · |M(q or Rq)|²`. The members of a group share their matrix element
+*exactly* — that is what makes them a group — so at a fixed ordering the whole of
+what separates them is their parton luminosity at the event's own `(x₁, x₂)`, and
+the rule reduces to "∝ luminosity share". The ordering split is the one place the
+matrix element re-enters, because `|M(q)|²` and `|M(Rq)|²` differ.
+
+`a_members_share_of_the_draw_is_its_share_of_the_parton_luminosity` pins it by
+**sweeping** the uniform rather than sampling it, so the measured shares are the
+rule's own and carry no Monte Carlo error — the only residual is the sweep's grid,
+and every margin is quoted in units of that resolution:
+
+| | measured |
+|---|---|
+| deviation from the luminosity share | **0.18** resolutions |
+| what a *uniform* draw would be off by | ≥ **6.3** |
+| what an *exchanged-beam* assignment would be off by | up to **72.3** |
+
+The oracle forms each member's `x·f` product straight from the parton
+distribution, so it shares no code with `FlavorGroup::member_luminosity`. Two
+things had to be arranged for the margins to exist at all, and both are asserted
+rather than assumed: the point is chosen off central rapidity (`x₁ > 5x₂`), and
+the probe distribution's `x` shape differs sharply per flavour — `probe_pdf` is
+flat enough in `x` that exchanging `x₁` and `x₂` moves the shares by only 9e-4,
+which would have left the beam orientation unpinned. The group's entry point is
+found by bisection on `u₀` (the group index rises with it, being read off a
+cumulative distribution), so even the smallest group is reached.
+
+*What it cannot see*: realised frequencies over a generated sample against
+MadGraph's own. That is a distribution-level question and stays with the deferred
+validation pass.
+
+### The exchanged beam ordering, and MadGraph's own answer
+
+The claim is that the mirror identity extends from `|M|²` to the accumulators a
+record is filled from: `R` maps each beam momentum onto the other's, so the
+representative's leg 0 describes the event's *second* beam, and the two incoming
+legs of every per-leg field trade places while the outgoing legs are untouched.
+That is a convention claim about helicity labels and colour lines, which no cross
+section can see.
+
+`an_exchanged_ordering_relabels_the_beams_of_every_per_leg_field` measures it
+against the mirrored subprocess compiled from **its own** proc card: per-helicity
+`|M_c|²` and per-flow `JAMP2` agree to **1e-11** of the summed `|M|²` over all six
+`ℓℓj` groups, matched by helicity *tuple* under the leg permutation rather than by
+index. *What it cannot see*: `ℓℓj` has one colour flow per subprocess, so the flow
+*index* is unpermutable here and only the tags of that one flow are compared.
+
+MadGraph's banked events say the same thing independently, and this was checked by
+eye before the test was written. `P1_gq_llq`'s `leshouche.inc` gives
+`g u > e⁺e⁻ u` as `ICOLUP = (501,502), (502,0), 0, 0, (501,0)`; a banked event with
+the quark on beam 1 carries `(502,0), (501,502), 0, 0, (501,0)` — the two incoming
+rows exchanged and the outgoing row untouched, with the same integers.
+
+### `w_max` against budget — the measurement P3 asked for
+
+P3's warning was right and the effect is larger here than for any gated process. A
+frozen scan estimates each channel's maximum on that channel's own share of the
+integration budget, so `w_max` inherits the same under-sampled small channels that
+biased σ. Measured on the banked llj cards, 20 000 events per row:
+
+| `neval` | banked σ (pb) | overweight rate | **share of σ above `w_max`** | largest `w/w_max` | efficiency |
+|---|---|---|---|---|---|
+| 30 000 | 416.876 ± 1.632 | 1.48e-4 | **3.24e-2** | 23.5 | 9.62e-3 |
+| 100 000 | 419.893 ± 0.831 | 7.87e-5 | **1.50e-2** | 9.4 | 1.03e-2 |
+| 300 000 | 423.731 ± 0.473 | 4.75e-5 | **8.43e-3** | 15.0 | 1.17e-2 |
+| 600 000 | 423.670 ± 0.325 | 2.00e-5 | **5.28e-3** | 11.1 | 8.18e-3 |
+
+For scale: note 23's gated `e⁺e⁻ → μ⁺μ⁻` shows an overweight share of **3.04e-4**
+and a largest ratio of **1.009**. The llj run is 20–100× worse and the share is
+still falling at 600 000, so the scan is nowhere near converged at any budget this
+gate can afford. The estimator stays unbiased — an overweight point is kept at a
+weight above one — so what the tail costs is the sample's *spread*, and under
+`IDWTUP = +3` it would cost lumpiness (an event of weight 25 becomes 25 copies).
+The largest ratio moves non-monotonically (23.5, 9.4, 15.0, 11.1) exactly because
+it is an extremum estimate: one channel finding a new maximum moves `Σⱼ w_maxⱼ` and
+the efficiency with it, which is why the efficiency column is not monotone either.
+
+**A `neval` that gives a good σ does not give a good `w_max`** — confirmed, and the
+two do not even improve in step.
+
+### The sample's own σ does not inherit the integrator's bias
+
+A five-seed sweep of the emitted file's mean `XWGTUP` against the banked σ, 20 000
+events each:
+
+| `neval` | deviations | mean |
+|---|---|---|
+| 100 000 | −0.19, **+2.29, +1.67, +1.37, +1.11** % | **+1.25%** |
+| 300 000 | −0.36, −0.14, −0.62, +0.47, +0.29 % | **−0.07%** |
+
+Four of five on the same side at the low budget is not a fluctuation. The reason is
+worth recording, because it is an independent confirmation of P3's diagnosis: the
+accept/reject pass is a **single** pass over the frozen grids, so its estimator does
+*not* go through `combine_iterations`' `1/σ²` weighting of iterations, and it
+therefore converges to the true σ while the banked number is still about 1% low.
+The sample and the integration disagree at 100 000 by roughly the integrator's own
+bias, and agree at 300 000 where that bias has gone. **The gate runs at 300 000 for
+this reason, not for the wall clock**, and `SIGMA_MAX_REL = 0.015` brackets the
+converged spread while staying below what an unconverged budget produces.
+
+### The four gates
+
+**(a) The banked fixed-scale `.lhe.gz` is in the byte-for-byte corpus.** It needed
+no work: `banked_files_round_trip_byte_for_byte` *discovers* every banked run, so
+`pp_to_llj_fixed` joined when P0 banked it — 10 000 events / 59 493 legs,
+byte-identical, inside a corpus that is now 25 runs and 248 747 events. What it
+needed was a **guard**: a discovered corpus can silently stop covering something.
+The test now requires at least one run with a hadron-collider `<init>` (proton beam
+ids and an LHAPDF id in `PDFSUP`) and at least one with colour lines on an incoming
+leg — the two layouts this crate's writer emits at proton beams and did not emit
+before — and names which run supplies each.
+
+**(b) `generate`'s own output self-reads.** New gate
+`validate-generate-proton` (`cli_generate_proton`, pixi task added): one `integrate`
+run on MadGraph's own banked run card, 20 000 events, read back through
+`lhef::parse`. Per event: `NUP`, statuses, mothers, four-momentum balance
+(≤ **7.02e-11** of the event's own incoming energy), on-shellness (≤ **5.11e-9** of
+its own `ŝ`), the beam partons on their own side of the axis carrying at most their
+beam's energy, `SCALUP` exactly `91.188`, and `AQCDUP` within **1.09e-7** of the PDF
+grid's coupling. `<init>` carries `2212 2212`, the run card's beam energies, and the
+LHAPDF id in `PDFSUP` — the same fields MadGraph's own file carries, compared
+against it.
+
+Two of the checks are real MadGraph oracles rather than self-comparisons, and they
+are the ones the hadronic path introduced:
+
+- **Flavour.** Every emitted `IDUP` row must be one of the 24 subprocesses
+  MadGraph's `leshouche.inc` lists, or that subprocess with its two beams
+  exchanged. The oracle is read from the generated Fortran, not from MadGraph's
+  event sample, so a flavour its 10 000 events happen to miss is still admissible
+  and one it could never produce is still refused. Observed: **48 distinct
+  assignments** — all 24 subprocesses in both orderings.
+- **Colour.** Every event's connectivity must be one MadGraph's own events exhibit
+  for the same arrangement of gluon / quark / antiquark / leptons. Observed: all 6
+  initial-state arrangements, matching MadGraph's set exactly.
+
+σ(sample) **423.158 ± 0.209 pb** against the integration's **423.731 ± 0.473 pb**
+(−0.135%), mean `XWGTUP` equal to the declared `XSECUP` to < 1e-6.
+
+*What (b) cannot see* — note 23's E4 caveat applies unchanged and is the reason (a)
+exists: the file is read back by **our own parser**, which shares its assumptions
+with our writer, so a self-consistently wrong format is invisible here. It is also
+blind, as every replay is, to anything the integrand gets wrong. And neither
+MadGraph oracle above says anything about *how often* each flavour or colour flow
+is drawn — only about which are admissible.
+
+**(c) A different PDF set is refused.** `pdf_mismatches` compares the artifact's
+`pdf_set` and `pdf_member` against the ones this run would read, and the check runs
+*before* the set is loaded, so a mismatch is refused by name rather than by a load
+failure. The gap it closes is specific: the run card pins the LHAPDF *id*, but the
+set a run actually loads is named by a flag, so an artifact and a command line can
+agree on every card and still disagree about which tabulation trained the grids.
+A fixed-energy run is held to the artifact's `none`/`0` by the same check.
+
+**(d) The dynamical-scale card stays refused — in two places, and the plan had it
+in one.** See the corrections below.
+
+### Plan corrections
+
+1. **`generate` at `lpp = 1` covers the general path only; `p p > e⁺e⁻` still
+   refuses, by name.** The bespoke Drell–Yan integrand banks a single grid over its
+   whole `(τ, y) × cosθ` map, which is not a channel decomposition, so there is
+   nothing for an accept/reject pass to draw a channel from. This is not a
+   regression — Drell–Yan was never generatable — but it is the opposite of the
+   shape one would guess, and it decides Track U: **the acceptance job must move to
+   `ℓℓj`, because Drell–Yan is the one hadronic process `generate` cannot do.**
+2. **Gate (d) cannot be what it was written as.** `generate` never reaches the
+   clustering refusal: a dynamical card does not match the one that trained the
+   grids, so the card-mismatch check fires first — and no artifact of a dynamical
+   card can exist, because `integrate` is where that card is refused. The test
+   therefore asserts **both** refusals, on a card built from the banked one by
+   turning off its three `fixed_*_scale` switches and nothing else, so neither
+   refusal can be coming from something else about the card. The first names
+   `run card \`fixed_ren_scale\``; the second names the clustering.
+3. **The sample's σ estimator is bias-free where the integrator's is not**, as
+   above. Worth carrying into any future comparison of a generated sample against
+   its own banked σ.
+4. **P3's operational facts all held.** The banked keys matched the derived
+   `channel_ids()` pairwise on the first run; `set_channel_alphas` behaved; the
+   artifact is `fv4`. The pairwise check is implemented and reports the offending
+   position, but nothing has yet made it fire in anger.
+5. **`AQCDUP` and `AQEDUP` sit a few 1e-7 from MadGraph's printed fields**, in both
+   cases for a stated reason and neither is a gate. MadGraph writes
+   `1.30002700e-01`; undoing its `π` truncation gives `1.30002698e-01` against our
+   `1.30002712e-01`, so the two interpolations of the *same* `αs` grid differ by
+   1.1e-7 relative. `AQEDUP` differs by 1.7e-7 because ours is the model's `aEW` and
+   MadGraph's is `1/aEWM1` from its param card.
+
+### The `cargo test` wall clock — a close-out item
+
+The `pre-commit` hook runs a full `cargo test`, and that is now **18m46s** in the
+debug profile. It is long enough to be a real obstacle to committing at all. The
+likely contributors are the heavy default-feature tests this sprint added, all
+running unoptimised: the flavour-group probe compiles 24 subprocesses, and
+`ProtonIntegrand`'s adaptation, fixed-`ŝ` slices and (new) label sweeps each drive
+many thousands of hadronic integrand points. Worth either moving the heaviest of
+them behind a feature or giving the hook a profile.
+
+### Gate results
+
+`cargo fmt --check` clean. `cargo test --workspace` **523 lib passed / 0 failed**
+(520 at P3's close + 3 new) plus the CLI suites — the binary's own **9**,
+`cli_fixed_energy` 2, `cli_generate` 3. No tolerance was loosened anywhere; the one
+tolerance *tightened* is the new gate's `AQCDUP` bound, from a guessed `1e-6` to
+MadGraph's own printing budget for the field.
+
+| gate | result |
+|---|---|
+| **`validate-generate-proton`** (new) | **3 passed** — 20 000 events, **48** flavour assignments over **6** initial-state arrangements, all in MadGraph's tables; σ(sample) **423.158 ± 0.209 pb** vs integration **423.731 ± 0.473 pb** (−0.135%); balance 7.02e-11, on-shell 5.11e-9, `AQCDUP` 1.09e-7 |
+| `validate-lhef` | 3 passed — **248 747 events / 1 314 204 particle lines across 25 banked runs** byte-identical, `pp_to_llj_fixed` among them (10 000 events / 59 493 legs) |
+| `validate_hadronic` | **5 passed** — llj **422.850 ± 0.189** vs MG **422.840 ± 1.805** (χ²/dof 1.90), seed for seed identical to P3 |
+| ↳ Drell–Yan anchor | σ default **934.416 ± 0.870**, mmll window **644.855 ± 0.570**, pointwise **1.15e-14** — **identical to P2b, P2c, P2d and P3** |
+| ↳ DY general-path info row | 933.706 ± 1.843, rel 0.0006 — unmoved |
+| `cli_integrate` | 3 passed — CLI σ **934.415866 ± 0.869944** and **644.855362 ± 0.569603**, bit-for-bit as banked (the `integrate` PDF-loading refactor moved nothing) |
+| `validate-alphas` | 5 passed — `pp_to_llj_fixed` **10 000/10 000** printed `AQCDUP` digits from the PDF grid, worst **0.281** of budget |
+| `validate-scales` | 7 passed — `pp_to_llj_fixed` 50 000 comparisons, worst **0.000** of budget |
+| `validate-color-flow-tags` | 30 passed — `pp_to_llj_fixed/P1_gq_llq` labels **identical to MadGraph's** |
+| `validate-color-jamp` | 3 passed |
+| `validate-helas-mg` | 18 passed — `gg_to_gg` 8.25e-14, `gg_to_ttx` 1.89e-15, unchanged |
+| `validate-unweighting` | 1 passed — `ee_to_mumua` eff 2.872e-2, max `w/w_max` 8.393, unchanged |
+| `validate-sigma` | 11 GATE rows asserted, unchanged |
+| `validate-pdf-grid` | still not runnable here (`validation/pdf/oracle*.json` gitignored and absent, as P2b–P3 recorded) |
+
+### What the sprint close-out needs
+
+1. **TODO pipeline table**: steps 5 and 6 lose their `lpp = 1` deferral for the
+   general path. Drell–Yan `generate` stays deferred and should be named as such.
+2. **New pixi task** `validate-generate-proton`, and a line in the validation
+   regime table.
+3. **New backlog item — the unweighting scan budget.** `w_max` is scanned on the
+   integration's own per-channel `neval`, and on a 24-channel hadronic run that
+   leaves 0.5%–3% of the cross section above the maxima. Options: scan on a budget
+   of its own, raise the maxima by a safety factor, or adopt MadGraph's two-pass
+   `unwgt.f` treatment. This is the first process where it matters.
+4. **Reinforces P3's discard-first-`k` item**: the same under-sampled channels drive
+   both the integrator's `O(1/N)` bias and the `w_max` undershoot.
+5. **New follow-up — `generate` for Drell–Yan**, i.e. either give the bespoke
+   integrand a channel decomposition or route `p p > e⁺e⁻` through the general path
+   for event generation only.
+6. **Deferred, unchanged**: Pythia consumption of the emitted `.lhe`, and
+   distribution-level event-sample-vs-MadGraph statistics. Both now have two
+   processes waiting.
