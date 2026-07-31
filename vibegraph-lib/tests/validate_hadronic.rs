@@ -7,6 +7,11 @@
 //! Two reference runs are enforced: default lepton cuts, and the m_ll ∈ [60,120]
 //! window. Both must agree within combined Monte-Carlo error (target < 1%).
 //!
+//! The same default run is also taken through the **general** hadronic path
+//! ([`vibegraph::proton`]) as an informational row, so a process the general path can
+//! already do keeps an end-to-end comparison against MadGraph running while it is
+//! under construction. The enforced rows are the bespoke integrand's and stay there.
+//!
 //! A pointwise integrand oracle pins the PDF × flux × |M|² factors at fixed
 //! `(x₁, x₂, cosθ)` points (including points just inside/outside a cut boundary)
 //! against an independent Python computation (`validation/madgraph/gen_dy_oracle.py`).
@@ -43,18 +48,21 @@ mod validate_hadronic {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
     }
 
-    fn load_pdf() -> PdfMember {
+    fn load_pdf_set() -> PdfSet {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../validation/pdf")
             .join(PDF_SET);
-        let set = PdfSet::load(&dir, PDF_SET).unwrap_or_else(|e| {
+        PdfSet::load(&dir, PDF_SET).unwrap_or_else(|e| {
             panic!(
                 "cannot load PDF set {PDF_SET} from {}: {e}\n\
                  run `pixi run -e madgraph fetch-pdf`",
                 dir.display()
             )
-        });
-        set.member(0).expect("PDF member 0")
+        })
+    }
+
+    fn load_pdf() -> PdfMember {
+        load_pdf_set().member(0).expect("PDF member 0")
     }
 
     /// Run the full VEGAS integration for a given run card, returning (σ, Δσ) in pb.
@@ -161,6 +169,86 @@ mod validate_hadronic {
     #[test]
     fn sigma_mmll_window_vs_mg() {
         check_run("mmll_60_120", "dy13_mmll_run_card.dat");
+    }
+
+    /// Drell–Yan through the **general** hadronic path — the flavour-group
+    /// decomposition convolved over `(τ, y)` with a per-diagram multichannel inner
+    /// map — against the same banked MadGraph reference the bespoke integrand is
+    /// gated on.
+    ///
+    /// **Informational.** The enforced Drell–Yan rows above are the pipeline's
+    /// bit-reproducibility anchor and stay exactly where they are; this row exists so
+    /// that a general path under construction has a known-good end-to-end comparison
+    /// running against a process it can already do. Whether the bespoke path is later
+    /// retired in its favour is a separate decision.
+    ///
+    /// What it proves: the whole assembled chain — the `(τ, y)` map and its Jacobian,
+    /// the `x·f` luminosity, the flux and `2π` measure, the cut filter in the lab
+    /// frame, the flavour partition and both beam orderings — reproduces a measured
+    /// hadronic cross section, on real parton distributions and a real run card.
+    ///
+    /// What it cannot see: anything specific to a coloured initial state or a
+    /// three-body final state. Drell–Yan has no gluon-initiated group, no peripheral
+    /// channel, no strong coupling and no jet cut, so the spacelike floor, the grid
+    /// `αs` and the three-body spine are all untouched by it.
+    #[test]
+    fn sigma_default_cuts_through_the_general_path() {
+        use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
+
+        let model = super::common::sm_model();
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let rc = RunCard::parse_file(&validation_dir().join("dy13_default_run_card.dat"))
+            .expect("parse run card");
+
+        let opts = ParsingOptions::default();
+        let proc_card = parse_proc_card("generate p p > e+ e-", &opts).expect("proc card");
+        let sets = generate_from_proc_card(&proc_card, &model).expect("enumeration");
+        let groups = derive_flavor_groups(sets, &model, &evaluated, &rc).expect("flavour groups");
+
+        let set = load_pdf_set();
+        let pdf = set.member(0).expect("PDF member 0");
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("hadronic integrand");
+        let report = integ
+            .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+            .expect("run card scale prescription compiles");
+        let constant = report.constant_scales.unwrap_or_else(|| {
+            panic!("reference run card no longer fixes both scales: {report:?}")
+        });
+        assert_eq!(
+            (constant.mu_r, constant.mu_f),
+            (MU_F, [MU_F, MU_F]),
+            "reference run card no longer fixes both scales at m_Z"
+        );
+        assert!(
+            !report.depends_on_alpha_s,
+            "Drell-Yan at this order carries no strong coupling"
+        );
+
+        integ.adapt_alphas(20260730, 8_000, 5, 0.5);
+        let (sigma, err) = integ.integrate(40_000, 10, 20260719);
+
+        let (mg, mg_err) = banked("default").expect("banked MG reference");
+        let combined = (err * err + mg_err * mg_err).sqrt();
+        let delta = sigma - mg;
+        let rel = delta.abs() / mg;
+        eprintln!(
+            "[default/general-path] INFO vibegraph σ = {sigma:.3} ± {err:.3} pb | \
+             MG σ = {mg:.3} ± {mg_err:.3} pb | Δ = {delta:.3} pb ({:.1} combined σ), \
+             rel = {rel:.4}",
+            delta / combined
+        );
+        assert!(
+            rel < 0.02,
+            "[default/general-path] σ disagreement: vibegraph {sigma:.3}±{err:.3} vs \
+             MG {mg:.3}±{mg_err:.3} pb, rel = {rel:.4}"
+        );
     }
 
     /// Pointwise integrand oracle: at ~10 pinned `(x₁, x₂, cosθ)` points
