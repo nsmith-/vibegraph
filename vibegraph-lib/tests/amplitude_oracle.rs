@@ -11,6 +11,8 @@
 //! 1. `|M|²` summed over helicities and colour, at every point.
 //! 2. `AMP(1:NGRAPHS)` per helicity, at a few points of each set.
 //! 3. `JAMP(1:NCOLOR)` per helicity, at the same points.
+//! 4. Which `AMP()` entries each `AMP2()` accumulator of the generated
+//!    `matrix1.f` sums — MadGraph's integration configurations.
 //!
 //! and the param card MadGraph evaluated with, so both sides use the same
 //! rounded masses, SM inputs and widths and the comparison is not limited by a
@@ -47,6 +49,27 @@
 //!   must vanish there too, which is what keeps the omission an assertion.
 //! - `eval_jamp2` reproduces `Σ_hel |JAMP_f^mg|²` flow by flow — the colour-flow
 //!   selection weight itself, against MadGraph rather than against our own JAMPs.
+//! - The integration configurations are MadGraph's own: the same count, the same
+//!   `AMP()` grouping, in the same order as its `AMP2()` accumulators — which is
+//!   what makes a configuration index usable as an `ICOLAMP` column. `g g > g g`
+//!   is where it bites: MadGraph writes no accumulator for the four-gluon contact
+//!   diagram, so three of its six `AMP()`s carry no configuration at all.
+//! - Each configuration's amplitude equals MadGraph's `AMP()` up to a **per-diagram
+//!   unit phase**, fitted per configuration over every `(point, helicity)` entry.
+//!   Per-diagram rather than global on purpose: MadGraph puts the relative sign
+//!   between an annihilation and an exchange diagram into the colour coefficient
+//!   `c_i` while vibegraph puts it into the diagram root, so the bare amplitudes
+//!   differ by a sign that is a convention rather than an error. `|k| = 1` is the
+//!   part with teeth — it is exactly what makes `AMP2` (the modulus) agree, and it
+//!   would fail for a diagram carrying a stray symmetry factor or coupling.
+//! - `eval_amp2` reproduces `Σ_hel |AMP_d^mg|²` configuration by configuration —
+//!   the weight the per-event configuration draw uses, and through that
+//!   configuration's `ICOLAMP` mask the colour flow an event is written with.
+//! - The helicity-pruned evaluator's `AMP2` against the unpruned one. Unlike the
+//!   `|M|²` sum this is *not* automatic: a combination is dropped when the
+//!   coherent amplitude cancels, which does not make the individual diagram
+//!   amplitudes vanish, so the two sums can differ and the size of the difference
+//!   is measured rather than assumed.
 //! - The helicity-pruned evaluator (the production `eval_m2` configuration) is
 //!   bit-for-bit against the unpruned one at every point.
 //!
@@ -123,6 +146,34 @@ const EVENT_REL_TOL_OVERRIDE: &[(&str, f64)] = &[("ee_to_mumu_tata_qcd0", 1e-11)
 /// normalised to the largest reference entry in the process.
 const LINEAR_REL_TOL: f64 = 1e-12;
 
+/// Relative tolerance on the per-configuration `AMP2` comparison, normalised to
+/// the largest `AMP2` of the point. Same accumulated-rounding scale as the JAMP2
+/// diagonal (a sum of squared moduli over helicities), so it rides at the same
+/// margin.
+const AMP2_REL_TOL: f64 = 1e-12;
+
+/// Processes where MadGraph's own export merges several diagrams into one
+/// integration configuration, so its `AMP2` grouping is coarser than one
+/// configuration per non-contact diagram.
+///
+/// That merge is `get_amp2_lines`' `config_map` branch: diagrams MadGraph's
+/// channel mapping calls the same topology are summed *coherently* into one
+/// accumulator, `|Σ AMP|²`, and which diagrams those are comes from the channel
+/// mapping rather than from the diagram itself, so it is not derivable from the
+/// diagram list the way the four-point-vertex exclusion is. Where it happens our
+/// configurations are finer than MadGraph's and the per-configuration comparison
+/// has nothing to align, so it is skipped and the amplitudes are still compared
+/// one by one.
+///
+/// The entry is two-way: a listed process whose grouping starts agreeing fails
+/// here, so a stale exemption cannot survive.
+const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[(
+    "ee_to_ee",
+    "the two t-channel diagrams (photon and Z exchange) share a configuration; \
+     the process is colourless, so its single all-admitting ICOLAMP row makes \
+     the configuration label unobservable in an event",
+)];
+
 /// MadGraph graph index of each vibegraph diagram, for processes whose two
 /// enumeration orders differ. Absent processes pair by the identity.
 ///
@@ -174,6 +225,9 @@ struct Table {
     flow_structures: Vec<String>,
     /// The colour coefficients of `JAMP(1) = Σ_i c_i AMP(i)`, single-flow only.
     coefficients: Option<Vec<C<f64>>>,
+    /// The `AMP()` indices each `AMP2()` accumulator of MadGraph's generated
+    /// `matrix1.f` sums, in its own configuration order.
+    amp2_groups: Vec<Vec<usize>>,
     helicities: Vec<Vec<i32>>,
     param_card: String,
     points: Vec<Point>,
@@ -259,6 +313,18 @@ fn parse_table(json: &serde_json::Value) -> Table {
         coefficients: json["jamp_coefficients"]
             .as_array()
             .map(|_| complex_list(&json["jamp_coefficients"])),
+        amp2_groups: json["amp2_groups"]
+            .as_array()
+            .expect("the table banks MadGraph's AMP2 configuration grouping")
+            .iter()
+            .map(|g| {
+                g.as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|i| i.as_u64().unwrap() as usize)
+                    .collect()
+            })
+            .collect(),
         helicities,
         param_card: json["param_card"]
             .as_array()
@@ -305,6 +371,9 @@ fn ulp_sensitivity(bound: &BoundAmplitude<f64>, momenta: &[LorentzVector<f64>]) 
 struct M2Result {
     grid: f64,
     event: f64,
+    /// Largest relative gap between the helicity-pruned and unpruned `AMP2`,
+    /// over every point and configuration.
+    amp2_pruned: f64,
     failures: Vec<String>,
 }
 
@@ -322,8 +391,11 @@ fn compare_m2(
     let mut result = M2Result {
         grid: 0.0,
         event: 0.0,
+        amp2_pruned: 0.0,
         failures: Vec::new(),
     };
+    let n_configs = bound.evaluator().n_configs();
+    let (mut amp2, mut amp2_pruned) = (vec![0.0; n_configs], vec![0.0; n_configs]);
     for (i, pt) in table.points.iter().enumerate() {
         let ours = bound.eval_m2(&pt.momenta, &mut scratch);
         let rel = (ours - pt.m2).abs() / pt.m2.abs().max(1e-300);
@@ -344,6 +416,16 @@ fn compare_m2(
                 ulp_sensitivity(bound, &pt.momenta)
             ));
         }
+        // The same pruning against `AMP2`, which is a sum of *incoherent* moduli
+        // and so has no reason a priori to be unmoved by dropping a combination
+        // whose coherent amplitude cancels. Measured, not asserted.
+        bound.eval_amp2(&pt.momenta, &mut scratch, &mut amp2);
+        pruned.eval_amp2(&pt.momenta, &mut scratch_pruned, &mut amp2_pruned);
+        let scale = amp2.iter().cloned().fold(0.0f64, f64::max).max(1e-300);
+        for (a, b) in amp2.iter().zip(&amp2_pruned) {
+            result.amp2_pruned = result.amp2_pruned.max((a - b).abs() / scale);
+        }
+
         // The production configuration drops helicity combinations that provably
         // contribute below rounding, so it must not move the sum at all.
         let m2_pruned = pruned.eval_m2(&pt.momenta, &mut scratch_pruned);
@@ -546,14 +628,65 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
         .iter()
         .filter_map(|p| p.detail.as_ref())
         .any(|d| d.amps.is_some());
+    // The per-diagram *contribution* comparison needs the single-flow colour
+    // coefficients to form `c_i·AMP(i)`; a multi-flow process banks its per-diagram
+    // amplitudes without them and is compared at the configuration level below.
+    let per_diagram_fit = banks_amps && table.coefficients.is_some();
     let order: Vec<usize> = MG_DIAGRAM_ORDER
         .iter()
         .find(|(p, _)| *p == name)
         .map(|(_, o)| o.to_vec())
         .unwrap_or_else(|| (0..table.n_graphs).collect());
 
+    // ── the integration configurations ───────────────────────────────────────
+    // MadGraph's own AMP2 accumulators, against the configurations our compiler
+    // derives from the diagrams. The grouping decides which ICOLAMP column an
+    // event's colour draw is masked with, so it is compared before any value is.
+    let merge = KNOWN_CONFIG_MERGE.iter().find(|(k, _)| *k == name);
+    let our_counts = evaluator.config_amp_counts().to_vec();
+    let grouping_agrees = our_counts.len() == table.amp2_groups.len()
+        && our_counts
+            .iter()
+            .zip(&table.amp2_groups)
+            .all(|(n, g)| *n == g.len());
+    match (grouping_agrees, merge) {
+        (false, None) => {
+            return Err(format!(
+                "[{name}] the integration configurations are not MadGraph's: ours group \
+                 {our_counts:?} amplitudes, MadGraph's AMP2 accumulators group {:?}",
+                table.amp2_groups.iter().map(Vec::len).collect::<Vec<_>>()
+            )
+            .into());
+        }
+        (true, Some((_, why))) => {
+            return Err(format!(
+                "[{name}] is listed in KNOWN_CONFIG_MERGE ({why}) but its configurations \
+                 now agree with MadGraph's — drop the exemption"
+            )
+            .into());
+        }
+        _ => {}
+    }
+    // The MadGraph AMP index of each of our configuration amplitudes, in the
+    // flattened order `run_config_amps` returns them: MadGraph's own AMP2
+    // grouping flattened, then through the banked diagram order.
+    let mg_amp_index: Vec<usize> = table
+        .amp2_groups
+        .iter()
+        .flatten()
+        .map(|&i| order[i])
+        .collect();
+    let n_config_amps: usize = our_counts.iter().sum();
+    if mg_amp_index.len() != n_config_amps {
+        return Err(format!(
+            "[{name}] {n_config_amps} configuration amplitudes against MadGraph's {}",
+            mg_amp_index.len()
+        )
+        .into());
+    }
+
     let mut per_diagram: Vec<AmplitudeEvaluator> = Vec::new();
-    if banks_amps {
+    if per_diagram_fit {
         if set.diagrams.len() != table.n_graphs {
             return Err(format!(
                 "[{name}] diagram count: vibegraph {} vs MadGraph NGRAPHS {}",
@@ -601,6 +734,12 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
     let mut worst_zero_where = String::new();
     let mut worst_jamp2 = 0.0f64;
     let mut worst_jamp2_where = String::new();
+    let mut worst_amp2 = 0.0f64;
+    let mut worst_amp2_where = String::new();
+    // One entry table per configuration amplitude: the fit is per configuration,
+    // not global (see the module header on why the phase is per diagram).
+    let mut config_entries: Vec<Vec<Entry>> = (0..n_config_amps).map(|_| Vec::new()).collect();
+    let mut our_amp2 = vec![0.0f64; table.amp2_groups.len()];
 
     for (pi, pt) in table.points.iter().enumerate() {
         let Some(detail) = pt.detail.as_ref() else {
@@ -628,6 +767,24 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
                         format!("point {pi}, hel {hel:?}, flow {fi}: vibegraph {value:?}");
                 }
             }
+            // The same for the configuration amplitudes: a combination MadGraph
+            // omits carries no `AMP()` either (the bank keeps a combination when
+            // *any* AMP or JAMP is non-zero), so ours must vanish there too or our
+            // `AMP2` would sum over combinations MadGraph's does not.
+            for (ci, value) in bound
+                .run_config_amps(&pt.momenta, hel, &mut scratch)
+                .iter()
+                .enumerate()
+            {
+                let dev = value.norm() / scale_here.max(1e-300);
+                if dev > worst_zero {
+                    worst_zero = dev;
+                    worst_zero_where = format!(
+                        "point {pi}, hel {hel:?}, configuration amplitude {ci}: \
+                         vibegraph {value:?}"
+                    );
+                }
+            }
         }
 
         for (row, &hi) in detail.helicities.iter().enumerate() {
@@ -648,10 +805,24 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
             let Some(amps) = detail.amps.as_ref() else {
                 continue;
             };
-            let coefficients = table
-                .coefficients
-                .as_ref()
-                .ok_or_else(|| format!("[{name}] per-diagram table without colour coefficients"))?;
+            // The configuration amplitudes against MadGraph's bare `AMP()`: no
+            // colour coefficient and no symmetry factor on either side, which is
+            // what makes them comparable one to one and their moduli `AMP2`.
+            let ours_cfg = bound.run_config_amps(&pt.momenta, hel, &mut scratch);
+            for (ci, &j) in mg_amp_index.iter().enumerate() {
+                config_entries[ci].push(Entry {
+                    mg: amps[row][j],
+                    vg: ours_cfg[ci],
+                    what: format!(
+                        "point {pi}, hel {hel:?}, configuration amplitude {ci} \
+                         (MadGraph AMP({}))",
+                        j + 1
+                    ),
+                });
+            }
+            let Some(coefficients) = table.coefficients.as_ref() else {
+                continue;
+            };
             let mut vg_row = Vec::with_capacity(table.n_graphs);
             let mut mg_row = Vec::with_capacity(table.n_graphs);
             for (di, &j) in order.iter().enumerate() {
@@ -694,6 +865,35 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
             if dev > worst_jamp2 {
                 worst_jamp2 = dev;
                 worst_jamp2_where = format!("point {pi}, flow {fi}: {a:e} vs {b:e}");
+            }
+        }
+
+        // The configuration-selection weight, against MadGraph's own AMP() the
+        // same way. A configuration owning several amplitudes is MadGraph's
+        // coherent `|Σ AMP|²` (the `config_map` branch of `get_amp2_lines`), and
+        // is formed that way here so a grouping ours sums incoherently cannot
+        // pass unnoticed.
+        if let (Some(amps), true) = (
+            detail.amps.as_ref(),
+            grouping_agrees && !table.amp2_groups.is_empty(),
+        ) {
+            let mut mg_amp2 = vec![0.0f64; table.amp2_groups.len()];
+            for row in amps {
+                for (acc, group) in mg_amp2.iter_mut().zip(&table.amp2_groups) {
+                    let coherent = group
+                        .iter()
+                        .fold(C::new(0.0, 0.0), |sum, &j| sum + row[order[j]]);
+                    *acc += coherent.norm_sqr();
+                }
+            }
+            bound.eval_amp2(&pt.momenta, &mut scratch, &mut our_amp2);
+            let norm = mg_amp2.iter().cloned().fold(0.0f64, f64::max).max(1e-300);
+            for (ci, (a, b)) in our_amp2.iter().zip(&mg_amp2).enumerate() {
+                let dev = (a - b).abs() / norm;
+                if dev > worst_amp2 {
+                    worst_amp2 = dev;
+                    worst_amp2_where = format!("point {pi}, configuration {ci}: {a:e} vs {b:e}");
+                }
             }
         }
     }
@@ -770,17 +970,71 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
         .into());
     }
 
+    // One constant per configuration amplitude. The residual under it says the
+    // amplitude is MadGraph's; its modulus being 1 says `AMP2` — which is blind to
+    // the phase — is MadGraph's too.
+    let mut worst_config = 0.0f64;
+    let mut worst_config_where = String::new();
+    let mut worst_config_phase = 0.0f64;
+    for (ci, entries) in config_entries.iter().enumerate() {
+        if entries.is_empty() {
+            continue;
+        }
+        let (k, scale) = fit_constant(entries);
+        let (worst, what) = worst_deviation(entries, k, scale);
+        if worst > worst_config {
+            worst_config = worst;
+            worst_config_where = what;
+        }
+        let dev = (k.norm() - 1.0).abs();
+        if dev > worst_config_phase {
+            worst_config_phase = dev;
+        }
+        if worst > LINEAR_REL_TOL {
+            return Err(format!(
+                "[{name}] configuration amplitude {ci} is not MadGraph's AMP() up to one \
+                 phase (max element-wise deviation {worst:.3e}) at {worst_config_where}"
+            )
+            .into());
+        }
+        if dev > LINEAR_REL_TOL {
+            return Err(format!(
+                "[{name}] configuration amplitude {ci} differs from MadGraph's AMP() by \
+                 more than a phase: |k| = {:.17} (deviation {dev:.3e}). AMP2 is the \
+                 modulus of exactly this, so the configuration draw is off by |k|²",
+                k.norm()
+            )
+            .into());
+        }
+    }
+    if worst_amp2 > AMP2_REL_TOL {
+        return Err(format!(
+            "[{name}] eval_amp2 disagrees with MadGraph's own AMP2 accumulation: max \
+             relative deviation {worst_amp2:.3e} at {worst_amp2_where}"
+        )
+        .into());
+    }
+
     println!(
         "  [{name}] '{}' NGRAPHS={} NCOLOR={}: |M|² max_rel grid {:.2e} / event {:.2e}, \
          per-diagram {worst_diagram:.2e}{}, per-flow {worst_flow:.2e}, JAMP2 {worst_jamp2:.2e} \
-         (G = {:+.0}i, |G|-1 = {mag_dev:.1e}, {n_dropped} helicity combinations pruned)",
+         (G = {:+.0}i, |G|-1 = {mag_dev:.1e}, {n_dropped} helicity combinations pruned); \
+         {} configurations{}: amplitude {worst_config:.2e}, |k|-1 {worst_config_phase:.1e}, \
+         AMP2 {worst_amp2:.2e}, pruning moves AMP2 by {:.2e}",
         table.process,
         table.n_graphs,
         table.n_flows,
         m2.grid,
         m2.event,
-        if banks_amps { "" } else { " (not banked)" },
+        if per_diagram_fit { "" } else { " (not banked)" },
         g.im.signum(),
+        table.amp2_groups.len(),
+        if grouping_agrees {
+            ""
+        } else {
+            " (MadGraph merges some; AMP2 not compared)"
+        },
+        m2.amp2_pruned,
     );
 
     if !m2.failures.is_empty() {
@@ -800,9 +1054,13 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
     row.points_event = table.points.len() - row.points_grid;
     row.max_rel_grid = m2.grid;
     row.max_rel_event = m2.event;
-    row.per_diagram = banks_amps.then_some(worst_diagram);
+    row.per_diagram = per_diagram_fit.then_some(worst_diagram);
     row.per_flow = worst_flow;
     row.jamp2 = worst_jamp2;
+    row.n_configs = table.amp2_groups.len();
+    row.per_config = worst_config;
+    row.amp2 = grouping_agrees.then_some(worst_amp2);
+    row.amp2_pruned = m2.amp2_pruned;
     // Every row is compared as the full per-helicity × per-flow outer product;
     // nothing here weakens it to the two projections of it.
     row.factorized = false;

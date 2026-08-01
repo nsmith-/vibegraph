@@ -55,8 +55,8 @@ pub enum NodeType {
     FermionIn,
     /// Flow-out (bra) fermion current — `WaveformSlot::FermionOut`.
     FermionOut,
-    /// `Op::Flows`/`Op::Hels`: a variadic amplitude root. Never an operand, so it
-    /// has no output slot.
+    /// `Op::Flows`/`Op::Hels`/`Op::Configs`: a variadic amplitude root. Never an
+    /// operand, so it has no output slot.
     Sink,
 }
 
@@ -379,7 +379,7 @@ fn analyze_core<T>(
 
         // ── output type ──
         let out = match op {
-            Op::Flows | Op::Hels => NodeType::Sink,
+            Op::Flows | Op::Hels | Op::Configs => NodeType::Sink,
             _ => match leaf {
                 LeafKind::External { out, .. } => out,
                 LeafKind::RealConst => NodeType::RealConst,
@@ -389,13 +389,14 @@ fn analyze_core<T>(
         };
 
         // ── constness ──
-        // The `Flows`/`Hels` sinks are never foldable constants, even in the degenerate
-        // case of all-constant operands: they are variadic amplitude roots, not values.
+        // The `Flows`/`Hels`/`Configs` sinks are never foldable constants, even in the
+        // degenerate case of all-constant operands: they are variadic amplitude roots,
+        // not values.
         let cst = match leaf {
             LeafKind::External { .. } => false,
             LeafKind::RealConst | LeafKind::ScalarConst => true,
             LeafKind::NonLeaf => {
-                !matches!(op, Op::Flows | Op::Hels)
+                !matches!(op, Op::Flows | Op::Hels | Op::Configs)
                     && !kids.is_empty()
                     && kids.iter().all(|&k| is_const[k as usize])
             }
@@ -530,7 +531,8 @@ fn momentum_into(
         | Op::PMom
         | Op::PMomOut
         | Op::Flows
-        | Op::Hels => {}
+        | Op::Hels
+        | Op::Configs => {}
         // Momentum-preserving unary transforms.
         Op::Propagate | Op::ProjM | Op::ProjP | Op::MetricVout => add(buf, kids[0], 1),
         // Scalar contraction: sum of the two vectors' momenta.

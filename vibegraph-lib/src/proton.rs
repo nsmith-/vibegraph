@@ -90,7 +90,6 @@ use crate::hadronic::{
     EventScaleSource, HadronicError, RunningCouplingReport, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS,
     SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED, VEGAS_NBINS,
 };
-use crate::helas::color::flow_tags::select_flow;
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::grid::AlphaSInfo;
@@ -1180,7 +1179,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// it, which concrete flavour assignment inside that group, which way round the
     /// beams carry it, which helicity combination and which colour flow.
     ///
-    /// The four uniforms are consumed in that order. The draws are nested rather
+    /// The five uniforms are consumed in that order. The draws are nested rather
     /// than independent, and each is proportional to the term of the point's own
     /// value that the label names:
     ///
@@ -1190,15 +1189,18 @@ impl<'a> ProtonIntegrand<'a> {
     ///   parton luminosity at this event's `(x₁, x₂)` — the whole of what
     ///   distinguishes one member of a group from another, since they share the
     ///   matrix element exactly;
-    /// * the helicity `∝ |M_c|²` and the flow `∝ JAMP2(i)`, both evaluated at the
-    ///   argument the drawn ordering implies, as on a fixed-beam run.
+    /// * the helicity `∝ |M_c|²`, then the colour flow through
+    ///   [`AmplitudeEvaluator::select_color_flow`] — the integration configuration
+    ///   `∝ AMP2(d)` and the flow `∝ JAMP2(i)` inside that configuration's
+    ///   admitted set — all evaluated at the argument the drawn ordering implies,
+    ///   as on a fixed-beam run.
     ///
     /// All of them are selections, not sampling channels: the cross section sums
     /// over every one, and this reads accumulators that sum already contains. A
     /// caller may skip it entirely and integrate the same number.
     ///
     /// `None` when the point carries no weight, where no label is defined.
-    pub fn select_event(&self, event: &ProtonEvent, u: [f64; 4]) -> Option<ProtonSelection> {
+    pub fn select_event(&self, event: &ProtonEvent, u: [f64; 5]) -> Option<ProtonSelection> {
         // The diagonals are read at the event's own coupling, the one its |M|² was
         // taken at.
         self.apply_scale(event.scales.mu_r);
@@ -1255,8 +1257,9 @@ impl<'a> ProtonIntegrand<'a> {
         let sub = &self.subs[group];
         let eval = sub.evaluator();
         let mut hel_m2 = vec![0.0; eval.helicities().len()];
+        let mut amp2 = vec![0.0; eval.n_configs()];
         let mut jamp2 = vec![0.0; eval.n_flows()];
-        sub.eval_diagonals(argument, &mut hel_m2, &mut jamp2);
+        sub.eval_diagonals(argument, &mut hel_m2, &mut amp2, &mut jamp2);
         let drawn = eval.select_helicity(&hel_m2, u[2])?;
         let (_, order) = g.event_legs(member, ordering);
 
@@ -1265,7 +1268,7 @@ impl<'a> ProtonIntegrand<'a> {
             member,
             ordering,
             helicity: order.iter().map(|&leg| drawn[leg]).collect(),
-            flow: select_flow(&jamp2, u[3])?,
+            flow: eval.select_color_flow(&amp2, &jamp2, [u[3], u[4]])?,
         })
     }
 
@@ -2776,7 +2779,7 @@ mod tests {
         // by a sweep fine enough to land inside the smallest of them.
         let group_at = |u0: f64| {
             integ
-                .select_event(&event, [u0, 0.5, 0.5, 0.5])
+                .select_event(&event, [u0, 0.5, 0.5, 0.5, 0.5])
                 .expect("an accepted point has labels")
                 .group
         };
@@ -2810,7 +2813,7 @@ mod tests {
             for k in 0..SWEEP {
                 let u1 = (k as f64 + 0.5) / SWEEP as f64;
                 let s = integ
-                    .select_event(&event, [u0, u1, 0.5, 0.5])
+                    .select_event(&event, [u0, u1, 0.5, 0.5, 0.5])
                     .expect("an accepted point has labels");
                 assert_eq!(s.group, gi, "the group draw moved with the flavour draw");
                 counts[s.member][usize::from(s.ordering == BeamOrdering::Exchanged)] += 1;

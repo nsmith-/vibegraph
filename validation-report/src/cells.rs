@@ -156,9 +156,14 @@ impl RowFile {
                     Some(v) => exp(v),
                     None => "not banked".to_string(),
                 };
+                let amp2 = match self.value.get("amp2").and_then(Value::as_f64) {
+                    Some(v) => exp(v),
+                    None => "grouping merged by MadGraph".to_string(),
+                };
                 format!(
                     "NGRAPHS {}, NCOLOR {}; |M|^2 max rel {} over {} grid points and {} over {} event points; \
-                     per-diagram {per_diagram}, per-flow {}, JAMP2 {}{}",
+                     per-diagram {per_diagram}, per-flow {}, JAMP2 {}; {} configurations: \
+                     amplitude {}, AMP2 {amp2}, helicity pruning moves AMP2 by {}{}",
                     self.u64_at("n_graphs")?,
                     self.u64_at("n_flows")?,
                     exp(self.f64_at("max_rel_grid")?),
@@ -167,6 +172,9 @@ impl RowFile {
                     self.u64_at("points_event")?,
                     exp(self.f64_at("per_flow")?),
                     exp(self.f64_at("jamp2")?),
+                    self.u64_at("n_configs")?,
+                    exp(self.f64_at("per_config")?),
+                    exp(self.f64_at("amp2_pruned")?),
                     if self.bool_at("factorized") == Some(true) {
                         " (comparison factorized into its two projections)"
                     } else {

@@ -183,7 +183,7 @@ const ROWS: &[Row] = &[
         process: "u u~ > u u~",
         neval: 30_000,
         niter: 5,
-        mode: "info",
+        mode: "gate",
     },
     Row {
         key: "gg_to_ttx",
@@ -372,7 +372,7 @@ fn generate(
             continue;
         };
         integ.event_in_channel(point.channel, &point.u, &mut momenta);
-        let u = [rng.random(), rng.random(), rng.random()];
+        let u = [rng.random(), rng.random(), rng.random(), rng.random()];
         let Some(selection) = integ.select_event(&momenta, u) else {
             continue;
         };

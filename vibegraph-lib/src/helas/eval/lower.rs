@@ -70,7 +70,18 @@ const NC: i64 = 3;
 /// — bit-identical to a color-free lowering — and its single JAMP becomes the root
 /// with no `Flows` wrapper (the constant color factor is applied after the helicity
 /// sum at runtime instead).
-pub fn lower_flows(basis: &ColorBasis, evals: &HashMap<(usize, Vec<u8>), DiagramEval>) -> Ast<Sym> {
+///
+/// `configs` groups the `(diagram, chain)` amplitudes of each integration
+/// configuration (MadGraph's `AMP2` grouping). When it is non-empty the amplitude
+/// root is wrapped in an [`Op::Configs`] bundle carrying those amplitude subtrees
+/// alongside it, so their values stay readable off the arena after a run. They are
+/// the *same* nodes the JAMPs are built from — referenced, not rebuilt — so no
+/// arithmetic is added and the sharing is unchanged.
+pub fn lower_flows(
+    basis: &ColorBasis,
+    evals: &HashMap<(usize, Vec<u8>), DiagramEval>,
+    configs: &[Vec<(usize, Vec<u8>)>],
+) -> Ast<Sym> {
     let mut b = AstBuilder::new();
     // One lowered amplitude subtree per (diagram, chain), shared across the flows it
     // contributes to.
@@ -114,10 +125,28 @@ pub fn lower_flows(basis: &ColorBasis, evals: &HashMap<(usize, Vec<u8>), Diagram
         }
         jamps.push(sum_or_single(&mut b, terms));
     }
-    let root = if jamps.len() == 1 {
+    let amplitude = if jamps.len() == 1 {
         jamps[0]
     } else {
         b.add(Op::Flows, Sym::None, jamps)
+    };
+    // The configuration amplitudes are the *same* lowered subtrees the JAMPs are
+    // built from, referenced again — one DAG, so the common-subexpression sharing
+    // below is untouched and nothing is evaluated twice.
+    let mut bundle = Vec::with_capacity(1 + configs.len());
+    bundle.push(amplitude);
+    for amps in configs {
+        for key in amps {
+            let amp = *amp_cache
+                .get(key)
+                .expect("a configuration's amplitude is one the colour basis references");
+            bundle.push(amp);
+        }
+    }
+    let root = if configs.is_empty() {
+        amplitude
+    } else {
+        b.add(Op::Configs, Sym::None, bundle)
     };
     b.finish(root)
 }

@@ -112,35 +112,21 @@ them. Every one of them is a measurement that exists, not a suspicion.
   fix identified: mg5amcnlo `286feb8e6` ("change sde_strategy2 to avoid negative
   weights", 2025-01-27), first released in 3.6.2, never backported to 3.5.x
   (3.5.16 still carries the bug); provenance detail in note 27 §B1.
-- **`uux_to_uux` colour-flow frequencies — needs a per-diagram `AMP2`
-  accumulator.** Every kinematic observable agrees (min KS p `6.7e-3` over three
-  seeds) and so do the helicity frequencies, but the realised `ICOLUP` frequencies
-  do not: MadGraph writes the flow whose lines join each incoming pair on
-  **99.96%** of its events where we write it on **90.4%** (`∝ JAMP2` over every
-  flow, which is the banked `|JAMP1|²/|JAMP2|² = 8.5…9.0`), χ² 1015 on one degree
-  of freedom, stable across seeds. MadEvent's rule is now read end to end and
-  reproduced (note 27 §B3.1): `SELECT_COLOR` masks `JAMP2` with the integration
-  configuration's `ICOLAMP` row and keeps `∝ JAMP2` inside the mask. The table is
-  implemented as `LeadingColorFlows` and matches MadGraph's own generated
-  `coloramps.inc` row for row on `u u~ > u u~`, `g g > t t~` and `g g > g g`
-  (`color_cf.rs::leading_color_flows_match_madgraphs_coloramps`), and the masked
-  draw is `select_flow_reached_by`.
-  What is missing is the *conditioning variable*. MadEvent's configuration is an
-  amplitude share, `AMP2_j(x)/Σ AMP2(x)`; our sampling channel is a density share,
-  `α_j g_j(x)/g(x)`. Conditioning on ours was implemented and measured: χ² 1015 →
-  **7268**, our flow-1 share 90.4% → 51.0%. The reason is that our per-diagram
-  channels for a massless-propagator process are the *same map* — worst pairwise
-  relative density difference `0.000e0` over 2000 accepted points on both
-  `u u~ > u u~` (2 channels) and `g g > g g` (4 channels), α frozen at uniform,
-  per-channel σ 49.6/50.4 and 25/25/25/25 against MadGraph's 0.055/99.945. So the
-  channel index carries no information about which diagram produced the point.
-  Wanted: `AMP2_d`, the helicity-summed squared modulus of each diagram's coherent
-  amplitude, as a second folded root beside `Op::Flows` (the per-diagram
-  counterpart of `eval_jamp2`, accumulated only over diagrams that would carry a
-  MadGraph config — no four-point vertex, per `get_amp2_lines`), then the
-  per-event configuration drawn `∝ AMP2_d` and the `ICOLAMP` mask applied. That is
-  sampler-independent and reproduces MadGraph's marginal by construction. `samples`
-  cell informational until it lands. (`validate_samples.rs`, note 27 §B3.)
+- ~~**`uux_to_uux` colour-flow frequencies**~~ — ✅ **closed** (`v3-backlog` B6).
+  The realised `ICOLUP` frequencies are MadGraph's: **99.960%** against its
+  **99.960%**, χ² `0.0`/`0.7`/`0.3` on one degree of freedom (p `1.00`/`0.39`/
+  `0.58`) over three seeds, from χ² `1015` before. The rule is MadEvent's
+  `SELECT_COLOR` end to end — the integration configuration drawn per event
+  `∝ AMP2_d(x)`, then the flow `∝ JAMP2` inside that configuration's `ICOLAMP`
+  row (`AmplitudeEvaluator::select_color_flow`). `AMP2_d` rides on the same
+  compiled program as the JAMPs (`Op::Configs` bundles the per-diagram amplitude
+  wires under the root; `BoundAmplitude::eval_amp2` squares and helicity-sums
+  them), over the diagrams MadGraph gives a configuration — no four-point vertex,
+  per `get_amp2_lines`. Gated against MadGraph's own `AMP2` accumulators, which
+  every committed amplitude table now banks: configuration grouping and order,
+  each configuration amplitude against `AMP()` up to a per-diagram unit phase,
+  and `eval_amp2` against `Σ_hel |AMP^mg|²` (`1.5e-15` here, `3.5e-13` worst over
+  the suite, on the 25-diagram `e+ e- > mu+ mu- ta+ ta-` row). `samples` cell ⚠️ → **GATE**. (note 27 §B6.)
 - **The per-diagram multichannel builds degenerate maps for massless-propagator
   processes** (exposed by the above, not chased). On `u u~ > u u~` the two
   `DiagramChannel` densities are bit-identical at every probed point, and on
@@ -163,26 +149,17 @@ them. Every one of them is a measurement that exists, not a suspicion.
   **2 145 500 ± 3 414 pb** (rel −0.011%, pull −0.07, χ²/dof 0.51 over three
   seeds), flat across a 75k–1.2M budget ladder. `integrals` cell ⛔ → **GATE**;
   `samples` cell ⛔ → **info**, for the new finding below.
-- **`pp_to_bb_fixed` colour-flow frequencies** — the `uux_to_uux` finding above on
-  a second process, exposed by the first `samples` measurement this row could
-  take. Everything else agrees: kinematics at min KS p `9.7e-3`, helicity
-  frequencies at χ² p `0.57…0.78`, flavour-group frequencies at p `0.31…0.46`,
-  over three seeds. The realised `ICOLUP` frequencies do not: χ² `23…31` on five
-  degrees of freedom, p `1.0e-5…3.0e-4`, seed-stable. The excess is entirely in
-  the two sub-percent flows — MadGraph writes `0.07%` and `0.08%` of its events
-  there against our `0.23%` and `0.25%`, a factor `3.1…3.2` — while the two
-  dominant flows agree to about a percent of themselves. Note 27 §B3.2 explains
-  this shape too: the s-channel `g → b b̄` configuration admits *both* flows at
-  leading colour, so only the t/u configurations discriminate — which is why the
-  effect is 3× here against `uux_to_uux`'s 240×. The per-diagram `AMP2`
-  accumulator (the `uux_to_uux` entry above) settles both rows at once, and this
-  row is the sharper acceptance check for it: a mask that is merely *on*
-  reproduces a 99.96% split, but only correct per-configuration weights
-  reproduce a 3×. Not an
-  integration defect: this row's σ agrees at `−0.01%` and the ŝ floor cannot reach
-  the colour draw. `samples` cell informational.
-  (`validate_samples_proton.rs`
-  `generated_b_quark_events_agree_with_madgraphs_banked_ones`.)
+- ~~**`pp_to_bb_fixed` colour-flow frequencies**~~ — ✅ **closed** (`v3-backlog`
+  B6), and the sharper of the two acceptance checks the configuration draw had to
+  pass: its two sub-percent flows now land at **0.060%** and **0.070%** against
+  MadGraph's **0.070%** and **0.080%**, where an unconditioned `∝ JAMP2` draw put
+  them at `0.23%` and `0.25%`. `ICOLUP` χ² `2.0`/`2.5`/`5.2` on five degrees of
+  freedom (p `0.85`/`0.78`/`0.39`), from `23…31` before. A mask that is merely
+  *on* reproduces `uux_to_uux`'s 99.96/0.04; only the per-configuration weights
+  reproduce a factor 3. Everything else was already agreeing and still does:
+  kinematics min KS p `2.1e-2`, helicity frequencies χ² p `0.74…0.94`,
+  flavour-group frequencies p `0.20…0.62`, over three seeds. `samples` cell ⛔ →
+  **GATE**. (`validate_samples_proton.rs`, note 27 §B6.)
 - **Four llj partonic σ rows are unreachable, not merely ungated** — `uux_to_epemg`,
   `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux` are banked with cross sections
   and cost seconds to integrate, so L3 was to promote them to GATE. They cannot

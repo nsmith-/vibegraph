@@ -18,9 +18,12 @@ use num_rational::Ratio;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use crate::diagrams::DiagramSet;
+use crate::diagrams::{Diagram, DiagramSet};
 use crate::helas::color::colorize_process;
-use crate::helas::color::flow_tags::{color_flow_tags, ColorFlowTags, LeadingColorFlows, LegColor};
+use crate::helas::color::flow_tags::{
+    color_flow_tags, select_flow, select_flow_reached_by, ColorFlowTags, LeadingColorFlows,
+    LegColor,
+};
 use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::phasespace::rambo_massive;
@@ -73,6 +76,14 @@ pub struct AmplitudeEvaluator {
     /// Which flows each diagram reaches at leading order in `Nc` (MadGraph's
     /// `ICOLAMP`), read off the same basis as the flow tags.
     leading_color_flows: LeadingColorFlows,
+    /// The diagram behind each integration configuration, in configuration order —
+    /// the diagrams MadGraph writes an `AMP2` for (see
+    /// [`config_carrying_diagrams`]). Indexes [`Self::leading_color_flows`].
+    config_diagrams: Vec<usize>,
+    /// How many `(diagram, color chain)` amplitudes each configuration owns, parallel
+    /// to `config_diagrams`. All but a four-point-vertex diagram carry exactly one;
+    /// the sum is the width of the compiled program's configuration-amplitude row.
+    config_spans: Vec<usize>,
     /// Set by [`prune_zero_helicities`](Self::prune_zero_helicities) once it has
     /// actually dropped combinations. `eval_m2` on a pruned evaluator only sums the
     /// survivors, so it is correct only under that method's kinematic contract
@@ -149,9 +160,28 @@ impl AmplitudeEvaluator {
 
         // Pass 3: inline the color-factorized diagrams into one whole-amplitude AST
         // (one JAMP per flow under a `Flows` root, or a single scalar root when
-        // `NCOLOR = 1`), then intern the constants into the folded skeleton.
+        // `NCOLOR = 1`), then intern the constants into the folded skeleton. The
+        // configuration amplitudes ride under the same root.
         let n_diagrams = set.diagrams.len();
-        let symbolic = lower::optimize(lower::lower_flows(&basis, &evals));
+        let mut config_diagrams: Vec<usize> = Vec::new();
+        let mut configs: Vec<Vec<(usize, Vec<u8>)>> = Vec::new();
+        for d in config_carrying_diagrams(&set.diagrams) {
+            let mut chains: Vec<Vec<u8>> = evals
+                .keys()
+                .filter(|(diagram, _)| *diagram == d)
+                .map(|(_, chain)| chain.clone())
+                .collect();
+            chains.sort();
+            // A diagram the color basis never references contributes nothing to any
+            // flow, so it has no amplitude to square and no configuration either.
+            if chains.is_empty() {
+                continue;
+            }
+            config_diagrams.push(d);
+            configs.push(chains.into_iter().map(|chain| (d, chain)).collect());
+        }
+        let config_spans: Vec<usize> = configs.iter().map(Vec::len).collect();
+        let symbolic = lower::optimize(lower::lower_flows(&basis, &evals, &configs));
         let folded = Folded::build(&symbolic);
 
         // Read each flow's basis key back as color lines, giving the Les Houches
@@ -190,6 +220,8 @@ impl AmplitudeEvaluator {
             cf_matrix: basis.cf_matrix,
             color_flow_tags,
             leading_color_flows,
+            config_diagrams,
+            config_spans,
             pruned: false,
             zeroamp_nodes_before: 0,
             zeroamp_nodes_after: 0,
@@ -254,6 +286,56 @@ impl AmplitudeEvaluator {
         select_index(hel_m2, u).map(|c| self.helicities[c].as_slice())
     }
 
+    /// The colour flow an accepted event is written with, drawn from two uniform
+    /// variates — MadEvent's `SELECT_COLOR`.
+    ///
+    /// `u[0]` draws the integration configuration `∝ AMP2(d)`
+    /// ([`BoundAmplitude::eval_amp2`](super::run::BoundAmplitude::eval_amp2)), and
+    /// `u[1]` then draws the flow `∝ JAMP2(i)` over the flows *that configuration's
+    /// diagram reaches at leading colour* — its `ICOLAMP` row. Both steps are
+    /// selections: the cross section sums over configurations and over flows, and
+    /// this reads accumulators that decomposition already contains.
+    ///
+    /// The configuration is drawn rather than taken from the sampler's channel
+    /// because MadEvent's is not a sampling label either: under single-diagram
+    /// enhancement configuration `j`'s integrand carries `AMP2_j / Σ_i AMP2_i`, so
+    /// the configurations of the events a run writes follow that amplitude share
+    /// whatever the sampler did. Conditioning on our own sampled channel instead is
+    /// measurably not the same thing: for a process whose propagators are all
+    /// massless the per-diagram channel maps degenerate onto one another, so the
+    /// channel index carries no information about which diagram produced the point.
+    ///
+    /// A process whose colour basis has one flow reduces to a no-op: every diagram
+    /// reaches the single flow, so the mask admits everything and the draw returns
+    /// flow 0 for any variate. `None` when no flow carries weight at all.
+    pub fn select_color_flow(&self, amp2: &[f64], jamp2: &[f64], u: [f64; 2]) -> Option<usize> {
+        // Asserted rather than debug-asserted for the reason `select_helicity`
+        // gives: a short weight vector draws from a prefix and returns a label that
+        // looks valid.
+        assert_eq!(
+            amp2.len(),
+            self.n_configs(),
+            "amp2 weights must cover the integration configurations"
+        );
+        assert_eq!(
+            jamp2.len(),
+            self.n_flows,
+            "jamp2 weights must cover the color flows"
+        );
+        match select_index(amp2, u[0]) {
+            Some(c) => select_flow_reached_by(
+                jamp2,
+                self.leading_color_flows.reached_by(self.config_diagrams[c]),
+                u[1],
+            ),
+            // No configuration carries weight here (or the process has none), so
+            // there is nothing to condition on and the draw runs over every flow —
+            // the same fallback `SELECT_COLOR` takes when its masked cumulant ends
+            // at zero.
+            None => select_flow(jamp2, u[1]),
+        }
+    }
+
     /// Return the number of color flows (NCOLOR).
     pub fn n_flows(&self) -> usize {
         self.n_flows
@@ -276,6 +358,28 @@ impl AmplitudeEvaluator {
     /// diagrams and the same flow order as the JAMPs.
     pub fn leading_color_flows(&self) -> &LeadingColorFlows {
         &self.leading_color_flows
+    }
+
+    /// The diagram behind each integration configuration, in the configuration order
+    /// [`BoundAmplitude::eval_amp2`](super::run::BoundAmplitude::eval_amp2) fills and
+    /// MadGraph's `ICOLAMP` columns run in. Indexes [`Self::leading_color_flows`], so
+    /// `leading_color_flows().reached_by(config_diagrams()[c])` is configuration `c`'s
+    /// admitted-flow mask.
+    pub fn config_diagrams(&self) -> &[usize] {
+        &self.config_diagrams
+    }
+
+    /// The number of integration configurations — the length of an `AMP2` vector.
+    pub fn n_configs(&self) -> usize {
+        self.config_diagrams.len()
+    }
+
+    /// How many `(diagram, color chain)` amplitudes each configuration owns —
+    /// the grouping MadGraph's `AMP2(k)` accumulator lines carry, and the layout
+    /// [`BoundAmplitude::run_config_amps`](super::run::BoundAmplitude::run_config_amps)
+    /// returns its values in.
+    pub fn config_amp_counts(&self) -> &[usize] {
+        &self.config_spans
     }
 
     /// Whether [`prune_zero_helicities`](Self::prune_zero_helicities) has dropped
@@ -466,6 +570,29 @@ pub(super) const MG_VALIDATED_PROCESSES: [&str; 18] = [
     "g u > e+ e- u QCD=2 QED=2",
     "g u~ > e+ e- u~ QCD=2 QED=2",
 ];
+
+/// The diagrams MadGraph gives an integration configuration — and therefore an
+/// `AMP2` accumulator and an `ICOLAMP` column — as indices into `diagrams`.
+///
+/// The rule is `get_amp2_lines` (`madgraph/iolibs/export_v4.py`): over the diagrams
+/// that have vertices at all, take the smallest of their largest vertex arities, and
+/// drop every diagram whose largest vertex exceeds it. In practice that keeps the
+/// diagrams built from three-point vertices only and drops the four-point contact
+/// ones — `g g > g g`'s four-gluon diagram gets no `AMP2` and no configuration, so
+/// nothing can be drawn to it and its colour structures never mask a flow.
+///
+/// A contact diagram still contributes to `|M|²` and to every JAMP it reaches; what
+/// it does not get is a *channel*, because it has no propagator to enhance.
+fn config_carrying_diagrams(diagrams: &[Diagram]) -> Vec<usize> {
+    let widest = |d: &Diagram| d.vertices.iter().map(|v| v.rays.len()).max();
+    let minvert = diagrams.iter().filter_map(widest).min();
+    (0..diagrams.len())
+        .filter(|&i| match (widest(&diagrams[i]), minvert) {
+            (Some(w), Some(m)) => w <= m,
+            _ => true,
+        })
+        .collect()
+}
 
 /// Helicity-filter threshold: a combination whose CF-contracted |M_c|² stays below
 /// `Σ_c |M_c|² · HEL_PRUNE_REL / NCOMB` at every probe point is dropped (MadGraph's
@@ -661,6 +788,100 @@ mod tests {
         assert!(
             any_fired,
             "zero-amplitude pass reclaimed no nodes on any probed process — it is inert"
+        );
+    }
+
+    /// The four-gluon contact diagram carries no integration configuration, and
+    /// every other diagram carries exactly one — MadGraph's `get_amp2_lines` rule,
+    /// on the process it is visible in. `u u~ > u u~` is the control: no contact
+    /// diagram, so both of its diagrams are configurations.
+    #[test]
+    fn the_four_point_contact_diagram_carries_no_configuration() {
+        let model = sm_model(SMRestrict::Default);
+        let opts = ParsingOptions::default();
+        for (process, n_diagrams, configs) in [
+            ("u u~ > u u~", 2, vec![0, 1]),
+            ("g g > t t~", 3, vec![0, 1, 2]),
+            // Diagram 0 is the four-gluon vertex; the s/t/u gluon exchanges follow.
+            ("g g > g g", 4, vec![1, 2, 3]),
+        ] {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+            assert_eq!(eval.n_diagrams(), n_diagrams, "[{process}] diagram count");
+            assert_eq!(
+                eval.config_diagrams(),
+                configs,
+                "[{process}] configuration-carrying diagrams"
+            );
+            // The contact diagram's three colour structures are three amplitudes; a
+            // configuration diagram has one apiece.
+            assert!(
+                eval.config_amp_counts().iter().all(|&n| n == 1),
+                "[{process}] configuration amplitude counts {:?}",
+                eval.config_amp_counts()
+            );
+        }
+    }
+
+    /// The colour draw is conditioned on the configuration, not merely masked by
+    /// something: on `u u~ > u u~` each configuration's `ICOLAMP` row admits exactly
+    /// one flow — the *other* one — so the drawn flow is fixed by the configuration
+    /// alone, and swapping the two configurations swaps the flow. A draw that
+    /// ignored the configuration, or that read the rows off by one, cannot
+    /// reproduce both rows.
+    #[test]
+    fn the_flow_is_decided_by_the_drawn_configuration() {
+        let model = sm_model(SMRestrict::Default);
+        let opts = ParsingOptions::default();
+        let pc = parse_proc_card("generate u u~ > u u~", &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, &model).unwrap();
+        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+
+        // Lopsided weights so the configuration draw is decided by u[0] alone, and
+        // JAMP2 weights that would send an unconditioned draw to flow 0 nine times
+        // in ten.
+        let jamp2 = [9.0, 1.0];
+        for (amp2, u0, want) in [
+            ([1.0, 0.0], 0.5, 1),
+            ([0.0, 1.0], 0.5, 0),
+            ([1.0, 1.0], 0.25, 1),
+            ([1.0, 1.0], 0.75, 0),
+        ] {
+            for u1 in [0.0, 0.5, 0.99] {
+                assert_eq!(
+                    eval.select_color_flow(&amp2, &jamp2, [u0, u1]),
+                    Some(want),
+                    "amp2 {amp2:?} at u = [{u0}, {u1}]"
+                );
+            }
+        }
+    }
+
+    /// A colourless process reduces the rule to a no-op: one flow, one all-admitting
+    /// `ICOLAMP` row, so every configuration draw lands on flow 0 and Drell-Yan
+    /// events are labelled exactly as they were before the rule existed.
+    #[test]
+    fn a_single_flow_process_always_selects_its_only_flow() {
+        let model = sm_model(SMRestrict::Default);
+        let opts = ParsingOptions::default();
+        let pc = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, &model).unwrap();
+        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+        assert_eq!(eval.n_flows(), 1);
+        assert_eq!(eval.n_configs(), 2, "both diagrams carry a configuration");
+        for u0 in [0.0, 0.3, 0.999] {
+            for u1 in [0.0, 0.3, 0.999] {
+                assert_eq!(
+                    eval.select_color_flow(&[1.0, 3.0], &[7.0], [u0, u1]),
+                    Some(0)
+                );
+            }
+        }
+        // Even with no configuration carrying weight, the event still gets its flow.
+        assert_eq!(
+            eval.select_color_flow(&[0.0, 0.0], &[7.0], [0.5, 0.5]),
+            Some(0)
         );
     }
 
