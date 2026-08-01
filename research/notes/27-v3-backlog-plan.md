@@ -1026,6 +1026,92 @@ re-bank makes moot; and the multi-flow colour coefficient matrix is still not
 banked, so the per-diagram *contribution* fit (`c_i·AMP(i)`) still runs on
 single-flow rows only.
 
+### B7 — the source-text-preserving LHE round trip
+
+B5's blocker as its own session, added post-B5 by the user. Scope: `lhef/`, the
+round-trip gate, and the `git archive` export proof B5 could not run while the
+gate was red. Nothing else — no re-cut bundle, no re-banked run.
+
+#### B7 outcome (2026-08-01) — ✅ closed, branch `v3b-b7`
+
+The blocker is gone: `banked_files_round_trip_byte_for_byte` is green on
+**34/34** banked event files, `pixi run --skip-deps validate` is green end to
+end, and the sprint's census reads **75 measured / 74 ✅ / 1 ⚠️** exactly as §B5
+predicted.
+
+**The falsifier came first and cleared.** §B5's diagnosis said the 20 failures
+were *formatting only* — that every field in a pass-through file decodes to the
+value our reader already reads, and only its spelling differs. If that were
+wrong, a source-text-preserving writer would still not reproduce the bytes. It
+reproduces all 34, including the two 200k-event Drell-Yan banks: 714 759 events
+and 3 711 197 particle lines, byte for byte.
+
+**What was built.** `lhef::parse` keeps each block's record lines as a
+`BlockSource` — one owned string per `<init>` and per `<event>`, covering the
+body from its start through the newline that ends the last record line —
+alongside the values it decoded from them. `lhef::write` splits that text back
+into lines and hands a line back **verbatim only after decoding it again and
+finding it to spell the record it is being asked to write**. Three consequences,
+and the third is the point:
+
+- the reuse is *checked*, not flagged. There is no mutation tracking and no
+  dialect enum; a caller who edits a field gets that line in this writer's
+  layout and the rest of the block in the file's own spelling, which is
+  MadGraph's own behaviour arrived at from the other direction;
+- the source is dropped where it stops describing the record —
+  `observables::canonical` reorders the legs, and a block whose record-line
+  count no longer matches (a leg added or dropped) is discarded whole rather
+  than matched up by guesswork;
+- a record *built* rather than read carries no source at all, so nothing this
+  crate generates changed. Both `generated_events_serialise_into_a_coherent_file`
+  samples came out at exactly the pre-change byte counts (5 921 500 and
+  7 241 598), which is the check that the fix cannot have leaked into the
+  emitted-events path.
+
+`LheInit` and `LheEvent` now compare on their values with a hand-written
+`PartialEq`: the source says how one file spelled a record, not what the record
+is, and a parsed block has to keep comparing equal to the same block built from
+scratch or every by-value round-trip check in the crate would start failing on
+files it reads correctly.
+
+**The gate would have got quietly weaker, so it was made to say so.** Once the
+writer hands a file its own text back, a pass-through run round-trips *whatever*
+this crate's columns are — the round trip on those 20 files is no longer evidence
+that our layout is MadGraph's. The gate therefore re-serialises every run a
+second time with the source dropped, requires at least one to still reproduce
+MadGraph's bytes, and prints the split: **14 of 34 in this writer's own layout,
+20 in the pass-through dialect**. That is 8 `lpp ≠ 0` runs plus B1's 6 3.5.7
+evidence runs, which is precisely the partition §B5 derived from `use_syst`,
+measured rather than assumed. A corpus that lost its converted runs now fails
+with a message saying what stopped being evidence.
+
+The gate also stopped looking only at each process's `run_01` and now sweeps
+every `Events/*/unweighted_events.lhe.gz`: the Higgs-window evidence runs, the
+two Drell-Yan banks and `var_sde1` are files MadGraph wrote too, and there was
+no reason for the format oracle to be blind to 8 of them. 26 runs → 34.
+
+**Cost, measured on the identical 34-file corpus** (`release-debug`, `/usr/bin/
+time -l`, two runs each): with the source carried and the second pass, **23.7 s**
+and **853 MB** peak RSS; with `source: None` forced at parse and the mismatch
+branch reduced to a counter, **22.3 s** and **724 MB**. Carrying a verified line
+is *cheaper* than formatting thirteen fields — the whole second pass costs about
+what the reformatting it replaces cost — and the extra memory is the owned line
+text of the two 200k-event banks. Owned strings rather than spans into the file:
+the measurement says the trade is right and spans would have put a lifetime on
+`LheFile` and every consumer of it.
+
+**The `refdata-3` export proof ran, and its first attempt failed on a defect in
+the acceptance script rather than in the tree**: `git archive` emits an *empty
+directory* for each submodule gitlink, so the script's
+`cp -R …/mg5amcnlo "$EXPORT/research/refs/mg5amcnlo"` nested the copy one level
+down and `sm_interned_blob` could not find the SM UFO source. With
+`cp -R …/mg5amcnlo/. "$EXPORT/research/refs/mg5amcnlo/"` the export runs the
+banked layer green from the local bundle alone — same sha256 `10892f05…` as the
+manifest pin, no re-cut — and reproduces this session's numbers exactly: the same
+34/34 with the same 14/20 dialect split, and the same
+`75 measured (74 ✅, 1 ⚠️, 4 ⏳, 16 ⛔, 9 —)` census. Worth knowing for anyone
+writing a "clean export" check against this repo.
+
 ## 3. What this sprint deliberately does not take
 
 - **`kt-clustering`** and everything ⛔ behind it (6 scale rows, 4 llj partonic
