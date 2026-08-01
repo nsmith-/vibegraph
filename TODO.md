@@ -19,11 +19,14 @@ rendered table, the findings register and the recommended order for the follow-u
 work — is note 25 §10.
 
 **Next**: the **`v3-backlog` sprint** — **active (launched 2026-08-01), note
-27; D1 = match MadEvent, D2 = delete**. Sessions B1–B5 take
-note 25 §10's order: the `h → τ⁺τ⁻` pole bin, the `hadronic-shat-floor`, the
-`uux_to_uux` colour-selection rule, banking Drell-Yan events for the two `dy13`
-cards, then hygiene riders + a single `refdata-3` re-cut. All items are in the
-validation backlog below with their evidence.
+27**. B1–B3 ✅ merged to the `v3-backlog` integration branch: the h→ττ pole is
+**MadGraph 3.5.7's defect** (fixed upstream in `286feb8e6`, first in 3.6.2),
+the general ŝ floor gates `pp_to_bb_fixed` σ at −0.011%, and the
+colour-selection premise is falsified in favour of a per-diagram `AMP2_d` draw
+(note 27 §B3.2). Decisions D1–D4 in note 27 §6 (D3 = oracle layer moves to
+3.7.1; D4 = `AMP2_d` is session B6). Remaining: **B4** (DY event banking at
+3.7.1) ∥ **B6** (`AMP2_d`), then **B5** (3.7.1 re-bank + hygiene +
+`refdata-3` re-cut + close-out).
 
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
@@ -101,12 +104,12 @@ them. Every one of them is a measurement that exists, not a suspicion.
   Standing evidence: `validation/madgraph/gen_higgs_window.sh` +
   `validation/madgraph/higgs_window_reference.json` (committed), measured live by
   `validate_samples.rs` `the_higgs_pole_window_is_measured_against_madgraph`.
-  **Open, and a decision rather than a session task:** the banked reference for
-  this row is defective, so `integrals` and `samples` stay informational — there is
-  no correct number to gate against. Re-banking it needs a MadGraph that weights
-  the resonant channel correctly (3.7.1, or 3.5.7 at `sde_strategy = 1`), which
-  changes both the pinned bundle and the question of which MadGraph the oracle
-  layer runs. For the user / B5.
+  **Decided (D3, 2026-08-01): the oracle layer moves to 3.7.1** — B4 banks with
+  it, B5 re-banks the rest and re-measures every banked gate (note 27 §B4/§B5);
+  this row's `integrals` cell becomes gateable for the first time then. Upstream
+  fix identified: mg5amcnlo `286feb8e6` ("change sde_strategy2 to avoid negative
+  weights", 2025-01-27), first released in 3.6.2, never backported to 3.5.x
+  (3.5.16 still carries the bug); provenance detail in note 27 §B1.
 - **`uux_to_uux` colour-flow frequencies — needs a per-diagram `AMP2`
   accumulator.** Every kinematic observable agrees (min KS p `6.7e-3` over three
   seeds) and so do the helicity frequencies, but the realised `ICOLUP` frequencies

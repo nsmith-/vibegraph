@@ -184,6 +184,21 @@ question of which MadGraph the oracle layer should run, so it is a decision, not
 a session task. Until then the `integrals` cell cannot be gated: there is no
 correct number to gate against.
 
+**Upstream provenance (post-session archaeology).** The fix is mg5amcnlo commit
+`286feb8e606a4e55951f6ea10ea0e3d145213b13` (Olivier Mattelaer, 2025-01-27,
+*"change sde_strategy2 to avoid negative weights"*). It changes both
+`get_channel_cut` branches: the spacelike one
+`/((t-Mass)*(t+Mass)+stot*1d-10)**2` → `/(t-Mass**2+stot*1d-10)**2`, and the
+resonant one from `tmp = (t-Mass)*(t+Mass)` with weight
+`(tmp²−(MΓ)²)/(tmp²+(MΓ)²)²` to `tmp = (t-Mass**2)` with a plain Breit–Wigner
+`1/(tmp²+(MΓ)²)`. The commit title names the second defect the expression fix
+alone would have exposed: with the corrected `tmp`, the old numerator
+`tmp²−(MΓ)²` is *negative* within one width of the pole, so the functional form
+had to change too. First released in **3.6.2** (absent from 3.6.0/3.6.1,
+present in all 3.7.x); **never backported to the 3.5.x LTS line** — 3.5.16, the
+latest, still carries `(t-Mass)*(t+Mass)` — so no 3.5.x re-run can be a valid
+narrow-resonance reference at `sde_strategy = 2`.
+
 ### B2 — `hadronic-shat-floor`
 
 Smallest and most contained. The general hadronic path derives every `ŝ` lower
@@ -460,11 +475,19 @@ Fills the last two `uncovered` cells a run can fill, and restores the
 Drell-Yan low-mass spectrum measurement the deleted `dy_dsigma_dmll.md` table
 stood in for.
 
+- **First: the oracle toolchain moves to MadGraph 3.7.1** (decision D3). The
+  banking runs must come from the pinned submodule's 3.7.1 — B1 proved 3.5.7's
+  `sde_strategy = 2` channel weight defective at narrow poles, and while the Z
+  at Γ/m = 2.7% is far from that regime, banking new references on a
+  known-defective version would build the next `refdata` on sand. Verify
+  `VERSION 3.7.x` in the produced banner, and record the mechanism (submodule
+  `bin/mg5_aMC` needs only plain Python + `six` to generate; `madevent` builds
+  with the pixi env's gfortran) so B5 reuses it for the full re-bank.
 - Oracle-layer MadGraph runs banking **events** for the two committed dy13
   cards — the committed cards with the fetched `lhaid 247000` set, *not* the
   existing banked run's MG-internal `nn23lo1`-at-dynamical-scale configuration,
-  which is exactly what made that run's events unusable as a reference. These
-  runs can start while B1–B3 are in flight; they join the bundle at B5.
+  which is exactly what made that run's events unusable as a reference. They
+  join the bundle at B5.
 - After B1 and B3 land: measure `pp_to_ll`'s `samples` cell with the standard
   3-seed KS/χ² protocol (and resolve whether `pp_to_ll_qcd0` gets its own cell
   or a covered-by, matching how its other cells point).
@@ -481,11 +504,19 @@ regenerates from a committed gate again.
 One session, because the bundle re-cut must happen exactly once (each re-cut
 costs a new archive and a new pin — note 25 §refdata-2).
 
-- **`refdata-3` re-cut**: adds B1's windowed run and B4's two DY event banks
-  (plus anything B2/B3 banked). Same verification protocol as `refdata-2`:
-  two assemblies byte-identical, all runs' decompressed event text sha256-
-  stable through pack/unpack, clean `git archive` export runs the banked layer
-  green from the bundle alone. Publish, flip the manifest pin.
+- **The 3.7.1 re-bank** (decision D3): regenerate the banked reference runs
+  with the submodule's 3.7.1 via the mechanism B4 records, then re-measure
+  every banked gate against the regenerated references — the h→ττ row's
+  `integrals` cell becomes gateable for the first time (its correct number now
+  exists), and any other cell that moves is a finding, not a nuisance: 3.5.7
+  and 3.7.1 must agree wherever B1's analysis says the defect cannot reach.
+- **`refdata-3` re-cut**: the re-banked runs, B1's windowed run and B4's two
+  DY event banks (plus anything B2/B3 banked). Same verification protocol as
+  `refdata-2`: two assemblies byte-identical, all runs' decompressed event
+  text sha256-stable through pack/unpack, clean `git archive` export runs the
+  banked layer green from the bundle alone. Publish, flip the manifest pin.
+- **`.gitignore` the stray `py.py`** mg5_aMC drops in the cwd (B1's note), or
+  make the drivers run MG from a scratch directory.
 - **`validate_madgraph_diagrams` → hermetic**: it reads committed files only
   and runs in 1.5 s; move the registration, flip the manifest tiers back to
   `hermetic`, and the whole `diagrams` column runs on a bare clone.
@@ -511,6 +542,31 @@ costs a new archive and a new pin — note 25 §refdata-2).
 
 Gate: `pixi run validate` green end-to-end on the new manifest; bundle
 round-trip verified; no hygiene item left half-moved.
+
+### B6 — the per-diagram `AMP2_d` accumulator (decision D4)
+
+The §B3.2 design as its own session, added post-B3 by the user. Scope:
+
+1. **Evaluator**: `AMP2_d = Σ_hel |A_d|²` per diagram as additional roots on
+   the *same* compiled program — tap the existing per-diagram amplitude
+   wires, add `|·|²` + helicity-fold nodes, keep one DAG so CSE sharing is
+   untouched and the event path reads scratch indices. Accumulate only over
+   diagrams that would carry a MadGraph config (no four-point vertex, per
+   `get_amp2_lines`); recheck the `prune_zero_helicities`/`folded_hel`
+   contract on the new roots.
+2. **Oracle first**: per-diagram `AMP2` values against MadGraph's own (the
+   f2py wrappers expose the `AMP2` array the generated `matrix1.f`
+   accumulates), before any selection change — the [[helas-debugging-lessons]]
+   order.
+3. **Selection**: draw the per-event configuration ∝ `AMP2_d(x)`, apply that
+   config's `ICOLAMP` mask (B3's `select_flow_reached_by`), weights ∝ JAMP²
+   inside the mask. DY must reduce to a no-op (single flow / all-true mask).
+4. **Gate**: `uux_to_uux` `ICOLUP` χ² clears the floor across 3 seeds
+   (99.96/0.04 reproduced) **and** `pp_to_bb_fixed`'s two sub-percent flows
+   land at MadGraph's 0.07–0.08% (the per-config-weight test a merely-on mask
+   cannot fake); `gg_to_ttx`/`gg_to_gg`/llj `samples` re-measured; Pythia
+   consumption re-run (event bytes change); both colour cells info → gate on
+   success.
 
 ## 3. What this sprint deliberately does not take
 
@@ -551,6 +607,20 @@ worktree-fragility rule and the B1/B3-before-B4 constraint verbatim.
    the integration channel's `ICOLAMP`-admitted flows, weights still ∝ JAMP²
    within the admitted set. (Contingent on B3's reading confirming the
    candidate algorithm; if MadEvent does something else, the session reports
-   back before implementing.)
+   back before implementing.) **Outcome: the contingency fired** — the premise
+   is falsified (§B3.2); superseded by D4.
 2. **D2 — `compact_events.py`: delete.** Note 26 records the verdict's
    numbers, git history keeps the script.
+3. **D3 — re-bank with MadGraph 3.7.1** (user, post-B1). The oracle layer
+   moves to the pinned submodule's 3.7.1; B4 banks its Drell-Yan events with
+   3.7.1 directly (verified in the banner), and B5 re-banks the remaining runs
+   with the same toolchain before the `refdata-3` re-cut, re-measuring every
+   banked gate against the regenerated references.
+4. **D4 — `AMP2_d` becomes its own session, B6** (user, post-B3): the
+   per-diagram helicity-summed `|AMP_d|²` accumulator of §B3.2, as additional
+   roots on the existing program DAG (CSE preserved, values read from scratch
+   indices), config drawn ∝ `AMP2_d` over configs (no four-point-contact
+   diagrams), `ICOLAMP` mask applied, with its own MadGraph `AMP2` oracle.
+   Acceptance: `uux_to_uux` 99.96/0.04 reproduced **and** `pp_to_bb_fixed`'s
+   two sub-percent flows at 0.07–0.08% (the sharper test — a merely-on mask
+   cannot fake per-config weights).
