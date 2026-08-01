@@ -1,0 +1,37 @@
+# MadGraph5 batch script: p p > j j on MadGraph's shipped run-card defaults.
+#
+# Why this exact process:
+#   - The canonical leading-order QCD process, and the only one in the set whose
+#     flavour group mixes subprocesses with *unequal* identical-particle
+#     symmetry factors: g g > g g and q q~ > g g carry 1/2, q g > q g and
+#     g g > q q~ carry 1. A group-wide factor taken from one member is wrong for
+#     the others here, where in every other multi-channel row it happens to be
+#     right.
+#   - Its scale is the general case rather than a degenerate one: a 2 -> 2 core
+#     of massless coloured legs at dynamical_scale_choice = -1, where the
+#     clustering has real freedom in which pair it merges and no closed form
+#     collapses the prescription.
+#
+# The run card is left at the shipped defaults — dynamical scale, ptj 20,
+# etaj 5, 10000 events, use_syst on — with two departures:
+#
+#   - ebeam1 = ebeam2 = 6500, stated rather than inherited, which is the value
+#     the defaults already carry and the energy every other hadronic reference
+#     here runs at.
+#   - pdlabel = lhapdf with lhaid 247000 (NNPDF23_lo_as_0130_qed) in place of
+#     the MG-internal nn23lo1. nn23lo1 is not an LHAPDF6 grid and cannot be read
+#     by this crate's PDF layer, so a run taking it could not be compared
+#     against at all; 247000 is the set the Drell-Yan, llj and b b~ references
+#     already use.
+#
+# The default jet cuts are the whole regulator: uncut, the cross section is
+# dominated by the collinear and soft region, so ptj 20 is what makes the
+# comparison measure the matrix element and the scale rather than the cutoff.
+generate p p > j j
+output pp_to_jj -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set pdlabel lhapdf
+  set lhaid 247000
+  done
