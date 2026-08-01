@@ -53,8 +53,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # `pixi-version` pinned to the version that writes `pixi.lock` locally:
+      # the action's default pixi is older and rejects lock files the current
+      # tool considers up-to-date.
       - uses: prefix-dev/setup-pixi@v0.9.0
         with:
+          pixi-version: v0.63.2
           environments: default
           cache: true
 
