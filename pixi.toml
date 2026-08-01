@@ -5,8 +5,13 @@ name = "vibegraph"
 platforms = ["osx-arm64", "linux-64"]
 version = "0.1.0"
 
-# Default environment: no conda deps (Rust toolchain managed by rustup)
+# Default environment: the Rust toolchain comes from rustup, not conda. `zstd`
+# is the one binary the layer's own scripts shell out to (the refdata bundle is
+# a tar.zst), and declaring it also keeps the environment non-empty on every
+# platform — pixi refuses to list an environment whose lock has no entry for
+# the host platform at all.
 [dependencies]
+zstd = "*"
 
 [tasks]
 install-samply = "which samply || cargo install --locked samply"
