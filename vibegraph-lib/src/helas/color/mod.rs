@@ -34,7 +34,10 @@ pub mod tensor;
 pub use coeff::ColorCoeff;
 pub use colorize::{colorize_process, BasisElement, ColorBasis, Contribution};
 pub use factor::{CanonicalString, ColorFactor, ColorString, ImmutableString};
-pub use flow_tags::{color_flow_tags, select_flow, ColorFlowTags, LegColor};
+pub use flow_tags::{
+    color_flow_tags, select_flow, select_flow_reached_by, ColorFlowTags, LeadingColorFlows,
+    LegColor,
+};
 pub use tensor::{ColorAlgebraError, ColorTensor, Idx, TensorKind};
 
 #[cfg(test)]

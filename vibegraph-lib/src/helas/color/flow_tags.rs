@@ -165,6 +165,102 @@ pub fn select_flow(jamp2: &[f64], u: f64) -> Option<usize> {
     select_index(jamp2, u)
 }
 
+/// The same draw restricted to the flows one diagram reaches at leading order in
+/// `Nc` ([`LeadingColorFlows`]): weights stay `∝ JAMP2(i)`, but every flow the
+/// diagram does not reach is given weight zero.
+///
+/// `reached` is that diagram's row; a row of the wrong length leaves the draw
+/// unrestricted. When the reached flows carry no probability at this point —
+/// none is reached, or all of their `JAMP2` vanish — the restriction is dropped
+/// and the draw runs over every flow, which is what still labels an event whose
+/// amplitude at this point is entirely subleading.
+///
+/// Both the mask and the fallback are MadEvent's `SELECT_COLOR`: it accumulates
+/// `JAMP2` over the flows its `ICOLAMP` row admits, and re-accumulates over every
+/// flow when that cumulant ends at zero.
+///
+/// The caller supplies the diagram. Nothing in the event path calls this yet —
+/// picking the diagram the way MadEvent does needs a per-diagram `AMP2` the
+/// evaluator does not accumulate, and the event path draws `∝ JAMP2` over every
+/// flow meanwhile.
+pub fn select_flow_reached_by(jamp2: &[f64], reached: &[bool], u: f64) -> Option<usize> {
+    if reached.len() != jamp2.len() {
+        return select_flow(jamp2, u);
+    }
+    let restricted: Vec<f64> = jamp2
+        .iter()
+        .zip(reached)
+        .map(|(&w, &ok)| if ok { w } else { 0.0 })
+        .collect();
+    select_index(&restricted, u).or_else(|| select_flow(jamp2, u))
+}
+
+/// Which colour flows each diagram of a subprocess reaches at the basis's
+/// highest power of `Nc` — MadGraph's `ICOLAMP`.
+///
+/// A diagram's colour factor spreads over several flows with different powers of
+/// `Nc`; the flows carrying the highest power are that diagram's leading-colour
+/// assignment, and the rest are its `1/N²`-suppressed pieces. MadEvent masks
+/// `JAMP2` with the row of the configuration it is integrating before drawing an
+/// event's colour flow, so this table is what decides which flow a Les Houches
+/// record can carry.
+///
+/// The maximum is taken over the whole basis rather than per diagram, matching
+/// MadGraph's `max_Nc`: a diagram that only ever appears suppressed reaches
+/// nothing, and the draw off its row falls back to the unrestricted one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LeadingColorFlows {
+    n_flows: usize,
+    /// Diagram-major: diagram `d`'s row is `reached[d * n_flows..][..n_flows]`.
+    reached: Vec<bool>,
+}
+
+impl LeadingColorFlows {
+    /// Read the table off a colour basis. `n_diagrams` is the subprocess's
+    /// diagram count, so a diagram no flow references still gets a row.
+    pub fn of(basis: &ColorBasis, n_diagrams: usize) -> Self {
+        let n_flows = basis.ncolor();
+        let max_nc = basis
+            .elements
+            .iter()
+            .flat_map(|e| e.contributions.iter())
+            .map(|c| c.coeff.nc_power)
+            .max();
+        let mut reached = vec![false; n_diagrams * n_flows];
+        if let Some(max_nc) = max_nc {
+            for (f, elem) in basis.elements.iter().enumerate() {
+                for contrib in &elem.contributions {
+                    if contrib.coeff.nc_power == max_nc && contrib.diagram < n_diagrams {
+                        reached[contrib.diagram * n_flows + f] = true;
+                    }
+                }
+            }
+        }
+        LeadingColorFlows { n_flows, reached }
+    }
+
+    /// The number of colour flows a row spans (NCOLOR).
+    pub fn n_flows(&self) -> usize {
+        self.n_flows
+    }
+
+    /// The number of diagrams the table has a row for.
+    pub fn n_diagrams(&self) -> usize {
+        if self.n_flows == 0 {
+            0
+        } else {
+            self.reached.len() / self.n_flows
+        }
+    }
+
+    /// Diagram `d`'s row, one flag per flow. Empty for a diagram outside the
+    /// table, which leaves [`select_flow_reached_by`] unrestricted.
+    pub fn reached_by(&self, diagram: usize) -> &[bool] {
+        let start = diagram * self.n_flows;
+        self.reached.get(start..start + self.n_flows).unwrap_or(&[])
+    }
+}
+
 /// Derive the per-leg `(colour, anticolour)` tags of every flow in `basis`.
 ///
 /// `legs` is the process's external legs in order (incoming first). Fails if a
@@ -394,5 +490,57 @@ mod tests {
         assert_eq!(select_flow(&w, 0.999), Some(2));
         assert_eq!(select_flow(&[0.0, 0.0], 0.5), None);
         assert_eq!(select_flow(&[f64::NAN], 0.5), None);
+    }
+}
+
+#[cfg(test)]
+mod masked_draw_tests {
+    use super::*;
+
+    /// The mask zeroes the flows a diagram does not reach, and the surviving
+    /// weights keep their `JAMP2` ratios: a diagram reaching only the smaller flow
+    /// must select it every time, which no reweighting of the full vector does.
+    #[test]
+    fn the_mask_removes_the_flows_a_diagram_does_not_reach() {
+        let jamp2 = [9.0, 1.0];
+        assert_eq!(select_flow_reached_by(&jamp2, &[false, true], 0.0), Some(1));
+        assert_eq!(
+            select_flow_reached_by(&jamp2, &[false, true], 0.999),
+            Some(1)
+        );
+        assert_eq!(
+            select_flow_reached_by(&jamp2, &[true, false], 0.999),
+            Some(0)
+        );
+        // Reaching both is the unrestricted draw, boundary included.
+        assert_eq!(select_flow_reached_by(&jamp2, &[true, true], 0.89), Some(0));
+        assert_eq!(select_flow_reached_by(&jamp2, &[true, true], 0.91), Some(1));
+        assert_eq!(select_flow(&jamp2, 0.91), Some(1));
+    }
+
+    /// Every route to "the mask carries no probability" falls back to the
+    /// unrestricted draw rather than to `None`: an event whose amplitude at this
+    /// point is entirely subleading still gets a colour flow, which is what
+    /// MadEvent's `SELECT_COLOR` does when its masked cumulant ends at zero.
+    #[test]
+    fn a_mask_carrying_no_probability_falls_back_to_every_flow() {
+        let jamp2 = [9.0, 1.0];
+        // Reaches nothing.
+        assert_eq!(
+            select_flow_reached_by(&jamp2, &[false, false], 0.5),
+            Some(0)
+        );
+        // Reaches a flow whose JAMP2 vanishes at this point.
+        assert_eq!(
+            select_flow_reached_by(&[0.0, 1.0], &[true, false], 0.5),
+            Some(1)
+        );
+        // A row of the wrong length is not a mask for these weights.
+        assert_eq!(select_flow_reached_by(&jamp2, &[true], 0.5), Some(0));
+        // With nothing to draw from at all there is still no label.
+        assert_eq!(
+            select_flow_reached_by(&[0.0, 0.0], &[true, true], 0.5),
+            None
+        );
     }
 }
