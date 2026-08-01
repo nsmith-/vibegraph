@@ -55,6 +55,16 @@ For paper references, submodule locations and key paths, and instructions for fe
 - **Keep a known-wrong informational comparison running** while a feature is under
   construction (enforce it later): it turns "the feature went live" into an instant
   end-to-end signal against the reference.
+- **ULP exactness is never the target.** This is numerical physics simulation:
+  last-ulp effects are always subdominant to some algorithmic limit — sampling
+  error, re-association when simplifying algebra, and eventually reduced
+  precision (f32 and below on GPUs). Don't pin float results to exact bits
+  across platforms (system libms legitimately differ at the last ulp), and
+  don't add dependencies to force bit-reproducibility. Set each tolerance at
+  the scale of the algorithm's own error, with measured headroom for ulp
+  noise. When a variation *is* intolerable at that scale, treat it as a
+  numerical-stability problem and reformulate the algorithm (ordering,
+  cancellation, conditioning) — not the comparison.
 
 ## Build & Test
 
