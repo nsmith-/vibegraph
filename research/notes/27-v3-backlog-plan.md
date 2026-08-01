@@ -91,6 +91,70 @@ bound from leptons, so `p p > b b~` gets `shat_min = 0`, an infinite
 Gate: two ⛔ cells become measured cells; the NaN path is dead by construction
 for any massive or pT-cut final state.
 
+#### B2 outcome — ✅ closed, branch `v3b-b2`
+
+**What MadGraph actually derives.** `setcuts.f:527-707` builds `smin` letter
+class by letter class. Each class accumulates `smin_p = Σᵢ max(e_X, pt_X, …)`
+over its legs and `smin_m = −Σᵢ mᵢ² + n(n−1)/2 · mm_XX²` over its pairs, takes
+`max(smin_p², smin_m, class extras)`, and *adds* the classes; line 707 then
+raises the total to `max(smin, (Σ pmass(i))², dsqrt_shat²)`. `genps.f:274`
+passes `smin/stot` to `sample_get_x` as `τ_min`, so this is the same quantity
+`Cuts::shat_min` feeds the `(τ, y)` map. For the banked `pp_to_bb_fixed` card
+(`ptb = 20`, `eb = mmbb = dsqrt_shat = 0`, `mb = 4.7`, `maxjetflavor = 4` so
+both b quarks are the `b` letter) only the b class fires:
+`max(40², −2·4.7², 0) = 1600`, then `max(1600, (2·4.7)², 0) = 1600 GeV²`.
+
+**What was implemented.** Not the per-class sum, which is a heuristic, but the
+two bounds behind it, taken at once over the whole final state. In the partonic
+centre of mass `√ŝ = Σᵢ Eᵢ`; a boost along the beam leaves each leg's transverse
+momentum alone, so the lab-frame `pT` a cut holds a leg above also bounds that
+leg's energy in that frame, and `Eᵢ ≥ max(mᵢ, pTᵢ)` gives
+
+```
+√ŝ  ≥  Σᵢ pTᵢ^min        and        √ŝ  ≥  Σᵢ mᵢ
+```
+
+for **any** number of outgoing legs — no back-to-back step, no two-body
+assumption. `shat_min` is the max of those two, `dsqrt_shat²`, and the existing
+`mmll²` term. Summing the transverse threshold over all classes at once equals
+MadGraph's value when one class is cut and is tighter when several are, and it
+is sound by the derivation, so it can only ever be at or above MadGraph's floor
+while still never exceeding a surviving point's own `ŝ`.
+
+The old narrow branch — "exactly two final legs, both leptons, `(2·ptl)²`" —
+is subsumed exactly: two leptons give `Σ pTᵢ^min = 2·ptl`.
+
+**Nothing else moved, by arithmetic and not by hope.** dy13 default and window:
+`Σ pT = 2·10 = 20` reproduces the old `(2·ptl)² = 400`, and `mmll² = 3600`
+still dominates the window card. llj: the new `(2·10 + 20)² = 1600` sits under
+its `mmll² = 2500`, so `τ_min` is unchanged and the row is bit-identical. Both
+were then re-run end to end (below).
+
+**Measurements.**
+
+| | |
+|---|---|
+| `shat_min` for `pp_to_bb_fixed` | **1600 GeV²**, asserted equal to the `setcuts.f` value, `ln(1/τ_min) = 11.568` |
+| σ, three seeds at 300k × 10 | **2 145 255 ± 961 pb** vs MG **2 145 500 ± 3 414 pb** — rel **−0.011%**, pull **−0.07**, χ²/dof **0.51** |
+| budget ladder (3-seed mean rel) | −0.07% @75k, +0.04% @150k, −0.01% @300k, −0.03% @600k, −0.00% @1.2M — flat, so the sweep measures agreement and not convergence |
+| seed scatter over the ladder | χ²/dof 0.48, 1.67, 0.51, 0.96, 0.91 |
+| samples, three seeds × 20 000 events | kinematics min KS p **9.7e-3**; `SPINUP` χ² p **0.57–0.78**; flavour χ² p **0.31–0.46**; **`ICOLUP` χ² 23–31 / 5 dof, p 1.0e-5–3.0e-4** |
+
+**One new finding, filed not chased** (scope control, §0): the `ICOLUP` column.
+The excess is entirely in the two sub-percent flows — MadGraph writes `0.07%`
+and `0.08%` of its events there against our `0.23%` and `0.25%` — while the two
+dominant flows agree to about a percent of themselves. Same shape and same
+direction as `uux_to_uux`: MadEvent concentrates on the flows the integration
+channel's own diagram admits, we spread `∝ JAMP2`. **B3's D1 change should move
+this row**, so it is worth re-measuring inside B3 rather than diagnosing on its
+own. It is not an integration defect — σ agrees at −0.01% and the ŝ floor cannot
+reach the colour draw.
+
+Cells: `integrals` ⛔ → **banked/gate**, `samples` ⛔ → **banked/info**.
+
+**For B5.** The `pp_to_bb_fixed` `samples` cell is a candidate to flip to `gate`
+after B3 lands; nothing else here needs re-cutting the bundle.
+
 ### B3 — the `uux_to_uux` colour-selection rule
 
 The only place validation-3 found where what we hand a shower differs from
