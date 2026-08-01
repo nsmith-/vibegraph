@@ -881,7 +881,7 @@ fn eval_probe(
     for id in ast.iter() {
         let node = ast.value(id);
         let value = match node.op {
-            Op::Hels | Op::Flows => WaveformSlot::Empty,
+            Op::Hels | Op::Flows | Op::Configs => WaveformSlot::Empty,
             _ => {
                 let ids = ast.children_ids(id);
                 apply(node, ids.len(), |i| &out[ids[i] as usize], &env)

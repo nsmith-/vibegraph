@@ -568,6 +568,108 @@ The §B3.2 design as its own session, added post-B3 by the user. Scope:
    consumption re-run (event bytes change); both colour cells info → gate on
    success.
 
+#### B6 outcome (2026-08-01) — ✅ closed, branch `v3b-b6`
+
+Both acceptance targets reproduced, and the two colour `samples` cells are `gate`.
+
+**The evaluator.** A new `Op::Configs` root bundles the amplitude root with the
+per-configuration diagram amplitudes: `(Configs <Flows|scalar> A_0 … A_{k-1})`,
+where each `A_d` is the *same* lowered subtree the JAMPs are built from,
+referenced again. One DAG, no arithmetic added, CSE untouched; the helicity
+expansion carries the bundle through, `Program::build` records the amplitudes'
+scratch indices alongside the JAMP ones, and `BoundAmplitude::eval_amp2` reads
+them back squared and helicity-summed. Which diagrams get one is
+`get_amp2_lines`' own rule — drop any diagram whose widest vertex exceeds the
+narrowest diagram's widest — so `g g > g g`'s four-gluon contact diagram gets no
+configuration and its three colour structures never mask a flow.
+
+Deviation from the sketch: the `|·|²` and the helicity fold are **not** arena
+nodes. The arena has no real-valued square or fold op, adding one would touch the
+op↔s-expr bijection, the layout, the egraph schema and the op-coverage allowlist,
+and it would buy nothing — `eval_jamp2` already forms exactly this shape in Rust
+off the helicity-expanded root, once per accepted event. `eval_amp2` is its
+per-diagram twin.
+
+**The oracle, first and hermetic.** Every committed amplitude table now banks
+`amp2_groups`, the `AMP()` indices each `AMP2()` accumulator of MadGraph's own
+generated `matrix1.f` sums, and the three multi-flow tables bank `AMP()` itself
+(built against the *banked* `matrix1_orig.f`; the probe reproduces every banked
+`JAMP` to ≤4.1e-16, which is what makes the addition safe). `amplitude_oracle`
+then checks, on all 19 rows:
+
+- the configuration count and grouping are MadGraph's, in MadGraph's order —
+  `g g > g g` gives `[[3],[4],[5]]`, i.e. `AMP(1..3)` (the contact diagram) carry
+  none;
+- each configuration amplitude is MadGraph's `AMP()` up to a per-diagram unit
+  phase (worst residual 1.7e-13, worst `||k|-1|` 8.0e-14 across the suite);
+- `eval_amp2` reproduces `Σ_hel |AMP^mg|²` per configuration: `uux_to_uux`
+  1.5e-15, `gg_to_ttx` 2.1e-15, `gg_to_gg` 1.5e-15, `uux_to_epemg` 2.0e-14, and
+  3.5e-13 worst over the suite (`ee_to_mumu_tata_qcd0`, 25 configurations).
+
+The phase is fitted **per diagram**, not globally: MadGraph puts the
+annihilation/exchange relative sign in the colour coefficient and we put it in
+the diagram root, so a global fit would show a spurious residual. `|k| = 1` is
+the half with teeth, and it is exactly the claim `AMP2` rests on.
+
+Two findings fell out of the oracle:
+
+1. **MadGraph's export merges some configurations, and it is not derivable from
+   the diagram list.** The banked exports use `get_amp2_lines`' `config_map`
+   branch, where diagrams the channel mapping calls one topology are summed
+   *coherently* into one accumulator. In the whole banked set it fires once:
+   `e+ e- > e+ e-` merges its two t-channel diagrams (photon and Z) into config
+   3, so MadGraph has 3 configurations where we derive 4. Recorded as
+   `KNOWN_CONFIG_MERGE` with the reason it cannot reach an event: the process is
+   colourless, its single `ICOLAMP` row admits everything, and the configuration
+   label is unobservable. The entry is two-way — if the grouping ever agrees, the
+   gate fails on the stale exemption.
+2. **Helicity pruning moves `AMP2`, and by a lot.** `|M|²` is bit-for-bit under
+   pruning because the dropped combinations are ~1e-30 of the coherent sum; the
+   *incoherent* per-diagram sum has no such protection. Measured:
+   `gg_to_ttx` **39.5%**, `gg_to_gg` **3.2%**, every other row exactly 0. The
+   dropped combinations are the ones that vanish by `J_z` conservation about the
+   beam axis, whose individual diagram amplitudes do not vanish at all. The
+   production path draws on the pruned evaluator, which is the analogue of
+   MadEvent's own `GOODHEL`-filtered accumulation (`|T| > ANS·LIMHEL/NCOMB`,
+   `LIMHEL = 1e-8` against our 1e-24), and the measured `ICOLUP` frequencies say
+   it is the right one — `gg_to_ttx` sits at p 0.46 to 0.71. The gate measures the
+   gap every run rather than assuming it away.
+
+**Selection.** `AmplitudeEvaluator::select_color_flow(amp2, jamp2, [u0, u1])` is
+`SELECT_COLOR`: configuration `∝ AMP2(d)`, then flow `∝ JAMP2(i)` inside that
+configuration's `ICOLAMP` row, with B3's fallback when the mask carries no
+probability. Both event paths (`FixedBeamIntegrand::select_event`,
+`ProtonIntegrand::select_event`) now take one more uniform and call it. A
+single-flow process reduces to a no-op by construction, asserted directly.
+
+**Measured** (3 seeds each, 20k events, against MadGraph's banked samples):
+
+| row | ICOLUP before | ICOLUP after |
+|---|---|---|
+| `uux_to_uux` | 90.4% vs 99.96%, χ² 1015 / 1 dof | **99.960% vs 99.960%**, χ² 0.0 / 0.7 / 0.3, p 1.00 / 0.39 / 0.58 |
+| `pp_to_bb_fixed` | 0.23%, 0.25% vs 0.07%, 0.08%; χ² 23–31 / 5 | **0.060%, 0.070% vs 0.070%, 0.080%**; χ² 2.0 / 2.5 / 5.2, p 0.39–0.85 |
+| `gg_to_ttx` | (gate) | χ² 0.6 / 0.1 / 0.5 on 1 dof, p 0.46–0.71 |
+| `gg_to_gg` | p 0.003 | χ² 14.0–18.1 / 5, p 2.8e-3 to 1.6e-2 — unmoved |
+| `pp_to_llj_fixed` | (gate) | χ² 3.3–8.3 / 5, p 0.14–0.65 |
+
+`gg_to_gg` not moving is worth keeping in view: its three configurations reach
+four of six flows each, so the mask is live, and the residual is in the two
+double-share flows rather than in a suppressed one. It clears the 1e-4 floor and
+stays a gate, but it is the row where a further colour-selection subtlety would
+show up first.
+
+Cells: `uux_to_uux` `samples` ⚠️ info → **gate**, `pp_to_bb_fixed` `samples`
+⛔ info → **gate**.
+
+**For B5.** The three multi-flow amplitude tables now carry `amps`, so a
+`generate-amplitude-tables` re-run must have `mg_amp_probe_*` built for them —
+`build_amplitude.sh` already does. Worth filing separately: those tables' banked
+`AMP()` come from a probe built beside the banked matrix element rather than from
+the same binary that produced their `JAMP()` (agreeing to 4.1e-16), which a full
+re-bank makes moot; and the multi-flow colour coefficient matrix is still not
+banked, so the per-diagram *contribution* fit (`c_i·AMP(i)`) still runs on
+single-flow rows only.
+
 ## 3. What this sprint deliberately does not take
 
 - **`kt-clustering`** and everything ⛔ behind it (6 scale rows, 4 llj partonic

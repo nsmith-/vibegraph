@@ -67,6 +67,16 @@ pub enum Op {
     /// (`Folded::expand_helicities`); like [`Op::Flows`], it computes nothing itself —
     /// the helicity-summed |M|² reads its children's scalars out of the arena.
     Hels,
+    /// Variadic root bundling the amplitude with the per-configuration diagram
+    /// amplitudes: `(Configs <amplitude root> A_0 A_1 … A_{k-1})`. Child 0 is the
+    /// amplitude root proper (a single JAMP scalar, or the [`Op::Flows`] node for a
+    /// multi-flow colour basis); the rest are the colour-stripped amplitudes of the
+    /// diagrams MadGraph gives an integration configuration, in configuration order.
+    /// Squared and summed over helicities they are MadGraph's `AMP2`, which is what a
+    /// per-event configuration draw reads. Like [`Op::Flows`] it computes nothing —
+    /// keeping the wires under the root is what keeps their slots live to the end of
+    /// the pass, so the values are read out of the arena afterwards.
+    Configs,
     // ── Lorentz primitives (semantics mirror the old `LorentzEvalNode`) ──
     /// 2 fermions → off-shell vector current.
     GammaVout,

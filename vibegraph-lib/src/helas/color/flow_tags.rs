@@ -156,11 +156,14 @@ impl ColorFlowTags {
 /// Draw a colour-flow index with probability `JAMP2(i) / Σⱼ JAMP2(j)` from a
 /// uniform variate `u ∈ [0, 1)`. `None` when the weights carry no probability.
 ///
-/// This is a categorical draw off a diagonal accumulator (MadGraph's
-/// `SELECT_COLOR`); it selects a flow for the event record and never enters the
-/// integrand, so it has no effect on the cross section. It is the same draw the
-/// per-event helicity selection makes off `|M_hel|²`, so both share one
-/// definition ([`select_index`]).
+/// This is a categorical draw off a diagonal accumulator; it selects a flow for
+/// the event record and never enters the integrand, so it has no effect on the
+/// cross section. It is the same draw the per-event helicity selection makes off
+/// `|M_hel|²`, so both share one definition ([`select_index`]).
+///
+/// The unrestricted form. MadEvent's `SELECT_COLOR` runs it over the flows one
+/// integration configuration admits ([`select_flow_reached_by`]) and falls back
+/// to this when that mask carries no probability.
 pub fn select_flow(jamp2: &[f64], u: f64) -> Option<usize> {
     select_index(jamp2, u)
 }
@@ -179,10 +182,10 @@ pub fn select_flow(jamp2: &[f64], u: f64) -> Option<usize> {
 /// `JAMP2` over the flows its `ICOLAMP` row admits, and re-accumulates over every
 /// flow when that cumulant ends at zero.
 ///
-/// The caller supplies the diagram. Nothing in the event path calls this yet —
-/// picking the diagram the way MadEvent does needs a per-diagram `AMP2` the
-/// evaluator does not accumulate, and the event path draws `∝ JAMP2` over every
-/// flow meanwhile.
+/// The caller supplies the diagram; the event path picks it the way MadEvent
+/// does, by drawing the integration configuration `∝ AMP2` (see
+/// [`AmplitudeEvaluator::select_color_flow`](crate::helas::eval::AmplitudeEvaluator::select_color_flow),
+/// which composes the two steps).
 pub fn select_flow_reached_by(jamp2: &[f64], reached: &[bool], u: f64) -> Option<usize> {
     if reached.len() != jamp2.len() {
         return select_flow(jamp2, u);

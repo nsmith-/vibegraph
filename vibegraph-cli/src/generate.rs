@@ -318,7 +318,12 @@ impl EventSource for SampleSource<'_> {
             .event_in_channel(point.channel, &point.u, &mut self.momenta);
         let selection = self.integrand.select_event(
             &self.momenta,
-            [self.rng.random(), self.rng.random(), self.rng.random()],
+            [
+                self.rng.random(),
+                self.rng.random(),
+                self.rng.random(),
+                self.rng.random(),
+            ],
         )?;
         let externals: Vec<[f64; 4]> = self
             .integrand
@@ -768,6 +773,7 @@ impl EventSource for ProtonSampleSource<'_> {
         let selection = self.integrand.select_event(
             &event,
             [
+                self.rng.random(),
                 self.rng.random(),
                 self.rng.random(),
                 self.rng.random(),
