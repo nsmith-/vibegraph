@@ -75,6 +75,8 @@ use libtest_mimic::{Arguments, Failed, Trial};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use common::report::AmplitudesRow;
+
 use vibegraph::diagrams::DiagramSet;
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::C;
@@ -469,7 +471,26 @@ fn worst_deviation(entries: &[Entry], g: C<f64>, scale: f64) -> (f64, String) {
     (worst, what)
 }
 
+/// The trial, and the report row it writes either way: a failure is a cell the
+/// collator has to see as failed, not a cell that silently went missing.
 fn run_trial(path: PathBuf) -> Result<(), Failed> {
+    let key = path.file_stem().unwrap().to_string_lossy().into_owned();
+    match measure(path) {
+        Ok(row) => {
+            row.write();
+            Ok(())
+        }
+        Err(failed) => {
+            let mut row = AmplitudesRow::new(&key, "", "gate");
+            row.status = "fail";
+            row.note = Some(failed.message().unwrap_or_default().to_string());
+            row.write();
+            Err(failed)
+        }
+    }
+}
+
+fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{e}"))?;
     let table = parse_table(&json);
@@ -771,7 +792,21 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
         )
         .into());
     }
-    Ok(())
+
+    let mut row = AmplitudesRow::new(name, &table.process, "gate");
+    row.n_graphs = table.n_graphs;
+    row.n_flows = table.n_flows;
+    row.points_grid = table.points.iter().filter(|p| p.set == "grid").count();
+    row.points_event = table.points.len() - row.points_grid;
+    row.max_rel_grid = m2.grid;
+    row.max_rel_event = m2.event;
+    row.per_diagram = banks_amps.then_some(worst_diagram);
+    row.per_flow = worst_flow;
+    row.jamp2 = worst_jamp2;
+    // Every row is compared as the full per-helicity × per-flow outer product;
+    // nothing here weakens it to the two projections of it.
+    row.factorized = false;
+    Ok(row)
 }
 
 fn main() {

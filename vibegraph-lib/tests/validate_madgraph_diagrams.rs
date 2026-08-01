@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use common::report::DiagramsRow;
 use libtest_mimic::{Arguments, Failed, Trial};
 use vibegraph::diagrams::{self, generate_from_proc_card, DiagramSet, ParsingOptions};
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
@@ -285,16 +286,37 @@ fn run_trial(key: &str, mg_counts: &DiagramCounts) -> Result<(), Failed> {
     println!(
         "  vibegraph: {total_count} total diagrams ({unique_topology_count} unique topologies)"
     );
+    let informational = INFORMATIONAL_ROWS.iter().find(|(row, _)| *row == key);
+    let mut row = DiagramsRow::new(
+        key,
+        &process_str,
+        if informational.is_some() {
+            "info"
+        } else {
+            "gate"
+        },
+    );
+    row.ours = unique_topology_count;
+    row.theirs = mg_counts.total_diagrams;
+    row.ours_all_subprocesses = total_count;
+    row.note = informational.map(|(_, why)| (*why).to_string());
+
     if unique_topology_count != mg_counts.total_diagrams {
         let report = format!(
             "vibegraph: {unique_topology_count} unique topologies, MG5 reference: {}",
             mg_counts.total_diagrams
         );
-        match INFORMATIONAL_ROWS.iter().find(|(row, _)| *row == key) {
+        match informational {
             Some((_, why)) => println!("  informational: {report} — {why}"),
-            None => return Err(report.into()),
+            None => {
+                row.status = "fail";
+                row.note = Some(report.clone());
+                row.write();
+                return Err(report.into());
+            }
         }
     }
+    row.write();
     Ok(())
 }
 

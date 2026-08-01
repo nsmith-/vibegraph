@@ -52,15 +52,21 @@ fetch-refdata = "bash validation/fetch_refdata.sh"
 # visible. Nothing in the layer skips: the fetch tasks below are what supply its
 # inputs, and a gate that finds one missing fails naming it.
 #
+# It ends with the collator, which renders `target/validation-report/report.md`
+# out of the row files the gates wrote and fails when those are not the cells
+# `validation/manifest.toml` declares.
+#
 # One banked gate sits outside it: `validate-pythia` needs Pythia 8, so it runs
 # in its own environment (`pixi run -e pythia validate-pythia`) and this task
 # stays runnable without it.
-validate = { cmd = "cargo test --workspace --profile release-debug --features vibegraph/extended-validation,vibegraph-lib/extended-validation -- --nocapture", depends-on = [
+validate = { cmd = "bash validation/validate.sh", depends-on = [
     "init-sm-submodule",
     "fetch-pdf",
     "fetch-pdf-multigrid",
     "fetch-refdata",
 ] }
+# The collator alone, over whatever the last `validate` left behind.
+validation-report = "cargo run --profile release-debug -p vibegraph-validation-report"
 
 # The oracle layer's vibegraph side: the runs too heavy for the banked budget.
 # A stub until those rows have a driver.
