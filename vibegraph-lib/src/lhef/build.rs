@@ -277,6 +277,7 @@ impl SubprocessRecord {
             alpha_qcd: header.alpha_qcd,
             particles,
             trailer: Vec::new(),
+            source: None,
         })
     }
 }

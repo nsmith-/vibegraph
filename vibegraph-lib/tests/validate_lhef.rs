@@ -17,6 +17,17 @@
 //! spelling, the `px py pz E` permutation, the sign on a negative zero — against
 //! a file 10k events long that a real shower reads.
 //!
+//! # Two dialects, and only one of them is layout evidence
+//!
+//! MadGraph delivers its events in either of two spellings, depending on how
+//! much of the file its own Python post-processing had to convert (see the
+//! [`lhef`](vibegraph::lhef) module docs). The reader keeps what it was given
+//! and the writer hands it back, so a run in the pass-through dialect
+//! round-trips whatever this crate's own column layout is. The runs MadGraph
+//! reformatted are the ones that pin the layout, and the gate counts them and
+//! names one: a corpus that lost them would still be green, and would no longer
+//! be evidence for anything but the reader and the writer being inverse.
+//!
 //! # The error classes this gate provably cannot detect
 //!
 //! * **Anything about which event we generated.** The round-trip re-emits values
@@ -75,27 +86,40 @@ fn output_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output")
 }
 
-/// Every banked run directory carrying an unweighted event file.
+/// Every banked event file, named `<process>/<run>` and given by its path.
+///
+/// The whole work area is swept rather than each process's `run_01`, because the
+/// runs banked under another name — the Higgs-window evidence runs, the
+/// Drell-Yan event banks, the sampler variant — are files MadGraph wrote too and
+/// there is no reason for the format oracle to be blind to them.
 fn banked_runs() -> Vec<(String, PathBuf)> {
-    let mut runs: Vec<(String, PathBuf)> = std::fs::read_dir(output_dir())
-        .expect("MadGraph output directory")
-        .filter_map(|entry| {
-            let path = entry.ok()?.path();
-            if !path
-                .join("Events/run_01/unweighted_events.lhe.gz")
-                .is_file()
-            {
-                return None;
+    let mut runs = Vec::new();
+    for process in std::fs::read_dir(output_dir()).expect("MadGraph output directory") {
+        let process = process.expect("directory entry").path();
+        let Ok(events) = std::fs::read_dir(process.join("Events")) else {
+            continue;
+        };
+        for run in events {
+            let run = run.expect("directory entry").path();
+            let lhe = run.join("unweighted_events.lhe.gz");
+            if lhe.is_file() {
+                let name = format!(
+                    "{}/{}",
+                    process
+                        .file_name()
+                        .expect("process directory")
+                        .to_string_lossy(),
+                    run.file_name().expect("run directory").to_string_lossy()
+                );
+                runs.push((name, lhe));
             }
-            Some((path.file_name()?.to_string_lossy().into_owned(), path))
-        })
-        .collect();
+        }
+    }
     runs.sort();
     runs
 }
 
-fn banked_text(run: &Path) -> String {
-    let lhe = run.join("Events/run_01/unweighted_events.lhe.gz");
+fn banked_text(lhe: &Path) -> String {
     let out = Command::new("gzip")
         .args(["-dc", lhe.to_str().unwrap()])
         .output()
@@ -148,23 +172,36 @@ fn banked_files_round_trip_byte_for_byte() {
     // colour lines on the incoming legs; nothing in a lepton-beam file does.
     let mut hadronic_init = None;
     let mut coloured_incoming = None;
+    // Reading a file back gives the writer that file's own spelling of every
+    // field it did not change, so a run MadGraph delivered in the pass-through
+    // dialect would go on round-tripping however this writer formatted a number.
+    // The claim that our columns *are* MadGraph's rests on the runs its own
+    // post-processing reformatted, which is why they are counted and one of them
+    // is named: a corpus that lost them would still be green and would no longer
+    // be evidence.
+    let mut own_layout = None;
+    let mut converted = 0usize;
     for (name, run) in &runs {
         let text = banked_text(run);
-        let file = LheFile::parse(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let mut file = LheFile::parse(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
         let expected = record_span(&text);
-        let rendered = serialise(&file);
-        if rendered != expected {
-            let (line, (got, want)) = rendered
-                .lines()
-                .zip(expected.lines())
-                .enumerate()
-                .find(|(_, (a, b))| a != b)
-                .map(|(i, pair)| (i + 1, pair))
-                .unwrap_or((0, ("<length differs>", "<length differs>")));
-            panic!(
-                "{name}: re-serialised block {line} of the record span differs\n  \
-                 wrote    {got:?}\n  MadGraph {want:?}"
-            );
+        // Scoped: the largest banked run is 200k events, and its rendering is
+        // another hundred megabytes to hold alongside the file and the records.
+        {
+            let rendered = serialise(&file);
+            if rendered != expected {
+                let (line, (got, want)) = rendered
+                    .lines()
+                    .zip(expected.lines())
+                    .enumerate()
+                    .find(|(_, (a, b))| a != b)
+                    .map(|(i, pair)| (i + 1, pair))
+                    .unwrap_or((0, ("<length differs>", "<length differs>")));
+                panic!(
+                    "{name}: re-serialised block {line} of the record span differs\n  \
+                     wrote    {got:?}\n  MadGraph {want:?}"
+                );
+            }
         }
         if file.init.beam_pdg == [2212, 2212] && file.init.pdf_set != [0, 0] {
             hadronic_init.get_or_insert_with(|| name.clone());
@@ -178,8 +215,22 @@ fn banked_files_round_trip_byte_for_byte() {
             coloured_incoming.get_or_insert_with(|| name.clone());
         }
         let particles: usize = file.events.iter().map(|e| e.nup()).sum();
+
+        // The same records with the file's own text dropped: what this writer
+        // produces on its own, against the bytes MadGraph delivered.
+        file.init.source = None;
+        for event in file.events.iter_mut() {
+            event.source = None;
+        }
+        let dialect = if serialise(&file) == expected {
+            own_layout.get_or_insert_with(|| name.clone());
+            converted += 1;
+            "converted"
+        } else {
+            "pass-through"
+        };
         println!(
-            "{name}: {} events, {particles} legs, {} process entries -- byte-identical",
+            "{name}: {} events, {particles} legs, {} process entries -- byte-identical ({dialect})",
             file.events.len(),
             file.init.processes.len()
         );
@@ -194,11 +245,19 @@ fn banked_files_round_trip_byte_for_byte() {
         "no banked run carries colour lines on an incoming leg, so the round trip does not cover \
          the ICOLUP layout this crate writes for a coloured initial state",
     );
+    let own_layout = own_layout.expect(
+        "every banked run is in MadGraph's pass-through dialect, so all this gate shows is that \
+         the reader and the writer are inverse — nothing here pins this crate's own column layout \
+         against MadGraph's bytes any more",
+    );
     println!(
         "LHE format: {total_events} events / {total_particles} particle lines across {} banked \
          runs re-serialise byte-for-byte (hadronic <init> covered by {hadronic_init}, incoming \
-         colour lines by {coloured_incoming})",
-        runs.len()
+         colour lines by {coloured_incoming}); {converted} of them are in this writer's own \
+         layout with the source text dropped, {} in MadGraph's pass-through dialect \
+         (own layout pinned by {own_layout})",
+        runs.len(),
+        runs.len() - converted
     );
 }
 
@@ -216,7 +275,7 @@ fn the_round_trip_is_sensitive_to_every_convention_sensitive_field() {
     }
     // A gluon-initiated process, so every leg carries colour in both slots and a
     // slot swap is visible on every line.
-    let run = output_dir().join("gg_to_ttx");
+    let run = output_dir().join("gg_to_ttx/Events/run_01/unweighted_events.lhe.gz");
     if !run.exists() {
         vibegraph::validation::require(
             "the_round_trip_is_sensitive_to_every_convention_sensitive_field",
@@ -531,6 +590,7 @@ fn generate_and_check(row: &Row) {
             id: 1,
         }],
         trailer: vec![generator_element("vibegraph", "0.1", "")],
+        source: None,
     };
 
     let mut out = Vec::new();
