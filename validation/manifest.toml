@@ -87,17 +87,21 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 2
-archive = "vibegraph-refdata-2.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-2/vibegraph-refdata-2.tar.zst"
-sha256 = "4495d6dfe585f65902edad80381cd8714d18483397c4b2e3ce0fd98ef40e736c"
-size_bytes = 65066838
+version = 3
+archive = "vibegraph-refdata-3.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-3/vibegraph-refdata-3.tar.zst"
+sha256 = "10892f056efda8968ed6c05c06e95b94019d28e4875ee6dad018276e09adf5f9"
+size_bytes = 104789332
 unpacks_to = "validation/madgraph/output"
-# The `refdata-2` release carries the archive. While the repository is
-# private, the plain `url` serves 404 to unauthenticated clients and the fetch
-# falls back to an authenticated `gh release download` of the same asset;
-# $VIBEGRAPH_REFDATA_SOURCE still overrides both for a local bundle.
-published = true
+# Every run in this bundle is MadGraph 3.7.1's except the six that measure a
+# 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
+# `var_sde1`), which are the evidence and stay at the version they measure.
+#
+# While the repository is private, the plain `url` serves 404 to unauthenticated
+# clients and the fetch falls back to an authenticated `gh release download` of
+# the same asset; $VIBEGRAPH_REFDATA_SOURCE still overrides both for a local
+# bundle.
+published = false
 
 # ─────────────────────────── single-channel rows ────────────────────────────
 #
@@ -328,8 +332,8 @@ artifacts = ["output/ee_to_mumu_tata_qcd0", "output/ee_to_mumu_tata_qcd0.json", 
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate", note = "the two banked events within 40 MeV of the Higgs pole in m(tau tau) gate at 1e-11 rather than 1e-12: a narrow-resonance propagator amplifies the last bits of s, and at the worse of the two a one-ulp move of a momentum component moves |M|^2 by twice the deviation being gated" }
-integrals = { tier = "banked", mode = "info", note = "the reference is wrong, not this side. The whole +2.2% offset is the h -> tau tau pole, and MadGraph measures that pole as we do when asked for it directly: its own cross section over m(tau tau) in [124.9, 125.1] is 7.2077e-5 +- 2.9e-7 pb and over the complement 1.2965e-3 +- 3.4e-6 pb, summing to 1.36858e-3 pb against the 1.3373e-3 pb its own unwindowed run reports -- a 7.2-sigma failure of MadEvent to close against itself on its own quoted errors, while our 1.367e-3 pb sits 0.35 sigma from that sum. Cause: MadGraph 3.5.7, which produced every banked run, computes the sde_strategy=2 channel weight from (t-Mass)*(t+Mass) where t is already p^2 (get_channel_cut, genps.f), so the expression never vanishes on a pole; the resonant channel gets alpha 1.9e-3 instead of 1-1.2e-7 there and the 24 non-resonant channels, whose maps cannot resolve 6.4 MeV in a 500 GeV range, are left to find it. 3.7.1 uses t-Mass**2, and re-running 3.5.7 with sde_strategy=1 gives 1.3742e-3 +- 3.9e-6 pb. Informational until the reference is re-banked with a MadGraph that weights the resonant channel correctly" }
-samples = { tier = "banked", mode = "info", note = "the same resonance and the same verdict: m(ta+,ta-) is the worst observable at KS p 3.6e-6 and the helicity frequencies follow it (chi-squared 210 to 233 on 15 degrees of freedom, in the mass-suppressed same-sign tau categories), because the banked event sample inherits its own run's under-covered pole. Carries the m_ll-to-threshold binning that localised the offset and the windowed cross section that settled which side owns it" }
+integrals = { tier = "banked", mode = "gate", note = "the narrowest resonance under gate: a 6.4 MeV h -> tau tau peak in a 500 GeV range carrying 5% of the cross section, reached through the resonant channel's own mapping. rel_tol 0.02 is set by that channel's seed spread (0.45% over five seeds), not by the reference's error. This row is why the references are banked with MadGraph 3.7.1: 3.5.7 computes the sde_strategy=2 channel weight from (t-Mass)*(t+Mass) where t is already p^2 (get_channel_cut, genps.f), so the expression never vanishes on a pole, the resonant channel gets alpha 1.9e-3 instead of 1-1.2e-7 there, and the 24 non-resonant channels are left to find a peak their maps cannot resolve. 3.5.7 therefore reported 1.3373e-3 pb, 2.2% low and 7.2 sigma from the sum of its own windowed (7.2077e-5 +- 2.9e-7 pb over m(tau tau) in [124.9, 125.1]) and complementary (1.2965e-3 +- 3.4e-6 pb) cross sections; 3.7.1 uses t-Mass**2 and reports 1.3725e-3 +- 2.7e-6 pb, where this side already was" }
+samples = { tier = "banked", mode = "gate", note = "the resonance the integrals cell gates, seen in the event sample: against the 3.7.1 bank the worst observable is cos(ta+) at KS p 6.5e-2 and SPINUP is the worst column at chi-squared p 2.5e-1, where the 3.5.7 bank gave m(ta+,ta-) at KS p 3.6e-6 and chi-squared 210 to 233 on 15 degrees of freedom in the mass-suppressed same-sign tau categories -- the same under-covered pole its own cross section carried. Keeps the m_ll-to-threshold binning that localised the offset and the windowed cross section that settled which side owned it" }
 
 [[process]]
 key = "uux_to_ccx_emmm_qcd0"
@@ -374,10 +378,6 @@ class = "multi-channel"
 n_final = 2
 rationale = "Drell-Yan at default coupling orders: the flavour-group path over a proton beam, and — through the two committed dy13 run cards (default cuts, and the m_ll in [60,120] window) — the hadronic cross-section reference that pins the PDF luminosity, the flux and the cuts together."
 artifacts = ["output/pp_to_ll", "output/pp_to_ll.json", "output/dy13_default", "output/dy13_mmll_60_120", "hadronic_sigma_reference.json", "dy13_default_run_card.dat", "dy13_mmll_run_card.dat", "dy13_proc_card.dat", "dy13_param_card.dat"]
-# The two dy13 runs now bank events as well as a cross section, and those events
-# are not in the pinned bundle yet: a fetching checkout does not have them and the
-# next bundle has to pick them up.
-bundled = false
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union, not only the count" }
 amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"] }
