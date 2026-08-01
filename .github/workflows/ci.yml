@@ -14,11 +14,9 @@ name: ci
 # tests needing banked inputs use `#[cfg(feature = "extended-validation")]`.)
 #
 # `banked` is the **banked** layer: submodule checked out, reference data
-# fetched, `pixi run validate`. It is not a merge gate yet — the reference bundle
-# has a fetch seam but no published asset, so this job runs without the frozen
-# MadGraph runs and its gates fail naming them. `continue-on-error` marks that;
-# removing it goes with publishing the asset and adding `pixi run fetch-refdata`
-# to the fetch step below.
+# fetched (PDF sets + the pinned `refdata` bundle, a release asset), then
+# `pixi run validate`, which ends with the report collator. It is a merge gate:
+# every input is fetchable on a fresh runner, so a red cell is a red check.
 on:
   push:
     branches: [main]
@@ -48,7 +46,6 @@ jobs:
   banked:
     needs: test
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,17 +66,28 @@ jobs:
           cache-on-failure: true
 
       # Fetched reference data is not a cargo artifact: cached on the fetch
-      # scripts, so a changed pin re-fetches and nothing else does.
+      # scripts and the manifest pin, so a changed pin re-fetches and nothing
+      # else does.
       - uses: actions/cache@v4
         with:
-          path: validation/pdf
-          key: refdata-${{ hashFiles('validation/pdf/fetch.sh', 'validation/fetch_common.sh') }}
+          path: |
+            validation/pdf
+            validation/madgraph/output
+          key: refdata-${{ hashFiles('validation/pdf/fetch.sh', 'validation/fetch_common.sh', 'validation/fetch_refdata.sh', 'validation/manifest.toml') }}
 
       # Downloads are a step of their own rather than something a test triggers
       # by reaching for a file it cannot find, so what this job pulls from the
-      # network is visible in the log without reading any Rust.
+      # network is visible in the log without reading any Rust. The bundle is a
+      # release asset of this (private) repository, so its fetch authenticates
+      # with the workflow token.
       - name: Fetch reference data
-        run: pixi run fetch-pdf
+        env:
+          VIBEGRAPH_FETCH_CONSENT: "1"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pixi run fetch-pdf
+          pixi run fetch-pdf-multigrid
+          pixi run fetch-refdata
 
       # The task ends with the collator, so a green run here says the rendered
       # report matched the manifest's declared cell set as well as that every

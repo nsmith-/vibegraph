@@ -257,20 +257,15 @@ Small, independent, each one a gate that is weaker than it looks.
   banked because the *other* side of the comparison is the two fetched PDF sets,
   which `pixi run validate` now acquires (`fetch-pdf-multigrid` joined its
   dependencies).
-- **Publish the `refdata-2` release asset and make the CI banked job gating** —
-  user step, and the only thing standing between the `banked` job and being a
-  merge gate. `validation/madgraph/assemble_bundle.sh` builds
-  `vibegraph-refdata-2.tar.zst` (1786 files, 65 066 838 bytes, sha256
-  `4495d6df…f40e736c`, pinned in `validation/manifest.toml`) reproducibly from
-  the work area — two assemblies hash the same — and `validation/fetch_common.sh`
-  fetches and verifies it; the URL it points at is a `refdata-2` tag that does not
-  exist yet, so the path is exercised through `$VIBEGRAPH_REFDATA_SOURCE`
-  meanwhile, which is how the whole banked layer was run green on a clean export.
-  Tag + upload the asset, flip `[refdata].published`, then drop
-  `continue-on-error` from `ci.yml`'s `banked` job and add
-  `pixi run fetch-refdata` to its fetch step — the reason it is non-gating is
-  exactly that a fresh runner could not obtain the MadGraph runs. The report
-  artifact upload is already in place and runs `if: always()`.
+- ~~**Publish the `refdata-2` release asset and make the CI banked job
+  gating**~~ ✅ **done.** The `refdata-2` release carries
+  `vibegraph-refdata-2.tar.zst` (65 066 838 bytes, sha256 `4495d6df…f40e736c`,
+  matching the manifest pin), `[refdata].published = true`, and the `banked`
+  job fetches all three inputs and gates merges — `continue-on-error` is gone.
+  The repository being private means the plain release URL serves 404 to
+  unauthenticated clients; `vg_ensure_refdata` falls back to an authenticated
+  `gh release download` of the same asset (`GITHUB_TOKEN` in CI), and the
+  plain URL becomes live if the repository ever goes public.
 - ~~**The reference bundle double-compresses its event files**~~ ✅ **taken in
   the `refdata-2` re-cut.** Event files travel as plain Les Houches text and
   `vg_ensure_refdata` gzips them back as it unpacks, so no consumer changed:

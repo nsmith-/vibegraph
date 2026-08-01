@@ -99,6 +99,37 @@ vg_download() {
   mv "$dest.part" "$dest"
 }
 
+# vg_download_release_asset URL DEST WHAT — vg_download, plus a fallback for a
+# GitHub release URL the plain client is refused: a private repository serves
+# 404 to unauthenticated downloads, so retry the same tag and asset through an
+# authenticated `gh release download`. One consent covers both routes — they
+# name the same bytes on the same host.
+vg_download_release_asset() {
+  local url="$1" dest="$2" what="$3"
+  vg_consent "$what" "$url" || return 1
+  vg_say ">>> downloading $what"
+  vg_say "    $url"
+  if curl -sSL --fail -o "$dest.part" "$url"; then
+    mv "$dest.part" "$dest"
+    return 0
+  fi
+  rm -f "$dest.part"
+  case "$url" in
+    https://github.com/*/releases/download/*/*)
+      local slug tag
+      slug="${url#https://github.com/}" && slug="${slug%%/releases/*}"
+      tag="${url##*/download/}" && tag="${tag%%/*}"
+      if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+        vg_say "    plain download refused; retrying authenticated (private repository?)"
+        gh release download "$tag" --repo "$slug" --pattern "${dest##*/}" \
+          --output "$dest" --clobber && return 0
+      fi
+      vg_say "!!! plain download refused and no authenticated gh available"
+      ;;
+  esac
+  return 1
+}
+
 # ── the three declared inputs ────────────────────────────────────────────────
 
 # The pinned model source. Offline once the object cache exists, so it needs no
@@ -171,7 +202,7 @@ vg_ensure_refdata() {
     tarball="$source"
   else
     [ -n "$url" ] || vg_die "no [refdata] url in $VG_MANIFEST and no VIBEGRAPH_REFDATA_SOURCE"
-    vg_download "$url" "$tarball" "the banked MadGraph reference bundle ($archive)" || return 1
+    vg_download_release_asset "$url" "$tarball" "the banked MadGraph reference bundle ($archive)" || return 1
     downloaded=1
   fi
 
