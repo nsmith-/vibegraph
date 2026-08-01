@@ -152,22 +152,19 @@ One line each; the note is the full record. Earlier sprints
 
 ## 🧩 Feature backlog
 
-- **`identical-particle-permutation`** (sprint plan: note 28 §S1) — make the
-  symmetry factor a property of the phase-space map. `dΦ_n` over-counts a final state with identical particles
-  by `Π_s n_s!`; `dynamical-scales` added `final_state_symmetry_factor`
-  (`hadronic.rs`) but as a per-integrand scalar — the wrong home. Two latent
-  consequences, both smooth factor-of-`n!` σ errors: `FixedBeamIntegrand::new`
-  derives the factor from `amps[0]` and applies it to every subprocess, but in
-  `p p > j j` the factor differs between subprocesses whose mass lists agree
-  (`gg→gg` needs 1/2, `qq̄→qq̄` needs 1, both `[0,0]`). `ProtonIntegrand`
-  deliberately did not extend the `amps[0]` pattern — it *asserts* the factor is
-  1 for every group member and would refuse a group where it is not, which is
-  the right shape but only defers the question. The map knows its own
-  outgoing multiset, so deriving it there makes every consumer right by
-  construction, and settles whether multichannel treats permutations as distinct
-  channels or one channel with the factor folded in. Pair with a gate process
-  with a repeated outgoing particle — `g g → g g` is currently the only one,
-  which is exactly why the factor of 2 survived.
+- **`identical-particle-permutation`** — ✅ **done in `kt-spine` S1** (note 28
+  §"S1 — channel-enumeration decision"). `phasespace::identical_particle_factor`
+  is the single definition of `1/Π_s n_s!`; every consumer derives it from the
+  outgoing legs it owns, and neither latent shape survives —
+  `FixedBeamIntegrand`'s integrand-level factor field (the `amps[0]` derivation)
+  and `ProtonError::IdenticalFinalState` (the assert-the-factor-is-1 refusal) are
+  both gone, and a flavour group applies each *member*'s own factor. The
+  channel-enumeration question is decided with the decision recorded: one channel
+  per diagram, permutations not enumerated because the diagram set is already
+  closed under them — pinned by a test with a control that refuses a
+  configuration where the closure cannot be seen. Still owed by the sprint: the
+  capstone `p p > j j`, the only process that exercises unequal factors against
+  MadGraph.
 - **Multi-rung t-channel spine** (sprint plan: note 28 §S2–S4) — ladder
   topologies (VBF/DIS, ≥2 spacelike lines). The ordering Jacobian cannot be pinned by `Vₙ`/σ in-session, so it was
   deferred rather than committed unvalidated; hand-off design written up

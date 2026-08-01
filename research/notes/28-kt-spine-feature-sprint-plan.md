@@ -1269,3 +1269,67 @@ the right one, and this is the reason.
 8. **A `scalefact ≠ 1` reference run is the only thing that would make §K1.9
    non-vacuous.** Recommended as a cheap Sb addition; otherwise K4 lands the
    correction against a reading, and the note says so.
+## S1 — channel-enumeration decision (identical particles)
+
+**Decision.** Multichannel treats a repeated outgoing species as **one channel set
+over the full labelled `dΦ_n`**, not as permutation copies. The enumeration stays
+*one channel per diagram*; the maps keep sampling every permutation of the
+identical legs as a distinct configuration; and `1/Π_s n_s!` is a **per-subprocess
+scalar** multiplying that subprocess's term of the summed matrix element. Nothing
+about channel enumeration changes when a final state repeats a species — this is
+the shape the performance sprint can freeze on.
+
+**Why not permutation copies.** The per-diagram channel set is *already* closed
+under permutations of identical outgoing legs: the image of a diagram under a swap
+of two identical legs is another diagram of the same process (`g g → g g`'s `t` and
+`u` channels are each other's image). Enumerating the copies would duplicate
+channels the set already has — `Π_s n_s!` times the per-point density cost for no
+new coverage — and would manufacture exactly-degenerate channels that the
+Kleiss–Pittau reallocation cannot separate, which is the failure mode note 27 §B3.2
+already registers. The closure claim is *pinned*, not assumed:
+`the_channel_set_of_identical_outgoing_legs_is_permutation_closed` (`hadronic.rs`)
+asserts the combined density of `g g → g g`'s regulated channel set is invariant
+under exchanging the two outgoing momenta, and refuses to report a pass unless
+dropping some single channel breaks that invariance.
+
+That control caught a real blind spot on its first run: built *unregulated*
+(spacelike floor zero), all four of `g g → g g`'s channels collapse onto a common
+all-timelike map whose density is symmetric one channel at a time, so the check
+saw nothing. It is therefore stated at the floor a hadronic run gives the
+channels — and the collapse itself is another instance of the degenerate-map
+finding, now confirmed for `g g → g g` at fixed beams.
+
+**Why not a fundamental domain.** Restricting the map to one ordering of the
+identical legs would put the factor in the map, but a [`Channel`] must report the
+density it assigns to a *foreign* configuration, and a foreign point need not lie
+in the domain — every channel would have to symmetrise its density over the `n_s!`
+images. It would also put the cut filter and the event record, both written on
+labelled legs, on a different footing from the sampler. Rejected.
+
+**Where the factor lives — a refinement of §4 S1's wording.** "Into the phase-space
+map, which knows its own outgoing multiset" is right for a fixed-beam run, where
+the map is per-process, and *unsound* for a hadronic one: `ProtonIntegrand`
+deliberately pools the channels of every flavour group into a single mixture, so
+one map is shared by subprocesses whose outgoing masses agree while their multisets
+do not — `p p > j j` has `g g → g g` and `q q̄ → q q̄` both at `[0, 0]`. A map weight
+carrying the factor would stop being a density on the one labelled `dΦ_n` those
+subprocesses share: the same one-factor-for-many-subprocesses bug, one level lower.
+So the factor moved into the phase-space *layer*, but not into the weight:
+
+- `phasespace::identical_particle_factor(outgoing)` is the single definition,
+  documented with the `dΦ_n` over-counting it undoes. It takes any species labels
+  that compare equal for the same species, which model particle ids and PDG codes
+  both do, both separating a particle from its antiparticle.
+- Every consumer derives it from the outgoing legs *it* owns, and no consumer holds
+  a field another could write to. `BoundSubprocess` carries its own amplitude's
+  factor and `FixedBeamIntegrand` applies it inside the sum — the integrand-level
+  `symmetry_factor` field is gone, so the `amps[0]` derivation has nowhere to land.
+  `proton::Subprocess::symmetry_factor` reads the concrete flavour assignment and
+  `FlavorGroup::symmetry_weighted_luminosity` folds each member's own factor into
+  the luminosity sum, which is where a sum over subprocesses can still tell members
+  apart. `ProtonError::IdenticalFinalState` — the assert-the-factor-is-1 refusal —
+  is deleted, so C's `p p > j j` decomposition is no longer refused.
+
+**Consequence for C.** A flavour group's members are not constrained to share an
+outgoing multiset by anything in the grouping rule, so the factor is applied per
+*member* rather than per group. C needs no further work here beyond exercising it.
