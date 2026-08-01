@@ -497,9 +497,9 @@ fn subsystem_mask(momentum: &[i8], n_in: usize, n_ext: usize) -> Option<u64> {
     let n_out = n_ext - n_in;
     let beams = momentum[..n_in].iter().filter(|&&c| c != 0).count();
     let mut stored = 0u64;
-    for i in n_in..n_ext {
-        if momentum[i] != 0 {
-            stored |= 1 << (i - n_in);
+    for (bit, &c) in momentum[n_in..n_ext].iter().enumerate() {
+        if c != 0 {
+            stored |= 1 << bit;
         }
     }
     let full = if n_out >= 64 {
@@ -657,9 +657,9 @@ fn spine_partition(momentum: &[i8], n_in: usize, n_ext: usize) -> (u64, u64) {
     let full = (1u64 << n_out) - 1;
     let stored_has_beam0 = momentum[0] != 0;
     let mut stored_out = 0u64;
-    for i in n_in..n_ext {
-        if momentum[i] != 0 {
-            stored_out |= 1 << (i - n_in);
+    for (bit, &c) in momentum[n_in..n_ext].iter().enumerate() {
+        if c != 0 {
+            stored_out |= 1 << bit;
         }
     }
     let emitted = if stored_has_beam0 {
@@ -1630,7 +1630,9 @@ mod tests {
     #[test]
     fn resonant_channel_volume_still_v_n() {
         let z = Some(z_resonance());
-        let cases: Vec<(f64, Vec<f64>, Vec<(Vec<usize>, Option<Resonance<f64>>)>)> = vec![
+        // (√s, outgoing masses, one (subsystem, resonance) list per channel).
+        type Case = (f64, Vec<f64>, Vec<(Vec<usize>, Option<Resonance<f64>>)>);
+        let cases: Vec<Case> = vec![
             (500.0, vec![0.0; 3], vec![(vec![0, 1], z)]),
             (
                 600.0,
@@ -1867,7 +1869,7 @@ mod tests {
     fn t_map_zero_variance_on_propagator() {
         let (t_min, t_max, _) = t_window();
         for m2 in [0.0_f64, 91.1876 * 91.1876] {
-            let analytic = ((m2 - t_min) / (m2 - t_max)).ln() * (-1.0);
+            let analytic = -((m2 - t_min) / (m2 - t_max)).ln();
             for k in 0..=40 {
                 let x = k as f64 / 40.0;
                 let t = draw_t(t_min, t_max, m2, x);
@@ -2261,12 +2263,12 @@ mod tests {
         }
         let mut mask = 0u64;
         let mut count = 0usize;
-        for e in n_in..n_ext {
+        for (bit, &in_side_a) in in_a[n_in..n_ext].iter().enumerate() {
             // The beam-free side is `side_a` when it holds no beam, else its
             // complement; either way, take its outgoing legs.
-            let on_zero_beam_side = if beams_a == 0 { in_a[e] } else { !in_a[e] };
+            let on_zero_beam_side = if beams_a == 0 { in_side_a } else { !in_side_a };
             if on_zero_beam_side {
-                mask |= 1 << (e - n_in);
+                mask |= 1 << bit;
                 count += 1;
             }
         }

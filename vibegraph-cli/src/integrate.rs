@@ -314,6 +314,10 @@ fn integrate_proton(
 /// grids are trained, so the survey sees the integrand the integration will and
 /// weight goes to the channels carrying variance of the cross section rather than
 /// of a partonic one at some representative energy.
+// Every argument is an independently-loaded piece of the run's setup, and the
+// two callers hold them separately; bundling them into a struct here would only
+// move the same list one level out.
+#[allow(clippy::too_many_arguments)]
 fn integrate_hadronic(
     args: &IntegrateArgs,
     parsed: &ParsedProcCard,

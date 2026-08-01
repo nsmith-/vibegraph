@@ -220,7 +220,11 @@ impl RunningAlphaS {
 /// `aS = 0.130` the round trip returns `0.13000000000000003` — so the shift is
 /// reproduced here rather than short-circuited.
 pub fn asmz_from_param_card(a_s: f64) -> f64 {
-    // PI as spelled in Source/MODEL/couplings.f.
+    // PI as spelled in Source/MODEL/couplings.f, so the literal tracks the
+    // Fortran source it is transcribed from rather than Rust's own constant. The
+    // two round to the same `f64`, so `std::f64::consts::PI` would be a style
+    // change and not a numerical one, and it would lose that provenance.
+    #[allow(clippy::approx_constant)]
     const PI: f64 = 3.141592653589793;
     let g = (4.0 * PI * a_s).sqrt();
     g * g / (16.0 * 1.0f64.atan())

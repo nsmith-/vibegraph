@@ -14,6 +14,9 @@ extended-validation = []
 # kernel-granularity microbenches in benches/. Never enable in normal builds.
 bench-internals = []
 
+[lints]
+workspace = true
+
 [dependencies]
 num-traits = "0.2"
 rand = "0.9"

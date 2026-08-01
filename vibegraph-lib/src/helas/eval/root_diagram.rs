@@ -815,9 +815,13 @@ fn choose_root(diagram: &Diagram) -> VtxIdx {
     canonical_root(diagram)
 }
 
+/// A replacement for [`canonical_root`], installed per thread.
+#[cfg(test)]
+pub(crate) type RootChooser = Box<dyn Fn(&Diagram) -> VtxIdx>;
+
 #[cfg(test)]
 thread_local! {
-    static ROOT_OVERRIDE: std::cell::RefCell<Option<Box<dyn Fn(&Diagram) -> VtxIdx>>> =
+    static ROOT_OVERRIDE: std::cell::RefCell<Option<RootChooser>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -825,7 +829,7 @@ thread_local! {
 /// thread. Lets a soundness harness re-root diagrams without touching the production
 /// walk. With no override installed, rooting falls back to [`canonical_root`].
 #[cfg(test)]
-pub(crate) fn set_root_override(f: Box<dyn Fn(&Diagram) -> VtxIdx>) {
+pub(crate) fn set_root_override(f: RootChooser) {
     ROOT_OVERRIDE.with(|c| *c.borrow_mut() = Some(f));
 }
 

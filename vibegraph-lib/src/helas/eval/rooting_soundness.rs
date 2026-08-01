@@ -257,7 +257,7 @@ fn all_rootings_preserve_amplitude() {
 
         // Baseline oracle: production rooting.
         clear_root_override();
-        let base = match eval_m2_all(set, &model, &evaluated, &points) {
+        let base = match eval_m2_all(set, &model, &evaluated, points) {
             Ok(v) => v,
             Err(e) => {
                 failures.push(Failure {
@@ -290,7 +290,7 @@ fn all_rootings_preserve_amplitude() {
                             VtxIdx(0)
                         }
                     }));
-                    let cand = eval_m2_all(set, &model, &evaluated, &points);
+                    let cand = eval_m2_all(set, &model, &evaluated, points);
                     clear_root_override();
                     swept += 1;
                     record(&mut failures, process, di, n_vertices, r, &base, cand);
@@ -306,7 +306,7 @@ fn all_rootings_preserve_amplitude() {
             for s in 1..max_v {
                 // Root every diagram at vertex position `s` (clamped into range).
                 set_root_override(Box::new(move |d| VtxIdx(s.min(d.vertices.len() - 1))));
-                let cand = eval_m2_all(set, &model, &evaluated, &points);
+                let cand = eval_m2_all(set, &model, &evaluated, points);
                 clear_root_override();
                 swept += 1;
                 record(&mut failures, process, usize::MAX, max_v, s, &base, cand);
@@ -369,10 +369,10 @@ fn root_override_hook_is_transparent() {
         let evaluated = EvaluatedModel::from_model_card((*model).clone(), &reference.card);
 
         clear_root_override();
-        let base = eval_m2_all(set, &model, &evaluated, &points).expect("baseline eval");
+        let base = eval_m2_all(set, &model, &evaluated, points).expect("baseline eval");
 
         set_root_override(Box::new(|_| VtxIdx(0)));
-        let forced = eval_m2_all(set, &model, &evaluated, &points).expect("forced-0 eval");
+        let forced = eval_m2_all(set, &model, &evaluated, points).expect("forced-0 eval");
         clear_root_override();
 
         for (b, f) in base.iter().zip(&forced) {

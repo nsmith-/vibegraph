@@ -346,7 +346,7 @@ mod tests {
         assert!((8..=36).contains(&below_5), "{below_5}/400 below 0.05");
         assert!((165..=235).contains(&below_50), "{below_50}/400 below 0.5");
         assert!(
-            ps.iter().all(|&p| p <= 1.0 && p >= 0.0),
+            ps.iter().all(|&p| (0.0..=1.0).contains(&p)),
             "p-values leave [0,1]"
         );
     }

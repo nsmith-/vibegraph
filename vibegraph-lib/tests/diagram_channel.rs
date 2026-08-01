@@ -784,9 +784,7 @@ fn a_regulated_three_body_spine_beats_the_all_timelike_channel_on_a_peripheral_i
             let mut variances = Vec::new();
             for (label, map) in maps {
                 let runs: Vec<(f64, f64)> = (0..5)
-                    .map(|seed| {
-                        mc_estimate(map, 0xD00 + 16 * seed + i as u64, 71 + seed, n, &probe)
-                    })
+                    .map(|seed| mc_estimate(map, 0xD00 + 16 * seed + i as u64, 71 + seed, n, probe))
                     .collect();
                 let mean = runs.iter().map(|r| r.0).sum::<f64>() / runs.len() as f64;
                 let var = runs.iter().map(|r| r.1).sum::<f64>() / runs.len() as f64;

@@ -13,6 +13,9 @@ path = "src/main.rs"
 # Slow integration tests needing the fetched PDF set and banked MG references.
 extended-validation = ["vibegraph-lib/extended-validation"]
 
+[lints]
+workspace = true
+
 [dependencies]
 vibegraph-lib = { path = "../vibegraph-lib" }
 clap = { version = "4", features = ["derive"] }
