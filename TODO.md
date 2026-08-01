@@ -590,6 +590,26 @@ the natural vehicle for several at once.
   G-directories, per-diagram-class = per *distinct* map) are second tier:
   real cluster-scale precedent, but they carry the routing fragility and need
   the same coverage guardrail as the per-flow item above.
+- **Per-stage timing capture** (user, 2026-08-01; deliberately deferred from
+  the B5 re-bank). Neither side records wall times today: the banked runs
+  carry no timing at any stage (the bundled `run_*_log.txt` are job-wrapper
+  logs; MadEvent's `run1_app.log` iteration logs are excluded), our report row
+  JSONs have no duration fields, and the only timing instrument is
+  `scripts/mg_perf_compare.sh` (matrix-element stage only). Wanted, when
+  taken: (a) a host-labelled `timings.json` sidecar for MG's stages
+  (generate / output / compile / integrate / events, per process) captured
+  during an oracle-layer regeneration pass; (b) duration fields in the
+  collator's row files so our diagrams/amplitudes/integrals/samples stages
+  are timed per run. **Hard requirement: every timing record carries its
+  machine identity in full — architecture, core count and which cores were
+  used, nominal/boost frequency, memory, OS, compiler/toolchain versions, and
+  build settings (profile, flags, `RUSTFLAGS`, MG's Fortran flags) — or it is
+  noise**; cross-host comparison of absolute times stays out of scope (note
+  15's single-host-ratio position stands). Keep timings out of the refdata
+  bundle — they are measurements about a machine, not references. The
+  host-independent efficiency layer (points-to-precision from `results.dat`,
+  unweighting efficiency and `w_max` shares from the artifact's subsampler
+  summary) is already reconstructable from banked data and needs no capture.
 - **Compiled-program cache in the artifact** — designed in note 23, deliberately
   not built: compilation costs 0.05–0.29 s against ~13 s for a 20k-event
   `generate`. **Trigger:** setup climbing to a noticeable share of a generation
