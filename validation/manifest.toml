@@ -90,14 +90,14 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 1
-archive = "vibegraph-refdata-1.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-1/vibegraph-refdata-1.tar.zst"
-sha256 = "1afeadfad69d954f3295df32c4527e872e462855eda8e9fc1e827ee6cc447e50"
-size_bytes = 90597923
+version = 2
+archive = "vibegraph-refdata-2.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-2/vibegraph-refdata-2.tar.zst"
+sha256 = "4495d6dfe585f65902edad80381cd8714d18483397c4b2e3ce0fd98ef40e736c"
+size_bytes = 65066838
 unpacks_to = "validation/madgraph/output"
 # The archive is assembled and pinned, but no release carries it yet, so `url`
-# resolves to nothing until the `refdata-1` tag is published. Until then the
+# resolves to nothing until the `refdata-2` tag is published. Until then the
 # fetch path is exercised through $VIBEGRAPH_REFDATA_SOURCE.
 published = false
 
@@ -432,7 +432,6 @@ class = "multi-channel"
 n_final = 2
 rationale = "Same generate line as pp_to_bb_qcd2 with a fixed-scale run card and a ptb cut, so the sigma and the event sample of a purely QCD-initiated group become measurable without kT clustering. The only multi-channel row whose hard process carries no electroweak core, and the first consumer of the mirrored beam ordering on a group whose mirrored members carry a large share of the cross section."
 artifacts = ["output/pp_to_bb_fixed", "output/pp_to_bb_fixed/Events/run_01/unweighted_events.lhe.gz"]
-bundled = false
 [process.categories]
 diagrams = { tier = "banked", mode = "gate" }
 amplitudes = { tier = "uncovered", note = "would be covered-by new b b~ parton rows if those are added" }
