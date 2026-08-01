@@ -12,6 +12,7 @@ pub mod phasespace;
 pub mod proton;
 pub mod runcard;
 pub mod select;
+pub mod stats;
 pub mod ufo;
 pub mod unweight;
 // Test support for the banked validation layer, shared by the integration tests

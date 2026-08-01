@@ -1,0 +1,57 @@
+# MadGraph5 batch script: p p > b b~ QCD=2 at a fixed scale.
+#
+# Why this exact process:
+#   - The only multi-channel row whose hard process carries no electroweak core.
+#     The Drell-Yan groups (pp_to_ll, pp_to_llj_fixed) are held together by an
+#     s-channel gamma*/Z and every member shares one colour structure, so their
+#     flavour union varies the electroweak couplings and little else. A b b~ pair
+#     at QCD order 2 spans two initial states whose colour content differs — g g
+#     resolved through the triple-gluon vertex, and q q~ through a single
+#     s-channel gluon — so the group's members differ in the part of the
+#     amplitude the colour code owns.
+#   - It is the first cross section and event sample gated on the mirrored beam
+#     ordering. g g is symmetric under exchanging the beams; q q~ is not, and the
+#     q u~ ordering the enumeration does not produce is what the mirror term
+#     supplies. In the Drell-Yan groups that path carries a cross section too,
+#     but no row was gated on a group where the mirrored members are this large a
+#     share.
+#
+# Same generate line as pp_to_bb_qcd2. The run card differs in three places,
+# each for the reason pp_to_llj_fixed's does:
+#
+#   - fixed_ren_scale / fixed_fac_scale1 / fixed_fac_scale2 = True, all three
+#     scales at m_Z. The dynamical default (dynamical_scale_choice = -1) needs
+#     the general kT clustering, which coupling::scales refuses rather than
+#     approximates; a constant scale takes the branch that has a closed form, so
+#     this run's per-event SCALUP / <rscale> / <pdfrwt> can be replayed exactly.
+#     This is what pp_to_bb and pp_to_bb_qcd2 cannot offer and why neither has an
+#     integrals or samples cell.
+#   - pdlabel = lhapdf with lhaid 247000 (NNPDF23_lo_as_0130_qed). The
+#     MG-internal nn23lo1 that pp_to_bb takes is not an LHAPDF6 grid and cannot
+#     be read by this crate's PDF layer; 247000 is the set the Drell-Yan and llj
+#     references already use.
+#   - ptb 20 and etab 5, where pp_to_bb leaves both open. Uncut, the cross
+#     section is 4.2e8 pb and is dominated by the region where the 4.7 GeV b mass
+#     is the only regulator, so a comparison there would measure the collinear
+#     limit rather than the colour and flavour content this row exists for. It is
+#     the analogue of pp_to_llj_fixed's mmll = 50, and it leaves the uncut region
+#     covered by nothing — deliberately, since no cross section on this side
+#     reproduces it without a scale prescription anyway.
+#
+# Everything else is left where pp_to_bb had it.
+generate p p > b b~ QCD=2
+output pp_to_bb_fixed -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set fixed_ren_scale True
+  set fixed_fac_scale1 True
+  set fixed_fac_scale2 True
+  set scale 91.188
+  set dsqrt_q2fact1 91.188
+  set dsqrt_q2fact2 91.188
+  set pdlabel lhapdf
+  set lhaid 247000
+  set ptb 20
+  set etab 5
+  done
