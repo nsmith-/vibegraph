@@ -2240,10 +2240,14 @@ mod tests {
     }
 
     /// Every diagram of every group becomes a channel, they are pooled into one
-    /// mixture, and the peripheral ones are floored at the scale the cuts imply.
+    /// mixture, and the peripheral ones are regulated at the scale the cuts imply.
     ///
-    /// The floor is what *builds* those channels: at floor zero the same diagrams
+    /// The scale is what *builds* those channels: at scale zero the same diagrams
     /// give an all-timelike tree, which is why it is passed rather than defaulted.
+    /// It regulates them two ways: the token pole floor the propagator map draws
+    /// against, which the banked summary records and this checks, and the transverse
+    /// bound on the transfer, whose effect on the drawn points the channel's own
+    /// tests measure.
     #[test]
     fn every_diagram_of_every_group_becomes_a_floored_channel() {
         let m = model();
@@ -2287,7 +2291,7 @@ mod tests {
                 );
                 match with.spine_pole() {
                     Some(pole) => {
-                        assert_eq!(pole, 400.0);
+                        assert_eq!(pole, 0.4);
                         floored += 1;
                     }
                     None => unfloored += 1,
@@ -2321,7 +2325,7 @@ mod tests {
                 assert_eq!(samplers[k], ChannelSampler::of(&built), "channel {k}");
                 match samplers[k].topology {
                     SamplerTopology::Spine => {
-                        assert_eq!(samplers[k].spine_pole_gev2, Some(400.0));
+                        assert_eq!(samplers[k].spine_pole_gev2, Some(0.4));
                         assert_eq!(samplers[k].t_channels.len(), 1);
                         spines += 1;
                     }
@@ -2373,6 +2377,14 @@ mod tests {
     /// What it cannot see: the phase-space weight, which it takes from its own copy of
     /// the same channel construction, and anything the cut filter and the parton
     /// distribution agree on being wrong about.
+    ///
+    /// The two sides multiply the same factors in different orders over a sum whose
+    /// mirror term can carry the whole of a group's contribution, so they agree only
+    /// to reassociation noise: worst `2.9e-13` over a twelve-seed sweep of the point
+    /// stream, the largest of them from configurations sitting on the transverse
+    /// cut edge. The bound sits a few times above that and many orders below any
+    /// structural defect — a dropped mirror term or a lost average moves the ratio
+    /// by a finite fraction, not by an ulp.
     #[test]
     fn a_point_reproduces_an_independently_assembled_integrand() {
         let m = model();
@@ -2493,7 +2505,7 @@ mod tests {
             "the mirror term is worth only {mirror_weight:.3e} of a group's contribution, so \
              this oracle could not see it dropped"
         );
-        assert!(worst < 1e-13, "pointwise disagreement {worst:.3e}");
+        assert!(worst < 2e-12, "pointwise disagreement {worst:.3e}");
     }
 
     /// A bound amplitude paired with the wrong group is refused. Crossing the pairing

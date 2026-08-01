@@ -1101,8 +1101,7 @@ fn probe_fiducial_t_max_against_the_floored_pole_on_llj_cuts() {
         masses_all = masses.clone();
         for cut in &cutlist {
             bounded_only.push(Box::new(
-                build_spine(sqrt_s, &masses, cut, safe_floor.sqrt())
-                    .with_fiducial_t_max(-scale),
+                build_spine(sqrt_s, &masses, cut, safe_floor.sqrt()).with_fiducial_t_max(-scale),
             ));
         }
     }
@@ -1127,15 +1126,17 @@ fn probe_fiducial_t_max_against_the_floored_pole_on_llj_cuts() {
     // questions at once: how loose `pT_min²` is as a bound on the transfer, and
     // whether the coverage check can fire at all.
     let mut broke_at = None;
-    for (k, mult) in [1.0f64, 10.0, 100.0, 250.0, 375.0, 500.0].iter().enumerate() {
+    for (k, mult) in [1.0f64, 10.0, 100.0, 250.0, 375.0, 500.0]
+        .iter()
+        .enumerate()
+    {
         let cap = mult * scale;
         let mut set: Vec<Box<dyn Channel<f64>>> = Vec::new();
         for process in LLJ_SUBPROCESSES {
             let (cutlist, _, masses) = spacelike_cuts(process, &evaluated, sqrt_s);
             for cut in &cutlist {
                 set.push(Box::new(
-                    build_spine(sqrt_s, &masses, cut, safe_floor.sqrt())
-                        .with_fiducial_t_max(-cap),
+                    build_spine(sqrt_s, &masses, cut, safe_floor.sqrt()).with_fiducial_t_max(-cap),
                 ));
             }
         }
