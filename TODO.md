@@ -147,6 +147,15 @@ One line each; the note is the full record. Earlier sprints
   fail until a first release exists. Turn it on once one does: it is also the
   second detector for the "CERN repackages the PDF archive" risk, whose only
   other detector is an `#[ignore]`d test nobody runs on a timer. (Note 24 §U2.)
+- **`release-debug` profile cannot run the `#[should_panic]` contract tests** —
+  the profile inherits `release`, so `debug_assertions` are off and
+  `eval_m2_pruned_rejects_boosted_frame` (a `#[should_panic]` guarded by
+  `debug_assert!`) fails under `cargo test --profile release-debug`. Either gate
+  such tests on `cfg(debug_assertions)` or promote the guard to a hard assert.
+- **`cargo fmt --check` is red on `main`** for four files
+  (`validate_samples_proton.rs`, `validation/samples.rs`,
+  `amplitude_oracle.rs`, `color_cf_oracle.rs`) — pre-existing; wants a
+  formatting-only commit at a quiet moment.
 
 ---
 
@@ -374,6 +383,11 @@ the natural vehicle for several at once.
   matrix element (+6% `gg_to_gg`, +21% `uux_to_uux`). `ScaleChoice::clustered`
   heap-allocates its beam–leg candidate list per event; that is the obvious
   first cut. (`coupling/scales.rs`; `validate_sigma.rs` `probe_scale_cost`.)
+- **Tighter spacelike floor** — `Cuts::spacelike_floor() = pT_min²` is provable
+  but 10–100× looser than the true fiducial floor: S2's D3 measurement found the
+  cut-surviving region above `|t| ≈ 4 000–40 000 GeV²` where the floor sits at
+  400. A tighter derived bound scales the bounded-`t_max` variance win (measured
+  1.67–1.83×) with it. (Note 28 §S2.5.)
 - **2→6 σ rows** — `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` stay
   `Plan::Skip`: ~1 ms/eval over a 24-dim map is too slow to gate — a cost issue,
   not a sampling one. (`validate_sigma.rs`.)
