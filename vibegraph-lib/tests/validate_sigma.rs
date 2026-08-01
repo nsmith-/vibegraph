@@ -1159,9 +1159,9 @@ fn sigma_gate_matches_madgraph() {
         serde_json::from_str(&text).expect("sigma_reference.json parses");
 
     if !output_dir().exists() {
-        return vibegraph::validation::skip(
+        vibegraph::validation::require(
             "sigma_gate_matches_madgraph",
-            "madgraph output tree",
+            "the banked MadGraph work area",
             output_dir().display(),
         );
     }
@@ -1170,8 +1170,7 @@ fn sigma_gate_matches_madgraph() {
     let mut asserted = 0usize;
     for (dir, entry) in &banked {
         if !output_dir().join(dir).join("Cards/run_card.dat").exists() {
-            vibegraph::validation::skip("sigma_gate_matches_madgraph", "banked run card", dir);
-            continue;
+            vibegraph::validation::require("sigma_gate_matches_madgraph", "a banked run card", dir);
         }
         if matches!(plan_for(dir), Plan::Gate { .. }) {
             asserted += 1;

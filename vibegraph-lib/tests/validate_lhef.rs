@@ -123,9 +123,9 @@ fn serialise(file: &LheFile) -> String {
 #[test]
 fn banked_files_round_trip_byte_for_byte() {
     if !output_dir().exists() {
-        return vibegraph::validation::skip(
+        vibegraph::validation::require(
             "banked_files_round_trip_byte_for_byte",
-            "madgraph output tree",
+            "the banked MadGraph work area",
             output_dir().display(),
         );
     }
@@ -200,9 +200,9 @@ fn banked_files_round_trip_byte_for_byte() {
 #[test]
 fn the_round_trip_is_sensitive_to_every_convention_sensitive_field() {
     if !output_dir().exists() {
-        return vibegraph::validation::skip(
+        vibegraph::validation::require(
             "the_round_trip_is_sensitive_to_every_convention_sensitive_field",
-            "madgraph output tree",
+            "the banked MadGraph work area",
             output_dir().display(),
         );
     }
@@ -210,9 +210,9 @@ fn the_round_trip_is_sensitive_to_every_convention_sensitive_field() {
     // slot swap is visible on every line.
     let run = output_dir().join("gg_to_ttx");
     if !run.exists() {
-        return vibegraph::validation::skip(
+        vibegraph::validation::require(
             "the_round_trip_is_sensitive_to_every_convention_sensitive_field",
-            "banked madgraph run",
+            "a banked MadGraph run",
             "gg_to_ttx",
         );
     }
@@ -374,20 +374,19 @@ fn param_card(dir: &str) -> ParamCard {
 #[test]
 fn generated_events_serialise_into_a_coherent_file() {
     if !output_dir().exists() {
-        return vibegraph::validation::skip(
+        vibegraph::validation::require(
             "generated_events_serialise_into_a_coherent_file",
-            "madgraph output tree",
+            "the banked MadGraph work area",
             output_dir().display(),
         );
     }
     for row in ROWS {
         if !output_dir().join(row.dir).exists() {
-            vibegraph::validation::skip(
+            vibegraph::validation::require(
                 "generated_events_serialise_into_a_coherent_file",
-                "banked madgraph run",
+                "a banked MadGraph run",
                 row.dir,
             );
-            continue;
         }
         generate_and_check(row);
     }

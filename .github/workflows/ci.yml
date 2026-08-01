@@ -14,11 +14,11 @@ name: ci
 # tests needing banked inputs use `#[cfg(feature = "extended-validation")]`.)
 #
 # `banked` is the **banked** layer: submodule checked out, reference data
-# fetched, `pixi run validate`. It is not a merge gate yet — a fresh runner has
-# no way to obtain the frozen MadGraph runs until the reference bundle has a
-# fetch seam, so most of the layer would record expected skips rather than
-# assert. `continue-on-error` marks that; removing it belongs with the bundle
-# fetch and the report driver.
+# fetched, `pixi run validate`. It is not a merge gate yet — the reference bundle
+# has a fetch seam but no published asset, so this job runs without the frozen
+# MadGraph runs and its gates fail naming them. `continue-on-error` marks that;
+# removing it goes with publishing the asset and adding `pixi run fetch-refdata`
+# to the fetch step below.
 on:
   push:
     branches: [main]

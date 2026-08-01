@@ -346,9 +346,9 @@ fn banked_initial_roles() -> BTreeSet<(i32, i32)> {
 #[test]
 fn generated_proton_events_are_coherent_and_madgraph_labelled() {
     if !banked_present() {
-        return vibegraph::validation::skip(
+        vibegraph::validation::require(
             "generated_proton_events_are_coherent_and_madgraph_labelled",
-            "banked madgraph run or fetched pdf set",
+            "the banked MadGraph run and the fetched PDF set",
             RUN,
         );
     }
@@ -545,9 +545,9 @@ fn banked_alpha_s() -> f64 {
 #[test]
 fn a_different_pdf_set_is_refused() {
     if !banked_present() {
-        return vibegraph::validation::skip(
+        vibegraph::validation::require(
             "a_different_pdf_set_is_refused",
-            "banked madgraph run or fetched pdf set",
+            "the banked MadGraph run and the fetched PDF set",
             RUN,
         );
     }
@@ -583,9 +583,9 @@ fn a_different_pdf_set_is_refused() {
 #[test]
 fn a_dynamical_scale_card_is_still_refused() {
     if !banked_present() {
-        return vibegraph::validation::skip(
+        vibegraph::validation::require(
             "a_dynamical_scale_card_is_still_refused",
-            "banked madgraph run or fetched pdf set",
+            "the banked MadGraph run and the fetched PDF set",
             RUN,
         );
     }
