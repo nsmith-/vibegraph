@@ -147,6 +147,17 @@ One line each; the note is the full record. Earlier sprints
   fail until a first release exists. Turn it on once one does: it is also the
   second detector for the "CERN repackages the PDF archive" risk, whose only
   other detector is an `#[ignore]`d test nobody runs on a timer. (Note 24 §U2.)
+- **`pp_to_jj`'s banked event sample is not reproducible across MG re-runs** —
+  σ is identical to all printed digits and single-group runs regenerate
+  bit-identically, but `pp_to_jj`'s five subprocess groups make the unweighting
+  draw sensitive to job scheduling, so a re-run yields a different (equally
+  valid) event sample. The banked sample is the reference; any "regenerate the
+  bank byte-for-byte" claim must exempt multi-group runs, and C's `samples`
+  gate compares distributions, not bytes. (Sb, note 28.)
+- **`pixi run -e madgraph extract-diagrams` silently re-runs MadGraph** for any
+  script whose output directory is missing (`depends-on = ["build-diagrams"]`
+  → `build.sh` regenerates). Anyone holding a run directory aside must invoke
+  only `--skip-deps` tasks, or the held-out run comes back as a fresh MG job.
 - **`release-debug` profile cannot run the `#[should_panic]` contract tests** —
   the profile inherits `release`, so `debug_assertions` are off and
   `eval_m2_pruned_rejects_boosted_frame` (a `#[should_panic]` guarded by
