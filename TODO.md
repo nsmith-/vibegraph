@@ -99,20 +99,45 @@ them. Every one of them is a measurement that exists, not a suspicion.
   which measures the resonance directly on both sides. `integrals` and `samples`
   cells both informational.
   (`validate_samples.rs` `the_low_m_ll_region_is_binned_against_madgraph`.)
-- **`uux_to_uux` colour-flow frequencies** — every kinematic observable agrees
-  (min KS p `6.7e-3` over three seeds) and so do the helicity frequencies, but the
-  realised `ICOLUP` frequencies do not: MadGraph writes the flow whose lines join
-  each incoming pair on **99.96%** of its events where we write it on **90.4%**,
-  χ² 1015 on one degree of freedom, stable across seeds. The banked per-flow
-  JAMPs give `|JAMP1|²/|JAMP2|² = 8.5…9.0` at MadGraph's own points — which is our
-  90/10 split, and is not MadGraph's — so the two sides are not applying the same
-  colour-selection rule to the same numbers. Ours is `∝ JAMP2` (MadGraph's
-  documented `SELECT_COLOR`); the candidate explanation is that MadEvent's
-  selection is conditioned on the integration channel's own diagram
-  (`ICOLAMP`), which for a t-channel-dominated process leaves one flow. Neither
-  is wrong as an LO colour assignment, but they differ at order `1/N²` and the
-  shower is handed the difference. `samples` cell informational until it is
-  settled. (`validate_samples.rs`.)
+- **`uux_to_uux` colour-flow frequencies — needs a per-diagram `AMP2`
+  accumulator.** Every kinematic observable agrees (min KS p `6.7e-3` over three
+  seeds) and so do the helicity frequencies, but the realised `ICOLUP` frequencies
+  do not: MadGraph writes the flow whose lines join each incoming pair on
+  **99.96%** of its events where we write it on **90.4%** (`∝ JAMP2` over every
+  flow, which is the banked `|JAMP1|²/|JAMP2|² = 8.5…9.0`), χ² 1015 on one degree
+  of freedom, stable across seeds. MadEvent's rule is now read end to end and
+  reproduced (note 27 §B3.1): `SELECT_COLOR` masks `JAMP2` with the integration
+  configuration's `ICOLAMP` row and keeps `∝ JAMP2` inside the mask. The table is
+  implemented as `LeadingColorFlows` and matches MadGraph's own generated
+  `coloramps.inc` row for row on `u u~ > u u~`, `g g > t t~` and `g g > g g`
+  (`color_cf.rs::leading_color_flows_match_madgraphs_coloramps`), and the masked
+  draw is `select_flow_reached_by`.
+  What is missing is the *conditioning variable*. MadEvent's configuration is an
+  amplitude share, `AMP2_j(x)/Σ AMP2(x)`; our sampling channel is a density share,
+  `α_j g_j(x)/g(x)`. Conditioning on ours was implemented and measured: χ² 1015 →
+  **7268**, our flow-1 share 90.4% → 51.0%. The reason is that our per-diagram
+  channels for a massless-propagator process are the *same map* — worst pairwise
+  relative density difference `0.000e0` over 2000 accepted points on both
+  `u u~ > u u~` (2 channels) and `g g > g g` (4 channels), α frozen at uniform,
+  per-channel σ 49.6/50.4 and 25/25/25/25 against MadGraph's 0.055/99.945. So the
+  channel index carries no information about which diagram produced the point.
+  Wanted: `AMP2_d`, the helicity-summed squared modulus of each diagram's coherent
+  amplitude, as a second folded root beside `Op::Flows` (the per-diagram
+  counterpart of `eval_jamp2`, accumulated only over diagrams that would carry a
+  MadGraph config — no four-point vertex, per `get_amp2_lines`), then the
+  per-event configuration drawn `∝ AMP2_d` and the `ICOLAMP` mask applied. That is
+  sampler-independent and reproduces MadGraph's marginal by construction. `samples`
+  cell informational until it lands. (`validate_samples.rs`, note 27 §B3.)
+- **The per-diagram multichannel builds degenerate maps for massless-propagator
+  processes** (exposed by the above, not chased). On `u u~ > u u~` the two
+  `DiagramChannel` densities are bit-identical at every probed point, and on
+  `g g > g g` all four are; the Kleiss–Pittau α-adaptation therefore never moves
+  off uniform and the multichannel buys nothing over flat RAMBO for those rows.
+  `g g > t t~`, whose t/u maps carry a `173 GeV` top pole, is not degenerate
+  (worst pairwise density difference `0.84`, α converging to
+  `[0.267, 0.364, 0.369]`). Both σ cells gate today, so this costs variance rather
+  than correctness; it is the same "multi-rung spine" gap the `uux_to_uux`
+  `integrals` note already names.
 - **`hadronic-shat-floor`** — the general hadronic path cannot integrate a process
   with no leptons in the final state. Every lower bound on `ŝ` the cut layer
   derives is a lepton bound (`dsqrt_shat`, the same-flavour dilepton mass cut, the
