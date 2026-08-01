@@ -81,10 +81,17 @@ def read_run_card_scalars(run_card: Path) -> Dict[str, str]:
     return out
 
 
-def extract(output_base: Path) -> Dict[str, Dict]:
+def extract(output_base: Path, validated: set) -> Dict[str, Dict]:
     banked: Dict[str, Dict] = {}
     for run_dir in sorted(output_base.glob("*/")):
         if not run_dir.is_dir():
+            continue
+        # One entry per validated row and nothing else. A work area also holds
+        # bespoke fixed-energy runs — the Higgs-window pair and its unwindowed
+        # controls are `lpp = 0` at the banked beams and would otherwise be
+        # banked as if they were rows — so the committed reference would depend
+        # on which of them a machine happens to have run.
+        if run_dir.name not in validated:
             continue
         params = read_run_card_scalars(run_dir / "Cards" / "run_card.dat")
         if params.get("lpp1") != "0" or params.get("lpp2") != "0":
@@ -120,7 +127,8 @@ def main() -> None:
         print("Run the MadGraph build first (bash build.sh)", file=sys.stderr)
         sys.exit(1)
 
-    banked = extract(output_base)
+    validated = {s.stem for s in (script_dir / "scripts").glob("*.mg5")}
+    banked = extract(output_base, validated)
     if not banked:
         print("No fixed-energy runs found to bank", file=sys.stderr)
         sys.exit(1)

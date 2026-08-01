@@ -30,7 +30,6 @@ set -euo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fetch_common.sh"
 
 MG="$VG_VALIDATION_DIR/madgraph"
-FORCE="${VG_FORCE:-0}"
 
 stage_banner() {
   vg_say ""
@@ -54,12 +53,11 @@ stage_madgraph() {
   stage_banner "madgraph (cached: existing process directories are never rebuilt)"
   bash "$MG/build.sh"
 
-  if [ "$FORCE" != 1 ] && [ -s "$MG/hadronic_sigma_reference.json" ]; then
-    vg_say "⊘ hadronic_sigma_reference.json already banked — not rerunning madevent"
-    vg_say "  (VG_FORCE=1 reruns the two Drell-Yan cross-section runs)"
-  else
-    bash "$MG/gen_hadronic_sigma.sh"
-  fi
+  # Cached on the work area the same way the process directories are: the script
+  # reads a Drell-Yan run that is already on disk instead of re-running madevent,
+  # and rewrites the reference from it either way, so the banked cross section
+  # always belongs to the banked events. VG_FORCE=1 re-runs both.
+  bash "$MG/gen_hadronic_sigma.sh"
 }
 
 # ── refs ─────────────────────────────────────────────────────────────────────

@@ -3315,15 +3315,14 @@ mod tests {
         use num_complex::Complex64;
 
         let model = sm_model(SMRestrict::Default);
-        // Use MadGraph's massless-tau param card so couplings match the probe.
+        // The committed massless-tau card the probe's reference values were taken at.
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let card_path = std::path::Path::new(&manifest).join(
-            "../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards/param_card_masslesstau.dat",
-        );
+        let card_path = std::path::Path::new(&manifest)
+            .join("../validation/madgraph/param_card_masslesstau.dat");
         let card = std::fs::read_to_string(&card_path)
             .ok()
             .and_then(|s| s.parse::<ParamCard>().ok())
-            .expect("param_card_masslesstau.dat not found — run `pixi run -e madgraph build-diagrams` first");
+            .expect("validation/madgraph/param_card_masslesstau.dat is missing or unparseable");
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
         let gc50 = model.coupling_id("GC_50").unwrap();
@@ -3440,9 +3439,8 @@ mod tests {
             };
 
             // The outgoing mu-pair convention is VG = MG (no i factor).
-            for mu in 0..4 {
+            for (mu, &expected) in mg_eps.iter().enumerate() {
                 let vg = got.eps.component(mu);
-                let expected = mg_eps[mu];
                 let diff = (vg - expected).norm();
                 assert!(
                     diff < 5e-10 * mz as f64,
@@ -3475,13 +3473,12 @@ mod tests {
 
         let model = sm_model(SMRestrict::Default);
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let card_path = std::path::Path::new(&manifest).join(
-            "../validation/madgraph/output/ee_to_mumu_tata_qcd0/Cards/param_card_masslesstau.dat",
-        );
+        let card_path = std::path::Path::new(&manifest)
+            .join("../validation/madgraph/param_card_masslesstau.dat");
         let card = std::fs::read_to_string(&card_path)
             .ok()
             .and_then(|s| s.parse::<ParamCard>().ok())
-            .expect("param_card_masslesstau.dat not found — run `pixi run -e madgraph build-diagrams` first");
+            .expect("validation/madgraph/param_card_masslesstau.dat is missing or unparseable");
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
         let gc3 = model.coupling_id("GC_3").unwrap();

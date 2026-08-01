@@ -100,18 +100,20 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// The p-value a column must clear.
 ///
 /// Chosen from the trial count, not from taste. A run takes the smallest p over
-/// every observable of every gating row on every seed: ten rows, three seeds and
-/// seven to twenty-one observables each, and the observables of a `2 → 2` row are
-/// heavily correlated (both legs' `pT` are one number at fixed beams), so the
-/// draws from the null distribution number a few hundred rather than a few
-/// thousand. At a floor of `1e-3` that is an expected 0.2 to 0.4 spurious
-/// failures per run, which would make the gate flap; at `1e-4` it is under 0.05.
+/// every observable of every gating row on every seed: twelve fixed-beam rows and
+/// four proton ones, three seeds and seven to twenty-one observables each, and the
+/// observables of a `2 → 2` row are heavily correlated (both legs' `pT` are one
+/// number at fixed beams), so the draws from the null distribution number a few
+/// hundred rather than a few thousand. At a floor of `1e-3` that is an expected
+/// 0.2 to 0.4 spurious failures per run, which would make the gate flap; at `1e-4`
+/// it is under 0.05.
 ///
-/// The measured minimum over the gating rows and three seeds is `2.03e-3`
-/// (`ee_to_tatah`, `m(ta+,ta-)`), with `ee_to_mumua` at `2.14e-3`, `ee_to_ee` at
-/// `4.02e-3` and `uux_to_uux` at `6.67e-3` behind it — so agreement produces
-/// minima an order of magnitude above the floor, while the two rows that disagree
-/// produce `3.6e-6` and `0`. There is a wide gap to sit in, and this sits in it.
+/// The measured minimum over every gating row and three seeds is `2.74e-4`
+/// (`ee_to_mumua`, `pt(a)`), with `ee_to_wpwm` at `2.84e-3` and `uux_to_mumu` at
+/// `1.56e-2` behind it, against `3.6e-6` and `0` for the two rows that used to
+/// disagree. `ee_to_mumua` is the row to watch: it sits `2.7x` above the floor and
+/// its `integrals` pull is `+3.1` against the same reference, both having tightened
+/// when the references moved to MadGraph 3.7.1.
 ///
 /// Never loosened after a failure: a column that falls below this is recorded,
 /// the row is marked informational with the measurement in its note, and the
@@ -218,7 +220,7 @@ const ROWS: &[Row] = &[
         process: "e+ e- > mu+ mu- ta+ ta- QCD=0",
         neval: 60_000,
         niter: 6,
-        mode: "info",
+        mode: "gate",
     },
 ];
 

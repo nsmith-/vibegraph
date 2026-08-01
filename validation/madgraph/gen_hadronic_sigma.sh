@@ -67,19 +67,30 @@ EOF
     rm -f "$tmp_mg5"
   fi
 
-  silence_madgraph_ui "$procdir/Cards/me5_configuration.txt"
-
-  echo ">>> [$name] installing shared run card $card ..." >&2
-  cp "$HERE/$card" "$procdir/Cards/run_card.dat"
-
-  echo ">>> [$name] running madevent ..." >&2
   local log="$OUT/generate_$name.log"
-  # The conda activation exports its own LDFLAGS, which suppresses MadGraph's
-  # make_opts `STDLIB=-lc++` (its `ifeq($(origin LDFLAGS),undefined)` guard sees
-  # LDFLAGS as already-set), so the LHAPDF C++ runtime symbols (__cxa_throw,
-  # __gxx_personality_v0) go unresolved when madevent links libpdf.a. Append
-  # -lc++ so the gensym/madevent link finds them.
-  LDFLAGS="${LDFLAGS:-} -lc++" "$procdir/bin/generate_events" -f "run_$name" >"$log" 2>&1
+  # The work area is the cache, as it is for the process directories: a run that
+  # already banked its events and its combined result is not re-run, so the
+  # reference this script writes is a pure function of what is on disk and the
+  # events the `samples` gate compares against cannot drift away from the cross
+  # section the `integrals` gate uses. VG_FORCE=1 runs madevent regardless.
+  if [ "${VG_FORCE:-0}" != 1 ] &&
+    [ -s "$procdir/Events/run_$name/unweighted_events.lhe.gz" ] &&
+    [ -s "$procdir/SubProcesses/results.dat" ]; then
+    echo ">>> [$name] already run — reading its banked result" >&2
+  else
+    silence_madgraph_ui "$procdir/Cards/me5_configuration.txt"
+
+    echo ">>> [$name] installing shared run card $card ..." >&2
+    cp "$HERE/$card" "$procdir/Cards/run_card.dat"
+
+    echo ">>> [$name] running madevent ..." >&2
+    # The conda activation exports its own LDFLAGS, which suppresses MadGraph's
+    # make_opts `STDLIB=-lc++` (its `ifeq($(origin LDFLAGS),undefined)` guard sees
+    # LDFLAGS as already-set), so the LHAPDF C++ runtime symbols (__cxa_throw,
+    # __gxx_personality_v0) go unresolved when madevent links libpdf.a. Append
+    # -lc++ so the gensym/madevent link finds them.
+    LDFLAGS="${LDFLAGS:-} -lc++" "$procdir/bin/generate_events" -f "run_$name" >"$log" 2>&1
+  fi
 
   # MadGraph writes the combined result to SubProcesses/results.dat: field 1 is
   # the cross section (pb), field 2 its Monte-Carlo error (pb).

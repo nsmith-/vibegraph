@@ -116,15 +116,44 @@ pub struct ProcessSpec {
     pub forbidden_s_channels: Vec<String>,
     /// Forbidden on-shell s-channels, from `$ X Y`.
     pub forbidden_onsh_s_channels: Vec<String>,
+    /// In the order they appear in the process string.
     pub coupling_constraints: Vec<CouplingConstraint>,
     /// Process tag from `@N`; `None` if absent.
     pub tag: Option<u32>,
 }
 
-impl Display for ProcessSpec {
+impl Display for CouplingOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Reconstruct a process string from the parsed spec (without modifiers).
-        // TODO: refine this to include modifiers if we want to round-trip test the parser.
+        f.write_str(match self {
+            CouplingOp::Eq => "=",
+            CouplingOp::ExactEq => "==",
+            CouplingOp::StrictEq => "===",
+            CouplingOp::Le => "<=",
+            CouplingOp::Lt => "<",
+            CouplingOp::Ge => ">=",
+            CouplingOp::Gt => ">",
+            CouplingOp::Ne => "!=",
+        })
+    }
+}
+
+impl Display for CouplingConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        if self.squared {
+            f.write_str("^2")?;
+        }
+        write!(f, "{}{}", self.op, self.value)
+    }
+}
+
+impl Display for ProcessSpec {
+    /// The legs and the coupling-order constraints, spelled the way MadGraph's
+    /// own generate line spells them. Carrying the orders is what keeps two
+    /// specs that differ only in an order constraint from printing identically.
+    /// The other modifiers — required and forbidden s-channels, forbidden
+    /// propagators, the `@N` tag — are still dropped, so this is not a round trip.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let initial = self
             .initial
             .iter()
@@ -149,7 +178,11 @@ impl Display for ProcessSpec {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        write!(f, "{} > {}", initial, final_state)
+        write!(f, "{} > {}", initial, final_state)?;
+        for constraint in &self.coupling_constraints {
+            write!(f, " {constraint}")?;
+        }
+        Ok(())
     }
 }
 
@@ -367,6 +400,9 @@ fn strip_coupling_orders(line: &mut String) -> Vec<CouplingConstraint> {
         }
     }
 
+    // The strip runs right to left, which is MadGraph's own algorithm; the field
+    // is stated left to right so it reads as the process string does.
+    constraints.reverse();
     constraints
 }
 
@@ -795,5 +831,30 @@ generate e+ e- > mu+ mu-
         let model = parsed.model.unwrap();
         assert_eq!(model.name, "sm");
         assert_eq!(model.restrict_variant, Some("no_b_mass".to_string()));
+    }
+
+    /// The printed form carries the coupling orders, so two specs that enumerate
+    /// different diagram sets cannot print the same string. The validation
+    /// report identifies a row's measurement by this string.
+    #[test]
+    fn display_keeps_the_coupling_order_constraints() {
+        assert_eq!(parse("p p > b b~").to_string(), "p p > b b~");
+        assert_eq!(parse("p p > b b~ QCD=2").to_string(), "p p > b b~ QCD=2");
+        assert_ne!(
+            parse("p p > b b~").to_string(),
+            parse("p p > b b~ QCD=2").to_string()
+        );
+        assert_eq!(
+            parse("p p > l+ l- j QCD=2 QED=2").to_string(),
+            "p p > l+ l- j QCD=2 QED=2"
+        );
+        // Every operator spelling, and the squared-order marker.
+        assert_eq!(
+            parse("e+ e- > mu+ mu- QCD<=1 QED<2 QCD^2==4 QED>=1 QCD!=3").to_string(),
+            "e+ e- > mu+ mu- QCD<=1 QED<2 QCD^2==4 QED>=1 QCD!=3"
+        );
+        // The orders sit after the legs however those were spelled: a `2j`
+        // multiplicity is expanded at parse time and prints as repeated legs.
+        assert_eq!(parse("e+ e- > 2j QCD=2").to_string(), "e+ e- > j j QCD=2");
     }
 }

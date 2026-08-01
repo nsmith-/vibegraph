@@ -35,12 +35,13 @@ def _candidate_roots():
 
 
 def _import_run_card_lo():
-    try:
-        from madgraph.various.banner import RunCardLO  # noqa: E402
+    """The pinned checkout's ``RunCardLO``, in preference to any on the path.
 
-        return RunCardLO
-    except Exception:
-        pass
+    The submodule is tried first so that which release this oracle tracks is a
+    property of the code rather than of whether the ambient environment happens
+    to expose a ``madgraph`` package. A plain import stays as the last resort
+    for an environment that has one and no submodule.
+    """
     for root in _candidate_roots():
         if not os.path.isdir(os.path.join(root, "madgraph")):
             continue
@@ -48,6 +49,12 @@ def _import_run_card_lo():
         from madgraph.various.banner import RunCardLO  # noqa: E402
 
         return RunCardLO
+    try:
+        from madgraph.various.banner import RunCardLO  # noqa: E402
+
+        return RunCardLO
+    except Exception:
+        pass
     raise SystemExit(
         "cannot import madgraph.various.banner.RunCardLO; check out the "
         "research/refs/mg5amcnlo submodule or set MG5AMCNLO_PATH"

@@ -70,15 +70,19 @@ required-features = ["bench-internals"]
 name = "amplitude_oracle"
 harness = false
 
+# The diagram gate is hermetic for the same reason: the committed
+# `diagrams.json` and the committed `.mg5` scripts are all it reads. When a
+# process directory happens to sit beside them it also prints that directory's
+# configs.inc topologies, which asserts nothing and is skipped when the work
+# area is absent.
+[[test]]
+name = "validate_madgraph_diagrams"
+harness = false
+
 # `required-features` is how a test declares its dependency layer: everything
 # listed here needs the mg5amcnlo submodule, a fetched PDF set or a frozen
 # MadGraph run, so it is absent from a default-feature build rather than
 # deciding at runtime whether it has anything to do. See validation/manifest.toml.
-
-[[test]]
-name = "validate_madgraph_diagrams"
-harness = false
-required-features = ["extended-validation"]
 
 [[test]]
 name = "color_cf_oracle"

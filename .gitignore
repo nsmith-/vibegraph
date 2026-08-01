@@ -9,8 +9,6 @@
 /ee_to_mumu/
 /validation/helas/*.so
 /validation/madgraph/output
-# Columnar projections of the banked event files, written by compact_events.py
-/validation/madgraph/events
 # Fetched LHAPDF6 sets and the compiled oracle generator (its output is committed)
 /validation/pdf/NNPDF23_lo_as_0130_qed/
 /validation/pdf/NNPDF31_lo_as_0130/
@@ -23,4 +21,6 @@ __pycache__/
 # TODO: add MCP server setup to pixi.toml ?
 .mcp.json
 profile.json.gz
+# mg5_aMC drops a scratch py.py into whatever directory it is invoked from
+/py.py
 .DS_Store

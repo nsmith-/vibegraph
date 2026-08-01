@@ -159,6 +159,9 @@ pub fn canonical(event: &LheEvent, labelling: Labelling) -> LheEvent {
     LheEvent {
         particles,
         trailer: Vec::new(),
+        // The legs are reordered, so the file's own lines no longer describe
+        // this record.
+        source: None,
         ..event.clone()
     }
 }
@@ -367,6 +370,7 @@ mod tests {
             alpha_qcd: 0.118,
             particles,
             trailer: Vec::new(),
+            source: None,
         }
     }
 
