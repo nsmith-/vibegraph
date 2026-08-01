@@ -1,5 +1,5 @@
 //! End-to-end test of `vibegraph integrate` on the Drell–Yan pp→e⁺e⁻ proc card
-//! + reference run cards: a cold-start run must reproduce the banked MadGraph
+//! and reference run cards: a cold-start run must reproduce the banked MadGraph
 //! reference σ, and the persisted per-channel grids must reload and drive a
 //! frozen sampling pass that reproduces the adapted estimate.
 //!

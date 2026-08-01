@@ -135,15 +135,19 @@ def join_continuations(src):
 def read_dimensions(key):
     """(NGRAPHS, NCOLOR, [flow structure labels]) from matrix1_orig.f.
 
-    MadGraph prints one `C  <coefficient> <structure>` comment after each
-    `DATA (CF(I,k),...)` block; the k-th names colour flow k.
+    MadGraph prints one `C  <coefficient> <structure>` comment after each `DATA`
+    block of the colour-factor matrix; the k-th names colour flow k. Two
+    spellings of that block exist: 3.5.x writes one column of a square array of
+    reals (`DATA (CF(I,  k),I=  1,  N)`), 3.7.x one row of the upper triangle of
+    an integer array over a common denominator (`DATA (CF(I),I=  a,  b)`). The
+    labels sit in the same place in both, and only the labels are read here.
     """
     with open(matrix_file(key)) as f:
         src = f.read()
     ngraphs = int(re.search(r"NGRAPHS=(\d+)", src).group(1))
     ncolor = int(re.search(r"NCOLOR=(\d+)", src).group(1))
     structures = re.findall(
-        r"DATA \(CF\(I, *\d+\),.*?\n(?:.*?\n)*?C +\d+ (\S.*?)\n", src
+        r"DATA \(CF\(I(?:, *\d+)?\),.*?\n(?:.*?\n)*?C +\d+ (\S.*?)\n", src
     )
     assert len(structures) >= ncolor, f"{key}: {len(structures)} structures for NCOLOR={ncolor}"
     return ngraphs, ncolor, structures[:ncolor]

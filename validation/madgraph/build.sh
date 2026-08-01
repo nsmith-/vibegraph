@@ -4,6 +4,12 @@
 #
 # Dynamically maps script names to output directories:
 #   script.mg5 -> script (removes .mg5 extension)
+#
+# The generator is the pinned submodule by way of mg5_pinned.sh, not whatever
+# mg5_aMC sits on PATH — see that script for why the version matters to a run
+# whose events and cross section become a reference. It runs from a temporary
+# directory, so each script's relative `output <name>` is rewritten to the
+# absolute work-area path before it is handed over.
 
 set -e
 
@@ -47,17 +53,29 @@ for script_path in "$SCRIPTS_DIR"/*.mg5; do
 
   t0=$(date +%s)
 
-  # Run mg5_aMC in the output directory to keep things organized
-  cd "$OUTPUT_BASE"
+  driver="$(mktemp -t vg_build_XXXXXX).mg5"
+  sed -E "s|^([[:space:]]*output[[:space:]]+)[^[:space:]]+|\1$output_path|" \
+    "$script_path" > "$driver"
+  grep -qE "^[[:space:]]*output[[:space:]]+$output_path( |$)" "$driver" || {
+    echo "!!! $script has no 'output' line to redirect" >&2
+    exit 1
+  }
+
   # The conda activation exports its own LDFLAGS, which suppresses MadGraph's
   # make_opts `STDLIB=-lc++` (its `ifeq($(origin LDFLAGS),undefined)` guard sees
   # LDFLAGS as already set), so a `pdlabel = lhapdf` run leaves the LHAPDF C++
   # runtime symbols unresolved when madevent links libpdf.a. Appending -lc++ is
   # what gen_hadronic_sigma.sh already does for the same reason; it is inert for a
   # script that links no C++.
-  LDFLAGS="${LDFLAGS:-} -lc++" mg5_aMC "$script_path" > "tmp.log" 2>&1
-  mv tmp.log "$output_dir/build.log"
-  cd - > /dev/null
+  log="$(mktemp -t vg_build_log_XXXXXX)"
+  if ! LDFLAGS="${LDFLAGS:-} -lc++" bash "$SCRIPT_DIR/mg5_pinned.sh" "$driver" > "$log" 2>&1; then
+    echo "!!! $script failed; last 40 lines of its log:" >&2
+    tail -40 "$log" >&2
+    if [ -d "$output_path" ]; then mv "$log" "$output_path/build.log"; fi
+    exit 1
+  fi
+  rm -f "$driver"
+  mv "$log" "$output_path/build.log"
 
   t1=$(date +%s)
   elapsed=$((t1 - t0))

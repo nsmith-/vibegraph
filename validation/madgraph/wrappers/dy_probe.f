@@ -22,16 +22,27 @@ C     madevent dependency chain (mirrors wrappers/generic.f).
       R = 0.5D0
       END
 
+      SUBROUTINE SELECT_COLOR(RCOL, JAMP2, ICONFIG, IPROC, ICOL, IVEC)
+      IMPLICIT NONE
+      INCLUDE 'maxamps.inc'
+      DOUBLE PRECISION RCOL, JAMP2(0:MAXFLOW)
+      INTEGER ICONFIG, IPROC, ICOL, IVEC
+      ICOL = 1
+      END
+
       SUBROUTINE DY_M2(P, PARAM_PATH, M2_UP, M2_DOWN)
 Cf2py intent(in)  P, PARAM_PATH
 Cf2py intent(out) M2_UP, M2_DOWN
       IMPLICIT NONE
       INCLUDE 'nexternal.inc'
+      INCLUDE 'maxamps.inc'
       INTEGER MAXHEL
       PARAMETER (MAXHEL = 3**NEXTERNAL)
       CHARACTER*(*) PARAM_PATH
       DOUBLE PRECISION P(0:3, NEXTERNAL), M2_UP, M2_DOWN
       DOUBLE PRECISION TS(MAXHEL)
+C     Scratch the callee fills; see wrappers/generic.f for the 3.7.x signature.
+      DOUBLE PRECISION AMP2(MAXAMPS), JAMP2(0:MAXFLOW)
       INTEGER IC(NEXTERNAL), I
       LOGICAL FIRST
       SAVE FIRST
@@ -49,7 +60,7 @@ Cf2py intent(out) M2_UP, M2_DOWN
       DO I = 1, MAXHEL
         TS(I) = 0.0D0
       END DO
-      CALL MATRIX1(P, IC, TS)
+      CALL MATRIX1(P, IC, TS, AMP2, JAMP2, 1)
       M2_UP = 0.0D0
       DO I = 1, MAXHEL
         M2_UP = M2_UP + TS(I)
@@ -58,7 +69,7 @@ Cf2py intent(out) M2_UP, M2_DOWN
       DO I = 1, MAXHEL
         TS(I) = 0.0D0
       END DO
-      CALL MATRIX2(P, IC, TS)
+      CALL MATRIX2(P, IC, TS, AMP2, JAMP2, 1)
       M2_DOWN = 0.0D0
       DO I = 1, MAXHEL
         M2_DOWN = M2_DOWN + TS(I)

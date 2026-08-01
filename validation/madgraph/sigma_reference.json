@@ -3,126 +3,126 @@
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "b b~ > c c~ e+ e- mu+ mu- QCD=0",
-    "sigma_err_pb": 4.8404e-09,
-    "sigma_pb": 1.6053e-06
+    "sigma_err_pb": 4.8978e-09,
+    "sigma_pb": 1.6825e-06
   },
   "ddx_to_epemg": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "d d~ > e+ e- g QCD=2 QED=2",
-    "sigma_err_pb": 0.0015512,
-    "sigma_pb": 0.67104
+    "sigma_err_pb": 0.0012468,
+    "sigma_pb": 0.6177
   },
   "ee_to_ee": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "e+ e- > e+ e-",
-    "sigma_err_pb": 0.20956,
-    "sigma_pb": 155.77
+    "sigma_err_pb": 0.1064,
+    "sigma_pb": 155.72
   },
   "ee_to_mumu": {
     "ebeam1": 45.6,
     "ebeam2": 45.6,
     "process": "e+ e- > mu+ mu-",
-    "sigma_err_pb": 1.1155,
-    "sigma_pb": 2025.2
+    "sigma_err_pb": 0.84272,
+    "sigma_pb": 2025.0
   },
   "ee_to_mumu_tata_qcd0": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "e+ e- > mu+ mu- ta+ ta- QCD=0",
-    "sigma_err_pb": 2.8039e-06,
-    "sigma_pb": 0.0013373
+    "sigma_err_pb": 2.6737e-06,
+    "sigma_pb": 0.0013725
   },
   "ee_to_mumua": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "e+ e- > mu+ mu- a",
-    "sigma_err_pb": 0.0003865,
-    "sigma_pb": 0.10063
+    "sigma_err_pb": 0.00023352,
+    "sigma_pb": 0.099801
   },
   "ee_to_tatah": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "e+ e- > ta+ ta- h",
-    "sigma_err_pb": 2.405e-06,
-    "sigma_pb": 0.0018835
+    "sigma_err_pb": 2.1663e-06,
+    "sigma_pb": 0.0018861
   },
   "ee_to_ttx": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "e+ e- > t t~",
-    "sigma_err_pb": 0.00032917,
-    "sigma_pb": 0.54855
+    "sigma_err_pb": 0.00018055,
+    "sigma_pb": 0.54866
   },
   "ee_to_wpwm": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "e+ e- > w+ w-",
-    "sigma_err_pb": 0.021688,
-    "sigma_pb": 7.1551
+    "sigma_err_pb": 0.011137,
+    "sigma_pb": 7.2123
   },
   "ee_to_zh": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "e+ e- > z h",
-    "sigma_err_pb": 2.0676e-05,
-    "sigma_pb": 0.057234
+    "sigma_err_pb": 1.3783e-05,
+    "sigma_pb": 0.05721
   },
   "gg_to_gg": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "g g > g g",
-    "sigma_err_pb": 252.35,
-    "sigma_pb": 168830.0
+    "sigma_err_pb": 97.157,
+    "sigma_pb": 142770.0
   },
   "gg_to_ttx": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "g g > t t~",
-    "sigma_err_pb": 0.037425,
-    "sigma_pb": 15.953
+    "sigma_err_pb": 0.016289,
+    "sigma_pb": 13.513
   },
   "gu_to_epemu": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "g u > e+ e- u QCD=2 QED=2",
-    "sigma_err_pb": 0.00022118,
-    "sigma_pb": 0.11812
+    "sigma_err_pb": 0.00019305,
+    "sigma_pb": 0.1087
   },
   "gux_to_epemux": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "g u~ > e+ e- u~ QCD=2 QED=2",
-    "sigma_err_pb": 0.00025564,
-    "sigma_pb": 0.11816
+    "sigma_err_pb": 0.00021701,
+    "sigma_pb": 0.10884
   },
   "uux_to_ccx_emmm_qcd0": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "u u~ > c c~ e+ e- mu+ mu- QCD=0",
-    "sigma_err_pb": 1.6111e-09,
-    "sigma_pb": 6.5557e-07
+    "sigma_err_pb": 2.167e-09,
+    "sigma_pb": 7.1428e-07
   },
   "uux_to_epemg": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "u u~ > e+ e- g QCD=2 QED=2",
-    "sigma_err_pb": 0.0013581,
-    "sigma_pb": 0.60043
+    "sigma_err_pb": 0.001159,
+    "sigma_pb": 0.55507
   },
   "uux_to_mumu": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "u u~ > mu+ mu-",
-    "sigma_err_pb": 7.4187e-05,
-    "sigma_pb": 0.076768
+    "sigma_err_pb": 5.065e-05,
+    "sigma_pb": 0.076796
   },
   "uux_to_uux": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "u u~ > u u~",
-    "sigma_err_pb": 52.113,
-    "sigma_pb": 33428.0
+    "sigma_err_pb": 24.379,
+    "sigma_pb": 28269.0
   }
 }

@@ -317,9 +317,12 @@ fn connectivity(event: &LheEvent) -> Vec<Vec<(usize, usize)>> {
     event.color_connectivity()
 }
 
+/// One event's flavour roles paired with its colour connectivity.
+type ColourPattern = (Vec<i32>, Vec<Vec<(usize, usize)>>);
+
 /// `(roles, connectivity)` pairs MadGraph's own events exhibit.
-fn banked_colour_patterns() -> &'static BTreeSet<(Vec<i32>, Vec<Vec<(usize, usize)>>)> {
-    static ONCE: OnceLock<BTreeSet<(Vec<i32>, Vec<Vec<(usize, usize)>>)>> = OnceLock::new();
+fn banked_colour_patterns() -> &'static BTreeSet<ColourPattern> {
+    static ONCE: OnceLock<BTreeSet<ColourPattern>> = OnceLock::new();
     ONCE.get_or_init(|| {
         banked_events()
             .events

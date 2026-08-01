@@ -63,6 +63,14 @@ use vibegraph::unweight::Unweighter;
 
 mod common;
 
+/// A named edit to one parsed event, applied to check that the round trip is
+/// sensitive to it.
+type Mutation = (&'static str, Box<dyn Fn(&mut LheEvent)>);
+
+/// One replayed event: channel, flavour assignment, colour flow, momenta, and
+/// the three per-event scalars the record carries.
+type GeneratedEvent = (usize, Vec<i32>, usize, Vec<[f64; 4]>, f64, f64, f64);
+
 fn output_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output")
 }
@@ -221,7 +229,7 @@ fn the_round_trip_is_sensitive_to_every_convention_sensitive_field() {
     let expected = record_span(&text);
     assert_eq!(serialise(&file), expected, "the unmutated file must match");
 
-    let mutations: Vec<(&str, Box<dyn Fn(&mut LheEvent)>)> = vec![
+    let mutations: Vec<Mutation> = vec![
         (
             "MOTHUP dropped on the outgoing legs",
             Box::new(|e: &mut LheEvent| {
@@ -457,7 +465,7 @@ fn generate_and_check(row: &Row) {
     // describes rather than a prediction of it.
     let mut rng = ChaCha8Rng::seed_from_u64(GEN_SEED);
     let mut momenta = Vec::new();
-    let mut generated: Vec<(usize, Vec<i32>, usize, Vec<[f64; 4]>, f64, f64, f64)> = Vec::new();
+    let mut generated: Vec<GeneratedEvent> = Vec::new();
     for _ in 0..TRIALS {
         let Some(point) = uw.trial(&integ, &mut rng) else {
             continue;

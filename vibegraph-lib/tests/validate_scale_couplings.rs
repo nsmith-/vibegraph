@@ -146,8 +146,7 @@ fn scaling_path_reproduces_the_reference_path() {
 
             // The pools are what |M|² is built from, so this adds no independent
             // information; it is the check that nothing else in the binding moved.
-            if i < 2 {
-                let p = &momenta[i];
+            if let Some(p) = momenta.get(i) {
                 let got = fast.eval_m2(p, &mut scratch);
                 let want = reference.eval_m2(p, &mut scratch);
                 let rel = (got - want).abs() / want.abs().max(f64::MIN_POSITIVE);

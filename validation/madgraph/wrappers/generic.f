@@ -7,12 +7,15 @@ C     subprocess's own include files, so this single file compiles unchanged
 C     against any process.
 C
 C     Assumptions:
-C       * MATRIX1(P, IC, TS) returns the per-helicity, color-summed |M|^2 in
-C         TS(NCOMB) (the helicity-recycled matrix1_optim.f API).  NCOMB is not
-C         exported by any include file, so TS is oversized to 3^NEXTERNAL
-C         (>= any product of SM per-leg helicity counts, incl. massive
-C         vectors' 3) and zero-initialized; the sum over unused entries is a
-C         no-op.
+C       * MATRIX1(P, IC, TS, AMP2, JAMP2, IVEC) returns the per-helicity,
+C         color-summed |M|^2 in TS(NCOMB) (the helicity-recycled
+C         matrix1_optim.f API of MadGraph 3.7.x; 3.5.x took the first three
+C         arguments only).  NCOMB is not exported by any include file, so TS is
+C         oversized to 3^NEXTERNAL (>= any product of SM per-leg helicity
+C         counts, incl. massive vectors' 3) and zero-initialized; the sum over
+C         unused entries is a no-op.  AMP2 and JAMP2 are scratch the callee
+C         fills and nothing here reads; IVEC indexes the vectorized-event
+C         dimension, which a generated MadEvent directory sizes at 1.
 C
 C     Returns M2_OUT = sum_hel sum_color |M|^2  (NOT divided by IDEN / averaged),
 C     matching vibegraph's AmplitudeEvaluator.eval_m2 convention.  The remaining
@@ -20,6 +23,8 @@ C     single-color-flow factor (CF(1,1)) is applied on the vibegraph side.
 
 C     Stubs for symbols referenced by SMATRIX1 but not by MATRIX1; satisfy the
 C     linker without pulling in the genps.f / DiscreteSampler dependency chain.
+C     SELECT_COLOR is one of these from 3.7.x on, where SMATRIX1 draws the event's
+C     colour flow itself; nothing here reads the drawn flow.
       DOUBLE PRECISION FUNCTION GET_CHANNEL_CUT(P, CONFIG)
       IMPLICIT NONE
       INCLUDE 'nexternal.inc'
@@ -34,6 +39,14 @@ C     linker without pulling in the genps.f / DiscreteSampler dependency chain.
       R = 0.5D0
       END
 
+      SUBROUTINE SELECT_COLOR(RCOL, JAMP2, ICONFIG, IPROC, ICOL, IVEC)
+      IMPLICIT NONE
+      INCLUDE 'maxamps.inc'
+      DOUBLE PRECISION RCOL, JAMP2(0:MAXFLOW)
+      INTEGER ICONFIG, IPROC, ICOL, IVEC
+      ICOL = 1
+      END
+
 C     Single-event entry point.
 C       P           REAL*8 P(0:3, NEXTERNAL): external 4-momenta [E,px,py,pz]
 C       PARAM_PATH  path to param_card.dat (passed from Python to avoid CWD
@@ -44,11 +57,13 @@ Cf2py intent(in)  P, PARAM_PATH
 Cf2py intent(out) M2_OUT
       IMPLICIT NONE
       INCLUDE 'nexternal.inc'
+      INCLUDE 'maxamps.inc'
       INTEGER MAXHEL
       PARAMETER (MAXHEL = 3**NEXTERNAL)
       CHARACTER*(*) PARAM_PATH
       DOUBLE PRECISION P(0:3, NEXTERNAL), M2_OUT
       DOUBLE PRECISION TS(MAXHEL)
+      DOUBLE PRECISION AMP2(MAXAMPS), JAMP2(0:MAXFLOW)
       INTEGER IC(NEXTERNAL), I
       LOGICAL FIRST
       SAVE FIRST
@@ -66,7 +81,7 @@ Cf2py intent(out) M2_OUT
         TS(I) = 0.0D0
       END DO
 
-      CALL MATRIX1(P, IC, TS)
+      CALL MATRIX1(P, IC, TS, AMP2, JAMP2, 1)
 
       M2_OUT = 0.0D0
       DO I = 1, MAXHEL
@@ -82,6 +97,7 @@ Cf2py intent(out) M2_OUT
 Cf2py integer intent(hide), depend(P_BATCH) :: N = shape(P_BATCH, 2)
       IMPLICIT NONE
       INCLUDE 'nexternal.inc'
+      INCLUDE 'maxamps.inc'
       INTEGER MAXHEL
       PARAMETER (MAXHEL = 3**NEXTERNAL)
       CHARACTER*(*) PARAM_PATH
@@ -89,6 +105,7 @@ Cf2py integer intent(hide), depend(P_BATCH) :: N = shape(P_BATCH, 2)
       DOUBLE PRECISION P_BATCH(0:3, NEXTERNAL, N)
       DOUBLE PRECISION M2_OUT(N)
       DOUBLE PRECISION TS(MAXHEL), SUMTS
+      DOUBLE PRECISION AMP2(MAXAMPS), JAMP2(0:MAXFLOW)
       INTEGER IC(NEXTERNAL), I, J
       LOGICAL FIRST
       SAVE FIRST
@@ -107,7 +124,7 @@ Cf2py integer intent(hide), depend(P_BATCH) :: N = shape(P_BATCH, 2)
         DO I = 1, MAXHEL
           TS(I) = 0.0D0
         END DO
-        CALL MATRIX1(P_BATCH(0, 1, J), IC, TS)
+        CALL MATRIX1(P_BATCH(0, 1, J), IC, TS, AMP2, JAMP2, 1)
         SUMTS = 0.0D0
         DO I = 1, MAXHEL
           SUMTS = SUMTS + TS(I)

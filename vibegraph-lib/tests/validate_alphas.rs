@@ -266,9 +266,16 @@ fn printed_half_ulp(v: f64) -> f64 {
 /// a sixth of the last printed digit, and enough to move the rounding of one
 /// event in twenty. Reproducing the field means reproducing the truncation.
 fn aqcdup_from_alpha_s(alpha_s: f64) -> f64 {
+    // Both literals are spelled as the Fortran spells them: the full one is what
+    // built `g`, the truncated one is the divisor `unwgt.f` actually uses, and
+    // the gap between them is the effect being reproduced. Writing either as
+    // `std::f64::consts::PI` would erase it.
+    #[allow(clippy::approx_constant)]
     const PI: f64 = 3.141592653589793;
+    #[allow(clippy::approx_constant)]
+    const TRUNCATED_PI: f64 = 3.1415926;
     let g = (4.0 * PI * alpha_s).sqrt();
-    g * g / 4.0 / 3.1415926
+    g * g / 4.0 / TRUNCATED_PI
 }
 
 /// The per-event oracle: `AQCDUP` reproduced from `SCALUP` for every event of
