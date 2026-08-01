@@ -2,7 +2,7 @@
 authors = ["Nick Smith <nick.smith@cern.ch>"]
 channels = ["conda-forge", "pytorch"]
 name = "vibegraph"
-platforms = ["osx-arm64"]
+platforms = ["osx-arm64", "linux-64"]
 version = "0.1.0"
 
 # Default environment: no conda deps (Rust toolchain managed by rustup)
