@@ -32,17 +32,17 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: actions/cache@v4
+      # Compiled dependencies + the crate registry, keyed on Cargo.lock and the
+      # toolchain, with stale target artifacts pruned before saving — so the
+      # dependency graph compiles once per lockfile change, not once per push.
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ci-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ci-
+          shared-key: hermetic
+          cache-on-failure: true
 
-      - run: cargo build --locked --workspace
+      # `cargo test` compiles everything `cargo build` would, plus the
+      # dev-dependencies and test binaries; a separate build step adds a
+      # second compile wave without adding coverage.
       - run: cargo test --locked --workspace
 
   banked:
@@ -59,17 +59,21 @@ jobs:
       - uses: prefix-dev/setup-pixi@v0.9.0
         with:
           environments: default
+          cache: true
 
+      # Separate cargo cache from the hermetic job's: this layer compiles under
+      # the release-debug profile, so the two jobs share no artifacts.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: banked
+          cache-on-failure: true
+
+      # Fetched reference data is not a cargo artifact: cached on the fetch
+      # scripts, so a changed pin re-fetches and nothing else does.
       - uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-            validation/pdf
-          key: banked-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            banked-
+          path: validation/pdf
+          key: refdata-${{ hashFiles('validation/pdf/fetch.sh', 'validation/fetch_common.sh') }}
 
       # Downloads are a step of their own rather than something a test triggers
       # by reaching for a file it cannot find, so what this job pulls from the
