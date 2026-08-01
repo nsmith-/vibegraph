@@ -243,6 +243,9 @@ pub(super) enum Instr {
     /// Variadic per-helicity-combination root: computes nothing (its children's scalars
     /// are read out by the helicity-summed evaluator).
     Hels,
+    /// Variadic root bundle: computes nothing (the amplitude root and the
+    /// per-configuration diagram amplitudes under it are read out after the pass).
+    Configs,
 }
 
 /// Where the amplitude value(s) live after a run.
@@ -279,6 +282,13 @@ pub(super) struct Program {
     /// is the vertex output leg's structure momentum.
     pub(super) mom_operands: Box<[u32]>,
     pub(super) root: RootKind,
+    /// Scalar-arena indices of the per-configuration diagram amplitudes `A_d` (the
+    /// children of the [`Op::Configs`] root bundle), in configuration order. Under a
+    /// [`RootKind::Hels`] root they are combination-major:
+    /// `amp_locs[c * n_amps + d]`. Empty when the arena carries no `Configs` bundle.
+    pub(super) amp_locs: Box<[u32]>,
+    /// Diagram amplitudes per helicity combination — the row length of `amp_locs`.
+    pub(super) n_amps: u32,
 }
 
 /// The operand nodes an instruction actually reads from the result arenas: all
@@ -287,8 +297,20 @@ pub(super) struct Program {
 /// pass (kept live to the end instead).
 fn arena_reads(op: Op, kids: &[NodeId]) -> &[NodeId] {
     match op {
-        Op::PMom | Op::PMomOut | Op::Flows | Op::Hels => &[],
+        Op::PMom | Op::PMomOut | Op::Flows | Op::Hels | Op::Configs => &[],
         _ => kids,
+    }
+}
+
+/// Unwrap an [`Op::Configs`] root bundle into `(amplitude root, per-configuration
+/// diagram amplitudes)`. A node that is not a bundle is the amplitude root itself and
+/// carries no configuration amplitudes.
+fn split_configs(ast: &Ast<Const>, id: NodeId) -> (NodeId, &[NodeId]) {
+    if ast.value(id).op == Op::Configs {
+        let kids = ast.children_ids(id);
+        (kids[0], &kids[1..])
+    } else {
+        (id, &[])
     }
 }
 
@@ -319,24 +341,25 @@ impl Program {
         let mut live_end = vec![false; n];
         {
             let root_id = ast.root();
-            match ast.value(root_id).op {
-                Op::Hels => {
-                    for &c in ast.children_ids(root_id) {
-                        if ast.value(c).op == Op::Flows {
-                            for &j in ast.children_ids(c) {
-                                live_end[j as usize] = true;
-                            }
-                        } else {
-                            live_end[c as usize] = true;
-                        }
+            let mark = |live_end: &mut Vec<bool>, id: NodeId| {
+                let (amplitude, amps) = split_configs(ast, id);
+                if ast.value(amplitude).op == Op::Flows {
+                    for &j in ast.children_ids(amplitude) {
+                        live_end[j as usize] = true;
                     }
+                } else {
+                    live_end[amplitude as usize] = true;
                 }
-                Op::Flows => {
-                    for &c in ast.children_ids(root_id) {
-                        live_end[c as usize] = true;
-                    }
+                for &a in amps {
+                    live_end[a as usize] = true;
                 }
-                _ => live_end[root_id as usize] = true,
+            };
+            if ast.value(root_id).op == Op::Hels {
+                for &c in ast.children_ids(root_id) {
+                    mark(&mut live_end, c);
+                }
+            } else {
+                mark(&mut live_end, root_id);
             }
         }
         // CSR of nodes by expiry position, so the main loop can release slots in O(1).
@@ -577,6 +600,7 @@ impl Program {
                 }
                 Op::Flows => Instr::Flows,
                 Op::Hels => Instr::Hels,
+                Op::Configs => Instr::Configs,
             };
             instrs.push(instr);
 
@@ -602,17 +626,34 @@ impl Program {
         }
 
         let root_id = ast.root();
+        let mut amp_locs: Vec<u32> = Vec::new();
+        let mut n_amps: Option<u32> = None;
+        // Collect one combination's configuration amplitudes, checking that every
+        // combination carries the same number of them (the row length `amp_locs` is
+        // read back with).
+        let mut take_amps = |amps: &[NodeId], loc: &[u32]| {
+            amp_locs.extend(amps.iter().map(|&a| loc[a as usize]));
+            let k = amps.len() as u32;
+            assert_eq!(
+                n_amps.unwrap_or(k),
+                k,
+                "helicity combinations disagree on configuration-amplitude count"
+            );
+            n_amps = Some(k);
+        };
         let root = match ast.value(root_id).op {
             Op::Hels => {
                 let mut n_flows = 0u32;
                 let mut locs: Vec<u32> = Vec::new();
                 for &c in ast.children_ids(root_id) {
-                    let combo_flows = if ast.value(c).op == Op::Flows {
-                        let jamps = ast.children_ids(c);
+                    let (amplitude, amps) = split_configs(ast, c);
+                    take_amps(amps, &loc);
+                    let combo_flows = if ast.value(amplitude).op == Op::Flows {
+                        let jamps = ast.children_ids(amplitude);
                         locs.extend(jamps.iter().map(|&j| loc[j as usize]));
                         jamps.len() as u32
                     } else {
-                        locs.push(loc[c as usize]);
+                        locs.push(loc[amplitude as usize]);
                         1
                     };
                     assert!(
@@ -626,15 +667,20 @@ impl Program {
                     locs: locs.into_boxed_slice(),
                 }
             }
-            Op::Flows => {
-                let flows: Box<[u32]> = ast
-                    .children_ids(root_id)
-                    .iter()
-                    .map(|&c| loc[c as usize])
-                    .collect();
-                RootKind::Flows(flows)
+            _ => {
+                let (amplitude, amps) = split_configs(ast, root_id);
+                take_amps(amps, &loc);
+                if ast.value(amplitude).op == Op::Flows {
+                    RootKind::Flows(
+                        ast.children_ids(amplitude)
+                            .iter()
+                            .map(|&c| loc[c as usize])
+                            .collect(),
+                    )
+                } else {
+                    RootKind::Single(loc[amplitude as usize])
+                }
             }
-            _ => RootKind::Single(loc[root_id as usize]),
         };
 
         Program {
@@ -644,6 +690,8 @@ impl Program {
             operands: operands.into_boxed_slice(),
             mom_operands: mom_operands.into_boxed_slice(),
             root,
+            amp_locs: amp_locs.into_boxed_slice(),
+            n_amps: n_amps.unwrap_or(0),
         }
     }
 }

@@ -327,6 +327,73 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         }
     }
 
+    /// Fill `amp2` with the per-configuration helicity-summed squared amplitude
+    /// `AMP2(d) = Σ_hel Σ_chains |A_d(p)|²` — MadGraph's `AMP2` array.
+    ///
+    /// `A_d` is the colour-stripped amplitude of the diagram configuration `d` is
+    /// built on, without the symmetry factor, the Fermi sign or the colour
+    /// coefficient the JAMPs multiply it by, exactly as MadGraph's `AMP(i)` is. The
+    /// chains of one diagram are squared *separately* and added, which is
+    /// `get_amp2_lines`' own `Σ_a AMP(a)·conj(AMP(a))` over a diagram's amplitudes.
+    ///
+    /// This is the distribution MadEvent's per-event integration configuration
+    /// follows: under single-diagram-enhanced multi-channel integration configuration
+    /// `j`'s integrand carries the factor `AMP2_j / Σ_i AMP2_i`, so at a phase-space
+    /// point the configurations are distributed by that share — independently of how
+    /// the point was sampled. It selects an event's colour flow (through the
+    /// configuration's `ICOLAMP` mask) and nothing else: no integrand, no cross
+    /// section.
+    ///
+    /// `amp2` must hold one entry per configuration
+    /// ([`AmplitudeEvaluator::n_configs`](super::compile::AmplitudeEvaluator::n_configs)).
+    /// On a helicity-filtered evaluator the sum runs over the surviving combinations
+    /// only, under the same partonic-CM kinematic contract
+    /// [`eval_m2`](Self::eval_m2) documents — and, unlike the JAMP diagonal, that is
+    /// not a bit-for-bit-neutral restriction: a combination can be dropped because the
+    /// *coherent* amplitude cancels while the individual diagram amplitudes do not.
+    /// The pruned and unpruned `AMP2` are pinned against each other, and against
+    /// MadGraph's own array, by the amplitude gate.
+    pub fn eval_amp2(
+        &self,
+        momenta: &[LorentzVector<F>],
+        scratch: &mut ScratchSpace<F>,
+        amp2: &mut [F],
+    ) {
+        assert_eq!(
+            amp2.len(),
+            self.eval.n_configs(),
+            "amp2 buffer must hold one entry per integration configuration"
+        );
+        for slot in amp2.iter_mut() {
+            *slot = F::zero();
+        }
+        if momenta.len() != self.eval.n_ext() {
+            return;
+        }
+        if self.eval.is_pruned() {
+            assert_partonic_cm_beams_along_z(momenta, self.eval.n_in());
+        }
+        let folded = self.eval.folded_hel();
+        resolve_moms(folded, momenta, scratch);
+        let env = self.eval_env(folded, momenta, &[], None);
+        fill_arenas(folded, &env, scratch);
+
+        let program = folded.program();
+        let n = program.n_amps as usize;
+        if n == 0 {
+            return;
+        }
+        for row in program.amp_locs.chunks_exact(n) {
+            let mut at = 0;
+            for (acc, &span) in amp2.iter_mut().zip(self.eval.config_amp_counts()) {
+                for &l in &row[at..at + span] {
+                    *acc = *acc + scratch.scalars[l as usize].norm_sqr();
+                }
+                at += span;
+            }
+        }
+    }
+
     /// Fill `hel_m2` with the per-combination squared matrix element `|M_c(p)|²`,
     /// colour-contracted through CF — MadGraph's `SELECT_HEL` input.
     ///
@@ -532,6 +599,35 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         resolve_moms(folded, momenta, scratch);
         let env = self.eval_env(folded, momenta, helicities, None);
         run_forward_flows_typed(folded, &env, scratch)
+    }
+
+    /// The per-configuration diagram amplitudes `A_d` at one `(momenta, helicity)`
+    /// point, in the flattened
+    /// [`config_amp_counts`](super::compile::AmplitudeEvaluator::config_amp_counts)
+    /// layout — the complex objects [`eval_amp2`](Self::eval_amp2) squares.
+    ///
+    /// This is the level at which the configuration amplitudes are comparable to
+    /// MadGraph's `AMP()` directly: they carry neither the colour coefficient nor
+    /// the symmetry factor and Fermi sign the JAMPs multiply them by, exactly as
+    /// `AMP()` does not. `eval_amp2` takes the modulus, so it is blind to a phase
+    /// and to a permutation within a configuration; this is not. Allocates per
+    /// call; a validation handle, not a hot path.
+    pub fn run_config_amps(
+        &self,
+        momenta: &[LorentzVector<F>],
+        helicities: &[i32],
+        scratch: &mut ScratchSpace<F>,
+    ) -> Vec<C<F>> {
+        let folded = self.eval.folded();
+        resolve_moms(folded, momenta, scratch);
+        let env = self.eval_env(folded, momenta, helicities, None);
+        fill_arenas(folded, &env, scratch);
+        folded
+            .program()
+            .amp_locs
+            .iter()
+            .map(|&l| scratch.scalars[l as usize])
+            .collect()
     }
 
     /// Test-only: evaluate the amplitude with one external boson's polarisation ε^μ
@@ -969,7 +1065,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 let neg = -acc;
                 scratch.vectors[loc] = kernel::pmom_bare(&neg);
             }
-            Instr::Flows | Instr::Hels => {}
+            Instr::Flows | Instr::Hels | Instr::Configs => {}
         }
     }
 
@@ -1207,6 +1303,7 @@ pub(super) fn apply<'a, F: Real + 'a>(
         // what consumes their children's slots directly.
         Op::Flows => panic!("Op::Flows has no single-scalar node evaluation"),
         Op::Hels => panic!("Op::Hels has no single-scalar node evaluation"),
+        Op::Configs => panic!("Op::Configs has no single-scalar node evaluation"),
     }
 }
 

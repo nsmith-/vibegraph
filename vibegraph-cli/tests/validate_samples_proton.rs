@@ -324,5 +324,5 @@ fn generated_proton_events_agree_with_madgraphs_banked_ones() {
 /// agrees at `−0.01%`, so this is not that.
 #[test]
 fn generated_b_quark_events_agree_with_madgraphs_banked_ones() {
-    check_row("pp_to_bb_fixed", "p p > b b~ QCD=2", "info");
+    check_row("pp_to_bb_fixed", "p p > b b~ QCD=2", "gate");
 }
