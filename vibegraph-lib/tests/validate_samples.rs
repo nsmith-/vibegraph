@@ -50,11 +50,10 @@
 //!   question is decided by a binned comparison
 //!   ([`the_low_m_ll_region_is_binned_against_madgraph`]) and not by a p-value.
 
-use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
@@ -64,17 +63,14 @@ use vibegraph::hadronic::{
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::lhef::build::{EventHeader, SubprocessRecord};
-use vibegraph::lhef::observables::{
-    canonical, colour_key, flavour_key, helicity_key, kinematics, Labelling,
-};
+use vibegraph::lhef::observables::{canonical, kinematics, Labelling};
 use vibegraph::lhef::parse::LheFile;
-use vibegraph::lhef::record::LheEvent;
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::runcard::{BeamMode, RunCard};
-use vibegraph::stats::{chi2_homogeneity, effective_counts, ks_two_sample};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
 use vibegraph::unweight::Unweighter;
+use vibegraph::validation::samples::{compare, labelling_for, Chi2Column, EventSample};
 
 mod common;
 
@@ -120,16 +116,6 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// the row is marked informational with the measurement in its note, and the
 /// disagreement is filed — the threshold does not move.
 const P_FLOOR: f64 = 1e-4;
-
-/// Categorical columns with at most this many distinct keys carry their per-key
-/// counts into the report, so a χ² that fails says which category moved.
-const MAX_CATEGORY_DETAIL: usize = 32;
-
-/// An observable whose values span less than this fraction of their own scale is
-/// a constant of the process — `m(l+,l-)` at fixed beams is `√s` on every event —
-/// and has no distribution to compare. Such columns are named in the report
-/// rather than dropped silently.
-const DEGENERATE_SPAN: f64 = 1e-9;
 
 /// One process to compare, with the integration budget its grids are built on.
 struct Row {
@@ -282,42 +268,25 @@ fn param_card(dir: &str) -> ParamCard {
         .unwrap_or_else(|| "".parse::<ParamCard>().unwrap())
 }
 
-/// A sample: one record per event, with the weight it carries.
-struct Sample {
-    events: Vec<LheEvent>,
-    weights: Vec<f64>,
-    /// The cross section the sample represents, in picobarns — MadGraph's banked
-    /// value, or the one our accept/reject pass recovered.
-    sigma_pb: f64,
-}
-
-impl Sample {
-    fn len(&self) -> usize {
-        self.events.len()
-    }
-}
-
-/// MadGraph's banked events for a run, as records.
-fn banked_sample(dir: &str) -> Sample {
+/// MadGraph's banked events for a run, as a sample.
+fn banked_sample(dir: &str) -> EventSample {
     let path = output_dir()
         .join(dir)
         .join("Events/run_01/unweighted_events.lhe.gz");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let mut text = String::new();
-    GzDecoder::new(&bytes[..])
+    // MadGraph concatenates the per-channel event files, so a banked `.lhe.gz` is
+    // a *multi-member* gzip stream and a single-member reader stops silently at
+    // the first member's end — with a perfectly parseable prefix of the run.
+    MultiGzDecoder::new(&bytes[..])
         .read_to_string(&mut text)
         .unwrap_or_else(|e| panic!("decompress {}: {e}", path.display()));
-    let file = LheFile::parse(&text).expect("MadGraph's own file parses");
-    // `XWGTUP` under `IDWTUP = -4` is a cross section per event and the total is
-    // their mean, so the mean is the sample's σ and the weights carry whatever
-    // spread the run left in them.
-    let weights: Vec<f64> = file.events.iter().map(|e| e.weight).collect();
-    let sigma_pb = weights.iter().sum::<f64>() / weights.len() as f64;
-    Sample {
-        events: file.events,
-        weights,
-        sigma_pb,
-    }
+    assert!(
+        text.trim_end().ends_with("</LesHouchesEvents>"),
+        "{} decompressed to a truncated document",
+        path.display()
+    );
+    EventSample::from_lhe(LheFile::parse(&text).expect("MadGraph's own file parses"))
 }
 
 /// Build the production fixed-energy integrand for a banked process and hand it
@@ -388,7 +357,7 @@ fn generate(
     records: &[SubprocessRecord],
     uw: &mut Unweighter,
     seed: u64,
-) -> Sample {
+) -> EventSample {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut momenta = Vec::new();
     let mut events = Vec::with_capacity(EVENTS_PER_SEED);
@@ -428,227 +397,111 @@ fn generate(
     let after = uw.stats();
     let weight_sum = after.event_weight_sum - before.event_weight_sum;
     let sigma_pb = uw.total_w_max() * GEV2_TO_PB * weight_sum / trials as f64;
-    Sample {
+    EventSample {
         events,
         weights,
         sigma_pb,
     }
 }
 
-/// The columns of a sample: one named continuous observable per entry, plus the
-/// three categorical keys.
-struct Columns {
-    kinematic: Vec<(String, Vec<(f64, f64)>)>,
-    helicity: BTreeMap<String, (f64, f64)>,
-    colour: BTreeMap<String, (f64, f64)>,
-    flavour: BTreeMap<String, (f64, f64)>,
-}
-
-fn columns(sample: &Sample, labelling: Labelling) -> Columns {
-    let mut kinematic: Vec<(String, Vec<(f64, f64)>)> = Vec::new();
-    let mut helicity = BTreeMap::new();
-    let mut colour = BTreeMap::new();
-    let mut flavour = BTreeMap::new();
-    for (event, &w) in sample.events.iter().zip(&sample.weights) {
-        let event = canonical(event, labelling);
-        for (k, (name, value)) in kinematics(&event, labelling).into_iter().enumerate() {
-            if k == kinematic.len() {
-                kinematic.push((name.clone(), Vec::with_capacity(sample.len())));
-            }
-            assert_eq!(
-                kinematic[k].0, name,
-                "the observable names must not depend on the event"
-            );
-            kinematic[k].1.push((value, w));
-        }
-        for (map, key) in [
-            (&mut helicity, helicity_key(&event)),
-            (&mut colour, colour_key(&event)),
-            (&mut flavour, flavour_key(&event)),
-        ] {
-            let entry = map.entry(key).or_insert((0.0, 0.0));
-            entry.0 += w;
-            entry.1 += w * w;
-        }
-    }
-    Columns {
-        kinematic,
-        helicity,
-        colour,
-        flavour,
-    }
-}
-
-/// χ² homogeneity between two categorical columns, over the union of their
-/// categories.
-fn categorical(
-    ours: &BTreeMap<String, (f64, f64)>,
-    theirs: &BTreeMap<String, (f64, f64)>,
-    column: &str,
-) -> Option<Chi2Cell> {
-    let keys: Vec<&String> = ours
-        .keys()
-        .chain(theirs.keys())
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    if keys.len() < 2 {
-        return None;
-    }
-    let pick =
-        |m: &BTreeMap<String, (f64, f64)>, k: &String| m.get(k).copied().unwrap_or((0.0, 0.0));
-    let (a_w, a_w2): (Vec<f64>, Vec<f64>) = keys.iter().map(|k| pick(ours, k)).unzip();
-    let (b_w, b_w2): (Vec<f64>, Vec<f64>) = keys.iter().map(|k| pick(theirs, k)).unzip();
-    let a = effective_counts(&a_w, &a_w2);
-    let b = effective_counts(&b_w, &b_w2);
-    let test = chi2_homogeneity(&a, &b).ok()?;
-    let detail = if keys.len() <= MAX_CATEGORY_DETAIL {
-        keys.iter()
-            .zip(a.iter().zip(&b))
-            .map(|(k, (&ours, &theirs))| CategoryCount {
-                key: (*k).clone(),
-                ours,
-                theirs,
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
-    Some(Chi2Cell {
-        detail,
-        column: column.to_string(),
-        chi2: test.chi2,
-        dof: test.dof,
-        p: test.p,
-        categories: test.categories,
-        distinct_keys: keys.len(),
-        pooled_share: test.pooled_share,
-    })
-}
-
-/// Whether a column's values span enough of their own scale to have a
-/// distribution.
-fn degenerate(values: &[(f64, f64)]) -> bool {
-    let (lo, hi) = values
-        .iter()
-        .fold((f64::MAX, f64::MIN), |(lo, hi), &(v, _)| {
-            (lo.min(v), hi.max(v))
-        });
-    (hi - lo).abs() <= DEGENERATE_SPAN * hi.abs().max(lo.abs()).max(1.0)
-}
-
 /// Compare one generated sample against MadGraph's, filling in a report row's
-/// per-seed entry and returning the failures the comparison found.
-fn compare(
+/// per-seed entry and returning the columns that fell below the floor.
+fn compare_seed(
     key: &str,
     seed: u64,
-    ours: &Sample,
-    theirs: &Sample,
+    ours: &EventSample,
+    theirs: &EventSample,
     labelling: Labelling,
     row: &mut SamplesRow,
 ) -> Vec<String> {
-    let mine = columns(ours, labelling);
-    let mg = columns(theirs, labelling);
-    assert_eq!(
-        mine.kinematic.iter().map(|c| &c.0).collect::<Vec<_>>(),
-        mg.kinematic.iter().map(|c| &c.0).collect::<Vec<_>>(),
-        "[{key}] the two samples produced different observable names"
-    );
-
-    let mut cells = Vec::new();
-    let mut constant = Vec::new();
-    for ((name, ours_col), (_, mg_col)) in mine.kinematic.iter().zip(&mg.kinematic) {
-        if degenerate(ours_col) && degenerate(mg_col) {
-            constant.push(name.clone());
-            continue;
-        }
-        let ks = ks_two_sample(ours_col, mg_col).expect("both columns are finite and non-empty");
-        cells.push(KsCell {
-            observable: name.clone(),
-            d: ks.d,
-            p: ks.p,
-        });
-    }
-    let mut chi2 = Vec::new();
-    for (column, ours_map, mg_map) in [
-        ("SPINUP", &mine.helicity, &mg.helicity),
-        ("ICOLUP", &mine.colour, &mg.colour),
-        ("flavour", &mine.flavour, &mg.flavour),
-    ] {
-        match categorical(ours_map, mg_map, column) {
-            Some(cell) => chi2.push(cell),
-            None => row.single_category.push(column.to_string()),
-        }
-    }
-
-    let worst_ks = cells
-        .iter()
-        .min_by(|a, b| a.p.total_cmp(&b.p))
-        .cloned()
-        .expect("a row has at least one non-degenerate observable");
+    let found = compare(ours, theirs, labelling);
+    let worst = found
+        .worst_ks()
+        .expect("a row has one comparable observable");
     eprintln!(
         "  seed {seed:#010x} | {} events (n_eff {:.0}) | worst KS: {} p {:.3e} (D {:.4})",
         ours.len(),
-        vibegraph::stats::effective_size(ours.weights.iter().copied()),
-        worst_ks.observable,
-        worst_ks.p,
-        worst_ks.d,
+        ours.effective_size(),
+        worst.observable,
+        worst.p,
+        worst.d,
     );
-    for cell in &chi2 {
+    for cell in &found.chi2 {
         eprintln!(
-            "             chi2 {:<8} p {:.3e} (chi2 {:.1} / {} dof over {} of {} categories, {:.1}% pooled)",
-            cell.column, cell.p, cell.chi2, cell.dof, cell.categories, cell.distinct_keys,
+            "             chi2 {:<8} p {:.3e} (chi2 {:.1} / {} dof over {} of {} categories, \
+             {:.1}% pooled)",
+            cell.column,
+            cell.p,
+            cell.chi2,
+            cell.dof,
+            cell.categories,
+            cell.distinct_keys,
             100.0 * cell.pooled_share
         );
     }
 
-    let mut failures = Vec::new();
-    for cell in &cells {
+    let mut below = Vec::new();
+    for cell in &found.ks {
         if cell.p < P_FLOOR {
-            failures.push(format!(
+            below.push(format!(
                 "[{key}] seed {seed:#010x} KS {} p {:.3e} (D {:.4}) below the {P_FLOOR:.0e} floor",
                 cell.observable, cell.p, cell.d
             ));
         }
     }
-    for cell in &chi2 {
+    for cell in &found.chi2 {
         if cell.p < P_FLOOR {
-            failures.push(format!(
-                "[{key}] seed {seed:#010x} chi2 {} p {:.3e} ({:.1}/{} dof) below the {P_FLOOR:.0e} floor",
+            below.push(format!(
+                "[{key}] seed {seed:#010x} chi2 {} p {:.3e} ({:.1}/{} dof) below the \
+                 {P_FLOOR:.0e} floor",
                 cell.column, cell.p, cell.chi2, cell.dof
             ));
         }
     }
 
-    row.constant_observables = constant;
+    row.constant_observables = found.constant.clone();
+    row.single_category = found
+        .single_category
+        .iter()
+        .map(|c| (*c).to_string())
+        .collect();
     row.per_seed.push(SeedSample {
         seed,
         events: ours.len(),
         sigma_pb: ours.sigma_pb,
-        ks: cells,
-        chi2,
+        ks: found
+            .ks
+            .iter()
+            .map(|c| KsCell {
+                observable: c.observable.clone(),
+                d: c.d,
+                p: c.p,
+            })
+            .collect(),
+        chi2: found.chi2.iter().map(chi2_cell).collect(),
     });
-    failures
+    below
 }
 
-/// Fine labels when both samples carry one final-state species multiset, coarse
-/// ones otherwise — the choice is a property of the sample, so it is measured
-/// rather than declared.
-fn labelling_for(a: &Sample, b: &Sample) -> Labelling {
-    let key = |s: &Sample| {
-        let mut keys: Vec<String> = s
-            .events
+/// A shared comparison's χ² result as the report row records it.
+fn chi2_cell(cell: &Chi2Column) -> Chi2Cell {
+    Chi2Cell {
+        column: cell.column.to_string(),
+        chi2: cell.chi2,
+        dof: cell.dof,
+        p: cell.p,
+        categories: cell.categories,
+        distinct_keys: cell.distinct_keys,
+        pooled_share: cell.pooled_share,
+        detail: cell
+            .detail
             .iter()
-            .map(|e| flavour_key(&canonical(e, Labelling::Fine)))
-            .collect();
-        keys.sort();
-        keys.dedup();
-        keys
-    };
-    if key(a).len() == 1 && key(b).len() == 1 && key(a) == key(b) {
-        Labelling::Fine
-    } else {
-        Labelling::Coarse
+            .map(|(key, ours, theirs)| CategoryCount {
+                key: key.clone(),
+                ours: *ours,
+                theirs: *theirs,
+            })
+            .collect(),
     }
 }
 
@@ -692,7 +545,7 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                     Labelling::Fine => "fine",
                     Labelling::Coarse => "coarse",
                 };
-                let found = compare(row.key, seed, &ours, &mg, l, &mut report);
+                let found = compare_seed(row.key, seed, &ours, &mg, l, &mut report);
                 if row.mode == "gate" {
                     failures.extend(found);
                 } else {
@@ -746,26 +599,18 @@ fn the_gate_rejects_a_sample_from_a_different_process() {
     for (a, b) in pairs {
         let (sa, sb) = (banked_sample(a), banked_sample(b));
         let l = labelling_for(&sa, &sb);
-        let (ca, cb) = (columns(&sa, l), columns(&sb, l));
-        let worst = ca
-            .kinematic
-            .iter()
-            .zip(&cb.kinematic)
-            .filter(|((_, x), (_, y))| !(degenerate(x) && degenerate(y)))
-            .map(|((name, x), (_, y))| {
-                let ks = ks_two_sample(x, y).expect("finite columns");
-                (name.clone(), ks.p)
-            })
-            .min_by(|x, y| x.1.total_cmp(&y.1))
-            .expect("a comparable observable");
+        let worst = compare(&sa, &sb, l)
+            .worst_ks()
+            .cloned()
+            .expect("the two processes share a comparable observable");
         eprintln!(
             "  {a} against {b}: smallest KS p {:.3e} on {}",
-            worst.1, worst.0
+            worst.p, worst.observable
         );
         assert!(
-            worst.1 < P_FLOOR,
+            worst.p < P_FLOOR,
             "{a} against {b} passed the {P_FLOOR:.0e} floor at p = {:.3e}",
-            worst.1
+            worst.p
         );
     }
 }

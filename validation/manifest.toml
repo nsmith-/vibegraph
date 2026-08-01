@@ -373,7 +373,7 @@ artifacts = ["output/pp_to_ll", "output/pp_to_ll.json", "output/dy13_default", "
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union, not only the count" }
 amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"] }
 integrals = { tier = "banked", mode = "gate", note = "two cards, both through the general proton path; no bespoke integrand. Three seeds each: pull +0.25 (rel +0.02%) on the default card, -1.35 (rel -0.10%) on the m_ll window" }
-samples = { tier = "banked", mode = "gate" }
+samples = { tier = "uncovered", note = "nothing to compare against: the Drell-Yan reference banks the two dy13 cards' cross sections and not their events, and this row's own banked run takes the MG-internal nn23lo1 set at a dynamical scale, neither of which this crate can reproduce. Filled by banking events for the dy13 cards, which is an oracle-layer run" }
 
 [[process]]
 key = "pp_to_ll_qcd0"
@@ -387,7 +387,7 @@ artifacts = ["output/pp_to_ll_qcd0", "output/pp_to_ll_qcd0.json", "output/pp_to_
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
 amplitudes = { tier = "hermetic", mode = "gate", note = "its banked table is the u u~ > mu+ mu- subprocess; the event points are the group's proton-beam events filtered to that flavour assignment and boosted into the partonic centre of mass, so this is the one row whose points come from a hadronic run" }
 integrals = { tier = "covered-by", rows = ["pp_to_ll"] }
-samples = { tier = "covered-by", rows = ["pp_to_ll"] }
+samples = { tier = "uncovered", note = "same gap as pp_to_ll, which it would have been covered by" }
 
 [[process]]
 key = "pp_to_bb"
@@ -444,7 +444,7 @@ artifacts = ["output/pp_to_llj_fixed", "output/pp_to_llj_fixed/Events/run_01/unw
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
 amplitudes = { tier = "covered-by", rows = ["uux_to_epemg", "ddx_to_epemg", "gu_to_epemu", "gux_to_epemux"] }
 integrals = { tier = "banked", mode = "gate", note = "three seeds at 300k in this layer; the full seed sweep and the budget ladder are oracle-layer" }
-samples = { tier = "banked", mode = "gate", note = "carries the flavour-group frequency chi-squared as well as the continuous observables" }
+samples = { tier = "banked", mode = "gate", note = "the only row measured through the shipped binary — the flavour draw and the record relabelling live in `generate` — and the only one carrying the flavour-group frequency chi-squared: 48 concrete assignments, p 0.14 to 0.62 over three seeds, against a continuous minimum of KS p 4.4e-2" }
 
 [[process]]
 key = "pp_to_llj"
@@ -598,6 +598,13 @@ layer = "hermetic"
 targets = ["vibegraph-lib/tests/amplitude_oracle.rs"]
 inputs = ["validation/madgraph/amplitudes/<process>.json"]
 rationale = "The gate behind the `amplitudes` column, one trial per row: |M|^2 at every banked point, and per-diagram AMP() plus per-flow JAMP() per helicity at a few of each point set. Listed here as well as in the table because a single binary covers every row."
+
+[[standalone]]
+key = "samples-mg"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_samples.rs", "vibegraph-cli/tests/validate_samples_proton.rs"]
+inputs = ["banked .lhe.gz runs", "fetched PDF set (proton rows)"]
+rationale = "The gate behind the `samples` column: two binaries covering every row, one per beam kind. Listed here as well as in the table because they also carry two checks that belong to no row — a mutation probe comparing one process's banked events against another's, which must fail the same floor the rows pass (a statistic that never rejects would leave every green cell meaningless), and the measured refusal of the four dynamical-scale parton rows."
 
 [[standalone]]
 key = "hadronic-sigma"
