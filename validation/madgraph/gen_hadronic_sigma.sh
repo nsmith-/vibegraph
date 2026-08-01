@@ -8,6 +8,15 @@
 # consume the identical cut/beam/PDF settings. The banked result lands in
 # hadronic_sigma_reference.json (committed).
 #
+# Each run also banks its unweighted events under
+# output/dy13_<name>/Events/run_<name>/ — MadGraph names the directory after the
+# run tag — which is what the `samples` gate for this row compares against. The
+# cross section and the sample come out of one invocation, so there is no
+# configuration between them to drift.
+#
+# The generator is the pinned submodule (validation/madgraph/mg5_pinned.sh), not
+# the packaged mg5_aMC on PATH; see that script for why.
+#
 # Usage: pixi run -e madgraph generate-hadronic-sigma
 set -euo pipefail
 
@@ -15,6 +24,32 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$HERE/output"
 mkdir -p "$OUT"
 REF_JSON="$HERE/hadronic_sigma_reference.json"
+
+# LHAPDF resolves `lhaid 247000` against the set validation/pdf/ holds rather
+# than downloading one of its own; the installed data directory stays on the path
+# for lhapdf.conf and the set index.
+LHAPDF_DATA_PATH="$HERE/../pdf${LHAPDF_DATA_PATH:+:$LHAPDF_DATA_PATH}"
+if command -v lhapdf-config >/dev/null 2>&1; then
+  LHAPDF_DATA_PATH="$LHAPDF_DATA_PATH:$(lhapdf-config --datadir)"
+fi
+export LHAPDF_DATA_PATH
+
+# A generated process directory carries its own copy of MadGraph's settings, and
+# `bin/generate_events` reads that copy rather than anything the caller exports.
+# Both of these default to on and both reach the desktop — one opens a browser at
+# the run's HTML summary, the other posts a notification — so a batch of runs
+# takes over the machine it runs on. Rewrite rather than uncomment, so the value
+# is what this says whatever the file arrived holding.
+silence_madgraph_ui() {
+  local cfg="$1"
+  [ -f "$cfg" ] || return 0
+  grep -vE '^\s*#?\s*(automatic_html_opening|notification_center)\s*=' "$cfg" > "$cfg.tmp"
+  {
+    printf 'automatic_html_opening = False\n'
+    printf 'notification_center = False\n'
+  } >> "$cfg.tmp"
+  mv "$cfg.tmp" "$cfg"
+}
 
 # Run one card through madevent and print "<sigma> <err>" (pb) on stdout.
 run_one() {
@@ -28,9 +63,11 @@ run_one() {
 generate p p > e+ e-
 output $procdir -nojpeg
 EOF
-    mg5_aMC "$tmp_mg5" >&2
+    bash "$HERE/mg5_pinned.sh" "$tmp_mg5" >&2
     rm -f "$tmp_mg5"
   fi
+
+  silence_madgraph_ui "$procdir/Cards/me5_configuration.txt"
 
   echo ">>> [$name] installing shared run card $card ..." >&2
   cp "$HERE/$card" "$procdir/Cards/run_card.dat"

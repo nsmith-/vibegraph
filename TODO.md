@@ -68,18 +68,20 @@ One line each; the note is the full record. Earlier sprints
 The rendered table's non-green cells, in the order note 25 §10 recommends taking
 them. Every one of them is a measurement that exists, not a suspicion.
 
-- **No banked Drell-Yan event sample** — the `samples` cell of `pp_to_ll` (and so
-  of `pp_to_ll_qcd0`, which pointed at it) is `uncovered`, not measured: the
-  Drell-Yan reference banks the two `dy13` cards' cross sections and not their
-  events, and the row's own banked MadGraph run takes the MG-internal `nn23lo1`
-  set at a dynamical scale, which this crate cannot reproduce. Filled by an
-  oracle-layer run banking events for the committed `dy13` cards — after which the
-  general path's `dσ/dm_ll` at low `m_ll` becomes measurable against MadGraph, the
-  thing the deleted `dy_dsigma_dmll.md` table was standing in for. That table had
-  lost its regeneration path with the bespoke integrand and was deleted rather
-  than reproduced: the `samples` binning that replaces it runs on
-  `ee_to_mumu_tata_qcd0`, not on Drell-Yan, so nothing regenerates a Drell-Yan
-  spectrum today. (L4.)
+- ~~**No banked Drell-Yan event sample**~~ — **filled** (B4, 2026-08-01; note 27
+  §B4). The two `dy13` cards' MadGraph runs now bank their unweighted events
+  alongside their cross section, produced with the pinned submodule's **3.7.1**
+  per decision D3. `pp_to_ll`'s `samples` cell is `banked`/`gate`, measured once
+  per card (200000 MadGraph events against 3 × 20000 of ours; minimum KS p
+  `2.2e-2`, minimum χ² p `2.9e-3` on `SPINUP` for one seed with `0.49`/`0.72` on
+  the other two), and `pp_to_ll_qcd0`'s points at it. A Drell-Yan `dσ/dm_ll`
+  regenerates from a gate again, which is what the deleted `dy_dsigma_dmll.md`
+  table stood in for: absolute picobarns from the 20 GeV threshold `ptl` implies
+  out to 1 TeV, every judged bin within 2.3 combined errors, and the threshold
+  itself checked rather than assumed. **Left for B5**: the two runs exist only in
+  a local work area, so the row carries `bundled = false` and the branch is red on
+  a fetching checkout until `refdata-3` picks them up; they add about 40 MB
+  gzipped to a 65 MB bundle.
 
 ### Standing discrepancies to resolve (never a loosened tolerance)
 
@@ -271,6 +273,22 @@ them. Every one of them is a measurement that exists, not a suspicion.
 ### Gate + tooling hygiene
 
 Small, independent, each one a gate that is weaker than it looks.
+
+- ~~**A sample's cross section was read without looking at `IDWTUP`**~~ ✅
+  **resolved** (B4, 2026-08-01). `EventSample::from_lhe` took every file's σ as
+  the *mean* of `XWGTUP`, which is right for `IDWTUP = -4` and wrong by a factor
+  of the event count for `-3`. It had never been exercised because every banked
+  run at the time was `-4` — and which one MadGraph writes turns out to be a
+  property of the *run card*, not of MadGraph: `event_norm`'s card default is
+  `average` (`-4`) but its **system default is `sum`** (`-3`), the value applied
+  when the card never mentions the parameter. MadGraph's own full cards name it;
+  the hand-written `dy13` cards do not, so the first Drell-Yan bank arrived at
+  `-3` and read as `4.7e-3` pb against `933.23`. The reader now dispatches on the
+  field, takes `XSECUP` under `+3`, and refuses an `IDWTUP` it does not know
+  rather than guessing — a wrong guess here is orders of magnitude out and
+  silent. Found by the `dσ/dm_ll` gate, which is the only comparison in the
+  `samples` category that is not blind to normalisation; pinned by three unit
+  tests in `validation/samples.rs`.
 
 - ~~**One work-area `matrix1_orig.f` is hand-patched**~~ ✅ **resolved in the
   `refdata-2` re-cut.** The `COMMON/DBG_AMP/` block an old debugging session added
