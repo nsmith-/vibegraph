@@ -24,6 +24,17 @@ pub enum WeightStrategy {
     /// `floor(w) + Bernoulli(frac(w))` times. The choice is between a visible
     /// weight and a multiplicity, not between representable and not.
     MeanCrossSectionPb,
+    /// `-3`: `XWGTUP` is a cross section in picobarns and the total is the **sum**
+    /// of the event weights.
+    ///
+    /// MadGraph writes this whenever its `event_norm` resolves to `sum`, which is
+    /// what a run card that never mentions `event_norm` gets: that parameter's
+    /// *system* default is `sum` where its card default is `average`, so a
+    /// hand-written minimal card and MadGraph's own full card produce samples
+    /// whose weights differ by a factor of the event count. Nothing else in the
+    /// file distinguishes them, so a reader that assumes the other strategy is
+    /// wrong by that factor with nothing to notice it by.
+    SumCrossSectionPb,
     /// Any other value, kept verbatim.
     Other(i32),
 }
@@ -33,14 +44,16 @@ impl WeightStrategy {
         match self {
             WeightStrategy::UnitWeight => 3,
             WeightStrategy::MeanCrossSectionPb => -4,
+            WeightStrategy::SumCrossSectionPb => -3,
             WeightStrategy::Other(v) => v,
         }
     }
 
-    /// The strategy an `IDWTUP` names, normalising the two values that have one.
+    /// The strategy an `IDWTUP` names, normalising the values that have one.
     pub fn from_i32(value: i32) -> Self {
         match value {
             3 => WeightStrategy::UnitWeight,
+            -3 => WeightStrategy::SumCrossSectionPb,
             -4 => WeightStrategy::MeanCrossSectionPb,
             other => WeightStrategy::Other(other),
         }
@@ -198,15 +211,20 @@ mod tests {
         for s in [
             WeightStrategy::UnitWeight,
             WeightStrategy::MeanCrossSectionPb,
+            WeightStrategy::SumCrossSectionPb,
             WeightStrategy::Other(1),
             WeightStrategy::Other(-1),
         ] {
             assert_eq!(WeightStrategy::from_i32(s.as_i32()), s);
         }
-        // The two named values are normalised, so an `Other` spelling of them is
+        // The named values are normalised, so an `Other` spelling of them is
         // never produced by parsing.
         assert_eq!(WeightStrategy::from_i32(-4).as_i32(), -4);
         assert_eq!(WeightStrategy::from_i32(3), WeightStrategy::UnitWeight);
+        assert_eq!(
+            WeightStrategy::from_i32(-3),
+            WeightStrategy::SumCrossSectionPb
+        );
     }
 
     fn particle(color: [i32; 2]) -> LheParticle {

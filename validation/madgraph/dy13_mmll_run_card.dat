@@ -37,3 +37,12 @@
   60.0  = mmll
   120.0 = mmllmax
   4     = maxjetflavor
+#*********************************************************************
+# Systematics: off. MadGraph's systematics pass is a post-processing
+# reweighting that leaves the events, their XWGTUP and the cross section
+# untouched and appends one <wgt> per scale and PDF-error variation to
+# every record — with this PDF set's error member count, two orders of
+# magnitude more bytes per event than the event itself. The banked runs
+# are read back event by event, so the variations are not written.
+#*********************************************************************
+  False = use_syst
