@@ -170,16 +170,14 @@ fn coverage(run: &str) -> Coverage {
         "ee_to_mumu" | "ee_to_ttx" | "ee_to_zh" | "ee_to_tatah" => Closed(COLOURLESS_ANNIHILATION),
         // Lepton beams with a t-channel: Bhabha exchanges a photon between the
         // two electron lines, and `W` pair production a neutrino, each locking
-        // an outgoing leg to the beam it can share a vertex with.
-        "ee_to_ee" => Closed(ClusterTopology {
+        // an outgoing leg to the beam it can share a vertex with. Both masks are
+        // the diagonal one — the charged current pairs each beam with the `W` of
+        // its own charge, so `e⁺` goes with `W⁺` exactly as `e⁺` goes with `e⁺`.
+        // `coupling::topology` derives both from the diagrams and is asserted on
+        // them, so the two routes to the declaration agree.
+        "ee_to_ee" | "ee_to_wpwm" => Closed(ClusterTopology {
             beam_connections: BeamConnections::TChannel {
                 two_body_pairs: [[true, false], [false, true]],
-            },
-            ..COLOURLESS_ANNIHILATION
-        }),
-        "ee_to_wpwm" => Closed(ClusterTopology {
-            beam_connections: BeamConnections::TChannel {
-                two_body_pairs: [[false, true], [true, false]],
             },
             ..COLOURLESS_ANNIHILATION
         }),

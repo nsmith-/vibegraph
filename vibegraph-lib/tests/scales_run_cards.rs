@@ -49,15 +49,15 @@ fn the_banked_cross_section_cards_are_fixed_scale() {
     assert_eq!(checked, 2);
 }
 
-/// `vibegraph-lib/tests/data/run_card_dy.dat` disagrees with both cards above:
-/// it leaves `fixed_ren_scale` false, so a run driven from it would take the
-/// clustering branch for `μR` while keeping `μF` at `91.188`. Asserted rather
-/// than corrected — the banked cross sections depend on the `dy13` cards, and
-/// silently aligning the test fixture to them would hide which card any future
-/// disagreement came from.
+/// The parser fixture compiles to the *other* branch, and is the only committed
+/// card that does: it leaves `fixed_ren_scale` false, so a run driven from it
+/// takes the clustering branch for `μR` while keeping `μF` at `91.188`. That is
+/// the point of it — it is written for the parser, not copied from a run, so it
+/// is free to cover a combination no reference card does. Pinned here so the two
+/// branches keep an example each.
 #[test]
-fn the_drell_yan_test_fixture_disagrees_with_the_reference_cards() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/run_card_dy.dat");
+fn the_parser_fixture_compiles_to_the_free_scale_branch() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/run_card_parser_fixture.dat");
     let card = RunCard::parse_file(&path).expect("run card");
     assert!(!card.fixed_ren_scale, "fixture already fixes mu_R");
     assert!(card.fixed_fac_scale, "fixture already frees mu_F");
