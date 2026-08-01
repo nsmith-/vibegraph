@@ -747,6 +747,158 @@ costs a new archive and a new pin — note 25 §refdata-2).
 Gate: `pixi run validate` green end-to-end on the new manifest; bundle
 round-trip verified; no hygiene item left half-moved.
 
+#### B5 outcome (2026-08-01) — ⛔ **blocked**, branch `v3b-b5`
+
+The re-bank landed and two cells were promoted, but `pixi run validate` is **red**
+and the branch must not be merged: MadGraph 3.7.1 emits Les Houches events in a
+second numeric dialect our writer does not produce, and
+`validate_lhef::banked_files_round_trip_byte_for_byte` — an enforced gate over
+all banked runs — fails on 20 of the 34 banked event files. The fix belongs in
+`lhef::parse`/`lhef::write` and is out of this session's scope; see **the LHE
+dialect blocker** below.
+
+Everything else in the session is done, measured and committed.
+
+**The re-bank.** Every run in `validation/madgraph/output/` is now MadGraph
+3.7.1's — `#*  VERSION 3.7.1  2026-04-29  *` in 28 of 34 banners — through
+`mg5_pinned.sh`, which `build.sh` now calls in place of the `mg5_aMC` on `PATH`.
+The six exceptions are deliberate and are B1's *evidence*: the
+`ee_to_mumu_tata_qcd0` `hwindow`/`hanti`/`control_2026080{1,2,3}` runs and
+`var_sde1` measure a 3.5.7 defect, so they stay at the version they measure.
+`IDWTUP` is `-4` on all 32 MadGraph-carded runs and `-3` on B4's two `dy13`
+banks, which is what §B4's hand-off predicted from `event_norm`'s system default
+— no row flipped convention silently. The packed-`CF` prediction held: every
+`amplitudes`, `color_cf_oracle` and `color_flow_tags_oracle` row passes against
+regenerated 3.7.1 Fortran, so the f2py path really does execute MadGraph's own
+contraction and only the hand-written parser needed B4's fix.
+
+**`e+ e- > mu+ mu- ta+ ta-` gates, both cells.** `integrals` reads
+`1.367003e-3 ± 2.685e-6` pb against `1.372500e-3 ± 2.674e-6` pb — pull `−1.45`,
+rel `−0.40%`, against a `rel_tol` of `0.02` taken from the resonant channel's own
+`0.45%` seed spread rather than from the reference's error. `samples` reads
+worst KS p `6.5e-2` (`cos(ta+)`) and worst χ² p `2.5e-1` (`SPINUP`) over three
+seeds, against `3.6e-6` and χ² 210–233 on 15 dof from the 3.5.7 bank. B1
+predicted ~0.4σ and the measurement is 1.45σ; the difference is that B1's
+prediction was against MadGraph's *windowed* sum, and this is against a fresh
+independent 3.7.1 run with its own Monte-Carlo error.
+
+**The finding the re-bank was not looking for: 3.5.7 ran every `lpp = 0` process
+at `αs(M_Z) = 0.130`.** The partonic references moved far more than the pole fix
+could explain — `gg_to_gg` `168830 → 142770` pb, `gg_to_ttx` `15.953 → 13.513`,
+`uux_to_uux` `33428 → 28269`, all `−15.4%`; the `QCD=2 QED=2` 2→3 rows `−8%`
+each; every pure-QED row unmoved. That is `0.920ⁿ` in the power of `αs`, and the
+chain closes on the cards:
+
+| | 3.5.7 (`refdata-2`) | 3.7.1 (`refdata-3`) |
+|---|---|---|
+| `run_card.dat` `lpp1`/`lpp2` | `0`/`0` | `0`/`0` |
+| `run_card.dat` `pdlabel` | `nn23lo1` | `nn23lo1` |
+| `param_card.dat` `SMINPUTS 3` | **`1.300000e-01`** | **`1.180000e-01`** |
+| banked `SCALUP` | `250.0` | `250.0` |
+| banked `AQCDUP` | `0.1113305` | `0.1024649` |
+
+3.5.7 applied the `nn23lo1` set's `αs(M_Z)` override to a run whose *beams carry
+no PDF at all*; 3.7.1 leaves the model's own value. Nothing on this side moved:
+every gate resolves `αs` from the run's own parameter card, so our σ tracked the
+step exactly and the three QCD `integrals` cells stayed green at pull `+0.05`,
+`+0.68`, `−1.49`. Recorded because it changes what a banked partonic σ *means* —
+a number quoted from `refdata-2` is not comparable to one from `refdata-3`.
+
+**The alphas gate's oracle was withdrawn upstream.** 3.7.1 moved `setclscales`
+from `cuts.f` into a vectorised `reweight.f` and commented out its
+`write(6,*) 'alpha_s for scale ',scale,' is ',…` diagnostic, so the 17-digit
+per-scale `αs` value the run logs used to print no longer exists — a *format*
+change, not a behaviour change: the `New value of alpha_s from PDF lhapdf` line
+still prints at 17 digits and still matches the grid to `9.86e-9`.
+`the_grid_alpha_s_reproduces_the_scale_its_run_log_prints` is therefore folded
+into `banked_run_logs_pin_the_alpha_s_source_rule` rather than kept alive on a
+line that is never there. Every assertion with a surviving oracle is kept: the
+grid reading against the printed `αs(M_Z)`, and — the half that was not a
+duplicate — that the grid and the parameter card are separated by more than half
+a printed `AQCDUP` digit (`1.78` half-digits, measured), without which
+`banked_events_reproduce_aqcdup`'s 20 000 grid-sourced events would agree with
+either source and pin neither. What is genuinely lost: a wrong interpolation
+*away* from `M_Z` is now bounded by the events' six-digit `AQCDUP` budget instead
+of by seventeen digits. Both `pdlabel = lhapdf` runs fix `μR = 91.188 = M_Z`, so
+nothing measured today separates the two.
+
+**`ee_to_mumua` is the one row that got worse.** Our σ is unchanged
+(`1.007660e-1` pb, same seed, same budget); MadGraph's moved
+`1.00630e-1 ± 3.865e-4 → 9.980100e-2 ± 2.335e-4` pb. The `integrals` pull went
+`+0.31 → +3.12` against a `PULL_LIMIT` of `3.5`, and roughly half of that growth
+is the tighter reference error rather than the `−0.83%` shift. Its `samples` cell
+followed: minimum KS p `2.14e-3 → 2.74e-4` against a `1e-4` floor, worst
+observable `y(a) → pt(a)`. Both cells still gate and both are now the tightest in
+their category. Filed with the measurement, not chased: the photon is
+soft/collinear-regulated by the run card's cuts, which is the region MadGraph's
+channel-weight change reallocates, and deciding which side owns the remaining 1%
+wants the windowed comparison B1 used on the Higgs pole.
+
+**The LHE dialect blocker.** MadGraph writes `unweighted_events.lhe` twice over:
+`rw_events.f` emits it in Fortran, and `madevent`'s Python post-processing reads
+it back through `lhe_parser.py` and writes it out again. Which of the two dialects
+survives depends on how much of the file that read-back had to parse:
+
+```python
+# lhe_parser.py:2606, Event.__str__
+try:
+    scale_str = "%2d %6d %+13.7e %14.8e %14.8e %14.8e" % \
+        (self.nexternal, self.ievent, self.wgt, self.scale, self.aqed, self.aqcd)
+except:
+    scale_str = "%s %s %+13.7e %s %s %s" % \
+        (self.nexternal, self.ievent, self.wgt, self.scale, self.aqed, self.aqcd)
+```
+
+`EventFile`'s `parsing == "wgt_only"` mode constructs each `Event` with
+`parse_momenta=False`, and `assign_scale_line(line, convert=False)` then keeps
+`nexternal`, `ievent`, `scale`, `aqed` and `aqcd` as **strings** (`lhe_parser.py`
+:2233–2251). `"%2d" % "4"` raises, the `except` fires, and every field except the
+weight — which the unweighting rescaled and therefore had to convert — is written
+back verbatim. The particle lines are never touched at all, so they keep
+`rw_events.f`'s `5e19.11,f3.1,f4.1`:
+
+| | dialect P (converted) | dialect F (pass-through) |
+|---|---|---|
+| info line | `· 4 · · · ·1 +1.4277480e+05 2.50000000e+02 …` | `4 1 +1.4277480e+05 0.2500000E+03 …` |
+| momentum | `+0.0000000000e+00` | `0.00000000000E+00` |
+| lifetime / spin | `0.0000e+00 -1.0000e+00` | `0. 1.` |
+
+3.5.7 produced dialect P for every run. Under 3.7.1 it depends on whether the
+systematics step forced a full parse, which tracks `use_syst`, which tracks the
+beams: all 8 `lpp ≠ 0` runs are still dialect P, and all 20 `lpp = 0` runs
+regenerated here are dialect F. (B1's six 3.5.7 evidence runs stay P.) It is a
+deliberate fast path, not a defect, and it is not reachable from the run card.
+
+Nothing physical moved — every gate that *parses* the file is green, because Rust
+reads `0.2500000E+03` as readily as `2.50000000e+02`. What broke is the one gate
+that asserts on the bytes: our reader parses both dialects and our writer emits
+only P, so re-serialising a dialect-F run does not reproduce it.
+
+Recommended fix, for a session that owns `lhef/`: make the round trip
+byte-exact **by construction** rather than by matching a format, which is the
+same move MadGraph makes. `lhef::parse` already sees each numeric field's source
+text; carrying it on the record and having `lhef::write` re-emit it unless the
+value changed removes the whole class of "we reformat what we did not alter" —
+and it is what makes the gate mean *this file round-trips*, rather than *this
+file happens to be in the dialect we emit*. A dialect enum switching two format
+tables would also pass, and would be the weaker claim: it goes stale the next
+time upstream adds a third spelling.
+
+**Riders.** `compact_events.py` deleted with its `lhe-compact` environment (D2);
+the `diagrams` gate moved to the hermetic layer (registration, all 26 manifest
+tiers, 26 rows in 1.25 s on a bare clone); `init-sm-submodule` calls
+`vg_ensure_submodule`; `Process::Display` carries coupling orders;
+`/py.py` ignored; `cargo clippy --workspace --all-targets --all-features` clean.
+The mirror-term bound is now a function of `ŝ` —
+`0.076 ŝ/(ŝ + m_Z²)`, the shape of a `γ*/Z` core whose forward-backward asymmetry
+is set by `ŝ/m_Z²`, fitted to the measured plateau and halved, sitting 1.58× to
+4.86× under `probe_mirror_visibility_ladder` from 25 GeV to 4 TeV over three
+streams and two sample sizes. That ladder also says *why* the flat `1e-3` was the
+wrong shape: the bound has to be a percentile, because the two beam orderings
+agree exactly wherever the configuration is symmetric, so the *minimum*
+visibility falls by a decade going from 32 draws to 512 at every energy — it
+measures the sample, not the physics.
+
 ### B6 — the per-diagram `AMP2_d` accumulator (decision D4)
 
 The §B3.2 design as its own session, added post-B3 by the user. Scope:
