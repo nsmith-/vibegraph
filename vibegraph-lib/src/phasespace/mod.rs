@@ -77,6 +77,40 @@ pub use rambo::{rambo, rambo_massive, rambo_massless, RamboPoint};
 /// Derived from (ℏc)² = 0.3893793721 GeV²·mb and 1 mb = 10⁹ pb.
 pub const GEV2_TO_PB: f64 = 3.893_793_721e8;
 
+/// The identical-particle symmetry factor `1 / Π_s n_s!` of an outgoing multiset.
+///
+/// Every map here covers the whole of `dΦ_n`, whose legs are *labelled*: each
+/// permutation of a set of identical outgoing particles is a distinct
+/// configuration under the measure, while the cross section counts each such
+/// configuration once. `n_s` is the multiplicity of species `s` among `outgoing`;
+/// the entries need only compare equal for the same species, which PDG codes and
+/// model particle ids both do, both separating a particle from its antiparticle.
+/// `g g → g g` is the case that makes the factor visible: without its `1/2!` the
+/// cross section comes out exactly twice MadGraph's, with the `|M|²`, the flux and
+/// the initial-state average all already agreeing.
+///
+/// The factor belongs to one subprocess's final state rather than to the weight a
+/// map returns. A hadronic run pools the channels of subprocesses whose outgoing
+/// *masses* agree while their species do not — `g g → g g` and `u ū → d d̄` are
+/// both `[0, 0]` — so a map weight carrying the factor would stop being a density
+/// on the one labelled `dΦ_n` those subprocesses share. Each subprocess instead
+/// multiplies its own term of the summed matrix element by its own factor.
+///
+/// Permutations of identical legs are not enumerated as extra sampling channels:
+/// the per-diagram channel set is already closed under them, since the image of a
+/// diagram under a swap of two identical outgoing legs is another diagram of the
+/// same process.
+pub fn identical_particle_factor<S: PartialEq>(outgoing: &[S]) -> f64 {
+    // Each leg contributes the next factor of its own species' factorial, counted
+    // by how many earlier legs it matches, so one pass builds `Π_s n_s!`.
+    let permutations: f64 = outgoing
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (outgoing[..i].iter().filter(|&other| other == s).count() + 1) as f64)
+        .product();
+    1.0 / permutations
+}
+
 /// Returns the differential 2-body LIPS weight `dΦ₂/d(cosθ)` in the CM frame.
 ///
 /// For massless final-state particles this is `|p_cm| / (8π √s)`, which
@@ -125,6 +159,22 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
+
+    /// The factor counts species, not legs and not masses: `[g, g]` and `[q, q̄]`
+    /// carry the same mass list and different factors, which is the whole reason a
+    /// mass list cannot own it.
+    #[test]
+    fn identical_particle_factor_counts_species_not_masses() {
+        assert_eq!(identical_particle_factor(&[21, 21]), 0.5);
+        assert_eq!(identical_particle_factor(&[2, -2]), 1.0);
+        assert_eq!(identical_particle_factor(&[21, 21, 21]), 1.0 / 6.0);
+        assert_eq!(identical_particle_factor(&[21, 21, 21, 21]), 1.0 / 24.0);
+        // Two species at once: `1/(2! · 3!)`.
+        assert_eq!(identical_particle_factor(&[21, 2, 21, 2, 2]), 1.0 / 12.0);
+        // A particle is not its own antiparticle.
+        assert_eq!(identical_particle_factor(&[2, 2, -2]), 0.5);
+        assert_eq!(identical_particle_factor::<i32>(&[]), 1.0);
+    }
 
     /// Massive RAMBO points are on-shell to the Newton tolerance and conserve the
     /// total four-momentum `(√s, 0, 0, 0)`.

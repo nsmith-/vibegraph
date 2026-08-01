@@ -37,8 +37,8 @@ use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::grid::AlphaSInfo;
 use crate::phasespace::{
-    AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel, PhaseSpaceMap,
-    PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
+    identical_particle_factor, AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel,
+    PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
 };
 use crate::runcard::RunCard;
 use crate::select::select_index;
@@ -303,26 +303,6 @@ pub fn initial_spin_color_average(
     1.0 / denom
 }
 
-/// The final-state identical-particle symmetry factor `1 / Π_s n_s!`.
-///
-/// A phase-space map covers the whole of `dΦ_n`, which counts every permutation of
-/// a set of identical outgoing particles as a distinct configuration, while the
-/// cross section counts each such configuration once. `g g → g g` is the case that
-/// makes the difference visible: without the `1/2!` its cross section comes out
-/// exactly twice MadGraph's, with everything else — the bit-exact `|M|²`, the flux,
-/// and the `1/256` initial-state average — already agreeing.
-pub fn final_state_symmetry_factor(eval: &AmplitudeEvaluator) -> f64 {
-    let out = &eval.external_particles()[eval.n_in()..];
-    // Each leg contributes the next factor of its own species' factorial, counted
-    // by how many earlier legs it matches, so one pass builds `Π_s n_s!`.
-    let multiplicities: f64 = out
-        .iter()
-        .enumerate()
-        .map(|(i, id)| (out[..i].iter().filter(|&other| other == id).count() + 1) as f64)
-        .product();
-    1.0 / multiplicities
-}
-
 /// Build the [`ExternalLeg`] list (incoming legs first, then outgoing) for a
 /// compiled process, reading PDG codes and pole masses from the model — the
 /// input [`Cuts::compile`] classifies.
@@ -379,6 +359,11 @@ pub fn compile_subprocesses(
 pub(crate) struct BoundSubprocess<'a> {
     amp: SubAmplitude<'a>,
     scratch: RefCell<ScratchSpace<f64>>,
+    /// `1 / Π_s n_s!` over *this* amplitude's outgoing legs
+    /// ([`identical_particle_factor`]). Held per subprocess because the terms of a
+    /// summed matrix element need not share an outgoing multiset even when they
+    /// share a phase-space map.
+    symmetry_factor: f64,
 }
 
 /// A subprocess amplitude, held at the parameter card's own strong coupling or at
@@ -397,10 +382,17 @@ enum SubAmplitude<'a> {
 
 impl<'a> BoundSubprocess<'a> {
     pub(crate) fn fixed(amp: &'a BoundAmplitude<'a, f64>) -> Self {
+        let eval = amp.evaluator();
         BoundSubprocess {
             scratch: RefCell::new(amp.scratch_space()),
+            symmetry_factor: identical_particle_factor(&eval.external_particles()[eval.n_in()..]),
             amp: SubAmplitude::Fixed(amp),
         }
+    }
+
+    /// This subprocess's own identical-particle symmetry factor.
+    pub(crate) fn symmetry_factor(&self) -> f64 {
+        self.symmetry_factor
     }
 
     /// The bound evaluator this subprocess was built from, the input a scale-aware
@@ -576,15 +568,17 @@ pub(crate) fn constant_scale_report(
 /// # Master formula
 ///
 /// ```text
-/// σ̂ = 1/(2ŝ) · ⟨spin·colour avg⟩ · S · ∫ dΦ_n Σ|M|²
-///    = 1/(2ŝ) · avg · S · (2π)^{4−3n} · ⟨weight · Σ_sub |M_sub|²⟩_uniform
+/// σ̂ = 1/(2ŝ) · ⟨spin·colour avg⟩ · ∫ dΦ_n Σ_sub S_sub |M_sub|²
+///    = 1/(2ŝ) · avg · (2π)^{4−3n} · ⟨weight · Σ_sub S_sub |M_sub|²⟩_uniform
 /// ```
 ///
-/// where `Σ|M|²` is the colour+helicity-summed matrix element ([`eval_m2`]), the
-/// `(2π)^{4−3n}` factor turns the map's invariant volume `R_n` into the full
-/// `dΦ_n` measure, and `S = 1/Π_s n_s!` is the identical-particle symmetry factor
-/// ([`final_state_symmetry_factor`]) that undoes `dΦ_n`'s over-counting of the
-/// permutations of identical outgoing legs.
+/// where `|M_sub|²` is a subprocess's colour+helicity-summed matrix element
+/// ([`eval_m2`]), the `(2π)^{4−3n}` factor turns the map's invariant volume `R_n`
+/// into the full `dΦ_n` measure, and `S_sub = 1/Π_s n_s!` is that subprocess's own
+/// identical-particle symmetry factor ([`identical_particle_factor`]), undoing
+/// `dΦ_n`'s over-counting of the permutations of its identical outgoing legs. It
+/// sits inside the sum because subprocesses sharing one map — one outgoing mass
+/// list — need not share an outgoing multiset.
 ///
 /// [`eval_m2`]: BoundAmplitude::eval_m2
 pub struct FixedBeamIntegrand<'a> {
@@ -604,9 +598,6 @@ pub struct FixedBeamIntegrand<'a> {
     final_masses: Vec<f64>,
     /// `1 / Π_a (n_spin · n_colour)` over the incoming legs.
     spin_color_avg: f64,
-    /// The final-state identical-particle factor `1 / Π_s n_s!`, derived from the
-    /// process's outgoing legs ([`final_state_symmetry_factor`]).
-    symmetry_factor: f64,
     /// The `(2π)^{4−3n}` measure factor.
     lips_2pi: f64,
     /// Beam energy `√ŝ/2`.
@@ -737,7 +728,8 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// the same external state.
     ///
     /// * `amps` — bound amplitudes whose colour+helicity-summed |M|² are added
-    ///   (a single subprocess for a fully-specified initial state).
+    ///   (a single subprocess for a fully-specified initial state), each weighted
+    ///   by its own identical-particle symmetry factor.
     /// * `cuts` — the compiled cut filter.
     /// * `sqrt_s` — the fixed partonic energy `E₁ + E₂`.
     /// * `final_masses` — outgoing pole masses in leg order (the RAMBO targets).
@@ -750,7 +742,6 @@ impl<'a> FixedBeamIntegrand<'a> {
         spin_color_avg: f64,
     ) -> Self {
         let n = final_masses.len();
-        let symmetry_factor = final_state_symmetry_factor(amps[0].evaluator());
         let subs = amps.into_iter().map(BoundSubprocess::fixed).collect();
         let sampler = Sampler::Flat(RamboChannel::new(sqrt_s, final_masses.clone()));
         FixedBeamIntegrand {
@@ -761,7 +752,6 @@ impl<'a> FixedBeamIntegrand<'a> {
             channel_samplers: Vec::new(),
             final_masses,
             spin_color_avg,
-            symmetry_factor,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n as i32),
             beam_e: sqrt_s / 2.0,
             vegas_alpha: VEGAS_ALPHA,
@@ -926,11 +916,15 @@ impl<'a> FixedBeamIntegrand<'a> {
         self.sampler.ndim()
     }
 
-    /// The colour+helicity-summed `Σ|M|²` at the outgoing momenta `momenta`, in the
-    /// partonic-CM frame, with the beams prepended and the cut filter applied — the
-    /// matrix-element part of the integrand as a function of the phase-space point.
-    /// A configuration failing a cut returns exactly `0.0`, so it drops out of both
-    /// the cross section and the α-adaptation survey.
+    /// The colour+helicity-summed `Σ_sub S_sub |M_sub|²` at the outgoing momenta
+    /// `momenta`, in the partonic-CM frame, with the beams prepended and the cut
+    /// filter applied — the matrix-element part of the integrand as a function of the
+    /// phase-space point. A configuration failing a cut returns exactly `0.0`, so it
+    /// drops out of both the cross section and the α-adaptation survey.
+    ///
+    /// Each subprocess enters weighted by its own identical-particle factor, so a
+    /// summed matrix element whose terms have different outgoing multisets is right
+    /// term by term. The survey sees the same weighting the integral does.
     fn matrix_element(&self, momenta: &[V]) -> f64 {
         let ext = self.externals(momenta);
         if !self.cuts.pass(&ext) {
@@ -940,7 +934,7 @@ impl<'a> FixedBeamIntegrand<'a> {
 
         let mut m2 = 0.0;
         for sub in &self.subs {
-            m2 += sub.eval_m2(&ext);
+            m2 += sub.symmetry_factor() * sub.eval_m2(&ext);
         }
         m2
     }
@@ -957,12 +951,13 @@ impl<'a> FixedBeamIntegrand<'a> {
         self.prefactor() * point.weight * m2
     }
 
-    /// The constants in front of `weight · Σ|M|²`: the `1/(2ŝ)` flux, the
-    /// initial-state spin×colour average, the identical-particle symmetry factor,
-    /// and the `(2π)^{4−3n}` measure factor.
+    /// The constants in front of `weight · Σ_sub S_sub |M_sub|²`: the `1/(2ŝ)` flux,
+    /// the initial-state spin×colour average, and the `(2π)^{4−3n}` measure factor.
+    /// The identical-particle factors are not among them — they are per subprocess,
+    /// applied inside the sum.
     fn prefactor(&self) -> f64 {
         let flux = 1.0 / (2.0 * self.sqrt_s * self.sqrt_s);
-        flux * self.spin_color_avg * self.symmetry_factor * self.lips_2pi
+        flux * self.spin_color_avg * self.lips_2pi
     }
 
     /// Replace flat RAMBO with a resonance-aware per-diagram [`MultiChannel`] built
@@ -1403,20 +1398,156 @@ mod tests {
         assert_eq!(initial_spin_color_average(&gg, &m, &evaluated), 1.0 / 256.0);
     }
 
-    /// The identical-particle factor must fall out of the outgoing legs, not out of
-    /// a table: `g g → g g` is the only MG-validated process with a repeated
-    /// outgoing particle, and it is exactly the row whose cross section comes out
-    /// twice MadGraph's without the factor.
+    /// The identical-particle factor must fall out of a compiled process's own
+    /// outgoing legs, not out of a table: `g g → g g` is the only MG-validated
+    /// process with a repeated outgoing particle, and it is exactly the row whose
+    /// cross section comes out twice MadGraph's without the factor.
+    ///
+    /// `u ū → g g` and `u ū → d d̄` are the pair that says the outgoing *mass* list
+    /// cannot own the factor: both are `[0, 0]` and they need `1/2` and `1`.
     #[test]
-    fn final_state_symmetry_factor_counts_identical_legs() {
+    fn subprocess_symmetry_factor_counts_its_own_outgoing_legs() {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
-        let factor =
-            |proc: &str| final_state_symmetry_factor(&build_evaluator(proc, &m, &evaluated));
+        let factor = |proc: &str| {
+            let eval = build_evaluator(proc, &m, &evaluated);
+            identical_particle_factor(&eval.external_particles()[eval.n_in()..])
+        };
         assert_eq!(factor("g g > g g"), 0.5);
         assert_eq!(factor("g g > t t~"), 1.0);
         assert_eq!(factor("u u~ > u u~"), 1.0);
         assert_eq!(factor("e+ e- > mu+ mu-"), 1.0);
+        assert_eq!(factor("u u~ > g g"), 0.5);
+        assert_eq!(factor("u u~ > d d~"), 1.0);
+    }
+
+    /// A summed matrix element weights each subprocess by *its own* factor.
+    ///
+    /// `u ū → g g` (`1/2`) and `u ū → d d̄` (`1`) share a phase-space map — same
+    /// outgoing masses, same cut filter — and differ in the factor, so an integrand
+    /// that derived one factor from its first subprocess and applied it to all of
+    /// them would halve the `d d̄` term. The reference is the two subprocesses
+    /// integrated separately over the same map and seed, whose sum the combined
+    /// integrand must reproduce to the identity of the sampling, not to Monte Carlo
+    /// error: both sides draw the same points.
+    #[test]
+    fn a_summed_matrix_element_weights_each_subprocess_by_its_own_factor() {
+        use crate::phasespace::rng::SubStream;
+
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let gg = build_evaluator("u u~ > g g", &m, &evaluated);
+        let ddx = build_evaluator("u u~ > d d~", &m, &evaluated);
+        let b_gg = BoundAmplitude::<f64>::bind(&gg, &evaluated);
+        let b_ddx = BoundAmplitude::<f64>::bind(&ddx, &evaluated);
+
+        let legs = process_external_legs(&gg, &m, &evaluated);
+        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let avg = initial_spin_color_average(&gg, &m, &evaluated);
+        let masses = vec![0.0, 0.0];
+        let sqrt_s = 400.0;
+        let both = FixedBeamIntegrand::new(vec![&b_gg, &b_ddx], &cuts, sqrt_s, masses.clone(), avg);
+        let only_gg = FixedBeamIntegrand::new(vec![&b_gg], &cuts, sqrt_s, masses.clone(), avg);
+        let only_ddx = FixedBeamIntegrand::new(vec![&b_ddx], &cuts, sqrt_s, masses, avg);
+
+        let mut stream = SubStream::from_stream(0x5111_5EED, 3);
+        let mut nonzero = 0;
+        for _ in 0..64 {
+            let u = stream.uniforms::<f64>(both.vegas_ndim());
+            let sum = only_gg.value(&u) + only_ddx.value(&u);
+            let combined = both.value(&u);
+            if combined == 0.0 {
+                continue;
+            }
+            nonzero += 1;
+            let rel = (combined - sum).abs() / sum.abs();
+            assert!(
+                rel < 1e-14,
+                "summed integrand {combined:.17e} vs term sum {sum:.17e} (rel {rel:.2e})"
+            );
+            // The two terms must actually be comparable in size, or the `d d̄` term
+            // could be halved without moving the sum enough to see.
+            let share = only_ddx.value(&u) / combined;
+            assert!(
+                share > 1e-3,
+                "the d d̄ term is {share:.2e} of the sum; a lost factor would hide"
+            );
+        }
+        assert!(nonzero > 32, "only {nonzero} points passed the cuts");
+    }
+
+    /// Permutations of identical outgoing legs are not enumerated as extra sampling
+    /// channels, on the claim that the per-diagram set is already closed under them:
+    /// the image of a diagram under a swap of two identical outgoing legs is another
+    /// diagram of the same process. That claim is testable at the level of the
+    /// mixture it licenses — under uniform selection weights the combined density of
+    /// `g g → g g`'s channels must be invariant under exchanging the two outgoing
+    /// momenta, since a channel whose image were missing would peak on one
+    /// assignment only.
+    ///
+    /// The control is the second half: dropping a single channel has to break the
+    /// symmetry, or the invariance is a property of the density formula rather than
+    /// of the set and the first half sees nothing. The channels are built at the
+    /// spacelike floor a hadronic run gives them, which is what makes the peripheral
+    /// ones peak on one leg assignment each; at floor zero they collapse to a common
+    /// all-timelike map whose density is symmetric one channel at a time, and the
+    /// control refuses that configuration.
+    #[test]
+    fn the_channel_set_of_identical_outgoing_legs_is_permutation_closed() {
+        use crate::phasespace::rng::SubStream;
+
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate g g > g g", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, &m).unwrap();
+        let diagrams: Vec<_> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let sqrt_s = 500.0;
+        let floor = 400.0;
+        let build = |skip: Option<usize>| {
+            let channels: Vec<Box<dyn Channel<f64>>> = diagrams
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| Some(*i) != skip)
+                .map(|(_, d)| {
+                    Box::new(DiagramChannel::from_diagram_regulated(
+                        d, &evaluated, sqrt_s, floor,
+                    )) as Box<dyn Channel<f64>>
+                })
+                .collect();
+            MultiChannel::uniform(channels)
+        };
+
+        let full = build(None);
+        let mut stream = SubStream::from_stream(0xC105_ED, 1);
+        let points: Vec<Vec<V>> = (0..32)
+            .map(|_| full.sample(&stream.uniforms::<f64>(full.ndim())).momenta)
+            .collect();
+        let asymmetry = |mc: &MultiChannel<f64>, p: &[V]| {
+            let swapped = vec![p[1], p[0]];
+            let (a, b) = (mc.density(p), mc.density(&swapped));
+            (a - b).abs() / a.abs().max(b.abs())
+        };
+
+        for p in &points {
+            let rel = asymmetry(&full, p);
+            assert!(
+                rel < 1e-12,
+                "the channel set is not permutation closed: {rel:.2e}"
+            );
+        }
+
+        let broken = (0..diagrams.len()).any(|k| {
+            let short = build(Some(k));
+            points.iter().any(|p| asymmetry(&short, p) > 1e-6)
+        });
+        assert!(
+            broken,
+            "no single channel carries the symmetry, so the closure check sees nothing"
+        );
     }
 
     #[test]
