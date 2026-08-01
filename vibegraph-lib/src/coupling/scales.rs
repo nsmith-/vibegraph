@@ -350,12 +350,10 @@ impl ScaleChoice {
     ) -> Result<f64, ScaleError> {
         let out = event.outgoing;
         let value = match choice {
-            DynamicalChoice::TotalTransverseEnergy => {
-                out.iter().map(|p| transverse_energy(p)).sum()
-            }
-            DynamicalChoice::SumTransverseMass => out.iter().map(|p| transverse_mass(p)).sum(),
+            DynamicalChoice::TotalTransverseEnergy => out.iter().map(transverse_energy).sum(),
+            DynamicalChoice::SumTransverseMass => out.iter().map(transverse_mass).sum(),
             DynamicalChoice::HalfSumTransverseMass => {
-                out.iter().map(|p| transverse_mass(p)).sum::<f64>() / 2.0
+                out.iter().map(transverse_mass).sum::<f64>() / 2.0
             }
             DynamicalChoice::PartonicEnergy => {
                 let total = add(&event.incoming[0], &event.incoming[1]);

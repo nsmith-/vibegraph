@@ -508,7 +508,7 @@ fn classify(idx: usize, leg: &ExternalLeg, maxjetflavor: i64) -> LegInfo {
     let is_neutrino = matches!(a, 12 | 14 | 16);
     let letter = if a == 21 || a <= maxjetflavor.min(6) {
         Some(Letter::Jet)
-    } else if a >= maxjetflavor + 1 && a <= 5 {
+    } else if a > maxjetflavor && a <= 5 {
         Some(Letter::B)
     } else if matches!(a, 11 | 13 | 15) {
         Some(Letter::Lepton)
@@ -1103,13 +1103,13 @@ mod tests {
         let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
         let (b1, b2) = beams(500.0);
         // Photon pT below pta=10 fails; neutrino pT is irrelevant.
-        assert!(!cuts.pass(&vec![
+        assert!(!cuts.pass(&[
             b1,
             b2,
             lep(5.0, 0.0, 0.0),
             lep(0.01, 0.0, std::f64::consts::PI)
         ]));
-        assert!(cuts.pass(&vec![
+        assert!(cuts.pass(&[
             b1,
             b2,
             lep(15.0, 0.0, 0.0),
@@ -1128,7 +1128,7 @@ mod tests {
         let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
         let (b1, b2) = beams(500.0);
         // Even a tiny-pT, high-rapidity Z passes (no single-leg cut applies).
-        assert!(cuts.pass(&vec![b1, b2, lep(0.5, 6.0, 0.0)]));
+        assert!(cuts.pass(&[b1, b2, lep(0.5, 6.0, 0.0)]));
     }
 
     // ── parse-and-detect of unimplemented active cuts ───────────────────

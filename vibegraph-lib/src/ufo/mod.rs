@@ -468,7 +468,7 @@ impl EvaluatedModel {
     ///
     /// Evaluates all parameter values and coupling constants according to the given parameter card.
     pub fn from_model_card(model: Arc<UFOModel>, param_card: &ParamCard) -> Self {
-        let param_values = model.params.evaluate(&param_card);
+        let param_values = model.params.evaluate(param_card);
 
         let coupling_values: Vec<Complex64> = model
             .couplings
@@ -477,7 +477,7 @@ impl EvaluatedModel {
             .collect();
 
         EvaluatedModel {
-            model: model,
+            model,
             param_values,
             coupling_values,
         }

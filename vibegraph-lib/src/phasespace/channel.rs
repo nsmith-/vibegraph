@@ -778,7 +778,9 @@ mod tests {
     /// phase-space volume `V_n` for a spread of multiplicities.
     #[test]
     fn multichannel_unbiased_volume() {
-        let cases: Vec<(f64, usize, Vec<Vec<Vec<usize>>>)> = vec![
+        // (√s, n_out, one decomposition tree per channel).
+        type Case = (f64, usize, Vec<Vec<Vec<usize>>>);
+        let cases: Vec<Case> = vec![
             // 2→3: pair {0,1} vs pair {1,2}.
             (500.0, 3, vec![vec![vec![0, 1]], vec![vec![1, 2]]]),
             // 2→4: balanced {0,1}{2,3} vs crossed {0,2}{1,3}.

@@ -6,6 +6,16 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 
+# `if !(x > 0.0)` is how this crate routes a NaN into the rejecting branch: a NaN
+# fails every comparison, so the negated form rejects it where `x <= 0.0` would
+# accept it. Every site the lint fires on is that guard, and its `partial_cmp`
+# rewrite spells the same thing out at three times the length.
+[workspace.lints.clippy]
+neg_cmp_op_on_partial_ord = "allow"
+# Test seeds are hex words with an index (`0x5EED_1`, `0xC0FFEE_11`): the
+# grouping marks where the word ends, which nibble-quartets would hide.
+unusual_byte_groupings = "allow"
+
 # The test suite is physics: VEGAS adaptations, amplitude evaluations and
 # phase-space sweeps that run millions of floating-point operations per test. At
 # `opt-level = 0` the arithmetic, not the compiler, is what a `cargo test` waits

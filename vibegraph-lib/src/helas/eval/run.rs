@@ -2232,8 +2232,8 @@ mod tests {
                     panic!("expected ket fermion from chiral propagation");
                 };
                 let want2 = textbook(o, z);
-                for k in 0..4 {
-                    let d = (got2.spinor.component(k) - want2[k]).norm();
+                for (k, want) in want2.iter().enumerate() {
+                    let d = (got2.spinor.component(k) - want).norm();
                     assert!(
                         d < 1e-10,
                         "FFV2 e-spine vs textbook (m={mass}, {hel}, {charge:?}, comp {k}): {d}"
@@ -2263,8 +2263,8 @@ mod tests {
                     unreachable!()
                 };
                 let want4 = textbook(o, Complex64::new(2.0, 0.0));
-                for k in 0..4 {
-                    let d = (got4.spinor.component(k) - want4[k]).norm();
+                for (k, want) in want4.iter().enumerate() {
+                    let d = (got4.spinor.component(k) - want).norm();
                     assert!(
                         d < 1e-10,
                         "FFV4 e-spine vs textbook (m={mass}, {hel}, {charge:?}, comp {k}): {d}"
@@ -2302,8 +2302,8 @@ mod tests {
                     panic!("expected ket fermion");
                 };
                 let want2b = textbook_proj_first(o, z);
-                for k in 0..4 {
-                    let d = (g2b.spinor.component(k) - want2b[k]).norm();
+                for (k, want) in want2b.iter().enumerate() {
+                    let d = (g2b.spinor.component(k) - want).norm();
                     assert!(
                         d < 1e-10,
                         "FFV2 leg-1 (ε̸·P_L·ψ) vs textbook (m={mass}, {hel}, {charge:?}, comp {k}): {d}"
@@ -2331,8 +2331,8 @@ mod tests {
                     unreachable!()
                 };
                 let want4b = textbook_proj_first(o, Complex64::new(2.0, 0.0));
-                for k in 0..4 {
-                    let d = (g4b.spinor.component(k) - want4b[k]).norm();
+                for (k, want) in want4b.iter().enumerate() {
+                    let d = (g4b.spinor.component(k) - want).norm();
                     assert!(
                         d < 1e-10,
                         "FFV4 leg-1 (ε̸·(P_L+2P_R)·ψ) vs textbook (m={mass}, {hel}, {charge:?}, comp {k}): {d}"
@@ -2488,7 +2488,7 @@ mod tests {
                     let build = |chi: Chirality| {
                         let WaveformSlot::FermionOut(c) = off_shell_fermion_current(
                             &WaveformSlot::Vector(v),
-                            &chiral_project(&WaveformSlot::FermionOut(fo.clone()), chi),
+                            &chiral_project(&WaveformSlot::FermionOut(fo), chi),
                         ) else {
                             unreachable!()
                         };
@@ -3778,7 +3778,9 @@ mod tests {
                     p
                 };
 
-                let regimes: [Box<dyn Fn(&mut StdRng) -> Vec<LorentzVector<f64>>>; 3] = [
+                // One kinematic regime: a draw of a full external momentum set.
+                type Regime<'a> = Box<dyn Fn(&mut StdRng) -> Vec<LorentzVector<f64>> + 'a>;
+                let regimes: [Regime<'_>; 3] = [
                     Box::new(|rng: &mut StdRng| z_beam(rng, 500.0)),
                     Box::new(|rng: &mut StdRng| z_beam(rng, 12.0)),
                     Box::new(|rng: &mut StdRng| (0..n_ext).map(|_| random_mom(rng)).collect()),

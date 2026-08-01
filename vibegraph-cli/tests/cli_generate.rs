@@ -221,7 +221,7 @@ fn event_content(file: &LheFile) -> Vec<f64> {
 fn binned(file: &LheFile) -> (Vec<f64>, Vec<f64>, Vec<usize>) {
     let content = event_content(file);
     let mut sigma = vec![0.0; NBINS];
-    let mut var = vec![0.0; NBINS];
+    let mut var = [0.0; NBINS];
     let mut counts = vec![0usize; NBINS];
     for (event, c) in file.events.iter().zip(&content) {
         let bin = ((((cos_theta(event) + 1.0) / 2.0) * NBINS as f64) as usize).min(NBINS - 1);
