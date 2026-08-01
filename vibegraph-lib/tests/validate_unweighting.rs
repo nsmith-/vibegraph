@@ -369,9 +369,9 @@ fn weighted_reference(
 #[test]
 fn unweighted_sample_reproduces_the_integration_it_came_from() {
     if !output_dir().exists() {
-        return vibegraph::validation::skip(
+        vibegraph::validation::require(
             "unweighted_sample_reproduces_the_integration_it_came_from",
-            "madgraph output tree",
+            "the banked MadGraph work area",
             output_dir().display(),
         );
     }
@@ -379,12 +379,11 @@ fn unweighted_sample_reproduces_the_integration_it_came_from() {
     let mut failures: Vec<String> = Vec::new();
     for row in ROWS {
         if !output_dir().join(row.dir).exists() {
-            vibegraph::validation::skip(
+            vibegraph::validation::require(
                 "unweighted_sample_reproduces_the_integration_it_came_from",
-                "banked madgraph run",
+                "a banked MadGraph run",
                 row.dir,
             );
-            continue;
         }
         with_integrand(row, |integ| {
             let (channels, result) = integ.adapt_grids(row.neval, row.niter, SEED);

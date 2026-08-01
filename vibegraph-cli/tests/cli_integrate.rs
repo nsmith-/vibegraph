@@ -75,7 +75,7 @@ fn run_cli(out_dir: &Path, run_card: &str) -> IntegrateArtifact {
 
 fn check_run(test: &str, run: &str, run_card: &str) {
     let Some((mg, mg_err)) = banked(run) else {
-        return vibegraph::validation::skip(test, "banked hadronic sigma reference", run);
+        vibegraph::validation::require(test, "the banked hadronic sigma reference", run);
     };
 
     let tmp = tempfile::tempdir().unwrap();

@@ -27,9 +27,11 @@
 # the handful of `--lib` tests that need banked inputs carry
 # `#[cfg(feature = "extended-validation")]` instead. Integration tests never do.
 #
-# Any runtime skip inside the banked layer goes through
-# `vibegraph::validation::skip`, which refuses to skip for a reason not listed
-# in its `EXPECTED_SKIPS` table.
+# The banked layer takes no runtime skips. Its inputs — the submodule, the two
+# PDF sets, the reference bundle — are acquired by `pixi run validate`'s own
+# dependency tasks, each of which fails when it cannot acquire what it names, so
+# a gate that still finds one missing calls `vibegraph::validation::require` and
+# fails naming the input.
 #
 # ## Categories and cell tiers
 #

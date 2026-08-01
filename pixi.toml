@@ -48,8 +48,9 @@ fetch-refdata = "bash validation/fetch_refdata.sh"
 # The banked layer: every gate that may assume the checked-out submodule, the
 # fetched PDF sets and the frozen MadGraph reference runs — but may not run
 # MadGraph, which is what lets it run on a machine that has never built a process
-# directory. `--nocapture` so the VALIDATION-SKIP lines are visible; a skip that
-# is not in vibegraph::validation::EXPECTED_SKIPS fails the run.
+# directory. `--nocapture` so the per-row measurements the gates print are
+# visible. Nothing in the layer skips: the fetch tasks below are what supply its
+# inputs, and a gate that finds one missing fails naming it.
 #
 # One banked gate sits outside it: `validate-pythia` needs Pythia 8, so it runs
 # in its own environment (`pixi run -e pythia validate-pythia`) and this task
