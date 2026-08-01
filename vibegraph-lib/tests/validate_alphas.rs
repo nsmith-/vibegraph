@@ -90,7 +90,7 @@ fn banked_runs() -> Vec<(String, PathBuf)> {
 /// `alphasPDF(Q)` and not the beta-function solve this file's first oracle
 /// validates. [`resolve`] asserts the classification both ways, so a run that
 /// changed source shows up as a failure rather than as a quiet reclassification.
-const GRID_ALPHA_S_RUNS: &[&str] = &["pp_to_llj_fixed"];
+const GRID_ALPHA_S_RUNS: &[&str] = &["pp_to_bb_fixed", "pp_to_llj_fixed"];
 
 /// The LHAPDF set each `lhaid` names. A run card carries only the id, and the
 /// grid `αs` has to come from the set the *densities* come from, so the mapping
@@ -216,11 +216,11 @@ fn event_scales(run: &Path) -> Vec<(f64, f64)> {
 /// outside. The partition is asserted rather than assumed, so the day it
 /// changes is a test failure and not a silent reclassification.
 ///
-/// `pp_to_llj_fixed` is here on the strength of a *different* source: its `αs`
-/// comes from the PDF set's own table, not from this crate's evolution. All
-/// 10 000 of its events reproduce the printed `AQCDUP` digits, and the
-/// parameter card's value would reproduce none of them — see
-/// [`the_grid_alpha_s_reproduces_the_scale_its_run_log_prints`].
+/// `pp_to_bb_fixed` and `pp_to_llj_fixed` are here on the strength of a
+/// *different* source: their `αs` comes from the PDF set's own table, not from
+/// this crate's evolution. All 10 000 events of each reproduce the printed
+/// `AQCDUP` digits, and the parameter card's value would reproduce none of them —
+/// see [`the_grid_alpha_s_reproduces_the_scale_its_run_log_prints`].
 const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "ddx_to_epemg",
     "ee_to_ee",
@@ -236,6 +236,7 @@ const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "gu_to_epemu",
     "gux_to_epemux",
     "pp_to_bb",
+    "pp_to_bb_fixed",
     "pp_to_bb_qcd2",
     "pp_to_ll",
     "pp_to_ll_qcd0",

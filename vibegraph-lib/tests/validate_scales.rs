@@ -137,7 +137,11 @@ fn coverage(run: &str) -> Coverage {
         // banked with all three scales pinned at m_Z. Its clustering tree is
         // just as far out of reach; nothing has to reach it, because a fixed
         // scale never consults one.
-        "pp_to_llj_fixed" => Fixed,
+        // `p p -> b b~` at fixed scales, the same process as the two closed-form
+        // runs below. A fixed scale never consults a clustering tree, so the row
+        // says nothing about the shape of one — which is what makes the pair with
+        // pp_to_bb a controlled comparison of the two branches on one process.
+        "pp_to_llj_fixed" | "pp_to_bb_fixed" => Fixed,
         // Coloured 2 -> 2 with t-channel exchange. `g g -> g g` and
         // `g g -> t t~` put a colour line between either beam and either leg;
         // `u u~ -> u u~` has only the diagonal, since no diagram joins the
@@ -263,13 +267,13 @@ const CLUSTERING_REQUIRED_RUNS: &[&str] = &[
 /// those cards, so every `AQCDUP` oracle here has to step over them —
 /// [`the_grid_alpha_s_runs_are_refused_for_a_measurable_reason`] is what keeps
 /// the step from being a convenience.
-const GRID_ALPHA_S_RUNS: &[&str] = &["pp_to_llj_fixed"];
+const GRID_ALPHA_S_RUNS: &[&str] = &["pp_to_bb_fixed", "pp_to_llj_fixed"];
 
 /// The runs whose scales are run-card constants. `pp_to_llj_fixed` is the same
 /// process as two of the refused runs above, so the pair is a controlled
 /// comparison: what separates a replayable run from an unreachable one is the
 /// `fixed_*_scale` flags alone, not the final state.
-const FIXED_SCALE_RUNS: &[&str] = &["pp_to_llj_fixed"];
+const FIXED_SCALE_RUNS: &[&str] = &["pp_to_bb_fixed", "pp_to_llj_fixed"];
 
 /// Every banked run directory carrying an unweighted event file.
 fn banked_runs() -> Vec<(String, PathBuf)> {
