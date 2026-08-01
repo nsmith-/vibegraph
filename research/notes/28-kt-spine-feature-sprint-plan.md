@@ -1,6 +1,6 @@
 # 28 — `kt-spine` feature sprint plan (scales + phase-space, two tracks)
 
-**Status: DRAFT — awaiting user review; decisions D1–D3 open (§6).**
+**Status: APPROVED 2026-08-01 — §6 recommended decisions adopted (D1–D3 resolved); sprint launched.**
 
 The feature sprint that unblocks the validation cells `v3-backlog` could not
 reach and freezes the channel/map structure ahead of the integration-focused
@@ -237,17 +237,18 @@ Nothing else rides on Z — that is the B5 lesson. **Check `pixi.lock` against
 `pixi.toml` with a locked install if any environment changed (the refdata-3
 close-out tripped CI on exactly this).**
 
-## 6. Decisions (user)
+## 6. Decisions (user — resolved 2026-08-01, recommended options adopted)
 
-1. **D1 — capstone card**: `p p > j j` with MadGraph's default run card
-   (dynamical scale, default `ptj`) — recommended. Alternative: also a
-   fixed-scale jj row first, giving a scale-independent stepping stone at the
-   cost of one more banked run.
-2. **D2 — spine reference process**: S2 proposes the card (candidate
-   `p p > e+ e- j j` QCD=0, fixed scale); user confirms before Sb banks it.
-3. **D3 — massless-t-channel cut**: resolved inside S2 by measurement
-   (flat-fallback vs fiducially-bounded `t_max`); the decision and its numbers
-   land in this note.
+1. **D1 — capstone card (decided)**: `p p > j j` with MadGraph's default run
+   card (dynamical scale, default `ptj`). No fixed-scale stepping-stone row.
+2. **D2 — spine reference process (decided)**: the candidate
+   `p p > e+ e- j j` (QCD=0, fixed scale) is approved as the reference
+   process. S2 still writes the concrete card into this note; Sb banks it
+   after the sprint manager's card review — no further user round-trip unless
+   S2 finds a reason to deviate from the approved candidate.
+3. **D3 — massless-t-channel cut (decided)**: resolved inside S2 by
+   measurement (flat-fallback vs fiducially-bounded `t_max`); the decision and
+   its numbers land in this note.
 
 ## 7. Sequencing
 
