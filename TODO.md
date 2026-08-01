@@ -16,6 +16,13 @@ comparable** to one from `refdata-3` (MadGraph 3.5.7 applied the PDF set's
 `αs(M_Z) = 0.130` to `lpp = 0` runs; 3.7.1 keeps the model's `0.118` — note 27
 §B5).
 
+**Next (proposed)**: the **`kt-spine` feature sprint** — note 28, DRAFT
+awaiting review. Two tracks (K: kt-clustering; S: permutation factor +
+multi-rung spine + massless-t-cut) converging on a `p p > j j`
+default-dynamical-scale capstone; freezes the channel/map structure ahead of
+the integration-focused performance sprint (VEGAS first-iteration bias +
+`w_max` scan decoupling, performance backlog below).
+
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
 ## Pipeline Status
@@ -144,8 +151,8 @@ One line each; the note is the full record. Earlier sprints
 
 ## 🧩 Feature backlog
 
-- **`identical-particle-permutation`** — make the symmetry factor a property of
-  the phase-space map. `dΦ_n` over-counts a final state with identical particles
+- **`identical-particle-permutation`** (sprint plan: note 28 §S1) — make the
+  symmetry factor a property of the phase-space map. `dΦ_n` over-counts a final state with identical particles
   by `Π_s n_s!`; `dynamical-scales` added `final_state_symmetry_factor`
   (`hadronic.rs`) but as a per-integrand scalar — the wrong home. Two latent
   consequences, both smooth factor-of-`n!` σ errors: `FixedBeamIntegrand::new`
@@ -160,14 +167,15 @@ One line each; the note is the full record. Earlier sprints
   channels or one channel with the factor folded in. Pair with a gate process
   with a repeated outgoing particle — `g g → g g` is currently the only one,
   which is exactly why the factor of 2 survived.
-- **Multi-rung t-channel spine** — ladder topologies (VBF/DIS, ≥2 spacelike
-  lines). The ordering Jacobian cannot be pinned by `Vₙ`/σ in-session, so it was
+- **Multi-rung t-channel spine** (sprint plan: note 28 §S2–S4) — ladder
+  topologies (VBF/DIS, ≥2 spacelike lines). The ordering Jacobian cannot be pinned by `Vₙ`/σ in-session, so it was
   deferred rather than committed unvalidated; hand-off design written up
   (`Spine → rungs: Vec`, running `q_i = p_a − Σp`, note-07 §2.9.0 ordering firing
   test). Also where the `uux_to_uux` bias evidence and the degenerate-map
   finding point. (Note 21.)
-- **`kt-clustering`** — general kT clustering for `dynamical_scale_choice = -1`
-  (sprint sketch; also what MLM matching needs). 6 banked runs are asserted as
+- **`kt-clustering`** (sprint plan: note 28 §K1–K5, superseding the sketch
+  below) — general kT clustering for `dynamical_scale_choice = -1`
+  (also what MLM matching needs). 6 banked runs are asserted as
   refused; **hard prerequisite for gating any QCD process at MadGraph's default
   scale choice** — the no-strong-coupling short-circuit stops covering it the
   moment the matrix element carries `G`. (Multiplicity is not the barrier:
@@ -216,33 +224,6 @@ One line each; the note is the full record. Earlier sprints
   costing compiled programs, never correctness. Keep the sampled criterion as an
   independent cross-check when it lands: they should agree, and a disagreement
   is a finding. (`proton.rs`, note 24 §P2c.)
-- **VEGAS first-iteration convergence bias** — `VegasGrid::adapt` feeds *every*
-  iteration into `combine_iterations`' `1/σ²` weighted mean, including the first
-  ones on an unadapted grid. An early iteration that undersamples the peak
-  returns a low integral **and** a low variance, so it is weighted *up*. Measured
-  on llj (five seeds each): −1.03% at 30k/iter, −0.28% at 150k, +0.002% at 300k,
-  +0.16% at 600k — steps halving as the budget doubles, the `O(1/N)` signature.
-  Not hadronic-specific; the same combination runs the fixed-beam path, and llj
-  exposes it because 24 pooled channels × a 7-dim grid each buys every channel
-  far fewer points than a partonic 2→2 does. Independent confirmation: the
-  accept/reject pass is a *single* pass over frozen grids, does not go through
-  `combine_iterations`, and converges to the true σ — at 100k the emitted
-  sample's own σ sits +1.25% above the banked integral, and at 300k they agree.
-  Fix: discard the first `k` iterations (or an unweighted final pass over the
-  trained grids). Would let the llj gate run at a quarter of its budget.
-  (`vegas.rs`, note 24 §P3.)
-- **`w_max` scan budget decoupled from the integration budget** — a frozen scan
-  estimates each channel's maximum on that channel's share of the *integration*
-  budget, so it inherits the same undersampled small channels. On llj the share
-  of σ above the maxima runs 3.2e-2 → 1.5e-2 → 8.4e-3 → 5.3e-3 over
-  30k → 100k → 300k → 600k and is **still falling**, against 3.04e-4 for a
-  fixed-beam process — 20–100× worse, and nowhere near converged at any budget
-  the gate can afford. The estimator stays unbiased (overweights are kept at
-  weight > 1), so what this costs is unweighting efficiency and sample
-  lumpiness under `IDWTUP = +3`, not correctness. Wanted: a scan budget set
-  independently of `neval`. Note the largest `w/w_max` moves non-monotonically
-  (23.5, 9.4, 15.0, 11.1) because it is an extremum estimate — do not read it as
-  a convergence measure. (`unweight`, note 24 §P4.)
 - **Streaming `IDWTUP = -4`** by deterministic two-pass replay — the interface
   hook (`EventSource::restart`) is in place and contract-tested; not needed while
   100k-event runs buffer in ~42 MB. (Note 23 close-out.)
@@ -250,10 +231,10 @@ One line each; the note is the full record. Earlier sprints
   `coupling::scales` reports the scale only. Bites nothing today; a hadronic run
   with a dynamic μF reaching below 2 GeV will disagree with MG without it.
   (Note 22 §4 + close-out.)
-- **Massless-t-channel fiducial cut** — a massless beam pins `t_max = 0`
-  (collinear edge) where the t-map falls back to flat; whether a fiducial cut is
-  wanted instead is unresolved for a physical massless-initial-state t-channel.
-  (Note 21 close-out.)
+- **Massless-t-channel fiducial cut** (sprint plan: note 28 §S2/D3) — a
+  massless beam pins `t_max = 0` (collinear edge) where the t-map falls back to
+  flat; whether a fiducial cut is wanted instead is unresolved for a physical
+  massless-initial-state t-channel. (Note 21 close-out.)
 - **`typed-units`** — research `uom`/`dimensioned`/`units` crates for typed
   four-momenta and cross sections.
 
@@ -333,6 +314,35 @@ the natural vehicle for several at once.
   G-directories, per-diagram-class = per *distinct* map) are second tier:
   real cluster-scale precedent, but they carry the routing fragility and need
   the same coverage guardrail as the per-flow item above.
+- **VEGAS first-iteration convergence bias** — `VegasGrid::adapt` feeds *every*
+  iteration into `combine_iterations`' `1/σ²` weighted mean, including the first
+  ones on an unadapted grid. An early iteration that undersamples the peak
+  returns a low integral **and** a low variance, so it is weighted *up*. Measured
+  on llj (five seeds each): −1.03% at 30k/iter, −0.28% at 150k, +0.002% at 300k,
+  +0.16% at 600k — steps halving as the budget doubles, the `O(1/N)` signature.
+  Not hadronic-specific; the same combination runs the fixed-beam path, and llj
+  exposes it because 24 pooled channels × a 7-dim grid each buys every channel
+  far fewer points than a partonic 2→2 does. Independent confirmation: the
+  accept/reject pass is a *single* pass over frozen grids, does not go through
+  `combine_iterations`, and converges to the true σ — at 100k the emitted
+  sample's own σ sits +1.25% above the banked integral, and at 300k they agree.
+  Fix: discard the first `k` iterations (or an unweighted final pass over the
+  trained grids). Would let the llj gate run at a quarter of its budget.
+  One half of the integration-sprint pair with the `w_max` item below: both are
+  "how the budget splits across adapt / scan / frozen phases", one holistic
+  redesign. (`vegas.rs`, note 24 §P3.)
+- **`w_max` scan budget decoupled from the integration budget** — a frozen scan
+  estimates each channel's maximum on that channel's share of the *integration*
+  budget, so it inherits the same undersampled small channels. On llj the share
+  of σ above the maxima runs 3.2e-2 → 1.5e-2 → 8.4e-3 → 5.3e-3 over
+  30k → 100k → 300k → 600k and is **still falling**, against 3.04e-4 for a
+  fixed-beam process — 20–100× worse, and nowhere near converged at any budget
+  the gate can afford. The estimator stays unbiased (overweights are kept at
+  weight > 1), so what this costs is unweighting efficiency and sample
+  lumpiness under `IDWTUP = +3`, not correctness. Wanted: a scan budget set
+  independently of `neval`. Note the largest `w/w_max` moves non-monotonically
+  (23.5, 9.4, 15.0, 11.1) because it is an extremum estimate — do not read it as
+  a convergence measure. (`unweight`, note 24 §P4.)
 - **Per-stage timing capture** (user, 2026-08-01; deliberately deferred from
   the B5 re-bank). Neither side records wall times today: the banked runs
   carry no timing at any stage (the bundled `run_*_log.txt` are job-wrapper
