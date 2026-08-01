@@ -69,6 +69,121 @@ m_ll" string `validate_sigma.rs` still writes into the
 Gate: the windowed σ is measured on both sides; the factor 3.16 has a recorded
 root cause; no tolerance moved.
 
+#### B1 outcome (2026-08-01) — **the defect is MadGraph's**
+
+The suspected Breit–Wigner normalisation is not it: our map is exactly
+measure-preserving, and the π was a coincidence. Both sides were asked for the
+*same window* and they agree.
+
+**The window on MadGraph's side.** No run-card cut can express it: `setcuts.f`
+applies `mmll`/`mmllmax` to every same-flavour opposite-sign pair
+(`s_min(j,i)=mmll*dabs(mmll)` guarded only by `abs(idup(i))==abs(idup(j))` and
+opposite sign), so it bites the muons too, and `banner.py` refuses a per-PDG
+`mxx_min_pdg` for any lepton ("Can not use PDG related cut for light
+quark/b quark/lepton/gluon/photon", pdg 15 among them). The window therefore
+goes into `dummy_cuts` (`SubProcesses/dummy_fct.f`), which `passcuts` calls after
+every other cut and which leaves MadEvent's phase-space generation untouched —
+so the windowed run integrates the same integrand MadGraph already integrated.
+Legs 5,6 are the τ pair, asserted against the generated `leshouche.inc`
+(`DATA (IDUP(I,1,1),I=1,6)/-11,11,-13,13,-15,15/`), not assumed.
+Driver: `validation/madgraph/gen_higgs_window.sh`; result:
+`validation/madgraph/higgs_window_reference.json` (committed — a few scalars).
+
+**The measurement.** All with the banked run card (`ptl 10`, `etal 2.5`,
+`drll 0.4`, `bwcutoff 15`, `sde_strategy 2`, `e+e-` at 250+250):
+
+| | σ (pb) |
+|---|---|
+| MG, `m(ττ) ∈ [124.9, 125.1]` | `7.2077e-5 ± 2.94e-7` |
+| MG, complement | `1.2965e-3 ± 3.43e-6` |
+| **MG, sum** | **`1.36858e-3 ± 3.44e-6`** |
+| MG, unwindowed, seeds 20260801/2/3 | `1.3380e-3`, `1.3421e-3`, `1.3322e-3` |
+| MG, unwindowed, banked | `1.3373e-3 ± 2.8e-6` |
+| ours, production (VEGAS + 25-channel + unweighting) | `1.367e-3 ± 3e-6` |
+
+MadGraph's own partition of its own phase space **exceeds its own unwindowed
+integral by 3.1e-5 pb, 7.2σ on its own quoted errors**, and the excess is the
+pole. Our σ sits 0.35σ from MadGraph's sum. The unwindowed run is the wrong
+number, and its quoted 0.2% error does not cover a 2.3% miss — the
+[[seed-sweep-over-fixed-seed-pull]] shape, on MadGraph's side this time: three
+fresh seeds agree with each other and with the banked run, all confidently wrong.
+
+That the windowed σ *is* the resonance and not a continuum shoulder: 1898 of
+MadGraph's 2000 windowed events lie within ±5Γ_h (31.9 MeV) of 125.000.
+
+**The window on our side**, three maps, none sharing VEGAS or the unweighter:
+
+| map | σ over the window (pb) |
+|---|---|
+| single Breit–Wigner channel of the one Higgs diagram | `7.2065e-5 ± 3.2e-8` |
+| α-adapted 25-channel combiner, flat draws | `7.1948e-5 ± 3.1e-7` |
+| flat RAMBO, 2e7 draws | `5.37e-5 ± 1.0e-5` (crude, 1.8σ) |
+
+**Root cause, in MadGraph's integration.** MadGraph **3.5.7** produced every
+banked run (the banked banner says `VERSION 3.5.7 2024-11-29`, and it is the
+version in the `madgraph` pixi environment). Its `get_channel_cut` in
+`genps.f` — the `sde_strategy = 2` multichannel weight, which is the run-card
+default — computes a propagator's off-shellness as
+
+```fortran
+tmp = (t-Mass)*(t+Mass)                                  ! 3.5.7
+get_channel_cut = get_channel_cut* (tmp**2 - tmp2**2)/(tmp**2 + tmp2**2)**2
+```
+
+where `t = dot(ptemp(0,-i), ptemp(0,-i))` is *already* `p²` and `Mass` is a mass.
+`(t−M)(t+M) = t²−M²` is dimensionally inconsistent and never vanishes on the
+pole. The pinned submodule, **3.7.1**, has
+
+```fortran
+tmp = (t-Mass**2)                                        ! 3.7.1
+get_channel_cut = get_channel_cut/(tmp**2 + tmp2**2)
+```
+
+Re-evaluating both expressions over `configs.inc` + `props.inc` at MadGraph's own
+on-pole event (`m(ττ) = 124.999999`) gives, for the one config carrying the Higgs
+propagator (config 9, `SPROP = 25`):
+
+- 3.5.7: **α₉ = 1.90e-3**, the eight t-channel continuum configs taking 99.8%
+- 3.7.1: **α₉ = 0.9999998**
+
+and the windowed run's realised per-channel split confirms the 3.5.7 number:
+`G9.*` collect `1.42e-7` of `7.19e-5`, a share of **0.198%** against the
+predicted 0.190%. So MadEvent hands 99.8% of the pole to channels whose maps have
+no density at a 6.4 MeV structure inside a 500 GeV range; in a windowed run the
+cut forces them onto it and they find it, in an unwindowed run they do not.
+
+Confirming experiment: the same unwindowed run with `sde_strategy = 1` (the
+amplitude-squared weighting, which does not use the broken expression) gives
+**`1.3742e-3 ± 3.86e-6` pb** — 1.1σ from MadGraph's own windowed+complement sum
+and 1.5σ from ours, against −7.4σ for the `sde_strategy = 2` default.
+
+The changelog does not announce the fix; the code on both sides is the evidence.
+
+**Why no other row is affected.** Only four banked processes carry a Higgs
+propagator at all (`FK_MDL_WH` in `matrix1_orig.f`: this row,
+`uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0`, and — as an external leg, not a
+propagator — `ee_to_tatah`/`ee_to_zh`), and of those only this one has its σ
+measured. Every other resonance in the suite is a Z at Γ/m = 2.7%, wide enough
+that neighbouring channels' maps cover it. That is why the rest of the σ column
+is green.
+
+**Disposition.** Both cells stay ⚠️ `info`, per the plan's MadGraph branch. The
+curated notes in `validation/manifest.toml` are rewritten to say which side is
+wrong and how it was measured; `validate_sigma`'s falsified "localised at low
+m_ll" reason is replaced (the rider); and
+`validate_samples::the_higgs_pole_window_is_measured_against_madgraph` makes the
+windowed agreement a live measurement against the committed reference rather than
+a claim in a note. No tolerance moved, and nothing on this side changed — there
+was nothing to fix here.
+
+**Filed for the user / B5, not done here:** the banked reference for this row
+(and any future narrow-resonance row) is defective and would need re-banking with
+a MadGraph that weights the resonant channel correctly — 3.7.1, or 3.5.7 with
+`sde_strategy = 1`. Re-banking changes the pinned reference bundle and the
+question of which MadGraph the oracle layer should run, so it is a decision, not
+a session task. Until then the `integrals` cell cannot be gated: there is no
+correct number to gate against.
+
 ### B2 — `hadronic-shat-floor`
 
 Smallest and most contained. The general hadronic path derives every `ŝ` lower

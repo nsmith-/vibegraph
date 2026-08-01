@@ -65,6 +65,7 @@ use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::lhef::build::{EventHeader, SubprocessRecord};
 use vibegraph::lhef::observables::{canonical, kinematics, Labelling};
 use vibegraph::lhef::parse::LheFile;
+use vibegraph::phasespace::diagram_channel::DiagramChannel;
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
@@ -766,20 +767,17 @@ impl Binned {
 /// times its error, and the rest of the spectrum sits about 1.4% *below*
 /// MadGraph, so the offset is a resonance question and not a threshold question.
 ///
-/// Which side is wrong is *not* settled here, and the third estimate does not
-/// settle it: flat RAMBO under a VEGAS grid puts 1.0e-6 pb in that bin, twenty
-/// times under MadGraph, because a map with no Breit–Wigner cannot find a 6.4 MeV
-/// peak in a 500 GeV process — it shows only the direction a poor map fails in,
-/// and its per-bin ratios elsewhere (0.004 to 36) say it is not converged. What
-/// can be said is that MadGraph's own per-channel `results.dat` and its 10 000
-/// banked events agree with each other, so its sample is not merely
-/// under-representing its own integral. The ratio 3.158 is within its errors of
-/// `π`, which in a Breit–Wigner map — where `∫ds/((s−m²)²+m²Γ²) = π/(mΓ)` — is the
-/// first thing a follow-up should check on this side.
+/// The third estimate here does not settle *which* side is wrong: flat RAMBO
+/// under a VEGAS grid puts 1.0e-6 pb in that bin, twenty times under MadGraph,
+/// because a map with no Breit–Wigner cannot find a 6.4 MeV peak in a 500 GeV
+/// process — it shows only the direction a poor map fails in, and its per-bin
+/// ratios elsewhere (0.004 to 36) say it is not converged.
 ///
-/// So `low-mll-reconciliation` is retired and replaced by a resonance question,
-/// this row's `integrals` cell stays informational for the new reason, and its
-/// `samples` cell joins it. Neither threshold moved.
+/// [`the_higgs_pole_window_is_measured_against_madgraph`] settles it, by asking
+/// MadGraph for the same window directly: MadGraph's own windowed cross section
+/// is 7.2077e-5 pb, so the deficit is in MadGraph's *unwindowed* integration and
+/// not in this sampler. Both cells stay informational because the banked
+/// reference they compare against is the run that carries the deficit.
 #[test]
 fn the_low_m_ll_region_is_binned_against_madgraph() {
     let row = ROWS
@@ -910,4 +908,193 @@ fn ratio(a: f64, b: f64) -> String {
     } else {
         "-".to_string()
     }
+}
+
+/// Draws for the windowed measurement. The single-channel estimator's error at
+/// this budget is well under a percent, against a disagreement that was a factor
+/// of three.
+const HWINDOW_DRAWS: usize = 400_000;
+const HWINDOW_SEED: u64 = 0x_B1_0000;
+/// Agreement the windowed cross sections must show. Sized on what the check is
+/// for — the banked disagreement it replaces was a factor 3.16 — and left well
+/// above the two estimates' combined Monte-Carlo errors (0.4% and 0.5%) so a
+/// budget change cannot make it flap.
+const HWINDOW_TOLERANCE: f64 = 0.02;
+
+/// `σ` over the 200 MeV window at the `h → τ⁺τ⁻` pole, on both sides, measured
+/// directly rather than read off a histogram.
+///
+/// This is what decides the resonance question
+/// [`the_low_m_ll_region_is_binned_against_madgraph`] exposed. Two histograms of
+/// the same bin disagreeing is symmetric evidence; a cross section *of that bin*
+/// from each generator is not.
+///
+/// # MadGraph's side
+///
+/// `validation/madgraph/gen_higgs_window.sh` runs the banked process three ways
+/// with the banked run card — inside the window, outside it, and unwindowed over
+/// three seeds — and banks the scalars in `higgs_window_reference.json`. The
+/// window is imposed through `dummy_cuts`, because the only run-card cut that
+/// constrains a lepton-pair mass (`mmll`/`mmllmax`) is applied by `setcuts.f` to
+/// *every* same-flavour opposite-sign pair and would bite the muons too; the
+/// script records how that was verified.
+///
+/// The three numbers do not close:
+///
+/// ```text
+/// m(ta+,ta-) in  [124.9, 125.1]   7.2077e-5  +- 2.94e-7 pb
+/// m(ta+,ta-) outside              1.2965e-3  +- 3.43e-6 pb
+///                       sum       1.36858e-3 +- 3.44e-6 pb
+/// unwindowed, three seeds         1.3380e-3, 1.3421e-3, 1.3322e-3 (banked: 1.3373e-3)
+/// ```
+///
+/// MadGraph's own partition of its own phase space exceeds its own unwindowed
+/// integral by 3.1e-5 pb, 7.2σ on its own quoted errors, and the excess is the
+/// pole. The unwindowed run is the one that is wrong, and its quoted 0.2% error
+/// does not cover a 2.3% miss.
+///
+/// # This side
+///
+/// Measured with the single Breit–Wigner channel of the one diagram carrying the
+/// Higgs propagator, drawn flat in its own uniforms: no VEGAS grid, no α mixture,
+/// no unweighting — the layers the production number goes through and the ones a
+/// mis-covered resonance would hide in. It agrees with MadGraph's windowed run
+/// (and, at higher cost, so do the 25-channel combiner and flat RAMBO).
+///
+/// # What this cannot detect
+///
+/// Anything both sides get wrong the same way inside the window: the two
+/// estimates share the matrix element, which the `amplitudes` cell gates at the
+/// pole to 1e-11, and share the window definition. It is a statement about phase
+/// space coverage, not about `|M|²`.
+#[test]
+fn the_higgs_pole_window_is_measured_against_madgraph() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/higgs_window_reference.json");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let reference: serde_json::Value = serde_json::from_str(&text).expect("windowed reference");
+    let get = |section: &str, field: &str| -> f64 {
+        reference[section][field]
+            .as_f64()
+            .unwrap_or_else(|| panic!("{section}.{field} in {}", path.display()))
+    };
+    let (lo, hi) = (get("window", "m_tautau_lo"), get("window", "m_tautau_hi"));
+    let (mg, mg_err) = (get("hwindow", "sigma_pb"), get("hwindow", "sigma_err_pb"));
+
+    let row = ROWS
+        .iter()
+        .find(|r| r.key == "ee_to_mumu_tata_qcd0")
+        .expect("the decider row is in the table");
+
+    let card_path = output_dir().join(row.key).join("Cards/run_card.dat");
+    let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
+    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.key));
+    let sets = common::generate(row.process);
+    let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
+    let bounds: Vec<_> = evals
+        .iter()
+        .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+        .collect();
+    let rep = &evals[0];
+    let legs = process_external_legs(rep, &model, &evaluated);
+    let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
+    let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+        .iter()
+        .map(|&id| evaluated.mass(id))
+        .collect();
+    let spin_color_avg = initial_spin_color_average(rep, &model, &evaluated);
+    let diagrams: Vec<_> = sets
+        .iter()
+        .flat_map(|s| s.diagrams.iter().cloned())
+        .collect();
+
+    // The diagram whose propagator chain carries the pole the window is drawn
+    // around, found by asking the channel builder rather than by index.
+    let pole = 0.5 * (lo + hi);
+    let resonant: Vec<_> = diagrams
+        .iter()
+        .filter(|d| {
+            DiagramChannel::<f64>::from_diagram(d, &evaluated, sqrt_s)
+                .resonances()
+                .iter()
+                .any(|r| (r.mass - pole).abs() < 1.0)
+        })
+        .cloned()
+        .collect();
+    assert_eq!(
+        resonant.len(),
+        1,
+        "[{}] expected exactly one diagram with a pole at {pole} GeV",
+        row.key
+    );
+
+    let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    integ
+        .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+        .expect("run card scale prescription compiles");
+    integ.use_multichannel(&resonant, &evaluated, 2_000, 1, SEED);
+    assert_eq!(integ.channel_count(), 1, "one channel, so no α mixture");
+
+    let mut rng = ChaCha8Rng::seed_from_u64(HWINDOW_SEED);
+    let mut u = vec![0.0; integ.channel_grid_ndim()];
+    let mut momenta = Vec::new();
+    let (mut sum, mut sum_sq, mut inside) = (0.0, 0.0, 0usize);
+    for _ in 0..HWINDOW_DRAWS {
+        for x in u.iter_mut() {
+            *x = rng.random::<f64>();
+        }
+        let v = integ.event_in_channel(0, &u, &mut momenta);
+        let m = (momenta[2] + momenta[3]).m();
+        let w = if m >= lo && m < hi { v } else { 0.0 };
+        sum += w;
+        sum_sq += w * w;
+        if w != 0.0 {
+            inside += 1;
+        }
+    }
+    let n = HWINDOW_DRAWS as f64;
+    let mean = sum / n;
+    let ours = mean * GEV2_TO_PB;
+    let ours_err = ((sum_sq / n - mean * mean).max(0.0) / n).sqrt() * GEV2_TO_PB;
+
+    let rel = ours / mg - 1.0;
+    let pull = (ours - mg) / (ours_err * ours_err + mg_err * mg_err).sqrt();
+    eprintln!(
+        "-- h -> tau tau pole window, m(ta+,ta-) in [{lo}, {hi}] --\n  \
+         vibegraph (single Breit-Wigner channel, {inside}/{HWINDOW_DRAWS} draws in window) \
+         {ours:.5e} +- {ours_err:.2e} pb\n  \
+         MadGraph  (dummy_cuts window, own run card)                          \
+         {mg:.5e} +- {mg_err:.2e} pb\n  \
+         rel {:+.3}%, pull {pull:+.2}\n  \
+         MadGraph's window + complement = {:.6e} pb against its unwindowed {:.6e} pb \
+         and the banked {:.6e} pb",
+        100.0 * rel,
+        get("sum_in_plus_out", "sigma_pb"),
+        reference["control"][0]["sigma_pb"]
+            .as_f64()
+            .expect("control"),
+        banked_sigma(row.key),
+    );
+    assert!(
+        rel.abs() < HWINDOW_TOLERANCE,
+        "[{}] windowed sigma {ours:.5e} pb against MadGraph's own {mg:.5e} pb: \
+         rel {:+.3}%, outside {:.0}%",
+        row.key,
+        100.0 * rel,
+        100.0 * HWINDOW_TOLERANCE
+    );
+}
+
+/// The banked run's own cross section, for context in the windowed comparison.
+fn banked_sigma(key: &str) -> f64 {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/sigma_reference.json");
+    let text = std::fs::read_to_string(&path).expect("banked sigma reference");
+    let doc: serde_json::Value =
+        serde_json::from_str(&text).expect("banked sigma reference parses");
+    doc[key]["sigma_pb"].as_f64().expect("banked sigma")
 }
