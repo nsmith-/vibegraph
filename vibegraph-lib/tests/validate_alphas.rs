@@ -41,9 +41,13 @@
 //! against `0.1300028` from the parameter card, twice the printing budget apart.
 //! So for such a run the events are back in play — all 10 000 of
 //! `pp_to_llj_fixed`'s reproduce their printed `AQCDUP` from the grid, and none
-//! would from the card. [`the_grid_alpha_s_reproduces_the_scale_its_run_log_prints`]
-//! adds the 17-digit log line at the run's own scale, and states what the pair can
-//! and cannot distinguish.
+//! would from the card. The run log adds the same reading at 17 digits, and only
+//! at `M_Z`: MadGraph resolves and prints `αs(M_Z)` once and prints no value at
+//! any other scale, so the grid reading is pinned to `1e-8` at the reference
+//! scale and to the `AQCDUP` printing budget everywhere else. Both
+//! `pdlabel = lhapdf` runs fix `μR = 91.188`, which *is* `M_Z`, so the two
+//! statements coincide over the banked data; separating them needs a
+//! dynamical-scale grid run, where only the events would speak.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -220,7 +224,8 @@ fn event_scales(run: &Path) -> Vec<(f64, f64)> {
 /// *different* source: their `αs` comes from the PDF set's own table, not from
 /// this crate's evolution. All 10 000 events of each reproduce the printed
 /// `AQCDUP` digits, and the parameter card's value would reproduce none of them —
-/// see [`the_grid_alpha_s_reproduces_the_scale_its_run_log_prints`].
+/// see [`banked_run_logs_pin_the_alpha_s_source_rule`], which asserts the two
+/// sources stay far enough apart for these events to tell them apart.
 const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "ddx_to_epemg",
     "ee_to_ee",
@@ -358,12 +363,28 @@ fn banked_events_reproduce_aqcdup() {
 /// `setrun.f` prints the parameter-card value it recovered from `G` and, when
 /// a beam carries a PDF, the value the PDF label replaced it with — both at
 /// 17 digits, which round-trip exactly through a double. This is what makes
-/// the override observable in the banked data at all: the `AQCDUP` field
-/// cannot distinguish the two, because they are numerically equal in every
-/// banked run.
+/// the override observable in the banked data at all: for a `pdlabel` other than
+/// `lhapdf` the `AQCDUP` field cannot distinguish the two, because MadGraph's own
+/// tooling has already written the PDF's `aS` into the parameter card and the two
+/// are numerically equal.
+///
+/// The `lhapdf` runs are where they differ, and there this reads the set's own
+/// knots at `M_Z` against the 17-digit value MadGraph resolved, then asserts the
+/// gap to the card's value is wider than half a printed `AQCDUP` digit — without
+/// which [`banked_events_reproduce_aqcdup`]'s 20 000 grid-sourced events would
+/// agree with either source and pin neither.
+///
+/// **What it cannot.** The scale dependence of the grid reading: MadGraph prints
+/// its resolved `αs` at `M_Z` and at no other scale, so a wrong interpolation
+/// away from the reference scale is left entirely to the events' `AQCDUP`
+/// budget — six digits rather than seventeen. Nor the interpolation *shape*:
+/// `91.188` sits `2.4e-5` of the way into its knot interval, where a linear and
+/// a cubic reading of the same knots agree to `1e-8`, so `GRID_ALPHA_S_TOL`
+/// bounds the source and not the interpolant.
 #[test]
 fn banked_run_logs_pin_the_alpha_s_source_rule() {
     let mut checked = 0usize;
+    let mut grid_runs: Vec<String> = Vec::new();
     for (name, run) in banked_runs() {
         let Some(log) = find_run_log(&run) else {
             continue;
@@ -410,10 +431,27 @@ fn banked_run_logs_pin_the_alpha_s_source_rule() {
                  {final_value} (rel {rel:.2e})",
                 grid.eval(ZMASS)
             );
+            // The swap has to be visible in the printed field too, not only in
+            // the 17-digit log line, or the banked events pin no source at all.
+            let card_value = RunningAlphaS::new(resolved.param_card_asmz, NLoop::Two)
+                .expect("positive asmz")
+                .eval(ZMASS);
+            let gap = (aqcdup_from_alpha_s(card_value) - aqcdup_from_alpha_s(final_value)).abs();
+            let half_ulp = printed_half_ulp(aqcdup_from_alpha_s(final_value));
+            assert!(
+                gap > half_ulp,
+                "{name}: at M_Z the parameter card's alpha_s is no longer distinguishable \
+                 from the grid's in a printed AQCDUP ({gap:.2e} against {half_ulp:.2e}), so \
+                 nothing pins which source the events used"
+            );
             println!(
                 "{name}: alpha_s(M_Z) overridden by the PDF grid, {from_card} -> \
-                 {final_value}, reproduced from the set's knots to {rel:.2e}"
+                 {final_value}, reproduced from the set's {} knots to {rel:.2e}; \
+                 AQCDUP separates the two sources by {:.2} printed half-digits",
+                grid.knots(),
+                gap / half_ulp
             );
+            grid_runs.push(name.clone());
             checked += 1;
             continue;
         };
@@ -433,105 +471,11 @@ fn banked_run_logs_pin_the_alpha_s_source_rule() {
         checked += 1;
     }
     assert!(checked >= 5, "only {checked} runs carried a readable log");
-    println!("alpha_s source rule pinned against {checked} MadGraph run logs");
-}
-
-/// `αs` at the scale a grid-sourced run actually evaluated it at, against the
-/// value that run's log prints.
-///
-/// `alfas_functions_lhapdf.f` prints one `alpha_s for scale Q is V` line per
-/// distinct scale, at 17 digits — the same round-tripping precision as the
-/// `M_Z` line, but taken at the run's own `μR` rather than at the reference
-/// scale. Reading the set's tabulated knots has to land on it.
-///
-/// **What this pins.** The *source*: the PDF set's table versus the parameter
-/// card's `aS`. The two differ by `1.1e-5` relative here, which is `2×` the
-/// `AQCDUP` printing budget, so the choice is observable in the banked events —
-/// and [`banked_events_reproduce_aqcdup`] observes it, 10 000 times.
-///
-/// **What it cannot.** The scale dependence: this run fixes `μR = 91.188`, which
-/// is `M_Z`, so evaluating at `μR` and evaluating at the reference scale give the
-/// same number and nothing here separates them. Nor the interpolation *shape* —
-/// `91.188` sits `2.4e-5` of the way into its knot interval, where a linear and a
-/// cubic reading of the same knots agree to `1e-8`. A dynamical scale would need
-/// both, and would need LHAPDF's cubic `ipol` to have an oracle at all.
-#[test]
-fn the_grid_alpha_s_reproduces_the_scale_its_run_log_prints() {
-    let mut checked = 0usize;
-    for (name, run) in banked_runs() {
-        let resolved = resolve(&name, &run);
-        let Some(grid) = resolved.source.grid() else {
-            continue;
-        };
-        let log = find_run_log(&run).unwrap_or_else(|| panic!("{name}: no readable run log"));
-        let text = std::fs::read_to_string(&log).expect("run log");
-        let evaluations = alpha_s_evaluations(&text);
-        assert!(
-            !evaluations.is_empty(),
-            "{name}: the log prints no 'alpha_s for scale' line to compare against"
-        );
-
-        let mut worst = 0.0f64;
-        for &(q, printed) in &evaluations {
-            let got = grid.eval(q);
-            let rel = (got - printed).abs() / printed;
-            assert!(
-                rel <= GRID_ALPHA_S_TOL,
-                "{name}: alpha_s({q}) reads {got} against MadGraph's {printed} \
-                 (rel {rel:.2e})"
-            );
-            worst = worst.max(rel);
-
-            // The parameter card is the source this replaces, and the swap is
-            // visible in the printed field rather than only in the 17-digit log.
-            let card_value = RunningAlphaS::new(resolved.param_card_asmz, NLoop::Two)
-                .expect("positive asmz")
-                .eval(q);
-            let gap = (aqcdup_from_alpha_s(card_value) - aqcdup_from_alpha_s(printed)).abs();
-            assert!(
-                gap > printed_half_ulp(aqcdup_from_alpha_s(printed)),
-                "{name}: at Q = {q} the parameter card's alpha_s is no longer \
-                 distinguishable from the grid's in a printed AQCDUP, so nothing here \
-                 pins which source was used"
-            );
-        }
-        println!(
-            "{name}: {} tabulated alpha_s scales from the run log, worst {worst:.2e} relative \
-             (grid of {} knots)",
-            evaluations.len(),
-            grid.knots()
-        );
-        checked += 1;
-    }
     assert_eq!(
-        checked,
-        GRID_ALPHA_S_RUNS.len(),
-        "not every grid-sourced run was compared against its log"
+        grid_runs, GRID_ALPHA_S_RUNS,
+        "the set of runs whose log reports a PDF-grid alpha_s changed"
     );
-}
-
-/// Every `alpha_s for scale Q is V` line of a `pdlabel = lhapdf` run log.
-fn alpha_s_evaluations(text: &str) -> Vec<(f64, f64)> {
-    let mut out = Vec::new();
-    for line in text.lines() {
-        let Some(tail) = line.split_once("alpha_s for scale").map(|(_, t)| t) else {
-            continue;
-        };
-        let numbers: Vec<f64> = tail
-            .split_whitespace()
-            .filter_map(|token| token.parse::<f64>().ok())
-            .collect();
-        assert_eq!(
-            numbers.len(),
-            2,
-            "unexpected 'alpha_s for scale' line: {line}"
-        );
-        let entry = (numbers[0], numbers[1]);
-        if !out.contains(&entry) {
-            out.push(entry);
-        }
-    }
-    out
+    println!("alpha_s source rule pinned against {checked} MadGraph run logs");
 }
 
 /// The first `run_01_log.txt` under a run's `SubProcesses/*/G*/`.

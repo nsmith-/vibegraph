@@ -78,15 +78,19 @@ them. Every one of them is a measurement that exists, not a suspicion.
   regenerates from a gate again, which is what the deleted `dy_dsigma_dmll.md`
   table stood in for: absolute picobarns from the 20 GeV threshold `ptl` implies
   out to 1 TeV, every judged bin within 2.3 combined errors, and the threshold
-  itself checked rather than assumed. **Left for B5**: the two runs exist only in
-  a local work area, so the row carries `bundled = false` and the branch is red on
-  a fetching checkout until `refdata-3` picks them up; they add about 40 MB
-  gzipped to a 65 MB bundle.
+  itself checked rather than assumed. Both runs travel in `refdata-3` (B5), the
+  row's `bundled = false` is gone, and a fetching checkout has them.
 
 ### Standing discrepancies to resolve (never a loosened tolerance)
 
-- **`higgs-pole-in-m-tautau` — DIAGNOSED, the defect is MadGraph's** (B1,
-  2026-08-01; full evidence in note 27 §B1). Asked for the *same window* directly,
+- ~~**`higgs-pole-in-m-tautau`**~~ — ✅ **closed** (`v3-backlog` B1 diagnosed,
+  B5 re-banked). Against the 3.7.1 reference the row's `integrals` cell gates for
+  the first time: **1.367003e-3 ± 2.685e-6** pb against MadGraph's
+  **1.372500e-3 ± 2.674e-6** pb, pull **−1.45**, rel **−0.40%**, `rel_tol` 0.02
+  from the resonant channel's own 0.45% seed spread. Its `samples` cell gates
+  too — worst KS p **6.5e-2** (`cos(ta+)`) and worst χ² p **2.5e-1** (`SPINUP`)
+  over three seeds, where the 3.5.7 bank gave `3.6e-6` and χ² 210–233 on 15 dof.
+  ⚠️/⚠️ → **GATE**/**GATE**. The diagnosis it rests on, unchanged:
   the two sides agree: MadGraph's own `σ(m(ττ) ∈ [124.9, 125.1])` is
   `7.2077e-5 ± 2.9e-7` pb and ours `7.2065e-5 ± 3.2e-8` pb. MadGraph's window plus
   its complement (`1.2965e-3 ± 3.4e-6`) sums to `1.36858e-3` pb against the
@@ -106,10 +110,7 @@ them. Every one of them is a measurement that exists, not a suspicion.
   Standing evidence: `validation/madgraph/gen_higgs_window.sh` +
   `validation/madgraph/higgs_window_reference.json` (committed), measured live by
   `validate_samples.rs` `the_higgs_pole_window_is_measured_against_madgraph`.
-  **Decided (D3, 2026-08-01): the oracle layer moves to 3.7.1** — B4 banks with
-  it, B5 re-banks the rest and re-measures every banked gate (note 27 §B4/§B5);
-  this row's `integrals` cell becomes gateable for the first time then. Upstream
-  fix identified: mg5amcnlo `286feb8e6` ("change sde_strategy2 to avoid negative
+  Upstream fix: mg5amcnlo `286feb8e6` ("change sde_strategy2 to avoid negative
   weights", 2025-01-27), first released in 3.6.2, never backported to 3.5.x
   (3.5.16 still carries the bug); provenance detail in note 27 §B1.
 - ~~**`uux_to_uux` colour-flow frequencies**~~ — ✅ **closed** (`v3-backlog` B6).
@@ -180,19 +181,31 @@ them. Every one of them is a measurement that exists, not a suspicion.
   tail *less* — the region a single-rung t-channel spine under-resolves. Evidence
   for the multi-rung spine (feature backlog), not a new defect.
   (`validate_sigma.rs` `probe_qcd_seed_stability`.)
-- **The mirror term's visibility is unmeasured below the electroweak scale** —
-  `the_mirrored_beam_ordering_needs_the_reflected_matrix_element` is the control
-  that makes the mirrored beam ordering's *identity* check meaningful: it asserts
-  that evaluating the representative unreflected — what dropping the mirror
-  amounts to — moves `|M|²` by more than `1e-3` at every probe point. Its ladder
-  starts at 220 GeV. Extended down to `√ŝ = 25` GeV it finds `p p > l+ l- j`
-  configurations where the mirror term is worth only `8.4e-4`, so the control
-  fails there on the present bound. The identity itself is not in question — it
-  holds to `5.4e-13` at every point measured — and no gate moved, but "a dropped
-  mirror would be visible" is a claim currently supported only above 220 GeV.
-  Wanted: measure how the weakest mirror term scales with `ŝ` and state the bound
-  as a function of it, rather than widening the ladder and lowering the number.
-  (`proton.rs` `fresh_points`.)
+- ~~**The mirror term's visibility is unmeasured below the electroweak scale**~~
+  — ✅ **closed** (`v3-backlog` B5). The control is now stated as a function of
+  `ŝ` rather than as a flat `1e-3`, on a ladder from 25 GeV to 1.2 TeV:
+  `mirror_visibility_floor(√ŝ) = 0.076 ŝ/(ŝ + m_Z²)`, the shape of a `γ*/Z` core
+  whose forward-backward asymmetry is set by `ŝ/m_Z²`, fitted to the measured
+  plateau and halved. It sits 1.58× to 4.86× under every point of
+  `probe_mirror_visibility_ladder` (25 GeV to 4 TeV, three streams, two sample
+  sizes). The bound is on the *tenth percentile*, not the minimum, and that is
+  the finding the flat number hid: the two beam orderings agree exactly wherever
+  the configuration happens to be symmetric, so a minimum falls by a decade going
+  from 32 draws to 512 at every energy — it measures the sample, not the physics.
+  (`proton.rs`.)
+- **`ee_to_mumua` drifted when the references moved to 3.7.1** — the one row
+  where 3.7.1 disagrees with us *more* than 3.5.7 did. Our σ is unchanged
+  (`1.007660e-1` pb, same integration); MadGraph's moved `1.00630e-1 ± 3.865e-4`
+  → `9.980100e-2 ± 2.335e-4` pb, so the `integrals` pull went **+0.31 → +3.12**
+  (rel +0.135% → +0.97%) against a `PULL_LIMIT` of 3.5, and about half of that
+  growth is the tighter reference error rather than the −0.83% shift itself. Its
+  `samples` cell followed: minimum KS p **2.14e-3 → 2.74e-4** against a `1e-4`
+  floor, worst observable `y(a)` → `pt(a)`. Both cells still gate, and both are
+  now the tightest in their category. The photon here is soft/collinear-regulated
+  by the run card's cuts, which is the region MadGraph's channel-weight change
+  reallocates; whether the remaining 1% is that or ours is not established.
+  Wanted: a windowed comparison over `pt(a)` of the kind B1 used on the Higgs
+  pole, which is the measurement that decides which side owns it.
 
 ### Deferred coverage
 
@@ -250,6 +263,21 @@ them. Every one of them is a measurement that exists, not a suspicion.
 ### Gate + tooling hygiene
 
 Small, independent, each one a gate that is weaker than it looks.
+
+- ~~**Every `lpp = 0` banked run was running `αs(M_Z) = 0.130`**~~ ✅ **exposed by
+  the 3.7.1 re-bank** (B5), and it is why the partonic σ references moved so far.
+  MadGraph 3.5.7 wrote the `pdlabel = nn23lo1` set's `aS = 0.130` into the
+  parameter card of a run whose *beams carry no PDF at all* (`lpp1 = lpp2 = 0`);
+  3.7.1 leaves the model's `0.118`. `SCALUP` did not move — it is `250.0` in both
+  banks for the `√s = 500` fixed-beam rows — but `AQCDUP` went
+  `0.1113305 → 0.1024649`, a **−8.0%** step in `αs(250)`, and every reference σ
+  followed by `0.920ⁿ` in its power of `αs`: the pure-QCD 2→2 rows by −15.4%
+  (`gg_to_gg` 168830 → 142770 pb, `gg_to_ttx` 15.953 → 13.513 pb, `uux_to_uux`
+  33428 → 28269 pb) and the `QCD=2 QED=2` 2→3 rows by −8% each. Nothing on this
+  side moved: every gate reads its run's own parameter card, so our σ tracked the
+  step exactly and the three QCD `integrals` cells stayed green at pull +0.05,
+  +0.68 and −1.49. Recorded because it changes what a banked partonic σ *means*:
+  a number quoted from `refdata-2` is not comparable to one from `refdata-3`.
 
 - ~~**The CF-matrix oracle read only MadGraph 3.5.x's emission format**~~ ✅
   **resolved** (B4, 2026-08-01). 3.7.1 writes the colour matrix as integers over
@@ -321,15 +349,16 @@ Small, independent, each one a gate that is weaker than it looks.
   banked because the *other* side of the comparison is the two fetched PDF sets,
   which `pixi run validate` now acquires (`fetch-pdf-multigrid` joined its
   dependencies).
-- ~~**Publish the `refdata-2` release asset and make the CI banked job
-  gating**~~ ✅ **done.** The `refdata-2` release carries
-  `vibegraph-refdata-2.tar.zst` (65 066 838 bytes, sha256 `4495d6df…f40e736c`,
-  matching the manifest pin), `[refdata].published = true`, and the `banked`
-  job fetches all three inputs and gates merges — `continue-on-error` is gone.
-  The repository being private means the plain release URL serves 404 to
-  unauthenticated clients; `vg_ensure_refdata` falls back to an authenticated
-  `gh release download` of the same asset (`GITHUB_TOKEN` in CI), and the
-  plain URL becomes live if the repository ever goes public.
+- **Publish the `refdata-3` release asset** — the manifest pins
+  `vibegraph-refdata-3.tar.zst` with `[refdata].published = false`, so the CI
+  `banked` job (which gates merges — `continue-on-error` went with `refdata-2`)
+  stays red until the asset is uploaded to a `refdata-3` release tag. The bundle
+  is assembled, hash-verified and reproducible; the publish itself is the user's
+  step. `$VIBEGRAPH_REFDATA_SOURCE` serves a local copy meanwhile. The repository
+  being private means the plain release URL serves 404 to unauthenticated
+  clients; `vg_ensure_refdata` falls back to an authenticated
+  `gh release download` of the same asset (`GITHUB_TOKEN` in CI), and the plain
+  URL becomes live if the repository ever goes public.
 - ~~**The reference bundle double-compresses its event files**~~ ✅ **taken in
   the `refdata-2` re-cut.** Event files travel as plain Les Houches text and
   `vg_ensure_refdata` gzips them back as it unpacks, so no consumer changed:
@@ -340,15 +369,12 @@ Small, independent, each one a gate that is weaker than it looks.
   unpacked from a bundle re-assembles to that same bundle, which an archive of
   gzipped members could not promise. Measured: all 26 runs' decompressed text
   unchanged sha256 for sha256 through pack and unpack.
-- **`validation/madgraph/compact_events.py` has no consumer** — the projection
-  L1b measured (note 26) is committed with its `lhe-compact` pixi environment so
-  the verdict's numbers are reproducible, but nothing runs it: no gate reads its
-  output and `generate-references` does not call it. The bundle *was* re-cut
-  (`refdata-2`) and deliberately not around Parquet, so the "wire it in" branch
-  has now been declined once; what remains is to delete it or to keep it as
-  reproducible evidence for the verdict, and to say which. A committed generator
-  that nothing exercises is exactly the shape `validate-pdf-grid` had while it
-  covered nothing for four sessions.
+- ~~**`validation/madgraph/compact_events.py` has no consumer**~~ ✅ **decided
+  (D2) and deleted** (B5). The script, its `lhe-compact` pixi environment and the
+  `/validation/madgraph/events` ignore rule are gone; note 26 keeps the verdict's
+  numbers and git history keeps the script. The bundle was re-cut twice
+  (`refdata-2`, `refdata-3`) and deliberately not around Parquet, so the "wire it
+  in" branch was declined on evidence rather than by neglect.
 - ~~**`g g > g g` diagram count: 6 against 4**~~ ✅ **decided (L7): report our
   count in our own convention, mark the cell informational.** MadGraph writes the
   four-gluon contact term as three graphs, one per colour structure
@@ -361,23 +387,21 @@ Small, independent, each one a gate that is weaker than it looks.
 - ~~**`validate_sigma` writes a note its own binning falsified**~~ — DONE (B1,
   2026-08-01): the `ee_to_mumu_tata_qcd0` `Plan::Info` reason and the module
   header now say what the windowed measurement established.
-- **The `diagrams` gate could be hermetic** — it reads the committed
-  `diagrams.json`, the committed `.mg5` scripts and nothing else, and runs in
-  1.5 s including the two 2→6 enumerations, but it is registered
-  `required-features = ["extended-validation"]` on the enumeration-cost argument.
-  L7 made the manifest tiers say `banked` to match the registration rather than
-  move the binary mid-close-out. Moving it would put the whole `diagrams` column
-  on a bare clone for ~1.5 s of the 3-minute hermetic budget.
-- **`init-sm-submodule` fails outside a git checkout** — the pixi task runs
-  `git submodule update --init` unconditionally, where `vg_ensure_submodule` in
-  `fetch_common.sh` checks for `models/sm/particles.py` first and is a no-op when
-  the source is already there. Bites a `git archive` export (how the clean-tree
-  gate is run), not CI. The task should call the shared function.
-- **`Process`'s `Display` drops coupling-order constraints** — the report's
-  measurement detail prints `p p > b b~` for a row whose generate line is
-  `p p > b b~ QCD=2`. The enumeration honours the constraint (that row counts 6
-  diagrams where the default-order row counts 4), so this is a printing loss
-  only, but it makes two report lines read as if they measured the same process.
+- ~~**The `diagrams` gate could be hermetic**~~ ✅ **moved** (B5). The binary is
+  registered without `required-features`, all 26 `diagrams` cells say
+  `tier = "hermetic"`, and the column runs on a bare clone — 26 rows in 1.25 s,
+  the two 2→6 enumerations included. `validate-diagrams` keeps its
+  `extract-diagrams` dependency for the regeneration path; the gate itself reads
+  the committed `diagrams.json` and `.mg5` scripts and prints a process
+  directory's `configs.inc` topologies only when one happens to be there.
+- ~~**`init-sm-submodule` fails outside a git checkout**~~ ✅ **fixed** (B5). The
+  pixi task calls `vg_ensure_submodule`, which returns as soon as the model
+  source is on disk — an exported tree carries the content but no `.git`, where
+  `git submodule update` has nothing to do and no repository to do it in.
+- ~~**`Process`'s `Display` drops coupling-order constraints**~~ ✅ **fixed**
+  (B5). `p p > b b~ QCD=2` prints as its generate line, so the two `pp_to_bb*`
+  report rows stop reading as the same measurement
+  (`diagrams::parse` `display_keeps_the_coupling_order_constraints`).
 - **`diagrams.json` carries counts only, not the per-flavour union** — the
   committed reference is what the existing extractor produces, so the
   multi-channel `diagrams` cells assert a summed count and not the concrete

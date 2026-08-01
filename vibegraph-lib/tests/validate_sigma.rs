@@ -51,17 +51,15 @@
 //! # Which processes are asserted
 //!
 //! The electroweak final states are gated with an assertion, including the
-//! sharply resonant `e+ e- > ta+ ta- h` and `e+ e- > mu+ mu- a`: the multichannel
-//! sampler resolves the Z/gamma* Breit-Wigner peaks flat RAMBO under-sampled, so
-//! they converge to the banked sigma and hold across independent RNG seeds. The
-//! three QCD processes are gated too, now that they run alpha_s to the same scale
-//! MadGraph does.
+//! sharply resonant `e+ e- > ta+ ta- h`, `e+ e- > mu+ mu- a` and
+//! `e+ e- > mu+ mu- ta+ ta-`: the multichannel sampler resolves the Z/gamma* and
+//! Higgs Breit-Wigner peaks flat RAMBO under-sampled, so they converge to the
+//! banked sigma and hold across independent RNG seeds. The three QCD processes
+//! are gated too, now that they run alpha_s to the same scale MadGraph does.
 //!
-//! Two classes remain informational. `e+ e- > mu+ mu- ta+ ta-` samples stably but
-//! sits ~2.2% above the banked sigma, because the banked run under-covers the
-//! `h -> tau tau` pole (see its `Plan::Info` reason). The 2->6 states are not
-//! integrated at all — their ~1 ms matrix-element cost over a 24-dim map makes a
-//! meaningful integral prohibitively slow.
+//! The 2->6 states are the class that stays out: they are not integrated at all,
+//! their ~1 ms matrix-element cost over a 24-dim map making a meaningful integral
+//! prohibitively slow.
 //!
 //! Every process is driven through the same run-card-pinned setup, so the cut
 //! compiler and beam handling are exercised for all of them.
@@ -142,6 +140,12 @@ enum Plan {
     /// Integrate and print sigma/pull without asserting: the banked sigma
     /// legitimately differs (recorded reason), so it is a live informational
     /// comparison rather than a pass/fail check.
+    ///
+    /// No row uses it today. It is the middle rung of the enforcement ladder —
+    /// a row whose disagreement is measured and recorded rather than absorbed
+    /// into a widened `rel_tol` — and the arm a demotion is supposed to land on,
+    /// so it stays wired to `run_one` and to the report's `info` status.
+    #[allow(dead_code)]
     Info {
         neval: usize,
         niter: usize,
@@ -246,32 +250,26 @@ fn plan_for(dir: &str) -> Plan {
             niter: 8,
             rel_tol: 0.03,
         },
-        // Informational because the reference is wrong, not because this side is.
-        // Every seed sits ~2.2% *above* the banked sigma (pull +6.7 to +8.3), and
-        // the whole offset is the `h -> tau tau` pole: MadGraph's own cross section
-        // over a 200 MeV window at 125 GeV is 7.2077e-5 pb and over the complement
-        // 1.2965e-3 pb, summing to 1.36858e-3 pb against the 1.3373e-3 pb its own
-        // unwindowed run reports — a 7.2-sigma failure of MadEvent to close against
-        // itself, on its own quoted errors. This sampler's windowed sigma agrees
-        // with MadGraph's windowed sigma
-        // (`validate_samples::the_higgs_pole_window_is_measured_against_madgraph`).
+        // The narrowest resonance under gate: a 6.4 MeV `h -> tau tau` peak inside
+        // a 500 GeV range, carrying 5% of the cross section. It reaches the pole
+        // through the resonant channel's own mapping, and the tolerance is set by
+        // the seed spread of that channel (0.45% over five seeds,
+        // `probe_resonant_seed_stability`) rather than by the reference's error.
         //
-        // MadGraph 3.5.7, which produced every banked run, computes the
-        // `sde_strategy = 2` channel weight from `(t - Mass)*(t + Mass)` where `t`
-        // is already an invariant mass squared (`get_channel_cut`, `genps.f`), so
-        // the expression never vanishes on a pole and the resonant channel gets
-        // alpha 1.9e-3 instead of 1 - 1.2e-7 at the pole. 3.7.1 uses
-        // `t - Mass**2`. Re-running with `sde_strategy = 1` gives
-        // 1.3742e-3 +- 3.9e-6 pb, which is this side's number.
-        //
-        // Gate this row once the reference is re-banked with a MadGraph that
-        // weights the resonant channel correctly.
-        "ee_to_mumu_tata_qcd0" => Plan::Info {
+        // The row is the reason the references are banked with MadGraph 3.7.1.
+        // MadGraph 3.5.7 computes the `sde_strategy = 2` channel weight from
+        // `(t - Mass)*(t + Mass)` where `t` is already an invariant mass squared
+        // (`get_channel_cut`, `genps.f`), so the expression never vanishes on a
+        // pole: the resonant channel is given alpha 1.9e-3 instead of 1 - 1.2e-7
+        // there, and the 24 non-resonant channels, whose maps cannot resolve
+        // 6.4 MeV, are left to find the peak. A 3.5.7 run therefore reports
+        // 1.3373e-3 pb, 2.2% low and 7.2 sigma from the sum of its *own* windowed
+        // and complementary cross sections. 3.7.1 uses `t - Mass**2` and reports
+        // 1.3725e-3 pb, which is where this side already was.
+        "ee_to_mumu_tata_qcd0" => Plan::Gate {
             neval: 100_000,
             niter: 8,
-            reason: "stable across seeds (spread 0.45%) but +2.2% vs banked, which is the \
-                     h -> tau tau pole the banked MadGraph 3.5.7 run under-covers; its own \
-                     windowed cross section agrees with this one",
+            rel_tol: 0.02,
         },
         // ── llj partonic subprocesses, blocked on the clustering scale ──────
         // Each is banked with a cross section and each is cheap enough to
