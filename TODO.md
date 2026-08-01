@@ -5,10 +5,10 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: `validation-3` (validation) ✅ **closed** 2026-07-31 on
-branch `validation-3` — awaiting the user's merge to `main`, unpushed and
-untagged. The suite now has three declared dependency layers (`hermetic` /
-`banked` / `oracle`), one manifest that says which check may assume what, and a
+**Current position**: `validation-3` (validation) ✅ **closed + merged to
+`main`** 2026-07-31; `refdata-2` published and pinned, CI's `banked` job gates
+merges. The suite has three declared dependency layers (`hermetic` / `banked` /
+`oracle`), one manifest that says which check may assume what, and a
 per-process × per-category report the banked layer renders and asserts:
 `pixi run validate` ends by writing `target/validation-report/report.md` and
 failing if the cells measured are not the cells `validation/manifest.toml`
@@ -18,11 +18,12 @@ declares. 26 rows × 4 categories = 104 cells, 72 of them measured in that layer
 rendered table, the findings register and the recommended order for the follow-up
 work — is note 25 §10.
 
-**Next**: the **backlog-tackling session** the sprint's discipline deferred
-everything to. Note 25 §10 recommends, in order: the `h → τ⁺τ⁻` pole bin, the
-`hadronic-shat-floor`, the `uux_to_uux` colour-selection rule, and banking
-Drell-Yan events for the two `dy13` cards. All four are in the validation backlog
-below with their evidence.
+**Next**: the **`v3-backlog` sprint** — **active (launched 2026-08-01), note
+27; D1 = match MadEvent, D2 = delete**. Sessions B1–B5 take
+note 25 §10's order: the `h → τ⁺τ⁻` pole bin, the `hadronic-shat-floor`, the
+`uux_to_uux` colour-selection rule, banking Drell-Yan events for the two `dy13`
+cards, then hygiene riders + a single `refdata-3` re-cut. All items are in the
+validation backlog below with their evidence.
 
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
