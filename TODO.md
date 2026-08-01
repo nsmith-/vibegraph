@@ -19,14 +19,17 @@ rendered table, the findings register and the recommended order for the follow-u
 work — is note 25 §10.
 
 **Next**: the **`v3-backlog` sprint** — **active (launched 2026-08-01), note
-27**. B1–B3 ✅ merged to the `v3-backlog` integration branch: the h→ττ pole is
-**MadGraph 3.5.7's defect** (fixed upstream in `286feb8e6`, first in 3.6.2),
-the general ŝ floor gates `pp_to_bb_fixed` σ at −0.011%, and the
-colour-selection premise is falsified in favour of a per-diagram `AMP2_d` draw
-(note 27 §B3.2). Decisions D1–D4 in note 27 §6 (D3 = oracle layer moves to
-3.7.1; D4 = `AMP2_d` is session B6). Remaining: **B4** (DY event banking at
-3.7.1) ∥ **B6** (`AMP2_d`), then **B5** (3.7.1 re-bank + hygiene +
-`refdata-3` re-cut + close-out).
+27**. B1–B4 and B6 ✅ merged to the `v3-backlog` integration branch: the h→ττ pole
+is **MadGraph 3.5.7's defect** (fixed upstream in `286feb8e6`, first in 3.6.2),
+the general ŝ floor gates `pp_to_bb_fixed` σ at −0.011%, the colour-selection
+premise was falsified and replaced by a per-diagram `AMP2_d` draw (note 27
+§B3.2/§B6), and Drell-Yan events are banked. Decisions D1–D4 in note 27 §6.
+**B5 (3.7.1 re-bank + hygiene + `refdata-3` + close-out) is ⛔ blocked on branch
+`v3b-b5`**: the re-bank, the promotions and the bundle are done and verified, but
+MadGraph 3.7.1 emits a second Les Houches numeric dialect our writer does not
+produce, so the byte-for-byte round-trip gate fails on 20 of 34 banked event
+files and `pixi run validate` is red. See the blocker at the head of the
+validation backlog; the fix belongs in `lhef/`.
 
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
@@ -82,6 +85,34 @@ them. Every one of them is a measurement that exists, not a suspicion.
   row's `bundled = false` is gone, and a fetching checkout has them.
 
 ### Standing discrepancies to resolve (never a loosened tolerance)
+
+- **⛔ BLOCKER — the LHEF writer emits one of MadGraph's two event dialects**
+  (`v3-backlog` B5, 2026-08-01; full derivation in note 27 §B5). `pixi run
+  validate` is **red** and `v3b-b5` must not merge until this lands.
+  `validate_lhef::banked_files_round_trip_byte_for_byte` — enforced over every
+  banked run — fails on **20 of the 34** banked event files after the 3.7.1
+  re-bank. Cause, in MadGraph and deliberate: `EventFile`'s `parsing ==
+  "wgt_only"` mode parses each event with `parse_momenta=False`, so
+  `assign_scale_line(line, convert=False)` keeps `nexternal`, `ievent`, `scale`,
+  `aqed` and `aqcd` as *strings*; `Event.__str__`'s `"%2d %6d …" % (...)` then
+  raises and its `except` branch writes `"%s %s %+13.7e %s %s %s"`, passing every
+  field but the rescaled weight through verbatim. Particle lines are never
+  touched, so they keep `rw_events.f`'s `5e19.11,f3.1,f4.1`
+  (`0.00000000000E+00`, `0.`, `1.`) instead of the converted
+  `+0.0000000000e+00`, `0.0000e+00`, `-1.0000e+00`. Whether a run takes that fast
+  path follows `use_syst`, which follows the beams: all 8 `lpp ≠ 0` runs stay in
+  the converted dialect, all 20 regenerated `lpp = 0` runs are in the
+  pass-through one. Not reachable from the run card, and not a defect to report
+  upstream.
+  **Nothing physical moved** — every gate that *parses* the events is green
+  (Rust reads `0.2500000E+03` as readily as `2.50000000e+02`); only the
+  byte-exact re-serialisation claim broke.
+  Wanted: make the round trip byte-exact **by construction** — `lhef::parse`
+  already sees each numeric field's source text, so carrying it on the record and
+  re-emitting it unless the value changed retires the whole "we reformat what we
+  did not alter" class, and is what makes the gate mean *this file round-trips*
+  rather than *this file is in the dialect we emit*. A dialect enum over two
+  format tables would also pass and is the weaker claim.
 
 - ~~**`higgs-pole-in-m-tautau`**~~ — ✅ **closed** (`v3-backlog` B1 diagnosed,
   B5 re-banked). Against the 3.7.1 reference the row's `integrals` cell gates for

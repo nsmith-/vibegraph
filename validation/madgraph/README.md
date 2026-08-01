@@ -90,8 +90,10 @@ pixi run fetch-refdata      # pinned URL + SHA-256 from ../manifest.toml
 pixi run --skip-deps validate
 ```
 
-`VIBEGRAPH_REFDATA_SOURCE=/path/to/vibegraph-refdata-1.tar.zst` takes the archive
-from a local file instead; the pinned checksum is enforced either way.
+`VIBEGRAPH_REFDATA_SOURCE=/path/to/vibegraph-refdata-3.tar.zst` takes the archive
+from a local file instead; the pinned checksum is enforced either way. It is also
+the only route while `[refdata].published` is `false`: a bundle whose release
+asset has not been uploaded yet has a pin but no URL that serves it.
 
 ## Coupling-order semantics
 
