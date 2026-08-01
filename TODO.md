@@ -24,12 +24,13 @@ is **MadGraph 3.5.7's defect** (fixed upstream in `286feb8e6`, first in 3.6.2),
 the general ŝ floor gates `pp_to_bb_fixed` σ at −0.011%, the colour-selection
 premise was falsified and replaced by a per-diagram `AMP2_d` draw (note 27
 §B3.2/§B6), and Drell-Yan events are banked. Decisions D1–D4 in note 27 §6.
-**B5 (3.7.1 re-bank + hygiene + `refdata-3` + close-out) is ⛔ blocked on branch
-`v3b-b5`**: the re-bank, the promotions and the bundle are done and verified, but
-MadGraph 3.7.1 emits a second Les Houches numeric dialect our writer does not
-produce, so the byte-for-byte round-trip gate fails on 20 of 34 banked event
-files and `pixi run validate` is red. See the blocker at the head of the
-validation backlog; the fix belongs in `lhef/`.
+B5 (3.7.1 re-bank + hygiene + `refdata-3`) and **B7** (the Les Houches dialect
+blocker B5 hit, fixed in `lhef/` — note 27 §B7) are done on branches `v3b-b5`
+and `v3b-b7`: `pixi run validate` is green end to end and the census reads 75
+measured / 74 gated / 1 informational. What is left is the sprint's close-out
+(the report, this file, the `validation/madgraph` README, note 27's close-out
+section) and the user's own step: publish `refdata-3` and flip the CI banked
+layer to gating.
 
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
@@ -86,33 +87,24 @@ them. Every one of them is a measurement that exists, not a suspicion.
 
 ### Standing discrepancies to resolve (never a loosened tolerance)
 
-- **⛔ BLOCKER — the LHEF writer emits one of MadGraph's two event dialects**
-  (`v3-backlog` B5, 2026-08-01; full derivation in note 27 §B5). `pixi run
-  validate` is **red** and `v3b-b5` must not merge until this lands.
-  `validate_lhef::banked_files_round_trip_byte_for_byte` — enforced over every
-  banked run — fails on **20 of the 34** banked event files after the 3.7.1
-  re-bank. Cause, in MadGraph and deliberate: `EventFile`'s `parsing ==
-  "wgt_only"` mode parses each event with `parse_momenta=False`, so
-  `assign_scale_line(line, convert=False)` keeps `nexternal`, `ievent`, `scale`,
-  `aqed` and `aqcd` as *strings*; `Event.__str__`'s `"%2d %6d …" % (...)` then
-  raises and its `except` branch writes `"%s %s %+13.7e %s %s %s"`, passing every
-  field but the rescaled weight through verbatim. Particle lines are never
-  touched, so they keep `rw_events.f`'s `5e19.11,f3.1,f4.1`
-  (`0.00000000000E+00`, `0.`, `1.`) instead of the converted
-  `+0.0000000000e+00`, `0.0000e+00`, `-1.0000e+00`. Whether a run takes that fast
-  path follows `use_syst`, which follows the beams: all 8 `lpp ≠ 0` runs stay in
-  the converted dialect, all 20 regenerated `lpp = 0` runs are in the
-  pass-through one. Not reachable from the run card, and not a defect to report
-  upstream.
-  **Nothing physical moved** — every gate that *parses* the events is green
-  (Rust reads `0.2500000E+03` as readily as `2.50000000e+02`); only the
-  byte-exact re-serialisation claim broke.
-  Wanted: make the round trip byte-exact **by construction** — `lhef::parse`
-  already sees each numeric field's source text, so carrying it on the record and
-  re-emitting it unless the value changed retires the whole "we reformat what we
-  did not alter" class, and is what makes the gate mean *this file round-trips*
-  rather than *this file is in the dialect we emit*. A dialect enum over two
-  format tables would also pass and is the weaker claim.
+- ~~**the LHEF writer emits one of MadGraph's two event dialects**~~ — ✅
+  **closed** (`v3-backlog` B5 diagnosed, B7 fixed; note 27 §B5/§B7). MadGraph's
+  `wgt_only` read-back keeps every info-line field but the rescaled weight as a
+  *string* and never touches the particle lines, so a delivered file carries
+  `rw_events.f`'s `0.00000000000E+00` / `0.` / `1.` instead of the converted
+  `+0.0000000000e+00` / `0.0000e+00` / `-1.0000e+00`. Which one arrives follows
+  `use_syst`, which follows the beams, and is not reachable from the run card.
+  Fixed by construction rather than by a format table: `lhef::parse` keeps each
+  block's record lines beside the values it decoded and `lhef::write` re-emits a
+  line verbatim once it has decoded it again and found it to spell the record
+  being written. `banked_files_round_trip_byte_for_byte` is green on **34/34**
+  files (714 759 events, 3 711 197 particle lines) and now sweeps every
+  `Events/*/…` rather than each process's `run_01`. Because a pass-through file
+  would round-trip whatever this crate's columns were, the gate also
+  re-serialises each run with the source dropped and requires the converted runs
+  to keep reproducing MadGraph's bytes: **14 of 34**, the same partition
+  `use_syst` predicts. Records built rather than read carry no source, so the
+  emitted-events path is byte-identical.
 
 - ~~**`higgs-pole-in-m-tautau`**~~ — ✅ **closed** (`v3-backlog` B1 diagnosed,
   B5 re-banked). Against the 3.7.1 reference the row's `integrals` cell gates for
