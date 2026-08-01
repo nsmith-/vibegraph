@@ -58,8 +58,8 @@
 //! MadGraph does.
 //!
 //! Two classes remain informational. `e+ e- > mu+ mu- ta+ ta-` samples stably but
-//! sits ~2.2% above the banked sigma, an offset localised at low lepton-pair mass
-//! and not yet reconciled (see its `Plan::Info` reason). The 2->6 states are not
+//! sits ~2.2% above the banked sigma, because the banked run under-covers the
+//! `h -> tau tau` pole (see its `Plan::Info` reason). The 2->6 states are not
 //! integrated at all — their ~1 ms matrix-element cost over a 24-dim map makes a
 //! meaningful integral prohibitively slow.
 //!
@@ -246,31 +246,32 @@ fn plan_for(dir: &str) -> Plan {
             niter: 8,
             rel_tol: 0.03,
         },
-        // Stable but carrying an unexplained offset, so informational rather than
-        // gated. The estimator itself is sound — five seeds agree within 0.45% of
-        // each other with chi2/dof in 0.97-1.21 — but every seed sits ~2.2% *above*
-        // the banked sigma (pull +6.7 to +8.3), an offset that no longer hides
-        // inside the error bar now that the sampler converges.
+        // Informational because the reference is wrong, not because this side is.
+        // Every seed sits ~2.2% *above* the banked sigma (pull +6.7 to +8.3), and
+        // the whole offset is the `h -> tau tau` pole: MadGraph's own cross section
+        // over a 200 MeV window at 125 GeV is 7.2077e-5 pb and over the complement
+        // 1.2965e-3 pb, summing to 1.36858e-3 pb against the 1.3373e-3 pb its own
+        // unwindowed run reports — a 7.2-sigma failure of MadEvent to close against
+        // itself, on its own quoted errors. This sampler's windowed sigma agrees
+        // with MadGraph's windowed sigma
+        // (`validate_samples::the_higgs_pole_window_is_measured_against_madgraph`).
         //
-        // The offset is entirely localised at low lepton-pair mass: re-integrating
-        // with `mmll = 20 GeV`, which truncates that region, agrees with MadGraph to
-        // -0.1% (`probe_photon_pole_is_the_instability`). Its *sign* is what keeps
-        // this open rather than filed as a known deficiency of this side — failing
-        // to cover the photon pole would read low, not high. The leading hypothesis
-        // is the reverse: MadEvent pre-shapes a massless s-channel invariant's grid
-        // only down to `xo = 10/stot` (`set_peaks` in `myamp.f`, `setgrid` in
-        // `dsample.f`), so it may under-sample below `m_ll ~ 3 GeV` where this
-        // sampler now maps explicitly. That is a hypothesis, not a finding: the
-        // floor sets MadGraph's initial grid density, not its support, so its own
-        // adaptation can still reach the region. Gate this row once the low-m_ll
-        // region is reconciled against MadGraph directly — a differential
-        // `dsigma/dm_ll` comparison, not a scalar.
+        // MadGraph 3.5.7, which produced every banked run, computes the
+        // `sde_strategy = 2` channel weight from `(t - Mass)*(t + Mass)` where `t`
+        // is already an invariant mass squared (`get_channel_cut`, `genps.f`), so
+        // the expression never vanishes on a pole and the resonant channel gets
+        // alpha 1.9e-3 instead of 1 - 1.2e-7 at the pole. 3.7.1 uses
+        // `t - Mass**2`. Re-running with `sde_strategy = 1` gives
+        // 1.3742e-3 +- 3.9e-6 pb, which is this side's number.
+        //
+        // Gate this row once the reference is re-banked with a MadGraph that
+        // weights the resonant channel correctly.
         "ee_to_mumu_tata_qcd0" => Plan::Info {
             neval: 100_000,
             niter: 8,
-            reason: "stable across seeds (spread 0.45%) but +2.2% vs banked, localised at \
-                     low m_ll (agrees to -0.1% with mmll = 20 GeV); the sign rules out \
-                     under-coverage on this side",
+            reason: "stable across seeds (spread 0.45%) but +2.2% vs banked, which is the \
+                     h -> tau tau pole the banked MadGraph 3.5.7 run under-covers; its own \
+                     windowed cross section agrees with this one",
         },
         // ── llj partonic subprocesses, blocked on the clustering scale ──────
         // Each is banked with a cross section and each is cheap enough to

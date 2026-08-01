@@ -80,25 +80,33 @@ them. Every one of them is a measurement that exists, not a suspicion.
 
 ### Standing discrepancies to resolve (never a loosened tolerance)
 
-- **`higgs-pole-in-m-tautau`** (replaces `low-mll-reconciliation`, whose premise
-  L4 falsified) — `ee_to_mumu_tata_qcd0` sits **+2.2% above** banked MG, and
-  binning `dσ/dm_ll` against MadGraph's own events down to threshold says the
-  offset is **not** a low-`m_ll` effect: every bin below 20 GeV agrees within its
-  errors on both pairs, and **159% of the offset sits in one 200 MeV bin at the
-  `h → τ⁺τ⁻` pole** — `7.137e-5 ± 1.3e-6` pb against `2.260e-5 ± 1.7e-6` pb, a
-  factor 3.16 at 22σ around a resonance 6.4 MeV wide. The rest of the spectrum
-  sits ~1.4% *below* MadGraph. Which side mis-covers the resonance is open: the
-  third estimate (flat RAMBO under a VEGAS grid) puts `1.0e-6` pb there, twenty
-  times under MadGraph, because a map with no Breit–Wigner cannot find that peak
-  at all, so it shows only the direction a poor map fails in; MadGraph's
-  per-channel `results.dat` and its 10 000 banked events agree with each other, so
-  its sample is not merely under-representing its own integral. The ratio 3.158 is
-  within errors of **π**, which in a Breit–Wigner map (`∫ds/((s−m²)²+m²Γ²) =
-  π/(mΓ)`) is the first thing to check on this side. Decisive next step: a
-  dedicated MadGraph run of this process with an `m(τ⁺τ⁻)` window around 125 GeV,
-  which measures the resonance directly on both sides. `integrals` and `samples`
-  cells both informational.
-  (`validate_samples.rs` `the_low_m_ll_region_is_binned_against_madgraph`.)
+- **`higgs-pole-in-m-tautau` — DIAGNOSED, the defect is MadGraph's** (B1,
+  2026-08-01; full evidence in note 27 §B1). Asked for the *same window* directly,
+  the two sides agree: MadGraph's own `σ(m(ττ) ∈ [124.9, 125.1])` is
+  `7.2077e-5 ± 2.9e-7` pb and ours `7.2065e-5 ± 3.2e-8` pb. MadGraph's window plus
+  its complement (`1.2965e-3 ± 3.4e-6`) sums to `1.36858e-3` pb against the
+  `1.3373e-3` pb its own unwindowed run reports — **MadEvent fails to close
+  against itself by 7.2σ on its own quoted errors**, and our `1.367e-3` pb sits
+  0.35σ from its sum. Root cause, in MadGraph's *integration*: **3.5.7** (the
+  version that produced every banked run — the banked banner says
+  `VERSION 3.5.7 2024-11-29`) computes the `sde_strategy=2` channel weight in
+  `get_channel_cut` (`genps.f`) from `(t-Mass)*(t+Mass)` where `t` is already `p²`,
+  so it never vanishes on a pole; the Higgs channel gets **α = 1.9e-3** instead of
+  `1 − 1.2e-7` at the pole (recomputed from MadGraph's own `configs.inc`/`props.inc`
+  at its own on-pole event, and confirmed by the windowed run's realised 0.198%
+  channel share), leaving 24 non-resonant channels to find a 6.4 MeV structure in
+  a 500 GeV range. The pinned submodule **3.7.1** has `t - Mass**2`; re-running
+  3.5.7 with `sde_strategy = 1` gives `1.3742e-3 ± 3.9e-6` pb, i.e. our number.
+  Nothing on this side needed fixing, and no tolerance moved.
+  Standing evidence: `validation/madgraph/gen_higgs_window.sh` +
+  `validation/madgraph/higgs_window_reference.json` (committed), measured live by
+  `validate_samples.rs` `the_higgs_pole_window_is_measured_against_madgraph`.
+  **Open, and a decision rather than a session task:** the banked reference for
+  this row is defective, so `integrals` and `samples` stay informational — there is
+  no correct number to gate against. Re-banking it needs a MadGraph that weights
+  the resonant channel correctly (3.7.1, or 3.5.7 at `sde_strategy = 1`), which
+  changes both the pinned bundle and the question of which MadGraph the oracle
+  layer runs. For the user / B5.
 - **`uux_to_uux` colour-flow frequencies** — every kinematic observable agrees
   (min KS p `6.7e-3` over three seeds) and so do the helicity frequencies, but the
   realised `ICOLUP` frequencies do not: MadGraph writes the flow whose lines join
@@ -295,14 +303,9 @@ Small, independent, each one a gate that is weaker than it looks.
   validated in order to make a number match, and the same process is pinned at
   8.25e-14 per flow — far below what any difference in diagram *content* could
   survive. The cell renders `⚠️ 4/6` with that reason attached.
-- **`validate_sigma` writes a note its own binning falsified** — the
-  `ee_to_mumu_tata_qcd0` `integrals` row file still carries "localised at low
-  m_ll", which is the premise L4 measured and disproved. The report does not
-  repeat it — the collator prefers the manifest's curated note over a
-  measurement's own — but the string is written into
-  `target/validation-report/integrals/ee_to_mumu_tata_qcd0.json` on every run.
-  One string in `validate_sigma.rs`; it goes with whoever takes the Higgs-pole
-  item.
+- ~~**`validate_sigma` writes a note its own binning falsified**~~ — DONE (B1,
+  2026-08-01): the `ee_to_mumu_tata_qcd0` `Plan::Info` reason and the module
+  header now say what the windowed measurement established.
 - **The `diagrams` gate could be hermetic** — it reads the committed
   `diagrams.json`, the committed `.mg5` scripts and nothing else, and runs in
   1.5 s including the two 2→6 enumerations, but it is registered
