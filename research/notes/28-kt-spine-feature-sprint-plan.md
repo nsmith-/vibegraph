@@ -241,11 +241,13 @@ close-out tripped CI on exactly this).**
 
 1. **D1 — capstone card (decided)**: `p p > j j` with MadGraph's default run
    card (dynamical scale, default `ptj`). No fixed-scale stepping-stone row.
-2. **D2 — spine reference process (decided)**: the candidate
-   `p p > e+ e- j j` (QCD=0, fixed scale) is approved as the reference
-   process. S2 still writes the concrete card into this note; Sb banks it
-   after the sprint manager's card review — no further user round-trip unless
-   S2 finds a reason to deviate from the approved candidate.
+2. **D2 — spine reference process (decided; revised 2026-08-01)**: S2's
+   measurement deviated from the `p p > e+ e- j j` candidate (112
+   subprocesses / 3024 diagrams / 1608 pooled channels — §S2.6) and the user
+   approved the narrowed partonic spelling **`u d > e+ e- u d QCD=0`** at a
+   fixed scale, which carries the full ladder spectrum (12/14/9 diagrams over
+   one/two/three spacelike lines) in one flavour assignment. Card:
+   `validation/madgraph/scripts/ud_to_epemud_qcd0.mg5`; banked by Sb.
 3. **D3 — massless-t-channel cut (decided)**: resolved inside S2 by
    measurement (flat-fallback vs fiducially-bounded `t_max`); the decision and
    its numbers land in this note.
