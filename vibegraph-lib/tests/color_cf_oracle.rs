@@ -141,10 +141,26 @@ fn parse_matrix_file(path: &Path) -> Result<MgReference, String> {
     let ncolor = parse_param(&lines, "NCOLOR").ok_or("no NCOLOR parameter")?;
     let ngraphs = parse_param(&lines, "NGRAPHS").ok_or("no NGRAPHS parameter")?;
 
-    // Parse the CF DATA block. Each column J is one logical line
+    // Parse the CF DATA block. MadGraph emits it two ways, and which one a file
+    // carries is a property of the version that wrote it — see `parse_packed_cf`
+    // for the newer one. The square form is one logical line per column J,
     //   DATA (CF(I,  J),I=  1,  NCOLOR) /v1, v2, .../
     // optionally followed by a `C     <coeff> <structure>` comment giving the
     // basis structure of flow J.
+    if lines
+        .iter()
+        .any(|l| l.trim_start().starts_with("DATA (CF(I),"))
+    {
+        let (cf, structures) = parse_packed_cf(&lines, ncolor)?;
+        return Ok(MgReference {
+            process,
+            ncolor,
+            ngraphs,
+            cf,
+            structures,
+        });
+    }
+
     let mut cf = vec![f64::NAN; ncolor * ncolor];
     let mut structures = vec![String::new(); ncolor];
     let mut current_col: Option<usize> = None;
@@ -200,6 +216,111 @@ fn parse_matrix_file(path: &Path) -> Result<MgReference, String> {
         cf,
         structures,
     })
+}
+
+/// Parse the packed color-matrix form, and return the same square `cf` and
+/// `structures` the caller builds from the other one.
+///
+/// Newer MadGraph emits the matrix as integers over one common denominator,
+/// storing only the upper triangle:
+///
+/// ```text
+/// INTEGER CF(NCOLOR*(NCOLOR+1)/2)
+/// DATA DENOM/6/
+/// DATA (CF(I),I=  1,  6) /19,-4,-4,-4,-4,8/
+/// ```
+///
+/// and contracts it with a single running index,
+///
+/// ```text
+/// DO I = 1, NCOLOR
+///   DO J = I, NCOLOR
+///     CF_INDEX = CF_INDEX + 1
+///     ZTEMP = ZTEMP + CF(CF_INDEX)*JAMP(J,M)
+/// ```
+///
+/// so entry `(I,J)` appears once for the unordered pair rather than twice.
+/// `MATRIX1` is `REAL*8`, which takes the real part of that sum, and
+/// `Re[c·a·conj(b)]` equals `Re[c·b·conj(a)]` for real `c` — so an off-diagonal
+/// entry has to carry **twice** the symmetric matrix's value to reproduce the
+/// same `|M|²`. The square form is therefore
+///
+/// ```text
+/// CF(I,I) = packed / DENOM        CF(I,J) = CF(J,I) = packed / (2 DENOM)
+/// ```
+///
+/// Confirmed against the older form on three processes spanning `NCOLOR` 1, 2
+/// and 6 and `DENOM` 1, 3 and 6, element for element; `packed_gg_ttx_matches_the_square_form`
+/// pins the `NCOLOR = 2` case here.
+fn parse_packed_cf(lines: &[String], ncolor: usize) -> Result<(Vec<f64>, Vec<String>), String> {
+    let denom = lines
+        .iter()
+        .find_map(|l| {
+            l.trim_start()
+                .strip_prefix("DATA DENOM/")?
+                .split('/')
+                .next()?
+                .trim()
+                .parse::<f64>()
+                .ok()
+        })
+        .ok_or("packed CF block with no DATA DENOM")?;
+    if denom == 0.0 {
+        return Err("DENOM is zero".into());
+    }
+
+    let mut packed: Vec<f64> = Vec::new();
+    let mut structures = vec![String::new(); ncolor];
+    let mut pending = false;
+    let mut row = 0usize;
+    for line in lines {
+        if line.trim_start().starts_with("DATA (CF(I),") {
+            let body = line
+                .split_once('/')
+                .and_then(|(_, r)| r.rsplit_once('/').map(|(v, _)| v))
+                .ok_or_else(|| format!("no /.../ in CF line: {line}"))?;
+            for tok in body.split(',').map(str::trim).filter(|t| !t.is_empty()) {
+                packed.push(parse_fortran_real(tok).ok_or_else(|| format!("bad CF value '{tok}'"))?);
+            }
+            pending = true;
+        } else if pending {
+            // Each `DATA` line is one row of the triangle, and the structure
+            // comment after it names that row's flow.
+            if let Some(rest) = line.trim_start().strip_prefix('C') {
+                if let Some((_, structure)) = rest.trim().split_once(char::is_whitespace) {
+                    if row < ncolor {
+                        structures[row] = normalize_structure(structure);
+                    }
+                }
+            }
+            row += 1;
+            pending = false;
+        }
+    }
+
+    let expected = ncolor * (ncolor + 1) / 2;
+    if packed.len() != expected {
+        return Err(format!(
+            "packed CF has {} values, expected NCOLOR*(NCOLOR+1)/2 = {expected}",
+            packed.len()
+        ));
+    }
+
+    let mut cf = vec![f64::NAN; ncolor * ncolor];
+    let mut k = 0;
+    for i in 0..ncolor {
+        for j in i..ncolor {
+            let v = if i == j {
+                packed[k] / denom
+            } else {
+                packed[k] / (2.0 * denom)
+            };
+            cf[i * ncolor + j] = v;
+            cf[j * ncolor + i] = v;
+            k += 1;
+        }
+    }
+    Ok((cf, structures))
 }
 
 /// Normalise a color-structure label for comparison: drop whitespace so
@@ -362,6 +483,50 @@ fn check_ordering(cb: &ColorBasis, mg: &MgReference) -> String {
     }
 }
 
+/// The packed color-matrix block MadGraph 3.7.1 writes for `g g > t t~`,
+/// verbatim.
+const PACKED_GG_TTX: &str = "\
+      DATA DENOM/3/
+      DATA (CF(I),I=  1,  2) /16,-4/
+C     1 T(1,2,3,4)
+      DATA (CF(I),I=  3,  3) /16/
+C     1 T(2,1,3,4)
+";
+
+/// The square block MadGraph 3.5.7 writes for the same process, which is the
+/// matrix the packed one has to reproduce.
+const SQUARE_GG_TTX: [f64; 4] = [
+    5.333333333333333,
+    -0.6666666666666666,
+    -0.6666666666666666,
+    5.333333333333333,
+];
+
+/// Pin the packed→square mapping against the other form's own numbers.
+///
+/// The live sweep below only reaches the packed form on `NCOLOR = 1` process
+/// directories, where the diagonal-only mapping is trivially right and the factor
+/// of two on off-diagonal entries is never exercised. This is the smallest case
+/// that exercises it.
+fn packed_cf_form_matches_the_square_form() -> Result<(), Failed> {
+    let (cf, structures) = parse_packed_cf(&logical_lines(PACKED_GG_TTX), 2)?;
+    for (k, (got, want)) in cf.iter().zip(&SQUARE_GG_TTX).enumerate() {
+        let rel = (got - want).abs() / want.abs();
+        if rel > CF_REL_TOL {
+            return Err(format!(
+                "packed CF[{}][{}] = {got} against the square form's {want} (rel {rel:.2e})",
+                k / 2,
+                k % 2
+            )
+            .into());
+        }
+    }
+    if structures != ["T(1,2,3,4)", "T(2,1,3,4)"] {
+        return Err(format!("packed CF structures came out as {structures:?}").into());
+    }
+    Ok(())
+}
+
 fn main() {
     let args = Arguments::from_args();
 
@@ -372,13 +537,17 @@ fn main() {
         libtest_mimic::run(&args, vec![]).exit();
     }
 
-    let trials: Vec<Trial> = matrix_files
+    let mut trials: Vec<Trial> = matrix_files
         .into_iter()
         .map(|p| {
             let name = trial_name(&p);
             Trial::test(name, move || run_trial(p))
         })
         .collect();
+    trials.push(Trial::test(
+        "packed-cf-form/gg_ttx",
+        packed_cf_form_matches_the_square_form,
+    ));
 
     libtest_mimic::run(&args, trials).exit();
 }
