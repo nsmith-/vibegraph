@@ -60,6 +60,33 @@ impl WeightStrategy {
     }
 }
 
+/// The text a block's record lines were read from, kept verbatim.
+///
+/// The accord fixes the fields and their order, not their spelling, and the
+/// programs that write a Les Houches file do not agree on one: MadGraph alone
+/// emits two, depending on how much of the file its own post-processing had to
+/// parse back. Carrying the text lets the writer hand a file's own spelling
+/// back instead of the one this crate would have chosen, so re-serialising a
+/// file reproduces *that file* rather than the dialect this crate emits.
+///
+/// Reuse is never assumed: a line is re-emitted only after it has been decoded
+/// again and found to spell the values the record now carries, so a caller that
+/// edits a field gets that line in this writer's own layout and the rest of the
+/// block unchanged.
+#[derive(Clone, Debug)]
+pub struct BlockSource(Box<str>);
+
+impl BlockSource {
+    pub(crate) fn new(text: &str) -> Self {
+        BlockSource(text.into())
+    }
+
+    /// The record lines, newline-separated as they were read.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// One process's entry in the `<init>` block: `XSECUP`, `XERRUP`, `XMAXUP`,
 /// `LPRUP`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -76,7 +103,7 @@ pub struct LheProcess {
 }
 
 /// The `<init>` block.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct LheInit {
     /// `IDBMUP` — the beam particles' PDG codes.
     pub beam_pdg: [i32; 2],
@@ -95,6 +122,24 @@ pub struct LheInit {
     /// Lines between the last process entry and `</init>`, kept verbatim —
     /// MadGraph puts its `<generator>` tag there.
     pub trailer: Vec<String>,
+    /// The beam line and the process entries as the file spelled them, when this
+    /// block was read from one. `None` for a block built rather than parsed.
+    pub source: Option<BlockSource>,
+}
+
+/// The values are the record; the source text only says how one file spelled
+/// them, so a block read from a file compares equal to the same block built
+/// from scratch.
+impl PartialEq for LheInit {
+    fn eq(&self, other: &Self) -> bool {
+        self.beam_pdg == other.beam_pdg
+            && self.beam_energy == other.beam_energy
+            && self.pdf_group == other.pdf_group
+            && self.pdf_set == other.pdf_set
+            && self.weight_strategy == other.weight_strategy
+            && self.processes == other.processes
+            && self.trailer == other.trailer
+    }
 }
 
 /// `ISTUP` for an incoming leg.
@@ -139,7 +184,7 @@ pub struct LheParticle {
 }
 
 /// One `<event>` block.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct LheEvent {
     /// `IDPRUP` — which `<init>` process entry this event belongs to.
     pub process_id: i32,
@@ -157,6 +202,22 @@ pub struct LheEvent {
     /// Lines between the last particle and `</event>`, kept verbatim — MadGraph
     /// puts `<mgrwt>` and `<rwgt>` blocks there.
     pub trailer: Vec<String>,
+    /// The info line and the particle lines as the file spelled them, when this
+    /// event was read from one. `None` for an event built rather than parsed.
+    pub source: Option<BlockSource>,
+}
+
+/// See [`LheInit`]'s: the source text is not part of what the record says.
+impl PartialEq for LheEvent {
+    fn eq(&self, other: &Self) -> bool {
+        self.process_id == other.process_id
+            && self.weight == other.weight
+            && self.scale == other.scale
+            && self.alpha_qed == other.alpha_qed
+            && self.alpha_qcd == other.alpha_qcd
+            && self.particles == other.particles
+            && self.trailer == other.trailer
+    }
 }
 
 impl LheEvent {
@@ -249,6 +310,7 @@ mod tests {
             alpha_qcd: 0.1,
             particles: colors.iter().copied().map(particle).collect(),
             trailer: Vec::new(),
+            source: None,
         }
     }
 

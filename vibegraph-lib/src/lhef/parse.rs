@@ -21,7 +21,7 @@ use std::ops::Range;
 use quick_xml::events::Event as XmlEvent;
 use quick_xml::Reader;
 
-use super::record::{LheEvent, LheInit, LheParticle, LheProcess, WeightStrategy};
+use super::record::{BlockSource, LheEvent, LheInit, LheParticle, LheProcess, WeightStrategy};
 use super::LhefError;
 
 /// A parsed file: its `<init>` block and every `<event>` in order.
@@ -153,106 +153,230 @@ impl<'a> Fields<'a> {
 /// The body a well-formed block hands over begins with the newline that follows
 /// its start tag, so the first content line is line 2 of the element and the
 /// leading empty line is not a record.
+///
+/// The reader tracks how far the records reach so that the text they occupy can
+/// be kept alongside the values it decoded to.
 struct Body<'a> {
-    lines: std::iter::Enumerate<std::str::Lines<'a>>,
+    text: &'a str,
+    /// Byte offset of the first line not yet handed out.
+    cursor: usize,
+    /// The number of the last line handed out, counting from 1.
+    number: usize,
+    /// Byte offset just past the last line accepted as a record.
+    records_end: usize,
 }
 
 impl<'a> Body<'a> {
     fn new(body: &'a str) -> Self {
         Body {
-            lines: body.lines().enumerate(),
+            text: body,
+            cursor: 0,
+            number: 0,
+            records_end: 0,
         }
+    }
+
+    fn next_line(&mut self) -> Option<&'a str> {
+        if self.cursor >= self.text.len() {
+            return None;
+        }
+        let rest = &self.text[self.cursor..];
+        let (line, step) = match rest.find('\n') {
+            Some(end) => (&rest[..end], end + 1),
+            None => (rest, rest.len()),
+        };
+        self.cursor += step;
+        self.number += 1;
+        Some(line.strip_suffix('\r').unwrap_or(line))
     }
 
     /// The next line that carries anything, with its number.
     fn record(&mut self, what: &str) -> Result<(usize, &'a str), RecordError> {
-        for (index, line) in self.lines.by_ref() {
+        while let Some(line) = self.next_line() {
             if !line.trim().is_empty() {
-                return Ok((index + 1, line));
+                self.records_end = self.cursor;
+                return Ok((self.number, line));
             }
         }
         malformed(0, format!("the element ends where {what} was expected"))
     }
 
-    /// Everything left, as written.
-    fn rest(self) -> Vec<String> {
-        self.lines.map(|(_, line)| line.to_string()).collect()
+    /// The text the records occupy, from the body's start through the newline
+    /// that ends the last of them.
+    fn source(&self) -> BlockSource {
+        BlockSource::new(&self.text[..self.records_end])
     }
+
+    /// Everything left, as written.
+    fn rest(mut self) -> Vec<String> {
+        let mut rest = Vec::new();
+        while let Some(line) = self.next_line() {
+            rest.push(line.to_string());
+        }
+        rest
+    }
+}
+
+/// The `<init>` beam line's fields, `NPRUP` included.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct InitHead {
+    pub beam_pdg: [i32; 2],
+    pub beam_energy: [f64; 2],
+    pub pdf_group: [i32; 2],
+    pub pdf_set: [i32; 2],
+    pub weight_strategy: WeightStrategy,
+    pub n_processes: usize,
+}
+
+impl InitHead {
+    /// The beam line a block's records spell.
+    pub(super) fn of(init: &LheInit) -> Self {
+        InitHead {
+            beam_pdg: init.beam_pdg,
+            beam_energy: init.beam_energy,
+            pdf_group: init.pdf_group,
+            pdf_set: init.pdf_set,
+            weight_strategy: init.weight_strategy,
+            n_processes: init.processes.len(),
+        }
+    }
+}
+
+/// The `<event>` info line's fields, `NUP` included.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct EventInfo {
+    pub nup: usize,
+    pub process_id: i32,
+    pub weight: f64,
+    pub scale: f64,
+    pub alpha_qed: f64,
+    pub alpha_qcd: f64,
+}
+
+impl EventInfo {
+    /// The info line an event's records spell.
+    pub(super) fn of(event: &LheEvent) -> Self {
+        EventInfo {
+            nup: event.nup(),
+            process_id: event.process_id,
+            weight: event.weight,
+            scale: event.scale,
+            alpha_qed: event.alpha_qed,
+            alpha_qcd: event.alpha_qcd,
+        }
+    }
+}
+
+fn init_head(line: (usize, &str)) -> Result<InitHead, RecordError> {
+    let f = Fields::split(line, 10, "the <init> beam line")?;
+    Ok(InitHead {
+        beam_pdg: [f.int(0, "IDBMUP(1)")?, f.int(1, "IDBMUP(2)")?],
+        beam_energy: [f.real(2, "EBMUP(1)")?, f.real(3, "EBMUP(2)")?],
+        pdf_group: [f.int(4, "PDFGUP(1)")?, f.int(5, "PDFGUP(2)")?],
+        pdf_set: [f.int(6, "PDFSUP(1)")?, f.int(7, "PDFSUP(2)")?],
+        weight_strategy: WeightStrategy::from_i32(f.int(8, "IDWTUP")?),
+        n_processes: f.count(9, "NPRUP")?,
+    })
+}
+
+fn init_process(line: (usize, &str)) -> Result<LheProcess, RecordError> {
+    let f = Fields::split(line, 4, "an <init> process entry")?;
+    Ok(LheProcess {
+        xsec_pb: f.real(0, "XSECUP")?,
+        xerr_pb: f.real(1, "XERRUP")?,
+        xmax: f.real(2, "XMAXUP")?,
+        id: f.int(3, "LPRUP")?,
+    })
+}
+
+fn event_info(line: (usize, &str)) -> Result<EventInfo, RecordError> {
+    let f = Fields::split(line, 6, "the <event> info line")?;
+    Ok(EventInfo {
+        nup: f.count(0, "NUP")?,
+        process_id: f.int(1, "IDPRUP")?,
+        weight: f.real(2, "XWGTUP")?,
+        scale: f.real(3, "SCALUP")?,
+        alpha_qed: f.real(4, "AQEDUP")?,
+        alpha_qcd: f.real(5, "AQCDUP")?,
+    })
+}
+
+fn event_particle(line: (usize, &str)) -> Result<LheParticle, RecordError> {
+    let f = Fields::split(line, 13, "an <event> particle line")?;
+    Ok(LheParticle {
+        pdg: f.int(0, "IDUP")?,
+        status: f.int(1, "ISTUP")?,
+        mothers: [f.int(2, "MOTHUP(1)")?, f.int(3, "MOTHUP(2)")?],
+        color: [f.int(4, "ICOLUP(1)")?, f.int(5, "ICOLUP(2)")?],
+        // The file writes `px py pz E`; the crate's layout is energy first.
+        momentum: [
+            f.real(9, "E")?,
+            f.real(6, "px")?,
+            f.real(7, "py")?,
+            f.real(8, "pz")?,
+        ],
+        mass: f.real(10, "mass")?,
+        lifetime: f.real(11, "VTIMUP")?,
+        spin: f.real(12, "SPINUP")?,
+    })
+}
+
+/// What one record line spells, or `None` when it does not spell a record of
+/// that kind at all. The writer asks so that it can reuse a source line only
+/// where the line still decodes to what it is being asked to write.
+pub(super) fn decode_init_head(line: &str) -> Option<InitHead> {
+    init_head((0, line)).ok()
+}
+
+pub(super) fn decode_init_process(line: &str) -> Option<LheProcess> {
+    init_process((0, line)).ok()
+}
+
+pub(super) fn decode_event_info(line: &str) -> Option<EventInfo> {
+    event_info((0, line)).ok()
+}
+
+pub(super) fn decode_event_particle(line: &str) -> Option<LheParticle> {
+    event_particle((0, line)).ok()
 }
 
 fn parse_init(body: &str) -> Result<LheInit, RecordError> {
     let mut lines = Body::new(body);
-    let head = Fields::split(
-        lines.record("the <init> beam line")?,
-        10,
-        "the <init> beam line",
-    )?;
-    let n_processes = head.count(9, "NPRUP")?;
-    let mut processes = Vec::with_capacity(n_processes);
-    for _ in 0..n_processes {
-        let f = Fields::split(
-            lines.record("an <init> process entry")?,
-            4,
-            "an <init> process entry",
-        )?;
-        processes.push(LheProcess {
-            xsec_pb: f.real(0, "XSECUP")?,
-            xerr_pb: f.real(1, "XERRUP")?,
-            xmax: f.real(2, "XMAXUP")?,
-            id: f.int(3, "LPRUP")?,
-        });
+    let head = init_head(lines.record("the <init> beam line")?)?;
+    let mut processes = Vec::with_capacity(head.n_processes);
+    for _ in 0..head.n_processes {
+        processes.push(init_process(lines.record("an <init> process entry")?)?);
     }
+    let source = lines.source();
     Ok(LheInit {
-        beam_pdg: [head.int(0, "IDBMUP(1)")?, head.int(1, "IDBMUP(2)")?],
-        beam_energy: [head.real(2, "EBMUP(1)")?, head.real(3, "EBMUP(2)")?],
-        pdf_group: [head.int(4, "PDFGUP(1)")?, head.int(5, "PDFGUP(2)")?],
-        pdf_set: [head.int(6, "PDFSUP(1)")?, head.int(7, "PDFSUP(2)")?],
-        weight_strategy: WeightStrategy::from_i32(head.int(8, "IDWTUP")?),
+        beam_pdg: head.beam_pdg,
+        beam_energy: head.beam_energy,
+        pdf_group: head.pdf_group,
+        pdf_set: head.pdf_set,
+        weight_strategy: head.weight_strategy,
         processes,
         trailer: lines.rest(),
+        source: Some(source),
     })
 }
 
 fn parse_event(body: &str) -> Result<LheEvent, RecordError> {
     let mut lines = Body::new(body);
-    let head = Fields::split(
-        lines.record("the <event> info line")?,
-        6,
-        "the <event> info line",
-    )?;
-    let nup = head.count(0, "NUP")?;
-    let mut particles = Vec::with_capacity(nup);
-    for _ in 0..nup {
-        let f = Fields::split(
-            lines.record("an <event> particle line")?,
-            13,
-            "an <event> particle line",
-        )?;
-        particles.push(LheParticle {
-            pdg: f.int(0, "IDUP")?,
-            status: f.int(1, "ISTUP")?,
-            mothers: [f.int(2, "MOTHUP(1)")?, f.int(3, "MOTHUP(2)")?],
-            color: [f.int(4, "ICOLUP(1)")?, f.int(5, "ICOLUP(2)")?],
-            // The file writes `px py pz E`; the crate's layout is energy first.
-            momentum: [
-                f.real(9, "E")?,
-                f.real(6, "px")?,
-                f.real(7, "py")?,
-                f.real(8, "pz")?,
-            ],
-            mass: f.real(10, "mass")?,
-            lifetime: f.real(11, "VTIMUP")?,
-            spin: f.real(12, "SPINUP")?,
-        });
+    let head = event_info(lines.record("the <event> info line")?)?;
+    let mut particles = Vec::with_capacity(head.nup);
+    for _ in 0..head.nup {
+        particles.push(event_particle(lines.record("an <event> particle line")?)?);
     }
+    let source = lines.source();
     Ok(LheEvent {
-        process_id: head.int(1, "IDPRUP")?,
-        weight: head.real(2, "XWGTUP")?,
-        scale: head.real(3, "SCALUP")?,
-        alpha_qed: head.real(4, "AQEDUP")?,
-        alpha_qcd: head.real(5, "AQCDUP")?,
+        process_id: head.process_id,
+        weight: head.weight,
+        scale: head.scale,
+        alpha_qed: head.alpha_qed,
+        alpha_qcd: head.alpha_qcd,
         particles,
         trailer: lines.rest(),
+        source: Some(source),
     })
 }
 
