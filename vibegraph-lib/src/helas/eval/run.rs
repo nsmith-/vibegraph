@@ -93,63 +93,6 @@ impl<F: Real> ScratchSpace<F> {
     }
 }
 
-/// Unchecked arena/pool accessors for the typed forward pass. `Program::build` draws
-/// every result slot (`loc[id]` and every operand index) from `0..arena_sizes[class]`
-/// by liveness allocation, `ensure_sizes` grows each arena to exactly `arena_sizes`, and
-/// `resolve_moms` fills `moms` to `mom_table.len()` — the sole source of every momentum
-/// id. So each index the dispatch loop feeds these is in range by construction, which the
-/// one-shot [`validate_arenas`] cross-check re-proves under debug / `extended-validation`.
-/// One getter/setter pair per arena class keeps the `unsafe` to a single audited surface
-/// (the loop body carries none) and drops the per-access bounds check from the hot pass.
-impl<F: Real> ScratchSpace<F> {
-    #[inline(always)]
-    unsafe fn real(&self, i: u32) -> F {
-        *self.reals.get_unchecked(i as usize)
-    }
-    #[inline(always)]
-    unsafe fn scalar(&self, i: u32) -> C<F> {
-        *self.scalars.get_unchecked(i as usize)
-    }
-    // Composite arena reads return a reference — matching the original `&arena[i]` borrow —
-    // so wide lane types (`NumericArray`) are never copied out on a read.
-    #[inline(always)]
-    unsafe fn vector(&self, i: u32) -> &ComplexVector<F> {
-        self.vectors.get_unchecked(i as usize)
-    }
-    #[inline(always)]
-    unsafe fn fin_at(&self, i: u32) -> &Bispinor<F, Ket> {
-        self.fin.get_unchecked(i as usize)
-    }
-    #[inline(always)]
-    unsafe fn fout_at(&self, i: u32) -> &Bispinor<F, Bra> {
-        self.fout.get_unchecked(i as usize)
-    }
-    #[inline(always)]
-    unsafe fn mom(&self, i: u32) -> &LorentzVector<F> {
-        self.moms.get_unchecked(i as usize)
-    }
-    #[inline(always)]
-    unsafe fn set_real(&mut self, i: usize, v: F) {
-        *self.reals.get_unchecked_mut(i) = v;
-    }
-    #[inline(always)]
-    unsafe fn set_scalar(&mut self, i: usize, v: C<F>) {
-        *self.scalars.get_unchecked_mut(i) = v;
-    }
-    #[inline(always)]
-    unsafe fn set_vector(&mut self, i: usize, v: ComplexVector<F>) {
-        *self.vectors.get_unchecked_mut(i) = v;
-    }
-    #[inline(always)]
-    unsafe fn set_fin(&mut self, i: usize, v: Bispinor<F, Ket>) {
-        *self.fin.get_unchecked_mut(i) = v;
-    }
-    #[inline(always)]
-    unsafe fn set_fout(&mut self, i: usize, v: Bispinor<F, Bra>) {
-        *self.fout.get_unchecked_mut(i) = v;
-    }
-}
-
 /// The per-evaluation immutable context every node reduction reads: the bound
 /// constant pools and leg table, plus one phase-space point's kinematics.
 pub(super) struct EvalEnv<'a, F: Real> {
@@ -618,9 +561,8 @@ fn run_forward_flows_typed<F: Real>(
 /// Run the typed instruction stream, filling the per-class result arenas. Every node
 /// writes its result — by direct index (`arena[loc]`) — to the arena its statically-known
 /// output class selects; operands are read directly from the arena their class fixes, so no
-/// per-value type dispatch happens on the hot path. Arena and momentum-pool accesses go
-/// through the unchecked accessors (indices are in range by construction — see their `impl`
-/// block), so the only per-iteration branch left is the instruction dispatch itself.
+/// per-value type dispatch happens on the hot path. The remaining per-iteration branches are
+/// the instruction dispatch and the slice bounds checks on arena indexing.
 fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut ScratchSpace<F>) {
     let prog = folded.program();
     scratch.ensure_sizes(&prog.arena_sizes);
@@ -629,37 +571,32 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
 
     for (instr, &loc) in prog.instrs.iter().zip(prog.loc.iter()) {
         let loc = loc as usize;
-        // SAFETY: every arena/pool index below is in range by construction — see the
-        // unchecked-accessor `impl` block on `ScratchSpace`. `ensure_sizes` above and
-        // `resolve_moms` (per point) size the arenas and momentum pool to the exact bounds
-        // `Program::build` allocated slots and momentum ids from.
-        unsafe {
         match *instr {
-            Instr::ComplexConst { pool } => scratch.set_scalar(loc, env.consts_c[pool as usize]),
-            Instr::RealConst { pool } => scratch.set_real(loc, env.consts_f[pool as usize]),
+            Instr::ComplexConst { pool } => scratch.scalars[loc] = env.consts_c[pool as usize],
+            Instr::RealConst { pool } => scratch.reals[loc] = env.consts_f[pool as usize],
             Instr::ExternalScalar { leg } => {
                 let WaveformSlot::Scalar(s) = build_external_slot(env, leg as usize) else {
                     panic!("external scalar leg produced a non-scalar slot");
                 };
-                scratch.set_scalar(loc, s.value);
+                scratch.scalars[loc] = s.value;
             }
             Instr::ExternalVector { leg } => {
                 let WaveformSlot::Vector(v) = build_external_slot(env, leg as usize) else {
                     panic!("external vector leg produced a non-vector slot");
                 };
-                scratch.set_vector(loc, v.eps);
+                scratch.vectors[loc] = v.eps;
             }
             Instr::ExternalFin { leg } => {
                 let WaveformSlot::FermionIn(f) = build_external_slot(env, leg as usize) else {
                     panic!("external ket leg produced a non-fermion-in slot");
                 };
-                scratch.set_fin(loc, f.spinor);
+                scratch.fin[loc] = f.spinor;
             }
             Instr::ExternalFout { leg } => {
                 let WaveformSlot::FermionOut(f) = build_external_slot(env, leg as usize) else {
                     panic!("external bra leg produced a non-fermion-out slot");
                 };
-                scratch.set_fout(loc, f.spinor);
+                scratch.fout[loc] = f.spinor;
             }
             Instr::PropagateScalar {
                 input,
@@ -668,12 +605,12 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 mom,
             } => {
                 let out = kernel::propagate_scalar_bare(
-                    scratch.scalar(input),
-                    scratch.mom(mom),
-                    scratch.real(mass),
-                    scratch.real(width),
+                    scratch.scalars[input as usize],
+                    &scratch.moms[mom as usize],
+                    scratch.reals[mass as usize],
+                    scratch.reals[width as usize],
                 );
-                scratch.set_scalar(loc, out);
+                scratch.scalars[loc] = out;
             }
             Instr::PropagateVector {
                 input,
@@ -682,12 +619,12 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 mom,
             } => {
                 let out = kernel::propagate_vector_bare(
-                    scratch.vector(input),
-                    scratch.mom(mom),
-                    scratch.real(mass),
-                    scratch.real(width),
+                    &scratch.vectors[input as usize],
+                    &scratch.moms[mom as usize],
+                    scratch.reals[mass as usize],
+                    scratch.reals[width as usize],
                 );
-                scratch.set_vector(loc, out);
+                scratch.vectors[loc] = out;
             }
             Instr::PropagateFin {
                 input,
@@ -696,12 +633,12 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 mom,
             } => {
                 let out = kernel::propagate_fin_bare(
-                    scratch.fin_at(input),
-                    scratch.mom(mom),
-                    scratch.real(mass),
-                    scratch.real(width),
+                    &scratch.fin[input as usize],
+                    &scratch.moms[mom as usize],
+                    scratch.reals[mass as usize],
+                    scratch.reals[width as usize],
                 );
-                scratch.set_fin(loc, out);
+                scratch.fin[loc] = out;
             }
             Instr::PropagateFout {
                 input,
@@ -710,76 +647,77 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 mom,
             } => {
                 let out = kernel::propagate_fout_bare(
-                    scratch.fout_at(input),
-                    scratch.mom(mom),
-                    scratch.real(mass),
-                    scratch.real(width),
+                    &scratch.fout[input as usize],
+                    &scratch.moms[mom as usize],
+                    scratch.reals[mass as usize],
+                    scratch.reals[width as usize],
                 );
-                scratch.set_fout(loc, out);
+                scratch.fout[loc] = out;
             }
             Instr::AddScalar { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
-                let mut value = scratch.scalar(slice[0].index() as u32);
+                let mut value = scratch.scalars[slice[0].index()];
                 for op in &slice[1..] {
-                    value = value + scratch.scalar(op.index() as u32);
+                    value = value + scratch.scalars[op.index()];
                 }
-                scratch.set_scalar(loc, value);
+                scratch.scalars[loc] = value;
             }
             Instr::AddVector { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
-                let mut eps = *scratch.vector(slice[0].index() as u32);
+                let mut eps = scratch.vectors[slice[0].index()];
                 for op in &slice[1..] {
-                    eps = eps + *scratch.vector(op.index() as u32);
+                    eps = eps + scratch.vectors[op.index()];
                 }
-                scratch.set_vector(loc, eps);
+                scratch.vectors[loc] = eps;
             }
             Instr::AddFin { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
-                let mut spinor = *scratch.fin_at(slice[0].index() as u32);
+                let mut spinor = scratch.fin[slice[0].index()];
                 for op in &slice[1..] {
-                    spinor = spinor + *scratch.fin_at(op.index() as u32);
+                    spinor = spinor + scratch.fin[op.index()];
                 }
-                scratch.set_fin(loc, spinor);
+                scratch.fin[loc] = spinor;
             }
             Instr::AddFout { start, len } => {
                 let slice = &ops[start as usize..(start + len) as usize];
-                let mut spinor = *scratch.fout_at(slice[0].index() as u32);
+                let mut spinor = scratch.fout[slice[0].index()];
                 for op in &slice[1..] {
-                    spinor = spinor + *scratch.fout_at(op.index() as u32);
+                    spinor = spinor + scratch.fout[op.index()];
                 }
-                scratch.set_fout(loc, spinor);
+                scratch.fout[loc] = spinor;
             }
             Instr::MulScalarC { a, b } => {
-                scratch.set_scalar(loc, scratch.scalar(a) * scratch.scalar(b));
+                scratch.scalars[loc] = scratch.scalars[a as usize] * scratch.scalars[b as usize];
             }
             Instr::MulScalarR { s, r } => {
-                scratch.set_scalar(loc, scratch.scalar(s) * scratch.real(r));
+                scratch.scalars[loc] = scratch.scalars[s as usize] * scratch.reals[r as usize];
             }
             Instr::ScaleVecC { v, scale } => {
-                scratch.set_vector(loc, *scratch.vector(v) * scratch.scalar(scale));
+                scratch.vectors[loc] =
+                    scratch.vectors[v as usize] * scratch.scalars[scale as usize];
             }
             Instr::ScaleVecR { v, scale } => {
-                scratch.set_vector(loc, *scratch.vector(v) * scratch.real(scale));
+                scratch.vectors[loc] = scratch.vectors[v as usize] * scratch.reals[scale as usize];
             }
             Instr::ScaleFinC { f, scale } => {
-                scratch.set_fin(loc, *scratch.fin_at(f) * scratch.scalar(scale));
+                scratch.fin[loc] = scratch.fin[f as usize] * scratch.scalars[scale as usize];
             }
             Instr::ScaleFinR { f, scale } => {
-                scratch.set_fin(loc, *scratch.fin_at(f) * scratch.real(scale));
+                scratch.fin[loc] = scratch.fin[f as usize] * scratch.reals[scale as usize];
             }
             Instr::ScaleFoutC { f, scale } => {
-                scratch.set_fout(loc, *scratch.fout_at(f) * scratch.scalar(scale));
+                scratch.fout[loc] = scratch.fout[f as usize] * scratch.scalars[scale as usize];
             }
             Instr::ScaleFoutR { f, scale } => {
-                scratch.set_fout(loc, *scratch.fout_at(f) * scratch.real(scale));
+                scratch.fout[loc] = scratch.fout[f as usize] * scratch.reals[scale as usize];
             }
             Instr::GammaVout { bra, ket, reversed } => {
                 let out = kernel::gamma_vout_bare(
-                    scratch.fout_at(bra),
-                    scratch.fin_at(ket),
+                    &scratch.fout[bra as usize],
+                    &scratch.fin[ket as usize],
                     reversed,
                 );
-                scratch.set_vector(loc, out);
+                scratch.vectors[loc] = out;
             }
             Instr::FfvVout {
                 bra,
@@ -789,47 +727,51 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 reversed,
             } => {
                 let out = kernel::ffv_vout_bare(
-                    scratch.fout_at(bra),
-                    scratch.fin_at(ket),
-                    scratch.scalar(gl),
-                    scratch.scalar(gr),
+                    &scratch.fout[bra as usize],
+                    &scratch.fin[ket as usize],
+                    scratch.scalars[gl as usize],
+                    scratch.scalars[gr as usize],
                     reversed,
                 );
-                scratch.set_vector(loc, out);
+                scratch.vectors[loc] = out;
             }
             Instr::GammaFin { v, f } => {
-                let out = kernel::off_shell_fin_bare(scratch.vector(v), scratch.fin_at(f));
-                scratch.set_fin(loc, out);
+                let eps = scratch.vectors[v as usize];
+                let out = kernel::off_shell_fin_bare(&eps, &scratch.fin[f as usize]);
+                scratch.fin[loc] = out;
             }
             Instr::GammaFout { v, f } => {
-                let out = kernel::off_shell_fout_bare(scratch.vector(v), scratch.fout_at(f));
-                scratch.set_fout(loc, out);
+                let eps = scratch.vectors[v as usize];
+                let out = kernel::off_shell_fout_bare(&eps, &scratch.fout[f as usize]);
+                scratch.fout[loc] = out;
             }
             Instr::FfvFin { v, f, gl, gr } => {
+                let eps = scratch.vectors[v as usize];
                 let out = kernel::ffv_fin_bare(
-                    scratch.vector(v),
-                    scratch.fin_at(f),
-                    scratch.scalar(gl),
-                    scratch.scalar(gr),
+                    &eps,
+                    &scratch.fin[f as usize],
+                    scratch.scalars[gl as usize],
+                    scratch.scalars[gr as usize],
                 );
-                scratch.set_fin(loc, out);
+                scratch.fin[loc] = out;
             }
             Instr::FfvFout { v, f, gl, gr } => {
+                let eps = scratch.vectors[v as usize];
                 let out = kernel::ffv_fout_bare(
-                    scratch.vector(v),
-                    scratch.fout_at(f),
-                    scratch.scalar(gl),
-                    scratch.scalar(gr),
+                    &eps,
+                    &scratch.fout[f as usize],
+                    scratch.scalars[gl as usize],
+                    scratch.scalars[gr as usize],
                 );
-                scratch.set_fout(loc, out);
+                scratch.fout[loc] = out;
             }
             Instr::ProjFin { f, chirality } => {
-                let out = kernel::proj_fin_bare(scratch.fin_at(f), chirality);
-                scratch.set_fin(loc, out);
+                let out = kernel::proj_fin_bare(&scratch.fin[f as usize], chirality);
+                scratch.fin[loc] = out;
             }
             Instr::ProjFout { f, chirality } => {
-                let out = kernel::proj_fout_bare(scratch.fout_at(f), chirality);
-                scratch.set_fout(loc, out);
+                let out = kernel::proj_fout_bare(&scratch.fout[f as usize], chirality);
+                scratch.fout[loc] = out;
             }
             Instr::Bilinear {
                 bra,
@@ -837,35 +779,35 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 chirality,
             } => {
                 let out = kernel::scalar_bilinear_bare(
-                    scratch.fout_at(bra),
-                    scratch.fin_at(ket),
+                    &scratch.fout[bra as usize],
+                    &scratch.fin[ket as usize],
                     chirality,
                 );
-                scratch.set_scalar(loc, out);
+                scratch.scalars[loc] = out;
             }
             Instr::Metric { a, b } => {
-                let out = kernel::metric_bare(scratch.vector(a), scratch.vector(b));
-                scratch.set_scalar(loc, out);
+                let out =
+                    kernel::metric_bare(&scratch.vectors[a as usize], &scratch.vectors[b as usize]);
+                scratch.scalars[loc] = out;
             }
             Instr::MetricVout { v } => {
-                let out = kernel::metric_vout_bare(scratch.vector(v));
-                scratch.set_vector(loc, out);
+                let out = kernel::metric_vout_bare(&scratch.vectors[v as usize]);
+                scratch.vectors[loc] = out;
             }
             Instr::PMom { mom } => {
-                let out = kernel::pmom_bare(scratch.mom(mom));
-                scratch.set_vector(loc, out);
+                let out = kernel::pmom_bare(&scratch.moms[mom as usize]);
+                scratch.vectors[loc] = out;
             }
             Instr::PMomOut { start, len } => {
                 let slice = &mom_ops[start as usize..(start + len) as usize];
                 let mut acc = LorentzVector::zero();
                 for &mid in slice {
-                    acc = acc + *scratch.mom(mid);
+                    acc = acc + scratch.moms[mid as usize];
                 }
                 let neg = -acc;
-                scratch.set_vector(loc, kernel::pmom_bare(&neg));
+                scratch.vectors[loc] = kernel::pmom_bare(&neg);
             }
             Instr::Flows | Instr::Hels => {}
-        }
         }
     }
 

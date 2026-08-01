@@ -1,7 +1,10 @@
 # x86 AVX2 evaluator perf study — results (branch `x86_avx2_perf`)
 
-**Status: CLOSED (2026-07-31).** All three planned changes landed and are measured. The
-combined end-to-end delta vs the pre-study baseline is in "Cumulative outcome" below.
+**Status: CLOSED (2026-07-31).** Two changes landed (inlining tune + FMA); the third
+(`get_unchecked`) was implemented, measured, and then **reverted** — its ~2–3% did not
+justify retiring the evaluator's 100%-safe-Rust invariant. It survives here as the
+measurement that finally answers note 17's open question. Combined shipped delta vs the
+pre-study baseline is in "Cumulative outcome" below.
 
 Host: AVX2 + FMA, no AVX-512 (`grep avx /proc/cpuinfo` → `avx avx2 fma`, `zmm`=0 in all
 dumps). All builds `RUSTFLAGS="-C target-cpu=native"`, `--profile profiling`
@@ -21,13 +24,13 @@ dispatch loop, `helas/eval/run.rs:566`). Three findings drove the work:
    dot a `vmul`/`vadd` chain.
 2. **Bounds checks everywhere** in the dispatch loop — every `arena[loc]` /
    `arena[operand]` access checked, including inside the `Add*` accumulation loops.
-   Addressed via a narrowly-audited `unsafe` `get_unchecked` core (below), the
-   escalation option note 17 §7(b) preserved.
+   Prototyped as a narrowly-audited `unsafe` `get_unchecked` core (note 17 §7(b)'s
+   escalation option), measured, and **reverted** — see below.
 3. **Inconsistent kernel inlining** — LLVM left the FFV/propagate/gamma-vout `*_bare`
    kernels as out-of-line calls; `validate_arenas` (a once-per-workspace one-shot) was
    `#[inline]` and bloating the hot frame.
 
-## What landed
+## What happened (2 shipped, 1 reverted)
 
 ### Commit `1b47771` — inlining tune (finding 3)
 
@@ -98,7 +101,7 @@ honest "massless within tolerance" intent) instead of `m()`. MG gate and the lan
 bit-identical test both pass. (Three *other* failures are pre-existing baseline failures
 from the first Linux run — RNG seed-hash pins + a boosted-frame test — unrelated.)
 
-### `get_unchecked` on the dispatch loop (finding 2)
+### `get_unchecked` on the dispatch loop (finding 2) — measured, then REVERTED
 
 The `fill_arenas` dispatch loop bounds-checked every arena/pool access; the indices come
 from the compiled `prog` stream, correct by construction — `Program::build` draws every
@@ -107,13 +110,19 @@ liveness allocation, `ensure_sizes` grows each arena to exactly `arena_sizes`, a
 `resolve_moms` fills `moms` to `mom_table.len()` (the sole source of every momentum id).
 `validate_arenas` re-proves this under debug/`extended-validation`.
 
-**This is the escalation option note 17 §7(b) preserved.** That memo cancelled the A3c
-bounds-check work under a *safe-only* charter (its §9 recorded "the evaluator stays 100%
-safe Rust") but explicitly left "(b) re-scope to a narrowly-audited `unsafe` core … behind
-the full `validate_helas_mg` bit-for-bit gate" as the manager-escalation path. Taking it
-here retires that invariant deliberately, with the gate as the safety net.
+**Outcome: NO-GO, reverted.** This was note 17 §7(b)'s escalation option — that memo
+cancelled the A3c bounds-check work under a *safe-only* charter (its §9 recorded "the
+evaluator stays 100% safe Rust") but left "(b) re-scope to a narrowly-audited `unsafe`
+core … behind the full `validate_helas_mg` bit-for-bit gate" open. It was implemented and
+measured here (numbers below), then reverted: the shipped delta is ~2–3% on the scalar
+path and neutral on the SIMD paths, which does not justify retiring the 100%-safe-Rust
+invariant. The evaluator stays entirely safe. The mechanism and bench are recorded so the
+question note 17 left open — *what does the `unsafe` core actually buy on x86?* — is now
+answered with data rather than the arm64 probe's ceiling, and a future decision can weigh
+the real number, not a projection. What follows is the prototype's findings, not shipped
+code.
 
-**Implementation.** One getter/setter pair per arena class on `ScratchSpace`
+**Prototype shape.** One getter/setter pair per arena class on `ScratchSpace`
 (`scalar`/`set_scalar`, `vector`/`set_vector`, …) plus `real`/`mom`, each a one-line
 `get_unchecked{,_mut}` under a single shared `// SAFETY:` doc; the dispatch loop body is
 one `unsafe` block that carries none of its own. `unsafe` is confined to `run.rs` (11
@@ -154,30 +163,31 @@ reasons: (a) that ceiling was a *coupled* reads+writes effect and its write half
 `Vec::push` capacity-check family, which the current pre-sized direct-index writes had
 already eliminated (only the read checks remained to remove here); (b) the removed branches
 were near-perfectly predicted (never-taken), so deleting them buys I-cache/scheduling, not
-mispredict recovery. The scalar `forward` path — the least-used but the one every other
-path is validated against — gets a clean ~3% with no downside, recovering roughly the
-+3.5% FMA charged it. The few positive cells (gg_to_gg / ee_to_mumu lanes2/lanes8, +5–6%)
-are the NCOLOR=6 multi-flow high-variance cells and read as run-to-run noise, not a real
-regression; scalar and lanes4 are uniformly neutral-to-better. MG gate 14/14 bit-exact
-(identical `max_rel_diff` to baseline) and `eval_m2_lanes_bit_identical_to_scalar` exact —
-a provably value-preserving transform.
+mispredict recovery. The prototype was provably value-preserving throughout — MG gate 14/14
+bit-exact (identical `max_rel_diff` to baseline) and `eval_m2_lanes_bit_identical_to_scalar`
+exact — so the decision is purely cost/benefit, not correctness. **The ~2–3% is not worth
+an `unsafe` block in the amplitude core**: the scalar recovery it offers can be revisited
+if the scalar path ever becomes hot enough to matter (event generation's single-helicity
+regime, `mg-single-helicity-bench`), and the FMA change above already fixed the SIMD paths
+that were the study's actual motivation. Reverted; the evaluator remains 100% safe Rust.
 
 ## Cumulative outcome (whole study, `x86_avx2_perf` branch)
 
-Three changes vs the pre-study `x86_avx2_perf` base (`90fe612`, the 14-process bench
-extension): **inlining tune** (`1b47771`) → **FMA/`mul_add`** (`3dab3a1`) → **`get_unchecked`**
-(this commit). By strategy the arithmetic (FMA) dominated the SIMD paths and the
-bounds-check removal cleaned up the scalar path the FMA had charged:
+Two shipped changes vs the pre-study `x86_avx2_perf` base (`90fe612`, the 14-process bench
+extension): **inlining tune** (`1b47771`) → **FMA/`mul_add`** (`3dab3a1`). The third
+(`get_unchecked`) was measured and reverted (above), so it contributes nothing to the
+shipped state. The arithmetic (FMA) is the whole story:
 
-- **lanes2 / lanes4 / lanes8**: FMA's **−24% … −35%** median is the headline; `get_unchecked`
-  adds a further ~0–3% (neutral on the noisy multi-flow cells, −3% on lanes4).
-- **forward (scalar)**: FMA cost it ~+3.5%, `get_unchecked` gives ~−2.8% back → roughly
-  flat-to-slightly-better end to end, with the largest scalar wins on the widest-gap
-  colored processes (gg_to_gg −7.9%).
+- **lanes2 / lanes4 / lanes8**: FMA's **−24% … −35%** median is the headline — the SoA lane
+  paths, which the `hadronic-xsec` H4 session had written off as a SIMD negative result,
+  are now ~¼–⅓ faster than the pre-study base on this AVX2 host.
+- **forward (scalar)**: FMA cost it ~+3.5% (it traded the packed `vmulpd`+`vaddsubpd`
+  complex idiom for more scalar FMAs). Left as-is — `forward` is the least-used path, and
+  the `get_unchecked` recovery that would have offset it was reverted with the rest.
 
-Net: the SIMD lane paths are ~¼–⅓ faster than the pre-study base, the scalar path is
-neutral, and the evaluator now carries a small, gate-guarded `unsafe` core. All behind
-14/14 bit-exact `validate_helas_mg` + exact lane-identity throughout.
+Net shipped: the SIMD lane paths are substantially faster than the pre-study base, the
+scalar path is ~3.5% slower, and the evaluator stays entirely safe Rust. All behind 14/14
+bit-exact `validate_helas_mg` + exact lane-identity throughout.
 
 ## Reproduce
 
