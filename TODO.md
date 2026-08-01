@@ -16,12 +16,13 @@ comparable** to one from `refdata-3` (MadGraph 3.5.7 applied the PDF set's
 `αs(M_Z) = 0.130` to `lpp = 0` runs; 3.7.1 keeps the model's `0.118` — note 27
 §B5).
 
-**Next (proposed)**: the **`kt-spine` feature sprint** — note 28, DRAFT
-awaiting review. Two tracks (K: kt-clustering; S: permutation factor +
-multi-rung spine + massless-t-cut) converging on a `p p > j j`
-default-dynamical-scale capstone; freezes the channel/map structure ahead of
-the integration-focused performance sprint (VEGAS first-iteration bias +
-`w_max` scan decoupling, performance backlog below).
+**Current sprint**: the **`kt-spine` feature sprint** — note 28, approved and
+launched 2026-08-01 (D1–D3 decided on the recommended options). Two tracks
+(K: kt-clustering; S: permutation factor + multi-rung spine + massless-t-cut)
+converging on a `p p > j j` default-dynamical-scale capstone; freezes the
+channel/map structure ahead of the integration-focused performance sprint
+(VEGAS first-iteration bias + `w_max` scan decoupling, performance backlog
+below).
 
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
