@@ -59,7 +59,10 @@
 # differing from MadGraph's would need. It is stated wherever the question was
 # asked, so "not needed" is on the record rather than assumed.
 #
-# `status = "planned"` marks a row whose reference run does not exist yet.
+# `status = "planned"` marks a row whose reference run does not exist yet, and
+# `bundled = false` a row whose banked artifacts exist in a local work area but
+# are not yet in the pinned reference bundle, so a fetching checkout does not have
+# them and the next bundle has to pick them up.
 
 schema = 1
 
@@ -195,7 +198,7 @@ artifacts = ["output/uux_to_uux", "output/uux_to_uux_amplitude.csv", "sigma_refe
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate" }
 integrals = { tier = "banked", mode = "gate", note = "carries a standing -0.30% bias against the banked sigma; resolution is the multi-rung spine feature, and the cell stays visible until then" }
-samples = { tier = "banked", mode = "gate" }
+samples = { tier = "banked", mode = "info", note = "every kinematic observable agrees (min KS p 6.7e-3 over three seeds) and the helicity frequencies agree, but the realised colour-flow frequencies do not: MadGraph writes the flow whose lines join each incoming pair on 99.96% of its events, we write it on 90.4%, chi-squared 1015 on one degree of freedom. The banked per-flow JAMPs give |JAMP1|^2/|JAMP2|^2 = 8.5 to 9.0 at MadGraph's own points, so a selection proportional to JAMP2 is what we do and is not what MadGraph's sample shows; the cell is informational until the difference between the two colour-selection rules is settled" }
 
 [[process]]
 key = "gg_to_ttx"
@@ -265,7 +268,7 @@ artifacts = ["output/uux_to_epemg", "output/uux_to_epemg_amplitude.csv", "sigma_
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate" }
 integrals = { tier = "blocked", blocker = "kt-clustering", note = "banked with a cross section and cheap to integrate, but the run card leaves both scales free at dynamical_scale_choice = -1 and a t-channel propagator into a three-leg final state is exactly the topology whose cluster scale depends on the merge order; the prescription is refused rather than approximated, so no scale on this side reproduces MadGraph's number" }
-samples = { tier = "banked", mode = "gate" }
+samples = { tier = "blocked", blocker = "kt-clustering", note = "event generation runs through the same integrand as the cross section and meets the same refusal, which `validate_samples` measures rather than assumes" }
 
 [[process]]
 key = "ddx_to_epemg"
@@ -279,7 +282,7 @@ artifacts = ["output/ddx_to_epemg", "output/ddx_to_epemg_amplitude.csv", "sigma_
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate" }
 integrals = { tier = "blocked", blocker = "kt-clustering", note = "banked with a cross section and cheap to integrate, but the run card leaves both scales free at dynamical_scale_choice = -1 and a t-channel propagator into a three-leg final state is exactly the topology whose cluster scale depends on the merge order; the prescription is refused rather than approximated, so no scale on this side reproduces MadGraph's number" }
-samples = { tier = "banked", mode = "gate" }
+samples = { tier = "blocked", blocker = "kt-clustering", note = "event generation runs through the same integrand as the cross section and meets the same refusal, which `validate_samples` measures rather than assumes" }
 
 [[process]]
 key = "gu_to_epemu"
@@ -293,7 +296,7 @@ artifacts = ["output/gu_to_epemu", "output/gu_to_epemu_amplitude.csv", "sigma_re
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate" }
 integrals = { tier = "blocked", blocker = "kt-clustering", note = "banked with a cross section and cheap to integrate, but the run card leaves both scales free at dynamical_scale_choice = -1 and a t-channel propagator into a three-leg final state is exactly the topology whose cluster scale depends on the merge order; the prescription is refused rather than approximated, so no scale on this side reproduces MadGraph's number" }
-samples = { tier = "banked", mode = "gate" }
+samples = { tier = "blocked", blocker = "kt-clustering", note = "event generation runs through the same integrand as the cross section and meets the same refusal, which `validate_samples` measures rather than assumes" }
 
 [[process]]
 key = "gux_to_epemux"
@@ -307,7 +310,7 @@ artifacts = ["output/gux_to_epemux", "output/gux_to_epemux_amplitude.csv", "sigm
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate" }
 integrals = { tier = "blocked", blocker = "kt-clustering", note = "banked with a cross section and cheap to integrate, but the run card leaves both scales free at dynamical_scale_choice = -1 and a t-channel propagator into a three-leg final state is exactly the topology whose cluster scale depends on the merge order; the prescription is refused rather than approximated, so no scale on this side reproduces MadGraph's number" }
-samples = { tier = "banked", mode = "gate" }
+samples = { tier = "blocked", blocker = "kt-clustering", note = "event generation runs through the same integrand as the cross section and meets the same refusal, which `validate_samples` measures rather than assumes" }
 
 [[process]]
 key = "ee_to_mumu_tata_qcd0"
@@ -320,8 +323,8 @@ artifacts = ["output/ee_to_mumu_tata_qcd0", "output/ee_to_mumu_tata_qcd0.json", 
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate", note = "the two banked events within 40 MeV of the Higgs pole in m(tau tau) gate at 1e-11 rather than 1e-12: a narrow-resonance propagator amplifies the last bits of s, and at the worse of the two a one-ulp move of a momentum component moves |M|^2 by twice the deviation being gated" }
-integrals = { tier = "banked", mode = "info", note = "the low-m_ll disagreement is decided in `samples`, where the binned distribution says which side under-covers; the scalar sigma cannot" }
-samples = { tier = "banked", mode = "gate", note = "carries the m_ll-to-threshold binning that decides the low-m_ll reconciliation" }
+integrals = { tier = "banked", mode = "info", note = "the +2.2% offset is not a low-m_ll effect. Binned against MadGraph's own events down to threshold, every m_ll bin below 20 GeV agrees within errors and 159% of the offset sits in one 200 MeV bin at the h -> tau tau pole: 7.137e-5 pb against 2.260e-5 pb, a factor 3.16 at 22 sigma around a 6.4 MeV resonance. Which side mis-covers that resonance is open, so the cell stays informational for the new reason" }
+samples = { tier = "banked", mode = "info", note = "the same resonance: m(ta+,ta-) is the worst observable at KS p 3.6e-6, and the helicity frequencies follow it (chi-squared 210 to 233 on 15 degrees of freedom, entirely in the mass-suppressed same-sign tau categories the low-m(tau tau) region populates). Carries the m_ll-to-threshold binning that produced the verdict" }
 
 [[process]]
 key = "uux_to_ccx_emmm_qcd0"
@@ -370,7 +373,7 @@ artifacts = ["output/pp_to_ll", "output/pp_to_ll.json", "output/dy13_default", "
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union, not only the count" }
 amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"] }
 integrals = { tier = "banked", mode = "gate", note = "two cards, both through the general proton path; no bespoke integrand. Three seeds each: pull +0.25 (rel +0.02%) on the default card, -1.35 (rel -0.10%) on the m_ll window" }
-samples = { tier = "banked", mode = "gate" }
+samples = { tier = "uncovered", note = "nothing to compare against: the Drell-Yan reference banks the two dy13 cards' cross sections and not their events, and this row's own banked run takes the MG-internal nn23lo1 set at a dynamical scale, neither of which this crate can reproduce. Filled by banking events for the dy13 cards, which is an oracle-layer run" }
 
 [[process]]
 key = "pp_to_ll_qcd0"
@@ -384,7 +387,7 @@ artifacts = ["output/pp_to_ll_qcd0", "output/pp_to_ll_qcd0.json", "output/pp_to_
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
 amplitudes = { tier = "hermetic", mode = "gate", note = "its banked table is the u u~ > mu+ mu- subprocess; the event points are the group's proton-beam events filtered to that flavour assignment and boosted into the partonic centre of mass, so this is the one row whose points come from a hadronic run" }
 integrals = { tier = "covered-by", rows = ["pp_to_ll"] }
-samples = { tier = "covered-by", rows = ["pp_to_ll"] }
+samples = { tier = "uncovered", note = "same gap as pp_to_ll, which it would have been covered by" }
 
 [[process]]
 key = "pp_to_bb"
@@ -420,14 +423,14 @@ process = "p p > b b~ QCD=2"
 script = "validation/madgraph/scripts/pp_to_bb_fixed.mg5"
 class = "multi-channel"
 n_final = 2
-status = "planned"
-rationale = "Same generate line as pp_to_bb_qcd2 with a fixed-scale run card, so the sigma and the event sample of a purely QCD-initiated group become measurable without kT clustering. The only multi-channel row whose hard process carries no electroweak core, and the first gated consumer of the mirrored beam ordering."
-artifacts = ["output/pp_to_bb_fixed"]
+rationale = "Same generate line as pp_to_bb_qcd2 with a fixed-scale run card and a ptb cut, so the sigma and the event sample of a purely QCD-initiated group become measurable without kT clustering. The only multi-channel row whose hard process carries no electroweak core, and the first consumer of the mirrored beam ordering on a group whose mirrored members carry a large share of the cross section."
+artifacts = ["output/pp_to_bb_fixed", "output/pp_to_bb_fixed/Events/run_01/unweighted_events.lhe.gz"]
+bundled = false
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "uncovered", note = "would be covered-by new b b~ parton rows if those are added" }
-integrals = { tier = "banked", mode = "gate" }
-samples = { tier = "banked", mode = "gate" }
+integrals = { tier = "blocked", blocker = "hadronic-shat-floor", note = "the run is banked (sigma 2145500 +- 3414 pb, 10000 events, 3 flavour groups of which 2 are mirrored) but the general hadronic path cannot integrate it: every lower bound on s-hat the cut layer derives is a lepton bound, so a purely hadronic final state leaves shat_min = 0, the (tau, y) map's ln(1/tau_min) is infinite and the first parton-density call is asked for x = NaN. Measured by `bb_fixed_has_no_shat_floor_for_the_general_path`" }
+samples = { tier = "blocked", blocker = "hadronic-shat-floor", note = "same blocker: the sample is drawn off the same integrand" }
 
 [[process]]
 key = "pp_to_llj_fixed"
@@ -441,7 +444,7 @@ artifacts = ["output/pp_to_llj_fixed", "output/pp_to_llj_fixed/Events/run_01/unw
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
 amplitudes = { tier = "covered-by", rows = ["uux_to_epemg", "ddx_to_epemg", "gu_to_epemu", "gux_to_epemux"] }
 integrals = { tier = "banked", mode = "gate", note = "three seeds at 300k in this layer; the full seed sweep and the budget ladder are oracle-layer" }
-samples = { tier = "banked", mode = "gate", note = "carries the flavour-group frequency chi-squared as well as the continuous observables" }
+samples = { tier = "banked", mode = "gate", note = "the only row measured through the shipped binary — the flavour draw and the record relabelling live in `generate` — and the only one carrying the flavour-group frequency chi-squared: 48 concrete assignments, p 0.14 to 0.62 over three seeds, against a continuous minimum of KS p 4.4e-2" }
 
 [[process]]
 key = "pp_to_llj"
@@ -601,6 +604,13 @@ layer = "hermetic"
 targets = ["vibegraph-lib/tests/amplitude_oracle.rs"]
 inputs = ["validation/madgraph/amplitudes/<process>.json"]
 rationale = "The gate behind the `amplitudes` column, one trial per row: |M|^2 at every banked point, and per-diagram AMP() plus per-flow JAMP() per helicity at a few of each point set. Listed here as well as in the table because a single binary covers every row."
+
+[[standalone]]
+key = "samples-mg"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_samples.rs", "vibegraph-cli/tests/validate_samples_proton.rs"]
+inputs = ["banked .lhe.gz runs", "fetched PDF set (proton rows)"]
+rationale = "The gate behind the `samples` column: two binaries covering every row, one per beam kind. Listed here as well as in the table because they also carry two checks that belong to no row — a mutation probe comparing one process's banked events against another's, which must fail the same floor the rows pass (a statistic that never rejects would leave every green cell meaningless), and the measured refusal of the four dynamical-scale parton rows."
 
 [[standalone]]
 key = "hadronic-sigma"

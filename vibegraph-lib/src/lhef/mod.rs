@@ -7,6 +7,8 @@
 //! produces — the accepted point's momenta, the helicity combination and colour
 //! flow selected for it, and the scales it was evaluated at — and an [`emit`]
 //! layer choosing how the accept/reject pass's weights become a file's events.
+//! An [`observables`] layer reads a parsed event back as the named kinematic and
+//! categorical quantities two samples of the same process are compared in.
 //!
 //! # The column layout is MadGraph's, not an invention
 //!
@@ -64,6 +66,7 @@ use thiserror::Error;
 
 pub mod build;
 pub mod emit;
+pub mod observables;
 pub mod parse;
 pub mod record;
 pub mod write;

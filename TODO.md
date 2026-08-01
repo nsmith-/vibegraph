@@ -34,7 +34,17 @@ the bespoke `DrellYanIntegrand` is deleted, `p p > e+ e-` gates through the
 general path on both dy13 cards (pull +0.25 / −1.35 over three seeds), and DY is
 generatable as a side effect; the integration artifact carries a per-channel
 subsampler summary (fv5); and every `integrals` gate writes its measurement to
-`target/validation-report/integrals/<row>.json` for the L7 collator. L5 has
+`target/validation-report/integrals/<row>.json` for the L7 collator. L4 has
+landed: the `samples` category compares our unweighted events against MadGraph's
+banked ones column by column — weighted-ECDF Kolmogorov–Smirnov on the named
+kinematic observables and χ² homogeneity on `SPINUP`, `ICOLUP` and the flavour
+assignment — over twelve fixed-beam rows in the library and `p p > l+ l- j`
+through the shipped binary, three generation seeds each at 20 000 events against
+MadGraph's 10 000, at a p-floor of `1e-4`. Eleven rows gate; two are
+informational with their measurement recorded (`uux_to_uux` colour-flow
+frequencies, `ee_to_mumu_tata_qcd0`), and the `pp_to_bb_fixed` rider banked a
+purely QCD-initiated multi-channel run whose cross section the general path
+cannot yet reach. L5 has
 landed: `pixi run -e pythia validate-pythia` generates the llj and dy13 samples
 from their own cards and reads every event back through Pythia 8.312 —
 **2000/2000 consumed on both**, with a colour-mutation negative control that
@@ -87,39 +97,65 @@ lines an `e+ e-` sample does not have.
   to end through Pythia 8.312 (`pythia-consumption` in `validation/manifest.toml`).
   What it does *not* yet cover is filed under **Pythia consumption gate — what it
   cannot see** in *Deferred coverage*.
-- **Event-sample vs MG statistical comparison** — deferred out of E3 by decision.
-  We do not share MG's RNG, so no per-event comparison exists; owed is a
-  **distribution-level** comparison of our unweighted sample against MG's banked
-  one: invariant masses, angles, and — the fields nothing else covers — the
-  empirical `SPINUP` helicity and `ICOLUP` flow frequencies, which E1/E2 pin only
-  as *rules* (`∝ |M_hel|²`, `∝ JAMP2`), never against MG's realised sample. Needs
-  designing (binning, observables, per-process statistics). For llj add the
-  **flavour-group frequencies** — pinned only as the rule `∝ luminosity × σ̂`.
-  (Note 23 §E3 outcome; `validate_lhef.rs` module doc lists what E3 provably
-  cannot detect.)
-- **A `dσ/dm_ll` emitter for the general path** — the informational
-  `dy_dsigma_dmll.md` table was produced by an `#[ignore]`d test driving the
-  bespoke Drell-Yan integrand's `dsigma_dmll`, and went with it; the committed
-  table has no regeneration path until something replaces it. The `samples`
-  category's m_ll binning is that replacement and already owes the
-  `low-mll-reconciliation` verdict, so this is a note on the ordering, not a
-  second mechanism: either the histogram module regenerates the table or the
-  table is deleted with the reconciliation.
-- **MG-plot distribution comparison** — L5 validated histograms against *analytic*
-  BW/t-channel oracles with MG σ as coarse backstop; comparing against MG's own
-  `.lhe`/plots needs the MG toolchain. Same machinery as the row above, and the
-  vehicle for `low-mll-reconciliation` below. (Note 21 close-out.)
+- **No banked Drell-Yan event sample** — the `samples` cell of `pp_to_ll` (and so
+  of `pp_to_ll_qcd0`, which pointed at it) is `uncovered`, not measured: the
+  Drell-Yan reference banks the two `dy13` cards' cross sections and not their
+  events, and the row's own banked MadGraph run takes the MG-internal `nn23lo1`
+  set at a dynamical scale, which this crate cannot reproduce. Filled by an
+  oracle-layer run banking events for the committed `dy13` cards — after which the
+  general path's `dσ/dm_ll` at low `m_ll` becomes measurable against MadGraph, the
+  thing the deleted `dy_dsigma_dmll.md` table was standing in for. That table had
+  lost its regeneration path with the bespoke integrand and was deleted rather
+  than reproduced: the `samples` binning that replaces it runs on
+  `ee_to_mumu_tata_qcd0`, not on Drell-Yan, so nothing regenerates a Drell-Yan
+  spectrum today. (L4.)
 
 ### Standing discrepancies to resolve (never a loosened tolerance)
 
-- **`low-mll-reconciliation`** — `ee_to_mumu_tata_qcd0` samples stably (5 seeds
-  within 0.45%, χ²/dof 0.97–1.21) but sits **+2.2% above** banked MG (pull
-  +6.7…+8.3; was +3.0% before per-channel grids), entirely below `m_ll ≈ 20 GeV`
-  (cutting there agrees to −0.1%). The *sign* rules out under-coverage on this
-  side, so either MG under-counts (its `set_peaks` massless-pole grid floor
-  truncates the same region) or this sampler over-weights it. **A scalar σ cannot
-  decide it** — needs differential `dσ/dm_ll`. Row stays `Plan::Info`; 5
-  `#[ignore]`d probes in place in `validate_sigma.rs`.
+- **`higgs-pole-in-m-tautau`** (replaces `low-mll-reconciliation`, whose premise
+  L4 falsified) — `ee_to_mumu_tata_qcd0` sits **+2.2% above** banked MG, and
+  binning `dσ/dm_ll` against MadGraph's own events down to threshold says the
+  offset is **not** a low-`m_ll` effect: every bin below 20 GeV agrees within its
+  errors on both pairs, and **159% of the offset sits in one 200 MeV bin at the
+  `h → τ⁺τ⁻` pole** — `7.137e-5 ± 1.3e-6` pb against `2.260e-5 ± 1.7e-6` pb, a
+  factor 3.16 at 22σ around a resonance 6.4 MeV wide. The rest of the spectrum
+  sits ~1.4% *below* MadGraph. Which side mis-covers the resonance is open: the
+  third estimate (flat RAMBO under a VEGAS grid) puts `1.0e-6` pb there, twenty
+  times under MadGraph, because a map with no Breit–Wigner cannot find that peak
+  at all, so it shows only the direction a poor map fails in; MadGraph's
+  per-channel `results.dat` and its 10 000 banked events agree with each other, so
+  its sample is not merely under-representing its own integral. The ratio 3.158 is
+  within errors of **π**, which in a Breit–Wigner map (`∫ds/((s−m²)²+m²Γ²) =
+  π/(mΓ)`) is the first thing to check on this side. Decisive next step: a
+  dedicated MadGraph run of this process with an `m(τ⁺τ⁻)` window around 125 GeV,
+  which measures the resonance directly on both sides. `integrals` and `samples`
+  cells both informational.
+  (`validate_samples.rs` `the_low_m_ll_region_is_binned_against_madgraph`.)
+- **`uux_to_uux` colour-flow frequencies** — every kinematic observable agrees
+  (min KS p `6.7e-3` over three seeds) and so do the helicity frequencies, but the
+  realised `ICOLUP` frequencies do not: MadGraph writes the flow whose lines join
+  each incoming pair on **99.96%** of its events where we write it on **90.4%**,
+  χ² 1015 on one degree of freedom, stable across seeds. The banked per-flow
+  JAMPs give `|JAMP1|²/|JAMP2|² = 8.5…9.0` at MadGraph's own points — which is our
+  90/10 split, and is not MadGraph's — so the two sides are not applying the same
+  colour-selection rule to the same numbers. Ours is `∝ JAMP2` (MadGraph's
+  documented `SELECT_COLOR`); the candidate explanation is that MadEvent's
+  selection is conditioned on the integration channel's own diagram
+  (`ICOLAMP`), which for a t-channel-dominated process leaves one flow. Neither
+  is wrong as an LO colour assignment, but they differ at order `1/N²` and the
+  shower is handed the difference. `samples` cell informational until it is
+  settled. (`validate_samples.rs`.)
+- **`hadronic-shat-floor`** — the general hadronic path cannot integrate a process
+  with no leptons in the final state. Every lower bound on `ŝ` the cut layer
+  derives is a lepton bound (`dsqrt_shat`, the same-flavour dilepton mass cut, the
+  back-to-back `2·ptl` bound for two leptons), so `p p > b b~` leaves
+  `shat_min = 0`, the `(τ, y)` map's `ln(1/τ_min)` is infinite, and the first
+  parton-density call is asked for `x = NaN`. The missing bound is the one the
+  lepton branch already makes — two back-to-back b quarks each above `ptb` give
+  `m_bb ≥ 2·ptb` — plus `ŝ ≥ (2·m_b)²` from the final-state masses. Blocks the
+  `integrals` and `samples` cells of `pp_to_bb_fixed`, whose MadGraph run is
+  banked and whose diagram row already gates.
+  (`validate_hadronic.rs` `bb_fixed_has_no_shat_floor_for_the_general_path`.)
 - **Four llj partonic σ rows are unreachable, not merely ungated** — `uux_to_epemg`,
   `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux` are banked with cross sections
   and cost seconds to integrate, so L3 was to promote them to GATE. They cannot
@@ -130,7 +166,8 @@ lines an `e+ e-` sample does not have.
   scale on this side reproduces MadGraph's number, and a fixed-scale re-run would
   be a different cross section. Their `integrals` cells are `blocked` on
   `kt-clustering` in the manifest and named in `validate_sigma`'s `plan_for`;
-  their `samples` cells are left as they were and will meet the same refusal.
+  their `samples` cells are blocked on the same blocker, and L4 measured the
+  refusal in generation rather than assuming it.
   Fixed by `kt-clustering` (feature backlog), which grows four ready-to-flip σ
   rows on top of the six asserted-refused scale rows it already owns.
 - **`uux_to_uux` residual bias** — hard σ GATE, but the five-seed mean is
