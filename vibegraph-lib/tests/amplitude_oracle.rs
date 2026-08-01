@@ -432,7 +432,9 @@ fn compare_m2(
                 rel / sensitivity.max(1e-300),
             );
             if rel > budget {
-                result.failures.push(format!("{account} — over the {budget:.3e} budget"));
+                result
+                    .failures
+                    .push(format!("{account} — over the {budget:.3e} budget"));
             } else {
                 result.conditioned.push(account);
             }
