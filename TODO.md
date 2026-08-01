@@ -51,6 +51,13 @@ from their own cards and reads every event back through Pythia 8.312 —
 Pythia rejects (`ProcessLevel::checkColours: unphysical colour flow`) so the
 count is not consistent with a colour-blind reader. It is a standalone banked
 gate in its own pixi environment, so `pixi run validate` still needs no Pythia.
+L6 has cleared the sprint's
+hygiene riders: `cargo clippy --workspace --all-targets` is clean, the
+library-level sweeps reach the coloured 2→3 amplitudes (rooting soundness 165
+re-rootings, 0 failures), the flavour-grouping probe ladder reaches below the
+electroweak scale and onto the `Z` pole, and the banked layer's tolerated-skip
+table is gone — every one of its 15 entries was dead, so a missing input now
+fails naming itself.
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
 ## Pipeline Status
@@ -176,6 +183,19 @@ lines an `e+ e-` sample does not have.
   tail *less* — the region a single-rung t-channel spine under-resolves. Evidence
   for the multi-rung spine (feature backlog), not a new defect.
   (`validate_sigma.rs` `probe_qcd_seed_stability`.)
+- **The mirror term's visibility is unmeasured below the electroweak scale** —
+  `the_mirrored_beam_ordering_needs_the_reflected_matrix_element` is the control
+  that makes the mirrored beam ordering's *identity* check meaningful: it asserts
+  that evaluating the representative unreflected — what dropping the mirror
+  amounts to — moves `|M|²` by more than `1e-3` at every probe point. Its ladder
+  starts at 220 GeV. Extended down to `√ŝ = 25` GeV it finds `p p > l+ l- j`
+  configurations where the mirror term is worth only `8.4e-4`, so the control
+  fails there on the present bound. The identity itself is not in question — it
+  holds to `5.4e-13` at every point measured — and no gate moved, but "a dropped
+  mirror would be visible" is a claim currently supported only above 220 GeV.
+  Wanted: measure how the weakest mirror term scales with `ŝ` and state the bound
+  as a function of it, rather than widening the ladder and lowering the number.
+  (`proton.rs` `fresh_points`.)
 
 ### Deferred coverage
 
@@ -183,23 +203,30 @@ lines an `e+ e-` sample does not have.
   extractor + Rust sorted-PDG matching + JSON regen, with a real-finding risk
   (whether vibegraph enumerates MG's exact concrete-subprocess union). Design
   preserved in note 19 §3 / §V7.
-- **`MG_VALIDATED_PROCESSES` is 14 of the gate's 18 process strings** — the
-  library-level sweeps driven by it (rooting soundness, op coverage, egraph
-  round-trip and extraction identity) never reach a coloured 2→3 amplitude: the
-  four `p p > l+ l- j` subprocess rows are absent from the list, though every one
-  of them is gated by `amplitude_oracle`. Extending it is a one-line change plus a
-  re-verified full re-rooting sweep (currently 133 re-rootings, 0 failures).
+- ~~**`MG_VALIDATED_PROCESSES` is 14 of the gate's 18 process strings**~~ ✅
+  **resolved.** All four `p p > l+ l- j` subprocess rows are in the list, so the
+  library-level sweeps reach a coloured 2→3 amplitude. Re-verified on the extended
+  list: rooting soundness **165 re-rootings, 0 failures** (was 133); op coverage
+  unchanged, so `Hels` and `IdentityAmp` are still the only `KNOWN_UNCOVERED`
+  entries and the new rows add no op; egglog round-trip and extraction identity
+  both hold on them; the four default-suite sweeps (op coverage, binary
+  add/mul, forward finiteness, lane-vs-scalar) stay inside the hermetic budget.
 - **`IdentityAmp` process-level coverage** — the last `KNOWN_UNCOVERED` op; needs
   an `Identity` scalar bilinear the SM lacks, so it rides with `non-sm-ufo`
   (feature backlog).
-- **Flavour-group probe coverage** — `derive_flavor_groups` partitions on `|M|²`
-  measured at 12 shared points whose energy floor is **100 GeV**, while the
-  integrator routinely visits ŝ below it, and no point is deliberately placed on
-  a resonance. A pair of subprocesses agreeing over the probe set and differing
-  below it would be merged silently. Interim hardening (widen the energy ladder
-  downward, add an on-`m_Z` point, assert the observed inter-group separation
-  stays ≫ tolerance) until the s-expression identity criterion replaces the
-  sampled one. (`proton.rs`, note 24 §P2c.)
+- **Flavour-group probe coverage** — `derive_flavor_groups` partitions on sampled
+  `|M|²`, which is complete but unsound whatever the probe set: two subprocesses
+  differing only where the probe does not look are merged silently. The interim
+  hardening is **done** — the ladder now runs a fifth of the base energy (20 GeV
+  for a massless final state), the model's `Z` mass, and the three original rungs,
+  each clamped above the final state's own threshold and collapsed where the clamp
+  makes two coincide, so it reaches both below the electroweak scale and onto a
+  resonance. `p p > l+ l- j` partitions identically under it (6 groups of 4), and
+  the margin is measured rather than assumed: the closest pair of groups separates
+  by **0.74** at points the partition was not fitted on, six orders above
+  `GROUP_SEPARATION_MIN`, asserted to stay above 0.1. What remains is the
+  replacement of the sampled criterion by the sound s-expression one (feature
+  backlog). (`proton.rs`, note 24 §P2c.)
 - **Pythia consumption gate — what it cannot see.** The gate reads both emitted
   samples n/n and its negative control proves it is not colour-blind, but four
   things stay outside it. (a) Only the `Buffer` strategy (`IDWTUP = -4`) is fed
@@ -212,10 +239,16 @@ lines an `e+ e-` sample does not have.
   connectivity is not shown to be detectable. (d) Nothing checks Pythia's
   interpretation of `SCALUP`, `AQCDUP` or the `<init>` cross section — the file
   is proven *readable*, not proven to mean what we intended.
-- **Minor pinned discrepancies** (note 22 close-out): `ee_to_wpwm` topology mask
-  unpinned between D4's derivation and D2's declaration (tie-break never reaches
-  the scale); `run_card_dy.dat` fixture disagrees with the banked `dy13` cards on
-  `fixed_ren_scale` (asserted, not aligned).
+- ~~**Minor pinned discrepancies**~~ ✅ **resolved** (note 22 close-out). The
+  `ee_to_wpwm` topology mask was a real error, and an inert one: `validate_scales`
+  declared the transpose of what `coupling::topology` derives, and the derivation
+  is the right one — the charged current pairs each beam with the `W` of its own
+  charge, so `e⁺ → W⁺` exactly as Bhabha's `e⁺ → e⁺`. The declaration is
+  corrected, the derivation is now asserted on this process too, and the per-event
+  replay is unmoved (500 000 comparisons over 160 000 events), which is the
+  measurement behind "the tie-break never reaches the scale". The
+  `run_card_dy.dat` `fixed_ren_scale` half rested on a false premise about that
+  file — see the hygiene row below.
 
 ### Gate + tooling hygiene
 
@@ -228,18 +261,29 @@ Small, independent, each one a gate that is weaker than it looks.
   `COMMON` member makes f2py emit uncompilable C), but the work area is the
   bundle's source, so regenerating that process directory is owed before the next
   `refdata` bump.
-- **`run_card_dy.dat` is a verbatim MG5 copy** — delete it and read the card from
-  the `mg5amcnlo` submodule instead, so there is one source and no third-party
-  file to notice. Make the resulting skip **loud** when the submodule is absent
-  (see the row below): a fixture that silently vanishes is the failure mode this
-  trades into.
+- ~~**`run_card_dy.dat` is a verbatim MG5 copy**~~ ✅ **resolved — the premise was
+  wrong.** It is a hand-written fixture in MadGraph's run-card syntax, not
+  a copy of any MadGraph file: the template it resembles is a Python `%(...)s`
+  template, and the fixture's values are chosen to exercise the parser (`lhaid`
+  230000, a free `μR` against a fixed `μF`, a cut block that stops short so the
+  defaults have to fill it in). It is also what `include_str!` hands the *hermetic*
+  parser test, so there was nothing to delete and no submodule read to put in its
+  place. Renamed `run_card_parser_fixture.dat`, given a header saying what it is,
+  and its one copied banner block replaced; the scales test that recorded its
+  `fixed_ren_scale` as a disagreement now records it as the only committed card
+  covering the free-scale branch.
 - ~~**Silent soft-skip tests**~~ ✅ **resolved structurally.** Every test that
   needed the submodule, a fetched PDF set or a banked MadGraph run is registered
   behind `required-features` and absent from the default build, so the category
   "runs by default but quietly needs data" no longer exists: `cargo test` on a
   bare clone is complete with zero skips. The banked layer's remaining skips go
-  through `vibegraph::validation::skip`, which refuses any reason not in
-  `EXPECTED_SKIPS` and prints a `VALIDATION-SKIP` marker. The `ufo` and
+  through `vibegraph::validation::require`, which fails naming the input — the
+  15-entry `EXPECTED_SKIPS` table it replaces was audited entry by entry and every
+  one was dead, because the reference bundle carries every run the gates iterate
+  over, the two hadronic reference σ are committed, and the PDF sets come from a
+  fetch task that fails when it cannot acquire them. So the banked layer now takes
+  **no** runtime skips at all, and CI's non-gating `banked` job fails naming the
+  bundle instead of recording nine expected skips. The `ufo` and
   `ufo::sm` members moved to `tests/ufo.rs` and `tests/sm_interned_blob.rs`,
   where a missing submodule is now a failure, not a skip.
 - ~~**Two reference files are still generated rather than committed**~~ ✅
@@ -296,13 +340,14 @@ Small, independent, each one a gate that is weaker than it looks.
   design (note 19 §3/§V7) reaching `extract_diagrams.py`; until then the
   manifest's "includes the per-flavour concrete-subprocess union" notes describe
   the intent, not the current assertion.
-- **`clippy::approx_constant` deny at `coupling/alphas.rs:224`** — the one error
-  in a whole-workspace `cargo clippy`, which three sessions worked around rather
-  than fixed. `const PI: f64 = 3.141592653589793` is deliberate: it is π *as
-  spelled in* `Source/MODEL/couplings.f`, so the constant tracks MadGraph's
-  source rather than Rust's (it happens to round to the same `f64`, so the
-  lint's suggestion is a style change, not a numerical one). A targeted
-  `#[allow]` carrying that rationale restores the workspace lint.
+- ~~**`clippy::approx_constant` deny at `coupling/alphas.rs:224`**~~ ✅
+  **resolved.** The constant carries a targeted `#[allow]` with its
+  MG-source-tracking rationale, and `cargo clippy --workspace --all-targets` is
+  now **clean** — the 52 further warnings behind that error are fixed in place,
+  except two lints allowed workspace-wide with the reason in `Cargo.toml`:
+  `neg_cmp_op_on_partial_ord` (every site is the `!(x > 0.0)` guard that routes a
+  NaN to the rejecting branch) and `unusual_byte_groupings` (hex seed words like
+  `0x5EED_1`).
 - **Weekly `schedule` trigger on `acceptance.yml`** — left off because it can only
   fail until a first release exists. Turn it on once one does: it is also the
   second detector for the "CERN repackages the PDF archive" risk, whose only
