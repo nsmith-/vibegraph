@@ -325,7 +325,7 @@ impl Cuts {
 
         let dsqrt_shat = rc.float("dsqrt_shat");
         let dsqrt_shatmax = rc.float("dsqrt_shatmax");
-        let shat_min_hint = shat_min_hint(rc, &infos);
+        let shat_min_hint = shat_min_hint(rc, legs, &infos, &single);
 
         Ok(Cuts {
             incoming,
@@ -632,8 +632,36 @@ fn pair_ptll(rc: &RunCard, li: LegInfo, lj: LegInfo) -> (f64, f64) {
 }
 
 /// Conservative lower bound on ŝ from the active cuts:
-/// `max(dsqrt_shat², min dilepton-mass², two-lepton back-to-back pT bound²)`.
-fn shat_min_hint(rc: &RunCard, infos: &[LegInfo]) -> f64 {
+/// `max(dsqrt_shat², min dilepton-mass², (Σ pT threshold)², (Σ final mass)²)`.
+///
+/// The last two are the general bounds, and they are general because they are
+/// read off the partonic centre of mass, where `√ŝ = Σᵢ Eᵢ` over the final state.
+/// A boost along the beam leaves each leg's transverse momentum alone, so the
+/// `pT` a lab-frame cut holds a leg above bounds that leg's energy in *that*
+/// frame too, and `Eᵢ ≥ max(mᵢ, pTᵢ)` gives one bound per branch of the max:
+///
+///   `√ŝ ≥ Σᵢ pTᵢ^min`      and      `√ŝ ≥ Σᵢ mᵢ`.
+///
+/// Both hold for any number of outgoing legs — no back-to-back argument and no
+/// two-body assumption enters — and they are the two `setcuts.f` derives as
+/// `smin_p**2` (its per-letter-class transverse sum, `setcuts.f:527-676`) and
+/// `smin = max(smin, (Σ pmass(i))**2, dsqrt_shat**2)` (`setcuts.f:702-707`).
+/// Two departures from its arithmetic, both in the direction of the derivation:
+/// MadGraph sums the transverse term per letter class and *adds* the classes,
+/// where summing over all classes at once is the same bound when one class is
+/// cut and a tighter one when several are; and its per-leg term is
+/// `max(e_X, pt_X, …)`, where only the transverse threshold is used here,
+/// because an energy cut is a lab-frame quantity and the sum is taken in the
+/// partonic centre of mass.
+///
+/// A run whose final state is massless and uncut still gets `0` here, which is
+/// what `dsqrt_shat` is for: no cut implies no threshold.
+fn shat_min_hint(
+    rc: &RunCard,
+    legs: &[ExternalLeg],
+    infos: &[LegInfo],
+    single: &[SingleLegCut],
+) -> f64 {
     let dsqrt_shat = rc.float("dsqrt_shat");
     let mut hint = dsqrt_shat * dsqrt_shat;
 
@@ -654,19 +682,19 @@ fn shat_min_hint(rc: &RunCard, infos: &[LegInfo]) -> f64 {
         }
     }
 
-    // Exactly two final-state leptons back-to-back at LO: each with pT ≥ ptl
-    // implies m_ll ≥ 2·ptl, hence ŝ ≥ (2·ptl)².
-    let leptons: Vec<&LegInfo> = infos
+    // Σ over the legs a single-leg cut holds above a transverse threshold. Legs
+    // without one contribute nothing, which is what makes the sum a bound rather
+    // than an estimate.
+    let pt_sum: f64 = single.iter().map(|c| c.pt_min.max(0.0)).sum();
+    hint = hint.max(pt_sum * pt_sum);
+
+    // Σ over every final-state mass, cut or not: the production threshold.
+    let mass_sum: f64 = legs
         .iter()
-        .filter(|i| i.letter == Some(Letter::Lepton))
-        .collect();
-    if infos.len() == 2 && leptons.len() == 2 {
-        let ptl = rc.float("ptl");
-        if ptl > 0.0 {
-            let bound = 2.0 * ptl;
-            hint = hint.max(bound * bound);
-        }
-    }
+        .filter(|l| l.is_final)
+        .map(|l| l.mass.max(0.0))
+        .sum();
+    hint = hint.max(mass_sum * mass_sum);
 
     hint
 }
@@ -975,6 +1003,96 @@ mod tests {
         // ptl bound when the others are small.
         let c3 = Cuts::compile(&card("25 = ptl\n"), &dy_legs()).unwrap();
         assert_eq!(c3.shat_min(), 2500.0); // (2·25)²
+    }
+
+    /// `p p > b b~` external legs at `maxjetflavor = 4`, so both b quarks
+    /// classify as the `b` letter and carry `ptb` rather than `ptj`.
+    fn bb_legs(mass: f64) -> Vec<ExternalLeg> {
+        vec![
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::outgoing(5, mass),
+            ExternalLeg::outgoing(-5, mass),
+        ]
+    }
+
+    /// The floor a purely hadronic final state gets, against the number
+    /// MadGraph's own `setcuts.f` computes for the same card.
+    ///
+    /// For the banked `pp_to_bb_fixed` card — `ptb = 20`, `mb = 4.7`,
+    /// `mmbb = dsqrt_shat = 0` — `setcuts.f`'s b-class branch accumulates
+    /// `smin_p = max(eb,ptb,xptb,0) + max(eb,ptb,0) = 40` and takes
+    /// `max(smin_p**2, -2·mb**2, 0) = 1600`, then `max(smin, (2·mb)**2, 0)`
+    /// leaves it at 1600. Nothing here may exceed that: the banked run
+    /// integrated `τ` from `1600/s` up, so a higher floor would clip a region
+    /// its cross section covers.
+    #[test]
+    fn a_hadronic_final_state_gets_a_floor_from_its_pt_cut() {
+        let bb = card("4 = maxjetflavor\n20.0 = ptb\n5.0 = etab\n0.0 = mmbb\n0.0 = dsqrt_shat\n");
+        let cuts = Cuts::compile(&bb, &bb_legs(4.7)).unwrap();
+        assert_eq!(cuts.shat_min(), 1600.0);
+
+        // The mass sum takes over once it beats the transverse sum: two 100 GeV
+        // legs cannot be made below (2·100)² whatever the pT threshold says.
+        let heavy = Cuts::compile(&bb, &bb_legs(100.0)).unwrap();
+        assert_eq!(heavy.shat_min(), 40000.0);
+    }
+
+    /// The `(τ, y)` map divides by `ln(1/τ_min)`, so `shat_min = 0` is not a
+    /// loose floor but an unusable one. Every final state with a mass or a
+    /// transverse threshold has to give a positive value, whatever its flavour
+    /// content — that is the property, not the individual numbers.
+    #[test]
+    fn every_massive_or_pt_cut_final_state_has_a_positive_floor() {
+        let cases: [(&str, Vec<ExternalLeg>); 5] = [
+            // b quarks: a pT cut and a mass, no lepton anywhere.
+            ("4 = maxjetflavor\n20.0 = ptb\n", bb_legs(4.7)),
+            // Massless jets: the pT cut alone.
+            (
+                "4 = maxjetflavor\n20.0 = ptj\n",
+                vec![
+                    ExternalLeg::incoming(21, 0.0),
+                    ExternalLeg::incoming(21, 0.0),
+                    ExternalLeg::outgoing(21, 0.0),
+                    ExternalLeg::outgoing(21, 0.0),
+                ],
+            ),
+            // Photons.
+            (
+                "10.0 = pta\n",
+                vec![
+                    ExternalLeg::incoming(2, 0.0),
+                    ExternalLeg::incoming(-2, 0.0),
+                    ExternalLeg::outgoing(22, 0.0),
+                    ExternalLeg::outgoing(22, 0.0),
+                ],
+            ),
+            // Top pairs: `do_cuts` is off above 20 GeV, so the mass sum is the
+            // only bound left and it has to be the one that fires.
+            (
+                "4 = maxjetflavor\n",
+                vec![
+                    ExternalLeg::incoming(21, 0.0),
+                    ExternalLeg::incoming(21, 0.0),
+                    ExternalLeg::outgoing(6, 173.0),
+                    ExternalLeg::outgoing(-6, 173.0),
+                ],
+            ),
+            // Leptons, the case that already worked.
+            ("", dy_legs()),
+        ];
+        for (text, legs) in cases {
+            let cuts = Cuts::compile(&card(text), &legs).unwrap();
+            let shat_min = cuts.shat_min();
+            assert!(
+                shat_min > 0.0 && shat_min.is_finite(),
+                "legs {legs:?} under card {text:?} left shat_min = {shat_min}"
+            );
+            assert!(
+                (1.0f64 / (shat_min / (13000.0 * 13000.0))).ln().is_finite(),
+                "legs {legs:?} under card {text:?} leave ln(1/tau_min) unusable"
+            );
+        }
     }
 
     // ── spacelike floor ─────────────────────────────────────────────────

@@ -9,12 +9,14 @@
 //! over `(τ, y)` with a per-diagram multichannel inner map, one VEGAS grid per
 //! `(group, diagram)` channel. There is no per-process integrand.
 //!
-//! Two σ(pp → e⁺e⁻) reference runs are enforced — default lepton cuts, and the
-//! m_ll ∈ [60,120] window — and σ(pp → ℓ⁺ℓ⁻ j) against the banked
+//! Four reference runs are enforced: two σ(pp → e⁺e⁻) cards — default lepton
+//! cuts, and the m_ll ∈ [60,120] window — σ(pp → ℓ⁺ℓ⁻ j) against the banked
 //! `pp_to_llj_fixed` run, the one row with a coloured initial state, a three-body
-//! final state, a jet cut and a strong coupling. The ℓℓj row is measured over
-//! several seeds, because VEGAS's `1/σ²` iteration combination reports an
-//! under-sampled region confidently.
+//! final state, a jet cut and a strong coupling, and σ(pp → b b̄) against
+//! `pp_to_bb_fixed`, the one whose hard process has no electroweak core at all
+//! and whose `ŝ` floor therefore comes from a transverse cut rather than from a
+//! lepton. Each row is measured over several seeds, because VEGAS's `1/σ²`
+//! iteration combination reports an under-sampled region confidently.
 //!
 //! A pointwise integrand oracle pins the factors of the hadronic assembly — the
 //! `(τ, y)` map and its Jacobian, the per-group parton luminosity, the group
@@ -704,30 +706,54 @@ fn sigma_llj_fixed_scale_vs_mg() {
 /// spells it.
 const BB_PROCESS: &str = "p p > b b~ QCD=2";
 
-/// What stops `p p > b b~` from being integrated through the general hadronic
-/// path, measured rather than assumed.
+/// Independent seeds the `b b̄` cross section is measured on, for the reason the
+/// ℓℓj sweep gives.
+const BB_SEEDS: &[u64] = &[20260801, 20260802, 20260803];
+/// Points per survey iteration, and iterations, of the channel-weight adaptation.
+const BB_ADAPT_SURVEY: usize = 8_000;
+const BB_ADAPT_ITERS: usize = 5;
+/// VEGAS budget per seed, taken from a measured ladder rather than from cost.
+/// The three-seed mean is flat in the budget — `−0.07%`, `+0.04%`, `−0.01%`,
+/// `−0.03%`, `−0.00%` at 75 000, 150 000, 300 000, 600 000 and 1 200 000 points
+/// an iteration — so this row is converged well below the budget it runs at, and
+/// the seed sweep is measuring an agreement rather than this crate's convergence.
+/// The ℓℓj row, whose estimator approaches its limit from below, is the reason
+/// that is checked rather than assumed.
+const BB_NEVAL: usize = 300_000;
+const BB_NITER: usize = 10;
+/// Largest relative distance from the banked MadGraph σ the `b b̄` sweep may show.
+///
+/// MadGraph's own Monte-Carlo error on this run is `0.16%`, which is the floor —
+/// no agreement tighter than the reference's precision is meaningful — and the
+/// combined error of the two sides is `0.17%`, so this is the three-standard-
+/// deviation distance. The whole measured budget family sits inside `0.07%`.
+const BB_MAX_REL: f64 = 0.005;
+/// Scatter the seeds are allowed about their own mean, in units of their own
+/// quoted errors — the guard the scalar pull cannot be, since a run that missed a
+/// region reports a small integral *and* a small error. Measured `0.48`, `1.67`,
+/// `0.51`, `0.96`, `0.91` over the same budget ladder.
+const BB_MAX_CHI2_PER_DOF: f64 = 4.0;
+
+/// The `ŝ` floor the banked `pp_to_bb_fixed` card implies, against MadGraph's own
+/// `setcuts.f` arithmetic for the same card.
 ///
 /// The `(τ, y)` map draws `τ` logarithmically between `τ_min` and 1, so it needs
-/// a positive lower bound on `ŝ`. [`Cuts::shat_min`] derives one from the active
-/// cuts, and every bound it knows is a *lepton* bound: `dsqrt_shat`, the
-/// same-flavour dilepton mass cut, and the back-to-back `2·ptl` bound for a
-/// two-lepton final state. A purely hadronic final state activates none of them,
-/// so `τ_min = 0`, `ln(1/τ_min)` is infinite and the first PDF call is asked for
-/// `x = NaN`.
+/// a positive lower bound on `ŝ`; a final state with no lepton in it is the case
+/// that has to come from somewhere other than the lepton cuts.
 ///
-/// The bound this row is missing is not subtle — two back-to-back b quarks each
-/// above `ptb` give `m_bb ≥ 2·ptb`, the same argument the lepton branch already
-/// makes, and the final-state masses give `ŝ ≥ (2·m_b)²` besides. Supplying it is
-/// a change to the sampler, which is why this row records the blocker instead:
-/// its `integrals` and `samples` cells are blocked on `hadronic-shat-floor` and
-/// the fix is a backlog item. What is measured here is the blocker itself, so the
-/// cells cannot stay blocked after it goes away.
+/// `setcuts.f:574-600` walks the b-class legs accumulating
+/// `smin_p = Σ max(eb, ptb, 0)` and takes `max(smin_p**2, −Σ mb**2, 0)`; line 707
+/// then raises the result to `max(smin, (Σ pmass)**2, dsqrt_shat**2)`. At
+/// `ptb = 20`, `mb = 4.7` and `mmbb = dsqrt_shat = 0` that is
+/// `max(40², (2·4.7)², 0) = 1600`, and 1600 is the number this row must not
+/// exceed: the banked run integrated `τ` from `1600/s` upwards, so a higher floor
+/// would clip phase space its cross section covers.
 ///
-/// The flavour census is printed because it is the part of this row that does
-/// work: it is the first group whose mirrored members carry a large share of the
-/// cross section, which is what the row was banked for.
+/// The flavour census is printed alongside because it is what this row was banked
+/// for: the first group whose mirrored members carry a large share of the cross
+/// section.
 #[test]
-fn bb_fixed_has_no_shat_floor_for_the_general_path() {
+fn bb_fixed_shat_floor_matches_madgraphs_own() {
     let run_dir = validation_dir().join("output/pp_to_bb_fixed");
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).unwrap_or_else(|e| {
         panic!(
@@ -749,18 +775,140 @@ fn bb_fixed_has_no_shat_floor_for_the_general_path() {
         groups.subprocess_count()
     );
 
+    let masses = groups.groups()[0].final_masses();
+    let ptb = rc.float("ptb");
+    let mg_smin = (2.0 * ptb).powi(2).max(masses.iter().sum::<f64>().powi(2));
     let cuts = groups.groups()[0].cuts();
+    let shat_min = cuts.shat_min();
+    let tau_min = shat_min / (SQRT_S_HAD * SQRT_S_HAD);
     eprintln!(
-        "[bb_fixed] the run card's ptb = {} leaves shat_min = {} GeV^2, so the \
-         (tau, y) map has no floor and the general path cannot integrate this row",
-        rc.float("ptb"),
-        cuts.shat_min()
+        "[bb_fixed] ptb = {ptb}, m_b = {:?} => shat_min = {shat_min} GeV^2 \
+         (setcuts.f: {mg_smin}), ln(1/tau_min) = {:.3}",
+        masses,
+        (1.0 / tau_min).ln()
     );
+
     assert_eq!(
-        cuts.shat_min(),
-        0.0,
-        "[bb_fixed] the cuts now supply a shat floor: this row is no longer \
-         blocked on `hadronic-shat-floor` and its integrals and samples cells \
-         should be measured"
+        shat_min, mg_smin,
+        "[bb_fixed] the floor this crate derives is not the one MadGraph's \
+         setcuts.f computes for the same card"
+    );
+    assert!(
+        (1.0 / tau_min).ln().is_finite(),
+        "[bb_fixed] ln(1/tau_min) is not finite, so the (tau, y) map is unusable"
+    );
+}
+
+/// σ(p p → b b̄) at a fixed scale through the general hadronic path, against the
+/// banked `pp_to_bb_fixed` MadGraph run.
+///
+/// The only cross section here whose hard process carries no electroweak core at
+/// all: three flavour groups, two of them mirrored, a gluon-initiated group and a
+/// massive final state. It is what makes the `ŝ` floor above a live gate rather
+/// than an arithmetic identity — a floor above the true threshold would clip
+/// phase space and show up as a low cross section.
+///
+/// **Several seeds, not one**, for the reason the ℓℓj sweep gives: VEGAS's `1/σ²`
+/// iteration combination reports an under-sampled region as a confident number.
+///
+/// What it cannot see: everything σ integrates over — per-diagram phases,
+/// colour-flow relabellings, helicity-by-helicity errors — and, being a single
+/// scalar, a mis-sampled region of small measure, which the seed scatter and not
+/// the pull is what guards.
+#[test]
+fn sigma_bb_fixed_scale_vs_mg() {
+    let run_dir = validation_dir().join("output/pp_to_bb_fixed");
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).unwrap_or_else(|e| {
+        panic!(
+            "cannot read the banked run card at {}: {e}\n\
+             bank the run with `pixi run -e madgraph build-diagrams`",
+            run_dir.display()
+        )
+    });
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(BB_PROCESS, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+
+    let mut summary = Vec::new();
+    let mut runs: Vec<SeedResult> = Vec::new();
+    for &seed in BB_SEEDS {
+        let (sigma, err) = run_seed(
+            &groups,
+            &amps,
+            &model,
+            &evaluated,
+            &set,
+            &pdf,
+            &rc,
+            (BB_ADAPT_SURVEY, BB_ADAPT_ITERS, BB_NEVAL, BB_NITER),
+            seed,
+            // A b b̄ matrix element at QCD=2 must carry the strong coupling.
+            true,
+            &mut summary,
+        );
+        eprintln!(
+            "[bb_fixed seed {seed}] vibegraph σ = {sigma:.1} ± {err:.1} pb | \
+             rel = {:+.4} | pull = {:+.2}",
+            sigma / mg - 1.0,
+            (sigma - mg) / (err * err + mg_err * mg_err).sqrt()
+        );
+        runs.push(SeedResult {
+            seed,
+            sigma_pb: sigma,
+            sigma_err_pb: err,
+        });
+    }
+
+    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
+    let pull = (mean - mg) / combined;
+    let rel = mean / mg - 1.0;
+    eprintln!(
+        "[bb_fixed] GATE vibegraph σ = {mean:.1} ± {mean_err:.1} pb ({} seeds, \
+         χ²/dof = {chi2:.2}) | MG σ = {mg:.1} ± {mg_err:.1} pb | \
+         pull = {pull:+.2} | rel = {rel:+.4}",
+        runs.len()
+    );
+
+    let ok = pull.abs() < 3.0 && rel.abs() < BB_MAX_REL && chi2 < BB_MAX_CHI2_PER_DOF;
+    let mut row = IntegralsRow::new("pp_to_bb_fixed", BB_PROCESS, "gate");
+    row.status = if ok { "pass" } else { "fail" };
+    row.sigma_vg_pb = mean;
+    row.sigma_vg_err_pb = mean_err;
+    row.sigma_mg_pb = mg;
+    row.sigma_mg_err_pb = mg_err;
+    row.pull = pull;
+    row.rel = rel;
+    row.chi2_dof = chi2;
+    row.seeds = runs.iter().map(|r| r.seed).collect();
+    row.per_seed = runs.clone();
+    row.neval = BB_NEVAL;
+    row.niter = BB_NITER;
+    row.subsampler = summary;
+    row.note = Some(
+        "three seeds at 300k in this layer; the mean is flat across a 75k to 1.2M \
+         budget ladder"
+            .to_string(),
+    );
+    row.write();
+
+    assert!(
+        pull.abs() < 3.0 && rel.abs() < BB_MAX_REL,
+        "[bb_fixed] σ disagreement: vibegraph {mean:.1}±{mean_err:.1} vs \
+         MG {mg:.1}±{mg_err:.1} pb, pull = {pull:+.2}, rel = {rel:+.4}"
+    );
+    assert!(
+        chi2 < BB_MAX_CHI2_PER_DOF,
+        "[bb_fixed] the seeds scatter by more than they claim: \
+         χ²/dof = {chi2:.2} over {runs:?}"
     );
 }

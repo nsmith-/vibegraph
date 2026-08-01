@@ -113,17 +113,34 @@ them. Every one of them is a measurement that exists, not a suspicion.
   is wrong as an LO colour assignment, but they differ at order `1/N²` and the
   shower is handed the difference. `samples` cell informational until it is
   settled. (`validate_samples.rs`.)
-- **`hadronic-shat-floor`** — the general hadronic path cannot integrate a process
-  with no leptons in the final state. Every lower bound on `ŝ` the cut layer
-  derives is a lepton bound (`dsqrt_shat`, the same-flavour dilepton mass cut, the
-  back-to-back `2·ptl` bound for two leptons), so `p p > b b~` leaves
-  `shat_min = 0`, the `(τ, y)` map's `ln(1/τ_min)` is infinite, and the first
-  parton-density call is asked for `x = NaN`. The missing bound is the one the
-  lepton branch already makes — two back-to-back b quarks each above `ptb` give
-  `m_bb ≥ 2·ptb` — plus `ŝ ≥ (2·m_b)²` from the final-state masses. Blocks the
-  `integrals` and `samples` cells of `pp_to_bb_fixed`, whose MadGraph run is
-  banked and whose diagram row already gates.
-  (`validate_hadronic.rs` `bb_fixed_has_no_shat_floor_for_the_general_path`.)
+- ~~**`hadronic-shat-floor`**~~ — ✅ **closed** (`v3-backlog` B2). `Cuts::shat_min`
+  now derives the two general bounds `setcuts.f` derives: `√ŝ ≥ Σᵢ pTᵢ^min` over
+  the legs a single-leg cut holds above a threshold, and `√ŝ ≥ Σᵢ mᵢ` over the
+  final-state masses. Both read off `√ŝ = Σᵢ Eᵢ` in the partonic centre of mass
+  with `Eᵢ ≥ max(mᵢ, pTᵢ)`, so neither needs a back-to-back or two-body argument.
+  `pp_to_bb_fixed` gets `shat_min = 1600 GeV²`, the value MadGraph's own `smin`
+  takes for that card, and no other row moves (`ptl` still gives dy13 `(2·ptl)²`;
+  llj's `mmll² = 2500` still dominates its `(2·ptl + ptj)² = 1600`). σ measured
+  for the first time at **2 145 255 ± 961 pb** against MG
+  **2 145 500 ± 3 414 pb** (rel −0.011%, pull −0.07, χ²/dof 0.51 over three
+  seeds), flat across a 75k–1.2M budget ladder. `integrals` cell ⛔ → **GATE**;
+  `samples` cell ⛔ → **info**, for the new finding below.
+- **`pp_to_bb_fixed` colour-flow frequencies** — the `uux_to_uux` finding above on
+  a second process, exposed by the first `samples` measurement this row could
+  take. Everything else agrees: kinematics at min KS p `9.7e-3`, helicity
+  frequencies at χ² p `0.57…0.78`, flavour-group frequencies at p `0.31…0.46`,
+  over three seeds. The realised `ICOLUP` frequencies do not: χ² `23…31` on five
+  degrees of freedom, p `1.0e-5…3.0e-4`, seed-stable. The excess is entirely in
+  the two sub-percent flows — MadGraph writes `0.07%` and `0.08%` of its events
+  there against our `0.23%` and `0.25%`, a factor `3.1…3.2` — while the two
+  dominant flows agree to about a percent of themselves. Same direction as
+  `uux_to_uux` (MadEvent concentrates on the flows the channel's own diagram
+  admits, we spread `∝ JAMP2`), so **B3's D1 decision should move this row too**
+  and it is worth re-measuring there rather than diagnosing separately. Not an
+  integration defect: this row's σ agrees at `−0.01%` and the ŝ floor cannot reach
+  the colour draw. `samples` cell informational.
+  (`validate_samples_proton.rs`
+  `generated_b_quark_events_agree_with_madgraphs_banked_ones`.)
 - **Four llj partonic σ rows are unreachable, not merely ungated** — `uux_to_epemg`,
   `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux` are banked with cross sections
   and cost seconds to integrate, so L3 was to promote them to GATE. They cannot
