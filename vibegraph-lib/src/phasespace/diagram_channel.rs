@@ -177,6 +177,11 @@ pub struct DiagramChannel<F: Real> {
     beam_masses: [F; 2],
     topology: ChannelTopology<F>,
     t_channels: Vec<TChannel<F>>,
+    /// Upper edge (`≤ 0`) the peripheral transfer is restricted to, or `None` for
+    /// the full kinematic window. Set only by
+    /// [`with_fiducial_t_max`](Self::with_fiducial_t_max), a measurement knob no
+    /// production caller reaches.
+    fiducial_t_max: Option<F>,
 }
 
 impl<F: Real> DiagramChannel<F> {
@@ -268,6 +273,7 @@ impl<F: Real> DiagramChannel<F> {
             beam_masses,
             topology,
             t_channels,
+            fiducial_t_max: None,
         }
     }
 
@@ -289,6 +295,7 @@ impl<F: Real> DiagramChannel<F> {
             beam_masses: [F::zero(), F::zero()],
             topology: ChannelTopology::Timelike(root),
             t_channels: Vec::new(),
+            fiducial_t_max: None,
         }
     }
 
@@ -319,6 +326,7 @@ impl<F: Real> DiagramChannel<F> {
             beam_masses: [F::zero(), F::zero()],
             topology: ChannelTopology::Timelike(root),
             t_channels: Vec::new(),
+            fiducial_t_max: None,
         }
     }
 
@@ -372,6 +380,7 @@ impl<F: Real> DiagramChannel<F> {
             beam_masses,
             topology: ChannelTopology::Spine(spine),
             t_channels: Vec::new(),
+            fiducial_t_max: None,
         }
     }
 
@@ -398,6 +407,24 @@ impl<F: Real> DiagramChannel<F> {
     /// map.
     pub fn t_channels(&self) -> &[TChannel<F>] {
         &self.t_channels
+    }
+
+    /// Restrict the peripheral transfer to `t ≤ t_max` (`t_max ≤ 0`), so the
+    /// propagator map can keep the bare pole instead of a floored one and spends
+    /// no draw on the collinear region a fiducial cut removes anyway.
+    ///
+    /// **A measurement knob, not a production setting.** It narrows the channel's
+    /// *support*: outside the restricted window [`Channel::density`] is exactly
+    /// zero, so a channel set built this way is unbiased only if the union of its
+    /// members still covers everywhere the integrand is non-zero. Whether that
+    /// trade beats the pole floor is what the knob exists to measure; no caller in
+    /// the crate sets it.
+    ///
+    /// The restriction is skipped for a configuration whose kinematic window lies
+    /// entirely below `t_max`, so a channel never ends up with empty support.
+    pub fn with_fiducial_t_max(mut self, t_max: F) -> Self {
+        self.fiducial_t_max = Some(t_max);
+        self
     }
 
     /// The pole location `t_mass²` of the peripheral rung, or `None` for an
@@ -433,6 +460,7 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
                 spine,
                 s,
                 &self.beams_at(sqrt_s),
+                self.fiducial_t_max,
                 total,
                 u,
                 &mut cursor,
@@ -451,9 +479,13 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
         let s = sqrt_s * sqrt_s;
         let jac = match &self.topology {
             ChannelTopology::Timelike(root) => branch_jacobian(root, s, momenta),
-            ChannelTopology::Spine(spine) => {
-                spine_jacobian(spine, s, &self.beams_at(sqrt_s), momenta)
-            }
+            ChannelTopology::Spine(spine) => spine_jacobian(
+                spine,
+                s,
+                &self.beams_at(sqrt_s),
+                self.fiducial_t_max,
+                momenta,
+            ),
         };
         F::one() / jac
     }
@@ -1079,6 +1111,21 @@ fn t_kinematics<F: Real>(s: F, ma2: F, mb2: F, s1: F, s2: F) -> TKin<F> {
     }
 }
 
+/// Narrow the transfer window to `t ≤ cap`, reporting whether it moved.
+///
+/// Skipped when the kinematic window already lies below the cap (nothing to
+/// narrow) or when the cap would empty it, so the rung always keeps a window to
+/// draw from. Sampling and density both go through it at the same `(s, s₁, s₂)`,
+/// which is what keeps the two describing one map.
+fn apply_fiducial_t_max<F: Real>(tk: &mut TKin<F>, cap: Option<F>) -> bool {
+    let Some(cap) = cap else { return false };
+    if cap >= tk.t_max || cap <= tk.t_min {
+        return false;
+    }
+    tk.t_max = cap;
+    true
+}
+
 /// The peripheral 2-body factor `π·(dt/dx)/(4√s·k)` a spine rung contributes: the
 /// solid-angle LIPS `R_2` reparametrised from `(cosθ, φ)` to `(t, φ)` via
 /// `dcosθ = dt/(2k·p*)`, with the azimuth's `2π` folded in and `p*` cancelling.
@@ -1112,6 +1159,7 @@ fn sample_spine<F: Real>(
     spine: &Spine<F>,
     s: F,
     beams: &[LorentzVector<F>; 2],
+    fiducial_t_max: Option<F>,
     p_lab: LorentzVector<F>,
     u: &[F],
     cursor: &mut usize,
@@ -1149,7 +1197,8 @@ fn sample_spine<F: Real>(
         }
     };
 
-    let tk = t_kinematics(s, beams[0].m2(), beams[1].m2(), s1, s2);
+    let mut tk = t_kinematics(s, beams[0].m2(), beams[1].m2(), s1, s2);
+    apply_fiducial_t_max(&mut tk, fiducial_t_max);
     let t = draw_t(tk.t_min, tk.t_max, spine.t_mass2, u[*cursor]);
     *cursor += 1;
     *weight = *weight * peripheral_factor(s, tk.k, t_measure(tk.t_min, tk.t_max, spine.t_mass2, t));
@@ -1188,6 +1237,7 @@ fn spine_jacobian<F: Real>(
     spine: &Spine<F>,
     s: F,
     beams: &[LorentzVector<F>; 2],
+    fiducial_t_max: Option<F>,
     momenta: &[LorentzVector<F>],
 ) -> F {
     let sqrt_s = s.sqrt();
@@ -1197,9 +1247,18 @@ fn spine_jacobian<F: Real>(
     let sqrt_s1 = s1.sqrt();
     let s2 = node_invariant(&spine.recoil, momenta);
 
-    let tk = t_kinematics(s, beams[0].m2(), beams[1].m2(), s1, s2);
+    let mut tk = t_kinematics(s, beams[0].m2(), beams[1].m2(), s1, s2);
+    let restricted = apply_fiducial_t_max(&mut tk, fiducial_t_max);
     let p_emitted = subtree_momentum(&spine.emitted, momenta);
     let t = transfer_invariant(beams[0], p_emitted);
+    // Outside a restricted window the channel generates nothing, so it must report
+    // density zero — a positive density where no point can be drawn is what would
+    // bias a combiner. The unrestricted window is the kinematic one, whose upper
+    // edge a configuration only crosses by the cancellation noise of `t_max`
+    // itself, so the test is asked only of a window that was narrowed.
+    if restricted && t > tk.t_max {
+        return F::infinity();
+    }
 
     let mut f = F::one();
     if let Node::Branch(b) = &spine.emitted {
@@ -1902,6 +1961,41 @@ mod tests {
             massive.t_max
         );
         assert!(massive.t_min < massive.t_max && massive.t_max <= 0.0);
+    }
+
+    /// A *spacelike* incoming line pushes the transfer's upper edge off the pole in
+    /// exact proportion to its own virtuality: with a massless spectator beam and a
+    /// massless emitted subsystem,
+    ///
+    /// ```text
+    /// t_max = t_in · s_recoil / s
+    /// ```
+    ///
+    /// which is `0` when the incoming line is on shell and massless (the collinear
+    /// edge) and strictly negative otherwise. The peripheral kinematics is
+    /// algebraically fine for `t_in < 0` — nothing in it assumes a timelike incoming
+    /// leg — so a chain of spacelike lines can reuse it, and only the ends of such a
+    /// chain sit on the edge.
+    #[test]
+    fn a_spacelike_incoming_line_pushes_the_transfer_edge_off_the_pole() {
+        let s = 500.0_f64 * 500.0;
+        for &t_in in &[0.0, -1.0, -400.0, -25_000.0] {
+            for &s_recoil in &[0.0, 100.0, 40_000.0, 0.5 * s] {
+                let tk = t_kinematics(s, t_in, 0.0, 0.0, s_recoil);
+                let expected = t_in * s_recoil / s;
+                assert!(
+                    (tk.t_max - expected).abs() <= 1e-9 * s,
+                    "t_max = {} not t_in·s_recoil/s = {expected} (t_in = {t_in}, \
+                     s_recoil = {s_recoil})",
+                    tk.t_max
+                );
+                assert!(tk.t_max <= 0.0 && tk.t_min <= tk.t_max);
+            }
+        }
+        // The two ways the edge reaches the pole, kept visible so the formula is not
+        // read as "an interior rung is always safe".
+        assert_eq!(t_kinematics(s, 0.0, 0.0, 0.0, 40_000.0).t_max, 0.0);
+        assert_eq!(t_kinematics(s, -400.0, 0.0, 0.0, 0.0).t_max, 0.0);
     }
 
     /// Threshold kinematics: as `√s → (m₁+m₂)` the emitted momentum `p*` vanishes,

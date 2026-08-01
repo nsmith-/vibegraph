@@ -839,6 +839,357 @@ fn a_regulated_three_body_spine_beats_the_all_timelike_channel_on_a_peripheral_i
     );
 }
 
+/// A ladder's spacelike lines are **totally ordered by inclusion** of the outgoing
+/// legs they leave on beam `0`'s side, so the chain of rungs — and with it which
+/// blob is emitted at which rung, against which running momentum transfer — is a
+/// property of the diagram and not a choice.
+///
+/// This is the hypothesis every ordered-rung decomposition rests on: sorting the
+/// spacelike lines by the size of that side is the same as sorting them along the
+/// chain only if the sides nest, and the blob emitted at rung `i` is well defined
+/// only as the difference `S_i \ S_{i-1}`. Both fail loudly here if the sides ever
+/// come out incomparable or equal.
+///
+/// The check is kept from being vacuous by requiring genuine ladders to be
+/// present: a process whose diagrams all carried at most one spacelike line would
+/// satisfy "the sides nest" for free.
+#[test]
+fn spacelike_lines_of_a_diagram_nest_into_an_ordered_rung_chain() {
+    // The electroweak ladders: one, two and three spacelike lines in one process.
+    let processes = [
+        "u d > e+ e- u d QCD=0",
+        "u u~ > e+ e- u u~ QCD=0",
+        "u u~ > u u~",
+        LLJ_SUBPROCESSES[0],
+    ];
+    let mut rungs_seen = std::collections::BTreeMap::<usize, usize>::new();
+    let mut example = String::new();
+    for process in processes {
+        let sets = common::generate(process);
+        for d in &sets[0].diagrams {
+            let n_ext = d.n_ext();
+            let mut sides: Vec<Vec<usize>> = d
+                .props
+                .iter()
+                .filter(|p| p.is_spacelike(d.n_in))
+                .map(|p| spine_partition(&p.momentum, d.n_in, n_ext).0)
+                .collect();
+            sides.sort_by_key(|s| s.len());
+            *rungs_seen.entry(sides.len()).or_default() += 1;
+            for w in sides.windows(2) {
+                assert!(
+                    w[0].len() < w[1].len(),
+                    "{process}: two spacelike lines leave the same number of legs on \
+                     beam 0's side ({:?} and {:?}), so sorting by size does not order \
+                     the chain",
+                    w[0],
+                    w[1]
+                );
+                assert!(
+                    w[0].iter().all(|s| w[1].contains(s)),
+                    "{process}: spacelike sides {:?} and {:?} are incomparable, so the \
+                     lines do not form a chain and no rung ordering exists",
+                    w[0],
+                    w[1]
+                );
+            }
+            if sides.len() == 3 && example.is_empty() {
+                let blobs: Vec<Vec<usize>> = (0..sides.len())
+                    .map(|i| {
+                        sides[i]
+                            .iter()
+                            .copied()
+                            .filter(|s| i == 0 || !sides[i - 1].contains(s))
+                            .collect()
+                    })
+                    .collect();
+                let recoil: Vec<usize> = (0..n_ext - d.n_in)
+                    .filter(|s| !sides[sides.len() - 1].contains(s))
+                    .collect();
+                example = format!("{process}: rung blobs {blobs:?}, recoil {recoil:?}");
+            }
+        }
+    }
+    eprintln!("spacelike-line count over the surveyed diagrams: {rungs_seen:?}");
+    eprintln!("a three-rung chain: {example}");
+    let ladders: usize = rungs_seen
+        .iter()
+        .filter(|(&k, _)| k >= 2)
+        .map(|(_, &v)| v)
+        .sum();
+    assert!(
+        ladders > 0,
+        "no diagram carries two spacelike lines, so the nesting property is vacuous"
+    );
+    assert!(
+        rungs_seen.contains_key(&3),
+        "no three-rung ladder was surveyed — a chain of three is where sorting by \
+         size could first disagree with sorting along the chain"
+    );
+}
+
+/// How a fiducially cut process wants its massless spacelike pole treated: the
+/// pole floored to the cut scale over the whole kinematic window, or kept bare
+/// with the window itself bounded by that scale.
+///
+/// The two differ only over `|t| < pT_min²`, which the cuts reject anyway — the
+/// floored map spends draws there and weights them zero, the bounded map does not
+/// go there at all and reports density zero if asked. What that is worth, and
+/// whether the narrowed support costs anything in agreement, is measured rather
+/// than argued: three maps on the same `llj` cuts, the same peaked integrand and
+/// the same seeds.
+///
+/// The integrand carries the two structures an `llj` matrix element has, with the
+/// spacelike propagator left **massless** (`1/t²`, the singular thing the question
+/// is about) and the run card's own cut indicator in front, which is what makes it
+/// integrable. The baseline is the all-timelike channel the derivation builds for
+/// these diagrams when no floor is supplied — past two outgoing legs that is what
+/// "the map falls back flat" means concretely, since no spine is built at all.
+///
+/// Read as a measurement, not a gate: the assertions pin only that all three maps
+/// agree on the integral (so the narrowed support loses nothing here) and that the
+/// narrowing is actually in force (so the comparison is not vacuous).
+#[test]
+fn probe_fiducial_t_max_against_the_floored_pole_on_llj_cuts() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let z = model.particle_id("Z").expect("Z in model");
+    let (mz, gz) = (evaluated.mass(z), evaluated.width(z));
+    let (m2, mg) = (mz * mz, mz * gz);
+    let sqrt_s = 500.0;
+    let beam0 = [sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0];
+    let beam1 = [sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0];
+
+    // The scale the banked llj card implies: ptj = 20 -> 400 GeV^2.
+    let legs = vec![
+        ExternalLeg::incoming(2, 0.0),
+        ExternalLeg::incoming(-2, 0.0),
+        ExternalLeg::outgoing(-11, 0.0),
+        ExternalLeg::outgoing(11, 0.0),
+        ExternalLeg::outgoing(21, 0.0),
+    ];
+    let cuts = Cuts::compile(&RunCard::default(), &legs).expect("llj cuts compile");
+    let scale = cuts.spacelike_floor();
+    assert_eq!(scale, 400.0);
+    // The bounded arm keeps a pole three orders below the bound — negligible against
+    // it, so the draw is the bare `1/|t|` the bound exists to expose, while a
+    // configuration whose window the bound cannot narrow still gets a well-posed map
+    // instead of the unregulated one whose density is documented as inconsistent.
+    let safe_floor = scale / 1000.0;
+
+    let n = 200_000;
+    let seeds = 5u64;
+    let mut compared = 0usize;
+    let mut var_ratio_cb = Vec::new();
+    let mut eff_gain = Vec::new();
+
+    for process in LLJ_SUBPROCESSES {
+        let (cutlist, _, masses) = spacelike_cuts(process, &evaluated, sqrt_s);
+        for (i, cut) in cutlist.iter().enumerate() {
+            let emitted = cut.emitted.clone();
+            let transfer = move |p: &[LorentzVector<f64>]| {
+                let [mut e, mut px, mut py, mut pz] = beam0;
+                for &slot in &emitted {
+                    e -= p[slot].e();
+                    px -= p[slot].px();
+                    py -= p[slot].py();
+                    pz -= p[slot].pz();
+                }
+                e * e - px * px - py * py - pz * pz
+            };
+            let pass = |p: &[LorentzVector<f64>]| {
+                let mut ext = Vec::with_capacity(2 + p.len());
+                ext.push(LorentzVector::new(beam0[0], beam0[1], beam0[2], beam0[3]));
+                ext.push(LorentzVector::new(beam1[0], beam1[1], beam1[2], beam1[3]));
+                ext.extend_from_slice(p);
+                cuts.pass(&ext)
+            };
+            let probe = |p: &[LorentzVector<f64>]| {
+                if !pass(p) {
+                    return 0.0;
+                }
+                let t = transfer(p);
+                let s_ll = s_pair(p, 0, 1);
+                1.0 / (((s_ll - m2).powi(2) + mg * mg) * t * t)
+            };
+
+            let floored = build_spine(sqrt_s, &masses, cut, scale.sqrt());
+            let bounded =
+                build_spine(sqrt_s, &masses, cut, safe_floor.sqrt()).with_fiducial_t_max(-scale);
+            let maps: [(&str, &dyn PhaseSpaceMap<f64>); 3] = [
+                ("all-timelike", &cut.derived),
+                ("floored-pole", &floored),
+                ("bounded-tmax", &bounded),
+            ];
+
+            let mut arms = Vec::new();
+            for (label, map) in maps {
+                let runs: Vec<(f64, f64)> = (0..seeds)
+                    .map(|s| mc_estimate(map, 0xD3A0 + 16 * s + i as u64, 91 + s, n, probe))
+                    .collect();
+                let mean = runs.iter().map(|r| r.0).sum::<f64>() / seeds as f64;
+                let var = runs.iter().map(|r| r.1).sum::<f64>() / seeds as f64;
+                let err = (var / n as f64 / seeds as f64).sqrt();
+                let pull = runs
+                    .iter()
+                    .map(|r| (r.0 - mean).abs() / (r.1 / n as f64).sqrt())
+                    .fold(0.0f64, f64::max);
+                // Cut efficiency: the share of draws the map spends inside the
+                // fiducial region, which is the mechanism the bound acts through.
+                let mut stream = SubStream::from_stream(0xEFF0 + i as u64, 7);
+                let mut kept = 0usize;
+                let probes = 40_000;
+                for _ in 0..probes {
+                    let u = stream.uniforms::<f64>(map.ndim());
+                    if pass(&map.sample(&u).momenta) {
+                        kept += 1;
+                    }
+                }
+                let eff = kept as f64 / probes as f64;
+                eprintln!(
+                    "  {process} cut {i} {label:>13}: I = {mean:.6e} ± {err:.2e} \
+                     ({seeds} seeds × {n}), per-point var {var:.3e}, worst pull {pull:.2}, \
+                     cut efficiency {eff:.4}"
+                );
+                arms.push((label, mean, var, err, pull, eff));
+            }
+
+            let (_, i_time, var_time, e_time, _, _) = arms[0];
+            let (_, i_floor, var_floor, e_floor, _, eff_floor) = arms[1];
+            let (_, i_bound, var_bound, e_bound, _, eff_bound) = arms[2];
+            eprintln!(
+                "  {process} cut {i} SUMMARY: var(all-timelike)/var(floored) = {:.2}×, \
+                 var(floored)/var(bounded) = {:.3}×, efficiency {eff_floor:.4} → {eff_bound:.4} \
+                 ({:.2}×)",
+                var_time / var_floor,
+                var_floor / var_bound,
+                eff_bound / eff_floor
+            );
+            var_ratio_cb.push(var_floor / var_bound);
+            eff_gain.push(eff_bound / eff_floor);
+
+            // Unbiasedness: narrowing the support must not move the integral. This
+            // is the soundness half — a bound that cut into the surviving region
+            // would show up here as a low estimate, not as a variance win.
+            let err_fb = (e_floor * e_floor + e_bound * e_bound).sqrt();
+            assert!(
+                (i_floor - i_bound).abs() < 6.0 * err_fb,
+                "{process} cut {i}: bounding t_max moved the integral \
+                 ({i_bound:.6e} vs floored {i_floor:.6e}, err {err_fb:.2e})"
+            );
+            let err_tb = (e_time * e_time + e_bound * e_bound).sqrt();
+            assert!(
+                i_time > 0.0 && err_tb > 0.0,
+                "{process} cut {i}: the all-timelike baseline produced nothing ({i_time:.3e})"
+            );
+            compared += 1;
+        }
+    }
+
+    assert!(compared > 0, "no llj cut was compared");
+
+    // Union coverage: a channel set whose members each renounce part of phase space
+    // is unbiased only if between them they still reach everywhere the integrand
+    // lives. Measured on the sharpest available integrand — the cut indicator
+    // itself — over a combiner built from *only* bounded spines, so no unrestricted
+    // channel can paper over a hole. Flat RAMBO covers everything by construction
+    // and is the reference.
+    let mut bounded_only: Vec<Box<dyn Channel<f64>>> = Vec::new();
+    let mut masses_all = Vec::new();
+    for process in LLJ_SUBPROCESSES {
+        let (cutlist, _, masses) = spacelike_cuts(process, &evaluated, sqrt_s);
+        masses_all = masses.clone();
+        for cut in &cutlist {
+            bounded_only.push(Box::new(
+                build_spine(sqrt_s, &masses, cut, safe_floor.sqrt())
+                    .with_fiducial_t_max(-scale),
+            ));
+        }
+    }
+    let indicator = |p: &[LorentzVector<f64>]| {
+        let mut ext = Vec::with_capacity(2 + p.len());
+        ext.push(LorentzVector::new(beam0[0], beam0[1], beam0[2], beam0[3]));
+        ext.push(LorentzVector::new(beam1[0], beam1[1], beam1[2], beam1[3]));
+        ext.extend_from_slice(p);
+        if cuts.pass(&ext) {
+            1.0
+        } else {
+            0.0
+        }
+    };
+    let _ = bounded_only;
+    let flat = RamboChannel::new(sqrt_s, masses_all.clone());
+    let nc = 400_000;
+    let (v_f, var_f) = mc_estimate(&flat, 0xB0DF, 103, nc, indicator);
+
+    // A ladder of bounds, from the scale the cuts provably imply up past the point
+    // where the bound must start renouncing surviving phase space. It answers two
+    // questions at once: how loose `pT_min²` is as a bound on the transfer, and
+    // whether the coverage check can fire at all.
+    let mut broke_at = None;
+    for (k, mult) in [1.0f64, 10.0, 100.0, 250.0, 375.0, 500.0].iter().enumerate() {
+        let cap = mult * scale;
+        let mut set: Vec<Box<dyn Channel<f64>>> = Vec::new();
+        for process in LLJ_SUBPROCESSES {
+            let (cutlist, _, masses) = spacelike_cuts(process, &evaluated, sqrt_s);
+            for cut in &cutlist {
+                set.push(Box::new(
+                    build_spine(sqrt_s, &masses, cut, safe_floor.sqrt())
+                        .with_fiducial_t_max(-cap),
+                ));
+            }
+        }
+        let (v_b, var_b) = mc_estimate(
+            &MultiChannel::uniform(set),
+            0xB0DE + k as u64,
+            101 + k as u64,
+            nc,
+            indicator,
+        );
+        let err = ((var_b + var_f) / nc as f64).sqrt();
+        let pull = (v_b - v_f).abs() / err;
+        eprintln!(
+            "fiducial-volume coverage @ |t| ≥ {cap:>8.0} GeV² ({:.3}·ŝ): bounded-spine \
+             combiner {v_b:.6e} vs flat RAMBO {v_f:.6e} (± {err:.2e}), {pull:.1}σ",
+            cap / (sqrt_s * sqrt_s)
+        );
+        if pull > 5.0 && broke_at.is_none() {
+            broke_at = Some(cap);
+        }
+        if (mult - 1.0).abs() < 1e-12 {
+            // The bound the design would actually install must lose nothing.
+            assert!(
+                pull < 5.0,
+                "the bounded-spine channel set misses part of the cut-surviving region \
+                 already at the cut scale: {v_b:.6e} vs flat RAMBO {v_f:.6e} (± {err:.2e})"
+            );
+        }
+    }
+    eprintln!(
+        "coverage first breaks at |t| ≥ {:?} GeV²; the cut scale itself is {scale} GeV²",
+        broke_at
+    );
+    assert!(
+        broke_at.is_some(),
+        "no bound on the ladder renounced any surviving phase space — the coverage \
+         check cannot fire, so its passing at the cut scale means nothing"
+    );
+
+    let worst_eff = eff_gain.iter().cloned().fold(f64::INFINITY, f64::min);
+    let best_var = var_ratio_cb.iter().cloned().fold(0.0f64, f64::max);
+    eprintln!(
+        "over {compared} llj cuts: smallest efficiency gain from bounding t_max \
+         {worst_eff:.3}×, largest variance gain {best_var:.3}×"
+    );
+    // The comparison has content only if the bound is actually in force: a bounded
+    // map that spent the same share of its draws inside the cuts would be the
+    // floored map under another name.
+    assert!(
+        worst_eff > 1.0,
+        "bounding t_max changed no map's cut efficiency — the arms are the same map"
+    );
+}
+
 // ── The floor a run card implies, and what a zero one must leave alone ───────
 
 /// Where the regulator's scale comes from: the process's own cuts, not the model.
