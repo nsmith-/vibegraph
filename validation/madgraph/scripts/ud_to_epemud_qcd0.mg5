@@ -1,0 +1,69 @@
+# MadGraph5 batch script: u d > e+ e- u d at QCD=0, fixed scale, partonic beams.
+#
+# The multi-rung t-channel reference: the one banked run whose diagrams carry a
+# genuine ladder of spacelike lines, so a phase-space map that orders its rungs
+# wrongly has something to disagree with.
+#
+# Why this exact process:
+#   - Its 35 diagrams split 12 / 14 / 9 over one, two and three spacelike lines.
+#     Every rung count the ordered-chain decomposition has to handle is present in
+#     one subprocess, and the two- and three-rung diagrams are the majority. The
+#     three-rung ones are the multiperipheral topology where the e+ and the e-
+#     leave the chain at *different* vertices across a spacelike lepton line — the
+#     case where an ordering is least like a relabelling.
+#   - The rungs are asymmetric: the blobs a chain emits are a single jet, a single
+#     lepton and a lepton pair, and the spacelike poles are a mix of massless
+#     (photon, quark, lepton) and m_Z lines. A chain whose rungs were
+#     interchangeable would make any ordering test vacuous; these are not.
+#   - QCD=0 keeps the diagram set to the electroweak ladders and removes the
+#     strong coupling entirely, so nothing here waits on the kT clustering: with
+#     no alpha_s in the matrix element and no PDF on either beam, the scale
+#     prescription cannot reach the cross section at all.
+#
+# Why partonic (lpp = 0) rather than `p p > e+ e- j j QCD=0`:
+#   The hadronic spelling of the same physics decomposes into 112 non-empty
+#   subprocesses and 3024 diagrams, which this crate's flavour grouping turns into
+#   60 groups pooling 1608 sampling channels. A multichannel evaluates every
+#   channel's density at every point, so that is some sixty times the per-point
+#   cost of the pp_to_llj_fixed row (24 channels) on a final state needing more
+#   points, and MadGraph would have to integrate and store all 112 subprocesses.
+#   The one concrete flavour assignment carries the whole ladder spectrum at 35
+#   channels, which is what the reference exists to exercise. The flavour union
+#   and the (tau, y) convolution are already gated by the Drell-Yan and llj rows,
+#   so nothing is lost by fixing the initial state here.
+#
+# The run card follows the partonic precedent (uux_to_epemg) plus the fixed-scale
+# and LHAPDF lines of pp_to_llj_fixed:
+#
+#   - lpp1 = lpp2 = 0 with ebeam 250 each, so `launch` integrates sigma-hat at a
+#     fixed 500 GeV and the cross section is comparable point for point with this
+#     crate's fixed-beam path.
+#   - fixed_ren_scale / fixed_fac_scale1 / fixed_fac_scale2 = True at m_Z. With
+#     QCD=0 and no PDF none of the three can move the answer; they are set so the
+#     claim that this row is scale-independent is literal rather than inferred.
+#   - mmll = 50, for the reason pp_to_llj_fixed gives: it holds the run out of the
+#     low-m_ll region where the Drell-Yan comparison carries a standing
+#     few-percent discrepancy, so a cross section gated here does not inherit it.
+#   - use_syst False, as every other lpp = 0 run: the reweighting bookkeeping has
+#     no consumer on a partonic row.
+#
+# Everything else (ptj 20, ptl 10, etaj 5, etal 2.5, drll = drjl = 0.4) is left at
+# the defaults the llj cards use. ptj 20 is load-bearing twice over: it regulates
+# the t-channel singularity that would otherwise dominate sigma-hat, and it is the
+# scale the peripheral channels bound their momentum transfer by.
+generate u d > e+ e- u d QCD=0
+output ud_to_epemud_qcd0 -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set fixed_ren_scale True
+set fixed_fac_scale1 True
+set fixed_fac_scale2 True
+set scale 91.188
+set dsqrt_q2fact1 91.188
+set dsqrt_q2fact2 91.188
+set mmll 50
+set use_syst False
+done

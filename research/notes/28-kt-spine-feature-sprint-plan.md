@@ -1333,3 +1333,466 @@ So the factor moved into the phase-space *layer*, but not into the weight:
 **Consequence for C.** A flavour group's members are not constrained to share an
 outgoing multiset by anything in the grouping rule, so the factor is applied per
 *member* rather than per group. C needs no further work here beyond exercising it.
+
+## S2 — multi-rung spine design + ordering oracle spec
+
+A design session: no engine. What lands here is the binding shape of the ordered
+rung chain, the oracle S3 is judged by, the density contract the chain has to
+satisfy, the D3 decision with its measurement, and the D2 card. Two probes were
+written because two of the claims are measurements rather than readings —
+`spacelike_lines_of_a_diagram_nest_into_an_ordered_rung_chain` and
+`probe_fiducial_t_max_against_the_floored_pole_on_llj_cuts`, both in
+`vibegraph-lib/tests/diagram_channel.rs` — plus one experimental knob,
+`DiagramChannel::with_fiducial_t_max`, which no production caller reaches and which
+S3 owns productionising or deleting.
+
+### S2.1 The rung chain, derived from the `Prop` chain
+
+**The reading.** A spacelike line is one through which exactly one beam flows
+(`Prop::is_spacelike`, `vibegraph-lib/src/diagrams/diagram.rs:83-85`). Each such
+line cuts the externals in two, one side carrying beam `0` and the other beam `1`.
+For spacelike line `k` define
+
+```
+S_k = the outgoing-leg slots on beam 0's side of that cut
+```
+
+read exactly as `spine_partition` (`phasespace/diagram_channel.rs`) reads it today:
+the stored `momentum` sign-decorates the externals on one side, so only the nonzero
+pattern is used, and the side is complemented when the stored coefficients do not
+touch beam `0`. Nothing new is needed to obtain the `S_k`; what is new is the claim
+about their *structure*.
+
+**The claim.** For a tree diagram the `S_k` are **totally ordered by strict
+inclusion**, `S_1 ⊂ S_2 ⊂ … ⊂ S_r`, and no two are equal. The chain order is then
+`|S_k|`-sorted order, the blob emitted at rung `i` is
+
+```
+B_i = S_i \ S_{i-1}      (S_0 = ∅),        recoil = full \ S_r
+```
+
+and the running momentum transfer is `q_i = p_a − (p_{B_1} + … + p_{B_i})`, i.e.
+`q_i = p_a − Σ_{slot ∈ S_i} p_slot`, with `t_i = q_i²`. That is note 21's running
+`q_i` made constructive: the `S_k` *are* the prefixes.
+
+**Why it is a claim and not a definition.** Sorting by `|S_k|` agrees with sorting
+along the chain only if the sides nest; two incomparable sides would mean the
+spacelike lines are not a path, and two equal-sized sides would leave the order
+undetermined. Both are pinned by
+`spacelike_lines_of_a_diagram_nest_into_an_ordered_rung_chain`, which fails on
+either. Measured over `u d > e+ e- u d QCD=0`, `u u~ > e+ e- u u~ QCD=0`,
+`u u~ > u u~` and `u u~ > e+ e- g`: 89 diagrams, spacelike-line counts
+`{0: 17, 1: 33, 2: 22, 3: 17}`, **zero** violations. The test refuses to pass unless
+a three-rung ladder is present, so the nesting property cannot be satisfied
+vacuously. The same sweep was run in-session over the full `p p > e+ e- j j QCD=0`
+enumeration — 3024 diagrams, counts `{0: 624, 1: 1024, 2: 768, 3: 608}` — and also
+found zero violations; that sweep is not committed, since enumerating its 465
+subprocess sets on every test run buys nothing the four processes above do not.
+
+A three-rung chain it prints, on `u d > e+ e- u d QCD=0` with slots
+`[e+, e-, u, d]`: rung blobs `[[2], [0], [1]]`, recoil `[3]` — the multiperipheral
+topology where the `e+` and the `e-` leave the chain at *different* vertices across
+a spacelike lepton line. That is the shape a single-rung spine cannot express at
+all.
+
+**Cross-check S3 owes.** The `S_k` are read from the stored momentum routing. The
+same partition follows from an independent graph cut — remove the propagator, take
+connected components — which is the precedent note 21 set for `subsystem_mask`. S3
+derives the chain both ways and asserts they agree as sets, so a feyngraph routing
+change trips one derivation or the other.
+
+**Degrees of freedom.** With blobs `B_1 … B_r` of sizes `k_1 … k_r` and recoil
+`B_{r+1}` of size `k_{r+1}`, the chain consumes
+
+```
+2r                                        one t_i and one φ_i per rung
++ #{ i ≤ r : k_i ≥ 2 }                    each composite blob's own invariant s_i
++ #{ i ≤ r : |R_i| ≥ 2 }                  each running remainder's invariant ŝ_i
++ Σ_i (3k_i − 4) over composite blobs     each blob's internal decay tree
+```
+
+coordinates, where `R_i = B_{i+1} ∪ … ∪ B_{r+1}`. Checked: `r = 1`, blobs `{0,1}`
+and recoil `{2}` gives `2 + 1 + 0 + 2 = 5 = 3·3 − 4`, which is what `sample_spine`
+consumes today; `r = 2`, blobs `{2}`, `{0,1}`, recoil `{3}` gives
+`4 + 1 + 1 + 2 = 8 = 3·4 − 4`. S3 asserts `ndim() == 3·n_out − 4` for every derived
+chain, which is a real check once the count is non-trivial.
+
+**The recursion, and what it reuses.** Write `Q_0 = p_a + p_b` (invariant `ŝ`), and
+at rung `i` let the system `Q_{i-1}` (invariant `ŝ_{i-1}`) split into the blob `B_i`
+(invariant `s_i`) and the remaining system `Q_i = q_i + p_b` (invariant `ŝ_i`).
+Then rung `i` is *exactly* the existing peripheral 2-body step with
+
+```
+t_kinematics( ŝ_{i-1}, ma2 = t_{i-1}, mb2 = m_b², s1 = s_i, s2 = ŝ_i )
+```
+
+and `t_0 = m_a²`. The single-rung spine is `r = 1`. Note what changes: **for `i > 1`
+the incoming line is spacelike, so `ma2 < 0`.** `t_kinematics` is already
+algebraically fine there — `kallen(...).max(0).sqrt()` and
+`ea = (s + ma2 − mb2)/(2√s)` do not assume a timelike incoming leg — but
+`beam_momenta`, which takes *masses*, is not: S3 needs the `m²`-taking variant so a
+spacelike incoming line can be built (`e_a` below `|k|`, which is the point).
+
+**A consequence worth having in hand: where the collinear edge actually is.** With a
+massless spectator beam (`m_b² = 0`) and a massless emitted blob (`s_i = 0`) the
+transfer's upper edge works out to
+
+```
+t_max^(i) = t_{i-1} · ŝ_i / ŝ_{i-1}
+```
+
+— an exact identity under those two conditions, not an approximation, and **pinned
+against the production kinematics** by
+`a_spacelike_incoming_line_pushes_the_transfer_edge_off_the_pole`
+(`phasespace/diagram_channel.rs`), which also exercises the negative `ma2` an
+interior rung supplies. So:
+
+- **rung 1** has `t_0 = 0` and lands on `t_max = 0` — the collinear edge the
+  single-rung spine already meets, and D3's subject;
+- **interior rungs** are pushed strictly off it by the previous transfer, in
+  proportion to `t_{i-1}`;
+- the **last rung** is back on the edge whenever the recoil is a single massless leg
+  (`ŝ_r = 0`).
+
+The push-off is proportional to `t_{i-1}`, which is itself regulated rather than
+large, so this does *not* mean interior rungs need no regulator — it means the
+edge-degeneracy is a first-and-last-rung phenomenon and the interior ones are
+merely further from it. The same test keeps both routes back to the edge visible, so
+the formula is not read as "an interior rung is always safe". What S3 still owes is
+the *distribution*: a per-rung `t_min/t_max` dump on the D2 reference process, which
+says how small the push-off actually gets on real events.
+
+### S2.2 The types, and what the chain supersedes
+
+```rust
+struct SpineRung<F: Real> {
+    /// The final-state blob this rung emits: `B_i = S_i \ S_{i-1}`.
+    emitted: Node<F>,
+    /// The spacelike propagator's mass²; width zero by construction.
+    t_mass2: F,
+}
+
+struct Spine<F: Real> {
+    /// Ordered away from beam 0; `rungs[i]` emits against `q_i`.
+    rungs: Vec<SpineRung<F>>,
+    recoil: Node<F>,
+}
+```
+
+`ChannelTopology`, `Node`, `Branch`, `sample_branch` and `branch_jacobian` are
+untouched — blobs and the recoil hang off the chain through the existing timelike
+machinery exactly as `emitted`/`recoil` do today.
+
+- **Single-rung bit-identity is a hard requirement.** `rungs.len() == 1` must
+  reproduce today's `Spine { emitted, recoil, t_mass2 }` bit for bit on sampled
+  momenta, walk weights and densities, in the shape of
+  `a_zero_spacelike_floor_leaves_every_channel_bit_identical`. Every enforced σ row
+  that already runs peripheral channels depends on it.
+- **`t_channels()` stops being kinematic metadata.** It is a `props`-order list, so
+  its order carries no meaning; the kinematic driver becomes `rungs[i].t_mass2` in
+  chain order, and `spine_pole() -> Option<F>` is superseded by
+  `spine_poles() -> &[F]`. Keep the accessor for the diagrams that still fall back
+  to the all-timelike tree, and say in its doc that it is unordered.
+- **Anchor convention.** Beam `0`, matching `spine_partition`. Anchoring at beam `1`
+  reads the same ladder from the other end: it is a *different map* (a different
+  blob becomes the recoil), not a relabelling, and §S2.3's second control pins that.
+- **The multiset `{t_i}` is anchor-independent; the chain order is not.** `t_i` is
+  the square of a propagator momentum, the same invariant computed from either side
+  by momentum conservation. This is exactly why no invariant-level check —
+  `Vₙ`, σ, or a per-`t_i` histogram of the *volume* — can see a wrong ordering, and
+  why §S2.3 has to be a coverage test rather than an agreement test.
+- **The rotation is the new bug site.** Rung `i > 1` is built in the CM of `Q_{i-1}`
+  with `q_{i-1}` along `+z`; the existing single-rung code needs no rotation because
+  beam `0` is already along `+z` there. A chain does. A wrong rotation leaves the
+  drawn `t_i` and the `t_i` reconstructed from the final momenta disagreeing, which
+  is what `assert_valid`'s walk-weight-vs-`1/density` comparison
+  (`WALK_DENSITY_TOL = 1e-7`) already measures — it caught the unregulated spine at
+  `4e4` on the same measure. S3 additionally dumps the per-rung pair.
+
+### S2.3 The ordering firing test, and its negative control
+
+Note 21 deferred the multi-rung spine because `Vₙ` and σ are blind to a
+wrong-but-valid rung ordering. The test below is not blind to it, and the reason is
+stated before the mechanism: **a wrong ordering is not a wrong number, it is a wrong
+importance sampling.** Both orderings integrate `dΦ` correctly; only the right one
+concentrates its draws where the diagram's propagators peak. So the test is a
+coverage test on a peaked integrand, not an agreement test on a volume.
+
+Concretely, on the D2 reference process at fixed `√ŝ` with its run-card cuts, for a
+chain of `r ≥ 2`:
+
+**Probe integrand.** `f(p) = [Π_{i=1..r} 1/(m_i² − t_i)²] · BW(s_pair)`, with the
+`t_i` computed **in the test's own words** from the diagram's chain (the
+`S_i`-prefix definition of §S2.1), never asked of the channel. `BW` is the lepton
+pair's Z line shape. The cut indicator multiplies it, which is what makes the
+massless rungs integrable.
+
+**T-ORD-1 — per-rung coverage.** Draw `N = 400 000` points from the channel alone.
+For each rung `i`, bin the *raw* draws by `ln|t_i|` into 12 bins spanning
+`[|t|_cut, |t|_max]`. Every bin holds at least 500 draws. A rung that is not being
+importance-sampled starves its small-`|t_i|` bins.
+
+**T-ORD-2 — per-bin precision.** Over the same bins, the estimator of `∫f`
+restricted to each bin has relative error ≤ 10% at `N`.
+
+**T-ORD-3 — seed stability.** Five independent seeds; χ²/dof of the total `∫f` about
+its inverse-variance mean below 4, worst single-seed pull below 5. This is the guard
+a scalar cannot be: a map that misses a region reports a small integral *and* a
+small variance.
+
+**T-ORD-4 — volume neutrality (stated as ordering-blind).** The channel reproduces
+`V_n` against flat RAMBO within MC error. It checks the Jacobian, not the ordering,
+and is recorded here so nobody later mistakes it for confirmation.
+
+**NEG-A — the swapped chain (the load-bearing control).** Build the *same* channel
+with `rungs` reversed and everything else identical (S3 exposes a test-only
+`with_rung_order`), and assert that **at least one of T-ORD-1..3 fails for it**,
+printing the measured margin. `assert!(swapped_fails, "the ordering test cannot
+fire")`. Without this assertion the whole group is the vacuous-check failure. Note
+what a swap of a 2-rung chain actually changes: `t_2 = (p_a − p_{B_1} − p_{B_2})²`
+is *unchanged* (it is `p_a` minus every emitted blob), and only `t_1` moves, from
+`(p_a − p_{B_1})²` to `(p_a − p_{B_2})²` — which is not a propagator of the diagram
+at all. So the firing is expected in rung 1's projection specifically, and S3 should
+assert it there rather than anywhere.
+
+**NEG-B — the anchor flip.** Build the chain anchored at beam `1` and assert its
+density differs from the beam-`0` chain's by more than rounding on a majority of
+points drawn from the latter. Cheap, deterministic, and it pins that the two
+conventions are genuinely different maps.
+
+**NEG-C — the maps are distinguishable at all (the precondition).** Generate points
+from the correctly-ordered channel and evaluate the swapped channel's `density` on
+them; require a relative gap above `1e-6` on more than half. If the two densities
+coincided, the ordering question would be moot *and* T-ORD would have no content —
+and that is not hypothetical: S1 found all four `g g > g g` channels collapsing onto
+a common map at spacelike floor zero (note 27 §B3.2's finding made sharp). NEG-C is
+the check that the same collapse has not silently happened here. It must run at the
+floor a real run gives the channels, not at zero, for exactly the reason S1's
+permutation-closure control had to.
+
+**What this test provably cannot detect.**
+
+- **A symmetric chain.** If two rungs carry the same pole mass *and* kinematically
+  interchangeable blobs, the swapped map is the same map and the test has no
+  content. NEG-C is what refuses to report a pass in that case; D2's process is
+  chosen so it does not arise (blobs are a jet, a lepton and a lepton pair; poles
+  mix massless and `m_Z`).
+- **Anything invisible to a real positive density** — a global phase, an amplitude
+  sign, a colour-flow index. The map is a density; it sees none of that.
+- **An error common to both orderings** — a wrong per-rung Jacobian factor, a wrong
+  anchor beam applied to every rung, a misread blob content. Those are volume and
+  reciprocity errors; T-ORD-4 and the walk-vs-density comparison own them, and
+  T-ORD would pass with them present.
+- **A wrong ordering whose coverage happens to survive.** The test fires on
+  starvation, so at a `√ŝ` where all the `t_i` windows overlap heavily a wrong
+  ordering could stay adequate. The test is therefore specified at a *stated* `√ŝ`
+  and cut configuration, and NEG-A's measured margin is printed and asserted rather
+  than assumed to be large.
+- **Whether the chain belongs to *this* diagram.** T-ORD only sees that the sampled
+  invariants are the ones the probe peaks in. That the chain comes from this
+  diagram's `Prop` chain is §S2.1's structural test and the graph-cut cross-check,
+  not this one.
+
+### S2.4 The foreign-config density contract (L4), extended to rung chains
+
+The L4 contract is that a [`Channel`] reports the density it assigns to an
+*arbitrary* on-shell, momentum-conserving configuration, not only to points it
+generated, because a combiner weights every point by `αⱼ / Σₖ αₖ gₖ` gathered from
+every channel at the *same* configuration
+(`phasespace/channel.rs`, `Channel::density`). Note 21 discharged it for one rung by
+recomputing `t` as the frame-independent `(beams[0] − p_emitted)²`. For a chain:
+
+- **(C1) Reciprocity.** At any point the channel itself generated, `density` is the
+  exact reciprocal of the walk-accumulated weight, to rounding, for every rung
+  count. The two are separate computations — the walk multiplies the invariants it
+  drew, `density` rebuilds them from the momenta — so their agreement is a real
+  check. `WALK_DENSITY_TOL = 1e-7` is the existing bound; an unregulated single-rung
+  spine reaches `4e4` on the same measure.
+- **(C2) Domain totality — the sharpest new statement.** The density must be
+  defined, strictly positive and finite at **every** on-shell momentum-conserving
+  configuration at the channel's `√ŝ`, *including one that does not look like this
+  chain's ordering*. A configuration whose `t_2` is smaller than its `t_1`, or whose
+  blobs are nowhere near the chain's own peaks, is a perfectly ordinary point that
+  another channel drew. **The rung order is a property of the map, not a constraint
+  on the configuration**, and a chain that refused such a point — or returned zero,
+  or `NaN` — would bias every other channel's estimate through the shared `Σₖ αₖ gₖ`.
+  This is the failure mode a chain makes newly available, and S3 pins it by
+  evaluating every chain's density at points drawn from every *other* channel of the
+  D2 process and requiring finite positivity throughout.
+- **(C3) Frame independence.** Every quantity the density reads is an invariant
+  built from the configuration and the stored beams: `t_i = (p_a − Σ_{S_i} p)²`, the
+  blob invariants `s_i`, the running remainder invariants `ŝ_i`. Nothing is read
+  from a frame the channel assumed, so no rotation or boost the sampler performed
+  can leak into the density.
+- **(C4) Window totality.** The per-rung `[t_min, t_max]` and the per-invariant
+  `[lo, hi]` windows are the *kinematic* limits of the chain's own decomposition, so
+  any physical configuration satisfies them and no genuine zero-density region
+  arises. The only way to create one is to restrict the map deliberately — which is
+  precisely what D3's fiducial bound does, hence (C5).
+- **(C5) Support honesty.** A channel that deliberately narrows its support must
+  report density **exactly zero** outside it, never a positive number: the multichannel
+  estimator is unbiased only when each `gⱼ` is the true pushforward density of
+  channel `j` everywhere. And the channel *set* must then still cover, between its
+  members, everywhere the integrand is non-zero. Both halves are measured in §S2.5,
+  not assumed. In the experimental knob this is implemented as `spine_jacobian`
+  returning `+∞` outside the restricted window, so `density = 1/jac` is `0`.
+- **(C6) Degenerate configurations return zero, not `NaN`.** A lightlike `q_i`, a
+  blob at threshold, a vanishing `k`: the existing `peripheral_factor` guard
+  (`k > 0 && √s > 0` else zero) is the precedent and generalises per rung.
+
+### S2.5 D3 — the massless-t-channel cut, decided by measurement
+
+**The question.** With a massless beam and a massless emitted blob, rung 1's upper
+edge sits analytically on the pole (`t_max = m² = 0`) and is computed as a cancelling
+difference, so the propagator map either switches on over a window reaching
+`|t| ~ 1e-11` or falls back flat, on rounding noise
+(`a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise`). Production
+avoids that by **flooring the pole** at the scale the cuts imply,
+`t_mass² ← max(m², Cuts::spacelike_floor())` — the largest single-leg `pT_min`
+squared (`cuts.rs`), 400 GeV² on the banked llj card. The alternative note 21 left
+open is to keep the bare pole and **bound the window** instead, `t_max ← −pT_min²`.
+
+**What was measured.** `probe_fiducial_t_max_against_the_floored_pole_on_llj_cuts`,
+on the six single-spacelike-line cuts of `u u~ > e+ e- g` and `g u > e+ e- u` at
+`√ŝ = 500` with the default run card's cuts (`ptj 20 → 400 GeV²`), integrand
+`cut_pass · 1/[((s_ll − m_Z²)² + (m_Z Γ_Z)²) · t²]` — the spacelike propagator left
+**massless**, which is the singular thing the question is about. Five seeds,
+200 000 points each, per-point estimator variance reported. Three maps: the
+all-timelike channel the derivation builds when no floor is supplied (which is what
+"the map falls back flat" means concretely past two outgoing legs — no spine is
+built at all), the floored pole, and the bounded window. The bounded arm keeps a
+token pole at `400/1000 = 0.4 GeV²`, three orders below the bound and seven above
+the cancellation noise, so a configuration whose window the bound cannot narrow
+still gets a well-posed map instead of the unregulated one.
+
+| cut | var(all-timelike) / var(floored) | var(floored) / var(bounded) | cut efficiency floored → bounded |
+|---|---|---|---|
+| `u u~` 0 | 38.11× | 1.665× | 0.3843 → 0.4197 (1.09×) |
+| `u u~` 1 | 39.07× | 1.833× | 0.7610 → 0.8381 (1.10×) |
+| `u u~` 2 | 26.89× | 1.689× | 0.3880 → 0.4238 (1.09×) |
+| `u u~` 3 | 41.74× | 1.834× | 0.7617 → 0.8378 (1.10×) |
+| `g u` 0 | 38.11× | 1.665× | 0.3843 → 0.4197 (1.09×) |
+| `g u` 1 | 39.07× | 1.833× | 0.7610 → 0.8381 (1.10×) |
+
+(The `g u` rows reproduce the `u u~` ones exactly: the spine is built from masks,
+masses and the pair's pole, which coincide between the two subprocesses for those
+cuts. Four distinct configurations, not six.)
+
+Integrals agree across all three arms within combined error on every cut — e.g.
+`u u~` cut 1: all-timelike `2.324e-10 ± 3.7e-12`, floored `2.4074e-10 ± 5.9e-13`,
+bounded `2.4048e-10 ± 4.4e-13` — so nothing is being bought with a bias.
+
+**Union coverage, and the control that makes it mean something.** A channel set
+whose members each renounce part of phase space is unbiased only if between them
+they still reach everywhere the integrand lives. Measured on the sharpest available
+integrand — the cut indicator itself — over a combiner built from **only** bounded
+spines, against flat RAMBO (400 000 points):
+
+| bound | as a fraction of `ŝ` | bounded-spine combiner | flat RAMBO | pull |
+|---|---|---|---|---|
+| 400 GeV² (the cut scale) | 0.002 | 2.843149e5 | 2.827958e5 | 0.9σ |
+| 4 000 | 0.016 | 2.831375e5 | " | 0.2σ |
+| 40 000 | 0.160 | 2.756865e5 | " | 4.6σ |
+| 100 000 | 0.400 | 2.348088e5 | " | 34.1σ |
+| 150 000 | 0.600 | 1.899247e5 | " | 49.9σ |
+| 200 000 | 0.800 | 2.011633e5 | " | 33.9σ |
+
+The check fires, monotonically and in the right direction (a bound that renounces
+surviving phase space *under*-estimates), first breaking at 100× the cut scale. So
+the coverage pass at 400 GeV² is not vacuous, and the bound the design would install
+carries an order of magnitude of margin.
+
+**A side finding worth recording.** `Cuts::spacelike_floor() = pT_min²` is a
+*provable* bound but a very loose one: on this configuration the surviving region
+actually sits above `|t| ≈ 4 000–40 000 GeV²`, ten to a hundred times higher.
+Central leptons (`etal 2.5`) force the jet to recoil at a large angle, which the
+per-leg `pT` bound knows nothing about. A tighter fiducial bound would buy more than
+the 1.7× measured here — but deriving one from general cuts is real work and is
+**not** in this sprint; the conservative bound is what §S2.5's decision installs.
+
+**Decision (D3).** **Bound `t_max` at the fiducial scale where one exists; keep a
+pole floor as the fallback where none does.** Concretely, for a rung whose window
+reaches the collinear edge:
+
+- when `Cuts::spacelike_floor() > 0`, set that rung's `t_max ← −floor` and leave the
+  pole at `max(m², ε·floor)` with `ε` small (`1e-3` measured), so the draw is the
+  bare `1/|t|` over the fiducial region and a configuration the bound cannot narrow
+  still has a well-posed map;
+- when it is `0` — a partonic run with no active `pT` cut, and every fixed-beam
+  `2 → 2` row — **nothing changes**: there is no fiducial scale to bound with, so
+  the flat fallback stands and the existing bit-for-bit behaviour is preserved. D3's
+  answer is scoped to cut-regulated processes and does not touch any enforced
+  partonic σ row.
+
+Rationale in one line: 1.67×–1.83× variance at equal cost, no measurable bias, and a
+10× coverage margin — against the standing hazard that a narrowed support is a new
+way to be wrong, which (C5) and the ladder above are what keep visible.
+
+**What S3 owns.** Productionising this means threading the per-rung bound from
+`Cuts` into `DiagramChannel` construction (`proton.rs` and `hadronic.rs` are the two
+call sites of `from_diagram_regulated`) and generalising it per rung — the bound
+applies to whichever rungs reach the edge, which by §S2.1 is rung 1 and a last rung
+with a single massless recoil leg. `with_fiducial_t_max` is a whole-channel knob and
+is *not* the production shape; it exists to have made this measurement.
+
+### S2.6 D2 — the spine reference process and its card
+
+**Deviation from the approved candidate, with the numbers.** §6 approved
+`p p > e+ e- j j` at QCD=0. Enumerated here, that process is **112 non-empty
+subprocesses and 3024 diagrams**, which `derive_flavor_groups` turns into **60
+flavour groups pooling 1608 sampling channels**. A multichannel evaluates every
+channel's density at every point, so that is some 67× the per-point cost of the
+`pp_to_llj_fixed` row (24 channels) on a four-body final state needing more points —
+and MadGraph would have to integrate and store all 112 subprocesses, where
+`pp_to_llj_fixed` alone is 151 MB and would ride into `refdata-4` at Z.
+
+The card written instead is the **one concrete flavour assignment**,
+`u d > e+ e- u d QCD=0` at fixed partonic beams —
+`validation/madgraph/scripts/ud_to_epemud_qcd0.mg5`. Measured: **1 subprocess, 35
+diagrams, 35 channels**, splitting `12 / 14 / 9` over one, two and three spacelike
+lines. It carries the whole ladder spectrum the design has to handle — including the
+three-rung multiperipheral topology — at a channel count comparable to the llj row,
+and its rungs are asymmetric (blobs are a jet, a lepton and a lepton pair; poles mix
+massless photon/quark/lepton lines with `m_Z`), which is the precondition §S2.3's
+NEG-C insists on. `QCD=0` removes the strong coupling outright and `lpp = 0` removes
+both PDFs, so Track S cannot wait on Track K by construction rather than by run-card
+setting. The flavour union and the `(τ, y)` convolution are already gated by the
+Drell–Yan and llj rows, so fixing the initial state costs the sprint no coverage.
+
+The card follows the `uux_to_epemg` partonic precedent plus `pp_to_llj_fixed`'s
+fixed-scale lines: `lpp1 = lpp2 = 0`, `ebeam 250` each (`√ŝ = 500`, the energy the
+D3 measurement was made at), all three fixed-scale switches on at `m_Z`, `mmll = 50`
+for the reason `pp_to_llj_fixed` gives, `use_syst False` as every `lpp = 0` run, and
+the default `ptj 20 / ptl 10 / etaj 5 / etal 2.5 / drll = drjl = 0.4` left alone.
+`ptj 20` is load-bearing twice: it regulates the t-channel singularity that would
+otherwise dominate `σ̂`, and it is the scale §S2.5's bound uses.
+
+**If the manager wants the proton path exercised**, the middle option is
+`p p > e+ e- u u~ QCD=0`: 4 non-empty subprocesses, 131 diagrams, 4 groups, 131
+channels, rung counts `{0: 64, 1: 44, 2: 14, 3: 9}`. Five and a half times the llj
+row rather than sixty-seven, and still a real `p p` run — at the cost of half its
+diagrams having no spacelike line at all. It is not what the card proposes, but it
+is the one variant worth a second thought before Sb runs.
+
+### S2.7 For S3 and the sprint manager
+
+1. **The chain hypothesis is pinned, not assumed** —
+   `spacelike_lines_of_a_diagram_nest_into_an_ordered_rung_chain`, zero violations
+   over 89 surveyed diagrams and over the full 3024-diagram `p p > e+ e- j j QCD=0`
+   set, with a non-vacuity guard requiring a three-rung ladder to be present.
+2. **Ladders reach three rungs, not two.** `u d > e+ e- u d QCD=0` gives `12/14/9`
+   over one/two/three spacelike lines. A design that only handles `r = 2` covers a
+   quarter of that process's diagrams and none of its multiperipheral ones.
+3. **The interior rungs' incoming line is spacelike.** `t_kinematics` already
+   handles `ma2 < 0`; `beam_momenta` does not, and needs an `m²`-taking twin.
+4. **The rotation between rungs is the new bug site**, and the existing
+   walk-weight-vs-`1/density` comparison is already the instrument that sees it.
+5. **D3 is decided and scoped**: bound `t_max` where a fiducial scale exists, change
+   nothing where it does not, so no enforced partonic row moves.
+6. **`DiagramChannel::with_fiducial_t_max` is experimental and unwired.** No caller
+   in the crate reaches it. S3 either productionises the per-rung form or deletes
+   it; leaving it as a whole-channel knob is not an option, because a chain needs
+   the bound per rung.
+7. **Follow-up worth filing, not for this sprint:** a tighter fiducial bound on
+   `|t|` derived from the full cut set rather than from `pT_min²` alone. The measured
+   gap is one to two orders of magnitude, and the variance win scales with it.
