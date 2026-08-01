@@ -3,11 +3,12 @@
 //!
 //! A selection is not a sampling channel. The cross section is computed with
 //! helicities summed and colours contracted; once a phase-space point has been
-//! accepted, one helicity combination and one colour flow are drawn from the
-//! per-combination `|M_hel|²` and per-flow `JAMP2` diagonals (MadGraph's
-//! `SELECT_HEL` and `SELECT_COLOR`) purely to fill in the event record. The draw
-//! reads an accumulator that already exists, enters no integrand, and moves no
-//! cross section.
+//! accepted, one helicity combination, one integration configuration and one
+//! colour flow are drawn from the per-combination `|M_hel|²`, per-configuration
+//! `AMP2` and per-flow `JAMP2` diagonals (MadGraph's `SELECT_HEL` and
+//! `SELECT_COLOR`) purely to fill in the event record. The draw reads an
+//! accumulator that already exists, enters no integrand, and moves no cross
+//! section.
 //!
 //! Both draws are the same categorical step over non-negative weights, defined
 //! once here.

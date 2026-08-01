@@ -131,6 +131,20 @@ pub struct AmplitudesRow {
     /// `eval_jamp2` against Σ_hel |MadGraph JAMP|², the weight the colour-flow
     /// draw uses.
     pub jamp2: f64,
+    /// The number of integration configurations, checked against the `AMP2()`
+    /// accumulators MadGraph's own `matrix1.f` writes.
+    pub n_configs: usize,
+    /// Largest element-wise deviation of a configuration amplitude from
+    /// MadGraph's `AMP()` under that configuration's own unit phase.
+    pub per_config: f64,
+    /// `eval_amp2` against Σ_hel |MadGraph AMP|² per configuration, the weight
+    /// the configuration draw uses. `null` where MadGraph's own export merges
+    /// configurations and the two groupings do not align.
+    pub amp2: Option<f64>,
+    /// How far helicity pruning moves `AMP2`, relative to the largest
+    /// configuration at the point. Unlike |M|² this is not protected by the
+    /// pruning threshold, so it is measured every run.
+    pub amp2_pruned: f64,
     /// Whether the per-helicity × per-flow comparison had to be weakened to its
     /// two projections. The manifest states this per row where the question was
     /// asked; this is the measurement that claim is checked against.
@@ -157,6 +171,10 @@ impl AmplitudesRow {
             per_diagram: None,
             per_flow: 0.0,
             jamp2: 0.0,
+            n_configs: 0,
+            per_config: 0.0,
+            amp2: None,
+            amp2_pruned: 0.0,
             factorized: false,
             note: None,
         }

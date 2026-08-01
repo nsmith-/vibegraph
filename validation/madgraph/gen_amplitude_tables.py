@@ -178,6 +178,50 @@ def read_jamp_coefficients(key, ngraphs):
     return coeffs
 
 
+def read_amp2_groups(key):
+    """The AMP indices each `AMP2(k)` accumulator sums, in MadGraph's config order.
+
+    `AMP2` is the per-integration-configuration squared amplitude MadEvent's
+    single-diagram enhancement weights a channel by, and — through
+    `SELECT_COLOR`'s `ICOLAMP(iflow, iconfig, iproc)` mask — the distribution an
+    event's colour flow is drawn conditional on. Which diagrams get one is the
+    whole content of `get_amp2_lines` (`madgraph/iolibs/export_v4.py`): a diagram
+    with a vertex wider than the narrowest diagram's widest vertex — a four-point
+    contact — gets no accumulator, no configuration and no `ICOLAMP` column.
+
+    Two statement forms appear, and they are not the same sum:
+      `AMP2(k)=AMP2(k)+AMP(i)*DCONJG(AMP(i))+...`  one diagram's amplitudes,
+                                                   squared separately and added;
+      `AMP2(k)=AMP2(k)+(AMP(i)+AMP(j))*DCONJG(...)` several diagrams of one
+                                                   configuration, added first.
+    Anything else is a third form this parser has not seen and must not guess at,
+    so it asserts rather than falling through.
+
+    Returns 0-based AMP indices, one list per configuration.
+    """
+    with open(matrix_file(key)) as f:
+        src = join_continuations(f.read())
+    groups = []
+    for stmt in re.findall(r"AMP2\(\d+\)=AMP2\(\d+\)\+(.*)", src):
+        rhs = stmt.strip().replace(" ", "")
+        if rhs.startswith("("):
+            coherent = rhs[1 : rhs.index(")*")]
+            indices = [int(i) for i in re.findall(r"AMP\((\d+)\)", coherent)]
+            rebuilt = "(" + "+".join(f"AMP({i})" for i in indices) + ")"
+            rebuilt = f"{rebuilt}*DCONJG{rebuilt}"
+        else:
+            indices = [
+                int(i) for i in re.findall(r"AMP\((\d+)\)\*DCONJG\(AMP\(\1\)\)", rhs)
+            ]
+            rebuilt = "+".join(f"AMP({i})*DCONJG(AMP({i}))" for i in indices)
+        assert rebuilt.upper() == rhs.upper(), (
+            f"{key}: unrecognised AMP2 statement '{rhs}' (parsed back as '{rebuilt}')"
+        )
+        groups.append([i - 1 for i in indices])
+    assert groups, f"{key}: no AMP2 accumulator lines in {matrix_file(key)}"
+    return groups
+
+
 def helicity_combos(key, n_ext):
     """MadGraph's own NHEL table, in its own row order.
 
@@ -390,11 +434,10 @@ def evaluate(key, row, proc):
         key, proc, masses, N_EVENT_POINTS
     )
 
+    amp2_groups = read_amp2_groups(key)
+
     banked = []
-    # Only single-flow processes get a per-diagram table: for a multi-flow
-    # process a diagram root is not a scalar, and the corresponding fine-grained
-    # object is JAMP(1:NCOLOR), which is banked for every process.
-    with_amps = ncolor == 1 and ngraphs <= MAX_DIAGRAMS_FOR_AMP_TABLE
+    with_amps = ngraphs <= MAX_DIAGRAMS_FOR_AMP_TABLE
     for label, momenta_list, m2_list in (
         ("event", event_points, [None] * len(event_points)),
         ("grid", [m for m, _ in grid_points], [v for _, v in grid_points]),
@@ -422,6 +465,7 @@ def evaluate(key, row, proc):
         "jamp_coefficients": (
             [[c.real, c.imag] for c in coefficients] if coefficients else None
         ),
+        "amp2_groups": amp2_groups,
         "helicities": combos,
         "param_card": open(card).read().splitlines(),
         "grid_source": f"{row.grid_key}_amplitude.csv",
@@ -430,9 +474,6 @@ def evaluate(key, row, proc):
         "amp_table_note": (
             None
             if with_amps
-            else "a diagram root is not a scalar for a multi-flow process; "
-            "JAMP(1:NCOLOR) is the fine-grained object"
-            if ncolor > 1
             else f"{ngraphs} diagrams over {len(combos)} helicity combinations: "
             "only the per-flow JAMPs are banked"
         ),

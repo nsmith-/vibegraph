@@ -463,9 +463,10 @@ fn generate_and_check(row: &Row) {
             continue;
         };
         integ.event_in_channel(point.channel, &point.u, &mut momenta);
-        let Some(selection) =
-            integ.select_event(&momenta, [rng.random(), rng.random(), rng.random()])
-        else {
+        let Some(selection) = integ.select_event(
+            &momenta,
+            [rng.random(), rng.random(), rng.random(), rng.random()],
+        ) else {
             panic!("an accepted point carries weight, so its labels are defined");
         };
         let externals: Vec<[f64; 4]> = integ

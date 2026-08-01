@@ -402,19 +402,14 @@ fn generated_proton_events_agree_with_madgraphs_banked_ones() {
 /// carry the kinematics, a gluon-initiated group, and the flavour draw spread
 /// over three groups of which two are mirrored.
 ///
-/// **Informational on the colour column.** Everything else agrees — kinematics at
-/// KS p `9.7e-3` to `1.8e-1`, helicities at chi-squared p `0.57` to `0.78`, and
-/// the flavour-group frequencies at p `0.31` to `0.46`, over three seeds — but
-/// the realised `ICOLUP` frequencies do not: chi-squared `23` to `31` on five
-/// degrees of freedom, p `1.0e-5` to `3.0e-4`, seed-stable. The excess is in the
-/// two sub-percent flows, where MadGraph writes `0.07%` and `0.08%` of its events
-/// against our `0.23%` and `0.25%`; the two dominant flows agree to about a
-/// percent of themselves. That is the shape of a different colour-selection
-/// *rule* rather than different numbers, and the same shape the `uux_to_uux` row
-/// carries: ours draws the flow `∝ JAMP2` where MadEvent's `SELECT_COLOR` is
-/// conditioned on the integration channel's own diagram. The floor this row's
-/// integration now stands on cannot reach the colour draw, and its cross section
-/// agrees at `−0.01%`, so this is not that.
+/// This row is the sharper check on the colour draw: the s-channel
+/// gluon-splitting configuration admits *both* leading-colour flows, so the
+/// realised `ICOLUP` frequencies exercise the per-configuration `AMP2` weights
+/// themselves and not merely the `ICOLAMP` mask — the two sub-percent flows
+/// land at MadGraph's `0.07%`/`0.08%` only if the configuration draw carries
+/// the right shares. Chi-squared over five degrees of freedom clears the floor
+/// on every seed, alongside the kinematic KS, helicity and flavour-group
+/// columns.
 #[test]
 fn generated_b_quark_events_agree_with_madgraphs_banked_ones() {
     check_row(&Row {
@@ -426,7 +421,7 @@ fn generated_b_quark_events_agree_with_madgraphs_banked_ones() {
         run_card: None,
         neval: NEVAL,
         niter: NITER,
-        mode: "info",
+        mode: "gate",
     });
 }
 
