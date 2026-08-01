@@ -51,16 +51,24 @@
 //! # Regulating the spacelike pole
 //!
 //! With a *massless* exchanged line and a massless subsystem on one side, the
-//! transfer's upper edge sits analytically on the pole (`t_max = m² = 0`) but is
-//! computed as a cancelling difference of two large quantities built from different
-//! expressions, so it lands on either side of zero at the rounding scale. A draw
-//! that then switches the propagator map on reaches `|t| ~ 1e-11` while the density
-//! recomputes `t` from the momenta with a cancellation error of the same size:
-//! sampling density and weighting density describe different maps, and the
-//! estimator is *biased*, not merely noisy. In a `2 → 2` final state both
-//! invariants are fixed constants and the cancellation is exact, so the edge is a
-//! hard zero and the flat fallback fires deterministically; the degeneracy needs a
-//! *drawn* invariant on one side, which first appears at three outgoing legs.
+//! transfer's upper edge sits analytically on the pole, `t_max = m² = 0`, and is
+//! computed as a cancelling difference. Whether the arithmetic reproduces the zero
+//! decides whether the propagator map switches on or the draw falls back flat, so
+//! the conditioning of that difference is a physics-level question, not a cosmetic
+//! one: a map that switches on at `|t| ~ 1e-11` while the density recomputes `t`
+//! from the momenta with a cancellation error of the same size is sampling from one
+//! density and weighting by another, and the estimator is *biased*, not merely
+//! noisy.
+//!
+//! Two things keep the edge exact. The Källén function is evaluated in its grouped
+//! form, which cancels once rather than against terms of order `ŝ²` (see
+//! [`kallen`]); and each blob is boosted out of its own rest frame with `γ = E/√s`
+//! rather than from `β` (see [`boost_from_rest`]), so a subsystem's daughters sum
+//! back to it. Together those pin the edge at exactly zero whenever the emitted
+//! subsystem's invariant is *fixed* — a single on-shell leg — and the flat fallback
+//! then fires deterministically. The residual case is a **composite emitted
+//! subsystem**, whose drawn invariant cancels against `ŝ` in the edge and puts it on
+//! either side of zero at the rounding scale.
 //!
 //! [`DiagramChannel::from_diagram_regulated`] therefore takes the **fiducial
 //! scale** the process's own transverse-momentum cuts imply and regulates each rung
@@ -1010,9 +1018,26 @@ fn spine_chain<F: Real>(
 
 // ── Sampling & Jacobian ──────────────────────────────────────────────────────
 
-/// Källén function `λ(a,b,c) = a²+b²+c²−2(ab+bc+ca)`.
+/// Källén function, evaluated as `(a−b−c)² − 4bc` rather than as the expanded
+/// `a²+b²+c²−2(ab+bc+ca)`.
+///
+/// The expanded form adds and subtracts terms of order `a²` to reach a result that
+/// can be many orders smaller — a soft emission leaves `λ(ŝ, 0, ŝ_rest)` at `10` out
+/// of terms of order `10¹⁰`, so the answer carries only a few correct digits, and a
+/// one-ulp change in `ŝ_rest` moves `√λ` by `1e-6`. That is not merely inaccurate:
+/// the sampler's walk and the density evaluate it at inputs that differ in the last
+/// ulp (one drew the invariant, the other rebuilt it from momenta), so an
+/// ill-conditioned `λ` makes the two describe measurably different maps. The
+/// grouped form cancels once, at `a−b−c`, and holds the same configuration to
+/// `1e-11`.
+///
+/// It is not unconditionally stable: at the two-body threshold `(a−b−c)²` and `4bc`
+/// approach each other and cancel in turn. That regime is where `λ → 0` and the
+/// LIPS factor it feeds vanishes with it, so the error rides a weight going to zero.
 fn kallen<F: Real>(a: F, b: F, c: F) -> F {
-    a * a + b * b + c * c - (F::one() + F::one()) * (a * b + b * c + c * a)
+    let four = F::from(4).expect("4 fits the scalar field");
+    let d = a - b - c;
+    d * d - four * b * c
 }
 
 /// CM momentum magnitude of a 2-body split of invariant `s` into masses² `sl`,`sr`.
@@ -1030,13 +1055,27 @@ fn r2_factor<F: Real>(s: F, sqrt_s: F, sl: F, sr: F) -> F {
     }
 }
 
-/// Boost a rest-frame vector into the CM frame of a system with lab momentum
-/// `p_lab`, guarding the `β = p⃗/E` division against a degenerate (`E → 0` or
-/// numerically superluminal) subsystem — where the vector being boosted is already
-/// zero, so no boost is needed.
-fn safe_boost<F: Real>(v: LorentzVector<F>, p_lab: LorentzVector<F>) -> LorentzVector<F> {
+/// Boost a vector out of the rest frame of a system whose lab momentum is `p_lab`
+/// and whose invariant mass² is `s`.
+///
+/// The Lorentz factor is taken as `γ = E/√s`, not from `1/√(1−β²)`. The latter
+/// forms `1 − |p⃗|²/E²`, which retains only the digits by which the system is off
+/// its own light cone: a low-mass subsystem carried at `γ ~ 10³` — a lepton pair
+/// drawn near the bottom of its invariant range — loses ten of them, and its
+/// daughters then fail to sum back to it at the `1e-11` level, which propagates
+/// into every invariant a density rebuilds downstream. With `γ = E/√s` the
+/// rest-frame total `(√s, 0⃗)` maps back onto `p_lab` identically instead.
+///
+/// A degenerate system (`E → 0`, `s → 0`, or numerically superluminal) is left
+/// unboosted: it sits at the phase-space boundary where the weight already
+/// vanishes, so it is enough to keep the momenta finite.
+fn boost_from_rest<F: Real>(
+    v: LorentzVector<F>,
+    p_lab: LorentzVector<F>,
+    s: F,
+) -> LorentzVector<F> {
     let e = p_lab.e();
-    if e <= F::zero() {
+    if !(e > F::zero()) || !(s > F::zero()) {
         return v;
     }
     let beta = [p_lab.px() / e, p_lab.py() / e, p_lab.pz() / e];
@@ -1044,7 +1083,25 @@ fn safe_boost<F: Real>(v: LorentzVector<F>, p_lab: LorentzVector<F>) -> LorentzV
     if b2 >= F::one() {
         return v;
     }
-    v.boost(beta)
+    let gamma = e / s.sqrt();
+    if !(gamma >= F::one()) {
+        return v;
+    }
+    let bp = beta[0] * v.px() + beta[1] * v.py() + beta[2] * v.pz();
+    let coef = gamma * gamma / (gamma + F::one()) * bp + gamma * v.e();
+    LorentzVector::new(
+        gamma * (v.e() + bp),
+        v.px() + coef * beta[0],
+        v.py() + coef * beta[1],
+        v.pz() + coef * beta[2],
+    )
+}
+
+/// [`boost_from_rest`] inverted: a lab-frame vector into the rest frame of a system
+/// with lab momentum `p_lab` and invariant mass² `s`.
+fn boost_to_rest<F: Real>(v: LorentzVector<F>, p_lab: LorentzVector<F>, s: F) -> LorentzVector<F> {
+    let reflected = LorentzVector::new(p_lab.e(), -p_lab.px(), -p_lab.py(), -p_lab.pz());
+    boost_from_rest(v, reflected, s)
 }
 
 /// The Breit–Wigner scale `(m², mΓ)` a resonance imposes on its invariant draw,
@@ -1260,8 +1317,8 @@ fn sample_branch<F: Real>(
     let pl_rest = LorentzVector::new(e_l, pstar * dx, pstar * dy, pstar * dz);
     let pr_rest = LorentzVector::new(e_r, -pstar * dx, -pstar * dy, -pstar * dz);
 
-    let pl = safe_boost(pl_rest, p_lab);
-    let pr = safe_boost(pr_rest, p_lab);
+    let pl = boost_from_rest(pl_rest, p_lab, s);
+    let pr = boost_from_rest(pr_rest, p_lab, s);
 
     match &branch.left {
         Node::Leaf { slot, .. } => slots[*slot] = Some(pl),
@@ -1482,21 +1539,6 @@ fn rotate_from_z<F: Real>(v: LorentzVector<F>, axis: [F; 3]) -> LorentzVector<F>
     )
 }
 
-/// Boost a lab-frame vector into the rest frame of a system with lab momentum
-/// `p_lab`, with the same degeneracy guards as [`safe_boost`].
-fn safe_boost_to_rest<F: Real>(v: LorentzVector<F>, p_lab: LorentzVector<F>) -> LorentzVector<F> {
-    let e = p_lab.e();
-    if e <= F::zero() {
-        return v;
-    }
-    let beta = [-p_lab.px() / e, -p_lab.py() / e, -p_lab.pz() / e];
-    let b2 = beta[0] * beta[0] + beta[1] * beta[1] + beta[2] * beta[2];
-    if b2 >= F::one() {
-        return v;
-    }
-    v.boost(beta)
-}
-
 /// The unit 3-vector of `v`, or `+z` when its spatial part is degenerate — in which
 /// case the rung it would orient carries no transfer to speak of and the weight has
 /// already collapsed.
@@ -1598,8 +1640,8 @@ fn sample_spine<F: Real>(
             axis,
         );
 
-        let pb = safe_boost(pb_rest, p_sys);
-        let pr = safe_boost(pr_rest, p_sys);
+        let pb = boost_from_rest(pb_rest, p_sys, s_sys);
+        let pr = boost_from_rest(pr_rest, p_sys, s_sys);
 
         match &rung.emitted {
             Node::Leaf { slot, .. } => slots[*slot] = Some(pb),
@@ -1617,7 +1659,11 @@ fn sample_spine<F: Real>(
                 qa.py() - pb_rest.py(),
                 qa.pz() - pb_rest.pz(),
             );
-            axis = spatial_direction(safe_boost_to_rest(safe_boost(q_rest, p_sys), pr));
+            axis = spatial_direction(boost_to_rest(
+                boost_from_rest(q_rest, p_sys, s_sys),
+                pr,
+                s_rest,
+            ));
             t_prev = t;
             s_sys = s_rest;
             p_sys = pr;
