@@ -1,8 +1,7 @@
 # x86 AVX2 evaluator perf study — results (branch `x86_avx2_perf`)
 
-**Status: DRAFT — in progress.** Two of three planned changes landed and are measured;
-the third (`get_unchecked` on the `fill_arenas` dispatch loop) is not yet done. Finish
-in a fresh session, then flip this note to closed.
+**Status: CLOSED (2026-07-31).** All three planned changes landed and are measured. The
+combined end-to-end delta vs the pre-study baseline is in "Cumulative outcome" below.
 
 Host: AVX2 + FMA, no AVX-512 (`grep avx /proc/cpuinfo` → `avx avx2 fma`, `zmm`=0 in all
 dumps). All builds `RUSTFLAGS="-C target-cpu=native"`, `--profile profiling`
@@ -22,7 +21,8 @@ dispatch loop, `helas/eval/run.rs:566`). Three findings drove the work:
    dot a `vmul`/`vadd` chain.
 2. **Bounds checks everywhere** in the dispatch loop — every `arena[loc]` /
    `arena[operand]` access checked, including inside the `Add*` accumulation loops.
-   ~118 `panic_bounds_check` trampolines. **Not yet addressed.**
+   Addressed via a narrowly-audited `unsafe` `get_unchecked` core (below), the
+   escalation option note 17 §7(b) preserved.
 3. **Inconsistent kernel inlining** — LLVM left the FFV/propagate/gamma-vout `*_bare`
    kernels as out-of-line calls; `validate_arenas` (a once-per-workspace one-shot) was
    `#[inline]` and bloating the hot frame.
@@ -98,23 +98,86 @@ honest "massless within tolerance" intent) instead of `m()`. MG gate and the lan
 bit-identical test both pass. (Three *other* failures are pre-existing baseline failures
 from the first Linux run — RNG seed-hash pins + a boosted-frame test — unrelated.)
 
-## Not yet done — `get_unchecked` on the dispatch loop (finding 2)
+### `get_unchecked` on the dispatch loop (finding 2)
 
-The `fill_arenas` dispatch loop bounds-checks every arena access; the indices come from
-the compiled `prog` stream (correct by construction — exactly what `validate_arenas`
-proves at debug/`extended-validation` time). Converting the `arena[loc]` /
-`arena[operand]` accesses to `get_unchecked`/`get_unchecked_mut` behind a `// SAFETY:`
-pointing at the validation invariant should:
+The `fill_arenas` dispatch loop bounds-checked every arena/pool access; the indices come
+from the compiled `prog` stream, correct by construction — `Program::build` draws every
+result slot (`loc[id]` and every `OperandRef` index) from `0..arena_sizes[class]` by
+liveness allocation, `ensure_sizes` grows each arena to exactly `arena_sizes`, and
+`resolve_moms` fills `moms` to `mom_table.len()` (the sole source of every momentum id).
+`validate_arenas` re-proves this under debug/`extended-validation`.
 
-- delete the per-iteration `cmp`/`jbe` in the `Add{Scalar,Vector,Fin,Fout}` inner loops
-  (`LBB…_61`/`_97`/`_127`/`_152` in the dumps),
-- collapse ~100 `panic_bounds_check` trampolines, shrinking the function for I-cache.
+**This is the escalation option note 17 §7(b) preserved.** That memo cancelled the A3c
+bounds-check work under a *safe-only* charter (its §9 recorded "the evaluator stays 100%
+safe Rust") but explicitly left "(b) re-scope to a narrowly-audited `unsafe` core … behind
+the full `validate_helas_mg` bit-for-bit gate" as the manager-escalation path. Taking it
+here retires that invariant deliberately, with the gate as the safety net.
 
-Expected to help **all** strategies roughly uniformly (unlike FMA, which traded scalar
-against SIMD). **To measure next session:** save a fresh criterion baseline off the
-current FMA HEAD, apply the unchecked conversion, re-bench the 56-cell grid, and re-run
-the MG + lane bit-identical gates. Then close this note with the combined
-end-to-end delta vs the pre-study baseline.
+**Implementation.** One getter/setter pair per arena class on `ScratchSpace`
+(`scalar`/`set_scalar`, `vector`/`set_vector`, …) plus `real`/`mom`, each a one-line
+`get_unchecked{,_mut}` under a single shared `// SAFETY:` doc; the dispatch loop body is
+one `unsafe` block that carries none of its own. `unsafe` is confined to `run.rs` (11
+accessors + 1 block) — the rest of the library stays safe. **Critical subtlety the bench
+caught:** the composite reads (`vector`/`fin_at`/`fout_at`/`mom`) must return a *reference*,
+matching the original `&arena[i]` borrow. A first cut returned them *by value*; for scalar
+`f64` that copy is free, but for `NumericArray<f64,8>` a `ComplexVector` is 512 B, so every
+operand read became a memcpy → a uniform **+60% lanes8 regression** (scalar unaffected).
+Returning `&T` restored the zero-copy borrow and the regression vanished.
+
+**Mechanism — note 17's symbol-count confirmation does *not* reproduce here.** On rustc
+1.97 / x86 (`--profile profiling`), LLVM already *outlines the panic calls*: the checked
+`fill_arenas<f64>` shows **0** `panic_bounds_check` symbols even at baseline (note 17's
+arm64 build had 57). But the inline bounds *compare+branch* pairs are still there, and
+`get_unchecked` removes those — direct evidence from the lanes2 monomorphization body:
+
+| `fill_arenas` (lanes2, profiling) | insns | cond. branches |
+|---|--:|--:|
+| PRE (checked) | 3677 | 157 |
+| POST (unchecked) | 2867 | 52 |
+
+−810 instructions, −105 conditional branches (−22% body size). So the transform is real;
+it just isn't visible by counting panic trampolines on this toolchain.
+
+**Bench (before = FMA HEAD `3dab3a1` / baseline `pre_unchecked`, after = +unchecked;
+median Δ%, 56 cells):**
+
+| strategy | mean | median | min | max |
+|---|---|---|---|---|
+| forward (scalar) | **−2.84%** | −2.80% | −7.94% | +0.60% |
+| lanes2 | −0.83% | −1.40% | −4.37% | +6.36% |
+| lanes4 | **−2.98%** | −3.53% | −10.21% | +2.11% |
+| lanes8 | −0.15% | −0.15% | −4.80% | +5.93% |
+| **ALL** | **−1.70%** | −1.81% | −10.21% | +6.36% |
+
+Modest and consistent — well below note 17's arm64 +7–11% *ceiling*, for two structural
+reasons: (a) that ceiling was a *coupled* reads+writes effect and its write half was the
+`Vec::push` capacity-check family, which the current pre-sized direct-index writes had
+already eliminated (only the read checks remained to remove here); (b) the removed branches
+were near-perfectly predicted (never-taken), so deleting them buys I-cache/scheduling, not
+mispredict recovery. The scalar `forward` path — the least-used but the one every other
+path is validated against — gets a clean ~3% with no downside, recovering roughly the
++3.5% FMA charged it. The few positive cells (gg_to_gg / ee_to_mumu lanes2/lanes8, +5–6%)
+are the NCOLOR=6 multi-flow high-variance cells and read as run-to-run noise, not a real
+regression; scalar and lanes4 are uniformly neutral-to-better. MG gate 14/14 bit-exact
+(identical `max_rel_diff` to baseline) and `eval_m2_lanes_bit_identical_to_scalar` exact —
+a provably value-preserving transform.
+
+## Cumulative outcome (whole study, `x86_avx2_perf` branch)
+
+Three changes vs the pre-study `x86_avx2_perf` base (`90fe612`, the 14-process bench
+extension): **inlining tune** (`1b47771`) → **FMA/`mul_add`** (`3dab3a1`) → **`get_unchecked`**
+(this commit). By strategy the arithmetic (FMA) dominated the SIMD paths and the
+bounds-check removal cleaned up the scalar path the FMA had charged:
+
+- **lanes2 / lanes4 / lanes8**: FMA's **−24% … −35%** median is the headline; `get_unchecked`
+  adds a further ~0–3% (neutral on the noisy multi-flow cells, −3% on lanes4).
+- **forward (scalar)**: FMA cost it ~+3.5%, `get_unchecked` gives ~−2.8% back → roughly
+  flat-to-slightly-better end to end, with the largest scalar wins on the widest-gap
+  colored processes (gg_to_gg −7.9%).
+
+Net: the SIMD lane paths are ~¼–⅓ faster than the pre-study base, the scalar path is
+neutral, and the evaluator now carries a small, gate-guarded `unsafe` core. All behind
+14/14 bit-exact `validate_helas_mg` + exact lane-identity throughout.
 
 ## Reproduce
 

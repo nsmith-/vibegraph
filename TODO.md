@@ -135,6 +135,21 @@ our interpreter doesn't) is untested. Rerun kit for other boxes:
 `scripts/mg_perf_compare.sh` + recipe in note 15 §2.4 (regenerate MG reference natively →
 14/14 gate → bench-vs-MATRIX1 ratio table with host fingerprint, banked in `target/mg-perf/`).
 
+**x86 AVX2 evaluator study** (✅ CLOSED 2026-07-31, branch `x86_avx2_perf`, full record:
+`research/notes/x86-avx2-perf-study-results.md`). First non-arm64 optimization pass, driven
+by a `fill_arenas.asm` review on an AVX2+FMA/no-AVX-512 host. Three changes: (1) **inlining
+tune** of the `*_bare` kernels + `validate_arenas`→`#[inline(never)]`; (2) **FMA/`mul_add`**
+— routed the hot Lorentz/spinor primitives through the *real* fused `F::mul_add` (the one
+path that fuses on every `F: Real`, since `NumericArray` lacks the `num_traits::MulAdd`
+trait), curing the SoA lanes' shuffle-tax: **lanes2/4/8 median −24% … −35%**, the H4
+"SIMD is a negative result" verdict now overturned on this host; scalar `forward` +3.5%;
+(3) **`get_unchecked`** on the dispatch loop — took note 17 §7(b)'s preserved escalation
+(a narrowly-audited `unsafe` core, 11 accessors + 1 block in `run.rs`, behind the bit-exact
+gate), retiring note 17 §9's "100% safe Rust" invariant deliberately; scalar `forward`
+−2.8% (recovers the FMA charge), lanes ~0–3%. Cumulative vs the pre-study base: SIMD lane
+paths ~¼–⅓ faster, scalar neutral. 14/14 bit-exact + exact lane-identity throughout.
+**Not yet merged to `main`.**
+
 ### Deferred performance work
 
 - **Per-(hel,diagram) `ZEROAMP` skipping** (MG's second filter layer, note 15 §2.3)
