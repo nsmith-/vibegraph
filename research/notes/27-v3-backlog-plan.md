@@ -600,6 +600,51 @@ unit tests in `validation/samples.rs` pin all three branches, and
 `WeightStrategy` gained a named `-3`. No existing row moved: all of them are
 `-4`.
 
+**The second finding: 3.7.1 changed how it writes the colour matrix.** This one
+is scope the session did not ask for, taken because the alternative was a red
+branch — the `color_cf_oracle` gate sweeps *every* `matrix1_orig.f` under the
+work area, so the two new process directories joined it and failed with
+"CF matrix has unfilled entries". 3.5.x emits a square array of reals,
+
+```fortran
+REAL*8 CF(NCOLOR,NCOLOR)
+DATA (CF(I,  1),I=  1,  6) /3.166666666666667D+00, -3.333333333333333D-01, .../
+```
+
+and 3.7.1 emits integers over one common denominator, storing only the upper
+triangle:
+
+```fortran
+INTEGER CF(NCOLOR*(NCOLOR+1)/2)
+DATA DENOM/6/
+DATA (CF(I),I=  1,  6) /19,-4,-4,-4,-4,8/
+```
+
+Its contraction runs `DO I = 1, NCOLOR; DO J = I, NCOLOR` with a single running
+index, so each unordered pair is visited once; `MATRIX1` is `REAL*8` and takes
+the real part, and `Re[c·a·conj(b)] = Re[c·b·conj(a)]` for real `c`, so an
+off-diagonal entry must carry **twice** the symmetric matrix's value:
+
+```text
+CF(I,I) = packed / DENOM        CF(I,J) = CF(J,I) = packed / (2 DENOM)
+```
+
+Confirmed element for element against the square form on three processes
+regenerated with the pinned MadGraph — `u u~ > u u~` (`NCOLOR = 2`,
+`DENOM = 1`, packed `9,6,9` against `[[9,3],[3,9]]`), `g g > t t~`
+(`NCOLOR = 2`, `DENOM = 3`, `16,-4,16` against `[[16/3,-2/3],[-2/3,16/3]]`) and
+`g g > g g` (`NCOLOR = 6`, `DENOM = 6`, 21 packed integers against all 36 square
+entries). The parser now takes either form. The live sweep only reaches the
+packed one at `NCOLOR = 1`, where the factor of two is never exercised, so a
+trial carrying both forms of `g g > t t~` verbatim pins it.
+
+**This is the shape of every 3.7.1 re-bank.** Nothing about it is specific to
+Drell-Yan: when B5 re-banks the rest of the work area, every `matrix1_orig.f` in
+the bundle changes to the packed form at once, and any other gate that reads
+generated Fortran should be checked the same way before the re-cut rather than
+after — `gen_amplitude*.py`'s f2py path and `dy_integrand_oracle` both compile
+these files.
+
 **What is measured now.** `pp_to_ll` `samples` is `banked`/`gate`, one cell per
 card, 200000 MadGraph events against 3 × 20000 of ours at the σ gate's own
 `120000 × 12` budget:
@@ -651,6 +696,12 @@ cut is in the right place and not only that the spectrum above it is right.
    `generate_references.sh`'s `refs` stage regenerates `dy_integrand_oracle.json`
    from it whenever that file exists, so the next `generate-references` run will
    recompute the committed oracle against 3.7.1's matrix element. Not run here.
+5. Before the re-cut, sweep the *other* readers of generated Fortran for the
+   packed-`CF` change above — `build_amplitude.sh` + `gen_amplitude*.py` compile
+   `matrix1_orig.f` through f2py, so they execute MadGraph's own contraction and
+   should be unaffected, but that is a prediction and not a measurement until the
+   re-bank runs. The colour oracle parses the file by hand and is the one that
+   already broke.
 
 ### B5 — hygiene riders + `refdata-3` + close-out
 

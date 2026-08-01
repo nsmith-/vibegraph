@@ -274,6 +274,17 @@ them. Every one of them is a measurement that exists, not a suspicion.
 
 Small, independent, each one a gate that is weaker than it looks.
 
+- ~~**The CF-matrix oracle read only MadGraph 3.5.x's emission format**~~ ✅
+  **resolved** (B4, 2026-08-01). 3.7.1 writes the colour matrix as integers over
+  one `DENOM` storing only the upper triangle, where 3.5.x wrote a square array of
+  reals, and its contraction visits each unordered pair once — so off-diagonal
+  entries carry twice the symmetric matrix's value. `color_cf_oracle` found no
+  `DATA (CF(I,J)` lines in such a file and reported an unfilled matrix. It now
+  reads either form, with the mapping confirmed element for element against the
+  square form at `NCOLOR` 1, 2 and 6. **This lands on every row at once when the
+  work area is re-banked with 3.7.1** (note 27 §B4); the other readers of
+  generated Fortran go through f2py and execute MadGraph's own contraction, so
+  they are predicted unaffected — a prediction the re-bank measures.
 - ~~**A sample's cross section was read without looking at `IDWTUP`**~~ ✅
   **resolved** (B4, 2026-08-01). `EventSample::from_lhe` took every file's σ as
   the *mean* of `XWGTUP`, which is right for `IDWTUP = -4` and wrong by a factor
