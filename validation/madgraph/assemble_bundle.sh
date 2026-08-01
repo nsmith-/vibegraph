@@ -14,9 +14,12 @@
 #
 # The archive is byte-reproducible from a given work area: the member list is
 # sorted in the C locale, every member is staged with the same timestamp, mode
-# and (blank) ownership, and zstd runs single-threaded at a fixed level. Two runs
-# over the same work area therefore hash the same, which is what makes the
-# SHA-256 in `validation/manifest.toml` a pin rather than a snapshot.
+# and (blank) ownership, event files are carried decompressed (so no gzip
+# encoder's output is in the archive), and zstd runs single-threaded at a fixed
+# level. Two runs over the same work area therefore hash the same, which is what
+# makes the SHA-256 in `validation/manifest.toml` a pin rather than a snapshot —
+# and a work area that was itself unpacked from a bundle re-assembles to that
+# same bundle, which a gzipped-member archive could not promise.
 #
 # Usage:
 #   bash validation/madgraph/assemble_bundle.sh          # assemble + report
@@ -77,6 +80,18 @@ vg_say "    $count files"
 vg_say ">>> staging with normalised metadata"
 mkdir -p "$STAGE/root"
 tar -cf - -C "$WORK_AREA" -T "$STAGE/members.txt" | tar -xf - -C "$STAGE/root"
+
+# The event files travel as plain Les Houches text. MadGraph writes them gzipped
+# and every gate reads them gzipped — `vg_ensure_refdata` gzips them back as it
+# unpacks — but an already-gzipped member is incompressible, so archiving them as
+# they sit spends most of the archive on bytes zstd cannot touch. Decompressed
+# first, the same events cost about a third less. What a gate reads does not
+# change, and neither does what the byte-for-byte round-trip gate compares
+# against: gzip is lossless, so those are these bytes, one encoding layer nearer.
+vg_say ">>> decompressing the event files"
+find "$STAGE/root" -type f -name '*.lhe.gz' -exec gzip -d {} +
+sed 's/\.lhe\.gz$/.lhe/' "$STAGE/members.txt" | LC_ALL=C sort > "$STAGE/archive.txt"
+
 find "$STAGE/root" -type d -exec chmod 755 {} +
 find "$STAGE/root" -type f -exec chmod 644 {} +
 find "$STAGE/root" -exec touch -t 197001010000 {} +
@@ -85,7 +100,7 @@ vg_say ">>> writing $ARCHIVE"
 mkdir -p "$BUNDLE_DIR"
 COPYFILE_DISABLE=1 tar -cf "$STAGE/bundle.tar" \
   --format ustar --uid 0 --gid 0 --uname '' --gname '' --no-mac-metadata \
-  -C "$STAGE/root" -T "$STAGE/members.txt"
+  -C "$STAGE/root" -T "$STAGE/archive.txt"
 zstd -19 -q -f --single-thread --no-progress -o "$ARCHIVE" "$STAGE/bundle.tar"
 
 sha="$(vg_sha256 "$ARCHIVE")"

@@ -183,6 +183,13 @@ vg_ensure_refdata() {
   vg_say ">>> unpacking $archive into $dir"
   mkdir -p "$dir"
   zstd -dc "$tarball" | tar -xf - -C "$dir"
+  # The archive carries the event files as plain Les Houches text, since gzipped
+  # members are what zstd cannot compress. MadGraph writes them gzipped and every
+  # gate opens them gzipped, so the work-area layout is restored here: gzip is
+  # lossless, so what the gates read is what MadGraph wrote whichever way the
+  # bytes arrived.
+  vg_say ">>> restoring the gzipped event files"
+  find "$dir" -type f -name '*.lhe' -exec gzip -n -f {} +
   printf '%s\n' "$sha" > "$stamp"
   vg_say "✓ banked reference data ready at $dir"
 }
