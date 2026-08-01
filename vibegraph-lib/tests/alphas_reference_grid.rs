@@ -1,14 +1,18 @@
 //! The running strong coupling ([`vibegraph::coupling::alphas`]) against
-//! MadGraph's own Fortran, bit-for-bit.
+//! MadGraph's own Fortran, iterate-for-iterate.
 //!
-//! [`fortran_reference_is_bit_exact`] replays
+//! [`fortran_reference_matches_the_iterate`] replays
 //! `validation/alphas/reference.csv`, produced by linking MadGraph's unmodified
 //! `Source/alfas_functions.f` against a driver
 //! (`pixi run -e madgraph generate-alphas-reference`). Both sides run the same
-//! Newton iteration to the same `TOL = 5e-4`, so this is a *bit-for-bit*
-//! comparison, not a tolerance: the Newton solve returns a specific iterate, and
-//! agreeing on the iterate is a far stronger statement than agreeing on the root
-//! it approximates. The grid is committed, so this runs on a bare clone.
+//! Newton iteration to the same `TOL = 5e-4`, and the comparison is at the
+//! *iterate* level: a wrong branch, iteration count, or coefficient shows up at
+//! the Newton tolerance scale (~1e-4 relative), which the few-ulp bound here
+//! sits eleven orders of magnitude below. What the bound tolerates is only the
+//! transcendentals' last-ulp dependence on the host libm — the committed grid
+//! was generated on one platform, and pinning its exact bits would make this a
+//! test of the machine, not of the coupling. The grid is committed, so this
+//! runs on a bare clone.
 //!
 //! **What this cannot see.** Nothing about where `asmz` and `nloop` come from —
 //! the grid supplies them directly. That is the job of the per-event oracles in
@@ -94,9 +98,15 @@ fn reference_grid_straddles_every_branch() {
     }
 }
 
-/// Bit-for-bit against MadGraph's own `ALPHAS`.
+/// Same Newton iterate as MadGraph's own `ALPHAS`, modulo host-libm ulps.
+///
+/// Measured cross-platform drift on the committed grid: 2 of 792 points at
+/// 1 ulp. The bound leaves headroom over that while staying ~11 orders below
+/// the ~1e-4-relative signature of a different iterate.
 #[test]
-fn fortran_reference_is_bit_exact() {
+fn fortran_reference_matches_the_iterate() {
+    const MAX_ULPS: i64 = 4;
+
     let rows = load_reference();
     let mut mismatches = Vec::new();
     let mut worst_ulps = 0i64;
@@ -104,28 +114,29 @@ fn fortran_reference_is_bit_exact() {
     for row in &rows {
         let running = RunningAlphaS::new(row.asmz, row.nloop).expect("positive asmz");
         let got = running.eval(row.q);
-        if got.to_bits() != row.alphas.to_bits() {
-            let ulps = (got.to_bits() as i64 - row.alphas.to_bits() as i64).abs();
-            worst_ulps = worst_ulps.max(ulps);
-            if mismatches.len() < 10 {
-                mismatches.push(format!(
-                    "asmz={} nloop={} q={}: fortran {:.17e}, rust {:.17e} ({ulps} ulp)",
-                    row.asmz,
-                    row.nloop.as_i64(),
-                    row.q,
-                    row.alphas,
-                    got
-                ));
-            }
+        let ulps = (got.to_bits() as i64 - row.alphas.to_bits() as i64).abs();
+        worst_ulps = worst_ulps.max(ulps);
+        if ulps > MAX_ULPS && mismatches.len() < 10 {
+            mismatches.push(format!(
+                "asmz={} nloop={} q={}: fortran {:.17e}, rust {:.17e} ({ulps} ulp)",
+                row.asmz,
+                row.nloop.as_i64(),
+                row.q,
+                row.alphas,
+                got
+            ));
         }
     }
 
     assert!(
         mismatches.is_empty(),
-        "{} of {} grid points differ (worst {worst_ulps} ulp):\n{}",
+        "{} of {} grid points differ beyond {MAX_ULPS} ulp (worst {worst_ulps}):\n{}",
         mismatches.len(),
         rows.len(),
         mismatches.join("\n")
     );
-    println!("alpha_s grid: {} points bit-exact", rows.len());
+    println!(
+        "alpha_s grid: {} points within {worst_ulps} ulp of the Fortran iterate",
+        rows.len()
+    );
 }
