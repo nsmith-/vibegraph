@@ -458,13 +458,19 @@ fn build_spine(
     )
 }
 
-/// The upper edge of the spacelike transfer, spelled exactly as the peripheral
-/// kinematics spell it: `t_max = m_a² + s₁ − 2·E_a·E₁ + 2·k·p*`, each factor built
-/// from the Källén function the same way.
-fn t_max_as_computed(s: f64, s1: f64, s2: f64) -> f64 {
-    fn kallen(a: f64, b: f64, c: f64) -> f64 {
-        a * a + b * b + c * c - 2.0 * (a * b + b * c + c * a)
-    }
+/// The upper edge of the spacelike transfer, `t_max = m_a² + s₁ − 2·E_a·E₁ + 2·k·p*`,
+/// built from a Källén function evaluated in one of two algebraically equal ways:
+/// the expanded `a²+b²+c²−2(ab+bc+ca)`, or the grouped `(a−b−c)² − 4bc` the
+/// peripheral kinematics uses.
+fn t_max_as_computed(s: f64, s1: f64, s2: f64, grouped: bool) -> f64 {
+    let kallen = |a: f64, b: f64, c: f64| {
+        if grouped {
+            let d = a - b - c;
+            d * d - 4.0 * b * c
+        } else {
+            a * a + b * b + c * c - 2.0 * (a * b + b * c + c * a)
+        }
+    };
     let sqrt_s = s.sqrt();
     let inv = 1.0 / (2.0 * sqrt_s);
     let ea = s * inv;
@@ -475,21 +481,26 @@ fn t_max_as_computed(s: f64, s1: f64, s2: f64) -> f64 {
 }
 
 /// With a massless spacelike line and a massless subsystem on one side of it, the
-/// transfer's upper edge sits *exactly* on the pole: `t_max = m² = 0`. Analytically
-/// that is a clean statement; numerically it is a difference of two large equal
-/// quantities, and the two are built from different expressions, so it lands on
-/// either side of zero at the rounding scale.
+/// transfer's upper edge sits *exactly* on the pole, `t_max = m² = 0`. Whether the
+/// arithmetic reproduces that, or lands on either side of zero at the rounding
+/// scale, is decided entirely by how the Källén function is grouped — and the edge
+/// is what decides whether the peripheral draw importance-samples the propagator or
+/// falls back to flat.
 ///
-/// This decides whether the peripheral draw importance-samples the propagator or
-/// falls back to flat — a choice that therefore turns over on floating-point noise
-/// rather than on kinematics. Both signs really occur, which is what makes
-/// [`the_unregulated_three_body_spine_is_biased_at_the_collinear_edge`] a defect and
-/// not a tolerance question.
+/// The expanded `a²+b²+c²−2(ab+bc+ca)` reaches the answer by cancelling terms of
+/// order `s²` against each other. In the soft-emission corner, where the recoil
+/// carries almost all the invariant mass, the true value is many orders below
+/// those terms and only a few digits survive: the edge then straddles zero, and
+/// the pole/flat decision turns over on floating-point noise rather than on
+/// kinematics. The grouped `(a−b−c)² − 4bc` cancels once, at `a−b−c`, and returns
+/// the analytic zero exactly. Both are checked here over the same draws, so the
+/// grouping the peripheral kinematics uses is pinned rather than assumed.
 #[test]
-fn a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise() {
+fn only_the_grouped_kallen_puts_the_massless_transfer_edge_on_its_analytic_zero() {
     let s = 250_000.0;
     let (mut negative, mut positive, mut exact) = (0usize, 0usize, 0usize);
-    let mut worst = 0.0f64;
+    let mut worst_expanded = 0.0f64;
+    let mut worst_grouped = 0.0f64;
     // The recoil invariants a run actually sees are whatever the invariant draw
     // returns, so the sweep uses arbitrary values rather than tidy fractions of
     // `s` — the latter cancel exactly and would hide the effect.
@@ -498,8 +509,9 @@ fn a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise() {
     let draws = stream.uniforms::<f64>(n);
     for &x in &draws {
         let s2 = s * x;
-        let t_max = t_max_as_computed(s, 0.0, s2);
-        worst = worst.max(t_max.abs());
+        let t_max = t_max_as_computed(s, 0.0, s2, false);
+        worst_expanded = worst_expanded.max(t_max.abs());
+        worst_grouped = worst_grouped.max(t_max_as_computed(s, 0.0, s2, true).abs());
         match t_max.partial_cmp(&0.0).expect("finite") {
             std::cmp::Ordering::Less => negative += 1,
             std::cmp::Ordering::Greater => positive += 1,
@@ -507,25 +519,31 @@ fn a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise() {
         }
     }
     eprintln!(
-        "massless t edge over {n} recoil invariants: {negative} below zero, {positive} above, \
-         {exact} exactly zero; worst |t_max| = {worst:.3e} (s = {s})"
+        "massless t edge over {n} recoil invariants, expanded Källén: {negative} below zero, \
+         {positive} above, {exact} exactly zero, worst |t_max| = {worst_expanded:.3e}; \
+         grouped Källén worst |t_max| = {worst_grouped:.3e} (s = {s})"
     );
     assert!(
         negative > 0 && positive > 0,
-        "the transfer edge no longer straddles zero, so the pole/flat decision may have \
-         stopped depending on rounding"
+        "the expanded form's edge no longer straddles zero, so this sweep has lost the \
+         conditioning failure it exists to exhibit"
     );
     assert!(
-        worst < 1e-9 * s,
-        "|t_max| reached {worst:.3e}, far more than rounding: the edge is no longer the \
-         analytic zero this argument assumes"
+        worst_expanded > 1e-13 * s,
+        "the expanded form reached only {worst_expanded:.3e}, so the two groupings are no \
+         longer distinguishable here"
+    );
+    assert_eq!(
+        worst_grouped, 0.0,
+        "the grouped form put the massless transfer edge at {worst_grouped:.3e} rather than \
+         on its analytic zero"
     );
     // Over the same draws, a spacelike line given a mass well above that noise
     // keeps the edge strictly below the pole, which is what makes the pole usable.
     let m2 = 25.0;
     for &x in &draws {
         assert!(
-            m2 - t_max_as_computed(s, 0.0, s * x) > 0.0,
+            m2 - t_max_as_computed(s, 0.0, s * x, true) > 0.0,
             "a massive spacelike line should keep the whole window below its pole"
         );
     }
@@ -571,24 +589,28 @@ fn a_regulated_three_body_spine_from_an_llj_cut_is_a_valid_map() {
     assert!(checked > 0, "no llj cut was exercised");
 }
 
-/// An unregulated three-body spine samples from a density its own
+/// An unregulated three-body spine can sample from a density its own
 /// [`Channel::density`] does not describe — and *that*, not the walk, is what a
 /// multichannel combiner weights by.
 ///
-/// The mechanism is
-/// [`a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise`]: on the
-/// draws where the edge lands just below zero the propagator map switches on with a
-/// span of some thirty e-folds reaching down to `|t| ~ 1e-11`, while `density`
-/// re-derives the transfer from the momenta with a cancellation error of the same
-/// size. The walk knows which `t` it drew, so a standalone draw weighted by its own
-/// accumulated Jacobian stays consistent; `density` evaluated at the realised
-/// momenta does not, and a combiner discards the walk weight in favour of
-/// `αⱼ / Σₖ αₖ gₖ`, built from `density` alone.
+/// The mechanism is the massless transfer edge. On a cut where the edge lands just
+/// below zero the propagator map switches on with a span of some thirty e-folds
+/// reaching down to `|t| ~ 1e-11`, while `density` re-derives the transfer from the
+/// momenta with a cancellation error of the same size. The walk knows which `t` it
+/// drew, so a standalone draw weighted by its own accumulated Jacobian stays
+/// consistent; `density` evaluated at the realised momenta does not, and a combiner
+/// discards the walk weight in favour of `αⱼ / Σₖ αₖ gₖ`, built from `density`
+/// alone.
 ///
-/// So the two halves are asserted separately: the per-point gap between the two
-/// weightings blows up to O(1) or worse unregulated and collapses to rounding once
-/// floored, and the floor is what the combiner path therefore requires. That the
-/// floored map is otherwise a faithful one is
+/// Which cuts reach the edge is decided by which side of the rung carries a *drawn*
+/// invariant. When the emitted subsystem's invariant is fixed — a single on-shell
+/// leg — the edge is the grouped Källén function's exact zero and the flat fallback
+/// fires deterministically; when the emitted side is the composite one, the edge is
+/// a cancellation of the drawn invariant against `ŝ` and straddles zero on rounding.
+/// So the defect is asserted where it survives and the agreement is required
+/// everywhere it is floored, rather than assuming every cut behaves alike.
+///
+/// That the floored map is otherwise a faithful one is
 /// [`a_regulated_three_body_spine_from_an_llj_cut_is_a_valid_map`].
 #[test]
 fn an_unregulated_three_body_spine_breaks_the_density_a_combiner_weights_by() {
@@ -623,31 +645,31 @@ fn an_unregulated_three_body_spine_breaks_the_density_a_combiner_weights_by() {
                 }
                 worst
             };
-            let bad = gap(0.0, 0xDEF0 + i as u64);
-            let good = gap(regulator, 0xDEF0 + i as u64);
+            let bare = gap(0.0, 0xDEF0 + i as u64);
+            let floored = gap(regulator, 0xDEF0 + i as u64);
             eprintln!(
-                "{process} cut {i}: walk-vs-density gap {bad:.2e} unregulated, \
-                 {good:.2e} floored at {regulator} GeV"
+                "{process} cut {i}: walk-vs-density gap {bare:.2e} unfloored, \
+                 {floored:.2e} floored at {regulator} GeV"
             );
             assert!(
-                bad > 1e-3,
-                "{process} cut {i}: the unregulated spine's two weightings now agree to \
-                 {bad:.2e} — if the transfer edge stopped straddling the pole, this test has \
-                 lost its subject"
+                floored < WALK_DENSITY_TOL,
+                "{process} cut {i}: the floored spine's weightings disagree by {floored:.2e}"
             );
-            assert!(
-                good < WALK_DENSITY_TOL,
-                "{process} cut {i}: the floored spine's weightings disagree by {good:.2e}"
-            );
-            worst_unregulated = worst_unregulated.max(bad);
-            worst_regulated = worst_regulated.max(good);
+            worst_unregulated = worst_unregulated.max(bare);
+            worst_regulated = worst_regulated.max(floored);
             compared += 1;
         }
     }
     assert!(compared > 0, "no llj cut was exercised");
     eprintln!(
         "over {compared} llj cuts: worst walk-vs-density gap {worst_unregulated:.2e} \
-         unregulated, {worst_regulated:.2e} floored"
+         unfloored, {worst_regulated:.2e} floored"
+    );
+    assert!(
+        worst_unregulated > 1e-3,
+        "no unfloored cut's two weightings disagree any more (worst \
+         {worst_unregulated:.2e}) — if the transfer edge stopped straddling the pole \
+         everywhere, this test has lost its subject"
     );
 }
 
@@ -696,7 +718,7 @@ fn an_unregulated_spine_breaks_the_positive_density_contract() {
     let drawn = n * cuts.len();
     eprintln!(
         "self-density over {drawn} points on {} llj spines: {bad_unregulated} non-positive \
-         unregulated, {bad_floored} floored at {regulator} GeV",
+         unfloored, {bad_floored} floored at {regulator} GeV",
         cuts.len()
     );
     assert!(
