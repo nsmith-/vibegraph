@@ -17,6 +17,8 @@
 //! `validation/manifest.toml` describes the layers and the per-process coverage
 //! this table is the exception list for.
 
+pub mod samples;
+
 /// One tolerated runtime skip: the test that may take it, the input whose
 /// absence permits it, and why that input is not yet guaranteed.
 pub struct ExpectedSkip {
