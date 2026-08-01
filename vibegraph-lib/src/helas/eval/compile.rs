@@ -428,12 +428,13 @@ impl AmplitudeEvaluator {
 /// The processes these library-level sweeps compile, all of them gated against
 /// MadGraph by `tests/amplitude_oracle.rs`.
 ///
-/// It is a subset of that gate's suite, not all of it: the four `p p > l+ l- j`
-/// subprocess rows are absent, so a sweep driven by this list does not reach a
-/// coloured 2 -> 3 amplitude. Extending it costs another full re-rooting sweep to
+/// It is every concrete subprocess that gate covers, the four `p p > l+ l- j`
+/// rows included, so a sweep driven by this list reaches a coloured `2 -> 3`
+/// amplitude and not only colourless ones and `2 -> 2`s. A process added to the
+/// amplitude gate belongs here too; the cost is another full re-rooting sweep to
 /// re-verify.
 #[cfg(test)]
-pub(super) const MG_VALIDATED_PROCESSES: [&str; 14] = [
+pub(super) const MG_VALIDATED_PROCESSES: [&str; 18] = [
     "e+ e- > mu+ mu-",
     "u u~ > mu+ mu-",
     "e+ e- > e+ e-",
@@ -448,6 +449,10 @@ pub(super) const MG_VALIDATED_PROCESSES: [&str; 14] = [
     "u u~ > u u~",
     "g g > t t~",
     "g g > g g",
+    "u u~ > e+ e- g QCD=2 QED=2",
+    "d d~ > e+ e- g QCD=2 QED=2",
+    "g u > e+ e- u QCD=2 QED=2",
+    "g u~ > e+ e- u~ QCD=2 QED=2",
 ];
 
 /// Helicity-filter threshold: a combination whose CF-contracted |M_c|² stays below
