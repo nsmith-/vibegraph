@@ -1,13 +1,19 @@
 //! Colorize + CF-matrix fixtures: run the real diagram enumeration on the
 //! interned SM model, colorize each subprocess, and assert the exact-rational
 //! color-factor matrix against hand-derived / MadGraph-referenced values.
+//!
+//! The same basis carries a second MadGraph-referenced table: which flows each
+//! diagram reaches at the leading power of `Nc`
+//! ([`LeadingColorFlows`](vibegraph::helas::color::LeadingColorFlows), MadGraph's
+//! `ICOLAMP`). It is asserted here against MadGraph's own generated
+//! `coloramps.inc` — see [`leading_color_flows_match_madgraphs_coloramps`].
 
 mod common;
 
 use num_rational::Ratio;
 
 use vibegraph::diagrams::Diagram;
-use vibegraph::helas::color::{colorize_process, ColorBasis, TensorKind};
+use vibegraph::helas::color::{colorize_process, ColorBasis, LeadingColorFlows, TensorKind};
 use vibegraph::ufo::UFOModel;
 
 fn r(n: i64, d: i64) -> Ratio<i64> {
@@ -169,4 +175,83 @@ fn gg_to_gg_six_flows() {
             &[x, o, o, o, o, d],
         ],
     );
+}
+
+/// Which flows each diagram reaches at the leading power of `Nc`, against
+/// MadGraph's own `coloramps.inc`.
+///
+/// MadGraph writes that file as `ICOLAMP(iflow, iconfig, iproc)` and MadEvent
+/// reads it in `SELECT_COLOR` to mask `JAMP2` before drawing a colour flow, so
+/// the table decides which flow a Les Houches record carries. `iconfig` runs over
+/// the integration configurations, which are the diagrams with no four-point
+/// vertex; ours runs over every diagram, so a contact diagram gets a row here and
+/// has none there.
+///
+/// The expectations are transcribed from files MadGraph generates for these three
+/// processes:
+///
+/// ```text
+/// generate u u~ > u u~        (also: g g > t t~, g g > g g)
+/// output madevent DIR
+/// # DIR/SubProcesses/P*/coloramps.inc
+/// ```
+///
+/// What it pins beyond the table itself: our diagram order and our flow order
+/// against MadGraph's, since a permutation of either scrambles the rows or the
+/// columns. What it cannot see: a table right for these colour structures and
+/// wrong for one this process does not contain — `T`-chains longer than two
+/// generators, and any basis whose leading and subleading powers of `Nc` are not
+/// the `1` and `1/N` of a single Fierz.
+#[test]
+fn leading_color_flows_match_madgraphs_coloramps() {
+    // Each row is one diagram, each character one flow: `T` where MadGraph writes
+    // `.TRUE.`, `.` where it writes `.FALSE.`.
+    let cases: &[(&str, &[&str])] = &[
+        // ICOLAMP(2,2,1): config 1 (the s-channel gluon) /.FALSE.,.TRUE./,
+        // config 2 (the t-channel gluon) /.TRUE.,.FALSE./. Each colour flow is one
+        // diagram's Fierz-leading term and the other's 1/N remainder.
+        ("u u~ > u u~", &[".T", "T."]),
+        // ICOLAMP(2,3,1): the s-channel triple-gluon diagram reaches both flows,
+        // the two t/u-channel top exchanges one each.
+        ("g g > t t~", &["TT", "T.", ".T"]),
+        // ICOLAMP(6,3,1) over the three three-point diagrams; each `f·f` colour
+        // factor spreads over four of the six traces. Our first row is the
+        // four-gluon contact diagram, which MadGraph splits into three graphs and
+        // gives no config — it carries all three structures, so it reaches every
+        // flow and masks nothing.
+        ("g g > g g", &["TTTTTT", "TT.T.T", ".TTTT.", "T.T.TT"]),
+    ];
+
+    for (process, expected) in cases {
+        let cb = colorize(process);
+        let table = LeadingColorFlows::of(&cb, expected.len());
+        assert_eq!(
+            table.n_diagrams(),
+            expected.len(),
+            "[{process}] diagram count"
+        );
+        assert_eq!(table.n_flows(), cb.ncolor(), "[{process}] flow count");
+        for (d, want) in expected.iter().enumerate() {
+            let got: String = table
+                .reached_by(d)
+                .iter()
+                .map(|&b| if b { 'T' } else { '.' })
+                .collect();
+            assert_eq!(&got, want, "[{process}] diagram {d}");
+        }
+    }
+}
+
+/// A colourless process has one flow that every diagram reaches, so the table
+/// masks nothing and the colour draw is the unrestricted one. This is what makes
+/// the rule a no-op on Drell-Yan rather than a special case in the caller.
+#[test]
+fn a_colorless_process_reaches_its_single_flow_from_every_diagram() {
+    let cb = colorize("e+ e- > mu+ mu-");
+    assert_eq!(cb.ncolor(), 1);
+    let table = LeadingColorFlows::of(&cb, 2);
+    assert_eq!(table.n_diagrams(), 2);
+    for d in 0..2 {
+        assert_eq!(table.reached_by(d), &[true]);
+    }
 }

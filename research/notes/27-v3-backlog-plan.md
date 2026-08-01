@@ -118,6 +118,163 @@ the floor across 3 seeds; a documented-convention ⚠️ with the MadEvent
 algorithm written down if D1 = keep). No other samples cell regresses
 unexplained.
 
+#### B3.1 — MadEvent's colour selection, as read (2026-08-01)
+
+Traced in the pinned `research/refs/mg5amcnlo` submodule. Line numbers are that
+checkout's.
+
+**The draw.** `SELECT_COLOR(RCOL, JAMP2, ICONFIG, IPROC, ICOL, IVEC)` —
+`madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc:1087` for the
+subprocess-group export, byte-equivalent in the ungrouped one (an emitted copy
+sits at
+`tests/input_files/IOTestsComparison/IOExportV4IOTest/export_matrix_element_v4_madevent_nogroup/auto_dsig.f:655`).
+Its body is:
+
+1. `cconfig = iconfig`, replaced by the clustering's graph (`igraphs(1)` /
+   `vec_igraph(ivec)`) **only when `ickkw > 0`**, i.e. under MLM matching. Every
+   run card in `validation/madgraph/output` leaves `ickkw` at its `0` default, so
+   `cconfig` is the integration configuration throughout.
+2. `nc = int(jamp2(0))` flows. Accumulate `targetamp(i) = targetamp(i-1) +
+   jamp2(i)` for each flow `i` with `icolamp(i, cconfig, iproc)` true, and
+   `targetamp(i) = targetamp(i-1)` for the rest — a cumulative sum with the
+   unadmitted flows masked to zero weight.
+3. If `targetamp(nc) == 0` (no admitted flow carries weight at this point), drop
+   the mask and re-accumulate over every flow. This is the `is_LC = .false.`
+   branch.
+4. `xtarget = rcol * targetamp(nc)`, then walk to the first `icol` with
+   `targetamp(icol) >= xtarget`. Weights inside the admitted set stay `∝ JAMP2`.
+
+`rcol` is one fresh `ranmar` draw per phase-space point
+(`madgraph/iolibs/template_files/auto_dsig_v4.inc:142`), passed into `SMATRIX`,
+which calls `SELECT_COLOR` after dividing by `IDEN`
+(`matrix_madevent_v4.inc:188`, `matrix_madevent_group_v4.inc:241`). The result
+travels to the event through `UNWGT(..., selected_col, ...)`.
+
+So the candidate description is confirmed **for the rule**: MadEvent masks
+`JAMP2` with the integration configuration's `ICOLAMP` row and keeps `∝ JAMP2`
+within the mask.
+
+**The table.** `ICOLAMP(iflow, iconfig, iproc)` is written by
+`get_icolamp_lines` (`madgraph/iolibs/export_v4.py:1295`): `max_Nc` is the
+largest `Nc` power over the whole colour basis, and flow `f` is admitted for the
+diagram a config maps to exactly when that diagram contributes to `f` with
+`Nc` power `max_Nc`. A colourless process gets `.true.` for its one flow at every
+config (`export_v4.py:1308`), which is why the rule is a no-op on Drell-Yan
+without a special case in the caller.
+
+Configs are the diagrams with no four-point vertex: `get_amp2_lines`
+(`export_v4.py:1390`) skips a diagram whose largest vertex-leg number exceeds the
+minimum, so `g g > g g`'s four-gluon contact diagram gets no `AMP2`, no config and
+no `ICOLAMP` column. In group mode the config list is shared across the group's
+subprocesses (`write_coloramps_file`, `export_v4.py:6643`), which is what `iproc`
+indexes.
+
+**Where `ICONFIG` comes from.** `common/to_mconfigs/mapconfig, this_config`
+(`Template/LO/SubProcesses/genps.f:646`), set once per run at
+`genps.f:681-684`: MadEvent integrates **one configuration per `G<n>`
+directory**, so every event a `G<n>` writes carries `ICONFIG = n`. There is no
+per-event channel draw at all.
+
+**What that means for the config's distribution.** Under multi-channel
+(`matrix_madevent_v4.inc:174-185`) channel `j`'s integrand is multiplied by
+`AMP2(j) / Σ_i AMP2(i)` — a partition of unity over configs formed from
+*per-diagram squared amplitudes*, not from sampling densities. Summing the
+channels' event distributions returns `f(x)`, so at a phase-space point `x`
+
+    P(config = j | x) = AMP2_j(x) / Σ_i AMP2_i(x).
+
+That is the distribution MadEvent's colour label is conditioned on, and it is
+independent of how each channel samples.
+
+**Confirmed against MadGraph's own files.** `coloramps.inc` regenerated from the
+submodule (`generate <proc>; output madevent DIR`, plain Python plus `six`, no
+Fortran build) reproduces our `LeadingColorFlows` table row for row and column
+for column — `u u~ > u u~`, `g g > t t~`, `g g > g g`, so the diagram order and
+the flow order match MadGraph's too. Pinned hermetically by
+`vibegraph-lib/tests/color_cf.rs::leading_color_flows_match_madgraphs_coloramps`.
+
+And confirmed against MadGraph's own numbers: `uux_to_uux`'s banked per-config
+cross sections are `G1 = 18.49 pb` (the s-channel config, whose `ICOLAMP` row
+admits only flow 2) and `G2 = 33400 pb` (the t-channel config, only flow 1), so
+the rule predicts flow 1 on `33400/33418.5 = 99.945%` of events. MadGraph's
+banked sample writes it on `9996/10000 = 99.96%`. The rule and the observed
+frequencies agree.
+
+#### B3.2 — why conditioning on *our* sampled channel does not match, and what does
+
+The premise B3 was written on — that our multichannel's per-event sampled channel
+is the analogue of `ICONFIG` — is **false**, and measurably so.
+
+MadEvent's config label is an *amplitude* share, `AMP2_j(x)/Σ AMP2(x)`. Ours is a
+*density* share: channel `j`'s term is `f(x)·α_j g_j(x)/g(x)`, so
+`P(channel = j | x) = α_j g_j(x)/g(x)`. Both partition the same integral and give
+the same σ; they label events completely differently.
+
+Measured on `uux_to_uux` (30k × 5 through the production integrand, the σ gate's
+own budget):
+
+| | s-channel | t-channel |
+|---|---|---|
+| MadGraph per-config σ | 18.49 pb (0.055%) | 33400 pb (99.945%) |
+| ours per-channel σ | 1.6553e4 pb (49.6%) | 1.6792e4 pb (50.4%) |
+
+and the reason is sharper than "a different decomposition": for this process the
+two per-diagram channel *maps are identical*. Over 2000 accepted points the worst
+pairwise relative difference between the two `DiagramChannel` densities is
+**0.000e0** — bit-identical — the α-adaptation stays frozen at `[0.5, 0.5]` with
+equal variance shares to 15 digits, and the channel index carries exactly zero
+information about which diagram produced the point. `g g > g g` is the same: all
+four channel densities bit-identical, α frozen at `[0.25; 4]`, per-channel σ
+25%/25%/25%/25%. Both processes have only massless propagators, so the
+timelike/spine maps degenerate onto the flat one. `g g > t t~` is the exception
+(the `173 GeV` top pole makes the t/u maps real): worst pairwise density
+difference 0.84, α adapts to `[0.267, 0.364, 0.369]`, per-channel σ 26/37/37%.
+
+Implementing the channel-conditioned rule and measuring it confirms the
+consequence: `uux_to_uux`'s `ICOLUP` χ² goes from **1015 → 7268** on one degree
+of freedom, our flow-1 share moving 90.4% → 51.0% against MadGraph's 99.96%,
+because each degenerate channel deterministically forces its own diagram's flow
+and the channels are drawn 50/50.
+
+**What would match.** Draw the configuration per event from
+`AMP2_d(x) / Σ_c AMP2_c(x)` — MadEvent's own conditional — and mask `JAMP2` with
+that diagram's `ICOLAMP` row. This reproduces MadGraph's `ICOLUP` marginal by
+construction and is *independent of our sampler*, which is the right property: the
+colour label should not depend on our channel technology. It also handles the
+`symfact` folding MadEvent applies to symmetric configs automatically, since the
+`AMP2` share is defined before folding. It needs `AMP2_d`, the helicity-summed
+squared modulus of each diagram's coherent amplitude, in the production evaluator
+— a second folded root beside `Op::Flows`, the per-diagram counterpart of
+`eval_jamp2`, with `AMP2` accumulated only over diagrams that would carry a config
+(no four-point vertex, matching `get_amp2_lines`). That is new evaluator
+machinery, out of B3's scope, and it wants its own oracle against MadGraph's
+`AMP2`.
+
+**The same signature elsewhere.** B2 independently found it on
+`pp_to_bb_fixed`: the two sub-percent `ICOLUP` flows overproduced by about 3×,
+χ² 23–31 on 5 dof. That is the same mechanism seen from the other end — a flow
+that only a *subdominant* configuration reaches at leading colour, or that no
+configuration reaches except through its `1/N` remainder, takes its full
+`JAMP2` share from an unmasked draw and next to nothing from MadEvent's masked
+one. It is milder than `uux_to_uux`'s (9.6% against 0.04%, a factor 240) for a
+structural reason worth keeping: `g g > b b~`'s s-channel triple-gluon
+configuration admits *both* flows, so on that subprocess the mask is inactive
+and only the t/u configurations discriminate. The `AMP2_d` fix below addresses
+both rows, and reproducing `pp_to_bb_fixed`'s 3× is a sharper acceptance check
+on it than `uux_to_uux`'s near-deterministic 99.96% — a mask that is merely
+"on" reproduces the latter, while only the right per-configuration weights
+reproduce the former. Not measured here: that row is blocked on
+`hadronic-shat-floor` in this worktree.
+
+**What landed in B3** (branch `v3b-b3`): the reading above, and the verified half
+of the rule — `LeadingColorFlows` (the `ICOLAMP` table off the colour basis,
+pinned against MadGraph's generated `coloramps.inc`) and `select_flow_reached_by`
+(the mask-plus-fallback draw, pinned on both branches including the `is_LC` one).
+Neither is wired into the selection path: the flow draw is unchanged, still
+`∝ JAMP2` over every flow, and `uux_to_uux`'s `samples` cell stays informational
+with its note rewritten around the measurements above. The follow-up is the
+`AMP2_d` accumulator plus the config draw.
+
 ### B4 — banking Drell-Yan events (`samples` for the dy13 cards)
 
 Fills the last two `uncovered` cells a run can fill, and restores the

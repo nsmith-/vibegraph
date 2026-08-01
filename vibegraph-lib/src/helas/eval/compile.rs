@@ -20,7 +20,7 @@ use rand::SeedableRng;
 
 use crate::diagrams::DiagramSet;
 use crate::helas::color::colorize_process;
-use crate::helas::color::flow_tags::{color_flow_tags, ColorFlowTags, LegColor};
+use crate::helas::color::flow_tags::{color_flow_tags, ColorFlowTags, LeadingColorFlows, LegColor};
 use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::phasespace::rambo_massive;
@@ -70,6 +70,9 @@ pub struct AmplitudeEvaluator {
     /// Per-flow Les Houches `(color, anticolor)` line labels for every external leg,
     /// derived from the same basis keys the flows are indexed by.
     color_flow_tags: ColorFlowTags,
+    /// Which flows each diagram reaches at leading order in `Nc` (MadGraph's
+    /// `ICOLAMP`), read off the same basis as the flow tags.
+    leading_color_flows: LeadingColorFlows,
     /// Set by [`prune_zero_helicities`](Self::prune_zero_helicities) once it has
     /// actually dropped combinations. `eval_m2` on a pruned evaluator only sums the
     /// survivors, so it is correct only under that method's kinematic contract
@@ -173,6 +176,7 @@ impl AmplitudeEvaluator {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let color_flow_tags = color_flow_tags(&basis, &leg_colors)?;
+        let leading_color_flows = LeadingColorFlows::of(&basis, n_diagrams);
 
         Ok(Self {
             folded,
@@ -185,6 +189,7 @@ impl AmplitudeEvaluator {
             n_flows: basis.ncolor(),
             cf_matrix: basis.cf_matrix,
             color_flow_tags,
+            leading_color_flows,
             pruned: false,
             zeroamp_nodes_before: 0,
             zeroamp_nodes_after: 0,
@@ -264,6 +269,13 @@ impl AmplitudeEvaluator {
     /// same flow order as the JAMPs and the CF matrix.
     pub fn color_flow_tags(&self) -> &ColorFlowTags {
         &self.color_flow_tags
+    }
+
+    /// Return which colour flows each diagram reaches at leading order in `Nc`
+    /// (MadGraph's `ICOLAMP`), in the same diagram order as the compiled
+    /// diagrams and the same flow order as the JAMPs.
+    pub fn leading_color_flows(&self) -> &LeadingColorFlows {
+        &self.leading_color_flows
     }
 
     /// Whether [`prune_zero_helicities`](Self::prune_zero_helicities) has dropped
