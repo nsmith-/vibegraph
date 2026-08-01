@@ -195,6 +195,7 @@ fn init_block(plan: &EmitPlan, strategy: WeightStrategy, xsec_pb: f64, xmax: f64
             id: plan.process_id,
         }],
         trailer: plan.trailer.clone(),
+        source: None,
     }
 }
 
@@ -450,6 +451,7 @@ mod tests {
                 leg(STATUS_OUTGOING, -30.0),
             ],
             trailer: Vec::new(),
+            source: None,
         }
     }
 

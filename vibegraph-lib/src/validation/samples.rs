@@ -475,6 +475,7 @@ mod tests {
                 spin: 1.0,
             }],
             trailer: Vec::new(),
+            source: None,
         }
     }
 
@@ -493,6 +494,7 @@ mod tests {
                     id: 1,
                 }],
                 trailer: Vec::new(),
+                source: None,
             },
             events: weights.iter().map(|&w| one_event(w)).collect(),
         }

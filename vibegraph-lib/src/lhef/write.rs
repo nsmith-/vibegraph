@@ -12,7 +12,11 @@ use std::io::{self, Write};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event as XmlEvent};
 use quick_xml::Writer;
 
-use super::record::{LheEvent, LheInit, LheParticle};
+use super::parse::{
+    decode_event_info, decode_event_particle, decode_init_head, decode_init_process, EventInfo,
+    InitHead,
+};
+use super::record::{BlockSource, LheEvent, LheInit, LheParticle, LheProcess};
 use super::LHE_VERSION;
 
 /// A C `%[+]w.pe` conversion.
@@ -50,11 +54,76 @@ fn pad(s: String, width: usize) -> String {
     }
 }
 
+/// A block's record lines: each one the source spelled and still decodes to,
+/// re-emitted as written, and this writer's own layout for the rest.
+///
+/// The reuse is checked, not assumed. `decodes` reads a source line back and
+/// asks whether it spells the record now being written, so a caller that edited
+/// a field cannot get the stale spelling: that line falls to `render` while the
+/// rest of the block keeps the file's own numeric dialect. A source whose
+/// record-line count no longer matches the record — a leg added or dropped —
+/// cannot be matched up line by line and is discarded whole.
+///
+/// A non-finite field never decodes back to itself, so a record carrying one
+/// always takes the `render` path and fails loudly at the file.
+fn record_block(
+    source: Option<&BlockSource>,
+    records: usize,
+    render: impl Fn(usize) -> String,
+    decodes: impl Fn(usize, &str) -> bool,
+) -> String {
+    let lines: Vec<&str> = match source.map(BlockSource::as_str) {
+        Some(text) => text.lines().collect(),
+        None => Vec::new(),
+    };
+    if lines.iter().filter(|l| !l.trim().is_empty()).count() != records {
+        let mut body = String::from("\n");
+        for index in 0..records {
+            body.push_str(&render(index));
+        }
+        return body;
+    }
+    let mut body = String::new();
+    let mut index = 0;
+    for line in lines {
+        if line.trim().is_empty() {
+            body.push_str(line);
+            body.push('\n');
+            continue;
+        }
+        if decodes(index, line) {
+            body.push_str(line);
+            body.push('\n');
+        } else {
+            body.push_str(&render(index));
+        }
+        index += 1;
+    }
+    body
+}
+
 /// The `<init>` body: the beam line, one line per process, then whatever the
 /// block carried after them.
 fn init_body(init: &LheInit) -> String {
-    let mut body = format!(
-        "\n{} {} {} {} {} {} {} {} {} {}\n",
+    let mut body = record_block(
+        init.source.as_ref(),
+        init.processes.len() + 1,
+        |index| match index {
+            0 => beam_line(init),
+            i => process_line(&init.processes[i - 1]),
+        },
+        |index, line| match index {
+            0 => decode_init_head(line) == Some(InitHead::of(init)),
+            i => decode_init_process(line) == Some(init.processes[i - 1]),
+        },
+    );
+    push_trailer(&mut body, &init.trailer);
+    body
+}
+
+fn beam_line(init: &LheInit) -> String {
+    format!(
+        "{} {} {} {} {} {} {} {} {} {}\n",
         init.beam_pdg[0],
         init.beam_pdg[1],
         c_exponential(init.beam_energy[0], 6, false, 0),
@@ -65,37 +134,48 @@ fn init_body(init: &LheInit) -> String {
         init.pdf_set[1],
         init.weight_strategy.as_i32(),
         init.processes.len(),
-    );
-    for process in &init.processes {
-        body.push_str(&format!(
-            "{} {} {} {}\n",
-            c_exponential(process.xsec_pb, 6, false, 0),
-            c_exponential(process.xerr_pb, 6, false, 0),
-            c_exponential(process.xmax, 6, false, 0),
-            process.id,
-        ));
-    }
-    push_trailer(&mut body, &init.trailer);
-    body
+    )
+}
+
+fn process_line(process: &LheProcess) -> String {
+    format!(
+        "{} {} {} {}\n",
+        c_exponential(process.xsec_pb, 6, false, 0),
+        c_exponential(process.xerr_pb, 6, false, 0),
+        c_exponential(process.xmax, 6, false, 0),
+        process.id,
+    )
 }
 
 /// The `<event>` body: the info line, one line per leg, then whatever the block
 /// carried after them.
 fn event_body(event: &LheEvent) -> String {
-    let mut body = format!(
-        "\n{} {} {} {} {} {}\n",
+    let mut body = record_block(
+        event.source.as_ref(),
+        event.nup() + 1,
+        |index| match index {
+            0 => info_line(event),
+            i => particle_line(&event.particles[i - 1]),
+        },
+        |index, line| match index {
+            0 => decode_event_info(line) == Some(EventInfo::of(event)),
+            i => decode_event_particle(line) == Some(event.particles[i - 1]),
+        },
+    );
+    push_trailer(&mut body, &event.trailer);
+    body
+}
+
+fn info_line(event: &LheEvent) -> String {
+    format!(
+        "{} {} {} {} {} {}\n",
         pad(event.nup().to_string(), 2),
         pad(event.process_id.to_string(), 6),
         c_exponential(event.weight, 7, true, 13),
         c_exponential(event.scale, 8, false, 14),
         c_exponential(event.alpha_qed, 8, false, 14),
         c_exponential(event.alpha_qcd, 8, false, 14),
-    );
-    for particle in &event.particles {
-        body.push_str(&particle_line(particle));
-    }
-    push_trailer(&mut body, &event.trailer);
-    body
+    )
 }
 
 fn particle_line(p: &LheParticle) -> String {
@@ -317,6 +397,7 @@ mod tests {
                 id: 1,
             }],
             trailer: vec!["<generator name='vibegraph'>x</generator>".to_string()],
+            source: None,
         }
     }
 
@@ -352,6 +433,7 @@ mod tests {
                 },
             ],
             trailer: Vec::new(),
+            source: None,
         }
     }
 
@@ -413,6 +495,134 @@ mod tests {
         });
         assert!(text.contains("run - -nevents 10 - -seed 3"), "{text}");
         assert!(LheFile::parse(&text).is_ok());
+    }
+
+    /// One `g g > t t~` event as MadGraph 3.7.1 delivers it when its own
+    /// post-processing took the fast path that never converts the numbers:
+    /// three-digit-mantissa Fortran momenta, `0.` and `-1.` where the converted
+    /// spelling has `0.0000e+00` and `-1.0000e+00`, and an info line with no
+    /// column padding at all. Nothing in this crate emits any of it.
+    const PASS_THROUGH: &str = "\
+<LesHouchesEvents version=\"3.0\">
+<init>
+21 21 2.500000e+02 2.500000e+02 0 0 247000 247000 -4 1
+1.351348e+01 1.628904e-02 1.351348e+01 1
+</init>
+<event>
+4 1 +1.3513480e+01 0.2500000E+03 0.7546771E-02 0.1024649E+00
+21   -1    0    0  501  502  0.00000000000E+00  0.00000000000E+00  0.25000000000E+03  0.25000000000E+03  0.00000000000E+00 0. -1.
+21   -1    0    0  502  503 -0.00000000000E+00 -0.00000000000E+00 -0.25000000000E+03  0.25000000000E+03  0.00000000000E+00 0.  1.
+6    1    1    2  501    0  0.13402070006E+03 -0.68879185628E+02  0.99323258824E+02  0.25000000000E+03  0.17300000000E+03 0. -1.
+-6    1    1    2    0  503 -0.13402070006E+03  0.68879185628E+02 -0.99323258824E+02  0.25000000000E+03  0.17300000000E+03 0.  1.
+</event>
+</LesHouchesEvents>
+";
+
+    /// The record span of [`PASS_THROUGH`]: what re-serialising it has to
+    /// reproduce.
+    fn pass_through_records() -> String {
+        PASS_THROUGH
+            .lines()
+            .skip_while(|l| l.trim() != "<init>")
+            .take_while(|l| l.trim() != "</LesHouchesEvents>")
+            .map(|l| format!("{l}\n"))
+            .collect()
+    }
+
+    fn serialise(file: &LheFile) -> String {
+        rendered(|out| {
+            write_init(out, &file.init)?;
+            for event in &file.events {
+                write_event(out, event)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// A file spelled in a dialect this writer does not emit still re-serialises
+    /// to its own bytes, because what was read back is what is written out.
+    #[test]
+    fn a_file_is_re_emitted_in_its_own_dialect_and_not_in_this_writers() {
+        let file = LheFile::parse(PASS_THROUGH).expect("the sample parses");
+        assert_eq!(serialise(&file), pass_through_records());
+    }
+
+    /// The other half of the claim, and the one a verbatim copy would fake: the
+    /// source text is handed back only for the lines whose values are untouched.
+    /// Editing one leg's mass must move that line — and only that line — into
+    /// this writer's own layout.
+    #[test]
+    fn an_edited_field_reformats_its_own_line_and_leaves_the_rest_spelled_as_read() {
+        let mut file = LheFile::parse(PASS_THROUGH).expect("the sample parses");
+        file.events[0].particles[2].mass = 175.0;
+        let out = serialise(&file);
+
+        let records = pass_through_records();
+        let source: Vec<&str> = records.lines().collect();
+        let got: Vec<&str> = out.lines().collect();
+        assert_eq!(got.len(), source.len(), "{out}");
+        for index in [0, 1, 2, 3, 4, 5, 6, 7, 9, 10] {
+            assert_eq!(got[index], source[index], "line {index} was rewritten");
+        }
+        assert_eq!(
+            got[8],
+            "        6  1    1    2  501    0 +1.3402070006e+02 -6.8879185628e+01 \
+             +9.9323258824e+01 2.5000000000e+02 1.7500000000e+02 0.0000e+00 -1.0000e+00"
+        );
+    }
+
+    /// A source that no longer has one line per record cannot be matched up with
+    /// it, and is dropped rather than guessed at: the whole block comes back in
+    /// this writer's layout, `NUP` included.
+    #[test]
+    fn dropping_a_leg_discards_the_source_text_for_the_whole_block() {
+        let mut file = LheFile::parse(PASS_THROUGH).expect("the sample parses");
+        file.events[0].particles.pop();
+        let out = serialise(&file);
+        let info = out
+            .lines()
+            .nth(5)
+            .expect("the <event> info line follows the <init> block and the <event> tag");
+        assert_eq!(
+            info,
+            " 3      1 +1.3513480e+01 2.50000000e+02 7.54677100e-03 1.02464900e-01"
+        );
+    }
+
+    /// The reuse rule is a value comparison, and a non-finite value compares
+    /// equal to nothing — including the text it came from. The claim that a
+    /// record carrying one still reaches the writer's loud spelling rather than
+    /// being papered over by the source line is worth its own check, because it
+    /// is the one case where "the text still decodes to this" is false of a
+    /// record nothing edited.
+    #[test]
+    fn a_non_finite_field_is_written_out_rather_than_hidden_by_the_source_line() {
+        let mut file = LheFile::parse(PASS_THROUGH).expect("the sample parses");
+        file.events[0].particles[0].lifetime = f64::NAN;
+        let out = serialise(&file);
+        assert!(
+            out.lines()
+                .nth(6)
+                .expect("the first particle line")
+                .ends_with("NaN -1.0000e+00"),
+            "{out}"
+        );
+    }
+
+    /// The source text says how one file spelled a record, not what the record
+    /// is, so a parsed block has to compare equal to the same block built from
+    /// scratch — otherwise every consumer that checks a round trip by value
+    /// would start failing on files it reads correctly.
+    #[test]
+    fn a_parsed_record_equals_the_same_record_built_from_scratch() {
+        let file = LheFile::parse(PASS_THROUGH).expect("the sample parses");
+        let mut rebuilt = file.clone();
+        rebuilt.init.source = None;
+        for event in rebuilt.events.iter_mut() {
+            event.source = None;
+        }
+        assert!(file.init.source.is_some() && file.events[0].source.is_some());
+        assert_eq!(file, rebuilt);
     }
 
     /// Authored element content is escaped by the XML writer rather than pasted.

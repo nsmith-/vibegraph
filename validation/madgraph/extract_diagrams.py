@@ -345,11 +345,22 @@ def main():
     failed_count = 0
     counts: Dict[str, Any] = {}
 
+    # The committed reference covers the validated processes and only those: one
+    # per `.mg5` script, named after it. A work area is a superset — the oracle
+    # layer also drives bespoke runs (windowed cross sections, run-card variants)
+    # whose directories carry a SubProcesses tree too — and folding those in
+    # would make the committed file depend on which of them a machine happens to
+    # have run.
+    validated = {s.stem for s in (script_dir / "scripts").glob("*.mg5")}
+
     for output_dir in sorted(output_base.glob("*/")):
         if not (output_dir / "SubProcesses").is_dir():
             continue
 
         dir_name = output_dir.name
+        if dir_name not in validated:
+            print(f"⊘ {dir_name}: no .mg5 script, not a validated row", file=sys.stderr)
+            continue
 
         try:
             print(f"Processing: {dir_name}...", file=sys.stderr)

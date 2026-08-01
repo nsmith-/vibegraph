@@ -41,6 +41,30 @@
 //! layout is really "one space between columns", with the widths mattering only
 //! for the small integers.
 //!
+//! # There is more than one dialect, so a file is re-emitted in its own
+//!
+//! The layout above is what this writer *produces*, not the only one it has to
+//! reproduce. MadGraph writes `unweighted_events.lhe` twice: `rw_events.f` emits
+//! it in Fortran, and the Python post-processing reads it back and writes it out
+//! again — but only converts the fields it had to parse. When the unweighting is
+//! all it needs, every field except the rescaled weight is passed through as the
+//! string it was read as, and the delivered file keeps the Fortran spelling
+//! (`0.25000000000E+03`, a lifetime and helicity of `0.` and `1.`, an info line
+//! with no column padding). Which of the two arrives depends on whether a
+//! systematics pass forced a full parse, and nothing in the run card says so.
+//!
+//! [`parse`] therefore keeps each block's record lines as
+//! [`BlockSource`](record::BlockSource) alongside the values it decoded, and
+//! [`write`] hands a line back verbatim once it has decoded it again and found
+//! it to spell the record being written. Reformatting is what happens to a line
+//! whose values a caller changed, not what happens to every line. That is what
+//! makes "this file round-trips" a statement about the file rather than about
+//! whether it happened to be written in the dialect this crate emits — and it
+//! does not go stale the next time a generator spells a double differently.
+//!
+//! A record built rather than read carries no source, so everything this crate
+//! generates is written in the layout above.
+//!
 //! # A file is a lossy record of the run that wrote it
 //!
 //! Cross sections in `<init>` get seven significant digits, `XWGTUP` eight, and

@@ -809,9 +809,16 @@ fn the_grid_alpha_s_runs_are_refused_for_a_measurable_reason() {
 /// eight digits while `g` was built from the full one — a systematic `1.7e-8`
 /// relative that is a sixth of the field's last printed digit.
 fn aqcdup_from_alpha_s(alpha_s: f64) -> f64 {
+    // Both literals are spelled as the Fortran spells them: the full one is what
+    // built `g`, the truncated one is the divisor `unwgt.f` actually uses, and
+    // the gap between them is the effect being reproduced. Writing either as
+    // `std::f64::consts::PI` would erase it.
+    #[allow(clippy::approx_constant)]
     const PI: f64 = 3.141592653589793;
+    #[allow(clippy::approx_constant)]
+    const TRUNCATED_PI: f64 = 3.1415926;
     let g = (4.0 * PI * alpha_s).sqrt();
-    g * g / 4.0 / 3.1415926
+    g * g / 4.0 / TRUNCATED_PI
 }
 
 /// The measured evidence for the refusal, and for `SCALUP` being the
@@ -874,7 +881,10 @@ fn scalup_is_not_the_renormalisation_scale() {
 /// `μR` recovered from `αs(μR)` by bisection, which is monotone over the range
 /// the banked events cover.
 fn invert_alpha_s(running: &RunningAlphaS, aqcdup: f64) -> f64 {
-    let target = aqcdup * 3.1415926 / std::f64::consts::PI;
+    // The same truncated pi `unwgt.f` divided by, undone here.
+    #[allow(clippy::approx_constant)]
+    const TRUNCATED_PI: f64 = 3.1415926;
+    let target = aqcdup * TRUNCATED_PI / std::f64::consts::PI;
     let (mut lo, mut hi) = (1.0f64, 1.0e4f64);
     for _ in 0..200 {
         let mid = 0.5 * (lo + hi);

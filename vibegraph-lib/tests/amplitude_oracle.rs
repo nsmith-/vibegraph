@@ -125,22 +125,32 @@ const GRID_REL_TOL: f64 = 1e-12;
 /// off-shell configuration.
 const EVENT_REL_TOL: f64 = 1e-12;
 
-/// Processes whose event points need a wider tolerance than [`EVENT_REL_TOL`],
-/// with the measurement that set it.
+/// How many times a point's own one-ulp sensitivity a `|M|²` deviation may
+/// reach before it stops being that point's conditioning.
 ///
-/// `e+ e- > mu+ mu- ta+ ta-` is the one. Two of its 24 banked events land within
-/// 40 MeV of the Higgs pole in m(τ⁺τ⁻) — the only two of the 74 points that do —
-/// and they are exactly the two that exceed 1e-12, at 1.5e-12 and 4.2e-12 while
-/// the other 72 stay under 5.2e-13. A propagator whose `s - M² + iMΓ` is a
-/// difference of large numbers amplifies the last bits of `s`, and the two sides
-/// reach `s` by different summation orders, so this is the point's conditioning
-/// rather than a disagreement: at the worse of the two, moving one momentum
-/// component by one ulp moves `|M|²` by 8.4e-12, *twice* the deviation being
-/// gated. The linear level at the same kinematics is clean — the per-diagram
-/// amplitudes agree to 1.2e-14 — which is what rules out a width scheme or a
-/// propagator convention, either of which would move the resonant diagram by far
-/// more than parts in 1e12.
-const EVENT_REL_TOL_OVERRIDE: &[(&str, f64)] = &[("ee_to_mumu_tata_qcd0", 1e-11)];
+/// A handful of banked events sit on a narrow resonance, where the propagator's
+/// `s - M² + iMΓ` is a difference of large numbers and the last bits of `s`
+/// are amplified. There a fixed relative tolerance is measuring the phase-space
+/// point rather than the code, so the bound each point is judged against is the
+/// larger of [`EVENT_REL_TOL`] and this multiple of what one ulp on one momentum
+/// component does to `|M|²` at that point ([`ulp_sensitivity`]).
+///
+/// Measured over the whole suite: 347 points deviate by more than 1e-14, and of
+/// the 31 whose sensitivity exceeds 1e-13 all but two have a deviation *below*
+/// their own sensitivity (worst ratio 0.35). The two exceptions are
+/// `u u~ > c c~ e+ e- mu+ mu-` event points 3 and 12, the only two points in the
+/// suite whose four-lepton invariant mass sits on the Higgs pole — 125.000494
+/// and 124.980225 GeV against `Γ_h = 6.4 MeV` — at ratios 2.00 and 3.51. Ten
+/// leaves 2.85x headroom on the worst of those while leaving every
+/// well-conditioned point judged at `EVENT_REL_TOL`, since their sensitivities
+/// are 1e-13 and below.
+///
+/// What this cannot see: a defect whose size scales with the point's own
+/// conditioning. The two points above are read at the linear level instead —
+/// their process is `NCOLOR = 1`, so `|M|²` is a sum of positive per-helicity
+/// `|JAMP|²` with no cancellation, and the per-flow comparison over the banked
+/// helicities holds at 1.5e-14.
+const ULP_BUDGET: f64 = 10.0;
 
 /// Relative tolerance on the element-wise per-diagram and per-flow comparisons,
 /// normalised to the largest reference entry in the process.
@@ -374,6 +384,10 @@ struct M2Result {
     /// Largest relative gap between the helicity-pruned and unpruned `AMP2`,
     /// over every point and configuration.
     amp2_pruned: f64,
+    /// Points that exceeded the flat tolerance but stayed inside their own
+    /// conditioning. Reported rather than dropped: a point that starts being
+    /// carried by [`ULP_BUDGET`] is a change in what the gate is measuring.
+    conditioned: Vec<String>,
     failures: Vec<String>,
 }
 
@@ -382,16 +396,13 @@ fn compare_m2(
     bound: &BoundAmplitude<f64>,
     pruned: &BoundAmplitude<f64>,
 ) -> M2Result {
-    let event_tol = EVENT_REL_TOL_OVERRIDE
-        .iter()
-        .find(|(p, _)| *p == table.key)
-        .map_or(EVENT_REL_TOL, |(_, t)| *t);
     let mut scratch = bound.scratch_space();
     let mut scratch_pruned = pruned.scratch_space();
     let mut result = M2Result {
         grid: 0.0,
         event: 0.0,
         amp2_pruned: 0.0,
+        conditioned: Vec::new(),
         failures: Vec::new(),
     };
     let n_configs = bound.evaluator().n_configs();
@@ -402,19 +413,29 @@ fn compare_m2(
         let (worst, tol) = if pt.set == "grid" {
             (&mut result.grid, GRID_REL_TOL)
         } else {
-            (&mut result.event, event_tol)
+            (&mut result.event, EVENT_REL_TOL)
         };
         if rel > *worst {
             *worst = rel;
         }
         if rel > tol {
-            result.failures.push(format!(
-                "point {i} ({}): |M|² {ours:e} vs MadGraph {:e}, rel {rel:.3e} > {tol:.0e} \
-                 (one ulp on a momentum component moves it by {:.3e})",
+            // Only now, because it costs 4 x n_ext extra evaluations: how much
+            // of this deviation is the point rather than the code.
+            let sensitivity = ulp_sensitivity(bound, &pt.momenta);
+            let budget = tol.max(ULP_BUDGET * sensitivity);
+            let account = format!(
+                "point {i} ({}): |M|² {ours:e} vs MadGraph {:e}, rel {rel:.3e}; one ulp on a \
+                 momentum component moves |M|² by {sensitivity:.3e}, so the point's own \
+                 conditioning carries {:.2}x of it",
                 pt.set,
                 pt.m2,
-                ulp_sensitivity(bound, &pt.momenta)
-            ));
+                rel / sensitivity.max(1e-300),
+            );
+            if rel > budget {
+                result.failures.push(format!("{account} — over the {budget:.3e} budget"));
+            } else {
+                result.conditioned.push(account);
+            }
         }
         // The same pruning against `AMP2`, which is a sum of *incoherent* moduli
         // and so has no reason a priori to be unmoved by dropping a combination
@@ -1036,6 +1057,10 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
         },
         m2.amp2_pruned,
     );
+
+    for line in &m2.conditioned {
+        println!("  [{name}] carried by its own conditioning: {line}");
+    }
 
     if !m2.failures.is_empty() {
         return Err(format!(
