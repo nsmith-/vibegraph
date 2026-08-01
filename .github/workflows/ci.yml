@@ -77,5 +77,18 @@ jobs:
       - name: Fetch reference data
         run: pixi run fetch-pdf
 
+      # The task ends with the collator, so a green run here says the rendered
+      # report matched the manifest's declared cell set as well as that every
+      # gate passed.
       - name: Banked validation layer
         run: pixi run --skip-deps validate
+
+      # Uploaded whichever way the step above went: when a gate fails, the
+      # report is how the failing cell is read off without going through the log.
+      - name: Upload the validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-report
+          path: target/validation-report/
+          if-no-files-found: warn

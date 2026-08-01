@@ -1,0 +1,21 @@
+[package]
+name = "vibegraph-validation-report"
+version.workspace = true
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+publish = false
+
+# The collator is a development tool, not part of what the crate ships: it reads
+# the row files the validation gates wrote and renders the report. It depends on
+# nothing of vibegraph's own, which is what keeps it buildable on a bare clone.
+[[bin]]
+name = "validation-report"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
+toml = "1"

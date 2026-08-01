@@ -1,5 +1,5 @@
 [workspace]
-members = ["vibegraph-lib", "vibegraph-cli"]
+members = ["vibegraph-lib", "vibegraph-cli", "validation-report"]
 resolver = "2"
 
 [workspace.package]

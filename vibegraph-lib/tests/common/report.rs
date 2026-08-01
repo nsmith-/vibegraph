@@ -22,7 +22,16 @@
 //! | `category` | the manifest category the cell belongs to (`"integrals"`) |
 //! | `mode` | `"gate"` (a failure fails the suite) or `"info"` (measured, never enforced) |
 //! | `status` | `"pass"`, `"fail"` or `"info"` — what this run observed |
-//! | `process` | the process string that was integrated |
+//! | `process` | the process string the row measures |
+//! | `note` | free text a reader needs to interpret the cell; `null` when none |
+//!
+//! Those seven fields are common to every category, and are what the collator
+//! needs to place a cell and mark it. The measurement fields beneath them differ
+//! per category; the `integrals` ones are below, and `diagrams`, `amplitudes`
+//! and `samples` are documented on their own structs.
+//!
+//! | `integrals` field | meaning |
+//! |---|---|
 //! | `sigma_vg_pb` / `sigma_vg_err_pb` | this crate's cross section and its Monte-Carlo error |
 //! | `sigma_mg_pb` / `sigma_mg_err_pb` | the banked MadGraph value and its error |
 //! | `pull` | `(sigma_vg − sigma_mg) / sqrt(err_vg² + err_mg²)`, signed |
@@ -32,7 +41,6 @@
 //! | `per_seed` | one `{seed, sigma_pb, sigma_err_pb}` per seed, in sweep order |
 //! | `neval` / `niter` | the VEGAS budget per seed |
 //! | `subsampler` | per sampling channel, what the rule-based composition chose |
-//! | `note` | free text a reader needs to interpret the cell; `null` when none |
 //!
 //! `pull` and `rel` are signed here even where the gate asserts on their
 //! magnitude: a table of one-sided numbers hides whether a family of rows leans
@@ -47,6 +55,117 @@ use vibegraph::artifact::ChannelSampler;
 
 /// The schema version the files below are written under.
 pub const SCHEMA: u32 = 1;
+
+/// One measured `diagrams` cell: how many diagrams we enumerate against how many
+/// MadGraph does, counted MadGraph's way (one representative per subprocess
+/// class).
+#[derive(Debug, Clone, Serialize)]
+pub struct DiagramsRow {
+    pub schema: u32,
+    pub row: String,
+    pub variant: Option<String>,
+    pub category: &'static str,
+    pub mode: &'static str,
+    pub status: &'static str,
+    pub process: String,
+    /// Ours, grouped the way MadGraph groups: the `k` of `k/n`.
+    pub ours: u32,
+    /// MadGraph's own count from the committed reference: the `n`.
+    pub theirs: u32,
+    /// Every diagram of every concrete subprocess, ungrouped — larger than
+    /// `ours` exactly where the process is a flavour group.
+    pub ours_all_subprocesses: u32,
+    pub note: Option<String>,
+}
+
+impl DiagramsRow {
+    pub fn new(row: &str, process: &str, mode: &'static str) -> Self {
+        DiagramsRow {
+            schema: SCHEMA,
+            row: row.to_string(),
+            variant: None,
+            category: "diagrams",
+            mode,
+            status: if mode == "gate" { "pass" } else { "info" },
+            process: process.to_string(),
+            ours: 0,
+            theirs: 0,
+            ours_all_subprocesses: 0,
+            note: None,
+        }
+    }
+
+    pub fn write(&self) {
+        write_row(self.category, &self.row, self.variant.as_deref(), self);
+    }
+}
+
+/// One measured `amplitudes` cell.
+///
+/// The metric a table renders is the larger of `max_rel_grid` and
+/// `max_rel_event` — the worst `|M|²` deviation over both point sets. The
+/// element-wise fields beneath it are the finer comparison the cell actually
+/// rests on: per-diagram `AMP()` and per-flow `JAMP()` per helicity, each judged
+/// after one fitted global phase.
+#[derive(Debug, Clone, Serialize)]
+pub struct AmplitudesRow {
+    pub schema: u32,
+    pub row: String,
+    pub variant: Option<String>,
+    pub category: &'static str,
+    pub mode: &'static str,
+    pub status: &'static str,
+    pub process: String,
+    pub n_graphs: usize,
+    pub n_flows: usize,
+    pub points_grid: usize,
+    pub points_event: usize,
+    pub max_rel_grid: f64,
+    pub max_rel_event: f64,
+    /// Largest element-wise deviation of the per-diagram `AMP()` comparison,
+    /// relative to the largest MadGraph term. `null` where the table banks no
+    /// per-diagram detail (the two 2→6 rows).
+    pub per_diagram: Option<f64>,
+    /// The same for the per-flow `JAMP()` comparison, which every row banks.
+    pub per_flow: f64,
+    /// `eval_jamp2` against Σ_hel |MadGraph JAMP|², the weight the colour-flow
+    /// draw uses.
+    pub jamp2: f64,
+    /// Whether the per-helicity × per-flow comparison had to be weakened to its
+    /// two projections. The manifest states this per row where the question was
+    /// asked; this is the measurement that claim is checked against.
+    pub factorized: bool,
+    pub note: Option<String>,
+}
+
+impl AmplitudesRow {
+    pub fn new(row: &str, process: &str, mode: &'static str) -> Self {
+        AmplitudesRow {
+            schema: SCHEMA,
+            row: row.to_string(),
+            variant: None,
+            category: "amplitudes",
+            mode,
+            status: if mode == "gate" { "pass" } else { "info" },
+            process: process.to_string(),
+            n_graphs: 0,
+            n_flows: 0,
+            points_grid: 0,
+            points_event: 0,
+            max_rel_grid: 0.0,
+            max_rel_event: 0.0,
+            per_diagram: None,
+            per_flow: 0.0,
+            jamp2: 0.0,
+            factorized: false,
+            note: None,
+        }
+    }
+
+    pub fn write(&self) {
+        write_row(self.category, &self.row, self.variant.as_deref(), self);
+    }
+}
 
 /// One seed's own estimate inside a sweep.
 #[derive(Debug, Clone, Serialize)]
