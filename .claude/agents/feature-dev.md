@@ -53,7 +53,22 @@ report back.
 - **Branch**: all work happens on the sprint branch named in your assignment.
   Create it from `main` if absent; otherwise continue from its tip. Never commit
   to `main`.
-- **No sub-agents**: do the work yourself.
+- **Delegation — script-first, then narrow Sonnet sub-agents**: all judgment,
+  physics diagnosis, tolerance decisions, and anything touching a gate's or the
+  manifest's *meaning* is yours alone — never delegated. But do not burn your
+  own context on the tool output of deterministic bulk work (regenerating many
+  reference runs, per-run verification sweeps, mechanical file surgery).
+  Preference order: (1) a driver script in a backgrounded Bash call, reading
+  only the log tail; (2) for bulk work that needs light per-item judgment, at
+  most a handful of sub-agents, **one nesting level, `model: "sonnet"`**, spawned
+  as your own agent type or `claude` (never `general-purpose` — it ignores
+  model overrides). Every sub-agent brief must carry, verbatim: your worktree
+  path with the isolation rule, the background-long-command rule with a log
+  prefix unique to that sub-agent, and the instruction to write full evidence
+  (command + output per item) to a file and reply with only a compact summary
+  plus the file path. Sub-agent reports are claims, not results: spot-check at
+  least one item yourself before relying on any of them, and if a sub-agent's
+  completion notification never arrives, check its log rather than waiting.
 - **Gate before commit**: `cargo build` and `cargo test` must pass. If your
   session touches amplitude/eval code, run the MG net:
   `pixi run --skip-deps validate` (drop `--skip-deps` only if reference data must
