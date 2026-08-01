@@ -363,6 +363,21 @@ amplitudes = { tier = "hermetic", mode = "gate", note = "no per-diagram table: 5
 integrals = { tier = "long", mode = "gate" }
 samples = { tier = "long", mode = "gate" }
 
+[[process]]
+key = "ud_to_epemud_qcd0"
+process = "u d > e+ e- u d QCD=0"
+script = "validation/madgraph/scripts/ud_to_epemud_qcd0.mg5"
+class = "single-channel"
+n_final = 4
+bundled = false
+rationale = "The multi-rung t-channel reference: the one banked run whose diagrams carry a genuine ladder of spacelike lines, so a phase-space map that orders its rungs wrongly has something to disagree with. Its 35 diagrams split 12 / 14 / 9 over one, two and three spacelike lines, and the rungs are asymmetric — the blobs a chain emits are a single jet, a single lepton and a lepton pair, over a mix of massless and m_Z poles — so an ordering test on it is not vacuous. QCD=0 with lpp = 0 and all three scales fixed at m_Z keeps it clear of the scale prescription entirely: with no alpha_s in the matrix element and no PDF on either beam, no scale choice can reach the cross section."
+artifacts = ["output/ud_to_epemud_qcd0", "output/ud_to_epemud_qcd0/Events/run_01/unweighted_events.lhe.gz"]
+[process.categories]
+diagrams = { tier = "uncovered", note = "the run's counts are not in diagrams.json, so nothing reads them yet; enumerated against them this side finds 35 topologies to MadGraph's 35 over the single concrete subprocess, so banking the counts makes this a passing hermetic gate and needs no allowance" }
+amplitudes = { tier = "uncovered", note = "no fixed-grid amplitude table is generated for this row; adding it to the amplitude registry would give the ladder its per-diagram comparison, which is the finest level at which a wrong rung ordering could be read" }
+integrals = { tier = "uncovered", note = "deliberately not blocked on the clustering — fixed scales, QCD=0 and lpp = 0 put this cross section within reach of the existing fixed-beam path today. It is unmeasured because the row exists for the ordered rung chain, and the work that lands that map is what brings a reason to gate the number" }
+samples = { tier = "uncovered", note = "unmeasured for the same reason as the cross section: generation runs today, and the comparison that would justify a gate here is the one the rung-ordering work brings with it" }
+
 # ──────────────────────────── multi-channel rows ─────────────────────────────
 #
 # Proton beams and multiparticle labels, so one row is a group of concrete
