@@ -28,10 +28,10 @@ pole was **MadGraph 3.5.7's defect** (upstream fix `286feb8e6`, first in
 per-diagram `AMP2_d`; the references are re-banked on 3.7.1 (with the
 finding that 3.5.7/3.7.1 partonic σ are not comparable — `aS` param-card
 change); the LHE writer round-trips both MadGraph serialisation dialects by
-construction. **Remaining, user's steps**: publish `refdata-3`
-(104 789 332 B, sha256 `10892f05…adf5f9`, command in note 27 §B5; CI's
-`banked` job is red until then), flip `[refdata].published`, and decide the
-merge of `v3-backlog` to `main`.
+construction. The close-out steps are done (2026-08-01): `refdata-3` is
+published (release tag `refdata-3`, asset re-downloaded and verified against
+the pin `10892f05…adf5f9`), `[refdata].published = true`, and `v3-backlog`
+is merged to `main`.
 
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
@@ -373,14 +373,13 @@ Small, independent, each one a gate that is weaker than it looks.
   banked because the *other* side of the comparison is the two fetched PDF sets,
   which `pixi run validate` now acquires (`fetch-pdf-multigrid` joined its
   dependencies).
-- **Publish the `refdata-3` release asset** — the manifest pins
-  `vibegraph-refdata-3.tar.zst` with `[refdata].published = false`, so the CI
-  `banked` job (which gates merges — `continue-on-error` went with `refdata-2`)
-  stays red until the asset is uploaded to a `refdata-3` release tag. The bundle
-  is assembled, hash-verified and reproducible; the publish itself is the user's
-  step. `$VIBEGRAPH_REFDATA_SOURCE` serves a local copy meanwhile. The repository
-  being private means the plain release URL serves 404 to unauthenticated
-  clients; `vg_ensure_refdata` falls back to an authenticated
+- ~~**Publish the `refdata-3` release asset**~~ ✅ **published 2026-08-01.**
+  Asset `vibegraph-refdata-3.tar.zst` uploaded to release tag `refdata-3`,
+  re-downloaded and verified byte-identical to the manifest pin
+  (sha256 `10892f05…adf5f9`, 104 789 332 B), and `[refdata].published` flipped
+  to `true`. `$VIBEGRAPH_REFDATA_SOURCE` still overrides for a local copy. The
+  repository being private means the plain release URL serves 404 to
+  unauthenticated clients; `vg_ensure_refdata` falls back to an authenticated
   `gh release download` of the same asset (`GITHUB_TOKEN` in CI), and the plain
   URL becomes live if the repository ever goes public.
 - ~~**The reference bundle double-compresses its event files**~~ ✅ **taken in
