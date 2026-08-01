@@ -1168,3 +1168,77 @@ worktree-fragility rule and the B1/B3-before-B4 constraint verbatim.
    Acceptance: `uux_to_uux` 99.96/0.04 reproduced **and** `pp_to_bb_fixed`'s
    two sub-percent flows at 0.07–0.08% (the sharper test — a merely-on mask
    cannot fake per-config weights).
+
+## 7. Close-out (2026-08-01)
+
+All seven sessions closed, merged to the `v3-backlog` integration branch
+(`a55447f`), final gate green on that tip: hermetic complete, `pixi run
+--skip-deps validate` exit 0. The user decides the merge to `main`; nothing is
+pushed, and `refdata-3` is assembled and verified but not published.
+
+### The census
+
+26 rows × 4 categories = 104 cells: **75 measured (74 ✅, 1 ⚠️)**, 4 ⏳
+oracle-layer, 16 ⛔ blocked on a named feature, 9 covered-by / uncovered —
+against 72 measured (68 ✅, 4 ⚠️) at launch. The one remaining ⚠️ is
+`gg_to_gg` `diagrams` (4/6, the decided counting convention). Every
+informational colour and Higgs cell became a gate.
+
+### Sessions, one line each (outcomes above carry the evidence)
+
+- **B1** — the h→ττ pole is **MadGraph 3.5.7's defect**: `get_channel_cut`
+  computes `(t−Mass)*(t+Mass)` where `t` is already `p²`, starving the
+  resonant channel (α = 1.9e-3 at the pole); MG fails to close against itself
+  by 7.2σ. Upstream fix `286feb8e6` ("change sde_strategy2 to avoid negative
+  weights", 2025-01-27), first released in 3.6.2, never backported to 3.5.x.
+- **B2** — the general ŝ floor (√ŝ ≥ Σ pTᵢ^min, √ŝ ≥ Σ mᵢ, per `setcuts.f`);
+  `pp_to_bb_fixed` σ gates at rel −0.011%, pull −0.07.
+- **B3** — D1's premise falsified by measurement (conditioning on our sampled
+  channel: χ² 1015 → 7268); MadEvent's algorithm read end to end; ICOLAMP
+  table landed, pinned against `coloramps.inc`.
+- **B4** — DY events banked at 3.7.1 (`mg5_pinned.sh`); `pp_to_ll` samples
+  gated on both cards + the live `dσ/dm_ll` gate; found the latent `IDWTUP`
+  bug and 3.7.1's packed CF emission.
+- **B6** — per-diagram `AMP2_d` roots on the same DAG + MadEvent's
+  config-conditioned colour draw: `uux_to_uux` 99.960% vs 99.960%,
+  `pp_to_bb_fixed`'s sub-percent flows at MadGraph's values; both colour
+  cells → gate.
+- **B5** — the full 3.7.1 re-bank (28 runs; B1's six evidence runs stay 3.5.7
+  by design), both Higgs cells → gate against the now-correct reference, all
+  hygiene riders, `refdata-3` assembled and doubly verified.
+- **B7** — the source-text-preserving LHE writer: 34/34 banked files
+  byte-for-byte across both MadGraph serialisation dialects, with a second
+  source-dropped pass keeping the gate's own-layout claim measurable.
+
+### Findings register (filed, not chased)
+
+1. **3.5.7 vs 3.7.1 σ semantics**: 3.5.7 wrote the PDF set's `aS = 0.130`
+   into `lpp = 0` param cards; 3.7.1 leaves the model's 0.118. QCD partonic
+   references moved −8…−15% between banks while our σ tracked exactly — a
+   partonic σ from `refdata-2` is **not comparable** to one from `refdata-3`.
+2. **`ee_to_mumua`** is now the tightest row in both categories (σ pull
+   +3.12, samples KS p 2.7e-4; both gate). Wanted: a windowed `pt(a)`
+   comparison of the B1 kind.
+3. **Degenerate multichannel maps** on massless-propagator processes
+   (bit-identical densities, α frozen uniform) — variance, not correctness;
+   points at the multi-rung spine.
+4. **Helicity pruning moves the incoherent per-diagram AMP2** (39.5% on
+   `gg_to_ttx`) while |M|² is bit-exact — measured every run now.
+5. **`KNOWN_CONFIG_MERGE`**: MadGraph merges `e+ e- > e+ e-`'s two t-channel
+   diagrams into one config; colourless today, loud failure if a coloured
+   process ever does it.
+6. **Two LHE dialects** exist in MadGraph's own output (`wgt_only`
+   pass-through vs converted), keyed off `use_syst`/beams — handled by
+   construction in `lhef/`.
+
+### What remains
+
+- **User**: publish `refdata-3` (104 789 332 bytes, sha256 `10892f05…adf5f9`;
+  the exact `gh release create` command is in §B5's outcome; CI's `banked`
+  job stays red until then), flip `[refdata].published`, then decide the
+  merge of `v3-backlog` to `main`. The weekly `acceptance.yml` trigger still
+  waits on a first binary release tag.
+- **Future sprints**: `kt-clustering` (16 blocked cells), the multi-rung
+  spine, V7, and the three new performance-backlog items this sprint filed
+  (per-flow α offline measurement, stratified-parallel axes, per-stage timing
+  capture with full host identity).
