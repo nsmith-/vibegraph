@@ -782,18 +782,39 @@ mod tests {
         assert!((r.integral - 1.0).abs() < 0.02, "2d: {:.6}", r.integral);
     }
 
+    /// Asserts a value sits within `1e-12` relative of a pinned golden.
+    ///
+    /// The goldens are exact bit patterns captured on one platform, but the
+    /// grid refinement runs `ln`/`powf` through the system libm, and system
+    /// libms legitimately disagree at the last ulp; through the `sum2/n −
+    /// mean²` cancellation that shows up as a relative drift measured at
+    /// ≤ 2.4e-15 in `std_dev` between the two platforms this suite runs on.
+    /// The `1e-12` bound keeps ~400× headroom over that noise while sitting
+    /// orders of magnitude below what any change to draw order, accumulation
+    /// order, or the refinement algorithm produces (≥ 1e-6 in practice), so
+    /// the golden still guards the refactor it was captured for.
+    fn assert_matches_golden(got: f64, golden_bits: u64, what: &str) {
+        let golden = f64::from_bits(golden_bits);
+        let rel = ((got - golden) / golden).abs();
+        assert!(
+            rel < 1e-12,
+            "{what}: got {got:.17e} ({:#018x}), golden {golden:.17e} ({golden_bits:#018x}), rel {rel:.2e}",
+            got.to_bits()
+        );
+    }
+
     /// Pinned-seed regression golden, captured from the pre-split
     /// monolithic `Vegas::integrate` implementation. Guards the refactor:
     /// any change to draw order, accumulation order, or the refinement
-    /// algorithm would move these bits.
+    /// algorithm would move these values far beyond the golden tolerance.
     #[test]
     fn test_pinned_seed_regression_shim() {
         let mut v = Vegas::new(2, 50, 1.5);
         let mut rng = rand::rngs::StdRng::seed_from_u64(999);
         let r = v.integrate(|u| u[0] * u[0] + u[1], 5000, 4, &mut rng);
-        assert_eq!(r.integral.to_bits(), 4605706486304428084);
-        assert_eq!(r.std_dev.to_bits(), 4564401184564159150);
-        assert_eq!(r.chi2_per_dof.to_bits(), 4605496727683902589);
+        assert_matches_golden(r.integral, 4605706486304428084, "integral");
+        assert_matches_golden(r.std_dev, 4564401184564159150, "std_dev");
+        assert_matches_golden(r.chi2_per_dof, 4605496727683902589, "chi2_per_dof");
     }
 
     /// Same golden, driven directly through `VegasGrid::adapt` (bypassing
@@ -803,9 +824,9 @@ mod tests {
         let mut grid = VegasGrid::new(2, 50, 1.5);
         let mut rng = rand::rngs::StdRng::seed_from_u64(999);
         let r = grid.adapt(|u| u[0] * u[0] + u[1], 5000, 4, &mut rng);
-        assert_eq!(r.integral.to_bits(), 4605706486304428084);
-        assert_eq!(r.std_dev.to_bits(), 4564401184564159150);
-        assert_eq!(r.chi2_per_dof.to_bits(), 4605496727683902589);
+        assert_matches_golden(r.integral, 4605706486304428084, "integral");
+        assert_matches_golden(r.std_dev, 4564401184564159150, "std_dev");
+        assert_matches_golden(r.chi2_per_dof, 4605496727683902589, "chi2_per_dof");
     }
 
     // ── Serde round-trip / validation ───────────────────────────────────
