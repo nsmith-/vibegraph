@@ -749,9 +749,11 @@ mod tests {
 
     #[test]
     fn parses_real_format_run_card() {
-        // A real-format MadGraph LO `run_card.dat` (pp → e+ e-): exercises the
-        // syntax, quoting, and comment stripping a reference MadGraph run feeds in.
-        let text = include_str!("../tests/data/run_card_dy.dat");
+        // A card in MadGraph's LO `run_card.dat` syntax: exercises the format,
+        // quoting and comment stripping a reference MadGraph run feeds in. It is
+        // written for this test rather than copied out of a run, so its values are
+        // free to differ from every banked card — see the file's own header.
+        let text = include_str!("../tests/data/run_card_parser_fixture.dat");
         let rc = RunCard::parse(text).unwrap();
         assert_eq!(rc.nevents, 10000);
         assert_eq!(rc.ebeam1, 6500.0);

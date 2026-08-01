@@ -272,6 +272,22 @@ mod tests {
                 jet_legs: false,
             }
         );
+        // `W` pair production exchanges a neutrino, and the charged current pairs
+        // each beam with the `W` carrying its own charge: an incoming `e⁺` reaches
+        // the `ν̄` by emitting the `W⁺`, an incoming `e⁻` reaches the `ν` by
+        // emitting the `W⁻`. So the mask is Bhabha's diagonal and not its
+        // transpose, in the beam and leg orders the process is written in.
+        assert_eq!(
+            topology("e+ e- > W+ W-"),
+            ClusterTopology {
+                beam_connections: BeamConnections::TChannel {
+                    two_body_pairs: [[true, false], [false, true]],
+                },
+                coloured_beams: false,
+                coloured_central_line: false,
+                jet_legs: false,
+            }
+        );
     }
 
     /// A t-channel that no vertex adjacency reveals: no vertex joins an electron to
