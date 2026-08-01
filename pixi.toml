@@ -21,8 +21,11 @@ profile-diagrams = { cmd = "bash scripts/profile.sh validate_madgraph_diagrams",
 profile-sigma = { cmd = "bash scripts/profile.sh validate_sigma", depends-on = ["install-samply"] }
 # Custom command to build docs with MathJax support for rendering LaTeX in docstrings
 docs = "RUSTDOCFLAGS=\"--html-in-header doc-include/mathjax-header.html\" cargo doc --no-deps"
-# Ensure the SM UFO submodule is checked out (offline once the object cache exists)
-init-sm-submodule = "git submodule update --init research/refs/mg5amcnlo"
+# Ensure the SM UFO submodule is checked out (offline once the object cache exists).
+# Through the shared helper, which returns as soon as the model source is on
+# disk: an exported tree carries that content but no `.git`, and there
+# `git submodule update` has nothing to do and no repository to do it in.
+init-sm-submodule = "bash -c '. validation/fetch_common.sh && vg_ensure_submodule'"
 # Fail if the committed interned SM blob (src/ufo/sm_assets/, written by the
 # gen_sm_blob dev binary) disagrees with a fresh parse of the pinned submodule —
 # catches a stale blob after a submodule bump or an SM UFO source edit. The blob
@@ -110,7 +113,7 @@ build-diagrams = "bash validation/madgraph/build.sh"
 # Extract diagram counts and metadata from MadGraph output
 extract-diagrams = { cmd = "python validation/madgraph/extract_diagrams.py", depends-on = ["build-diagrams"] }
 # Full pipeline: extract MadGraph reference data, then run extended Rust tests
-validate-diagrams = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_madgraph_diagrams", depends-on = ["extract-diagrams"] }
+validate-diagrams = { cmd = "cargo test -p vibegraph-lib --profile release-debug --test validate_madgraph_diagrams", depends-on = ["extract-diagrams"] }
 # Compile MadGraph Fortran MATRIX1 subroutines via f2py into Python extension modules
 build-amplitude = { cmd = "bash validation/madgraph/build_amplitude.sh", depends-on = ["build-diagrams"] }
 # Evaluate compiled matrix elements on a fixed kinematic grid and write reference CSVs
@@ -209,24 +212,6 @@ generate-helas = { cmd = "cd validation/helas && python gen_reference.py", depen
 # Rebuild the grid and immediately re-run the gate against it
 validate-helas = { cmd = "cargo test -p vibegraph-lib --test validate_helas", depends-on = ["generate-helas"] }
 
-# --- lhe-compact: project banked Les Houches events into columnar Parquet ---
-# Reads the frozen `unweighted_events.lhe.gz` through pylhe (never a hand-written
-# parser), keeps only the fields the gates consume, and writes one Parquet file
-# per run. Reference-generation tooling, so it lives outside the default
-# environment.
-[feature.lhe-compact.dependencies]
-python = ">=3.11,<3.13"
-pyarrow = ">=15"
-awkward = ">=2"
-
-[feature.lhe-compact.pypi-dependencies]
-pylhe = ">=0.9"
-
-[feature.lhe-compact.tasks]
-# Rewrite every banked run's event file as Parquet under
-# validation/madgraph/events/, verifying the round trip as it goes.
-compact-events = "python validation/madgraph/compact_events.py"
-
 # --- pythia: read our emitted Les Houches files with a real shower generator ---
 # The one gate whose oracle is a downstream consumer rather than MadGraph: Pythia
 # parses the file we wrote, reconstructs the hard process from it and checks its
@@ -262,6 +247,5 @@ markitdown = "*"
 nougat = { features = ["nougat"], solve-group = "nougat" }
 madgraph = { features = ["madgraph"], solve-group = "madgraph" }
 helas-validation = { features = ["helas-validation"], solve-group = "helas-validation" }
-lhe-compact = { features = ["lhe-compact"], solve-group = "lhe-compact" }
 pythia = { features = ["pythia"], solve-group = "pythia" }
 markitdown = { features = ["markitdown"], solve-group = "markitdown" }
