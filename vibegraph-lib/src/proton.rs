@@ -56,12 +56,15 @@
 //! sums. An initial state with `a == b` has only one ordering and contributes no
 //! mirror term.
 //!
-//! # What this module does not decide
+//! # Identical outgoing particles
 //!
-//! The identical-particle symmetry factor is *asserted* to be one per subprocess
-//! rather than carried, because a summed matrix element has no single owner for
-//! it: the factor belongs to the final state, and a sum over subprocesses with
-//! different final states would need it per term.
+//! The symmetry factor `1/Π_s n_s!` belongs to a subprocess's outgoing multiset,
+//! which the grouping rule does not constrain: members share `|M|²` and outgoing
+//! *masses*, and `p p → j j` puts `g g → g g` (`1/2`) and `q q̄ → q q̄` (`1`) in
+//! different groups with the same mass list `[0, 0]`. Every member therefore
+//! carries its own factor ([`Subprocess::symmetry_factor`]) into the luminosity
+//! sum ([`FlavorGroup::symmetry_weighted_luminosity`]), which is where the sum over
+//! subprocesses can still tell them apart.
 //!
 //! # The integrand
 //!
@@ -85,10 +88,10 @@ use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
     boost_z, channel_neval, combine_channels, compile_class, compile_scale_source, components,
-    constant_scale_report, final_state_symmetry_factor, initial_spin_color_average,
-    make_subs_scale_aware, process_external_legs, BoundSubprocess, ChannelIntegration,
-    EventScaleSource, HadronicError, RunningCouplingReport, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS,
-    SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED, VEGAS_NBINS,
+    constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
+    process_external_legs, BoundSubprocess, ChannelIntegration, EventScaleSource, HadronicError,
+    RunningCouplingReport, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED,
+    VEGAS_ALPHA_MAPPED, VEGAS_NBINS,
 };
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::helas::repr::lorentz::LorentzVector;
@@ -96,8 +99,8 @@ use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::PdfMember;
 use crate::phasespace::rng::SubStream;
 use crate::phasespace::{
-    kleiss_pittau_step, AlphaAdaptation, DiagramChannel, PhaseSpaceMap, RamboChannel,
-    ScaledChannel, ScaledMultiChannel, GEV2_TO_PB,
+    identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, DiagramChannel, PhaseSpaceMap,
+    RamboChannel, ScaledChannel, ScaledMultiChannel, GEV2_TO_PB,
 };
 use crate::runcard::RunCard;
 use crate::select::select_index;
@@ -148,6 +151,16 @@ impl Subprocess {
     /// ordering is a second physical initial state rather than the same one.
     pub fn has_mirror(&self) -> bool {
         self.incoming[0] != self.incoming[1]
+    }
+
+    /// This subprocess's identical-particle symmetry factor `1/Π_s n_s!`, from its
+    /// own outgoing flavours ([`identical_particle_factor`]).
+    ///
+    /// Read from the concrete assignment rather than from the group's
+    /// representative, because the outgoing multiset is what the factor counts and
+    /// nothing in the grouping rule holds it fixed across members.
+    pub fn symmetry_factor(&self) -> f64 {
+        identical_particle_factor(&self.outgoing)
     }
 }
 
@@ -272,6 +285,33 @@ impl FlavorGroup {
         sums
     }
 
+    /// [`luminosity`](Self::luminosity) with each member weighted by its own
+    /// identical-particle symmetry factor — the combination the cross section takes.
+    ///
+    /// ```text
+    /// Σ_members S_i · xf_a(x₁, μ_F1) · xf_b(x₂, μ_F2)
+    /// ```
+    ///
+    /// The members share `|M|²`, so their `S_i` cannot be pulled out in front of the
+    /// group unless they happen to agree: a group is a statement about the matrix
+    /// element, not about the outgoing multiset.
+    pub fn symmetry_weighted_luminosity(
+        &self,
+        pdf: &PdfMember,
+        x1: f64,
+        x2: f64,
+        mu_f: [f64; 2],
+    ) -> [f64; 2] {
+        let mut sums = [0.0; 2];
+        for (i, member) in self.members.iter().enumerate() {
+            let s = member.symmetry_factor();
+            let m = self.member_luminosity(i, pdf, x1, x2, mu_f);
+            sums[0] += s * m[0];
+            sums[1] += s * m[1];
+        }
+        sums
+    }
+
     /// One member's `[direct, mirror]` luminosity — the share that decides which
     /// concrete flavour an accepted event of this group is labelled with.
     pub fn member_luminosity(
@@ -355,12 +395,6 @@ pub enum ProtonError {
          supplies massless partons and the probe puts the beams on the light cone"
     )]
     MassiveInitialState { process: String, mass: f64 },
-    #[error(
-        "subprocess {process} carries an identical-particle symmetry factor {factor}, not 1; a \
-         matrix element summed over subprocesses has no single owner for a final-state factor, \
-         so each term would have to carry its own"
-    )]
-    IdenticalFinalState { process: String, factor: f64 },
     #[error(
         "subprocesses {a} and {b} have different outgoing masses, so no single phase-space map \
          covers the sum"
@@ -516,13 +550,6 @@ pub fn derive_flavor_groups(
             return Err(ProtonError::MassiveInitialState {
                 process: process.clone(),
                 mass: leg.mass,
-            });
-        }
-        let factor = final_state_symmetry_factor(&evaluator);
-        if factor != 1.0 {
-            return Err(ProtonError::IdenticalFinalState {
-                process: process.clone(),
-                factor,
             });
         }
         let cuts = Cuts::compile(card, &legs)?;
@@ -726,11 +753,12 @@ pub struct OuterPoint {
 /// ```
 ///
 /// summed over the [`FlavorGroup`]s of the process, with `L^direct`/`L^mirror` the
-/// group's two summed beam orderings ([`FlavorGroup::luminosity`]) and `R` the
-/// mirror map ([`FlavorGroup::mirror_into`]). There is **one** cut indicator, on the
+/// group's two beam orderings summed over its members, each member weighted by its
+/// own identical-particle symmetry factor
+/// ([`FlavorGroup::symmetry_weighted_luminosity`]), and `R` the mirror map
+/// ([`FlavorGroup::mirror_into`]). There is **one** cut indicator, on the
 /// unreflected final state: the mirror is an argument to the matrix element, not a
-/// second event. The identical-particle symmetry factor is one by construction —
-/// [`derive_flavor_groups`] refuses a process where it is not.
+/// second event.
 ///
 /// # Change of variables
 ///
@@ -1068,7 +1096,8 @@ impl<'a> ProtonIntegrand<'a> {
         let mut acc = 0.0;
         let mut mirror = self.mirror_buf.borrow_mut();
         for (g, sub) in self.groups.groups().iter().zip(&self.subs) {
-            let [direct, reflected] = g.luminosity(self.pdf, m.x1, m.x2, scales.mu_f);
+            let [direct, reflected] =
+                g.symmetry_weighted_luminosity(self.pdf, m.x1, m.x2, scales.mu_f);
             let mut term = 0.0;
             if direct != 0.0 {
                 term += direct * sub.eval_m2(&cm);
@@ -1183,12 +1212,13 @@ impl<'a> ProtonIntegrand<'a> {
     /// than independent, and each is proportional to the term of the point's own
     /// value that the label names:
     ///
-    /// * the group `∝ avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)`;
-    /// * the `(flavour, beam ordering)` pair inside it `∝ L_i^o · |M(q or Rq)|²`,
+    /// * the group `∝ avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)`, with
+    ///   the two luminosities symmetry-weighted as in the cross section;
+    /// * the `(flavour, beam ordering)` pair inside it `∝ S_i · L_i^o · |M(q or Rq)|²`,
     ///   which at fixed ordering is the member's share of the group's summed
-    ///   parton luminosity at this event's `(x₁, x₂)` — the whole of what
-    ///   distinguishes one member of a group from another, since they share the
-    ///   matrix element exactly;
+    ///   parton luminosity at this event's `(x₁, x₂)`, times its own
+    ///   identical-particle factor — the whole of what distinguishes one member of a
+    ///   group from another, since they share the matrix element exactly;
     /// * the helicity `∝ |M_c|²`, then the colour flow through
     ///   [`AmplitudeEvaluator::select_color_flow`] — the integration configuration
     ///   `∝ AMP2(d)` and the flow `∝ JAMP2(i)` inside that configuration's
@@ -1209,7 +1239,8 @@ impl<'a> ProtonIntegrand<'a> {
         let mut m2 = Vec::with_capacity(self.subs.len());
         let mut terms = Vec::with_capacity(self.subs.len());
         for (g, sub) in self.groups.groups().iter().zip(&self.subs) {
-            let lumi = g.luminosity(self.pdf, event.x[0], event.x[1], event.scales.mu_f);
+            let lumi =
+                g.symmetry_weighted_luminosity(self.pdf, event.x[0], event.x[1], event.scales.mu_f);
             let direct = if lumi[0] != 0.0 {
                 sub.eval_m2(&event.cm)
             } else {
@@ -1229,12 +1260,16 @@ impl<'a> ProtonIntegrand<'a> {
 
         // One categorical draw over the group's `(member, ordering)` terms: the
         // matrix element is common to the members, so within an ordering this is the
-        // luminosity share and nothing else.
-        let weights: Vec<f64> = (0..g.members().len())
-            .flat_map(|i| {
+        // luminosity share times the member's own identical-particle factor.
+        let weights: Vec<f64> = g
+            .members()
+            .iter()
+            .enumerate()
+            .flat_map(|(i, member)| {
+                let s = member.symmetry_factor();
                 let lumi =
                     g.member_luminosity(i, self.pdf, event.x[0], event.x[1], event.scales.mu_f);
-                [lumi[0] * m2[group][0], lumi[1] * m2[group][1]]
+                [s * lumi[0] * m2[group][0], s * lumi[1] * m2[group][1]]
             })
             .collect();
         let picked = select_index(&weights, u[1])?;
@@ -1513,6 +1548,25 @@ mod tests {
     /// common `x` shape would make the two orderings equal and the check vacuous.
     fn probe_pdf() -> PdfMember {
         let flavors = vec![-4, -3, -2, -1, 1, 2, 3, 4, 21];
+        let x = vec![1e-7, 1.0];
+        let q2 = vec![1.0, 1e8];
+        let mut xf = Vec::new();
+        for ix in 0..x.len() {
+            for iq in 0..q2.len() {
+                for ifl in 0..flavors.len() {
+                    let shape = 1.0 + ix as f64 * 0.1 * (ifl + 1) as f64;
+                    xf.push(0.01 * (ifl + 1) as f64 * shape * (1.0 + 0.5 * iq as f64));
+                }
+            }
+        }
+        PdfMember::from_subgrids(vec![SubGrid { x, q2, flavors, xf }])
+    }
+
+    /// [`probe_pdf`] restricted to `alive`: every other flavour is absent from the
+    /// grid and so carries exactly zero, which switches off the flavour groups whose
+    /// initial states need it while leaving their sampling channels in the mixture.
+    fn probe_pdf_restricted(alive: &[i32]) -> PdfMember {
+        let flavors = alive.to_vec();
         let x = vec![1e-7, 1.0];
         let q2 = vec![1.0, 1e8];
         let mut xf = Vec::new();
@@ -1812,7 +1866,8 @@ mod tests {
                     "{swapped} is not the same process as {}",
                     label(set)
                 );
-                let mirror_eval = compile_class(&mirror_set, m, evaluated).expect("mirror compiles");
+                let mirror_eval =
+                    compile_class(&mirror_set, m, evaluated).expect("mirror compiles");
                 (g, mirror_eval)
             })
             .collect()
@@ -1914,29 +1969,58 @@ mod tests {
         }
     }
 
-    /// One group per identical-particle-free subprocess is a premise, not a
-    /// convention: a repeated outgoing species is refused rather than silently
-    /// dropped into a summed matrix element with no owner for its `1/n!`.
+    /// A decomposition whose groups carry *different* identical-particle factors is
+    /// accepted, and each group's luminosity is weighted by its own members' factors.
+    ///
+    /// `u ū → g g` (`1/2`) and `u ū → d d̄` (`1`) share the outgoing mass list
+    /// `[0, 0]` and a cut filter, so nothing below the outgoing flavours can tell
+    /// their factors apart — the shape `p p > j j` is made of.
     #[test]
-    fn a_repeated_outgoing_species_is_refused() {
+    fn groups_with_different_symmetry_factors_are_accepted_and_weighted_apart() {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
-        for g in derive(LLJ, &m, &evaluated).groups() {
-            assert_eq!(final_state_symmetry_factor(g.evaluator()), 1.0);
+        let mut sets = enumerate("u u~ > g g", &m);
+        sets.extend(enumerate("u u~ > d d~", &m));
+        let groups = derive_flavor_groups(sets, &m, &evaluated, &RunCard::default())
+            .expect("a mixed-factor decomposition is accepted");
+        assert_eq!(groups.groups().len(), 2);
+
+        let pdf = probe_pdf();
+        let (x1, x2, mu_f) = (0.12, 0.31, [MU_F, MU_F]);
+        let mut factors = Vec::new();
+        for g in groups.groups() {
+            let raw = g.luminosity(&pdf, x1, x2, mu_f);
+            let weighted = g.symmetry_weighted_luminosity(&pdf, x1, x2, mu_f);
+            let expected: f64 = g.members()[0].symmetry_factor();
+            assert!(
+                g.members().iter().all(|s| s.symmetry_factor() == expected),
+                "a group whose members disagree needs the per-member sum, not this check"
+            );
+            assert!(raw[0] > 0.0, "a group carries no direct luminosity");
+            for k in 0..2 {
+                assert_eq!(weighted[k], expected * raw[k]);
+            }
+            factors.push(expected);
         }
-        let err = match derive_flavor_groups(
-            enumerate("u u~ > g g", &m),
-            &m,
-            &evaluated,
-            &RunCard::default(),
-        ) {
-            Ok(_) => panic!("two outgoing gluons must be refused"),
-            Err(e) => e,
-        };
-        assert!(
-            matches!(err, ProtonError::IdenticalFinalState { factor, .. } if factor == 0.5),
-            "unexpected refusal: {err}"
-        );
+        factors.sort_by(f64::total_cmp);
+        assert_eq!(factors, vec![0.5, 1.0]);
+    }
+
+    /// Every member of `p p > l+ l- j` carries factor one, so its enforced cross
+    /// section is the row that would move if the weighting were applied where it
+    /// does not belong.
+    #[test]
+    fn a_final_state_of_distinct_species_is_left_alone() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive(LLJ, &m, &evaluated);
+        let pdf = probe_pdf();
+        for g in groups.groups() {
+            assert!(g.members().iter().all(|s| s.symmetry_factor() == 1.0));
+            let raw = g.luminosity(&pdf, 0.12, 0.31, [MU_F, MU_F]);
+            let weighted = g.symmetry_weighted_luminosity(&pdf, 0.12, 0.31, [MU_F, MU_F]);
+            assert_eq!(raw, weighted);
+        }
     }
 
     /// The flavour partition of `p p > e+ e-` lands on the two Z/gamma* coupling
@@ -2698,6 +2782,111 @@ mod tests {
             assert!(
                 pull.abs() < 4.0,
                 "the two sides differ by {pull:.2} combined standard errors at {sqrt_shat}"
+            );
+        }
+    }
+
+    /// The same fixed-energy oracle on a decomposition whose groups need *different*
+    /// identical-particle factors: `u ū → g g` at `1/2` beside `d d̄ → u ū` at `1`,
+    /// with one outgoing mass list and one cut filter, so nothing but the outgoing
+    /// flavours separates them.
+    ///
+    /// The two groups are measured one at a time, by a probe distribution that
+    /// supports only one of them — the other's luminosity is then exactly zero while
+    /// its channels keep sampling, so the mixture is the mixed one throughout and the
+    /// measurement is still of a group inside it. That isolation is what makes the
+    /// test fire: had the other group's factor been used, the reference would be off
+    /// by a factor of two rather than by a share of the total, and the assertion
+    /// below states that distance explicitly.
+    ///
+    /// The partonic side computes each group's `σ̂` through [`FixedBeamIntegrand`],
+    /// which reads the factor off that group's own amplitude, so the comparison is
+    /// between two independent readings of the factor and not one reading checked
+    /// against itself.
+    #[test]
+    fn at_fixed_energy_each_group_carries_its_own_symmetry_factor() {
+        use crate::hadronic::FixedBeamIntegrand;
+
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let mut sets = enumerate("u u~ > g g", &m);
+        sets.extend(enumerate("d d~ > u u~", &m));
+        let groups =
+            derive_flavor_groups(sets, &m, &evaluated, &card).expect("mixed-factor groups");
+        assert_eq!(groups.groups().len(), 2);
+        let amps = bind_all(&groups, &evaluated);
+        let factors: Vec<f64> = groups
+            .groups()
+            .iter()
+            .map(|g| g.members()[0].symmetry_factor())
+            .collect();
+        assert_eq!(factors.iter().copied().fold(0.0, f64::max), 1.0);
+        assert_eq!(factors.iter().copied().fold(1.0, f64::min), 0.5);
+
+        let cuts = groups.groups()[0].cuts();
+        let masses = groups.groups()[0].final_masses();
+        let sqrt_shat = 500.0f64;
+        let tau = sqrt_shat * sqrt_shat / (SQRT_S_HAD * SQRT_S_HAD);
+        let x = tau.sqrt();
+
+        for (i, alive) in [vec![2, -2], vec![1, -1]].into_iter().enumerate() {
+            let pdf = probe_pdf_restricted(&alive);
+            let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                .expect("integrand");
+            let u0 = 1.0 - tau.ln() / integ.tau_min().ln();
+            let y_max = -0.5 * tau.ln();
+            let jac = (1.0 / integ.tau_min()).ln() * 2.0 * y_max;
+
+            let seed = 0x5111_0002 + i as u64;
+            let [hadronic, hadronic_err] = inner_integral(&integ, [u0, 0.5], 3000, seed);
+
+            let (mut partonic, mut partonic_var) = (0.0, 0.0);
+            let mut live = Vec::new();
+            for (gi, (g, amp)) in groups.groups().iter().zip(&amps).enumerate() {
+                let [direct, mirror] = g.luminosity(&pdf, x, x, [MU_F, MU_F]);
+                let lum = direct + mirror;
+                if lum == 0.0 {
+                    continue;
+                }
+                live.push(gi);
+                let mut fixed = FixedBeamIntegrand::new(
+                    vec![amp],
+                    cuts,
+                    sqrt_shat,
+                    masses.clone(),
+                    g.spin_color_average(),
+                );
+                fixed.use_multichannel(g.diagrams(), &evaluated, 3000, 4, 0xA55E_7000);
+                let (sigma, err) = fixed.integrate(20_000, 5, seed + 1);
+                partonic += lum * sigma / GEV2_TO_PB;
+                partonic_var += (lum * err / GEV2_TO_PB).powi(2);
+            }
+            assert_eq!(live.len(), 1, "the probe distribution lit up {live:?}");
+            let other = factors[1 - live[0]];
+            let mine = factors[live[0]];
+
+            let expected = jac * partonic;
+            let expected_err = jac * partonic_var.sqrt();
+            let combined = (hadronic_err * hadronic_err + expected_err * expected_err).sqrt();
+            let rel = (hadronic - expected).abs() / expected;
+            let pull = (hadronic - expected) / combined;
+            let wrong = expected * other / mine;
+            let control = (wrong - expected).abs() / expected;
+            eprintln!(
+                "group {} (factor {mine}): hadronic {hadronic:.6e} ± {hadronic_err:.1e}, \
+                 luminosity × partonic {expected:.6e} ± {expected_err:.1e}, rel {rel:.3e}, \
+                 pull {pull:.2}; the other group's factor would sit {control:.3} away",
+                live[0]
+            );
+            assert!(
+                control > 0.4,
+                "the two factors are only {control:.3} apart here"
+            );
+            assert!(rel < 0.03, "the two sides differ by {rel:.3e}");
+            assert!(
+                pull.abs() < 4.0,
+                "the two sides differ by {pull:.2} combined standard errors"
             );
         }
     }
