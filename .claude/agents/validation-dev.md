@@ -49,10 +49,12 @@ job: execute it, validate it, commit it, report back.
   quoted MC uncertainty plus distribution checks — σ-agreement alone is a weak
   oracle, blind to mis-sampled regions of small measure.
 - **Enforcement lifecycle**: informational → demonstrated agreement → enforced.
-  When a process is promoted, keep the coverage bookkeeping honest
-  (`MG_VALIDATED_PROCESSES` / `KNOWN_UNCOVERED` in `helas/eval/compile.rs`, and
-  `EXPECT_MATCH` in `tests/validate_helas_mg.rs`) — a passing gate that cannot see
-  a convention is not confirmation of it.
+  When a process is promoted, keep the coverage bookkeeping honest — its row in
+  `validation/manifest.toml`, its committed table under
+  `validation/madgraph/amplitudes/` that `tests/amplitude_oracle.rs` reads, and
+  `MG_VALIDATED_PROCESSES` / `KNOWN_UNCOVERED` in `helas/eval/compile.rs`, which
+  drive the library-level sweeps. A passing gate that cannot see a convention is
+  not confirmation of it.
 
 ## Hard rules
 
@@ -65,9 +67,9 @@ job: execute it, validate it, commit it, report back.
   to `main`.
 - **No sub-agents**: do the work yourself.
 - **Gate before commit**: `cargo build` and `cargo test` must pass. Sessions that
-  touch amplitude/eval code or the coverage lists must also run the MG net:
-  `pixi run --skip-deps validate-helas-mg` (drop `--skip-deps` only if reference
-  data must be regenerated). Already-enforced processes must keep their status —
+  touch amplitude/eval code or the coverage lists must also run the banked layer:
+  `pixi run --skip-deps validate` (drop `--skip-deps` only if reference data must
+  be regenerated). Already-enforced processes must keep their status —
   bit-for-bit stays bit-for-bit, REL_TOL stays within tolerance. Never commit
   with a failing gate — report the failure instead.
 - **Diagnosis-only sessions** commit no source changes; throwaway probe code goes

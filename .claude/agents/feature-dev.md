@@ -56,8 +56,8 @@ report back.
 - **No sub-agents**: do the work yourself.
 - **Gate before commit**: `cargo build` and `cargo test` must pass. If your
   session touches amplitude/eval code, run the MG net:
-  `pixi run --skip-deps validate-helas-mg` (drop `--skip-deps` only if reference
-  data must be regenerated). Already-enforced processes must keep their status —
+  `pixi run --skip-deps validate` (drop `--skip-deps` only if reference data must
+  be regenerated). Already-enforced processes must keep their status —
   bit-for-bit stays bit-for-bit, REL_TOL stays within tolerance. Never commit
   with a failing gate — report the failure instead.
 - **Commit**: one commit at session end (intermediate commits at natural

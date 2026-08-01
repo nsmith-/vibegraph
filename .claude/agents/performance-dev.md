@@ -22,8 +22,9 @@ branch. Your job: implement it, measure it, validate it, commit it, report back.
 
 ## Performance-sprint focus
 
-- **The gate is the contract.** Every optimization lands guarded by the full
-  `validate_helas_mg` net. Classify each transformation up front:
+- **The gate is the contract.** Every optimization lands guarded by the full MG
+  net — `tests/amplitude_oracle.rs` against the committed per-process amplitude
+  tables, plus the rest of the banked layer. Classify each transformation up front:
   *order-preserving* changes gate **bit-for-bit** against the pre-change output;
   *reassociating* changes (momentum-sum reordering, balanced sums, rewrites) gate
   at REL_TOL 1e-12. State the classification in your report; a bit-for-bit claim
@@ -70,8 +71,8 @@ sessions:
 - **No sub-agents**: do the work yourself.
 - **Gate before commit**: `cargo build` and `cargo test` must pass, plus the MG
   net for anything touching amplitude/eval code:
-  `pixi run --skip-deps validate-helas-mg` (drop `--skip-deps` only if reference
-  data must be regenerated). Already-enforced processes must keep their status.
+  `pixi run --skip-deps validate` (drop `--skip-deps` only if reference data must
+  be regenerated). Already-enforced processes must keep their status.
   Never commit with a failing gate — report the failure instead.
 - **Commit**: one commit at session end (intermediate commits at natural
   checkpoints if the session is large), conventional-commit style, ending with:
