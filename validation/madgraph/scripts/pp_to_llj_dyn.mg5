@@ -1,0 +1,29 @@
+# MadGraph5 batch script: p p > l+ l- j QCD=2 QED=2 at the default dynamical scale.
+#
+# The scale-moved twin of pp_to_llj_fixed. Same generate line, same beams, the
+# same LHAPDF grid (lhaid 247000) and the same mmll = 50; the three fixed-scale
+# switches are off, so every scale follows dynamical_scale_choice = -1 — the kT
+# clustering MadGraph applies by default. The pair is what isolates the scale
+# prescription on a process this side already reproduces: a cross section that
+# agrees against pp_to_llj_fixed and disagrees here is a scale error and nothing
+# else, because that is the only card line between them.
+#
+# scale / dsqrt_q2fact1 / dsqrt_q2fact2 are set to the 91.188 the fixed run
+# carries even though the dynamical branch never reads them, so the two run
+# cards differ in exactly the three boolean lines.
+generate p p > l+ l- j QCD=2 QED=2
+output pp_to_llj_dyn -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set fixed_ren_scale False
+  set fixed_fac_scale1 False
+  set fixed_fac_scale2 False
+  set scale 91.188
+  set dsqrt_q2fact1 91.188
+  set dsqrt_q2fact2 91.188
+  set dynamical_scale_choice -1
+  set pdlabel lhapdf
+  set lhaid 247000
+  set mmll 50
+  done

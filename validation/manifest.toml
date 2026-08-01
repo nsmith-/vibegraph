@@ -482,6 +482,51 @@ amplitudes = { tier = "covered-by", rows = ["uux_to_epemg", "ddx_to_epemg", "gu_
 integrals = { tier = "blocked", blocker = "kt-clustering" }
 samples = { tier = "blocked", blocker = "kt-clustering" }
 
+[[process]]
+key = "pp_to_llj_dyn"
+process = "p p > l+ l- j QCD=2 QED=2"
+script = "validation/madgraph/scripts/pp_to_llj_dyn.mg5"
+class = "multi-channel"
+n_final = 3
+bundled = false
+rationale = "The scale-moved twin of pp_to_llj_fixed: the two run cards differ in the three fixed-scale booleans and in nothing else, so a cross section that agrees against the fixed-scale row and disagrees against this one isolates the scale prescription from every other part of the chain. Its per-event SCALUP takes 9966 distinct values over 10000 events where the fixed-scale run takes 1, which is what makes it a reference for the general clustering rather than for a closed form."
+artifacts = ["output/pp_to_llj_dyn", "output/pp_to_llj_dyn/Events/run_01/unweighted_events.lhe.gz"]
+[process.categories]
+diagrams = { tier = "covered-by", rows = ["pp_to_llj_fixed", "pp_to_llj_qcd2_qed2"] }
+amplitudes = { tier = "covered-by", rows = ["uux_to_epemg", "ddx_to_epemg", "gu_to_epemu", "gux_to_epemux"] }
+integrals = { tier = "blocked", blocker = "kt-clustering", note = "the run card leaves all three scales at dynamical_scale_choice = -1, which is refused rather than approximated until the general clustering lands; this is the row the hadronic cross section is re-gated against once it does" }
+samples = { tier = "blocked", blocker = "kt-clustering", note = "generation runs through the same integrand as the cross section and meets the same refusal" }
+
+[[process]]
+key = "pp_to_jj"
+process = "p p > j j"
+script = "validation/madgraph/scripts/pp_to_jj.mg5"
+class = "multi-channel"
+n_final = 2
+bundled = false
+rationale = "The canonical leading-order QCD process on MadGraph's shipped run-card defaults — the run card departs from them in pdlabel and lhaid alone, because the MG-internal nn23lo1 is not an LHAPDF6 grid this crate's PDF layer can read. The only row whose flavour group mixes subprocesses with unequal identical-particle symmetry factors (g g > g g and q q~ > g g carry 1/2 where q g > q g and g g > q q~ carry 1), and its scale is the general clustering case rather than a degenerate one: a 2 -> 2 core of massless coloured legs where no closed form collapses the prescription."
+artifacts = ["output/pp_to_jj", "output/pp_to_jj/Events/run_01/unweighted_events.lhe.gz"]
+[process.categories]
+diagrams = { tier = "uncovered", note = "the run's counts are not in diagrams.json: enumerated against them this side finds 15 unique topologies to MadGraph's 17, and the whole deficit is the g g > g g subprocess (4 against 6) — the four-gluon vertex written once here and once per colour structure there, which is the difference gg_to_gg already carries informationally and which its per-flow amplitude gate pins at 1e-13. Banking the counts means declaring the row informational for the same reason" }
+amplitudes = { tier = "uncovered", note = "gg_to_gg and uux_to_uux cover two of its subprocesses; g q > g q, q q~ > g g and g g > q q~ would need parton rows of their own" }
+integrals = { tier = "blocked", blocker = "kt-clustering", note = "needs the general per-event scale and a per-subprocess identical-particle symmetry factor at the same time, which is what makes it the capstone rather than another hadronic row" }
+samples = { tier = "blocked", blocker = "kt-clustering", note = "generation runs through the same integrand as the cross section and meets the same refusal" }
+
+[[process]]
+key = "pp_to_ll_scalefact2"
+process = "p p > l+ l-"
+script = "validation/madgraph/scripts/pp_to_ll_scalefact2.mg5"
+class = "multi-channel"
+n_final = 2
+bundled = false
+rationale = "The only banked run whose scalefact is not 1.0, and the only thing in the set that can say how many powers of it each scale carries: every other run leaves the factor at 1, where a prescription that squared it into the second beam's mu_F and one that applied it once are the same number. Same generate line, beams and shipped defaults as pp_to_ll with scalefact alone at 2.0, so the per-event SCALUP / <rscale> / <pdfrwt> are read against that row directly. Measured on its events: mu_F(beam 2) equals mu_F(beam 1) bit for bit in all 10000, which is the reading a doubled power would have made differ by exactly a factor of two."
+artifacts = ["output/pp_to_ll_scalefact2", "output/pp_to_ll_scalefact2/Events/run_01/unweighted_events.lhe.gz"]
+[process.categories]
+diagrams = { tier = "covered-by", rows = ["pp_to_ll"] }
+amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"] }
+integrals = { tier = "blocked", blocker = "kt-clustering", note = "a cross section is not what this run is for — the scale fields are — and it carries the dynamical scale choice besides" }
+samples = { tier = "blocked", blocker = "kt-clustering", note = "generation runs through the same integrand as the cross section and meets the same refusal" }
+
 # ─────────────────────────── standalone gates ────────────────────────────────
 #
 # Process-independent checks, run once per invocation of their layer and
