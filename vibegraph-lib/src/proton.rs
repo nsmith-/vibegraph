@@ -121,7 +121,11 @@ pub const GROUP_REL_TOL: f64 = 1e-10;
 ///
 /// Without it a partition could be produced by two subprocesses landing either
 /// side of [`GROUP_REL_TOL`] by rounding, which is not a physical distinction.
-/// Measured worst separation over `p p → ℓℓj`: `0.69`.
+/// It is a floor and not evidence of a margin: the margin is measured instead by
+/// `group_members_agree_where_the_partition_was_not_measured`, where the closest
+/// pair of `p p → ℓℓj` groups separates by `0.74` at points the partition was not
+/// fitted on — six orders above this floor, and asserted there to stay above
+/// `0.1`.
 pub const GROUP_SEPARATION_MIN: f64 = 1e-6;
 
 /// Probe points drawn at each of [`probe_energies`]' three energies.
@@ -395,21 +399,51 @@ pub enum ProtonError {
     AmplitudeMismatch { index: usize },
 }
 
-/// Partonic energies the grouping probe measures at, spread over more than a
-/// decade so a coincidence at one energy cannot survive.
+/// Partonic energies the grouping probe measures at, spread over two decades so
+/// a coincidence at one energy cannot survive.
 ///
-/// Scaled by the outgoing pole masses so a heavy final state is probed above its
-/// threshold, with a floor for the massless case.
-fn probe_energies(final_masses: &[f64]) -> [f64; 3] {
-    let base = final_masses.iter().sum::<f64>().max(100.0);
-    [3.0 * base, 5.0 * base, 13.0 * base]
+/// The rungs are scaled by the outgoing pole masses, with a floor for the
+/// massless case, and every rung is pushed above the final state's own threshold
+/// so a heavy final state is probed above it rather than at an energy RAMBO
+/// cannot fill. Two rungs are there for a specific blind spot each:
+///
+/// * the lowest, a fifth of the base, because the integrator routinely visits
+///   `ŝ` below the electroweak scale, and a pair of subprocesses agreeing over a
+///   ladder that starts above it while differing below would be merged silently;
+/// * `resonance`, the `s`-channel pole the model supplies, because nothing else
+///   in the ladder is deliberately placed on one, and a propagator on its pole is
+///   where two subprocesses' weak content separates most sharply.
+///
+/// Rungs that collide after the threshold clamp collapse to one, so a heavy final
+/// state costs fewer points rather than repeating a point.
+fn probe_energies(final_masses: &[f64], resonance: Option<f64>) -> Vec<f64> {
+    let threshold: f64 = final_masses.iter().sum();
+    let base = threshold.max(100.0);
+    let floor = 1.2 * threshold;
+    let mut rungs: Vec<f64> = [
+        Some(0.2 * base),
+        resonance,
+        Some(3.0 * base),
+        Some(5.0 * base),
+        Some(13.0 * base),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|e| e.max(floor))
+    .collect();
+    rungs.sort_by(f64::total_cmp);
+    rungs.dedup_by(|a, b| (*a - *b).abs() <= 1e-9 * a.abs().max(b.abs()));
+    rungs
 }
 
 /// Partonic-CM probe points: massless beams along ±z and a flat RAMBO draw over
 /// the outgoing legs, at each of [`probe_energies`].
-fn probe_momenta(final_masses: &[f64], seed: u64) -> Vec<Vec<V>> {
+fn probe_momenta(final_masses: &[f64], resonance: Option<f64>, seed: u64) -> Vec<Vec<V>> {
     let mut points = Vec::new();
-    for (i, sqrt_s) in probe_energies(final_masses).into_iter().enumerate() {
+    for (i, sqrt_s) in probe_energies(final_masses, resonance)
+        .into_iter()
+        .enumerate()
+    {
         let rambo = RamboChannel::<f64>::new(sqrt_s, final_masses.to_vec());
         let mut stream = SubStream::from_stream(seed, i as u64);
         for _ in 0..PROBE_POINTS_PER_ENERGY {
@@ -422,6 +456,13 @@ fn probe_momenta(final_masses: &[f64], seed: u64) -> Vec<Vec<V>> {
         }
     }
     points
+}
+
+/// The `s`-channel pole the probe ladder places a rung on: the model's `Z` mass,
+/// or nothing if the model has no `Z` or leaves it massless.
+fn s_channel_resonance(model: &UFOModel, evaluated: &EvaluatedModel) -> Option<f64> {
+    let mass = evaluated.mass(model.particle_id("Z")?);
+    (mass > 0.0).then_some(mass)
 }
 
 /// Worst relative disagreement between two probe traces.
@@ -500,7 +541,11 @@ pub fn derive_flavor_groups(
         }
     }
 
-    let points = probe_momenta(&final_masses, PROBE_SEED);
+    let points = probe_momenta(
+        &final_masses,
+        s_channel_resonance(model, evaluated),
+        PROBE_SEED,
+    );
     let traces: Vec<Vec<f64>> = compiled
         .iter()
         .map(|(evaluator, ..)| {
@@ -1423,6 +1468,13 @@ mod tests {
 
     /// Probe points at energies and on a stream the partition was *not* derived
     /// from, so a within-group agreement measured here is a prediction.
+    ///
+    /// The ladder stays above the electroweak scale where the derivation's now
+    /// reaches below it. Extending this one down is not free: at `√ŝ = 25` GeV
+    /// there are `p p > l+ l- j` configurations where the mirrored and unmirrored
+    /// matrix elements differ by only `8.4e-4`, against the `1e-3` the mirror
+    /// check below asserts, so how strong that claim can be made at low `ŝ` is a
+    /// measurement to take deliberately rather than a side effect of this list.
     fn fresh_points(final_masses: &[f64]) -> Vec<Vec<V>> {
         let mut points = Vec::new();
         for (i, sqrt_s) in [220.0f64, 740.0, 2100.0].into_iter().enumerate() {
@@ -1491,6 +1543,43 @@ mod tests {
             }
         }
         PdfMember::from_subgrids(vec![SubGrid { x, q2, flavors, xf }])
+    }
+
+    /// The ladder's own shape, which no grouping outcome pins: the partition would
+    /// still come out right if a rung were silently dropped or left below its
+    /// final state's threshold.
+    #[test]
+    fn the_probe_ladder_reaches_below_the_electroweak_scale_and_onto_the_pole() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let m_z = s_channel_resonance(&m, &evaluated).expect("the SM has a massive Z");
+
+        // A massless final state: five distinct rungs over two decades, one of
+        // them the pole and one of them below the electroweak scale.
+        let massless = probe_energies(&[0.0, 0.0, 0.0], Some(m_z));
+        assert_eq!(massless.len(), 5);
+        assert!(massless[0] < 91.0, "no rung below the electroweak scale");
+        assert!(
+            massless.contains(&m_z),
+            "the pole is not a rung: {massless:?}"
+        );
+        assert!(
+            massless.last().unwrap() / massless[0] > 50.0,
+            "ladder too narrow"
+        );
+
+        // A heavy final state: every rung sits above its threshold, and the ones
+        // that would not collapse onto the floor instead of repeating a point.
+        let m_t = evaluated.mass(m.particle_id("t").expect("t in the SM"));
+        let heavy = probe_energies(&[m_t, m_t], Some(m_z));
+        assert!(
+            heavy.iter().all(|&e| e > 2.0 * m_t),
+            "a rung below the t t~ threshold: {heavy:?}"
+        );
+        assert!(
+            heavy.windows(2).all(|w| w[1] > w[0]),
+            "rungs repeat: {heavy:?}"
+        );
     }
 
     #[test]
