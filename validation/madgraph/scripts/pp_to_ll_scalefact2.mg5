@@ -1,0 +1,28 @@
+# MadGraph5 batch script: p p > l+ l- with scalefact = 2.0.
+#
+# The scalefact twin of pp_to_ll: same generate line, same beams, same shipped
+# run-card defaults — which for this process means the dynamical scale, the
+# MG-internal nn23lo1 PDF and no cuts beyond the defaults — with scalefact
+# alone moved off 1.0. It is the only banked run whose scalefact is not 1, and
+# that is the entire point: with every scalefact at 1 the factor is invisible,
+# so no banked run can say how many powers of it each scale carries.
+#
+# What it pins. Under a dynamical scale choice, reweight.f applies exactly one
+# power of scalefact to mu_R and one to each of the two mu_F. The per-beam
+# factorisation scales are the sharp end: an implementation that carried
+# scalefact squared into the second beam's mu_F — as one did, through
+# q2fact(2) = scalefact**2 * q2fact(1) — reproduces every scalefact = 1 run in
+# the bank exactly and differs from this one by a factor of two in <pdfrwt>'s
+# second beam. The per-event SCALUP / <rscale> / <pdfrwt> fields are the
+# payload; the cross section is a by-product.
+#
+# The event budget is left at the default 10000 rather than trimmed, because
+# this run is read per event: the budget costs seconds here and every event is
+# another independent reading of the same placement.
+generate p p > l+ l-
+output pp_to_ll_scalefact2 -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set scalefact 2.0
+  done
