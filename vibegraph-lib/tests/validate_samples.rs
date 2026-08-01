@@ -71,7 +71,7 @@ use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
 use vibegraph::unweight::Unweighter;
-use vibegraph::validation::samples::{compare, labelling_for, Chi2Column, EventSample};
+use vibegraph::validation::samples::{compare, labelling_for, Chi2Column, EventSample, Spectrum};
 
 mod common;
 
@@ -683,55 +683,6 @@ const FLAT_NITER: usize = 8;
 const FLAT_DRAWS: usize = 600_000;
 const FLAT_SEED: u64 = 0x_F1A7_0001;
 
-/// A binned weight sum with the squared weights that give it an error.
-#[derive(Clone)]
-struct Binned {
-    sum: Vec<f64>,
-    sum_sq: Vec<f64>,
-    below: f64,
-    above: f64,
-}
-
-impl Binned {
-    fn new() -> Self {
-        Binned {
-            sum: vec![0.0; MLL_EDGES.len() - 1],
-            sum_sq: vec![0.0; MLL_EDGES.len() - 1],
-            below: 0.0,
-            above: 0.0,
-        }
-    }
-
-    fn fill(&mut self, x: f64, w: f64) {
-        if x < MLL_EDGES[0] {
-            self.below += w;
-            return;
-        }
-        match MLL_EDGES.windows(2).position(|e| x >= e[0] && x < e[1]) {
-            Some(k) => {
-                self.sum[k] += w;
-                self.sum_sq[k] += w * w;
-            }
-            None => self.above += w,
-        }
-    }
-
-    fn total(&self) -> f64 {
-        self.sum.iter().sum::<f64>() + self.below + self.above
-    }
-
-    /// Bin contents scaled so the whole histogram carries `sigma_pb`, with the
-    /// error each bin's own weights imply.
-    fn as_sigma(&self, sigma_pb: f64) -> Vec<(f64, f64)> {
-        let scale = sigma_pb / self.total();
-        self.sum
-            .iter()
-            .zip(&self.sum_sq)
-            .map(|(&s, &q)| (s * scale, q.sqrt() * scale))
-            .collect()
-    }
-}
-
 /// The `low-mll-reconciliation` decider: `dσ/dm_ll` down to threshold for
 /// `e+ e- > mu+ mu- ta+ ta-`, in absolute picobarns, from three independent
 /// estimates.
@@ -787,8 +738,8 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
     let mg = banked_sample(row.key);
 
     // MadGraph's side, from its own events and its own cross section.
-    let mut mg_mumu = Binned::new();
-    let mut mg_tata = Binned::new();
+    let mut mg_mumu = Spectrum::new(MLL_EDGES);
+    let mut mg_tata = Spectrum::new(MLL_EDGES);
     for (event, &w) in mg.events.iter().zip(&mg.weights) {
         let event = canonical(event, Labelling::Fine);
         for (name, value) in kinematics(&event, Labelling::Fine) {
@@ -808,8 +759,8 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
             channels.iter().map(|c| (&c.grid, c.neval)),
             SCAN_SEED,
         );
-        let mut ours_mumu = Binned::new();
-        let mut ours_tata = Binned::new();
+        let mut ours_mumu = Spectrum::new(MLL_EDGES);
+        let mut ours_tata = Spectrum::new(MLL_EDGES);
         let mut sigma_sum = 0.0;
         for &seed in &GEN_SEEDS {
             let sample = generate(integ, records, &mut uw, seed);
@@ -831,8 +782,8 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
         // weighted estimator is the estimate.
         let (grid, result) = integ.adapt_grid(FLAT_NEVAL, FLAT_NITER, FLAT_SEED);
         let flat_sigma = result.integral * GEV2_TO_PB;
-        let mut flat_mumu = Binned::new();
-        let mut flat_tata = Binned::new();
+        let mut flat_mumu = Spectrum::new(MLL_EDGES);
+        let mut flat_tata = Spectrum::new(MLL_EDGES);
         let mut rng = ChaCha8Rng::seed_from_u64(FLAT_SEED ^ 0xFFFF);
         let mut u = vec![0.0; integ.channel_grid_ndim()];
         let mut momenta = Vec::new();
@@ -871,32 +822,32 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
                  {:>13} {:>22} {:>22} {:>22} {:>11} {:>7} {:>7}",
                 "bin", "production", "MadGraph", "flat RAMBO", "prod-MG", "share", "flat/MG"
             );
-            for (k, edges) in MLL_EDGES.windows(2).enumerate() {
-                if b[k].0 <= 0.0 && a[k].0 <= 0.0 {
+            for ((prod, mgb), flatb) in a.iter().zip(&b).zip(&c) {
+                if mgb.sigma_pb <= 0.0 && prod.sigma_pb <= 0.0 {
                     continue;
                 }
                 eprintln!(
                     "    {:>6.1}-{:<6.1} {:>12.5e} +- {:>7.1e} {:>12.5e} +- {:>7.1e} \
                      {:>12.5e} +- {:>7.1e} {:>+11.3e} {:>6.0}% {:>7}",
-                    edges[0],
-                    edges[1],
-                    a[k].0,
-                    a[k].1,
-                    b[k].0,
-                    b[k].1,
-                    c[k].0,
-                    c[k].1,
-                    a[k].0 - b[k].0,
-                    100.0 * (a[k].0 - b[k].0) / excess,
-                    ratio(c[k].0, b[k].0),
+                    prod.low,
+                    prod.high,
+                    prod.sigma_pb,
+                    prod.err_pb,
+                    mgb.sigma_pb,
+                    mgb.err_pb,
+                    flatb.sigma_pb,
+                    flatb.err_pb,
+                    prod.sigma_pb - mgb.sigma_pb,
+                    100.0 * (prod.sigma_pb - mgb.sigma_pb) / excess,
+                    ratio(flatb.sigma_pb, mgb.sigma_pb),
                 );
             }
             eprintln!(
                 "    below {:.0}: production {:.3e} pb, MadGraph {:.3e} pb, flat {:.3e} pb",
                 MLL_EDGES[0],
-                ours.below / ours.total() * ours_sigma,
-                theirs.below / theirs.total() * mg.sigma_pb,
-                flat.below / flat.total() * flat_sigma,
+                ours.outside().0 / ours.total() * ours_sigma,
+                theirs.outside().0 / theirs.total() * mg.sigma_pb,
+                flat.outside().0 / flat.total() * flat_sigma,
             );
         }
     });

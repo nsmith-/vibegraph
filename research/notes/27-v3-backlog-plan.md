@@ -499,6 +499,159 @@ stood in for.
 Gate: two `uncovered` cells measured; a Drell-Yan `dσ/dm_ll` spectrum
 regenerates from a committed gate again.
 
+#### B4 outcome (2026-08-01) — ✅ closed, branch `v3b-b4`
+
+Both cells filled, the spectrum gate is live, and the session found one defect —
+in this crate, not in MadGraph.
+
+**The 3.7.1 mechanism (B5 reuses this verbatim).** `validation/madgraph/mg5_pinned.sh`
+runs the pinned submodule's generator in place of whatever `mg5_aMC` is on PATH;
+`gen_hadronic_sigma.sh` calls it, and `build.sh` still does not (the rest of the
+work area is B5's to re-bank). Everything runs under `pixi run -e madgraph`,
+which supplies the Python 3.11 + `six` the submodule needs to *generate* and the
+gfortran + LHAPDF that madevent needs to *build and run*; the packaged
+mg5amcnlo 3.5.7 in that environment is never invoked. Four details the wrapper
+handles so a caller does not repeat them:
+
+- MadGraph drops a scratch `py.py` into its working directory, so it runs in a
+  temporary one and the repository stays clean. The submodule itself is untouched
+  — `git status` in it is empty after a generation, and no
+  `input/mg5_configuration.txt` is created.
+- `LHAPDF_DATA_PATH` puts `validation/pdf/` ahead of the installed data
+  directory, so `lhaid 247000` resolves to the set this repository pins rather
+  than one MadGraph downloads. The installed directory stays on the path for
+  `lhapdf.conf` and the set index.
+- `set automatic_html_opening False --no_save` and `set notification_center
+  False --no_save` are prepended to every script. The pinned checkout carries no
+  site configuration, so both default to **on**, and a batch generation opens a
+  browser tab and posts a desktop notification per process directory. The
+  packaged 3.5.7 had them off in its own
+  `.pixi/envs/madgraph/MG5_aMC/input/mg5_configuration.txt`, which is why no
+  existing script needed this.
+- Those two `set` lines cover the *generation* only. `--no_save` keeps them out
+  of the submodule, and — verified, not assumed — also out of the generated
+  `Cards/me5_configuration.txt`, which still ships them commented out at their
+  `True` defaults. So the later `generate_events` is a second place to silence:
+  `silence_madgraph_ui` in `gen_hadronic_sigma.sh` rewrites that file before
+  every run, which also fixes a process directory generated before the wrapper
+  existed.
+
+Verified in the produced banner: `#*  VERSION 3.7.1  2026-04-29  *` in both
+`Events/*/run_*_tag_1_banner.txt`, against `VERSION 3.5.7 2024-11-29` in every
+banked run of `refdata-2`.
+
+**Sanity anchor — the σ that 3.7.1 produces agrees with the 3.5.7 reference**,
+which is what B1 §"why no other row is affected" predicted for a Z at
+`Γ/m = 2.7%`:
+
+| card | 3.5.7 (committed) | 3.7.1 (this session) | pull |
+|---|---|---|---|
+| `dy13_default` | `933.11 ± 0.447` pb | `933.23 ± 0.480` pb | `+0.18σ` |
+| `dy13_mmll_60_120` | `644.42 ± 0.315` pb | `644.33 ± 0.283` pb | `−0.21σ` |
+
+No finding. `hadronic_sigma_reference.json` was **restored to the committed
+3.5.7 numbers** — re-banking the reference is B5's step under D3, and the σ gate
+and the samples gate agree either way.
+
+**Two run-card changes, both forced and neither physical.**
+
+`False = use_syst` is now in both `dy13` cards. MadGraph's systematics pass
+appends one `<wgt>` per scale and PDF-error variation to every record, and with
+`--pdf=errorset` on NNPDF23 that is a few hundred; at the cards' 200000 events
+the unweighted file is **4.07 GB of text, 193 MB gzipped**, which no gate can
+read into memory and no bundle can carry. With the pass off the same run writes
+**20 MB gzipped**. It changes nothing else: σ is bit-identical
+(`0.93323E+03 ± 0.47991E+00` before and after), and the first event's momenta,
+colours, helicities and `XWGTUP` are identical to the last digit — the
+systematics pass only rewrites the file through `lhe_parser`, which is also why
+the formatting differs between the two.
+
+**The defect: a sample's cross section was read without looking at `IDWTUP`.**
+The first `dσ/dm_ll` run reported MadGraph's spectrum a factor `2.0e5` below
+ours, uniformly across every bin — a constant ratio, so a normalisation and not
+a shape. `EventSample::from_lhe` took σ as the **mean** of `XWGTUP`, correct
+under `IDWTUP = -4`; these files carry `-3`, where the **sum** is σ, and
+`2.0e5 ≈ 200000` is the event count.
+
+Which of the two MadGraph writes is a property of the **run card**, not of the
+version. `RunCardLO`'s `event_norm` is declared
+
+```python
+self.add_param("event_norm", "average", allowed=['sum','average','unity'],
+               include=False, sys_default='sum', hidden=True)
+```
+
+(`madgraph/various/banner.py:4298`), and `sys_default` is documented at
+`banner.py:2846` as "default used if the parameter is not in the card". MadGraph's
+own full cards name `event_norm` — `pp_to_llj_fixed/Cards/run_card.dat:195` says
+`average = event_norm` — so every banked run in `refdata-2` is `-4`. The `dy13`
+cards are hand-written and minimal, never mention it, and therefore get `sum`.
+`lhe_parser.py:517-526` turns that into strategy `3` (signed to `-3`), and
+`madevent_interface.py:3885` is where the run card's value is handed over.
+
+So the blind spot was structural: the only files the reader had ever seen were
+the ones its assumption was true for, and every existing `samples` cell is blind
+to it — KS is a statement about two cumulative distributions and χ² about
+category frequencies, both invariant under rescaling one sample's weights. The
+`dσ/dm_ll` gate is the first comparison in the category that is not, and it found
+it on its first run. `from_lhe` now dispatches on the field, takes `XSECUP` under
+`+3`, and **panics on an `IDWTUP` it does not know** rather than guessing; three
+unit tests in `validation/samples.rs` pin all three branches, and
+`WeightStrategy` gained a named `-3`. No existing row moved: all of them are
+`-4`.
+
+**What is measured now.** `pp_to_ll` `samples` is `banked`/`gate`, one cell per
+card, 200000 MadGraph events against 3 × 20000 of ours at the σ gate's own
+`120000 × 12` budget:
+
+| card | min KS p | min χ² p | σ (MG) |
+|---|---|---|---|
+| `default` | `2.6e-2` (`phi(l+)/pi`) | `2.9e-3` (`SPINUP`) | `933.230` pb |
+| `mmll_60_120` | `2.2e-2` (`y(l-)`) | `6.9e-2` (`ICOLUP`) | `644.334` pb |
+
+The `2.9e-3` is one seed of three (`0.49` and `0.72` on the others), so noise at
+this trial count, not a structure. `pt(ll)` is a constant of the process at this
+order and is named rather than compared. `pp_to_ll_qcd0`'s `samples` becomes
+`covered-by = ["pp_to_ll"]`, matching where its `integrals` cell already points:
+the two rows enumerate the same diagrams, so the order constraint changes what
+the selection is *asked* for and not what it returns, and that is the `diagrams`
+cell's business.
+
+**The spectrum.** `dσ/dm_ll` in absolute picobarns on both cards, shared
+machinery (`validation::samples::Spectrum`) with the `ee_to_mumu_tata_qcd0`
+binning, which was migrated onto it. Every judged bin — a bin carrying at least
+`1e-4` of MadGraph's sample — is within **2.3** combined errors on both cards,
+against a `4σ` threshold set from the ~50-bin trial count. The Z bins agree to
+`0.1–0.8%`, the `20–60 GeV` photon-pole region to `0.9–5.8%` at `0.3–2.2σ`.
+
+The lower edge is `20 GeV` and that is exact, not approximate: at this order the
+pair recoils against nothing, so both leptons carry the same `pt` and
+`m_ll = 2 pt / sin θ ≥ 2 ptl`. `drll` never binds under it (`Δφ = π`). The gate
+requires **zero** weight below that edge on both sides, which is a check that the
+cut is in the right place and not only that the spectrum above it is right.
+
+**Left for B5, with numbers.**
+
+1. The two runs are in the local work area only. `pp_to_ll` carries
+   `bundled = false`, and the branch is red on a fetching checkout — `banked_sample`
+   fails naming the missing file — until `refdata-3` picks them up. Both runs are
+   `Events/run_<name>/`, not `Events/run_01/`: `generate_events -f run_default`
+   names the directory after the run tag. The gate's `Row.events` field says which.
+2. Bundle cost: `20 MB` and `21 MB` gzipped, `~120 MB` of text each, against a
+   `65 MB` `refdata-2`. If that is too much, `nevents` is the dial — but it also
+   sets MadEvent's integration accuracy, so lowering it weakens the σ gate's
+   reference, and the cards are shared verbatim with this crate.
+3. When re-banking the rest with 3.7.1, **check each run's `IDWTUP`**. Every
+   `refdata-2` run is `-4` because MadGraph's own full run cards name
+   `event_norm`; any re-run driven from a hand-written card will be `-3`. The
+   reader now handles both, and `from_lhe`'s panic branch is the backstop, but a
+   re-bank that silently flips a row's convention is worth seeing rather than
+   absorbing.
+4. `output/dy13_default/SubProcesses/P1_qq_ll/matrix1_optim.f` is now 3.7.1's.
+   `generate_references.sh`'s `refs` stage regenerates `dy_integrand_oracle.json`
+   from it whenever that file exists, so the next `generate-references` run will
+   recompute the committed oracle against 3.7.1's matrix element. Not run here.
+
 ### B5 — hygiene riders + `refdata-3` + close-out
 
 One session, because the bundle re-cut must happen exactly once (each re-cut
