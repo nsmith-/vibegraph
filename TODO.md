@@ -543,6 +543,47 @@ the natural vehicle for several at once.
 
 ## ⚡ Performance backlog
 
+- **Per-flow α tuning — offline gain measurement first** (user, 2026-08-01;
+  sequenced after B6, which provides the shares). Stratify the integrand by
+  leading-colour share `s_i = |JAMP_i|²CF_ii / Σ_k |JAMP_k|²CF_kk` (positive,
+  partition of unity, interference apportioned pro rata) and tune a separate
+  channel-mixture α per stratum. **Stage 1 is a measurement, not a sampler**:
+  the Kleiss–Pittau optimal α and its variance are computable offline from
+  recorded `g_j(x)`, `f(x)` and `s_i(x)` on existing samples — report the
+  achievable variance reduction against the ×(strata) evaluation overhead
+  before building anything; a small number dies here like note 26's parquet.
+  Known limits, measured this sprint: on `uux_to_uux`/`gg_to_gg` the channel
+  maps are **bit-identical** (note 27 §B3.2), so per-flow α is a no-op there
+  until the multi-rung spine differentiates the maps; flows overlap heavily, so
+  the gain is the inter-stratum covariance term, expected modest. **Guardrail:
+  split the tuning, never the coverage** — every stratum keeps every channel
+  with an α floor, or the `sde_strategy`-class fragility (note 27 §B1) is
+  rebuilt on our side.
+- **Stratified-parallel integration axes** (user, 2026-08-01) — the iterative
+  VEGAS+α loop needs an embarrassingly parallel axis for SIMD/multi-thread
+  promotion. Catalogued, exact-first (no partition function, no fragility):
+  (a) **channel-block stratification** — allocate `N_j = α_j·N` points per
+  mixture component deterministically instead of drawing the label per event;
+  unbiased, removes the multinomial label noise (a small free variance win),
+  and each block is one map = one code path = SIMD-clean lanes with no branch
+  divergence; (b) **helicity strata** — `Σ_hel |M_hel|²` is an exact orthogonal
+  decomposition (no interference for unpolarized beams), so helicity classes
+  (parity-folded, zero-classes dropped) can carry their own budgets/grids;
+  first real consumer for `mg-single-helicity-bench`; (c) **flavour groups ×
+  beam orderings** (hadronic) — already independent integrals, blocked only by
+  the `RefCell` scratch (the DY-parallelism item below); (d) **frozen-pass
+  bulk** — `sample_frozen` is already embarrassingly parallel; keep the
+  sequential adapt phase short and put the budget in frozen passes (synergises
+  with the VEGAS first-iteration item: discard/shorten adaptation, bulk-sample
+  frozen); (e) **batch-size vs iteration-count** — measure whether α/grid
+  adaptation converges in fewer sequential iterations with larger parallel
+  batches per iteration (adaptation signal-to-noise grows ~√batch, so the
+  sequential critical path should shrink until the update is
+  quasi-deterministic; the measurement is a batch-size sweep at fixed total
+  budget). Partition-based axes (per-diagram AMP2 shares à la MadEvent
+  G-directories, per-diagram-class = per *distinct* map) are second tier:
+  real cluster-scale precedent, but they carry the routing fragility and need
+  the same coverage guardrail as the per-flow item above.
 - **Compiled-program cache in the artifact** — designed in note 23, deliberately
   not built: compilation costs 0.05–0.29 s against ~13 s for a 20k-event
   `generate`. **Trigger:** setup climbing to a noticeable share of a generation
