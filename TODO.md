@@ -18,19 +18,20 @@ declares. 26 rows × 4 categories = 104 cells, 72 of them measured in that layer
 rendered table, the findings register and the recommended order for the follow-up
 work — is note 25 §10.
 
-**Next**: the **`v3-backlog` sprint** — **active (launched 2026-08-01), note
-27**. B1–B4 and B6 ✅ merged to the `v3-backlog` integration branch: the h→ττ pole
-is **MadGraph 3.5.7's defect** (fixed upstream in `286feb8e6`, first in 3.6.2),
-the general ŝ floor gates `pp_to_bb_fixed` σ at −0.011%, the colour-selection
-premise was falsified and replaced by a per-diagram `AMP2_d` draw (note 27
-§B3.2/§B6), and Drell-Yan events are banked. Decisions D1–D4 in note 27 §6.
-B5 (3.7.1 re-bank + hygiene + `refdata-3`) and **B7** (the Les Houches dialect
-blocker B5 hit, fixed in `lhef/` — note 27 §B7) are done on branches `v3b-b5`
-and `v3b-b7`: `pixi run validate` is green end to end and the census reads 75
-measured / 74 gated / 1 informational. What is left is the sprint's close-out
-(the report, this file, the `validation/madgraph` README, note 27's close-out
-section) and the user's own step: publish `refdata-3` and flip the CI banked
-layer to gating.
+**Next**: the **`v3-backlog` sprint** — ✅ **complete on the `v3-backlog`
+integration branch** (all seven sessions B1–B7 merged, final gate green,
+close-out in note 27 §7). Census: **75 measured / 74 ✅ / 1 ⚠️** (the decided
+`gg_to_gg` 4/6 diagram-count cell) against 72/68/4 at launch — every
+informational Higgs and colour cell became a gate. Headline results: the h→ττ
+pole was **MadGraph 3.5.7's defect** (upstream fix `286feb8e6`, first in
+3.6.2); the colour draw now reproduces MadEvent's `SELECT_COLOR` via
+per-diagram `AMP2_d`; the references are re-banked on 3.7.1 (with the
+finding that 3.5.7/3.7.1 partonic σ are not comparable — `aS` param-card
+change); the LHE writer round-trips both MadGraph serialisation dialects by
+construction. **Remaining, user's steps**: publish `refdata-3`
+(104 789 332 B, sha256 `10892f05…adf5f9`, command in note 27 §B5; CI's
+`banked` job is red until then), flip `[refdata].published`, and decide the
+merge of `v3-backlog` to `main`.
 
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
