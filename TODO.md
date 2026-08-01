@@ -5,33 +5,16 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: `validation-3` (validation) ✅ **closed + merged to
-`main`** 2026-07-31; `refdata-2` published and pinned, CI's `banked` job gates
-merges. The suite has three declared dependency layers (`hermetic` / `banked` /
-`oracle`), one manifest that says which check may assume what, and a
-per-process × per-category report the banked layer renders and asserts:
-`pixi run validate` ends by writing `target/validation-report/report.md` and
-failing if the cells measured are not the cells `validation/manifest.toml`
-declares. 26 rows × 4 categories = 104 cells, 72 of them measured in that layer
-(68 gated green, 4 informational), 4 oracle-layer, 18 blocked on a named feature,
-10 covered-by or admitted gaps. The full record — what each session landed, the
-rendered table, the findings register and the recommended order for the follow-up
-work — is note 25 §10.
-
-**Next**: the **`v3-backlog` sprint** — ✅ **complete on the `v3-backlog`
-integration branch** (all seven sessions B1–B7 merged, final gate green,
-close-out in note 27 §7). Census: **75 measured / 74 ✅ / 1 ⚠️** (the decided
-`gg_to_gg` 4/6 diagram-count cell) against 72/68/4 at launch — every
-informational Higgs and colour cell became a gate. Headline results: the h→ττ
-pole was **MadGraph 3.5.7's defect** (upstream fix `286feb8e6`, first in
-3.6.2); the colour draw now reproduces MadEvent's `SELECT_COLOR` via
-per-diagram `AMP2_d`; the references are re-banked on 3.7.1 (with the
-finding that 3.5.7/3.7.1 partonic σ are not comparable — `aS` param-card
-change); the LHE writer round-trips both MadGraph serialisation dialects by
-construction. The close-out steps are done (2026-08-01): `refdata-3` is
-published (release tag `refdata-3`, asset re-downloaded and verified against
-the pin `10892f05…adf5f9`), `[refdata].published = true`, and `v3-backlog`
-is merged to `main`.
+**Current position**: the **`v3-backlog` sprint** (validation follow-up) ✅
+**closed + merged to `main`** 2026-08-01; `refdata-3` published and pinned
+(`[refdata].published = true`), CI's `banked` job gates merges against it.
+Census over the 26-row × 4-category report: **75 measured / 74 ✅ / 1 ⚠️**, the
+one ⚠️ being the decided `gg_to_gg` 4/6 diagram-counting convention. Full
+record in note 27 §7; the `validation-3` findings register it worked from is
+note 25 §10. Standing caveat: a partonic σ quoted from `refdata-2` is **not
+comparable** to one from `refdata-3` (MadGraph 3.5.7 applied the PDF set's
+`αs(M_Z) = 0.130` to `lpp = 0` runs; 3.7.1 keeps the model's `0.118` — note 27
+§B5).
 
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
@@ -43,8 +26,8 @@ Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. Deferred: multi-rung t-channel ladders (note 21) |
-| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 11 partonic GATE rows incl. the 3 QCD 2→2s, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). Deferred: `dynamical_scale_choice = -1` (needs `kt-clustering`), which also blocks the four llj partonic σ rows |
-| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) selection with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 26 banked MG runs byte-for-byte (258 747 events). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
+| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 12 partonic GATE rows incl. the 3 QCD 2→2s and `pp_to_bb_fixed`, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). Deferred: `dynamical_scale_choice = -1` (needs `kt-clustering`), which also blocks the four llj partonic σ rows |
+| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 34 banked MG runs byte-for-byte (714 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
 
 ## Closed-sprint history
 
@@ -63,140 +46,35 @@ One line each; the note is the full record. Earlier sprints
 - **`event-output-lhef`** (feature, closed + merged 2026-07-28) — JAMP2 flow selection + `leshouche.inc`-checked `ICOLUP` dictionary, accept/reject unweighting, byte-pinned LHEF writer/reader, `vibegraph generate`, model identity in the artifact (fv3); two plan corrections recorded (channel draw `∝ w_maxⱼ`; `IDWTUP=-4` not required for overweights); note 23.
 - **`user-distribution` + `proton-events`** (feature, two tracks, closed + merged 2026-07-31) — Track P: llj amplitude rows 14→18 plus a per-diagram `AMP()` oracle, measured flavour groups, `ProtonIntegrand`, σ(pp→ℓ⁺ℓ⁻j) and `generate` gated at `lpp = 1` (artifact fv3→fv4). Track U: release/CI/acceptance workflows, `~/.vibegraph` cache, consent-gated pinned PDF fetch, `check-events`. Transferable lesson: **a seed sweep is necessary and not sufficient** — five mutually-consistent seeds were collectively 1.0% low, so budget convergence is a second axis. Also `[profile.dev] opt-level = 2` cut `cargo test` 3m16s → 1m05s with nothing weakened; note 24.
 - **`validation-3`** (validation, closed 2026-07-31) — three declared dependency layers (`hermetic`/`banked`/`oracle`) with `validation/manifest.toml` as the single per-process source of truth; the `amplitudes` category made hermetic on MadGraph's own banked events; every hadronic σ moved onto the general `ProtonIntegrand`; the new `samples` category (KS + χ² against MadGraph's event samples); Pythia consumption; and one asserted report table over 26 rows × 4 categories. Transferable lesson: **a report is only evidence if every green cell is a recorded measurement** — inferring a cell from "the suite passed" is the same failure as a vacuous check. Findings register in note 25 §10.
+- **`v3-backlog`** (validation follow-up, closed + merged 2026-08-01) — every register finding resolved rather than tolerated: the h→ττ pole was **MadGraph 3.5.7's `get_channel_cut` defect** (`(t-Mass)*(t+Mass)` on `t = p²`; upstream fix `286feb8e6`, first in 3.6.2) and both cells now GATE against 3.7.1; the colour draw reproduces MadEvent's `SELECT_COLOR` via per-diagram `AMP2_d` (both χ² targets hit); `Cuts::shat_min` derives `setcuts.f`'s general bounds (`pp_to_bb_fixed` σ GATE); DY events banked with a live `dσ/dm_ll` gate; references re-banked on **3.7.1** into `refdata-3` (finding: 3.5.7 ran every `lpp = 0` process at `αs(M_Z) = 0.130`, so refdata-2/3 partonic σ are not comparable); the LHE writer round-trips **both** MG serialisation dialects by construction (34/34 byte-for-byte, 14/34 still reproduced with source dropped); latent `IDWTUP = -3` σ-misread fixed en route. Census 72/68/4 → **75/74/1**; note 27.
 
 ---
 
 ## 🔎 Validation backlog
 
-### The cells the report cannot fill yet
-
-The rendered table's non-green cells, in the order note 25 §10 recommends taking
-them. Every one of them is a measurement that exists, not a suspicion.
-
-- ~~**No banked Drell-Yan event sample**~~ — **filled** (B4, 2026-08-01; note 27
-  §B4). The two `dy13` cards' MadGraph runs now bank their unweighted events
-  alongside their cross section, produced with the pinned submodule's **3.7.1**
-  per decision D3. `pp_to_ll`'s `samples` cell is `banked`/`gate`, measured once
-  per card (200000 MadGraph events against 3 × 20000 of ours; minimum KS p
-  `2.2e-2`, minimum χ² p `2.9e-3` on `SPINUP` for one seed with `0.49`/`0.72` on
-  the other two), and `pp_to_ll_qcd0`'s points at it. A Drell-Yan `dσ/dm_ll`
-  regenerates from a gate again, which is what the deleted `dy_dsigma_dmll.md`
-  table stood in for: absolute picobarns from the 20 GeV threshold `ptl` implies
-  out to 1 TeV, every judged bin within 2.3 combined errors, and the threshold
-  itself checked rather than assumed. Both runs travel in `refdata-3` (B5), the
-  row's `bundled = false` is gone, and a fetching checkout has them.
-
 ### Standing discrepancies to resolve (never a loosened tolerance)
 
-- ~~**the LHEF writer emits one of MadGraph's two event dialects**~~ — ✅
-  **closed** (`v3-backlog` B5 diagnosed, B7 fixed; note 27 §B5/§B7). MadGraph's
-  `wgt_only` read-back keeps every info-line field but the rescaled weight as a
-  *string* and never touches the particle lines, so a delivered file carries
-  `rw_events.f`'s `0.00000000000E+00` / `0.` / `1.` instead of the converted
-  `+0.0000000000e+00` / `0.0000e+00` / `-1.0000e+00`. Which one arrives follows
-  `use_syst`, which follows the beams, and is not reachable from the run card.
-  Fixed by construction rather than by a format table: `lhef::parse` keeps each
-  block's record lines beside the values it decoded and `lhef::write` re-emits a
-  line verbatim once it has decoded it again and found it to spell the record
-  being written. `banked_files_round_trip_byte_for_byte` is green on **34/34**
-  files (714 759 events, 3 711 197 particle lines) and now sweeps every
-  `Events/*/…` rather than each process's `run_01`. Because a pass-through file
-  would round-trip whatever this crate's columns were, the gate also
-  re-serialises each run with the source dropped and requires the converted runs
-  to keep reproducing MadGraph's bytes: **14 of 34**, the same partition
-  `use_syst` predicts. Records built rather than read carry no source, so the
-  emitted-events path is byte-identical.
-
-- ~~**`higgs-pole-in-m-tautau`**~~ — ✅ **closed** (`v3-backlog` B1 diagnosed,
-  B5 re-banked). Against the 3.7.1 reference the row's `integrals` cell gates for
-  the first time: **1.367003e-3 ± 2.685e-6** pb against MadGraph's
-  **1.372500e-3 ± 2.674e-6** pb, pull **−1.45**, rel **−0.40%**, `rel_tol` 0.02
-  from the resonant channel's own 0.45% seed spread. Its `samples` cell gates
-  too — worst KS p **6.5e-2** (`cos(ta+)`) and worst χ² p **2.5e-1** (`SPINUP`)
-  over three seeds, where the 3.5.7 bank gave `3.6e-6` and χ² 210–233 on 15 dof.
-  ⚠️/⚠️ → **GATE**/**GATE**. The diagnosis it rests on, unchanged:
-  the two sides agree: MadGraph's own `σ(m(ττ) ∈ [124.9, 125.1])` is
-  `7.2077e-5 ± 2.9e-7` pb and ours `7.2065e-5 ± 3.2e-8` pb. MadGraph's window plus
-  its complement (`1.2965e-3 ± 3.4e-6`) sums to `1.36858e-3` pb against the
-  `1.3373e-3` pb its own unwindowed run reports — **MadEvent fails to close
-  against itself by 7.2σ on its own quoted errors**, and our `1.367e-3` pb sits
-  0.35σ from its sum. Root cause, in MadGraph's *integration*: **3.5.7** (the
-  version that produced every banked run — the banked banner says
-  `VERSION 3.5.7 2024-11-29`) computes the `sde_strategy=2` channel weight in
-  `get_channel_cut` (`genps.f`) from `(t-Mass)*(t+Mass)` where `t` is already `p²`,
-  so it never vanishes on a pole; the Higgs channel gets **α = 1.9e-3** instead of
-  `1 − 1.2e-7` at the pole (recomputed from MadGraph's own `configs.inc`/`props.inc`
-  at its own on-pole event, and confirmed by the windowed run's realised 0.198%
-  channel share), leaving 24 non-resonant channels to find a 6.4 MeV structure in
-  a 500 GeV range. The pinned submodule **3.7.1** has `t - Mass**2`; re-running
-  3.5.7 with `sde_strategy = 1` gives `1.3742e-3 ± 3.9e-6` pb, i.e. our number.
-  Nothing on this side needed fixing, and no tolerance moved.
-  Standing evidence: `validation/madgraph/gen_higgs_window.sh` +
-  `validation/madgraph/higgs_window_reference.json` (committed), measured live by
-  `validate_samples.rs` `the_higgs_pole_window_is_measured_against_madgraph`.
-  Upstream fix: mg5amcnlo `286feb8e6` ("change sde_strategy2 to avoid negative
-  weights", 2025-01-27), first released in 3.6.2, never backported to 3.5.x
-  (3.5.16 still carries the bug); provenance detail in note 27 §B1.
-- ~~**`uux_to_uux` colour-flow frequencies**~~ — ✅ **closed** (`v3-backlog` B6).
-  The realised `ICOLUP` frequencies are MadGraph's: **99.960%** against its
-  **99.960%**, χ² `0.0`/`0.7`/`0.3` on one degree of freedom (p `1.00`/`0.39`/
-  `0.58`) over three seeds, from χ² `1015` before. The rule is MadEvent's
-  `SELECT_COLOR` end to end — the integration configuration drawn per event
-  `∝ AMP2_d(x)`, then the flow `∝ JAMP2` inside that configuration's `ICOLAMP`
-  row (`AmplitudeEvaluator::select_color_flow`). `AMP2_d` rides on the same
-  compiled program as the JAMPs (`Op::Configs` bundles the per-diagram amplitude
-  wires under the root; `BoundAmplitude::eval_amp2` squares and helicity-sums
-  them), over the diagrams MadGraph gives a configuration — no four-point vertex,
-  per `get_amp2_lines`. Gated against MadGraph's own `AMP2` accumulators, which
-  every committed amplitude table now banks: configuration grouping and order,
-  each configuration amplitude against `AMP()` up to a per-diagram unit phase,
-  and `eval_amp2` against `Σ_hel |AMP^mg|²` (`1.5e-15` here, `3.5e-13` worst over
-  the suite, on the 25-diagram `e+ e- > mu+ mu- ta+ ta-` row). `samples` cell ⚠️ → **GATE**. (note 27 §B6.)
 - **The per-diagram multichannel builds degenerate maps for massless-propagator
-  processes** (exposed by the above, not chased). On `u u~ > u u~` the two
-  `DiagramChannel` densities are bit-identical at every probed point, and on
-  `g g > g g` all four are; the Kleiss–Pittau α-adaptation therefore never moves
-  off uniform and the multichannel buys nothing over flat RAMBO for those rows.
-  `g g > t t~`, whose t/u maps carry a `173 GeV` top pole, is not degenerate
-  (worst pairwise density difference `0.84`, α converging to
-  `[0.267, 0.364, 0.369]`). Both σ cells gate today, so this costs variance rather
-  than correctness; it is the same "multi-rung spine" gap the `uux_to_uux`
-  `integrals` note already names.
-- ~~**`hadronic-shat-floor`**~~ — ✅ **closed** (`v3-backlog` B2). `Cuts::shat_min`
-  now derives the two general bounds `setcuts.f` derives: `√ŝ ≥ Σᵢ pTᵢ^min` over
-  the legs a single-leg cut holds above a threshold, and `√ŝ ≥ Σᵢ mᵢ` over the
-  final-state masses. Both read off `√ŝ = Σᵢ Eᵢ` in the partonic centre of mass
-  with `Eᵢ ≥ max(mᵢ, pTᵢ)`, so neither needs a back-to-back or two-body argument.
-  `pp_to_bb_fixed` gets `shat_min = 1600 GeV²`, the value MadGraph's own `smin`
-  takes for that card, and no other row moves (`ptl` still gives dy13 `(2·ptl)²`;
-  llj's `mmll² = 2500` still dominates its `(2·ptl + ptj)² = 1600`). σ measured
-  for the first time at **2 145 255 ± 961 pb** against MG
-  **2 145 500 ± 3 414 pb** (rel −0.011%, pull −0.07, χ²/dof 0.51 over three
-  seeds), flat across a 75k–1.2M budget ladder. `integrals` cell ⛔ → **GATE**;
-  `samples` cell ⛔ → **info**, for the new finding below.
-- ~~**`pp_to_bb_fixed` colour-flow frequencies**~~ — ✅ **closed** (`v3-backlog`
-  B6), and the sharper of the two acceptance checks the configuration draw had to
-  pass: its two sub-percent flows now land at **0.060%** and **0.070%** against
-  MadGraph's **0.070%** and **0.080%**, where an unconditioned `∝ JAMP2` draw put
-  them at `0.23%` and `0.25%`. `ICOLUP` χ² `2.0`/`2.5`/`5.2` on five degrees of
-  freedom (p `0.85`/`0.78`/`0.39`), from `23…31` before. A mask that is merely
-  *on* reproduces `uux_to_uux`'s 99.96/0.04; only the per-configuration weights
-  reproduce a factor 3. Everything else was already agreeing and still does:
-  kinematics min KS p `2.1e-2`, helicity frequencies χ² p `0.74…0.94`,
-  flavour-group frequencies p `0.20…0.62`, over three seeds. `samples` cell ⛔ →
-  **GATE**. (`validate_samples_proton.rs`, note 27 §B6.)
+  processes**. On `u u~ > u u~` the two `DiagramChannel` densities are
+  bit-identical at every probed point, and on `g g > g g` all four are; the
+  Kleiss–Pittau α-adaptation therefore never moves off uniform and the
+  multichannel buys nothing over flat RAMBO for those rows. `g g > t t~`, whose
+  t/u maps carry a `173 GeV` top pole, is not degenerate (worst pairwise density
+  difference `0.84`, α converging to `[0.267, 0.364, 0.369]`). Both σ cells gate
+  today, so this costs variance rather than correctness; it is the same
+  "multi-rung spine" gap the `uux_to_uux` `integrals` note already names.
+  (note 27 §B3.2.)
 - **Four llj partonic σ rows are unreachable, not merely ungated** — `uux_to_epemg`,
   `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux` are banked with cross sections
-  and cost seconds to integrate, so L3 was to promote them to GATE. They cannot
-  run at all: all four run cards leave both scales free at
-  `dynamical_scale_choice = -1`, and their topology — a t-channel propagator into
-  a three-leg final state — is exactly the case whose cluster scale depends on
-  the merge order, which `coupling::scales` refuses rather than approximates. No
-  scale on this side reproduces MadGraph's number, and a fixed-scale re-run would
-  be a different cross section. Their `integrals` cells are `blocked` on
-  `kt-clustering` in the manifest and named in `validate_sigma`'s `plan_for`;
-  their `samples` cells are blocked on the same blocker, and L4 measured the
-  refusal in generation rather than assuming it.
+  and cost seconds to integrate. They cannot run at all: all four run cards leave
+  both scales free at `dynamical_scale_choice = -1`, and their topology — a
+  t-channel propagator into a three-leg final state — is exactly the case whose
+  cluster scale depends on the merge order, which `coupling::scales` refuses
+  rather than approximates. No scale on this side reproduces MadGraph's number,
+  and a fixed-scale re-run would be a different cross section. Their `integrals`
+  cells are `blocked` on `kt-clustering` in the manifest and named in
+  `validate_sigma`'s `plan_for`; their `samples` cells are blocked on the same
+  blocker, and the refusal in generation is measured rather than assumed.
   Fixed by `kt-clustering` (feature backlog), which grows four ready-to-flip σ
   rows on top of the six asserted-refused scale rows it already owns.
 - **`uux_to_uux` residual bias** — hard σ GATE, but the five-seed mean is
@@ -205,18 +83,6 @@ them. Every one of them is a measurement that exists, not a suspicion.
   tail *less* — the region a single-rung t-channel spine under-resolves. Evidence
   for the multi-rung spine (feature backlog), not a new defect.
   (`validate_sigma.rs` `probe_qcd_seed_stability`.)
-- ~~**The mirror term's visibility is unmeasured below the electroweak scale**~~
-  — ✅ **closed** (`v3-backlog` B5). The control is now stated as a function of
-  `ŝ` rather than as a flat `1e-3`, on a ladder from 25 GeV to 1.2 TeV:
-  `mirror_visibility_floor(√ŝ) = 0.076 ŝ/(ŝ + m_Z²)`, the shape of a `γ*/Z` core
-  whose forward-backward asymmetry is set by `ŝ/m_Z²`, fitted to the measured
-  plateau and halved. It sits 1.58× to 4.86× under every point of
-  `probe_mirror_visibility_ladder` (25 GeV to 4 TeV, three streams, two sample
-  sizes). The bound is on the *tenth percentile*, not the minimum, and that is
-  the finding the flat number hid: the two beam orderings agree exactly wherever
-  the configuration happens to be symmetric, so a minimum falls by a decade going
-  from 32 draws to 512 at every energy — it measures the sample, not the physics.
-  (`proton.rs`.)
 - **`ee_to_mumua` drifted when the references moved to 3.7.1** — the one row
   where 3.7.1 disagrees with us *more* than 3.5.7 did. Our σ is unchanged
   (`1.007660e-1` pb, same integration); MadGraph's moved `1.00630e-1 ± 3.865e-4`
@@ -228,8 +94,8 @@ them. Every one of them is a measurement that exists, not a suspicion.
   now the tightest in their category. The photon here is soft/collinear-regulated
   by the run card's cuts, which is the region MadGraph's channel-weight change
   reallocates; whether the remaining 1% is that or ours is not established.
-  Wanted: a windowed comparison over `pt(a)` of the kind B1 used on the Higgs
-  pole, which is the measurement that decides which side owns it.
+  Wanted: a windowed comparison over `pt(a)` of the kind note 27 §B1 used on the
+  Higgs pole, which is the measurement that decides which side owns it.
 
 ### Deferred coverage
 
@@ -237,30 +103,23 @@ them. Every one of them is a measurement that exists, not a suspicion.
   extractor + Rust sorted-PDG matching + JSON regen, with a real-finding risk
   (whether vibegraph enumerates MG's exact concrete-subprocess union). Design
   preserved in note 19 §3 / §V7.
-- ~~**`MG_VALIDATED_PROCESSES` is 14 of the gate's 18 process strings**~~ ✅
-  **resolved.** All four `p p > l+ l- j` subprocess rows are in the list, so the
-  library-level sweeps reach a coloured 2→3 amplitude. Re-verified on the extended
-  list: rooting soundness **165 re-rootings, 0 failures** (was 133); op coverage
-  unchanged, so `Hels` and `IdentityAmp` are still the only `KNOWN_UNCOVERED`
-  entries and the new rows add no op; egglog round-trip and extraction identity
-  both hold on them; the four default-suite sweeps (op coverage, binary
-  add/mul, forward finiteness, lane-vs-scalar) stay inside the hermetic budget.
+- **`diagrams.json` carries counts only, not the per-flavour union** — the
+  committed reference is what the existing extractor produces, so the
+  multi-channel `diagrams` cells assert a summed count and not the concrete
+  subprocess list the manifest describes. Filling that in is the deferred V7
+  design (above) reaching `extract_diagrams.py`; until then the manifest's
+  "includes the per-flavour concrete-subprocess union" notes describe the
+  intent, not the current assertion.
 - **`IdentityAmp` process-level coverage** — the last `KNOWN_UNCOVERED` op; needs
   an `Identity` scalar bilinear the SM lacks, so it rides with `non-sm-ufo`
   (feature backlog).
 - **Flavour-group probe coverage** — `derive_flavor_groups` partitions on sampled
   `|M|²`, which is complete but unsound whatever the probe set: two subprocesses
-  differing only where the probe does not look are merged silently. The interim
-  hardening is **done** — the ladder now runs a fifth of the base energy (20 GeV
-  for a massless final state), the model's `Z` mass, and the three original rungs,
-  each clamped above the final state's own threshold and collapsed where the clamp
-  makes two coincide, so it reaches both below the electroweak scale and onto a
-  resonance. `p p > l+ l- j` partitions identically under it (6 groups of 4), and
-  the margin is measured rather than assumed: the closest pair of groups separates
-  by **0.74** at points the partition was not fitted on, six orders above
-  `GROUP_SEPARATION_MIN`, asserted to stay above 0.1. What remains is the
-  replacement of the sampled criterion by the sound s-expression one (feature
-  backlog). (`proton.rs`, note 24 §P2c.)
+  differing only where the probe does not look are merged silently. The probe
+  ladder is hardened (five rungs down to a fifth of the base energy and onto the
+  `Z` mass, closest-pair separation measured at **0.74**, asserted > 0.1); the
+  sound replacement is the s-expression criterion (feature backlog).
+  (`proton.rs`, note 24 §P2c.)
 - **Pythia consumption gate — what it cannot see.** The gate reads both emitted
   samples n/n and its negative control proves it is not colour-blind, but four
   things stay outside it. (a) Only the `Buffer` strategy (`IDWTUP = -4`) is fed
@@ -273,173 +132,9 @@ them. Every one of them is a measurement that exists, not a suspicion.
   connectivity is not shown to be detectable. (d) Nothing checks Pythia's
   interpretation of `SCALUP`, `AQCDUP` or the `<init>` cross section — the file
   is proven *readable*, not proven to mean what we intended.
-- ~~**Minor pinned discrepancies**~~ ✅ **resolved** (note 22 close-out). The
-  `ee_to_wpwm` topology mask was a real error, and an inert one: `validate_scales`
-  declared the transpose of what `coupling::topology` derives, and the derivation
-  is the right one — the charged current pairs each beam with the `W` of its own
-  charge, so `e⁺ → W⁺` exactly as Bhabha's `e⁺ → e⁺`. The declaration is
-  corrected, the derivation is now asserted on this process too, and the per-event
-  replay is unmoved (500 000 comparisons over 160 000 events), which is the
-  measurement behind "the tie-break never reaches the scale". The
-  `run_card_dy.dat` `fixed_ren_scale` half rested on a false premise about that
-  file — see the hygiene row below.
 
 ### Gate + tooling hygiene
 
-Small, independent, each one a gate that is weaker than it looks.
-
-- ~~**Every `lpp = 0` banked run was running `αs(M_Z) = 0.130`**~~ ✅ **exposed by
-  the 3.7.1 re-bank** (B5), and it is why the partonic σ references moved so far.
-  MadGraph 3.5.7 wrote the `pdlabel = nn23lo1` set's `aS = 0.130` into the
-  parameter card of a run whose *beams carry no PDF at all* (`lpp1 = lpp2 = 0`);
-  3.7.1 leaves the model's `0.118`. `SCALUP` did not move — it is `250.0` in both
-  banks for the `√s = 500` fixed-beam rows — but `AQCDUP` went
-  `0.1113305 → 0.1024649`, a **−8.0%** step in `αs(250)`, and every reference σ
-  followed by `0.920ⁿ` in its power of `αs`: the pure-QCD 2→2 rows by −15.4%
-  (`gg_to_gg` 168830 → 142770 pb, `gg_to_ttx` 15.953 → 13.513 pb, `uux_to_uux`
-  33428 → 28269 pb) and the `QCD=2 QED=2` 2→3 rows by −8% each. Nothing on this
-  side moved: every gate reads its run's own parameter card, so our σ tracked the
-  step exactly and the three QCD `integrals` cells stayed green at pull +0.05,
-  +0.68 and −1.49. Recorded because it changes what a banked partonic σ *means*:
-  a number quoted from `refdata-2` is not comparable to one from `refdata-3`.
-
-- ~~**The CF-matrix oracle read only MadGraph 3.5.x's emission format**~~ ✅
-  **resolved** (B4, 2026-08-01). 3.7.1 writes the colour matrix as integers over
-  one `DENOM` storing only the upper triangle, where 3.5.x wrote a square array of
-  reals, and its contraction visits each unordered pair once — so off-diagonal
-  entries carry twice the symmetric matrix's value. `color_cf_oracle` found no
-  `DATA (CF(I,J)` lines in such a file and reported an unfilled matrix. It now
-  reads either form, with the mapping confirmed element for element against the
-  square form at `NCOLOR` 1, 2 and 6. **This lands on every row at once when the
-  work area is re-banked with 3.7.1** (note 27 §B4); the other readers of
-  generated Fortran go through f2py and execute MadGraph's own contraction, so
-  they are predicted unaffected — a prediction the re-bank measures.
-- ~~**A sample's cross section was read without looking at `IDWTUP`**~~ ✅
-  **resolved** (B4, 2026-08-01). `EventSample::from_lhe` took every file's σ as
-  the *mean* of `XWGTUP`, which is right for `IDWTUP = -4` and wrong by a factor
-  of the event count for `-3`. It had never been exercised because every banked
-  run at the time was `-4` — and which one MadGraph writes turns out to be a
-  property of the *run card*, not of MadGraph: `event_norm`'s card default is
-  `average` (`-4`) but its **system default is `sum`** (`-3`), the value applied
-  when the card never mentions the parameter. MadGraph's own full cards name it;
-  the hand-written `dy13` cards do not, so the first Drell-Yan bank arrived at
-  `-3` and read as `4.7e-3` pb against `933.23`. The reader now dispatches on the
-  field, takes `XSECUP` under `+3`, and refuses an `IDWTUP` it does not know
-  rather than guessing — a wrong guess here is orders of magnitude out and
-  silent. Found by the `dσ/dm_ll` gate, which is the only comparison in the
-  `samples` category that is not blind to normalisation; pinned by three unit
-  tests in `validation/samples.rs`.
-
-- ~~**One work-area `matrix1_orig.f` is hand-patched**~~ ✅ **resolved in the
-  `refdata-2` re-cut.** The `COMMON/DBG_AMP/` block an old debugging session added
-  to the `ee_to_mumu_tata_qcd0` subprocess is excised. Regenerating the process
-  with `mg5_aMC` was tried first and is *not* the way to do this: a fresh
-  `output` of the same generate line reproduces the file except for the order
-  MadGraph emits its `FK_*` declarations in, which moves run to run, so
-  regenerating would have introduced a gratuitous diff into the bundle for a
-  three-line removal. The excised file is byte-identical to the fresh generation
-  but for that permutation, and the `Events/` tree was not touched.
-- ~~**`run_card_dy.dat` is a verbatim MG5 copy**~~ ✅ **resolved — the premise was
-  wrong.** It is a hand-written fixture in MadGraph's run-card syntax, not
-  a copy of any MadGraph file: the template it resembles is a Python `%(...)s`
-  template, and the fixture's values are chosen to exercise the parser (`lhaid`
-  230000, a free `μR` against a fixed `μF`, a cut block that stops short so the
-  defaults have to fill it in). It is also what `include_str!` hands the *hermetic*
-  parser test, so there was nothing to delete and no submodule read to put in its
-  place. Renamed `run_card_parser_fixture.dat`, given a header saying what it is,
-  and its one copied banner block replaced; the scales test that recorded its
-  `fixed_ren_scale` as a disagreement now records it as the only committed card
-  covering the free-scale branch.
-- ~~**Silent soft-skip tests**~~ ✅ **resolved structurally.** Every test that
-  needed the submodule, a fetched PDF set or a banked MadGraph run is registered
-  behind `required-features` and absent from the default build, so the category
-  "runs by default but quietly needs data" no longer exists: `cargo test` on a
-  bare clone is complete with zero skips. The banked layer's remaining skips go
-  through `vibegraph::validation::require`, which fails naming the input — the
-  15-entry `EXPECTED_SKIPS` table it replaces was audited entry by entry and every
-  one was dead, because the reference bundle carries every run the gates iterate
-  over, the two hadronic reference σ are committed, and the PDF sets come from a
-  fetch task that fails when it cannot acquire them. So the banked layer now takes
-  **no** runtime skips at all, and CI's non-gating `banked` job fails naming the
-  bundle instead of recording nine expected skips. The `ufo` and
-  `ufo::sm` members moved to `tests/ufo.rs` and `tests/sm_interned_blob.rs`,
-  where a missing submodule is now a failure, not a skip.
-- ~~**Two reference files are still generated rather than committed**~~ ✅
-  **resolved.** `validation/pdf/oracle{,_multigrid}.json` (51 + 71 KB) and
-  `validation/helas/reference.{csv,npz}` (27 KB) are committed, both
-  `EXPECTED_SKIPS` entries are deleted, and the two gates read the committed
-  files. `validate_helas` needs nothing external any more and moved to the
-  hermetic layer (0.25 s); `validate_pdf_grid`'s 12 tests are live and stay
-  banked because the *other* side of the comparison is the two fetched PDF sets,
-  which `pixi run validate` now acquires (`fetch-pdf-multigrid` joined its
-  dependencies).
-- ~~**Publish the `refdata-3` release asset**~~ ✅ **published 2026-08-01.**
-  Asset `vibegraph-refdata-3.tar.zst` uploaded to release tag `refdata-3`,
-  re-downloaded and verified byte-identical to the manifest pin
-  (sha256 `10892f05…adf5f9`, 104 789 332 B), and `[refdata].published` flipped
-  to `true`. `$VIBEGRAPH_REFDATA_SOURCE` still overrides for a local copy. The
-  repository being private means the plain release URL serves 404 to
-  unauthenticated clients; `vg_ensure_refdata` falls back to an authenticated
-  `gh release download` of the same asset (`GITHUB_TOKEN` in CI), and the plain
-  URL becomes live if the repository ever goes public.
-- ~~**The reference bundle double-compresses its event files**~~ ✅ **taken in
-  the `refdata-2` re-cut.** Event files travel as plain Les Houches text and
-  `vg_ensure_refdata` gzips them back as it unpacks, so no consumer changed:
-  **65 066 838 bytes against 90 597 923** while carrying one more run. The
-  byte-for-byte round-trip gate keeps its meaning — it compares Les Houches text,
-  gzip is lossless, and the archive now holds exactly the bytes it asserts on
-  instead of a container around them. Side effect worth having: a work area
-  unpacked from a bundle re-assembles to that same bundle, which an archive of
-  gzipped members could not promise. Measured: all 26 runs' decompressed text
-  unchanged sha256 for sha256 through pack and unpack.
-- ~~**`validation/madgraph/compact_events.py` has no consumer**~~ ✅ **decided
-  (D2) and deleted** (B5). The script, its `lhe-compact` pixi environment and the
-  `/validation/madgraph/events` ignore rule are gone; note 26 keeps the verdict's
-  numbers and git history keeps the script. The bundle was re-cut twice
-  (`refdata-2`, `refdata-3`) and deliberately not around Parquet, so the "wire it
-  in" branch was declined on evidence rather than by neglect.
-- ~~**`g g > g g` diagram count: 6 against 4**~~ ✅ **decided (L7): report our
-  count in our own convention, mark the cell informational.** MadGraph writes the
-  four-gluon contact term as three graphs, one per colour structure
-  (`VVVV1_0`/`VVVV3_0`/`VVVV4_0` into `AMP(1..3)`); we write one diagram whose
-  vertex carries all three, so 3 exchange + 3 contact against 3 + 1. Re-splitting
-  the enumeration to match a counting convention would change the thing being
-  validated in order to make a number match, and the same process is pinned at
-  8.25e-14 per flow — far below what any difference in diagram *content* could
-  survive. The cell renders `⚠️ 4/6` with that reason attached.
-- ~~**`validate_sigma` writes a note its own binning falsified**~~ — DONE (B1,
-  2026-08-01): the `ee_to_mumu_tata_qcd0` `Plan::Info` reason and the module
-  header now say what the windowed measurement established.
-- ~~**The `diagrams` gate could be hermetic**~~ ✅ **moved** (B5). The binary is
-  registered without `required-features`, all 26 `diagrams` cells say
-  `tier = "hermetic"`, and the column runs on a bare clone — 26 rows in 1.25 s,
-  the two 2→6 enumerations included. `validate-diagrams` keeps its
-  `extract-diagrams` dependency for the regeneration path; the gate itself reads
-  the committed `diagrams.json` and `.mg5` scripts and prints a process
-  directory's `configs.inc` topologies only when one happens to be there.
-- ~~**`init-sm-submodule` fails outside a git checkout**~~ ✅ **fixed** (B5). The
-  pixi task calls `vg_ensure_submodule`, which returns as soon as the model
-  source is on disk — an exported tree carries the content but no `.git`, where
-  `git submodule update` has nothing to do and no repository to do it in.
-- ~~**`Process`'s `Display` drops coupling-order constraints**~~ ✅ **fixed**
-  (B5). `p p > b b~ QCD=2` prints as its generate line, so the two `pp_to_bb*`
-  report rows stop reading as the same measurement
-  (`diagrams::parse` `display_keeps_the_coupling_order_constraints`).
-- **`diagrams.json` carries counts only, not the per-flavour union** — the
-  committed reference is what the existing extractor produces, so the
-  multi-channel `diagrams` cells assert a summed count and not the concrete
-  subprocess list the manifest describes. Filling that in is the deferred V7
-  design (note 19 §3/§V7) reaching `extract_diagrams.py`; until then the
-  manifest's "includes the per-flavour concrete-subprocess union" notes describe
-  the intent, not the current assertion.
-- ~~**`clippy::approx_constant` deny at `coupling/alphas.rs:224`**~~ ✅
-  **resolved.** The constant carries a targeted `#[allow]` with its
-  MG-source-tracking rationale, and `cargo clippy --workspace --all-targets` is
-  now **clean** — the 52 further warnings behind that error are fixed in place,
-  except two lints allowed workspace-wide with the reason in `Cargo.toml`:
-  `neg_cmp_op_on_partial_ord` (every site is the `!(x > 0.0)` guard that routes a
-  NaN to the rejecting branch) and `unusual_byte_groupings` (hex seed words like
-  `0x5EED_1`).
 - **Weekly `schedule` trigger on `acceptance.yml`** — left off because it can only
   fail until a first release exists. Turn it on once one does: it is also the
   second detector for the "CERN repackages the PDF archive" risk, whose only
@@ -469,7 +164,8 @@ Small, independent, each one a gate that is weaker than it looks.
   lines). The ordering Jacobian cannot be pinned by `Vₙ`/σ in-session, so it was
   deferred rather than committed unvalidated; hand-off design written up
   (`Spine → rungs: Vec`, running `q_i = p_a − Σp`, note-07 §2.9.0 ordering firing
-  test). Also where the `uux_to_uux` bias evidence points. (Note 21.)
+  test). Also where the `uux_to_uux` bias evidence and the degenerate-map
+  finding point. (Note 21.)
 - **`kt-clustering`** — general kT clustering for `dynamical_scale_choice = -1`
   (sprint sketch; also what MLM matching needs). 6 banked runs are asserted as
   refused; **hard prerequisite for gating any QCD process at MadGraph's default
