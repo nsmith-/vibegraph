@@ -5,59 +5,25 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: `user-distribution` + `proton-events` (feature) ✅ closed +
-merged 2026-07-31 — cards → `.lhe` for `p p > l+ l- j` from a clean environment,
-release/CI/acceptance workflows in place, and the project dual-licensed
-`MIT OR Apache-2.0`. **In progress: the validation pass** — `validation-3`,
-planned in note 25 (three-layer suite delineation + per-process × per-category
-report; shower consumption and event-sample statistics land as the `samples`
-category). L0 has landed: `validation/manifest.toml` is the per-process source of
-truth, `required-features` is the only mechanism deciding layer membership, and
-`cargo test` on a bare clone is complete with zero skips. L1 has landed:
-`pixi run generate-references` is one staged entry point over every generator and
-reproduces every committed reference — the bundle archive included — byte-for-byte
-from a populated work area; `validation/fetch_common.sh` is the one place that may
-download; the diagram counts, the HELAS grid and the two LHAPDF oracles are now
-committed; and the banked layer runs off a fetched `vibegraph-refdata-1.tar.zst`
-on a machine with no MadGraph at all. `pixi run validate` is the banked layer;
-`validate-deep` / `generate-references` are the oracle layer. L1b measured the
-compact in-repo alternative to that bundle and **rejected it**: projecting the
-banked events onto the fields the gates read is exact, but bottoms out at 27.5 MB
-against a 5–10 MB target, so the fetched bundle stands and no reader changed
-(note 26). L2 has landed: the `amplitudes` category is
-hermetic for all 19 rows — one committed table per process (|M|² at every point,
-per-diagram `AMP()` and per-flow `JAMP()` per helicity at six of them), evaluated
-at MadGraph's own banked events projected exactly on shell as well as at the fixed
-grid, gated by a single `amplitude_oracle` binary in 1.1 s. L3 has landed:
-every hadronic cross section now runs through the general `ProtonIntegrand` —
-the bespoke `DrellYanIntegrand` is deleted, `p p > e+ e-` gates through the
-general path on both dy13 cards (pull +0.25 / −1.35 over three seeds), and DY is
-generatable as a side effect; the integration artifact carries a per-channel
-subsampler summary (fv5); and every `integrals` gate writes its measurement to
-`target/validation-report/integrals/<row>.json` for the L7 collator. L4 has
-landed: the `samples` category compares our unweighted events against MadGraph's
-banked ones column by column — weighted-ECDF Kolmogorov–Smirnov on the named
-kinematic observables and χ² homogeneity on `SPINUP`, `ICOLUP` and the flavour
-assignment — over twelve fixed-beam rows in the library and `p p > l+ l- j`
-through the shipped binary, three generation seeds each at 20 000 events against
-MadGraph's 10 000, at a p-floor of `1e-4`. Eleven rows gate; two are
-informational with their measurement recorded (`uux_to_uux` colour-flow
-frequencies, `ee_to_mumu_tata_qcd0`), and the `pp_to_bb_fixed` rider banked a
-purely QCD-initiated multi-channel run whose cross section the general path
-cannot yet reach. L5 has
-landed: `pixi run -e pythia validate-pythia` generates the llj and dy13 samples
-from their own cards and reads every event back through Pythia 8.312 —
-**2000/2000 consumed on both**, with a colour-mutation negative control that
-Pythia rejects (`ProcessLevel::checkColours: unphysical colour flow`) so the
-count is not consistent with a colour-blind reader. It is a standalone banked
-gate in its own pixi environment, so `pixi run validate` still needs no Pythia.
-L6 has cleared the sprint's
-hygiene riders: `cargo clippy --workspace --all-targets` is clean, the
-library-level sweeps reach the coloured 2→3 amplitudes (rooting soundness 165
-re-rootings, 0 failures), the flavour-grouping probe ladder reaches below the
-electroweak scale and onto the `Z` pole, and the banked layer's tolerated-skip
-table is gone — every one of its 15 entries was dead, so a missing input now
-fails naming itself.
+**Current position**: `validation-3` (validation) ✅ **closed** 2026-07-31 on
+branch `validation-3` — awaiting the user's merge to `main`, unpushed and
+untagged. The suite now has three declared dependency layers (`hermetic` /
+`banked` / `oracle`), one manifest that says which check may assume what, and a
+per-process × per-category report the banked layer renders and asserts:
+`pixi run validate` ends by writing `target/validation-report/report.md` and
+failing if the cells measured are not the cells `validation/manifest.toml`
+declares. 26 rows × 4 categories = 104 cells, 72 of them measured in that layer
+(68 gated green, 4 informational), 4 oracle-layer, 18 blocked on a named feature,
+10 covered-by or admitted gaps. The full record — what each session landed, the
+rendered table, the findings register and the recommended order for the follow-up
+work — is note 25 §10.
+
+**Next**: the **backlog-tackling session** the sprint's discipline deferred
+everything to. Note 25 §10 recommends, in order: the `h → τ⁺τ⁻` pole bin, the
+`hadronic-shat-floor`, the `uux_to_uux` colour-selection rule, and banking
+Drell-Yan events for the two `dy13` cards. All four are in the validation backlog
+below with their evidence.
+
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
 ## Pipeline Status
@@ -69,7 +35,7 @@ Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. Deferred: multi-rung t-channel ladders (note 21) |
 | 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 11 partonic GATE rows incl. the 3 QCD 2→2s, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). Deferred: `dynamical_scale_choice = -1` (needs `kt-clustering`), which also blocks the four llj partonic σ rows |
-| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) selection with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 25 banked MG `.lhe.gz` byte-for-byte (248 747 events). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Deferred: event-sample-vs-MG statistics |
+| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) + colour-flow (`∝ JAMP2`) selection with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 26 banked MG runs byte-for-byte (258 747 events). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
 
 ## Closed-sprint history
 
@@ -87,23 +53,17 @@ One line each; the note is the full record. Earlier sprints
 - **`dynamical-scales`** (feature, closed + merged 2026-07-27) — MG's `αs` RGE + per-event `μR`/per-beam `μF` through the constant pools; 3 QCD σ rows GATE, DY unmoved; found MG's `AQCDUP` π-truncation and `SCALUP` ≠ μR defects (note 07) and the missing `gg→gg` symmetry factor; note 22.
 - **`event-output-lhef`** (feature, closed + merged 2026-07-28) — JAMP2 flow selection + `leshouche.inc`-checked `ICOLUP` dictionary, accept/reject unweighting, byte-pinned LHEF writer/reader, `vibegraph generate`, model identity in the artifact (fv3); two plan corrections recorded (channel draw `∝ w_maxⱼ`; `IDWTUP=-4` not required for overweights); note 23.
 - **`user-distribution` + `proton-events`** (feature, two tracks, closed + merged 2026-07-31) — Track P: llj amplitude rows 14→18 plus a per-diagram `AMP()` oracle, measured flavour groups, `ProtonIntegrand`, σ(pp→ℓ⁺ℓ⁻j) and `generate` gated at `lpp = 1` (artifact fv3→fv4). Track U: release/CI/acceptance workflows, `~/.vibegraph` cache, consent-gated pinned PDF fetch, `check-events`. Transferable lesson: **a seed sweep is necessary and not sufficient** — five mutually-consistent seeds were collectively 1.0% low, so budget convergence is a second axis. Also `[profile.dev] opt-level = 2` cut `cargo test` 3m16s → 1m05s with nothing weakened; note 24.
+- **`validation-3`** (validation, closed 2026-07-31) — three declared dependency layers (`hermetic`/`banked`/`oracle`) with `validation/manifest.toml` as the single per-process source of truth; the `amplitudes` category made hermetic on MadGraph's own banked events; every hadronic σ moved onto the general `ProtonIntegrand`; the new `samples` category (KS + χ² against MadGraph's event samples); Pythia consumption; and one asserted report table over 26 rows × 4 categories. Transferable lesson: **a report is only evidence if every green cell is a recorded measurement** — inferring a cell from "the suite passed" is the same failure as a vacuous check. Findings register in note 25 §10.
 
 ---
 
 ## 🔎 Validation backlog
 
-### Next validation pass — natural content
+### The cells the report cannot fill yet
 
-Both rows below now have **two** waiting processes, not one: fixed-energy
-`e+ e- > mu+ mu-` and hadronic `p p > l+ l- j`. llj is the more informative
-subject — coloured initial state, three-body final state, a jet cut, and colour
-lines an `e+ e-` sample does not have.
+The rendered table's non-green cells, in the order note 25 §10 recommends taking
+them. Every one of them is a measurement that exists, not a suspicion.
 
-- ~~**Downstream-shower validation of the emitted `.lhe` (Pythia via pixi)**~~ —
-  **closed**: `pixi run -e pythia validate-pythia` reads both emitted samples end
-  to end through Pythia 8.312 (`pythia-consumption` in `validation/manifest.toml`).
-  What it does *not* yet cover is filed under **Pythia consumption gate — what it
-  cannot see** in *Deferred coverage*.
 - **No banked Drell-Yan event sample** — the `samples` cell of `pp_to_ll` (and so
   of `pp_to_ll_qcd0`, which pointed at it) is `uncovered`, not measured: the
   Drell-Yan reference banks the two `dy13` cards' cross sections and not their
@@ -254,13 +214,15 @@ lines an `e+ e-` sample does not have.
 
 Small, independent, each one a gate that is weaker than it looks.
 
-- **One work-area `matrix1_orig.f` is hand-patched** — the
-  `ee_to_mumu_tata_qcd0` subprocess carries a `COMMON/DBG_AMP/` block added by an
-  old debugging session, so that file is not what MadGraph would write. The probe
-  build now detects an existing block instead of adding a second one (a duplicate
-  `COMMON` member makes f2py emit uncompilable C), but the work area is the
-  bundle's source, so regenerating that process directory is owed before the next
-  `refdata` bump.
+- ~~**One work-area `matrix1_orig.f` is hand-patched**~~ ✅ **resolved in the
+  `refdata-2` re-cut.** The `COMMON/DBG_AMP/` block an old debugging session added
+  to the `ee_to_mumu_tata_qcd0` subprocess is excised. Regenerating the process
+  with `mg5_aMC` was tried first and is *not* the way to do this: a fresh
+  `output` of the same generate line reproduces the file except for the order
+  MadGraph emits its `FK_*` declarations in, which moves run to run, so
+  regenerating would have introduced a gratuitous diff into the bundle for a
+  three-line removal. The excised file is byte-identical to the fresh generation
+  but for that permutation, and the `Events/` tree was not touched.
 - ~~**`run_card_dy.dat` is a verbatim MG5 copy**~~ ✅ **resolved — the premise was
   wrong.** It is a hand-written fixture in MadGraph's run-card syntax, not
   a copy of any MadGraph file: the template it resembles is a Python `%(...)s`
@@ -295,44 +257,73 @@ Small, independent, each one a gate that is weaker than it looks.
   banked because the *other* side of the comparison is the two fetched PDF sets,
   which `pixi run validate` now acquires (`fetch-pdf-multigrid` joined its
   dependencies).
-- **Publish the `refdata-1` release asset and make the CI banked job gating** —
-  user step. `validation/madgraph/assemble_bundle.sh` builds
-  `vibegraph-refdata-1.tar.zst` (1736 files, 90 597 923 bytes, sha256
-  `1afeadfa…cc447e50`, pinned in `validation/manifest.toml`) reproducibly from
-  the work area, and `validation/fetch_common.sh` fetches and verifies it; the
-  URL it points at is a `refdata-1` tag that does not exist yet, so the path is
-  exercised through `$VIBEGRAPH_REFDATA_SOURCE` meanwhile. Tag + upload the
-  asset, flip `[refdata].published`, then drop `continue-on-error` from
-  `ci.yml`'s `banked` job and add `pixi run fetch-refdata` to its fetch step —
-  the reason it is non-gating is exactly that a fresh runner could not obtain the
-  MadGraph runs. L1b confirmed the asset is still the right shape: the compact
-  in-repo alternative was measured and rejected (note 26), so nothing about this
-  item's contents changes. Consider folding the recompression item below into the
-  same re-cut if the archive is rebuilt before publication.
-- **The reference bundle double-compresses its event files** — measured by L1b,
-  not taken. `assemble_bundle.sh` tars 25 already-gzipped `.lhe.gz` and runs
-  zstd-19 over the result, which cannot compress them further. Carrying the same
-  events as plain `.lhe` text under the same zstd-19 gives **58 629 865 bytes
-  against ~90 100 000**, a 35% smaller fetch with no fidelity loss and no change
-  to what any gate reads: the unpack step re-gzips, or the four consumers
-  (`validate_lhef`, `validate_alphas`, `validate_scales`, `cli_generate_proton`)
-  read `.lhe` directly. Costs a new archive and a new `[refdata]` pin, which is
-  why it waits for the next bundle re-cut rather than being done for its own sake.
+- **Publish the `refdata-2` release asset and make the CI banked job gating** —
+  user step, and the only thing standing between the `banked` job and being a
+  merge gate. `validation/madgraph/assemble_bundle.sh` builds
+  `vibegraph-refdata-2.tar.zst` (1786 files, 65 066 838 bytes, sha256
+  `4495d6df…f40e736c`, pinned in `validation/manifest.toml`) reproducibly from
+  the work area — two assemblies hash the same — and `validation/fetch_common.sh`
+  fetches and verifies it; the URL it points at is a `refdata-2` tag that does not
+  exist yet, so the path is exercised through `$VIBEGRAPH_REFDATA_SOURCE`
+  meanwhile, which is how the whole banked layer was run green on a clean export.
+  Tag + upload the asset, flip `[refdata].published`, then drop
+  `continue-on-error` from `ci.yml`'s `banked` job and add
+  `pixi run fetch-refdata` to its fetch step — the reason it is non-gating is
+  exactly that a fresh runner could not obtain the MadGraph runs. The report
+  artifact upload is already in place and runs `if: always()`.
+- ~~**The reference bundle double-compresses its event files**~~ ✅ **taken in
+  the `refdata-2` re-cut.** Event files travel as plain Les Houches text and
+  `vg_ensure_refdata` gzips them back as it unpacks, so no consumer changed:
+  **65 066 838 bytes against 90 597 923** while carrying one more run. The
+  byte-for-byte round-trip gate keeps its meaning — it compares Les Houches text,
+  gzip is lossless, and the archive now holds exactly the bytes it asserts on
+  instead of a container around them. Side effect worth having: a work area
+  unpacked from a bundle re-assembles to that same bundle, which an archive of
+  gzipped members could not promise. Measured: all 26 runs' decompressed text
+  unchanged sha256 for sha256 through pack and unpack.
 - **`validation/madgraph/compact_events.py` has no consumer** — the projection
   L1b measured (note 26) is committed with its `lhe-compact` pixi environment so
   the verdict's numbers are reproducible, but nothing runs it: no gate reads its
-  output and `generate-references` does not call it. Either wire it in if the
-  bundle is ever re-cut around Parquet, or delete it — a committed generator that
-  nothing exercises is exactly the shape `validate-pdf-grid` had while it covered
-  nothing for four sessions.
-- **`g g > g g` diagram count: 6 against 4** — exposed by L1, informational, not
-  chased. MadGraph writes the four-gluon contact term as three graphs, one per
-  colour structure (`VVVV1_0`/`VVVV3_0`/`VVVV4_0` into `AMP(1..3)`); we write one
-  diagram whose vertex carries all three. So 3 exchange + 3 contact against
-  3 + 1. The physics is pinned far below a count — the per-flow amplitude gate on
-  this process agrees with MadGraph at 8.25e-14 — so the question is only whether
-  our count should be reported in MadGraph's per-structure convention. Decide
-  that with the report driver, not by changing enumeration.
+  output and `generate-references` does not call it. The bundle *was* re-cut
+  (`refdata-2`) and deliberately not around Parquet, so the "wire it in" branch
+  has now been declined once; what remains is to delete it or to keep it as
+  reproducible evidence for the verdict, and to say which. A committed generator
+  that nothing exercises is exactly the shape `validate-pdf-grid` had while it
+  covered nothing for four sessions.
+- ~~**`g g > g g` diagram count: 6 against 4**~~ ✅ **decided (L7): report our
+  count in our own convention, mark the cell informational.** MadGraph writes the
+  four-gluon contact term as three graphs, one per colour structure
+  (`VVVV1_0`/`VVVV3_0`/`VVVV4_0` into `AMP(1..3)`); we write one diagram whose
+  vertex carries all three, so 3 exchange + 3 contact against 3 + 1. Re-splitting
+  the enumeration to match a counting convention would change the thing being
+  validated in order to make a number match, and the same process is pinned at
+  8.25e-14 per flow — far below what any difference in diagram *content* could
+  survive. The cell renders `⚠️ 4/6` with that reason attached.
+- **`validate_sigma` writes a note its own binning falsified** — the
+  `ee_to_mumu_tata_qcd0` `integrals` row file still carries "localised at low
+  m_ll", which is the premise L4 measured and disproved. The report does not
+  repeat it — the collator prefers the manifest's curated note over a
+  measurement's own — but the string is written into
+  `target/validation-report/integrals/ee_to_mumu_tata_qcd0.json` on every run.
+  One string in `validate_sigma.rs`; it goes with whoever takes the Higgs-pole
+  item.
+- **The `diagrams` gate could be hermetic** — it reads the committed
+  `diagrams.json`, the committed `.mg5` scripts and nothing else, and runs in
+  1.5 s including the two 2→6 enumerations, but it is registered
+  `required-features = ["extended-validation"]` on the enumeration-cost argument.
+  L7 made the manifest tiers say `banked` to match the registration rather than
+  move the binary mid-close-out. Moving it would put the whole `diagrams` column
+  on a bare clone for ~1.5 s of the 3-minute hermetic budget.
+- **`init-sm-submodule` fails outside a git checkout** — the pixi task runs
+  `git submodule update --init` unconditionally, where `vg_ensure_submodule` in
+  `fetch_common.sh` checks for `models/sm/particles.py` first and is a no-op when
+  the source is already there. Bites a `git archive` export (how the clean-tree
+  gate is run), not CI. The task should call the shared function.
+- **`Process`'s `Display` drops coupling-order constraints** — the report's
+  measurement detail prints `p p > b b~` for a row whose generate line is
+  `p p > b b~ QCD=2`. The enumeration honours the constraint (that row counts 6
+  diagrams where the default-order row counts 4), so this is a printing loss
+  only, but it makes two report lines read as if they measured the same process.
 - **`diagrams.json` carries counts only, not the per-flavour union** — the
   committed reference is what the existing extractor produces, so the
   multi-channel `diagrams` cells assert a summed count and not the concrete

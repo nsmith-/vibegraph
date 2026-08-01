@@ -123,10 +123,10 @@ events off the cache, read them back.
 git clone --recurse-submodules <repo-url>
 cd vibegraph
 cargo build --release        # library + `vibegraph` CLI
-cargo test                   # fast test suite (extended validation is opt-in)
+cargo test                   # the hermetic suite: complete on a bare clone
 ```
 
-The MadGraph-referenced validation and the PDF grids use
+The layers that assume fetched data or a MadGraph installation use
 [pixi](https://pixi.sh) environments; see [Validation](#validation) below.
 
 ## Using the CLI
@@ -225,7 +225,7 @@ whole group.
 `--pdf-set` selects the set (default `NNPDF23_lo_as_0130_qed`, MG5's LO
 default), which is downloaded on first use as described in the
 [quick start](#data-the-binary-does-not-carry). Inside a checkout,
-`pixi run -e madgraph fetch-pdf` puts a set in `validation/pdf/<set>/`, which
+`pixi run fetch-pdf` puts a set in `validation/pdf/<set>/`, which
 resolution falls back to last — so a dev tree that has already fetched one
 never reaches for the network.
 
@@ -298,8 +298,8 @@ unmodified `alfas_functions.f`; helicity-filter survivor sets match MadGraph's
 generated `NHEL` tables bitwise (and the pruned \|M\|² sum stays bit-for-bit
 equal to the unpruned one); the colour-flow `ICOLUP` dictionary matches
 `leshouche.inc` for 30/30 subprocesses. The LHEF layer also re-serialises all
-25 banked MadGraph `.lhe.gz` files byte-for-byte (248,747 events) — a format
-pin on the writer, not a physics statement.
+26 banked MadGraph runs byte-for-byte (258,747 events) — a format pin on the
+writer, not a physics statement.
 
 **Floating-point-reassociation level (≤ 1e-12 relative).** Per-point \|M\|² is
 compared against MadGraph's generated Fortran at `REL_TOL = 1e-12` — a budget
@@ -331,35 +331,42 @@ to reproduce the integrated σ.
 
 **Self-consistency, independent of MadGraph.** Convention claims ("this sign
 is automatic") are treated as hypotheses to be pinned: a rooting-soundness
-sweep re-derives every amplitude from all 133 alternative diagram rootings
+sweep re-derives every amplitude from all 165 alternative diagram rootings
 (0 failures, all sign conventions lifted into one `fermi_sign` function), and a
 guard test ensures every convention channel is exercised by at least one gated
 process, so a future edit cannot silently step outside the validated envelope.
 
-The main gates (each regenerates its own MadGraph reference; add `--skip-deps`
-when the reference is fresh):
+Which check may assume what is declared once, in
+[`validation/manifest.toml`](validation/manifest.toml), and three commands run
+the three layers it names:
 
 ```bash
-pixi run -e madgraph validate-diagrams     # diagram counts vs MG
-pixi run -e madgraph validate-helas-mg     # per-point |M|², bit / 1e-12
-pixi run -e madgraph validate-color-jamp   # per-flow complex JAMPs
-pixi run -e madgraph validate-amp-diagram  # per-diagram AMP(), single-flow processes
-pixi run -e madgraph validate-alphas       # αs RGE + per-event AQCDUP
-pixi run -e madgraph validate-scales       # per-event μR, per-beam μF
-pixi run -e madgraph validate-sigma        # partonic σ gate (statistical)
-pixi run -e madgraph validate-hadronic     # proton-beam σ: Drell–Yan and llj
-pixi run -e madgraph validate-unweighting  # accept/reject machinery
-pixi run -e madgraph validate-generate-proton  # cards → .lhe at lpp = 1
-pixi run -e madgraph validate-lhef         # LHEF byte round-trip
-pixi run -e helas-validation validate-helas  # Fortran77 HELAS kernel cross-check
+cargo test                    # hermetic: a bare clone, no submodule, no data, no skips
+pixi run validate             # banked: the frozen MadGraph references, fetched
+pixi run generate-references   # oracle: regenerate every reference from MadGraph
 ```
 
-Open validation items (tracked in `TODO.md`): downstream-shower (Pythia)
-consumption of emitted `.lhe` files, a distribution-level comparison of the
-unweighted sample against MadGraph's (including empirical helicity/colour-flow
-frequencies), per-flavor diagram matching, and two pinned sub-percent σ
-discrepancies under active investigation — kept as tracked rows, never as
-loosened tolerances.
+`pixi run validate` ends by rendering `target/validation-report/report.md`: one
+row per validated process, one column per category (diagrams, amplitudes,
+integrals, samples), each cell carrying its metric and whether it is gated,
+informational, blocked on a named feature, covered by another row, or an
+admitted gap. The same driver asserts that the cells measured are exactly the
+cells the manifest declares, so coverage cannot quietly shrink. The banked
+layer's frozen MadGraph runs come from a pinned, checksummed reference bundle
+rather than from running MadGraph, which is what lets the whole table be
+reproduced on a machine that has never built a process directory. One banked
+gate lives outside that command because it needs its own environment:
+
+```bash
+pixi run -e pythia validate-pythia   # every emitted event read back by Pythia 8
+```
+
+The report's own account of what is *not* covered is the current list of open
+validation items; `TODO.md` carries them with the evidence. The standing ones
+are the `h → τ⁺τ⁻` pole in `e+ e- > mu+ mu- ta+ ta-`, the realised colour-flow
+frequencies of `u u~ > u u~`, the missing ŝ floor that blocks a purely hadronic
+final state, and everything waiting on kT clustering — kept as tracked rows,
+never as loosened tolerances.
 
 ## Performance
 
@@ -420,7 +427,7 @@ per-event scale hot-path cost, feyngraph enumeration allocations) are triaged
 in the performance backlog in `TODO.md`.
 
 ```bash
-pixi run -e madgraph profile-sigma   # samply profile of the σ gate
+pixi run profile-sigma   # samply profile of the σ gate
 ```
 
 ## Repository layout

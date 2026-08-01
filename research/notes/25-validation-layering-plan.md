@@ -566,3 +566,208 @@ its exit gate), and the standing rule stands: never a loosened tolerance.
 Plus the general directive baked into §8: sessions expose and consolidate;
 newly-exposed failures are recorded, filed, and left for a follow-up
 backlog-tackling session.
+
+## 10. Close-out (2026-07-31)
+
+Sprint closed on branch `validation-3`, all eight sessions landed.
+The user decides the merge to `main`; nothing here is pushed or tagged.
+
+### What each session landed
+
+- **L0** — `validation/manifest.toml` as the per-process source of truth;
+  `required-features` became the only mechanism deciding layer membership (five
+  internally-`#[cfg]`'d gates moved); `[profile.profiling]` renamed
+  `release-debug`; `validate` / `validate-deep` / `generate-references` entry
+  points; CI's `banked` job. `cargo test` on a bare clone became complete.
+- **L1** — one staged `generate-references` driver over every generator;
+  `fetch_common.sh` as the only place that may download; the diagram counts, the
+  HELAS grid and the two LHAPDF oracles committed; `vibegraph-refdata-1`
+  assembled, pinned and fetchable; the `validation/madgraph` README rewritten as
+  an index over the manifest.
+- **L1b** — the compact in-repo event representation measured and **rejected**:
+  the projection is exact but bottoms out at 27.5 MB against a 5–10 MB target
+  (note 26). Its incidental finding — the bundle double-compresses — is what L7
+  acted on.
+- **L2** — the `amplitudes` category on MadGraph's own banked events, projected
+  exactly on shell, plus the fixed grid: one committed table per process, one
+  hermetic `amplitude_oracle` binary over all 19 rows in ~1.1 s, the three
+  point-level oracles folded into it.
+- **L3** — every hadronic σ through the general `ProtonIntegrand`; the bespoke
+  `DrellYanIntegrand` deleted; `p p > e+ e-` re-gated on both dy13 cards through
+  the general path; the artifact's per-channel subsampler summary (fv5); the
+  first row files written for the collator.
+- **L4** — the `samples` category: weighted-ECDF KS on the kinematic
+  observables and χ² homogeneity on `SPINUP`, `ICOLUP` and the flavour
+  assignment, three generation seeds per row at a 1e-4 p-floor. Two cells came
+  out informational and the `low-mll-reconciliation` premise was falsified (see
+  the register below). Rider: the `pp_to_bb_fixed` banked run.
+- **L5** — Pythia 8.312 reads both emitted samples back, 2000/2000 each, with a
+  colour-mutation negative control Pythia rejects.
+- **L6** — the hygiene riders: workspace clippy clean, the coloured 2→3
+  amplitudes inside the library sweeps, the flavour-group probe ladder widened,
+  and the banked layer's 15-entry tolerated-skip table deleted as dead — a
+  missing banked input now fails naming itself.
+- **L7** — this section, the collator, and the `refdata-2` re-cut.
+
+### The report
+
+`pixi run validate` = fetch → clear the previous run's cells → every banked gate
+→ the collator, which renders `target/validation-report/report.{md,json}` and
+exits nonzero on a cell the manifest declares and nothing measured, a cell
+nothing declared and something measured, a gate cell that failed, or a
+measurement that disagrees with its declaration about mode or factorization.
+Three rules decide what a cell says, all three stated in the binary's own docs:
+
+1. **Nothing is inferred.** A hermetic cell could have been marked from the
+   manifest tier plus "the hermetic suite passed"; that prints a green cell no
+   measurement stands behind and keeps printing it after the gate stops covering
+   the row. So `amplitude_oracle` and `validate_madgraph_diagrams` write row
+   files like every other gate, and a declared-and-unmeasured cell fails.
+2. **The worst measurement is the cell.** `pp_to_ll` arrives as two run cards;
+   the cell reports the worse pull and lists both, so a cell cannot be made green
+   by adding an easier variant.
+3. **A standalone gate with its own driver is read from its file.** Pythia's
+   verdict is rendered when present and reads "not run in this invocation" when
+   absent, which is not a failure — and when its file predates this run's cells,
+   the row says so rather than passing an old number off as today's.
+
+Final table (`pixi run validate`, 5m32 on the dev machine, exit 0; 26 rows ×
+4 categories = 104 cells, 72 measured: 68 ✅, 4 ⚠️, 4 ⏳ long, 18 ⛔ blocked,
+10 covered-by/uncovered):
+
+| process | 2→N | diagrams | amplitudes | integrals | samples |
+|---|---|---|---|---|---|
+| `ee_to_mumu` `e+ e- > mu+ mu-` | 2 | ✅ 2/2 | ✅ max rel 1.11e-14 | ✅ pull -0.55, chi2/dof 0.60 | ✅ KS p 0.033, chi2 p 0.049 |
+| `ee_to_ee` `e+ e- > e+ e-` | 2 | ✅ 4/4 | ✅ max rel 2.66e-14 | ✅ pull -0.73, chi2/dof 1.55 | ✅ KS p 0.004, chi2 p 0.121 |
+| `ee_to_ttx` `e+ e- > t t~` | 2 | ✅ 2/2 | ✅ max rel 4.97e-15 | ✅ pull +0.89, chi2/dof 1.69 | ✅ KS p 0.082, chi2 p 0.157 |
+| `ee_to_wpwm` `e+ e- > w+ w-` | 2 | ✅ 3/3 | ✅ max rel 4.24e-14 | ✅ pull +1.81, chi2/dof 0.96 | ✅ KS p 0.052, chi2 p 0.202 |
+| `ee_to_zh` `e+ e- > z h` | 2 | ✅ 1/1 | ✅ max rel 9.55e-14 | ✅ pull -1.14, chi2/dof 0.50 | ✅ KS p 0.031, chi2 p 0.117 |
+| `uux_to_mumu` `u u~ > mu+ mu-` | 2 | ✅ 2/2 | ✅ max rel 1.66e-14 | ✅ pull +0.34, chi2/dof 0.59 | ✅ KS p 0.127, chi2 p 0.073 |
+| `uux_to_uux` `u u~ > u u~` | 2 | ✅ 2/2 | ✅ max rel 5.61e-14 | ✅ pull -1.94, chi2/dof 1.75 | ⚠️ KS p 0.007, chi2 p <1e-300 [1] |
+| `gg_to_ttx` `g g > t t~` | 2 | ✅ 3/3 | ✅ max rel 1.89e-15 | ✅ pull +0.35, chi2/dof 0.80 | ✅ KS p 0.220, chi2 p 0.169 |
+| `gg_to_gg` `g g > g g` | 2 | ⚠️ 4/6 [2] | ✅ max rel 8.25e-14 | ✅ pull -0.53, chi2/dof 1.16 | ✅ KS p 0.014, chi2 p 0.003 |
+| `ee_to_mumua` `e+ e- > mu+ mu- a` | 3 | ✅ 8/8 | ✅ max rel 3.94e-14 | ✅ pull +0.31, chi2/dof 0.97 | ✅ KS p 0.002, chi2 p 0.064 |
+| `ee_to_tatah` `e+ e- > ta+ ta- h` | 3 | ✅ 5/5 | ✅ max rel 4.04e-14 | ✅ pull +0.44, chi2/dof 1.10 | ✅ KS p 0.002, chi2 p 0.499 |
+| `uux_to_epemg` `u u~ > e+ e- g QCD=2 QED=2` | 3 | ✅ 4/4 | ✅ max rel 5.84e-14 | ⛔ `kt-clustering` [3] | ⛔ `kt-clustering` [4] |
+| `ddx_to_epemg` `d d~ > e+ e- g QCD=2 QED=2` | 3 | ✅ 4/4 | ✅ max rel 3.98e-14 | ⛔ `kt-clustering` [3] | ⛔ `kt-clustering` [4] |
+| `gu_to_epemu` `g u > e+ e- u QCD=2 QED=2` | 3 | ✅ 4/4 | ✅ max rel 3.75e-14 | ⛔ `kt-clustering` [3] | ⛔ `kt-clustering` [4] |
+| `gux_to_epemux` `g u~ > e+ e- u~ QCD=2 QED=2` | 3 | ✅ 4/4 | ✅ max rel 3.91e-14 | ⛔ `kt-clustering` [3] | ⛔ `kt-clustering` [4] |
+| `ee_to_mumu_tata_qcd0` `e+ e- > mu+ mu- ta+ ta- QCD=0` | 4 | ✅ 25/25 | ✅ max rel 4.20e-12 | ⚠️ pull +7.65, chi2/dof 0.99 [5] | ⚠️ KS p 3.6e-6, chi2 p <1e-300 [6] |
+| `uux_to_ccx_emmm_qcd0` `u u~ > c c~ e+ e- mu+ mu- QCD=0` | 6 | ✅ 579/579 | ✅ max rel 2.05e-13 | ⏳ oracle layer [7] | ⏳ oracle layer |
+| `bbx_to_ccx_emmm_qcd0` `b b~ > c c~ e+ e- mu+ mu- QCD=0` | 6 | ✅ 615/615 | ✅ max rel 5.89e-14 | ⏳ oracle layer | ⏳ oracle layer |
+| **multi-channel** | | | | | |
+| `pp_to_ll` `p p > l+ l-` | 2 | ✅ 2/2 | — covered by `uux_to_mumu` | ✅ pull -1.35, chi2/dof 1.19 (worst of 2: mmll_60_120 pull -1.35; default pull +0.25) | uncovered [8] |
+| `pp_to_ll_qcd0` `p p > l+ l- QCD=0` | 2 | ✅ 2/2 | ✅ max rel 1.83e-14 | — covered by `pp_to_ll` | uncovered [9] |
+| `pp_to_bb` `p p > b b~` | 2 | ✅ 4/4 | uncovered [10] | ⛔ `kt-clustering` [11] | ⛔ `kt-clustering` |
+| `pp_to_bb_qcd2` `p p > b b~ QCD=2` | 2 | ✅ 6/6 | uncovered [12] | ⛔ `kt-clustering` | ⛔ `kt-clustering` |
+| `pp_to_bb_fixed` `p p > b b~ QCD=2` | 2 | ✅ 6/6 | uncovered [13] | ⛔ `hadronic-shat-floor` [14] | ⛔ `hadronic-shat-floor` [15] |
+| `pp_to_llj_fixed` `p p > l+ l- j QCD=2 QED=2` | 3 | ✅ 8/8 | — covered by `uux_to_epemg`, `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux` | ✅ pull +0.11, chi2/dof 1.48 | ✅ KS p 0.044, chi2 p 0.144 |
+| `pp_to_llj` `p p > l+ l- j` | 3 | ✅ 8/8 | uncovered [16] | ⛔ `kt-clustering` [17] | ⛔ `kt-clustering` |
+| `pp_to_llj_qcd2_qed2` `p p > l+ l- j QCD=2 QED=2` | 3 | ✅ 8/8 | — covered by `uux_to_epemg`, `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux` | ⛔ `kt-clustering` | ⛔ `kt-clustering` |
+
+### Findings register
+
+What the sprint exposed and deliberately did not fix, each with the gate that
+measures it. All of these are in `TODO.md` with their evidence.
+
+1. **The `h → τ⁺τ⁻` pole** (`higgs-pole-in-m-tautau`, replaces
+   `low-mll-reconciliation`, whose premise L4 falsified). `ee_to_mumu_tata_qcd0`
+   sits +2.2% above banked MadGraph, and binning dσ/dm_ll against MadGraph's own
+   events down to threshold puts 159% of the offset in **one 200 MeV bin at the
+   Higgs pole** — 7.137e-5 pb against 2.260e-5 pb, factor 3.16 at 22σ around a
+   6.4 MeV resonance — with every bin below 20 GeV agreeing. The ratio is within
+   errors of π, which a Breit–Wigner normalisation is the first place to look
+   for. Decisive next step: a MadGraph run of this process with an m(τ⁺τ⁻) window
+   around 125 GeV. Both its `integrals` and `samples` cells are ⚠️.
+2. **`uux_to_uux` realised colour flows.** Every kinematic observable and the
+   helicity frequencies agree; the `ICOLUP` frequencies do not (99.96% against
+   90.4%, χ² 1015 on one degree of freedom, stable across seeds). Our 90/10 is
+   exactly the banked JAMP² ratio, so the two sides are applying different
+   colour-selection rules — the candidate being MadEvent's per-channel `ICOLAMP`
+   conditioning. Neither is wrong as an LO assignment; they differ at order 1/N²
+   and the shower is handed the difference.
+3. **`hadronic-shat-floor`.** The general hadronic path cannot integrate a final
+   state with no leptons: every ŝ lower bound the cut layer derives is a lepton
+   bound, so `p p > b b~` leaves `shat_min = 0` and the first parton-density call
+   asks for x = NaN. The `pp_to_bb_fixed` run is banked and its `diagrams` cell
+   gates; its `integrals` and `samples` cells are ⛔ on this. The missing bound is
+   the one the lepton branch already makes.
+4. **The mirror term's visibility below the electroweak scale.** The control that
+   makes the mirrored-beam identity check meaningful — dropping the mirror must
+   move |M|² by more than 1e-3 — holds above 220 GeV and fails at √ŝ = 25 GeV,
+   where the weakest mirror term is worth 8.4e-4. The identity itself holds to
+   5.4e-13 everywhere measured. Wanted: the bound as a function of ŝ, not a wider
+   ladder and a smaller number.
+5. **`g g > g g` diagram counting, decided.** MadGraph writes the four-gluon
+   contact term as one graph per colour structure and we write one diagram whose
+   vertex carries all three, so 3 + 3 against 3 + 1. **Decision taken here, as
+   the plan asked: report our count in our own convention and mark the cell ⚠️.**
+   Re-splitting the enumeration to match a counting convention would change the
+   thing being validated to make a number match, and the same process is pinned
+   at 8.25e-14 per flow — far below what any difference in diagram content could
+   survive.
+
+### Bookkeeping the sweep turned up
+
+- The `diagrams` cells declared tier `hermetic` while the only gate measuring
+  them is registered `banked` (the 2→6 enumeration cost). The tiers now say
+  `banked`, and the manifest says that a tier is where a gate is *registered*,
+  not the weakest layer it could run in. The gate reads committed references
+  only and takes 1.5 s, so moving the binary instead is a live option for a
+  later session.
+- `validate_sigma` writes an `ee_to_mumu_tata_qcd0` row note that L4's binning
+  falsified ("localised at low m_ll"). The collator prefers the manifest's
+  curated note over a measurement's own, so the report does not repeat it, but
+  the string is still written into the row file.
+- The `init-sm-submodule` pixi task runs `git submodule update --init`
+  unconditionally and fails outside a git checkout, where `vg_ensure_submodule`
+  guards on the file first. It bites only a `git archive` export, not CI.
+- `Process`'s `Display` drops coupling-order constraints, so the report's
+  measurement detail shows `p p > b b~` where the row is `p p > b b~ QCD=2`. The
+  enumeration honours the constraint (4 diagrams against 6); only the printed
+  form loses it.
+
+### `refdata-2`
+
+One re-cut, three reasons, because each one costs a new archive and a new pin.
+
+- The `ee_to_mumu_tata_qcd0` subprocess's `matrix1_orig.f` carried a
+  hand-added `COMMON/DBG_AMP/` block. Regenerating the process with
+  `mg5_aMC` reproduces the file **except for the order MadGraph emits its `FK_*`
+  declarations in**, which moves run to run — so the block was excised instead,
+  and the result is byte-identical to the fresh generation but for that
+  permutation. The `Events/` tree was not touched.
+- `pp_to_bb_fixed` joined the bundle (`bundled = false` gone), so a fetching
+  checkout has the one purely QCD-initiated multi-channel row.
+- Event files travel decompressed, taking L1b's finding: **65 066 838 bytes
+  against 90 597 923**, 28% smaller while carrying one more run. The unpack step
+  gzips them back, so no gate changed. The byte-for-byte round-trip gate keeps
+  its meaning — it compares Les Houches *text*, gzip is lossless, and the archive
+  now holds exactly the bytes it asserts on rather than a container around them.
+  A side effect worth having: a work area unpacked from a bundle now re-assembles
+  to that same bundle, which a gzipped-member archive could not promise.
+
+Verified: two assemblies byte-identical
+(`4495d6df…f40e736c`); all 26 runs' decompressed event text unchanged sha256 for
+sha256 through pack and unpack; a clean `git archive` export fed only by the
+local bundle runs the whole banked layer green and renders a report identical to
+the dev machine's, Pythia row apart.
+
+### What the follow-up backlog session should take first
+
+In order:
+
+1. **The Higgs-pole bin.** It is the only ⚠️ that is a candidate *defect* rather
+   than a convention difference, the decisive measurement is one banked MadGraph
+   run with an m(τ⁺τ⁻) window, and the suspected cause (a Breit–Wigner
+   normalisation) would move every resonant channel.
+2. **`hadronic-shat-floor`.** Smallest, most contained, and it turns two ⛔ cells
+   into measured ones on a row whose reference is already banked.
+3. **`uux_to_uux` colour selection.** Read MadEvent's `ICOLAMP` conditioning and
+   decide which rule we mean to implement; it is the only place the sprint found
+   where what we hand a shower differs from what MadGraph hands one.
+4. **The Drell-Yan `samples` gap.** One oracle-layer run banking events for the
+   dy13 cards fills the last two `uncovered` cells that a run could fill.
+
+Everything else in the register is either a feature (kT clustering, the
+multi-rung spine) or a bookkeeping item above.
