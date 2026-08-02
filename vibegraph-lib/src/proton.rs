@@ -2575,17 +2575,17 @@ mod tests {
     }
 
     /// The fixed-scale card resolves to constants and reads `αs` from the set's own
-    /// tabulation; the dynamical card of the same process is refused at setup, not at
-    /// the first VEGAS point.
+    /// tabulation; the dynamical card of the same process resolves too, over a set
+    /// whose table stops below the collider.
     ///
-    /// What refuses it is no longer the scale: the clustering computes one. It is
-    /// the coupling the scale would be evaluated at — this set tabulates `αs` to
-    /// 10 TeV and a per-event scale on a 13 TeV collider can exceed it, on some
-    /// events and not on all. LHAPDF extrapolates past its own table and this
-    /// crate does not, so the bound is checked once at setup rather than met as a
-    /// failure part-way through an integration.
+    /// That combination is the ordinary one rather than a corner: this set
+    /// tabulates `αs` to 10 TeV and a per-event scale on a 13 TeV collider can
+    /// exceed it, on some events and not on all. Past its last knot LHAPDF holds
+    /// the coupling at the last tabulated value, so the reading is defined
+    /// wherever the clustering can land, and a run does not depend on which of its
+    /// events happen to cross the top of the table.
     #[test]
-    fn a_dynamical_scale_is_refused_where_the_fixed_one_resolves() {
+    fn a_dynamical_scale_resolves_where_the_table_stops_below_the_collider() {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
         let card = llj_card();
@@ -2642,14 +2642,30 @@ mod tests {
         .expect("dynamical run card");
         let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
             .expect("integrand");
-        let err = match integ.use_run_card_scales(&m, &evaluated, &dynamical, Some(&info)) {
-            Ok(report) => panic!("a coupling tabulated below the collider resolved: {report:?}"),
-            Err(e) => e.to_string(),
-        };
+        let report = integ
+            .use_run_card_scales(&m, &evaluated, &dynamical, Some(&info))
+            .expect("the dynamical prescription compiles");
         assert!(
-            err.contains("alpha_s") && err.contains("10000") && err.contains("13000"),
-            "unexpected refusal: {err}"
+            report.constant_scales.is_none(),
+            "the dynamical card must read the event: {report:?}"
         );
+        let grid = integ
+            .alpha_s_source()
+            .and_then(AlphaSSource::grid)
+            .expect("the set's own tabulation");
+
+        let collider = dynamical.ebeam1 + dynamical.ebeam2;
+        let (_, q_max) = grid.q_range();
+        assert!(
+            q_max < collider,
+            "the fixture's table reaches {q_max}, so it no longer stops below the \
+             {collider} GeV collider this asserts about"
+        );
+        let last = *info.vals.last().expect("tabulated values");
+        assert_eq!(grid.eval(q_max), last);
+        for q in [q_max * 1.000_001, 0.5 * (q_max + collider), collider] {
+            assert_eq!(grid.eval(q), last, "at Q = {q}");
+        }
     }
 
     /// The `ŝ` window the cuts *hint* is looser than the one they impose, and the

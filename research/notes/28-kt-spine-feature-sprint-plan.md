@@ -2584,3 +2584,155 @@ computed at a dynamical scale off an `lhapdf` set carries a systematic `1.7e-4`
 on `αs` until the knots are read as LHAPDF reads them, and **K5 should size that
 against the σ agreement it is trying to demonstrate before flipping those
 rows.**
+
+## K5a — αs grid fidelity
+
+Both of §K4.6's blockers are closed, and the second one is what closed the
+first. `GridAlphaS` now *is* LHAPDF's `AlphaS_Ipol`, so a scale past the top of
+the table has a defined reading and the setup-time refusal that stood in for one
+is deleted. `GRID_INTERPOLANT_RUNS` and its stay-excluded assertion are gone;
+`pp_to_jj` and `pp_to_llj_dyn` join `banked_events_reproduce_aqcdup`.
+
+### K5a.1 The algorithm, and what pins each line of it
+
+The call MadGraph makes is `ALPHAS(Q)` in `alfas_functions_lhapdf.f`, one line
+forward to `alphasPDF(Q)`; `LHAGlue.cc:1411` forwards that to
+`PDF::alphasQ(Q)`, which is `alphasQ2(q*q)` (`PDF.h:504`) on the set's `AlphaS`
+object, and for `AlphaS_Type: ipol` that object is `AlphaS_Ipol`. Every element
+below is read off that class rather than inferred from its output.
+
+| element | what it is | source |
+|---|---|---|
+| interpolation variable | `ln Q²`, natural log | `AlphaSArray::_syncq2s` |
+| interpolant | cubic Hermite, `2t³−3t²+1` basis | `AlphaS_Ipol::_interpolateCubic` |
+| endpoint slopes | central inside a subgrid, forward at its first knot, backward at its last | `AlphaS_Ipol::alphasQ2`, `AlphaSArray::ddlogq_*` |
+| subgrids | table cut at every repeated `Q²`, pieces keyed by their first `Q²` so a repeat of an earlier key replaces it | `AlphaS_Ipol::_setup_grids` |
+| above the last knot | **frozen** at the last tabulated value | `if (q2 > _q2s.back()) return _as.back();` |
+| below the first knot | power law in `Q²` whose exponent is the first interval's gradient in the `log₁₀`–`log₁₀` plane | `AlphaS_Ipol::alphasQ2` |
+| a reading `≥ 2` in magnitude | replaced by `DBL_MAX` | `_interpolateCubic`'s return |
+
+The reading is of 6.5.3's sources; the oracle below is MadGraph's own 6.5.6, and
+414 probes agreeing to the bit is what says the two are the same routine.
+
+The first three rows are where a plausible-looking wrong answer could have sat,
+and one hermetic fixture separates them instead of asserting them together. **A
+quadratic in `ln Q²` sampled on the knots is reproduced exactly, and only in the
+intervals where both slopes are central** — a central difference of a quadratic
+*is* its derivative, a one-sided difference is not, and Hermite with exact
+endpoint derivatives is exact for anything cubic or below. So a linear reading,
+a reading in `Q`, and central differences carried into the edges each fail a
+different half of `a_quadratic_in_log_q2_is_exact_inside_and_only_inside`.
+
+### K5a.2 The 20 000 events, at the same standard as every other run
+
+| run | a straight line through the same knots | the cubic |
+|---|---|---|
+| `pp_to_llj_dyn` | 9976 / 10000 outside, worst **1776.6×** budget, 23 events digit-exact | **0** outside, worst **0.999**, 9798 digit-exact |
+| `pp_to_jj` | 9993 / 10000 outside, worst **1076.3×** budget, 6 events digit-exact | **0** outside, worst **0.996**, 9681 digit-exact |
+
+The left column is remeasured here rather than carried over, and it corrects
+§K4.6's pairing: the `1777×` belongs to `pp_to_llj_dyn` and the `1076×` to
+`pp_to_jj`, not the other way round. The counts were right.
+
+Both runs now sit against the same bound every other run does — the budget is
+saturated because events pile up against a rounding boundary, not because the
+gate is close to failing. `banked_events_reproduce_aqcdup` reports **280 000
+events across 28 runs inside their printing budget, worst 0.999** (in
+`pp_to_llj_dyn`), up from 260 000 across 26.
+
+The `M_Z` reading gained six orders with them. This crate's `αs(M_Z)` off the
+set is now `0.13000271085472234` against MadGraph's own 17-digit report of
+`0.13000271085472234` — every bit — so `GRID_ALPHA_S_TOL` drops from `1e-7` to
+`1e-14`, which is two orders above the arithmetic noise of one `ln` call and
+leaves room for a system `libm` that rounds it differently.
+
+### K5a.3 The ceiling: K4's premise corrected, and the oracle that replaced it
+
+**No banked event is above the ceiling.** The largest `SCALUP` in
+`pp_to_llj_dyn` is `845.5386` GeV and in `pp_to_jj` `167.1938`, against a table
+that runs to `10000`; the smallest `AQCDUP` in either is `0.0976`, nowhere near
+the top knot's `0.07695485`. So the expectation that llj_dyn's tail carries the
+above-ceiling answer is wrong. The panic K4 met came from the integrator
+sampling high-`ŝ` points, not from anything that survived unweighting into the
+bank — §K5a.5's measurement is the same mechanism seen directly, an integration
+reaching `Q = 10647` GeV where no banked event passes `846`. **The banked oracle
+cannot speak about either end of the table**, and a policy adopted on its
+strength would have been adopted on no evidence.
+
+What speaks instead is LHAPDF itself, through the oracle generator the PDF gate
+already had. `validation/pdf/gen_oracle.cpp` now also dumps `gpdf.alphasQ(q)` —
+the same call, through MG's own LHAPDF 6.5.6 — on a probe set built for the
+branches the events cannot reach:
+
+| category | probes (NNPDF23 / NNPDF31) | what it covers |
+|---|---|---|
+| `knot` | 51 / 50 | every tabulated scale |
+| `interval` | 150 / 144 | `t = ¼, ½, ¾` of every interval in `ln Q²`, edges included |
+| `threshold` | — / 3 | either side of and exactly at NNPDF31's repeated `Q = 4.92`, the only real subgrid split in the two sets |
+| `above_qmax` | 4 / 4 | `q_max·(1+10⁻¹²)`, `1.3`, `2.6`, `10³` |
+| `below_qmin` | 4 / 4 | `q_min·(1−10⁻¹²)`, `0.5`, `0.1`, `10⁻³` |
+
+**All 414 probes across both sets reproduce LHAPDF exactly — `0.00e0` relative
+in every category**
+(`alpha_s_matches_lhapdf_across_the_table_and_past_both_ends`, bounded at
+`1e-14`). The ceiling answer is asserted separately as the *shape* claim it is: LHAPDF's own values at `Q` up to `10⁷` are the last
+tabulated value to the bit, over both sets
+(`above_the_alpha_s_table_lhapdf_freezes_rather_than_extrapolates`). NNPDF23
+freezes at `0.07695485` from `10000` GeV up, which is what makes a 13 TeV
+dynamical scale evaluable at all.
+
+Regenerating the two oracle files changed **no existing point** — only the
+`alphas` block was added.
+
+### K5a.4 What is still refused, and why each one is undefined rather than awkward
+
+- **A scale that is not a positive finite number.** `AlphaS_Ipol` asserts
+  `q2 >= 0` and would return `+inf` at `Q = 0`; NaN would take an interpolating
+  branch by way of a false comparison. Both are refused here.
+- **A table with fewer than three knots in any subgrid that a query can select.**
+  `alphasQ2` reads `alphas()[i+2]` when it takes a central slope at `i+1`, so a
+  two-knot subgrid indexes off the end of its own `std::vector`. A one-knot
+  piece is *not* refused: it can only arise from a repeated first knot, and the
+  keyed-by-front-`Q²` insertion means the piece that follows replaces it, so
+  nothing ever interpolates on it
+  (`a_leading_repeated_scale_is_shadowed_rather_than_refused`).
+- **A non-`ipol` `AlphaS_Type`**, unchanged: the knots are not the source there.
+- **A non-positive tabulated value**, new: the below-table power law takes
+  `log₁₀` of a ratio of them, so it would surface as a NaN rather than as a bad
+  table.
+
+`HadronicError::GridAlphaSBelowCollider` is deleted, and
+`proton.rs`'s test of it is replaced by the opposite assertion — the same
+dynamical card over the same 10 TeV table on a 13 TeV collider now compiles, and
+the coupling it installs returns the frozen value at and above the collider
+energy (`a_dynamical_scale_resolves_where_the_table_stops_below_the_collider`).
+
+### K5a.5 For K5b and the capstone
+
+- **The `αs` systematic is gone**, not reduced: there is no `1.7e-4` left to size
+  against a σ agreement. A dynamical-scale cross section off an `lhapdf` set now
+  reads the same coupling MadGraph read, event for event, to the printed digit.
+- **The *density* grid has the same ceiling, it is untouched, and it is
+  reached.** NNPDF23's parton densities also stop at `QMax = 10000`, and
+  `PdfMember::xfx_q2` refuses an out-of-grid point rather than continuing —
+  LHAPDF has an `Extrapolator` hierarchy this crate does not implement. With the
+  coupling no longer stopping it, `vibegraph integrate` on the banked
+  `pp → ℓ⁺ℓ⁻ j` card with its three `fixed_*_scale` switches turned off now gets
+  further and **stops on the densities instead**, at `Q² = 1.1337e8` —
+  `Q = 10647` GeV — against a grid reaching `1e8`. So it is measured rather than
+  anticipated: a per-event `μF` on a 13 TeV collider does cross a 10 TeV grid.
+  That is the next wall for the dynamical σ rows, it needs an extrapolator
+  rather than a wider bound, and until one lands the stop arrives part-way
+  through an integration instead of at setup. The measurement is kept running as
+  `a_dynamical_scale_card_is_stopped_by_the_density_grid_and_not_by_the_coupling`,
+  which asserts that the stop is the density grid's, that it is not the
+  coupling's, and that the `Q²` it names is above the grid's own maximum — so a
+  continuation landing later reads as a test that needs rewriting rather than as
+  a quiet pass.
+- **An available strengthening, deliberately not taken here.**
+  `validate_scales`'s `banked_events_reproduce_aqcdup_from_the_computed_scale`
+  steps over the four `lhapdf` runs because its second oracle is the
+  beta-function solve. With a faithful grid reading those four could join it,
+  which would tie the clustering-computed `μR` and the grid coupling together on
+  `pp_to_jj` and `pp_to_llj_dyn` in one comparison instead of two. It is left
+  alone because this session's gate was `validate_scales` **unmoved**.

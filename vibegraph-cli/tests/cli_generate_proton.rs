@@ -571,25 +571,34 @@ fn a_different_pdf_set_is_refused() {
     );
 }
 
-/// A dynamical scale on this process stays refused, in both places a user can meet
-/// one — but no longer for the same reason.
+/// A dynamical scale on this process is stopped by the parton densities, and by
+/// nothing before them.
 ///
-/// `generate` never reaches the scale prescription: the card it is handed does not
-/// match the one that trained the grids. `integrate` now computes the clustering
-/// scale, and meets the *next* limit instead: the run card's PDF set tabulates
-/// `αs` to 10 TeV while a per-event scale on a 13 TeV collider can exceed it.
-/// LHAPDF extrapolates past its own table and this crate does not, so the run
-/// stops at setup naming the range rather than evaluating off the end of it on
-/// whichever events happen to reach past it.
+/// Two halves, two separate statements. `generate` never reaches the scale
+/// prescription at all: the card it is handed does not match the one that trained
+/// the grids, and that refusal is about the artifact rather than about the scale.
+/// `integrate` computes the clustering scale per event, reads `αs` off the run
+/// card's PDF set at it — past the top of that set's `αs` table the reading is
+/// LHAPDF's frozen value, so the coupling stops nothing — and then asks the same
+/// set for a parton density at the same scale, where this crate's grid reader
+/// refuses rather than continuing past its support.
+///
+/// **That is a measurement and not a limitation being restated.** The `Q²` the
+/// refusal names is above the density grid's own maximum, so a per-event
+/// factorisation scale on a 13 TeV collider demonstrably reaches past a set
+/// whose grid stops at 10 TeV — which is what a dynamical-scale cross section on
+/// this process has to clear next, and it will need LHAPDF's `Extrapolator`
+/// rather than a wider bound. Until then the stop arrives part-way through an
+/// integration rather than at setup.
 ///
 /// The card is the banked one with its three `fixed_*_scale` switches turned off,
-/// so nothing but the scale prescription differs and the refusals cannot be coming
-/// from something else about it.
+/// so nothing but the scale prescription differs and neither outcome can be
+/// coming from something else about it.
 #[test]
-fn a_dynamical_scale_card_is_still_refused() {
+fn a_dynamical_scale_card_is_stopped_by_the_density_grid_and_not_by_the_coupling() {
     if !banked_present() {
         vibegraph::validation::require(
-            "a_dynamical_scale_card_is_still_refused",
+            "a_dynamical_scale_card_is_stopped_by_the_density_grid_and_not_by_the_coupling",
             "the banked MadGraph run and the fetched PDF set",
             RUN,
         );
@@ -620,8 +629,8 @@ fn a_dynamical_scale_card_is_still_refused() {
         "the refusal does not name the switch that was turned off:\n{stderr}"
     );
 
-    // And the card that would have to produce such an artifact is itself refused,
-    // with the missing capability spelled out rather than silently approximated.
+    // And the card that would have to produce such an artifact runs until it
+    // asks for a density off the end of the grid.
     let out: Output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
         .arg("integrate")
         .arg(&run.proc_card)
@@ -637,11 +646,39 @@ fn a_dynamical_scale_card_is_still_refused() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         !out.status.success(),
-        "a dynamical-scale card was integrated"
+        "a dynamical-scale card integrated; if the density grid gained a \
+         continuation this test is the statement that needs rewriting:\n{stderr}"
     );
     assert!(
-        stderr.contains("alpha_s") && stderr.contains("10000"),
-        "the integration's refusal does not name the tabulated alpha_s range:\n{stderr}"
+        stderr.contains("PDF evaluation point") && !stderr.contains("alpha_s"),
+        "the stop is no longer the density grid's:\n{stderr}"
+    );
+
+    // The scale it names has to be above the grid's own maximum, or the refusal
+    // is about `x` and this says nothing about the collider reaching past 10 TeV.
+    let q2: f64 = stderr
+        .split("Q²=")
+        .nth(1)
+        .and_then(|tail| tail.split(')').next())
+        .and_then(|token| token.parse().ok())
+        .unwrap_or_else(|| panic!("the refusal does not name a Q²:\n{stderr}"));
+    let q2_max: f64 = stderr
+        .rsplit("Q²∈[")
+        .next()
+        .and_then(|tail| tail.split(']').next())
+        .and_then(|range| range.split(", ").nth(1))
+        .and_then(|token| token.parse().ok())
+        .unwrap_or_else(|| panic!("the refusal does not name its Q² support:\n{stderr}"));
+    assert!(
+        q2 > q2_max,
+        "the density refusal is not about the scale: Q² = {q2} against a grid \
+         reaching {q2_max}"
+    );
+    eprintln!(
+        "a per-event mu_F on this card reached Q = {:.0} GeV against a grid \
+         stopping at {:.0} GeV",
+        q2.sqrt(),
+        q2_max.sqrt()
     );
 }
 
