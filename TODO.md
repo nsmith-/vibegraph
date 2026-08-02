@@ -96,21 +96,27 @@ One line each; the note is the full record. Earlier sprints
   (was `2.69` / `6.4e-3`). The quoted error at the gate budget fell 2.4×, and
   `g g > g g`'s fell 2.6×. (`validate_sigma.rs` `probe_qcd_seed_stability`,
   note 28 §S4.)
-- **`ud_to_epemud_qcd0`'s matrix element disagrees with MadGraph** — σ cell
-  informational at `1.0860e-1 pb` against MadGraph's `1.4107e-2 ± 3.4e-5 pb`.
-  Traced below the cross section in `kt-spine` S4: registered temporarily into the
-  f2py amplitude registry, this side's colour- and helicity-summed |M|² disagrees
-  with `MATRIX1` **point by point by factors of 2 to 63** on MadGraph's own
-  20-point grid, ours the larger nearly everywhere, while the same comparison
-  reproduces `uux_to_uux` to `5.7e-14` and `ee_to_mumu_tata_qcd0` to `5.1e-13`.
-  Diagram count (35), `NCOLOR = 2` with `CF = [[9,3],[3,9]]`, the 8 surviving
-  helicity combinations, the leg ordering and the compiled cuts all already match
-  MadGraph, and no recontraction of the two JAMPs reproduces its number — so it is
-  the coherent amplitude. This is the first row whose diagrams put a `W` between
-  two quark lines. **Next step**: land the amplitude registry entry and teach
-  `amplitude_oracle` MadGraph's 21 AMP2 accumulators over the 35 diagrams (its
-  structural pre-check refuses the row before comparing anything), then read the
-  disagreement per diagram. (note 28 §S4 B3.)
+- **`ud_to_epemud_qcd0` carries a relative sign between diagrams** — localised in
+  `kt-spine` S5; the σ cell stays informational at `1.0860e-1 pb` against
+  MadGraph's `1.4107e-2 ± 3.4e-5 pb`. The row is now a registered amplitude
+  process with a committed table, compared on every run as a `hermetic` / `info`
+  cell (`KNOWN_LINEAR_DISAGREEMENT` in `amplitude_oracle`). Every one of the 35
+  diagrams reproduces MadGraph's own `AMP()` to rounding under a unit phase — the
+  pairing is banked and exact at overlap `1` over 48 (point, helicity) rows — but
+  **eleven of them carry the opposite sign to the other 24**: MadGraph graphs
+  `1–8` (the three-rung ladders whose middle rung is a spacelike lepton), `17`
+  (the same with a spacelike neutrino between two `W`s) and `18, 19`
+  (`W+W- → γ*/Z* → e+e-`). Flipping exactly those eleven takes the worst |M|²
+  deviation over all 74 banked points from `5.1e+1` to `4.1e-14`. The predicate
+  that selects them is *the beam-to-beam spine carries an even number of boson
+  rungs*; three candidate correction rules were each falsified by a gated control
+  (`ee_to_mumu_tata_qcd0`, `ee_to_wpwm`, `u u~ > u u~`), so the fix is **not** a
+  missing multiplicative factor of those forms. Rooting soundness passes on the
+  process (270 re-rootings, 0 failures) and the CKM is diagonal on both sides.
+  **Next step**: derive the crossing sign for a diagram whose spine passes through
+  a crossed fermion line, and for a triple-gauge vertex whose legs are all
+  internal — the required sign vector is known exactly, so a candidate rule can be
+  checked against it and the 19 gated tables in one run. (note 28 §S5.)
 - **`ee_to_mumua` drifted when the references moved to 3.7.1** — the one row
   where 3.7.1 disagrees with us *more* than 3.5.7 did. Our σ is unchanged
   (`1.007660e-1` pb, same integration); MadGraph's moved `1.00630e-1 ± 3.865e-4`
