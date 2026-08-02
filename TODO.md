@@ -185,6 +185,15 @@ One line each; the note is the full record. Earlier sprints
   valid) event sample. The banked sample is the reference; any "regenerate the
   bank byte-for-byte" claim must exempt multi-group runs, and C's `samples`
   gate compares distributions, not bytes. (Sb, note 28.)
+- **`ForcePositive` is unimplemented, and out of grid it stops being
+  negligible** — on NNPDF31 (`ForcePositive: 2`) the clamp fires on 205 of 935
+  extrapolated probes, replacing a continued value of magnitude up to 25.7
+  with `1e-10`: MadGraph reads `1e-10`, we read `−25.7`. No production impact
+  today (every `pdlabel = lhapdf` run carries lhaid 247000, where it fires on
+  0/1190 probes), and the relationship is checked data
+  (`the_only_difference_from_madgraphs_own_value_is_the_positivity_clamp`),
+  not an assumption. Closing it is ~5 lines plus re-reading the interpolation
+  gates' `FORCE_POSITIVE_FLOOR` screen. (Note 28 §K5a2.)
 - **Tie the clustering-computed μR to the grid coupling in one gate** — 
   `validate_scales`'s `banked_events_reproduce_aqcdup_from_the_computed_scale`
   steps over the `pdlabel = lhapdf` runs because its second oracle was the
