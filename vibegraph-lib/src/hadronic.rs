@@ -975,6 +975,13 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// master formula and every prefactor are untouched — only the sampling density
     /// changes, and the estimator stays unbiased for the same `σ̂`.
     ///
+    /// The peripheral channels are regulated at [`Cuts::spacelike_floor`], the scale
+    /// this integrand's own cuts imply — the same input
+    /// [`ProtonIntegrand`](crate::proton::ProtonIntegrand) passes, read off the cuts
+    /// rather than taken from the caller so a run cannot regulate at a scale its
+    /// cuts do not have. Without one, a final state of more than two legs has no
+    /// peripheral spine at all, and a spacelike line's transfer is drawn flat.
+    ///
     /// Returns the α refinement path, or `None` if `diagrams` is empty (the flat
     /// sampler is then left in place).
     pub fn use_multichannel(
@@ -985,9 +992,10 @@ impl<'a> FixedBeamIntegrand<'a> {
         n_iter: usize,
         seed: u64,
     ) -> Option<AlphaAdaptation<f64>> {
+        let floor = self.cuts.spacelike_floor();
         let built: Vec<DiagramChannel<f64>> = diagrams
             .iter()
-            .map(|d| DiagramChannel::from_diagram(d, model, self.sqrt_s))
+            .map(|d| DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor))
             .collect();
         if built.is_empty() {
             return None;
@@ -1035,9 +1043,10 @@ impl<'a> FixedBeamIntegrand<'a> {
         model: &EvaluatedModel,
         alphas: &[f64],
     ) -> Option<Result<(), usize>> {
+        let floor = self.cuts.spacelike_floor();
         let built: Vec<DiagramChannel<f64>> = diagrams
             .iter()
-            .map(|d| DiagramChannel::from_diagram(d, model, self.sqrt_s))
+            .map(|d| DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor))
             .collect();
         if built.is_empty() {
             return None;

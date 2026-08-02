@@ -1813,3 +1813,190 @@ is the one variant worth a second thought before Sb runs.
 7. **Follow-up worth filing, not for this sprint:** a tighter fiducial bound on
    `|t|` derived from the full cut set rather than from `pT_min²` alone. The measured
    gap is one to two orders of magnitude, and the variance win scales with it.
+
+## S4 — spine in production: measurements
+
+The switch was two lines, not one. `from_diagram_regulated` now admits every rung
+(the ladder cap moves to `from_diagram_capped`, which nothing in production calls
+and which exists so the chain can be measured against the map it replaced), and
+`FixedBeamIntegrand::use_multichannel` now passes its own `Cuts::spacelike_floor()`
+the way `ProtonIntegrand::new` always has. The second line is what makes the first
+reach anything: **no production process today is both a ladder and regulated
+without it.** `pp_to_llj_fixed`'s diagrams carry one spacelike line each, every
+fixed-beam `2 → 2` carries one propagator, and the fixed-beam path was supplying
+floor `0` — under which a final state of more than two legs gets no spine at all.
+The ladder switch alone would have moved nothing.
+
+**Deviation from D3's scoping.** §S2.5 recorded that D3 "does not touch any enforced
+partonic σ row", on the reading that a fixed-beam row has no fiducial scale. Six of
+them do: `uux_to_uux` and `gg_to_gg` carry `ptj 20` (floor 400 GeV²), and `ee_to_ee`,
+`ee_to_mumua`, `ee_to_mumu_tata_qcd0` and `ud_to_epemud_qcd0` carry `ptl 10`
+(floor 100 GeV²). Their maps moved, every one of them for the better. Two disjoint
+controls stay bit-for-bit unchanged and say the change is the floor acting on a
+spacelike line and nothing else: rows whose cuts imply no floor even though their
+diagrams are peripheral (`gg_to_ttx`, floor 0 with 2 peripheral channels;
+`ee_to_wpwm`, floor 0 with 1), and rows with a floor but no spacelike line at all
+(`ee_to_mumu`, `uux_to_mumu`, `ee_to_tatah`, all floor 100 with 0).
+
+### Coverage, per process switched on
+
+`every_bounded_channel_set_covers_its_own_fiducial_region` (banked gate, 100 000
+flat-RAMBO draws per row, the cut indicator as the integrand). Every accepted point
+must be reachable by some channel's density; the bound narrows support, so this is
+the check that the narrowing renounced nothing.
+
+| row | floor | peripheral/total channels | accepted | reachable | only a bounded channel reaches | at 100× the bound |
+|---|---|---|---|---|---|---|
+| `ee_to_ee` | 100 | 2/4 | 98 642 | 98 642 | 0 | 98 642 |
+| `ee_to_mumua` | 100 | 4/8 | 92 247 | 92 247 | 0 | 92 247 |
+| `ee_to_mumu_tata_qcd0` | 100 | 8/25 | 83 142 | 83 142 | 0 | 83 142 |
+| `gg_to_gg` | 400 | 2/4 | 99 652 | 99 652 | 0 | 99 652 |
+| `uux_to_uux` | 400 | 1/2 | 99 652 | 99 652 | 0 | 99 652 |
+| `ud_to_epemud_qcd0` | 400 | 35/35 | 75 360 | 75 360 | **75 360** | 75 190 |
+
+Five of the six keep an unbounded member — an s-channel or contact diagram whose
+tree spans the whole final state — so their coverage is not a constraint and the
+table says so rather than claiming a pass. `ud_to_epemud_qcd0` is the one that
+constrains: all 35 channels are bounded chains, coverage is exact, and pushing every
+bound out by 100× loses 170 accepted points, which is the control that says the
+check can see where the bound sits.
+
+### B1 — the `uux_to_uux` five-seed mean
+
+`probe_qcd_seed_stability`, five seeds × two budgets, unchanged budgets.
+
+| row | before: worst \|pull\| / worst \|rel\| / 5-seed mean rel | after |
+|---|---|---|
+| `uux_to_uux` 1× | 2.69 / 6.4e-3 / **−0.30%** | 0.93 / 1.1e-3 / **+0.019%** |
+| `uux_to_uux` 4× | — / 3.5e-3 / −0.25% | 0.54 / 5.1e-4 / +0.015% |
+| `gg_to_gg` 1× | 1.63 / 4.9e-3 | 1.24 / 1.4e-3 / +0.077% |
+| `gg_to_gg` 4× | — / 2.7e-3 | 1.19 / 1.0e-3 / +0.041% |
+| `gg_to_ttx` | 0.68 / 8.6e-4 | bit-for-bit identical (floor 0) |
+
+**Verdict: the bias is gone.** The standing −0.30% was the spacelike collinear
+region, and it was under-resolved not because a rung was missing but because the
+transfer was drawn *flat* — a massless line at the collinear edge cannot shape its
+own draw, so every peripheral fixed-beam channel was an isotropic 2-body split.
+Floor and bound together turn it into a `1/|t|` draw over the fiducial window. The
+quoted error at the gate budget fell 2.4× on `uux_to_uux` (5.13e1 → 2.17e1 pb) and
+2.6× on `gg_to_gg` (3.66e2 → 1.40e2 pb) — 5.6× and 6.8× in variance at equal cost.
+
+### B2 — the degenerate-map finding
+
+`probe_channel_map_degeneracy`, worst *pairwise* relative density difference over
+2 000 drawn points beside the converged α.
+
+| row | worst pairwise density difference | bit-identical pairs | converged α |
+|---|---|---|---|
+| `uux_to_uux` | **1.000** (was 0, bit-identical) | 0 / 2 000 | `[8.5e-6, 0.99999]` |
+| `gg_to_gg` | **1.000** (was 0) | 2 000 / 12 000 | `[3.2e-5, 3.2e-5, 0.496, 0.504]` |
+| `gg_to_ttx` (control) | 0.8385 | 0 / 6 000 | `[0.267, 0.364, 0.369]` |
+
+**Verdict: the maps differentiate and α moves.** `uux_to_uux`'s t-channel channel
+takes essentially the whole selection weight; `gg_to_gg` splits between its two
+peripheral channels and starves the s-channel and four-gluon ones. The control
+reproduces note 27 §B3.2's recorded numbers (0.84, `[0.267, 0.364, 0.369]`)
+digit for digit, so the instrument is the same one that recorded the finding. One
+degeneracy survives and is expected: `gg_to_gg`'s two *non*-peripheral channels
+remain bit-identical to each other (2 000 of 12 000 pairs = one pair per point),
+since neither has a spacelike line for the floor to act on.
+
+This unblocks the per-flow α item the performance backlog parked on it.
+
+### B3 — the spine reference σ, and what it found instead
+
+σ(`u d > e+ e- u d QCD=0`) = **1.0860e-1 pb** at the gate seed (120 000 × 8,
+χ²/dof 1.22), 1.0816e-1 at a second seed and 1.0821e-1 as a plain multichannel
+average with no VEGAS at all — stable to 0.4% — against MadGraph's banked
+**1.4107e-2 ± 3.4241e-5 pb**. A factor 7.7.
+
+It is not the map. Registered temporarily into the f2py amplitude registry and
+compared against MadGraph's own `MATRIX1` on the 20-point fixed grid
+`gen_amplitude.py` writes for it, this side's colour- and helicity-summed |M|²
+disagrees **point by point by factors of 2 to 63**, ours the larger nearly
+everywhere. The same comparison, same code path, reproduces `uux_to_uux` to 5.7e-14
+over 75 points and `ee_to_mumu_tata_qcd0` to 5.1e-13 over 50, so it is this process
+and not the method. Everything countable already agrees with MadGraph: 35 diagrams
+to 35, `NCOLOR = 2` with `CF = [[9,3],[3,9]]` against `leshouche.inc`, 8 surviving
+helicity combinations to `NCOMB = 8`, the same external ordering, the same compiled
+cuts, spin/colour average 1/36. No recontraction of our two JAMPs reproduces
+MadGraph's number either, so the colour algebra is not the lever — the coherent
+amplitude is wrong.
+
+What is new about this process: it is **the first row here whose diagrams put a `W`
+between two quark lines** (`u → d W⁺`, `d → u W⁻`, closed by `W⁺W⁻ → γ*/Z* → e⁺e⁻`),
+which is what makes its second colour flow physical at all. That the ratio is
+region-dependent and almost always > 1 is what a missed cancellation between
+diagrams looks like, not a normalisation.
+
+**So the row lands informational, not gated** — `Plan::Info` with the reason, and
+the manifest `integrals` cell `banked` / `info`. Enforcing a σ whose linear level is
+known to be wrong is the thing the Physics Validation section exists to forbid. The
+phase-space side of the row is exercised regardless: all 35 channels are peripheral
+chains, so the number above is drawn entirely through the ordered rung chain, and
+the chain's coverage of the fiducial region is gated separately (table above).
+
+The registry entry was reverted rather than committed, because the `amplitude_oracle`
+would then fail — and it fails first on a *structural* pre-check worth recording:
+MadGraph groups this process's 35 diagrams into **21 AMP2 accumulators**
+(`N_MAX_CG = 21`), where this side has 35 singleton configurations. Teaching the
+oracle that grouping is the first step of the per-diagram comparison that would
+localise the bug.
+
+### B4 — the D3 delta on `pp_to_llj_fixed`
+
+`probe_fiducial_bound_on_llj_fixed`, the same three seeds and the same
+300 000 × 10 budget on both arms, the only difference being whether the peripheral
+channels keep their transfer bound.
+
+| arm | σ (pb) | χ²/dof | rel vs MG | pull | per-seed errors |
+|---|---|---|---|---|---|
+| bound on (production) | 423.3142 ± 0.2313 | 0.10 | −0.12% | −0.34 | 0.399 / 0.401 / 0.402 |
+| bound off (pole floor only) | 422.5653 ± 0.2642 | 0.14 | −0.30% | −0.83 | 0.462 / 0.449 / 0.462 |
+
+The bound buys **1.25×–1.34× in variance** per seed (1.30× on the mean) at equal
+cost — less than the 1.67×–1.83× §S2.5 measured on isolated cuts, which is what one
+expects once VEGAS and 23 other channels are between the map and the answer. Both
+arms sit inside `LLJ_MAX_REL`, both agree with MadGraph, and the bounded arm is the
+closer of the two: no bias is bought with the variance.
+
+### C — every enforced σ row, before and after
+
+Fixed seed, unchanged budgets. Rows not listed are bit-for-bit unchanged.
+
+| row | before (σ, pull, rel, χ²/dof) | after |
+|---|---|---|
+| `uux_to_uux` | 2.818429e4 ± 5.129e1, −1.49, −3.00e-3, 1.76 | 2.825463e4 ± 2.172e1, −0.44, −5.08e-4, 0.76 |
+| `gg_to_gg` | 1.427908e5 ± 3.660e2, +0.05, +1.45e-4, 1.16 | 1.427420e5 ± 1.400e2, −0.16, −1.96e-4, 0.56 |
+| `ee_to_ee` | 1.556023e2 ± 9.323e-2, −0.83, −7.56e-4, 1.55 | 1.556415e2 ± 9.439e-2, −0.55, −5.04e-4, 1.64 |
+| `ee_to_mumu_tata_qcd0` | 1.367003e-3 ± 2.685e-6, −1.45, −4.01e-3, 0.99 | 1.372287e-3 ± 2.078e-6, −0.06, −1.55e-4, 1.18 |
+| `ee_to_mumua` | 1.007660e-1 ± 2.022e-4, +3.12, +9.67e-3, 0.97 | 1.006000e-1 ± 1.665e-4, +2.79, +8.01e-3, 0.72 |
+
+Every moved row moved toward MadGraph, and four of the five shrank their own error.
+`ee_to_mumua` stays the widest row of the set (+0.80%, the standing 3.7.1 drift
+recorded in TODO.md) but is now 2.79σ rather than 3.12σ from it.
+
+### For the sprint manager
+
+1. **The fixed-beam path was never regulated.** That is the finding behind B1 and
+   B2, and it means every measurement of "what the spine is worth" taken through
+   `FixedBeamIntegrand` before this session was taken on flat transfer draws.
+2. **`ud_to_epemud_qcd0`'s matrix element does not agree with MadGraph.** The spine
+   reference row cannot gate its σ until that is reconciled; the phase-space work it
+   was banked for is unaffected and is exercised by it regardless. This wants a
+   session of its own: register the amplitude table, teach the oracle MadGraph's 21
+   AMP2 accumulators, and read the disagreement per diagram.
+3. **The work area's inventory debt is now load-bearing.** With the row's σ in
+   `sigma_reference.json`, `sigma_gate_matches_madgraph` requires
+   `output/ud_to_epemud_qcd0` present, and `validate_scales`/`validate_alphas`
+   assert a run inventory that Sb's four new directories break. Registering those
+   four is Track K's task and this session did not touch it, so the local banked
+   layer is green except for those two inventory assertions.
+4. **`with_fiducial_t_max` still exists** and now has a committed caller: the
+   coverage gate's 100× control. `without_transfer_bound` and
+   `ProtonIntegrand::new_unbounded` are B4's, and `from_diagram_capped` is the
+   informational arm's.
+5. The artifact schema is at **version 6**: `ChannelSampler::spine_poles_gev2`, one
+   entry per rung in chain order, with a version-5 reader that upgrades the old
+   scalar to a one-entry chain (which is what it always was — a version-5 writer
+   left every ladder all-timelike).
