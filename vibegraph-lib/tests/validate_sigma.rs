@@ -291,19 +291,48 @@ fn plan_for(dir: &str) -> Plan {
             niter: 8,
             rel_tol: 0.01,
         },
-        // ── llj partonic subprocesses, blocked on the clustering scale ──────
-        // Each is banked with a cross section and each is cheap enough to
-        // integrate, but all four run cards leave both scales free at
-        // `dynamical_scale_choice = -1`, and their topology — a t-channel
-        // propagator into a three-leg final state — is the case whose cluster
-        // scale depends on the merge order. The prescription is refused rather
-        // than approximated, so there is no scale at which this side could
-        // reproduce MadGraph's number; a fixed-scale re-run of the same process
-        // would be a different cross section. Same blocker as `pp_to_llj`.
-        "uux_to_epemg" | "ddx_to_epemg" | "gu_to_epemu" | "gux_to_epemux" => Plan::Skip(
-            "the banked run card takes the dynamical scale, which needs the general kT \
-             clustering (`kt-clustering`) for a t-channel topology into three legs",
-        ),
+        // ── llj partonic subprocesses, at the kT-clustered per-event scale ──
+        // All four run cards leave both scales free at
+        // `dynamical_scale_choice = -1`, so every point carries its own `αs`, and
+        // these are the only rows here where the coupling moves under the
+        // sampler. Their `σ` is linear in it.
+        //
+        // The two annihilation rows agree and are asserted; the two rows with a
+        // gluon beam do not, and the difference between the pairs is a measured
+        // property of the scale rather than of the amplitudes — which are gated
+        // at `4e-14` on all four. The scale is a function of the event **and** of
+        // the integration channel, and the integrand names channel 1 on every
+        // point because the sampled channel is not plumbed through to the scale
+        // prescription. On `uux_to_epemg` and `ddx_to_epemg` no banked event needs
+        // any other channel; on `gu_to_epemu` and `gux_to_epemux` 7204 and 7231 of
+        // 10 000 do. `probe_first_channel_cost_in_alpha_s` prices that in the
+        // coupling itself, against MadGraph's own per-event `AQCDUP`: `-2e-9` on
+        // the two asserted here, and `-5.540e-2` / `-5.557e-2` on the two below,
+        // which are their sigma deviations to two digits.
+        //
+        // Over five seeds at this budget and at four times it
+        // (`probe_llj_parton_seed_stability`) the two asserted rows hold
+        // |rel| <= 3.9e-3 and 5.6e-3 with means +2.8e-3 / +4.3e-3, both flat
+        // across the ladder and inside twice the banked run's own 0.21% and 0.20%
+        // Monte-Carlo error. `rel_tol` is set at 0.01 by that spread rather than
+        // by the reference's error, which is the tighter of the two here.
+        "uux_to_epemg" | "ddx_to_epemg" => Plan::Gate {
+            neval: 60_000,
+            niter: 8,
+            rel_tol: 0.01,
+        },
+        // A gluon beam: 5.5% low, on every seed and unmoved by four times the
+        // budget, so it is not sampling. Measured and reported rather than
+        // absorbed into a widened tolerance — the fix is to give the scale
+        // prescription the channel the point was drawn in, which is an integrand
+        // change and not a tolerance.
+        "gu_to_epemu" | "gux_to_epemux" => Plan::Info {
+            neval: 60_000,
+            niter: 8,
+            reason: "the cluster scale is taken in integration channel 1 on every point; \
+                     7204 and 7231 of these runs' 10000 banked events need another channel, \
+                     and sigma is 5.5% low, seed-stable and flat in the budget",
+        },
         // ── 2->6, not integrated ────────────────────────────────────────────
         "uux_to_ccx_emmm_qcd0" | "bbx_to_ccx_emmm_qcd0" => {
             Plan::Skip("2->6 final state: 24-dim flat RAMBO at ~1 ms/eval is too slow to gate")
@@ -902,6 +931,64 @@ fn probe_scale_cost() {
         );
     }
 }
+
+/// Seed-stability sweep and budget ladder for the four `ℓ⁺ℓ⁻ j` partonic rows —
+/// the evidence two of them are enforced on and two are not.
+///
+/// These are the first gated rows whose renormalisation and factorisation scales
+/// are recomputed per event by the kT clustering, so the integrand is no longer a
+/// smooth function of a fixed coupling: `αs(μR(p))` varies over the phase space
+/// the sampler adapts to. A seed sweep alone cannot say whether the residual is
+/// sampling — a bias that survives the budget is a defect — so both axes are
+/// reported here, five seeds at the gate budget and the same five at four times
+/// it. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_llj_parton_seed_stability() {
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let seeds = [SEED, 11, 22, 33, 44];
+    for dir in LLJ_PARTON_ROWS {
+        // The budget the gate itself integrates at, so the `1x` rung is the row's
+        // own cell and the `4x` rung is what says whether it is converged.
+        let (neval, niter) = match plan_for(dir) {
+            Plan::Gate { neval, niter, .. } | Plan::Info { neval, niter, .. } => (neval, niter),
+            Plan::Skip(_) => continue,
+        };
+        let e = &banked[dir];
+        eprintln!(
+            "── {dir} (MG {:.6e} ± {:.2e}) ──",
+            e.sigma_pb, e.sigma_err_pb
+        );
+        for budget in [1usize, 4] {
+            let mut rels = Vec::new();
+            for seed in seeds {
+                let (s, err, chi2) = integrate(dir, &e.process, neval * budget, niter, seed);
+                let pull = (s - e.sigma_pb) / (err * err + e.sigma_err_pb * e.sigma_err_pb).sqrt();
+                rels.push(s / e.sigma_pb - 1.0);
+                eprintln!(
+                    "  {:>7} seed {seed:>10}: vg {s:.6e} ± {err:.3e} | pull {pull:+8.2} | \
+                     rel {:+.2e} | chi2/dof {chi2:.2}",
+                    format!("{}x", budget),
+                    s / e.sigma_pb - 1.0,
+                );
+            }
+            let mean = rels.iter().sum::<f64>() / rels.len() as f64;
+            let worst = rels.iter().fold(0.0f64, |a, r| a.max(r.abs()));
+            eprintln!("  {budget}x mean rel {mean:+.2e} | worst |rel| {worst:.2e}");
+        }
+    }
+}
+
+/// The four `ℓ⁺ℓ⁻ j` partonic rows, the ones whose scales the kT clustering
+/// recomputes on every point.
+const LLJ_PARTON_ROWS: [&str; 4] = [
+    "uux_to_epemg",
+    "ddx_to_epemg",
+    "gu_to_epemu",
+    "gux_to_epemux",
+];
 
 /// Seed-stability sweep for the three QCD rows, the evidence their hard gate rests
 /// on.
