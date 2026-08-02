@@ -180,10 +180,19 @@ fn generate_sets_inner(
     cached_topologies: &[Topology],
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     let mut sets = Vec::new();
-    // Deduplicate on (sorted_initial, final_state): skip only when both the
-    // initial state (as an unordered set) AND the final state are identical to
-    // a previously-seen process.  Deduplicating on the initial state alone
-    // would silently drop subprocesses like `g d > e+ e- d` when the first
+    // Deduplicate on (sorted initial, sorted final): a concrete subprocess is
+    // identified by the *unordered* content of each side, so a card whose
+    // final-state slots draw on intersecting alias sets (`p p > j j`) yields
+    // `g u > g u` once rather than once per ordering.  `g u > u g` is the same
+    // subprocess: dPhi_n is integrated over the whole labelled region and every
+    // run-card cut is a per-class one, so a permutation of the outgoing legs
+    // relabels the integral without moving it, and enumerating both would add
+    // its term twice.  Sorting is in the key only — the surviving representative
+    // keeps the order the expansion emitted it in.
+    //
+    // Distinct final-state *content* never collapses, which is what
+    // deduplicating on the initial state alone would get wrong: it would
+    // silently drop subprocesses like `g d > e+ e- d` when the first
     // final-state combo tried for that initial (e.g. `g d > e+ e- g`) has no
     // diagrams at the active WEIGHTED bound.
     let mut seen_processes: std::collections::HashSet<(Vec<String>, Vec<String>)> =
@@ -223,8 +232,9 @@ fn generate_sets_inner(
 
         let mut initial_sorted = concrete.initial.clone();
         initial_sorted.sort();
-        let key = (initial_sorted, concrete.final_state.clone());
-        if !seen_processes.insert(key) {
+        let mut final_sorted = concrete.final_state.clone();
+        final_sorted.sort();
+        if !seen_processes.insert((initial_sorted, final_sorted)) {
             continue;
         }
 

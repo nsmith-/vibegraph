@@ -644,14 +644,13 @@ fn run_present(gate: &str, run: &str) -> bool {
     vibegraph::validation::require(gate, "a banked run directory", run);
 }
 
-/// The `p p > j j` sample against MadGraph's banked one — **measured and recorded,
-/// not enforced.**
+/// The `p p > j j` sample against MadGraph's banked one — **measured and
+/// recorded, not enforced**, on one column.
 ///
 /// The event side of the canonical leading-order QCD row: a purely hadronic
-/// two-jet final state whose
-/// flavour column spans five MadGraph subprocess directories and 65 concrete
-/// assignments, generated through the shipped binary at the run card's own
-/// dynamical scale.
+/// two-jet final state whose flavour column spans five MadGraph subprocess
+/// directories and 65 concrete assignments, generated through the shipped binary
+/// at the run card's own dynamical scale.
 ///
 /// **It is compared by distribution and never by bytes.** MadGraph regenerates a
 /// single-group run's events bit-identically, but this run's five subprocess
@@ -659,13 +658,27 @@ fn run_present(gate: &str, run: &str) -> bool {
 /// the same card yields a different — equally valid — sample. The banked one is
 /// the reference and only its distributions are statements about it.
 ///
-/// The cell is informational for the reason the cross-section cell is: the
-/// flavour decomposition carries one surplus copy of every concrete subprocess
-/// whose outgoing flavours differ (`validate_hadronic`'s
-/// `jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations` counts them
-/// exactly), so those assignments are over-represented in the draw by construction
-/// and the flavour column says so. The kinematic columns inherit it through the
-/// subprocess mixture rather than through any map.
+/// **Why it is informational, and what that is narrowed to.** Every kinematic
+/// observable, `SPINUP` and the flavour frequencies clear the floor on all three
+/// seeds. `ICOLUP` does not, and the cause is not the subprocess mixture: the
+/// events this row emits for a flavour assignment containing an **antiquark**
+/// carry that leg's colour line in `ICOLUP(1)` where the Les Houches convention
+/// puts an antiquark's line in `ICOLUP(2)`. That is a statement about the record
+/// alone — no reference needed — and it is why the colour partition of those
+/// events is one MadGraph never emits.
+///
+/// The colour flows come from the flavour group's *representative* subprocess
+/// (`FlavorGroup::evaluator`), permuted for a beam exchange and otherwise reused
+/// for every member; `color_flow_tags` derives its slots from each leg's own
+/// colour rep and checks them, so a member whose legs carry the conjugate reps of
+/// the representative's gets slots that are legal for the representative and not
+/// for it. This row is the first whose groups mix the two — `g q > g q` and
+/// `g q̄ > g q̄` share a pointwise `|M|²`, mass list, cut filter and colour basis.
+///
+/// What it is blind to: correlations between columns, a discrepancy confined to a
+/// small tail, and the *ordering* of the outgoing legs within an assignment —
+/// `canonical()` sorts them by class label and then by `pT`, so leg order enters
+/// the flavour key only through `pT`.
 #[test]
 fn generated_dijet_events_agree_with_madgraphs_banked_ones() {
     if !run_present(
