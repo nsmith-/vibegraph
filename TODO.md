@@ -308,18 +308,34 @@ One line each; the note is the full record. Earlier sprints
      below the table are pinned by 414 new LHAPDF probe values in
      `oracle.json` / `oracle_multigrid.json` — all reproduced at `0.0`
      relative.
+  4b. ✅ **Density extrapolator** (note 28 §K5a2) — the same ceiling one level
+     down is cleared. `PdfMember::try_xfx_q2` continues past the grid instead of
+     refusing, reproducing LHAPDF's `ContinuationExtrapolator` (the
+     `Extrapolator: continuation` both sets resolve to through `lhapdf.conf`):
+     straight lines in `ln Q²` / `ln x` through the flattened array's edge knot
+     pairs, taken in `ln y` when both endpoints clear `1e-3`, and a clamped
+     anomalous-dimension power law below the `Q²` floor. Pinned by **2125 new
+     LHAPDF probes** across the four out-of-range quadrants of both sets, dumped
+     unclamped (`xf_raw`) so the comparison needs no absolute floor; worst
+     `2.4e-13` relative, which is **one ulp times each point's own condition
+     number** (the continuation is a difference of much larger numbers far
+     outside its defining pair) — divided out, `≤8.9e-16`. Only `x` above the
+     last knot, and points that are not points, are still refused. The dynamical
+     llj card now **integrates to completion** where it used to stop at
+     `Q = 10647 GeV`. Finding for later: this crate still omits `ForcePositive`,
+     which out of grid is no longer a negligible-region-only difference — on
+     NNPDF31 it clamps 205/935 probes, one of magnitude 25.7 (note 28 §K5a2.5).
+     No production impact: no banked run reads NNPDF31 — all six
+     `pdlabel = lhapdf` runs carry `lhaid = 247000` (NNPDF23, `ForcePositive`
+     defaulting to `0`, clamp fires on 0 of 1190 probes).
   5. **Gate** — flip the four llj partonic σ rows (`uux_to_epemg`,
      `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux`) from `blocked` to GATE —
      banked, cheap and waiting on nothing else — then re-gate σ(pp→ℓ⁺ℓ⁻j)
      against a *dynamical*-scale MG run: the fixed-scale row is already
      enforced, so the whole rest of that chain is held fixed and only the scale
-     moves. The scale-row flips themselves are done (session 3 above), and the
-     coupling systematic is gone (session 4). **The remaining blocker is the
-     same ceiling one level down, and it is measured, not feared**: the parton
-     *density* grid also stops at 10 TeV and `PdfMember::xfx_q2` refuses past
-     it, and `integrate` on the dynamical llj card now reaches `Q = 10647 GeV`
-     before stopping there. Clearing it needs LHAPDF's `Extrapolator`, not a
-     wider bound (note 28 §K5a.5).
+     moves. The scale-row flips themselves are done (session 3), the coupling
+     systematic is gone (session 4), and the density ceiling is gone (session
+     4b) — **nothing in the coupling-and-densities layer blocks this any more**.
   (`coupling/scales.rs`, `validate_scales.rs`, note 22 §1.3/§5.)
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by

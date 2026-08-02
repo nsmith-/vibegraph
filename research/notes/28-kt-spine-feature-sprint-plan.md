@@ -2895,3 +2895,144 @@ energy (`a_dynamical_scale_resolves_where_the_table_stops_below_the_collider`).
   which would tie the clustering-computed `μR` and the grid coupling together on
   `pp_to_jj` and `pp_to_llj_dyn` in one comparison instead of two. It is left
   alone because this session's gate was `validate_scales` **unmoved**.
+
+## K5a2 — the density extrapolator
+
+§K5a.5's wall is down. `PdfMember::try_xfx_q2` no longer refuses a point past
+the grid; it continues it, the way LHAPDF does, and the dynamical `llj` card
+that used to stop at `Q = 10647 GeV` now runs to a cross section.
+
+### K5a2.1 Which continuation, and what pins each line of it
+
+Neither fetched set's `.info` carries an `Extrapolator` key, so
+`GridPDF::_loadExtrapolator`'s `info().get_entry("Extrapolator")` falls through
+`PDFInfo::get_entry` → `PDFSet::get_entry` → `Config`, and `lhapdf.conf` says
+`Extrapolator: continuation` — in 6.5.3's source tree and in the installed
+6.5.6's `share/LHAPDF/lhapdf.conf` alike. `mkExtrapolator` (`Factories.cc:113`)
+builds a `ContinuationExtrapolator`. The resolved name is *dumped into the
+oracle* rather than left as a reading of a config file, so a build configured
+differently fails the gate instead of quietly redefining the reference.
+
+| element | what it is | source |
+|---|---|---|
+| the split | in range → interpolator, out of range → extrapolator, both edges inclusive | `GridPDF::_xfxQ2`, `KnotArray::inRangeX/inRangeQ2` |
+| the edges it reads | `xs(0)`, `xs(1)`, `xs(nx−1)`, `q2s(0)`, `q2s(nq−2)`, `q2s(nq−1)` of the **flattened** array | `ContinuationExtrapolator::extrapolateXQ2` |
+| above the Q² ceiling | straight line in `ln Q²` through the last two flattened Q² knots | same, branch 2 |
+| below the x floor | straight line in `ln x` through the first two x knots | same, branch 1 |
+| past both | the Q² line at each of the two lowest x knots, then the x line between them | same, branch 3 |
+| in the value or its log | `ln y` when **both** endpoints exceed `1e-3`, `y` otherwise | `_extrapolateLinear` |
+| below the Q² floor | `f(q2Min)·(Q²/Q²ₘᵢₙ)^γ`, `γ = anom·Q²/Q²ₘᵢₙ + 1 − Q²/Q²ₘᵢₙ` | same, branch 4 |
+| that `anom` | `dlog f/dlog Q²` from a `1.01×` forward difference, floored at `−2.5`; `1` outright if `|f(q2Min)| < 1e-5` | same |
+| `x` above the last knot | `RangeError` — the one direction with no continuation | same, final branch |
+
+The flattened-edge row is the one that could have looked right while being
+wrong. Our grids are stored per band; LHAPDF's `q2s(nq−2)` is the second-to-last
+entry of *all* bands concatenated, which for a two-band set is the upper band's
+penultimate knot and not the lower band's anything. `edges_of` builds the
+concatenation explicitly for that reason, and `oracle_multigrid.json`'s
+`above_q2max` probes are what would catch a per-band reading.
+
+### K5a2.2 The oracle, and what it says
+
+`gen_oracle.cpp` gained an `extrapolated` block: 1190 probes on NNPDF23 and 935
+on NNPDF31, one category per out-of-range quadrant, every flavour at every
+probe. Each record carries **two** values —
+`Extrapolator::extrapolateXQ2` called directly (`xf_raw`, no positivity clamp on
+top of it) and `PDF::xfxQ2` (`xf`, the number MadGraph sees). The comparison is
+against `xf_raw`, so unlike the interpolated categories it needs no absolute
+floor and an exact oracle zero demands an exact zero back.
+
+| category | NNPDF23 | worst rel | NNPDF31 | worst rel |
+|---|---|---|---|---|
+| `above_q2max` | 560 | **2.37e-13** | 440 | 3.77e-14 |
+| `below_xmin` | 168 | 0.00e0 | 132 | 1.83e-15 |
+| `below_xmin_above_q2max` | 56 | 9.81e-16 | 44 | 5.15e-14 |
+| `below_q2min` | 350 | 3.75e-16 | 275 | 6.80e-15 |
+| `below_q2min_below_xmin` | 56 | 0.00e0 | 44 | 3.17e-14 |
+
+Regenerating both files changed **no existing value**: the diff has zero deleted
+lines and every pre-existing key compares equal.
+
+### K5a2.3 The residual is one ulp, and the flat bound alone would not say so
+
+Unlike §K5a's `αs` probes, these are not `0.00e0` across the board, and the
+reason is conditioning rather than arithmetic. A straight line evaluated far
+*outside* the pair of points that defines it is a difference of much larger
+numbers: at `x = 0.7` four decades above the ceiling the gluon's continuation
+carries a condition number of `1.9e3`, and one ulp on its two endpoints comes out
+as `2.4e-13` on the result.
+
+So the gate makes two statements rather than one. The flat bound
+(`EXTRAP_REL_TOL = 1e-11`) is the coarse net — an order above the worst case,
+eight orders below what a branch or knot-pair confusion produces. The sharp one
+divides each point by its own condition number
+`(|y_lo(1−t)| + |t·y_hi|)/|result|` and requires what is left to be one ulp:
+**8.93e-16 worst on NNPDF23, 6.34e-16 on NNPDF31**, bounded at `1e-14`
+(`the_upper_continuation_misses_lhapdf_by_one_ulp_of_its_own_conditioning`).
+Reconstructing the endpoints from our own interpolator is sound because those
+endpoints are independently gated against LHAPDF's, at `≤4e-16`.
+
+Branch selection is pinned the same way, against LHAPDF's values rather than
+against the source it was read from: for every `above_q2max` probe both candidate
+continuations are built from our own edge readings, and LHAPDF's number must be
+the one its endpoint values select. **184 NNPDF23 probes and 124 NNPDF31 probes
+sit where the two candidates visibly differ**, with 205 and 180 on the linear
+branch — so neither branch is covered only in name.
+
+### K5a2.4 What is still refused, and why each one is undefined
+
+- **`x` above the grid's last knot.** `ContinuationExtrapolator` raises
+  `RangeError` there. For both fetched sets `xMax = 1`, so this coincides with an
+  unphysical momentum fraction and is unreachable by a second route — but it is
+  the extrapolator's refusal, not the physical-range check's, and a set whose
+  grid stopped short of `x = 1` would separate them.
+- **A point that is not a point**: non-finite `x` or `Q²`, `x ≤ 0` (the small-x
+  continuation is a straight line in `ln x`, so `x = 0` sends LHAPDF's own
+  reading to `±inf`), or `Q² < 0`.
+- **`Q² = 0` is *not* refused.** The power law's exponent collapses to exactly
+  `1` there and the reading is exactly zero, which is defined and is what LHAPDF
+  returns.
+- **A point in no subgrid while inside the overall extent** — a gap between
+  bands, which a well-formed `lhagrid1` member does not have. `OutOfRange`
+  survives as exactly that condition and nothing else.
+
+### K5a2.5 The measured finding K5b must know
+
+`ForcePositive` is applied by `PDF::xfxQ2` on top of everything, and this crate
+does not apply it — a documented blind spot from the interpolation gates, where
+it only ever bit "where the PDF is physically negligible". **Out of grid that is
+no longer true.** On NNPDF31 (`ForcePositive: 2`) the clamp fires on **205 of
+935** out-of-grid probes, and the largest continued value it replaces with `1e-10`
+has magnitude **25.7** — a small-`x` continuation that ran negative, where
+MadGraph would read `1e-10` and this crate reads `−25.7`.
+
+It costs this sprint nothing. **No banked run reads NNPDF31**: all six
+`pdlabel = lhapdf` runs (`dy13_default`, `dy13_mmll_60_120`, `pp_to_bb_fixed`,
+`pp_to_llj_fixed`, `pp_to_llj_dyn`, `pp_to_jj`) carry `lhaid = 247000`, which is
+NNPDF23 with no `ForcePositive` key and so the config default `0` — where the
+clamp fires on **0 of 1190** probes. Every other banked run takes MadGraph's
+built-in `nn23lo1`. NNPDF31 is in the tree only as the multi-subgrid *shape*
+fixture for the interpolation gates. But it is a real gap against MadGraph for any
+`ForcePositive`-carrying set, it is now measured rather than assumed
+(`the_only_difference_from_madgraphs_own_value_is_the_positivity_clamp` asserts
+`xf == clamp(xf_raw)` per level, so the relationship is checked data rather than
+a claim), and closing it is a five-line change plus a re-reading of the
+interpolation gates' `FORCE_POSITIVE_FLOOR` screen. Deliberately not taken here:
+this session's gate was every existing `validate_pdf_grid` test green.
+
+### K5a2.6 The guard test, rewritten
+
+`a_dynamical_scale_card_is_stopped_by_the_density_grid_and_not_by_the_coupling`
+is now
+`a_dynamical_scale_card_runs_past_the_density_grid_and_past_the_coupling_table`.
+The same command, the same budget, the same default seed: it used to stop
+part-way through naming `Q² = 1.1337e8`, and it now completes and reports a cross
+section. That is the end-to-end signal — the continuation is live on the path an
+integration actually takes, not merely on a probe set. The scale the old stop
+named is re-asserted directly in the same test (above the grid's own ceiling, and
+a finite positive gluon density rather than a refusal), so the crossing stays
+pinned even if the sampler's route moves.
+
+The σ it reports at that budget (`--neval 2000 --niter 2`) is deliberately not
+compared to anything: **the dynamical σ rows are K5b's**, and this says the run
+finishes and produces a number, not that the number is right.
