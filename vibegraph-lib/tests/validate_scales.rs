@@ -161,7 +161,12 @@ const UNREPLAYABLE_RUNS: &[&str] = &["bbx_to_ccx_emmm_qcd0", "uux_to_ccx_emmm_qc
 /// those cards, so every `AQCDUP` oracle here has to step over them —
 /// [`the_grid_alpha_s_runs_are_refused_for_a_measurable_reason`] is what keeps
 /// the step from being a convenience.
-const GRID_ALPHA_S_RUNS: &[&str] = &["pp_to_bb_fixed", "pp_to_jj", "pp_to_llj_dyn", "pp_to_llj_fixed"];
+const GRID_ALPHA_S_RUNS: &[&str] = &[
+    "pp_to_bb_fixed",
+    "pp_to_jj",
+    "pp_to_llj_dyn",
+    "pp_to_llj_fixed",
+];
 
 /// The runs whose scales are run-card constants. `pp_to_llj_fixed` is the same
 /// process as one of the clustered runs, so the pair is a controlled comparison:
@@ -568,20 +573,19 @@ fn replay(choice: &ScaleChoice, channels: Option<&Channels>, event: &Event) -> R
         let Ok(mu) = general(choice, channels, event, config) else {
             continue;
         };
-        let mut scales = |incoming: &[[f64; 4]; 2],
-                          outgoing: &[[f64; 4]]|
-         -> Result<MuTriple, ScaleError> {
-            general(
-                choice,
-                channels,
-                &Event {
-                    incoming: *incoming,
-                    outgoing: outgoing.to_vec(),
-                    ..event.clone()
-                },
-                config,
-            )
-        };
+        let mut scales =
+            |incoming: &[[f64; 4]; 2], outgoing: &[[f64; 4]]| -> Result<MuTriple, ScaleError> {
+                general(
+                    choice,
+                    channels,
+                    &Event {
+                        incoming: *incoming,
+                        outgoing: outgoing.to_vec(),
+                        ..event.clone()
+                    },
+                    config,
+                )
+            };
         let spread = momentum_spread(&mut scales, event, mu);
         let candidate = Replay { mu, spread, config };
         let budget = printed_half_ulp(event.scalup, 7) + spread.0[1].max(spread.0[2]);
@@ -933,7 +937,10 @@ fn the_grid_alpha_s_runs_are_refused_for_a_measurable_reason() {
         checked += 1;
     }
     assert_eq!(checked, pinning.len());
-    assert!(checked > 0, "no fixed-scale grid run is on this machine to pin the source");
+    assert!(
+        checked > 0,
+        "no fixed-scale grid run is on this machine to pin the source"
+    );
 }
 
 /// What an integrand pays for naming the first integration channel on every

@@ -186,10 +186,9 @@ impl ChannelSet {
             }
             for iproc in 0..self.n_proc() {
                 for leg in 1..=self.n_external {
-                    tables[iproc].ipdgcl.insert(
-                        (1 << (leg - 1), graph),
-                        self.external_pdg[iproc][leg - 1],
-                    );
+                    tables[iproc]
+                        .ipdgcl
+                        .insert((1 << (leg - 1), graph), self.external_pdg[iproc][leg - 1]);
                 }
             }
             let root = forest.root().map(|line| line.index);
