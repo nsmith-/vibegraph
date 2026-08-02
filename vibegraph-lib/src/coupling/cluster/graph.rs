@@ -381,3 +381,174 @@ mod tests {
         assert!(qcd[0].resmap.is_empty());
     }
 }
+
+#[cfg(test)]
+mod single_leg_entries {
+    use super::*;
+    use crate::coupling::cluster::configs::derive_channels;
+    use crate::coupling::cluster::kt::{Channel, ClusterSettings};
+    use crate::coupling::cluster::setclscales::{setclscales, JetMemo, ScaleSettings};
+    use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+    use crate::ufo::particles::ParticleId;
+    use crate::ufo::sm::{sm_model, SMRestrict};
+    use crate::ufo::EvaluatedModel;
+
+    struct Derived {
+        set: ChannelSet,
+        colors: ColorTable,
+        beam2: i64,
+    }
+
+    fn derived(spec: &str) -> Derived {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let parsed = parse_proc_card(&format!("generate {spec}"), &ParsingOptions::default())
+            .expect("proc card parses");
+        let sets = generate_from_proc_card(&parsed, model.as_ref()).expect("enumerate");
+        let set = sets
+            .iter()
+            .find(|s| !s.diagrams.is_empty())
+            .expect("a non-empty subprocess");
+        let externals: Vec<ParticleId> = set
+            .particles_in
+            .iter()
+            .chain(set.particles_out.iter())
+            .map(|name| model.particle_id(name).expect("external in model"))
+            .collect();
+        Derived {
+            beam2: model.particle(externals[1]).pdg_code,
+            set: derive_channels(
+                &set.diagrams,
+                &externals,
+                set.particles_in.len(),
+                model.as_ref(),
+                &evaluated,
+            )
+            .expect("channel forests")
+            .set,
+            colors: ColorTable::new(
+                model
+                    .particles
+                    .values()
+                    .map(|p| (p.pdg_code, p.color))
+                    .collect::<Vec<(i64, i32)>>(),
+                4,
+            ),
+        }
+    }
+
+    /// Why keeping a single external leg's own flavour costs nothing.
+    ///
+    /// `filgrp` registers each line under its leg set *and* its complement
+    /// (`cluster.f:262`), writing the same PDG to both, and MadGraph's live
+    /// `ipdgcl` gives a single-leg mask the subprocess flavour instead. Reading
+    /// the Fortran, those two look like different tables; they are not, and this
+    /// is the reason.
+    ///
+    /// A line's complement is a single external leg exactly when the line has
+    /// `nexternal - 1` legs below it, and only one line ever does: the vertex
+    /// that closes a channel on the beams, whose complement is beam 2 alone. An
+    /// s-channel-only channel does not even write that vertex, so it has no
+    /// single-leg complement at all. And `configs.inc` gives the closing line
+    /// `tprid = abs(leg 2's own id)` (`export_v4.py:2262`, where the vertex's
+    /// last leg *is* beam 2) — so the code the complement rule would write is the
+    /// leg's own code, up to sign.
+    ///
+    /// Everything the clustering asks a line's code — `isqcd`, `isjet`,
+    /// `is_octet` — is a question about `abs(pdg)`, so the two readings are the
+    /// same table wherever they are read. [`a_single_leg_keeps_its_flavour`]
+    /// pins the signed form, which is what `ipartupdate`'s flavour propagation
+    /// then mutates and what the instrumented dump's per-event `LINE` records
+    /// compare against.
+    #[test]
+    fn only_the_closing_line_can_write_a_single_leg_entry() {
+        for spec in [
+            "u u~ > u u~",
+            "g g > g g",
+            "b b~ > b b~",
+            "u d~ > u d~",
+            "e+ e- > mu+ mu-",
+        ] {
+            let d = derived(spec);
+            let n = d.set.n_external;
+            for (index, forest) in d.set.configs.iter().enumerate() {
+                for line in &forest.lines {
+                    let mask = forest.mask(line.index).expect("a line that resolves");
+                    let complement = d.set.full_mask() - mask;
+                    if !complement.is_power_of_two() {
+                        continue;
+                    }
+                    // The only single-leg complement is beam 2's, and it belongs
+                    // to the line that closes the channel on the beams.
+                    assert_eq!(complement, 1 << 1, "{spec}: channel {}", index + 1);
+                    assert_eq!(mask.count_ones() as usize, n - 1);
+                    assert_eq!(line.tprid, d.beam2.abs(), "{spec}: the closing line's code");
+                    assert_eq!(line.sprop[0], 0);
+                }
+            }
+        }
+    }
+
+    /// The consequence, measured rather than argued: overwriting beam 2's entry
+    /// with the closing line's code moves no scale.
+    ///
+    /// `b b̄ → b b̄` at `maxjetflavor = 4` is where the two readings would be
+    /// furthest apart if they could be — the exchanged gluon is a jet and the
+    /// beams are not — and the scale is identical to the bit. If it were not,
+    /// the choice this module makes would need an oracle it does not have.
+    #[test]
+    fn overwriting_a_single_leg_entry_moves_no_scale() {
+        let d = derived("b b~ > b b~");
+        assert!(!d.colors.is_jet(-5), "the comparison needs a non-jet beam");
+        assert!(d.colors.is_jet(21));
+        let spacelike = d
+            .set
+            .configs
+            .iter()
+            .position(|c| c.lines.iter().any(|l| l.tprid == 21))
+            .expect("a t-channel gluon channel")
+            + 1;
+        let behaviour = d.set.merge_tables(spacelike);
+        let mut reading = behaviour.clone();
+        let beam2 = 1u32 << 1;
+        for graph in reading[0].id_cl[&beam2].clone() {
+            reading[0].ipdgcl.insert((beam2, graph), 21);
+        }
+        assert_ne!(
+            behaviour[0].ipdgcl[&(beam2, spacelike)],
+            reading[0].ipdgcl[&(beam2, spacelike)]
+        );
+
+        let p = [
+            [3000.0, 0.0, 0.0, 3000.0],
+            [2000.0, 0.0, 0.0, -2000.0],
+            [2400.0, 900.0, 0.0, 2225.398840_f64],
+            [2600.0, -900.0, 0.0, -1225.398840_f64],
+        ];
+        let scale_of = |table: &MergeTable| {
+            let channel = Channel {
+                set: &d.set,
+                table,
+                colors: &d.colors,
+                this_config: spacelike,
+                iproc: 1,
+            };
+            setclscales(
+                &channel,
+                &ClusterSettings::default(),
+                &ScaleSettings::default(),
+                &p,
+                &mut JetMemo::default(),
+                false,
+                &[],
+                (0.0, [0.0; 2]),
+                false,
+            )
+            .map(|s| (s.mu_r, s.q2fact, s.jcode, s.mur_branch, s.muf_branch))
+        };
+        assert_eq!(
+            scale_of(&behaviour[0]).expect("a scale"),
+            scale_of(&reading[0]).expect("a scale")
+        );
+    }
+}

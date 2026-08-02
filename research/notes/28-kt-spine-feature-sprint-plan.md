@@ -2257,3 +2257,197 @@ of the diagram re-rooted toward the highest-numbered initial leg, s-channel
 entries carrying `sprop` per subprocess and t-channel entries carrying `tprid`,
 with the closing vertex written only when the channel reaches the beams through
 a spacelike line (`export_v4.py:2229`, `if len(tchannels) > 1`).
+
+## K4 — production wiring and the scale-row flips
+
+`ScaleChoice`'s closed forms are gone. `dynamical_scale_choice = -1` now takes
+one path — the kT clustering of §K3's engine — through
+`ScaleChoice::cluster_scales`, and `coupling::topology`, `ClusterTopology`,
+`BeamConnections` and the whole `clustered()` collapse are deleted rather than
+left as a second implementation.
+
+### K4.1 `ConfigForest` from our own diagrams
+
+`coupling::cluster::configs` derives the channel forests from vibegraph's
+enumerated diagrams: the tree re-rooted toward beam 2, s-channel lines (subtree
+carrying neither beam) ahead of the spacelike chain (subtree carrying beam 1)
+ordered from beam 1 inward, the closing vertex written only for a channel that
+reaches the beams through a spacelike line, and the diagrams whose largest
+vertex exceeds the set's minimum dropped.
+
+**The consistency gate is exact and it is whole.** For every dumped run whose
+process directory groups a single subprocess, the derived forests are compared
+against the `IFOR` records line for line — every line's leg set, both its
+daughters' leg sets, `tprid`, `sprop`, the mass and the width — as a bijection
+over channels (`derived_channel_forests_match_the_generated_ones`):
+
+| process | channels / diagrams | lines |
+|---|---|---|
+| `b b̄ → c c̄ e⁺e⁻ μ⁺μ⁻ QCD=0` | 615 / 615 | 3327 |
+| `e⁺e⁻ → μ⁺μ⁻ τ⁺τ⁻ QCD=0` | 25 / 25 | 83 |
+| `e⁺e⁻ → μ⁺μ⁻ γ` | 8 / 8 | 20 |
+| `e⁺e⁻ → t t̄` | 2 / 2 | 2 |
+| `u ū → c c̄ e⁺e⁻ μ⁺μ⁻ QCD=0` | 579 / 579 | 3135 |
+| `u ū → u ū` | 2 / 2 | 3 |
+
+**6570 lines, all equal.** Channel *numbering* is not compared and cannot be —
+MadGraph numbers configs by its own diagram order — and nothing needs it to be:
+the merge table reads a channel's identity only through its QCD order.
+
+Two things the comparison settled that the reading had not.
+
+- **The sign on a timelike line.** `configs.inc` writes the particle that
+  *decays into* the line's subtree, not the one leaving it. Above `e⁺ e⁻ μ⁺`
+  sits a `μ⁺`, and the first derivation had it backwards; 552 of 615 forests
+  disagreed on exactly that entry and nothing else.
+- **The four-point filter is unexercised by the bank.** No diagram of any of the
+  six is dropped by it, so finding 3 is pinned hermetically instead:
+  `g g → g g` has 4 diagrams and 3 channels, and the surviving three are the
+  s-channel gluon (whose closing vertex stays implicit, so it carries one line)
+  and the two spacelike ones (two lines each).
+
+### K4.2 What replaced the closed forms, and what it cost
+
+`ScaleEvent` no longer carries a topology declaration; the caller supplies a
+`ClusterInput` — the process's `ChannelSet`, a `ColorTable`, the integration
+channel and the subprocess. `hadronic::compile_scale_source` builds it from the
+same diagrams it already had, so no integrand carries a table keyed by process
+name.
+
+**`beam2_from_beam1` is deleted** (§K1.9's action). Nothing carries it forward:
+`setclscales` applies one power of `scalefact` to `μR` and to each `μF`, and
+`scalefact_reaches_every_scale_exactly_once` asserts that on the branch where
+3.5.7 applied two — colourless beams, `jcentral` zero on both.
+
+**The general path against the closed forms it replaces**, run once before the
+deletion, every event of all 14 closed-form runs under *every* channel: 8 runs
+agree to `0.0` or `1.1e-16`; `pp_to_bb*` do not. There the clustering's first
+merge is initial-state and the leftover leg's measure is taken in the boosted
+frame, which the collapse did not model — the two differ by `1e-9` relative,
+four orders inside the printed field, and it grows to `1.5e-6` on some events.
+Where they differ **the general path is the one pinned bit-for-bit against
+MadGraph's own intermediates** (`pp_to_bb_qcd2`, 10000/10000, §K3.1), so the
+closed form was the approximation. The comparison was a scaffold and is not
+kept; the standing net is the enforced replay below, plus
+`the_general_path_keeps_the_beam_crossing_population`, which requires
+`u ū → u ū`'s tie-break population to be **exactly 16 events at 250.000125**
+— K2's dump count, and note 22's `250.0001` row re-derived rather than fitted.
+
+### K4.3 The flip, and the integration channel
+
+`validate_scales` now replays **every** banked run through the clustering.
+840 000 comparisons over 270 000 events in 27 runs, all inside their printing
+budget; `AQCDUP` recomputed from the same scales for 230 000 events across 23
+runs. The budget gained a term it should always have had: the *incoming* momenta
+are printed inputs too, and the clustering reads them.
+
+The honest difficulty is §K1.11 finding 2. The cluster scale is a function of
+the event **and** of the integration channel, and an LHE record does not carry
+one. The replay adopts the first channel whose `μF` lands inside `SCALUP`'s
+budget and reads every other field — and the independent `AQCDUP` oracle — off
+that same channel, so a wrong clustering cannot be repaired field by field. How
+often the choice matters is reported per run rather than assumed away:
+
+| run | events needing a channel other than the first |
+|---|---|
+| `gu_to_epemu` / `gux_to_epemux` | 7204 / 7231 |
+| `pp_to_llj_dyn` / `pp_to_llj` | 5768 / 5572 |
+| `ee_to_mumua` | 370 |
+| `ee_to_mumu_tata_qcd0` | 262 |
+| `pp_to_bb_qcd2` | 141 |
+| every other replayed run | 0 |
+
+So the channel is live on six runs and inert on twenty-one. That is a
+measurement, and it is what the production default — channel 1 where the caller
+sampled none — rests on.
+
+### K4.4 The four decisions this session owed
+
+- **D4.** `pp_to_llj_qcd2_qed2` is declared a duplicate of `pp_to_llj` and
+  skipped with a printed note; enforcement is on `pp_to_llj`. Its inventory row
+  stays until Z prunes it.
+- **The two `2 → 6` runs stay informational**, and not for a tolerance. Two
+  separate inputs are missing from an LHE record: the carried-over on-shell
+  flags of §K3.3 (81 and 163 events), and the integration channel out of 615 and
+  579 — searching that many for one that agrees is a gate almost anything
+  passes. What enforces them is finer and already green: `validate_kt_cluster`
+  reproduces all 20 000 of their events, every candidate and both scales,
+  against the instrumented dump.
+- **The four llj partonic runs flip** (`uux_to_epemg`, `ddx_to_epemg`,
+  `gu_to_epemu`, `gux_to_epemux`), all inside budget. **Their blind spot, stated:
+  they have no clustering dump, so their only reference is the banked
+  `SCALUP`/`<rscale>`/`<pdfrwt>`, which §K1.10 already showed cannot see a wrong
+  tie-break or a wrong line PDG that does not move the final number.** What
+  tests the path that produced their scale is this session's dumps on other
+  processes, not these rows.
+- **`pp_to_jj` flips with a diagnosed exception of 9 events in 10 000
+  (0.09 %).** All are `q q' → q q'` subprocesses with a single integration
+  channel and two allowed beam–leg pairs. MadGraph inflated the winning
+  candidate and the replay did not, and the two scales differ by `√(1 + 10⁻⁶)`
+  **and by nothing else** — `<rscale>`'s eight digits put the ratio at `5.03e-7`
+  and `5.16e-7` against the inflation's `5.000e-7`. The gate admits an event only
+  if it carries that signature and asserts the count for equality, so the class
+  cannot quietly become a different one. Which of two numerically degenerate
+  candidates `cluster.f` chose is decided below the eleven digits the record
+  prints; the engine's own tie-break is pinned bit-for-bit elsewhere.
+  **Settling this population needs a K2-style clustering dump for `p p → j j`,
+  which the sprint did not bank.**
+
+### K4.5 §K3.5 is explained, not merely reproduced
+
+The falsifier K3 left was run and came back *negative* — and the reason is the
+explanation.
+
+A line's complement is a single external leg exactly when the line has
+`nexternal − 1` legs below it, and **only one line ever does**: the vertex that
+closes a channel on the beams, whose complement is beam 2 alone. An
+s-channel-only channel does not write that vertex at all, so it has no
+single-leg complement. And `export_v4.py:2262` gives the closing line
+`tprid = abs(leg 2's own id)` — the vertex's last leg *is* beam 2. So the code
+the complement rule would write is the leg's own code **up to sign**, and
+`isqcd`, `isjet` and `is_octet` are all questions about `abs(pdg)`.
+
+The two readings are therefore the same table wherever the clustering reads
+them, which is why no banked scale moved either way and why the falsifier could
+not fire: `b b̄ → b b̄` at `maxjetflavor = 4`, where the exchanged gluon is a jet
+and the beams are not, gives the identical scale to the bit under both. Both
+halves are pinned (`only_the_closing_line_can_write_a_single_leg_entry`,
+`overwriting_a_single_leg_entry_moves_no_scale`). What remains signed is
+`ipartupdate`'s flavour propagation, and that is what the dump's per-event
+`LINE` records compare against. **The thread is closed.**
+
+### K4.6 What K5 must know
+
+Landing the general scale moved `p p → ℓ⁺ℓ⁻ j` at a dynamical scale from
+"refused" to "runs", and it immediately met the next limit: **NNPDF23's `αs`
+table stops at `Q = 10 TeV` and a per-event scale on a 13 TeV collider can
+exceed it.** LHAPDF extrapolates past its own table; this crate does not, and it
+was reaching that edge as a panic on whichever events happened to pass it.
+`EventScaleSource::from_run_card` now refuses at setup when a tabulated coupling
+stops below `ebeam1 + ebeam2`, naming both — a run stops before it starts rather
+than mid-integration.
+
+**This blocks K5's dynamical-scale σ rows and the capstone as it stands**, and
+the decision is not one this session should improvise: either extrapolate as
+LHAPDF does (and validate the extrapolation), or bank against a set whose table
+covers the collider. It is stated here rather than worked around.
+
+**And a second one, found by registering the new runs in `validate_alphas`.**
+`GridAlphaS` reads a set's `αs` knots with a straight line in `log Q²`; LHAPDF
+reads the same knots with a cubic. At `Q = M_Z` the two agree to `1e-8` — the
+scale sits 2.4e-5 of the way into its knot interval — which is why
+`pp_to_bb_fixed` and `pp_to_llj_fixed` reproduce all 20 000 of their `AQCDUP`
+digits and why `GRID_ALPHA_S_TOL` could be set at `1e-7` at all. A *dynamical*
+scale lands mid-interval, and there the gap is the `~1.7e-4` relative that
+tolerance's own reasoning predicted: measured on the two new lhapdf runs at
+**1076 and 1777 times the printed budget, on 9993 and 9976 of 10 000 events**.
+
+The two are declared as `GRID_INTERPOLANT_RUNS` and excluded from the `AQCDUP`
+oracle, with an assertion that they stay excluded — a linear reading that had
+quietly become accurate mid-interval would make the list wrong rather than
+harmless. Nothing about the *scale* is in question: the same events' `SCALUP` is
+reproduced from their momenta inside its own budget. But a cross section
+computed at a dynamical scale off an `lhapdf` set carries a systematic `1.7e-4`
+on `αs` until the knots are read as LHAPDF reads them, and **K5 should size that
+against the σ agreement it is trying to demonstrate before flipping those
+rows.**

@@ -618,17 +618,23 @@ fn the_gate_rejects_a_sample_from_a_different_process() {
     }
 }
 
-/// The four `l+ l- j` partonic rows cannot be generated for the same reason they
-/// cannot be integrated, and this measures it rather than assuming it.
+/// The four `l+ l- j` partonic rows now resolve a per-event scale, which is what
+/// unblocks generating them — measured here rather than assumed.
 ///
 /// Their run cards leave `dynamical_scale_choice = -1`, and a t-channel
 /// propagator into a three-leg final state is the topology whose cluster scale
-/// depends on the merge order — which `coupling::scales` refuses. Event
-/// generation runs through the same integrand, so the refusal lands in the same
-/// place, and their `samples` cells are blocked on `kt-clustering` alongside their
-/// `integrals` cells.
+/// depends on the merge order. That used to be a refusal; the general clustering
+/// computes it, and every event of all four runs reproduces the banked
+/// `SCALUP`/`<rscale>`/`<pdfrwt>` inside its printing budget
+/// (`validate_scales.rs`). What this asserts is the integrand's own side of it:
+/// the prescription compiles, resolves on a sampled cut-passing point, and hands
+/// back a coupling that moves with the event.
+///
+/// Their `samples` and `integrals` cells stay declared as they are until the
+/// cross sections themselves are gated; this is the capability check that says
+/// nothing stands in the way any more.
 #[test]
-fn the_llj_parton_rows_cannot_be_generated_either() {
+fn the_llj_parton_rows_resolve_a_per_event_scale() {
     for row in REFUSED_ROWS {
         let card_path = output_dir().join(row.key).join("Cards/run_card.dat");
         let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
@@ -659,15 +665,30 @@ fn the_llj_parton_rows_cannot_be_generated_either() {
             final_masses,
             spin_color_avg,
         );
-        let refusal = integ.use_running_coupling(&diagrams, &model, &evaluated, &run_card);
-        let message = match refusal {
-            Ok(_) => panic!(
-                "[{}] the scale prescription was accepted, so this row is no longer blocked",
-                row.key
-            ),
-            Err(e) => e.to_string(),
-        };
-        eprintln!("  {} refuses generation: {message}", row.key);
+        let report = integ
+            .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+            .unwrap_or_else(|e| panic!("[{}] the scale prescription was refused: {e}", row.key));
+        assert!(
+            report.depends_on_alpha_s,
+            "[{}] a QCD matrix element must move with the strong coupling",
+            row.key
+        );
+        // A clustered scale is a function of the event, so the prescription must
+        // *not* have collapsed to a constant — that is what separates it from the
+        // fixed-scale rows.
+        assert!(
+            report.constant_scales.is_none(),
+            "[{}] the clustering branch resolved to a constant",
+            row.key
+        );
+        let channels = report
+            .channels
+            .expect("the clustering branch was given channel forests");
+        assert!(channels > 0, "[{}] no integration channels", row.key);
+        eprintln!(
+            "  {} resolves a per-event cluster scale over {channels} channels",
+            row.key
+        );
     }
 }
 
