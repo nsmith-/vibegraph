@@ -91,6 +91,9 @@
 //!   endpoints against `leshouche.inc`.
 //! - The CF matrix itself is not re-derived here; `color_cf_oracle` pins it
 //!   against every generated `DATA CF` block.
+//! - A row named in [`KNOWN_LINEAR_DISAGREEMENT`] is measured but not enforced: its
+//!   comparison runs and is reported, and only its verdict is downgraded. Nothing
+//!   that row would otherwise pin is pinned while it is listed.
 
 mod common;
 
@@ -177,11 +180,42 @@ const AMP2_REL_TOL: f64 = 1e-12;
 ///
 /// The entry is two-way: a listed process whose grouping starts agreeing fails
 /// here, so a stale exemption cannot survive.
-const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[(
-    "ee_to_ee",
-    "the two t-channel diagrams (photon and Z exchange) share a configuration; \
-     the process is colourless, so its single all-admitting ICOLAMP row makes \
-     the configuration label unobservable in an event",
+const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
+    (
+        "ee_to_ee",
+        "the two t-channel diagrams (photon and Z exchange) share a configuration; \
+         the process is colourless, so its single all-admitting ICOLAMP row makes \
+         the configuration label unobservable in an event",
+    ),
+    (
+        "ud_to_epemud_qcd0",
+        "MadGraph writes 21 accumulators over the 35 diagrams: the four neutral-current \
+         diagrams that differ only in which of γ/Z carries each of two rungs share one, \
+         and eight further pairs differing only in the boson on one rung share one each",
+    ),
+];
+
+/// Processes whose linear-level comparison is known to disagree with MadGraph, with the
+/// finding that keeps them out of the gate.
+///
+/// A listed row is still evaluated in full — the comparison runs on every commit and its
+/// worst deviation is written to the report as an `info` cell — but the failure is
+/// recorded rather than raised. That is the "keep a known-wrong informational comparison
+/// running" rule: the alternative, leaving the reference table uncommitted until the
+/// defect is fixed, is what let this one sit behind a cross section instead of being
+/// visible at the level it actually lives at.
+///
+/// Two-way: a listed row that starts agreeing fails here, so the exemption cannot outlive
+/// the defect it names.
+const KNOWN_LINEAR_DISAGREEMENT: &[(&str, &str)] = &[(
+    "ud_to_epemud_qcd0",
+    "eleven of the 35 diagrams carry the wrong sign relative to the other 24: MadGraph \
+     graphs 1-8 (the three-rung ladders whose middle rung is a spacelike lepton), 17 (the \
+     same with a spacelike neutrino between two W lines) and 18, 19 (W+W- → γ*/Z* → e+e-). \
+     Each diagram on its own reproduces MadGraph's AMP() to rounding under a unit phase; \
+     flipping exactly those eleven takes the worst |M|² deviation over the banked points \
+     from 5.1e+1 to 4.1e-14. The eleven are exactly the diagrams whose beam-to-beam spine \
+     carries an even number of boson rungs",
 )];
 
 /// MadGraph graph index of each vibegraph diagram, for processes whose two
@@ -198,6 +232,13 @@ const MG_DIAGRAM_ORDER: &[(&str, &[usize])] = &[
         &[
             9, 11, 13, 15, 10, 12, 14, 16, 0, 2, 4, 6, 1, 3, 5, 7, 8, 17, 19, 21, 23, 18, 22, 20,
             24,
+        ],
+    ),
+    (
+        "ud_to_epemud_qcd0",
+        &[
+            8, 10, 12, 14, 0, 2, 4, 6, 1, 3, 5, 7, 9, 11, 13, 15, 19, 21, 16, 20, 22, 17, 18, 23,
+            25, 27, 29, 31, 33, 28, 32, 30, 34, 24, 26,
         ],
     ),
 ];
@@ -580,13 +621,41 @@ fn worst_deviation(entries: &[Entry], g: C<f64>, scale: f64) -> (f64, String) {
 /// collator has to see as failed, not a cell that silently went missing.
 fn run_trial(path: PathBuf) -> Result<(), Failed> {
     let key = path.file_stem().unwrap().to_string_lossy().into_owned();
-    match measure(path) {
-        Ok(row) => {
+    let known = KNOWN_LINEAR_DISAGREEMENT
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, why)| *why);
+    match (measure(path, known.is_some()), known) {
+        (Ok(row), None) => {
             row.write();
             Ok(())
         }
-        Err(failed) => {
-            let mut row = AmplitudesRow::new(&key, "", "gate");
+        // An informational row that violated nothing is a row whose defect is gone.
+        (Ok(mut row), Some(why)) if row.note.is_none() => {
+            let failed: Failed = format!(
+                "[{key}] is listed in KNOWN_LINEAR_DISAGREEMENT ({why}) but now agrees with \
+                 MadGraph at every level — drop the exemption and promote the manifest cell \
+                 from info to gate"
+            )
+            .into();
+            row.status = "fail";
+            row.note = Some(failed.message().unwrap_or_default().to_string());
+            row.write();
+            Err(failed)
+        }
+        (Ok(mut row), Some(why)) => {
+            // The whole comparison ran and every number it measured is on the row; only
+            // the verdict is downgraded. The note carries the standing finding *and* what
+            // this run observed, so a change in the disagreement is visible in the report.
+            let observed = row.note.take().unwrap_or_default();
+            row.note = Some(format!("{why}. This run: {observed}"));
+            println!("  [{key}] informational (not gated): {why}.\n    this run: {observed}");
+            row.write();
+            Ok(())
+        }
+        (Err(failed), _) => {
+            let mut row =
+                AmplitudesRow::new(&key, "", if known.is_some() { "info" } else { "gate" });
             row.status = "fail";
             row.note = Some(failed.message().unwrap_or_default().to_string());
             row.write();
@@ -595,7 +664,10 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
     }
 }
 
-fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
+/// Compare one committed table. `informational` is set for a
+/// [`KNOWN_LINEAR_DISAGREEMENT`] process: its linear-level checks are recorded on the
+/// row instead of failing the trial, and everything downstream of them still runs.
+fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> {
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{e}"))?;
     let table = parse_table(&json);
@@ -936,61 +1008,70 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
         return Err(format!("[{name}] the reference has no non-zero amplitude").into());
     }
 
+    // Each linear-level check below either fails the trial or, for a process listed in
+    // [`KNOWN_LINEAR_DISAGREEMENT`], records what it saw and lets the rest of the
+    // comparison run — so an informational row still carries every number a gated one
+    // does and the report shows the size of the disagreement rather than a zero.
+    let mut violations: Vec<String> = Vec::new();
+    macro_rules! violation {
+        ($($arg:tt)*) => {{
+            let message = format!($($arg)*);
+            if !informational {
+                return Err(message.into());
+            }
+            violations.push(message);
+        }};
+    }
+
     let (worst_diagram, worst_diagram_where) = worst_deviation(&diagram_entries, g, diagram_scale);
     if worst_diagram > LINEAR_REL_TOL {
         report_breakdown(name, &vg_rows, &mg_rows, diagram_scale);
-        return Err(format!(
+        violation!(
             "[{name}] per-diagram amplitudes disagree with MadGraph beyond a single \
              global phase (max element-wise deviation {worst_diagram:.3e}) at \
              {worst_diagram_where}"
-        )
-        .into());
+        );
     }
 
     let flow_scale = flow_entries.iter().fold(0.0f64, |m, e| m.max(e.mg.norm()));
     let (worst_flow, worst_flow_where) = worst_deviation(&flow_entries, g, flow_scale);
     if worst_flow > LINEAR_REL_TOL {
-        return Err(format!(
+        violation!(
             "[{name}] per-flow JAMPs disagree with MadGraph beyond the per-diagram \
              constant (max element-wise deviation {worst_flow:.3e}) at {worst_flow_where}"
-        )
-        .into());
+        );
     }
 
     // A uniform rescaling is the one deviation the fit absorbs with zero
     // residual, and it multiplies every JAMP2 weight by |G|².
     let mag_dev = (g.norm() - 1.0).abs();
     if mag_dev > LINEAR_REL_TOL {
-        return Err(format!(
+        violation!(
             "[{name}] the vibegraph↔MadGraph amplitude constant is not a pure phase: \
              |G| = {:.17} (deviation {mag_dev:.3e})",
             g.norm()
-        )
-        .into());
+        );
     }
     if g.re.abs() > LINEAR_REL_TOL {
-        return Err(format!(
+        violation!(
             "[{name}] the vibegraph↔MadGraph amplitude constant is not ±i: G = {g:?}. \
              The two sides are expected to differ by exactly the one factor of i \
              vibegraph's diagram roots carry and MadGraph's AMP() does not"
-        )
-        .into());
+        );
     }
 
     if worst_zero > LINEAR_REL_TOL {
-        return Err(format!(
+        violation!(
             "[{name}] a helicity combination MadGraph's amplitude vanishes on does not \
              vanish for us (largest {worst_zero:.3e} of the point's scale) at \
              {worst_zero_where}"
-        )
-        .into());
+        );
     }
     if worst_jamp2 > LINEAR_REL_TOL {
-        return Err(format!(
+        violation!(
             "[{name}] eval_jamp2 disagrees with Σ_hel |MadGraph JAMP|²: max relative \
              deviation {worst_jamp2:.3e} at {worst_jamp2_where}"
-        )
-        .into());
+        );
     }
 
     // One constant per configuration amplitude. The residual under it says the
@@ -1014,28 +1095,25 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
             worst_config_phase = dev;
         }
         if worst > LINEAR_REL_TOL {
-            return Err(format!(
+            violation!(
                 "[{name}] configuration amplitude {ci} is not MadGraph's AMP() up to one \
                  phase (max element-wise deviation {worst:.3e}) at {worst_config_where}"
-            )
-            .into());
+            );
         }
         if dev > LINEAR_REL_TOL {
-            return Err(format!(
+            violation!(
                 "[{name}] configuration amplitude {ci} differs from MadGraph's AMP() by \
                  more than a phase: |k| = {:.17} (deviation {dev:.3e}). AMP2 is the \
                  modulus of exactly this, so the configuration draw is off by |k|²",
                 k.norm()
-            )
-            .into());
+            );
         }
     }
     if worst_amp2 > AMP2_REL_TOL {
-        return Err(format!(
+        violation!(
             "[{name}] eval_amp2 disagrees with MadGraph's own AMP2 accumulation: max \
              relative deviation {worst_amp2:.3e} at {worst_amp2_where}"
-        )
-        .into());
+        );
     }
 
     println!(
@@ -1065,16 +1143,29 @@ fn measure(path: PathBuf) -> Result<AmplitudesRow, Failed> {
     }
 
     if !m2.failures.is_empty() {
-        return Err(format!(
+        violation!(
             "[{name}] {} of {} points disagree with MadGraph's |M|²:\n  {}",
             m2.failures.len(),
             table.points.len(),
             m2.failures.join("\n  ")
-        )
-        .into());
+        );
     }
 
-    let mut row = AmplitudesRow::new(name, &table.process, "gate");
+    let mut row = AmplitudesRow::new(
+        name,
+        &table.process,
+        if informational { "info" } else { "gate" },
+    );
+    if let Some(first) = violations.first() {
+        // The row's numeric fields already carry every deviation; the note says how many
+        // checks the disagreement reached and names the first, rather than pasting a
+        // per-point dump into the report.
+        let head: String = first.chars().take(220).collect();
+        row.note = Some(format!(
+            "{} of the linear-level checks failed; first: {head}",
+            violations.len()
+        ));
+    }
     row.n_graphs = table.n_graphs;
     row.n_flows = table.n_flows;
     row.points_grid = table.points.iter().filter(|p| p.set == "grid").count();

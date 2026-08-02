@@ -246,6 +246,20 @@ PROCESSES = [
         npoints=25,
         seed=67,
     ),
+    # The multi-rung t-channel reference, and the only registered process whose
+    # diagrams put a W between two different quark lines. Two energies, both above
+    # the banked run's own 500 GeV threshold behaviour, so the grid visits the
+    # ladder at two ratios of transfer to collision energy.
+    Process(
+        "ud_to_epemud_qcd0",
+        "u d > e+ e- u d QCD=0",
+        (2, 1),
+        (-11, 11, 2, 1),
+        sqrt_s_list=(200.0, 500.0),
+        npoints=25,
+        seed=71,
+        profile_npoints=2_000,
+    ),
 ]
 
 
