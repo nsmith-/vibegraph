@@ -1,15 +1,15 @@
 # MadGraph5 batch script: p p > l+ l- j QCD=2 QED=2 at a fixed scale.
 #
-# Same process content as pp_to_llj_qcd2_qed2 (identical generate line and
+# Same process content as pp_to_llj_dyn (identical generate line and
 # multiparticle definitions, so the proc card differs only in the output
 # directory name); the run card differs in four places:
 #
 #   - fixed_ren_scale / fixed_fac_scale1 / fixed_fac_scale2 = True, all three
-#     scales at m_Z. The dynamical default (dynamical_scale_choice = -1) needs
-#     the general kT clustering for a 2 -> 3, which coupling::scales refuses
-#     rather than approximates; a constant scale takes the branch that has a
-#     closed form, so this run's per-event SCALUP / <rscale> / <pdfrwt> can be
-#     replayed exactly.
+#     scales at m_Z, where the dynamical default (dynamical_scale_choice = -1)
+#     sends every event through the general kT clustering. Holding the two runs
+#     apart by those three booleans alone is what isolates the scale
+#     prescription: a constant scale takes the closed-form branch, so a cross
+#     section that agrees here and disagrees there is the prescription's.
 #   - pdlabel = lhapdf with lhaid 247000 (NNPDF23_lo_as_0130_qed). The
 #     MG-internal nn23lo1 of the dynamical runs is not an LHAPDF6 grid, so it
 #     cannot be read by this crate's PDF layer; 247000 is the same set the

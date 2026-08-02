@@ -53,8 +53,9 @@
 //!   distinguish `μR` from `μF`, and no perturbation of the momenta can move it,
 //!   so the run says nothing about the kinematic dependence the other runs pin.
 //!   Its value is the complementary one: it is the same `p p → l+ l- j` process
-//!   whose dynamical siblings are refused, so it separates the refusal from the
-//!   process. The `dy13_*_run_card.dat` cards the hadronic cross-section
+//!   its dynamical siblings run, differing in the three `fixed_*_scale` booleans
+//!   alone, so it separates the prescription from the process. The
+//!   `dy13_*_run_card.dat` cards the hadronic cross-section
 //!   reference was generated with are asserted to still compile to the constants
 //!   that reference assumed. That assertion, and the rest of what the committed
 //!   cards compile to, is `scales_run_cards.rs` — no events, so it runs on a bare
@@ -89,15 +90,9 @@ enum Coverage {
     /// The card fixes every scale, so no clustering enters and the printed
     /// fields are run-card constants.
     Fixed,
-    /// The run's events are byte-identical to another run's, so replaying it
-    /// measures nothing the other does not.
-    DuplicateOf(&'static str),
 }
 
 fn coverage(run: &str) -> Coverage {
-    if let Some((_, of)) = DUPLICATE_RUNS.iter().find(|(name, _)| *name == run) {
-        return Coverage::DuplicateOf(of);
-    }
     if FIXED_SCALE_RUNS.contains(&run) {
         return Coverage::Fixed;
     }
@@ -106,7 +101,7 @@ fn coverage(run: &str) -> Coverage {
     }
     panic!(
         "banked run {run} is in none of this gate's inventories: add it to CLUSTERED_RUNS, \
-         UNREPLAYABLE_RUNS, FIXED_SCALE_RUNS or DUPLICATE_RUNS"
+         UNREPLAYABLE_RUNS or FIXED_SCALE_RUNS"
     )
 }
 
@@ -159,13 +154,6 @@ const CLUSTERED_RUNS: &[&str] = &[
 /// against MadGraph's own instrumented intermediates, given the channel and the
 /// carried flags. The scale field is the coarser oracle of the two.
 const UNREPLAYABLE_RUNS: &[&str] = &["bbx_to_ccx_emmm_qcd0", "uux_to_ccx_emmm_qcd0"];
-
-/// Runs whose banked events are byte-identical to another run's.
-///
-/// `p p > l+ l- j QCD=2 QED=2` restricts to the orders `p p > l+ l- j` already
-/// has, so MadGraph generated the same events twice. Replaying both would count
-/// one measurement as two.
-const DUPLICATE_RUNS: &[(&str, &str)] = &[("pp_to_llj_qcd2_qed2", "pp_to_llj")];
 
 /// The runs whose `αs` MadGraph reads out of the PDF grid rather than solving
 /// for: with `pdlabel = lhapdf` it links `alfas_functions_lhapdf.f`, whose
@@ -221,7 +209,6 @@ fn declared_runs() -> Vec<&'static str> {
         .chain(UNREPLAYABLE_RUNS)
         .chain(FIXED_SCALE_RUNS)
         .copied()
-        .chain(DUPLICATE_RUNS.iter().map(|(name, _)| *name))
         .collect();
     names.sort_unstable();
     let mut unique = names.clone();
@@ -630,13 +617,6 @@ fn banked_events_reproduce_every_printed_scale() {
         let choice = ScaleChoice::from_run_card(&card).expect("compiled");
         let events = parse_events(run);
         let channels = match coverage(name) {
-            Coverage::DuplicateOf(other) => {
-                println!(
-                    "{name}: {} events, byte-identical to {other} — replayed there",
-                    events.len()
-                );
-                continue;
-            }
             // A fixed scale reads no kinematics, so the replay hands it no
             // channels at all: passing them would let a clustering bug hide
             // behind the constant.
@@ -819,7 +799,6 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
     for (name, run) in &runs {
         let channels = match coverage(name) {
             Coverage::Fixed => None,
-            Coverage::DuplicateOf(_) => continue,
             Coverage::Clustered if UNREPLAYABLE_RUNS.contains(&name.as_str()) => continue,
             Coverage::Clustered => Some(channels_for(run)),
         };

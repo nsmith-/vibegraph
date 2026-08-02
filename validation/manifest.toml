@@ -461,7 +461,7 @@ process = "p p > l+ l- j QCD=2 QED=2"
 script = "validation/madgraph/scripts/pp_to_llj_fixed.mg5"
 class = "multi-channel"
 n_final = 3
-rationale = "The integrals/samples/events subject of the llj triple: same generate line as pp_to_llj_qcd2_qed2 with all three scales fixed at m_Z and an LHAPDF grid (lhaid 247000), so every per-event scale field can be replayed exactly and the cross section does not inherit the low-m_ll discrepancy (mmll = 50)."
+rationale = "The integrals/samples/events subject of the llj triple: same generate line as pp_to_llj_dyn with all three scales fixed at m_Z and an LHAPDF grid (lhaid 247000), so every per-event scale field can be replayed exactly and the cross section does not inherit the low-m_ll discrepancy (mmll = 50)."
 artifacts = ["output/pp_to_llj_fixed", "output/pp_to_llj_fixed/Events/run_01/unweighted_events.lhe.gz"]
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
@@ -475,26 +475,12 @@ process = "p p > l+ l- j"
 script = "validation/madgraph/scripts/pp_to_llj.mg5"
 class = "multi-channel"
 n_final = 3
-rationale = "llj at default coupling orders. Kept alongside the explicit-order script because the pair is what pins order-constraint semantics: the two must select the same diagram content, and this row is the asserted-refused case in the scale gate (its dynamical scale choice is refused rather than approximated)."
+rationale = "llj at default coupling orders. Kept alongside the explicit-order scripts (pp_to_llj_fixed, pp_to_llj_dyn, same generate line with QCD=2 QED=2) because the pair is what pins order-constraint semantics: the two spellings must select the same diagram content. Its banked run is the one whose per-event scales come out of the general clustering over three final-state legs at MadGraph's own dynamical default, replayed field by field in validate_scales."
 artifacts = ["output/pp_to_llj", "output/pp_to_llj.json"]
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour union; the point of the row is the order-selection semantics" }
 amplitudes = { tier = "uncovered", note = "an order-semantics row: its content is pinned in `diagrams`, and the amplitudes of its QCD=2 QED=2 subprocesses are covered by the four llj parton rows" }
 integrals = { tier = "blocked", blocker = "kt-clustering", note = "the dynamical scale is refused, and that refusal is itself asserted" }
-samples = { tier = "blocked", blocker = "kt-clustering" }
-
-[[process]]
-key = "pp_to_llj_qcd2_qed2"
-process = "p p > l+ l- j QCD=2 QED=2"
-script = "validation/madgraph/scripts/pp_to_llj_qcd2_qed2.mg5"
-class = "multi-channel"
-n_final = 3
-rationale = "llj with the orders stated explicitly: the other half of the order-constraint pair, and the dynamical-scale run whose refusal is asserted."
-artifacts = ["output/pp_to_llj_qcd2_qed2", "output/pp_to_llj_qcd2_qed2.json"]
-[process.categories]
-diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour union" }
-amplitudes = { tier = "covered-by", rows = ["uux_to_epemg", "ddx_to_epemg", "gu_to_epemu", "gux_to_epemux"] }
-integrals = { tier = "blocked", blocker = "kt-clustering" }
 samples = { tier = "blocked", blocker = "kt-clustering" }
 
 [[process]]
@@ -507,7 +493,7 @@ bundled = false
 rationale = "The scale-moved twin of pp_to_llj_fixed: the two run cards differ in the three fixed-scale booleans and in nothing else, so a cross section that agrees against the fixed-scale row and disagrees against this one isolates the scale prescription from every other part of the chain. Its per-event SCALUP takes 9966 distinct values over 10000 events where the fixed-scale run takes 1, which is what makes it a reference for the general clustering rather than for a closed form."
 artifacts = ["output/pp_to_llj_dyn", "output/pp_to_llj_dyn/Events/run_01/unweighted_events.lhe.gz"]
 [process.categories]
-diagrams = { tier = "covered-by", rows = ["pp_to_llj_fixed", "pp_to_llj_qcd2_qed2"] }
+diagrams = { tier = "covered-by", rows = ["pp_to_llj_fixed", "pp_to_llj"] }
 amplitudes = { tier = "covered-by", rows = ["uux_to_epemg", "ddx_to_epemg", "gu_to_epemu", "gux_to_epemux"] }
 integrals = { tier = "banked", mode = "gate", note = "the row where the scale prescription is the only thing under test, and the fixed-scale twin held enforced at 0.5% is what makes the attribution sound: the two run cards differ in the three fixed_*_scale booleans and in nothing else. Each point is now clustered in the channel its own sampling channel names, per flavour group -- the groups of this process do not share a merge graph, and the integrand had been using group 0's forests for all of them. Over five seeds at 75000/150000/300000/600000 points (probe_llj_dyn_budget_ladder) sigma = 409.554 +- 0.357, 411.393 +- 0.247, 412.529 +- 0.172, 412.950 +- 0.121 pb, rising with increments that halve (+1.84, +1.14, +0.42) and the last rung's five seeds agreeing at chi2/dof 0.09 with a 0.05% spread, so it is converged and seed-stable at about 413 pb against MadGraph's 415.42 +- 1.36 -- rel -0.59% at the top rung and -0.68% at this layer's own three seeds at 300k. It read -3.05% while every point was clustered in channel 1. rel_tol 0.015 is the channel-partition ambiguity of the gu_to_epemu cell (1.5% between this crate's converged and uniform partitions, on the partonic rows whose scale the channel actually moves) diluted by the flavour groups that do not carry it, with headroom, and above MadGraph's own 0.33% on this run. The pull is reported and NOT asserted: the residual is a systematic of about 0.6%, so its pull grows without bound as this side's budget rises while the disagreement stays put" }
 samples = { tier = "uncovered", note = "nothing refuses this any more -- the integrals cell above now runs to a cross section -- and nothing measures it either. A proton-beam samples row is generated through the shipped binary (validate_samples_proton), which today integrates and generates the fixed-scale card only; the dynamical card needs its own artifact and its own generation pass. Deferred rather than refused, and worth taking together with whatever fixes the integration-channel deficit that cell records" }
