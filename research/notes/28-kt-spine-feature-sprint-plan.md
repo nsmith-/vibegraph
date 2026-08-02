@@ -2391,3 +2391,163 @@ C-conjugation identity the crossing rests on (`ū₁Γv₂ = −ū₂(CΓᵀC⁻
 to a chain whose propagator momentum crosses the beam cut), not another fit — the
 required sign vector is now known exactly, so any candidate rule can be checked against
 it in one run, and against the 19 gated tables in the same run.
+
+## S6 — the crossing sign rule
+
+The fix is one condition in `spine_sign_from_flow`: the per-propagator flip that fired
+on *initial–initial* fermion lines now fires on every line with **at least one
+initial-state endpoint**, mixed lines included. `inc_a && inc_b` became
+`inc_a || inc_b`.
+
+What makes that a derivation rather than a fit is that the rule it generalises — the
+initial-state spine sign, pinned since the `u u~ → c c~ e+e- μ+μ-` per-diagram oracle —
+is a *special case* of a slot-binding mismatch that mixed lines share and crossed lines
+do not. Both of S5's falsified candidates are the same −1 attributed to the wrong line
+class.
+
+### The convention that actually differs
+
+Both sides cross half the external legs, and not the same half.
+
+| leg | diagram enumeration (this side) | reference HELAS bookkeeping |
+|---|---|---|
+| initial | physical identity | **anti** identity (all-outgoing) |
+| final, on a mixed line | anti identity, restored to physical by `mixed_line_final_legs` | physical identity |
+| final, on a crossed line | **anti** identity, kept | physical identity |
+
+A UFO fermion slot pairs with a definite spinor adjoint — the pair-first slot takes the
+ket, the pair-second the bra. Because MadGraph crosses the *initial* legs into the
+all-outgoing identity before binding them, its binding never disagrees with the adjoint
+of the wavefunction it holds: an incoming `e-` is bound to the `ℓ+` slot and `IXXXXX`
+gives it a ket; an outgoing `e-` is bound to the `ℓ-` slot and `OXXXXX` gives it a bra.
+Ours disagrees at exactly two kinds of leg — every **initial** leg (we keep the physical
+identity where the reference crosses it) and every **uncrossed final** leg (we replace
+the wavefunction but not the slot binding). It agrees at every **crossed final** leg,
+where the anti identity and the anti wavefunction move together.
+
+So the lines read against their own slot arrow are the ones with at least one
+initial-state endpoint: initial–initial **and mixed**. A crossed (final–final) line is
+read along its arrow.
+
+### What reading a line backwards costs
+
+Reading a bilinear against its slot arrow replaces each vertex structure by `C Γᵀ C⁻¹`,
+which for `Γ = γ^μ P_χ` is `−γ^μ P_χ̄`. The chirality flip is applied per vertex by
+`chiral_correction`. The −1 is applied **once per line**, by
+`reversed_convention_sign` at the line's single vector-rooted sink — a fermion line
+meets exactly one such vertex in a rooted tree, so that channel can contribute at most
+one factor however long the line is. A line with `V` vertices needs `(−1)^V`; the
+remaining `V − 1` are one per internal fermion propagator, and supplying them is what
+`spine_sign_from_flow`'s first arm is for.
+
+The account makes a structural prediction that is not the thing being fixed:
+`reversed_convention_sign` should be exactly `(−1)^(#initial–initial + #mixed lines)`
+per diagram and should never fire on a crossed line. Measured over
+`e+e- → e+e-`, `u u~ → u u~`, `g g → t t~`, `e+e- → μ+μ-τ+τ-`, `e+e- → W+W-`,
+`g u → e+e- u`, `u u~ → e+e- g` and `u d → e+e- u d`, it is.
+
+The arm was written for initial–initial lines only, so **mixed lines were getting
+`(−1)^1` where they needed `(−1)^V`.** No banked row could see it before:
+`e+e- → e+e-` and `u u~ → u u~` have mixed lines with no propagator at all;
+`g u → e+e- u` and `g u~ → e+e- u~` have one mixed line carrying one propagator in
+*every* diagram, a uniform sign the per-configuration phase fit absorbs; no other banked
+process has a mixed line at all. `u d > e+ e- u d QCD=0` is the first row with **two**
+mixed quark lines, so its single internal fermion propagator sits on a mixed line in
+some diagrams and on the crossed lepton line in others. That split is 24 / 9 (+2 with no
+fermion propagator at all) — exactly S5's partition, with the two triple-gauge diagrams
+landing on the un-flipped side without being mentioned.
+
+### Why the S5 candidates failed
+
+- **"one further −1 per internal fermion propagator on a crossed final–final line"**
+  puts the factor on the one line class that is *not* read backwards. On this process
+  alone it is indistinguishable from the right rule — it selects the complement of the
+  24, and a global sign is absorbed by the fit — but it moves `e+e- → μ+μ-τ+τ-`
+  diagrams 0–15 against 17–24, and `g g → t t~`'s t/u-channel diagrams against its
+  s-channel. Two independent bit-exact rows falsify it.
+- **"the WWγ/WWZ vertex must not take the Yang–Mills VVV sign"** was needed only
+  because graphs 18 and 19 carry no internal fermion propagator: under the crossed-line
+  reading they fell outside the nine ladders and wanted a second mechanism. Under the
+  mixed-line reading they need nothing, and `yang_mills_vvv_sign` is untouched. Two
+  diagrams landing in the right class *without* being named is the check the account had
+  to pass and the fitted rules did not.
+- **"one further −1 per spacelike boson propagator"** is the predicate that fits this
+  process; it coincides with the mixed-line propagator count here and is false on
+  `u u~ > u u~`.
+
+The C-conjugation identity S5 pointed at is the right tool; what it acts on is the
+vertex, not the whole chain, and the count that matters is vertices on a
+slot-reversed line, not boson rungs on the beam-to-beam spine.
+
+### Measured
+
+`ud_to_epemud_qcd0`, against the committed table (74 points, 6 of them per-helicity):
+
+| check | S5 | S6 |
+|---|---|---|
+| `\|M\|²` max rel, grid / event | 5.12e1 / 2.80e1 | **4.16e-14 / 2.62e-14** |
+| per-flow (JAMP) | 1.29e0 | **2.96e-15** |
+| `JAMP2` | 9.71e0 | **2.61e-14** |
+| per-configuration amplitude vs bare `AMP()` | 3.03e1 | **6.57e-15** |
+| fitted global constant `G` | split ±i | **−1i**, `\|G\|−1 = 1.1e-14` |
+
+The other 19 amplitude tables are unmoved and still gated; the rooting-soundness sweep
+stays at **270 re-rootings, 0 failures**; `e+e- → μ+μ-τ+τ-` (6.06e-14), `e+e- → W+W-`
+(8.44e-15) and `u u~ → u u~` (2.00e-15) — the three controls that falsified the S5
+candidates — are unmoved.
+
+One oracle bug had to be fixed to see the last row of that table. The per-configuration
+comparison built its MadGraph `AMP()` index by flattening MadGraph's own `AMP2` grouping,
+which is only an index source while that grouping lists graphs in graph order. This
+process's grouping is `[0,2,4,6],[1,3,5,7],…`, so position `k` was not graph `k` and the
+comparison was scrambled — it read 3.03e1 whatever the physics did. Where a row is in
+`KNOWN_CONFIG_MERGE` the pairing now comes from the diagram behind each of our
+configurations instead. `ee_to_ee`, the other merged row, is unaffected (its flattening
+happens to be sorted).
+
+### The row, promoted
+
+With the linear level agreeing, σ was re-measured and moved from **1.0860e-1 pb** (a
+factor 7.7 high) to **1.409864e-2 ± 1.841e-5 pb** against MadGraph's banked
+**1.410700e-2 ± 3.4241e-5 pb** — pull −0.22, rel −0.06%, χ²/dof 1.20, at the same
+120 000 × 8 budget and the same seed S4 used. Nothing about the map changed; the
+factor 7.7 was the missing sign all along, which is what S4's "the ratio is
+region-dependent and almost always > 1" was reading.
+
+Two axes before enforcing it:
+
+| seed | σ (pb) | pull | rel | χ²/dof |
+|---|---|---|---|---|
+| 20260719 | 1.409864e-2 | −0.22 | −5.9e-4 | 1.20 |
+| 11 | 1.409501e-2 | −0.31 | −8.5e-4 | 1.00 |
+| 22 | 1.407280e-2 | −0.88 | −2.4e-3 | 1.15 |
+| 33 | 1.406969e-2 | −0.96 | −2.6e-3 | 1.16 |
+| 44 | 1.409319e-2 | −0.36 | −9.8e-4 | 1.39 |
+| ×2 budget | 1.410882e-2 | +0.05 | +1.3e-4 | 1.26 |
+| ×4 budget | 1.408890e-2 | −0.51 | −1.3e-3 | 1.19 |
+
+The budget ladder does not shrink the residual, and should not: at ×4 our own error is
+9.5e-6 against the reference's 3.4e-5, so the pull is floored by MadGraph's error, not
+ours. What the ladder does rule out is a defect, which would migrate between seeds at
+fixed size rather than scatter inside a fixed band. `rel_tol` is set to **0.01**, 3.8×
+the worst seed, and `probe_resonant_seed_stability` now carries the row (and a
+budget-ladder arm for every row it sweeps).
+
+Cells flipped: `amplitudes` `hermetic`/`info` → `hermetic`/**gate**, `integrals`
+`banked`/`info` → `banked`/**gate**. `MG_VALIDATED_PROCESSES` grew to 19 entries — which
+is what took the rooting-soundness sweep to 270 re-rootings — and
+`KNOWN_LINEAR_DISAGREEMENT` is empty again. The `samples` cell stays `uncovered`, but
+its reason is no longer "the cross section is informational": the comparison is simply
+unwritten.
+
+### What the new test cannot see
+
+`spine_sign_separates_mixed_line_and_crossed_line_propagators` asserts the 24 / 9 / 2
+split of `u d > e+ e- u d QCD=0` and that the mixed-line class comes out at the opposite
+spine sign to the other two, with `g g > t t~` as the negative control that a crossed
+line's −1 does not count propagators. It is blind to a sign common to every diagram of a
+process — the per-configuration phase fit absorbs those, and so does |M|² — and to
+anything outside the spine channel. The absolute per-diagram values are pinned only by
+the `ud_to_epemud_qcd0` row of `amplitude_oracle`, which is now gated; if that row were
+ever demoted, this test alone would still pass with `spine_sign_from_flow` off by a
+global sign.

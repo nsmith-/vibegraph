@@ -202,21 +202,12 @@ const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
 /// worst deviation is written to the report as an `info` cell — but the failure is
 /// recorded rather than raised. That is the "keep a known-wrong informational comparison
 /// running" rule: the alternative, leaving the reference table uncommitted until the
-/// defect is fixed, is what let this one sit behind a cross section instead of being
-/// visible at the level it actually lives at.
+/// defect is fixed, is what let one sit behind a cross section instead of being visible
+/// at the level it actually lives at.
 ///
 /// Two-way: a listed row that starts agreeing fails here, so the exemption cannot outlive
 /// the defect it names.
-const KNOWN_LINEAR_DISAGREEMENT: &[(&str, &str)] = &[(
-    "ud_to_epemud_qcd0",
-    "eleven of the 35 diagrams carry the wrong sign relative to the other 24: MadGraph \
-     graphs 1-8 (the three-rung ladders whose middle rung is a spacelike lepton), 17 (the \
-     same with a spacelike neutrino between two W lines) and 18, 19 (W+W- → γ*/Z* → e+e-). \
-     Each diagram on its own reproduces MadGraph's AMP() to rounding under a unit phase; \
-     flipping exactly those eleven takes the worst |M|² deviation over the banked points \
-     from 5.1e+1 to 4.1e-14. The eleven are exactly the diagrams whose beam-to-beam spine \
-     carries an even number of boson rungs",
-)];
+const KNOWN_LINEAR_DISAGREEMENT: &[(&str, &str)] = &[];
 
 /// MadGraph graph index of each vibegraph diagram, for processes whose two
 /// enumeration orders differ. Absent processes pair by the identity.
@@ -763,14 +754,37 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         _ => {}
     }
     // The MadGraph AMP index of each of our configuration amplitudes, in the
-    // flattened order `run_config_amps` returns them: MadGraph's own AMP2
-    // grouping flattened, then through the banked diagram order.
-    let mg_amp_index: Vec<usize> = table
-        .amp2_groups
-        .iter()
-        .flatten()
-        .map(|&i| order[i])
-        .collect();
+    // flattened order `run_config_amps` returns them: MadGraph's own AMP2 grouping
+    // flattened, then through the banked diagram order.
+    //
+    // That flattening is only an index source while MadGraph lists the graphs in graph
+    // order. Its channel mapping breaks that where it merges diagrams into one
+    // accumulator (`KNOWN_CONFIG_MERGE`) — `u d > e+ e- u d QCD=0` groups
+    // `[0,2,4,6],[1,3,5,7],…`, so position `k` of the flattening is not graph `k`.
+    // There each of our configurations owns exactly one amplitude, so the pairing
+    // comes from the diagram behind it instead.
+    let mg_amp_index: Vec<usize> = match merge {
+        Some(_) => {
+            if !our_counts.iter().all(|&n| n == 1) {
+                return Err(format!(
+                    "[{name}] merges configurations and owns multi-amplitude \
+                     configurations {our_counts:?}; the two groupings cannot be paired"
+                )
+                .into());
+            }
+            evaluator
+                .config_diagrams()
+                .iter()
+                .map(|&d| order[d])
+                .collect()
+        }
+        None => table
+            .amp2_groups
+            .iter()
+            .flatten()
+            .map(|&i| order[i])
+            .collect(),
+    };
     let n_config_amps: usize = our_counts.iter().sum();
     if mg_amp_index.len() != n_config_amps {
         return Err(format!(

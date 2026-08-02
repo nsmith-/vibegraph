@@ -550,7 +550,7 @@ impl AmplitudeEvaluator {
 /// amplitude gate belongs here too; the cost is another full re-rooting sweep to
 /// re-verify.
 #[cfg(test)]
-pub(super) const MG_VALIDATED_PROCESSES: [&str; 18] = [
+pub(super) const MG_VALIDATED_PROCESSES: [&str; 19] = [
     "e+ e- > mu+ mu-",
     "u u~ > mu+ mu-",
     "e+ e- > e+ e-",
@@ -569,6 +569,7 @@ pub(super) const MG_VALIDATED_PROCESSES: [&str; 18] = [
     "d d~ > e+ e- g QCD=2 QED=2",
     "g u > e+ e- u QCD=2 QED=2",
     "g u~ > e+ e- u~ QCD=2 QED=2",
+    "u d > e+ e- u d QCD=0",
 ];
 
 /// The diagrams MadGraph gives an integration configuration — and therefore an
