@@ -35,7 +35,14 @@ use crate::vegas::VegasGrid;
 /// propagator poles that map is shaped by. Versions 3 and 4 are still read,
 /// through [`v3`] and [`v4`], and upgrade with no sampler recorded (`None`),
 /// which is what those writers knew.
-pub const FORMAT_VERSION: u32 = 5;
+///
+/// `6` replaces `ChannelSampler`'s single spine pole with
+/// [`ChannelSampler::spine_poles_gev2`], one entry per rung in chain order: a
+/// peripheral channel is a chain of rungs, and a scalar could only report the
+/// first of them. A version-5 file records exactly that first pole, so it upgrades
+/// to a one-entry list, which for the ladder-free processes a version-5 writer
+/// could produce is the whole chain.
+pub const FORMAT_VERSION: u32 = 6;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] still decodes.
 pub const OLDEST_READABLE_VERSION: u32 = 3;
@@ -92,8 +99,8 @@ pub enum ChannelKey {
 pub enum SamplerTopology {
     /// An all-timelike decay tree: every drawn invariant is a subsystem mass.
     Timelike,
-    /// A peripheral t-channel spine: one spacelike rung with timelike subsystems
-    /// hanging off it.
+    /// A peripheral t-channel spine: an ordered chain of spacelike rungs with a
+    /// timelike subsystem hanging off each, and one left as the recoil.
     Spine,
 }
 
@@ -120,20 +127,24 @@ pub struct ChannelSampler {
     pub resonances: Vec<SamplerPole>,
     /// The spacelike lines of the channel's diagram.
     pub t_channels: Vec<SamplerPole>,
-    /// The pole location `t_mass²` (GeV²) a peripheral channel draws its momentum
-    /// transfer against, *after* the regulating floor — so it differs from the
-    /// corresponding `t_channels` entry wherever the floor bound. `None` for an
-    /// all-timelike tree.
-    pub spine_pole_gev2: Option<f64>,
+    /// The pole locations `t_mass²` (GeV²) a peripheral channel draws its rungs'
+    /// momentum transfers against, in chain order away from the first beam and
+    /// *after* the regulating floor — so they differ from the corresponding
+    /// `t_channels` entries wherever the floor bound, and `t_channels`' order,
+    /// which is the diagram's, carries no kinematic meaning where this one does.
+    /// Empty for an all-timelike tree.
+    pub spine_poles_gev2: Vec<f64>,
 }
 
 impl ChannelSampler {
     /// Read the composition off a built channel.
     pub fn of(channel: &crate::phasespace::DiagramChannel<f64>) -> Self {
+        let spine_poles_gev2 = channel.spine_poles();
         ChannelSampler {
-            topology: match channel.spine_pole() {
-                Some(_) => SamplerTopology::Spine,
-                None => SamplerTopology::Timelike,
+            topology: if spine_poles_gev2.is_empty() {
+                SamplerTopology::Timelike
+            } else {
+                SamplerTopology::Spine
             },
             resonances: channel
                 .resonances()
@@ -151,7 +162,7 @@ impl ChannelSampler {
                     width: t.width,
                 })
                 .collect(),
-            spine_pole_gev2: channel.spine_pole(),
+            spine_poles_gev2,
         }
     }
 }
@@ -348,6 +359,105 @@ pub mod v4 {
     }
 }
 
+/// Schema version 5, kept so artifacts banked before the rung chain still load.
+/// Every field is version 6's but for the sampler's spine pole, which a version-5
+/// writer recorded as a single `Option<f64>`.
+///
+/// That scalar is the whole chain, not a truncation of one: a version-5 writer
+/// left every diagram with more than one spacelike line on the all-timelike tree,
+/// so a file with a pole recorded has exactly one rung and the upgrade to a list
+/// loses nothing.
+pub mod v5 {
+    use serde::Deserialize;
+
+    use super::{ChannelKey, SamplerPole, SamplerTopology};
+    use crate::runcard::RunCard;
+    use crate::ufo::identity::ModelIdentity;
+    use crate::vegas::VegasGrid;
+
+    #[derive(Debug, Deserialize)]
+    pub(super) struct ChannelSampler {
+        pub topology: SamplerTopology,
+        pub resonances: Vec<SamplerPole>,
+        pub t_channels: Vec<SamplerPole>,
+        pub spine_pole_gev2: Option<f64>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub(super) struct ChannelGrid {
+        pub key: ChannelKey,
+        pub alpha: f64,
+        pub neval: usize,
+        pub grid: VegasGrid,
+        pub sigma_pb: f64,
+        pub sigma_err_pb: f64,
+        pub chi2_per_dof: f64,
+        pub sampler: Option<ChannelSampler>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub(super) struct IntegrateArtifact {
+        /// Present so the positional decode consumes the version prefix; the
+        /// version itself was already read and dispatched on.
+        #[allow(dead_code)]
+        pub format_version: u32,
+        pub process: String,
+        pub model: ModelIdentity,
+        pub pdf_set: String,
+        pub pdf_member: u32,
+        pub mu_f: f64,
+        pub sqrt_s_had: f64,
+        pub neval: usize,
+        pub niter: usize,
+        pub seed: u64,
+        pub run_card: RunCard,
+        pub channels: Vec<ChannelGrid>,
+        pub sigma_pb: f64,
+        pub sigma_err_pb: f64,
+        pub chi2_per_dof: f64,
+    }
+}
+
+impl v5::IntegrateArtifact {
+    fn upgrade(self) -> IntegrateArtifact {
+        IntegrateArtifact {
+            format_version: FORMAT_VERSION,
+            process: self.process,
+            model: self.model,
+            pdf_set: self.pdf_set,
+            pdf_member: self.pdf_member,
+            mu_f: self.mu_f,
+            sqrt_s_had: self.sqrt_s_had,
+            neval: self.neval,
+            niter: self.niter,
+            seed: self.seed,
+            run_card: self.run_card,
+            channels: self
+                .channels
+                .into_iter()
+                .map(|c| ChannelGrid {
+                    key: c.key,
+                    alpha: c.alpha,
+                    neval: c.neval,
+                    grid: c.grid,
+                    sigma_pb: c.sigma_pb,
+                    sigma_err_pb: c.sigma_err_pb,
+                    chi2_per_dof: c.chi2_per_dof,
+                    sampler: c.sampler.map(|s| ChannelSampler {
+                        topology: s.topology,
+                        resonances: s.resonances,
+                        t_channels: s.t_channels,
+                        spine_poles_gev2: s.spine_pole_gev2.into_iter().collect(),
+                    }),
+                })
+                .collect(),
+            sigma_pb: self.sigma_pb,
+            sigma_err_pb: self.sigma_err_pb,
+            chi2_per_dof: self.chi2_per_dof,
+        }
+    }
+}
+
 impl v4::IntegrateArtifact {
     fn upgrade(self) -> IntegrateArtifact {
         IntegrateArtifact {
@@ -465,6 +575,9 @@ impl IntegrateArtifact {
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         match header.format_version {
             FORMAT_VERSION => bincode::deserialize(&raw).map_err(ArtifactError::Decode),
+            5 => bincode::deserialize::<v5::IntegrateArtifact>(&raw)
+                .map_err(ArtifactError::Decode)
+                .map(v5::IntegrateArtifact::upgrade),
             4 => bincode::deserialize::<v4::IntegrateArtifact>(&raw)
                 .map_err(ArtifactError::Decode)
                 .map(v4::IntegrateArtifact::upgrade),
@@ -662,7 +775,7 @@ mod tests {
                         mass: 0.0,
                         width: 0.0,
                     }],
-                    spine_pole_gev2: Some(100.0),
+                    spine_poles_gev2: vec![100.0, 25.0],
                 }),
             })
             .collect();
@@ -893,6 +1006,136 @@ mod tests {
             assert_eq!(c.alpha.to_bits(), (0.25 * (j + 1) as f64).to_bits());
             assert_eq!(c.sampler, None, "channel {j}");
         }
+        assert_eq!(upgraded.sigma_pb.to_bits(), 934.42f64.to_bits());
+
+        std::fs::remove_file(&path).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
+
+    /// A version-5 artifact still loads, and its single spine pole becomes a
+    /// one-rung chain — while a channel that recorded no pole comes back with an
+    /// empty chain rather than a chain holding a zero, which is the one way this
+    /// upgrade could quietly turn an all-timelike tree into a peripheral one.
+    #[test]
+    fn a_version_5_artifact_upgrades_to_the_current_schema() {
+        #[derive(Serialize)]
+        struct V5ChannelSampler {
+            topology: SamplerTopology,
+            resonances: Vec<SamplerPole>,
+            t_channels: Vec<SamplerPole>,
+            spine_pole_gev2: Option<f64>,
+        }
+
+        #[derive(Serialize)]
+        struct V5ChannelGrid {
+            key: ChannelKey,
+            alpha: f64,
+            neval: usize,
+            grid: VegasGrid,
+            sigma_pb: f64,
+            sigma_err_pb: f64,
+            chi2_per_dof: f64,
+            sampler: Option<V5ChannelSampler>,
+        }
+
+        #[derive(Serialize)]
+        struct V5Artifact {
+            format_version: u32,
+            process: String,
+            model: ModelIdentity,
+            pdf_set: String,
+            pdf_member: u32,
+            mu_f: f64,
+            sqrt_s_had: f64,
+            neval: usize,
+            niter: usize,
+            seed: u64,
+            run_card: RunCard,
+            channels: Vec<V5ChannelGrid>,
+            sigma_pb: f64,
+            sigma_err_pb: f64,
+            chi2_per_dof: f64,
+        }
+
+        let sampler = |spine: Option<f64>| V5ChannelSampler {
+            topology: match spine {
+                Some(_) => SamplerTopology::Spine,
+                None => SamplerTopology::Timelike,
+            },
+            resonances: vec![SamplerPole {
+                mass: 91.1876,
+                width: 2.4952,
+            }],
+            t_channels: spine
+                .map(|_| {
+                    vec![SamplerPole {
+                        mass: 0.0,
+                        width: 0.0,
+                    }]
+                })
+                .unwrap_or_default(),
+            spine_pole_gev2: spine,
+        };
+
+        let legacy = V5Artifact {
+            format_version: 5,
+            process: "p p > e+ e- j".to_string(),
+            model: ModelIdentity::interned_sm(SMRestrict::Default),
+            pdf_set: "NNPDF23_lo_as_0130_qed".to_string(),
+            pdf_member: 0,
+            mu_f: 91.1880,
+            sqrt_s_had: 13000.0,
+            neval: 1000,
+            niter: 2,
+            seed: 42,
+            run_card: RunCard::default(),
+            channels: vec![
+                V5ChannelGrid {
+                    key: ChannelKey::GroupDiagram {
+                        group: 0,
+                        diagram: 0,
+                    },
+                    alpha: 0.25,
+                    neval: 1000,
+                    grid: VegasGrid::new(4, 16, 0.5),
+                    sigma_pb: 934.42,
+                    sigma_err_pb: 0.87,
+                    chi2_per_dof: 1.02,
+                    sampler: Some(sampler(Some(0.4))),
+                },
+                V5ChannelGrid {
+                    key: ChannelKey::GroupDiagram {
+                        group: 0,
+                        diagram: 1,
+                    },
+                    alpha: 0.75,
+                    neval: 1000,
+                    grid: VegasGrid::new(4, 16, 0.5),
+                    sigma_pb: 934.42,
+                    sigma_err_pb: 0.87,
+                    chi2_per_dof: 1.02,
+                    sampler: Some(sampler(None)),
+                },
+            ],
+            sigma_pb: 934.42,
+            sigma_err_pb: 0.87,
+            chi2_per_dof: 1.02,
+        };
+
+        let dir = scratch_dir("v5");
+        let path = dir.join("v5.bin.zst");
+        let raw = bincode::serialize(&legacy).unwrap();
+        let compressed = zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap();
+        std::fs::write(&path, compressed).unwrap();
+
+        let upgraded = IntegrateArtifact::read_from_path(&path).expect("version 5 reads");
+        assert_eq!(upgraded.format_version, FORMAT_VERSION);
+        let peripheral = upgraded.channels[0].sampler.as_ref().expect("sampler");
+        assert_eq!(peripheral.topology, SamplerTopology::Spine);
+        assert_eq!(peripheral.spine_poles_gev2, vec![0.4]);
+        let timelike = upgraded.channels[1].sampler.as_ref().expect("sampler");
+        assert_eq!(timelike.topology, SamplerTopology::Timelike);
+        assert!(timelike.spine_poles_gev2.is_empty());
         assert_eq!(upgraded.sigma_pb.to_bits(), 934.42f64.to_bits());
 
         std::fs::remove_file(&path).ok();

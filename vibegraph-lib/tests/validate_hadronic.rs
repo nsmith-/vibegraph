@@ -222,9 +222,48 @@ fn run_seed(
     expect_alpha_s: bool,
     summary: &mut Vec<ChannelSummary>,
 ) -> (f64, f64) {
+    run_seed_mapped(
+        groups,
+        amps,
+        model,
+        evaluated,
+        set,
+        pdf,
+        rc,
+        budget,
+        seed,
+        expect_alpha_s,
+        summary,
+        true,
+    )
+}
+
+/// [`run_seed`] with the peripheral channels' fiducial transfer bound under the
+/// caller's control, so what the bound is worth can be read off two runs that
+/// differ in nothing else.
+#[allow(clippy::too_many_arguments)]
+fn run_seed_mapped(
+    groups: &FlavorGroups,
+    amps: &[BoundAmplitude<'_, f64>],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    set: &PdfSet,
+    pdf: &PdfMember,
+    rc: &RunCard,
+    budget: (usize, usize, usize, usize),
+    seed: u64,
+    expect_alpha_s: bool,
+    summary: &mut Vec<ChannelSummary>,
+    bound_transfer: bool,
+) -> (f64, f64) {
     let (survey, adapt_iters, neval, niter) = budget;
-    let mut integ = ProtonIntegrand::new(groups, amps, evaluated, pdf, SQRT_S_HAD, MU_F)
-        .expect("hadronic integrand");
+    let build = if bound_transfer {
+        ProtonIntegrand::new
+    } else {
+        ProtonIntegrand::new_unbounded
+    };
+    let mut integ =
+        build(groups, amps, evaluated, pdf, SQRT_S_HAD, MU_F).expect("hadronic integrand");
     let report = integ
         .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
         .expect("run card scale prescription compiles");
@@ -598,6 +637,76 @@ fn pointwise_integrand_oracle() {
 /// `amplitude_oracle`. It also cannot separate the
 /// phase-space map from the matrix element: a map whose weight and density were
 /// both wrong by one factor would integrate correctly.
+/// What the fiducial transfer bound is worth on the one enforced row whose map it
+/// narrows.
+///
+/// The peripheral channels of `p p → ℓ⁺ℓ⁻ j` draw their momentum transfer over the
+/// window `t ≤ −pT_min²` rather than up to the collinear edge, which is where the
+/// jet cut stops accepting anyway. Both maps are unbiased estimators of the same
+/// `σ̂` — the bound narrows support the cuts already reject — so the comparison
+/// reads two things: the quoted error per seed, which is what the bound buys, and
+/// the agreement of the two means, which is what says the narrowing renounced
+/// nothing the integrand lives on.
+///
+/// The same seeds and the same budget on both arms, so the difference is the map
+/// and nothing else. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_fiducial_bound_on_llj_fixed() {
+    let run_dir = validation_dir().join("output/pp_to_llj_fixed");
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(LLJ_PROCESS, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+
+    eprintln!("── pp_to_llj_fixed: the fiducial transfer bound (MG {mg:.3} ± {mg_err:.3} pb) ──");
+    for bound in [true, false] {
+        let mut summary = Vec::new();
+        let mut runs: Vec<SeedResult> = Vec::new();
+        for &seed in LLJ_SEEDS {
+            let (sigma, err) = run_seed_mapped(
+                &groups,
+                &amps,
+                &model,
+                &evaluated,
+                &set,
+                &pdf,
+                &rc,
+                (LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, LLJ_NEVAL, LLJ_NITER),
+                seed,
+                true,
+                &mut summary,
+                bound,
+            );
+            runs.push(SeedResult {
+                seed,
+                sigma_pb: sigma,
+                sigma_err_pb: err,
+            });
+        }
+        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
+        eprintln!(
+            "  bound {:>3}: σ = {mean:.4} ± {mean_err:.4} pb (χ²/dof {chi2:.2}) | rel {:+.4} | \
+             pull {pull:+.2} | per seed {}",
+            if bound { "on" } else { "off" },
+            mean / mg - 1.0,
+            runs.iter()
+                .map(|r| format!("{:.3}±{:.3}", r.sigma_pb, r.sigma_err_pb))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+    }
+}
+
 #[test]
 fn sigma_llj_fixed_scale_vs_mg() {
     let run_dir = validation_dir().join("output/pp_to_llj_fixed");

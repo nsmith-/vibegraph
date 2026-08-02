@@ -850,6 +850,36 @@ impl<'a> ProtonIntegrand<'a> {
         sqrt_s_had: f64,
         mu_f: f64,
     ) -> Result<Self, ProtonError> {
+        Self::build(groups, amps, model, pdf, sqrt_s_had, mu_f, true)
+    }
+
+    /// [`new`](Self::new) with the peripheral channels' fiducial transfer bound
+    /// dropped, leaving only the regulating pole floor.
+    ///
+    /// Production always bounds. This builds the map the bound narrows, on the same
+    /// channels, so what the bound is worth can be measured on a real integration
+    /// rather than argued from the channel's own variance.
+    pub fn new_unbounded(
+        groups: &'a FlavorGroups,
+        amps: &'a [BoundAmplitude<'a, f64>],
+        model: &EvaluatedModel,
+        pdf: &'a PdfMember,
+        sqrt_s_had: f64,
+        mu_f: f64,
+    ) -> Result<Self, ProtonError> {
+        Self::build(groups, amps, model, pdf, sqrt_s_had, mu_f, false)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        groups: &'a FlavorGroups,
+        amps: &'a [BoundAmplitude<'a, f64>],
+        model: &EvaluatedModel,
+        pdf: &'a PdfMember,
+        sqrt_s_had: f64,
+        mu_f: f64,
+        bound_transfer: bool,
+    ) -> Result<Self, ProtonError> {
         if amps.len() != groups.groups().len() {
             return Err(ProtonError::AmplitudeCount {
                 amps: amps.len(),
@@ -878,6 +908,11 @@ impl<'a> ProtonIntegrand<'a> {
                 // the event's own; the collider energy is the well-formed value to
                 // leave it at.
                 let channel = DiagramChannel::from_diagram_regulated(d, model, sqrt_s_had, floor);
+                let channel = if bound_transfer {
+                    channel
+                } else {
+                    channel.without_transfer_bound()
+                };
                 channel_samplers.push(ChannelSampler::of(&channel));
                 channels.push(Box::new(channel));
                 channel_ids.push(ChannelId {
@@ -2284,17 +2319,16 @@ mod tests {
                 );
                 let without =
                     DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, SQRT_S_HAD, 0.0);
-                assert_eq!(
-                    without.spine_pole(),
-                    None,
+                assert!(
+                    without.spine_poles().is_empty(),
                     "a three-body spine was built without a floor"
                 );
-                match with.spine_pole() {
-                    Some(pole) => {
-                        assert_eq!(pole, 0.4);
+                match with.spine_poles().as_slice() {
+                    [] => unfloored += 1,
+                    poles => {
+                        assert_eq!(poles, [0.4], "an llj diagram carries one spacelike line");
                         floored += 1;
                     }
-                    None => unfloored += 1,
                 }
             }
         }
@@ -2325,12 +2359,12 @@ mod tests {
                 assert_eq!(samplers[k], ChannelSampler::of(&built), "channel {k}");
                 match samplers[k].topology {
                     SamplerTopology::Spine => {
-                        assert_eq!(samplers[k].spine_pole_gev2, Some(0.4));
+                        assert_eq!(samplers[k].spine_poles_gev2, vec![0.4]);
                         assert_eq!(samplers[k].t_channels.len(), 1);
                         spines += 1;
                     }
                     SamplerTopology::Timelike => {
-                        assert_eq!(samplers[k].spine_pole_gev2, None);
+                        assert!(samplers[k].spine_poles_gev2.is_empty());
                         assert!(samplers[k].t_channels.is_empty());
                     }
                 }

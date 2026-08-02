@@ -44,9 +44,11 @@
 //! A ladder — several spacelike lines in one diagram — is the same construction
 //! repeated. Its spacelike lines nest, so they form an *ordered chain* of rungs,
 //! each emitting one blob against the running momentum transfer left by the rungs
-//! before it. [`DiagramChannel::from_diagram_ladder`] builds that chain;
-//! [`DiagramChannel::from_diagram_regulated`] leaves a ladder on the all-timelike
-//! tree and keeps its spacelike lines as metadata only.
+//! before it, which is what [`DiagramChannel::from_diagram_regulated`] builds. A
+//! chain importance-samples every spacelike propagator of the diagram; the
+//! all-timelike tree, which is what a derivation admitting only one rung falls
+//! back to, samples none of them and both under-covers the peripheral region and
+//! carries orders more per-point variance on a ladder integrand.
 //!
 //! # Regulating the spacelike pole
 //!
@@ -292,36 +294,37 @@ impl<F: Real> DiagramChannel<F> {
         Self::from_diagram_regulated(diagram, model, sqrt_s, F::zero())
     }
 
-    /// [`from_diagram`](Self::from_diagram) with the peripheral rung regulated at
+    /// [`from_diagram`](Self::from_diagram) with the peripheral rungs regulated at
     /// the process's own `fiducial_scale` (GeV², the largest single-leg `pT_min`
     /// squared), so a massless exchanged line still gives a well-posed draw.
     ///
-    /// A diagram with several spacelike lines is a ladder, and this builds it as an
-    /// all-timelike tree; [`from_diagram_ladder`](Self::from_diagram_ladder) builds
-    /// the ordered rung chain instead.
+    /// A diagram with several spacelike lines is a ladder, and this decomposes it
+    /// as the ordered chain of rungs those lines imply, each drawing its own `t`
+    /// against the transfer the rungs before it left.
     pub fn from_diagram_regulated(
         diagram: &Diagram,
         model: &EvaluatedModel,
         sqrt_s: F,
         fiducial_scale: F,
     ) -> Self {
-        Self::from_diagram_with(diagram, model, sqrt_s, fiducial_scale, 1)
+        Self::from_diagram_with(diagram, model, sqrt_s, fiducial_scale, usize::MAX)
     }
 
-    /// [`from_diagram_regulated`](Self::from_diagram_regulated) with a ladder
-    /// decomposed as the ordered chain of peripheral rungs its spacelike lines
-    /// imply, rather than as an all-timelike tree.
+    /// [`from_diagram_regulated`](Self::from_diagram_regulated) admitting a chain of
+    /// at most `max_rungs` rungs and falling back to the all-timelike tree for a
+    /// diagram with more spacelike lines than that.
     ///
-    /// The chain reads the same `(t, φ)` per rung against the running momentum
-    /// transfer, so it importance-samples every spacelike propagator of the diagram
-    /// instead of only the one a single-rung spine can carry.
-    pub fn from_diagram_ladder(
+    /// Nothing derives a cap this way — production admits every rung. It exists so
+    /// the chain can be measured against the truncated map it replaces, which for
+    /// `max_rungs = 1` is the all-timelike tree every ladder used to fall back to.
+    pub fn from_diagram_capped(
         diagram: &Diagram,
         model: &EvaluatedModel,
         sqrt_s: F,
         fiducial_scale: F,
+        max_rungs: usize,
     ) -> Self {
-        Self::from_diagram_with(diagram, model, sqrt_s, fiducial_scale, usize::MAX)
+        Self::from_diagram_with(diagram, model, sqrt_s, fiducial_scale, max_rungs)
     }
 
     /// The shared construction, admitting a peripheral chain of at most `max_rungs`
@@ -677,13 +680,19 @@ impl<F: Real> DiagramChannel<F> {
         }
     }
 
-    /// The pole location `t_mass²` of the peripheral chain's first rung, or `None`
-    /// for an all-timelike tree.
-    pub fn spine_pole(&self) -> Option<F> {
-        match &self.topology {
-            ChannelTopology::Timelike(_) => None,
-            ChannelTopology::Spine(spine) => Some(spine.rungs[0].t_mass2),
+    /// Drop the fiducial transfer bound from every peripheral rung, leaving the
+    /// regulating pole floor in place — the map the bound narrows.
+    ///
+    /// Production always bounds where a fiducial scale exists. This exists so the
+    /// bound's effect can be measured against the same channels without it, on the
+    /// same seeds, rather than against a differently-poled map.
+    pub fn without_transfer_bound(mut self) -> Self {
+        if let ChannelTopology::Spine(spine) = &mut self.topology {
+            for rung in &mut spine.rungs {
+                rung.t_max_cap = None;
+            }
         }
+        self
     }
 
     /// The CM beam momenta at energy `sqrt_s`, beam `0` along `+z`.
