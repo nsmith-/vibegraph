@@ -28,8 +28,9 @@ use thiserror::Error;
 
 use crate::artifact::ChannelSampler;
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
-use crate::coupling::scales::{ClusterTopology, EventScales, ScaleChoice, ScaleError, ScaleEvent};
-use crate::coupling::topology::cluster_topology;
+use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
+use crate::coupling::cluster::graph::ColorTable;
+use crate::coupling::scales::{ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::{DiagramError, DiagramSet};
@@ -111,12 +112,20 @@ pub enum HadronicError {
     AlphaS(#[from] AlphaSError),
     #[error("parameter card supplies no strong coupling to run from")]
     MissingAlphaS,
+    #[error("channel forests for the clustering scale: {0}")]
+    Channels(#[from] crate::coupling::cluster::configs::ConfigError),
+    #[error(
+        "the PDF set tabulates alpha_s only up to Q = {q_max} GeV, and a per-event scale on a \
+         {collider} GeV collider can exceed it; LHAPDF extrapolates past its table and this \
+         crate does not, so the run is refused rather than evaluated off the end of it"
+    )]
+    GridAlphaSBelowCollider { q_max: f64, collider: f64 },
 }
 
 /// The run card's per-event scale prescription, bound to one process.
 ///
-/// Holds the compiled [`ScaleChoice`], the [`ClusterTopology`] its clustering
-/// branch consults, and the running coupling that turns `μR` into `αs(μR)`.
+/// Holds the compiled [`ScaleChoice`], the channel forests its clustering branch
+/// consults, and the running coupling that turns `μR` into `αs(μR)`.
 ///
 /// The coupling is constructed only on request. `coupling::alphas` refuses a
 /// `pdlabel` whose `αs` MadGraph delegates to LHAPDF, and a matrix element with no
@@ -129,14 +138,54 @@ pub struct EventScaleSource {
     alpha_s: Option<AlphaSSource>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum ScaleSourceKind {
     /// Every scale is a constant, so no event kinematics are read at all.
     Constant(EventScales),
     PerEvent {
         choice: ScaleChoice,
-        topology: Option<ClusterTopology>,
+        /// The process's channel forests and the colour table the clustering
+        /// asks `isqcd`/`isjet` through. `None` for a prescription whose
+        /// dynamic value is one of `setscales.f`'s closed forms, which read no
+        /// merge graph.
+        channels: Option<Box<Channels>>,
     },
+}
+
+/// The clustering's static side of one process.
+#[derive(Clone, Debug)]
+pub struct Channels {
+    derived: DerivedChannels,
+    colors: ColorTable,
+    /// The channel a caller that samples none gets.
+    ///
+    /// The cluster scale depends on the integration channel through three
+    /// routes, and an integrand that has not sampled
+    /// one still has to name one. The banked replay in `validate_scales.rs`
+    /// reports, per run, how many events the choice moves at all — it is the
+    /// measurement this default rests on.
+    default_config: usize,
+}
+
+impl Channels {
+    pub fn input(&self, this_config: usize) -> ClusterInput<'_> {
+        ClusterInput {
+            set: &self.derived.set,
+            colors: &self.colors,
+            this_config,
+            iproc: 1,
+        }
+    }
+
+    /// How many integration channels the process has, which is the range
+    /// [`Channels::input`] accepts.
+    pub fn len(&self) -> usize {
+        self.derived.set.configs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.derived.set.configs.is_empty()
+    }
 }
 
 impl EventScaleSource {
@@ -152,30 +201,45 @@ impl EventScaleSource {
         }
     }
 
-    /// Compile a run card's prescription. `topology` is consulted only by the
+    /// Compile a run card's prescription. `channels` are consulted only by the
     /// clustering branch; `needs_alpha_s` decides whether a running coupling is
     /// built at all.
     pub fn from_run_card(
         card: &RunCard,
         param_card_as: f64,
         grid: Option<&AlphaSInfo>,
-        topology: Option<ClusterTopology>,
+        channels: Option<Channels>,
         needs_alpha_s: bool,
     ) -> Result<Self, HadronicError> {
         let choice = ScaleChoice::from_run_card(card)?;
         let alpha_s = needs_alpha_s
             .then(|| AlphaSSource::from_run_card(card, param_card_as, grid))
             .transpose()?;
+        // A per-event scale is bounded by the collider energy and by nothing
+        // smaller, so a tabulated coupling that stops below it can be asked for a
+        // value it does not have — on some events, not on all, which is the worst
+        // way for it to surface. The bound is checked once here instead.
+        if !choice.is_fully_fixed() {
+            if let Some(table) = alpha_s.as_ref().and_then(AlphaSSource::grid) {
+                let q_max = table.q_range().1;
+                let collider = card.float("ebeam1") + card.float("ebeam2");
+                if q_max < collider {
+                    return Err(HadronicError::GridAlphaSBelowCollider { q_max, collider });
+                }
+            }
+        }
         let kind = if choice.is_fully_fixed() {
             // A fully fixed prescription returns the card's constants without
             // reading the event, so any event resolves it.
             ScaleSourceKind::Constant(choice.scales(&ScaleEvent {
                 incoming: [[0.0; 4]; 2],
                 outgoing: &[],
-                topology: None,
             })?)
         } else {
-            ScaleSourceKind::PerEvent { choice, topology }
+            ScaleSourceKind::PerEvent {
+                choice,
+                channels: channels.map(Box::new),
+            }
         };
         Ok(EventScaleSource { kind, alpha_s })
     }
@@ -193,11 +257,11 @@ impl EventScaleSource {
         self.alpha_s.as_ref()
     }
 
-    /// The topology the clustering branch consults.
-    pub fn topology(&self) -> Option<ClusterTopology> {
-        match self.kind {
+    /// The channel forests the clustering branch consults.
+    pub fn channels(&self) -> Option<&Channels> {
+        match &self.kind {
             ScaleSourceKind::Constant(_) => None,
-            ScaleSourceKind::PerEvent { topology, .. } => topology,
+            ScaleSourceKind::PerEvent { channels, .. } => channels.as_deref(),
         }
     }
 
@@ -207,13 +271,17 @@ impl EventScaleSource {
         incoming: [[f64; 4]; 2],
         outgoing: &[[f64; 4]],
     ) -> Result<EventScales, ScaleError> {
-        match self.kind {
-            ScaleSourceKind::Constant(scales) => Ok(scales),
-            ScaleSourceKind::PerEvent { choice, topology } => choice.scales(&ScaleEvent {
-                incoming,
-                outgoing,
-                topology,
-            }),
+        match &self.kind {
+            ScaleSourceKind::Constant(scales) => Ok(*scales),
+            ScaleSourceKind::PerEvent { choice, channels } => {
+                let event = ScaleEvent { incoming, outgoing };
+                match channels {
+                    Some(channels) => {
+                        choice.cluster_scales(&event, &channels.input(channels.default_config))
+                    }
+                    None => choice.scales(&event),
+                }
+            }
         }
     }
 }
@@ -225,8 +293,9 @@ pub struct RunningCouplingReport {
     /// false no running coupling was constructed and the amplitudes are left where
     /// they were bound.
     pub depends_on_alpha_s: bool,
-    /// The topology derived for the clustering branch.
-    pub topology: Option<ClusterTopology>,
+    /// How many integration channels the clustering branch was given, or `None`
+    /// where the prescription reads no merge graph.
+    pub channels: Option<usize>,
     /// The scales, when the prescription resolves to constants — then no event
     /// kinematics are read and the coupling is applied once rather than per point.
     pub constant_scales: Option<EventScales>,
@@ -488,8 +557,8 @@ pub(crate) fn make_subs_scale_aware(
     }
 }
 
-/// Compile the run card's prescription for a process, deriving the topology its
-/// clustering branch consults from the process's own diagrams.
+/// Compile the run card's prescription for a process, deriving the channel
+/// forests its clustering branch consults from the process's own diagrams.
 ///
 /// The coupling is built only when some subprocess actually moves with it, which is
 /// what keeps a matrix element with no QCD in it away from a `pdlabel` whose
@@ -505,15 +574,27 @@ pub(crate) fn compile_scale_source(
     grid: Option<&AlphaSInfo>,
     needs_alpha_s: bool,
 ) -> Result<EventScaleSource, HadronicError> {
-    let topology = cluster_topology(
+    let derived = derive_channels(
         diagrams,
         rep.external_particles(),
         rep.n_in(),
         model,
-        card.maxjetflavor,
-    );
+        evaluated,
+    )?;
+    let channels = Channels {
+        derived,
+        colors: ColorTable::new(
+            model
+                .particles
+                .values()
+                .map(|p| (p.pdg_code, p.color))
+                .collect::<Vec<(i64, i32)>>(),
+            card.maxjetflavor,
+        ),
+        default_config: 1,
+    };
     let param_card_as = evaluated.alpha_s().ok_or(HadronicError::MissingAlphaS)?;
-    EventScaleSource::from_run_card(card, param_card_as, grid, Some(topology), needs_alpha_s)
+    EventScaleSource::from_run_card(card, param_card_as, grid, Some(channels), needs_alpha_s)
 }
 
 /// Hold every subprocess at the coupling a constant prescription implies, and
@@ -535,7 +616,7 @@ pub(crate) fn constant_scale_report(
     }
     RunningCouplingReport {
         depends_on_alpha_s: awareness.depends_on_alpha_s,
-        topology: source.and_then(EventScaleSource::topology),
+        channels: source.and_then(EventScaleSource::channels).map(Channels::len),
         constant_scales,
         constant_alpha_s,
         alpha_s_ref: awareness.alpha_s_ref,
@@ -765,8 +846,8 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// renormalisation scale implies, instead of at the parameter card's own.
     ///
     /// Each subprocess is replaced by a scale-aware copy owning its constant pools;
-    /// the [`ClusterTopology`](crate::coupling::scales::ClusterTopology) the `-1`
-    /// scale consults is derived from `diagrams` rather than declared per process.
+    /// the channel forests the `-1` scale clusters against are derived from
+    /// `diagrams` rather than declared per process.
     /// A fixed-beam run has no parton distributions, so only `μR` is consumed here —
     /// the per-beam `μF` the same prescription produces has nothing to feed.
     ///

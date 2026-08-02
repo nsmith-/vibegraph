@@ -2577,6 +2577,13 @@ mod tests {
     /// The fixed-scale card resolves to constants and reads `αs` from the set's own
     /// tabulation; the dynamical card of the same process is refused at setup, not at
     /// the first VEGAS point.
+    ///
+    /// What refuses it is no longer the scale: the clustering computes one. It is
+    /// the coupling the scale would be evaluated at — this set tabulates `αs` to
+    /// 10 TeV and a per-event scale on a 13 TeV collider can exceed it, on some
+    /// events and not on all. LHAPDF extrapolates past its own table and this
+    /// crate does not, so the bound is checked once at setup rather than met as a
+    /// failure part-way through an integration.
     #[test]
     fn a_dynamical_scale_is_refused_where_the_fixed_one_resolves() {
         let m = model();
@@ -2636,11 +2643,11 @@ mod tests {
         let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
             .expect("integrand");
         let err = match integ.use_run_card_scales(&m, &evaluated, &dynamical, Some(&info)) {
-            Ok(report) => panic!("a clustered scale on three outgoing legs resolved: {report:?}"),
+            Ok(report) => panic!("a coupling tabulated below the collider resolved: {report:?}"),
             Err(e) => e.to_string(),
         };
         assert!(
-            err.contains("clustering") || err.contains("t-channel"),
+            err.contains("alpha_s") && err.contains("10000") && err.contains("13000"),
             "unexpected refusal: {err}"
         );
     }

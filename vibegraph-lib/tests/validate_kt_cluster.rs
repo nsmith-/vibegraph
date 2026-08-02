@@ -1238,3 +1238,263 @@ fn compare_clustering(
     }
     ok
 }
+
+// ── the forests, derived from our own diagrams ───────────────────────────────
+
+/// Each dumped run whose process directory groups a single subprocess, with the
+/// process it was generated from.
+///
+/// A grouped directory cannot take part: `configs.inc` writes one `sprop` column
+/// per subprocess of the group and takes every `tprid` from the group's first
+/// subprocess, so its forests are not a function of any one subprocess's
+/// diagrams. The runs below are the ones whose group is a single flavour
+/// assignment, which is what makes the comparison exact.
+const DERIVED_FOREST_RUNS: &[(&str, &str)] = &[
+    ("bbx_to_ccx_emmm_qcd0", "b b~ > c c~ e+ e- mu+ mu- QCD=0"),
+    ("ee_to_mumu_tata_qcd0", "e+ e- > mu+ mu- ta+ ta- QCD=0"),
+    ("ee_to_mumua", "e+ e- > mu+ mu- a"),
+    ("ee_to_ttx", "e+ e- > t t~"),
+    ("uux_to_ccx_emmm_qcd0", "u u~ > c c~ e+ e- mu+ mu- QCD=0"),
+    ("uux_to_uux", "u u~ > u u~"),
+];
+
+/// One channel forest as a comparison can see it: every line named by the leg
+/// set below it rather than by the index the file happened to give it.
+///
+/// The index is a labelling — `configs.inc` numbers the lines in the order it
+/// writes them, and two generators that agree on the tree can disagree on that
+/// order without disagreeing on anything the clustering reads. The leg set is
+/// not: it is what `filmap` keys the merge table on, what `checkbw` measures,
+/// and what every merge is matched against. So the canonical form keys each line
+/// by its own leg set and its two daughters' leg sets, and carries the rest of
+/// the line — the propagator codes, the mass and the width — verbatim.
+type CanonicalLine = (u32, u32, u32, i64, i64, u64, u64);
+
+fn canonical_forest(forest: &ConfigForest, n_external: usize) -> Vec<CanonicalLine> {
+    let bit = |d: i32| -> u32 {
+        if d > 0 {
+            1 << (d - 1)
+        } else {
+            forest.mask(d).expect("a daughter that resolves")
+        }
+    };
+    // Masses and widths are model constants on both sides, so they compare as
+    // written; quantising them keeps the tuple orderable without inventing a
+    // tolerance that would hide a wrong propagator.
+    let quantise = |v: f64| -> u64 { (v * 1e6).round() as u64 };
+    let mut lines: Vec<CanonicalLine> = forest
+        .lines
+        .iter()
+        .map(|line| {
+            let mut daughters = [bit(line.daughters[0]), bit(line.daughters[1])];
+            daughters.sort_unstable();
+            (
+                forest.mask(line.index).expect("a line that resolves"),
+                daughters[0],
+                daughters[1],
+                line.tprid,
+                line.sprop[0],
+                quantise(line.mass),
+                quantise(line.width),
+            )
+        })
+        .collect();
+    let _ = n_external;
+    lines.sort_unstable();
+    lines
+}
+
+/// The forests a dump carries for its single process directory.
+fn dumped_forests(path: &Path) -> (usize, Vec<ConfigForest>) {
+    let (header, _events) = read_dump(path);
+    let directory = &header["directory"];
+    // The `RUN` record is written once per integration channel, so one directory
+    // appears many times; its subprocess count is what tells two directories
+    // apart, and a single value means the dump holds one ungrouped directory.
+    let rows = directory["RUN"].as_array().expect("RUN rows");
+    let groups: BTreeSet<u64> = rows
+        .iter()
+        .map(|r| r.as_array().expect("RUN row")[3].as_u64().expect("maxsproc"))
+        .collect();
+    assert_eq!(
+        groups.iter().copied().collect::<Vec<u64>>(),
+        vec![1],
+        "the dump holds a grouped or multi-directory process"
+    );
+    let row = rows[0].as_array().expect("RUN row");
+    let n_external = row[1].as_u64().expect("nexternal") as usize;
+    let n_configs = rows
+        .iter()
+        .map(|r| r.as_array().expect("RUN row")[4].as_u64().expect("mapconfig(0)") as usize)
+        .max()
+        .expect("a RUN row");
+
+    // A directory's tables are written once per integration channel, so the same
+    // line arrives many times over.
+    let mut lines: BTreeMap<(usize, i32), ForestLine> = BTreeMap::new();
+    for row in directory["IFOR"].as_array().expect("IFOR rows") {
+        let row = row.as_array().expect("IFOR row");
+        let config = row[1].as_u64().expect("config") as usize;
+        let index = row[2].as_i64().expect("line index") as i32;
+        lines.entry((config, index)).or_insert(ForestLine {
+            index,
+            daughters: [
+                row[3].as_i64().expect("daughter") as i32,
+                row[4].as_i64().expect("daughter") as i32,
+            ],
+            tprid: row[5].as_i64().expect("tprid"),
+            mass: row[6].as_f64().expect("mass"),
+            width: row[7].as_f64().expect("width"),
+            sprop: row[8..]
+                .iter()
+                .map(|v| v.as_i64().expect("sprop"))
+                .collect(),
+        });
+    }
+    let mut configs = vec![ConfigForest::default(); n_configs];
+    for ((config, _), line) in lines {
+        configs[config - 1].lines.push(line);
+    }
+    for config in &mut configs {
+        config.lines.sort_by_key(|line| -line.index);
+    }
+    (n_external, configs)
+}
+
+/// The channel forests derived from vibegraph's own diagrams against the ones
+/// MadGraph generated for the same process.
+///
+/// This is the step the clustering engine did not take: it was given the dump's
+/// `IFOR` records, so everything below them was derived and the forests
+/// themselves were assumed. Here they are produced from the enumerated diagrams
+/// and compared whole — every line's leg set, its daughters' leg sets, both
+/// propagator codes, the mass and the width — against the file MadGraph wrote.
+///
+/// The channel *numbering* is not compared, and cannot be: MadGraph numbers its
+/// configs by its own diagram order and drops the ones its vertex filter
+/// rejects. What is compared is the bijection — every generated channel is one
+/// of ours and every one of ours is generated — together with the QCD order that
+/// partitions them, which is the only thing the merge table reads a channel's
+/// identity for.
+#[test]
+fn derived_channel_forests_match_the_generated_ones() {
+    let dumps = dumps_dir();
+    if !dumps.is_dir() {
+        println!("no kT clustering dumps in {}", dumps.display());
+        return;
+    }
+    let model = common::sm_model();
+    let mut checked = 0usize;
+    let mut lines_checked = 0usize;
+    for (run, process) in DERIVED_FOREST_RUNS {
+        let path = dumps.join(format!("{run}.jsonl.gz"));
+        if !path.is_file() {
+            continue;
+        }
+        let card = vibegraph::ufo::slha::ParamCard::from_file(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../validation/madgraph/output")
+                .join(run)
+                .join("Cards/param_card.dat"),
+        )
+        .expect("param card");
+        let evaluated = vibegraph::ufo::EvaluatedModel::from_model_card(model.clone(), &card);
+
+        let sets = common::generate_with(process, model.as_ref());
+        let set = sets
+            .iter()
+            .find(|s| !s.diagrams.is_empty())
+            .expect("a non-empty subprocess");
+        assert_eq!(
+            sets.iter().filter(|s| !s.diagrams.is_empty()).count(),
+            1,
+            "{run}: {process} enumerates more than one subprocess"
+        );
+        let externals: Vec<vibegraph::ufo::particles::ParticleId> = set
+            .particles_in
+            .iter()
+            .chain(set.particles_out.iter())
+            .map(|name| model.particle_id(name).expect("external in model"))
+            .collect();
+        let derived = vibegraph::coupling::cluster::configs::derive_channels(
+            &set.diagrams,
+            &externals,
+            set.particles_in.len(),
+            model.as_ref(),
+            &evaluated,
+        )
+        .expect("channel forests");
+
+        let (n_external, generated) = dumped_forests(&path);
+        assert_eq!(n_external, derived.set.n_external, "{run}: nexternal");
+        assert_eq!(
+            generated.len(),
+            derived.set.configs.len(),
+            "{run}: {} generated channels against {} derived from {} diagrams",
+            generated.len(),
+            derived.set.configs.len(),
+            set.diagrams.len()
+        );
+
+        let mut mine: Vec<(i64, Vec<CanonicalLine>)> = derived
+            .set
+            .configs
+            .iter()
+            .map(|c| (c.nqcd, canonical_forest(c, n_external)))
+            .collect();
+        let mut theirs: Vec<Vec<CanonicalLine>> = generated
+            .iter()
+            .map(|c| canonical_forest(c, n_external))
+            .collect();
+        let mut mine_forests: Vec<Vec<CanonicalLine>> =
+            mine.iter().map(|(_, f)| f.clone()).collect();
+        mine_forests.sort();
+        theirs.sort();
+        let only_ours: Vec<&Vec<CanonicalLine>> = mine_forests
+            .iter()
+            .filter(|f| !theirs.contains(f))
+            .collect();
+        let only_theirs: Vec<&Vec<CanonicalLine>> = theirs
+            .iter()
+            .filter(|f| !mine_forests.contains(f))
+            .collect();
+        assert!(
+            only_ours.is_empty() && only_theirs.is_empty(),
+            "{run}: {} derived channels MadGraph does not generate and {} generated \
+             channels we do not derive\n  ours:   {:?}\n  theirs: {:?}",
+            only_ours.len(),
+            only_theirs.len(),
+            only_ours.iter().take(2).collect::<Vec<_>>(),
+            only_theirs.iter().take(2).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            mine_forests, theirs,
+            "{run}: the two channel multisets contain the same forests with different \
+             multiplicities"
+        );
+        lines_checked += theirs.iter().map(Vec::len).sum::<usize>();
+
+        mine.sort_by_key(|(nqcd, _)| *nqcd);
+        let orders: BTreeMap<i64, usize> = mine.iter().fold(BTreeMap::new(), |mut acc, (n, _)| {
+            *acc.entry(*n).or_insert(0) += 1;
+            acc
+        });
+        println!(
+            "{run}: {} channels from {} diagrams, {} lines, QCD orders {:?}",
+            derived.set.configs.len(),
+            set.diagrams.len(),
+            theirs.iter().map(Vec::len).sum::<usize>(),
+            orders
+        );
+        checked += 1;
+    }
+    assert_eq!(
+        checked,
+        DERIVED_FOREST_RUNS.len(),
+        "not every single-subprocess dump was compared"
+    );
+    println!(
+        "channel forests: {checked} processes, {lines_checked} lines derived from our own \
+         diagrams and equal to MadGraph's generated configs.inc"
+    );
+}
