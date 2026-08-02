@@ -42,6 +42,7 @@
 
 mod common;
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use common::report::{ChannelSummary, IntegralsRow, SeedResult};
@@ -1353,4 +1354,819 @@ fn sigma_bb_fixed_scale_vs_mg() {
         "[bb_fixed] the seeds scatter by more than they claim: \
          χ²/dof = {chi2:.2} over {runs:?}"
     );
+}
+
+// ──────────────────────────── p p > j j ─────────────────────────────────────
+
+/// The process of the banked `pp_to_jj` run, spelled as its `.mg5` script spells it.
+const JJ_PROCESS: &str = "p p > j j";
+
+/// The banked run directory.
+const JJ_RUN: &str = "pp_to_jj";
+
+/// Independent seeds the `j j` cross section is measured on, for the reason the
+/// ℓℓj sweep gives.
+const JJ_SEEDS: &[u64] = &[20260810, 20260811, 20260812];
+/// Points per survey iteration, and iterations, of the channel-weight adaptation.
+const JJ_ADAPT_SURVEY: usize = 8_000;
+const JJ_ADAPT_ITERS: usize = 5;
+/// VEGAS budget per seed, taken from a measured ladder rather than from cost.
+/// Over five seeds at 75 000, 150 000, 300 000 and 600 000 points an iteration
+/// (`probe_jj_budget_ladder`) this row's estimator is flat in the budget rather
+/// than approaching from below the way the `ℓℓj` rows do, so it is converged well
+/// below the budget it runs at and the comparison is measuring an agreement.
+const JJ_NEVAL: usize = 300_000;
+const JJ_NITER: usize = 10;
+
+/// MadGraph's own concrete subprocesses for a banked run, one entry per
+/// `leshouche.inc` `IDUP` record, as `(incoming, outgoing)` PDG codes.
+///
+/// `leshouche.inc` is the file the colour-flow dictionary is already checked
+/// against, and it is the only place a run states which concrete flavour
+/// assignments its cross section is a sum over. Read from the banked run rather
+/// than from a committed list, so the reference cannot drift from the run it
+/// describes.
+fn madgraph_subprocesses(run: &str, n_in: usize, n_out: usize) -> BTreeSet<(Vec<i32>, Vec<i32>)> {
+    let dir = validation_dir()
+        .join("output")
+        .join(run)
+        .join("SubProcesses");
+    let mut found = BTreeSet::new();
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.is_dir()
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with('P'))
+        })
+        .collect();
+    dirs.sort();
+    assert!(
+        !dirs.is_empty(),
+        "no P* subprocess directory under {}",
+        dir.display()
+    );
+    for d in dirs {
+        let path = d.join("leshouche.inc");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        for line in text.lines() {
+            let Some(rest) = line.split_once("DATA (IDUP(") else {
+                continue;
+            };
+            let Some((_, payload)) = rest.1.split_once(")/") else {
+                continue;
+            };
+            let codes: Vec<i32> = payload
+                .trim_end()
+                .trim_end_matches('/')
+                .split(',')
+                .map(|f| {
+                    f.trim()
+                        .parse::<i32>()
+                        .expect("an IDUP field is an integer")
+                })
+                .collect();
+            assert_eq!(
+                codes.len(),
+                n_in + n_out,
+                "{} lists an IDUP record of {} legs",
+                path.display(),
+                codes.len()
+            );
+            let mut incoming = codes[..n_in].to_vec();
+            incoming.sort_unstable();
+            found.insert((incoming, codes[n_in..].to_vec()));
+        }
+    }
+    found
+}
+
+/// The outgoing-leg orderings MadGraph's banked sample actually emits: how many
+/// distinct flavour assignments it carries, how many of those have their outgoing
+/// swap emitted too, and — over the assignments whose two outgoing flavours differ
+/// — how often the first outgoing leg is the more forward one and how often it is
+/// not.
+fn banked_outgoing_orderings(run: &str) -> (usize, usize, (usize, usize)) {
+    use flate2::read::MultiGzDecoder;
+    use std::io::Read;
+    use vibegraph::lhef::parse::LheFile;
+
+    let path = validation_dir()
+        .join("output")
+        .join(run)
+        .join("Events/run_01/unweighted_events.lhe.gz");
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let mut text = String::new();
+    MultiGzDecoder::new(&bytes[..])
+        .read_to_string(&mut text)
+        .unwrap_or_else(|e| panic!("decompress {}: {e}", path.display()));
+    let events = LheFile::parse(&text)
+        .expect("MadGraph's own file parses")
+        .events;
+
+    let mut patterns: BTreeSet<Vec<i32>> = BTreeSet::new();
+    let mut ordered = (0usize, 0usize);
+    for ev in &events {
+        let codes: Vec<i32> = ev.particles.iter().map(|p| p.pdg).collect();
+        assert_eq!(codes.len(), 4, "a 2 -> 2 record carries four legs");
+        patterns.insert(codes.clone());
+        if codes[2] == codes[3] {
+            continue;
+        }
+        let eta = |p: &vibegraph::lhef::record::LheParticle| {
+            let pt = p.momentum[0].hypot(p.momentum[1]);
+            if pt > 0.0 {
+                (p.momentum[2] / pt).asinh()
+            } else {
+                0.0
+            }
+        };
+        if eta(&ev.particles[2]) > eta(&ev.particles[3]) {
+            ordered.0 += 1;
+        } else {
+            ordered.1 += 1;
+        }
+    }
+    let swapped = patterns
+        .iter()
+        .filter(|c| c[2] != c[3] && patterns.contains(&vec![c[0], c[1], c[3], c[2]]))
+        .count();
+    (patterns.len(), swapped, ordered)
+}
+
+/// This crate's concrete subprocesses for a flavour decomposition, in the same
+/// `(incoming, outgoing)` shape, with the incoming pair sorted so the two sides
+/// agree about a beam ordering neither of them enumerates twice.
+fn our_subprocesses(groups: &FlavorGroups) -> Vec<(Vec<i32>, Vec<i32>)> {
+    let mut out = Vec::new();
+    for g in groups.groups() {
+        for m in g.members() {
+            let mut incoming = m.incoming.to_vec();
+            incoming.sort_unstable();
+            out.push((incoming, m.outgoing.clone()));
+        }
+    }
+    out
+}
+
+/// The concrete subprocess set of `p p > j j`, against the one MadGraph's own
+/// `leshouche.inc` declares.
+///
+/// `p p > j j` is the first banked row whose process card **repeats a
+/// multiparticle label in the final state**, and that is the case the two
+/// enumerations do not treat alike. MadGraph keeps one representative per
+/// *unordered* outgoing assignment; this crate's expansion deduplicates on
+/// `(sorted initial, final state as written)`, so `g u > g u` and `g u > u g`
+/// are two subprocesses here and one there.
+///
+/// Both are then summed over the same labelled `dΦ₂`, whose polar angle runs over
+/// the whole sphere, so the second copy is the first one relabelled and its term
+/// is added twice. The statement is exact — no Monte Carlo, no tolerance:
+///
+/// - every assignment MadGraph lists is one this side lists (nothing is missing);
+/// - every extra one this side lists is the **outgoing swap** of one MadGraph
+///   lists (the surplus is a permutation, not new physics);
+/// - the surplus is exactly one copy per assignment whose two outgoing flavours
+///   differ, and collapsing the permutations at enumeration reproduces MadGraph's
+///   set entry for entry, in MadGraph's own outgoing order.
+///
+/// The surplus is asserted at its measured size rather than at zero, which is the
+/// same shape as `validate_scales`'s declared tie-break exception: the count is
+/// the record of a defect, so a repair moves it to zero here and this assertion
+/// with it, and nothing about it drifts silently in the meantime.
+///
+/// What it cannot see: whether the *diagrams* of a listed subprocess agree, and
+/// anything about the cross section — a set comparison is blind to both. The σ
+/// consequence is measured in [`probe_jj_outgoing_permutation_costs_the_cross_section`].
+#[test]
+fn jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations() {
+    if !dyn_run_present(
+        "jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations",
+        JJ_RUN,
+    ) {
+        return;
+    }
+    let run_dir = validation_dir().join("output").join(JJ_RUN);
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(JJ_PROCESS, &model, &evaluated, &rc);
+
+    let mg = madgraph_subprocesses(JJ_RUN, 2, 2);
+    let ours = our_subprocesses(&groups);
+    let ours_set: BTreeSet<(Vec<i32>, Vec<i32>)> = ours.iter().cloned().collect();
+    assert_eq!(
+        ours.len(),
+        ours_set.len(),
+        "the flavour decomposition lists a concrete subprocess twice"
+    );
+
+    let missing: Vec<_> = mg.difference(&ours_set).cloned().collect();
+    assert!(
+        missing.is_empty(),
+        "MadGraph sums over {} concrete subprocess(es) this side does not enumerate: {missing:?}",
+        missing.len()
+    );
+
+    let surplus: Vec<_> = ours_set.difference(&mg).cloned().collect();
+    let swapped_from_mg = surplus
+        .iter()
+        .filter(|(inc, out)| {
+            let mut rev = out.clone();
+            rev.reverse();
+            mg.contains(&(inc.clone(), rev))
+        })
+        .count();
+    let mg_unequal_outgoing = mg.iter().filter(|(_, out)| out[0] != out[1]).count();
+
+    eprintln!(
+        "[{JJ_RUN}] concrete subprocesses: MadGraph {} ({} with unequal outgoing flavours), \
+         this side {} = {} + {} surplus, of which {} are an outgoing swap of a MadGraph one",
+        mg.len(),
+        mg_unequal_outgoing,
+        ours_set.len(),
+        mg.len(),
+        surplus.len(),
+        swapped_from_mg,
+    );
+
+    assert_eq!(
+        swapped_from_mg,
+        surplus.len(),
+        "some surplus subprocess is not the outgoing permutation of a MadGraph one, \
+         so the difference is more than a permutation"
+    );
+    assert_eq!(
+        surplus.len(),
+        mg_unequal_outgoing,
+        "the surplus is not one copy per assignment with unequal outgoing flavours: it is \
+         either a different defect or a repaired enumeration, and both want this test read \
+         again rather than passed"
+    );
+
+    // The premise, read off MadGraph's own events rather than off the reading of
+    // `dΦ₂`: if the two orderings were distinct subprocesses there, both would
+    // appear in the sample, and the region the second one would cover would be
+    // missing from the first. Neither is so — no emitted assignment's outgoing
+    // swap is also emitted, and inside a single assignment the two outgoing legs
+    // are found in both relative orderings.
+    let (patterns, swapped_pairs, both_orderings) = banked_outgoing_orderings(JJ_RUN);
+    eprintln!(
+        "[{JJ_RUN}] MadGraph's banked sample: {patterns} distinct emitted flavour \
+         assignments, {swapped_pairs} of them with their outgoing swap also emitted; \
+         inside the unequal-outgoing ones the legs are ordered {} / {} either way",
+        both_orderings.0, both_orderings.1,
+    );
+    assert_eq!(
+        swapped_pairs, 0,
+        "MadGraph emits both outgoing orderings of a flavour assignment, so the two are \
+         distinct subprocesses there after all"
+    );
+    assert!(
+        both_orderings.0 > 0 && both_orderings.1 > 0,
+        "MadGraph's events put the two outgoing legs in one relative order only, so its \
+         single representative does not visibly cover the other"
+    );
+
+    // Which representative a collapse would keep. The surviving ordering is the
+    // one the expansion emitted first, and an event record is written on the legs
+    // of whichever that is — so this says whether repairing the count also repairs
+    // the record's leg order, or whether the representative has to be chosen.
+    let collapsed_groups = jj_groups(&model, &evaluated, &rc, true);
+    let collapsed_set: BTreeSet<(Vec<i32>, Vec<i32>)> =
+        our_subprocesses(&collapsed_groups).into_iter().collect();
+    eprintln!(
+        "[{JJ_RUN}] collapsing the permutations at enumeration leaves {} concrete \
+         subprocesses, {} of them in MadGraph's own outgoing order",
+        collapsed_set.len(),
+        collapsed_set.intersection(&mg).count(),
+    );
+    assert_eq!(
+        collapsed_set, mg,
+        "collapsing the outgoing permutations does not reproduce MadGraph's set, so \
+         repairing the count would also need a rule for which representative to keep"
+    );
+
+    // The negative control: a card whose final-state slots draw on *disjoint*
+    // alias sets cannot produce two ordered assignments with the same multiset, so
+    // collapsing the permutations there must change nothing. Without it, the
+    // surplus above could be read as a blanket property of alias expansion rather
+    // than as the repeated label it is.
+    let control_dir = validation_dir().join("output/pp_to_llj_fixed");
+    let control_rc =
+        RunCard::parse_file(&control_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let opts = ParsingOptions::default();
+    let card = parse_proc_card(&format!("generate {LLJ_PROCESS}"), &opts).expect("proc card");
+    let control_sets = generate_from_proc_card(&card, &model).expect("enumeration");
+    let enumerated = control_sets.len();
+    let mut seen: BTreeSet<(Vec<String>, Vec<String>)> = BTreeSet::new();
+    let collapsed = control_sets
+        .iter()
+        .filter(|s| {
+            let mut key = (s.particles_in.clone(), s.particles_out.clone());
+            key.0.sort();
+            key.1.sort();
+            seen.insert(key)
+        })
+        .count();
+    let control_groups = derive_flavor_groups(control_sets, &model, &evaluated, &control_rc)
+        .expect("flavour groups");
+    let control_members: usize = control_groups
+        .groups()
+        .iter()
+        .map(|g| g.members().len())
+        .sum();
+    eprintln!(
+        "[pp_to_llj_fixed] control: {enumerated} enumerated sets, {collapsed} surviving the \
+         same collapse, {control_members} of them carrying diagrams"
+    );
+    assert_eq!(
+        collapsed, enumerated,
+        "the outgoing-permutation collapse drops a set on a process whose final-state \
+         slots draw on disjoint alias sets, so it is not measuring the repeated label"
+    );
+}
+
+/// The flavour decomposition of a process, optionally with the outgoing
+/// permutations of each concrete assignment collapsed onto one representative —
+/// the set MadGraph sums over.
+///
+/// The filter is on the enumerated `DiagramSet`s and nothing in the library
+/// changes: this is the counterfactual arm of
+/// [`probe_jj_outgoing_permutation_costs_the_cross_section`], not a second
+/// production path. `(sorted incoming, sorted outgoing)` is the key, which is
+/// MadGraph's own rule and is sound for a cross section because `dΦ_n` is
+/// integrated over the whole labelled region and every cut of the card is a
+/// per-class one: a permutation of the outgoing legs relabels the integral
+/// without moving it.
+fn jj_groups(
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+    collapse_permutations: bool,
+) -> FlavorGroups {
+    let opts = ParsingOptions::default();
+    let proc_card = parse_proc_card(&format!("generate {JJ_PROCESS}"), &opts).expect("proc card");
+    let mut sets = generate_from_proc_card(&proc_card, model).expect("enumeration");
+    if collapse_permutations {
+        let mut seen: BTreeSet<(Vec<String>, Vec<String>)> = BTreeSet::new();
+        sets.retain(|s| {
+            let mut key = (s.particles_in.clone(), s.particles_out.clone());
+            key.0.sort();
+            key.1.sort();
+            seen.insert(key)
+        });
+    }
+    derive_flavor_groups(sets, model, evaluated, rc).expect("flavour groups")
+}
+
+/// What the outgoing-permutation surplus of
+/// [`jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations`] costs the
+/// cross section, measured against a prediction the bank makes independently.
+///
+/// The counting statement says the surplus is one extra copy of every assignment
+/// whose outgoing flavours differ. If that is what it is, then
+///
+/// ```text
+/// σ(as enumerated) = σ(MadGraph) + σ(MadGraph, restricted to unequal outgoing flavours)
+/// ```
+///
+/// and the banked run brackets the second term without any fit: its five
+/// subprocess directories carry their own cross sections, and three of them —
+/// `gg_qq`, `gq_gq` and the part of `qq_qq` that is not `q q → q q` — are exactly
+/// the unequal-outgoing ones. `gg_gg` and `qq_gg` are not. So the ratio must land
+/// in the interval those directories imply, and a defect of any other shape
+/// almost certainly would not.
+///
+/// The second arm collapses the permutations at enumeration and integrates the
+/// same card, which is the direct falsifier: if the surplus is the whole of the
+/// disagreement, that arm agrees with MadGraph.
+///
+/// What it cannot see: whether the collapsed arm agrees for the *right* reason at
+/// the sub-percent level — that is the seed sweep and the budget ladder in
+/// [`probe_jj_budget_ladder`], and below them the per-event scale replay
+/// `validate_scales` already runs on this run's 10 000 events.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_jj_outgoing_permutation_costs_the_cross_section() {
+    if !dyn_run_present(
+        "probe_jj_outgoing_permutation_costs_the_cross_section",
+        JJ_RUN,
+    ) {
+        return;
+    }
+    let run_dir = validation_dir().join("output").join(JJ_RUN);
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+
+    // The bracket the banked per-directory cross sections imply.
+    let dirs = ["P1_gg_gg", "P1_gg_qq", "P1_gq_gq", "P1_qq_gg", "P1_qq_qq"];
+    let mut per_dir = Vec::new();
+    for d in dirs {
+        let base = run_dir.join("SubProcesses").join(d);
+        let mut acc = 0.0;
+        let mut entries: Vec<PathBuf> = std::fs::read_dir(&base)
+            .unwrap_or_else(|e| panic!("read {}: {e}", base.display()))
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.join("results.dat").is_file())
+            .collect();
+        entries.sort();
+        for g in entries {
+            let text = std::fs::read_to_string(g.join("results.dat")).expect("channel results");
+            let first = text.split_whitespace().next().expect("a cross section");
+            acc += first
+                .replace(['E', 'D'], "e")
+                .parse::<f64>()
+                .expect("a number");
+        }
+        eprintln!("  {d:<10} σ = {acc:.6e} pb");
+        per_dir.push((d, acc));
+    }
+    let total: f64 = per_dir.iter().map(|(_, v)| v).sum();
+    // `gg > q q~` and `g q > g q` are entirely unequal-outgoing; `g g > g g` and
+    // `q q~ > g g` are entirely equal-outgoing; `q q > q q` mixes the two and is
+    // the only unresolved part, so it sets the width of the bracket.
+    let certain: f64 = per_dir
+        .iter()
+        .filter(|(d, _)| *d == "P1_gg_qq" || *d == "P1_gq_gq")
+        .map(|(_, v)| v)
+        .sum();
+    let unresolved: f64 = per_dir
+        .iter()
+        .filter(|(d, _)| *d == "P1_qq_qq")
+        .map(|(_, v)| v)
+        .sum();
+    eprintln!(
+        "  banked per-directory total {total:.6e} pb against results.dat {mg:.6e} pb; \
+         predicted σ(as enumerated)/σ(MG) ∈ [{:.4}, {:.4}]",
+        1.0 + certain / total,
+        1.0 + (certain + unresolved) / total,
+    );
+
+    for (label, collapse) in [("as enumerated", false), ("permutations collapsed", true)] {
+        let groups = jj_groups(&model, &evaluated, &rc, collapse);
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+        let mut summary = Vec::new();
+        let (sigma, err) = run_seed_shaped(
+            &groups,
+            &amps,
+            &model,
+            &evaluated,
+            &set,
+            &pdf,
+            &rc,
+            (JJ_ADAPT_SURVEY, JJ_ADAPT_ITERS, JJ_NEVAL, JJ_NITER),
+            JJ_SEEDS[0],
+            true,
+            &mut summary,
+            true,
+            ScaleShape::PerEvent,
+        );
+        eprintln!(
+            "  {label:<24}: {} subprocesses over {} groups, {} channels | \
+             σ = {sigma:.6e} ± {err:.3e} pb | σ/σ_MG = {:.4} | rel = {:+.4} | pull = {:+.2}",
+            groups
+                .groups()
+                .iter()
+                .map(|g| g.members().len())
+                .sum::<usize>(),
+            groups.groups().len(),
+            summary.len(),
+            sigma / mg,
+            sigma / mg - 1.0,
+            (sigma - mg) / (err * err + mg_err * mg_err).sqrt(),
+        );
+    }
+}
+
+/// Seed sweep and budget ladder for the `j j` row, on both arms.
+///
+/// Two axes, because neither alone is evidence: a seed sweep cannot see a bias
+/// shared by every seed (VEGAS's `1/σ²` iteration combination reports an
+/// under-sampled region *confidently*), and a single budget cannot tell a
+/// converged estimator from one still climbing. The collapsed arm is the one a
+/// future gate would run, so its convergence is what a tolerance would be set
+/// against; the enumerated arm is what production integrates today and is
+/// measured at the gate budget only.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_jj_budget_ladder() {
+    if !dyn_run_present("probe_jj_budget_ladder", JJ_RUN) {
+        return;
+    }
+    let run_dir = validation_dir().join("output").join(JJ_RUN);
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let seeds = [20260810u64, 20260811, 20260812, 20260813, 20260814];
+
+    eprintln!("── {JJ_RUN}: MG {mg:.6e} ± {mg_err:.3e} pb ──");
+    for (label, collapse, rungs) in [
+        ("as enumerated", false, &[300_000usize][..]),
+        (
+            "permutations collapsed",
+            true,
+            &[75_000usize, 150_000, 300_000, 600_000][..],
+        ),
+    ] {
+        let groups = jj_groups(&model, &evaluated, &rc, collapse);
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+        for &neval in rungs {
+            let mut summary = Vec::new();
+            let mut runs: Vec<SeedResult> = Vec::new();
+            for &seed in &seeds {
+                let (sigma, err) = run_seed_shaped(
+                    &groups,
+                    &amps,
+                    &model,
+                    &evaluated,
+                    &set,
+                    &pdf,
+                    &rc,
+                    (JJ_ADAPT_SURVEY, JJ_ADAPT_ITERS, neval, JJ_NITER),
+                    seed,
+                    true,
+                    &mut summary,
+                    true,
+                    ScaleShape::PerEvent,
+                );
+                runs.push(SeedResult {
+                    seed,
+                    sigma_pb: sigma,
+                    sigma_err_pb: err,
+                });
+            }
+            let (mean, mean_err, chi2) = combine_seeds(&runs);
+            let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
+            eprintln!(
+                "  {label:<24} neval {neval:>7}: σ = {mean:.6e} ± {mean_err:.3e} pb \
+                 (χ²/dof {chi2:.2}) | rel {:+.4} | pull {pull:+.2} | per seed {}",
+                mean / mg - 1.0,
+                runs.iter()
+                    .map(|r| format!("{:.5e}", r.sigma_pb))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
+    }
+}
+
+/// The channel-partition ambiguity on `p p → j j`, measured rather than inherited.
+///
+/// Once the cluster scale is read in the channel a point was drawn in, σ stops
+/// being independent of the multichannel selection weights `αⱼ`: they decide
+/// *which* scale a region of phase space is evaluated at, not merely how often it
+/// is visited. The size of that is a property of the process, and
+/// this row is where it should be largest — every leg is coloured and no two
+/// channels share a merge graph — so it is measured here instead of taken from
+/// the partonic rows.
+///
+/// Both arms are measured, at the converged `αⱼ` and at uniform `αⱼ`
+/// (`n_adapt_iter = 0`) with everything else held, one seed each.
+///
+/// **`pp_to_llj_fixed` is the negative control**, on the same hadronic path with
+/// the same instrument: its card fixes all three scales, so its integrand is a
+/// function of the momenta alone and its two partitions must agree to Monte-Carlo
+/// error. Without it, a gap measured here could be the uniform-`α` arm's own
+/// variance rather than the scale reading the channel.
+///
+/// What it cannot see: MadEvent's partition, which is neither of these — single-
+/// diagram enhancement weights channel `c` by `AMP2_c(p)/Σ AMP2`, a function of
+/// the point rather than a constant, so it is not reachable from any choice of
+/// `αⱼ`. The gap below brackets the ambiguity; it does not locate MadGraph inside
+/// it.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_jj_channel_partition() {
+    if !dyn_run_present("probe_jj_channel_partition", JJ_RUN) {
+        return;
+    }
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+
+    let jj_dir = validation_dir().join("output").join(JJ_RUN);
+    let jj_rc = RunCard::parse_file(&jj_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (jj_mg, _) = banked_llj_sigma(&jj_dir);
+    let control_dir = validation_dir().join("output/pp_to_llj_fixed");
+    let control_rc =
+        RunCard::parse_file(&control_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (control_mg, _) = banked_llj_sigma(&control_dir);
+
+    struct Arm<'a> {
+        label: &'a str,
+        groups: FlavorGroups,
+        rc: &'a RunCard,
+        mg: f64,
+        shape: ScaleShape,
+    }
+    let arms = vec![
+        Arm {
+            label: "j j, as enumerated",
+            groups: jj_groups(&model, &evaluated, &jj_rc, false),
+            rc: &jj_rc,
+            mg: jj_mg,
+            shape: ScaleShape::PerEvent,
+        },
+        Arm {
+            label: "j j, permutations collapsed",
+            groups: jj_groups(&model, &evaluated, &jj_rc, true),
+            rc: &jj_rc,
+            mg: jj_mg,
+            shape: ScaleShape::PerEvent,
+        },
+        Arm {
+            label: "llj_fixed (control)",
+            groups: groups_for(LLJ_PROCESS, &model, &evaluated, &control_rc),
+            rc: &control_rc,
+            mg: control_mg,
+            shape: ScaleShape::FixedAtMz,
+        },
+    ];
+
+    for arm in &arms {
+        let amps: Vec<BoundAmplitude<f64>> = arm
+            .groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+        let mut measured = Vec::new();
+        for adapt_iters in [JJ_ADAPT_ITERS, 0] {
+            let mut summary = Vec::new();
+            measured.push(run_seed_shaped(
+                &arm.groups,
+                &amps,
+                &model,
+                &evaluated,
+                &set,
+                &pdf,
+                arm.rc,
+                (JJ_ADAPT_SURVEY, adapt_iters, JJ_NEVAL, JJ_NITER),
+                JJ_SEEDS[0],
+                true,
+                &mut summary,
+                true,
+                match arm.shape {
+                    ScaleShape::PerEvent => ScaleShape::PerEvent,
+                    ScaleShape::FixedAtMz => ScaleShape::FixedAtMz,
+                },
+            ));
+        }
+        let (adapted, err_a) = measured[0];
+        let (uniform, err_u) = measured[1];
+        eprintln!(
+            "  {:<28}: adapted α {adapted:.6e} ± {err_a:.2e} | uniform α {uniform:.6e} ± \
+             {err_u:.2e} | partition gap {:+.3e} (Monte-Carlo {:.1e}) | MG rel adapted {:+.3e} \
+             uniform {:+.3e}",
+            arm.label,
+            uniform / adapted - 1.0,
+            (err_a * err_a + err_u * err_u).sqrt() / adapted,
+            adapted / arm.mg - 1.0,
+            uniform / arm.mg - 1.0,
+        );
+    }
+}
+
+/// σ(p p → j j) at MadGraph's default dynamical scale, against the banked
+/// `pp_to_jj` run — **measured and recorded, not enforced.**
+///
+/// The canonical leading-order QCD process on MadGraph's shipped run-card
+/// defaults, and the row that needs the whole chain at once: flavour groups whose
+/// members carry *unequal* identical-particle symmetry factors, a per-event kT
+/// cluster scale in the integration channel each point was drawn in, and a
+/// multichannel over a mixed subprocess set.
+///
+/// **What it measures, and why it is not a gate.** The cross section is high by
+/// about `36%`, and the reason is neither the scale nor the maps nor a tolerance:
+/// this is the first banked row whose process card repeats a multiparticle label
+/// in the final state, and the two enumerations do not treat that alike.
+/// MadGraph keeps one representative per *unordered* outgoing assignment; this
+/// crate's expansion deduplicates on `(sorted initial, final state as written)`,
+/// so `g u > g u` and `g u > u g` are two subprocesses here and one there, and
+/// both are summed over the same labelled `dΦ₂`. The surplus is counted exactly
+/// and with no tolerance by
+/// [`jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations`], and
+/// [`probe_jj_outgoing_permutation_costs_the_cross_section`] closes it: collapsing
+/// the permutations at enumeration — the library untouched — puts this row on
+/// MadGraph inside the reference's own Monte-Carlo error.
+///
+/// So the cell is informational with the disagreement recorded, rather than a
+/// widened tolerance around a number that is wrong for a known reason.
+///
+/// What the number can and cannot see, once the surplus is out of the way: σ is a
+/// scalar, so a clustering that got individual events wrong while preserving their
+/// average would pass it. That is what `validate_scales` replays this run's 10 000
+/// events for, field by field against MadGraph's own printed `SCALUP` and
+/// `<rscale>`.
+#[test]
+fn sigma_jj_dynamical_scale_vs_mg() {
+    if !dyn_run_present("sigma_jj_dynamical_scale_vs_mg", JJ_RUN) {
+        return;
+    }
+    let run_dir = validation_dir().join("output").join(JJ_RUN);
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(JJ_PROCESS, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+
+    let mut summary = Vec::new();
+    let mut runs: Vec<SeedResult> = Vec::new();
+    for &seed in JJ_SEEDS {
+        let (sigma, err) = run_seed_shaped(
+            &groups,
+            &amps,
+            &model,
+            &evaluated,
+            &set,
+            &pdf,
+            &rc,
+            (JJ_ADAPT_SURVEY, JJ_ADAPT_ITERS, JJ_NEVAL, JJ_NITER),
+            seed,
+            // Every diagram of `p p > j j` is a strong vertex.
+            true,
+            &mut summary,
+            true,
+            ScaleShape::PerEvent,
+        );
+        eprintln!(
+            "[jj seed {seed}] vibegraph σ = {sigma:.6e} ± {err:.3e} pb | rel = {:+.4}",
+            sigma / mg - 1.0,
+        );
+        runs.push(SeedResult {
+            seed,
+            sigma_pb: sigma,
+            sigma_err_pb: err,
+        });
+    }
+
+    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
+    let rel = mean / mg - 1.0;
+    eprintln!(
+        "[jj] INFO vibegraph σ = {mean:.6e} ± {mean_err:.3e} pb ({} seeds, χ²/dof = {chi2:.2}) | \
+         MG σ = {mg:.6e} ± {mg_err:.3e} pb | pull = {pull:+.2} | rel = {rel:+.4} \
+         (the outgoing-permutation surplus, measured)",
+        runs.len()
+    );
+
+    let mut row = IntegralsRow::new(JJ_RUN, JJ_PROCESS, "info");
+    row.status = "info";
+    row.sigma_vg_pb = mean;
+    row.sigma_vg_err_pb = mean_err;
+    row.sigma_mg_pb = mg;
+    row.sigma_mg_err_pb = mg_err;
+    row.pull = pull;
+    row.rel = rel;
+    row.chi2_dof = chi2;
+    row.seeds = runs.iter().map(|r| r.seed).collect();
+    row.per_seed = runs.clone();
+    row.neval = JJ_NEVAL;
+    row.niter = JJ_NITER;
+    row.subsampler = summary;
+    row.note = Some(
+        "measured, not enforced: the flavour decomposition of a process whose card \
+         repeats a multiparticle label in the final state carries one extra copy of \
+         every concrete subprocess with unequal outgoing flavours (52 surplus over \
+         MadGraph's 65, counted exactly by \
+         jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations), and both \
+         copies are summed over the same labelled phase space. Collapsing them at \
+         enumeration puts this row inside MadGraph's own Monte-Carlo error"
+            .to_string(),
+    );
+    row.write();
 }
