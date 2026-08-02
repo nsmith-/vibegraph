@@ -4,7 +4,7 @@
 #
 # Usage:
 #   pixi run fetch-refdata
-#   VIBEGRAPH_REFDATA_SOURCE=/path/to/vibegraph-refdata-1.tar.zst bash validation/fetch_refdata.sh
+#   VIBEGRAPH_REFDATA_SOURCE=/path/to/vibegraph-refdata-4.tar.zst bash validation/fetch_refdata.sh
 #
 # A work area that already holds process directories is left untouched: on a
 # machine that generates the references, this is a no-op. Which archive, from
