@@ -27,6 +27,13 @@
 //! LHAPDF's own `LogBicubicInterpolator` — the algorithm MadGraph evaluates
 //! PDFs through.
 //!
+//! A third kind of gate shares the same files and the same reference library. A set
+//! tabulates the `αs` it was fitted at alongside its densities, LHAPDF reads
+//! those knots with a different interpolator again (`AlphaS_Ipol`, a cubic in
+//! `ln Q²`), and `pdlabel = lhapdf` makes that reading MadGraph's coupling. The
+//! banked events pin it wherever their scales land; the probes here cover what
+//! they cannot reach — the ends of the table and past them.
+//!
 //! Blind spot: an oracle of x·f values cannot see a mislabelled flavor whose
 //! grid values happen to coincide, nor a global convention shared by both
 //! libraries; and the seam gate confirms the walk lands each probe in a band
@@ -34,7 +41,9 @@
 //! structure was traversed.
 
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use vibegraph::pdf::alphas::{GridAlphaS, TABULATED_TYPE};
 use vibegraph::pdf::PdfSet;
 
 /// Both sides parse the same ASCII float tokens independently (Rust's
@@ -52,6 +61,20 @@ struct Oracle {
     seams: Vec<f64>,
     subgrids: Vec<OracleSubgrid>,
     points: Vec<OraclePoint>,
+    /// The set's `AlphaS_Type`. The probes below are `AlphaS_Ipol`'s values, so
+    /// a set that derives its coupling some other way would need a different
+    /// comparison rather than a looser one.
+    #[serde(default)]
+    alphas_type: String,
+    #[serde(default)]
+    alphas: Vec<OracleAlphaPoint>,
+}
+
+#[derive(Deserialize)]
+struct OracleAlphaPoint {
+    category: String,
+    q: f64,
+    alphas: f64,
 }
 
 #[derive(Deserialize)]
@@ -486,6 +509,123 @@ fn multigrid_value_is_continuous_across_seams() {
         assert!(
             (v_above - v_at).abs() <= 1e-4 * scale,
             "value jumps above seam Q²={seam}: {v_at} vs {v_above}"
+        );
+    }
+}
+
+/// How far this crate's `αs` may sit from LHAPDF's on the same probe scale.
+///
+/// Both sides run `AlphaS_Ipol`'s cubic over the same knots, so the residual is
+/// arithmetic noise around a number of order `0.1`: a `ln` per query in the
+/// interpolating branch, a `log10` pair and a `powf` in the branch below the
+/// table, each good to an ulp or so. The bound sits two orders above that, which
+/// is headroom for a system `libm` that rounds those differently and still four
+/// orders below the `1.7e-4` a straight-line reading of the same knots would
+/// cost mid-interval.
+const ALPHA_S_REL_TOL: f64 = 1e-14;
+
+/// `αs(Q)` against LHAPDF's own values, over the whole tabulated range and past
+/// both ends of it.
+///
+/// The banked MadGraph events pin the interpolation event by event
+/// (`validate_alphas.rs`), but only where their scales land: every one of the
+/// 20 000 sits strictly inside the table, so the two continuations — frozen above
+/// the last knot, a log-log straight line below the first — have no event behind
+/// them at all. The probe categories below are where that gap is closed, and the
+/// `threshold` ones (only the multigrid set has a repeated scale, at `Q = 4.92`)
+/// are the only reference for the subgrid split.
+///
+/// Blind spot: an `αs(Q)` oracle says nothing about *which* scale a process
+/// evaluates the coupling at — that is `validate_scales.rs` — and a probe set is
+/// a finite sample, so it cannot exclude a disagreement between probes. The event
+/// oracle is what covers the interior densely; this covers the shape of the
+/// range.
+#[test]
+fn alpha_s_matches_lhapdf_across_the_table_and_past_both_ends() {
+    for name in ["oracle.json", "oracle_multigrid.json"] {
+        let oracle = load_oracle_named(name);
+        assert_eq!(
+            oracle.alphas_type, TABULATED_TYPE,
+            "{name}: the oracle was dumped from a set whose alpha_s is not tabulated"
+        );
+        let set = load_set(&oracle);
+        let grid =
+            GridAlphaS::from_info(&set.info.alpha_s).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!(
+            !oracle.alphas.is_empty(),
+            "{name}: carries no alpha_s probes; regenerate with \
+             `pixi run -e madgraph generate-pdf-oracle`"
+        );
+
+        let mut by_category: BTreeMap<&str, (usize, f64, f64)> = BTreeMap::new();
+        for probe in &oracle.alphas {
+            let got = grid.eval(probe.q);
+            let rel = (got - probe.alphas).abs() / probe.alphas.abs();
+            let entry = by_category
+                .entry(probe.category.as_str())
+                .or_insert((0, 0.0, 0.0));
+            entry.0 += 1;
+            // `>=` so the reported scale is a real probe even when every
+            // category agrees exactly and there is no strict worst.
+            if rel >= entry.1 {
+                *entry = (entry.0, rel, probe.q);
+            }
+        }
+        for (category, (n, worst, at)) in &by_category {
+            println!("{name} {category}: {n} probes, worst {worst:.2e} at Q = {at}");
+            assert!(
+                *worst <= ALPHA_S_REL_TOL,
+                "{name} {category}: alpha_s misses LHAPDF by {worst:.2e} at Q = {at}"
+            );
+        }
+        // Every branch of the reading has to be exercised, or the gate is a
+        // statement about the interior wearing the range's name.
+        for required in ["knot", "interval", "above_qmax", "below_qmin"] {
+            assert!(
+                by_category.contains_key(required),
+                "{name}: no {required} probes"
+            );
+        }
+    }
+}
+
+/// The frozen continuation above the table, read off LHAPDF's own probes rather
+/// than off the source it was derived from.
+///
+/// This is the branch a 13 TeV collider reaches on a set whose `αs` table stops
+/// at 10 TeV, and the whole reason a dynamical scale is evaluable there at all.
+/// It is asserted separately from the tolerance sweep above because it is a
+/// *shape* claim — one value, however far past the table — and a sweep that
+/// happened to agree at three nearby probes would not say that.
+#[test]
+fn above_the_alpha_s_table_lhapdf_freezes_rather_than_extrapolates() {
+    for name in ["oracle.json", "oracle_multigrid.json"] {
+        let oracle = load_oracle_named(name);
+        let set = load_set(&oracle);
+        let last = *set.info.alpha_s.vals.last().expect("tabulated alpha_s");
+        let above: Vec<&OracleAlphaPoint> = oracle
+            .alphas
+            .iter()
+            .filter(|p| p.category == "above_qmax")
+            .collect();
+        assert!(above.len() >= 3, "{name}: too few probes above the table");
+        let spread = above
+            .iter()
+            .map(|p| (p.alphas - last).abs())
+            .fold(0.0f64, f64::max);
+        assert_eq!(
+            spread, 0.0,
+            "{name}: LHAPDF's alpha_s above the table is not the last tabulated \
+             value {last}"
+        );
+        let (lo, hi) = (
+            above.iter().map(|p| p.q).fold(f64::MAX, f64::min),
+            above.iter().map(|p| p.q).fold(0.0f64, f64::max),
+        );
+        println!(
+            "{name}: alpha_s frozen at {last} over Q = {lo} .. {hi} \
+             ({} probes)",
+            above.len()
         );
     }
 }

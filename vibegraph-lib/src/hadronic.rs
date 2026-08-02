@@ -114,12 +114,6 @@ pub enum HadronicError {
     MissingAlphaS,
     #[error("channel forests for the clustering scale: {0}")]
     Channels(#[from] crate::coupling::cluster::configs::ConfigError),
-    #[error(
-        "the PDF set tabulates alpha_s only up to Q = {q_max} GeV, and a per-event scale on a \
-         {collider} GeV collider can exceed it; LHAPDF extrapolates past its table and this \
-         crate does not, so the run is refused rather than evaluated off the end of it"
-    )]
-    GridAlphaSBelowCollider { q_max: f64, collider: f64 },
 }
 
 /// The run card's per-event scale prescription, bound to one process.
@@ -215,19 +209,6 @@ impl EventScaleSource {
         let alpha_s = needs_alpha_s
             .then(|| AlphaSSource::from_run_card(card, param_card_as, grid))
             .transpose()?;
-        // A per-event scale is bounded by the collider energy and by nothing
-        // smaller, so a tabulated coupling that stops below it can be asked for a
-        // value it does not have — on some events, not on all, which is the worst
-        // way for it to surface. The bound is checked once here instead.
-        if !choice.is_fully_fixed() {
-            if let Some(table) = alpha_s.as_ref().and_then(AlphaSSource::grid) {
-                let q_max = table.q_range().1;
-                let collider = card.float("ebeam1") + card.float("ebeam2");
-                if q_max < collider {
-                    return Err(HadronicError::GridAlphaSBelowCollider { q_max, collider });
-                }
-            }
-        }
         let kind = if choice.is_fully_fixed() {
             // A fully fixed prescription returns the card's constants without
             // reading the event, so any event resolves it.
