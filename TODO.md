@@ -285,20 +285,35 @@ One line each; the note is the full record. Earlier sprints
      one channel out of 615), `pp_to_llj_qcd2_qed2` is skipped as D4's
      duplicate, and `pp_to_jj` carries 9 events in 10 000 admitted only by the
      crossing-inflation signature. §K3.5's open thread is closed by explanation.
-  4. **Gate** — flip the four llj partonic σ rows (`uux_to_epemg`,
+  4. ✅ **`αs` grid fidelity** (note 28 §K5a) — both of K4's blockers closed,
+     and the second closed the first. `GridAlphaS` *is* LHAPDF's
+     `AlphaS_Ipol`: cubic Hermite in `ln Q²`, slopes central inside a subgrid
+     and one-sided at its ends, the table cut at every repeated `Q²`. So
+     `pp_to_jj` and `pp_to_llj_dyn` join `banked_events_reproduce_aqcdup` —
+     **280 000 events across 28 runs inside their printing budget, worst
+     0.999**, where a straight line through the same knots misses by 1777 and
+     1076 budgets on 9976 and 9993 of their 10 000 events. `αs(M_Z)` off the set
+     now equals MadGraph's
+     17-digit report bit for bit (`GRID_ALPHA_S_TOL` `1e-7 → 1e-14`). Past the
+     top knot LHAPDF *freezes* `αs` at the last tabulated value, so a 10 TeV
+     table is readable at a 13 TeV collider and
+     `HadronicError::GridAlphaSBelowCollider` is deleted. **No banked event
+     reaches that branch** (largest `SCALUP` 845.5 GeV), so it and the power law
+     below the table are pinned by 414 new LHAPDF probe values in
+     `oracle.json` / `oracle_multigrid.json` — all reproduced at `0.0`
+     relative.
+  5. **Gate** — flip the four llj partonic σ rows (`uux_to_epemg`,
      `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux`) from `blocked` to GATE —
      banked, cheap and waiting on nothing else — then re-gate σ(pp→ℓ⁺ℓ⁻j)
      against a *dynamical*-scale MG run: the fixed-scale row is already
      enforced, so the whole rest of that chain is held fixed and only the scale
-     moves. The scale-row flips themselves are done (session 3 above).
-     **Two blockers found in K4** (note 28 §K4.6), both about the coupling
-     rather than the scale: NNPDF23 tabulates `αs` only to 10 TeV and a
-     per-event scale on a 13 TeV collider can exceed it (the run is now refused
-     at setup naming the range), and `GridAlphaS` reads the set's knots
-     linearly where LHAPDF reads them with a cubic — worth `1e-8` at `M_Z` but
-     `~1.7e-4` mid-interval, measured at 1076-1777 printing budgets on the two
-     new dynamical lhapdf runs. K5 must size that against the σ agreement it is
-     demonstrating before flipping the dynamical rows.
+     moves. The scale-row flips themselves are done (session 3 above), and the
+     coupling systematic is gone (session 4). **The remaining blocker is the
+     same ceiling one level down, and it is measured, not feared**: the parton
+     *density* grid also stops at 10 TeV and `PdfMember::xfx_q2` refuses past
+     it, and `integrate` on the dynamical llj card now reaches `Q = 10647 GeV`
+     before stopping there. Clearing it needs LHAPDF's `Extrapolator`, not a
+     wider bound (note 28 §K5a.5).
   (`coupling/scales.rs`, `validate_scales.rs`, note 22 §1.3/§5.)
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by

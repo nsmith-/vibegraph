@@ -532,14 +532,16 @@ mod tests {
         );
     }
 
-    /// A two-knot stand-in for a set's `AlphaS_*` block, bracketing `M_Z`.
+    /// A stand-in for a set's `AlphaS_*` block, starting at `M_Z`. Three knots is
+    /// the shortest table the tabulated reading accepts, since its cubic takes a
+    /// finite-difference slope at each end of the interval it selected.
     fn grid_info() -> AlphaSInfo {
         AlphaSInfo {
             mz: 0.130,
             order_qcd: 0,
             kind: "ipol".to_string(),
-            qs: vec![ZMASS, 2.0 * ZMASS],
-            vals: vec![0.13, 0.12],
+            qs: vec![ZMASS, 2.0 * ZMASS, 4.0 * ZMASS],
+            vals: vec![0.13, 0.12, 0.11],
             lambda4: 0.276,
             lambda5: 0.166,
         }
@@ -555,7 +557,7 @@ mod tests {
         let source = AlphaSSource::from_run_card(&c, 0.118, Some(&info)).unwrap();
         assert!(source.running().is_none());
         assert_eq!(source.eval(ZMASS), 0.13);
-        assert_eq!(source.grid().unwrap().knots(), 2);
+        assert_eq!(source.grid().unwrap().knots(), 3);
     }
 
     /// Every other label keeps the beta-function solve, and supplying a set does
