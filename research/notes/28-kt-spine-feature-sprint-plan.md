@@ -2000,3 +2000,260 @@ recorded in TODO.md) but is now 2.79σ rather than 3.12σ from it.
    entry per rung in chain order, with a version-5 reader that upgrades the old
    scalar to a one-entry chain (which is what it always was — a version-5 writer
    left every ladder all-timelike).
+## K3 — engine vs oracle: results and consumed state
+
+The engine is `vibegraph-lib/src/coupling/cluster/`: `graph.rs` (the merge graph
+a directory's channel forests imply), `kt.rs` (`cluster.f`), `setclscales.rs`
+(`reweight.f`'s walk and the two scale formulas). The comparison against K2's
+dumps is `vibegraph-lib/tests/validate_kt_cluster.rs`, gated on
+`extended-validation` and skipped when the work area has no dumps.
+
+### K3.1 Result
+
+**All 90 000 dumped events reproduce, merge sequence and scales.** The gate is
+a relative agreement of `1e-12` — four orders above the last-ulp spread of
+`pow`, `cosh` and `log` between two libms, and four below anything a wrong
+branch could produce. The *observed* worst difference over every compared
+quantity of every event is `0.0`: both sides evaluate the same expressions on
+the same inputs in the same order, so on this platform they agree to the bit.
+That is reported, not required — the assertion stays at `1e-12`, since a system
+libm may legitimately differ in the last place.
+
+| run | events | sequences | scales | worst dj | worst μ | ambiguous dirs | carried flags |
+|---|---|---|---|---|---|---|---|
+| `bbx_to_ccx_emmm_qcd0` | 10000 | 10000 | 10000 | 0 | 0 | 0 | 81 |
+| `ee_to_mumu_tata_qcd0` | 10000 | 10000 | 10000 | 0 | 0 | 0 | 0 |
+| `ee_to_mumua` | 10000 | 10000 | 10000 | 0 | 0 | 0 | 0 |
+| `ee_to_ttx` | 10000 | 10000 | 10000 | 0 | 0 | 0 | 0 |
+| `pp_to_bb_qcd2` | 10000 | 10000 | 10000 | 0 | 0 | 3 | 0 |
+| `pp_to_llj` | 10000 | 10000 | 10000 | 0 | 0 | 8 | 0 |
+| `pp_to_llj_qcd2_qed2` | 10000 | 10000 | 10000 | 0 | 0 | 8 | 0 |
+| `uux_to_ccx_emmm_qcd0` | 10000 | 10000 | 10000 | 0 | 0 | 0 | 163 |
+| `uux_to_uux` | 10000 | 10000 | 10000 | 0 | 0 | 0 | 0 |
+
+2 402 444 candidate pairs and 120 whole merge tables were compared. The
+comparison is finer than the scale in seven separate places, each of which
+found a real bug during the session: every candidate pair's admissibility, the
+arm of the measure it took, its raw and inflated values, the number of channels
+`findmt` left alive and `zclus`; every merge's participating leg sets, kind,
+scale, `mt2ij`, `zcl` and written leg numbers; the winner of every pass; every
+frame change's fired flag, `nleft` and boost vector; the surviving channel list
+either side of the point the integration channel claims it; the on-shell
+resonance list; `jfirst`/`jlast`/`jcentral` raw and final; every line's PDG,
+provenance and jet flag; the jet tags and jet code; which of the two scale
+rewrites fired; every vertex scale after them; and the branch index of both
+scale formulas. **Every attempt** is compared, not only the accepted one — the
+1873 `pp_to_llj` events that re-cluster have both of their clusterings checked.
+
+Non-vacuity is asserted, not assumed: the test reproduces the manifest's own
+per-run `coverage` counts branch for branch (`candidate_measure`, `boost`,
+`memo`, `mur_branch`, `muf_branch`, `beam_crossing_inflation`,
+`cluster_calls_per_event`, `igraphs1_is_iconfig`, `mt2last_override`,
+`jcentral_override_beam*`), and fails if the engine ever takes a branch the
+reference never took.
+
+### K3.2 Declared consumed state — K4's replay-scope answer
+
+Per event, the engine is *given*:
+
+1. **`iconfig`** (the integration channel) and **`iproc`** (the subprocess).
+   Both are live, not inert: §K1.11's finding 2 is confirmed three times over.
+2. **The momenta as `cluster()` received them**, from the dump's `MOM` records
+   rather than the LHE's ten digits.
+3. **`njetstore(iconfig)` at event entry.** The memo *logic* is derived — the
+   1873 `pp_to_llj` restricted re-clusters are the engine's own decision, and
+   they match one for one — but the stored count itself is a per-directory
+   history the dump's write-order cannot reconstruct.
+4. **The channel forests** (`iforest`/`sprop`/`tprid`/`prmass`/`prwidth`), from
+   the dump's `IFOR` records. Everything downstream of them is derived: the leg
+   sets and their complements, the PDG on each line, the resonance map, the
+   coupling-order filter, and the Breit-Wigner tagging. The derived tables are
+   compared whole against the reference's own on the seven runs whose dump holds
+   a single process directory (120 tables, all equal).
+5. **The run-card constants**, from the `CONST` record.
+
+Two further consumptions are small, counted, and named because they are not
+functions of the event:
+
+6. **Carried-over on-shell flags — 244 events of 90 000 (0.27 %).** See K3.3.
+7. **Process-directory identity — 7 flavour assignments across 3 runs.** See
+   K3.4.
+
+Nothing else is read from the dump before the engine runs. In particular the
+merge graph, the resonance tagging, every measure, the tie-break, the merge
+order, the frame changes, the beam walk and both scale formulas are derived.
+
+### K3.3 Diagnosed exception: `isbw` is stale across events
+
+`cluster.f`'s on-shell flag array `isbw` lives in a common block. `checkbw`
+(`cluster.f:414`) clears it only for the leg sets of the *integration channel's*
+own timelike lines, `i = -1 … -(nexternal-3)`. Every other leg set keeps
+whatever a previous event left there. Because one MadEvent process integrates
+many channels — `bbx_to_ccx_emmm_qcd0` shows 150 distinct `this_config` values,
+and consecutive written events jump between them — a leg set flagged on-shell
+under one channel is still flagged when the next event runs under another.
+
+Firing signature: MadGraph measures a final-state pair by `SumDot` (the pair's
+invariant mass) on a leg set that is **not** in that event's own `ibwlist`.
+Example, `bbx_to_ccx_emmm_qcd0` event 442, `this_config = 487`: its forest's
+leg sets are `{48, 12, 60, 192, 61}` and its `ibwlist` is `[(48, −1)]`, yet the
+pair `{3,4,7,8}` (mask 204) is measured as a resonance. Mask 204 is `12 + 192`,
+the `h → ZZ` line of a *different* channel of the same directory.
+
+Counts: 81 events of `bbx_to_ccx_emmm_qcd0`, 163 of `uux_to_ccx_emmm_qcd0`,
+zero elsewhere. Both are `2 → 6` with three `Z`s and an `h`; no `2 → 2`,
+`2 → 3` or `2 → 4` run is affected.
+
+Handling: `cluster()` takes a `carried_on_shell: &[u32]` argument, documented as
+exactly this. The comparison runs each event first with an empty list; only if
+that disagrees does it take the reference's own extra flags (the leg sets it
+measured by `SumDot` that are absent from the event's `ibwlist`) and re-run.
+All 244 then reproduce **completely** — every candidate, merge, frame change and
+scale — which is what makes this a diagnosis rather than a tolerance: the
+divergence is entirely explained by the one input, and nothing else moves.
+
+**What K4 must decide.** The flags do not enter the resonance filter on the
+merge graph (that is rebuilt per event from `ibwlist`), only the measure of a
+final-state pair and the mass its mother carries. For production this is a
+non-issue — our generator owns its own state and the pure-function reading is
+the correct one. For a *replay* of a banked `2 → 6` run it is not reproducible
+from an LHE record. Of the ten names in `validate_scales`'s
+`CLUSTERING_REQUIRED_RUNS`, four (`pp_to_llj{,_qcd2_qed2}`, `ee_to_mumua`,
+`ee_to_mumu_tata_qcd0`) are unaffected and flip cleanly, while
+`bbx_to_ccx_emmm_qcd0` and `uux_to_ccx_emmm_qcd0` carry a 0.8 % / 1.6 % event
+population a pure replay cannot reach. Enforcing those two per-event is
+therefore not free: either they stay informational, or their gate admits this
+class explicitly with its count.
+
+### K3.4 Diagnosed exception: the dump cannot name a process directory
+
+The per-directory tables (`RUN`, `NQCD`, `MAP`, `PDG`, `RES`, `IFOR`) carry
+`this_config` but no directory name, and the extraction de-duplicates them by
+text. A run whose bank spans several subprocess directories therefore merges
+their tables under one key. Two runs do: `pp_to_bb_qcd2` (`gg → bb̄` with
+`maxsproc = 1`, `qq̄ → bb̄` with 2) and `pp_to_llj{,_qcd2_qed2}` (`qg → ℓℓq`
+with 4, `qq̄ → ℓℓg` with 2). `NQCD` collides outright there: `(this_config 1,
+config 1)` is `nqcd = 2` in one directory and `0` in the other.
+
+Three consequences and how the session handles them:
+
+- **The forests are separable** — an `IFOR` row carries one `sprop` per
+  subprocess, so its length is `8 + maxsproc` and names the directory.
+- **`nqcd` is not.** It is re-derived instead, by counting a channel's vertices
+  whose three lines are all coloured (including the vertex that closes an
+  s-channel-only tree on the beams, which `configs.inc` does not write). The
+  merge graph needs only the *partition* of channels by equal order, and the
+  seven unambiguous runs check the derivation: 120 tables equal.
+- **The directory of an event** is settled first by a model test — every vertex
+  a channel's forest implies must have a colour combination the model has, and
+  where the line's flavour is per-subprocess (`sprop`, not `tprid`, which
+  `configs.inc` writes once per channel from the group's *first* subprocess) the
+  PDG triple must be one the model has too. That leaves 7 flavour assignments
+  across the 3 affected runs undecided, and those consult the event's own
+  candidate list once — per flavour assignment, not per event, so 7 bits
+  altogether decide 30 000 events.
+
+For K4 this is not a production concern (our channels know their own process),
+but it is a **dump-format finding for any future re-bank**: the K2 records
+should carry the process-directory name, which the writer already has in its
+`SHARD` record and the extraction drops.
+
+### K3.5 Unexplained by the reading, reproduced as behaviour
+
+`filgrp` registers each line under its leg set *and its complement*
+(`cluster.f:262`), writing the same PDG to both. For a channel that reaches the
+beams through a spacelike line, the outermost such line's complement is a single
+external leg — beam 2 — so the reading says that leg's `ipdgcl` entry ends up
+carrying the line's `tprid` rather than the leg's own flavour. The dump's
+initcluster tables agree with the reading: `PDG|4|2|2|4|2` for `pp_to_llj`
+says mask `2` carries `2`.
+
+**The live array does not.** Every `LINE` record of every event of every run
+gives a single-leg mask the *subprocess flavour*: `pp_to_llj` event 0 has
+`LINE|2|−1` where the reading predicts `2`. Reproducing the reading makes 7837
+of 10 000 `pp_to_llj` events disagree on that leg's flavour and on the mother
+PDGs derived from it; reproducing the behaviour makes all 90 000 events agree
+everywhere. The engine therefore keeps a single external leg's own flavour and
+skips the complement's PDG write for it (`graph.rs`), pinned by
+`a_single_leg_keeps_its_flavour`. The leg set is still registered — only the
+code on it differs.
+
+No banked scale moves either way: both readings give the same `isqcd`/`isjet`
+answers on every event here, because a t-channel `tprid` and the beam flavour it
+sits on are both quarks. **This is a genuine open thread, not a settled one.**
+K4 should re-derive it before relying on it, and the falsifier is cheap: a
+process where the spacelike line's `tprid` and beam 2's flavour differ in
+`isjet` — a `b`-initiated channel at `maxjetflavor = 4`, say — would separate
+the two readings in the scale itself.
+
+### K3.6 Branch coverage: what the bank cannot judge
+
+Implemented per §K1 and reached by nothing in the bank, so uncovered:
+
+- `ktscheme = 2` (`PYDJ`, `PYJB`) and `ickkw > 0` — `IS_PYJB`, `FS_PYDJ` never
+  fire, and the `MatchingWeight` μF branch is unreachable.
+- `dj`'s second massless–massive arm (`FS_DJ_MLESS_MASSIVE_2`) and its
+  zero-three-momentum guard (`FS_DJ_DEGENERATE`). Only the first arm fires,
+  1611× on `pp_to_llj`.
+- μR branches `L1157`, `L1160`, `L1163`, `L1165`, `L1167`; only `L1153`
+  (5 runs) and `L1169` (3 runs) are exercised. μF branches `NEXT3`,
+  `JC0_BACKFILL1/2`, `JC0_BEAM1/2`, `PDFWGT`; only `GEOM_COLLAPSED` and
+  `JC0_BOTH` are exercised. Confirms K2's finding 2.
+- The `2 → 1` short-circuit (`nexternal = 3`), the `xqcut`/`xmtc` refusals, the
+  μF floor refusal, and `MixedFixedFactorisationScales`.
+- `scalefact ≠ 1`. Every banked run has `1.0`, so §K1.9's table stays a reading;
+  the engine applies exactly one power everywhere and `beam2_from_beam1` has no
+  counterpart in the new code — K4 deletes it from `scales.rs`.
+- `jcentral_override` on its *initial-state* feeder: it fires 141× on
+  `pp_to_bb_qcd2` and only through `mt2last`, as §K1.6 predicted.
+
+### K3.7 Confirmed against the bank
+
+- **§K1.11 finding 2 is live on all three routes.** The coupling-order filter
+  (`pp_to_bb_qcd2`: `this_config = 3` sees only the two `nqcd = 0` channels), the
+  resonance tagging, and the memo (1873 restricted re-clusters on `pp_to_llj`).
+  `igraphs(1) ≠ iconfig` on 7 to 7877 events per run, and the engine reproduces
+  the collapse at `cluster.f:811-817` every time.
+- **The tie-break.** `uux_to_uux`'s 32 inflated candidates over 16 events are
+  reproduced, and the general path gives `μR = μF = 250.000125` — note 22's
+  `250.0001` row, re-derived rather than fitted. Pinned hermetically by
+  `a_wholly_crossed_event_carries_the_tie_break_into_the_scale`, with
+  `colourless_beams_keep_the_tie_break_out_of_the_scale` as its negative control
+  and `an_exact_tie_goes_to_the_pair_visited_first` for the strict comparison.
+- **The dead mass-propagation guard** (§K1.11 finding 6): implemented as
+  `A .or. B` and confirmed by every `2 → 6` event.
+- **`mt2last` is set only after a final-state last merge**, and the un-boost at
+  `cluster.f:786-792` sits inside that branch: `pp_to_llj` events whose last real
+  merge is initial-state keep the core scale in the boosted frame, and the
+  engine reproduces both.
+- **`ipartupdate` mutates `ipdgcl`** in-event, and the mutation is visible: the
+  `LINE` comparison pins the mutated jet flavours (`−1` for a beam line that
+  emitted a gluon) event for event. The cross-event persistence that would
+  follow from the common block is *not* observed to matter here — every event's
+  mutations are re-derived from the merge graph and agree.
+
+### K3.8 What K4 inherits
+
+`ScaleChoice` is untouched: `-1` still takes the closed-form-or-refuse path, and
+no enforced row moved.
+
+One inventory correction for the flip: `CLUSTERING_REQUIRED_RUNS` holds **ten**
+names, not six. Six are the dumped no-closed-form runs; the other four —
+`ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux`, `uux_to_epemg` — are the `2 → 3`
+partonic σ rows, which have **no clustering dump at all**. K4 gets no
+intermediate oracle for them: their only reference is the banked
+`SCALUP`/`<rscale>`/`<pdfrwt>`, which §K1.10 already showed is blind to a wrong
+tie-break or a wrong line PDG that does not move the final number. They are
+`2 → 3` at `lpp = 0`, so the boost cannot fire and the merge graph is small; the
+honest framing is that flipping them tests the *scale*, and this session's dumps
+are what tests the path that produced it. The wiring K4 has to do is to build a `ChannelSet` from
+our own diagram enumeration rather than from a dump's `IFOR` records — the one
+derivation step this session did not take, because the dump's directory
+collision makes it uncheckable on 2 of the 9 runs and the merge-graph derivation
+*from forests* is checkable on all 7 others. §K1.11 finding 3 (drop every
+diagram whose maximum vertex arity exceeds the process minimum) belongs to that
+step, and `ConfigForest` is the interface it must produce: one entry per vertex
+of the diagram re-rooted toward the highest-numbered initial leg, s-channel
+entries carrying `sprop` per subprocess and t-channel entries carrying `tprid`,
+with the closing vertex written only when the channel reaches the beams through
+a spacelike line (`export_v4.py:2229`, `if len(tchannels) > 1`).
