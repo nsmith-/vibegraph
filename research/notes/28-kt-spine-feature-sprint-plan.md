@@ -3259,3 +3259,255 @@ prescription. Until it does:
   a process with many channels and no reason for channel 1 to be the right one.
   Its 9-event tie-break exception is a separate and much smaller thing. Session C
   should not be attempted before the channel is plumbed through.
+
+## K6 — the sampled channel reaches the scale
+
+K5b's two Info rows and `pp_to_llj_dyn` were waiting on one input: the cluster
+scale is a function of the event **and** of the integration channel, and the
+integrand named channel 1 on every point. This session threads the channel the
+sampler actually drew through to `EventScaleSource::scales`, and the three rows
+move from `−5.5 %`, `−5.6 %` and `−3.05 %` to `+1.07 %`, `+0.97 %` and `−0.68 %`.
+All three are now enforced. Every other σ row of the report is **bit-for-bit
+identical**, and there is a reason stronger than a count for why.
+
+### K6.1 What was threaded
+
+`EventScaleSource::scales` takes a `SampledChannel` — the channel set a draw
+belongs to (the flavour group), and that channel's diagram inside it. Both
+integrands supply it from the draw they made:
+
+- `MultiChannel::sample_from` reports the drawn index alongside the point, and
+  `PhaseSpaceMap::sample` delegates to it, so no draw and no weight moved by a
+  bit;
+- `FixedBeamIntegrand`'s `matrix_element`, `apply_scale`, `event_scales`,
+  `select_event`, `value`, `value_in_channel` and `event_in_channel` all carry
+  the channel, as does the setup-time scale probe;
+- `ProtonIntegrand::shape` and `event_scales` take it from `channel_ids[j]`, the
+  `(group, diagram)` pair the pooled sampler was already keyed on;
+- `MultiChannel::adapt_alphas`'s survey integrand became
+  `Fn(&[momenta], usize)`, so the α-adaptation surveys the integrand the
+  integration will run rather than a channel-1 shadow of it;
+- `vibegraph generate` writes each event's `SCALUP`/`AQCDUP` from the same
+  channel the point was drawn in.
+
+### K6.2 The map is not the identity, and it is derived
+
+`derive_channels` drops a diagram whose largest vertex exceeds the set's minimum
+(§K1.11 finding 3), so the sampler's channels — one per *diagram* — and
+`configs.inc`'s channels are two numberings. `DerivedChannels` now carries
+`config_of_diagram`, the inverse of `diagram_of` over the whole diagram slice:
+`None` for a dropped diagram, whose region MadGraph covers from the surviving
+channels and whose draw therefore takes the set's default rather than indexing
+one channel too far. `RunningCouplingReport::unmapped_channels` reports how many
+such channels a run has, so a run that has any says so.
+
+`g g → g g` is the hermetic pin — 4 diagrams, 3 channels, nothing in the bank
+exercising the filter:
+
+- `the_channel_to_config_map_is_not_the_identity` (`coupling::cluster::configs`)
+  identifies the unmapped diagram **by the four-gluon vertex that gets it
+  dropped**, not by its position, asserts the table
+  `[None, Some(1), Some(2), Some(3)]`, asserts both directions of the map, and
+  asserts each entry's forest leg-set masks — so a reorder that carried both
+  sides along together, leaving the indices alone, still fails.
+- `a_sampled_channel_names_the_integration_channel_of_its_own_diagram`
+  (`hadronic`) pins the *wiring* on the same process: the compiled prescription
+  reports `channels = 3`, `unmapped_channels = 1`, `config_of_channel` reads
+  `[1, 1, 2, 3]`, and the installed sampler's channel count equals the set's
+  diagram count. `use_multichannel` asserts that last equality at run time too,
+  because a caller that sampled one diagram slice and clustered against another
+  would name the wrong channel on every point in perfect silence.
+
+### K6.3 Per flavour group, not per process
+
+`compile_scale_source` takes one `(representative amplitude, diagrams)` pair per
+subprocess a sampling channel can be drawn from and builds one `Channels` each.
+A fixed-beam run passes one. A hadronic run passes one per flavour group — and
+that is a correction, not just plumbing: `ProtonIntegrand` derived its forests
+from **group 0's** diagrams and used them for every group, while its sampler
+pools channels across all of them. `g u → ℓ⁺ℓ⁻ u` and `u ū → ℓ⁺ℓ⁻ g` do not
+share a merge graph, and `validate_scales`'s banked replay has always keyed its
+forests on the event's own external flavours, which is the same statement made
+against MadGraph. `use_run_card_scales` now asserts that every pooled
+`(group, diagram)` names a forest in its own group's set.
+
+### K6.4 The four partonic rows
+
+Five seeds at the gate budget and the same five at four times it
+(`probe_llj_parton_seed_stability`), against `sigma_reference.json`.
+
+| row | events on another channel | mean rel 1× (was) | mean rel 4× | worst \|rel\| | verdict |
+|---|---|---|---|---|---|
+| `uux_to_epemg` | 0 of 10 000 | **+2.83e-3** (+2.83e-3) | +2.34e-3 | 3.93e-3 | GATE `rel_tol` 0.01 |
+| `ddx_to_epemg` | 0 of 10 000 | **+4.29e-3** (+4.29e-3) | +4.37e-3 | 5.58e-3 | GATE `rel_tol` 0.01 |
+| `gu_to_epemu` | 7204 | **+1.07e-2** (−5.55e-2) | +1.13e-2 | 1.20e-2 | GATE `rel_tol` 0.02 |
+| `gux_to_epemux` | 7231 | **+9.74e-3** (−5.62e-2) | +1.03e-2 | 1.12e-2 | GATE `rel_tol` 0.02 |
+
+Their four `samples` cells stay GATE. The two annihilation rows' are unchanged
+(`3.74e-2` / `5.85e-3` minimum KS `p`, same worst observable, same `χ²`); the two
+gluon rows' moved with the integrand the accept/reject draw runs over —
+`gu_to_epemu` from `2.01e-2` to `1.32e-2`, both on `cs_cos(ll)`, and
+`gux_to_epemux` from `9.40e-3` on `m(e−,u~)` to `9.37e-3` on `m(e⁺,u~)` — against
+a `1e-4` floor. They remain blind to the normalisation by construction, which is
+why the σ cells are where §K6.5 lives.
+
+**The two annihilation rows are unchanged to the last bit, and the reason is
+sharper than their event count.** `the_sampled_channel_reaches_the_cluster_scale`
+evaluates `μR` in *every* sampling channel at the same drawn point and reports
+the spread:
+
+| row | `μR` spread over its channels |
+|---|---|
+| `uux_to_epemg`, `ddx_to_epemg` | **0.000e0** |
+| `gu_to_epemu`, `gux_to_epemux` | **9.93e-1** |
+
+So on the annihilation rows the cluster scale is not merely *usually* the same in
+every channel — it is identically the same, and no threading could have moved
+them. On the gluon-beam rows it differs by a factor of two between channels,
+which is why they carried the whole of K5b's deficit and why they are the rows
+that could pay for the partition below. That test is also this session's guard:
+it fails if the channel ever stops reaching the prescription, which is exactly
+the change whose *absence* every other number here would silently survive.
+
+### K6.5 The residual is the channel partition, and it has a negative control
+
+`gu_to_epemu` and `gux_to_epemux` do not land at zero; they land at `+1.07 %` and
+`+0.97 %`, seed-stable, and `+1.13 %` / `+1.03 %` at four times the budget — a
+bias, not sampling. It is not a defect of the clustering, and it is not a
+tolerance question either. It is a property the cross section acquired the moment
+the scale started reading the integration channel:
+
+> With a channel-dependent scale, the channel-split estimator
+> `σ = Σⱼ ∫ dΦ f(p, j)·αⱼgⱼ(p)/g(p)` is **no longer independent of `αⱼ`**. The
+> selection weights decide which scale a region of phase space is evaluated at,
+> not merely how often it is visited. σ is therefore defined only up to the
+> channel partition.
+
+`probe_channel_partition_moves_sigma` measures it: the same rows integrated at the
+converged `αⱼ` and at uniform `αⱼ`, one seed, everything else held.
+
+| row | adapted α, rel to MG | uniform α, rel to MG | partition gap | Monte Carlo |
+|---|---|---|---|---|
+| `uux_to_epemg` | +3.09e-3 | +4.14e-3 | +1.05e-3 | 1.6e-3 |
+| `ddx_to_epemg` | +4.73e-3 | +6.59e-3 | +1.86e-3 | 1.5e-3 |
+| `gu_to_epemu` | +1.08e-2 | **−4.24e-3** | **−1.48e-2** | 1.6e-3 |
+| `gux_to_epemux` | +9.75e-3 | **−5.69e-3** | **−1.53e-2** | 1.6e-3 |
+
+Three things are worth reading off it.
+
+- **The two rows whose scale is channel-independent are the negative control.**
+  Their partition gap is inside and at their own Monte-Carlo error, which is what
+  a partition-invariant integral looks like. The effect is 9σ on the other two.
+- **MadGraph's own σ lies *inside* the interval this crate's two partitions
+  span.** On `gu_to_epemu` the adapted partition is `+1.08 %` and the uniform one
+  `−0.42 %` relative to the same reference. There is no single number to agree
+  with.
+- **MadEvent's partition is a third one.** Single-diagram enhancement weights the
+  integrand of channel `c` by `AMP2_c/Σ AMP2`, which is not reachable from either
+  of ours by any choice of `αⱼ` — it is a function of the point, not a constant.
+
+So `rel_tol` `0.02` on these two rows is the **algorithm's own ambiguity with
+headroom** over the worst measured `1.20e-2`, in exactly the sense AGENTS.md's
+tolerance rule means: it is not the reference's `0.18 %` error, and it is not a
+bound fitted around one number — the `−5.5 %` this row read before the channel
+reached the scale is far outside it.
+
+**And their pull is reported rather than asserted** — the same judgment
+`pp_to_llj_dyn` gets below, and the only two places in the σ gate where it is
+made. A pull bounds a disagreement only while the residual is a fluctuation; a
+systematic of fixed size drives it to infinity as `err_vg` falls, so a budget
+increase would eventually fail a row that had not moved. `PULL_REPORTED_NOT_ASSERTED`
+carries the list and the reason, `rel`, the five-seed sweep and `χ²/dof` are the
+criteria, and the gate asserts that no row on the list is ungated — an exemption
+on a row that asserts nothing would hide that it asserts nothing.
+
+### K6.6 σ(p p → ℓ⁺ℓ⁻ j) at the dynamical scale
+
+Five seeds per rung, the fixed-scale twin left enforced and untouched
+(`probe_llj_dyn_budget_ladder`). MadGraph: **415.42 ± 1.36 pb**.
+
+| neval | σ ± Δ (pb) | χ²/dof | rel | was (channel 1) |
+|---|---|---|---|---|
+| 75 000 | 409.554 ± 0.357 | 6.13 | −1.41 % | −3.83 % |
+| 150 000 | 411.393 ± 0.247 | 0.80 | −0.97 % | −3.41 % |
+| 300 000 | 412.529 ± 0.172 | 0.82 | **−0.70 %** | −3.14 % |
+| 600 000 | 412.950 ± 0.121 | 0.09 | −0.59 % | −3.05 % |
+
+The estimator still rises with the budget and the increments still halve
+(`+1.84`, `+1.14`, `+0.42`), which is the fixed-scale row's own approach from
+below, and the last rung's five seeds agree at `χ²/dof 0.09` with a `0.05 %`
+spread — converged and seed-stable at about `413 pb`. The
+banked layer runs three seeds at `300 000` and writes the cell: **412.585 ±
+0.224 pb, χ²/dof 0.22, rel −0.68 %**.
+
+The row is enforced at `LLJ_DYN_MAX_REL = 0.015` — the partonic partition band of
+§K6.5 diluted by the flavour groups that do not carry it, with headroom, and
+above MadGraph's own `0.33 %` on this run. **The pull is reported and not
+asserted**: the residual is a systematic of about `0.6 %`, so its pull grows
+without bound as this side's budget rises while the disagreement stays put, and
+asserting it would be asserting a precision the number does not have.
+`sigma_llj_fixed_scale_vs_mg` stays enforced at `0.005` and unmoved, which is
+what keeps the attribution to the scale sound.
+
+### K6.7 The instruments, and what each can and cannot say
+
+- `probe_first_channel_cost_in_alpha_s` (`validate_scales`) is **unchanged by
+  construction and was re-run to confirm it**: it replays MadGraph's banked
+  events at *channel 1* and divides by `AQCDUP`, so it is a property of the bank
+  and of one channel, not of any integrand. It still reads `−5.540e-2` /
+  `−5.557e-2` on the two gluon rows and `≤1.6e-7` on every enforced QCD row. What
+  it prices is what the old default cost, and that is all it can ever price.
+- `probe_sampled_channel_cost_in_alpha_s` (`validate_sigma`) is its
+  production-side counterpart and is what actually moved: the integrand draws its
+  own points in its own channels and reports the σ-weighted `⟨αs⟩` against
+  `⟨AQCDUP⟩` over the run's banked unweighted events, which are distributed as
+  MadGraph's own cross section.
+
+  | row | σ-weighted `⟨αs⟩` | MG `⟨AQCDUP⟩` | rel |
+  |---|---|---|---|
+  | `uux_to_epemg` | 0.1015708 | 0.1014733 | +9.61e-4 |
+  | `ddx_to_epemg` | 0.1019197 | 0.1017793 | +1.38e-3 |
+  | `gu_to_epemu` | 0.1016983 | 0.0996450 | +2.06e-2 |
+  | `gux_to_epemux` | 0.1016959 | 0.0996616 | +2.04e-2 |
+
+  Per-event agreement is neither claimed nor available — MadGraph's sampled
+  channel differs event by event and an LHE record carries none — so the mean is
+  the statement, and it is the multiplicative factor a σ linear in `αs` inherits.
+  The two gluon rows' residual `+2 %` in the coupling is the same partition
+  effect §K6.5 measures in σ, seen one step earlier in the chain.
+
+### K6.8 What this leaves
+
+**Landed.** Three σ rows Info → GATE (`gu_to_epemu`, `gux_to_epemux` at
+`rel_tol` 0.02; `pp_to_llj_dyn` at 0.015), the `ProtonIntegrand`'s per-group
+forest correction, and two guards that fail if the channel stops reaching the
+scale or if either numbering reorders. `sigma_gate_matches_madgraph` asserts 17
+processes where it asserted 15. The census moves `82 → 85` ✅ and `4 → 1` ⚠️ over
+the same 86 measured cells.
+
+**The report's two rendered tables differ on exactly five cells** — the three
+`integrals` cells that flipped, and the two `samples` cells whose accept/reject
+draw follows the integrand — and are identical elsewhere in every compared field,
+which is a stronger statement than "unmoved to the printed digit". Both work-area
+states are green: with the four unbundled runs held out the census reads `84`
+measured (`83 ✅, 1 ⚠️, 6 ⏳`) against `86` (`85, 1, 4`) with them present, the two
+unbundled `integrals` cells moving to ⏳ and nothing else. The four held-out runs
+were restored and verified byte-identical over all 2867 files.
+
+**Owed, and filed rather than improvised.** The comparison can be made
+partition-free, and the reading says how: take the scale's channel from
+`AMP2_c(p)` at each point instead of from the phase-space draw. That is what
+MadEvent's `iconfig` distribution *is* — single-diagram enhancement — so it would
+reproduce MadGraph's own effective channel distribution and stop the scale
+riding on this crate's sampler at all. It is a second per-point draw inside the
+integrand with its own reproducibility and artifact consequences, which is why it
+is a design decision and not a session's improvisation. Until it lands, `σ` at
+`dynamical_scale_choice = -1` agrees with MadGraph to the partition ambiguity and
+no better, and the three cells say so.
+
+**For the capstone.** `p p → j j` is no longer blocked on the channel: it is a
+many-channel process at the default dynamical scale, which is exactly the
+configuration K6 supplies. It should expect the partition residual of §K6.5 to
+be at its largest there — every leg coloured, every channel's merge graph
+different — so session C should measure the partition gap on `pp_to_jj` before
+choosing its tolerance, rather than inheriting `0.02` from the partonic rows.

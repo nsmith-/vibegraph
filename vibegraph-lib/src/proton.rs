@@ -90,8 +90,8 @@ use crate::hadronic::{
     boost_z, channel_neval, combine_channels, compile_class, compile_scale_source, components,
     constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
     process_external_legs, BoundSubprocess, ChannelIntegration, EventScaleSource, HadronicError,
-    RunningCouplingReport, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED,
-    VEGAS_ALPHA_MAPPED, VEGAS_NBINS,
+    RunningCouplingReport, SampledChannel, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS,
+    SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED, VEGAS_NBINS,
 };
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::helas::repr::lorentz::LorentzVector;
@@ -957,11 +957,12 @@ impl<'a> ProtonIntegrand<'a> {
     /// tabulation, and refuses rather than falling back to a beta-function solve the
     /// densities were not fitted with.
     ///
-    /// The cluster topology the `-1` scale consults is derived from the first group's
-    /// diagrams. Groups of one process need not share a topology, so a prescription
-    /// that actually reads it is resolved once here on a sampled, cut-passing point:
-    /// a clustering this crate refuses stops the run at setup rather than at the first
-    /// VEGAS point, and before any per-group question arises.
+    /// The channel forests the `-1` scale clusters against are derived per flavour
+    /// group, from that group's own diagrams and external flavours — the groups of
+    /// one process do not share a merge graph, and a sampling channel belongs to
+    /// exactly one of them. A prescription that actually reads them is resolved
+    /// once here on a sampled, cut-passing point, so a clustering this crate
+    /// refuses stops the run at setup rather than at the first VEGAS point.
     pub fn use_run_card_scales(
         &mut self,
         model: &UFOModel,
@@ -973,15 +974,35 @@ impl<'a> ProtonIntegrand<'a> {
         // Unlike a fixed-beam run, the factorisation scale has a consumer whatever
         // the matrix element is made of, so the prescription is compiled even when
         // nothing moves with the strong coupling.
+        let subprocesses: Vec<(&AmplitudeEvaluator, &[Diagram])> = self
+            .groups
+            .groups()
+            .iter()
+            .map(|g| (g.evaluator(), g.diagrams()))
+            .collect();
         let source = compile_scale_source(
-            self.subs[0].evaluator(),
-            self.groups.groups()[0].diagrams(),
+            &subprocesses,
             model,
             evaluated,
             card,
             alpha_s,
             awareness.depends_on_alpha_s,
         )?;
+        // Every pooled sampling channel has to name a channel of its own group's
+        // forests: that pairing is the whole of how a drawn channel reaches the
+        // cluster scale, and it is an index into a set built elsewhere.
+        if let Some(sets) = source.channels() {
+            assert_eq!(sets.len(), self.groups.groups().len());
+            for id in &self.channel_ids {
+                assert!(
+                    id.diagram < sets[id.group].diagram_count(),
+                    "sampling channel (group {}, diagram {}) has no forest in a set of {}",
+                    id.group,
+                    id.diagram,
+                    sets[id.group].diagram_count()
+                );
+            }
+        }
         if source.constant_scales().is_none() {
             self.probe_scale(&source)?;
         }
@@ -1006,7 +1027,8 @@ impl<'a> ProtonIntegrand<'a> {
             self.build_frames(&m, &pt.momenta);
             let lab = self.lab_buf.borrow();
             if self.cuts.pass(&lab) {
-                self.scales_of(source, &lab).map_err(HadronicError::from)?;
+                self.scales_of(source, &lab, self.sampled_channel(0))
+                    .map_err(HadronicError::from)?;
                 return Ok(());
             }
         }
@@ -1116,7 +1138,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// the `(τ, y)` Jacobian, the flux, the `2π` measure and the luminosity-weighted
     /// sum over groups. Zero where the cuts reject the lab-frame configuration or no
     /// group carries luminosity.
-    fn shape(&self, m: &OuterPoint, out: &[V]) -> f64 {
+    fn shape(&self, m: &OuterPoint, out: &[V], channel: SampledChannel) -> f64 {
         self.build_frames(m, out);
         let cm = self.cm_buf.borrow();
         {
@@ -1125,7 +1147,7 @@ impl<'a> ProtonIntegrand<'a> {
                 return 0.0;
             }
         }
-        let scales = self.event_scales();
+        let scales = self.event_scales(channel);
         self.apply_scale(scales.mu_r);
 
         let mut acc = 0.0;
@@ -1152,21 +1174,37 @@ impl<'a> ProtonIntegrand<'a> {
         m.jac * flux * self.lips_2pi * acc
     }
 
-    /// The scales at the lab-frame point currently in the frame buffers.
-    fn event_scales(&self) -> EventScales {
+    /// The scales at the lab-frame point currently in the frame buffers, in the
+    /// sampling channel that drew it.
+    fn event_scales(&self, channel: SampledChannel) -> EventScales {
         if let Some(fixed) = self.scales.constant_scales() {
             return fixed;
         }
         let lab = self.lab_buf.borrow();
-        self.scales_of(&self.scales, &lab)
+        self.scales_of(&self.scales, &lab, channel)
             .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
     }
 
-    fn scales_of(&self, source: &EventScaleSource, lab: &[V]) -> Result<EventScales, ScaleError> {
+    /// The pooled sampling channel `j` as the scale prescription names it: the
+    /// flavour group it was built for, and its diagram inside that group.
+    fn sampled_channel(&self, j: usize) -> SampledChannel {
+        let id = self.channel_ids[j];
+        SampledChannel {
+            group: id.group,
+            diagram: id.diagram,
+        }
+    }
+
+    fn scales_of(
+        &self,
+        source: &EventScaleSource,
+        lab: &[V],
+        channel: SampledChannel,
+    ) -> Result<EventScales, ScaleError> {
         let mut buf = self.scale_buf.borrow_mut();
         buf.clear();
         buf.extend(lab[2..].iter().map(components));
-        source.scales([components(&lab[0]), components(&lab[1])], &buf)
+        source.scales([components(&lab[0]), components(&lab[1])], &buf, channel)
     }
 
     /// Move every group's amplitude to the coupling `mu_r` implies. A constant
@@ -1205,7 +1243,7 @@ impl<'a> ProtonIntegrand<'a> {
         let point = self
             .combiner
             .sample_channel_at(channel, m.sqrt_shat, &u[OUTER_NDIM..]);
-        let shape = self.shape(&m, &point.momenta);
+        let shape = self.shape(&m, &point.momenta, self.sampled_channel(channel));
         if shape == 0.0 {
             return 0.0;
         }
@@ -1226,14 +1264,15 @@ impl<'a> ProtonIntegrand<'a> {
         let point = self
             .combiner
             .sample_channel_at(channel, m.sqrt_shat, &u[OUTER_NDIM..]);
-        let shape = self.shape(&m, &point.momenta);
+        let drawn = self.sampled_channel(channel);
+        let shape = self.shape(&m, &point.momenta, drawn);
         if shape == 0.0 {
             return None;
         }
         Some(ProtonEvent {
             weight: shape * point.weight,
             x: [m.x1, m.x2],
-            scales: self.event_scales(),
+            scales: self.event_scales(drawn),
             lab: self.lab_buf.borrow().clone(),
             cm: self.cm_buf.borrow().clone(),
         })
@@ -1361,7 +1400,7 @@ impl<'a> ProtonIntegrand<'a> {
         let point = self
             .combiner
             .sample_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
-        let shape = self.shape(&m, &point.momenta);
+        let shape = self.shape(&m, &point.momenta, self.sampled_channel(j));
         if shape == 0.0 {
             return 0.0;
         }
@@ -1427,7 +1466,7 @@ impl<'a> ProtonIntegrand<'a> {
             // `sample_channel_at` weights by `αⱼ/g`; the mixture that actually drew
             // this point has density `g`, so the mixture estimator is `f/g`.
             let g = self.combiner.alphas()[j] / point.weight;
-            let est = self.shape(&m, &point.momenta) / g;
+            let est = self.shape(&m, &point.momenta, self.sampled_channel(j)) / g;
             if est == 0.0 {
                 continue;
             }

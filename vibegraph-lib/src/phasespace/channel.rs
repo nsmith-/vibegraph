@@ -304,9 +304,15 @@ impl<F: Real> MultiChannel<F> {
     /// non-finite) leaves α untouched and stops. Otherwise every weight is floored
     /// strictly positive before reinstalling, so one under-sampled survey never
     /// permanently kills a channel.
+    ///
+    /// `integrand` is evaluated at the drawn point *and* the channel that drew
+    /// it, because an integrand carrying a per-event scale prescription is not a
+    /// function of the momenta alone: the cluster scale reads the integration
+    /// channel. The survey therefore sees the same integrand the integration
+    /// will.
     pub fn adapt_alphas(
         &mut self,
-        integrand: impl Fn(&[LorentzVector<F>]) -> F,
+        integrand: impl Fn(&[LorentzVector<F>], usize) -> F,
         seed: u64,
         stream: u64,
         n_survey: usize,
@@ -325,10 +331,10 @@ impl<F: Real> MultiChannel<F> {
             let mut w = vec![F::zero(); n];
             for _ in 0..n_survey {
                 let u = s.uniforms::<F>(ndim);
-                let pt = self.sample(&u);
+                let (drawn, pt) = self.sample_from(&u);
                 // g(p) = 1/weight is the combined density; est = weight·f = f/g.
                 let g = F::one() / pt.weight;
-                let est = pt.weight * integrand(&pt.momenta);
+                let est = pt.weight * integrand(&pt.momenta, drawn);
                 let est2 = est * est;
                 for (wj, ch) in w.iter_mut().zip(&self.channels) {
                     *wj = *wj + est2 * ch.density(&pt.momenta) / g;
@@ -392,6 +398,30 @@ impl<F: Real> MultiChannel<F> {
         }
     }
 
+    /// [`PhaseSpaceMap::sample`] with the channel that drew the point reported
+    /// alongside it.
+    ///
+    /// The point and its `1/g` weight are the mixture's own either way; what the
+    /// index adds is the channel an integrand needs when it is not a pure
+    /// function of the momenta — a per-event scale prescription that reads the
+    /// integration channel, for one.
+    pub fn sample_from(&self, u: &[F]) -> (usize, PhaseSpacePoint<F>) {
+        let idx = self.select(u[0]);
+        let pt = self.channels[idx].sample(&u[1..]);
+        // g ≥ α_idx · g_idx = α_idx / pt.weight > 0: the generating channel's own
+        // positive density keeps the denominator off zero, so `1/g` is the exact
+        // reciprocal the reciprocity contract requires.
+        let g = self.density(&pt.momenta);
+        debug_assert!(g > F::zero(), "combined density must be positive");
+        (
+            idx,
+            PhaseSpacePoint {
+                momenta: pt.momenta,
+                weight: F::one() / g,
+            },
+        )
+    }
+
     /// The channel `u0 ∈ [0,1)` selects, by cumulative selection weight.
     fn select(&self, u0: F) -> usize {
         select_channel(&self.alphas, u0)
@@ -417,17 +447,7 @@ impl<F: Real> PhaseSpaceMap<F> for MultiChannel<F> {
     }
 
     fn sample(&self, u: &[F]) -> PhaseSpacePoint<F> {
-        let idx = self.select(u[0]);
-        let pt = self.channels[idx].sample(&u[1..]);
-        // g ≥ α_idx · g_idx = α_idx / pt.weight > 0: the generating channel's own
-        // positive density keeps the denominator off zero, so `1/g` is the exact
-        // reciprocal the reciprocity contract requires.
-        let g = self.density(&pt.momenta);
-        debug_assert!(g > F::zero(), "combined density must be positive");
-        PhaseSpacePoint {
-            momenta: pt.momenta,
-            weight: F::one() / g,
-        }
+        self.sample_from(u).1
     }
 }
 
@@ -1035,7 +1055,7 @@ mod tests {
         let f = move |p: &[LorentzVector<f64>]| 4.0 * bw(s_pair(p, 0, 1)) + bw(s_pair(p, 1, 2));
 
         let mut multi = two_peak_combiner(500.0);
-        let report = multi.adapt_alphas(f, 0xA1FA, 61, 40_000, 10, 0.5);
+        let report = multi.adapt_alphas(|p, _| f(p), 0xA1FA, 61, 40_000, 10, 0.5);
 
         let traj = &report.trajectory;
         eprintln!("α trajectory:");
@@ -1091,7 +1111,7 @@ mod tests {
 
         let mut adapted = two_peak_combiner(500.0);
         let t_survey = Instant::now();
-        let report = adapted.adapt_alphas(f, 0xA2FA, 71, 40_000, 10, 0.5);
+        let report = adapted.adapt_alphas(|p, _| f(p), 0xA2FA, 71, 40_000, 10, 0.5);
         let survey_ns = t_survey.elapsed().as_secs_f64() * 1e9;
         let survey_pts = 40_000.0 * report.trajectory.len().saturating_sub(1) as f64;
 
@@ -1137,7 +1157,7 @@ mod tests {
         let sqrt_s = 500.0;
 
         let mut adapted = two_peak_combiner(sqrt_s);
-        adapted.adapt_alphas(f, 0xA3FA, 81, 40_000, 8, 0.5);
+        adapted.adapt_alphas(|p, _| f(p), 0xA3FA, 81, 40_000, 8, 0.5);
 
         // Volume neutrality: the adapted mixture still integrates dΦ₃ to V₃.
         let n = 600_000;
@@ -1331,7 +1351,7 @@ mod tests {
         let f = move |p: &[LorentzVector<f64>]| 4.0 * bw(s_pair(p, 0, 1)) + bw(s_pair(p, 1, 2));
 
         let mut multi = two_peak_combiner(500.0);
-        multi.adapt_alphas(f, 0xA4FA, 101, 40_000, 8, 0.5);
+        multi.adapt_alphas(|p, _| f(p), 0xA4FA, 101, 40_000, 8, 0.5);
 
         // Direct MC estimate from the adapted combiner, as the reference integral.
         let n = 400_000;

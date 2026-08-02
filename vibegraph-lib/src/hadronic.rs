@@ -138,26 +138,52 @@ enum ScaleSourceKind {
     Constant(EventScales),
     PerEvent {
         choice: ScaleChoice,
-        /// The process's channel forests and the colour table the clustering
-        /// asks `isqcd`/`isjet` through. `None` for a prescription whose
-        /// dynamic value is one of `setscales.f`'s closed forms, which read no
-        /// merge graph.
-        channels: Option<Box<Channels>>,
+        /// One entry per subprocess whose diagrams a sampling channel can be
+        /// drawn from — a single entry for a fixed-beam run, one per flavour
+        /// group for a hadronic one. `None` for a prescription whose dynamic
+        /// value is one of `setscales.f`'s closed forms, which read no merge
+        /// graph.
+        channels: Option<Box<[Channels]>>,
     },
 }
 
-/// The clustering's static side of one process.
+/// Which sampling channel a phase-space point was drawn from, in the terms the
+/// scale prescription reads it.
+///
+/// The cluster scale is a function of the event **and** of the channel being
+/// integrated, so a point carries the channel that produced it all the way to
+/// [`EventScaleSource::scales`]. A sampling channel is one diagram of one
+/// subprocess, which is exactly the pair below.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SampledChannel {
+    /// Which channel set the draw belongs to: the flavour group on a hadronic
+    /// run, and `0` wherever one subprocess supplies every channel.
+    pub group: usize,
+    /// The channel's diagram, indexed into the diagram slice its channel set
+    /// was derived from.
+    pub diagram: usize,
+}
+
+impl SampledChannel {
+    /// The `diagram`-th channel of the only channel set — a fixed-beam run,
+    /// where the sampling channel index *is* the diagram index.
+    pub fn sole(diagram: usize) -> Self {
+        SampledChannel { group: 0, diagram }
+    }
+}
+
+/// The clustering's static side of one subprocess.
 #[derive(Clone, Debug)]
 pub struct Channels {
     derived: DerivedChannels,
     colors: ColorTable,
-    /// The channel a caller that samples none gets.
+    /// The channel named by a draw that has none of its own.
     ///
-    /// The cluster scale depends on the integration channel through three
-    /// routes, and an integrand that has not sampled
-    /// one still has to name one. The banked replay in `validate_scales.rs`
-    /// reports, per run, how many events the choice moves at all — it is the
-    /// measurement this default rests on.
+    /// Two callers reach it: a flat sampler, which draws no channel at all, and
+    /// a sampling channel whose diagram the vertex filter dropped, whose region
+    /// of phase space MadGraph covers from the surviving channels instead. The
+    /// banked replay in `validate_scales.rs` reports, per run, how many events
+    /// the choice moves at all — it is the measurement this default rests on.
     default_config: usize,
 }
 
@@ -169,6 +195,40 @@ impl Channels {
             this_config,
             iproc: 1,
         }
+    }
+
+    /// The integration channel a point drawn from the `diagram`-th sampling
+    /// channel was generated in, falling back to the set's default channel where
+    /// that diagram has none.
+    pub fn config_of_channel(&self, diagram: usize) -> usize {
+        self.config_of_diagram(diagram)
+            .unwrap_or(self.default_config)
+    }
+
+    /// The integration channel derived from one diagram, or `None` where the
+    /// vertex filter dropped it. The mapping itself, without the fallback.
+    pub fn config_of_diagram(&self, diagram: usize) -> Option<usize> {
+        self.derived
+            .config_of_diagram
+            .get(diagram)
+            .copied()
+            .flatten()
+    }
+
+    /// How many diagrams the channel forests were derived from — the range of
+    /// [`config_of_channel`](Channels::config_of_channel)'s argument, and the
+    /// number of sampling channels the same diagram slice produces.
+    pub fn diagram_count(&self) -> usize {
+        self.derived.config_of_diagram.len()
+    }
+
+    /// How many sampling channels name no integration channel of their own.
+    pub fn unmapped_channels(&self) -> usize {
+        self.derived
+            .config_of_diagram
+            .iter()
+            .filter(|c| c.is_none())
+            .count()
     }
 
     /// How many integration channels the process has, which is the range
@@ -195,14 +255,15 @@ impl EventScaleSource {
         }
     }
 
-    /// Compile a run card's prescription. `channels` are consulted only by the
-    /// clustering branch; `needs_alpha_s` decides whether a running coupling is
-    /// built at all.
+    /// Compile a run card's prescription. `channels` carries one channel set per
+    /// subprocess a sampling channel can be drawn from and is consulted only by
+    /// the clustering branch; `needs_alpha_s` decides whether a running coupling
+    /// is built at all.
     pub fn from_run_card(
         card: &RunCard,
         param_card_as: f64,
         grid: Option<&AlphaSInfo>,
-        channels: Option<Channels>,
+        channels: Option<Vec<Channels>>,
         needs_alpha_s: bool,
     ) -> Result<Self, HadronicError> {
         let choice = ScaleChoice::from_run_card(card)?;
@@ -219,7 +280,7 @@ impl EventScaleSource {
         } else {
             ScaleSourceKind::PerEvent {
                 choice,
-                channels: channels.map(Box::new),
+                channels: channels.map(Vec::into_boxed_slice),
             }
         };
         Ok(EventScaleSource { kind, alpha_s })
@@ -238,27 +299,44 @@ impl EventScaleSource {
         self.alpha_s.as_ref()
     }
 
-    /// The channel forests the clustering branch consults.
-    pub fn channels(&self) -> Option<&Channels> {
+    /// The channel forests the clustering branch consults, one set per
+    /// subprocess a sampling channel can be drawn from.
+    pub fn channels(&self) -> Option<&[Channels]> {
         match &self.kind {
             ScaleSourceKind::Constant(_) => None,
             ScaleSourceKind::PerEvent { channels, .. } => channels.as_deref(),
         }
     }
 
-    /// The scales for one event, from lab-frame momenta.
+    /// The scales for one event, from lab-frame momenta and the sampling channel
+    /// the point was drawn from.
+    ///
+    /// # Panics
+    ///
+    /// If `channel` names a group this prescription has no channel set for.
     pub fn scales(
         &self,
         incoming: [[f64; 4]; 2],
         outgoing: &[[f64; 4]],
+        channel: SampledChannel,
     ) -> Result<EventScales, ScaleError> {
         match &self.kind {
             ScaleSourceKind::Constant(scales) => Ok(*scales),
             ScaleSourceKind::PerEvent { choice, channels } => {
                 let event = ScaleEvent { incoming, outgoing };
                 match channels {
-                    Some(channels) => {
-                        choice.cluster_scales(&event, &channels.input(channels.default_config))
+                    Some(sets) => {
+                        let set = sets.get(channel.group).unwrap_or_else(|| {
+                            panic!(
+                                "a point was drawn in channel group {} of {}",
+                                channel.group,
+                                sets.len()
+                            )
+                        });
+                        choice.cluster_scales(
+                            &event,
+                            &set.input(set.config_of_channel(channel.diagram)),
+                        )
                     }
                     None => choice.scales(&event),
                 }
@@ -274,9 +352,15 @@ pub struct RunningCouplingReport {
     /// false no running coupling was constructed and the amplitudes are left where
     /// they were bound.
     pub depends_on_alpha_s: bool,
-    /// How many integration channels the clustering branch was given, or `None`
-    /// where the prescription reads no merge graph.
+    /// How many integration channels the clustering branch was given, summed
+    /// over its channel sets, or `None` where the prescription reads no merge
+    /// graph.
     pub channels: Option<usize>,
+    /// How many sampling channels of those sets name no integration channel of
+    /// their own, because MadGraph's vertex filter drops the diagram they were
+    /// built on. Such a draw takes the set's default channel, so a run that has
+    /// any says so rather than absorbing it.
+    pub unmapped_channels: usize,
     /// The scales, when the prescription resolves to constants — then no event
     /// kinematics are read and the coupling is applied once rather than per point.
     pub constant_scales: Option<EventScales>,
@@ -541,41 +625,49 @@ pub(crate) fn make_subs_scale_aware(
 /// Compile the run card's prescription for a process, deriving the channel
 /// forests its clustering branch consults from the process's own diagrams.
 ///
+/// One `(representative amplitude, diagrams)` pair per subprocess a sampling
+/// channel can be drawn from, in the order the sampler pools them: a fixed-beam
+/// run passes one, a hadronic run one per flavour group. The pairing is what
+/// makes a drawn channel nameable to the scale — channel `j` of set `g` is
+/// diagram `j` of `subprocesses[g].1`.
+///
 /// The coupling is built only when some subprocess actually moves with it, which is
 /// what keeps a matrix element with no QCD in it away from a `pdlabel` whose
 /// `αs` lives in a PDF set the caller may not have loaded. `grid` is that set's
 /// `AlphaS_*` metadata, for the label that demands it.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn compile_scale_source(
-    rep: &AmplitudeEvaluator,
-    diagrams: &[Diagram],
+    subprocesses: &[(&AmplitudeEvaluator, &[Diagram])],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     card: &RunCard,
     grid: Option<&AlphaSInfo>,
     needs_alpha_s: bool,
 ) -> Result<EventScaleSource, HadronicError> {
-    let derived = derive_channels(
-        diagrams,
-        rep.external_particles(),
-        rep.n_in(),
-        model,
-        evaluated,
-    )?;
-    let channels = Channels {
-        derived,
-        colors: ColorTable::new(
-            model
-                .particles
-                .values()
-                .map(|p| (p.pdg_code, p.color))
-                .collect::<Vec<(i64, i32)>>(),
-            card.maxjetflavor,
-        ),
-        default_config: 1,
-    };
+    let colors = ColorTable::new(
+        model
+            .particles
+            .values()
+            .map(|p| (p.pdg_code, p.color))
+            .collect::<Vec<(i64, i32)>>(),
+        card.maxjetflavor,
+    );
+    let mut sets = Vec::with_capacity(subprocesses.len());
+    for (rep, diagrams) in subprocesses {
+        let derived = derive_channels(
+            diagrams,
+            rep.external_particles(),
+            rep.n_in(),
+            model,
+            evaluated,
+        )?;
+        sets.push(Channels {
+            derived,
+            colors: colors.clone(),
+            default_config: 1,
+        });
+    }
     let param_card_as = evaluated.alpha_s().ok_or(HadronicError::MissingAlphaS)?;
-    EventScaleSource::from_run_card(card, param_card_as, grid, Some(channels), needs_alpha_s)
+    EventScaleSource::from_run_card(card, param_card_as, grid, Some(sets), needs_alpha_s)
 }
 
 /// Hold every subprocess at the coupling a constant prescription implies, and
@@ -597,7 +689,13 @@ pub(crate) fn constant_scale_report(
     }
     RunningCouplingReport {
         depends_on_alpha_s: awareness.depends_on_alpha_s,
-        channels: source.and_then(EventScaleSource::channels).map(Channels::len),
+        channels: source
+            .and_then(EventScaleSource::channels)
+            .map(|sets| sets.iter().map(Channels::len).sum()),
+        unmapped_channels: source
+            .and_then(EventScaleSource::channels)
+            .map(|sets| sets.iter().map(Channels::unmapped_channels).sum())
+            .unwrap_or(0),
         constant_scales,
         constant_alpha_s,
         alpha_s_ref: awareness.alpha_s_ref,
@@ -700,10 +798,12 @@ impl Sampler {
         }
     }
 
-    fn sample(&self, u: &[f64]) -> PhaseSpacePoint<f64> {
+    /// One draw, with the channel it was made in. The flat map has a single
+    /// channel and so always reports `0`.
+    fn sample_from(&self, u: &[f64]) -> (usize, PhaseSpacePoint<f64>) {
         match self {
-            Sampler::Flat(c) => c.sample(u),
-            Sampler::Multi(c) => c.sample(u),
+            Sampler::Flat(c) => (0, c.sample(u)),
+            Sampler::Multi(c) => c.sample_from(u),
         }
     }
 }
@@ -858,8 +958,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         // A fixed-beam run has no parton distributions, so `pdlabel` never reaches
         // the branch that would want a set's alpha_s tabulation.
         let source = compile_scale_source(
-            self.subs[0].evaluator(),
-            diagrams,
+            &[(self.subs[0].evaluator(), diagrams)],
             model,
             evaluated,
             card,
@@ -889,24 +988,26 @@ impl<'a> FixedBeamIntegrand<'a> {
             let u: Vec<f64> = (0..self.sampler.ndim())
                 .map(|_| rng.random::<f64>())
                 .collect();
-            let point = self.sampler.sample(&u);
+            let (channel, point) = self.sampler.sample_from(&u);
             let mut ext: Vec<V> = Vec::with_capacity(2 + point.momenta.len());
             ext.push(V::new(self.beam_e, 0.0, 0.0, self.beam_e));
             ext.push(V::new(self.beam_e, 0.0, 0.0, -self.beam_e));
             ext.extend_from_slice(&point.momenta);
             if self.cuts.pass(&ext) {
-                self.event_scales_of(source, &point.momenta)?;
+                self.event_scales_of(source, &point.momenta, channel)?;
                 return Ok(());
             }
         }
         Ok(())
     }
 
-    /// The scales at one phase-space point, from the beams and the outgoing momenta.
+    /// The scales at one phase-space point, from the beams, the outgoing momenta
+    /// and the sampling channel the point was drawn in.
     fn event_scales_of(
         &self,
         source: &EventScaleSource,
         momenta: &[V],
+        channel: usize,
     ) -> Result<EventScales, ScaleError> {
         let mut buf = self.scale_buf.borrow_mut();
         buf.clear();
@@ -915,7 +1016,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             [self.beam_e, 0.0, 0.0, self.beam_e],
             [self.beam_e, 0.0, 0.0, -self.beam_e],
         ];
-        source.scales(beams, &buf)
+        source.scales(beams, &buf, SampledChannel::sole(channel))
     }
 
     /// The scales this integrand evaluates a point at, when a prescription was
@@ -927,9 +1028,16 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// matrix element moves with the strong coupling and so no prescription was
     /// installed at all — a record then takes its factorisation scale from the run
     /// card directly, no cross section having depended on it.
-    pub fn event_scales(&self, momenta: &[V]) -> Option<Result<EventScales, ScaleError>> {
+    /// `channel` is the sampling channel the point came from, which the
+    /// clustering prescription reads: an event record's scale is the one its own
+    /// draw implied, not the one some other channel would have given.
+    pub fn event_scales(
+        &self,
+        momenta: &[V],
+        channel: usize,
+    ) -> Option<Result<EventScales, ScaleError>> {
         let source = self.scales.as_ref()?;
-        Some(self.event_scales_of(source, momenta))
+        Some(self.event_scales_of(source, momenta, channel))
     }
 
     /// The source an event record's `AQCDUP` is evaluated from, when one was built.
@@ -937,11 +1045,17 @@ impl<'a> FixedBeamIntegrand<'a> {
         self.scales.as_ref()?.alpha_s()
     }
 
+    /// The compiled per-event prescription, once
+    /// [`use_running_coupling`](Self::use_running_coupling) installed one.
+    pub fn scale_source(&self) -> Option<&EventScaleSource> {
+        self.scales.as_ref()
+    }
+
     /// Move every subprocess to the coupling this point's renormalisation scale
     /// implies. A constant prescription was applied once at installation, and a
     /// matrix element with no strong coupling in it has no coupling to move, so
     /// both return here without touching the momenta.
-    fn apply_scale(&self, momenta: &[V]) {
+    fn apply_scale(&self, momenta: &[V], channel: usize) {
         let Some(source) = &self.scales else { return };
         if source.constant_scales().is_some() {
             return;
@@ -950,7 +1064,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             return;
         };
         let scales = self
-            .event_scales_of(source, momenta)
+            .event_scales_of(source, momenta, channel)
             .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"));
         let (last_mu_r, last_alpha_s) = self.last_coupling.get();
         let alpha_s = if scales.mu_r == last_mu_r {
@@ -987,12 +1101,12 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// Each subprocess enters weighted by its own identical-particle factor, so a
     /// summed matrix element whose terms have different outgoing multisets is right
     /// term by term. The survey sees the same weighting the integral does.
-    fn matrix_element(&self, momenta: &[V]) -> f64 {
+    fn matrix_element(&self, momenta: &[V], channel: usize) -> f64 {
         let ext = self.externals(momenta);
         if !self.cuts.pass(&ext) {
             return 0.0;
         }
-        self.apply_scale(momenta);
+        self.apply_scale(momenta, channel);
 
         let mut m2 = 0.0;
         for sub in &self.subs {
@@ -1005,8 +1119,8 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// (GeV⁻²); its VEGAS integral is the partonic cross section. Points whose
     /// momenta fail a cut contribute exactly zero.
     pub fn value(&self, u: &[f64]) -> f64 {
-        let point = self.sampler.sample(u);
-        let m2 = self.matrix_element(&point.momenta);
+        let (channel, point) = self.sampler.sample_from(u);
+        let m2 = self.matrix_element(&point.momenta, channel);
         if m2 == 0.0 {
             return 0.0;
         }
@@ -1062,6 +1176,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         if built.is_empty() {
             return None;
         }
+        self.assert_channels_match_the_scale_source(built.len());
         let samplers: Vec<ChannelSampler> = built.iter().map(ChannelSampler::of).collect();
         let channels: Vec<Box<dyn Channel<f64>>> = built
             .into_iter()
@@ -1069,7 +1184,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             .collect();
         let mut combiner = MultiChannel::uniform(channels);
         let report = combiner.adapt_alphas(
-            |momenta| self.matrix_element(momenta),
+            |momenta, channel| self.matrix_element(momenta, channel),
             seed,
             MULTICHANNEL_ADAPT_STREAM,
             n_survey,
@@ -1113,6 +1228,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         if built.is_empty() {
             return None;
         }
+        self.assert_channels_match_the_scale_source(built.len());
         let samplers: Vec<ChannelSampler> = built.iter().map(ChannelSampler::of).collect();
         let channels: Vec<Box<dyn Channel<f64>>> = built
             .into_iter()
@@ -1127,6 +1243,28 @@ impl<'a> FixedBeamIntegrand<'a> {
         self.channel_samplers = samplers;
         self.vegas_alpha = VEGAS_ALPHA_MAPPED;
         Some(Ok(()))
+    }
+
+    /// A sampling channel names an integration channel by its diagram index, so
+    /// the two sides have to be built from one diagram slice. A caller that
+    /// installed a clustering prescription from different diagrams than it
+    /// sampled would silently cluster every point in the wrong channel; the
+    /// count is what says so.
+    fn assert_channels_match_the_scale_source(&self, built: usize) {
+        let Some(sets) = self.scales.as_ref().and_then(EventScaleSource::channels) else {
+            return;
+        };
+        assert_eq!(
+            sets.len(),
+            1,
+            "a fixed-beam run draws every channel from one subprocess"
+        );
+        assert_eq!(
+            built,
+            sets[0].diagram_count(),
+            "the multichannel map and the cluster scale were built from different diagrams, \
+             so a sampled channel would name the wrong integration channel"
+        );
     }
 
     /// The channels the integral is split across: one per diagram once a
@@ -1175,7 +1313,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// If `channel` is not a channel index ([`channel_count`](Self::channel_count)).
     pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         let point = self.sample_channel(channel, u);
-        let m2 = self.matrix_element(&point.momenta);
+        let m2 = self.matrix_element(&point.momenta, channel);
         if m2 == 0.0 {
             return 0.0;
         }
@@ -1193,7 +1331,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         let point = self.sample_channel(channel, u);
         momenta.clear();
         momenta.extend_from_slice(&point.momenta);
-        let m2 = self.matrix_element(&point.momenta);
+        let m2 = self.matrix_element(&point.momenta, channel);
         if m2 == 0.0 {
             return 0.0;
         }
@@ -1260,11 +1398,17 @@ impl<'a> FixedBeamIntegrand<'a> {
     ///
     /// `None` when the point carries no weight at all (outside the cuts, or a
     /// vanishing matrix element), where no label is defined.
-    pub fn select_event(&self, momenta: &[V], u: [f64; 4]) -> Option<EventSelection> {
+    pub fn select_event(
+        &self,
+        momenta: &[V],
+        channel: usize,
+        u: [f64; 4],
+    ) -> Option<EventSelection> {
         let ext = self.externals(momenta);
         // The diagonals are read at the event's own coupling, the one its |M|² was
-        // taken at.
-        self.apply_scale(momenta);
+        // taken at — which is the point's own sampling channel's, since the
+        // cluster scale reads it.
+        self.apply_scale(momenta, channel);
 
         let m2: Vec<f64> = self.subs.iter().map(|s| s.eval_m2(&ext)).collect();
         let subprocess = select_index(&m2, u[0])?;
@@ -1906,6 +2050,99 @@ mod tests {
         (evals, cuts, masses, avg)
     }
 
+    /// The sampler's channels and the scale prescription's integration channels
+    /// are one numbering apart, and this is where the two meet.
+    ///
+    /// `g g → g g` is the process where they provably differ: four diagrams, four
+    /// sampling channels, three integration channels, because MadGraph's
+    /// generator drops the four-gluon diagram. So the map cannot be the identity
+    /// and cannot be assumed — a point drawn in the sampler's channel 2 is
+    /// clustered in integration channel 2, not 3, and the channel with no config
+    /// of its own falls back rather than indexing past the end.
+    ///
+    /// What this pins that `configs`' own test cannot is the *wiring*: that the
+    /// integrand hands the scale source the same diagram slice its sampler is
+    /// built from, so the two indices mean the same thing.
+    #[test]
+    fn a_sampled_channel_names_the_integration_channel_of_its_own_diagram() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let sqrt_s = 500.0;
+        let opts = ParsingOptions::default();
+        let proc = parse_proc_card("generate g g > g g", &opts).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        assert_eq!(diagrams.len(), 4);
+
+        // Both scales free at `dynamical_scale_choice = -1`, which is the branch
+        // that reads a channel at all.
+        let card = RunCard::parse(
+            "  0 = lpp1
+  0 = lpp2
+  250.0 = ebeam1
+  250.0 = ebeam2
+             \x20 False = fixed_ren_scale
+  False = fixed_fac_scale1
+             \x20 False = fixed_fac_scale2
+  -1 = dynamical_scale_choice
+             \x20 4 = maxjetflavor
+",
+        )
+        .expect("run card");
+
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&card, &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let mut integ =
+            FixedBeamIntegrand::new(bounds.iter().collect(), &cuts, sqrt_s, masses, avg);
+        let report = integ
+            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .expect("the clustering scale compiles for g g > g g");
+        assert_eq!(report.channels, Some(3));
+        assert_eq!(report.unmapped_channels, 1);
+
+        let sets = integ
+            .scale_source()
+            .and_then(EventScaleSource::channels)
+            .expect("the clustering branch carries channel forests");
+        assert_eq!(sets.len(), 1, "one subprocess, one channel set");
+        let channels = &sets[0];
+        assert_eq!(channels.diagram_count(), diagrams.len());
+        assert_eq!(
+            (0..4)
+                .map(|j| channels.config_of_diagram(j))
+                .collect::<Vec<_>>(),
+            vec![None, Some(1), Some(2), Some(3)],
+        );
+        // The unmapped channel takes the default rather than an out-of-range
+        // index or the identity's `1`-off answer.
+        assert_eq!(
+            (0..4)
+                .map(|j| channels.config_of_channel(j))
+                .collect::<Vec<_>>(),
+            vec![1, 1, 2, 3],
+        );
+
+        let diagram_count = channels.diagram_count();
+        // And the sampler is built over the same slice, so `j` means the same
+        // thing on both sides.
+        integ.use_multichannel(&diagrams, &evaluated, 512, 1, 0x5EED_C6);
+        assert_eq!(integ.channel_count(), diagram_count);
+    }
+
     /// The per-event helicity and colour-flow draws must reproduce the diagonals
     /// they read — the property `SELECT_HEL` and `SELECT_COLOR` rest on, and the one
     /// a wrong accumulator or a mis-indexed draw would break while still returning
@@ -1994,6 +2231,7 @@ mod tests {
             let sel = integ
                 .select_event(
                     &momenta,
+                    0,
                     [
                         s.next_uniform::<f64>(),
                         s.next_uniform::<f64>(),
@@ -2095,6 +2333,7 @@ mod tests {
                 let sel = integ
                     .select_event(
                         &momenta,
+                        point.channel,
                         [
                             labels.next_uniform::<f64>(),
                             labels.next_uniform::<f64>(),

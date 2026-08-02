@@ -66,6 +66,14 @@ pub struct DerivedChannels {
     /// from. The two numberings differ: a diagram the vertex filter drops has no
     /// channel at all.
     pub diagram_of: Vec<usize>,
+    /// `config_of_diagram[d]` is the channel (from `1`) diagram `d` yielded, or
+    /// `None` where the vertex filter dropped it — the inverse of `diagram_of`,
+    /// over the whole diagram slice rather than over the surviving channels.
+    ///
+    /// This is the map a sampler needs. Its channels are one per *diagram*, so
+    /// the channel it drew a point in names an integration channel only through
+    /// here, and the two numberings coincide exactly when nothing was dropped.
+    pub config_of_diagram: Vec<Option<usize>>,
 }
 
 /// One vertex of the re-rooted tree, in the shape `configs.inc` writes.
@@ -176,6 +184,10 @@ pub fn derive_channels_permuted(
         .map(|&id| model.particle(id).pdg_code)
         .collect();
     let n_configs = configs.len();
+    let mut config_of_diagram = vec![None; diagrams.len()];
+    for (config, &diagram) in diagram_of.iter().enumerate() {
+        config_of_diagram[diagram] = Some(config + 1);
+    }
     Ok(DerivedChannels {
         set: ChannelSet {
             n_external,
@@ -185,6 +197,7 @@ pub fn derive_channels_permuted(
             contributes: vec![vec![true; n_configs]],
         },
         diagram_of,
+        config_of_diagram,
     })
 }
 
@@ -482,6 +495,103 @@ mod tests {
         assert_eq!(
             masks,
             vec![vec![0b0101, 0b1101], vec![0b1001, 0b1101], vec![0b1100]]
+        );
+    }
+
+    /// The map from a sampler's channels to integration channels, on the one
+    /// process where the two numberings provably differ.
+    ///
+    /// A per-diagram sampler has one channel per *diagram*; `configs.inc` has one
+    /// per surviving diagram. `g g → g g` is where that gap is visible without a
+    /// MadGraph run: the four-gluon diagram has no channel, so the sampler's
+    /// fourth channel maps to nothing and the other three do not map to
+    /// themselves. Anything that reorders either side — the diagram enumeration
+    /// or the forest derivation — moves this table.
+    #[test]
+    fn the_channel_to_config_map_is_not_the_identity() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let card = parse_proc_card("generate g g > g g", &ParsingOptions::default())
+            .expect("proc card parses");
+        let sets = generate_from_proc_card(&card, model.as_ref()).expect("enumerate");
+        let set = sets
+            .iter()
+            .find(|s| !s.diagrams.is_empty())
+            .expect("a non-empty subprocess");
+        let externals: Vec<ParticleId> = set
+            .particles_in
+            .iter()
+            .chain(set.particles_out.iter())
+            .map(|name| model.particle_id(name).expect("external in model"))
+            .collect();
+        let derived = derive_channels(
+            &set.diagrams,
+            &externals,
+            set.particles_in.len(),
+            model.as_ref(),
+            &evaluated,
+        )
+        .expect("channel forests");
+
+        // The unmapped channel is the four-gluon one, identified by the vertex
+        // that gets it dropped rather than by its position.
+        let four_point: Vec<usize> = set
+            .diagrams
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.vertices.iter().any(|v| v.rays.len() == 4))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(four_point.len(), 1);
+        assert_eq!(derived.config_of_diagram[four_point[0]], None);
+        assert_eq!(
+            derived
+                .config_of_diagram
+                .iter()
+                .filter(|c| c.is_none())
+                .count(),
+            1
+        );
+
+        // Both directions of the same map.
+        for (diagram, config) in derived.config_of_diagram.iter().enumerate() {
+            if let Some(config) = config {
+                assert_eq!(derived.diagram_of[config - 1], diagram);
+            }
+        }
+
+        // The table itself, and the topology each entry lands on: a reorder that
+        // carried both sides along together would leave the indices alone and
+        // move the masks.
+        let masks: Vec<Option<Vec<u32>>> = derived
+            .config_of_diagram
+            .iter()
+            .map(|c| {
+                c.map(|c| {
+                    let forest = &derived.set.configs[c - 1];
+                    forest
+                        .lines
+                        .iter()
+                        .filter_map(|l| forest.mask(l.index))
+                        .collect()
+                })
+            })
+            .collect();
+        assert_eq!(
+            derived.config_of_diagram,
+            vec![None, Some(1), Some(2), Some(3)]
+        );
+        // The s-channel gluon writes one line and the two spacelike channels
+        // write two each, as `a_four_point_vertex_leaves_its_diagram_without_a_channel`
+        // reads them off the channel side.
+        assert_eq!(
+            masks,
+            vec![
+                None,
+                Some(vec![0b1100]),
+                Some(vec![0b0101, 0b1101]),
+                Some(vec![0b1001, 0b1101]),
+            ]
         );
     }
 
