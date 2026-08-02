@@ -318,6 +318,7 @@ impl EventSource for SampleSource<'_> {
             .event_in_channel(point.channel, &point.u, &mut self.momenta);
         let selection = self.integrand.select_event(
             &self.momenta,
+            point.channel,
             [
                 self.rng.random(),
                 self.rng.random(),
@@ -334,7 +335,7 @@ impl EventSource for SampleSource<'_> {
             .collect();
         // The scales the matrix element itself ran at, so the record reports the
         // run rather than a second prescription compiled off the same card.
-        let (scale, alpha_qcd) = match self.integrand.event_scales(&self.momenta) {
+        let (scale, alpha_qcd) = match self.integrand.event_scales(&self.momenta, point.channel) {
             Some(Ok(scales)) => {
                 let alpha_s = self
                     .integrand

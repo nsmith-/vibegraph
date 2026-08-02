@@ -111,6 +111,24 @@ const LLJ_NITER: usize = 10;
 /// The whole measured budget family — `0.28%`, `0.00%`, `0.16%` at 150 000,
 /// 300 000 and 600 000 — sits inside it, so it is not a bound around one number.
 const LLJ_MAX_REL: f64 = 0.005;
+/// The same bound for the *dynamical*-scale row, set at a different thing.
+///
+/// The fixed-scale row's residual is Monte Carlo, so its bound sits just above
+/// the reference's own error. This row's residual is a systematic: the cluster
+/// scale reads the integration channel, so σ depends on the channel partition it
+/// was integrated with, and `validate_sigma`'s `probe_channel_partition_moves_sigma`
+/// measures that dependence at `1.5%` on the two partonic rows whose scale the
+/// channel actually moves — against a `0.16%` Monte-Carlo error, and against
+/// nothing outside noise on the two where it does not. Diluted by the flavour
+/// groups of `p p → ℓ⁺ℓ⁻ j` that do not carry it, the observed `0.68%` sits
+/// inside that band, and `1.5%` here is the band with headroom.
+///
+/// It is above MadGraph's own `0.33%` on this run, which is the floor no
+/// agreement can be tighter than, and it is not a bound fitted to one number: the
+/// budget ladder's `150k` and `300k` rungs (`−0.97%`, `−0.70%`) are both inside
+/// it, while the `−3.05%` this row read when every point was clustered in
+/// channel 1 is not.
+const LLJ_DYN_MAX_REL: f64 = 0.015;
 /// Scatter the estimates are allowed about their own mean, in units of their
 /// quoted errors. Measured over the same budget family: `1.55`, `0.47`, `1.90`,
 /// `0.37`.
@@ -913,7 +931,7 @@ fn dyn_run_present(gate: &str, run: &str) -> bool {
 }
 
 /// σ(p p → ℓ⁺ℓ⁻ j) at MadGraph's *dynamical* scale choice, against the banked
-/// `pp_to_llj_dyn` run — measured and reported, not enforced.
+/// `pp_to_llj_dyn` run.
 ///
 /// The one row where the scale prescription is the only thing under test. The two
 /// run cards differ in the three `fixed_*_scale` booleans and in nothing else —
@@ -924,32 +942,36 @@ fn dyn_run_present(gate: &str, run: &str) -> bool {
 /// flavour decomposition, the phase-space map or the cuts: those are held fixed
 /// by a passing row.
 ///
-/// **It disagrees, by a diagnosed amount.** The budget ladder in
-/// [`probe_llj_dyn_budget_ladder`] gives `399.51`, `401.26`, `402.38`, `402.77 pb`
-/// over five seeds at `75k`, `150k`, `300k` and `600k` — rising, with the
-/// increments halving, so the estimator approaches roughly `403` from below the
-/// way the fixed-scale row does, and the last rung's five seeds agree at
-/// `χ²/dof 0.09`. Against MadGraph's `415.42 ± 1.36` that is a converged,
-/// seed-stable `−3.05%`.
+/// Each point is clustered in the channel its own sampling channel names — per
+/// flavour group, since the groups of this process do not share a merge graph.
+/// While every point was instead clustered in channel 1 this row read `−3.05%`;
+/// it now reads `−0.68%` at the gate's own budget, and the budget ladder in
+/// [`probe_llj_dyn_budget_ladder`] gives `409.55`, `411.39`, `412.53` pb over
+/// five seeds at `75k`, `150k` and `300k` — rising with the increments halving,
+/// the same approach-from-below the fixed-scale row has.
 ///
-/// The cause is not this scale prescription's arithmetic but the input it is not
-/// given: the cluster scale depends on the integration channel, and the integrand
-/// names channel 1 on every point. The partonic rows separate the two halves of
-/// that — `uux_to_epemg` and `ddx_to_epemg`, where no banked event needs another
-/// channel, agree to `0.3%` and `0.4%`, while `gu_to_epemu` and `gux_to_epemux`,
-/// where 72% do, are `5.5%` low. This row is the same defect diluted by the
-/// groups that do not carry it: the gluon-initiated share of `p p → ℓ⁺ℓ⁻ j` times
-/// `5.5%` is the `3%` seen here.
+/// **What is left is the channel partition, and the tolerance is set at its
+/// scale rather than at the reference's.** Once the scale reads the integration
+/// channel, σ is no longer independent of the multichannel selection weights:
+/// `αⱼ` decides which scale a region of phase space is evaluated at, not only how
+/// often it is visited. `validate_sigma`'s `probe_channel_partition_moves_sigma`
+/// measures that directly on the partonic rows — `1.5%` between this crate's
+/// converged and uniform partitions on the two gluon-beam ones, against Monte
+/// Carlo `0.16%`, and nothing outside noise on the two where no channel moves the
+/// scale. Diluted by the groups that do not carry it, that is the band this row's
+/// `0.68%` sits in.
 ///
-/// The comparison stays running rather than being removed, so landing the channel
-/// plumbing shows up here immediately.
+/// The **pull is reported and not asserted**, and that is deliberate: the
+/// residual here is a systematic of about `0.6%`, so its pull grows without bound
+/// as this side's budget rises while the disagreement stays put. `rel` and the
+/// seed scatter are what carry meaning.
 ///
-/// What it cannot see even once it agrees: everything a scalar integrates over.
-/// The per-event scale enters σ through an average, so a clustering that got
-/// individual events wrong while preserving that average would pass — which is
-/// why `validate_scales` replays every banked event's `SCALUP`, `<rscale>` and
-/// `<pdfrwt>` against MadGraph's own printed values, and why this row is the
-/// end-to-end statement rather than the fine one.
+/// What it cannot see: everything a scalar integrates over. The per-event scale
+/// enters σ through an average, so a clustering that got individual events wrong
+/// while preserving that average would pass — which is why `validate_scales`
+/// replays every banked event's `SCALUP`, `<rscale>` and `<pdfrwt>` against
+/// MadGraph's own printed values, and why this row is the end-to-end statement
+/// rather than the fine one.
 #[test]
 fn sigma_llj_dynamical_scale_vs_mg() {
     if !dyn_run_present("sigma_llj_dynamical_scale_vs_mg", LLJ_DYN_RUN) {
@@ -1006,15 +1028,15 @@ fn sigma_llj_dynamical_scale_vs_mg() {
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
     eprintln!(
-        "[llj_dyn] INFO vibegraph σ = {mean:.3} ± {mean_err:.3} pb ({} seeds, \
+        "[llj_dyn] GATE vibegraph σ = {mean:.3} ± {mean_err:.3} pb ({} seeds, \
          χ²/dof = {chi2:.2}) | MG σ = {mg:.3} ± {mg_err:.3} pb | \
-         pull = {pull:+.2} | rel = {rel:+.4}  <the cluster scale is taken in \
-         integration channel 1 on every point>",
+         pull = {pull:+.2} | rel = {rel:+.4}",
         runs.len()
     );
 
-    let mut row = IntegralsRow::new(LLJ_DYN_RUN, LLJ_PROCESS, "info");
-    row.status = "info";
+    let ok = rel.abs() < LLJ_DYN_MAX_REL && chi2 < LLJ_MAX_CHI2_PER_DOF;
+    let mut row = IntegralsRow::new(LLJ_DYN_RUN, LLJ_PROCESS, "gate");
+    row.status = if ok { "pass" } else { "fail" };
     row.sigma_vg_pb = mean;
     row.sigma_vg_err_pb = mean_err;
     row.sigma_mg_pb = mg;
@@ -1028,13 +1050,25 @@ fn sigma_llj_dynamical_scale_vs_mg() {
     row.niter = LLJ_NITER;
     row.subsampler = summary;
     row.note = Some(
-        "measured, not enforced: the cluster scale is taken in integration channel 1 \
-         on every point, which costs -5.5% on the two gluon-beam partonic rows and \
-         nothing on the two annihilation ones. Three seeds at 300k here; the budget \
-         ladder that says this is converged rather than under-sampled is oracle-layer"
+        "each point clustered in the channel its own sampling channel names, per \
+         flavour group. Three seeds at 300k here; the budget ladder that says this is \
+         converged rather than under-sampled is oracle-layer. rel_tol is the channel \
+         partition's own scale, and the pull is reported rather than asserted because \
+         the residual is a systematic whose pull grows with this side's budget"
             .to_string(),
     );
     row.write();
+
+    assert!(
+        rel.abs() < LLJ_DYN_MAX_REL,
+        "[llj_dyn] σ disagreement: vibegraph {mean:.3}±{mean_err:.3} vs \
+         MG {mg:.3}±{mg_err:.3} pb, rel = {rel:+.4} > {LLJ_DYN_MAX_REL}"
+    );
+    assert!(
+        chi2 < LLJ_MAX_CHI2_PER_DOF,
+        "[llj_dyn] the seeds scatter by more than they claim: \
+         χ²/dof = {chi2:.2} over {runs:?}"
+    );
 }
 
 /// Seed sweep and budget ladder for the dynamical ℓℓj row, the evidence its

@@ -87,7 +87,9 @@
 //! ```
 //!
 //! required to satisfy `|pull| <= PULL_LIMIT`, backed by a per-process
-//! relative-tolerance bound.
+//! relative-tolerance bound. The rows in [`PULL_REPORTED_NOT_ASSERTED`] are the
+//! exception, for a reason recorded there: a pull cannot bound a residual that is
+//! a systematic rather than a fluctuation.
 //!
 //! Runs only when the gitignored MadGraph `output/` tree is present (same
 //! contract as `amplitude_oracle`); otherwise every process is skipped.
@@ -121,6 +123,27 @@ use common::report::{ChannelSummary, IntegralsRow, SeedResult};
 /// once the budget makes `err_vg` small).
 const PULL_LIMIT: f64 = 3.5;
 
+/// The gated rows whose pull is reported rather than asserted, and why the pull
+/// is the wrong statistic for them.
+///
+/// A pull is the right statistic when the residual is Monte Carlo: it shrinks as
+/// either side's budget grows, so a bound on it is a bound on a disagreement. It
+/// is the wrong one when the residual is a *systematic of measured size*, because
+/// then it grows without bound as `err_vg` falls while the disagreement stays
+/// exactly where it was. Asserting it would be asserting a precision the
+/// comparison does not have, and tightening the budget would eventually fail a
+/// row that had not moved.
+///
+/// These two are that case, and nothing else here is. Their cluster scale depends
+/// on which integration channel is named — `μR` spreads by a factor of two over
+/// their sampling channels, where every other row's spread is exactly zero
+/// (`the_sampled_channel_reaches_the_cluster_scale`) — so their σ depends on the
+/// channel partition it was integrated with, at a size
+/// `probe_channel_partition_moves_sigma` measures directly. `rel_tol` is set at
+/// that ambiguity, and the seed sweep and `χ²/dof` are what say the number is
+/// stable; those three are the criteria, and the pull is printed beside them.
+const PULL_REPORTED_NOT_ASSERTED: [&str; 2] = ["gu_to_epemu", "gux_to_epemux"];
+
 /// Fixed RNG seed — makes the integral (and hence the pull) reproducible.
 const SEED: u64 = 20_260_719;
 
@@ -145,6 +168,10 @@ enum Plan {
     /// The middle rung of the enforcement ladder — a row whose disagreement is
     /// measured and recorded rather than absorbed into a widened `rel_tol`, and
     /// the arm a demotion lands on.
+    ///
+    /// The attribute keeps the rung available while every row happens to be
+    /// enforced; it is what [`plan_for`] returns for a row that is not.
+    #[allow(dead_code)]
     Info {
         neval: usize,
         niter: usize,
@@ -297,41 +324,49 @@ fn plan_for(dir: &str) -> Plan {
         // these are the only rows here where the coupling moves under the
         // sampler. Their `σ` is linear in it.
         //
-        // The two annihilation rows agree and are asserted; the two rows with a
-        // gluon beam do not, and the difference between the pairs is a measured
-        // property of the scale rather than of the amplitudes — which are gated
-        // at `4e-14` on all four. The scale is a function of the event **and** of
-        // the integration channel, and the integrand names channel 1 on every
-        // point because the sampled channel is not plumbed through to the scale
-        // prescription. On `uux_to_epemg` and `ddx_to_epemg` no banked event needs
-        // any other channel; on `gu_to_epemu` and `gux_to_epemux` 7204 and 7231 of
-        // 10 000 do. `probe_first_channel_cost_in_alpha_s` prices that in the
-        // coupling itself, against MadGraph's own per-event `AQCDUP`: `-2e-9` on
-        // the two asserted here, and `-5.540e-2` / `-5.557e-2` on the two below,
-        // which are their sigma deviations to two digits.
-        //
-        // Over five seeds at this budget and at four times it
-        // (`probe_llj_parton_seed_stability`) the two asserted rows hold
-        // |rel| <= 3.9e-3 and 5.6e-3 with means +2.8e-3 / +4.3e-3, both flat
-        // across the ladder and inside twice the banked run's own 0.21% and 0.20%
-        // Monte-Carlo error. `rel_tol` is set at 0.01 by that spread rather than
-        // by the reference's error, which is the tighter of the two here.
+        // The scale each point runs at is the one its own sampling channel
+        // implies, so the four split by how much the channel moves the scale at
+        // all. On `uux_to_epemg` and `ddx_to_epemg` no banked event needs a
+        // channel other than the first, and both are numerically identical to
+        // what they were when every point was clustered in channel 1: over five
+        // seeds at this budget and at four times it
+        // (`probe_llj_parton_seed_stability`) they hold |rel| <= 3.9e-3 and
+        // 5.6e-3 with means +2.8e-3 / +4.3e-3, flat across the ladder and inside
+        // twice the banked run's own 0.21% and 0.20% Monte-Carlo error.
+        // `rel_tol` is set at 0.01 by that spread rather than by the reference's
+        // error, which is the tighter of the two here.
         "uux_to_epemg" | "ddx_to_epemg" => Plan::Gate {
             neval: 60_000,
             niter: 8,
             rel_tol: 0.01,
         },
-        // A gluon beam: 5.5% low, on every seed and unmoved by four times the
-        // budget, so it is not sampling. Measured and reported rather than
-        // absorbed into a widened tolerance — the fix is to give the scale
-        // prescription the channel the point was drawn in, which is an integrand
-        // change and not a tolerance.
-        "gu_to_epemu" | "gux_to_epemux" => Plan::Info {
+        // A gluon beam, where 7204 and 7231 of 10 000 banked events land on a
+        // channel other than the first. These two carried a −5.5% deficit while
+        // the scale was read in channel 1 on every point; reading it in the
+        // sampled one leaves +1.07e-2 and +9.74e-3 (five seeds each, worst
+        // 1.16e-2 / 1.02e-2, and +1.13e-2 / +1.03e-2 at four times the budget —
+        // a bias, not sampling).
+        //
+        // What is left is the *channel partition*, and it is measured rather
+        // than assumed. Once the scale reads the integration channel, σ stops
+        // being independent of the selection weights: αⱼ decides which scale a
+        // region is evaluated at, not only how often it is visited. Moving from
+        // the converged α to a uniform one (`probe_channel_partition_moves_sigma`)
+        // moves these two by −1.48e-2 and −1.53e-2 against a Monte-Carlo error
+        // of 1.6e-3, while it moves the two rows above by +1.0e-3 and +1.9e-3 —
+        // their own noise, since no channel moves their scale. MadGraph's σ lies
+        // *inside* the interval our two partitions span (+1.08e-2 at the
+        // converged α, −4.2e-3 at uniform on `gu_to_epemu`), and MadEvent's own
+        // partition is a third one: single-diagram enhancement weights channel c
+        // by `AMP2_c/Σ AMP2`, which is not reachable from either of ours.
+        //
+        // So `rel_tol` 0.02 is the scale of that ambiguity with headroom over the
+        // worst measured 1.20e-2 — the algorithm's own error, not the
+        // reference's 0.18% and not a bound fitted to one number.
+        "gu_to_epemu" | "gux_to_epemux" => Plan::Gate {
             neval: 60_000,
             niter: 8,
-            reason: "the cluster scale is taken in integration channel 1 on every point; \
-                     7204 and 7231 of these runs' 10000 banked events need another channel, \
-                     and sigma is 5.5% low, seed-stable and flat in the budget",
+            rel_tol: 0.02,
         },
         // ── 2->6, not integrated ────────────────────────────────────────────
         "uux_to_ccx_emmm_qcd0" | "bbx_to_ccx_emmm_qcd0" => {
@@ -990,6 +1025,258 @@ const LLJ_PARTON_ROWS: [&str; 4] = [
     "gux_to_epemux",
 ];
 
+/// The sampling channel a point was drawn in reaches the scale prescription, and
+/// changes it — asserted on the rows where it must and reported on the rows where
+/// it need not.
+///
+/// Everything downstream of this — two enforced cross sections, four `samples`
+/// rows, and the proton row's own — would look exactly the same if the channel
+/// were silently dropped again and every point clustered in channel 1: the
+/// numbers would move, but nothing would *say* that the channel was what moved
+/// them. This is the assertion that would fail.
+///
+/// On the two gluon-beam rows the merge graph's coupling-order filter admits
+/// different channel sets for different `nqcd`, so `μR` genuinely depends on
+/// which channel is named, and 7204 / 7231 of their 10 000 banked events land
+/// somewhere other than the first. Those two must show a spread over channels at
+/// a sampled point. The two annihilation rows are the control and are only
+/// reported: no banked event of theirs needs another channel, and their cross
+/// sections are numerically identical to what they were before the channel was
+/// threaded at all.
+#[test]
+fn the_sampled_channel_reaches_the_cluster_scale() {
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    // The rows whose scale must move with the channel, and the rows where it is
+    // measured but not required to.
+    const MUST_SPREAD: [&str; 2] = ["gu_to_epemu", "gux_to_epemux"];
+    let mut asserted = 0usize;
+    for dir in LLJ_PARTON_ROWS {
+        let e = &banked[dir];
+        let spread = with_integrand(
+            dir,
+            &e.process,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+            None,
+            |integ, _| {
+                let ndim = integ.channel_grid_ndim();
+                let mut momenta = Vec::new();
+                let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_C4);
+                let mut worst = 0.0f64;
+                // A handful of cut-passing points is enough: the claim is that
+                // the channel is read at all, not how often it matters.
+                for _ in 0..64 {
+                    let u: Vec<f64> = (0..ndim)
+                        .map(|_| rand::Rng::random::<f64>(&mut rng))
+                        .collect();
+                    if integ.event_in_channel(0, &u, &mut momenta) == 0.0 {
+                        continue;
+                    }
+                    let mu: Vec<f64> = (0..integ.channel_count())
+                        .map(|j| {
+                            integ
+                                .event_scales(&momenta, j)
+                                .expect("a clustered row carries a prescription")
+                                .expect("the prescription accepts a sampled point")
+                                .mu_r
+                        })
+                        .collect();
+                    let lo = mu.iter().cloned().fold(f64::INFINITY, f64::min);
+                    let hi = mu.iter().cloned().fold(0.0f64, f64::max);
+                    worst = worst.max(hi / lo - 1.0);
+                }
+                worst
+            },
+        );
+        println!("{dir}: mu_R spreads by {spread:.3e} over its sampling channels at one point");
+        if MUST_SPREAD.contains(&dir) {
+            assert!(
+                spread > 1e-6,
+                "{dir}: the cluster scale is the same in every sampling channel, so the \
+                 channel the point was drawn in is not reaching the prescription"
+            );
+            asserted += 1;
+        }
+    }
+    assert_eq!(asserted, MUST_SPREAD.len());
+}
+
+/// What the production integrand's own choice of integration channel costs in the
+/// coupling, priced against MadGraph's per-event `AQCDUP`.
+///
+/// `probe_first_channel_cost_in_alpha_s` (`validate_scales.rs`) prices the
+/// *default* — channel 1 on every point — by replaying MadGraph's own events
+/// through the clustering. That number is a property of the bank and of one
+/// channel, so it cannot move when an integrand changes. This is its
+/// production-side counterpart: the integrand draws its own points in its own
+/// channels and reports the cross-section-weighted coupling it evaluates at,
+///
+/// ```text
+/// <as>_vg = Σ w·αs(μR) / Σ w
+/// ```
+///
+/// against `<AQCDUP>_MG` over the run's banked unweighted events, which are
+/// distributed as MadGraph's own cross section. Both sides are the multiplicative
+/// factor a σ linear in `αs` carries, so their ratio is directly comparable to the
+/// σ deviations this file reports.
+///
+/// Per-event agreement is neither claimed nor available: MadGraph's sampled
+/// channel differs event by event and an LHE record does not carry one. What a
+/// cross section reads is the mean.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_sampled_channel_cost_in_alpha_s() {
+    use flate2::read::MultiGzDecoder;
+    use std::io::Read;
+    use vibegraph::lhef::parse::LheFile;
+
+    // `unwgt.f:694` fills `AQCDUP` as `g*g/4d0/3.1415926d0`, with π truncated at
+    // eight digits while `g` was built from the full one. Applying the same
+    // truncation here keeps the two means comparable at the 1.7e-8 the field
+    // carries; nothing at this probe's scale turns on it.
+    #[allow(clippy::approx_constant)]
+    const TRUNCATED_PI: f64 = 3.1415926;
+
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    // Enough draws that the weighted mean's own error is orders below the effect
+    // being priced; the channel split follows the converged α, as the integration's
+    // does.
+    const DRAWS: usize = 600_000;
+
+    for dir in LLJ_PARTON_ROWS {
+        let e = &banked[dir];
+        let path = output_dir()
+            .join(dir)
+            .join("Events/run_01/unweighted_events.lhe.gz");
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let mut lhe = String::new();
+        MultiGzDecoder::new(&bytes[..])
+            .read_to_string(&mut lhe)
+            .unwrap_or_else(|e| panic!("decompress {}: {e}", path.display()));
+        let events = LheFile::parse(&lhe)
+            .expect("MadGraph's own file parses")
+            .events;
+        let mg: f64 = events.iter().map(|ev| ev.alpha_qcd).sum::<f64>() / events.len() as f64;
+
+        let (vg, drawn, unweighted) = with_integrand(
+            dir,
+            &e.process,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+            None,
+            |integ, alphas| {
+                let running = integ
+                    .alpha_s_source()
+                    .expect("a clustered row runs its own coupling");
+                let ndim = integ.channel_grid_ndim();
+                let mut momenta = Vec::new();
+                let (mut sum_w, mut sum_wa, mut sum_a) = (0.0f64, 0.0f64, 0.0f64);
+                let mut kept = 0usize;
+                for (j, &alpha) in alphas.iter().enumerate() {
+                    let n_j = ((alpha * DRAWS as f64) as usize).max(4_096);
+                    let mut rng = ChaCha8Rng::seed_from_u64(SEED);
+                    rng.set_stream(0xC0571 + j as u64);
+                    for _ in 0..n_j {
+                        let u: Vec<f64> = (0..ndim)
+                            .map(|_| rand::Rng::random::<f64>(&mut rng))
+                            .collect();
+                        let w = integ.event_in_channel(j, &u, &mut momenta);
+                        if w == 0.0 {
+                            continue;
+                        }
+                        let scales = integ
+                            .event_scales(&momenta, j)
+                            .expect("a clustered row carries a prescription")
+                            .expect("the prescription accepts a sampled point");
+                        let a = running.eval(scales.mu_r) * TRUNCATED_PI / std::f64::consts::PI;
+                        sum_w += w;
+                        sum_wa += w * a;
+                        sum_a += a;
+                        kept += 1;
+                    }
+                }
+                (sum_wa / sum_w, kept, sum_a / kept as f64)
+            },
+        );
+        println!(
+            "{dir}: sigma-weighted <alpha_s> {vg:.7} over {drawn} drawn points \
+             (unweighted mean {unweighted:.7}) against MadGraph's <AQCDUP> {mg:.7} over {} \
+             banked events: {:+.3e}",
+            events.len(),
+            vg / mg - 1.0,
+        );
+    }
+}
+
+/// Whether the cross section depends on the *channel partition* it was integrated
+/// with — the property a channel-dependent scale gives an integral and a
+/// channel-independent one does not.
+///
+/// Once the scale is read in the channel the point was drawn in, the integrand is
+/// no longer a function of the momenta alone, and the channel-split estimator
+///
+/// ```text
+/// σ = Σⱼ ∫ dΦ f(p, j)·αⱼgⱼ(p)/g(p)
+/// ```
+///
+/// stops being independent of `αⱼ`: the selection weights decide *which* scale a
+/// region of phase space is evaluated at, not merely how often it is visited. So
+/// two partitions of the same process integrate to two different numbers, and the
+/// gap between them is the scale of the ambiguity a comparison against MadGraph
+/// inherits — MadGraph partitions by single-diagram enhancement (`AMP2` per
+/// configuration), this crate by the adapted `αⱼgⱼ/g`, and neither is a
+/// refinement of the other.
+///
+/// The measurement is the same rows integrated twice at one seed: once at the
+/// converged `αⱼ` and once at uniform `αⱼ` (`n_adapt_iter = 0`), everything else
+/// held. Under a channel-*independent* scale the two agree to Monte-Carlo error
+/// by construction, so the two annihilation rows — where no channel moves the
+/// scale — are this probe's own negative control.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_channel_partition_moves_sigma() {
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    for dir in LLJ_PARTON_ROWS {
+        let (neval, niter) = match plan_for(dir) {
+            Plan::Gate { neval, niter, .. } | Plan::Info { neval, niter, .. } => (neval, niter),
+            Plan::Skip(_) => continue,
+        };
+        let e = &banked[dir];
+        let (adapted, err_a, _, _) = integrate_with(
+            dir,
+            &e.process,
+            neval,
+            niter,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+        );
+        let (uniform, err_u, _, _) =
+            integrate_with(dir, &e.process, neval, niter, SEED, MULTICHANNEL_SURVEY, 0);
+        let gap = uniform / adapted - 1.0;
+        let stat = (err_a * err_a + err_u * err_u).sqrt() / adapted;
+        println!(
+            "{dir}: adapted alpha {adapted:.6e} ± {err_a:.2e} | uniform alpha \
+             {uniform:.6e} ± {err_u:.2e} | partition gap {gap:+.3e} \
+             (Monte-Carlo {stat:.1e}) | MG rel adapted {:+.3e} uniform {:+.3e}",
+            adapted / e.sigma_pb - 1.0,
+            uniform / e.sigma_pb - 1.0,
+        );
+    }
+}
+
 /// Seed-stability sweep for the three QCD rows, the evidence their hard gate rests
 /// on.
 ///
@@ -1327,15 +1614,21 @@ fn gate_dir(dir: &str, banked: &BankedSigma) -> Result<(), String> {
     let (pull, rel) = compare(sigma_vg, err_vg, banked);
     eprintln!(
         "[{dir}] {} vg = {sigma_vg:.6e} +- {err_vg:.3e} pb | MG = {:.6e} +- {:.3e} pb | \
-         pull = {pull:+.2} | rel = {rel:+.2e} | chi2/dof = {chi2:.2} ({neval}x{niter}){}",
+         pull = {pull:+.2}{} | rel = {rel:+.2e} | chi2/dof = {chi2:.2} ({neval}x{niter}){}",
         mode.to_uppercase(),
         banked.sigma_pb,
         banked.sigma_err_pb,
+        if PULL_REPORTED_NOT_ASSERTED.contains(&dir) {
+            " (reported, not asserted)"
+        } else {
+            ""
+        },
         reason.map(|r| format!("  <{r}>")).unwrap_or_default()
     );
 
+    let asserts_pull = !PULL_REPORTED_NOT_ASSERTED.contains(&dir);
     let failure = rel_tol.and_then(|tol| {
-        if pull.abs() > PULL_LIMIT {
+        if asserts_pull && pull.abs() > PULL_LIMIT {
             Some(format!(
                 "[{dir}] |pull| = {:.2} exceeds {PULL_LIMIT} \
                  (vg {sigma_vg:.6e} +- {err_vg:.3e} vs MG {:.6e} +- {:.3e})",
@@ -1712,6 +2005,13 @@ fn sigma_gate_matches_madgraph() {
         }
         if matches!(plan_for(dir), Plan::Gate { .. }) {
             asserted += 1;
+        } else {
+            // An exemption on a row that is not gated asserts nothing and hides
+            // that it asserts nothing.
+            assert!(
+                !PULL_REPORTED_NOT_ASSERTED.contains(&dir.as_str()),
+                "[{dir}] is exempt from the pull bound but is not a gated row"
+            );
         }
         if let Err(e) = gate_dir(dir, entry) {
             failures.push(e);

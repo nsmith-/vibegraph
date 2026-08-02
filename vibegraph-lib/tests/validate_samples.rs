@@ -384,7 +384,7 @@ fn generate(
         };
         integ.event_in_channel(point.channel, &point.u, &mut momenta);
         let u = [rng.random(), rng.random(), rng.random(), rng.random()];
-        let Some(selection) = integ.select_event(&momenta, u) else {
+        let Some(selection) = integ.select_event(&momenta, point.channel, u) else {
             continue;
         };
         let beams = integ.beams();
