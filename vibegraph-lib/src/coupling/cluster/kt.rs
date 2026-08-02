@@ -473,8 +473,8 @@ fn cut_bw(channel: &Channel<'_>, settings: &ClusterSettings, p: &[[f64; 4]]) -> 
         let xmass = mg_dot(&q, &q).sqrt();
         mass_of.push((index, xmass));
         let width = line.width.max(line.mass * settings.small_width_treatment);
-        let onshell = (xmass - line.mass).abs() < settings.bwcutoff * width
-            && width / line.mass < 0.1;
+        let onshell =
+            (xmass - line.mass).abs() < settings.bwcutoff * width && width / line.mass < 0.1;
         if !onshell {
             continue;
         }
@@ -601,8 +601,18 @@ pub fn cluster(
             };
             if seed.is_some() {
                 measure_pair(
-                    channel, settings, &pcl, &is_bw, idi, idj, idij, j, partner, &mut pt2ij,
-                    &mut zij, &mut record,
+                    channel,
+                    settings,
+                    &pcl,
+                    &is_bw,
+                    idi,
+                    idj,
+                    idij,
+                    j,
+                    partner,
+                    &mut pt2ij,
+                    &mut zij,
+                    &mut record,
                 );
                 if pt2ij[idij as usize] < min_pt2 {
                     min_pt2 = pt2ij[idij as usize];
@@ -683,7 +693,9 @@ pub fn cluster(
             if pcl[d1 as usize][4] > 0.0 || pcl[d2 as usize][4] > 0.0 {
                 pcl[mother as usize][4] = pcl[d1 as usize][4].max(pcl[d2 as usize][4]);
             }
-            let invariant = frame[0] * frame[0] - frame[1] * frame[1] - frame[2] * frame[2]
+            let invariant = frame[0] * frame[0]
+                - frame[1] * frame[1]
+                - frame[2] * frame[2]
                 - frame[3] * frame[3];
             let boosted = invariant > BOOST_FLOOR && lines_left > 4;
             if boosted {
@@ -691,7 +703,11 @@ pub fn cluster(
                 let carried = boost(&spatial(&pcl[mother as usize]), &frame);
                 rotation = constr(&carried, &along_z);
                 for &(_, mask) in lines.iter().take(lines_left) {
-                    let moved = rotate(&boost(&spatial(&pcl[mask as usize]), &frame), &rotation, true);
+                    let moved = rotate(
+                        &boost(&spatial(&pcl[mask as usize]), &frame),
+                        &rotation,
+                        true,
+                    );
                     pcl[mask as usize][..4].copy_from_slice(&moved);
                 }
                 let moved = rotate(
@@ -817,8 +833,18 @@ pub fn cluster(
                 };
                 if narrowed.is_some() {
                     measure_pair(
-                        channel, settings, &pcl, &is_bw, idi, idj, idij, j, partner, &mut pt2ij,
-                        &mut zij, &mut record,
+                        channel,
+                        settings,
+                        &pcl,
+                        &is_bw,
+                        idi,
+                        idj,
+                        idij,
+                        j,
+                        partner,
+                        &mut pt2ij,
+                        &mut zij,
+                        &mut record,
                     );
                     if pt2ij[idij as usize] < min_pt2 {
                         min_pt2 = pt2ij[idij as usize];

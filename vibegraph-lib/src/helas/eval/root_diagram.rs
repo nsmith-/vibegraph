@@ -1380,7 +1380,10 @@ mod tests {
             "mixed-line-propagator diagrams must share a spine sign, got {mixed_prop:?}"
         );
         assert!(
-            crossed_prop.iter().chain(&no_prop).all(|&s| s == no_prop[0]),
+            crossed_prop
+                .iter()
+                .chain(&no_prop)
+                .all(|&s| s == no_prop[0]),
             "crossed-line-propagator and propagator-free diagrams must share a spine \
              sign, got {crossed_prop:?} / {no_prop:?}"
         );

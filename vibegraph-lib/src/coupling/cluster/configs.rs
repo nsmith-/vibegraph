@@ -331,7 +331,11 @@ impl Walk<'_> {
     /// Each visited vertex other than the root contributes one line, appended
     /// after its own daughters so that the timelike block is bottom-up and the
     /// spacelike block runs from beam 1 inward.
-    fn descend(&mut self, vertex: VtxIdx, from: Option<(PropIdx, usize)>) -> Result<u32, ConfigError> {
+    fn descend(
+        &mut self,
+        vertex: VtxIdx,
+        from: Option<(PropIdx, usize)>,
+    ) -> Result<u32, ConfigError> {
         if std::mem::replace(&mut self.seen[vertex.0], true) {
             return Err(ConfigError::NotATree { index: self.index });
         }
@@ -407,7 +411,12 @@ impl Walk<'_> {
 /// receives the stored species and one whose vertex is endpoint `0` receives its
 /// antiparticle. Which one `configs.inc` writes is fixed by the file itself: the
 /// timelike line above `e⁺ e⁻ μ⁺` is a `μ⁺`, not a `μ⁻`.
-fn signed_toward_subtree(model: &UFOModel, particle: ParticleId, pdg: i64, child_end: usize) -> i64 {
+fn signed_toward_subtree(
+    model: &UFOModel,
+    particle: ParticleId,
+    pdg: i64,
+    child_end: usize,
+) -> i64 {
     let p = model.particle(particle);
     if child_end == 1 || p.name == p.antiname {
         pdg

@@ -426,7 +426,6 @@ impl ScaleChoice {
         }
         Ok(value)
     }
-
 }
 
 struct Dynamic {

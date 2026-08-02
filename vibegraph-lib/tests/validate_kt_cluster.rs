@@ -73,7 +73,8 @@ fn dumps_dir() -> PathBuf {
 }
 
 fn manifest_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/kt_cluster_dump_manifest.json")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/kt_cluster_dump_manifest.json")
 }
 
 // ── dump records ─────────────────────────────────────────────────────────────
@@ -281,7 +282,10 @@ fn forest_is_consistent(
         .collect();
     let entry = |index: i32| -> Option<(i64, bool)> {
         if index > 0 {
-            return external.get(index as usize - 1).copied().map(|pdg| (pdg, true));
+            return external
+                .get(index as usize - 1)
+                .copied()
+                .map(|pdg| (pdg, true));
         }
         let line = lines.iter().find(|l| l.index == index)?;
         let sprop = line.sprop.get(iproc - 1).copied().unwrap_or(0);
@@ -297,11 +301,7 @@ fn forest_is_consistent(
             entry(line.daughters[1]),
             entry(line.index),
         ];
-        let Some(legs) = legs
-            .iter()
-            .copied()
-            .collect::<Option<Vec<(i64, bool)>>>()
-        else {
+        let Some(legs) = legs.iter().copied().collect::<Option<Vec<(i64, bool)>>>() else {
             continue;
         };
         if legs.iter().any(|&(pdg, _)| pdg == 0) {
@@ -482,8 +482,9 @@ fn the_clustering_engine_reproduces_madgraphs_own() {
         );
         return;
     }
-    let manifest: Value = serde_json::from_slice(&std::fs::read(manifest_path()).expect("manifest"))
-        .expect("manifest parses");
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(manifest_path()).expect("manifest"))
+            .expect("manifest parses");
     let runs = manifest["runs"].as_object().expect("manifest runs");
 
     let model = Model::new(common::sm_model().as_ref());
@@ -502,7 +503,11 @@ fn the_clustering_engine_reproduces_madgraphs_own() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
             .join(entry["path"].as_str().expect("dump path"));
-        assert!(path.is_file(), "manifest names a missing dump {}", path.display());
+        assert!(
+            path.is_file(),
+            "manifest names a missing dump {}",
+            path.display()
+        );
         let tally = compare_run(name, &path, &model);
         assert_eq!(
             tally.events,
@@ -707,7 +712,11 @@ fn compare_run(_name: &str, path: &Path, model: &Model) -> Tally {
                 .copied()
                 .filter(|d| forest_is_consistent(d, this_config, &external, iproc, model))
                 .collect();
-            let pool = if viable.is_empty() { &candidates } else { &viable };
+            let pool = if viable.is_empty() {
+                &candidates
+            } else {
+                &viable
+            };
             let chosen = if pool.len() == 1 {
                 pool[0]
             } else {
@@ -741,7 +750,10 @@ fn compare_run(_name: &str, path: &Path, model: &Model) -> Tally {
             let chosen = &directories[&directory_of[&external]];
             sets.insert(
                 key.clone(),
-                (build_channel_set(chosen, &external, iproc, &colors), chosen.n_proc),
+                (
+                    build_channel_set(chosen, &external, iproc, &colors),
+                    chosen.n_proc,
+                ),
             );
         }
         let (set, _) = &sets[&key];
@@ -773,9 +785,7 @@ fn compare_run(_name: &str, path: &Path, model: &Model) -> Tally {
                     Some(_) => {
                         tally.fail("merge graph: a leg set maps to other channels", event.index)
                     }
-                    None => {
-                        tally.fail("merge graph: a leg set the reference has not", event.index)
-                    }
+                    None => tally.fail("merge graph: a leg set the reference has not", event.index),
                 }
             }
             // A dump with several directories in it merges their tables under
@@ -786,7 +796,10 @@ fn compare_run(_name: &str, path: &Path, model: &Model) -> Tally {
                     if (*config, *proc) == (this_config, iproc)
                         && !tables[iproc - 1].id_cl.contains_key(mask)
                     {
-                        tally.fail("merge graph: a leg set the reference has and we lack", event.index);
+                        tally.fail(
+                            "merge graph: a leg set the reference has and we lack",
+                            event.index,
+                        );
                     }
                 }
             }
@@ -811,7 +824,11 @@ fn compare_run(_name: &str, path: &Path, model: &Model) -> Tally {
 
         let scl = event.first("SCL");
         let stored = scl.i(10);
-        let memo = JetMemo(if stored < 0 { None } else { Some(stored as usize) });
+        let memo = JetMemo(if stored < 0 {
+            None
+        } else {
+            Some(stored as usize)
+        });
         let incoming = (scl.f(7), [scl.f(8), scl.f(9)]);
 
         let mut memo_pure = memo;
@@ -882,9 +899,10 @@ fn compare_run(_name: &str, path: &Path, model: &Model) -> Tally {
 
         match outcome {
             Ok(scales) => compare_event(&event, &scales, this_config, &mut tally),
-            Err(_) => {
-                tally.fail("the engine refused an event the reference clustered", event.index)
-            }
+            Err(_) => tally.fail(
+                "the engine refused an event the reference clustered",
+                event.index,
+            ),
         }
     }
     tally
@@ -909,12 +927,16 @@ fn compare_event(
             tally.bump("cluster_calls_per_event", &(index + 1).to_string());
             tally.bump("memo", mine.memo.name());
             if mine.chcluster != theirs.b(2) {
-                tally.fail("a clustering attempt was restricted differently", event.index);
+                tally.fail(
+                    "a clustering attempt was restricted differently",
+                    event.index,
+                );
                 sequence_ok = false;
             }
         }
         for (index, clustering) in scales.traces.iter().enumerate() {
-            sequence_ok &= compare_clustering(event, index as i64 + 1, clustering, this_config, tally);
+            sequence_ok &=
+                compare_clustering(event, index as i64 + 1, clustering, this_config, tally);
         }
     }
 
@@ -987,7 +1009,10 @@ fn compare_event(
         tally.fail("which scale rewrite fired", event.index);
         sequence_ok = false;
     }
-    tally.bump("mt2last_override", if scales.overrides[0] { "True" } else { "False" });
+    tally.bump(
+        "mt2last_override",
+        if scales.overrides[0] { "True" } else { "False" },
+    );
     tally.bump(
         "jcentral_override_beam1",
         if scales.overrides[1] { "True" } else { "False" },
@@ -1019,14 +1044,22 @@ fn compare_event(
     tally.bump("muf_branch", scales.muf_branch.name());
     if scales.mur_branch.name() != mur.s(1) {
         tally.fail(
-            &format!("mu_R came from branch {} not {}", scales.mur_branch.name(), mur.s(1)),
+            &format!(
+                "mu_R came from branch {} not {}",
+                scales.mur_branch.name(),
+                mur.s(1)
+            ),
             event.index,
         );
         scales_ok = false;
     }
     if scales.muf_branch.name() != muf.s(1) {
         tally.fail(
-            &format!("mu_F came from branch {} not {}", scales.muf_branch.name(), muf.s(1)),
+            &format!(
+                "mu_F came from branch {} not {}",
+                scales.muf_branch.name(),
+                muf.s(1)
+            ),
             event.index,
         );
         scales_ok = false;
@@ -1068,10 +1101,7 @@ fn compare_clustering(
     }
 
     // Every candidate pair, admissible or not.
-    let candidates: Vec<Rec<'_>> = event
-        .iter("CAND")
-        .filter(|r| r.i(1) == attempt)
-        .collect();
+    let candidates: Vec<Rec<'_>> = event.iter("CAND").filter(|r| r.i(1) == attempt).collect();
     let mine = &clustering.candidates;
     tally.candidates += mine.len();
     if mine.len() != candidates.len() {
@@ -1100,7 +1130,10 @@ fn compare_clustering(
             return false;
         }
         if mine.n_graphs != theirs.u(16) {
-            tally.fail("a candidate left another number of channels alive", event.index);
+            tally.fail(
+                "a candidate left another number of channels alive",
+                event.index,
+            );
             return false;
         }
         if mine.inflated != theirs.b(13) {
@@ -1137,19 +1170,31 @@ fn compare_clustering(
         tally.fail("a different number of merges", event.index);
         return false;
     }
-    for (index, ((mine, theirs), win)) in real.iter().zip(merges.iter()).zip(wins.iter()).enumerate()
+    for (index, ((mine, theirs), win)) in
+        real.iter().zip(merges.iter()).zip(wins.iter()).enumerate()
     {
         tally.bump(
             "merge kind",
-            if mine.kind == MergeKind::Initial { "IS" } else { "FS" },
+            if mine.kind == MergeKind::Initial {
+                "IS"
+            } else {
+                "FS"
+            },
         );
         if mine.daughters != [theirs.u(3) as u32, theirs.u(4) as u32]
             || mine.mother != theirs.u(5) as u32
         {
-            tally.fail(&format!("merge {} joined other lines", index + 1), event.index);
+            tally.fail(
+                &format!("merge {} joined other lines", index + 1),
+                event.index,
+            );
             return false;
         }
-        let kind = if mine.kind == MergeKind::Initial { "IS" } else { "FS" };
+        let kind = if mine.kind == MergeKind::Initial {
+            "IS"
+        } else {
+            "FS"
+        };
         if kind != theirs.s(6) {
             tally.fail("a merge took the beam on the other side", event.index);
             return false;
@@ -1176,7 +1221,10 @@ fn compare_clustering(
     }
 
     // The terminal vertex, and the frame changes on the way to it.
-    let mine_core = clustering.merges.last().expect("a clustering writes a core");
+    let mine_core = clustering
+        .merges
+        .last()
+        .expect("a clustering writes a core");
     if mine_core.daughters != [core.u(3) as u32, core.u(4) as u32]
         || mine_core.mother != core.u(5) as u32
     {
@@ -1225,7 +1273,11 @@ fn compare_clustering(
         if grph.s(2) == "after" {
             tally.bump(
                 "igraphs1_is_iconfig",
-                if mine.first() == Some(&this_config) { "True" } else { "False" },
+                if mine.first() == Some(&this_config) {
+                    "True"
+                } else {
+                    "False"
+                },
             );
         }
         if mine.as_slice() != listed.as_slice() {
@@ -1314,7 +1366,11 @@ fn dumped_forests(path: &Path) -> (usize, Vec<ConfigForest>) {
     let rows = directory["RUN"].as_array().expect("RUN rows");
     let groups: BTreeSet<u64> = rows
         .iter()
-        .map(|r| r.as_array().expect("RUN row")[3].as_u64().expect("maxsproc"))
+        .map(|r| {
+            r.as_array().expect("RUN row")[3]
+                .as_u64()
+                .expect("maxsproc")
+        })
         .collect();
     assert_eq!(
         groups.iter().copied().collect::<Vec<u64>>(),
@@ -1325,7 +1381,11 @@ fn dumped_forests(path: &Path) -> (usize, Vec<ConfigForest>) {
     let n_external = row[1].as_u64().expect("nexternal") as usize;
     let n_configs = rows
         .iter()
-        .map(|r| r.as_array().expect("RUN row")[4].as_u64().expect("mapconfig(0)") as usize)
+        .map(|r| {
+            r.as_array().expect("RUN row")[4]
+                .as_u64()
+                .expect("mapconfig(0)") as usize
+        })
         .max()
         .expect("a RUN row");
 

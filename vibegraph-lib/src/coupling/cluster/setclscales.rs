@@ -394,7 +394,7 @@ pub fn setclscales(
                         * at(&pt2, jcentral[0])
                         * pt2[jlast[1] - 1]
                         * at(&pt2, jcentral[1]))
-                        .powf(0.125),
+                    .powf(0.125),
                     MurBranch::BothPartonLines,
                 )
             } else if jlast[0] > 0 {
@@ -466,9 +466,7 @@ pub fn setclscales(
         }
 
         for beam in 0..2 {
-            if settings.beam_has_pdf[beam]
-                && q2fact[beam] < MUF_FLOOR
-                && !settings.fixed_fac[beam]
+            if settings.beam_has_pdf[beam] && q2fact[beam] < MUF_FLOOR && !settings.fixed_fac[beam]
             {
                 return Err(ScaleRefusal::FactorisationFloor);
             }
@@ -539,12 +537,7 @@ struct Walk {
 
 /// Walk the merge sequence, tracking each beam's line and which legs count as
 /// jets.
-fn walk_tree(
-    channel: &Channel<'_>,
-    clustering: &Clustering,
-    n: usize,
-    p: &[[f64; 4]],
-) -> Walk {
+fn walk_tree(channel: &Channel<'_>, clustering: &Clustering, n: usize, p: &[[f64; 4]]) -> Walk {
     let graph = clustering.graphs[0];
     let n_masks = 1usize << n;
     let mut pdg: Vec<i64> = (0..n_masks)
@@ -884,11 +877,7 @@ fn ipartupdate(
     };
     let harder_is_first = pt2(d1) > pt2(d2);
     let (hard, soft) = if harder_is_first { (d1, d2) } else { (d2, d1) };
-    let (cmo, c1, c2) = (
-        colors.color(idmo),
-        colors.color(id1),
-        colors.color(id2),
-    );
+    let (cmo, c1, c2) = (colors.color(idmo), colors.color(id1), colors.color(id2));
 
     if idmo == 21 && id1 == 21 && id2 == 21 {
         ipart[mo] = ipart[hard];
@@ -1055,7 +1044,12 @@ mod tests {
         assert_eq!(first.daughters, [0b0001, 0b0100]);
         assert_eq!(first.pt2, 62500.0 * TIE_BREAK);
         assert_eq!(
-            scales.clustering.candidates.iter().filter(|c| c.inflated).count(),
+            scales
+                .clustering
+                .candidates
+                .iter()
+                .filter(|c| c.inflated)
+                .count(),
             2
         );
         assert_eq!(scales.jfirst, [1, 2]);
@@ -1103,7 +1097,12 @@ mod tests {
         )
         .expect("the clustering succeeds");
         assert_eq!(
-            scales.clustering.candidates.iter().filter(|c| c.inflated).count(),
+            scales
+                .clustering
+                .candidates
+                .iter()
+                .filter(|c| c.inflated)
+                .count(),
             2
         );
         assert_eq!(scales.jlast, [0, 0]);
