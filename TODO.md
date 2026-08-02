@@ -264,6 +264,14 @@ One line each; the note is the full record. Earlier sprints
   massless beam pins `t_max = 0` (collinear edge) where the t-map falls back to
   flat; whether a fiducial cut is wanted instead is unresolved for a physical
   massless-initial-state t-channel. (Note 21 close-out.)
+- **Re-examine the "no spine without a scale past two outgoing legs" policy** —
+  the policy predates the peripheral-kinematics conditioning fixes (grouped
+  Källén, `γ = E/√s`), which removed most of the unregulated-spine defect it
+  guarded against: with the grouped form the massless transfer edge is the
+  exact analytic zero whenever the emitted subsystem carries a fixed
+  invariant, and only composite emitted sides still exhibit the defect. The
+  conservative fallback is kept; whether it is still the right default is an
+  open measurement. (Note 28 §S3 deviations.)
 - **`typed-units`** — research `uom`/`dimensioned`/`units` crates for typed
   four-momenta and cross sections.
 
