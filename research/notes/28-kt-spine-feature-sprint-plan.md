@@ -2000,3 +2000,137 @@ recorded in TODO.md) but is now 2.79σ rather than 3.12σ from it.
    entry per rung in chain order, with a version-5 reader that upgrades the old
    scalar to a one-entry chain (which is what it always was — a version-5 writer
    left every ladder all-timelike).
+
+## S5 — the W-current amplitude: the defect, localised
+
+S4 left the spine reference row's |M|² disagreeing with MadGraph by factors of 2 to 63
+point by point. This session took it to the finest linear level MadGraph exposes. The
+answer is **a relative sign between diagrams**, not a coupling, a colour factor, a
+propagator or a width — and it is localised to eleven of the 35 diagrams, exactly.
+
+**It is not fixed, and that is a deliberate stop.** Three candidate correction rules were
+written down and each was falsified by a gated control before it could be landed; the one
+predicate that fits this process exactly cannot be added to `fermi_sign` without breaking
+a bit-exact row. Landing a sign rule that reproduces this process without a derivation is
+what the Physics Validation section forbids, so what landed instead is the instrument, the
+localisation and the falsification record — enough that the next session can check any
+candidate rule against a known-exact answer in one run.
+
+### The instrument
+
+`ud_to_epemud_qcd0` is now a registered amplitude process end to end:
+`gen_amplitude.PROCESSES` (25 points at each of 200 and 500 GeV, seed 71),
+`build_amplitude.sh`'s generic and amp-probe lists, and the committed table
+`validation/madgraph/amplitudes/ud_to_epemud_qcd0.json` — 74 points (24 projected
+events + 50 grid), six of them carrying MadGraph's `AMP(1:35)` and `JAMP(1:2)` for
+every one of the 8 helicity combinations its amplitude does not vanish on. Regenerating
+the other 19 tables left them byte-identical, so the registry entry moved nothing else.
+
+MadGraph's own bookkeeping, read out of its generated `matrix1_orig.f`:
+`NGRAPHS = 35`, `NCOLOR = 2` with the upper-triangle `CF = /9,6/,/9/` over `DENOM = 1`
+— which the `DO J = I, NCOLOR` sum makes the symmetric `[[9,3],[3,9]]` — flows
+`T(5,1)T(6,2)` and `T(5,2)T(6,1)`, and `JAMP(1) = -Σ AMP(i)` over graphs 1–16 and
+28–35 against `JAMP(2) = +Σ AMP(i)` over 17–27, every coefficient of unit modulus. The
+21 `AMP2` accumulators are parsed from the same file; the row is listed in
+`KNOWN_CONFIG_MERGE`, which is exactly the case that constant exists for (our 35
+singleton configurations are finer than MadGraph's 21).
+
+### The measurement
+
+Per diagram, per helicity, over 48 (point, helicity) rows: **every one of our 35
+diagrams pairs with exactly one MadGraph graph at normalised overlap `1.00000`, with a
+fitted constant of modulus `1.000000` and a residual of at most `3.5e-15`.** The
+pairing is banked in `MG_DIAGRAM_ORDER`. So no diagram is individually wrong: not its
+coupling, not its propagator, not its kinematics.
+
+What is wrong is the *phase* of that constant. It should be one constant for the whole
+process (`±i`, the factor our diagram roots carry and MadGraph's `AMP()` does not).
+Instead it takes both values:
+
+| fitted constant | our diagrams | MadGraph graphs |
+|---|---|---|
+| `-i` | d00–d03, d12–d15, d25–d32; d18, d21, d22 | 9–16, 28–35; 17, 18, 19 |
+| `+i` | d04–d11; d16, d17, d19, d20, d23, d24, d33, d34 | 1–8; 20–27 |
+
+Against MadGraph's uniform colour coefficients this makes **eleven diagrams wrong
+relative to the other 24**: MadGraph graphs **1–8, 17, 18, 19**. Flipping exactly those
+eleven and recontracting through `CF` takes the worst relative `|M|²` deviation over all
+74 banked points from **5.1e+1 to 4.1e-14** — inside the standing `1e-12`. The eleven
+are a complete explanation of the disagreement, and nothing else is wrong.
+
+### What the eleven are
+
+- graphs 1–8 (our d04–d11): the three-rung ladders `γ/Z^t — e^t — γ/Z^t`, where the
+  **lepton line itself is the spacelike spine** between the two quark lines;
+- graph 17 (d18): the same with `W^t — ν^t — W^t`;
+- graphs 18, 19 (d21, d22): `W^t — W^t` closed by a timelike `γ*/Z* → e+e-`, the only
+  two diagrams with a triple-gauge vertex.
+
+The exact predicate is **the number of boson lines on the beam-to-beam spine is even**
+(2 for all eleven; 1 for all 24 others). Every diagram of this process has the same
+fermion-line endpoint classes — two mixed quark lines and one crossed lepton line — so
+`spine_sign_from_flow` returns `-1` for all 35 and carries no relative information at
+all here. `diagram.sign` splits only along the colour flows (`-1` neutral-current,
+`+1` charged-current), matching MadGraph's own `JAMP` coefficients. `build_convention_sign`
+and `reversed_convention_sign` are `+1` for all 35. `yang_mills_vvv_sign` is `-1` for
+d21 and d22 and `+1` for the rest. That accounts for every factor in `fermi_sign`, and
+none of them separates d00 from d04.
+
+### Three mechanisms, three falsifications
+
+1. **"a crossed final–final line takes one further −1 per internal fermion
+   propagator"** — fits the nine ladder diagrams exactly. Falsified by
+   `ee_to_mumu_tata_qcd0`: its diagrams 0–15 carry a final–final μ or τ line with one
+   internal propagator alongside diagrams 17–24 that carry none, and the process is
+   gated at `6.0e-14`. The rule would flip their relative sign.
+2. **"the WWγ/WWZ vertex must not take the Yang–Mills VVV sign"** — fixes d21 and d22.
+   Falsified by `ee_to_wpwm`, gated at `6.2e-15`: its two `s`-channel diagrams carry
+   exactly one WWV vertex and need `ym = -1` to sit at the same `fermi_sign` as the
+   ν-exchange diagram. (`g g > g g` cannot decide this — its `ym` and
+   `build_convention_sign` move together across all four diagrams.)
+3. **"one further −1 per spacelike boson propagator"** — the predicate that fits all
+   eleven. Cannot be *added* to `fermi_sign`: `u u~ > u u~`'s `s`- and `t`-channel
+   diagrams differ by exactly that count, their relative sign is already right, and a
+   second −1 would break a bit-exact row.
+
+So the defect is not a missing multiplicative factor of any of those forms. It is in the
+interaction between the crossing conventions and a topology no banked process had
+before: `ud_to_epemud_qcd0` is the first row with **two mixed quark lines**, hence the
+first where a *final–final* fermion line can itself be spacelike, and the first with a
+triple-gauge vertex all of whose legs are internal propagators.
+
+Two further controls, both clean, that narrow where it is *not*:
+
+- **Rooting soundness passes on the process**: adding it to `MG_VALIDATED_PROCESSES`
+  took the sweep from 133 to **270 re-rootings, 0 failures**. Every diagram's amplitude
+  is root-invariant, so the `GammaIout`/`GammaOout` asymmetry between d00 and d04 (they
+  build their off-shell fermion from opposite ends, where MadGraph uses `FFV1_2` for
+  both) is not the lever.
+- **The CKM is not involved**: the pinned model's `MDL_CONJG__CKM1X1 = 1.000000D+00`,
+  so `GC_100` is `ee·i/(sw·√2)` on both sides.
+
+### What landed
+
+The row is `hermetic` / `info` in the manifest and listed in the oracle's new
+`KNOWN_LINEAR_DISAGREEMENT`. A listed row's linear-level checks *record* rather than
+raise, so the whole comparison still runs and the `info` cell carries the same numeric
+fields a gated one does — |M|² max rel `5.12e1` (grid) and `2.80e1` (event), per-flow
+`1.29e0`, JAMP2 `9.71e0`, per-configuration `3.03e1` — rather than the zeros an
+early-return would have left. Its note names how many checks the disagreement reached
+and the first of them, so a *change* in the disagreement is visible rather than silent.
+The entry is two-way: if the row starts agreeing, the oracle fails and asks for the
+exemption to be dropped and the cell promoted. `validate_sigma`'s `Plan::Info` reason
+now names the relative sign rather than the aggregate ratio.
+
+`MG_VALIDATED_PROCESSES` was **not** extended — the process is not validated, and that
+list drives the library-level coverage sweeps.
+
+### For the sprint manager
+
+The remaining work is one question: what is the correct rooting-convention sign for a
+diagram whose beam-to-beam spine passes through a crossed fermion line, and for a
+triple-gauge vertex whose legs are all internal? It wants a derivation from the
+C-conjugation identity the crossing rests on (`ū₁Γv₂ = −ū₂(CΓᵀC⁻¹)v₁`, and what it does
+to a chain whose propagator momentum crosses the beam cut), not another fit — the
+required sign vector is now known exactly, so any candidate rule can be checked against
+it in one run, and against the 19 gated tables in the same run.

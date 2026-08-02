@@ -52,6 +52,7 @@ GENERIC_PROCESSES=(
     gu_to_epemu
     ddx_to_epemg
     gux_to_epemux
+    ud_to_epemud_qcd0
 )
 
 # subprocess_dir NAME — the single SubProcesses/P1_* directory of a process.
