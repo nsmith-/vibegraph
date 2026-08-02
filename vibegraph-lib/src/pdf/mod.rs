@@ -3,19 +3,25 @@
 //!
 //! Interpolation lives behind the [`interp`] seam ([`interp::Bicubic2D`]); the
 //! backend that matches LHAPDF6 (and hence MadGraph) is [`interp::LogBicubic`].
+//! Points past the tabulated range go to the [`extrap`] seam
+//! ([`extrap::Extrapolate2D`]), whose LHAPDF-matching backend is
+//! [`extrap::Continuation`] — the split, and which one a point takes, is
+//! LHAPDF's own (`GridPDF::_xfxQ2`).
 //!
 //! A set also carries the strong coupling it was fitted at ([`alphas::GridAlphaS`]),
 //! which is the coupling a run reading these densities has to use.
 
 pub mod alphas;
+pub mod extrap;
 pub mod grid;
 pub mod interp;
 
 use std::path::{Path, PathBuf};
 
 use crate::helas::repr::Real;
+use extrap::{Continuation, Extrapolate2D, PdfPointError};
 use grid::{GridError, SetInfo, SubGrid};
-use interp::{Bicubic2D, LogBicubic, OutOfRange};
+use interp::{Bicubic2D, LogBicubic};
 
 /// LHAPDF's flavor alias: PDG code 0 means the gluon (21) in `.dat` flavor lists.
 pub fn normalize_flavor_pdg(pdg: i32) -> i32 {
@@ -67,17 +73,17 @@ impl PdfSet {
         }
         let dat_path = self.dir.join(format!("{}_{id:04}.dat", self.name));
         let subgrids = grid::parse_member_dat(&dat_path)?;
-        let interp = LogBicubic::build(&subgrids);
-        Ok(PdfMember { subgrids, interp })
+        Ok(PdfMember::from_subgrids(subgrids))
     }
 }
 
-/// One PDF member's parsed subgrids (in file order) plus its precomputed
-/// log-bicubic interpolator.
+/// One PDF member's parsed subgrids (in file order), its precomputed log-bicubic
+/// interpolator, and the continuation that reads points past the grid.
 #[derive(Debug)]
 pub struct PdfMember {
     pub subgrids: Vec<SubGrid>,
     interp: LogBicubic,
+    extrap: Continuation,
 }
 
 impl PdfMember {
@@ -85,18 +91,36 @@ impl PdfMember {
     /// interpolator). Mainly useful for tests with in-memory grids.
     pub fn from_subgrids(subgrids: Vec<SubGrid>) -> Self {
         let interp = LogBicubic::build(&subgrids);
-        PdfMember { subgrids, interp }
+        PdfMember {
+            subgrids,
+            interp,
+            extrap: Continuation,
+        }
     }
 
-    /// `x·f(x, Q²)` for PDG code `pdg` (0 aliases the gluon 21), interpolated
-    /// with the LHAPDF-matching log-bicubic scheme. Returns
-    /// [`OutOfRange`](interp::OutOfRange) if the point lies outside every
-    /// subgrid's support (extrapolation is a deliberate non-goal).
-    pub fn try_xfx_q2<F: Real>(&self, pdg: i32, x: F, q2: F) -> Result<F, OutOfRange> {
-        self.interp.xfx_q2(pdg, x, q2)
+    /// `x·f(x, Q²)` for PDG code `pdg` (0 aliases the gluon 21).
+    ///
+    /// Inside the tabulated range this is the LHAPDF-matching log-bicubic
+    /// interpolation; outside it, the LHAPDF-matching continuation. The split is
+    /// `GridPDF::_xfxQ2`'s, and so is the guard in front of it: a point that is
+    /// not a point (`x` at or below zero, a negative `Q²`, either non-finite) is
+    /// refused, as is an `x` above the grid's last knot, which is the one
+    /// direction the continuation does not extend into.
+    pub fn try_xfx_q2<F: Real>(&self, pdg: i32, x: F, q2: F) -> Result<F, PdfPointError> {
+        let xv = x.to_f64().unwrap();
+        let q2v = q2.to_f64().unwrap();
+        // Negated comparisons so a NaN lands in the refusing branch.
+        if !(xv > 0.0) || !xv.is_finite() || !(q2v >= 0.0) || !q2v.is_finite() {
+            return Err(PdfPointError::Unphysical { x: xv, q2: q2v });
+        }
+        if extrap::in_grid_range(&self.interp.edges(), xv, q2v) {
+            Ok(self.interp.xfx_q2(pdg, x, q2)?)
+        } else {
+            self.extrap.xfx_q2(&self.interp, pdg, x, q2)
+        }
     }
 
-    /// Like [`PdfMember::try_xfx_q2`] but panics on an out-of-grid point.
+    /// Like [`PdfMember::try_xfx_q2`] but panics on a point with no reading.
     pub fn xfx_q2<F: Real>(&self, pdg: i32, x: F, q2: F) -> F {
         self.try_xfx_q2(pdg, x, q2)
             .unwrap_or_else(|e| panic!("{e}"))

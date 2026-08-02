@@ -34,6 +34,10 @@
 //! banked events pin it wherever their scales land; the probes here cover what
 //! they cannot reach — the ends of the table and past them.
 //!
+//! A fourth reads the `extrapolated` block: LHAPDF's own continuation past every
+//! boundary of the density grid, dumped at two levels (with and without the
+//! set's positivity clamp) so the comparison has no floor in it.
+//!
 //! Blind spot: an oracle of x·f values cannot see a mislabelled flavor whose
 //! grid values happen to coincide, nor a global convention shared by both
 //! libraries; and the seam gate confirms the walk lands each probe in a band
@@ -68,6 +72,32 @@ struct Oracle {
     alphas_type: String,
     #[serde(default)]
     alphas: Vec<OracleAlphaPoint>,
+    /// The `Extrapolator` LHAPDF resolved for this set. The probes below are
+    /// that object's values, so a build whose config named a different one has
+    /// to fail here rather than silently redefine the reference.
+    #[serde(default)]
+    extrapolator: String,
+    /// The set's `ForcePositive` level, which is applied on top of every value
+    /// LHAPDF hands out but not to the continuation itself.
+    #[serde(default)]
+    force_positive: i32,
+    #[serde(default)]
+    extrapolated: Vec<OracleExtrapPoint>,
+}
+
+/// One out-of-grid probe, carried at two levels: `xf_raw` is
+/// `Extrapolator::extrapolateXQ2` with nothing applied on top, and `xf` is
+/// `PDF::xfxQ2` — the same number with the set's positivity clamp. The
+/// comparison below is against `xf_raw`, which has no clamp in it to hide a
+/// disagreement behind.
+#[derive(Deserialize)]
+struct OracleExtrapPoint {
+    category: String,
+    pdg: i32,
+    x: f64,
+    q2: f64,
+    xf: f64,
+    xf_raw: f64,
 }
 
 #[derive(Deserialize)]
@@ -331,17 +361,31 @@ fn on_knot_interpolation_reproduces_node() {
     eprintln!("on-knot interpolation: {count} points, worst |Δ| {worst_abs:.3e}");
 }
 
-/// Points outside the grid support are a hard error rather than a silent
-/// extrapolation. Blind spot: this pins the *policy* (refuse), not any
-/// extrapolated value — extrapolation is a deliberate non-goal.
+/// Which points still have no reading, now that the ones past the grid do.
+///
+/// Blind spot: this pins the *policy* at each of these points, not a value —
+/// the values past the grid are pinned against LHAPDF further down.
 #[test]
-fn out_of_range_is_error() {
+fn only_the_points_lhapdf_has_no_reading_for_are_refused() {
     let oracle = load_oracle();
     let set = load_set(&oracle);
     let member = set.member(oracle.member).expect("member load");
-    // Far below XMin=1e-9 in x and above QMax in Q².
-    assert!(member.try_xfx_q2(2, 1e-12_f64, 1e6_f64).is_err());
-    assert!(member.try_xfx_q2(2, 2.0_f64, 100.0_f64).is_err());
+
+    // Below XMin=1e-9 in x, and above QMax in Q²: both continue.
+    assert!(member.try_xfx_q2::<f64>(2, 1e-12, 1e6).is_ok());
+    assert!(member.try_xfx_q2::<f64>(2, 0.1, 1e12).is_ok());
+    assert!(member.try_xfx_q2::<f64>(2, 1e-12, 1e12).is_ok());
+    assert!(member.try_xfx_q2::<f64>(2, 0.1, 0.5).is_ok());
+
+    // Above the last x knot there is nothing to continue into, and a point that
+    // is not a point has no reading in any direction.
+    assert!(member.try_xfx_q2::<f64>(2, 2.0, 100.0).is_err());
+    assert!(member.try_xfx_q2::<f64>(2, 0.0, 100.0).is_err());
+    assert!(member.try_xfx_q2::<f64>(2, -0.1, 100.0).is_err());
+    assert!(member.try_xfx_q2::<f64>(2, f64::NAN, 100.0).is_err());
+    assert!(member.try_xfx_q2::<f64>(2, 0.1, -1.0).is_err());
+    assert!(member.try_xfx_q2::<f64>(2, 0.1, f64::NAN).is_err());
+    assert!(member.try_xfx_q2::<f64>(2, 0.1, f64::INFINITY).is_err());
 }
 
 // ── Multi-Q²-subgrid coverage (MSHT20lo_as130) ─────────────────────────
@@ -626,6 +670,300 @@ fn above_the_alpha_s_table_lhapdf_freezes_rather_than_extrapolates() {
             "{name}: alpha_s frozen at {last} over Q = {lo} .. {hi} \
              ({} probes)",
             above.len()
+        );
+    }
+}
+
+// ── The out-of-grid continuation ───────────────────────────────────────────
+//
+// A grid stops where the fit stopped; the physics does not. LHAPDF continues
+// past both Q² ends and below the x floor through an `Extrapolator` chosen per
+// set, and since MadGraph reads its densities through LHAPDF, that continuation
+// is part of the reference a cross section has to match. These gates are its
+// only oracle: no banked event is out of grid, by construction — the events that
+// survive unweighting sit well inside it, which is exactly why an integration
+// reaches past the ceiling where a bank cannot.
+
+/// How far this crate's continued `x·f` may sit from LHAPDF's on the same probe.
+///
+/// Both sides run the same arithmetic on the same edge readings, so the input to
+/// the residual is one ulp of the interpolation — but the continuation itself is
+/// ill-conditioned where it is most interesting. A straight line evaluated far
+/// *outside* the pair of points that define it is a difference of two much
+/// larger numbers, and at a large `x` where `x·f` has all but died the
+/// cancellation runs to three orders. The observed residual is therefore not
+/// flat: it is one ulp times each point's own condition number, reaching
+/// `2.4e-13` on the gluon at `x = 0.7`, four decades above the ceiling.
+///
+/// This flat bound is the coarse net, an order above that worst case and eight
+/// orders below what a branch or knot-pair confusion produces (tens of percent
+/// at least). The sharp statement — that the residual *is* one ulp once the
+/// conditioning is divided out — is made per point further down.
+const EXTRAP_REL_TOL: f64 = 1e-11;
+
+/// One ulp of the interpolated endpoint values, with headroom for a system
+/// `libm` that rounds a couple of `log` calls differently. This is the scale the
+/// continuation is really held to, once each point's own amplification of that
+/// ulp is divided out.
+const EXTRAP_CONDITIONED_TOL: f64 = 1e-14;
+
+/// Relative error with no absolute screen: an exact oracle zero demands an exact
+/// zero back. The interpolated categories screen sub-floor values because a
+/// positivity-clamped set floors its own output there, but these probes compare
+/// against the *unclamped* `xf_raw`, so there is nothing to screen and a zero is
+/// a real claim (an absent flavor, or a density the power law drove to zero).
+fn extrap_rel_err(got: f64, want: f64) -> f64 {
+    if want == 0.0 {
+        return if got == 0.0 { 0.0 } else { f64::INFINITY };
+    }
+    (got - want).abs() / got.abs().max(want.abs())
+}
+
+/// The continuation against LHAPDF's own `ContinuationExtrapolator`, on probes
+/// past every boundary a query can cross.
+///
+/// Blind spot: a probe set is a finite sample of a continuous surface, so this
+/// cannot exclude a disagreement between probes; and an `x·f` oracle says
+/// nothing about *which* `(x, Q²)` a process asks for. What it does cover is
+/// every branch — each of the four out-of-range quadrants is a named category,
+/// and the assertion at the bottom fails if one stops being emitted.
+#[test]
+fn extrapolation_matches_lhapdf_past_every_grid_boundary() {
+    for name in ["oracle.json", "oracle_multigrid.json"] {
+        let oracle = load_oracle_named(name);
+        assert_eq!(
+            oracle.extrapolator, "continuation",
+            "{name}: dumped from a set LHAPDF continued some other way"
+        );
+        let set = load_set(&oracle);
+        let member = set.member(oracle.member).expect("member load");
+        assert!(
+            !oracle.extrapolated.is_empty(),
+            "{name}: carries no out-of-grid probes; regenerate with \
+             `pixi run -e madgraph generate-pdf-oracle`"
+        );
+
+        let mut by_category: BTreeMap<&str, (usize, f64, String)> = BTreeMap::new();
+        for probe in &oracle.extrapolated {
+            let got: f64 = member
+                .try_xfx_q2(probe.pdg, probe.x, probe.q2)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "{name}: LHAPDF continued (pdg={}, x={}, Q²={}) to {} and this \
+                         crate refused it: {e}",
+                        probe.pdg, probe.x, probe.q2, probe.xf_raw
+                    )
+                });
+            let rel = extrap_rel_err(got, probe.xf_raw);
+            let entry =
+                by_category
+                    .entry(probe.category.as_str())
+                    .or_insert((0, 0.0, String::new()));
+            entry.0 += 1;
+            if rel >= entry.1 {
+                *entry = (
+                    entry.0,
+                    rel,
+                    format!(
+                        "pdg={} x={} Q²={} (rust={got:.17e} lhapdf={:.17e})",
+                        probe.pdg, probe.x, probe.q2, probe.xf_raw
+                    ),
+                );
+            }
+        }
+        for (category, (n, worst, at)) in &by_category {
+            println!("{name} {category}: {n} probes, worst {worst:.2e} at {at}");
+            assert!(
+                *worst <= EXTRAP_REL_TOL,
+                "{name} {category}: the continuation misses LHAPDF by {worst:.2e} at {at}"
+            );
+        }
+        for required in [
+            "above_q2max",
+            "below_xmin",
+            "below_xmin_above_q2max",
+            "below_q2min",
+            "below_q2min_below_xmin",
+        ] {
+            assert!(
+                by_category.contains_key(required),
+                "{name}: no {required} probes"
+            );
+        }
+    }
+}
+
+/// Which of the two `_extrapolateLinear` branches LHAPDF took, decided against
+/// its own values rather than assumed from reading its source.
+///
+/// The branch is chosen by the two endpoint values the line runs through, so it
+/// is reconstructible: take those two readings off this crate's interpolator at
+/// the grid's top two Q² knots, build both candidate continuations, and see
+/// which one LHAPDF's number is. Where both endpoints clear `1e-3` it must be
+/// the log-linear one and the linear one must be visibly different; where they
+/// do not it must be the linear one. Getting this backwards is a silent factor
+/// of order one on a density, and no |x·f| comparison at a single point could
+/// tell the two apart if the probe set happened to sit on one side of the floor.
+#[test]
+fn the_branch_of_the_upper_continuation_is_the_one_the_endpoint_values_select() {
+    for name in ["oracle.json", "oracle_multigrid.json"] {
+        let oracle = load_oracle_named(name);
+        let set = load_set(&oracle);
+        let member = set.member(oracle.member).expect("member load");
+        let top = member.subgrids.last().expect("at least one subgrid");
+        let q2_max = *top.q2.last().unwrap();
+        let q2_max1 = top.q2[top.q2.len() - 2];
+
+        let (mut log_linear, mut linear) = (0usize, 0usize);
+        for probe in oracle
+            .extrapolated
+            .iter()
+            .filter(|p| p.category == "above_q2max")
+        {
+            let y_lo: f64 = member.xfx_q2(probe.pdg, probe.x, q2_max);
+            let y_hi: f64 = member.xfx_q2(probe.pdg, probe.x, q2_max1);
+            let t = (probe.q2.ln() - q2_max.ln()) / (q2_max1.ln() - q2_max.ln());
+            let candidate_linear = y_lo + t * (y_hi - y_lo);
+            // A log-linear continuation of a non-positive endpoint is not a
+            // number, which is the other half of why the branch exists.
+            if !(y_lo > 1e-3 && y_hi > 1e-3) {
+                assert!(
+                    extrap_rel_err(candidate_linear, probe.xf_raw) <= 1e-9,
+                    "{name}: sub-floor endpoints ({y_lo}, {y_hi}) did not take the \
+                     linear branch at pdg={} x={} Q²={}",
+                    probe.pdg,
+                    probe.x,
+                    probe.q2
+                );
+                linear += 1;
+                continue;
+            }
+            let candidate_log = (y_lo.ln() + t * (y_hi.ln() - y_lo.ln())).exp();
+            assert!(
+                extrap_rel_err(candidate_log, probe.xf_raw) <= 1e-9,
+                "{name}: positive endpoints ({y_lo}, {y_hi}) did not take the \
+                 log-linear branch at pdg={} x={} Q²={}",
+                probe.pdg,
+                probe.x,
+                probe.q2
+            );
+            // The negative control: the branch is only pinned where the two
+            // candidates actually disagree, so require that and count it.
+            if extrap_rel_err(candidate_linear, probe.xf_raw) > 1e-3 {
+                log_linear += 1;
+            }
+        }
+        println!(
+            "{name}: {log_linear} probes where the log-linear branch is \
+             distinguishable from the linear one, {linear} on the linear branch"
+        );
+        assert!(
+            log_linear > 0 && linear > 0,
+            "{name}: the probes do not reach both branches ({log_linear}, {linear})"
+        );
+    }
+}
+
+/// The set's positivity clamp, which this crate does not apply, is the only
+/// thing standing between the continuation and the number MadGraph sees.
+///
+/// `xf_raw` is `Extrapolator::extrapolateXQ2` and `xf` is `PDF::xfxQ2` on the
+/// same point; the difference is `ForcePositive` and nothing else. Pinning that
+/// relationship makes the omission a stated, measured blind spot — vibegraph
+/// evaluates the unclamped continuation, and this says exactly what that costs
+/// and where (a floor of `1e-10` on a set carrying `ForcePositive: 2`).
+#[test]
+fn the_only_difference_from_madgraphs_own_value_is_the_positivity_clamp() {
+    for name in ["oracle.json", "oracle_multigrid.json"] {
+        let oracle = load_oracle_named(name);
+        let mut clamped = 0usize;
+        let mut worst_clamped = 0.0f64;
+        for probe in &oracle.extrapolated {
+            let want = match oracle.force_positive {
+                0 => probe.xf_raw,
+                1 => probe.xf_raw.max(0.0),
+                2 => probe.xf_raw.max(1e-10),
+                other => panic!("{name}: unhandled ForcePositive level {other}"),
+            };
+            assert_eq!(
+                probe.xf, want,
+                "{name}: xfxQ2 is not the continuation at ForcePositive \
+                 {} (pdg={} x={} Q²={})",
+                oracle.force_positive, probe.pdg, probe.x, probe.q2
+            );
+            if probe.xf != probe.xf_raw {
+                clamped += 1;
+                worst_clamped = worst_clamped.max(probe.xf_raw.abs());
+            }
+        }
+        println!(
+            "{name}: ForcePositive {} clamps {clamped}/{} out-of-grid probes, \
+             none larger than {worst_clamped:.3e} in magnitude",
+            oracle.force_positive,
+            oracle.extrapolated.len()
+        );
+    }
+}
+
+/// The residual against LHAPDF, divided by the conditioning that produced it.
+///
+/// The flat bound above is loose because the continuation's own conditioning
+/// varies by three orders across the probe set, and a bound wide enough for the
+/// worst-conditioned point is wide enough to hide a real disagreement at the
+/// best-conditioned one. The line `y_lo + t·(y_hi − y_lo)` has condition number
+/// `(|y_lo·(1−t)| + |t·y_hi|) / |result|` with respect to a relative perturbation
+/// of its two endpoints, and that is exactly the quantity to divide out: what is
+/// left is the perturbation itself, which must be one ulp because both sides
+/// compute the same expression from the same two numbers.
+///
+/// Reconstructing the endpoints from this crate's own interpolator is what makes
+/// the statement checkable at all; it is sound because those endpoints are
+/// independently gated against LHAPDF's (`off_knot` and `corner`, ≤4e-16 there).
+///
+/// Blind spot: only the `above_q2max` branch has a two-point line simple enough
+/// to write a condition number for, so the other three categories are covered by
+/// the flat bound alone — where they sit two orders under it.
+#[test]
+fn the_upper_continuation_misses_lhapdf_by_one_ulp_of_its_own_conditioning() {
+    for name in ["oracle.json", "oracle_multigrid.json"] {
+        let oracle = load_oracle_named(name);
+        let set = load_set(&oracle);
+        let member = set.member(oracle.member).expect("member load");
+        let top = member.subgrids.last().expect("at least one subgrid");
+        let q2_max = *top.q2.last().unwrap();
+        let q2_max1 = top.q2[top.q2.len() - 2];
+
+        let (mut worst, mut worst_at, mut worst_amp, mut n) = (0.0f64, String::new(), 1.0f64, 0);
+        for probe in oracle
+            .extrapolated
+            .iter()
+            .filter(|p| p.category == "above_q2max")
+        {
+            let got: f64 = member.xfx_q2(probe.pdg, probe.x, probe.q2);
+            let y_lo: f64 = member.xfx_q2(probe.pdg, probe.x, q2_max);
+            let y_hi: f64 = member.xfx_q2(probe.pdg, probe.x, q2_max1);
+            let t = (probe.q2.ln() - q2_max.ln()) / (q2_max1.ln() - q2_max.ln());
+            // Below the amplification the point carries no cancellation at all,
+            // so its residual is compared at face value.
+            let amp = (((y_lo * (1.0 - t)).abs() + (t * y_hi).abs())
+                / got.abs().max(f64::MIN_POSITIVE))
+            .max(1.0);
+            let conditioned = extrap_rel_err(got, probe.xf_raw) / amp;
+            n += 1;
+            if conditioned >= worst {
+                worst = conditioned;
+                worst_amp = amp;
+                worst_at = format!("pdg={} x={} Q²={}", probe.pdg, probe.x, probe.q2);
+            }
+        }
+        println!(
+            "{name}: {n} probes above the ceiling, worst conditioned residual \
+             {worst:.2e} at {worst_at} (amplification {worst_amp:.2e})"
+        );
+        assert!(
+            worst <= EXTRAP_CONDITIONED_TOL,
+            "{name}: the continuation misses LHAPDF by {worst:.2e} per unit of \
+             conditioning at {worst_at}, which is more than one ulp of its inputs"
         );
     }
 }

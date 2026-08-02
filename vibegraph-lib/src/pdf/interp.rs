@@ -22,10 +22,10 @@ use crate::helas::repr::Real;
 use super::grid::SubGrid;
 use super::normalize_flavor_pdg;
 
-/// Raised when an evaluation point lies outside every subgrid's `(x, Q²)`
-/// support. Extrapolation beyond the grid is a deliberate non-goal: the PDF is
-/// only defined on its tabulated range, so a request outside it is an error
-/// rather than a silently extrapolated value.
+/// Raised when an evaluation point lies inside the grid's overall extent but in
+/// none of its subgrids — a gap between bands, which a well-formed `lhagrid1`
+/// member does not have. Points *outside* the extent are not this: they are
+/// continued by [`super::extrap`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutOfRange {
     pub x: f64,
@@ -40,8 +40,8 @@ impl std::fmt::Display for OutOfRange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "PDF evaluation point (x={}, Q²={}) is outside the grid support \
-             x∈[{}, {}], Q²∈[{}, {}]; extrapolation is not supported",
+            "PDF evaluation point (x={}, Q²={}) falls in no subgrid of a member \
+             whose support is x∈[{}, {}], Q²∈[{}, {}]",
             self.x, self.q2, self.x_min, self.x_max, self.q2_min, self.q2_max
         )
     }
@@ -49,13 +49,38 @@ impl std::fmt::Display for OutOfRange {
 
 impl std::error::Error for OutOfRange {}
 
+/// The grid knots an out-of-range continuation is built from, in LHAPDF's
+/// flattened layout: one x axis shared by every subgrid, and a Q² axis that is
+/// the bands' knots concatenated in order. `q2_max1` is therefore the
+/// second-to-last entry of that concatenation — the *last* band's penultimate
+/// knot — and not a per-band quantity.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GridEdges {
+    pub x_min: f64,
+    /// The second x knot: the continuation below `x_min` is the line through
+    /// the first two.
+    pub x_min1: f64,
+    pub x_max: f64,
+    pub q2_min: f64,
+    /// The second-to-last knot of the flattened Q² axis.
+    pub q2_max1: f64,
+    pub q2_max: f64,
+}
+
 /// A minimal seam over the 2D interpolation backend, so the evaluation
 /// algorithm can be swapped without touching the [`super::PdfMember`] API.
 /// The single implementation is the LHAPDF-matching [`LogBicubic`].
 pub trait Bicubic2D {
-    /// `x·f(x, Q²)` for PDG code `pdg` (0 aliases the gluon 21). `Err` if the
-    /// point is outside the grid support.
+    /// `x·f(x, Q²)` for PDG code `pdg` (0 aliases the gluon 21). Callers pass
+    /// in-range points; a point in no subgrid is an [`OutOfRange`].
     fn xfx_q2<F: Real>(&self, pdg: i32, x: F, q2: F) -> Result<F, OutOfRange>;
+
+    /// The grid's own edge knots, which is what a continuation past them needs.
+    fn edges(&self) -> GridEdges;
+
+    /// Whether the grid carries `pdg` at all (0 aliases the gluon 21). An absent
+    /// flavor is exactly zero everywhere rather than a value to continue.
+    fn has_flavor(&self, pdg: i32) -> bool;
 }
 
 /// The precomputed log-bicubic coefficient tables for one member, one subgrid
@@ -63,6 +88,7 @@ pub trait Bicubic2D {
 #[derive(Debug, Clone)]
 pub struct LogBicubic {
     subgrids: Vec<LogBicubicSubgrid>,
+    edges: GridEdges,
 }
 
 /// One subgrid's precomputed x-direction cubic coefficients plus the log-knot
@@ -92,7 +118,29 @@ impl LogBicubic {
     pub fn build(subgrids: &[SubGrid]) -> Self {
         LogBicubic {
             subgrids: subgrids.iter().map(LogBicubicSubgrid::build).collect(),
+            edges: edges_of(subgrids),
         }
+    }
+}
+
+/// The flattened edge knots, assembled exactly as LHAPDF's `KnotArray` holds
+/// them: the x axis off the first band (every band shares it) and the Q² axis as
+/// the bands' knots concatenated. A grid too small to name an edge reports NaN
+/// there, which fails every comparison and so leaves no point in range.
+fn edges_of(subgrids: &[SubGrid]) -> GridEdges {
+    let xs: &[f64] = subgrids.first().map(|sg| sg.x.as_slice()).unwrap_or(&[]);
+    let flat_q2: Vec<f64> = subgrids
+        .iter()
+        .flat_map(|sg| sg.q2.iter().copied())
+        .collect();
+    let nq = flat_q2.len();
+    GridEdges {
+        x_min: xs.first().copied().unwrap_or(f64::NAN),
+        x_min1: xs.get(1).copied().unwrap_or(f64::NAN),
+        x_max: xs.last().copied().unwrap_or(f64::NAN),
+        q2_min: flat_q2.first().copied().unwrap_or(f64::NAN),
+        q2_max1: if nq >= 2 { flat_q2[nq - 2] } else { f64::NAN },
+        q2_max: flat_q2.last().copied().unwrap_or(f64::NAN),
     }
 }
 
@@ -142,6 +190,17 @@ impl Bicubic2D for LogBicubic {
             q2_min,
             q2_max,
         })
+    }
+
+    fn edges(&self) -> GridEdges {
+        self.edges
+    }
+
+    fn has_flavor(&self, pdg: i32) -> bool {
+        let pdg = normalize_flavor_pdg(pdg);
+        self.subgrids
+            .iter()
+            .any(|sg| sg.flavors.iter().any(|&f| f == pdg))
     }
 }
 
@@ -457,6 +516,9 @@ mod tests {
         assert_eq!(interp.xfx_q2(4, 0.01_f64, 100.0_f64).unwrap(), 0.0);
     }
 
+    /// The interpolator itself covers only the tabulated range: a point outside
+    /// it is an error here, and it is [`super::super::extrap`] that turns such a
+    /// point into a value.
     #[test]
     fn out_of_support_is_out_of_range_error() {
         let x = geomspace(1e-4, 1.0, 6);

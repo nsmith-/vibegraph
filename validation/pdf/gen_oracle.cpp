@@ -8,6 +8,12 @@
 // checks; the interpolated categories (off_knot, seam, x_to_one_tail, corner)
 // are evaluated through LHAPDF's xfxQ2 and banked for the interpolation gate.
 //
+// A set's reach is wider than its grid: LHAPDF continues past the tabulated
+// range through an Extrapolator chosen per set, and the "extrapolated" block
+// dumps that object's own values on probes past each boundary. Those probes have
+// no other oracle available -- an unweighted event sample never leaves the grid,
+// so only the library itself can say what is out there.
+//
 // Handles both single- and multi-Q^2-subgrid sets. LHAPDF flattens all bands
 // into one KnotArray with a shared x axis and the bands' Q^2 knots concatenated
 // (each seam knot duplicated back to back); this generator recovers the per-
@@ -61,6 +67,38 @@ void write_point(FILE* out, const Point& p, bool last) {
   write_double(out, p.q2);
   std::fprintf(out, ", \"xf\": ");
   write_double(out, p.xf);
+  std::fprintf(out, "}%s\n", last ? "" : ",");
+}
+
+// A single emitted out-of-grid record. Two values per probe, because two
+// different things are worth pinning there:
+//
+//   xf_raw  Extrapolator::extrapolateXQ2 called directly, so the number is the
+//           continuation itself with nothing applied on top of it. This is the
+//           reference the Rust extrapolator is compared against, and it has no
+//           positivity clamp in it to hide a disagreement behind.
+//   xf      PDF::xfxQ2, the call MadGraph makes, which is the same continuation
+//           with the set's ForcePositive level applied. Carrying both makes the
+//           clamp a checked relationship rather than an assumption.
+struct ExtrapPoint {
+  const char* category;
+  int pdg;
+  double x;
+  double q2;
+  double xf;
+  double xf_raw;
+};
+
+void write_extrap_point(FILE* out, const ExtrapPoint& p, bool last) {
+  std::fprintf(out, "    {\"category\": \"%s\", \"pdg\": %d, \"x\": ",
+               p.category, p.pdg);
+  write_double(out, p.x);
+  std::fprintf(out, ", \"q2\": ");
+  write_double(out, p.q2);
+  std::fprintf(out, ", \"xf\": ");
+  write_double(out, p.xf);
+  std::fprintf(out, ", \"xf_raw\": ");
+  write_double(out, p.xf_raw);
   std::fprintf(out, "}%s\n", last ? "" : ",");
 }
 
@@ -321,6 +359,87 @@ int main(int argc, char** argv) {
     for (double f : {1 - 1e-12, 0.5, 0.1, 1e-3}) probe("below_qmin", as_qmin * f);
   }
 
+  // ---- extrapolation: the grid's four out-of-range quadrants. -------------
+  //
+  // Neither set's .info names an Extrapolator, so the key resolves through the
+  // set level to lhapdf.conf's `Extrapolator: continuation` and the object is
+  // ContinuationExtrapolator. That resolution is emitted below rather than
+  // assumed, so a build whose config said something else fails the gate that
+  // reads this file instead of quietly redefining the reference.
+  //
+  // ContinuationExtrapolator::extrapolateXQ2 branches on which boundary the
+  // point is past, and the probe blocks below are one per branch:
+  //
+  //   x  in range, q2 > q2Max   log-linear continuation in q2 through the last
+  //                             two flattened Q^2 knots
+  //   x < xMin, q2 in range     the same continuation in x through the first
+  //                             two x knots
+  //   x < xMin, q2 > q2Max      the q2 continuation at each of those two x
+  //                             knots, then the x continuation between them
+  //   q2 < q2Min                a power law in q2/q2Min whose exponent is built
+  //                             from the anomalous dimension at q2Min, with the
+  //                             small-x continuation nested inside it when x is
+  //                             also below the floor
+  //
+  // x > xMax has no continuation at all -- it raises RangeError -- so it cannot
+  // be probed here and is pinned on the Rust side against this source.
+  const std::string extrapolator = gpdf.info().get_entry("Extrapolator");
+  const int force_positive = gpdf.forcePositive();
+
+  std::vector<ExtrapPoint> extrap_points;
+  {
+    auto xprobe = [&](const char* cat, double x, double q2) {
+      for (int pdg : flavors) {
+        const int ipid = ka.get_pid(pdg);
+        if (ipid < 0) continue;
+        extrap_points.push_back({cat, pdg, x, q2, gpdf.xfxQ2(pdg, x, q2),
+                                 gpdf.extrapolator().extrapolateXQ2(ipid, x, q2)});
+      }
+    };
+
+    // Above the Q^2 ceiling at x values spanning the grid. The 1.0647 factor is
+    // not decorative: on the 10 TeV set it is Q = 10647 GeV, the scale a
+    // per-event mu_F on a 13 TeV collider was measured to reach.
+    for (double factor : {1 + 1e-12, 1.0647, 2.0, 10.0, 100.0}) {
+      const double q = q_max * factor;
+      for (double x : {1e-8, 1e-5, 1e-3, 0.05, 0.3, 0.7, 0.9, 1.0}) {
+        xprobe("above_q2max", x, q * q);
+      }
+    }
+
+    // Below the x floor at three in-range scales, the bottom and top knots
+    // included so the continuation is probed against both one-sided Q^2 edges.
+    const std::vector<double> below_x = {x_min * (1 - 1e-12), x_min * 0.5,
+                                         x_min * 1e-2, x_min * 1e-4};
+    for (double q2 : {q2_min, std::sqrt(q2_min * q2_max), q2_max}) {
+      for (double x : below_x) xprobe("below_xmin", x, q2);
+    }
+
+    // Past both upper boundaries at once: the nested branch, which no single-
+    // boundary probe reaches.
+    for (double factor : {1.5, 50.0}) {
+      const double q = q_max * factor;
+      for (double x : {x_min * 0.5, x_min * 1e-3}) {
+        xprobe("below_xmin_above_q2max", x, q * q);
+      }
+    }
+
+    // Below the Q^2 floor, down to where the power law drives x*f to zero.
+    for (double factor : {1 - 1e-12, 0.5, 0.1, 1e-3, 1e-6}) {
+      for (double x : {1e-7, 1e-3, 0.1, 0.5, 0.9}) {
+        xprobe("below_q2min", x, q2_min * factor);
+      }
+    }
+
+    // And below both floors: the anomalous dimension is then built from two
+    // x-continued values rather than two interpolated ones.
+    for (double factor : {0.5, 1e-3}) {
+      for (double x : {x_min * 0.5, x_min * 1e-3}) {
+        xprobe("below_q2min_below_xmin", x, q2_min * factor);
+      }
+    }
+  }
+
   // ---- write JSON --------------------------------------------------------
   FILE* out = std::fopen(out_path.c_str(), "w");
   if (!out) {
@@ -365,6 +484,13 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < alpha_points.size(); ++i) {
     write_alpha_point(out, alpha_points[i], i + 1 == alpha_points.size());
   }
+  std::fprintf(out, "  ],\n");
+  std::fprintf(out, "  \"extrapolator\": \"%s\",\n", extrapolator.c_str());
+  std::fprintf(out, "  \"force_positive\": %d,\n", force_positive);
+  std::fprintf(out, "  \"extrapolated\": [\n");
+  for (size_t i = 0; i < extrap_points.size(); ++i) {
+    write_extrap_point(out, extrap_points[i], i + 1 == extrap_points.size());
+  }
   std::fprintf(out, "  ]\n");
   std::fprintf(out, "}\n");
   std::fclose(out);
@@ -374,8 +500,9 @@ int main(int argc, char** argv) {
     if (std::string(p.category) == "knot") ++n_knot;
   std::fprintf(stderr,
                "Wrote %s: %zu points (%zu on-knot), %zu alpha_s probes, "
-               "via LHAPDF %s\n",
+               "%zu out-of-grid probes (%s, ForcePositive %d), via LHAPDF %s\n",
                out_path.c_str(), points.size(), n_knot, alpha_points.size(),
+               extrap_points.size(), extrapolator.c_str(), force_positive,
                LHAPDF::version().c_str());
   return 0;
 }
