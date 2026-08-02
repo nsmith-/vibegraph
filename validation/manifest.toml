@@ -424,8 +424,8 @@ artifacts = ["output/pp_to_bb", "output/pp_to_bb.json"]
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
 amplitudes = { tier = "uncovered", note = "no banked b b~ parton row exists; the single-channel colour rows (uux_to_uux, gg_to_ttx) cover the same colour structures at other flavours" }
-integrals = { tier = "blocked", blocker = "kt-clustering", note = "the run card takes the dynamical scale, which needs general kT clustering for the scale choice" }
-samples = { tier = "blocked", blocker = "kt-clustering" }
+integrals = { tier = "blocked", blocker = "mg-internal-pdf", note = "the run card's dynamical scale is no longer what stops this: the general clustering reproduces all 10000 of its events' scale fields in validate_scales. What stops it is the beams -- pdlabel = nn23lo1 is MadGraph's own parton-density parameterisation, not an LHAPDF6 grid the pdf layer here can load, so the two sides would not be convolving the same densities and the comparison would measure the PDF difference rather than the cross section. pp_to_bb_fixed cards this generate line onto lhaid 247000 and gates both cells" }
+samples = { tier = "blocked", blocker = "mg-internal-pdf", note = "generation runs through the same integrand as the cross section and meets the same parton densities" }
 
 [[process]]
 key = "pp_to_bb_qcd2"
@@ -438,8 +438,8 @@ artifacts = ["output/pp_to_bb_qcd2", "output/pp_to_bb_qcd2.json"]
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
 amplitudes = { tier = "uncovered", note = "same gap as pp_to_bb" }
-integrals = { tier = "blocked", blocker = "kt-clustering" }
-samples = { tier = "blocked", blocker = "kt-clustering" }
+integrals = { tier = "blocked", blocker = "mg-internal-pdf", note = "the same nn23lo1 beams as pp_to_bb, and blocked for the same reason; pp_to_bb_fixed is this generate line on lhaid 247000 at a fixed scale and gates" }
+samples = { tier = "blocked", blocker = "mg-internal-pdf" }
 
 [[process]]
 key = "pp_to_bb_fixed"
@@ -480,8 +480,8 @@ artifacts = ["output/pp_to_llj", "output/pp_to_llj.json"]
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour union; the point of the row is the order-selection semantics" }
 amplitudes = { tier = "uncovered", note = "an order-semantics row: its content is pinned in `diagrams`, and the amplitudes of its QCD=2 QED=2 subprocesses are covered by the four llj parton rows" }
-integrals = { tier = "blocked", blocker = "kt-clustering", note = "the dynamical scale is refused, and that refusal is itself asserted" }
-samples = { tier = "blocked", blocker = "kt-clustering" }
+integrals = { tier = "blocked", blocker = "mg-internal-pdf", note = "its dynamical scale is computed rather than refused: validate_scales replays all 10000 of this run's SCALUP / <rscale> / <pdfrwt> out of the general clustering, and validate_kt_cluster reproduces the merge sequence behind them against an instrumented MadGraph. What blocks a cross section is the beams -- pdlabel = nn23lo1 is MadGraph's internal parameterisation rather than an LHAPDF6 grid this crate reads. pp_to_llj_dyn is the same generate line and the same dynamical scale on lhaid 247000, and it gates" }
+samples = { tier = "blocked", blocker = "mg-internal-pdf" }
 
 [[process]]
 key = "pp_to_llj_dyn"
@@ -525,8 +525,8 @@ artifacts = ["output/pp_to_ll_scalefact2", "output/pp_to_ll_scalefact2/Events/ru
 [process.categories]
 diagrams = { tier = "covered-by", rows = ["pp_to_ll"] }
 amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"] }
-integrals = { tier = "blocked", blocker = "kt-clustering", note = "a cross section is not what this run is for — the scale fields are — and it carries the dynamical scale choice besides" }
-samples = { tier = "blocked", blocker = "kt-clustering", note = "generation runs through the same integrand as the cross section and meets the same refusal" }
+integrals = { tier = "blocked", blocker = "mg-internal-pdf", note = "a cross section is not what this run is for -- the scale fields are, and validate_scales now reads all three of them out of the general clustering with the run card's scalefact 2.0 carried through. Its beams take pdlabel = nn23lo1, MadGraph's internal parameterisation rather than an LHAPDF6 grid, so the luminosity a cross section would be built from is not the one MadGraph used" }
+samples = { tier = "blocked", blocker = "mg-internal-pdf", note = "generation runs through the same integrand as the cross section and meets the same parton densities" }
 
 # ─────────────────────────── standalone gates ────────────────────────────────
 #
