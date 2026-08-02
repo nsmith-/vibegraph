@@ -564,28 +564,28 @@ impl std::fmt::Display for DiagramEvalTree {
 /// Connectivity comes from *our* recomputed `spin_map` (UFOModel `LorentzStructure`),
 /// indexed by the vertex's ordered ray slots — which are exactly the owned diagram's
 /// `Vertex.rays`, since `Diagram::from_view` records them in interaction-slot order.
-/// Returns the external leg index where the line terminates and whether it passed
-/// through at least one internal propagator (i.e. is an off-shell spine).
+/// Returns the external leg index where the line terminates and how many internal
+/// propagators the trace crossed.
 #[cfg(test)]
 fn trace_fermion_line(
     diagram: &Diagram,
     model: &UFOModel,
     start_vtx: VtxIdx,
     in_ray: RaySlot,
-) -> (LegIdx, bool) {
+) -> (LegIdx, usize) {
     let mut vtx = start_vtx;
     let mut in_ray = in_ray;
-    let mut passed_internal = false;
+    let mut n_props = 0usize;
     // Tree diagrams terminate; the bound only guards against pathological loops.
     for _ in 0..1024 {
         let vertex = diagram.vertex(vtx);
         let lid = model.vertex_def(vertex.interaction).lorentz[0];
         let out_ray = model.lorentz_struct(lid).spin_map[in_ray.0] as usize;
         match vertex.rays[out_ray] {
-            Ray::Leg(li) => return (li, passed_internal),
+            Ray::Leg(li) => return (li, n_props),
             Ray::Prop { prop, end } => {
                 let (next_vtx, next_slot) = diagram.prop(prop).endpoints[1 - end];
-                passed_internal = true;
+                n_props += 1;
                 vtx = next_vtx;
                 in_ray = next_slot;
             }
@@ -596,18 +596,12 @@ fn trace_fermion_line(
 
 /// Relative fermion sign that feyngraph's connectivity-based `view.sign()` omits.
 ///
-/// MadGraph assigns a relative −1 to a diagram whose off-shell fermion **spine**
-/// is the line joining the two **initial-state** fermions: in MadGraph's
-/// all-outgoing convention that pair is crossed, and chaining it as a propagator
-/// (rather than closing it at a single vertex) picks up the crossing sign. Across
-/// such diagrams `view.sign()` is uniform, so we apply the correction here.
-///
-/// Detected structurally by tracing each external fermion line: flip when a line
-/// connects two incoming legs through at least one internal propagator. Validated
-/// against MadGraph per-diagram amplitudes for e+e-→μ+μ-τ+τ- and
-/// u u~→c c~ e+e- μ+μ- (QCD=0).
+/// Independent `spin_map`-tracing oracle for [`spine_sign_from_flow`]; see there for
+/// the derivation. Detected structurally by tracing each external fermion line: one
+/// −1 per internal propagator on a line with at least one initial-state endpoint, and
+/// one −1 per final–final line.
 #[cfg(test)]
-fn initial_state_spine_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
+fn reversed_line_propagator_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
     let n_in = diagram.n_in;
     let mut visited: HashSet<LegIdx> = HashSet::new();
     let mut sign: i8 = 1;
@@ -618,13 +612,13 @@ fn initial_state_spine_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
             continue;
         }
         let (attach_vtx, attach_slot) = diagram.leg_attachment(li);
-        let (other, passed_internal) = trace_fermion_line(diagram, model, attach_vtx, attach_slot);
+        let (other, n_props) = trace_fermion_line(diagram, model, attach_vtx, attach_slot);
         visited.insert(other);
-        if passed_internal && li.0 < n_in && other.0 < n_in {
+        let crossed = li.0 >= n_in && other.0 >= n_in;
+        if !crossed && n_props % 2 == 1 {
             sign = -sign;
         }
-        // Crossed (final–final) line: one −1 each, mirroring spine_sign_from_flow.
-        if li.0 >= n_in && other.0 >= n_in {
+        if crossed {
             sign = -sign;
         }
     }
@@ -660,25 +654,44 @@ fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> (bool, usiz
 
 /// Derive the fermion-line sign corrections purely from the baked spinor adjoint, using
 /// only the rooted evaluation tree we already build — no second graph walk. (The
-/// `spin_map`-tracing `initial_state_spine_sign` is kept as a test oracle and proven
+/// `spin_map`-tracing `reversed_line_propagator_sign` is kept as a test oracle and proven
 /// equivalent by `spine_sign_from_flow_matches_heuristic`.)
 ///
 /// A fermion line terminates at any vertex node that outputs a non-fermion yet has two
 /// fermion children: an FFV/FFS current rooted at its boson leg, or the root
 /// contraction. Each fermion line meets exactly one such sink, so every line is
-/// counted once. Two per-line flips on top of feyngraph's permutation sign:
+/// counted once.
 ///
-/// * **Initial spine**: a line joining two *incoming* legs through an ODD number of
-///   internal fermion propagators — MadGraph's crossing sign for an initial-state
-///   fermion pair carried as an off-shell spine, one −1 per reversed propagator (a
-///   2-propagator initial spine flips twice = no net sign; pinned by the uux 2→6
-///   per-diagram oracle, validation/madgraph/compare_amps.py).
-/// * **Crossed line**: a line joining two *final-state* legs, evaluated in the
-///   crossed (conjugate-wavefunction) representation, takes one −1 — the operator
-///   reordering of the conjugated pair. Invisible while every diagram of a process
-///   has the same crossed-line count (uniform sign); exposed and pinned by Bhabha,
-///   where the s-channel has one crossed line and the t-channel none
-///   (validation/madgraph/compare_amps.py, ee_to_ee).
+/// The two flips below both come from the same place: which UFO slot each external
+/// wavefunction is bound to. Diagram enumeration binds slots in the *all-incoming*
+/// identity, so an outgoing leg is bound to its antiparticle's slot; the reference
+/// HELAS bookkeeping binds them in the all-outgoing identity, so an *incoming* leg is
+/// bound to its antiparticle's slot. A vertex slot pairs with a definite spinor adjoint
+/// (the pair-first slot takes the ket, the pair-second the bra), so the two bindings
+/// disagree exactly on the legs neither convention crosses the same way:
+///
+/// * A line with at least one **initial-state** endpoint is bound against its own
+///   arrow at every vertex (the initial leg always, and a mixed line's final leg
+///   because [`mixed_line_final_legs`] restores its physical wavefunction while the
+///   slot stays the all-incoming one). Reading a bilinear against its slot arrow
+///   replaces each vertex structure by `C Γᵀ C⁻¹`, which for `Γ = γ^μ P_χ` is
+///   `−γ^μ P_χ̄`: the chirality flip is applied per vertex by
+///   [`chiral_correction`](super::root_lorentz), and one of the `V` minus signs is
+///   supplied by [`reversed_convention_sign`](DiagramEvalTree::reversed_convention_sign)
+///   at the line's single vector-rooted sink. The remaining `V − 1` — one per internal
+///   fermion propagator on the line — are this flip. Pinned by the uux 2→6 per-diagram
+///   oracle for the initial–initial case and by `u d > e+ e- u d QCD=0`, whose 35
+///   diagrams split 24/11 on whether a *mixed* quark line carries the propagator, for
+///   the mixed case.
+/// * A **crossed line** — both endpoints final-state, kept in the all-incoming
+///   (conjugate-wavefunction) representation — is bound *along* its arrow at every
+///   vertex, so it takes no per-propagator factor; its single −1 is the operator
+///   reordering of the conjugated pair relative to the reference's physical pair.
+///   Invisible while every diagram of a process has the same crossed-line count
+///   (uniform sign); exposed and pinned by Bhabha, where the s-channel has one crossed
+///   line and the t-channel none, and its propagator-independence by `g g > t t~`,
+///   whose s-channel top line carries no propagator and whose t/u-channel lines carry
+///   one.
 pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
     let mut sign = 1i8;
     for id in tree.iter() {
@@ -697,10 +710,11 @@ pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
         if let [a, b] = fermions[..] {
             let (inc_a, n_props_a) = descend_fermion_line(tree, a);
             let (inc_b, n_props_b) = descend_fermion_line(tree, b);
-            if inc_a && inc_b && (n_props_a + n_props_b) % 2 == 1 {
+            let crossed = !inc_a && !inc_b;
+            if !crossed && (n_props_a + n_props_b) % 2 == 1 {
                 sign = -sign;
             }
-            if !inc_a && !inc_b {
+            if crossed {
                 sign = -sign;
             }
         }
@@ -1210,8 +1224,10 @@ mod tests {
     ///
     /// This is the non-vacuity half of the map; the deeper per-channel properties live in
     /// dedicated tests — [`yang_mills_vvv_sign_fires_only_for_source_vvv`] (VVV `σ_V`,
-    /// with the +1-uniform and VVVV-not-counted arms) and
-    /// [`spine_sign_from_flow_matches_heuristic`] (spine sign vs the `spin_map` oracle).
+    /// with the +1-uniform and VVVV-not-counted arms),
+    /// [`spine_sign_from_flow_matches_heuristic`] (spine sign vs the `spin_map` oracle)
+    /// and [`spine_sign_separates_mixed_line_and_crossed_line_propagators`] (the spine
+    /// sign's two arms, mixed-line-per-propagator vs crossed-line-once).
     /// The one sub-branch no default-suite process reaches — the VVS pure-metric −1 with
     /// the *scalar* leg as output (H produced from two vectors, only in the 2→6 H
     /// classes) — is pinned at the primitive level by
@@ -1257,7 +1273,7 @@ mod tests {
     }
 
     /// The adjoint-derived spine sign must agree with the `spin_map`-tracing heuristic for
-    /// every diagram, across processes with and without initial-state fermion spines.
+    /// every diagram, across processes with and without off-shell fermion spines.
     #[test]
     fn spine_sign_from_flow_matches_heuristic() {
         let model = sm_model(SMRestrict::Default);
@@ -1266,6 +1282,7 @@ mod tests {
             "e+ e- > e+ e-",
             "u u~ > d d~",
             "e+ e- > mu+ mu- ta+ ta-",
+            "u d > e+ e- u d QCD=0",
         ];
         let mut flipped_total = 0;
         for process in processes {
@@ -1274,7 +1291,7 @@ mod tests {
                     let chain = vec![0u8; diagram.vertices.len()];
                     let tree = root_tree(diagram, &model, &chain).expect("rooting failed");
                     let from_flow = spine_sign_from_flow(&tree);
-                    let heuristic = initial_state_spine_sign(diagram, &model);
+                    let heuristic = reversed_line_propagator_sign(diagram, &model);
                     assert_eq!(
                         from_flow, heuristic,
                         "spine sign mismatch in `{process}` diagram {i}: \
@@ -1291,6 +1308,102 @@ mod tests {
         assert!(
             flipped_total >= 8,
             "expected at least the 8 e-spine flips, saw {flipped_total}"
+        );
+    }
+
+    /// The per-propagator flip fires on a *mixed* (initial↔final) fermion line, not only
+    /// on an initial–initial one, and a *crossed* (final–final) line takes its single −1
+    /// regardless of how many propagators it carries.
+    ///
+    /// `u d > e+ e- u d QCD=0` is the discriminating topology: every one of its 35
+    /// diagrams has exactly one internal fermion propagator except the two with a triple-
+    /// gauge vertex, and the propagator sits either on a mixed quark line (24 diagrams)
+    /// or on the crossed lepton line (9). The two classes must therefore come out with
+    /// *opposite* spine signs — which is the relative sign between MadGraph graphs
+    /// 1-8/17 and the rest. `g g > t t~` supplies the negative control: its s-channel top
+    /// line carries no propagator and its t/u-channel lines carry one, and all three must
+    /// come out the same.
+    ///
+    /// What this cannot see: a sign common to all diagrams of a process (absorbed by the
+    /// per-configuration phase fit), and anything outside the spine channel — the gate on
+    /// `ud_to_epemud_qcd0` in `tests/amplitude_oracle.rs` is what pins the absolute
+    /// per-diagram values.
+    #[test]
+    fn spine_sign_separates_mixed_line_and_crossed_line_propagators() {
+        let model = sm_model(SMRestrict::Default);
+
+        let mut mixed_prop = Vec::new();
+        let mut crossed_prop = Vec::new();
+        let mut no_prop = Vec::new();
+        for set in generate("u d > e+ e- u d QCD=0") {
+            let n_in = set.diagrams[0].n_in;
+            for diagram in &set.diagrams {
+                let chain = vec![0u8; diagram.vertices.len()];
+                let tree = root_tree_at(diagram, &model, &chain, VtxIdx(0)).unwrap();
+                let sign = spine_sign_from_flow(&tree);
+                // Classify by where the diagram's internal fermion propagator sits.
+                let mut visited: HashSet<LegIdx> = HashSet::new();
+                let (mut on_mixed, mut on_crossed) = (0usize, 0usize);
+                for leg in &diagram.legs {
+                    let li = leg.leg_idx;
+                    if leg.spin.abs() != 2 || !visited.insert(li) {
+                        continue;
+                    }
+                    let (attach_vtx, attach_slot) = diagram.leg_attachment(li);
+                    let (other, n_props) =
+                        trace_fermion_line(diagram, &model, attach_vtx, attach_slot);
+                    visited.insert(other);
+                    if li.0 >= n_in && other.0 >= n_in {
+                        on_crossed += n_props;
+                    } else {
+                        on_mixed += n_props;
+                    }
+                }
+                match (on_mixed, on_crossed) {
+                    (0, 0) => no_prop.push(sign),
+                    (1, 0) => mixed_prop.push(sign),
+                    (0, 1) => crossed_prop.push(sign),
+                    other => panic!("unexpected propagator placement {other:?}"),
+                }
+            }
+        }
+        assert_eq!(
+            (mixed_prop.len(), crossed_prop.len(), no_prop.len()),
+            (24, 9, 2),
+            "u d > e+ e- u d QCD=0 must split 24 mixed-line / 9 crossed-line / 2 \
+             propagator-free diagrams"
+        );
+        // Both classes carry one crossed lepton line, so the crossed −1 is common and the
+        // classes must differ by exactly the mixed-line propagator flip.
+        assert!(
+            mixed_prop.iter().all(|&s| s == mixed_prop[0]),
+            "mixed-line-propagator diagrams must share a spine sign, got {mixed_prop:?}"
+        );
+        assert!(
+            crossed_prop.iter().chain(&no_prop).all(|&s| s == no_prop[0]),
+            "crossed-line-propagator and propagator-free diagrams must share a spine \
+             sign, got {crossed_prop:?} / {no_prop:?}"
+        );
+        assert_eq!(
+            mixed_prop[0], -no_prop[0],
+            "a propagator on a mixed line must flip the spine sign relative to one on a \
+             crossed line"
+        );
+
+        // Negative control: a crossed line's −1 does not count propagators.
+        let ttx: Vec<i8> = generate("g g > t t~")
+            .iter()
+            .flat_map(|set| set.diagrams.iter())
+            .map(|d| {
+                let chain = vec![0u8; d.vertices.len()];
+                spine_sign_from_flow(&root_tree_at(d, &model, &chain, VtxIdx(0)).unwrap())
+            })
+            .collect();
+        assert_eq!(
+            ttx,
+            vec![-1, -1, -1],
+            "g g > t t~ must carry one crossed-line −1 per diagram regardless of the \
+             top-line propagator"
         );
     }
 }
