@@ -39,30 +39,48 @@
 //! (only the azimuth is free), with the emitted and recoil subsystems recursing
 //! into the same 2-body-decay machinery. The transfer is importance-sampled through
 //! the logarithmic substitution `t = m² − (m²−t_min)·exp(−x·N)` (density
-//! `∝ 1/(m²−t)`), and a spacelike line carries no width. Genuine
-//! multi-spacelike-line (ladder) topologies are not yet given a spine; their
-//! spacelike lines are kept as metadata only.
+//! `∝ 1/(m²−t)`), and a spacelike line carries no width.
+//!
+//! A ladder — several spacelike lines in one diagram — is the same construction
+//! repeated. Its spacelike lines nest, so they form an *ordered chain* of rungs,
+//! each emitting one blob against the running momentum transfer left by the rungs
+//! before it. [`DiagramChannel::from_diagram_ladder`] builds that chain;
+//! [`DiagramChannel::from_diagram_regulated`] leaves a ladder on the all-timelike
+//! tree and keeps its spacelike lines as metadata only.
 //!
 //! # Regulating the spacelike pole
 //!
 //! With a *massless* exchanged line and a massless subsystem on one side, the
-//! transfer's upper edge sits analytically on the pole (`t_max = m² = 0`) but is
-//! computed as a cancelling difference of two large quantities built from different
-//! expressions, so it lands on either side of zero at the rounding scale. A draw
-//! that then switches the propagator map on reaches `|t| ~ 1e-11` while the density
-//! recomputes `t` from the momenta with a cancellation error of the same size:
-//! sampling density and weighting density describe different maps, and the
-//! estimator is *biased*, not merely noisy. In a `2 → 2` final state both
-//! invariants are fixed constants and the cancellation is exact, so the edge is a
-//! hard zero and the flat fallback fires deterministically; the degeneracy needs a
-//! *drawn* invariant on one side, which first appears at three outgoing legs.
+//! transfer's upper edge sits analytically on the pole, `t_max = m² = 0`, and is
+//! computed as a cancelling difference. Whether the arithmetic reproduces the zero
+//! decides whether the propagator map switches on or the draw falls back flat, so
+//! the conditioning of that difference is a physics-level question, not a cosmetic
+//! one: a map that switches on at `|t| ~ 1e-11` while the density recomputes `t`
+//! from the momenta with a cancellation error of the same size is sampling from one
+//! density and weighting by another, and the estimator is *biased*, not merely
+//! noisy.
 //!
-//! [`DiagramChannel::from_diagram_regulated`] therefore takes a **floor** on the
-//! pole location, `t_mass² ← max(m², floor)`. The floor moves only the sampling
-//! density — `draw_t` and `t_measure` read the same `t_mass2`, so the estimator is
-//! unbiased for any non-negative value — and a floor far above the cancellation
-//! scale is what makes the propagator draw well posed. A spine is built for a
-//! final state of more than two legs only when such a floor is supplied.
+//! Two things keep the edge exact. The Källén function is evaluated in its grouped
+//! form, which cancels once rather than against terms of order `ŝ²` (see
+//! [`kallen`]); and each blob is boosted out of its own rest frame with `γ = E/√s`
+//! rather than from `β` (see [`boost_from_rest`]), so a subsystem's daughters sum
+//! back to it. Together those pin the edge at exactly zero whenever the emitted
+//! subsystem's invariant is *fixed* — a single on-shell leg — and the flat fallback
+//! then fires deterministically. The residual case is a **composite emitted
+//! subsystem**, whose drawn invariant cancels against `ŝ` in the edge and puts it on
+//! either side of zero at the rounding scale.
+//!
+//! [`DiagramChannel::from_diagram_regulated`] therefore takes the **fiducial
+//! scale** the process's own transverse-momentum cuts imply and regulates each rung
+//! with it two ways. It bounds the transfer at `t ≤ −scale`, which is where the
+//! draw stops before reaching the degenerate edge and is also where the cuts stop
+//! accepting; and it floors the pole location at a small fraction of that scale, so
+//! a configuration whose window the bound cannot narrow still draws against a pole
+//! far above the cancellation noise. The floor moves only the sampling density —
+//! `draw_t` and `t_measure` read the same `t_mass2`, so the estimator is unbiased
+//! for any non-negative value — while the bound narrows the channel's *support*,
+//! which [`Channel::density`] reports as an exact zero above the edge. A spine is
+//! built for a final state of more than two legs only when a scale is supplied.
 //!
 //! The weight is the exact product of the 2-body LIPS factors `R_2 = π|p*|/√s`
 //! and each invariant's draw measure `ds/dx`, so a flat Monte-Carlo average of
@@ -97,6 +115,11 @@ pub struct Resonance<F: Real> {
     pub mass: F,
     pub width: F,
 }
+
+/// One rung of a hand-specified peripheral chain: the outgoing-leg slots the rung
+/// emits, an optional [`Resonance`] on that blob's own invariant, and the mass of
+/// the spacelike propagator its transfer sits on (width zero by construction).
+pub type RungSpec<F> = (Vec<usize>, Option<Resonance<F>>, F);
 
 /// A spacelike (t-channel) internal line: its propagator mass and width, kept for
 /// a later t-channel importance map. Its invariant is a momentum transfer, not a
@@ -137,21 +160,100 @@ impl<F: Real> Node<F> {
     }
 }
 
-/// A t-channel spine: the peripheral emission a single spacelike line drives.
-///
-/// One beam (the `emitted` subsystem's anchor, beam `0` here) emits the `emitted`
-/// subsystem against the spacelike propagator of mass² `t_mass2`; the `recoil`
-/// subsystem balances it. The polar angle of the emission is fixed by the sampled
-/// momentum transfer `t`, so only its azimuth is free. Each subsystem is a
-/// [`Node`] that recurses into the timelike 2-body-decay machinery unchanged. This
-/// carries one spacelike rung; a ladder of several spacelike lines would extend it
-/// to an ordered chain of rungs.
+/// One rung of a t-channel spine: the final-state blob emitted at this step of the
+/// chain, and the spacelike propagator the step's momentum transfer sits on.
 #[derive(Clone, Debug)]
-struct Spine<F: Real> {
+struct SpineRung<F: Real> {
+    /// The blob this rung emits, `B_i = S_i \ S_{i-1}`, as a subtree that recurses
+    /// into the timelike 2-body-decay machinery unchanged.
     emitted: Node<F>,
-    recoil: Node<F>,
     /// The spacelike propagator's mass²; its width is zero by construction.
     t_mass2: F,
+    /// Upper edge (`≤ 0`) this rung's transfer is restricted to, or `None` for the
+    /// full kinematic window. A restriction narrows the channel's *support*, so
+    /// the density reports exactly zero above it.
+    t_max_cap: Option<F>,
+}
+
+/// A t-channel spine: the ordered chain of peripheral emissions a diagram's
+/// spacelike lines drive.
+///
+/// The spacelike lines of a tree diagram cut the final state into sides that nest,
+/// `S_1 ⊂ S_2 ⊂ … ⊂ S_r` (each `S_k` the outgoing legs on beam `0`'s side of line
+/// `k`), so they form a chain rather than an unordered set. Rung `i` emits the blob
+/// `B_i = S_i \ S_{i-1}` against the running momentum transfer
+/// `q_i = p_a − (p_{B_1} + … + p_{B_i})`, and what is left after the last rung is
+/// the `recoil`. The polar angle of each emission is fixed by that rung's sampled
+/// `t_i = q_i²`, so only its azimuth is free.
+///
+/// Rung `i > 1` scatters a *spacelike* incoming line, so its `m_a² = t_{i-1}` is
+/// negative — the peripheral kinematics is algebraically fine there, and it pushes
+/// the transfer's upper edge off the collinear pole in proportion to `t_{i-1}`.
+///
+/// The chain order is a property of the map, not of a configuration: the multiset
+/// `{t_i}` is the same read from either end of the ladder, so no invariant-level
+/// check can see a wrong ordering. What a wrong ordering costs is importance
+/// sampling — its draws concentrate where a *different* diagram's propagators peak.
+#[derive(Clone, Debug)]
+struct Spine<F: Real> {
+    /// Ordered away from beam `0`: `rungs[i]` emits against the transfer that
+    /// follows every earlier rung's emission.
+    rungs: Vec<SpineRung<F>>,
+    recoil: Node<F>,
+}
+
+impl<F: Real> Spine<F> {
+    /// Whether the running remainder `R_i = B_{i+1} ∪ … ∪ B_r ∪ recoil` — the
+    /// system rung `i` leaves behind, whose invariant `ŝ_i` the rung draws — spans
+    /// more than one leg and so carries an invariant of its own.
+    fn rest_is_composite(&self, i: usize) -> bool {
+        i + 1 < self.rungs.len() || matches!(self.recoil, Node::Branch(_))
+    }
+
+    /// Sum of `R_i`'s leaf masses: the remainder's minimal invariant mass.
+    fn rest_mu(&self, i: usize) -> F {
+        self.rungs[i + 1..]
+            .iter()
+            .fold(self.recoil.mu(), |m, r| m + r.emitted.mu())
+    }
+
+    /// The propagator pole `R_i`'s invariant sits on. Only the last remainder is a
+    /// timelike subsystem of the diagram — the earlier ones straddle the chain and
+    /// bound no line of their own, so their invariant is drawn flat.
+    fn rest_resonance(&self, i: usize) -> Option<Resonance<F>> {
+        if i + 1 < self.rungs.len() {
+            return None;
+        }
+        match &self.recoil {
+            Node::Branch(b) => b.resonance,
+            Node::Leaf { .. } => None,
+        }
+    }
+
+    /// Four-momentum of `R_i` at a configuration.
+    fn rest_momentum(&self, i: usize, momenta: &[LorentzVector<F>]) -> LorentzVector<F> {
+        self.rungs[i + 1..]
+            .iter()
+            .fold(subtree_momentum(&self.recoil, momenta), |acc, r| {
+                let p = subtree_momentum(&r.emitted, momenta);
+                LorentzVector::new(
+                    acc.e() + p.e(),
+                    acc.px() + p.px(),
+                    acc.py() + p.py(),
+                    acc.pz() + p.pz(),
+                )
+            })
+    }
+
+    /// Invariant mass² of `R_i` at a configuration, clamped away from the tiny
+    /// negative value a near-threshold configuration can pick up.
+    fn rest_invariant(&self, i: usize, momenta: &[LorentzVector<F>]) -> F {
+        if i + 1 == self.rungs.len() {
+            node_invariant(&self.recoil, momenta)
+        } else {
+            self.rest_momentum(i, momenta).m2().max(F::zero())
+        }
+    }
 }
 
 /// The top-level structure of a channel: an all-timelike decay tree, or a
@@ -177,11 +279,6 @@ pub struct DiagramChannel<F: Real> {
     beam_masses: [F; 2],
     topology: ChannelTopology<F>,
     t_channels: Vec<TChannel<F>>,
-    /// Upper edge (`≤ 0`) the peripheral transfer is restricted to, or `None` for
-    /// the full kinematic window. Set only by
-    /// [`with_fiducial_t_max`](Self::with_fiducial_t_max), a measurement knob no
-    /// production caller reaches.
-    fiducial_t_max: Option<F>,
 }
 
 impl<F: Real> DiagramChannel<F> {
@@ -195,19 +292,61 @@ impl<F: Real> DiagramChannel<F> {
         Self::from_diagram_regulated(diagram, model, sqrt_s, F::zero())
     }
 
-    /// [`from_diagram`](Self::from_diagram) with the spacelike propagator's pole
-    /// floored at `spacelike_floor` (GeV²), so a massless exchanged line still
-    /// gives a well-posed peripheral draw.
+    /// [`from_diagram`](Self::from_diagram) with the peripheral rung regulated at
+    /// the process's own `fiducial_scale` (GeV², the largest single-leg `pT_min`
+    /// squared), so a massless exchanged line still gives a well-posed draw.
     ///
-    /// The floor enters `draw_t` and `t_measure` alike, so it reshapes the sampling
-    /// density and nothing else. Without one, a spacelike line inside a final state
-    /// of more than two legs is left to the all-timelike tree: the module docs
-    /// record why an unfloored three-body spine is biased rather than merely noisy.
+    /// A diagram with several spacelike lines is a ladder, and this builds it as an
+    /// all-timelike tree; [`from_diagram_ladder`](Self::from_diagram_ladder) builds
+    /// the ordered rung chain instead.
     pub fn from_diagram_regulated(
         diagram: &Diagram,
         model: &EvaluatedModel,
         sqrt_s: F,
-        spacelike_floor: F,
+        fiducial_scale: F,
+    ) -> Self {
+        Self::from_diagram_with(diagram, model, sqrt_s, fiducial_scale, 1)
+    }
+
+    /// [`from_diagram_regulated`](Self::from_diagram_regulated) with a ladder
+    /// decomposed as the ordered chain of peripheral rungs its spacelike lines
+    /// imply, rather than as an all-timelike tree.
+    ///
+    /// The chain reads the same `(t, φ)` per rung against the running momentum
+    /// transfer, so it importance-samples every spacelike propagator of the diagram
+    /// instead of only the one a single-rung spine can carry.
+    pub fn from_diagram_ladder(
+        diagram: &Diagram,
+        model: &EvaluatedModel,
+        sqrt_s: F,
+        fiducial_scale: F,
+    ) -> Self {
+        Self::from_diagram_with(diagram, model, sqrt_s, fiducial_scale, usize::MAX)
+    }
+
+    /// The shared construction, admitting a peripheral chain of at most `max_rungs`
+    /// rungs and falling back to the all-timelike tree otherwise.
+    ///
+    /// `fiducial_scale` regulates the collinear edge two ways at once. It bounds
+    /// each rung's transfer at `t ≤ −fiducial_scale`, the region a process's own
+    /// transverse-momentum cuts reject anyway, and it puts a token floor
+    /// `POLE_FRACTION_OF_FIDUCIAL_SCALE · fiducial_scale` under the propagator pole
+    /// so a configuration the bound cannot narrow still has a well-posed draw
+    /// rather than one whose pole sits on the transfer's own rounding noise. Both
+    /// enter `draw_t` and `t_measure` alike, so the pole floor reshapes the sampling
+    /// density and nothing else; the bound additionally narrows the channel's
+    /// support, which the density reports honestly as an exact zero above the edge.
+    ///
+    /// A scale of zero — a run with no active single-leg `pT` cut — leaves both off,
+    /// which for a final state of more than two legs means no spine is built at all:
+    /// the module docs record why an unregulated three-body spine is biased rather
+    /// than merely noisy.
+    fn from_diagram_with(
+        diagram: &Diagram,
+        model: &EvaluatedModel,
+        sqrt_s: F,
+        fiducial_scale: F,
+        max_rungs: usize,
     ) -> Self {
         let n_in = diagram.n_in;
         let n_ext = diagram.n_ext();
@@ -228,10 +367,11 @@ impl<F: Real> DiagramChannel<F> {
         // Timelike subsystems drive the decay tree; spacelike lines are peripheral.
         let mut resonances: BTreeMap<u64, Resonance<F>> = BTreeMap::new();
         let mut t_channels = Vec::new();
-        let mut spacelike: Vec<usize> = Vec::new();
-        for (pi, prop) in diagram.props.iter().enumerate() {
+        let mut spacelike: Vec<(u64, F)> = Vec::new();
+        for prop in diagram.props.iter() {
             if prop.is_spacelike(n_in) {
-                spacelike.push(pi);
+                let m: F = cast(model.mass(prop.particle));
+                spacelike.push((spine_partition(&prop.momentum, n_in, n_ext).0, m * m));
                 t_channels.push(TChannel {
                     mass: cast(model.mass(prop.particle)),
                     width: cast(model.width(prop.particle)),
@@ -247,25 +387,27 @@ impl<F: Real> DiagramChannel<F> {
         }
 
         let subsystems: Vec<u64> = resonances.keys().copied().collect();
-        // A single spacelike line is peripheral: it is decomposed as a t-channel
-        // spine rather than an all-timelike tree. Past two outgoing legs the
+        // Spacelike lines are peripheral: they are decomposed as a chain of t-channel
+        // rungs rather than as an all-timelike tree. Past two outgoing legs the
         // transfer's upper edge is a cancelling difference of drawn invariants, so
-        // the spine is built only when a floor keeps the pole clear of it. Ladder
-        // topologies (several spacelike lines) stay all-timelike for now.
-        let regulated = spacelike_floor > F::zero();
-        let topology = if spacelike.len() == 1 && (n_out == 2 || regulated) {
-            let prop = &diagram.props[spacelike[0]];
-            let (emitted_mask, recoil_mask) = spine_partition(&prop.momentum, n_in, n_ext);
-            ChannelTopology::Spine(Spine {
-                emitted: build_node(emitted_mask, &masses, &subsystems, &resonances),
-                recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
-                t_mass2: {
-                    let m: F = cast(model.mass(prop.particle));
-                    (m * m).max(spacelike_floor)
-                },
-            })
-        } else {
-            ChannelTopology::Timelike(build_root(n_out, &masses, &subsystems, &resonances))
+        // the chain is built only when a fiducial scale keeps the draw clear of it.
+        let regulated = fiducial_scale > F::zero();
+        let chain =
+            if !spacelike.is_empty() && spacelike.len() <= max_rungs && (n_out == 2 || regulated) {
+                spine_chain(
+                    &spacelike,
+                    n_out,
+                    fiducial_scale,
+                    &masses,
+                    &subsystems,
+                    &resonances,
+                )
+            } else {
+                None
+            };
+        let topology = match chain {
+            Some(spine) => ChannelTopology::Spine(spine),
+            None => ChannelTopology::Timelike(build_root(n_out, &masses, &subsystems, &resonances)),
         };
         DiagramChannel {
             sqrt_s,
@@ -273,7 +415,6 @@ impl<F: Real> DiagramChannel<F> {
             beam_masses,
             topology,
             t_channels,
-            fiducial_t_max: None,
         }
     }
 
@@ -295,7 +436,6 @@ impl<F: Real> DiagramChannel<F> {
             beam_masses: [F::zero(), F::zero()],
             topology: ChannelTopology::Timelike(root),
             t_channels: Vec::new(),
-            fiducial_t_max: None,
         }
     }
 
@@ -326,7 +466,6 @@ impl<F: Real> DiagramChannel<F> {
             beam_masses: [F::zero(), F::zero()],
             topology: ChannelTopology::Timelike(root),
             t_channels: Vec::new(),
-            fiducial_t_max: None,
         }
     }
 
@@ -370,9 +509,12 @@ impl<F: Real> DiagramChannel<F> {
         );
         let subsystems: Vec<u64> = resonances.keys().copied().collect();
         let spine = Spine {
-            emitted: build_node(emitted_mask, &masses, &subsystems, &resonances),
+            rungs: vec![SpineRung {
+                emitted: build_node(emitted_mask, &masses, &subsystems, &resonances),
+                t_mass2: t_mass * t_mass,
+                t_max_cap: None,
+            }],
             recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
-            t_mass2: t_mass * t_mass,
         };
         DiagramChannel {
             sqrt_s,
@@ -380,7 +522,73 @@ impl<F: Real> DiagramChannel<F> {
             beam_masses,
             topology: ChannelTopology::Spine(spine),
             t_channels: Vec::new(),
-            fiducial_t_max: None,
+        }
+    }
+
+    /// Build a multi-rung t-channel spine directly, without a diagram, for
+    /// exercising a controlled ladder.
+    ///
+    /// `rungs` lists the emitted blobs in chain order away from beam `0` — each a
+    /// disjoint outgoing-leg slot set, an optional [`Resonance`] on its own
+    /// invariant, and the mass of the spacelike propagator the rung's transfer sits
+    /// on (width zero) — and `recoil` is what the chain leaves behind. Together they
+    /// must partition `0..masses.len()`.
+    pub fn from_topology_ladder(
+        sqrt_s: F,
+        beam_masses: [F; 2],
+        masses: Vec<F>,
+        rungs: &[RungSpec<F>],
+        recoil: (Vec<usize>, Option<Resonance<F>>),
+    ) -> Self {
+        let n_out = masses.len();
+        assert!(n_out >= 2, "a 2-body decomposition needs at least two legs");
+        assert!(!rungs.is_empty(), "a spine carries at least one rung");
+        let mut resonances: BTreeMap<u64, Resonance<F>> = BTreeMap::new();
+        let mut masks = Vec::new();
+        let mut mask_of = |slots: &[usize], res: Option<Resonance<F>>| -> u64 {
+            let mask = slots.iter().fold(0u64, |m, &i| m | (1 << i));
+            if let Some(r) = res {
+                resonances.insert(mask, r);
+            }
+            masks.push(mask);
+            mask
+        };
+        let rung_masks: Vec<(u64, F)> = rungs
+            .iter()
+            .map(|(slots, res, t_mass)| (mask_of(slots, *res), *t_mass * *t_mass))
+            .collect();
+        let recoil_mask = mask_of(&recoil.0, recoil.1);
+        let union = rung_masks.iter().fold(recoil_mask, |acc, &(m, _)| acc | m);
+        let sizes: u32 =
+            rung_masks.iter().map(|&(m, _)| m.count_ones()).sum::<u32>() + recoil_mask.count_ones();
+        assert_eq!(
+            union,
+            (1u64 << n_out) - 1,
+            "the rung blobs and the recoil must partition the final state"
+        );
+        assert_eq!(
+            sizes,
+            union.count_ones(),
+            "the rung blobs and the recoil must be disjoint"
+        );
+        let subsystems: Vec<u64> = resonances.keys().copied().collect();
+        let spine = Spine {
+            rungs: rung_masks
+                .iter()
+                .map(|&(mask, t_mass2)| SpineRung {
+                    emitted: build_node(mask, &masses, &subsystems, &resonances),
+                    t_mass2,
+                    t_max_cap: None,
+                })
+                .collect(),
+            recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
+        };
+        DiagramChannel {
+            sqrt_s,
+            n_out,
+            beam_masses,
+            topology: ChannelTopology::Spine(spine),
+            t_channels: Vec::new(),
         }
     }
 
@@ -396,7 +604,9 @@ impl<F: Real> DiagramChannel<F> {
         match &self.topology {
             ChannelTopology::Timelike(root) => collect_resonances(root, &mut out),
             ChannelTopology::Spine(spine) => {
-                collect_node_resonances(&spine.emitted, &mut out);
+                for rung in &spine.rungs {
+                    collect_node_resonances(&rung.emitted, &mut out);
+                }
                 collect_node_resonances(&spine.recoil, &mut out);
             }
         }
@@ -404,35 +614,75 @@ impl<F: Real> DiagramChannel<F> {
     }
 
     /// The spacelike (t-channel) lines of the diagram, for a t-channel importance
-    /// map.
+    /// map. Listed in the diagram's propagator order, which carries no kinematic
+    /// meaning; the chain order a peripheral map draws in is
+    /// [`spine_poles`](Self::spine_poles).
     pub fn t_channels(&self) -> &[TChannel<F>] {
         &self.t_channels
     }
 
-    /// Restrict the peripheral transfer to `t ≤ t_max` (`t_max ≤ 0`), so the
-    /// propagator map can keep the bare pole instead of a floored one and spends
-    /// no draw on the collinear region a fiducial cut removes anyway.
+    /// Bound every peripheral rung's transfer at `t ≤ t_max` (`t_max ≤ 0`), the
+    /// scale a process's fiducial cuts imply, so the map spends no draw on the
+    /// collinear region those cuts reject anyway.
     ///
-    /// **A measurement knob, not a production setting.** It narrows the channel's
-    /// *support*: outside the restricted window [`Channel::density`] is exactly
-    /// zero, so a channel set built this way is unbiased only if the union of its
-    /// members still covers everywhere the integrand is non-zero. Whether that
-    /// trade beats the pole floor is what the knob exists to measure; no caller in
-    /// the crate sets it.
+    /// It narrows the channel's *support*: above the bound [`Channel::density`] is
+    /// exactly zero, so a channel set built this way is unbiased only if the union
+    /// of its members still covers everywhere the integrand is non-zero.
     ///
-    /// The restriction is skipped for a configuration whose kinematic window lies
-    /// entirely below `t_max`, so a channel never ends up with empty support.
+    /// The bound is applied per rung and per configuration, and is skipped for a
+    /// rung whose kinematic window already lies entirely below it (nothing to
+    /// narrow) or entirely above it (which would empty the window), so a rung never
+    /// ends up with no window to draw from. An interior rung's window is pushed off
+    /// the collinear edge by the previous transfer, so it is typically the first and
+    /// last rungs the bound acts on.
     pub fn with_fiducial_t_max(mut self, t_max: F) -> Self {
-        self.fiducial_t_max = Some(t_max);
+        if let ChannelTopology::Spine(spine) = &mut self.topology {
+            for rung in &mut spine.rungs {
+                rung.t_max_cap = Some(t_max);
+            }
+        }
         self
     }
 
-    /// The pole location `t_mass²` of the peripheral rung, or `None` for an
-    /// all-timelike tree — the floor a regulated channel actually installed.
+    /// Reorder the peripheral chain's rungs, `order[i]` naming the rung that moves
+    /// into position `i`. The blobs and the recoil are unchanged, so the resulting
+    /// channel is a valid map over the same phase space — a *different* map, whose
+    /// draws concentrate on a different set of running transfers.
+    ///
+    /// Nothing derives an ordering this way; it exists so a deliberately wrong
+    /// ordering can be built and measured against the derived one.
+    pub fn with_rung_order(mut self, order: &[usize]) -> Self {
+        if let ChannelTopology::Spine(spine) = &mut self.topology {
+            assert_eq!(order.len(), spine.rungs.len(), "order must name every rung");
+            let mut seen = vec![false; order.len()];
+            for &i in order {
+                assert!(
+                    !std::mem::replace(&mut seen[i], true),
+                    "order repeats a rung"
+                );
+            }
+            spine.rungs = order.iter().map(|&i| spine.rungs[i].clone()).collect();
+        }
+        self
+    }
+
+    /// The pole locations `t_mass²` the peripheral rungs draw their transfers
+    /// against, in chain order away from beam `0` — after whatever floor the
+    /// regulator installed, so they differ from [`t_channels`](Self::t_channels)
+    /// wherever it bound. Empty for an all-timelike tree.
+    pub fn spine_poles(&self) -> Vec<F> {
+        match &self.topology {
+            ChannelTopology::Timelike(_) => Vec::new(),
+            ChannelTopology::Spine(spine) => spine.rungs.iter().map(|r| r.t_mass2).collect(),
+        }
+    }
+
+    /// The pole location `t_mass²` of the peripheral chain's first rung, or `None`
+    /// for an all-timelike tree.
     pub fn spine_pole(&self) -> Option<F> {
         match &self.topology {
             ChannelTopology::Timelike(_) => None,
-            ChannelTopology::Spine(spine) => Some(spine.t_mass2),
+            ChannelTopology::Spine(spine) => Some(spine.rungs[0].t_mass2),
         }
     }
 
@@ -460,7 +710,6 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
                 spine,
                 s,
                 &self.beams_at(sqrt_s),
-                self.fiducial_t_max,
                 total,
                 u,
                 &mut cursor,
@@ -468,6 +717,17 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
                 &mut weight,
             ),
         }
+        // A decomposition is only a parametrisation of the same phase space if it
+        // consumes exactly its own dimension: a chain that dropped a rung's azimuth,
+        // or drew a running remainder's invariant that the kinematics had already
+        // fixed, would still produce momenta and would be integrating a different
+        // volume. Cheap enough to assert on every draw a debug build makes.
+        debug_assert_eq!(
+            cursor,
+            self.ndim(),
+            "the walk consumed {cursor} coordinates, not the {} the map declares",
+            self.ndim()
+        );
         let momenta: Vec<LorentzVector<F>> = slots
             .into_iter()
             .map(|m| m.expect("every outgoing slot is filled"))
@@ -479,13 +739,9 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
         let s = sqrt_s * sqrt_s;
         let jac = match &self.topology {
             ChannelTopology::Timelike(root) => branch_jacobian(root, s, momenta),
-            ChannelTopology::Spine(spine) => spine_jacobian(
-                spine,
-                s,
-                &self.beams_at(sqrt_s),
-                self.fiducial_t_max,
-                momenta,
-            ),
+            ChannelTopology::Spine(spine) => {
+                spine_jacobian(spine, s, &self.beams_at(sqrt_s), momenta)
+            }
         };
         F::one() / jac
     }
@@ -667,9 +923,16 @@ fn collect_node_resonances<F: Real>(node: &Node<F>, out: &mut Vec<Resonance<F>>)
 /// The two incoming beam four-momenta in the CM frame at `sqrt_s` for beam masses
 /// `ma`, `mb`: beam `0` along `+z`, beam `1` along `−z`, both on shell.
 fn beam_momenta<F: Real>(sqrt_s: F, ma: F, mb: F) -> [LorentzVector<F>; 2] {
+    beam_momenta_m2(sqrt_s, ma * ma, mb * mb)
+}
+
+/// [`beam_momenta`] taking invariants rather than masses, so the incoming line can
+/// be *spacelike* (`ma2 < 0`) — which is what an interior rung of a peripheral
+/// chain scatters. A negative `ma2` gives `e_a < |k|`, the sign that the line is off
+/// shell in the spacelike direction; nothing downstream assumes otherwise.
+fn beam_momenta_m2<F: Real>(sqrt_s: F, ma2: F, mb2: F) -> [LorentzVector<F>; 2] {
     let two = F::one() + F::one();
     let s = sqrt_s * sqrt_s;
-    let (ma2, mb2) = (ma * ma, mb * mb);
     let e_a = (s + ma2 - mb2) / (two * sqrt_s);
     let e_b = (s + mb2 - ma2) / (two * sqrt_s);
     let k = kallen(s, ma2, mb2).max(F::zero()).sqrt() / (two * sqrt_s);
@@ -702,11 +965,90 @@ fn spine_partition(momentum: &[i8], n_in: usize, n_ext: usize) -> (u64, u64) {
     (emitted, full & !emitted)
 }
 
+/// Fraction of the fiducial scale left under a bounded rung's propagator pole.
+///
+/// The bound is what shapes the draw, so the pole only has to be far enough below
+/// the bound to leave the propagator map essentially bare `1/|t|` over the window,
+/// and far enough above the scale at which a massless transfer's upper edge is a
+/// cancelling difference of large quantities for the draw to be well posed at all
+/// on a configuration the bound could not narrow. Three orders below the bound sits
+/// between those.
+const POLE_FRACTION_OF_FIDUCIAL_SCALE: f64 = 1e-3;
+
+/// Order a diagram's spacelike lines into a chain of rungs, or report that they do
+/// not form one.
+///
+/// `spacelike` gives, per spacelike line, the outgoing legs it leaves on beam `0`'s
+/// side (`S_k`) and its propagator mass². For a tree diagram those sides are totally
+/// ordered by strict inclusion, so sorting them by size is sorting them along the
+/// chain, and rung `i` emits `B_i = S_i \ S_{i-1}` with the recoil left over. Two
+/// sides that are equal or incomparable would mean the lines are not a path — no
+/// rung ordering exists then, and the caller falls back to the all-timelike tree
+/// rather than picking one arbitrarily.
+fn spine_chain<F: Real>(
+    spacelike: &[(u64, F)],
+    n_out: usize,
+    fiducial_scale: F,
+    masses: &[F],
+    subsystems: &[u64],
+    resonances: &BTreeMap<u64, Resonance<F>>,
+) -> Option<Spine<F>> {
+    let full = (1u64 << n_out) - 1;
+    let mut sides: Vec<(u64, F)> = spacelike.to_vec();
+    sides.sort_by_key(|&(mask, _)| mask.count_ones());
+    for w in sides.windows(2) {
+        if w[0].0.count_ones() == w[1].0.count_ones() || w[0].0 & w[1].0 != w[0].0 {
+            return None;
+        }
+    }
+    let bounded = fiducial_scale > F::zero();
+    let pole_floor = fiducial_scale * cast(POLE_FRACTION_OF_FIDUCIAL_SCALE);
+    let mut rungs = Vec::with_capacity(sides.len());
+    let mut previous = 0u64;
+    for &(side, m2) in &sides {
+        let blob = side & !previous;
+        if blob == 0 {
+            return None;
+        }
+        rungs.push(SpineRung {
+            emitted: build_node(blob, masses, subsystems, resonances),
+            t_mass2: if bounded { m2.max(pole_floor) } else { m2 },
+            t_max_cap: bounded.then(|| -fiducial_scale),
+        });
+        previous = side;
+    }
+    let recoil_mask = full & !previous;
+    if recoil_mask == 0 {
+        return None;
+    }
+    Some(Spine {
+        rungs,
+        recoil: build_node(recoil_mask, masses, subsystems, resonances),
+    })
+}
+
 // ── Sampling & Jacobian ──────────────────────────────────────────────────────
 
-/// Källén function `λ(a,b,c) = a²+b²+c²−2(ab+bc+ca)`.
+/// Källén function, evaluated as `(a−b−c)² − 4bc` rather than as the expanded
+/// `a²+b²+c²−2(ab+bc+ca)`.
+///
+/// The expanded form adds and subtracts terms of order `a²` to reach a result that
+/// can be many orders smaller — a soft emission leaves `λ(ŝ, 0, ŝ_rest)` at `10` out
+/// of terms of order `10¹⁰`, so the answer carries only a few correct digits, and a
+/// one-ulp change in `ŝ_rest` moves `√λ` by `1e-6`. That is not merely inaccurate:
+/// the sampler's walk and the density evaluate it at inputs that differ in the last
+/// ulp (one drew the invariant, the other rebuilt it from momenta), so an
+/// ill-conditioned `λ` makes the two describe measurably different maps. The
+/// grouped form cancels once, at `a−b−c`, and holds the same configuration to
+/// `1e-11`.
+///
+/// It is not unconditionally stable: at the two-body threshold `(a−b−c)²` and `4bc`
+/// approach each other and cancel in turn. That regime is where `λ → 0` and the
+/// LIPS factor it feeds vanishes with it, so the error rides a weight going to zero.
 fn kallen<F: Real>(a: F, b: F, c: F) -> F {
-    a * a + b * b + c * c - (F::one() + F::one()) * (a * b + b * c + c * a)
+    let four = F::from(4).expect("4 fits the scalar field");
+    let d = a - b - c;
+    d * d - four * b * c
 }
 
 /// CM momentum magnitude of a 2-body split of invariant `s` into masses² `sl`,`sr`.
@@ -724,13 +1066,27 @@ fn r2_factor<F: Real>(s: F, sqrt_s: F, sl: F, sr: F) -> F {
     }
 }
 
-/// Boost a rest-frame vector into the CM frame of a system with lab momentum
-/// `p_lab`, guarding the `β = p⃗/E` division against a degenerate (`E → 0` or
-/// numerically superluminal) subsystem — where the vector being boosted is already
-/// zero, so no boost is needed.
-fn safe_boost<F: Real>(v: LorentzVector<F>, p_lab: LorentzVector<F>) -> LorentzVector<F> {
+/// Boost a vector out of the rest frame of a system whose lab momentum is `p_lab`
+/// and whose invariant mass² is `s`.
+///
+/// The Lorentz factor is taken as `γ = E/√s`, not from `1/√(1−β²)`. The latter
+/// forms `1 − |p⃗|²/E²`, which retains only the digits by which the system is off
+/// its own light cone: a low-mass subsystem carried at `γ ~ 10³` — a lepton pair
+/// drawn near the bottom of its invariant range — loses ten of them, and its
+/// daughters then fail to sum back to it at the `1e-11` level, which propagates
+/// into every invariant a density rebuilds downstream. With `γ = E/√s` the
+/// rest-frame total `(√s, 0⃗)` maps back onto `p_lab` identically instead.
+///
+/// A degenerate system (`E → 0`, `s → 0`, or numerically superluminal) is left
+/// unboosted: it sits at the phase-space boundary where the weight already
+/// vanishes, so it is enough to keep the momenta finite.
+fn boost_from_rest<F: Real>(
+    v: LorentzVector<F>,
+    p_lab: LorentzVector<F>,
+    s: F,
+) -> LorentzVector<F> {
     let e = p_lab.e();
-    if e <= F::zero() {
+    if !(e > F::zero()) || !(s > F::zero()) {
         return v;
     }
     let beta = [p_lab.px() / e, p_lab.py() / e, p_lab.pz() / e];
@@ -738,7 +1094,25 @@ fn safe_boost<F: Real>(v: LorentzVector<F>, p_lab: LorentzVector<F>) -> LorentzV
     if b2 >= F::one() {
         return v;
     }
-    v.boost(beta)
+    let gamma = e / s.sqrt();
+    if !(gamma >= F::one()) {
+        return v;
+    }
+    let bp = beta[0] * v.px() + beta[1] * v.py() + beta[2] * v.pz();
+    let coef = gamma * gamma / (gamma + F::one()) * bp + gamma * v.e();
+    LorentzVector::new(
+        gamma * (v.e() + bp),
+        v.px() + coef * beta[0],
+        v.py() + coef * beta[1],
+        v.pz() + coef * beta[2],
+    )
+}
+
+/// [`boost_from_rest`] inverted: a lab-frame vector into the rest frame of a system
+/// with lab momentum `p_lab` and invariant mass² `s`.
+fn boost_to_rest<F: Real>(v: LorentzVector<F>, p_lab: LorentzVector<F>, s: F) -> LorentzVector<F> {
+    let reflected = LorentzVector::new(p_lab.e(), -p_lab.px(), -p_lab.py(), -p_lab.pz());
+    boost_from_rest(v, reflected, s)
 }
 
 /// The Breit–Wigner scale `(m², mΓ)` a resonance imposes on its invariant draw,
@@ -954,8 +1328,8 @@ fn sample_branch<F: Real>(
     let pl_rest = LorentzVector::new(e_l, pstar * dx, pstar * dy, pstar * dz);
     let pr_rest = LorentzVector::new(e_r, -pstar * dx, -pstar * dy, -pstar * dz);
 
-    let pl = safe_boost(pl_rest, p_lab);
-    let pr = safe_boost(pr_rest, p_lab);
+    let pl = boost_from_rest(pl_rest, p_lab, s);
+    let pr = boost_from_rest(pr_rest, p_lab, s);
 
     match &branch.left {
         Node::Leaf { slot, .. } => slots[*slot] = Some(pl),
@@ -1150,16 +1524,60 @@ fn transfer_invariant<F: Real>(pa: LorentzVector<F>, p1: LorentzVector<F>) -> F 
     de * de - dx * dx - dy * dy - dz * dz
 }
 
-/// Draw the emitted/recoil invariants, the transfer `t`, and the azimuth of one
-/// peripheral emission, then recurse into each subsystem's decay tree. `s` is the
-/// scattering system's invariant mass²; `p_lab` its CM four-momentum; `beams` the
-/// incoming beams in that frame (beam `0` along `+z`).
+/// Rotate a vector out of a frame whose `+z` is the unit vector `axis`, back into
+/// the frame `axis` is expressed in. The identity when `axis` is `+z` itself, which
+/// is what the first rung of a chain always sees — beam `0` is along `+z` in the
+/// collision CM by construction — so a single-rung spine performs no rotation at
+/// all.
+fn rotate_from_z<F: Real>(v: LorentzVector<F>, axis: [F; 3]) -> LorentzVector<F> {
+    let (nx, ny, nz) = (axis[0], axis[1], axis[2]);
+    let st = (nx * nx + ny * ny).sqrt();
+    if !(st > F::zero()) {
+        // The axis is ±z: either nothing to do, or a half turn about x.
+        return if nz < F::zero() {
+            LorentzVector::new(v.e(), v.px(), -v.py(), -v.pz())
+        } else {
+            v
+        };
+    }
+    let (cp, sp) = (nx / st, ny / st);
+    let (ct, s_t) = (nz, st);
+    LorentzVector::new(
+        v.e(),
+        ct * cp * v.px() - sp * v.py() + s_t * cp * v.pz(),
+        ct * sp * v.px() + cp * v.py() + s_t * sp * v.pz(),
+        -s_t * v.px() + ct * v.pz(),
+    )
+}
+
+/// The unit 3-vector of `v`, or `+z` when its spatial part is degenerate — in which
+/// case the rung it would orient carries no transfer to speak of and the weight has
+/// already collapsed.
+fn spatial_direction<F: Real>(v: LorentzVector<F>) -> [F; 3] {
+    let n = v.p3_squared().sqrt();
+    if !(n > F::zero()) {
+        return [F::zero(), F::zero(), F::one()];
+    }
+    [v.px() / n, v.py() / n, v.pz() / n]
+}
+
+/// Walk the peripheral chain: at each rung draw the emitted blob's invariant, the
+/// remainder's invariant, the transfer `t_i` and the azimuth, place the blob, and
+/// carry the running momentum transfer into the next rung. `s` is the collision
+/// system's invariant mass²; `p_lab` its four-momentum; `beams` the incoming beams
+/// in that frame (beam `0` along `+z`).
+///
+/// Rung `i` is the same peripheral 2-body step the single-rung spine takes, with the
+/// incoming line's invariant `m_a²` replaced by the previous rung's transfer
+/// `t_{i-1}` — spacelike, hence negative — and the spectator beam's mass² unchanged,
+/// since the system left after every rung still contains beam `1`. What a chain adds
+/// is the frame: rung `i > 1` is built in the CM of what the previous rung left
+/// behind, with `q_{i-1}` — not beam `0` — as its polar axis.
 #[allow(clippy::too_many_arguments)]
 fn sample_spine<F: Real>(
     spine: &Spine<F>,
     s: F,
     beams: &[LorentzVector<F>; 2],
-    fiducial_t_max: Option<F>,
     p_lab: LorentzVector<F>,
     u: &[F],
     cursor: &mut usize,
@@ -1167,116 +1585,177 @@ fn sample_spine<F: Real>(
     weight: &mut F,
 ) {
     let two = F::one() + F::one();
-    let sqrt_s = s.sqrt();
-    let mu_e = spine.emitted.mu();
-    let mu_r = spine.recoil.mu();
+    let mb2 = beams[1].m2();
+    let mut s_sys = s;
+    let mut p_sys = p_lab;
+    let mut t_prev = beams[0].m2();
+    // The incoming line's direction in the current system's rest frame. Beam `0` is
+    // along `+z` in the collision CM, so the first rung needs no rotation.
+    let mut axis = [F::zero(), F::zero(), F::one()];
 
-    let s1 = match &spine.emitted {
-        Node::Leaf { mass, .. } => *mass * *mass,
-        Node::Branch(b) => {
-            let lo = mu_e * mu_e;
-            let hi = (sqrt_s - mu_r).powi(2);
+    for (i, rung) in spine.rungs.iter().enumerate() {
+        let sqrt_s_sys = s_sys.sqrt();
+        let mu_blob = rung.emitted.mu();
+        let mu_rest = spine.rest_mu(i);
+
+        let s_blob = match &rung.emitted {
+            Node::Leaf { mass, .. } => *mass * *mass,
+            Node::Branch(b) => {
+                let lo = mu_blob * mu_blob;
+                let hi = (sqrt_s_sys - mu_rest).powi(2);
+                let x = u[*cursor];
+                *cursor += 1;
+                let drawn = draw_invariant(lo, hi, b.resonance, x);
+                *weight = *weight * invariant_measure(lo, hi, b.resonance, drawn);
+                drawn
+            }
+        };
+        let sqrt_s_blob = s_blob.sqrt();
+        let rest_res = spine.rest_resonance(i);
+        let s_rest = if spine.rest_is_composite(i) {
+            let lo = mu_rest * mu_rest;
+            let hi = (sqrt_s_sys - sqrt_s_blob).powi(2);
             let x = u[*cursor];
             *cursor += 1;
-            let s = draw_invariant(lo, hi, b.resonance, x);
-            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
-            s
+            let drawn = draw_invariant(lo, hi, rest_res, x);
+            *weight = *weight * invariant_measure(lo, hi, rest_res, drawn);
+            drawn
+        } else {
+            mu_rest * mu_rest
+        };
+
+        let mut tk = t_kinematics(s_sys, t_prev, mb2, s_blob, s_rest);
+        apply_fiducial_t_max(&mut tk, rung.t_max_cap);
+        let t = draw_t(tk.t_min, tk.t_max, rung.t_mass2, u[*cursor]);
+        *cursor += 1;
+        *weight = *weight
+            * peripheral_factor(s_sys, tk.k, t_measure(tk.t_min, tk.t_max, rung.t_mass2, t));
+        let phi = two * F::PI() * u[*cursor];
+        *cursor += 1;
+
+        let span = two * tk.k * tk.pstar;
+        let cos = if span > F::zero() {
+            ((t - tk.center) / span).max(-F::one()).min(F::one())
+        } else {
+            F::zero()
+        };
+        let sin = (F::one() - cos * cos).max(F::zero()).sqrt();
+        let (dx, dy, dz) = (sin * phi.cos(), sin * phi.sin(), cos);
+        let pstar = tk.pstar;
+        let pb_rest = rotate_from_z(
+            LorentzVector::new(tk.e1, pstar * dx, pstar * dy, pstar * dz),
+            axis,
+        );
+        let pr_rest = rotate_from_z(
+            LorentzVector::new(tk.e2, -pstar * dx, -pstar * dy, -pstar * dz),
+            axis,
+        );
+
+        let pb = boost_from_rest(pb_rest, p_sys, s_sys);
+        let pr = boost_from_rest(pr_rest, p_sys, s_sys);
+
+        match &rung.emitted {
+            Node::Leaf { slot, .. } => slots[*slot] = Some(pb),
+            Node::Branch(b) => sample_branch(b, s_blob, pb, u, cursor, slots, weight),
         }
-    };
-    let sqrt_s1 = s1.sqrt();
-    let s2 = match &spine.recoil {
-        Node::Leaf { mass, .. } => *mass * *mass,
-        Node::Branch(b) => {
-            let lo = mu_r * mu_r;
-            let hi = (sqrt_s - sqrt_s1).powi(2);
-            let x = u[*cursor];
-            *cursor += 1;
-            let s = draw_invariant(lo, hi, b.resonance, x);
-            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
-            s
+
+        if i + 1 < spine.rungs.len() {
+            // The next rung scatters `q_i = q_{i-1} − p_{B_i}`, built in this rung's
+            // own frame so its invariant is the `t` just drawn rather than an
+            // accumulation of lab-frame differences.
+            let qa = rotate_from_z(beam_momenta_m2(sqrt_s_sys, t_prev, mb2)[0], axis);
+            let q_rest = LorentzVector::new(
+                qa.e() - pb_rest.e(),
+                qa.px() - pb_rest.px(),
+                qa.py() - pb_rest.py(),
+                qa.pz() - pb_rest.pz(),
+            );
+            axis = spatial_direction(boost_to_rest(
+                boost_from_rest(q_rest, p_sys, s_sys),
+                pr,
+                s_rest,
+            ));
+            t_prev = t;
+            s_sys = s_rest;
+            p_sys = pr;
+        } else {
+            match &spine.recoil {
+                Node::Leaf { slot, .. } => slots[*slot] = Some(pr),
+                Node::Branch(b) => sample_branch(b, s_rest, pr, u, cursor, slots, weight),
+            }
         }
-    };
-
-    let mut tk = t_kinematics(s, beams[0].m2(), beams[1].m2(), s1, s2);
-    apply_fiducial_t_max(&mut tk, fiducial_t_max);
-    let t = draw_t(tk.t_min, tk.t_max, spine.t_mass2, u[*cursor]);
-    *cursor += 1;
-    *weight = *weight * peripheral_factor(s, tk.k, t_measure(tk.t_min, tk.t_max, spine.t_mass2, t));
-    let phi = two * F::PI() * u[*cursor];
-    *cursor += 1;
-
-    let span = two * tk.k * tk.pstar;
-    let cos = if span > F::zero() {
-        ((t - tk.center) / span).max(-F::one()).min(F::one())
-    } else {
-        F::zero()
-    };
-    let sin = (F::one() - cos * cos).max(F::zero()).sqrt();
-    let (dx, dy, dz) = (sin * phi.cos(), sin * phi.sin(), cos);
-    let pstar = tk.pstar;
-    let pe_rest = LorentzVector::new(tk.e1, pstar * dx, pstar * dy, pstar * dz);
-    let pr_rest = LorentzVector::new(tk.e2, -pstar * dx, -pstar * dy, -pstar * dz);
-
-    let pe = safe_boost(pe_rest, p_lab);
-    let pr = safe_boost(pr_rest, p_lab);
-
-    match &spine.emitted {
-        Node::Leaf { slot, .. } => slots[*slot] = Some(pe),
-        Node::Branch(b) => sample_branch(b, s1, pe, u, cursor, slots, weight),
-    }
-    match &spine.recoil {
-        Node::Leaf { slot, .. } => slots[*slot] = Some(pr),
-        Node::Branch(b) => sample_branch(b, s2, pr, u, cursor, slots, weight),
     }
 }
 
-/// The spine's phase-space Jacobian at an arbitrary configuration: the emitted /
-/// recoil invariant measures, the peripheral `t` factor (with `t` recomputed as the
-/// beam-`0`-to-emitted transfer), and each subsystem's own decay-tree Jacobian.
+/// The spine's phase-space Jacobian at an arbitrary configuration.
+///
+/// Every quantity is rebuilt from the configuration and the stored beams as an
+/// invariant — the blob invariants `s_i`, the running remainder invariants `ŝ_i`,
+/// and each transfer `t_i = (p_a − Σ_{j ≤ i} p_{B_j})²` — so no frame the sampler
+/// worked in leaks in, and the density is defined at a configuration that looks
+/// nothing like this chain's own ordering.
 fn spine_jacobian<F: Real>(
     spine: &Spine<F>,
     s: F,
     beams: &[LorentzVector<F>; 2],
-    fiducial_t_max: Option<F>,
     momenta: &[LorentzVector<F>],
 ) -> F {
-    let sqrt_s = s.sqrt();
-    let mu_e = spine.emitted.mu();
-    let mu_r = spine.recoil.mu();
-    let s1 = node_invariant(&spine.emitted, momenta);
-    let sqrt_s1 = s1.sqrt();
-    let s2 = node_invariant(&spine.recoil, momenta);
-
-    let mut tk = t_kinematics(s, beams[0].m2(), beams[1].m2(), s1, s2);
-    let restricted = apply_fiducial_t_max(&mut tk, fiducial_t_max);
-    let p_emitted = subtree_momentum(&spine.emitted, momenta);
-    let t = transfer_invariant(beams[0], p_emitted);
-    // Outside a restricted window the channel generates nothing, so it must report
-    // density zero — a positive density where no point can be drawn is what would
-    // bias a combiner. The unrestricted window is the kinematic one, whose upper
-    // edge a configuration only crosses by the cancellation noise of `t_max`
-    // itself, so the test is asked only of a window that was narrowed.
-    if restricted && t > tk.t_max {
-        return F::infinity();
-    }
-
+    let mb2 = beams[1].m2();
     let mut f = F::one();
-    if let Node::Branch(b) = &spine.emitted {
-        let lo = mu_e * mu_e;
-        let hi = (sqrt_s - mu_r).powi(2);
-        f = f * invariant_measure(lo, hi, b.resonance, s1);
+    let mut s_sys = s;
+    let mut t_prev = beams[0].m2();
+    let mut emitted_so_far = LorentzVector::new(F::zero(), F::zero(), F::zero(), F::zero());
+
+    for (i, rung) in spine.rungs.iter().enumerate() {
+        let sqrt_s_sys = s_sys.sqrt();
+        let mu_blob = rung.emitted.mu();
+        let mu_rest = spine.rest_mu(i);
+        let s_blob = node_invariant(&rung.emitted, momenta);
+        let sqrt_s_blob = s_blob.sqrt();
+        let s_rest = spine.rest_invariant(i, momenta);
+
+        if let Node::Branch(b) = &rung.emitted {
+            let lo = mu_blob * mu_blob;
+            let hi = (sqrt_s_sys - mu_rest).powi(2);
+            f = f * invariant_measure(lo, hi, b.resonance, s_blob);
+        }
+        if spine.rest_is_composite(i) {
+            let lo = mu_rest * mu_rest;
+            let hi = (sqrt_s_sys - sqrt_s_blob).powi(2);
+            f = f * invariant_measure(lo, hi, spine.rest_resonance(i), s_rest);
+        }
+
+        let mut tk = t_kinematics(s_sys, t_prev, mb2, s_blob, s_rest);
+        let restricted = apply_fiducial_t_max(&mut tk, rung.t_max_cap);
+        let p_blob = subtree_momentum(&rung.emitted, momenta);
+        emitted_so_far = LorentzVector::new(
+            emitted_so_far.e() + p_blob.e(),
+            emitted_so_far.px() + p_blob.px(),
+            emitted_so_far.py() + p_blob.py(),
+            emitted_so_far.pz() + p_blob.pz(),
+        );
+        let t = transfer_invariant(beams[0], emitted_so_far);
+        // Above a restricted window the channel generates nothing, so it must report
+        // density zero — a positive density where no point can be drawn is what would
+        // bias a combiner. The unrestricted window is the kinematic one, whose upper
+        // edge a configuration only crosses by the cancellation noise of `t_max`
+        // itself, so the test is asked only of a window that was narrowed.
+        if restricted && t > tk.t_max {
+            return F::infinity();
+        }
+        f = f * peripheral_factor(s_sys, tk.k, t_measure(tk.t_min, tk.t_max, rung.t_mass2, t));
+
+        t_prev = t;
+        s_sys = s_rest;
+    }
+
+    for rung in &spine.rungs {
+        if let Node::Branch(b) = &rung.emitted {
+            f = f * branch_jacobian(b, node_invariant(&rung.emitted, momenta), momenta);
+        }
     }
     if let Node::Branch(b) = &spine.recoil {
-        let lo = mu_r * mu_r;
-        let hi = (sqrt_s - sqrt_s1).powi(2);
-        f = f * invariant_measure(lo, hi, b.resonance, s2);
-    }
-    f = f * peripheral_factor(s, tk.k, t_measure(tk.t_min, tk.t_max, spine.t_mass2, t));
-    if let Node::Branch(b) = &spine.emitted {
-        f = f * branch_jacobian(b, s1, momenta);
-    }
-    if let Node::Branch(b) = &spine.recoil {
-        f = f * branch_jacobian(b, s2, momenta);
+        f = f * branch_jacobian(b, node_invariant(&spine.recoil, momenta), momenta);
     }
     f
 }
@@ -1996,6 +2475,170 @@ mod tests {
         // read as "an interior rung is always safe".
         assert_eq!(t_kinematics(s, 0.0, 0.0, 0.0, 40_000.0).t_max, 0.0);
         assert_eq!(t_kinematics(s, -400.0, 0.0, 0.0, 0.0).t_max, 0.0);
+    }
+
+    /// An interior rung of a peripheral chain scatters a *spacelike* incoming line,
+    /// so the frame it is built in has to be constructible from a negative `m²`.
+    /// [`beam_momenta_m2`] is that construction: the line comes out with
+    /// `E < |p⃗|` — the statement that it is off shell in the spacelike direction —
+    /// and with its invariant reproduced, while the spectator beam stays on shell.
+    ///
+    /// The mass-taking [`beam_momenta`] cannot express this at all: `√(m²)` of a
+    /// negative invariant is not a real number.
+    #[test]
+    fn a_spacelike_incoming_line_has_a_frame_of_its_own() {
+        let sqrt_s = 500.0_f64;
+        let mb2 = 80.0 * 80.0;
+        for &ma2 in &[-1.0_f64, -400.0, -25_000.0, -240_000.0] {
+            let [a, b] = beam_momenta_m2(sqrt_s, ma2, mb2);
+            let scale = sqrt_s * sqrt_s;
+            assert!(
+                (a.m2() - ma2).abs() < 1e-9 * scale,
+                "incoming line m² = {} not {ma2}",
+                a.m2()
+            );
+            assert!(
+                (b.m2() - mb2).abs() < 1e-9 * scale,
+                "spectator m² = {} not {mb2}",
+                b.m2()
+            );
+            assert!(
+                a.e() < a.p3_squared().sqrt(),
+                "a spacelike line should carry E = {} below |p| = {}",
+                a.e(),
+                a.p3_squared().sqrt()
+            );
+            assert!(
+                (a.e() + b.e() - sqrt_s).abs() < 1e-9 * sqrt_s,
+                "the two do not add up to the system energy"
+            );
+            assert!(
+                (a.pz() + b.pz()).abs() < 1e-9 * sqrt_s,
+                "the two do not balance along the beam axis"
+            );
+        }
+        // On shell it is the mass-taking form, exactly — a chain's first rung reads
+        // the collision's own beams through this path.
+        let [a, b] = beam_momenta_m2(sqrt_s, 80.0 * 80.0, mb2);
+        let [ra, rb] = beam_momenta(sqrt_s, 80.0, 80.0);
+        assert_eq!((a.e(), a.pz()), (ra.e(), ra.pz()));
+        assert_eq!((b.e(), b.pz()), (rb.e(), rb.pz()));
+    }
+
+    /// The rotation between rungs is a rotation: it is the identity on `+z` — which
+    /// is the only axis a single-rung spine ever sees, and why one is bit-identical
+    /// to a chain of length one — and it preserves invariants and relative angles on
+    /// every other axis while actually moving the vector.
+    #[test]
+    fn the_inter_rung_rotation_is_a_rotation() {
+        let v = LorentzVector::new(7.0_f64, 1.0, -2.0, 3.0);
+        let w = LorentzVector::new(5.0_f64, -0.5, 0.25, -4.0);
+        let identity = rotate_from_z(v, [0.0, 0.0, 1.0]);
+        assert_eq!(
+            (identity.e(), identity.px(), identity.py(), identity.pz()),
+            (v.e(), v.px(), v.py(), v.pz()),
+            "the +z axis must leave a vector bit-identical"
+        );
+        let mut moved = 0usize;
+        for axis in [
+            [0.0_f64, 0.0, -1.0],
+            [1.0, 0.0, 0.0],
+            [0.6, 0.8, 0.0],
+            [0.36, 0.48, 0.8],
+            [-0.36, 0.48, -0.8],
+        ] {
+            let rv = rotate_from_z(v, axis);
+            let rw = rotate_from_z(w, axis);
+            assert!(
+                (rv.m2() - v.m2()).abs() < 1e-12 * v.e() * v.e(),
+                "the rotation changed an invariant: {} vs {}",
+                rv.m2(),
+                v.m2()
+            );
+            let dot = |a: LorentzVector<f64>, b: LorentzVector<f64>| {
+                a.px() * b.px() + a.py() * b.py() + a.pz() * b.pz()
+            };
+            assert!(
+                (dot(rv, rw) - dot(v, w)).abs()
+                    < 1e-12 * v.p3_squared().sqrt() * w.p3_squared().sqrt(),
+                "the rotation changed a relative angle"
+            );
+            // `+z` itself must land on the axis, which is what makes it *this*
+            // rotation and not merely some rotation.
+            let z = rotate_from_z(LorentzVector::new(1.0, 0.0, 0.0, 1.0), axis);
+            for (got, want) in [(z.px(), axis[0]), (z.py(), axis[1]), (z.pz(), axis[2])] {
+                assert!((got - want).abs() < 1e-12, "+z did not land on the axis");
+            }
+            if (rv.px() - v.px()).abs() + (rv.py() - v.py()).abs() + (rv.pz() - v.pz()).abs() > 1e-6
+            {
+                moved += 1;
+            }
+        }
+        assert_eq!(moved, 5, "some axis left the vector where it was");
+    }
+
+    /// A controlled three-rung ladder is a valid map: it consumes exactly its own
+    /// dimension, emits on-shell momentum-conserving points, keeps every transfer
+    /// spacelike, and its two weightings agree.
+    ///
+    /// The dimension is the check with the most content here. A chain of `r` rungs
+    /// spends `2r` coordinates on the transfers and azimuths, one on each composite
+    /// blob's invariant and one on each running remainder's, and the rest inside the
+    /// blobs' own decay trees; that it lands on `3n−4` is not arranged anywhere, and
+    /// a rung that drew an invariant the kinematics had already fixed would break it.
+    #[test]
+    fn a_three_rung_ladder_is_a_valid_map() {
+        let z = z_resonance();
+        let ch = DiagramChannel::from_topology_ladder(
+            600.0,
+            [0.0, 0.0],
+            vec![0.0, 0.0, 0.0, 0.0, 0.0],
+            &[
+                (vec![4], None, 0.0),
+                (vec![0, 1], Some(z), 0.0),
+                (vec![2], None, 80.4),
+            ],
+            (vec![3], None),
+        );
+        assert_eq!(ch.ndim(), 3 * 5 - 4);
+        assert_eq!(ch.spine_poles().len(), 3);
+        let beams = beam_momenta::<f64>(600.0, 0.0, 0.0);
+        let mut stream = SubStream::from_stream(0x1ADDE, 11);
+        let mut worst_gap = 0.0f64;
+        for _ in 0..3000 {
+            let u = stream.uniforms::<f64>(ch.ndim());
+            let pt = ch.sample(&u);
+            let tot = total(&pt.momenta);
+            assert!((tot[0] - 600.0).abs() < 1e-6 * 600.0, "energy: {}", tot[0]);
+            for c in &tot[1..] {
+                assert!(c.abs() < 1e-6 * 600.0, "3-momentum: {c}");
+            }
+            for p in &pt.momenta {
+                assert!(p.m2().abs() < 1e-4, "off shell: m² = {}", p.m2());
+            }
+            // The running transfers, read off the chain's own prefixes.
+            for slots in [vec![4], vec![4, 0, 1], vec![4, 0, 1, 2]] {
+                let mut acc = LorentzVector::new(0.0, 0.0, 0.0, 0.0);
+                for s in slots {
+                    let p = pt.momenta[s];
+                    acc = LorentzVector::new(
+                        acc.e() + p.e(),
+                        acc.px() + p.px(),
+                        acc.py() + p.py(),
+                        acc.pz() + p.pz(),
+                    );
+                }
+                let t = transfer_invariant(beams[0], acc);
+                assert!(t <= 1e-6, "a running transfer came out timelike: {t}");
+            }
+            let recip = 1.0 / ch.density(&pt.momenta);
+            worst_gap = worst_gap.max((pt.weight - recip).abs() / recip);
+        }
+        eprintln!("three-rung ladder walk-vs-density worst {worst_gap:.3e}");
+        assert!(
+            worst_gap < 1e-9,
+            "walk and density disagree by {worst_gap:.3e}"
+        );
     }
 
     /// Threshold kinematics: as `√s → (m₁+m₂)` the emitted momentum `p*` vanishes,

@@ -506,11 +506,7 @@ mod tests {
     #[test]
     fn a_samples_cross_section_follows_the_files_idwtup() {
         let weights = [1.0, 2.0, 3.0, 4.0];
-        let mean = EventSample::from_lhe(file(
-            WeightStrategy::MeanCrossSectionPb,
-            0.0,
-            &weights,
-        ));
+        let mean = EventSample::from_lhe(file(WeightStrategy::MeanCrossSectionPb, 0.0, &weights));
         let sum = EventSample::from_lhe(file(WeightStrategy::SumCrossSectionPb, 0.0, &weights));
         assert_eq!(mean.sigma_pb, 2.5);
         assert_eq!(sum.sigma_pb, 10.0);
@@ -523,8 +519,11 @@ mod tests {
     /// it comes from `XSECUP` and the per-event weight is its share.
     #[test]
     fn unit_weights_take_the_cross_section_from_the_init_block() {
-        let sample =
-            EventSample::from_lhe(file(WeightStrategy::UnitWeight, 40.0, &[1.0, 1.0, 1.0, 1.0]));
+        let sample = EventSample::from_lhe(file(
+            WeightStrategy::UnitWeight,
+            40.0,
+            &[1.0, 1.0, 1.0, 1.0],
+        ));
         assert_eq!(sample.sigma_pb, 40.0);
         assert_eq!(sample.weights, vec![10.0; 4]);
     }

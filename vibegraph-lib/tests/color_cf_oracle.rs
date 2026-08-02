@@ -280,7 +280,8 @@ fn parse_packed_cf(lines: &[String], ncolor: usize) -> Result<(Vec<f64>, Vec<Str
                 .and_then(|(_, r)| r.rsplit_once('/').map(|(v, _)| v))
                 .ok_or_else(|| format!("no /.../ in CF line: {line}"))?;
             for tok in body.split(',').map(str::trim).filter(|t| !t.is_empty()) {
-                packed.push(parse_fortran_real(tok).ok_or_else(|| format!("bad CF value '{tok}'"))?);
+                packed
+                    .push(parse_fortran_real(tok).ok_or_else(|| format!("bad CF value '{tok}'"))?);
             }
             pending = true;
         } else if pending {
