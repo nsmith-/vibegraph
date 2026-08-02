@@ -42,8 +42,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use flate2::read::MultiGzDecoder;
-use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::observables::Labelling;
+use vibegraph::lhef::parse::LheFile;
 use vibegraph::validation::samples::{compare, labelling_for, EventSample, Spectrum};
 
 #[path = "../../vibegraph-lib/tests/common/report.rs"]
