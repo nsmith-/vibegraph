@@ -271,7 +271,7 @@ fn plan_for(dir: &str) -> Plan {
             niter: 8,
             rel_tol: 0.02,
         },
-        // ── the multi-rung spine reference, informational ───────────────────
+        // ── the multi-rung spine reference, asserted ────────────────────────
         // The one banked row whose diagrams carry a ladder of spacelike lines:
         // 35 channels splitting 12 / 14 / 9 over one, two and three of them, so
         // every channel is a peripheral chain and this cross section is the
@@ -279,24 +279,17 @@ fn plan_for(dir: &str) -> Plan {
         // carry it. QCD = 0 at lpp = 0 with all three scales fixed at m_Z keeps
         // it clear of the strong coupling and the PDFs entirely.
         //
-        // Measured and not enforced, because the disagreement is not the map's:
-        // it is a relative sign between diagrams. Against the committed
-        // amplitude table each of the 35 diagrams reproduces MadGraph's own
-        // `AMP()` to rounding under a unit phase, but eleven of them carry the
-        // opposite sign to the other 24 — the nine three-rung ladders whose
-        // middle rung is a spacelike lepton or neutrino, and the two
-        // W+W- → γ*/Z* → e+e- diagrams. Flipping exactly those eleven takes the
-        // worst |M|² deviation over the banked points from 5.1e+1 to 4.1e-14.
-        // The σ below therefore measures a matrix element that is wrong by a
-        // known amount; enforcing it would be gating a number whose linear level
-        // is known to be wrong.
-        "ud_to_epemud_qcd0" => Plan::Info {
+        // The tolerance is the seed spread, not the reference's error. Over five
+        // seeds (`probe_resonant_seed_stability`) the row holds |pull| <= 0.96
+        // and |rel| <= 2.6e-3 with chi2/dof in 1.00-1.39. Quadrupling the budget
+        // does not move it: rel -5.9e-4 / +1.3e-4 / -1.3e-3 at one, two and four
+        // times, pulls -0.22 / +0.05 / -0.51, scattering inside a band the
+        // reference's own 0.24% error sets and no budget can shrink. A defect
+        // would migrate between seeds at fixed size instead.
+        "ud_to_epemud_qcd0" => Plan::Gate {
             neval: 120_000,
             niter: 8,
-            reason: "eleven of the 35 diagrams carry the wrong sign relative to the other 24 \
-                     (amplitude_oracle, KNOWN_LINEAR_DISAGREEMENT); the cross section is \
-                     measured, and that relative sign is what has to be reconciled before it \
-                     can be enforced",
+            rel_tol: 0.01,
         },
         // ── llj partonic subprocesses, blocked on the clustering scale ──────
         // Each is banked with a cross section and each is cheap enough to
@@ -610,6 +603,7 @@ fn probe_resonant_seed_stability() {
         ("ee_to_tatah", 60_000usize, 8usize),
         ("ee_to_mumua", 80_000, 8),
         ("ee_to_mumu_tata_qcd0", 100_000, 8),
+        ("ud_to_epemud_qcd0", 120_000, 8),
     ] {
         let e = &banked[dir];
         eprintln!(
@@ -622,6 +616,15 @@ fn probe_resonant_seed_stability() {
             eprintln!(
                 "  seed {seed:>10}: vg {s:.6e} ± {err:.3e} | pull {pull:+8.2} | \
                  rel {:+.2e} | chi2/dof {chi2:.2}",
+                s / e.sigma_pb - 1.0,
+            );
+        }
+        // The second axis: a residual that is sampling shrinks with budget, where a
+        // defect migrates between seeds at fixed size.
+        for scale in [2usize, 4] {
+            let (s, err, chi2) = integrate(dir, &e.process, neval * scale, niter, SEED);
+            eprintln!(
+                "  budget x{scale}: vg {s:.6e} ± {err:.3e} | rel {:+.2e} | chi2/dof {chi2:.2}",
                 s / e.sigma_pb - 1.0,
             );
         }
