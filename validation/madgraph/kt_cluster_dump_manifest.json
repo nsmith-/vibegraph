@@ -1,0 +1,451 @@
+{
+  "_comment": "Per-event kT-clustering dumps from an instrumented replay of the banked MadGraph 3.7.1 runs. The dumps themselves live in the gitignored work area; this file pins what they are. Regenerate with validation/madgraph/gen_kt_cluster_dumps.sh.",
+  "madgraph": "v3.7.1 (b7687064b9a013317ca164aa1395bc9c0e39ae1e)",
+  "runs": {
+    "bbx_to_ccx_emmm_qcd0": {
+      "alphas_ordering": {
+        "max_rise": 0.0,
+        "n_distinct_scales": 9833
+      },
+      "coverage": {
+        "beam_crossing_inflation": {
+          "applied": 73564
+        },
+        "boost": {
+          "fired": 6635,
+          "not_fired": 9609
+        },
+        "candidate_measure": {
+          "FS_DJ_DURHAM": 50268,
+          "FS_SUMDOT_BW": 59188,
+          "IS_DJB": 147128,
+          "NONE": 493416
+        },
+        "cluster_calls_per_event": {
+          "1": 10000
+        },
+        "igraphs1_is_iconfig": {
+          "False": 7877,
+          "True": 2123
+        },
+        "jcentral_override_beam1": {
+          "False": 10000
+        },
+        "jcentral_override_beam2": {
+          "False": 10000
+        },
+        "memo": {
+          "ACCEPTED": 10000
+        },
+        "mt2last_override": {
+          "False": 10000
+        },
+        "muf_branch": {
+          "GEOM_COLLAPSED": 10000
+        },
+        "mur_branch": {
+          "L1153": 10000
+        }
+      },
+      "n_events": 10000,
+      "n_matched": 10000,
+      "path": "validation/madgraph/output/ktdump/dumps/bbx_to_ccx_emmm_qcd0.jsonl.gz",
+      "sha256": "f40d1c9cd559b5f3870e592bb92643d82ab5fd58a7069e3c9d982d007734ee94"
+    },
+    "ee_to_mumu_tata_qcd0": {
+      "alphas_ordering": {
+        "max_rise": 0.0,
+        "n_distinct_scales": 9067
+      },
+      "coverage": {
+        "beam_crossing_inflation": {
+          "applied": 26790
+        },
+        "boost": {
+          "fired": 671,
+          "not_fired": 8395
+        },
+        "candidate_measure": {
+          "FS_DJ_DURHAM": 21741,
+          "FS_SUMDOT_BW": 22983,
+          "IS_DJB": 53580,
+          "NONE": 181696
+        },
+        "cluster_calls_per_event": {
+          "1": 10000
+        },
+        "igraphs1_is_iconfig": {
+          "False": 2004,
+          "True": 7996
+        },
+        "jcentral_override_beam1": {
+          "False": 10000
+        },
+        "jcentral_override_beam2": {
+          "False": 10000
+        },
+        "memo": {
+          "ACCEPTED": 10000
+        },
+        "mt2last_override": {
+          "False": 10000
+        },
+        "muf_branch": {
+          "JC0_BOTH": 10000
+        },
+        "mur_branch": {
+          "L1169": 10000
+        }
+      },
+      "n_events": 10000,
+      "n_matched": 10000,
+      "path": "validation/madgraph/output/ktdump/dumps/ee_to_mumu_tata_qcd0.jsonl.gz",
+      "sha256": "2de7bca263aa651dc91ba42712249f3e39af08172964f00f921911d2fbdc8917"
+    },
+    "ee_to_mumua": {
+      "alphas_ordering": {
+        "max_rise": 0.0,
+        "n_distinct_scales": 7853
+      },
+      "coverage": {
+        "beam_crossing_inflation": {
+          "applied": 22962
+        },
+        "boost": {
+          "fired": 1371,
+          "not_fired": 6481
+        },
+        "candidate_measure": {
+          "FS_DJ_DURHAM": 18141,
+          "FS_SUMDOT_BW": 5126,
+          "IS_DJB": 45924,
+          "NONE": 70809
+        },
+        "cluster_calls_per_event": {
+          "1": 10000
+        },
+        "igraphs1_is_iconfig": {
+          "False": 4001,
+          "True": 5999
+        },
+        "jcentral_override_beam1": {
+          "False": 10000
+        },
+        "jcentral_override_beam2": {
+          "False": 10000
+        },
+        "memo": {
+          "ACCEPTED": 10000
+        },
+        "mt2last_override": {
+          "False": 10000
+        },
+        "muf_branch": {
+          "JC0_BOTH": 10000
+        },
+        "mur_branch": {
+          "L1169": 10000
+        }
+      },
+      "n_events": 10000,
+      "n_matched": 10000,
+      "path": "validation/madgraph/output/ktdump/dumps/ee_to_mumua.jsonl.gz",
+      "sha256": "22c5c844c048cbe398e8f7711b04ae934f1039871eb8cdcc2d293aa9d97c8025"
+    },
+    "ee_to_ttx": {
+      "alphas_ordering": {
+        "max_rise": 0.0,
+        "n_distinct_scales": 1
+      },
+      "coverage": {
+        "candidate_measure": {
+          "FS_DJ_DURHAM": 10000,
+          "NONE": 40000
+        },
+        "cluster_calls_per_event": {
+          "1": 10000
+        },
+        "igraphs1_is_iconfig": {
+          "True": 10000
+        },
+        "jcentral_override_beam1": {
+          "False": 10000
+        },
+        "jcentral_override_beam2": {
+          "False": 10000
+        },
+        "memo": {
+          "ACCEPTED": 10000
+        },
+        "mt2last_override": {
+          "False": 10000
+        },
+        "muf_branch": {
+          "JC0_BOTH": 10000
+        },
+        "mur_branch": {
+          "L1169": 10000
+        }
+      },
+      "n_events": 10000,
+      "n_matched": 10000,
+      "path": "validation/madgraph/output/ktdump/dumps/ee_to_ttx.jsonl.gz",
+      "sha256": "c3e2379d442525bb0cd069f48f50d1704295e47592e3932bb8c0829b2e5a2c59"
+    },
+    "pp_to_bb_qcd2": {
+      "alphas_ordering": {
+        "max_rise": 0.0,
+        "n_distinct_scales": 10000
+      },
+      "coverage": {
+        "beam_crossing_inflation": {
+          "applied": 19718
+        },
+        "boost": {
+          "not_fired": 9859
+        },
+        "candidate_measure": {
+          "FS_DJ_HAD": 10000,
+          "IS_DJB": 39436,
+          "NONE": 564
+        },
+        "cluster_calls_per_event": {
+          "1": 10000
+        },
+        "igraphs1_is_iconfig": {
+          "False": 5014,
+          "True": 4986
+        },
+        "jcentral_override_beam1": {
+          "False": 9859,
+          "True": 141
+        },
+        "jcentral_override_beam2": {
+          "False": 9859,
+          "True": 141
+        },
+        "memo": {
+          "ACCEPTED": 10000
+        },
+        "mt2last_override": {
+          "False": 9859,
+          "True": 141
+        },
+        "muf_branch": {
+          "GEOM_COLLAPSED": 10000
+        },
+        "mur_branch": {
+          "L1153": 10000
+        }
+      },
+      "n_events": 10000,
+      "n_matched": 10000,
+      "path": "validation/madgraph/output/ktdump/dumps/pp_to_bb_qcd2.jsonl.gz",
+      "sha256": "42510700fba25b157eb95aa7eda5dbdebb6428fc528146cdcbb88691dbdb147a"
+    },
+    "pp_to_llj": {
+      "alphas_ordering": {
+        "max_rise": 0.0,
+        "n_distinct_scales": 10000
+      },
+      "coverage": {
+        "beam_crossing_inflation": {
+          "applied": 7389
+        },
+        "boost": {
+          "fired": 7697,
+          "not_fired": 2303
+        },
+        "candidate_measure": {
+          "FS_DJ_HAD": 5664,
+          "FS_DJ_MLESS_MASSIVE_1": 1611,
+          "FS_SUMDOT_BW": 16185,
+          "IS_DJB": 17733,
+          "NONE": 125029
+        },
+        "cluster_calls_per_event": {
+          "1": 10000,
+          "2": 1873
+        },
+        "igraphs1_is_iconfig": {
+          "False": 2387,
+          "True": 9486
+        },
+        "jcentral_override_beam1": {
+          "False": 10000
+        },
+        "jcentral_override_beam2": {
+          "False": 10000
+        },
+        "memo": {
+          "ACCEPTED": 10000,
+          "RESTRICTED_RECLUSTER": 1873
+        },
+        "mt2last_override": {
+          "False": 10000
+        },
+        "muf_branch": {
+          "GEOM_COLLAPSED": 10000
+        },
+        "mur_branch": {
+          "L1153": 10000
+        }
+      },
+      "n_events": 10000,
+      "n_matched": 10000,
+      "path": "validation/madgraph/output/ktdump/dumps/pp_to_llj.jsonl.gz",
+      "sha256": "45b26605d375d1ba33230cb10d49bd4194fd22c6790df846c5cfc8db6a1f32c2"
+    },
+    "pp_to_llj_qcd2_qed2": {
+      "alphas_ordering": {
+        "max_rise": 0.0,
+        "n_distinct_scales": 10000
+      },
+      "coverage": {
+        "beam_crossing_inflation": {
+          "applied": 7389
+        },
+        "boost": {
+          "fired": 7697,
+          "not_fired": 2303
+        },
+        "candidate_measure": {
+          "FS_DJ_HAD": 5664,
+          "FS_DJ_MLESS_MASSIVE_1": 1611,
+          "FS_SUMDOT_BW": 16185,
+          "IS_DJB": 17733,
+          "NONE": 125029
+        },
+        "cluster_calls_per_event": {
+          "1": 10000,
+          "2": 1873
+        },
+        "igraphs1_is_iconfig": {
+          "False": 2387,
+          "True": 9486
+        },
+        "jcentral_override_beam1": {
+          "False": 10000
+        },
+        "jcentral_override_beam2": {
+          "False": 10000
+        },
+        "memo": {
+          "ACCEPTED": 10000,
+          "RESTRICTED_RECLUSTER": 1873
+        },
+        "mt2last_override": {
+          "False": 10000
+        },
+        "muf_branch": {
+          "GEOM_COLLAPSED": 10000
+        },
+        "mur_branch": {
+          "L1153": 10000
+        }
+      },
+      "n_events": 10000,
+      "n_matched": 10000,
+      "path": "validation/madgraph/output/ktdump/dumps/pp_to_llj_qcd2_qed2.jsonl.gz",
+      "sha256": "0cc525bf9593c84dee6657157fb90d52131412a8ee4e4f4230d7c6010f53ffe8"
+    },
+    "uux_to_ccx_emmm_qcd0": {
+      "alphas_ordering": {
+        "max_rise": 0.0,
+        "n_distinct_scales": 6671
+      },
+      "coverage": {
+        "beam_crossing_inflation": {
+          "applied": 62393
+        },
+        "boost": {
+          "fired": 6431,
+          "not_fired": 6306
+        },
+        "candidate_measure": {
+          "FS_DJ_DURHAM": 47152,
+          "FS_SUMDOT_BW": 57088,
+          "IS_DJB": 124786,
+          "NONE": 520974
+        },
+        "cluster_calls_per_event": {
+          "1": 10000
+        },
+        "igraphs1_is_iconfig": {
+          "False": 7614,
+          "True": 2386
+        },
+        "jcentral_override_beam1": {
+          "False": 10000
+        },
+        "jcentral_override_beam2": {
+          "False": 10000
+        },
+        "memo": {
+          "ACCEPTED": 10000
+        },
+        "mt2last_override": {
+          "False": 10000
+        },
+        "muf_branch": {
+          "GEOM_COLLAPSED": 10000
+        },
+        "mur_branch": {
+          "L1153": 10000
+        }
+      },
+      "n_events": 10000,
+      "n_matched": 10000,
+      "path": "validation/madgraph/output/ktdump/dumps/uux_to_ccx_emmm_qcd0.jsonl.gz",
+      "sha256": "750f547981dfdc574e43693b0156f4d82cba6f43ec36b8af662edca7e5f9ce98"
+    },
+    "uux_to_uux": {
+      "alphas_ordering": {
+        "max_rise": 0.0,
+        "n_distinct_scales": 2
+      },
+      "coverage": {
+        "beam_crossing_inflation": {
+          "applied": 32
+        },
+        "boost": {
+          "not_fired": 10000
+        },
+        "candidate_measure": {
+          "FS_DJ_DURHAM": 10000,
+          "IS_DJB": 20000,
+          "NONE": 20000
+        },
+        "cluster_calls_per_event": {
+          "1": 10000
+        },
+        "igraphs1_is_iconfig": {
+          "False": 7,
+          "True": 9993
+        },
+        "jcentral_override_beam1": {
+          "False": 10000
+        },
+        "jcentral_override_beam2": {
+          "False": 10000
+        },
+        "memo": {
+          "ACCEPTED": 10000
+        },
+        "mt2last_override": {
+          "False": 10000
+        },
+        "muf_branch": {
+          "GEOM_COLLAPSED": 10000
+        },
+        "mur_branch": {
+          "L1153": 10000
+        }
+      },
+      "n_events": 10000,
+      "n_matched": 10000,
+      "path": "validation/madgraph/output/ktdump/dumps/uux_to_uux.jsonl.gz",
+      "sha256": "c0c63f79e8637e87013b515d13204e89ed3f21cc3dd64510dff52878f7c64502"
+    }
+  }
+}
