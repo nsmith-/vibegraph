@@ -34,7 +34,7 @@ Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. Deferred: multi-rung t-channel ladders (note 21) |
-| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 17 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and all 4 llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). At a *dynamical* scale each point is clustered in the channel its own sampling channel names, per flavour group: `gu_to_epemu` **+1.07%** / `gux_to_epemux` **+0.97%** and σ(pp→ℓ⁺ℓ⁻j) **−0.68%**, all GATE at tolerances set by the channel-partition ambiguity (backlog below). The `p p > j j` capstone runs the same path on the canonical QCD process and is **measured, not gated**: **+36.2%** against MadGraph, all of it the outgoing-permutation surplus of the enumeration (backlog above), and **+0.15%** with the surplus collapsed — its own channel-partition ambiguity is `1.0e-3`, at its Monte-Carlo error, because a 2 → 2 gives the clustering no merge to choose |
+| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 17 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and all 4 llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). At a *dynamical* scale each point is clustered in the channel its own sampling channel names, per flavour group: `gu_to_epemu` **+1.07%** / `gux_to_epemux` **+0.97%** and σ(pp→ℓ⁺ℓ⁻j) **−0.68%**, all GATE at tolerances set by the channel-partition ambiguity (backlog below). The `p p > j j` capstone runs the same path on the canonical QCD process and is **GATE**: **6.803009e8 ± 2.511e5 pb** over three seeds vs MG 6.788500e8 ± 1.4726e6, rel **+0.21%** at pull **+0.97**, at `rel_tol` 0.005 — the reference's own 0.22% with headroom, pull asserted, since its channel-partition ambiguity is only `1.0e-3` (its own Monte-Carlo error, because a 2 → 2 gives the clustering no merge to choose). It sums over MadGraph's own 65 concrete assignments, pinned entry for entry against the run's `leshouche.inc` |
 | 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 34 banked MG runs byte-for-byte (714 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
 
 ## Closed-sprint history
@@ -62,35 +62,51 @@ One line each; the note is the full record. Earlier sprints
 
 ### Standing discrepancies to resolve (never a loosened tolerance)
 
-- **A repeated multiparticle label in the final state is enumerated once per
-  ordering, and summed twice** — the defect the `kt-spine` capstone found, and the
-  only thing between `p p > j j` and a gated cross section.
-  `generate_sets_inner` (`diagrams/mod.rs`) deduplicates concrete assignments on
-  `(sorted initial, final state as written)`: the initial state as an unordered
-  pair, the final state **in the order the card's slots were filled**. MadGraph
-  keeps one representative per *unordered* outgoing assignment, and a labelled
-  `dΦ_n` integrated over the whole sphere already covers the other orderings — so
-  `g u > g u` and `g u > u g` are two subprocesses here, one there, and both are
-  added. Counted against the banked run's own `leshouche.inc`
-  (`validate_hadronic.rs`
-  `jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations`, enforced):
-  MadGraph **65** assignments, this side **117 = 65 + 52**, every surplus the
-  outgoing swap of a MadGraph one, nothing missing, `13 + 2×52 = 117` exactly.
-  MadGraph's own 10 000 events say it from the other side: **77** emitted
-  assignments, **0** with the swap emitted, the two outgoing legs ordered
-  **1808/1814** either way inside one assignment. σ(`p p > j j`) is high by
-  **+36.2%**, inside the `[1.3354, 1.3651]` bracket the run's five per-directory
-  cross sections predict; collapsing the permutations at enumeration — library
-  untouched — gives **+0.22%** at pull **+0.99** over five seeds at 300k, and
-  `+0.16%` / `+0.21%` / `+0.27%` at 75k / 150k / 600k, against MadGraph's own
-  `0.22%`.
-  **Fix**: sort the final state in that dedup key. The collapse already keeps
-  MadGraph's own representative (65 of 65 in its outgoing order), so no
-  representative rule is needed. `p p > j j` is the only manifest process whose
-  final-state slots draw on intersecting alias sets — the control `p p > l+ l- j`
-  keeps all 212 of its enumerated sets — but it is a change to the enumeration
-  every process goes through, so it wants the whole banked layer behind it and is
-  filed rather than improvised. (note 28 §C.)
+- **A flavour group's colour flows are the representative's, and are reused for
+  members whose legs carry conjugate colour reps** — the defect that came out from
+  behind the enumeration surplus once the surplus was gone, and the only thing
+  between `p p > j j` and a gated event sample. `SubprocessRecord::relabelled`
+  (`lhef/build.rs`) carries a group's `ColorFlowTags` from the representative
+  subprocess to every member, on the stated premise that "the flavours sharing an
+  amplitude are the ones whose legs carry the same masses". `u` and `u~` share an
+  amplitude and a mass list and carry **conjugate SU(3) reps**, so their `ICOLUP`
+  slots must be swapped, and they are not: `color_flow_tags` derives each flow's
+  slots from the leg's own rep and checks them, so tags legal for an antiquark leg
+  provably are not what was applied. Measured on the record alone, with no
+  reference in it: of 20 000 generated `p p > j j` events, **2309** carry an
+  antiquark whose colour line sits in `ICOLUP(1)` where Les Houches puts it in
+  `ICOLUP(2)` — **4758 of 80 000 legs**, every one an antiquark, always both
+  antiquark legs of the same event. The `samples` `ICOLUP` χ² reads it as
+  `≈2470 / 25 dof` at `p 0` on every seed while every other column of that cell
+  clears the `1e-4` floor. **It reaches no gated row**: `p p > l+ l- j`
+  **0/100 000** legs, `p p > b b~` **0/80 000**, MadGraph's own banked `pp_to_jj`
+  **0/40 000**. `p p > j j` is the first row whose groups mix the two — `g q > g q`
+  and `g q~ > g q~` share a pointwise `|M|²`, mass list, cut filter and colour
+  basis. **Why the net did not have it**: `color_flow_tags_oracle` checks the
+  derived table against `leshouche.inc` for the **first** subprocess of each
+  `SubProcesses/P*` directory — the same representative whose tags are then reused
+  — so it validates exactly the member that is right and never a conjugate one.
+  **Fix**: conjugate the tags when a member's leg reps are the representative's
+  conjugates (or derive them per member), and widen the oracle past each
+  directory's first subprocess so the repair is gated rather than asserted.
+  (note 28 §C2.5.)
+- ~~**A repeated multiparticle label in the final state is enumerated once per
+  ordering, and summed twice**~~ — **resolved in `kt-spine` C2**.
+  `generate_sets_inner` (`diagrams/mod.rs`) now sorts the final state in its dedup
+  key as well as the initial state, **in the key only**, so the surviving
+  `DiagramSet` keeps the order the expansion emitted — which is MadGraph's own, so
+  no representative rule was needed. `jj_subprocesses_are_madgraphs_own` (renamed,
+  still enforced, still read from the banked run's own `leshouche.inc`) turns
+  `117 = 65 + 52` into **65 = 65, 0 missing, 0 surplus**, and now also asserts
+  MadGraph's own side of the rule — **0** of its 52 unequal-outgoing assignments
+  has the swap listed — so the equality cannot hold for a trivial reason.
+  σ(`p p > j j`) **+36.2% → +0.21%** at pull **+0.97**, χ²/dof `6.53 → 2.52` over
+  the gate's three seeds, and the `integrals` cell is **GATE** at `rel_tol` 0.005
+  — the reference's own `0.22%` with headroom, pull **asserted**. Blast radius
+  measured rather than assumed: over 30 report rows × 4 categories and 82 appendix
+  measurement lines, **only `pp_to_jj` moved**; hermetic `cargo test --workspace`
+  and the banked layer both exit `0`; the `p p > l+ l- j` control keeps all **212**
+  enumerated sets. (note 28 §C2.)
 - ~~**The per-diagram multichannel builds degenerate maps for massless-propagator
   processes**~~ — **resolved in `kt-spine` S4**, and not by the multi-rung spine.
   The cause was that `FixedBeamIntegrand::use_multichannel` supplied no fiducial
@@ -146,8 +162,10 @@ One line each; the note is the full record. Earlier sprints
   reproduces MadEvent's own `iconfig` distribution and stops the scale riding on
   this crate's sampler. A second per-point draw inside the integrand, with
   reproducibility and artifact consequences, so it is a design decision rather
-  than an improvisation. Session C should measure the partition gap on `pp_to_jj`
-  before choosing its tolerance. (note 28 §K6.5/§K6.8.)
+  than an improvisation. It does **not** set `p p > j j`'s tolerance: measured
+  there, the gap is `+1.03e-3` against its own `9.6e-4` Monte Carlo, because a
+  `2 → 2` final state gives the clustering no merge to choose, so that row gates
+  at the reference's own error instead. (note 28 §K6.5/§K6.8/§C.3.)
 - ~~**`uux_to_uux` residual bias**~~ — **resolved in `kt-spine` S4**. The −0.30%
   five-seed mean was the flat transfer draw above, not a missing rung: with the
   jet cut's floor supplied, the five-seed mean is **+0.019%** at the gate budget

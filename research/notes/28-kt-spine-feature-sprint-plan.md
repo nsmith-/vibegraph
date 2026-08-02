@@ -3805,3 +3805,278 @@ side's budget. It reads `+0.99` at `300 000` and `+1.25` at `600 000`.
 **For Z.** `pp_to_jj` stays `bundled = false`, so on a fetching checkout its two new
 cells are ⏳ until the re-cut. This session touches nothing else about the bundle,
 and it does not prune `pp_to_llj_qcd2_qed2`.
+
+## C2 — the enumeration repaired, and what the repair uncovered
+
+C localised the `p p > j j` surplus exactly and named the fix without making it.
+This session makes it, measures the blast radius, and gates what the fix earned —
+which is the cross section and not the event sample. Re-measuring the `samples`
+cell through the repaired enumeration is what C said would close its attribution
+blind spot, and it closed it in the direction C could not see: the surplus was
+sufficient to explain every column that cell failed, and it was not the only
+cause. One column still fails, for a reason that has nothing to do with
+enumeration.
+
+### C2.1 The fix
+
+`generate_sets_inner` (`diagrams/mod.rs`) keyed its dedup on `(sorted initial,
+final state as written)`. It now sorts the final state too, **in the key only** —
+the surviving `DiagramSet` keeps the order the expansion emitted it in, which
+§C.1 measured to be MadGraph's own:
+
+```rust
+let mut final_sorted = concrete.final_state.clone();
+final_sorted.sort();
+if !seen_processes.insert((initial_sorted, final_sorted)) {
+    continue;
+}
+```
+
+The comment above it states the rule and why it is sound — `dΦ_n` is integrated
+over the whole labelled region and every run-card cut is a per-class one, so a
+permutation of the outgoing legs relabels the integral without moving it — and
+keeps the guarantee the old comment carried, that distinct final-state *content*
+never collapses.
+
+The enforced set test moves with it.
+`jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations` is now
+`jj_subprocesses_are_madgraphs_own`: the surplus assertion becomes set equality,
+and two statements are added so the equality is not satisfiable for a trivial
+reason —
+
+- MadGraph's own side of the rule: of its 65 assignments, **52** have unequal
+  outgoing flavours, and **0** of those 52 have the swap that `leshouche.inc`
+  could have listed. Without this the equality could hold because there was never
+  a choice to make.
+- The equality itself carries the representative claim: each entry lists its
+  outgoing legs in the order that side enumerated them, so `ours == mg` says the
+  surviving representative is in **MadGraph's own outgoing order**, not merely one
+  of the two.
+
+`probe_jj_outgoing_permutation_costs_the_cross_section` and the
+`collapse_permutations` flag on `jj_groups` are **deleted**. Their counterfactual
+arm was the defect, and reconstructing it would mean re-adding the surplus to
+demonstrate a bug that no longer exists; §C.2 is its record. `probe_jj_budget_ladder`
+and `probe_jj_channel_partition` lose their duplicated arm and run the production
+enumeration.
+
+### C2.2 The set, at zero tolerance
+
+```text
+[pp_to_jj] concrete subprocesses: MadGraph 65 (52 with unequal outgoing flavours,
+  0 of those with the swap also listed), this side 65 — 0 missing, 0 surplus
+[pp_to_llj_fixed] control: 212 enumerated sets, 212 surviving the same key,
+  24 of them carrying diagrams
+test jj_subprocesses_are_madgraphs_own ... ok
+```
+
+`117 = 65 + 52` → **65 = 65**, and the negative control is unmoved: a card whose
+final-state slots draw on disjoint alias sets keeps every one of its 212
+enumerated sets under the same key, so the rule merges where a label repeats and
+nowhere else.
+
+### C2.3 Blast radius, measured
+
+`cargo build` and `cargo test --workspace` (hermetic, no features) both exit `0`;
+nothing in the hermetic layer pinned the `117`. The banked layer exits `0` and the
+rendered report is diffed against the one taken before the change:
+
+| | baseline | fixed |
+|---|---|---|
+| table rows differing (footnote indices normalised) | — | **1** (`pp_to_jj`) |
+| appendix measurement lines | 82 | 82, **2** differing (both `pp_to_jj`) |
+| census | `85 ✅, 3 ⚠️, 4 ⏳, 10 ⛔, 18 uncovered` | `86 ✅, 2 ⚠️, 4 ⏳, 10 ⛔, 18 uncovered` |
+| measured cells | 88 | 88 |
+
+Every other row is character-identical in every printed field. That is what §C.1
+predicted and why: `gg_to_gg` and `uux_to_uux` spell their final states with
+concrete particles, so there is no duplicate to collapse, and `p p > j j` is the
+only manifest row whose final-state slots draw on intersecting alias sets. The raw
+`diff` moves 44 lines, of which everything but the `pp_to_jj` row, its two
+footnotes and the census line is the mechanical renumbering of the footnotes after
+them.
+
+**Both work-area states are green.** With the four unbundled runs present the
+banked layer exits `0` at the census above. With them held out it exits `0` at
+`84` measured (`83 ✅, 1 ⚠️, 8 ⏳, 10 ⛔, 18 uncovered`), both `pp_to_jj` cells
+reading *awaiting the bundle*. That report is **character-identical to §C.7's
+held-out one across all 78 of its measurement lines**, which is the blast-radius
+statement again from the other side: with the only row the fix can reach removed,
+the fix is invisible. The four held-out runs were restored and verified
+byte-identical over all **2867** files.
+
+### C2.4 The σ cell — GATE
+
+The banked layer's own three seeds at `300 000 × 10`, on the production path:
+
+```text
+[jj] GATE vibegraph σ = 6.803009e8 ± 2.511e5 pb (3 seeds, χ²/dof = 2.52)
+     | MG σ = 6.788500e8 ± 1.473e6 pb | pull = +0.97 | rel = +0.0021
+```
+
+against `9.246158e8 ± 3.363e5 pb, χ²/dof 6.53, rel +0.3620, pull +162.70` before
+the fix. The tolerance is `JJ_MAX_REL = 0.005` with `|pull| < 3` **asserted** and
+`χ²/dof < 4`.
+
+**The oracle-layer ladder, five seeds a rung, through the real fix rather than
+through C's counterfactual filter** (`probe_jj_budget_ladder`):
+
+| neval | σ ± Δ (pb) | χ²/dof | rel | pull |
+|---|---|---|---|---|
+| 75 000 | 6.799571e8 ± 3.900e5 | 1.41 | +0.16 % | +0.73 |
+| 150 000 | 6.802836e8 ± 2.753e5 | 0.61 | +0.21 % | +0.96 |
+| 300 000 | 6.803185e8 ± 1.943e5 | 1.26 | +0.22 % | +0.99 |
+| 600 000 | 6.806965e8 ± 1.375e5 | 1.25 | +0.27 % | +1.25 |
+
+Every rung reproduces §C.4's collapsed arm **to the printed digit**, which is a
+statement about the fix and not about the row: it says the production enumeration
+and C's `(sorted incoming, sorted outgoing)` filter over the enumerated
+`DiagramSet`s are the same estimator, so C's evidence transfers rather than
+merely agreeing.
+
+**Why the tolerance is the reference's error and not a partition band.**
+`probe_jj_channel_partition`, one seed, `300 000 × 10`, everything else held:
+
+| arm | adapted α | uniform α | partition gap | Monte Carlo |
+|---|---|---|---|---|
+| `j j` | 6.798582e8 ± 4.33e5 | 6.805569e8 ± 4.90e5 | **+1.028e-3** | 9.6e-4 |
+| `pp_to_llj_fixed` (control) | 4.230616e2 ± 3.99e-1 | 4.230056e2 ± 4.63e-1 | −1.324e-4 | 1.4e-3 |
+
+`1.07 σ` — the gap is at its own Monte-Carlo error, against the `1.5e-2` at `9 σ`
+that `gu_to_epemu` and `gux_to_epemux` carry (§K6.5). So this row does not inherit
+`0.02`, and the pull is asserted rather than reported: the residual is a
+fluctuation, not a systematic of fixed size, and the arithmetic keeps it that way
+— MadGraph's error on this run is `1.47e6 pb` against this side's `2.5e5` at the
+gate budget, so the combined error is essentially the reference's and raising this
+side's budget cannot drive the pull up. It reads `+0.99` at `300 000` and `+1.25`
+at `600 000`.
+
+`0.005` is `2.3×` MadGraph's own `0.22 %` on this run and `1.9×` the ladder's
+worst rung. What it cannot see is a residual below about `0.2 %`: the estimator
+climbs `0.11 %` across an eightfold budget — increments `+0.05 %`, `+0.01 %`,
+`+0.05 %` — which is half the reference's own error and is not resolved into an
+asymptote. The row is converged **at the scale the comparison is made at**, and
+the ladder is kept so a later session can say more.
+
+**Variance recovered, and it was predicted.** §C.4 read the enumerated arm's five
+seeds at `χ²/dof 3.41` where the collapsed arm's sat near one, and attributed the
+excess to six extra sampling channels that were relabelled images of channels
+already in the mixture — the ill-conditioned multichannel of note 27 §B3.2. Fixed,
+the five seeds at the gate budget scatter at **1.26**, and the whole ladder sits in
+`0.61–1.41`. The gate's own three seeds read `6.53 → 2.52`; `2.52` on two degrees
+of freedom is `χ² = 5.0` at `p ≈ 0.08`, unremarkable at that sample size and the
+reason the bound is `4.0` rather than something tighter. The mechanism the
+prediction named is directly visible in the integrator's own header, on the same
+card before and after the fix — `channels: 25 grids` → `channels: 19 grids`, with
+σ `9.242427e8 ± 1.17e6` → `6.799516e8 ± 8.79e5` at `120 000 × 6` — so the six
+channels that left are the six the prediction said were relabelled images.
+(§C.2's counts of the flavour groups behind them, `11 → 8`, are that session's.)
+
+### C2.5 The `samples` cell — one column, and it is not the enumeration
+
+Three seeds of 20 000 events against the banked 10 000, `p`-floor `1e-4`,
+everything else as C ran it.
+
+| column | C (`117` subprocesses) | this session (`65`) |
+|---|---|---|
+| worst KS | `y(j1)` p **1.12e-7** | `phi(j1)/pi` p **7.94e-2** |
+| `SPINUP` | p 7.6e-4 … 6.1e-2 | p **0.18 … 0.35** |
+| `flavour` | χ² ≈ **3270 / 108**, p 0 | χ² **80.5/64, 83.2/70, 78.2/67**, p **0.079 … 0.164** |
+| `ICOLUP` | χ² ≈ **5100 / 30**, p 0 | χ² **2455.0/26, 2494.2/25, 2479.1/24**, p **0** |
+
+The kinematics and the flavour frequencies come back inside the floor, which is
+the statement C wanted: the subprocess mixture was the surplus and the surplus is
+gone. `ICOLUP` does not, and the cell stays `info` for that column alone rather
+than being forced.
+
+**What it is.** Not a frequency question and not MadGraph's to settle: the events
+this row emits for a flavour assignment containing an **antiquark** put that leg's
+colour line in `ICOLUP(1)`, where the Les Houches convention puts an antiquark's
+in `ICOLUP(2)`. Checked on the record alone, with no reference in the comparison —
+one integration per row at `120 000 × 6` off the row's banked cards, then
+20 000 events at one seed:
+
+| sample | events | legs violating the `ICOLUP` slot convention |
+|---|---|---|
+| `p p > j j`, this session | 20 000 | **4 758 / 80 000** — every one an antiquark, and always *both* antiquark legs of the same event (2 309 events) |
+| `p p > j j`, enumeration as C left it | 20 000 | **7 382 / 80 000**, including **238 quark** legs |
+| `p p > l+ l- j` (samples GATE) | 20 000 | **0 / 100 000** |
+| `p p > b b~` (samples GATE) | 20 000 | **0 / 80 000** |
+| MadGraph's own banked `pp_to_jj` | 10 000 | **0 / 40 000** |
+
+The second row is the load-bearing one: **the defect predates this session and the
+fix strictly reduces it**, removing an entire class (the quark-leg violations were
+the surplus's swapped orderings). The third and fourth say it reaches no currently
+gated row.
+
+**Where it comes from**, read off the code rather than guessed.
+`SubprocessRecord::relabelled` (`lhef/build.rs`) carries a flavour group's colour
+flows from the group representative to every member, and says so:
+
+> The colour flows and the pole masses travel with the legs and only the codes
+> change: the flavours sharing an amplitude are the ones whose legs carry the same
+> masses.
+
+Sharing an amplitude and a mass list does not imply sharing a colour *rep*. `u`
+and `ū` share both and carry conjugate SU(3) reps, so their `ICOLUP` slots must be
+swapped — and `color_flow_tags` derives each flow's slots from the leg's own rep
+and *checks* them, so tags legal for an antiquark leg cannot be what was applied.
+By elimination the tags applied are the representative's. `p p > j j` is the first
+row whose groups mix the two: `g q > g q` and `g q̄ > g q̄` share a pointwise
+`|M|²`, mass list, cut filter and colour basis, so the flavour decomposition puts
+them together.
+
+**Why the net did not have this already.** `color_flow_tags_oracle` compares the
+derived `ICOLUP` table against `leshouche.inc` for every generated subprocess —
+but for the *first* subprocess of each `SubProcesses/P*` directory, the one
+`matrix1_orig.f`'s header names. That is the same representative whose tags this
+crate then reuses, so the oracle validates exactly the member that is right and
+never a member whose reps are conjugate. A cross-tabulation of flavour key against
+colour key over the two samples makes the gap concrete: **39** flavour assignments
+where the two sides' colour-key sets are *disjoint* (MadGraph 1 145 of 10 000
+events, ours 2 274 of 20 000), every one of them containing an antiquark, against
+**32** where the sets agree (MadGraph 8 838, ours 17 620).
+
+### C2.6 The instruments, and what each cannot see
+
+- **`jj_subprocesses_are_madgraphs_own`** is a set comparison at zero tolerance
+  against the run's own `leshouche.inc`, and it is enforced, so it fails the moment
+  either side's enumeration moves. It cannot see anything about the *diagrams* of a
+  listed subprocess, about any cross section, or about what the record layer later
+  does with a subprocess — a set is blind to all three, and §C2.5 is the third one
+  biting.
+- **The report table-diff** says nothing else moved *in a printed field*. It cannot
+  see a change that moves no cell — a re-association inside an equal σ, say — and
+  it is only as fine as the layer that wrote the cells.
+- **The σ gate** is a scalar over three seeds. It cannot see a compensating pair of
+  errors, a mis-sampled region of small measure, or anything the sum over
+  subprocesses averages out; the ladder and the seed sweep guard the first two, and
+  `validate_scales`'s per-event replay of this run's 10 000 events the third.
+- **The colour-slot check of §C2.5** needs no reference and is therefore not
+  blind to a shared convention error the way a comparison against MadGraph would
+  be — but it only sees *legality*, not correctness: a record whose slots are legal
+  and whose flow is the wrong one of two would pass it. What sees that is the
+  `ICOLUP` χ², which is why the cell keeps it rather than being retired to the
+  legality check.
+- **The `samples` comparison** remains blind to correlations between columns, to a
+  discrepancy confined to a small tail, and — `canonical()` sorting the outgoing
+  legs — to the leg ordering *within* an assignment, which is why the surplus only
+  ever showed up in it as a frequency.
+
+### C2.7 What this leaves
+
+**Landed.** `pp_to_jj`'s `integrals` cell is **GATE**, the census moves
+`85 ✅, 3 ⚠️` → `86 ✅, 2 ⚠️` at 88 measured, and the enumeration defect is closed
+with an enforced zero-tolerance pin behind it.
+
+**Open, and newly attributed.** A flavour group's colour flows are the
+representative's, reused for members whose legs carry conjugate colour reps. It is
+filed rather than fixed here: it is a change to the record layer with its own
+oracle question (the `leshouche.inc` comparison has to reach past each directory's
+first subprocess before it can be gated), and this session's scope was the
+enumeration. Everything a repairing session needs is above — the mechanism, the
+code path, the counts, and a reference-free instrument that fails today.
+
+**For Z.** `pp_to_jj` stays `bundled = false`, so on a fetching checkout both its
+cells are ⏳ until the re-cut. Nothing about the bundle changed, and
+`pp_to_llj_qcd2_qed2` is untouched.

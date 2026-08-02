@@ -1372,11 +1372,28 @@ const JJ_ADAPT_SURVEY: usize = 8_000;
 const JJ_ADAPT_ITERS: usize = 5;
 /// VEGAS budget per seed, taken from a measured ladder rather than from cost.
 /// Over five seeds at 75 000, 150 000, 300 000 and 600 000 points an iteration
-/// (`probe_jj_budget_ladder`) this row's estimator is flat in the budget rather
-/// than approaching from below the way the `ℓℓj` rows do, so it is converged well
-/// below the budget it runs at and the comparison is measuring an agreement.
+/// (`probe_jj_budget_ladder`) this row's estimator climbs by `0.11 %` across the
+/// whole eightfold range, against the `0.82 %` `pp_to_llj_dyn` climbs over the
+/// same one. That is half the reference's own Monte-Carlo error and is not
+/// resolved into an asymptote, so the honest statement is that the row is
+/// converged at the scale the comparison is made at rather than demonstrably
+/// asymptotic — and `JJ_MAX_REL` is set at that scale.
 const JJ_NEVAL: usize = 300_000;
 const JJ_NITER: usize = 10;
+/// Relative agreement this row is held to.
+///
+/// Set from the reference's own Monte-Carlo error — `1.4726e6` on `6.7885e8 pb`,
+/// `0.22 %` — and not from the channel-partition band the `ℓℓj` rows carry: a
+/// `2 → 2` final state gives the clustering no merge to choose, so σ here is a
+/// function of the momenta alone and `probe_jj_channel_partition` measures the
+/// partition gap at `1.0e-3` against its own `9.6e-4` Monte Carlo. What is left
+/// is Monte Carlo, so the pull is asserted too. Measured `+0.16 %` / `+0.21 %` /
+/// `+0.22 %` / `+0.27 %` over a `75 000`–`600 000` ladder at five seeds a rung.
+const JJ_MAX_REL: f64 = 0.005;
+/// Scatter the seeds are allowed about their own mean, in units of their quoted
+/// errors — the guard the scalar pull cannot be. Measured `1.26` over five seeds
+/// at the gate budget.
+const JJ_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 /// MadGraph's own concrete subprocesses for a banked run, one entry per
 /// `leshouche.inc` `IDUP` record, as `(incoming, outgoing)` PDG codes.
@@ -1513,40 +1530,43 @@ fn our_subprocesses(groups: &FlavorGroups) -> Vec<(Vec<i32>, Vec<i32>)> {
 }
 
 /// The concrete subprocess set of `p p > j j`, against the one MadGraph's own
-/// `leshouche.inc` declares.
+/// `leshouche.inc` declares: **set equality, at zero tolerance.**
 ///
-/// `p p > j j` is the first banked row whose process card **repeats a
-/// multiparticle label in the final state**, and that is the case the two
-/// enumerations do not treat alike. MadGraph keeps one representative per
-/// *unordered* outgoing assignment; this crate's expansion deduplicates on
-/// `(sorted initial, final state as written)`, so `g u > g u` and `g u > u g`
-/// are two subprocesses here and one there.
+/// `p p > j j` is the one banked row whose process card repeats a multiparticle
+/// label in the final state, so it is the row that exercises the enumeration's
+/// unordered-outgoing rule: a concrete subprocess is identified by the unordered
+/// content of each side, and `g u > g u` and `g u > u g` are one subprocess, not
+/// two. They have to be, because both would then be summed over the same
+/// labelled `dΦ₂` — whose polar angle runs over the whole sphere — and the second
+/// is the first relabelled, so enumerating both adds its term twice.
 ///
-/// Both are then summed over the same labelled `dΦ₂`, whose polar angle runs over
-/// the whole sphere, so the second copy is the first one relabelled and its term
-/// is added twice. The statement is exact — no Monte Carlo, no tolerance:
+/// Three things are asserted, and none of them is implied by the other two:
 ///
-/// - every assignment MadGraph lists is one this side lists (nothing is missing);
-/// - every extra one this side lists is the **outgoing swap** of one MadGraph
-///   lists (the surplus is a permutation, not new physics);
-/// - the surplus is exactly one copy per assignment whose two outgoing flavours
-///   differ, and collapsing the permutations at enumeration reproduces MadGraph's
-///   set entry for entry, in MadGraph's own outgoing order.
+/// - **MadGraph itself lists one representative per unordered assignment.** Of
+///   its 65, the 52 whose two outgoing flavours differ each have an outgoing swap
+///   that `leshouche.inc` could have listed and does not. Without this the set
+///   equality below could hold for the trivial reason that there was never a
+///   choice to make.
+/// - **The two sets are equal**, so nothing is missing and nothing is surplus —
+///   and, since each entry carries its outgoing legs in the order that side
+///   enumerated them, the surviving representative is in **MadGraph's own
+///   outgoing order** rather than merely being one of the two.
+/// - **MadGraph's own 10 000 events say the premise from the other side**: no
+///   emitted flavour assignment has its outgoing swap also emitted, and inside a
+///   single assignment the two outgoing legs are found in both relative
+///   orderings. A single representative covering the whole sphere is what that
+///   looks like; two distinct subprocesses is not.
 ///
-/// The surplus is asserted at its measured size rather than at zero, which is the
-/// same shape as `validate_scales`'s declared tie-break exception: the count is
-/// the record of a defect, so a repair moves it to zero here and this assertion
-/// with it, and nothing about it drifts silently in the meantime.
+/// The negative control is a card whose final-state slots draw on *disjoint*
+/// alias sets, where the rule can collapse nothing and must not.
 ///
 /// What it cannot see: whether the *diagrams* of a listed subprocess agree, and
 /// anything about the cross section — a set comparison is blind to both. The σ
-/// consequence is measured in [`probe_jj_outgoing_permutation_costs_the_cross_section`].
+/// consequence is [`sigma_jj_dynamical_scale_vs_mg`], and its convergence
+/// [`probe_jj_budget_ladder`].
 #[test]
-fn jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations() {
-    if !dyn_run_present(
-        "jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations",
-        JJ_RUN,
-    ) {
+fn jj_subprocesses_are_madgraphs_own() {
+    if !dyn_run_present("jj_subprocesses_are_madgraphs_own", JJ_RUN) {
         return;
     }
     let run_dir = validation_dir().join("output").join(JJ_RUN);
@@ -1564,47 +1584,56 @@ fn jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations() {
         "the flavour decomposition lists a concrete subprocess twice"
     );
 
+    // MadGraph's own side of the rule, so the equality below is not trivially
+    // satisfiable: every assignment with unequal outgoing flavours is one whose
+    // swap `leshouche.inc` could have carried, and none of them is there.
+    let mg_unequal_outgoing = mg.iter().filter(|(_, out)| out[0] != out[1]).count();
+    let mg_with_swap = mg
+        .iter()
+        .filter(|(inc, out)| out[0] != out[1] && mg.contains(&(inc.clone(), vec![out[1], out[0]])))
+        .count();
+
     let missing: Vec<_> = mg.difference(&ours_set).cloned().collect();
+    let surplus: Vec<_> = ours_set.difference(&mg).cloned().collect();
+    eprintln!(
+        "[{JJ_RUN}] concrete subprocesses: MadGraph {} ({} with unequal outgoing flavours, \
+         {} of those with the swap also listed), this side {} — {} missing, {} surplus",
+        mg.len(),
+        mg_unequal_outgoing,
+        mg_with_swap,
+        ours_set.len(),
+        missing.len(),
+        surplus.len(),
+    );
+
+    assert!(
+        mg_unequal_outgoing > 0,
+        "no MadGraph assignment has unequal outgoing flavours, so this run cannot \
+         exercise the unordered-outgoing rule at all"
+    );
+    assert_eq!(
+        mg_with_swap, 0,
+        "MadGraph's own leshouche.inc lists both outgoing orderings of an assignment, \
+         so it does not keep one representative per unordered assignment after all"
+    );
     assert!(
         missing.is_empty(),
         "MadGraph sums over {} concrete subprocess(es) this side does not enumerate: {missing:?}",
         missing.len()
     );
-
-    let surplus: Vec<_> = ours_set.difference(&mg).cloned().collect();
-    let swapped_from_mg = surplus
-        .iter()
-        .filter(|(inc, out)| {
-            let mut rev = out.clone();
-            rev.reverse();
-            mg.contains(&(inc.clone(), rev))
-        })
-        .count();
-    let mg_unequal_outgoing = mg.iter().filter(|(_, out)| out[0] != out[1]).count();
-
-    eprintln!(
-        "[{JJ_RUN}] concrete subprocesses: MadGraph {} ({} with unequal outgoing flavours), \
-         this side {} = {} + {} surplus, of which {} are an outgoing swap of a MadGraph one",
-        mg.len(),
-        mg_unequal_outgoing,
-        ours_set.len(),
-        mg.len(),
-        surplus.len(),
-        swapped_from_mg,
+    assert!(
+        surplus.is_empty(),
+        "this side enumerates {} concrete subprocess(es) MadGraph does not sum over: {surplus:?}",
+        surplus.len()
     );
-
+    // Redundant with the two differences taken together, and kept because it is
+    // the statement the row rests on: the representative this side keeps is the
+    // one MadGraph writes, legs in the same order, so an event record built on
+    // its legs needs no reordering.
     assert_eq!(
-        swapped_from_mg,
-        surplus.len(),
-        "some surplus subprocess is not the outgoing permutation of a MadGraph one, \
-         so the difference is more than a permutation"
-    );
-    assert_eq!(
-        surplus.len(),
-        mg_unequal_outgoing,
-        "the surplus is not one copy per assignment with unequal outgoing flavours: it is \
-         either a different defect or a repaired enumeration, and both want this test read \
-         again rather than passed"
+        ours_set, mg,
+        "the concrete subprocess sets differ, so this side does not sum over MadGraph's \
+         own assignments in MadGraph's own outgoing order"
     );
 
     // The premise, read off MadGraph's own events rather than off the reading of
@@ -1631,30 +1660,13 @@ fn jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations() {
          single representative does not visibly cover the other"
     );
 
-    // Which representative a collapse would keep. The surviving ordering is the
-    // one the expansion emitted first, and an event record is written on the legs
-    // of whichever that is — so this says whether repairing the count also repairs
-    // the record's leg order, or whether the representative has to be chosen.
-    let collapsed_groups = jj_groups(&model, &evaluated, &rc, true);
-    let collapsed_set: BTreeSet<(Vec<i32>, Vec<i32>)> =
-        our_subprocesses(&collapsed_groups).into_iter().collect();
-    eprintln!(
-        "[{JJ_RUN}] collapsing the permutations at enumeration leaves {} concrete \
-         subprocesses, {} of them in MadGraph's own outgoing order",
-        collapsed_set.len(),
-        collapsed_set.intersection(&mg).count(),
-    );
-    assert_eq!(
-        collapsed_set, mg,
-        "collapsing the outgoing permutations does not reproduce MadGraph's set, so \
-         repairing the count would also need a rule for which representative to keep"
-    );
-
     // The negative control: a card whose final-state slots draw on *disjoint*
     // alias sets cannot produce two ordered assignments with the same multiset, so
-    // collapsing the permutations there must change nothing. Without it, the
-    // surplus above could be read as a blanket property of alias expansion rather
-    // than as the repeated label it is.
+    // the unordered-outgoing rule has nothing to collapse there and must leave the
+    // count alone. Applying the same key on top of the enumerated sets is how that
+    // is measured — it drops nothing. Without it, the rule could be silently
+    // merging assignments across every process rather than only where a label
+    // repeats.
     let control_dir = validation_dir().join("output/pp_to_llj_fixed");
     let control_rc =
         RunCard::parse_file(&control_dir.join("Cards/run_card.dat")).expect("banked run card");
@@ -1681,186 +1693,29 @@ fn jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations() {
         .sum();
     eprintln!(
         "[pp_to_llj_fixed] control: {enumerated} enumerated sets, {collapsed} surviving the \
-         same collapse, {control_members} of them carrying diagrams"
+         same key, {control_members} of them carrying diagrams"
     );
     assert_eq!(
         collapsed, enumerated,
-        "the outgoing-permutation collapse drops a set on a process whose final-state \
-         slots draw on disjoint alias sets, so it is not measuring the repeated label"
+        "two enumerated sets of a process whose final-state slots draw on disjoint alias \
+         sets share an unordered final state, so the rule is merging more than a repeated \
+         label"
     );
 }
 
-/// The flavour decomposition of a process, optionally with the outgoing
-/// permutations of each concrete assignment collapsed onto one representative —
-/// the set MadGraph sums over.
+/// Seed sweep and budget ladder for the `j j` row — the two axes the gate's
+/// tolerance is set from.
 ///
-/// The filter is on the enumerated `DiagramSet`s and nothing in the library
-/// changes: this is the counterfactual arm of
-/// [`probe_jj_outgoing_permutation_costs_the_cross_section`], not a second
-/// production path. `(sorted incoming, sorted outgoing)` is the key, which is
-/// MadGraph's own rule and is sound for a cross section because `dΦ_n` is
-/// integrated over the whole labelled region and every cut of the card is a
-/// per-class one: a permutation of the outgoing legs relabels the integral
-/// without moving it.
-fn jj_groups(
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-    rc: &RunCard,
-    collapse_permutations: bool,
-) -> FlavorGroups {
-    let opts = ParsingOptions::default();
-    let proc_card = parse_proc_card(&format!("generate {JJ_PROCESS}"), &opts).expect("proc card");
-    let mut sets = generate_from_proc_card(&proc_card, model).expect("enumeration");
-    if collapse_permutations {
-        let mut seen: BTreeSet<(Vec<String>, Vec<String>)> = BTreeSet::new();
-        sets.retain(|s| {
-            let mut key = (s.particles_in.clone(), s.particles_out.clone());
-            key.0.sort();
-            key.1.sort();
-            seen.insert(key)
-        });
-    }
-    derive_flavor_groups(sets, model, evaluated, rc).expect("flavour groups")
-}
-
-/// What the outgoing-permutation surplus of
-/// [`jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations`] costs the
-/// cross section, measured against a prediction the bank makes independently.
+/// Neither axis alone is evidence: a seed sweep cannot see a bias shared by every
+/// seed (VEGAS's `1/σ²` iteration combination reports an under-sampled region
+/// *confidently*), and a single budget cannot tell a converged estimator from one
+/// still climbing.
 ///
-/// The counting statement says the surplus is one extra copy of every assignment
-/// whose outgoing flavours differ. If that is what it is, then
-///
-/// ```text
-/// σ(as enumerated) = σ(MadGraph) + σ(MadGraph, restricted to unequal outgoing flavours)
-/// ```
-///
-/// and the banked run brackets the second term without any fit: its five
-/// subprocess directories carry their own cross sections, and three of them —
-/// `gg_qq`, `gq_gq` and the part of `qq_qq` that is not `q q → q q` — are exactly
-/// the unequal-outgoing ones. `gg_gg` and `qq_gg` are not. So the ratio must land
-/// in the interval those directories imply, and a defect of any other shape
-/// almost certainly would not.
-///
-/// The second arm collapses the permutations at enumeration and integrates the
-/// same card, which is the direct falsifier: if the surplus is the whole of the
-/// disagreement, that arm agrees with MadGraph.
-///
-/// What it cannot see: whether the collapsed arm agrees for the *right* reason at
-/// the sub-percent level — that is the seed sweep and the budget ladder in
-/// [`probe_jj_budget_ladder`], and below them the per-event scale replay
-/// `validate_scales` already runs on this run's 10 000 events.
-///
-/// Run with `--ignored --nocapture`.
-#[test]
-#[ignore]
-fn probe_jj_outgoing_permutation_costs_the_cross_section() {
-    if !dyn_run_present(
-        "probe_jj_outgoing_permutation_costs_the_cross_section",
-        JJ_RUN,
-    ) {
-        return;
-    }
-    let run_dir = validation_dir().join("output").join(JJ_RUN);
-    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
-    let (mg, mg_err) = banked_llj_sigma(&run_dir);
-    let model = common::sm_model();
-    let evaluated = EvaluatedModel::from_model(model.clone());
-    let set = load_pdf_set();
-    let pdf = set.member(0).expect("PDF member 0");
-
-    // The bracket the banked per-directory cross sections imply.
-    let dirs = ["P1_gg_gg", "P1_gg_qq", "P1_gq_gq", "P1_qq_gg", "P1_qq_qq"];
-    let mut per_dir = Vec::new();
-    for d in dirs {
-        let base = run_dir.join("SubProcesses").join(d);
-        let mut acc = 0.0;
-        let mut entries: Vec<PathBuf> = std::fs::read_dir(&base)
-            .unwrap_or_else(|e| panic!("read {}: {e}", base.display()))
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.join("results.dat").is_file())
-            .collect();
-        entries.sort();
-        for g in entries {
-            let text = std::fs::read_to_string(g.join("results.dat")).expect("channel results");
-            let first = text.split_whitespace().next().expect("a cross section");
-            acc += first
-                .replace(['E', 'D'], "e")
-                .parse::<f64>()
-                .expect("a number");
-        }
-        eprintln!("  {d:<10} σ = {acc:.6e} pb");
-        per_dir.push((d, acc));
-    }
-    let total: f64 = per_dir.iter().map(|(_, v)| v).sum();
-    // `gg > q q~` and `g q > g q` are entirely unequal-outgoing; `g g > g g` and
-    // `q q~ > g g` are entirely equal-outgoing; `q q > q q` mixes the two and is
-    // the only unresolved part, so it sets the width of the bracket.
-    let certain: f64 = per_dir
-        .iter()
-        .filter(|(d, _)| *d == "P1_gg_qq" || *d == "P1_gq_gq")
-        .map(|(_, v)| v)
-        .sum();
-    let unresolved: f64 = per_dir
-        .iter()
-        .filter(|(d, _)| *d == "P1_qq_qq")
-        .map(|(_, v)| v)
-        .sum();
-    eprintln!(
-        "  banked per-directory total {total:.6e} pb against results.dat {mg:.6e} pb; \
-         predicted σ(as enumerated)/σ(MG) ∈ [{:.4}, {:.4}]",
-        1.0 + certain / total,
-        1.0 + (certain + unresolved) / total,
-    );
-
-    for (label, collapse) in [("as enumerated", false), ("permutations collapsed", true)] {
-        let groups = jj_groups(&model, &evaluated, &rc, collapse);
-        let amps: Vec<BoundAmplitude<f64>> = groups
-            .groups()
-            .iter()
-            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
-            .collect();
-        let mut summary = Vec::new();
-        let (sigma, err) = run_seed_shaped(
-            &groups,
-            &amps,
-            &model,
-            &evaluated,
-            &set,
-            &pdf,
-            &rc,
-            (JJ_ADAPT_SURVEY, JJ_ADAPT_ITERS, JJ_NEVAL, JJ_NITER),
-            JJ_SEEDS[0],
-            true,
-            &mut summary,
-            true,
-            ScaleShape::PerEvent,
-        );
-        eprintln!(
-            "  {label:<24}: {} subprocesses over {} groups, {} channels | \
-             σ = {sigma:.6e} ± {err:.3e} pb | σ/σ_MG = {:.4} | rel = {:+.4} | pull = {:+.2}",
-            groups
-                .groups()
-                .iter()
-                .map(|g| g.members().len())
-                .sum::<usize>(),
-            groups.groups().len(),
-            summary.len(),
-            sigma / mg,
-            sigma / mg - 1.0,
-            (sigma - mg) / (err * err + mg_err * mg_err).sqrt(),
-        );
-    }
-}
-
-/// Seed sweep and budget ladder for the `j j` row, on both arms.
-///
-/// Two axes, because neither alone is evidence: a seed sweep cannot see a bias
-/// shared by every seed (VEGAS's `1/σ²` iteration combination reports an
-/// under-sampled region *confidently*), and a single budget cannot tell a
-/// converged estimator from one still climbing. The collapsed arm is the one a
-/// future gate would run, so its convergence is what a tolerance would be set
-/// against; the enumerated arm is what production integrates today and is
-/// measured at the gate budget only.
+/// What it cannot see: whether the estimator is asymptotic. The climb across an
+/// eightfold budget is smaller than the reference's own Monte-Carlo error, so the
+/// ladder resolves the row as converged *at the scale the comparison is made at*
+/// and no finer — which is why the gate's `rel_tol` is set at that scale rather
+/// than at the ladder's residual.
 ///
 /// Run with `--ignored --nocapture`.
 #[test]
@@ -1879,57 +1734,48 @@ fn probe_jj_budget_ladder() {
     let seeds = [20260810u64, 20260811, 20260812, 20260813, 20260814];
 
     eprintln!("── {JJ_RUN}: MG {mg:.6e} ± {mg_err:.3e} pb ──");
-    for (label, collapse, rungs) in [
-        ("as enumerated", false, &[300_000usize][..]),
-        (
-            "permutations collapsed",
-            true,
-            &[75_000usize, 150_000, 300_000, 600_000][..],
-        ),
-    ] {
-        let groups = jj_groups(&model, &evaluated, &rc, collapse);
-        let amps: Vec<BoundAmplitude<f64>> = groups
-            .groups()
-            .iter()
-            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
-            .collect();
-        for &neval in rungs {
-            let mut summary = Vec::new();
-            let mut runs: Vec<SeedResult> = Vec::new();
-            for &seed in &seeds {
-                let (sigma, err) = run_seed_shaped(
-                    &groups,
-                    &amps,
-                    &model,
-                    &evaluated,
-                    &set,
-                    &pdf,
-                    &rc,
-                    (JJ_ADAPT_SURVEY, JJ_ADAPT_ITERS, neval, JJ_NITER),
-                    seed,
-                    true,
-                    &mut summary,
-                    true,
-                    ScaleShape::PerEvent,
-                );
-                runs.push(SeedResult {
-                    seed,
-                    sigma_pb: sigma,
-                    sigma_err_pb: err,
-                });
-            }
-            let (mean, mean_err, chi2) = combine_seeds(&runs);
-            let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
-            eprintln!(
-                "  {label:<24} neval {neval:>7}: σ = {mean:.6e} ± {mean_err:.3e} pb \
-                 (χ²/dof {chi2:.2}) | rel {:+.4} | pull {pull:+.2} | per seed {}",
-                mean / mg - 1.0,
-                runs.iter()
-                    .map(|r| format!("{:.5e}", r.sigma_pb))
-                    .collect::<Vec<_>>()
-                    .join(" ")
+    let groups = groups_for(JJ_PROCESS, &model, &evaluated, &rc);
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+    for &neval in &[75_000usize, 150_000, 300_000, 600_000] {
+        let mut summary = Vec::new();
+        let mut runs: Vec<SeedResult> = Vec::new();
+        for &seed in &seeds {
+            let (sigma, err) = run_seed_shaped(
+                &groups,
+                &amps,
+                &model,
+                &evaluated,
+                &set,
+                &pdf,
+                &rc,
+                (JJ_ADAPT_SURVEY, JJ_ADAPT_ITERS, neval, JJ_NITER),
+                seed,
+                true,
+                &mut summary,
+                true,
+                ScaleShape::PerEvent,
             );
+            runs.push(SeedResult {
+                seed,
+                sigma_pb: sigma,
+                sigma_err_pb: err,
+            });
         }
+        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
+        eprintln!(
+            "  neval {neval:>7}: σ = {mean:.6e} ± {mean_err:.3e} pb \
+             (χ²/dof {chi2:.2}) | rel {:+.4} | pull {pull:+.2} | per seed {}",
+            mean / mg - 1.0,
+            runs.iter()
+                .map(|r| format!("{:.5e}", r.sigma_pb))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
     }
 }
 
@@ -1938,10 +1784,16 @@ fn probe_jj_budget_ladder() {
 /// Once the cluster scale is read in the channel a point was drawn in, σ stops
 /// being independent of the multichannel selection weights `αⱼ`: they decide
 /// *which* scale a region of phase space is evaluated at, not merely how often it
-/// is visited. The size of that is a property of the process, and
-/// this row is where it should be largest — every leg is coloured and no two
-/// channels share a merge graph — so it is measured here instead of taken from
-/// the partonic rows.
+/// is visited. The size of that is a property of the process, so it is measured
+/// here rather than inherited from the partonic rows — and it comes out at this
+/// row's own Monte-Carlo error, which is why `JJ_MAX_REL` is set from the
+/// reference's error and not from a partition band.
+///
+/// It is small here for a structural reason rather than by luck: the cluster
+/// scale depends on the integration channel only through which merge sequence the
+/// channel's forest admits, and a `2 → 2` final state offers no merge to choose —
+/// the clustering's terminal core is the event itself, so `μR` and both `μF` are
+/// functions of the momenta alone.
 ///
 /// Both arms are measured, at the converged `αⱼ` and at uniform `αⱼ`
 /// (`n_adapt_iter = 0`) with everything else held, one seed each.
@@ -1987,15 +1839,8 @@ fn probe_jj_channel_partition() {
     }
     let arms = vec![
         Arm {
-            label: "j j, as enumerated",
-            groups: jj_groups(&model, &evaluated, &jj_rc, false),
-            rc: &jj_rc,
-            mg: jj_mg,
-            shape: ScaleShape::PerEvent,
-        },
-        Arm {
-            label: "j j, permutations collapsed",
-            groups: jj_groups(&model, &evaluated, &jj_rc, true),
+            label: "j j",
+            groups: groups_for(JJ_PROCESS, &model, &evaluated, &jj_rc),
             rc: &jj_rc,
             mg: jj_mg,
             shape: ScaleShape::PerEvent,
@@ -2054,7 +1899,7 @@ fn probe_jj_channel_partition() {
 }
 
 /// σ(p p → j j) at MadGraph's default dynamical scale, against the banked
-/// `pp_to_jj` run — **measured and recorded, not enforced.**
+/// `pp_to_jj` run.
 ///
 /// The canonical leading-order QCD process on MadGraph's shipped run-card
 /// defaults, and the row that needs the whole chain at once: flavour groups whose
@@ -2062,24 +1907,20 @@ fn probe_jj_channel_partition() {
 /// cluster scale in the integration channel each point was drawn in, and a
 /// multichannel over a mixed subprocess set.
 ///
-/// **What it measures, and why it is not a gate.** The cross section is high by
-/// about `36%`, and the reason is neither the scale nor the maps nor a tolerance:
-/// this is the first banked row whose process card repeats a multiparticle label
-/// in the final state, and the two enumerations do not treat that alike.
-/// MadGraph keeps one representative per *unordered* outgoing assignment; this
-/// crate's expansion deduplicates on `(sorted initial, final state as written)`,
-/// so `g u > g u` and `g u > u g` are two subprocesses here and one there, and
-/// both are summed over the same labelled `dΦ₂`. The surplus is counted exactly
-/// and with no tolerance by
-/// [`jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations`], and
-/// [`probe_jj_outgoing_permutation_costs_the_cross_section`] closes it: collapsing
-/// the permutations at enumeration — the library untouched — puts this row on
-/// MadGraph inside the reference's own Monte-Carlo error.
+/// The set it sums over is MadGraph's own, entry for entry, and
+/// [`jj_subprocesses_are_madgraphs_own`] asserts that at zero tolerance against
+/// the run's `leshouche.inc` — this is the row where the enumeration's
+/// unordered-outgoing rule matters, and a scalar cross section is far too coarse
+/// to see a subprocess counted twice as anything but a normalisation.
 ///
-/// So the cell is informational with the disagreement recorded, rather than a
-/// widened tolerance around a number that is wrong for a known reason.
+/// `JJ_MAX_REL` is the reference's own `0.22 %` Monte-Carlo error with headroom,
+/// and the **pull is asserted** rather than reported: the residual here is Monte
+/// Carlo rather than a systematic of fixed size, and the arithmetic says a budget
+/// increase cannot drive the pull up — MadGraph's error on this run is `1.47e6 pb`
+/// against this side's `1.9e5` at the gate budget, so the combined error is
+/// essentially the reference's.
 ///
-/// What the number can and cannot see, once the surplus is out of the way: σ is a
+/// What the number can and cannot see: σ is a
 /// scalar, so a clustering that got individual events wrong while preserving their
 /// average would pass it. That is what `validate_scales` replays this run's 10 000
 /// events for, field by field against MadGraph's own printed `SCALUP` and
@@ -2138,14 +1979,14 @@ fn sigma_jj_dynamical_scale_vs_mg() {
     let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
     let rel = mean / mg - 1.0;
     eprintln!(
-        "[jj] INFO vibegraph σ = {mean:.6e} ± {mean_err:.3e} pb ({} seeds, χ²/dof = {chi2:.2}) | \
-         MG σ = {mg:.6e} ± {mg_err:.3e} pb | pull = {pull:+.2} | rel = {rel:+.4} \
-         (the outgoing-permutation surplus, measured)",
+        "[jj] GATE vibegraph σ = {mean:.6e} ± {mean_err:.3e} pb ({} seeds, χ²/dof = {chi2:.2}) | \
+         MG σ = {mg:.6e} ± {mg_err:.3e} pb | pull = {pull:+.2} | rel = {rel:+.4}",
         runs.len()
     );
 
-    let mut row = IntegralsRow::new(JJ_RUN, JJ_PROCESS, "info");
-    row.status = "info";
+    let ok = pull.abs() < 3.0 && rel.abs() < JJ_MAX_REL && chi2 < JJ_MAX_CHI2_PER_DOF;
+    let mut row = IntegralsRow::new(JJ_RUN, JJ_PROCESS, "gate");
+    row.status = if ok { "pass" } else { "fail" };
     row.sigma_vg_pb = mean;
     row.sigma_vg_err_pb = mean_err;
     row.sigma_mg_pb = mg;
@@ -2159,14 +2000,28 @@ fn sigma_jj_dynamical_scale_vs_mg() {
     row.niter = JJ_NITER;
     row.subsampler = summary;
     row.note = Some(
-        "measured, not enforced: the flavour decomposition of a process whose card \
-         repeats a multiparticle label in the final state carries one extra copy of \
-         every concrete subprocess with unequal outgoing flavours (52 surplus over \
-         MadGraph's 65, counted exactly by \
-         jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations), and both \
-         copies are summed over the same labelled phase space. Collapsing them at \
-         enumeration puts this row inside MadGraph's own Monte-Carlo error"
+        "the canonical leading-order QCD row: a per-event kT cluster scale read in the \
+         channel each point was drawn in, over a flavour decomposition whose members \
+         carry unequal identical-particle symmetry factors. Its 65 concrete \
+         subprocesses are MadGraph's own, asserted entry for entry against the run's \
+         leshouche.inc by jj_subprocesses_are_madgraphs_own. rel_tol is the reference's \
+         own 0.22% Monte-Carlo error with headroom, and the pull is asserted: the \
+         partition ambiguity that sets the llj tolerances is 1.0e-3 here, at its own \
+         Monte Carlo, because a 2 -> 2 final state gives the clustering no merge to \
+         choose. Three seeds at 300k; the five-seed 75k-to-600k ladder that says this is \
+         converged rather than under-sampled is oracle-layer"
             .to_string(),
     );
     row.write();
+
+    assert!(
+        pull.abs() < 3.0 && rel.abs() < JJ_MAX_REL,
+        "[jj] σ disagreement: vibegraph {mean:.6e}±{mean_err:.3e} vs \
+         MG {mg:.6e}±{mg_err:.3e} pb, rel = {rel:+.4} (bound {JJ_MAX_REL}), \
+         pull = {pull:+.2}"
+    );
+    assert!(
+        chi2 < JJ_MAX_CHI2_PER_DOF,
+        "[jj] the seeds scatter by more than they claim: χ²/dof = {chi2:.2} over {runs:?}"
+    );
 }
