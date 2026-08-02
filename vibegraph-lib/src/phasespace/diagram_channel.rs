@@ -717,6 +717,17 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
                 &mut weight,
             ),
         }
+        // A decomposition is only a parametrisation of the same phase space if it
+        // consumes exactly its own dimension: a chain that dropped a rung's azimuth,
+        // or drew a running remainder's invariant that the kinematics had already
+        // fixed, would still produce momenta and would be integrating a different
+        // volume. Cheap enough to assert on every draw a debug build makes.
+        debug_assert_eq!(
+            cursor,
+            self.ndim(),
+            "the walk consumed {cursor} coordinates, not the {} the map declares",
+            self.ndim()
+        );
         let momenta: Vec<LorentzVector<F>> = slots
             .into_iter()
             .map(|m| m.expect("every outgoing slot is filled"))
@@ -2464,6 +2475,170 @@ mod tests {
         // read as "an interior rung is always safe".
         assert_eq!(t_kinematics(s, 0.0, 0.0, 0.0, 40_000.0).t_max, 0.0);
         assert_eq!(t_kinematics(s, -400.0, 0.0, 0.0, 0.0).t_max, 0.0);
+    }
+
+    /// An interior rung of a peripheral chain scatters a *spacelike* incoming line,
+    /// so the frame it is built in has to be constructible from a negative `m²`.
+    /// [`beam_momenta_m2`] is that construction: the line comes out with
+    /// `E < |p⃗|` — the statement that it is off shell in the spacelike direction —
+    /// and with its invariant reproduced, while the spectator beam stays on shell.
+    ///
+    /// The mass-taking [`beam_momenta`] cannot express this at all: `√(m²)` of a
+    /// negative invariant is not a real number.
+    #[test]
+    fn a_spacelike_incoming_line_has_a_frame_of_its_own() {
+        let sqrt_s = 500.0_f64;
+        let mb2 = 80.0 * 80.0;
+        for &ma2 in &[-1.0_f64, -400.0, -25_000.0, -240_000.0] {
+            let [a, b] = beam_momenta_m2(sqrt_s, ma2, mb2);
+            let scale = sqrt_s * sqrt_s;
+            assert!(
+                (a.m2() - ma2).abs() < 1e-9 * scale,
+                "incoming line m² = {} not {ma2}",
+                a.m2()
+            );
+            assert!(
+                (b.m2() - mb2).abs() < 1e-9 * scale,
+                "spectator m² = {} not {mb2}",
+                b.m2()
+            );
+            assert!(
+                a.e() < a.p3_squared().sqrt(),
+                "a spacelike line should carry E = {} below |p| = {}",
+                a.e(),
+                a.p3_squared().sqrt()
+            );
+            assert!(
+                (a.e() + b.e() - sqrt_s).abs() < 1e-9 * sqrt_s,
+                "the two do not add up to the system energy"
+            );
+            assert!(
+                (a.pz() + b.pz()).abs() < 1e-9 * sqrt_s,
+                "the two do not balance along the beam axis"
+            );
+        }
+        // On shell it is the mass-taking form, exactly — a chain's first rung reads
+        // the collision's own beams through this path.
+        let [a, b] = beam_momenta_m2(sqrt_s, 80.0 * 80.0, mb2);
+        let [ra, rb] = beam_momenta(sqrt_s, 80.0, 80.0);
+        assert_eq!((a.e(), a.pz()), (ra.e(), ra.pz()));
+        assert_eq!((b.e(), b.pz()), (rb.e(), rb.pz()));
+    }
+
+    /// The rotation between rungs is a rotation: it is the identity on `+z` — which
+    /// is the only axis a single-rung spine ever sees, and why one is bit-identical
+    /// to a chain of length one — and it preserves invariants and relative angles on
+    /// every other axis while actually moving the vector.
+    #[test]
+    fn the_inter_rung_rotation_is_a_rotation() {
+        let v = LorentzVector::new(7.0_f64, 1.0, -2.0, 3.0);
+        let w = LorentzVector::new(5.0_f64, -0.5, 0.25, -4.0);
+        let identity = rotate_from_z(v, [0.0, 0.0, 1.0]);
+        assert_eq!(
+            (identity.e(), identity.px(), identity.py(), identity.pz()),
+            (v.e(), v.px(), v.py(), v.pz()),
+            "the +z axis must leave a vector bit-identical"
+        );
+        let mut moved = 0usize;
+        for axis in [
+            [0.0_f64, 0.0, -1.0],
+            [1.0, 0.0, 0.0],
+            [0.6, 0.8, 0.0],
+            [0.36, 0.48, 0.8],
+            [-0.36, 0.48, -0.8],
+        ] {
+            let rv = rotate_from_z(v, axis);
+            let rw = rotate_from_z(w, axis);
+            assert!(
+                (rv.m2() - v.m2()).abs() < 1e-12 * v.e() * v.e(),
+                "the rotation changed an invariant: {} vs {}",
+                rv.m2(),
+                v.m2()
+            );
+            let dot = |a: LorentzVector<f64>, b: LorentzVector<f64>| {
+                a.px() * b.px() + a.py() * b.py() + a.pz() * b.pz()
+            };
+            assert!(
+                (dot(rv, rw) - dot(v, w)).abs()
+                    < 1e-12 * v.p3_squared().sqrt() * w.p3_squared().sqrt(),
+                "the rotation changed a relative angle"
+            );
+            // `+z` itself must land on the axis, which is what makes it *this*
+            // rotation and not merely some rotation.
+            let z = rotate_from_z(LorentzVector::new(1.0, 0.0, 0.0, 1.0), axis);
+            for (got, want) in [(z.px(), axis[0]), (z.py(), axis[1]), (z.pz(), axis[2])] {
+                assert!((got - want).abs() < 1e-12, "+z did not land on the axis");
+            }
+            if (rv.px() - v.px()).abs() + (rv.py() - v.py()).abs() + (rv.pz() - v.pz()).abs() > 1e-6
+            {
+                moved += 1;
+            }
+        }
+        assert_eq!(moved, 5, "some axis left the vector where it was");
+    }
+
+    /// A controlled three-rung ladder is a valid map: it consumes exactly its own
+    /// dimension, emits on-shell momentum-conserving points, keeps every transfer
+    /// spacelike, and its two weightings agree.
+    ///
+    /// The dimension is the check with the most content here. A chain of `r` rungs
+    /// spends `2r` coordinates on the transfers and azimuths, one on each composite
+    /// blob's invariant and one on each running remainder's, and the rest inside the
+    /// blobs' own decay trees; that it lands on `3n−4` is not arranged anywhere, and
+    /// a rung that drew an invariant the kinematics had already fixed would break it.
+    #[test]
+    fn a_three_rung_ladder_is_a_valid_map() {
+        let z = z_resonance();
+        let ch = DiagramChannel::from_topology_ladder(
+            600.0,
+            [0.0, 0.0],
+            vec![0.0, 0.0, 0.0, 0.0, 0.0],
+            &[
+                (vec![4], None, 0.0),
+                (vec![0, 1], Some(z), 0.0),
+                (vec![2], None, 80.4),
+            ],
+            (vec![3], None),
+        );
+        assert_eq!(ch.ndim(), 3 * 5 - 4);
+        assert_eq!(ch.spine_poles().len(), 3);
+        let beams = beam_momenta::<f64>(600.0, 0.0, 0.0);
+        let mut stream = SubStream::from_stream(0x1ADDE, 11);
+        let mut worst_gap = 0.0f64;
+        for _ in 0..3000 {
+            let u = stream.uniforms::<f64>(ch.ndim());
+            let pt = ch.sample(&u);
+            let tot = total(&pt.momenta);
+            assert!((tot[0] - 600.0).abs() < 1e-6 * 600.0, "energy: {}", tot[0]);
+            for c in &tot[1..] {
+                assert!(c.abs() < 1e-6 * 600.0, "3-momentum: {c}");
+            }
+            for p in &pt.momenta {
+                assert!(p.m2().abs() < 1e-4, "off shell: m² = {}", p.m2());
+            }
+            // The running transfers, read off the chain's own prefixes.
+            for slots in [vec![4], vec![4, 0, 1], vec![4, 0, 1, 2]] {
+                let mut acc = LorentzVector::new(0.0, 0.0, 0.0, 0.0);
+                for s in slots {
+                    let p = pt.momenta[s];
+                    acc = LorentzVector::new(
+                        acc.e() + p.e(),
+                        acc.px() + p.px(),
+                        acc.py() + p.py(),
+                        acc.pz() + p.pz(),
+                    );
+                }
+                let t = transfer_invariant(beams[0], acc);
+                assert!(t <= 1e-6, "a running transfer came out timelike: {t}");
+            }
+            let recip = 1.0 / ch.density(&pt.momenta);
+            worst_gap = worst_gap.max((pt.weight - recip).abs() / recip);
+        }
+        eprintln!("three-rung ladder walk-vs-density worst {worst_gap:.3e}");
+        assert!(
+            worst_gap < 1e-9,
+            "walk and density disagree by {worst_gap:.3e}"
+        );
     }
 
     /// Threshold kinematics: as `√s → (m₁+m₂)` the emitted momentum `p*` vanishes,
