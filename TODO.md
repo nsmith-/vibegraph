@@ -185,6 +185,12 @@ One line each; the note is the full record. Earlier sprints
   valid) event sample. The banked sample is the reference; any "regenerate the
   bank byte-for-byte" claim must exempt multi-group runs, and C's `samples`
   gate compares distributions, not bytes. (Sb, note 28.)
+- **Tie the clustering-computed μR to the grid coupling in one gate** — 
+  `validate_scales`'s `banked_events_reproduce_aqcdup_from_the_computed_scale`
+  steps over the `pdlabel = lhapdf` runs because its second oracle was the
+  beta-function solve; with the faithful `AlphaS_Ipol` grid reading landed,
+  those four runs could join it, checking cluster-scale → μR → αs(μR) in a
+  single per-event comparison. (Note 28 §K5a, "available strengthening".)
 - **`pp_to_jj`'s 9 tie-break events want a K2-style clustering dump** — K4
   enforces them by signature (the `√(1+1e-6)` beam-crossing inflation is the
   only difference, `<rscale>`'s printed digits pin it) and asserts the count,
