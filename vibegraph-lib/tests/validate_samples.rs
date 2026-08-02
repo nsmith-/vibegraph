@@ -222,41 +222,50 @@ const ROWS: &[Row] = &[
         niter: 6,
         mode: "gate",
     },
-];
-
-/// The four `l+ l- j` partonic rows, whose run cards leave both scales free.
-/// Their `integrals` cells are blocked on `kt-clustering`; this list is what
-/// [`the_llj_parton_rows_cannot_be_generated_either`] measures the same refusal
-/// on, so their `samples` cells are blocked for a reason that was checked.
-const REFUSED_ROWS: &[Row] = &[
+    // ── the ℓ⁺ℓ⁻ j partonic rows, generated at a per-event cluster scale ──
+    // The only rows here whose renormalisation and factorisation scales are
+    // recomputed from each event's kT clustering rather than read once off the
+    // run card, so the accept/reject draw runs over an integrand whose coupling
+    // moves with the point. `the_llj_parton_rows_take_a_per_event_cluster_scale`
+    // is what says the prescription did not collapse to a constant — the way
+    // these could agree for a reason other than the clustering.
     Row {
         key: "uux_to_epemg",
         process: "u u~ > e+ e- g QCD=2 QED=2",
-        neval: 0,
-        niter: 0,
-        mode: "blocked",
+        neval: 40_000,
+        niter: 5,
+        mode: "gate",
     },
     Row {
         key: "ddx_to_epemg",
         process: "d d~ > e+ e- g QCD=2 QED=2",
-        neval: 0,
-        niter: 0,
-        mode: "blocked",
+        neval: 40_000,
+        niter: 5,
+        mode: "gate",
     },
     Row {
         key: "gu_to_epemu",
         process: "g u > e+ e- u QCD=2 QED=2",
-        neval: 0,
-        niter: 0,
-        mode: "blocked",
+        neval: 40_000,
+        niter: 5,
+        mode: "gate",
     },
     Row {
         key: "gux_to_epemux",
         process: "g u~ > e+ e- u~ QCD=2 QED=2",
-        neval: 0,
-        niter: 0,
-        mode: "blocked",
+        neval: 40_000,
+        niter: 5,
+        mode: "gate",
     },
+];
+
+/// The four `l+ l- j` partonic rows: the ones whose run cards leave both scales
+/// free at `dynamical_scale_choice = -1`.
+const LLJ_PARTON_KEYS: [&str; 4] = [
+    "uux_to_epemg",
+    "ddx_to_epemg",
+    "gu_to_epemu",
+    "gux_to_epemux",
 ];
 
 fn output_dir() -> PathBuf {
@@ -618,24 +627,29 @@ fn the_gate_rejects_a_sample_from_a_different_process() {
     }
 }
 
-/// The four `l+ l- j` partonic rows now resolve a per-event scale, which is what
-/// unblocks generating them — measured here rather than assumed.
+/// The four `l+ l- j` partonic rows draw their scales from the kT clustering on
+/// every event, not from a constant — measured here rather than assumed.
 ///
 /// Their run cards leave `dynamical_scale_choice = -1`, and a t-channel
 /// propagator into a three-leg final state is the topology whose cluster scale
-/// depends on the merge order. That used to be a refusal; the general clustering
-/// computes it, and every event of all four runs reproduces the banked
-/// `SCALUP`/`<rscale>`/`<pdfrwt>` inside its printing budget
-/// (`validate_scales.rs`). What this asserts is the integrand's own side of it:
-/// the prescription compiles, resolves on a sampled cut-passing point, and hands
-/// back a coupling that moves with the event.
+/// depends on the merge order. The general clustering computes it, and every
+/// event of all four runs reproduces the banked `SCALUP`/`<rscale>`/`<pdfrwt>`
+/// inside its printing budget (`validate_scales.rs`). What this asserts is the
+/// integrand's own side of it: the prescription compiles, resolves on a sampled
+/// cut-passing point, and hands back a coupling that moves with the event.
 ///
-/// Their `samples` and `integrals` cells stay declared as they are until the
-/// cross sections themselves are gated; this is the capability check that says
-/// nothing stands in the way any more.
+/// It is what stops the sample and cross-section rows above from agreeing for the
+/// wrong reason. A prescription that quietly collapsed to a constant — `m_Z`, say,
+/// which is where their `ℓ⁺ℓ⁻` pair sits — would leave both comparisons close
+/// enough to pass while measuring nothing about the clustering, and the two
+/// assertions below are exactly what such a collapse fails.
 #[test]
-fn the_llj_parton_rows_resolve_a_per_event_scale() {
-    for row in REFUSED_ROWS {
+fn the_llj_parton_rows_take_a_per_event_cluster_scale() {
+    for key in LLJ_PARTON_KEYS {
+        let row = ROWS
+            .iter()
+            .find(|r| r.key == key)
+            .expect("every llj parton key names a compared row");
         let card_path = output_dir().join(row.key).join("Cards/run_card.dat");
         let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
         let model = common::sm_model();

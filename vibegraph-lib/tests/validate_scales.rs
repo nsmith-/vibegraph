@@ -957,6 +957,70 @@ fn the_grid_alpha_s_runs_are_refused_for_a_measurable_reason() {
     assert!(checked > 0, "no fixed-scale grid run is on this machine to pin the source");
 }
 
+/// What an integrand pays for naming the first integration channel on every
+/// event, in the coupling rather than in a count.
+///
+/// The cluster scale is a function of the event **and** of the integration
+/// channel, and an integrand that samples a channel but does not tell the scale
+/// prescription which one gets channel 1 on every point. How often that choice
+/// changes the scale at all is already reported per run by
+/// [`banked_events_reproduce_every_printed_scale`]; what it *costs* is not a
+/// count, because a cross section reads the scale only through `αs(μR)`.
+///
+/// So this compares `αs` at the channel-1 scale against `AQCDUP` — MadGraph's own
+/// coupling for that event, at seven printed digits — over every event of every
+/// clustered run whose `αs` comes from the evolution rather than from a PDF grid.
+/// The mean ratio is the multiplicative bias a cross section linear in `αs`
+/// inherits, and it is directly comparable to the σ deviations `validate_sigma`
+/// reports.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_first_channel_cost_in_alpha_s() {
+    for (name, run) in &banked_runs() {
+        if !matches!(coverage(name), Coverage::Clustered)
+            || UNREPLAYABLE_RUNS.contains(&name.as_str())
+            || GRID_ALPHA_S_RUNS.contains(&name.as_str())
+        {
+            continue;
+        }
+        let card = run_card(run);
+        let choice = ScaleChoice::from_run_card(&card).expect("compiled");
+        let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
+        let a_s = params.get("sminputs", &[3]).expect("aS in SMINPUTS");
+        let Ok(running) = RunningAlphaS::from_run_card(&card, a_s) else {
+            continue;
+        };
+        let channels = channels_for(run);
+        let events = parse_events(run);
+        let mut moved = 0usize;
+        let mut sum = 0.0f64;
+        let mut worst: f64 = 0.0;
+        for event in &events {
+            let adopted = replay(&choice, Some(&channels), event).config;
+            if adopted != 1 {
+                moved += 1;
+            }
+            let mu_r = general(&choice, &channels, event, 1)
+                .expect("channel 1 resolves on a banked event")
+                .0[0];
+            let ratio = aqcdup_from_alpha_s(running.eval(mu_r)) / event.aqcdup;
+            sum += ratio;
+            worst = worst.max((ratio - 1.0).abs());
+        }
+        let n = events.len() as f64;
+        println!(
+            "{name}: {moved} of {} events need a channel other than the first; \
+             alpha_s at the channel-1 scale is {:+.3e} relative to AQCDUP on average, \
+             worst {:.3e}",
+            events.len(),
+            sum / n - 1.0,
+            worst
+        );
+    }
+}
+
 /// `unwgt.f:694` fills `AQCDUP` as `g*g/4d0/3.1415926d0`, with π truncated at
 /// eight digits while `g` was built from the full one — a systematic `1.7e-8`
 /// relative that is a sixth of the field's last printed digit.

@@ -3036,3 +3036,226 @@ pinned even if the sampler's route moves.
 The σ it reports at that budget (`--neval 2000 --niter 2`) is deliberately not
 compared to anything: **the dynamical σ rows are K5b's**, and this says the run
 finishes and produces a number, not that the number is right.
+
+## K5b — the σ flips
+
+Four cross sections were waiting on nothing but K4, and the session that
+integrates them is the first to run the clustering *under the sampler* rather
+than over MadGraph's own events. Two of the four agree and are enforced. The
+other two are `5.5 %` low on every seed at every budget, and what separates the
+pairs is neither their amplitudes nor their phase space: it is an input the
+production integrand does not supply.
+
+### K5b.1 The four partonic rows, both axes
+
+Five seeds at the gate budget and the same five at four times it
+(`probe_llj_parton_seed_stability`, `validate_sigma.rs`), against
+`sigma_reference.json` — which this session re-extracted with all runs present
+and which came back **byte-identical**, so the four σ were already banked and
+the flip is a plan change and not a data change.
+
+| row | MG σ ± Δ (pb) | mean rel, 1× | mean rel, 4× | worst \|rel\| | verdict |
+|---|---|---|---|---|---|
+| `uux_to_epemg` | 0.55507 ± 0.00116 | **+2.83e-3** | +2.34e-3 | 3.93e-3 | GATE, `rel_tol` 0.01 |
+| `ddx_to_epemg` | 0.61770 ± 0.00125 | **+4.29e-3** | +4.37e-3 | 5.58e-3 | GATE, `rel_tol` 0.01 |
+| `gu_to_epemu` | 0.10870 ± 0.00019 | **−5.55e-2** | −5.48e-2 | 5.71e-2 | ⚠️ Info |
+| `gux_to_epemux` | 0.10884 ± 0.00022 | **−5.62e-2** | −5.57e-2 | 5.70e-2 | ⚠️ Info |
+
+The budget is `60 000 × 8` on all four and the ladder rung is four times it. Two
+things are worth reading off the table before the diagnosis.
+
+- **Nothing here is sampling.** Quadrupling the budget moves every row by less
+  than its own seed spread, and the two low rows do not move at all — they sit
+  at `−5.5 %` on all ten runs. VEGAS's `1/σ²` combination makes an
+  under-sampled region *confidently* wrong, which is why the ladder and not the
+  sweep is what says so; the sweep alone would have shown five mutually
+  consistent seeds either way.
+- **The two enforced rows are inside their reference's own error.** `0.28 %` and
+  `0.43 %` against banked Monte-Carlo errors of `0.21 %` and `0.20 %`. That is
+  the term the pull is dominated by and the one no budget on this side can
+  shrink, so `rel_tol` is set from the measured seed spread — `0.01`, about
+  twice the worst rung — rather than from a pull that would keep growing as
+  `err_vg` fell.
+
+### K5b.2 The diagnosis: §K1.11 finding 2, met in production
+
+The disagreement is the **integration channel**, and the sprint's own design note
+named the mechanism before the engine existed.
+
+§K1.11 finding 2: *the scale is not a pure function of (momenta, process)*.
+Three channel dependencies exist — `filmap`'s `nqcd(this_config)` filter
+(`cluster.f:360`), `checkbw`'s use of `this_config` (`cluster.f:419`), and the
+`njetstore` memo (`reweight.f:985-1030`). K3 measured them on the bank and K4
+reported, per run, how many events the choice moves at all (§K4.3).
+
+`hadronic::Channels` carries a `default_config` of `1`, and
+`EventScaleSource::scales` reads it on **every** point, because the sampled
+channel is not plumbed from the multichannel map to the scale prescription:
+`FixedBeamIntegrand::matrix_element` and `ProtonIntegrand`'s inner map both take
+momenta and nothing else. So the production integrand computes MadGraph's
+channel-dependent scale in a channel it did not sample.
+
+**The rows split exactly along that line**, and the split is K4's own table read
+against this session's:
+
+| row | banked events needing a channel other than the first | σ deviation |
+|---|---|---|
+| `uux_to_epemg` | 0 of 10 000 | +0.28 % |
+| `ddx_to_epemg` | 0 of 10 000 | +0.43 % |
+| `gu_to_epemu` | **7204** of 10 000 | **−5.5 %** |
+| `gux_to_epemux` | **7231** of 10 000 | **−5.6 %** |
+
+Every other explanation is excluded by a gate that is already green on the same
+process. The **amplitudes** cells enforce `4.07e-14` and `3.95e-14` on
+`gu_to_epemu` and `gux_to_epemux` — per-diagram, per-helicity, per-flow — so it
+is not the matrix element. The **diagrams** cells are `4/4`. `uux_to_epemg` and
+`gu_to_epemu` are crossings of one another with the same channel maps, the same
+cut compiler and the same multichannel combiner, so it is not the phase space.
+And `validate_scales` reproduces all four runs' banked `SCALUP` / `<rscale>` /
+`<pdfrwt>` inside their printing budgets — *when it is allowed to search for the
+channel*, which is precisely the input production lacks.
+
+Note also that channel *numbering* is not shared with MadGraph and cannot be
+(§K4.1): the forests were checked as a bijection, not as a list. So "channel 1"
+on this side is an arbitrary member of the set, and the default was never more
+than a placeholder — K4 said as much and reported the counts that would price it.
+
+**What the fix is.** Thread the sampled channel index through to
+`EventScaleSource::scales`, and map the multichannel map's channel onto the
+derived config it came from. Both sides are per-diagram over the same diagram
+list, so the mapping exists; it is not the identity in general, because
+`derive_channels` drops the diagrams the four-point filter removes (§K1.11
+finding 3), and it has to be constructed rather than assumed. That is an
+integrand-contract change touching every process, and it is **not** this
+session's scope: it is filed rather than improvised, and the two rows land
+informational meanwhile — a live, known-wrong comparison that turns the fix into
+an instant end-to-end signal.
+
+### K5b.3 The size of it, priced in the coupling rather than in a count
+
+A count of moved events does not say what a cross section pays, because σ reads
+the scale only through `αs(μR)`. So the diagnosis is closed by an instrument that
+prices it directly: `probe_first_channel_cost_in_alpha_s`
+(`validate_scales.rs`) evaluates `αs` at the **channel-1** scale on every banked
+event of every clustered run whose coupling comes from the evolution, and divides
+by `AQCDUP` — MadGraph's own coupling for that event, seven printed digits, read
+off the record. The mean ratio is the multiplicative bias a σ linear in `αs`
+inherits.
+
+| run | events on another channel | mean `αs(ch 1)/AQCDUP − 1` | measured σ deviation |
+|---|---|---|---|
+| `uux_to_epemg` | 0 | −2.1e-9 | +2.8e-3 |
+| `ddx_to_epemg` | 0 | −1.6e-9 | +4.3e-3 |
+| `gu_to_epemu` | 7204 | **−5.540e-2** | **−5.55e-2** |
+| `gux_to_epemux` | 7231 | **−5.557e-2** | **−5.62e-2** |
+| `pp_to_llj` | 5572 | −4.667e-2 | (proton, see below) |
+| `uux_to_uux`, `gg_to_gg`, `gg_to_ttx`, `pp_to_ll`, `pp_to_bb` | 0 | ≤ 1.6e-7 | enforced, unmoved |
+
+**The two low rows' σ deficits are their `αs` deficits to two digits.** Nothing
+else in the chain has to be invoked, and nothing else could produce a number that
+close by coincidence. The enforced QCD rows sit at `1.6e-7` — the printed field's
+own rounding — which is why none of them moved: for them channel 1 *is* every
+channel as far as the scale is concerned.
+
+The rows that agree also gain a statement they did not have: their `+0.28%` and
+`+0.43%` are **not** the scale. At `2e-9` the channel default costs them nothing,
+so what is left is the ordinary distance between two Monte-Carlo estimates, one
+of which carries a `0.2%` error of its own.
+
+### K5b.4 σ(p p → ℓ⁺ℓ⁻ j) at the dynamical scale
+
+Five seeds per rung, the fixed-scale row of the same process left enforced and
+untouched, so the scale is the only moving part in the chain
+(`probe_llj_dyn_budget_ladder`). MadGraph: **415.42 ± 1.36 pb**.
+
+| neval | σ ± Δ (pb) | χ²/dof | rel | pull |
+|---|---|---|---|---|
+| 75 000 | 399.505 ± 0.349 | 4.89 | −3.83 % | −11.33 |
+| 150 000 | 401.263 ± 0.242 | 0.50 | −3.41 % | −10.24 |
+| 300 000 | 402.379 ± 0.169 | 1.57 | −3.14 % | −9.51 |
+| 600 000 | 402.769 ± 0.119 | 0.09 | **−3.05 %** | −9.26 |
+
+The estimator rises with the budget and the increments halve — `+1.76`, `+1.12`,
+`+0.39` — which is the fixed-scale row's own approach-from-below, and at the last
+rung the five seeds agree at `χ²/dof 0.09` with a `0.03%` spread. So this is
+converged and seed-stable at about `403 pb`, and the `393.71` the K5a2 guard test
+printed at `--neval 2000 --niter 2` was the bottom of that same ladder rather than
+a second effect.
+
+The banked layer runs three of those seeds at `300 000` and writes the cell:
+**`402.411 ± 0.218 pb`, `χ²/dof 0.26`, rel `−3.13%`, pull `−9.44`** — the ladder's
+own `300k` rung, reached independently.
+
+**`−3.05%` is the partonic `−5.5%` diluted by the groups that do not carry it.**
+The gluon-initiated share of `p p → ℓ⁺ℓ⁻ j` at 13 TeV is a little over half the
+cross section, and half of `5.5%` is `3%`; the banked-event mean for `pp_to_llj`
+in §K5b.3 is `−4.7%` for the same reason, weighted differently. The row therefore
+lands **⚠️ Info** with the finding recorded, not GATE — `sigma_llj_fixed_scale_vs_mg`
+stays enforced and unmoved, which is what makes the attribution to the scale
+sound.
+
+### K5b.5 The `samples` cells, and what they provably cannot see
+
+All four partonic rows' `samples` cells unblock with their `integrals` cells and
+follow the precedent exactly — the same `validate_samples` row list, the same
+three generation seeds, the same 20 000 events a seed against MadGraph's own
+10 000, the same weighted-ECDF KS on the kinematics and χ² on `SPINUP`. They are
+the only fixed-beam samples rows whose accept/reject draw runs over an integrand
+with a per-event coupling; every other one draws on a constant.
+
+| row | min KS p (worst observable) | min `SPINUP` χ² p |
+|---|---|---|
+| `uux_to_epemg` | 3.7e-2 `phi(e+)` | 0.48 |
+| `ddx_to_epemg` | 5.8e-3 `m(e-,g)` | 0.87 |
+| `gu_to_epemu` | 2.0e-2 `cs_cos(ll)` | 8.0e-2 |
+| `gux_to_epemux` | 9.4e-3 `m(e-,u~)` | 0.31 |
+
+All four gate, against a `1e-4` floor. **Including the two whose cross section is
+`5.5%` wrong**, and that is stated on the cells rather than left to be noticed:
+these are shape statistics, the defect is a nearly uniform multiplicative factor
+over the fiducial region, and a normalisation that moves σ without moving a shape
+is exactly what a KS test is blind to. The passing cells are not evidence about
+the σ deficit, and the σ cells are where it lives.
+
+`the_llj_parton_rows_take_a_per_event_cluster_scale` replaces the capability check
+that used to assert the refusal: it requires, per row, that the prescription
+resolved, that it did **not** collapse to a constant, and that it was handed
+channel forests. A collapse to `m_Z` — where these rows' lepton pair sits — would
+leave both the σ and the sample comparisons close enough to look fine while
+measuring nothing about the clustering, and that is the assertion which fails.
+
+### K5b.6 Where this leaves the sprint
+
+**Landed.** Two σ rows GATE (`uux_to_epemg`, `ddx_to_epemg` at `rel_tol` 0.01),
+four `samples` rows GATE, two σ rows ⚠️ Info with a diagnosed and priced
+disagreement (`gu_to_epemu`, `gux_to_epemux`), and `pp_to_llj_dyn`'s `integrals`
+cell ⚠️ Info at `−3.05%`. The census moves `77 → 86` measured cells, `76 → 82` ✅,
+`1 → 4` ⚠️, `22 → 12` ⛔. `sigma_gate_matches_madgraph` asserts 15 processes where
+it asserted 13. **Every other row of the report is byte-identical to the
+pre-session one** — the two rendered tables differ on exactly the five rows above
+and nowhere else, which is a stronger statement than "unmoved to the printed
+digit".
+
+Both work-area states are green. With the four unbundled runs held out, the
+report renders `pp_to_llj_dyn`'s `integrals` cell as **⏳ awaiting the bundle**
+and the census reads `84` measured (`81 ✅, 3 ⚠️, 6 ⏳`) against `86` (`82, 4, 4`)
+with them present — the two unbundled `integrals` cells moving to `⏳` and nothing
+else. The four llj partonic rows stay `✅` in both, which is right: they are in
+`refdata-3`, so a fetching checkout has them.
+
+`pp_to_llj_dyn`'s `samples` cell moves `blocked → uncovered`: nothing refuses it
+any more, and nothing measures it either — `validate_samples_proton` integrates
+and generates the fixed-scale card only, so the dynamical one needs an artifact
+and a generation pass of its own. Leaving it `blocked` on `kt-clustering` would
+have been a false statement once the cell above it started producing a number.
+
+**Owed, and not by this session.** The integration channel has to reach the scale
+prescription. Until it does:
+
+- the two Info rows stay Info, and so does `pp_to_llj_dyn`;
+- **the capstone will meet the same wall.** `p p → j j` at the default dynamical
+  scale is `pp_to_jj`, and the whole point of it is a 2 → 2 core of massless
+  coloured legs where no closed form collapses the prescription — which is to say
+  a process with many channels and no reason for channel 1 to be the right one.
+  Its 9-event tie-break exception is a separate and much smaller thing. Session C
+  should not be attempted before the channel is plumbed through.

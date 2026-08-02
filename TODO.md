@@ -34,7 +34,7 @@ Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. Deferred: multi-rung t-channel ladders (note 21) |
-| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 12 partonic GATE rows incl. the 3 QCD 2→2s and `pp_to_bb_fixed`, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). Deferred: `dynamical_scale_choice = -1` (needs `kt-clustering`), which also blocks the four llj partonic σ rows |
+| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 14 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and the 2 annihilation llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). Informational at a *dynamical* scale until the sampled integration channel reaches the scale prescription: `gu_to_epemu` / `gux_to_epemux` −5.5% and σ(pp→ℓ⁺ℓ⁻j) −3.05% (backlog below) |
 | 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 34 banked MG runs byte-for-byte (714 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
 
 ## Closed-sprint history
@@ -76,19 +76,34 @@ One line each; the note is the full record. Earlier sprints
   `g g > g g`'s two non-peripheral channels stay bit-identical to each other,
   which is expected — neither has a spacelike line for the floor to act on.
   (note 27 §B3.2, note 28 §S4.)
-- **Four llj partonic σ rows are unreachable, not merely ungated** — `uux_to_epemg`,
-  `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux` are banked with cross sections
-  and cost seconds to integrate. They cannot run at all: all four run cards leave
-  both scales free at `dynamical_scale_choice = -1`, and their topology — a
-  t-channel propagator into a three-leg final state — is exactly the case whose
-  cluster scale depends on the merge order, which `coupling::scales` refuses
-  rather than approximates. No scale on this side reproduces MadGraph's number,
-  and a fixed-scale re-run would be a different cross section. Their `integrals`
-  cells are `blocked` on `kt-clustering` in the manifest and named in
-  `validate_sigma`'s `plan_for`; their `samples` cells are blocked on the same
-  blocker, and the refusal in generation is measured rather than assumed.
-  Fixed by `kt-clustering` (feature backlog), which grows four ready-to-flip σ
-  rows on top of the six asserted-refused scale rows it already owns.
+- ~~**Four llj partonic σ rows are unreachable, not merely ungated**~~ — **run in
+  `kt-spine` K5b**, and two of the four agree. `uux_to_epemg` and `ddx_to_epemg`
+  are GATE at `rel_tol` 0.01 (**+0.28%**, **+0.43%**), all four `samples` cells
+  are GATE, and `gu_to_epemu` / `gux_to_epemux` are ⚠️ Info at **−5.5%** for the
+  reason below. (note 28 §K5b.)
+- **The cluster scale is computed in integration channel 1 on every point** —
+  `hadronic::Channels::default_config` is `1` and `EventScaleSource::scales`
+  reads it unconditionally, because the multichannel map's sampled channel is not
+  plumbed through to the scale prescription: `FixedBeamIntegrand::matrix_element`
+  and `ProtonIntegrand`'s inner map take momenta and nothing else. MadGraph's
+  cluster scale is a function of the event **and** of `this_config` (note 28
+  §K1.11 finding 2: `filmap`'s `nqcd(this_config)`, `checkbw`, the `njetstore`
+  memo), so this is wrong wherever channel 1 is not the sampled one — and channel
+  numbering is not even shared with MadGraph (§K4.1 checked the forests as a
+  bijection, not as a list). **Priced, not merely counted**
+  (`validate_scales.rs` `probe_first_channel_cost_in_alpha_s`): `αs` at the
+  channel-1 scale against MadGraph's own per-event `AQCDUP` is `−5.540e-2` on
+  `gu_to_epemu` and `−5.557e-2` on `gux_to_epemux`, which **is** their σ deficit
+  to two digits, against `≤1.6e-7` on every enforced row (`uux_to_uux`,
+  `gg_to_gg`, `gg_to_ttx`, `pp_to_ll`, `pp_to_bb`, `uux_to_epemg`,
+  `ddx_to_epemg`), which is why none of them moved. Costs `−3.05%` on
+  σ(pp→ℓ⁺ℓ⁻j) at the dynamical scale. **Fix**: thread the sampled channel index
+  into `EventScaleSource::scales`, and build the map from a multichannel channel
+  to the derived config it came from — not the identity in general, because
+  `derive_channels` drops the four-point-filtered diagrams (§K1.11 finding 3).
+  An integrand-contract change touching every process, so it is filed rather
+  than improvised. **Blocks the `p p → j j` capstone**, whose whole premise is a
+  many-channel process at the default dynamical scale. (note 28 §K5b.2/§K5b.3.)
 - ~~**`uux_to_uux` residual bias**~~ — **resolved in `kt-spine` S4**. The −0.30%
   five-seed mean was the flat transfer draw above, not a missing rung: with the
   jet cut's floor supplied, the five-seed mean is **+0.019%** at the gate budget
@@ -337,14 +352,19 @@ One line each; the note is the full record. Earlier sprints
      No production impact: no banked run reads NNPDF31 — all six
      `pdlabel = lhapdf` runs carry `lhaid = 247000` (NNPDF23, `ForcePositive`
      defaulting to `0`, clamp fires on 0 of 1190 probes).
-  5. **Gate** — flip the four llj partonic σ rows (`uux_to_epemg`,
-     `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux`) from `blocked` to GATE —
-     banked, cheap and waiting on nothing else — then re-gate σ(pp→ℓ⁺ℓ⁻j)
-     against a *dynamical*-scale MG run: the fixed-scale row is already
-     enforced, so the whole rest of that chain is held fixed and only the scale
-     moves. The scale-row flips themselves are done (session 3), the coupling
-     systematic is gone (session 4), and the density ceiling is gone (session
-     4b) — **nothing in the coupling-and-densities layer blocks this any more**.
+  5. ✅ **Gate** (note 28 §K5b) — the four llj partonic σ rows and their
+     `samples` cells leave `blocked`, and the flip is where the clustering first
+     runs *under the sampler* rather than over MadGraph's own events. Two σ rows
+     GATE at `rel_tol` 0.01 (`uux_to_epemg` **+0.28%**, `ddx_to_epemg`
+     **+0.43%**, both budget-flat over five seeds at 60k×8 and at four times it,
+     inside twice their reference's own 0.2% error); all four `samples` cells
+     GATE (min KS p 5.8e-3, min χ² p 8.0e-2). **Two σ rows land ⚠️ Info with the
+     cause priced**: `gu_to_epemu` and `gux_to_epemux` are **−5.5%**, identical
+     on every seed and unmoved by 4× the budget, and σ(pp→ℓ⁺ℓ⁻j) at the
+     dynamical scale converges to **402.77 ± 0.12 pb** against MG's
+     415.42 ± 1.36 (**−3.05%**, five seeds at 600k, χ²/dof 0.09) — the same
+     defect diluted by the groups that do not carry it. Cause below; the
+     fixed-scale llj row is unmoved, which is what makes the attribution sound.
   (`coupling/scales.rs`, `validate_scales.rs`, note 22 §1.3/§5.)
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by

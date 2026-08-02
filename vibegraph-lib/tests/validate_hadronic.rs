@@ -18,6 +18,12 @@
 //! lepton. Each row is measured over several seeds, because VEGAS's `1/σ²`
 //! iteration combination reports an under-sampled region confidently.
 //!
+//! A fifth is measured and **not** enforced: σ(pp → ℓ⁺ℓ⁻ j) against
+//! `pp_to_llj_dyn`, whose card is the enforced ℓℓj one with its three
+//! `fixed_*_scale` switches turned off, so the kT-clustered per-event scale is
+//! the only moving part in the chain. It carries a diagnosed disagreement; see
+//! [`sigma_llj_dynamical_scale_vs_mg`].
+//!
 //! A pointwise integrand oracle pins the factors of the hadronic assembly — the
 //! `(τ, y)` map and its Jacobian, the per-group parton luminosity, the group
 //! amplitudes and the cut indicator — at fixed `(x₁, x₂, cosθ)` points against an
@@ -256,6 +262,57 @@ fn run_seed_mapped(
     summary: &mut Vec<ChannelSummary>,
     bound_transfer: bool,
 ) -> (f64, f64) {
+    run_seed_shaped(
+        groups,
+        amps,
+        model,
+        evaluated,
+        set,
+        pdf,
+        rc,
+        budget,
+        seed,
+        expect_alpha_s,
+        summary,
+        bound_transfer,
+        ScaleShape::FixedAtMz,
+    )
+}
+
+/// What a run card's scale prescription must resolve to.
+///
+/// Asserted rather than observed. The fixed-scale and dynamical cards of the same
+/// process differ in three booleans and in nothing else, so one read as the other
+/// integrates a plausible cross section at the wrong scale. MadGraph's own two
+/// numbers for `p p → ℓ⁺ℓ⁻ j` differ by `1.75%` — `415.42` against `422.84` —
+/// which is three times the fixed-scale row's tolerance and well outside either
+/// run's Monte-Carlo error, so the confusion would not be a small one.
+enum ScaleShape {
+    /// Both scales pinned at [`MU_F`], applied once rather than per point.
+    FixedAtMz,
+    /// Recomputed on every event by the kT clustering, over channel forests
+    /// derived from the process's own diagrams.
+    PerEvent,
+}
+
+/// [`run_seed_mapped`] with the scale prescription's expected shape under the
+/// caller's control.
+#[allow(clippy::too_many_arguments)]
+fn run_seed_shaped(
+    groups: &FlavorGroups,
+    amps: &[BoundAmplitude<'_, f64>],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    set: &PdfSet,
+    pdf: &PdfMember,
+    rc: &RunCard,
+    budget: (usize, usize, usize, usize),
+    seed: u64,
+    expect_alpha_s: bool,
+    summary: &mut Vec<ChannelSummary>,
+    bound_transfer: bool,
+    shape: ScaleShape,
+) -> (f64, f64) {
     let (survey, adapt_iters, neval, niter) = budget;
     let build = if bound_transfer {
         ProtonIntegrand::new
@@ -267,14 +324,28 @@ fn run_seed_mapped(
     let report = integ
         .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
         .expect("run card scale prescription compiles");
-    let constant = report.constant_scales.unwrap_or_else(|| {
-        panic!("the reference run card no longer fixes both scales: {report:?}")
-    });
-    assert_eq!(
-        (constant.mu_r, constant.mu_f),
-        (MU_F, [MU_F, MU_F]),
-        "the reference run card no longer fixes both scales at m_Z"
-    );
+    match shape {
+        ScaleShape::FixedAtMz => {
+            let constant = report.constant_scales.unwrap_or_else(|| {
+                panic!("the reference run card no longer fixes both scales: {report:?}")
+            });
+            assert_eq!(
+                (constant.mu_r, constant.mu_f),
+                (MU_F, [MU_F, MU_F]),
+                "the reference run card no longer fixes both scales at m_Z"
+            );
+        }
+        ScaleShape::PerEvent => {
+            assert!(
+                report.constant_scales.is_none(),
+                "the dynamical run card collapsed to a constant scale: {report:?}"
+            );
+            let channels = report
+                .channels
+                .expect("the clustering branch was given no channel forests");
+            assert!(channels > 0, "the clustering branch has no channels");
+        }
+    }
     assert_eq!(
         report.depends_on_alpha_s, expect_alpha_s,
         "the matrix element's dependence on the strong coupling is not what this \
@@ -809,6 +880,234 @@ fn sigma_llj_fixed_scale_vs_mg() {
         "[llj_fixed] the seeds scatter by more than they claim: \
          χ²/dof = {chi2:.2} over {runs:?}"
     );
+}
+
+/// The run whose card is `pp_to_llj_fixed`'s with the three `fixed_*_scale`
+/// switches turned off, and nothing else changed.
+const LLJ_DYN_RUN: &str = "pp_to_llj_dyn";
+
+/// Whether this checkout has the dynamical run, given that the manifest declares
+/// it absent from the pinned bundle.
+///
+/// The two halves are each other's control: a row the bundle does not carry may
+/// be missing, and one it does carry may not. Without the first, a fetching
+/// checkout fails on a run nothing promised it; without the second, an incomplete
+/// work area passes silently.
+fn dyn_run_present(gate: &str, run: &str) -> bool {
+    if validation_dir()
+        .join("output")
+        .join(run)
+        .join("Cards/run_card.dat")
+        .is_file()
+    {
+        return true;
+    }
+    if common::manifest::unbundled_rows().contains(run) {
+        eprintln!(
+            "[{run}] AWAITING BUNDLE (the manifest marks this row bundled = false and this \
+             checkout does not have its run, so no cell is written for it)"
+        );
+        return false;
+    }
+    vibegraph::validation::require(gate, "a banked run directory", run);
+}
+
+/// σ(p p → ℓ⁺ℓ⁻ j) at MadGraph's *dynamical* scale choice, against the banked
+/// `pp_to_llj_dyn` run — measured and reported, not enforced.
+///
+/// The one row where the scale prescription is the only thing under test. The two
+/// run cards differ in the three `fixed_*_scale` booleans and in nothing else —
+/// same process, same beams, same cuts, same PDF set, same param card — and the
+/// fixed-scale row above is enforced at `0.5%` against its own reference. So a
+/// disagreement here is the kT clustering's `μR` and per-beam `μF`, the coupling
+/// read at them and the densities read at them, and cannot be the amplitudes, the
+/// flavour decomposition, the phase-space map or the cuts: those are held fixed
+/// by a passing row.
+///
+/// **It disagrees, by a diagnosed amount.** The budget ladder in
+/// [`probe_llj_dyn_budget_ladder`] gives `399.51`, `401.26`, `402.38`, `402.77 pb`
+/// over five seeds at `75k`, `150k`, `300k` and `600k` — rising, with the
+/// increments halving, so the estimator approaches roughly `403` from below the
+/// way the fixed-scale row does, and the last rung's five seeds agree at
+/// `χ²/dof 0.09`. Against MadGraph's `415.42 ± 1.36` that is a converged,
+/// seed-stable `−3.05%`.
+///
+/// The cause is not this scale prescription's arithmetic but the input it is not
+/// given: the cluster scale depends on the integration channel, and the integrand
+/// names channel 1 on every point. The partonic rows separate the two halves of
+/// that — `uux_to_epemg` and `ddx_to_epemg`, where no banked event needs another
+/// channel, agree to `0.3%` and `0.4%`, while `gu_to_epemu` and `gux_to_epemux`,
+/// where 72% do, are `5.5%` low. This row is the same defect diluted by the
+/// groups that do not carry it: the gluon-initiated share of `p p → ℓ⁺ℓ⁻ j` times
+/// `5.5%` is the `3%` seen here.
+///
+/// The comparison stays running rather than being removed, so landing the channel
+/// plumbing shows up here immediately.
+///
+/// What it cannot see even once it agrees: everything a scalar integrates over.
+/// The per-event scale enters σ through an average, so a clustering that got
+/// individual events wrong while preserving that average would pass — which is
+/// why `validate_scales` replays every banked event's `SCALUP`, `<rscale>` and
+/// `<pdfrwt>` against MadGraph's own printed values, and why this row is the
+/// end-to-end statement rather than the fine one.
+#[test]
+fn sigma_llj_dynamical_scale_vs_mg() {
+    if !dyn_run_present("sigma_llj_dynamical_scale_vs_mg", LLJ_DYN_RUN) {
+        return;
+    }
+    let run_dir = validation_dir().join("output").join(LLJ_DYN_RUN);
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(LLJ_PROCESS, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+
+    let mut summary = Vec::new();
+    let mut runs: Vec<SeedResult> = Vec::new();
+    for &seed in LLJ_SEEDS {
+        let (sigma, err) = run_seed_shaped(
+            &groups,
+            &amps,
+            &model,
+            &evaluated,
+            &set,
+            &pdf,
+            &rc,
+            (LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, LLJ_NEVAL, LLJ_NITER),
+            seed,
+            true,
+            &mut summary,
+            true,
+            ScaleShape::PerEvent,
+        );
+        eprintln!(
+            "[llj_dyn seed {seed}] vibegraph σ = {sigma:.3} ± {err:.3} pb | \
+             rel = {:+.4} | pull = {:+.2}",
+            sigma / mg - 1.0,
+            (sigma - mg) / (err * err + mg_err * mg_err).sqrt()
+        );
+        runs.push(SeedResult {
+            seed,
+            sigma_pb: sigma,
+            sigma_err_pb: err,
+        });
+    }
+
+    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
+    let pull = (mean - mg) / combined;
+    let rel = mean / mg - 1.0;
+    eprintln!(
+        "[llj_dyn] INFO vibegraph σ = {mean:.3} ± {mean_err:.3} pb ({} seeds, \
+         χ²/dof = {chi2:.2}) | MG σ = {mg:.3} ± {mg_err:.3} pb | \
+         pull = {pull:+.2} | rel = {rel:+.4}  <the cluster scale is taken in \
+         integration channel 1 on every point>",
+        runs.len()
+    );
+
+    let mut row = IntegralsRow::new(LLJ_DYN_RUN, LLJ_PROCESS, "info");
+    row.status = "info";
+    row.sigma_vg_pb = mean;
+    row.sigma_vg_err_pb = mean_err;
+    row.sigma_mg_pb = mg;
+    row.sigma_mg_err_pb = mg_err;
+    row.pull = pull;
+    row.rel = rel;
+    row.chi2_dof = chi2;
+    row.seeds = runs.iter().map(|r| r.seed).collect();
+    row.per_seed = runs.clone();
+    row.neval = LLJ_NEVAL;
+    row.niter = LLJ_NITER;
+    row.subsampler = summary;
+    row.note = Some(
+        "measured, not enforced: the cluster scale is taken in integration channel 1 \
+         on every point, which costs -5.5% on the two gluon-beam partonic rows and \
+         nothing on the two annihilation ones. Three seeds at 300k here; the budget \
+         ladder that says this is converged rather than under-sampled is oracle-layer"
+            .to_string(),
+    );
+    row.write();
+}
+
+/// Seed sweep and budget ladder for the dynamical ℓℓj row, the evidence its
+/// recorded disagreement rests on.
+///
+/// The fixed-scale row's estimator approaches its limit **from below** — the
+/// unadapted early iterations enter VEGAS's `1/σ²` combination with
+/// underestimated variances — and the same has to be established here rather than
+/// assumed, because the dynamical row's integrand carries a per-event coupling
+/// the fixed-scale one does not: a scale prescription wrong in a
+/// phase-space-dependent way would produce a bias that does *not* shrink with
+/// budget, which is exactly what the ladder separates from one that does.
+///
+/// Both axes, five seeds each: a seed sweep is the floor and budget convergence
+/// is the second. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_llj_dyn_budget_ladder() {
+    if !dyn_run_present("probe_llj_dyn_budget_ladder", LLJ_DYN_RUN) {
+        return;
+    }
+    let run_dir = validation_dir().join("output").join(LLJ_DYN_RUN);
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(LLJ_PROCESS, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+
+    eprintln!("── {LLJ_DYN_RUN}: MG {mg:.3} ± {mg_err:.3} pb ──");
+    for neval in [75_000usize, 150_000, 300_000, 600_000] {
+        let mut summary = Vec::new();
+        let mut runs: Vec<SeedResult> = Vec::new();
+        for &seed in &[20260730u64, 20260731, 20260732, 20260733, 20260734] {
+            let (sigma, err) = run_seed_shaped(
+                &groups,
+                &amps,
+                &model,
+                &evaluated,
+                &set,
+                &pdf,
+                &rc,
+                (LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, neval, LLJ_NITER),
+                seed,
+                true,
+                &mut summary,
+                true,
+                ScaleShape::PerEvent,
+            );
+            runs.push(SeedResult {
+                seed,
+                sigma_pb: sigma,
+                sigma_err_pb: err,
+            });
+        }
+        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
+        eprintln!(
+            "  neval {neval:>7}: σ = {mean:.4} ± {mean_err:.4} pb (χ²/dof {chi2:.2}) | \
+             rel {:+.4} | pull {pull:+.2} | per seed {}",
+            mean / mg - 1.0,
+            runs.iter()
+                .map(|r| format!("{:.2}±{:.2}", r.sigma_pb, r.sigma_err_pb))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+    }
 }
 
 /// The process of the banked `pp_to_bb_fixed` run, spelled as its `.mg5` script
