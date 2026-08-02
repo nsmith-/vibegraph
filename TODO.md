@@ -186,6 +186,12 @@ One line each; the note is the full record. Earlier sprints
   valid) event sample. The banked sample is the reference; any "regenerate the
   bank byte-for-byte" claim must exempt multi-group runs, and C's `samples`
   gate compares distributions, not bytes. (Sb, note 28.)
+- **`pp_to_jj`'s 9 tie-break events want a K2-style clustering dump** — K4
+  enforces them by signature (the `√(1+1e-6)` beam-crossing inflation is the
+  only difference, `<rscale>`'s printed digits pin it) and asserts the count,
+  but only an instrumented dump of a `p p > j j` run would show the merge
+  sequence directly. The sprint banked the run without a dump; a future
+  oracle-layer pass can add one via `gen_kt_cluster_dumps.sh`. (Note 28 §K4.)
 - **The K2 clustering-dump format should key its per-directory tables by
   process-directory name** — the writer already has the name (`SHARD` records)
   but the extraction drops it, which forced K3 to disambiguate merged tables
