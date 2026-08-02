@@ -53,6 +53,10 @@ criterion = "0.5"
 libm = "0.2"
 libtest-mimic = "0.7"
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
+# The validation gates read one flag out of validation/manifest.toml — which rows
+# the pinned reference bundle carries. Same version the report collator parses it
+# with, so the two cannot disagree about the manifest's shape.
+toml = "1"
 
 [[bench]]
 name = "eval_strategies"

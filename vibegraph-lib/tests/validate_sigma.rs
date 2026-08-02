@@ -92,7 +92,7 @@
 //! Runs only when the gitignored MadGraph `output/` tree is present (same
 //! contract as `amplitude_oracle`); otherwise every process is skipped.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -323,6 +323,36 @@ struct BankedSigma {
     process: String,
     sigma_pb: f64,
     sigma_err_pb: f64,
+}
+
+/// Whether a banked run directory is on this machine, and — when it is not —
+/// whether the manifest says it is allowed to be.
+///
+/// A gate that cannot find a run it names is normally looking at an incomplete
+/// environment, and [`vibegraph::validation::require`] is what says so. A row the
+/// manifest marks `bundled = false` is the declared exception: its artifacts live
+/// in a local work area and are deliberately not in the pinned bundle yet, so a
+/// checkout that fetched the bundle and does not have the run has a complete
+/// environment with respect to what the bundle promises. Such a row is passed
+/// over — the report renders the cell as awaiting the bundle — while a missing
+/// bundled row still fails.
+enum RunPresence {
+    /// The run directory and its cards are on this machine.
+    Present,
+    /// Absent, and the manifest declares the bundle does not carry it.
+    AwaitingBundle,
+    /// Absent, and the bundle is supposed to carry it.
+    Missing,
+}
+
+fn run_presence(dir: &str, unbundled: &BTreeSet<String>) -> RunPresence {
+    if output_dir().join(dir).join("Cards/run_card.dat").exists() {
+        RunPresence::Present
+    } else if unbundled.contains(dir) {
+        RunPresence::AwaitingBundle
+    } else {
+        RunPresence::Missing
+    }
 }
 
 fn output_dir() -> PathBuf {
@@ -1264,6 +1294,79 @@ fn gate_dir(dir: &str, banked: &BankedSigma) -> Result<(), String> {
     }
 }
 
+/// A row the bundle does not carry may be absent; a row it carries may not.
+///
+/// The two halves are the whole of the declared-absent rule, and each is the
+/// other's control: without the first, a checkout that fetched the pinned bundle
+/// fails on a run the bundle never promised it, and without the second, a genuinely
+/// incomplete environment passes silently. The gate's own iteration is what
+/// consumes [`run_presence`], so it is exercised here directly rather than by
+/// arranging a work area.
+#[test]
+fn a_row_the_bundle_does_not_carry_may_be_absent() {
+    let unbundled = common::manifest::unbundled_rows();
+    assert!(
+        !unbundled.is_empty(),
+        "no manifest row is marked bundled = false, so this rule has nothing to check \
+         and the gate's tolerance is untested"
+    );
+
+    // Absent and declared absent: passed over.
+    let declared = unbundled.iter().next().unwrap();
+    assert!(
+        matches!(
+            run_presence("no-such-run-directory", &unbundled),
+            RunPresence::Missing
+        ),
+        "a directory no manifest row names is not exempt from anything"
+    );
+    let absent_and_declared: BTreeSet<String> =
+        std::iter::once("no-such-run-directory".to_string()).collect();
+    assert!(
+        matches!(
+            run_presence("no-such-run-directory", &absent_and_declared),
+            RunPresence::AwaitingBundle
+        ),
+        "a row the manifest marks bundled = false may be absent"
+    );
+
+    // Present is present whatever the manifest says about the bundle, so a machine
+    // that has the run measures it rather than passing over it.
+    if output_dir()
+        .join(declared)
+        .join("Cards/run_card.dat")
+        .exists()
+    {
+        assert!(
+            matches!(run_presence(declared, &unbundled), RunPresence::Present),
+            "an unbundled row whose run is on this machine must still be measured"
+        );
+    }
+}
+
+/// The other half, as the failure it has to stay: a missing run the bundle *does*
+/// carry is an incomplete environment and says so.
+#[test]
+#[should_panic(expected = "needs a banked run card")]
+fn a_row_the_bundle_carries_may_not_be_absent() {
+    let unbundled = common::manifest::unbundled_rows();
+    match run_presence("uux_to_mumu_but_misspelt", &unbundled) {
+        RunPresence::Missing => vibegraph::validation::require(
+            "sigma_gate_matches_madgraph",
+            "a banked run card",
+            "uux_to_mumu_but_misspelt",
+        ),
+        other => panic!(
+            "a bundled row's missing run classified as {}",
+            match other {
+                RunPresence::Present => "present",
+                RunPresence::AwaitingBundle => "awaiting the bundle",
+                RunPresence::Missing => unreachable!(),
+            }
+        ),
+    }
+}
+
 /// Draws the coverage sweep is measured over. Flat, so every accepted point is an
 /// independent chance for the bound to have renounced something the cuts keep.
 const COVERAGE_DRAWS: usize = 100_000;
@@ -1308,15 +1411,30 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
         serde_json::from_str(&text).expect("sigma_reference.json parses");
 
     let model = common::sm_model();
+    let unbundled = common::manifest::unbundled_rows();
     let mut bounded_processes = 0usize;
     let mut control_fired = 0usize;
     let mut constraining = 0usize;
+    let mut awaiting = 0usize;
     for (dir, entry) in &banked {
         // Every row this suite integrates, gated or informational — an unenforced
         // cross section is drawn through the same channel set and would inherit the
         // same bias if the bound renounced something the cuts keep.
         if matches!(plan_for(dir), Plan::Skip(_)) {
             continue;
+        }
+        match run_presence(dir, &unbundled) {
+            RunPresence::Present => {}
+            RunPresence::AwaitingBundle => {
+                eprintln!("[{dir}] awaiting the bundle: no run on this machine, nothing to cover");
+                awaiting += 1;
+                continue;
+            }
+            RunPresence::Missing => vibegraph::validation::require(
+                "every_bounded_channel_set_covers_its_own_fiducial_region",
+                "a banked run card",
+                dir,
+            ),
         }
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
@@ -1431,12 +1549,27 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
 
     eprintln!(
         "coverage: {bounded_processes} bounded process(es), {constraining} of them with points \
-         no unbounded channel reaches, control fires on {control_fired}"
+         no unbounded channel reaches, control fires on {control_fired}; {awaiting} row(s) \
+         awaiting the bundle"
     );
     assert!(
         bounded_processes > 0,
-        "no gated process builds a bounded peripheral channel, so this measures nothing"
+        "no process builds a bounded peripheral channel, so this measures nothing"
     );
+    // Coverage above is asserted per process regardless. What the two checks below
+    // add is that the assertion is not vacuous — that some process has accepted
+    // points only a *bounded* channel reaches, and that moving the bound would lose
+    // them. Only a process whose whole channel set is peripheral shows that, and on
+    // this reference set exactly one does. A checkout the bundle has not yet reached
+    // that row on cannot demonstrate it, and is told so rather than passing quietly;
+    // a checkout that has every row must.
+    if constraining == 0 && awaiting > 0 {
+        eprintln!(
+            "coverage: no available process has points only a bounded channel reaches, so the \
+             bound's non-vacuity rests on the {awaiting} row(s) this checkout does not have yet"
+        );
+        return;
+    }
     assert!(
         constraining > 0,
         "every accepted point is reachable by an unbounded channel on every process, so the \
@@ -1465,11 +1598,26 @@ fn sigma_gate_matches_madgraph() {
         );
     }
 
+    let unbundled = common::manifest::unbundled_rows();
     let mut failures = Vec::new();
     let mut asserted = 0usize;
+    let mut awaiting = Vec::new();
     for (dir, entry) in &banked {
-        if !output_dir().join(dir).join("Cards/run_card.dat").exists() {
-            vibegraph::validation::require("sigma_gate_matches_madgraph", "a banked run card", dir);
+        match run_presence(dir, &unbundled) {
+            RunPresence::Present => {}
+            RunPresence::AwaitingBundle => {
+                eprintln!(
+                    "[{dir}] AWAITING BUNDLE (the manifest marks this row bundled = false and \
+                     this checkout does not have its run, so no cell is written for it)"
+                );
+                awaiting.push(dir.as_str());
+                continue;
+            }
+            RunPresence::Missing => vibegraph::validation::require(
+                "sigma_gate_matches_madgraph",
+                "a banked run card",
+                dir,
+            ),
         }
         if matches!(plan_for(dir), Plan::Gate { .. }) {
             asserted += 1;
@@ -1479,7 +1627,22 @@ fn sigma_gate_matches_madgraph() {
         }
     }
 
-    eprintln!("sigma gate: {asserted} process(es) asserted against banked MadGraph sigma");
+    eprintln!(
+        "sigma gate: {asserted} process(es) asserted against banked MadGraph sigma, \
+         {} awaiting the bundle ({})",
+        awaiting.len(),
+        if awaiting.is_empty() {
+            "none".to_string()
+        } else {
+            awaiting.join(", ")
+        }
+    );
+    // A row passed over above writes no cell, so a reference whose runs had all gone
+    // missing would leave this gate asserting nothing at all and still passing.
+    assert!(
+        asserted > 0,
+        "no banked run on this machine is asserted, so the sigma gate measured nothing"
+    );
     assert!(
         failures.is_empty(),
         "sigma gate failures:\n{}",
