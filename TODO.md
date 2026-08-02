@@ -147,6 +147,12 @@ One line each; the note is the full record. Earlier sprints
   fail until a first release exists. Turn it on once one does: it is also the
   second detector for the "CERN repackages the PDF archive" risk, whose only
   other detector is an `#[ignore]`d test nobody runs on a timer. (Note 24 §U2.)
+- **`pp_to_llj_qcd2_qed2` is a duplicate of `pp_to_llj`** — the banked event
+  payloads are sha-identical (the `QCD=2 QED=2` restriction coincides with the
+  default orders for this process), so the census double-counts one
+  measurement. Decision (user, 2026-08-01): keep `pp_to_llj`, prune the
+  duplicate at the kt-spine close-out alongside the refdata-4 re-cut; until
+  then the pair counts as one independent row. (Note 28 §6/D4.)
 - **`pp_to_jj`'s banked event sample is not reproducible across MG re-runs** —
   σ is identical to all printed digits and single-group runs regenerate
   bit-identically, but `pp_to_jj`'s five subprocess groups make the unweighting
