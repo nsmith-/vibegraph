@@ -1,0 +1,480 @@
+--- Template/LO/SubProcesses/cluster.f
++++ Template/LO/SubProcesses/cluster.f (kT-clustering dump)
+@@ -378,11 +378,133 @@
+      $        write(*,*) 'Inserting graph ',i
+  10      if (filgrp(i,inpids,ipids)) goto 10
+       enddo
++      call vg_tables()
+       filmap=.true.
+       return
+       end
+ 
+ 
++      subroutine vg_tables()
++c**************************************************************************
++c     The merge graph as filmap left it: which configs a mask can be reached
++c     from, the propagator identity each config gives it, which are resonant,
++c     and the iforest the whole thing was derived from. Emitted once per
++c     process directory per integration channel — the nqcd filter at the top
++c     of filmap makes the table a function of the channel, not of the process.
++c**************************************************************************
++      implicit none
++      include 'genps.inc'
++      include 'nexternal.inc'
++      include 'maxamps.inc'
++      include 'cluster.inc'
++      include 'coupl.inc'
++      include 'ktdump.inc'
++      integer mapconfig(0:lmaxconfigs), this_config
++      common/to_mconfigs/mapconfig, this_config
++      integer iforest(2,-max_branch:-1,lmaxconfigs)
++      integer tstrategy(lmaxconfigs)
++      common/to_forest/iforest, tstrategy
++      integer sprop(maxsproc,-max_branch:-1,lmaxconfigs)
++      integer tprid(-max_branch:-1,lmaxconfigs)
++      common/to_sprop/sprop,tprid
++      integer nqcd(lmaxconfigs)
++      include 'config_nqcd.inc'
++      double precision ZERO
++      parameter (ZERO=0d0)
++      double precision prmass(-nexternal:0,lmaxconfigs)
++      double precision prwidth(-nexternal:0,lmaxconfigs)
++      integer pow(-nexternal:0,lmaxconfigs)
++      integer i, j, k, iproc
++      logical vg_active
++      external vg_active
++
++      if (.not.vg_active()) return
++c     props.inc assigns only the propagators a config has, so the rest of the
++c     array would be whatever the stack held.
++      do i=1,lmaxconfigs
++         do j=-nexternal,0
++            prmass(j,i)=0d0
++            prwidth(j,i)=0d0
++            pow(j,i)=0
++         enddo
++      enddo
++      include 'props.inc'
++
++      call vg_beg('RUN')
++      call vg_i(this_config)
++      call vg_i(nexternal)
++      call vg_i(nincoming)
++      call vg_i(maxsproc)
++      call vg_i(mapconfig(0))
++      call vg_i(n_max_cl)
++      call vg_i(n_max_cg)
++      call vg_now()
++
++      do i=1,mapconfig(0)
++         call vg_beg('NQCD')
++         call vg_i(this_config)
++         call vg_i(i)
++         call vg_i(nqcd(i))
++         call vg_now()
++      enddo
++
++      do iproc=1,maxsproc
++         do i=1,n_max_cl
++            if (id_cl(iproc,i,0).le.0) cycle
++            call vg_beg('MAP')
++            call vg_i(this_config)
++            call vg_i(iproc)
++            call vg_i(i)
++            call vg_i(id_cl(iproc,i,0))
++            do j=1,id_cl(iproc,i,0)
++               call vg_i(id_cl(iproc,i,j))
++            enddo
++            call vg_now()
++            do j=1,id_cl(iproc,i,0)
++               call vg_beg('PDG')
++               call vg_i(this_config)
++               call vg_i(iproc)
++               call vg_i(i)
++               call vg_i(id_cl(iproc,i,j))
++               call vg_i(ipdgcl(i,id_cl(iproc,i,j),iproc))
++               call vg_now()
++            enddo
++         enddo
++      enddo
++
++      do i=1,n_max_cl
++         do j=1,mapconfig(0)
++            if (.not.resmap(i,j)) cycle
++            call vg_beg('RES')
++            call vg_i(this_config)
++            call vg_i(i)
++            call vg_i(j)
++            call vg_now()
++         enddo
++      enddo
++
++      do i=1,mapconfig(0)
++         do k=-1,-(nexternal-2),-1
++            if (iforest(1,k,i).eq.0.and.iforest(2,k,i).eq.0) cycle
++            call vg_beg('IFOR')
++            call vg_i(this_config)
++            call vg_i(i)
++            call vg_i(k)
++            call vg_i(iforest(1,k,i))
++            call vg_i(iforest(2,k,i))
++            call vg_i(tprid(k,i))
++            call vg_d(prmass(k,i))
++            call vg_d(prwidth(k,i))
++            do iproc=1,maxsproc
++               call vg_i(sprop(iproc,k,i))
++            enddo
++            call vg_now()
++         enddo
++      enddo
++      return
++      end
++
++
+       subroutine checkbw(nbw,ibwlist,isbw,p)
+ c**************************************************************************
+ c      Checks if any resonances are on the BW for this configuration
+@@ -539,6 +661,12 @@
+ 
+       integer mapconfig(0:lmaxconfigs), this_config
+       common/to_mconfigs/mapconfig, this_config
++      integer imirror, iproc
++      common/to_mirror/imirror, iproc
++      include 'ktdump.inc'
++      logical vg_adm, vg_infl, vg_boosted
++      double precision vg_raw, vg_zz
++      character*24 vg_br
+ 
+       data (pz(i),i=0,3)/1d0,0d0,0d0,1d0/
+ 
+@@ -554,6 +682,19 @@
+       if (btest(mlevel,1))
+      $   write (*,*)'New event'
+ 
++      vg_attempt = vg_attempt+1
++      vg_pass = 0
++      call vg_beg('EVT')
++      call vg_i(vg_attempt)
++      call vg_i(iproc)
++      call vg_i(this_config)
++      call vg_i(ivec)
++      call vg_i(imirror)
++      call vg_i(nexternal)
++      call vg_i(nincoming)
++      call vg_l(chcluster)
++      call vg_rec()
++
+       iwin = 0
+       jwin = 0
+       cluster=.false.
+@@ -565,6 +706,14 @@
+       enddo
+ c     Check if any resonances are on the BW, store results in to_checkbw
+       call checkbw(nbw,ibwlist,isbw,p)
++      call vg_beg('BW')
++      call vg_i(vg_attempt)
++      call vg_i(nbw)
++      do i=1,nbw
++         call vg_i(ibwlist(1,i))
++         call vg_i(ibwlist(2,i))
++      enddo
++      call vg_rec()
+       if(btest(mlevel,4).and.nbw.gt.0)
+      $     write(*,*) 'Found BWs: ',(ibwlist(1,i),i=1,nbw)
+ 
+@@ -584,6 +733,14 @@
+          enddo
+ c     give mass to external particles
+          pcl(4,idi)=dot(p(0,i),p(0,i))
++         call vg_beg('MOM')
++         call vg_i(vg_attempt)
++         call vg_i(i)
++         do j=0,3
++            call vg_d(p(j,i))
++         enddo
++         call vg_d(pcl(4,idi))
++         call vg_rec()
+ c     never combine the two beams
+          if (i.gt.2) then
+ c     fill combine table, first pass, determine all ptij
+@@ -595,7 +752,11 @@
+                icgs(0)=0
+                idij=combid(idi,idj)
+                pt2ij(idij)=1.0d37
+-               if (findmt(idij,icgs)) then
++               vg_adm=findmt(idij,icgs)
++               vg_br='NONE'
++               vg_raw=1.0d37
++               vg_infl=.false.
++               if (vg_adm) then
+                   if (btest(mlevel,4)) then
+                      write(*,*)'diagrams: ',(icgs(k),k=1,icgs(0))
+                   endif
+@@ -603,14 +764,17 @@
+ c     final state clustering                     
+                      if(isbw(idij))then
+                        pt2ij(idij)=SumDot(pcl(0,idi),pcl(0,idj),1d0)
++                       vg_br='FS_SUMDOT_BW'
+                        if (btest(mlevel,4))
+      $                    write(*,*)'Mother ',idij,' has ptij ',
+      $                    sqrt(pt2ij(idij))
+                      else
+                        if(ktscheme.eq.2)then
+                          pt2ij(idij)=pydj(pcl(0,idi),pcl(0,idj))
++                         vg_br='FS_PYDJ'
+                        else
+                          pt2ij(idij)=dj(pcl(0,idi),pcl(0,idj))
++                         call vg_djname(vg_br)
+                        endif
+                      endif
+                      zij(idij)=0d0
+@@ -622,14 +786,20 @@
+                         pt2ij(idij)=pyjb(pcl(0,idi),
+      $                    pcl(0,idj),pcl(0,iwinp),zij(idij))
+                         zij(idij)=0d0
++                        vg_br='IS_PYJB'
+                      else
+                         pt2ij(idij)=djb(pcl(0,idi))
+                         zij(idij)=zclus(pcl(0,idi),pcl(0,idj),pcl(0,iwinp))
++                        vg_br='IS_DJB'
+                      endif
++                     vg_raw=pt2ij(idij)
+ c     prefer clustering when outgoing in direction of incoming
+-                     if(sign(1d0,pcl(3,idi)).ne.sign(1d0,pcl(3,idj)))
+-     $                    pt2ij(idij)=pt2ij(idij)*(1d0+1d-6)
++                     if(sign(1d0,pcl(3,idi)).ne.sign(1d0,pcl(3,idj)))then
++                        pt2ij(idij)=pt2ij(idij)*(1d0+1d-6)
++                        vg_infl=.true.
++                     endif
+                   endif
++                  if (vg_br(1:2).eq.'FS') vg_raw=pt2ij(idij)
+                   if (btest(mlevel,4)) then
+                      write(*,*)'         ',idi,'&',idj,' part ',iwinp,
+      &                              ' -> ',idij,' pt2ij = ',pt2ij(idij)
+@@ -644,9 +814,21 @@
+                      minpt2ij=pt2ij(idij)
+                   endif                 
+                endif
++               vg_zz=0d0
++               if (vg_adm) vg_zz=zij(idij)
++               call vg_cand(vg_attempt,vg_pass,i,j,i,j,idi,idj,idij,
++     $              vg_adm,vg_br,vg_raw,vg_infl,pt2ij(idij),vg_zz,
++     $              icgs(0))
+             enddo
+          endif
+       enddo
++      call vg_beg('WIN')
++      call vg_i(vg_attempt)
++      call vg_i(vg_pass)
++      call vg_i(iwin)
++      call vg_i(jwin)
++      call vg_d(minpt2ij)
++      call vg_rec()
+ c     Take care of special 2 -> 1 case
+       if (nexternal.eq.3.and.nincoming.eq.2) then
+          n=1
+@@ -662,6 +844,16 @@
+          icluster(3,n,ivec)=2
+          igraphs(0)=1
+          igraphs(1)=this_config
++         call vg_beg('CORE')
++         call vg_i(vg_attempt)
++         call vg_i(n)
++         call vg_i(idacl(n,1))
++         call vg_i(idacl(n,2))
++         call vg_i(imocl(n))
++         call vg_d(pt2ijcl(n))
++         call vg_d(mt2last)
++         call vg_l(.false.)
++         call vg_rec()
+          cluster=.true.
+          clustered=.true.
+          return
+@@ -733,6 +925,18 @@
+      $         pcl(4,imocl(n))=max(pcl(4,idacl(n,1)),pcl(4,idacl(n,2)))
+ 
+ c       Don't boost if boost vector too lightlike or last vertex 
++            vg_boosted = pcmsp(0)**2-pcmsp(1)**2-pcmsp(2)**2-pcmsp(3)**2
++     $           .gt.100d0 .and. nleft.gt.4
++            call vg_beg('BOOST')
++            call vg_i(vg_attempt)
++            call vg_i(n)
++            call vg_l(vg_boosted)
++            call vg_i(nleft)
++            do k=0,3
++               call vg_d(pcmsp(k))
++            enddo
++            call vg_d(pcmsp(0)**2-pcmsp(1)**2-pcmsp(2)**2-pcmsp(3)**2)
++            call vg_rec()
+             if (pcmsp(0)**2-pcmsp(1)**2-pcmsp(2)**2-pcmsp(3)**2.gt.100d0.and.
+      $           nleft.gt.4) then
+                call boostx(pcl(0,imocl(n)),pcmsp(0),p1(0))
+@@ -767,6 +971,28 @@
+            endif
+          endif
+          
++         call vg_beg('MRG')
++         call vg_i(vg_attempt)
++         call vg_i(n)
++         call vg_i(idacl(n,1))
++         call vg_i(idacl(n,2))
++         call vg_i(imocl(n))
++         if (iwin.lt.3) then
++            call vg_s('IS')
++         else
++            call vg_s('FS')
++         endif
++         call vg_d(pt2ijcl(n))
++         call vg_d(zcl(n))
++         call vg_d(mt2ij(n))
++         call vg_i(ipdgcl(idacl(n,1),igraphs(1),iproc))
++         call vg_i(ipdgcl(idacl(n,2),igraphs(1),iproc))
++         call vg_i(ipdgcl(imocl(n),igraphs(1),iproc))
++         do k=1,4
++            call vg_i(icluster(k,n,ivec))
++         enddo
++         call vg_i(igraphs(0))
++         call vg_rec()
+          nleft=nleft-1
+ c     create new imap
+          imap(iwin,2)=imocl(n)
+@@ -774,6 +1000,17 @@
+             imap(i,1)=imap(i+1,1)
+             imap(i,2)=imap(i+1,2)
+          enddo
++         do i=1,nleft
++            call vg_beg('PCL')
++            call vg_i(vg_attempt)
++            call vg_i(n)
++            call vg_i(imap(i,2))
++            do k=0,3
++               call vg_d(pcl(k,imap(i,2)))
++            enddo
++            call vg_d(pcl(4,imap(i,2)))
++            call vg_rec()
++         enddo
+          if (nleft.le.3) then
+ c           If last clustering is FS, store also average transverse mass
+ c           of the particles combined (for use if QCD vertex, e.g. tt~ or qq~)
+@@ -806,6 +1043,7 @@
+               write(*,*) 'Last vertex is ',imap(1,2),imap(2,2),imap(3,2)
+               write(*,*) '            -> ',pt2ijcl(n+1),sqrt(pt2ijcl(n+1))
+             endif
++            call vg_graphs('before')
+ c     If present channel among graphs, use only this channel
+ c     This is important when we have mixed QED-QCD
+             do i=1,igraphs(0)
+@@ -815,6 +1053,29 @@
+                   exit
+                endif
+             enddo
++            call vg_graphs('after')
++            call vg_beg('CORE')
++            call vg_i(vg_attempt)
++            call vg_i(n+1)
++            call vg_i(idacl(n+1,1))
++            call vg_i(idacl(n+1,2))
++            call vg_i(imocl(n+1))
++            call vg_d(pt2ijcl(n+1))
++            call vg_d(mt2last)
++            call vg_l(iwin.gt.2 .and. pcmsp(0)**2-pcmsp(1)**2
++     $           -pcmsp(2)**2-pcmsp(3)**2.gt.100d0)
++            call vg_rec()
++            do i=1,nleft
++               call vg_beg('PCL')
++               call vg_i(vg_attempt)
++               call vg_i(n+1)
++               call vg_i(imap(i,2))
++               do k=0,3
++                  call vg_d(pcl(k,imap(i,2)))
++               enddo
++               call vg_d(pcl(4,imap(i,2)))
++               call vg_rec()
++            enddo
+ c            if(pt2ijcl(n).gt. pt2ijcl(n+1))then
+ c              pt2ijcl(n+1)=pt2ijcl(n)
+ c              if (btest(mlevel,3)) then
+@@ -835,6 +1096,7 @@
+ c            write(*,*)'is case'
+ c     recalculate all in is case due to rotation & boost
+          minpt2ij=1.0d37
++         vg_pass=vg_pass+1
+             do i=1,nleft
+                idi=imap(i,2)
+ c     never combine the two beams
+@@ -854,7 +1116,11 @@
+                      idij=combid(idi,idj)
+ c                     write (*,*) 'RECALC !!! ',idij
+                      pt2ij(idij)=1.0d37
+-                     if (findmt(idij,icgs)) then
++                     vg_adm=findmt(idij,icgs)
++                     vg_br='NONE'
++                     vg_raw=1.0d37
++                     vg_infl=.false.
++                     if (vg_adm) then
+                         if (btest(mlevel,4)) then
+                            write(*,*)'diagrams: ',(icgs(k),k=1,icgs(0))
+                        endif
+@@ -862,14 +1128,17 @@
+ c     final state clustering                     
+                            if(isbw(idij))then
+                              pt2ij(idij)=SumDot(pcl(0,idi),pcl(0,idj),1d0)
++                             vg_br='FS_SUMDOT_BW'
+                              if (btest(mlevel,4))
+      $                          write(*,*) 'Mother ',idij,' has ptij ',
+      $                          sqrt(pt2ij(idij))
+                            else
+                              if(ktscheme.eq.2)then
+                                pt2ij(idij)=pydj(pcl(0,idi),pcl(0,idj))
++                               vg_br='FS_PYDJ'
+                              else
+                                pt2ij(idij)=dj(pcl(0,idi),pcl(0,idj))
++                               call vg_djname(vg_br)
+                              endif
+                            endif
+                            zij(idij)=0d0
+@@ -880,14 +1149,20 @@
+                           if(ickkw.eq.2.or.ktscheme.eq.2)then
+                              pt2ij(idij)=pyjb(pcl(0,idi),
+      $                            pcl(0,idj),pcl(0,iwinp),zij(idij))
++                             vg_br='IS_PYJB'
+                           else
+                              pt2ij(idij)=djb(pcl(0,idi))
+                              zij(idij)=zclus(pcl(0,idi),pcl(0,idj),pcl(0,iwinp))
++                             vg_br='IS_DJB'
+                           endif
++                          vg_raw=pt2ij(idij)
+ c                 prefer clustering when outgoing in direction of incoming
+-                          if(sign(1d0,pcl(3,idi)).ne.sign(1d0,pcl(3,idj)))
+-     $                         pt2ij(idij)=pt2ij(idij)*(1d0+1d-6)
++                          if(sign(1d0,pcl(3,idi)).ne.sign(1d0,pcl(3,idj)))then
++                             pt2ij(idij)=pt2ij(idij)*(1d0+1d-6)
++                             vg_infl=.true.
++                          endif
+                         endif
++                        if (vg_br(1:2).eq.'FS') vg_raw=pt2ij(idij)
+                         if (btest(mlevel,4)) then
+                           write(*,*)'         ',idi,'&',idj,' part ',iwinp,' -> ',idij,
+      &                       ' pt2ij = ',pt2ij(idij)
+@@ -901,9 +1176,21 @@
+                            minpt2ij=pt2ij(idij)
+                         endif                 
+                      endif
++                     vg_zz=0d0
++                     if (vg_adm) vg_zz=zij(idij)
++                     call vg_cand(vg_attempt,vg_pass,i,j,imap(i,1),
++     $                    imap(j,1),idi,idj,idij,vg_adm,vg_br,vg_raw,
++     $                    vg_infl,pt2ij(idij),vg_zz,icgs(0))
+                   enddo
+                endif
+             enddo
++         call vg_beg('WIN')
++         call vg_i(vg_attempt)
++         call vg_i(vg_pass)
++         call vg_i(iwin)
++         call vg_i(jwin)
++         call vg_d(minpt2ij)
++         call vg_rec()
+       enddo
+ 
+       return

@@ -175,6 +175,11 @@ validate-hadronic = { cmd = "cargo test -p vibegraph-lib --profile release-debug
 validate-generate-proton = { cmd = "cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_generate_proton -- --nocapture --test-threads 1", depends-on = ["fetch-pdf", "build-diagrams"] }
 # Build the MG |M|^2 probe and (re)generate the pointwise DY integrand oracle
 generate-dy-oracle = { cmd = "bash validation/madgraph/gen_dy_oracle.sh", depends-on = ["fetch-pdf"] }
+# Replay the banked runs through a clustering-instrumented MadGraph and bank the
+# per-event kT-clustering history behind dynamical_scale_choice = -1. Each replay
+# must reproduce its banked event file byte-for-byte, and every event's dumped
+# scales must reproduce that event's own SCALUP / <rscale> / <pdfrwt>.
+generate-kt-cluster-dumps = { cmd = "bash validation/madgraph/gen_kt_cluster_dumps.sh", depends-on = ["fetch-pdf", "build-diagrams"] }
 # Build the LHAPDF C++ oracle and dump the committed reference values for both
 # grid shapes (one rectangular subgrid; two bands joined at a seam)
 generate-pdf-oracle = { cmd = "bash validation/pdf/gen_oracle.sh", depends-on = ["fetch-pdf", "fetch-pdf-multigrid"] }
