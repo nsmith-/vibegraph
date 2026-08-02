@@ -180,6 +180,13 @@ One line each; the note is the full record. Earlier sprints
   valid) event sample. The banked sample is the reference; any "regenerate the
   bank byte-for-byte" claim must exempt multi-group runs, and C's `samples`
   gate compares distributions, not bytes. (Sb, note 28.)
+- **The K2 clustering-dump format should key its per-directory tables by
+  process-directory name** — the writer already has the name (`SHARD` records)
+  but the extraction drops it, which forced K3 to disambiguate merged tables
+  by forest-row length plus a per-event candidate-list consult on 2 of 9 runs
+  (`pp_to_bb_qcd2`, `pp_to_llj*`, with an outright `NQCD` collision). A
+  re-extraction keyed by directory removes that whole exception class.
+  (Note 28 §K3.4.)
 - **`pixi run -e madgraph extract-diagrams` silently re-runs MadGraph** for any
   script whose output directory is missing (`depends-on = ["build-diagrams"]`
   → `build.sh` regenerates). Anyone holding a run directory aside must invoke
