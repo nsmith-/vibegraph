@@ -60,6 +60,8 @@ use vibegraph::pdf::PdfSet;
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
 
+mod common;
+
 fn output_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output")
 }
@@ -94,7 +96,33 @@ fn banked_runs() -> Vec<(String, PathBuf)> {
 /// `alphasPDF(Q)` and not the beta-function solve this file's first oracle
 /// validates. [`resolve`] asserts the classification both ways, so a run that
 /// changed source shows up as a failure rather than as a quiet reclassification.
-const GRID_ALPHA_S_RUNS: &[&str] = &["pp_to_bb_fixed", "pp_to_llj_fixed"];
+const GRID_ALPHA_S_RUNS: &[&str] = &[
+    "pp_to_bb_fixed",
+    "pp_to_jj",
+    "pp_to_llj_dyn",
+    "pp_to_llj_fixed",
+];
+
+/// The declared runs of `list` whose directory is on this machine, sorted.
+///
+/// A row the manifest marks `bundled = false` has banked artifacts that live in
+/// a local work area and are deliberately not in the pinned bundle yet, so a
+/// checkout that fetched the bundle and does not have it is complete with
+/// respect to what the bundle promises. A declared row that is absent and *is*
+/// bundled is an incomplete environment and says so.
+fn present(list: &[&str], runs: &[(String, PathBuf)]) -> Vec<String> {
+    let unbundled = common::manifest::unbundled_rows();
+    let mut names = Vec::new();
+    for name in list {
+        if runs.iter().any(|(have, _)| have == *name) {
+            names.push((*name).to_string());
+        } else if !unbundled.contains(*name) {
+            vibegraph::validation::require("alphas_gate_matches_madgraph", "a banked run", name);
+        }
+    }
+    names.sort();
+    names
+}
 
 /// The LHAPDF set each `lhaid` names. A run card carries only the id, and the
 /// grid `αs` has to come from the set the *densities* come from, so the mapping
@@ -248,10 +276,33 @@ const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "pp_to_llj",
     "pp_to_llj_fixed",
     "pp_to_llj_qcd2_qed2",
+    "pp_to_ll_scalefact2",
+    "ud_to_epemud_qcd0",
     "uux_to_epemg",
     "uux_to_mumu",
     "uux_to_uux",
 ];
+
+/// Runs whose `αs` comes from a PDF grid **and** whose scale moves, so the
+/// coupling is read away from the knot the fixed-scale runs sit on.
+///
+/// This is where the interpolant itself becomes visible. LHAPDF reads the set's
+/// `αs` knots with a cubic (`AlphaS_Type: ipol`) and [`GridAlphaS`] reads them
+/// with a straight line in `log Q²`. At `Q = M_Z` that costs `1e-8` — 2.4e-5 of
+/// the way into a knot interval, the two agree — which is why `pp_to_bb_fixed`
+/// and `pp_to_llj_fixed` reproduce all 20 000 of their `AQCDUP` digits. A
+/// dynamical scale lands mid-interval instead, where the gap is the `~1.7e-4`
+/// relative that [`GRID_ALPHA_S_TOL`]'s own reasoning predicts, and against a
+/// field printed to seven digits that is a thousand budgets wide: measured here
+/// at 1076 and 1777 times it, on 9993 and 9976 of 10 000 events.
+///
+/// So these two are excluded, and the exclusion is a statement about the
+/// interpolant and not about the scale — the same events' `SCALUP` is
+/// reproduced from their momenta to within its own printing budget in
+/// `validate_scales.rs`. Fixing it means reading the knots as LHAPDF does; until
+/// then a cross section computed at a dynamical scale off a `lhapdf` set carries
+/// this as a systematic.
+const GRID_INTERPOLANT_RUNS: &[&str] = &["pp_to_jj", "pp_to_llj_dyn"];
 
 /// Half a unit in the last of `v`'s seven printed significant digits.
 ///
@@ -299,14 +350,15 @@ fn aqcdup_from_alpha_s(alpha_s: f64) -> f64 {
 /// close to failing. The runs it excludes miss by `1.7e5` times the budget.
 #[test]
 fn banked_events_reproduce_aqcdup() {
+    let runs = banked_runs();
     let mut agreeing_runs: Vec<String> = Vec::new();
     let mut total_events = 0usize;
     let mut worst_fraction = 0.0f64;
     let mut worst_run = String::new();
 
-    for (name, run) in banked_runs() {
-        let running = resolve(&name, &run).source;
-        let events = event_scales(&run);
+    for (name, run) in &runs {
+        let running = resolve(name, run).source;
+        let events = event_scales(run);
         let mut run_worst = 0.0f64;
         let mut outside = 0usize;
         let mut redigitised = 0usize;
@@ -347,10 +399,21 @@ fn banked_events_reproduce_aqcdup() {
         }
     }
 
+    agreeing_runs.sort();
     assert_eq!(
-        agreeing_runs, SCALUP_IS_THE_RENORMALISATION_SCALE,
+        agreeing_runs,
+        present(SCALUP_IS_THE_RENORMALISATION_SCALE, &runs),
         "the set of runs whose AQCDUP is reproduced from SCALUP changed"
     );
+    // The excluded runs are excluded for a measured reason, so the measurement
+    // has to still hold: a linear reading of the knots that had quietly become
+    // accurate mid-interval would make this list wrong rather than harmless.
+    for name in present(GRID_INTERPOLANT_RUNS, &runs) {
+        assert!(
+            !agreeing_runs.contains(&name),
+            "{name}: the grid interpolant no longer separates this run from LHAPDF's"
+        );
+    }
     println!(
         "AQCDUP: {total_events} events across {} runs within their printing budget, \
          worst {worst_fraction:.3} of budget (in {worst_run})",
@@ -383,15 +446,16 @@ fn banked_events_reproduce_aqcdup() {
 /// bounds the source and not the interpolant.
 #[test]
 fn banked_run_logs_pin_the_alpha_s_source_rule() {
+    let runs = banked_runs();
     let mut checked = 0usize;
     let mut grid_runs: Vec<String> = Vec::new();
-    for (name, run) in banked_runs() {
-        let Some(log) = find_run_log(&run) else {
+    for (name, run) in &runs {
+        let Some(log) = find_run_log(run) else {
             continue;
         };
         let text = std::fs::read_to_string(&log).expect("run log");
         let card = RunCard::parse_file(&run.join("Cards/run_card.dat")).expect("run card");
-        let resolved = resolve(&name, &run);
+        let resolved = resolve(name, run);
 
         let has_pdf = card.lpp1 != 0 || card.lpp2 != 0;
         let (from_card_tag, final_tag) = if has_pdf {
@@ -471,8 +535,10 @@ fn banked_run_logs_pin_the_alpha_s_source_rule() {
         checked += 1;
     }
     assert!(checked >= 5, "only {checked} runs carried a readable log");
+    grid_runs.sort();
     assert_eq!(
-        grid_runs, GRID_ALPHA_S_RUNS,
+        grid_runs,
+        present(GRID_ALPHA_S_RUNS, &runs),
         "the set of runs whose log reports a PDF-grid alpha_s changed"
     );
     println!("alpha_s source rule pinned against {checked} MadGraph run logs");

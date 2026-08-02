@@ -32,14 +32,13 @@ fn the_banked_cross_section_cards_are_fixed_scale() {
             "{name}: both scales should be run-card constants"
         );
         assert!(
-            !choice.needs_topology(),
-            "{name}: a fixed scale needs no clustering topology"
+            !choice.needs_channels(),
+            "{name}: a fixed scale needs no channel forests"
         );
         let scales = choice
             .scales(&ScaleEvent {
                 incoming: [[10.0, 0.0, 0.0, 10.0], [10.0, 0.0, 0.0, -10.0]],
                 outgoing: &[[10.0, 3.0, 0.0, 4.0], [10.0, -3.0, 0.0, -4.0]],
-                topology: None,
             })
             .expect("scales");
         assert_eq!(scales.mu_r, card.scale);
@@ -63,5 +62,5 @@ fn the_parser_fixture_compiles_to_the_free_scale_branch() {
     assert!(card.fixed_fac_scale, "fixture already frees mu_F");
     let choice = ScaleChoice::from_run_card(&card).expect("compiled");
     assert!(!choice.is_fully_fixed());
-    assert!(choice.needs_topology());
+    assert!(choice.needs_channels());
 }

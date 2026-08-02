@@ -8,17 +8,12 @@
 //!
 //! [`scales`] is the other half: the scale the coupling is evaluated *at*, and
 //! the per-beam factorisation scale the same run-card prescription fixes with it.
-
-//! [`topology`] supplies the one input [`scales`] does not take from the run
-//! card — the facts about a process's diagrams that MadGraph's clustering
-//! consults — by reading them off the enumerated diagrams.
-
-//! [`cluster`] is the general form of the prescription [`scales`] implements
-//! only where it collapses: the kT clustering behind
-//! `dynamical_scale_choice = -1`, from the merge graph a process's integration
-//! channels imply through to `μR` and the two `μF`.
+//!
+//! [`cluster`] is where the run card's own default lives:
+//! `dynamical_scale_choice = -1` names no closed form at all, and the scale
+//! comes out of the kT clustering of `cluster.f` — from the merge graph a
+//! process's integration channels imply, through to `μR` and the two `μF`.
 
 pub mod alphas;
 pub mod cluster;
 pub mod scales;
-pub mod topology;

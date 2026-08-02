@@ -22,6 +22,7 @@
 //! replay that does not know which channel produced an event cannot in general
 //! reproduce its scale.
 
+pub mod configs;
 pub mod graph;
 pub mod kt;
 pub mod setclscales;

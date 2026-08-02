@@ -572,13 +572,15 @@ fn a_different_pdf_set_is_refused() {
 }
 
 /// A dynamical scale on this process stays refused, in both places a user can meet
-/// one.
+/// one — but no longer for the same reason.
 ///
-/// The two refusals are different and both are asserted, because only together do
-/// they close the process off. `generate` never reaches the scale prescription: the
-/// card it is handed does not match the one that trained the grids, and it could
-/// not — no artifact of a dynamical card exists, because `integrate` is where that
-/// card is refused, naming the clustering this crate does not compute.
+/// `generate` never reaches the scale prescription: the card it is handed does not
+/// match the one that trained the grids. `integrate` now computes the clustering
+/// scale, and meets the *next* limit instead: the run card's PDF set tabulates
+/// `αs` to 10 TeV while a per-event scale on a 13 TeV collider can exceed it.
+/// LHAPDF extrapolates past its own table and this crate does not, so the run
+/// stops at setup naming the range rather than evaluating off the end of it on
+/// whichever events happen to reach past it.
 ///
 /// The card is the banked one with its three `fixed_*_scale` switches turned off,
 /// so nothing but the scale prescription differs and the refusals cannot be coming
@@ -638,8 +640,8 @@ fn a_dynamical_scale_card_is_still_refused() {
         "a dynamical-scale card was integrated"
     );
     assert!(
-        stderr.contains("clustering"),
-        "the integration's refusal does not name the missing clustering:\n{stderr}"
+        stderr.contains("alpha_s") && stderr.contains("10000"),
+        "the integration's refusal does not name the tabulated alpha_s range:\n{stderr}"
     );
 }
 
