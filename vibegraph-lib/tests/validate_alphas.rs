@@ -11,7 +11,7 @@
 //! per `<event>` line: the scale MadGraph chose and the coupling it evaluated
 //! there. Feeding the printed `SCALUP` back through this module must reproduce
 //! `AQCDUP` to the precision it is printed at, for every event of every run —
-//! a per-event oracle over 180k events rather than a single scalar. Choosing the
+//! a per-event oracle over 280k events rather than a single scalar. Choosing the
 //! scale is a separate concern and is not exercised here; `SCALUP` is taken as
 //! given, which is also why the two `2 → 6` runs sit outside the gate (see
 //! [`SCALUP_IS_THE_RENORMALISATION_SCALE`]).
@@ -43,11 +43,16 @@
 //! `pp_to_llj_fixed`'s reproduce their printed `AQCDUP` from the grid, and none
 //! would from the card. The run log adds the same reading at 17 digits, and only
 //! at `M_Z`: MadGraph resolves and prints `αs(M_Z)` once and prints no value at
-//! any other scale, so the grid reading is pinned to `1e-8` at the reference
-//! scale and to the `AQCDUP` printing budget everywhere else. Both
-//! `pdlabel = lhapdf` runs fix `μR = 91.188`, which *is* `M_Z`, so the two
-//! statements coincide over the banked data; separating them needs a
-//! dynamical-scale grid run, where only the events would speak.
+//! any other scale, so the log pins the reading at the reference scale and the
+//! events pin it everywhere else.
+//!
+//! Two of the four grid-sourced runs fix `μR = 91.188`, which *is* `M_Z`, so on
+//! those the two statements coincide. The other two carry a per-event scale, and
+//! there the events are the only oracle for the shape of the interpolation
+//! between knots: `pp_to_llj_dyn` takes 9966 distinct `SCALUP` values over 10 000
+//! events. What they cannot reach is either end of the table — no banked event
+//! sits below the first knot or above the last — so the two continuations outside
+//! it are pinned by LHAPDF probe values instead, in `validate_pdf_grid.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -129,16 +134,17 @@ fn present(list: &[&str], runs: &[(String, PathBuf)]) -> Vec<String> {
 /// is stated here rather than inferred from whatever set happens to be unpacked.
 const PDF_SET_BY_LHAID: &[(i64, &str)] = &[(247000, "NNPDF23_lo_as_0130_qed")];
 
-/// How far the log-linear reading of the set's `αs` knots is allowed to sit from
-/// the value MadGraph's LHAPDF call returned.
+/// How far this crate's reading of the set's `αs` knots is allowed to sit from
+/// the value MadGraph's LHAPDF call returned at `M_Z`.
 ///
-/// This is not a numerical-noise budget: LHAPDF interpolates the same knots with
-/// a cubic (`AlphaS_Type: ipol`) and this reads them with a straight line, so the
-/// residual is a property of where the scale sits in its knot interval. At
-/// `Q = 91.188`, `2.4e-5` of the way into `[91.1876, 109.8541]`, it is `1.0e-8`;
-/// mid-interval it would be `~1.7e-4` and this bound would (rightly) fail.
-/// Tightening it would therefore pin the knot spacing rather than the source.
-const GRID_ALPHA_S_TOL: f64 = 1e-7;
+/// Both sides run the same algorithm — LHAPDF's `AlphaS_Ipol`, a cubic in
+/// `ln Q²` — over the same knots, so what is left is arithmetic noise: one `ln`
+/// call and a handful of rounded operations, whose worst case is a few ulp of a
+/// number near `0.13`, i.e. a few times `1e-16` relative. The observed residual
+/// against MadGraph's 17-digit report is `0`; the bound is set two orders above
+/// the noise so a system `libm` whose `ln` rounds differently in the last bit
+/// stays inside it.
+const GRID_ALPHA_S_TOL: f64 = 1e-14;
 
 /// The `AlphaS_*` metadata of the set a run's beams read, or `None` for a run
 /// that names no LHAPDF set.
@@ -248,12 +254,18 @@ fn event_scales(run: &Path) -> Vec<(f64, f64)> {
 /// outside. The partition is asserted rather than assumed, so the day it
 /// changes is a test failure and not a silent reclassification.
 ///
-/// `pp_to_bb_fixed` and `pp_to_llj_fixed` are here on the strength of a
-/// *different* source: their `αs` comes from the PDF set's own table, not from
-/// this crate's evolution. All 10 000 events of each reproduce the printed
-/// `AQCDUP` digits, and the parameter card's value would reproduce none of them —
+/// The four `lhapdf` runs are here on the strength of a *different* source:
+/// their `αs` comes from the PDF set's own table, not from this crate's
+/// evolution. The parameter card's value would reproduce none of their events —
 /// see [`banked_run_logs_pin_the_alpha_s_source_rule`], which asserts the two
 /// sources stay far enough apart for these events to tell them apart.
+///
+/// Two of the four fix `μR` at `M_Z`, which sits `2.4e-5` of the way into its
+/// knot interval; the other two carry a per-event scale and so land mid-interval,
+/// where the shape of the interpolation between knots is what decides the printed
+/// digits. A straight line through the same knots reproduces the first pair and
+/// misses the second by up to `1.7e-4` relative — a thousand times the printing
+/// budget — so those two are what pin the interpolant to LHAPDF's cubic.
 const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "ddx_to_epemg",
     "ee_to_ee",
@@ -271,9 +283,11 @@ const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "pp_to_bb",
     "pp_to_bb_fixed",
     "pp_to_bb_qcd2",
+    "pp_to_jj",
     "pp_to_ll",
     "pp_to_ll_qcd0",
     "pp_to_llj",
+    "pp_to_llj_dyn",
     "pp_to_llj_fixed",
     "pp_to_llj_qcd2_qed2",
     "pp_to_ll_scalefact2",
@@ -282,27 +296,6 @@ const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "uux_to_mumu",
     "uux_to_uux",
 ];
-
-/// Runs whose `αs` comes from a PDF grid **and** whose scale moves, so the
-/// coupling is read away from the knot the fixed-scale runs sit on.
-///
-/// This is where the interpolant itself becomes visible. LHAPDF reads the set's
-/// `αs` knots with a cubic (`AlphaS_Type: ipol`) and [`GridAlphaS`] reads them
-/// with a straight line in `log Q²`. At `Q = M_Z` that costs `1e-8` — 2.4e-5 of
-/// the way into a knot interval, the two agree — which is why `pp_to_bb_fixed`
-/// and `pp_to_llj_fixed` reproduce all 20 000 of their `AQCDUP` digits. A
-/// dynamical scale lands mid-interval instead, where the gap is the `~1.7e-4`
-/// relative that [`GRID_ALPHA_S_TOL`]'s own reasoning predicts, and against a
-/// field printed to seven digits that is a thousand budgets wide: measured here
-/// at 1076 and 1777 times it, on 9993 and 9976 of 10 000 events.
-///
-/// So these two are excluded, and the exclusion is a statement about the
-/// interpolant and not about the scale — the same events' `SCALUP` is
-/// reproduced from their momenta to within its own printing budget in
-/// `validate_scales.rs`. Fixing it means reading the knots as LHAPDF does; until
-/// then a cross section computed at a dynamical scale off a `lhapdf` set carries
-/// this as a systematic.
-const GRID_INTERPOLANT_RUNS: &[&str] = &["pp_to_jj", "pp_to_llj_dyn"];
 
 /// Half a unit in the last of `v`'s seven printed significant digits.
 ///
@@ -347,7 +340,7 @@ fn aqcdup_from_alpha_s(alpha_s: f64) -> f64 {
 /// The budget is a bound, not a margin: events pile up against it wherever a
 /// true value sits near a rounding boundary, so the reported maximum
 /// saturating at `0.999` is the bound being tight rather than the gate being
-/// close to failing. The runs it excludes miss by `1.7e5` times the budget.
+/// close to failing.
 #[test]
 fn banked_events_reproduce_aqcdup() {
     let runs = banked_runs();
@@ -405,15 +398,6 @@ fn banked_events_reproduce_aqcdup() {
         present(SCALUP_IS_THE_RENORMALISATION_SCALE, &runs),
         "the set of runs whose AQCDUP is reproduced from SCALUP changed"
     );
-    // The excluded runs are excluded for a measured reason, so the measurement
-    // has to still hold: a linear reading of the knots that had quietly become
-    // accurate mid-interval would make this list wrong rather than harmless.
-    for name in present(GRID_INTERPOLANT_RUNS, &runs) {
-        assert!(
-            !agreeing_runs.contains(&name),
-            "{name}: the grid interpolant no longer separates this run from LHAPDF's"
-        );
-    }
     println!(
         "AQCDUP: {total_events} events across {} runs within their printing budget, \
          worst {worst_fraction:.3} of budget (in {worst_run})",
@@ -440,10 +424,11 @@ fn banked_events_reproduce_aqcdup() {
 /// **What it cannot.** The scale dependence of the grid reading: MadGraph prints
 /// its resolved `αs` at `M_Z` and at no other scale, so a wrong interpolation
 /// away from the reference scale is left entirely to the events' `AQCDUP`
-/// budget — six digits rather than seventeen. Nor the interpolation *shape*:
-/// `91.188` sits `2.4e-5` of the way into its knot interval, where a linear and
-/// a cubic reading of the same knots agree to `1e-8`, so `GRID_ALPHA_S_TOL`
-/// bounds the source and not the interpolant.
+/// budget — six digits rather than seventeen. `91.188` sits `2.4e-5` of the way
+/// into its knot interval, close enough to a knot that a straight line through
+/// the same knots lands within `1e-8` of the cubic. So what seventeen digits at
+/// this one scale pin is the *source*; what pins the interpolation's shape is the
+/// two dynamical-scale runs' events, mid-interval and printed to seven.
 #[test]
 fn banked_run_logs_pin_the_alpha_s_source_rule() {
     let runs = banked_runs();

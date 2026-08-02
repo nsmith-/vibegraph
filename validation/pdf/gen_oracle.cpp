@@ -64,6 +64,24 @@ void write_point(FILE* out, const Point& p, bool last) {
   std::fprintf(out, "}%s\n", last ? "" : ",");
 }
 
+// A single emitted (category, Q, alpha_s) record. The probe scale is Q and not
+// Q^2 because Q is the argument MadGraph passes: pdlabel = lhapdf links
+// alfas_functions_lhapdf.f, whose ALPHAS(Q) forwards to alphasPDF(Q), and the
+// squaring happens inside LHAPDF.
+struct AlphaPoint {
+  const char* category;
+  double q;
+  double alphas;
+};
+
+void write_alpha_point(FILE* out, const AlphaPoint& p, bool last) {
+  std::fprintf(out, "    {\"category\": \"%s\", \"q\": ", p.category);
+  write_double(out, p.q);
+  std::fprintf(out, ", \"alphas\": ");
+  write_double(out, p.alphas);
+  std::fprintf(out, "}%s\n", last ? "" : ",");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -246,6 +264,63 @@ int main(int argc, char** argv) {
   eval_all("corner", x_max, q2_min, probe_pdgs);
   eval_all("corner", x_max, q2_max, probe_pdgs);
 
+  // ---- alpha_s: the set's own coupling, through the same call MG makes. ---
+  //
+  // The set tabulates (Q, alpha_s) knots separately from the parton densities
+  // and LHAPDF reads them with a different interpolator (AlphaS_Ipol, a cubic
+  // in log Q^2 with finite-difference slopes). The banked MadGraph events carry
+  // AQCDUP and so pin the interior of that table event by event, but only over
+  // the scales those events happen to reach: nothing in the bank sits below the
+  // first knot or above the last, and those are exactly the two branches with
+  // no interpolation in them. These probes are the reference for the whole
+  // range.
+  const std::string alphas_type =
+      gpdf.info().get_entry_as<std::string>("AlphaS_Type", "");
+  std::vector<double> as_qs;
+  if (alphas_type == "ipol") {
+    as_qs = gpdf.info().get_entry_as<std::vector<double> >("AlphaS_Qs");
+  }
+  std::vector<AlphaPoint> alpha_points;
+  if (!as_qs.empty()) {
+    auto probe = [&](const char* cat, double q) {
+      alpha_points.push_back({cat, q, gpdf.alphasQ(q)});
+    };
+    const double as_qmin = as_qs.front();
+    const double as_qmax = as_qs.back();
+
+    // Every knot: the value there is the tabulated one, so this is the part a
+    // reader can get right while interpolating wrongly between them.
+    for (double q : as_qs) probe("knot", q);
+
+    // Three points across every interval, in the interpolation's own variable
+    // (log Q^2), so the first and last intervals -- where LHAPDF takes a
+    // one-sided slope -- are probed as densely as the interior ones. A repeated
+    // knot is a zero-width interval and is skipped.
+    for (size_t i = 0; i + 1 < as_qs.size(); ++i) {
+      if (!(as_qs[i + 1] > as_qs[i])) continue;
+      const double l0 = 2 * std::log(as_qs[i]), l1 = 2 * std::log(as_qs[i + 1]);
+      for (double t : {0.25, 0.5, 0.75}) {
+        probe("interval", std::exp(0.5 * (l0 + t * (l1 - l0))));
+      }
+    }
+
+    // Either side of, and exactly at, every repeated scale (a flavour
+    // threshold, where the table is cut into subgrids).
+    for (size_t i = 1; i < as_qs.size(); ++i) {
+      if (as_qs[i] != as_qs[i - 1]) continue;
+      probe("threshold", as_qs[i] * (1 - 1e-9));
+      probe("threshold", as_qs[i]);
+      probe("threshold", as_qs[i] * (1 + 1e-9));
+    }
+
+    // Past the top knot. This is the branch a 13 TeV collider reaches on a set
+    // whose table stops at 10 TeV, and no banked event does.
+    for (double f : {1 + 1e-12, 1.3, 2.6, 1e3}) probe("above_qmax", as_qmax * f);
+
+    // Below the bottom knot, the other continuation.
+    for (double f : {1 - 1e-12, 0.5, 0.1, 1e-3}) probe("below_qmin", as_qmin * f);
+  }
+
   // ---- write JSON --------------------------------------------------------
   FILE* out = std::fopen(out_path.c_str(), "w");
   if (!out) {
@@ -284,6 +359,12 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < points.size(); ++i) {
     write_point(out, points[i], i + 1 == points.size());
   }
+  std::fprintf(out, "  ],\n");
+  std::fprintf(out, "  \"alphas_type\": \"%s\",\n", alphas_type.c_str());
+  std::fprintf(out, "  \"alphas\": [\n");
+  for (size_t i = 0; i < alpha_points.size(); ++i) {
+    write_alpha_point(out, alpha_points[i], i + 1 == alpha_points.size());
+  }
   std::fprintf(out, "  ]\n");
   std::fprintf(out, "}\n");
   std::fclose(out);
@@ -292,8 +373,9 @@ int main(int argc, char** argv) {
   for (const Point& p : points)
     if (std::string(p.category) == "knot") ++n_knot;
   std::fprintf(stderr,
-               "Wrote %s: %zu points (%zu on-knot) via LHAPDF %s\n",
-               out_path.c_str(), points.size(), n_knot,
+               "Wrote %s: %zu points (%zu on-knot), %zu alpha_s probes, "
+               "via LHAPDF %s\n",
+               out_path.c_str(), points.size(), n_knot, alpha_points.size(),
                LHAPDF::version().c_str());
   return 0;
 }
