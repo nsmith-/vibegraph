@@ -62,16 +62,20 @@ One line each; the note is the full record. Earlier sprints
 
 ### Standing discrepancies to resolve (never a loosened tolerance)
 
-- **The per-diagram multichannel builds degenerate maps for massless-propagator
-  processes**. On `u u~ > u u~` the two `DiagramChannel` densities are
-  bit-identical at every probed point, and on `g g > g g` all four are; the
-  Kleiss–Pittau α-adaptation therefore never moves off uniform and the
-  multichannel buys nothing over flat RAMBO for those rows. `g g > t t~`, whose
-  t/u maps carry a `173 GeV` top pole, is not degenerate (worst pairwise density
-  difference `0.84`, α converging to `[0.267, 0.364, 0.369]`). Both σ cells gate
-  today, so this costs variance rather than correctness; it is the same
-  "multi-rung spine" gap the `uux_to_uux` `integrals` note already names.
-  (note 27 §B3.2.)
+- ~~**The per-diagram multichannel builds degenerate maps for massless-propagator
+  processes**~~ — **resolved in `kt-spine` S4**, and not by the multi-rung spine.
+  The cause was that `FixedBeamIntegrand::use_multichannel` supplied no fiducial
+  scale, so a massless spacelike line sat on the collinear edge and its transfer
+  was drawn *flat*: every peripheral fixed-beam channel collapsed to the same
+  isotropic 2-body split. Passing the cuts' own `spacelike_floor()` — what
+  `ProtonIntegrand` always did — makes the draw `1/|t|` over the fiducial window.
+  Re-measured (`validate_sigma.rs` `probe_channel_map_degeneracy`): worst pairwise
+  density difference `1.000` on both `u u~ > u u~` (0 of 2000 pairs coincident,
+  α `[8.5e-6, 0.99999]`) and `g g > g g` (α `[3.2e-5, 3.2e-5, 0.496, 0.504]`),
+  against the unchanged `g g > t t~` control (`0.84`, `[0.267, 0.364, 0.369]`).
+  `g g > g g`'s two non-peripheral channels stay bit-identical to each other,
+  which is expected — neither has a spacelike line for the floor to act on.
+  (note 27 §B3.2, note 28 §S4.)
 - **Four llj partonic σ rows are unreachable, not merely ungated** — `uux_to_epemg`,
   `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux` are banked with cross sections
   and cost seconds to integrate. They cannot run at all: all four run cards leave
@@ -85,12 +89,28 @@ One line each; the note is the full record. Earlier sprints
   blocker, and the refusal in generation is measured rather than assumed.
   Fixed by `kt-clustering` (feature backlog), which grows four ready-to-flip σ
   rows on top of the six asserted-refused scale rows it already owns.
-- **`uux_to_uux` residual bias** — hard σ GATE, but the five-seed mean is
-  **~−0.30%** since per-channel grids (was ~−0.17% shared-grid) and does not
-  shrink with budget. Sharper per-channel grids cover the spacelike collinear
-  tail *less* — the region a single-rung t-channel spine under-resolves. Evidence
-  for the multi-rung spine (feature backlog), not a new defect.
-  (`validate_sigma.rs` `probe_qcd_seed_stability`.)
+- ~~**`uux_to_uux` residual bias**~~ — **resolved in `kt-spine` S4**. The −0.30%
+  five-seed mean was the flat transfer draw above, not a missing rung: with the
+  jet cut's floor supplied, the five-seed mean is **+0.019%** at the gate budget
+  and **+0.015%** at four times it, worst |pull| `0.93` and worst |rel| `1.1e-3`
+  (was `2.69` / `6.4e-3`). The quoted error at the gate budget fell 2.4×, and
+  `g g > g g`'s fell 2.6×. (`validate_sigma.rs` `probe_qcd_seed_stability`,
+  note 28 §S4.)
+- **`ud_to_epemud_qcd0`'s matrix element disagrees with MadGraph** — σ cell
+  informational at `1.0860e-1 pb` against MadGraph's `1.4107e-2 ± 3.4e-5 pb`.
+  Traced below the cross section in `kt-spine` S4: registered temporarily into the
+  f2py amplitude registry, this side's colour- and helicity-summed |M|² disagrees
+  with `MATRIX1` **point by point by factors of 2 to 63** on MadGraph's own
+  20-point grid, ours the larger nearly everywhere, while the same comparison
+  reproduces `uux_to_uux` to `5.7e-14` and `ee_to_mumu_tata_qcd0` to `5.1e-13`.
+  Diagram count (35), `NCOLOR = 2` with `CF = [[9,3],[3,9]]`, the 8 surviving
+  helicity combinations, the leg ordering and the compiled cuts all already match
+  MadGraph, and no recontraction of the two JAMPs reproduces its number — so it is
+  the coherent amplitude. This is the first row whose diagrams put a `W` between
+  two quark lines. **Next step**: land the amplitude registry entry and teach
+  `amplitude_oracle` MadGraph's 21 AMP2 accumulators over the 35 diagrams (its
+  structural pre-check refuses the row before comparing anything), then read the
+  disagreement per diagram. (note 28 §S4 B3.)
 - **`ee_to_mumua` drifted when the references moved to 3.7.1** — the one row
   where 3.7.1 disagrees with us *more* than 3.5.7 did. Our σ is unchanged
   (`1.007660e-1` pb, same integration); MadGraph's moved `1.00630e-1 ± 3.865e-4`
@@ -185,23 +205,22 @@ One line each; the note is the full record. Earlier sprints
   configuration where the closure cannot be seen. Still owed by the sprint: the
   capstone `p p > j j`, the only process that exercises unequal factors against
   MadGraph.
-- **Multi-rung t-channel spine** (sprint plan: note 28 §S2–S4) — ladder
-  topologies (VBF/DIS, ≥2 spacelike lines). **Engine landed opt-in in `kt-spine`
-  S3**: `Spine → rungs: Vec<SpineRung>` + terminal recoil, each rung emitting one
-  blob against the running `q_i = p_a − Σ_{j≤i} p_{B_j}`, built in the CM of what
-  the previous rung left behind with the previous (spacelike) transfer as its
-  incoming line. `from_diagram_ladder` builds the chain; production
-  (`from_diagram_regulated`) still leaves ladders on the all-timelike tree, so
-  **S4 owns the switch and the σ measurements**. Also in S3: the fiducial `t_max`
-  bound is now per rung and reaches production (D3), replacing the experimental
-  whole-channel knob. Gates green on `u d > e+ e- u d QCD=0` — graph-cut
-  cross-check of the chain, per-chain volume against its own support, the
-  §S2.4 density contract, walk-vs-density 6.8e-9, and the §S2.3 ordering oracle
-  with NEG-A/B/C firing. The informational arm says what S4 should expect: the
-  chain's per-point variance is 5.4×–2614× below the all-timelike fallback's on
-  every ladder, and the two disagree by >3σ on 8 of 23 (the fallback
-  under-covering). Still open: the `uux_to_uux` bias and the degenerate-map
-  finding, which S4 re-measures. (Notes 21, 28.)
+- ~~**Multi-rung t-channel spine**~~ (sprint plan: note 28 §S2–S4) — ladder
+  topologies (VBF/DIS, ≥2 spacelike lines). **Landed in production in `kt-spine`
+  S3+S4**: `Spine → rungs: Vec<SpineRung>` + terminal recoil, each rung emitting
+  one blob against the running `q_i = p_a − Σ_{j≤i} p_{B_j}`, built in the CM of
+  what the previous rung left behind with the previous (spacelike) transfer as its
+  incoming line. `from_diagram_regulated` derives the chain; `from_diagram_capped`
+  is the truncated map the informational arm measures against. The fiducial `t_max`
+  bound is per rung (D3), and the fixed-beam path now supplies its own cuts'
+  `spacelike_floor()` the way the proton path always did — which is what actually
+  moved anything, since no production process is both a ladder and regulated
+  without it. Gates green on `u d > e+ e- u d QCD=0` — graph-cut cross-check of the
+  chain, per-chain volume against its own support, the §S2.4 density contract,
+  walk-vs-density 6.8e-9, the §S2.3 ordering oracle with NEG-A/B/C firing, and a
+  per-process union-coverage gate over every bounded channel set. Still owed by the
+  sprint: the capstone rides the chain, and `ud_to_epemud_qcd0`'s σ stays
+  informational on the amplitude disagreement above. (Notes 21, 28.)
 - **`kt-clustering`** (sprint plan: note 28 §K1–K5, superseding the sketch
   below) — general kT clustering for `dynamical_scale_choice = -1`
   (also what MLM matching needs). 6 banked runs are asserted as
@@ -311,10 +330,10 @@ the natural vehicle for several at once.
   recorded `g_j(x)`, `f(x)` and `s_i(x)` on existing samples — report the
   achievable variance reduction against the ×(strata) evaluation overhead
   before building anything; a small number dies here like note 26's parquet.
-  Known limits, measured this sprint: on `uux_to_uux`/`gg_to_gg` the channel
-  maps are **bit-identical** (note 27 §B3.2), so per-flow α is a no-op there
-  until the multi-rung spine differentiates the maps; flows overlap heavily, so
-  the gain is the inter-stratum covariance term, expected modest. **Guardrail:
+  The blocker that stood here is gone: `uux_to_uux`/`gg_to_gg`'s channel maps are
+  no longer bit-identical and their α no longer sits at uniform (note 28 §S4 B2),
+  so per-flow α is no longer a no-op on those rows. Flows still overlap heavily,
+  so the gain is the inter-stratum covariance term, expected modest. **Guardrail:
   split the tuning, never the coverage** — every stratum keeps every channel
   with an α floor, or the `sde_strategy`-class fragility (note 27 §B1) is
   rebuilt on our side.
