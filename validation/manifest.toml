@@ -87,11 +87,11 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 3
-archive = "vibegraph-refdata-3.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-3/vibegraph-refdata-3.tar.zst"
-sha256 = "10892f056efda8968ed6c05c06e95b94019d28e4875ee6dad018276e09adf5f9"
-size_bytes = 104789332
+version = 4
+archive = "vibegraph-refdata-4.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-4/vibegraph-refdata-4.tar.zst"
+sha256 = "c8ef939ec6336fe53015115b7c3194604b1bd2f7cc6b52b5d21be69a82a325e9"
+size_bytes = 118015652
 unpacks_to = "validation/madgraph/output"
 # Every run in this bundle is MadGraph 3.7.1's except the six that measure a
 # 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
@@ -101,7 +101,7 @@ unpacks_to = "validation/madgraph/output"
 # clients and the fetch falls back to an authenticated `gh release download` of
 # the same asset; $VIBEGRAPH_REFDATA_SOURCE still overrides both for a local
 # bundle.
-published = true
+published = false
 
 # ─────────────────────────── single-channel rows ────────────────────────────
 #
@@ -369,7 +369,6 @@ process = "u d > e+ e- u d QCD=0"
 script = "validation/madgraph/scripts/ud_to_epemud_qcd0.mg5"
 class = "single-channel"
 n_final = 4
-bundled = false
 rationale = "The multi-rung t-channel reference: the one banked run whose diagrams carry a genuine ladder of spacelike lines, so a phase-space map that orders its rungs wrongly has something to disagree with. Its 35 diagrams split 12 / 14 / 9 over one, two and three spacelike lines, and the rungs are asymmetric — the blobs a chain emits are a single jet, a single lepton and a lepton pair, over a mix of massless and m_Z poles — so an ordering test on it is not vacuous. QCD=0 with lpp = 0 and all three scales fixed at m_Z keeps it clear of the scale prescription entirely: with no alpha_s in the matrix element and no PDF on either beam, no scale choice can reach the cross section."
 artifacts = ["output/ud_to_epemud_qcd0", "output/ud_to_epemud_qcd0/Events/run_01/unweighted_events.lhe.gz"]
 [process.categories]
@@ -489,7 +488,6 @@ process = "p p > l+ l- j QCD=2 QED=2"
 script = "validation/madgraph/scripts/pp_to_llj_dyn.mg5"
 class = "multi-channel"
 n_final = 3
-bundled = false
 rationale = "The scale-moved twin of pp_to_llj_fixed: the two run cards differ in the three fixed-scale booleans and in nothing else, so a cross section that agrees against the fixed-scale row and disagrees against this one isolates the scale prescription from every other part of the chain. Its per-event SCALUP takes 9966 distinct values over 10000 events where the fixed-scale run takes 1, which is what makes it a reference for the general clustering rather than for a closed form."
 artifacts = ["output/pp_to_llj_dyn", "output/pp_to_llj_dyn/Events/run_01/unweighted_events.lhe.gz"]
 [process.categories]
@@ -504,7 +502,6 @@ process = "p p > j j"
 script = "validation/madgraph/scripts/pp_to_jj.mg5"
 class = "multi-channel"
 n_final = 2
-bundled = false
 rationale = "The canonical leading-order QCD process on MadGraph's shipped run-card defaults — the run card departs from them in pdlabel and lhaid alone, because the MG-internal nn23lo1 is not an LHAPDF6 grid this crate's PDF layer can read. The only row whose flavour group mixes subprocesses with unequal identical-particle symmetry factors (g g > g g and q q~ > g g carry 1/2 where q g > q g and g g > q q~ carry 1), and its scale is the general clustering case rather than a degenerate one: a 2 -> 2 core of massless coloured legs where no closed form collapses the prescription."
 artifacts = ["output/pp_to_jj", "output/pp_to_jj/Events/run_01/unweighted_events.lhe.gz"]
 [process.categories]
@@ -519,7 +516,6 @@ process = "p p > l+ l-"
 script = "validation/madgraph/scripts/pp_to_ll_scalefact2.mg5"
 class = "multi-channel"
 n_final = 2
-bundled = false
 rationale = "The only banked run whose scalefact is not 1.0, and the only thing in the set that can say how many powers of it each scale carries: every other run leaves the factor at 1, where a prescription that squared it into the second beam's mu_F and one that applied it once are the same number. Same generate line, beams and shipped defaults as pp_to_ll with scalefact alone at 2.0, so the per-event SCALUP / <rscale> / <pdfrwt> are read against that row directly. Measured on its events: mu_F(beam 2) equals mu_F(beam 1) bit for bit in all 10000, which is the reading a doubled power would have made differ by exactly a factor of two."
 artifacts = ["output/pp_to_ll_scalefact2", "output/pp_to_ll_scalefact2/Events/run_01/unweighted_events.lhe.gz"]
 [process.categories]
