@@ -279,23 +279,24 @@ fn plan_for(dir: &str) -> Plan {
         // carry it. QCD = 0 at lpp = 0 with all three scales fixed at m_Z keeps
         // it clear of the strong coupling and the PDFs entirely.
         //
-        // Measured and not enforced, because the disagreement is not the map's.
-        // On MadGraph's own fixed kinematic grid this process's colour- and
-        // helicity-summed |M|² disagrees with MadGraph's MATRIX1 point by point
-        // by factors of 2 to 63 — ours the larger nearly everywhere, which is
-        // what a missed cancellation between diagrams looks like — while the
-        // same comparison reproduces `uux_to_uux` to 5.7e-14 and
-        // `ee_to_mumu_tata_qcd0` to 5.1e-13. It is the first process here whose
-        // diagrams carry a W between two quark lines, and it has no
-        // amplitude-level reference. The σ below therefore measures a matrix
-        // element nothing has checked; enforcing it would be gating a number
-        // whose linear level is known to be wrong.
+        // Measured and not enforced, because the disagreement is not the map's:
+        // it is a relative sign between diagrams. Against the committed
+        // amplitude table each of the 35 diagrams reproduces MadGraph's own
+        // `AMP()` to rounding under a unit phase, but eleven of them carry the
+        // opposite sign to the other 24 — the nine three-rung ladders whose
+        // middle rung is a spacelike lepton or neutrino, and the two
+        // W+W- → γ*/Z* → e+e- diagrams. Flipping exactly those eleven takes the
+        // worst |M|² deviation over the banked points from 5.1e+1 to 4.1e-14.
+        // The σ below therefore measures a matrix element that is wrong by a
+        // known amount; enforcing it would be gating a number whose linear level
+        // is known to be wrong.
         "ud_to_epemud_qcd0" => Plan::Info {
             neval: 120_000,
             niter: 8,
-            reason: "|M|² disagrees with MadGraph's MATRIX1 point by point (2x-63x on its \
-                     own fixed grid); the cross section is measured, and the amplitude is \
-                     what has to be reconciled before it can be enforced",
+            reason: "eleven of the 35 diagrams carry the wrong sign relative to the other 24 \
+                     (amplitude_oracle, KNOWN_LINEAR_DISAGREEMENT); the cross section is \
+                     measured, and that relative sign is what has to be reconciled before it \
+                     can be enforced",
         },
         // ── llj partonic subprocesses, blocked on the clustering scale ──────
         // Each is banked with a cross section and each is cheap enough to
