@@ -110,6 +110,29 @@ pub fn derive_channels(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Result<DerivedChannels, ConfigError> {
+    let identity: Vec<usize> = (0..externals.len()).collect();
+    derive_channels_permuted(diagrams, externals, n_in, &identity, model, evaluated)
+}
+
+/// The channel forests of a *relabelling* of the process the diagrams were
+/// enumerated for: `positions[l]` is the external position diagram leg `l`
+/// occupies, and `externals` is in position order.
+///
+/// The one relabelling this is for is the beam crossing. MadGraph generates
+/// `ū u → b b̄` as its own subprocess directory, with its own `configs.inc`;
+/// vibegraph's enumeration produces the initial state once, so the crossed
+/// ordering is the same diagrams read with legs 1 and 2 exchanged. The
+/// distinction is not cosmetic — the forests are rooted on beam 2 and the
+/// clustering measures each beam separately — so the crossed subprocess is
+/// derived rather than served by swapping an event's beams.
+pub fn derive_channels_permuted(
+    diagrams: &[Diagram],
+    externals: &[ParticleId],
+    n_in: usize,
+    positions: &[usize],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Result<DerivedChannels, ConfigError> {
     if n_in != 2 {
         return Err(ConfigError::NotTwoBeams { n_in });
     }
@@ -142,7 +165,9 @@ pub fn derive_channels(
         if arity(diagram) > minvert {
             continue;
         }
-        configs.push(forest(diagram, index, n_external, model, evaluated, externals)?);
+        configs.push(forest(
+            diagram, index, n_external, positions, model, evaluated, externals,
+        )?);
         diagram_of.push(index);
     }
 
@@ -163,17 +188,24 @@ pub fn derive_channels(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn forest(
     diagram: &Diagram,
     index: usize,
     n_external: usize,
+    positions: &[usize],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     externals: &[ParticleId],
 ) -> Result<ConfigForest, ConfigError> {
     // Beam 2 is the root: every line's leg set is what sits below it once the
     // tree hangs from that leg.
-    let root_leg = LegIdx(1);
+    let root_leg = LegIdx(
+        positions
+            .iter()
+            .position(|&p| p == 1)
+            .ok_or(ConfigError::NotATree { index })?,
+    );
     let root_vertex = diagram
         .vertices
         .iter()
@@ -189,6 +221,8 @@ fn forest(
         index,
         model,
         evaluated,
+        positions,
+        root_leg,
         seen: vec![false; diagram.vertices.len()],
         timelike: Vec::new(),
         spacelike: Vec::new(),
@@ -217,7 +251,8 @@ fn forest(
     }
 
     let full = (1u32 << n_external) - 1;
-    debug_assert_eq!(closing, full & !(1 << root_leg.0));
+    debug_assert_eq!(closing, full & !(1 << 1));
+    let _ = full;
 
     // The negative index of a line, assigned in the order the file writes them.
     let position = |mask: u32| -> Option<i32> {
@@ -263,6 +298,8 @@ fn forest(
 struct Walk<'a> {
     diagram: &'a Diagram,
     index: usize,
+    positions: &'a [usize],
+    root_leg: LegIdx,
     model: &'a UFOModel,
     evaluated: &'a EvaluatedModel,
     seen: Vec<bool>,
@@ -292,11 +329,12 @@ impl Walk<'_> {
                 Ray::Leg(leg) => {
                     // Beam 2 sits at the root and is the one leg that is not
                     // below any line.
-                    if from.is_none() && leg == LegIdx(1) {
+                    if from.is_none() && leg == self.root_leg {
                         continue;
                     }
-                    mask |= 1 << leg.0;
-                    daughters.push(Daughter::Leg(leg.0 + 1));
+                    let position = self.positions[leg.0];
+                    mask |= 1 << position;
+                    daughters.push(Daughter::Leg(position + 1));
                 }
                 Ray::Prop { prop, end } => {
                     if from.map(|(p, _)| p) == Some(prop) {

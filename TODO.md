@@ -262,17 +262,32 @@ One line each; the note is the full record. Earlier sprints
      cannot name a process directory (7 flavour assignments across 3 runs), and
      a single external leg's `ipdgcl` keeps its flavour where the source reading
      says the complement registration overwrites it.
-  3. **Scale synthesis + wiring** — replace the closed-form-only `-1` branches
-     in `ScaleChoice` with the general path; the degenerate cases become
-     consistency checks (the general code must reproduce them exactly on the
-     already-gated runs).
-  4. **Gate** — flip the 6 asserted-refused rows in `validate_scales` to
-     enforced per-event replays (`SCALUP`/`<rscale>`/`<pdfrwt>`), flip the four
-     llj partonic σ rows (`uux_to_epemg`, `ddx_to_epemg`, `gu_to_epemu`,
-     `gux_to_epemux`) from `blocked` to GATE — they are banked, cheap and
-     waiting on nothing else — then re-gate σ(pp→ℓ⁺ℓ⁻j) against a
-     *dynamical*-scale MG run: the fixed-scale row is already enforced, so the
-     whole rest of that chain is held fixed and only the scale moves.
+  3. ✅ **Scale synthesis + wiring** (note 28 §K4) — the closed forms are
+     deleted and `-1` takes one path. `coupling/cluster/configs.rs` derives the
+     channel forests from our own diagrams, checked whole against the generated
+     `configs.inc` (6570 lines over 6 processes). `validate_scales` replays
+     **every** banked run through the clustering: 840 000 comparisons over
+     270 000 events in 27 runs inside their printing budget, `AQCDUP`
+     recomputed for 230 000 of them, `u ū → u ū`'s 16 beam-crossing events
+     re-derived at 250.000125. Three decisions in §K4.4: the two 2→6 rows stay
+     informational (an LHE record carries neither the stale on-shell flags nor
+     one channel out of 615), `pp_to_llj_qcd2_qed2` is skipped as D4's
+     duplicate, and `pp_to_jj` carries 9 events in 10 000 admitted only by the
+     crossing-inflation signature. §K3.5's open thread is closed by explanation.
+  4. **Gate** — flip the four llj partonic σ rows (`uux_to_epemg`,
+     `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux`) from `blocked` to GATE —
+     banked, cheap and waiting on nothing else — then re-gate σ(pp→ℓ⁺ℓ⁻j)
+     against a *dynamical*-scale MG run: the fixed-scale row is already
+     enforced, so the whole rest of that chain is held fixed and only the scale
+     moves. The scale-row flips themselves are done (session 3 above).
+     **Two blockers found in K4** (note 28 §K4.6), both about the coupling
+     rather than the scale: NNPDF23 tabulates `αs` only to 10 TeV and a
+     per-event scale on a 13 TeV collider can exceed it (the run is now refused
+     at setup naming the range), and `GridAlphaS` reads the set's knots
+     linearly where LHAPDF reads them with a cubic — worth `1e-8` at `M_Z` but
+     `~1.7e-4` mid-interval, measured at 1076-1777 printing budgets on the two
+     new dynamical lhapdf runs. K5 must size that against the σ agreement it is
+     demonstrating before flipping the dynamical rows.
   (`coupling/scales.rs`, `validate_scales.rs`, note 22 §1.3/§5.)
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by
