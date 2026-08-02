@@ -1,0 +1,57 @@
+--- Template/LO/SubProcesses/unwgt.f
++++ Template/LO/SubProcesses/unwgt.f (kT-clustering dump)
+@@ -509,6 +509,7 @@
+       integer icolup(2,nexternal,maxflow,maxsproc)
+       double precision eta
+       integer nsym
++      include 'ktdump.inc'
+ 
+       integer ievent
+       logical flip
+@@ -854,6 +855,46 @@
+         return
+       endif
+ 
++c     The clustering history this event's scale came out of, flushed here so
++c     the record set travels with the event rather than with the phase-space
++c     point: setclscales runs on every point, and only a small fraction of
++c     them is ever written. The momenta are the ones write_event is about to
++c     write, which is what keys a record back to its event.
++      call vg_beg('OUT')
++      call vg_d(scale)
++      call vg_d(q2fact(1))
++      call vg_d(q2fact(2))
++      call vg_d(sscale)
++      call vg_d(aaqcd)
++      call vg_d(aaqed)
++      call vg_i(npart)
++      call vg_rec()
++      call vg_beg('SYST')
++      call vg_l(use_syst)
++      call vg_d(s_scale(ivec))
++      call vg_i(n_qcd(ivec))
++      call vg_i(n_alpsem(ivec))
++      do i=1,2
++         call vg_i(n_pdfrw(i,ivec))
++         call vg_i(i_pdgpdf(1,i,ivec))
++         call vg_d(s_xpdf(1,i,ivec))
++         call vg_d(s_qpdf(1,i,ivec))
++      enddo
++      call vg_d(s_rwfact(ivec))
++      call vg_rec()
++      do i=1,npart
++         call vg_beg('OUTMOM')
++         call vg_i(i)
++         call vg_d(pb(0,i))
++         call vg_d(pb(1,i))
++         call vg_d(pb(2,i))
++         call vg_d(pb(3,i))
++         call vg_d(pb(4,i))
++         call vg_i(jpart(1,i))
++         call vg_rec()
++      enddo
++      call vg_flush()
++
+ c     Store weight for event
+       nw = nw+1
+       swgt(nw)=wgt

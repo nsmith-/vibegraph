@@ -27,6 +27,8 @@ output/                   the work area (gitignored, ~1 GB)
   <process>_amplitude.csv   |M|² on the fixed kinematic grid
   f2py/                     compiled matrix-element extension modules
   bundle/                   the assembled banked-reference archive
+  ktdump/                   instrumented replays of the banked runs, and the
+                              per-event clustering dumps they produce
 ```
 
 Beside the one directory per `.mg5` script, the work area also holds the
@@ -56,6 +58,7 @@ Committed reference files, each the output of one generator:
 | `runcard_defaults.json` | `dump_runcard_defaults.py` | the run-card defaults transcription |
 | `dy13_*_card.dat` | copied verbatim into the runs | both sides of the hadronic σ gate |
 | `higgs_window_reference.json` | `gen_higgs_window.sh` | the h → ττ pole window measurement |
+| `kt_cluster_dump_manifest.json` | `gen_kt_cluster_dumps.sh` | what the kT-clustering dumps are, and their checksums |
 
 ## Regenerating
 
@@ -94,6 +97,23 @@ pixi run --skip-deps validate
 from a local file instead; the pinned checksum is enforced either way. It is also
 the only route while `[refdata].published` is `false`: a bundle whose release
 asset has not been uploaded yet has a pin but no URL that serves it.
+
+## The kT-clustering dumps
+
+`dynamical_scale_choice = -1` gives no closed form for anything past a 2 → 2, and
+MadGraph writes no `<clustering>` tag at `ickkw = 0`, so the merge sequence a
+banked event's scale came out of is not recoverable from the event file. The
+oracle for it is an instrumented replay: `gen_kt_cluster_dumps.sh` regenerates
+each banked row's process directory, patches the clustering sources MadGraph
+copied into it (`wrappers/ktdump_*.patch`, applied only after the copies are
+confirmed byte-identical to the pinned template), installs the banked cards with
+the seed the banked banner records, and re-runs it.
+
+Two things make the dump worth reading, and both are checked rather than assumed:
+the replay's unweighted event file is byte-identical to the bank over every
+event, and every event's dumped μR and μF reproduce that event's own `SCALUP`,
+`<rscale>` and `<pdfrwt>`. The dumps themselves are work-area sized and live
+under `output/ktdump/dumps/`; the committed manifest pins their checksums.
 
 ## Coupling-order semantics
 

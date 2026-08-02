@@ -1,0 +1,48 @@
+--- Template/LO/SubProcesses/initcluster.f
++++ Template/LO/SubProcesses/initcluster.f (kT-clustering dump)
+@@ -12,9 +12,12 @@
+ C
+ C     SPECIAL CUTS
+ C
+-      real*8 xptj,xptb,xpta,xptl,xmtc
+-      real*8 xetamin,xqcut,deltaeta
+-      common /to_specxpt/xptj,xptb,xpta,xptl,xmtc,xetamin,xqcut,deltaeta
++      include 'cuts.inc'
++      include 'ktdump.inc'
++      double precision D
++      common/to_dj/D
++      double precision stot,m1,m2
++      common/to_stot/stot,m1,m2
+ 
+       integer i,j,iproc
+       logical filmap, cluster
+@@ -49,6 +52,29 @@
+         write(*,*) 'cuts.f: cluster map initialization failed'
+         stop
+       endif
++c     D reaches the hadronic final-state measure from the hidden run-card
++c     parameter and nothing in Template/LO ever assigns it, so it is recorded
++c     rather than assumed.
++      call vg_beg('CONST')
++      call vg_i(lpp(1))
++      call vg_i(lpp(2))
++      call vg_d(D)
++      call vg_i(maxjetflavor)
++      call vg_i(ktscheme)
++      call vg_i(ickkw)
++      call vg_l(chcluster)
++      call vg_l(pdfwgt)
++      call vg_d(xqcut)
++      call vg_d(xmtc)
++      call vg_d(scalefact)
++      call vg_l(fixed_ren_scale)
++      call vg_l(fixed_fac_scale1)
++      call vg_l(fixed_fac_scale2)
++      call vg_d(bwcutoff)
++      call vg_i(dynamical_scale_choice)
++      call vg_l(use_syst)
++      call vg_d(stot)
++      call vg_now()
+       if (btest(mlevel,3)) then
+         do iproc=1,maxsproc
+            write(*,*)'for proc ',iproc
