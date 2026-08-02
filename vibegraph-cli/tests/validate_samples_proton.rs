@@ -49,6 +49,9 @@ use vibegraph::validation::samples::{compare, labelling_for, EventSample, Spectr
 #[path = "../../vibegraph-lib/tests/common/report.rs"]
 mod report;
 
+#[path = "../../vibegraph-lib/tests/common/manifest.rs"]
+mod manifest;
+
 use report::{CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample};
 
 /// The PDF set both banked runs were generated with.
@@ -618,4 +621,68 @@ fn the_drell_yan_mass_spectrum_is_binned_against_madgraph() {
         }
     }
     assert!(failures.is_empty(), "dsigma/dm_ll:\n{failures:#?}");
+}
+
+/// Whether this checkout has a row's banked run, given what the manifest says the
+/// pinned bundle carries.
+///
+/// The two halves are each other's control: a row marked `bundled = false` may be
+/// absent from a fetching checkout, and one the bundle carries may not be. The
+/// library's `validate_sigma` states the same rule over its own reference; this is
+/// it at the binary's rows.
+fn run_present(gate: &str, run: &str) -> bool {
+    if run_dir(run).join("Cards/run_card.dat").is_file() {
+        return true;
+    }
+    if manifest::unbundled_rows().contains(run) {
+        eprintln!(
+            "[{run}] AWAITING BUNDLE (the manifest marks this row bundled = false and this \
+             checkout does not have its run, so no cell is written for it)"
+        );
+        return false;
+    }
+    vibegraph::validation::require(gate, "a banked run directory", run);
+}
+
+/// The `p p > j j` sample against MadGraph's banked one — **measured and recorded,
+/// not enforced.**
+///
+/// The event side of the canonical leading-order QCD row: a purely hadronic
+/// two-jet final state whose
+/// flavour column spans five MadGraph subprocess directories and 65 concrete
+/// assignments, generated through the shipped binary at the run card's own
+/// dynamical scale.
+///
+/// **It is compared by distribution and never by bytes.** MadGraph regenerates a
+/// single-group run's events bit-identically, but this run's five subprocess
+/// groups make the unweighting draw sensitive to job scheduling, so a re-run of
+/// the same card yields a different — equally valid — sample. The banked one is
+/// the reference and only its distributions are statements about it.
+///
+/// The cell is informational for the reason the cross-section cell is: the
+/// flavour decomposition carries one surplus copy of every concrete subprocess
+/// whose outgoing flavours differ (`validate_hadronic`'s
+/// `jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations` counts them
+/// exactly), so those assignments are over-represented in the draw by construction
+/// and the flavour column says so. The kinematic columns inherit it through the
+/// subprocess mixture rather than through any map.
+#[test]
+fn generated_dijet_events_agree_with_madgraphs_banked_ones() {
+    if !run_present(
+        "generated_dijet_events_agree_with_madgraphs_banked_ones",
+        "pp_to_jj",
+    ) {
+        return;
+    }
+    check_row(&Row {
+        run: "pp_to_jj",
+        events: "run_01",
+        key: "pp_to_jj",
+        variant: None,
+        process: "p p > j j",
+        run_card: None,
+        neval: NEVAL,
+        niter: NITER,
+        mode: "info",
+    });
 }

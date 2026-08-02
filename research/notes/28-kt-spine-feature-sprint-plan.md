@@ -3511,3 +3511,297 @@ configuration K6 supplies. It should expect the partition residual of §K6.5 to
 be at its largest there — every leg coloured, every channel's merge graph
 different — so session C should measure the partition gap on `pp_to_jj` before
 choosing its tolerance, rather than inheriting `0.02` from the partonic rows.
+
+## C — capstone: `p p > j j` at MadGraph's default dynamical scale
+
+The capstone ran, and what it found is not a tolerance question. `p p > j j` is
+the first banked row whose process card **repeats a multiparticle label in the
+final state**, and that is the one case this crate's alias expansion and
+MadGraph's do not treat alike. σ is high by `36 %`. The cause is counted exactly,
+against MadGraph's own `leshouche.inc` and against its own events, and collapsing
+the surplus at enumeration — with the library untouched — puts the row inside the
+reference's own Monte-Carlo error. **Both cells land informational with the
+measurement recorded**, and the fix is named rather than improvised: it is one
+line in the enumeration, and it belongs to a session that can re-run the whole
+banked layer behind it.
+
+### C.1 The surplus, counted against `leshouche.inc`
+
+`generate_sets_inner` (`diagrams/mod.rs`) deduplicates concrete assignments on
+`(sorted initial, final state as written)` — the initial state as an unordered
+pair, the final state **in the order the card's slots were filled**. MadGraph
+keeps one representative per *unordered* outgoing assignment. So `g u > g u` and
+`g u > u g` are two subprocesses here and one there, and both are then summed over
+the same labelled `dΦ₂`, whose polar angle runs over the whole sphere: the second
+is the first relabelled, and its term is added twice.
+
+`jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations`
+(`validate_hadronic`, enforced) states it as a set comparison against the banked
+run's own `leshouche.inc` — the file the colour-flow dictionary is already checked
+against, and the only place a run declares which concrete assignments its cross
+section sums over. Read from the run, not from a committed list. No Monte Carlo,
+no tolerance:
+
+| | |
+|---|---|
+| MadGraph's assignments | **65** (52 with unequal outgoing flavours, 13 with equal) |
+| this side's | **117** = 65 + 52 surplus |
+| surplus that is an outgoing swap of a MadGraph one | **52 of 52** |
+| MadGraph assignments this side does not enumerate | **0** |
+
+`13 + 2 × 52 = 117` is the whole of it, and the identity is what makes the reading
+a derivation rather than a fit: the surplus is exactly one extra copy per
+assignment whose two outgoing flavours differ, and nothing else.
+
+**The premise is measured too, not read off `dΦ₂`.** If the two orderings were
+distinct subprocesses for MadGraph, its sample would carry both, and the region
+the second covers would be missing from the first. Over the banked 10 000 events:
+**77** distinct emitted flavour assignments (65 × the two beam orderings, less the
+ones with equal beams), **0** of them with their outgoing swap also emitted, and
+inside the unequal-outgoing ones the two outgoing legs are found more-forward-first
+**1808** times and more-forward-second **1814** — the even split a single
+representative covering the whole sphere predicts.
+
+**And the collapse reproduces MadGraph's set exactly**, which is the part that
+sizes the fix: filtering the enumerated `DiagramSet`s on `(sorted incoming,
+sorted outgoing)` leaves **65** assignments, **all 65 in MadGraph's own outgoing
+order**. So repairing the count does not also need a rule for which representative
+to keep — the survivor is already the one MadGraph writes.
+
+**Negative control.** A card whose final-state slots draw on *disjoint* alias sets
+cannot produce two ordered assignments with the same multiset, so the same collapse
+must change nothing there. `p p > l+ l- j`: **212** enumerated sets, **212**
+surviving, 24 of them carrying diagrams. Without it the surplus would read as a
+blanket property of alias expansion rather than as the repeated label it is. By the
+same criterion `p p > j j` is the **only** process in the manifest whose final-state
+slots draw on intersecting alias sets — every other row's card spells its final
+state with concrete particles or with pairwise-disjoint aliases (`l+`, `l-`, `j`).
+
+### C.2 What it costs the cross section, and the bracket the bank makes for it
+
+If the surplus is one extra copy of every unequal-outgoing assignment, then
+
+```text
+σ(as enumerated) = σ(MG) + σ(MG restricted to unequal outgoing flavours)
+```
+
+and the banked run brackets the second term with no fit at all: its five
+subprocess directories carry their own cross sections, and `gg_qq` and `gq_gq` are
+entirely unequal-outgoing while `gg_gg` and `qq_gg` are entirely equal-outgoing.
+`qq_qq` mixes the two and is the only unresolved part, so it sets the width.
+
+| directory | σ (pb) | outgoing |
+|---|---|---|
+| `P1_gg_gg` | 4.307376e8 | equal |
+| `P1_gg_qq` | 1.136845e7 | unequal |
+| `P1_gq_gq` | 2.163323e8 | unequal |
+| `P1_qq_gg` | 2.937100e5 | equal |
+| `P1_qq_qq` | 2.012659e7 | mixed |
+| total | 6.788587e8 | (`results.dat`: 6.788500e8) |
+
+**Predicted `σ(as enumerated)/σ(MG) ∈ [1.3354, 1.3651]`. Measured 1.3628**
+(`probe_jj_outgoing_permutation_costs_the_cross_section`, 300 000 × 10, one seed).
+A defect of any other shape would have had no reason to land in that interval.
+
+The same probe's second arm is the falsifier:
+
+| arm | subprocesses / groups / channels | σ (pb) | σ/σ_MG | pull |
+|---|---|---|---|---|
+| as enumerated | 117 / 11 / 25 | 9.251119e8 ± 5.824e5 | 1.3628 | +155.51 |
+| permutations collapsed | 65 / 8 / 19 | 6.798582e8 ± 4.326e5 | **1.0015** | **+0.66** |
+
+`+0.15 %` against a reference whose own Monte-Carlo error is `0.22 %`.
+
+### C.3 The channel partition is not the residual here — §K6.8's expectation, corrected
+
+§K6.8 handed this session the instruction to measure the channel-partition
+ambiguity on `pp_to_jj` before choosing a tolerance, on the reading that "every leg
+coloured and every channel's merge graph different" would make it largest here.
+**Measured, it is the smallest of any clustered row in the set**, and the reason is
+structural rather than accidental.
+
+`probe_jj_channel_partition`: the same row at the converged `αⱼ` and at uniform
+`αⱼ` (`n_adapt_iter = 0`), everything else held, one seed, 300 000 × 10.
+
+| arm | adapted α | uniform α | partition gap | Monte Carlo | MG rel adapted | MG rel uniform |
+|---|---|---|---|---|---|---|
+| `j j`, as enumerated | 9.251119e8 ± 5.82e5 | 9.252758e8 ± 6.53e5 | **+1.77e-4** | 9.5e-4 | +3.628e-1 | +3.630e-1 |
+| `j j`, permutations collapsed | 6.798582e8 ± 4.33e5 | 6.805569e8 ± 4.90e5 | **+1.03e-3** | 9.6e-4 | +1.485e-3 | +2.514e-3 |
+| `pp_to_llj_fixed` (control) | 4.230616e2 ± 3.99e-1 | 4.230056e2 ± 4.63e-1 | −1.32e-4 | 1.4e-3 | −1.836e-3 | −1.969e-3 |
+
+Both `j j` arms sit at their own Monte-Carlo error — `1.07 σ` on the collapsed one
+— against the `1.5e-2` at `9 σ` that `gu_to_epemu` and `gux_to_epemux` carry
+(§K6.5). The control is a fixed-scale row on the same hadronic path with the same
+instrument, so it says the uniform-`α` arm is not simply noisier in a way that
+would hide a gap.
+
+**Why it is small, and why that is not luck.** The cluster scale depends on the
+integration channel only through *which merge sequence* the channel's forest
+admits. A `2 → 2` final state has no merge to choose: the clustering's terminal
+"`2 → 2` core" is the event itself, so `jlast`/`jcentral` — and therefore `μR` and
+both `μF` — are functions of the momenta alone. That is the same structural
+statement K6 measured as an exactly-zero `μR` spread on the two annihilation llj
+rows, and `validate_scales` records it independently for this run: `pp_to_jj` is
+one of the twenty-one replayed runs needing **0** events on a channel other than
+the first (§K4.3).
+
+**Consequence for whoever repairs C.1**: this row's tolerance is set by the
+reference's own `0.22 %` and by the seed spread, not by a partition band. It does
+not inherit `0.02`, and it does not need `PULL_REPORTED_NOT_ASSERTED` either — the
+residual it is left with is Monte Carlo, not a systematic of fixed size.
+
+### C.4 The σ cell, both axes
+
+`probe_jj_budget_ladder`, five seeds a rung, against MadGraph's
+`6.788500e8 ± 1.4726e6 pb` — a reference whose own Monte-Carlo error is `0.22 %`.
+
+| arm | neval | σ ± Δ (pb) | χ²/dof | rel |
+|---|---|---|---|---|
+| as enumerated | 300 000 | 9.244620e8 ± 2.604e5 | 3.41 | **+36.18 %** |
+| permutations collapsed | 75 000 | 6.799571e8 ± 3.900e5 | 1.41 | +0.16 % |
+| permutations collapsed | 150 000 | 6.802836e8 ± 2.753e5 | 0.61 | +0.21 % |
+| permutations collapsed | 300 000 | 6.803185e8 ± 1.943e5 | 1.26 | +0.22 % |
+| permutations collapsed | 600 000 | 6.806965e8 ± 1.375e5 | 1.25 | +0.27 % |
+
+The collapsed arm climbs by `0.11 %` over an eightfold budget — increments
+`+0.05 %`, `+0.01 %`, `+0.05 %` — against the `0.82 %` `pp_to_llj_dyn` climbs over
+the same range, and every rung sits inside `1.25 σ` of the reference. That is half
+the reference's own error and it is not resolved into an asymptote, so the honest
+statement is that the row is converged **at the scale the comparison is made at**
+rather than demonstrably asymptotic; a session that gates it should keep the ladder
+and say so. Its five seeds at `300 000` span `0.18 %` and scatter at `χ²/dof 1.26`,
+so what is left there is Monte Carlo.
+
+**The enumerated arm's `χ²/dof 3.41` is worth recording on its own.** Its five
+seeds scatter by about `1.8×` their own quoted errors where the collapsed arm's
+stay near one. The surplus does not only double a term: it puts six extra sampling
+channels into the mixture that are relabelled images of channels already in it, and
+a multichannel whose members are near-degenerate is the ill-conditioned case the
+`αⱼ` reallocation cannot separate (note 27 §B3.2's failure mode). So the defect
+costs variance as well as normalisation. Observed rather than derived — nothing
+here separates the degeneracy from the three extra flavour groups.
+
+The banked layer writes the cell from three seeds at `300 000 × 10` on the
+production path (`sigma_jj_dynamical_scale_vs_mg`, mode `info`):
+**`9.246158e8 ± 3.363e5 pb`, `χ²/dof 6.53`, `rel +36.20 %`, `pull +162.70`**. The
+`χ²/dof` is part of the record rather than an embarrassment: it is the same
+over-dispersion the five-seed ladder reads as `3.41`, and it goes with the arm
+that carries the surplus.
+
+### C.5 The `samples` cell
+
+The event side, through the shipped binary: one `integrate` at `300 000 × 8` off
+the banked cards, then 20 000 events at each of three seeds, read back and compared
+column by column against MadGraph's banked 10 000
+(`generated_dijet_events_agree_with_madgraphs_banked_ones`, `validate_samples_proton`,
+mode `info`). The `p`-floor is `1e-4`, the same one every other `samples` row uses.
+
+**Never by bytes**, and that is a property of this run rather than a convenience:
+MadGraph regenerates a single-group run's events bit-identically, but `pp_to_jj`'s
+five subprocess directories make its unweighting draw scheduling-sensitive, so a
+re-run of the same card yields a different and equally valid sample (Sb). Only its
+distributions are statements about it.
+
+| seed | n_eff | worst KS | `χ²` SPINUP | `χ²` ICOLUP | `χ²` flavour |
+|---|---|---|---|---|---|
+| `0x5a4d1001` | 19 956 | `y(j1)` p 9.07e-6 (D 0.0303) | p 6.10e-3 (18.1/6) | p 0 (5089.1/31) | p 0 (3252.2/112) |
+| `0x5a4d1002` | 19 996 | `y(j1)` p 1.25e-6 (D 0.0327) | p 6.14e-2 (13.5/7) | p 0 (5117.2/32) | p 0 (3256.2/104) |
+| `0x5a4d1003` | 19 986 | `y(j1)` p 1.12e-7 (D 0.0353) | p 7.63e-4 (23.1/6) | p 0 (5095.2/28) | p 0 (3290.9/108) |
+
+Minimum KS `p` `1.12e-7` on `y(j1)` (and `cos(j1)`, its image), minimum `χ²` `p`
+`0` on `ICOLUP`, over three seeds. The cell fails every column it can fail, on
+every seed, and it fails them the way the surplus predicts: the draw over
+subprocesses is what is wrong, so the *frequencies* move — `ICOLUP` because which
+colour topologies occur is a property of which subprocess an event came from,
+`flavour` directly, and the jet rapidity because `g q → g q` and `g g → g g`
+populate `y` differently and one of them is doubled. **`SPINUP` is the column that
+survives** on all three seeds, which is consistent: the helicity fractions are the
+observable least sensitive to reweighting one subprocess against another.
+
+**What this cell cannot do is attribute.** It says the sample disagrees, and the
+surplus is sufficient to explain everything it shows — but a distribution
+comparison cannot separate a sufficient cause from the only cause. What would close
+that is re-measuring this cell once the enumeration is repaired: the columns coming
+back inside the floor is the statement, and it is not one this session can make.
+
+Two counts worth carrying forward: the comparison finds `171`–`174` distinct
+flavour keys of which `105`–`113` are compared (the rest below the pooling
+threshold, `0.5`–`0.6 %` of the sample pooled), and `35`–`36` `ICOLUP` keys of which
+`29`–`33` are compared. `flavour_key` is taken on a `canonical()` event, whose
+outgoing legs are sorted by class label and then by `pT` — so within a jet final
+state the key is flavour *and* `pT` ordering, and it is blind to the leg ordering
+the enumeration surplus is made of. That is why the surplus appears in this cell as
+a frequency and never as a category MadGraph does not emit.
+
+### C.6 The instruments, and what each provably cannot see
+
+- **`jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations`** is the
+  finest level available for this defect: a set comparison at zero tolerance
+  against the run's own `leshouche.inc`. It cannot see anything about the
+  *diagrams* of a listed subprocess, or about any cross section — a set is blind to
+  both. It is enforced, so it fails the moment the enumeration changes on either
+  side.
+- **The banked-sample ordering counts** turn "a labelled `dΦ₂` covers both
+  orderings" from a reading into a measurement against MadGraph's own events. They
+  cannot see whether the coverage is *correctly weighted* — only that both
+  orderings occur inside one assignment and that neither side emits the swap.
+- **The bracket from the per-directory cross sections** is an independent
+  prediction of the σ ratio from numbers this session did not fit. It is blind to
+  anything that moves the equal- and unequal-outgoing parts by the same factor.
+- **The collapsed arm** is a scalar and therefore blind to a compensating pair of
+  errors, and to a mis-sampled region of small measure. What guards those is the
+  seed sweep and the ladder in §C.4, and beneath them `validate_scales`'s replay of
+  this run's 10 000 events field by field.
+- **`probe_jj_channel_partition`** brackets the ambiguity between two constant-`αⱼ`
+  partitions. It cannot locate MadGraph inside that bracket: MadEvent partitions by
+  single-diagram enhancement, `AMP2_c(p)/Σ AMP2`, a function of the point rather
+  than a constant, which is not reachable from any choice of `αⱼ`.
+- **The `samples` comparison** is by distribution and never by bytes, because this
+  run's five subprocess groups make MadGraph's own unweighting draw
+  scheduling-sensitive (Sb). It is blind to correlations between columns and to a
+  discrepancy confined to a small tail, and — `canonical()` sorting the outgoing
+  legs by label — it is blind to the *ordering* within an assignment, which is
+  precisely why the surplus shows up in it as a frequency and not as a new category.
+
+### C.7 What this leaves
+
+**Landed.** The `pp_to_jj` `integrals` and `samples` cells move from ⛔ `blocked`
+to ⚠️ `banked`/`info` — measured, with the reason attached, rather than a silent
+gap — and `jj_subprocesses_are_madgraphs_own_plus_the_outgoing_permutations` is an
+*enforced* comparison against the run's own `leshouche.inc` which fails the moment
+either side's enumeration moves. The census over the 30-row × 4-category report
+moves `86 → 88` measured — `85 ✅, 3 ⚠️, 4 ⏳, 10 ⛔, 18 uncovered` against
+`85, 1, 4, 12, 18` — with the two ⛔ that became ⚠️ being exactly this row's.
+
+**The two rendered tables differ on exactly the two cells and nothing else.** A
+line-by-line diff of the report against the one taken before any of this session's
+changes moves 25 lines: the `pp_to_jj` row itself, its two footnotes, the mechanical
+renumbering of the four footnotes after them, the two new measurement lines in the
+appendix, and the census line. Every other row is identical in every printed field,
+so nothing this session added reached a gated measurement.
+
+**Both work-area states are green.** With the four unbundled runs present the
+banked layer exits `0` at the census above; with them held out it exits `0` at
+`84` measured (`83 ✅, 1 ⚠️, 8 ⏳, 10 ⛔, 18 uncovered`), the two new `pp_to_jj`
+cells reading *awaiting the bundle* and nothing else moving. The four held-out runs
+were restored and verified byte-identical over all 2867 files.
+
+**Not landed, deliberately: the fix.** It is one line — sort the final state in
+`generate_sets_inner`'s dedup key — and it is filed rather than written here,
+because it changes the enumeration every process goes through and wants the whole
+banked layer behind it. Everything that session needs is measured above: the
+collapse reproduces MadGraph's set entry for entry *in MadGraph's own outgoing
+order*, so no representative rule is wanted; the control says the `ℓℓj`
+enumeration does not move under it, and by the same criterion — final-state slots
+drawing on *intersecting* alias sets — no other manifest row's can; and the
+collapsed arm's ladder and seed sweep already say where
+the row would gate — `rel_tol` at the reference's own `0.22 %` scale rather than at
+a partition band, with the pull **asserted** rather than reported. The reason the
+pull is safe here and not on the `ℓℓj` rows is arithmetic: MadGraph's own error on
+this run is `1.47e6 pb` against this side's `1.9e5` at the gate budget, so the
+combined error is the reference's and the pull cannot be driven up by raising this
+side's budget. It reads `+0.99` at `300 000` and `+1.25` at `600 000`.
+
+**For Z.** `pp_to_jj` stays `bundled = false`, so on a fetching checkout its two new
+cells are ⏳ until the re-cut. This session touches nothing else about the bundle,
+and it does not prune `pp_to_llj_qcd2_qed2`.

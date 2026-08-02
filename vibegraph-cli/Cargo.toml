@@ -27,6 +27,9 @@ ureq = "3.3.0"
 tempfile = "3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# The samples gate reads one flag out of validation/manifest.toml — which rows the
+# pinned reference bundle carries — through the same reader the library gates use.
+toml = "1"
 tar = "0.4.46"
 flate2 = "1.1.9"
 ureq = "3.3.0"

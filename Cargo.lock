@@ -2461,6 +2461,7 @@ dependencies = [
  "serde_json",
  "tar",
  "tempfile",
+ "toml",
  "ureq",
  "vibegraph-lib",
 ]
