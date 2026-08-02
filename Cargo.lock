@@ -2499,6 +2499,7 @@ dependencies = [
  "strum",
  "tar",
  "thiserror",
+ "toml",
  "zstd",
 ]
 
