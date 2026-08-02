@@ -132,13 +132,6 @@
       },
       "total_diagrams": 8
     },
-    "pp_to_llj_qcd2_qed2": {
-      "diagrams_by_subprocess": {
-        "P1_gq_llq": 4,
-        "P1_qq_llg": 4
-      },
-      "total_diagrams": 8
-    },
     "uux_to_ccx_emmm_qcd0": {
       "diagrams_by_subprocess": {
         "P1_qq_qqllll": 579

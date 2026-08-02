@@ -2,20 +2,20 @@
 #
 # Why this exact process:
 #   - The default-order half of the llj pair. One extra QCD coupling for the
-#     jet takes the order selection past the trivial case, so this and
-#     pp_to_llj_qcd2_qed2 together pin what "default orders" means once more
-#     than one power of a coupling is in play: the two must select the same
-#     diagram content, and a change to the selector that broke that would show
-#     up as one count moving.
-#   - Its run card takes MadGraph's dynamical scale choice, which the scale
-#     layer refuses rather than approximates (a 2 -> 3 needs general kT
-#     clustering for the cluster scale). That refusal is itself asserted, so
-#     this row is the negative case of the scale gate: a scale we decline to
-#     claim, stated as such rather than left untested.
+#     jet takes the order selection past the trivial case, so this and the
+#     QCD=2 QED=2 scripts (pp_to_llj_fixed, pp_to_llj_dyn) together pin what
+#     "default orders" means once more than one power of a coupling is in play:
+#     the two spellings must select the same diagram content, and a change to
+#     the selector that broke that would show up as one count moving.
+#   - Its run card takes MadGraph's dynamical scale choice over a 2 -> 3, so
+#     every event's SCALUP / <rscale> / <pdfrwt> comes out of the general kT
+#     clustering rather than a closed form. validate_scales replays all 10000
+#     of them field by field.
 #
-# Not used for cross sections or event samples: the refusal above blocks them.
-# pp_to_llj_fixed has the same generate line with all three scales fixed at m_Z,
-# and it is the integrals, samples and event-generation subject of the triple.
+# Not used for cross sections or event samples: its beams take MadGraph's
+# internal nn23lo1 parton densities, which the LHAPDF6 grid reader here cannot
+# load. pp_to_llj_fixed and pp_to_llj_dyn card the same generate line onto
+# lhaid 247000 and are the integrals, samples and event-generation subjects.
 generate p p > l+ l- j
 output pp_to_llj -nojpeg
 launch

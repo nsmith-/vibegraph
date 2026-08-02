@@ -289,7 +289,6 @@ const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "pp_to_llj",
     "pp_to_llj_dyn",
     "pp_to_llj_fixed",
-    "pp_to_llj_qcd2_qed2",
     "pp_to_ll_scalefact2",
     "ud_to_epemud_qcd0",
     "uux_to_epemg",

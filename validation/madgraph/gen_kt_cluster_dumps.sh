@@ -39,7 +39,6 @@ STAGE="${VG_KT_STAGE:-all}"
 # route, ee_to_ttx the colourless-beam branch with a coloured final state).
 DEFAULT_PROCESSES=(
     pp_to_llj
-    pp_to_llj_qcd2_qed2
     ee_to_mumua
     ee_to_mumu_tata_qcd0
     bbx_to_ccx_emmm_qcd0
