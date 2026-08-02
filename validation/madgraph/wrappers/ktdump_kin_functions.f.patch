@@ -1,0 +1,37 @@
+--- Template/LO/Source/kin_functions.f
++++ Template/LO/Source/kin_functions.f (kT-clustering dump)
+@@ -244,6 +244,7 @@
+ c
+       double precision D
+       common/to_dj/D
++      include 'ktdump.inc'
+ c
+ c     Local
+ c
+@@ -269,8 +270,10 @@
+          if (p1a*p2a .ne. 0d0) then
+             costh = (p1(1)*p2(1)+p1(2)*p2(2)+p1(3)*p2(3))/(p1a*p2a)
+             dj = 2d0*min(p1(0)**2,p2(0)**2)*(1d0-costh) !Durham
++            vg_dj_branch = 1
+ c            dj = 2d0*p1(0)*p2(0)*(1d0-costh)    !JADE
+          else
++            vg_dj_branch = 0
+             print*,'Warning 0 momentum in Durham algorythm'
+             write(*,'(4e15.5)') (p1(j),j=0,3)
+             write(*,'(4e15.5)') (p2(j),j=0,3)
+@@ -289,12 +292,15 @@
+         if(p1(4).lt.1d0.and.(p2(4).ge.3d0.and.maxjetflavor.gt.4.or.
+      $       p2(4).ge.1d0.and.maxjetflavor.gt.3))then
+            dj = DJB(p1)*(1d0+1d-6)
++           vg_dj_branch = 2
+         elseif(p2(4).lt.1d0.and.(p1(4).ge.3d0.and.maxjetflavor.gt.4.or.
+      $       p1(4).ge.1d0.and.maxjetflavor.gt.3))then
+            dj = DJB(p2)*(1d0+1d-6)
++           vg_dj_branch = 3
+         else
+            dj = max(p1(4),p2(4))+min(pt1,pt2)*2d0*(cosh(eta1-eta2)-
+      &          (p1(1)*p2(1)+p1(2)*p2(2))/dsqrt(pt1*pt2))/D**2
++           vg_dj_branch = 4
+         endif
+ c        write(*,'(a,5e16.4)')'Mom(1): ',(p1(j),j=1,3),p1(0),p1(4)
+ c        write(*,'(a,5e16.4)')'Mom(2): ',(p2(j),j=1,3),p2(0),p2(4)
