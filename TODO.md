@@ -175,11 +175,22 @@ One line each; the note is the full record. Earlier sprints
   capstone `p p > j j`, the only process that exercises unequal factors against
   MadGraph.
 - **Multi-rung t-channel spine** (sprint plan: note 28 §S2–S4) — ladder
-  topologies (VBF/DIS, ≥2 spacelike lines). The ordering Jacobian cannot be pinned by `Vₙ`/σ in-session, so it was
-  deferred rather than committed unvalidated; hand-off design written up
-  (`Spine → rungs: Vec`, running `q_i = p_a − Σp`, note-07 §2.9.0 ordering firing
-  test). Also where the `uux_to_uux` bias evidence and the degenerate-map
-  finding point. (Note 21.)
+  topologies (VBF/DIS, ≥2 spacelike lines). **Engine landed opt-in in `kt-spine`
+  S3**: `Spine → rungs: Vec<SpineRung>` + terminal recoil, each rung emitting one
+  blob against the running `q_i = p_a − Σ_{j≤i} p_{B_j}`, built in the CM of what
+  the previous rung left behind with the previous (spacelike) transfer as its
+  incoming line. `from_diagram_ladder` builds the chain; production
+  (`from_diagram_regulated`) still leaves ladders on the all-timelike tree, so
+  **S4 owns the switch and the σ measurements**. Also in S3: the fiducial `t_max`
+  bound is now per rung and reaches production (D3), replacing the experimental
+  whole-channel knob. Gates green on `u d > e+ e- u d QCD=0` — graph-cut
+  cross-check of the chain, per-chain volume against its own support, the
+  §S2.4 density contract, walk-vs-density 6.8e-9, and the §S2.3 ordering oracle
+  with NEG-A/B/C firing. The informational arm says what S4 should expect: the
+  chain's per-point variance is 5.4×–2614× below the all-timelike fallback's on
+  every ladder, and the two disagree by >3σ on 8 of 23 (the fallback
+  under-covering). Still open: the `uux_to_uux` bias and the degenerate-map
+  finding, which S4 re-measures. (Notes 21, 28.)
 - **`kt-clustering`** (sprint plan: note 28 §K1–K5, superseding the sketch
   below) — general kT clustering for `dynamical_scale_choice = -1`
   (also what MLM matching needs). 6 banked runs are asserted as
