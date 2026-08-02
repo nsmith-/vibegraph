@@ -13,6 +13,12 @@
 //! card — the facts about a process's diagrams that MadGraph's clustering
 //! consults — by reading them off the enumerated diagrams.
 
+//! [`cluster`] is the general form of the prescription [`scales`] implements
+//! only where it collapses: the kT clustering behind
+//! `dynamical_scale_choice = -1`, from the merge graph a process's integration
+//! channels imply through to `μR` and the two `μF`.
+
 pub mod alphas;
+pub mod cluster;
 pub mod scales;
 pub mod topology;

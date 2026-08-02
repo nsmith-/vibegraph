@@ -211,15 +211,25 @@ One line each; the note is the full record. Earlier sprints
   `p p > l+ l- j` is gated at a *fixed* scale.) Note 22 §1.3 pins the degenerate
   closed-form cases;
   this sprint builds the general path. Sessions:
-  1. **Design note** — read MG's `cluster.f`/`setscales.f`/`reweight.f` path
-     end to end and pin the algorithm: the `djb`/kT measure, which merges are
-     admissible (graph-guided — only vertices the process's diagrams contain),
-     the tie-break order (including the `1 + 1e-6` beam-crossing inflation
-     note 22 §1.3 caught in `uux_to_uux`), and how the cluster sequence maps
-     to μR (the geometric-mean prescription) and per-beam μF.
-  2. **Clustering engine** — diagram-guided kT clustering of an event's
-     external momenta down to a 2→2 core, building on the `ClusterTopology`
-     derivation from the `dynamical-scales` sprint.
+  1. ✅ **Design note** — the binding spec is note 28 §K1: the `djb`/kT measure,
+     which merges are admissible (graph-guided — only vertices the process's
+     diagrams contain), the tie-break order (including the `1 + 1e-6`
+     beam-crossing inflation note 22 §1.3 caught in `uux_to_uux`), and how the
+     cluster sequence maps to μR (the geometric-mean prescription) and per-beam
+     μF, each claim with its falsifier.
+  1b. ✅ **Oracle** — an instrumented 3.7.1 dumps every intermediate per banked
+     event, for 9 runs × 10k events (`validation/madgraph/wrappers/ktdump*`,
+     `kt_cluster_dump_manifest.json`).
+  2. ✅ **Clustering engine** — `coupling/cluster/` (merge graph, clustering,
+     scale walk), informational only; `ScaleChoice`'s `-1` still takes the
+     closed-form-or-refuse path. **All 90 000 dumped events reproduce, merge
+     sequence and scales, at zero observed deviation**
+     (`validate_kt_cluster.rs`, 2.4M candidate pairs, 120 merge tables). Two
+     counted exceptions and one open thread in note 28 §K3: MadGraph's on-shell
+     flag array is stale across events (244 events, both 2→6 runs), the dump
+     cannot name a process directory (7 flavour assignments across 3 runs), and
+     a single external leg's `ipdgcl` keeps its flavour where the source reading
+     says the complement registration overwrites it.
   3. **Scale synthesis + wiring** — replace the closed-form-only `-1` branches
      in `ScaleChoice` with the general path; the degenerate cases become
      consistency checks (the general code must reproduce them exactly on the

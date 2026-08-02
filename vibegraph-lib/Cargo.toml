@@ -123,6 +123,10 @@ name = "validate_scales"
 required-features = ["extended-validation"]
 
 [[test]]
+name = "validate_kt_cluster"
+required-features = ["extended-validation"]
+
+[[test]]
 name = "validate_pdf_grid"
 required-features = ["extended-validation"]
 
