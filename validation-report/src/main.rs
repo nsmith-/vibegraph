@@ -278,6 +278,17 @@ fn resolve_cell(
     };
 
     if measured.is_empty() {
+        // A row the pinned bundle does not carry is *declared* absent from a
+        // fetching checkout, so its gate legitimately found no run to measure and
+        // wrote no cell. That is a complete environment with respect to what the
+        // bundle promises, not a missing measurement — the cell waits on the next
+        // re-cut the way an oracle-layer cell waits on its driver. A row the bundle
+        // does carry has no such excuse.
+        if !process.bundled {
+            cell.mark = "⏳";
+            cell.body = "awaiting the bundle".to_string();
+            return cell;
+        }
         problems.push(format!(
             "{where_} is declared '{}' and no gate wrote it — the cell is missing, not empty",
             declared.tier.as_str()

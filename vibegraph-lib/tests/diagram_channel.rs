@@ -1242,12 +1242,12 @@ fn the_llj_run_card_supplies_the_scale_the_spacelike_pole_is_floored_at() {
 
 /// A zero floor is the identity map on the channel derivation.
 ///
-/// Every `lpp = 0` caller reaches the derivation through
-/// [`DiagramChannel::from_diagram`], which supplies floor `0`, so a partonic run's
-/// channels have to be bit-for-bit what they were before a regulator existed — the
-/// banked `σ̂` artifacts depend on it. Asserted on the sampled momenta and the
-/// densities rather than on the constructor arguments, since those are what a run
-/// actually consumes.
+/// [`DiagramChannel::from_diagram`] is the unregulated derivation, and a run whose
+/// cuts imply no single-leg transverse threshold reaches the regulated one with a
+/// zero scale; the two have to build the same channel, or the regulator would be
+/// moving maps for processes that never asked it to. Asserted on the sampled
+/// momenta and the densities rather than on the constructor arguments, since those
+/// are what a run actually consumes.
 ///
 /// The second half is what keeps the first from being vacuous: with the floor the
 /// `llj` run card implies, the same derivation produces *different* channels. Note
@@ -1580,7 +1580,8 @@ fn every_ladder_chain_is_a_valid_map() {
     let mut worst = 0.0f64;
     let mut multi = 0usize;
     for (i, (d, chain)) in ladder_diagrams(&evaluated).into_iter().enumerate() {
-        let ch = DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale);
+        let ch =
+            DiagramChannel::<f64>::from_diagram_regulated(&d, &evaluated, LADDER_SQRT_S, scale);
         assert_eq!(
             ch.spine_poles().len(),
             chain.sides.len(),
@@ -1645,7 +1646,7 @@ fn ladder_chains_integrate_their_own_support_and_cover_the_fiducial_region() {
     let channels: Vec<DiagramChannel<f64>> = diagrams
         .iter()
         .map(|(d, _)| {
-            DiagramChannel::<f64>::from_diagram_ladder(d, &evaluated, LADDER_SQRT_S, scale)
+            DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, LADDER_SQRT_S, scale)
         })
         .collect();
 
@@ -1981,7 +1982,8 @@ fn the_rung_ordering_test_fires_on_a_swapped_chain() {
     );
     assert_eq!(chain.blobs.len(), 2, "the ordering chain has two rungs");
 
-    let build = || DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale);
+    let build =
+        || DiagramChannel::<f64>::from_diagram_regulated(&d, &evaluated, LADDER_SQRT_S, scale);
     let good = ordering_report(&build(), &chain, &cuts, mz2, mg, 0xC0DE_0DDE);
     describe_ordering("derived", &good);
     let bad = ordering_report(
@@ -2057,7 +2059,7 @@ fn the_rung_ordering_test_fires_on_a_swapped_chain() {
         chain3.blobs, chain3.recoil, chain3.poles
     );
     let build3 =
-        || DiagramChannel::<f64>::from_diagram_ladder(&d3, &evaluated, LADDER_SQRT_S, scale);
+        || DiagramChannel::<f64>::from_diagram_regulated(&d3, &evaluated, LADDER_SQRT_S, scale);
     let good3 = ordering_report(&build3(), &chain3, &cuts, mz2, mg, 0xC0DE_0DD3);
     describe_ordering("derived-3", &good3);
     let bad3 = ordering_report(
@@ -2169,9 +2171,9 @@ fn a_swapped_chain_and_an_anchor_flip_are_different_maps() {
             continue;
         }
         let derived =
-            DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale);
+            DiagramChannel::<f64>::from_diagram_regulated(&d, &evaluated, LADDER_SQRT_S, scale);
         let reversed =
-            DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale)
+            DiagramChannel::<f64>::from_diagram_regulated(&d, &evaluated, LADDER_SQRT_S, scale)
                 .with_rung_order(&(0..r).rev().collect::<Vec<_>>());
         let flipped = anchor_flipped(&chain, &derived, scale);
 
@@ -2258,7 +2260,7 @@ fn the_chain_density_contract_holds_at_foreign_configurations() {
     let channels: Vec<DiagramChannel<f64>> = diagrams
         .iter()
         .map(|(d, _)| {
-            DiagramChannel::<f64>::from_diagram_ladder(d, &evaluated, LADDER_SQRT_S, scale)
+            DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, LADDER_SQRT_S, scale)
         })
         .collect();
 
@@ -2385,7 +2387,8 @@ fn the_chain_density_reads_only_invariants() {
         if chain.blobs.len() < 2 {
             continue;
         }
-        let ch = DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale);
+        let ch =
+            DiagramChannel::<f64>::from_diagram_regulated(&d, &evaluated, LADDER_SQRT_S, scale);
         for k in 0..60 {
             let u = stream.uniforms::<f64>(ch.ndim());
             let p = ch.sample(&u).momenta;
@@ -2423,12 +2426,13 @@ fn the_chain_density_reads_only_invariants() {
     );
 }
 
-/// What the chain is worth, measured beside the map production actually uses.
+/// What the chain is worth, measured beside the map it replaced.
 ///
-/// A ladder diagram still falls back to the all-timelike tree in production, so this
-/// runs the two side by side on the diagram's own peaked structure — the lepton
-/// pair's Z line shape and every rung's spacelike propagator, under the run card's
-/// cuts — over independent seeds.
+/// Production derives the chain; the all-timelike tree is what a derivation capped
+/// at one rung falls back to for a ladder, and what this crate drew ladders through
+/// before. The two run side by side on the diagram's own peaked structure — the
+/// lepton pair's Z line shape and every rung's spacelike propagator, under the run
+/// card's cuts — over independent seeds.
 ///
 /// A seed sweep and not a single run, because a single run cannot tell a converged
 /// estimate from an under-covered one: a map that misses the peripheral region
@@ -2436,9 +2440,9 @@ fn the_chain_density_reads_only_invariants() {
 /// the inside. That is exactly what the all-timelike map does here, so the assertion
 /// is emphatically **not** that the two agree. It is that the chain is
 /// self-consistent across seeds and never the noisier of the two, and that the
-/// fallback still visibly fails to keep up — a comparison whose known-wrong arm
-/// stopped being wrong would have lost its subject, and the day the chain goes into
-/// production this is the number that has to move.
+/// truncated map still visibly fails to keep up: the gap is what production bought,
+/// and a comparison whose known-wrong arm stopped being wrong would be measuring
+/// nothing.
 #[test]
 fn the_ladder_chain_beside_the_all_timelike_fallback() {
     let model = common::sm_model();
@@ -2474,16 +2478,22 @@ fn the_ladder_chain_beside_the_all_timelike_fallback() {
             }
             f
         };
-        // What production builds for a ladder today, and what the chain builds for it.
+        // A derivation capped at one rung, and what production derives instead.
         let fallback =
-            DiagramChannel::<f64>::from_diagram_regulated(&d, &evaluated, LADDER_SQRT_S, scale);
+            DiagramChannel::<f64>::from_diagram_capped(&d, &evaluated, LADDER_SQRT_S, scale, 1);
         assert!(
             fallback.spine_poles().is_empty(),
-            "diagram {i} is a ladder, so the regulated derivation should leave it \
-             all-timelike"
+            "diagram {i} is a ladder, so a one-rung cap should leave it all-timelike"
         );
         let chained =
-            DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale);
+            DiagramChannel::<f64>::from_diagram_regulated(&d, &evaluated, LADDER_SQRT_S, scale);
+        assert_eq!(
+            chained.spine_poles().len(),
+            chain.blobs.len(),
+            "diagram {i}: production derived {} rungs for a {}-rung ladder",
+            chained.spine_poles().len(),
+            chain.blobs.len()
+        );
 
         let sweep = |map: &dyn PhaseSpaceMap<f64>, base: u64| -> (f64, f64, f64, f64) {
             let runs: Vec<(f64, f64)> = (0..seeds)
@@ -2540,7 +2550,7 @@ fn the_ladder_chain_beside_the_all_timelike_fallback() {
     assert!(compared > 0, "no ladder diagram was compared");
     assert!(
         disagreements > 0,
-        "the all-timelike fallback now agrees with the chain everywhere, so this \
-         comparison has stopped carrying a signal about what production is missing"
+        "the all-timelike map now agrees with the chain everywhere, so this \
+         comparison has stopped carrying a signal about what the chain is worth"
     );
 }

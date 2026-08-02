@@ -92,7 +92,7 @@
 //! Runs only when the gitignored MadGraph `output/` tree is present (same
 //! contract as `amplitude_oracle`); otherwise every process is skipped.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -104,6 +104,7 @@ use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
 };
 use vibegraph::helas::eval::BoundAmplitude;
+use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
@@ -141,11 +142,9 @@ enum Plan {
     /// legitimately differs (recorded reason), so it is a live informational
     /// comparison rather than a pass/fail check.
     ///
-    /// No row uses it today. It is the middle rung of the enforcement ladder —
-    /// a row whose disagreement is measured and recorded rather than absorbed
-    /// into a widened `rel_tol` — and the arm a demotion is supposed to land on,
-    /// so it stays wired to `run_one` and to the report's `info` status.
-    #[allow(dead_code)]
+    /// The middle rung of the enforcement ladder — a row whose disagreement is
+    /// measured and recorded rather than absorbed into a widened `rel_tol`, and
+    /// the arm a demotion lands on.
     Info {
         neval: usize,
         niter: usize,
@@ -206,19 +205,20 @@ fn plan_for(dir: &str) -> Plan {
         //
         // Their tolerances are set by the t-channel-peaked integrand, not by the
         // coupling. Over five seeds at these budgets (`probe_qcd_seed_stability`)
-        // `gg_to_ttx` holds |pull| <= 0.35 and |rel| <= 8.3e-4, `gg_to_gg` |pull| <=
-        // 1.63 and |rel| <= 4.9e-3, and `uux_to_uux` |pull| <= 2.69 and |rel| <=
-        // 6.4e-3 — the thinnest margin of the three against PULL_LIMIT. Quadrupling
-        // the budget shrinks every one of those (worst |rel| 4.9e-3 -> 2.7e-3 and
-        // 6.4e-3 -> 3.5e-3), which is what says the residual is sampling and not a
-        // defect: a bug makes the failure migrate between seeds rather than shrink.
-        // `uux_to_uux` does keep a negative mean over the sweep — ~0.30% at these
-        // budgets, ~0.25% at four times them, so it is not the seed spread — and the
-        // spacelike collinear region a single-rung t-channel spine under-resolves is
-        // the place to look for it. Sharpening the grids channel by channel roughly
-        // doubled that mean (one shared grid over the mixture gives ~0.17% on the
-        // same seeds), which is what an under-covered tail does when each channel's
-        // grid stops compromising with the others.
+        // `gg_to_ttx` holds |pull| <= 0.68 and |rel| <= 8.6e-4, `gg_to_gg` |pull| <=
+        // 1.24 and |rel| <= 1.4e-3, and `uux_to_uux` |pull| <= 0.93 and |rel| <=
+        // 1.1e-3. Quadrupling the budget shrinks the sweep means (`gg_to_gg` +7.7e-4
+        // -> +4.1e-4, `uux_to_uux` +1.9e-4 -> +1.5e-4), which is what says the
+        // residual is sampling and not a defect: a bug makes the failure migrate
+        // between seeds rather than shrink.
+        //
+        // The two coloured 2 -> 2 rows carry a jet cut, so their peripheral channels
+        // draw the momentum transfer over the fiducial window rather than flat to the
+        // collinear edge. That is what removed `uux_to_uux`'s standing negative mean
+        // (-0.30% over the same five seeds when every transfer was drawn flat, and
+        // not shrinking with budget) and cut the per-point variance with it: the
+        // quoted error at the gate budget fell 2.4x on `uux_to_uux` and 2.6x on
+        // `gg_to_gg`.
         "gg_to_ttx" => Plan::Gate {
             neval: 60_000,
             niter: 8,
@@ -271,6 +271,32 @@ fn plan_for(dir: &str) -> Plan {
             niter: 8,
             rel_tol: 0.02,
         },
+        // ── the multi-rung spine reference, informational ───────────────────
+        // The one banked row whose diagrams carry a ladder of spacelike lines:
+        // 35 channels splitting 12 / 14 / 9 over one, two and three of them, so
+        // every channel is a peripheral chain and this cross section is the
+        // chain's own end-to-end number — no all-timelike member is there to
+        // carry it. QCD = 0 at lpp = 0 with all three scales fixed at m_Z keeps
+        // it clear of the strong coupling and the PDFs entirely.
+        //
+        // Measured and not enforced, because the disagreement is not the map's.
+        // On MadGraph's own fixed kinematic grid this process's colour- and
+        // helicity-summed |M|² disagrees with MadGraph's MATRIX1 point by point
+        // by factors of 2 to 63 — ours the larger nearly everywhere, which is
+        // what a missed cancellation between diagrams looks like — while the
+        // same comparison reproduces `uux_to_uux` to 5.7e-14 and
+        // `ee_to_mumu_tata_qcd0` to 5.1e-13. It is the first process here whose
+        // diagrams carry a W between two quark lines, and it has no
+        // amplitude-level reference. The σ below therefore measures a matrix
+        // element nothing has checked; enforcing it would be gating a number
+        // whose linear level is known to be wrong.
+        "ud_to_epemud_qcd0" => Plan::Info {
+            neval: 120_000,
+            niter: 8,
+            reason: "|M|² disagrees with MadGraph's MATRIX1 point by point (2x-63x on its \
+                     own fixed grid); the cross section is measured, and the amplitude is \
+                     what has to be reconciled before it can be enforced",
+        },
         // ── llj partonic subprocesses, blocked on the clustering scale ──────
         // Each is banked with a cross section and each is cheap enough to
         // integrate, but all four run cards leave both scales free at
@@ -297,6 +323,36 @@ struct BankedSigma {
     process: String,
     sigma_pb: f64,
     sigma_err_pb: f64,
+}
+
+/// Whether a banked run directory is on this machine, and — when it is not —
+/// whether the manifest says it is allowed to be.
+///
+/// A gate that cannot find a run it names is normally looking at an incomplete
+/// environment, and [`vibegraph::validation::require`] is what says so. A row the
+/// manifest marks `bundled = false` is the declared exception: its artifacts live
+/// in a local work area and are deliberately not in the pinned bundle yet, so a
+/// checkout that fetched the bundle and does not have the run has a complete
+/// environment with respect to what the bundle promises. Such a row is passed
+/// over — the report renders the cell as awaiting the bundle — while a missing
+/// bundled row still fails.
+enum RunPresence {
+    /// The run directory and its cards are on this machine.
+    Present,
+    /// Absent, and the manifest declares the bundle does not carry it.
+    AwaitingBundle,
+    /// Absent, and the bundle is supposed to carry it.
+    Missing,
+}
+
+fn run_presence(dir: &str, unbundled: &BTreeSet<String>) -> RunPresence {
+    if output_dir().join(dir).join("Cards/run_card.dat").exists() {
+        RunPresence::Present
+    } else if unbundled.contains(dir) {
+        RunPresence::AwaitingBundle
+    } else {
+        RunPresence::Missing
+    }
 }
 
 fn output_dir() -> PathBuf {
@@ -885,6 +941,95 @@ fn probe_qcd_seed_stability() {
     }
 }
 
+/// Are the per-diagram channel maps of a massless-propagator process distinct, and
+/// does the α-adaptation move off uniform?
+///
+/// The standing finding this re-measures: with the spacelike transfer drawn flat —
+/// which is what an unregulated massless line gives — every `u u~ → u u~` channel
+/// density was bit-identical at every probed point, all four of `g g → g g` were,
+/// and the Kleiss–Pittau reallocation therefore had nothing to reallocate. Reported
+/// as the worst *pairwise* relative density difference over drawn points (a set
+/// whose members coincide reads zero) beside the converged α, with `g g → t t~` —
+/// whose t/u maps carry a 173 GeV pole and were never degenerate — as the control
+/// that says the instrument can tell the two apart.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_channel_map_degeneracy() {
+    use vibegraph::phasespace::rng::SubStream;
+    use vibegraph::phasespace::{Channel, DiagramChannel, PhaseSpaceMap};
+
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let model = common::sm_model();
+    for (dir, neval, niter) in [
+        ("uux_to_uux", 40_000usize, 6usize),
+        ("gg_to_gg", 40_000, 6),
+        ("gg_to_ttx", 60_000, 8),
+    ] {
+        let entry = &banked[dir];
+        let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
+            .expect("banked run card parses");
+        let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let sets = common::generate(&entry.process);
+        let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &model, &evaluated);
+        let cuts = Cuts::compile(&run_card, &legs).expect("cuts compile");
+        let floor = cuts.spacelike_floor();
+        let diagrams: Vec<_> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let channels: Vec<DiagramChannel<f64>> = diagrams
+            .iter()
+            .map(|d| DiagramChannel::from_diagram_regulated(d, &evaluated, sqrt_s, floor))
+            .collect();
+
+        let mut stream = SubStream::from_stream(SEED, 0xD1FF);
+        let mut worst = 0.0f64;
+        let mut coincident = 0usize;
+        let mut pairs = 0usize;
+        for _ in 0..2_000 {
+            let u = stream.uniforms::<f64>(channels[0].ndim());
+            let p = channels[0].sample(&u).momenta;
+            let d: Vec<f64> = channels.iter().map(|c| c.density(&p)).collect();
+            for i in 0..d.len() {
+                for j in (i + 1)..d.len() {
+                    pairs += 1;
+                    let rel =
+                        (d[i] - d[j]).abs() / d[i].abs().max(d[j].abs()).max(f64::MIN_POSITIVE);
+                    if rel == 0.0 {
+                        coincident += 1;
+                    }
+                    worst = worst.max(rel);
+                }
+            }
+        }
+        let (_, _, _, alphas) = integrate_with(
+            dir,
+            &entry.process,
+            neval,
+            niter,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+        );
+        let spread = alphas.iter().cloned().fold(0.0f64, f64::max)
+            - alphas.iter().cloned().fold(f64::INFINITY, f64::min);
+        eprintln!(
+            "  {dir:>12} floor {floor:>5.0} GeV², {} channels: worst pairwise density difference \
+             {worst:.3e}, {coincident} of {pairs} pairs bit-identical; α {alphas:?} (spread \
+             {spread:.3e} about uniform {:.4})",
+            channels.len(),
+            1.0 / channels.len() as f64,
+        );
+    }
+}
+
 /// Diagnose *why* `ee_to_mumu_tata_qcd0` is seed-unstable: is the estimator
 /// merely under-sampled (more points would fix it), or is the α-adaptation
 /// collapsing the channel mixture (more points would not)?
@@ -1149,6 +1294,294 @@ fn gate_dir(dir: &str, banked: &BankedSigma) -> Result<(), String> {
     }
 }
 
+/// A row the bundle does not carry may be absent; a row it carries may not.
+///
+/// The two halves are the whole of the declared-absent rule, and each is the
+/// other's control: without the first, a checkout that fetched the pinned bundle
+/// fails on a run the bundle never promised it, and without the second, a genuinely
+/// incomplete environment passes silently. The gate's own iteration is what
+/// consumes [`run_presence`], so it is exercised here directly rather than by
+/// arranging a work area.
+#[test]
+fn a_row_the_bundle_does_not_carry_may_be_absent() {
+    let unbundled = common::manifest::unbundled_rows();
+    assert!(
+        !unbundled.is_empty(),
+        "no manifest row is marked bundled = false, so this rule has nothing to check \
+         and the gate's tolerance is untested"
+    );
+
+    // Absent and declared absent: passed over.
+    let declared = unbundled.iter().next().unwrap();
+    assert!(
+        matches!(
+            run_presence("no-such-run-directory", &unbundled),
+            RunPresence::Missing
+        ),
+        "a directory no manifest row names is not exempt from anything"
+    );
+    let absent_and_declared: BTreeSet<String> =
+        std::iter::once("no-such-run-directory".to_string()).collect();
+    assert!(
+        matches!(
+            run_presence("no-such-run-directory", &absent_and_declared),
+            RunPresence::AwaitingBundle
+        ),
+        "a row the manifest marks bundled = false may be absent"
+    );
+
+    // Present is present whatever the manifest says about the bundle, so a machine
+    // that has the run measures it rather than passing over it.
+    if output_dir()
+        .join(declared)
+        .join("Cards/run_card.dat")
+        .exists()
+    {
+        assert!(
+            matches!(run_presence(declared, &unbundled), RunPresence::Present),
+            "an unbundled row whose run is on this machine must still be measured"
+        );
+    }
+}
+
+/// The other half, as the failure it has to stay: a missing run the bundle *does*
+/// carry is an incomplete environment and says so.
+#[test]
+#[should_panic(expected = "needs a banked run card")]
+fn a_row_the_bundle_carries_may_not_be_absent() {
+    let unbundled = common::manifest::unbundled_rows();
+    match run_presence("uux_to_mumu_but_misspelt", &unbundled) {
+        RunPresence::Missing => vibegraph::validation::require(
+            "sigma_gate_matches_madgraph",
+            "a banked run card",
+            "uux_to_mumu_but_misspelt",
+        ),
+        other => panic!(
+            "a bundled row's missing run classified as {}",
+            match other {
+                RunPresence::Present => "present",
+                RunPresence::AwaitingBundle => "awaiting the bundle",
+                RunPresence::Missing => unreachable!(),
+            }
+        ),
+    }
+}
+
+/// Draws the coverage sweep is measured over. Flat, so every accepted point is an
+/// independent chance for the bound to have renounced something the cuts keep.
+const COVERAGE_DRAWS: usize = 100_000;
+
+/// How far the control pushes each rung's transfer bound out beyond the scale the
+/// cuts imply. Two orders: the bound ladder measured on this crate's ladder cuts
+/// first loses fiducial phase space at a hundred times the cut scale, so a control
+/// at that factor is the nearest one that has to fire.
+const CONTROL_BOUND_FACTOR: f64 = 100.0;
+
+/// Every gated process whose peripheral channels are bounded still reaches
+/// everywhere its own cuts accept.
+///
+/// [`Cuts::spacelike_floor`] does two things to a peripheral channel. It floors the
+/// propagator pole, which enters the draw and the density alike and so only
+/// reshapes the sampling; and it bounds each rung's transfer at `t ≤ −floor`, which
+/// narrows the channel's *support* — above the bound the density is an exact zero.
+/// A set of narrowed channels integrates the right thing only if between them they
+/// still cover everywhere the integrand lives, and the bound's `pT_min²` argument
+/// is a proof only up to three outgoing legs. Past that it is a scale, so coverage
+/// is measured here per process rather than inherited from the process it was first
+/// measured on.
+///
+/// The measurement is on the sharpest available integrand, the cut indicator
+/// itself, over flat RAMBO: every drawn point the cuts accept must be reachable by
+/// some channel. A process whose set keeps an unbounded member — an s-channel or
+/// contact diagram, whose tree spans the whole final state — passes that trivially,
+/// so the count of points only a bounded channel reaches is reported beside it and
+/// is what says whether the process constrains anything.
+///
+/// The control is the second half. The same channels with every bound pushed out by
+/// [`CONTROL_BOUND_FACTOR`] have to *lose* accepted points somewhere, or the pass
+/// above is a property of the cuts rather than of where the bound sits.
+#[test]
+fn every_bounded_channel_set_covers_its_own_fiducial_region() {
+    use vibegraph::phasespace::rng::SubStream;
+    use vibegraph::phasespace::{Channel, DiagramChannel, PhaseSpaceMap, RamboChannel};
+
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).expect("sigma reference readable");
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+
+    let model = common::sm_model();
+    let unbundled = common::manifest::unbundled_rows();
+    let mut bounded_processes = 0usize;
+    let mut control_fired = 0usize;
+    let mut constraining = 0usize;
+    let mut awaiting = 0usize;
+    for (dir, entry) in &banked {
+        // Every row this suite integrates, gated or informational — an unenforced
+        // cross section is drawn through the same channel set and would inherit the
+        // same bias if the bound renounced something the cuts keep.
+        if matches!(plan_for(dir), Plan::Skip(_)) {
+            continue;
+        }
+        match run_presence(dir, &unbundled) {
+            RunPresence::Present => {}
+            RunPresence::AwaitingBundle => {
+                eprintln!("[{dir}] awaiting the bundle: no run on this machine, nothing to cover");
+                awaiting += 1;
+                continue;
+            }
+            RunPresence::Missing => vibegraph::validation::require(
+                "every_bounded_channel_set_covers_its_own_fiducial_region",
+                "a banked run card",
+                dir,
+            ),
+        }
+        let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
+            .expect("banked run card parses");
+        let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let sets = common::generate(&entry.process);
+        let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &model, &evaluated);
+        let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
+        let floor = cuts.spacelike_floor();
+
+        let particles = rep.external_particles();
+        let n_in = rep.n_in();
+        let masses: Vec<f64> = particles[n_in..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let beams: Vec<LorentzVector<f64>> = (0..n_in)
+            .map(|a| {
+                let m = evaluated.mass(particles[a]);
+                let e = sqrt_s / 2.0;
+                let pz = (e * e - m * m).max(0.0).sqrt();
+                LorentzVector::new(e, 0.0, 0.0, if a == 0 { pz } else { -pz })
+            })
+            .collect();
+
+        let diagrams: Vec<_> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let build = |cap: Option<f64>| -> Vec<DiagramChannel<f64>> {
+            diagrams
+                .iter()
+                .map(|d| {
+                    let ch = DiagramChannel::from_diagram_regulated(d, &evaluated, sqrt_s, floor);
+                    match cap {
+                        Some(t_max) => ch.with_fiducial_t_max(t_max),
+                        None => ch,
+                    }
+                })
+                .collect()
+        };
+        let channels = build(None);
+        let peripheral = channels
+            .iter()
+            .filter(|c| !c.spine_poles().is_empty())
+            .count();
+        if floor == 0.0 || peripheral == 0 {
+            eprintln!(
+                "[{dir}] floor {floor} GeV², {peripheral} of {} channels peripheral: \
+                 nothing bounded, nothing to cover",
+                channels.len()
+            );
+            continue;
+        }
+        let widened = build(Some(-floor * CONTROL_BOUND_FACTOR));
+
+        let flat = RamboChannel::new(sqrt_s, masses.clone());
+        let mut stream = SubStream::from_stream(SEED, 0xC0FE);
+        let mut ext = beams.clone();
+        let (mut fiducial, mut reachable, mut only_bounded, mut reachable_wide) = (0, 0, 0, 0);
+        for _ in 0..COVERAGE_DRAWS {
+            let u = stream.uniforms::<f64>(flat.ndim());
+            let p = flat.sample(&u).momenta;
+            ext.truncate(n_in);
+            ext.extend_from_slice(&p);
+            if !cuts.pass(&ext) {
+                continue;
+            }
+            fiducial += 1;
+            let hit = |set: &[DiagramChannel<f64>]| set.iter().any(|c| c.density(&p) > 0.0);
+            if hit(&channels) {
+                reachable += 1;
+            }
+            if !channels
+                .iter()
+                .any(|c| c.spine_poles().is_empty() && c.density(&p) > 0.0)
+            {
+                only_bounded += 1;
+            }
+            if hit(&widened) {
+                reachable_wide += 1;
+            }
+        }
+        eprintln!(
+            "[{dir}] floor {floor:.0} GeV², {peripheral}/{} channels peripheral: {fiducial} of \
+             {COVERAGE_DRAWS} draws accepted, {reachable} reachable ({only_bounded} of them only \
+             by a bounded channel); at {CONTROL_BOUND_FACTOR:.0}x the bound, {reachable_wide}",
+            channels.len()
+        );
+        assert!(
+            fiducial > 0 && fiducial < COVERAGE_DRAWS,
+            "[{dir}] the cut indicator is not selecting a proper subregion, so coverage \
+             here would be vacuous"
+        );
+        assert_eq!(
+            fiducial,
+            reachable,
+            "[{dir}] the bounded channel set leaves {} accepted point(s) unreachable, so its \
+             densities cannot normalise a combiner over the fiducial region",
+            fiducial - reachable
+        );
+        bounded_processes += 1;
+        if only_bounded > 0 {
+            constraining += 1;
+        }
+        if reachable_wide < fiducial {
+            control_fired += 1;
+        }
+    }
+
+    eprintln!(
+        "coverage: {bounded_processes} bounded process(es), {constraining} of them with points \
+         no unbounded channel reaches, control fires on {control_fired}; {awaiting} row(s) \
+         awaiting the bundle"
+    );
+    assert!(
+        bounded_processes > 0,
+        "no process builds a bounded peripheral channel, so this measures nothing"
+    );
+    // Coverage above is asserted per process regardless. What the two checks below
+    // add is that the assertion is not vacuous — that some process has accepted
+    // points only a *bounded* channel reaches, and that moving the bound would lose
+    // them. Only a process whose whole channel set is peripheral shows that, and on
+    // this reference set exactly one does. A checkout the bundle has not yet reached
+    // that row on cannot demonstrate it, and is told so rather than passing quietly;
+    // a checkout that has every row must.
+    if constraining == 0 && awaiting > 0 {
+        eprintln!(
+            "coverage: no available process has points only a bounded channel reaches, so the \
+             bound's non-vacuity rests on the {awaiting} row(s) this checkout does not have yet"
+        );
+        return;
+    }
+    assert!(
+        constraining > 0,
+        "every accepted point is reachable by an unbounded channel on every process, so the \
+         coverage pass says nothing about the bound"
+    );
+    assert!(
+        control_fired > 0,
+        "pushing every bound out by {CONTROL_BOUND_FACTOR}x loses no accepted point anywhere, \
+         so the coverage check cannot see where the bound sits"
+    );
+}
+
 #[test]
 fn sigma_gate_matches_madgraph() {
     let ref_path = reference_path();
@@ -1165,11 +1598,26 @@ fn sigma_gate_matches_madgraph() {
         );
     }
 
+    let unbundled = common::manifest::unbundled_rows();
     let mut failures = Vec::new();
     let mut asserted = 0usize;
+    let mut awaiting = Vec::new();
     for (dir, entry) in &banked {
-        if !output_dir().join(dir).join("Cards/run_card.dat").exists() {
-            vibegraph::validation::require("sigma_gate_matches_madgraph", "a banked run card", dir);
+        match run_presence(dir, &unbundled) {
+            RunPresence::Present => {}
+            RunPresence::AwaitingBundle => {
+                eprintln!(
+                    "[{dir}] AWAITING BUNDLE (the manifest marks this row bundled = false and \
+                     this checkout does not have its run, so no cell is written for it)"
+                );
+                awaiting.push(dir.as_str());
+                continue;
+            }
+            RunPresence::Missing => vibegraph::validation::require(
+                "sigma_gate_matches_madgraph",
+                "a banked run card",
+                dir,
+            ),
         }
         if matches!(plan_for(dir), Plan::Gate { .. }) {
             asserted += 1;
@@ -1179,7 +1627,22 @@ fn sigma_gate_matches_madgraph() {
         }
     }
 
-    eprintln!("sigma gate: {asserted} process(es) asserted against banked MadGraph sigma");
+    eprintln!(
+        "sigma gate: {asserted} process(es) asserted against banked MadGraph sigma, \
+         {} awaiting the bundle ({})",
+        awaiting.len(),
+        if awaiting.is_empty() {
+            "none".to_string()
+        } else {
+            awaiting.join(", ")
+        }
+    );
+    // A row passed over above writes no cell, so a reference whose runs had all gone
+    // missing would leave this gate asserting nothing at all and still passing.
+    assert!(
+        asserted > 0,
+        "no banked run on this machine is asserted, so the sigma gate measured nothing"
+    );
     assert!(
         failures.is_empty(),
         "sigma gate failures:\n{}",
