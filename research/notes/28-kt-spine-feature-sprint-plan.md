@@ -237,6 +237,10 @@ Nothing else rides on Z — that is the B5 lesson. **Check `pixi.lock` against
 `pixi.toml` with a locked install if any environment changed (the refdata-3
 close-out tripped CI on exactly this).**
 
+Z also executes **D4 (§6)**: prune the duplicate `pp_to_llj_qcd2_qed2` —
+manifest rows, gate registrations, reference entries, and its bundle
+membership — keeping `pp_to_llj` as the one dynamical-scale llj row.
+
 ## 6. Decisions (user — resolved 2026-08-01, recommended options adopted)
 
 1. **D1 — capstone card (decided)**: `p p > j j` with MadGraph's default run
@@ -251,6 +255,17 @@ close-out tripped CI on exactly this).**
 3. **D3 — massless-t-channel cut (decided)**: resolved inside S2 by
    measurement (flat-fallback vs fiducially-bounded `t_max`); the decision and
    its numbers land in this note.
+4. **D4 — duplicate-run pruning (user, 2026-08-01)**: `pp_to_llj_qcd2_qed2`'s
+   banked run is event-for-event identical to `pp_to_llj` (K2 found it;
+   verified independently — equal sha over the event payloads: the `QCD=2
+   QED=2` restriction coincides with the default orders for this process), so
+   the census counts one measurement twice. Keep `pp_to_llj`; prune
+   `pp_to_llj_qcd2_qed2` at Z — manifest rows, gate registrations, reference
+   entries, and the refdata-4 bundle. Coupling-order grammar coverage is
+   retained by the other order-restricted rows (`ee_to_mumu_tata_qcd0`,
+   `bbx_to_ccx_emmm_qcd0`, …). Until Z, sessions treat the pair as one
+   independent row: K4 enforces on `pp_to_llj`, and the duplicate earns no
+   separate cell anywhere.
 
 ## 7. Sequencing
 
