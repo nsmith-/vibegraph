@@ -96,27 +96,26 @@ One line each; the note is the full record. Earlier sprints
   (was `2.69` / `6.4e-3`). The quoted error at the gate budget fell 2.4×, and
   `g g > g g`'s fell 2.6×. (`validate_sigma.rs` `probe_qcd_seed_stability`,
   note 28 §S4.)
-- **`ud_to_epemud_qcd0` carries a relative sign between diagrams** — localised in
-  `kt-spine` S5; the σ cell stays informational at `1.0860e-1 pb` against
-  MadGraph's `1.4107e-2 ± 3.4e-5 pb`. The row is now a registered amplitude
-  process with a committed table, compared on every run as a `hermetic` / `info`
-  cell (`KNOWN_LINEAR_DISAGREEMENT` in `amplitude_oracle`). Every one of the 35
-  diagrams reproduces MadGraph's own `AMP()` to rounding under a unit phase — the
-  pairing is banked and exact at overlap `1` over 48 (point, helicity) rows — but
-  **eleven of them carry the opposite sign to the other 24**: MadGraph graphs
-  `1–8` (the three-rung ladders whose middle rung is a spacelike lepton), `17`
-  (the same with a spacelike neutrino between two `W`s) and `18, 19`
-  (`W+W- → γ*/Z* → e+e-`). Flipping exactly those eleven takes the worst |M|²
-  deviation over all 74 banked points from `5.1e+1` to `4.1e-14`. The predicate
-  that selects them is *the beam-to-beam spine carries an even number of boson
-  rungs*; three candidate correction rules were each falsified by a gated control
-  (`ee_to_mumu_tata_qcd0`, `ee_to_wpwm`, `u u~ > u u~`), so the fix is **not** a
-  missing multiplicative factor of those forms. Rooting soundness passes on the
-  process (270 re-rootings, 0 failures) and the CKM is diagonal on both sides.
-  **Next step**: derive the crossing sign for a diagram whose spine passes through
-  a crossed fermion line, and for a triple-gauge vertex whose legs are all
-  internal — the required sign vector is known exactly, so a candidate rule can be
-  checked against it and the 19 gated tables in one run. (note 28 §S5.)
+- ~~**`ud_to_epemud_qcd0` carries a relative sign between diagrams**~~ — **resolved
+  in `kt-spine` S6**, and the rule generalises one that was already there. The
+  per-propagator flip in `spine_sign_from_flow` fired only on *initial–initial*
+  fermion lines; it belongs on every line with **at least one initial-state
+  endpoint**, mixed lines included. Both sides cross half the external legs and not
+  the same half — diagram enumeration binds UFO slots in the all-incoming identity,
+  MadGraph in the all-outgoing one — so the lines read against their own slot arrow
+  are exactly initial–initial *and* mixed, and a line read backwards costs
+  `C Γᵀ C⁻¹ = −γ^μ P_χ̄` **per vertex** while `reversed_convention_sign` can only ever
+  supply one such −1 (a fermion line has one vector-rooted sink). The missing `V − 1`
+  are one per internal fermion propagator. `u d > e+ e- u d QCD=0` is the first
+  banked row with two mixed fermion lines, so it is the first where the propagator
+  can sit on a mixed line (24 diagrams) or on the crossed lepton line (9, plus 2 with
+  none) — S5's partition, with the two triple-gauge diagrams landing right without
+  being named. The row is now **gated at both levels**: |M|² max rel `4.2e-14`
+  (was `5.1e+1`), per-flow `3.0e-15`, `JAMP2` `2.6e-14`, all 35 diagrams against bare
+  `AMP()` at `6.6e-15` under one phase; σ = `1.409864e-2 ± 1.841e-5 pb` against
+  MadGraph's `1.410700e-2 ± 3.4241e-5` (pull −0.22, rel −0.06%). The 19 other
+  amplitude tables are unmoved, rooting soundness is `270 re-rootings, 0 failures`,
+  and `MG_VALIDATED_PROCESSES` is 19 entries. (note 28 §S6.)
 - **`ee_to_mumua` drifted when the references moved to 3.7.1** — the one row
   where 3.7.1 disagrees with us *more* than 3.5.7 did. Our σ is unchanged
   (`1.007660e-1` pb, same integration); MadGraph's moved `1.00630e-1 ± 3.865e-4`
