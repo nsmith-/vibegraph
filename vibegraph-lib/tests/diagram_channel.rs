@@ -18,11 +18,11 @@
 mod common;
 
 use vibegraph::cuts::{Cuts, ExternalLeg};
-use vibegraph::diagrams::diagram::Diagram;
+use vibegraph::diagrams::diagram::{Diagram, LegIdx, Ray};
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rng::SubStream;
 use vibegraph::phasespace::{
-    Channel, DiagramChannel, MultiChannel, PhaseSpaceMap, RamboChannel, Resonance,
+    Channel, DiagramChannel, MultiChannel, PhaseSpaceMap, RamboChannel, Resonance, RungSpec,
 };
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::EvaluatedModel;
@@ -1320,5 +1320,1227 @@ fn a_zero_spacelike_floor_leaves_every_channel_bit_identical() {
     assert!(
         moved_by_floor > 0,
         "no channel responds to the floor at all — the identity above is vacuous"
+    );
+}
+
+// ── The ordered peripheral chain ─────────────────────────────────────────────
+
+/// The reference process for the ordered peripheral chain: one concrete flavour
+/// assignment of `p p > e+ e- j j` at `QCD = 0`, at fixed partonic beams.
+///
+/// 35 diagrams splitting `12 / 14 / 9` over one, two and three spacelike lines, so
+/// the whole ladder spectrum is present — including the multiperipheral topology
+/// where the two leptons leave the chain at *different* rungs, which a single-rung
+/// spine cannot express at all. Its rungs are asymmetric: the blobs are a jet, a
+/// lepton and a lepton pair, and the poles mix massless lines with `m_W` and `m_Z`,
+/// which is what keeps a swapped ordering from being the same map.
+const LADDER_PROCESS: &str = "u d > e+ e- u d QCD=0";
+const LADDER_SQRT_S: f64 = 500.0;
+
+/// One diagram's peripheral chain, derived here rather than asked of the channel:
+/// the spacelike sides `S_1 ⊂ … ⊂ S_r` sorted by size, the blobs `B_i = S_i \ S_{i-1}`
+/// they imply, what is left over, and each rung's *bare* propagator mass².
+#[derive(Clone, Debug)]
+struct RungChain {
+    sides: Vec<Vec<usize>>,
+    blobs: Vec<Vec<usize>>,
+    recoil: Vec<usize>,
+    poles: Vec<f64>,
+}
+
+fn rung_chain(d: &Diagram, model: &EvaluatedModel) -> RungChain {
+    let n_out = d.n_ext() - d.n_in;
+    let mut lines: Vec<(Vec<usize>, f64)> = d
+        .props
+        .iter()
+        .filter(|p| p.is_spacelike(d.n_in))
+        .map(|p| {
+            let m = model.mass(p.particle);
+            (spine_partition(&p.momentum, d.n_in, d.n_ext()).0, m * m)
+        })
+        .collect();
+    lines.sort_by_key(|(s, _)| s.len());
+    let sides: Vec<Vec<usize>> = lines.iter().map(|(s, _)| s.clone()).collect();
+    let poles: Vec<f64> = lines.iter().map(|(_, m)| *m).collect();
+    let blobs: Vec<Vec<usize>> = (0..sides.len())
+        .map(|i| {
+            sides[i]
+                .iter()
+                .copied()
+                .filter(|s| i == 0 || !sides[i - 1].contains(s))
+                .collect()
+        })
+        .collect();
+    let recoil: Vec<usize> = (0..n_out)
+        .filter(|s| sides.last().is_none_or(|l| !l.contains(s)))
+        .collect();
+    RungChain {
+        sides,
+        blobs,
+        recoil,
+        poles,
+    }
+}
+
+/// The outgoing-leg slots on beam `0`'s side of propagator `cut`, derived by
+/// deleting that propagator from the diagram's vertex graph and taking the connected
+/// component beam `0` lands in — an independent route to the same partition, reading
+/// the graph rather than the stored momentum routing.
+fn beam0_side_by_graph_cut(d: &Diagram, cut: usize) -> Vec<usize> {
+    let nv = d.vertices.len();
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); nv];
+    for (pi, p) in d.props.iter().enumerate() {
+        if pi == cut {
+            continue;
+        }
+        adj[p.endpoints[0].0 .0].push(p.endpoints[1].0 .0);
+        adj[p.endpoints[1].0 .0].push(p.endpoints[0].0 .0);
+    }
+    let side = |start: usize| -> Vec<usize> {
+        let mut seen = vec![false; nv];
+        let mut stack = vec![start];
+        seen[start] = true;
+        while let Some(v) = stack.pop() {
+            for &w in &adj[v] {
+                if !seen[w] {
+                    seen[w] = true;
+                    stack.push(w);
+                }
+            }
+        }
+        let mut ext = Vec::new();
+        for (vi, vtx) in d.vertices.iter().enumerate() {
+            if !seen[vi] {
+                continue;
+            }
+            for ray in &vtx.rays {
+                if let Ray::Leg(LegIdx(li)) = ray {
+                    ext.push(*li);
+                }
+            }
+        }
+        ext.sort_unstable();
+        ext
+    };
+    let a = side(d.props[cut].endpoints[0].0 .0);
+    let with_beam0 = if a.contains(&0) {
+        a
+    } else {
+        side(d.props[cut].endpoints[1].0 .0)
+    };
+    with_beam0
+        .into_iter()
+        .filter(|&l| l >= d.n_in)
+        .map(|l| l - d.n_in)
+        .collect()
+}
+
+/// The running momentum transfers `t_i = (p_a − Σ_{S_i} p)²` of a chain, computed
+/// from the chain's own prefixes and never asked of the channel.
+fn chain_transfers(
+    chain: &RungChain,
+    beam0: LorentzVector<f64>,
+    p: &[LorentzVector<f64>],
+) -> Vec<f64> {
+    chain
+        .sides
+        .iter()
+        .map(|side| {
+            let (mut e, mut px, mut py, mut pz) = (beam0.e(), beam0.px(), beam0.py(), beam0.pz());
+            for &s in side {
+                e -= p[s].e();
+                px -= p[s].px();
+                py -= p[s].py();
+                pz -= p[s].pz();
+            }
+            e * e - px * px - py * py - pz * pz
+        })
+        .collect()
+}
+
+fn ladder_beams() -> [LorentzVector<f64>; 2] {
+    let h = LADDER_SQRT_S / 2.0;
+    [
+        LorentzVector::new(h, 0.0, 0.0, h),
+        LorentzVector::new(h, 0.0, 0.0, -h),
+    ]
+}
+
+/// The run card's cuts for [`LADDER_PROCESS`], and the fiducial scale they imply.
+fn ladder_cuts() -> Cuts {
+    let legs = vec![
+        ExternalLeg::incoming(2, 0.0),
+        ExternalLeg::incoming(1, 0.0),
+        ExternalLeg::outgoing(-11, 0.0),
+        ExternalLeg::outgoing(11, 0.0),
+        ExternalLeg::outgoing(2, 0.0),
+        ExternalLeg::outgoing(1, 0.0),
+    ];
+    Cuts::compile(&RunCard::default(), &legs).expect("the reference process's cuts compile")
+}
+
+/// Every diagram of the reference process with the chain it implies.
+fn ladder_diagrams(model: &EvaluatedModel) -> Vec<(Diagram, RungChain)> {
+    let sets = common::generate(LADDER_PROCESS);
+    assert_eq!(sets.len(), 1, "the reference process is one subprocess");
+    sets[0]
+        .diagrams
+        .iter()
+        .map(|d| {
+            let chain = rung_chain(d, model);
+            (d.clone(), chain)
+        })
+        .collect()
+}
+
+/// The chain the ordering test is specified at: two rungs, the lepton pair emitted
+/// first and a single jet second, with poles of different masses.
+///
+/// Selected by shape rather than by index, so a change in enumeration order moves
+/// the test rather than silently retargeting it. The asymmetry is the precondition:
+/// two rungs carrying the same pole and interchangeable blobs would make the swapped
+/// chain the *same* map, and the ordering question would have no content.
+fn ordering_chain(model: &EvaluatedModel) -> (Diagram, RungChain) {
+    ladder_diagrams(model)
+        .into_iter()
+        .find(|(_, c)| {
+            c.blobs.len() == 2
+                && c.blobs[0] == vec![0, 1]
+                && c.blobs[1].len() == 1
+                && c.poles[0] != c.poles[1]
+        })
+        .expect("the reference process carries an asymmetric two-rung chain")
+}
+
+/// The spacelike lines of every diagram of the reference process nest into an
+/// ordered chain *and* that chain is the one an independent graph cut gives.
+///
+/// The chain is read off the stored momentum routing — feyngraph eliminates the
+/// highest-indexed external, so a stored coefficient vector is the signed
+/// combination for one side of the cut, and which side that is takes care. Deleting
+/// the propagator from the vertex graph and taking beam `0`'s connected component
+/// asks the same question of the topology instead. The two agreeing means a routing
+/// convention change trips one derivation or the other rather than quietly moving
+/// every rung's blob.
+#[test]
+fn the_rung_chain_agrees_with_an_independent_graph_cut() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let mut rungs_seen = std::collections::BTreeMap::<usize, usize>::new();
+    let mut compared = 0usize;
+    for (d, chain) in ladder_diagrams(&evaluated) {
+        *rungs_seen.entry(chain.sides.len()).or_default() += 1;
+        let spacelike: Vec<usize> = (0..d.props.len())
+            .filter(|&pi| d.props[pi].is_spacelike(d.n_in))
+            .collect();
+        let mut by_graph: Vec<Vec<usize>> = spacelike
+            .iter()
+            .map(|&pi| beam0_side_by_graph_cut(&d, pi))
+            .collect();
+        by_graph.sort_by_key(|s| s.len());
+        assert_eq!(
+            by_graph, chain.sides,
+            "the routed and graph-cut derivations of the rung chain disagree"
+        );
+        // Blobs and recoil partition the final state, in chain order.
+        let mut covered: Vec<usize> = chain.blobs.concat();
+        covered.extend(&chain.recoil);
+        covered.sort_unstable();
+        assert_eq!(
+            covered,
+            (0..4).collect::<Vec<_>>(),
+            "the blobs and recoil do not partition the final state"
+        );
+        assert!(!chain.recoil.is_empty(), "the chain left nothing behind");
+        compared += 1;
+    }
+    eprintln!("{LADDER_PROCESS}: spacelike-line count over {compared} diagrams: {rungs_seen:?}");
+    assert!(
+        rungs_seen.contains_key(&3),
+        "no three-rung ladder in the reference process, so the cross-check is weak"
+    );
+}
+
+/// Every chain the reference process implies is a valid map: it consumes exactly its
+/// own dimension, emits on-shell momentum-conserving points, and the weight its walk
+/// accumulated is the reciprocal of the density rebuilt from the realised momenta.
+///
+/// The last is the instrument that sees a wrong inter-rung rotation. The walk builds
+/// rung `i > 1` in the CM of what the previous rung left behind, with `q_{i-1}` as
+/// its polar axis; the density never enters that frame at all, and reads every
+/// invariant back off the momenta. A rotation that put a rung's emission at the
+/// wrong angle would leave the drawn `t_i` and the reconstructed one disagreeing,
+/// which is exactly this comparison.
+#[test]
+fn every_ladder_chain_is_a_valid_map() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let scale = ladder_cuts().spacelike_floor();
+    let masses = vec![0.0; 4];
+    let mut worst = 0.0f64;
+    let mut multi = 0usize;
+    for (i, (d, chain)) in ladder_diagrams(&evaluated).into_iter().enumerate() {
+        let ch = DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale);
+        assert_eq!(
+            ch.spine_poles().len(),
+            chain.sides.len(),
+            "diagram {i}: the channel built {} rungs for a {}-line ladder",
+            ch.spine_poles().len(),
+            chain.sides.len()
+        );
+        if chain.sides.len() > 1 {
+            multi += 1;
+        }
+        worst = worst.max(assert_valid(
+            &ch,
+            LADDER_SQRT_S,
+            &masses,
+            0x1ADD0 + i as u64,
+        ));
+    }
+    eprintln!(
+        "{LADDER_PROCESS}: walk weight vs 1/density over every derived chain \
+         ({multi} of them multi-rung): worst {worst:.3e} relative"
+    );
+    assert!(multi > 0, "no multi-rung chain was exercised");
+    assert!(
+        worst < WALK_DENSITY_TOL,
+        "a chain's two weightings disagree by {worst:.3e}"
+    );
+}
+
+/// Importance sampling reshapes variance, not volume: each chain integrates exactly
+/// the volume of the region it draws from, and between them the chains reach
+/// everywhere the process's own cuts accept.
+///
+/// The comparison cannot simply be against `V_4`, because a rung bounded at the
+/// fiducial scale deliberately *renounces* part of phase space and must report
+/// density zero there. So the reference is `V_4` restricted to the chain's own
+/// support, measured with flat RAMBO using the chain's density as the indicator:
+/// two entirely different parametrisations of the same region, one drawing it and
+/// one rejecting into it. A wrong Jacobian moves the first and not the second.
+///
+/// Both halves are stated as what they are. The volume agreement is a check on the
+/// Jacobian and is **blind to the rung ordering** by construction — the multiset
+/// `{t_i}` a configuration carries is the same read from either end of the ladder —
+/// so it is recorded here so nobody later mistakes it for confirmation that the
+/// ordering is right. The coverage half is the other side of a narrowed support: a
+/// channel set whose members each renounce a piece is unbiased only if between them
+/// they still reach everywhere the integrand lives, and the sharpest available
+/// integrand for that is the cut indicator itself.
+#[test]
+fn ladder_chains_integrate_their_own_support_and_cover_the_fiducial_region() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let cuts = ladder_cuts();
+    let scale = cuts.spacelike_floor();
+    assert_eq!(scale, 400.0, "the reference card's fiducial scale");
+    let masses = vec![0.0; 4];
+    let n = 200_000;
+
+    let flat = RamboChannel::new(LADDER_SQRT_S, masses.clone());
+    let (v_full, _) = mc_estimate(&flat, 0x1ADD_10, 21, n, |_| 1.0);
+
+    let diagrams = ladder_diagrams(&evaluated);
+    let channels: Vec<DiagramChannel<f64>> = diagrams
+        .iter()
+        .map(|(d, _)| {
+            DiagramChannel::<f64>::from_diagram_ladder(d, &evaluated, LADDER_SQRT_S, scale)
+        })
+        .collect();
+
+    let mut checked = 0usize;
+    let mut worst_pull = 0.0f64;
+    let mut smallest_support = 1.0f64;
+    for (i, (_, chain)) in diagrams.iter().enumerate() {
+        if chain.sides.len() < 2 {
+            continue;
+        }
+        let ch = &channels[i];
+        let (drawn, var_drawn) = mc_estimate(ch, 0x1ADD_20 + i as u64, 23, n, |_| 1.0);
+        let (rejected, var_rej) = mc_estimate(&flat, 0x1ADD_40 + i as u64, 27, n, |p| {
+            if ch.density(p) > 0.0 {
+                1.0
+            } else {
+                0.0
+            }
+        });
+        let err = ((var_drawn + var_rej) / n as f64).sqrt();
+        let pull = (drawn - rejected) / err;
+        worst_pull = worst_pull.max(pull.abs());
+        smallest_support = smallest_support.min(rejected / v_full);
+        eprintln!(
+            "  chain {i} (r = {}): drawn {drawn:.6e} vs rejected-into {rejected:.6e} ± {err:.2e}, \
+             pull {pull:+.2}; support is {:.4} of V_4",
+            chain.sides.len(),
+            rejected / v_full
+        );
+        assert!(
+            pull.abs() < 5.0,
+            "chain {i} draws a volume {drawn:.6e} its own support does not have \
+             ({rejected:.6e} ± {err:.2e})"
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no multi-rung chain was exercised");
+    eprintln!(
+        "over {checked} multi-rung chains: worst volume pull {worst_pull:.2}, \
+         narrowest support {smallest_support:.4} of V_4 (flat RAMBO V_4 = {v_full:.6e})"
+    );
+    assert!(
+        smallest_support < 0.999,
+        "no chain's support is narrowed at all, so the support-restricted comparison \
+         is the plain volume check in disguise"
+    );
+
+    // Coverage: over the whole channel set, the region no channel reaches must hold
+    // nothing the cuts accept. Measured with flat RAMBO on the cut indicator, once
+    // over everything the cuts keep and once over what they keep *and* some channel
+    // can draw.
+    let beams = ladder_beams();
+    let pass = |p: &[LorentzVector<f64>]| {
+        let mut ext = vec![beams[0], beams[1]];
+        ext.extend_from_slice(p);
+        cuts.pass(&ext)
+    };
+    let covered = |p: &[LorentzVector<f64>]| channels.iter().any(|c| c.density(p) > 0.0);
+    let (fiducial, var_f) =
+        mc_estimate(&flat, 0x1ADD_50, 29, n, |p| if pass(p) { 1.0 } else { 0.0 });
+    let (reachable, var_r) = mc_estimate(&flat, 0x1ADD_50, 29, n, |p| {
+        if pass(p) && covered(p) {
+            1.0
+        } else {
+            0.0
+        }
+    });
+    // The same draws, so the difference is a strict subset count and its own error
+    // is what matters, not the two quoted separately.
+    let err = ((var_f + var_r) / n as f64).sqrt();
+    eprintln!(
+        "fiducial volume {fiducial:.6e}, of it reachable by some chain {reachable:.6e} \
+         ({:.6} of it), combined error {err:.2e}",
+        reachable / fiducial
+    );
+    assert_eq!(
+        fiducial, reachable,
+        "the chain set leaves part of the fiducial region unreachable, so its densities \
+         cannot normalise a combiner over it"
+    );
+    assert!(
+        fiducial > 0.0 && fiducial < v_full,
+        "the cut indicator is not selecting a proper subregion, so coverage is vacuous"
+    );
+}
+
+/// Logarithmic bins the per-rung transfer projections are read in, spanning the
+/// fiducial window `[|t|_cut, ŝ]` a bounded rung draws over.
+const T_ORD_BINS: usize = 12;
+/// Draws each coverage and precision figure is measured over.
+const T_ORD_DRAWS: usize = 400_000;
+/// Least share of the raw draws a bin must hold for the rung it projects to count
+/// as importance-sampled.
+///
+/// A rung drawn against its own propagator is uniform in `ln|t|` within each
+/// event's window, so its occupancy is spread across the fiducial window rather
+/// than piled at the wide end. Measured on the reference process's asymmetric
+/// two-rung chain: the derived ordering holds at least `1.80%` in every bin of both
+/// rungs, while the reversed one falls to `0.91%` in rung 1 — and stays at `2.62%`
+/// in rung 2, which is the ordering-blindness the mechanism predicts. The bound sits
+/// between them with half again as much margin either way.
+const T_ORD_MIN_BIN_SHARE: f64 = 0.012;
+
+/// What one map does to the probe integrand: per-rung bin occupancies, per-bin
+/// precision, and the seed-swept integral.
+struct OrderingReport {
+    /// `[rung][bin]` raw draw counts over `ln|t_i|` across the fiducial window.
+    occupancy: Vec<[usize; T_ORD_BINS]>,
+    /// Worst per-bin relative error of `∫f` restricted to a bin, over all rungs.
+    worst_bin_rel_err: f64,
+    /// Inverse-variance mean of `∫f` over the seed sweep, with its error, `χ²/dof`
+    /// and the worst single-seed pull.
+    integral: f64,
+    integral_err: f64,
+    chi2_per_dof: f64,
+    worst_pull: f64,
+}
+
+impl OrderingReport {
+    fn share(&self, rung: usize, bin: usize) -> f64 {
+        self.occupancy[rung][bin] as f64 / T_ORD_DRAWS as f64
+    }
+
+    fn thinnest_bin(&self, rung: usize) -> f64 {
+        (0..T_ORD_BINS)
+            .map(|b| self.share(rung, b))
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Rungs whose thinnest bin falls below the coverage share — the rungs this map
+    /// is not importance-sampling.
+    fn starved_rungs(&self) -> Vec<usize> {
+        (0..self.occupancy.len())
+            .filter(|&i| self.thinnest_bin(i) < T_ORD_MIN_BIN_SHARE)
+            .collect()
+    }
+}
+
+/// Measure a map against a chain's own probe integrand.
+///
+/// The transfers come from the `S_i` prefixes of the *diagram*, not from anything
+/// the map reports, so a map that orders its rungs differently is still judged on
+/// the diagram's structure.
+fn ordering_report(
+    map: &dyn PhaseSpaceMap<f64>,
+    chain: &RungChain,
+    cuts: &Cuts,
+    mz2: f64,
+    mg: f64,
+    seed: u64,
+) -> OrderingReport {
+    let beams = ladder_beams();
+    let scale = cuts.spacelike_floor();
+    let r = chain.sides.len();
+    // The probe carries the structures the diagram's matrix element has: the lepton
+    // pair's Z line shape and each rung's spacelike propagator. A pole lighter than
+    // the fiducial scale is held at it — below that scale the cuts reject anyway,
+    // and a bare massless `1/t²` is not integrable against a cut set that lets the
+    // two jets balance each other rather than the beam.
+    let probe = |p: &[LorentzVector<f64>]| -> f64 {
+        let mut ext = vec![beams[0], beams[1]];
+        ext.extend_from_slice(p);
+        if !cuts.pass(&ext) {
+            return 0.0;
+        }
+        let ts = chain_transfers(chain, beams[0], p);
+        let s_ll = s_pair(p, 0, 1);
+        let mut f = 1.0 / ((s_ll - mz2).powi(2) + mg * mg);
+        for (i, &t) in ts.iter().enumerate() {
+            f /= (chain.poles[i].max(scale) - t).powi(2);
+        }
+        f
+    };
+
+    let lo = scale.ln();
+    let hi = (LADDER_SQRT_S * LADDER_SQRT_S).ln();
+    let bin_of = |t: f64| -> Option<usize> {
+        let l = t.abs().ln();
+        if !(l >= lo) || !(l < hi) {
+            return None;
+        }
+        Some((((l - lo) / (hi - lo)) * T_ORD_BINS as f64) as usize)
+    };
+
+    let mut occupancy = vec![[0usize; T_ORD_BINS]; r];
+    let mut bin_sum = vec![[0.0f64; T_ORD_BINS]; r];
+    let mut bin_sq = vec![[0.0f64; T_ORD_BINS]; r];
+    let mut stream = SubStream::from_stream(seed, 31);
+    for _ in 0..T_ORD_DRAWS {
+        let u = stream.uniforms::<f64>(map.ndim());
+        let pt = map.sample(&u);
+        let ts = chain_transfers(chain, beams[0], &pt.momenta);
+        let v = pt.weight * probe(&pt.momenta);
+        for (i, &t) in ts.iter().enumerate() {
+            if let Some(b) = bin_of(t) {
+                occupancy[i][b] += 1;
+                bin_sum[i][b] += v;
+                bin_sq[i][b] += v * v;
+            }
+        }
+    }
+    let n = T_ORD_DRAWS as f64;
+    let mut worst_bin_rel_err = 0.0f64;
+    for i in 0..r {
+        for b in 0..T_ORD_BINS {
+            let mean = bin_sum[i][b] / n;
+            if !(mean > 0.0) {
+                worst_bin_rel_err = f64::INFINITY;
+                continue;
+            }
+            let var = (bin_sq[i][b] / n - mean * mean).max(0.0);
+            worst_bin_rel_err = worst_bin_rel_err.max((var / n).sqrt() / mean);
+        }
+    }
+
+    // Seed stability: a map that misses a region reports a small integral *and* a
+    // small variance, so only independent seeds landing within the errors they each
+    // claim separates a converged estimate from an under-covered one.
+    let seeds = 5u64;
+    let per_seed = T_ORD_DRAWS / 4;
+    let runs: Vec<(f64, f64)> = (0..seeds)
+        .map(|k| mc_estimate(map, seed ^ (0x5EED_0000 + k), 33 + k, per_seed, probe))
+        .collect();
+    let weights: Vec<f64> = runs
+        .iter()
+        .map(|r| per_seed as f64 / r.1.max(f64::MIN_POSITIVE))
+        .collect();
+    let wsum: f64 = weights.iter().sum();
+    let integral = runs.iter().zip(&weights).map(|(r, w)| r.0 * w).sum::<f64>() / wsum;
+    let chi2: f64 = runs
+        .iter()
+        .zip(&weights)
+        .map(|(r, w)| w * (r.0 - integral).powi(2))
+        .sum();
+    let worst_pull = runs
+        .iter()
+        .map(|r| (r.0 - integral).abs() / (r.1 / per_seed as f64).sqrt())
+        .fold(0.0f64, f64::max);
+    OrderingReport {
+        occupancy,
+        worst_bin_rel_err,
+        integral,
+        integral_err: (1.0 / wsum).sqrt(),
+        chi2_per_dof: chi2 / (seeds as f64 - 1.0),
+        worst_pull,
+    }
+}
+
+fn describe_ordering(label: &str, rep: &OrderingReport) {
+    for (i, occ) in rep.occupancy.iter().enumerate() {
+        eprintln!(
+            "  {label} rung {i}: ln|t| occupancy {occ:?}, thinnest bin {:.4}",
+            rep.thinnest_bin(i)
+        );
+    }
+    eprintln!(
+        "  {label}: I = {:.5e} ± {:.2e} ({:.1}%), worst per-bin rel err {:.3}, χ²/dof {:.2}, \
+         worst seed pull {:.2}, starved rungs {:?}",
+        rep.integral,
+        rep.integral_err,
+        100.0 * rep.integral_err / rep.integral,
+        rep.worst_bin_rel_err,
+        rep.chi2_per_dof,
+        rep.worst_pull,
+        rep.starved_rungs()
+    );
+}
+
+/// The rung ordering is a property of the map, not of a configuration, so no
+/// invariant-level check can see a wrong one: `V_n`, `σ`, and any histogram of the
+/// *volume* in `t_i` are identical between a chain and its reverse, because the
+/// multiset `{t_i}` a configuration carries is the same read from either end of the
+/// ladder. What a wrong ordering costs is importance sampling — both orderings
+/// integrate `dΦ` correctly, only the right one concentrates its draws where the
+/// diagram's propagators peak.
+///
+/// So this is a coverage test on a peaked integrand, not an agreement test on a
+/// volume. On the reference process's asymmetric two-rung chain, at fixed `√ŝ` with
+/// the run card's cuts:
+///
+/// * **per-rung coverage** — the raw draws, binned by `ln|t_i|` over the fiducial
+///   window, hold at least [`T_ORD_MIN_BIN_SHARE`] in every bin. A rung that is not
+///   being importance-sampled piles its draws at the wide end and thins out toward
+///   the fiducial edge.
+/// * **per-bin precision** — restricted to each bin the estimator of `∫f` is
+///   non-empty, and the integral as a whole holds its relative error under 10%.
+/// * **seed stability** — five independent seeds agree within the errors they claim.
+///   This is the guard a scalar cannot be: a map that misses a region reports a
+///   small integral *and* a small variance, and looks perfectly stable from inside.
+///
+/// Volume neutrality is the fourth leg and lives in
+/// [`ladder_chains_integrate_their_own_support_and_cover_the_fiducial_region`]; it
+/// checks the Jacobian, not the ordering, and is named here so nobody mistakes it
+/// for confirmation.
+///
+/// And the control that makes the group mean anything: the same channel with its
+/// rungs **reversed** must fail. Note what a swap of a two-rung chain actually
+/// changes — `t_2 = (p_a − p_{B_1} − p_{B_2})²` is `p_a` minus every emitted blob
+/// and is untouched, and only `t_1` moves, from `(p_a − p_{B_1})²` to
+/// `(p_a − p_{B_2})²`, which is not a propagator of the diagram at all. So the
+/// firing is expected in rung 1's projection specifically and nowhere else, and both
+/// halves of that prediction are asserted rather than only the convenient one.
+///
+/// What this provably cannot detect. **A symmetric chain**: two rungs carrying the
+/// same pole and kinematically interchangeable blobs make the reversed map the
+/// *same* map, and the test has no content — which is why the chain is selected for
+/// asymmetric blobs and distinct poles, and why
+/// [`a_swapped_chain_and_an_anchor_flip_are_different_maps`] measures the density
+/// gap rather than assuming it. **Anything a positive density cannot see**: a global
+/// phase, an amplitude sign, a colour-flow index. **An error common to both
+/// orderings** — a wrong per-rung Jacobian, a wrong anchor beam applied to every
+/// rung, a misread blob content — which are volume and reciprocity errors owned by
+/// the support-volume and walk-vs-density comparisons, and would leave this test
+/// green. **A wrong ordering whose coverage happens to survive**: the test fires on
+/// starvation, so at a `√ŝ` where every `t_i` window overlaps heavily a wrong
+/// ordering could stay adequate, which is why it is specified at a stated `√ŝ` and
+/// cut configuration and why the margin is printed and asserted rather than assumed
+/// to be large. **Whether the chain belongs to this diagram**, which is
+/// [`the_rung_chain_agrees_with_an_independent_graph_cut`]'s business.
+#[test]
+fn the_rung_ordering_test_fires_on_a_swapped_chain() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let z = model.particle_id("Z").expect("Z in model");
+    let (mz, gz) = (evaluated.mass(z), evaluated.width(z));
+    let (mz2, mg) = (mz * mz, mz * gz);
+    let cuts = ladder_cuts();
+    let scale = cuts.spacelike_floor();
+    let (d, chain) = ordering_chain(&evaluated);
+    eprintln!(
+        "ordering chain: blobs {:?}, recoil {:?}, bare poles {:?}",
+        chain.blobs, chain.recoil, chain.poles
+    );
+    assert_eq!(chain.blobs.len(), 2, "the ordering chain has two rungs");
+
+    let build = || DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale);
+    let good = ordering_report(&build(), &chain, &cuts, mz2, mg, 0xC0DE_0DDE);
+    describe_ordering("derived", &good);
+    let bad = ordering_report(
+        &build().with_rung_order(&[1, 0]),
+        &chain,
+        &cuts,
+        mz2,
+        mg,
+        0xC0DE_0DDE,
+    );
+    describe_ordering("reversed", &bad);
+
+    // T-ORD-1..3 on the chain the diagram implies.
+    assert!(
+        good.starved_rungs().is_empty(),
+        "the derived chain starves rungs {:?}: thinnest bins {:?}",
+        good.starved_rungs(),
+        (0..chain.blobs.len())
+            .map(|i| good.thinnest_bin(i))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        good.worst_bin_rel_err.is_finite(),
+        "a bin of the derived chain's projection holds no estimator at all"
+    );
+    assert!(
+        good.integral_err / good.integral < 0.10,
+        "the derived chain's integral carries {:.1}% error",
+        100.0 * good.integral_err / good.integral
+    );
+    assert!(
+        good.chi2_per_dof < 4.0 && good.worst_pull < 5.0,
+        "the derived chain's seeds scatter by more than they claim: χ²/dof {:.2}, \
+         worst pull {:.2}",
+        good.chi2_per_dof,
+        good.worst_pull
+    );
+
+    // NEG-A: the same measurement on the reversed chain has to fire, in rung 1.
+    assert_eq!(
+        bad.starved_rungs(),
+        vec![0],
+        "reversing the rungs was expected to starve rung 1's projection and only that \
+         one — thinnest bins {:?} against a share of {T_ORD_MIN_BIN_SHARE}",
+        (0..chain.blobs.len())
+            .map(|i| bad.thinnest_bin(i))
+            .collect::<Vec<_>>()
+    );
+    let margin = T_ORD_MIN_BIN_SHARE / bad.thinnest_bin(0);
+    eprintln!(
+        "NEG-A: the reversed chain holds {:.4} of its draws in rung 1's thinnest bin \
+         against the derived chain's {:.4}, a factor {:.2} below the coverage share",
+        bad.thinnest_bin(0),
+        good.thinnest_bin(0),
+        margin
+    );
+    assert!(
+        margin > 1.2,
+        "the reversed chain misses the coverage share by only {margin:.2}, too little \
+         to read as a firing rather than as noise"
+    );
+    // The multiperipheral chain, where a single-rung spine has nothing to say at
+    // all. Three rungs admit no single coverage share that separates the two
+    // orderings — the last rung's projection is ordering-blind and thin under both —
+    // so the statement there is relative: the derived ordering out-populates its
+    // reversal in the rung the swap moves.
+    let (d3, chain3) = ladder_diagrams(&evaluated)
+        .into_iter()
+        .find(|(_, c)| c.blobs.len() == 3)
+        .expect("the reference process carries a three-rung chain");
+    eprintln!(
+        "multiperipheral chain: blobs {:?}, recoil {:?}, bare poles {:?}",
+        chain3.blobs, chain3.recoil, chain3.poles
+    );
+    let build3 =
+        || DiagramChannel::<f64>::from_diagram_ladder(&d3, &evaluated, LADDER_SQRT_S, scale);
+    let good3 = ordering_report(&build3(), &chain3, &cuts, mz2, mg, 0xC0DE_0DD3);
+    describe_ordering("derived-3", &good3);
+    let bad3 = ordering_report(
+        &build3().with_rung_order(&[2, 1, 0]),
+        &chain3,
+        &cuts,
+        mz2,
+        mg,
+        0xC0DE_0DD3,
+    );
+    describe_ordering("reversed-3", &bad3);
+    for rung in [0usize, 1] {
+        let ratio = good3.thinnest_bin(rung) / bad3.thinnest_bin(rung);
+        eprintln!(
+            "  multiperipheral rung {rung}: derived {:.4} vs reversed {:.4}, ratio {ratio:.2}",
+            good3.thinnest_bin(rung),
+            bad3.thinnest_bin(rung)
+        );
+        assert!(
+            ratio > 2.0,
+            "reversing a three-rung chain left rung {rung}'s coverage within a factor \
+             {ratio:.2} of the derived ordering's"
+        );
+    }
+    assert!(
+        (good3.thinnest_bin(2) - bad3.thinnest_bin(2)).abs() < 1e-12,
+        "reversing a three-rung chain moved the last rung's projection, which is `p_a` \
+         minus every emitted blob and cannot depend on their order"
+    );
+}
+
+/// The chain read from the other beam: the same ladder, anchored at beam `1`.
+///
+/// Complementing every side and re-sorting turns `S_1 ⊂ … ⊂ S_r` into
+/// `full\S_r ⊂ … ⊂ full\S_1`, so the blobs come out reversed with the old recoil
+/// leading and the old first blob left over. It is a *different map* — a different
+/// blob is the recoil, and each rung's transfer is measured against the other beam —
+/// not a relabelling of the same one.
+fn anchor_flipped(
+    chain: &RungChain,
+    derived: &DiagramChannel<f64>,
+    scale: f64,
+) -> DiagramChannel<f64> {
+    let composite: Vec<&Vec<usize>> = chain
+        .blobs
+        .iter()
+        .chain(std::iter::once(&chain.recoil))
+        .filter(|b| b.len() > 1)
+        .collect();
+    assert!(
+        composite.len() <= 1,
+        "the flip reads its one composite blob's pole off the channel, so a chain with \
+         more than one would need the resonances matched up by mask"
+    );
+    let pole = derived.resonances().first().copied();
+    let res_of = |slots: &[usize]| if slots.len() > 1 { pole } else { None };
+    let mut rungs: Vec<RungSpec<f64>> = Vec::with_capacity(chain.blobs.len());
+    rungs.push((
+        chain.recoil.clone(),
+        res_of(&chain.recoil),
+        chain.poles[chain.poles.len() - 1]
+            .max(scale / 1000.0)
+            .sqrt(),
+    ));
+    for i in (1..chain.blobs.len()).rev() {
+        rungs.push((
+            chain.blobs[i].clone(),
+            res_of(&chain.blobs[i]),
+            chain.poles[i - 1].max(scale / 1000.0).sqrt(),
+        ));
+    }
+    DiagramChannel::from_topology_ladder(
+        LADDER_SQRT_S,
+        [0.0, 0.0],
+        vec![0.0; 4],
+        &rungs,
+        (chain.blobs[0].clone(), res_of(&chain.blobs[0])),
+    )
+    .with_fiducial_t_max(-scale)
+}
+
+/// The precondition the ordering test rests on, and the convention it pins.
+///
+/// **NEG-C, the precondition.** If a chain and its reversal assigned the same
+/// density to the same configuration, the ordering question would be moot *and* the
+/// coverage test would have no content. That is not hypothetical — permutation
+/// channels of `g g > g g` were once found collapsing onto a common map at spacelike
+/// floor zero — so the gap is measured, at the regulator a real run gives the
+/// channels rather than at zero, for exactly that reason.
+///
+/// **NEG-B, the anchor.** Anchoring at beam `1` reads the same ladder from the other
+/// end. It is a different map, not a relabelling: a different blob becomes the
+/// recoil and every transfer is measured against the other beam. Asserting that its
+/// density differs pins that beam `0` is a *choice* the chain derivation makes, so a
+/// derivation that quietly anchored at the other beam would not pass unnoticed.
+#[test]
+fn a_swapped_chain_and_an_anchor_flip_are_different_maps() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let scale = ladder_cuts().spacelike_floor();
+    let n = 400;
+    let mut stream = SubStream::from_stream(0x1ADD_C0, 41);
+    let mut checked = 0usize;
+    let mut worst_swap_agreement = 1.0f64;
+    let mut worst_flip_agreement = 1.0f64;
+    for (i, (d, chain)) in ladder_diagrams(&evaluated).into_iter().enumerate() {
+        let r = chain.blobs.len();
+        if r < 2 {
+            continue;
+        }
+        let derived =
+            DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale);
+        let reversed =
+            DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale)
+                .with_rung_order(&(0..r).rev().collect::<Vec<_>>());
+        let flipped = anchor_flipped(&chain, &derived, scale);
+
+        let (mut swap_apart, mut flip_apart, mut drawn) = (0usize, 0usize, 0usize);
+        for _ in 0..n {
+            let u = stream.uniforms::<f64>(derived.ndim());
+            let pt = derived.sample(&u);
+            let g = derived.density(&pt.momenta);
+            let gap = |other: f64| (g - other).abs() > 1e-6 * g.max(other);
+            if gap(reversed.density(&pt.momenta)) {
+                swap_apart += 1;
+            }
+            if gap(flipped.density(&pt.momenta)) {
+                flip_apart += 1;
+            }
+            drawn += 1;
+        }
+        let swap_share = swap_apart as f64 / drawn as f64;
+        let flip_share = flip_apart as f64 / drawn as f64;
+        worst_swap_agreement = worst_swap_agreement.min(swap_share);
+        worst_flip_agreement = worst_flip_agreement.min(flip_share);
+        assert!(
+            swap_share > 0.5,
+            "chain {i}: the reversed chain's density matches the derived one's to rounding \
+             on {:.0}% of its own points, so the two are the same map and the ordering \
+             test has no content there",
+            100.0 * (1.0 - swap_share)
+        );
+        assert!(
+            flip_share > 0.5,
+            "chain {i}: the beam-1-anchored chain's density matches the beam-0 one's to \
+             rounding on {:.0}% of its points, so the anchor is not a choice the \
+             derivation is making",
+            100.0 * (1.0 - flip_share)
+        );
+        checked += 1;
+    }
+    eprintln!(
+        "over {checked} multi-rung chains: the reversed chain's density differs on at least \
+         {:.3} of drawn points, the anchor-flipped one on at least {:.3}",
+        worst_swap_agreement, worst_flip_agreement
+    );
+    assert!(checked > 0, "no multi-rung chain was exercised");
+}
+
+/// The foreign-configuration density contract, at a rung chain.
+///
+/// A combiner weights every point by `αⱼ / Σₖ αₖ gₖ` gathered from *every* channel
+/// at the *same* configuration, so a chain has to report the density it assigns to
+/// an arbitrary on-shell momentum-conserving point, not only to points it generated.
+/// A chain makes a new way to get that wrong available, because it has an ordering
+/// and a configuration does not: a point whose `t_2` is smaller than its `t_1`, or
+/// whose blobs sit nowhere near this chain's peaks, is a perfectly ordinary point
+/// that another channel drew. **The rung order is a property of the map, not a
+/// constraint on the configuration** — a chain that refused such a point, or returned
+/// zero or `NaN` at it, would bias every other channel's estimate through the shared
+/// `Σₖ αₖ gₖ`.
+///
+/// Checked here over points drawn from every channel of the reference process, from
+/// the reversed chains, and from flat RAMBO:
+///
+/// * **totality** — every density is finite and non-negative, at every configuration,
+///   including the ones ordered against the chain's own peaks.
+/// * **positivity where the chain has support** — a configuration whose every running
+///   transfer clears the fiducial scale is inside the chain's windows by construction,
+///   and gets a strictly positive density.
+/// * **support honesty** — outside a deliberately narrowed window the density is
+///   *exactly* zero and never a small positive number, since the estimator is
+///   unbiased only when each `gⱼ` is the true pushforward density of channel `j`
+///   everywhere.
+/// * **degeneracy** — a threshold or lightlike configuration returns zero rather than
+///   `NaN`, which the flat-RAMBO and near-threshold draws reach.
+///
+/// Reciprocity, the contract's first clause, is
+/// [`every_ladder_chain_is_a_valid_map`]; frame independence is
+/// [`the_chain_density_reads_only_invariants`].
+#[test]
+fn the_chain_density_contract_holds_at_foreign_configurations() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let scale = ladder_cuts().spacelike_floor();
+    let beams = ladder_beams();
+    let diagrams = ladder_diagrams(&evaluated);
+    let channels: Vec<DiagramChannel<f64>> = diagrams
+        .iter()
+        .map(|(d, _)| {
+            DiagramChannel::<f64>::from_diagram_ladder(d, &evaluated, LADDER_SQRT_S, scale)
+        })
+        .collect();
+
+    // Sources: every channel of the process, every reversed chain, and flat RAMBO —
+    // the last reaching the threshold and near-collinear corners no peaked map dwells
+    // on.
+    let mut sources: Vec<Box<dyn PhaseSpaceMap<f64>>> = Vec::new();
+    for (i, (_, chain)) in diagrams.iter().enumerate() {
+        sources.push(Box::new(channels[i].clone()));
+        if chain.blobs.len() > 1 {
+            sources.push(Box::new(
+                channels[i]
+                    .clone()
+                    .with_rung_order(&(0..chain.blobs.len()).rev().collect::<Vec<_>>()),
+            ));
+        }
+    }
+    sources.push(Box::new(RamboChannel::new(LADDER_SQRT_S, vec![0.0; 4])));
+
+    let mut stream = SubStream::from_stream(0x1ADD_F0, 43);
+    let mut evaluated_at = 0usize;
+    let mut zeros = 0usize;
+    let mut against_the_ordering = 0usize;
+    let mut inside_support = 0usize;
+    for src in &sources {
+        for _ in 0..120 {
+            let u = stream.uniforms::<f64>(src.ndim());
+            let p = src.sample(&u).momenta;
+            for (i, (_, chain)) in diagrams.iter().enumerate() {
+                let g = channels[i].density(&p);
+                assert!(
+                    g.is_finite() && g >= 0.0,
+                    "chain {i} reported density {g} at a configuration it did not generate"
+                );
+                evaluated_at += 1;
+                let ts = chain_transfers(chain, beams[0], &p);
+                // A configuration whose transfers run the other way from the chain's
+                // own peaks is an ordinary point another channel drew, not one this
+                // chain may refuse.
+                if ts.len() > 1 && ts[1].abs() < ts[0].abs() {
+                    against_the_ordering += 1;
+                    assert!(
+                        g.is_finite() && g >= 0.0,
+                        "chain {i} refused a configuration ordered against its own rungs"
+                    );
+                }
+                if ts.iter().all(|&t| t <= -scale) {
+                    inside_support += 1;
+                    assert!(
+                        g > 0.0,
+                        "chain {i} reported density {g} at a configuration inside its own \
+                         windows: transfers {ts:?}"
+                    );
+                }
+                if g == 0.0 {
+                    zeros += 1;
+                    assert!(
+                        ts.iter().any(|&t| t > -scale),
+                        "chain {i} renounced a configuration every one of whose transfers \
+                         clears the fiducial scale: {ts:?}"
+                    );
+                }
+            }
+        }
+    }
+    eprintln!(
+        "density contract over {evaluated_at} chain × configuration pairs from {} sources: \
+         {zeros} exact zeros (all above the fiducial bound), {inside_support} inside the \
+         chain's own windows, {against_the_ordering} ordered against the chain's rungs",
+        sources.len()
+    );
+    assert!(
+        against_the_ordering > 0,
+        "no configuration ran against a chain's own ordering, so the clause that matters \
+         most for a chain is untested"
+    );
+    assert!(
+        zeros > 0,
+        "no configuration fell outside a narrowed window, so support honesty is untested"
+    );
+    assert!(
+        inside_support > 0,
+        "no configuration landed inside a chain's own windows, so positivity is untested"
+    );
+}
+
+/// The chain's density reads invariants only, so no frame the sampler worked in
+/// leaks into it.
+///
+/// The sampler builds rung `i > 1` in the CM of what the previous rung left behind,
+/// with `q_{i-1}` as its polar axis — a transverse frame that exists nowhere in the
+/// configuration. Rotating an event about the beam axis leaves every invariant the
+/// density reads untouched (`t_i`, the blob invariants, the running remainders) while
+/// moving every momentum, so the density must come back identical. Rotating about a
+/// transverse axis instead moves the configuration relative to the *beams*, which are
+/// part of the channel's data, and must move the density — otherwise the first check
+/// would pass for a density that reads nothing at all.
+#[test]
+fn the_chain_density_reads_only_invariants() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let scale = ladder_cuts().spacelike_floor();
+    let spin_z = |p: LorentzVector<f64>, a: f64| {
+        LorentzVector::new(
+            p.e(),
+            p.px() * a.cos() - p.py() * a.sin(),
+            p.px() * a.sin() + p.py() * a.cos(),
+            p.pz(),
+        )
+    };
+    let tilt_x = |p: LorentzVector<f64>, a: f64| {
+        LorentzVector::new(
+            p.e(),
+            p.px(),
+            p.py() * a.cos() - p.pz() * a.sin(),
+            p.py() * a.sin() + p.pz() * a.cos(),
+        )
+    };
+    let mut stream = SubStream::from_stream(0x1ADD_A0, 45);
+    let mut worst = 0.0f64;
+    let mut moved = 0usize;
+    let mut checked = 0usize;
+    for (i, (d, chain)) in ladder_diagrams(&evaluated).into_iter().enumerate() {
+        if chain.blobs.len() < 2 {
+            continue;
+        }
+        let ch = DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale);
+        for k in 0..60 {
+            let u = stream.uniforms::<f64>(ch.ndim());
+            let p = ch.sample(&u).momenta;
+            let g = ch.density(&p);
+            if !(g > 0.0) {
+                continue;
+            }
+            let angle = 0.3 + 0.1 * k as f64;
+            let spun: Vec<LorentzVector<f64>> = p.iter().map(|q| spin_z(*q, angle)).collect();
+            let rel = (ch.density(&spun) - g).abs() / g;
+            worst = worst.max(rel);
+            assert!(
+                rel < 1e-9,
+                "chain {i}: rotating an event about the beam axis moved its density by \
+                 {rel:.3e}, so the density is reading a frame rather than invariants"
+            );
+            let tilted: Vec<LorentzVector<f64>> = p.iter().map(|q| tilt_x(*q, angle)).collect();
+            let tilted_g = ch.density(&tilted);
+            if (tilted_g - g).abs() > 1e-6 * g.max(tilted_g) {
+                moved += 1;
+            }
+            checked += 1;
+        }
+    }
+    eprintln!(
+        "azimuthal invariance over {checked} configurations: worst relative change \
+         {worst:.3e}; a transverse tilt moved the density on {moved} of them"
+    );
+    assert!(checked > 0, "no multi-rung chain was exercised");
+    assert!(
+        moved as f64 > 0.9 * checked as f64,
+        "a transverse tilt left the density where it was on {} of {checked} configurations, \
+         so the azimuthal check above could be passing for a density that reads nothing",
+        checked - moved
+    );
+}
+
+/// What the chain is worth, measured beside the map production actually uses.
+///
+/// A ladder diagram still falls back to the all-timelike tree in production, so this
+/// runs the two side by side on the diagram's own peaked structure — the lepton
+/// pair's Z line shape and every rung's spacelike propagator, under the run card's
+/// cuts — over independent seeds.
+///
+/// A seed sweep and not a single run, because a single run cannot tell a converged
+/// estimate from an under-covered one: a map that misses the peripheral region
+/// reports a small integral *and* a small variance and looks perfectly stable from
+/// the inside. That is exactly what the all-timelike map does here, so the assertion
+/// is emphatically **not** that the two agree. It is that the chain is
+/// self-consistent across seeds and never the noisier of the two, and that the
+/// fallback still visibly fails to keep up — a comparison whose known-wrong arm
+/// stopped being wrong would have lost its subject, and the day the chain goes into
+/// production this is the number that has to move.
+#[test]
+fn the_ladder_chain_beside_the_all_timelike_fallback() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let z = model.particle_id("Z").expect("Z in model");
+    let (mz, gz) = (evaluated.mass(z), evaluated.width(z));
+    let (mz2, mg) = (mz * mz, mz * gz);
+    let cuts = ladder_cuts();
+    let scale = cuts.spacelike_floor();
+    let beams = ladder_beams();
+    let seeds = 5u64;
+    let n = 100_000;
+
+    let mut compared = 0usize;
+    let mut disagreements = 0usize;
+    let mut worst_ratio = 0.0f64;
+    let mut best_ratio = f64::INFINITY;
+    for (i, (d, chain)) in ladder_diagrams(&evaluated).into_iter().enumerate() {
+        if chain.blobs.len() < 2 {
+            continue;
+        }
+        let probe = |p: &[LorentzVector<f64>]| -> f64 {
+            let mut ext = vec![beams[0], beams[1]];
+            ext.extend_from_slice(p);
+            if !cuts.pass(&ext) {
+                return 0.0;
+            }
+            let ts = chain_transfers(&chain, beams[0], p);
+            let s_ll = s_pair(p, 0, 1);
+            let mut f = 1.0 / ((s_ll - mz2).powi(2) + mg * mg);
+            for (k, &t) in ts.iter().enumerate() {
+                f /= (chain.poles[k].max(scale) - t).powi(2);
+            }
+            f
+        };
+        // What production builds for a ladder today, and what the chain builds for it.
+        let fallback =
+            DiagramChannel::<f64>::from_diagram_regulated(&d, &evaluated, LADDER_SQRT_S, scale);
+        assert!(
+            fallback.spine_poles().is_empty(),
+            "diagram {i} is a ladder, so the regulated derivation should leave it \
+             all-timelike"
+        );
+        let chained =
+            DiagramChannel::<f64>::from_diagram_ladder(&d, &evaluated, LADDER_SQRT_S, scale);
+
+        let sweep = |map: &dyn PhaseSpaceMap<f64>, base: u64| -> (f64, f64, f64, f64) {
+            let runs: Vec<(f64, f64)> = (0..seeds)
+                .map(|k| mc_estimate(map, base + 64 * k + i as u64, 51 + k, n, probe))
+                .collect();
+            let w: Vec<f64> = runs
+                .iter()
+                .map(|r| n as f64 / r.1.max(f64::MIN_POSITIVE))
+                .collect();
+            let wsum: f64 = w.iter().sum();
+            let mean = runs.iter().zip(&w).map(|(r, x)| r.0 * x).sum::<f64>() / wsum;
+            let err = (1.0 / wsum).sqrt();
+            let chi2 = runs
+                .iter()
+                .zip(&w)
+                .map(|(r, x)| x * (r.0 - mean).powi(2))
+                .sum::<f64>()
+                / (seeds as f64 - 1.0);
+            let var = runs.iter().map(|r| r.1).sum::<f64>() / seeds as f64;
+            (mean, err, chi2, var)
+        };
+        let (i_time, e_time, chi_time, var_time) = sweep(&fallback, 0x1ADD_B0);
+        let (i_chain, e_chain, chi_chain, var_chain) = sweep(&chained, 0x1ADD_B0);
+        let ratio = var_time / var_chain;
+        worst_ratio = worst_ratio.max(ratio);
+        best_ratio = best_ratio.min(ratio);
+        let pull = (i_chain - i_time) / (e_chain * e_chain + e_time * e_time).sqrt();
+        eprintln!(
+            "  chain {i} (r = {}): all-timelike {i_time:.4e} ± {e_time:.1e} (χ²/dof \
+             {chi_time:.2}) vs chain {i_chain:.4e} ± {e_chain:.1e} (χ²/dof {chi_chain:.2}), \
+             pull {pull:+.2}, variance ratio {ratio:.2}×",
+            chain.blobs.len()
+        );
+        assert!(
+            chi_chain < 4.0,
+            "chain {i}'s seeds scatter by more than they claim: χ²/dof {chi_chain:.2}"
+        );
+        assert!(
+            ratio > 1.0,
+            "chain {i} carries {:.2}× the per-point variance of the all-timelike map it \
+             is meant to replace",
+            1.0 / ratio
+        );
+        if pull.abs() > 3.0 {
+            disagreements += 1;
+        }
+        compared += 1;
+    }
+    eprintln!(
+        "over {compared} ladder diagrams: the chain's per-point variance is between \
+         {best_ratio:.2}× and {worst_ratio:.2}× below the all-timelike fallback's, and the \
+         two integrals disagree by more than 3σ on {disagreements} of them"
+    );
+    assert!(compared > 0, "no ladder diagram was compared");
+    assert!(
+        disagreements > 0,
+        "the all-timelike fallback now agrees with the chain everywhere, so this \
+         comparison has stopped carrying a signal about what production is missing"
     );
 }
