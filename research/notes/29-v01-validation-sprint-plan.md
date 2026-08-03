@@ -1286,6 +1286,81 @@ closes on both axes by construction (same draws), so nothing here audits *this*
 side's coverage. `C_VG` on the `pt(γ)` axis (§D.M5) remains the only coverage audit
 this side has.
 
+### Addenda and manager ruling (2026-08-03, post-review)
+
+Appended after chain D's review returned FIX (documentation only; no re-runs, no
+physics rework, no tolerance or gate moved). Everything above this heading is
+frozen as recorded — these entries supersede by pointing, never by editing a
+measurement in place.
+
+**A1 — §D.M9 item 5 is superseded.** It reads "the `m(μμ)` secondary axis of §D.2
+was not measured", which was true when written and was falsified by the later
+`### m(mumu) secondary axis` section below §D.M10. The axis *was* measured, and it
+carried the sharpest result in the chain. Item 5's remaining clauses — the shared
+matrix element, `W1`'s lower edge being the `pta` cut, `η(γ)` integrated over
+inside each window — stand unchanged. The original line is left as written.
+
+**A2 — error-propagation conventions, named.** Two are in use, both legitimate,
+and the same quantity therefore appears with slightly different digits:
+
+* the *ratio form*, `rel = a/b − 1` with `err² = (σ_a/b)² + (a·σ_b/b²)²` — what
+  the committed probe's `rel_with_err` computes, and the source of every figure
+  in §D.M4, §D.M5 and §D.M7. `C_MG = +3.07σ`; on the `m(μμ)` axis `+14.98σ` and
+  `+16.66σ`.
+* *plain quadrature* on the absolute difference, `Δ = a − b` with
+  `σ = √(σ_a² + σ_b²)` — used in the `### m(mumu) secondary axis` summary table,
+  which compares absolute cross sections rather than ratios. `C_MG = +3.08σ`,
+  `+15.05σ`, `+16.70σ`.
+
+So `C_MG` on the `pt(γ)` axis is `+3.07` in §D.M4 (ratio form) and `+3.08` in the
+`m(μμ)` table (quadrature); they are the same measurement to rounding. No
+conclusion anywhere depends on the choice — the pairs differ by under 0.5% of
+their own value, and no threshold sits between them.
+
+**A3 — the basis of the `~20σ` sample-versus-windowed claim in §D.M7.** The quoted
+`+19.9σ` for `[10, 20)` divides the `+0.663` pp gap by the **5-seed standard error
+of the mean of the sample fractions alone** (`0.033` pp). Other defensible bases:
+
+| error used | σ |
+|---|---|
+| 5-seed SEM of the sample fractions, `0.0333` pp (as quoted) | 19.9 |
+| binomial on the pooled 500 000 events, `0.0399` pp | 16.6 |
+| 5-seed SEM ⊕ `MG-part`'s own share error (`0.0134` pp) | 18.5 |
+| binomial ⊕ `MG-part`'s own share error | 15.8 |
+
+The conclusion is unaffected at any reading — the smallest is 15.8σ — but "~20σ"
+is the most favourable of them, so the figure should be read as "≥15σ, 19.9σ on
+the seed-spread basis" wherever it appears above and in `validation/manifest.toml`.
+
+**A4 — provenance of the committed reference.**
+`validation/madgraph/pta_window_reference.json` was verified row by row against the
+raw MadGraph run directories that produced it: all **58/58** rows reproduce their
+`SubProcesses/results.dat` first line (σ and quoted error) to machine precision, 0
+missing, 0 mismatched. Those directories live under `validation/madgraph/output/`,
+which is **gitignored and may be pruned at any time** — so the JSON is the durable
+record and the only one that survives a clean of the work area. Anything a later
+reader needs must be read from the JSON, not from `output/`.
+
+**A5 — MANAGER RULING (sprint manager, 2026-08-03).** The chain lands on **D1**,
+read at the side level as the clauses were frozen: `C_MG` fails at `+3.07σ`,
+`C_VG` holds at `−1.53σ`, and this side is seed-consistent (χ²/dof `0.69`) and
+budget-stable (`+0.177%` against a `0.232%` bound). The strict per-window reading —
+`VG-part(W1)` budget shift `+2.422%` against a `1.530%` bound, and `VG-cut(W3)`,
+`VG-cut(W5)` seed clouds at χ²/dof `2.06` and `2.41` against a ≤ 2 criterion —
+would land **D10**; it is recorded in §D.M5, §D.M3 and §D.M8 and is not smoothed.
+The frozen clause text is side-level, and D1 and D10 differ here only in label,
+not in action: no tolerance and no gate moves under either reading.
+
+**A6 — a stale figure found while applying these fixes, and corrected.** The
+`P_FLOOR` doc comment in `vibegraph-lib/tests/validate_samples.rs` quoted the
+`ee_to_mumua` `samples` minimum as `2.74e-4` ("`2.7x` above the floor") and its
+`integrals` pull as `+3.1`. The banked gate run of 2026-08-03 measures
+`min KS p 1.292e-4` over the three generation seeds (per-seed `3.383e-4`,
+`1.172e-2`, `1.292e-4`) and `pull +2.79`. The row therefore sits **1.3× above the
+`1e-4` floor, not 2.7×** — materially closer than the documented figure, and worth
+the attention of whoever next touches the `samples` gate. The doc comment and the
+`samples` note in `validation/manifest.toml` now carry the measured values.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,

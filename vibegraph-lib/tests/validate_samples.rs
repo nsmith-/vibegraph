@@ -108,12 +108,19 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// 0.2 to 0.4 spurious failures per run, which would make the gate flap; at `1e-4`
 /// it is under 0.05.
 ///
-/// The measured minimum over every gating row and three seeds is `2.74e-4`
-/// (`ee_to_mumua`, `pt(a)`), with `ee_to_wpwm` at `2.84e-3` and `uux_to_mumu` at
+/// The measured minimum over every gating row and three seeds is `1.29e-4`
+/// (`ee_to_mumua`, `pt(a)`; per-seed `3.38e-4`, `1.17e-2`, `1.29e-4`), with
+/// `ee_to_wpwm` at `2.84e-3`, `ddx_to_epemg` at `5.85e-3` and `uux_to_mumu` at
 /// `1.56e-2` behind it, against `3.6e-6` and `0` for the two rows that used to
-/// disagree. `ee_to_mumua` is the row to watch: it sits `2.7x` above the floor and
-/// its `integrals` pull is `+3.1` against the same reference, both having tightened
-/// when the references moved to MadGraph 3.7.1.
+/// disagree. `ee_to_mumua` is the row to watch: it sits only `1.3x` above the
+/// floor, and its `integrals` pull is `+2.79` against the same reference.
+///
+/// That `pt(a)` column is the one the windowed measurement attributed: MadGraph's
+/// banked sample puts 8.73% of σ below `pt(a) = 20` GeV where MadGraph's *own*
+/// cross section for that region puts 9.40%, and both of this side's estimators
+/// land on the latter. The column sitting closest to this floor is measuring the
+/// reference's sample rather than this side's — see the `ee_to_mumua` `samples`
+/// note in `validation/manifest.toml`.
 ///
 /// Never loosened after a failure: a column that falls below this is recorded,
 /// the row is marked informational with the measurement in its note, and the
