@@ -670,6 +670,515 @@ regenerates no reference data, so no census cell can move as a result of it.
   has **no** `amplitudes/*.json` dump, only an MG5 export; the per-diagram
   hostile cases must use `gg_to_ttx` / `uux_to_uux` / `ud_to_epemud_qcd0`.
 
+## Chain F findings (2026-08-03)
+
+Research-only sidecar, executed against the pre-registration in
+`## Chain F design (2026-08-02)` (commit `391affd`). No production file is
+modified by this section; the instrumentation used to obtain the numbers below
+was a scratch patch to `helas/eval/root_diagram.rs`'s test module and to
+`tests/amplitude_oracle.rs`, run and then reverted — the working tree was
+verified clean before this note was committed. **Rule amendments after first
+comparison: 0.**
+
+### F.7 P0 — the pre-registered falsifier, resolved first
+
+P0 asked for `channel_counts(&model, "g g > g g")` as four measured numbers.
+Measured (scratch `#[ignore]`d probe in `root_diagram`'s test module, canonical
+`VtxIdx(0)` rooting, exactly the function at `root_diagram.rs:1204`):
+
+```
+CHANNEL_COUNTS g g > g g = (vvv=3, spine=0, build=1, reversed=0)
+```
+
+The third component is **1 > 0**. Per the pre-registration, *the strong reading
+— "charge flow determines the diagram's phase", predicting `fermi_sign ≡ +1` on
+a process with no fermion line — is **REFUTED**, before any derivation.* The
+investigation continues only on the factorized reading, the one weaker reading
+the design sanctions.
+
+The per-diagram detail, which the pre-registration did not ask for but which
+changes how the refutation should be read:
+
+| diagram | vertices | `sign` | spine | vvv | build | revC·revL | `fermi_sign` |
+|---|---|---|---|---|---|---|---|
+| D0 | `V_37` (VVVV contact) | +1 | +1 | +1 | **−1** | +1 | **−1** |
+| D1 | `V_36`,`V_36` | +1 | +1 | **−1** | +1 | +1 | **−1** |
+| D2 | `V_36`,`V_36` | +1 | +1 | **−1** | +1 | +1 | **−1** |
+| D3 | `V_36`,`V_36` | +1 | +1 | **−1** | +1 | +1 | **−1** |
+
+So `fermi_sign` is **uniformly −1** across `g g > g g`. Two consequences the
+design did not anticipate, both of which matter for grading:
+
+1. The counterexample to the strong reading is a *global* sign, and a global
+   per-process sign is exactly the class F.5's "what this provably cannot
+   decide" item 2 declares unobservable (it is absorbed by `G`). P0 as
+   pre-registered is stated on `channel_counts` — a code-internal quantity —
+   not on an observable, so it can refute the bookkeeping claim ("every pinned
+   convention on a fermion-free process is +1") and nothing stronger. It does
+   refute that claim, decisively; it does not touch a physics claim. This is a
+   defect in the falsifier's construction, recorded rather than patched around.
+2. Individually, rows 4c and 5 *do* vary across the four diagrams (build:
+   `−,+,+,+`; vvv: `+,−,−,−`), and their patterns are complementary, so only
+   their product is uniform. Flipping **either alone** makes `fermi_sign`
+   non-uniform and is therefore observable; flipping **both together** is not
+   observable in this process. That residual two-row degeneracy is broken
+   elsewhere: `e+ e- > W+ W-` has vvv `−,−,+` with build uniform, so row 5
+   alone is pinned there.
+
+### F.8 What the dumps actually pin — the framework the rest of this uses
+
+Let `A_d = φ_d · H_d` be vibegraph's amplitude for diagram `d`, with `φ_d =
+fermi_sign` (the nine-row convention lift) and `H_d` the sign-free current
+evaluation. The gate establishes `A_d = G · c_d · AMP_d^{MG}` elementwise at
+`1e-12`. A candidate rule `R` replaces `φ` by `ρ` and leaves `H` alone;
+substituting, the gate still passes **iff `ρ_d / φ_d` is constant over `d`
+within each process**.
+
+So the dump-observable content of the whole inventory is exactly *the pattern of
+`φ_d` up to one global sign per process*. Measured (same probe, over the
+processes the guard test names plus every hostile case):
+
+| process | n diagrams | `fermi_sign` values | pattern |
+|---|---|---|---|
+| `g g > g g` | 4 | all −1 | **uniform** |
+| `g g > t t~` | 3 | all −1 | **uniform** |
+| `e+ e- > e+ e-` | 4 | all −1 | **uniform** |
+| `e+ e- > mu+ mu-` | 2 | all −1 | **uniform** |
+| `e+ e- > W+ W-` | 3 | all −1 | **uniform** |
+| `u u~ > u u~` | 2 | all −1 | **uniform** |
+| `u u~ > d d~` | 1 | −1 | **uniform** |
+| `e+ e- > ta+ ta- h` | 5 | +1,+1,+1,+1,−1 | **varies 4:1** |
+| `u d > e+ e- u d QCD=0` | 35 | 18×+1, 17×−1 | **varies 18:17** |
+
+**Seven of the nine processes carry a `fermi_sign` that is a pure global sign.**
+The entire observable content of the nine-row inventory, at the `fermi_sign`
+level, is concentrated in two processes. That is the most important structural
+fact this investigation found, and it is what caps the bar's arithmetic below.
+
+Note what uniformity is *not*: it is not absence of evidence. A rule predicting
+a non-uniform pattern where a uniform one is measured is refuted by that
+measurement. Uniformity in `g g > t t~` (crossed top line with 0, 1, 1
+propagators across D0/D1/D2) is precisely how the crossed line's
+propagator-independence is pinned.
+
+### F.9 The rule, written in full before its first dump comparison
+
+Written after reading `root_diagram.rs` / `root_lorentz.rs` and after the P0
+measurement (both pre-registered as preceding it), and **before** any comparison
+against `validation/madgraph/amplitudes/*.json`. Disclosure required by F.5's
+first vacuity mode: the derivation was informed by the existing doc comment on
+`spine_sign_from_flow`, which already contains a partial C-conjugation argument.
+It was *not* informed by any dump.
+
+For a diagram `d` rooted at vertex `r`, the SM's fermion lines partition the
+external fermion legs into pairs. For a line `ℓ`: `V(ℓ)` vertices, `P(ℓ) =
+V(ℓ) − 1` internal propagators, and a crossing bit `x(ℓ) = 1` iff both endpoints
+are final-state. At each vertex `v ∈ ℓ` define the **binding orientation**
+`ω(v,ℓ) = −1` if the line's charge arrow runs against the UFO slot pairing at
+`v` (the bilinear is read reversed), `+1` if along it.
+
+> **RULE R.**  `Φ(d,r) = ε(d) · Π_ℓ [ σ(ℓ) · Π_{v∈ℓ} ω(v,ℓ) ] · κ(d,r)`
+>
+> - `ε(d)`: parity of the permutation carrying the reference ordering of
+>   external fermion legs to the ordering induced by the diagram's line pairing
+>   (Wick).
+> - `σ(ℓ) = (−1)^{x(ℓ)}`: one −1 per crossed line, the reordering of the
+>   conjugated pair.
+> - `ω(v,ℓ)`: −1 at every vertex of a line with an initial-state endpoint
+>   (enumeration binds all-incoming, the reference binds all-outgoing, so such a
+>   line is read against its arrow everywhere, and `C γ^{μT} C⁻¹ = −γ^μ`); +1 at
+>   every vertex of a crossed line (read along its arrow).
+> - `κ(d,r) = Π_ℓ ω(sink(ℓ),ℓ)`: removes the one `ω` factor the runtime
+>   `resolve_bra_ket` already supplies at each line's single non-fermion-output
+>   sink.
+>
+> No per-Lorentz-structure case, no per-process table, no dump-fitted constant.
+
+Collapsing: an uncrossed line contributes `(+1)·(−1)^V·(−1) = (−1)^{V−1} =
+(−1)^{P(ℓ)}`; a crossed line contributes `(−1)·(+1)^V·(+1) = −1`. That is
+`spine_sign_from_flow` exactly, with `ε` supplying row 1 and `κ` row 3.
+
+**The crux question of F.1, resolved — structurally, not by a dump.** The design
+asked whether row 2's per-propagator arm is charge flow or "i-counting in
+disguise (each propagator carries −i)". Two findings:
+
+- The i-counting reading is *structurally* impossible. The propagator's `−i` is
+  applied in `kernel.rs` (the propagator numerator/denominator), not in
+  `fermi_sign`; the two factors live in different places and both are present.
+  The spine's per-propagator `−1` is therefore not a repackaged `−i`.
+- The two candidate charge-flow phrasings — "one −1 per internal fermion
+  propagator" and "one −1 per vertex the arrow traverses against the binding,
+  less the one absorbed at the sink" — are **extensionally identical on every
+  tree diagram**, because `P(ℓ) = V(ℓ) − 1` identically on a tree line. No dump
+  can discriminate them, now or ever, at tree level. H4 can confirm the count;
+  it cannot choose the reading. This blind spot is intrinsic to the question,
+  not a shortfall of the banked set.
+
+So the crux resolves **in favour of charge flow**, on the structural argument,
+with the explicit caveat that the dump evidence is degenerate.
+
+### F.10 Hostile cases, in the pre-registered order
+
+Harvested datasets (none existed on disk, per F.4): `G` per process, the
+per-configuration phases `k`, and per-diagram fitted ratios `r_d` against
+MadGraph's *bare* `AMP()`. All three came from a reverted scratch patch to
+`tests/amplitude_oracle.rs`; every residual quoted is a least-squares fit over
+all banked (point, helicity) entries.
+
+**A new instrument, not anticipated by the design.** F.1 row 9 records that the
+per-configuration phases `k` are asserted only in modulus and that "the phase of
+`k` is entirely free". Measured, across every configuration of every banked
+process (75 in the single-flow set plus 35 on `ud_to_epemud_qcd0`): **`k/G ∈
+{+1, −1}` exactly**, every value real to the printed precision, residuals ≤
+`6.6e-15`. The phases are not free; each is one bit. Where `jamp_coefficients`
+are banked, that bit *is* MadGraph's own `c_j` (verified: `r_d/G =
+c_{order[d]}` on `ee_to_ee` `(−1,−1,+1,+1)`, `ee_to_tatah` `(−1)×5`,
+`ee_to_mumu` `(−1,−1)`, `uux_to_mumu` `(+1,+1)`). Where they are not banked —
+the four multi-flow processes, which are H1, H2, H4 and H7 — `k/G` is the only
+per-diagram sign oracle that exists.
+
+**H1 — `g g > g g`, the fermion-free control.** Done as P0 above. Two
+corrections to the case as designed. (i) vibegraph enumerates **4** diagrams
+against MadGraph's **6** graphs: MG splits the 4-gluon contact into three colour
+structures (`amp2_groups = [[3],[4],[5]]` are the three propagator diagrams), so
+there is no 1:1 per-diagram pairing to read. (ii) `gg_to_gg.json` banks
+`jamp_coefficients: null`, so the production oracle performs **no** per-diagram
+comparison here at all; the sign structure is pinned through the six JAMPs and
+through `k/G = (−1,−1,−1)` on the three configurations. The i-counting
+cancellation `i^V(−i)^{V−1} = i` was checked diagram-by-diagram as the design
+asked: D0 has `V=1, P=0 → i`; D1–D3 have `V=2, P=1 → i²(−i) = i`. Consistent,
+and consistent with the measurement that **all 20 processes have `Re G = 0` and
+`|G| = 1`** — row 8's quadrant is derived by i-counting with zero free
+parameters, as pre-registered.
+*Blind spot, as F.5 required: trace-reversal-degenerate flow pairs (`J₁=J₆,
+J₂=J₄, J₃=J₅`) are invisible here; H1 does not close that class.*
+
+**H2 — `g g > t t~`, the colour slot swap (row 7).** MadGraph's own banked
+`flow_structures` are `["T(1,2,3,4)", "T(2,1,3,4)"]` — untransposed, matching
+`color_cf.rs::gg_to_ttx_flow_structures_untransposed`. Checked against reference
+data, so row 7's *value* is green. **But the check cannot see what it is claimed
+to see.** Every SM UFO FFV vertex lists its particles antifermion-first (`V_98 =
+[e+, e-, a]`, and `V_135`/`V_137`/… alike), so the 3̄ slot is uniformly first.
+Under that uniform ordering, "swap the 3 and 3̄ slots unconditionally" (what note
+16 §2.4 recorded) and "index `T(…,i,j)` by the arrow-out leg" (the charge-flow
+phrasing) are the same function on every vertex in the model. The dump confirms
+the value and is provably blind to *which rule produced it*. Row 7 counts toward
+`n`, but its charge-flow content is untested and untestable in the SM UFO.
+
+Also measured here: `φ = (−1,−1,−1)` uniform, with crossed top lines carrying 0,
+1, 1 propagators respectively. That uniformity is what pins the crossed arm's
+propagator-independence — a rule giving the crossed line a per-propagator factor
+predicts `(+1,−1,−1)` and is refuted.
+
+**H3 — `e+ e- > e+ e-` (Bhabha).** `φ = (−1,−1,−1,−1)`, uniform. Decomposed:
+`diagram.sign = (+1,+1,−1,−1)` and `spine = (−1,−1,+1,+1)` — the two cancel
+exactly. MadGraph's independently banked `jamp_coefficients` are `c =
+(−1,−1,+1,+1)`, i.e. `c = −diagram.sign` exactly, and the harvested `r_d/G`
+reproduces `c` to ≤ `1.9e-14`. **Row 1 is checked against the dump**: MG's own
+per-diagram relative sign between the annihilation-type and exchange-type
+pairings equals vibegraph's Wick parity up to one global sign, and that parity is
+the permutation parity of the charge-flow endpoint pairing — the `ε` of rule R.
+
+The finding the design's framing missed: because `spine` cancels `diagram.sign`
+here, the *relative* sign Bhabha pins lives, on vibegraph's side, in `H_d` and
+not in `φ_d`. Bhabha does not pin `fermi_sign`'s relative structure — it pins
+the product. It is still evidence (flipping the crossed arm alone makes `φ`
+non-uniform and breaks the gate), but evidence about a combination, not about
+row 2 in isolation.
+
+**H4 — `u d > e+ e- u d QCD=0`, the crux case.** 35 diagrams, `build ≡ +1` and
+`revC·revL ≡ +1` throughout, so `φ_d = sign_d · spine_d · vvv_d`. Harvested
+`k/G` for all 35 configurations (`config_diagrams` is the identity, `counts` all
+1, so configuration `i` is diagram `i`): `−1` at `{4…11, 18}`, `+1` on the other
+26, every residual ≤ `6.6e-15`.
+
+The design predicted a **24/11 split "on whether a mixed quark line carries the
+propagator"**. A 24/11 split is indeed present, but it is not that split. Form
+`σ_d = (k/G)_d / φ_d` — MadGraph's per-diagram convention read against
+vibegraph's sign-free evaluation. Measured: `σ = −1` on `{0…15, 25…32}` (**24
+diagrams**) and `+1` on `{16…24, 33, 34}` (**11 diagrams**). Those two sets are
+exactly the **neutral-current** and **charged-current** diagrams (the 11 all
+carry `V_123`/`V_89`, the W–quark vertices). The split is a *Wick-pairing* (row
+1) effect — NC diagrams pair the quark lines `u→u, d→d`, CC diagrams pair them
+`u→d, d→u`, a transposition — not the per-propagator arm. The propagator
+structure is identical across the divide (D0 and D16 have the same line/prop
+pattern and differ only in pairing, hence in `diagram.sign`).
+
+The per-propagator arm's real observable content in this process is narrower and
+was located: **D21/D22 are the only two diagrams whose mixed lines are all
+propagator-free** (`spine = −1`, from the crossed line alone), against 33
+diagrams carrying one propagator on a mixed line (`spine = +1`). A rule dropping
+the per-propagator factor flips `φ` on those 33 and not on those 2 — detectable.
+Separately, **D18 is the only diagram whose *crossed* line carries a propagator
+while `spine = −1`**, which is where the crossed arm's propagator-independence
+is pinned inside this process. Both arms of row 2 are therefore checked, but by
+2 and 1 diagrams respectively, not by a 24/11 majority.
+
+**H5 — `e+ e- > ta+ ta- H`.** `φ = (+1,+1,+1,+1,−1)`; the variation comes
+entirely from `build = (−1,−1,−1,−1,+1)`. Per-vertex attribution (scratch dump
+of each node's `build_sign`): in D0–D3 exactly one off-shell current carries
+`−1`, and it sits on `V_106 = [ta+, ta-, H]` (`FFS4`) rooted at a **fermion**
+output — that is `standalone_projector_crossed` (`root_lorentz.rs:654`), **row
+4d**. In D4 every node is `+1`, including `V_69 = [Z, Z, H]` (`VVS1`), because
+D4's rooting makes a `Z` that vertex's output and the pure-metric arm is only
+reached at a scalar or amplitude sink.
+
+Therefore **the design's row 4b attribution is wrong**: `e+ e- > ta+ ta- H` does
+not exercise the scalar-sink ProjM/ProjP/Identity `−1` at all — its build sign
+is row 4d alone. (The same conflation sits in the production comment on
+`mg_guard_processes_exercise_every_convention_channel`'s fourth assertion, which
+says the build sign there is "ProjM/ProjP scalar-sink + the crossed-τ standalone
+projector"; only the second half fires.) Consequence for the bar: **row 4d is
+checked** — `r_d/G = c_{order[d]} = −1` for all five diagrams at residual ≤
+`5.7e-15`, so flipping D4's `φ` alone would break the per-diagram gate — while
+**row 4b is unchecked**, having no varying instance anywhere in the banked set.
+
+**H6 — alternative rooting.** Conditional on the rule surviving H1–H5 as the
+strong reading. It did not (P0), and the design's stop-rule directs the session
+to the write-up. **Not run.** The 133-rooting sweep's rooting-covariance claim
+therefore stands unexamined by this chain; nothing here touches it.
+
+**H7 — `u u~ > u u~`, multi-flow.** `φ = (−1,−1)`, uniform, with the same
+`diagram.sign`/`spine` cancellation as Bhabha (`(+1,−1)` against `(−1,+1)`).
+Harvested per-diagram per-flow ratios against the bare `AMP()`:
+
+```
+d=0 f=0  r/G = +0.166666667    d=0 f=1  r/G = −0.500000000
+d=1 f=0  r/G = +0.500000000    d=1 f=1  r/G = −0.166666667
+```
+
+all real (imaginary parts `0.000000000`), residuals ≤ `4.6e-16`. Both diagrams
+show the same sign pattern across flows `(+, −)`, the magnitudes being the
+colour weights `1/6` and `1/2`. **A per-diagram scalar phase suffices**: the
+flow-dependence of the sign is entirely the colour weight, so the rule need not
+be assigned per colour flow. That answers H7's question in the rule's favour.
+
+### F.11 Verdict against the pre-registered bar
+
+`S` is graded as the nine members `{1, 2, 3, 4a, 4b, 4c, 4d, 5, 7}` — see F.13
+for why `S`'s size is ambiguous in the pre-registration and why this is the
+reading adopted.
+
+| row | R covers it? | checked against a dump? | evidence |
+|---|---|---|---|
+| 1 Wick parity | yes (`ε`) | **yes** | `ee_to_ee`: MG `c = −diagram.sign`, `r/G` reproduces `c` to `1.9e-14`; `ud` NC/CC `σ` split |
+| 2 spine, both arms | yes | **yes** | crossed arm: `gg_to_ttx` uniform `φ` over 0/1 props, `ud` D18. per-prop arm: `ud` D21/D22 vs the other 33 |
+| 3 reversed-bilinear parity | yes (`κ`) | **no** | `revC·revL ≡ +1` on every canonically-rooted diagram; content lives in `H`, which no dump separates from `φ` |
+| 4a crossed-pair −1 | yes | **no** | never produces a varying `build` pattern in any of the 9 probed processes |
+| 4b scalar-sink −1 | no (no arrow) | **no** | does not fire in `ee_to_tatah`; no varying instance found |
+| 4c pure-metric −1 | no (no arrow) | yes | `gg_to_gg` D0 vs D1–D3 |
+| 4d standalone-projector-crossed | yes | **yes** | `ee_to_tatah` 4:1, `r/G` uniform `−1` at `5.7e-15` |
+| 5 Yang–Mills VVV | no (no arrow) | yes | `gg_to_gg`; `ee_to_wpwm` (`−,−,+`) |
+| 7 colour 3/3̄ swap | yes | yes (value only) | MG `flow_structures = ["T(1,2,3,4)","T(2,1,3,4)"]`; blind to which rule produced it |
+
+**The arithmetic.**
+
+- `n` (pinned binary conventions R reproduces **and** that a recorded dump
+  measurement checks) = **4** — rows 1, 2, 4d, 7. Rows 3 and 4a are reproduced
+  but **unchecked**, and the bar's closing clause says an unchecked row is
+  "never green".
+- `k` (independent binary choices R contains): (i) the global sign of `Φ` per
+  process; (ii) the crossed-line reordering sign `σ = −1`; (iii) which of the
+  `V` per-vertex `ω` factors is the one absorbed at the sink, i.e. the placement
+  of `κ`; (iv) the colour-sector arrow-indexing direction in row 7. **`k = 4`.**
+- **`n − k = 4 − 4 = 0`.**
+
+Most generous admissible accounting — count the two unchecked reproductions
+(`n = 6`) and grant that (i) is unobservable and (iii) is fixed by the runtime
+rather than chosen (`k = 2`) — gives **`n − k = 4`**, still short of the
+pre-registered `≥ 5`.
+
+The bar's second VERY PROMISING clause (strictly reduce the fitted-quantity
+count below `1 + Σ_process N_config`) also fails: a large reduction **is**
+available and is reported in F.12, but it comes from *measurement* of `k`, not
+from rule R, and the clause requires the rule to do the reducing.
+
+> **VERDICT: INTERESTING BUT NOT ACTIONABLE.**
+>
+> Rule R reproduces rows 1, 2, 3, 4a, 4d and 7 — the fermionic arms plus the
+> colour swap — and requires non-charge-flow input (i-counting and the vertex's
+> Lorentz structure) for rows 4b, 4c and 5. The diagram phase **factorizes** as
+> (charge flow) × (i-counting / Lorentz), exactly the middle bucket the design
+> defined. It is not VERY PROMISING under any admissible reading of the `n − k`
+> clause. It is not REFUTED: no witness pair exists against the fermionic arms.
+
+Two qualifications that must travel with that verdict:
+
+- Membership in the middle bucket requires rows 3 and 4a to count as reproduced;
+  both are **unchecked**, and row 3 is unchecked *in principle* at the level R
+  operates, not merely unmeasured. A stricter reading — the middle bucket
+  requires its six rows to be checked — puts the result below the middle bucket
+  with no bucket to fall into. The taxonomy has no cell for "reproduces the
+  right rows, but a third of them are unobservable"; that is where this landed.
+- The witness pairs the design asked for do exist, but against the *strong*
+  claim only. They are recorded in F.12.
+
+### F.12 The negative result, stated with the same care
+
+**Why the rule under-determines the phase.** The nine-row inventory is a
+partition of a quantity nothing observes. What the dumps pin is `A_d = φ_d·H_d`;
+the split between the convention lift `φ` and the honest evaluation `H` is
+internal to vibegraph, and **every reassignment of a sign between the two is
+invisible to every banked oracle.** Bhabha and `u u~ > u u~` are the clean
+demonstrations: in both, `diagram.sign` and `spine` cancel exactly, `φ` is a
+global sign, and the relative sign MadGraph pins sits on vibegraph's side inside
+`H`. A charge-flow rule for `φ` is therefore graded against a quantity the
+reference never isolates — the deep reason `n` cannot be pushed up by banking
+more processes.
+
+**Which conventions escape the rule.** Rows 4b, 4c and 5 involve no fermion
+arrow anywhere. Row 4c fires on `g g > g g`'s four-gluon contact, a diagram with
+no fermion line and no propagator; row 5 fires on a VVV vertex at index ≥ 1;
+row 4b's condition is a scalar or amplitude sink. None of the three has any
+charge-flow input to read. They are Lorentz-structure and i-counting facts, and
+the factorization is not a defect of R but the shape of the answer.
+
+**Witness pair W1 — the strong reading.** `g g > g g` D0 (the `V_37` contact)
+and D1 (two `V_36` vertices). Charge-flow input sets: both **empty and
+identical** — no fermion external, no fermion propagator, no line, no arrow, no
+crossing bit. Pinned values: row 4c is `−1` on D0 and `+1` on D1; row 5 is `+1`
+on D0 and `−1` on D1. Two configurations agreeing on every charge-flow input yet
+carrying different pinned signs — the design's required form of the negative
+result, delivered against the strong reading. (Their *product* agrees, `φ = −1`
+both, which is why the strong reading survives at the level of `φ` while failing
+at the level of `S`'s members, and why P0's falsifier had to be sited on
+`channel_counts`.)
+
+**Witness pair W2 — the `G`-sign clause.** `e+ e- > mu+ mu-` and
+`u u~ > mu+ mu-`: same diagram count (2), same topology (γ/Z in the s-channel),
+same fermion-line structure (one initial–initial line, one crossed final line,
+no fermion propagator), same crossing bits. Measured `G = −i` and `G = +i`
+respectively. The two differ only in the SU(3) representation of the initial
+pair, and MadGraph's banked coefficients differ in exactly the compensating way
+(`c = (−1,−1)` against `c = (+1,+1)`), so `G·c₀ = +i` for both. Across the 16
+coefficient-banked processes, `G·c₀ = +i` for 13 and `−i` for 3
+(`ee_to_mumu_tata_qcd0`, `ee_to_wpwm`, `ee_to_zh`). **The sign of `G` tracks
+MadGraph's own colour-coefficient sign, not any vibegraph-side invariant** —
+F.5's "cannot decide" item 1 confirmed quantitatively rather than assumed. The
+bar's headline test, "the sign of `G` on every one of the 20 banked processes",
+is therefore a test of MadGraph's convention and is not winnable by any rule of
+the pre-registered form.
+
+**A positive by-product: rows 8 and 9 are far smaller than pre-registered.**
+`|G| = 1` and `Re G = 0` are derived by i-counting (`i^V(−i)^{V−1} = i`,
+independent of `V`) and measured to hold on all 20 processes, so row 8 contains
+one bit, not a phase. Row 9 contains one bit per configuration, not a free
+phase: `k/G ∈ {±1}` exactly on every configuration measured, residuals ≤
+`6.6e-15`. Where `jamp_coefficients` exist, those bits *are* MadGraph's `c_j`.
+The fitted-quantity count is therefore not `1 + Σ_process N_config` free complex
+phases but `1 + Σ_process N_config` **bits**, most of them already banked in the
+reference. This is measurement, not derivation, and it does not earn the bar's
+second clause — but it is the most useful thing this chain produced, and it
+turns into a concrete gate hardening (F.14).
+
+### F.13 Errors found in the pre-registration and the dispatch brief
+
+Reported, not patched around, as the brief requires.
+
+1. **`S`'s size is ambiguous.** F.1's prose says "there are **nine** pinned
+   conventions" and the BAR says "the nine pinned conventions of F.1", but F.1's
+   table has **twelve** numbered rows (1, 2, 3, 4a, 4b, 4c, 4d, 5, 6, 7, 8, 9).
+   The only reading that yields nine is `{1, 2, 3, 4a, 4b, 4c, 4d, 5, 7}` — the
+   five `fermi_sign` factors with `build` expanded into its four sub-arms, plus
+   the colour swap, excluding row 6 (a phase, not a sign) and rows 8–9 (the
+   fitted constants, which the bar counts separately). That is the reading
+   graded above; a different reading changes `n`'s ceiling but not the verdict,
+   since `n − k` falls short even at its most generous.
+2. **The bar's clause 1 contradicts F.5's "cannot decide" item 1.** Clause 1
+   requires the rule to reproduce `G`'s sign on all 20 processes; F.5 item 1
+   says an unexplained `G` sign "is therefore **not** evidence against the rule,
+   and must not be graded as a miss". A criterion that cannot be failed cannot
+   be passed as evidence. W2 above shows the clause is in fact unwinnable.
+   Clause 2 (the disjunct) is unaffected, so the bar survives, but clause 1
+   should be struck rather than repaired.
+3. **Row 4b's pinning attribution is wrong** (F.1's table, and the same error in
+   the production doc comment on
+   `mg_guard_processes_exercise_every_convention_channel`). `e+ e- > ta+ ta- H`
+   exercises row **4d** (`standalone_projector_crossed`), not row 4b: the `−1`
+   sits on the `ta ta H` `FFS4` vertex rooted at a *fermion* output, and the
+   scalar-sink arm at `root_lorentz.rs:485/501/557` never fires in that process.
+   Row 4b has **no** varying instance anywhere in the banked set and must be
+   recorded as unchecked.
+4. **All four multi-flow hostile cases lack the per-diagram comparison the
+   design assumed.** H1 `gg_to_gg`, H2 `gg_to_ttx`, H4 `ud_to_epemud_qcd0` and
+   H7 `uux_to_uux` all bank `jamp_coefficients: null`, so `per_diagram_fit =
+   banks_amps && table.coefficients.is_some()` is false and the oracle runs
+   **no** per-diagram check on any of them. F.3 describes H4 as reading
+   "`detail.amps` 35 wide … with the banked pairing `MG_DIAGRAM_ORDER`" as
+   though a per-diagram comparison were available; it is not. The working
+   substitute — per-configuration `k/G`, which the design listed only as an
+   un-harvested quantity — is what actually carries the per-diagram sign for
+   these four.
+5. **`g g > g g` is 4 diagrams against MadGraph's 6 graphs**, not "6 diagrams ×
+   6 flows" as F.3 states: MG splits the four-gluon contact into three colour
+   structures. There is no 1:1 diagram pairing for that process at all.
+6. **H4's "24/11 split on the per-propagator arm" mis-describes the data.** The
+   24/11 split exists and is the neutral-current / charged-current split, i.e. a
+   Wick-pairing (row 1) effect. The per-propagator arm's observable content in
+   that process is 2 diagrams (D21/D22) against 33. The crux case still decides
+   the crux, but not by the mechanism the design named.
+7. **P0's falsifier is sited on a code-internal quantity.** `channel_counts` is
+   not an observable, so P0 can only refute a bookkeeping claim. Recorded in
+   F.7; noted here because a future pre-registration should site its falsifier
+   on a dump-visible quantity.
+8. The dispatch brief's own errors were already caught by the design's F.6 (133
+   not 165 re-rootings; the second family of fitted phases; `eda4412` rather
+   than note 16 §6; `p p > j j` has no amplitude dump). All four confirmed
+   correct as F.6 states; nothing to add.
+
+### F.14 Backlog drafts — NOT attempted this sprint
+
+The verdict is not *very promising*, so **no refactor entry is proposed**. The
+design's scope risk stands and is reinforced: `fermi_sign` should not be
+reformulated on the strength of this, because F.12's central finding is that the
+`φ`/`H` split is unobservable, so a reformulation could not be validated beyond
+preserving a product the current gate already preserves. Two *other* entries
+fell out of the work and are drafted here for the manager to land or discard.
+
+**(a) Assert what `k` actually is (cheap, high value).** `amplitude_oracle.rs`
+asserts only `|k| = 1` per configuration. Measured: `k/G ∈ {±1}` exactly on
+every configuration of every banked process, residuals ≤ `6.6e-15`. Asserting
+`|Im(k/G)| < LINEAR_REL_TOL` — that `k` is a *real* multiple of `G` — converts
+a free per-configuration phase into a pinned bit, and would catch any future
+defect that rotates a configuration amplitude in the complex plane, a class
+`AMP2` is blind to by construction. Scope: one assertion plus its message in the
+existing per-configuration loop; no reference data, no tolerance move. Two-way,
+per house style: it should fail if a `k` stops being real.
+
+**(b) An unexplained sign between two internal routes to the same amplitude
+(investigate before (a) lands).** On `ee_to_tatah`, whose `config_diagrams` is
+the identity and whose configurations each own exactly one amplitude, the two
+independently fitted ratios against the same bare `AMP()` disagree for diagram 4
+and only for diagram 4: the per-diagram route gives `r/G = −1` for all five
+diagrams (residual ≤ `5.7e-15`), while the configuration route gives `k/G =
+(−1,−1,−1,−1,+1)` (residual ≤ `6.7e-15`). Arithmetically, `run_config_amps()[4]
+= −(the amplitude of the single-diagram compile of diagram 4)`. No current gate
+compares the two routes — `AMP2` takes the modulus and `k` is fitted per
+configuration — so this is invisible today and has no observable consequence for
+the configuration draw. **Not root-caused here**, and an alternative explanation
+(a subtlety in how the scratch harvest built its single-diagram evaluators) is
+not excluded, so this is written as a lead, not a defect. Cheapest next step:
+assert `run_config_amps` against the per-diagram amplitudes directly for the
+single-flow processes, where both are already computed.
+
+### F.15 What this section provably did not decide
+
+Beyond F.5's own list, which stands unchanged (`G`-sign attribution, phases
+common to all diagrams and flows, Majorana lines, the two 8-point flows-only
+processes, loop level), this execution adds four:
+
+1. **The `φ`/`H` split** — no banked oracle separates the convention lift from
+   the honest evaluation, only their product (F.12).
+2. **Row 2's two phrasings** — "per internal propagator" and "per vertex less
+   the sink absorption" are extensionally identical on every tree diagram
+   (`P = V − 1`), so no tree-level dump can ever discriminate them (F.9).
+3. **Row 7's rule** — under the SM UFO's uniform antifermion-first FFV slot
+   ordering, "unconditional swap" and "index by the arrow-out leg" are the same
+   function; the dump confirms the value and cannot see the rule (H2).
+4. **Rows 3 and 4a** — no varying instance exists in the banked set, so they are
+   unchecked, and row 3 is unchecked in principle at the `fermi_sign` level
+   because `revC·revL ≡ +1` there (F.11).
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
