@@ -747,6 +747,388 @@ TODO's standing-discrepancy entry is the manager's to rewrite, not this chain's.
   beams), or polarisation — all inert for this process, which is why the
   measurement can be read as a pure coverage statement.
 
+## Chain D measurement (2026-08-03)
+
+Implementation session output. Every number below is a recorded measurement: the
+command that produced it is named, and no cell is inferred from another cell or
+from a suite passing. §D.6's decision rule was applied top to bottom without
+reference to which side "ought" to be right; §D.6.1 records exactly which clauses
+were marginal.
+
+Driver: `validation/madgraph/gen_pta_windows.sh` (stages `control-371`,
+`control-357`, `partition-371`, `refocus`). This side:
+`probe_pta_windows_against_madgraph` in `vibegraph-lib/tests/validate_samples.rs`,
+run as
+
+```
+cargo test -p vibegraph-lib --features extended-validation --test validate_samples \
+  probe_pta_windows_against_madgraph -- --ignored --nocapture
+```
+
+(the design's §D.5 Run 3 command omits `-lib` and the required feature; the test
+target is feature-gated and does not build without it).
+
+### D.M0 — Run 0: §D.0's premise re-verified, all four facts
+
+Nothing moved. The channel-weight mechanism the chain brief named is unreachable
+for this process in *both* MadGraph lines.
+
+1. `sde_strategy = 1` in the banked cards:
+
+   ```
+   Cards/run_card.dat:86:  1	= sde_strategy ! default integration strategy (hep-ph/2021.00773)
+   Cards/run_card_default.dat:85:   1  = sde_strategy  ! default integration strategy (hep-ph/2021.00773)
+   ```
+
+2. `TMIN_FOR_CHANNEL = -1` in the banked generated include, alongside the
+   strategy the run actually used:
+
+   ```
+   Source/run_card.inc:333:      TMIN_FOR_CHANNEL = -1.000000000000000D+00
+   Source/run_card.inc:337:      SDE_STRAT = 1
+   ```
+
+   Re-read off `Source/run_card.inc` after *every* run this chain made
+   (`run_one` prints it): `TMIN_FOR_CHANNEL=-1.000000000000000D+00 SDE_STRAT=1`
+   without exception.
+
+3. The early return is present and identical in both lines —
+   `.pixi/envs/madgraph/MG5_aMC/Template/LO/SubProcesses/genps.f:1858`,
+   `research/refs/mg5amcnlo/Template/LO/SubProcesses/genps.f:1878`, and the
+   banked `SubProcesses/genps.f:1878`:
+
+   ```fortran
+         if(sde_strat.eq.1.and.tmin_for_channel.eq.-1)then
+            get_channel_cut = 1d0
+            return
+         endif
+   ```
+
+   so `get_channel_cut` is identically 1 here and never reaches either
+   expression the 3.5.7 → 3.7.1 fix touched.
+
+4. Freshly generated directories auto-select the same strategy in both lines
+   (printed by `generate_template`):
+
+   ```
+   >>> [3.7.1] auto-selected sde_strategy:    1  = sde_strategy ...
+   >>> [3.5.7] auto-selected sde_strategy:    1  = sde_strategy ...
+   ```
+
+   The only change to the selection rule between versions is the guard
+   `proc_characteristic['gauge'] != 'FD' and` prepended at `banner.py:4995`
+   (3.7.1) relative to `banner.py:4684` (3.5.7); `proc_characteristics` gives
+   `single_color = True`, `gauge = unitary`, so the branch is entered either way
+   and falls through `pure_lepton and proton_initial` (the initial state is
+   `e+ e-`) to `elif not no_qcd`.
+
+Two further equivalence facts, asserted by the driver rather than assumed:
+
+* `leshouche.inc` gives `DATA (IDUP(I,1,1),I=1,5)/-11,11,-13,13,22/` in the bank
+  and in both freshly generated templates — **the photon is external leg 5**, and
+  the `dummy_cuts` window cuts on `p(1,5), p(2,5)`.
+* `configs.inc`, `props.inc` and `leshouche.inc` in the 3.7.1 template are
+  byte-identical to the bank's. The 3.5.7 template differs from the bank in
+  `configs.inc` by two lines only — `C     used fake id` / `DATA FAKE_ID/7/`,
+  which 3.5.7 does not emit — and is identical in `props.inc`, `leshouche.inc`
+  and `maxamps.inc`. **Both lines build the same six-channel decomposition**, so
+  the version comparison is a comparison of integrators, not of processes.
+
+The banked per-channel cross sections in §D.1 were re-read off
+`SubProcesses/P1_ll_lla/G*/results.dat` and match that table exactly.
+
+The chain proceeded.
+
+### D.M1 — Run 1: the reference's own error honesty
+
+`pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage control-371`,
+five seeds, and the same again with `NEVENTS=10000 TAG_SUFFIX=_n10k`.
+
+| budget | σ per seed (pb) | mean | quoted/run | seed sd | cloud χ²/dof |
+|---|---|---|---|---|---|
+| `nevents = 100000` | 9.9966e-2, 9.9956e-2, 1.00010e-1, 1.00110e-1, 9.9901e-2 | `9.998860e-2` | 8.398e-5 | 7.817e-5 | **0.90** |
+| `nevents = 10000` (the bank's) | 9.9845e-2, 9.9917e-2, 1.00090e-1, 1.00010e-1, 9.9712e-2 | `9.991480e-2` | 2.569e-4 | 1.464e-4 | **0.32** |
+
+**§D.0's central hypothesis is refuted.** MadGraph's quoted error on this process
+is honest at the 100k budget (χ²/dof 0.90; spread 7.8e-5 against a quoted 8.4e-5)
+and *conservative* at the bank's own 10k budget (χ²/dof 0.32). The banked
+`9.980100e-2` sits 0.78 seed-sd below its own 10k cloud mean — an ordinary draw,
+not an outlier. Whatever the +0.80% is, it is not a reference whose error bar
+fails to cover its own spread.
+
+### D.M2 — Run 2: the third witness, MadGraph 3.5.7
+
+`--stage control-357`, five seeds, `nevents = 100000`. The 3.5.7 environment ran
+here without difficulty, so §D.6's degradation rider was **not** invoked and the
+version axis is fully available.
+
+| | σ per seed (pb) | mean | quoted/run | seed sd | cloud χ²/dof |
+|---|---|---|---|---|---|
+| 3.5.7 | 1.00200e-1, 9.9949e-2, 9.9943e-2, 1.00120e-1, 1.00100e-1 | `1.000624e-1` | 9.556e-5 | 1.127e-4 | 1.40 |
+
+3.5.7 − 3.7.1 = `+7.380e-5` pb = **+0.074%**, `+1.20` combined-seed-spread σ,
+against a separation criterion of 3× the combined spread (`1.840e-4`).
+
+> **Version-separated: NO. The two clouds overlap.**
+
+The two MadGraph lines agree on this process to 0.074%. The apparent 0.82%
+"drift" between reference banks is two single draws from two clouds that overlap;
+it is not a version effect, and §D.5's `--stage partition-357` was therefore not
+needed.
+
+### D.M3 — Run 3: `VG-part`, our shape at the gate's own configuration
+
+Five seeds at `neval 80 000 × niter 8` (the σ gate's budget for this row), plus
+three seeds at 4×. The measurement is a frozen pass over the grids `adapt_grids`
+trains, on a ChaCha stream disjoint from the integration's. Self-check: at seed
+`20260719` the run's own `adapt_grids` total is `1.006000e-1`, bit-for-bit the
+banked gate value, so the integrand measured is the gated one.
+
+Seed clouds (mean, quoted error on the mean, seed-spread error, χ²/dof on 4 dof):
+
+| | σ (pb) | quoted | spread | χ²/dof |
+|---|---|---|---|---|
+| total | `1.006713e-1` | 9.961e-5 | 7.969e-5 | **0.69** |
+| `[10, 20)` | `9.315376e-3` | 6.869e-5 | 8.195e-5 | 1.23 |
+| `[20, 39.4)` | `9.865348e-3` | 4.085e-5 | 3.005e-5 | 0.62 |
+| `[39.4, 77)` | `2.785841e-2` | 5.343e-5 | 5.683e-5 | 1.10 |
+| `[77, 144)` | `2.728223e-2` | 4.145e-5 | 4.137e-5 | 0.99 |
+| `[144, 250)` | `2.634998e-2` | 3.758e-5 | 3.364e-5 | 0.80 |
+
+> **Seed-consistent: YES** — every cloud is at or under χ²/dof 1.23, well inside
+> the ≤ 2 criterion.
+
+Budget stability, base against 4× on the three shared seeds:
+
+| | base | 4× | err shrinks | shift | `2 ε(1×)` | stable? |
+|---|---|---|---|---|---|---|
+| total | `1.005657e-1` ± 1.166e-4 | `1.007437e-1` ± 5.628e-5 | 2.07× | +0.177% | 0.232% | **yes** |
+| `[10, 20)` | `9.248053e-3` ± 7.075e-5 | `9.471996e-3` ± 3.731e-5 | 1.90× | **+2.422%** | 1.530% | **no** |
+| `[20, 39.4)` | `9.870744e-3` ± 4.909e-5 | `9.826276e-3` ± 2.144e-5 | 2.29× | −0.451% | 0.995% | yes |
+| `[39.4, 77)` | `2.786214e-2` ± 7.068e-5 | `2.790989e-2` ± 3.243e-5 | 2.18× | +0.171% | 0.507% | yes |
+| `[77, 144)` | `2.728244e-2` ± 5.391e-5 | `2.723621e-2` ± 2.660e-5 | 2.03× | −0.169% | 0.395% | yes |
+| `[144, 250)` | `2.630229e-2` ± 4.867e-5 | `2.629937e-2` ± 2.406e-5 | 2.02× | −0.011% | 0.357% | yes |
+
+> **Budget-stable on the total: YES.** Budget-stable per window: yes in W2–W5,
+> **no in W1**, where the base-budget frozen pass sits 2.4% low. W1 is the window
+> that keeps ~9% of the multichannel draws, and its 4× value moves *towards* both
+> MadGraph's own windowed cross section and this side's independent `VG-cut(W1)`
+> (below) rather than away from either — the error also shrinks by 1.90×, i.e.
+> ≈ √4. The residual converges under budget; it does not migrate between seeds.
+
+### D.M4 — Run 4: `MG-part`, and the closure test `C_MG`
+
+`--stage partition-371`, five windows × **five** seeds (the design's §D.5 asked
+for three; §D.4's seed protocol names five, and `C_MG` is the statistic the whole
+verdict turns on, so the full five were run), `nevents = 100000`.
+
+| window | σ per seed (pb) | mean | quoted (mean) | seed sd | cloud χ²/dof |
+|---|---|---|---|---|---|
+| `[10, 20)` | 9.4130e-3, 9.4426e-3, 9.3615e-3, 9.4182e-3, 9.3969e-3 | `9.406440e-3` | 6.242e-6 | 3.000e-5 | **4.27** |
+| `[20, 39.4)` | 9.8537e-3, 9.8383e-3, 9.8285e-3, 9.8265e-3, 9.8052e-3 | `9.830440e-3` | 6.948e-6 | 1.774e-5 | 1.33 |
+| `[39.4, 77)` | 2.7516e-2, 2.7520e-2, 2.7607e-2, 2.7489e-2, 2.7480e-2 | `2.752240e-2` | 1.267e-5 | 5.029e-5 | **3.51** |
+| `[77, 144)` | 2.7074e-2, 2.7014e-2, 2.7003e-2, 2.7079e-2, 2.7066e-2 | `2.704720e-2` | 1.274e-5 | 3.584e-5 | 1.53 |
+| `[144, 250)` | 2.6320e-2, 2.6316e-2, 2.6317e-2, 2.6308e-2, 2.6317e-2 | `2.631560e-2` | 7.717e-6 | 2.015e-6 | 0.07 |
+
+A finding in its own right: **MadEvent's quoted error on a `dummy_cuts`-windowed
+run understates its own seed spread**, by 2.1× in `[10, 20)` and 1.9× in
+`[39.4, 77)` (χ²/dof 4.27 and 3.51 on 4 dof). The unwindowed runs of D.M1 do not
+show this. Whatever the windowed error estimator is doing, it is not covering the
+seed spread when a large fraction of generated points is rejected after the fact.
+
+```
+C_MG: sum of windows 1.001221e-1 +- 2.167e-5 against unwindowed 9.998860e-2 +- 3.758e-5
+      -> +0.133% +- 0.043%, +3.07 sigma
+```
+
+> **`C_MG` fails: +3.07 σ** on the quoted errors combined — the form §D.3
+> pre-registers and the form B1 was measured in (7.2σ there). On the *seed-spread*
+> errors instead it is +2.82σ, i.e. just inside. **The clause is marginal and
+> both readings are recorded**; see §D.M8.
+
+### D.M5 — Run 5: `VG-cut`, and the closure test `C_VG`
+
+Five seeds per window at `neval 80 000 × niter 8`, with `[10, 20)` at 4× because
+`ptamax = 20` rejects ~92% of draws.
+
+| window | σ (pb) | quoted | spread | χ²/dof |
+|---|---|---|---|---|
+| `[10, 20)` (4×) | `9.425007e-3` | 1.804e-5 | 1.646e-5 | 0.83 |
+| `[20, 39.4)` | `9.776201e-3` | 2.393e-5 | 2.840e-5 | 1.42 |
+| `[39.4, 77)` | `2.784266e-2` | 2.951e-5 | 4.193e-5 | **2.06** |
+| `[77, 144)` | `2.717872e-2` | 2.087e-5 | 2.334e-5 | 1.23 |
+| `[144, 250)` | `2.627963e-2` | 1.294e-5 | 1.993e-5 | **2.41** |
+
+```
+C_VG: sum of windows 1.005022e-1 +- 4.870e-5 against unwindowed 1.006713e-1 +- 9.961e-5
+      -> -0.168% +- 0.110%, -1.53 sigma
+```
+
+> **`C_VG` holds: −1.53 σ.** Five independent re-surveys, each with its own
+> fiducial scale, channel maps and VEGAS grids, reproduce the unwindowed integral.
+> Two of the five per-window seed clouds sit marginally over the ≤ 2 χ²/dof
+> criterion (2.06 and 2.41); on 4 dof the χ²/dof estimator's own sd is 0.71, so
+> both are ≈ 2σ high and neither is a failure at any conventional level. Recorded,
+> not smoothed.
+
+### D.M6 — Run 6: not run, and why
+
+§D.5 makes Run 6 conditional — "*Run only if Runs 1–5 leave the verdict in
+D3–D6*". They did not (§D.M8). Additionally, Run 6 as designed refocuses `W1` and
+`W5`, and the window the partition actually implicates is `W3` (§D.M7), which the
+stage as specified would not have measured. `--stage refocus` is implemented,
+tested to the point of stage dispatch, and left unrun; `MG-cut(W3)` is filed as
+the follow-up in §D.M9.
+
+### D.M7 — `Δ_w`, `χ²_flat`, and a shape contradiction internal to MadGraph
+
+`Δ_w ≡ VG-part(w)/MG-part(w) − 1`:
+
+| window | `Δ_w` | `ε_w` | pull |
+|---|---|---|---|
+| `[10, 20)` | **−0.968%** | 0.733% | −1.32 |
+| `[20, 39.4)` | +0.355% | 0.422% | +0.84 |
+| `[39.4, 77)` | **+1.221%** | 0.200% | **+6.11** |
+| `[77, 144)` | **+0.869%** | 0.160% | **+5.42** |
+| `[144, 250)` | +0.131% | 0.146% | +0.90 |
+
+```
+inverse-variance mean Delta_bar +0.597%, chi2_flat 27.75 on 4 dof (localised iff > 13.28)
+Delta_tot +0.683% +- 0.107%
+```
+
+> **Localised: YES** (`χ²_flat = 27.75`, p ≈ 1.4e-5). Recomputing with MadGraph's
+> *spread*-based per-window errors instead of its quoted ones gives `χ²_flat =
+> 24.9`, so the conclusion does not rest on the error estimator D.M4 just showed
+> to be optimistic. The disagreement is not flat: it is concentrated in
+> `[39.4, 77)` and `[77, 144)`, the radiative-return turn-on and bulk, and is
+> consistent with zero in the two lowest and the highest window.
+
+**The finest oracle in this chain is not a cross section at all.** MadGraph banks
+an unweighted event sample with every run, all events carrying an identical
+`XWGTUP` (verified: 1 distinct weight in both the bank and a fresh 100k run, mean
+= σ), so the sample's `pt(γ)` fractions estimate the *same* σ shares the windowed
+runs measure. They disagree, internally to MadGraph:
+
+| window | `MG-part` share | `VG-cut` share | `VG-part` share (4×) | MG **unwindowed sample** share (5 × 100k) | MG-part − sample |
+|---|---|---|---|---|---|
+| `[10, 20)` | 9.395% | 9.378% | 9.402% | **8.732% ± 0.033%** | **+0.663 pp, +19.9 σ** |
+| `[20, 39.4)` | 9.818% | 9.727% | 9.754% | 9.549% ± 0.060% | +0.269 pp, +4.5 σ |
+| `[39.4, 77)` | 27.489% | 27.704% | 27.704% | 27.859% ± 0.049% | −0.370 pp, −7.6 σ |
+| `[77, 144)` | 27.014% | 27.043% | 27.035% | 27.319% ± 0.050% | −0.305 pp, −6.1 σ |
+| `[144, 250)` | 26.284% | 26.148% | 26.105% | 26.541% ± 0.081% | −0.258 pp, −3.2 σ |
+
+(the banked 10k sample gives 8.330% ± 0.276% in `[10, 20)`, consistent with the
+100k sample cloud and 3.9σ from `MG-part`; the 3.5.7 samples give 8.805% and
+8.655%, i.e. the same deficit in the other MadGraph line.)
+
+MadGraph's unweighted event sample moves ≈0.9 pp of the cross section out of the
+two lowest `pt(γ)` windows and into the three radiative-return windows, relative
+to MadGraph's own windowed cross sections for those same regions. **This side's
+two independent estimators land on MadGraph's windowed numbers, not on
+MadGraph's sample** — `VG-cut(W1)/Σ VG-cut = 9.378%` and
+`VG-part(W1)/total = 9.402%` against `MG-part` 9.395% and the MG sample 8.732%.
+
+This is not a threshold call: it is a ~20σ contradiction between two objects
+MadGraph produces from one run, it reproduces across five seeds and both MadGraph
+versions, and the two sides' *integrals* of that window agree to
+`+0.20% ± 0.24%` (`VG-cut(W1) = 9.425007e-3` against `MG-part(W1) =
+9.406440e-3`). The `samples` gate compares our events against exactly the object
+that is the outlier, which is what the `pt(a)` KS cell at p = 2.74e-4 has been
+seeing.
+
+### D.M8 — the decision rule, applied
+
+Read top to bottom.
+
+| row | clause | measured | holds? |
+|---|---|---|---|
+| **D1** | `C_MG` fails (> 3σ) | +3.07 σ (quoted errors, §D.3's form); +2.82 σ (seed-spread errors) | **yes** (marginal) |
+| | `C_VG` holds | −1.53 σ | **yes** |
+| | our side seed-consistent | total χ²/dof 0.69; `VG-part` ≤ 1.23 in every window; `VG-cut` ≤ 1.42 except 2.06 and 2.41 | **yes** (two marginal) |
+| | our side budget-stable | total +0.177% against a 0.232% bound, error ×2.07; W2–W5 stable; **W1 +2.422% against a 1.530% bound** | **yes at the side level, no for W1** |
+
+**D1 fires. Verdict: the reference owns it.**
+
+Every row below D1 requires either `C_VG` to fail (D2, D3) or *both* closures to
+hold (D4–D9), so with `C_MG` failing and `C_VG` holding the table admits only D1
+or D10. The clauses above are stated at the level §D.6 states them: §D.3 defines
+seed-consistency without a window index, and D4 — not D1 — is the row that
+carries the per-window form ("*in the implicated window our `Δ_w`*"). Under a
+strict per-window reading of D1's "budget-stable", W1's failure would push the
+chain to D10; that reading is recorded here so the manager can overrule, and
+§D.M9 flags it.
+
+What makes D1 more than a threshold call is that its verdict is independently
+confirmed by a measurement no threshold enters: §D.M7's ~20σ contradiction
+between MadGraph's own event sample and MadGraph's own windowed cross sections
+for the same region, with this side on the windowed side of it. The σ closure
+failure (+0.133%) and the shape contradiction have the same sign and the same
+location — MadGraph's unwindowed run under-represents low `pt(γ)`.
+
+**This is not a loosened tolerance.** No tolerance moved in this chain and none is
+proposed. `ee_to_mumua`'s `integrals` `rel_tol` stays at 0.03 and the `samples`
+p-floor stays at 1e-4. What changed is the record of *which side* the residual
+sits on and how that was measured.
+
+**Second occurrence of B1's shape.** As with `ee_to_mumu_tata_qcd0`, MadGraph's
+partition of its own phase space exceeds its own unwindowed integral by more than
+its own quoted errors allow. The mechanism is different — B1's was a
+`get_channel_cut` defect specific to 3.5.7 and `sde_strategy = 2`, refuted for
+this process in §D.M0 — and the size is 17× smaller (+0.13% against +2.3%).
+
+### D.M9 — what this chain did **not** settle
+
+1. **The localised `W3`/`W4` excess is unexplained and survives the verdict.**
+   `Δ_3 = +1.221% ± 0.200%` and `Δ_4 = +0.869% ± 0.160%` — this side above
+   MadGraph in the radiative-return turn-on and bulk, at 6.1σ and 5.4σ, confirmed
+   by `VG-cut` (`+1.164%` and `+0.486%` in the same windows) and not removed by
+   inflating MadGraph's errors to its seed spread. D1's verdict does not account
+   for it. A candidate that this chain could not test: `W3`'s lower edge, 39.4
+   GeV, is the radiative-return kinematic turn-on, and `MG-part` reaches it
+   through a generator that does not know the window exists while `VG-cut` sets
+   it as a real `pta` cut the maps adapt to. **Recommended follow-up:
+   `MG-cut(W3)` via `--stage refocus WINDOWS=3`, which the committed driver
+   already supports** — if it lands on `VG-cut(W3)`, the residual is
+   `MG-part`'s window-blind sampling; if it lands on `MG-part(W3)`, it is ours.
+2. **`C_MG` is marginal**: +3.07σ on quoted errors, +2.82σ on seed-spread errors,
+   against a 3σ threshold. The verdict does not rest on it alone (§D.M7), but the
+   statistic on its own would not carry a verdict.
+3. **`VG-part(W1)` is not budget-stable** at the base budget. It converges under
+   4× toward both independent estimates rather than migrating, which per AGENTS.md
+   reads as sampling rather than a defect, but the pre-registered inequality is
+   violated and this is the one clause where a stricter reading changes the row.
+4. **The mechanism of MadGraph's sample/integral shape contradiction is not
+   diagnosed.** A lead, not a conclusion: in a fresh 100k control the per-channel
+   σ shares (`G1` 12.10%, `G7` 16.15%) and the per-channel written-event shares
+   (`G1` 9.69%, `G7` 11.95%) differ substantially, and `G1`/`G5`/`G7` are the
+   γ\*-mapped channels that carry low `pt(γ)`. Whether MadEvent's combination step
+   is what moves the shape was not established and is out of this chain's scope.
+5. **Blind spots, unchanged from §D.8**: anything both sides get wrong the same
+   way inside a window (they share the matrix element, gated to 1e-11); `W1`'s
+   lower edge is the `pta` cut, so a disagreement confined there cannot separate
+   a cut-boundary convention from a coverage miss; `η(γ)` is integrated over
+   inside each window. The `m(μμ)` secondary axis of §D.2 was not measured —
+   `pt(γ)` localised the disagreement on its own, so the axis that exists to say
+   "there was nothing to localise" was not needed.
+
+### D.M10 — gates after the measurement
+
+This chain changed no production code, and no report cell moved.
+
+```
+$ cargo test --workspace
+   ... 19 test binaries, all ok
+   test result: ok. 606 passed; 0 failed; 8 ignored ...   (vibegraph-lib unit)
+   === WORKSPACE EXIT 0 ===
+```
+
+`pixi run validate --skip-deps` — never bare, which would launch a multi-hour
+MadGraph regeneration — and `git diff --stat validation-report/` are recorded in
+the session report. The `extended-validation` gates were **not** run: they cover
+amplitude, colour, coupling and diagram-enumeration changes, and this chain
+touched none of those.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
