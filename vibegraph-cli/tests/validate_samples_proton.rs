@@ -52,6 +52,9 @@ mod report;
 #[path = "../../vibegraph-lib/tests/common/manifest.rs"]
 mod manifest;
 
+#[path = "../../vibegraph-lib/tests/common/leshouche.rs"]
+mod leshouche;
+
 use report::{CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample};
 
 /// The PDF set both banked runs were generated with.
@@ -126,11 +129,69 @@ struct Row {
     neval: &'static str,
     niter: &'static str,
     mode: &'static str,
+    /// Per-event scans run over each generated sample in addition to the
+    /// distribution comparison. Each returns how many units it judged and how many
+    /// failed, so a clean reading is a recorded measurement rather than silence.
+    scans: &'static [Scan],
 }
+
+/// One per-event scan: `(name, unit, run)`, where `run` returns `(bad, total)`.
+type Scan = (&'static str, &'static str, fn(&Row, &EventSample) -> (usize, usize));
 
 fn validation_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
 }
+
+
+/// Every leg's `ICOLUP` slots are the ones its own colour rep allows.
+///
+/// Reference-free: it reads the emitted record against the Les Houches convention
+/// itself — a quark's line belongs in `ICOLUP(1)`, an antiquark's in `ICOLUP(2)`, a
+/// gluon fills both and a colourless leg neither — so it is a statement about our
+/// file with nothing on the other side of it. That is what makes it able to localise
+/// a defect rather than only detect one: it once read 4 758 of 80 000 legs, every one
+/// an antiquark carrying its line in the colour slot.
+///
+/// What it cannot detect: a legal but wrong flow, or a wrong flow *frequency*. The
+/// pattern-membership scan below and the `ICOLUP` chi-squared are what cover those.
+fn scan_slot_legality(_row: &Row, sample: &EventSample) -> (usize, usize) {
+    let mut bad = 0;
+    let mut total = 0;
+    for event in &sample.events {
+        total += event.particles.len();
+        bad += leshouche::illegal_slots(event).len();
+    }
+    (bad, total)
+}
+
+/// Every emitted event's `(roles, connectivity)` is one MadGraph's own tables admit,
+/// at zero tolerance.
+///
+/// The admissible set is built from `leshouche.inc` — every `P*` directory, every
+/// `isproc`, every flavour row, every colour flow, both beam orderings — rather than
+/// from MadGraph's 10 000-event sample. A sample-derived set is missing whatever its
+/// draws happened not to reach, and an honest event carrying a rare flow would fail
+/// against it.
+///
+/// What it cannot detect: frequencies. Every event could carry the same legal
+/// pattern and pass.
+fn scan_colour_patterns(row: &Row, sample: &EventSample) -> (usize, usize) {
+    let allowed = leshouche::allowed_patterns(&run_dir(row.run)).expect("leshouche tables");
+    let mut bad = 0;
+    for event in &sample.events {
+        let pattern = (leshouche::roles(event), leshouche::connectivity(event));
+        if !allowed.contains(&pattern) {
+            bad += 1;
+        }
+    }
+    (bad, sample.events.len())
+}
+
+/// The dijet row's scans: slot legality, then pattern membership.
+const DIJET_SCANS: &[Scan] = &[
+    ("slot legality", "legs", scan_slot_legality),
+    ("colour patterns", "events", scan_colour_patterns),
+];
 
 /// A row's generation side: one integration off its cards, then a sample per seed
 /// replayed from the frozen grids the integration wrote.
@@ -259,6 +320,18 @@ fn check_row(row_spec: &Row) {
         mg.sigma_pb
     );
 
+    // Both scans are instruments, so both are read on MadGraph's own banked sample
+    // first: one that cannot fail on the reference is not measuring anything.
+    for (name, unit, scan) in row_spec.scans {
+        let (bad, total) = scan(row_spec, &mg);
+        eprintln!("  scan {name} on MadGraph's banked sample: {bad} / {total} {unit}");
+        assert_eq!(
+            bad, 0,
+            "[{run}] the {name} scan reports {bad} of {total} {unit} on MadGraph's own events, \
+             so it is not a statement about ours"
+        );
+    }
+
     let mut row = SamplesRow::new(key, process, mode);
     row.variant = variant.map(str::to_string);
     row.p_floor = P_FLOOR;
@@ -269,6 +342,16 @@ fn check_row(row_spec: &Row) {
 
     for &seed in &GEN_SEEDS {
         let ours = generator.sample(seed);
+
+        for (name, unit, scan) in row_spec.scans {
+            let (bad, total) = scan(row_spec, &ours);
+            eprintln!("  seed {seed:#010x} | scan {name}: {bad} / {total} {unit}");
+            if bad != 0 {
+                failures.push(format!(
+                    "seed {seed:#010x} scan {name}: {bad} of {total} {unit}"
+                ));
+            }
+        }
 
         let labelling = labelling_for(&ours, &mg);
         let found = compare(&ours, &mg, labelling);
@@ -398,6 +481,7 @@ fn generated_proton_events_agree_with_madgraphs_banked_ones() {
         neval: NEVAL,
         niter: NITER,
         mode: "gate",
+        scans: &[],
     });
 }
 
@@ -425,6 +509,7 @@ fn generated_b_quark_events_agree_with_madgraphs_banked_ones() {
         neval: NEVAL,
         niter: NITER,
         mode: "gate",
+        scans: &[],
     });
 }
 
@@ -450,6 +535,7 @@ const DY_ROWS: &[Row] = &[
         neval: DY_NEVAL,
         niter: DY_NITER,
         mode: "gate",
+        scans: &[],
     },
     Row {
         run: "dy13_mmll_60_120",
@@ -461,6 +547,7 @@ const DY_ROWS: &[Row] = &[
         neval: DY_NEVAL,
         niter: DY_NITER,
         mode: "gate",
+        scans: &[],
     },
 ];
 
@@ -658,22 +745,22 @@ fn run_present(gate: &str, run: &str) -> bool {
 /// the same card yields a different — equally valid — sample. The banked one is
 /// the reference and only its distributions are statements about it.
 ///
-/// **Why it is informational, and what that is narrowed to.** Every kinematic
-/// observable, `SPINUP` and the flavour frequencies clear the floor on all three
-/// seeds. `ICOLUP` does not, and the cause is not the subprocess mixture: the
-/// events this row emits for a flavour assignment containing an **antiquark**
-/// carry that leg's colour line in `ICOLUP(1)` where the Les Houches convention
-/// puts an antiquark's line in `ICOLUP(2)`. That is a statement about the record
-/// alone — no reference needed — and it is why the colour partition of those
-/// events is one MadGraph never emits.
+/// **What the `ICOLUP` column measures here.** Each member of a flavour group
+/// carries its **own** subprocess's colour-flow table, reordered once into the
+/// representative's flow indexing at group construction. Two subprocesses can share
+/// a matrix element, a mass list and a colour-factor matrix while routing their
+/// colour lines between different pairs of legs — conjugating one end of a line
+/// moves it — so a table derived from the representative is not the member's, and
+/// this is the first row whose groups mix them: `g q > g q` with `g q̄ > g q̄`,
+/// `q q > q q` with `q̄ q̄ > q̄ q̄`, and `q q\' > q q\'` with `q q̄\' > q q̄\'`.
 ///
-/// The colour flows come from the flavour group's *representative* subprocess
-/// (`FlavorGroup::evaluator`), permuted for a beam exchange and otherwise reused
-/// for every member; `color_flow_tags` derives its slots from each leg's own
-/// colour rep and checks them, so a member whose legs carry the conjugate reps of
-/// the representative's gets slots that are legal for the representative and not
-/// for it. This row is the first whose groups mix the two — `g q > g q` and
-/// `g q̄ > g q̄` share a pointwise `|M|²`, mass list, cut filter and colour basis.
+/// Three statements at increasing strength, all enforced: every leg's occupied
+/// slots are the ones its own colour rep allows, judged against the Les Houches
+/// convention with no reference at all; every event's `(roles, connectivity)` is one
+/// MadGraph's `leshouche.inc` tables admit, at zero tolerance; and the realised
+/// `ICOLUP` frequencies agree with MadGraph's own sample. Each is blind to the next
+/// one's failure — legality cannot see a legal-but-wrong flow, membership cannot see
+/// a frequency.
 ///
 /// What it is blind to: correlations between columns, a discrepancy confined to a
 /// small tail, and the *ordering* of the outgoing legs within an assignment —
@@ -696,6 +783,7 @@ fn generated_dijet_events_agree_with_madgraphs_banked_ones() {
         run_card: None,
         neval: NEVAL,
         niter: NITER,
-        mode: "info",
+        mode: "gate",
+        scans: DIJET_SCANS,
     });
 }

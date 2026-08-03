@@ -1,5 +1,5 @@
 {
-  "_comment": "Per-process Feynman-diagram counts from MadGraph's own enumeration: the NGRAPHS of each P-class's representative subprocess, summed. Written by validation/madgraph/extract_diagrams.py from the local MadGraph work area and committed, so the diagram gate runs against a checkout that has never run MadGraph. The per-process files beside the work-area process directories carry the same counts plus the configs.inc topologies, which the gate prints for debugging when they are present. Keys are the .mg5 script names; the process string each one generates is in validation/manifest.toml and in the script itself.",
+  "_comment": "Per-process Feynman-diagram counts from MadGraph's own enumeration: the NGRAPHS of each P-class's representative subprocess, summed. Written by validation/madgraph/extract_diagrams.py from the local MadGraph work area and committed, so the diagram gate runs against a checkout that has never run MadGraph. The per-process files beside the work-area process directories carry the same counts plus the configs.inc topologies, which the gate prints for debugging when they are present. Keys are exactly the rows validation/manifest.toml declares diagrams hermetic; the process string each one generates is in the manifest and in its .mg5 script.",
   "processes": {
     "bbx_to_ccx_emmm_qcd0": {
       "diagrams_by_subprocess": {
@@ -131,6 +131,12 @@
         "P1_qq_llg": 4
       },
       "total_diagrams": 8
+    },
+    "ud_to_epemud_qcd0": {
+      "diagrams_by_subprocess": {
+        "P1_qq_llqq": 35
+      },
+      "total_diagrams": 35
     },
     "uux_to_ccx_emmm_qcd0": {
       "diagrams_by_subprocess": {

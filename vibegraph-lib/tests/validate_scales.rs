@@ -65,7 +65,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use vibegraph::coupling::alphas::{asmz_from_param_card, RunningAlphaS};
+use vibegraph::coupling::alphas::{asmz_from_param_card, AlphaSSource, RunningAlphaS};
 use vibegraph::coupling::cluster::configs::{derive_channels_permuted, DerivedChannels};
 use vibegraph::coupling::cluster::graph::ColorTable;
 use vibegraph::coupling::scales::{
@@ -158,9 +158,12 @@ const UNREPLAYABLE_RUNS: &[&str] = &["bbx_to_ccx_emmm_qcd0", "uux_to_ccx_emmm_qc
 /// The runs whose `αs` MadGraph reads out of the PDF grid rather than solving
 /// for: with `pdlabel = lhapdf` it links `alfas_functions_lhapdf.f`, whose
 /// `ALPHAS(Q)` forwards to LHAPDF's `alphasPDF(Q)`. `RunningAlphaS` refuses
-/// those cards, so every `AQCDUP` oracle here has to step over them —
-/// [`the_grid_alpha_s_runs_are_refused_for_a_measurable_reason`] is what keeps
-/// the step from being a convenience.
+/// those cards, so [`AlphaSSource::from_run_card`] takes its grid arm for
+/// them instead of its evolution one — the classification is now of which
+/// arm a run takes rather than of which runs a plain `RunningAlphaS` oracle
+/// has to skip. [`the_grid_runs_need_the_grids_alpha_s_and_not_the_parameter_cards`]
+/// is what keeps the classification from being a convenience: the parameter
+/// card's own `αs(M_Z)` is not an interchangeable substitute for the grid's.
 const GRID_ALPHA_S_RUNS: &[&str] = &[
     "pp_to_bb_fixed",
     "pp_to_jj",
@@ -790,14 +793,15 @@ fn checks(
 /// [`RunningAlphaS`] and landing inside the field's printing budget therefore
 /// confirms the scale independently of the field that names it.
 ///
-/// Runs listed in [`GRID_ALPHA_S_RUNS`] cannot take part: their `αs` comes
-/// from the PDF grid, not from this evolution.
+/// Runs listed in [`GRID_ALPHA_S_RUNS`] take part through the grid arm of
+/// [`AlphaSSource`] rather than the evolution: the reading their beams' PDF
+/// set was fitted with, which closes cluster scale → `μR` → `αs(μR)` in one
+/// per-event comparison for them too instead of skipping them.
 #[test]
 fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
     let mut runs_checked = 0usize;
     let mut events_checked = 0usize;
     let mut worst = (0.0f64, String::new());
-    let mut grid_alpha_s: Vec<String> = Vec::new();
 
     let runs = banked_runs();
     for (name, run) in &runs {
@@ -810,17 +814,12 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
         let choice = ScaleChoice::from_run_card(&card).expect("compiled");
         let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
         let a_s = params.get("sminputs", &[3]).expect("aS in SMINPUTS");
-        let running = match RunningAlphaS::from_run_card(&card, a_s) {
-            Ok(running) => running,
-            Err(err) => {
-                assert!(
-                    GRID_ALPHA_S_RUNS.contains(&name.as_str()),
-                    "{name}: unexpected alpha_s source refusal: {err}"
-                );
-                grid_alpha_s.push(name.clone());
-                continue;
-            }
-        };
+        let source = AlphaSSource::from_run_card(
+            &card,
+            a_s,
+            common::pdfset::set_alpha_s_info(&card).as_ref(),
+        )
+        .unwrap_or_else(|e| panic!("{name}: alpha_s source: {e}"));
 
         let mut run_worst = 0.0f64;
         let mut outside = 0usize;
@@ -830,10 +829,10 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
             let got = replay(&choice, channels.as_ref(), event);
             let mu_r = got.mu.0[0];
             let spread = got.spread.0[0];
-            let got = aqcdup_from_alpha_s(running.eval(mu_r));
+            let got = aqcdup_from_alpha_s(source.eval(mu_r));
             let moved = [mu_r + spread, mu_r - spread]
                 .into_iter()
-                .map(|q| (aqcdup_from_alpha_s(running.eval(q)) - got).abs())
+                .map(|q| (aqcdup_from_alpha_s(source.eval(q)) - got).abs())
                 .fold(0.0f64, f64::max);
             let budget = printed_half_ulp(event.aqcdup, 7) + moved;
             let fraction = (got - event.aqcdup).abs() / budget;
@@ -857,13 +856,11 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
         runs_checked += 1;
     }
 
-    assert_eq!(grid_alpha_s, present(GRID_ALPHA_S_RUNS, &runs));
-    // Every declared run except the two the LHE cannot replay, the byte-identical
-    // duplicate, and the ones whose coupling comes from a PDF grid.
+    // Every declared run except the two the LHE cannot replay and the
+    // byte-identical duplicate.
     assert_eq!(
         runs_checked,
         present(CLUSTERED_RUNS, &runs).len() + present(FIXED_SCALE_RUNS, &runs).len()
-            - present(GRID_ALPHA_S_RUNS, &runs).len()
     );
     println!(
         "AQCDUP from the computed scale: {events_checked} events across {runs_checked} runs, \
@@ -872,7 +869,10 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
     );
 }
 
-/// The refusal of [`GRID_ALPHA_S_RUNS`] is a measurement, not a convention.
+/// The two arms of [`AlphaSSource`] are not interchangeable on
+/// [`GRID_ALPHA_S_RUNS`], which is the negative control that makes
+/// [`banked_events_reproduce_aqcdup_from_the_computed_scale`]'s agreement on
+/// them informative rather than a foregone conclusion.
 ///
 /// Those runs fix `μR` at the run card's `scale`, which sits within `1e-5`
 /// relative of `M_Z`, so any evolution from `M_Z` to `μR` is negligible at the
@@ -881,9 +881,10 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
 /// without the grid's own running — therefore isolates the grid's override,
 /// and it misses the printed field by well over its printing budget on every
 /// event. Adopting the parameter-card value as an approximation would be a
-/// visible error, which is why the refusal stands rather than a fallback.
+/// visible error, which is why the two arms stay separate rather than one
+/// standing in for the other.
 #[test]
-fn the_grid_alpha_s_runs_are_refused_for_a_measurable_reason() {
+fn the_grid_runs_need_the_grids_alpha_s_and_not_the_parameter_cards() {
     let runs = banked_runs();
     // The argument below reads `AQCDUP` as `αs(M_Z)`, which is only true where
     // the card fixes `μR` there; a grid run at a dynamical scale is separated
@@ -1273,5 +1274,145 @@ fn the_general_path_keeps_the_beam_crossing_population() {
     println!(
         "uux_to_uux: {inflated} events carry the beam-crossing inflation, at {worst:.9} against \
          the core's {CORE}"
+    );
+}
+
+/// Every run card a banked reference was produced with still parses.
+///
+/// The parser refuses a card that moves a recognized-but-unread parameter off
+/// MadGraph's default where doing so would change what this generator produces.
+/// That refusal is only sound if it rejects nothing MadGraph actually ran, and
+/// this is where that is measured: the `run_card.dat` of every banked run, the
+/// `run_card_default.dat` beside it — which carries the full template rather
+/// than the handful of lines a run overrode, so it exercises far more names —
+/// and the two cards the hadronic cross-section reference used.
+///
+/// What this cannot see is an enforcement that is too *weak*. It proves only
+/// that nothing legitimate is rejected; the committed-card half runs on a bare
+/// clone in `scales_run_cards.rs`.
+#[test]
+fn banked_run_cards_are_accepted() {
+    let mut cards: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(output_dir()).expect("MadGraph output directory") {
+        let dir = entry.expect("directory entry").path();
+        for name in ["run_card.dat", "run_card_default.dat"] {
+            let path = dir.join("Cards").join(name);
+            if path.is_file() {
+                cards.push(path);
+            }
+        }
+    }
+    for name in ["dy13_default_run_card.dat", "dy13_mmll_run_card.dat"] {
+        cards.push(output_dir().join("..").join(name));
+    }
+    cards.sort();
+    assert!(
+        cards.len() >= 70,
+        "only {} run cards found; the reference tree looks incomplete",
+        cards.len()
+    );
+
+    for path in &cards {
+        RunCard::parse_file(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    }
+    println!(
+        "run cards: {} banked and committed cards accepted by the field enforcement",
+        cards.len()
+    );
+}
+
+/// The banked runs whose factorisation scale can reach MadGraph's 2 GeV floor:
+/// both beams carry a parton density and at least one of them takes a dynamical
+/// factorisation scale. Derived from the cards in
+/// [`banked_hadronic_runs_clear_the_factorisation_floor`] and asserted there, so
+/// a re-bank that adds one cannot slip past.
+const FLOOR_REACHABLE_RUNS: &[&str] = &[
+    "pp_to_bb",
+    "pp_to_bb_qcd2",
+    "pp_to_jj",
+    "pp_to_ll",
+    "pp_to_ll_qcd0",
+    "pp_to_ll_scalefact2",
+    "pp_to_llj",
+    "pp_to_llj_dyn",
+];
+
+/// `reweight.f` drops an event whose factorisation scale fell below 2 GeV on a
+/// beam that both carries a parton density and takes a dynamical scale. No
+/// banked run comes near it, and this is the measurement of how near.
+///
+/// The headroom is structural rather than lucky — a run's floor sits on its
+/// card's `ptj` or on the mass of the heaviest leg its clustered core contains —
+/// which is why it is asserted rather than merely printed. A banked sample also
+/// cannot contain a counter-example by construction: MadGraph vetoed such points
+/// before writing them, so this is the complementary statement to a constructed
+/// card, not a substitute for one.
+///
+/// What it cannot see: anything about runs that are not banked, and — since it
+/// reads this crate's replay rather than MadGraph's own `q2fact` — a common-mode
+/// scale error moving both sides together.
+#[test]
+fn banked_hadronic_runs_clear_the_factorisation_floor() {
+    // `reweight.f` compares the square against 4, so exactly 2 GeV survives.
+    const FLOOR: f64 = 4.0;
+
+    let mut reachable: Vec<String> = Vec::new();
+    let mut global = (f64::INFINITY, String::new());
+    for (name, run) in banked_runs() {
+        let card = run_card(&run);
+        let dynamic_pdf_beam = |beam: usize| {
+            let lpp = if beam == 0 { card.lpp1 } else { card.lpp2 };
+            let fixed = card.fixed_fac_scale
+                || card
+                    .get(if beam == 0 {
+                        "fixed_fac_scale1"
+                    } else {
+                        "fixed_fac_scale2"
+                    })
+                    .expect("known")
+                    .as_bool();
+            lpp != 0 && !fixed
+        };
+        let beams: Vec<usize> = (0..2).filter(|b| dynamic_pdf_beam(*b)).collect();
+        if beams.is_empty() {
+            continue;
+        }
+        reachable.push(name.clone());
+
+        let choice = ScaleChoice::from_run_card(&card).expect("compiled");
+        let channels = channels_for(&run);
+        let mut run_min = f64::INFINITY;
+        for event in parse_events(&run).iter() {
+            let mu = replay(&choice, Some(&channels), event).mu;
+            for beam in &beams {
+                run_min = run_min.min(mu.0[1 + beam]);
+            }
+        }
+        assert!(
+            run_min * run_min > FLOOR,
+            "{name}: replayed mu_F falls to {run_min:.4} GeV, at or below MadGraph's floor — \
+             the banked events prove MadGraph did not veto them, so this is a scale bug"
+        );
+        println!(
+            "{name}: minimum replayed mu_F {run_min:.4} GeV over beams {beams:?}, \
+             {:.2}x the 2 GeV floor",
+            run_min / FLOOR.sqrt()
+        );
+        if run_min < global.0 {
+            global = (run_min, name.clone());
+        }
+    }
+
+    assert_eq!(
+        reachable,
+        present(FLOOR_REACHABLE_RUNS, &banked_runs()),
+        "the set of banked runs that can reach the factorisation floor changed"
+    );
+    println!(
+        "factorisation floor: minimum replayed mu_F over every banked hadronic event is \
+         {:.4} GeV ({}), {:.2}x the 2 GeV floor",
+        global.0,
+        global.1,
+        global.0 / FLOOR.sqrt()
     );
 }

@@ -73,7 +73,7 @@ impl PdfSet {
         }
         let dat_path = self.dir.join(format!("{}_{id:04}.dat", self.name));
         let subgrids = grid::parse_member_dat(&dat_path)?;
-        Ok(PdfMember::from_subgrids(subgrids))
+        Ok(PdfMember::from_subgrids(subgrids).with_force_positive(self.info.force_positive))
     }
 }
 
@@ -84,18 +84,34 @@ pub struct PdfMember {
     pub subgrids: Vec<SubGrid>,
     interp: LogBicubic,
     extrap: Continuation,
+    force_positive: i32,
 }
 
 impl PdfMember {
     /// Build a member directly from parsed subgrids (precomputing the
-    /// interpolator). Mainly useful for tests with in-memory grids.
+    /// interpolator). Mainly useful for tests with in-memory grids. Carries no
+    /// positivity clamp (`ForcePositive: 0`); use
+    /// [`PdfMember::with_force_positive`] to set one.
     pub fn from_subgrids(subgrids: Vec<SubGrid>) -> Self {
         let interp = LogBicubic::build(&subgrids);
         PdfMember {
             subgrids,
             interp,
             extrap: Continuation,
+            force_positive: 0,
         }
+    }
+
+    /// Set the `ForcePositive` level (`0`, `1` or `2`) applied to every value
+    /// this member hands out.
+    pub fn with_force_positive(mut self, level: i32) -> Self {
+        self.force_positive = level;
+        self
+    }
+
+    /// The `ForcePositive` level this member applies.
+    pub fn force_positive(&self) -> i32 {
+        self.force_positive
     }
 
     /// `x·f(x, Q²)` for PDG code `pdg` (0 aliases the gluon 21).
@@ -105,7 +121,10 @@ impl PdfMember {
     /// `GridPDF::_xfxQ2`'s, and so is the guard in front of it: a point that is
     /// not a point (`x` at or below zero, a negative `Q²`, either non-finite) is
     /// refused, as is an `x` above the grid's last knot, which is the one
-    /// direction the continuation does not extend into.
+    /// direction the continuation does not extend into. An absent flavor
+    /// returns exactly zero before either branch runs, matching
+    /// `PDF::xfxQ2`'s own ordering ahead of the positivity clamp, which is
+    /// applied last, on the way out.
     pub fn try_xfx_q2<F: Real>(&self, pdg: i32, x: F, q2: F) -> Result<F, PdfPointError> {
         let xv = x.to_f64().unwrap();
         let q2v = q2.to_f64().unwrap();
@@ -113,17 +132,50 @@ impl PdfMember {
         if !(xv > 0.0) || !xv.is_finite() || !(q2v >= 0.0) || !q2v.is_finite() {
             return Err(PdfPointError::Unphysical { x: xv, q2: q2v });
         }
-        if extrap::in_grid_range(&self.interp.edges(), xv, q2v) {
-            Ok(self.interp.xfx_q2(pdg, x, q2)?)
-        } else {
-            self.extrap.xfx_q2(&self.interp, pdg, x, q2)
+        if !self.interp.has_flavor(pdg) {
+            return Ok(F::zero());
         }
+        let value = if extrap::in_grid_range(&self.interp.edges(), xv, q2v) {
+            self.interp.xfx_q2(pdg, x, q2)?
+        } else {
+            self.extrap.xfx_q2(&self.interp, pdg, x, q2)?
+        };
+        Ok(force_positive_clamp(self.force_positive, value))
     }
 
     /// Like [`PdfMember::try_xfx_q2`] but panics on a point with no reading.
     pub fn xfx_q2<F: Real>(&self, pdg: i32, x: F, q2: F) -> F {
         self.try_xfx_q2(pdg, x, q2)
             .unwrap_or_else(|e| panic!("{e}"))
+    }
+}
+
+/// LHAPDF's `PDF::xfxQ2` positivity switch (`src/PDF.cc`), applied after
+/// interpolation/continuation and after the absent-flavor zero, so it never
+/// touches either of those. Level `2`'s floor is not `Float::max`: that
+/// returns the non-NaN operand and would silently clamp a NaN, where LHAPDF's
+/// `if (xfx < 1e-10)` is false for NaN and passes it through unchanged.
+fn force_positive_clamp<F: Real>(level: i32, value: F) -> F {
+    match level {
+        0 => value,
+        1 => {
+            if value < F::zero() {
+                F::zero()
+            } else {
+                value
+            }
+        }
+        2 => {
+            let floor = F::from(1e-10).unwrap();
+            if value < floor {
+                floor
+            } else {
+                value
+            }
+        }
+        other => panic!(
+            "unreachable ForcePositive level {other}: the parser refuses anything outside 0..=2"
+        ),
     }
 }
 
@@ -139,6 +191,37 @@ mod tests {
             flavors: vec![-1, 1, 21, 22],
             xf: vec![0.0; 2 * 2 * 4],
         }
+    }
+
+    /// Mirrors LHAPDF's `PDF::xfxQ2` switch (`src/PDF.cc`): level 0 touches
+    /// nothing, level 1 floors only negatives, level 2 floors below `1e-10`
+    /// (including a value straddling it), and NaN passes through unchanged at
+    /// every level (`if (xfx < floor)` is false for NaN).
+    #[test]
+    fn force_positive_clamp_matches_lhapdfs_switch() {
+        assert_eq!(force_positive_clamp(0, 0.5), 0.5);
+        assert_eq!(force_positive_clamp(0, -0.5), -0.5);
+        assert!(force_positive_clamp::<f64>(0, f64::NAN).is_nan());
+
+        assert_eq!(force_positive_clamp(1, -0.5), 0.0);
+        assert_eq!(force_positive_clamp(1, 0.5), 0.5);
+        assert!(force_positive_clamp::<f64>(1, f64::NAN).is_nan());
+
+        assert_eq!(force_positive_clamp(2, 9.4e-11), 1e-10);
+        assert_eq!(force_positive_clamp(2, 1.34e-10), 1.34e-10);
+        assert!(force_positive_clamp::<f64>(2, f64::NAN).is_nan());
+    }
+
+    /// `PDF.cc`'s `if (!hasFlavor(id2)) return 0.0;` runs ahead of the clamp:
+    /// a level-2 member must return exactly zero for a flavor its subgrids do
+    /// not carry, in range and out of it, never the `1e-10` floor.
+    #[test]
+    fn an_absent_flavour_is_zero_and_not_the_floor() {
+        let member = PdfMember::from_subgrids(vec![sample_subgrid()]).with_force_positive(2);
+        let in_range: f64 = member.xfx_q2(5, 0.2, 50.0);
+        assert_eq!(in_range, 0.0);
+        let out_of_range: f64 = member.xfx_q2(5, 0.2, 1000.0);
+        assert_eq!(out_of_range, 0.0);
     }
 
     #[test]

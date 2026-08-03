@@ -473,15 +473,16 @@ fn close(a: f64, b: f64) -> f64 {
 }
 
 #[test]
+#[ignore = "oracle layer: the 75 MB kT dumps are outside the reference bundle; `pixi run -e madgraph validate-kt-cluster` builds and runs them"]
 fn the_clustering_engine_reproduces_madgraphs_own() {
     let dumps = dumps_dir();
-    if !dumps.is_dir() || !manifest_path().is_file() {
-        println!(
-            "no kT clustering dumps in {}: run `pixi run generate-kt-cluster-dumps` to build them",
-            dumps.display()
-        );
-        return;
-    }
+    assert!(
+        dumps.is_dir() && manifest_path().is_file(),
+        "no kT clustering dumps at {} or manifest at {}: run \
+         `pixi run -e madgraph validate-kt-cluster` to build and run them",
+        dumps.display(),
+        manifest_path().display()
+    );
     let manifest: Value =
         serde_json::from_slice(&std::fs::read(manifest_path()).expect("manifest"))
             .expect("manifest parses");
@@ -1437,12 +1438,15 @@ fn dumped_forests(path: &Path) -> (usize, Vec<ConfigForest>) {
 /// partitions them, which is the only thing the merge table reads a channel's
 /// identity for.
 #[test]
+#[ignore = "oracle layer: the 75 MB kT dumps are outside the reference bundle; `pixi run -e madgraph validate-kt-cluster` builds and runs them"]
 fn derived_channel_forests_match_the_generated_ones() {
     let dumps = dumps_dir();
-    if !dumps.is_dir() {
-        println!("no kT clustering dumps in {}", dumps.display());
-        return;
-    }
+    assert!(
+        dumps.is_dir(),
+        "no kT clustering dumps at {}: run `pixi run -e madgraph validate-kt-cluster` \
+         to build and run them",
+        dumps.display()
+    );
     let model = common::sm_model();
     let mut checked = 0usize;
     let mut lines_checked = 0usize;

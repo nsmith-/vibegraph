@@ -108,12 +108,19 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// 0.2 to 0.4 spurious failures per run, which would make the gate flap; at `1e-4`
 /// it is under 0.05.
 ///
-/// The measured minimum over every gating row and three seeds is `2.74e-4`
-/// (`ee_to_mumua`, `pt(a)`), with `ee_to_wpwm` at `2.84e-3` and `uux_to_mumu` at
+/// The measured minimum over every gating row and three seeds is `1.29e-4`
+/// (`ee_to_mumua`, `pt(a)`; per-seed `3.38e-4`, `1.17e-2`, `1.29e-4`), with
+/// `ee_to_wpwm` at `2.84e-3`, `ddx_to_epemg` at `5.85e-3` and `uux_to_mumu` at
 /// `1.56e-2` behind it, against `3.6e-6` and `0` for the two rows that used to
-/// disagree. `ee_to_mumua` is the row to watch: it sits `2.7x` above the floor and
-/// its `integrals` pull is `+3.1` against the same reference, both having tightened
-/// when the references moved to MadGraph 3.7.1.
+/// disagree. `ee_to_mumua` is the row to watch: it sits only `1.3x` above the
+/// floor, and its `integrals` pull is `+2.79` against the same reference.
+///
+/// That `pt(a)` column is the one the windowed measurement attributed: MadGraph's
+/// banked sample puts 8.73% of σ below `pt(a) = 20` GeV where MadGraph's *own*
+/// cross section for that region puts 9.40%, and both of this side's estimators
+/// land on the latter. The column sitting closest to this floor is measuring the
+/// reference's sample rather than this side's — see the `ee_to_mumua` `samples`
+/// note in `validation/manifest.toml`.
 ///
 /// Never loosened after a failure: a column that falls below this is recorded,
 /// the row is marked informational with the measurement in its note, and the
@@ -221,6 +228,18 @@ const ROWS: &[Row] = &[
         neval: 60_000,
         niter: 6,
         mode: "gate",
+    },
+    Row {
+        key: "ud_to_epemud_qcd0",
+        process: "u d > e+ e- u d QCD=0",
+        neval: 60_000,
+        niter: 6,
+        // Kinematics and SPINUP agree (min KS p 1.0e-1, SPINUP chi2 p 0.43-0.73
+        // over three seeds), but ICOLUP does not: chi2 642-664 on 1 dof (p ~ 0)
+        // on every seed, a sharp and seed-stable colour-connectivity
+        // disagreement rather than a marginal miss. Measured and reported
+        // rather than gated; see validation/manifest.toml's note.
+        mode: "info",
     },
     // ── the ℓ⁺ℓ⁻ j partonic rows, generated at a per-event cluster scale ──
     // The only rows here whose renormalisation and factorisation scales are
@@ -1085,4 +1104,775 @@ fn banked_sigma(key: &str) -> f64 {
     let doc: serde_json::Value =
         serde_json::from_str(&text).expect("banked sigma reference parses");
     doc[key]["sigma_pb"].as_f64().expect("banked sigma")
+}
+
+// ── pt(γ) windows: the `ee_to_mumua` σ/shape discrepancy, localised ──────────
+
+/// Window edges in `pt(γ)`, GeV. Fixed from the run card and from kinematics
+/// before any measurement, not fitted to the disagreement:
+///
+/// * `10` is the run card's own `pta`, and `250` is `√s/2`;
+/// * `20 = 2·pta` isolates the strip where the cut, not the dynamics, sets the
+///   density;
+/// * `39.4 = p_RR / cosh(etaa)` with `p_RR = (s − M_Z²)/(2√s) = 241.685` GeV is
+///   the transverse momentum below which no on-shell-Z radiative-return event
+///   can survive the `etaa = 2.5` rapidity cut, so it separates the phase space
+///   the two Breit–Wigner channels reach from the phase space they cannot;
+/// * `77` and `144` are the equal-population tertiles of MadGraph's banked
+///   sample *above* that threshold, rounded to 1 GeV.
+const PTA_EDGES: [f64; 6] = [10.0, 20.0, 39.4, 77.0, 144.0, 250.0];
+/// The secondary axis: below-Z continuum, low shoulder, the Z peak, high
+/// shoulder, and the `m(μμ) → √s` non-radiative region.
+///
+/// `pt(γ)` is a *smeared image* of the structure carrying this cross section —
+/// an on-shell-Z event lands anywhere in `pt(γ) ∈ [39.4, 241.7]` depending on
+/// `η(γ)` — whereas `m(μμ)` resolves the Breit–Wigner directly. This axis is what
+/// says whether something localised in `pt(γ)` sits on the Z peak or in the
+/// continuum. It carries no verdict of its own: nothing in the decision rule
+/// keys on it, by construction.
+const MUMU_EDGES: [f64; 6] = [0.0, 60.0, 86.0, 96.0, 200.0, 500.0];
+/// The σ gate's own budget for this row, so the windowed shape is measured at
+/// the configuration the gated cross section comes from.
+const PTA_NEVAL: usize = 80_000;
+const PTA_NITER: usize = 8;
+/// The seed set `probe_resonant_seed_stability` sweeps, so this sweep and the
+/// recorded one are directly comparable.
+const PTA_SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
+/// Seeds carried to the 4× budget. A residual that is sampling shrinks with
+/// budget; one that migrates between seeds at fixed size is a defect, and three
+/// seeds is enough to tell those apart without quadrupling the sweep's cost.
+const PTA_BUDGET_SEEDS: [u64; 3] = [SEED, 11, 22];
+/// ChaCha stream base for the windowed measurement pass, disjoint from the
+/// integrand's own channel streams and from the α survey's.
+const PTA_STREAM_BASE: u64 = 0x0D_0D_0000;
+
+/// Build the production `ee_to_mumua` integrand — its banked run card, cuts,
+/// per-event scale and α-adapted per-diagram multichannel sampler — optionally
+/// with the photon `pt` cuts replaced by a window.
+///
+/// With `pt_window = None` this is exactly the σ gate's integrand for this row.
+/// With a window it is a *different* integration: `pta` sets the process's
+/// fiducial scale, so both the channel maps and the VEGAS grids re-adapt inside
+/// the window, which is what makes the sum over windows an independent survey
+/// rather than a partition of one.
+fn with_mumua_integrand<R>(
+    pt_window: Option<(f64, f64)>,
+    seed: u64,
+    f: impl FnOnce(&FixedBeamIntegrand) -> R,
+) -> R {
+    const KEY: &str = "ee_to_mumua";
+    const PROCESS: &str = "e+ e- > mu+ mu- a";
+
+    let card_path = output_dir().join(KEY).join("Cards/run_card.dat");
+    let card_path = match pt_window {
+        None => card_path,
+        Some((lo, hi)) => {
+            let text = std::fs::read_to_string(&card_path).expect("run card readable");
+            let (mut saw_lo, mut saw_hi) = (0usize, 0usize);
+            let patched: String = text
+                .lines()
+                .map(|l| {
+                    if l.contains("= pta ") {
+                        saw_lo += 1;
+                        format!("  {lo} = pta\n")
+                    } else if l.contains("= ptamax ") {
+                        saw_hi += 1;
+                        format!("  {hi} = ptamax\n")
+                    } else {
+                        format!("{l}\n")
+                    }
+                })
+                .collect();
+            assert_eq!((saw_lo, saw_hi), (1, 1), "one pta and one ptamax line");
+            let out = std::env::temp_dir().join(format!("vg_pta_window_{lo}_{hi}.dat"));
+            std::fs::write(&out, patched).expect("windowed run card writable");
+            out
+        }
+    };
+
+    let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
+    assert_eq!(run_card.beam_mode(), BeamMode::FixedEnergy);
+    assert_eq!(
+        run_card.ebeam1, run_card.ebeam2,
+        "the comparison assumes the lab frame is the partonic centre of mass"
+    );
+    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(KEY));
+    let sets = common::generate(PROCESS);
+    let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
+    let bounds: Vec<_> = evals
+        .iter()
+        .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+        .collect();
+
+    let rep = &evals[0];
+    // The window is read off `momenta[2]`, which is only the photon if the final
+    // state is ordered (mu+, mu-, a). MadGraph's own window is cut on external
+    // leg 5 of `leshouche.inc`, IDUP = (-11, 11, -13, 13, 22); the two sides
+    // must be windowing the same leg.
+    let final_pdg: Vec<i64> = rep.external_particles()[rep.n_in()..]
+        .iter()
+        .map(|&id| model.particle(id).pdg_code)
+        .collect();
+    assert_eq!(
+        final_pdg,
+        vec![-13, 13, 22],
+        "final state must be (mu+, mu-, a) for momenta[2] to be the photon"
+    );
+
+    let legs = process_external_legs(rep, &model, &evaluated);
+    let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
+    let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+        .iter()
+        .map(|&id| evaluated.mass(id))
+        .collect();
+    let spin_color_avg = initial_spin_color_average(rep, &model, &evaluated);
+    let diagrams: Vec<_> = sets
+        .iter()
+        .flat_map(|s| s.diagrams.iter().cloned())
+        .collect();
+
+    let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    integ
+        .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+        .expect("run card scale prescription compiles");
+    integ.use_multichannel(
+        &diagrams,
+        &evaluated,
+        MULTICHANNEL_SURVEY,
+        MULTICHANNEL_ITERS,
+        seed,
+    );
+    f(&integ)
+}
+
+/// A cross section and its Monte-Carlo error, in pb.
+#[derive(Clone, Copy, Debug)]
+struct Sigma {
+    pb: f64,
+    err: f64,
+}
+
+impl Sigma {
+    fn zero() -> Self {
+        Sigma { pb: 0.0, err: 0.0 }
+    }
+    /// Independent terms: values add, errors add in quadrature.
+    fn add(self, other: Sigma) -> Self {
+        Sigma {
+            pb: self.pb + other.pb,
+            err: (self.err * self.err + other.err * other.err).sqrt(),
+        }
+    }
+}
+
+/// `a/b − 1` with both errors propagated.
+fn rel_with_err(a: Sigma, b: Sigma) -> (f64, f64) {
+    let rel = a.pb / b.pb - 1.0;
+    let err = ((a.err / b.pb).powi(2) + (a.pb * b.err / (b.pb * b.pb)).powi(2)).sqrt();
+    (rel, err)
+}
+
+/// The unwindowed integral split into `pt(γ)` windows on one set of draws: the
+/// total and every window come off the *same* points, so the windows sum to the
+/// total exactly and the split carries no information about coverage — only
+/// about shape, at the gate's own configuration.
+///
+/// The grids are the ones `adapt_grids` trains at the gate budget; the
+/// measurement itself is a frozen pass over them on a disjoint ChaCha stream,
+/// which is what lets a per-window indicator be accumulated without changing the
+/// integration the gate runs.
+/// Both axes are accumulated on the same draws, because they cost nothing extra
+/// there and because a shared set of points is what makes the two tables
+/// comparable: any difference between them is the projection, not the sample.
+struct PartSplit {
+    total: Sigma,
+    pt: Vec<Sigma>,
+    mll: Vec<Sigma>,
+    /// The `adapt_grids` result the σ gate itself reports, for cross-checking
+    /// that the integrand measured here is the gated one.
+    gate: f64,
+}
+
+fn vg_part(seed: u64, neval: usize) -> PartSplit {
+    with_mumua_integrand(None, seed, |integ| {
+        let (channels, gate) = integ.adapt_grids(neval, PTA_NITER, seed);
+        let (npt, nmll) = (PTA_EDGES.len() - 1, MUMU_EDGES.len() - 1);
+        let mut pt_windows = vec![Sigma::zero(); npt];
+        let mut mll_windows = vec![Sigma::zero(); nmll];
+        let mut total = Sigma::zero();
+        let ndim = integ.channel_grid_ndim();
+
+        for (j, ch) in channels.iter().enumerate() {
+            let draws = ch.neval * PTA_NITER;
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            rng.set_stream(PTA_STREAM_BASE + j as u64);
+            let mut x = vec![0.0; ndim];
+            let mut momenta = Vec::new();
+            // Slot 0 is the total; then the pt(γ) windows, then the m(μμ) ones.
+            let mut sum = vec![0.0; 1 + npt + nmll];
+            let mut sum_sq = vec![0.0; 1 + npt + nmll];
+            for _ in 0..draws {
+                let jac = ch.grid.draw(&mut rng, &mut x);
+                let v = jac * integ.event_in_channel(j, &x, &mut momenta);
+                sum[0] += v;
+                sum_sq[0] += v * v;
+                if v == 0.0 {
+                    continue;
+                }
+                let p = momenta[2];
+                let pt = (p.px() * p.px() + p.py() * p.py()).sqrt();
+                if let Some(w) = PTA_EDGES.windows(2).position(|e| pt >= e[0] && pt < e[1]) {
+                    sum[1 + w] += v;
+                    sum_sq[1 + w] += v * v;
+                }
+                let mll = (momenta[0] + momenta[1]).m();
+                if let Some(w) = MUMU_EDGES
+                    .windows(2)
+                    .position(|e| mll >= e[0] && mll < e[1])
+                {
+                    sum[1 + npt + w] += v;
+                    sum_sq[1 + npt + w] += v * v;
+                }
+            }
+            let n = draws as f64;
+            let term = |k: usize| {
+                let mean = sum[k] / n;
+                Sigma {
+                    pb: mean * GEV2_TO_PB,
+                    err: ((sum_sq[k] / n - mean * mean).max(0.0) / n).sqrt() * GEV2_TO_PB,
+                }
+            };
+            total = total.add(term(0));
+            for (w, slot) in pt_windows.iter_mut().enumerate() {
+                *slot = slot.add(term(1 + w));
+            }
+            for (w, slot) in mll_windows.iter_mut().enumerate() {
+                *slot = slot.add(term(1 + npt + w));
+            }
+        }
+        PartSplit {
+            total,
+            pt: pt_windows,
+            mll: mll_windows,
+            gate: gate.integral * GEV2_TO_PB,
+        }
+    })
+}
+
+/// One window integrated on its own, with the run card's photon `pt` cuts set to
+/// the window's edges. Unlike [`vg_part`] this re-surveys: the α mixture, the
+/// channel maps' fiducial scale and the VEGAS grids all adapt to the window, so
+/// the sum over windows is an audit of the unwindowed integral rather than a
+/// restatement of it.
+fn vg_cut(window: usize, seed: u64, neval: usize) -> (Sigma, f64) {
+    let (lo, hi) = (PTA_EDGES[window], PTA_EDGES[window + 1]);
+    with_mumua_integrand(Some((lo, hi)), seed, |integ| {
+        let (_, r) = integ.adapt_grids(neval, PTA_NITER, seed);
+        (
+            Sigma {
+                pb: r.integral * GEV2_TO_PB,
+                err: r.std_dev * GEV2_TO_PB,
+            },
+            r.chi2_per_dof,
+        )
+    })
+}
+
+/// The MadGraph side of the window table, seed-averaged per estimator.
+///
+/// `pta_window_reference.json` holds one row per MadGraph run: stage, version,
+/// estimator (`control` unwindowed, `part` windowed through `dummy_cuts`, `cut`
+/// windowed through the run card), `axis`, window index, seed, `nevents`, σ and
+/// its quoted error. This reduces a selection of those rows to a mean and the two
+/// error estimates that matter — the quoted errors combined, and the *spread* of
+/// the seeds about their own mean, which is the one B1 showed can be larger.
+///
+/// `axis` must be part of the key: the two axes number their windows from 1
+/// independently, so a filter without it would silently pool `pt(γ)`'s window 3
+/// with `m(μμ)`'s.
+fn mg_cloud(
+    reference: &serde_json::Value,
+    version: &str,
+    estimator: &str,
+    axis: &str,
+    window: usize,
+    nevents: u64,
+) -> Option<(Sigma, f64, f64, usize)> {
+    let runs: Vec<&serde_json::Value> = reference["runs"]
+        .as_array()
+        .expect("runs array")
+        .iter()
+        .filter(|r| {
+            r["mg_version"].as_str() == Some(version)
+                && r["estimator"].as_str() == Some(estimator)
+                // A row banked before the secondary axis existed is pt(γ).
+                && r["axis"].as_str().unwrap_or("pt_a") == axis
+                && r["window"].as_u64() == Some(window as u64)
+                && r["nevents"].as_u64() == Some(nevents)
+        })
+        .collect();
+    if runs.is_empty() {
+        return None;
+    }
+    let n = runs.len() as f64;
+    let s: Vec<f64> = runs
+        .iter()
+        .map(|r| r["sigma_pb"].as_f64().unwrap())
+        .collect();
+    let e: Vec<f64> = runs
+        .iter()
+        .map(|r| r["sigma_err_pb"].as_f64().unwrap())
+        .collect();
+    let mean = s.iter().sum::<f64>() / n;
+    // The quoted errors of independent runs, combined as the error on their mean.
+    let quoted = (e.iter().map(|x| x * x).sum::<f64>()).sqrt() / n;
+    // The seeds' own spread, and the error on the mean it implies. A quoted error
+    // that undercuts this is the failure mode this whole measurement is about.
+    let spread = if runs.len() > 1 {
+        (s.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
+    } else {
+        f64::NAN
+    };
+    // χ²/dof of the cloud about its own mean on the quoted errors: > 1 means the
+    // runs disagree with each other by more than they claim.
+    let chi2_dof = if runs.len() > 1 {
+        s.iter()
+            .zip(&e)
+            .map(|(x, err)| ((x - mean) / err).powi(2))
+            .sum::<f64>()
+            / (n - 1.0)
+    } else {
+        f64::NAN
+    };
+    Some((
+        Sigma {
+            pb: mean,
+            err: quoted,
+        },
+        spread / n.sqrt(),
+        chi2_dof,
+        runs.len(),
+    ))
+}
+
+/// Localise the `ee_to_mumua` cross-section and `pt(γ)` shape disagreement by
+/// measuring both sides' windowed cross sections and testing each side's
+/// partition against its own unwindowed control.
+///
+/// # Why a partition and not a total
+///
+/// The gated row disagrees by +0.80% (2.8σ) against the MadGraph 3.7.1 bank, and
+/// agreed with the 3.5.7 bank it replaced (−0.03%, 0.07σ) — while MadGraph's own
+/// two numbers differ by only 1.84σ on their own quoted errors. A single cross
+/// section cannot say which side mis-covers a region, and a seed-fixed pull is
+/// not evidence on either side. Four estimators can:
+///
+/// * `MG-part(w)` — MadGraph with the window imposed through `dummy_cuts`, which
+///   `passcuts` applies after every other cut and which the phase-space generator
+///   never sees, so the windowed runs integrate the same integrand restricted to
+///   `w` and **must** sum to the unwindowed control. B1 (`ee_to_mumu_tata_qcd0`)
+///   is the precedent where they did not, by 7.2σ.
+/// * `MG-cut(w)` — the window as run-card `pta`/`ptamax`, which `setcuts.f` feeds
+///   into `etmax(i)` so the generator re-optimises. A better estimate of the true
+///   windowed σ, and for exactly that reason not a term in the closure sum.
+/// * `VG-part(w)` — this side's shape at the σ gate's own configuration, split on
+///   one set of draws. Closes exactly and therefore says nothing about coverage.
+/// * `VG-cut(w)` — this side's independent per-window integration, whose sum is
+///   the only coverage audit this side gets.
+///
+/// # What this provably cannot decide
+///
+/// * Anything both sides get wrong the same way inside a window: they share the
+///   matrix element (gated to 1e-11 by the `amplitudes` cell) and the window
+///   definition. This is a statement about phase-space coverage and cut
+///   boundaries, not about `|M|²`.
+/// * `VG-cut` re-adapts grids and fiducial scale but reuses the same channel
+///   construction and map code as the unwindowed run, so a defect in that shared
+///   code survives in both and lets the closure pass. MadGraph's windowed runs
+///   re-survey with a genuinely different channel allocation, so its closure is
+///   the stronger oracle — the asymmetry favours the reference.
+/// * The first window's lower edge *is* the `pta` cut, so a disagreement confined
+///   to it cannot separate "the cut boundary is implemented differently" from
+///   "the region is mis-covered".
+/// * `η(γ)` is integrated over inside each window, so a compensating error that
+///   cancels in the `pt(γ)` projection is invisible here.
+///
+/// Ignored: this is a measurement, not a gate. Run with
+/// `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_pta_windows_against_madgraph() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/pta_window_reference.json");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let reference: serde_json::Value = serde_json::from_str(&text).expect("window reference");
+    let edges: Vec<f64> = reference["pt_edges_gev"]
+        .as_array()
+        .expect("pt_edges_gev")
+        .iter()
+        .map(|v| v.as_f64().unwrap())
+        .collect();
+    assert_eq!(
+        edges, PTA_EDGES,
+        "the MadGraph runs and this side must window the same edges"
+    );
+    let nwin = PTA_EDGES.len() - 1;
+    const NEV: u64 = 100_000;
+
+    // ── MadGraph's side, as banked ──────────────────────────────────────────
+    eprintln!("── MadGraph, sigma(e+ e- > mu+ mu- a) by pt(a) window ──");
+    for (version, estimator, label) in [
+        ("3.7.1", "control", "3.7.1 unwindowed"),
+        ("3.5.7", "control", "3.5.7 unwindowed"),
+        ("3.7.1", "part", "3.7.1 dummy_cuts window"),
+        ("3.5.7", "part", "3.5.7 dummy_cuts window"),
+        ("3.7.1", "cut", "3.7.1 run-card window"),
+    ] {
+        for w in 0..=nwin {
+            let Some((s, spread, chi2, n)) =
+                mg_cloud(&reference, version, estimator, "pt_a", w, NEV)
+            else {
+                continue;
+            };
+            let range = if w == 0 {
+                "unwindowed".to_string()
+            } else {
+                format!("[{}, {})", PTA_EDGES[w - 1], PTA_EDGES[w])
+            };
+            eprintln!(
+                "  {label:<24} {range:>14}  {:.6e} +- {:.3e} (quoted, {n} seeds) \
+                 | seed-spread err {spread:.3e} | cloud chi2/dof {chi2:.2}",
+                s.pb, s.err,
+            );
+        }
+    }
+
+    // MG's closure: the dummy_cuts partition against the unwindowed control.
+    let mg_control = mg_cloud(&reference, "3.7.1", "control", "pt_a", 0, NEV);
+    let mg_parts: Vec<Option<(Sigma, f64, f64, usize)>> = (1..=nwin)
+        .map(|w| mg_cloud(&reference, "3.7.1", "part", "pt_a", w, NEV))
+        .collect();
+    let mut c_mg = None;
+    if let (Some((control, _, _, _)), true) = (mg_control, mg_parts.iter().all(|p| p.is_some())) {
+        let sum = mg_parts
+            .iter()
+            .map(|p| p.unwrap().0)
+            .fold(Sigma::zero(), Sigma::add);
+        let (rel, err) = rel_with_err(sum, control);
+        eprintln!(
+            "  C_MG: sum of windows {:.6e} +- {:.3e} against unwindowed {:.6e} +- {:.3e} \
+             -> {:+.3}% +- {:.3}%, {:+.2} sigma",
+            sum.pb,
+            sum.err,
+            control.pb,
+            control.err,
+            100.0 * rel,
+            100.0 * err,
+            rel / err,
+        );
+        c_mg = Some((sum, control, rel, err));
+    } else {
+        eprintln!("  C_MG: not computable — the 3.7.1 partition is incomplete");
+    }
+
+    // ── this side: shape at the gate's configuration ────────────────────────
+    eprintln!("\n── vibegraph VG-part: gate budget {PTA_NEVAL} x {PTA_NITER}, windows on one set of draws ──");
+    let mut vg_part_seeds: Vec<(u64, Sigma, Vec<Sigma>)> = Vec::new();
+    let mut vg_part_mll: Vec<(u64, Vec<Sigma>)> = Vec::new();
+    for seed in PTA_SEEDS {
+        let split = vg_part(seed, PTA_NEVAL);
+        let (total, windows, gate) = (split.total, split.pt.clone(), split.gate);
+        vg_part_mll.push((seed, split.mll));
+        eprintln!(
+            "  seed {seed:>10}: total {:.6e} +- {:.3e} pb (gate's own combined {gate:.6e})",
+            total.pb, total.err
+        );
+        for (w, s) in windows.iter().enumerate() {
+            eprintln!(
+                "      [{:>5}, {:>5})  {:.6e} +- {:.3e}  ({:5.2}% of total)",
+                PTA_EDGES[w],
+                PTA_EDGES[w + 1],
+                s.pb,
+                s.err,
+                100.0 * s.pb / total.pb
+            );
+        }
+        vg_part_seeds.push((seed, total, windows));
+    }
+    let mut vg_part_4x: Vec<(u64, Sigma, Vec<Sigma>)> = Vec::new();
+    for seed in PTA_BUDGET_SEEDS {
+        let split = vg_part(seed, 4 * PTA_NEVAL);
+        let (total, windows) = (split.total, split.pt);
+        eprintln!(
+            "  seed {seed:>10} @4x budget: total {:.6e} +- {:.3e} pb",
+            total.pb, total.err
+        );
+        for (w, s) in windows.iter().enumerate() {
+            eprintln!(
+                "      [{:>5}, {:>5})  {:.6e} +- {:.3e}",
+                PTA_EDGES[w],
+                PTA_EDGES[w + 1],
+                s.pb,
+                s.err
+            );
+        }
+        vg_part_4x.push((seed, total, windows));
+    }
+
+    // ── this side: independent per-window integrations, and their closure ───
+    eprintln!("\n── vibegraph VG-cut: one integration per window (pta/ptamax), 4x on W1 ──");
+    let mut vg_cut_seeds: Vec<(u64, Vec<Sigma>)> = Vec::new();
+    for seed in PTA_SEEDS {
+        let mut windows = Vec::with_capacity(nwin);
+        for w in 0..nwin {
+            // The first window rejects ~92% of draws through `ptamax`, so at the
+            // base budget its error would dominate the closure sum and make the
+            // audit vacuous.
+            let neval = if w == 0 { 4 * PTA_NEVAL } else { PTA_NEVAL };
+            let (s, chi2) = vg_cut(w, seed, neval);
+            eprintln!(
+                "  seed {seed:>10}  [{:>5}, {:>5})  {:.6e} +- {:.3e}  chi2/dof {chi2:.2}  \
+                 (neval {neval})",
+                PTA_EDGES[w],
+                PTA_EDGES[w + 1],
+                s.pb,
+                s.err
+            );
+            windows.push(s);
+        }
+        vg_cut_seeds.push((seed, windows));
+    }
+
+    // ── the statistics the verdict is read off ──────────────────────────────
+    let mean_over_seeds = |pick: &dyn Fn(usize) -> Sigma, n: usize| -> (Sigma, f64, f64) {
+        let vals: Vec<Sigma> = (0..n).map(pick).collect();
+        let m = vals.iter().map(|s| s.pb).sum::<f64>() / n as f64;
+        let quoted = vals.iter().map(|s| s.err * s.err).sum::<f64>().sqrt() / n as f64;
+        let spread = if n > 1 {
+            (vals.iter().map(|s| (s.pb - m).powi(2)).sum::<f64>() / (n as f64 - 1.0)).sqrt()
+        } else {
+            f64::NAN
+        };
+        let chi2_dof = if n > 1 {
+            vals.iter()
+                .map(|s| ((s.pb - m) / s.err).powi(2))
+                .sum::<f64>()
+                / (n as f64 - 1.0)
+        } else {
+            f64::NAN
+        };
+        (
+            Sigma { pb: m, err: quoted },
+            spread / (n as f64).sqrt(),
+            chi2_dof,
+        )
+    };
+
+    eprintln!("\n── seed clouds (mean, quoted error on the mean, seed-spread error, cloud chi2/dof on 4 dof) ──");
+    let ns = PTA_SEEDS.len();
+    let (vg_total, vg_total_spread, vg_total_chi2) = mean_over_seeds(&|i| vg_part_seeds[i].1, ns);
+    eprintln!(
+        "  VG total   {:.6e} +- {:.3e} | spread err {vg_total_spread:.3e} | chi2/dof {vg_total_chi2:.2}",
+        vg_total.pb, vg_total.err
+    );
+
+    let mut vg_part_mean = Vec::with_capacity(nwin);
+    let mut vg_cut_mean = Vec::with_capacity(nwin);
+    for w in 0..nwin {
+        let (p, p_spread, p_chi2) = mean_over_seeds(&|i| vg_part_seeds[i].2[w], ns);
+        let (c, c_spread, c_chi2) = mean_over_seeds(&|i| vg_cut_seeds[i].1[w], ns);
+        eprintln!(
+            "  [{:>5}, {:>5})  VG-part {:.6e} +- {:.3e} | spread {p_spread:.3e} | chi2/dof {p_chi2:.2}\n\
+             {:>18}  VG-cut  {:.6e} +- {:.3e} | spread {c_spread:.3e} | chi2/dof {c_chi2:.2}",
+            PTA_EDGES[w], PTA_EDGES[w + 1], p.pb, p.err, "", c.pb, c.err
+        );
+        vg_part_mean.push(p);
+        vg_cut_mean.push(c);
+    }
+
+    // Budget stability, per window and on the total, over the seeds carried to
+    // 4×: a residual that is sampling shrinks with budget, where a defect keeps
+    // its size and migrates between seeds.
+    eprintln!("\n── VG-part budget stability, base against 4x on the same seeds ──");
+    let nb = PTA_BUDGET_SEEDS.len();
+    let base_at = |i: usize, w: Option<usize>| -> Sigma {
+        let k = vg_part_seeds
+            .iter()
+            .position(|(s, _, _)| *s == PTA_BUDGET_SEEDS[i])
+            .expect("the 4x seeds are a subset of the sweep");
+        match w {
+            None => vg_part_seeds[k].1,
+            Some(w) => vg_part_seeds[k].2[w],
+        }
+    };
+    let quad = |a: Sigma, b: Sigma| (a.err * a.err + b.err * b.err).sqrt();
+    for slot in [None, Some(0), Some(1), Some(2), Some(3), Some(4)] {
+        let (b, q) = (
+            mean_over_seeds(&|i| base_at(i, slot), nb).0,
+            mean_over_seeds(
+                &|i| match slot {
+                    None => vg_part_4x[i].1,
+                    Some(w) => vg_part_4x[i].2[w],
+                },
+                nb,
+            )
+            .0,
+        );
+        let label = match slot {
+            None => "total".to_string(),
+            Some(w) => format!("[{}, {})", PTA_EDGES[w], PTA_EDGES[w + 1]),
+        };
+        eprintln!(
+            "  {label:>14}  base {:.6e} +- {:.3e} | 4x {:.6e} +- {:.3e} | \
+             err shrinks {:.2}x (need >= 1.7) | shift {:+.3}% = {:+.2} combined sigma",
+            b.pb,
+            b.err,
+            q.pb,
+            q.err,
+            b.err / q.err,
+            100.0 * (q.pb / b.pb - 1.0),
+            (q.pb - b.pb) / quad(b, q),
+        );
+    }
+
+    // C_VG: the independent per-window integrations against the unwindowed total.
+    let vg_sum = vg_cut_mean.iter().copied().fold(Sigma::zero(), Sigma::add);
+    let (c_vg_rel, c_vg_err) = rel_with_err(vg_sum, vg_total);
+    eprintln!(
+        "\n  C_VG: sum of windows {:.6e} +- {:.3e} against unwindowed {:.6e} +- {:.3e} \
+         -> {:+.3}% +- {:.3}%, {:+.2} sigma",
+        vg_sum.pb,
+        vg_sum.err,
+        vg_total.pb,
+        vg_total.err,
+        100.0 * c_vg_rel,
+        100.0 * c_vg_err,
+        c_vg_rel / c_vg_err,
+    );
+
+    // chi2_flat: is the disagreement localised in a window, or the same in all?
+    if mg_parts.iter().all(|p| p.is_some()) {
+        let mut deltas = Vec::with_capacity(nwin);
+        for w in 0..nwin {
+            let (rel, err) = rel_with_err(vg_part_mean[w], mg_parts[w].unwrap().0);
+            deltas.push((rel, err));
+        }
+        let wsum: f64 = deltas.iter().map(|(_, e)| 1.0 / (e * e)).sum();
+        let dbar: f64 = deltas.iter().map(|(d, e)| d / (e * e)).sum::<f64>() / wsum;
+        let chi2_flat: f64 = deltas.iter().map(|(d, e)| ((d - dbar) / e).powi(2)).sum();
+        eprintln!("\n── Delta_w = VG-part(w)/MG-part(w) - 1 ──");
+        for (w, (d, e)) in deltas.iter().enumerate() {
+            eprintln!(
+                "  [{:>5}, {:>5})  {:+.3}% +- {:.3}%  ({:+.2} sigma)",
+                PTA_EDGES[w],
+                PTA_EDGES[w + 1],
+                100.0 * d,
+                100.0 * e,
+                d / e
+            );
+        }
+        let (tot_rel, tot_err) = rel_with_err(
+            vg_total,
+            mg_control.map(|c| c.0).unwrap_or(Sigma {
+                pb: f64::NAN,
+                err: f64::NAN,
+            }),
+        );
+        eprintln!(
+            "  inverse-variance mean Delta_bar {:+.3}%, chi2_flat {chi2_flat:.2} on 4 dof \
+             (localised iff > 13.28); Delta_tot {:+.3}% +- {:.3}%",
+            100.0 * dbar,
+            100.0 * tot_rel,
+            100.0 * tot_err,
+        );
+    } else {
+        eprintln!("\n── Delta_w not computable — the 3.7.1 partition is incomplete");
+    }
+    let _ = c_mg;
+
+    // ── the secondary axis: m(mu+ mu-), reported, gating nothing ────────────
+    //
+    // `pt(γ)` cannot separate an on-shell-Z event from a continuum one, because
+    // `η(γ)` smears the Z's image across most of the `pt(γ)` range. This axis
+    // resolves the Breit–Wigner directly, so it says *where* a `pt(γ)`
+    // localisation lives. Nothing in the decision rule reads it.
+    let nmll = MUMU_EDGES.len() - 1;
+    let mg_mll: Vec<Option<(Sigma, f64, f64, usize)>> = (1..=nmll)
+        .map(|w| mg_cloud(&reference, "3.7.1", "part", "m_mumu", w, NEV))
+        .collect();
+    if mg_mll.iter().all(|m| m.is_some()) {
+        eprintln!(
+            "\n── secondary axis m(mu+ mu-): VG-part against MG-part (no verdict keys on this) ──"
+        );
+        let mut sum_mg = Sigma::zero();
+        let mut sum_vg = Sigma::zero();
+        for w in 0..nmll {
+            let (mg, mg_spread, mg_chi2, n) = mg_mll[w].unwrap();
+            let (vg, vg_spread, vg_chi2) = mean_over_seeds(&|i| vg_part_mll[i].1[w], ns);
+            let (rel, err) = rel_with_err(vg, mg);
+            // The same ratio against MadGraph's seed spread rather than its
+            // quoted error, since the pt(γ) axis measured those clouds at
+            // chi2/dof 3.5-4.3 and this axis has no reason to be better.
+            let err_spread = ((vg_spread / mg.pb).powi(2)
+                + (vg.pb * mg_spread / (mg.pb * mg.pb)).powi(2))
+            .sqrt();
+            eprintln!(
+                "  [{:>5}, {:>5})  MG-part {:.6e} +- {:.3e} (quoted, {n} seeds) | spread {mg_spread:.3e} | chi2/dof {mg_chi2:.2}\n\
+                 {:>18}  VG-part {:.6e} +- {:.3e} | spread {vg_spread:.3e} | chi2/dof {vg_chi2:.2}\n\
+                 {:>18}  Delta {:+.3}% +- {:.3}% ({:+.2} sigma quoted) +- {:.3}% ({:+.2} sigma spread) | \
+                 MG share {:5.2}%",
+                MUMU_EDGES[w],
+                MUMU_EDGES[w + 1],
+                mg.pb,
+                mg.err,
+                "",
+                vg.pb,
+                vg.err,
+                "",
+                100.0 * rel,
+                100.0 * err,
+                rel / err,
+                100.0 * err_spread,
+                rel / err_spread,
+                100.0 * mg.pb
+                    / mg_mll
+                        .iter()
+                        .map(|m| m.unwrap().0.pb)
+                        .sum::<f64>(),
+            );
+            sum_mg = sum_mg.add(mg);
+            sum_vg = sum_vg.add(vg);
+        }
+        // A second, independent partition of the same MadGraph run. Recorded as
+        // corroboration only: the verdicts are frozen and nothing keys on it.
+        if let Some((control, _, _, _)) = mg_control {
+            let (rel, err) = rel_with_err(sum_mg, control);
+            eprintln!(
+                "  C_MG on this axis (recorded, keys nothing): sum {:.6e} +- {:.3e} against \
+                 unwindowed {:.6e} +- {:.3e} -> {:+.3}% +- {:.3}%, {:+.2} sigma",
+                sum_mg.pb,
+                sum_mg.err,
+                control.pb,
+                control.err,
+                100.0 * rel,
+                100.0 * err,
+                rel / err,
+            );
+        }
+        let (rel, err) = rel_with_err(sum_vg, sum_mg);
+        eprintln!(
+            "  sum over this axis: VG {:.6e} vs MG {:.6e} -> {:+.3}% +- {:.3}%",
+            sum_vg.pb,
+            sum_mg.pb,
+            100.0 * rel,
+            100.0 * err
+        );
+    } else {
+        eprintln!("\n── secondary axis m(mu+ mu-) not measured on MadGraph's side");
+    }
 }
