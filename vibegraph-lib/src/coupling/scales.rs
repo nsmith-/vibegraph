@@ -163,6 +163,12 @@ pub enum ScaleError {
     },
     #[error("scale choice {choice} gives a non-positive scale {value} on these momenta")]
     DegenerateKinematics { choice: i64, value: f64 },
+    #[error(
+        "run card selects dynamical_scale_choice = {choice}: the integration path evaluates the \
+         clustered scale only, and the closed forms for 1-5 are computed nowhere a cross section \
+         reads them"
+    )]
+    UnhonouredScaleChoice { choice: i64 },
 }
 
 /// A run card's scale prescription, compiled once.
@@ -195,6 +201,28 @@ impl ScaleChoice {
     /// would keep the single flag — the only combination where the two readings
     /// differ, and one MadGraph itself calls out.
     pub fn from_run_card(card: &RunCard) -> Result<Self, ScaleError> {
+        let compiled = Self::compile(card)?;
+        // The choice is only read where a scale is derived from the event: both
+        // `scales` and `cluster_scales` short-circuit on `is_fully_fixed` before
+        // reaching it, so on a card that fixes every scale the value provably
+        // cannot change a number and refusing it would be a refusal the code
+        // cannot justify. Everywhere else the closed forms for 1-5 are computed
+        // nowhere a cross section reads them, and a scale prescription with no
+        // oracle behind it is refused rather than approximated.
+        if !compiled.is_fully_fixed() && compiled.choice != DynamicalChoice::Clustered {
+            return Err(ScaleError::UnhonouredScaleChoice {
+                choice: compiled.choice.as_i64(),
+            });
+        }
+        Ok(compiled)
+    }
+
+    /// [`from_run_card`](Self::from_run_card) without its refusal of the
+    /// closed-form scale choices. Those formulas are transcribed from
+    /// `setscales.f` and keep their unit tests through here, so the arithmetic
+    /// stays pinned for whoever wires them to a cross section; no run card
+    /// reaches them.
+    fn compile(card: &RunCard) -> Result<Self, ScaleError> {
         let choice_int = card.int("dynamical_scale_choice");
         let choice = DynamicalChoice::from_i64(choice_int)
             .ok_or(ScaleError::UnsupportedChoice { choice: choice_int })?;
@@ -577,22 +605,28 @@ mod tests {
 
     /// `scalefact` multiplies a dynamic scale exactly once, and the factorisation
     /// scale inherits it through `tempscale**2` rather than picking up a second.
+    ///
+    /// Built through [`ScaleChoice::compile`] because `from_run_card` refuses a
+    /// closed-form choice on a card that does not fix every scale; this pins the
+    /// transcribed arithmetic, not a reachable configuration.
     #[test]
     fn scalefact_multiplies_a_dynamic_scale_once() {
-        let choice =
-            ScaleChoice::from_run_card(&card("3 = dynamical_scale_choice\n2.0 = scalefact"))
-                .expect("compiled");
+        let choice = ScaleChoice::compile(&card("3 = dynamical_scale_choice\n2.0 = scalefact"))
+            .expect("compiled");
         let out = [[125.0, 0.0, 0.0, 0.0], [125.0, 0.0, 0.0, 0.0]];
         let scales = choice.scales(&event(&out)).expect("scales");
         assert_eq!(scales.mu_r, 2.0 * 125.0);
         assert_eq!(scales.mu_f, [250.0, 250.0]);
     }
 
-    /// A fixed `μR` with a dynamic `μF` is a real configuration: `set_fac_scale`
-    /// calls `set_ren_scale` for its own value regardless of `fixed_ren_scale`.
+    /// A fixed `μR` with a dynamic `μF`: `set_fac_scale` calls `set_ren_scale`
+    /// for its own value regardless of `fixed_ren_scale`.
+    ///
+    /// Built through [`ScaleChoice::compile`] for the same reason as the test
+    /// above — a card selecting choice 4 without fixing every scale is refused.
     #[test]
     fn a_fixed_renormalisation_scale_leaves_the_factorisation_scale_dynamic() {
-        let choice = ScaleChoice::from_run_card(&card(
+        let choice = ScaleChoice::compile(&card(
             "True = fixed_ren_scale\n91.188 = scale\n4 = dynamical_scale_choice\n",
         ))
         .expect("compiled");
@@ -600,6 +634,61 @@ mod tests {
         let scales = choice.scales(&event(&out)).expect("scales");
         assert_eq!(scales.mu_r, 91.188);
         assert_eq!(scales.mu_f, [500.0, 500.0]);
+    }
+
+    /// The closed-form scale choices are refused where they would be read, and
+    /// only there.
+    ///
+    /// `ScaleChoice::closed_form` computes all five, and nothing on the
+    /// integration path evaluates them: every per-event scale goes through the
+    /// clustering. A prescription with no reference run behind it would produce a
+    /// plausible, smooth, wrong cross section with nothing to notice it by, so it
+    /// is named rather than approximated.
+    ///
+    /// The `fully_fixed` half is the accuracy of the gate, not leniency: both
+    /// scale entry points short-circuit on `is_fully_fixed` before the choice is
+    /// read, so there the value cannot reach a number.
+    ///
+    /// This cannot say whether the closed forms are *correct* — nothing here
+    /// claims they are, which is the reason for the refusal.
+    #[test]
+    fn an_unhonoured_scale_choice_is_refused() {
+        for choice in [1, 2, 3, 4, 5] {
+            let text = format!("{choice} = dynamical_scale_choice");
+            assert_eq!(
+                ScaleChoice::from_run_card(&card(&text)),
+                Err(ScaleError::UnhonouredScaleChoice { choice }),
+                "choice {choice} on a dynamical card"
+            );
+
+            // The same choice where every scale is a run-card constant is
+            // accepted, and yields those constants.
+            let fixed = format!(
+                "{choice} = dynamical_scale_choice\nTrue = fixed_ren_scale\n80.0 = scale\n\
+                 True = fixed_fac_scale\n70.0 = dsqrt_q2fact1\n60.0 = dsqrt_q2fact2\n"
+            );
+            let compiled = ScaleChoice::from_run_card(&card(&fixed))
+                .unwrap_or_else(|e| panic!("choice {choice} on a fully fixed card: {e}"));
+            assert!(compiled.is_fully_fixed());
+            let out = [[125.0, 10.0, 0.0, 124.0], [125.0, -10.0, 0.0, -124.0]];
+            let scales = compiled.scales(&event(&out)).expect("scales");
+            assert_eq!(scales.mu_r, 80.0);
+            assert_eq!(scales.mu_f, [70.0, 60.0]);
+        }
+
+        // The clustered default is never touched by the gate.
+        assert_eq!(
+            ScaleChoice::from_run_card(&card("-1 = dynamical_scale_choice"))
+                .expect("the clustering default is honoured")
+                .choice(),
+            DynamicalChoice::Clustered
+        );
+        assert_eq!(
+            ScaleChoice::from_run_card(&card(""))
+                .expect("an empty card is the clustering default")
+                .choice(),
+            DynamicalChoice::Clustered
+        );
     }
 
     /// The unimplemented choices are named, not approximated.

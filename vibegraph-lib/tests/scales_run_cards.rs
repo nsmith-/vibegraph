@@ -64,3 +64,24 @@ fn the_parser_fixture_compiles_to_the_free_scale_branch() {
     assert!(!choice.is_fully_fixed());
     assert!(choice.needs_channels());
 }
+
+/// Every run card committed to this repository is accepted by the parser's
+/// field enforcement.
+///
+/// The enforcement refuses a card that moves a recognized-but-unread parameter
+/// off MadGraph's default where that would change what this generator produces,
+/// so it can only be sound if it rejects nothing a real card carries. This is
+/// the bare-clone half of that check; the banked references it was measured
+/// against are in `validate_scales.rs`, which needs the reference data.
+#[test]
+fn the_committed_run_cards_are_accepted() {
+    let committed = [
+        validation_dir().join("madgraph/dy13_default_run_card.dat"),
+        validation_dir().join("madgraph/dy13_mmll_run_card.dat"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/run_card_parser_fixture.dat"),
+    ];
+    for path in &committed {
+        RunCard::parse_file(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    }
+    println!("{} committed run cards accepted", committed.len());
+}
