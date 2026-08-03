@@ -90,7 +90,7 @@ use crate::hadronic::{
     boost_z, channel_neval, combine_channels, compile_class, compile_scale_source, components,
     constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
     process_external_legs, BoundSubprocess, ChannelIntegration, EventScaleSource, HadronicError,
-    RunningCouplingReport, SampledChannel, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS,
+    PointScales, RunningCouplingReport, SampledChannel, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS,
     SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED, VEGAS_NBINS,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
@@ -1170,10 +1170,18 @@ impl<'a> ProtonIntegrand<'a> {
     /// Resolve the scale on the first cut-passing point of a fixed pseudo-random
     /// draw, so a refusal that would otherwise surface mid-integration surfaces at
     /// setup.
+    /// A point below the factorisation floor is not a refusal — it is one ordinary
+    /// zero-weight point — so the probe steps over it and keeps drawing. Only the
+    /// degenerate case is reported: cut-passing points exist and *every* one of
+    /// them was vetoed, which makes the cross section zero by construction and is
+    /// worth saying before the integration spends anything on it. A run whose
+    /// support is partly below the floor integrates normally, as it does in
+    /// MadGraph.
     fn probe_scale(&self, source: &EventScaleSource) -> Result<(), ProtonError> {
         use rand::Rng;
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(SCALE_PROBE_SEED);
         let ndim = self.channel_grid_ndim();
+        let mut any_passed_cuts = false;
         for _ in 0..SCALE_PROBE_DRAWS {
             let u: Vec<f64> = (0..ndim).map(|_| rng.random::<f64>()).collect();
             let m = self.map_point(&u);
@@ -1183,11 +1191,20 @@ impl<'a> ProtonIntegrand<'a> {
             self.build_frames(&m, &pt.momenta);
             let lab = self.lab_buf.borrow();
             if self.cuts.pass(&lab) {
-                self.scales_of(source, &lab, self.sampled_channel(0))
+                any_passed_cuts = true;
+                let resolved = self
+                    .scales_of(source, &lab, self.sampled_channel(0))
                     .map_err(HadronicError::from)?;
-                return Ok(());
+                if let PointScales::Scales(_) = resolved {
+                    return Ok(());
+                }
             }
         }
+        if any_passed_cuts {
+            return Err(HadronicError::FactorisationScaleBelowFloor.into());
+        }
+        // No draw passed the cuts, which says something about the cuts and
+        // nothing about the scale.
         Ok(())
     }
 
@@ -1303,7 +1320,14 @@ impl<'a> ProtonIntegrand<'a> {
                 return 0.0;
             }
         }
-        let scales = self.event_scales(channel);
+        // A point whose factorisation scale fell below the floor carries no
+        // weight, and returning here is before both of the things that follow:
+        // the coupling is not moved for a point that contributes nothing, and the
+        // parton densities are not queried below roughly their own grid's lowest
+        // tabulated `Q`, which is most of why the floor sits where it does.
+        let Some(scales) = self.event_scales(channel) else {
+            return 0.0;
+        };
         self.apply_scale(scales.mu_r);
 
         let mut acc = 0.0;
@@ -1331,14 +1355,24 @@ impl<'a> ProtonIntegrand<'a> {
     }
 
     /// The scales at the lab-frame point currently in the frame buffers, in the
-    /// sampling channel that drew it.
-    fn event_scales(&self, channel: SampledChannel) -> EventScales {
+    /// sampling channel that drew it, or `None` where the point fell below the
+    /// factorisation floor and so carries no weight.
+    ///
+    /// Every *other* scale error still stops the run, with the message it had
+    /// before: those say the prescription does not apply to this process, which
+    /// no amount of sampling fixes.
+    fn event_scales(&self, channel: SampledChannel) -> Option<EventScales> {
         if let Some(fixed) = self.scales.constant_scales() {
-            return fixed;
+            return Some(fixed);
         }
         let lab = self.lab_buf.borrow();
-        self.scales_of(&self.scales, &lab, channel)
+        match self
+            .scales_of(&self.scales, &lab, channel)
             .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
+        {
+            PointScales::Scales(scales) => Some(scales),
+            PointScales::Vetoed => None,
+        }
     }
 
     /// The pooled sampling channel `j` as the scale prescription names it: the
@@ -1356,11 +1390,11 @@ impl<'a> ProtonIntegrand<'a> {
         source: &EventScaleSource,
         lab: &[V],
         channel: SampledChannel,
-    ) -> Result<EventScales, ScaleError> {
+    ) -> Result<PointScales, ScaleError> {
         let mut buf = self.scale_buf.borrow_mut();
         buf.clear();
         buf.extend(lab[2..].iter().map(components));
-        source.scales([components(&lab[0]), components(&lab[1])], &buf, channel)
+        source.point_scales([components(&lab[0]), components(&lab[1])], &buf, channel)
     }
 
     /// Move every group's amplitude to the coupling `mu_r` implies. A constant
@@ -1428,7 +1462,10 @@ impl<'a> ProtonIntegrand<'a> {
         Some(ProtonEvent {
             weight: shape * point.weight,
             x: [m.x1, m.x2],
-            scales: self.event_scales(drawn),
+            // `shape` returned nonzero, so this point was not vetoed.
+            scales: self
+                .event_scales(drawn)
+                .expect("a point carrying weight has scales"),
             lab: self.lab_buf.borrow().clone(),
             cm: self.cm_buf.borrow().clone(),
         })
@@ -2873,6 +2910,179 @@ mod tests {
         for q in [q_max * 1.000_001, 0.5 * (q_max + collider), collider] {
             assert_eq!(grid.eval(q), last, "at Q = {q}");
         }
+    }
+
+    /// The banked `p p > l+ l- j` configuration with `μF` scaled by `scalefact`,
+    /// for the tests that exercise the factorisation floor. `scalefact` multiplies
+    /// every factorisation scale uniformly, so it moves the whole distribution
+    /// down against a fixed floor without touching the cuts, the flavours or the
+    /// phase-space map — which is what makes the `scalefact = 1` control a
+    /// controlled comparison rather than a different run.
+    fn scaled_llj_card(scalefact: &str) -> RunCard {
+        RunCard::parse(&format!(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n\
+             \x20 -1 = dynamical_scale_choice\n  {scalefact} = scalefact\n\
+             \x20 20.0 = ptj\n  10.0 = ptl\n  5.0 = etaj\n  2.5 = etal\n\
+             \x20 0.4 = drll\n  0.4 = drjl\n  50.0 = mmll\n  4 = maxjetflavor\n"
+        ))
+        .expect("run card")
+    }
+
+    /// `reweight.f` answers a point whose factorisation scale fell below 2 GeV by
+    /// zeroing its weight and carrying on (`reweight.f:1907-1908`). This is that
+    /// behaviour reaching the integrand: the vetoed points evaluate to exactly
+    /// `0.0`, and the run does not stop.
+    ///
+    /// The `scalefact = 1` control is part of the same test and has to be — on its
+    /// own a zero cannot be told from a point the cuts rejected or one where the
+    /// densities returned nothing. What identifies the veto is that the *same*
+    /// points carry weight when the scale is not scaled down.
+    ///
+    /// It cannot see a veto firing too often on an ordinary card; the banked
+    /// factorisation-floor margin and the unmoved reference cross sections cover
+    /// that direction.
+    #[test]
+    fn a_sub_threshold_factorisation_scale_gives_zero_weight() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &llj_card())
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        let build = |scalefact: &str| {
+            let mut integ =
+                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                    .expect("integrand");
+            integ
+                .use_run_card_scales(&m, &evaluated, &scaled_llj_card(scalefact), Some(&info))
+                .expect("a partly sub-threshold card still compiles");
+            integ
+        };
+        let control = build("1.0");
+        let vetoed = build("1e-3");
+
+        let mut stream = SubStream::from_stream(0x00C2_A111, 3);
+        let (mut carried, mut dropped) = (0usize, 0usize);
+        for i in 0..300 {
+            let channel = i % control.channel_count();
+            let u = stream.uniforms::<f64>(control.channel_grid_ndim());
+            if control.value_in_channel(channel, &u) == 0.0 {
+                continue;
+            }
+            carried += 1;
+            if vetoed.value_in_channel(channel, &u) == 0.0 {
+                dropped += 1;
+            }
+        }
+        assert!(
+            carried > 0,
+            "no point carried weight at scalefact = 1, so there was nothing to veto"
+        );
+        assert!(
+            dropped > 0,
+            "{carried} points carry weight at scalefact = 1 and none was vetoed at 1e-3"
+        );
+        eprintln!(
+            "factorisation floor: {dropped} of {carried} weight-carrying points give exactly 0.0 \
+             once mu_F is scaled below the floor"
+        );
+    }
+
+    /// The veto reaches generation, not only the integral. `event_in_channel`
+    /// evaluates `shape` first and returns `None` on a zero, so a sample and the
+    /// integral it came from drop the same points — which is what keeps a
+    /// sample's scales consistent with its own cross section.
+    #[test]
+    fn a_vetoed_point_is_dropped_from_generation_too() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &llj_card())
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        let build = |scalefact: &str| {
+            let mut integ =
+                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                    .expect("integrand");
+            integ
+                .use_run_card_scales(&m, &evaluated, &scaled_llj_card(scalefact), Some(&info))
+                .expect("a partly sub-threshold card still compiles");
+            integ
+        };
+        let control = build("1.0");
+        let vetoed = build("1e-3");
+
+        let mut stream = SubStream::from_stream(0x00C2_B222, 3);
+        let mut dropped = 0usize;
+        for i in 0..300 {
+            let channel = i % control.channel_count();
+            let u = stream.uniforms::<f64>(control.channel_grid_ndim());
+            if control.event_in_channel(channel, &u).is_none() {
+                continue;
+            }
+            let generated = vetoed.event_in_channel(channel, &u).is_some();
+            let integrated = vetoed.value_in_channel(channel, &u) != 0.0;
+            assert_eq!(
+                generated, integrated,
+                "generation and integration disagree about a point in channel {channel}"
+            );
+            if !generated {
+                dropped += 1;
+            }
+        }
+        assert!(
+            dropped > 0,
+            "no weight-carrying point was dropped, so generation was never exercised on a veto"
+        );
+        eprintln!(
+            "factorisation floor: {dropped} points dropped from generation as well as from the \
+             integral"
+        );
+    }
+
+    /// A card whose support is *entirely* below the floor is refused at setup
+    /// rather than integrated to zero. The scale probe already draws 64 points to
+    /// surface a refusal before the integration starts; it now steps over vetoed
+    /// draws instead of reporting the first one, so a partly vetoed card passes
+    /// it and an entirely vetoed one does not.
+    ///
+    /// This is deliberately not a per-event counter: a partly vetoed run is
+    /// legitimate physics with a correct cross section, so only the degenerate
+    /// case is actionable — and it is actionable before anything is spent on it.
+    #[test]
+    fn a_wholly_sub_threshold_card_is_refused_at_setup() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &llj_card())
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("integrand");
+        let err = integ
+            .use_run_card_scales(&m, &evaluated, &scaled_llj_card("1e-4"), Some(&info))
+            .expect_err("a card with no support above the floor must be refused");
+        assert!(
+            matches!(
+                err,
+                ProtonError::Hadronic(HadronicError::FactorisationScaleBelowFloor)
+            ),
+            "refused for the wrong reason: {err}"
+        );
+        eprintln!("factorisation floor, wholly sub-threshold card: {err}");
+
+        // One decade up there is support left, and the same probe accepts it —
+        // so the refusal tracks the support and not merely a small scalefact.
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("integrand");
+        integ
+            .use_run_card_scales(&m, &evaluated, &scaled_llj_card("1e-3"), Some(&info))
+            .expect("a partly sub-threshold card integrates normally");
     }
 
     /// The `ŝ` window the cuts *hint* is looser than the one they impose, and the

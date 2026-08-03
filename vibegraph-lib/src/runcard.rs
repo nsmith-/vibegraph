@@ -26,6 +26,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod classes;
+
 /// A parsed parameter value. The variant also records the parameter's kind,
 /// which drives how a card line's text is interpreted.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -136,11 +138,13 @@ pub enum RunCardError {
          and fixed-energy partonic beams (0,0) are supported"
     )]
     UnsupportedLpp { lpp1: i64, lpp2: i64 },
-    #[error(
-        "beam polarization is not supported: polbeam1={polbeam1}, polbeam2={polbeam2} \
-         (both must be 0)"
-    )]
-    UnsupportedPolarization { polbeam1: f64, polbeam2: f64 },
+    #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
+    UnsupportedField {
+        name: String,
+        value: String,
+        default: String,
+        why: &'static str,
+    },
 }
 
 /// How the incoming state of a run is prepared.
@@ -279,12 +283,9 @@ impl RunCard {
         if (lpp1, lpp2) != (1, 1) && (lpp1, lpp2) != (0, 0) {
             return Err(RunCardError::UnsupportedLpp { lpp1, lpp2 });
         }
-
-        let polbeam1 = f("polbeam1");
-        let polbeam2 = f("polbeam2");
-        if polbeam1 != 0.0 || polbeam2 != 0.0 {
-            return Err(RunCardError::UnsupportedPolarization { polbeam1, polbeam2 });
-        }
+        // After the beam check, which is what makes a beam-dependent
+        // classification decidable.
+        classes::refuse_ignored_physics(&values, lpp1, lpp2)?;
 
         Ok(RunCard {
             nevents: i("nevents"),
@@ -730,15 +731,24 @@ mod tests {
     #[test]
     fn polbeam1_nonzero_is_rejected() {
         let err = RunCard::parse("  1.0 = polbeam1\n").unwrap_err();
-        assert!(matches!(err, RunCardError::UnsupportedPolarization { .. }));
-        assert!(err.to_string().contains("beam polarization is not supported"));
+        assert!(matches!(err, RunCardError::UnsupportedField { .. }));
+        assert!(err.to_string().contains("polbeam1"));
+        assert!(err.to_string().contains("beam polarisation"));
     }
 
     #[test]
     fn polbeam2_nonzero_is_rejected() {
         let err = RunCard::parse("  -1.0 = polbeam2\n").unwrap_err();
-        assert!(matches!(err, RunCardError::UnsupportedPolarization { .. }));
-        assert!(err.to_string().contains("beam polarization is not supported"));
+        assert!(matches!(err, RunCardError::UnsupportedField { .. }));
+        assert!(err.to_string().contains("polbeam2"));
+        assert!(err.to_string().contains("beam polarisation"));
+    }
+
+    #[test]
+    fn polbeam1_fractional_is_rejected() {
+        let err = RunCard::parse("  0.5 = polbeam1\n").unwrap_err();
+        assert!(matches!(err, RunCardError::UnsupportedField { .. }));
+        assert!(err.to_string().contains("polbeam1"));
     }
 
     #[test]
