@@ -80,6 +80,16 @@ const R_UNIMPL: &str = "cuts::detect_unimplemented — parsed and detected rathe
                         so a value off the default is already a hard error";
 const R_PTGMIN: &str = "cuts::detect_unimplemented, and cuts::Cuts::compile, which raises the \
                         photon pT threshold to it";
+const R_SDE_STRATEGY: &str = "hadronic::EventScaleSource::draws_configuration, which reads it \
+                              together with tmin_for_channel: the per-point integration \
+                              configuration the cluster scale is taken in is drawn from the \
+                              squared amplitude only at 1, the value at which matrix1.f's \
+                              enhancement weight AMP2_c * CC_c collapses to AMP2_c. At 2 the \
+                              squared amplitude is discarded there and the weight is a product \
+                              of propagator denominators this crate does not form, so the \
+                              scale keeps the channel the point was sampled in — which is a \
+                              partition choice of ours rather than MadEvent's, and is why no \
+                              banked row that clusters carries that value";
 const R_XQCUT: &str = "cuts::detect_unimplemented, and ScaleChoice::from_run_card, which \
                        refuses a card that switches matching on";
 
@@ -90,15 +100,7 @@ const B_JOB: &str = "MadEvent job and code-generation bookkeeping: it names outp
 const B_INTEGRATOR: &str = "a directive for MadEvent's own integrator or helicity code \
                             generation. This crate integrates with its own sampler and sums \
                             helicities explicitly, so a reference cross section is invariant \
-                            under it up to Monte-Carlo error. SDE_strategy is the one measured \
-                            exception, and it is a defect on MadGraph's side rather than a \
-                            dependence on ours: at 2, the 3.5.7 generator's get_channel_cut in \
-                            genps.f forms a propagator's off-shellness as (t - M)(t + M) where \
-                            t is already p squared, so it never vanishes on the pole and almost \
-                            all of a narrow resonance is handed to channels whose maps have no \
-                            density there, leaving the reference integral short of it. The \
-                            var_sde1 run is the banked control that measures this, at \
-                            SDE_strategy = 1 where the expression is not used";
+                            under it up to Monte-Carlo error";
 const B_SYST: &str = "post-hoc systematics reweighting, which writes only the <mgrwt>/<rwgt> \
                       block of the event file and never enters a cross section";
 const B_EVA: &str = "an EVA lepton-PDF parameter, reachable only at |lpp| of 3 or 4; the \
@@ -370,7 +372,7 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("hel_filtering",           IgnoredBenign(B_INTEGRATOR)),
     ("hel_splitamp",            IgnoredBenign(B_INTEGRATOR)),
     ("hel_zeroamp",             IgnoredBenign(B_INTEGRATOR)),
-    ("SDE_strategy",            IgnoredBenign(B_INTEGRATOR)),
+    ("SDE_strategy",            Consumed(R_SDE_STRATEGY)),
     ("global_flag",             IgnoredBenign(B_JOB)),
     ("aloha_flag",              IgnoredBenign(B_JOB)),
     ("matrix_flag",             IgnoredBenign(B_JOB)),

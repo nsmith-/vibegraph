@@ -546,7 +546,7 @@ fn generate_and_check(row: &Row) {
         // The scale the matrix element itself ran at, when one was installed; a
         // process with no strong coupling has none, and the run card's own
         // factorisation scale stands in.
-        let (scale, alpha_qcd) = match integ.event_scales(&momenta, point.channel) {
+        let (scale, alpha_qcd) = match integ.event_scales_at(&momenta, point.channel, &point.u) {
             Some(scales) => {
                 let scales = scales.expect("the scale prescription accepts a sampled point");
                 let alpha_s = integ
