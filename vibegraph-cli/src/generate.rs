@@ -647,8 +647,10 @@ fn ordering_slot(ordering: BeamOrdering) -> usize {
 /// labelled with.
 ///
 /// One compiled amplitude serves the whole group, so each member is that
-/// amplitude's record relabelled: the PDG codes are the member's, and an exchanged
-/// beam ordering additionally trades the two incoming legs of every per-leg field.
+/// amplitude's record relabelled: the PDG codes, the colour reps and the colour-flow
+/// table are the member's own — a group may join subprocesses that route their colour
+/// lines between different pairs of legs — and an exchanged beam ordering additionally
+/// trades the two incoming legs of every per-leg field.
 fn flavor_records(
     groups: &FlavorGroups,
     model: &UFOModel,
@@ -666,8 +668,9 @@ fn flavor_records(
                     continue;
                 }
                 let (pdg, order) = group.event_legs(i, ordering);
+                let legs = group.event_leg_colors(i, ordering);
                 slots[ordering_slot(ordering)] = Some(
-                    base.relabelled(&order, &pdg)
+                    base.relabelled(&order, &pdg, &legs, &member.flows)
                         .map_err(|e| err(format!("cannot relabel {pdg:?}: {e}")))?,
                 );
             }
