@@ -329,6 +329,447 @@ so conflicts are mechanical, but the manager resolves them (never a subagent).
   the manager may collapse design+implement for *light* chains only — a
   protocol observation to record in the close-out either way.
 
+## Chain A design (2026-08-02)
+
+Read-only design session. Nothing outside this section was edited. Everything
+below that is stated as a measurement was measured in this session, from the
+banked MadGraph reference data in the chain worktree; everything stated as a
+derivation is marked as one and carries the test that would falsify it.
+
+### A.0 What the reference data says, before any code is written
+
+Two facts had to be established first, because the obvious fix is wrong.
+
+**Fact 1 — MadGraph keeps a separate `ICOLUP` table per colour-rep assignment,
+and it is reachable.** `SubProcesses/P*/leshouche.inc` carries
+`ICOLUP(slot, leg, iflow, isproc)` for *every* `isproc`, and `isproc N`
+corresponds one-for-one with `matrix<N>_orig.f`, whose `C     Process:` header
+names that subprocess. The correspondence is exact across the whole banked
+tree: **79 `isproc` entries against 79 `matrix<N>_orig.f` files over 49 `P*`
+directories** (49 of the 79 are the `isproc = 1` the oracle reads today). So the
+conjugate members this crate gets wrong *do* have a reference table; nothing
+needs regenerating to reach them.
+
+`pp_to_jj/SubProcesses/P1_gq_gq/leshouche.inc`, both tables, verbatim:
+
+```text
+isproc 1  (matrix1: g u > g u)
+  flow 1  ICOLUP(1,·)/501,503,503,501/   ICOLUP(2,·)/502,  0,502,  0/
+  flow 2  ICOLUP(1,·)/503,502,503,501/   ICOLUP(2,·)/502,  0,501,  0/
+isproc 2  (matrix2: g u~ > g u~)
+  flow 1  ICOLUP(1,·)/501,  0,503,  0/   ICOLUP(2,·)/502,501,502,503/
+  flow 2  ICOLUP(1,·)/503,  0,503,  0/   ICOLUP(2,·)/502,501,501,502/
+```
+
+Reading `isproc 1` flow 1 back as a basis key gives `T([1,3], 4, 2)` and
+`derive_flow` reproduces `[501,502], [503,0], [503,502], [501,0]` label for
+label — i.e. **the representative side is already right**, which is what the
+existing oracle gates and is why §6's reprioritization trigger is *not* fired by
+this design (see A.6).
+
+**Fact 2 — the conjugate member's flow index is the reversed one, measured.**
+This is the trap. `isproc 2`'s table at flow index `f` is *not* the image of
+`isproc 1`'s flow `f`; it is the image of flow `3 − f`. The natural-looking fix
+("keep the key, re-assign the `T`-chain ends from the member's own reps, so our
+flow `f` gets MG's `isproc 2` flow `f`") is therefore wrong, and it is wrong in
+a way that is *legal* — every slot it fills is a slot the member's rep allows —
+so no legality check can see it.
+
+The correspondence was measured off MadGraph's own banked `pp_to_jj` sample
+(10 000 events), which needs no code: members of one group share `|M|²`
+pointwise, so the two flows' *conditional* frequencies must agree between a
+representative and its conjugate, and only the index map is in question.
+
+| ordering | quark member | antiquark member | reversed-index hypothesis | same-index hypothesis |
+|---|---|---|---|---|
+| `g q > g q` | flow 1: 651, flow 2: 395 → `P₁ = 0.622 ± 0.015` | MG flow 1: 208, MG flow 2: 302 | `P(MG flow 2) = 0.592 ± 0.022` → **1.1 σ** | `P(MG flow 1) = 0.408` → **8.1 σ** |
+| `q g > g q` | flow 1: 667, flow 2: 473 → `P₁ = 0.585 ± 0.015` | MG flow 1: 204, MG flow 2: 306 | `P(MG flow 2) = 0.600 ± 0.022` → **0.6 σ** | `P(MG flow 1) = 0.400` → **7.1 σ** |
+
+(Aggregated over `q ∈ {d, u, s, c}`; the two rows are independent leg orderings
+of the same claim. Command: `gunzip -c
+validation/madgraph/output/pp_to_jj/Events/run_01/unweighted_events.lhe.gz`
+piped through an `awk` that emits `IDUP | ICOLUP` per event, then `uniq -c` per
+flavour class.)
+
+The reversal is what charge conjugation predicts and is therefore not a
+coincidence to be pinned by frequency alone: `C` maps QCD's gluon field onto
+`−Aᵀ`, so a basis key conjugates as `T(a₁…aₙ, i, j)* = T(aₙ…a₁, j, i)`, and the
+member's amplitude satisfies `JAMP'_{σ(f)} = ± JAMP_f` with `σ` the permutation
+that key-conjugation induces on the sorted basis. For `g q > g q`, `σ` swaps the
+two flows. Squaring kills the sign, so the draw `∝ JAMP2_f` taken off the
+*representative* is already the correct draw — it just has to be labelled with
+the member's basis element `σ(f)`, not `f`.
+
+**Fact 3 — and that makes the tags transformation trivial.** Conjugating a
+basis key flips every endpoint's SU(3) index rep while preserving *which leg*
+each endpoint sits on and *which endpoints pair into a line* (checked on both
+`T` chains and `Tr` traces). `AmpRep::slot` is `rep XOR incoming` and the
+leg's `incoming` flag does not move, so every endpoint's slot flips and nothing
+else does. Therefore:
+
+> **The tags of the conjugated key are the tags of the key with both `ICOLUP`
+> slots exchanged on every leg.**
+
+Verified against the table above: exchanging both slots on every leg of
+`isproc 1` flow 1 gives connectivity `{1a,4a} {1c,3c} {2a,3a}`, which is
+`isproc 2` **flow 2** (`{1c,3c} {1a,4a} {2a,3a}`) under a relabelling; the same
+holds for flow 2 → flow 1. Both directions checked by hand in this session.
+
+So the fix is a **global slot exchange, applied when and only when every leg's
+member rep is the conjugate of the representative's**. Note what it is *not*: it
+is not "swap the slots on the legs that changed rep" (that breaks the gluon
+legs' connectivity while staying legal), and it is not "re-derive from the same
+key with the member's reps" (that is MG's `isproc` table at the *unreversed*
+index, refuted at 7–8 σ above).
+
+### A.1 Change list, file by file
+
+**1. `vibegraph-lib/src/helas/repr/color.rs`**
+Add `PartialOrd, Ord` to `ColorRep`'s derive list. Only needed so `Subprocess`
+keeps its derived ordering after gaining a `ColorRep` field (change 6); the
+order itself carries no meaning. If the implementation prefers not to order a
+representation, the alternative is a member-indexed `Vec<Vec<ColorRep>>` on
+`FlavorGroup` built in the same loop as `members` — acceptable, but it is a
+parallel array and must be constructed in that one place.
+
+**2. `vibegraph-lib/src/helas/color/flow_tags.rs`**
+
+- Factor the rep → occupied-slots table out of `FlowBuilder::finish` into a free
+  `fn slots_for(rep: ColorRep) -> [bool; 2]`, so the check has exactly one
+  definition.
+- `pub fn ColorFlowTags::conjugated(&self) -> ColorFlowTags` — exchange
+  `[colour, anticolour]` on every leg of every flow. Its doc comment states the
+  theorem of A.0 Fact 3 in its own terms (key conjugation flips every
+  endpoint's index rep, preserves the pairings and the legs' directions, so the
+  slot exchange is the whole of it) and says what it is for: the flows of a
+  subprocess whose legs carry the conjugate reps of these.
+- `pub fn ColorFlowTags::check_legs(&self, legs: &[LegColor]) -> Result<(),
+  ColorAlgebraError>` — for every flow and every leg, the occupied slots must be
+  exactly `slots_for(legs[leg].rep)`. This is the derive-and-check the record
+  layer runs against the *member's own* reps.
+
+**3. `vibegraph-lib/src/helas/eval/compile.rs`**
+`leg_colors` is built at line ~189 and dropped after `color_flow_tags`. Keep it:
+store `leg_colors: Vec<LegColor>` on `AmplitudeEvaluator` and add
+`pub fn external_colors(&self) -> &[LegColor]`. This is the provenance that
+matters — every consumer's leg reps then come from the compiled amplitude, not
+from a second PDG → rep table.
+
+**4. `vibegraph-lib/src/lhef/mod.rs`**
+One new `LhefError` variant:
+
+```rust
+#[error(
+    "leg {leg} carries colour rep {member:?} where the compiled subprocess carries \
+     {representative:?}; an event record can only reuse a subprocess's colour flows for \
+     legs whose reps are all equal to, or all conjugate to, its own"
+)]
+ColorRepsUnrelated { leg: usize, representative: ColorRep, member: ColorRep },
+```
+
+plus a variant (or a `String` payload on the same one) for a `check_legs`
+failure, so a wrong table is refused at record construction rather than written.
+
+**5. `vibegraph-lib/src/lhef/build.rs`**
+
+- `SubprocessRecord` gains `legs: Vec<LegColor>` — the reps of the legs *this
+  record* describes.
+- `SubprocessRecord::new` fills it from `evaluator.external_colors()`.
+- `relabelled(&self, order: &[usize], pdg: &[i32], legs: &[LegColor])`:
+  1. the existing well-formedness check on `order`/`pdg`, extended to
+     `legs.len() == n_ext`;
+  2. `flows = self.flows.permuted(order)?` (unchanged);
+  3. classify, over all legs `i`, comparing `legs[i].rep` against
+     `self.legs[order[i]].rep`: **all equal** → keep; else **all conjugate**
+     (`self.legs[order[i]].rep.anti() == legs[i].rep` for every `i`) → `flows =
+     flows.conjugated()`; else → `Err(ColorRepsUnrelated)` naming the first leg
+     that fits neither. Self-conjugate reps satisfy both, so the non-self-
+     conjugate legs decide, and "all equal" is tested first so an all-gluon
+     process takes the identity branch.
+  4. `flows.check_legs(legs)?` — the derive-and-check, on the member's own reps.
+  5. store `legs: legs.to_vec()` in the result.
+- The doc comment's current claim ("the flavours sharing an amplitude are the
+  ones whose legs carry the same masses") is the defect written down and must be
+  replaced: sharing an amplitude and a mass list does not imply sharing a colour
+  rep, so the flows travel with the legs only up to conjugation, and the reps
+  the caller supplies decide which.
+
+**6. `vibegraph-lib/src/proton.rs`**
+
+- `Subprocess` gains `colors: Vec<ColorRep>` in the group's shared leg order,
+  filled at group construction (~line 640) from
+  `compiled[i].0.external_colors()` — the member's *own* compiled amplitude,
+  which the grouping already builds and currently discards.
+- `FlavorGroup::event_leg_colors(&self, member: usize, ordering: BeamOrdering)
+  -> Vec<LegColor>` — the member's reps in physical leg order, applying the same
+  `order.swap(0, 1)` `event_legs` applies, with `incoming` set positionally.
+  Returning it from `event_legs` as a third element is equally fine; one
+  function that cannot return the codes without the reps is slightly better.
+
+**7. `vibegraph-cli/src/generate.rs`**
+`flavor_records` (~line 655) passes `group.event_leg_colors(i, ordering)` into
+`relabelled`. No other call site changes: `validate_lhef.rs:512`,
+`validate_samples.rs:331` and `generate.rs:519/1203` use `SubprocessRecord::new`,
+which does not relabel.
+
+**8. `vibegraph-lib/tests/color_flow_tags_oracle.rs` — the widening**
+
+- `parse_leshouche` returns every `isproc`, not `isproc == 1`:
+  `Vec<(usize, Vec<Vec<[u32; 2]>>)>`, and additionally parses
+  `IDUP(I, 1, isproc)`.
+- `process_of` takes the `isproc` and reads `matrix<isproc>_orig.f`. A missing
+  file is a **hard failure**, never a skip.
+- One trial per `(P* directory, isproc)`; name it `pp_to_jj/P1_qq_qq#3`. Trial
+  count goes **49 → 79**.
+- Each trial additionally asserts that the compiled subprocess's PDG codes equal
+  that `isproc`'s `IDUP(·, 1, isproc)` row, so "we compiled the member MadGraph
+  names" stops being an assumption.
+- The comparison itself is unchanged: connectivity per flow index, labels
+  reported as information.
+
+**9. `vibegraph-cli/tests/validate_samples_proton.rs`**
+
+- The `pp_to_jj` row's `mode` flips `"info"` → `"gate"` (line ~699), and the doc
+  comment's defect paragraph is replaced by what the cell now measures.
+- Two per-event scans over the generated file, both new (note 28's counts came
+  from a session-local instrument; nothing in the tree measures this today) —
+  see tests **T5** and **T6** in A.2.
+
+**10. `validation/manifest.toml`**
+`pp_to_jj.samples`: `mode = "info"` → `"gate"`, and the note rewritten. The
+current note is a careful description of the defect and its attribution; it
+becomes a description of what the gated cell measures, with the `4758 / 80 000`
+figure kept only as the recorded before-state.
+
+**11. `vibegraph-lib/tests/validate_lhef.rs`** — no change expected. Its
+`"ICOLUP slots 1 and 2 exchanged"` mutation is a re-serialisation negative
+control on a fixed subprocess, not on a relabelled member, and the run it uses
+has no conjugate member. Named here only because an implementer who greps for
+slot exchanges will find it and wonder.
+
+### A.2 Acceptance tests
+
+**Must keep passing, unchanged** (the regression fence):
+
+- `color_flow_tags_oracle`, every `isproc = 1` trial — the representative side.
+- `an_exchanged_ordering_relabels_the_beams_of_every_per_leg_field`
+  (`proton.rs`) — the beam-exchange permutation, which the classification of
+  A.1/5 step 3 must resolve to the *identity* branch.
+- `jj_subprocesses_are_madgraphs_own` — the 65-assignment set.
+- `crossing_rule_is_not_free`, `uux_annihilation_flow_matches_madgraph_labels`,
+  `uux_exchange_flow_matches_madgraph_labels`, `ggttx_chain_matches_madgraph_labels`,
+  `gggg_trace_matches_madgraph_labels` (`flow_tags.rs`).
+- `colour_lines_land_in_the_physical_slots` (`build.rs`).
+- `cli_generate_proton`'s per-event `(roles, connectivity)` membership test on
+  `p p > l+ l- j` — the negative control. `p p > l+ l- j` has no conjugate
+  member in any group (MadGraph puts `g u > e+ e- u` and `g u~ > e+ e- u~` in
+  separate `isproc`s of `P1_gq_llq`, and this crate separates them too because
+  their `|M|²` differ), so **every one of its cells must be character-identical
+  after the fix**. Same for `pp_to_bb` and `pp_to_ll`, whose second `isproc` is
+  a different generation with identical reps, not a conjugate.
+- `validate_lhef`'s byte-for-byte re-serialisation of all 37 banked runs.
+
+**New:**
+
+- **T1 `conjugating_a_flow_is_the_slot_exchange_and_nothing_else`**
+  (`flow_tags.rs`, hermetic). Build `T([1,3], 4, 2)` on `g u > g u` legs and
+  `T([3,1], 2, 4)` — its key-conjugate — on `g u~ > g u~` legs; assert
+  `derive_flow(conjugate_key, conjugate_legs)` has the same connectivity as
+  `conjugated(derive_flow(key, legs))`, and assert both against the literal
+  `isproc 2` rows quoted in A.0. *Fails on*: a `conjugated()` that swaps
+  something other than the two slots; a slot exchange applied per-leg instead of
+  globally. *Provably cannot detect*: anything about which flow index a member's
+  event should carry — it is a statement about one key at a time.
+- **T2 `the_representatives_tags_are_illegal_on_a_conjugate_members_legs`**
+  (`flow_tags.rs`, hermetic). `check_legs` on the unconjugated tags with
+  antiquark legs must error, naming the leg and its rep. *Fails on*: a
+  `check_legs` that is vacuous, or that reads the reps off the tags it is
+  checking. *Cannot detect*: a wrong-but-legal flow — precisely the failure mode
+  A.0 Fact 2 refutes, which is why T4 exists.
+- **T3 `a_conjugate_member_gets_the_conjugated_colour_lines`** (`build.rs`,
+  hermetic, hand-built record). Relabel a `g u > g u` record onto
+  `g u~ > g u~` and assert the resulting `ICOLUP` matches the `isproc 2`
+  connectivity of A.0 at the reversed flow index; assert `relabelled` returns
+  `ColorRepsUnrelated` for a leg list that is neither all-equal nor
+  all-conjugate. *Fails on*: the classification taking the wrong branch, the
+  conjugation being skipped, `check_legs` not being wired in. *Cannot detect*:
+  that the flow index the generator draws is the one this record should be
+  labelled with — checked-data only, no amplitude in it.
+- **T4 `a_conjugate_member_carries_its_own_subprocesss_colour_flows`**
+  (`proton.rs`, hermetic — **the linchpin**). Modelled directly on
+  `an_exchanged_ordering_relabels_the_beams_of_every_per_leg_field`. For every
+  group of `p p > j j` and every member and both beam orderings: compile the
+  member from its own process string; evaluate `eval_jamp2` on both the
+  representative and the member over the shared probe points; establish the flow
+  permutation `π` by matching `JAMP2` values; assert `π` is the *same*
+  permutation at every probe point; assert the record layer's tags for that
+  member at flow `f` have the same connectivity as the member's own compiled
+  tags at `π(f)`. Two anti-vacuity assertions are **required**, or the test
+  passes for the wrong reason: (i) at least one member took the conjugation
+  branch, and at least one `π` is not the identity — otherwise it never sees the
+  defect; (ii) at every probe point the `JAMP2` entries are separated by more
+  than a stated relative margin, so `π` is uniquely determined rather than
+  matched by rounding. *Fails on*: the whole defect class, including a global
+  slot exchange applied at the unreversed index. *Cannot detect*: an error
+  shared by the two compilations — if `color_flow_tags` derived both the
+  representative's and the member's keys wrongly in the same way, this agrees.
+  That is what the widened oracle (T7) is for, and the two together have no
+  common blind spot.
+- **T5 `no_generated_leg_carries_a_line_in_the_slot_its_rep_forbids`**
+  (`validate_samples_proton.rs`). Reference-free scan of the generated
+  `pp_to_jj` file: for every event and leg, occupied slots must be
+  `slots_for(rep)`. Must read **0 / 80 000** (recorded: 4 758 / 80 000). Run it
+  over MadGraph's banked file too, which must also read 0 — an instrument that
+  cannot fail on the reference is not an instrument. *Cannot detect*: a legal
+  but wrong flow, or a wrong flow *frequency*.
+- **T6 `every_generated_dijet_colour_pattern_is_one_madgraph_lists`**
+  (`validate_samples_proton.rs` or a shared helper with
+  `cli_generate_proton.rs`). Build the allowed `(roles, connectivity)` set from
+  `leshouche.inc` — every `isproc`, every flow, both beam orderings — and assert
+  every generated event's pattern is in it, at zero tolerance. Derive the set
+  from `leshouche.inc` rather than from MadGraph's 10 000-event sample: a
+  sample-derived set is incomplete for rare flows and would fail honest events.
+  *Cannot detect*: frequencies — every event could carry the same legal pattern
+  and pass.
+- **T7 the widened `color_flow_tags_oracle`** (extended-validation, 79 trials).
+  *Fails on*: any derived table disagreeing with MadGraph's for any subprocess
+  of any banked directory. *Cannot detect*: what the record layer does with a
+  derived table — it never constructs a record. T4 and T6 cover that.
+- **T8 the `ICOLUP` χ² column** of the `pp_to_jj` `samples` cell, flipped to
+  gate: below the `1e-4` floor on **every** seed. *Cannot detect*: an error that
+  preserves the colour-key frequencies; correlations with other columns; a
+  discrepancy in a small tail.
+
+The instrument ladder is deliberate: T5 legality → T6 connectivity legality
+against the reference → T4 the right flow for the right `JAMP` → T8 the right
+frequencies. Each one is blind to the next one's failure.
+
+### A.3 Gates to run, and the cells expected to move
+
+In order, each backgrounded with a `chainA_`-prefixed log, `--skip-deps` on
+every `pixi run`:
+
+1. `cargo build` and `cargo test --workspace` (hermetic, no features) — T1–T4.
+2. `pixi run --skip-deps validate-color-flow-tags` — T7, expect **79** trials
+   passing where 49 ran before.
+3. `pixi run --skip-deps validate-color-cf`, `validate-lhef`,
+   `validate-unweighting`, `validate-generate-proton` — the colour/LHEF gates
+   named in the acceptance. `validate-generate-proton` is the `p p > l+ l- j`
+   negative control and must be character-identical.
+4. `pixi run --skip-deps validate` — the full banked layer and the collated
+   report. Long; background it.
+
+**Expected to move — exactly one cell:**
+
+| cell | before | after |
+|---|---|---|
+| `pp_to_jj` / `samples` | ⚠️ banked `info`, `ICOLUP` χ² ≈ 2470 / 25 at `p 0` | ✅ banked `gate`, every column above the `1e-4` floor |
+| census | 87 measured / 85 ✅ / 2 ⚠️ | 87 measured / 86 ✅ / **1** ⚠️ |
+
+The surviving ⚠️ is the hermetic `diagrams` `info` cell at
+`validation/manifest.toml:235`, which this chain does not touch.
+
+**Must not move:** every other printed field of every other row, including
+`pp_to_jj`'s own `integrals` cell (the fix changes no weight — the colour flow
+is drawn for the record and never enters the integrand), `pp_to_llj*`,
+`pp_to_bb*`, `pp_to_ll*`, and every partonic σ row. The implementation session
+must diff the rendered report against a baseline taken **before** its first
+edit, and report the diff line count, not the impression. Footnote renumbering
+after the changed row is expected and is not a moved cell.
+
+### A.4 Risks
+
+- **The χ² still fails after the fix.** The frequency evidence of A.0 Fact 2
+  bounds the residual at ≈1 σ on a 510-event MadGraph sub-sample, which does not
+  bound it at the resolution of 3 × 20 000 events against 10 000. If T4, T5, T6
+  and T7 are all green and T8 still fails, that is a *second* defect and the
+  chain must stop and report it rather than tune anything — the diagnosis is
+  already narrowed to the flow *frequencies*, i.e. to `select_color_flow`'s
+  `AMP2`-then-`ICOLAMP` composition, not to the tags.
+- **`LeadingColorFlows` (`ICOLAMP`) is reused per member too, and this design
+  does not change it.** That is deliberate and believed correct: the
+  configuration draw, the mask and the flow draw all happen in the
+  *representative's* indexing and are mutually consistent there; only the final
+  label is translated. If T8 fails while T4 passes, this is the first place to
+  look, because a diagram-index permutation between member and representative
+  would show up exactly as a frequency error.
+- **The group-formation checks cannot see the flow permutation.** `proton.rs`
+  requires members to agree on `n_flows` and on `cf_matrix`; for `g q > g q` the
+  2 × 2 CF matrix is symmetric with equal diagonals, so it is invariant under
+  the reversal `σ` and the check passes on a permuted basis. Nothing existing
+  guards this; T4 is what starts guarding it.
+- **A member that is neither all-equal nor all-conjugate.** Unreachable today
+  (checked: within `p p > j j` the conjugating groups are `g q`/`g q̄`,
+  `qq`/`q̄q̄` and `qq'`/`q̄q̄'`, all global; the outgoing-swap cases are removed by
+  the enumeration's sorted-final-state key and the beam-exchange cases resolve
+  to the identity). The design hard-errors rather than guessing, which is the
+  right behaviour at a boundary the restricted scope does not cover.
+- **Trial-count creep in the widened oracle.** 79 trials each compile a
+  subprocess; `P1_qq_qq` alone adds six. If the gate's wall time becomes a
+  problem the answer is not to narrow the oracle back — it is to share the model
+  load across trials.
+- **T4's cost.** It compiles every member of every `p p > j j` group in the
+  hermetic suite. Group formation already compiles all 65 members once, so the
+  order of magnitude is known and affordable; if it is not, the acceptable
+  reduction is to the groups that actually mix reps (`g q`/`g q̄` and the
+  `qq_qq` pairs), never to a single hand-picked pair — the anti-vacuity
+  assertions must still hold.
+
+### A.5 What this provably cannot break
+
+The change is confined to the `ICOLUP` columns of emitted event records.
+
+- **No cross section can move.** The colour flow is selected *after* a point is
+  accepted and enters no weight: `select_flow`'s own documentation records that
+  it "never enters the integrand". `conjugated()` and `check_legs` are called
+  once per `(member, ordering)` at record-construction time and touch no
+  momentum, weight, coupling or scale. Every σ row is therefore unmoved
+  bit-for-bit, and the `integrals` cells are a control on that claim rather than
+  a hope.
+- **No event's kinematics, flavours, helicities, masses, statuses or mothers
+  can move.** `relabelled` gains one argument and one transformation of
+  `self.flows`; `pdg`, `mass`, `n_in` and the `order` permutation are untouched,
+  and `event()` reads the same fields it reads today.
+- **No subprocess whose group has a single rep assignment can move at all** —
+  the classification takes the identity branch and `conjugated()` is never
+  called. That is every gated row except `pp_to_jj`, verified against the
+  reference rather than assumed: `pp_to_bb`'s and `pp_to_ll`'s second `isproc`
+  is a different generation with identical reps, and `pp_to_llj`'s `g q̄` is a
+  separate `isproc` that this crate also keeps in a separate group.
+- **A record that would have been wrong is now refused, not written.**
+  `check_legs` runs on the member's own reps before any event is emitted, so the
+  4 758-legs failure mode cannot be reintroduced silently by a future change to
+  the grouping: it becomes a hard error at record construction.
+
+What it emphatically *can* break, and what the gates are for: any consumer that
+depended on the old, wrong `ICOLUP` for an antiquark member. Nothing in this
+tree does — `validate_lhef`'s byte-for-byte re-serialisation reads MadGraph's
+files, not ours.
+
+### A.6 §6's reprioritization trigger — how the widened oracle distinguishes it
+
+§6's risk is that the widened oracle finds the **representative's** tags wrong
+too, not only the conjugate reuse. The widened oracle separates the two by
+construction, because it keeps the `isproc` index in the trial name:
+
+- a failure on an `isproc = 1` trial is a **representative-level** finding — the
+  oracle already covers those 49 subprocesses today and they pass, so a new
+  failure there means the derivation itself moved;
+- a failure on an `isproc > 1` trial whose `IDUP` row is the *conjugate* of that
+  directory's `isproc 1` row is the defect this chain fixes;
+- a failure on an `isproc > 1` trial whose `IDUP` row is **neither equal nor
+  conjugate** in rep pattern to `isproc 1` — for instance `P1_qq_qq`'s
+  `u u~ > u u~` against its `u u > u u` — is a **new** finding: a subprocess no
+  oracle has ever seen, whose derivation is independent of both. The trial name
+  and the `IDUP` assertion of A.1/8 make the classification mechanical rather
+  than a judgement call.
+
+**This session found no evidence of the trigger.** The representative side was
+spot-checked by hand against `P1_gq_gq` `isproc 1`, both flows, and reproduces
+MadGraph label for label. The 30 newly-reachable subprocesses have never been
+compared, so the trigger remains genuinely open until T7 runs — which is the
+point of widening the oracle before, not after, flipping the cell.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
