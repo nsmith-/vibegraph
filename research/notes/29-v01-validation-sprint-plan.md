@@ -5510,6 +5510,194 @@ the *mirror* ordering, which `shape` evaluates at the same scale as the direct o
 predicts which cells may differ, and a cell that moves against it is
 stop-and-report either way.
 
+### Chain B results (2026-08-03)
+
+Implementation, in four commits on `val4-b`: `9f7a1ea` (B-0 census), `33f561a`
+(B-1a plumbing), `a6384cc` (B-1b the draw), `825ef31` (B-1c tolerances), plus
+`a51c258` (B-3 rider) and `0440769` (B-4 artifact guard) from a separate session.
+
+#### The census, and what it corrected
+
+The B-0 output above records the measurement. Its one structural correction to
+§B.2 is worth repeating here because every later stage rests on it: **nine of the
+eighteen rows §B.2 lists as "clustered" compile no per-event prescription at
+all.** A fixed-energy row whose matrix element does not move with `αs` has no
+consumer for either scale — no parton density on the beams — so
+`use_running_coupling` returns before `compile_scale_source` and `event_scales`
+answers `None`. §B.2 derived its list from a property of the *card*; whether the
+prescription is compiled is a property of the card **and** the matrix element,
+and only the second decides whether a row can move. That covers all three rows
+§B.2 marked genuinely unknown, `ee_to_mumua` among them, which is why chain B
+never collided with chain D.
+
+The pre-registered may-move set was therefore exactly three rows:
+`gu_to_epemu`, `gux_to_epemux`, `pp_to_llj_dyn`.
+
+#### B-1a — the negative control held
+
+`pixi run --skip-deps validate` with the trailing uniform drawn, carried in
+`AcceptedPoint.u`, and read by nothing: **byte-identical** to
+`/tmp/valreport-baseline-B` over all 23 `integrals` and 22 `samples` cells, same
+tree digest `4bc825da…`, 36 suites ok. The zero-bits invariant of §B.3 is not an
+argument in this note; it is a measurement.
+
+#### B-1b — the escalation diff landed exactly on the pre-registered set
+
+The `diff -r` against the baseline differed in **three `integrals` cells and two
+`samples` cells, and no others**: `gu_to_epemu`, `gux_to_epemux`,
+`pp_to_llj_dyn` integrals, and the two fixed-beam movers' samples cells (which
+regenerate events at the new scale). Every zero-spread clustered row and every
+fully-fixed row came out byte-identical, `pp_to_jj` included — a row with a
+*live* draw whose within-group spread is exactly zero, which is the sharpest
+confirmation the census got.
+
+**The informational comparison collapsed, which is the chain's own claim.**
+`probe_channel_partition_moves_sigma`, converged `αⱼ` against uniform `αⱼ`:
+
+| row | gap before | gap after | Monte Carlo |
+|---|---|---|---|
+| `uux_to_epemg` | `+1.047e-3` | `+1.047e-3` (bit-identical) | `1.6e-3` |
+| `ddx_to_epemg` | `+1.857e-3` | `+1.857e-3` (bit-identical) | `1.5e-3` |
+| `gu_to_epemu` | `−1.484e-2` | `+1.867e-3` | `1.6e-3` |
+| `gux_to_epemux` | `−1.528e-2` | `+1.493e-3` | `1.6e-3` |
+
+All four rows are now indistinguishable from their own noise, and the two whose
+scale no configuration moves reproduced their old numbers *bit for bit* — the
+census predicting which rows could not move, and being right at the last bit.
+
+Against MadGraph:
+
+| row | rel before | rel after | reference's own error |
+|---|---|---|---|
+| `gu_to_epemu` | `+1.076e-2` (pull `+5.21`) | `+3.98e-5` (pull `+0.02`) | `0.18%` |
+| `gux_to_epemux` | `+9.75e-3` (pull `+4.32`) | `−1.10e-3` (pull `−0.49`) | `0.20%` |
+| `pp_to_llj_dyn` | `−6.82e-3` (pull `−2.05`) | `−7.08e-5` (pull `−0.02`) | `0.33%` |
+
+The hadronic row moved from `−0.68%` to `−0.01%` **without the flavour-group
+axis being touched at all**, which is what §B.4's gate asked about and what
+retires B-2 below.
+
+#### B-1c — the tolerances, and the rule they were set by
+
+§B.8's rule was fixed before the measurement and is what the numbers were read
+against, not the other way round.
+
+`probe_llj_parton_seed_stability`, five seeds at the gate budget and at four
+times it:
+
+| row | 1× mean / worst `\|rel\|` | 4× mean / worst | pulls | `χ²/dof` |
+|---|---|---|---|---|
+| `gu_to_epemu` | `+1.57e-4` / `1.35e-3` | `+7.53e-4` / `1.53e-3` | `≤ 0.65` | `0.58`–`1.25` |
+| `gux_to_epemux` | `−8.69e-4` / `1.51e-3` | `−2.19e-4` / `1.20e-3` | `≤ 0.67` | `0.71`–`1.74` |
+
+`probe_llj_dyn_budget_ladder`, five seeds a rung, against MadGraph's
+`415.42 ± 1.36`:
+
+| `neval` | σ (pb) | `rel` | pull | `χ²/dof` |
+|---|---|---|---|---|
+| `75 000` | `412.5969 ± 0.3617` | `−0.68%` | `−2.00` | `6.38` |
+| `150 000` | `414.2659 ± 0.2494` | `−0.28%` | `−0.83` | `0.82` |
+| `300 000` | `415.2694 ± 0.1733` | `−0.04%` | `−0.11` | `0.65` |
+| `600 000` | `415.7450 ± 0.1223` | `+0.08%` | `+0.24` | `0.30` |
+
+Increments `+1.67`, `+1.00`, `+0.48` — halving — and the row crosses the
+reference between the last two rungs. Before the draw the same ladder read
+`409.55`, `411.39`, `412.53`, `412.95`, asymptoting `0.6%` low.
+
+So all three rows' residuals are Monte Carlo, and the decisions follow:
+
+* `gu_to_epemu` and `gux_to_epemux` **leave `PULL_REPORTED_NOT_ASSERTED`**,
+  which is now empty, and go `rel_tol` `0.02` → `0.005`.
+* `LLJ_DYN_MAX_REL` `0.015` → `0.005`, and that row's pull is asserted too.
+
+Each bound is the larger of the reference's own error with headroom (`0.18%`,
+`0.20%`, `0.33%`) and the measured five-seed spread (`0.15%`, `0.15%`, `0.18%`).
+None is fitted to the achieved central value, which on `gu_to_epemu` is `4e-5` —
+a bound fitted there would be absurd, and saying so is the point of the rule.
+
+#### The rulings
+
+* **B-2 is out of the sprint, by measurement.** The group-vs-configuration split
+  on `pp_to_llj_dyn` is zero to every printed digit (`8.274400e0` within-group
+  against `8.274400e0` across-group), so the group axis reaches no scale the
+  configuration axis inside the sampled group does not. The σ measurement agrees:
+  the row closed to `−0.01%` with the group left on the sampler.
+* **`SDE_strategy` becomes a consumed field.** It decides whether the draw runs,
+  so the old `IgnoredBenign` claim that a reference cross section is invariant
+  under it was false. Its reason string records what the crate does at `2`:
+  keeps the sampling channel, which is a partition choice of ours and not
+  MadEvent's.
+* **`tmin_for_channel` stays `IgnoredPhysics`, against the ruling, and the
+  reasoning is the point.** A card that sets it does not parse — the audit
+  refuses it. Reclassifying it as consumed would remove that refusal and leave
+  such a card integrating silently under a rule that does not describe it, since
+  this crate implements no `get_channel_cut` product. A hard error is strictly
+  stronger than a silent fallback, and converting one into the other is the
+  failure class this sprint exists to close. The field is still *read* by
+  `EventScaleSource::draws_configuration`; the parser refusal is simply what
+  stands between such a card and a cross section, and
+  `the_configuration_draw_needs_both_run_card_fields` asserts both guards.
+
+#### B-3 and B-4
+
+`pp_to_llj_dyn`'s `samples` cell is banked and gated — min KS `p 1.496e-2`, min
+χ² `p 3.691e-1` over three seeds — taking the census to 90 measured, 88 ✅, 2 ⚠️.
+The artifact guard is `FORMAT_VERSION 7` with a refusal targeted at a pre-v7
+artifact replayed on a clustering-scale card. One defect surfaced en route and is
+worth recording: the v3/v4/v5 upgrade impls normalised `format_version` to
+`FORMAT_VERSION` on read, which would have made every upgraded artifact look
+current and blinded the guard to exactly the artifacts it exists to catch. They
+now preserve the recorded origin version, and the three round-trip tests assert
+it.
+
+#### §B.10's acceptance tests, mapped to what exists
+
+None of §B.10's names exist in the tree. What delivers each, by real name:
+
+| § | design's name | delivered by | status |
+|---|---|---|---|
+| 1 | `the_scale_channel_is_drawn_from_amp2_and_not_from_the_sampler` | `probe_the_scale_draw_reads_the_point_and_not_the_sampler` (`vibegraph-lib/tests/validate_sigma.rs`, `--ignored`) | **half**: the independence-from-the-sampler half is asserted on `gu_to_epemu` over 64 draws × 3 channels, with a non-vacuity guard that the sweep reaches more than one scale. The `∝ AMP2_c/Σ AMP2` frequency half is **not** delivered |
+| 2 | `a_scale_draw_replays_identically_on_reconstruction` | same probe, third property | **yes, in observable form**: the scales at fixed `(momenta, channel, u)` are unchanged after 256 intervening evaluations that move the bound coupling. The Fact-3 defect the design names — a counter advanced per integrand call — would fail exactly this assertion. The design's literal form (an `Unweighter` trial loop with interleaved rejections) is not built; the remaining half of it, that an accepted point's recorded scale is the one its weight was taken at, is true by construction now that `event_scales_at` is a pure function of `(momenta, channel, u)` and `AcceptedPoint.u` carries the trailing coordinate |
+| 3 | `the_amp2_config_order_matches_the_forest_config_order` | `the_amp2_configuration_order_matches_the_forest_order` (`vibegraph-lib/src/hadronic.rs`, banked unit test) | **yes**, on `g g → g g` where four diagrams give three configurations, so an off-by-one cannot hide |
+| 4 | `the_scale_draw_is_independent_of_the_bound_coupling` | same probe, third property | **yes, in observable form**. The design's literal form — build `AMP2` at two different `αs` — is not reachable from outside the crate, the pin being internal; its observable consequence is that evaluation history does not move the drawn configuration, which is what is asserted |
+| 5 | `a_non_default_sde_strategy_keeps_the_sampler_channel` | `the_configuration_draw_needs_both_run_card_fields` (`vibegraph-lib/src/hadronic.rs`, banked unit test) | **yes**, and it additionally pins that a card setting `tmin_for_channel` is refused upstream |
+| 6 | `the_clustered_rows_that_cannot_move_are_bit_identical` | — | **no**. The measurement exists as `probe_cluster_scale_spread_over_configurations` (both `validate_sigma.rs` and `validate_hadronic.rs`, `--ignored`) but it *reports* the spreads and asserts nothing about the rows that read zero. Promoting it means asserting `spread == 0.0` on the named rows; what keeps it out of the banked layer as written is that it builds sixteen fixed-beam integrands |
+| 7 | the rider's cell and the artifact refusal | `a51c258`, `0440769` | **yes** |
+
+The two gaps are stated rather than papered over. Item 1's frequency half is
+blocked on observability: no public API reports *which* configuration was drawn,
+only the scale it implies, and two configurations may share a scale — so the
+frequency law cannot be measured from outside. Exposing the drawn configuration
+would unblock item 1's second half and item 6 at once, and is the natural next
+increment.
+
+#### Open items
+
+* **`pp_to_jj`'s across-group spread is `4.999999e-7`**, against a within-group
+  spread of exactly zero on all eight groups. Nothing in this chain moves the
+  group, so the row is bit-identical and stays so; but two groups of a `2 → 2`
+  agreeing on the scale only to seven digits is larger than rounding and is the
+  size of the effect a §B.4-style change would expose.
+* **Rows with no prescription record a run-card `SCALUP` and `AQCDUP = 0`**
+  (`vibegraph-cli/src/generate.rs`, the `None` arm), while MadGraph's own
+  `ee_to_mumua` events carry a clustered, channel-dependent `SCALUP` — 370 of
+  10 000 in a channel other than the first, which `validate_scales` replays
+  correctly. The σ is right, because nothing reads the scale; the *records* are
+  not MadGraph's. No `samples` cell compares `SCALUP`, so no gate sees it.
+* **The draw is noisier at low budget**, as §B.11 predicted. `pp_to_llj_dyn`'s
+  `75k` rung scatters at `χ²/dof 6.38` over five seeds where the pre-draw ladder
+  never exceeded `1.90`. It falls to `0.82`, `0.65`, `0.30` on the next three
+  rungs, so it is that rung being under-budget rather than a property of the
+  estimator — but a row gated at a budget near `75k` would feel it.
+* **`scale_draw_fallbacks()` is observable but unobserved.** Both integrands
+  count the points whose `AMP2` carried no probability; nothing reads the
+  counter. It is expected to be zero on any run that produces anything.
+* **The mirror ordering is still a third axis.** `shape` draws one configuration
+  per point from the direct ordering's momenta and applies the resulting scale to
+  both orderings. §B.11 names the falsifier — σ must not move outside Monte Carlo
+  when the draw is formed from the luminosity-weighted combination — and it is
+  not measured here.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
