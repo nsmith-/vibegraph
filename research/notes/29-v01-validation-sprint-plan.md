@@ -1201,6 +1201,91 @@ locations:
   Z peak, or a per-channel comparison against `G6`/`G8`'s banked terms, which
   carry 53.6% of σ and dominate exactly this region.
 
+### m(mumu) secondary axis
+
+§D.2's secondary axis, frozen there with edges `0, 60, 86, 96, 200, 500` and
+explicitly carrying no verdict. Dropped for time during the main measurement; run
+afterwards because the D6-class `W3`/`W4` finding needs a discriminator, and
+`pt(γ)` cannot supply one — `η(γ)` smears an on-shell-Z event across most of the
+`pt(γ)` range, whereas `m(μμ)` resolves the Breit–Wigner directly.
+
+**Pre-registered before running, and binding on the reading below: whatever this
+table shows it maps to NO decision-rule row. It is localisation evidence for the
+D6 finding and nothing else. D1 stands, the `W3`/`W4` item stays a recorded
+D6-class subsidiary finding, and no verdict in this chain moves.**
+
+`MG-part` via `dummy_cuts` on externals 3 and 4 (`IDUP = -13, 13`, asserted from
+`leshouche.inc`), 3 seeds × `nevents = 100000` — this axis carries no verdict, so
+three seeds suffice. `VG-part` is accumulated on the *same draws* as the `pt(γ)`
+split, five seeds at the gate budget, so any difference between the two tables is
+the projection and not the sample.
+
+```
+WINDOWS="1 2 3 4 5" SEEDS="20260803 20260804 20260805" \
+  pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage mll-371
+```
+
+| `m(μμ)` | `MG-part` (3 seeds) | `VG-part` (5 seeds) | `Δ` | quoted σ | spread σ | MG share |
+|---|---|---|---|---|---|---|
+| `[0, 60)` | `5.431867e-3` ± 3.341e-6 | `5.428301e-3` ± 2.308e-5 | −0.066% | −0.15 | −0.19 | 5.40% |
+| `[60, 86)` | `4.510933e-3` ± 1.569e-6 | `4.498985e-3` ± 2.554e-5 | −0.265% | −0.47 | −0.41 | 4.48% |
+| **`[86, 96)` (Z peak)** | `4.408767e-2` ± 1.289e-5 | `4.414335e-2` ± 4.478e-5 | **+0.126%** | **+1.19** | **+1.14** | **43.80%** |
+| `[96, 200)` | `1.171800e-2` ± 4.570e-6 | `1.172257e-2` ± 3.565e-5 | +0.039% | +0.13 | +0.12 | 11.64% |
+| `[200, 500)` | `3.490667e-2` ± 1.867e-5 | `3.487814e-2` ± 8.092e-5 | −0.082% | −0.34 | −0.36 | 34.68% |
+
+Seed clouds are healthy on both sides on this axis (MadGraph χ²/dof 0.32–1.84,
+ours 0.63–1.46) — none of the 3.5–4.3 inflation the `pt(γ)` windowed clouds
+showed.
+
+> **The two integrands agree in every `m(μμ)` window**, worst pull 1.19σ, and the
+> largest single window — the Z peak carrying 43.8% of σ — agrees to
+> `+0.126% ± 0.106%`. Summed: `VG 1.006713e-1` against `Σ MG-part(m) 1.006551e-1`,
+> **`+0.016% ± 0.107%`**.
+
+**The `W3`/`W4` question is answered: the excess sits OFF the resonance's
+normalisation.** `[86, 96)` is where a resonance-mapping or width disagreement
+would have to appear, and it agrees to a tenth of a percent. So the ~0.9–1.2%
+`pt(γ)` excess in `[39.4, 77)` and `[77, 144)` is not the Z propagator, not the
+width, and not the radiative-return normalisation.
+
+**And the axis exposes something larger, which needs recording even though it
+keys nothing.** Both partitions cover the phase space completely (`pt(γ) ∈
+[10, 250)` from the cut to `√s/2`; `m(μμ) ∈ [0, 500)` from threshold to `√s`), and
+both are imposed the same way, through `dummy_cuts` after every other cut. They
+do not agree with each other:
+
+| | Δ | σ |
+|---|---|---|
+| `Σ MG-part(pt_a)` − MG control | +0.134% | **+3.08** |
+| `Σ MG-part(m_mumu)` − MG control | **+0.667%** | **+15.05** |
+| `Σ MG-part(m_mumu)` − `Σ MG-part(pt_a)` | +0.532% | **+16.70** |
+| VG total − `Σ MG-part(m_mumu)` | +0.016% | +0.16 |
+| VG total − MG control | +0.683% | +6.41 |
+
+Two complete `dummy_cuts` partitions of one MadGraph run's own phase space differ
+from each other by **16.7σ**, and both exceed the unwindowed control. This is a
+statement about MadGraph that needs no reference to this side at all. It is D1's
+own signature — the reference's partition exceeding its own unwindowed integral —
+at **five times the size** the `pt(γ)` axis measured, and it recovers essentially
+exactly this side's number: **when MadGraph re-integrates its own phase space in
+`m(μμ)` slices, the entire +0.68% disagreement disappears (+0.016%, 0.16σ).**
+
+For whoever picks up the D6 item, that reframes it. Windowing in `pt(γ)` — by
+`dummy_cuts` *or* by run-card `pta`/`ptamax`, which the W3 refocus showed give the
+same answer — leaves MadGraph low in the radiative-return region; windowing the
+same phase space in `m(μμ)` does not. The discriminating variable is which
+observable the window is cut in, not whether the generator re-surveys. That points
+at MadGraph's coverage in the `pt(γ)`/`η(γ)` plane rather than at either side's
+matrix element (gated to 1e-11) or at the Z propagator. The cheapest next probe is
+the two-dimensional one this chain never took: `MG-part` on `[39.4, 77) × [86, 96)`
+against the same cell on this side, which separates "our `η(γ)` distribution at
+fixed `m(μμ)` differs" from "MadGraph's `pt(γ)`-restricted runs under-recover".
+
+Blind spot, stated because it is the reason this axis carries no verdict: `VG-part`
+closes on both axes by construction (same draws), so nothing here audits *this*
+side's coverage. `C_VG` on the `pt(γ)` axis (§D.M5) remains the only coverage audit
+this side has.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
