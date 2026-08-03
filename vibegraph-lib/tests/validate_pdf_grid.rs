@@ -158,6 +158,19 @@ fn load_set(oracle: &Oracle) -> PdfSet {
     })
 }
 
+/// The member at the level the set's own `.info` resolves — what MadGraph
+/// itself reads through LHAPDF.
+fn load_member(oracle: &Oracle) -> vibegraph::pdf::PdfMember {
+    let set = load_set(oracle);
+    set.member(oracle.member).expect("member load")
+}
+
+/// The same member with any positivity clamp stripped, for comparisons
+/// against `xf_raw` — LHAPDF's continuation before its own clamp runs.
+fn load_unclamped_member(oracle: &Oracle) -> vibegraph::pdf::PdfMember {
+    load_member(oracle).with_force_positive(0)
+}
+
 fn rel_close(a: f64, b: f64) -> bool {
     (a - b).abs() <= REL_TOL * a.abs().max(b.abs()).max(f64::MIN_POSITIVE)
 }
@@ -485,22 +498,25 @@ fn multigrid_on_knot_values_match_oracle_exactly() {
     eprintln!("multigrid: checked {checked} on-knot points against the LHAPDF oracle");
 }
 
-/// This set carries `ForcePositive: 2` in its `.info`, so LHAPDF clamps its
-/// interpolated x·f up to a ~1e-10 floor; vibegraph applies no such clamp,
-/// evaluating the raw log-bicubic. The two therefore diverge only where the
-/// PDF is physically negligible (heavy-flavor tails at large x, where x·f
-/// underflows the floor) — a clamp the gate deliberately does not test. The
-/// `atol` screens exactly that sub-floor region; every physical value (≳1e-4
-/// at these points) is compared at full relative precision. Blind spot: the
-/// gate does not verify LHAPDF's positivity clamp, which vibegraph omits by
-/// design.
+/// This set carries `ForcePositive: 2` in its `.info`, and this crate now
+/// applies that clamp too. The screen still earns its keep: this crate's raw
+/// log-bicubic and LHAPDF's own interpolated value are computed by
+/// independent arithmetic, so on a value close enough to the `1e-10` floor
+/// the two could round to opposite sides of it and clamp (or not) differently
+/// even though both algorithms agree to their usual precision. `atol` absorbs
+/// exactly that straddle band; every physical value (≳1e-4 at these points)
+/// is compared at full relative precision regardless. Measured on
+/// `oracle_multigrid.json`: the smallest in-range value strictly above the
+/// floor is `1.1039e-10` (10.4% above it) and 84 in-range points sit exactly
+/// at the floor, so nothing in this probe set is within nine orders of the
+/// straddle — `an_in_grid_value_lhapdf_floors_is_floored_here_too` is what
+/// pins the floored points exactly rather than through this screen.
 const FORCE_POSITIVE_FLOOR: f64 = 1e-8;
 
 #[test]
 fn multigrid_off_knot_interpolation_matches_lhapdf() {
     let oracle = load_multigrid_oracle();
-    let set = load_set(&oracle);
-    let member = set.member(oracle.member).expect("member load");
+    let member = load_member(&oracle);
     let worst = worst_in_category(&member, &oracle, "off_knot", FORCE_POSITIVE_FLOOR);
     assert!(worst <= 1e-9, "off_knot worst rel {worst:.3e} exceeds 1e-9");
 }
@@ -522,8 +538,7 @@ fn multigrid_seam_interpolation_matches_lhapdf() {
         "expected ≥1 internal seam, got {}",
         oracle.seams.len()
     );
-    let set = load_set(&oracle);
-    let member = set.member(oracle.member).expect("member load");
+    let member = load_member(&oracle);
     let worst = worst_in_category(&member, &oracle, "seam", FORCE_POSITIVE_FLOOR);
     assert!(worst <= 1e-9, "seam worst rel {worst:.3e} exceeds 1e-9");
 }
@@ -536,8 +551,7 @@ fn multigrid_seam_interpolation_matches_lhapdf() {
 #[test]
 fn multigrid_value_is_continuous_across_seams() {
     let oracle = load_multigrid_oracle();
-    let set = load_set(&oracle);
-    let member = set.member(oracle.member).expect("member load");
+    let member = load_member(&oracle);
     let x = 0.05_f64;
     for &seam in &oracle.seams {
         let below = seam * (1.0 - 1e-7);
@@ -735,8 +749,7 @@ fn extrapolation_matches_lhapdf_past_every_grid_boundary() {
             oracle.extrapolator, "continuation",
             "{name}: dumped from a set LHAPDF continued some other way"
         );
-        let set = load_set(&oracle);
-        let member = set.member(oracle.member).expect("member load");
+        let member = load_unclamped_member(&oracle);
         assert!(
             !oracle.extrapolated.is_empty(),
             "{name}: carries no out-of-grid probes; regenerate with \
@@ -808,8 +821,7 @@ fn extrapolation_matches_lhapdf_past_every_grid_boundary() {
 fn the_branch_of_the_upper_continuation_is_the_one_the_endpoint_values_select() {
     for name in ["oracle.json", "oracle_multigrid.json"] {
         let oracle = load_oracle_named(name);
-        let set = load_set(&oracle);
-        let member = set.member(oracle.member).expect("member load");
+        let member = load_unclamped_member(&oracle);
         let top = member.subgrids.last().expect("at least one subgrid");
         let q2_max = *top.q2.last().unwrap();
         let q2_max1 = top.q2[top.q2.len() - 2];
@@ -864,18 +876,23 @@ fn the_branch_of_the_upper_continuation_is_the_one_the_endpoint_values_select() 
     }
 }
 
-/// The set's positivity clamp, which this crate does not apply, is the only
-/// thing standing between the continuation and the number MadGraph sees.
+/// The set's positivity clamp is the only thing standing between the
+/// continuation and the number MadGraph sees, and this crate now applies it.
 ///
 /// `xf_raw` is `Extrapolator::extrapolateXQ2` and `xf` is `PDF::xfxQ2` on the
-/// same point; the difference is `ForcePositive` and nothing else. Pinning that
-/// relationship makes the omission a stated, measured blind spot — vibegraph
-/// evaluates the unclamped continuation, and this says exactly what that costs
-/// and where (a floor of `1e-10` on a set carrying `ForcePositive: 2`).
+/// same point; the difference is `ForcePositive` and nothing else. This pins
+/// both sides of that relationship: the oracle-internal one (`xf ==
+/// clamp(xf_raw)`, which fixes what LHAPDF itself does) and this crate's own
+/// (a clamped member's reading equals `xf` wherever the clamp fired, and
+/// equals the unclamped reading — bit for bit — wherever it did not), so the
+/// clamp is pinned at the wrong-level, wrong-branch and unconditional-clamp
+/// failure modes and not merely at "some value moved."
 #[test]
 fn the_only_difference_from_madgraphs_own_value_is_the_positivity_clamp() {
     for name in ["oracle.json", "oracle_multigrid.json"] {
         let oracle = load_oracle_named(name);
+        let clamped_member = load_member(&oracle);
+        let unclamped_member = load_unclamped_member(&oracle);
         let mut clamped = 0usize;
         let mut worst_clamped = 0.0f64;
         for probe in &oracle.extrapolated {
@@ -891,10 +908,51 @@ fn the_only_difference_from_madgraphs_own_value_is_the_positivity_clamp() {
                  {} (pdg={} x={} Q²={})",
                 oracle.force_positive, probe.pdg, probe.x, probe.q2
             );
+
+            let got_clamped: f64 = clamped_member
+                .try_xfx_q2(probe.pdg, probe.x, probe.q2)
+                .unwrap_or_else(|e| panic!("{name}: clamped member refused a probe: {e}"));
+            let got_unclamped: f64 = unclamped_member
+                .try_xfx_q2(probe.pdg, probe.x, probe.q2)
+                .unwrap_or_else(|e| panic!("{name}: unclamped member refused a probe: {e}"));
+
             if probe.xf != probe.xf_raw {
                 clamped += 1;
                 worst_clamped = worst_clamped.max(probe.xf_raw.abs());
+                assert_eq!(
+                    got_clamped, probe.xf,
+                    "{name}: this crate's clamped reading misses LHAPDF's xfxQ2 at \
+                     pdg={} x={} Q²={}",
+                    probe.pdg, probe.x, probe.q2
+                );
+            } else {
+                assert_eq!(
+                    got_clamped, got_unclamped,
+                    "{name}: the clamp fired where LHAPDF's own did not, at \
+                     pdg={} x={} Q²={}",
+                    probe.pdg, probe.x, probe.q2
+                );
             }
+        }
+        match name {
+            "oracle.json" => {
+                assert_eq!(
+                    oracle.extrapolated.len(),
+                    1190,
+                    "{name}: probe count moved, re-check the expected clamp count"
+                );
+                assert_eq!(clamped, 0, "{name}: expected no clamped probes (ForcePositive 0)");
+            }
+            "oracle_multigrid.json" => {
+                assert_eq!(
+                    oracle.extrapolated.len(),
+                    935,
+                    "{name}: probe count moved, re-check the expected clamp count"
+                );
+                assert_eq!(clamped, 205, "{name}: expected 205 clamped probes");
+                assert!(clamped > 0, "{name}: the clamp count must not go vacuous");
+            }
+            other => panic!("unexpected oracle file {other}"),
         }
         println!(
             "{name}: ForcePositive {} clamps {clamped}/{} out-of-grid probes, \
@@ -902,6 +960,81 @@ fn the_only_difference_from_madgraphs_own_value_is_the_positivity_clamp() {
             oracle.force_positive,
             oracle.extrapolated.len()
         );
+    }
+}
+
+/// The resolved `ForcePositive` level, pinned against LHAPDF's own
+/// `PDFInfo → PDFSet → Config` chain rather than left as a reading of a
+/// config file.
+///
+/// Blind spot: a level that is wrong identically on both sides — a `.info`
+/// and a resolved value that agree with each other but not with what
+/// MadGraph's own PDF call links — is invisible here; that would need a
+/// probe from MadGraph's own PDF call, which no oracle in this tree carries.
+#[test]
+fn the_clamp_level_is_the_one_lhapdf_resolved() {
+    for name in ["oracle.json", "oracle_multigrid.json"] {
+        let oracle = load_oracle_named(name);
+        let set = load_set(&oracle);
+        assert_eq!(
+            set.info.force_positive, oracle.force_positive,
+            "{name}: this crate's ForcePositive reading ({}) disagrees with \
+             LHAPDF's own resolved value ({})",
+            set.info.force_positive, oracle.force_positive
+        );
+    }
+}
+
+/// LHAPDF floors any *in-range* interpolated value below `1e-10` under
+/// `ForcePositive: 2`; this crate's own clamp must reproduce every one of
+/// those floors exactly.
+///
+/// Blind spot: the oracle carries no unclamped in-range value, so a point
+/// both libraries wrongly floor — a real density that dips below `1e-10` —
+/// is invisible here. Only the out-of-grid probes carry both `xf` and
+/// `xf_raw`, and this test does not touch them; that comparison is
+/// `the_only_difference_from_madgraphs_own_value_is_the_positivity_clamp`.
+#[test]
+fn an_in_grid_value_lhapdf_floors_is_floored_here_too() {
+    for name in ["oracle.json", "oracle_multigrid.json"] {
+        let oracle = load_oracle_named(name);
+        let clamped_member = load_member(&oracle);
+        let unclamped_member = load_unclamped_member(&oracle);
+        let mut floored = 0usize;
+        let mut smallest_margin = f64::INFINITY;
+        for p in &oracle.points {
+            if p.xf != 1e-10 {
+                continue;
+            }
+            floored += 1;
+            let got: f64 = clamped_member.xfx_q2(p.pdg, p.x, p.q2);
+            assert_eq!(
+                got, 1e-10,
+                "{name}: LHAPDF floors pdg={} x={} Q²={} to 1e-10 but this crate reads \
+                 {got:.17e}",
+                p.pdg, p.x, p.q2
+            );
+            let unclamped: f64 = unclamped_member.xfx_q2(p.pdg, p.x, p.q2);
+            let margin = (unclamped - 1e-10).abs() / 1e-10;
+            smallest_margin = smallest_margin.min(margin);
+        }
+        match name {
+            "oracle.json" => {
+                assert_eq!(floored, 0, "{name}: expected no in-range floored points")
+            }
+            "oracle_multigrid.json" => {
+                assert!(floored > 0, "{name}: expected some in-range floored points")
+            }
+            other => panic!("unexpected oracle file {other}"),
+        }
+        if floored > 0 {
+            println!(
+                "{name}: {floored} in-range points floored to 1e-10, smallest \
+                 unclamped margin {smallest_margin:.3e}"
+            );
+        } else {
+            println!("{name}: no in-range points floored to 1e-10");
+        }
     }
 }
 
@@ -927,8 +1060,7 @@ fn the_only_difference_from_madgraphs_own_value_is_the_positivity_clamp() {
 fn the_upper_continuation_misses_lhapdf_by_one_ulp_of_its_own_conditioning() {
     for name in ["oracle.json", "oracle_multigrid.json"] {
         let oracle = load_oracle_named(name);
-        let set = load_set(&oracle);
-        let member = set.member(oracle.member).expect("member load");
+        let member = load_unclamped_member(&oracle);
         let top = member.subgrids.last().expect("at least one subgrid");
         let q2_max = *top.q2.last().unwrap();
         let q2_max1 = top.q2[top.q2.len() - 2];
