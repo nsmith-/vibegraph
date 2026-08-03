@@ -135,15 +135,18 @@ const PULL_LIMIT: f64 = 3.5;
 /// comparison does not have, and tightening the budget would eventually fail a
 /// row that had not moved.
 ///
-/// These two are that case, and nothing else here is. Their cluster scale depends
-/// on which integration channel is named — `μR` spreads by a factor of two over
-/// their sampling channels, where every other row's spread is exactly zero
-/// (`the_sampled_channel_reaches_the_cluster_scale`) — so their σ depends on the
-/// channel partition it was integrated with, at a size
-/// `probe_channel_partition_moves_sigma` measures directly. `rel_tol` is set at
-/// that ambiguity, and the seed sweep and `χ²/dof` are what say the number is
-/// stable; those three are the criteria, and the pull is printed beside them.
-const PULL_REPORTED_NOT_ASSERTED: [&str; 2] = ["gu_to_epemu", "gux_to_epemux"];
+/// No row is that case now. The two that were — `gu_to_epemu` and
+/// `gux_to_epemux`, whose cluster scale spreads by a factor of two over their
+/// integration configurations — carried a systematic while their scale was read
+/// in the channel the *sampler* drew the point in. Each point's configuration is
+/// now drawn from its own squared amplitudes, and what is left on both rows is
+/// Monte Carlo: five seeds at the gate budget and at four times it scatter about
+/// zero at `|pull| ≤ 0.67` with `χ²/dof` in `0.58`–`1.74`, worst `|rel|` `1.5e-3`
+/// against a reference whose own error is `1.8e-3` and `2.0e-3`.
+///
+/// The list is kept because the distinction it draws is the one to make when a
+/// row's residual stops shrinking, not because it is expected to stay empty.
+const PULL_REPORTED_NOT_ASSERTED: [&str; 0] = [];
 
 /// Fixed RNG seed — makes the integral (and hence the pull) reproducible.
 const SEED: u64 = 20_260_719;
@@ -342,32 +345,31 @@ fn plan_for(dir: &str) -> Plan {
             rel_tol: 0.01,
         },
         // A gluon beam, where 7204 and 7231 of 10 000 banked events land on a
-        // channel other than the first. These two carried a −5.5% deficit while
-        // the scale was read in channel 1 on every point; reading it in the
-        // sampled one leaves +1.07e-2 and +9.74e-3 (five seeds each, worst
-        // 1.16e-2 / 1.02e-2, and +1.13e-2 / +1.03e-2 at four times the budget —
-        // a bias, not sampling).
+        // channel other than the first, and the only two fixed-energy rows whose
+        // cluster scale depends on which integration configuration is named —
+        // `μR` and both `μF` spread by 9.96e-1 over their four configurations at
+        // one point, where every other clustered row's spread is exactly zero.
         //
-        // What is left is the *channel partition*, and it is measured rather
-        // than assumed. Once the scale reads the integration channel, σ stops
-        // being independent of the selection weights: αⱼ decides which scale a
-        // region is evaluated at, not only how often it is visited. Moving from
-        // the converged α to a uniform one (`probe_channel_partition_moves_sigma`)
-        // moves these two by −1.48e-2 and −1.53e-2 against a Monte-Carlo error
-        // of 1.6e-3, while it moves the two rows above by +1.0e-3 and +1.9e-3 —
-        // their own noise, since no channel moves their scale. MadGraph's σ lies
-        // *inside* the interval our two partitions span (+1.08e-2 at the
-        // converged α, −4.2e-3 at uniform on `gu_to_epemu`), and MadEvent's own
-        // partition is a third one: single-diagram enhancement weights channel c
-        // by `AMP2_c/Σ AMP2`, which is not reachable from either of ours.
+        // That made them the two rows a *partition* choice could move, and while
+        // the scale was read in the channel the sampler drew the point in they
+        // carried +1.07e-2 and +9.74e-3 with the converged α against −4.2e-3 and
+        // −5.7e-3 at a uniform one: a 1.5% ambiguity, measured directly by
+        // `probe_channel_partition_moves_sigma` against a 1.6e-3 Monte-Carlo
+        // error. Drawing each point's configuration from its own `AMP2` instead
+        // — MadEvent's own rule — collapses that gap to +1.87e-3 and +1.49e-3,
+        // its own noise, and brings the rows to +3.98e-5 and −1.10e-3 of the
+        // reference.
         //
-        // So `rel_tol` 0.02 is the scale of that ambiguity with headroom over the
-        // worst measured 1.20e-2 — the algorithm's own error, not the
-        // reference's 0.18% and not a bound fitted to one number.
+        // `rel_tol` 0.005 is set from the larger of the reference's own
+        // Monte-Carlo error (0.18% and 0.20%) and the measured five-seed spread
+        // (worst |rel| 1.35e-3 and 1.51e-3 at this budget, 1.53e-3 and 1.20e-3 at
+        // four times it — `probe_llj_parton_seed_stability`), with headroom over
+        // both. It is not fitted to the achieved central value, which is smaller
+        // than either.
         "gu_to_epemu" | "gux_to_epemux" => Plan::Gate {
             neval: 60_000,
             niter: 8,
-            rel_tol: 0.02,
+            rel_tol: 0.005,
         },
         // ── 2->6, not integrated ────────────────────────────────────────────
         "uux_to_ccx_emmm_qcd0" | "bbx_to_ccx_emmm_qcd0" => {
