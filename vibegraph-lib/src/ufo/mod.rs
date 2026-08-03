@@ -105,6 +105,11 @@ pub enum UfoError {
     Vertex(#[from] VertexError),
     #[error("FeynGraph model error: {0}")]
     FeynGraph(#[from] topo::TopoError),
+    #[error(
+        "custom UFO propagators are not supported: '{file}' defines propagator \
+         forms this loader does not read"
+    )]
+    UnsupportedPropagators { file: String },
 }
 
 /// A UFO model with all topology and field/parameter/coupling information loaded.
@@ -146,6 +151,13 @@ impl ParsedModel {
     /// Parse a UFO model directory into its pre-restriction form: no vertex
     /// pruning, no topology model.
     pub fn parse(path: &Path) -> Result<Self, UfoError> {
+        let propagators_path = path.join("propagators.py");
+        if propagators_path.exists() {
+            return Err(UfoError::UnsupportedPropagators {
+                file: propagators_path.display().to_string(),
+            });
+        }
+
         let read = |name: &str| -> Result<String, UfoError> {
             std::fs::read_to_string(path.join(name)).map_err(|e| UfoError::Io {
                 file: path.join(name).display().to_string(),
@@ -634,6 +646,50 @@ mod tests {
         // Verify the new index-based lookup
         let e_id = model.particle_id("e-");
         assert!(e_id.is_some(), "e- not found in particle index");
+    }
+
+    #[test]
+    fn propagators_py_present_is_rejected() {
+        let dir = std::env::temp_dir().join(format!(
+            "vibegraph-ufo-propagators-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in REQUIRED_SOURCE_FILES.iter().chain(["propagators.py"].iter()) {
+            std::fs::write(dir.join(name), "").unwrap();
+        }
+
+        let result = ParsedModel::parse(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("expected UnsupportedPropagators error"),
+        };
+        assert!(matches!(err, UfoError::UnsupportedPropagators { .. }));
+        assert!(err
+            .to_string()
+            .contains("custom UFO propagators are not supported"));
+    }
+
+    #[test]
+    fn propagators_py_absent_still_parses() {
+        let dir = std::env::temp_dir().join(format!(
+            "vibegraph-ufo-no-propagators-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in REQUIRED_SOURCE_FILES.iter() {
+            std::fs::write(dir.join(name), "\n").unwrap();
+        }
+
+        let result = ParsedModel::parse(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        match result {
+            Ok(_) => {}
+            Err(e) => assert!(!matches!(e, UfoError::UnsupportedPropagators { .. })),
+        }
     }
 
     #[test]
