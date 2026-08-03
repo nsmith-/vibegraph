@@ -31,6 +31,11 @@ pub enum ParseError {
     UnclosedLoopSpec(String),
     #[error("malformed particle token '{0}'")]
     BadParticleTok(String),
+    #[error(
+        "decay-chain process syntax is not supported: '{0}' separates a hard \
+         process from a decay chain with ','"
+    )]
+    DecayChainUnsupported(String),
 }
 
 // ── Options ───────────────────────────────────────────────────────────────────
@@ -259,6 +264,14 @@ pub fn parse_proc_card(content: &str, opts: &ParsingOptions) -> Result<ParsedPro
 /// Parse a single MadGraph process string (e.g. `"p p > e+ e- j QCD<=2 @1"`).
 pub fn parse_process_string(s: &str, opts: &ParsingOptions) -> Result<ProcessSpec, ParseError> {
     let mut line = s.trim().to_owned();
+
+    // Step 0: reject decay-chain syntax outright. ',' has no other meaning
+    // anywhere in this grammar, so its presence unambiguously marks a decay
+    // chain rather than a hard process. Checked before any stripping so it
+    // fires regardless of where the comma sits relative to @N/[...]/$$/$//.
+    if line.contains(',') {
+        return Err(ParseError::DecayChainUnsupported(line));
+    }
 
     // Step 1: strip process tag @N
     let tag = strip_proc_tag(&mut line)?;
@@ -746,6 +759,28 @@ mod tests {
     fn test_forbidden_onsh_s_channel() {
         let p = parse("p p > e+ e- $ Z");
         assert_eq!(p.forbidden_onsh_s_channels, vec!["Z"]);
+    }
+
+    #[test]
+    fn decay_chain_comma_is_rejected() {
+        let result = parse_process_string("p p > t t~, t > w+ b", &opts());
+        assert!(matches!(result, Err(ParseError::DecayChainUnsupported(_))));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("decay-chain process syntax is not supported"));
+    }
+
+    #[test]
+    fn decay_chain_comma_after_tag_is_rejected() {
+        let result = parse_process_string("p p > t t~, t > w+ b @1", &opts());
+        assert!(matches!(result, Err(ParseError::DecayChainUnsupported(_))));
+    }
+
+    #[test]
+    fn comma_free_processes_still_parse() {
+        parse("p p > e+ e- $$ Z");
+        parse("p p > e+ e- [QCD]");
     }
 
     #[test]
