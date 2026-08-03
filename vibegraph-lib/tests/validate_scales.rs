@@ -65,7 +65,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use vibegraph::coupling::alphas::{asmz_from_param_card, RunningAlphaS};
+use vibegraph::coupling::alphas::{asmz_from_param_card, AlphaSSource, RunningAlphaS};
 use vibegraph::coupling::cluster::configs::{derive_channels_permuted, DerivedChannels};
 use vibegraph::coupling::cluster::graph::ColorTable;
 use vibegraph::coupling::scales::{
@@ -158,9 +158,12 @@ const UNREPLAYABLE_RUNS: &[&str] = &["bbx_to_ccx_emmm_qcd0", "uux_to_ccx_emmm_qc
 /// The runs whose `αs` MadGraph reads out of the PDF grid rather than solving
 /// for: with `pdlabel = lhapdf` it links `alfas_functions_lhapdf.f`, whose
 /// `ALPHAS(Q)` forwards to LHAPDF's `alphasPDF(Q)`. `RunningAlphaS` refuses
-/// those cards, so every `AQCDUP` oracle here has to step over them —
-/// [`the_grid_alpha_s_runs_are_refused_for_a_measurable_reason`] is what keeps
-/// the step from being a convenience.
+/// those cards, so [`AlphaSSource::from_run_card`] takes its grid arm for
+/// them instead of its evolution one — the classification is now of which
+/// arm a run takes rather than of which runs a plain `RunningAlphaS` oracle
+/// has to skip. [`the_grid_runs_need_the_grids_alpha_s_and_not_the_parameter_cards`]
+/// is what keeps the classification from being a convenience: the parameter
+/// card's own `αs(M_Z)` is not an interchangeable substitute for the grid's.
 const GRID_ALPHA_S_RUNS: &[&str] = &[
     "pp_to_bb_fixed",
     "pp_to_jj",
@@ -790,14 +793,15 @@ fn checks(
 /// [`RunningAlphaS`] and landing inside the field's printing budget therefore
 /// confirms the scale independently of the field that names it.
 ///
-/// Runs listed in [`GRID_ALPHA_S_RUNS`] cannot take part: their `αs` comes
-/// from the PDF grid, not from this evolution.
+/// Runs listed in [`GRID_ALPHA_S_RUNS`] take part through the grid arm of
+/// [`AlphaSSource`] rather than the evolution: the reading their beams' PDF
+/// set was fitted with, which closes cluster scale → `μR` → `αs(μR)` in one
+/// per-event comparison for them too instead of skipping them.
 #[test]
 fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
     let mut runs_checked = 0usize;
     let mut events_checked = 0usize;
     let mut worst = (0.0f64, String::new());
-    let mut grid_alpha_s: Vec<String> = Vec::new();
 
     let runs = banked_runs();
     for (name, run) in &runs {
@@ -810,17 +814,12 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
         let choice = ScaleChoice::from_run_card(&card).expect("compiled");
         let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
         let a_s = params.get("sminputs", &[3]).expect("aS in SMINPUTS");
-        let running = match RunningAlphaS::from_run_card(&card, a_s) {
-            Ok(running) => running,
-            Err(err) => {
-                assert!(
-                    GRID_ALPHA_S_RUNS.contains(&name.as_str()),
-                    "{name}: unexpected alpha_s source refusal: {err}"
-                );
-                grid_alpha_s.push(name.clone());
-                continue;
-            }
-        };
+        let source = AlphaSSource::from_run_card(
+            &card,
+            a_s,
+            common::pdfset::set_alpha_s_info(&card).as_ref(),
+        )
+        .unwrap_or_else(|e| panic!("{name}: alpha_s source: {e}"));
 
         let mut run_worst = 0.0f64;
         let mut outside = 0usize;
@@ -830,10 +829,10 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
             let got = replay(&choice, channels.as_ref(), event);
             let mu_r = got.mu.0[0];
             let spread = got.spread.0[0];
-            let got = aqcdup_from_alpha_s(running.eval(mu_r));
+            let got = aqcdup_from_alpha_s(source.eval(mu_r));
             let moved = [mu_r + spread, mu_r - spread]
                 .into_iter()
-                .map(|q| (aqcdup_from_alpha_s(running.eval(q)) - got).abs())
+                .map(|q| (aqcdup_from_alpha_s(source.eval(q)) - got).abs())
                 .fold(0.0f64, f64::max);
             let budget = printed_half_ulp(event.aqcdup, 7) + moved;
             let fraction = (got - event.aqcdup).abs() / budget;
@@ -857,13 +856,11 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
         runs_checked += 1;
     }
 
-    assert_eq!(grid_alpha_s, present(GRID_ALPHA_S_RUNS, &runs));
-    // Every declared run except the two the LHE cannot replay, the byte-identical
-    // duplicate, and the ones whose coupling comes from a PDF grid.
+    // Every declared run except the two the LHE cannot replay and the
+    // byte-identical duplicate.
     assert_eq!(
         runs_checked,
         present(CLUSTERED_RUNS, &runs).len() + present(FIXED_SCALE_RUNS, &runs).len()
-            - present(GRID_ALPHA_S_RUNS, &runs).len()
     );
     println!(
         "AQCDUP from the computed scale: {events_checked} events across {runs_checked} runs, \
@@ -872,7 +869,10 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
     );
 }
 
-/// The refusal of [`GRID_ALPHA_S_RUNS`] is a measurement, not a convention.
+/// The two arms of [`AlphaSSource`] are not interchangeable on
+/// [`GRID_ALPHA_S_RUNS`], which is the negative control that makes
+/// [`banked_events_reproduce_aqcdup_from_the_computed_scale`]'s agreement on
+/// them informative rather than a foregone conclusion.
 ///
 /// Those runs fix `μR` at the run card's `scale`, which sits within `1e-5`
 /// relative of `M_Z`, so any evolution from `M_Z` to `μR` is negligible at the
@@ -881,9 +881,10 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
 /// without the grid's own running — therefore isolates the grid's override,
 /// and it misses the printed field by well over its printing budget on every
 /// event. Adopting the parameter-card value as an approximation would be a
-/// visible error, which is why the refusal stands rather than a fallback.
+/// visible error, which is why the two arms stay separate rather than one
+/// standing in for the other.
 #[test]
-fn the_grid_alpha_s_runs_are_refused_for_a_measurable_reason() {
+fn the_grid_runs_need_the_grids_alpha_s_and_not_the_parameter_cards() {
     let runs = banked_runs();
     // The argument below reads `AQCDUP` as `αs(M_Z)`, which is only true where
     // the card fixes `μR` there; a grid run at a dynamical scale is separated

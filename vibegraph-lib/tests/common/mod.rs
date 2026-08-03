@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod manifest;
+pub mod pdfset;
 pub mod report;
 
 use std::sync::Arc;
