@@ -107,6 +107,7 @@ use vibegraph::hadronic::{
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
+use vibegraph::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
@@ -847,10 +848,14 @@ fn probe_unweighting_weight_max() {
                     let draws = (WMAX_DRAWS * ch.neval / total_neval).max(MIN_CHANNEL_DRAWS);
                     let mut rng = ChaCha8Rng::seed_from_u64(WMAX_SEED);
                     rng.set_stream(1 + j as u64);
-                    let mut x = vec![0.0; ch.grid.ndim()];
+                    let grid_ndim = ch.grid.ndim();
+                    let mut x = vec![0.0; integ.point_ndim()];
+                    let mut scale_draw =
+                        SubStream::from_stream(WMAX_SEED, SCALE_DRAW_STREAM_BASE + j as u64);
                     let mut w_max = 0.0f64;
                     for _ in 0..draws {
-                        let jac = ch.grid.draw(&mut rng, &mut x);
+                        let jac = ch.grid.draw(&mut rng, &mut x[..grid_ndim]);
+                        scale_draw.fill_uniforms(&mut x[grid_ndim..]);
                         w_max = w_max.max(jac * integ.value_in_channel(j, &x) * GEV2_TO_PB);
                     }
                     w_max_each.push(w_max);
@@ -1062,7 +1067,7 @@ fn the_sampled_channel_reaches_the_cluster_scale() {
             MULTICHANNEL_ITERS,
             None,
             |integ, _| {
-                let ndim = integ.channel_grid_ndim();
+                let ndim = integ.point_ndim();
                 let mut momenta = Vec::new();
                 let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_C4);
                 let mut worst = 0.0f64;
@@ -1188,7 +1193,7 @@ fn probe_cluster_scale_spread_over_configurations() {
                      from different diagram slices, so this sweep is not a sweep over \
                      configurations"
                 );
-                let ndim = integ.channel_grid_ndim();
+                let ndim = integ.point_ndim();
                 let mut momenta = Vec::new();
                 let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_C4);
                 let mut worst = [0.0f64; 3];
@@ -1308,7 +1313,7 @@ fn probe_sampled_channel_cost_in_alpha_s() {
                 let running = integ
                     .alpha_s_source()
                     .expect("a clustered row runs its own coupling");
-                let ndim = integ.channel_grid_ndim();
+                let ndim = integ.point_ndim();
                 let mut momenta = Vec::new();
                 let (mut sum_w, mut sum_wa, mut sum_a) = (0.0f64, 0.0f64, 0.0f64);
                 let mut kept = 0usize;
