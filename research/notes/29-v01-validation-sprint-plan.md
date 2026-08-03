@@ -5340,6 +5340,176 @@ whose own error is `0.22%` and which no scale rule can move.
 * **`validate_samples_proton.rs:14-16` says "Three rows"** and there are four
   (§B.5).
 
+### B-0 output — the baseline, and the pre-registered movement census (2026-08-03)
+
+Implementation session, branch `val4-b` at `1cfd9aa`. No production line changed:
+the two probes below are `--ignored` test code, and the baseline was captured from
+this worktree before either was written.
+
+**The baseline.** `pixi run --skip-deps validate` in the chain-B worktree, then
+`cp -Rc target/validation-report /tmp/valreport-baseline-B`. The run is green and
+its census line is
+
+```
+29 rows × 4 categories = 116 cells: 89 measured in this layer (87 ✅, 2 ⚠️, 4 ⏳, 8 ⛔, 15 — / uncovered).
+```
+
+with `[report] 29 rows x 4 categories: the measured cells are the declared cells`.
+The comparison artifact is 23 `integrals` and 22 `samples` cells; over
+`find integrals samples -type f | sort | xargs shasum -a 256 | shasum -a 256` the
+tree digests to `4bc825da7976dec27bd7ec1a8f9f90b0711a04e2da68606068339ad35a4cd84f`
+(`integrals` alone `762e649d…`, `samples` alone `3d6b511f…`).
+
+#### B-0.1 The μ-spread census
+
+Two probes, both `--ignored`:
+`probe_cluster_scale_spread_over_configurations` in `validate_sigma.rs` for the
+fixed-energy rows and in `validate_hadronic.rs` for the two proton rows. Each
+reports the worst relative spread of `μR` and of both `μF` over *all* integration
+configurations at one cut-passing point, worst over 64 points. The fixed-beam
+sweep runs over sampling channels and is a sweep over configurations because each
+surviving diagram yields exactly one configuration; the probe asserts
+`channel_count() == diagram_count()` so that stays true. The hadronic probe
+rebuilds the clustering from the run card and the groups' own diagrams — the
+proton integrand exposes no accessor for its prescription — and checks that
+reconstruction on every point against the scales the integrand itself recorded,
+which passed on 64/64 points for both rows.
+
+| row | predicted (§B.2) | measured μR spread | measured μF spread | verdict |
+|---|---|---|---|---|
+| `ee_to_ee` | zero (2→2) | **no prescription** | — | cannot move |
+| `ee_to_mumu` | zero (2→2) | **no prescription** | — | cannot move |
+| `ee_to_ttx` | zero (2→2) | **no prescription** | — | cannot move |
+| `ee_to_zh` | zero (2→2) | **no prescription** | — | cannot move |
+| `ee_to_wpwm` | zero (2→2) | **no prescription** | — | cannot move |
+| `uux_to_mumu` | zero (2→2) | **no prescription** | — | cannot move |
+| `ee_to_mumua` | **unknown** | **no prescription** | — | cannot move |
+| `ee_to_tatah` | **unknown** | **no prescription** | — | cannot move |
+| `ee_to_mumu_tata_qcd0` | **unknown** | **no prescription** | — | cannot move |
+| `gg_to_gg` | zero (2→2) | `0.000e0` (3 configs, 1 unmapped) | `0.000e0` | confirmed |
+| `gg_to_ttx` | zero (2→2) | `0.000e0` (3 configs) | `0.000e0` | confirmed |
+| `uux_to_uux` | zero (2→2) | `0.000e0` (2 configs) | `0.000e0` | confirmed |
+| `uux_to_epemg` | zero (§K6.4) | `0.000e0` (4 configs) | `0.000e0` | confirmed |
+| `ddx_to_epemg` | zero (§K6.4) | `0.000e0` (4 configs) | `0.000e0` | confirmed |
+| `gu_to_epemu` | **nonzero** | `9.961e-1` (4 configs) | `9.961e-1` | confirmed mover |
+| `gux_to_epemux` | **nonzero** | `9.961e-1` (4 configs) | `9.961e-1` | confirmed mover |
+| `pp_to_jj` | zero (2→2) | within-group `0.000000e0` | `0.000000e0` | confirmed |
+| `pp_to_llj_dyn` | nonzero | within-group `8.274400e0` | `8.274400e0` | confirmed mover |
+
+**Correction to §B.2's row list.** Nine of the eighteen rows it names as
+"clustered" compile **no per-event prescription at all**. A fixed-energy run whose
+matrix element does not move with `αs` has no consumer for either scale — there is
+no parton density on the beams — so `use_running_coupling` sets `scales = None`
+(`hadronic.rs:992-995`) and returns before `compile_scale_source`. `event_scales`
+then answers `None`, the clustering is never built, and no configuration rule can
+reach the row's σ. That is a stronger statement than zero spread and it covers all
+three rows §B.2 marked genuinely unknown. The criterion §B.2 derived the list from
+— `dynamical_scale_choice = -1` with the `fixed_*_scale` booleans off — is a
+property of the card; whether the prescription is *compiled* is a property of the
+card **and** the matrix element, and only the second is what decides whether a row
+can move.
+
+So the pre-registered **may-move** set is exactly three rows — `gu_to_epemu`,
+`gux_to_epemux`, `pp_to_llj_dyn` — and every other `integrals` row is
+pre-registered **must be bit-identical**, on two distinct grounds: nine because no
+prescription exists, six because every configuration returns one scale, and the
+five fully-fixed rows of §B.2 because they resolve to `Constant`.
+
+**`ee_to_mumua` does not collide with chain D.** Its cluster scale is not
+configuration-dependent; it has no cluster scale. Chain B cannot move the row
+chain D is measuring the drift on, and the two chains are independent.
+
+**`pp_to_jj`'s across-group `5.0e-7`.** Its within-group spread is exactly zero on
+all eight groups, but the spread over *every* `(group, configuration)` pair is
+`4.999999e-7` rather than zero. The groups agree on the scale to seven digits and
+not beyond. Nothing in this chain moves the group, so the row stays pre-registered
+bit-identical; the number is recorded because it is the size of a group-axis
+effect that a §B.4-style change would expose, and it is far too large to be
+rounding of a `2 → 2` scale that ought to be identical.
+
+#### B-0.2 The `pp_to_llj_dyn` group-vs-configuration split
+
+The measurement §B.4 makes B-2 conditional on, taken at the same 64 points:
+
+```
+pp_to_llj_dyn: 6 groups, configs [4, 4, 4, 4, 4, 4] over 64 points |
+  within-group worst spread mu_R 8.274400e0 mu_F1 8.274400e0 mu_F2 8.274400e0 |
+  across-group worst spread mu_R 8.274400e0 mu_F1 8.274400e0 mu_F2 8.274400e0
+pp_to_llj_dyn: per-group worst mu_R spread
+  g0 8.274400e0 | g1 8.274400e0 | g2 8.274400e0 | g3 8.274400e0 | g4 0.000000e0 | g5 0.000000e0
+```
+
+The two numbers are equal to every printed digit, so **the group axis reaches no
+scale the configuration axis inside the sampled group does not already reach**.
+The six groups split four-and-two exactly as the partonic rows do: the four with a
+gluon on a beam carry the whole spread and agree with each other to seven digits
+(their forests are the same topology at different flavours), the two annihilation
+groups carry none — the hadronic image of `gu_to_epemu` at `9.961e-1` against
+`uux_to_epemg` at `0.000e0`.
+
+This is a statement about *range* at 64 points, not about σ. It says a
+configuration draw is not structurally short of reach on this row; it does not say
+the residual will collapse. The rest of §B.4's gate — `probe_llj_dyn_budget_ladder`
+re-run under the draw — is B-1c's and is not answered here.
+
+#### B-0.3 The conjunction gate, per targeted row
+
+`sde_strategy` and `tmin_for_channel` read out of each run's own
+`Cards/run_card.dat`. No card in the set sets `tmin_for_channel`, so every one
+takes the default `-1.0` (`validation/madgraph/runcard_defaults.json:243`,
+transcribed at `vibegraph-lib/src/runcard.rs:596`).
+
+| row | `sde_strategy` | line | `tmin_for_channel` | `∝ AMP2_c` applies |
+|---|---|---|---|---|
+| `ddx_to_epemg` | 1 | `:80` | absent → `-1.0` | yes |
+| `ee_to_ee` | 1 | `:86` | absent → `-1.0` | yes |
+| `ee_to_mumu` | 1 | `:86` | absent → `-1.0` | yes |
+| `ee_to_mumua` | 1 | `:86` | absent → `-1.0` | yes |
+| `ee_to_mumu_tata_qcd0` | **2** | `:86` | absent → `-1.0` | **no** |
+| `ee_to_tatah` | 1 | `:86` | absent → `-1.0` | yes |
+| `ee_to_ttx` | 1 | `:86` | absent → `-1.0` | yes |
+| `ee_to_wpwm` | 1 | `:86` | absent → `-1.0` | yes |
+| `ee_to_zh` | 1 | `:86` | absent → `-1.0` | yes |
+| `gg_to_gg` | 1 | `:80` | absent → `-1.0` | yes |
+| `gg_to_ttx` | 1 | `:80` | absent → `-1.0` | yes |
+| `gu_to_epemu` | 1 | `:82` | absent → `-1.0` | yes |
+| `gux_to_epemux` | 1 | `:82` | absent → `-1.0` | yes |
+| `pp_to_jj` | 1 | `:80` | absent → `-1.0` | yes |
+| `pp_to_llj_dyn` | 1 | `:81` | absent → `-1.0` | yes |
+| `uux_to_epemg` | 1 | `:80` | absent → `-1.0` | yes |
+| `uux_to_mumu` | 1 | `:80` | absent → `-1.0` | yes |
+| `uux_to_uux` | 1 | `:80` | absent → `-1.0` | yes |
+
+§B.1's exception is confirmed and is now inert: `ee_to_mumu_tata_qcd0` is the one
+card at `sde_strategy = 2`, and it is also a row that compiles no prescription. The
+`sde_strategy = 2` branch therefore has **no gated row that exercises it**, which
+makes §B.1's falsifier (a card-level test asserting the prescription reports it is
+not drawing) the only thing that will ever cover it. `ud_to_epemud_qcd0` also
+carries `sde_strategy = 2` (`:82`) and is one of the five fully-fixed rows.
+
+#### B-0.4 The known-wrong informational comparison, re-measured
+
+`probe_channel_partition_moves_sigma`, on this machine, in this worktree:
+
+```
+uux_to_epemg:  adapted alpha 5.567836e-1 ± 6.37e-4 | uniform alpha 5.573665e-1 ± 6.55e-4 | partition gap +1.047e-3 (Monte-Carlo 1.6e-3)
+ddx_to_epemg:  adapted alpha 6.206199e-1 ± 6.28e-4 | uniform alpha 6.217727e-1 ± 7.19e-4 | partition gap +1.857e-3 (Monte-Carlo 1.5e-3)
+gu_to_epemu:   adapted alpha 1.098695e-1 ± 1.15e-4 | uniform alpha 1.082390e-1 ± 1.35e-4 | partition gap -1.484e-2 (Monte-Carlo 1.6e-3)
+gux_to_epemux: adapted alpha 1.099007e-1 ± 1.15e-4 | uniform alpha 1.082211e-1 ± 1.35e-4 | partition gap -1.528e-2 (Monte-Carlo 1.6e-3)
+```
+
+against §B.7's pre-registered `+1.05e-3`, `+1.86e-3`, `−1.48e-2`, `−1.53e-2`. All
+four reproduce, so the environment is the one the bank was taken in and the probe
+is live as this chain's end-to-end signal.
+
+**What the census cannot see.** The points are cut-passing draws from one channel's
+map, so a configuration dependence confined to a region those points miss reads
+zero here; and a spread of zero over configurations does not bound the effect of
+the *mirror* ordering, which `shape` evaluates at the same scale as the direct one
+(§B.11's last risk). Neither is what the pre-registration is used for — it
+predicts which cells may differ, and a cell that moves against it is
+stop-and-report either way.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
