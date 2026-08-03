@@ -2118,7 +2118,7 @@ fn probe_cluster_scale_spread_over_configurations() {
             })
             .collect();
 
-        let ndim = integ.channel_grid_ndim();
+        let ndim = integ.point_ndim();
         let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_C4);
         let (mut within, mut across) = ([0.0f64; 3], [0.0f64; 3]);
         let mut per_group = vec![0.0f64; derived.len()];

@@ -38,6 +38,7 @@ use crate::diagrams::{DiagramError, DiagramSet};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::grid::AlphaSInfo;
+use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
     identical_particle_factor, AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel,
     PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
@@ -136,6 +137,18 @@ pub enum HadronicError {
 pub struct EventScaleSource {
     kind: ScaleSourceKind,
     alpha_s: Option<AlphaSSource>,
+    /// Whether the card's single-diagram enhancement weights an integration
+    /// configuration by its squared amplitude alone.
+    ///
+    /// `matrix1.f`'s `MULTI_CHANNEL` block weights configuration `c` by
+    /// `AMP2_c · CC_c`, and `genps.f`'s `get_channel_cut` returns `CC_c = 1`
+    /// only when `sde_strat == 1` and `tmin_for_channel == -1`. Off that
+    /// conjunction the weight is a product of propagator denominators — at
+    /// `sde_strat == 2` the squared amplitude is discarded outright — and this
+    /// crate has no implementation of it, so the scale keeps the sampler's
+    /// channel there instead of drawing a configuration this rule does not
+    /// describe.
+    amp2_configuration_weights: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -258,6 +271,7 @@ impl EventScaleSource {
                 mu_f: [mu, mu],
             }),
             alpha_s: None,
+            amp2_configuration_weights: false,
         }
     }
 
@@ -289,7 +303,30 @@ impl EventScaleSource {
                 channels: channels.map(Vec::into_boxed_slice),
             }
         };
-        Ok(EventScaleSource { kind, alpha_s })
+        Ok(EventScaleSource {
+            kind,
+            alpha_s,
+            amp2_configuration_weights: card.int("SDE_strategy") == 1
+                && card.float("tmin_for_channel") == -1.0,
+        })
+    }
+
+    /// Whether a point's integration configuration is drawn from the squared
+    /// amplitude rather than taken from the sampling channel it came from.
+    ///
+    /// True only where all three hold: the prescription reads the event at all,
+    /// it consults channel forests (the kT clustering, not one of `setscales.f`'s
+    /// closed forms), and the card's enhancement weight is the squared amplitude
+    /// alone.
+    pub fn draws_configuration(&self) -> bool {
+        self.amp2_configuration_weights
+            && matches!(
+                &self.kind,
+                ScaleSourceKind::PerEvent {
+                    channels: Some(_),
+                    ..
+                }
+            )
     }
 
     /// The scales, when they are the same on every event.
@@ -1374,7 +1411,28 @@ impl<'a> FixedBeamIntegrand<'a> {
         }
     }
 
-    /// The `j`-th term of the channel-split estimator at `u ∈ [0,1]^channel_ndim`,
+    /// The uniforms a point carries beyond its channel's grid coordinates: one for
+    /// the scale prescription's configuration draw where that draw is live, and
+    /// none otherwise.
+    ///
+    /// It is not a grid coordinate. The grids stay over
+    /// [`channel_grid_ndim`](Self::channel_grid_ndim) exactly, so installing the
+    /// draw leaves every trained grid, every channel weight and every point
+    /// sequence what it was.
+    pub fn scale_draw_ndim(&self) -> usize {
+        self.scales
+            .as_ref()
+            .map_or(0, |s| usize::from(s.draws_configuration()))
+    }
+
+    /// The full length of the coordinate slice a point is evaluated at:
+    /// its channel's grid coordinates followed by
+    /// [`scale_draw_ndim`](Self::scale_draw_ndim) trailing uniforms.
+    pub fn point_ndim(&self) -> usize {
+        self.channel_grid_ndim() + self.scale_draw_ndim()
+    }
+
+    /// The `j`-th term of the channel-split estimator at `u ∈ [0,1]^point_ndim`,
     /// in natural units (GeV⁻²): the point is drawn from channel `j` alone and
     /// weighted by `αⱼ/g`, so the sum over channels of these terms' integrals is
     /// the same cross section [`value`](Self::value) integrates from the mixture.
@@ -1383,9 +1441,14 @@ impl<'a> FixedBeamIntegrand<'a> {
     ///
     /// # Panics
     ///
-    /// If `channel` is not a channel index ([`channel_count`](Self::channel_count)).
+    /// If `channel` is not a channel index ([`channel_count`](Self::channel_count)),
+    /// or if `u` is not [`point_ndim`](Self::point_ndim) long. The length is
+    /// asserted rather than tolerated: a driver that handed over only the grid's
+    /// coordinates would silently drop the scale draw and evaluate every point in
+    /// the sampler's own channel, which is a difference no cross section announces.
     pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
-        let point = self.sample_channel(channel, u);
+        let (grid_u, _scale_u) = self.split_point(u);
+        let point = self.sample_channel(channel, grid_u);
         let m2 = self.matrix_element(&point.momenta, channel);
         if m2 == 0.0 {
             return 0.0;
@@ -1401,7 +1464,8 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// trial loop runs on `value_in_channel` and reconstructs an accepted point
     /// through this — the same map at the same `u`, hence the same weight.
     pub fn event_in_channel(&self, channel: usize, u: &[f64], momenta: &mut Vec<V>) -> f64 {
-        let point = self.sample_channel(channel, u);
+        let (grid_u, _scale_u) = self.split_point(u);
+        let point = self.sample_channel(channel, grid_u);
         momenta.clear();
         momenta.extend_from_slice(&point.momenta);
         let m2 = self.matrix_element(&point.momenta, channel);
@@ -1409,6 +1473,20 @@ impl<'a> FixedBeamIntegrand<'a> {
             return 0.0;
         }
         self.prefactor() * point.weight * m2
+    }
+
+    /// Split a point's coordinates into the ones its channel's map consumes and
+    /// the trailing ones the scale prescription does.
+    fn split_point<'u>(&self, u: &'u [f64]) -> (&'u [f64], &'u [f64]) {
+        let grid_ndim = self.channel_grid_ndim();
+        assert_eq!(
+            u.len(),
+            grid_ndim + self.scale_draw_ndim(),
+            "a point is {} map coordinates and {} scale-draw uniforms",
+            grid_ndim,
+            self.scale_draw_ndim()
+        );
+        u.split_at(grid_ndim)
     }
 
     /// Draw the phase-space point channel `channel` maps `u` to, with its weight.
@@ -1559,6 +1637,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     ) -> (Vec<ChannelIntegration>, VegasResult) {
         let alphas = self.channel_alphas();
         let ndim = self.channel_grid_ndim();
+        let point_ndim = self.point_ndim();
         let mut per_channel = Vec::with_capacity(alphas.len());
         for (j, &alpha) in alphas.iter().enumerate() {
             let n_j = if alphas.len() == 1 {
@@ -1570,7 +1649,21 @@ impl<'a> FixedBeamIntegrand<'a> {
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             rng.set_stream(CHANNEL_STREAM_BASE + j as u64);
             rng.set_word_pos(0);
-            let result = grid.adapt(|u| self.value_in_channel(j, u), n_j, niter, &mut rng);
+            // The grid draws its own coordinates; the scale draw's trailing
+            // uniform comes off a stream of its own, so the grid's sequence is
+            // what it would be with no draw installed.
+            let mut scale_draw = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
+            let mut point = vec![0.0; point_ndim];
+            let result = grid.adapt(
+                |u| {
+                    point[..ndim].copy_from_slice(u);
+                    scale_draw.fill_uniforms(&mut point[ndim..]);
+                    self.value_in_channel(j, &point)
+                },
+                n_j,
+                niter,
+                &mut rng,
+            );
             per_channel.push(ChannelIntegration {
                 alpha,
                 neval: n_j,
@@ -1593,6 +1686,10 @@ impl ChannelIntegrand for FixedBeamIntegrand<'_> {
 
     fn channel_grid_ndim(&self) -> usize {
         FixedBeamIntegrand::channel_grid_ndim(self)
+    }
+
+    fn scale_draw_ndim(&self) -> usize {
+        FixedBeamIntegrand::scale_draw_ndim(self)
     }
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
@@ -2278,7 +2375,7 @@ mod tests {
         let mut carried = 0usize;
         let draws = 200usize;
         for i in 0..draws {
-            let u = stream.uniforms::<f64>(integ.channel_grid_ndim());
+            let u = stream.uniforms::<f64>(integ.point_ndim());
             if FixedBeamIntegrand::value_in_channel(&integ, i % integ.channel_count(), &u) > 0.0 {
                 carried += 1;
             }
@@ -2313,7 +2410,7 @@ mod tests {
         let integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, masses, avg);
 
         // One ordinary phase-space point of the flat map.
-        let u: Vec<f64> = (0..integ.channel_grid_ndim())
+        let u: Vec<f64> = (0..integ.point_ndim())
             .map(|k| 0.11 + 0.07 * (k as f64 % 7.0))
             .collect();
         let mut momenta = Vec::new();
@@ -2569,7 +2666,7 @@ mod tests {
 
         assert_eq!(replayed.channel_count(), adapted.channel_count());
         assert_eq!(replayed.channel_grid_ndim(), adapted.channel_grid_ndim());
-        let ndim = adapted.channel_grid_ndim();
+        let ndim = adapted.point_ndim();
         let mut compared = 0;
         for channel in 0..adapted.channel_count() {
             for step in 1..=7 {

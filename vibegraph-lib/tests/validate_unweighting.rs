@@ -61,6 +61,7 @@ use vibegraph::hadronic::{
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
+use vibegraph::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::select::select_index;
@@ -342,14 +343,22 @@ fn weighted_reference(
     let alphas = integ.channel_alphas();
     let total_alpha: f64 = alphas.iter().sum();
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let mut u = vec![0.0; integ.channel_grid_ndim()];
+    let grid_ndim = integ.channel_grid_ndim();
+    let mut u = vec![0.0; integ.point_ndim()];
+    // The scale draw's trailing uniforms come off streams of their own, one per
+    // channel, so this reference pass consumes the same `rng` sequence it did
+    // before the draw existed.
+    let mut scale_draw: Vec<SubStream> = (0..integ.channel_count())
+        .map(|j| SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64))
+        .collect();
     let mut momenta = Vec::new();
     let mut hists = hists;
     let (mut sum, mut sum_sq) = (0.0f64, 0.0f64);
     for _ in 0..REF_TRIALS {
         let j = select_index(&alphas, rng.random::<f64>()).expect("some channel carries weight");
         let q = alphas[j] / total_alpha;
-        let jac = grids[j].draw(&mut rng, &mut u);
+        let jac = grids[j].draw(&mut rng, &mut u[..grid_ndim]);
+        scale_draw[j].fill_uniforms(&mut u[grid_ndim..]);
         let w = jac * integ.event_in_channel(j, &u, &mut momenta) * GEV2_TO_PB / q;
         sum += w;
         sum_sq += w * w;
