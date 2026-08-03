@@ -173,7 +173,9 @@ fn force_positive_clamp<F: Real>(level: i32, value: F) -> F {
                 value
             }
         }
-        other => panic!("unreachable ForcePositive level {other}: the parser refuses anything outside 0..=2"),
+        other => panic!(
+            "unreachable ForcePositive level {other}: the parser refuses anything outside 0..=2"
+        ),
     }
 }
 

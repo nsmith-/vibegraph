@@ -941,7 +941,10 @@ fn the_only_difference_from_madgraphs_own_value_is_the_positivity_clamp() {
                     1190,
                     "{name}: probe count moved, re-check the expected clamp count"
                 );
-                assert_eq!(clamped, 0, "{name}: expected no clamped probes (ForcePositive 0)");
+                assert_eq!(
+                    clamped, 0,
+                    "{name}: expected no clamped probes (ForcePositive 0)"
+                );
             }
             "oracle_multigrid.json" => {
                 assert_eq!(
