@@ -2424,6 +2424,68 @@ mod tests {
         assert_eq!(integ.channel_count(), diagram_count);
     }
 
+    /// The evaluator's `AMP2` configuration order and the channel forests' agree,
+    /// over a process where the two are known to be derived independently.
+    ///
+    /// `AMP2` index `c` names a configuration in
+    /// [`AmplitudeEvaluator::config_diagrams`]' order; `ClusterInput::this_config`
+    /// names one in `derive_channels`' order. Both are derived from the same
+    /// diagram slice, by different code. Production does not assume they coincide
+    /// — the configuration draw composes through the diagram index, which is the
+    /// pair's common ground — so this is not a correctness requirement. It exists
+    /// so that a reorder on either side becomes a named finding here instead of a
+    /// silent reshuffle of every event's scale.
+    ///
+    /// `g g → g g` is the case worth pinning: four diagrams give three
+    /// configurations, so the diagram→configuration map is not the identity and
+    /// an off-by-one would survive a process where it is.
+    #[test]
+    fn the_amp2_configuration_order_matches_the_forest_order() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let opts = ParsingOptions::default();
+        let proc = parse_proc_card("generate g g > g g", &opts).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let card = RunCard::parse(
+            "  0 = lpp1
+  0 = lpp2
+  250.0 = ebeam1
+  250.0 = ebeam2
+  False = fixed_ren_scale
+  False = fixed_fac_scale1
+  False = fixed_fac_scale2
+  -1 = dynamical_scale_choice
+  4 = maxjetflavor
+",
+        )
+        .expect("run card");
+        let source =
+            compile_scale_source(&[(&evals[0], &diagrams)], &m, &evaluated, &card, None, true)
+                .expect("the clustering scale compiles");
+        let channels = &source.channels().expect("channel forests")[0];
+        let eval = &evals[0];
+
+        assert_eq!(
+            eval.n_configs(),
+            channels.len(),
+            "the evaluator and the channel forests disagree about how many \
+             integration configurations this process has"
+        );
+        for (c, &diagram) in eval.config_diagrams().iter().enumerate() {
+            assert_eq!(
+                channels.config_of_diagram(diagram),
+                Some(c + 1),
+                "AMP2 configuration {c} is diagram {diagram}, which the channel \
+                 forests number differently"
+            );
+        }
+    }
+
     /// MadEvent's configuration weight is the squared amplitude alone only under a
     /// run-card conjunction, and the prescription reports which side of it a card
     /// falls on.
