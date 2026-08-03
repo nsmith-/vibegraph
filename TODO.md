@@ -16,13 +16,28 @@ one from `refdata-3`/`refdata-4` (MadGraph 3.5.7 applied the PDF set's
 `αs(M_Z) = 0.130` to `lpp = 0` runs; 3.7.1 keeps the model's `0.118` — note 27
 §B5).
 
-**Awaiting the user**: `main` is unpushed. A first push + release tag runs
-`release.yml` and `acceptance.yml` for the first time.
+**Scope decision (user, 2026-08-02)**: the release goal is restricted to
+**arbitrary fixed-order Standard Model processes** over unpolarized
+proton–proton or fixed-energy partonic beams, without decay-chain syntax.
+Every extension beyond that — BSM UFO support, other beam configurations,
+polarization, decay chains — is explicitly descoped to the feature backlog
+(see "Descoped from v1" below), and every descoped surface a card can still
+reach must be a **hard error**, never a silent acceptance; the fixes closing
+the remaining silent acceptances are validation-sprint items.
 
-**Next sprint**: the integration-focused performance pass (VEGAS
-first-iteration bias + `w_max` scan decoupling + stratified-parallel axes,
-performance backlog below). `kt-spine` froze the channel/map structure it
-measures against, which was its precondition.
+**Awaiting the user**: `main` is pushed; the first release tag is **`v0.1`**
+(decided 2026-08-02) — a 0.x line because no global backwards-compatibility
+promise is made yet; a future "quality sprint" tightening the `pub` API
+surface (backlog below) precedes any 1.0. Tagging runs `release.yml` and
+`acceptance.yml` for the first time.
+
+**Next sprints** — one more round before the first release tag:
+1. **Validation sprint** over the restricted scope: the sprint slate below
+   (standing correctness items + the hard-error closures).
+2. **Performance sprint**: the integration-focused pass (VEGAS
+   first-iteration bias + `w_max` scan decoupling + stratified-parallel axes,
+   performance backlog below). `kt-spine` froze the channel/map structure it
+   measures against, which was its precondition.
 
 ## Pipeline Status
 
@@ -31,7 +46,7 @@ measures against, which was its precondition.
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params; model identity (label + SHA-256 over the parsed model) banked into artifacts |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
-| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. Deferred: multi-rung t-channel ladders (note 21) |
+| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. The multi-rung t-channel spine and the per-subprocess identical-particle factor are in production (`kt-spine` Track S, note 28) |
 | 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 17 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and all 4 llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). At a *dynamical* scale each point is clustered in the channel its own sampling channel names, per flavour group: `gu_to_epemu` **+1.07%** / `gux_to_epemux` **+0.97%** and σ(pp→ℓ⁺ℓ⁻j) **−0.68%**, all GATE at tolerances set by the channel-partition ambiguity (backlog below). The `p p > j j` capstone runs the same path on the canonical QCD process and is **GATE**: **6.803009e8 ± 2.511e5 pb** over three seeds vs MG 6.788500e8 ± 1.4726e6, rel **+0.21%** at pull **+0.97**, at `rel_tol` 0.005 — the reference's own 0.22% with headroom, pull asserted, since its channel-partition ambiguity is only `1.0e-3` (its own Monte-Carlo error, because a 2 → 2 gives the clustering no merge to choose). It sums over MadGraph's own 65 concrete assignments, pinned entry for entry against the run's `leshouche.inc` |
 | 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 37 banked MG runs byte-for-byte (744 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
 
@@ -58,6 +73,57 @@ One line each; the note is the full record. Earlier sprints
 ---
 
 ## 🔎 Validation backlog
+
+### Validation-sprint slate (restricted scope, decided 2026-08-02)
+
+The next validation sprint hardens the restricted scope: resolve the standing
+discrepancies, and close every place a card can reach outside the scope without
+hitting a hard error. The slate:
+
+1. **Conjugate-rep colour-flow tags** — the standing discrepancy below; the
+   only thing between `p p > j j` and a gated event sample.
+2. **Per-point `AMP2_c` scale-channel draw** — the fix the channel-partition
+   discrepancy below names; removes the partition-ambiguity tolerances
+   (0.015–0.02) on the dynamical-scale σ rows.
+3. **`ee_to_mumua` windowed `pt(a)` comparison** — the measurement that
+   decides which side owns the 3.7.1 drift (standing discrepancy below).
+4. **Hard-error closures** — every one of these is a card surface that today
+   is accepted and silently ignored, against the project's hard-error rule:
+   - **Nonzero `polbeam1`/`polbeam2`**: parsed as known run-card fields
+     (`runcard.rs` defaults) and read by nothing — a card asking for polarized
+     beams runs unpolarized. Reject with an explicit unsupported-polarization
+     error. (Beam configurations other than `lpp` (0,0)/(1,1) already
+     hard-error via `UnsupportedLpp` — nothing to do there.)
+   - **Decay-chain syntax** (`generate p p > t t~, t > w+ b`): the comma
+     survives tokenization, so the chain is misparsed as required-s-channel
+     syntax and dies with a misleading unknown-particle error
+     (`diagrams/parse.rs::parse_process_body`). Detect the comma and reject
+     with an explicit decay-chains-unsupported error.
+   - **`propagators.py` in a UFO directory**: the loader reads exactly
+     particles/lorentz/couplings/parameters/vertices (+ optional
+     `coupling_orders.py`, `ufo/mod.rs`); a UFO 2.0 model defining custom
+     propagators would silently get default propagators. Presence of the file
+     must be a hard error until it is implemented.
+   - **Run-card ignored-field audit**: enumerate every field the parser
+     accepts (typo protection means unknown keys already error) but nothing
+     consumes, classify each as physics-relevant or not, and hard-error on the
+     physics-relevant ones when set away from their default. `polbeam` is the
+     known instance; the audit is what proves it is the only one.
+5. **`μF ≥ 2 GeV` event veto** (moved from the feature backlog) —
+   `reweight.f:1185` *vetoes* the point below 2 GeV; `coupling::scales`
+   reports the scale only. Bites nothing gated today, but within the restricted
+   scope a hadronic run whose dynamic μF dips below 2 GeV silently disagrees
+   with MG — implement the veto (or hard-error until it exists). (Note 22 §4.)
+6. **`ForcePositive`** — the ~5-line implementation plus the
+   `FORCE_POSITIVE_FLOOR` screen re-read (Gate + tooling hygiene below); an
+   arbitrary-LHAPDF-set run card is in scope, and NNPDF31 is where it bites.
+7. **`nn23lo1` decision** — re-bank the four blocked runs at `lhaid = 247000`
+   vs implement MG's internal parameterisation (Gate + tooling hygiene below);
+   a decision item for the sprint, not necessarily an implementation.
+8. **Gate + tooling hygiene as budget allows** — priority order:
+   `validate_kt_cluster`'s silent skip becomes a declared tier; the
+   `release-debug` `#[should_panic]` contract tests; the three `uncovered`
+   cells the `kt-spine` runs earned (Deferred coverage below).
 
 ### Standing discrepancies to resolve (never a loosened tolerance)
 
@@ -162,7 +228,8 @@ One line each; the note is the full record. Earlier sprints
   differing only where the probe does not look are merged silently. The probe
   ladder is hardened (five rungs down to a fifth of the base energy and onto the
   `Z` mass, closest-pair separation measured at **0.74**, asserted > 0.1); the
-  sound replacement is the s-expression criterion (feature backlog).
+  sound replacement is the s-expression criterion (feature backlog). Accepted
+  for v1 on the MG-helicity-filtering precedent (see the feature-backlog entry).
   (`proton.rs`, note 24 §P2c.)
 - **Pythia consumption gate — what it cannot see.** The gate reads both emitted
   samples n/n and its negative control proves it is not colour-blind, but four
@@ -255,10 +322,35 @@ One line each; the note is the full record. Earlier sprints
 
 ## 🧩 Feature backlog
 
+### Descoped from v1 (user, 2026-08-02)
+
+Each of these is out of the release goal's restricted scope. The validation
+sprint makes every one a hard error where a card can ask for it (slate item 4
+above); the entries here are the eventual features.
+
+- **Beam polarization** (`polbeam1`/`polbeam2`) — polarized matrix-element
+  sums and the per-event `SPINUP` consequences.
+- **Beam configurations beyond unpolarized `p p` and fixed-energy partonic** —
+  antiproton beams (`lpp = -1`, Tevatron), mixed configurations, lepton-PDF /
+  photon beams. `RunCard::parse` admits exactly (0,0) and (1,1) today.
+- **Decay-chain process syntax** (`p p > t t~, t > w+ b`) and 1→n
+  single-particle decay processes — the grammar and the phase space both
+  assume a 2→n hard process.
+- **Custom UFO propagators** (`propagators.py`, UFO 2.0) — parse the file and
+  thread the propagator forms through the HELAS compiler.
+- **Non-SM UFO models** — the `non-sm-ufo` checklist below; the README's
+  scope section points at it as the natural next scope step.
+
+### In-scope features
+
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by
   sampled `|M|²` agreement: **complete but unsound** — two programs that differ
   only where the probe does not look are merged, and the merge is silent.
+  **Accepted for v1** (user, 2026-08-02): probe-based judgment has MadGraph
+  precedent — MG's own helicity filtering drops vanishing helicity
+  configurations on the same sampled-probe basis — and the probe ladder is
+  hardened (below); the sound criterion remains the right eventual replacement.
   Replace it with a sound-but-conservative criterion: two subprocesses share a
   group iff their compiled programs are *identical as s-expressions*. Three
   prerequisites, in order:
@@ -279,10 +371,6 @@ One line each; the note is the full record. Earlier sprints
 - **Streaming `IDWTUP = -4`** by deterministic two-pass replay — the interface
   hook (`EventSource::restart`) is in place and contract-tested; not needed while
   100k-event runs buffer in ~42 MB. (Note 23 close-out.)
-- **`μF ≥ 2 GeV` event veto** — `reweight.f:1185` *vetoes* the point below it;
-  `coupling::scales` reports the scale only. Bites nothing today; a hadronic run
-  with a dynamic μF reaching below 2 GeV will disagree with MG without it.
-  (Note 22 §4 + close-out.)
 - **Massless-t-channel fiducial cut** (sprint plan: note 28 §S2/D3) — a
   massless beam pins `t_max = 0` (collinear edge) where the t-map falls back to
   flat; whether a fiducial cut is wanted instead is unresolved for a physical
@@ -297,14 +385,45 @@ One line each; the note is the full record. Earlier sprints
   open measurement. (Note 28 §S3 deviations.)
 - **`typed-units`** — research `uom`/`dimensioned`/`units` crates for typed
   four-momenta and cross sections.
+- **Self-contained `generate` artifact** (user, 2026-08-02; post-v0.1) — one
+  file a clean worker machine can sample from. Today a proton-beam worker
+  needs the binary + artifact + both cards + the PDF set (unweighting reads
+  densities and grid-αs per trial point; the README documents the
+  copy-to-working-dir workaround), and a non-SM run needs its UFO directory
+  too. Three pieces, taken together as one feature:
+  1. **Bundle the compiled program** (design in note 23; absorbed from the
+     performance backlog, whose trigger — setup climbing to a noticeable
+     share of a generation run — still applies: compilation is 0.05–0.29 s
+     against ~13 s for a 20k-event `generate` today). Key
+     `(model digest, process, compiler schema version)` is derivable from
+     banked fields, no schema bump needed. Note 23's recorded obstacles: no
+     serde in `helas::eval`; `folded_hel` is a lazy `OnceLock` and the
+     expanded arena is the large part; `prune_zero_helicities`' kinematic
+     contract must be rechecked on load.
+  2. **Bundle the PDF data the run reads** — the member's grid file verbatim,
+     or a subgrid slice pinned to the run's (x, Q²) support; which, is part of
+     the design. Keeps the artifact's refuse-on-mismatch property: the banked
+     set name/member already gate, the data would too.
+  3. **Investigate compactifying the VEGAS grids** — long-term: per-channel
+     grids dominate artifact size on multichannel processes; quantization,
+     sparser binning, or shared axes are unexplored.
+- **Quality sprint: tighten the `pub` API surface** (user, 2026-08-02) —
+  before any backwards-compatibility promise (i.e. before 1.0): audit what
+  `vibegraph-lib` exports, demote what only the CLI and the validation crates
+  consume, and decide what the supported library surface actually is. Until
+  then releases stay on the 0.x line (first tag `v0.1`).
 
 ### `non-sm-ufo` — collected boundaries a non-SM UFO model will hit
 
-The UFO surface is deliberately model-generic, but "generic" currently ends at
-the SM's feature set. None of these block anything; collected so a future
-BSM-model task scopes against a checklist instead of rediscovering each wall one
-hard error at a time. A small dedicated test model (or a public BSM UFO) would be
-the natural vehicle for several at once.
+**Explicitly descoped from v1** (user, 2026-08-02): the release goal is the SM
+UFO, and the README's scope section says so and points here. The UFO surface is
+deliberately model-generic, but "generic" currently ends at the SM's feature
+set. None of these block anything; collected so a future BSM-model task scopes
+against a checklist instead of rediscovering each wall one hard error at a
+time. A small dedicated test model (or a public BSM UFO) would be the natural
+vehicle for several at once — and would also retire the standing gap that no
+non-SM model has ever been loaded end to end, so "model-generic" is currently
+exercised on SM evidence alone.
 
 - **Color sextets and baryonic epsilons**: the color engine handles
   Singlet/Triplet/AntiTriplet/Octet only (`helas/repr/color.rs`); sextet tensors
@@ -423,15 +542,6 @@ the natural vehicle for several at once.
   host-independent efficiency layer (points-to-precision from `results.dat`,
   unweighting efficiency and `w_max` shares from the artifact's subsampler
   summary) is already reconstructable from banked data and needs no capture.
-- **Compiled-program cache in the artifact** — designed in note 23, deliberately
-  not built: compilation costs 0.05–0.29 s against ~13 s for a 20k-event
-  `generate`. **Trigger:** setup climbing to a noticeable share of a generation
-  run (richer diagram enumeration, or e-graph extraction joining compilation).
-  Key `(model digest, process, compiler schema version)` is already derivable
-  from banked fields — no schema bump needed. Three obstacles recorded in note 23
-  (no serde in `helas::eval`; `folded_hel` is a lazy `OnceLock`, the expanded
-  arena is the large part; `prune_zero_helicities`' kinematic contract must be
-  rechecked on load).
 - **Per-event scale hot-path cost** — ~100 ns/point on top of a 0.5–1.7 µs
   matrix element (+6% `gg_to_gg`, +21% `uux_to_uux`). `ScaleChoice::clustered`
   heap-allocates its beam–leg candidate list per event; that is the obvious

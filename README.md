@@ -15,9 +15,12 @@ the emitted Les Houches event samples.
 ## Scope
 
 **Current goal — near-MVP**: an LO event generator for **arbitrary fixed-order
-processes** with **full support for arbitrary UFO models**. The pipeline runs
-end to end today: a UFO model and a MadGraph-style process card go in, an
-unweighted `.lhe` event sample comes out.
+Standard Model processes**, driven end to end by the standard toolchain
+formats: a UFO model and a MadGraph-style process card go in, an unweighted
+`.lhe` event sample comes out. That includes hadronic processes at MadGraph's
+own default dynamical scale — the kT-clustering prescription
+(`dynamical_scale_choice = -1`) is reproduced against MadGraph's clustering
+itself, not approximated.
 
 ```
 UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALOHA)
@@ -26,19 +29,19 @@ UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALO
                                                           (multichannel VEGAS)
 ```
 
-"Arbitrary" currently carries two caveats. On the model side it ends at the
-SM's feature set: a few tensor-coupling representations (color sextets,
-baryonic epsilons, spin ≥ 3/2, Majorana fermions) are deliberate hard errors
-rather than silent gaps. On the process side, the limit is the **scale
-choice**, not the multiplicity: `p p > l+ l- j` is gated against MadGraph at a
-fixed scale, but MadGraph's *default* prescription for a QCD process
-(`dynamical_scale_choice = -1`) requires general kT clustering, which vibegraph
-refuses rather than approximates — so a run card asking for it is an error, at
-any multiplicity. Both — plus a handful of open validation items — are detailed
-in the sections below and tracked in [`TODO.md`](TODO.md).
+The UFO loader is model-generic, but the supported feature surface is
+deliberately scoped to the Standard Model's: representations the SM does not
+use — color sextets, baryonic epsilon tensors, spin ≥ 3/2, Majorana fermions —
+are hard errors rather than silent gaps. Beam configurations other than
+unpolarized proton–proton or fixed-energy partonic collisions, and MadGraph's
+decay-chain process syntax, are likewise out of scope for now; the audit making
+every such boundary a hard error is part of the validation backlog. The
+remaining open validation items are detailed in the sections below and tracked
+in [`TODO.md`](TODO.md).
 
-**Future scope may include**: LO MLM-style matching + merging, and NLO event
-generation.
+**Future scope may include**: full support for arbitrary (BSM) UFO models —
+the boundary checklist already lives in [`TODO.md`](TODO.md) — plus LO
+MLM-style matching + merging, and NLO event generation.
 
 ## Getting started
 
@@ -208,8 +211,10 @@ generate p p > l+ l- j QCD=2 QED=2
   0.4     = drjl
 ```
 
-The scales are fixed rather than dynamical: a 2→3 dynamical scale needs kT
-clustering, which vibegraph refuses rather than approximates.
+The scale lines pin μR and μF to fixed values; leave them out and MadGraph's
+default prescription applies instead — the kT-clustered dynamical scale
+(`dynamical_scale_choice = -1`), computed per event exactly as a MadGraph
+reference run would compute it.
 
 ```bash
 vibegraph integrate proc_card.dat --run-card run_card.dat --out run/
@@ -261,170 +266,139 @@ for seed in 1 2 3 4; do
 done
 ```
 
+**What a worker machine needs.** The artifact is not the whole run: the
+compiled amplitude is deliberately not banked, so every `generate` job
+re-reads the same cards and recompiles, refusing on any mismatch. A clean
+worker therefore needs the binary, `grid.bin.zst`, and both cards — and, for
+proton beams, the PDF set itself, because unweighting reads parton densities
+and the grid's αs at every trial point. Copy the set's directory (e.g.
+`NNPDF23_lo_as_0130_qed/`) into the worker's working directory, or point
+`--pdf-dir` / `$VIBEGRAPH_PDF_DIR` at a shared location; otherwise each worker
+asks to download the set — and an unattended job refuses instead of asking. A
+non-SM run ships its UFO model directory the same way. Folding all of this
+into the artifact, so a worker needs one file, is a tracked post-v0.1 feature
+(see [`TODO.md`](TODO.md)).
+
 Run `vibegraph <cmd> --help` for the full option list.
 
 ## Feature breakdown
 
 | Pipeline step | Status |
 |---|---|
-| UFO model loading | ✅ Python-AST parser for arbitrary UFO models; restrict cards baked into parameters; model identity (label + SHA-256 over the parsed model) banked into artifacts |
+| UFO model loading | ✅ Python-AST parser for UFO models; restrict cards baked into parameters; model identity (label + SHA-256 over the parsed model) banked into artifacts |
 | Feynman diagram enumeration | ✅ [feyngraph](https://github.com/Jens-Braun/FeynGraph) topology generation + a MadGraph-style process grammar (`p p > e+ e-`, coupling-order constraints, multiparticle labels); validated against MadGraph's diagram counts |
 | Helicity amplitudes | ✅ HELAS-style evaluation compiled directly from UFO Lorentz structures (the ALOHA role), topology-driven for arbitrary processes; exact color-factor \|M\|² via per-flow JAMPs; per-helicity program expansion with MadGraph-matched helicity filtering |
-| Phase-space sampling | ✅ Lepage VEGAS (deterministic parallel chunking, serde-frozen grids) + n-body LIPS/RAMBO generic over the scalar type, and MadGraph-style **multichannel**: per-diagram propagator-pole channel trees, Breit–Wigner / t-channel / massless-log maps, variance-minimising weights with α-adaptation, one grid per channel |
-| Cross section + running couplings | ✅ Leptonic and hadronic (PDF-convolved) σ with compiled MadGraph run-card cuts; MadGraph's αs RGE and per-event μR / per-beam μF prescriptions; at proton beams, an arbitrary process through measured flavour groups summed over both beam orderings |
-| Unweighted event output | ✅ Accept/reject over the frozen grids at fixed-energy **and** proton beams; per-event helicity (∝ \|M_hel\|²) and colour-flow (∝ JAMP2) selection with a flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; a four-layer LHEF writer/reader |
+| Phase-space sampling | ✅ Lepage VEGAS (deterministic parallel chunking, serde-frozen grids) + n-body LIPS/RAMBO generic over the scalar type, and MadGraph-style **multichannel**: per-diagram propagator-pole channel trees, Breit–Wigner / multi-rung t-channel-spine / massless-log maps with per-subprocess identical-particle factors, variance-minimising weights with α-adaptation, one grid per channel |
+| Cross section + running couplings | ✅ Leptonic and hadronic (PDF-convolved) σ with compiled MadGraph run-card cuts; MadGraph's αs RGE and per-event μR / per-beam μF prescriptions, including the default kT-clustered dynamical scale reproduced against MadGraph's own clustering; at proton beams, an arbitrary process through measured flavour groups summed over both beam orderings |
+| Unweighted event output | ✅ Accept/reject over the frozen grids at fixed-energy **and** proton beams; per-event helicity and colour-flow selection following MadEvent's own rules, with the flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; a four-layer LHEF writer/reader that round-trips MadGraph's own event files byte-for-byte |
 
-Notable current boundaries (all hard errors or tracked rows, not silent
+Notable current boundaries (hard errors or tracked rows, not silent
 wrongness): color sextets / baryonic epsilon tensors, spin-3/2 and spin-2
-wavefunctions, Majorana fermions, loop-level UFOs (out of the LO charter), and
-kT-clustered dynamical scales (`dynamical_scale_choice = -1`). See the backlogs in
+wavefunctions, Majorana fermions, loop-level UFOs (out of the LO charter),
+beam configurations beyond unpolarized proton–proton or fixed-energy partonic
+beams, and decay-chain process syntax. See the backlogs in
 [`TODO.md`](TODO.md) and the design notes in
 [`research/notes/`](research/notes/).
 
 ## Validation
 
 The validation strategy is built on one principle: **every oracle has a blind
-spot**, so agreement is enforced at the finest level each quantity permits, and
-for each gate we record what error class it provably cannot see. Three levels
-of strictness are in play.
+spot**, so agreement with MadGraph is enforced at the finest level each
+quantity permits, and for each gate the suite records what error class it
+provably cannot see. Three levels of strictness are in play.
 
-**Bit-level (exact equality).** The inputs are shared with MadGraph exactly:
-vibegraph consumes MadGraph's own `param_card.dat` and `run_card.dat` files
-verbatim (an artifact replay compares every run-card field for exact
-equality), and the parsed UFO model is pinned by a SHA-256 digest. Where both
-sides compute the same number in the same order, the comparison is bitwise:
-the αs RGE is **bit-exact** against a reference built from MadGraph's own
-unmodified `alfas_functions.f`; helicity-filter survivor sets match MadGraph's
-generated `NHEL` tables bitwise (and the pruned \|M\|² sum stays bit-for-bit
-equal to the unpruned one); the colour-flow `ICOLUP` dictionary matches
-`leshouche.inc` for 30/30 subprocesses. The LHEF layer also re-serialises all
-26 banked MadGraph runs byte-for-byte (258,747 events) — a format pin on the
-writer, not a physics statement.
+**Bit-level (exact equality)** wherever both sides compute the same number
+from the same inputs. The inputs are shared with MadGraph exactly — vibegraph
+consumes MadGraph's own `param_card.dat` and `run_card.dat` files verbatim,
+and the parsed UFO model is pinned by a SHA-256 digest — so quantities with no
+legitimate room to differ are compared bitwise: the αs RGE against MadGraph's
+own `alfas_functions.f`, helicity-filter survivor sets against the generated
+`NHEL` tables, the colour-flow `ICOLUP` dictionary against `leshouche.inc`,
+the kT-clustering merge sequence against an instrumented MadGraph run, and the
+LHEF writer against MadGraph's own event files byte-for-byte.
 
-**Floating-point-reassociation level (≤ 1e-12 relative).** Per-point \|M\|² is
-compared against MadGraph's generated Fortran at `REL_TOL = 1e-12` — a budget
-sized for summation-order differences only, since both sides use the identical
-`param_card.dat`. All 18 gated processes pass: the 15 single-flow ones (up to
-2→6, massive externals, VVV couplings, and the four `p p > l+ l- j`
-subprocesses at ≤ 3.2e-14) sit at ≤ 6.3e-13 with many points bit-identical,
-and the three multi-flow ones — where the CF-weighted flow contraction
-genuinely reassociates — at 5.6e-14 (`u u~ > u u~`), 1.9e-15 (`g g > t t~`),
-and 8.3e-14 (`g g > g g`, NCOLOR=6). Beneath that sit two finer oracles, each
-reaching a level a color-summed \|M\|² is blind to: the per-flow **JAMP
-oracle** compares complex per-flow amplitudes element-wise against banked
-MadGraph `JAMP()` values (per-flow phases, basis permutations), and where a
-process has one flow and JAMP therefore says nothing, the **per-diagram
-oracle** compares MadGraph's `AMP(1:NGRAPHS)` per helicity.
+**Floating-point-reassociation level (≤ 1e-12 relative)** on per-point \|M\|²
+against MadGraph's generated Fortran — a budget sized for summation-order
+differences only, since both sides read the identical `param_card.dat`.
+Beneath the colour-summed \|M\|² sit two finer oracles, each reaching a level
+it is blind to: per-flow complex `JAMP` values (which see per-flow phases and
+basis permutations) and per-diagram amplitudes per helicity (which see what a
+single-flow \|M\|² cannot).
 
-**Statistical level.** Integrated cross sections carry Monte Carlo error, so
-the σ gate compares against banked MadGraph values statistically: 11 partonic
-processes gated (including resonant Z-pole rows and the three QCD 2→2s), plus
-hadronic Drell–Yan agreeing to 0.14% / 0.07% on two cut configurations and
-σ(`p p > l+ l- j`) at a fixed scale — 422.850 ± 0.189 pb over five seeds
-against MadGraph's 422.840 ± 1.805, a 0.01σ difference. Because VEGAS's
-1/σ² iteration-combining can make a missed phase-space region *confidently*
-wrong, sampler gates run **seed sweeps**, never a single fixed-seed pull — and
-llj showed that a sweep is necessary but not sufficient: at a quarter of the
-gate's budget all five seeds agreed with each other and were collectively 1.0%
-low, so the budget is scanned as a second axis. Unweighted samples are checked
-to reproduce the integrated σ.
+**Statistical level** for integrated cross sections and unweighted event
+samples, which carry Monte Carlo error. σ gates compare against banked
+MadGraph values at tolerances derived from the reference's own uncertainty —
+and because VEGAS's inverse-variance iteration combining can make a missed
+phase-space region *confidently* wrong, sampler gates run multi-seed sweeps
+with the budget scanned as a second axis, never a single fixed-seed pull.
+Event samples are compared distribution by distribution against MadGraph's
+banked samples, and every emitted file is also read back end to end by
+Pythia 8.
 
 **Self-consistency, independent of MadGraph.** Convention claims ("this sign
-is automatic") are treated as hypotheses to be pinned: a rooting-soundness
-sweep re-derives every amplitude from all 165 alternative diagram rootings
-(0 failures, all sign conventions lifted into one `fermi_sign` function), and a
-guard test ensures every convention channel is exercised by at least one gated
-process, so a future edit cannot silently step outside the validated envelope.
+is automatic") are treated as hypotheses to be pinned: sweeps re-derive every
+amplitude from alternative diagram rootings, and guard tests ensure every
+convention channel is exercised by at least one gated process, so a future
+edit cannot silently step outside the validated envelope.
 
-Which check may assume what is declared once, in
-[`validation/manifest.toml`](validation/manifest.toml), and three commands run
-the three layers it names:
+What each check may assume is a declared contract:
+[`validation/manifest.toml`](validation/manifest.toml) is the single source of
+truth, and every test registers into exactly one of three dependency layers —
+a test that quietly skips when its data is absent is a structure the suite
+does not permit.
 
-```bash
-cargo test                    # hermetic: a bare clone, no submodule, no data, no skips
-pixi run validate             # banked: the frozen MadGraph references, fetched
-pixi run generate-references   # oracle: regenerate every reference from MadGraph
-```
+| Layer | May assume | Command |
+|---|---|---|
+| `hermetic` | A bare clone — no submodule, no fetched data, no network. Complete there: it never skips. | `cargo test` |
+| `banked` | The `mg5amcnlo` submodule, fetched PDF sets, and a pinned, checksummed bundle of frozen MadGraph reference runs. May *not* run MadGraph — which is what makes it reproducible on a machine that has never built a process directory. | `pixi run validate` |
+| `oracle` | A full MadGraph/LHAPDF toolchain; regenerates every reference. | `pixi run generate-references` |
 
-`pixi run validate` ends by rendering `target/validation-report/report.md`: one
-row per validated process, one column per category (diagrams, amplitudes,
-integrals, samples), each cell carrying its metric and whether it is gated,
-informational, blocked on a named feature, covered by another row, or an
-admitted gap. The same driver asserts that the cells measured are exactly the
-cells the manifest declares, so coverage cannot quietly shrink. The banked
-layer's frozen MadGraph runs come from a pinned, checksummed reference bundle
-rather than from running MadGraph, which is what lets the whole table be
-reproduced on a machine that has never built a process directory. One banked
-gate lives outside that command because it needs its own environment:
+`pixi run validate` ends by rendering a report table: one row per validated
+process, one column per category (diagrams, amplitudes, integrals, samples),
+each cell carrying its metric and whether it is gated, informational, blocked
+on a named feature, covered by another row, or an admitted gap. The same
+driver asserts that the cells measured are exactly the cells the manifest
+declares, so coverage cannot quietly shrink. **CI runs the hermetic and banked
+layers as a merge gate and publishes the rendered report as each run's job
+summary** — the current validation status of `main` is always one click away,
+and a failing cell is read off the table rather than dug out of a log. One
+banked gate lives outside that command because it needs its own environment:
 
 ```bash
 pixi run -e pythia validate-pythia   # every emitted event read back by Pythia 8
 ```
 
 The report's own account of what is *not* covered is the current list of open
-validation items; `TODO.md` carries them with the evidence. The standing ones
-are the `h → τ⁺τ⁻` pole in `e+ e- > mu+ mu- ta+ ta-`, the realised colour-flow
-frequencies of `u u~ > u u~`, the missing ŝ floor that blocks a purely hadronic
-final state, and everything waiting on kT clustering — kept as tracked rows,
-never as loosened tolerances.
+validation items; [`TODO.md`](TODO.md) carries them with the evidence — kept
+as tracked rows, never as loosened tolerances.
 
 ## Performance
 
 Per-point matrix-element evaluation currently runs at **0.72×–1.69×** the
 cost of MadGraph's generated, helicity-filtered Fortran (`matrix1_optim.f`) —
 **geometric mean 1.24×** over the 14 processes the comparison kit covers, 2→2
-through 2→6.
-Six processes sit at parity (within ~15%), `e+ e- > e+ e-` runs ~1.4×
-*faster* than MadGraph, and the widest gaps are `g g > g g` (1.65×) and the
-massive-b 2→6 (1.69×). The hadronic Drell–Yan σ run completes in ~2 s
-single-threaded. Not bad for a runtime evaluator built at model-load time
+through 2→6. Several processes sit at parity, and `e+ e- > e+ e-` runs faster
+than MadGraph. Not bad for a runtime evaluator built at model-load time
 against code MadGraph generates and compiles per process.
 
-The path there (full record in notes 15, 17, 20):
-
-1. **Starting point ~8.6×–110× slower.** The first working evaluator walked a
-   general expression DAG per point.
-2. **Layout program**: struct-of-arrays arena layout, constant folding and
-   pooling, binary-arity lowering with add-flattening, bounds-check
-   elimination — the compiled program becomes a flat typed tape.
-3. **Helicity expansion**: compile one straight-line program per contributing
-   helicity combination instead of looping a generic one, sharing
-   helicity-independent subexpressions.
-4. **Helicity filtering**: probe and drop vanishing helicity combinations
-   exactly as MadGraph's `NHEL` survey does (survivor sets match MG bitwise;
-   the pruned sum is bit-for-bit the unpruned one). This was the big one —
-   it put the comparison on equal combination counts (e.g. 16/256 for a 2→6)
-   and collapsed the 2→6 gap from 25× to 2.5×. Gap after: **1.2×–3.5×**.
-5. **Second pass** — four independent sessions, cumulatively **1.18×–2.19×**
-   on every benchmarked process, still ≤ 1e-12 vs MadGraph — landing at the
-   headline range above:
-   - *Multiply splitting*: one generic complex `Mul` op became eight typed
-     variants specialised by operand kind (real×scalar, scalar×vector, …),
-     since ~86% of hot multiplies had a cheaper shape than the general
-     kernel. The broad base win: −13% to −44% ns/eval on every process,
-     biggest on the Mul-heavy `g g > g g`. Bit-exact.
-   - *One-shot DAG validation*: per-node cross-checks compiled into the eval
-     loop moved to a single up-front arena validation. No release-build
-     change, but it made the extended-validation timings honest (3.1×–5.4×
-     faster there).
-   - *`ZEROAMP` skipping*: MadGraph's second filter layer — probe and drop
-     per-(helicity, diagram) zero amplitudes inside surviving combinations.
-     The colored-2→2 win (`e+ e- > e+ e-`, `u u~ > u u~`, `g g > g g`),
-     beating its "likely small" prior. Bit-exact.
-   - *Fewest-external-leg rooting*: re-root each diagram at the vertex
-     touching the fewest external legs, maximising current sharing under CSE.
-     The multi-leg win: −18% to −26% on 2→3/2→4/2→6, neutral on 2→2. This one
-     reassociates the arithmetic, yet the MG gate stayed at 1e-12 — shorter,
-     more-shared current chains actually reduced FP drift.
+The starting point was 8.6×–110× slower: a general expression DAG walked per
+point. The distance was closed by compiling that DAG into a flat typed tape
+(struct-of-arrays layout, constant folding and pooling, bounds-check
+elimination), expanding one straight-line program per contributing helicity
+combination, reproducing MadGraph's own two layers of zero-filtering (whole
+helicity combinations, then per-diagram amplitudes within them — survivor sets
+match MadGraph's bitwise), and specialising the arithmetic itself (typed
+multiply variants, diagram rooting chosen to maximise current sharing) — all
+of it holding the ≤ 1e-12 matrix-element gate throughout. The full
+optimization record lives in [`research/notes/`](research/notes/).
 
 Caveats: ratios are single-host (Apple M3 Max) measurements, not constants —
 `scripts/mg_perf_compare.sh` is the rerun kit that re-derives the full ratio
 table directly on any platform (the headline is its 2026-07-28 output). Pruned
 evaluators inherit MadGraph's frame contract (partonic-CM momenta, beams along
-±z). The remaining gap is largest on colored 2→2s, where NCOLOR-flow
-contraction dominates; candidate next steps (e-graph sharing extraction,
-per-event scale hot-path cost, feyngraph enumeration allocations) are triaged
-in the performance backlog in `TODO.md`.
+±z). The remaining gap is largest on colored 2→2s, where color-flow
+contraction dominates; candidate next steps are triaged in the performance
+backlog in [`TODO.md`](TODO.md).
 
 ```bash
 pixi run profile-sigma   # samply profile of the σ gate
