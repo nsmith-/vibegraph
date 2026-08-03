@@ -33,7 +33,12 @@ surface (backlog below) precedes any 1.0. Tagging runs `release.yml` and
 
 **Next sprints** — one more round before the first release tag:
 1. **Validation sprint** over the restricted scope: the sprint slate below
-   (standing correctness items + the hard-error closures).
+   (standing correctness items + the hard-error closures). **Planned as note
+   29** — design→implement→review chains: A conjugate colour tags, B
+   `AMP2_c` scale-channel draw, C1/C2 hard errors + card audit, D
+   `ee_to_mumua` ownership, E ForcePositive + hygiene, F the research-only
+   U(1)-charge-flow phase sidecar; plus the decided `nn23lo1` re-bank (§G:
+   `refdata-5` **replaces** the four superseded runs, bundle size flat).
 2. **Performance sprint**: the integration-focused pass (VEGAS
    first-iteration bias + `w_max` scan decoupling + stratified-parallel axes,
    performance backlog below). `kt-spine` froze the channel/map structure it
@@ -264,15 +269,17 @@ hitting a hard error. The slate:
   and register the row `banked`, or register it `oracle` and let the banked layer
   require nothing. Either way the silent early return should become a declared
   tier. (Note 28 §Z.)
-- **Four banked runs are blocked on `nn23lo1`, not on anything this sprint
-  built** — `pp_to_bb`, `pp_to_bb_qcd2`, `pp_to_llj` and `pp_to_ll_scalefact2`
-  carry `pdlabel = nn23lo1`, MadGraph's internal parton-density parameterisation
-  rather than an LHAPDF6 grid the `pdf/` layer can load, so their 8 ⛔ cells stay
-  blocked now that the clustering they also named is in production. Closing them
-  is a choice between re-banking those four cards at `lhaid = 247000` (cheap, but
-  four more MG runs and a fifth bundle) and implementing the internal set (a
-  parameterisation with no oracle in this tree). Their scale fields are already
-  gated — `validate_scales` replays all four runs event by event. (Note 28 §Z.)
+- **Four banked runs are blocked on `nn23lo1` — decided: re-bank** (user,
+  2026-08-02; note 29 §G) — `pp_to_bb`, `pp_to_bb_qcd2`, `pp_to_llj` and
+  `pp_to_ll_scalefact2` carry `pdlabel = nn23lo1`, MadGraph's internal
+  parton-density parameterisation rather than an LHAPDF6 grid the `pdf/` layer
+  can load: 8 ⛔ cells. The re-bank at `lhaid = 247000` runs as an
+  oracle-layer background task in the note-29 sprint, and **`refdata-5`
+  replaces the four superseded runs rather than adding a bundle** (the bundle
+  is ~100 MB and does not grow by superseded runs; retired runs go to the
+  local retired area per the note 27 D4 precedent). Their scale fields are
+  already gated — `validate_scales` replays all four runs event by event.
+  (Note 28 §Z.)
 - **`pp_to_jj`'s banked event sample is not reproducible across MG re-runs** —
   σ is identical to all printed digits and single-group runs regenerate
   bit-identically, but `pp_to_jj`'s five subprocess groups make the unweighting
