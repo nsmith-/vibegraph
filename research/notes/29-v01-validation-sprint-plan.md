@@ -828,9 +828,10 @@ all banked (point, helicity) entries.
 **A new instrument, not anticipated by the design.** F.1 row 9 records that the
 per-configuration phases `k` are asserted only in modulus and that "the phase of
 `k` is entirely free". Measured, across every configuration of every banked
-process (75 in the single-flow set plus 35 on `ud_to_epemud_qcd0`): **`k/G ∈
-{+1, −1}` exactly**, every value real to the printed precision, residuals ≤
-`6.6e-15`. The phases are not free; each is one bit. Where `jamp_coefficients`
+process (**113** configurations: 70 in the single-flow set plus 43 across the
+multi-flow set): **`k/G ∈ {+1, −1}` exactly**, every value real to the printed
+precision, suite-wide worst residual `1.19e-13` (on `ee_to_mumu_tata_qcd0`).
+The phases are not free; each is one bit. Where `jamp_coefficients`
 are banked, that bit *is* MadGraph's own `c_j` (verified: `r_d/G =
 c_{order[d]}` on `ee_to_ee` `(−1,−1,+1,+1)`, `ee_to_tatah` `(−1)×5`,
 `ee_to_mumu` `(−1,−1)`, `uux_to_mumu` `(+1,+1)`). Where they are not banked —
@@ -904,15 +905,25 @@ carry `V_123`/`V_89`, the W–quark vertices). The split is a *Wick-pairing* (ro
 structure is identical across the divide (D0 and D16 have the same line/prop
 pattern and differ only in pairing, hence in `diagram.sign`).
 
-The per-propagator arm's real observable content in this process is narrower and
-was located: **D21/D22 are the only two diagrams whose mixed lines are all
-propagator-free** (`spine = −1`, from the crossed line alone), against 33
-diagrams carrying one propagator on a mixed line (`spine = +1`). A rule dropping
-the per-propagator factor flips `φ` on those 33 and not on those 2 — detectable.
-Separately, **D18 is the only diagram whose *crossed* line carries a propagator
-while `spine = −1`**, which is where the crossed arm's propagator-independence
-is pinned inside this process. Both arms of row 2 are therefore checked, but by
-2 and 1 diagrams respectively, not by a 24/11 majority.
+The per-propagator arm's real observable content in this process is a different
+partition, and a machine-checked one: `spine = −1` on **11** diagrams —
+`{4…11, 18, 21, 22}` — and `+1` on the other **24**, matching
+`channel_counts(&model, "u d > e+ e- u d QCD=0").1 = 11`. The 11 are exactly the
+diagrams in which **no mixed (initial↔final) quark line carries a propagator**,
+so only the crossed line's single −1 survives: D4–D11 and D18 put the propagator
+on the *crossed* line, and D21/D22 carry no fermion propagator on any line at
+all. The 24 carry one propagator on a mixed line, which cancels the crossed −1.
+A rule dropping the per-propagator factor flips `φ` on those 24 and not on the
+11 — detectable. D4–D11 and D18 do double duty: they are also where the crossed
+arm's propagator-independence is pinned, since a crossed line taking a
+per-propagator factor would flip exactly those 9.
+
+*(An earlier revision of this section claimed the split was "D21/D22 against
+33". That was a by-hand miscount of the same probe output — the AGENTS.md
+"machine-check census claims" failure, committed inside a section arguing for
+machine-checked censuses. Corrected above against `channel_counts` and the
+per-diagram readout; that both arms of row 2 are checked is unchanged, and the
+evidence for each is broader than the miscount suggested.)*
 
 **H5 — `e+ e- > ta+ ta- H`.** `φ = (+1,+1,+1,+1,−1)`; the variation comes
 entirely from `build = (−1,−1,−1,−1,+1)`. Per-vertex attribution (scratch dump
@@ -962,7 +973,7 @@ reading adopted.
 | row | R covers it? | checked against a dump? | evidence |
 |---|---|---|---|
 | 1 Wick parity | yes (`ε`) | **yes** | `ee_to_ee`: MG `c = −diagram.sign`, `r/G` reproduces `c` to `1.9e-14`; `ud` NC/CC `σ` split |
-| 2 spine, both arms | yes | **yes** | crossed arm: `gg_to_ttx` uniform `φ` over 0/1 props, `ud` D18. per-prop arm: `ud` D21/D22 vs the other 33 |
+| 2 spine, both arms | yes | **yes** | crossed arm: `gg_to_ttx` uniform `φ` over 0/1 props, `ud` D4–D11/D18. per-prop arm: `ud` 11 (`spine = −1`) vs 24 (`spine = +1`) |
 | 3 reversed-bilinear parity | yes (`κ`) | **no** | `revC·revL ≡ +1` on every canonically-rooted diagram; content lives in `H`, which no dump separates from `φ` |
 | 4a crossed-pair −1 | yes | **no** | never produces a varying `build` pattern in any of the 9 probed processes |
 | 4b scalar-sink −1 | no (no arrow) | **no** | does not fire in `ee_to_tatah`; no varying instance found |
@@ -1063,8 +1074,9 @@ the pre-registered form.
 `|G| = 1` and `Re G = 0` are derived by i-counting (`i^V(−i)^{V−1} = i`,
 independent of `V`) and measured to hold on all 20 processes, so row 8 contains
 one bit, not a phase. Row 9 contains one bit per configuration, not a free
-phase: `k/G ∈ {±1}` exactly on every configuration measured, residuals ≤
-`6.6e-15`. Where `jamp_coefficients` exist, those bits *are* MadGraph's `c_j`.
+phase: `k/G ∈ {±1}` exactly on all 113 configurations measured, suite-wide worst
+residual `1.19e-13`. Where `jamp_coefficients` exist, those bits *are*
+MadGraph's `c_j`.
 The fitted-quantity count is therefore not `1 + Σ_process N_config` free complex
 phases but `1 + Σ_process N_config` **bits**, most of them already banked in the
 reference. This is measurement, not derivation, and it does not earn the bar's
@@ -1114,9 +1126,11 @@ Reported, not patched around, as the brief requires.
    structures. There is no 1:1 diagram pairing for that process at all.
 6. **H4's "24/11 split on the per-propagator arm" mis-describes the data.** The
    24/11 split exists and is the neutral-current / charged-current split, i.e. a
-   Wick-pairing (row 1) effect. The per-propagator arm's observable content in
-   that process is 2 diagrams (D21/D22) against 33. The crux case still decides
-   the crux, but not by the mechanism the design named.
+   Wick-pairing (row 1) effect. The per-propagator arm's own partition of the
+   same 35 diagrams is 11 (`spine = −1`, `{4…11, 18, 21, 22}`) against 24. The
+   crux case still decides the crux, but not by the mechanism the design named,
+   and the two 24/11 partitions are different partitions that happen to share a
+   shape.
 7. **P0's falsifier is sited on a code-internal quantity.** `channel_counts` is
    not an observable, so P0 can only refute a bookkeeping claim. Recorded in
    F.7; noted here because a future pre-registration should site its falsifier
@@ -1136,8 +1150,10 @@ preserving a product the current gate already preserves. Two *other* entries
 fell out of the work and are drafted here for the manager to land or discard.
 
 **(a) Assert what `k` actually is (cheap, high value).** `amplitude_oracle.rs`
-asserts only `|k| = 1` per configuration. Measured: `k/G ∈ {±1}` exactly on
-every configuration of every banked process, residuals ≤ `6.6e-15`. Asserting
+asserts only `|k| = 1` per configuration. Measured: `k/G ∈ {±1}` exactly on all
+113 configurations of the banked set, suite-wide worst residual `1.19e-13`
+(`ee_to_mumu_tata_qcd0`) — so any tolerance for this must sit above that, not at
+the `1e-15` the per-process figures might suggest. Asserting
 `|Im(k/G)| < LINEAR_REL_TOL` — that `k` is a *real* multiple of `G` — converts
 a free per-configuration phase into a pinned bit, and would catch any future
 defect that rotates a configuration amplitude in the complex plane, a class
@@ -1145,21 +1161,39 @@ defect that rotates a configuration amplitude in the complex plane, a class
 existing per-configuration loop; no reference data, no tolerance move. Two-way,
 per house style: it should fail if a `k` stops being real.
 
-**(b) An unexplained sign between two internal routes to the same amplitude
-(investigate before (a) lands).** On `ee_to_tatah`, whose `config_diagrams` is
-the identity and whose configurations each own exactly one amplitude, the two
-independently fitted ratios against the same bare `AMP()` disagree for diagram 4
-and only for diagram 4: the per-diagram route gives `r/G = −1` for all five
-diagrams (residual ≤ `5.7e-15`), while the configuration route gives `k/G =
-(−1,−1,−1,−1,+1)` (residual ≤ `6.7e-15`). Arithmetically, `run_config_amps()[4]
-= −(the amplitude of the single-diagram compile of diagram 4)`. No current gate
-compares the two routes — `AMP2` takes the modulus and `k` is fitted per
-configuration — so this is invisible today and has no observable consequence for
-the configuration draw. **Not root-caused here**, and an alternative explanation
-(a subtlety in how the scratch harvest built its single-diagram evaluators) is
-not excluded, so this is written as a lead, not a defect. Cheapest next step:
-assert `run_config_amps` against the per-diagram amplitudes directly for the
-single-flow processes, where both are already computed.
+**(b) A real per-diagram sign between `run_config_amps` and the per-diagram
+amplitude — structurally inert, worth pinning anyway.** The research session
+found this on `ee_to_tatah` and left it as a lead, explicitly not excluding a
+scratch-harvest artifact. **The chain F review settled it**, reproducing the
+disagreement with production's own evaluators rather than the harvest: the
+ratio is exactly `±1` with spread `0.00e0` over 48 samples, so the effect is
+**real, not an artifact of the harvest**, and the alternative explanation this
+entry originally offered is withdrawn.
+
+It is also broader than one process. The per-configuration sign pattern is
+**non-uniform in three processes** — `ee_to_tatah` (`+ + + + −`),
+`ee_to_mumua` (`− − − − + + + +`) and `ee_to_mumu_tata_qcd0` (17:8) — and
+uniform in the other 11, where a uniform sign is absorbed and harmless.
+
+**Severity is settled: not a live defect, structurally.** `run_config_amps` has
+no production consumer at all — `amplitude_oracle.rs` is its only caller — and
+`eval_amp2` accumulates `norm_sqr()` incoherently, so no configuration sign can
+reach `AMP2`, the configuration draw, or `ICOLAMP`. There is no path by which
+this changes an event.
+
+**The research session's proposed next step was wrong and is replaced.**
+Asserting `run_config_amps` against the per-diagram amplitudes *directly* —
+i.e. demanding they agree — **would fail as stated** on those three processes.
+Any such assertion has to permit a per-diagram sign, and once it does it is
+nearly vacuous. The useful form instead: **pin the measured sign *patterns* per
+process** — bank the 14 per-process sign vectors and assert against them, so
+the three non-uniform patterns are frozen as data and a future change that
+reshuffles them fails, without asserting a uniformity that is false. Scope: one
+banked table plus a comparison in the existing per-configuration loop; no
+reference data regenerated, no tolerance moved. Sequencing note: this is
+independent of (a) — (a) constrains `k`'s *phase*, this constrains the
+per-configuration *sign pattern* — so the "investigate before (a) lands"
+condition in the original draft is dropped.
 
 ### F.15 What this section provably did not decide
 
