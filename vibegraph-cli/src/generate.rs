@@ -335,7 +335,10 @@ impl EventSource for SampleSource<'_> {
             .collect();
         // The scales the matrix element itself ran at, so the record reports the
         // run rather than a second prescription compiled off the same card.
-        let (scale, alpha_qcd) = match self.integrand.event_scales(&self.momenta, point.channel) {
+        let (scale, alpha_qcd) = match self
+            .integrand
+            .event_scales_at(&self.momenta, point.channel, &point.u)
+        {
             Some(Ok(scales)) => {
                 let alpha_s = self
                     .integrand
