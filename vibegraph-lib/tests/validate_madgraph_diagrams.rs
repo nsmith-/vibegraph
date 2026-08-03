@@ -320,6 +320,30 @@ fn run_trial(key: &str, mg_counts: &DiagramCounts) -> Result<(), Failed> {
     Ok(())
 }
 
+/// The committed `diagrams.json`'s keys must be exactly the manifest's
+/// `diagrams = hermetic` rows — no more (a stale count for a row the manifest
+/// no longer gates), no fewer (a gated row the committed file silently lost).
+/// Both files are committed, so this stays hermetic.
+fn diagrams_json_covers_exactly_the_hermetic_rows() -> Result<(), Failed> {
+    let committed: std::collections::BTreeSet<String> = madgraph_reference()
+        .into_iter()
+        .map(|(key, _)| key)
+        .collect();
+    let declared = common::manifest::hermetic_diagram_rows();
+
+    let missing_from_committed: Vec<_> = declared.difference(&committed).collect();
+    let extra_in_committed: Vec<_> = committed.difference(&declared).collect();
+    if !missing_from_committed.is_empty() || !extra_in_committed.is_empty() {
+        return Err(format!(
+            "diagrams.json disagrees with the manifest's hermetic diagrams rows: \
+             missing from diagrams.json {missing_from_committed:?}, \
+             present in diagrams.json but not declared hermetic {extra_in_committed:?}"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 fn main() {
     let args = Arguments::from_args();
 
@@ -329,11 +353,15 @@ fn main() {
         .build_global()
         .unwrap();
 
-    let trials: Vec<Trial> = madgraph_reference()
+    let mut trials: Vec<Trial> = madgraph_reference()
         .into_iter()
         .map(|(key, counts)| Trial::test(key.clone(), move || run_trial(&key, &counts)))
         .collect();
     assert!(!trials.is_empty(), "the committed reference has no rows");
+    trials.push(Trial::test(
+        "diagrams_json_covers_exactly_the_hermetic_rows",
+        diagrams_json_covers_exactly_the_hermetic_rows,
+    ));
 
     libtest_mimic::run(&args, trials).exit();
 }

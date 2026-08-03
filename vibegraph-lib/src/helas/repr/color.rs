@@ -32,7 +32,11 @@ use num_rational::Ratio;
 /// This is the lightweight, runtime-value counterpart of the [`ColorRepr`]
 /// marker types: colorize and the `Identity` resolution key off it, and each
 /// marker type names its rep through [`ColorRepr::REP`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+///
+/// The ordering is the declaration order and carries no group-theoretic meaning:
+/// it exists so that types holding a rep can derive one, and nothing reads it as
+/// a ranking of representations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ColorRep {
     /// The trivial **1** (leptons, photon, …).
     Singlet,

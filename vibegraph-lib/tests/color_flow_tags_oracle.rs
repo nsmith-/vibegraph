@@ -2,10 +2,17 @@
 //! against MadGraph's own `leshouche.inc` for every generated subprocess.
 //!
 //! For each `SubProcesses/P*/leshouche.inc` this parses MadGraph's
-//! `ICOLUP(1|2, leg, iflow, isproc)` rows of the first subprocess — the one
-//! `matrix1_orig.f`'s `C     Process:` header names, and the one whose colour
-//! basis vibegraph reproduces — then compiles the same process and compares its
-//! [`ColorFlowTags`] flow by flow.
+//! `ICOLUP(1|2, leg, iflow, isproc)` rows of **every** subprocess the file
+//! carries — `isproc N` is the process the sibling `matrix<N>_orig.f`'s
+//! `C     Process:` header names — then compiles each of them and compares its
+//! [`ColorFlowTags`] flow by flow. One trial per `(P* directory, isproc)`.
+//!
+//! Reading past `isproc 1` is what reaches the conjugate members: a directory
+//! groups `g u > g u` with `g u~ > g u~`, or `u u > u u` with `u u~ > u u~` and
+//! `u~ u~ > u~ u~`, and each of them has a table of its own. Each trial also
+//! asserts that the compiled subprocess's PDG codes are that `isproc`'s
+//! `IDUP(·, 1, isproc)` row, so "we compiled the process MadGraph named" is
+//! checked rather than assumed.
 //!
 //! Two things this deliberately does **not** do:
 //!
@@ -37,6 +44,7 @@ mod common;
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::path::{Path, PathBuf};
 
+use common::leshouche;
 use vibegraph::diagrams::DiagramSet;
 use vibegraph::helas::eval::AmplitudeEvaluator;
 
@@ -44,37 +52,8 @@ use vibegraph::helas::eval::AmplitudeEvaluator;
 /// joins, sorted, with the label discarded.
 type Line = [(usize, usize); 2];
 
-/// Find every `SubProcesses/P*/leshouche.inc` under the MG output tree.
-fn find_leshouche_files() -> Vec<PathBuf> {
-    let output_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output");
-    let mut out = Vec::new();
-    collect(&output_dir, &mut out);
-    out.sort();
-    out
-}
-
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.is_dir() {
-            collect(&path, out);
-        } else if path.file_name().and_then(|n| n.to_str()) == Some("leshouche.inc")
-            && path.parent().is_some_and(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.starts_with('P'))
-            })
-        {
-            out.push(path);
-        }
-    }
-}
-
-/// A short, stable trial name, e.g. `pp_to_bb/P1_gg_bbx`.
-fn trial_name(path: &Path) -> String {
+/// A short, stable trial name, e.g. `pp_to_bb/P1_gg_bbx#1`.
+fn trial_name(path: &Path, isproc: usize) -> String {
     let sub = path
         .parent()
         .and_then(|p| p.file_name())
@@ -86,16 +65,19 @@ fn trial_name(path: &Path) -> String {
         .and_then(|p| p.file_name())
         .and_then(|n| n.to_str())
         .unwrap_or("?");
-    format!("{proc}/{sub}")
+    format!("{proc}/{sub}#{isproc}")
 }
 
-/// Read the concrete process from the sibling `matrix1_orig.f`, dropping the
-/// MadGraph-only `@N` tag and derived `WEIGHTED` order.
-fn process_of(leshouche: &Path) -> Result<String, String> {
+/// Read the concrete process from the sibling `matrix<isproc>_orig.f`, dropping
+/// the MadGraph-only `@N` tag and derived `WEIGHTED` order.
+///
+/// A missing file is a failure, never a skip: an `isproc` with no matrix file
+/// would silently drop a subprocess out of the comparison.
+fn process_of(leshouche: &Path, isproc: usize) -> Result<String, String> {
     let matrix = leshouche
         .parent()
         .ok_or("no subprocess directory")?
-        .join("matrix1_orig.f");
+        .join(format!("matrix{isproc}_orig.f"));
     let content = std::fs::read_to_string(&matrix).map_err(|e| format!("read {matrix:?}: {e}"))?;
     let raw = content
         .lines()
@@ -106,68 +88,6 @@ fn process_of(leshouche: &Path) -> Result<String, String> {
         .filter(|tok| !tok.starts_with('@') && !tok.to_uppercase().starts_with("WEIGHTED"))
         .collect::<Vec<_>>()
         .join(" "))
-}
-
-/// Parse the `ICOLUP` rows of subprocess 1 into `[flow][leg] = [colour, anti]`.
-///
-/// Rows read `DATA (ICOLUP(k,I,iflow,isproc),I=1, N)/v1,…,vN/` with `k = 1` the
-/// colour slot and `k = 2` the anticolour slot.
-fn parse_leshouche(path: &Path) -> Result<Vec<Vec<[u32; 2]>>, String> {
-    let content = std::fs::read_to_string(path).map_err(|e| format!("read {path:?}: {e}"))?;
-    let mut flows: Vec<Vec<[u32; 2]>> = Vec::new();
-    for line in content.lines() {
-        let Some(rest) = line.trim_start().strip_prefix("DATA (ICOLUP(") else {
-            continue;
-        };
-        let (args, tail) = rest
-            .split_once(')')
-            .ok_or_else(|| format!("unterminated ICOLUP subscript: {line}"))?;
-        let subscripts: Vec<&str> = args.split(',').map(str::trim).collect();
-        if subscripts.len() != 4 {
-            return Err(format!("unexpected ICOLUP rank: {line}"));
-        }
-        let slot: usize = subscripts[0]
-            .parse::<usize>()
-            .map_err(|_| format!("bad ICOLUP slot: {line}"))?;
-        let flow: usize = subscripts[2]
-            .parse::<usize>()
-            .map_err(|_| format!("bad ICOLUP flow: {line}"))?;
-        let subproc: usize = subscripts[3]
-            .parse::<usize>()
-            .map_err(|_| format!("bad ICOLUP subprocess: {line}"))?;
-        if subproc != 1 {
-            continue;
-        }
-        let body = tail
-            .split_once('/')
-            .and_then(|(_, r)| r.rsplit_once('/').map(|(v, _)| v))
-            .ok_or_else(|| format!("no /…/ in ICOLUP line: {line}"))?;
-        let values: Vec<u32> = body
-            .split(',')
-            .map(|t| {
-                t.trim()
-                    .parse::<u32>()
-                    .map_err(|_| format!("bad ICOLUP value '{t}'"))
-            })
-            .collect::<Result<_, _>>()?;
-        if flows.len() < flow {
-            flows.resize(flow, Vec::new());
-        }
-        let row = &mut flows[flow - 1];
-        if row.is_empty() {
-            row.resize(values.len(), [0; 2]);
-        }
-        if row.len() != values.len() {
-            return Err(format!("ICOLUP leg count changes within a flow: {line}"));
-        }
-        for (leg, v) in values.into_iter().enumerate() {
-            row[leg][slot - 1] = v;
-        }
-    }
-    if flows.iter().any(|f| f.is_empty()) {
-        return Err("gap in the ICOLUP flow index".into());
-    }
-    Ok(flows)
 }
 
 /// The colour lines a tag row induces: `(leg, slot)` endpoint pairs sharing a
@@ -229,11 +149,32 @@ fn compile(process: &str) -> Result<AmplitudeEvaluator, String> {
     AmplitudeEvaluator::compile(with_diagrams[0], &model).map_err(|e| format!("compile: {e}"))
 }
 
-fn run_trial(leshouche: PathBuf) -> Result<(), Failed> {
-    let process = process_of(&leshouche)?;
-    let mg = parse_leshouche(&leshouche)?;
+fn run_trial(path: PathBuf, isproc: usize) -> Result<(), Failed> {
+    let process = process_of(&path, isproc)?;
+    let subprocess = leshouche::parse(&path)?
+        .into_iter()
+        .find(|s| s.isproc == isproc)
+        .ok_or_else(|| format!("isproc {isproc} vanished from {path:?}"))?;
+    let mg = subprocess.flows;
     let eval = compile(&process)?;
     let tags = eval.color_flow_tags();
+
+    // The compiled subprocess is the one MadGraph filed this table under, rather
+    // than whatever the header string happened to parse into.
+    let model = common::sm_model();
+    let ours: Vec<i32> = eval
+        .external_particles()
+        .iter()
+        .map(|&id| model.particle(id).pdg_code as i32)
+        .collect();
+    let theirs = &subprocess.idup[0];
+    if &ours != theirs {
+        return Err(format!(
+            "'{process}' compiles to PDG codes {ours:?}, but MadGraph files isproc \
+             {isproc} under IDUP {theirs:?}"
+        )
+        .into());
+    }
 
     if tags.n_flows() != mg.len() {
         return Err(format!(
@@ -275,7 +216,7 @@ fn run_trial(leshouche: PathBuf) -> Result<(), Failed> {
     let n_lines = lines(tags.flow(0))?.len();
     println!(
         "  [{}] '{process}' NCOLOR={} lines/flow={n_lines} labels={}",
-        trial_name(&leshouche),
+        trial_name(&path, isproc),
         tags.n_flows(),
         if labels_identical {
             "identical to MG"
@@ -289,20 +230,25 @@ fn run_trial(leshouche: PathBuf) -> Result<(), Failed> {
 fn main() {
     let args = Arguments::from_args();
 
-    let files = find_leshouche_files();
+    let output_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output");
+    let files = leshouche::files_under(&output_dir);
     if files.is_empty() {
         eprintln!("No SubProcesses/P*/leshouche.inc found in validation/madgraph/output/");
         eprintln!("Run: pixi run -e madgraph build-diagrams");
         libtest_mimic::run(&args, vec![]).exit();
     }
 
-    let trials: Vec<Trial> = files
-        .into_iter()
-        .map(|p| {
-            let name = trial_name(&p);
-            Trial::test(name, move || run_trial(p))
-        })
-        .collect();
+    let mut trials: Vec<Trial> = Vec::new();
+    for path in files {
+        let subprocesses = leshouche::parse(&path)
+            .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+        for sub in subprocesses {
+            let name = trial_name(&path, sub.isproc);
+            let path = path.clone();
+            let isproc = sub.isproc;
+            trials.push(Trial::test(name, move || run_trial(path, isproc)));
+        }
+    }
 
     libtest_mimic::run(&args, trials).exit();
 }
