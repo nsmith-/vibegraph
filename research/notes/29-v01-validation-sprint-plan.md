@@ -770,6 +770,324 @@ MadGraph label for label. The 30 newly-reachable subprocesses have never been
 compared, so the trigger remains genuinely open until T7 runs — which is the
 point of widening the oracle before, not after, flipping the cell.
 
+## Chain A design amendment (2026-08-03)
+
+Second design session, after implementation falsified the first design's central
+classification. It supersedes **A.1 items 4–7** and **A.2's T3 and T4**, and
+corrects **A.0 Fact 2** and **A.4's "unreachable today"** claim. A.1 items 1–3
+and 8 are landed as `8a56825`; A.2's T1, T2, T5–T8, A.3 and A.5 stand except
+where said below. Written against the worktree at `8a56825`, with the withheld
+implementation attempt (`chainA_full_attempt.patch`, 1252 lines) as raw material.
+
+### B.0 What was wrong, and the measurement that settles the replacement
+
+**The transformation premise is dead.** A.0 concluded that a member's tags are
+the representative's under a global `ICOLUP` slot exchange. That is true for one
+of three classes and false for the class that matters most:
+
+| class | example (`p p > j j`) | relation to the representative's table |
+|---|---|---|
+| identity | `u u > u u` ← `c c > c c` | equal |
+| global conjugate | `u u > u u` ← `u~ u~ > u~ u~`; `g u > g u` ← `g u~ > g u~` | global slot exchange |
+| **crossing** | `u c > u c` ← `u c~ > u c~` | **no slot operation relates them** |
+
+The crossing class conjugates exactly two of four legs. Read off
+`pp_to_jj/P1_qq_qq/leshouche.inc`, as colour lines:
+
+```text
+isproc 4  u c > u c      flow 1 {1c,3c} {2c,4c}      flow 2 {1c,4c} {2c,3c}
+isproc 6  u c~ > u c~    flow 1 {1c,2a} {3c,4a}      flow 2 {1c,3c} {2a,4a}
+```
+
+The *leg pairings* differ: `isproc 4` pairs `{1,4}{2,3}` on its flow 2, and no
+flow of `isproc 6` pairs those legs at all. A slot exchange is a per-leg
+relabelling of endpoints; it cannot re-route a line from one leg to another. So
+the transformation does not merely need a third case — it does not exist. The
+global exchange of `isproc 4` produces `isproc 7`'s all-anticolour tables, which
+`check_legs` correctly refuses on `isproc 6`'s legs, and the per-leg exchange
+gets flow 1 right and flow 2 wrong. 12 of the 65 dijet assignments are in this
+class, so the first design's hard-error path aborts `p p > j j` outright. The
+implementation session's finding is confirmed here independently and its
+recommendation is adopted.
+
+**Why it is a re-routing, in one line.** `u c > u c` has one diagram, colour
+factor `T^a_{31} T^a_{42}`, whose Fierz is
+`½(δ_{32}δ_{41} − Nc⁻¹ δ_{31}δ_{42})`. Conjugating the `c` line transposes the
+second factor: `T^a_{31} T^a_{24}`, Fierz `½(δ_{34}δ_{21} − Nc⁻¹ δ_{31}δ_{24})`.
+The subleading term keeps the leg pairing `{1,3}{2,4}`; the **leading** term
+moves from `{1,4}{2,3}` to `{1,2}{3,4}`. That is the re-routing, and it is why
+the leading flow sits at index **2** for `u c > u c` and index **1** for
+`u c~ > u c~`.
+
+**Measured, categorically, on MadGraph's banked `pp_to_jj` sample.** Restricted
+to the matched leg ordering (`out = (q, q')`, gluons excluded — an earlier cut of
+this measurement mixed orderings and gave a nonsense answer):
+
+| subprocess class | patterns emitted in 10 000 events |
+|---|---|
+| `q q' > q q'` (`isproc 4` ordering) | **one** pattern, 35 events: `{1c,4c}{2c,3c}` = its flow **2** |
+| `q q~' > q q~'` (`isproc 6` ordering) | **one** pattern, 48 events: `{1c,2a}{3c,4a}` = its flow **1** |
+
+MadGraph emits *only* the leading flow for these single-diagram subprocesses —
+which is `ICOLAMP` doing exactly what it is for — so the correspondence
+`leading ↔ leading` is forced rather than inferred, and it maps flow **2 ↦ 1**.
+This is a categorical confirmation, not a statistical one: there is no second
+pattern for the correspondence to be wrong about.
+
+### B.1 Amendment to A.0 Fact 2 — the flow permutation is not a rule, it is a computation
+
+A.0 Fact 2 said the conjugate member's flow index is "the reversed one", and
+generalised a two-flow measurement into a rule. That is wrong, and the
+implementation session is right to call it out. Corrected statement, with every
+case verified in this session against `leshouche.inc`:
+
+| representative → member | tags | flow index |
+|---|---|---|
+| `g u > g u` → `g u~ > g u~` | global exchange | **reversed** (1↔2) |
+| `u u > u u` → `u~ u~ > u~ u~` | global exchange | **preserved** |
+| `u c > u c` → `u c~ > u c~` | no transformation | **reversed** (2↦1) |
+
+Two members of the *same* class carry different permutations, so the permutation
+cannot be read off the class. What survives from A.0 is only the underlying
+principle — the member's basis element that corresponds to the representative's
+flow `f` is the one carrying the same amplitude, i.e. `JAMP'_{π(f)} = ± JAMP_f`
+— and `π` must be **computed per member**, never assumed. B.2 makes that
+computation structural.
+
+### B.2 Change list against the current worktree (`8a56825` landed)
+
+The shape of the fix: **each member carries its own subprocess's colour-flow
+table, reordered once into the representative's flow indexing.** Nothing is
+transformed, so there is no theorem to get wrong and the three classes are one
+code path.
+
+**1. `vibegraph-lib/src/helas/color/colorize.rs` + `helas/eval/compile.rs` — the
+flow fingerprint.**
+`ColorBasis::elements[f].contributions` is already exactly what distinguishes one
+flow from another: `Contribution { diagram, chain, coeff }` with `coeff` an exact
+`q · i^imag · Nc^power`. Compile keeps a per-flow fingerprint and exposes it:
+
+```rust
+/// Per flow, the contributions summing into its JAMP, as a sorted fingerprint:
+/// `(diagram, chain, coeff.nc_power, |coeff.q|)`.
+flow_fingerprints: Vec<Vec<(usize, Vec<u8>, i32, Ratio<i64>)>>
+```
+
+with `pub fn flow_fingerprints(&self) -> &[Vec<…>]`. **The sign and the `i^imag`
+phase are deliberately dropped**: charge conjugation can flip a contribution's
+sign (`T^a → −T^{aᵀ}` puts a `(−1)ⁿ` on an `n`-gluon-vertex diagram), and the
+quantity being matched is which diagram lands on which flow at which power of
+`Nc`, which that phase does not move. Retaining the whole `ColorBasis` on the
+evaluator instead is acceptable if the implementation prefers it; the
+fingerprint is specified because it is the part that is actually used and it
+bounds the memory.
+
+**2. `vibegraph-lib/src/proton.rs` — `π` and the member's tags, fixed at group
+construction.**
+`derive_flavor_groups` already compiles every member (`compiled[i].0`) to test
+`|M|²`, `n_flows` and `cf_matrix`, then discards all but the representative.
+Stop discarding what the record layer needs. For each member:
+
+- `π` = the unique bijection `rep flow f ↦ member flow π(f)` with equal
+  fingerprints. **Uniqueness is required, not assumed**: if either basis has two
+  flows with equal fingerprints, or no bijection exists, or more than one does,
+  this is a `ProtonError` naming the group, the two subprocesses and the
+  ambiguous flows. **No tie-break, no heuristic, no numeric fallback** — a
+  refusal at setup is correct, and if it ever fires the chain returns to design
+  rather than the implementation inventing a rule.
+- the member's `ColorFlowTags` reordered into the representative's indexing:
+  `member_flows[f] = member_evaluator.color_flow_tags().flow(π(f))`. Store this
+  on `Subprocess` (alongside `colors`, which the withheld patch already adds and
+  which is kept verbatim) together with `π` itself, which is wanted for the
+  tests and for a failure message even though production only reads the
+  reordered table.
+- `Subprocess::colors` and `FlavorGroup::event_leg_colors` from the withheld
+  patch are adopted unchanged. `ColorRep` gaining `PartialOrd, Ord` (A.1 item 1)
+  is still needed for `Subprocess`'s derived ordering.
+
+Because the reordering happens once, **no downstream consumer sees `π`**: the
+configuration draw, the `ICOLAMP` mask and the flow draw all stay in the
+representative's indexing, and the tag lookup is a plain index.
+
+**3. `LeadingColorFlows` / `ICOLAMP` — no change, and why that is a claim and not
+an omission.** The concern is right to raise and is answered by the choice of
+`π`: `reached[d][f]` is "diagram `d` contributes to flow `f` at the basis's
+maximal `Nc` power", and `π` is defined to preserve `(diagram, chain,
+nc_power)`. Therefore `rep.reached_by(d)[f] == member.reached_by(d)[π(f)]`
+identically, and masking in the representative's indexing *is* masking in the
+member's. The worked case: `u c > u c`'s mask marks flow 2, `π(2) = 1`, and
+`u c~ > u c~`'s own leading flow is 1 — which is the only flow MadGraph ever
+emits for it (B.0). This identity is not left as reasoning: **T10 asserts it
+elementwise**, and if it ever fails, tag-only translation is insufficient and the
+mask must be translated too.
+
+**4. `vibegraph-lib/src/lhef/build.rs` — `relabelled` gets simpler, not more
+complex.** It no longer classifies anything and no longer transforms anything:
+
+```rust
+pub fn relabelled(
+    &self,
+    order: &[usize],
+    pdg: &[i32],
+    legs: &[LegColor],
+    flows: &ColorFlowTags,   // the member's own, in the representative's indexing
+) -> Result<Self, LhefError>
+```
+
+1. the existing well-formedness check on `order`/`pdg`, extended to `legs` and to
+   `flows` agreeing with `self` on `n_ext` and `n_flows`;
+2. `flows.permuted(order)` — the beam exchange, unchanged;
+3. `flows.check_legs(legs)` — the derive-and-check against the member's own reps,
+   which is what makes the original 4 758-leg defect a refusal rather than an
+   emission;
+4. store `legs` and the permuted flows.
+
+`LhefError::ColorRepsUnrelated` from A.1 item 4 is **not** added — there is no
+longer a classification to fail. The `check_legs` failure variant is. The doc
+comment must drop the "flavours sharing an amplitude carry the same masses"
+premise; the honest statement is that the flows do **not** travel with the legs,
+they are the member's own, and only the beam-exchange permutation is applied here.
+
+**5. `vibegraph-cli/src/generate.rs` — `flavor_records`** passes the member's
+`event_leg_colors(i, ordering)` and the member's stored flow table into
+`relabelled`.
+
+**6. `ColorFlowTags::conjugated` (landed, and now unused by production).** Keep
+it, used by **T9** as an independent oracle for the global-conjugate class: a
+second derivation with a different failure mode is worth more than a deleted
+function. Its doc comment must gain the boundary it lacks — that it relates a
+subprocess to its *full* conjugate only, and that a partially-conjugated member
+is not related to it by any slot operation.
+
+**7. Not in scope, designed around.** The slot-order dependence of compiled
+`|M|²` at `NCOLOR > 1` (`u g > g u` against `g u > g u`) is on the manager's
+backlog. This design never compiles a non-canonical ordering: members are
+compiled from their own enumerated `DiagramSet`s, and the beam exchange is a leg
+permutation applied to an already-resolved table (`ColorFlowTags::permuted`),
+never a second compilation. T11 replaces the withheld T4's Exchanged half on that
+basis.
+
+### B.3 Acceptance tests
+
+A.2's **T1, T2, T5, T6, T7, T8 stand unchanged**. T3 and T4 are superseded by
+T9–T12. Every one of T9–T12 runs over **all three classes** and carries the
+anti-vacuity assertions named.
+
+- **T9 `every_member_carries_its_own_subprocesss_colour_flows`** (`proton.rs`,
+  hermetic, `p p > j j` — **the linchpin**). For every group, every member, both
+  beam orderings: compare the record layer's table against the member's own
+  compiled `ColorFlowTags` under the stored `π`, by connectivity. Then, per
+  class: identity members must have `π = id` and tags *equal* to the
+  representative's; global-conjugate members must have tags equal to
+  `representative.conjugated()` at `π(f)` (the independent oracle of B.2/6);
+  crossing members must have tags that are **neither** the representative's nor
+  its conjugate at any index — asserted, because that is the statement that
+  falsified the first design and it must stay falsified.
+  **Anti-vacuity, all required**: at least one member in each of the three
+  classes; at least one non-identity `π` *and* at least one identity `π` among
+  members whose reps differ from the representative's (`u u > u u` →
+  `u~ u~ > u~ u~` is the conjugate-class member with `π = id`, and it is the case
+  that kills any "conjugate ⇒ reversed" shortcut). Report the per-class counts.
+  *Cannot detect*: an error shared by the member's compilation and the
+  representative's — T7's 73 `leshouche` trials are what exclude that, and the
+  two have no common blind spot.
+- **T10 `the_flow_permutation_carries_the_leading_colour_mask`** (`proton.rs`,
+  hermetic). For every group, member, diagram `d` and flow `f`:
+  `rep.reached_by(d)[f] == member.reached_by(d)[π(f)]`. *Anti-vacuity*: assert
+  that some `reached` row is not all-true and some `π` is not the identity —
+  otherwise the identity is trivially satisfied. *Fails on*: a `π` that matches
+  tags but not contributions, which is exactly the failure that would leave the
+  crossing class with right labels at wrong frequencies. *Cannot detect*: that
+  the mask itself is the right mask — that is `validate_unweighting`'s job.
+- **T11 `the_exchanged_ordering_is_a_leg_permutation_of_the_direct_one`**
+  (`proton.rs`, hermetic). The `Exchanged` record's tags equal the `Direct`
+  record's under `permuted([1, 0, 2, …])`, and its leg reps are the member's
+  swapped. Replaces the withheld T4's Exchanged half **without compiling a
+  swapped process string**, so it is independent of the slot-order finding.
+  *Cannot detect*: whether the direct ordering itself is right — T9's job.
+- **T12 `the_flow_fingerprint_identifies_a_flow_uniquely`** (`proton.rs` or
+  `colorize.rs`, hermetic). Within every basis of every `p p > j j` and
+  `p p > l+ l- j` member, the fingerprints are pairwise distinct, and the
+  `π`-matched fingerprints agree. Separately, at the group's own probe points,
+  `JAMP2_rep[f] == JAMP2_member[π(f)]` to the mirror identity's `1e-11`,
+  **subject to the degeneracy rule**: the value comparison is asserted only for
+  flows separated from every other flow by more than `1e-3` of the summed `|M|²`
+  at some probe point; where a degenerate block exists, assert instead that `π`
+  maps the block onto a block of equal JAMP2 multiset. This is the numeric
+  cross-check on a structural decision — it must never become the decision, and
+  the degeneracy rule is why. (`g g > g g`'s reflection-degenerate flows are the
+  known block; it is an identity-class group, so T9 pins it far more tightly than
+  any JAMP2 match could.) *Cannot detect*: a fingerprint scheme that is unique but
+  matches the wrong pairs — T9 and T10 are what exclude that.
+
+### B.4 Gates and expected movement
+
+Unchanged from A.3, with two additions: `pixi run --skip-deps
+validate-color-flow-tags` is already green at **73 trials** on `8a56825` and must
+stay so (the counts in A.0/A.1 said 49/79; the correct figures are **47 files /
+73 isprocs**, the difference being the since-retired `pp_to_llj_qcd2_qed2`), and
+the hermetic suite now carries T9–T12.
+
+E1 is unchanged and is still the target:
+
+| cell | before | after |
+|---|---|---|
+| `pp_to_jj` / `samples` | ⚠️ banked `info`, `ICOLUP` χ² ≈ 2470 / 25 at `p 0` | ✅ banked `gate`, every column above the `1e-4` floor on every seed |
+| T5's reference-free scan | 4 758 / 80 000 legs | **0 / 80 000** |
+| census | 87 measured / 85 ✅ / 2 ⚠️ | 87 / **86** ✅ / **1** ⚠️ |
+
+Must not move: every other printed field, `pp_to_jj`'s own `integrals` cell, and
+every row of `pp_to_llj*`, `pp_to_bb*`, `pp_to_ll*`. The zero-line report diff
+the implementation session already recorded for `8a56825` is the baseline the
+next diff is taken against.
+
+### B.5 Risks, and what this provably cannot break
+
+**Principal residual risk — the fingerprint fails to determine `π`.** If two
+flows of one basis share a fingerprint, the group is refused at setup. The
+design chooses that over a tie-break because a wrong `π` is a silently wrong
+event sample, while a refusal is loud and cheap. It is not expected to fire on
+`p p > j j`: the crossing pair's two flows are separated by `nc_power` alone
+(`0` against `−1`), and the `g q` pair by which diagrams reach which flow. If it
+does fire, the answer is a richer fingerprint, not a fallback — and it comes back
+to design.
+
+**The helicity correspondence across a conjugate member is assumed, not proved,
+and this design does not change that.** The record already labels a member's
+event with a helicity drawn off the representative's per-helicity `|M|²`; the
+`SPINUP` column of the dijet samples cell clears the floor at `p 0.18–0.35`,
+which is evidence and not proof. Out of scope, named so the review does not read
+its absence as a claim.
+
+**MadGraph's own sample cannot cross-check every `π`.** For single-diagram
+subprocesses it emits only the leading flow, so the crossing class is pinned
+categorically but with no second pattern to check the subleading map against.
+The `g q` class, with three diagrams and both flows populated, is where the
+sample checks a full permutation; T12's `JAMP2` identity is what covers the rest.
+
+**Provably cannot break:**
+
+- **No cross section can move.** The colour flow is selected after a point is
+  accepted and enters no weight; `π`, the fingerprint and the per-member tables
+  are all resolved at group construction and touch no momentum, weight, coupling
+  or scale. The `integrals` cells are the control on that.
+- **No event's kinematics, flavours, helicities, masses, statuses or mothers can
+  move.** `relabelled` gains arguments and *loses* a transformation; `pdg`,
+  `mass`, `n_in` and `order` are untouched.
+- **No identity-class group can move at all** — `π = id` and the member's tags
+  are asserted equal to the representative's, so every gated row except
+  `pp_to_jj` is bit-identical. Verified against the reference rather than
+  assumed: `pp_to_bb` and `pp_to_ll` differ between `isproc`s by generation, not
+  by rep, and `pp_to_llj`'s `g q~` is a separate `isproc` this crate also keeps
+  in a separate group.
+- **A table that does not fit its legs is refused, not written.** `check_legs`
+  runs against the member's own reps before any event is emitted.
+
+**§6's trigger is now closed, not merely unfired**: all 73 `leshouche` trials
+pass, including `u u~ > u u~`, `u u~ > c c~` and `u c~ > u c~`, so the
+per-subprocess derivation is right everywhere and the defect is confined to the
+record layer's cross-member reuse — which is what this amendment replaces.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
