@@ -1088,6 +1088,75 @@ pass, including `u u~ > u u~`, `u u~ > c c~` and `u c~ > u c~`, so the
 per-subprocess derivation is right everywhere and the defect is confined to the
 record layer's cross-member reuse — which is what this amendment replaces.
 
+## Chain A design amendment 2 (2026-08-03)
+
+A scoping clause on amendment 1's `π` refusal, which fired on a case that has no
+correspondence question. The scoping the implementation session proposes is
+adopted; the reason below is the load-bearing part, because it is what keeps
+this from being the tie-break B.5 forbids.
+
+### C.1 The two clauses
+
+**Clause 1 — B.2's uniqueness requirement is scoped.** When the member and the
+group representative are the **same compiled subprocess**, `π` is the identity
+and the fingerprint is not consulted. The condition is the member's index
+equalling the group head's — an identity of objects, not of process strings, leg
+reps, or fingerprints, and it applies to the representative-as-member of *every*
+group, not only to one-member groups. For every **distinct** pair the refusal of
+B.2 stands unconditionally: no tie-break, no heuristic, no numeric fallback.
+
+**Clause 2 — T12's first assertion is scoped the same way.** Fingerprints must
+be pairwise distinct only within a basis that has to be paired against a
+*different* subprocess's. `g g > g g`'s three reversal-degenerate pairs
+`(0,5) (1,3) (2,4)` are the known block and are exempt; the block is already
+handled by T12's JAMP2 degeneracy rule, which asserts that `π` maps a degenerate
+block onto a block of equal JAMP2 multiset rather than pinning members of it
+individually.
+
+### C.2 Why this is not a tie-break
+
+A tie-break would be choosing one of two admissible answers. Here there is only
+one, and there is no question: **the table indexed is the table drawn from.** The
+fingerprint matcher exists to relate two *different* bases; applied to a basis
+against itself it is being asked which element of a set corresponds to itself,
+and the identity is the answer by construction, not by preference. The
+degenerate flows do carry different connectivity, so an intra-block *choice*
+between two distinct subprocesses would be observable in the emitted `ICOLUP` and
+must stay forbidden — which is exactly what clause 1 preserves by scoping rather
+than weakening.
+
+The degeneracy itself is physical and not a defect of the fingerprint: a trace
+and its reverse are related by the gluon amplitudes' reflection identity, so they
+carry the same contributions and the same `JAMP2`, and no coefficient data
+separates them — measured, with signs and `i^imag` retained. That is why the
+remedy B.5 offered does not apply here, and it is the one statement of amendment
+1 that this section corrects (see C.3).
+
+The refusal remains live where it matters: a group whose representative's basis
+is degenerate *and* which has a distinct member would still be refused, because
+that ambiguity is real. `g g > g g` cannot become such a group — it is a single
+flavour assignment.
+
+### C.3 What else in amendment 1 changes
+
+Nothing, with one correction. **B.5's principal-risk paragraph** says that if the
+fingerprint ties, "the answer is a richer fingerprint, not a fallback". That
+remains true for a distinct pair, but it is false for the self-paired reversal
+block: retaining the sign and the `i^imag` phase leaves the pairs identical, so
+no enrichment separates them and the right answer is the scoping above. The
+sentence should be read as applying to distinct pairs only.
+
+Everything else stands as written: B.2's per-member tables and their reordering,
+B.2/3's `ICOLAMP` argument (`π = id` makes the mask identity trivially true for a
+self-paired member, and T10's anti-vacuity is carried by the 16 non-identity `π`
+the multi-member groups supply), B.3's T9–T11 with their anti-vacuity conditions,
+B.4's expected cell movement, and B.5's remaining risks. The measurements the
+implementation session took under the provisional scoping — T9's 238 tables over
+classes 39/14/12, T10's 112 rows with 95 restricting, T11's 52 mirrored members,
+`check_legs` 238/238, and the dijet `ICOLUP` χ² at `p` 1.05e-1 / 2.63e-1 /
+1.40e-1 against `p 0` at 2494/25 — are consistent with every prediction B.1 and
+B.5 made, and A.4's second-defect rule is not triggered.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
