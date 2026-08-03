@@ -1686,17 +1686,19 @@ fn gate_dir(dir: &str, banked: &BankedSigma) -> Result<(), String> {
 /// incomplete environment passes silently. The gate's own iteration is what
 /// consumes [`run_presence`], so it is exercised here directly rather than by
 /// arranging a work area.
+///
+/// The declared-absent sets are built here rather than read from the manifest.
+/// Reading them would tie the rule's coverage to whether some row happens to be
+/// awaiting a bundle right now — which is a transient state, empty between a
+/// re-cut and the next banked run, and the whole rule would then go untested
+/// exactly when the manifest is tidiest. Every classification is reachable from
+/// constructed inputs, so none of them is.
 #[test]
 fn a_row_the_bundle_does_not_carry_may_be_absent() {
+    // Absent, and named by no row: not exempt from anything. The manifest's own
+    // set is the input here, so a row that silently appeared in it would show up
+    // as this arm failing.
     let unbundled = common::manifest::unbundled_rows();
-    assert!(
-        !unbundled.is_empty(),
-        "no manifest row is marked bundled = false, so this rule has nothing to check \
-         and the gate's tolerance is untested"
-    );
-
-    // Absent and declared absent: passed over.
-    let declared = unbundled.iter().next().unwrap();
     assert!(
         matches!(
             run_presence("no-such-run-directory", &unbundled),
@@ -1704,6 +1706,8 @@ fn a_row_the_bundle_does_not_carry_may_be_absent() {
         ),
         "a directory no manifest row names is not exempt from anything"
     );
+
+    // Absent and declared absent: passed over.
     let absent_and_declared: BTreeSet<String> =
         std::iter::once("no-such-run-directory".to_string()).collect();
     assert!(
@@ -1714,18 +1718,20 @@ fn a_row_the_bundle_does_not_carry_may_be_absent() {
         "a row the manifest marks bundled = false may be absent"
     );
 
-    // Present is present whatever the manifest says about the bundle, so a machine
-    // that has the run measures it rather than passing over it.
-    if output_dir()
-        .join(declared)
-        .join("Cards/run_card.dat")
-        .exists()
-    {
-        assert!(
-            matches!(run_presence(declared, &unbundled), RunPresence::Present),
-            "an unbundled row whose run is on this machine must still be measured"
-        );
-    }
+    // Present beats declared-absent: a machine that has the run measures it rather
+    // than passing over it. `uux_to_mumu` is in the bundle, so this arm runs in
+    // every environment the banked layer runs in — including a fetching checkout,
+    // where a row-dependent version of this check would have had nothing to look at.
+    let present_but_declared_absent: BTreeSet<String> =
+        std::iter::once("uux_to_mumu".to_string()).collect();
+    assert!(
+        matches!(
+            run_presence("uux_to_mumu", &present_but_declared_absent),
+            RunPresence::Present
+        ),
+        "a run that is on this machine must be measured whatever the manifest says \
+         about the bundle"
+    );
 }
 
 /// The other half, as the failure it has to stay: a missing run the bundle *does*
