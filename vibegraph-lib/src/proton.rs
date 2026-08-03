@@ -93,7 +93,9 @@ use crate::hadronic::{
     RunningCouplingReport, SampledChannel, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS,
     SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED, VEGAS_NBINS,
 };
+use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
+use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::PdfMember;
@@ -144,6 +146,25 @@ pub struct Subprocess {
     pub incoming: [i32; 2],
     /// PDG codes of the outgoing legs, in the group's shared leg order.
     pub outgoing: Vec<i32>,
+    /// SU(3) rep of every leg, in the group's shared leg order (incoming first),
+    /// read off *this* member's own compiled amplitude.
+    ///
+    /// A group's members share a matrix element but not necessarily a colour rep —
+    /// a quark and an antiquark share `|M|²`, mass list, cut filter and colour-factor
+    /// matrix — and the record layer needs the member's own reps to check the table
+    /// it is about to write.
+    pub colors: Vec<ColorRep>,
+    /// This member's **own** per-flow `ICOLUP` tags, reordered into the group
+    /// representative's flow indexing by [`flow_permutation`].
+    ///
+    /// Nothing downstream sees the permutation: the configuration draw, the
+    /// `ICOLAMP` mask and the flow draw all happen in the representative's indexing,
+    /// and labelling an event is a plain index into this table.
+    pub flows: ColorFlowTags,
+    /// `flow_permutation[f]` is the flow of this member's own colour basis that
+    /// corresponds to flow `f` of the representative's. Kept for the tests and for
+    /// failure messages; production reads [`Self::flows`], which has it applied.
+    pub flow_permutation: Vec<usize>,
 }
 
 impl Subprocess {
@@ -361,6 +382,29 @@ impl FlavorGroup {
             .collect::<Vec<i32>>();
         (pdg, order)
     }
+
+    /// The colour reps one member carries under one beam ordering, in the same
+    /// **physical** leg order [`event_legs`](Self::event_legs) reports its codes in.
+    ///
+    /// These are the member's own reps, not the group representative's; the two
+    /// differ wherever a group joins subprocesses that conjugate some of their legs.
+    /// `incoming` is positional, since the beams are the first two legs whichever
+    /// parton is on them.
+    pub fn event_leg_colors(&self, member: usize, ordering: BeamOrdering) -> Vec<LegColor> {
+        let mut colors = self.members[member].colors.clone();
+        if ordering == BeamOrdering::Exchanged {
+            colors.swap(0, 1);
+        }
+        let n_in = self.n_in();
+        colors
+            .into_iter()
+            .enumerate()
+            .map(|(leg, rep)| LegColor {
+                rep,
+                incoming: leg < n_in,
+            })
+            .collect()
+    }
 }
 
 /// The flavour decomposition of one hadronic process.
@@ -410,6 +454,12 @@ pub enum ProtonError {
          event of {b} is labelled with cannot be read off {a}"
     )]
     ColorStructureDiffers { a: String, b: String },
+    #[error(
+        "subprocesses {a} and {b} share a matrix element, but their colour flows cannot be paired \
+         up: {reason}. An event of {b} is labelled with a flow drawn in {a}'s indexing, so without \
+         that pairing the label would be a guess"
+    )]
+    ColorFlowPairing { a: String, b: String, reason: String },
     #[error(
         "the groups represented by {a} and {b} separate by only {rel:.3e} at their best-separated \
          probe point; a partition that close is rounding, not a coupling distinction"
@@ -622,10 +672,12 @@ pub fn derive_flavor_groups(
                     b: labels[i].clone(),
                 });
             }
-            // An event is labelled with its group representative's colour-flow
-            // basis, so members must share it. `|M|²` on its own does not imply
-            // they do: it is a sum over the basis and would not move if two
-            // members' bases differed by a relabelling.
+            // An event's flow is drawn in the representative's indexing, and each
+            // member's own table is reindexed into it below. That reindexing needs a
+            // bijection between the two bases, which needs them to have the same
+            // number of flows and the same colour-factor matrix. `|M|²` on its own
+            // does not imply either: it is a sum over the basis and would not move
+            // if two members' bases differed by a relabelling.
             if member_eval.n_flows() != head_eval.n_flows()
                 || member_eval.cf_matrix() != head_eval.cf_matrix()
             {
@@ -638,13 +690,42 @@ pub fn derive_flavor_groups(
         let members = indices
             .iter()
             .map(|&i| {
-                let legs = &compiled[i].as_ref().expect("member unclaimed").1;
-                Subprocess {
+                let (evaluator, legs, _) = compiled[i].as_ref().expect("member unclaimed");
+                // The representative is a member of its own group, and there its
+                // table *is* the one an event was drawn from, so there is no
+                // correspondence to establish and the fingerprint is not consulted.
+                // The condition is an identity of objects — the same compiled
+                // subprocess — not an equality of process strings, leg reps or
+                // fingerprints, which is what keeps this a scoping of the question
+                // rather than an answer to it. Between two distinct subprocesses the
+                // refusal below stands unconditionally.
+                let flow_permutation = if i == head {
+                    (0..evaluator.n_flows()).collect()
+                } else {
+                    flow_permutation(head_eval, evaluator).map_err(|reason| {
+                        ProtonError::ColorFlowPairing {
+                            a: labels[head].clone(),
+                            b: labels[i].clone(),
+                            reason,
+                        }
+                    })?
+                };
+                // The member's own table, put into the representative's flow
+                // indexing once, so no consumer downstream has to know about the
+                // permutation.
+                let own = evaluator.color_flow_tags();
+                let flows = own
+                    .reindexed(&flow_permutation)
+                    .expect("flow_permutation is a permutation of this basis");
+                Ok(Subprocess {
                     incoming: [legs[0].pdg, legs[1].pdg],
                     outgoing: legs[2..].iter().map(|l| l.pdg).collect(),
-                }
+                    colors: evaluator.external_colors().iter().map(|l| l.rep).collect(),
+                    flows,
+                    flow_permutation,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, ProtonError>>()?;
         let (evaluator, legs, cuts) = compiled[head].take().expect("group head unclaimed");
         let spin_color_avg = initial_spin_color_average(&evaluator, model, evaluated);
         groups.push(FlavorGroup {
@@ -658,6 +739,74 @@ pub fn derive_flavor_groups(
     }
 
     Ok(FlavorGroups { groups })
+}
+
+/// Pair up two subprocesses' colour flows: `π[f]` is the flow of `member`'s basis
+/// built from the same contributions as flow `f` of `representative`'s.
+///
+/// Two subprocesses that share a matrix element carry the same set of colour
+/// structures, but their bases are sorted by key and the keys differ, so the same
+/// flow generally sits at a different index in each. Matching is on the structural
+/// fingerprint — which diagram, through which colour-index chain, lands on the flow
+/// at which power of `Nc` and with what rational magnitude — rather than on numbers
+/// that agree at a probe point, because that is a statement about the colour algebra
+/// and holds at every point by construction.
+///
+/// **Ambiguity is refused, never broken.** If either basis has two flows with equal
+/// fingerprints, or no bijection exists, or more than one does, this returns an error
+/// and the group is refused at setup. A wrong `π` is a silently wrong colour label on
+/// every event of that member; a refusal is loud and cheap.
+fn flow_permutation(
+    representative: &AmplitudeEvaluator,
+    member: &AmplitudeEvaluator,
+) -> Result<Vec<usize>, String> {
+    let ours = representative.flow_fingerprints();
+    let theirs = member.flow_fingerprints();
+    if ours.len() != theirs.len() {
+        return Err(format!(
+            "{} flows against {}",
+            ours.len(),
+            theirs.len()
+        ));
+    }
+    for (side, keys) in [("the representative", ours), ("the member", theirs)] {
+        for a in 0..keys.len() {
+            if let Some(b) = (a + 1..keys.len()).find(|&b| keys[a] == keys[b]) {
+                return Err(format!(
+                    "flows {} and {} of {side}'s own basis have the same contributions, so no \
+                     fingerprint can tell them apart",
+                    a + 1,
+                    b + 1
+                ));
+            }
+        }
+    }
+    let mut pi = Vec::with_capacity(ours.len());
+    for (f, key) in ours.iter().enumerate() {
+        let hits: Vec<usize> = theirs
+            .iter()
+            .enumerate()
+            .filter(|(_, other)| *other == key)
+            .map(|(g, _)| g)
+            .collect();
+        match hits[..] {
+            [g] => pi.push(g),
+            [] => {
+                return Err(format!(
+                    "flow {} of the representative has no counterpart in the member's basis",
+                    f + 1
+                ))
+            }
+            _ => {
+                return Err(format!(
+                    "flow {} of the representative matches {} of the member's flows",
+                    f + 1,
+                    hits.len()
+                ))
+            }
+        }
+    }
+    Ok(pi)
 }
 
 /// Unit-hypercube coordinates the `(τ, y)` outer map consumes. They are *prepended*
@@ -721,9 +870,16 @@ pub struct ProtonSelection {
     /// order [`FlavorGroup::event_legs`] returns codes in, so an exchanged
     /// ordering's beam helicities are already swapped.
     pub helicity: Vec<i32>,
-    /// Index into the group representative's colour-flow basis. The bases of a
-    /// group's members are equal by construction, and a beam exchange permutes the
-    /// legs of a flow rather than the flows.
+    /// Index into the group **representative's** colour-flow basis — the indexing
+    /// the draw is made in, off the representative's `JAMP2`.
+    ///
+    /// The members' bases are *not* equal: two subprocesses can share a matrix
+    /// element and a colour-factor matrix while routing their colour lines between
+    /// different pairs of legs. Each member's own table is reindexed into this
+    /// indexing once at group construction, by the permutation stored on
+    /// [`Subprocess::flow_permutation`], so the index is meaningful for every member
+    /// without their bases agreeing. A beam exchange permutes the legs of a flow
+    /// rather than the flows, and so does not touch it either.
     pub flow: usize,
 }
 
@@ -1548,6 +1704,7 @@ mod tests {
     use super::*;
     use crate::artifact::SamplerTopology;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+    use crate::lhef::build::SubprocessRecord;
     use crate::pdf::grid::SubGrid;
     use crate::ufo::sm::{sm_model, SMRestrict};
     use std::collections::BTreeSet;
@@ -1557,6 +1714,12 @@ mod tests {
     /// two beam multiparticles, two coupling classes, and a jet that is a gluon
     /// in one arrangement and a quark in the other.
     const LLJ: &str = "p p > l+ l- j QCD=2 QED=2";
+
+    /// The hadronic process whose flavour groups join subprocesses across all three
+    /// colour-rep relations: equal (`u u > u u` with `c c > c c`), globally conjugate
+    /// (`g u > g u` with `g u~ > g u~`) and partially conjugate — the crossing class,
+    /// `u c > u c` with `u c~ > u c~`, which no slot operation relates.
+    const JJ: &str = "p p > j j";
 
     fn model() -> Arc<UFOModel> {
         sm_model(SMRestrict::Default)
@@ -1772,9 +1935,14 @@ mod tests {
         for set in enumerate(LLJ, &m).iter().filter(|s| !s.diagrams.is_empty()) {
             let evaluator = compile_class(set, &m, &evaluated).expect("subprocess compiles");
             let legs = process_external_legs(&evaluator, &m, &evaluated);
+            let flows = evaluator.color_flow_tags().clone();
+            let flow_permutation = (0..evaluator.n_flows()).collect();
             let subprocess = Subprocess {
                 incoming: [legs[0].pdg, legs[1].pdg],
                 outgoing: legs[2..].iter().map(|l| l.pdg).collect(),
+                colors: evaluator.external_colors().iter().map(|l| l.rep).collect(),
+                flows,
+                flow_permutation,
             };
             let trace = m2_trace(&evaluator, &evaluated, &points);
             let hits: Vec<usize> = (0..groups.groups().len())
@@ -3445,6 +3613,467 @@ mod tests {
         );
         assert!(worst_jamp < 1e-11, "per-flow disagreement {worst_jamp:.2e}");
     }
+
+    /// How a member's colour reps relate to its group representative's.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum RepClass {
+        /// Every leg carries the representative's own rep.
+        Identity,
+        /// Every leg carries the conjugate, and at least one actually differs.
+        GlobalConjugate,
+        /// Some legs conjugated and some not — no slot operation relates the tables.
+        Crossing,
+    }
+
+    fn rep_class(representative: &[ColorRep], member: &[ColorRep]) -> RepClass {
+        if representative == member {
+            RepClass::Identity
+        } else if representative
+            .iter()
+            .zip(member)
+            .all(|(r, m)| r.anti() == *m)
+        {
+            RepClass::GlobalConjugate
+        } else {
+            RepClass::Crossing
+        }
+    }
+
+    /// Every enumerated subprocess of `process`, compiled, keyed by its PDG
+    /// assignment — the member's *own* amplitude, in the enumeration's own leg order.
+    fn compiled_by_assignment(
+        process: &str,
+        m: &Arc<UFOModel>,
+        evaluated: &EvaluatedModel,
+    ) -> std::collections::BTreeMap<Vec<i32>, AmplitudeEvaluator> {
+        let mut out = std::collections::BTreeMap::new();
+        for set in enumerate(process, m).iter().filter(|s| !s.diagrams.is_empty()) {
+            let evaluator = compile_class(set, m, evaluated).expect("subprocess compiles");
+            let legs = process_external_legs(&evaluator, m, evaluated);
+            out.insert(legs.iter().map(|l| l.pdg).collect(), evaluator);
+        }
+        out
+    }
+
+    /// Every member of every `p p → j j` group carries **its own** subprocess's
+    /// colour flows, under both beam orderings.
+    ///
+    /// The record layer serves a whole group off one compiled amplitude, and the
+    /// colour flows are the one thing that cannot come from it: two subprocesses can
+    /// share a matrix element, a mass list and a colour-factor matrix while routing
+    /// their colour lines between different pairs of legs. So each member's table is
+    /// its own, put into the representative's flow indexing once by a permutation
+    /// matched on the colour algebra rather than on numbers. This asserts the whole
+    /// of that against the member compiled from its own enumerated diagrams.
+    ///
+    /// Then, per class, the statement that class alone makes. The sharpest is the
+    /// crossing class's: its members' tags are **neither** the representative's nor
+    /// the representative's conjugate, at any index — so no slot operation, global or
+    /// per-leg, could have produced them, and a table transformed from the
+    /// representative's cannot serve them. `conjugated` survives as the independent
+    /// oracle for the global-conjugate class, so that class is checked twice by two
+    /// derivations with different failure modes.
+    ///
+    /// What it cannot see: an error shared by the member's compilation and the
+    /// representative's — the 73 `leshouche.inc` trials of `color_flow_tags_oracle`
+    /// are what exclude that, and the two have no common blind spot.
+    #[test]
+    fn every_member_carries_its_own_subprocesss_colour_flows() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive(JJ, &m, &evaluated);
+        let owned = compiled_by_assignment(JJ, &m, &evaluated);
+
+        let mut counts = [0usize; 3];
+        let (mut non_identity_pi, mut identity_pi_rep_differs) = (0usize, 0usize);
+        let mut checked = 0usize;
+        for group in groups.groups() {
+            let rep_colors: Vec<ColorRep> = group
+                .evaluator()
+                .external_colors()
+                .iter()
+                .map(|l| l.rep)
+                .collect();
+            let rep_tags = group.evaluator().color_flow_tags();
+            let rep_conj = rep_tags.conjugated();
+            let base = SubprocessRecord::new(group.evaluator(), &m, &evaluated).expect("record");
+
+            for (i, member) in group.members().iter().enumerate() {
+                let direct: Vec<i32> = member
+                    .incoming
+                    .iter()
+                    .chain(member.outgoing.iter())
+                    .copied()
+                    .collect();
+                let own = &owned[&direct];
+                let pi = &member.flow_permutation;
+                let class = rep_class(&rep_colors, &member.colors);
+                counts[class as usize] += 1;
+                if pi.iter().enumerate().any(|(f, &g)| f != g) {
+                    non_identity_pi += 1;
+                } else if class != RepClass::Identity {
+                    identity_pi_rep_differs += 1;
+                }
+
+                for ordering in [BeamOrdering::Direct, BeamOrdering::Exchanged] {
+                    if ordering == BeamOrdering::Exchanged && !member.has_mirror() {
+                        continue;
+                    }
+                    let (pdg, order) = group.event_legs(i, ordering);
+                    let legs = group.event_leg_colors(i, ordering);
+                    let record = base
+                        .relabelled(&order, &pdg, &legs, &member.flows)
+                        .unwrap_or_else(|e| panic!("{pdg:?} {ordering:?}: {e}"));
+
+                    for f in 0..record.n_flows() {
+                        // The record's table is the member's own, at `π(f)`, with the
+                        // beam exchange applied to the legs and nothing else.
+                        let want = own
+                            .color_flow_tags()
+                            .flow(pi[f])
+                            .iter()
+                            .enumerate()
+                            .map(|(leg, _)| own.color_flow_tags().flow(pi[f])[order[leg]])
+                            .collect::<Vec<_>>();
+                        assert_eq!(
+                            connectivity(record.flows().flow(f)),
+                            connectivity(&want),
+                            "{pdg:?} {ordering:?}: record flow {f} is not the member's own \
+                             flow {} on these legs",
+                            pi[f]
+                        );
+                        checked += 1;
+                    }
+                }
+
+                // Per class, on the direct ordering, where the leg order is shared.
+                for f in 0..rep_tags.n_flows() {
+                    let ours = connectivity(member.flows.flow(f));
+                    match class {
+                        RepClass::Identity => {
+                            assert_eq!(pi[f], f, "{direct:?}: identity class with a permuted flow");
+                            assert_eq!(
+                                ours,
+                                connectivity(rep_tags.flow(f)),
+                                "{direct:?}: identity class disagrees with the representative"
+                            );
+                        }
+                        RepClass::GlobalConjugate => {
+                            assert_eq!(
+                                ours,
+                                connectivity(rep_conj.flow(f)),
+                                "{direct:?}: conjugate class is not the representative's \
+                                 conjugated table at flow {f}"
+                            );
+                        }
+                        RepClass::Crossing => {
+                            let matches_rep = (0..rep_tags.n_flows())
+                                .any(|g| ours == connectivity(rep_tags.flow(g)));
+                            let matches_conj = (0..rep_conj.n_flows())
+                                .any(|g| ours == connectivity(rep_conj.flow(g)));
+                            assert!(
+                                !matches_rep && !matches_conj,
+                                "{direct:?}: a crossing member's flow {f} is the representative's \
+                                 table (or its conjugate) at some index, so a slot transformation \
+                                 would have sufficed after all"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "per-member colour flows: {checked} (member, ordering, flow) tables checked; \
+             classes identity/conjugate/crossing = {}/{}/{}; {non_identity_pi} members carry a \
+             non-identity flow permutation, {identity_pi_rep_differs} carry the identity while \
+             differing from the representative in rep",
+            counts[0], counts[1], counts[2]
+        );
+        assert!(counts[0] > 0, "no identity-class member");
+        assert!(counts[1] > 0, "no global-conjugate member");
+        assert!(counts[2] > 0, "no crossing-class member");
+        assert!(non_identity_pi > 0, "every flow permutation was the identity");
+        assert!(
+            identity_pi_rep_differs > 0,
+            "every rep-differing member permuted its flows, so this cannot tell the permutation \
+             from the rep relation"
+        );
+    }
+
+    /// The flow permutation carries the leading-colour mask, elementwise.
+    ///
+    /// `ICOLAMP` is reused across a group unchanged: the configuration draw, the mask
+    /// and the flow draw all happen in the representative's indexing, and only the
+    /// final label is the member's. That is sound only if `π` maps a diagram's
+    /// reached flows onto the same diagram's reached flows, which it does by
+    /// construction — `π` is matched on `(diagram, chain, nc_power)` and `reached` is
+    /// a predicate on exactly those. Asserted rather than argued, because if it ever
+    /// fails the mask has to be translated too and the labels would otherwise be
+    /// right at the wrong frequencies.
+    ///
+    /// What it cannot see: whether the mask is the right mask — that is
+    /// `validate_unweighting`'s job.
+    #[test]
+    fn the_flow_permutation_carries_the_leading_colour_mask() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive(JJ, &m, &evaluated);
+        let owned = compiled_by_assignment(JJ, &m, &evaluated);
+
+        let (mut rows, mut restrictive, mut permuted) = (0usize, 0usize, 0usize);
+        for group in groups.groups() {
+            let rep = group.evaluator().leading_color_flows();
+            for member in group.members() {
+                let direct: Vec<i32> = member
+                    .incoming
+                    .iter()
+                    .chain(member.outgoing.iter())
+                    .copied()
+                    .collect();
+                let theirs = owned[&direct].leading_color_flows();
+                let pi = &member.flow_permutation;
+                if pi.iter().enumerate().any(|(f, &g)| f != g) {
+                    permuted += 1;
+                }
+                assert_eq!(rep.n_diagrams(), theirs.n_diagrams(), "{direct:?}: diagram count");
+                for d in 0..rep.n_diagrams() {
+                    let (ours, other) = (rep.reached_by(d), theirs.reached_by(d));
+                    assert_eq!(ours.len(), other.len(), "{direct:?}: diagram {d} row width");
+                    if ours.iter().any(|&r| !r) {
+                        restrictive += 1;
+                    }
+                    for (f, &reached) in ours.iter().enumerate() {
+                        assert_eq!(
+                            reached, other[pi[f]],
+                            "{direct:?}: diagram {d} reaches flow {f} = {reached} in the \
+                             representative but {} at the member's flow {}",
+                            other[pi[f]], pi[f]
+                        );
+                    }
+                    rows += 1;
+                }
+            }
+        }
+        eprintln!(
+            "ICOLAMP invariance: {rows} diagram rows compared, {restrictive} of them actually \
+             restricting, over {permuted} members with a non-identity flow permutation"
+        );
+        assert!(restrictive > 0, "every mask row was all-true, so the identity is trivial");
+        assert!(permuted > 0, "every flow permutation was the identity");
+    }
+
+    /// The exchanged beam ordering is a leg permutation of the direct one, and
+    /// nothing else.
+    ///
+    /// The mirrored term evaluates the shared amplitude at the rotated argument, so
+    /// everything the direct record says about its leg 0 describes the event's second
+    /// beam. This pins that at the record layer without compiling a beam-swapped
+    /// process — a second compilation in a non-canonical leg order is not a
+    /// trustworthy oracle at `NCOLOR > 1`, and it is not needed: the exchange is a
+    /// permutation applied to an already-resolved table.
+    ///
+    /// What it cannot see: whether the direct ordering's table is right at all —
+    /// that is [`every_member_carries_its_own_subprocesss_colour_flows`]'s job.
+    #[test]
+    fn the_exchanged_ordering_is_a_leg_permutation_of_the_direct_one() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive(JJ, &m, &evaluated);
+
+        let mut compared = 0usize;
+        for group in groups.groups() {
+            let base = SubprocessRecord::new(group.evaluator(), &m, &evaluated).expect("record");
+            for (i, member) in group.members().iter().enumerate() {
+                if !member.has_mirror() {
+                    continue;
+                }
+                let (pdg_d, order_d) = group.event_legs(i, BeamOrdering::Direct);
+                let legs_d = group.event_leg_colors(i, BeamOrdering::Direct);
+                let direct = base
+                    .relabelled(&order_d, &pdg_d, &legs_d, &member.flows)
+                    .expect("direct record");
+                let (pdg_x, order_x) = group.event_legs(i, BeamOrdering::Exchanged);
+                let legs_x = group.event_leg_colors(i, BeamOrdering::Exchanged);
+                let exchanged = base
+                    .relabelled(&order_x, &pdg_x, &legs_x, &member.flows)
+                    .expect("exchanged record");
+
+                let mut swap: Vec<usize> = (0..pdg_d.len()).collect();
+                swap.swap(0, 1);
+                assert_eq!(
+                    exchanged.flows(),
+                    &direct.flows().permuted(&swap).expect("beam swap"),
+                    "{pdg_d:?}: the exchanged tags are not the direct ones with the beams traded"
+                );
+                assert_eq!(
+                    exchanged.legs(),
+                    {
+                        let mut want = legs_d.clone();
+                        want.swap(0, 1);
+                        // The `incoming` flag is positional, so it does not travel.
+                        for (leg, l) in want.iter_mut().enumerate() {
+                            l.incoming = leg < group.n_in();
+                        }
+                        &want.clone()[..]
+                    },
+                    "{pdg_d:?}: the exchanged leg reps are not the direct ones with the beams \
+                     traded"
+                );
+                assert_eq!(exchanged.pdg()[0], pdg_d[1]);
+                assert_eq!(exchanged.pdg()[1], pdg_d[0]);
+                compared += 1;
+            }
+        }
+        eprintln!("beam exchange: {compared} mirrored members compared against their direct record");
+        assert!(compared > 0, "no member carried a mirrored ordering");
+    }
+
+    /// The flow fingerprint identifies a flow uniquely, and the permutation it picks
+    /// is the one the amplitudes agree with.
+    ///
+    /// The pairing is a structural decision — which diagram, through which colour
+    /// chain, lands on the flow at which power of `Nc` — and this is its numeric
+    /// cross-check, never its basis. `JAMP2` cannot be the decision: `g g > g g`'s
+    /// colour orderings come in reversal pairs whose `|JAMP|²` agree *exactly* at
+    /// every point, so a squared oracle provably cannot separate them. Where such a
+    /// block exists the check weakens to "the block maps onto a block of equal
+    /// multiset", which is all any numeric oracle can say there.
+    ///
+    /// Distinctness is required of a basis only where that basis is paired against a
+    /// *different* subprocess's. A group whose only member is its representative
+    /// pairs a basis with itself, where the identity is the answer by construction;
+    /// `g g > g g` is that case here, and its reversal-degenerate flows are exactly
+    /// the block the JAMP2 rule above covers.
+    #[test]
+    fn the_flow_fingerprint_identifies_a_flow_uniquely() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let (mut bases, mut degenerate_blocks, mut asserted) = (0usize, 0usize, 0usize);
+        let mut worst = 0.0f64;
+        let mut exempt: Vec<String> = Vec::new();
+
+        for process in [JJ, LLJ] {
+            let groups = derive(process, &m, &evaluated);
+            let owned = compiled_by_assignment(process, &m, &evaluated);
+            // A basis has to be pairwise distinct only where it is actually paired
+            // against a *different* subprocess's, which is every basis in a group of
+            // more than one member. A single-member group pairs its representative
+            // with itself, where the identity is the answer by construction and no
+            // fingerprint is consulted; `g g > g g`'s three reversal-degenerate pairs
+            // are the one such basis here, and the block is covered instead by the
+            // JAMP2 degeneracy rule below.
+            for group in groups.groups() {
+                if group.members().len() < 2 {
+                    exempt.push(format!("{:?}", group.members()[0].incoming));
+                    continue;
+                }
+                for member in group.members() {
+                    let direct: Vec<i32> = member
+                        .incoming
+                        .iter()
+                        .chain(member.outgoing.iter())
+                        .copied()
+                        .collect();
+                    let keys = owned[&direct].flow_fingerprints();
+                    for a in 0..keys.len() {
+                        for b in a + 1..keys.len() {
+                            assert_ne!(
+                                keys[a], keys[b],
+                                "{direct:?}: flows {a} and {b} share a fingerprint, and this \
+                                 basis is paired against a different subprocess's, so the \
+                                 pairing would not be unique"
+                            );
+                        }
+                    }
+                    bases += 1;
+                }
+            }
+
+            for group in groups.groups() {
+                let points = fresh_points(&group.final_masses());
+                let rep = BoundAmplitude::<f64>::bind(group.evaluator(), &evaluated);
+                let mut rep_scratch = rep.scratch_space();
+                let rep_keys = group.evaluator().flow_fingerprints();
+                let n_flows = group.evaluator().n_flows();
+
+                for member in group.members() {
+                    let direct: Vec<i32> = member
+                        .incoming
+                        .iter()
+                        .chain(member.outgoing.iter())
+                        .copied()
+                        .collect();
+                    let own = &owned[&direct];
+                    let pi = &member.flow_permutation;
+                    for f in 0..n_flows {
+                        assert_eq!(
+                            rep_keys[f],
+                            own.flow_fingerprints()[pi[f]],
+                            "{direct:?}: flow {f}'s fingerprint is not its image's"
+                        );
+                    }
+
+                    let bound = BoundAmplitude::<f64>::bind(own, &evaluated);
+                    let mut scratch = bound.scratch_space();
+                    let mut rep_j = Vec::with_capacity(points.len());
+                    let mut own_j = Vec::with_capacity(points.len());
+                    let mut scales = Vec::with_capacity(points.len());
+                    for k in &points {
+                        let mut a = vec![0.0; n_flows];
+                        let mut b = vec![0.0; n_flows];
+                        rep.eval_jamp2(k, &mut rep_scratch, &mut a);
+                        bound.eval_jamp2(k, &mut scratch, &mut b);
+                        scales.push(b.iter().sum::<f64>().max(f64::MIN_POSITIVE));
+                        rep_j.push(a);
+                        own_j.push(b);
+                    }
+                    // A flow is "separated" when some probe point tells it apart from
+                    // every other flow of the representative's basis by more than the
+                    // stated margin; only then does a value comparison identify it.
+                    for f in 0..n_flows {
+                        let separated = (0..n_flows).filter(|&g| g != f).all(|g| {
+                            (0..points.len()).any(|p| {
+                                (rep_j[p][f] - rep_j[p][g]).abs() / scales[p] > JAMP_SEPARATION_MIN
+                            })
+                        });
+                        if separated {
+                            for p in 0..points.len() {
+                                worst = worst
+                                    .max((rep_j[p][f] - own_j[p][pi[f]]).abs() / scales[p]);
+                            }
+                            asserted += 1;
+                        } else {
+                            // The degenerate block: assert the multisets match instead.
+                            degenerate_blocks += 1;
+                            for p in 0..points.len() {
+                                let mut ours: Vec<f64> = rep_j[p].clone();
+                                let mut theirs: Vec<f64> =
+                                    (0..n_flows).map(|g| own_j[p][pi[g]]).collect();
+                                ours.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                                theirs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                                for (a, b) in ours.iter().zip(&theirs) {
+                                    worst = worst.max((a - b).abs() / scales[p]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "flow fingerprints: {bases} paired bases with pairwise-distinct keys, {} \
+             self-paired bases exempt ({exempt:?}); JAMP2 identity \
+             asserted directly on {asserted} separated flows and by multiset on \
+             {degenerate_blocks} degenerate ones, worst {worst:.2e} of the summed |M|\u{b2}",
+            exempt.len()
+        );
+        assert!(asserted > 0, "no flow was separated enough to compare by value");
+        assert!(worst < 1e-11, "JAMP2 disagreement {worst:.2e} across the permutation");
+    }
+
+    /// How far apart two flows must get, relative to the summed `|M|²` at some probe
+    /// point, before a value comparison can identify one of them.
+    const JAMP_SEPARATION_MIN: f64 = 1e-3;
 
     /// The colour lines a set of tags induces: the `(leg, slot)` endpoints sharing a
     /// label, with the label itself discarded because any consistent relabelling is

@@ -8,6 +8,7 @@
 //! resolved once, by [`SubprocessRecord`].
 
 use crate::coupling::scales::EventScales;
+use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::AmplitudeEvaluator;
 use crate::ufo::{EvaluatedModel, UFOModel};
 
@@ -117,8 +118,11 @@ pub struct SubprocessRecord {
     /// Pole mass per external leg, in GeV.
     mass: Vec<f64>,
     n_in: usize,
+    /// The colour rep and direction of every leg *this record* describes — the reps
+    /// [`SubprocessRecord::flows`] is checked against.
+    legs: Vec<LegColor>,
     /// `(colour, anticolour)` line labels per leg, per flow.
-    flows: crate::helas::color::flow_tags::ColorFlowTags,
+    flows: ColorFlowTags,
 }
 
 impl SubprocessRecord {
@@ -139,6 +143,7 @@ impl SubprocessRecord {
             pdg,
             mass,
             n_in: evaluator.n_in(),
+            legs: evaluator.external_colors().to_vec(),
             flows: evaluator.color_flow_tags().clone(),
         })
     }
@@ -148,18 +153,36 @@ impl SubprocessRecord {
     /// `pdg[i]`.
     ///
     /// A hadron-collider event needs this because one compiled amplitude serves
-    /// several concrete flavour assignments and both beam orderings. The colour
-    /// flows and the pole masses travel with the legs and only the codes change:
-    /// the flavours sharing an amplitude are the ones whose legs carry the same
-    /// masses, and exchanging the two beams exchanges their momenta along with
-    /// everything else the record says about them.
+    /// several concrete flavour assignments and both beam orderings. The pole masses
+    /// travel with the legs and only the codes change; exchanging the two beams
+    /// exchanges their momenta along with everything else the record says about them.
+    ///
+    /// **The colour flows do not travel with the legs at all.** `flows` is the
+    /// member's *own* subprocess's table, already reordered into this one's flow
+    /// indexing by the caller, and all that happens here is the beam-exchange
+    /// permutation. Two subprocesses can share a matrix element, a mass list and a
+    /// colour-factor matrix and still route their colour lines between different
+    /// pairs of legs — a quark and an antiquark on the same leg carry conjugate SU(3)
+    /// reps, and conjugating one end of a line moves it — so nothing derived from
+    /// this record's own flows would be right for them.
+    ///
+    /// `legs` is the reps those legs carry, and the table is checked against them
+    /// before it can reach an event: a line in a slot its leg's rep forbids is
+    /// refused here rather than emitted.
     ///
     /// The incoming/outgoing split is `self`'s, so a permutation that moves a leg
     /// across it is refused.
-    pub fn relabelled(&self, order: &[usize], pdg: &[i32]) -> Result<Self, LhefError> {
+    pub fn relabelled(
+        &self,
+        order: &[usize],
+        pdg: &[i32],
+        legs: &[LegColor],
+        flows: &ColorFlowTags,
+    ) -> Result<Self, LhefError> {
         let n_ext = self.n_ext();
         let well_formed = order.len() == n_ext
             && pdg.len() == n_ext
+            && legs.len() == n_ext
             && order.iter().enumerate().all(|(i, &leg)| {
                 leg < n_ext && (i < self.n_in) == (leg < self.n_in) && !order[..i].contains(&leg)
             });
@@ -169,19 +192,38 @@ impl SubprocessRecord {
                 n_ext,
             });
         }
-        let flows = self
-            .flows
-            .permuted(order)
-            .ok_or_else(|| LhefError::LegOrder {
-                order: order.to_vec(),
+        if flows.n_ext() != n_ext || flows.n_flows() != self.n_flows() {
+            return Err(LhefError::ColorFlowShape {
                 n_ext,
-            })?;
+                n_flows: self.n_flows(),
+                got_ext: flows.n_ext(),
+                got_flows: flows.n_flows(),
+            });
+        }
+        let flows = flows.permuted(order).ok_or_else(|| LhefError::LegOrder {
+            order: order.to_vec(),
+            n_ext,
+        })?;
+        flows
+            .check_legs(legs)
+            .map_err(|e| LhefError::ColorFlowLegs(e.to_string()))?;
         Ok(SubprocessRecord {
             pdg: pdg.to_vec(),
             mass: order.iter().map(|&leg| self.mass[leg]).collect(),
             n_in: self.n_in,
+            legs: legs.to_vec(),
             flows,
         })
+    }
+
+    /// The colour rep and direction of every leg, in this record's own order.
+    pub fn legs(&self) -> &[LegColor] {
+        &self.legs
+    }
+
+    /// This record's per-flow `(colour, anticolour)` tags.
+    pub fn flows(&self) -> &ColorFlowTags {
+        &self.flows
     }
 
     /// The number of external legs.
@@ -323,6 +365,7 @@ mod tests {
             pdg: vec![21, 21, 6, -6],
             mass: vec![0.0, 0.0, 173.0, 173.0],
             n_in: 2,
+            legs: legs.to_vec(),
             flows: color_flow_tags(&basis, &legs).expect("flow tags"),
         }
     }
