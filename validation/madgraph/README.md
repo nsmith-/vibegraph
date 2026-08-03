@@ -79,6 +79,16 @@ they always rerun — which is what makes a reference that moved show up as a di
 Regenerating from a populated work area reproduces every committed file
 byte-for-byte, the bundle archive included.
 
+**A banked event sample is not regenerable from its cards for a run whose
+process directory holds more than one subprocess group.** `VG_FORCE=1` will
+re-run the card and the cross section comes back identical to every printed
+digit, but the unweighting draw is sensitive to how the groups' jobs are
+scheduled, so the events are a different — equally valid — sample. `p p > j j`
+is the measured case: five groups, and a re-run yields a different event file.
+Its banked sample is the reference, and the `samples` gate on it compares
+distributions rather than bytes. Single-group runs do regenerate bit-identically,
+which is what the clustering dumps below rely on.
+
 ## Using the reference data without MadGraph
 
 Everything the banked validation layer reads is either committed here or in the
@@ -93,7 +103,7 @@ pixi run fetch-refdata      # pinned URL + SHA-256 from ../manifest.toml
 pixi run --skip-deps validate
 ```
 
-`VIBEGRAPH_REFDATA_SOURCE=/path/to/vibegraph-refdata-3.tar.zst` takes the archive
+`VIBEGRAPH_REFDATA_SOURCE=/path/to/vibegraph-refdata-4.tar.zst` takes the archive
 from a local file instead; the pinned checksum is enforced either way. It is also
 the only route while `[refdata].published` is `false`: a bundle whose release
 asset has not been uploaded yet has a pin but no URL that serves it.
@@ -112,8 +122,14 @@ the seed the banked banner records, and re-runs it.
 Two things make the dump worth reading, and both are checked rather than assumed:
 the replay's unweighted event file is byte-identical to the bank over every
 event, and every event's dumped μR and μF reproduce that event's own `SCALUP`,
-`<rscale>` and `<pdfrwt>`. The dumps themselves are work-area sized and live
-under `output/ktdump/dumps/`; the committed manifest pins their checksums.
+`<rscale>` and `<pdfrwt>`. The dumps themselves are work-area sized (75 MB) and
+live under `output/ktdump/dumps/`; the committed manifest pins their checksums.
+
+The reference bundle does **not** carry them, and the consequence is not a
+detail: `validate_kt_cluster` returns early when the dumps are absent, so on a
+checkout that fetched the bundle that gate is green without having compared
+anything. Whether the dumps join a bundle or the gate moves to the oracle layer
+is an open decision (`TODO.md`, gate + tooling hygiene).
 
 ## Coupling-order semantics
 

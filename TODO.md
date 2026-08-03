@@ -5,24 +5,25 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: the **`v3-backlog` sprint** (validation follow-up) ✅
-**closed + merged to `main`** 2026-08-01; `refdata-3` published and pinned
-(`[refdata].published = true`), CI's `banked` job gates merges against it.
-Census over the 26-row × 4-category report: **75 measured / 74 ✅ / 1 ⚠️**, the
-one ⚠️ being the decided `gg_to_gg` 4/6 diagram-counting convention. Full
-record in note 27 §7; the `validation-3` findings register it worked from is
-note 25 §10. Standing caveat: a partonic σ quoted from `refdata-2` is **not
-comparable** to one from `refdata-3` (MadGraph 3.5.7 applied the PDF set's
+**Current position**: the **`kt-spine` feature sprint** ✅ **closed** 2026-08-02
+(branch `kt-spine/z-closeout`). General kT clustering, the multi-rung t-channel
+spine and the per-subprocess identical-particle factor are in production, and
+`p p > j j` is gated at MadGraph's own default dynamical scale. Census over the
+29-row × 4-category report: **87 measured / 85 ✅ / 2 ⚠️**. Full record in
+note 28 §Z; the standing discrepancies it left are below. Standing caveat: a
+partonic σ quoted from `refdata-2` is **not comparable** to one from
+`refdata-3`/`refdata-4` (MadGraph 3.5.7 applied the PDF set's
 `αs(M_Z) = 0.130` to `lpp = 0` runs; 3.7.1 keeps the model's `0.118` — note 27
 §B5).
 
-**Current sprint**: the **`kt-spine` feature sprint** — note 28, approved and
-launched 2026-08-01 (D1–D3 decided on the recommended options). Two tracks
-(K: kt-clustering; S: permutation factor + multi-rung spine + massless-t-cut)
-converging on a `p p > j j` default-dynamical-scale capstone; freezes the
-channel/map structure ahead of the integration-focused performance sprint
-(VEGAS first-iteration bias + `w_max` scan decoupling, performance backlog
-below).
+**Awaiting the user**: `refdata-4` is assembled, verified and pinned, and
+`[refdata].published = false` until the release asset is uploaded — CI's
+`banked` job stays red until then. Commands in note 28 §Z.
+
+**Next sprint**: the integration-focused performance pass (VEGAS
+first-iteration bias + `w_max` scan decoupling + stratified-parallel axes,
+performance backlog below). `kt-spine` froze the channel/map structure it
+measures against, which was its precondition.
 
 Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
@@ -35,7 +36,7 @@ Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. Deferred: multi-rung t-channel ladders (note 21) |
 | 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 17 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and all 4 llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). At a *dynamical* scale each point is clustered in the channel its own sampling channel names, per flavour group: `gu_to_epemu` **+1.07%** / `gux_to_epemux` **+0.97%** and σ(pp→ℓ⁺ℓ⁻j) **−0.68%**, all GATE at tolerances set by the channel-partition ambiguity (backlog below). The `p p > j j` capstone runs the same path on the canonical QCD process and is **GATE**: **6.803009e8 ± 2.511e5 pb** over three seeds vs MG 6.788500e8 ± 1.4726e6, rel **+0.21%** at pull **+0.97**, at `rel_tol` 0.005 — the reference's own 0.22% with headroom, pull asserted, since its channel-partition ambiguity is only `1.0e-3` (its own Monte-Carlo error, because a 2 → 2 gives the clustering no merge to choose). It sums over MadGraph's own 65 concrete assignments, pinned entry for entry against the run's `leshouche.inc` |
-| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 34 banked MG runs byte-for-byte (714 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
+| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with the flow→`ICOLUP` dictionary checked against MG's `leshouche.inc` (30/30 subprocesses), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 37 banked MG runs byte-for-byte (744 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
 
 ## Closed-sprint history
 
@@ -55,6 +56,7 @@ One line each; the note is the full record. Earlier sprints
 - **`user-distribution` + `proton-events`** (feature, two tracks, closed + merged 2026-07-31) — Track P: llj amplitude rows 14→18 plus a per-diagram `AMP()` oracle, measured flavour groups, `ProtonIntegrand`, σ(pp→ℓ⁺ℓ⁻j) and `generate` gated at `lpp = 1` (artifact fv3→fv4). Track U: release/CI/acceptance workflows, `~/.vibegraph` cache, consent-gated pinned PDF fetch, `check-events`. Transferable lesson: **a seed sweep is necessary and not sufficient** — five mutually-consistent seeds were collectively 1.0% low, so budget convergence is a second axis. Also `[profile.dev] opt-level = 2` cut `cargo test` 3m16s → 1m05s with nothing weakened; note 24.
 - **`validation-3`** (validation, closed 2026-07-31) — three declared dependency layers (`hermetic`/`banked`/`oracle`) with `validation/manifest.toml` as the single per-process source of truth; the `amplitudes` category made hermetic on MadGraph's own banked events; every hadronic σ moved onto the general `ProtonIntegrand`; the new `samples` category (KS + χ² against MadGraph's event samples); Pythia consumption; and one asserted report table over 26 rows × 4 categories. Transferable lesson: **a report is only evidence if every green cell is a recorded measurement** — inferring a cell from "the suite passed" is the same failure as a vacuous check. Findings register in note 25 §10.
 - **`v3-backlog`** (validation follow-up, closed + merged 2026-08-01) — every register finding resolved rather than tolerated: the h→ττ pole was **MadGraph 3.5.7's `get_channel_cut` defect** (`(t-Mass)*(t+Mass)` on `t = p²`; upstream fix `286feb8e6`, first in 3.6.2) and both cells now GATE against 3.7.1; the colour draw reproduces MadEvent's `SELECT_COLOR` via per-diagram `AMP2_d` (both χ² targets hit); `Cuts::shat_min` derives `setcuts.f`'s general bounds (`pp_to_bb_fixed` σ GATE); DY events banked with a live `dσ/dm_ll` gate; references re-banked on **3.7.1** into `refdata-3` (finding: 3.5.7 ran every `lpp = 0` process at `αs(M_Z) = 0.130`, so refdata-2/3 partonic σ are not comparable); the LHE writer round-trips **both** MG serialisation dialects by construction (34/34 byte-for-byte, 14/34 still reproduced with source dropped); latent `IDWTUP = -3` σ-misread fixed en route. Census 72/68/4 → **75/74/1**; note 27.
+- **`kt-spine`** (feature, two tracks, closed 2026-08-02) — Track K: MadGraph's general kT clustering reproduced merge for merge against an instrumented 3.7.1 (90 000 dumped events, zero observed deviation), the closed forms deleted so `dynamical_scale_choice = -1` takes one path, `GridAlphaS` made LHAPDF's own `AlphaS_Ipol` and the density grid continued past its edges — then the flips: 6 asserted-refused scale rows became per-event replays, the 4 llj partonic σ rows and their `samples` cells left `blocked`, σ(pp→ℓ⁺ℓ⁻j) re-gated at the dynamical scale, and the capstone **`p p > j j`** gated on MadGraph's shipped run-card defaults (**6.803009e8 ± 2.511e5 pb** vs MG 6.788500e8 ± 1.4726e6, rel +0.21%, pull +0.97). Track S: the identical-particle factor moved into the phase-space map per subprocess, and the multi-rung t-channel spine landed in production. Two bugs the sprint found rather than assumed: the **fixed-beam path was never regulated** (every prior "what is the spine worth" measurement was taken on flat transfer draws), and `p p > j j`'s σ was **36% high** because a repeated final-state label enumerated `g u > g u` and `g u > u g` as two subprocesses. Transferable lesson: **a per-event field is a finer oracle than a cross section, and it exists more often than it looks** — the clustering was pinned by an instrumented replay of MadGraph's own intermediates long before any σ moved, which is why every σ flip that followed had a diagnosis attached. Census 75/74/1 → **87/85/2** over 29 rows; note 28.
 
 ---
 
@@ -91,57 +93,20 @@ One line each; the note is the full record. Earlier sprints
   directory's first subprocess so the repair is gated rather than asserted.
   (note 28 §C2.5.)
 - ~~**A repeated multiparticle label in the final state is enumerated once per
-  ordering, and summed twice**~~ — **resolved in `kt-spine` C2**.
-  `generate_sets_inner` (`diagrams/mod.rs`) now sorts the final state in its dedup
-  key as well as the initial state, **in the key only**, so the surviving
-  `DiagramSet` keeps the order the expansion emitted — which is MadGraph's own, so
-  no representative rule was needed. `jj_subprocesses_are_madgraphs_own` (renamed,
-  still enforced, still read from the banked run's own `leshouche.inc`) turns
-  `117 = 65 + 52` into **65 = 65, 0 missing, 0 surplus**, and now also asserts
-  MadGraph's own side of the rule — **0** of its 52 unequal-outgoing assignments
-  has the swap listed — so the equality cannot hold for a trivial reason.
-  σ(`p p > j j`) **+36.2% → +0.21%** at pull **+0.97**, χ²/dof `6.53 → 2.52` over
-  the gate's three seeds, and the `integrals` cell is **GATE** at `rel_tol` 0.005
-  — the reference's own `0.22%` with headroom, pull **asserted**. Blast radius
-  measured rather than assumed: over 30 report rows × 4 categories and 82 appendix
-  measurement lines, **only `pp_to_jj` moved**; hermetic `cargo test --workspace`
-  and the banked layer both exit `0`; the `p p > l+ l- j` control keeps all **212**
-  enumerated sets. (note 28 §C2.)
+  ordering, and summed twice**~~ — **resolved in `kt-spine` C2**: the dedup key
+  sorts the final state too, `117 = 65 + 52` becomes `65 = 65`, and
+  σ(`p p > j j`) goes `+36.2% → +0.21%` with the cell GATE. (note 28 §C2.)
 - ~~**The per-diagram multichannel builds degenerate maps for massless-propagator
-  processes**~~ — **resolved in `kt-spine` S4**, and not by the multi-rung spine.
-  The cause was that `FixedBeamIntegrand::use_multichannel` supplied no fiducial
-  scale, so a massless spacelike line sat on the collinear edge and its transfer
-  was drawn *flat*: every peripheral fixed-beam channel collapsed to the same
-  isotropic 2-body split. Passing the cuts' own `spacelike_floor()` — what
-  `ProtonIntegrand` always did — makes the draw `1/|t|` over the fiducial window.
-  Re-measured (`validate_sigma.rs` `probe_channel_map_degeneracy`): worst pairwise
-  density difference `1.000` on both `u u~ > u u~` (0 of 2000 pairs coincident,
-  α `[8.5e-6, 0.99999]`) and `g g > g g` (α `[3.2e-5, 3.2e-5, 0.496, 0.504]`),
-  against the unchanged `g g > t t~` control (`0.84`, `[0.267, 0.364, 0.369]`).
-  `g g > g g`'s two non-peripheral channels stay bit-identical to each other,
-  which is expected — neither has a spacelike line for the floor to act on.
-  (note 27 §B3.2, note 28 §S4.)
+  processes**~~ — **resolved in `kt-spine` S4**, and not by the spine: the
+  fixed-beam path supplied no fiducial scale, so every peripheral channel drew
+  its transfer flat. (note 27 §B3.2, note 28 §S4.)
 - ~~**Four llj partonic σ rows are unreachable, not merely ungated**~~ — **run in
-  `kt-spine` K5b and all four enforced in K6**. `uux_to_epemg` and `ddx_to_epemg`
-  GATE at `rel_tol` 0.01 (**+0.28%**, **+0.43%**), `gu_to_epemu` and
-  `gux_to_epemux` GATE at `rel_tol` 0.02 (**+1.07%**, **+0.97%**) once the
-  sampled channel reached the scale, all four `samples` cells GATE.
+  `kt-spine` K5b and all four enforced in K6**, `samples` cells included.
   (note 28 §K5b, §K6.4.)
 - ~~**The cluster scale is computed in integration channel 1 on every point**~~ —
-  **resolved in `kt-spine` K6.** `EventScaleSource::scales` takes a
-  `SampledChannel` (channel set + diagram) and both integrands supply it from the
-  draw they made; `MultiChannel::sample_from` reports the drawn channel, and the
-  α-adaptation survey carries it too. The multichannel-channel → derived-config
-  map is `DerivedChannels::config_of_diagram`, the inverse of `diagram_of` over
-  the whole diagram slice — **not** the identity, since `derive_channels` drops
-  the four-point-filtered diagrams, and pinned hermetically on `g g > g g`'s
-  4 diagrams / 3 configs from both sides. `ProtonIntegrand` gained a forest set
-  **per flavour group** in the same change, where it had been using group 0's for
-  all of them. `gu_to_epemu` −5.5% → **+1.07%**, `gux_to_epemux` −5.6% →
-  **+0.97%**, σ(pp→ℓ⁺ℓ⁻j) at the dynamical scale −3.05% → **−0.68%**, all three
-  now GATE; every other σ row bit-for-bit unchanged, and the two annihilation llj
-  rows provably so — their `μR` spread over all sampling channels is exactly
-  `0.000e0`. **Unblocks the `p p → j j` capstone.** (note 28 §K6.)
+  **resolved in `kt-spine` K6**: the scale takes the channel the point was drawn
+  in, per flavour group, and three σ rows flipped Info → GATE. The residual it
+  left is the next item. (note 28 §K6.)
 - **σ at a channel-dependent scale is only defined up to the channel partition** —
   the residual `kt-spine` K6 left, measured rather than tolerated. Once the scale
   reads the integration channel, the channel-split estimator
@@ -166,38 +131,21 @@ One line each; the note is the full record. Earlier sprints
   there, the gap is `+1.03e-3` against its own `9.6e-4` Monte Carlo, because a
   `2 → 2` final state gives the clustering no merge to choose, so that row gates
   at the reference's own error instead. (note 28 §K6.5/§K6.8/§C.3.)
-- ~~**`uux_to_uux` residual bias**~~ — **resolved in `kt-spine` S4**. The −0.30%
-  five-seed mean was the flat transfer draw above, not a missing rung: with the
-  jet cut's floor supplied, the five-seed mean is **+0.019%** at the gate budget
-  and **+0.015%** at four times it, worst |pull| `0.93` and worst |rel| `1.1e-3`
-  (was `2.69` / `6.4e-3`). The quoted error at the gate budget fell 2.4×, and
-  `g g > g g`'s fell 2.6×. (`validate_sigma.rs` `probe_qcd_seed_stability`,
-  note 28 §S4.)
+- ~~**`uux_to_uux` residual bias**~~ — **resolved in `kt-spine` S4**: the −0.30%
+  five-seed mean was the flat transfer draw above, and reads +0.019% with the
+  jet cut's floor supplied. (note 28 §S4.)
 - ~~**`ud_to_epemud_qcd0` carries a relative sign between diagrams**~~ — **resolved
-  in `kt-spine` S6**, and the rule generalises one that was already there. The
-  per-propagator flip in `spine_sign_from_flow` fired only on *initial–initial*
-  fermion lines; it belongs on every line with **at least one initial-state
-  endpoint**, mixed lines included. Both sides cross half the external legs and not
-  the same half — diagram enumeration binds UFO slots in the all-incoming identity,
-  MadGraph in the all-outgoing one — so the lines read against their own slot arrow
-  are exactly initial–initial *and* mixed, and a line read backwards costs
-  `C Γᵀ C⁻¹ = −γ^μ P_χ̄` **per vertex** while `reversed_convention_sign` can only ever
-  supply one such −1 (a fermion line has one vector-rooted sink). The missing `V − 1`
-  are one per internal fermion propagator. `u d > e+ e- u d QCD=0` is the first
-  banked row with two mixed fermion lines, so it is the first where the propagator
-  can sit on a mixed line (24 diagrams) or on the crossed lepton line (9, plus 2 with
-  none) — S5's partition, with the two triple-gauge diagrams landing right without
-  being named. The row is now **gated at both levels**: |M|² max rel `4.2e-14`
-  (was `5.1e+1`), per-flow `3.0e-15`, `JAMP2` `2.6e-14`, all 35 diagrams against bare
-  `AMP()` at `6.6e-15` under one phase; σ = `1.409864e-2 ± 1.841e-5 pb` against
-  MadGraph's `1.410700e-2 ± 3.4241e-5` (pull −0.22, rel −0.06%). The 19 other
-  amplitude tables are unmoved, rooting soundness is `270 re-rootings, 0 failures`,
-  and `MG_VALIDATED_PROCESSES` is 19 entries. (note 28 §S6.)
+  in `kt-spine` S6**: the per-propagator flip in `spine_sign_from_flow` belongs on
+  every fermion line with at least one initial-state endpoint, mixed lines
+  included. The row is gated at both levels — |M|² 4.2e-14, σ pull −0.22.
+  (note 28 §S6.)
 - **`ee_to_mumua` drifted when the references moved to 3.7.1** — the one row
-  where 3.7.1 disagrees with us *more* than 3.5.7 did. Our σ is unchanged
-  (`1.007660e-1` pb, same integration); MadGraph's moved `1.00630e-1 ± 3.865e-4`
-  → `9.980100e-2 ± 2.335e-4` pb, so the `integrals` pull went **+0.31 → +3.12**
-  (rel +0.135% → +0.97%) against a `PULL_LIMIT` of 3.5, and about half of that
+  where 3.7.1 disagrees with us *more* than 3.5.7 did, and the widest σ row in
+  the set. Our σ is `1.006000e-1 ± 1.665e-4` pb (it was `1.007660e-1` before
+  `kt-spine` S4 regulated the fixed-beam transfer draw, which moved it toward
+  MadGraph and shrank its error); MadGraph's moved `1.00630e-1 ± 3.865e-4`
+  → `9.980100e-2 ± 2.335e-4` pb, so the `integrals` pull reads **+2.79**
+  (rel **+0.80%**) against a `PULL_LIMIT` of 3.5, and about half of that
   growth is the tighter reference error rather than the −0.83% shift itself. Its
   `samples` cell followed: minimum KS p **2.14e-3 → 2.74e-4** against a `1e-4`
   floor, worst observable `y(a)` → `pt(a)`. Both cells still gate, and both are
@@ -209,6 +157,18 @@ One line each; the note is the full record. Earlier sprints
 
 ### Deferred coverage
 
+- **Three `uncovered` cells the `kt-spine` runs earned and nobody wrote** — each
+  is unwritten rather than refused, and the run that would feed it is banked.
+  (a) `ud_to_epemud_qcd0` `samples`: the spine reference row banks an unweighted
+  event file and its σ now gates, so nothing blocks the comparison. (b)
+  `pp_to_llj_dyn` `samples`: `validate_samples_proton` integrates and generates
+  the *fixed*-scale llj card only, so the dynamical one needs its own artifact
+  and generation pass — worth taking together with whatever closes the
+  integration-channel deficit that cell's `integrals` note records. (c)
+  `ud_to_epemud_qcd0` `diagrams`: the run's counts are not in `diagrams.json`,
+  and enumerated against them this side finds 35 topologies to MadGraph's 35, so
+  banking the counts makes it a passing hermetic gate with no allowance needed.
+  (Note 28 §S6, §K5b.6.)
 - **V7 per-flavor diagram matching** — deferred from `validation-2`: Python
   extractor + Rust sorted-PDG matching + JSON regen, with a real-finding risk
   (whether vibegraph enumerates MG's exact concrete-subprocess union). Design
@@ -249,12 +209,29 @@ One line each; the note is the full record. Earlier sprints
   fail until a first release exists. Turn it on once one does: it is also the
   second detector for the "CERN repackages the PDF archive" risk, whose only
   other detector is an `#[ignore]`d test nobody runs on a timer. (Note 24 §U2.)
-- **`pp_to_llj_qcd2_qed2` is a duplicate of `pp_to_llj`** — the banked event
-  payloads are sha-identical (the `QCD=2 QED=2` restriction coincides with the
-  default orders for this process), so the census double-counts one
-  measurement. Decision (user, 2026-08-01): keep `pp_to_llj`, prune the
-  duplicate at the kt-spine close-out alongside the refdata-4 re-cut; until
-  then the pair counts as one independent row. (Note 28 §6/D4.)
+- **`validate_kt_cluster` is a banked gate the manifest does not know about, and
+  it skips in silence** — the finest oracle the sprint built (all 90 000 dumped
+  events, every candidate pair and merge against an instrumented MadGraph) has no
+  `[[standalone]]` row, and `the_clustering_engine_reproduces_madgraphs_own`
+  returns early with a `println!` when `output/ktdump/dumps/` is absent. The
+  dumps are **75 MB** and deliberately not bundled
+  (`validation/madgraph/README.md` §"The kT-clustering dumps": work-area sized,
+  only their checksums committed), so on every fetching checkout — CI's `banked`
+  job included — that gate is green and vacuous, which is exactly the failure
+  mode `validation-3`'s lesson names. Two ways out, and choosing is a size
+  decision: bundle the dumps (`refdata-4` is 118 MB, so it would roughly double)
+  and register the row `banked`, or register it `oracle` and let the banked layer
+  require nothing. Either way the silent early return should become a declared
+  tier. (Note 28 §Z.)
+- **Four banked runs are blocked on `nn23lo1`, not on anything this sprint
+  built** — `pp_to_bb`, `pp_to_bb_qcd2`, `pp_to_llj` and `pp_to_ll_scalefact2`
+  carry `pdlabel = nn23lo1`, MadGraph's internal parton-density parameterisation
+  rather than an LHAPDF6 grid the `pdf/` layer can load, so their 8 ⛔ cells stay
+  blocked now that the clustering they also named is in production. Closing them
+  is a choice between re-banking those four cards at `lhaid = 247000` (cheap, but
+  four more MG runs and a fifth bundle) and implementing the internal set (a
+  parameterisation with no oracle in this tree). Their scale fields are already
+  gated — `validate_scales` replays all four runs event by event. (Note 28 §Z.)
 - **`pp_to_jj`'s banked event sample is not reproducible across MG re-runs** —
   σ is identical to all printed digits and single-group runs regenerate
   bit-identically, but `pp_to_jj`'s five subprocess groups make the unweighting
@@ -308,126 +285,16 @@ One line each; the note is the full record. Earlier sprints
 
 ## 🧩 Feature backlog
 
-- **`identical-particle-permutation`** — ✅ **done in `kt-spine` S1** (note 28
-  §"S1 — channel-enumeration decision"). `phasespace::identical_particle_factor`
-  is the single definition of `1/Π_s n_s!`; every consumer derives it from the
-  outgoing legs it owns, and neither latent shape survives —
-  `FixedBeamIntegrand`'s integrand-level factor field (the `amps[0]` derivation)
-  and `ProtonError::IdenticalFinalState` (the assert-the-factor-is-1 refusal) are
-  both gone, and a flavour group applies each *member*'s own factor. The
-  channel-enumeration question is decided with the decision recorded: one channel
-  per diagram, permutations not enumerated because the diagram set is already
-  closed under them — pinned by a test with a control that refuses a
-  configuration where the closure cannot be seen. Still owed by the sprint: the
-  capstone `p p > j j`, the only process that exercises unequal factors against
-  MadGraph.
-- ~~**Multi-rung t-channel spine**~~ (sprint plan: note 28 §S2–S4) — ladder
-  topologies (VBF/DIS, ≥2 spacelike lines). **Landed in production in `kt-spine`
-  S3+S4**: `Spine → rungs: Vec<SpineRung>` + terminal recoil, each rung emitting
-  one blob against the running `q_i = p_a − Σ_{j≤i} p_{B_j}`, built in the CM of
-  what the previous rung left behind with the previous (spacelike) transfer as its
-  incoming line. `from_diagram_regulated` derives the chain; `from_diagram_capped`
-  is the truncated map the informational arm measures against. The fiducial `t_max`
-  bound is per rung (D3), and the fixed-beam path now supplies its own cuts'
-  `spacelike_floor()` the way the proton path always did — which is what actually
-  moved anything, since no production process is both a ladder and regulated
-  without it. Gates green on `u d > e+ e- u d QCD=0` — graph-cut cross-check of the
-  chain, per-chain volume against its own support, the §S2.4 density contract,
-  walk-vs-density 6.8e-9, the §S2.3 ordering oracle with NEG-A/B/C firing, and a
-  per-process union-coverage gate over every bounded channel set. Still owed by the
-  sprint: the capstone rides the chain, and `ud_to_epemud_qcd0`'s σ stays
-  informational on the amplitude disagreement above. (Notes 21, 28.)
-- **`kt-clustering`** (sprint plan: note 28 §K1–K5, superseding the sketch
-  below) — general kT clustering for `dynamical_scale_choice = -1`
-  (also what MLM matching needs). 6 banked runs are asserted as
-  refused; **hard prerequisite for gating any QCD process at MadGraph's default
-  scale choice** — the no-strong-coupling short-circuit stops covering it the
-  moment the matrix element carries `G`. (Multiplicity is not the barrier:
-  `p p > l+ l- j` is gated at a *fixed* scale.) Note 22 §1.3 pins the degenerate
-  closed-form cases;
-  this sprint builds the general path. Sessions:
-  1. ✅ **Design note** — the binding spec is note 28 §K1: the `djb`/kT measure,
-     which merges are admissible (graph-guided — only vertices the process's
-     diagrams contain), the tie-break order (including the `1 + 1e-6`
-     beam-crossing inflation note 22 §1.3 caught in `uux_to_uux`), and how the
-     cluster sequence maps to μR (the geometric-mean prescription) and per-beam
-     μF, each claim with its falsifier.
-  1b. ✅ **Oracle** — an instrumented 3.7.1 dumps every intermediate per banked
-     event, for 9 runs × 10k events (`validation/madgraph/wrappers/ktdump*`,
-     `kt_cluster_dump_manifest.json`).
-  2. ✅ **Clustering engine** — `coupling/cluster/` (merge graph, clustering,
-     scale walk), informational only; `ScaleChoice`'s `-1` still takes the
-     closed-form-or-refuse path. **All 90 000 dumped events reproduce, merge
-     sequence and scales, at zero observed deviation**
-     (`validate_kt_cluster.rs`, 2.4M candidate pairs, 120 merge tables). Two
-     counted exceptions and one open thread in note 28 §K3: MadGraph's on-shell
-     flag array is stale across events (244 events, both 2→6 runs), the dump
-     cannot name a process directory (7 flavour assignments across 3 runs), and
-     a single external leg's `ipdgcl` keeps its flavour where the source reading
-     says the complement registration overwrites it.
-  3. ✅ **Scale synthesis + wiring** (note 28 §K4) — the closed forms are
-     deleted and `-1` takes one path. `coupling/cluster/configs.rs` derives the
-     channel forests from our own diagrams, checked whole against the generated
-     `configs.inc` (6570 lines over 6 processes). `validate_scales` replays
-     **every** banked run through the clustering: 840 000 comparisons over
-     270 000 events in 27 runs inside their printing budget, `AQCDUP`
-     recomputed for 230 000 of them, `u ū → u ū`'s 16 beam-crossing events
-     re-derived at 250.000125. Three decisions in §K4.4: the two 2→6 rows stay
-     informational (an LHE record carries neither the stale on-shell flags nor
-     one channel out of 615), `pp_to_llj_qcd2_qed2` is skipped as D4's
-     duplicate, and `pp_to_jj` carries 9 events in 10 000 admitted only by the
-     crossing-inflation signature. §K3.5's open thread is closed by explanation.
-  4. ✅ **`αs` grid fidelity** (note 28 §K5a) — both of K4's blockers closed,
-     and the second closed the first. `GridAlphaS` *is* LHAPDF's
-     `AlphaS_Ipol`: cubic Hermite in `ln Q²`, slopes central inside a subgrid
-     and one-sided at its ends, the table cut at every repeated `Q²`. So
-     `pp_to_jj` and `pp_to_llj_dyn` join `banked_events_reproduce_aqcdup` —
-     **280 000 events across 28 runs inside their printing budget, worst
-     0.999**, where a straight line through the same knots misses by 1777 and
-     1076 budgets on 9976 and 9993 of their 10 000 events. `αs(M_Z)` off the set
-     now equals MadGraph's
-     17-digit report bit for bit (`GRID_ALPHA_S_TOL` `1e-7 → 1e-14`). Past the
-     top knot LHAPDF *freezes* `αs` at the last tabulated value, so a 10 TeV
-     table is readable at a 13 TeV collider and
-     `HadronicError::GridAlphaSBelowCollider` is deleted. **No banked event
-     reaches that branch** (largest `SCALUP` 845.5 GeV), so it and the power law
-     below the table are pinned by 414 new LHAPDF probe values in
-     `oracle.json` / `oracle_multigrid.json` — all reproduced at `0.0`
-     relative.
-  4b. ✅ **Density extrapolator** (note 28 §K5a2) — the same ceiling one level
-     down is cleared. `PdfMember::try_xfx_q2` continues past the grid instead of
-     refusing, reproducing LHAPDF's `ContinuationExtrapolator` (the
-     `Extrapolator: continuation` both sets resolve to through `lhapdf.conf`):
-     straight lines in `ln Q²` / `ln x` through the flattened array's edge knot
-     pairs, taken in `ln y` when both endpoints clear `1e-3`, and a clamped
-     anomalous-dimension power law below the `Q²` floor. Pinned by **2125 new
-     LHAPDF probes** across the four out-of-range quadrants of both sets, dumped
-     unclamped (`xf_raw`) so the comparison needs no absolute floor; worst
-     `2.4e-13` relative, which is **one ulp times each point's own condition
-     number** (the continuation is a difference of much larger numbers far
-     outside its defining pair) — divided out, `≤8.9e-16`. Only `x` above the
-     last knot, and points that are not points, are still refused. The dynamical
-     llj card now **integrates to completion** where it used to stop at
-     `Q = 10647 GeV`. Finding for later: this crate still omits `ForcePositive`,
-     which out of grid is no longer a negligible-region-only difference — on
-     NNPDF31 it clamps 205/935 probes, one of magnitude 25.7 (note 28 §K5a2.5).
-     No production impact: no banked run reads NNPDF31 — all six
-     `pdlabel = lhapdf` runs carry `lhaid = 247000` (NNPDF23, `ForcePositive`
-     defaulting to `0`, clamp fires on 0 of 1190 probes).
-  5. ✅ **Gate** (note 28 §K5b) — the four llj partonic σ rows and their
-     `samples` cells leave `blocked`, and the flip is where the clustering first
-     runs *under the sampler* rather than over MadGraph's own events. Two σ rows
-     GATE at `rel_tol` 0.01 (`uux_to_epemg` **+0.28%**, `ddx_to_epemg`
-     **+0.43%**, both budget-flat over five seeds at 60k×8 and at four times it,
-     inside twice their reference's own 0.2% error); all four `samples` cells
-     GATE (min KS p 5.8e-3, min χ² p 8.0e-2). **Two σ rows land ⚠️ Info with the
-     cause priced**: `gu_to_epemu` and `gux_to_epemux` are **−5.5%**, identical
-     on every seed and unmoved by 4× the budget, and σ(pp→ℓ⁺ℓ⁻j) at the
-     dynamical scale converges to **402.77 ± 0.12 pb** against MG's
-     415.42 ± 1.36 (**−3.05%**, five seeds at 600k, χ²/dof 0.09) — the same
-     defect diluted by the groups that do not carry it. Cause below; the
-     fixed-scale llj row is unmoved, which is what makes the attribution sound.
-  (`coupling/scales.rs`, `validate_scales.rs`, note 22 §1.3/§5.)
+- ~~**`identical-particle-permutation`**~~, ~~**multi-rung t-channel spine**~~,
+  ~~**`kt-clustering`**~~ — all three ✅ **landed in `kt-spine`** and in
+  production: `phasespace::identical_particle_factor` is the single definition
+  of `1/Π_s n_s!` and every consumer derives it from the outgoing legs it owns;
+  `Spine → rungs: Vec<SpineRung>` emits one blob per rung against the running
+  transfer, with the fiducial `t_max` bound per rung; and
+  `dynamical_scale_choice = -1` takes one general clustering path with no closed
+  form left in it. What each session built, measured and could not see is
+  note 28 §S1–S6 / §K1–K6 / §C–C2; what they left open is filed individually
+  above and below.
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by
   sampled `|M|²` agreement: **complete but unsound** — two programs that differ
