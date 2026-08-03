@@ -13,12 +13,15 @@
 # structures are pinned per-diagram and per-flow at other flavours by
 # uux_to_uux (q q~ initial state) and gg_to_ttx (g g initial state).
 #
-# Not used for cross sections or event samples: the run card takes the
-# dynamical scale, which the scale layer refuses for want of general kT
-# clustering, so both cells are blocked on that feature.
+# The beams read pdlabel = lhapdf with lhaid 247000 (NNPDF23_lo_as_0130_qed)
+# rather than the shipped default nn23lo1: MadGraph's internal nn23lo1
+# parameterisation is not an LHAPDF6 grid this crate's PDF layer can load, and
+# 247000 is the same set the Drell-Yan cross-section reference uses.
 generate p p > b b~
 output pp_to_bb -nojpeg
 launch
   set ebeam1 6500
   set ebeam2 6500
+  set pdlabel lhapdf
+  set lhaid 247000
   done
