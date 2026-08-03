@@ -5,27 +5,24 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: the **`kt-spine` feature sprint** ✅ **closed** 2026-08-02
-(branch `kt-spine/z-closeout`). General kT clustering, the multi-rung t-channel
-spine and the per-subprocess identical-particle factor are in production, and
-`p p > j j` is gated at MadGraph's own default dynamical scale. Census over the
-29-row × 4-category report: **87 measured / 85 ✅ / 2 ⚠️**. Full record in
-note 28 §Z; the standing discrepancies it left are below. Standing caveat: a
-partonic σ quoted from `refdata-2` is **not comparable** to one from
-`refdata-3`/`refdata-4` (MadGraph 3.5.7 applied the PDF set's
+**Current position**: the **`kt-spine` feature sprint** ✅ **closed** 2026-08-02.
+General kT clustering, the multi-rung t-channel spine and the per-subprocess
+identical-particle factor are in production, and `p p > j j` is gated at
+MadGraph's own default dynamical scale. `refdata-4` is published and pinned.
+Census over the 29-row × 4-category report: **87 measured / 85 ✅ / 2 ⚠️**.
+Full record in note 28 §Z; the standing discrepancies it left are below.
+Standing caveat: a partonic σ quoted from `refdata-2` is **not comparable** to
+one from `refdata-3`/`refdata-4` (MadGraph 3.5.7 applied the PDF set's
 `αs(M_Z) = 0.130` to `lpp = 0` runs; 3.7.1 keeps the model's `0.118` — note 27
 §B5).
 
-**Awaiting the user**: `refdata-4` is assembled, verified and pinned, and
-`[refdata].published = false` until the release asset is uploaded — CI's
-`banked` job stays red until then. Commands in note 28 §Z.
+**Awaiting the user**: `main` is unpushed. A first push + release tag runs
+`release.yml` and `acceptance.yml` for the first time.
 
 **Next sprint**: the integration-focused performance pass (VEGAS
 first-iteration bias + `w_max` scan decoupling + stratified-parallel axes,
 performance backlog below). `kt-spine` froze the channel/map structure it
 measures against, which was its precondition.
-
-Unrun until the user pushes a first tag: `release.yml` and `acceptance.yml`.
 
 ## Pipeline Status
 
@@ -92,21 +89,6 @@ One line each; the note is the full record. Earlier sprints
   conjugates (or derive them per member), and widen the oracle past each
   directory's first subprocess so the repair is gated rather than asserted.
   (note 28 §C2.5.)
-- ~~**A repeated multiparticle label in the final state is enumerated once per
-  ordering, and summed twice**~~ — **resolved in `kt-spine` C2**: the dedup key
-  sorts the final state too, `117 = 65 + 52` becomes `65 = 65`, and
-  σ(`p p > j j`) goes `+36.2% → +0.21%` with the cell GATE. (note 28 §C2.)
-- ~~**The per-diagram multichannel builds degenerate maps for massless-propagator
-  processes**~~ — **resolved in `kt-spine` S4**, and not by the spine: the
-  fixed-beam path supplied no fiducial scale, so every peripheral channel drew
-  its transfer flat. (note 27 §B3.2, note 28 §S4.)
-- ~~**Four llj partonic σ rows are unreachable, not merely ungated**~~ — **run in
-  `kt-spine` K5b and all four enforced in K6**, `samples` cells included.
-  (note 28 §K5b, §K6.4.)
-- ~~**The cluster scale is computed in integration channel 1 on every point**~~ —
-  **resolved in `kt-spine` K6**: the scale takes the channel the point was drawn
-  in, per flavour group, and three σ rows flipped Info → GATE. The residual it
-  left is the next item. (note 28 §K6.)
 - **σ at a channel-dependent scale is only defined up to the channel partition** —
   the residual `kt-spine` K6 left, measured rather than tolerated. Once the scale
   reads the integration channel, the channel-split estimator
@@ -131,14 +113,6 @@ One line each; the note is the full record. Earlier sprints
   there, the gap is `+1.03e-3` against its own `9.6e-4` Monte Carlo, because a
   `2 → 2` final state gives the clustering no merge to choose, so that row gates
   at the reference's own error instead. (note 28 §K6.5/§K6.8/§C.3.)
-- ~~**`uux_to_uux` residual bias**~~ — **resolved in `kt-spine` S4**: the −0.30%
-  five-seed mean was the flat transfer draw above, and reads +0.019% with the
-  jet cut's floor supplied. (note 28 §S4.)
-- ~~**`ud_to_epemud_qcd0` carries a relative sign between diagrams**~~ — **resolved
-  in `kt-spine` S6**: the per-propagator flip in `spine_sign_from_flow` belongs on
-  every fermion line with at least one initial-state endpoint, mixed lines
-  included. The row is gated at both levels — |M|² 4.2e-14, σ pull −0.22.
-  (note 28 §S6.)
 - **`ee_to_mumua` drifted when the references moved to 3.7.1** — the one row
   where 3.7.1 disagrees with us *more* than 3.5.7 did, and the widest σ row in
   the set. Our σ is `1.006000e-1 ± 1.665e-4` pb (it was `1.007660e-1` before
@@ -276,25 +250,11 @@ One line each; the note is the full record. Earlier sprints
   `eval_m2_pruned_rejects_boosted_frame` (a `#[should_panic]` guarded by
   `debug_assert!`) fails under `cargo test --profile release-debug`. Either gate
   such tests on `cfg(debug_assertions)` or promote the guard to a hard assert.
-- **`cargo fmt --check` is red on `main`** for four files
-  (`validate_samples_proton.rs`, `validation/samples.rs`,
-  `amplitude_oracle.rs`, `color_cf_oracle.rs`) — pre-existing; wants a
-  formatting-only commit at a quiet moment.
 
 ---
 
 ## 🧩 Feature backlog
 
-- ~~**`identical-particle-permutation`**~~, ~~**multi-rung t-channel spine**~~,
-  ~~**`kt-clustering`**~~ — all three ✅ **landed in `kt-spine`** and in
-  production: `phasespace::identical_particle_factor` is the single definition
-  of `1/Π_s n_s!` and every consumer derives it from the outgoing legs it owns;
-  `Spine → rungs: Vec<SpineRung>` emits one blob per rung against the running
-  transfer, with the fiducial `t_max` bound per rung; and
-  `dynamical_scale_choice = -1` takes one general clustering path with no closed
-  form left in it. What each session built, measured and could not see is
-  note 28 §S1–S6 / §K1–K6 / §C–C2; what they left open is filed individually
-  above and below.
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by
   sampled `|M|²` agreement: **complete but unsound** — two programs that differ

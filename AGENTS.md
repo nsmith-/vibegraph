@@ -40,6 +40,11 @@ For paper references, submodule locations and key paths, and instructions for fe
 - **Metric signature**: (+, −, −, −)
 - **Comment guidelines**: Avoid narrative comments; add notes only for non-obvious constraints or physics assumptions. Document what the code *does now*, not what it used to do or what was tried before — git history records that, and "the old X" / "no longer Y" framing is just distraction. Comments must be self-contained: never reference `TODO.md`, planning docs, sprint/task names, or plan "stages"/"sessions" (e.g. "Stage A", "the convention-refactor session"). Those artifacts are temporary and invisible to a future reader of the code, so such comments read as vacuous. Describe the code's behavior and rationale in its own terms; if a follow-up is genuinely worth flagging, describe the work itself, not the plan item that tracks it.
 - **Four-momentum layout**: `[E, px, py, pz]` (energy first, spatial components follow)
+- **Never hand-write a standard primitive** (hash, RNG, compression): add the
+  crate instead — "no suitable dependency in the set yet" is a reason to add
+  one, not to write one. State the actual requirement explicitly and pin it
+  (e.g. cross-build digest stability → `sha2` with known-answer tests); reserve
+  in-tree implementations for things specific to this project's physics.
 
 ### Physics Validation
 
@@ -55,6 +60,28 @@ For paper references, submodule locations and key paths, and instructions for fe
 - **Keep a known-wrong informational comparison running** while a feature is under
   construction (enforce it later): it turns "the feature went live" into an instant
   end-to-end signal against the reference.
+- **Amplitude disagreements: bit-exact oracle first** (note 12 is the full
+  methodology). Match parameter provenance on both sides, then go straight to
+  per-diagram × per-helicity (and per-flow) complex dumps. Ward identities,
+  hand-built test diagrams, two-helicity ratios and total |M|² are
+  underdetermined oracles; machine-check census claims (by-hand diagram counts
+  have been wrong); verify a candidate fix arithmetically on the dumped
+  amplitudes before writing production code.
+- **Samplers gate statistically, and a fixed-seed pull is not evidence.**
+  Bit-for-bit exists only with a pinned seed and unchanged sampling order.
+  VEGAS's inverse-variance iteration combination turns a missed region into a
+  *confidently wrong* σ — small error bar included — so sweep ≥5 seeds and read
+  the spread and χ²/dof, not the headline pull. A clean sweep is necessary, not
+  sufficient: five mutually consistent seeds have been collectively 1% low, so
+  budget convergence is a second axis. If extra budget makes a failure migrate
+  between seeds instead of shrinking, it is a bug, not statistics.
+- **A per-event field is a finer oracle than a cross section, and it exists more
+  often than it looks** — pin intermediates (scales, merge sequences, per-event
+  replays) against the reference's own record before flipping a σ gate, so every
+  flip carries a diagnosis.
+- **A report is only evidence if every green cell is a recorded measurement** —
+  inferring a cell from "the suite passed" is the same failure as a vacuous
+  check.
 - **ULP exactness is never the target.** This is numerical physics simulation:
   last-ulp effects are always subdominant to some algorithmic limit — sampling
   error, re-association when simplifying algebra, and eventually reduced
@@ -93,6 +120,39 @@ script when the task genuinely requires logic these tools cannot express.
 
 Key flags: `grep -n` (line numbers), `grep -r` (recursive), `grep -C N` (context), `grep -l`
 (filenames only), `sed -n 'N,Mp'` (line range), `find . -name "*.rs"`.
+
+### Sprint & Subagent Operations (manager side)
+
+Sprints are run by a manager session dispatching one dev agent per session
+(`feature-dev` / `validation-dev` / `performance-dev`; for miscellaneous tasks
+use the `claude` agent type with an explicit model override — never
+`general-purpose`, which ignores model overrides).
+
+- **Own the worktrees.** Harness worktree isolation has repeatedly failed here:
+  agents (especially resumed ones) editing the shared main checkout, sessions
+  branched from a stale base, and fresh worktrees missing the gitignored MG
+  reference data (whose absence silently triggers a multi-hour MG regeneration).
+  Pre-create each worktree off `main` (`git worktree add -b <branch> <path>
+  main`), verify its HEAD equals current `main` right after dispatch, COW-copy
+  the reference data in (`cp -Rc`, instant on APFS), and require the agent's
+  first action to be `cd` + toplevel/branch verification. Worker branches often
+  carry zero commits — find work via `git worktree list` plus per-worktree
+  status, not `git log`.
+- **Subagent reports are evidence, not truth.** Demand the command alongside its
+  output ("it passed" is unfalsifiable), spot-check cheap high-consequence
+  claims (`git log` after "I committed"; a build after "clean tree"), and
+  sanity-check numbers against physical plausibility (a wall time that cannot
+  contain the work it claims). When relaying, mark what was verified versus
+  asserted. Briefs carry errors in the other direction too — invite sessions to
+  correct their brief.
+- **Long foreground commands kill agents** at the ~600 s stream watchdog, and
+  killed runs leave zombie `cargo` processes needing `kill -9`. Dispatch briefs
+  must carry the dev-agent prompts' worktree/long-command discipline verbatim.
+  Watch for sleep-based watcher-shell rings (`ps -ax -o pid,ppid,etime,stat,command
+  | grep sleep`) — kill the sleepers, never the real job. For a stall-proof long
+  run, detach it entirely (Python `os.setsid()` double-fork; `setsid` the CLI is
+  absent on macOS). An interrupted worktree `git submodule update` leaves partial
+  state under `.git/worktrees/<wt>/modules/` — remove it before retrying.
 
 ## Working Notes
 
