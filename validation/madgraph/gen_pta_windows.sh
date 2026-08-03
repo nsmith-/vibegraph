@@ -69,6 +69,15 @@ RESULT_JSON="$HERE/pta_window_reference.json"
 # population tertiles of the banked sample above that threshold.
 EDGES=(10 20 39.4 77 144 250)
 
+# The secondary axis, frozen in the same design section and carrying no verdict
+# of its own: below-Z continuum, low shoulder, the Z peak, high shoulder, and the
+# m(mumu) -> sqrt(s) non-radiative region. `pt(a)` is a smeared image of the
+# structure that carries this cross section -- an on-Z event lands anywhere in
+# pt(a) in [39.4, 241.7] depending on eta(a) -- whereas m(mumu) resolves the
+# Breit-Wigner directly, so this axis is what says whether a disagreement
+# localised in pt(a) sits on the Z peak or in the continuum.
+MLL_EDGES=(0 60 86 96 200 500)
+
 STAGE=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -76,7 +85,10 @@ while [ $# -gt 0 ]; do
     *) echo "!!! unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$STAGE" ] || { echo "usage: $0 --stage <control-371|control-357|partition-371|refocus>" >&2; exit 2; }
+[ -n "$STAGE" ] || {
+  echo "usage: $0 --stage <control-371|control-357|partition-371|partition-357|refocus|mll-371>" >&2
+  exit 2
+}
 
 NEVENTS="${NEVENTS:-100000}"
 SEEDS="${SEEDS:-20260803 20260804 20260805 20260806 20260807}"
@@ -242,6 +254,30 @@ PY
   grep -n "pta2\|parameter (ptlo" "$dir/SubProcesses/dummy_fct.f" >&2
 }
 
+# The same, for a window on the muon-pair invariant mass. The muons are externals
+# 3 and 4 -- asserted against leshouche.inc by `generate_template`, which requires
+# IDUP = (-11, 11, -13, 13, 22) -- and an invariant mass needs no frame argument.
+install_mll_window() {
+  local dir="$1" lo="$2" hi="$3"
+  python3 - "$dir/SubProcesses/dummy_fct.f" "$lo" "$hi" <<'PY'
+import sys
+path, lo, hi = sys.argv[1], sys.argv[2], sys.argv[3]
+text = open(path).read()
+marker = "      dummy_cuts=.true.\n"
+assert text.count(marker) == 1, "dummy_cuts body not found exactly once"
+body = """      double precision mll2, mlo, mhi
+      parameter (mlo = %sd0, mhi = %sd0)
+      dummy_cuts=.true.
+c     window on m(mu+ mu-): externals 3 and 4 (idup -13, 13)
+      mll2 = (p(0,3)+p(0,4))**2 - (p(1,3)+p(1,4))**2
+     &     - (p(2,3)+p(2,4))**2 - (p(3,3)+p(3,4))**2
+      if (mll2.lt.mlo*mlo .or. mll2.ge.mhi*mhi) dummy_cuts=.false.
+""" % (lo, hi)
+open(path, "w").write(text.replace(marker, body))
+PY
+  grep -n "mll2\|parameter (mlo" "$dir/SubProcesses/dummy_fct.f" >&2
+}
+
 # Run madevent and echo "<sigma> <err>" (pb) from SubProcesses/results.dat.
 run_one() {
   local dir="$1" tag="$2"
@@ -267,26 +303,30 @@ run_one() {
 
 # One measurement: clone, configure, run, append a row to the stage's TSV.
 measure() {
-  local template="$1" version="$2" estimator="$3" widx="$4" seed="$5"
+  local template="$1" version="$2" estimator="$3" widx="$4" seed="$5" axis="${6:-pt_a}"
   local lo hi tag dir s e
   if [ "$widx" = "0" ]; then
     lo="-"; hi="-"
     tag="${STAGE}${TAG_SUFFIX}_n${NEVENTS}_s${seed}"
+  elif [ "$axis" = "m_mumu" ]; then
+    lo="${MLL_EDGES[$((widx - 1))]}"; hi="${MLL_EDGES[$widx]}"
+    tag="${STAGE}${TAG_SUFFIX}_w${widx}_n${NEVENTS}_s${seed}"
   else
     lo="${EDGES[$((widx - 1))]}"; hi="${EDGES[$widx]}"
     tag="${STAGE}${TAG_SUFFIX}_w${widx}_n${NEVENTS}_s${seed}"
   fi
   dir="$OUT/pta_$tag"
   clone_run_dir "$template" "$dir"
-  case "$estimator" in
-    control) install_cards "$dir" "$seed" ;;
-    part)    install_cards "$dir" "$seed"; install_window "$dir" "$lo" "$hi" ;;
-    cut)     install_cards "$dir" "$seed" "$lo" "$hi" ;;
-    *) echo "!!! unknown estimator $estimator" >&2; exit 1 ;;
+  case "$estimator:$axis" in
+    control:*)     install_cards "$dir" "$seed" ;;
+    part:pt_a)     install_cards "$dir" "$seed"; install_window "$dir" "$lo" "$hi" ;;
+    part:m_mumu)   install_cards "$dir" "$seed"; install_mll_window "$dir" "$lo" "$hi" ;;
+    cut:pt_a)      install_cards "$dir" "$seed" "$lo" "$hi" ;;
+    *) echo "!!! unknown estimator/axis $estimator/$axis" >&2; exit 1 ;;
   esac
   read -r s e < <(run_one "$dir" "$tag")
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$STAGE" "$version" "$estimator" "$widx" "$lo" "$hi" "$seed" "$NEVENTS" "$s" "$e" >> "$TSV"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$STAGE" "$version" "$estimator" "$widx" "$lo" "$hi" "$seed" "$NEVENTS" "$s" "$e" "$axis" >> "$TSV"
   echo ">>> [$tag] sigma = $s +- $e pb" >&2
 }
 
@@ -322,6 +362,13 @@ case "$STAGE" in
       for seed in $SEEDS; do measure "$T" 3.7.1 cut "$w" "$seed"; done
     done
     ;;
+  mll-371)
+    T="$OUT/pta_template_371"
+    generate_template "$T" 3.7.1
+    for w in ${WINDOWS:-1 2 3 4 5}; do
+      for seed in $SEEDS; do measure "$T" 3.7.1 part "$w" "$seed" m_mumu; done
+    done
+    ;;
   *)
     echo "!!! unknown stage: $STAGE" >&2
     exit 2
@@ -330,18 +377,24 @@ esac
 
 # Rebuild the committed reference from every stage TSV on disk, so a stage that
 # is re-run or added later does not require the others to be re-run.
-python3 - "$RESULT_JSON" "$OUT" "${EDGES[@]}" <<'PY'
+python3 - "$RESULT_JSON" "$OUT" "${#EDGES[@]}" "${EDGES[@]}" "${MLL_EDGES[@]}" <<'PY'
 import glob, json, os, sys
-out, outdir = sys.argv[1], sys.argv[2]
-edges = [float(x) for x in sys.argv[3:]]
+out, outdir, npt = sys.argv[1], sys.argv[2], int(sys.argv[3])
+edges = [float(x) for x in sys.argv[4:4 + npt]]
+mll_edges = [float(x) for x in sys.argv[4 + npt:]]
 rows = []
 for path in sorted(glob.glob(os.path.join(outdir, "pta_windows_*.tsv"))):
     for line in open(path):
         f = line.rstrip("\n").split("\t")
-        if len(f) != 10:
+        # A row written before the secondary axis existed has no axis column and
+        # is pt(a) by construction.
+        if len(f) == 10:
+            f = f + ["pt_a"]
+        elif len(f) != 11:
             continue
         rows.append({
             "stage": f[0], "mg_version": f[1], "estimator": f[2],
+            "axis": f[10],
             "window": int(f[3]),
             "pt_lo": None if f[4] == "-" else float(f[4]),
             "pt_hi": None if f[5] == "-" else float(f[5]),
@@ -356,8 +409,12 @@ doc = {
                 "through dummy_cuts, leaving the phase-space generator untouched, so the "
                 "windows sum to the control; 'cut' imposes it as run-card pta/ptamax, "
                 "which lets the generator re-optimise and so does not belong in that sum. "
+                "Rows carry an 'axis': 'pt_a' windows the photon's transverse momentum "
+                "(external leg 5), 'm_mumu' the muon-pair invariant mass (externals 3 and "
+                "4) on the secondary axis, whose window index refers to m_mumu_edges_gev. "
                 "Generated by validation/madgraph/gen_pta_windows.sh.",
     "pt_edges_gev": edges,
+    "m_mumu_edges_gev": mll_edges,
     "runs": rows,
 }
 with open(out, "w") as f:
