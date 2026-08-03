@@ -22,11 +22,27 @@ on:
     branches: [main]
   pull_request:
 
+# Both jobs below run on `ubuntu-latest`, which is x86_64, and both exist only to
+# compile and run this repository's own tests — nothing either of them builds is
+# distributed. Raising the codegen floor from the x86-64 baseline to v3 (AVX2 +
+# FMA, which every GitHub-hosted x86_64 runner has) lets the amplitude and VEGAS
+# arithmetic that dominates the suite's wall time vectorise. `release.yml`
+# deliberately does not set this: its binaries ship to users, and must keep
+# running on baseline x86-64 hardware.
+#
+# `Swatinem/rust-cache` folds this into its own cache key without help — its
+# `env-vars` default (`CARGO CC CFLAGS CXX CMAKE RUST`) is matched by prefix, so
+# `RUSTFLAGS` already contributes to the environment hash. The `actions/cache`
+# step below is keyed on the fetch scripts and the manifest pin and caches no
+# compiler output, so it is unaffected.
+env:
+  RUSTFLAGS: -C target-cpu=x86-64-v3
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -47,7 +63,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -56,7 +72,7 @@ jobs:
       # `pixi-version` pinned to the version that writes `pixi.lock` locally:
       # the action's default pixi is older and rejects lock files the current
       # tool considers up-to-date.
-      - uses: prefix-dev/setup-pixi@v0.9.0
+      - uses: prefix-dev/setup-pixi@v0.10.0
         with:
           pixi-version: v0.63.2
           environments: default
@@ -72,7 +88,7 @@ jobs:
       # Fetched reference data is not a cargo artifact: cached on the fetch
       # scripts and the manifest pin, so a changed pin re-fetches and nothing
       # else does.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             validation/pdf
@@ -99,11 +115,25 @@ jobs:
       - name: Banked validation layer
         run: pixi run --skip-deps validate
 
+      # The rendered table, in the run's own summary page: a failing cell is then
+      # readable from the check itself, without downloading the artifact below.
+      # `always()` because a red gate is exactly when it is worth reading.
+      - name: Validation report to job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          report=target/validation-report/report.md
+          if [ -f "$report" ]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "report not produced: $report is missing (the collator did not run)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # Uploaded whichever way the step above went: when a gate fails, the
       # report is how the failing cell is read off without going through the log.
       - name: Upload the validation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: validation-report
           path: target/validation-report/

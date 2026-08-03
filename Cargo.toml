@@ -26,8 +26,18 @@ unusual_byte_groupings = "allow"
 [profile.dev]
 opt-level = 2
 
+# Fat LTO across the whole crate graph. The evaluator's hot path crosses crate
+# boundaries — the generated amplitude programs live in `vibegraph-lib` and are
+# driven from `vibegraph-cli` and the test binaries — so cross-crate inlining is
+# what lets the per-event arithmetic collapse into the calling loop.
+[profile.release]
+lto = true
+
 # Release codegen with debug info kept: the compilation profile of every heavy
-# validation gate, and what `scripts/profile.sh` records under samply.
+# validation gate, and what `scripts/profile.sh` records under samply. `debug`
+# is the only override, so `lto` arrives through the inherit and tracks whatever
+# `release` is set to — which is the point, since a profile used for timing must
+# not diverge in codegen from the one that ships.
 [profile.release-debug]
 inherits = "release"
 debug = 1

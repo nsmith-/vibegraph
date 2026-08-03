@@ -34,7 +34,7 @@ jobs:
             # The one added cost is musl-tools for musl-gcc, installed below.
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -45,7 +45,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -104,7 +104,7 @@ jobs:
           cp THIRD-PARTY-NOTICES "$asset/"
           tar czf "dist/$asset.tar.gz" "$asset"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vibegraph-${{ matrix.target }}
           path: dist/*.tar.gz
@@ -115,7 +115,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
