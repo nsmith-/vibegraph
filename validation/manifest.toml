@@ -21,6 +21,9 @@
 #   oracle    May run `mg5_aMC`, LHAPDF and f2py. Holds all reference generation
 #             plus the vibegraph-side runs too heavy for the banked budget.
 #             Driven by `pixi run generate-references` / `pixi run validate-deep`.
+#             A standalone gate registers here as `#[ignore]` plus a pixi task
+#             that passes `--ignored`, so it is absent from the banked
+#             invocation's default test run and only runs under its own task.
 #
 # The one structural exception to "registration is the mechanism": a library
 # unit test lives in the `--lib` target, which has no per-test registration, so
@@ -605,6 +608,16 @@ layer = "banked"
 targets = ["vibegraph-lib/tests/color_flow_tags_oracle.rs"]
 inputs = ["leshouche.inc per subprocess"]
 rationale = "Each flow's Les Houches ICOLUP connectivity against leshouche.inc — the colour information an event file carries, which |M|^2 is blind to."
+
+[[standalone]]
+key = "kt-cluster"
+layer = "oracle"
+task = "validate-kt-cluster"
+environment = "madgraph"
+targets = ["vibegraph-lib/tests/validate_kt_cluster.rs"]
+inputs = ["validation/madgraph/kt_cluster_dump_manifest.json", "output/ktdump/dumps (75 MB, outside the bundle)"]
+rationale = "The finest oracle in the tree: 90000 events of MadGraph's own clustering intermediates -- every candidate pair with the arm of the measure it took, every merge with its leg sets and scale, the beam walk, both scales -- replayed merge by merge and compared in order, so the first divergence is reported by merge index. Its dumps are 75 MB and deliberately outside the reference bundle, which is what puts it in this layer rather than the banked one."
+note = "The dumps are absent on every fetching checkout, so in the banked layer this gate could only be green without having compared anything. Here their absence is a failure naming them and the task that builds them."
 
 [[standalone]]
 key = "lhef-roundtrip"
