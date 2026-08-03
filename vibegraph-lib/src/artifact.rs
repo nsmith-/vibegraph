@@ -42,7 +42,23 @@ use crate::vegas::VegasGrid;
 /// first of them. A version-5 file records exactly that first pole, so it upgrades
 /// to a one-entry list, which for the ladder-free processes a version-5 writer
 /// could produce is the whole chain.
-pub const FORMAT_VERSION: u32 = 6;
+///
+/// `7` changes no field at all: a version-6 file decodes through the same struct
+/// as a version-7 one. What changed is what [`IntegrateArtifact::sigma_pb`] means
+/// on a run whose scale needs a channel — `dynamical_scale_choice = -1` and not
+/// every scale fixed. A version-6 writer read that channel from the sampler; from
+/// this version, it is drawn per point from the per-configuration `AMP2`, so a
+/// version-6 `sigma_pb` is a different run's answer, not a stale copy of this
+/// one's. Because the schema did not move, [`read_from_path`](IntegrateArtifact::read_from_path)
+/// decodes a version-6 file directly rather than through an `upgrade`, and — unlike
+/// versions 3 through 5, whose upgrades normalise to `FORMAT_VERSION` because
+/// nothing downstream read the field — it leaves the file's own recorded version in
+/// place, so a caller can tell a pre-draw artifact from a post-draw one by
+/// [`IntegrateArtifact::format_version`] alone. `vibegraph generate` is that
+/// caller: it refuses to replay a `format_version < 7` artifact's `sigma_pb` as
+/// `XSECUP` when the run card selects the clustering scale
+/// ([`crate::coupling::scales::ScaleChoice::needs_channels`]).
+pub const FORMAT_VERSION: u32 = 7;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] still decodes.
 pub const OLDEST_READABLE_VERSION: u32 = 3;
@@ -293,9 +309,10 @@ pub mod v3 {
 
     #[derive(Debug, Deserialize)]
     pub(super) struct IntegrateArtifact {
-        /// Present so the positional decode consumes the version prefix; the
-        /// version itself was already read and dispatched on.
-        #[allow(dead_code)]
+        /// The version this file was actually written at, carried through the
+        /// upgrade unchanged rather than normalised to `FORMAT_VERSION`: a reader
+        /// downstream of an upgrade (`vibegraph generate`'s artifact-age guard) needs
+        /// the file's own version, not the version the in-memory struct now matches.
         pub format_version: u32,
         pub process: String,
         pub model: ModelIdentity,
@@ -338,9 +355,10 @@ pub mod v4 {
 
     #[derive(Debug, Deserialize)]
     pub(super) struct IntegrateArtifact {
-        /// Present so the positional decode consumes the version prefix; the
-        /// version itself was already read and dispatched on.
-        #[allow(dead_code)]
+        /// The version this file was actually written at, carried through the
+        /// upgrade unchanged rather than normalised to `FORMAT_VERSION`: a reader
+        /// downstream of an upgrade (`vibegraph generate`'s artifact-age guard) needs
+        /// the file's own version, not the version the in-memory struct now matches.
         pub format_version: u32,
         pub process: String,
         pub model: ModelIdentity,
@@ -397,9 +415,10 @@ pub mod v5 {
 
     #[derive(Debug, Deserialize)]
     pub(super) struct IntegrateArtifact {
-        /// Present so the positional decode consumes the version prefix; the
-        /// version itself was already read and dispatched on.
-        #[allow(dead_code)]
+        /// The version this file was actually written at, carried through the
+        /// upgrade unchanged rather than normalised to `FORMAT_VERSION`: a reader
+        /// downstream of an upgrade (`vibegraph generate`'s artifact-age guard) needs
+        /// the file's own version, not the version the in-memory struct now matches.
         pub format_version: u32,
         pub process: String,
         pub model: ModelIdentity,
@@ -421,7 +440,7 @@ pub mod v5 {
 impl v5::IntegrateArtifact {
     fn upgrade(self) -> IntegrateArtifact {
         IntegrateArtifact {
-            format_version: FORMAT_VERSION,
+            format_version: self.format_version,
             process: self.process,
             model: self.model,
             pdf_set: self.pdf_set,
@@ -461,7 +480,7 @@ impl v5::IntegrateArtifact {
 impl v4::IntegrateArtifact {
     fn upgrade(self) -> IntegrateArtifact {
         IntegrateArtifact {
-            format_version: FORMAT_VERSION,
+            format_version: self.format_version,
             process: self.process,
             model: self.model,
             pdf_set: self.pdf_set,
@@ -497,7 +516,7 @@ impl v3::IntegrateArtifact {
     fn upgrade(self) -> IntegrateArtifact {
         let sole = self.channels.len() == 1;
         IntegrateArtifact {
-            format_version: FORMAT_VERSION,
+            format_version: self.format_version,
             process: self.process,
             model: self.model,
             pdf_set: self.pdf_set,
@@ -574,7 +593,10 @@ impl IntegrateArtifact {
         let raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         match header.format_version {
-            FORMAT_VERSION => bincode::deserialize(&raw).map_err(ArtifactError::Decode),
+            // 6 and 7 share one schema (see `FORMAT_VERSION`'s doc), so a version-6
+            // file decodes straight into the current struct with its own recorded
+            // `format_version` intact — no upgrade function is needed or wanted.
+            FORMAT_VERSION | 6 => bincode::deserialize(&raw).map_err(ArtifactError::Decode),
             5 => bincode::deserialize::<v5::IntegrateArtifact>(&raw)
                 .map_err(ArtifactError::Decode)
                 .map(v5::IntegrateArtifact::upgrade),
@@ -889,7 +911,10 @@ mod tests {
         let sole = dir.join("v3-sole.bin.zst");
         write_v3(&sole, vec![v3_channel(1.0, VegasGrid::new(3, 64, 1.5))]);
         let upgraded = IntegrateArtifact::read_from_path(&sole).expect("version 3 reads");
-        assert_eq!(upgraded.format_version, FORMAT_VERSION);
+        // The schema is current; the recorded version is the file's own, not
+        // normalised, so a reader downstream can still tell this artifact predates
+        // the per-point AMP2 configuration draw introduced at format version 7.
+        assert_eq!(upgraded.format_version, 3);
         assert_eq!(upgraded.channels[0].key, ChannelKey::Whole);
         assert!(upgraded.sole_grid().is_some());
         assert_eq!(upgraded.sigma_pb.to_bits(), 934.42f64.to_bits());
@@ -993,7 +1018,7 @@ mod tests {
         std::fs::write(&path, compressed).unwrap();
 
         let upgraded = IntegrateArtifact::read_from_path(&path).expect("version 4 reads");
-        assert_eq!(upgraded.format_version, FORMAT_VERSION);
+        assert_eq!(upgraded.format_version, 4);
         assert_eq!(upgraded.channels.len(), 3);
         for (j, c) in upgraded.channels.iter().enumerate() {
             assert_eq!(
@@ -1129,7 +1154,7 @@ mod tests {
         std::fs::write(&path, compressed).unwrap();
 
         let upgraded = IntegrateArtifact::read_from_path(&path).expect("version 5 reads");
-        assert_eq!(upgraded.format_version, FORMAT_VERSION);
+        assert_eq!(upgraded.format_version, 5);
         let peripheral = upgraded.channels[0].sampler.as_ref().expect("sampler");
         assert_eq!(peripheral.topology, SamplerTopology::Spine);
         assert_eq!(peripheral.spine_poles_gev2, vec![0.4]);
@@ -1137,6 +1162,32 @@ mod tests {
         assert_eq!(timelike.topology, SamplerTopology::Timelike);
         assert!(timelike.spine_poles_gev2.is_empty());
         assert_eq!(upgraded.sigma_pb.to_bits(), 934.42f64.to_bits());
+
+        std::fs::remove_file(&path).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
+
+    /// A version-6 file shares version 7's schema exactly, so it decodes with no
+    /// upgrade function at all — and, unlike versions 3 through 5, it must keep its
+    /// own recorded version rather than reading back as `FORMAT_VERSION`. That is
+    /// the field `vibegraph generate`'s artifact-age guard reads to tell a
+    /// pre-draw `sigma_pb` from a post-draw one.
+    #[test]
+    fn a_version_6_artifact_keeps_its_own_recorded_version() {
+        let mut artifact = sample_artifact();
+        artifact.format_version = 6;
+        let dir = std::env::temp_dir().join(format!(
+            "vibegraph-artifact-test-v6-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("v6.bin.zst");
+        let _ = std::fs::remove_file(&path);
+
+        artifact.write_to_path(&path, false).expect("write");
+        let reloaded = IntegrateArtifact::read_from_path(&path).expect("version 6 reads");
+        assert_eq!(reloaded.format_version, 6);
+        assert_eq!(reloaded.sigma_pb.to_bits(), artifact.sigma_pb.to_bits());
 
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();
