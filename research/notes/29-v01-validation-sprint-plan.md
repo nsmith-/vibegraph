@@ -1129,6 +1129,78 @@ the session report. The `extended-validation` gates were **not** run: they cover
 amplitude, colour, coupling and diagram-enumeration changes, and this chain
 touched none of those.
 
+### W3 refocus supplement (2026-08-03, authorised after the verdict)
+
+Run after D1 was upheld, to settle §D.M9 item 1 — the localised `[39.4, 77)`
+excess that survives the verdict. `MG-cut(W3)` is MadGraph's *re-surveyed*
+integral of the same window: the run card carries `pta = 39.4`, `ptamax = 77.0`
+and `dummy_fct.f` is left stock, so `setcuts.f` feeds the upper edge into
+`etmax(i)` and the phase-space generator adapts to the window instead of having
+it applied after the fact. It is therefore the estimator that discriminates
+between "`MG-part(W3)` is low because its generator is window-blind at a
+kinematic turn-on" and "the two integrands genuinely disagree there".
+
+```
+WINDOWS=3 SEEDS="20260803 20260804 20260805" \
+  pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage refocus
+```
+
+**The three-way interpretation, fixed before the measurement:** if `MG-cut(W3)`
+lands on `MG-part(W3)`, the excess is a real disagreement between the two
+integrands in the radiative-return turn-on, surviving D1 and changing what the
+row's note should say (but not the verdict); if it lands on `VG-cut(W3)` /
+`VG-part(W3)`, `MG-part(W3)` is the artifact and the excess dissolves into D1's
+existing story; if it lands between them with errors too wide to discriminate,
+that is recorded and no third measurement is taken.
+
+| | σ (pb) | quoted (mean) | seed spread (mean) | cloud χ²/dof |
+|---|---|---|---|---|
+| **`MG-cut(W3)`, 3 seeds** | **`2.759167e-2`** | 1.704e-5 | 3.367e-5 | 4.17 |
+| `MG-part(W3)`, 5 seeds | `2.752240e-2` | 1.267e-5 | 2.249e-5 | 3.51 |
+| `VG-cut(W3)`, 5 seeds | `2.784266e-2` | 2.951e-5 | 4.193e-5 | — |
+| `VG-part(W3)`, 5 seeds | `2.785841e-2` | 5.343e-5 | 5.683e-5 | — |
+
+per-seed: `2.7659e-2, 2.7558e-2, 2.7558e-2` — three independent runs, confirmed
+by their banners (`20260803/4/5 = iseed`), their point counts (5 848 448 /
+4 540 128 / 4 039 108) and their distinct quoted errors. The two equal entries
+agree only to the five significant digits `results.dat` prints, a resolution
+≈60× finer than the seed spread.
+
+| `MG-cut(W3)` − | Δ | quoted σ | seed-spread σ |
+|---|---|---|---|
+| `MG-part(W3)` | **+0.252%** | +3.26 | **+1.71** |
+| `VG-cut(W3)` | **−0.901%** | −7.37 | **−4.67** |
+| `VG-part(W3)` | −0.957% | −4.76 | −4.04 |
+
+> **Branch 1 fired: `MG-cut(W3)` lands with `MG-part(W3)`, not with this side.**
+> On the seed-spread errors — the honest ones here, since both MadGraph windowed
+> clouds have χ²/dof ≈ 3.5–4.2 — it is consistent with `MG-part(W3)` at 1.71σ and
+> inconsistent with `VG-cut(W3)` at 4.67σ. On MadGraph's optimistic quoted errors
+> it is 3.26σ from `MG-part` and 7.37σ from `VG-cut`, i.e. decisively nearer
+> `MG-part` on either basis. Re-surveying moves MadGraph's W3 value up by
+> +0.252%, closing only **22% of the 1.164% gap** to `VG-cut(W3)`: window-blind
+> sampling at the turn-on is a real but small part of it, and it is not the
+> explanation.
+
+**Consequence.** The `[39.4, 77)` and `[77, 144)` excess is a genuine
+disagreement between the two integrands in the radiative-return region, ~0.9–1.2%
+with this side high, and it **survives D1**. It is not a sampling artifact of
+`MG-part`'s window-blindness, and it is not covered by D1's verdict, whose
+evidence is the low-`pt(γ)` coverage miss in MadGraph's unwindowed run and its
+event sample. Two separate effects live in this row's +0.80%, with opposite
+locations:
+
+* low `pt(γ)` — the reference under-covers, measured at 19.9σ against its own
+  windowed cross sections (§D.M7). D1.
+* radiative-return turn-on and bulk — this side sits ~1% above MadGraph in a
+  comparison where both sides re-survey the window, 4.7σ. **Open, unattributed,
+  and not explained by D1.** Per §D.6 an unattributed localised residual on which
+  both sides are stable is D6 territory; chain D does not demote the row and only
+  the manager may act on it. What would falsify "ours": an `m(μμ)`-axis
+  measurement (§D.2's unmeasured secondary axis) showing the excess sits off the
+  Z peak, or a per-channel comparison against `G6`/`G8`'s banked terms, which
+  carry 53.6% of σ and dominate exactly this region.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
