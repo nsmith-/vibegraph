@@ -38,6 +38,18 @@ use super::lower;
 use super::root_diagram::{compile_single_diagram, DiagramEval};
 use super::run::BoundAmplitude;
 
+/// What one colour flow is made of, as a structural key: per contribution to its
+/// JAMP, the `(diagram, colour-index chain, power of Nc, |rational coefficient|)`,
+/// sorted so the key does not depend on the order the contributions were collected.
+///
+/// The coefficient's **sign and its `i` phase are deliberately excluded**. Charge
+/// conjugation flips a contribution's sign — `T^a → −T^{aᵀ}` puts a `(−1)ⁿ` on a
+/// diagram with `n` gluon vertices — so two subprocesses that are each other's
+/// conjugate carry the same flows with some signs flipped. What identifies a flow
+/// across such a pair is which diagram lands on it at which power of `Nc`, and that
+/// phase does not move it.
+pub type FlowFingerprint = Vec<(usize, Vec<u8>, i32, Ratio<i64>)>;
+
 /// Compiled amplitude evaluator for a whole process (card- and `F`-independent).
 ///
 /// Built once into a [`Folded`] skeleton (pass 1+2 rooting → `lower` → `fold`).
@@ -73,6 +85,9 @@ pub struct AmplitudeEvaluator {
     /// The colour rep and direction of every external leg, in process order — the
     /// legs `color_flow_tags` was derived and checked against.
     leg_colors: Vec<LegColor>,
+    /// Per flow, a sorted fingerprint of the contributions summing into its JAMP.
+    /// See [`Self::flow_fingerprints`].
+    flow_fingerprints: Vec<FlowFingerprint>,
     /// Per-flow Les Houches `(color, anticolor)` line labels for every external leg,
     /// derived from the same basis keys the flows are indexed by.
     color_flow_tags: ColorFlowTags,
@@ -210,6 +225,30 @@ impl AmplitudeEvaluator {
             .collect::<Result<Vec<_>, _>>()?;
         let color_flow_tags = color_flow_tags(&basis, &leg_colors)?;
         let leading_color_flows = LeadingColorFlows::of(&basis, n_diagrams);
+        let flow_fingerprints: Vec<FlowFingerprint> = basis
+            .elements
+            .iter()
+            .map(|elem| {
+                let mut key: FlowFingerprint = elem
+                    .contributions
+                    .iter()
+                    .map(|c| {
+                        (
+                            c.diagram,
+                            c.chain.clone(),
+                            c.coeff.nc_power,
+                            if c.coeff.q < Ratio::from_integer(0) {
+                                -c.coeff.q
+                            } else {
+                                c.coeff.q
+                            },
+                        )
+                    })
+                    .collect();
+                key.sort();
+                key
+            })
+            .collect();
 
         Ok(Self {
             folded,
@@ -222,6 +261,7 @@ impl AmplitudeEvaluator {
             n_flows: basis.ncolor(),
             cf_matrix: basis.cf_matrix,
             leg_colors,
+            flow_fingerprints,
             color_flow_tags,
             leading_color_flows,
             config_diagrams,
@@ -364,6 +404,18 @@ impl AmplitudeEvaluator {
     /// from the compiled amplitude rather than from a PDG table of its own.
     pub fn external_colors(&self) -> &[LegColor] {
         &self.leg_colors
+    }
+
+    /// Return each flow's structural fingerprint ([`FlowFingerprint`]), in the same
+    /// flow order as the JAMPs and the CF matrix.
+    ///
+    /// Two subprocesses that share a matrix element carry the same flows in
+    /// generally different orders, and this is what pairs them up: the flow of one
+    /// that corresponds to flow `f` of the other is the one built from the same
+    /// contributions. Matching on it is a statement about the colour algebra rather
+    /// than about numbers that happen to agree at a probe point.
+    pub fn flow_fingerprints(&self) -> &[FlowFingerprint] {
+        &self.flow_fingerprints
     }
 
     /// Return which colour flows each diagram reaches at leading order in `Nc`

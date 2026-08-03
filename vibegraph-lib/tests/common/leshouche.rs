@@ -13,7 +13,12 @@
 
 #![allow(dead_code)]
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+
+use vibegraph::helas::color::flow_tags::slots_for;
+use vibegraph::helas::repr::color::ColorRep;
+use vibegraph::lhef::record::LheEvent;
 
 /// One subprocess of one `P*` directory: MadGraph's `isproc`, its flavour rows and
 /// its colour-flow table.
@@ -146,4 +151,138 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
+}
+
+/// A PDG code reduced to the role it plays in the colour flow. Two events with the
+/// same roles on the same legs must carry the same colour connectivity, whatever
+/// generation or lepton flavour they happen to be.
+pub fn role(pdg: i32) -> i32 {
+    match pdg {
+        21 => 21,
+        q if (1..=6).contains(&q) => 1,
+        q if (-6..=-1).contains(&q) => -1,
+        _ => 0,
+    }
+}
+
+/// The roles of an event's external legs, in record order.
+pub fn roles(event: &LheEvent) -> Vec<i32> {
+    event.particles.iter().map(|p| role(p.pdg)).collect()
+}
+
+/// The colour lines an event carries: the `(leg, slot)` endpoints sharing a label,
+/// with the label itself discarded because any consistent relabelling is the same
+/// event.
+pub fn connectivity(event: &LheEvent) -> Vec<Vec<(usize, usize)>> {
+    event.color_connectivity()
+}
+
+/// The same, off a raw `ICOLUP` table row rather than off a parsed event.
+pub fn connectivity_of(tags: &[[u32; 2]]) -> Vec<Vec<(usize, usize)>> {
+    let mut labels: Vec<u32> = tags.iter().flatten().copied().filter(|&c| c != 0).collect();
+    labels.sort_unstable();
+    labels.dedup();
+    let mut lines: Vec<Vec<(usize, usize)>> = labels
+        .into_iter()
+        .map(|label| {
+            let mut ends = Vec::new();
+            for (leg, pair) in tags.iter().enumerate() {
+                for (slot, &c) in pair.iter().enumerate() {
+                    if c == label {
+                        ends.push((leg, slot));
+                    }
+                }
+            }
+            ends
+        })
+        .collect();
+    lines.sort_unstable();
+    lines
+}
+
+/// One event's flavour roles paired with its colour connectivity.
+pub type ColourPattern = (Vec<i32>, Vec<Vec<(usize, usize)>>);
+
+/// The `(roles, connectivity)` patterns a set of events exhibits.
+pub fn patterns_of_events<'a>(
+    events: impl IntoIterator<Item = &'a LheEvent>,
+) -> BTreeSet<ColourPattern> {
+    events
+        .into_iter()
+        .map(|e| (roles(e), connectivity(e)))
+        .collect()
+}
+
+/// Every `(roles, connectivity)` pattern MadGraph's tables admit for one run: each
+/// `P*` directory, each `isproc`, each flavour row, each colour flow, and each of
+/// the two beam orderings.
+///
+/// The exchanged ordering is included because the enumeration produces one ordering
+/// of each unordered initial state and the mirror term supplies the other, so an
+/// emitted event may carry either.
+pub fn allowed_patterns(run_dir: &Path) -> Result<BTreeSet<ColourPattern>, String> {
+    let files = files_under(run_dir);
+    if files.is_empty() {
+        return Err(format!("no SubProcesses/P*/leshouche.inc under {run_dir:?}"));
+    }
+    let mut out = BTreeSet::new();
+    for file in &files {
+        for sub in parse(file)? {
+            for idup in &sub.idup {
+                for flow in &sub.flows {
+                    if flow.len() != idup.len() {
+                        return Err(format!(
+                            "{file:?} isproc {}: {} colour legs against {} flavour legs",
+                            sub.isproc,
+                            flow.len(),
+                            idup.len()
+                        ));
+                    }
+                    let direct: Vec<i32> = idup.iter().map(|&p| role(p)).collect();
+                    out.insert((direct.clone(), connectivity_of(flow)));
+                    let mut exchanged_roles = direct;
+                    exchanged_roles.swap(0, 1);
+                    let mut exchanged_tags = flow.clone();
+                    exchanged_tags.swap(0, 1);
+                    out.insert((exchanged_roles, connectivity_of(&exchanged_tags)));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The SU(3) rep a PDG code carries, for a scan that has only a written event file
+/// to read.
+///
+/// This is a second PDG → rep table, and deliberately so: it is what lets the scan
+/// below be *reference-free*, judging an emitted record against the Les Houches
+/// convention itself rather than against anything the generator computed. The
+/// convention leaves no room — `ICOLUP(1)` is the colour line and `ICOLUP(2)` the
+/// anticolour, so a quark occupies the first and an antiquark the second — so there
+/// is no convention here for the two tables to disagree about.
+pub fn color_rep(pdg: i32) -> ColorRep {
+    match pdg {
+        21 => ColorRep::Octet,
+        q if (1..=6).contains(&q) => ColorRep::Triplet,
+        q if (-6..=-1).contains(&q) => ColorRep::AntiTriplet,
+        _ => ColorRep::Singlet,
+    }
+}
+
+/// Every leg of `event` whose occupied `ICOLUP` slots are not the ones its own PDG
+/// code's colour rep allows, as `(leg, [colour, anticolour] occupancy)`.
+///
+/// A triplet fills only the colour slot, an antitriplet only the anticolour slot, an
+/// octet both and a singlet neither. No reference is consulted.
+pub fn illegal_slots(event: &LheEvent) -> Vec<(usize, [bool; 2])> {
+    event
+        .particles
+        .iter()
+        .enumerate()
+        .filter_map(|(leg, p)| {
+            let got = [p.color[0] != 0, p.color[1] != 0];
+            (got != slots_for(color_rep(p.pdg))).then_some((leg, got))
+        })
+        .collect()
 }

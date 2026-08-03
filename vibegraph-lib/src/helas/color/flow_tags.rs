@@ -105,7 +105,7 @@ impl AmpRep {
 /// Row-major over flows: flow `f`'s per-leg pairs are `tags[f]`, in the process's
 /// external-leg order (incoming first). `0` means the leg has no line in that
 /// slot.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ColorFlowTags {
     n_ext: usize,
     tags: Vec<[u32; 2]>,
@@ -158,6 +158,34 @@ impl ColorFlowTags {
         })
     }
 
+    /// The same flows under a new flow numbering: flow `f` of the result is flow
+    /// `order[f]` of `self`.
+    ///
+    /// This renumbers the flows and touches nothing inside them, which is the
+    /// opposite of [`permuted`](Self::permuted) — that keeps the numbering and moves
+    /// the legs. It is what puts one subprocess's table into another's flow indexing,
+    /// once the two bases have been paired up. `None` unless `order` is a permutation
+    /// of the flows.
+    pub fn reindexed(&self, order: &[usize]) -> Option<ColorFlowTags> {
+        if order.len() != self.n_flows() {
+            return None;
+        }
+        let mut seen = vec![false; self.n_flows()];
+        for &f in order {
+            if std::mem::replace(seen.get_mut(f)?, true) {
+                return None;
+            }
+        }
+        let mut tags = Vec::with_capacity(self.tags.len());
+        for &f in order {
+            tags.extend_from_slice(self.flow(f));
+        }
+        Some(ColorFlowTags {
+            n_ext: self.n_ext,
+            tags,
+        })
+    }
+
     /// The same flows read on legs carrying the conjugate colour reps: every leg's
     /// `[colour, anticolour]` pair exchanged, in every flow.
     ///
@@ -178,6 +206,14 @@ impl ColorFlowTags {
     /// whose rep changed. That leaves a self-conjugate leg's endpoints where they
     /// were while its partners move, which breaks the lines it sits on while staying
     /// legal on every leg — so no slot-occupancy check can see it.
+    ///
+    /// **This relates a subprocess to its *full* conjugate and to nothing else.** A
+    /// subprocess with only *some* legs conjugated — `u c~ > u c~` against
+    /// `u c > u c` — is not related to this one by any slot operation at all:
+    /// conjugating one end of a colour line re-routes it onto a different pair of
+    /// legs, and exchanging slots can only move an endpoint between the two slots of
+    /// the leg it already sits on. Such a subprocess's table has to come from its own
+    /// colour basis.
     pub fn conjugated(&self) -> ColorFlowTags {
         ColorFlowTags {
             n_ext: self.n_ext,
