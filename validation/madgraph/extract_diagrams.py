@@ -21,6 +21,12 @@ what lets it run on a checkout with no work area. The per-directory
 for the 2 -> 6 processes, and printed by the gate for debugging when present),
 so they stay in the work area.
 
+The committed file's keys are exactly the rows ``validation/manifest.toml``
+declares ``diagrams`` hermetic -- a function of the manifest and the work
+area, not of which runs a machine happens to have. A declared row with no
+matching work-area directory is an error naming the row; a work-area
+directory with no declaration is skipped.
+
 Per-directory ``output/DIR.json`` shape:
   {
     "process": "inferred from directory name",
@@ -65,6 +71,7 @@ import json
 import os
 import re
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -325,10 +332,27 @@ COMMITTED_HEADER = (
     "and committed, so the diagram gate runs against a checkout that has never "
     "run MadGraph. The per-process files beside the work-area process "
     "directories carry the same counts plus the configs.inc topologies, which "
-    "the gate prints for debugging when they are present. Keys are the .mg5 "
-    "script names; the process string each one generates is in "
-    "validation/manifest.toml and in the script itself."
+    "the gate prints for debugging when they are present. Keys are exactly the "
+    "rows validation/manifest.toml declares diagrams hermetic; the process "
+    "string each one generates is in the manifest and in its .mg5 script."
 )
+
+
+def hermetic_diagram_rows(repo_root: Path) -> set:
+    """Every ``[[process]]`` key of ``validation/manifest.toml`` whose
+    ``categories.diagrams.tier`` is ``"hermetic"``. This is the selector the
+    committed ``diagrams.json`` covers: a superset (the oracle layer's bespoke
+    runs) or a subset (a row not yet extracted) would make the committed file
+    a function of which runs a machine happens to have, rather than of the
+    manifest."""
+    manifest_path = repo_root / "validation" / "manifest.toml"
+    with open(manifest_path, "rb") as f:
+        manifest = tomllib.load(f)
+    return {
+        process["key"]
+        for process in manifest.get("process", [])
+        if process.get("categories", {}).get("diagrams", {}).get("tier") == "hermetic"
+    }
 
 
 def main():
@@ -345,13 +369,14 @@ def main():
     failed_count = 0
     counts: Dict[str, Any] = {}
 
-    # The committed reference covers the validated processes and only those: one
-    # per `.mg5` script, named after it. A work area is a superset — the oracle
-    # layer also drives bespoke runs (windowed cross sections, run-card variants)
-    # whose directories carry a SubProcesses tree too — and folding those in
-    # would make the committed file depend on which of them a machine happens to
+    # The committed reference covers exactly the rows the manifest declares
+    # `diagrams` hermetic. A work area is a superset — the oracle layer also
+    # drives bespoke runs (windowed cross sections, run-card variants) whose
+    # directories carry a SubProcesses tree too — and folding those in would
+    # make the committed file depend on which of them a machine happens to
     # have run.
-    validated = {s.stem for s in (script_dir / "scripts").glob("*.mg5")}
+    validated = hermetic_diagram_rows(script_dir.parent.parent)
+    seen = set()
 
     for output_dir in sorted(output_base.glob("*/")):
         if not (output_dir / "SubProcesses").is_dir():
@@ -359,8 +384,9 @@ def main():
 
         dir_name = output_dir.name
         if dir_name not in validated:
-            print(f"⊘ {dir_name}: no .mg5 script, not a validated row", file=sys.stderr)
+            print(f"⊘ {dir_name}: not a manifest row with diagrams = hermetic", file=sys.stderr)
             continue
+        seen.add(dir_name)
 
         try:
             print(f"Processing: {dir_name}...", file=sys.stderr)
@@ -383,6 +409,16 @@ def main():
         except (FileNotFoundError, NotADirectoryError) as e:
             print(f"  ✗ {e}", file=sys.stderr)
             failed_count += 1
+
+    missing = validated - seen
+    if missing:
+        print(
+            f"✗ manifest declares diagrams hermetic for {sorted(missing)}, "
+            "but no matching work-area directory exists; the committed file "
+            "may not silently lose a gated row",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     committed = script_dir / "diagrams.json"
     with open(committed, "w") as f:

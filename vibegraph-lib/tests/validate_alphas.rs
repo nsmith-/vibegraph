@@ -60,8 +60,6 @@ use std::process::Command;
 use vibegraph::coupling::alphas::{
     asmz_from_param_card, AlphaSSource, NLoop, RunningAlphaS, ZMASS,
 };
-use vibegraph::pdf::grid::AlphaSInfo;
-use vibegraph::pdf::PdfSet;
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
 
@@ -129,11 +127,6 @@ fn present(list: &[&str], runs: &[(String, PathBuf)]) -> Vec<String> {
     names
 }
 
-/// The LHAPDF set each `lhaid` names. A run card carries only the id, and the
-/// grid `αs` has to come from the set the *densities* come from, so the mapping
-/// is stated here rather than inferred from whatever set happens to be unpacked.
-const PDF_SET_BY_LHAID: &[(i64, &str)] = &[(247000, "NNPDF23_lo_as_0130_qed")];
-
 /// How far this crate's reading of the set's `αs` knots is allowed to sit from
 /// the value MadGraph's LHAPDF call returned at `M_Z`.
 ///
@@ -145,30 +138,6 @@ const PDF_SET_BY_LHAID: &[(i64, &str)] = &[(247000, "NNPDF23_lo_as_0130_qed")];
 /// the noise so a system `libm` whose `ln` rounds differently in the last bit
 /// stays inside it.
 const GRID_ALPHA_S_TOL: f64 = 1e-14;
-
-/// The `AlphaS_*` metadata of the set a run's beams read, or `None` for a run
-/// that names no LHAPDF set.
-fn set_alpha_s_info(card: &RunCard) -> Option<AlphaSInfo> {
-    if card.pdlabel != "lhapdf" {
-        return None;
-    }
-    let name = PDF_SET_BY_LHAID
-        .iter()
-        .find(|(id, _)| *id == card.lhaid)
-        .map(|(_, name)| *name)
-        .unwrap_or_else(|| panic!("no PDF set registered for lhaid {}", card.lhaid));
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../validation/pdf")
-        .join(name);
-    let set = PdfSet::load(&dir, name).unwrap_or_else(|e| {
-        panic!(
-            "cannot load PDF set {name} from {}: {e}\n\
-             run `pixi run -e madgraph fetch-pdf`",
-            dir.display()
-        )
-    });
-    Some(set.info.alpha_s)
-}
 
 /// Everything a banked run's cards say about its strong coupling.
 struct Resolved {
@@ -185,7 +154,7 @@ fn resolve(name: &str, run: &Path) -> Resolved {
     let card = RunCard::parse_file(&run.join("Cards/run_card.dat")).expect("run card");
     let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
     let a_s = params.get("sminputs", &[3]).expect("aS in SMINPUTS");
-    let info = set_alpha_s_info(&card);
+    let info = common::pdfset::set_alpha_s_info(&card);
     let source = AlphaSSource::from_run_card(&card, a_s, info.as_ref())
         .unwrap_or_else(|e| panic!("{name}: alpha_s source: {e}"));
     assert_eq!(

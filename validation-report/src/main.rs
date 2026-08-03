@@ -108,6 +108,7 @@ fn main() {
     let report_dir = report_dir(&repo_root);
 
     let (rows, mut problems) = cells::load_all(&report_dir);
+    check_standalone_layers(&manifest, &mut problems);
     let mut resolved = resolve(&manifest, &rows, &mut problems);
     number_notes(&mut resolved);
 
@@ -147,6 +148,29 @@ fn report_dir(repo_root: &std::path::Path) -> PathBuf {
         None => repo_root.join("target"),
     }
     .join("validation-report")
+}
+
+/// `Standalone::layer` is a free `String`, so a typo would otherwise render
+/// silently as "ran with the {typo} layer's suite" instead of failing. The
+/// layer set is a declaration like any other in this manifest and is enforced
+/// the same way: every standalone row's layer must be one the report
+/// understands, and a row declaring `oracle` (which has no row file of its
+/// own) must carry a `task` or `standalone_verdict` has nothing to name.
+fn check_standalone_layers(manifest: &Manifest, problems: &mut Vec<String>) {
+    for standalone in &manifest.standalone {
+        if !matches!(standalone.layer.as_str(), "hermetic" | "banked" | "oracle") {
+            problems.push(format!(
+                "standalone '{}' declares layer '{}', which is none of hermetic/banked/oracle",
+                standalone.key, standalone.layer
+            ));
+        }
+        if standalone.layer == "oracle" && standalone.task.is_none() {
+            problems.push(format!(
+                "standalone '{}' declares layer 'oracle' but names no task",
+                standalone.key
+            ));
+        }
+    }
 }
 
 /// Match every declared cell against what was measured, collecting the

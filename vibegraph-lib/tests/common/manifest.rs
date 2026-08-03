@@ -11,10 +11,11 @@
 //! needs the manifest, because nothing else in the tree records which rows the
 //! bundle carries.
 //!
-//! Only `key` and `bundled` are read. The report collator parses the whole
-//! manifest and is the authority on its shape; this is the one flag a gate has to
-//! agree with it about, so it is deserialised the same way — `bundled` defaulting
-//! to true, which is what an entry that says nothing means.
+//! `key`, `bundled` and `categories.diagrams.tier` are read. The report
+//! collator parses the whole manifest and is the authority on its shape; these
+//! are the fields a gate has to agree with it about, so they are deserialised
+//! the same way — `bundled` defaulting to true, which is what an entry that
+//! says nothing means.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -32,14 +33,34 @@ struct Process {
     key: String,
     #[serde(default = "bundled_by_default")]
     bundled: bool,
+    #[serde(default)]
+    categories: Categories,
 }
 
 fn bundled_by_default() -> bool {
     true
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct Categories {
+    #[serde(default)]
+    diagrams: Option<Cell>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Cell {
+    tier: String,
+}
+
 pub fn manifest_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml")
+}
+
+fn load_manifest() -> Manifest {
+    let path = manifest_path();
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    toml::from_str(&text).unwrap_or_else(|e| panic!("{} does not parse: {e}", path.display()))
 }
 
 /// The keys of every row the pinned reference bundle does **not** carry.
@@ -48,15 +69,26 @@ pub fn manifest_path() -> PathBuf {
 /// manifest does not mention at all is not exempt from anything, so it stays out
 /// of this set and a gate that cannot find its run still fails.
 pub fn unbundled_rows() -> BTreeSet<String> {
-    let path = manifest_path();
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    let manifest: Manifest =
-        toml::from_str(&text).unwrap_or_else(|e| panic!("{} does not parse: {e}", path.display()));
-    manifest
+    load_manifest()
         .processes
         .into_iter()
         .filter(|p| !p.bundled)
+        .map(|p| p.key)
+        .collect()
+}
+
+/// The keys of every row the manifest declares `diagrams` hermetic — the set
+/// the committed `validation/madgraph/diagrams.json` must cover exactly.
+pub fn hermetic_diagram_rows() -> BTreeSet<String> {
+    load_manifest()
+        .processes
+        .into_iter()
+        .filter(|p| {
+            p.categories
+                .diagrams
+                .as_ref()
+                .is_some_and(|c| c.tier == "hermetic")
+        })
         .map(|p| p.key)
         .collect()
 }

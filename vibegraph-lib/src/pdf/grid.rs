@@ -92,6 +92,10 @@ pub struct SetInfo {
     pub q_min: f64,
     pub q_max: f64,
     pub alpha_s: AlphaSInfo,
+    /// `ForcePositive` (LHAPDF's positivity-clamp level: `0` none, `1` clamp
+    /// negatives to zero, `2` clamp below `1e-10`). Absent in a `.info` file
+    /// resolves to `0`, matching the installed `lhapdf.conf` default.
+    pub force_positive: i32,
 }
 
 /// One `lhagrid1` subgrid block: a rectangular (x, Q²) grid of x·f(x, Q²)
@@ -228,6 +232,22 @@ where
 pub fn parse_info(content: &str, path: &str) -> Result<SetInfo, GridError> {
     let map = parse_raw_map(content);
 
+    let force_positive = match map.get("ForcePositive") {
+        None => 0,
+        Some(v) => {
+            let level: i32 = parse_num(path, "ForcePositive", v, "integer")?;
+            if !(0..=2).contains(&level) {
+                return Err(GridError::InvalidValue {
+                    path: path.to_owned(),
+                    key: "ForcePositive".to_owned(),
+                    expected: "0, 1 or 2",
+                    value: v.to_owned(),
+                });
+            }
+            level
+        }
+    };
+
     let alpha_s = AlphaSInfo {
         mz: parse_num(
             path,
@@ -301,6 +321,7 @@ pub fn parse_info(content: &str, path: &str) -> Result<SetInfo, GridError> {
         q_min: parse_num(path, "QMin", require(&map, path, "QMin")?, "float")?,
         q_max: parse_num(path, "QMax", require(&map, path, "QMax")?, "float")?,
         alpha_s,
+        force_positive,
     })
 }
 
@@ -535,6 +556,22 @@ AlphaS_Lambda5: 0.165831
             "Flavors: [-6, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 21, 22]",
             "Flavors: -6, -5, 1",
         );
+        let err = parse_info(&bad, "bad.info").unwrap_err();
+        assert!(matches!(err, GridError::InvalidValue { .. }), "{err:?}");
+    }
+
+    /// `SAMPLE_INFO` carries no `ForcePositive` key, matching every fetched
+    /// set's `.info` this crate has seen carry no clamp at all: the resolved
+    /// level must be `0`, not merely "some default".
+    #[test]
+    fn an_info_without_forcepositive_reads_as_the_config_default() {
+        let info = parse_info(SAMPLE_INFO, "test.info").unwrap();
+        assert_eq!(info.force_positive, 0);
+    }
+
+    #[test]
+    fn an_unknown_forcepositive_level_is_refused() {
+        let bad = format!("{SAMPLE_INFO}ForcePositive: 3\n");
         let err = parse_info(&bad, "bad.info").unwrap_err();
         assert!(matches!(err, GridError::InvalidValue { .. }), "{err:?}");
     }
