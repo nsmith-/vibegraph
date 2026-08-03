@@ -823,6 +823,367 @@ MadGraph's own writer emits one template or the other and never both, so no
 MadGraph-written card can reach it; a hand-written one could, and would be
 resolved as `pdlabel` where MadGraph would resolve it as `nn23lo1`.
 
+## Chain C2 design amendment (2026-08-03)
+
+Supersedes C2.4's change list items 2–4 and tests T5a/T5b. C2.0–C2.3 and
+C2.5–C2.7's T1–T4/T6 stand as landed in `30e88c1`. C2.4's *semantics* reading
+of `reweight.f` stands and is what convicts the current code; only its "where
+it lives" was wrong.
+
+### A.0 What the control falsified, re-verified here
+
+The implementer's three findings were re-checked against the worktree at
+`30e88c1` rather than taken on report:
+
+1. **The veto already exists.** `coupling/cluster/setclscales.rs:468-473`:
+   `if settings.beam_has_pdf[beam] && q2fact[beam] < MUF_FLOOR && !settings.fixed_fac[beam]`
+   → `Err(ScaleRefusal::FactorisationFloor)`, with `MUF_FLOOR = 4.0` at
+   `setclscales.rs:37`. Per beam, strict, on the square, guarded on both PDF
+   presence and the fixed flag — the faithful transcription C2.4 specified,
+   written before this chain existed. C2.4's "where it lives" section was
+   designing a duplicate of code already in the tree; that is the error, and it
+   came from reading `scales.rs` and `proton.rs` without reading the clustering
+   module underneath them.
+2. **Its response is an abort, not a zero.** `ScaleRefusal::FactorisationFloor`
+   → `ScaleError::Clustering` (`scales.rs:391`, `.map_err(ScaleError::Clustering)`)
+   → `ProtonIntegrand::event_scales` (`proton.rs:1184-1185`)
+   `.unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))`.
+   C2.4 established zero-weight as the reference semantics
+   (`reweight.f:1907-1908`, `all_wgt(i) = 0d0`); the crate panics. The chain's
+   real defect is therefore a **response** bug, not a missing feature, and it is
+   worse than the silent disagreement C2.4 set out to close: an abort mid-VEGAS
+   on a card whose support merely dips below the floor.
+3. **C2.4's proposed check was unreachable.** `compile_scale_source`
+   (`hadronic.rs:670`) always passes `Some(sets)`, and `EventScaleSource::scales`
+   dispatches on `channels.is_some()` — never on `dynamical_scale_choice`. Both
+   `EventScaleSource::from_run_card` callers in the crate go through
+   `compile_scale_source`, so every non-fully-fixed run reaches `cluster_scales`.
+   Confirmed one level deeper than the report: `ScaleChoice::cluster_scales`
+   (`scales.rs:332-395`) never inspects `self.choice` at all — it short-circuits
+   on `is_fully_fixed()` and otherwise goes straight to `setclscales`.
+
+**Two further sites the brief does not name, found while checking (1)–(3):**
+
+4. **The setup probe propagates the refusal too.** `ProtonIntegrand::probe_scale`
+   (`proton.rs:1030-1031`) and `FixedBeamIntegrand::probe_scale`
+   (`hadronic.rs:997`) resolve the scale on the first cut-passing draw and `?`
+   the result. A `FactorisationFloor` there is not a setup failure — it is one
+   ordinary vetoed point — so under the corrected semantics the probe must keep
+   drawing rather than abort the run before it starts. Any fix confined to
+   `shape` would leave a card whose *first* cut-passing probe point is
+   sub-threshold still dying at setup.
+5. **The fixed-beam path carries the identical panic.**
+   `hadronic.rs:1067-1068` repeats `unwrap_or_else(|e| panic!("per-event scale
+   on a sampled point: {e}"))`. It is unreachable for this refusal (A.1), but
+   the duplication is why a call-site-only fix would not hold.
+
+### A.1 (a) Routing the `FactorisationFloor` refusal
+
+**Decision: give the distinction a type, one level above the clustering, and let
+the compiler force every call site to say what it does with a veto.** Matching
+`ScaleError::Clustering(ScaleRefusal::FactorisationFloor)` at each call site was
+considered and rejected: there are four such sites today (`shape`'s
+`event_scales`, two `probe_scale`s, `FixedBeamIntegrand::apply_scale`), finding
+(4) shows that a fix aimed at one of them misses the others, and a fifth site
+added later would silently inherit the panic — which is precisely how the
+present bug survived.
+
+**New in `hadronic.rs`, beside `EventScaleSource`:**
+
+```rust
+/// What resolving one point's scales produced.
+pub enum PointScales {
+    /// The scales to evaluate this point at.
+    Scales(EventScales),
+    /// The point carries no weight: a beam carrying a parton density ended
+    /// below the factorisation floor, where MadGraph zero-weights the point
+    /// and moves on.
+    Vetoed,
+}
+
+impl EventScaleSource {
+    /// [`scales`](Self::scales), with the factorisation-floor refusal separated
+    /// from the errors that mean the prescription itself does not apply.
+    pub fn point_scales(&self, /* same args as scales */) -> Result<PointScales, ScaleError> {
+        match self.scales(..) {
+            Ok(s) => Ok(PointScales::Scales(s)),
+            Err(ScaleError::Clustering(ScaleRefusal::FactorisationFloor)) => Ok(PointScales::Vetoed),
+            Err(other) => Err(other),
+        }
+    }
+}
+```
+
+The mapping lives in exactly one function. `ScaleError` gains **no** variant and
+`ScaleRefusal` gains none either: `FactorisationFloor` already exists and is
+already the right name. Nothing about `ScaleChoice::cluster_scales`'s signature
+or behaviour changes — deliberately, because `validate_scales.rs` drives it
+directly and wants the refusal *as* a refusal when it replays a banked event
+against MadGraph's own record. Keeping that API fixed is what makes "the scales
+gate is untouched" a structural statement rather than a hope.
+
+**Call sites, all four:**
+
+- `ProtonIntegrand::event_scales` (`proton.rs:1179-1186`) returns
+  `Option<EventScales>`: `PointScales::Vetoed` → `None`, `Scales(s)` → `Some(s)`,
+  and a genuine `ScaleError` keeps today's panic with today's message. The panic
+  is *right* for the remaining errors — they mean the prescription does not
+  apply to this process, which no amount of sampling fixes.
+- `ProtonIntegrand::shape` → `let Some(scales) = self.event_scales(channel) else
+  { return 0.0; };`, placed exactly where C2.4 put it: after the cuts, before
+  `apply_scale` and the luminosity loop. That ordering survives the amendment
+  unchanged and for the same two reasons — the coupling is not moved for a point
+  with no weight, and the PDF is not queried below roughly its own grid `Q_min`.
+  This reproduces `reweight.f:1907-1908`.
+- `ProtonIntegrand::event_in_channel` inherits it with no edit: it calls `shape`
+  first and returns `None` on a zero, so a generated sample and the integral it
+  came from veto the same points.
+- Both `probe_scale`s: `Ok(PointScales::Vetoed)` means *keep drawing* — the draw
+  passed the cuts but carries no weight, which is exactly the case the probe
+  should skip rather than report. See A.2 for what happens when every draw is
+  vetoed.
+- `FixedBeamIntegrand`'s scale sites take `point_scales` too, and handle
+  `Vetoed` with an explicit `unreachable!` carrying the reason, converting
+  today's silent assumption into a checked one.
+
+**Why the fixed-beam path stays unreachable, and why that survives this change.**
+The floor's applicability is decided by `ScaleSettings::beam_has_pdf`, which
+`ScaleChoice::from_run_card` sets from the card as `[card.lpp1 != 0, card.lpp2 != 0]`.
+A fixed-energy card gives `[false, false]`, so the guard at `setclscales.rs:469`
+short-circuits before the comparison and the refusal is never constructed. That
+argument is **upstream of everything this amendment touches** — it depends on the
+card, not on which integrand runs or how a refusal is routed — so no routing
+change can reach it. It is also not the same as "`FixedBeamIntegrand` is only
+built for `lpp = 0`": the guard tracks the card, so it would hold even if that
+pairing were ever broken. The `unreachable!` above pins it.
+
+### A.2 (b) Tests replacing T5a and T5b, and the diagnostic decision
+
+T5a and T5b are withdrawn: T5a specified a predicate that already exists and is
+already unit-tested inside the clustering module, and T5b's construction panics
+rather than returning zero, which is the bug — it was a correct experiment
+attached to a wrong premise.
+
+**T5a′ `a_sub_threshold_factorisation_scale_gives_zero_weight`** — the
+replacement wiring test, aimed at the existing veto. Build a proton integrand on
+a card whose factorisation scale is driven below 2 GeV at every reachable point
+(`scalefact` small enough that `scalefact² · pt²` clears the floor nowhere, on
+an otherwise ordinary hadronic fixture), and assert `value_in_channel` returns
+**exactly `0.0`** on a fixed set of points — not a panic. Control: the identical
+fixture at `scalefact = 1.0` returns nonzero on the same points.
+*Fails on*: today's code, immediately, with the panic — which is the point; and
+on any future routing that turns the veto back into an error.
+*Provably cannot detect*: on its own, "vetoed" from "cut away" or "PDF returned
+zero" — the `scalefact = 1.0` control is what separates them, and the two halves
+must stay in one test for that reason. It also cannot see a veto firing **too
+often** on a normal card; T6 and the unmoved σ rows cover that direction.
+
+**T5b′ `a_vetoed_point_is_dropped_from_generation_too`** — `event_in_channel` on
+the sub-threshold fixture returns `None` at points where the control fixture
+returns `Some`.
+*Fails on*: a veto wired into `shape` but bypassed on the generation path, which
+would produce a sample whose scales disagree with its own integral.
+*Provably cannot detect*: whether the *kept* events carry the right scales; that
+is `validate_scales`'s job and it is untouched.
+
+**T5c′ `the_factorisation_floor_is_unreachable_on_fixed_beams`** — a fixed-energy
+card at the same small `scalefact` integrates normally and returns nonzero.
+*Fails on*: a `beam_has_pdf` guard dropped or inverted in the clustering.
+*Provably cannot detect*: nothing about proton runs.
+
+**The diagnostic question: decided — refuse at setup, do not count per event.**
+
+MadGraph warns on the first ten vetoed points and then goes quiet, which is a
+console affordance for an interactive run. Two reasons not to transcribe it:
+
+- A per-event counter is per-thread mutable state inside the VEGAS loop. Note 22
+  §4 already flags that class of state as the thing that makes `adapt_parallel`
+  race silently; paying that for a diagnostic is the wrong trade.
+- A partially-vetoed run is **legitimate physics** — MadGraph runs them and their
+  σ is correct — so a per-event count has no threshold at which it could act.
+  Only the degenerate case is actionable.
+
+The degenerate case already has a home: `probe_scale`, which exists to surface at
+setup what would otherwise surface mid-integration, draws 64 points
+(`SCALE_PROBE_DRAWS`, `hadronic.rs:92`) and stops at the first that passes the
+cuts. Amend it to keep drawing past vetoed points and to distinguish three
+outcomes: a scale resolved (`Ok`), no draw passed the cuts (`Ok`, as today —
+the cuts, not the scale, are what that says something about), and **at least one
+draw passed the cuts and every such draw was vetoed** → refuse, with a message
+describing the boundary in its own terms:
+
+> every sampled point's factorisation scale fell below the 2 GeV floor a
+> parton density is fitted down to, so the cross section this card asks for is
+> zero by construction
+
+That is strictly stronger than MadGraph's warning — it fires before the
+integration spends anything — and it costs one boolean in a setup-time loop that
+already exists. A run with *partial* sub-threshold support integrates normally
+and silently, which is the correct behaviour and matches the reference.
+*Provably cannot detect*: a run where 64 draws happen to find support the veto
+spares while the bulk of the measure is vetoed. That is a sampling statement
+about a 64-point probe, not a claim about σ, and the σ it produces is still
+right — merely inefficient.
+
+### A.3 (c) `dynamical_scale_choice` 1–5
+
+**Decision: hard-error, and only where the value is actually consulted.**
+
+Wiring the closed forms is rejected now, on the project's own rule rather than
+on effort. `ScaleChoice::closed_form` (`scales.rs:398`) already computes all five
+and is exercised **only by unit tests**; all 35 banked cards that mention the
+field set `-1` (measured across the same corpus as C2.0), so there is no
+reference run against which an honoured choice 1–5 could be pinned. Turning on
+an unvalidated scale prescription would produce a plausible, smooth, wrong σ with
+nothing to notice it by — the exact failure note 22 §4 names for the
+unimplemented `-1` cases and answers the same way. A hard error is what this
+project does with a boundary that has no oracle.
+
+**Where.** `ScaleChoice::from_run_card` (`scales.rs:197`), beside the existing
+`UnsupportedChoice` and `UnsupportedMatching` refusals, gated on reachability:
+
+```rust
+if !fully_fixed && choice != DynamicalChoice::Clustered {
+    return Err(ScaleError::UnhonouredScaleChoice { choice: choice_int });
+}
+```
+
+The `!fully_fixed` gate is not leniency, it is accuracy: `cluster_scales` and
+`scales` both short-circuit on `is_fully_fixed()` before the choice is read, so
+on a fully-fixed card the value provably cannot change a number. Refusing it
+there would be a refusal the code cannot justify. (The gate must be computed from
+the same `fixed_ren`/`fixed_fac` values `is_fully_fixed` uses, after they are
+resolved — the implementer should reorder within `from_run_card` rather than
+recompute.)
+
+**Message**, describing what the code does now and naming no plan item:
+
+> run card selects dynamical_scale_choice = {choice}: the integration path
+> evaluates the clustered scale only, and the closed forms for 1–5 are computed
+> nowhere a cross section reads them
+
+**Refusal test `an_unhonoured_scale_choice_is_refused`**, in `scales.rs`'s test
+module next to the existing `UnsupportedChoice` test: for each of 1, 2, 3, 4, 5
+a dynamical card is refused with `UnhonouredScaleChoice`; the same choice on a
+fully-fixed card is **accepted** and yields the card's constants; `-1` is
+accepted.
+*Fails on*: the gate dropped, inverted, or applied to `-1`.
+*Provably cannot detect*: whether the closed forms are *correct* — nothing here
+claims they are, which is the reason for the refusal.
+
+**`FIELD_CLASSES` consequence — the field does not move.**
+`dynamical_scale_choice` stays **`Consumed`** (`ScaleChoice::from_run_card`),
+and the row's evidence string needs no edit: it is read, which is not in
+dispute. The refusal is on a **value**, not on the field, and that distinction is
+the whole reason it belongs in `from_run_card` rather than in the classification
+loop. Concretely:
+
+- T2 iterates `IgnoredPhysics` rows and expects `RunCardError::UnsupportedField`.
+  `dynamical_scale_choice` is not in that class, so T2 never constructs a card
+  that touches it, and the new refusal cannot perturb T2.
+- The two refusals also live at different layers and produce different types:
+  `RunCardError::UnsupportedField` at parse (`RunCard::from_values`), and
+  `ScaleError::UnhonouredScaleChoice` at prescription compile
+  (`ScaleChoice::from_run_card`). A card asking for choice 4 still *parses*; it
+  fails when a scale prescription is compiled from it. That is correct — the
+  parse layer has no business knowing which prescriptions are implemented — and
+  it is why this is a separate check with a separate test, not an extension of
+  T2's framework.
+- The C2.3 table is unchanged by this amendment. No row is reclassified.
+
+### A.4 (d) Gates and expected movement
+
+Everything the implementer landed in `30e88c1` stays; nothing in the audit half
+is reopened. Run, all with `--skip-deps`:
+
+- `cargo test --workspace` — T1–T4 as landed, plus T5a′, T5b′, T5c′,
+  `an_unhonoured_scale_choice_is_refused`, and the existing `runcard`, `cuts`,
+  `scales` and `setclscales` unit tests.
+- `pixi run validate` — the banked census, covering T3 and T6.
+- `pixi run validate-scales` is the one to read first and to quote in the report:
+  it drives `ScaleChoice::cluster_scales` directly, that API is deliberately
+  unchanged (A.1), and its 400k per-event comparisons are the tightest oracle
+  the modified path has.
+- `validate-hadronic`, `validate-sigma`, `validate-generate-proton` — the three
+  σ/sample gates on the proton path.
+- The MadGraph/HELAS amplitude, colour and diagram gates remain **not required**:
+  no amplitude, colour, coupling or enumeration code is touched. State that in
+  the report rather than running them silently.
+
+**Report cells expected to move: none**, and the assertion is the same shape as
+C2.8's — `target/validation-report/report.md` identical to the banked report in
+every σ, uncertainty, pull, tolerance verdict, samples/KS and census cell, with
+run metadata the only admissible difference. The pre-registered reasons, updated
+for what the amendment actually changes:
+
+1. **No banked point is vetoed.** The global minimum μF over every banked
+   hadronic event is 4.70 GeV, 2.35× the floor (C2.4's table, reproduced by the
+   implementer over the corrected eight-run set). The veto's behaviour changes
+   only for points that reach it, and none does.
+2. **No banked card is refused for its scale choice.** All 35 cards that set
+   `dynamical_scale_choice` set `-1`; the two `dy13` cards omit it and are fully
+   fixed, where the new gate does not apply.
+3. **The replay API is untouched.** `ScaleChoice::cluster_scales` keeps its
+   signature and its error, so `validate_scales` compares exactly what it
+   compared before.
+
+A moved cell is a defect in this amendment, not statistics.
+
+### A.5 Corrections to the C2 design section, folded here
+
+Recorded here rather than edited in place, so the record shows what was designed
+and what was measured against it:
+
+- **C2.1**, "under-reports by 71 fields" → **58**. 130 consumed less 72 literal
+  hits. The claim it supports — that a literal sweep alone would have
+  misclassified most of the cut block — is unaffected.
+- **C2.0**, "Twenty are consumed … The remaining five are unread" →
+  **17 consumed, 6 unread**. The sixth is `iseed = 33`, set by both `dy13`
+  cards; it is `IgnoredBenign` and its inertness is already argued in C2.3's
+  first `IgnoredBenign` row (MadEvent's RNG seed; this crate's seed comes from
+  the CLI). The §6 trigger conclusion is unchanged.
+- **C2.4**, the veto-reachable banked run set is **8, not 5**: add `pp_to_ll`,
+  `pp_to_ll_scalefact2` and `pp_to_llj_dyn`, all `lpp = (1,1)` with a dynamical
+  μF. Every minimum quoted in C2.4's table reproduces and the global minimum
+  stays **4.70 GeV**; T6 as landed asserts over the eight.
+
+None of the three changes a decision. All three are cases of a stated number
+being narrower than the measurement behind it, which is the failure mode the
+"every green cell is a recorded measurement" rule exists to catch — recorded
+accordingly.
+
+### A.6 What this amendment provably cannot break, and its blind spots
+
+- **No amplitude, colour, coupling, phase-space map, sampler, cut or event
+  writer.** The diff touches `hadronic.rs`, `proton.rs`, `scales.rs` and tests.
+  `setclscales.rs` is touched **not at all** — the veto itself, the number
+  `MUF_FLOOR`, and every branch of the scale synthesis are left exactly as
+  they are gated today.
+- **No banked artifact.** No type that `IntegrateArtifact` serialises gains or
+  loses a field; `PointScales` is a return type, never stored.
+- **No fixed-beam run.** A.1's `beam_has_pdf` argument is upstream of the
+  routing, and the amendment converts that assumption into an `unreachable!`.
+- **No replay gate.** `ScaleChoice::cluster_scales` is unchanged by design.
+- **Strictly fewer aborts.** Every path this amendment changes turns a panic
+  into either a zero weight or a typed refusal; none turns anything into a panic
+  that was not one before.
+
+**Blind spots, stated because nothing here closes them:**
+
+- The amendment cannot show the veto's *threshold* is right. `MUF_FLOOR = 4.0`
+  is a transcription, pinned by reading `reweight.f`, and no banked run
+  approaches it — the nearest is 2.35× away. If the constant were wrong, every
+  test above would still pass.
+- T5a′/T5b′ construct sub-threshold support with `scalefact`, so they exercise
+  the floor through one particular route into it. A floor reached by a different
+  branch of the μF synthesis (`Backfill1/2`, `Beam1FromFirst`, …) is covered
+  only by the shared comparison at `setclscales.rs:468-473`, not by an
+  independent point.
+- Refusing choices 1–5 leaves the closed forms unvalidated, which is the
+  intended state, but it also means the refusal itself is the only thing
+  standing between a user and an unpinned scale. If a later chain wires them,
+  the oracle has to come first.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
