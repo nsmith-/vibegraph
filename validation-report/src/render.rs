@@ -220,6 +220,18 @@ fn tally(resolved: &[ResolvedRow]) -> (usize, String) {
 /// What the list under the table says about one standalone gate.
 fn standalone_verdict(standalone: &Standalone, report_dir: &Path) -> String {
     let Some(row) = standalone.row.as_deref() else {
+        if standalone.layer == "oracle" {
+            return format!(
+                "the oracle layer runs it — `pixi run{} {}` ({})",
+                standalone
+                    .environment
+                    .as_deref()
+                    .map(|e| format!(" -e {e}"))
+                    .unwrap_or_default(),
+                standalone.task.as_deref().unwrap_or("<task>"),
+                standalone.targets.join(", "),
+            );
+        }
         return format!(
             "ran with the {} layer's suite ({})",
             standalone.layer,

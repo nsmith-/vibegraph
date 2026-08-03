@@ -222,6 +222,18 @@ const ROWS: &[Row] = &[
         niter: 6,
         mode: "gate",
     },
+    Row {
+        key: "ud_to_epemud_qcd0",
+        process: "u d > e+ e- u d QCD=0",
+        neval: 60_000,
+        niter: 6,
+        // Kinematics and SPINUP agree (min KS p 1.0e-1, SPINUP chi2 p 0.43-0.73
+        // over three seeds), but ICOLUP does not: chi2 642-664 on 1 dof (p ~ 0)
+        // on every seed, a sharp and seed-stable colour-connectivity
+        // disagreement rather than a marginal miss. Measured and reported
+        // rather than gated; see validation/manifest.toml's note.
+        mode: "info",
+    },
     // ── the ℓ⁺ℓ⁻ j partonic rows, generated at a per-event cluster scale ──
     // The only rows here whose renormalisation and factorisation scales are
     // recomputed from each event's kT clustering rather than read once off the
