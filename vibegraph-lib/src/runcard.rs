@@ -26,6 +26,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod classes;
+
 /// A parsed parameter value. The variant also records the parameter's kind,
 /// which drives how a card line's text is interpreted.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -136,6 +138,13 @@ pub enum RunCardError {
          and fixed-energy partonic beams (0,0) are supported"
     )]
     UnsupportedLpp { lpp1: i64, lpp2: i64 },
+    #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
+    UnsupportedField {
+        name: String,
+        value: String,
+        default: String,
+        why: &'static str,
+    },
 }
 
 /// How the incoming state of a run is prepared.
@@ -274,6 +283,9 @@ impl RunCard {
         if (lpp1, lpp2) != (1, 1) && (lpp1, lpp2) != (0, 0) {
             return Err(RunCardError::UnsupportedLpp { lpp1, lpp2 });
         }
+        // After the beam check, which is what makes a beam-dependent
+        // classification decidable.
+        classes::refuse_ignored_physics(&values, lpp1, lpp2)?;
 
         Ok(RunCard {
             nevents: i("nevents"),
