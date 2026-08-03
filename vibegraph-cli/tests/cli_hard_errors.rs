@@ -55,7 +55,7 @@ fn cli_polarized_beam_card_is_refused() {
     );
     let stderr = stderr_of(&output);
     assert!(
-        stderr.contains("beam polarization is not supported"),
+        stderr.contains("polbeam1") && stderr.contains("beam polarisation"),
         "got:\n{stderr}"
     );
 }

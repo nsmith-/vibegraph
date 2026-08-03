@@ -2801,6 +2801,1891 @@ classes 39/14/12, T10's 112 rows with 95 restricting, T11's 52 mirrored members,
 `check_legs` 238/238, and the dijet `ICOLUP` χ² at `p` 1.05e-1 / 2.63e-1 /
 1.40e-1 against `p 0` at 2494/25 — are consistent with every prediction B.1 and
 B.5 made, and A.4's second-defect rule is not triggered.
+## Chain D design (2026-08-03)
+
+Design session output. Nothing here is a measurement: every number below is
+either read off a banked artifact, read off MadGraph source, or derived from the
+run card. The measurement is the implementation session's job, and §D.6 is
+pre-registered so its outcome cannot be argued into a box after the fact.
+
+### D.0 — the brief's stated mechanism is refuted before the measurement starts
+
+The chain brief (§3, and TODO's standing-discrepancy entry) motivates the
+measurement with "the photon is soft/collinear-regulated by cuts — exactly the
+region MadGraph's channel-weight change reallocates". **That mechanism provably
+cannot reach this process**, and the design has to say so before it sets a
+window, because otherwise the windows get placed around a mechanism that is not
+operating.
+
+The channel-weight change is B1's `get_channel_cut` fix (note 27 §B1). In the
+banked `ee_to_mumua` directory:
+
+- `Cards/run_card.dat:86` and `Cards/run_card_default.dat:85` both carry
+  `1 = sde_strategy`. The auto-selection rule (`banner.py`, in the branch
+  guarded by `single_color`) lands on 1 for this process because the final state
+  is pure-lepton-plus-photon while the initial state is not partonic, so it
+  falls through `pure_lepton and proton_initial` to `elif not no_qcd:
+  self['sde_strategy'] = 1`. `SubProcesses/proc_characteristics` confirms
+  `single_color = True` and `gauge = unitary`, so the extra
+  `proc_characteristic['gauge'] != 'FD'` guard 3.7.1 added to that branch does
+  not change the outcome. Diffing `banner.py` between `v3.5.7` and `v3.7.1`
+  shows that guard is the *only* change to the rule — **`sde_strategy = 1` in
+  both versions.**
+- `Source/run_card.inc:333` sets `TMIN_FOR_CHANNEL = -1`.
+- `genps.f`'s `get_channel_cut` opens with
+
+  ```fortran
+        if(sde_strat.eq.1.and.tmin_for_channel.eq.-1)then
+           get_channel_cut = 1d0
+           return
+        endif
+  ```
+
+  so for this run the function is **identically 1** and returns before reaching
+  either of the two expressions the 3.5.7 → 3.7.1 fix touched (both of which are
+  in any case guarded by `if(sde_strat.eq.2)`).
+
+So whatever moved `ee_to_mumua` between reference banks, it is not
+`get_channel_cut`. The implementation session **must re-verify this claim first**
+(§D.5 Run 0) and treat a contradiction as a finding, not a nuisance.
+
+What is left as a candidate mechanism is much less exotic, and the numbers point
+straight at it:
+
+| | σ (pb) | rel err |
+|---|---|---|
+| ours (gate budget, seed `20260719`) | `1.006000e-1 ± 1.665e-4` | 0.166% |
+| MadGraph **3.5.7** (previous bank) | `1.00630e-1 ± 3.865e-4` | 0.384% |
+| MadGraph **3.7.1** (current bank) | `9.980100e-2 ± 2.3352e-4` | 0.234% |
+
+- ours vs 3.5.7: **−0.03%, 0.07σ** — agreement to well inside either error.
+- ours vs 3.7.1: **+0.80%, +2.79σ** — the gated row.
+- 3.5.7 vs 3.7.1: **−0.82%, 1.84σ** — *MadGraph's own two numbers do not
+  disagree at 2σ on their own quoted errors.*
+
+The whole "drift" is therefore a claim resting on the 3.7.1 run's quoted 0.234%
+being honest. B1 established, on this same reference generator, that a MadEvent
+run's quoted error does **not** cover a coverage miss — three fresh seeds agreed
+with each other and with the bank, all confidently wrong by 2.3%. AGENTS.md
+generalises that to a rule this design applies *to the reference*: a single run's
+error bar is not evidence, a seed sweep is. Nobody has ever swept seeds on
+MadGraph's `ee_to_mumua`. That is the cheapest decisive experiment available and
+§D.5 makes it Run 1, ahead of any window.
+
+### D.1 — what the process actually is, and where a coverage miss would live
+
+`e+ e- > mu+ mu- a` at `250 + 250` GeV, cuts `pta 10`, `ptl 10`, `etaa 2.5`,
+`etal 2.5`, `drll 0.4`, `dral 0.4`; 8 diagrams, 6 surviving MadEvent channels.
+Their banked per-channel cross sections (`SubProcesses/P1_ll_lla/G*/results.dat`,
+summing to `9.98009e-2` and quadrature-summing to exactly the quoted `2.335e-4`):
+
+| channel | propagator structure (`configs.inc` + `props.inc`) | σ (pb) | share |
+|---|---|---|---|
+| `G1` | FSR off `mu+`, fixed s-channel γ\* | `1.2042e-2 ± 1.09e-4` | 12.1% |
+| `G2` | FSR off `mu+`, fixed s-channel Z | `1.7409e-3 ± 2.97e-5` | 1.7% |
+| `G5` | ISR, γ\* at `m(μμ)`, 2 t-channel `e` rungs | `1.6334e-2 ± 1.15e-4` | 16.4% |
+| **`G6`** | **ISR, Z Breit–Wigner at `m(μμ)`** | `2.6886e-2 ± 9.09e-5` | **26.9%** |
+| `G7` | mirror ISR, γ\* at `m(μμ)` | `1.6159e-2 ± 1.15e-4` | 16.2% |
+| **`G8`** | **mirror ISR, Z Breit–Wigner at `m(μμ)`** | `2.6639e-2 ± 8.41e-5` | **26.7%** |
+
+**54% of this cross section is the Z radiative return**, carried by the two
+channels whose maps are Breit–Wigners in `m(μμ)` (`PRMASS(-1,6) = MDL_MZ`,
+`PRWIDTH(-1,6) = MDL_WZ`). The banked event sample agrees: 39.4% of events have
+`m(μμ) ∈ [88, 94]`, and **36.9% sit in the single 1 GeV bin
+`E(a) ∈ [241, 242]`**, which is the radiative-return energy
+
+```
+p_RR = (s − M_Z²) / (2√s) = (250000 − 8315.3) / 1000 = 241.685 GeV
+```
+
+The soft/collinear region the brief names carries, by contrast, **2.1% of the
+sample below `pt(a) = 12` and 8.3% below 20**. A +0.80% total offset localised
+there would be a +10% error in that window; localised in the radiative return it
+would be +1.5%. Both are findable, but they are very different claims and the
+windows have to be able to tell them apart. This is the correction the design
+makes to the brief: the suspect region is not only the cut-regulated edge, it is
+also — and on σ-share grounds primarily — a narrow-resonance coverage question of
+exactly B1's kind, with a Z whose width is 2.7% of `m(μμ)` but whose image in
+`E(a)` is `M_Z Γ_Z / √s = 0.46` GeV out of a 240 GeV range, i.e. 0.2%.
+
+### D.2 — the windows, and the rule that fixes them
+
+Windows are in `pt(a)`, per the brief (it is the worst `samples` observable, min
+KS p `2.74e-4`). The rule is **physics-derived outer and boundary edges, equal
+population in between**, and it is stated here so the edges are frozen before any
+measurement:
+
+1. **Outer edges** come from the run card and kinematics, not from the sample:
+   `pt_lo = pta = 10` GeV, `pt_hi = √s/2 = 250` GeV.
+2. **Cut-boundary edge** at `2 × pta = 20` GeV, isolating the region where the
+   `pta` cut, not the dynamics, sets the density. Both sides must reproduce a cut
+   boundary here, and this is the only window whose lower edge coincides with a
+   cut (a blind spot, §D.8).
+3. **Radiative-return threshold edge** at
+
+   ```
+   pt_RR^min = p_RR / cosh(etaa) = 241.685 / cosh(2.5) = 39.41 → 39.4 GeV
+   ```
+
+   the `pt(a)` below which **no on-shell-Z event can survive the `etaa = 2.5`
+   cut**. This is a genuine kinematic boundary, not a fitted one: it separates
+   the phase space the two Breit–Wigner channels can reach from the phase space
+   they cannot. The banked sample confirms it — 0.0% of events below `pt(a) = 20`
+   and 2.1% between 20 and 40 have `m(μμ) ∈ [86, 96]`, against 46% just above.
+4. **Interior edges** are the equal-population tertiles of the banked sample
+   *restricted to* `pt(a) ≥ pt_RR^min`, rounded to 1 GeV: `77.02 → 77` and
+   `143.51 → 144`. Equal population above the threshold, rather than over the
+   whole range, because below the threshold the physics question is different and
+   population-balancing would smear the two regimes together.
+
+**Frozen edges: `10, 20, 39.4, 77, 144, 250`.** Five windows, with the banked
+sample's population and the composition measured on the coarse design binning:
+
+| window | `pt(a)` | share of banked sample | binomial rel err at 10k | character |
+|---|---|---|---|---|
+| **W1** | `[10, 20)` | 8.33% | 3.3% | cut boundary; Z-free by kinematics (0% in the Z mass window, 100% at `m(μμ) > 200`) |
+| **W2** | `[20, 39.4)` | 9.62% | 3.1% | soft continuum, still Z-free (2.1% in the Z window) |
+| **W3** | `[39.4, 77)` | 27.34% | 1.6% | radiative-return turn-on (≈46% in the Z window) |
+| **W4** | `[77, 144)` | 27.47% | 1.6% | radiative-return bulk (≈51–57%) |
+| **W5** | `[144, 250]` | 27.24% | 1.6% | radiative-return core, mean `abs(eta_a)` falling to 0.16 (67–74% in the Z window) |
+
+No window carries under 8% of σ, so no window's Monte-Carlo error blows up
+relative to the total.
+
+**A secondary axis is reported but not gated**: the same five-window table in
+`m(μμ)` with edges `0, 60, 86, 96, 200, 500` (below-Z continuum, low shoulder,
+Z peak, high shoulder, the `m(μμ) → √s` non-radiative region). Reason: `pt(a)`
+is a *smeared image* of the structure that carries the cross section — an on-Z
+event can land anywhere in `pt(a) ∈ [39.4, 241.7]` depending on `η_a`, whereas
+`m(μμ)` resolves the Breit–Wigner directly. If the `pt(a)` table localises
+nothing, the `m(μμ)` table is what says whether that is because there is nothing
+to localise or because `pt(a)` cannot see it. It carries no verdict of its own
+(§D.6 keys only on `pt(a)`), which keeps the pre-registration honest.
+
+### D.3 — the four estimators, and which error each carries
+
+The asymmetry that matters: **a partition of one integration cannot audit that
+integration**, because the windows sum to the total by construction. Only an
+*independently re-surveyed* windowed integral can. So each side gets both, and
+the closure test is the oracle.
+
+**MadGraph, `MG-part(w)` — the B1 estimator.** The window imposed through
+`dummy_cuts` (`SubProcesses/dummy_fct.f`), which `passcuts` applies after every
+other cut and which leaves MadEvent's phase-space generation untouched, so a
+windowed run integrates *the same integrand* restricted to `w`. Verified usable
+here: the banked 3.7.1 `dummy_fct.f` has the same `logical FUNCTION dummy_cuts(P)`
+signature and the same single `      dummy_cuts=.true.` marker line
+`gen_higgs_window.sh` patches, and `leshouche.inc` gives
+`DATA (IDUP(I,1,1),I=1,5)/-11,11,-13,13,22/`, so **the photon is external leg 5**
+— to be asserted by the script, not assumed. Error: MadEvent's own quoted error
+per run. **Closure:** `Σ_w MG-part(w)` must equal the unwindowed control. It need
+not, and B1 is the precedent where it did not by 7.2σ.
+
+**MadGraph, `MG-cut(w)` — the refocused estimator.** The window imposed as
+run-card cuts `pta = lo`, `ptamax = hi`. This is *not* a substitute for
+`MG-part`: `setcuts.f:301` feeds `ptamax` into `etmax(i)`, which the phase-space
+generator reads, so the generator re-optimises for the window. That is precisely
+what makes it a better estimate of the *true* windowed σ and precisely what
+disqualifies it from the closure test. Run only on `W1` and `W5` (the two
+extremes), as an independent check on whichever window the partition implicates.
+
+**Ours, `VG-part(w)`.** Indicator accumulators on the production sampler at the
+σ gate's own configuration (`neval 80_000`, `niter 8`, `MULTICHANNEL_SURVEY
+30_000 × 6`), summing `w·1[pt(a) ∈ window]` and `w²` per window over the same
+draws — the pattern
+`validate_samples::the_higgs_pole_window_is_measured_against_madgraph` already
+uses. Per-window MC error from the same-draw variance. Closure is **trivially
+exact** and therefore carries no information; this estimator exists to give our
+*shape* at exactly the configuration the gated σ comes from.
+
+**Ours, `VG-cut(w)`.** An independent integration per window with a run card
+carrying `pta = lo`, `ptamax = hi`. Both fields are already supported
+(`runcard.rs:455/462`; `cuts.rs` reads `pt{c}max` for the photon class), and
+because `pta` sets the process's fiducial scale, the channel maps and the VEGAS
+grids genuinely re-adapt inside the window. **Closure:** `Σ_w VG-cut(w)` against
+the unwindowed `VG` total, errors in quadrature — the mirror of MadGraph's, and
+the only coverage audit our side gets.
+
+**Third witness — MadGraph 3.5.7.** `pixi.toml:106` pins the packaged
+`mg5amcnlo = "==3.5.7"` while the reference bank is generated from the pinned
+`research/refs/mg5amcnlo` submodule at 3.7.1, so **both versions are runnable on
+this machine**. The third witness is a 5-seed unwindowed control at 3.5.7 plus,
+if a window is implicated, `MG-part(w)` at 3.5.7 in that window. This is what
+turns "the reference moved" from an assertion into a measurement: two seed clouds
+that overlap mean the reference did not move, it fluctuated.
+
+**Statistics, all defined now.** With `Δ_w ≡ σ_VG(w)/σ_MG(w) − 1` and `ε_w` its
+combined error:
+
+- `χ²_flat ≡ Σ_w (Δ_w − Δ̄)² / ε_w²` on **4 dof**, `Δ̄` the inverse-variance mean.
+  **Localised ⟺ `χ²_flat > 13.28`** (p < 0.01). Anything below is "not localised".
+- `C_MG ≡ Σ_w MG-part(w) / MG-control − 1`; **MG closure fails ⟺ `|C_MG| > 3`
+  combined σ.** Same form for `C_VG`.
+- **Seed-consistent** ⟺ the 5-seed χ²/dof about the sweep mean is ≤ 2 on 4 dof.
+- **Budget-stable** ⟺ under a 4× budget the quoted error shrinks by ≥ 1.7× *and*
+  `|Δ_w(4×) − Δ_w(1×)| ≤ 2 ε_w(1×)`. Per AGENTS.md, a residual that migrates
+  between seeds instead of shrinking under budget is a bug, not statistics.
+- **Version-separated** ⟺ the 3.5.7 and 3.7.1 5-seed clouds are separated by more
+  than 3× the combined seed spread (not the quoted per-run errors).
+
+### D.4 — seed and budget protocol (binding, AGENTS.md)
+
+- **Ours**: seeds `{20260719, 11, 22, 33, 44}` — the existing
+  `probe_resonant_seed_stability` set, so the sweep is comparable to the recorded
+  one. Two budgets: the gate's (`neval 80_000, niter 8`) and 4× (`neval
+  320_000, niter 8`). `VG-cut(W1)` additionally gets 4× at the base budget
+  because `ptamax = 20` rejects ≈92% of draws and its error would otherwise not
+  be comparable.
+- **MadGraph**: seeds `{20260803, 20260804, 20260805, 20260806, 20260807}`,
+  `nevents = 100000` (the bank used 10000 for `2.335e-4`; MadEvent's refine
+  targets scale with `nevents`, so expect ≈0.08%). The banked run's own
+  `Cards/run_card.dat` and `Cards/param_card.dat` verbatim, with only `nevents`
+  and `iseed` changed — the `gen_higgs_window.sh` discipline.
+- **Report the spread and χ²/dof, never a headline pull.** A fixed-seed pull is
+  not evidence on either side, and this chain's whole thesis is that it was not
+  evidence on MadGraph's side either.
+
+### D.5 — the runs, in order (each may stop the chain early)
+
+**Run 0 — source verification (minutes, no compute).** Re-derive §D.0:
+`sde_strategy` in the banked card and in a freshly generated 3.5.7 directory;
+`TMIN_FOR_CHANNEL` in `Source/run_card.inc` for both; the early return in
+`genps.f`'s `get_channel_cut`. Record the four facts with the grep output. If any
+differs from §D.0, stop and report — the design's premise moved.
+
+**Run 1 — the reference's own error honesty (≈15 min).** MadGraph 3.7.1
+unwindowed, 5 seeds, `nevents = 100000`; then the same 5 seeds at
+`nevents = 10000` (the bank's budget) so the sweep is directly comparable to the
+banked number. Report spread vs quoted error, and where the banked `9.980100e-2`
+sits in the cloud.
+
+```bash
+# in the chain worktree, backgrounded, log prefixed chainD_
+pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage control-371
+```
+
+**Run 2 — the third witness (≈15 min).** The same 5-seed unwindowed control from
+the packaged MadGraph **3.5.7**. Together with Run 1 this decides
+"version-separated".
+
+```bash
+pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage control-357
+```
+
+**Run 3 — our own seed and budget sweep (≈30 min).** `VG-part` over the 5 seeds
+at both budgets, producing `Δ_w` and the total.
+
+```bash
+cargo test -p vibegraph --test validate_samples \
+  probe_pta_windows_against_madgraph -- --ignored --nocapture
+```
+
+**Run 4 — MadGraph's partition (≈60–90 min).** `MG-part(w)` for all five windows
+via `dummy_cuts`, 3 seeds each, `nevents = 100000`; the closure test `C_MG`.
+
+```bash
+pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage partition-371
+```
+
+**Run 5 — our partition audit (≈30 min).** `VG-cut(w)` for all five windows, 5
+seeds, plus 3 seeds at 4× on whichever windows Run 3 or Run 4 implicates; the
+closure test `C_VG`.
+
+**Run 6 — conditional refocus (≈15 min).** `MG-cut` on `W1` and `W5`, and
+`MG-part` at 3.5.7 on any window Run 4 implicates. Run only if Runs 1–5 leave the
+verdict in D3–D6.
+
+**Total expected cost ≈ 3 hours wall**, dominated by MadGraph and fully
+parallelisable; the banked run's own `<cumulated_time>` is 10.3 s at
+`nevents = 10000`, so this is a cheap measurement by this project's standards.
+Everything over ~2 minutes is backgrounded with a `chainD_`-prefixed log, per the
+worktree discipline.
+
+### D.6 — THE PRE-REGISTERED DECISION RULE
+
+Read top to bottom; the **first** row whose pattern holds is the verdict. Every
+symbol is defined in §D.3. No other mapping is permitted, and in particular no
+row may be reached by reasoning about which side "ought" to be right.
+
+| # | observed pattern | verdict |
+|---|---|---|
+| **D1** | `C_MG` fails (>3σ) · `C_VG` holds · our side seed-consistent and budget-stable | **The reference owns it.** MadGraph's own partition of its own phase space does not close on its own errors — B1's shape, second occurrence. The `integrals` and `samples` tolerances **stay**, and the note records explicitly that this is not a loosened tolerance: the reference moved, we did not. E4 closed. |
+| **D2** | `C_VG` fails · `C_MG` holds · MadGraph seed-consistent within and across versions | **We own it.** File a defect naming the window(s) carrying the closure failure and the size of the miss. The fix is **not** this chain — it spawns its own, and per §6 the sprint's budget question goes to the user. |
+| **D3** | both `C_MG` and `C_VG` fail | **Two defects; chain D does not choose.** Report both closure failures per window; escalate to the manager. Neither tolerance moves in the meantime. |
+| **D4** | both closures hold · localised (`χ²_flat > 13.28`) · in the implicated window our `Δ_w` is seed-inconsistent **or** not budget-stable | **We own it, localised.** A residual that migrates between seeds or fails to shrink under 4× budget is a bug (AGENTS.md). File the defect with the window and the migration recorded. |
+| **D5** | both closures hold · localised · our `Δ_w` there is seed-consistent and budget-stable · MadGraph's value in that window is **version-separated** | **The reference owns it, localised.** The note names the window and the version dependence, and Run 6's `MG-part` at 3.5.7 in that window is the recorded evidence. Tolerances stay; same "not a loosened tolerance" statement as D1. |
+| **D6** | both closures hold · localised · both sides stable in that window · **not** version-separated | **Localised but unattributed.** A per-window disagreement that is stable on both sides is not a sampling question; it points at the integrand — the cut boundary, the window definition, or something `amplitudes` (gated to 1e-11) cannot see. Escalate with the window named. Chain D does **not** demote the row; only the manager may. |
+| **D7** | closures hold · **not** localised · `Δ̄ ≈ Δ_tot` · our side budget-stable · the two MadGraph versions' seed clouds **overlap** | **Localisation refuted, and the drift is the reference's error estimate rather than a shift.** The measurement's positive content: MadGraph's 3.5.7 and 3.7.1 numbers agree within their own seed spread (they already agree at 1.84σ on quoted errors) while the 3.7.1 run's quoted 0.234% understates its own spread. Verdict goes on the reference's side; tolerances stay; the note records the seed cloud, not a widened bound. |
+| **D8** | closures hold · not localised · `Δ̄` shrinks with our budget by ≈√N and the 4× value is within `2ε` of zero | **Ours, and statistical rather than a defect.** No defect filed. Re-report the pull at the higher budget and record the budget dependence, so the row's number stops being read as a standing discrepancy. |
+| **D9** | closures hold · not localised · `Δ̄` stable on both sides at every budget · versions agree | **A flat normalisation difference.** Not a coverage question at all. Escalate to the manager with the `amplitudes` cell (1e-11 at fixed points) as the constraint that rules out the matrix element, pointing instead at the cut boundary, the flux factor, or units. |
+| **D10** | anything else, including any run that fails to produce its estimator | **No verdict.** Report the measurement as taken, state which pattern was expected and which was seen, and escalate. Inventing a verdict post hoc is the failure this table exists to prevent. |
+
+Two standing riders on every row: (i) if Run 0 contradicts §D.0, the chain stops
+before Run 1 and reports; (ii) if MadGraph 3.5.7 cannot be run on this machine,
+the version axis is unavailable, **D5 and the version clause of D7 become
+unreachable**, and their outcomes route to D6 and D10 respectively — recorded as
+a degraded measurement, not silently absorbed.
+
+### D.7 — gates afterwards, and where the record lands
+
+**This chain changes no production code, so the expectation is that no report
+cell moves at all.** That is itself the check:
+
+```bash
+cargo test --workspace                 # hermetic suite, unchanged
+pixi run validate --skip-deps          # NEVER bare: a bare run can launch a
+                                       # multi-hour MadGraph regeneration
+git diff --stat validation-report/     # expected: empty
+```
+
+Any moved cell is a defect in this chain, not a finding. The
+`extended-validation` gates are **not** run and the reason is recorded rather
+than assumed: they cover amplitude, colour, coupling and diagram-enumeration
+changes, and this chain touches none of those.
+
+**Committed artifacts — authorised explicitly, and nothing beyond this list**
+(the brief permits a small committed probe only if the design names it and says
+where it lives):
+
+1. `validation/madgraph/gen_pta_windows.sh` — the MadGraph driver, staged
+   (`--stage control-371 | control-357 | partition-371 | refocus`). Precedent and
+   template: `gen_higgs_window.sh`, whose leg-index assertion, run-card-verbatim
+   discipline and "σ comes from `results.dat`, not from the event count" rule it
+   inherits.
+2. `validation/madgraph/pta_window_reference.json` — a few dozen scalars
+   (per-window and per-seed σ ± err, both versions, both estimators). Committed
+   like `higgs_window_reference.json` and `sigma_reference.json`: expensive to
+   produce, stable, far too small for the fetched bundle.
+3. `probe_pta_windows_against_madgraph` in `vibegraph-lib/tests/validate_samples.rs`,
+   **`#[ignore]`d**, following `probe_resonant_seed_stability`. It stays ignored
+   in this chain: the acceptance is the verdict, not a new gate, and promoting it
+   to a live measurement (as B1's window test was promoted) costs suite runtime
+   and is a manager decision recorded in the close-out.
+
+**The record**: a `## Chain D measurement (date)` section appended to this note,
+carrying the full per-window table with every cell a recorded measurement — no
+cell inferred from "the suite passed" — the closure statistics, the seed clouds,
+the decision-rule row that fired, and the verdict. On a D1/D5/D7 verdict the
+`ee_to_mumua` `integrals` and `samples` notes in `validation/manifest.toml` are
+rewritten to say which side is wrong and how it was measured, exactly as B1 did.
+TODO's standing-discrepancy entry is the manager's to rewrite, not this chain's.
+
+### D.8 — risks, and what this measurement provably cannot decide
+
+**Risks.**
+
+- The `dummy_cuts` patch must land on the 3.7.1 body (verified above: same
+  signature, one marker line) and the photon must be leg 5 (verified in
+  `leshouche.inc`). Both are assertions in the script, not assumptions — a silent
+  mismatch would window the wrong leg and produce a confidently wrong table.
+- MadEvent may fail to fill `nevents` in a narrow window. σ is read from
+  `SubProcesses/results.dat`, which is survey+refine and independent of the event
+  count; a short event file is not a failure.
+- `VG-cut(W1)` rejects ≈92% of draws through `ptamax`; without the 4× budget its
+  error would silently dominate `C_VG` and make our closure test vacuous.
+- The 3.5.7 environment may not build or generate here; §D.6's rider covers the
+  degradation rather than leaving it to judgement.
+- `pt(a)` must be computed identically on both sides. Ours comes through
+  `lhef::observables`; MadGraph's window is Fortran in the rest frame. For fixed
+  beams these frames coincide, but the script asserts it rather than relying on
+  it.
+
+**Blind spots — the error classes this measurement provably cannot detect.**
+
+- **Anything both sides get wrong the same way inside a window.** The two sides
+  share the matrix element (gated to 1e-11 by the `amplitudes` cell at fixed
+  points) and share the window definition. This is a statement about phase-space
+  coverage and cut boundaries, not about the matrix element — B1's blind spot,
+  inherited unchanged.
+- **Our closure test is structurally weaker than MadGraph's.** `VG-cut(w)`
+  re-adapts grids and fiducial scale but reuses the same channel construction and
+  the same map code as the unwindowed run, so a defect in that shared code can
+  survive in both and let `C_VG` pass. MadGraph's windowed runs re-survey with a
+  genuinely different channel allocation, so `C_MG` is the stronger oracle. A D2
+  verdict is therefore *harder* to reach than a D1 — the asymmetry is in the
+  reference's favour, which is the safe direction but must be stated.
+- **`W1` cannot separate "the cut boundary is implemented differently" from "the
+  region is mis-covered"**, because its lower edge *is* the `pta = 10` cut. A
+  disagreement localised in `W1` alone routes to D6, not to a coverage verdict.
+- **The σ verdict does not automatically own the `samples` KS cell.** KS is
+  shape-only and normalisation-free; a flat `Δ_w` (D7–D9) would leave the
+  `pt(a)` KS failure unexplained. The per-window shape table is the evidence that
+  speaks to the KS cell; the σ verdict is not.
+- **A compensating error that cancels in the `pt(a)` projection is invisible** —
+  `η(a)` is integrated over inside each window. The `m(μμ)` secondary axis
+  covers part of this, but a defect orthogonal to both projections is not
+  reachable by this design.
+- **Nothing here tests** the scale prescription (fixed EW couplings), PDFs (fixed
+  beams), or polarisation — all inert for this process, which is why the
+  measurement can be read as a pure coverage statement.
+
+## Chain D measurement (2026-08-03)
+
+Implementation session output. Every number below is a recorded measurement: the
+command that produced it is named, and no cell is inferred from another cell or
+from a suite passing. §D.6's decision rule was applied top to bottom without
+reference to which side "ought" to be right; §D.6.1 records exactly which clauses
+were marginal.
+
+Driver: `validation/madgraph/gen_pta_windows.sh` (stages `control-371`,
+`control-357`, `partition-371`, `refocus`). This side:
+`probe_pta_windows_against_madgraph` in `vibegraph-lib/tests/validate_samples.rs`,
+run as
+
+```
+cargo test -p vibegraph-lib --features extended-validation --test validate_samples \
+  probe_pta_windows_against_madgraph -- --ignored --nocapture
+```
+
+(the design's §D.5 Run 3 command omits `-lib` and the required feature; the test
+target is feature-gated and does not build without it).
+
+### D.M0 — Run 0: §D.0's premise re-verified, all four facts
+
+Nothing moved. The channel-weight mechanism the chain brief named is unreachable
+for this process in *both* MadGraph lines.
+
+1. `sde_strategy = 1` in the banked cards:
+
+   ```
+   Cards/run_card.dat:86:  1	= sde_strategy ! default integration strategy (hep-ph/2021.00773)
+   Cards/run_card_default.dat:85:   1  = sde_strategy  ! default integration strategy (hep-ph/2021.00773)
+   ```
+
+2. `TMIN_FOR_CHANNEL = -1` in the banked generated include, alongside the
+   strategy the run actually used:
+
+   ```
+   Source/run_card.inc:333:      TMIN_FOR_CHANNEL = -1.000000000000000D+00
+   Source/run_card.inc:337:      SDE_STRAT = 1
+   ```
+
+   Re-read off `Source/run_card.inc` after *every* run this chain made
+   (`run_one` prints it): `TMIN_FOR_CHANNEL=-1.000000000000000D+00 SDE_STRAT=1`
+   without exception.
+
+3. The early return is present and identical in both lines —
+   `.pixi/envs/madgraph/MG5_aMC/Template/LO/SubProcesses/genps.f:1858`,
+   `research/refs/mg5amcnlo/Template/LO/SubProcesses/genps.f:1878`, and the
+   banked `SubProcesses/genps.f:1878`:
+
+   ```fortran
+         if(sde_strat.eq.1.and.tmin_for_channel.eq.-1)then
+            get_channel_cut = 1d0
+            return
+         endif
+   ```
+
+   so `get_channel_cut` is identically 1 here and never reaches either
+   expression the 3.5.7 → 3.7.1 fix touched.
+
+4. Freshly generated directories auto-select the same strategy in both lines
+   (printed by `generate_template`):
+
+   ```
+   >>> [3.7.1] auto-selected sde_strategy:    1  = sde_strategy ...
+   >>> [3.5.7] auto-selected sde_strategy:    1  = sde_strategy ...
+   ```
+
+   The only change to the selection rule between versions is the guard
+   `proc_characteristic['gauge'] != 'FD' and` prepended at `banner.py:4995`
+   (3.7.1) relative to `banner.py:4684` (3.5.7); `proc_characteristics` gives
+   `single_color = True`, `gauge = unitary`, so the branch is entered either way
+   and falls through `pure_lepton and proton_initial` (the initial state is
+   `e+ e-`) to `elif not no_qcd`.
+
+Two further equivalence facts, asserted by the driver rather than assumed:
+
+* `leshouche.inc` gives `DATA (IDUP(I,1,1),I=1,5)/-11,11,-13,13,22/` in the bank
+  and in both freshly generated templates — **the photon is external leg 5**, and
+  the `dummy_cuts` window cuts on `p(1,5), p(2,5)`.
+* `configs.inc`, `props.inc` and `leshouche.inc` in the 3.7.1 template are
+  byte-identical to the bank's. The 3.5.7 template differs from the bank in
+  `configs.inc` by two lines only — `C     used fake id` / `DATA FAKE_ID/7/`,
+  which 3.5.7 does not emit — and is identical in `props.inc`, `leshouche.inc`
+  and `maxamps.inc`. **Both lines build the same six-channel decomposition**, so
+  the version comparison is a comparison of integrators, not of processes.
+
+The banked per-channel cross sections in §D.1 were re-read off
+`SubProcesses/P1_ll_lla/G*/results.dat` and match that table exactly.
+
+The chain proceeded.
+
+### D.M1 — Run 1: the reference's own error honesty
+
+`pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage control-371`,
+five seeds, and the same again with `NEVENTS=10000 TAG_SUFFIX=_n10k`.
+
+| budget | σ per seed (pb) | mean | quoted/run | seed sd | cloud χ²/dof |
+|---|---|---|---|---|---|
+| `nevents = 100000` | 9.9966e-2, 9.9956e-2, 1.00010e-1, 1.00110e-1, 9.9901e-2 | `9.998860e-2` | 8.398e-5 | 7.817e-5 | **0.90** |
+| `nevents = 10000` (the bank's) | 9.9845e-2, 9.9917e-2, 1.00090e-1, 1.00010e-1, 9.9712e-2 | `9.991480e-2` | 2.569e-4 | 1.464e-4 | **0.32** |
+
+**§D.0's central hypothesis is refuted.** MadGraph's quoted error on this process
+is honest at the 100k budget (χ²/dof 0.90; spread 7.8e-5 against a quoted 8.4e-5)
+and *conservative* at the bank's own 10k budget (χ²/dof 0.32). The banked
+`9.980100e-2` sits 0.78 seed-sd below its own 10k cloud mean — an ordinary draw,
+not an outlier. Whatever the +0.80% is, it is not a reference whose error bar
+fails to cover its own spread.
+
+### D.M2 — Run 2: the third witness, MadGraph 3.5.7
+
+`--stage control-357`, five seeds, `nevents = 100000`. The 3.5.7 environment ran
+here without difficulty, so §D.6's degradation rider was **not** invoked and the
+version axis is fully available.
+
+| | σ per seed (pb) | mean | quoted/run | seed sd | cloud χ²/dof |
+|---|---|---|---|---|---|
+| 3.5.7 | 1.00200e-1, 9.9949e-2, 9.9943e-2, 1.00120e-1, 1.00100e-1 | `1.000624e-1` | 9.556e-5 | 1.127e-4 | 1.40 |
+
+3.5.7 − 3.7.1 = `+7.380e-5` pb = **+0.074%**, `+1.20` combined-seed-spread σ,
+against a separation criterion of 3× the combined spread (`1.840e-4`).
+
+> **Version-separated: NO. The two clouds overlap.**
+
+The two MadGraph lines agree on this process to 0.074%. The apparent 0.82%
+"drift" between reference banks is two single draws from two clouds that overlap;
+it is not a version effect, and §D.5's `--stage partition-357` was therefore not
+needed.
+
+### D.M3 — Run 3: `VG-part`, our shape at the gate's own configuration
+
+Five seeds at `neval 80 000 × niter 8` (the σ gate's budget for this row), plus
+three seeds at 4×. The measurement is a frozen pass over the grids `adapt_grids`
+trains, on a ChaCha stream disjoint from the integration's. Self-check: at seed
+`20260719` the run's own `adapt_grids` total is `1.006000e-1`, bit-for-bit the
+banked gate value, so the integrand measured is the gated one.
+
+Seed clouds (mean, quoted error on the mean, seed-spread error, χ²/dof on 4 dof):
+
+| | σ (pb) | quoted | spread | χ²/dof |
+|---|---|---|---|---|
+| total | `1.006713e-1` | 9.961e-5 | 7.969e-5 | **0.69** |
+| `[10, 20)` | `9.315376e-3` | 6.869e-5 | 8.195e-5 | 1.23 |
+| `[20, 39.4)` | `9.865348e-3` | 4.085e-5 | 3.005e-5 | 0.62 |
+| `[39.4, 77)` | `2.785841e-2` | 5.343e-5 | 5.683e-5 | 1.10 |
+| `[77, 144)` | `2.728223e-2` | 4.145e-5 | 4.137e-5 | 0.99 |
+| `[144, 250)` | `2.634998e-2` | 3.758e-5 | 3.364e-5 | 0.80 |
+
+> **Seed-consistent: YES** — every cloud is at or under χ²/dof 1.23, well inside
+> the ≤ 2 criterion.
+
+Budget stability, base against 4× on the three shared seeds:
+
+| | base | 4× | err shrinks | shift | `2 ε(1×)` | stable? |
+|---|---|---|---|---|---|---|
+| total | `1.005657e-1` ± 1.166e-4 | `1.007437e-1` ± 5.628e-5 | 2.07× | +0.177% | 0.232% | **yes** |
+| `[10, 20)` | `9.248053e-3` ± 7.075e-5 | `9.471996e-3` ± 3.731e-5 | 1.90× | **+2.422%** | 1.530% | **no** |
+| `[20, 39.4)` | `9.870744e-3` ± 4.909e-5 | `9.826276e-3` ± 2.144e-5 | 2.29× | −0.451% | 0.995% | yes |
+| `[39.4, 77)` | `2.786214e-2` ± 7.068e-5 | `2.790989e-2` ± 3.243e-5 | 2.18× | +0.171% | 0.507% | yes |
+| `[77, 144)` | `2.728244e-2` ± 5.391e-5 | `2.723621e-2` ± 2.660e-5 | 2.03× | −0.169% | 0.395% | yes |
+| `[144, 250)` | `2.630229e-2` ± 4.867e-5 | `2.629937e-2` ± 2.406e-5 | 2.02× | −0.011% | 0.357% | yes |
+
+> **Budget-stable on the total: YES.** Budget-stable per window: yes in W2–W5,
+> **no in W1**, where the base-budget frozen pass sits 2.4% low. W1 is the window
+> that keeps ~9% of the multichannel draws, and its 4× value moves *towards* both
+> MadGraph's own windowed cross section and this side's independent `VG-cut(W1)`
+> (below) rather than away from either — the error also shrinks by 1.90×, i.e.
+> ≈ √4. The residual converges under budget; it does not migrate between seeds.
+
+### D.M4 — Run 4: `MG-part`, and the closure test `C_MG`
+
+`--stage partition-371`, five windows × **five** seeds (the design's §D.5 asked
+for three; §D.4's seed protocol names five, and `C_MG` is the statistic the whole
+verdict turns on, so the full five were run), `nevents = 100000`.
+
+| window | σ per seed (pb) | mean | quoted (mean) | seed sd | cloud χ²/dof |
+|---|---|---|---|---|---|
+| `[10, 20)` | 9.4130e-3, 9.4426e-3, 9.3615e-3, 9.4182e-3, 9.3969e-3 | `9.406440e-3` | 6.242e-6 | 3.000e-5 | **4.27** |
+| `[20, 39.4)` | 9.8537e-3, 9.8383e-3, 9.8285e-3, 9.8265e-3, 9.8052e-3 | `9.830440e-3` | 6.948e-6 | 1.774e-5 | 1.33 |
+| `[39.4, 77)` | 2.7516e-2, 2.7520e-2, 2.7607e-2, 2.7489e-2, 2.7480e-2 | `2.752240e-2` | 1.267e-5 | 5.029e-5 | **3.51** |
+| `[77, 144)` | 2.7074e-2, 2.7014e-2, 2.7003e-2, 2.7079e-2, 2.7066e-2 | `2.704720e-2` | 1.274e-5 | 3.584e-5 | 1.53 |
+| `[144, 250)` | 2.6320e-2, 2.6316e-2, 2.6317e-2, 2.6308e-2, 2.6317e-2 | `2.631560e-2` | 7.717e-6 | 2.015e-6 | 0.07 |
+
+A finding in its own right: **MadEvent's quoted error on a `dummy_cuts`-windowed
+run understates its own seed spread**, by 2.1× in `[10, 20)` and 1.9× in
+`[39.4, 77)` (χ²/dof 4.27 and 3.51 on 4 dof). The unwindowed runs of D.M1 do not
+show this. Whatever the windowed error estimator is doing, it is not covering the
+seed spread when a large fraction of generated points is rejected after the fact.
+
+```
+C_MG: sum of windows 1.001221e-1 +- 2.167e-5 against unwindowed 9.998860e-2 +- 3.758e-5
+      -> +0.133% +- 0.043%, +3.07 sigma
+```
+
+> **`C_MG` fails: +3.07 σ** on the quoted errors combined — the form §D.3
+> pre-registers and the form B1 was measured in (7.2σ there). On the *seed-spread*
+> errors instead it is +2.82σ, i.e. just inside. **The clause is marginal and
+> both readings are recorded**; see §D.M8.
+
+### D.M5 — Run 5: `VG-cut`, and the closure test `C_VG`
+
+Five seeds per window at `neval 80 000 × niter 8`, with `[10, 20)` at 4× because
+`ptamax = 20` rejects ~92% of draws.
+
+| window | σ (pb) | quoted | spread | χ²/dof |
+|---|---|---|---|---|
+| `[10, 20)` (4×) | `9.425007e-3` | 1.804e-5 | 1.646e-5 | 0.83 |
+| `[20, 39.4)` | `9.776201e-3` | 2.393e-5 | 2.840e-5 | 1.42 |
+| `[39.4, 77)` | `2.784266e-2` | 2.951e-5 | 4.193e-5 | **2.06** |
+| `[77, 144)` | `2.717872e-2` | 2.087e-5 | 2.334e-5 | 1.23 |
+| `[144, 250)` | `2.627963e-2` | 1.294e-5 | 1.993e-5 | **2.41** |
+
+```
+C_VG: sum of windows 1.005022e-1 +- 4.870e-5 against unwindowed 1.006713e-1 +- 9.961e-5
+      -> -0.168% +- 0.110%, -1.53 sigma
+```
+
+> **`C_VG` holds: −1.53 σ.** Five independent re-surveys, each with its own
+> fiducial scale, channel maps and VEGAS grids, reproduce the unwindowed integral.
+> Two of the five per-window seed clouds sit marginally over the ≤ 2 χ²/dof
+> criterion (2.06 and 2.41); on 4 dof the χ²/dof estimator's own sd is 0.71, so
+> both are ≈ 2σ high and neither is a failure at any conventional level. Recorded,
+> not smoothed.
+
+### D.M6 — Run 6: not run, and why
+
+§D.5 makes Run 6 conditional — "*Run only if Runs 1–5 leave the verdict in
+D3–D6*". They did not (§D.M8). Additionally, Run 6 as designed refocuses `W1` and
+`W5`, and the window the partition actually implicates is `W3` (§D.M7), which the
+stage as specified would not have measured. `--stage refocus` is implemented,
+tested to the point of stage dispatch, and left unrun; `MG-cut(W3)` is filed as
+the follow-up in §D.M9.
+
+### D.M7 — `Δ_w`, `χ²_flat`, and a shape contradiction internal to MadGraph
+
+`Δ_w ≡ VG-part(w)/MG-part(w) − 1`:
+
+| window | `Δ_w` | `ε_w` | pull |
+|---|---|---|---|
+| `[10, 20)` | **−0.968%** | 0.733% | −1.32 |
+| `[20, 39.4)` | +0.355% | 0.422% | +0.84 |
+| `[39.4, 77)` | **+1.221%** | 0.200% | **+6.11** |
+| `[77, 144)` | **+0.869%** | 0.160% | **+5.42** |
+| `[144, 250)` | +0.131% | 0.146% | +0.90 |
+
+```
+inverse-variance mean Delta_bar +0.597%, chi2_flat 27.75 on 4 dof (localised iff > 13.28)
+Delta_tot +0.683% +- 0.107%
+```
+
+> **Localised: YES** (`χ²_flat = 27.75`, p ≈ 1.4e-5). Recomputing with MadGraph's
+> *spread*-based per-window errors instead of its quoted ones gives `χ²_flat =
+> 24.9`, so the conclusion does not rest on the error estimator D.M4 just showed
+> to be optimistic. The disagreement is not flat: it is concentrated in
+> `[39.4, 77)` and `[77, 144)`, the radiative-return turn-on and bulk, and is
+> consistent with zero in the two lowest and the highest window.
+
+**The finest oracle in this chain is not a cross section at all.** MadGraph banks
+an unweighted event sample with every run, all events carrying an identical
+`XWGTUP` (verified: 1 distinct weight in both the bank and a fresh 100k run, mean
+= σ), so the sample's `pt(γ)` fractions estimate the *same* σ shares the windowed
+runs measure. They disagree, internally to MadGraph:
+
+| window | `MG-part` share | `VG-cut` share | `VG-part` share (4×) | MG **unwindowed sample** share (5 × 100k) | MG-part − sample |
+|---|---|---|---|---|---|
+| `[10, 20)` | 9.395% | 9.378% | 9.402% | **8.732% ± 0.033%** | **+0.663 pp, +19.9 σ** |
+| `[20, 39.4)` | 9.818% | 9.727% | 9.754% | 9.549% ± 0.060% | +0.269 pp, +4.5 σ |
+| `[39.4, 77)` | 27.489% | 27.704% | 27.704% | 27.859% ± 0.049% | −0.370 pp, −7.6 σ |
+| `[77, 144)` | 27.014% | 27.043% | 27.035% | 27.319% ± 0.050% | −0.305 pp, −6.1 σ |
+| `[144, 250)` | 26.284% | 26.148% | 26.105% | 26.541% ± 0.081% | −0.258 pp, −3.2 σ |
+
+(the banked 10k sample gives 8.330% ± 0.276% in `[10, 20)`, consistent with the
+100k sample cloud and 3.9σ from `MG-part`; the 3.5.7 samples give 8.805% and
+8.655%, i.e. the same deficit in the other MadGraph line.)
+
+MadGraph's unweighted event sample moves ≈0.9 pp of the cross section out of the
+two lowest `pt(γ)` windows and into the three radiative-return windows, relative
+to MadGraph's own windowed cross sections for those same regions. **This side's
+two independent estimators land on MadGraph's windowed numbers, not on
+MadGraph's sample** — `VG-cut(W1)/Σ VG-cut = 9.378%` and
+`VG-part(W1)/total = 9.402%` against `MG-part` 9.395% and the MG sample 8.732%.
+
+This is not a threshold call: it is a ~20σ contradiction between two objects
+MadGraph produces from one run, it reproduces across five seeds and both MadGraph
+versions, and the two sides' *integrals* of that window agree to
+`+0.20% ± 0.24%` (`VG-cut(W1) = 9.425007e-3` against `MG-part(W1) =
+9.406440e-3`). The `samples` gate compares our events against exactly the object
+that is the outlier, which is what the `pt(a)` KS cell at p = 2.74e-4 has been
+seeing.
+
+### D.M8 — the decision rule, applied
+
+Read top to bottom.
+
+| row | clause | measured | holds? |
+|---|---|---|---|
+| **D1** | `C_MG` fails (> 3σ) | +3.07 σ (quoted errors, §D.3's form); +2.82 σ (seed-spread errors) | **yes** (marginal) |
+| | `C_VG` holds | −1.53 σ | **yes** |
+| | our side seed-consistent | total χ²/dof 0.69; `VG-part` ≤ 1.23 in every window; `VG-cut` ≤ 1.42 except 2.06 and 2.41 | **yes** (two marginal) |
+| | our side budget-stable | total +0.177% against a 0.232% bound, error ×2.07; W2–W5 stable; **W1 +2.422% against a 1.530% bound** | **yes at the side level, no for W1** |
+
+**D1 fires. Verdict: the reference owns it.**
+
+Every row below D1 requires either `C_VG` to fail (D2, D3) or *both* closures to
+hold (D4–D9), so with `C_MG` failing and `C_VG` holding the table admits only D1
+or D10. The clauses above are stated at the level §D.6 states them: §D.3 defines
+seed-consistency without a window index, and D4 — not D1 — is the row that
+carries the per-window form ("*in the implicated window our `Δ_w`*"). Under a
+strict per-window reading of D1's "budget-stable", W1's failure would push the
+chain to D10; that reading is recorded here so the manager can overrule, and
+§D.M9 flags it.
+
+What makes D1 more than a threshold call is that its verdict is independently
+confirmed by a measurement no threshold enters: §D.M7's ~20σ contradiction
+between MadGraph's own event sample and MadGraph's own windowed cross sections
+for the same region, with this side on the windowed side of it. The σ closure
+failure (+0.133%) and the shape contradiction have the same sign and the same
+location — MadGraph's unwindowed run under-represents low `pt(γ)`.
+
+**This is not a loosened tolerance.** No tolerance moved in this chain and none is
+proposed. `ee_to_mumua`'s `integrals` `rel_tol` stays at 0.03 and the `samples`
+p-floor stays at 1e-4. What changed is the record of *which side* the residual
+sits on and how that was measured.
+
+**Second occurrence of B1's shape.** As with `ee_to_mumu_tata_qcd0`, MadGraph's
+partition of its own phase space exceeds its own unwindowed integral by more than
+its own quoted errors allow. The mechanism is different — B1's was a
+`get_channel_cut` defect specific to 3.5.7 and `sde_strategy = 2`, refuted for
+this process in §D.M0 — and the size is 17× smaller (+0.13% against +2.3%).
+
+### D.M9 — what this chain did **not** settle
+
+1. **The localised `W3`/`W4` excess is unexplained and survives the verdict.**
+   `Δ_3 = +1.221% ± 0.200%` and `Δ_4 = +0.869% ± 0.160%` — this side above
+   MadGraph in the radiative-return turn-on and bulk, at 6.1σ and 5.4σ, confirmed
+   by `VG-cut` (`+1.164%` and `+0.486%` in the same windows) and not removed by
+   inflating MadGraph's errors to its seed spread. D1's verdict does not account
+   for it. A candidate that this chain could not test: `W3`'s lower edge, 39.4
+   GeV, is the radiative-return kinematic turn-on, and `MG-part` reaches it
+   through a generator that does not know the window exists while `VG-cut` sets
+   it as a real `pta` cut the maps adapt to. **Recommended follow-up:
+   `MG-cut(W3)` via `--stage refocus WINDOWS=3`, which the committed driver
+   already supports** — if it lands on `VG-cut(W3)`, the residual is
+   `MG-part`'s window-blind sampling; if it lands on `MG-part(W3)`, it is ours.
+2. **`C_MG` is marginal**: +3.07σ on quoted errors, +2.82σ on seed-spread errors,
+   against a 3σ threshold. The verdict does not rest on it alone (§D.M7), but the
+   statistic on its own would not carry a verdict.
+3. **`VG-part(W1)` is not budget-stable** at the base budget. It converges under
+   4× toward both independent estimates rather than migrating, which per AGENTS.md
+   reads as sampling rather than a defect, but the pre-registered inequality is
+   violated and this is the one clause where a stricter reading changes the row.
+4. **The mechanism of MadGraph's sample/integral shape contradiction is not
+   diagnosed.** A lead, not a conclusion: in a fresh 100k control the per-channel
+   σ shares (`G1` 12.10%, `G7` 16.15%) and the per-channel written-event shares
+   (`G1` 9.69%, `G7` 11.95%) differ substantially, and `G1`/`G5`/`G7` are the
+   γ\*-mapped channels that carry low `pt(γ)`. Whether MadEvent's combination step
+   is what moves the shape was not established and is out of this chain's scope.
+5. **Blind spots, unchanged from §D.8**: anything both sides get wrong the same
+   way inside a window (they share the matrix element, gated to 1e-11); `W1`'s
+   lower edge is the `pta` cut, so a disagreement confined there cannot separate
+   a cut-boundary convention from a coverage miss; `η(γ)` is integrated over
+   inside each window. The `m(μμ)` secondary axis of §D.2 was not measured —
+   `pt(γ)` localised the disagreement on its own, so the axis that exists to say
+   "there was nothing to localise" was not needed.
+
+### D.M10 — gates after the measurement
+
+This chain changed no production code, and no report cell moved.
+
+```
+$ cargo test --workspace
+   ... 19 test binaries, all ok
+   test result: ok. 606 passed; 0 failed; 8 ignored ...   (vibegraph-lib unit)
+   === WORKSPACE EXIT 0 ===
+```
+
+`pixi run validate --skip-deps` — never bare, which would launch a multi-hour
+MadGraph regeneration — and `git diff --stat validation-report/` are recorded in
+the session report. The `extended-validation` gates were **not** run: they cover
+amplitude, colour, coupling and diagram-enumeration changes, and this chain
+touched none of those.
+
+### W3 refocus supplement (2026-08-03, authorised after the verdict)
+
+Run after D1 was upheld, to settle §D.M9 item 1 — the localised `[39.4, 77)`
+excess that survives the verdict. `MG-cut(W3)` is MadGraph's *re-surveyed*
+integral of the same window: the run card carries `pta = 39.4`, `ptamax = 77.0`
+and `dummy_fct.f` is left stock, so `setcuts.f` feeds the upper edge into
+`etmax(i)` and the phase-space generator adapts to the window instead of having
+it applied after the fact. It is therefore the estimator that discriminates
+between "`MG-part(W3)` is low because its generator is window-blind at a
+kinematic turn-on" and "the two integrands genuinely disagree there".
+
+```
+WINDOWS=3 SEEDS="20260803 20260804 20260805" \
+  pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage refocus
+```
+
+**The three-way interpretation, fixed before the measurement:** if `MG-cut(W3)`
+lands on `MG-part(W3)`, the excess is a real disagreement between the two
+integrands in the radiative-return turn-on, surviving D1 and changing what the
+row's note should say (but not the verdict); if it lands on `VG-cut(W3)` /
+`VG-part(W3)`, `MG-part(W3)` is the artifact and the excess dissolves into D1's
+existing story; if it lands between them with errors too wide to discriminate,
+that is recorded and no third measurement is taken.
+
+| | σ (pb) | quoted (mean) | seed spread (mean) | cloud χ²/dof |
+|---|---|---|---|---|
+| **`MG-cut(W3)`, 3 seeds** | **`2.759167e-2`** | 1.704e-5 | 3.367e-5 | 4.17 |
+| `MG-part(W3)`, 5 seeds | `2.752240e-2` | 1.267e-5 | 2.249e-5 | 3.51 |
+| `VG-cut(W3)`, 5 seeds | `2.784266e-2` | 2.951e-5 | 4.193e-5 | — |
+| `VG-part(W3)`, 5 seeds | `2.785841e-2` | 5.343e-5 | 5.683e-5 | — |
+
+per-seed: `2.7659e-2, 2.7558e-2, 2.7558e-2` — three independent runs, confirmed
+by their banners (`20260803/4/5 = iseed`), their point counts (5 848 448 /
+4 540 128 / 4 039 108) and their distinct quoted errors. The two equal entries
+agree only to the five significant digits `results.dat` prints, a resolution
+≈60× finer than the seed spread.
+
+| `MG-cut(W3)` − | Δ | quoted σ | seed-spread σ |
+|---|---|---|---|
+| `MG-part(W3)` | **+0.252%** | +3.26 | **+1.71** |
+| `VG-cut(W3)` | **−0.901%** | −7.37 | **−4.67** |
+| `VG-part(W3)` | −0.957% | −4.76 | −4.04 |
+
+> **Branch 1 fired: `MG-cut(W3)` lands with `MG-part(W3)`, not with this side.**
+> On the seed-spread errors — the honest ones here, since both MadGraph windowed
+> clouds have χ²/dof ≈ 3.5–4.2 — it is consistent with `MG-part(W3)` at 1.71σ and
+> inconsistent with `VG-cut(W3)` at 4.67σ. On MadGraph's optimistic quoted errors
+> it is 3.26σ from `MG-part` and 7.37σ from `VG-cut`, i.e. decisively nearer
+> `MG-part` on either basis. Re-surveying moves MadGraph's W3 value up by
+> +0.252%, closing only **22% of the 1.164% gap** to `VG-cut(W3)`: window-blind
+> sampling at the turn-on is a real but small part of it, and it is not the
+> explanation.
+
+**Consequence.** The `[39.4, 77)` and `[77, 144)` excess is a genuine
+disagreement between the two integrands in the radiative-return region, ~0.9–1.2%
+with this side high, and it **survives D1**. It is not a sampling artifact of
+`MG-part`'s window-blindness, and it is not covered by D1's verdict, whose
+evidence is the low-`pt(γ)` coverage miss in MadGraph's unwindowed run and its
+event sample. Two separate effects live in this row's +0.80%, with opposite
+locations:
+
+* low `pt(γ)` — the reference under-covers, measured at 19.9σ against its own
+  windowed cross sections (§D.M7). D1.
+* radiative-return turn-on and bulk — this side sits ~1% above MadGraph in a
+  comparison where both sides re-survey the window, 4.7σ. **Open, unattributed,
+  and not explained by D1.** Per §D.6 an unattributed localised residual on which
+  both sides are stable is D6 territory; chain D does not demote the row and only
+  the manager may act on it. What would falsify "ours": an `m(μμ)`-axis
+  measurement (§D.2's unmeasured secondary axis) showing the excess sits off the
+  Z peak, or a per-channel comparison against `G6`/`G8`'s banked terms, which
+  carry 53.6% of σ and dominate exactly this region.
+
+### m(mumu) secondary axis
+
+§D.2's secondary axis, frozen there with edges `0, 60, 86, 96, 200, 500` and
+explicitly carrying no verdict. Dropped for time during the main measurement; run
+afterwards because the D6-class `W3`/`W4` finding needs a discriminator, and
+`pt(γ)` cannot supply one — `η(γ)` smears an on-shell-Z event across most of the
+`pt(γ)` range, whereas `m(μμ)` resolves the Breit–Wigner directly.
+
+**Pre-registered before running, and binding on the reading below: whatever this
+table shows it maps to NO decision-rule row. It is localisation evidence for the
+D6 finding and nothing else. D1 stands, the `W3`/`W4` item stays a recorded
+D6-class subsidiary finding, and no verdict in this chain moves.**
+
+`MG-part` via `dummy_cuts` on externals 3 and 4 (`IDUP = -13, 13`, asserted from
+`leshouche.inc`), 3 seeds × `nevents = 100000` — this axis carries no verdict, so
+three seeds suffice. `VG-part` is accumulated on the *same draws* as the `pt(γ)`
+split, five seeds at the gate budget, so any difference between the two tables is
+the projection and not the sample.
+
+```
+WINDOWS="1 2 3 4 5" SEEDS="20260803 20260804 20260805" \
+  pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage mll-371
+```
+
+| `m(μμ)` | `MG-part` (3 seeds) | `VG-part` (5 seeds) | `Δ` | quoted σ | spread σ | MG share |
+|---|---|---|---|---|---|---|
+| `[0, 60)` | `5.431867e-3` ± 3.341e-6 | `5.428301e-3` ± 2.308e-5 | −0.066% | −0.15 | −0.19 | 5.40% |
+| `[60, 86)` | `4.510933e-3` ± 1.569e-6 | `4.498985e-3` ± 2.554e-5 | −0.265% | −0.47 | −0.41 | 4.48% |
+| **`[86, 96)` (Z peak)** | `4.408767e-2` ± 1.289e-5 | `4.414335e-2` ± 4.478e-5 | **+0.126%** | **+1.19** | **+1.14** | **43.80%** |
+| `[96, 200)` | `1.171800e-2` ± 4.570e-6 | `1.172257e-2` ± 3.565e-5 | +0.039% | +0.13 | +0.12 | 11.64% |
+| `[200, 500)` | `3.490667e-2` ± 1.867e-5 | `3.487814e-2` ± 8.092e-5 | −0.082% | −0.34 | −0.36 | 34.68% |
+
+Seed clouds are healthy on both sides on this axis (MadGraph χ²/dof 0.32–1.84,
+ours 0.63–1.46) — none of the 3.5–4.3 inflation the `pt(γ)` windowed clouds
+showed.
+
+> **The two integrands agree in every `m(μμ)` window**, worst pull 1.19σ, and the
+> largest single window — the Z peak carrying 43.8% of σ — agrees to
+> `+0.126% ± 0.106%`. Summed: `VG 1.006713e-1` against `Σ MG-part(m) 1.006551e-1`,
+> **`+0.016% ± 0.107%`**.
+
+**The `W3`/`W4` question is answered: the excess sits OFF the resonance's
+normalisation.** `[86, 96)` is where a resonance-mapping or width disagreement
+would have to appear, and it agrees to a tenth of a percent. So the ~0.9–1.2%
+`pt(γ)` excess in `[39.4, 77)` and `[77, 144)` is not the Z propagator, not the
+width, and not the radiative-return normalisation.
+
+**And the axis exposes something larger, which needs recording even though it
+keys nothing.** Both partitions cover the phase space completely (`pt(γ) ∈
+[10, 250)` from the cut to `√s/2`; `m(μμ) ∈ [0, 500)` from threshold to `√s`), and
+both are imposed the same way, through `dummy_cuts` after every other cut. They
+do not agree with each other:
+
+| | Δ | σ |
+|---|---|---|
+| `Σ MG-part(pt_a)` − MG control | +0.134% | **+3.08** |
+| `Σ MG-part(m_mumu)` − MG control | **+0.667%** | **+15.05** |
+| `Σ MG-part(m_mumu)` − `Σ MG-part(pt_a)` | +0.532% | **+16.70** |
+| VG total − `Σ MG-part(m_mumu)` | +0.016% | +0.16 |
+| VG total − MG control | +0.683% | +6.41 |
+
+Two complete `dummy_cuts` partitions of one MadGraph run's own phase space differ
+from each other by **16.7σ**, and both exceed the unwindowed control. This is a
+statement about MadGraph that needs no reference to this side at all. It is D1's
+own signature — the reference's partition exceeding its own unwindowed integral —
+at **five times the size** the `pt(γ)` axis measured, and it recovers essentially
+exactly this side's number: **when MadGraph re-integrates its own phase space in
+`m(μμ)` slices, the entire +0.68% disagreement disappears (+0.016%, 0.16σ).**
+
+For whoever picks up the D6 item, that reframes it. Windowing in `pt(γ)` — by
+`dummy_cuts` *or* by run-card `pta`/`ptamax`, which the W3 refocus showed give the
+same answer — leaves MadGraph low in the radiative-return region; windowing the
+same phase space in `m(μμ)` does not. The discriminating variable is which
+observable the window is cut in, not whether the generator re-surveys. That points
+at MadGraph's coverage in the `pt(γ)`/`η(γ)` plane rather than at either side's
+matrix element (gated to 1e-11) or at the Z propagator. The cheapest next probe is
+the two-dimensional one this chain never took: `MG-part` on `[39.4, 77) × [86, 96)`
+against the same cell on this side, which separates "our `η(γ)` distribution at
+fixed `m(μμ)` differs" from "MadGraph's `pt(γ)`-restricted runs under-recover".
+
+Blind spot, stated because it is the reason this axis carries no verdict: `VG-part`
+closes on both axes by construction (same draws), so nothing here audits *this*
+side's coverage. `C_VG` on the `pt(γ)` axis (§D.M5) remains the only coverage audit
+this side has.
+
+### Addenda and manager ruling (2026-08-03, post-review)
+
+Appended after chain D's review returned FIX (documentation only; no re-runs, no
+physics rework, no tolerance or gate moved). Everything above this heading is
+frozen as recorded — these entries supersede by pointing, never by editing a
+measurement in place.
+
+**A1 — §D.M9 item 5 is superseded.** It reads "the `m(μμ)` secondary axis of §D.2
+was not measured", which was true when written and was falsified by the later
+`### m(mumu) secondary axis` section below §D.M10. The axis *was* measured, and it
+carried the sharpest result in the chain. Item 5's remaining clauses — the shared
+matrix element, `W1`'s lower edge being the `pta` cut, `η(γ)` integrated over
+inside each window — stand unchanged. The original line is left as written.
+
+**A2 — error-propagation conventions, named.** Two are in use, both legitimate,
+and the same quantity therefore appears with slightly different digits:
+
+* the *ratio form*, `rel = a/b − 1` with `err² = (σ_a/b)² + (a·σ_b/b²)²` — what
+  the committed probe's `rel_with_err` computes, and the source of every figure
+  in §D.M4, §D.M5 and §D.M7. `C_MG = +3.07σ`; on the `m(μμ)` axis `+14.98σ` and
+  `+16.66σ`.
+* *plain quadrature* on the absolute difference, `Δ = a − b` with
+  `σ = √(σ_a² + σ_b²)` — used in the `### m(mumu) secondary axis` summary table,
+  which compares absolute cross sections rather than ratios. `C_MG = +3.08σ`,
+  `+15.05σ`, `+16.70σ`.
+
+So `C_MG` on the `pt(γ)` axis is `+3.07` in §D.M4 (ratio form) and `+3.08` in the
+`m(μμ)` table (quadrature); they are the same measurement to rounding. No
+conclusion anywhere depends on the choice — the pairs differ by under 0.5% of
+their own value, and no threshold sits between them.
+
+**A3 — the basis of the `~20σ` sample-versus-windowed claim in §D.M7.** The quoted
+`+19.9σ` for `[10, 20)` divides the `+0.663` pp gap by the **5-seed standard error
+of the mean of the sample fractions alone** (`0.033` pp). Other defensible bases:
+
+| error used | σ |
+|---|---|
+| 5-seed SEM of the sample fractions, `0.0333` pp (as quoted) | 19.9 |
+| binomial on the pooled 500 000 events, `0.0399` pp | 16.6 |
+| 5-seed SEM ⊕ `MG-part`'s own share error (`0.0134` pp) | 18.5 |
+| binomial ⊕ `MG-part`'s own share error | 15.8 |
+
+The conclusion is unaffected at any reading — the smallest is 15.8σ — but "~20σ"
+is the most favourable of them, so the figure should be read as "≥15σ, 19.9σ on
+the seed-spread basis" wherever it appears above and in `validation/manifest.toml`.
+
+**A4 — provenance of the committed reference.**
+`validation/madgraph/pta_window_reference.json` was verified row by row against the
+raw MadGraph run directories that produced it: all **58/58** rows reproduce their
+`SubProcesses/results.dat` first line (σ and quoted error) to machine precision, 0
+missing, 0 mismatched. Those directories live under `validation/madgraph/output/`,
+which is **gitignored and may be pruned at any time** — so the JSON is the durable
+record and the only one that survives a clean of the work area. Anything a later
+reader needs must be read from the JSON, not from `output/`.
+
+**A5 — MANAGER RULING (sprint manager, 2026-08-03).** The chain lands on **D1**,
+read at the side level as the clauses were frozen: `C_MG` fails at `+3.07σ`,
+`C_VG` holds at `−1.53σ`, and this side is seed-consistent (χ²/dof `0.69`) and
+budget-stable (`+0.177%` against a `0.232%` bound). The strict per-window reading —
+`VG-part(W1)` budget shift `+2.422%` against a `1.530%` bound, and `VG-cut(W3)`,
+`VG-cut(W5)` seed clouds at χ²/dof `2.06` and `2.41` against a ≤ 2 criterion —
+would land **D10**; it is recorded in §D.M5, §D.M3 and §D.M8 and is not smoothed.
+The frozen clause text is side-level, and D1 and D10 differ here only in label,
+not in action: no tolerance and no gate moves under either reading.
+
+**A6 — a stale figure found while applying these fixes, and corrected.** The
+`P_FLOOR` doc comment in `vibegraph-lib/tests/validate_samples.rs` quoted the
+`ee_to_mumua` `samples` minimum as `2.74e-4` ("`2.7x` above the floor") and its
+`integrals` pull as `+3.1`. The banked gate run of 2026-08-03 measures
+`min KS p 1.292e-4` over the three generation seeds (per-seed `3.383e-4`,
+`1.172e-2`, `1.292e-4`) and `pull +2.79`. The row therefore sits **1.3× above the
+`1e-4` floor, not 2.7×** — materially closer than the documented figure, and worth
+the attention of whoever next touches the `samples` gate. The doc comment and the
+`samples` note in `validation/manifest.toml` now carry the measured values.
+## Chain C2 design (2026-08-02)
+
+### C2.0 The §6 trigger: measured, and it does **not** fire
+
+The trigger asks whether a physics-relevant parsed-but-unread field is already
+set away from its default by a gated run — a latent wrong result rather than a
+future hard error. It was checked mechanically, not by reading: every one of the
+209 names in `PARAM_DEFAULTS` was parsed out of the Rust table with its default,
+and every run card in the tree was re-read under *this crate's own* parse rules
+(`parse_fortran_bool`, the `d`/`D` exponent, `strip_quotes`, and the
+`{}`/`[]` → empty normalisation of `Kind::Opaque`) and compared field by field.
+Corpus: 36 `validation/madgraph/output/*/Cards/run_card.dat`, 37
+`.../run_card_default.dat`, `validation/madgraph/dy13_{default,mmll}_run_card.dat`,
+`vibegraph-lib/tests/data/run_card_parser_fixture.dat`.
+
+Across that whole corpus exactly 23 names are ever set away from their table
+default. Twenty are **consumed** (`ebeam1/2`, `lpp1/2`, `lhaid`, `pdlabel`,
+`nevents`, `maxjetflavor`, `scalefact`, `mmll`, `mmllmax`, `ptb`, `etab`,
+`fixed_ren_scale`, `fixed_fac_scale`, `fixed_fac_scale1/2`). The remaining
+five are unread, and each is dispositioned below:
+
+| field | value seen | cards | why it is not the trigger |
+|---|---|---|---|
+| `SDE_strategy` | `2` | 9 | MadEvent's own multi-channel weight rule (`banner.py:4458`, "full single diagram enhanced" vs "product of the denominator"). It selects how *MadGraph* distributes its own sampling, and this crate integrates with its own multichannel; σ is invariant under it up to Monte-Carlo error. The one place it is not — the 3.5.7 narrow-pole bias — is already owned in note 27 §B1, which is why `var_sde1` exists as a banked variant. Nearest call in the audit; recorded rather than waved past. |
+| `use_syst` | `False` | 28 | Enables MadGraph's post-hoc systematics reweighting, which writes only the `<mgrwt>`/`<rwgt>` block. Note 22 §5 already puts it out of scope. `validate_scales.rs` reads that block where it exists, so its presence is an oracle *input*, never an output. |
+| `mxx_only_part_antipart` | `{'default': False}` | 35 | This is MadGraph's *own* default value; the disagreement is on our side — see C2.5, which is a finding but not a physics one, because the field only qualifies `mxx_min_pdg`, which `UNIMPLEMENTED_CUTS` already hard-errors on. |
+| `pdlabel1`, `pdlabel2` | `none` | 14 | All 14 are `lpp1 = lpp2 = 0` fixed-energy runs. `setrun.f` overwrites `pdlabel` with `none` when no beam carries a PDF, and `RunningAlphaS::from_run_card` short-circuits on `lpp1 == 0 && lpp2 == 0` (`coupling/alphas.rs:206`) *before* `pdf_label_alpha_s` is reached, so no PDF label of any kind is read on those runs. Physics-relevant in general (C2.3 makes them a hard error), inert on every card that sets them. |
+
+**Conclusion: no gated run rests on an unread physics-relevant field.** The
+audit's output is prophylactic, not corrective. That is a negative result and it
+is stated as a measurement, not as "nothing was found".
+
+### C2.1 Audit method (what was actually run, so a reviewer can redo it)
+
+Literal-name search alone **under-reports by 71 fields** and a design that
+trusted it would have mis-classified most of the cut block. `Cuts::compile`
+builds parameter names at runtime — `rc.float(&format!("pt{c}"))`,
+`format!("dr{tag}")`, `format!("mm{tag}")` — so `ptj`, `etal`, `drjl`, `mmbb`
+and 67 others have a real consumer and **zero** literal occurrences. The method
+that survives is three passes, and the implementation session must redo all
+three rather than trusting this table:
+
+1. **Literal sweep.** `grep -rn '"<name>"' --include='*.rs'` over
+   `vibegraph-lib/src`, `vibegraph-cli/src`, `validation-report/src`, excluding
+   `runcard.rs` itself. 72 hits, 137 misses.
+2. **Typed-field sweep.** The 14 `RunCard` struct fields are read as
+   `rc.<field>`, not by name; `grep -rn '\.<field>\b'` (LSP references where
+   available) resolves them. This found that `RunCard::iseed` has **no consumer
+   at all** — MadEvent's RNG seed, where this crate's seed comes from the CLI.
+3. **Constructed-name sweep.** Every `format!` argument passed to
+   `RunCard::float`/`int`/`get` is expanded over its own generator set:
+   `letter_char` gives `{j,b,a,l}` and `pair_tag` gives
+   `{jj,bb,ll,aa,bj,jl,aj,bl,ab,al}`. This is the pass a pure LSP query cannot
+   do, and it is the reason the audit is judgment-heavy rather than mechanical.
+
+Where a field has no consumer, the classification's evidence is not "no consumer
+found" but a *positive* argument for inertness — either an existing vibegraph
+guard that makes it unreachable, or a reading of the MadGraph source showing it
+cannot enter σ or the event record. Bare absence is never accepted as evidence.
+
+### C2.2 The classification, asserted rather than documentary
+
+**New file `vibegraph-lib/src/runcard/classes.rs`** — or, if keeping `runcard.rs`
+a single module is preferred, a `mod classes` block inside it; the implementer
+picks, the contract is the contents:
+
+```rust
+/// Where a recognized run-card parameter goes.
+pub enum FieldClass {
+    /// Read by this crate. The string names the consumer.
+    Consumed(&'static str),
+    /// Not read, and unable to reach σ, the event record or the cuts. The
+    /// string is the argument for that, never "no consumer found".
+    IgnoredBenign(&'static str),
+    /// Not read, and able to change what this generator produces. Rejected
+    /// when a card moves it off the MadGraph default.
+    IgnoredPhysics { why: &'static str, when: Applicability },
+}
+
+/// When an `IgnoredPhysics` field is capable of biting at all.
+pub enum Applicability {
+    Always,
+    /// Only when both beams carry a PDF (`lpp1 == lpp2 == 1`).
+    ProtonBeams,
+}
+
+pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[ /* 209 rows */ ];
+```
+
+`Applicability` is not decoration: `pdlabel1`/`pdlabel2` are set away from
+default by 14 banked cards, so a flat "must equal default" rule would reject
+them. It has exactly two variants and only those two fields use the second one.
+
+**Enforcement** — in `RunCard::from_values`, *after* the existing
+`UnsupportedLpp` check (which is what makes `Applicability::ProtonBeams`
+decidable), a single loop over `FIELD_CLASSES` returning a new error:
+
+```rust
+#[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
+UnsupportedField { name: String, value: String, default: String, why: &'static str },
+```
+
+Reuse `cuts.rs::describe` for the value rendering (move it to a shared helper, or
+duplicate the four-line match — the implementer picks; do not make `cuts.rs`
+depend on the new module for it). The message must describe the boundary in its
+own terms and name no plan item, per AGENTS.md's comment rules applied to error
+text.
+
+**Deliberate non-changes**, both load-bearing:
+
+- **No new field on `RunCard`.** `RunCard` is `Serialize`/`Deserialize` and
+  travels inside `IntegrateArtifact`; adding a `user_set` set would be an
+  artifact-format change for a parse-time concern. The cost is a residual blind
+  spot recorded in C2.6.
+- **Nothing is derived or rewritten.** The enforcement only *rejects*. MadGraph
+  resolves `pdlabel` from `pdlabel1`/`pdlabel2` (`banner.py:4055-4086`); mirroring
+  that would silently change `RunCard::pdlabel` on the 14 fixed-energy cards
+  (`nn23lo1` → `none`) and put a semantic change inside a chain whose acceptance
+  is "every gated σ row unmoved". Refuse now; derive in a later chain if a card
+  ever needs it.
+
+### C2.3 The audit table — all 209 fields
+
+Counts: **130 Consumed, 58 IgnoredBenign, 21 IgnoredPhysics.** Rows are grouped
+only where the evidence string is literally identical; every one of the 209
+names appears exactly once below.
+
+**Consumed (130).**
+
+| fields | consumer |
+|---|---|
+| `nevents` | `RunCard::nevents` → CLI event budget |
+| `lpp1` `lpp2` | `RunCard::beam_mode`, `RunCardError::UnsupportedLpp`, `scales.rs` `beam_has_pdf` |
+| `ebeam1` `ebeam2` | `RunCard::ebeam1/2` → `proton.rs` / `hadronic.rs` beam energies |
+| `pdlabel` | `coupling/alphas.rs::pdf_label_alpha_s` (via `from_run_card`) |
+| `lhaid` | `coupling/alphas.rs::from_run_card`; PDF set id |
+| `fixed_ren_scale` `fixed_fac_scale` `fixed_fac_scale1` `fixed_fac_scale2` `scale` `dsqrt_q2fact1` `dsqrt_q2fact2` `dynamical_scale_choice` `scalefact` `ickkw` `pdfwgt` `bwcutoff` `xmtcentral` `d` | `coupling/scales.rs::ScaleChoice::from_run_card` (`d` → `ClusterSettings::d_parameter`) |
+| `maxjetflavor` | `cuts.rs::Cuts::compile` → `classify()` |
+| `dsqrt_shat` `dsqrt_shatmax` `mmll` `mmnl` `mmnlmax` `ptllmin` `ptllmax` `pta` | `cuts.rs::Cuts::compile` / `shat_min_hint` / `pair_ptll`, literal names |
+| `ptj` `ptb` `ptl` `ptjmax` `ptbmax` `ptamax` `ptlmax` `ej` `eb` `ea` `el` `ejmax` `ebmax` `eamax` `elmax` `etaj` `etab` `etaa` `etal` `etajmin` `etabmin` `etaamin` `etalmin` | `cuts.rs::Cuts::compile` single-leg block; name built by `format!("pt{c}")`, `format!("e{c}max")`, `format!("eta{c}min")`, … over `letter_char` ∈ {j,b,a,l} |
+| `drjj` `drbb` `drll` `draa` `drbj` `drjl` `draj` `drbl` `drab` `dral` `drjjmax` `drbbmax` `drllmax` `draamax` `drbjmax` `drjlmax` `drajmax` `drblmax` `drabmax` `dralmax` | `cuts.rs::pair_dr`, name built by `format!("dr{tag}")` over `pair_tag` |
+| `mmjj` `mmbb` `mmaa` `mmjjmax` `mmbbmax` `mmaamax` `mmllmax` | `cuts.rs::pair_mass`, name built by `format!("mm{tag}")` |
+| `misset` `missetmax` `ptheavy` `ptonium` `etaonium` `xptj` `xptb` `xpta` `xptl` `ptj1min` `ptj1max` `ptj2min` `ptj2max` `ptj3min` `ptj3max` `ptj4min` `ptj4max` `cutuse` `ptl1min` `ptl1max` `ptl2min` `ptl2max` `ptl3min` `ptl3max` `ptl4min` `ptl4max` `htjmin` `htjmax` `ihtmin` `ihtmax` `ht2min` `ht3min` `ht4min` `ht2max` `ht3max` `ht4max` `ptgmin` `xetamin` `deltaeta` `ktdurham` `dparameter` `ptlund` `xqcut` `pt_min_pdg` `pt_max_pdg` `E_min_pdg` `E_max_pdg` `eta_min_pdg` `eta_max_pdg` `mxx_min_pdg` | `cuts.rs::detect_unimplemented` over `UNIMPLEMENTED_CUTS` — parse-and-detect: an active value is already a hard error (`CutError::UnimplementedCutActive`). `ptgmin` and `xqcut` additionally reach `Cuts::compile` and `ScaleChoice::from_run_card`. |
+
+**IgnoredBenign (58).**
+
+| fields | why it cannot bite |
+|---|---|
+| `run_tag` `keep_log` `gridpack` `python_seed` `iseed` `gseed` `bypass_check` `issgridfile` `global_flag` `aloha_flag` `matrix_flag` | MadEvent job and codegen bookkeeping: names output files, seeds MadGraph-side RNGs, or passes compiler flags. None reaches a momentum, a weight or a written record. `iseed` is a typed `RunCard` field with no consumer — this crate's seed comes from the CLI. |
+| `gridrun` `mc_grouped_subproc` `job_strategy` `hard_survey` `second_refine_treshold` `survey_splitting` `survey_nchannel_per_job` `refine_evt_by_job` `SDE_strategy` `vector_size` `nb_warp` `vecsize_memmax` `hel_recycling` `hel_filtering` `hel_splitamp` `hel_zeroamp` | Directives for MadEvent's own integrator and helicity codegen. This crate integrates with its own sampler and sums helicities explicitly, so the reference value is invariant under them up to Monte-Carlo error. `SDE_strategy`'s one exception (the 3.5.7 narrow-pole bias) is owned in note 27 §B1 with `var_sde1` as its banked control. |
+| `use_syst` `systematics_program` `systematics_arguments` `sys_scalefact` `sys_alpsfact` `sys_matchscale` `sys_pdf` `sys_scalecorrelation` | Post-hoc systematics reweighting: touches only the `<mgrwt>`/`<rwgt>` block, never σ (note 22 §5). |
+| `ievo_eva` `evaorder` `eva_xcut` | EVA lepton-PDF parameters, reachable only at `lpp = ±3, ±4`; `RunCardError::UnsupportedLpp` admits only (0,0) and (1,1). |
+| `fixed_extra_scale` `mue_ref_fixed` `mue_over_ref` | The Ellis–Sexton / "extra scale" family. `grep -rn` over `Template/LO/Source/*.f` and `Template/LO/SubProcesses/*.f` finds **zero** occurrences — they are NLO-only and inert at LO. |
+| `highestmult` `ktscheme` `alpsfact` `chcluster` `asrwgtflavor` `clusinfo` `auto_ptj_mjj` `pdgs_for_merging_cut` | MLM matching. `ScaleChoice::from_run_card` refuses `ickkw != 0 \|\| xqcut > 0` (`ScaleError::UnsupportedMatching`), and `ktdurham`/`ptlund`/`dparameter` are in `UNIMPLEMENTED_CUTS`, so no matching path is reachable. |
+| `r0gamma` `xn` `epsgamma` `isoem` | Frixione photon isolation, read by `cuts.f` only inside its `ptgmin` block; `ptgmin` is in `UNIMPLEMENTED_CUTS`. |
+| `mxx_only_part_antipart` | Qualifies the `mxx_min_pdg` cut only, and `mxx_min_pdg` is in `UNIMPLEMENTED_CUTS`. (See C2.5 — this field's stored default is also wrong, which is *why* it must not be enforced.) |
+| `bias_parameters` | The bias module's payload. `bias_module` is `IgnoredPhysics`, so no bias is ever active to read it. |
+| `cut_decays` | Sets `do_cuts` for legs produced by a decay chain; decay-chain process syntax is a hard error (chain C1), so no such leg exists. |
+| `me_frame` `frame_id` | Select the frame for a matrix element that is not Lorentz invariant, or for a polarised sum. Every amplitude here is Lorentz invariant and `polbeam1/2` are refused, so the frame choice cannot change a value. Also the safe classification: `me_frame`'s MadGraph default is `[1, 2]` while the table stores an empty `Opaque` (C2.5), so enforcing it would misfire. |
+
+**IgnoredPhysics (21) — each becomes a hard error.**
+
+| field | applicability | why it is physics |
+|---|---|---|
+| `polbeam1` `polbeam2` | Always | Beam polarisation: polarised matrix-element sums and their `SPINUP` consequences are not implemented. **Closed by chain C1 — see C2.7 for the merge rule.** |
+| `pdlabel1` `pdlabel2` | ProtonBeams | Per-beam PDF set. Selects the parton densities and, through `pdfwrap.f`, `αs(M_Z)`; only the single `pdlabel` is read. MadGraph itself raises `InvalidRunCard` when `lpp1 = lpp2 = 1` and the two disagree (`banner.py:4087-4089`), so the asymmetric case is a boundary on both sides. |
+| `nb_proton1` `nb_proton2` `nb_neutron1` `nb_neutron2` | Always | Ion beam composition: `setrun.f:165-178` builds `IDBMUP` from it, so it changes the beam particle in the event record. |
+| `mass_ion1` `mass_ion2` | Always | Ion beam mass: `genps.f:668-669` uses it as the beam mass, so it changes the phase-space kinematics. |
+| `small_width_treatment` | Always | Floors every width at `VALUE × mass`. `coupling/cluster/kt.rs:475` (`line.width.max(line.mass * settings.small_width_treatment)`) is fed a **hardcoded** `1e-6` from `scales.rs:243`. The hard error is what makes that hardcode true by construction. Reading the card instead was considered and rejected: MadGraph applies the floor at generation time to the propagators as well, so reading it would track the clustering and not the matrix element — a half-implementation with no gate to catch the missing half. |
+| `tmin_for_channel` | Always | "Limit the non-singular reach of --some-- channel of integration related to T-channel diagram" (`banner.py:4447`). No argument shows σ invariant under truncating one channel's reach, so it is not benign by the rule of C2.1. |
+| `nhel` | Always | Monte-Carlo over helicities instead of the explicit sum: changes the estimator and the per-event weight. |
+| `limhel` | Always | Threshold below which MadGraph drops a helicity configuration. Raising it drops contributions this crate keeps. |
+| `event_norm` | Always | Normalisation of `XWGTUP` (`average`/`sum`/`unity`) — a factor of the event count in the record. `lhef/record.rs`'s `WeightStrategy` doc already records that nothing else in an LHE file distinguishes them. |
+| `time_of_flight` | Always | Writes a nonzero `VTIMUP` for long-lived particles; this crate always writes `0`. |
+| `boost_event` | Always | Boosts the whole event before it is written. |
+| `lhe_version` | Always | Les Houches format version; `lhef/write.rs` emits `3.0` unconditionally. |
+| `bias_module` | Always | A bias module multiplies every event weight. |
+| `custom_fcts` | Always | User hook files that overwrite dummy functions, cuts included (`banner.py:4292`). Its MadGraph default `[]` and the table's empty `Opaque` are the same value under `parse_value`'s `{}`/`[]` normalisation, so it is safe to enforce. |
+| `fixed_couplings` | Always | MadGraph itself aborts on `False` — `reweight.f`: `'form factor with fixed_couplings not supported anymore'`, `stop 5`. Mirroring its refusal is strictly the honest behaviour. |
+
+### C2.4 The μF ≥ 2 GeV veto
+
+**Reference semantics, read at the pin.** The brief and note 22 §4 both cite
+`reweight.f:1185`; in the pinned `mg5amcnlo` checkout the veto is at
+**`reweight.f:1205-1220`** (identical in each generated
+`validation/madgraph/output/*/SubProcesses/reweight.f`). Line numbers have
+drifted; the code has not. Verbatim condition, with Fortran's `.and.`-binds-tighter
+precedence made explicit:
+
+```
+(lpp(1)/=0 .and. (q2fact(1) < 4d0 .and. .not.fixed_fac_scale1)) .or.
+(lpp(2)/=0 .and. (q2fact(2) < 4d0 .and. .not.fixed_fac_scale2))
+   →  warn (first 10 only); setclscales = .false.; clustered = .false.; return
+```
+
+Three properties that the design must reproduce and that no summary of it
+carries: it is **per beam**; it applies only to a beam that both carries a PDF
+*and* has a dynamical factorisation scale; and the comparison is **strict** on
+the *square* (`q2fact < 4`, so exactly 2 GeV survives).
+
+**Veto, not error — confirmed at the call site.** `reweight.f:1907-1913`:
+`if(.not.setclscales(...)) then all_wgt(i) = 0d0`. The point keeps its place in
+the sample and contributes nothing. So: return zero weight, do not abort the run.
+
+**Where it lives.**
+
+- `coupling/scales.rs`, new method on `ScaleChoice`:
+  ```rust
+  pub fn factorisation_scale_vetoed(&self, scales: &EventScales) -> bool {
+      (0..2).any(|b| {
+          self.beam_has_pdf[b]
+              && self.fixed_fac[b].is_none()
+              && scales.mu_f[b] * scales.mu_f[b] < 4.0
+      })
+  }
+  ```
+  `beam_has_pdf` and `fixed_fac` are already fields of `ScaleChoice`, so this
+  needs no new state. Compare the **square** against `4.0` rather than `mu_f`
+  against `2.0`: MadGraph stores `q2fact` and we store its root, and squaring
+  back is the closer transcription.
+- `hadronic.rs`, forwarding method on `EventScaleSource`: `PerEvent` delegates;
+  `ScaleSourceKind::Constant` returns `false`. That is provable, not a
+  convenience: `Constant` is built only under `choice.is_fully_fixed()`
+  (`hadronic.rs:275`), which requires `fixed_fac[0]` and `fixed_fac[1]` both
+  `Some`, exactly the case MadGraph's `.not.fixed_fac_scale` guard excludes. The
+  other `Constant` producer, `EventScaleSource::constant(mu)`
+  (`hadronic.rs:248`, used at `proton.rs:941`), belongs to a caller that supplied
+  a μF directly and is modelling no MadGraph run at all.
+- `proton.rs`, one early return in `ProtonIntegrand::shape`, immediately after
+  `let scales = self.event_scales(channel);` and **before** `apply_scale` and the
+  luminosity loop:
+  ```rust
+  if self.scales.factorisation_scale_vetoed(&scales) {
+      return 0.0;
+  }
+  ```
+  The ordering is load-bearing twice over: it keeps `apply_scale` from moving the
+  coupling for a point that carries no weight, and it keeps the PDF from being
+  queried below roughly its own grid `Q_min` — which is most of why MadGraph's
+  floor is at 2 GeV in the first place.
+
+**Why `ProtonIntegrand` is the only site.** MadGraph's guard is `lpp(i) /= 0`.
+The only PDF convolution in this crate is `proton.rs` (`FlavorGroup::luminosity`
+and `symmetry_weighted_luminosity` are its only callers; `hadronic.rs`'s
+`FixedBeamIntegrand` builds its beams as `[beam_e, 0, 0, ±beam_e]` with no
+densities). So the veto is unreachable on every fixed-energy run *by construction*,
+not by a flag. `event_in_channel` needs no separate wiring: it calls `shape`
+first and returns `None` on a zero, so generation inherits the veto — and
+inherits it in a way that keeps a sample's scales consistent with its integral.
+
+**Why no banked reference exercises it — measured, not asserted.** The veto is
+reachable on exactly five banked runs (`lpp = (1,1)`, at least one dynamical
+factorisation scale): `pp_to_jj`, `pp_to_llj`, `pp_to_bb`, `pp_to_bb_qcd2`,
+`pp_to_ll_qcd0`. Both `dy13` cards set `fixed_ren_scale = fixed_fac_scale = True`,
+so `setclscales` early-returns before the check ever runs; the `gu_to_epemu`,
+`gux_to_epemux`, `ddx_to_epemg`, `uux_to_epemg` and all `ee_*` runs are `lpp = 0`.
+Minimum `SCALUP` over each reachable run's 10 000 banked events
+(`SCALUP = sqrt(max(q2fact(1), q2fact(2)))`, `unwgt.f:686`), cross-checked
+against the per-beam `<pdfrwt beam="i">` field where `use_syst` wrote it:
+
+| run | min μF (GeV) | headroom over 2 GeV |
+|---|---|---|
+| `pp_to_bb` | **4.7003** | ×2.35 |
+| `pp_to_bb_qcd2` | **4.7003** | ×2.35 |
+| `pp_to_jj` | 20.0003 | ×10.0 |
+| `pp_to_ll_qcd0` | 20.0393 | ×10.0 |
+| `pp_to_llj` | 21.5932 | ×10.8 |
+
+The floors are structural, not lucky: `pp_to_jj` / `pp_to_ll_qcd0` / `pp_to_llj`
+sit on their cards' `ptj = 20`, and the `pp_to_bb` pair sits on `m_b = 4.7` —
+the clustered 2 → 2 core's transverse mass cannot fall below the heaviest leg it
+contains. **The global minimum over every banked hadronic event is 4.70 GeV.** A
+banked sample also cannot contain a counter-example by construction: MadGraph
+vetoed such points before writing them. So the veto's own test must be a
+constructed card, and the banked runs' role is the complementary one — proving
+the veto is a no-op on all of them (test T6).
+
+### C2.5 A second finding: the `Opaque` defaults are unverified
+
+`defaults_match_banner_py_dump` (`runcard.rs:778`) is the transcription oracle
+against `banner.py`, and its `Def::O` arm is `{}` — Opaque payloads are *not*
+compared. Consequence, measured: for four fields the table's empty default is
+not MadGraph's.
+
+| field | table default | `banner.py` default |
+|---|---|---|
+| `mxx_only_part_antipart` | `""` | `{'default': False}` |
+| `me_frame` | `""` | `[1, 2]` |
+| `pdgs_for_merging_cut` | `""` | `[21, 1, 2, 3, 4, 5, 6]` |
+| `systematics_arguments` | `""` | `['--mur=0.5,1,2', '--muf=0.5,1,2', '--pdf=errorset']` |
+
+`mxx_only_part_antipart` is the live one: **35 banked cards write MadGraph's own
+default and it reads as an override.** That is the trap this chain is one step
+away from — all four are classified `IgnoredBenign` above precisely so the
+enforcement never compares them, and the reasons given are independent of the
+default. Rather than fix the payloads (a Python-repr normalisation problem worth
+its own change), the design **pins the discrepancy**: test T4 asserts exactly
+this set of four names, so a MadGraph bump that changes it fails loudly instead
+of silently re-arming the trap. The eventual fix belongs in a follow-up, and
+the review session should say so in its report rather than in `TODO.md` (this
+session does not edit `TODO.md`).
+
+### C2.6 Change list, file by file
+
+1. **`vibegraph-lib/src/runcard.rs`** (or `runcard/classes.rs`, implementer's
+   choice): `FieldClass`, `Applicability`, `FIELD_CLASSES` (209 rows, C2.3);
+   `RunCardError::UnsupportedField`; the enforcement loop in `from_values` after
+   the `UnsupportedLpp` check. No change to `PARAM_DEFAULTS`, to `RunCard`'s
+   fields, or to its serialised form.
+2. **`vibegraph-lib/src/coupling/scales.rs`**:
+   `ScaleChoice::factorisation_scale_vetoed`. No change to `ScaleChoice::scales`
+   or `cluster_scales`, so `validate_scales`'s replay path is untouched.
+3. **`vibegraph-lib/src/hadronic.rs`**:
+   `EventScaleSource::factorisation_scale_vetoed`, delegating.
+4. **`vibegraph-lib/src/proton.rs`**: the three-line early return in `shape`.
+5. **Tests** (T1–T6, C2.7).
+6. **Nothing else.** No file under `helas/`, `diagrams/`, `ufo/`, `phasespace/`,
+   `lhef/`, `vegas.rs`, `unweight.rs`, `cuts.rs` or `pdf/` is touched.
+
+### C2.7 Acceptance tests
+
+**T1 `every_run_card_field_is_classified`** — hermetic, in `runcard.rs`'s test
+module. Every `PARAM_DEFAULTS` name has exactly one `FIELD_CLASSES` row and vice
+versa; no duplicates in either direction; every reason string non-empty.
+*Fails on*: a field added to the defaults table without a classification, or a
+stale classification row. This is the durable form the brief asks for.
+*Provably cannot detect*: a **wrong** classification. A physics-relevant field
+parked in `IgnoredBenign` passes T1 and every other test here — the audit's
+judgment is the oracle, and nothing mechanical replaces it. This is the chain's
+single largest residual risk and it is stated, not managed.
+
+**T2 `ignored_physics_fields_are_refused`** — hermetic. For each
+`IgnoredPhysics` row, build a one-line card perturbing that field off its
+default (numeric → `default + 1` where the default is not a sentinel, bool →
+negation, string → a marker) and assert `RunCard::parse` returns
+`UnsupportedField` naming that field. For the two `ProtonBeams` rows the
+perturbed card is built at `lpp = (1,1)` and the test *also* asserts the same
+perturbation at `lpp = (0,0)` is **accepted**.
+*Fails on*: an `IgnoredPhysics` row with no enforcement, or an applicability
+guard inverted.
+*Provably cannot detect*: a misclassification into `IgnoredBenign` (T1's blind
+spot); and, because it perturbs one field at a time, any interaction between two
+fields that is only unsafe jointly.
+
+**T3 `banked_run_cards_are_accepted`** — refdata-gated, in `validate_scales.rs`
+or a small new `validate_run_cards.rs`. Parse every
+`validation/madgraph/output/*/Cards/run_card.dat`, every
+`.../run_card_default.dat`, and both `dy13` cards; assert `Ok` for each, naming
+the file on failure. Its hermetic sibling covers the committed cards, in
+`scales_run_cards.rs`.
+*Fails on*: any enforcement that rejects a card a banked reference actually ran
+with — the single highest-probability defect in this chain, and the test that
+would have caught the `pdlabel1 = none` trap.
+*Provably cannot detect*: an enforcement that is too **weak**; it proves only
+that nothing legitimate is rejected.
+
+**T4 `opaque_defaults_known_to_differ_from_banner_py`** — hermetic. Assert the
+mismatch set of C2.5 is *exactly* `{mxx_only_part_antipart, me_frame,
+pdgs_for_merging_cut, systematics_arguments}`, comparing against
+`validation/madgraph/runcard_defaults.json`.
+*Fails on*: a MadGraph bump that adds or removes a mismatch.
+*Provably cannot detect*: whether the four are individually harmless — that rests
+on their `IgnoredBenign` reasons, not on this test.
+
+**T5a `factorisation_scale_veto_matches_reweight_f`** — hermetic unit test in
+`scales.rs`. On a constructed card (`lpp1 = lpp2 = 1`, `fixed_ren_scale = True`,
+dynamical factorisation, `dynamical_scale_choice = 4` so μF = √ŝ is exactly
+computable by hand), assert: √ŝ = 1.5 GeV vetoes; √ŝ = 3 GeV does not; the same
+card with `fixed_fac_scale = True` never vetoes at any √ŝ; and a per-beam
+asymmetric case vetoes on the low beam alone. Plus `lpp = (0,0)` never vetoes.
+*Fails on*: a dropped `beam_has_pdf` or `fixed_fac` guard, or an inverted
+comparison.
+*Provably cannot detect*: the **wiring** — it never runs an integrand; and the
+exact boundary, since `mu_f * mu_f` and MadGraph's `q2fact` differ by one
+round-trip rounding at `q2fact == 4` exactly. Per AGENTS.md that last-ulp
+difference on a measure-zero set is not chased.
+
+**T5b `a_sub_threshold_factorisation_scale_gives_zero`** — the wiring test.
+Take an existing small hadronic integrand fixture, set `scalefact = 1e-3` on its
+card so that μF < 2 GeV at every reachable point, and assert the integrand's
+value is **exactly** `0.0` over a fixed set of points; then the same fixture at
+`scalefact = 1.0` returns nonzero.
+*Fails on*: a veto that never reaches `ProtonIntegrand::shape`.
+*Provably cannot detect*: on its own, "vetoed" from "cut away" or "PDF returned
+zero" — which is exactly why the `scalefact = 1.0` control is part of the same
+test; and a veto that fires **too often** on a normal card, which is what T6 and
+the unmoved σ rows cover.
+
+**T6 `banked_hadronic_runs_clear_the_factorisation_floor`** — refdata-gated, in
+`validate_scales.rs`, which already replays both per-beam μF per banked event.
+Over the five reachable runs, assert `min over events, min over beams` of the
+*replayed* μF exceeds 2 GeV, and print the measured minimum.
+*Fails on*: a re-bank that introduces a run reaching the floor — precisely when
+the gate must start caring — or a scale bug large enough to push a replayed μF
+below a threshold MadGraph demonstrably did not hit (a banked event exists, so
+MadGraph did not veto it).
+*Provably cannot detect*: anything about runs that are not banked; and, since it
+reads our replay rather than MadGraph's `q2fact`, a common-mode scale error that
+moves both sides together.
+
+**Interaction with chain C1.** `polbeam1`/`polbeam2` are classified
+`IgnoredPhysics` in C2.3 and T2 therefore exercises them, so **in this worktree
+C2 refuses them by itself** (C2's worktree is off `main` and does not carry C1).
+That is a deliberate duplicate, not an oversight: C2's tests must pass standalone.
+At merge (order C1 → E → A → D → **C2** → B) the manager keeps **one**
+mechanism. Recommendation: keep C2's generic loop and delete C1's dedicated
+polbeam check, retaining C1's refusal test unchanged — the `why` string for
+`polbeam1/2` is written to name polarised beams explicitly so a message
+assertion in C1's test survives the substitution. This is the chain's one
+expected merge conflict and it is mechanical; per AGENTS.md the manager resolves
+it, never a subagent.
+
+### C2.8 Gates, and the diff assertion about the report
+
+Run, all with `--skip-deps`:
+
+- `cargo test --workspace` — T1, T2, T4, T5a, and the existing `runcard`/`cuts`/
+  `scales` unit tests. The hermetic tier must still be complete on a bare clone.
+- `pixi run validate` — the banked census, which covers T3 and T6 and every σ row.
+- `pixi run validate-scales`, `validate-hadronic`, `validate-sigma`,
+  `validate-generate-proton` individually if the full run is inconvenient to
+  bisect; these are the four that touch the modified path.
+- The MadGraph/HELAS bit-exact amplitude, colour and diagram gates are **not**
+  required: no amplitude, colour, coupling or enumeration code is touched
+  (C2.6 item 6). Say so in the report rather than running them silently.
+
+**Report cells expected to move: none.** As an assertion about the diff:
+`target/validation-report/report.md`, regenerated after the change, must be
+identical to the banked report in every σ value, every uncertainty, every pull,
+every tolerance verdict, every samples/KS cell and every census cell — the only
+admissible differences are run metadata that already varies between runs
+(timestamps, wall times). A single moved cell is a defect in this chain, not
+statistics, and the review session should treat it as escalation-worthy.
+
+The pre-registered reasons it cannot move:
+
+1. **No card newly refuses.** Measured in C2.0: across 36 + 37 + 2 + 1 cards,
+   no `Applicability::Always` `IgnoredPhysics` field is ever set away from its
+   default, and the only `IgnoredPhysics` fields set at all — `pdlabel1`,
+   `pdlabel2` — are set only on `lpp = (0,0)` cards, which `ProtonBeams` exempts.
+2. **No point is newly vetoed.** The minimum μF over every banked hadronic event
+   is 4.70 GeV, 2.35× the floor, and the veto is unreachable on fixed-energy runs
+   and under a `Constant` scale source (C2.4).
+3. **Nothing on the value path changes.** The veto adds one comparison per point
+   and no arithmetic; the enforcement runs once at parse time.
+
+### C2.9 Risks, and what this provably cannot break
+
+**Risks, in descending probability.**
+
+- *An enforcement rejects a card a gate needs.* Highest-probability defect;
+  T3 is aimed exactly at it, and C2.0's measurement is the pre-check. The
+  `Opaque`-default trap of C2.5 is the specific form it would have taken.
+- *A classification is wrong.* Unfalsifiable by construction (T1's blind spot).
+  Mitigation is that every `IgnoredBenign` reason is a positive argument citing
+  an existing guard or a line of MadGraph source, so a reviewer can check them
+  one at a time rather than re-deriving the audit.
+- *The veto fires where MadGraph does not.* Would need our replayed μF to
+  straddle 2 GeV against MadGraph's own. `validate_scales` already gates both
+  per-beam μF per event against MadGraph's printed value at that value's own
+  precision, so a disagreement of that size fails an existing gate first.
+- *`RunCardError` gains a variant.* A public-API change for any downstream
+  `match`; in-tree there are few and the compiler finds them all.
+
+**What this provably cannot break.**
+
+- **No amplitude, colour, coupling, phase-space map, sampler or event writer.**
+  C2.6 item 6 lists the untouched directories; the claim is checkable as a
+  property of the diff, not of the tests.
+- **No fixed-energy (`lpp = 0`) run, in any respect.** The veto lives in
+  `ProtonIntegrand`, which is the only PDF-convolving code in the crate; and
+  every `IgnoredPhysics` field is either at its default on every fixed-energy
+  card or guarded to `ProtonBeams`.
+- **No parsed value.** The enforcement only rejects; it never rewrites a field.
+  This is why MadGraph's `pdlabel` ← `pdlabel1/2` derivation was deliberately
+  *not* mirrored (C2.2), and it is what makes "no σ row moves" a structural
+  statement rather than a hope.
+- **No artifact format.** `RunCard` gains no field, so `IntegrateArtifact`'s
+  serialised form is unchanged and every banked artifact still deserialises.
+- **No hermetic-tier completeness.** T1, T2, T4 and T5a need no reference data;
+  T3's hermetic sibling reads only committed cards.
+
+**Residual blind spot, stated because nothing here closes it.** Without
+MadGraph's `user_set` tracking (declined in C2.2 for artifact-format reasons),
+"the card wrote this field" and "the field differs from its default" are the
+same predicate. So a card that writes a field *at* its MadGraph default is
+indistinguishable from one that omits it. For every `IgnoredPhysics` field that
+is the correct behaviour — the default is by definition safe. It bites only in
+one constructed case: a card writing **both** `pdlabel` and `pdlabel1/2` where
+`pdlabel1 = pdlabel2 = nn23lo1` (the default) and `pdlabel` is something else.
+MadGraph's own writer emits one template or the other and never both, so no
+MadGraph-written card can reach it; a hand-written one could, and would be
+resolved as `pdlabel` where MadGraph would resolve it as `nn23lo1`.
+
+## Chain C2 design amendment (2026-08-03)
+
+Supersedes C2.4's change list items 2–4 and tests T5a/T5b. C2.0–C2.3 and
+C2.5–C2.7's T1–T4/T6 stand as landed in `30e88c1`. C2.4's *semantics* reading
+of `reweight.f` stands and is what convicts the current code; only its "where
+it lives" was wrong.
+
+### A.0 What the control falsified, re-verified here
+
+The implementer's three findings were re-checked against the worktree at
+`30e88c1` rather than taken on report:
+
+1. **The veto already exists.** `coupling/cluster/setclscales.rs:468-473`:
+   `if settings.beam_has_pdf[beam] && q2fact[beam] < MUF_FLOOR && !settings.fixed_fac[beam]`
+   → `Err(ScaleRefusal::FactorisationFloor)`, with `MUF_FLOOR = 4.0` at
+   `setclscales.rs:37`. Per beam, strict, on the square, guarded on both PDF
+   presence and the fixed flag — the faithful transcription C2.4 specified,
+   written before this chain existed. C2.4's "where it lives" section was
+   designing a duplicate of code already in the tree; that is the error, and it
+   came from reading `scales.rs` and `proton.rs` without reading the clustering
+   module underneath them.
+2. **Its response is an abort, not a zero.** `ScaleRefusal::FactorisationFloor`
+   → `ScaleError::Clustering` (`scales.rs:391`, `.map_err(ScaleError::Clustering)`)
+   → `ProtonIntegrand::event_scales` (`proton.rs:1184-1185`)
+   `.unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))`.
+   C2.4 established zero-weight as the reference semantics
+   (`reweight.f:1907-1908`, `all_wgt(i) = 0d0`); the crate panics. The chain's
+   real defect is therefore a **response** bug, not a missing feature, and it is
+   worse than the silent disagreement C2.4 set out to close: an abort mid-VEGAS
+   on a card whose support merely dips below the floor.
+3. **C2.4's proposed check was unreachable.** `compile_scale_source`
+   (`hadronic.rs:670`) always passes `Some(sets)`, and `EventScaleSource::scales`
+   dispatches on `channels.is_some()` — never on `dynamical_scale_choice`. Both
+   `EventScaleSource::from_run_card` callers in the crate go through
+   `compile_scale_source`, so every non-fully-fixed run reaches `cluster_scales`.
+   Confirmed one level deeper than the report: `ScaleChoice::cluster_scales`
+   (`scales.rs:332-395`) never inspects `self.choice` at all — it short-circuits
+   on `is_fully_fixed()` and otherwise goes straight to `setclscales`.
+
+**Two further sites the brief does not name, found while checking (1)–(3):**
+
+4. **The setup probe propagates the refusal too.** `ProtonIntegrand::probe_scale`
+   (`proton.rs:1030-1031`) and `FixedBeamIntegrand::probe_scale`
+   (`hadronic.rs:997`) resolve the scale on the first cut-passing draw and `?`
+   the result. A `FactorisationFloor` there is not a setup failure — it is one
+   ordinary vetoed point — so under the corrected semantics the probe must keep
+   drawing rather than abort the run before it starts. Any fix confined to
+   `shape` would leave a card whose *first* cut-passing probe point is
+   sub-threshold still dying at setup.
+5. **The fixed-beam path carries the identical panic.**
+   `hadronic.rs:1067-1068` repeats `unwrap_or_else(|e| panic!("per-event scale
+   on a sampled point: {e}"))`. It is unreachable for this refusal (A.1), but
+   the duplication is why a call-site-only fix would not hold.
+
+### A.1 (a) Routing the `FactorisationFloor` refusal
+
+**Decision: give the distinction a type, one level above the clustering, and let
+the compiler force every call site to say what it does with a veto.** Matching
+`ScaleError::Clustering(ScaleRefusal::FactorisationFloor)` at each call site was
+considered and rejected: there are four such sites today (`shape`'s
+`event_scales`, two `probe_scale`s, `FixedBeamIntegrand::apply_scale`), finding
+(4) shows that a fix aimed at one of them misses the others, and a fifth site
+added later would silently inherit the panic — which is precisely how the
+present bug survived.
+
+**New in `hadronic.rs`, beside `EventScaleSource`:**
+
+```rust
+/// What resolving one point's scales produced.
+pub enum PointScales {
+    /// The scales to evaluate this point at.
+    Scales(EventScales),
+    /// The point carries no weight: a beam carrying a parton density ended
+    /// below the factorisation floor, where MadGraph zero-weights the point
+    /// and moves on.
+    Vetoed,
+}
+
+impl EventScaleSource {
+    /// [`scales`](Self::scales), with the factorisation-floor refusal separated
+    /// from the errors that mean the prescription itself does not apply.
+    pub fn point_scales(&self, /* same args as scales */) -> Result<PointScales, ScaleError> {
+        match self.scales(..) {
+            Ok(s) => Ok(PointScales::Scales(s)),
+            Err(ScaleError::Clustering(ScaleRefusal::FactorisationFloor)) => Ok(PointScales::Vetoed),
+            Err(other) => Err(other),
+        }
+    }
+}
+```
+
+The mapping lives in exactly one function. `ScaleError` gains **no** variant and
+`ScaleRefusal` gains none either: `FactorisationFloor` already exists and is
+already the right name. Nothing about `ScaleChoice::cluster_scales`'s signature
+or behaviour changes — deliberately, because `validate_scales.rs` drives it
+directly and wants the refusal *as* a refusal when it replays a banked event
+against MadGraph's own record. Keeping that API fixed is what makes "the scales
+gate is untouched" a structural statement rather than a hope.
+
+**Call sites, all four:**
+
+- `ProtonIntegrand::event_scales` (`proton.rs:1179-1186`) returns
+  `Option<EventScales>`: `PointScales::Vetoed` → `None`, `Scales(s)` → `Some(s)`,
+  and a genuine `ScaleError` keeps today's panic with today's message. The panic
+  is *right* for the remaining errors — they mean the prescription does not
+  apply to this process, which no amount of sampling fixes.
+- `ProtonIntegrand::shape` → `let Some(scales) = self.event_scales(channel) else
+  { return 0.0; };`, placed exactly where C2.4 put it: after the cuts, before
+  `apply_scale` and the luminosity loop. That ordering survives the amendment
+  unchanged and for the same two reasons — the coupling is not moved for a point
+  with no weight, and the PDF is not queried below roughly its own grid `Q_min`.
+  This reproduces `reweight.f:1907-1908`.
+- `ProtonIntegrand::event_in_channel` inherits it with no edit: it calls `shape`
+  first and returns `None` on a zero, so a generated sample and the integral it
+  came from veto the same points.
+- Both `probe_scale`s: `Ok(PointScales::Vetoed)` means *keep drawing* — the draw
+  passed the cuts but carries no weight, which is exactly the case the probe
+  should skip rather than report. See A.2 for what happens when every draw is
+  vetoed.
+- `FixedBeamIntegrand`'s scale sites take `point_scales` too, and handle
+  `Vetoed` with an explicit `unreachable!` carrying the reason, converting
+  today's silent assumption into a checked one.
+
+**Why the fixed-beam path stays unreachable, and why that survives this change.**
+The floor's applicability is decided by `ScaleSettings::beam_has_pdf`, which
+`ScaleChoice::from_run_card` sets from the card as `[card.lpp1 != 0, card.lpp2 != 0]`.
+A fixed-energy card gives `[false, false]`, so the guard at `setclscales.rs:469`
+short-circuits before the comparison and the refusal is never constructed. That
+argument is **upstream of everything this amendment touches** — it depends on the
+card, not on which integrand runs or how a refusal is routed — so no routing
+change can reach it. It is also not the same as "`FixedBeamIntegrand` is only
+built for `lpp = 0`": the guard tracks the card, so it would hold even if that
+pairing were ever broken. The `unreachable!` above pins it.
+
+### A.2 (b) Tests replacing T5a and T5b, and the diagnostic decision
+
+T5a and T5b are withdrawn: T5a specified a predicate that already exists and is
+already unit-tested inside the clustering module, and T5b's construction panics
+rather than returning zero, which is the bug — it was a correct experiment
+attached to a wrong premise.
+
+**T5a′ `a_sub_threshold_factorisation_scale_gives_zero_weight`** — the
+replacement wiring test, aimed at the existing veto. Build a proton integrand on
+a card whose factorisation scale is driven below 2 GeV at every reachable point
+(`scalefact` small enough that `scalefact² · pt²` clears the floor nowhere, on
+an otherwise ordinary hadronic fixture), and assert `value_in_channel` returns
+**exactly `0.0`** on a fixed set of points — not a panic. Control: the identical
+fixture at `scalefact = 1.0` returns nonzero on the same points.
+*Fails on*: today's code, immediately, with the panic — which is the point; and
+on any future routing that turns the veto back into an error.
+*Provably cannot detect*: on its own, "vetoed" from "cut away" or "PDF returned
+zero" — the `scalefact = 1.0` control is what separates them, and the two halves
+must stay in one test for that reason. It also cannot see a veto firing **too
+often** on a normal card; T6 and the unmoved σ rows cover that direction.
+
+**T5b′ `a_vetoed_point_is_dropped_from_generation_too`** — `event_in_channel` on
+the sub-threshold fixture returns `None` at points where the control fixture
+returns `Some`.
+*Fails on*: a veto wired into `shape` but bypassed on the generation path, which
+would produce a sample whose scales disagree with its own integral.
+*Provably cannot detect*: whether the *kept* events carry the right scales; that
+is `validate_scales`'s job and it is untouched.
+
+**T5c′ `the_factorisation_floor_is_unreachable_on_fixed_beams`** — a fixed-energy
+card at the same small `scalefact` integrates normally and returns nonzero.
+*Fails on*: a `beam_has_pdf` guard dropped or inverted in the clustering.
+*Provably cannot detect*: nothing about proton runs.
+
+**The diagnostic question: decided — refuse at setup, do not count per event.**
+
+MadGraph warns on the first ten vetoed points and then goes quiet, which is a
+console affordance for an interactive run. Two reasons not to transcribe it:
+
+- A per-event counter is per-thread mutable state inside the VEGAS loop. Note 22
+  §4 already flags that class of state as the thing that makes `adapt_parallel`
+  race silently; paying that for a diagnostic is the wrong trade.
+- A partially-vetoed run is **legitimate physics** — MadGraph runs them and their
+  σ is correct — so a per-event count has no threshold at which it could act.
+  Only the degenerate case is actionable.
+
+The degenerate case already has a home: `probe_scale`, which exists to surface at
+setup what would otherwise surface mid-integration, draws 64 points
+(`SCALE_PROBE_DRAWS`, `hadronic.rs:92`) and stops at the first that passes the
+cuts. Amend it to keep drawing past vetoed points and to distinguish three
+outcomes: a scale resolved (`Ok`), no draw passed the cuts (`Ok`, as today —
+the cuts, not the scale, are what that says something about), and **at least one
+draw passed the cuts and every such draw was vetoed** → refuse, with a message
+describing the boundary in its own terms:
+
+> every sampled point's factorisation scale fell below the 2 GeV floor a
+> parton density is fitted down to, so the cross section this card asks for is
+> zero by construction
+
+That is strictly stronger than MadGraph's warning — it fires before the
+integration spends anything — and it costs one boolean in a setup-time loop that
+already exists. A run with *partial* sub-threshold support integrates normally
+and silently, which is the correct behaviour and matches the reference.
+*Provably cannot detect*: a run where 64 draws happen to find support the veto
+spares while the bulk of the measure is vetoed. That is a sampling statement
+about a 64-point probe, not a claim about σ, and the σ it produces is still
+right — merely inefficient.
+
+### A.3 (c) `dynamical_scale_choice` 1–5
+
+**Decision: hard-error, and only where the value is actually consulted.**
+
+Wiring the closed forms is rejected now, on the project's own rule rather than
+on effort. `ScaleChoice::closed_form` (`scales.rs:398`) already computes all five
+and is exercised **only by unit tests**; all 35 banked cards that mention the
+field set `-1` (measured across the same corpus as C2.0), so there is no
+reference run against which an honoured choice 1–5 could be pinned. Turning on
+an unvalidated scale prescription would produce a plausible, smooth, wrong σ with
+nothing to notice it by — the exact failure note 22 §4 names for the
+unimplemented `-1` cases and answers the same way. A hard error is what this
+project does with a boundary that has no oracle.
+
+**Where.** `ScaleChoice::from_run_card` (`scales.rs:197`), beside the existing
+`UnsupportedChoice` and `UnsupportedMatching` refusals, gated on reachability:
+
+```rust
+if !fully_fixed && choice != DynamicalChoice::Clustered {
+    return Err(ScaleError::UnhonouredScaleChoice { choice: choice_int });
+}
+```
+
+The `!fully_fixed` gate is not leniency, it is accuracy: `cluster_scales` and
+`scales` both short-circuit on `is_fully_fixed()` before the choice is read, so
+on a fully-fixed card the value provably cannot change a number. Refusing it
+there would be a refusal the code cannot justify. (The gate must be computed from
+the same `fixed_ren`/`fixed_fac` values `is_fully_fixed` uses, after they are
+resolved — the implementer should reorder within `from_run_card` rather than
+recompute.)
+
+**Message**, describing what the code does now and naming no plan item:
+
+> run card selects dynamical_scale_choice = {choice}: the integration path
+> evaluates the clustered scale only, and the closed forms for 1–5 are computed
+> nowhere a cross section reads them
+
+**Refusal test `an_unhonoured_scale_choice_is_refused`**, in `scales.rs`'s test
+module next to the existing `UnsupportedChoice` test: for each of 1, 2, 3, 4, 5
+a dynamical card is refused with `UnhonouredScaleChoice`; the same choice on a
+fully-fixed card is **accepted** and yields the card's constants; `-1` is
+accepted.
+*Fails on*: the gate dropped, inverted, or applied to `-1`.
+*Provably cannot detect*: whether the closed forms are *correct* — nothing here
+claims they are, which is the reason for the refusal.
+
+**`FIELD_CLASSES` consequence — the field does not move.**
+`dynamical_scale_choice` stays **`Consumed`** (`ScaleChoice::from_run_card`),
+and the row's evidence string needs no edit: it is read, which is not in
+dispute. The refusal is on a **value**, not on the field, and that distinction is
+the whole reason it belongs in `from_run_card` rather than in the classification
+loop. Concretely:
+
+- T2 iterates `IgnoredPhysics` rows and expects `RunCardError::UnsupportedField`.
+  `dynamical_scale_choice` is not in that class, so T2 never constructs a card
+  that touches it, and the new refusal cannot perturb T2.
+- The two refusals also live at different layers and produce different types:
+  `RunCardError::UnsupportedField` at parse (`RunCard::from_values`), and
+  `ScaleError::UnhonouredScaleChoice` at prescription compile
+  (`ScaleChoice::from_run_card`). A card asking for choice 4 still *parses*; it
+  fails when a scale prescription is compiled from it. That is correct — the
+  parse layer has no business knowing which prescriptions are implemented — and
+  it is why this is a separate check with a separate test, not an extension of
+  T2's framework.
+- The C2.3 table is unchanged by this amendment. No row is reclassified.
+
+### A.4 (d) Gates and expected movement
+
+Everything the implementer landed in `30e88c1` stays; nothing in the audit half
+is reopened. Run, all with `--skip-deps`:
+
+- `cargo test --workspace` — T1–T4 as landed, plus T5a′, T5b′, T5c′,
+  `an_unhonoured_scale_choice_is_refused`, and the existing `runcard`, `cuts`,
+  `scales` and `setclscales` unit tests.
+- `pixi run validate` — the banked census, covering T3 and T6.
+- `pixi run validate-scales` is the one to read first and to quote in the report:
+  it drives `ScaleChoice::cluster_scales` directly, that API is deliberately
+  unchanged (A.1), and its 400k per-event comparisons are the tightest oracle
+  the modified path has.
+- `validate-hadronic`, `validate-sigma`, `validate-generate-proton` — the three
+  σ/sample gates on the proton path.
+- The MadGraph/HELAS amplitude, colour and diagram gates remain **not required**:
+  no amplitude, colour, coupling or enumeration code is touched. State that in
+  the report rather than running them silently.
+
+**Report cells expected to move: none**, and the assertion is the same shape as
+C2.8's — `target/validation-report/report.md` identical to the banked report in
+every σ, uncertainty, pull, tolerance verdict, samples/KS and census cell, with
+run metadata the only admissible difference. The pre-registered reasons, updated
+for what the amendment actually changes:
+
+1. **No banked point is vetoed.** The global minimum μF over every banked
+   hadronic event is 4.70 GeV, 2.35× the floor (C2.4's table, reproduced by the
+   implementer over the corrected eight-run set). The veto's behaviour changes
+   only for points that reach it, and none does.
+2. **No banked card is refused for its scale choice.** All 35 cards that set
+   `dynamical_scale_choice` set `-1`; the two `dy13` cards omit it and are fully
+   fixed, where the new gate does not apply.
+3. **The replay API is untouched.** `ScaleChoice::cluster_scales` keeps its
+   signature and its error, so `validate_scales` compares exactly what it
+   compared before.
+
+A moved cell is a defect in this amendment, not statistics.
+
+### A.5 Corrections to the C2 design section, folded here
+
+Recorded here rather than edited in place, so the record shows what was designed
+and what was measured against it:
+
+- **C2.1**, "under-reports by 71 fields" → **58**. 130 consumed less 72 literal
+  hits. The claim it supports — that a literal sweep alone would have
+  misclassified most of the cut block — is unaffected.
+- **C2.0**, "Twenty are consumed … The remaining five are unread" →
+  **17 consumed, 6 unread**. The sixth is `iseed = 33`, set by both `dy13`
+  cards; it is `IgnoredBenign` and its inertness is already argued in C2.3's
+  first `IgnoredBenign` row (MadEvent's RNG seed; this crate's seed comes from
+  the CLI). The §6 trigger conclusion is unchanged.
+- **C2.4**, the veto-reachable banked run set is **8, not 5**: add `pp_to_ll`,
+  `pp_to_ll_scalefact2` and `pp_to_llj_dyn`, all `lpp = (1,1)` with a dynamical
+  μF. Every minimum quoted in C2.4's table reproduces and the global minimum
+  stays **4.70 GeV**; T6 as landed asserts over the eight.
+
+None of the three changes a decision. All three are cases of a stated number
+being narrower than the measurement behind it, which is the failure mode the
+"every green cell is a recorded measurement" rule exists to catch — recorded
+accordingly.
+
+### A.6 What this amendment provably cannot break, and its blind spots
+
+- **No amplitude, colour, coupling, phase-space map, sampler, cut or event
+  writer.** The diff touches `hadronic.rs`, `proton.rs`, `scales.rs` and tests.
+  `setclscales.rs` is touched **not at all** — the veto itself, the number
+  `MUF_FLOOR`, and every branch of the scale synthesis are left exactly as
+  they are gated today.
+- **No banked artifact.** No type that `IntegrateArtifact` serialises gains or
+  loses a field; `PointScales` is a return type, never stored.
+- **No fixed-beam run.** A.1's `beam_has_pdf` argument is upstream of the
+  routing, and the amendment converts that assumption into an `unreachable!`.
+- **No replay gate.** `ScaleChoice::cluster_scales` is unchanged by design.
+- **Strictly fewer aborts.** Every path this amendment changes turns a panic
+  into either a zero weight or a typed refusal; none turns anything into a panic
+  that was not one before.
+
+**Blind spots, stated because nothing here closes them:**
+
+- The amendment cannot show the veto's *threshold* is right. `MUF_FLOOR = 4.0`
+  is a transcription, pinned by reading `reweight.f`, and no banked run
+  approaches it — the nearest is 2.35× away. If the constant were wrong, every
+  test above would still pass.
+- T5a′/T5b′ construct sub-threshold support with `scalefact`, so they exercise
+  the floor through one particular route into it. A floor reached by a different
+  branch of the μF synthesis (`Backfill1/2`, `Beam1FromFirst`, …) is covered
+  only by the shared comparison at `setclscales.rs:468-473`, not by an
+  independent point.
+- Refusing choices 1–5 leaves the closed forms unvalidated, which is the
+  intended state, but it also means the refusal itself is the only thing
+  standing between a user and an unpinned scale. If a later chain wires them,
+  the oracle has to come first.
 
 ## Chain B design (2026-08-03)
 
