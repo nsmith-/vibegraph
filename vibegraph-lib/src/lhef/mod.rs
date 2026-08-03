@@ -113,6 +113,18 @@ pub enum LhefError {
          incoming ones incoming, or does not come with one PDG code per leg"
     )]
     LegOrder { order: Vec<usize>, n_ext: usize },
+    #[error("the colour flows do not land in the slots these legs' reps allow: {0}")]
+    ColorFlowLegs(String),
+    #[error(
+        "a subprocess record of {n_ext} legs and {n_flows} flows was given a colour-flow table \
+         of {got_ext} legs and {got_flows} flows"
+    )]
+    ColorFlowShape {
+        n_ext: usize,
+        n_flows: usize,
+        got_ext: usize,
+        got_flows: usize,
+    },
     #[error("line {line}: {reason}")]
     Malformed { line: usize, reason: String },
     #[error("no <init> block")]
