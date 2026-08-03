@@ -12,13 +12,15 @@
 #     clustering rather than a closed form. validate_scales replays all 10000
 #     of them field by field.
 #
-# Not used for cross sections or event samples: its beams take MadGraph's
-# internal nn23lo1 parton densities, which the LHAPDF6 grid reader here cannot
-# load. pp_to_llj_fixed and pp_to_llj_dyn card the same generate line onto
-# lhaid 247000 and are the integrals, samples and event-generation subjects.
+# The beams read pdlabel = lhapdf with lhaid 247000 (NNPDF23_lo_as_0130_qed)
+# rather than the shipped default nn23lo1 — the same set pp_to_llj_fixed and
+# pp_to_llj_dyn card — because MadGraph's internal nn23lo1 parameterisation is
+# not an LHAPDF6 grid this crate's PDF layer can load.
 generate p p > l+ l- j
 output pp_to_llj -nojpeg
 launch
   set ebeam1 6500
   set ebeam2 6500
+  set pdlabel lhapdf
+  set lhaid 247000
   done
