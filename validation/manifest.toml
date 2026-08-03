@@ -630,8 +630,8 @@ rationale = "MadGraph's own banked events re-serialised byte-for-byte through ou
 key = "scales-replay"
 layer = "banked"
 targets = ["vibegraph-lib/tests/validate_scales.rs"]
-inputs = ["banked LHE events (SCALUP, <rscale>, <pdfrwt>)"]
-rationale = "The renormalisation and factorisation scales replayed per event against three fields at two precisions, each event judged against a bound built from the printed precision of the momenta that formed it rather than a chosen tolerance."
+inputs = ["banked LHE events (SCALUP, <rscale>, <pdfrwt>)", "fetched PDF set (NNPDF23_lo_as_0130_qed, for the grid-alpha_s runs)"]
+rationale = "The renormalisation and factorisation scales replayed per event against three fields at two precisions, each event judged against a bound built from the printed precision of the momenta that formed it rather than a chosen tolerance. banked_events_reproduce_aqcdup_from_the_computed_scale composes with validate_alphas.rs's own reproduction of AQCDUP from the printed scale to close cluster scale -> mu_R -> alpha_s(mu_R) in one per-event comparison, on the grid-alpha_s runs as well as the evolved ones."
 
 [[standalone]]
 key = "scale-couplings"
