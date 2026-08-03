@@ -70,6 +70,9 @@ pub struct AmplitudeEvaluator {
     /// Exact color-factor matrix `CF_{ij}` (row-major, `cf_matrix[i*n_flows + j]`),
     /// evaluated at `Nc = 3`. `BoundAmplitude::bind` resolves it to the scalar field.
     cf_matrix: Vec<Ratio<i64>>,
+    /// The colour rep and direction of every external leg, in process order — the
+    /// legs `color_flow_tags` was derived and checked against.
+    leg_colors: Vec<LegColor>,
     /// Per-flow Les Houches `(color, anticolor)` line labels for every external leg,
     /// derived from the same basis keys the flows are indexed by.
     color_flow_tags: ColorFlowTags,
@@ -218,6 +221,7 @@ impl AmplitudeEvaluator {
             helicities,
             n_flows: basis.ncolor(),
             cf_matrix: basis.cf_matrix,
+            leg_colors,
             color_flow_tags,
             leading_color_flows,
             config_diagrams,
@@ -351,6 +355,15 @@ impl AmplitudeEvaluator {
     /// same flow order as the JAMPs and the CF matrix.
     pub fn color_flow_tags(&self) -> &ColorFlowTags {
         &self.color_flow_tags
+    }
+
+    /// Return the colour rep and direction of every external leg, in process order.
+    ///
+    /// These are the legs [`Self::color_flow_tags`] was derived on, so a consumer
+    /// carrying that table somewhere else reads the reps it has to compare against
+    /// from the compiled amplitude rather than from a PDG table of its own.
+    pub fn external_colors(&self) -> &[LegColor] {
+        &self.leg_colors
     }
 
     /// Return which colour flows each diagram reaches at leading order in `Nc`

@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub mod leshouche;
 pub mod manifest;
 pub mod report;
 
