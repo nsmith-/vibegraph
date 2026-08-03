@@ -4331,6 +4331,7 @@ mod tests {
     /// rather than silently under-counting the sum. Without the frame guard in
     /// `eval_m2` this call would return a low-by-~3e-3 result instead of panicking.
     #[test]
+    #[cfg(any(debug_assertions, feature = "extended-validation"))]
     #[should_panic(expected = "partonic-CM kinematics")]
     fn eval_m2_pruned_rejects_boosted_frame() {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
