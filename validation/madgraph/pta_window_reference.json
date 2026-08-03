@@ -488,6 +488,42 @@
       "nevents": 100000,
       "sigma_pb": 0.026317,
       "sigma_err_pb": 1.7532e-05
+    },
+    {
+      "stage": "refocus",
+      "mg_version": "3.7.1",
+      "estimator": "cut",
+      "window": 3,
+      "pt_lo": 39.4,
+      "pt_hi": 77.0,
+      "iseed": 20260803,
+      "nevents": 100000,
+      "sigma_pb": 0.027659,
+      "sigma_err_pb": 2.7757e-05
+    },
+    {
+      "stage": "refocus",
+      "mg_version": "3.7.1",
+      "estimator": "cut",
+      "window": 3,
+      "pt_lo": 39.4,
+      "pt_hi": 77.0,
+      "iseed": 20260804,
+      "nevents": 100000,
+      "sigma_pb": 0.027558,
+      "sigma_err_pb": 2.9737e-05
+    },
+    {
+      "stage": "refocus",
+      "mg_version": "3.7.1",
+      "estimator": "cut",
+      "window": 3,
+      "pt_lo": 39.4,
+      "pt_hi": 77.0,
+      "iseed": 20260805,
+      "nevents": 100000,
+      "sigma_pb": 0.027558,
+      "sigma_err_pb": 3.0948e-05
     }
   ]
 }
