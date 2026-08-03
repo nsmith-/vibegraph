@@ -2802,6 +2802,659 @@ classes 39/14/12, T10's 112 rows with 95 restricting, T11's 52 mirrored members,
 1.40e-1 against `p 0` at 2494/25 — are consistent with every prediction B.1 and
 B.5 made, and A.4's second-defect rule is not triggered.
 
+## Chain B design (2026-08-03)
+
+Design session, read-only but for this section. Branch `val4-b`, cut from `val4`
+at `8ed8467` — after chain A's per-member colour-flow merge. Every claim about
+this crate below was read out of *that* tree and carries a `file:line`; every
+claim about MadGraph was read out of the pinned checkout under `research/refs/`
+or out of a banked run directory, and carries a path.
+
+### B.0 What the code does today, and the three facts the design rests on
+
+**Fact 1 — the scale reads the sampler's channel, as a `(group, diagram)` pair.**
+`SampledChannel` (`vibegraph-lib/src/hadronic.rs:152`) is exactly that pair.
+`EventScaleSource::scales` (`hadronic.rs:313`) indexes its channel sets by
+`channel.group` and turns `channel.diagram` into an integration configuration
+through `Channels::config_of_channel` (`hadronic.rs:203`), which falls back to
+the set's `default_config` for a diagram the vertex filter dropped. That
+configuration becomes `ClusterInput::this_config` (`coupling/scales.rs:110-126`)
+and selects both the merge table and the resonance tagging inside
+`ScaleChoice::cluster_scales` (`coupling/scales.rs:331`). The two production
+call sites are `ProtonIntegrand::shape` (`proton.rs:1297`, via `event_scales`
+at `proton.rs:1335` and `sampled_channel` at `proton.rs:1346`) and
+`FixedBeamIntegrand::event_scales_of` (`hadronic.rs:1019`, through
+`SampledChannel::sole`).
+
+**Fact 2 — the machinery for a per-point `AMP2` draw already exists, and is
+already gated.** `BoundAmplitude::eval_amp2` (`helas/eval/run.rs:356`) fills
+`AMP2(d) = Σ_hel Σ_chains |A_d(p)|²` per *integration configuration*, in the
+order `AmplitudeEvaluator::config_diagrams` (`helas/eval/compile.rs:432`) names,
+with `n_configs` at `compile.rs:438`. `select_index` (`select.rs:26`) is the
+categorical draw. `AmplitudeEvaluator::select_color_flow`
+(`compile.rs:355`) already draws a configuration `∝ AMP2(d)` per accepted event
+and uses it to mask the flow draw, and that draw is *measured against MadGraph*:
+`generated_b_quark_events_agree_with_madgraphs_banked_ones`
+(`vibegraph-cli/tests/validate_samples_proton.rs:501`) states that
+`pp_to_bb_fixed`'s two sub-percent `ICOLUP` flows land at MadGraph's
+`0.07%`/`0.08%` "only if the configuration draw carries the right shares". So
+the *distribution* this chain wants to move the scale onto is not a new
+hypothesis — it is an existing, χ²-gated one. What is new is that it stops being
+a selection and starts entering the integrand.
+
+**Fact 3 — an accepted point is reconstructed from `(channel, u)` and nothing
+else.** `Unweighter::trial` (`unweight.rs:330`) returns
+`AcceptedPoint { channel, u, weight }` (`unweight.rs:161`) after calling
+`value_in_channel`, and `vibegraph-cli/src/generate.rs:318`/`:776` rebuild the
+event with `event_in_channel(point.channel, &point.u)` — a second, independent
+evaluation. `ProtonIntegrand::event_in_channel` (`proton.rs:1418`) says so in
+its own words: "the same map at the same `u`, hence the same weight".
+
+> **Fact 3 is the binding constraint of this whole design.** Any randomness the
+> scale draw consumes must be a *pure function of the arguments
+> `value_in_channel` and `event_in_channel` both receive*. A counter advanced
+> per integrand call satisfies neither: the trial loop makes rejected calls
+> between the accepted one and its reconstruction, and the reconstruction would
+> then draw a different configuration, giving an event whose recorded `SCALUP`
+> is not the scale its own accept/reject weight was computed at. That is the
+> "a sample whose scales disagree with its integral is a new defect" the chain
+> brief names, and it is reachable by the obvious implementation.
+
+### B.1 What MadEvent's rule actually is — the note's `∝ AMP2_c` is conditional
+
+The chain brief and TODO's standing-discrepancy entry both state the target rule
+as "single-diagram enhancement weights channel `c` by `AMP2_c/Σ AMP2`". Read
+against the generated Fortran, that is true **only under a run-card condition
+neither document names**. The enhancement block is
+`validation/madgraph/output/gu_to_epemu/SubProcesses/P1_gq_llq/matrix1_orig.f:291-317`:
+
+```fortran
+      IF (MULTI_CHANNEL) THEN
+        XTOT=0D0
+        DO I=1,LMAXCONFIGS
+          J = CONFSUB(1, I)
+          IF (J.NE.0) THEN
+            IF(SDE_STRAT.EQ.1) THEN
+              AMP2(J) = AMP2(J) * GET_CHANNEL_CUT(P, I)
+              XTOT=XTOT+AMP2(J)
+            ELSE
+              AMP2(J) = GET_CHANNEL_CUT(P, I)
+              XTOT=XTOT+AMP2(J)
+            ENDIF
+          ENDIF
+        ENDDO
+        IF (XTOT.NE.0D0) THEN
+          ANS=ANS*AMP2(CHANNEL)/XTOT
+```
+
+So the per-point configuration weight is `AMP2_c · CC_c` at `sde_strategy = 1`
+and `CC_c` **alone** at `sde_strategy = 2` — the squared amplitude is discarded
+outright in the second case. `CC_c` is `get_channel_cut`
+(`research/refs/mg5amcnlo/Template/LO/SubProcesses/genps.f:1817`), a product over
+the configuration's propagator denominators. Its first statement
+(`genps.f:1879-1881`) is what rescues the simple rule:
+
+```fortran
+      if(sde_strat.eq.1.and.tmin_for_channel.eq.-1)then
+         get_channel_cut = 1d0
+         return
+      endif
+```
+
+Measured on the cards themselves (`grep sde_strategy` over
+`validation/madgraph/output/*/Cards/run_card.dat`): every row this chain touches
+runs `sde_strategy = 1` — `gu_to_epemu`, `gux_to_epemux`, `uux_to_epemg`,
+`pp_to_llj_dyn`, `pp_to_jj`, `ee_to_mumua` — and `tmin_for_channel` is set in no
+card, so it takes its default `-1.0`
+(`validation/madgraph/runcard_defaults.json:243`, transcribed at
+`vibegraph-lib/src/runcard.rs:596`). **`ee_to_mumu_tata_qcd0` is the exception:
+its card carries `sde_strategy = 2`**, where MadEvent's configuration
+distribution is not a function of the amplitude at all.
+
+**Design consequence, and it is a hard edge rather than a tolerance.** The draw
+this chain installs is `∝ AMP2_c(p)` and is therefore MadEvent's rule *only*
+when `sde_strategy == 1 && tmin_for_channel == -1.0`. The implementation must
+read both fields and apply the draw only under that conjunction; on any other
+card the scale keeps the sampler's channel exactly as today, and the row keeps
+its existing partition justification. Both fields are already parsed
+(`runcard.rs:596`, `runcard.rs:697`) and — as far as this session could find —
+read by nothing, so chain B is what turns them into read fields. **The sprint
+manager should tell chain C2 this**, since an audit of parsed-but-unread fields
+would otherwise propose a refusal for exactly these two.
+
+*Falsifier for the conditional:* a test that compiles a scale source from a card
+with `sde_strategy = 2` and asserts the prescription reports that it is **not**
+drawing (and that a `sde_strategy = 1` card reports that it is). Without it the
+condition is an unexercised branch, and the `var_sde1` run directory exists
+precisely because this field has bitten before.
+
+### B.2 The pre-registered movement census — P0, before any production line changes
+
+The chain brief names "chain B moves a σ row it should not" as a user-escalation
+trigger. This design turns that from a judgement into a mechanical comparison, by
+measuring *first* which rows are even capable of moving.
+
+**The criterion.** The scale enters σ and nothing else about the draw does. So a
+row whose `μR` and both `μF` are the *same number* in every integration
+configuration at every phase-space point cannot move, whatever configuration is
+drawn — not "usually", but identically. That is already how K6 explained the two
+annihilation rows staying bit-identical (§K6.4: `μR` spread `0.000e0` on
+`uux_to_epemg`/`ddx_to_epemg` against `9.93e-1` on the two gluon rows), and the
+instrument exists: `the_sampled_channel_reaches_the_cluster_scale`
+(`vibegraph-lib/tests/validate_sigma.rs:1047`) already evaluates `μR` in every
+channel at a drawn point and reports the spread.
+
+**P0 deliverable.** Widen that instrument — or add a sibling probe beside it —
+to report, for **every** gated row whose prescription is the clustering branch,
+the worst relative spread of `μR` and of each `μF` over *all* integration
+configurations (`Channels::len()`), over a few dozen cut-passing points. The
+clustered rows are, from `dynamical_scale_choice = -1` with the `fixed_*_scale`
+booleans off:
+
+`ddx_to_epemg`, `ee_to_ee`, `ee_to_mumu`, `ee_to_mumua`, `ee_to_mumu_tata_qcd0`,
+`ee_to_tatah`, `ee_to_ttx`, `ee_to_wpwm`, `ee_to_zh`, `gg_to_gg`, `gg_to_ttx`,
+`gu_to_epemu`, `gux_to_epemux`, `pp_to_jj`, `pp_to_llj_dyn`, `uux_to_epemg`,
+`uux_to_mumu`, `uux_to_uux` — 18 of the 23 `integrals` rows.
+
+The remaining five are fully fixed (`fixed_ren_scale` and both
+`fixed_fac_scale*` true) and so resolve to `ScaleSourceKind::Constant` before any
+event is seen: `pp_to_bb_fixed`, `pp_to_llj_fixed`, `ud_to_epemud_qcd0` and both
+`pp_to_ll` variants (the committed `dy13_*_run_card.dat`). **They execute no
+changed line at all.**
+
+**The pre-registration, written before the measurement.** Structurally, a
+`2 → 2` final state gives the clustering no merge to choose — §C.3's argument,
+and the reason `pp_to_jj`'s partition gap is its own Monte-Carlo error. So the
+prediction is *zero spread* on the ten `2 → 2` rows (`ee_to_ee`, `ee_to_mumu`,
+`ee_to_ttx`, `ee_to_zh`, `ee_to_wpwm`, `gg_to_gg`, `gg_to_ttx`, `uux_to_uux`,
+`uux_to_mumu`, `pp_to_jj`), zero on `uux_to_epemg`/`ddx_to_epemg` (already
+measured at `0.000e0`, §K6.4), and *nonzero* on `gu_to_epemu`/`gux_to_epemux`
+(already measured at `9.93e-1`). The three genuinely unknown rows are
+**`ee_to_mumua`** (2 → 3, 8 configs), **`ee_to_tatah`** (2 → 3, 5 configs) and
+**`ee_to_mumu_tata_qcd0`** (2 → 4, 25 configs, and the `sde_strategy = 2` card);
+config counts from each run's `SubProcesses/*/config_nqcd.inc`.
+
+**`ee_to_mumua` is chain D's row.** If its spread is nonzero, chain B moves the
+very number chain D is measuring the `+0.80%` drift on, and the two chains
+collide. That is a manager decision, not an implementation one: the P0 census
+must be reported *before* implementation is dispatched, and if `ee_to_mumua`
+spreads, the manager decides whether B is resequenced behind D, whether D's
+measurement is retaken after B, or whether the draw is scoped to hadronic and
+QCD rows for v0.1.
+
+**How the census is used afterwards.** Every row with exactly-zero spread is
+pre-registered as **must be bit-identical** — not "within tolerance", *equal*,
+because §B.3's stream discipline leaves its point sequence untouched and the
+scale it evaluates at unchanged. Every row with nonzero spread is pre-registered
+as **may move**. Any deviation from that census in the after-comparison of §B.6
+is stop-and-report, never fix-inline.
+
+### B.3 Where the draw lives, and where its randomness comes from
+
+**Decision 1 — the draw lives in the integrand, not in the scale prescription.**
+`ScaleChoice::cluster_scales` takes a `ClusterInput` and has no amplitude, no
+evaluator and no way to form `AMP2`. Pushing the draw down there would mean
+handing the coupling layer an `AmplitudeEvaluator`, inverting the dependency the
+crate is built on. The integrand already owns both the evaluator and the
+momenta, so it forms the weights and hands the *resulting* configuration down
+through the existing `SampledChannel`/`ClusterInput` seam. Nothing in
+`coupling/` changes.
+
+**Decision 2 — the draw's uniform travels with the point, and is drawn from a
+dedicated substream that no existing stream shares.** Concretely:
+
+* `ChannelIntegrand` (`unweight.rs:55`) gains
+  `fn scale_draw_ndim(&self) -> usize { 0 }`, returning `1` exactly when the
+  installed prescription is the clustering branch under §B.1's card condition.
+* The slice handed to `value_in_channel` / `event_in_channel` is
+  `channel_grid_ndim() + scale_draw_ndim()` long; both **assert** that length.
+  The trailing coordinate is the scale-draw uniform `v`. A driver that forgets
+  the tail fails loudly instead of silently clustering in the sampler's channel
+  again — the record-layer self-check this defect class needs.
+* `Unweighter` opens `SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j)`
+  (`phasespace/rng.rs`, the same counter-based construction
+  `CHANNEL_STREAM_BASE`/`SCAN_STREAM_BASE` use — `hadronic.rs:82`,
+  `unweight.rs:45`) and fills the tail from it in both `scan` (`unweight.rs:206`)
+  and `trial` (`unweight.rs:330`). **It must not draw `v` from the caller's
+  `rng`**: that would shift the generate sequence of every clustered row,
+  including the ones whose scale cannot move. `AcceptedPoint.u` then carries `v`,
+  so the reconstruction at `generate.rs:318`/`:776` replays it exactly — Fact 3
+  discharged by construction rather than by care.
+* On the integration side, `adapt_grids_with` (`hadronic.rs:~1480`,
+  `proton.rs:~1650`) wraps its per-channel closure over a scratch buffer and its
+  own `SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j)`, leaving the
+  grid's own `rng` (`hadronic.rs:1498`, `proton.rs:1664`) untouched. The
+  integration never reconstructs a point, so a per-call advance is sound there.
+* `MultiChannel::adapt_alphas`'s survey integrand
+  (`phasespace/channel.rs:313`, `Fn(&[momenta], usize)`) gets the same treatment
+  on its own stream, so the α-adaptation surveys the integrand the integration
+  will run. `probe_scale` (`hadronic.rs:~985`, `proton.rs:~1177`) likewise.
+
+> **The invariant this buys, and it is the load-bearing one:** *the scale draw
+> consumes zero bits from any pre-existing stream.* Point sequences, channel
+> selections, acceptance draws and VEGAS grids are bit-for-bit what they are
+> today, on every row. Combined with §B.2's census, that is what makes
+> "zero μ-spread ⇒ bit-identical σ" a prediction rather than a hope.
+
+**Decision 3 — rejected: an extra VEGAS grid dimension.** The obvious
+implementation appends the coordinate to `channel_grid_ndim()` so the grid draws
+it. It is rejected for two independent reasons. (a) It changes `ndim` for all 18
+clustered rows, so every one of them resamples and moves by Monte Carlo — the
+ten `2 → 2` rows, `ee_to_mumua` and `ee_to_mumu_tata_qcd0` included — which is
+precisely the outcome the escalation trigger exists to catch, manufactured on
+purpose. (b) It puts a coordinate whose integrand dependence is a step function
+with point-dependent breakpoints under grid refinement, which is the
+ill-conditioned direction AGENTS.md's sampler rule warns about.
+
+**Decision 4 — rejected: Rao–Blackwellising the draw away.** `σ` could be made
+partition-free with no randomness at all by evaluating
+`Σ_c w_c(p)·f(p, μ_c)` and grouping configurations by their resulting scale
+triple — cheap where the scale collapses (one distinct scale on a `2 → 2`).
+Rejected because an event still carries exactly one `SCALUP`, so the event pass
+must draw regardless; a σ built from the mixture and events built from a draw
+would give every accepted event a weight that is not `f(p, μ_recorded)`, which
+is a new version of the same defect. It is also outside the chain's stated
+scope. Worth one line in TODO as a variance-reduction idea, not as this chain's
+design.
+
+**Decision 5 — `AMP2` is evaluated at a pinned coupling, not at whatever is
+bound.** `eval_amp2` reads the currently-set `αs`, and the scale is not known
+until after the draw, so evaluating "at the event's coupling" is circular. Two
+resolutions were considered:
+
+* *Rely on αs-cancellation.* If every configuration of a subprocess carries the
+  same power of `g`, the normalised weights are αs-independent and any bound
+  value serves. Measured across every banked `SubProcesses/*/config_nqcd.inc`,
+  this holds for **every** clustered row — all configurations share one `NQCD`
+  — with a single exception, `pp_to_bb*`'s `P1_qq_bbx`, where `NQCD ∈ {0, 2}`.
+  (`pp_to_bb` is a `2 → 2`, so its scale cannot depend on the configuration
+  anyway, and it is one of §G's `nn23lo1`-blocked rows besides.) This also
+  corrects a loose claim in the existing code: the doc of
+  `the_sampled_channel_reaches_the_cluster_scale` (`validate_sigma.rs:1047`)
+  attributes the gluon rows' `μR` spread to "the merge graph's coupling-order
+  filter admits different channel sets for different `nqcd`", but
+  `validation/madgraph/output/gu_to_epemu/SubProcesses/P1_gq_llq/config_nqcd.inc`
+  reads `NQCD(1..4) = 1` — every configuration the same order, so that filter
+  (`coupling/cluster/graph.rs:181-186`) does nothing on that row. The spread
+  comes from the differing *forests*, not from the coupling order. Worth fixing
+  in that comment while the file is open.
+* *Pin the coupling.* Evaluate `AMP2` at the coupling the amplitudes were bound
+  at (`RunningCouplingReport::alpha_s_ref`), then set `αs(μR)` for the matrix
+  element. Costs one extra `set_alpha_s` per point.
+
+**Take the second.** It makes the drawn configuration a pure function of the
+momenta with no cancellation hypothesis behind it, it survives the mixed-`NQCD`
+case without a special path, and it removes any dependence of the draw on
+evaluation history — which matters because `event_in_channel` runs after
+intervening trials have moved the bound coupling. The cancellation argument then
+becomes a *test* rather than a load-bearing assumption: assert that on
+`gu_to_epemu` the drawn configuration is unchanged when `AMP2` is formed at two
+different couplings. Where `set_alpha_s` falls back to a full model
+re-evaluation (`RunningCouplingReport::fallbacks`), this doubles that cost per
+point; the implementation must report the measured wall-time change per gated
+row rather than absorb it.
+
+**Decision 6 — the index composition, through the diagram and not by assumption.**
+`AMP2` index `c` names a configuration in `AmplitudeEvaluator`'s order;
+`ClusterInput::this_config` names one in `derive_channels`' order. These are two
+independent derivations from the same diagram slice, and §K6.2 already records
+that the diagram→config map is *not* the identity (`g g → g g`: 4 diagrams, 3
+configs). Compose through the diagram index, which is the common ground:
+
+```
+this_config = channels.config_of_channel( eval.config_diagrams()[c] )
+```
+
+and, separately, add a test asserting the two orders agree
+(`config_of_diagram(config_diagrams()[c]) == Some(c + 1)`) and that
+`eval.n_configs() == channels.len()`, over the banked process set. Production
+must not depend on that identity; the test exists so a reorder is a named
+finding instead of a silent reshuffle of every event's scale.
+
+**Decision 7 — the fallback, counted.** `select_index` returns `None` when the
+weights carry no probability (`select.rs:26-40`). Take the set's
+`default_config` there, matching `select_color_flow`'s own fallback
+(`compile.rs:~372`), and count it into the `RunningCouplingReport` beside
+`unmapped_channels` so a run that hits it says so rather than absorbing it.
+MadEvent's counterpart is the `NB_FAIL` branch at `matrix1_orig.f:306-315`,
+which stops the run after ten such points — a useful sanity bound on how often
+this is expected to fire (essentially never).
+
+### B.4 The group is the other half, and the note's scope does not reach it
+
+**What the code does.** `ProtonIntegrand::shape` (`proton.rs:1297`) computes
+**one** scale from the sampled channel and applies it to the whole sum over
+flavour groups:
+
+```rust
+let scales = self.event_scales(channel);
+self.apply_scale(scales.mu_r);
+for (g, sub) in self.groups.groups().iter().zip(&self.subs) { ... }
+```
+
+**Why that is a partition dependence the configuration draw does not touch.**
+`SampledChannel` is a `(group, diagram)` pair, and §K6.3 records that the groups
+of `p p → ℓ⁺ℓ⁻ j` "do not share a merge graph" — `g u → ℓ⁺ℓ⁻ u` and
+`u ū → ℓ⁺ℓ⁻ g` cluster differently at the same momenta. §K6.4 measures those two
+subprocess types at `μR` spreads of `9.93e-1` and `0.000e0`, so the two groups
+genuinely disagree about the scale at a shared point. Drawing the *configuration*
+`∝ AMP2` fixes which config inside the sampled group is used; it leaves the
+**group** taken from the sampler, so `σ` still depends on `αⱼ` through which
+group's forests a region of phase space is evaluated with. MadEvent has no
+counterpart to this at all: it integrates each subprocess directory separately,
+each at its own scale, and sums.
+
+**This is where the note's chain B entry falls short of its own acceptance
+criterion.** E2 asks for `pp_to_llj` below `0.015` "at tolerances justified by
+the reference's own error". `pp_to_llj_dyn` is a 6-group, 24-pooled-channel
+hadronic row (`validate_hadronic.rs:~103`), and there is no measurement anywhere
+in the bank that says the residual is dominated by the within-group
+configuration choice rather than by the cross-group one. The literal scope —
+configuration draw only — is **complete and exact for the fixed-beam rows**
+(`gu_to_epemu`, `gux_to_epemux` have one subprocess, so the group question does
+not arise, and E2's first half is fully reachable), and **only partial for the
+hadronic row**.
+
+**Design response — a measurement decides, not an assumption.** Split the work:
+
+* **B-1 (in scope, the note's own):** the configuration draw, all rows. Retires
+  the partition dependence on the fixed-beam rows outright.
+* **B-2 (conditional):** each flavour group's term evaluated at *its own*
+  group's drawn configuration — one clustering, one `AMP2` and one coupling per
+  group with nonzero luminosity per point, replacing the single shared scale.
+  This removes the sampler from the hadronic scale entirely and is what MadEvent
+  does. It is a restructuring of `shape` and of `apply_scale` (`proton.rs:1369`,
+  today one global coupling for all subprocesses) and it multiplies the
+  per-point clustering and coupling cost by the group count.
+
+**The gate between them, run at the end of B-1:** report `pp_to_llj_dyn`'s
+`μR` spread decomposed into *within-group* and *across-group* parts at the same
+points, and re-run `probe_llj_dyn_budget_ladder` (`validate_hadronic.rs:1090`)
+under B-1. If the row's residual has collapsed into the reference's own `0.33%`,
+B-2 is unnecessary and should not be built. If it has not, B-2 is what E2 needs,
+and **the manager decides whether it is in this sprint** — it is a scope
+extension beyond the chain brief and the design says so rather than smuggling it
+in. Either outcome is a recorded measurement, which is the point.
+
+### B.5 The rider — `pp_to_llj_dyn`'s `samples` cell
+
+Smaller than it reads. `validate_samples_proton.rs` drives every proton
+`samples` row through one `Row` struct (`:118-137`): a banked run directory, a
+manifest key, a process string, an optional committed card, a budget and a mode.
+`generated_proton_events_agree_with_madgraphs_banked_ones` (`:472`) is the
+`pp_to_llj_fixed` row, and `pp_to_llj_dyn`'s banked sample is already in the
+bundle (`validation/manifest.toml:495` lists
+`output/pp_to_llj_dyn/Events/run_01/unweighted_events.lhe.gz`, and no row in the
+manifest carries `bundled = false` any more).
+
+* Add one `Row` with `run`/`key` `"pp_to_llj_dyn"`, `events: "run_01"`,
+  `process: "p p > l+ l- j QCD=2 QED=2"`, `run_card: None` (the run's own card is
+  the dynamical one — that *is* the row), the same `NEVAL`/`NITER`/seeds as the
+  fixed-scale row, and `scans: &[]`.
+* Flip `validation/manifest.toml`'s `pp_to_llj_dyn` `samples` entry from
+  `tier = "uncovered"` to `tier = "banked", mode = ...`, with a note recording
+  what the comparison measured. Mode is a *measurement outcome*: `gate` if every
+  column clears the `1e-4` floor on all three seeds, `info` with the recorded
+  reason if not. Do not pre-declare `gate`.
+* The header comment of `validate_samples_proton.rs:14-16` says "Three rows" and
+  is already stale (the dijet row at `:770` is a fourth); make it right while
+  adding the fifth.
+
+Taken here because B-1/B-2 rebuild exactly the path this cell exercises: a
+`samples` cell measured before the draw lands would have to be measured again
+after it.
+
+### B.6 The before/after σ comparison — the escalation trigger, mechanised
+
+`pixi run --skip-deps validate` writes one JSON per cell under
+`target/validation-report/{integrals,samples}/` (schema at
+`target/validation-report/integrals/pp_to_llj_dyn.json`: `sigma_vg_pb`,
+`sigma_vg_err_pb`, `rel`, `pull`, `chi2_dof`, `per_seed`), and
+`validation/validate.sh:23` deletes them before each run so a cell is always
+*this* invocation's measurement. That directory is the comparison artifact.
+
+**The procedure, mandatory and in this order:**
+
+1. **Before touching a production line**, on a clean `val4-b`:
+   `pixi run --skip-deps validate`, then
+   `cp -Rc target/validation-report /tmp/valreport-baseline-B` (`cp -Rc` is
+   instant on APFS). Record the census line from `report.md`.
+2. Run the §B.2 P0 census and report it to the manager. **Stop here for the
+   dispatch decision if `ee_to_mumua` spreads.**
+3. Implement, in the stages of §B.7.
+4. After each stage: `pixi run --skip-deps validate`, then
+   `diff -r /tmp/valreport-baseline-B/integrals target/validation-report/integrals`
+   and the same for `samples`.
+5. **Read the diff against the §B.2 census, cell by cell.** A row with zero
+   μ-spread whose `sigma_vg_pb` differs *in any digit* is a defect in the stream
+   discipline of §B.3, not statistics — the drawn configuration cannot have
+   changed its scale, so nothing in the estimator may have moved. A row that is
+   fully fixed (the five of §B.2) differing at all means changed code ran on a
+   path that should not execute it.
+6. **Any unexpected row that moved is stop-and-report to the sprint manager.**
+   Do not retune, do not re-seed, do not widen a tolerance to absorb it. Write
+   the row, the before and after `sigma_vg_pb`/`rel`, and what the census
+   predicted.
+
+The five fully-fixed rows and the zero-spread clustered rows should diff to
+**nothing at all** — byte-identical JSON. That is a stronger statement than
+"inside tolerance" and it is available here, so it is the one to make.
+
+### B.7 Stages, gates, and expected pass/fail at each
+
+Every command is `--skip-deps`; a bare `pixi run validate` (or any task with a
+MadGraph dependency taken live) triggers a multi-hour regeneration. Long runs go
+in the background per the sprint's long-command discipline and are polled.
+
+| # | Stage | Model | Gates to run | Expected state |
+|---|---|---|---|---|
+| B-0 | Baseline capture + P0 μ-spread census (§B.2), no production change | **Opus** (judgement on the census) | `pixi run --skip-deps validate`; the new census probe under `cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_sigma -- --nocapture <probe> --ignored` | validate **passes**, unchanged from `main`'s report. Census reported to the manager before B-1 is written. |
+| B-1a | The draw plumbing: `scale_draw_ndim`, the `u` tail, the substreams, the length asserts — wired but with the drawn config **discarded** and the sampler's still used | **Opus** | `pixi run --skip-deps validate`; `cargo test -p vibegraph-lib --features extended-validation --test validate_unweighting` | validate **passes bit-identically** on all 23 `integrals` and all `samples` rows. This is the negative control: the plumbing must be provably inert. If any cell moves here, the stream discipline is wrong and nothing else should be built on it. |
+| B-1b | The draw goes live: `AMP2` at the pinned coupling, index composition, fallback counting, the `sde_strategy`/`tmin_for_channel` condition | **Opus** | `pixi run --skip-deps validate`; `pixi run -e madgraph --skip-deps validate-sigma`; `pixi run -e madgraph --skip-deps validate-hadronic`; `pixi run -e madgraph --skip-deps validate-scales`; `pixi run -e madgraph --skip-deps validate-generate-proton` | `validate-scales` **must pass unchanged** — it replays MadGraph's *own* banked events at *its* channel and is a property of the bank, not of any integrand (§K6.7), so a change there means the prescription itself moved. σ rows: only the §B.2 census's may-move set differs. `gu_to_epemu`/`gux_to_epemux` are expected to move; their `rel_tol` is still `0.02`, so they should still **pass** while moving. |
+| B-1c | The partition instruments re-read, tolerances re-justified (§B.8) | **Opus** | `probe_channel_partition_moves_sigma` (`validate_sigma.rs:1247`), `probe_llj_dyn_budget_ladder` (`validate_hadronic.rs:1090`), the five-seed sweeps, both `--ignored` under the extended-validation feature | The named numbers below. |
+| B-2 | Per-group scales, **only if B-1c's measurement says E2 needs it and the manager approves** | **Opus** | as B-1b, plus a wall-time comparison per hadronic row | `pp_to_llj_dyn` moves; the fixed-beam rows must be **bit-identical to B-1b** (they have one group, so B-2 executes no changed branch for them). |
+| B-3 | The rider: the `samples` row + manifest + the stale header comment (§B.5) | **Sonnet** | `pixi run --skip-deps validate` | The new cell is written and the census gains one measured cell. No other cell moves. |
+| B-4 | Artifact-version guard (§B.9) | **Sonnet** | `cargo test -p vibegraph --features extended-validation --test cli_generate`, `--test cli_integrate` | A pre-change artifact plus a clustering run card is refused with a message naming the scale rule; a fixed-scale card still loads. |
+| B-5 | The note section: measurements, tolerances, what each instrument cannot see | **Opus** | — | — |
+
+**The known-wrong informational comparison to keep running throughout.**
+`probe_channel_partition_moves_sigma` is exactly that instrument and it already
+exists: it integrates the same row at the converged `αⱼ` and at uniform `αⱼ` and
+reports the gap. Its banked readings are the pre-registered before-values —
+`gu_to_epemu` `−1.48e-2`, `gux_to_epemux` `−1.53e-2`, against `uux_to_epemg`
+`+1.05e-3` and `ddx_to_epemg` `+1.86e-3` as the negative control, all at a
+Monte-Carlo error of about `1.6e-3` (§K6.5). Run it at **B-0** (must reproduce
+those four numbers — if it does not, the environment is not the one the bank was
+taken in, and nothing downstream means anything), at **B-1a** (must be
+unchanged), and at **B-1b**, where the whole claim of this chain is that all four
+rows collapse to their own Monte-Carlo error. That single table is the chain's
+end-to-end signal, and it is available from the first line of code.
+
+### B.8 Tolerances — the decision rule, pre-registered, not the number
+
+E2 asks for the partition tolerances retired. The honest form of that is a rule
+fixed before the measurement:
+
+* A row leaves `PULL_REPORTED_NOT_ASSERTED` (`validate_sigma.rs:145`) **only if**
+  its residual behaves like Monte Carlo: it shrinks with budget across the
+  ladder, and its five-seed scatter sits at `χ²/dof ≈ 1`. A residual of fixed
+  size that merely got smaller is still a systematic, and asserting its pull
+  would assert a precision the comparison does not have — the exact reasoning at
+  `validate_sigma.rs:130-145`.
+* `rel_tol` is then set at the larger of (a) the reference's own Monte-Carlo
+  error with headroom — `0.18%` on `gu_to_epemu`/`gux_to_epemux`, `0.33%` on
+  `pp_to_llj_dyn` — and (b) the measured five-seed spread. Not fitted around the
+  achieved central value.
+* `LLJ_DYN_MAX_REL` (`validate_hadronic.rs:132`) and the two `0.02` entries
+  (`validate_sigma.rs:369`) move only on that basis, and their doc comments must
+  be rewritten to say what the new number is set by. A tolerance whose comment
+  still cites the partition band while the partition is gone is a false comment.
+* **If the residual does not become Monte Carlo, the tolerances do not move.**
+  E2 is then partially met, with a diagnosis, and that is reported — not
+  absorbed. A row left where it is with a measurement behind it is a better
+  outcome than a tightened row resting on one lucky seed.
+
+`pp_to_jj` is explicitly **not** re-justified here: TODO records it as GATE at
+`rel_tol` 0.005 with the pull asserted, set at the reference's own `0.22%`,
+because its partition gap is `1.03e-3` against its own `9.6e-4` Monte Carlo
+(§C.3). It is a zero-spread row under §B.2's prediction and should come out of
+this chain byte-identical.
+
+### B.9 Artifacts
+
+`FORMAT_VERSION` is `6` and `OLDEST_READABLE_VERSION` is `3`
+(`vibegraph-lib/src/artifact.rs:45,48`). **The grids do not change meaning**:
+their coordinate count is untouched (§B.3 Decision 3 was rejected precisely to
+keep it so), the channel decomposition is unchanged, and a VEGAS grid is an
+importance weight that remains valid under a changed integrand — it can only be
+suboptimal, never wrong.
+
+**One thing does change meaning: the recorded `sigma_pb`.** `vibegraph generate`
+takes the file's `XSECUP` from `artifact.sigma_pb`
+(`vibegraph-cli/src/generate.rs:553` and `:897`) while the sample's own cross
+section comes from `sigma_from_events` (`:377`, `:824`). So an artifact written
+before this chain, replayed after it, writes an old-rule `XSECUP` onto a
+new-rule sample. That is a boundary a card can reach silently, which is the class
+this whole sprint is closing.
+
+**Recommendation:** bump `FORMAT_VERSION` to `7` with no schema change, leave
+`OLDEST_READABLE_VERSION` at `3`, and refuse in `generate` when the artifact's
+version is `< 7` **and** the run card selects the clustering branch — naming the
+scale rule in the message, not a plan item. A fixed-scale artifact keeps
+working, which is most of them. The implementation should first confirm no
+artifact is committed to the repository (`git ls-files | grep -i 'grid.bin'`);
+this session found none, and every test writes its artifact into a `tempfile`
+directory (`validate_samples_proton.rs:~205`).
+
+### B.10 Acceptance tests, named
+
+1. `the_scale_channel_is_drawn_from_amp2_and_not_from_the_sampler` — at a fixed
+   point on `gu_to_epemu`, sweep the scale-draw uniform across `[0,1)` and assert
+   the drawn configuration's empirical frequencies match
+   `AMP2_c / Σ AMP2` (the same convergence property `select.rs`'s
+   `frequencies_converge_to_the_weight_fractions` asserts), and that the drawn
+   configuration is **independent of the sampling channel the point came from**.
+   The second half is the one that would fail if the sampler leaked back in.
+2. `a_scale_draw_replays_identically_on_reconstruction` — run
+   `Unweighter::trial` to an accepted point, then `event_in_channel` on
+   `AcceptedPoint.u`, and assert the event's `EventScales` equals the scale the
+   trial's own `value_in_channel` evaluated at, **after** interleaving further
+   rejected trials between the two. Without the interleaving the test cannot see
+   the Fact-3 defect at all, which is the point of specifying it.
+3. `the_amp2_config_order_matches_the_forest_config_order` — over the banked
+   process set, `eval.n_configs() == channels.len()` and
+   `channels.config_of_diagram(eval.config_diagrams()[c]) == Some(c + 1)`.
+   Production does not rely on it (§B.3 Decision 6); the test turns a reorder
+   into a finding.
+4. `the_scale_draw_is_independent_of_the_bound_coupling` — form `AMP2` at two
+   different `αs` on `gu_to_epemu` and assert the drawn configuration is the
+   same, pinning Decision 5's pinned-coupling behaviour and, incidentally, the
+   uniform-`NQCD` cancellation.
+5. `a_non_default_sde_strategy_keeps_the_sampler_channel` — a card with
+   `sde_strategy = 2`, and one with `tmin_for_channel` set, both report a
+   prescription that does **not** draw; a default card reports one that does.
+   §B.1's falsifier.
+6. `the_clustered_rows_that_cannot_move_are_bit_identical` — the §B.2 census
+   promoted into a standing test: every gated clustered row's worst μ-spread over
+   all configurations is recorded, and the rows reading exactly `0.0` are
+   asserted to. It is the guard that fails if a future change makes a scale
+   configuration-dependent on a row this chain declared inert.
+7. The rider's own cell (§B.5) and the artifact refusal (§B.9).
+
+Two of these — 1 and 4 — are `--ignored` oracle-layer probes if they need a full
+integrand build; the rest belong in the banked suite.
+
+### B.11 Risks, and what this provably cannot break
+
+**Provably cannot break** (each with the reason, not the assurance):
+
+* The five fully-fixed rows (`pp_to_bb_fixed`, `pp_to_llj_fixed`,
+  `ud_to_epemud_qcd0`, both `pp_to_ll`). `ScaleChoice::is_fully_fixed`
+  (`coupling/scales.rs:266`) resolves them to `ScaleSourceKind::Constant` at
+  compile time (`hadronic.rs:~272`), `needs_channels()` is false
+  (`scales.rs:274`), `scale_draw_ndim()` is `0`, and no changed line executes.
+* Every row whose prescription is a closed form (`dynamical_scale_choice` 1–5) —
+  same argument, different branch.
+* `validate_scales`, `validate_kt_cluster`, `validate_alphas`,
+  `probe_first_channel_cost_in_alpha_s`. All replay MadGraph's *own* banked
+  events at *MadGraph's* channel; they are properties of the bank and of
+  `coupling/`, and this chain changes no line under `coupling/` (§B.3
+  Decision 1). §K6.7 makes exactly this argument for the same reason.
+* The amplitude, colour and diagram gates. `eval_amp2` is called, not modified.
+* The phase-space maps, the channel `αⱼ` values, the VEGAS grids and the
+  unweighting acceptance sequence, by the zero-bits invariant of §B.3.
+
+**Risks:**
+
+* **`ee_to_mumua` spreads and collides with chain D** (§B.2). Mitigated by
+  measuring first and reporting before dispatch; resolution is the manager's.
+* **`ee_to_mumu_tata_qcd0` spreads *and* runs `sde_strategy = 2`.** Then this
+  crate has no implementation of MadEvent's configuration distribution for that
+  card, the §B.1 condition leaves it on the sampler's channel, and the row keeps
+  a partition ambiguity that this chain cannot retire. That is a recorded
+  limitation, not a defect to paper over — and it is a candidate TODO entry
+  (implement `get_channel_cut`), not sprint work.
+* **The draw is unbiased but noisier.** It adds a categorical step inside the
+  integrand, so per-point variance rises on the rows that actually move. Watch
+  `err_vg` and `χ²/dof` on the moving rows across the seed sweep; AGENTS.md's
+  rule applies — if extra budget makes a failure migrate between seeds rather
+  than shrink, it is a bug.
+* **Cost.** One `eval_amp2` per point per subprocess is roughly one more matrix
+  element's worth of arithmetic, and Decision 5 adds a `set_alpha_s`. If the
+  measured slowdown on `pp_to_llj_dyn` or `pp_to_jj` is material, the natural
+  remedy is a combined entry point that fills `AMP2` from the same arena
+  `eval_m2` already fills (`helas/eval/run.rs`, both call `fill_arenas`) rather
+  than running the program twice — an evaluator change to size before writing,
+  and to hand to performance work if it grows.
+* **The mirror ordering.** `shape` evaluates a group's direct and reflected terms
+  at one shared scale (`proton.rs:1297-1320`), so there is one `AMP2` to draw
+  from but two arguments it could be formed at. Take the direct ordering, and
+  name the falsifier: `σ` must not move outside Monte Carlo when the draw is
+  formed from the luminosity-weighted combination of both instead. If it does,
+  the ordering is a third partition axis and that is a finding for the manager,
+  not an inline fix. Pre-existing, not introduced here.
+* **Merge conflicts.** B is merged last (§5) and touches
+  `validate_sigma.rs`'s plan table, `validate_hadronic.rs`'s tolerance
+  constants, `validate_samples_proton.rs` and `validation/manifest.toml` — the
+  declared conflict hotspot. Rows are disjoint from the other chains'; the
+  manager resolves.
+
+**What this provably cannot decide.** Whether the residual that survives on
+`pp_to_llj_dyn` after B-1 is the flavour-group axis (§B.4) or something else:
+only B-2, or a group-resolved measurement, separates them. And nothing here says
+anything about `p p → j j`'s `+0.21%`, which is Monte Carlo against a reference
+whose own error is `0.22%` and which no scale rule can move.
+
+### B.12 Errors found in the chain brief and in the note
+
+* **The brief's premise is sound and its checks all passed**: toplevel, branch
+  `val4-b`, `HEAD = 8ed84676`, clean tree. Chain A's merge (`8ed8467`, "per-member
+  colour-flow tables via structurally-determined permutation") is in this
+  history, as are C1 (`6018549`) and E (`6f95f83`).
+* **The note's chain B entry states MadEvent's rule unconditionally** as
+  "weights the integrand of channel `c` by `AMP2_c/Σ AMP2`" (§K6.5, §K6.8, and
+  TODO's standing-discrepancy entry). It is conditional on
+  `sde_strategy = 1 && tmin_for_channel = -1` (§B.1), and one gated row in the
+  set — `ee_to_mumu_tata_qcd0` — does not meet it.
+* **The note's chain B scope does not reach E2's second half.** The
+  configuration draw leaves the flavour-*group* half of `SampledChannel` on the
+  sampler, so `pp_to_llj_dyn`'s σ remains partition-dependent through the group
+  (§B.4). The spec predates nothing here — this is a gap in the plan, not a
+  consequence of chain A — and it is flagged rather than silently expanded into.
+* **Chain A's merge does not conflict with anything in this design.** A's change
+  is in `lhef/build.rs`'s per-member colour-flow tables; the scale path is
+  disjoint. The one place the two meet is §5's stated reason for ordering A
+  before B — B's rider regenerates llj samples that must carry A's fixed tags —
+  and that holds.
+* **A stale doc comment found en route**, worth correcting while the file is
+  open: `the_sampled_channel_reaches_the_cluster_scale`
+  (`validate_sigma.rs:1047`) attributes the gluon rows' `μR` spread to the
+  coupling-order filter admitting different channel sets for different `nqcd`,
+  but that run's `config_nqcd.inc` has `NQCD = 1` on all four configurations, so
+  the filter is inert there (§B.3 Decision 5).
+* **`validate_samples_proton.rs:14-16` says "Three rows"** and there are four
+  (§B.5).
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,
