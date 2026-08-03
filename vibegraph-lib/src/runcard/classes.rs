@@ -132,6 +132,18 @@ const P_SMALL_WIDTH: &str = "floors every width at this fraction of the mass. Th
                              same floor to the propagators at generation time, so honouring \
                              the card here would move the clustering without moving the \
                              matrix element";
+const P_KTSCHEME: &str = "selects the clustering distance measure. At 2, cluster.f takes \
+                          Pythia's pydj between two final-state legs and pyjb against a beam, \
+                          in place of the dj, djb and zclus this crate implements; the \
+                          initial-state branch reads it as 'ickkw == 2 .or. ktscheme == 2', so \
+                          it fires with matching switched off. A different measure is a \
+                          different merge sequence, and so a different renormalisation and \
+                          factorisation scale on every event";
+const P_CHCLUSTER: &str = "restricts the clustering to the integration channel's own diagram: \
+                           when cluster.f seeds the admissible graphs for a merge it keeps only \
+                           those equal to iconfig, which changes which pairs may combine and \
+                           with them the scales read off the resulting tree. The test sits \
+                           outside any matching switch, so it applies to an ordinary run";
 const P_TMIN_FOR_CHANNEL: &str = "limits the non-singular reach of a t-channel integration \
                                   channel; nothing shows a cross section invariant under \
                                   truncating one channel's reach";
@@ -198,9 +210,9 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("scalefact",               Consumed(R_SCALES)),
     ("ickkw",                   Consumed(R_SCALES)),
     ("highestmult",             IgnoredBenign(B_MLM)),
-    ("ktscheme",                IgnoredBenign(B_MLM)),
+    ("ktscheme",                IgnoredPhysics { why: P_KTSCHEME, when: Applicability::Always }),
     ("alpsfact",                IgnoredBenign(B_MLM)),
-    ("chcluster",               IgnoredBenign(B_MLM)),
+    ("chcluster",               IgnoredPhysics { why: P_CHCLUSTER, when: Applicability::Always }),
     ("pdfwgt",                  Consumed(R_SCALES)),
     ("asrwgtflavor",            IgnoredBenign(B_MLM)),
     ("clusinfo",                IgnoredBenign(B_MLM)),
@@ -493,7 +505,7 @@ mod tests {
             }
             checked += 1;
         }
-        assert_eq!(checked, 21, "the refused inventory changed size");
+        assert_eq!(checked, 23, "the refused inventory changed size");
         assert_eq!(proton_only, 2, "the beam-dependent inventory changed size");
     }
 
