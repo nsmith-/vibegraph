@@ -101,7 +101,7 @@ unpacks_to = "validation/madgraph/output"
 # clients and the fetch falls back to an authenticated `gh release download` of
 # the same asset; $VIBEGRAPH_REFDATA_SOURCE still overrides both for a local
 # bundle.
-published = false
+published = true
 
 # ─────────────────────────── single-channel rows ────────────────────────────
 #
