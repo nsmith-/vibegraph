@@ -1212,6 +1212,303 @@ processes, loop level), this execution adds four:
 4. **Rows 3 and 4a** — no varying instance exists in the banked set, so they are
    unchecked, and row 3 is unchecked in principle at the `fermi_sign` level
    because `revC·revL ≡ +1` there (F.11).
+## Chain C1 design (2026-08-02)
+
+Three independent hard-error additions, one per parser boundary. Each is a
+guard added at the point that already fully resolves the field/token in
+question, so no new resolution logic is needed — only a check and a new error
+variant. All three are unconditional refusals (no `ParsingOptions`-style
+override), matching `UnsupportedLpp`'s existing precedent for an
+out-of-restricted-scope beam configuration.
+
+### (a) Concrete change list
+
+**1. Beam polarization — `vibegraph-lib/src/runcard.rs`**
+
+- Add a variant to `RunCardError` (next to `UnsupportedLpp`, ~line 138):
+  ```rust
+  #[error(
+      "beam polarization is not supported: polbeam1={polbeam1}, polbeam2={polbeam2} \
+       (both must be 0)"
+  )]
+  UnsupportedPolarization { polbeam1: f64, polbeam2: f64 },
+  ```
+- In `RunCard::from_values` (~line 266), immediately after the existing
+  `lpp1`/`lpp2` check and before constructing `RunCard { .. }`:
+  ```rust
+  let polbeam1 = f("polbeam1");
+  let polbeam2 = f("polbeam2");
+  if polbeam1 != 0.0 || polbeam2 != 0.0 {
+      return Err(RunCardError::UnsupportedPolarization { polbeam1, polbeam2 });
+  }
+  ```
+  `polbeam1`/`polbeam2` are already `Def::F(0.0)` in `PARAM_DEFAULTS`
+  (lines 395–396) — resolved fields, nothing new to parse. The check must be
+  `||`, not `&&`: MadGraph allows setting either beam's polarization
+  independently, so a card polarizing only one beam is exactly the failure
+  mode a `&&` bug would miss (this is what the two acceptance tests below are
+  built to catch).
+
+**2. Decay-chain commas — `vibegraph-lib/src/diagrams/parse.rs`**
+
+- Add a variant to `ParseError` (next to `BadParticleTok`, ~line 33):
+  ```rust
+  #[error(
+      "decay-chain process syntax is not supported: '{0}' separates a hard \
+       process from a decay chain with ','"
+  )]
+  DecayChainUnsupported(String),
+  ```
+- In `parse_process_string` (line 260), as a new **Step 0** before the
+  existing Step 1 (`strip_proc_tag`):
+  ```rust
+  let mut line = s.trim().to_owned();
+
+  // Step 0: reject decay-chain syntax outright. ',' has no other meaning
+  // anywhere in this grammar (checked against every proc-card fixture and
+  // every banked reference card — none carries one), so its presence
+  // unambiguously marks a decay chain rather than a hard process.
+  if line.contains(',') {
+      return Err(ParseError::DecayChainUnsupported(line));
+  }
+  ```
+  Placing this before any stripping means it fires regardless of where the
+  comma sits relative to `@N`/`[...]`/`$$`/`$`/`/` syntax, and it never reaches
+  `parse_process_body`'s `>`-splitting — which is what today turns the comma
+  into a bogus 3-way split (`"p p > t t~, t > w+ b"` splits on `>` into
+  `["p p ", " t t~, t ", " w+ b"]`, so `t t~, t` is misread as a
+  required-s-channel list, then fails downstream in `diagrams/mod.rs` as
+  `DiagramError::UnknownParticle` — the misleading error the brief refers to).
+  Grepped confirmation this is the actual failure path: `tokenize_names(" t
+  t~, t ")` → `["t~,",  ...]`-shaped tokens reach `expand_name_list`/feyngraph
+  with no particle of that name, is genuinely what produces today's
+  misleading message — the new Step 0 preempts it entirely.
+
+**3. `propagators.py` presence — `vibegraph-lib/src/ufo/mod.rs`**
+
+- Add a variant to `UfoError` (next to the other UFO-file variants, ~line 95):
+  ```rust
+  #[error(
+      "custom UFO propagators are not supported: '{file}' defines propagator \
+       forms this loader does not read"
+  )]
+  UnsupportedPropagators { file: String },
+  ```
+- In `ParsedModel::parse` (line 148), as the first statement in the function
+  body, before the `read` closure and the `REQUIRED_SOURCE_FILES` reads:
+  ```rust
+  pub fn parse(path: &Path) -> Result<Self, UfoError> {
+      let propagators_path = path.join("propagators.py");
+      if propagators_path.exists() {
+          return Err(UfoError::UnsupportedPropagators {
+              file: propagators_path.display().to_string(),
+          });
+      }
+      let read = |name: &str| -> Result<String, UfoError> { /* unchanged */ };
+      ...
+  ```
+  Checking presence *before* any required-file read means the refusal fires
+  unconditionally on directory contents — it does not depend on
+  particles.py/lorentz.py/etc. being well-formed, which is also what keeps
+  the hermetic test below trivial (no valid UFO fixture content needed, only
+  the file's presence).
+  This only guards the on-disk load path. `import model sm` never reaches
+  `ParsedModel::parse` at all — `GlobalConfig::load_ufo_with_identity`
+  (`vibegraph-lib/src/config.rs:59`) special-cases `import.name == "sm"` and
+  returns the interned built-in model directly, so the interned SM is
+  unaffected by this check by construction, and no gated row (all SM,
+  `import model sm` or bare) can reach it.
+
+None of the three touches `RunCard`'s/`ProcessSpec`'s/`ParsedModel`'s public
+shape beyond adding an error variant — no field renames, no new struct.
+
+### (b) Acceptance tests (named)
+
+All hermetic: no network, no fetched reference data, no `extended-validation`
+feature. Layer = plain `#[cfg(test)] mod tests` in the same file as the
+change (matching each file's existing convention), except the CLI-level pair
+which is a new `vibegraph-cli/tests/` integration test file. Run under a bare
+`cargo test --workspace` / `cargo test -p vibegraph-lib` / `cargo test -p
+vibegraph` on a clone with no `pixi run fetch-*` steps run.
+
+1. `runcard::tests::polbeam1_nonzero_is_rejected` — parse a run-card string
+   containing `1.0 = polbeam1` (polbeam2 left at default). Asserts
+   `Err(RunCardError::UnsupportedPolarization { .. })` and that
+   `err.to_string()` contains `"beam polarization is not supported"`. Fails
+   today (silently succeeds); would fail post-fix under a `&&`-instead-of-`||`
+   implementation bug (the field this test exists to catch).
+2. `runcard::tests::polbeam2_nonzero_is_rejected` — mirror of (1) with
+   `polbeam1` at default and `-1.0 = polbeam2` set. Together, (1)+(2) are the
+   pair that makes an `&&` bug observable — either alone leaves it hidden.
+3. `runcard::tests::unpolarized_default_still_parses` — parse the empty
+   card (`RunCard::parse("")`, already implicitly covered by
+   `RunCard::default()`'s use in every other runcard test, but stated
+   explicitly here as the negative control for (1)/(2): the guard must not
+   fire on the untouched default).
+4. `diagrams::parse::tests::decay_chain_comma_is_rejected` — call
+   `parse_process_string("p p > t t~, t > w+ b", &opts())` (the brief's own
+   example) and assert `Err(ParseError::DecayChainUnsupported(_))` with the
+   message containing `"decay-chain process syntax is not supported"`. Fails
+   today by returning `Ok(ProcessSpec { required_s_channels: ["t~,", ...],
+   .. })` (or a `BadParticleTok`/other error further down the stack, depending
+   on exact split — either way, not today's actual failure a caller sees,
+   which is `DiagramError::UnknownParticle` one layer up in `diagrams/mod.rs`;
+   this test pins the boundary at the parser, where the fix lives).
+5. `diagrams::parse::tests::decay_chain_comma_after_tag_is_rejected` —
+   same but with a trailing `@1` tag (`"p p > t t~, t > w+ b @1"`), proving
+   the Step-0 placement catches the comma regardless of what else is on the
+   line, not just the brief's exact string.
+6. `diagrams::parse::tests::comma_free_processes_still_parse` — negative
+   control: re-run a handful of the module's existing non-comma fixtures
+   (e.g. `"p p > e+ e- $$ Z"`, `"p p > e+ e- [QCD]"`) through
+   `parse_process_string` and assert `Ok(..)`, guarding against an
+   over-broad comma detector (e.g. one that fires on a byte inside a
+   multi-byte token by accident — not a real risk here since `contains(',')`
+   is a plain byte scan, but the existing suite already exercises these
+   strings, so this is cheap insurance, not new fixture-building).
+7. `ufo::mod::tests::propagators_py_present_is_rejected` — build a fixture
+   dir at `std::env::temp_dir().join(format!("vibegraph-ufo-propagators-test-{}",
+   std::process::id()))` (the exact idiom `artifact.rs`/`cache/*.rs` already
+   use for hermetic filesystem tests), write six **empty** files into it —
+   the five `REQUIRED_SOURCE_FILES` plus `propagators.py` — call
+   `ParsedModel::parse(&dir)`, assert `Err(UfoError::UnsupportedPropagators {
+   .. })` with the message containing `"custom UFO propagators are not
+   supported"`, then remove the fixture dir. Content-free files are
+   sufficient *because* the check runs before any required-file read (design
+   decision above) — this test would fail to compile as easy hermetic
+   coverage if the check were placed after the reads, which is itself a
+   reason to keep it first.
+8. `ufo::mod::tests::propagators_py_absent_still_parses` — negative control:
+   same fixture minus `propagators.py`, but with the five required files
+   holding minimal syntactically-valid empty-ish UFO content (or, more
+   simply, reuse whatever minimal fixture content an existing hermetic UFO
+   parse test in this module already builds, if one exists — if the module
+   has none, the smallest viable stand-in is acceptable, e.g.
+   `particles.py`/`lorentz.py`/`couplings.py`/`parameters.py` each containing
+   nothing but a trailing newline and `vertices.py` the same; `parse_particles`
+   et al. must already tolerate an empty file for this to pass as `Ok`, which
+   the implementer should confirm empirically rather than assume — if it
+   doesn't, this control test can instead just assert the error variant is
+   *not* `UnsupportedPropagators`, which is weaker but does not depend on the
+   rest of the parser accepting empty input). This is the test that would
+   catch an inverted condition (e.g. `!path.exists()`).
+9. **CLI-level pair**, new file `vibegraph-cli/tests/cli_hard_errors.rs`
+   (pattern lifted from `cli_first_run.rs`: temp `cwd`, `VIBEGRAPH_HOME` set
+   to a temp dir so `cache_root()` never touches the real `$HOME`,
+   `CARGO_BIN_EXE_vibegraph`, `--no-network` passed defensively even though
+   none of these three refusals reach network code):
+   - `cli_polarized_beam_card_is_refused` — `vibegraph integrate` with a
+     minimal fixed-energy (`lpp1 = lpp2 = 0`) run card carrying `1.0 =
+     polbeam1`, a comma-free `generate e+ e- > mu+ mu-` proc card (built-in
+     `sm` model, no `--ufo-dir` needed), asserts non-zero exit and stderr
+     containing `"beam polarization is not supported"`.
+   - `cli_decay_chain_proc_card_is_refused` — `vibegraph integrate` with the
+     brief's `generate p p > t t~, t > w+ b` proc card (built-in `sm` model)
+     and a default run card, asserts non-zero exit and stderr containing
+     `"decay-chain process syntax is not supported"`. (Fires at proc-card
+     parse, before model/run-card load, so this is reachable with nothing
+     else on disk.)
+   - `cli_propagators_py_model_is_refused` — `vibegraph integrate` with
+     `import model fixturemodel` / `generate e+ e- > mu+ mu-`, `--ufo-dir`
+     pointed at a temp dir containing `fixturemodel/` with the six
+     content-free files from test 7, and a default run card. Asserts
+     non-zero exit and stderr containing `"custom UFO propagators are not
+     supported"`. This is the one CLI case that cannot use the built-in `sm`
+     model (which never touches disk) — it is also the only one of the three
+     that exercises `--ufo-dir` resolution at all, so it is worth keeping
+     even though it duplicates test 7's assertion, per the brief's explicit
+     ask that the review check these fire from the CLI and not only from
+     unit tests.
+   All three assert on `Command::new(env!("CARGO_BIN_EXE_vibegraph"))`'s
+   captured stderr and `ExitStatus::success() == false` — `main.rs` prints
+   `"error: {err}"` via each error's `Display`, so the same message text
+   asserted in the unit tests is what a real invocation prints.
+
+### (c) Gates and expected report movement
+
+Expected: **no report cell moves.** This chain closes silent acceptances of
+card surfaces that are, by construction, outside the restricted v0.1 scope —
+every banked reference card in `validation/madgraph/output/*/Cards/` was
+checked directly:
+- Every banked `run_card.dat` sets `polbeam1 = polbeam2 = 0.0` (grepped
+  across all of them; MadGraph's own default, never overridden in this repo's
+  fixtures).
+- No banked `proc_card_mg5.dat`'s `generate`/`add process` line contains a
+  `,` (grepped across all of them).
+- No UFO directory this crate's loader ever reads (the interned SM, or
+  `research/ufo` were it used as an on-disk fallback) contains
+  `propagators.py` — confirmed absent from `research/ufo`; the
+  `propagators.py` files that do exist in the tree
+  (`research/refs/mg5amcnlo/models/*_UFO/`,
+  `validation/madgraph/output/*/bin/internal/ufomodel/`) belong to MadGraph's
+  own installation and its per-run copies, never read by
+  `vibegraph::ufo::UFOModel::load`.
+
+So every gate that reads a banked card takes the same path through
+`RunCard::from_values`/`parse_process_string`/`ParsedModel::parse` it did
+before, hits none of the three new early-return branches, and produces
+byte-identical `RunCard`/`ProcessSpec`/`ParsedModel` values. Gates to run
+(as regression checks, not as gates expected to flip anything):
+- `cargo test -p vibegraph-lib --lib` (covers the three unit-test groups
+  above plus every other hermetic lib test — this is the primary check that
+  nothing regressed).
+- `cargo test -p vibegraph` (covers the new `cli_hard_errors` integration
+  test alongside the existing CLI test binaries that don't require
+  `extended-validation`).
+- `pixi run --skip-deps validate` — the full banked gate, run once after the
+  change lands, expected to reproduce the same census (87/85/2 going into
+  this chain) with **zero** cells moving. This is the recorded measurement
+  the design asks the implementer to capture (before/after `validate`
+  summary line or report diff), not merely asserted from "tests passed."
+
+No `pixi run --skip-deps validate-diagrams`/`validate-amplitudes`/etc.
+sub-gate is expected to differ either, since none of them exercise a
+polarized, comma-bearing, or `propagators.py`-carrying card.
+
+### (d) Risks and what this provably cannot break
+
+**Risks:**
+- The `line.contains(',')` decay-chain check is a blunt instrument: if some
+  future in-scope syntax legitimately wanted a comma (none does today, and
+  MadGraph's own grammar doesn't put one anywhere but the decay-chain
+  separator), this guard would need to move past Step 0. Low probability
+  inside the v0.1 restricted scope, which explicitly excludes decay chains
+  entirely.
+- The `propagators.py` check is presence-only, at `ParsedModel::parse`'s
+  entry, ahead of the required-file reads. If a future model directory
+  legitimately ships a *stale, unused* `propagators.py` (e.g. copied from
+  another model by accident) this refusal fires even though nothing would
+  have read it — a false positive in principle, but exactly the intended
+  behavior per the brief ("presence... must be a hard error until it is
+  implemented"), and consistent with the project's hard-error-over-silent-gap
+  convention.
+- `RunCard::from_values`'s new check reads `polbeam1`/`polbeam2` via the
+  existing `f()` closure, which panics (`"no such parameter"`) if the name
+  is ever removed from `PARAM_DEFAULTS` — no new panic surface, this is the
+  same failure mode every other typed field in that function already has.
+- The CLI-level `propagators.py` test is the one place this design asks the
+  implementer to touch `--ufo-dir`/`VIBEGRAPH_HOME` resolution, which has
+  its own edge cases (`cache_root()` needing a writable/settable home). If
+  that proves fragile in the implementer's sandbox, dropping CLI test 9's
+  third case and relying on unit test 7 alone for `propagators.py` is an
+  acceptable fallback — but the design's preference is to keep it, since the
+  brief explicitly asks the review to check CLI firing, not just unit tests.
+
+**What this provably cannot break:** no code path reachable by an
+unpolarized, comma-free, `propagators.py`-free card changes at all — every
+new check is a guard clause that returns early on a condition no existing
+banked card satisfies (per the grep evidence in (c)), and every non-error
+return value downstream of each guard (`RunCard`, `ProcessSpec`,
+`ParsedModel`) is constructed identically to before once the guard is
+passed. The three changes touch three different files with no shared state
+and no call-graph overlap between them (`runcard.rs` has no dependency on
+`diagrams/parse.rs` or `ufo/mod.rs` and vice versa), so a defect in one
+guard cannot manifest as a defect in another. What this design does *not*
+provably prevent: the general run-card-ignored-field-audit problem
+(Chain C2's job — this chain closes exactly the three named surfaces, not
+every parsed-but-unread field), and it does not implement `propagators.py`
+support, decay chains, or polarization — it only converts three silent
+acceptances into three named refusals.
 
 ## Close-out
 

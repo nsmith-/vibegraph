@@ -136,6 +136,11 @@ pub enum RunCardError {
          and fixed-energy partonic beams (0,0) are supported"
     )]
     UnsupportedLpp { lpp1: i64, lpp2: i64 },
+    #[error(
+        "beam polarization is not supported: polbeam1={polbeam1}, polbeam2={polbeam2} \
+         (both must be 0)"
+    )]
+    UnsupportedPolarization { polbeam1: f64, polbeam2: f64 },
 }
 
 /// How the incoming state of a run is prepared.
@@ -273,6 +278,12 @@ impl RunCard {
         let lpp2 = i("lpp2");
         if (lpp1, lpp2) != (1, 1) && (lpp1, lpp2) != (0, 0) {
             return Err(RunCardError::UnsupportedLpp { lpp1, lpp2 });
+        }
+
+        let polbeam1 = f("polbeam1");
+        let polbeam2 = f("polbeam2");
+        if polbeam1 != 0.0 || polbeam2 != 0.0 {
+            return Err(RunCardError::UnsupportedPolarization { polbeam1, polbeam2 });
         }
 
         Ok(RunCard {
@@ -714,6 +725,25 @@ mod tests {
             err,
             RunCardError::UnsupportedLpp { lpp1: 0, lpp2: 1 }
         ));
+    }
+
+    #[test]
+    fn polbeam1_nonzero_is_rejected() {
+        let err = RunCard::parse("  1.0 = polbeam1\n").unwrap_err();
+        assert!(matches!(err, RunCardError::UnsupportedPolarization { .. }));
+        assert!(err.to_string().contains("beam polarization is not supported"));
+    }
+
+    #[test]
+    fn polbeam2_nonzero_is_rejected() {
+        let err = RunCard::parse("  -1.0 = polbeam2\n").unwrap_err();
+        assert!(matches!(err, RunCardError::UnsupportedPolarization { .. }));
+        assert!(err.to_string().contains("beam polarization is not supported"));
+    }
+
+    #[test]
+    fn unpolarized_default_still_parses() {
+        RunCard::parse("").unwrap();
     }
 
     #[test]
