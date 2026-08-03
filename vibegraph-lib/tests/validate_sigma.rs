@@ -1104,6 +1104,138 @@ fn the_sampled_channel_reaches_the_cluster_scale() {
     assert_eq!(asserted, MUST_SPREAD.len());
 }
 
+/// Every fixed-energy row whose run card leaves the scale to the kT clustering:
+/// `dynamical_scale_choice = -1` with `fixed_ren_scale` and both
+/// `fixed_fac_scale*` off.
+const CLUSTERED_FIXED_BEAM_ROWS: [&str; 16] = [
+    "ddx_to_epemg",
+    "ee_to_ee",
+    "ee_to_mumu",
+    "ee_to_mumua",
+    "ee_to_mumu_tata_qcd0",
+    "ee_to_tatah",
+    "ee_to_ttx",
+    "ee_to_wpwm",
+    "ee_to_zh",
+    "gg_to_gg",
+    "gg_to_ttx",
+    "gu_to_epemu",
+    "gux_to_epemux",
+    "uux_to_epemg",
+    "uux_to_mumu",
+    "uux_to_uux",
+];
+
+/// How far a row's scales can move if the integration configuration they are
+/// clustered in changes — the whole of what a different rule for choosing that
+/// configuration could do to its cross section.
+///
+/// `the_sampled_channel_reaches_the_cluster_scale` measures this on the four
+/// `ℓ⁺ℓ⁻ j` rows and asserts it on two. This is the same measurement over every
+/// clustered row, reported per row as the worst relative spread of `μR` and of
+/// each `μF` over *all* integration configurations at one cut-passing point,
+/// worst over a few dozen points.
+///
+/// Two distinct reasons a row reads zero, and the report separates them because
+/// they are different facts:
+///
+/// * **no prescription** — the matrix element moves with no strong coupling and
+///   the beams carry no parton density, so `use_running_coupling` compiles no
+///   per-event prescription at all (`hadronic.rs`, the `depends_on_alpha_s`
+///   branch) and neither scale has a consumer. Nothing about the configuration
+///   can reach such a row's σ, whatever the clustering would have said.
+/// * **one scale in every configuration** — the prescription runs, and the
+///   forests of every configuration return the same number on the same momenta.
+///   A `2 → 2` final state is the structural case: there is no merge to choose.
+///
+/// The configuration sweep is a sweep over *sampling channels*, and they are the
+/// same set: each surviving diagram yields exactly one configuration
+/// (`configs.rs`), so the diagram sweep covers every configuration, and the
+/// assertion below is what says the two counts still agree.
+///
+/// What this cannot see: a scale that depends on the configuration only in a
+/// region of phase space the drawn points miss. The points are cut-passing draws
+/// from channel 0's map, so a feature confined elsewhere reads zero here.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_cluster_scale_spread_over_configurations() {
+    /// Cut-passing points per row.
+    const POINTS: usize = 64;
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    for dir in CLUSTERED_FIXED_BEAM_ROWS {
+        let e = &banked[dir];
+        let report = with_integrand(
+            dir,
+            &e.process,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            0,
+            None,
+            |integ, _| {
+                let Some(sets) = integ.scale_source().and_then(|s| s.channels()) else {
+                    return None;
+                };
+                assert_eq!(sets.len(), 1, "a fixed-beam run has one channel set");
+                let set = &sets[0];
+                assert_eq!(
+                    integ.channel_count(),
+                    set.diagram_count(),
+                    "[{dir}] the sampling channels and the channel forests were built \
+                     from different diagram slices, so this sweep is not a sweep over \
+                     configurations"
+                );
+                let ndim = integ.channel_grid_ndim();
+                let mut momenta = Vec::new();
+                let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_C4);
+                let mut worst = [0.0f64; 3];
+                let mut kept = 0usize;
+                let mut tries = 0usize;
+                while kept < POINTS && tries < 200 * POINTS {
+                    tries += 1;
+                    let u: Vec<f64> = (0..ndim)
+                        .map(|_| rand::Rng::random::<f64>(&mut rng))
+                        .collect();
+                    if integ.event_in_channel(0, &u, &mut momenta) == 0.0 {
+                        continue;
+                    }
+                    kept += 1;
+                    let mut lo = [f64::INFINITY; 3];
+                    let mut hi = [0.0f64; 3];
+                    for j in 0..integ.channel_count() {
+                        let s = integ
+                            .event_scales(&momenta, j)
+                            .expect("a prescription was installed")
+                            .expect("the prescription accepts a cut-passing point");
+                        for (k, v) in [s.mu_r, s.mu_f[0], s.mu_f[1]].into_iter().enumerate() {
+                            lo[k] = lo[k].min(v);
+                            hi[k] = hi[k].max(v);
+                        }
+                    }
+                    for k in 0..3 {
+                        worst[k] = worst[k].max(hi[k] / lo[k] - 1.0);
+                    }
+                }
+                Some((set.len(), set.unmapped_channels(), kept, worst))
+            },
+        );
+        match report {
+            None => println!(
+                "{dir}: no per-event prescription — nothing in this row's cross section \
+                 reads a scale"
+            ),
+            Some((configs, unmapped, kept, worst)) => println!(
+                "{dir}: {configs} configs ({unmapped} unmapped) over {kept} points | \
+                 worst spread mu_R {:.3e} | mu_F1 {:.3e} | mu_F2 {:.3e}",
+                worst[0], worst[1], worst[2]
+            ),
+        }
+    }
+}
+
 /// What the production integrand's own choice of integration channel costs in the
 /// coupling, priced against MadGraph's per-event `AQCDUP`.
 ///

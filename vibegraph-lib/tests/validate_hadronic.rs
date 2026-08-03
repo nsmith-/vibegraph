@@ -2025,3 +2025,193 @@ fn sigma_jj_dynamical_scale_vs_mg() {
         "[jj] the seeds scatter by more than they claim: χ²/dof = {chi2:.2} over {runs:?}"
     );
 }
+
+// ─────────────────── the configuration-dependence census ─────────────────────
+
+/// How far a hadronic row's scales can move if the integration configuration
+/// they are clustered in changes — and how much of that movement is the flavour
+/// *group* rather than the configuration inside it.
+///
+/// A hadronic sampling channel is a `(group, diagram)` pair, and both halves
+/// reach the scale: the group selects which merge graph a point is clustered
+/// against, the diagram selects which configuration inside it. The two are
+/// separately measurable at one point and this reports both:
+///
+/// * **within-group** — the worst spread over the configurations of a single
+///   group, maximised over groups. This is what a rule for choosing the
+///   configuration could move.
+/// * **across-group** — the worst spread over every `(group, configuration)`
+///   pair at the same momenta. It is bounded below by the within-group number,
+///   and the gap between the two is the part no configuration rule can reach.
+///
+/// The clustering is rebuilt here from the run card and the groups' own diagrams
+/// rather than read off the integrand, which has no accessor for it. That
+/// reconstruction is not assumed: on every point the value it gives in the
+/// channel the point was drawn in is compared against the scales the integrand
+/// itself recorded on that point, and a mismatch fails the probe. Without that
+/// check the numbers below would be a measurement of a second implementation.
+///
+/// What this cannot see: configuration dependence confined to a region of phase
+/// space the drawn points miss, and any effect of the *mirror* ordering, which
+/// is evaluated at the same scale as the direct one.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_cluster_scale_spread_over_configurations() {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use vibegraph::coupling::cluster::configs::derive_channels;
+    use vibegraph::coupling::cluster::graph::ColorTable;
+    use vibegraph::coupling::scales::{ClusterInput, ScaleChoice, ScaleEvent};
+
+    /// Cut-passing points per row.
+    const POINTS: usize = 64;
+
+    for (run, process) in [(LLJ_DYN_RUN, LLJ_PROCESS), (JJ_RUN, JJ_PROCESS)] {
+        if !dyn_run_present("probe_cluster_scale_spread_over_configurations", run) {
+            continue;
+        }
+        let run_dir = validation_dir().join("output").join(run);
+        let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+        let model = common::sm_model();
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let groups = groups_for(process, &model, &evaluated, &rc);
+        let set = load_pdf_set();
+        let pdf = set.member(0).expect("PDF member 0");
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("hadronic integrand");
+        let report = integ
+            .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+            .expect("run card scale prescription compiles");
+        assert!(
+            report.constant_scales.is_none(),
+            "[{run}] this row's card does not leave the scale to the clustering"
+        );
+
+        let choice = ScaleChoice::from_run_card(&rc).expect("the card's prescription compiles");
+        let colors = ColorTable::new(
+            model
+                .particles
+                .values()
+                .map(|p| (p.pdg_code, p.color))
+                .collect::<Vec<(i64, i32)>>(),
+            rc.maxjetflavor,
+        );
+        let derived: Vec<_> = groups
+            .groups()
+            .iter()
+            .map(|g| {
+                derive_channels(
+                    g.diagrams(),
+                    g.evaluator().external_particles(),
+                    g.evaluator().n_in(),
+                    &model,
+                    &evaluated,
+                )
+                .expect("the group's channel forests derive")
+            })
+            .collect();
+
+        let ndim = integ.channel_grid_ndim();
+        let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_C4);
+        let (mut within, mut across) = ([0.0f64; 3], [0.0f64; 3]);
+        let mut per_group = vec![0.0f64; derived.len()];
+        let (mut kept, mut tries) = (0usize, 0usize);
+        let mut checked = 0usize;
+        while kept < POINTS && tries < 400 * POINTS {
+            tries += 1;
+            let u: Vec<f64> = (0..ndim)
+                .map(|_| rand::Rng::random::<f64>(&mut rng))
+                .collect();
+            let Some(ev) = integ.event_in_channel(0, &u) else {
+                continue;
+            };
+            kept += 1;
+            let incoming = [comps(&ev.lab[0]), comps(&ev.lab[1])];
+            let outgoing: Vec<[f64; 4]> = ev.lab[2..].iter().map(comps).collect();
+            let event = ScaleEvent {
+                incoming,
+                outgoing: &outgoing,
+            };
+            let (mut all_lo, mut all_hi) = ([f64::INFINITY; 3], [0.0f64; 3]);
+            for (g, d) in derived.iter().enumerate() {
+                let (mut lo, mut hi) = ([f64::INFINITY; 3], [0.0f64; 3]);
+                for config in 1..=d.set.configs.len() {
+                    let input = ClusterInput {
+                        set: &d.set,
+                        colors: &colors,
+                        this_config: config,
+                        iproc: 1,
+                    };
+                    let s = choice
+                        .cluster_scales(&event, &input)
+                        .expect("the prescription accepts a cut-passing point");
+                    // The reconstruction is only worth reading if it reproduces
+                    // what the integrand itself evaluated this point at.
+                    let drawn = integ.channel_ids()[0];
+                    if g == drawn.group
+                        && d.config_of_diagram[drawn.diagram].unwrap_or(1) == config
+                    {
+                        assert_eq!(
+                            (s.mu_r, s.mu_f),
+                            (ev.scales.mu_r, ev.scales.mu_f),
+                            "[{run}] the rebuilt clustering disagrees with the integrand's \
+                             own scales in the channel the point was drawn in"
+                        );
+                        checked += 1;
+                    }
+                    for (k, v) in [s.mu_r, s.mu_f[0], s.mu_f[1]].into_iter().enumerate() {
+                        lo[k] = lo[k].min(v);
+                        hi[k] = hi[k].max(v);
+                        all_lo[k] = all_lo[k].min(v);
+                        all_hi[k] = all_hi[k].max(v);
+                    }
+                }
+                per_group[g] = per_group[g].max(hi[0] / lo[0] - 1.0);
+                for k in 0..3 {
+                    within[k] = within[k].max(hi[k] / lo[k] - 1.0);
+                }
+            }
+            for k in 0..3 {
+                across[k] = across[k].max(all_hi[k] / all_lo[k] - 1.0);
+            }
+        }
+        assert!(
+            checked == kept,
+            "[{run}] the drawn channel's configuration was not reached on every point"
+        );
+        let configs: Vec<usize> = derived.iter().map(|d| d.set.configs.len()).collect();
+        println!(
+            "{run}: {} groups, configs {configs:?} over {kept} points | \
+             within-group worst spread mu_R {:.6e} mu_F1 {:.6e} mu_F2 {:.6e} | \
+             across-group worst spread mu_R {:.6e} mu_F1 {:.6e} mu_F2 {:.6e}",
+            derived.len(),
+            within[0],
+            within[1],
+            within[2],
+            across[0],
+            across[1],
+            across[2]
+        );
+        println!(
+            "{run}: per-group worst mu_R spread {}",
+            per_group
+                .iter()
+                .enumerate()
+                .map(|(g, s)| format!("g{g} {s:.6e}"))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+}
+
+/// Components in the `[E, px, py, pz]` layout the scale prescription reads.
+fn comps(p: &V) -> [f64; 4] {
+    [p.e(), p.px(), p.py(), p.pz()]
+}
