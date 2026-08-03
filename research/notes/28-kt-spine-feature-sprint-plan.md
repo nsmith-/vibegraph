@@ -4080,3 +4080,291 @@ code path, the counts, and a reference-free instrument that fails today.
 **For Z.** `pp_to_jj` stays `bundled = false`, so on a fetching checkout both its
 cells are ⏳ until the re-cut. Nothing about the bundle changed, and
 `pp_to_llj_qcd2_qed2` is untouched.
+
+## Z — close-out
+
+The one-shot session: `refdata-4` cut and verified, the four unbundled rows
+flipped, D4's duplicate pruned, the stale blocked-cell wording corrected, one
+formatting pass, and the sprint's record written. Nothing else rides on it.
+
+### Z.1 D4 — the duplicate, pruned
+
+The premise was re-measured before anything was deleted. Over the `<event>`
+payloads alone, stripped of banners:
+
+```text
+pp_to_llj            49544f8c58658aae64cec18952b0a9d0fba88ae4aa47b60d0c0698d15dab6193
+pp_to_llj_qcd2_qed2  49544f8c58658aae64cec18952b0a9d0fba88ae4aa47b60d0c0698d15dab6193
+```
+
+The whole files differ (`0a84d85d…` against `7049873…`) and the difference is the
+banner's process string. The clustering agrees with that reading from a second
+direction: the two runs' entries in `kt_cluster_dump_manifest.json` are equal
+field for field in every one of their 13 coverage tables — `NONE 125029`,
+`IS_DJB 17733`, `GEOM_COLLAPSED 10000`, all of it — and differ only in the dump's
+own path and sha. Two dumps of one measurement.
+
+Removed: the manifest row, `scripts/pp_to_llj_qcd2_qed2.mg5`, the `diagrams.json`
+counts, the `kt_cluster_dump_manifest.json` entry and its 8.7 MB dump,
+the run's place in `gen_kt_cluster_dumps.sh`'s default list, its name in
+`validate_alphas`'s `SCALUP_IS_THE_RENORMALISATION_SCALE`, and
+`validate_scales`'s entire `DUPLICATE_RUNS` / `Coverage::DuplicateOf` mechanism —
+a three-arm classifier with one member, now two arms with none missing.
+
+The run directory itself is retired to
+`/Users/ncsmith/src/generators/vibegraph-refdata-retired/` rather than deleted:
+the work area is what `assemble_bundle.sh` and every run-inventory assertion
+scan, so a pruned run cannot stay in it, and a banked MadGraph run is not
+something to throw away.
+
+What the pruning cost in coverage: nothing. `pp_to_llj` keeps the default-order
+half of the order-constraint pair and `pp_to_llj_fixed` / `pp_to_llj_dyn` carry
+the explicit `QCD=2 QED=2` half, so the two spellings are still required to
+select the same diagram content — and now the pair measures two different runs
+instead of one run twice.
+
+### Z.2 `refdata-4`
+
+Assembled twice from the same work area:
+
+| | |
+|---|---|
+| archive | `vibegraph-refdata-4.tar.zst` |
+| members | 2505 files, 37 process directories, 18 amplitude tables |
+| size | 118 015 652 bytes (`refdata-3`: 104 789 332) |
+| sha256 | `c8ef939ec6336fe53015115b7c3194604b1bd2f7cc6b52b5d21be69a82a325e9` |
+| two assemblies | **byte-identical** (`cmp` clean) |
+
+The growth is the four new runs less the pruned one. The event text survives the
+round trip: the sha256 of the decompressed Les Houches text of all **37** banked
+event files is identical between the work area and a fresh checkout that
+unpacked the bundle — which is the thing that has to hold, since
+`vg_ensure_refdata` re-gzips as it unpacks and a gzip encoder's bytes are not
+the ones MadGraph wrote.
+
+**`published = false`.** The pin is live and the fetch enforces it on every
+route; until the asset exists the only route is `$VIBEGRAPH_REFDATA_SOURCE`, and
+CI's `banked` job is red. The two commands are §Z.7.
+
+### Z.3 The flips, and both work-area states
+
+`bundled = false` is gone from all four rows (`ud_to_epemud_qcd0`,
+`pp_to_llj_dyn`, `pp_to_jj`, `pp_to_ll_scalefact2`), which restores the hard
+`require()` their cells were exempt from. Both states were run rather than
+reasoned about:
+
+- **with the runs present** — `bash validation/validate.sh` exits `0` at
+  `87 measured (85 ✅, 2 ⚠️, 4 ⏳, 8 ⛔, 17 — / uncovered)`;
+- **from the bundle alone** — a clean `git archive` export of the branch, given
+  the pinned submodule and the two fetched PDF sets (neither is in any bundle)
+  and nothing else, unpacks `refdata-4` and exits `0` at the same census.
+
+The two rendered reports are **byte-identical**, which is the strongest form the
+statement comes in: a fetching checkout does not merely pass, it produces the
+same table, so no cell is quietly standing on something only this machine has.
+`vg_ensure_refdata` re-gzips the event files as it unpacks and the export's own
+LHE gate still reads the same corpus the work area does — `744 759 events /
+3 869 480 particle lines across 37 banked runs`, same 16/21 dialect split.
+
+That is what the flips are for: before them a fetching checkout read those eight
+cells as ⏳ *awaiting the bundle*; after them a missing run is a failure naming
+the run, and `a_row_the_bundle_carries_may_not_be_absent` is what proves the
+failure still happens.
+
+**What the export proof also showed, and it is a gap rather than a result.**
+`validate_kt_cluster` prints
+
+```text
+no kT clustering dumps in …/output/ktdump/dumps: run `pixi run generate-kt-cluster-dumps` to build them
+test the_clustering_engine_reproduces_madgraphs_own ... ok
+```
+
+— green, having compared nothing. The dumps are 75 MB and deliberately outside
+the bundle, so that is every fetching checkout including CI's `banked` job. It is
+filed in §Z.8 and `TODO.md` rather than fixed here: bundling them roughly doubles
+`refdata-4`, and the alternative is to register the gate at the oracle layer, so
+the choice is a coverage decision and not a close-out edit.
+
+**The flip turned the banked layer red, and the reason is worth keeping.**
+`validate_sigma`'s `a_row_the_bundle_does_not_carry_may_be_absent` opened with
+
+```rust
+assert!(!unbundled.is_empty(),
+    "no manifest row is marked bundled = false, so this rule has nothing to check \
+     and the gate's tolerance is untested");
+```
+
+and with the last four rows flipped there was no such row left. The guard is
+right in principle — a rule with no instance is untested, and refusing to pass
+vacuously is the `validation-3` lesson — but it drew its instance from the wrong
+place. `bundled = false` is *transient*: it exists between a banked run and the
+next bundle and is empty the rest of the time, so the coverage it gated vanished
+precisely when the manifest was tidiest, which is also when a regression in
+`run_presence` would ship unnoticed.
+
+All three classifications are now reached from sets the test builds itself, and
+the arm that was weakest got stronger: "present beats declared-absent" used to
+run only `if` the first unbundled row's directory happened to exist, and now runs
+unconditionally against a bundled run — so it is exercised on a fetching checkout
+too, where the old form had nothing to look at. The manifest's own set stays the
+input to the `Missing` arm, where it *is* the right oracle: a row that silently
+acquired `bundled = false` fails there. No tolerance moved.
+
+The transferable shape: **a vacuity guard is only as good as where it gets its
+instance.** Keying one to a state the repository is supposed to leave behind
+turns "this rule is covered" into "this rule is covered while we are mid-sprint".
+
+### Z.4 The blocked cells, re-worded
+
+Ten cells named `kt-clustering` as their blocker. It landed in this sprint, so
+the name was false on every one of them, and two of the notes under it said the
+dynamical scale was "refused" — a claim `validate_scales` now contradicts 10 000
+events at a time.
+
+Two of the ten belonged to the pruned row. What blocks the other eight was
+measured off the cards:
+
+```text
+pp_to_bb             nn23lo1   lhaid 230000   dynamical
+pp_to_bb_qcd2        nn23lo1   lhaid 230000   dynamical
+pp_to_llj            nn23lo1   lhaid 230000   dynamical
+pp_to_ll_scalefact2  nn23lo1   lhaid 230000   dynamical, scalefact 2.0
+pp_to_bb_fixed       lhapdf    lhaid 247000   fixed        ← gates
+pp_to_llj_dyn        lhapdf    lhaid 247000   dynamical    ← gates
+pp_to_jj             lhapdf    lhaid 247000   dynamical    ← gates
+```
+
+`nn23lo1` is MadGraph's internal parton-density parameterisation, not an LHAPDF6
+grid the `pdf/` layer can load — the reading `pp_to_jj`'s own rationale already
+carried, and the reason its card departs from MadGraph's shipped defaults in
+`pdlabel` and `lhaid` alone. A cross section built here against one of those runs
+would convolve different densities and measure that difference. The blocker is
+`mg-internal-pdf` on all eight, each note says what is true now, and no tier
+moved: cells that were not measured are still not measured.
+
+The attribution is checkable rather than a story, and the bottom three rows are
+what makes it so: each of the three blocked processes has a twin carded onto
+`lhaid = 247000`, and every one of those twins gates.
+
+### Z.5 The report, diffed
+
+Against the report rendered before this session's first change, with the runs
+present:
+
+| | pre-Z | post-Z |
+|---|---|---|
+| rows × categories | 30 × 4 = 120 | 29 × 4 = 116 |
+| census | `86 ✅, 2 ⚠️, 4 ⏳, 10 ⛔, 18 — / uncovered` | `85 ✅, 2 ⚠️, 4 ⏳, 8 ⛔, 17 — / uncovered` |
+| measured | 88 | 87 |
+| unbundled rows listed | 4 | none |
+
+Compared cell by cell with the footnote indices normalised away, the two tables
+differ in exactly four places and **no measured cell is one of them**:
+
+| what moved | count |
+|---|---|
+| rows removed (the pruned duplicate) | 1 |
+| rows added | 0 |
+| ⛔ cells whose blocker string changed `kt-clustering` → `mg-internal-pdf` | 8 |
+| `covered-by` pointers dropping the pruned row (`pp_to_llj_dyn` / `diagrams`) | 1 |
+| ✅ or ⚠️ cells whose value changed | **0** |
+
+The raw `diff` moves 59 lines; everything beyond the above is the mechanical
+renumbering of the footnotes after the ones that moved, the two appendix lines
+the pruned row contributed, the coverage-bookkeeping line (four unbundled rows →
+`none`) and the census line. That is the whole blast radius, measured rather
+than asserted: nothing this session did reached a gated measurement.
+
+### Z.6 The environment
+
+Nothing changed it. `pixi.lock` is byte-identical to the sprint's base
+(`b676b6f`), and the only `pixi.toml` change in the whole sprint is K1b's added
+`generate-kt-cluster-dumps` task — a task, not a dependency. `pixi install
+--locked -e madgraph` succeeds, and the local pixi is `0.63.2`, which is what
+CI's `setup-pixi` pins. The refdata-3 close-out's CI failure has no counterpart
+here.
+
+### Z.7 For the user: publish, then flip the pin
+
+Two steps, in this order. The bundle sits in the `kt-spine/z-closeout` worktree's
+work area, which is gitignored — so the path is absolute rather than relative to
+wherever the release is cut from:
+
+```sh
+BUNDLE=/Users/ncsmith/src/generators/vibegraph-wt-k4/validation/madgraph/output/bundle/vibegraph-refdata-4.tar.zst
+
+shasum -a 256 "$BUNDLE"
+# expect c8ef939ec6336fe53015115b7c3194604b1bd2f7cc6b52b5d21be69a82a325e9
+
+gh release create refdata-4 \
+  --repo nsmith-/vibegraph \
+  --prerelease \
+  --title "Banked reference data, cut 4" \
+  --notes "Frozen MadGraph reference runs for the banked validation layer. 37 runs, events as plain .lhe under zstd. Adds the kt-spine sprint's four banked runs (ud_to_epemud_qcd0, pp_to_llj_dyn, pp_to_jj, pp_to_ll_scalefact2) and drops pp_to_llj_qcd2_qed2, whose events were byte-identical to pp_to_llj's. sha256 c8ef939ec6336fe53015115b7c3194604b1bd2f7cc6b52b5d21be69a82a325e9, pinned in validation/manifest.toml [refdata]. Partonic cross sections are comparable to refdata-3 and not to refdata-2." \
+  "$BUNDLE"
+```
+
+Then, in `validation/manifest.toml`, `[refdata].published = false → true` and
+commit. Until that flip CI's `banked` job is red: the pinned `url` resolves to a
+release asset that does not exist, and `$VIBEGRAPH_REFDATA_SOURCE` is the only
+route to the bytes. `pp_to_jj`'s banked event sample must **never** be regenerated to
+reproduce this bundle: its five subprocess groups make MadGraph's own unweighting
+draw scheduling-sensitive, so a re-run of the same card yields a different and
+equally valid sample (Sb's finding, now also in
+`validation/madgraph/README.md`). Any "regenerable from the cards" claim about
+the bundle has to exempt multi-group runs.
+
+### Z.8 The sprint, closed
+
+Eleven sessions plus banking and this one, over two tracks:
+
+| track | section | what it landed |
+|---|---|---|
+| K | §K1 | the binding spec for MadGraph's kT clustering, each claim with its falsifier |
+| K | K2 (banking) | the instrumented 3.7.1 oracle — 9 runs × 10k events of dumped intermediates |
+| K | §K3 | the clustering engine, informational: 90 000 events, 2.4M candidate pairs, zero observed deviation |
+| K | §K4 | the closed forms deleted; `-1` takes one path; every banked run replayed |
+| K | §K5a, §K5a2 | `GridAlphaS` *is* LHAPDF's `AlphaS_Ipol`; the density grid continued past its edges |
+| K | §K5b | the four llj partonic σ rows and their `samples` cells leave `blocked` |
+| K | §K6 | the scale reads the channel the point was drawn in, per flavour group |
+| S | §S1 | the identical-particle factor, one definition, derived per subprocess |
+| S | §S2, §S4 | the multi-rung spine, and the finding that the fixed-beam path was never regulated |
+| S | §S5, §S6 | the fermion-line spine sign on mixed lines — a factor 7.7 in σ, found at the per-diagram level |
+| — | Sb | the four MadGraph runs, banked once |
+| — | §C, §C2 | the capstone, and the 36% enumeration surplus it uncovered and then repaired |
+| — | §Z | this |
+
+**Census.** `75 measured / 74 ✅ / 1 ⚠️` over 26 rows at the sprint's base, to
+`87 / 85 / 2` over 29 rows at its close. The two ⚠️ are the decided `gg_to_gg`
+4/6 diagram-counting convention and `pp_to_jj`'s `samples` cell, whose single
+failing column (`ICOLUP`) is diagnosed rather than tolerated — §C2.5.
+
+**What each session could not see** is in its own subsection above; that is the
+sprint's findings register, and the entries still open are filed in `TODO.md`
+rather than left here. Three are worth naming because they are load-bearing for
+what comes next:
+
+1. **A flavour group's colour flows are the representative's**, reused for
+   members whose legs carry conjugate colour reps (§C2.5). It is the only thing
+   between `p p > j j` and a gated event sample, it reaches no gated row today,
+   and the oracle that should have caught it validates exactly the member that is
+   right.
+2. **σ at a channel-dependent scale is defined only up to the channel
+   partition** (§K6.5). Three rows carry tolerances set by that ambiguity rather
+   than by the reference's error, and the fix — drawing the scale's channel
+   `∝ AMP2_c(p)` — is a design decision with artifact consequences.
+3. **`validate_kt_cluster` is the sprint's finest oracle and the manifest does
+   not know it exists.** It has no `[[standalone]]` row, and it returns early
+   with a `println!` when `output/ktdump/dumps/` is absent — which is every
+   fetching checkout, since the 75 MB of dumps are deliberately not bundled. On
+   CI's `banked` job that gate is green without having compared anything. Found
+   at close-out, filed rather than fixed: bundling the dumps would roughly double
+   `refdata-4`, and registering the row `oracle` instead is a coverage decision,
+   not a bookkeeping edit.
+
+The third is the sprint's own lesson turned back on itself. Every σ that moved
+here moved because a per-event field was compared first — the clustering was
+pinned merge by merge against MadGraph's own intermediates long before any cross
+section flipped, which is why each flip arrived with a diagnosis attached rather
+than a tolerance. The instrument that made that possible is the one the coverage
+bookkeeping cannot see.
