@@ -90,7 +90,15 @@ const B_JOB: &str = "MadEvent job and code-generation bookkeeping: it names outp
 const B_INTEGRATOR: &str = "a directive for MadEvent's own integrator or helicity code \
                             generation. This crate integrates with its own sampler and sums \
                             helicities explicitly, so a reference cross section is invariant \
-                            under it up to Monte-Carlo error";
+                            under it up to Monte-Carlo error. SDE_strategy is the one measured \
+                            exception, and it is a defect on MadGraph's side rather than a \
+                            dependence on ours: at 2, the 3.5.7 generator's get_channel_cut in \
+                            genps.f forms a propagator's off-shellness as (t - M)(t + M) where \
+                            t is already p squared, so it never vanishes on the pole and almost \
+                            all of a narrow resonance is handed to channels whose maps have no \
+                            density there, leaving the reference integral short of it. The \
+                            var_sde1 run is the banked control that measures this, at \
+                            SDE_strategy = 1 where the expression is not used";
 const B_SYST: &str = "post-hoc systematics reweighting, which writes only the <mgrwt>/<rwgt> \
                       block of the event file and never enters a cross section";
 const B_EVA: &str = "an EVA lepton-PDF parameter, reachable only at |lpp| of 3 or 4; the \
