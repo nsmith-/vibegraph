@@ -143,16 +143,17 @@ fn validation_dir() -> PathBuf {
 }
 
 
-/// **T5** — every leg's `ICOLUP` slots are the ones its own colour rep allows.
+/// Every leg's `ICOLUP` slots are the ones its own colour rep allows.
 ///
 /// Reference-free: it reads the emitted record against the Les Houches convention
-/// itself, so it is a statement about our file with nothing on the other side of it.
-/// This is the scan that localised the original defect — antiquark legs carrying
-/// their line in `ICOLUP(1)` where the convention puts it in `ICOLUP(2)`, 4 758 of
-/// 80 000 legs — and 0 is the only reading consistent with the convention.
+/// itself — a quark's line belongs in `ICOLUP(1)`, an antiquark's in `ICOLUP(2)`, a
+/// gluon fills both and a colourless leg neither — so it is a statement about our
+/// file with nothing on the other side of it. That is what makes it able to localise
+/// a defect rather than only detect one: it once read 4 758 of 80 000 legs, every one
+/// an antiquark carrying its line in the colour slot.
 ///
-/// What it cannot detect: a legal but wrong flow, or a wrong flow *frequency*. T6
-/// and the `ICOLUP` chi-squared are what cover those.
+/// What it cannot detect: a legal but wrong flow, or a wrong flow *frequency*. The
+/// pattern-membership scan below and the `ICOLUP` chi-squared are what cover those.
 fn scan_slot_legality(_row: &Row, sample: &EventSample) -> (usize, usize) {
     let mut bad = 0;
     let mut total = 0;
@@ -163,8 +164,8 @@ fn scan_slot_legality(_row: &Row, sample: &EventSample) -> (usize, usize) {
     (bad, total)
 }
 
-/// **T6** — every emitted event's `(roles, connectivity)` is one MadGraph's own
-/// tables admit, at zero tolerance.
+/// Every emitted event's `(roles, connectivity)` is one MadGraph's own tables admit,
+/// at zero tolerance.
 ///
 /// The admissible set is built from `leshouche.inc` — every `P*` directory, every
 /// `isproc`, every flavour row, every colour flow, both beam orderings — rather than

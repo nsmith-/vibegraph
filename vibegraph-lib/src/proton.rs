@@ -672,10 +672,12 @@ pub fn derive_flavor_groups(
                     b: labels[i].clone(),
                 });
             }
-            // An event is labelled with its group representative's colour-flow
-            // basis, so members must share it. `|M|²` on its own does not imply
-            // they do: it is a sum over the basis and would not move if two
-            // members' bases differed by a relabelling.
+            // An event's flow is drawn in the representative's indexing, and each
+            // member's own table is reindexed into it below. That reindexing needs a
+            // bijection between the two bases, which needs them to have the same
+            // number of flows and the same colour-factor matrix. `|M|²` on its own
+            // does not imply either: it is a sum over the basis and would not move
+            // if two members' bases differed by a relabelling.
             if member_eval.n_flows() != head_eval.n_flows()
                 || member_eval.cf_matrix() != head_eval.cf_matrix()
             {
@@ -868,9 +870,16 @@ pub struct ProtonSelection {
     /// order [`FlavorGroup::event_legs`] returns codes in, so an exchanged
     /// ordering's beam helicities are already swapped.
     pub helicity: Vec<i32>,
-    /// Index into the group representative's colour-flow basis. The bases of a
-    /// group's members are equal by construction, and a beam exchange permutes the
-    /// legs of a flow rather than the flows.
+    /// Index into the group **representative's** colour-flow basis — the indexing
+    /// the draw is made in, off the representative's `JAMP2`.
+    ///
+    /// The members' bases are *not* equal: two subprocesses can share a matrix
+    /// element and a colour-factor matrix while routing their colour lines between
+    /// different pairs of legs. Each member's own table is reindexed into this
+    /// indexing once at group construction, by the permutation stored on
+    /// [`Subprocess::flow_permutation`], so the index is meaningful for every member
+    /// without their bases agreeing. A beam exchange permutes the legs of a flow
+    /// rather than the flows, and so does not touch it either.
     pub flow: usize,
 }
 
@@ -3657,12 +3666,13 @@ mod tests {
     /// matched on the colour algebra rather than on numbers. This asserts the whole
     /// of that against the member compiled from its own enumerated diagrams.
     ///
-    /// Then, per class, the statement that class alone makes — including the one
-    /// that killed the transformation the first design was built on: a crossing
-    /// member's tags are **neither** the representative's nor the representative's
-    /// conjugate, at any index. `conjugated` survives as the independent oracle for
-    /// the global-conjugate class, so that class is checked twice by two derivations
-    /// with different failure modes.
+    /// Then, per class, the statement that class alone makes. The sharpest is the
+    /// crossing class's: its members' tags are **neither** the representative's nor
+    /// the representative's conjugate, at any index — so no slot operation, global or
+    /// per-leg, could have produced them, and a table transformed from the
+    /// representative's cannot serve them. `conjugated` survives as the independent
+    /// oracle for the global-conjugate class, so that class is checked twice by two
+    /// derivations with different failure modes.
     ///
     /// What it cannot see: an error shared by the member's compilation and the
     /// representative's — the 73 `leshouche.inc` trials of `color_flow_tags_oracle`
