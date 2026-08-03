@@ -1276,3 +1276,143 @@ fn the_general_path_keeps_the_beam_crossing_population() {
          the core's {CORE}"
     );
 }
+
+/// Every run card a banked reference was produced with still parses.
+///
+/// The parser refuses a card that moves a recognized-but-unread parameter off
+/// MadGraph's default where doing so would change what this generator produces.
+/// That refusal is only sound if it rejects nothing MadGraph actually ran, and
+/// this is where that is measured: the `run_card.dat` of every banked run, the
+/// `run_card_default.dat` beside it — which carries the full template rather
+/// than the handful of lines a run overrode, so it exercises far more names —
+/// and the two cards the hadronic cross-section reference used.
+///
+/// What this cannot see is an enforcement that is too *weak*. It proves only
+/// that nothing legitimate is rejected; the committed-card half runs on a bare
+/// clone in `scales_run_cards.rs`.
+#[test]
+fn banked_run_cards_are_accepted() {
+    let mut cards: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(output_dir()).expect("MadGraph output directory") {
+        let dir = entry.expect("directory entry").path();
+        for name in ["run_card.dat", "run_card_default.dat"] {
+            let path = dir.join("Cards").join(name);
+            if path.is_file() {
+                cards.push(path);
+            }
+        }
+    }
+    for name in ["dy13_default_run_card.dat", "dy13_mmll_run_card.dat"] {
+        cards.push(output_dir().join("..").join(name));
+    }
+    cards.sort();
+    assert!(
+        cards.len() >= 70,
+        "only {} run cards found; the reference tree looks incomplete",
+        cards.len()
+    );
+
+    for path in &cards {
+        RunCard::parse_file(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    }
+    println!(
+        "run cards: {} banked and committed cards accepted by the field enforcement",
+        cards.len()
+    );
+}
+
+/// The banked runs whose factorisation scale can reach MadGraph's 2 GeV floor:
+/// both beams carry a parton density and at least one of them takes a dynamical
+/// factorisation scale. Derived from the cards in
+/// [`banked_hadronic_runs_clear_the_factorisation_floor`] and asserted there, so
+/// a re-bank that adds one cannot slip past.
+const FLOOR_REACHABLE_RUNS: &[&str] = &[
+    "pp_to_bb",
+    "pp_to_bb_qcd2",
+    "pp_to_jj",
+    "pp_to_ll",
+    "pp_to_ll_qcd0",
+    "pp_to_ll_scalefact2",
+    "pp_to_llj",
+    "pp_to_llj_dyn",
+];
+
+/// `reweight.f` drops an event whose factorisation scale fell below 2 GeV on a
+/// beam that both carries a parton density and takes a dynamical scale. No
+/// banked run comes near it, and this is the measurement of how near.
+///
+/// The headroom is structural rather than lucky — a run's floor sits on its
+/// card's `ptj` or on the mass of the heaviest leg its clustered core contains —
+/// which is why it is asserted rather than merely printed. A banked sample also
+/// cannot contain a counter-example by construction: MadGraph vetoed such points
+/// before writing them, so this is the complementary statement to a constructed
+/// card, not a substitute for one.
+///
+/// What it cannot see: anything about runs that are not banked, and — since it
+/// reads this crate's replay rather than MadGraph's own `q2fact` — a common-mode
+/// scale error moving both sides together.
+#[test]
+fn banked_hadronic_runs_clear_the_factorisation_floor() {
+    // `reweight.f` compares the square against 4, so exactly 2 GeV survives.
+    const FLOOR: f64 = 4.0;
+
+    let mut reachable: Vec<String> = Vec::new();
+    let mut global = (f64::INFINITY, String::new());
+    for (name, run) in banked_runs() {
+        let card = run_card(&run);
+        let dynamic_pdf_beam = |beam: usize| {
+            let lpp = if beam == 0 { card.lpp1 } else { card.lpp2 };
+            let fixed = card.fixed_fac_scale
+                || card
+                    .get(if beam == 0 {
+                        "fixed_fac_scale1"
+                    } else {
+                        "fixed_fac_scale2"
+                    })
+                    .expect("known")
+                    .as_bool();
+            lpp != 0 && !fixed
+        };
+        let beams: Vec<usize> = (0..2).filter(|b| dynamic_pdf_beam(*b)).collect();
+        if beams.is_empty() {
+            continue;
+        }
+        reachable.push(name.clone());
+
+        let choice = ScaleChoice::from_run_card(&card).expect("compiled");
+        let channels = channels_for(&run);
+        let mut run_min = f64::INFINITY;
+        for event in parse_events(&run).iter() {
+            let mu = replay(&choice, Some(&channels), event).mu;
+            for beam in &beams {
+                run_min = run_min.min(mu.0[1 + beam]);
+            }
+        }
+        assert!(
+            run_min * run_min > FLOOR,
+            "{name}: replayed mu_F falls to {run_min:.4} GeV, at or below MadGraph's floor — \
+             the banked events prove MadGraph did not veto them, so this is a scale bug"
+        );
+        println!(
+            "{name}: minimum replayed mu_F {run_min:.4} GeV over beams {beams:?}, \
+             {:.2}x the 2 GeV floor",
+            run_min / FLOOR.sqrt()
+        );
+        if run_min < global.0 {
+            global = (run_min, name.clone());
+        }
+    }
+
+    assert_eq!(
+        reachable,
+        present(FLOOR_REACHABLE_RUNS, &banked_runs()),
+        "the set of banked runs that can reach the factorisation floor changed"
+    );
+    println!(
+        "factorisation floor: minimum replayed mu_F over every banked hadronic event is \
+         {:.4} GeV ({}), {:.2}x the 2 GeV floor",
+        global.0,
+        global.1,
+        global.0 / FLOOR.sqrt()
+    );
+}

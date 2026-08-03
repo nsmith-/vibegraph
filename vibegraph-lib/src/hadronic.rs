@@ -30,6 +30,7 @@ use crate::artifact::ChannelSampler;
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
 use crate::coupling::cluster::graph::ColorTable;
+use crate::coupling::cluster::setclscales::ScaleRefusal;
 use crate::coupling::scales::{ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
@@ -114,6 +115,11 @@ pub enum HadronicError {
     MissingAlphaS,
     #[error("channel forests for the clustering scale: {0}")]
     Channels(#[from] crate::coupling::cluster::configs::ConfigError),
+    #[error(
+        "every sampled point's factorisation scale fell below the 2 GeV floor a parton density \
+         is fitted down to, so the cross section this card asks for is zero by construction"
+    )]
+    FactorisationScaleBelowFloor,
 }
 
 /// The run card's per-event scale prescription, bound to one process.
@@ -343,6 +349,38 @@ impl EventScaleSource {
             }
         }
     }
+
+    /// [`scales`](Self::scales), with the factorisation-floor refusal separated
+    /// from the errors that mean the prescription itself does not apply.
+    ///
+    /// This is the only place the two are told apart. `reweight.f` answers a
+    /// point below the floor by zeroing its weight and carrying on, so a caller
+    /// that evaluates points has to be able to say "no weight" without saying
+    /// "this run cannot proceed" — and every other error means exactly the
+    /// latter, so it stays an `Err` and stays fatal at the call site.
+    pub fn point_scales(
+        &self,
+        incoming: [[f64; 4]; 2],
+        outgoing: &[[f64; 4]],
+        channel: SampledChannel,
+    ) -> Result<PointScales, ScaleError> {
+        match self.scales(incoming, outgoing, channel) {
+            Ok(scales) => Ok(PointScales::Scales(scales)),
+            Err(ScaleError::Clustering(ScaleRefusal::FactorisationFloor)) => Ok(PointScales::Vetoed),
+            Err(other) => Err(other),
+        }
+    }
+}
+
+/// What resolving one point's scales produced.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PointScales {
+    /// The scales to evaluate this point at.
+    Scales(EventScales),
+    /// The point carries no weight: a beam carrying a parton density ended below
+    /// the factorisation floor, where MadGraph zero-weights the point and moves
+    /// on rather than stopping.
+    Vetoed,
 }
 
 /// What installing a run card's per-event scale did to one integrand.
@@ -973,17 +1011,24 @@ impl<'a> FixedBeamIntegrand<'a> {
         Ok(report)
     }
 
-    /// Resolve the scale on the first cut-passing point of a fixed pseudo-random
-    /// draw, so a refusal that would otherwise surface mid-integration surfaces at
-    /// setup.
+    /// Resolve the scale on the cut-passing points of a fixed pseudo-random draw,
+    /// so a refusal that would otherwise surface mid-integration surfaces at setup.
     ///
     /// The draw goes through the cut filter because the scale is only ever asked for
     /// on points that pass it: an unphysical configuration — a leg carrying no
     /// energy, say — has no beam measure to compare, and refusing on one would say
     /// nothing about the process.
+    ///
+    /// A point below the factorisation floor is not a refusal — it is one ordinary
+    /// zero-weight point — so the probe steps over it and keeps drawing. Only the
+    /// degenerate case is reported: cut-passing points exist and *every* one of them
+    /// was vetoed, which makes the cross section zero by construction and is worth
+    /// saying before the integration spends anything on it. A run whose support is
+    /// partly below the floor integrates normally, as it does in MadGraph.
     fn probe_scale(&self, source: &EventScaleSource) -> Result<(), HadronicError> {
         use rand::Rng;
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(SCALE_PROBE_SEED);
+        let mut any_passed_cuts = false;
         for _ in 0..SCALE_PROBE_DRAWS {
             let u: Vec<f64> = (0..self.sampler.ndim())
                 .map(|_| rng.random::<f64>())
@@ -994,10 +1039,18 @@ impl<'a> FixedBeamIntegrand<'a> {
             ext.push(V::new(self.beam_e, 0.0, 0.0, -self.beam_e));
             ext.extend_from_slice(&point.momenta);
             if self.cuts.pass(&ext) {
-                self.event_scales_of(source, &point.momenta, channel)?;
-                return Ok(());
+                any_passed_cuts = true;
+                if let PointScales::Scales(_) = self.point_scales_of(source, &point.momenta, channel)?
+                {
+                    return Ok(());
+                }
             }
         }
+        if any_passed_cuts {
+            return Err(HadronicError::FactorisationScaleBelowFloor);
+        }
+        // No draw passed the cuts, which says something about the cuts and
+        // nothing about the scale.
         Ok(())
     }
 
@@ -1009,6 +1062,26 @@ impl<'a> FixedBeamIntegrand<'a> {
         momenta: &[V],
         channel: usize,
     ) -> Result<EventScales, ScaleError> {
+        Ok(match self.point_scales_of(source, momenta, channel)? {
+            PointScales::Scales(scales) => scales,
+            // The floor applies only to a beam carrying a parton density, and
+            // `ScaleChoice::from_run_card` reads that off the card as
+            // `lpp != 0`. A fixed-energy card gives `false` on both beams, so
+            // the comparison is short-circuited and the refusal is never built.
+            PointScales::Vetoed => unreachable!(
+                "the factorisation floor was applied on beams carrying no parton density"
+            ),
+        })
+    }
+
+    /// [`event_scales_of`](Self::event_scales_of) keeping the floor refusal,
+    /// which only the setup probe has a use for.
+    fn point_scales_of(
+        &self,
+        source: &EventScaleSource,
+        momenta: &[V],
+        channel: usize,
+    ) -> Result<PointScales, ScaleError> {
         let mut buf = self.scale_buf.borrow_mut();
         buf.clear();
         buf.extend(momenta.iter().map(components));
@@ -1016,7 +1089,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             [self.beam_e, 0.0, 0.0, self.beam_e],
             [self.beam_e, 0.0, 0.0, -self.beam_e],
         ];
-        source.scales(beams, &buf, SampledChannel::sole(channel))
+        source.point_scales(beams, &buf, SampledChannel::sole(channel))
     }
 
     /// The scales this integrand evaluates a point at, when a prescription was
@@ -2141,6 +2214,83 @@ mod tests {
         // thing on both sides.
         integ.use_multichannel(&diagrams, &evaluated, 512, 1, 0x5EED_C6);
         assert_eq!(integ.channel_count(), diagram_count);
+    }
+
+    /// The factorisation floor is unreachable on fixed-energy beams, and a
+    /// `scalefact` that would put a proton run entirely below it changes nothing
+    /// here.
+    ///
+    /// `ScaleChoice::from_run_card` reads the floor's applicability off the card
+    /// as `lpp != 0`, so a fixed-energy card gives `false` on both beams and
+    /// `setclscales` short-circuits before the comparison — the refusal is never
+    /// constructed. That argument is upstream of how a refusal is routed, which is
+    /// why the routing carries an `unreachable!` rather than a branch; this is
+    /// what would fail if the `beam_has_pdf` guard were dropped or inverted.
+    ///
+    /// It says nothing about proton runs.
+    #[test]
+    fn the_factorisation_floor_is_unreachable_on_fixed_beams() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let sqrt_s = 500.0;
+        let opts = ParsingOptions::default();
+        let proc = parse_proc_card("generate g g > g g", &opts).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+
+        // The same scalefact that leaves a proton run with no support above the
+        // floor at all, with `μR` pinned to the card so the comparison is about
+        // the factorisation scale alone: `scalefact` scales both, and a `μR` of
+        // order 0.01 GeV would leave the strong coupling below its own table
+        // long before any factorisation floor came into it.
+        let card = RunCard::parse(
+            "  0 = lpp1\n  0 = lpp2\n  250.0 = ebeam1\n  250.0 = ebeam2\n\
+             \x20 True = fixed_ren_scale\n  91.188 = scale\n\
+             \x20 False = fixed_fac_scale1\n  False = fixed_fac_scale2\n\
+             \x20 -1 = dynamical_scale_choice\n  1e-4 = scalefact\n  4 = maxjetflavor\n",
+        )
+        .expect("run card");
+
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&card, &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let mut integ =
+            FixedBeamIntegrand::new(bounds.iter().collect(), &cuts, sqrt_s, masses, avg);
+        integ
+            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .expect("a fixed-beam card is never refused for the factorisation floor");
+        integ.use_multichannel(&diagrams, &evaluated, 512, 1, 0x5EED_C7);
+
+        let mut stream = crate::phasespace::rng::SubStream::from_stream(0x00C2_C333, 3);
+        let mut carried = 0usize;
+        let draws = 200usize;
+        for i in 0..draws {
+            let u = stream.uniforms::<f64>(integ.channel_grid_ndim());
+            if FixedBeamIntegrand::value_in_channel(&integ, i % integ.channel_count(), &u) > 0.0 {
+                carried += 1;
+            }
+        }
+        assert!(
+            carried > 0,
+            "no fixed-beam point carried weight, so the floor's absence was never exercised"
+        );
+        eprintln!(
+            "factorisation floor: {carried} of {draws} fixed-beam points carry weight at \
+             scalefact = 1e-4, where a proton run has no support above the floor"
+        );
     }
 
     /// The per-event helicity and colour-flow draws must reproduce the diagonals
