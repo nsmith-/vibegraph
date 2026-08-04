@@ -90,21 +90,29 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 4
-archive = "vibegraph-refdata-4.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-4/vibegraph-refdata-4.tar.zst"
-sha256 = "c8ef939ec6336fe53015115b7c3194604b1bd2f7cc6b52b5d21be69a82a325e9"
-size_bytes = 118015652
+version = 5
+archive = "vibegraph-refdata-5.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-5/vibegraph-refdata-5.tar.zst"
+sha256 = "9f639d4ed651e66a7d7f7c9b863bed9e66059c43cefb213e803d8c8c072d356e"
+size_bytes = 117974066
 unpacks_to = "validation/madgraph/output"
 # Every run in this bundle is MadGraph 3.7.1's except the six that measure a
 # 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
 # `var_sde1`), which are the evidence and stay at the version they measure.
 #
+# Cut 5 is cut 4 with `pp_to_bb`, `pp_to_bb_qcd2`, `pp_to_llj` and
+# `pp_to_ll_scalefact2` replaced rather than added to: the same member list name
+# for name, with those four re-carded from MadGraph's internal `nn23lo1` onto
+# `pdlabel = lhapdf` at `lhaid = 247000` (NNPDF23_lo_as_0130_qed). Their beams
+# are therefore different parton densities from cut 4's, and their cross
+# sections are not comparable across the boundary — the `b b~` pair moves 9.8%.
+# The superseded runs are recoverable from the local retired area, not from here.
+#
 # While the repository is private, the plain `url` serves 404 to unauthenticated
 # clients and the fetch falls back to an authenticated `gh release download` of
 # the same asset; $VIBEGRAPH_REFDATA_SOURCE still overrides both for a local
 # bundle.
-published = true
+published = false
 
 # ─────────────────────────── single-channel rows ────────────────────────────
 #
