@@ -8,12 +8,15 @@
 #     produce the same diagram content, and a constraint that quietly dropped or
 #     admitted a topology shows up as one count moving.
 #
-# Not used for amplitudes, cross sections or event samples, for the same reasons
-# as pp_to_bb: no banked b b~ parton row, and a dynamical-scale run card the
-# scale layer refuses.
+# Not used for amplitudes: no banked b b~ parton row exists (see pp_to_bb).
+# The beams read pdlabel = lhapdf with lhaid 247000, for the reason pp_to_bb
+# states: MadGraph's internal nn23lo1 default is not an LHAPDF6 grid this
+# crate's PDF layer can load.
 generate p p > b b~ QCD=2
 output pp_to_bb_qcd2 -nojpeg
 launch
   set ebeam1 6500
   set ebeam2 6500
+  set pdlabel lhapdf
+  set lhaid 247000
   done
