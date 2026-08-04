@@ -34,10 +34,11 @@ opt-level = 2
 lto = true
 
 # Release codegen with debug info kept: the compilation profile of every heavy
-# validation gate, and what `scripts/profile.sh` records under samply. `debug`
-# is the only override, so `lto` arrives through the inherit and tracks whatever
-# `release` is set to — which is the point, since a profile used for timing must
-# not diverge in codegen from the one that ships.
+# validation gate, and what `scripts/profile.sh` records under samply. Thin LTO
+# keeps most cross-crate inlining in the hot amplitude path at a fraction of fat
+# LTO's link time, which is what makes this profile affordable to rebuild on
+# every push in CI's banked layer. `release` stays fat because its binaries ship.
 [profile.release-debug]
 inherits = "release"
 debug = 1
+lto = "thin"
