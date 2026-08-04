@@ -39,6 +39,7 @@
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
+use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::select::select_index;
 use crate::vegas::VegasGrid;
 
@@ -60,7 +61,20 @@ pub trait ChannelIntegrand {
     /// excludes any channel-selection coordinate.
     fn channel_grid_ndim(&self) -> usize;
 
-    /// The `channel`-th term's integrand at `u ∈ [0,1]^ndim`, weighted by that
+    /// Uniforms the integrand consumes *after* its channel's grid coordinates,
+    /// which the grid therefore does not adapt over. Zero for an integrand whose
+    /// value is a function of the map's coordinates alone.
+    ///
+    /// The pass fills them from a stream of its own and carries them in the
+    /// accepted point, so a reconstruction at the same coordinates reproduces the
+    /// value the trial was accepted on — including whatever the integrand did
+    /// with them.
+    fn scale_draw_ndim(&self) -> usize {
+        0
+    }
+
+    /// The `channel`-th term's integrand at
+    /// `u ∈ [0,1]^(channel_grid_ndim + scale_draw_ndim)`, weighted by that
     /// channel's `αⱼ`, so the terms sum to the full integral. Points the cuts
     /// reject return exactly `0.0`.
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64;
@@ -186,8 +200,15 @@ pub struct Unweighter {
     select_weights: Vec<f64>,
     total_w_max: f64,
     stats: UnweightStats,
-    /// Reused coordinate buffer for a trial draw.
+    /// Reused coordinate buffer for a trial draw: the drawn channel's grid
+    /// coordinates followed by the integrand's trailing uniforms.
     u: Vec<f64>,
+    /// How many of `u`'s trailing coordinates the grid does not supply.
+    scale_ndim: usize,
+    /// One stream per channel for those trailing uniforms, opened at the scan and
+    /// carried on into the trials, so no trailing draw is ever replayed and the
+    /// caller's own generator supplies none of them.
+    scale_draw: Vec<SubStream>,
 }
 
 impl Unweighter {
@@ -209,8 +230,10 @@ impl Unweighter {
         seed: u64,
     ) -> Self {
         let ndim = integrand.channel_grid_ndim();
+        let scale_ndim = integrand.scale_draw_ndim();
         let mut built = Vec::with_capacity(integrand.channel_count());
-        let mut u = vec![0.0; ndim];
+        let mut u = vec![0.0; ndim + scale_ndim];
+        let mut scale_draw: Vec<SubStream> = Vec::with_capacity(integrand.channel_count());
         for (j, (grid, draws)) in channels.into_iter().enumerate() {
             assert_eq!(
                 grid.ndim(),
@@ -220,11 +243,13 @@ impl Unweighter {
             );
             let mut rng = ChaCha8Rng::seed_from_u64(seed);
             rng.set_stream(SCAN_STREAM_BASE + j as u64);
+            let mut trailing = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
             let mut w_max = 0.0f64;
             let mut sum = 0.0f64;
             let mut nonzero = 0usize;
             for _ in 0..draws {
-                let jac = grid.draw(&mut rng, &mut u);
+                let jac = grid.draw(&mut rng, &mut u[..ndim]);
+                trailing.fill_uniforms(&mut u[ndim..]);
                 let w = jac * integrand.value_in_channel(j, &u);
                 if w > 0.0 {
                     nonzero += 1;
@@ -242,6 +267,7 @@ impl Unweighter {
                     mean: ratio(sum, draws as f64),
                 },
             });
+            scale_draw.push(trailing);
         }
         assert_eq!(
             built.len(),
@@ -260,6 +286,8 @@ impl Unweighter {
             total_w_max,
             stats: UnweightStats::default(),
             u,
+            scale_ndim,
+            scale_draw,
         }
     }
 
@@ -325,8 +353,11 @@ impl Unweighter {
     /// accept it with probability `w/w_maxⱼ`. Returns the accepted point, or
     /// `None` when the trial was rejected.
     ///
-    /// Three uniforms' worth of the stream are consumed per trial in a fixed order
-    /// — channel, point, acceptance — so a run is reproducible from the RNG alone.
+    /// Three uniforms' worth of the caller's stream are consumed per trial in a
+    /// fixed order — channel, point, acceptance — so a run is reproducible from
+    /// the RNG alone. The integrand's trailing uniforms are *not* among them: they
+    /// come off this pass's own per-channel streams, which is what leaves the
+    /// caller's sequence identical to a run with no such coordinate.
     pub fn trial<I: ChannelIntegrand>(
         &mut self,
         integrand: &I,
@@ -335,7 +366,9 @@ impl Unweighter {
         let j = select_index(&self.select_weights, rng.random::<f64>())
             .expect("the summed maximum is positive, so some channel carries weight");
         let channel = &self.channels[j];
-        let jac = channel.grid.draw(rng, &mut self.u);
+        let grid_ndim = self.u.len() - self.scale_ndim;
+        let jac = channel.grid.draw(rng, &mut self.u[..grid_ndim]);
+        self.scale_draw[j].fill_uniforms(&mut self.u[grid_ndim..]);
         let w = jac * integrand.value_in_channel(j, &self.u);
         let r = w / channel.w_max;
         let accept: f64 = rng.random();

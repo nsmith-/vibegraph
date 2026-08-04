@@ -107,6 +107,7 @@ use vibegraph::hadronic::{
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
+use vibegraph::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
@@ -134,15 +135,20 @@ const PULL_LIMIT: f64 = 3.5;
 /// comparison does not have, and tightening the budget would eventually fail a
 /// row that had not moved.
 ///
-/// These two are that case, and nothing else here is. Their cluster scale depends
-/// on which integration channel is named — `μR` spreads by a factor of two over
-/// their sampling channels, where every other row's spread is exactly zero
-/// (`the_sampled_channel_reaches_the_cluster_scale`) — so their σ depends on the
-/// channel partition it was integrated with, at a size
-/// `probe_channel_partition_moves_sigma` measures directly. `rel_tol` is set at
-/// that ambiguity, and the seed sweep and `χ²/dof` are what say the number is
-/// stable; those three are the criteria, and the pull is printed beside them.
-const PULL_REPORTED_NOT_ASSERTED: [&str; 2] = ["gu_to_epemu", "gux_to_epemux"];
+/// No row is that case now. The two that were — `gu_to_epemu` and
+/// `gux_to_epemux`, the only fixed-energy rows whose cluster scale moves with
+/// the integration configuration at all (`9.96e-1` on `μR` and both `μF`, where
+/// every other clustered row measures exactly zero:
+/// `probe_cluster_scale_spread_over_configurations`) — carried a systematic
+/// while their scale was read in the channel the *sampler* drew the point in. Each point's configuration is
+/// now drawn from its own squared amplitudes, and what is left on both rows is
+/// Monte Carlo: five seeds at the gate budget and at four times it scatter about
+/// zero at `|pull| ≤ 0.67` with `χ²/dof` in `0.58`–`1.74`, worst `|rel|` `1.5e-3`
+/// against a reference whose own error is `1.8e-3` and `2.0e-3`.
+///
+/// The list is kept because the distinction it draws is the one to make when a
+/// row's residual stops shrinking, not because it is expected to stay empty.
+const PULL_REPORTED_NOT_ASSERTED: [&str; 0] = [];
 
 /// Fixed RNG seed — makes the integral (and hence the pull) reproducible.
 const SEED: u64 = 20_260_719;
@@ -341,32 +347,31 @@ fn plan_for(dir: &str) -> Plan {
             rel_tol: 0.01,
         },
         // A gluon beam, where 7204 and 7231 of 10 000 banked events land on a
-        // channel other than the first. These two carried a −5.5% deficit while
-        // the scale was read in channel 1 on every point; reading it in the
-        // sampled one leaves +1.07e-2 and +9.74e-3 (five seeds each, worst
-        // 1.16e-2 / 1.02e-2, and +1.13e-2 / +1.03e-2 at four times the budget —
-        // a bias, not sampling).
+        // channel other than the first, and the only two fixed-energy rows whose
+        // cluster scale depends on which integration configuration is named —
+        // `μR` and both `μF` spread by 9.96e-1 over their four configurations at
+        // one point, where every other clustered row's spread is exactly zero.
         //
-        // What is left is the *channel partition*, and it is measured rather
-        // than assumed. Once the scale reads the integration channel, σ stops
-        // being independent of the selection weights: αⱼ decides which scale a
-        // region is evaluated at, not only how often it is visited. Moving from
-        // the converged α to a uniform one (`probe_channel_partition_moves_sigma`)
-        // moves these two by −1.48e-2 and −1.53e-2 against a Monte-Carlo error
-        // of 1.6e-3, while it moves the two rows above by +1.0e-3 and +1.9e-3 —
-        // their own noise, since no channel moves their scale. MadGraph's σ lies
-        // *inside* the interval our two partitions span (+1.08e-2 at the
-        // converged α, −4.2e-3 at uniform on `gu_to_epemu`), and MadEvent's own
-        // partition is a third one: single-diagram enhancement weights channel c
-        // by `AMP2_c/Σ AMP2`, which is not reachable from either of ours.
+        // That made them the two rows a *partition* choice could move, and while
+        // the scale was read in the channel the sampler drew the point in they
+        // carried +1.07e-2 and +9.74e-3 with the converged α against −4.2e-3 and
+        // −5.7e-3 at a uniform one: a 1.5% ambiguity, measured directly by
+        // `probe_channel_partition_moves_sigma` against a 1.6e-3 Monte-Carlo
+        // error. Drawing each point's configuration from its own `AMP2` instead
+        // — MadEvent's own rule — collapses that gap to +1.87e-3 and +1.49e-3,
+        // its own noise, and brings the rows to +3.98e-5 and −1.10e-3 of the
+        // reference.
         //
-        // So `rel_tol` 0.02 is the scale of that ambiguity with headroom over the
-        // worst measured 1.20e-2 — the algorithm's own error, not the
-        // reference's 0.18% and not a bound fitted to one number.
+        // `rel_tol` 0.005 is set from the larger of the reference's own
+        // Monte-Carlo error (0.18% and 0.20%) and the measured five-seed spread
+        // (worst |rel| 1.35e-3 and 1.51e-3 at this budget, 1.53e-3 and 1.20e-3 at
+        // four times it — `probe_llj_parton_seed_stability`), with headroom over
+        // both. It is not fitted to the achieved central value, which is smaller
+        // than either.
         "gu_to_epemu" | "gux_to_epemux" => Plan::Gate {
             neval: 60_000,
             niter: 8,
-            rel_tol: 0.02,
+            rel_tol: 0.005,
         },
         // ── 2->6, not integrated ────────────────────────────────────────────
         "uux_to_ccx_emmm_qcd0" | "bbx_to_ccx_emmm_qcd0" => {
@@ -847,10 +852,14 @@ fn probe_unweighting_weight_max() {
                     let draws = (WMAX_DRAWS * ch.neval / total_neval).max(MIN_CHANNEL_DRAWS);
                     let mut rng = ChaCha8Rng::seed_from_u64(WMAX_SEED);
                     rng.set_stream(1 + j as u64);
-                    let mut x = vec![0.0; ch.grid.ndim()];
+                    let grid_ndim = ch.grid.ndim();
+                    let mut x = vec![0.0; integ.point_ndim()];
+                    let mut scale_draw =
+                        SubStream::from_stream(WMAX_SEED, SCALE_DRAW_STREAM_BASE + j as u64);
                     let mut w_max = 0.0f64;
                     for _ in 0..draws {
-                        let jac = ch.grid.draw(&mut rng, &mut x);
+                        let jac = ch.grid.draw(&mut rng, &mut x[..grid_ndim]);
+                        scale_draw.fill_uniforms(&mut x[grid_ndim..]);
                         w_max = w_max.max(jac * integ.value_in_channel(j, &x) * GEV2_TO_PB);
                     }
                     w_max_each.push(w_max);
@@ -1035,14 +1044,19 @@ const LLJ_PARTON_ROWS: [&str; 4] = [
 /// numbers would move, but nothing would *say* that the channel was what moved
 /// them. This is the assertion that would fail.
 ///
-/// On the two gluon-beam rows the merge graph's coupling-order filter admits
-/// different channel sets for different `nqcd`, so `μR` genuinely depends on
-/// which channel is named, and 7204 / 7231 of their 10 000 banked events land
-/// somewhere other than the first. Those two must show a spread over channels at
-/// a sampled point. The two annihilation rows are the control and are only
-/// reported: no banked event of theirs needs another channel, and their cross
-/// sections are numerically identical to what they were before the channel was
-/// threaded at all.
+/// On the two gluon-beam rows `μR` genuinely depends on which channel is named,
+/// and 7204 / 7231 of their 10 000 banked events land somewhere other than the
+/// first. Those two must show a spread over channels at a sampled point. What
+/// produces the spread is the *forests*: the four configurations of
+/// `g u → ℓ⁺ℓ⁻ u` cluster the same momenta differently. It is not the merge
+/// graph's coupling-order filter, which is inert here — that run's
+/// `config_nqcd.inc` reads `NQCD = 1` on all four configurations, so the filter
+/// admits the same channel set for every one of them.
+///
+/// The two annihilation rows are the control and are only reported: no banked
+/// event of theirs needs another channel, and their cross sections are
+/// numerically identical to what they were before the channel was threaded at
+/// all.
 #[test]
 fn the_sampled_channel_reaches_the_cluster_scale() {
     let ref_path = reference_path();
@@ -1062,7 +1076,7 @@ fn the_sampled_channel_reaches_the_cluster_scale() {
             MULTICHANNEL_ITERS,
             None,
             |integ, _| {
-                let ndim = integ.channel_grid_ndim();
+                let ndim = integ.point_ndim();
                 let mut momenta = Vec::new();
                 let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_C4);
                 let mut worst = 0.0f64;
@@ -1102,6 +1116,270 @@ fn the_sampled_channel_reaches_the_cluster_scale() {
         }
     }
     assert_eq!(asserted, MUST_SPREAD.len());
+}
+
+/// The scale's integration configuration is a function of the point and of the
+/// trailing uniform, and of nothing else — not of the sampling channel the point
+/// was drawn in, and not of the evaluation that happened before it.
+///
+/// Three properties, on the row that can show them. `gu_to_epemu`'s four
+/// configurations give `μR` a spread of `9.96e-1`, so a configuration change is
+/// visible in the scale; on a row whose configurations agree, every assertion
+/// below would hold vacuously.
+///
+/// 1. **The sampler does not reach the scale.** At fixed momenta and a fixed
+///    trailing uniform, the scales are the same whichever sampling channel is
+///    named. This is the one that fails if the drawn configuration is ever
+///    conditioned back on the channel — the defect the draw exists to remove,
+///    and the one no cross section would announce.
+/// 2. **The sweep is not vacuous.** Sweeping the uniform reaches more than one
+///    distinct scale, so property 1 is a statement about a draw that moves.
+/// 3. **Evaluation history does not reach it either.** Re-asking after
+///    intervening evaluations — which move the bound `αs`, since every point
+///    sets the coupling its own scale implies — returns the same scales.
+///    `AMP2` is formed at the coupling the amplitudes were bound at, so the
+///    drawn configuration is a function of the momenta; this is that pinning in
+///    its observable form, and it is also what makes an accepted point replay
+///    identically after other trials have run between the two evaluations.
+///
+/// What it does not check: that the drawn configuration's *frequencies* follow
+/// `AMP2_c / Σ AMP2`. No public API reports which configuration was drawn — only
+/// the scale it implies — and two configurations may share a scale, so the
+/// frequency law is not observable from here.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_the_scale_draw_reads_the_point_and_not_the_sampler() {
+    const DIR: &str = "gu_to_epemu";
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let e = &banked[DIR];
+    with_integrand(
+        DIR,
+        &e.process,
+        SEED,
+        MULTICHANNEL_SURVEY,
+        0,
+        None,
+        |integ, _| {
+            let ndim = integ.channel_grid_ndim();
+            assert_eq!(
+                integ.point_ndim(),
+                ndim + 1,
+                "this row's card must put the configuration draw live, or the \
+                 assertions below hold for the wrong reason"
+            );
+            let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_D2);
+            let mut momenta = Vec::new();
+            let mut u: Vec<f64> = (0..integ.point_ndim())
+                .map(|_| rand::Rng::random::<f64>(&mut rng))
+                .collect();
+            while integ.event_in_channel(0, &u, &mut momenta) == 0.0 {
+                u = (0..integ.point_ndim())
+                    .map(|_| rand::Rng::random::<f64>(&mut rng))
+                    .collect();
+            }
+
+            let mut distinct: Vec<f64> = Vec::new();
+            let mut checked = 0usize;
+            for step in 0..64 {
+                u[ndim] = (step as f64 + 0.5) / 64.0;
+                let want = integ
+                    .event_scales_at(&momenta, 0, &u)
+                    .expect("a clustered row carries a prescription")
+                    .expect("the prescription accepts a cut-passing point");
+                for j in 1..integ.channel_count() {
+                    let got = integ
+                        .event_scales_at(&momenta, j, &u)
+                        .expect("a clustered row carries a prescription")
+                        .expect("the prescription accepts a cut-passing point");
+                    assert_eq!(
+                        (got.mu_r, got.mu_f),
+                        (want.mu_r, want.mu_f),
+                        "[{DIR}] the scale at one point and one draw depends on the \
+                         sampling channel it is asked about, so the sampler is still \
+                         reaching the configuration"
+                    );
+                    checked += 1;
+                }
+                if !distinct.iter().any(|m| *m == want.mu_r) {
+                    distinct.push(want.mu_r);
+                }
+            }
+            assert!(
+                distinct.len() > 1,
+                "[{DIR}] the whole uniform sweep gave one scale, so the \
+                 channel-independence above says nothing"
+            );
+
+            // Move the bound coupling with unrelated evaluations, then ask again.
+            let before = integ
+                .event_scales_at(&momenta, 0, &u)
+                .unwrap()
+                .expect("scales");
+            let mut scratch = Vec::new();
+            for _ in 0..256 {
+                let v: Vec<f64> = (0..integ.point_ndim())
+                    .map(|_| rand::Rng::random::<f64>(&mut rng))
+                    .collect();
+                integ.event_in_channel(rng_channel(&mut rng, integ.channel_count()), &v, &mut scratch);
+            }
+            let after = integ
+                .event_scales_at(&momenta, 0, &u)
+                .unwrap()
+                .expect("scales");
+            assert_eq!(
+                (before.mu_r, before.mu_f),
+                (after.mu_r, after.mu_f),
+                "[{DIR}] the scale moved because other points were evaluated in \
+                 between, so the configuration draw is reading evaluation history"
+            );
+            println!(
+                "{DIR}: {checked} channel comparisons over 64 draws, {} distinct mu_R \
+                 reached, and the scale survives 256 intervening evaluations",
+                distinct.len()
+            );
+        },
+    );
+}
+
+/// A channel index drawn uniformly, for filling the integrand with unrelated work.
+fn rng_channel(rng: &mut ChaCha8Rng, n: usize) -> usize {
+    (rand::Rng::random::<f64>(rng) * n as f64) as usize % n
+}
+
+/// Every fixed-energy row whose run card leaves the scale to the kT clustering:
+/// `dynamical_scale_choice = -1` with `fixed_ren_scale` and both
+/// `fixed_fac_scale*` off.
+const CLUSTERED_FIXED_BEAM_ROWS: [&str; 16] = [
+    "ddx_to_epemg",
+    "ee_to_ee",
+    "ee_to_mumu",
+    "ee_to_mumua",
+    "ee_to_mumu_tata_qcd0",
+    "ee_to_tatah",
+    "ee_to_ttx",
+    "ee_to_wpwm",
+    "ee_to_zh",
+    "gg_to_gg",
+    "gg_to_ttx",
+    "gu_to_epemu",
+    "gux_to_epemux",
+    "uux_to_epemg",
+    "uux_to_mumu",
+    "uux_to_uux",
+];
+
+/// How far a row's scales can move if the integration configuration they are
+/// clustered in changes — the whole of what a different rule for choosing that
+/// configuration could do to its cross section.
+///
+/// `the_sampled_channel_reaches_the_cluster_scale` measures this on the four
+/// `ℓ⁺ℓ⁻ j` rows and asserts it on two. This is the same measurement over every
+/// clustered row, reported per row as the worst relative spread of `μR` and of
+/// each `μF` over *all* integration configurations at one cut-passing point,
+/// worst over a few dozen points.
+///
+/// Two distinct reasons a row reads zero, and the report separates them because
+/// they are different facts:
+///
+/// * **no prescription** — the matrix element moves with no strong coupling and
+///   the beams carry no parton density, so `use_running_coupling` compiles no
+///   per-event prescription at all (`hadronic.rs`, the `depends_on_alpha_s`
+///   branch) and neither scale has a consumer. Nothing about the configuration
+///   can reach such a row's σ, whatever the clustering would have said.
+/// * **one scale in every configuration** — the prescription runs, and the
+///   forests of every configuration return the same number on the same momenta.
+///   A `2 → 2` final state is the structural case: there is no merge to choose.
+///
+/// The configuration sweep is a sweep over *sampling channels*, and they are the
+/// same set: each surviving diagram yields exactly one configuration
+/// (`configs.rs`), so the diagram sweep covers every configuration, and the
+/// assertion below is what says the two counts still agree.
+///
+/// What this cannot see: a scale that depends on the configuration only in a
+/// region of phase space the drawn points miss. The points are cut-passing draws
+/// from channel 0's map, so a feature confined elsewhere reads zero here.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_cluster_scale_spread_over_configurations() {
+    /// Cut-passing points per row.
+    const POINTS: usize = 64;
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    for dir in CLUSTERED_FIXED_BEAM_ROWS {
+        let e = &banked[dir];
+        let report = with_integrand(
+            dir,
+            &e.process,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            0,
+            None,
+            |integ, _| {
+                let Some(sets) = integ.scale_source().and_then(|s| s.channels()) else {
+                    return None;
+                };
+                assert_eq!(sets.len(), 1, "a fixed-beam run has one channel set");
+                let set = &sets[0];
+                assert_eq!(
+                    integ.channel_count(),
+                    set.diagram_count(),
+                    "[{dir}] the sampling channels and the channel forests were built \
+                     from different diagram slices, so this sweep is not a sweep over \
+                     configurations"
+                );
+                let ndim = integ.point_ndim();
+                let mut momenta = Vec::new();
+                let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_C4);
+                let mut worst = [0.0f64; 3];
+                let mut kept = 0usize;
+                let mut tries = 0usize;
+                while kept < POINTS && tries < 200 * POINTS {
+                    tries += 1;
+                    let u: Vec<f64> = (0..ndim)
+                        .map(|_| rand::Rng::random::<f64>(&mut rng))
+                        .collect();
+                    if integ.event_in_channel(0, &u, &mut momenta) == 0.0 {
+                        continue;
+                    }
+                    kept += 1;
+                    let mut lo = [f64::INFINITY; 3];
+                    let mut hi = [0.0f64; 3];
+                    for j in 0..integ.channel_count() {
+                        let s = integ
+                            .event_scales(&momenta, j)
+                            .expect("a prescription was installed")
+                            .expect("the prescription accepts a cut-passing point");
+                        for (k, v) in [s.mu_r, s.mu_f[0], s.mu_f[1]].into_iter().enumerate() {
+                            lo[k] = lo[k].min(v);
+                            hi[k] = hi[k].max(v);
+                        }
+                    }
+                    for k in 0..3 {
+                        worst[k] = worst[k].max(hi[k] / lo[k] - 1.0);
+                    }
+                }
+                Some((set.len(), set.unmapped_channels(), kept, worst))
+            },
+        );
+        match report {
+            None => println!(
+                "{dir}: no per-event prescription — nothing in this row's cross section \
+                 reads a scale"
+            ),
+            Some((configs, unmapped, kept, worst)) => println!(
+                "{dir}: {configs} configs ({unmapped} unmapped) over {kept} points | \
+                 worst spread mu_R {:.3e} | mu_F1 {:.3e} | mu_F2 {:.3e}",
+                worst[0], worst[1], worst[2]
+            ),
+        }
+    }
 }
 
 /// What the production integrand's own choice of integration channel costs in the
@@ -1176,7 +1454,7 @@ fn probe_sampled_channel_cost_in_alpha_s() {
                 let running = integ
                     .alpha_s_source()
                     .expect("a clustered row runs its own coupling");
-                let ndim = integ.channel_grid_ndim();
+                let ndim = integ.point_ndim();
                 let mut momenta = Vec::new();
                 let (mut sum_w, mut sum_wa, mut sum_a) = (0.0f64, 0.0f64, 0.0f64);
                 let mut kept = 0usize;

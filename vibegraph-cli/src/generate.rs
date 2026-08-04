@@ -17,8 +17,9 @@
 use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
-use vibegraph::artifact::{ChannelKey, IntegrateArtifact};
+use vibegraph::artifact::{ChannelKey, IntegrateArtifact, FORMAT_VERSION};
 use vibegraph::config::GlobalConfig;
+use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card_file, ParsingOptions};
 use vibegraph::hadronic::{
@@ -261,6 +262,39 @@ fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), IntegrateError>
     Err(err(msg))
 }
 
+/// The one thing a schema-identical format bump can still break: format version 7
+/// changes no field, but it changes what a clustering-scale artifact's `sigma_pb`
+/// means (see [`vibegraph::artifact::FORMAT_VERSION`]'s doc). An artifact written
+/// before it was integrated with the per-event scale read from the sampler's own
+/// channel; from version 7 the clustering scale draws its configuration per point
+/// from the per-diagram `AMP2` instead, so a stale artifact's `sigma_pb` is a
+/// different run's cross section, not this run's. A card whose every scale is
+/// fixed never reaches the clustering branch at all, so it is unaffected and
+/// still loads.
+fn refuse_stale_artifact_on_clustering_scale(
+    artifact: &IntegrateArtifact,
+    run_card: &RunCard,
+) -> Result<(), IntegrateError> {
+    if artifact.format_version >= FORMAT_VERSION {
+        return Ok(());
+    }
+    let needs_channels = ScaleChoice::from_run_card(run_card)
+        .map(|choice| choice.needs_channels())
+        .unwrap_or(false);
+    if !needs_channels {
+        return Ok(());
+    }
+    Err(err(format!(
+        "this artifact was written at format version {} (this build is {FORMAT_VERSION}); its \
+         sigma_pb was computed with the per-event scale read from the sampler's own channel, \
+         and this run card selects the clustering scale, which now draws its configuration \
+         per point from the per-diagram AMP2 instead. That is a different rule, so the \
+         artifact's sigma_pb no longer means this run's cross section; re-integrate with the \
+         current build",
+        artifact.format_version,
+    )))
+}
+
 /// The accept/reject pass as a replayable source of events.
 ///
 /// Each accepted point is turned straight into a record: the momenta come back
@@ -335,7 +369,10 @@ impl EventSource for SampleSource<'_> {
             .collect();
         // The scales the matrix element itself ran at, so the record reports the
         // run rather than a second prescription compiled off the same card.
-        let (scale, alpha_qcd) = match self.integrand.event_scales(&self.momenta, point.channel) {
+        let (scale, alpha_qcd) = match self
+            .integrand
+            .event_scales_at(&self.momenta, point.channel, &point.u)
+        {
             Some(Ok(scales)) => {
                 let alpha_s = self
                     .integrand
@@ -417,6 +454,7 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
     let pdf_set = if hadronic { &args.pdf_set } else { NO_PDF };
     mismatches.extend(pdf_mismatches(&artifact, pdf_set, PDF_MEMBER));
     refuse_on_mismatch(&mismatches)?;
+    refuse_stale_artifact_on_clustering_scale(&artifact, &rc)?;
 
     let evaluated = EvaluatedModel::from_model(model.clone());
     let nevents = args

@@ -27,6 +27,16 @@ use crate::helas::repr::Real;
 /// underlying word position as `2 * position`.
 const WORDS_PER_DRAW: u128 = 2;
 
+/// The stream family the per-point scale-configuration draw consumes, offset by
+/// channel index.
+///
+/// It is disjoint from every other stream a run opens, and that is the whole
+/// point: the coordinate this draw needs is appended to a point *after* the
+/// phase-space map has taken its own, so no existing sequence — the channel
+/// grids, the channel selection, the acceptance test — shifts by a single bit
+/// when the draw is present.
+pub const SCALE_DRAW_STREAM_BASE: u64 = 0x5CA1_0000;
+
 /// Map a 64-bit draw to a uniform in `[0, 1)`.
 ///
 /// Rule: take the top 53 bits of the draw as the mantissa of an `f64`, i.e.
