@@ -5744,6 +5744,269 @@ by this probe, and nothing downstream reads its value.
   when the draw is formed from the luminosity-weighted combination — and it is
   not measured here.
 
+## §G re-bank — phase 1: extraction and the candidate bundle (2026-08-03)
+
+Phase 1 turns the four completed re-bank runs into banked references and a
+**candidate** `refdata-5`. Nothing here flips the pin, retires a run, or
+publishes: `[refdata]` still names `refdata-4` at
+`c8ef939ec6336fe53015115b7c3194604b1bd2f7cc6b52b5d21be69a82a325e9`, and that
+archive is still on disk at that digest.
+
+### G.1 What the four runs are
+
+Read from each run's own banner, which is the seed record — the run card's
+`iseed` line is not, MadGraph resets it.
+
+| run | `pdlabel` | `lhaid` | `iseed` | `nevents` |
+|---|---|---|---|---|
+| `pp_to_bb` | `lhapdf` | 247000 | 21 | 10000 |
+| `pp_to_bb_qcd2` | `lhapdf` | 247000 | 21 | 10000 |
+| `pp_to_llj` | `lhapdf` | 247000 | 21 | 10000 |
+| `pp_to_ll_scalefact2` | `lhapdf` | 247000 | 21 | 10000 |
+
+Each event file's `<init>` carries `PDFSUP1 = PDFSUP2 = 247000`, so the number
+is what the run convolved and not only what the card asked for. **`lhaid =
+247000` is `NNPDF23_lo_as_0130_qed`** (`SetIndex: 247000` in the fetched set's
+`.info`), the set the Drell-Yan references already use — not NNPDF3.1, whose
+index is 315200.
+
+### G.2 The cross sections move, and by how much
+
+`refdata-4`'s banners against the re-banks', both as MadGraph's own
+`Integrated weight (pb)`:
+
+| run | `nn23lo1` | `lhaid 247000` | shift |
+|---|---|---|---|
+| `pp_to_bb` | 417 202 400.0 | 376 243 100.0 | −9.8% |
+| `pp_to_bb_qcd2` | 417 208 048.74 | 376 246 848.68 | −9.8% |
+| `pp_to_llj` | 503.5553 | 504.6288 | +0.21% |
+| `pp_to_ll_scalefact2` | 1958.82 | 1958.95 | +0.0066% |
+
+MadGraph's internal `nn23lo1` and LHAPDF's `NNPDF23_lo_as_0130_qed` are not the
+same parton densities, and the two `b b~` rows say so at 10%. Any comparison
+that quotes a σ across the re-bank boundary is comparing two different beams,
+which is the same rule `refdata-2` → `refdata-3` earned for α_s.
+
+### G.3 The extraction, and what it did not touch
+
+The only reference generators that read these four runs are
+`extract_diagrams.py` and `gen_kt_cluster_dumps.sh`; `gen_amplitude*.py` never
+listed them, and `extract_sigma.py` skips `lpp = 1` runs by construction.
+Re-running the extraction over the new runs leaves both committed references
+**bit-identical** — `diagrams.json` at
+`af8829cc2ee0f5e8a2637e48cc6fa2cbef2fe9778b4cf46c4df298db93eaac30` and
+`sigma_reference.json` at
+`fe56b3979d2b98d3f50fc621c10530412e5edcb4ec00630cf9b4f8b70f83664b` before and
+after. Diagram content and fixed-energy partonic cross sections do not depend
+on the proton's parton densities, so this is the expected reading rather than a
+null result: it is what says the re-bank changed the beams and nothing else.
+
+### G.4 The kT dumps
+
+`pp_to_llj` and `pp_to_bb_qcd2` are the two re-banked runs with clustering
+dumps; `pp_to_bb` has never had one. Both were replayed against the new runs
+through the instrumented MadGraph at the banked seed, and both cleared the
+replay's hard precondition — **event text byte-identical over 10000 events** —
+and its scale gate: every event's dumped μ_R / μ_F reproduce that event's own
+`SCALUP`, `<rscale>` and `<pdfrwt>`. The controls the two runs exist for
+survive the re-bank: `pp_to_bb_qcd2` still drives `mt2last_override` and both
+`jcentral` overrides on 141 of its 10000 events, and `pp_to_llj` still drives
+`RESTRICTED_RECLUSTER` on 1857.
+
+The re-cut dumps sit at `output/ktdump/dumps-rebank/` and their entries in
+`validation/madgraph/kt_cluster_dump_manifest.rebank-candidate.json`, beside
+rather than over the live ones, so the committed manifest keeps pinning the
+dumps that belong to the pinned bundle. The other six runs' entries carry over
+with identical digests.
+
+### G.5 The candidate bundle
+
+Assembled twice from this work area through `assemble_bundle.sh` itself. The
+archive's bytes do not encode its own file name, so an archive assembled under
+the pinned name and renamed is exactly what a manifest flipped to `refdata-5`
+would produce.
+
+| | |
+|---|---|
+| path | `validation/madgraph/output/bundle-candidate/vibegraph-refdata-5-candidate.tar.zst` |
+| members | 2505 files — **the same member list as `refdata-4`, name for name** |
+| size | 117 974 066 bytes (`refdata-4`: 118 015 652) |
+| sha256 | `9f639d4ed651e66a7d7f7c9b863bed9e66059c43cefb213e803d8c8c072d356e` |
+| two assemblies | **byte-identical** (`cmp` clean) |
+
+An identical member list is the check that §4's "replacement, not addition" was
+carried out at the file level: the four runs' contents changed and nothing
+entered or left the bundle. `refdata-4` re-hashes to its pinned digest after
+the assembly, so the pin is untouched.
+
+### G.6 The gate does not pass, and that is the guard working
+
+`pixi run --skip-deps -e madgraph validate` exits 101 in this worktree.
+`--no-fail-fast` over the whole workspace narrows the blast radius to **one
+target and two tests**: `validate_alphas`'s
+
+    pp_to_bb: alpha_s source arm disagrees with GRID_ALPHA_S_RUNS
+      left: true   right: false
+
+`resolve()` asserts *both ways* that a run's α_s source arm matches
+`GRID_ALPHA_S_RUNS`, precisely so a run that changed source shows up as a
+failure rather than as a quiet reclassification. `pdlabel = lhapdf` makes
+MadGraph link the grid's α_s, so all four re-banked runs move into that class
+and the list — four fixed-scale names, unchanged since `main`'s 4deb883 — no
+longer describes them.
+
+The classification list is the same at `2322357`, so **the re-bank commit
+itself left the gate red**; the failure is not the merge's and not phase 1's
+(removing phase 1's only artifact reproduces it verbatim). Updating
+`GRID_ALPHA_S_RUNS` in `validate_alphas.rs` and `validate_scales.rs` is coverage
+bookkeeping that belongs with the pin flip.
+
+`validate_scales` meanwhile **passes** on all four, which is the substantive
+result underneath the red cell: it resolves the α_s arm from the card at
+runtime rather than from the list, and the four re-banks replay field for field
+with zero declared misses —
+
+- `pp_to_bb`: 10000 events, 50000 scale comparisons, worst 0.999 of budget
+- `pp_to_bb_qcd2`: 10000 events, 50000 comparisons, worst 0.999, 141 events
+  needing a channel other than the first
+- `pp_to_ll_scalefact2`: 10000 events, 50000 comparisons, worst 1.000
+- `pp_to_llj`: 10000 events, 50000 comparisons, worst 1.000, 5540 events
+  needing a channel other than the first
+
+— and the factorisation floor is unmoved: the minimum replayed μ_F over every
+banked hadronic event is 4.7002 GeV in `pp_to_bb_qcd2`, 2.35× the 2 GeV floor,
+the same margin the C2 amendment records.
+
+### G.7 What phase 2 still owes
+
+The pin flip and publication, the four rows' manifest edits, retiring the
+`nn23lo1` runs to the local retired area, `GRID_ALPHA_S_RUNS` in both test
+files, moving `dumps-rebank/` over `dumps/` with its manifest, and the E6
+measurements that turn the 8 ⛔ cells into recorded ones.
+
+## §G re-bank — phase 2: the pin flip and E6 (2026-08-03)
+
+Phase 2 lands what phase 1 staged. `[refdata]` is `refdata-5`, the kT dumps and
+the α_s classification move with it, and the eight `nn23lo1`-blocked cells are
+measured and **enforced** rather than merely unblocked.
+
+### G.8 The α_s classification, and what the flip is checked against
+
+`pdlabel = lhapdf` links `alfas_functions_lhapdf.f`, so all four re-carded runs
+take `AlphaSSource`'s grid arm. `GRID_ALPHA_S_RUNS` grows from four names to
+eight in both `validate_alphas.rs` and `validate_scales.rs`.
+
+The flip is not a declaration: `banked_run_logs_pin_the_alpha_s_source_rule`
+collects the runs whose **own MadGraph run log** reports a PDF-grid α_s and
+asserts set equality against the constant. It agrees over **29 logs**. The four
+additions then reproduce `AQCDUP` through the grid's own running with no event
+outside its printing budget — `pp_to_bb` 9665 of 10000 events digit-exact
+(worst 0.989 of budget), `pp_to_bb_qcd2` 9657 (0.996), `pp_to_ll_scalefact2`
+9803 (0.995), `pp_to_llj` 9816 (0.996).
+
+Phase 1 warned that the negative control could be weakened by this. It is not,
+and the reason is structural rather than lucky:
+`the_grid_runs_need_the_grids_alpha_s_and_not_the_parameter_cards` intersects
+the grid runs with `FIXED_SCALE_RUNS`, and all four additions are
+dynamical-scale, so the pinning set is the same two runs it was —
+`pp_to_bb_fixed` and `pp_to_llj_fixed`, each still missing `AQCDUP` from the
+parameter card's α_s by 2.0× its printing budget with no event digit-exact. The
+test also asserts that set is non-empty on its own account. What widened is the
+positive statement, not the control.
+
+### G.9 The pin, and the refusal that makes it one
+
+`vibegraph-refdata-5.tar.zst`, sha256
+`9f639d4ed651e66a7d7f7c9b863bed9e66059c43cefb213e803d8c8c072d356e`, 117 974 066
+bytes, `published = false` until the asset exists.
+
+Both directions were run rather than reasoned about. `assemble_bundle.sh
+--check` accepts the archive at the new pin — which also confirms phase 1's
+claim that the archive's bytes do not encode its own name, since these are the
+bytes assembled under the old one. Handed `refdata-4` instead, the fetch path
+refuses by name and by digest and exits 1:
+
+    !!! checksum mismatch for .../vibegraph-refdata-4.tar.zst
+        expected 9f639d4ed651e66a7d7f7c9b863bed9e66059c43cefb213e803d8c8c072d356e
+        got      c8ef939ec6336fe53015115b7c3194604b1bd2f7cc6b52b5d21be69a82a325e9
+
+and handed `refdata-5` it unpacks 55 entries whose four re-carded runs carry
+`lhaid = 247000` in their banners. A checker that refuses everything is not a
+checker, which is why both halves are here.
+
+### G.10 E6 — the eight cells, measured and enforced
+
+| row | σ (pb) | MadGraph (pb) | pull | rel | χ²/dof |
+|---|---|---|---|---|---|
+| `pp_to_bb` | 3.763032e8 ± 7.513e4 | 3.762400e8 ± 2.679e5 | +0.23 | +0.02% | 0.27 |
+| `pp_to_bb_qcd2` | 3.762584e8 ± 8.138e4 | 3.762500e8 ± 2.686e5 | +0.03 | +0.00% | 1.67 |
+| `pp_to_llj` | 5.048244e2 ± 2.426e-1 | 5.046300e2 ± 1.674e0 | +0.11 | +0.04% | 0.61 |
+| `pp_to_ll_scalefact2` | 1.958788e3 ± 7.511e-1 | 1.958900e3 ± 3.883e0 | −0.03 | −0.01% | 0.16 |
+
+Three seeds each; `rel_tol` 0.005 on all four, set from the references' own
+Monte-Carlo errors (0.071%, 0.071%, 0.33%, 0.198%) rather than from the numbers
+it admits. The sample halves clear the `1e-4` p-value floor on every column and
+every seed: min KS `9.257e-2` / `2.515e-2` / `9.946e-3` / `1.530e-1`, min χ²
+`1.586e-1` / `2.349e-1` / `1.660e-1` / `7.930e-1`.
+
+**The second axis is where the content is.** A seed sweep cannot tell agreement
+from convergence — VEGAS's inverse-variance combination turns an under-sampled
+region into a confidently wrong σ with a small error bar — so
+`probe_recarded_budget_ladder` runs five seeds a rung over an eightfold range:
+
+| row | 75k | 150k | 300k | 600k |
+|---|---|---|---|---|
+| `pp_to_bb` | +0.04% | −0.02% | +0.01% | −0.02% |
+| `pp_to_bb_qcd2` | +0.00% | +0.01% | −0.01% | −0.00% |
+| `pp_to_llj` | **−2.07%** | **−0.80%** | **−0.30%** | **+0.02%** |
+| `pp_to_ll_scalefact2` | −0.08% | +0.02% | −0.03% | −0.05% |
+
+Three rows are flat and gate at 300k. `pp_to_llj` is not. With `mmll` back at 0
+its card opens the low lepton-pair-mass region — the only banked cross section
+drawn from the photon-pole side of `m_ll`, regulated by `ptl = 10` alone — and
+there this estimator approaches its limit from below, increments shrinking and
+crossing the reference at the last rung, with χ²/dof 1.23 / 0.60 / 0.98 / 0.42
+throughout. **The residual shrinks with the budget instead of migrating between
+seeds**, which is the discriminator `AGENTS.md` names, so it is convergence and
+not a defect. That row therefore gates at 600 000 points an iteration rather
+than at a tolerance wide enough to admit a number still moving: its 300k reading
+is −0.38% and its 600k reading is +0.04%, and enforcing the first would have
+been enforcing the climb.
+
+This is the same shape `pp_to_llj_dyn` shows over the same range in the opposite
+carding, which is what makes it a property of the region rather than of the row.
+
+### G.11 What the cells cannot see
+
+A cross section integrates over everything. The per-event scale enters σ through
+an average, so a clustering wrong on individual events but right in the mean
+would pass all four. That is what `validate_scales` replays all four runs'
+10 000 events for, field by field — 50 000 comparisons apiece, zero declared
+misses — and what `validate_kt_cluster` reproduces the merge sequences behind for
+two of them. The σ rows are the end-to-end statement, not the fine one.
+
+### G.12 Retirement, and a correction to the phase-2 brief
+
+The brief asked for the four superseded run directories to be retired *from this
+worktree's* `output/`. They were not there: the re-bank commit `2322357`
+regenerated in place, having already moved the `nn23lo1` originals to
+`~/src/generators/vibegraph-refdata-retired/`. Their event text is byte-identical
+to what `refdata-4` carries, checked by extracting the archive's own copies and
+comparing — so the retirement was already correct and complete, and a second copy
+would have been 241 MB of duplicate. What phase 2 adds there is the two
+superseded kT dumps, laid out flat beside `pp_to_llj_qcd2_qed2.jsonl.gz` as that
+precedent does.
+
+### G.13 The census
+
+`pixi run --skip-deps -e madgraph validate` exits 0 at
+
+    29 rows × 4 categories = 116 cells: 98 measured in this layer
+    (96 ✅, 2 ⚠️, 4 ⏳, 14 — / uncovered)
+
+**No ⛔ remains anywhere in the manifest**, and `blocked` is now a tier the
+schema documents and nothing uses.
+
 ## Close-out
 
 (To be written at sprint close: per-chain outcomes, census before/after,

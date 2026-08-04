@@ -165,8 +165,12 @@ const UNREPLAYABLE_RUNS: &[&str] = &["bbx_to_ccx_emmm_qcd0", "uux_to_ccx_emmm_qc
 /// is what keeps the classification from being a convenience: the parameter
 /// card's own `αs(M_Z)` is not an interchangeable substitute for the grid's.
 const GRID_ALPHA_S_RUNS: &[&str] = &[
+    "pp_to_bb",
     "pp_to_bb_fixed",
+    "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_ll_scalefact2",
+    "pp_to_llj",
     "pp_to_llj_dyn",
     "pp_to_llj_fixed",
 ];

@@ -100,8 +100,12 @@ fn banked_runs() -> Vec<(String, PathBuf)> {
 /// validates. [`resolve`] asserts the classification both ways, so a run that
 /// changed source shows up as a failure rather than as a quiet reclassification.
 const GRID_ALPHA_S_RUNS: &[&str] = &[
+    "pp_to_bb",
     "pp_to_bb_fixed",
+    "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_ll_scalefact2",
+    "pp_to_llj",
     "pp_to_llj_dyn",
     "pp_to_llj_fixed",
 ];

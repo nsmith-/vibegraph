@@ -810,3 +810,111 @@ fn generated_dijet_events_agree_with_madgraphs_banked_ones() {
         scans: DIJET_SCANS,
     });
 }
+
+// ───────────── the rows re-carded off MadGraph's internal parton densities ──────
+//
+// The sample halves of the four runs re-carded from `pdlabel = nn23lo1` onto
+// `lhaid = 247000`. Each is the uncut member of a pair whose cut member gates
+// above: `pp_to_bb` / `pp_to_bb_qcd2` against `pp_to_bb_fixed` at `ptb = 0`
+// rather than 20, `pp_to_llj` against `pp_to_llj_dyn` at `mmll = 0` rather than
+// 50, and `pp_to_ll_scalefact2` at `mmll = 0` with the per-event scales doubled.
+//
+// Every column of all four clears the `1e-4` p-value floor on all three seeds
+// with nothing to report, at p-values in the same family as the enforced rows'
+// — worst KS `9.9e-3` (pt(ℓ⁺), ℓℓj) and worst χ² `1.6e-1` (flavour, b b̄) — so
+// they are enforced rather than reported.
+
+/// σ's uncut `b b̄` counterpart at MadGraph's default coupling orders.
+#[test]
+fn generated_bb_recarded_events_agree_with_madgraphs_banked_ones() {
+    if !run_present(
+        "generated_bb_recarded_events_agree_with_madgraphs_banked_ones",
+        "pp_to_bb",
+    ) {
+        return;
+    }
+    check_row(&Row {
+        run: "pp_to_bb",
+        events: "run_01",
+        key: "pp_to_bb",
+        variant: None,
+        process: "p p > b b~",
+        run_card: None,
+        neval: NEVAL,
+        niter: NITER,
+        mode: "gate",
+        scans: &[],
+    });
+}
+
+/// The explicit-order spelling of the row above, on its own banked run.
+#[test]
+fn generated_bb_qcd2_recarded_events_agree_with_madgraphs_banked_ones() {
+    if !run_present(
+        "generated_bb_qcd2_recarded_events_agree_with_madgraphs_banked_ones",
+        "pp_to_bb_qcd2",
+    ) {
+        return;
+    }
+    check_row(&Row {
+        run: "pp_to_bb_qcd2",
+        events: "run_01",
+        key: "pp_to_bb_qcd2",
+        variant: None,
+        process: "p p > b b~ QCD=2",
+        run_card: None,
+        neval: NEVAL,
+        niter: NITER,
+        mode: "gate",
+        scans: &[],
+    });
+}
+
+/// `pp_to_llj_dyn`'s card with `mmll` back at 0 — the low-mass lepton-pair
+/// region the enforced twin is carded away from.
+#[test]
+fn generated_llj_recarded_events_agree_with_madgraphs_banked_ones() {
+    if !run_present(
+        "generated_llj_recarded_events_agree_with_madgraphs_banked_ones",
+        "pp_to_llj",
+    ) {
+        return;
+    }
+    check_row(&Row {
+        run: "pp_to_llj",
+        events: "run_01",
+        key: "pp_to_llj",
+        variant: None,
+        process: "p p > l+ l- j",
+        run_card: None,
+        neval: NEVAL,
+        niter: NITER,
+        mode: "gate",
+        scans: &[],
+    });
+}
+
+/// Drell-Yan with the event-by-event scales doubled: the only banked sample
+/// whose `scalefact` is not 1, so it is where a sample carries the run card's
+/// scale factor rather than only a cross section doing so.
+#[test]
+fn generated_scalefact2_events_agree_with_madgraphs_banked_ones() {
+    if !run_present(
+        "generated_scalefact2_events_agree_with_madgraphs_banked_ones",
+        "pp_to_ll_scalefact2",
+    ) {
+        return;
+    }
+    check_row(&Row {
+        run: "pp_to_ll_scalefact2",
+        events: "run_01",
+        key: "pp_to_ll_scalefact2",
+        variant: None,
+        process: "p p > l+ l-",
+        run_card: None,
+        neval: NEVAL,
+        niter: NITER,
+        mode: "gate",
+        scans: &[],
+    });
+}

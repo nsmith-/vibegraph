@@ -90,21 +90,29 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 4
-archive = "vibegraph-refdata-4.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-4/vibegraph-refdata-4.tar.zst"
-sha256 = "c8ef939ec6336fe53015115b7c3194604b1bd2f7cc6b52b5d21be69a82a325e9"
-size_bytes = 118015652
+version = 5
+archive = "vibegraph-refdata-5.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-5/vibegraph-refdata-5.tar.zst"
+sha256 = "9f639d4ed651e66a7d7f7c9b863bed9e66059c43cefb213e803d8c8c072d356e"
+size_bytes = 117974066
 unpacks_to = "validation/madgraph/output"
 # Every run in this bundle is MadGraph 3.7.1's except the six that measure a
 # 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
 # `var_sde1`), which are the evidence and stay at the version they measure.
 #
+# Cut 5 is cut 4 with `pp_to_bb`, `pp_to_bb_qcd2`, `pp_to_llj` and
+# `pp_to_ll_scalefact2` replaced rather than added to: the same member list name
+# for name, with those four re-carded from MadGraph's internal `nn23lo1` onto
+# `pdlabel = lhapdf` at `lhaid = 247000` (NNPDF23_lo_as_0130_qed). Their beams
+# are therefore different parton densities from cut 4's, and their cross
+# sections are not comparable across the boundary — the `b b~` pair moves 9.8%.
+# The superseded runs are recoverable from the local retired area, not from here.
+#
 # While the repository is private, the plain `url` serves 404 to unauthenticated
 # clients and the fetch falls back to an authenticated `gh release download` of
 # the same asset; $VIBEGRAPH_REFDATA_SOURCE still overrides both for a local
 # bundle.
-published = true
+published = false
 
 # ─────────────────────────── single-channel rows ────────────────────────────
 #
@@ -426,8 +434,8 @@ artifacts = ["output/pp_to_bb", "output/pp_to_bb.json"]
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
 amplitudes = { tier = "uncovered", note = "no banked b b~ parton row exists; the single-channel colour rows (uux_to_uux, gg_to_ttx) cover the same colour structures at other flavours" }
-integrals = { tier = "blocked", blocker = "mg-internal-pdf", note = "the run card's dynamical scale is no longer what stops this: the general clustering reproduces all 10000 of its events' scale fields in validate_scales. What stops it is the beams -- pdlabel = nn23lo1 is MadGraph's own parton-density parameterisation, not an LHAPDF6 grid the pdf layer here can load, so the two sides would not be convolving the same densities and the comparison would measure the PDF difference rather than the cross section. pp_to_bb_fixed cards this generate line onto lhaid 247000 and gates both cells" }
-samples = { tier = "blocked", blocker = "mg-internal-pdf", note = "generation runs through the same integrand as the cross section and meets the same parton densities" }
+integrals = { tier = "banked", mode = "gate", note = "the row that reaches the softest phase space of any enforced cross section: ptb = 0 and dsqrt_shat = 0 leave the b masses as the only floor, so setcuts.f's shat_min is (2 m_b)^2 = 88 GeV^2 against pp_to_bb_fixed's 1600, and sigma is four orders larger at 3.76e8 pb. sigma = 3.763032e8 +- 7.513e4 pb against MadGraph's 3.762400e8 +- 2.679e5: pull +0.23, rel +0.02%, chi2/dof 0.27 over three seeds at 300000 x 10. The budget ladder (probe_recarded_budget_ladder, five seeds a rung) reads +0.04% / -0.02% / +0.01% / -0.02% at 75k / 150k / 300k / 600k -- flat across an eightfold range, so the seed sweep measures an agreement rather than this crate's convergence. rel_tol 0.005 is set from the reference's own 0.071% Monte-Carlo error with headroom, and the pull is asserted because MadGraph's error on this run is 3.6x this side's at the gate budget, so no budget spent here drives it up. Measurable at all only since the re-bank onto lhaid 247000: against the nn23lo1 run the two sides convolved different parton densities and the comparison read the 9.8% between them" }
+samples = { tier = "banked", mode = "gate", note = "generated_bb_recarded_events_agree_with_madgraphs_banked_ones: the same integrate-then-generate path as pp_to_bb_fixed on this run's own uncut, dynamical-scale card. Every column clears the 1e-4 p-value floor on all three seeds -- min KS p 9.257e-2 (y(b)), min chi2 p 1.586e-1 (flavour) -- with no column to report" }
 
 [[process]]
 key = "pp_to_bb_qcd2"
@@ -440,8 +448,8 @@ artifacts = ["output/pp_to_bb_qcd2", "output/pp_to_bb_qcd2.json"]
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
 amplitudes = { tier = "uncovered", note = "same gap as pp_to_bb" }
-integrals = { tier = "blocked", blocker = "mg-internal-pdf", note = "the same nn23lo1 beams as pp_to_bb, and blocked for the same reason; pp_to_bb_fixed is this generate line on lhaid 247000 at a fixed scale and gates" }
-samples = { tier = "blocked", blocker = "mg-internal-pdf" }
+integrals = { tier = "banked", mode = "gate", note = "the explicit-order half of the pair, and the cross-section statement of order-constraint semantics: same card and same beams as pp_to_bb, so a QCD=2 that selected different diagram content would show up here as a sigma split rather than only as a diagram count. sigma = 3.762584e8 +- 8.138e4 pb against MadGraph's 3.762500e8 +- 2.686e5: pull +0.03, rel +0.00%, chi2/dof 1.67 over three seeds at 300000 x 10, and its own run reads within 0.001% of pp_to_bb's. Ladder +0.00% / +0.01% / -0.01% / -0.00% at 75k / 150k / 300k / 600k. rel_tol 0.005 from the reference's own 0.071%, as for pp_to_bb" }
+samples = { tier = "banked", mode = "gate", note = "generated_bb_qcd2_recarded_events_agree_with_madgraphs_banked_ones: min KS p 2.515e-2 (y(b)), min chi2 p 2.349e-1 (flavour) over three seeds, every column above the 1e-4 floor" }
 
 [[process]]
 key = "pp_to_bb_fixed"
@@ -482,8 +490,8 @@ artifacts = ["output/pp_to_llj", "output/pp_to_llj.json"]
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour union; the point of the row is the order-selection semantics" }
 amplitudes = { tier = "uncovered", note = "an order-semantics row: its content is pinned in `diagrams`, and the amplitudes of its QCD=2 QED=2 subprocesses are covered by the four llj parton rows" }
-integrals = { tier = "blocked", blocker = "mg-internal-pdf", note = "its dynamical scale is computed rather than refused: validate_scales replays all 10000 of this run's SCALUP / <rscale> / <pdfrwt> out of the general clustering, and validate_kt_cluster reproduces the merge sequence behind them against an instrumented MadGraph. What blocks a cross section is the beams -- pdlabel = nn23lo1 is MadGraph's internal parameterisation rather than an LHAPDF6 grid this crate reads. pp_to_llj_dyn is the same generate line and the same dynamical scale on lhaid 247000, and it gates" }
-samples = { tier = "blocked", blocker = "mg-internal-pdf" }
+integrals = { tier = "banked", mode = "gate", note = "pp_to_llj_dyn's run card with mmll back at 0 and nothing else changed, so this row is the low lepton-pair-mass region its enforced twin is carded away from -- the one place a banked cross section is drawn from the photon-pole side of m_ll, regulated by ptl = 10 alone. That region is also where this crate's estimator approaches its limit from below: the budget ladder (five seeds a rung) reads -2.07% / -0.80% / -0.30% / +0.02% at 75k / 150k / 300k / 600k with chi2/dof 1.23 / 0.60 / 0.98 / 0.42, increments shrinking and crossing the reference at the last rung. The residual shrinks with the budget instead of migrating between seeds, which is convergence rather than a defect, and it is why this row alone runs at 600000 x 10 rather than at 300000: gating at a rung the estimator is still climbing would enforce a moving number. At the gate budget sigma = 5.048244e2 +- 2.426e-1 pb against MadGraph's 5.046300e2 +- 1.674e0: pull +0.11, rel +0.04%, chi2/dof 0.61; the same three seeds at 300000 read 5.027187e2 +- 3.455e-1, pull -1.12, rel -0.38%, which is the climb and not a second answer. rel_tol 0.005 from the reference's own 0.33% Monte-Carlo error. What this cannot see is a clustering wrong per event but right on average -- validate_scales replays all 10000 events' SCALUP / <rscale> / <pdfrwt>, and validate_kt_cluster reproduces the merge sequences behind them" }
+samples = { tier = "banked", mode = "gate", note = "generated_llj_recarded_events_agree_with_madgraphs_banked_ones: min KS p 9.946e-3 (pt(l+)), min chi2 p 1.660e-1 (flavour) over three seeds. The worst KS column is the lepton pt, which is the observable the removed mmll cut acts on, and it clears the floor by two orders" }
 
 [[process]]
 key = "pp_to_llj_dyn"
@@ -524,8 +532,8 @@ artifacts = ["output/pp_to_ll_scalefact2", "output/pp_to_ll_scalefact2/Events/ru
 [process.categories]
 diagrams = { tier = "covered-by", rows = ["pp_to_ll"] }
 amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"] }
-integrals = { tier = "blocked", blocker = "mg-internal-pdf", note = "a cross section is not what this run is for -- the scale fields are, and validate_scales now reads all three of them out of the general clustering with the run card's scalefact 2.0 carried through. Its beams take pdlabel = nn23lo1, MadGraph's internal parameterisation rather than an LHAPDF6 grid, so the luminosity a cross section would be built from is not the one MadGraph used" }
-samples = { tier = "blocked", blocker = "mg-internal-pdf", note = "generation runs through the same integrand as the cross section and meets the same parton densities" }
+integrals = { tier = "banked", mode = "gate", note = "the only banked row whose scalefact is not 1, so it is the one place the run card's scale factor reaches a cross section rather than only the per-event scale fields: doubling every event-by-event scale moves sigma to 1958.9 pb where the unscaled Drell-Yan card sits elsewhere, and both sides have to do the same doubling to agree. sigma = 1.958788e3 +- 7.511e-1 pb against MadGraph's 1.958900e3 +- 3.883e0: pull -0.03, rel -0.01%, chi2/dof 0.16 over three seeds at 300000 x 10. Ladder -0.08% / +0.02% / -0.03% / -0.05% at 75k / 150k / 300k / 600k, flat. rel_tol 0.005 from the reference's own 0.198% Monte-Carlo error with headroom" }
+samples = { tier = "banked", mode = "gate", note = "generated_scalefact2_events_agree_with_madgraphs_banked_ones: min KS p 1.530e-1 (y(l-)), min chi2 p 7.930e-1 (ICOLUP) over three seeds -- the cleanest of the four re-carded sample cells, on the simplest final state" }
 
 # ─────────────────────────── standalone gates ────────────────────────────────
 #
