@@ -5671,6 +5671,52 @@ frequency law cannot be measured from outside. Exposing the drawn configuration
 would unblock item 1's second half and item 6 at once, and is the natural next
 increment.
 
+#### Why the draw reproduces MadEvent even though MadEvent does not draw
+
+Recorded because the design never derived it, and a future reader who opens
+`cluster.f` first will otherwise conclude this chain inverted MadGraph's rule.
+
+**MadEvent clusters in the sampler's channel.** `genps.f:221` and `genps.f:245`
+both set `this_config = iconfig` — the configuration currently being sampled —
+and `cluster.f:663-664` roots the clustering on it (`igraphs(1) = this_config`).
+So per *event*, MadEvent's cluster scale is read in the channel that drew the
+point, which is exactly the rule this chain replaced.
+
+**The resolution is that MadEvent's channel is not distributed the way ours is.**
+Under single-diagram enhancement the integrand of configuration `c` carries the
+factor `AMP2_c / XTOT` (`matrix1_orig.f:291-317`), and a point sampled from
+configuration `c` carries the map density `g_c`. The density of *events*
+generated in configuration `c` at momentum `p` is therefore
+`∝ |M(p)|² · (AMP2_c(p)/XTOT(p)) · g_c(p) / g_c(p)` — the sampling density
+cancels against the multichannel weight — so the conditional distribution of the
+configuration given the point is
+
+```text
+P(c | p) = AMP2_c(p) / Σ_i AMP2_i(p)
+```
+
+and it does not depend on `g_c` at all. That conditional is a property of the
+squared amplitudes, not of the partition, which is why drawing it directly
+reproduces MadEvent's per-event scale distribution *despite* this crate's
+Kleiss–Pittau `αⱼ` partition being a different one from MadEvent's. It is also
+why the two rows whose configurations agree on the scale came out bit-identical:
+where `AMP2` moves no scale, the conditional is irrelevant.
+
+This is the chain's justification in one line: **we do not imitate MadEvent's
+channel; we sample the conditional its channel induces**, which is the same
+distribution and is independent of the partition neither side shares.
+
+#### A drifted probe reading, and why it is not a finding
+
+`probe_cluster_scale_spread_over_configurations` now reports `9.962e-1` on
+`gu_to_epemu` and `gux_to_epemux` where B-0's table above recorded `9.961e-1`.
+The probe draws its own points from `channel_grid_ndim()`-many uniforms; adding
+the trailing scale-draw coordinate changed `point_ndim()` and so shifted the
+probe's own point sequence, which moves the worst-over-64-points maximum by one
+part in `10⁴`. It is a different set of points, not a different scale. The
+inertness of B-1a was established by the report diff being byte-identical, not
+by this probe, and nothing downstream reads its value.
+
 #### Open items
 
 * **`pp_to_jj`'s across-group spread is `4.999999e-7`**, against a within-group
