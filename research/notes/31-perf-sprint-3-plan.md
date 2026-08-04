@@ -437,12 +437,16 @@ the samples category is half the size of integrals in wall time.
   cell keeping its status; σ-touching sessions add the ≥5-seed sweep at two
   budgets; evaluator sessions run `validate_helas_mg` (bit-for-bit where the
   session claims bit-for-bit) and quote `eval_strategies` medians with the host
-  fingerprint; PDF session runs `validate_pdf_grid` + the hadronic σ gates and
-  states the worst oracle deviation before/after.
+  fingerprint **plus a `scripts/mg_perf_compare.sh` before/after** (the per-point
+  MATRIX1 comparison, note 15 §2.4 — the direct amplitude-component measure the
+  baseline study omitted; applies to E1, E2, E3); PDF session runs
+  `validate_pdf_grid` + the hadronic σ gates and states the worst oracle
+  deviation before/after.
 - **Measurement honesty**: layer-level claims via report `duration_s` against
   note 30 §3.2 (0.8%/3.4% noise floor — nothing sub-1% is claimable there);
   kernel-level claims via criterion; every table carries its command.
 - **Close-out**: re-run the note-30 instrumented validate pass and the
   `time_stages.py` MG pass in one sitting on the same host, append the
-  before/after table here, update `TODO.md` and the backlog entries this sprint
-  retires.
+  before/after table here, and add a sprint-level `scripts/mg_perf_compare.sh`
+  before/after table (note 30 §5.3 explicitly disclaims being a substitute for
+  it); update `TODO.md` and the backlog entries this sprint retires.
