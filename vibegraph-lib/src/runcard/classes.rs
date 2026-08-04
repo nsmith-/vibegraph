@@ -29,8 +29,12 @@ pub enum FieldClass {
     /// Not read, and unable to reach the cross section, the event record or the
     /// cuts. The string argues that, rather than reporting an absent consumer.
     IgnoredBenign(&'static str),
-    /// Not read, and able to change what this generator produces. Refused when a
-    /// card moves it off the MadGraph default.
+    /// Not implemented, and able to change what this generator produces. Refused
+    /// when a card moves it off the MadGraph default.
+    ///
+    /// "Not implemented" rather than "not read": a field may be read precisely in
+    /// order to decline the branch it selects, which is what the refusal then
+    /// covers. `tmin_for_channel` is that case.
     IgnoredPhysics {
         why: &'static str,
         when: Applicability,
@@ -155,8 +159,15 @@ const P_CHCLUSTER: &str = "restricts the clustering to the integration channel's
                            with them the scales read off the resulting tree. The test sits \
                            outside any matching switch, so it applies to an ordinary run";
 const P_TMIN_FOR_CHANNEL: &str = "limits the non-singular reach of a t-channel integration \
-                                  channel; nothing shows a cross section invariant under \
-                                  truncating one channel's reach";
+                                  channel, and off its default it also turns get_channel_cut \
+                                  from the constant 1 into a product of propagator \
+                                  denominators, which is the enhancement weight this crate does \
+                                  not form. The field is read -- \
+                                  EventScaleSource::draws_configuration tests it beside \
+                                  SDE_strategy and declines to draw a configuration off the \
+                                  conjunction -- but declining is not implementing it, so the \
+                                  refusal here is what stands between such a card and a cross \
+                                  section taken under a rule that does not describe it";
 const P_NHEL: &str = "Monte-Carlo over helicities in place of the explicit sum, which changes \
                       both the estimator and the per-event weight";
 const P_LIMHEL: &str = "the threshold below which MadGraph drops a helicity configuration; \
