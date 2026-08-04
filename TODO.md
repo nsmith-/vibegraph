@@ -38,9 +38,19 @@ is made yet; a future "quality sprint" tightening the `pub` API surface
 (backlog below) precedes any 1.0. Tagging runs `release.yml` and
 `acceptance.yml` for the first time.
 
-**Next sprint**: the **performance sprint** — the integration-focused pass
-(VEGAS first-iteration bias + `w_max` scan decoupling + stratified-parallel
-axes, performance backlog below). `kt-spine` froze the channel/map structure
+**Next sprint**: the **performance sprint** — **planned in note 31**
+(2026-08-04): three tracks — I (VEGAS first-iteration bias + `w_max` scan
+decoupling; parallel `integrate` with a `-j/--parallel` CLI flag over the
+existing thread-count-bit-identical chunked VEGAS, unblocked by making the
+hadronic `RefCell` scratch per-thread; convergence-targeted stopping with
+hard-split per-channel Neyman allocation), P (PDF interpolation hot path:
+f64-only SIMT-shaped `xfx_all` batch eval, flavor LUT, Horner/FMA), E
+(evaluator: DAG linearization/scheduling study, `fill_arenas` overhead
+reduction, chain-B draw work-sharing). The `fill_arenas` instruction study is
+**done** (`fill-arenas-asm-study-results.md`): dispatch is already a 38-entry
+jump table; the budget is 30.5% loop+dispatch / 22.9% loads / 20.4% FP / 20.4%
+bounds checks — arena-header hoisting and threaded dispatch are the scoped,
+safe-Rust, bit-for-bit fixes. `kt-spine` froze the channel/map structure
 it measures against; the note-29 sprint hardened the gate it optimizes
 against. The baseline is taken: **note 30** records the per-stage timings of
 both sides on one host, the samply profiles, and the machine block they are
