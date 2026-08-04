@@ -213,8 +213,8 @@
           "1": 10000
         },
         "igraphs1_is_iconfig": {
-          "False": 5014,
-          "True": 4986
+          "False": 5104,
+          "True": 4896
         },
         "jcentral_override_beam1": {
           "False": 9859,
@@ -241,7 +241,7 @@
       "n_events": 10000,
       "n_matched": 10000,
       "path": "validation/madgraph/output/ktdump/dumps/pp_to_bb_qcd2.jsonl.gz",
-      "sha256": "42510700fba25b157eb95aa7eda5dbdebb6428fc528146cdcbb88691dbdb147a"
+      "sha256": "55040c018cc1b45d4e42220c66a84944ed39e3d7912074213942242a8b758d40"
     },
     "pp_to_llj": {
       "alphas_ordering": {
@@ -250,26 +250,26 @@
       },
       "coverage": {
         "beam_crossing_inflation": {
-          "applied": 7389
+          "applied": 7343
         },
         "boost": {
-          "fired": 7697,
-          "not_fired": 2303
+          "fired": 7772,
+          "not_fired": 2228
         },
         "candidate_measure": {
-          "FS_DJ_HAD": 5664,
-          "FS_DJ_MLESS_MASSIVE_1": 1611,
-          "FS_SUMDOT_BW": 16185,
-          "IS_DJB": 17733,
-          "NONE": 125029
+          "FS_DJ_HAD": 5606,
+          "FS_DJ_MLESS_MASSIVE_1": 1566,
+          "FS_SUMDOT_BW": 16280,
+          "IS_DJB": 17583,
+          "NONE": 124963
         },
         "cluster_calls_per_event": {
           "1": 10000,
-          "2": 1873
+          "2": 1857
         },
         "igraphs1_is_iconfig": {
-          "False": 2387,
-          "True": 9486
+          "False": 2424,
+          "True": 9433
         },
         "jcentral_override_beam1": {
           "False": 10000
@@ -279,7 +279,7 @@
         },
         "memo": {
           "ACCEPTED": 10000,
-          "RESTRICTED_RECLUSTER": 1873
+          "RESTRICTED_RECLUSTER": 1857
         },
         "mt2last_override": {
           "False": 10000
@@ -294,7 +294,7 @@
       "n_events": 10000,
       "n_matched": 10000,
       "path": "validation/madgraph/output/ktdump/dumps/pp_to_llj.jsonl.gz",
-      "sha256": "45b26605d375d1ba33230cb10d49bd4194fd22c6790df846c5cfc8db6a1f32c2"
+      "sha256": "20b5b987af88c0a874faadd671ac03a16ff2d0dde6a1558be19f6170a141990d"
     },
     "uux_to_ccx_emmm_qcd0": {
       "alphas_ordering": {
