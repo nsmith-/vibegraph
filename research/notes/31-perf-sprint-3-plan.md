@@ -261,6 +261,42 @@ on proton generate — measurable against the 0.8%/3.4% noise floor via row
 durations, plus a dedicated criterion micro-bench for `xfx_all` (add one; there is
 none today).
 
+### 2.4 P1 — MERGED 2026-08-04 (`71a7ef3`, merge `a66d58a`): measured results
+
+All five items landed plus the `pdf_xfx` criterion bench; **no tolerance was
+relaxed anywhere**. Gate: full banked layer green, cell-for-cell identical census
+(96 ✅ / 2 ⚠️ / 4 ⏳), `validate_pdf_grid` 20/20; hadronic σ gates all green.
+
+- **Brief correction (recorded)**: the "REL_TOL 1e-12 oracle gate" in §2.3 was
+  wrong — `1e-12` in `validate_pdf_grid` only locates knots by coordinate. The
+  real accept bars: 1e-9 (interpolation), 1e-11 (flat continuation), **1e-14**
+  (conditioned residual — the tightest, and the one a reassociation would break).
+- **Horner+FMA landed in `cubic_x` only.** In `cubic_hermite` it moved a single
+  continuation probe at x = 1 (a ~1e-35 pure-cancellation residue that the
+  oracle matches only because our operation order reproduces LHAPDF's own
+  rounding) by 2.4e-5 relative; per the AGENTS.md reformulate-don't-relax rule,
+  `cubic_hermite` keeps LHAPDF's operation order (documented in its doc comment
+  as load-bearing). Worst conditioned residual 8.93e-16 → 1.08e-15 vs the 1e-14
+  bar; all other categories unchanged or ulp-level.
+- **Kernel**: `xfx_all` (one reading, 14 flavours) **112 ns** vs 504 ns for the
+  14-call shape it replaces — 4.56×, essentially all from the all-flavour
+  restructure (per-call overhead removal alone was only ~1.07×). M3 Max,
+  `release`, criterion medians.
+- **Layer**: hadronic row work (cells > 1 s) **2023.7 s → 1477.9 s (−27.0%)**,
+  same host, back-to-back before/after in the session worktree. Largest:
+  `pp_to_jj` integrals −39% / samples −51%. Partonic rows flat within the
+  0.8%/3.4% noise floor.
+- **Profiles**: PDF group **14.5% → 1.38%** (integrate llj_dyn) and
+  **19.4% → 2.00%** (generate proton) of busiest-thread self time; the evaluator
+  is now **62% / 79%** with `fill_arenas` alone at 33.1% / 42.6% — Track E's
+  ceiling grew accordingly. Note 30 §7.3's "PDF 14–19% wherever there are
+  protons" is retired; every Track-I duration claim must re-baseline against
+  `a66d58a`, not note 30 §3.2's table.
+- Ops note for future worktree sessions: `git worktree add` leaves the
+  `research/refs/mg5amcnlo` submodule checkout empty, which aborts
+  `cargo test --workspace` before most gates run; COW-copy the checkout in and
+  point its `.git` file at the shared module.
+
 ## 3. Track E — evaluator
 
 ### E0 — `fill_arenas` instruction-level study ✅ (2026-08-04)
