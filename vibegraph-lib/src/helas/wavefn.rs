@@ -427,7 +427,7 @@ mod tests {
     > {
         let p1 = LorentzVector::new(2.0, 0.5, -0.3, 1.2);
         let p2 = LorentzVector::new((3.5_f64).sqrt(), 0.5, -1.0, 1.5);
-        assert!(p2.m() < 1e-10, "p2 should be massless for this test");
+        assert!(p2.m2().abs() < 1e-10, "p2 should be massless for this test");
         let offshell_cases = vec![
             (p1, 0.5), // off-shell massive
             (p1, 0.0), // off-shell massless

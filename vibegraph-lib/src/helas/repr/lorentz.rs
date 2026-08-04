@@ -17,6 +17,29 @@ use super::numbers::{Charge, SpinorHelicity};
 use super::vectorspace::{impl_vectorspace, ArrayBacked};
 use super::{r, ri, Real, C};
 
+// Complex multiply-accumulate expressed through the real fused multiply-add
+// (`F::mul_add`). This lowers to a hardware FMA on both scalar `f64` and the SIMD
+// lane field: the lane type implements `Float::mul_add` (a method) but not the
+// `num_traits::MulAdd` trait, so `Complex::mul_add` is unavailable there — routing
+// through the real `mul_add` keeps one code path that fuses on every `F: Real`.
+// A single shared path also keeps the lane result bit-identical to the scalar one.
+
+/// Complex product `a * b` (three real FMAs after the leading `re`/`im` products).
+#[inline(always)]
+fn cmul<F: Real>(a: C<F>, b: C<F>) -> C<F> {
+    let re = (-a.im).mul_add(b.im, a.re * b.re);
+    let im = a.re.mul_add(b.im, a.im * b.re);
+    C::new(re, im)
+}
+
+/// Complex multiply-add `a * b + c`.
+#[inline(always)]
+fn cmul_add<F: Real>(a: C<F>, b: C<F>, c: C<F>) -> C<F> {
+    let re = a.re.mul_add(b.re, c.re) - a.im * b.im;
+    let im = a.re.mul_add(b.im, a.im.mul_add(b.re, c.im));
+    C::new(re, im)
+}
+
 /// We will have some marker traits that are sealed in this module
 /// (i.e. no external code can implement them)
 mod sealed {
@@ -244,7 +267,8 @@ impl<F: Real, V: Variance> LorentzVector<F, V> {
     /// Momentum magnitude squared |p|² = px² + py² + pz²
     #[inline(always)]
     pub fn p3_squared(self) -> F {
-        self.0[1] * self.0[1] + self.0[2] * self.0[2] + self.0[3] * self.0[3]
+        self.0[3]
+            .mul_add(self.0[3], self.0[2].mul_add(self.0[2], self.0[1] * self.0[1]))
     }
 
     /// Momentum magnitude |p| = √(px² + py² + pz²).
@@ -256,7 +280,7 @@ impl<F: Real, V: Variance> LorentzVector<F, V> {
     /// Invariant mass squared m² = E² - |p|².
     #[inline(always)]
     pub fn m2(self) -> F {
-        self.e() * self.e() - self.p3_squared()
+        self.e().mul_add(self.e(), -self.p3_squared())
     }
 
     /// Invariant mass m = √(E² - |p|²).
@@ -322,10 +346,10 @@ impl<F: Real, V: Variance> VectorRepr<F, V> for ComplexVector<F, V> {
 
     fn dot(&self, other: &Self::Dual) -> Self::Scalar {
         // Dual basis has the metric built in, so the contraction is a simple dot product
-        self.0[0] * other.0[0]
-            + self.0[1] * other.0[1]
-            + self.0[2] * other.0[2]
-            + self.0[3] * other.0[3]
+        let acc = cmul(self.0[0], other.0[0]);
+        let acc = cmul_add(self.0[1], other.0[1], acc);
+        let acc = cmul_add(self.0[2], other.0[2], acc);
+        cmul_add(self.0[3], other.0[3], acc)
     }
 
     fn dualize(&self) -> Self::Dual {
@@ -388,11 +412,17 @@ impl<F: Real, V: Variance> ComplexVector<F, V> {
     /// `ComplexVector` and using the `dot` method
     #[inline(always)]
     pub fn dot_lorentz(&self, other: &LorentzVector<F, V>) -> C<F> {
-        // Here the variance is THE SAME for both, so we need to manually insert the metric signs in the contraction
-        self.0[0] * other.0[0]
-            - self.0[1] * other.0[1]
-            - self.0[2] * other.0[2]
-            - self.0[3] * other.0[3]
+        // Here the variance is THE SAME for both, so we need to manually insert the
+        // metric signs in the contraction. Each term is complex×real, so the real and
+        // imaginary parts accumulate through independent real FMA chains.
+        let o = &other.0;
+        let acc = |sel: fn(&C<F>) -> F| {
+            let a = sel(&self.0[0]) * o[0];
+            let a = (-sel(&self.0[1])).mul_add(o[1], a);
+            let a = (-sel(&self.0[2])).mul_add(o[2], a);
+            (-sel(&self.0[3])).mul_add(o[3], a)
+        };
+        C::new(acc(|c| c.re), acc(|c| c.im))
     }
 }
 
@@ -473,11 +503,11 @@ impl DiracAdjoint for Ket {
         let v1_p_iv2 = v[1] + i * v[2];
 
         // ψ_L ← (σ·v) ψ_R
-        let l1 = v0_p_v3 * psi[2] + v1_m_iv2 * psi[3];
-        let l2 = v1_p_iv2 * psi[2] + v0_m_v3 * psi[3];
+        let l1 = cmul_add(v0_p_v3, psi[2], cmul(v1_m_iv2, psi[3]));
+        let l2 = cmul_add(v1_p_iv2, psi[2], cmul(v0_m_v3, psi[3]));
         // ψ_R ← (σ̄·v) ψ_L
-        let r1 = v0_m_v3 * psi[0] - v1_m_iv2 * psi[1];
-        let r2 = -v1_p_iv2 * psi[0] + v0_p_v3 * psi[1];
+        let r1 = cmul_add(v0_m_v3, psi[0], -cmul(v1_m_iv2, psi[1]));
+        let r2 = cmul_add(v0_p_v3, psi[1], -cmul(v1_p_iv2, psi[0]));
 
         [l1, l2, r1, r2]
     }
@@ -515,10 +545,10 @@ impl DiracAdjoint for Bra {
         let v1_p_iv2 = v[1] + i * v[2];
 
         [
-            v0_m_v3 * psi[2] - v1_p_iv2 * psi[3],
-            -v1_m_iv2 * psi[2] + v0_p_v3 * psi[3],
-            v0_p_v3 * psi[0] + v1_p_iv2 * psi[1],
-            v1_m_iv2 * psi[0] + v0_m_v3 * psi[1],
+            cmul_add(v0_m_v3, psi[2], -cmul(v1_p_iv2, psi[3])),
+            cmul_add(v0_p_v3, psi[3], -cmul(v1_m_iv2, psi[2])),
+            cmul_add(v0_p_v3, psi[0], cmul(v1_p_iv2, psi[1])),
+            cmul_add(v1_m_iv2, psi[0], cmul(v0_m_v3, psi[1])),
         ]
     }
 }
@@ -746,10 +776,10 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
         let fi = &fi.0;
         ComplexVector(
             [
-                fo[2] * fi[0] + fo[3] * fi[1],
-                -(fo[2] * fi[1] + fo[3] * fi[0]),
-                ri(F::one()) * (fo[2] * fi[1] - fo[3] * fi[0]),
-                -fo[2] * fi[0] + fo[3] * fi[1],
+                cmul_add(fo[2], fi[0], cmul(fo[3], fi[1])),
+                -cmul_add(fo[2], fi[1], cmul(fo[3], fi[0])),
+                ri(F::one()) * cmul_add(fo[2], fi[1], -cmul(fo[3], fi[0])),
+                cmul_add(fo[3], fi[1], -cmul(fo[2], fi[0])),
             ],
             PhantomData,
         )
@@ -775,10 +805,10 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
         let fi = &fi.0;
         ComplexVector(
             [
-                fo[0] * fi[2] + fo[1] * fi[3],
-                fo[0] * fi[3] + fo[1] * fi[2],
-                -ri(F::one()) * (fo[0] * fi[3] - fo[1] * fi[2]),
-                fo[0] * fi[2] - fo[1] * fi[3],
+                cmul_add(fo[0], fi[2], cmul(fo[1], fi[3])),
+                cmul_add(fo[0], fi[3], cmul(fo[1], fi[2])),
+                -ri(F::one()) * cmul_add(fo[0], fi[3], -cmul(fo[1], fi[2])),
+                cmul_add(fo[0], fi[2], -cmul(fo[1], fi[3])),
             ],
             PhantomData,
         )
@@ -804,9 +834,12 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
         let fo = &self.0;
         let fi = &fi.0;
         match chirality {
-            Chirality::Left => fo[0] * fi[0] + fo[1] * fi[1],
-            Chirality::Right => fo[2] * fi[2] + fo[3] * fi[3],
-            Chirality::Both => (fo[0] * fi[0] + fo[1] * fi[1]) + (fo[2] * fi[2] + fo[3] * fi[3]),
+            Chirality::Left => cmul_add(fo[0], fi[0], cmul(fo[1], fi[1])),
+            Chirality::Right => cmul_add(fo[2], fi[2], cmul(fo[3], fi[3])),
+            Chirality::Both => {
+                let l = cmul_add(fo[0], fi[0], cmul(fo[1], fi[1]));
+                cmul_add(fo[2], fi[2], cmul_add(fo[3], fi[3], l))
+            }
         }
     }
 
@@ -1058,7 +1091,7 @@ mod tests {
                 bilinear
             );
 
-            if (p.m() - mass).abs() < EPS_ABS {
+            if (p.m2() - mass * mass).abs() < EPS_ABS {
                 // On-shell spinors
 
                 // The genuine Lorentz scalar is ψ̄ψ = 2 m · nsf  (u → +2m, v → −2m;
@@ -1105,7 +1138,7 @@ mod tests {
     #[test]
     fn test_completeness_relations() {
         for (p, mass) in momenta_test_cases() {
-            if (p.m() - mass).abs() > EPS_ABS {
+            if (p.m2() - mass * mass).abs() > EPS_ABS {
                 // Only valid for on-shell spinors
                 continue;
             }
