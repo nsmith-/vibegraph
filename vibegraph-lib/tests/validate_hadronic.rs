@@ -112,24 +112,25 @@ const LLJ_NITER: usize = 10;
 /// The whole measured budget family — `0.28%`, `0.00%`, `0.16%` at 150 000,
 /// 300 000 and 600 000 — sits inside it, so it is not a bound around one number.
 const LLJ_MAX_REL: f64 = 0.005;
-/// The same bound for the *dynamical*-scale row, set at a different thing.
+/// The same bound for the *dynamical*-scale row, and now set at the same thing.
 ///
-/// The fixed-scale row's residual is Monte Carlo, so its bound sits just above
-/// the reference's own error. This row's residual is a systematic: the cluster
-/// scale reads the integration channel, so σ depends on the channel partition it
-/// was integrated with, and `validate_sigma`'s `probe_channel_partition_moves_sigma`
-/// measures that dependence at `1.5%` on the two partonic rows whose scale the
-/// channel actually moves — against a `0.16%` Monte-Carlo error, and against
-/// nothing outside noise on the two where it does not. Diluted by the flavour
-/// groups of `p p → ℓ⁺ℓ⁻ j` that do not carry it, the observed `0.68%` sits
-/// inside that band, and `1.5%` here is the band with headroom.
+/// This row's residual used to be a systematic: the cluster scale was read in the
+/// channel the sampler drew the point in, so σ depended on the channel partition
+/// it was integrated with, and the row read `−0.68%`. Each point's integration
+/// configuration is now drawn from its own squared amplitudes, and what is left
+/// is the reference's own error: `−0.04%` over five seeds at this budget, at
+/// `χ²/dof 0.65`.
 ///
-/// It is above MadGraph's own `0.33%` on this run, which is the floor no
-/// agreement can be tighter than, and it is not a bound fitted to one number: the
-/// budget ladder's `150k` and `300k` rungs (`−0.97%`, `−0.70%`) are both inside
-/// it, while the `−3.05%` this row read when every point was clustered in
-/// channel 1 is not.
-const LLJ_DYN_MAX_REL: f64 = 0.015;
+/// `0.005` is MadGraph's own `0.33%` on this run — the floor no agreement can be
+/// tighter than — with headroom, and it is above the measured five-seed spread of
+/// `0.18%`. The budget ladder is what says the row is converged there rather than
+/// merely close: `412.60`, `414.27`, `415.27`, `415.75` pb over five seeds at
+/// `75k`, `150k`, `300k` and `600k` (`probe_llj_dyn_budget_ladder`), climbing by
+/// `+1.67`, `+1.00`, `+0.48` — increments that halve — and crossing MadGraph's
+/// `415.42` between the last two rungs to settle `+0.08%` above it. The `75k`
+/// rung's `χ²/dof` of `6.38` is that rung being under-budget and not a property
+/// of the estimator: it falls to `0.82`, `0.65`, `0.30` on the next three.
+const LLJ_DYN_MAX_REL: f64 = 0.005;
 /// Scatter the estimates are allowed about their own mean, in units of their
 /// quoted errors. Measured over the same budget family: `1.55`, `0.47`, `1.90`,
 /// `0.37`.
@@ -943,29 +944,31 @@ fn dyn_run_present(gate: &str, run: &str) -> bool {
 /// flavour decomposition, the phase-space map or the cuts: those are held fixed
 /// by a passing row.
 ///
-/// Each point is clustered in the channel its own sampling channel names — per
-/// flavour group, since the groups of this process do not share a merge graph.
-/// While every point was instead clustered in channel 1 this row read `−3.05%`;
-/// it now reads `−0.68%` at the gate's own budget, and the budget ladder in
-/// [`probe_llj_dyn_budget_ladder`] gives `409.55`, `411.39`, `412.53` pb over
-/// five seeds at `75k`, `150k` and `300k` — rising with the increments halving,
-/// the same approach-from-below the fixed-scale row has.
+/// Each point is clustered in the integration configuration drawn from its own
+/// squared amplitudes, inside the flavour group that produced it — the groups of
+/// this process do not share a merge graph, so which group is asked matters as
+/// much as which configuration. The row has read three numbers under three rules:
+/// `−3.05%` while every point was clustered in channel 1, `−0.68%` while the
+/// scale was read in the channel the *sampler* drew the point in, and `−0.01%`
+/// now. The budget ladder in [`probe_llj_dyn_budget_ladder`] gives `412.60`,
+/// `414.27`, `415.27`, `415.75` pb over five seeds at `75k`, `150k`, `300k` and
+/// `600k` against MadGraph's `415.42 ± 1.36`, rising with the increments halving
+/// and crossing the reference between the last two rungs.
 ///
-/// **What is left is the channel partition, and the tolerance is set at its
-/// scale rather than at the reference's.** Once the scale reads the integration
-/// channel, σ is no longer independent of the multichannel selection weights:
-/// `αⱼ` decides which scale a region of phase space is evaluated at, not only how
-/// often it is visited. `validate_sigma`'s `probe_channel_partition_moves_sigma`
-/// measures that directly on the partonic rows — `1.5%` between this crate's
-/// converged and uniform partitions on the two gluon-beam ones, against Monte
-/// Carlo `0.16%`, and nothing outside noise on the two where no channel moves the
-/// scale. Diluted by the groups that do not carry it, that is the band this row's
-/// `0.68%` sits in.
+/// **The channel partition is what the middle number was, and it is gone.** Once
+/// the scale reads the integration channel, σ is no longer independent of the
+/// multichannel selection weights: `αⱼ` decides which scale a region of phase
+/// space is evaluated at, not only how often it is visited. Drawing the
+/// configuration per point removes `αⱼ` from that decision, and
+/// `validate_sigma`'s `probe_channel_partition_moves_sigma` measures the
+/// difference directly on the partonic rows: `1.5%` between this crate's
+/// converged and uniform partitions before, `1.9e-3` and `1.5e-3` after, against
+/// a `1.6e-3` Monte-Carlo error.
 ///
-/// The **pull is reported and not asserted**, and that is deliberate: the
-/// residual here is a systematic of about `0.6%`, so its pull grows without bound
-/// as this side's budget rises while the disagreement stays put. `rel` and the
-/// seed scatter are what carry meaning.
+/// The **pull is asserted**. It was reported and not asserted while the residual
+/// was a systematic of about `0.6%`, whose pull grows without bound as this
+/// side's budget rises; five seeds now sit at `χ²/dof 0.65` with the mean
+/// `0.11σ` from the reference, which is what the statistic is for.
 ///
 /// What it cannot see: everything a scalar integrates over. The per-event scale
 /// enters σ through an average, so a clustering that got individual events wrong
@@ -1051,11 +1054,14 @@ fn sigma_llj_dynamical_scale_vs_mg() {
     row.niter = LLJ_NITER;
     row.subsampler = summary;
     row.note = Some(
-        "each point clustered in the channel its own sampling channel names, per \
-         flavour group. Three seeds at 300k here; the budget ladder that says this is \
-         converged rather than under-sampled is oracle-layer. rel_tol is the channel \
-         partition's own scale, and the pull is reported rather than asserted because \
-         the residual is a systematic whose pull grows with this side's budget"
+        "each point clustered in the integration configuration drawn from its own \
+         AMP2, inside the flavour group that produced it. Three seeds at 300k here; \
+         the five-seed budget ladder that says this is converged rather than \
+         under-sampled is oracle-layer, and gives 412.60, 414.27, 415.27, 415.75 pb \
+         at 75k, 150k, 300k and 600k against MadGraph's 415.42 +- 1.36. rel_tol 0.005 is the \
+         reference's own 0.33% with headroom, above the measured 0.18% five-seed \
+         spread; the pull is asserted, the channel-partition systematic that made it \
+         the wrong statistic having been retired with the draw"
             .to_string(),
     );
     row.write();
@@ -1064,6 +1070,11 @@ fn sigma_llj_dynamical_scale_vs_mg() {
         rel.abs() < LLJ_DYN_MAX_REL,
         "[llj_dyn] σ disagreement: vibegraph {mean:.3}±{mean_err:.3} vs \
          MG {mg:.3}±{mg_err:.3} pb, rel = {rel:+.4} > {LLJ_DYN_MAX_REL}"
+    );
+    assert!(
+        pull.abs() < 3.0,
+        "[llj_dyn] σ pull: vibegraph {mean:.3}±{mean_err:.3} vs \
+         MG {mg:.3}±{mg_err:.3} pb, pull = {pull:+.2}"
     );
     assert!(
         chi2 < LLJ_MAX_CHI2_PER_DOF,
@@ -2024,4 +2035,194 @@ fn sigma_jj_dynamical_scale_vs_mg() {
         chi2 < JJ_MAX_CHI2_PER_DOF,
         "[jj] the seeds scatter by more than they claim: χ²/dof = {chi2:.2} over {runs:?}"
     );
+}
+
+// ─────────────────── the configuration-dependence census ─────────────────────
+
+/// How far a hadronic row's scales can move if the integration configuration
+/// they are clustered in changes — and how much of that movement is the flavour
+/// *group* rather than the configuration inside it.
+///
+/// A hadronic sampling channel is a `(group, diagram)` pair, and both halves
+/// reach the scale: the group selects which merge graph a point is clustered
+/// against, the diagram selects which configuration inside it. The two are
+/// separately measurable at one point and this reports both:
+///
+/// * **within-group** — the worst spread over the configurations of a single
+///   group, maximised over groups. This is what a rule for choosing the
+///   configuration could move.
+/// * **across-group** — the worst spread over every `(group, configuration)`
+///   pair at the same momenta. It is bounded below by the within-group number,
+///   and the gap between the two is the part no configuration rule can reach.
+///
+/// The clustering is rebuilt here from the run card and the groups' own diagrams
+/// rather than read off the integrand, which has no accessor for it. That
+/// reconstruction is not assumed: on every point the value it gives in the
+/// channel the point was drawn in is compared against the scales the integrand
+/// itself recorded on that point, and a mismatch fails the probe. Without that
+/// check the numbers below would be a measurement of a second implementation.
+///
+/// What this cannot see: configuration dependence confined to a region of phase
+/// space the drawn points miss, and any effect of the *mirror* ordering, which
+/// is evaluated at the same scale as the direct one.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_cluster_scale_spread_over_configurations() {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use vibegraph::coupling::cluster::configs::derive_channels;
+    use vibegraph::coupling::cluster::graph::ColorTable;
+    use vibegraph::coupling::scales::{ClusterInput, ScaleChoice, ScaleEvent};
+
+    /// Cut-passing points per row.
+    const POINTS: usize = 64;
+
+    for (run, process) in [(LLJ_DYN_RUN, LLJ_PROCESS), (JJ_RUN, JJ_PROCESS)] {
+        if !dyn_run_present("probe_cluster_scale_spread_over_configurations", run) {
+            continue;
+        }
+        let run_dir = validation_dir().join("output").join(run);
+        let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+        let model = common::sm_model();
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let groups = groups_for(process, &model, &evaluated, &rc);
+        let set = load_pdf_set();
+        let pdf = set.member(0).expect("PDF member 0");
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("hadronic integrand");
+        let report = integ
+            .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+            .expect("run card scale prescription compiles");
+        assert!(
+            report.constant_scales.is_none(),
+            "[{run}] this row's card does not leave the scale to the clustering"
+        );
+
+        let choice = ScaleChoice::from_run_card(&rc).expect("the card's prescription compiles");
+        let colors = ColorTable::new(
+            model
+                .particles
+                .values()
+                .map(|p| (p.pdg_code, p.color))
+                .collect::<Vec<(i64, i32)>>(),
+            rc.maxjetflavor,
+        );
+        let derived: Vec<_> = groups
+            .groups()
+            .iter()
+            .map(|g| {
+                derive_channels(
+                    g.diagrams(),
+                    g.evaluator().external_particles(),
+                    g.evaluator().n_in(),
+                    &model,
+                    &evaluated,
+                )
+                .expect("the group's channel forests derive")
+            })
+            .collect();
+
+        let ndim = integ.point_ndim();
+        let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_C4);
+        let (mut within, mut across) = ([0.0f64; 3], [0.0f64; 3]);
+        let mut per_group = vec![0.0f64; derived.len()];
+        let (mut kept, mut tries) = (0usize, 0usize);
+        let mut checked = 0usize;
+        while kept < POINTS && tries < 400 * POINTS {
+            tries += 1;
+            let u: Vec<f64> = (0..ndim)
+                .map(|_| rand::Rng::random::<f64>(&mut rng))
+                .collect();
+            let Some(ev) = integ.event_in_channel(0, &u) else {
+                continue;
+            };
+            kept += 1;
+            let incoming = [comps(&ev.lab[0]), comps(&ev.lab[1])];
+            let outgoing: Vec<[f64; 4]> = ev.lab[2..].iter().map(comps).collect();
+            let event = ScaleEvent {
+                incoming,
+                outgoing: &outgoing,
+            };
+            let (mut all_lo, mut all_hi) = ([f64::INFINITY; 3], [0.0f64; 3]);
+            for (g, d) in derived.iter().enumerate() {
+                let (mut lo, mut hi) = ([f64::INFINITY; 3], [0.0f64; 3]);
+                for config in 1..=d.set.configs.len() {
+                    let input = ClusterInput {
+                        set: &d.set,
+                        colors: &colors,
+                        this_config: config,
+                        iproc: 1,
+                    };
+                    let s = choice
+                        .cluster_scales(&event, &input)
+                        .expect("the prescription accepts a cut-passing point");
+                    // The reconstruction is only worth reading if it reproduces
+                    // what the integrand itself evaluated this point at.
+                    let drawn = integ.channel_ids()[0];
+                    if g == drawn.group
+                        && d.config_of_diagram[drawn.diagram].unwrap_or(1) == config
+                    {
+                        assert_eq!(
+                            (s.mu_r, s.mu_f),
+                            (ev.scales.mu_r, ev.scales.mu_f),
+                            "[{run}] the rebuilt clustering disagrees with the integrand's \
+                             own scales in the channel the point was drawn in"
+                        );
+                        checked += 1;
+                    }
+                    for (k, v) in [s.mu_r, s.mu_f[0], s.mu_f[1]].into_iter().enumerate() {
+                        lo[k] = lo[k].min(v);
+                        hi[k] = hi[k].max(v);
+                        all_lo[k] = all_lo[k].min(v);
+                        all_hi[k] = all_hi[k].max(v);
+                    }
+                }
+                per_group[g] = per_group[g].max(hi[0] / lo[0] - 1.0);
+                for k in 0..3 {
+                    within[k] = within[k].max(hi[k] / lo[k] - 1.0);
+                }
+            }
+            for k in 0..3 {
+                across[k] = across[k].max(all_hi[k] / all_lo[k] - 1.0);
+            }
+        }
+        assert!(
+            checked == kept,
+            "[{run}] the drawn channel's configuration was not reached on every point"
+        );
+        let configs: Vec<usize> = derived.iter().map(|d| d.set.configs.len()).collect();
+        println!(
+            "{run}: {} groups, configs {configs:?} over {kept} points | \
+             within-group worst spread mu_R {:.6e} mu_F1 {:.6e} mu_F2 {:.6e} | \
+             across-group worst spread mu_R {:.6e} mu_F1 {:.6e} mu_F2 {:.6e}",
+            derived.len(),
+            within[0],
+            within[1],
+            within[2],
+            across[0],
+            across[1],
+            across[2]
+        );
+        println!(
+            "{run}: per-group worst mu_R spread {}",
+            per_group
+                .iter()
+                .enumerate()
+                .map(|(g, s)| format!("g{g} {s:.6e}"))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+}
+
+/// Components in the `[E, px, py, pz]` layout the scale prescription reads.
+fn comps(p: &V) -> [f64; 4] {
+    [p.e(), p.px(), p.py(), p.pz()]
 }

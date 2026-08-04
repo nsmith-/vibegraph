@@ -11,9 +11,11 @@
 //! [`validation::samples`](vibegraph::validation::samples) machinery the library
 //! rows use.
 //!
-//! Three rows: `pp_to_llj_fixed`, a three-body final state with an electroweak
-//! core; `pp_to_bb_fixed`, a two-body one with none; and `pp_to_ll`, measured
-//! once per committed Drell-Yan card.
+//! Five rows: `pp_to_llj_fixed`, a three-body final state with an electroweak
+//! core; its scale-moved twin `pp_to_llj_dyn`, same generate line on the
+//! dynamical-scale card; `pp_to_bb_fixed`, a two-body one with no electroweak
+//! core; `pp_to_ll`, measured once per committed Drell-Yan card; and
+//! `pp_to_jj`, the purely hadronic dijet row.
 //!
 //! # What this adds over the fixed-beam rows
 //!
@@ -475,6 +477,27 @@ fn generated_proton_events_agree_with_madgraphs_banked_ones() {
         run: "pp_to_llj_fixed",
         events: "run_01",
         key: "pp_to_llj_fixed",
+        variant: None,
+        process: "p p > l+ l- j QCD=2 QED=2",
+        run_card: None,
+        neval: NEVAL,
+        niter: NITER,
+        mode: "gate",
+        scans: &[],
+    });
+}
+
+/// The scale-moved twin of the row above: same generate line, same budget, the
+/// run's own dynamical-scale card instead of the fixed one. The two run cards
+/// differ only in the three `fixed_*_scale` booleans, so this cell is what the
+/// per-point `AMP2`-drawn configuration change actually exercises end to end —
+/// a sample assembled by the binary rather than a scalar cross section.
+#[test]
+fn generated_llj_dyn_events_agree_with_madgraphs_banked_ones() {
+    check_row(&Row {
+        run: "pp_to_llj_dyn",
+        events: "run_01",
+        key: "pp_to_llj_dyn",
         variant: None,
         process: "p p > l+ l- j QCD=2 QED=2",
         run_card: None,

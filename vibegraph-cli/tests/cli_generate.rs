@@ -41,6 +41,7 @@ use std::process::{Command, Output};
 use std::sync::OnceLock;
 
 use vibegraph::artifact::IntegrateArtifact;
+use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
 
@@ -460,4 +461,111 @@ fn a_card_that_did_not_train_the_grid_is_refused() {
         FEW_EVENTS,
         "the refused run must leave the existing file alone"
     );
+}
+
+/// A copy of `run()`'s artifact, stamped with an older format version so the
+/// stale-artifact guard has something to refuse or admit.
+fn stale_copy(run: &Run, name: &str, format_version: u32) -> PathBuf {
+    let mut artifact = run.artifact.clone();
+    artifact.format_version = format_version;
+    let path = run.dir.join(name);
+    artifact.write_to_path(&path, true).expect("write stale copy");
+    path
+}
+
+/// `run()`'s own card selects the clustering scale (`dynamical_scale_choice = -1`
+/// is the default and nothing here fixes it), so a copy of its artifact stamped
+/// with format version 6 must be refused: version 6's `sigma_pb` was computed
+/// with the scale read from the sampler's own channel, and this build draws that
+/// channel's configuration from `AMP2` per point instead, which is a different
+/// rule for the same run card.
+#[test]
+fn a_pre_draw_artifact_is_refused_on_a_clustering_card() {
+    let run = run();
+    let stale = stale_copy(run, "stale-clustering.bin.zst", 6);
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
+    cmd.arg("generate")
+        .arg(&stale)
+        .arg(&run.proc_card)
+        .arg("--run-card")
+        .arg(&run.run_card)
+        .arg("--nevents")
+        .arg("10")
+        .arg("-o")
+        .arg(run.dir.join("never.lhe"));
+    let out = cmd.output().expect("spawn vibegraph");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "generate accepted a format-version-6 artifact on a clustering-scale card; it must \
+         refuse\nstdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(
+        stderr.contains("AMP2") && stderr.contains("format version"),
+        "the refusal must name the scale rule and the version, got: {stderr}"
+    );
+}
+
+/// The same stale artifact, on a card that fixes every scale: `is_fully_fixed`
+/// takes the clustering branch out of the picture entirely (`ScaleChoice::
+/// needs_channels`), so the version-6 `sigma_pb` was computed by the same closed
+/// form this run would use and the guard must not fire.
+#[test]
+fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().to_path_buf();
+    let proc_card = dir.join("proc_card.dat");
+    let run_card = dir.join("run_card.dat");
+    std::fs::write(&proc_card, format!("import model sm\ngenerate {PROCESS}\n")).unwrap();
+    write_run_card(
+        &run_card,
+        EBEAM,
+        "True = fixed_ren_scale\nTrue = fixed_fac_scale\n",
+    );
+
+    let out = dir.join("out");
+    let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(&out)
+        .args(["--neval", NEVAL, "--niter", NITER])
+        .status()
+        .expect("spawn vibegraph");
+    assert!(status.success(), "vibegraph integrate exited non-zero");
+
+    let artifact_path = out.join("grid.bin.zst");
+    let mut artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
+    let choice = ScaleChoice::from_run_card(&artifact.run_card).expect("scale choice compiles");
+    assert!(
+        !choice.needs_channels(),
+        "the fixture card must actually be fully fixed, or this test is not exercising the \
+         branch it claims to"
+    );
+    artifact.format_version = 6;
+    let stale = dir.join("stale-fixed.bin.zst");
+    artifact.write_to_path(&stale, true).expect("write stale copy");
+
+    let output = dir.join("fixed.lhe");
+    let gen_status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        .arg("generate")
+        .arg(&stale)
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--nevents")
+        .arg("10")
+        .arg("-o")
+        .arg(&output)
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        gen_status.status.success(),
+        "a format-version-6 artifact on a fixed-scale card must still load:\n{}",
+        String::from_utf8_lossy(&gen_status.stderr)
+    );
+    assert!(output.exists());
 }
