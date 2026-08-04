@@ -77,9 +77,9 @@ schema = 1
 #
 # What the banked layer fetches instead of running MadGraph: the frozen event
 # files with their banners and logs, the run and parameter cards, each
-# subprocess's `leshouche.inc` and `matrix1_orig.f`, the per-channel integration
-# logs the `alpha_s` source rule is read out of, the combined `results.dat`, and
-# the fixed-grid amplitude tables. It unpacks into
+# subprocess's `leshouche.inc` and every `matrixN_orig.f`, the per-channel
+# integration logs the `alpha_s` source rule is read out of, the combined
+# `results.dat`, and the fixed-grid amplitude tables. It unpacks into
 # `validation/madgraph/output/`, so a fetching checkout and a machine that
 # generated the runs itself present the gates with the same paths.
 #
@@ -90,11 +90,11 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 5
-archive = "vibegraph-refdata-5.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-5/vibegraph-refdata-5.tar.zst"
-sha256 = "9f639d4ed651e66a7d7f7c9b863bed9e66059c43cefb213e803d8c8c072d356e"
-size_bytes = 117974066
+version = 6
+archive = "vibegraph-refdata-6.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-6/vibegraph-refdata-6.tar.zst"
+sha256 = "75ee6debcff120c2c7555f1ce0d3cf259c415cb1410743a94495aaa7d0b3bee5"
+size_bytes = 118030273
 unpacks_to = "validation/madgraph/output"
 # Every run in this bundle is MadGraph 3.7.1's except the six that measure a
 # 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
@@ -107,6 +107,13 @@ unpacks_to = "validation/madgraph/output"
 # are therefore different parton densities from cut 4's, and their cross
 # sections are not comparable across the boundary — the `b b~` pair moves 9.8%.
 # The superseded runs are recoverable from the local retired area, not from here.
+#
+# Cut 6 is cut 5's runs unchanged: `assemble_bundle.sh`'s member selection
+# picked only `matrix1_orig.f` per subprocess, so every `#N` case beyond the
+# first (`pp_to_jj/P1_qq_qq#2`..`#7`, `dy13_default/P1_qq_ll#2`, the llj rows)
+# was silently missing from cut 5's archive though present in the work area
+# that built it. The glob now matches `matrix[0-9]*_orig.f`; the 26 files that
+# adds are the only difference from cut 5.
 #
 # While the repository is private, the plain `url` serves 404 to unauthenticated
 # clients and the fetch falls back to an authenticated `gh release download` of

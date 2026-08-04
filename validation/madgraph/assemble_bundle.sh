@@ -4,8 +4,9 @@
 # The bundle is what lets the banked layer run on a machine that has never run
 # MadGraph: it carries the frozen outputs the gates read — the unweighted event
 # files and their banners and logs, the run and parameter cards, each
-# subprocess's `leshouche.inc` and `matrix1_orig.f`, the combined `results.dat`,
-# and the fixed-grid amplitude tables — and nothing that a build produces
+# subprocess's `leshouche.inc` and every `matrixN_orig.f` (one per diagram-group
+# case, `#1`, `#2`, ...), the combined `results.dat`, and the fixed-grid
+# amplitude tables — and nothing that a build produces
 # (objects, libraries, executables, generated Fortran beyond the two files the
 # gates parse).
 #
@@ -64,7 +65,7 @@ vg_say ">>> selecting banked files under $WORK_AREA"
     find "$proc/Cards" "$proc/Events" -type f 2>/dev/null || true
     find "$proc/SubProcesses" -maxdepth 1 -type f -name results.dat 2>/dev/null || true
     find "$proc/SubProcesses" -maxdepth 2 -type f \
-      \( -name leshouche.inc -o -name matrix1_orig.f \) 2>/dev/null || true
+      \( -name leshouche.inc -o -name 'matrix[0-9]*_orig.f' \) 2>/dev/null || true
     # Per-channel integration logs: where MadGraph prints the alpha_s source rule
     # and its own alpha_s at the scales the run evaluated.
     find "$proc/SubProcesses" -maxdepth 3 -type f -name 'run_*_log.txt' 2>/dev/null || true
