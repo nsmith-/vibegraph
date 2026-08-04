@@ -9,8 +9,8 @@ gate.
 on branch `val4`. All three standing discrepancies resolved (conjugate colour
 tags per-member; the `AMP2_c` scale-channel draw retired the channel-partition
 tolerances to 0.005; `ee_to_mumua` adjudicated — the reference owns it), every
-descoped card surface a hard error, `refdata-5` pinned (**publication pending
-the user** — `published = false` keeps CI's banked job red), and the 8
+descoped card surface a hard error, `refdata-5` **published and pinned**
+(release `refdata-5`, asset digest round-trip-verified), and the 8
 `nn23lo1`-blocked cells enforced. Census over the 29-row × 4-category report:
 **98 measured / 96 ✅ / 2 ⚠️** (one ⚠️ is the pre-existing `gg_to_gg`
 diagrams 4/6 annotation; the other is a new finding, below). Full record:
@@ -31,10 +31,11 @@ polarization, decay chains — is explicitly descoped to the feature backlog
 reach must be a **hard error**, never a silent acceptance; the fixes closing
 the remaining silent acceptances are validation-sprint items.
 
-**Awaiting the user**: `main` is pushed; the first release tag is **`v0.1`**
-(decided 2026-08-02) — a 0.x line because no global backwards-compatibility
-promise is made yet; a future "quality sprint" tightening the `pub` API
-surface (backlog below) precedes any 1.0. Tagging runs `release.yml` and
+**Awaiting the user**: the first release tag is **`v0.1`**, decided
+2026-08-02 and re-affirmed 2026-08-03 to follow the **performance sprint**
+(next below) — a 0.x line because no global backwards-compatibility promise
+is made yet; a future "quality sprint" tightening the `pub` API surface
+(backlog below) precedes any 1.0. Tagging runs `release.yml` and
 `acceptance.yml` for the first time.
 
 **Next sprint**: the **performance sprint** — the integration-focused pass
