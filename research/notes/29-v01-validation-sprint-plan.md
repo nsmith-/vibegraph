@@ -6007,7 +6007,153 @@ precedent does.
 **No ⛔ remains anywhere in the manifest**, and `blocked` is now a tier the
 schema documents and nothing uses.
 
-## Close-out
+## Close-out (2026-08-03)
 
-(To be written at sprint close: per-chain outcomes, census before/after,
-protocol observations on the design–implement–review structure.)
+Written by the sprint manager. Every number here is a recorded measurement
+from a chain's own report or a gate the manager ran; nothing is inferred from
+"the suite passed".
+
+### Census
+
+Before (clean main, 2026-08-02, after the stale `pp_to_llj_qcd2_qed2`
+artifacts were removed): **87 measured / 85 ✅ / 2 ⚠️ / 4 ⏳ / 8 ⛔ / 17 —**
+over 29 rows × 4 categories = 116 cells.
+
+After (val4 with every chain and the §G re-bank merged, refdata-5 pinned):
+**98 measured / 96 ✅ / 2 ⚠️ / 4 ⏳ / 0 ⛔ / 14 —**.
+
+The ⚠️ pair changed membership. Of the starting two, `p p > j j` `samples`
+was resolved by chain A (its `ICOLUP` χ² now clears the floor and the cell
+gates ✅) and `gg_to_gg` `diagrams` (4/6, measured and deliberately not
+enforced) remains — untouched by this sprint. The second current ⚠️ is
+`ud_to_epemud_qcd0` `samples`, a **new finding** measured by chain E's
+coverage: `ICOLUP` χ² ≈ 650 on 1 dof, p ≈ 0, seed-stable — a colour-flow
+convention gap on the fixed-beam `SubprocessRecord::new` path, distinct from
+chain A's relabelling mechanism; kinematics and `SPINUP` clear their floors.
+The 8 ⛔ became 8 enforced gates (§G phase 2). The 17 → 14 uncovered:
+`ud_to_epemud_qcd0` `diagrams` (E), `ud_to_epemud_qcd0` `samples` (E),
+`pp_to_llj_dyn` `samples` (B-3).
+
+### Exit criteria
+
+- **E1** ✅ — conjugate colour tags fixed by per-member colour-flow tables
+  (chain A): dijet `ICOLUP` χ² p 0.105/0.263/0.140 over three seeds against
+  p 0 at 2494/25 before; T5 0/80 000 mis-slotted legs; oracle widened to all
+  73 concrete subprocesses over 47 `leshouche.inc` files.
+- **E2** ✅ in substance — the `AMP2_c` draw (chain B) collapsed the
+  channel-partition gaps into Monte-Carlo noise (`gu` −1.48e-2 → +1.9e-3,
+  `gux` −1.53e-2 → +1.5e-3 against 1.6e-3 MC) and the partition tolerances
+  were retired 0.02/0.015 → 0.005, set at the references' own errors with
+  measured headroom. The design's E2-second-half gap (the flavour-group
+  axis) was measured to be zero (B-0: within-group and across-group spreads
+  equal to every digit), so nothing was left on the table.
+- **E3** ✅ — hard-error closures: polarized beams, decay-chain syntax,
+  `propagators.py` (C1); the 209-field run-card audit with 23 refused
+  physics fields including `chcluster`/`ktscheme` caught in review (C2);
+  the μF ≥ 2 GeV veto transcribed from `reweight.f` as a zero-weight
+  mapping; `dynamical_scale_choice` 1–5 a hard error.
+- **E4** ✅ recorded, verdict **D1: the reference owns it** — MadGraph's
+  windowed partition fails its own closure (+3.07σ), its unweighted sample
+  contradicts its own windowed integrals (≥15σ), its two complete partitions
+  of one run disagree at 16.70σ, while our total matches its m(μμ)
+  re-integration at +0.016% (0.16σ). Tolerances unchanged. Residual: an
+  unattributed ~1% ours-high excess localised to MadGraph's pt(γ)/η(γ)
+  coverage; the named next probe is the 2D `[39.4,77) × [86,96)` cell.
+- **E5** ✅ — ForcePositive implemented with LHAPDF's own semantics;
+  `validate_kt_cluster` a declared oracle tier with a `[[standalone]]` row;
+  the silent skips hard-assert; coverage +2 cells (E).
+- **E6** ✅ — refdata-5 pinned (replacement semantics, member list identical
+  name-for-name to refdata-4), the four re-carded runs join the PDF-grid αs
+  class, and all 8 blocked cells are enforced gates: σ pulls +0.23/+0.03/
+  +0.11/−0.03, every samples column above the 1e-4 floor on three seeds.
+  `pp_to_llj` gates at 600k points/iteration because its ladder was still
+  climbing at 300k — a tolerance was not widened to admit a moving number.
+  Publication of the bundle (`gh release`, note 28 §Z.7 convention) is
+  pending the user; `published = false` keeps CI's banked job red until then.
+- **E7** ✅ recorded as designed — chain F's U(1) charge-flow phase
+  hypothesis reached n−k = 0 against the pre-registered bar of 5; the P0
+  falsifier refuted the strong reading in the first hour. Negative result,
+  no production change.
+
+### Per-chain verdicts (design → implement → review)
+
+- **F** (research sidecar): interesting but not actionable; review verified
+  the bar arithmetic independently. One review fix loop (note-prose errors).
+- **C1** (hard errors): merged after review with all three refusals
+  hand-verified. One incident: the implementer lost uncommitted work to its
+  own `git reset` and re-applied; commit-early discipline added to briefs.
+- **E** (ForcePositive + hygiene): merged; review found a second silent
+  skip, fixed same loop. Surfaced the `ud_to_epemud_qcd0` ICOLUP finding.
+- **A** (colour tags): the sprint's deepest chain — the design's premise was
+  falsified twice by measurement (the crossing class `u c~ > u c~`; the
+  `g g > g g` reversal-degenerate self-pairing), amended twice, and the
+  final mechanism (per-member tables under a structurally-determined
+  permutation, refuse-on-ambiguity) survived an independent 20k-event
+  categorical reproduction by the reviewer.
+- **D** (ee_to_mumua ownership): pre-registration held mechanically (the
+  note is append-only through all measurement commits — zero deletions);
+  the reviewer recomputed all six headline claims from raw artifacts and
+  reproduced every one. One manager ruling: D1 read at side level as the
+  clauses were frozen; the strict per-window reading (D10) is recorded,
+  not smoothed.
+- **C2** (card audit + veto): the design's veto premise was falsified (the
+  veto existed but panicked) and amended; review caught two misclassified
+  fields via one human reading a reason string against `cluster.f` — the
+  audit's own documented blind spot materialising. Lesson adopted: per-field
+  evidence strings wherever a block argument is not uniform.
+- **B** (AMP2_c draw): B-0's census falsified the design's 18-row reach list
+  (nine fixed-beam rows compile no scale prescription — including all three
+  "unknown" rows, which is what cleared the potential collision with D) and
+  measured the group-vs-config split to be exactly zero, retiring stage B-2
+  before it was built. The live draw's escalation diff landed byte-exactly
+  on the pre-registered five-cell set. The reviewer independently derived
+  the load-bearing step the design had asserted (MadEvent clusters in the
+  sampler's channel, but the enhancement weight makes the event-density
+  conditional `AMP2_c/Σ AMP2` independent of the map densities) and the
+  derivation is now in the results section. One review fix loop
+  (a published stale manifest note; a false "not read" label).
+
+### Manager rulings made during the sprint
+
+B-2 out (by measurement); D1 over D10 (frozen side-level clauses; label-only
+difference); the `ee_to_mumua` samples p-floor stays at 1e-4 with the 1.3×
+headroom recorded as a watch item (raising it would be the loosening E4
+forbids); `tmin_for_channel` stays a refused field — the implementer's
+counter-argument to the manager's own instruction was correct and is
+recorded in the results section; refdata-5 publication deferred to the user;
+§G phase 2 held until after chain B's merge so the pin flip could not
+confound B's σ-row escalation check.
+
+### Protocol observations (the §6 question)
+
+The design step paid for itself on **every** chain, including the light
+ones — but not by being right: three designs had a load-bearing premise
+falsified by the first measurement (A twice, C2's veto, B's row list), and
+the value was that each falsification happened against a written,
+pre-registered claim, so it produced an amendment instead of an
+improvisation. The pre-registered decision table (D) and may-move set (B)
+turned the two highest-stakes adjudications into mechanical checks. Review
+with fresh context caught real defects on five of seven chains (F's prose,
+E's second skip, C2's two fields, D's four record gaps, B's published stale
+note) — none caught by the implementer, all cheap to fix in one loop; no
+chain needed a second review loop. Costs, recorded honestly: Sonnet-staffed
+sessions stalled in a "waiting for notification" state on three occasions
+and needed manager nudges (Opus sessions did too under the ~600s stream
+watchdog, twice); the manager's own post-compaction brief lost reviewer
+wording it had deferred across a pause (lesson: quote deferred text
+verbatim at hold time); and one harness-level incident — a design-session
+worktree found reset with uncommitted work — cost one re-application.
+Worktree pre-provisioning (COW reference data, branch-at-dispatch
+verification) had zero failures across nine sessions.
+
+### Standing items handed to TODO.md
+
+The `ud_to_epemud_qcd0` ICOLUP diagnosis; the SCALUP samples column (the
+sharpest missing oracle — no samples cell compares it, though MadGraph's
+LHEs carry it and the no-prescription rows emit run-card values); the
+drawn-configuration accessor + end-to-end frequency law + banked zero-spread
+assertion; `pp_to_jj`'s 4.999999e-7 across-group spread; `scale_draw_
+fallbacks()` observability; the αs silent-NaN below ~0.5 GeV; k/G bit
+pinning and the per-process route-sign patterns (F); the D 2D-cell probe;
+the `blocked` tier schema slot (now unused); `probe_recarded_budget_ladder`
+has no pixi task; `pp_to_llj`'s 600k gate cost (~2 min per banked run).
