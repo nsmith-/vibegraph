@@ -85,6 +85,9 @@ pub struct ResolvedCell {
     /// The measurements behind the cell, worst first.
     pub detail: Vec<String>,
     pub sources: Vec<String>,
+    /// What each of those measurements cost in wall-clock seconds, labelled the
+    /// way the cell labels them. Only the ones whose gate timed itself appear.
+    pub durations: Vec<(String, f64)>,
 }
 
 pub struct ResolvedRow<'a> {
@@ -236,6 +239,10 @@ fn resolve_cell(
         sources: measured
             .iter()
             .map(|m| m.path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect(),
+        durations: measured
+            .iter()
+            .filter_map(|m| m.duration_s.map(|s| (m.label().to_string(), s)))
             .collect(),
     };
 

@@ -75,7 +75,7 @@ use vibegraph::validation::samples::{compare, labelling_for, Chi2Column, EventSa
 
 mod common;
 
-use common::report::{CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample};
+use common::report::{CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample, Stopwatch};
 
 /// α-adaptation budget for the multichannel combiner, matching the σ gate's, so
 /// the grids the events are drawn on are the ones that gate integrates over.
@@ -543,6 +543,7 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
     // in full, never enforced, and tracked in the backlog instead.
     let mut informational: Vec<String> = Vec::new();
     for row in ROWS {
+        let clock = Stopwatch::start();
         let mg = banked_sample(row.key);
         eprintln!(
             "-- {} ({} banked events, sigma {:.6e} pb) --",
@@ -600,6 +601,7 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                 }
                 _ => "info",
             };
+            report.duration_s = Some(clock.seconds());
             report.write();
         });
     }

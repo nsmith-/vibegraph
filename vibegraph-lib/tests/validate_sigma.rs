@@ -115,7 +115,7 @@ use vibegraph::ufo::EvaluatedModel;
 
 mod common;
 
-use common::report::{ChannelSummary, IntegralsRow, SeedResult};
+use common::report::{ChannelSummary, IntegralsRow, SeedResult, Stopwatch};
 
 /// A pull magnitude above this fails the gate. The banked runs and the vibegraph
 /// integral are independent Monte-Carlo estimates, so a few-sigma spread is
@@ -1870,6 +1870,7 @@ fn compare(sigma_vg: f64, err_vg: f64, banked: &BankedSigma) -> (f64, f64) {
 /// Every non-skipped row writes its measurement to the report directory,
 /// including a failing one: the report is what ran, not what passed.
 fn gate_dir(dir: &str, banked: &BankedSigma) -> Result<(), String> {
+    let clock = Stopwatch::start();
     let (neval, niter, mode, reason, rel_tol) = match plan_for(dir) {
         Plan::Skip(reason) => {
             eprintln!("[{dir}] SKIP ({reason})");
@@ -1948,6 +1949,7 @@ fn gate_dir(dir: &str, banked: &BankedSigma) -> Result<(), String> {
     row.niter = niter;
     row.subsampler = subsampler;
     row.note = reason.map(str::to_string);
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     match failure {

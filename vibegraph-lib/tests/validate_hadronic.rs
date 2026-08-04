@@ -45,7 +45,7 @@ mod common;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use common::report::{ChannelSummary, IntegralsRow, SeedResult};
+use common::report::{ChannelSummary, IntegralsRow, SeedResult, Stopwatch};
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -418,6 +418,7 @@ fn combine_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
 /// row's. Being a single scalar it is also blind to a mis-sampled region of small
 /// measure, which the seed sweep and not the pull is what guards.
 fn check_dy_run(run: &str, card: &str) {
+    let clock = Stopwatch::start();
     let (mg, mg_err) = banked(run).expect("banked Drell-Yan reference");
     let card_path = validation_dir().join(card);
     let rc = RunCard::parse_file(&card_path).expect("parse run card");
@@ -492,6 +493,7 @@ fn check_dy_run(run: &str, card: &str) {
     row.neval = DY_NEVAL;
     row.niter = DY_NITER;
     row.subsampler = summary;
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -800,6 +802,7 @@ fn probe_fiducial_bound_on_llj_fixed() {
 
 #[test]
 fn sigma_llj_fixed_scale_vs_mg() {
+    let clock = Stopwatch::start();
     let run_dir = validation_dir().join("output/pp_to_llj_fixed");
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).unwrap_or_else(|e| {
         panic!(
@@ -883,6 +886,7 @@ fn sigma_llj_fixed_scale_vs_mg() {
          ladder are oracle-layer"
             .to_string(),
     );
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -981,6 +985,7 @@ fn sigma_llj_dynamical_scale_vs_mg() {
     if !dyn_run_present("sigma_llj_dynamical_scale_vs_mg", LLJ_DYN_RUN) {
         return;
     }
+    let clock = Stopwatch::start();
     let run_dir = validation_dir().join("output").join(LLJ_DYN_RUN);
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
     let (mg, mg_err) = banked_llj_sigma(&run_dir);
@@ -1064,6 +1069,7 @@ fn sigma_llj_dynamical_scale_vs_mg() {
          the wrong statistic having been retired with the draw"
             .to_string(),
     );
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -1271,6 +1277,7 @@ fn bb_fixed_shat_floor_matches_madgraphs_own() {
 /// the pull is what guards.
 #[test]
 fn sigma_bb_fixed_scale_vs_mg() {
+    let clock = Stopwatch::start();
     let run_dir = validation_dir().join("output/pp_to_bb_fixed");
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).unwrap_or_else(|e| {
         panic!(
@@ -1353,6 +1360,7 @@ fn sigma_bb_fixed_scale_vs_mg() {
          budget ladder"
             .to_string(),
     );
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -1941,6 +1949,7 @@ fn sigma_jj_dynamical_scale_vs_mg() {
     if !dyn_run_present("sigma_jj_dynamical_scale_vs_mg", JJ_RUN) {
         return;
     }
+    let clock = Stopwatch::start();
     let run_dir = validation_dir().join("output").join(JJ_RUN);
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
     let (mg, mg_err) = banked_llj_sigma(&run_dir);
@@ -2023,6 +2032,7 @@ fn sigma_jj_dynamical_scale_vs_mg() {
          converged rather than under-sampled is oracle-layer"
             .to_string(),
     );
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -2307,6 +2317,7 @@ fn measure_recarded_sigma(run: &str, process: &str, neval: usize) {
     if !dyn_run_present("recarded_rows_sigma_vs_mg", run) {
         return;
     }
+    let clock = Stopwatch::start();
     let run_dir = validation_dir().join("output").join(run);
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
     let (mg, mg_err) = banked_llj_sigma(&run_dir);
@@ -2389,6 +2400,7 @@ fn measure_recarded_sigma(run: &str, process: &str, neval: usize) {
         "three seeds at {neval} points an iteration, the rung this row's budget \
          ladder is flat at"
     ));
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -2510,3 +2522,4 @@ fn probe_recarded_budget_ladder() {
         }
     }
 }
+

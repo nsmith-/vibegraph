@@ -57,7 +57,7 @@ mod manifest;
 #[path = "../../vibegraph-lib/tests/common/leshouche.rs"]
 mod leshouche;
 
-use report::{CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample};
+use report::{CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample, Stopwatch};
 
 /// The PDF set both banked runs were generated with.
 const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
@@ -305,6 +305,7 @@ impl Generator {
 /// demoted with a note saying what was measured and where the fix is tracked —
 /// never by widening the floor.
 fn check_row(row_spec: &Row) {
+    let clock = Stopwatch::start();
     let Row {
         run,
         key,
@@ -460,6 +461,7 @@ fn check_row(row_spec: &Row) {
         }
         _ => "info",
     };
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     if mode != "gate" {

@@ -31,6 +31,8 @@ struct Common {
     process: String,
     #[serde(default)]
     note: Option<String>,
+    #[serde(default)]
+    duration_s: Option<f64>,
 }
 
 #[derive(Debug)]
@@ -43,6 +45,9 @@ pub struct RowFile {
     pub status: String,
     pub process: String,
     pub note: Option<String>,
+    /// Wall-clock seconds the gate spent measuring this row, where it timed
+    /// itself. A measurement, not a verdict: nothing here reads it.
+    pub duration_s: Option<f64>,
     value: Value,
 }
 
@@ -77,6 +82,7 @@ impl RowFile {
             status: common.status,
             process: common.process,
             note: common.note,
+            duration_s: common.duration_s,
             value,
         })
     }

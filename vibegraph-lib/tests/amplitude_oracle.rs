@@ -101,7 +101,7 @@ use libtest_mimic::{Arguments, Failed, Trial};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use common::report::AmplitudesRow;
+use common::report::{AmplitudesRow, Stopwatch};
 
 use vibegraph::diagrams::DiagramSet;
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -611,13 +611,15 @@ fn worst_deviation(entries: &[Entry], g: C<f64>, scale: f64) -> (f64, String) {
 /// The trial, and the report row it writes either way: a failure is a cell the
 /// collator has to see as failed, not a cell that silently went missing.
 fn run_trial(path: PathBuf) -> Result<(), Failed> {
+    let clock = Stopwatch::start();
     let key = path.file_stem().unwrap().to_string_lossy().into_owned();
     let known = KNOWN_LINEAR_DISAGREEMENT
         .iter()
         .find(|(k, _)| *k == key)
         .map(|(_, why)| *why);
     match (measure(path, known.is_some()), known) {
-        (Ok(row), None) => {
+        (Ok(mut row), None) => {
+            row.duration_s = Some(clock.seconds());
             row.write();
             Ok(())
         }
@@ -631,6 +633,7 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
             .into();
             row.status = "fail";
             row.note = Some(failed.message().unwrap_or_default().to_string());
+            row.duration_s = Some(clock.seconds());
             row.write();
             Err(failed)
         }
@@ -641,6 +644,7 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
             let observed = row.note.take().unwrap_or_default();
             row.note = Some(format!("{why}. This run: {observed}"));
             println!("  [{key}] informational (not gated): {why}.\n    this run: {observed}");
+            row.duration_s = Some(clock.seconds());
             row.write();
             Ok(())
         }
@@ -649,6 +653,7 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
                 AmplitudesRow::new(&key, "", if known.is_some() { "info" } else { "gate" });
             row.status = "fail";
             row.note = Some(failed.message().unwrap_or_default().to_string());
+            row.duration_s = Some(clock.seconds());
             row.write();
             Err(failed)
         }
