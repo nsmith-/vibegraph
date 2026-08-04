@@ -98,7 +98,7 @@ use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::grid::AlphaSInfo;
-use crate::pdf::PdfMember;
+use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
     identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, DiagramChannel, PhaseSpaceMap,
@@ -209,7 +209,29 @@ pub struct FlavorGroup {
     legs: Vec<ExternalLeg>,
     cuts: Cuts,
     members: Vec<Subprocess>,
+    /// Per member, parallel to `members`: where its beam partons sit in a
+    /// flavour row.
+    member_slots: Vec<BeamSlots>,
     spin_color_avg: f64,
+}
+
+/// One member's luminosity addressing: the [`crate::pdf::flavor_slot`] of each
+/// beam parton, resolved once at setup, and whether the two differ — a member
+/// whose beams carry the same parton has no mirrored ordering.
+#[derive(Debug, Clone, Copy)]
+struct BeamSlots {
+    slots: [usize; 2],
+    mirrored: bool,
+}
+
+/// The two per-beam flavour rows one phase-space point reads: `x·f` at
+/// `(x₁, μ²_F1)` and at `(x₂, μ²_F2)`, every flavour at once. Every subprocess
+/// summed over the point reads these same two, whatever its beam flavours.
+pub fn beam_rows(pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [FlavorRow; 2] {
+    let mut rows = [[0.0; FLAVOR_SLOTS]; 2];
+    pdf.xfx_all(x1, mu_f[0] * mu_f[0], &mut rows[0]);
+    pdf.xfx_all(x2, mu_f[1] * mu_f[1], &mut rows[1]);
+    rows
 }
 
 impl FlavorGroup {
@@ -296,10 +318,21 @@ impl FlavorGroup {
     /// A member whose beams carry the same parton has a single ordering, so it
     /// contributes to `direct` only — counting it twice would double that
     /// subprocess's cross section.
+    ///
+    /// This reads the densities itself. Every group of a process evaluates them
+    /// at the same two points, so a caller summing over groups reads the two
+    /// beam rows once with [`beam_rows`] and takes
+    /// [`luminosity_rows`](Self::luminosity_rows) instead.
     pub fn luminosity(&self, pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [f64; 2] {
+        let [f1, f2] = beam_rows(pdf, x1, x2, mu_f);
+        self.luminosity_rows(&f1, &f2)
+    }
+
+    /// [`luminosity`](Self::luminosity) off the two beam flavour rows directly.
+    pub fn luminosity_rows(&self, f1: &FlavorRow, f2: &FlavorRow) -> [f64; 2] {
         let mut sums = [0.0; 2];
         for i in 0..self.members.len() {
-            let m = self.member_luminosity(i, pdf, x1, x2, mu_f);
+            let m = self.member_luminosity_rows(i, f1, f2);
             sums[0] += m[0];
             sums[1] += m[1];
         }
@@ -323,10 +356,17 @@ impl FlavorGroup {
         x2: f64,
         mu_f: [f64; 2],
     ) -> [f64; 2] {
+        let [f1, f2] = beam_rows(pdf, x1, x2, mu_f);
+        self.symmetry_weighted_luminosity_rows(&f1, &f2)
+    }
+
+    /// [`symmetry_weighted_luminosity`](Self::symmetry_weighted_luminosity) off
+    /// the two beam flavour rows directly.
+    pub fn symmetry_weighted_luminosity_rows(&self, f1: &FlavorRow, f2: &FlavorRow) -> [f64; 2] {
         let mut sums = [0.0; 2];
         for (i, member) in self.members.iter().enumerate() {
             let s = member.symmetry_factor();
-            let m = self.member_luminosity(i, pdf, x1, x2, mu_f);
+            let m = self.member_luminosity_rows(i, f1, f2);
             sums[0] += s * m[0];
             sums[1] += s * m[1];
         }
@@ -343,14 +383,23 @@ impl FlavorGroup {
         x2: f64,
         mu_f: [f64; 2],
     ) -> [f64; 2] {
-        let q2 = [mu_f[0] * mu_f[0], mu_f[1] * mu_f[1]];
-        let [a, b] = self.members[member].incoming;
-        let direct = pdf.xfx_q2(a, x1, q2[0]) * pdf.xfx_q2(b, x2, q2[1]);
-        let mirror = if a == b {
-            0.0
-        } else {
-            pdf.xfx_q2(b, x1, q2[0]) * pdf.xfx_q2(a, x2, q2[1])
-        };
+        let [f1, f2] = beam_rows(pdf, x1, x2, mu_f);
+        self.member_luminosity_rows(member, &f1, &f2)
+    }
+
+    /// [`member_luminosity`](Self::member_luminosity) off the two beam flavour
+    /// rows directly: two array reads per ordering, at slots resolved when the
+    /// group was built.
+    pub fn member_luminosity_rows(
+        &self,
+        member: usize,
+        f1: &FlavorRow,
+        f2: &FlavorRow,
+    ) -> [f64; 2] {
+        let m = self.member_slots[member];
+        let [a, b] = m.slots;
+        let direct = f1[a] * f2[b];
+        let mirror = if m.mirrored { f1[b] * f2[a] } else { 0.0 };
         [direct, mirror]
     }
 
@@ -728,12 +777,28 @@ pub fn derive_flavor_groups(
             .collect::<Result<Vec<_>, ProtonError>>()?;
         let (evaluator, legs, cuts) = compiled[head].take().expect("group head unclaimed");
         let spin_color_avg = initial_spin_color_average(&evaluator, model, evaluated);
+        let member_slots = members
+            .iter()
+            .map(|m| {
+                let [a, b] = m.incoming;
+                let slot = |pdg: i32| {
+                    flavor_slot(pdg).unwrap_or_else(|| {
+                        panic!("initial-state parton {pdg} is not a tabulated parton density")
+                    })
+                };
+                BeamSlots {
+                    slots: [slot(a), slot(b)],
+                    mirrored: a != b,
+                }
+            })
+            .collect();
         groups.push(FlavorGroup {
             representative: sets[head].take().expect("group head unclaimed"),
             evaluator,
             legs,
             cuts,
             members,
+            member_slots,
             spin_color_avg,
         });
     }
@@ -1409,11 +1474,15 @@ impl<'a> ProtonIntegrand<'a> {
         };
         self.apply_scale(scales.mu_r);
 
+        // Two density readings for the whole point: every group reads `x·f` at
+        // the same two `(x, μ²_F)`, and differs only in which flavours it picks
+        // out of them.
+        let [f1, f2] = beam_rows(self.pdf, m.x1, m.x2, scales.mu_f);
+
         let mut acc = 0.0;
         let mut mirror = self.mirror_buf.borrow_mut();
         for (g, sub) in self.groups.groups().iter().zip(&self.subs) {
-            let [direct, reflected] =
-                g.symmetry_weighted_luminosity(self.pdf, m.x1, m.x2, scales.mu_f);
+            let [direct, reflected] = g.symmetry_weighted_luminosity_rows(&f1, &f2);
             let mut term = 0.0;
             if direct != 0.0 {
                 term += direct * sub.eval_m2(&cm);
@@ -1637,11 +1706,12 @@ impl<'a> ProtonIntegrand<'a> {
         self.apply_scale(event.scales.mu_r);
         let mut mirror = Vec::with_capacity(event.cm.len());
 
+        let [f1, f2] = beam_rows(self.pdf, event.x[0], event.x[1], event.scales.mu_f);
+
         let mut m2 = Vec::with_capacity(self.subs.len());
         let mut terms = Vec::with_capacity(self.subs.len());
         for (g, sub) in self.groups.groups().iter().zip(&self.subs) {
-            let lumi =
-                g.symmetry_weighted_luminosity(self.pdf, event.x[0], event.x[1], event.scales.mu_f);
+            let lumi = g.symmetry_weighted_luminosity_rows(&f1, &f2);
             let direct = if lumi[0] != 0.0 {
                 sub.eval_m2(&event.cm)
             } else {
@@ -1668,8 +1738,7 @@ impl<'a> ProtonIntegrand<'a> {
             .enumerate()
             .flat_map(|(i, member)| {
                 let s = member.symmetry_factor();
-                let lumi =
-                    g.member_luminosity(i, self.pdf, event.x[0], event.x[1], event.scales.mu_f);
+                let lumi = g.member_luminosity_rows(i, &f1, &f2);
                 [s * lumi[0] * m2[group][0], s * lumi[1] * m2[group][1]]
             })
             .collect();

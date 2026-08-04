@@ -385,20 +385,20 @@ fn only_the_points_lhapdf_has_no_reading_for_are_refused() {
     let member = set.member(oracle.member).expect("member load");
 
     // Below XMin=1e-9 in x, and above QMax in Q²: both continue.
-    assert!(member.try_xfx_q2::<f64>(2, 1e-12, 1e6).is_ok());
-    assert!(member.try_xfx_q2::<f64>(2, 0.1, 1e12).is_ok());
-    assert!(member.try_xfx_q2::<f64>(2, 1e-12, 1e12).is_ok());
-    assert!(member.try_xfx_q2::<f64>(2, 0.1, 0.5).is_ok());
+    assert!(member.try_xfx_q2(2, 1e-12, 1e6).is_ok());
+    assert!(member.try_xfx_q2(2, 0.1, 1e12).is_ok());
+    assert!(member.try_xfx_q2(2, 1e-12, 1e12).is_ok());
+    assert!(member.try_xfx_q2(2, 0.1, 0.5).is_ok());
 
     // Above the last x knot there is nothing to continue into, and a point that
     // is not a point has no reading in any direction.
-    assert!(member.try_xfx_q2::<f64>(2, 2.0, 100.0).is_err());
-    assert!(member.try_xfx_q2::<f64>(2, 0.0, 100.0).is_err());
-    assert!(member.try_xfx_q2::<f64>(2, -0.1, 100.0).is_err());
-    assert!(member.try_xfx_q2::<f64>(2, f64::NAN, 100.0).is_err());
-    assert!(member.try_xfx_q2::<f64>(2, 0.1, -1.0).is_err());
-    assert!(member.try_xfx_q2::<f64>(2, 0.1, f64::NAN).is_err());
-    assert!(member.try_xfx_q2::<f64>(2, 0.1, f64::INFINITY).is_err());
+    assert!(member.try_xfx_q2(2, 2.0, 100.0).is_err());
+    assert!(member.try_xfx_q2(2, 0.0, 100.0).is_err());
+    assert!(member.try_xfx_q2(2, -0.1, 100.0).is_err());
+    assert!(member.try_xfx_q2(2, f64::NAN, 100.0).is_err());
+    assert!(member.try_xfx_q2(2, 0.1, -1.0).is_err());
+    assert!(member.try_xfx_q2(2, 0.1, f64::NAN).is_err());
+    assert!(member.try_xfx_q2(2, 0.1, f64::INFINITY).is_err());
 }
 
 // ── Multi-Q²-subgrid coverage (MSHT20lo_as130) ─────────────────────────

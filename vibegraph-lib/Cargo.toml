@@ -67,6 +67,10 @@ name = "kernel_fusion"
 harness = false
 required-features = ["bench-internals"]
 
+[[bench]]
+name = "pdf_xfx"
+harness = false
+
 # The amplitude gate reads committed per-process tables and needs nothing else,
 # so it is hermetic; `harness = false` is only because it names one trial per
 # process.

@@ -57,8 +57,6 @@
 
 use thiserror::Error;
 
-use crate::helas::repr::Real;
-
 use super::interp::{Bicubic2D, GridEdges, OutOfRange};
 
 /// Endpoint values above which `_extrapolateLinear` runs the straight line
@@ -107,13 +105,13 @@ pub enum PdfPointError {
 pub trait Extrapolate2D {
     /// `x·f(x, Q²)` at a point outside `interp`'s support (`pdg` 0 aliases the
     /// gluon 21).
-    fn xfx_q2<F: Real, I: Bicubic2D>(
+    fn xfx_q2<I: Bicubic2D>(
         &self,
         interp: &I,
         pdg: i32,
-        x: F,
-        q2: F,
-    ) -> Result<F, PdfPointError>;
+        x: f64,
+        q2: f64,
+    ) -> Result<f64, PdfPointError>;
 }
 
 /// LHAPDF's `continuation` extrapolator, the one both fetched sets resolve to.
@@ -121,39 +119,37 @@ pub trait Extrapolate2D {
 pub struct Continuation;
 
 impl Extrapolate2D for Continuation {
-    fn xfx_q2<F: Real, I: Bicubic2D>(
+    fn xfx_q2<I: Bicubic2D>(
         &self,
         interp: &I,
         pdg: i32,
-        x: F,
-        q2: F,
-    ) -> Result<F, PdfPointError> {
+        x: f64,
+        q2: f64,
+    ) -> Result<f64, PdfPointError> {
         let e = interp.edges();
-        let xv = x.to_f64().unwrap();
-        let q2v = q2.to_f64().unwrap();
 
         // A flavor the grid does not carry is zero everywhere, in range and out
         // of it alike: LHAPDF returns before choosing between interpolation and
         // continuation at all.
         if !interp.has_flavor(pdg) {
-            return Ok(F::zero());
+            return Ok(0.0);
         }
 
-        let x_min = f::<F>(e.x_min);
-        let x_min1 = f::<F>(e.x_min1);
-        let q2_min = f::<F>(e.q2_min);
-        let q2_max = f::<F>(e.q2_max);
-        let q2_max1 = f::<F>(e.q2_max1);
+        let x_min = e.x_min;
+        let x_min1 = e.x_min1;
+        let q2_min = e.q2_min;
+        let q2_max = e.q2_max;
+        let q2_max1 = e.q2_max1;
 
-        if xv < e.x_min && q2v >= e.q2_min && q2v <= e.q2_max {
+        if x < e.x_min && q2 >= e.q2_min && q2 <= e.q2_max {
             let f_min = interp.xfx_q2(pdg, x_min, q2)?;
             let f_min1 = interp.xfx_q2(pdg, x_min1, q2)?;
             Ok(extrapolate_linear(x, x_min, x_min1, f_min, f_min1))
-        } else if xv >= e.x_min && xv <= e.x_max && q2v > e.q2_max {
+        } else if x >= e.x_min && x <= e.x_max && q2 > e.q2_max {
             let f_max = interp.xfx_q2(pdg, x, q2_max)?;
             let f_max1 = interp.xfx_q2(pdg, x, q2_max1)?;
             Ok(extrapolate_linear(q2, q2_max, q2_max1, f_max, f_max1))
-        } else if xv < e.x_min && q2v > e.q2_max {
+        } else if x < e.x_min && q2 > e.q2_max {
             // The Q² continuation at each of the two lowest x knots, then the x
             // continuation between the two results.
             let at_x_min = extrapolate_linear(
@@ -171,9 +167,9 @@ impl Extrapolate2D for Continuation {
                 interp.xfx_q2(pdg, x_min1, q2_max1)?,
             );
             Ok(extrapolate_linear(x, x_min, x_min1, at_x_min, at_x_min1))
-        } else if q2v < e.q2_min && xv <= e.x_max {
-            let q2_step = f::<F>(ANOM_STEP_POINT * e.q2_min);
-            let (at_floor, at_step) = if xv < e.x_min {
+        } else if q2 < e.q2_min && x <= e.x_max {
+            let q2_step = ANOM_STEP_POINT * e.q2_min;
+            let (at_floor, at_step) = if x < e.x_min {
                 // The two values the gradient is measured between are themselves
                 // continued in x before the power law is built from them.
                 let floor = extrapolate_linear(
@@ -198,19 +194,19 @@ impl Extrapolate2D for Continuation {
                 )
             };
 
-            let anom = if at_floor.abs() >= f::<F>(ANOM_VALUE_FLOOR) {
-                ((at_step - at_floor) / at_floor / f::<F>(ANOM_STEP)).max(f::<F>(ANOM_MIN))
+            let anom = if at_floor.abs() >= ANOM_VALUE_FLOOR {
+                ((at_step - at_floor) / at_floor / ANOM_STEP).max(ANOM_MIN)
             } else {
-                F::one()
+                1.0
             };
             // The exponent runs from the measured anomalous dimension at the
             // floor to 1 far below it, so the density vanishes as Q² → 0.
             let ratio = q2 / q2_min;
-            Ok(at_floor * ratio.powf(anom * q2 / q2_min + F::one() - ratio))
-        } else if xv > e.x_max {
+            Ok(at_floor * ratio.powf(anom * q2 / q2_min + 1.0 - ratio))
+        } else if x > e.x_max {
             Err(PdfPointError::AboveXMax {
-                x: xv,
-                q2: q2v,
+                x,
+                q2,
                 x_max: e.x_max,
             })
         } else {
@@ -218,8 +214,8 @@ impl Extrapolate2D for Continuation {
             // above, so this is the in-range point a caller should not have sent
             // here (LHAPDF's own `LogicError` arm).
             Err(OutOfRange {
-                x: xv,
-                q2: q2v,
+                x,
+                q2,
                 x_min: e.x_min,
                 x_max: e.x_max,
                 q2_min: e.q2_min,
@@ -239,19 +235,13 @@ impl Extrapolate2D for Continuation {
 /// continuation is the only one defined. Note that `xl` and `xh` are the grid
 /// edge and the knot *inside* it, so `x` sits outside the pair rather than
 /// between them.
-fn extrapolate_linear<F: Real>(x: F, xl: F, xh: F, yl: F, yh: F) -> F {
+fn extrapolate_linear(x: f64, xl: f64, xh: f64, yl: f64, yh: f64) -> f64 {
     let t = (x.ln() - xl.ln()) / (xh.ln() - xl.ln());
-    if yl > f::<F>(LOG_LINEAR_FLOOR) && yh > f::<F>(LOG_LINEAR_FLOOR) {
+    if yl > LOG_LINEAR_FLOOR && yh > LOG_LINEAR_FLOOR {
         (yl.ln() + t * (yh.ln() - yl.ln())).exp()
     } else {
         yl + t * (yh - yl)
     }
-}
-
-/// Cast an `f64` constant into the scalar field `F`.
-#[inline(always)]
-fn f<F: Real>(v: f64) -> F {
-    num_traits::cast(v).unwrap()
 }
 
 /// Whether `(x, Q²)` lies inside the flattened grid extent, i.e. whether it is

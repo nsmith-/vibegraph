@@ -13,14 +13,36 @@
 //! evaluation time from the x-interpolated values on the four surrounding Q²
 //! knots (Hermite with central/one-sided finite-difference slopes).
 //!
-//! Coefficient and knot tables are held in `f64`; evaluation is generic over
-//! [`Real`] and casts the tables into `F` per point, so the same tables serve
-//! any scalar field. Index lookup uses the `f64` value of the query point.
-
-use crate::helas::repr::Real;
+//! # Kernel shape
+//!
+//! Tables and evaluation are `f64` throughout, and the kernel is written in the
+//! shape a lane-parallel (SIMT) implementation needs, so that the fast scalar
+//! form and a future vector form are the same code:
+//!
+//! - **Index computation is separated from arithmetic.** Band selection, the two
+//!   knot searches and the two interval fractions happen once per `(x, Q²)`;
+//!   everything after them is straight-line floating point over a contiguous
+//!   coefficient block.
+//! - **The Q²-slope stencils are branch-free.** The forward/backward/central
+//!   finite-difference cases differ only by a clamped neighbour index and two
+//!   per-interval constants ([`QCell`]), both resolved when the member is built.
+//!   The one case that is genuinely a different formula — the bilinear fallback
+//!   for a band with two Q² knots — is a property of the band, decided at build
+//!   time, not of the point.
+//! - **The inner loop is flavor-major** over the cell's contiguous
+//!   `(flavor, coefficient)` block, which is what [`LogBicubic::xfx_all`]
+//!   evaluates in one pass, and the x-direction cubic in it is a Horner chain of
+//!   fused multiply-adds. The Q²-direction Hermite deliberately is not: see
+//!   [`cubic_hermite`].
+//!
+//! A batch-of-points variant is a mechanical extension of this shape: hold the
+//! per-point indices in lanes, gather the four coefficient blocks, and run the
+//! same arithmetic. It is not built here because no caller can feed it — the
+//! hadronic integrand is a single-point closure — and an unused batched API
+//! would be untested surface. Extrapolation stays a scalar fallback either way.
 
 use super::grid::SubGrid;
-use super::normalize_flavor_pdg;
+use super::{flavor_slot, FlavorRow, FLAVOR_SLOTS};
 
 /// Raised when an evaluation point lies inside the grid's overall extent but in
 /// none of its subgrids — a gap between bands, which a well-formed `lhagrid1`
@@ -73,7 +95,12 @@ pub struct GridEdges {
 pub trait Bicubic2D {
     /// `x·f(x, Q²)` for PDG code `pdg` (0 aliases the gluon 21). Callers pass
     /// in-range points; a point in no subgrid is an [`OutOfRange`].
-    fn xfx_q2<F: Real>(&self, pdg: i32, x: F, q2: F) -> Result<F, OutOfRange>;
+    fn xfx_q2(&self, pdg: i32, x: f64, q2: f64) -> Result<f64, OutOfRange>;
+
+    /// Every tabulated flavor's `x·f(x, Q²)` at one point, written into `out` by
+    /// [`super::flavor_slot`]. Slots the grid does not carry are set to zero.
+    /// This is the form the luminosity sums want: one point, all flavors.
+    fn xfx_all(&self, x: f64, q2: f64, out: &mut FlavorRow) -> Result<(), OutOfRange>;
 
     /// The grid's own edge knots, which is what a continuation past them needs.
     fn edges(&self) -> GridEdges;
@@ -81,6 +108,10 @@ pub trait Bicubic2D {
     /// Whether the grid carries `pdg` at all (0 aliases the gluon 21). An absent
     /// flavor is exactly zero everywhere rather than a value to continue.
     fn has_flavor(&self, pdg: i32) -> bool;
+
+    /// The `(slot, pdg)` pairs some band of this grid carries, ascending in
+    /// slot — the set an all-flavor reading is defined on.
+    fn present_flavors(&self) -> &[(u8, i32)];
 }
 
 /// The precomputed log-bicubic coefficient tables for one member, one subgrid
@@ -89,13 +120,63 @@ pub trait Bicubic2D {
 pub struct LogBicubic {
     subgrids: Vec<LogBicubicSubgrid>,
     edges: GridEdges,
+    /// `(slot, pdg)` for every flavor some band carries, ascending in slot.
+    present: Vec<(u8, i32)>,
+    /// Slot → whether some band carries that flavor, for an O(1)
+    /// [`Bicubic2D::has_flavor`].
+    has_slot: [bool; FLAVOR_SLOTS],
+    /// Whether the bands are ordered so that a Q² binary search reproduces the
+    /// first-in-range walk exactly: ascending, non-overlapping in Q², and all
+    /// sharing one x support. A `lhagrid1` member is always like this; anything
+    /// else falls back to the walk.
+    bands_searchable: bool,
+}
+
+/// Per-Q²-interval constants of the Hermite slope stencil, one entry per
+/// interval `iq` of a band.
+///
+/// The three finite-difference cases LHAPDF distinguishes — forward at the
+/// band's lower Q² edge, backward at its upper edge, central in between —
+/// collapse into a single expression
+///
+/// ```text
+/// vdl = (vh - vl + (vl - vll)·dlogq·inv_dlogq_lo) · half_lo
+/// vdh = (vh - vl + (vhh - vh)·dlogq·inv_dlogq_hi) · half_hi
+/// ```
+///
+/// once the neighbour index is clamped onto the interval's own knot (so the
+/// difference `vl - vll` or `vhh - vh` is exactly zero at an edge), the
+/// reciprocal spacing there is zero, and the halving factor is one. That is the
+/// same arithmetic in the same order as the branching form, with the edge terms
+/// multiplied by zero instead of skipped.
+#[derive(Debug, Clone, Copy)]
+struct QCell {
+    /// `logq2s[iq+1] - logq2s[iq]`.
+    dlogq: f64,
+    /// `1 / (logq2s[iq] - logq2s[iq-1])`, zero at the band's lower Q² edge.
+    inv_dlogq_lo: f64,
+    /// `1 / (logq2s[iq+2] - logq2s[iq+1])`, zero at the band's upper Q² edge.
+    inv_dlogq_hi: f64,
+    /// `0.5` for a central difference, `1.0` where the one-sided difference is
+    /// the whole slope.
+    half_lo: f64,
+    half_hi: f64,
+    /// `iq - 1`, clamped to `iq` at the lower edge.
+    iq_lo: usize,
+    /// `iq + 2`, clamped to `iq + 1` at the upper edge.
+    iq_hi: usize,
 }
 
 /// One subgrid's precomputed x-direction cubic coefficients plus the log-knot
 /// coordinates needed for the Q²-direction Hermite assembly.
 #[derive(Debug, Clone)]
 struct LogBicubicSubgrid {
-    flavors: Vec<i32>,
+    /// Flavor-list position → [`super::flavor_slot`], the scatter an all-flavor
+    /// reading writes through.
+    slot_of_flavor: Vec<usize>,
+    /// Slot → flavor-list position, or `usize::MAX` for a flavor this band does
+    /// not carry. Replaces the linear scan over the flavor list.
+    flavor_of_slot: [usize; FLAVOR_SLOTS],
     logxs: Vec<f64>,
     logq2s: Vec<f64>,
     x_min: f64,
@@ -111,15 +192,81 @@ struct LogBicubicSubgrid {
     /// Raw `x·f` grid values, shape `(nx, nq, nf)` row-major. Used only by the
     /// bilinear fallback for degenerate (two-Q²-knot) bands.
     xf: Vec<f64>,
+    /// Slope stencil constants, one per Q² interval.
+    qcells: Vec<QCell>,
+    /// A band with two Q² knots carries no third knot to take a finite
+    /// difference against, and LHAPDF drops to bilinear there. It is a property
+    /// of the band, so the choice is made here rather than per point.
+    degenerate: bool,
 }
 
 impl LogBicubic {
     /// Precompute the log-bicubic coefficients for every subgrid of a member.
     pub fn build(subgrids: &[SubGrid]) -> Self {
-        LogBicubic {
-            subgrids: subgrids.iter().map(LogBicubicSubgrid::build).collect(),
-            edges: edges_of(subgrids),
+        let bands: Vec<LogBicubicSubgrid> = subgrids.iter().map(LogBicubicSubgrid::build).collect();
+
+        let mut has_slot = [false; FLAVOR_SLOTS];
+        let mut present: Vec<(u8, i32)> = Vec::new();
+        for sg in subgrids {
+            for &pdg in &sg.flavors {
+                let slot = flavor_slot(pdg).expect("checked when the band was built");
+                if !has_slot[slot] {
+                    has_slot[slot] = true;
+                    present.push((slot as u8, super::normalize_flavor_pdg(pdg)));
+                }
+            }
         }
+        present.sort_unstable();
+
+        let bands_searchable = bands.windows(2).all(|w| {
+            w[0].q2_max <= w[1].q2_min && w[0].x_min == w[1].x_min && w[0].x_max == w[1].x_max
+        });
+
+        LogBicubic {
+            subgrids: bands,
+            edges: edges_of(subgrids),
+            present,
+            has_slot,
+            bands_searchable,
+        }
+    }
+
+    /// The band a point reads from: the first whose `(x, Q²)` support contains
+    /// it. On an ordered member (the only shape `lhagrid1` produces) this is a
+    /// binary search on the bands' upper Q² edges, which lands a seam value in
+    /// the lower band exactly as the walk does, because the seam *is* that
+    /// band's upper edge.
+    #[inline]
+    fn select_band(&self, x: f64, q2: f64) -> Option<&LogBicubicSubgrid> {
+        if !self.bands_searchable {
+            return self
+                .subgrids
+                .iter()
+                .find(|sg| x >= sg.x_min && x <= sg.x_max && q2 >= sg.q2_min && q2 <= sg.q2_max);
+        }
+        let i = self.subgrids.partition_point(|sg| sg.q2_max < q2);
+        let sg = self.subgrids.get(i)?;
+        (x >= sg.x_min && x <= sg.x_max && q2 >= sg.q2_min).then_some(sg)
+    }
+
+    /// The union extent of every band, for an out-of-range report.
+    #[cold]
+    fn out_of_range(&self, x: f64, q2: f64) -> OutOfRange {
+        let mut e = OutOfRange {
+            x,
+            q2,
+            x_min: f64::INFINITY,
+            x_max: f64::NEG_INFINITY,
+            q2_min: f64::INFINITY,
+            q2_max: f64::NEG_INFINITY,
+        };
+        for sg in &self.subgrids {
+            e.x_min = e.x_min.min(sg.x_min);
+            e.x_max = e.x_max.max(sg.x_max);
+            e.q2_min = e.q2_min.min(sg.q2_min);
+            e.q2_max = e.q2_max.max(sg.q2_max);
+        }
+        e
     }
 }
 
@@ -145,51 +292,28 @@ fn edges_of(subgrids: &[SubGrid]) -> GridEdges {
 }
 
 impl Bicubic2D for LogBicubic {
-    fn xfx_q2<F: Real>(&self, pdg: i32, x: F, q2: F) -> Result<F, OutOfRange> {
-        let pdg = normalize_flavor_pdg(pdg);
-        let xf = x.to_f64().unwrap();
-        let q2f = q2.to_f64().unwrap();
-
-        // Subgrid walk: first band whose (x, Q²) support contains the point.
-        for sg in &self.subgrids {
-            if xf >= sg.x_min && xf <= sg.x_max && q2f >= sg.q2_min && q2f <= sg.q2_max {
-                let Some(ifl) = sg.flavors.iter().position(|&f| f == pdg) else {
-                    // Flavor absent from the grid: LHAPDF returns exactly zero.
-                    return Ok(F::zero());
-                };
-                return Ok(sg.eval(ifl, x, q2, xf, q2f));
-            }
+    fn xfx_q2(&self, pdg: i32, x: f64, q2: f64) -> Result<f64, OutOfRange> {
+        let Some(sg) = self.select_band(x, q2) else {
+            return Err(self.out_of_range(x, q2));
+        };
+        // Flavor absent from the band: LHAPDF returns exactly zero.
+        let Some(slot) = flavor_slot(pdg) else {
+            return Ok(0.0);
+        };
+        let ifl = sg.flavor_of_slot[slot];
+        if ifl == ABSENT {
+            return Ok(0.0);
         }
+        Ok(sg.eval_one(ifl, x, q2))
+    }
 
-        // Point in no band: report the union extent for a useful message.
-        let x_min = self
-            .subgrids
-            .iter()
-            .map(|s| s.x_min)
-            .fold(f64::INFINITY, f64::min);
-        let x_max = self
-            .subgrids
-            .iter()
-            .map(|s| s.x_max)
-            .fold(f64::NEG_INFINITY, f64::max);
-        let q2_min = self
-            .subgrids
-            .iter()
-            .map(|s| s.q2_min)
-            .fold(f64::INFINITY, f64::min);
-        let q2_max = self
-            .subgrids
-            .iter()
-            .map(|s| s.q2_max)
-            .fold(f64::NEG_INFINITY, f64::max);
-        Err(OutOfRange {
-            x: xf,
-            q2: q2f,
-            x_min,
-            x_max,
-            q2_min,
-            q2_max,
-        })
+    fn xfx_all(&self, x: f64, q2: f64, out: &mut FlavorRow) -> Result<(), OutOfRange> {
+        let Some(sg) = self.select_band(x, q2) else {
+            return Err(self.out_of_range(x, q2));
+        };
+        *out = [0.0; FLAVOR_SLOTS];
+        sg.eval_all(x, q2, out);
+        Ok(())
     }
 
     fn edges(&self) -> GridEdges {
@@ -197,12 +321,16 @@ impl Bicubic2D for LogBicubic {
     }
 
     fn has_flavor(&self, pdg: i32) -> bool {
-        let pdg = normalize_flavor_pdg(pdg);
-        self.subgrids
-            .iter()
-            .any(|sg| sg.flavors.iter().any(|&f| f == pdg))
+        flavor_slot(pdg).is_some_and(|slot| self.has_slot[slot])
+    }
+
+    fn present_flavors(&self) -> &[(u8, i32)] {
+        &self.present
     }
 }
+
+/// Marks a slot no band position corresponds to, in `flavor_of_slot`.
+const ABSENT: usize = usize::MAX;
 
 /// Largest knot index `i` with `knots[i] <= value`, clamped to `len-2` so
 /// `i` and `i+1` are always valid. Mirrors LHAPDF's `indexbelow`. Callers only
@@ -216,6 +344,16 @@ fn index_below(value: f64, knots: &[f64]) -> usize {
         i -= 1;
     }
     i.saturating_sub(1)
+}
+
+/// Where one point sits in one band: the interval indices and the two interval
+/// fractions, computed once and shared by every flavor.
+struct Cell<'a> {
+    ix: usize,
+    iq: usize,
+    tlogx: f64,
+    tlogq: f64,
+    q: &'a QCell,
 }
 
 impl LogBicubicSubgrid {
@@ -252,8 +390,50 @@ impl LogBicubicSubgrid {
             }
         }
 
+        let mut flavor_of_slot = [ABSENT; FLAVOR_SLOTS];
+        let mut slot_of_flavor = vec![0usize; nf];
+        for (ifl, &pdg) in sg.flavors.iter().enumerate() {
+            let slot = flavor_slot(pdg).unwrap_or_else(|| {
+                panic!(
+                    "subgrid flavor list carries PDG code {pdg}, which is not a parton \
+                     density this reader has a slot for (quarks -6..=6, gluon 21, photon 22)"
+                )
+            });
+            slot_of_flavor[ifl] = slot;
+            // First position wins, matching the scan over the flavor list a
+            // duplicated code would have resolved to.
+            if flavor_of_slot[slot] == ABSENT {
+                flavor_of_slot[slot] = ifl;
+            }
+        }
+
+        let qcells = (0..nq.saturating_sub(1))
+            .map(|iq| {
+                let lower = iq == 0;
+                let upper = iq + 1 == nq - 1;
+                QCell {
+                    dlogq: logq2s[iq + 1] - logq2s[iq],
+                    inv_dlogq_lo: if lower {
+                        0.0
+                    } else {
+                        1.0 / (logq2s[iq] - logq2s[iq - 1])
+                    },
+                    inv_dlogq_hi: if upper {
+                        0.0
+                    } else {
+                        1.0 / (logq2s[iq + 2] - logq2s[iq + 1])
+                    },
+                    half_lo: if lower { 1.0 } else { 0.5 },
+                    half_hi: if upper { 1.0 } else { 0.5 },
+                    iq_lo: if lower { iq } else { iq - 1 },
+                    iq_hi: if upper { iq + 1 } else { iq + 2 },
+                }
+            })
+            .collect();
+
         LogBicubicSubgrid {
-            flavors: sg.flavors.clone(),
+            slot_of_flavor,
+            flavor_of_slot,
             logxs,
             logq2s,
             x_min: sg.x[0],
@@ -264,7 +444,30 @@ impl LogBicubicSubgrid {
             nf,
             coeffs,
             xf: sg.xf.clone(),
+            qcells,
+            degenerate: nq == 2,
         }
+    }
+
+    /// Locate `(x, Q²)` in this band. All the index work and both `ln` calls
+    /// happen here, once per point however many flavors are read.
+    #[inline]
+    fn locate(&self, x: f64, q2: f64) -> (Cell<'_>, f64, f64) {
+        let logx = x.ln();
+        let logq2 = q2.ln();
+        // ln is monotone, so locating the interval on the log-knots is identical
+        // to locating it on the raw knots; use the log-knots directly.
+        let ix = index_below(logx, &self.logxs);
+        let iq = index_below(logq2, &self.logq2s);
+        let q = &self.qcells[iq];
+        let cell = Cell {
+            ix,
+            iq,
+            tlogx: (logx - self.logxs[ix]) / (self.logxs[ix + 1] - self.logxs[ix]),
+            tlogq: (logq2 - self.logq2s[iq]) / q.dlogq,
+            q,
+        };
+        (cell, logx, logq2)
     }
 
     /// The four x-cubic coefficients `[a, b, c, d]` for interval `ix`, Q²-knot
@@ -275,80 +478,64 @@ impl LogBicubicSubgrid {
         &self.coeffs[base..base + 4]
     }
 
-    /// Evaluate `x·f` at `(x, Q²)`. `xf`/`q2f` are the `f64` values of the
-    /// (possibly non-`f64`) query point, used only for the knot index lookup.
-    fn eval<F: Real>(&self, ifl: usize, x: F, q2: F, xf: f64, q2f: f64) -> F {
-        // ln is monotone, so locating the interval on the log-knots is identical
-        // to locating it on the raw knots; use the log-knots directly.
-        let ix = index_below(xf.ln(), &self.logxs);
-        let iq = index_below(q2f.ln(), &self.logq2s);
+    /// One flavor's `x·f` in an already-located cell.
+    #[inline]
+    fn eval_at(&self, cell: &Cell<'_>, ifl: usize) -> f64 {
+        let q = cell.q;
+        let vl = cubic_x(cell.tlogx, self.coeff(cell.ix, cell.iq, ifl));
+        let vh = cubic_x(cell.tlogx, self.coeff(cell.ix, cell.iq + 1, ifl));
+        let vll = cubic_x(cell.tlogx, self.coeff(cell.ix, q.iq_lo, ifl));
+        let vhh = cubic_x(cell.tlogx, self.coeff(cell.ix, q.iq_hi, ifl));
+        let d = vh - vl;
+        let vdl = (d + (vl - vll) * q.dlogq * q.inv_dlogq_lo) * q.half_lo;
+        let vdh = (d + (vhh - vh) * q.dlogq * q.inv_dlogq_hi) * q.half_hi;
+        cubic_hermite(cell.tlogq, vl, vdl, vh, vdh)
+    }
 
-        let logx = x.ln();
-        let logq2 = q2.ln();
-
-        let tlogx = (logx - f(self.logxs[ix])) / f(self.logxs[ix + 1] - self.logxs[ix]);
-
-        // x-interpolated values on the two bracketing Q² knots.
-        let vl = cubic_x(tlogx, self.coeff(ix, iq, ifl));
-        let vh = cubic_x(tlogx, self.coeff(ix, iq + 1, ifl));
-
-        // Fallback to bilinear only when both Q² edges are grid edges (i.e. the
-        // band has effectively two Q² knots) — LHAPDF's degenerate case.
-        let q2_lower = iq == 0;
-        let q2_upper = iq + 1 == self.nq - 1;
-        if q2_lower && q2_upper {
-            let f_ql = interp_linear(
-                logx,
-                f(self.logxs[ix]),
-                f(self.logxs[ix + 1]),
-                f(self.xf_raw(ix, iq, ifl)),
-                f(self.xf_raw(ix + 1, iq, ifl)),
-            );
-            let f_qh = interp_linear(
-                logx,
-                f(self.logxs[ix]),
-                f(self.logxs[ix + 1]),
-                f(self.xf_raw(ix, iq + 1, ifl)),
-                f(self.xf_raw(ix + 1, iq + 1, ifl)),
-            );
-            return interp_linear(
-                logq2,
-                f(self.logq2s[iq]),
-                f(self.logq2s[iq + 1]),
-                f_ql,
-                f_qh,
-            );
+    /// Evaluate `x·f` at `(x, Q²)` for one flavor position.
+    fn eval_one(&self, ifl: usize, x: f64, q2: f64) -> f64 {
+        let (cell, logx, logq2) = self.locate(x, q2);
+        if self.degenerate {
+            return self.bilinear(&cell, logx, logq2, ifl);
         }
+        self.eval_at(&cell, ifl)
+    }
 
-        let dlogq_1 = f(self.logq2s[iq + 1] - self.logq2s[iq]);
-        let tlogq = (logq2 - f(self.logq2s[iq])) / dlogq_1;
-
-        let (vdl, vdh) = if q2_lower {
-            // Forward difference at the lower Q² edge, central above.
-            let vdl = vh - vl;
-            let vhh = cubic_x(tlogx, self.coeff(ix, iq + 2, ifl));
-            let dlogq_2 = f(1.0 / (self.logq2s[iq + 2] - self.logq2s[iq + 1]));
-            let vdh = (vdl + (vhh - vh) * dlogq_1 * dlogq_2) * f(0.5);
-            (vdl, vdh)
-        } else if q2_upper {
-            // Backward difference at the upper Q² edge, central below.
-            let vdh = vh - vl;
-            let vll = cubic_x(tlogx, self.coeff(ix, iq - 1, ifl));
-            let dlogq_0 = f(1.0 / (self.logq2s[iq] - self.logq2s[iq - 1]));
-            let vdl = (vdh + (vl - vll) * dlogq_1 * dlogq_0) * f(0.5);
-            (vdl, vdh)
+    /// Evaluate `x·f` at `(x, Q²)` for every flavor this band carries, writing
+    /// each into its slot of `out`.
+    fn eval_all(&self, x: f64, q2: f64, out: &mut FlavorRow) {
+        let (cell, logx, logq2) = self.locate(x, q2);
+        if self.degenerate {
+            for (ifl, &slot) in self.slot_of_flavor.iter().enumerate() {
+                out[slot] = self.bilinear(&cell, logx, logq2, ifl);
+            }
         } else {
-            // Central differences on both sides.
-            let vll = cubic_x(tlogx, self.coeff(ix, iq - 1, ifl));
-            let dlogq_0 = f(1.0 / (self.logq2s[iq] - self.logq2s[iq - 1]));
-            let vdl = ((vh - vl) + (vl - vll) * dlogq_1 * dlogq_0) * f(0.5);
-            let vhh = cubic_x(tlogx, self.coeff(ix, iq + 2, ifl));
-            let dlogq_2 = f(1.0 / (self.logq2s[iq + 2] - self.logq2s[iq + 1]));
-            let vdh = ((vh - vl) + (vhh - vh) * dlogq_1 * dlogq_2) * f(0.5);
-            (vdl, vdh)
-        };
+            for (ifl, &slot) in self.slot_of_flavor.iter().enumerate() {
+                out[slot] = self.eval_at(&cell, ifl);
+            }
+        }
+    }
 
-        cubic_hermite(tlogq, vl, vdl, vh, vdh)
+    /// LHAPDF's degenerate case: a band whose only two Q² knots are both grid
+    /// edges has no finite difference to take, and falls back to bilinear on the
+    /// raw values.
+    fn bilinear(&self, cell: &Cell<'_>, logx: f64, logq2: f64, ifl: usize) -> f64 {
+        let (ix, iq) = (cell.ix, cell.iq);
+        let f_ql = interp_linear(
+            logx,
+            self.logxs[ix],
+            self.logxs[ix + 1],
+            self.xf_raw(ix, iq, ifl),
+            self.xf_raw(ix + 1, iq, ifl),
+        );
+        let f_qh = interp_linear(
+            logx,
+            self.logxs[ix],
+            self.logxs[ix + 1],
+            self.xf_raw(ix, iq + 1, ifl),
+            self.xf_raw(ix + 1, iq + 1, ifl),
+        );
+        interp_linear(logq2, self.logq2s[iq], self.logq2s[iq + 1], f_ql, f_qh)
     }
 
     /// Raw `x·f` at grid indices `(ix, iq)`, flavor `ifl`.
@@ -377,40 +564,42 @@ fn ddx_logx(sg: &SubGrid, logxs: &[f64], ix: usize, iq: usize, ifl: usize) -> f6
     }
 }
 
-/// Cast an `f64` constant into the scalar field `F`.
-#[inline(always)]
-fn f<F: Real>(v: f64) -> F {
-    num_traits::cast(v).unwrap()
-}
-
-/// Cubic from stored coefficients `[a, b, c, d]`: `a·t³ + b·t² + c·t + d`.
-/// Operation order mirrors LHAPDF's `_interpolateCubic(t, coeffs)`.
+/// Cubic from stored coefficients `[a, b, c, d]`: `a·t³ + b·t² + c·t + d`,
+/// in Horner form over fused multiply-adds. The stored monomial coefficients
+/// *are* the Horner coefficients, so this is an evaluation-order change and not
+/// a different polynomial.
 #[inline]
-fn cubic_x<F: Real>(t: F, coeffs: &[f64]) -> F {
-    let t2 = t * t;
-    let t3 = t2 * t;
-    f::<F>(coeffs[0]) * t3 + f::<F>(coeffs[1]) * t2 + f::<F>(coeffs[2]) * t + f::<F>(coeffs[3])
+fn cubic_x(t: f64, coeffs: &[f64]) -> f64 {
+    coeffs[0]
+        .mul_add(t, coeffs[1])
+        .mul_add(t, coeffs[2])
+        .mul_add(t, coeffs[3])
 }
 
 /// Cubic Hermite on `[0,1]` from edge values `vl, vh` and edge slopes
 /// `vdl, vdh` (already scaled by the interval width). Operation order mirrors
-/// LHAPDF's `_interpolateCubic(t, vl, vdl, vh, vdh)`.
+/// LHAPDF's `_interpolateCubic(t, vl, vdl, vh, vdh)`, and that is a constraint
+/// rather than an accident: at `x = 1` the four inputs cancel by some thirty
+/// orders, so `x·f` there is a pure rounding residue, and reproducing *LHAPDF's*
+/// residue is the only sense in which the two agree at such a point. Collecting
+/// the Hermite basis into one Horner chain moves that residue by parts in `1e5`
+/// of a number around `1e-35` — nothing as a density, but visible to the
+/// continuation oracle, which is relative and carries no absolute screen. The
+/// x-direction cubic has no such cancellation and is evaluated by Horner.
 #[inline]
-fn cubic_hermite<F: Real>(t: F, vl: F, vdl: F, vh: F, vdh: F) -> F {
+fn cubic_hermite(t: f64, vl: f64, vdl: f64, vh: f64, vdh: f64) -> f64 {
     let t2 = t * t;
     let t3 = t * t2;
-    let two = f::<F>(2.0);
-    let three = f::<F>(3.0);
-    let p0 = (two * t3 - three * t2 + F::one()) * vl;
-    let m0 = (t3 - two * t2 + t) * vdl;
-    let p1 = (-two * t3 + three * t2) * vh;
+    let p0 = (2.0 * t3 - 3.0 * t2 + 1.0) * vl;
+    let m0 = (t3 - 2.0 * t2 + t) * vdl;
+    let p1 = (-2.0 * t3 + 3.0 * t2) * vh;
     let m1 = (t3 - t2) * vdh;
     p0 + m0 + p1 + m1
 }
 
 /// Linear interpolation `yl + (x-xl)/(xh-xl)·(yh-yl)`.
 #[inline]
-fn interp_linear<F: Real>(x: F, xl: F, xh: F, yl: F, yh: F) -> F {
+fn interp_linear(x: f64, xl: f64, xh: f64, yl: f64, yh: f64) -> f64 {
     yl + (x - xl) / (xh - xl) * (yh - yl)
 }
 
@@ -467,7 +656,7 @@ mod tests {
 
         for &(xv, q2v) in &[(3.3e-4, 55.0), (0.11, 9.9e3), (7e-5, 2.0), (0.9, 8e5)] {
             for &fl in &[1, 2, 21] {
-                let got: f64 = interp.xfx_q2(fl, xv, q2v).unwrap();
+                let got = interp.xfx_q2(fl, xv, q2v).unwrap();
                 let want = val(xv.ln(), q2v.ln(), fl);
                 assert!(
                     (got - want).abs() <= 1e-12 * want.abs().max(1.0),
@@ -492,11 +681,62 @@ mod tests {
         let interp = LogBicubic::build(&[lo, hi]);
 
         // Interior of the lower band.
-        assert!((interp.xfx_q2(1, 0.01_f64, 10.0_f64).unwrap() - 1.0).abs() < 1e-12);
+        assert!((interp.xfx_q2(1, 0.01, 10.0).unwrap() - 1.0).abs() < 1e-12);
         // Interior of the upper band.
-        assert!((interp.xfx_q2(1, 0.01_f64, 1e4_f64).unwrap() - 2.0).abs() < 1e-12);
+        assert!((interp.xfx_q2(1, 0.01, 1e4).unwrap() - 2.0).abs() < 1e-12);
         // Exactly on the seam Q²=100: the lower band wins (first in-range).
-        assert!((interp.xfx_q2(1, 0.01_f64, 100.0_f64).unwrap() - 1.0).abs() < 1e-12);
+        assert!((interp.xfx_q2(1, 0.01, 100.0).unwrap() - 1.0).abs() < 1e-12);
+    }
+
+    /// The Q² binary search over band edges and the first-in-range walk are the
+    /// same selection, on both sides of every seam and at it — the property that
+    /// lets the search replace the walk. Checked against the walk directly, so a
+    /// future band layout the search cannot reproduce is caught here rather than
+    /// in a cross section.
+    #[test]
+    fn the_band_search_agrees_with_the_walk_everywhere() {
+        let x = geomspace(1e-4, 1.0, 6);
+        let bands: Vec<SubGrid> = [(1.0, 100.0), (100.0, 1e4), (1e4, 1e6)]
+            .iter()
+            .enumerate()
+            .map(|(i, &(lo, hi))| {
+                let q2 = geomspace(lo, hi, 5);
+                subgrid_from_fn(&x, &q2, &[1, 21], move |_, _, _| i as f64)
+            })
+            .collect();
+        let interp = LogBicubic::build(&bands);
+        assert!(interp.bands_searchable, "the fixture is an ordered member");
+
+        let walk = |q2: f64| {
+            interp.subgrids.iter().position(|sg| {
+                0.01 >= sg.x_min && 0.01 <= sg.x_max && q2 >= sg.q2_min && q2 <= sg.q2_max
+            })
+        };
+        for &q2 in &[
+            0.5,
+            1.0,
+            1.0000001,
+            50.0,
+            99.999999,
+            100.0,
+            100.00001,
+            5e3,
+            1e4,
+            1e4 + 1.0,
+            5e5,
+            1e6,
+            1e6 + 1.0,
+            1e9,
+        ] {
+            let searched = interp.select_band(0.01, q2).map(|sg| {
+                interp
+                    .subgrids
+                    .iter()
+                    .position(|s| std::ptr::eq(s, sg))
+                    .unwrap()
+            });
+            assert_eq!(searched, walk(q2), "band selection differs at Q²={q2}");
+        }
     }
 
     /// PDG 0 aliases the gluon 21, and an absent flavor evaluates to exactly 0.
@@ -508,12 +748,43 @@ mod tests {
         let val = |lx: f64, lq: f64, fl: i32| 1.0 + 0.3 * lx - 0.1 * lq + 0.01 * fl as f64;
         let interp = LogBicubic::build(&[subgrid_from_fn(&x, &q2, &flavors, val)]);
 
-        let g21: f64 = interp.xfx_q2(21, 0.01_f64, 100.0_f64).unwrap();
-        let g0: f64 = interp.xfx_q2(0, 0.01_f64, 100.0_f64).unwrap();
+        let g21 = interp.xfx_q2(21, 0.01, 100.0).unwrap();
+        let g0 = interp.xfx_q2(0, 0.01, 100.0).unwrap();
         assert_eq!(g21, g0, "PDG 0 must alias the gluon 21 bit-for-bit");
 
         // Charm (4) is not in the flavor list: exactly zero, no error.
-        assert_eq!(interp.xfx_q2(4, 0.01_f64, 100.0_f64).unwrap(), 0.0);
+        assert_eq!(interp.xfx_q2(4, 0.01, 100.0).unwrap(), 0.0);
+    }
+
+    /// The all-flavor reading is the single-flavor one, flavor by flavor, and
+    /// bit-for-bit: the luminosity sums go through `xfx_all` while every oracle
+    /// goes through `xfx_q2`, so a difference between them would be a gate the
+    /// production path is not under.
+    #[test]
+    fn all_flavor_and_single_flavor_readings_are_identical() {
+        let x = geomspace(1e-5, 1.0, 12);
+        let flavors = vec![-2, -1, 1, 2, 21, 22];
+        let val = |lx: f64, lq: f64, fl: i32| (0.3 * lx - 0.11 * lq + 0.07 * fl as f64).exp();
+        // One ordinary band and one degenerate (two-Q²-knot) band, so the
+        // bilinear fallback is covered as well as the Hermite.
+        for q2 in [geomspace(1.0, 1e6, 9), geomspace(1.0, 1e6, 2)] {
+            let interp = LogBicubic::build(&[subgrid_from_fn(&x, &q2, &flavors, val)]);
+            let mut row = [0.0; FLAVOR_SLOTS];
+            for &(xv, q2v) in &[(3.3e-4, 55.0), (0.11, 9.9e3), (7e-5, 1.0), (0.99, 9e5)] {
+                interp.xfx_all(xv, q2v, &mut row).unwrap();
+                for &fl in &flavors {
+                    let one = interp.xfx_q2(fl, xv, q2v).unwrap();
+                    let all = row[flavor_slot(fl).unwrap()];
+                    assert_eq!(
+                        one.to_bits(),
+                        all.to_bits(),
+                        "fl={fl} x={xv} Q²={q2v}: xfx_q2 {one:e} vs xfx_all {all:e}"
+                    );
+                }
+                // A flavor no band carries stays exactly zero in the row.
+                assert_eq!(row[flavor_slot(5).unwrap()], 0.0);
+            }
+        }
     }
 
     /// The interpolator itself covers only the tabulated range: a point outside
@@ -524,14 +795,10 @@ mod tests {
         let x = geomspace(1e-4, 1.0, 6);
         let q2 = geomspace(1.0, 1e6, 6);
         let interp = LogBicubic::build(&[subgrid_from_fn(&x, &q2, &[1], |_, _, _| 1.0)]);
-        assert!(
-            interp.xfx_q2(1, 1e-6_f64, 100.0_f64).is_err(),
-            "x below XMin"
-        );
-        assert!(
-            interp.xfx_q2(1, 0.01_f64, 1e8_f64).is_err(),
-            "Q² above QMax"
-        );
+        assert!(interp.xfx_q2(1, 1e-6, 100.0).is_err(), "x below XMin");
+        assert!(interp.xfx_q2(1, 0.01, 1e8).is_err(), "Q² above QMax");
+        let mut row = [0.0; FLAVOR_SLOTS];
+        assert!(interp.xfx_all(1e-6, 100.0, &mut row).is_err());
     }
 
     /// `index_below` returns the interval whose low knot is `<= value`, clamped
