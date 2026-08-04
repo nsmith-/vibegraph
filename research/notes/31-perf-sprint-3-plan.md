@@ -411,6 +411,47 @@ Gate: `validate_helas_mg` byte-equality for items 1–3, `eval_strategies` media
 with host fingerprint for all; the honest ceiling for 1–3 combined is bounded by
 the ~50% non-arithmetic share, discounted by whatever the loads/stalls overlap.
 
+**E2 — MERGED 2026-08-04 (`54d666f`, merge `d2d7520`): measured results.**
+Item 1 landed; items 2–4 implemented, measured, and deliberately not landed.
+
+- **Gate-name correction**: `validate_helas_mg` no longer exists; the successor
+  is `tests/amplitude_oracle.rs`. The session gated on it (20/20) plus a
+  stronger oracle: byte comparison of all 100 banked category row files
+  (durations stripped) — identical md5 before/after, so the change is
+  bit-for-bit at the layer's own resolution. Full validate green, census
+  unchanged.
+- **Item 1 (arena hoisting)**: header reloads 143 → 20 (the whole mechanism;
+  insns 2041 → 2064, still one `br`). `eval_m2/forward` criterion geomean
+  **−4.23%** (14/14 rows improve; two independent measurement designs agree to
+  0.01 pp under heavy sibling-session contention). `mg_perf_compare.sh`
+  MATRIX1 geomean **1.29× → 1.23×**, no row worse.
+- **Item 2 (dispatch replication): dead — +7.7% geomean.** True threaded
+  dispatch is not expressible in safe Rust (no computed goto; LLVM won't
+  tail-duplicate the jump-table block); the 2-way-unroll approximation grows
+  the function to 4183 insns, 404 header reloads, and evicts six kernels out
+  of line. E1's opcode-blocked order now stands alone against the single-`br`
+  dispatch, whose mispredicting `ldrh` (10.87%) is untouched.
+- **Item 3 (force-inline sret kernels): +0.18% alone, −2.5 pp worse on top of
+  item 1** — the 64-byte round-trips were store-to-load-forwarded; +25% code
+  growth costs more than they did. Dropped.
+- **E0-claim correction: the ~20% bounds-check budget is intact** — 108
+  `panic_bounds_check` sites before and after; hoisting did not make them
+  hoistable because the indices come from the instruction stream.
+- **Item 4 reframed**: "packed-complex GammaVout" is not a source-level lever
+  in safe Rust (packing is a codegen outcome). Found instead: in
+  `left_current`/`right_current` (`helas/repr/lorentz.rs:771,805`) the
+  `cmul_add` fusion blocks CSE against the sibling `cmul`, so each of four
+  spinor products is computed twice. Naming them once measured **−1.0 pp
+  further geomean** (up to −2.8 pp on fermion-rich rows, exactly 0 on
+  `gg_to_gg` — physics-consistent), `amplitude_oracle` 20/20, worst deviation
+  unchanged at 1.776e-11. **Reassociating** and touches the public
+  `SpinorRepr` vocabulary → held for its own REL_TOL-gated session (patch
+  stashed in the session record).
+- For E1: measure against `54d666f`; `Instr` is 20 B with `loc[i]` in a second
+  stream — folding `loc` into the instruction encoding is adjacent to E1's
+  linearization scope. Contention protocol that worked: per-config prebuilt
+  bench binaries run round-robin, min over rounds.
+
 ### E3 — chain-B draw work-sharing
 
 On live-draw rows each point pays one `eval_amp2` + one `set_alpha_s` *before* the
