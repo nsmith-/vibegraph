@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use common::report::DiagramsRow;
+use common::report::{DiagramsRow, Stopwatch};
 use libtest_mimic::{Arguments, Failed, Trial};
 use vibegraph::diagrams::{self, generate_from_proc_card, DiagramSet, ParsingOptions};
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
@@ -258,6 +258,7 @@ fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet], model: &UFOM
 }
 
 fn run_trial(key: &str, mg_counts: &DiagramCounts) -> Result<(), Failed> {
+    let clock = Stopwatch::start();
     let script_path = madgraph_dir().join(format!("scripts/{key}.mg5"));
     let script_content = fs::read_to_string(&script_path)
         .map_err(|e| Failed::from(format!("cannot read {}: {e}", script_path.display())))?;
@@ -311,11 +312,13 @@ fn run_trial(key: &str, mg_counts: &DiagramCounts) -> Result<(), Failed> {
             None => {
                 row.status = "fail";
                 row.note = Some(report.clone());
+                row.duration_s = Some(clock.seconds());
                 row.write();
                 return Err(report.into());
             }
         }
     }
+    row.duration_s = Some(clock.seconds());
     row.write();
     Ok(())
 }

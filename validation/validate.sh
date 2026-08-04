@@ -8,7 +8,8 @@
 #
 # The per-category row files are deleted first, so the report is what *this*
 # invocation measured: a row that stopped being written shows up as a missing
-# cell instead of being served from the last run. `standalone/` is left alone —
+# cell instead of being served from the last run. The host block goes with them,
+# so no run reads its durations against another machine's identity. `standalone/` is left alone —
 # the gates with drivers of their own (Pythia) run under separate tasks, and the
 # collator says so when their verdict predates this run's cells.
 #
@@ -22,6 +23,9 @@ REPORT_DIR="${CARGO_TARGET_DIR:-$ROOT/target}/validation-report"
 
 rm -rf "$REPORT_DIR/diagrams" "$REPORT_DIR/amplitudes" \
   "$REPORT_DIR/integrals" "$REPORT_DIR/samples"
+# The machine block belongs to the run whose durations it labels, and the gates
+# rewrite it as they write their first row.
+rm -f "$REPORT_DIR/host.json"
 
 cargo test --manifest-path "$ROOT/Cargo.toml" --workspace --profile release-debug \
   --features vibegraph/extended-validation,vibegraph-lib/extended-validation \

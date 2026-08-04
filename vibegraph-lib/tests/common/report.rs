@@ -24,8 +24,9 @@
 //! | `status` | `"pass"`, `"fail"` or `"info"` — what this run observed |
 //! | `process` | the process string the row measures |
 //! | `note` | free text a reader needs to interpret the cell; `null` when none |
+//! | `duration_s` | wall-clock seconds the measurement behind this cell took; `null` when it was not timed |
 //!
-//! Those seven fields are common to every category, and are what the collator
+//! Those eight fields are common to every category, and are what the collator
 //! needs to place a cell and mark it. The measurement fields beneath them differ
 //! per category; the `integrals` ones are below, and `diagrams`, `amplitudes`
 //! and `samples` are documented on their own structs.
@@ -45,16 +46,63 @@
 //! `pull` and `rel` are signed here even where the gate asserts on their
 //! magnitude: a table of one-sided numbers hides whether a family of rows leans
 //! the same way.
+//!
+//! # What `duration_s` is, and is not
+//!
+//! It is the wall time of one gate's own measurement of one row — the span a
+//! [`Stopwatch`] covers, which starts where that row's work starts and is read at
+//! `write()`. It is not a benchmark. `cargo test` runs a binary's tests in
+//! parallel threads and the integrators fan out over rayon underneath them, so
+//! rows measured concurrently each charge themselves the contended wall time and
+//! their durations overlap; they do not sum to the suite's. Read the field as
+//! the per-stage shape of a suite run on the machine `host.json` names, and take
+//! a per-row cost from a run of that row alone.
+//!
+//! # The host record
+//!
+//! Timings without machine identity are noise, so the first row written by any
+//! gate process also writes `<target>/validation-report/host.json`: the CPU, its
+//! core classes, memory, OS, toolchain and the build settings of the test binary
+//! doing the writing. One block per run rather than one per row — the rows
+//! accompany it in the same directory. It stays out of the reference bundle: it
+//! is a measurement about a machine, not a reference.
 
 #![allow(dead_code)]
 
 use std::path::PathBuf;
+use std::process::Command;
+use std::sync::Once;
+use std::time::Instant;
 
 use serde::Serialize;
+use serde_json::{json, Value};
 use vibegraph::artifact::ChannelSampler;
 
 /// The schema version the files below are written under.
 pub const SCHEMA: u32 = 1;
+
+/// The wall clock a row's `duration_s` is read off.
+///
+/// Started where a row's measurement starts, so the span it covers is the work
+/// the cell rests on and not the gate's setup around it.
+pub struct Stopwatch(Instant);
+
+impl Default for Stopwatch {
+    fn default() -> Self {
+        Stopwatch::start()
+    }
+}
+
+impl Stopwatch {
+    pub fn start() -> Self {
+        Stopwatch(Instant::now())
+    }
+
+    /// Elapsed seconds, as the row files record them.
+    pub fn seconds(&self) -> f64 {
+        self.0.elapsed().as_secs_f64()
+    }
+}
 
 /// One measured `diagrams` cell: how many diagrams we enumerate against how many
 /// MadGraph does, counted MadGraph's way (one representative per subprocess
@@ -76,6 +124,9 @@ pub struct DiagramsRow {
     /// `ours` exactly where the process is a flavour group.
     pub ours_all_subprocesses: u32,
     pub note: Option<String>,
+    /// Wall-clock seconds this row's own measurement took; `None` where the gate
+    /// wrote the row without timing it.
+    pub duration_s: Option<f64>,
 }
 
 impl DiagramsRow {
@@ -92,6 +143,7 @@ impl DiagramsRow {
             theirs: 0,
             ours_all_subprocesses: 0,
             note: None,
+            duration_s: None,
         }
     }
 
@@ -150,6 +202,9 @@ pub struct AmplitudesRow {
     /// asked; this is the measurement that claim is checked against.
     pub factorized: bool,
     pub note: Option<String>,
+    /// Wall-clock seconds this row's own measurement took; `None` where the gate
+    /// wrote the row without timing it.
+    pub duration_s: Option<f64>,
 }
 
 impl AmplitudesRow {
@@ -177,6 +232,7 @@ impl AmplitudesRow {
             amp2_pruned: 0.0,
             factorized: false,
             note: None,
+            duration_s: None,
         }
     }
 
@@ -225,6 +281,9 @@ pub struct IntegralsRow {
     pub niter: usize,
     pub subsampler: Vec<ChannelSummary>,
     pub note: Option<String>,
+    /// Wall-clock seconds this row's own measurement took; `None` where the gate
+    /// wrote the row without timing it.
+    pub duration_s: Option<f64>,
 }
 
 impl IntegralsRow {
@@ -253,6 +312,7 @@ impl IntegralsRow {
             niter: 0,
             subsampler: Vec::new(),
             note: None,
+            duration_s: None,
         }
     }
 
@@ -356,6 +416,9 @@ pub struct SamplesRow {
     pub single_category: Vec<String>,
     pub per_seed: Vec<SeedSample>,
     pub note: Option<String>,
+    /// Wall-clock seconds this row's own measurement took; `None` where the gate
+    /// wrote the row without timing it.
+    pub duration_s: Option<f64>,
 }
 
 impl SamplesRow {
@@ -380,6 +443,7 @@ impl SamplesRow {
             single_category: Vec::new(),
             per_seed: Vec::new(),
             note: None,
+            duration_s: None,
         }
     }
 
@@ -420,6 +484,7 @@ impl SamplesRow {
 
 /// One `<category>/<row>[__<variant>].json` under the report directory.
 fn write_row(category: &str, row: &str, variant: Option<&str>, value: &impl Serialize) {
+    ensure_host_record();
     let dir = report_dir().join(category);
     std::fs::create_dir_all(&dir)
         .unwrap_or_else(|e| panic!("cannot create the report directory {}: {e}", dir.display()));
@@ -432,6 +497,164 @@ fn write_row(category: &str, row: &str, variant: Option<&str>, value: &impl Seri
     std::fs::write(&path, text + "\n")
         .unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
     eprintln!("[report] wrote {}", path.display());
+}
+
+/// The file name of the per-run machine-identity block the durations are read
+/// against.
+pub const HOST_RECORD: &str = "host.json";
+
+/// Write `host.json` once per gate process, the first time that process records
+/// a measurement.
+///
+/// Every gate binary of a run writes the same content, so the last writer wins
+/// and the block describes the run. The write goes through a temporary file and
+/// a rename so two gate processes racing on it cannot leave a half-written
+/// record behind.
+fn ensure_host_record() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let dir = report_dir();
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let text = match serde_json::to_string_pretty(&host_record()) {
+            Ok(t) => t + "\n",
+            Err(_) => return,
+        };
+        let tmp = dir.join(format!("{HOST_RECORD}.{}", std::process::id()));
+        if std::fs::write(&tmp, text).is_ok() {
+            let _ = std::fs::rename(&tmp, dir.join(HOST_RECORD));
+        }
+    });
+}
+
+/// What a duration measured on this machine has to be read against: the CPU and
+/// its core classes, memory, OS, the toolchain, and the build settings of the
+/// binary taking the measurement.
+///
+/// Fields the OS does not expose are `null` rather than guessed — Apple Silicon
+/// publishes no clock frequency through `sysctl`, and a plausible number in that
+/// slot would be indistinguishable from a measured one.
+fn host_record() -> Value {
+    let exe = std::env::current_exe().ok();
+    // `target/<profile>/deps/<binary>`: the profile the running gate was built
+    // under, taken from where Cargo put it rather than from what a caller claims.
+    let profile = exe.as_ref().and_then(|p| {
+        p.parent()
+            .filter(|d| d.file_name().is_some_and(|n| n == "deps"))
+            .and_then(|d| d.parent())
+            .and_then(|d| d.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+    });
+    json!({
+        "schema": 1,
+        "captured": run_out("date", &["-u", "+%Y-%m-%dT%H:%M:%SZ"]),
+        "cpu": {
+            "arch": std::env::consts::ARCH,
+            "model": cpu_model(),
+            "logical_cpus": count("hw.logicalcpu", "processor"),
+            "physical_cpus": count("hw.physicalcpu", "core id"),
+            "performance_logical_cpus": sysctl_u64("hw.perflevel0.logicalcpu"),
+            "efficiency_logical_cpus": sysctl_u64("hw.perflevel1.logicalcpu"),
+            "frequency_hz": sysctl_u64("hw.cpufrequency_max"),
+            "frequency_note": "null where the OS exposes no clock (Apple Silicon: \
+                               `hw.cpufrequency`/`hw.cpufrequency_max` are empty)",
+            "memory_bytes": sysctl_u64("hw.memsize").or_else(meminfo_bytes),
+        },
+        "scheduling": {
+            "available_parallelism": std::thread::available_parallelism().map(|n| n.get()).ok(),
+            "rust_test_threads": std::env::var("RUST_TEST_THREADS").ok(),
+            "rayon_num_threads": std::env::var("RAYON_NUM_THREADS").ok(),
+            "affinity": "none — no run pins itself to a core class, so on a hybrid CPU \
+                         the scheduler is free to place work on either",
+        },
+        "os": {
+            "family": std::env::consts::OS,
+            "kernel": run_out("uname", &["-sr"]),
+            "release": run_out("sw_vers", &["-productVersion"]).or_else(|| run_out("uname", &["-v"])),
+        },
+        "toolchain": {
+            "rustc": run_out("rustc", &["--version"]),
+            "cargo": run_out("cargo", &["--version"]),
+            "rustup_toolchain": std::env::var("RUSTUP_TOOLCHAIN").ok(),
+            "note": "the toolchain on PATH at measurement time; the gate binary was built \
+                     by whatever `cargo test` resolved, which is the same one unless the \
+                     default moved between the build and the run",
+        },
+        "build": {
+            "profile": profile,
+            // `run_out` joins a multi-line output with "; ", which is what
+            // `rustc -vV` produces and what the host line has to be picked out of.
+            "target": run_out("rustc", &["-vV"]).and_then(|v| {
+                v.split("; ")
+                    .find_map(|f| f.strip_prefix("host: "))
+                    .map(str::to_string)
+            }),
+            "debug_assertions": cfg!(debug_assertions),
+            "rustflags": std::env::var("RUSTFLAGS").ok(),
+            "cargo_encoded_rustflags": std::env::var("CARGO_ENCODED_RUSTFLAGS").ok(),
+            "note": "profile settings themselves live in the workspace `Cargo.toml`; \
+                     `release-debug` is thin-LTO release codegen with debug info",
+        },
+    })
+}
+
+/// The trimmed first line of a command's standard output, or `None` if it did
+/// not run or said nothing. A host block records what it could read.
+fn run_out(program: &str, args: &[&str]) -> Option<String> {
+    let out = Command::new(program).args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let joined: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    (!joined.is_empty()).then(|| joined.join("; "))
+}
+
+fn sysctl_u64(key: &str) -> Option<u64> {
+    run_out("sysctl", &["-n", key])?.parse().ok()
+}
+
+fn cpu_model() -> Option<String> {
+    sysctl_str("machdep.cpu.brand_string").or_else(|| {
+        std::fs::read_to_string("/proc/cpuinfo").ok().and_then(|t| {
+            t.lines()
+                .find_map(|l| l.split_once("model name"))
+                .and_then(|(_, rest)| rest.split_once(':'))
+                .map(|(_, v)| v.trim().to_string())
+        })
+    })
+}
+
+fn sysctl_str(key: &str) -> Option<String> {
+    run_out("sysctl", &["-n", key])
+}
+
+/// A CPU count from `sysctl` where there is one, else from the `/proc/cpuinfo`
+/// key that carries it.
+fn count(sysctl_key: &str, proc_key: &str) -> Option<u64> {
+    sysctl_u64(sysctl_key).or_else(|| {
+        let text = std::fs::read_to_string("/proc/cpuinfo").ok()?;
+        let distinct: std::collections::BTreeSet<&str> = text
+            .lines()
+            .filter_map(|l| l.split_once(':'))
+            .filter(|(k, _)| k.trim() == proc_key)
+            .map(|(_, v)| v.trim())
+            .collect();
+        (!distinct.is_empty()).then(|| distinct.len() as u64)
+    })
+}
+
+fn meminfo_bytes() -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let kb: u64 = text
+        .lines()
+        .find_map(|l| l.strip_prefix("MemTotal:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    Some(kb * 1024)
 }
 
 /// `<target>/validation-report`, honouring `CARGO_TARGET_DIR` so a run with a

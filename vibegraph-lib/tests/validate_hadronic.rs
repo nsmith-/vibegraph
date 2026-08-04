@@ -45,7 +45,7 @@ mod common;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use common::report::{ChannelSummary, IntegralsRow, SeedResult};
+use common::report::{ChannelSummary, IntegralsRow, SeedResult, Stopwatch};
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -418,6 +418,7 @@ fn combine_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
 /// row's. Being a single scalar it is also blind to a mis-sampled region of small
 /// measure, which the seed sweep and not the pull is what guards.
 fn check_dy_run(run: &str, card: &str) {
+    let clock = Stopwatch::start();
     let (mg, mg_err) = banked(run).expect("banked Drell-Yan reference");
     let card_path = validation_dir().join(card);
     let rc = RunCard::parse_file(&card_path).expect("parse run card");
@@ -492,6 +493,7 @@ fn check_dy_run(run: &str, card: &str) {
     row.neval = DY_NEVAL;
     row.niter = DY_NITER;
     row.subsampler = summary;
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -800,6 +802,7 @@ fn probe_fiducial_bound_on_llj_fixed() {
 
 #[test]
 fn sigma_llj_fixed_scale_vs_mg() {
+    let clock = Stopwatch::start();
     let run_dir = validation_dir().join("output/pp_to_llj_fixed");
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).unwrap_or_else(|e| {
         panic!(
@@ -883,6 +886,7 @@ fn sigma_llj_fixed_scale_vs_mg() {
          ladder are oracle-layer"
             .to_string(),
     );
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -981,6 +985,7 @@ fn sigma_llj_dynamical_scale_vs_mg() {
     if !dyn_run_present("sigma_llj_dynamical_scale_vs_mg", LLJ_DYN_RUN) {
         return;
     }
+    let clock = Stopwatch::start();
     let run_dir = validation_dir().join("output").join(LLJ_DYN_RUN);
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
     let (mg, mg_err) = banked_llj_sigma(&run_dir);
@@ -1064,6 +1069,7 @@ fn sigma_llj_dynamical_scale_vs_mg() {
          the wrong statistic having been retired with the draw"
             .to_string(),
     );
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -1271,6 +1277,7 @@ fn bb_fixed_shat_floor_matches_madgraphs_own() {
 /// the pull is what guards.
 #[test]
 fn sigma_bb_fixed_scale_vs_mg() {
+    let clock = Stopwatch::start();
     let run_dir = validation_dir().join("output/pp_to_bb_fixed");
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).unwrap_or_else(|e| {
         panic!(
@@ -1353,6 +1360,7 @@ fn sigma_bb_fixed_scale_vs_mg() {
          budget ladder"
             .to_string(),
     );
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -1941,6 +1949,7 @@ fn sigma_jj_dynamical_scale_vs_mg() {
     if !dyn_run_present("sigma_jj_dynamical_scale_vs_mg", JJ_RUN) {
         return;
     }
+    let clock = Stopwatch::start();
     let run_dir = validation_dir().join("output").join(JJ_RUN);
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
     let (mg, mg_err) = banked_llj_sigma(&run_dir);
@@ -2023,6 +2032,7 @@ fn sigma_jj_dynamical_scale_vs_mg() {
          converged rather than under-sampled is oracle-layer"
             .to_string(),
     );
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -2307,6 +2317,7 @@ fn measure_recarded_sigma(run: &str, process: &str, neval: usize) {
     if !dyn_run_present("recarded_rows_sigma_vs_mg", run) {
         return;
     }
+    let clock = Stopwatch::start();
     let run_dir = validation_dir().join("output").join(run);
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
     let (mg, mg_err) = banked_llj_sigma(&run_dir);
@@ -2389,6 +2400,7 @@ fn measure_recarded_sigma(run: &str, process: &str, neval: usize) {
         "three seeds at {neval} points an iteration, the rung this row's budget \
          ladder is flat at"
     ));
+    row.duration_s = Some(clock.seconds());
     row.write();
 
     assert!(
@@ -2509,4 +2521,108 @@ fn probe_recarded_budget_ladder() {
             );
         }
     }
+}
+
+/// What the per-point configuration draw costs on a live-draw row.
+///
+/// The dynamical-scale rows draw the integration configuration their scale is
+/// clustered in from the point's own squared amplitudes, which is one `eval_amp2`
+/// and one `set_alpha_s` per point on top of everything the fixed-scale path
+/// already does. The card's `sde_strategy` is the switch that decides whether the
+/// enhancement weight is the squared amplitude, and it is the *only* thing the
+/// two integrands here differ in: same process, same cuts, same clustering, same
+/// running coupling, same points. So the gap between them is the draw and nothing
+/// else — unlike a dynamical-against-fixed comparison, which also carries the kT
+/// clustering and the per-point coupling move.
+///
+/// Points the cuts reject return before the draw, so the cost is charged on the
+/// surviving fraction; the ratio reported is against the same points' total, which
+/// is the number an integration budget is spent on. Run with
+/// `--ignored --nocapture`, and on an otherwise idle machine.
+#[test]
+#[ignore]
+fn probe_scale_draw_cost() {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use std::time::Instant;
+    if !dyn_run_present("probe_scale_draw_cost", LLJ_DYN_RUN) {
+        return;
+    }
+    let run_dir = validation_dir().join("output").join(LLJ_DYN_RUN);
+    let text = std::fs::read_to_string(run_dir.join("Cards/run_card.dat")).expect("run card");
+    let live = RunCard::parse(&text).expect("banked run card parses");
+    let off = RunCard::parse(&without_amp2_weights(&text)).expect("patched run card parses");
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(LLJ_PROCESS, &model, &evaluated, &live);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+
+    let build = |rc: &RunCard| {
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F).expect("integrand");
+        integ
+            .use_run_card_scales(&model, &evaluated, rc, Some(&set.info.alpha_s))
+            .expect("scale prescription compiles");
+        integ.adapt_alphas(LLJ_SEEDS[0], LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, 0.5);
+        integ
+    };
+    let with_draw = build(&live);
+    let without_draw = build(&off);
+    assert_eq!(
+        (with_draw.scale_draw_ndim(), without_draw.scale_draw_ndim()),
+        (1, 0),
+        "the two integrands must differ in the configuration draw and only there"
+    );
+
+    let ndim = with_draw.vegas_ndim();
+    let mut rng = ChaCha8Rng::seed_from_u64(LLJ_SEEDS[0]);
+    let points: Vec<Vec<f64>> = (0..PROBE_POINTS)
+        .map(|_| (0..ndim).map(|_| rand::Rng::random::<f64>(&mut rng)).collect())
+        .collect();
+
+    let time = |integ: &ProtonIntegrand<'_>| {
+        let take = integ.vegas_ndim();
+        let start = Instant::now();
+        let mut acc = 0.0;
+        for u in &points {
+            acc += integ.value(&u[..take]);
+        }
+        std::hint::black_box(acc);
+        start.elapsed().as_secs_f64() / points.len() as f64 * 1e9
+    };
+    time(&with_draw);
+    time(&without_draw);
+    let ns_on = time(&with_draw);
+    let ns_off = time(&without_draw);
+    eprintln!(
+        "[{LLJ_DYN_RUN}] {ns_off:8.1} ns/point without the configuration draw | \
+         {ns_on:8.1} ns/point with it | draw {:+.1} ns ({:+.2}% of the per-point budget) \
+         over {PROBE_POINTS} points",
+        ns_on - ns_off,
+        (1.0 - ns_off / ns_on) * 100.0,
+    );
+}
+
+/// How many points a per-point cost probe averages over.
+const PROBE_POINTS: usize = 20_000;
+
+/// The same run card with its enhancement weight taken off the squared amplitude,
+/// which is what turns the per-point configuration draw off.
+fn without_amp2_weights(text: &str) -> String {
+    text.lines()
+        .map(|l| {
+            if l.contains("= sde_strategy") {
+                "  2 = sde_strategy\n".to_string()
+            } else {
+                format!("{l}\n")
+            }
+        })
+        .collect()
 }

@@ -152,6 +152,8 @@ pub fn markdown(
         list_or_none(&planned)
     ));
 
+    out.push_str(&timing(resolved, report_dir));
+
     out.push_str("## Verification\n\n");
     let (measured, marks) = tally(resolved);
     out.push_str(&format!(
@@ -173,6 +175,81 @@ pub fn markdown(
         }
     }
     out
+}
+
+/// What this invocation cost, and on what machine.
+///
+/// Wall time per row as the gates timed themselves, against the host block they
+/// wrote beside their rows. The rows overlap — `cargo test` runs a binary's
+/// tests in parallel and the integrators fan out under them — so the per-category
+/// figure is the sum of concurrent spans and not the invocation's elapsed time.
+/// It is the shape of where a run's time goes, not a benchmark.
+fn timing(resolved: &[ResolvedRow], report_dir: &Path) -> String {
+    let mut per_category: BTreeMap<&str, (usize, f64)> = BTreeMap::new();
+    let mut rows: Vec<(f64, String)> = Vec::new();
+    for row in resolved {
+        for cell in &row.cells {
+            for (label, seconds) in &cell.durations {
+                let entry = per_category.entry(cell.category.as_str()).or_insert((0, 0.0));
+                entry.0 += 1;
+                entry.1 += seconds;
+                rows.push((
+                    *seconds,
+                    format!("`{}` · {} · {label}", row.process.key, cell.category.as_str()),
+                ));
+            }
+        }
+    }
+    if rows.is_empty() {
+        return String::new();
+    }
+    rows.sort_by(|a, b| b.0.total_cmp(&a.0));
+
+    let mut out = String::from("## Timing\n\n");
+    out.push_str(&format!("- host: {}\n", host_line(report_dir)));
+    out.push_str(
+        "- per-row wall times overlap: the gates run in parallel threads, so a category's total \
+         is the sum of concurrent spans rather than this invocation's elapsed time\n\n",
+    );
+    out.push_str("| category | timed measurements | summed wall time |\n|---|--:|--:|\n");
+    for (category, (n, seconds)) in &per_category {
+        out.push_str(&format!("| {category} | {n} | {seconds:.1} s |\n"));
+    }
+    out.push_str("\nSlowest measurements:\n\n");
+    for (seconds, what) in rows.iter().take(10) {
+        out.push_str(&format!("- {seconds:8.1} s — {what}\n"));
+    }
+    out.push('\n');
+    out
+}
+
+/// The one-line summary of the machine block the gates wrote, or why there is
+/// none to summarise.
+fn host_line(report_dir: &Path) -> String {
+    let path = report_dir.join("host.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return "no `host.json` — the durations below name no machine".to_string();
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        return "`host.json` is unreadable".to_string();
+    };
+    let at = |path: [&str; 2]| -> String {
+        v.get(path[0])
+            .and_then(|o| o.get(path[1]))
+            .map(|x| match x.as_str() {
+                Some(s) => s.to_string(),
+                None => x.to_string(),
+            })
+            .unwrap_or_else(|| "?".to_string())
+    };
+    format!(
+        "{} ({} logical cores), {}, {}, profile {} — full block in `host.json`",
+        at(["cpu", "model"]),
+        at(["cpu", "logical_cpus"]),
+        at(["os", "kernel"]),
+        at(["toolchain", "rustc"]),
+        at(["build", "profile"]),
+    )
 }
 
 fn list_or_none(keys: &[&str]) -> String {
@@ -344,6 +421,11 @@ pub fn json(
                             "note": cell.note,
                             "detail": cell.detail,
                             "sources": cell.sources,
+                            "durations_s": cell
+                                .durations
+                                .iter()
+                                .map(|(label, seconds)| json!({"measurement": label, "seconds": seconds}))
+                                .collect::<Vec<_>>(),
                         }),
                     )
                 })
