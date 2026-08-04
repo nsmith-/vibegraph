@@ -99,7 +99,7 @@ use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::PdfMember;
-use crate::phasespace::rng::SubStream;
+use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
     identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, DiagramChannel, PhaseSpaceMap,
     RamboChannel, ScaledChannel, ScaledMultiChannel, GEV2_TO_PB,
@@ -972,6 +972,16 @@ pub struct ProtonIntegrand<'a> {
     /// coupling lookup.
     last_coupling: Cell<(f64, f64)>,
     vegas_alpha: f64,
+    /// Reused `AMP2` buffer for the configuration draw, sized to the widest
+    /// group's configuration count.
+    amp2_buf: RefCell<Vec<f64>>,
+    /// The coupling the configuration draw forms `AMP2` at, so the drawn
+    /// configuration is a function of the momenta and not of whatever scale the
+    /// previous point left bound. `None` where no draw runs.
+    amp2_alpha_s: Option<f64>,
+    /// Points whose `AMP2` carried no probability at all, where the draw kept the
+    /// sampling channel instead.
+    scale_draw_fallbacks: Cell<u64>,
 }
 
 impl<'a> ProtonIntegrand<'a> {
@@ -1100,6 +1110,9 @@ impl<'a> ProtonIntegrand<'a> {
             lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
             mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
             last_coupling: Cell::new((f64::NAN, f64::NAN)),
+            amp2_buf: RefCell::new(Vec::new()),
+            amp2_alpha_s: None,
+            scale_draw_fallbacks: Cell::new(0),
             vegas_alpha: VEGAS_ALPHA_MAPPED,
         })
     }
@@ -1163,6 +1176,17 @@ impl<'a> ProtonIntegrand<'a> {
             self.probe_scale(&source)?;
         }
         let report = constant_scale_report(&self.subs, Some(&source), awareness);
+        if source.draws_configuration() {
+            let widest = self
+                .groups
+                .groups()
+                .iter()
+                .map(|g| g.evaluator().n_configs())
+                .max()
+                .unwrap_or(0);
+            *self.amp2_buf.borrow_mut() = vec![0.0; widest];
+            self.amp2_alpha_s = report.alpha_s_ref;
+        }
         self.scales = source;
         Ok(report)
     }
@@ -1269,9 +1293,52 @@ impl<'a> ProtonIntegrand<'a> {
         OUTER_NDIM + self.combiner.channel_ndim()
     }
 
+    /// The uniforms a point carries beyond its channel's grid coordinates: one for
+    /// the scale prescription's configuration draw where that draw is live, and
+    /// none otherwise.
+    ///
+    /// It is not a grid coordinate — the grids stay over
+    /// [`channel_grid_ndim`](Self::channel_grid_ndim) exactly.
+    pub fn scale_draw_ndim(&self) -> usize {
+        usize::from(self.scales.draws_configuration())
+    }
+
+    /// The full length of the coordinate slice a point is evaluated at: its
+    /// channel's grid coordinates followed by
+    /// [`scale_draw_ndim`](Self::scale_draw_ndim) trailing uniforms.
+    pub fn point_ndim(&self) -> usize {
+        self.channel_grid_ndim() + self.scale_draw_ndim()
+    }
+
+    /// Split a point's coordinates into the ones its maps consume and the trailing
+    /// ones the scale prescription does.
+    ///
+    /// # Panics
+    ///
+    /// If `u` is not [`point_ndim`](Self::point_ndim) long. A driver that handed
+    /// over only the grid's coordinates would silently drop the scale draw and
+    /// evaluate every point in the sampler's own channel, which is a difference no
+    /// cross section announces.
+    fn split_point<'u>(&self, u: &'u [f64]) -> (&'u [f64], &'u [f64]) {
+        let grid_ndim = self.channel_grid_ndim();
+        assert_eq!(
+            u.len(),
+            grid_ndim + self.scale_draw_ndim(),
+            "a point is {} map coordinates and {} scale-draw uniforms",
+            grid_ndim,
+            self.scale_draw_ndim()
+        );
+        u.split_at(grid_ndim)
+    }
+
     /// The strong coupling's source, once a run card installed one.
     pub fn alpha_s_source(&self) -> Option<&AlphaSSource> {
         self.scales.alpha_s()
+    }
+
+    /// The compiled per-event scale prescription this integrand runs.
+    pub fn scale_source(&self) -> &EventScaleSource {
+        &self.scales
     }
 
     /// Map a VEGAS point's outer coordinates to the partonic system.
@@ -1311,22 +1378,34 @@ impl<'a> ProtonIntegrand<'a> {
     /// the `(τ, y)` Jacobian, the flux, the `2π` measure and the luminosity-weighted
     /// sum over groups. Zero where the cuts reject the lab-frame configuration or no
     /// group carries luminosity.
-    fn shape(&self, m: &OuterPoint, out: &[V], channel: SampledChannel) -> f64 {
+    fn shape(
+        &self,
+        m: &OuterPoint,
+        out: &[V],
+        channel: SampledChannel,
+        scale_u: &[f64],
+    ) -> (f64, SampledChannel) {
         self.build_frames(m, out);
         let cm = self.cm_buf.borrow();
         {
             let lab = self.lab_buf.borrow();
             if !self.cuts.pass(&lab) {
-                return 0.0;
+                return (0.0, channel);
             }
         }
+        // The configuration the scale is clustered in, drawn from this point's own
+        // squared amplitudes where the card's enhancement weight is that and
+        // nothing else. The group is the sampler's: a configuration draw names one
+        // configuration *inside* a group's forests and says nothing about which
+        // group's forests to use.
+        let channel = self.scale_channel(&cm, channel, scale_u);
         // A point whose factorisation scale fell below the floor carries no
         // weight, and returning here is before both of the things that follow:
         // the coupling is not moved for a point that contributes nothing, and the
         // parton densities are not queried below roughly their own grid's lowest
         // tabulated `Q`, which is most of why the floor sits where it does.
         let Some(scales) = self.event_scales(channel) else {
-            return 0.0;
+            return (0.0, channel);
         };
         self.apply_scale(scales.mu_r);
 
@@ -1348,10 +1427,54 @@ impl<'a> ProtonIntegrand<'a> {
             acc += g.spin_color_average() * term;
         }
         if acc == 0.0 {
-            return 0.0;
+            return (0.0, channel);
         }
         let flux = 1.0 / (2.0 * m.sqrt_shat * m.sqrt_shat);
-        m.jac * flux * self.lips_2pi * acc
+        (m.jac * flux * self.lips_2pi * acc, channel)
+    }
+
+    /// Which of the sampled group's channels names the integration configuration
+    /// this point's scale is clustered in.
+    ///
+    /// Without the draw it is the sampling channel the point came from. With it,
+    /// the configuration is drawn `∝ AMP2_c(p)` from the group's own squared
+    /// amplitudes and named back through *its own diagram*, the common ground
+    /// between the evaluator's configuration order and the channel forests'.
+    /// `AMP2` is formed at the coupling the amplitudes were bound at, so the drawn
+    /// configuration is a function of the momenta and not of evaluation history.
+    ///
+    /// The momenta are the direct ordering's. A group's mirrored term is evaluated
+    /// at the same scale as its direct one, so there is one draw per point and not
+    /// one per ordering.
+    fn scale_channel(&self, cm: &[V], channel: SampledChannel, scale_u: &[f64]) -> SampledChannel {
+        let [v] = scale_u else { return channel };
+        let sub = &self.subs[channel.group];
+        if let Some(alpha_s) = self.amp2_alpha_s {
+            sub.set_alpha_s(alpha_s);
+        }
+        let eval = self.groups.groups()[channel.group].evaluator();
+        let mut buf = self.amp2_buf.borrow_mut();
+        let amp2 = &mut buf[..eval.n_configs()];
+        sub.eval_amp2(cm, amp2);
+        match select_index(amp2, *v) {
+            Some(c) => SampledChannel {
+                group: channel.group,
+                diagram: eval.config_diagrams()[c],
+            },
+            // Every diagram amplitude vanished here, so the coherent sum does too
+            // and this point carries no weight whichever channel names its scale.
+            None => {
+                self.scale_draw_fallbacks
+                    .set(self.scale_draw_fallbacks.get() + 1);
+                channel
+            }
+        }
+    }
+
+    /// Points on which the configuration draw found no probability and kept the
+    /// sampling channel. Expected to be zero on a run that produces anything.
+    pub fn scale_draw_fallbacks(&self) -> u64 {
+        self.scale_draw_fallbacks.get()
     }
 
     /// The scales at the lab-frame point currently in the frame buffers, in the
@@ -1429,11 +1552,17 @@ impl<'a> ProtonIntegrand<'a> {
     ///
     /// If `channel` is not a channel index.
     pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
-        let m = self.map_point(u);
+        let (grid_u, scale_u) = self.split_point(u);
+        let m = self.map_point(grid_u);
         let point = self
             .combiner
-            .sample_channel_at(channel, m.sqrt_shat, &u[OUTER_NDIM..]);
-        let shape = self.shape(&m, &point.momenta, self.sampled_channel(channel));
+            .sample_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
+        let (shape, _) = self.shape(
+            &m,
+            &point.momenta,
+            self.sampled_channel(channel),
+            scale_u,
+        );
         if shape == 0.0 {
             return 0.0;
         }
@@ -1450,12 +1579,17 @@ impl<'a> ProtonIntegrand<'a> {
     /// where the cuts reject the point or no group carries luminosity, which is
     /// where the trial would have carried no weight either.
     pub fn event_in_channel(&self, channel: usize, u: &[f64]) -> Option<ProtonEvent> {
-        let m = self.map_point(u);
+        let (grid_u, scale_u) = self.split_point(u);
+        let m = self.map_point(grid_u);
         let point = self
             .combiner
-            .sample_channel_at(channel, m.sqrt_shat, &u[OUTER_NDIM..]);
-        let drawn = self.sampled_channel(channel);
-        let shape = self.shape(&m, &point.momenta, drawn);
+            .sample_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
+        let (shape, drawn) = self.shape(
+            &m,
+            &point.momenta,
+            self.sampled_channel(channel),
+            scale_u,
+        );
         if shape == 0.0 {
             return None;
         }
@@ -1577,7 +1711,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// The uniforms the whole map consumes as one mixture: the two outer coordinates,
     /// one channel-selection coordinate, and the channel's own `3n − 4`.
     pub fn vegas_ndim(&self) -> usize {
-        self.channel_grid_ndim() + 1
+        self.channel_grid_ndim() + 1 + self.scale_draw_ndim()
     }
 
     /// The integrand at `u ∈ [0,1]^vegas_ndim` drawn through the mixture rather than
@@ -1593,7 +1727,12 @@ impl<'a> ProtonIntegrand<'a> {
         let point = self
             .combiner
             .sample_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
-        let shape = self.shape(&m, &point.momenta, self.sampled_channel(j));
+        let (shape, _) = self.shape(
+            &m,
+            &point.momenta,
+            self.sampled_channel(j),
+            &u[self.channel_grid_ndim() + 1..],
+        );
         if shape == 0.0 {
             return 0.0;
         }
@@ -1648,6 +1787,9 @@ impl<'a> ProtonIntegrand<'a> {
         let n = self.channel_count();
         let mut w = vec![0.0; n];
         let mut s = SubStream::from_stream(seed, stream);
+        // The scale draw's uniforms come off a stream of their own, so the survey's
+        // own point sequence is what it would be with no draw installed.
+        let mut scale_draw = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + stream);
         let ndim = self.channel_grid_ndim() + 1;
         for _ in 0..n_survey {
             let u = s.uniforms::<f64>(ndim);
@@ -1659,7 +1801,11 @@ impl<'a> ProtonIntegrand<'a> {
             // `sample_channel_at` weights by `αⱼ/g`; the mixture that actually drew
             // this point has density `g`, so the mixture estimator is `f/g`.
             let g = self.combiner.alphas()[j] / point.weight;
-            let est = self.shape(&m, &point.momenta, self.sampled_channel(j)) / g;
+            let scale_u: Vec<f64> = scale_draw.uniforms::<f64>(self.scale_draw_ndim());
+            let est = self
+                .shape(&m, &point.momenta, self.sampled_channel(j), &scale_u)
+                .0
+                / g;
             if est == 0.0 {
                 continue;
             }
@@ -1689,6 +1835,7 @@ impl<'a> ProtonIntegrand<'a> {
     ) -> (Vec<ChannelIntegration>, VegasResult) {
         let alphas = self.channel_alphas();
         let ndim = self.channel_grid_ndim();
+        let point_ndim = self.point_ndim();
         let mut per_channel = Vec::with_capacity(alphas.len());
         for (j, &alpha) in alphas.iter().enumerate() {
             let n_j = if alphas.len() == 1 {
@@ -1700,7 +1847,21 @@ impl<'a> ProtonIntegrand<'a> {
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             rng.set_stream(CHANNEL_STREAM_BASE + j as u64);
             rng.set_word_pos(0);
-            let result = grid.adapt(|u| self.value_in_channel(j, u), n_j, niter, &mut rng);
+            // The grid draws its own coordinates; the scale draw's trailing
+            // uniform comes off a stream of its own, so the grid's sequence is
+            // what it would be with no draw installed.
+            let mut scale_draw = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
+            let mut point = vec![0.0; point_ndim];
+            let result = grid.adapt(
+                |u| {
+                    point[..ndim].copy_from_slice(u);
+                    scale_draw.fill_uniforms(&mut point[ndim..]);
+                    self.value_in_channel(j, &point)
+                },
+                n_j,
+                niter,
+                &mut rng,
+            );
             per_channel.push(ChannelIntegration {
                 alpha,
                 neval: n_j,
@@ -1729,6 +1890,10 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
 
     fn channel_grid_ndim(&self) -> usize {
         ProtonIntegrand::channel_grid_ndim(self)
+    }
+
+    fn scale_draw_ndim(&self) -> usize {
+        ProtonIntegrand::scale_draw_ndim(self)
     }
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
@@ -2711,7 +2876,7 @@ mod tests {
         let mut stream = SubStream::from_stream(0xBEEF_0D1E, 7);
         let (mut worst, mut checked, mut rejected, mut mirror_weight) = (0.0f64, 0, 0, 0.0f64);
         for trial in 0..400 {
-            let u = stream.uniforms::<f64>(integ.channel_grid_ndim());
+            let u = stream.uniforms::<f64>(integ.point_ndim());
             let channel = trial % integ.channel_count();
 
             let tau = tau_min.powf(1.0 - u[0]);
@@ -2967,7 +3132,7 @@ mod tests {
         let (mut carried, mut dropped) = (0usize, 0usize);
         for i in 0..300 {
             let channel = i % control.channel_count();
-            let u = stream.uniforms::<f64>(control.channel_grid_ndim());
+            let u = stream.uniforms::<f64>(control.point_ndim());
             if control.value_in_channel(channel, &u) == 0.0 {
                 continue;
             }
@@ -3019,7 +3184,7 @@ mod tests {
         let mut dropped = 0usize;
         for i in 0..300 {
             let channel = i % control.channel_count();
-            let u = stream.uniforms::<f64>(control.channel_grid_ndim());
+            let u = stream.uniforms::<f64>(control.point_ndim());
             if control.event_in_channel(channel, &u).is_none() {
                 continue;
             }
@@ -3126,7 +3291,7 @@ mod tests {
         let mut stream = SubStream::from_stream(0x7A0_1111, 3);
         let (mut below, mut n) = (0usize, 4000usize);
         for i in 0..n {
-            let u = stream.uniforms::<f64>(integ.channel_grid_ndim());
+            let u = stream.uniforms::<f64>(integ.point_ndim());
             let tau = integ.tau_min().powf(1.0 - u[0]);
             if tau * SQRT_S_HAD * SQRT_S_HAD < shat_true {
                 below += 1;
@@ -3158,7 +3323,7 @@ mod tests {
         n: usize,
         seed: u64,
     ) -> [f64; 2] {
-        let ndim = integ.channel_grid_ndim();
+        let ndim = integ.point_ndim();
         let (mut total, mut var) = (0.0, 0.0);
         for j in 0..integ.channel_count() {
             let mut stream = SubStream::from_stream(seed, j as u64);
@@ -3471,7 +3636,7 @@ mod tests {
     ) -> (usize, Vec<f64>, ProtonEvent) {
         let mut stream = SubStream::from_stream(seed, 11);
         for trial in 0..40_000 {
-            let u = stream.uniforms::<f64>(integ.channel_grid_ndim());
+            let u = stream.uniforms::<f64>(integ.point_ndim());
             let channel = trial % integ.channel_count();
             if let Some(event) = integ.event_in_channel(channel, &u) {
                 if wanted(&event) {
@@ -3499,7 +3664,7 @@ mod tests {
         let mut stream = SubStream::from_stream(0x4E4E_7000, 3);
         let (mut kept, mut empty, mut worst_balance, mut worst_shat) = (0, 0, 0.0f64, 0.0f64);
         for trial in 0..400 {
-            let u = stream.uniforms::<f64>(integ.channel_grid_ndim());
+            let u = stream.uniforms::<f64>(integ.point_ndim());
             let channel = trial % integ.channel_count();
             let value = integ.value_in_channel(channel, &u);
             let Some(event) = integ.event_in_channel(channel, &u) else {
