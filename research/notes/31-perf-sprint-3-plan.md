@@ -297,6 +297,25 @@ relaxed anywhere**. Gate: full banked layer green, cell-for-cell identical censu
   `cargo test --workspace` before most gates run; COW-copy the checkout in and
   point its `.git` file at the shared module.
 
+**P1b follow-up — MERGED 2026-08-04 (`91c5a79`, merge `0fd6344`)**, user-directed:
+the continuation oracle's relative-only comparison gains an absolute screen —
+`|got − want| ≤ 1e-30 + 1e-11·|want|`, all five continuation categories, both
+oracles. ABS_TOL 1e-30 is four orders below one ulp of the `ForcePositive`
+1e-10 floor (the smallest magnitude LHAPDF itself treats as a density), and no
+probe lies in the changeover gap (1e-30, 1e-19), so only pure-residue and
+exact-zero probes see a different bar; the per-category sub-floor `worst |Δ|`
+statistic reads 0.0 everywhere today — the screen is pure headroom. Relative
+bars unchanged. **Horner+FMA in `cubic_hermite` stays rejected, now for a
+stability reason independent of any oracle**: at t = 1 the Hermite basis
+weights are exact in binary, so LHAPDF's operation order returns the knot value
+`vh` bit-for-bit, while a Horner chain reaches it only through cancellation —
+measured on-knot reproduction degrades 2.7e-20 → 2.7e-12 and exact corners pick
+up 4.4e-16. That property survives any test-suite change; both reasons are in
+`cubic_hermite`'s doc comment. Do not revisit. (Foregone payoff is bounded:
+`cubic_hermite` runs once per flavour vs `cubic_x`'s four — ~1/5 of the cubic
+evaluations in an `xfx_all` reading — and the session's host was too contended
+to measure it anyway.)
+
 ## 3. Track E — evaluator
 
 ### E0 — `fill_arenas` instruction-level study ✅ (2026-08-04)
