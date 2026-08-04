@@ -715,17 +715,40 @@ fn above_the_alpha_s_table_lhapdf_freezes_rather_than_extrapolates() {
 /// conditioning is divided out — is made per point further down.
 const EXTRAP_REL_TOL: f64 = 1e-11;
 
+/// The absolute floor the relative bound is paired with: below this, a
+/// continued `x·f` cannot change any density the pipeline reads, so pinning it
+/// at relative precision would pin rounding noise rather than physics.
+///
+/// The anchor is the set's own positivity clamp. `ForcePositive` replaces every
+/// output below `1e-10` with `1e-10`, so `1e-10` is the smallest magnitude
+/// LHAPDF itself still treats as a density rather than as zero — and one ulp of
+/// `1e-10` is about `1.2e-26`. A deviation of `1e-30` is four orders under
+/// *that*: it cannot move the last bit of the smallest density the set admits,
+/// let alone the `1e-4 .. 10` values the grid actually carries where a
+/// luminosity has support. What it screens are the continuation's dead corners,
+/// where the four Hermite inputs cancel by some thirty orders and `x·f` is a
+/// pure rounding residue around `1e-35`; agreement with LHAPDF there was never
+/// accuracy, only reproduction of LHAPDF's own rounding.
+///
+/// It is a floor, not a blanket: the comparison is `|Δ| ≤ ABS + REL·|want|`, so
+/// a screened probe still has to come back small. A branch or knot-pair
+/// confusion, which puts an O(1) fraction of a live density where a dead one
+/// belongs, fails it by tens of orders.
+const EXTRAP_ABS_TOL: f64 = 1e-30;
+
 /// One ulp of the interpolated endpoint values, with headroom for a system
 /// `libm` that rounds a couple of `log` calls differently. This is the scale the
 /// continuation is really held to, once each point's own amplification of that
 /// ulp is divided out.
 const EXTRAP_CONDITIONED_TOL: f64 = 1e-14;
 
-/// Relative error with no absolute screen: an exact oracle zero demands an exact
-/// zero back. The interpolated categories screen sub-floor values because a
-/// positivity-clamped set floors its own output there, but these probes compare
-/// against the *unclamped* `xf_raw`, so there is nothing to screen and a zero is
-/// a real claim (an absent flavor, or a density the power law drove to zero).
+/// Relative error with no absolute screen inside it: an exact oracle zero is
+/// `INFINITY` unless the reading is exactly zero too. The interpolated
+/// categories take a screen keyed on the positivity floor a clamped set writes
+/// into its own output; these probes compare against the *unclamped* `xf_raw`,
+/// which carries no such floor, so the scale at which a value stops being a
+/// density has to come from the caller's bound — [`EXTRAP_ABS_TOL`] — rather
+/// than from the reference.
 fn extrap_rel_err(got: f64, want: f64) -> f64 {
     if want == 0.0 {
         return if got == 0.0 { 0.0 } else { f64::INFINITY };
@@ -733,8 +756,38 @@ fn extrap_rel_err(got: f64, want: f64) -> f64 {
     (got - want).abs() / got.abs().max(want.abs())
 }
 
+/// The share of the combined acceptance budget `EXTRAP_ABS_TOL +
+/// EXTRAP_REL_TOL·|want|` a probe spends. One is the bar, so this is directly
+/// comparable across categories whose probes span thirty orders of magnitude.
+fn extrap_budget_used(got: f64, want: f64) -> f64 {
+    (got - want).abs() / (EXTRAP_ABS_TOL + EXTRAP_REL_TOL * want.abs())
+}
+
+/// Per-category worst case of the continuation comparison.
+#[derive(Default)]
+struct ExtrapWorst {
+    n: usize,
+    /// Probes whose oracle value is at or below the absolute floor, i.e. the
+    /// ones the relative bound alone would have been pinning rounding noise on.
+    n_sub_floor: usize,
+    /// Worst `|Δ|` among those, which is what says how far the screen is
+    /// actually being used rather than merely how far it would allow.
+    sub_floor_abs: f64,
+    budget: f64,
+    at: String,
+    abs: f64,
+    rel: f64,
+}
+
 /// The continuation against LHAPDF's own `ContinuationExtrapolator`, on probes
 /// past every boundary a query can cross.
+///
+/// Accept: `|got − want| ≤ EXTRAP_ABS_TOL + EXTRAP_REL_TOL·|want|`. The relative
+/// term is the bound that matters wherever the continuation carries a density;
+/// the absolute term keeps the comparison from pinning the dead corners of the
+/// surface, where `x·f` has cancelled down to a rounding residue thirty orders
+/// below anything a luminosity can see (see [`EXTRAP_ABS_TOL`] for why `1e-30`
+/// is that scale). Both categories of probe stay in the loop either way.
 ///
 /// Blind spot: a probe set is a finite sample of a continuous surface, so this
 /// cannot exclude a disagreement between probes; and an `x·f` oracle says
@@ -756,7 +809,7 @@ fn extrapolation_matches_lhapdf_past_every_grid_boundary() {
              `pixi run -e madgraph generate-pdf-oracle`"
         );
 
-        let mut by_category: BTreeMap<&str, (usize, f64, String)> = BTreeMap::new();
+        let mut by_category: BTreeMap<&str, ExtrapWorst> = BTreeMap::new();
         for probe in &oracle.extrapolated {
             let got: f64 = member
                 .try_xfx_q2(probe.pdg, probe.x, probe.q2)
@@ -767,28 +820,36 @@ fn extrapolation_matches_lhapdf_past_every_grid_boundary() {
                         probe.pdg, probe.x, probe.q2, probe.xf_raw
                     )
                 });
-            let rel = extrap_rel_err(got, probe.xf_raw);
-            let entry =
-                by_category
-                    .entry(probe.category.as_str())
-                    .or_insert((0, 0.0, String::new()));
-            entry.0 += 1;
-            if rel >= entry.1 {
-                *entry = (
-                    entry.0,
-                    rel,
-                    format!(
-                        "pdg={} x={} Q²={} (rust={got:.17e} lhapdf={:.17e})",
-                        probe.pdg, probe.x, probe.q2, probe.xf_raw
-                    ),
+            let budget = extrap_budget_used(got, probe.xf_raw);
+            let w = by_category.entry(probe.category.as_str()).or_default();
+            w.n += 1;
+            if probe.xf_raw.abs() <= EXTRAP_ABS_TOL {
+                w.n_sub_floor += 1;
+                w.sub_floor_abs = w.sub_floor_abs.max((got - probe.xf_raw).abs());
+            }
+            w.abs = w.abs.max((got - probe.xf_raw).abs());
+            w.rel = w.rel.max(extrap_rel_err(got, probe.xf_raw));
+            if budget >= w.budget {
+                w.budget = budget;
+                w.at = format!(
+                    "pdg={} x={} Q²={} (rust={got:.17e} lhapdf={:.17e})",
+                    probe.pdg, probe.x, probe.q2, probe.xf_raw
                 );
             }
         }
-        for (category, (n, worst, at)) in &by_category {
-            println!("{name} {category}: {n} probes, worst {worst:.2e} at {at}");
+        for (category, w) in &by_category {
+            println!(
+                "{name} {category}: {} probes ({} at or below the absolute floor, \
+                 worst |Δ| there {:.2e}), worst |Δ| {:.2e}, worst rel {:.2e}, \
+                 worst budget used {:.2e} at {}",
+                w.n, w.n_sub_floor, w.sub_floor_abs, w.abs, w.rel, w.budget, w.at
+            );
             assert!(
-                *worst <= EXTRAP_REL_TOL,
-                "{name} {category}: the continuation misses LHAPDF by {worst:.2e} at {at}"
+                w.budget <= 1.0,
+                "{name} {category}: the continuation misses LHAPDF by {:.2e} of the \
+                 {EXTRAP_ABS_TOL:.0e} + {EXTRAP_REL_TOL:.0e}·|want| budget at {}",
+                w.budget,
+                w.at
             );
         }
         for required in [

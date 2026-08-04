@@ -579,13 +579,25 @@ fn cubic_x(t: f64, coeffs: &[f64]) -> f64 {
 /// Cubic Hermite on `[0,1]` from edge values `vl, vh` and edge slopes
 /// `vdl, vdh` (already scaled by the interval width). Operation order mirrors
 /// LHAPDF's `_interpolateCubic(t, vl, vdl, vh, vdh)`, and that is a constraint
-/// rather than an accident: at `x = 1` the four inputs cancel by some thirty
-/// orders, so `x·f` there is a pure rounding residue, and reproducing *LHAPDF's*
-/// residue is the only sense in which the two agree at such a point. Collecting
-/// the Hermite basis into one Horner chain moves that residue by parts in `1e5`
-/// of a number around `1e-35` — nothing as a density, but visible to the
-/// continuation oracle, which is relative and carries no absolute screen. The
-/// x-direction cubic has no such cancellation and is evaluated by Horner.
+/// rather than an accident, for two independent reasons.
+///
+/// **The interval's ends are exact.** At `t = 1` the four basis weights are
+/// `2−3+1`, `1−2+1`, `−2+3` and `1−1`, each exact in binary, so the sum is `vh`
+/// to the bit; likewise `vl` at `t = 0`. Collecting the basis into monomial
+/// coefficients and running Horner reaches `vh` only through a cancellation
+/// between them, which costs eight orders on node reproduction at a band's top
+/// Q² knot (worst `|Δ|` over the LHAPDF on-knot probes: `2.7e-20` this way,
+/// `2.7e-12` under Horner).
+///
+/// **The `x → 1` residue is not reconstructible.** Where `x·f` has died the four
+/// inputs cancel by some thirty orders, leaving a rounding residue around
+/// `1e-35` rather than a density; reproducing *LHAPDF's* residue is the only
+/// sense in which the two agree at such a point, and Horner moves it by parts in
+/// `1e5`. That is nothing absolutely, and the continuation comparison past the
+/// grid boundaries screens it as such — but the two gates that reconstruct the
+/// upper continuation from its endpoints compare relatively, and see it.
+///
+/// The x-direction cubic has no such cancellation and is evaluated by Horner.
 #[inline]
 fn cubic_hermite(t: f64, vl: f64, vdl: f64, vh: f64, vdh: f64) -> f64 {
     let t2 = t * t;
