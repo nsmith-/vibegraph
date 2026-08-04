@@ -976,6 +976,116 @@ fn probe_scale_cost() {
     }
 }
 
+/// What the per-point configuration draw costs on a live-draw partonic row.
+///
+/// The two integrands differ in the run card's `sde_strategy` and in nothing
+/// else, so the same process, cuts, kT clustering and running coupling stand on
+/// both sides and the gap between them is one `eval_amp2` and one `set_alpha_s`
+/// per point — the draw itself. A dynamical-against-fixed comparison would carry
+/// the clustering and the coupling move as well, which is a different question.
+///
+/// A point the cuts reject returns before the draw, so the cost is charged on
+/// the surviving fraction and the percentage is against the same points' total —
+/// what an integration budget is actually spent on. Run with
+/// `--ignored --nocapture` on an otherwise idle machine.
+#[test]
+#[ignore]
+fn probe_scale_draw_cost() {
+    use std::time::Instant;
+    const POINTS: usize = 20_000;
+    for (dir, process) in [
+        ("gu_to_epemu", "g u > e+ e- u"),
+        ("gux_to_epemux", "g u~ > e+ e- u~"),
+    ] {
+        let text = std::fs::read_to_string(output_dir().join(dir).join("Cards/run_card.dat"))
+            .expect("run card readable");
+        let live = RunCard::parse(&text).expect("banked run card parses");
+        // `sde_strategy = 2` discards the squared amplitude as the enhancement
+        // weight, which is the one condition the draw needs.
+        let patched: String = text
+            .lines()
+            .map(|l| {
+                if l.contains("= sde_strategy") {
+                    "  2 = sde_strategy\n".to_string()
+                } else {
+                    format!("{l}\n")
+                }
+            })
+            .collect();
+        let off = RunCard::parse(&patched).expect("patched run card parses");
+
+        let sqrt_s = live.ebeam1 + live.ebeam2;
+        let model = common::sm_model();
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let sets = common::generate(process);
+        let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &model, &evaluated);
+        let cuts = Cuts::compile(&live, &legs).expect("compile cuts");
+        let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &model, &evaluated);
+        let diagrams: Vec<_> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+
+        let build = |rc: &RunCard| {
+            let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+            let mut integ =
+                FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg);
+            integ
+                .use_running_coupling(&diagrams, &model, &evaluated, rc)
+                .expect("scale prescription compiles");
+            integ.use_multichannel(&diagrams, &evaluated, MULTICHANNEL_SURVEY, MULTICHANNEL_ITERS, SEED);
+            integ
+        };
+        let with_draw = build(&live);
+        let without_draw = build(&off);
+        assert_eq!(
+            (with_draw.scale_draw_ndim(), without_draw.scale_draw_ndim()),
+            (1, 0),
+            "[{dir}] the two integrands must differ in the configuration draw and only there"
+        );
+
+        let mut rng = ChaCha8Rng::seed_from_u64(SEED);
+        let points: Vec<Vec<f64>> = (0..POINTS)
+            .map(|_| {
+                (0..with_draw.vegas_ndim())
+                    .map(|_| rand::Rng::random::<f64>(&mut rng))
+                    .collect()
+            })
+            .collect();
+
+        let time = |integ: &FixedBeamIntegrand| {
+            let take = integ.vegas_ndim();
+            let start = Instant::now();
+            let mut acc = 0.0;
+            for u in &points {
+                acc += integ.value(&u[..take]);
+            }
+            std::hint::black_box(acc);
+            start.elapsed().as_secs_f64() / points.len() as f64 * 1e9
+        };
+        time(&with_draw);
+        time(&without_draw);
+        let ns_on = time(&with_draw);
+        let ns_off = time(&without_draw);
+        eprintln!(
+            "[{dir}] {ns_off:8.1} ns/point without the configuration draw | {ns_on:8.1} ns/point \
+             with it | draw {:+.1} ns ({:+.2}% of the per-point budget) over {POINTS} points",
+            ns_on - ns_off,
+            (1.0 - ns_off / ns_on) * 100.0,
+        );
+    }
+}
+
 /// Seed-stability sweep and budget ladder for the four `ℓ⁺ℓ⁻ j` partonic rows —
 /// the evidence two of them are enforced on and two are not.
 ///
