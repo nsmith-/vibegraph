@@ -688,8 +688,40 @@ where
     LaneLen<N>: IntoArrayLength,
     LaneField<N>: Real,
 {
-    let momenta = transpose_points(points);
-    unpack(amp.eval_m2(&momenta, scratch))
+    let momenta = pack_lane_points(points);
+    eval_m2_lanes_packed(amp, &momenta, scratch)
+}
+
+/// Transpose `N` scalar phase-space points, each in [`eval_m2`] order, into the
+/// array-of-structures-to-structure-of-arrays lane-packed momentum list that
+/// [`eval_m2_lanes_packed`] consumes. Split out so a caller holding lane-packed
+/// kinematics — or one measuring what the transpose itself costs — can hoist it
+/// out of the evaluation loop.
+///
+/// [`eval_m2`]: BoundAmplitude::eval_m2
+pub fn pack_lane_points<const N: usize>(
+    points: &[&[LorentzVector<f64>]; N],
+) -> Vec<LorentzVector<LaneField<N>>>
+where
+    LaneLen<N>: IntoArrayLength,
+    LaneField<N>: Real,
+{
+    transpose_points(points)
+}
+
+/// [`eval_m2_lanes`] on momenta that are already lane-packed by
+/// [`pack_lane_points`]: the same colour- and helicity-summed |M|², one value per
+/// lane, with no transpose in the call.
+pub fn eval_m2_lanes_packed<const N: usize>(
+    amp: &BoundAmplitude<'_, LaneField<N>>,
+    momenta: &[LorentzVector<LaneField<N>>],
+    scratch: &mut ScratchSpace<LaneField<N>>,
+) -> [f64; N]
+where
+    LaneLen<N>: IntoArrayLength,
+    LaneField<N>: Real,
+{
+    unpack(amp.eval_m2(momenta, scratch))
 }
 
 /// Test helper: evaluate the folded arena through the generic [`WaveformSlot`] forward

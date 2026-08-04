@@ -93,4 +93,6 @@ pub use op::{Const, ConstKind, Node, Op, Sym};
 pub use rescale::{PoolTagCensus, RescaleFallback, ScaleAwareAmplitude};
 pub use root_diagram::compile_diagram_ast;
 pub use root_lorentz::RootLorentzError;
-pub use run::{eval_m2_lanes, BoundAmplitude, ScratchSpace};
+pub use run::{
+    eval_m2_lanes, eval_m2_lanes_packed, pack_lane_points, BoundAmplitude, ScratchSpace,
+};
