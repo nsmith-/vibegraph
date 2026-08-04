@@ -42,9 +42,19 @@ is made yet; a future "quality sprint" tightening the `pub` API surface
 (VEGAS first-iteration bias + `w_max` scan decoupling + stratified-parallel
 axes, performance backlog below). `kt-spine` froze the channel/map structure
 it measures against; the note-29 sprint hardened the gate it optimizes
-against. One note: chain B added one `eval_amp2` + one `set_alpha_s` per
-point on live-draw rows (cost unmeasured — a baseline timing before
-optimizing is the first task).
+against. The baseline is taken: **note 30** records the per-stage timings of
+both sides on one host, the samply profiles, and the machine block they are
+read against. Three numbers out of it that set the sprint's expectations.
+Chain B's per-point configuration draw — one `eval_amp2` + one `set_alpha_s`
+on live-draw rows — costs **≈1.0 µs/point (21% of the per-point budget) on
+the partonic rows `gu_to_epemu`/`gux_to_epemux`** and **≈0.2 µs/point (3%)
+on `pp_to_llj_dyn`**, isolated by flipping the run card's `sde_strategy` and
+nothing else (`probe_scale_draw_cost`, `validate_sigma.rs` and
+`validate_hadronic.rs`, `--ignored`). The profiles put the **evaluator at
+50–63%** of self time on every integrate/sample path and **PDF interpolation
+at 14–19%** wherever there are protons — the only two broad targets. And the
+banked layer's own run-to-run spread is **0.8% median / 3.4% worst** on rows
+above 1 s, so a sub-1% claim is not measurable at this granularity.
 
 ## Pipeline Status
 
@@ -427,26 +437,25 @@ exercised on SM evidence alone.
   independently of `neval`. Note the largest `w/w_max` moves non-monotonically
   (23.5, 9.4, 15.0, 11.1) because it is an extremum estimate — do not read it as
   a convergence measure. (`unweight`, note 24 §P4.)
-- **Per-stage timing capture** (user, 2026-08-01; deliberately deferred from
-  the B5 re-bank). Neither side records wall times today: the banked runs
-  carry no timing at any stage (the bundled `run_*_log.txt` are job-wrapper
-  logs; MadEvent's `run1_app.log` iteration logs are excluded), our report row
-  JSONs have no duration fields, and the only timing instrument is
-  `scripts/mg_perf_compare.sh` (matrix-element stage only). Wanted, when
-  taken: (a) a host-labelled `timings.json` sidecar for MG's stages
-  (generate / output / compile / integrate / events, per process) captured
-  during an oracle-layer regeneration pass; (b) duration fields in the
-  collator's row files so our diagrams/amplitudes/integrals/samples stages
-  are timed per run. **Hard requirement: every timing record carries its
-  machine identity in full — architecture, core count and which cores were
-  used, nominal/boost frequency, memory, OS, compiler/toolchain versions, and
-  build settings (profile, flags, `RUSTFLAGS`, MG's Fortran flags) — or it is
-  noise**; cross-host comparison of absolute times stays out of scope (note
-  15's single-host-ratio position stands). Keep timings out of the refdata
-  bundle — they are measurements about a machine, not references. The
-  host-independent efficiency layer (points-to-precision from `results.dat`,
-  unweighting efficiency and `w_max` shares from the artifact's subsampler
-  summary) is already reconstructable from banked data and needs no capture.
+- **Per-stage timing capture** — ✅ **done 2026-08-04, note 30.** Both halves
+  landed: (a) `validation/madgraph/time_stages.py` regenerates named processes
+  into a scratch directory and reads MG's generate / output / compile /
+  integrate / events boundaries off a per-line-timestamped transcript, writing
+  a host-labelled `timings.json`; (b) every report row carries `duration_s`
+  and each run writes one `target/validation-report/host.json` beside its rows,
+  rendered as the report's `## Timing` section. Machine identity is recorded in
+  full on both sides except the CPU clock, which Apple Silicon does not expose
+  through `sysctl` and which is therefore `null` rather than a vendor figure.
+  Timings stay out of the refdata bundle. **The regeneration cost is measured:
+  1001.6 s = 16 min 42 s wall for all 31 process directories with their
+  launches** — the `madgraph` stage of `generate_references.sh` on an M3 Max,
+  warm caches, ~20.5 s of it a one-off LHAPDF set install. "Multi-hour" was off
+  by an order of magnitude for *that* stage; the `refs` stage (f2py modules,
+  amplitude tables, α_s and PDF oracles) stays unmeasured because timing it
+  means writing into the reference bank. Left open by note 30 §8: the `refs`
+  stage; whether MadEvent's `results.dat` point count includes the survey pass;
+  and a per-phase `duration_s` inside a row, which is what would give our side
+  a counterpart to MG's `output` + `compile` column.
 - **Per-event scale hot-path cost** — ~100 ns/point on top of a 0.5–1.7 µs
   matrix element (+6% `gg_to_gg`, +21% `uux_to_uux`). `ScaleChoice::clustered`
   heap-allocates its beam–leg candidate list per event; that is the obvious
