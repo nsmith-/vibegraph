@@ -5,16 +5,23 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: the **note-29 validation sprint** ✅ **closed** 2026-08-03
-on branch `val4`. All three standing discrepancies resolved (conjugate colour
-tags per-member; the `AMP2_c` scale-channel draw retired the channel-partition
-tolerances to 0.005; `ee_to_mumua` adjudicated — the reference owns it), every
-descoped card surface a hard error, `refdata-5` **published and pinned**
-(release `refdata-5`, asset digest round-trip-verified), and the 8
-`nn23lo1`-blocked cells enforced. Census over the 29-row × 4-category report:
-**98 measured / 96 ✅ / 2 ⚠️** (one ⚠️ is the pre-existing `gg_to_gg`
-diagrams 4/6 annotation; the other is a new finding, below). Full record:
-note 29 close-out.
+**Current position**: the **performance sprint** ✅ **closed** 2026-08-05,
+eleven sessions over three tracks — I (integration engine), P (PDF hot path),
+E (evaluator) — all merged, `main` @ `ca53336`. Measured on one host in one
+sitting against the note-30 baseline: `pixi run --skip-deps validate`
+**691 s → 391 s (−43.4%)** on the identical command with the census
+cell-for-cell unchanged (**98 measured / 96 ✅ / 2 ⚠️ / 4 ⏳**); per-row
+single-thread **integrals 842.6 s → 389.8 s (−53.7%)**; integrand throughput
+against MadGraph on note 30 §5.3's CPU-time denominators **geomean
+6.84× → 8.76×** over the same 26 rows; the per-point MATRIX1 comparison
+**1.25× → 0.98×**, the evaluator itself −21.6%, with **8 of 14** processes now
+faster per point than MadGraph (was 3); and `integrate` scales **4.70×** on
+`dy13_default` and **5.36×** on `pp_to_llj` from `-j 1` to `-j 16` at a
+byte-identical artifact, which retires note 30 §1's "MadGraph is a 16-way
+parallel job farm and our integrator is one thread" caveat. Every bit-for-bit claim was checked at
+the layer's own resolution — the 100 banked category row files, digests
+compared — and no tolerance was relaxed anywhere in the sprint. Full record:
+note 31 §6; the sessions are one line each in the closed-sprint history below.
 Standing caveats: a partonic σ quoted from `refdata-2` is **not comparable** to
 one from `refdata-3`/`refdata-4`/`refdata-5` (MadGraph 3.5.7 applied the PDF
 set's `αs(M_Z) = 0.130` to `lpp = 0` runs; 3.7.1 keeps the model's `0.118` —
@@ -31,40 +38,31 @@ polarization, decay chains — is explicitly descoped to the feature backlog
 reach must be a **hard error**, never a silent acceptance; the fixes closing
 the remaining silent acceptances are validation-sprint items.
 
-**Awaiting the user**: the first release tag is **`v0.1`**, decided
-2026-08-02 and re-affirmed 2026-08-03 to follow the **performance sprint**
-(next below) — a 0.x line because no global backwards-compatibility promise
-is made yet; a future "quality sprint" tightening the `pub` API surface
-(backlog below) precedes any 1.0. Tagging runs `release.yml` and
-`acceptance.yml` for the first time.
+**Next action — the user's**: the first release tag is **`v0.1`**, decided
+2026-08-02 and re-affirmed 2026-08-03 to follow the **performance sprint**.
+That sprint is now closed (above), so nothing is in front of the tag. A 0.x
+line because no global backwards-compatibility promise is made yet; a future
+"quality sprint" tightening the `pub` API surface (backlog below) precedes any
+1.0. Tagging runs `release.yml` and `acceptance.yml` for the first time.
 
-**Next sprint**: the **performance sprint** — **planned in note 31**
-(2026-08-04): three tracks — I (VEGAS first-iteration bias + `w_max` scan
-decoupling; parallel `integrate` with a `-j/--parallel` CLI flag over the
-existing thread-count-bit-identical chunked VEGAS, unblocked by making the
-hadronic `RefCell` scratch per-thread; convergence-targeted stopping with
-hard-split per-channel Neyman allocation), P (PDF interpolation hot path:
-f64-only SIMT-shaped `xfx_all` batch eval, flavor LUT, Horner/FMA), E
-(evaluator: DAG linearization/scheduling study, `fill_arenas` overhead
-reduction, chain-B draw work-sharing). The `fill_arenas` instruction study is
-**done** (`fill-arenas-asm-study-results.md`): dispatch is already a 38-entry
-jump table; the budget is 30.5% loop+dispatch / 22.9% loads / 20.4% FP / 20.4%
-bounds checks — arena-header hoisting and threaded dispatch are the scoped,
-safe-Rust, bit-for-bit fixes. `kt-spine` froze the channel/map structure
-it measures against; the note-29 sprint hardened the gate it optimizes
-against. The baseline is taken: **note 30** records the per-stage timings of
-both sides on one host, the samply profiles, and the machine block they are
-read against. Three numbers out of it that set the sprint's expectations.
-Chain B's per-point configuration draw — one `eval_amp2` + one `set_alpha_s`
-on live-draw rows — costs **≈1.0 µs/point (21% of the per-point budget) on
-the partonic rows `gu_to_epemu`/`gux_to_epemux`** and **≈0.2 µs/point (3%)
-on `pp_to_llj_dyn`**, isolated by flipping the run card's `sde_strategy` and
-nothing else (`probe_scale_draw_cost`, `validate_sigma.rs` and
-`validate_hadronic.rs`, `--ignored`). The profiles put the **evaluator at
-50–63%** of self time on every integrate/sample path and **PDF interpolation
-at 14–19%** wherever there are protons — the only two broad targets. And the
-banked layer's own run-to-run spread is **0.8% median / 3.4% worst** on rows
-above 1 s, so a sub-1% claim is not measurable at this granularity.
+**Standing measurement facts** (note 30 baseline, note 31 §6 close-out; all
+one host, M3 Max). The layer's own run-to-run spread is **0.8% median / 3.4%
+worst** on rows above 1 s, so a sub-1% claim is not measurable there. Two
+readings of note 30 §3.2 are **corrected** by note 31 §6.2. Its `diagrams`
+column is not per-row work: `sm_model()` is process-wide interned, so under
+default test parallelism the 26 rows race its lazy initialisation and each
+charges itself the contention — run one at a time the category is **1.29 s**,
+not 14.2 s. Its `amplitudes` column, by contrast, **is** real work and
+reproduces under either protocol; only the sentence "never builds an evaluator"
+is wrong, since that gate runs enumeration and `AmplitudeEvaluator::compile` per
+row — which is exactly why its two 2→6 rows cost ~1.1 s while every other row is
+≤ 0.02 s. Chain B's per-point configuration draw was **≈1.0 µs/point
+(21%)** on `gu_to_epemu`/`gux_to_epemux` at the baseline and is **≈870 ns
+(≈18%)** after the evaluator sessions (note 31 §E3). PDF interpolation, which
+note 30's profiles put at 14–19% of self time wherever there are protons, is
+now **1.4–2.0%** (note 31 §2.4); the evaluator is correspondingly **62–79%**,
+with `fill_arenas` alone 33–43%, and is where any further broad win has to come
+from.
 
 ## Pipeline Status
 
@@ -97,6 +95,7 @@ One line each; the note is the full record. Earlier sprints
 - **`v3-backlog`** (validation follow-up, closed + merged 2026-08-01) — every register finding resolved rather than tolerated: the h→ττ pole was **MadGraph 3.5.7's `get_channel_cut` defect** (`(t-Mass)*(t+Mass)` on `t = p²`; upstream fix `286feb8e6`, first in 3.6.2) and both cells now GATE against 3.7.1; the colour draw reproduces MadEvent's `SELECT_COLOR` via per-diagram `AMP2_d` (both χ² targets hit); `Cuts::shat_min` derives `setcuts.f`'s general bounds (`pp_to_bb_fixed` σ GATE); DY events banked with a live `dσ/dm_ll` gate; references re-banked on **3.7.1** into `refdata-3` (finding: 3.5.7 ran every `lpp = 0` process at `αs(M_Z) = 0.130`, so refdata-2/3 partonic σ are not comparable); the LHE writer round-trips **both** MG serialisation dialects by construction (34/34 byte-for-byte, 14/34 still reproduced with source dropped); latent `IDWTUP = -3` σ-misread fixed en route. Census 72/68/4 → **75/74/1**; note 27.
 - **note-29 validation sprint** (validation, closed 2026-08-03, branch `val4`) — seven design→implement→review chains + the §G re-bank. A: conjugate colour tags fixed by **per-member colour-flow tables** under a structurally-determined permutation (dijet `ICOLUP` χ² p 0 → 0.105–0.263, T5 0/80 000; the design's premise falsified twice by measurement en route). B: **MadEvent's per-point `AMP2_c` scale-channel draw** in production (pure function of `(channel, u)`, zero bits from existing streams) — partition gaps collapsed to MC noise, `gu`/`gux`/llj_dyn tolerances retired 0.02/0.015 → **0.005**, σ(pp→ℓ⁺ℓ⁻j) rel −0.68% → **−0.01%**; reviewer derived the missing `this_config` reconciliation from MG source. C1+C2: every descoped card surface a **hard error** (polarization, decay chains, `propagators.py`, 209-field audit with 23 refused, μF ≥ 2 GeV veto as zero-weight, `dynamical_scale_choice` 1–5 refused). D: `ee_to_mumua` drift adjudicated **D1 — the reference owns it** (MG's own partitions disagree at ≥15σ; our total matches its m(μμ) re-integration at 0.16σ; tolerances unchanged). E: ForcePositive with LHAPDF's own clamp semantics; `validate_kt_cluster` a declared oracle tier; +2 cells. F: U(1) charge-flow phase — pre-registered negative result. §G: **`refdata-5` pinned** (four runs re-carded onto lhaid 247000, member list identical name-for-name; publication pending), all 8 ⛔ cells enforced. Census 87/85✅/2⚠️ → **98/96✅/2⚠️**. Transferable lesson: **pre-register the may-move set** — chain B's escalation diff landing byte-exactly on its five predicted cells is what made the sprint's biggest σ change auditable at a glance; note 29 close-out.
 - **`kt-spine`** (feature, two tracks, closed 2026-08-02) — Track K: MadGraph's general kT clustering reproduced merge for merge against an instrumented 3.7.1 (90 000 dumped events, zero observed deviation), the closed forms deleted so `dynamical_scale_choice = -1` takes one path, `GridAlphaS` made LHAPDF's own `AlphaS_Ipol` and the density grid continued past its edges — then the flips: 6 asserted-refused scale rows became per-event replays, the 4 llj partonic σ rows and their `samples` cells left `blocked`, σ(pp→ℓ⁺ℓ⁻j) re-gated at the dynamical scale, and the capstone **`p p > j j`** gated on MadGraph's shipped run-card defaults (**6.803009e8 ± 2.511e5 pb** vs MG 6.788500e8 ± 1.4726e6, rel +0.21%, pull +0.97). Track S: the identical-particle factor moved into the phase-space map per subprocess, and the multi-rung t-channel spine landed in production. Two bugs the sprint found rather than assumed: the **fixed-beam path was never regulated** (every prior "what is the spine worth" measurement was taken on flat transfer draws), and `p p > j j`'s σ was **36% high** because a repeated final-state label enumerated `g u > g u` and `g u > u g` as two subprocesses. Transferable lesson: **a per-event field is a finer oracle than a cross section, and it exists more often than it looks** — the clustering was pinned by an instrumented replay of MadGraph's own intermediates long before any σ moved, which is why every σ flip that followed had a diagnosis attached. Census 75/74/1 → **87/85/2** over 29 rows; note 28.
+- **`perf-sprint-3`** (performance, three tracks, closed 2026-08-05) — eleven sessions against the note-30 baseline, all merged. Layer result, one host one sitting: `pixi run --skip-deps validate` **691 s → 391 s (−43.4%)** on the identical command with the census cell-for-cell unchanged; per-row single-thread **integrals 842.6 s → 389.8 s (−53.7%)**; integrand throughput vs MadGraph on note 30 §5.3's CPU-time denominators **geomean 6.84× → 8.76×** over the same 26 rows (`pp_to_jj` 2.3× → 4.6×, `pp_to_llj_fixed` 5.8× → 9.1×); per-point MATRIX1 **1.25× → 0.98×** with the evaluator itself −21.6% and 8 of 14 processes now beating MadGraph (was 3); `integrate` **4.70×**/**5.36×** from `-j 1` to `-j 16` on `dy13_default`/`pp_to_llj` at a byte-identical artifact. **Track I**: I1 made VEGAS's iteration combination unweighted (`5b3952d`/`59887a3`) — a 4000-seed offline study showed the plan's warm-up discard removes essentially none of the bias and its parenthetical was the real lever — collapsing the llj ladders (`pp_to_llj` span 2.09% → 0.46%) and re-pinning `LLJ_NEVAL` 300k → 150k; I2 gave the `w_max` scan its own budget (`24aad64`/`928df28`) and **falsified its own premise**, the maxima never converging (`Σⱼ w_maxⱼ ∝ n^0.508` over 2.4 decades — a Pareto weight tail of index ≈ 2), so the lever is the percentile rule not the budget; I3 made the hadronic integrand `Sync` and added `-j/--parallel` (`6497f7e`/`1b527cc`), bit-for-bit at any thread count by construction; I4 added convergence-targeted integration with hard-split Neyman allocation (`30d44d1`/`539f0da`), 64/64 calibration runs meeting target, CPU parity with MG on llj and 4.2–4.5× less CPU on dy13. **Track P**: P1 replaced the per-flavour PDF reads with an f64-only all-flavour kernel (`71a7ef3`/`a66d58a`) — `xfx_all` 112 ns vs 504 ns, PDF share 14.5% → 1.38% and 19.4% → 2.00%, **no tolerance relaxed**; P1b added an absolute screen to the continuation oracle (`91c5a79`/`0fd6344`) and recorded why Horner+FMA stays rejected in `cubic_hermite`. **Track E**: E1 studied execution order (`52327b2`/`7416c1d`) and E1b made op-blocked-within-ASAP-levels the production schedule (`486e237`/`94af883`) — −17.3% eval geomean, bit-for-bit across all 100 banked row files; E2 hoisted the arenas into local slices in `fill_arenas` (`54d666f`/`d2d7520`), header reloads 143 → 20, while measuring and **rejecting** threaded dispatch (+7.7%) and force-inlined sret kernels; E2b shared the four spinor products in the chiral currents (`ced17fb`/`027e710`); E3 found the plan's prefix design a **NO-GO by measurement** and landed an arena-reuse cache instead (`6a8e91c`/`50fb671`), order-preserving and bit-for-bit. Transferable lesson: **four of the eleven sessions refuted their own brief's mechanism and still delivered** — I1's discard, I2's budget, E2's dispatch, E3's prefix — because each was pre-committed to a measurement that could kill it; the close-out then did the same to its own brief, whose prescribed `RAYON_NUM_THREADS=1` per-row protocol serialises every concurrent row through one global worker and would have published an ~8× phantom regression. Note 31 §6.
 
 ---
 
@@ -396,20 +395,22 @@ exercised on SM evidence alone.
 - **Stratified-parallel integration axes** (user, 2026-08-01) — the iterative
   VEGAS+α loop needs an embarrassingly parallel axis for SIMD/multi-thread
   promotion. Catalogued, exact-first (no partition function, no fragility):
-  (a) **channel-block stratification** — allocate `N_j = α_j·N` points per
-  mixture component deterministically instead of drawing the label per event;
-  unbiased, removes the multinomial label noise (a small free variance win),
-  and each block is one map = one code path = SIMD-clean lanes with no branch
-  divergence; (b) **helicity strata** — `Σ_hel |M_hel|²` is an exact orthogonal
+  (a) **channel-block stratification** — ✅ **done** (note 31 §I4). The hard split
+  was already there (`adapt_grids` is per-channel deterministic with a 512 floor);
+  what landed on top of it is `budget.rs`'s allocation and stopping rules and
+  `vegas::adapt_blocks_iteration`, which runs every channel's iteration in one
+  rayon region keyed `(channel, chunk)`. The multinomial survives only in the
+  undivided comparison estimator and the α-survey, neither of which is the
+  production σ path; (b) **helicity strata** — `Σ_hel |M_hel|²` is an exact orthogonal
   decomposition (no interference for unpolarized beams), so helicity classes
   (parity-folded, zero-classes dropped) can carry their own budgets/grids;
   first real consumer for `mg-single-helicity-bench`; (c) **flavour groups ×
-  beam orderings** (hadronic) — already independent integrals, blocked only by
-  the `RefCell` scratch (the DY-parallelism item below); (d) **frozen-pass
-  bulk** — `sample_frozen` is already embarrassingly parallel; keep the
-  sequential adapt phase short and put the budget in frozen passes (synergises
-  with the VEGAS first-iteration item: discard/shorten adaptation, bulk-sample
-  frozen); (e) **batch-size vs iteration-count** — measure whether α/grid
+  beam orderings** (hadronic) — already independent integrals, and **no longer
+  blocked**: the `RefCell` scratch is gone (`SubprocessProto`/`BoundSubprocess`
+  plus `ThreadLocal` scratch, note 31 §I3), so both integrands are `Sync`;
+  (d) **frozen-pass bulk** — `sample_frozen` is already embarrassingly parallel;
+  keep the sequential adapt phase short and put the budget in frozen passes;
+  (e) **batch-size vs iteration-count** — measure whether α/grid
   adaptation converges in fewer sequential iterations with larger parallel
   batches per iteration (adaptation signal-to-noise grows ~√batch, so the
   sequential critical path should shrink until the update is
@@ -418,35 +419,49 @@ exercised on SM evidence alone.
   G-directories, per-diagram-class = per *distinct* map) are second tier:
   real cluster-scale precedent, but they carry the routing fragility and need
   the same coverage guardrail as the per-flow item above.
-- **VEGAS first-iteration convergence bias** — `VegasGrid::adapt` feeds *every*
-  iteration into `combine_iterations`' `1/σ²` weighted mean, including the first
-  ones on an unadapted grid. An early iteration that undersamples the peak
-  returns a low integral **and** a low variance, so it is weighted *up*. Measured
-  on llj (five seeds each): −1.03% at 30k/iter, −0.28% at 150k, +0.002% at 300k,
-  +0.16% at 600k — steps halving as the budget doubles, the `O(1/N)` signature.
-  Not hadronic-specific; the same combination runs the fixed-beam path, and llj
-  exposes it because 24 pooled channels × a 7-dim grid each buys every channel
-  far fewer points than a partonic 2→2 does. Independent confirmation: the
-  accept/reject pass is a *single* pass over frozen grids, does not go through
-  `combine_iterations`, and converges to the true σ — at 100k the emitted
-  sample's own σ sits +1.25% above the banked integral, and at 300k they agree.
-  Fix: discard the first `k` iterations (or an unweighted final pass over the
-  trained grids). Would let the llj gate run at a quarter of its budget.
-  One half of the integration-sprint pair with the `w_max` item below: both are
-  "how the budget splits across adapt / scan / frozen phases", one holistic
-  redesign. (`vegas.rs`, note 24 §P3.)
-- **`w_max` scan budget decoupled from the integration budget** — a frozen scan
-  estimates each channel's maximum on that channel's share of the *integration*
-  budget, so it inherits the same undersampled small channels. On llj the share
-  of σ above the maxima runs 3.2e-2 → 1.5e-2 → 8.4e-3 → 5.3e-3 over
-  30k → 100k → 300k → 600k and is **still falling**, against 3.04e-4 for a
-  fixed-beam process — 20–100× worse, and nowhere near converged at any budget
-  the gate can afford. The estimator stays unbiased (overweights are kept at
-  weight > 1), so what this costs is unweighting efficiency and sample
-  lumpiness under `IDWTUP = +3`, not correctness. Wanted: a scan budget set
-  independently of `neval`. Note the largest `w/w_max` moves non-monotonically
-  (23.5, 9.4, 15.0, 11.1) because it is an extremum estimate — do not read it as
-  a convergence measure. (`unweight`, note 24 §P4.)
+- **`w_max` from a percentile, not from an extremum** — the frozen scan now has a
+  budget of its own (`--scan-points`), and that turned out not to be the lever:
+  the maxima never converge. On the llj grids `Σⱼ w_maxⱼ ∝ n^0.508` over 2.4
+  decades of scan budget (10³–2.56·10⁵ draws/channel, no plateau) while the σ-share
+  above the maxima falls only as `n^−0.455` — one statement, a Pareto weight tail
+  of index ≈ 2, confirmed by a Hill estimator (α = 2.08–2.40 on the twelve
+  σ-carrying channels, which also own the maxima). So no scan budget fixes llj's
+  ~5e-3 σ-share; the rule has to change. MadGraph's `unwgt.f` sets the maximum from
+  a **percentile** and re-normalises, capping `Σⱼ w_maxⱼ` instead of chasing an
+  extremum. The estimator stays unbiased either way (overweights are kept at
+  weight > 1), so what this buys is unweighting efficiency and sample lumpiness,
+  not correctness. Also free and provably inert: `Unweighter::scan` is a pure
+  per-channel function on its own stream, so a rayon `par_iter` over channels
+  cannot move a number (worth doing only for large `--scan-points`).
+  (`unweight`, note 31 §I2.)
+- **Seeds are still combined by inverse variance** — `combine_seeds`
+  (`validate_hadronic.rs`) is the same defect one level up from the one the
+  iteration combination just shed: a `1/σ²` weighted mean over per-seed results.
+  It is second-order now that per-seed errors are well estimated, which is
+  exactly why it is worth closing while it is cheap. (Note 31 §I1.)
+- **Convergence mode is opt-in, and should be the CLI default** —
+  `integrate --target-rel` reaches MG's banked accuracy at CPU parity on llj and
+  4.2–4.5× less CPU on dy13, but flipping it to the default changes `integrate`'s
+  default artifact bytes, which the CLI gates and `generate_samples.sh` pin. The
+  flip plus the byte re-pin is a small self-contained follow-up. (Note 31 §I4.)
+- **Stale σ values in the gate sources, left by the budget re-pin** — `BB_NEVAL`'s
+  ladder comments, the DY row docs and `validate_sigma.rs`'s per-process numbers
+  still quote σ measured before `LLJ_NEVAL` went 300k → 150k. The close-out
+  session re-measured timings, not σ, and its charter forbade code edits, so this
+  needs a pass that re-records what a current run prints. (Note 31 §I1.)
+- **`pp_to_jj`'s integration budget was never bias-set** — it is flat to 0.08%
+  across the 75k–600k ladder, so it could take a 4× cut with no accuracy argument
+  against it. Worth ~65 s of single-thread integrals time at the post-sprint cost
+  (86.2 s for that row, note 31 §6.3) — the ~130 s the measuring session quoted was
+  against note 30's 174.8 s and no longer applies. Deliberately left as a budget
+  decision rather than taken inside the session that found it. (Note 31 §I1, §6.3.)
+- **The serial tail of a parallel `integrate` run** — the α-adaptation survey is
+  serial and budget-independent (`neval.clamp(10k,40k) × 6`) and is now ~27% of a
+  fixed-budget `p p > ℓ⁺ℓ⁻ j` run at `-j 16`; `survey_variance` is
+  O(n_survey × n_channels) and is the obvious thing to parallelise. Chunk size is
+  a second, smaller knob: measured **inert** (identical artifact md5 at every
+  setting) but never tuned, because the scan that would have tuned it was
+  load-dominated — free and unmeasured, not known-neutral. (Note 31 §I3/§I4.)
 - **Per-stage timing capture** — ✅ **done 2026-08-04, note 30.** Both halves
   landed: (a) `validation/madgraph/time_stages.py` regenerates named processes
   into a scratch directory and reads MG's generate / output / compile /
@@ -466,10 +481,18 @@ exercised on SM evidence alone.
   stage; whether MadEvent's `results.dat` point count includes the survey pass;
   and a per-phase `duration_s` inside a row, which is what would give our side
   a counterpart to MG's `output` + `compile` column.
-- **Per-event scale hot-path cost** — ~100 ns/point on top of a 0.5–1.7 µs
-  matrix element (+6% `gg_to_gg`, +21% `uux_to_uux`). `ScaleChoice::clustered`
-  heap-allocates its beam–leg candidate list per event; that is the obvious
-  first cut. (`coupling/scales.rs`; `validate_sigma.rs` `probe_scale_cost`.)
+- **Accept/reject allocator traffic, and the per-event scale that feeds it** —
+  one item, because both are the same allocation. The unweighting profile is the
+  most allocation-bound of the four note-30 profiles: **18.4% allocator + libc
+  mem, 5.1% `BTreeMap`**, and kT clustering at its highest share (9.2%) because
+  accept/reject re-derives the per-event scale on every trial.
+  `ScaleChoice::clustered` heap-allocates its beam–leg candidate list per event,
+  which is ~100 ns/point on top of a 0.5–1.7 µs matrix element (+6% `gg_to_gg`,
+  +21% `uux_to_uux`). First cut: per-event allocations → reused scratch. Sized
+  honestly: the samples category is about half the integrals category in wall
+  time, which is why this stayed a stretch item through the sprint.
+  (`coupling/scales.rs`; `validate_sigma.rs` `probe_scale_cost`; note 30 §7.2,
+  note 31 §E4.)
 - **Tighter spacelike floor** — `Cuts::spacelike_floor() = pT_min²` is provable
   but 10–100× looser than the true fiducial floor: S2's D3 measurement found the
   cut-surviving region above `|t| ≈ 4 000–40 000 GeV²` where the floor sits at
@@ -478,10 +501,13 @@ exercised on SM evidence alone.
 - **2→6 σ rows** — `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` stay
   `Plan::Skip`: ~1 ms/eval over a 24-dim map is too slow to gate — a cost issue,
   not a sampling one. (`validate_sigma.rs`.)
-- **DY integrand parallelism** — `hadronic.rs`'s per-flavor-class scratch is
-  `RefCell`-based `FnMut`, so the `Fn + Sync` parallel VEGAS paths can't be used;
-  per-thread scratch unlocks both multi-threaded runs and distributed sharding
-  (note 18 §2.4). Whole default-cut run is ~2 s single-threaded, so unhurried.
+- **Cut before the configuration draw on the fixed-beam path** —
+  `FixedBeamIntegrand` runs the scale-configuration draw *before* the cut, so 22%
+  of `gu_to_epemu`/`gux_to_epemux` points pay ~190 ns of provably dead draw work;
+  `ProtonIntegrand::shape` already cuts first. The same session fixes note 30 §6's
+  "points the cuts reject return before the draw", which is true on the hadronic
+  path and false on the partonic one, and the doc comments that repeat it.
+  (Note 31 §E3.)
 - **`feyngraph-perf`** — `AssignWorkspace::assign()` (`workspace.rs:L122`) calls
   itertools `.counts()` (a fresh `HashMap`) per candidate vertex per topology per
   subprocess — ~340M allocations for pp→qq̃4l. Fix: pre-compute per-vertex counts

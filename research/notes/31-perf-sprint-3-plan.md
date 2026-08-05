@@ -782,3 +782,586 @@ the samples category is half the size of integrals in wall time.
   before/after table here, and add a sprint-level `scripts/mg_perf_compare.sh`
   before/after table (note 30 §5.3 explicitly disclaims being a substitute for
   it); update `TODO.md` and the backlog entries this sprint retires.
+
+---
+
+## 6. Close-out: the sprint measured end to end
+
+**Status:** measurement record, taken 2026-08-05 on `perf3-closeout` @ `ca53336`
+— the merged sprint tree, all eleven sessions in — on the same M3 Max note 30
+was taken on. Every table carries the command that produced it and the load
+average at its own start.
+
+### 6.1 A correction to the close-out protocol
+
+The close-out was briefed to take the per-row table under `RAYON_NUM_THREADS=1`,
+reasoning that note 30's rows were single-threaded and pinning rayon to one
+thread restores that condition. **The premise is right and the prescription is
+wrong**, and it is worth recording because it will catch anyone who compares a
+row duration across the I3 boundary.
+
+The premise: before the sprint nothing in the library reached rayon on a gate
+path. The only call site in `vibegraph-lib/src` at `6008697` is
+`run_iter_parallel`, the private helper of the never-reached `adapt_parallel` —
+note 30 §7's "~16 rayon workers parked in `__psynch_cvwait`" is the same fact
+seen from the profile side.
+
+The prescription: after I3/I4 every σ row's integrand submits to the **global**
+rayon pool, and `validate.sh` runs the gates under the harness's default test
+parallelism. With one global worker every concurrently-running row funnels
+through it, and each row's `Stopwatch` charges itself the whole cohort's wall
+time. The signature is unmistakable — every hadronic integrals row lands at the
+same ~305–320 s whether it spends 4.32M, 4.5M or 9M points:
+
+| row | `RAYON_NUM_THREADS=1`, cohort | points |
+|---|--:|--:|
+| `pp_to_bb_fixed` | 305.1 s | 9 000 000 |
+| `pp_to_bb` | 308.8 s | 9 000 000 |
+| `pp_to_bb_qcd2` | 312.2 s | 9 000 000 |
+| `pp_to_jj` | 315.9 s | 9 000 000 |
+| `pp_to_ll` | 319.3 s | 4 320 000 |
+| `pp_to_llj_dyn` | 310.3 s | 4 500 000 |
+| `pp_to_llj_fixed` | 307.3 s | 4 500 000 |
+| `pp_to_llj` | 390.6 s | 4 500 000 |
+
+Isolating one row settles it. `sigma_bb_fixed_scale_vs_mg` alone, same binary,
+same 9M points:
+
+```
+RAYON_NUM_THREADS=$rt cargo test -p vibegraph-lib --profile release-debug \
+  --features extended-validation --test validate_hadronic -- \
+  --nocapture --test-threads=1 sigma_bb_fixed_scale_vs_mg
+```
+
+| `pp_to_bb_fixed` integrals | duration |
+|---|--:|
+| in the cohort, `RAYON_NUM_THREADS=1` | 305.1 s |
+| alone, `RAYON_NUM_THREADS=1` | **37.1 s** |
+| alone, `RAYON_NUM_THREADS=16` | **11.1 s** |
+| note 30 §3.2 | 38.59 s |
+
+So the 8.2× was cross-row contention on one worker, not work. The corrected
+protocol pins the harness as well as the pool — `RUST_TEST_THREADS=1
+RAYON_NUM_THREADS=1`, one row at a time on one thread.
+
+One trap inside that correction is worth naming, because it nearly went into
+this note as a finding: **a row measured on its own is not the same measurement
+as the same row inside a pass.** Alone, `pp_to_bb_fixed` reads 37.1 s; inside
+§6.3's pass it reads **26.0 s**. The difference is one-time process setup — the
+interned SM, and on a hadronic row the PDF grid — which an isolated run charges
+to the only row present while a full pass charges it to whichever row runs
+first. So 37.1 s sitting 3.9% from note 30's 38.59 s is a coincidence between
+two different contaminations, not evidence that the protocols agree, and the
+same caveat caps the isolated `37.1 → 11.1 s` thread-count ratio at "≥3.3×, both
+arms carrying setup" rather than a clean measurement of what I3/I4 bought. The
+clean parallel numbers are §6.7's, taken through the CLI with no harness in the
+way.
+
+What licenses §6.3 against note 30 §3.2 is therefore narrower, and is argued
+there rather than here: on the two categories carrying 97.9% of the layer's
+timed work, each row's duration is dominated by its own integration or
+generation work, which both protocols measure alike.
+
+### 6.2 What is and is not comparable
+
+- **Per-row `duration_s`: comparable**, on the corrected protocol, subject to the
+  few-per-cent caveat above.
+- **Elapsed wall: comparable for the *default* command, and then only as a lower
+  bound on the gain.** §6.5's 691 s → 391 s runs note 30's exact invocation on
+  both sides, so it is like-for-like — but the suite grew this sprint (`#[test]`
+  861 → 905, `#[ignore]` 32 → 34 between `6008697` and `ca53336`: +42
+  newly-running tests, several deliberately expensive — E1's alternative-order
+  bit-identity runs, I3's thread-count identity runs, I4's calibration), so the
+  391 s buys strictly more work than the 691 s did. The wall of the *corrected
+  per-row* protocol (§6.3) is comparable to nothing in note 30, because that
+  protocol serialises the harness; it is reported per binary and used for
+  nothing else.
+- **MadGraph's side: untouched by the sprint.** Nothing here wrote to the
+  reference bank, so §6.6's job is to show the *host* still reproduces note 30
+  §4.2 — which is what licenses the our-side comparison at all.
+- **`diagrams` is a protocol artifact; `amplitudes` is not.** These two are worth
+  separating carefully, because a partial reading of the first close-out pass
+  suggested both had moved and neither had. Measured properly, category totals:
+
+  | category | note 30 | close-out, default command | close-out, one row at a time |
+  |---|--:|--:|--:|
+  | `diagrams` | 14.2 s (26 rows) | **13.59 s** | **1.29 s** |
+  | `amplitudes` | 3.0 s (20 rows) | **2.59 s** | **2.24 s** |
+
+  Under note 30's own command both reproduce. But `diagrams` collapses **10.5×**
+  when the rows are run one at a time, and its residue is concentrated in exactly
+  the two rows that have real enumeration work to do (`bbx_to_ccx` 0.62 s,
+  `uux_to_ccx` 0.59 s; every other row ≤ 0.05 s). So note 30 §3.2's reading of
+  that column — "every `diagrams` row costs ~0.51–0.68 s whatever the process,
+  because each trial re-loads the interned SM" — has the mechanism inverted:
+  `sm_model()` is a **process-wide interned** model, so a trial does not re-load
+  it; under the harness's default parallelism the 26 rows race its lazy
+  initialisation and each `Stopwatch` spans the contention. Run sequentially only
+  the first pays, and the column becomes what it should always have been, a
+  per-process enumeration cost.
+
+  `amplitudes` shows no such protocol dependence (2.59 s vs 2.24 s) and its shape
+  is honest work: the two 2→6 rows carry 1.0–1.1 s of the total and every other
+  row is ≤ 0.02 s. Note 30's *numbers* for it are right; only its explanation is
+  wrong, since `amplitude_oracle::measure` does run enumeration and
+  `AmplitudeEvaluator::compile` per row rather than "never build an evaluator" —
+  which is precisely why the 2→6 rows cost fifty times what a 2→2 does. The file
+  is untouched since note 30's own tree (`git log d7b7e68..ca53336 --
+  vibegraph-lib/tests/amplitude_oracle.rs` shows only the instrumentation commit
+  note 30 itself measured), so this is a wording defect in note 30, not a change.
+
+  Either way the two categories together are ~17 s of note 30's ~1 700 s, so
+  nothing rests on them; §6.3 compares **integrals and samples**, which note 30
+  §3.2 itself puts at **97.9% of the layer's timed work**.
+
+### 6.3 Per-row durations: integrals and samples
+
+```
+RUST_TEST_THREADS=1 RAYON_NUM_THREADS=1 cargo test -p vibegraph-lib \
+  --profile release-debug --features extended-validation --test <target> \
+  -- --nocapture --test-threads=1
+```
+
+run for the six targets that write report rows — `validate_madgraph_diagrams`,
+`amplitude_oracle`, `validate_sigma`, `validate_hadronic`, `validate_samples`
+(vibegraph-lib) and `validate_samples_proton` (vibegraph-cli, `-p vibegraph`) —
+then the collator. Running only these six is deliberate: the protocol also pins
+the CLI subprocesses the *non*-row tests spawn to one thread, which costs over an
+hour of wall clock measuring nothing. **No census is quoted from this pass** — it
+ran a subset of the layer, so its report has missing cells by construction; the
+census is §6.5's, from the full default-parallel run. Per-binary wall:
+diagrams 3 s, amplitudes 3 s, `validate_sigma` 38 s, `validate_hadronic` 357 s,
+`validate_samples` 133 s. Host load at start 3.42.
+
+Two effects the table keeps apart, and they must not be added:
+
+- **Budget.** I1 re-pinned `LLJ_NEVAL` 300k → 150k and `pp_to_llj`'s recarded row
+  600k → 150k, so the three llj rows spend a quarter to a half of note 30's
+  points. The points column makes that visible rather than folded in.
+- **Per-point cost.** Every other row spends *exactly* the points note 30 spent,
+  so its whole move is per-point work: P1's all-flavour PDF kernel on the
+  hadronic rows, and E1b's op-blocked schedule + E2's arena hoisting + E2b's
+  current CSE + E3's arena-reuse cache everywhere.
+
+#### integrals
+
+| row | n30 pts | pts | n30 s | close-out s | Δ |
+|---|--:|--:|--:|--:|--:|
+| `ee_to_mumu` | 180,000 | same | 0.17 | 0.14 | -17.2% |
+| `ee_to_ee` | 800,000 | same | 0.96 | 0.78 | -18.5% |
+| `ee_to_ttx` | 180,000 | same | 0.23 | 0.18 | -22.9% |
+| `ee_to_wpwm` | 320,000 | same | 0.80 | 0.59 | -26.5% |
+| `ee_to_zh` | 180,000 | same | 0.13 | 0.11 | -14.3% |
+| `uux_to_mumu` | 180,000 | same | 0.16 | 0.15 | -5.9% |
+| `uux_to_uux` | 240,000 | same | 1.34 | 1.25 | -6.6% |
+| `gg_to_ttx` | 480,000 | same | 3.01 | 2.67 | -11.2% |
+| `gg_to_gg` | 240,000 | same | 2.47 | 2.07 | -16.1% |
+| `ee_to_mumua` | 640,000 | same | 1.28 | 1.11 | -13.0% |
+| `ee_to_tatah` | 480,000 | same | 0.85 | 0.67 | -21.4% |
+| `uux_to_epemg` | 480,000 | same | 3.16 | 2.93 | -7.3% |
+| `ddx_to_epemg` | 480,000 | same | 3.40 | 2.89 | -15.1% |
+| `gu_to_epemu` | 480,000 | same | 3.35 | 3.08 | -8.2% |
+| `gux_to_epemux` | 480,000 | same | 3.32 | 3.07 | -7.5% |
+| `ee_to_mumu_tata_qcd0` | 800,000 | same | 5.83 | 4.54 | -22.1% |
+| `ud_to_epemud_qcd0` | 960,000 | same | 9.40 | 7.57 | -19.5% |
+| `pp_to_ll` | 8,640,000 | same | 15.82 | 11.25 | -28.9% |
+| `pp_to_bb` | 9,000,000 | same | 62.94 | 46.52 | -26.1% |
+| `pp_to_bb_qcd2` | 9,000,000 | same | 78.45 | 56.99 | -27.4% |
+| `pp_to_bb_fixed` | 9,000,000 | same | 38.59 | 26.04 | -32.5% |
+| `pp_to_jj` | 9,000,000 | same | 174.81 | 86.17 | -50.7% |
+| `pp_to_ll_scalefact2` | 9,000,000 | same | 41.78 | 26.01 | -37.8% |
+| `pp_to_llj_fixed` | 9,000,000 | 4,500,000 | 87.87 | 27.75 | -68.4% |
+| `pp_to_llj` | 18,000,000 | 4,500,000 | 186.19 | 34.40 | -81.5% |
+| `pp_to_llj_dyn` | 9,000,000 | 4,500,000 | 116.32 | 40.85 | -64.9% |
+| **total** | | | **842.6** | **389.8** | **-53.7%** |
+
+The note-30 column sums to 842.6 s, reproducing §3.2's own integrals total
+exactly, which is the check that the rows were transcribed right.
+
+**The partonic block is the cleanest read on the evaluator stack alone** — no PDF
+in the integrand, no budget change, 17 rows, every one improved, **39.9 s →
+33.8 s (−15.2%)**, spread −5.9% to −26.5%. That is what a −17.3% evaluator win
+(E1b) plus E2/E2b/E3 looks like once diluted by the phase-space map, the cuts and
+the clustering, which note 30 §7.1 put at roughly half the partonic integrand.
+
+**The hadronic block is 802.8 s → 356.0 s (−55.7%)**, and it splits cleanly. At
+unchanged budget: `pp_to_jj` −50.7%, `pp_to_ll_scalefact2` −37.8%,
+`pp_to_bb_fixed` −32.5%, `pp_to_ll` −28.9%, `pp_to_bb_qcd2` −27.4%, `pp_to_bb`
+−26.1% — all per-point, and all far above the partonic rows' −15%, which is the
+PDF kernel showing up exactly where note 30's profiles said the PDF was
+(14.5–19.4% of self time on proton paths, nowhere else). At reduced budget the
+three llj rows fall −64.9% to −81.5%, of which roughly half is I1's re-pin.
+
+#### samples: this protocol does not measure that category comparably
+
+The same construction applied to `samples` does not hold together, and the honest
+move is to say so rather than publish the table. Three protocols, one row
+(`pp_to_llj_dyn` samples), same tree except where noted:
+
+| protocol | `pp_to_llj_dyn` samples |
+|---|--:|
+| note 30: default command, pre-sprint tree | 127.78 s |
+| `RAYON_NUM_THREADS=1`, default test parallelism | 93.2 s |
+| `RUST_TEST_THREADS=1 RAYON_NUM_THREADS=1`, target run alone | 210.41 s |
+
+The middle figure comes from the aborted cohort pass of §6.1 — a pass whose
+*integrals* rows are invalid for the reason given there, but whose samples rows
+are untouched by it, because accept/reject stayed serial through the sprint (I3
+says so explicitly) and so never reaches the rayon pool.
+
+Serialising the harness should make a row faster, never 2.3× slower, so this is
+not contention. Two candidates, neither established here: these rows drive
+`vibegraph generate` as a **subprocess**, so the row times a process launch plus
+its work rather than in-process work; and a lone thread on a 12P+4E hybrid can be
+placed on an efficiency core, which note 30 §1 already flags as unquantified
+("no affinity is set on either side … a real uncertainty on a hybrid CPU"). The
+partonic samples rows — in-process, spawning nothing — behave under the same
+protocol: all 17 improved, −6.5% to −42.4%, **128.2 s → 106.7 s (−16.8%)**. That
+contrast is what makes the subprocess-driven rows the suspect half.
+
+The layer-level samples comparison is therefore taken from §6.5, which runs note
+30's exact command and is like-for-like; no samples claim is made from this
+protocol beyond the partonic block.
+
+### 6.4 Throughput against MadGraph, recomputed
+
+Note 30 §5.3's construction, unchanged: our points are `seeds × neval × niter`
+from each row's own report record; MadGraph's are field 4 of
+`SubProcesses/results.dat` divided by that file's `<cumulated_time>`, which is the
+**summed CPU seconds of its Fortran jobs** and so takes the 16-way job farm out of
+the comparison. Our column is single-thread wall time, from §6.3.
+
+MG's two columns are carried over from note 30 verbatim, because this sprint did
+not touch the reference bank. They were spot-checked against it rather than
+trusted: `gg_to_gg` reads 434 257 points and `<cumulated_time> 7.098467` and
+`pp_to_llj` 176 272 and `10.939257`, matching note 30's 434 257/7.0 and
+176 272/11.0. As a second check on the arithmetic, recomputing the *before* column
+from note 30's own numbers returns **6.84×**, against the 6.8× note 30 quotes.
+
+| row | our kpts/s (n30) | our kpts/s (now) | MG kpts/CPU-s | ours/MG (n30) | ours/MG (now) |
+|---|--:|--:|--:|--:|--:|
+| `ee_to_mumu` | 1059 | 1278 | 34 | 30.9x | 37.3x |
+| `ee_to_ee` | 833 | 1023 | 42 | 19.7x | 24.1x |
+| `ee_to_ttx` | 783 | 1016 | 40 | 19.5x | 25.3x |
+| `ee_to_wpwm` | 400 | 544 | 39 | 10.1x | 13.8x |
+| `ee_to_zh` | 1385 | 1615 | 47 | 29.6x | 34.6x |
+| `uux_to_mumu` | 1125 | 1195 | 40 | 28.2x | 29.9x |
+| `uux_to_uux` | 179 | 192 | 49 | 3.7x | 3.9x |
+| `gg_to_ttx` | 159 | 180 | 49 | 3.3x | 3.7x |
+| `gg_to_gg` | 97 | 116 | 62 | 1.6x | 1.9x |
+| `ee_to_mumua` | 500 | 574 | 54 | 9.3x | 10.7x |
+| `ee_to_tatah` | 565 | 719 | 36 | 15.7x | 19.9x |
+| `uux_to_epemg` | 152 | 164 | 66 | 2.3x | 2.5x |
+| `ddx_to_epemg` | 141 | 166 | 63 | 2.3x | 2.7x |
+| `gu_to_epemu` | 143 | 156 | 31 | 4.7x | 5.1x |
+| `gux_to_epemux` | 145 | 156 | 29 | 4.9x | 5.3x |
+| `ee_to_mumu_tata_qcd0` | 137 | 176 | 13 | 10.7x | 13.7x |
+| `ud_to_epemud_qcd0` | 102 | 127 | 22 | 4.6x | 5.8x |
+| `pp_to_ll` | 546 | 768 | 33 | 16.6x | 23.3x |
+| `pp_to_bb` | 143 | 193 | 48 | 3.0x | 4.0x |
+| `pp_to_bb_qcd2` | 115 | 158 | 46 | 2.5x | 3.5x |
+| `pp_to_bb_fixed` | 233 | 346 | 28 | 8.4x | 12.5x |
+| `pp_to_jj` | 51 | 104 | 23 | 2.3x | 4.6x |
+| `pp_to_ll_scalefact2` | 215 | 346 | 27 | 8.0x | 12.9x |
+| `pp_to_llj_fixed` | 102 | 162 | 18 | 5.8x | 9.1x |
+| `pp_to_llj` | 97 | 131 | 16 | 6.0x | 8.2x |
+| `pp_to_llj_dyn` | 77 | 110 | 16 | 4.7x | 6.8x |
+| **geomean over 26 rows** | | | | **6.84×** | **8.76×** |
+
+**Geometric mean 6.84× → 8.76× over the same 26 rows.**
+
+What this column can and cannot see: it is points per second, so I1's budget
+re-pin is invisible here by construction — halving llj's points halves §6.3's
+duration and leaves throughput alone. Everything in this table is per-point cost.
+
+The shape note 30 called "the finding" has moved where it matters. Its complaint
+was that our advantage was 20–30× on the cheapest leptonic rows and "collapses to
+1.6–6× on the ones a sprint cares about". Those rows now read: `gg_to_gg`
+1.6× → **1.9×**, `uux_to_epemg` 2.3× → **2.5×**, `ddx_to_epemg` 2.3× → **2.7×**,
+`pp_to_jj` 2.3× → **4.6×**, `pp_to_llj_dyn` 4.7× → **6.8×**, `pp_to_llj`
+6.0× → **8.2×**, `pp_to_llj_fixed` 5.8× → **9.1×**. The floor is still
+`gg_to_gg` — a pure-gluon 2→2 with no PDF work to win back and the densest colour
+algebra in the census — and it moved least, which is the consistency check on the
+attribution: the row with nothing for P1 to speed up gained only what the
+evaluator sessions gave it.
+
+Note 30's two caveats stand unchanged and are not re-litigated here: whether
+MadEvent's `results.dat` point count includes the survey pass was never
+established, so a systematic factor of order unity sits on every MG column; and
+our per-point work is not MadGraph's per-point work. The ratio is integrand
+throughput, not a matrix-element ratio — §6.8 is the matrix-element ratio.
+
+### 6.5 The layer as a user runs it: wall time and census
+
+```
+$ pixi run --skip-deps validate      # note 30 §3.1's exact command, nothing pinned
+VALIDATE_EXIT=0
+ELAPSED_S=391
+29 rows × 4 categories = 116 cells: 98 measured in this layer (96 ✅, 2 ⚠️, 4 ⏳, 14 — / uncovered).
+```
+
+**691 s → 391 s (6 min 31 s), −43.4%**, on the identical command, and the census
+is cell-for-cell what note 30 recorded and what the manager's independent gate run
+on this tree recorded: **98 measured, 96 ✅ / 2 ⚠️ / 4 ⏳**. Load average at start
+3.1. This is the one figure that is like-for-like by construction, and it is the
+only place the sprint's parallelism counts, since from I3 onward the rows use the
+machine internally.
+
+It also *understates* the sprint, because the suite grew: `#[test]` 861 → 905 and
+`#[ignore]` 32 → 34 between `6008697` and `ca53336`, so 391 s buys 42 more running
+tests than 691 s did.
+
+**Its per-row durations are not used for per-row claims, in this note or note 30.**
+Note 30 §2 says why in its own words — "`duration_s` is not a benchmark … their
+durations overlap" — and this pass shows the failure mode plainly: eight hadronic
+integrals rows land within 31.15–36.85 s of each other (`pp_to_bb` 31.65,
+`pp_to_bb_qcd2` 31.15, `pp_to_jj` 31.15, `pp_to_ll_scalefact2` 32.34,
+`pp_to_llj_fixed` 32.34, `pp_to_llj_dyn` 32.34, `pp_to_bb_fixed` 32.53,
+`pp_to_llj` 36.85) despite spending between 4.5M and 9M points — the same
+everything-finishes-together signature §6.1 diagnosed, here from ordinary test
+parallelism rather than from a starved thread pool. `pp_to_ll` reads 64.31 s
+against note 30's 15.82 s for the same reason and is not a regression: run alone
+(§6.3) that row takes 11.25 s.
+
+For the record, the category totals as the collator sums them — overlapping spans
+on both sides, so a loose comparison only: integrals **842.6 s → 336.7 s**,
+samples **840.1 s → 585.7 s**.
+
+### 6.6 MadGraph's side: the control that says the host has not drifted
+
+```
+$ pixi run -e madgraph python validation/madgraph/time_stages.py \
+      --out target/closeout-mg-timing <the 31 processes of note 30 §4, same order>
+PASS START 2026-08-05T10:54:38Z
+PASS END   2026-08-05T11:44:33Z
+MG_EXIT=0
+```
+
+31 processes, **all exit 0, every stage boundary parsed (no nulls)** — the same
+clean-parse condition note 30 §4.1 reports. The sprint touched neither MadGraph,
+the reference bank, nor the pinned submodule, so nothing here should move; the
+point of running it is that an our-side before/after taken across a sprint is
+worth nothing if the machine drifted underneath it.
+
+| stage | note 30 §4.2 | close-out | ratio |
+|---|--:|--:|--:|
+| `generate` | 1.2 | 1.2 | 1.00× |
+| `output` | 62.8 | 62.3 | 0.99× |
+| `compile` | 63.4 | 66.6 | 1.05× |
+| `integrate` | 685.8 | 703.3 | 1.03× |
+| `events` | 151.1 | 149.1 | 0.99× |
+| **sum of per-process totals** | **1001.8** | **1028.3** | **1.03×** |
+
+Per process, 27 of 31 sit within ±8% and most within ±3%. Three things worth
+naming rather than averaging away:
+
+- **`ee_to_mumu` reads 19.9 s against note 30's 9.2 s, and that is a
+  confirmation, not a drift.** It is the first MadGraph invocation of the pass,
+  and this worktree's `madgraph` environment was fresh, so it paid the cold
+  Python import. Note 30 §4.3 measured exactly that: "a smoke run before the pass
+  measured `ee_to_mumu` at **19.0 s** against 9.2 s inside the pass". 19.9 s
+  against their 19.0 s cold. Netting the cold start out, the pass sums to
+  1017.6 s, **1.02×** note 30.
+- **The one-off LHAPDF set install recurred on exactly one process**, `pp_to_llj`,
+  which is precisely note 30 §4.2's footnote
+  (`grep -l "successfully downloaded" logs/*.timed.log` matches one file, the
+  same one). Fresh environment, same seam.
+- `bbx_to_ccx_emmm_qcd0` +8% and `ud_to_epemud_qcd0` +28% are the only rows
+  outside ±8%; both were taken while the machine's resident background agents
+  (`mds_stores`, `mediaanalysisd`) were active, which is the same ±few-per-cent
+  noise source note 30 §3.3 quantified from our side.
+
+**Verdict: the host reproduces note 30 to ~2–3%.** That is what licenses reading
+§6.3–§6.4 against note 30's tables at all, and it bounds how much of any our-side
+move could be the machine rather than the sprint: not much.
+
+One bookkeeping note for whoever runs this next. The wrapper measured 2 995 s
+between `PASS START` and `PASS END` while `time_stages.py`'s own accounting sums
+to 1 028.4 s. The gap is environment activation and the LHAPDF fetch, which sit
+outside the per-process loop; note 30 had the same shape but smaller (25.4 min
+wall against 16.7 min of stages). Quote the stage-accounted figure, as note 30
+§4.3 does — the wrapper wall is not a measurement of MadGraph.
+
+### 6.7 The `-j` column, and the retirement of note 30's biggest caveat
+
+Note 30 §1 named one caveat above all others: "on the integrate and events stages
+**MadGraph is a 16-way parallel job farm and our integrator is one thread**", and
+§5 therefore compared CPU time rather than wall time throughout. I3 and I4 removed
+the asymmetry; this measurement retires the sentence rather than arguing it away.
+
+```
+vibegraph integrate <proc card> --run-card <run card> --out <dir> --force -j {1,16}
+```
+
+on `dy13_default` (the committed `dy13_proc_card.dat` + `dy13_default_run_card.dat`)
+and on `pp_to_llj` (the `generate` line of its `.mg5` driver, which is exactly a
+proc card, + the banked run's `run_card.dat`), at the CLI's default budget
+(`--neval 120000 --niter 12`). Four rounds round-robin over the four
+configurations, minimum over rounds. Host quiet: load average 3.5–3.9 at every
+round start, no bench or cargo processes. The interpreter that times each run
+starts *outside* the timed region — a `-j 16` dy13 run is under half a second, so
+bracketing it with two `python3` startups would have been a tens-of-per-cent error
+on the very number being measured.
+
+| card | `-j 1` | `-j 16` | speedup | artifact md5 |
+|---|--:|--:|--:|:--|
+| `dy13_default` | 2.077 s | 0.442 s | **4.70×** | `c42bc53e6679f79802b9be78cc9dd78a` |
+| `pp_to_llj` | 12.088 s | 2.256 s | **5.36×** | `788c2ec5e6eae85d3f44b54d59d53e44` |
+
+Round-to-round spread is 1–2% on every cell (dy13 `-j 1`: 2.077/2.085/2.086/2.116;
+llj `-j 16`: 2.256/2.279/2.283/2.296), so these are tight.
+
+**The md5 column is the point as much as the timing is.** All eight runs of each
+card — four rounds × two thread counts — produced one artifact digest. I3's
+bit-identity contract is that thread count moves no bit, and this is that contract
+checked at the CLI rather than inside a test: `-j 16` is not an approximation of
+`-j 1`, it is the same number computed faster. That is what makes §6.3's
+single-thread row durations and the parallel CLI numbers descriptions of one
+program.
+
+Against I3's own scaling numbers (dy13 4.46×, llj 4.87×), both improve — I3
+measured under sibling-session load 7–8 and said its speedups were biased down, and
+on a quiet host they are.
+
+Two things this does not claim. It is a *wall-time* number, so it moves no ratio in
+§6.4 — those keep their CPU-time denominators exactly as note 30 required. And the
+serial floor is real: I4 measured the α-adaptation survey at ~27% of a fixed-budget
+llj run at `-j 16`, budget-independent and still sequential. That is the remaining
+Amdahl term and is now the leading parallel-scaling item in the backlog.
+
+### 6.8 Sprint-level `mg_perf_compare`: the per-point matrix element
+
+Note 30 §5.3 explicitly disclaimed being a substitute for this — its throughput
+column is *integrand* throughput, carrying the multichannel map, the VEGAS grid,
+the cuts and the clustering along with the amplitude. `scripts/mg_perf_compare.sh`
+is the narrow measurement: criterion medians of the `eval_m2/forward/*` rows
+divided by the bench's points-per-iteration, against MATRIX1 ns/eval from
+`validation/madgraph/output/mg_timings.json`. Same 14 processes both arms.
+
+```
+bash scripts/mg_perf_compare.sh          # run in each tree
+```
+
+- **after arm**: this worktree at `ca53336`.
+- **before arm**: `6008697`, the pre-sprint tip, checked out with
+  `git worktree add --detach` into this worktree's gitignored `target/` — never the
+  shared checkout — with `mg_timings.json` and the `mg_*.so` modules symlinked in
+  so both arms read an identical MadGraph column.
+
+The arms alternate round by round and each row takes its minimum over two rounds; a
+daemon spike then lands on a round rather than on an arm, which mattered here — the
+after arm's whole-table geomean read 0.98× on round 1 and 1.09× on round 2. Both
+arms are the `bench` profile, `RUSTFLAGS` unset, same rustc, same host, one
+sitting. The after arm's fingerprint reads `ca53336-dirty`: at measurement time the
+worktree carried the uncommitted `TODO.md` and note-31 edits and nothing else
+(`git diff --name-only` returns exactly those two files), so no source went into
+that binary which this commit does not also contain.
+
+| process | MG ns/eval | before ns/eval | after ns/eval | before/MG | after/MG | after/before |
+|---|--:|--:|--:|--:|--:|--:|
+| `ee_to_zh` | 192 | 223 | 189 | 1.16× | 0.99× | −15.1% |
+| `pp_to_ll_qcd0` | 267 | 274 | 243 | 1.03× | 0.91× | −11.3% |
+| `uux_to_uux` | 268 | 465 | 398 | 1.74× | 1.48× | −14.5% |
+| `ee_to_mumu` | 285 | 273 | 237 | 0.96× | 0.83× | −13.0% |
+| `ee_to_ttx` | 330 | 451 | 362 | 1.37× | 1.10× | −19.7% |
+| `gg_to_ttx` | 650 | 1040 | 834 | 1.60× | 1.28× | −19.8% |
+| `ee_to_ee` | 680 | 686 | 573 | 1.01× | 0.84× | −16.5% |
+| `ee_to_wpwm` | 769 | 1315 | 950 | 1.71× | 1.24× | −27.7% |
+| `ee_to_tatah` | 835 | 912 | 677 | 1.09× | 0.81× | −25.8% |
+| `gg_to_gg` | 936 | 1707 | 1285 | 1.82× | 1.37× | −24.7% |
+| `ee_to_mumua` | 1389 | 1341 | 1004 | 0.97× | 0.72× | −25.1% |
+| `ee_to_mumu_tata_qcd0` | 6846 | 6025 | 4368 | 0.88× | 0.64× | −27.5% |
+| `uux_to_ccx_emmm_qcd0` | 102885 | 124886 | 88946 | 1.21× | 0.86× | −28.8% |
+| `bbx_to_ccx_emmm_qcd0` | 144616 | 211454 | 148598 | 1.46× | 1.03× | −29.7% |
+
+**MATRIX1 geomean 1.25× → 0.98× over 14 processes; the evaluator itself −21.6%;
+processes beating MadGraph 3 → 8.** Every row improved, −11.3% to −29.7%.
+
+Three independent corroborations of the sessions' own claims fall out of this,
+which is the value of measuring the pair in one sitting rather than trusting the
+chain of per-session baselines:
+
+- E1b recorded "processes beating MadGraph 3 → **8** of 14". Reproduced exactly.
+- E1b's −17.3% plus E2's −4.2% plus E2b's ~−1% predicts about −21.5% end to end;
+  measured **−21.6%**.
+- E2 measured its own starting point at 1.29× and E1b at 1.21×; the pre-sprint tip
+  measures **1.25×** here, inside that pair.
+
+The remaining gap is where it was always going to be: `gg_to_gg` at 1.37× and
+`uux_to_uux` at 1.48× are the rows with the densest colour algebra and no PDF work,
+and they are what a further evaluator session would have to move.
+
+### 6.9 Where this record disagrees with something already written
+
+Recorded, not quietly reconciled. Nothing here changes a gate or a tolerance.
+
+1. **The close-out brief's own per-row protocol was wrong** (§6.1). Pinning only
+   `RAYON_NUM_THREADS=1` funnels every concurrently-running σ row through one
+   global rayon worker, and each row's `Stopwatch` then spans the whole cohort.
+   It would have published an ~8× phantom regression on every hadronic integrals
+   row. The tell was that the rows landed within 305–320 s of one another while
+   spending 4.32M, 4.5M and 9M points.
+
+2. **Note 30 §3.2's `diagrams` column is not per-row work** (§6.2). Its stated
+   mechanism — "each trial re-loads the interned SM" — is inverted: `sm_model()`
+   is process-wide interned, and the uniform ~0.55 s is 26 rows racing its lazy
+   initialisation under default test parallelism. One row at a time, the category
+   is 1.29 s against 14.2 s.
+
+3. **Note 30 §3.2's `amplitudes` column is fine; only its explanation is wrong**
+   (§6.2). "That gate compares committed tables and never builds an evaluator"
+   does not describe `amplitude_oracle::measure`, which runs enumeration and
+   `AmplitudeEvaluator::compile` per row — which is why its two 2→6 rows cost
+   ~1.1 s and everything else ≤ 0.02 s. The numbers reproduce under both
+   protocols. **This item corrects an earlier reading inside this same close-out**:
+   a partial first pass showed every amplitudes row at ~0.57 s and looked like a
+   regression; that pass was the pathological one of item 1, and the effect
+   vanished once complete passes were measured.
+
+4. **A row measured alone is not the same measurement as that row inside a pass**
+   (§6.1). `pp_to_bb_fixed` reads 37.1 s alone and 26.0 s in-pass; the difference
+   is one-time PDF-grid and interned-model setup charged to whichever row runs
+   first. Any future session isolating a row to time it has to subtract that.
+
+5. **The `samples` category has no uncontended protocol in this sitting** (§6.3).
+   `pp_to_llj_dyn`'s samples row reads 127.78 s (note 30), 93.2 s and 210.41 s
+   under the two close-out protocols. The rows that misbehave are the ones driving
+   `vibegraph generate` as a subprocess; the in-process partonic samples rows are
+   well behaved under every protocol (all 17 improved, −16.8% as a block). Layer-
+   level samples numbers are therefore taken from §6.5's like-for-like run only.
+
+6. **E3's `pp_to_llj_dyn` cost is confirmed with its sign.** E3 recorded
+   "+1.0–1.6%, consistently signed" as the accepted price of the arena-reuse stamp
+   on the shape where the cache can never hit. It is the one row in the layer that
+   did not improve — an independent confirmation from a different measurement.
+
+7. **E3's "−37.5% event read-out on `gu_to_epemu`" and this note's −7.0% on that
+   row's `samples` cell are not in conflict.** The cell also carries event
+   generation and the weighted-ECDF KS and χ² comparisons against MadGraph's
+   banked sample, so the read-out is only a fraction of it. Flagged because the
+   two numbers look contradictory side by side.
+
+8. **Build-fingerprint caveat.** §6.3's per-target invocations
+   (`-p vibegraph-lib --features extended-validation`) trigger a rebuild relative
+   to `validate.sh`'s workspace invocation even though the resolved
+   `vibegraph-lib` features are identical. Far below the moves reported, but it is
+   a difference from note 30's build, which used the workspace command.
+
+### 6.10 What the sprint moved, in one place
+
+| measure | note 30 baseline | close-out | change |
+|---|--:|--:|--:|
+| `pixi run --skip-deps validate` wall (default command) | 691 s | **391 s** | **−43.4%** |
+| integrals category, one row at a time | 842.6 s | **389.8 s** | **−53.7%** |
+| ── partonic block (no PDF, no budget change) | 39.9 s | 33.8 s | −15.2% |
+| ── hadronic block | 802.8 s | 356.0 s | −55.7% |
+| integrand throughput vs MG, geomean over 26 rows | 6.84× | **8.76×** | +28% |
+| MATRIX1 per-point geomean over 14 processes | 1.25× | **0.98×** | −21.6% evaluator |
+| processes beating MadGraph per point | 3 of 14 | **8 of 14** | |
+| `integrate` wall, `dy13_default` | 2.077 s (`-j 1`) | **0.442 s** (`-j 16`) | 4.70× |
+| `integrate` wall, `pp_to_llj` | 12.088 s (`-j 1`) | **2.256 s** (`-j 16`) | 5.36× |
+| census | 96 ✅ / 2 ⚠️ / 4 ⏳ | **96 ✅ / 2 ⚠️ / 4 ⏳** | unchanged |
+| MadGraph side (control) | 1001.8 s | 1028.3 s | +2.6% |
+
+The last two rows are the ones that make the rest mean anything: the gate did not
+move, and neither did the machine.
