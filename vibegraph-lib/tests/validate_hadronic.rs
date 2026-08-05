@@ -386,23 +386,22 @@ fn run_seed_shaped(
     integ.integrate(neval, niter, seed)
 }
 
-/// The inverse-variance mean of independent seeds, its error, and the scatter of
-/// the seeds about that mean in units of their own quoted errors.
+/// The unweighted mean of independent seeds, its error, and the scatter of the
+/// seeds about that mean in units of their own quoted errors.
+///
+/// Seeds run equal budgets, so weighting by `1/σ²` here is the same bias Lepage's
+/// theorem forbids for VEGAS's own iteration combination: a seed whose variance
+/// estimate came out low by chance is double-counted, both in the mean and in
+/// its own weight. The unweighted mean and `err = √(Σᵢ σᵢ²)/n` carry no such bias.
 ///
 /// The scatter and not the error is what shows a missed region: a run that misses
 /// one reports a small integral *and* a small variance, which the mean alone
 /// cannot distinguish from convergence.
 fn combine_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
-    let inv_var: f64 = runs
-        .iter()
-        .map(|r| 1.0 / (r.sigma_err_pb * r.sigma_err_pb))
-        .sum();
-    let mean: f64 = runs
-        .iter()
-        .map(|r| r.sigma_pb / (r.sigma_err_pb * r.sigma_err_pb))
-        .sum::<f64>()
-        / inv_var;
-    let mean_err = inv_var.sqrt().recip();
+    let n = runs.len() as f64;
+    let mean: f64 = runs.iter().map(|r| r.sigma_pb).sum::<f64>() / n;
+    let var_sum: f64 = runs.iter().map(|r| r.sigma_err_pb * r.sigma_err_pb).sum();
+    let mean_err = var_sum.sqrt() / n;
     let dof = runs.len().saturating_sub(1).max(1) as f64;
     let chi2: f64 = runs
         .iter()
