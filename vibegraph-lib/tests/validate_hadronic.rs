@@ -982,6 +982,9 @@ fn probe_llj_fixed_budget_ladder() {
 /// switches turned off, and nothing else changed.
 const LLJ_DYN_RUN: &str = "pp_to_llj_dyn";
 
+/// The Drell–Yan run the draw-cost probe prices alongside the `ℓ⁺ℓ⁻ j` one.
+const DY_DRAW_RUN: &str = "pp_to_ll";
+
 /// Whether this checkout has the dynamical run, given that the manifest declares
 /// it absent from the pinned bundle.
 ///
@@ -2608,6 +2611,13 @@ fn probe_recarded_budget_ladder() {
 /// surviving fraction; the ratio reported is against the same points' total, which
 /// is the number an integration budget is spent on. Run with
 /// `--ignored --nocapture`, and on an otherwise idle machine.
+///
+/// Two rows are priced, because the draw does not cost the same on them. On `ℓ⁺ℓ⁻ j`
+/// the drawn configuration sets the event's renormalisation scale, so the coupling
+/// moves between the draw's `AMP2` and the matrix element and the second evaluation
+/// starts from nothing. Drell–Yan at this order carries no strong coupling, so nothing
+/// between the two moves and the matrix element reads currents the draw already
+/// computed.
 #[test]
 #[ignore]
 fn probe_scale_draw_cost() {
@@ -2617,66 +2627,73 @@ fn probe_scale_draw_cost() {
     if !dyn_run_present("probe_scale_draw_cost", LLJ_DYN_RUN) {
         return;
     }
-    let run_dir = validation_dir().join("output").join(LLJ_DYN_RUN);
-    let text = std::fs::read_to_string(run_dir.join("Cards/run_card.dat")).expect("run card");
-    let live = RunCard::parse(&text).expect("banked run card parses");
-    let off = RunCard::parse(&without_amp2_weights(&text)).expect("patched run card parses");
+    for (run, process) in [(LLJ_DYN_RUN, LLJ_PROCESS), (DY_DRAW_RUN, DY_PROCESS)] {
+        let run_dir = validation_dir().join("output").join(run);
+        let text = std::fs::read_to_string(run_dir.join("Cards/run_card.dat")).expect("run card");
+        let live = RunCard::parse(&text).expect("banked run card parses");
+        let off = RunCard::parse(&without_amp2_weights(&text)).expect("patched run card parses");
 
-    let model = common::sm_model();
-    let evaluated = EvaluatedModel::from_model(model.clone());
-    let groups = groups_for(LLJ_PROCESS, &model, &evaluated, &live);
-    let set = load_pdf_set();
-    let pdf = set.member(0).expect("PDF member 0");
-    let amps: Vec<BoundAmplitude<f64>> = groups
-        .groups()
-        .iter()
-        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
-        .collect();
+        let model = common::sm_model();
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let groups = groups_for(process, &model, &evaluated, &live);
+        let set = load_pdf_set();
+        let pdf = set.member(0).expect("PDF member 0");
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
 
-    let build = |rc: &RunCard| {
-        let mut integ =
-            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F).expect("integrand");
-        integ
-            .use_run_card_scales(&model, &evaluated, rc, Some(&set.info.alpha_s))
-            .expect("scale prescription compiles");
-        integ.adapt_alphas(LLJ_SEEDS[0], LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, 0.5);
-        integ
-    };
-    let with_draw = build(&live);
-    let without_draw = build(&off);
-    assert_eq!(
-        (with_draw.scale_draw_ndim(), without_draw.scale_draw_ndim()),
-        (1, 0),
-        "the two integrands must differ in the configuration draw and only there"
-    );
+        let build = |rc: &RunCard| {
+            let mut integ =
+                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                    .expect("integrand");
+            integ
+                .use_run_card_scales(&model, &evaluated, rc, Some(&set.info.alpha_s))
+                .expect("scale prescription compiles");
+            integ.adapt_alphas(LLJ_SEEDS[0], LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, 0.5);
+            integ
+        };
+        let with_draw = build(&live);
+        let without_draw = build(&off);
+        assert_eq!(
+            (with_draw.scale_draw_ndim(), without_draw.scale_draw_ndim()),
+            (1, 0),
+            "[{run}] the two integrands must differ in the configuration draw and only there"
+        );
 
-    let ndim = with_draw.vegas_ndim();
-    let mut rng = ChaCha8Rng::seed_from_u64(LLJ_SEEDS[0]);
-    let points: Vec<Vec<f64>> = (0..PROBE_POINTS)
-        .map(|_| (0..ndim).map(|_| rand::Rng::random::<f64>(&mut rng)).collect())
-        .collect();
+        let ndim = with_draw.vegas_ndim();
+        let mut rng = ChaCha8Rng::seed_from_u64(LLJ_SEEDS[0]);
+        let points: Vec<Vec<f64>> = (0..PROBE_POINTS)
+            .map(|_| {
+                (0..ndim)
+                    .map(|_| rand::Rng::random::<f64>(&mut rng))
+                    .collect()
+            })
+            .collect();
 
-    let time = |integ: &ProtonIntegrand<'_>| {
-        let take = integ.vegas_ndim();
-        let start = Instant::now();
-        let mut acc = 0.0;
-        for u in &points {
-            acc += integ.value(&u[..take]);
-        }
-        std::hint::black_box(acc);
-        start.elapsed().as_secs_f64() / points.len() as f64 * 1e9
-    };
-    time(&with_draw);
-    time(&without_draw);
-    let ns_on = time(&with_draw);
-    let ns_off = time(&without_draw);
-    eprintln!(
-        "[{LLJ_DYN_RUN}] {ns_off:8.1} ns/point without the configuration draw | \
-         {ns_on:8.1} ns/point with it | draw {:+.1} ns ({:+.2}% of the per-point budget) \
-         over {PROBE_POINTS} points",
-        ns_on - ns_off,
-        (1.0 - ns_off / ns_on) * 100.0,
-    );
+        let time = |integ: &ProtonIntegrand<'_>| {
+            let take = integ.vegas_ndim();
+            let start = Instant::now();
+            let mut acc = 0.0;
+            for u in &points {
+                acc += integ.value(&u[..take]);
+            }
+            std::hint::black_box(acc);
+            start.elapsed().as_secs_f64() / points.len() as f64 * 1e9
+        };
+        time(&with_draw);
+        time(&without_draw);
+        let ns_on = time(&with_draw);
+        let ns_off = time(&without_draw);
+        eprintln!(
+            "[{run}] {ns_off:8.1} ns/point without the configuration draw | \
+             {ns_on:8.1} ns/point with it | draw {:+.1} ns ({:+.2}% of the per-point budget) \
+             over {PROBE_POINTS} points",
+            ns_on - ns_off,
+            (1.0 - ns_off / ns_on) * 100.0,
+        );
+    }
 }
 
 /// How many points a per-point cost probe averages over.

@@ -58,12 +58,32 @@ pub struct ScratchSpace<F: Real> {
     /// Per-point momentum pool: `moms[id]` is the external-momentum combination the
     /// momentum table interns at `id` (`Σ ± p_leg`), resolved once per phase-space point.
     moms: Vec<LorentzVector<F>>,
+    /// Which `(amplitude, constant pools)` the arenas were last filled from, as the
+    /// amplitude's [`BoundAmplitude::fill_token`]. `0` means the arenas hold nothing a
+    /// reader may trust. Every path that writes the arenas outside the helicity-summed
+    /// entry points clears it, so a hit implies the stream that filled them was the one
+    /// the reader is about to run.
+    fill_token: u64,
+    /// The external momenta the arenas were filled at, alongside `fill_token`. Compared
+    /// bit-for-bit, so a hit implies identical inputs and therefore identical values.
+    fill_moms: Vec<LorentzVector<F>>,
+    /// Forward passes run against this workspace, for the reuse tests.
+    #[cfg(test)]
+    fills: u64,
     /// Set once the one-shot compiled-DAG cross-check ([`validate_arenas`]) has passed for
     /// this workspace, so it runs a single time rather than per point. The checked
     /// properties (output type, constness, momentum-routing / pool-index consistency) are
     /// invariant across phase-space points. Debug / `extended-validation` only.
     #[cfg(any(debug_assertions, feature = "extended-validation"))]
     validated: bool,
+}
+
+/// Bitwise equality of two scalars: `==` plus sign agreement, so `-0.0` and `0.0` are
+/// distinguished and a `NaN` never compares equal. Two points equal under this relation
+/// drive every kernel to the same result.
+#[inline]
+fn same_bits<F: Real>(a: F, b: F) -> bool {
+    a == b && a.is_sign_negative() == b.is_sign_negative()
 }
 
 impl<F: Real> ScratchSpace<F> {
@@ -91,6 +111,36 @@ impl<F: Real> ScratchSpace<F> {
             self.fout.resize(sizes[4] as usize, Bispinor::zero());
         }
     }
+
+    /// Whether the arenas already hold the fill `token` produced at `momenta`.
+    #[inline]
+    fn holds(&self, token: u64, momenta: &[LorentzVector<F>]) -> bool {
+        self.fill_token == token
+            && token != 0
+            && self.fill_moms.len() == momenta.len()
+            && self.fill_moms.iter().zip(momenta).all(|(&a, &b)| {
+                same_bits(a.e(), b.e())
+                    && same_bits(a.px(), b.px())
+                    && same_bits(a.py(), b.py())
+                    && same_bits(a.pz(), b.pz())
+            })
+    }
+
+    /// Record which fill the arenas now hold.
+    #[inline]
+    fn record_fill(&mut self, token: u64, momenta: &[LorentzVector<F>]) {
+        self.fill_moms.clear();
+        self.fill_moms.extend_from_slice(momenta);
+        self.fill_token = token;
+    }
+
+    /// Forward passes this workspace has run — the anti-vacuity handle for the
+    /// arena-reuse tests, which need to see a *skipped* pass and not merely an equal
+    /// answer.
+    #[cfg(test)]
+    pub(super) fn fills(&self) -> u64 {
+        self.fills
+    }
 }
 
 /// The per-evaluation immutable context every node reduction reads: the bound
@@ -113,7 +163,7 @@ pub(super) struct EvalEnv<'a, F: Real> {
 ///
 /// `Clone` duplicates the pools while sharing the evaluator, which is how a caller
 /// that rewrites the pools per event gets one independent copy per thread.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BoundAmplitude<'a, F: Real> {
     eval: &'a AmplitudeEvaluator,
     consts_c: Box<[C<F>]>,
@@ -121,6 +171,58 @@ pub struct BoundAmplitude<'a, F: Real> {
     /// The exact color-factor matrix resolved to `F` (row-major,
     /// `cf[i*n_flows + j] = CF_{ij}`).
     cf: Box<[F]>,
+    /// Names this amplitude *and* the current contents of its constant pools, drawn
+    /// from a process-wide counter at construction and again on every pool rewrite.
+    /// A [`ScratchSpace`] stamped with it holds arenas that this amplitude, at these
+    /// pools, produced — which is what lets a second read-out of the same point skip
+    /// the forward pass instead of repeating it.
+    fill_token: u64,
+}
+
+/// Source of [`BoundAmplitude::fill_token`] values. Monotone and never reused, so a
+/// stamp cannot survive the state it was taken from — including across a clone, a
+/// drop, or a reallocation at the same address.
+///
+/// Handed out in per-thread blocks: a parallel integrator draws one token per point per
+/// thread (every per-event coupling move rewrites the pools), and a shared counter would
+/// put a contended cache line on that path. Values start at 1, leaving `0` to mean "the
+/// arenas hold nothing".
+static FILL_TOKEN_BLOCKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// Tokens per block. Wide enough that a thread claims one and keeps it; a thread that
+/// does exhaust its block claims the next.
+const FILL_TOKEN_BLOCK: u64 = 1 << 40;
+
+thread_local! {
+    /// This thread's unissued token range, `(next, end)`.
+    static FILL_TOKENS: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+#[inline]
+fn next_fill_token() -> u64 {
+    FILL_TOKENS.with(|c| {
+        let (next, end) = c.get();
+        if next < end {
+            c.set((next + 1, end));
+            return next;
+        }
+        let base =
+            FILL_TOKEN_BLOCKS.fetch_add(FILL_TOKEN_BLOCK, std::sync::atomic::Ordering::Relaxed);
+        c.set((base + 1, base + FILL_TOKEN_BLOCK));
+        base
+    })
+}
+
+impl<F: Real> Clone for BoundAmplitude<'_, F> {
+    fn clone(&self) -> Self {
+        BoundAmplitude {
+            eval: self.eval,
+            consts_c: self.consts_c.clone(),
+            consts_f: self.consts_f.clone(),
+            cf: self.cf.clone(),
+            fill_token: next_fill_token(),
+        }
+    }
 }
 
 impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
@@ -158,12 +260,19 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             consts_c,
             consts_f,
             cf,
+            fill_token: next_fill_token(),
         }
     }
 
     /// The compiled (card-independent) evaluator this amplitude is bound to.
     pub fn evaluator(&self) -> &'a AmplitudeEvaluator {
         self.eval
+    }
+
+    /// The token naming this amplitude and its current pools, for the reuse tests.
+    #[cfg(test)]
+    pub(super) fn fill_token(&self) -> u64 {
+        self.fill_token
     }
 
     /// The card-resolved constant pools, `(couplings, masses/widths/coeffs)`, in the
@@ -181,10 +290,13 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         debug_assert_eq!(consts_f.len(), self.consts_f.len());
         self.consts_c = consts_c;
         self.consts_f = consts_f;
+        self.fill_token = next_fill_token();
     }
 
-    /// Mutable access to both constant pools, for in-place rewriting.
+    /// Mutable access to both constant pools, for in-place rewriting. Retires the
+    /// current fill token: the caller is about to change what the arenas would hold.
     pub(super) fn pools_mut(&mut self) -> (&mut [C<F>], &mut [F]) {
+        self.fill_token = next_fill_token();
         (&mut self.consts_c, &mut self.consts_f)
     }
 
@@ -199,6 +311,10 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             fin: Vec::with_capacity(sizes[3] as usize),
             fout: Vec::with_capacity(sizes[4] as usize),
             moms: Vec::with_capacity(self.eval.folded().analysis().mom_table().len()),
+            #[cfg(test)]
+            fills: 0,
+            fill_token: 0,
+            fill_moms: Vec::with_capacity(self.eval.n_ext()),
             #[cfg(any(debug_assertions, feature = "extended-validation"))]
             validated: false,
         }
@@ -237,10 +353,8 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             assert_partonic_cm_beams_along_z(momenta, self.eval.n_in());
         }
         let folded = self.eval.folded_hel();
-        resolve_moms(folded, momenta, scratch);
         // Baked-helicity externals never read the per-evaluation helicity assignment.
-        let env = self.eval_env(folded, momenta, &[], None);
-        fill_arenas(folded, &env, scratch);
+        self.fill_for(folded, momenta, scratch);
 
         let RootKind::Hels { n_flows, locs } = &folded.program().root else {
             panic!("eval_m2 on a program without a helicity-expanded root");
@@ -310,9 +424,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             assert_partonic_cm_beams_along_z(momenta, self.eval.n_in());
         }
         let folded = self.eval.folded_hel();
-        resolve_moms(folded, momenta, scratch);
-        let env = self.eval_env(folded, momenta, &[], None);
-        fill_arenas(folded, &env, scratch);
+        self.fill_for(folded, momenta, scratch);
 
         let RootKind::Hels { n_flows, locs } = &folded.program().root else {
             panic!("eval_jamp2 on a program without a helicity-expanded root");
@@ -374,9 +486,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             assert_partonic_cm_beams_along_z(momenta, self.eval.n_in());
         }
         let folded = self.eval.folded_hel();
-        resolve_moms(folded, momenta, scratch);
-        let env = self.eval_env(folded, momenta, &[], None);
-        fill_arenas(folded, &env, scratch);
+        self.fill_for(folded, momenta, scratch);
 
         let program = folded.program();
         let n = program.n_amps as usize;
@@ -431,9 +541,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             assert_partonic_cm_beams_along_z(momenta, self.eval.n_in());
         }
         let folded = self.eval.folded_hel();
-        resolve_moms(folded, momenta, scratch);
-        let env = self.eval_env(folded, momenta, &[], None);
-        fill_arenas(folded, &env, scratch);
+        self.fill_for(folded, momenta, scratch);
         self.contract_per_combination(folded, scratch, hel_m2);
     }
 
@@ -478,9 +586,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         scratch: &mut ScratchSpace<F>,
     ) -> Vec<Vec<C<F>>> {
         let folded = self.eval.folded_hel();
-        resolve_moms(folded, momenta, scratch);
-        let env = self.eval_env(folded, momenta, &[], None);
-        fill_arenas(folded, &env, scratch);
+        self.fill_for(folded, momenta, scratch);
         let RootKind::Hels { n_flows, locs } = &folded.program().root else {
             panic!("hel_jamps on a program without a helicity-expanded root");
         };
@@ -511,9 +617,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         good: &mut [bool],
     ) {
         let folded = self.eval.folded_hel();
-        resolve_moms(folded, momenta, scratch);
-        let env = self.eval_env(folded, momenta, &[], None);
-        fill_arenas(folded, &env, scratch);
+        self.fill_for(folded, momenta, scratch);
 
         // Per-combination T_c: the CF-contracted |M_c|², nonnegative because CF is
         // positive semidefinite. The threshold below is relative to their sum, so a
@@ -543,6 +647,34 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             return C::new(F::zero(), F::zero());
         }
         self.run(momenta, helicities, None, scratch)
+    }
+
+    /// Fill the result arenas with `momenta`'s currents through the helicity-expanded
+    /// program, unless they already hold exactly that.
+    ///
+    /// A hit needs the same amplitude, the same constant pools (both named by
+    /// [`fill_token`](Self::fill_token)) and bit-identical momenta, so the values the
+    /// forward pass would write are the ones already there — the reuse is exact, not
+    /// approximate. It is what makes a second read-out of one point (`AMP2` before the
+    /// matrix element on a configuration-drawing integrand; the three event diagonals
+    /// after it) cost its read-out and not another pass.
+    ///
+    /// The stamp lives in the workspace, which is per thread, so no thread can observe
+    /// another's fill. Every other writer of the arenas clears it in [`fill_arenas`].
+    #[inline]
+    fn fill_for(
+        &self,
+        folded: &Folded,
+        momenta: &[LorentzVector<F>],
+        scratch: &mut ScratchSpace<F>,
+    ) {
+        if scratch.holds(self.fill_token, momenta) {
+            return;
+        }
+        resolve_moms(folded, momenta, scratch);
+        let env = self.eval_env(folded, momenta, &[], None);
+        fill_arenas(folded, &env, scratch);
+        scratch.record_fill(self.fill_token, momenta);
     }
 
     /// The per-evaluation immutable context for one (momenta, helicity) point,
@@ -855,6 +987,13 @@ fn run_forward_flows_typed<F: Real>(
 /// the instruction dispatch and the slice bounds checks on arena indexing.
 fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut ScratchSpace<F>) {
     let prog = folded.program();
+    // Whatever the arenas held is about to be overwritten; only `fill_for` re-stamps
+    // them, so every other writer leaves them unreusable.
+    scratch.fill_token = 0;
+    #[cfg(test)]
+    {
+        scratch.fills += 1;
+    }
     scratch.ensure_sizes(&prog.arena_sizes);
     let ops = &prog.operands;
     let mom_ops = &prog.mom_operands;
@@ -4521,6 +4660,245 @@ mod hel_expand_stats {
                  for {} nodes",
                 hel.ast.len()
             );
+        }
+    }
+}
+
+/// The arena reuse: a second read-out of one point, at the same amplitude and the same
+/// constant pools, must skip the forward pass and still answer to the last bit.
+#[cfg(test)]
+mod arena_reuse {
+    use super::super::compile::{AmplitudeEvaluator, MG_VALIDATED_PROCESSES};
+    use super::*;
+    use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+    use crate::helas::eval::rescale::ScaleAwareAmplitude;
+    use crate::phasespace::rambo_massless;
+    use crate::ufo::sm::{sm_model, SMRestrict};
+    use crate::ufo::EvaluatedModel;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    fn compiled(process: &str) -> (Vec<AmplitudeEvaluator>, EvaluatedModel) {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, &model).unwrap();
+        let evals = sets
+            .iter()
+            .map(|s| {
+                let mut e = AmplitudeEvaluator::compile(s, &model).unwrap();
+                e.prune_zero_helicities(&evaluated);
+                e
+            })
+            .collect();
+        (evals, evaluated)
+    }
+
+    fn points(n_ext: usize, n: usize, seed: u64) -> Vec<Vec<LorentzVector<f64>>> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let sqrt_s = 500.0;
+        (0..n)
+            .map(|_| {
+                let mut p = vec![
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+                ];
+                p.extend(rambo_massless(sqrt_s, n_ext - 2, &mut rng));
+                p
+            })
+            .collect()
+    }
+
+    /// Every entry point that reads the helicity-expanded arenas returns exactly what a
+    /// workspace that had never seen the point returns — and the repeats run no second
+    /// forward pass, so the equality is evidence about reuse and not about determinism.
+    #[test]
+    fn reused_arenas_answer_bit_for_bit() {
+        for process in MG_VALIDATED_PROCESSES {
+            let (evals, evaluated) = compiled(process);
+            for eval in &evals {
+                let amp = BoundAmplitude::<f64>::bind(eval, &evaluated);
+                let n_conf = eval.n_configs();
+                let n_flow = eval.n_flows();
+                let n_hel = eval.helicities().len();
+                for p in points(eval.n_ext(), 3, 0x5EED_1) {
+                    // Reference: one fresh workspace per quantity, so nothing is reused.
+                    let m2_ref = amp.eval_m2(&p, &mut amp.scratch_space());
+                    let mut amp2_ref = vec![0.0; n_conf];
+                    amp.eval_amp2(&p, &mut amp.scratch_space(), &mut amp2_ref);
+                    let mut jamp2_ref = vec![0.0; n_flow];
+                    amp.eval_jamp2(&p, &mut amp.scratch_space(), &mut jamp2_ref);
+                    let mut hel_ref = vec![0.0; n_hel];
+                    amp.eval_hel_m2(&p, &mut amp.scratch_space(), &mut hel_ref);
+                    assert!(
+                        m2_ref.is_finite() && m2_ref != 0.0,
+                        "{process}: reference |M|² is not a live number"
+                    );
+
+                    // One workspace through the whole event sequence: the draw's AMP2,
+                    // the matrix element, then the three event diagonals.
+                    let mut sc = amp.scratch_space();
+                    let mut amp2 = vec![0.0; n_conf];
+                    amp.eval_amp2(&p, &mut sc, &mut amp2);
+                    let after_first = sc.fills();
+                    assert_eq!(after_first, 1, "{process}: the first read-out must fill");
+                    let m2 = amp.eval_m2(&p, &mut sc);
+                    let mut hel = vec![0.0; n_hel];
+                    amp.eval_hel_m2(&p, &mut sc, &mut hel);
+                    let mut jamp2 = vec![0.0; n_flow];
+                    amp.eval_jamp2(&p, &mut sc, &mut jamp2);
+                    assert_eq!(
+                        sc.fills(),
+                        after_first,
+                        "{process}: a read-out of the point already in the arenas ran a \
+                         second forward pass — the reuse test would be vacuous"
+                    );
+
+                    assert_eq!(m2.to_bits(), m2_ref.to_bits(), "{process}: |M|² moved");
+                    for (i, (a, b)) in amp2.iter().zip(&amp2_ref).enumerate() {
+                        assert_eq!(a.to_bits(), b.to_bits(), "{process}: AMP2[{i}] moved");
+                    }
+                    for (i, (a, b)) in jamp2.iter().zip(&jamp2_ref).enumerate() {
+                        assert_eq!(a.to_bits(), b.to_bits(), "{process}: JAMP2[{i}] moved");
+                    }
+                    for (i, (a, b)) in hel.iter().zip(&hel_ref).enumerate() {
+                        assert_eq!(a.to_bits(), b.to_bits(), "{process}: |M_c|²[{i}] moved");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The three things that must retire a fill: a different point, a rewritten pool,
+    /// and a different amplitude instance sharing the workspace.
+    #[test]
+    fn a_stale_fill_is_never_reused() {
+        let (evals, evaluated) = compiled("g u > e+ e- u QCD=2 QED=2");
+        let eval = &evals[0];
+        let pts = points(eval.n_ext(), 2, 0x5EED_2);
+
+        // A different point.
+        let amp = BoundAmplitude::<f64>::bind(eval, &evaluated);
+        let mut sc = amp.scratch_space();
+        let a = amp.eval_m2(&pts[0], &mut sc);
+        let fills = sc.fills();
+        let b = amp.eval_m2(&pts[1], &mut sc);
+        assert_eq!(sc.fills(), fills + 1, "a new point must refill");
+        assert_ne!(a.to_bits(), b.to_bits(), "the two probe points coincide");
+        assert_eq!(
+            b.to_bits(),
+            amp.eval_m2(&pts[1], &mut amp.scratch_space()).to_bits()
+        );
+
+        // A rewritten pool: `set_alpha_s` moves the couplings, so the arenas must be
+        // refilled even though the point is the same.
+        let mut running = ScaleAwareAmplitude::<f64>::new(eval, &evaluated);
+        assert!(
+            running.depends_on_alpha_s(),
+            "the probe process must carry a strong coupling for this to test anything"
+        );
+        let alpha_ref = running.alpha_s_ref();
+        let mut sc = running.scratch_space();
+        let mut amp2 = vec![0.0; eval.n_configs()];
+        running.amplitude().eval_amp2(&pts[0], &mut sc, &mut amp2);
+        let fills = sc.fills();
+        running.set_alpha_s(alpha_ref * 1.7);
+        let moved = running.eval_m2(&pts[0], &mut sc);
+        assert_eq!(sc.fills(), fills + 1, "a pool rewrite must refill");
+        let mut fresh = ScaleAwareAmplitude::<f64>::new(eval, &evaluated);
+        fresh.set_alpha_s(alpha_ref * 1.7);
+        let want = fresh.eval_m2(&pts[0], &mut fresh.scratch_space());
+        assert_eq!(
+            moved.to_bits(),
+            want.to_bits(),
+            "|M|² at the moved coupling"
+        );
+        // Anti-vacuity: the coupling move is visible at all.
+        let mut at_ref = ScaleAwareAmplitude::<f64>::new(eval, &evaluated);
+        assert_ne!(
+            moved.to_bits(),
+            at_ref
+                .eval_m2(&pts[0], &mut at_ref.scratch_space())
+                .to_bits()
+        );
+        at_ref.set_alpha_s(alpha_ref);
+
+        // A second amplitude instance: a clone carries its own token, so a workspace
+        // stamped by one is not read by the other.
+        let one = BoundAmplitude::<f64>::bind(eval, &evaluated);
+        let two = one.clone();
+        assert_ne!(one.fill_token(), two.fill_token());
+        let mut sc = one.scratch_space();
+        one.eval_m2(&pts[0], &mut sc);
+        let fills = sc.fills();
+        two.eval_m2(&pts[0], &mut sc);
+        assert_eq!(sc.fills(), fills + 1, "another instance must refill");
+    }
+
+    /// The workspace carrying the fill is per thread, so threads running the same
+    /// amplitude at *different* couplings cannot read each other's arenas. Each thread
+    /// reproduces the single-threaded answer for its own coupling.
+    #[test]
+    fn fills_do_not_cross_threads() {
+        let (evals, evaluated) = compiled("g u > e+ e- u QCD=2 QED=2");
+        let eval = &evals[0];
+        let pts = points(eval.n_ext(), 4, 0x5EED_3);
+        let base = ScaleAwareAmplitude::<f64>::new(eval, &evaluated);
+        let alpha_ref = base.alpha_s_ref();
+        let scales = [0.6, 0.9, 1.3, 2.1];
+
+        // Single-threaded truth, one independent amplitude and workspace per scale.
+        let want: Vec<Vec<f64>> = scales
+            .iter()
+            .map(|f| {
+                let mut a = ScaleAwareAmplitude::<f64>::new(eval, &evaluated);
+                a.set_alpha_s(alpha_ref * f);
+                let mut s = a.scratch_space();
+                pts.iter().map(|p| a.eval_m2(p, &mut s)).collect()
+            })
+            .collect();
+        assert!(
+            want[0]
+                .iter()
+                .zip(&want[1])
+                .all(|(a, b)| a.to_bits() != b.to_bits()),
+            "the probe scales must give different |M|², or the test sees nothing"
+        );
+
+        let got: Vec<Vec<f64>> = std::thread::scope(|s| {
+            let handles: Vec<_> = scales
+                .iter()
+                .map(|f| {
+                    let base = &base;
+                    let pts = &pts;
+                    s.spawn(move || {
+                        let mut mine = base.fork();
+                        mine.set_alpha_s(alpha_ref * f);
+                        let mut sc = mine.scratch_space();
+                        let mut amp2 = vec![0.0; mine.amplitude().evaluator().n_configs()];
+                        pts.iter()
+                            .map(|p| {
+                                // The production sequence: AMP2 first, matrix element
+                                // second, on the same momenta.
+                                mine.amplitude().eval_amp2(p, &mut sc, &mut amp2);
+                                mine.eval_m2(p, &mut sc)
+                            })
+                            .collect::<Vec<f64>>()
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+
+        for (i, (g, w)) in got.iter().zip(&want).enumerate() {
+            for (j, (a, b)) in g.iter().zip(w).enumerate() {
+                assert_eq!(
+                    a.to_bits(),
+                    b.to_bits(),
+                    "thread {i} point {j}: |M|² differs from the single-threaded value"
+                );
+            }
         }
     }
 }

@@ -1086,6 +1086,120 @@ fn probe_scale_draw_cost() {
     }
 }
 
+/// What a point's repeated read-outs cost, once its currents are already in the
+/// arenas.
+///
+/// A live-draw row reads one phase-space point several times over: `AMP2` for the
+/// configuration draw, `|M|²` for the weight, and — on an accepted point — the three
+/// event diagonals. Every read-out that runs at the same constant pools as the fill
+/// before it is a read-out of arenas that already hold the answer, so what this probe
+/// prices is the arena reuse, not the draw.
+///
+/// Both rows carry a strong coupling, so the per-event scale rewrites their pools
+/// between the draw and the matrix element and the draw's own pass stands alone; what
+/// is shared is the event labelling, whose three diagonals are read at the coupling the
+/// matrix element was taken at. Run with `--ignored --nocapture` on an otherwise idle
+/// machine.
+#[test]
+#[ignore]
+fn probe_event_readout_cost() {
+    use std::time::Instant;
+    const POINTS: usize = 20_000;
+    for (dir, process) in [
+        ("gu_to_epemu", "g u > e+ e- u"),
+        ("gux_to_epemux", "g u~ > e+ e- u~"),
+    ] {
+        let text = std::fs::read_to_string(output_dir().join(dir).join("Cards/run_card.dat"))
+            .expect("run card readable");
+        let live = RunCard::parse(&text).expect("banked run card parses");
+        let sqrt_s = live.ebeam1 + live.ebeam2;
+        let model = common::sm_model();
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let sets = common::generate(process);
+        let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &model, &evaluated);
+        let cuts = Cuts::compile(&live, &legs).expect("compile cuts");
+        let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &model, &evaluated);
+        let diagrams: Vec<_> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+        let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg);
+        integ
+            .use_running_coupling(&diagrams, &model, &evaluated, &live)
+            .expect("scale prescription compiles");
+        integ.use_multichannel(
+            &diagrams,
+            &evaluated,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+            SEED,
+        );
+        assert_eq!(
+            integ.scale_draw_ndim(),
+            1,
+            "[{dir}] the probe rows must draw their configuration"
+        );
+
+        // Points that carry weight, each with the channel it is read in — the only
+        // ones an event loop ever reads a second time.
+        let mut rng = ChaCha8Rng::seed_from_u64(SEED);
+        let n_ch = integ.channel_count();
+        let mut kept: Vec<(usize, Vec<f64>)> = Vec::with_capacity(POINTS);
+        while kept.len() < POINTS {
+            let ch = kept.len() % n_ch;
+            let u: Vec<f64> = (0..integ.point_ndim())
+                .map(|_| rand::Rng::random::<f64>(&mut rng))
+                .collect();
+            if integ.value_in_channel(ch, &u) != 0.0 {
+                kept.push((ch, u));
+            }
+        }
+
+        let mut momenta = Vec::new();
+        let replay = |momenta: &mut Vec<_>| {
+            let start = Instant::now();
+            let mut acc = 0.0;
+            for (ch, u) in &kept {
+                acc += integ.event_in_channel(*ch, u, momenta);
+            }
+            std::hint::black_box(acc);
+            start.elapsed().as_secs_f64() / kept.len() as f64 * 1e9
+        };
+        let labelled = |momenta: &mut Vec<_>| {
+            let start = Instant::now();
+            let mut acc = 0usize;
+            for (ch, u) in &kept {
+                acc += (integ.event_in_channel(*ch, u, momenta) != 0.0) as usize;
+                acc += integ
+                    .select_event(momenta, *ch, [0.1, 0.3, 0.5, 0.7])
+                    .map_or(0, |s| s.subprocess + 1);
+            }
+            std::hint::black_box(acc);
+            start.elapsed().as_secs_f64() / kept.len() as f64 * 1e9
+        };
+        replay(&mut momenta);
+        labelled(&mut momenta);
+        let ns_replay = replay(&mut momenta);
+        let ns_labelled = labelled(&mut momenta);
+        eprintln!(
+            "[{dir}] {ns_replay:8.1} ns/event replay | {ns_labelled:8.1} ns/event replay + \
+             labels | labels {:+.1} ns over {POINTS} accepted points",
+            ns_labelled - ns_replay,
+        );
+    }
+}
+
 /// Seed-stability sweep and budget ladder for the four `ℓ⁺ℓ⁻ j` partonic rows —
 /// the evidence two of them are enforced on and two are not.
 ///
