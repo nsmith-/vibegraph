@@ -87,14 +87,13 @@ use crate::coupling::alphas::AlphaSSource;
 use crate::coupling::scales::{EventScales, ScaleError};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
+use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport};
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
-    boost_z, channel_neval, combine_channels, compile_class, compile_scale_source, components,
-    constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
-    process_external_legs, vegas_chunk_size, BoundSubprocess, ChannelIntegration,
-    EventScaleSource, HadronicError, SubprocessProto,
-    PointScales, RunningCouplingReport, SampledChannel, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS,
-    SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED, VEGAS_NBINS,
+    boost_z, compile_class, compile_scale_source, components, constant_scale_report,
+    initial_spin_color_average, make_subs_scale_aware, process_external_legs, BoundSubprocess,
+    ChannelIntegration, EventScaleSource, HadronicError, PointScales, RunningCouplingReport,
+    SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -111,7 +110,7 @@ use crate::runcard::RunCard;
 use crate::select::select_index;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
-use crate::vegas::{VegasGrid, VegasResult};
+use crate::vegas::{IterationCombination, VegasResult};
 
 type V = LorentzVector<f64>;
 
@@ -1974,54 +1973,38 @@ impl<'a> ProtonIntegrand<'a> {
         niter: usize,
         seed: u64,
     ) -> (Vec<ChannelIntegration>, VegasResult) {
-        let alphas = self.channel_alphas();
-        let ndim = self.channel_grid_ndim();
-        let point_ndim = self.point_ndim();
-        let mut per_channel = Vec::with_capacity(alphas.len());
-        for (j, &alpha) in alphas.iter().enumerate() {
-            let n_j = if alphas.len() == 1 {
-                neval
-            } else {
-                channel_neval(alpha, neval)
-            };
-            let mut grid = VegasGrid::new(ndim, VEGAS_NBINS, self.vegas_alpha);
-            let scale_ndim = point_ndim - ndim;
-            // The grid draws its own coordinates from `CHANNEL_STREAM_BASE + j`;
-            // the scale draw's trailing uniforms come off a stream of its own, so
-            // the grid's sequence is what it would be with no draw installed.
-            // Both are addressed by the point's index in the channel's own run, so
-            // a chunk reproduces the points it would have drawn in sequence.
-            let result = grid.adapt_parallel_seeded(
-                |first| {
-                    (
-                        SubStream::new(
-                            seed,
-                            SCALE_DRAW_STREAM_BASE + j as u64,
-                            first * scale_ndim as u64,
-                        ),
-                        vec![0.0; point_ndim],
-                    )
-                },
-                |(scale_draw, point), u| {
-                    point[..ndim].copy_from_slice(u);
-                    scale_draw.fill_uniforms(&mut point[ndim..]);
-                    self.value_in_channel(j, point)
-                },
-                n_j,
-                niter,
-                seed,
-                CHANNEL_STREAM_BASE + j as u64,
-                vegas_chunk_size(n_j, rayon::current_num_threads()),
-            );
-            per_channel.push(ChannelIntegration {
-                alpha,
-                neval: n_j,
-                grid,
-                result,
-            });
-        }
-        let total = combine_channels(&per_channel, niter);
+        let (per_channel, total, _) = integrate_channels(
+            self,
+            &self.channel_alphas(),
+            self.vegas_alpha,
+            IterationCombination::default(),
+            Budget::Fixed { neval, niter },
+            BlockAllocation::ByAlpha,
+            seed,
+        );
         (per_channel, total)
+    }
+
+    /// Integrate under an arbitrary [`Budget`] and channel-allocation rule,
+    /// reporting what was spent alongside the terms.
+    ///
+    /// [`adapt_grids`](Self::adapt_grids) is the [`Budget::Fixed`],
+    /// [`BlockAllocation::ByAlpha`] case of this.
+    pub fn adapt_grids_budget(
+        &self,
+        budget: Budget,
+        allocation: BlockAllocation,
+        seed: u64,
+    ) -> (Vec<ChannelIntegration>, VegasResult, ConvergenceReport) {
+        integrate_channels(
+            self,
+            &self.channel_alphas(),
+            self.vegas_alpha,
+            IterationCombination::default(),
+            budget,
+            allocation,
+            seed,
+        )
     }
 
     /// Integrate the cross section with VEGAS, returning `(σ, Δσ)` in picobarns.
@@ -2056,6 +2039,10 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
 mod tests {
     use super::*;
     use crate::artifact::SamplerTopology;
+    use crate::hadronic::{
+        channel_neval, CHANNEL_STREAM_BASE, VEGAS_NBINS,
+    };
+    use crate::vegas::VegasGrid;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::lhef::build::SubprocessRecord;
     use crate::pdf::grid::SubGrid;

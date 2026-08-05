@@ -160,3 +160,71 @@ fn integrate_is_thread_count_independent() {
         "`integrate -j 1` and `-j 16` wrote different artifacts"
     );
 }
+
+/// `--target-rel` spends iterations rather than counting them out, and spends
+/// more of them for a tighter target.
+///
+/// The claim a convergence run makes is that it stopped *because* it reached the
+/// accuracy asked of it, so the test is not that it terminated but that the
+/// accuracy it reached is the accuracy requested and that asking for twice as
+/// good costs more work. A run that ignored its target — stopping on
+/// `--min-iters`, say — would satisfy the first half and fail the second.
+#[test]
+fn integrate_spends_iterations_to_reach_a_target() {
+    let tmp = tempfile::tempdir().unwrap();
+    let proc_path = tmp.path().join("proc_card.dat");
+    let run_path = tmp.path().join("run_card.dat");
+    std::fs::write(&proc_path, "import model sm\ngenerate e+ e- > ta+ ta- H\n").unwrap();
+    std::fs::write(
+        &run_path,
+        "  0 = lpp1\n  0 = lpp2\n  100 = ebeam1\n  100 = ebeam2\n",
+    )
+    .unwrap();
+
+    let integrate = |target: &str, out: &std::path::Path| {
+        let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+            .args(["integrate"])
+            .arg(&proc_path)
+            .arg("--run-card")
+            .arg(&run_path)
+            .arg("--out")
+            .arg(out)
+            .args(["--neval", "8000", "--target-rel", target, "--min-iters", "4"])
+            .status()
+            .expect("spawn vibegraph");
+        assert!(status.success(), "integrate --target-rel {target} exited non-zero");
+        IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).expect("reload artifact")
+    };
+
+    let loose = integrate("0.02", &tmp.path().join("loose"));
+    let tight = integrate("0.005", &tmp.path().join("tight"));
+
+    for (label, a, target) in [("loose", &loose, 0.02), ("tight", &tight, 0.005)] {
+        assert!(
+            a.sigma_pb > 0.0 && a.sigma_err_pb > 0.0,
+            "[{label}] σ = {} ± {} pb",
+            a.sigma_pb,
+            a.sigma_err_pb
+        );
+        // The stop reads a χ²-widened error, so the quoted one is at or inside
+        // the target — never outside it.
+        assert!(
+            a.sigma_err_pb / a.sigma_pb <= target,
+            "[{label}] stopped at {:.4}% against a {:.4}% target",
+            100.0 * a.sigma_err_pb / a.sigma_pb,
+            100.0 * target
+        );
+        // The banked iteration count is what the run actually did, not what a
+        // `--niter` default said.
+        assert!(a.niter >= 4, "[{label}] banked niter {}", a.niter);
+    }
+    assert!(
+        tight.niter > loose.niter,
+        "a 4× tighter target cost no extra iterations: {} vs {}",
+        tight.niter,
+        loose.niter
+    );
+    let (lo, hi) = (loose.sigma_pb, tight.sigma_pb);
+    let spread = (lo - hi).abs() / (loose.sigma_err_pb.powi(2) + tight.sigma_err_pb.powi(2)).sqrt();
+    assert!(spread < 5.0, "the two runs disagree: {lo} vs {hi} pb ({spread:.1}σ)");
+}

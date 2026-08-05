@@ -36,6 +36,9 @@ use crate::coupling::cluster::setclscales::ScaleRefusal;
 use crate::coupling::scales::{ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
+use crate::budget::{
+    integrate_channels, BlockAllocation, Budget, ConvergenceReport, MIN_CHANNEL_NEVAL,
+};
 use crate::diagrams::{DiagramError, DiagramSet};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
@@ -49,7 +52,7 @@ use crate::runcard::RunCard;
 use crate::select::select_index;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
-use crate::vegas::{VegasGrid, VegasResult};
+use crate::vegas::{IterationCombination, VegasGrid, VegasResult};
 
 type V = LorentzVector<f64>;
 
@@ -84,27 +87,6 @@ const MULTICHANNEL_ADAPT_STREAM: u64 = 0xA1FA_5EED;
 /// terms of the channel-split estimator sample structurally independent sequences
 /// under one seed and each replays on its own.
 pub(crate) const CHANNEL_STREAM_BASE: u64 = 0xC7A0_0000;
-
-/// Points one rayon task evaluates before its results are reduced, as a function
-/// of a channel's per-iteration budget and the pool size.
-///
-/// The result is a scheduling knob only — [`VegasGrid::adapt_parallel_seeded`] is
-/// bit-identical at any chunk size — so it is tuned for balance alone: several
-/// chunks per worker, so a straggler costs a fraction of an iteration rather than
-/// all of it, with a floor that keeps per-chunk setup (a generator seek, a
-/// substream, two small allocations) far below the cost of the points in it.
-pub(crate) fn vegas_chunk_size(neval: usize, threads: usize) -> usize {
-    const MIN_CHUNK: usize = 64;
-    const CHUNKS_PER_THREAD: usize = 8;
-    neval
-        .div_ceil(threads.max(1) * CHUNKS_PER_THREAD)
-        .max(MIN_CHUNK)
-}
-
-/// Floor on a channel's per-iteration evaluation count, so a channel whose
-/// selection weight rounds to nothing still gets a grid it can refine and a term
-/// it can estimate. Sample budget is otherwise split as `αⱼ · neval`.
-const MIN_CHANNEL_NEVAL: usize = 512;
 
 /// RNG seed and draw budget for the setup-time probe that resolves a dynamic scale
 /// once before integration begins.
@@ -1066,7 +1048,7 @@ pub(crate) fn combine_channels(per_channel: &[ChannelIntegration], niter: usize)
 }
 
 /// A channel's per-iteration evaluation count: its share `αⱼ · neval` of the
-/// budget, floored so no channel goes unsampled.
+/// budget, floored at [`MIN_CHANNEL_NEVAL`] so no channel goes unsampled.
 pub(crate) fn channel_neval(alpha: f64, neval: usize) -> usize {
     let share = (alpha * neval as f64).round();
     let share = if share.is_finite() && share > 0.0 {
@@ -1881,54 +1863,38 @@ impl<'a> FixedBeamIntegrand<'a> {
         seed: u64,
         vegas_alpha: f64,
     ) -> (Vec<ChannelIntegration>, VegasResult) {
-        let alphas = self.channel_alphas();
-        let ndim = self.channel_grid_ndim();
-        let point_ndim = self.point_ndim();
-        let mut per_channel = Vec::with_capacity(alphas.len());
-        for (j, &alpha) in alphas.iter().enumerate() {
-            let n_j = if alphas.len() == 1 {
-                neval
-            } else {
-                channel_neval(alpha, neval)
-            };
-            let mut grid = VegasGrid::new(ndim, VEGAS_NBINS, vegas_alpha);
-            let scale_ndim = point_ndim - ndim;
-            // The grid draws its own coordinates from `CHANNEL_STREAM_BASE + j`;
-            // the scale draw's trailing uniforms come off a stream of its own, so
-            // the grid's sequence is what it would be with no draw installed.
-            // Both are addressed by the point's index in the channel's own run, so
-            // a chunk reproduces the points it would have drawn in sequence.
-            let result = grid.adapt_parallel_seeded(
-                |first| {
-                    (
-                        SubStream::new(
-                            seed,
-                            SCALE_DRAW_STREAM_BASE + j as u64,
-                            first * scale_ndim as u64,
-                        ),
-                        vec![0.0; point_ndim],
-                    )
-                },
-                |(scale_draw, point), u| {
-                    point[..ndim].copy_from_slice(u);
-                    scale_draw.fill_uniforms(&mut point[ndim..]);
-                    self.value_in_channel(j, point)
-                },
-                n_j,
-                niter,
-                seed,
-                CHANNEL_STREAM_BASE + j as u64,
-                vegas_chunk_size(n_j, rayon::current_num_threads()),
-            );
-            per_channel.push(ChannelIntegration {
-                alpha,
-                neval: n_j,
-                grid,
-                result,
-            });
-        }
-        let total = combine_channels(&per_channel, niter);
+        let (per_channel, total, _) = integrate_channels(
+            self,
+            &self.channel_alphas(),
+            vegas_alpha,
+            IterationCombination::default(),
+            Budget::Fixed { neval, niter },
+            BlockAllocation::ByAlpha,
+            seed,
+        );
         (per_channel, total)
+    }
+
+    /// Integrate under an arbitrary [`Budget`] and channel-allocation rule,
+    /// reporting what was spent alongside the terms.
+    ///
+    /// [`adapt_grids`](Self::adapt_grids) is the [`Budget::Fixed`],
+    /// [`BlockAllocation::ByAlpha`] case of this.
+    pub fn adapt_grids_budget(
+        &self,
+        budget: Budget,
+        allocation: BlockAllocation,
+        seed: u64,
+    ) -> (Vec<ChannelIntegration>, VegasResult, ConvergenceReport) {
+        integrate_channels(
+            self,
+            &self.channel_alphas(),
+            self.vegas_alpha,
+            IterationCombination::default(),
+            budget,
+            allocation,
+            seed,
+        )
     }
 }
 

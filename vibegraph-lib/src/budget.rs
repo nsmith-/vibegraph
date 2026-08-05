@@ -1,0 +1,868 @@
+//! How a multichannel integration's sample budget is split across its channels
+//! and across its iterations, and when it is allowed to stop.
+//!
+//! The integral is a sum of per-channel terms, each sampled over its own grid
+//! with the channel frozen — a **hard split**, deterministic point counts per
+//! channel rather than a per-point channel draw. Two things then have to be
+//! decided every iteration: how many points each channel gets, and whether to
+//! run another iteration at all.
+//!
+//! # Allocation
+//!
+//! For a total-σ target the variance-minimising split of `N` points across terms
+//! with per-point standard deviations `sⱼ` is Neyman's, `Nⱼ ∝ sⱼ` — where `sⱼ` is
+//! the standard deviation of *this* estimator's term, which already carries the
+//! channel's selection weight `αⱼ` (the mixture density puts it inside
+//! [`ChannelIntegrand::value_in_channel`]). Written on the unweighted channel
+//! integrand `hⱼ = f/g` the same rule reads `Nⱼ ∝ αⱼ · sd(hⱼ)`.
+//!
+//! [`BlockAllocation::ByAlpha`] instead spends `Nⱼ ∝ αⱼ`. That is not the naive
+//! choice it looks like: the Kleiss–Pittau α-adaptation the combiner runs before
+//! the grids are trained already sets `αⱼ` from a variance survey, so `αⱼ` is
+//! itself most of a variance estimate. Measured on `p p > l+ l- j`, `αⱼ` spans a
+//! factor ~100 across the 24 channels while the realised ratio `sⱼ/αⱼ` spans
+//! only 2–4.5: the α split is already close to Neyman's, and re-deriving it from
+//! the trained grids buys a factor 1.00–1.22 in variance at equal points.
+//!
+//! That number is not why [`BlockAllocation::Neyman`] is worth having, and the
+//! difference between the two is the whole point of the stopping rule below —
+//! see [`BlockAllocation::Neyman`].
+//!
+//! Both are floored at [`MIN_CHANNEL_NEVAL`]: allocation splits the spend, never
+//! the coverage. A channel whose map is the only one with density on some
+//! structure has to keep sampling it even when its variance estimate says it is
+//! cheap, because a channel that stops covering its own region is how a
+//! multichannel integral becomes confidently wrong.
+//!
+//! # Stopping
+//!
+//! [`Budget::Fixed`] is the reproducible mode: `neval × niter`, the same points
+//! in the same order every run. [`Budget::Target`] iterates until the combined
+//! estimate's relative uncertainty meets a target, subject to three
+//! preconditions, each of which exists because a stop is a claim about an error
+//! bar and error bars here are known to be optimistic:
+//!
+//! * **The combination must be unweighted.** Lepage's `1/σ²` weighting is biased
+//!   by the correlation between an iteration's estimate and its own variance, and
+//!   the bias comes with a *small* error bar — precisely the shape that makes a
+//!   convergence test stop early on a wrong number. A `Target` budget refuses an
+//!   [`IterationCombination::InverseVariance`] grid rather than reading its error.
+//! * **A minimum iteration count**, so the χ²/dof below has degrees of freedom
+//!   and the grid has been refined more than a couple of times.
+//! * **An iteration-consistency scale factor.** The stopping test reads not the
+//!   quoted error but the quoted error times `√max(1, χ²/dof)` per channel — the
+//!   PDG scale-factor treatment, applied where the inconsistency lives. This is
+//!   the precondition that does the most work. The per-point weight distribution
+//!   of the σ-carrying channels of `p p > l+ l- j` has a Pareto tail index near
+//!   2.1–2.4, i.e. it sits at the boundary where the variance exists at all, so
+//!   empirical variances converge slowly and biased low; the iterations then
+//!   scatter by more than their own quoted errors, and χ²/dof measures exactly
+//!   that excess. Measured χ²/dof on that process at production budgets is 2–3.3,
+//!   so the factor buys a 1.4–1.8× tighter error before a stop is granted, which
+//!   is a 2–3× point cost — deliberately, since the alternative is stopping on an
+//!   error bar that the seed-to-seed spread does not support.
+
+use crate::hadronic::{combine_channels, ChannelIntegration, VEGAS_NBINS};
+use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
+use crate::unweight::ChannelIntegrand;
+use crate::vegas::{
+    adapt_blocks_iteration, combine_iterations, BlockPlan, IterationCombination, VegasGrid,
+    VegasResult,
+};
+
+/// Floor on a channel's per-iteration evaluation count.
+///
+/// A channel whose selection weight rounds to nothing still gets a grid it can
+/// refine and a term it can estimate. Coverage is not a thing an allocation rule
+/// is allowed to trade away.
+pub const MIN_CHANNEL_NEVAL: usize = 512;
+
+/// How the per-iteration budget is split across channels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BlockAllocation {
+    /// `Nⱼ = round(αⱼ · neval)`, floored — the split the channel weights already
+    /// imply, fixed for the whole run.
+    #[default]
+    ByAlpha,
+    /// Neyman: `Nⱼ ∝ sⱼ`, the running per-point standard deviation of channel
+    /// `j`'s own term, floored, recomputed from every completed iteration.
+    ///
+    /// Re-splitting a *fixed* budget this way is worth almost nothing — a factor
+    /// 1.00–1.22 in variance on `p p > l+ l- j`, 1.000 on the four channels of
+    /// `p p > e+ e-` — because the α-survey has already done that work. What it
+    /// is worth is measured against a *target*, where the channels it feeds are
+    /// the ones whose iterations disagree with themselves: on `p p > l+ l- j` at
+    /// a 0.179% target over 8 seeds it reaches the same accuracy in 2.94M
+    /// evaluations against 6.41M, and the seed-to-seed spread of that spend
+    /// narrows from 2.75M–12.4M to 1.97M–4.26M.
+    ///
+    /// The mechanism is the scale factor, not the split: a starved channel's
+    /// χ²/dof is what widens the error the stopping rule reads, so feeding it
+    /// relaxes the test by more than its own variance share ever could. Both
+    /// arms agree on σ (0.14σ and 0.32σ from MadGraph's banked value).
+    Neyman,
+}
+
+/// What an integration is asked to spend.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Budget {
+    /// `neval` points per iteration split across the channels, `niter`
+    /// iterations, and stop. Reproducible point-for-point from the seed.
+    Fixed { neval: usize, niter: usize },
+    /// Iterate until the scale-factor-corrected relative uncertainty of the
+    /// combined estimate is at or below `target_rel`.
+    Target {
+        /// Relative uncertainty to reach, e.g. `3.6e-3` for 0.36%.
+        target_rel: f64,
+        /// Points per iteration, split across the channels as in `Fixed`.
+        neval: usize,
+        /// Iterations that must run before a stop is considered.
+        min_iters: usize,
+        /// Iterations after which the run stops whether or not it converged.
+        max_iters: usize,
+        /// Points after which the run stops whether or not it converged.
+        max_points: u64,
+    },
+}
+
+impl Budget {
+    /// Points per iteration, before the per-channel floor.
+    pub fn neval(&self) -> usize {
+        match *self {
+            Budget::Fixed { neval, .. } | Budget::Target { neval, .. } => neval,
+        }
+    }
+
+    /// Iterations this budget can run at most.
+    fn max_iters(&self) -> usize {
+        match *self {
+            Budget::Fixed { niter, .. } => niter,
+            Budget::Target { max_iters, .. } => max_iters,
+        }
+    }
+}
+
+/// Why an integration stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopReason {
+    /// A [`Budget::Fixed`] run finished its iterations.
+    Budget,
+    /// The scale-factor-corrected relative uncertainty met the target.
+    TargetMet,
+    /// `max_iters` was reached with the target unmet.
+    MaxIters,
+    /// `max_points` was reached with the target unmet.
+    MaxPoints,
+}
+
+impl StopReason {
+    /// Whether the run reached the accuracy it was asked for. `true` for a fixed
+    /// budget, which was asked for points rather than accuracy.
+    pub fn converged(self) -> bool {
+        matches!(self, StopReason::Budget | StopReason::TargetMet)
+    }
+}
+
+/// What a completed integration spent and why it stopped.
+#[derive(Debug, Clone)]
+pub struct ConvergenceReport {
+    pub stop: StopReason,
+    /// Iterations run, warm-up included.
+    pub iterations: usize,
+    /// Integrand evaluations over all channels and iterations.
+    pub points: u64,
+    /// The target that was asked for, if any.
+    pub target_rel: Option<f64>,
+    /// `Δσ/σ` of the combined estimate as quoted.
+    pub achieved_rel: f64,
+    /// `Δσ/σ` after the per-channel `√max(1, χ²/dof)` scale factor — the number
+    /// the stopping test compares against `target_rel`.
+    pub scaled_rel: f64,
+    /// Points each channel drew over the whole run, in channel order.
+    pub channel_points: Vec<u64>,
+    /// The smallest per-iteration allocation any channel received in any
+    /// iteration — the floor guardrail as realised rather than as intended. A
+    /// cumulative point count cannot see a channel starved after the first
+    /// iteration, since the first iteration's α split dominates the sum.
+    pub min_channel_neval: usize,
+}
+
+/// One channel's running record over the iterations of a block-split adaptation.
+struct ChannelHistory {
+    alpha: f64,
+    /// Points drawn so far — the block's generator position.
+    drawn: u64,
+    /// `(integral, variance, neval)` of every iteration past the warm-up.
+    kept: Vec<(f64, f64, usize)>,
+    /// Running sum of the per-point variances measured by *every* iteration, and
+    /// the count behind it: the Neyman input. Warm-up iterations are included
+    /// because before the warm-up is over they are the only measurement there is.
+    point_var_sum: f64,
+    point_var_n: usize,
+}
+
+impl ChannelHistory {
+    /// The per-point standard deviation this channel's iterations have measured,
+    /// or `None` before any iteration has run.
+    fn point_sd(&self) -> Option<f64> {
+        (self.point_var_n > 0).then(|| (self.point_var_sum / self.point_var_n as f64).sqrt())
+    }
+
+    /// This channel's term, combined over its kept iterations.
+    ///
+    /// Iterations that drew the same number of points combine under `rule` —
+    /// the same arithmetic, in the same order, that a run of
+    /// [`VegasGrid::adapt_parallel_seeded`] would have performed, so a fixed
+    /// budget's numbers do not move.
+    ///
+    /// Iterations that drew *different* numbers are averaged weighted by their
+    /// point counts. Those weights are what Lepage's are not: an iteration's
+    /// point count is decided before any of its points exist, so it cannot
+    /// correlate with the estimate it weights, which is the correlation that
+    /// makes the `1/σ²` rule biased. What survives is a weaker dependence — a
+    /// count is chosen from *earlier* iterations' variances, and those are
+    /// correlated with earlier iterations' estimates. Bounding it needs a
+    /// measurement rather than an argument: over 8 seeds at four
+    /// process/target settings, this weighted mean and the plain unweighted one
+    /// (which is what a fixed split takes, its counts never varying) differ by
+    /// 0.26–0.40 σ with no common sign — no bias at the 0.02–0.04% these
+    /// resolve.
+    fn combine(&self, rule: IterationCombination) -> VegasResult {
+        let uniform = self
+            .kept
+            .first()
+            .is_some_and(|&(_, _, n0)| self.kept.iter().all(|&(_, _, n)| n == n0));
+        if uniform {
+            let pairs: Vec<(f64, f64)> = self.kept.iter().map(|&(i, v, _)| (i, v)).collect();
+            return combine_iterations(&pairs, rule);
+        }
+        let wtot: f64 = self.kept.iter().map(|&(_, _, n)| n as f64).sum();
+        let integral: f64 = self
+            .kept
+            .iter()
+            .map(|&(i, _, n)| i * n as f64)
+            .sum::<f64>()
+            / wtot;
+        let var: f64 = self
+            .kept
+            .iter()
+            .map(|&(_, v, n)| v * (n as f64) * (n as f64))
+            .sum::<f64>()
+            / (wtot * wtot);
+        let chi2_per_dof = if self.kept.len() > 1 {
+            self.kept
+                .iter()
+                .map(|&(i, v, _)| (i - integral).powi(2) / v)
+                .sum::<f64>()
+                / (self.kept.len() - 1) as f64
+        } else {
+            0.0
+        };
+        VegasResult {
+            integral,
+            std_dev: var.sqrt(),
+            chi2_per_dof,
+        }
+    }
+}
+
+/// Points one rayon task evaluates before its results are reduced.
+///
+/// `CHUNKS_PER_THREAD` several rather than one so a straggler costs a fraction of
+/// an iteration rather than all of it, and `MIN_CHUNK` so per-chunk setup (a
+/// generator seek, a substream, two small allocations) stays far below the cost
+/// of the points in it.
+///
+/// The result is a scheduling knob only — [`adapt_blocks_iteration`] is
+/// bit-identical at any chunk size, which a run at `CHUNKS_PER_THREAD` 2, 8 and
+/// 32 confirms artifact-byte for artifact-byte — so it is chosen for balance
+/// alone. Sizing from the channel's own budget rather than the iteration's is a
+/// second knob of the same kind: on a 24-channel `p p > l+ l- j` iteration at 16
+/// threads the two differ by more than a factor ten in chunk count and by
+/// nothing that a contended host could resolve, so the simpler one stays.
+fn chunk_size(channel_neval: usize, threads: usize) -> usize {
+    const MIN_CHUNK: usize = 64;
+    const CHUNKS_PER_THREAD: usize = 8;
+    channel_neval
+        .div_ceil(threads.max(1) * CHUNKS_PER_THREAD)
+        .max(MIN_CHUNK)
+}
+
+/// Split `total` points across channels with per-point standard deviations
+/// `sd`, `Nⱼ ∝ sdⱼ`, subject to `Nⱼ ≥ floor`.
+///
+/// Channels the proportional rule would put below the floor are pinned there and
+/// the rest re-split over what remains, repeatedly — so the floor is exact rather
+/// than a post-hoc clamp that would overspend the budget. When every channel is
+/// pinned the total simply rises to `channels × floor`: coverage wins over the
+/// budget, which is the point of having a floor at all.
+pub fn neyman_allocation(sd: &[f64], total: usize, floor: usize) -> Vec<usize> {
+    // Two points is the least an iteration's variance estimator can be formed
+    // from, so a floor below that is not a floor on anything.
+    let floor = floor.max(2);
+    let n = sd.len();
+    let mut out = vec![floor; n];
+    let mut pinned = vec![false; n];
+    loop {
+        let free: Vec<usize> = (0..n).filter(|&j| !pinned[j]).collect();
+        if free.is_empty() {
+            break;
+        }
+        let remaining = total.saturating_sub(floor * (n - free.len()));
+        let sd_total: f64 = free.iter().map(|&j| sd[j].max(0.0)).sum();
+        let mut newly_pinned = false;
+        for &j in &free {
+            let share = if sd_total > 0.0 {
+                remaining as f64 * sd[j].max(0.0) / sd_total
+            } else {
+                remaining as f64 / free.len() as f64
+            };
+            let share = if share.is_finite() && share > 0.0 {
+                share.round() as usize
+            } else {
+                0
+            };
+            if share <= floor {
+                out[j] = floor;
+                pinned[j] = true;
+                newly_pinned = true;
+            } else {
+                out[j] = share;
+            }
+        }
+        if !newly_pinned {
+            break;
+        }
+    }
+    out
+}
+
+/// Run a multichannel integration under `budget`, one grid per channel.
+///
+/// Every iteration is a single rayon region scheduled by `(channel, chunk)`:
+/// a narrow channel does not get a parallel region to itself, and a wide one does
+/// not serialise the iteration behind it. The scheduling is inert — see
+/// [`adapt_blocks_iteration`] — so which channels a region happens to interleave
+/// cannot move a number.
+///
+/// `vegas_alpha` is the grid-damping exponent every channel's grid is built with.
+#[allow(clippy::too_many_arguments)]
+pub fn integrate_channels<I>(
+    integrand: &I,
+    alphas: &[f64],
+    vegas_alpha: f64,
+    combination: IterationCombination,
+    budget: Budget,
+    allocation: BlockAllocation,
+    seed: u64,
+) -> (Vec<ChannelIntegration>, VegasResult, ConvergenceReport)
+where
+    I: ChannelIntegrand + Sync,
+{
+    let ndim = integrand.channel_grid_ndim();
+    let scale_ndim = integrand.scale_draw_ndim();
+    let point_ndim = ndim + scale_ndim;
+    let neval = budget.neval();
+    let single = alphas.len() == 1;
+
+    let mut grids: Vec<VegasGrid> = alphas
+        .iter()
+        .map(|_| VegasGrid::new(ndim, VEGAS_NBINS, vegas_alpha).with_combination(combination))
+        .collect();
+    let mut channels: Vec<ChannelHistory> = alphas
+        .iter()
+        .map(|&alpha| ChannelHistory {
+            alpha,
+            drawn: 0,
+            kept: Vec::new(),
+            point_var_sum: 0.0,
+            point_var_n: 0,
+        })
+        .collect();
+
+    if let Budget::Target { .. } = budget {
+        assert_eq!(
+            combination,
+            IterationCombination::Unweighted,
+            "a convergence target reads the combined error bar, and the inverse-variance \
+             combination's is biased small by its own weights"
+        );
+    }
+
+    // The α split is what a fixed budget spends every iteration and what the
+    // first iteration of a Neyman run spends, there being no variance measured
+    // yet to reallocate on.
+    let by_alpha: Vec<usize> = alphas
+        .iter()
+        .map(|&a| {
+            if single {
+                neval
+            } else {
+                crate::hadronic::channel_neval(a, neval)
+            }
+        })
+        .collect();
+    let alpha_total: usize = by_alpha.iter().sum();
+
+    let warmup = grids
+        .first()
+        .map(|g| g.warmup())
+        .unwrap_or_default()
+        .min(budget.max_iters().saturating_sub(1));
+
+    let threads = rayon::current_num_threads();
+    let mut current = by_alpha.clone();
+    let mut points = 0_u64;
+    let mut min_channel_neval = usize::MAX;
+    let mut iteration = 0_usize;
+    let mut stop = StopReason::Budget;
+
+    loop {
+        if iteration > 0 && !single && allocation == BlockAllocation::Neyman {
+            let sd: Vec<f64> = channels
+                .iter()
+                .map(|c| c.point_sd().unwrap_or(0.0))
+                .collect();
+            current = neyman_allocation(&sd, alpha_total, MIN_CHANNEL_NEVAL);
+        }
+
+        let plans: Vec<BlockPlan> = channels
+            .iter()
+            .zip(&current)
+            .enumerate()
+            .map(|(j, (c, &n_j))| BlockPlan {
+                neval: n_j,
+                first_point: c.drawn,
+                stream: crate::hadronic::CHANNEL_STREAM_BASE + j as u64,
+                chunk_size: chunk_size(n_j, threads),
+            })
+            .collect();
+
+        min_channel_neval = min_channel_neval.min(plans.iter().map(|p| p.neval).min().unwrap_or(0));
+
+        let outcomes = adapt_blocks_iteration(
+            &grids,
+            &plans,
+            seed,
+            // The grid draws its own coordinates from `CHANNEL_STREAM_BASE + j`;
+            // the scale draw's trailing uniforms come off a stream of its own, so
+            // the grid's sequence is what it would be with no draw installed.
+            // Both are addressed by the point's index in the channel's own run, so
+            // a chunk reproduces the points it would have drawn in sequence.
+            |j, first| {
+                (
+                    SubStream::new(
+                        seed,
+                        SCALE_DRAW_STREAM_BASE + j as u64,
+                        first * scale_ndim as u64,
+                    ),
+                    vec![0.0; point_ndim],
+                )
+            },
+            |j, (scale_draw, point), u| {
+                point[..ndim].copy_from_slice(u);
+                scale_draw.fill_uniforms(&mut point[ndim..]);
+                integrand.value_in_channel(j, point)
+            },
+        );
+
+        for ((c, out), plan) in channels.iter_mut().zip(&outcomes).zip(&plans) {
+            c.drawn += plan.neval as u64;
+            points += plan.neval as u64;
+            c.point_var_sum += out.point_variance(plan.neval);
+            c.point_var_n += 1;
+            if iteration >= warmup {
+                c.kept
+                    .push((out.integral, out.variance.max(f64::MIN_POSITIVE), plan.neval));
+            }
+        }
+
+        iteration += 1;
+
+        let done = match budget {
+            Budget::Fixed { niter, .. } => {
+                stop = StopReason::Budget;
+                iteration >= niter
+            }
+            Budget::Target {
+                target_rel,
+                min_iters,
+                max_iters,
+                max_points,
+                ..
+            } => {
+                let met = iteration >= min_iters.max(warmup + 2)
+                    && scaled_rel(&channels, combination) <= target_rel;
+                if met {
+                    stop = StopReason::TargetMet;
+                    true
+                } else if iteration >= max_iters {
+                    stop = StopReason::MaxIters;
+                    true
+                } else if points >= max_points {
+                    stop = StopReason::MaxPoints;
+                    true
+                } else {
+                    false
+                }
+            }
+        };
+
+        if done {
+            break;
+        }
+        // Only a run that will draw again refines: the banked grid is the one the
+        // last iteration sampled against.
+        for ((g, out), plan) in grids.iter_mut().zip(&outcomes).zip(&plans) {
+            g.refine_grid(&out.hist, plan.neval);
+        }
+    }
+
+    let per_channel: Vec<ChannelIntegration> = channels
+        .iter()
+        .zip(grids)
+        .zip(&current)
+        .map(|((c, grid), &n_j)| ChannelIntegration {
+            alpha: c.alpha,
+            neval: n_j,
+            grid,
+            result: c.combine(combination),
+        })
+        .collect();
+    let total = combine_channels(&per_channel, iteration);
+    let achieved_rel = rel_of(&total);
+    let report = ConvergenceReport {
+        stop,
+        iterations: iteration,
+        points,
+        target_rel: match budget {
+            Budget::Target { target_rel, .. } => Some(target_rel),
+            Budget::Fixed { .. } => None,
+        },
+        achieved_rel,
+        scaled_rel: scaled_rel(&channels, combination),
+        channel_points: channels.iter().map(|c| c.drawn).collect(),
+        min_channel_neval,
+    };
+    (per_channel, total, report)
+}
+
+/// `Δσ/σ` of a result, `∞` for a vanishing integral.
+fn rel_of(r: &VegasResult) -> f64 {
+    if r.integral > 0.0 {
+        r.std_dev / r.integral
+    } else {
+        f64::INFINITY
+    }
+}
+
+/// The relative uncertainty the stopping test reads: every channel's quoted error
+/// inflated by `√max(1, χ²/dofⱼ)` before the channels are summed in quadrature.
+///
+/// The scale factor goes on per channel rather than on the total because that is
+/// where the inconsistency is: one channel whose iterations disagree should widen
+/// its own term, not the terms of channels that agree with themselves.
+fn scaled_rel(channels: &[ChannelHistory], combination: IterationCombination) -> f64 {
+    let mut integral = 0.0_f64;
+    let mut variance = 0.0_f64;
+    for c in channels {
+        let r = c.combine(combination);
+        integral += r.integral;
+        variance += r.std_dev * r.std_dev * r.chi2_per_dof.max(1.0);
+    }
+    if integral > 0.0 {
+        variance.sqrt() / integral
+    } else {
+        f64::INFINITY
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A multichannel integrand with a known integral: channel `j` contributes
+    /// `αⱼ · f(u)` with `Σ αⱼ = 1`, so the terms sum to `∫f`. `spread[j]` scales
+    /// a peak that only channel `j` sees, which is how a test hands one channel
+    /// all the variance without moving the answer.
+    struct Toy {
+        alphas: Vec<f64>,
+        spread: Vec<f64>,
+    }
+
+    impl Toy {
+        /// Every channel integrates to `αⱼ · 1.5`, so the terms always sum to
+        /// `1.5` whatever the spreads are — what `spread[j]` changes is only how
+        /// much variance channel `j` carries while getting there.
+        ///
+        /// `spread[j] == 0` is the degenerate end of that: a channel whose value
+        /// is the constant `1.5`, with exactly zero variance, which is the
+        /// profile a variance-driven allocation would spend nothing on.
+        /// Otherwise `∫₀¹∫₀¹ (3u₀² + u₁) du = 1.5` plus a bump antisymmetric
+        /// about `u₁ = ½`, which integrates to zero exactly and is therefore
+        /// pure variance.
+        fn value(&self, j: usize, u: &[f64]) -> f64 {
+            let spread = self.spread[j];
+            if spread == 0.0 {
+                return self.alphas[j] * 1.5;
+            }
+            let base = 3.0 * u[0] * u[0] + u[1];
+            let bump = spread * (u[1] - 0.5).signum() * (u[0] * 40.0).exp() / 4.0e16;
+            self.alphas[j] * (base + bump)
+        }
+    }
+
+    impl ChannelIntegrand for Toy {
+        fn channel_count(&self) -> usize {
+            self.alphas.len()
+        }
+        fn channel_grid_ndim(&self) -> usize {
+            2
+        }
+        fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
+            self.value(channel, u)
+        }
+    }
+
+    fn toy(spread: Vec<f64>) -> Toy {
+        let n = spread.len();
+        Toy {
+            alphas: vec![1.0 / n as f64; n],
+            spread,
+        }
+    }
+
+    #[test]
+    fn neyman_allocation_is_proportional_when_nothing_binds() {
+        let n = neyman_allocation(&[1.0, 2.0, 5.0], 8_000, 100);
+        assert_eq!(n, vec![1_000, 2_000, 5_000]);
+    }
+
+    /// The guardrail, on the profile that attacks it: one channel carrying every
+    /// bit of the variance and the rest measuring exactly zero, which is what the
+    /// proportional rule would hand nothing at all.
+    #[test]
+    fn neyman_allocation_floors_a_zero_variance_channel() {
+        let floor = MIN_CHANNEL_NEVAL;
+        let sd = vec![1.0e9, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let n = neyman_allocation(&sd, 100_000, floor);
+        for (j, &n_j) in n.iter().enumerate() {
+            assert!(n_j >= floor, "channel {j} got {n_j} < floor {floor}");
+        }
+        assert_eq!(n[0], 100_000 - 5 * floor);
+        assert_eq!(&n[1..], &[floor; 5]);
+        // Nothing was conjured: the split spends the budget it was given.
+        assert_eq!(n.iter().sum::<usize>(), 100_000);
+    }
+
+    /// A budget too small to floor every channel raises the total rather than
+    /// starving one: coverage outranks the budget.
+    #[test]
+    fn neyman_allocation_never_starves_below_the_floor() {
+        let n = neyman_allocation(&[1.0, 0.0, 0.0], 100, MIN_CHANNEL_NEVAL);
+        assert_eq!(n, vec![MIN_CHANNEL_NEVAL; 3]);
+    }
+
+    /// A NaN standard deviation (a channel that saw no non-zero point at all)
+    /// is not allowed to swallow or to starve the split.
+    #[test]
+    fn neyman_allocation_survives_a_degenerate_estimate() {
+        let n = neyman_allocation(&[f64::NAN, 3.0, 1.0], 10_000, MIN_CHANNEL_NEVAL);
+        for (j, &n_j) in n.iter().enumerate() {
+            assert!(n_j >= MIN_CHANNEL_NEVAL, "channel {j} got {n_j}");
+        }
+        assert!(n[1] > n[2], "the measurable channels still split by their sd");
+    }
+
+    /// End to end: with the variance concentrated in one channel, the Neyman rule
+    /// pours the budget into it — and every other channel still draws its floor,
+    /// every iteration, for the whole run.
+    #[test]
+    fn convergence_run_keeps_every_channel_above_the_floor() {
+        let integ = toy(vec![1.0, 0.0, 0.0, 0.0]);
+        let budget = Budget::Target {
+            target_rel: 1.0e-3,
+            neval: 40_000,
+            min_iters: 4,
+            max_iters: 40,
+            max_points: 20_000_000,
+        };
+        let (per_channel, _total, report) = integrate_channels(
+            &integ,
+            &integ.alphas.clone(),
+            1.5,
+            IterationCombination::Unweighted,
+            budget,
+            BlockAllocation::Neyman,
+            0x1234,
+        );
+        assert!(
+            report.min_channel_neval >= MIN_CHANNEL_NEVAL,
+            "some channel was allocated {} points in some iteration, below the floor {}",
+            report.min_channel_neval,
+            MIN_CHANNEL_NEVAL
+        );
+        // And cumulatively too, which is the weaker statement but the one a
+        // caller reading the report will look at first.
+        for (j, points) in report.channel_points.iter().enumerate() {
+            assert!(
+                *points >= MIN_CHANNEL_NEVAL as u64 * report.iterations as u64,
+                "channel {j} drew {points} over {} iterations",
+                report.iterations
+            );
+        }
+        assert!(
+            per_channel[0].neval > per_channel[1].neval,
+            "the variance-carrying channel should have been fed: {} vs {}",
+            per_channel[0].neval,
+            per_channel[1].neval
+        );
+    }
+
+    /// A target budget stops on the accuracy it was asked for, no earlier than
+    /// `min_iters`, and the estimate it stops on covers the known integral.
+    #[test]
+    fn convergence_run_stops_at_its_target() {
+        let integ = toy(vec![1.0, 0.3, 0.0, 0.0]);
+        let target_rel = 2.0e-3;
+        let (_per_channel, total, report) = integrate_channels(
+            &integ,
+            &integ.alphas.clone(),
+            1.5,
+            IterationCombination::Unweighted,
+            Budget::Target {
+                target_rel,
+                neval: 20_000,
+                min_iters: 6,
+                max_iters: 200,
+                max_points: 200_000_000,
+            },
+            BlockAllocation::Neyman,
+            0xBEEF,
+        );
+        assert_eq!(report.stop, StopReason::TargetMet);
+        assert!(report.iterations >= 6, "stopped after {}", report.iterations);
+        assert!(
+            report.scaled_rel <= target_rel,
+            "stopped at scaled rel {} above the target {target_rel}",
+            report.scaled_rel
+        );
+        // The scale factor only ever widens the bar it is applied to.
+        assert!(report.achieved_rel <= report.scaled_rel);
+        let pull = (total.integral - 1.5).abs() / total.std_dev;
+        assert!(pull < 5.0, "σ = {} ± {}", total.integral, total.std_dev);
+    }
+
+    /// The cap is a cap: an unreachable target stops on iterations and says so.
+    #[test]
+    fn convergence_run_respects_its_iteration_cap() {
+        let integ = toy(vec![1.0, 1.0]);
+        let (_c, _t, report) = integrate_channels(
+            &integ,
+            &integ.alphas.clone(),
+            1.5,
+            IterationCombination::Unweighted,
+            Budget::Target {
+                target_rel: 1.0e-12,
+                neval: 4_000,
+                min_iters: 2,
+                max_iters: 5,
+                max_points: 200_000_000,
+            },
+            BlockAllocation::ByAlpha,
+            7,
+        );
+        assert_eq!(report.stop, StopReason::MaxIters);
+        assert_eq!(report.iterations, 5);
+        assert!(!report.stop.converged());
+    }
+
+    /// The point cap likewise, and before the iteration cap when it is the
+    /// tighter of the two.
+    #[test]
+    fn convergence_run_respects_its_point_cap() {
+        let integ = toy(vec![1.0, 1.0]);
+        let (_c, _t, report) = integrate_channels(
+            &integ,
+            &integ.alphas.clone(),
+            1.5,
+            IterationCombination::Unweighted,
+            Budget::Target {
+                target_rel: 1.0e-12,
+                neval: 4_000,
+                min_iters: 2,
+                max_iters: 1_000,
+                max_points: 20_000,
+            },
+            BlockAllocation::ByAlpha,
+            7,
+        );
+        assert_eq!(report.stop, StopReason::MaxPoints);
+        assert!(report.points >= 20_000);
+    }
+
+    /// The prerequisite, pinned rather than asserted in prose: a convergence stop
+    /// reads an error bar, and Lepage's is the one biased small by its own
+    /// weights, so a target budget refuses it outright.
+    #[test]
+    #[should_panic(expected = "inverse-variance")]
+    fn a_target_budget_refuses_the_inverse_variance_combination() {
+        let integ = toy(vec![1.0, 1.0]);
+        integrate_channels(
+            &integ,
+            &integ.alphas.clone(),
+            1.5,
+            IterationCombination::InverseVariance,
+            Budget::Target {
+                target_rel: 1.0e-2,
+                neval: 2_000,
+                min_iters: 2,
+                max_iters: 10,
+                max_points: 1_000_000,
+            },
+            BlockAllocation::ByAlpha,
+            1,
+        );
+    }
+
+    /// With every channel statistically identical the two allocation rules have
+    /// nothing to choose between, so they must agree point for point — the
+    /// control that says the `Neyman` arm differs from `ByAlpha` because of the
+    /// variances it read and not because of a bookkeeping difference.
+    #[test]
+    fn the_allocation_rules_agree_when_there_is_nothing_to_reallocate() {
+        let integ = toy(vec![0.5, 0.5, 0.5, 0.5]);
+        let budget = Budget::Fixed {
+            neval: 8_000,
+            niter: 6,
+        };
+        let run = |a| {
+            integrate_channels(
+                &integ,
+                &integ.alphas.clone(),
+                1.5,
+                IterationCombination::Unweighted,
+                budget,
+                a,
+                0x51,
+            )
+        };
+        let (_, by_alpha, ra) = run(BlockAllocation::ByAlpha);
+        let (_, neyman, rn) = run(BlockAllocation::Neyman);
+        // Rounding a proportional share can move a total by up to half a point
+        // per channel; anything beyond that is a rule that spent differently.
+        assert!(
+            ra.points.abs_diff(rn.points) <= integ.alphas.len() as u64,
+            "the two rules spent different budgets: {} vs {}",
+            ra.points,
+            rn.points
+        );
+        let d = (by_alpha.integral - neyman.integral).abs();
+        assert!(
+            d < 3.0 * by_alpha.std_dev,
+            "{} vs {}",
+            by_alpha.integral,
+            neyman.integral
+        );
+    }
+}
