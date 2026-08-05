@@ -47,6 +47,7 @@ use rand_chacha::ChaCha8Rng;
 
 use crate::integrate::{load_pdf_set, process_string, IntegrateError, NO_PDF, PDF_MEMBER};
 use crate::network::NetworkPolicy;
+use crate::parallel::ParallelArgs;
 use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 
 type V = LorentzVector<f64>;
@@ -124,6 +125,9 @@ pub struct GenerateArgs {
     /// `validation/pdf` under the current directory.
     #[arg(long)]
     pub pdf_dir: Option<PathBuf>,
+
+    #[command(flatten)]
+    pub parallel: ParallelArgs,
 }
 
 fn err(msg: impl Into<String>) -> IntegrateError {
@@ -300,9 +304,9 @@ fn refuse_stale_artifact_on_clustering_scale(
 /// Each accepted point is turned straight into a record: the momenta come back
 /// from the same channel map at the same `u` the trial was accepted on, and the
 /// discrete labels are selected off the diagonals at that point.
-struct SampleSource<'a> {
-    integrand: &'a FixedBeamIntegrand<'a>,
-    records: &'a [SubprocessRecord],
+struct SampleSource<'s, 'a> {
+    integrand: &'s FixedBeamIntegrand<'a>,
+    records: &'s [SubprocessRecord],
     /// The unweighter as the scan left it, kept so a restart returns the pass to
     /// its initial state rather than continuing with accumulated statistics.
     pristine: Unweighter,
@@ -316,10 +320,10 @@ struct SampleSource<'a> {
     momenta: Vec<V>,
 }
 
-impl<'a> SampleSource<'a> {
+impl<'s, 'a> SampleSource<'s, 'a> {
     fn new(
-        integrand: &'a FixedBeamIntegrand<'a>,
-        records: &'a [SubprocessRecord],
+        integrand: &'s FixedBeamIntegrand<'a>,
+        records: &'s [SubprocessRecord],
         unweighter: Unweighter,
         seed: u64,
         static_scale: f64,
@@ -343,7 +347,7 @@ impl<'a> SampleSource<'a> {
     }
 }
 
-impl EventSource for SampleSource<'_> {
+impl EventSource for SampleSource<'_, '_> {
     fn next_event(&mut self) -> Option<WeightedEvent> {
         let point =
             self.unweighter
@@ -416,6 +420,7 @@ impl EventSource for SampleSource<'_> {
 }
 
 pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateError> {
+    args.parallel.install().map_err(err)?;
     if !args.force && args.out.exists() {
         return Err(err(format!(
             "{} already exists (pass --force to overwrite)",
@@ -772,9 +777,9 @@ fn check_channel_keys(
 /// The difference from a fixed-beam run is entirely in what an accepted point
 /// carries: its own beam momentum fractions, its own scales, and a concrete flavour
 /// assignment drawn from the parton luminosities at those fractions.
-struct ProtonSampleSource<'a> {
-    integrand: &'a ProtonIntegrand<'a>,
-    records: &'a FlavorRecords,
+struct ProtonSampleSource<'s, 'a> {
+    integrand: &'s ProtonIntegrand<'a>,
+    records: &'s FlavorRecords,
     pristine: Unweighter,
     unweighter: Unweighter,
     rng: ChaCha8Rng,
@@ -782,10 +787,10 @@ struct ProtonSampleSource<'a> {
     alpha_qed: f64,
 }
 
-impl<'a> ProtonSampleSource<'a> {
+impl<'s, 'a> ProtonSampleSource<'s, 'a> {
     fn new(
-        integrand: &'a ProtonIntegrand<'a>,
-        records: &'a FlavorRecords,
+        integrand: &'s ProtonIntegrand<'a>,
+        records: &'s FlavorRecords,
         unweighter: Unweighter,
         seed: u64,
         alpha_qed: f64,
@@ -806,7 +811,7 @@ impl<'a> ProtonSampleSource<'a> {
     }
 }
 
-impl EventSource for ProtonSampleSource<'_> {
+impl EventSource for ProtonSampleSource<'_, '_> {
     fn next_event(&mut self) -> Option<WeightedEvent> {
         let point =
             self.unweighter

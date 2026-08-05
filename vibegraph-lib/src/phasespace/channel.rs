@@ -56,7 +56,14 @@ pub trait PhaseSpaceMap<F: Real> {
 /// return had it generated that point. A multichannel combiner sums these as
 /// `Σⱼ gⱼ` to form the variance-minimising weight `1/Σⱼ(1/Jⱼ)`, so it needs each
 /// channel's density at the *same* point, not only where the channel drew one.
-pub trait Channel<F: Real>: PhaseSpaceMap<F> {
+///
+/// A channel is a fixed structure that answers questions about a point — masks,
+/// masses, propagator poles — and holds no evaluation state, so a combiner can be
+/// read from several threads at once. `Send + Sync` states that here rather than
+/// at each `Box<dyn Channel>`: a channel that needed interior mutability would be
+/// a different kind of object, and the parallel integrator's channel maps are
+/// shared, not copied per thread.
+pub trait Channel<F: Real>: PhaseSpaceMap<F> + Send + Sync {
     /// The sampling density `g` this channel assigns to `momenta`. Equal to
     /// `1 / weight` at any point the channel itself generated.
     fn density(&self, momenta: &[LorentzVector<F>]) -> F;
@@ -71,7 +78,9 @@ pub trait Channel<F: Real>: PhaseSpaceMap<F> {
 /// the only alternative.
 /// The coordinate count is [`PhaseSpaceMap::ndim`] — a channel's dimensionality
 /// does not move with the energy, so it is not restated here.
-pub trait ScaledChannel<F: Real>: PhaseSpaceMap<F> {
+/// Shared across threads for the same reason [`Channel`] is, and stating it the
+/// same way.
+pub trait ScaledChannel<F: Real>: PhaseSpaceMap<F> + Send + Sync {
     /// Map uniforms to a phase-space point at CM energy `sqrt_s`, with the weight
     /// `1/g` this channel alone assigns.
     fn sample_at(&self, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F>;

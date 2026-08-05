@@ -76,9 +76,11 @@
 
 use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use rand::SeedableRng;
 use thiserror::Error;
+use thread_local::ThreadLocal;
 
 use crate::artifact::ChannelSampler;
 use crate::coupling::alphas::AlphaSSource;
@@ -89,7 +91,8 @@ use crate::diagrams::DiagramSet;
 use crate::hadronic::{
     boost_z, channel_neval, combine_channels, compile_class, compile_scale_source, components,
     constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
-    process_external_legs, BoundSubprocess, ChannelIntegration, EventScaleSource, HadronicError,
+    process_external_legs, vegas_chunk_size, BoundSubprocess, ChannelIntegration,
+    EventScaleSource, HadronicError, SubprocessProto,
     PointScales, RunningCouplingReport, SampledChannel, CHANNEL_STREAM_BASE, SCALE_PROBE_DRAWS,
     SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED, VEGAS_NBINS,
 };
@@ -1010,7 +1013,7 @@ pub struct OuterPoint {
 /// rapidity `y` first.
 pub struct ProtonIntegrand<'a> {
     groups: &'a FlavorGroups,
-    subs: Vec<BoundSubprocess<'a>>,
+    subs: Vec<SubprocessProto<'a>>,
     pdf: &'a PdfMember,
     /// The one cut filter every group compiles to.
     cuts: &'a Cuts,
@@ -1029,6 +1032,33 @@ pub struct ProtonIntegrand<'a> {
     /// The `(2π)^{4−3n}` measure factor.
     lips_2pi: f64,
     scales: EventScaleSource,
+    /// One evaluation context per thread that has evaluated a point, forked from
+    /// `subs` on first use. See [`ProtonScratch`].
+    scratch: ThreadLocal<ProtonScratch<'a>>,
+    vegas_alpha: f64,
+    /// Length the configuration draw's `AMP2` buffer is sized to — the widest
+    /// group's configuration count — and zero where no draw runs.
+    amp2_len: usize,
+    /// The coupling the configuration draw forms `AMP2` at, so the drawn
+    /// configuration is a function of the momenta and not of whatever scale the
+    /// previous point left bound. `None` where no draw runs.
+    amp2_alpha_s: Option<f64>,
+    /// Points whose `AMP2` carried no probability at all, where the draw kept the
+    /// sampling channel instead.
+    scale_draw_fallbacks: AtomicU64,
+}
+
+/// One thread's private half of a [`ProtonIntegrand`].
+///
+/// Everything a point evaluation writes lives here, so the integrand itself is
+/// immutable while an integration runs and can be shared across a rayon pool.
+/// Nothing in it carries information from one point to the next that changes a
+/// value: the amplitudes rescale from the card's own `αs` rather than from the
+/// previous point's, and the coupling memo returns what a recomputation would.
+/// A point's value is therefore the same whichever thread takes it.
+struct ProtonScratch<'a> {
+    /// This thread's own amplitudes ([`SubprocessProto::bind`]).
+    subs: Vec<BoundSubprocess<'a>>,
     scale_buf: RefCell<Vec<[f64; 4]>>,
     cm_buf: RefCell<Vec<V>>,
     lab_buf: RefCell<Vec<V>>,
@@ -1036,17 +1066,9 @@ pub struct ProtonIntegrand<'a> {
     /// The last `(μR, αs(μR))` pair, so a repeated scale does not repeat the
     /// coupling lookup.
     last_coupling: Cell<(f64, f64)>,
-    vegas_alpha: f64,
     /// Reused `AMP2` buffer for the configuration draw, sized to the widest
     /// group's configuration count.
     amp2_buf: RefCell<Vec<f64>>,
-    /// The coupling the configuration draw forms `AMP2` at, so the drawn
-    /// configuration is a function of the momenta and not of whatever scale the
-    /// previous point left bound. `None` where no draw runs.
-    amp2_alpha_s: Option<f64>,
-    /// Points whose `AMP2` carried no probability at all, where the draw kept the
-    /// sampling channel instead.
-    scale_draw_fallbacks: Cell<u64>,
 }
 
 impl<'a> ProtonIntegrand<'a> {
@@ -1157,7 +1179,7 @@ impl<'a> ProtonIntegrand<'a> {
         let s_had = sqrt_s_had * sqrt_s_had;
         let tau_min = cuts.shat_min() / s_had;
         Ok(ProtonIntegrand {
-            subs: amps.iter().map(BoundSubprocess::fixed).collect(),
+            subs: amps.iter().map(SubprocessProto::fixed).collect(),
             groups,
             pdf,
             cuts,
@@ -1170,16 +1192,42 @@ impl<'a> ProtonIntegrand<'a> {
             ln_inv_tau_min: (1.0 / tau_min).ln(),
             lips_2pi: (2.0 * PI).powi(4 - 3 * n_out as i32),
             scales: EventScaleSource::constant(mu_f),
-            scale_buf: RefCell::new(Vec::with_capacity(n_out)),
-            cm_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
-            lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
-            mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
-            last_coupling: Cell::new((f64::NAN, f64::NAN)),
-            amp2_buf: RefCell::new(Vec::new()),
+            scratch: ThreadLocal::new(),
+            amp2_len: 0,
             amp2_alpha_s: None,
-            scale_draw_fallbacks: Cell::new(0),
+            scale_draw_fallbacks: AtomicU64::new(0),
             vegas_alpha: VEGAS_ALPHA_MAPPED,
         })
+    }
+
+    /// This thread's evaluation context, forked from the integrand's own
+    /// subprocesses the first time the thread evaluates a point.
+    ///
+    /// Setup takes `&mut self` and so runs before any of these exist; a fork
+    /// therefore starts from the fully configured amplitudes.
+    fn scratch(&self) -> &ProtonScratch<'a> {
+        self.scratch.get_or(|| {
+            let n_out = self.groups.groups()[0].final_masses().len();
+            ProtonScratch {
+                subs: self.subs.iter().map(SubprocessProto::bind).collect(),
+                scale_buf: RefCell::new(Vec::with_capacity(n_out)),
+                cm_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
+                lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
+                mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
+                last_coupling: Cell::new((f64::NAN, f64::NAN)),
+                amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
+            }
+        })
+    }
+
+    /// Discard every thread's evaluation context, so the next point forks a fresh
+    /// one from the integrand's own subprocesses.
+    ///
+    /// Setup that changes what a subprocess evaluates — installing a scale
+    /// prescription, moving the coupling — must run this, or a thread that has
+    /// already evaluated a point would keep the amplitudes it forked before.
+    fn reset_scratch(&mut self) {
+        self.scratch.clear();
     }
 
     /// Take the renormalisation and per-beam factorisation scales — and the strong
@@ -1240,7 +1288,7 @@ impl<'a> ProtonIntegrand<'a> {
         if source.constant_scales().is_none() {
             self.probe_scale(&source)?;
         }
-        let report = constant_scale_report(&self.subs, Some(&source), awareness);
+        let report = constant_scale_report(&mut self.subs, Some(&source), awareness);
         if source.draws_configuration() {
             let widest = self
                 .groups
@@ -1249,10 +1297,11 @@ impl<'a> ProtonIntegrand<'a> {
                 .map(|g| g.evaluator().n_configs())
                 .max()
                 .unwrap_or(0);
-            *self.amp2_buf.borrow_mut() = vec![0.0; widest];
+            self.amp2_len = widest;
             self.amp2_alpha_s = report.alpha_s_ref;
         }
         self.scales = source;
+        self.reset_scratch();
         Ok(report)
     }
 
@@ -1277,12 +1326,13 @@ impl<'a> ProtonIntegrand<'a> {
             let pt = self
                 .combiner
                 .sample_channel_at(0, m.sqrt_shat, &u[OUTER_NDIM..]);
-            self.build_frames(&m, &pt.momenta);
-            let lab = self.lab_buf.borrow();
+            let sc = self.scratch();
+            self.build_frames(sc, &m, &pt.momenta);
+            let lab = sc.lab_buf.borrow();
             if self.cuts.pass(&lab) {
                 any_passed_cuts = true;
                 let resolved = self
-                    .scales_of(source, &lab, self.sampled_channel(0))
+                    .scales_of(sc, source, &lab, self.sampled_channel(0))
                     .map_err(HadronicError::from)?;
                 if let PointScales::Scales(_) = resolved {
                     return Ok(());
@@ -1422,9 +1472,9 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// Fill the partonic-CM and lab-frame external momenta of one point: beams first,
     /// then the outgoing legs.
-    fn build_frames(&self, m: &OuterPoint, out: &[V]) {
+    fn build_frames(&self, sc: &ProtonScratch<'a>, m: &OuterPoint, out: &[V]) {
         let e_cm = m.sqrt_shat / 2.0;
-        let mut cm = self.cm_buf.borrow_mut();
+        let mut cm = sc.cm_buf.borrow_mut();
         cm.clear();
         cm.push(V::new(e_cm, 0.0, 0.0, e_cm));
         cm.push(V::new(e_cm, 0.0, 0.0, -e_cm));
@@ -1432,7 +1482,7 @@ impl<'a> ProtonIntegrand<'a> {
 
         let e_beam = self.sqrt_s_had / 2.0;
         let beta = (m.x1 - m.x2) / (m.x1 + m.x2);
-        let mut lab = self.lab_buf.borrow_mut();
+        let mut lab = sc.lab_buf.borrow_mut();
         lab.clear();
         lab.push(V::new(m.x1 * e_beam, 0.0, 0.0, m.x1 * e_beam));
         lab.push(V::new(m.x2 * e_beam, 0.0, 0.0, -m.x2 * e_beam));
@@ -1445,15 +1495,16 @@ impl<'a> ProtonIntegrand<'a> {
     /// group carries luminosity.
     fn shape(
         &self,
+        sc: &ProtonScratch<'a>,
         m: &OuterPoint,
         out: &[V],
         channel: SampledChannel,
         scale_u: &[f64],
     ) -> (f64, SampledChannel) {
-        self.build_frames(m, out);
-        let cm = self.cm_buf.borrow();
+        self.build_frames(sc, m, out);
+        let cm = sc.cm_buf.borrow();
         {
-            let lab = self.lab_buf.borrow();
+            let lab = sc.lab_buf.borrow();
             if !self.cuts.pass(&lab) {
                 return (0.0, channel);
             }
@@ -1463,16 +1514,16 @@ impl<'a> ProtonIntegrand<'a> {
         // nothing else. The group is the sampler's: a configuration draw names one
         // configuration *inside* a group's forests and says nothing about which
         // group's forests to use.
-        let channel = self.scale_channel(&cm, channel, scale_u);
+        let channel = self.scale_channel(sc, &cm, channel, scale_u);
         // A point whose factorisation scale fell below the floor carries no
         // weight, and returning here is before both of the things that follow:
         // the coupling is not moved for a point that contributes nothing, and the
         // parton densities are not queried below roughly their own grid's lowest
         // tabulated `Q`, which is most of why the floor sits where it does.
-        let Some(scales) = self.event_scales(channel) else {
+        let Some(scales) = self.event_scales_in(sc, channel) else {
             return (0.0, channel);
         };
-        self.apply_scale(scales.mu_r);
+        self.apply_scale(sc, scales.mu_r);
 
         // Two density readings for the whole point: every group reads `x·f` at
         // the same two `(x, μ²_F)`, and differs only in which flavours it picks
@@ -1480,8 +1531,8 @@ impl<'a> ProtonIntegrand<'a> {
         let [f1, f2] = beam_rows(self.pdf, m.x1, m.x2, scales.mu_f);
 
         let mut acc = 0.0;
-        let mut mirror = self.mirror_buf.borrow_mut();
-        for (g, sub) in self.groups.groups().iter().zip(&self.subs) {
+        let mut mirror = sc.mirror_buf.borrow_mut();
+        for (g, sub) in self.groups.groups().iter().zip(&sc.subs) {
             let [direct, reflected] = g.symmetry_weighted_luminosity_rows(&f1, &f2);
             let mut term = 0.0;
             if direct != 0.0 {
@@ -1515,14 +1566,20 @@ impl<'a> ProtonIntegrand<'a> {
     /// The momenta are the direct ordering's. A group's mirrored term is evaluated
     /// at the same scale as its direct one, so there is one draw per point and not
     /// one per ordering.
-    fn scale_channel(&self, cm: &[V], channel: SampledChannel, scale_u: &[f64]) -> SampledChannel {
+    fn scale_channel(
+        &self,
+        sc: &ProtonScratch<'a>,
+        cm: &[V],
+        channel: SampledChannel,
+        scale_u: &[f64],
+    ) -> SampledChannel {
         let [v] = scale_u else { return channel };
-        let sub = &self.subs[channel.group];
+        let sub = &sc.subs[channel.group];
         if let Some(alpha_s) = self.amp2_alpha_s {
             sub.set_alpha_s(alpha_s);
         }
         let eval = self.groups.groups()[channel.group].evaluator();
-        let mut buf = self.amp2_buf.borrow_mut();
+        let mut buf = sc.amp2_buf.borrow_mut();
         let amp2 = &mut buf[..eval.n_configs()];
         sub.eval_amp2(cm, amp2);
         match select_index(amp2, *v) {
@@ -1533,8 +1590,7 @@ impl<'a> ProtonIntegrand<'a> {
             // Every diagram amplitude vanished here, so the coherent sum does too
             // and this point carries no weight whichever channel names its scale.
             None => {
-                self.scale_draw_fallbacks
-                    .set(self.scale_draw_fallbacks.get() + 1);
+                self.scale_draw_fallbacks.fetch_add(1, Ordering::Relaxed);
                 channel
             }
         }
@@ -1543,7 +1599,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// Points on which the configuration draw found no probability and kept the
     /// sampling channel. Expected to be zero on a run that produces anything.
     pub fn scale_draw_fallbacks(&self) -> u64 {
-        self.scale_draw_fallbacks.get()
+        self.scale_draw_fallbacks.load(Ordering::Relaxed)
     }
 
     /// The scales at the lab-frame point currently in the frame buffers, in the
@@ -1553,13 +1609,17 @@ impl<'a> ProtonIntegrand<'a> {
     /// Every *other* scale error still stops the run, with the message it had
     /// before: those say the prescription does not apply to this process, which
     /// no amount of sampling fixes.
-    fn event_scales(&self, channel: SampledChannel) -> Option<EventScales> {
+    fn event_scales_in(
+        &self,
+        sc: &ProtonScratch<'a>,
+        channel: SampledChannel,
+    ) -> Option<EventScales> {
         if let Some(fixed) = self.scales.constant_scales() {
             return Some(fixed);
         }
-        let lab = self.lab_buf.borrow();
+        let lab = sc.lab_buf.borrow();
         match self
-            .scales_of(&self.scales, &lab, channel)
+            .scales_of(sc, &self.scales, &lab, channel)
             .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
         {
             PointScales::Scales(scales) => Some(scales),
@@ -1579,11 +1639,12 @@ impl<'a> ProtonIntegrand<'a> {
 
     fn scales_of(
         &self,
+        sc: &ProtonScratch<'a>,
         source: &EventScaleSource,
         lab: &[V],
         channel: SampledChannel,
     ) -> Result<PointScales, ScaleError> {
-        let mut buf = self.scale_buf.borrow_mut();
+        let mut buf = sc.scale_buf.borrow_mut();
         buf.clear();
         buf.extend(lab[2..].iter().map(components));
         source.point_scales([components(&lab[0]), components(&lab[1])], &buf, channel)
@@ -1592,22 +1653,22 @@ impl<'a> ProtonIntegrand<'a> {
     /// Move every group's amplitude to the coupling `mu_r` implies. A constant
     /// prescription was applied once at installation and a matrix element with no
     /// strong coupling has none to move, so both return without touching the pools.
-    fn apply_scale(&self, mu_r: f64) {
+    fn apply_scale(&self, sc: &ProtonScratch<'a>, mu_r: f64) {
         if self.scales.constant_scales().is_some() {
             return;
         }
         let Some(source) = self.scales.alpha_s() else {
             return;
         };
-        let (last_mu_r, last_alpha_s) = self.last_coupling.get();
+        let (last_mu_r, last_alpha_s) = sc.last_coupling.get();
         let alpha_s = if mu_r == last_mu_r {
             last_alpha_s
         } else {
             let alpha_s = source.eval(mu_r);
-            self.last_coupling.set((mu_r, alpha_s));
+            sc.last_coupling.set((mu_r, alpha_s));
             alpha_s
         };
-        for sub in &self.subs {
+        for sub in &sc.subs {
             sub.set_alpha_s(alpha_s);
         }
     }
@@ -1627,6 +1688,7 @@ impl<'a> ProtonIntegrand<'a> {
             .combiner
             .sample_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
         let (shape, _) = self.shape(
+            self.scratch(),
             &m,
             &point.momenta,
             self.sampled_channel(channel),
@@ -1653,7 +1715,9 @@ impl<'a> ProtonIntegrand<'a> {
         let point = self
             .combiner
             .sample_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
+        let sc = self.scratch();
         let (shape, drawn) = self.shape(
+            sc,
             &m,
             &point.momenta,
             self.sampled_channel(channel),
@@ -1667,10 +1731,10 @@ impl<'a> ProtonIntegrand<'a> {
             x: [m.x1, m.x2],
             // `shape` returned nonzero, so this point was not vetoed.
             scales: self
-                .event_scales(drawn)
+                .event_scales_in(sc, drawn)
                 .expect("a point carrying weight has scales"),
-            lab: self.lab_buf.borrow().clone(),
-            cm: self.cm_buf.borrow().clone(),
+            lab: sc.lab_buf.borrow().clone(),
+            cm: sc.cm_buf.borrow().clone(),
         })
     }
 
@@ -1701,16 +1765,17 @@ impl<'a> ProtonIntegrand<'a> {
     ///
     /// `None` when the point carries no weight, where no label is defined.
     pub fn select_event(&self, event: &ProtonEvent, u: [f64; 5]) -> Option<ProtonSelection> {
+        let sc = self.scratch();
         // The diagonals are read at the event's own coupling, the one its |M|² was
         // taken at.
-        self.apply_scale(event.scales.mu_r);
+        self.apply_scale(sc, event.scales.mu_r);
         let mut mirror = Vec::with_capacity(event.cm.len());
 
         let [f1, f2] = beam_rows(self.pdf, event.x[0], event.x[1], event.scales.mu_f);
 
-        let mut m2 = Vec::with_capacity(self.subs.len());
-        let mut terms = Vec::with_capacity(self.subs.len());
-        for (g, sub) in self.groups.groups().iter().zip(&self.subs) {
+        let mut m2 = Vec::with_capacity(sc.subs.len());
+        let mut terms = Vec::with_capacity(sc.subs.len());
+        for (g, sub) in self.groups.groups().iter().zip(&sc.subs) {
             let lumi = g.symmetry_weighted_luminosity_rows(&f1, &f2);
             let direct = if lumi[0] != 0.0 {
                 sub.eval_m2(&event.cm)
@@ -1759,7 +1824,7 @@ impl<'a> ProtonIntegrand<'a> {
                 &mirror
             }
         };
-        let sub = &self.subs[group];
+        let sub = &sc.subs[group];
         let eval = sub.evaluator();
         let mut hel_m2 = vec![0.0; eval.helicities().len()];
         let mut amp2 = vec![0.0; eval.n_configs()];
@@ -1797,6 +1862,7 @@ impl<'a> ProtonIntegrand<'a> {
             .combiner
             .sample_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
         let (shape, _) = self.shape(
+            self.scratch(),
             &m,
             &point.momenta,
             self.sampled_channel(j),
@@ -1872,7 +1938,13 @@ impl<'a> ProtonIntegrand<'a> {
             let g = self.combiner.alphas()[j] / point.weight;
             let scale_u: Vec<f64> = scale_draw.uniforms::<f64>(self.scale_draw_ndim());
             let est = self
-                .shape(&m, &point.momenta, self.sampled_channel(j), &scale_u)
+                .shape(
+                    self.scratch(),
+                    &m,
+                    &point.momenta,
+                    self.sampled_channel(j),
+                    &scale_u,
+                )
                 .0
                 / g;
             if est == 0.0 {
@@ -1913,23 +1985,33 @@ impl<'a> ProtonIntegrand<'a> {
                 channel_neval(alpha, neval)
             };
             let mut grid = VegasGrid::new(ndim, VEGAS_NBINS, self.vegas_alpha);
-            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-            rng.set_stream(CHANNEL_STREAM_BASE + j as u64);
-            rng.set_word_pos(0);
-            // The grid draws its own coordinates; the scale draw's trailing
-            // uniform comes off a stream of its own, so the grid's sequence is
-            // what it would be with no draw installed.
-            let mut scale_draw = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
-            let mut point = vec![0.0; point_ndim];
-            let result = grid.adapt(
-                |u| {
+            let scale_ndim = point_ndim - ndim;
+            // The grid draws its own coordinates from `CHANNEL_STREAM_BASE + j`;
+            // the scale draw's trailing uniforms come off a stream of its own, so
+            // the grid's sequence is what it would be with no draw installed.
+            // Both are addressed by the point's index in the channel's own run, so
+            // a chunk reproduces the points it would have drawn in sequence.
+            let result = grid.adapt_parallel_seeded(
+                |first| {
+                    (
+                        SubStream::new(
+                            seed,
+                            SCALE_DRAW_STREAM_BASE + j as u64,
+                            first * scale_ndim as u64,
+                        ),
+                        vec![0.0; point_ndim],
+                    )
+                },
+                |(scale_draw, point), u| {
                     point[..ndim].copy_from_slice(u);
                     scale_draw.fill_uniforms(&mut point[ndim..]);
-                    self.value_in_channel(j, &point)
+                    self.value_in_channel(j, point)
                 },
                 n_j,
                 niter,
-                &mut rng,
+                seed,
+                CHANNEL_STREAM_BASE + j as u64,
+                vegas_chunk_size(n_j, rayon::current_num_threads()),
             );
             per_channel.push(ChannelIntegration {
                 alpha,
@@ -3050,6 +3132,104 @@ mod tests {
             ProtonIntegrand::new(&groups, short, &evaluated, &pdf, SQRT_S_HAD, MU_F),
             Err(ProtonError::AmplitudeCount { amps: 2, groups: 6 })
         ));
+    }
+
+    /// The parallel channel integration reproduces the sequential one it replaced,
+    /// on a process whose configuration draw carries weight.
+    ///
+    /// `p p > l+ l- j` under a clustering renormalisation scale is the case the
+    /// fixed-beam sequential reference cannot cover: the drawn configuration picks
+    /// the merge sequence the scale is read from, so the trailing uniform moves
+    /// `|M|²` — checked here rather than assumed, since a `2 → 2` draws the same
+    /// uniform and changes nothing. Both substreams are therefore live, and the
+    /// reference consumes each point by point exactly as a serial integrator
+    /// would, written out rather than shared with the implementation so the two
+    /// cannot drift together.
+    #[test]
+    fn the_parallel_integration_reproduces_a_sequential_one() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+             \x20 False = fixed_ren_scale\n  False = fixed_fac_scale1\n\
+             \x20 False = fixed_fac_scale2\n\
+             \x20 20.0 = ptj\n  10.0 = ptl\n  5.0 = etaj\n  2.5 = etal\n\
+             \x20 0.4 = drll\n  0.4 = drjl\n  50.0 = mmll\n  4 = maxjetflavor\n",
+        )
+        .expect("dynamical run card");
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("integrand");
+        integ
+            .use_run_card_scales(&m, &evaluated, &card, Some(&info))
+            .expect("the dynamical prescription compiles");
+
+        // The configuration draw has to reach the value, or the substream it runs
+        // on could be addressed any way at all and this test would still pass.
+        assert_eq!(integ.scale_draw_ndim(), 1, "no configuration draw installed");
+        let ndim = integ.point_ndim();
+        let mut probes = 0;
+        let mut moved = 0;
+        let mut s = SubStream::from_stream(0x5EED_D1, 4);
+        for _ in 0..400 {
+            let mut u = s.uniforms::<f64>(ndim);
+            u[ndim - 1] = 0.02;
+            let a = integ.value_in_channel(0, &u);
+            if a == 0.0 {
+                continue;
+            }
+            probes += 1;
+            u[ndim - 1] = 0.98;
+            moved += usize::from(a.to_bits() != integ.value_in_channel(0, &u).to_bits());
+        }
+        assert!(probes > 0, "every probe was cut away, so nothing was compared");
+        assert!(
+            moved > 0,
+            "{probes} probes carried weight and the configuration draw moved none of them"
+        );
+
+        let (seed, neval, niter) = (0x5EED_D2, 2_000, 3);
+        let (got, _) = integ.adapt_grids(neval, niter, seed);
+
+        let grid_ndim = integ.channel_grid_ndim();
+        let point_ndim = integ.point_ndim();
+        let alphas = integ.channel_alphas();
+        for (j, &alpha) in alphas.iter().enumerate() {
+            let n_j = if alphas.len() == 1 {
+                neval
+            } else {
+                channel_neval(alpha, neval)
+            };
+            let mut grid = VegasGrid::new(grid_ndim, VEGAS_NBINS, VEGAS_ALPHA_MAPPED);
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            rng.set_stream(CHANNEL_STREAM_BASE + j as u64);
+            rng.set_word_pos(0);
+            let mut scale_draw = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
+            let mut point = vec![0.0; point_ndim];
+            let want = grid.adapt(
+                |u| {
+                    point[..grid_ndim].copy_from_slice(u);
+                    scale_draw.fill_uniforms(&mut point[grid_ndim..]);
+                    integ.value_in_channel(j, &point)
+                },
+                n_j,
+                niter,
+                &mut rng,
+            );
+            assert_eq!(
+                got[j].result.integral.to_bits(),
+                want.integral.to_bits(),
+                "channel {j} term"
+            );
+            for (dim, (a, b)) in got[j].grid.xi().iter().zip(grid.xi()).enumerate() {
+                assert_eq!(a, b, "channel {j} grid edges of dim {dim}");
+            }
+        }
     }
 
     /// The fixed-scale card resolves to constants and reads `αs` from the set's own
@@ -4533,5 +4713,21 @@ mod tests {
             }
         }
         lines.into_values().collect()
+    }
+}
+
+/// Both integrands are shared, not copied, across a parallel integration: the
+/// closure a VEGAS chunk runs holds `&integrand` and must be `Sync`. That is a
+/// property of the *type*, so it is asserted on the type — a field that
+/// reintroduced interior mutability outside the per-thread scratch would fail
+/// here rather than at the call site that eventually needed it.
+#[cfg(test)]
+mod thread_safety {
+    fn assert_sync<T: Sync>() {}
+
+    #[test]
+    fn the_integrands_are_shareable() {
+        assert_sync::<super::ProtonIntegrand<'static>>();
+        assert_sync::<crate::hadronic::FixedBeamIntegrand<'static>>();
     }
 }

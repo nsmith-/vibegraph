@@ -10,6 +10,7 @@ mod fetch;
 mod generate;
 mod integrate;
 mod network;
+mod parallel;
 
 use network::NetworkPolicy;
 
