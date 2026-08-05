@@ -38,6 +38,8 @@ use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::vegas::VegasResult;
 
+use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
+
 use crate::assets;
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
@@ -59,6 +61,24 @@ const MAX_ADAPT_SURVEY: usize = 40_000;
 const ADAPT_ITERS: usize = 6;
 /// Kleiss–Pittau exponent the α-reallocation is damped by.
 const ADAPT_DAMPING: f64 = 0.5;
+
+/// How the per-iteration budget is split across the phase-space channels.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum Allocation {
+    /// `Nⱼ ∝ αⱼ`, the split the channel weights imply.
+    ByAlpha,
+    /// Neyman: `Nⱼ ∝ αⱼ σⱼ`, driven by the variance each channel measures.
+    Neyman,
+}
+
+impl From<Allocation> for BlockAllocation {
+    fn from(a: Allocation) -> Self {
+        match a {
+            Allocation::ByAlpha => BlockAllocation::ByAlpha,
+            Allocation::Neyman => BlockAllocation::Neyman,
+        }
+    }
+}
 
 #[derive(Args, Debug)]
 pub struct IntegrateArgs {
@@ -97,9 +117,43 @@ pub struct IntegrateArgs {
     #[arg(long, default_value_t = 120_000)]
     pub neval: usize,
 
-    /// VEGAS adaptation iterations.
+    /// VEGAS adaptation iterations. Ignored under `--target-rel`, which decides
+    /// how many to run.
     #[arg(long, default_value_t = 12)]
     pub niter: usize,
+
+    /// Integrate until σ's relative uncertainty reaches this, instead of
+    /// spending a fixed `--niter` iterations.
+    ///
+    /// The uncertainty the stop reads is the quoted one widened by each
+    /// channel's own `√max(1, χ²/dof)`, so a run whose iterations disagree by
+    /// more than their error bars keeps going. `--niter` still sets nothing but
+    /// the caps below.
+    #[arg(long, value_name = "REL")]
+    pub target_rel: Option<f64>,
+
+    /// Iterations that must run before `--target-rel` may stop.
+    #[arg(long, default_value_t = 6)]
+    pub min_iters: usize,
+
+    /// Iteration cap for `--target-rel`.
+    #[arg(long, default_value_t = 100)]
+    pub max_iters: usize,
+
+    /// Evaluation cap for `--target-rel`, over all channels and iterations.
+    #[arg(long, default_value_t = 400_000_000)]
+    pub max_points: u64,
+
+    /// How the per-iteration budget is split across channels.
+    ///
+    /// Defaults to `by-alpha` for a fixed budget — the split a banked run is
+    /// reproducible under — and to `neyman` under `--target-rel`, where it
+    /// reaches the same accuracy for roughly half the evaluations on a wide
+    /// multichannel process (`p p > l+ l- j`, 24 channels, 8 seeds: 2.94M
+    /// evaluations against 6.41M at a 0.179% target) and makes no measurable
+    /// difference on a narrow one (`p p > e+ e-`, 4 channels).
+    #[arg(long, value_enum)]
+    pub allocate: Option<Allocation>,
 
     /// RNG seed for the integration.
     #[arg(long, default_value_t = 20_260_719)]
@@ -128,6 +182,38 @@ impl std::error::Error for IntegrateError {}
 
 fn err(msg: impl Into<String>) -> IntegrateError {
     IntegrateError::Message(msg.into())
+}
+
+impl IntegrateArgs {
+    /// The channel-allocation rule, defaulted by mode where the flag is absent.
+    fn allocation(&self) -> BlockAllocation {
+        match (self.allocate, self.target_rel) {
+            (Some(a), _) => a.into(),
+            (None, None) => BlockAllocation::ByAlpha,
+            (None, Some(_)) => BlockAllocation::Neyman,
+        }
+    }
+
+    /// What this invocation asks the integrator to spend: a fixed number of
+    /// iterations, or however many it takes to reach `--target-rel`.
+    fn budget(&self) -> Result<Budget, IntegrateError> {
+        match self.target_rel {
+            None => Ok(Budget::Fixed {
+                neval: self.neval,
+                niter: self.niter,
+            }),
+            Some(target_rel) if target_rel > 0.0 && target_rel < 1.0 => Ok(Budget::Target {
+                target_rel,
+                neval: self.neval,
+                min_iters: self.min_iters,
+                max_iters: self.max_iters,
+                max_points: self.max_points,
+            }),
+            Some(bad) => Err(err(format!(
+                "--target-rel must be a relative uncertainty in (0, 1); got {bad}"
+            ))),
+        }
+    }
 }
 
 /// Locate and load a PDF set by name, which may mean asking to download it.
@@ -174,6 +260,7 @@ struct RunOutput {
     /// One trained grid per phase-space channel, in channel order.
     channels: Vec<ChannelGrid>,
     result: VegasResult,
+    convergence: ConvergenceReport,
 }
 
 /// Convert one channel's integration into the artifact record, with its term's
@@ -245,16 +332,38 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     println!("model:    {} ({})", model_id.label(), model_id.digest);
     println!("PDF set:  {} (member {PDF_MEMBER})", output.pdf_set);
     println!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
+    let conv = &output.convergence;
     println!(
         "VEGAS:    {} evals × {} iters, seed {} (χ²/dof = {:.3})",
-        args.neval, args.niter, args.seed, output.result.chi2_per_dof
+        args.neval, conv.iterations, args.seed, output.result.chi2_per_dof
     );
     if output.channels.len() > 1 {
         let total_neval: usize = output.channels.iter().map(|c| c.neval).sum();
         println!(
-            "channels: {} grids, {} evals/iter allocated by α",
+            "channels: {} grids, {} evals in the last iteration, allocated {}",
             output.channels.len(),
-            total_neval
+            total_neval,
+            match args.allocation() {
+                BlockAllocation::ByAlpha => "by α",
+                BlockAllocation::Neyman => "by αⱼσⱼ (Neyman)",
+            }
+        );
+    }
+    if let Some(target) = conv.target_rel {
+        println!(
+            "target:   {:.4}% relative, {} after {} iterations and {} evaluations \
+             (quoted {:.4}%, χ²-scaled {:.4}%)",
+            100.0 * target,
+            match conv.stop {
+                StopReason::TargetMet => "met",
+                StopReason::MaxIters => "GAVE UP on the iteration cap",
+                StopReason::MaxPoints => "GAVE UP on the evaluation cap",
+                StopReason::Budget => "unreachable",
+            },
+            conv.iterations,
+            conv.points,
+            100.0 * conv.achieved_rel,
+            100.0 * conv.scaled_rel,
         );
     }
     println!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb");
@@ -268,7 +377,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
         mu_f: output.mu_f,
         sqrt_s_had: output.sqrt_s,
         neval: args.neval,
-        niter: args.niter,
+        niter: output.convergence.iterations,
         seed: args.seed,
         run_card: rc,
         channels: output.channels,
@@ -357,7 +466,8 @@ fn integrate_hadronic(
     let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
     integ.adapt_alphas(args.seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
 
-    let (per_channel, result) = integ.adapt_grids(args.neval, args.niter, args.seed);
+    let (per_channel, result, convergence) =
+        integ.adapt_grids_budget(args.budget()?, args.allocation(), args.seed);
     let channels = integ
         .channel_ids()
         .iter()
@@ -381,6 +491,7 @@ fn integrate_hadronic(
         sqrt_s: sqrt_s_had,
         channels,
         result,
+        convergence,
     })
 }
 
@@ -433,7 +544,8 @@ fn integrate_fixed_energy(
     let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
     integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, args.seed);
 
-    let (per_channel, result) = integ.adapt_grids(args.neval, args.niter, args.seed);
+    let (per_channel, result, convergence) =
+        integ.adapt_grids_budget(args.budget()?, args.allocation(), args.seed);
     Ok(RunOutput {
         process,
         pdf_set: NO_PDF.to_string(),
@@ -452,5 +564,6 @@ fn integrate_fixed_energy(
             })
             .collect(),
         result,
+        convergence,
     })
 }

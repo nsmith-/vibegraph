@@ -876,7 +876,7 @@ impl VegasGrid {
     /// 2. Apply Lepage's α-damping to smooth the importance function.
     /// 3. Smooth with nearest-neighbour averaging.
     /// 4. Redistribute bin edges so each new bin captures equal total weight.
-    fn refine_grid(&mut self, d: &[Vec<f64>], neval: usize) {
+    pub(crate) fn refine_grid(&mut self, d: &[Vec<f64>], neval: usize) {
         let nbins = self.nbins;
         let hits_per_bin = (neval / nbins).max(1) as f64;
 
@@ -939,13 +939,178 @@ impl VegasGrid {
     }
 }
 
+/// What one block draws in one iteration of a block-split adaptation.
+///
+/// A "block" is one grid sampled over its own coordinates — in the multichannel
+/// integrand's case, one channel with the channel frozen. Blocks never share a
+/// point, so a block's numbers depend on its own plan alone and on nothing about
+/// how the blocks were scheduled.
+#[derive(Debug, Clone, Copy)]
+pub struct BlockPlan {
+    /// Points the block draws this iteration.
+    pub neval: usize,
+    /// How many points the block has already drawn in this run, which is where
+    /// its generator seeks to. Iterations of one block must therefore be planned
+    /// with a running total, not with `iteration × neval`, once `neval` varies.
+    pub first_point: u64,
+    /// The block's `ChaCha8Rng` stream id.
+    pub stream: u64,
+    /// Points one rayon task evaluates. Scheduling only — the result is
+    /// identical at any chunk size, for the reasons
+    /// [`VegasGrid::adapt_parallel_seeded`] documents.
+    pub chunk_size: usize,
+}
+
+/// One block's estimate from one iteration, with the refinement histogram that
+/// iteration accumulated.
+#[derive(Debug, Clone)]
+pub struct BlockIteration {
+    /// The block's integral estimate over its own coordinates.
+    pub integral: f64,
+    /// Variance of that estimate (not of a single point).
+    pub variance: f64,
+    /// `hist[dim][bin]` accumulating `(f·w)²`, the input
+    /// [`VegasGrid::refine_grid`] reshapes the block's grid from.
+    pub(crate) hist: Vec<Vec<f64>>,
+}
+
+impl BlockIteration {
+    /// The per-*point* variance this iteration measured, the quantity a Neyman
+    /// allocation compares across blocks. The estimate's variance is this
+    /// divided by the points behind it.
+    pub fn point_variance(&self, neval: usize) -> f64 {
+        self.variance * neval as f64
+    }
+}
+
+/// Run one iteration of every block in a **single** rayon region, scheduled by
+/// `(block, chunk)`.
+///
+/// This is [`VegasGrid::adapt_parallel_seeded`]'s iteration body lifted over a set
+/// of grids. Both contracts that make that function bit-for-bit the sequential
+/// `adapt` are kept per block and are what make the scheduling inert:
+///
+/// * each chunk seeks its own generator to `first_point + offset` draws rather
+///   than inheriting a predecessor's state, and
+/// * a block's points are reduced in global point order on one thread, so the
+///   sums and the histogram do not depend on where the chunk boundaries fell.
+///
+/// What changes is only *when* the work runs: one block per parallel region
+/// leaves a narrow block unable to fill the pool, while all blocks' chunks in one
+/// region schedule against each other. Nothing about a block's arithmetic can see
+/// the difference.
+///
+/// `init` builds a block's per-chunk state from `(block, first global point of
+/// the chunk)`; `f` evaluates one point of a block against it. Grids are **not**
+/// refined here — the caller decides whether another iteration follows and
+/// refines from [`BlockIteration::hist`].
+pub fn adapt_blocks_iteration<S, Init, Fp>(
+    grids: &[VegasGrid],
+    plans: &[BlockPlan],
+    seed: u64,
+    init: Init,
+    f: Fp,
+) -> Vec<BlockIteration>
+where
+    Init: Fn(usize, u64) -> S + Sync,
+    Fp: Fn(usize, &mut S, &[f64]) -> f64 + Sync,
+    S: Send,
+{
+    assert_eq!(
+        grids.len(),
+        plans.len(),
+        "one plan per grid: {} grid(s), {} plan(s)",
+        grids.len(),
+        plans.len()
+    );
+    // (block, chunk index within the block), block-major and ascending in chunk
+    // index, so a block's chunk results come back contiguous and in point order.
+    let tasks: Vec<(usize, usize)> = plans
+        .iter()
+        .enumerate()
+        .flat_map(|(b, p)| {
+            let nchunks = p.neval.div_ceil(p.chunk_size.max(1));
+            (0..nchunks).map(move |c| (b, c))
+        })
+        .collect();
+
+    let chunks: Vec<(Vec<f64>, Vec<u16>)> = tasks
+        .par_iter()
+        .map(|&(b, c)| {
+            let grid = &grids[b];
+            let plan = &plans[b];
+            let ndim = grid.ndim;
+            assert!(
+                grid.nbins <= usize::from(u16::MAX) + 1,
+                "a chunk carries its bin indices out as u16, so {} bins do not fit",
+                grid.nbins
+            );
+            let chunk_size = plan.chunk_size.max(1);
+            let offset = c * chunk_size;
+            let this_chunk = chunk_size.min(plan.neval - offset);
+            let chunk_first = plan.first_point + offset as u64;
+
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            rng.set_stream(plan.stream);
+            rng.set_word_pos(u128::from(chunk_first) * ndim as u128 * WORDS_PER_DRAW);
+
+            let mut state = init(b, chunk_first);
+            let mut x = vec![0.0_f64; ndim];
+            let mut ks = vec![0_usize; ndim];
+            let mut fvals = Vec::with_capacity(this_chunk);
+            let mut bins = Vec::with_capacity(this_chunk * ndim);
+            for _ in 0..this_chunk {
+                let wgt = grid.draw_point(&mut rng, &mut x, &mut ks);
+                fvals.push(f(b, &mut state, &x) * wgt);
+                bins.extend(ks.iter().map(|&k| k as u16));
+            }
+            (fvals, bins)
+        })
+        .collect();
+
+    let mut out = Vec::with_capacity(plans.len());
+    let mut next = 0_usize;
+    for (b, plan) in plans.iter().enumerate() {
+        let grid = &grids[b];
+        let ndim = grid.ndim;
+        let nchunks = plan.neval.div_ceil(plan.chunk_size.max(1));
+        let mut hist = vec![vec![0.0_f64; grid.nbins]; ndim];
+        let mut sum = 0.0_f64;
+        let mut sum2 = 0.0_f64;
+        for (fvals, bins) in &chunks[next..next + nchunks] {
+            for (i, &fval) in fvals.iter().enumerate() {
+                let fval2 = fval * fval;
+                sum += fval;
+                sum2 += fval2;
+                for (dim, &k) in bins[i * ndim..(i + 1) * ndim].iter().enumerate() {
+                    hist[dim][usize::from(k)] += fval2;
+                }
+            }
+        }
+        next += nchunks;
+
+        let n = plan.neval as f64;
+        let mean = sum / n;
+        let variance = ((sum2 / n - mean * mean) / (n - 1.0)).max(0.0);
+        out.push(BlockIteration {
+            integral: mean,
+            variance,
+            hist,
+        });
+    }
+    out
+}
+
 /// Combine per-iteration `(integral, variance)` pairs under `rule`.
 ///
 /// The χ²/dof is the same statistic either way — the surviving iterations'
 /// scatter about the combined estimate in units of their own quoted errors —
 /// since what it diagnoses is whether the iterations agree, not how they were
 /// averaged.
-fn combine_iterations(iter_results: &[(f64, f64)], rule: IterationCombination) -> VegasResult {
+pub(crate) fn combine_iterations(
+    iter_results: &[(f64, f64)],
+    rule: IterationCombination,
+) -> VegasResult {
     let niter = iter_results.len();
     let (integral, std_dev) = match rule {
         IterationCombination::Unweighted => {
@@ -1694,6 +1859,132 @@ mod tests {
                             eb.to_bits(),
                             "edge {k} of dim {dim} at {nthreads} threads, chunk {chunk}"
                         );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The `(block, chunk)` scheduler is the per-block `adapt_parallel_seeded`,
+    /// bit for bit, at any chunk size and pool size.
+    ///
+    /// Three blocks of deliberately unequal width — one of them narrow enough
+    /// that on its own it could not fill a pool — driven iteration-major through
+    /// one parallel region per iteration, against the same three blocks driven
+    /// block-major with a parallel region each. Both the estimates and the
+    /// trained grids must agree exactly: a histogram summed in a different order
+    /// would still match on the first iteration and diverge from the second.
+    #[test]
+    fn test_adapt_blocks_iteration_is_the_per_block_adaptation() {
+        let f = |b: usize, u: &[f64]| {
+            (u[0] * (2.0 + b as f64)).exp() * (1.0 + u[1]) / (0.05 + u[2] + 0.1 * b as f64)
+        };
+        let seed = 0x5EED_B10C;
+        let streams = [0xC7A0_0000_u64, 0xC7A0_0001, 0xC7A0_0002];
+        let nevals = [4000_usize, 517, 1300];
+        let niter = 5;
+        let ndim = 3;
+
+        // Block-major: each block gets its own adaptation, as the per-channel
+        // loop this replaces did.
+        let mut want_results = Vec::new();
+        let mut want_grids = Vec::new();
+        for b in 0..3 {
+            let mut grid = VegasGrid::new(ndim, 64, 1.5);
+            let r = grid.adapt_parallel_seeded(
+                |first| (SubStream::new(seed, 0x5CA1_0000 + b as u64, first * 2), [0.0_f64; 2]),
+                |(extra, tail), u| {
+                    extra.fill_uniforms(tail);
+                    f(b, u) * (1.0 + tail[0] + tail[1])
+                },
+                nevals[b],
+                niter,
+                seed,
+                streams[b],
+                256,
+            );
+            want_results.push(r);
+            want_grids.push(grid);
+        }
+
+        for nthreads in [1, 3, 8] {
+            for chunk in [1, 7, 512, 4000, 9000] {
+                let (got_results, got_grids) = run_with_threads(nthreads, || {
+                    let mut grids: Vec<VegasGrid> =
+                        (0..3).map(|_| VegasGrid::new(ndim, 64, 1.5)).collect();
+                    let mut drawn = [0_u64; 3];
+                    let mut kept: Vec<Vec<(f64, f64)>> = vec![Vec::new(); 3];
+                    for iter_idx in 0..niter {
+                        let plans: Vec<BlockPlan> = (0..3)
+                            .map(|b| BlockPlan {
+                                neval: nevals[b],
+                                first_point: drawn[b],
+                                stream: streams[b],
+                                chunk_size: chunk,
+                            })
+                            .collect();
+                        let out = adapt_blocks_iteration(
+                            &grids,
+                            &plans,
+                            seed,
+                            |b, first| {
+                                (
+                                    SubStream::new(seed, 0x5CA1_0000 + b as u64, first * 2),
+                                    [0.0_f64; 2],
+                                )
+                            },
+                            |b, (extra, tail): &mut (SubStream, [f64; 2]), u| {
+                                extra.fill_uniforms(tail);
+                                f(b, u) * (1.0 + tail[0] + tail[1])
+                            },
+                        );
+                        for b in 0..3 {
+                            drawn[b] += nevals[b] as u64;
+                            if iter_idx >= grids[b].warmup() {
+                                kept[b].push((
+                                    out[b].integral,
+                                    out[b].variance.max(f64::MIN_POSITIVE),
+                                ));
+                            }
+                            if iter_idx + 1 < niter {
+                                grids[b].refine_grid(&out[b].hist, nevals[b]);
+                            }
+                        }
+                    }
+                    let results: Vec<VegasResult> = kept
+                        .iter()
+                        .map(|k| combine_iterations(k, IterationCombination::default()))
+                        .collect();
+                    (results, grids)
+                });
+
+                for b in 0..3 {
+                    let (g, w) = (&got_results[b], &want_results[b]);
+                    assert_eq!(
+                        g.integral.to_bits(),
+                        w.integral.to_bits(),
+                        "block {b} integral at {nthreads} threads, chunk {chunk}"
+                    );
+                    assert_eq!(
+                        g.std_dev.to_bits(),
+                        w.std_dev.to_bits(),
+                        "block {b} std_dev at {nthreads} threads, chunk {chunk}"
+                    );
+                    assert_eq!(
+                        g.chi2_per_dof.to_bits(),
+                        w.chi2_per_dof.to_bits(),
+                        "block {b} chi2 at {nthreads} threads, chunk {chunk}"
+                    );
+                    for (dim, (a, e)) in
+                        got_grids[b].xi().iter().zip(want_grids[b].xi()).enumerate()
+                    {
+                        for (k, (ea, eb)) in a.iter().zip(e).enumerate() {
+                            assert_eq!(
+                                ea.to_bits(),
+                                eb.to_bits(),
+                                "block {b} edge {k} of dim {dim} at {nthreads} threads, chunk {chunk}"
+                            );
+                        }
                     }
                 }
             }
