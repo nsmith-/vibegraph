@@ -45,7 +45,7 @@ fn cli_polarized_beam_card_is_refused() {
         .arg(&run_card)
         .arg("--out")
         .arg(out.path())
-        .args(["--neval", "1000", "--niter", "2"])
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
         .output()
         .expect("spawn vibegraph");
 
@@ -79,7 +79,7 @@ fn cli_decay_chain_proc_card_is_refused() {
         .arg(&proc_card)
         .arg("--out")
         .arg(out.path())
-        .args(["--neval", "1000", "--niter", "2"])
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
         .output()
         .expect("spawn vibegraph");
 
@@ -129,7 +129,7 @@ fn cli_propagators_py_model_is_refused() {
         .arg(ufo_root.path())
         .arg("--out")
         .arg(out.path())
-        .args(["--neval", "1000", "--niter", "2"])
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
         .output()
         .expect("spawn vibegraph");
 

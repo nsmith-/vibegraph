@@ -209,6 +209,7 @@ fn integrate_refuses_overwrite_without_force() {
         .arg("--out")
         .arg(tmp.path())
         // Keep it cheap: a single tiny iteration is enough to write the artifact.
+        .arg("--fixed-budget")
         .arg("--neval")
         .arg("200")
         .arg("--niter")
@@ -233,11 +234,17 @@ fn integrate_refuses_overwrite_without_force() {
 /// evaluation arenas, per-event constant pools moved by the running coupling, and
 /// a configuration draw off a second substream. A thread-dependent result there
 /// would be a silently wrong σ, not a crash.
+///
+/// Three pool sizes rather than two, because the α-adaptation survey this path
+/// runs ahead of the grids reduces per-chunk partial sums: its chunk split is
+/// fixed and its reduction runs in chunk order, so the pool size is not in the
+/// answer — but that is a property of a *fixed* split, and an intermediate pool
+/// size is what would catch a split that had started to follow the pool.
 #[test]
 fn integrate_is_thread_count_independent() {
     let tmp = tempfile::tempdir().unwrap();
     let mut bytes = Vec::new();
-    for threads in ["1", "16"] {
+    for threads in ["1", "4", "16"] {
         let out = tmp.path().join(format!("out-j{threads}"));
         let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
             .arg("integrate")
@@ -248,6 +255,7 @@ fn integrate_is_thread_count_independent() {
             .arg(pdf_dir())
             .arg("--out")
             .arg(&out)
+            .arg("--fixed-budget")
             .args(["--neval", "20000", "--niter", "4", "-j", threads])
             .status()
             .expect("spawn vibegraph");
@@ -257,8 +265,8 @@ fn integrate_is_thread_count_independent() {
         );
         bytes.push(std::fs::read(out.join("grid.bin.zst")).expect("read artifact"));
     }
-    assert_eq!(
-        bytes[0], bytes[1],
-        "`integrate -j 1` and `-j 16` wrote different artifacts on proton beams"
+    assert!(
+        bytes.iter().all(|b| *b == bytes[0]),
+        "`integrate` wrote different artifacts on proton beams at -j 1 / 4 / 16"
     );
 }

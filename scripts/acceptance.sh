@@ -203,7 +203,7 @@ step "an unattended run refuses to download the PDF set"
 # binary, not just in the test suite.
 if "$binary" integrate "$cards/proc_card.dat" \
      --run-card "$cards/run_card.dat" --out "$work/refused" \
-     --neval 2000 --niter 2 >"$work/refusal.out" 2>&1; then
+     --fixed-budget --neval 2000 --niter 2 >"$work/refusal.out" 2>&1; then
   fail "the binary downloaded a PDF set without being asked"
 fi
 grep -q -- "--yes" "$work/refusal.out" \
@@ -217,7 +217,7 @@ echo "refused, naming --yes and the URL"
 step "with consent, the PDF set is downloaded, verified and cached"
 "$binary" --yes integrate "$cards/proc_card.dat" \
   --run-card "$cards/run_card.dat" --out "$work/llj" \
-  --neval "$NEVAL" --niter "$NITER" 2>&1 | tee "$work/integrate.out" \
+  --fixed-budget --neval "$NEVAL" --niter "$NITER" 2>&1 | tee "$work/integrate.out" \
   || fail "the hadronic integration failed"
 [ -f "$work/llj/grid.bin.zst" ] || fail "no grid artifact was written"
 [ -f "$VIBEGRAPH_HOME/pdf/NNPDF23_lo_as_0130_qed/NNPDF23_lo_as_0130_qed_0000.dat" ] \

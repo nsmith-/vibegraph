@@ -79,6 +79,7 @@ use std::f64::consts::PI;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rand::SeedableRng;
+use rayon::prelude::*;
 use thiserror::Error;
 use thread_local::ThreadLocal;
 
@@ -885,6 +886,17 @@ const OUTER_NDIM: usize = 2;
 /// per-channel integration streams so the survey and the integral neither share nor
 /// correlate their sequences.
 const ADAPT_STREAM: u64 = 0xA1FA_9110;
+
+/// Survey points one rayon task evaluates before its partial variance shares are
+/// reduced ([`ProtonIntegrand::survey_variance`]).
+///
+/// Fixed, rather than derived from the pool size as the per-iteration VEGAS chunking
+/// is, because the survey reduces per-chunk partial sums: the chunk boundaries fix
+/// the summation order, so the survey is thread-count independent only while the
+/// split itself is. Sized so the smallest survey a run takes (10k points) still hands
+/// a 16-thread pool several chunks each, while the per-chunk cost — two generator
+/// seeks and one `n_channels` accumulator — stays far below the points in it.
+const SURVEY_CHUNK: usize = 128;
 
 /// Which diagram of which flavour group a sampling channel was derived from.
 ///
@@ -1917,41 +1929,69 @@ impl<'a> ProtonIntegrand<'a> {
     /// One survey pass: every channel's variance share `Wⱼ = E_g[(f/g)²·gⱼ/g]` under
     /// the current mixture. Each drawn point informs every channel, so the estimate
     /// is low-variance in the channels it does not draw from.
+    ///
+    /// The point loop runs in one rayon region split into fixed-size chunks. Both
+    /// substreams are addressed by the point's index within the survey, so a chunk
+    /// seeks straight to its own first point and draws exactly the points it would
+    /// have drawn in sequence; what the split changes is the summation, which is
+    /// reduced from per-chunk partials in chunk order. Carrying every point's whole
+    /// `n_channels` density row out to a single sequential reduction — the stronger
+    /// contract [`crate::vegas::VegasGrid::adapt_parallel_seeded`] holds — would cost
+    /// `n_survey × n_channels` doubles, which on a several-hundred-channel process is
+    /// hundreds of megabytes, so the partials are summed per chunk instead. That
+    /// makes [`SURVEY_CHUNK`] part of the answer and the thread count not.
     fn survey_variance(&self, seed: u64, stream: u64, n_survey: usize) -> Vec<f64> {
         let n = self.channel_count();
-        let mut w = vec![0.0; n];
-        let mut s = SubStream::from_stream(seed, stream);
-        // The scale draw's uniforms come off a stream of their own, so the survey's
-        // own point sequence is what it would be with no draw installed.
-        let mut scale_draw = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + stream);
         let ndim = self.channel_grid_ndim() + 1;
-        for _ in 0..n_survey {
-            let u = s.uniforms::<f64>(ndim);
-            let m = self.map_point(&u);
-            let j = self.combiner.select(u[OUTER_NDIM]);
-            let point = self
-                .combiner
-                .sample_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
-            // `sample_channel_at` weights by `αⱼ/g`; the mixture that actually drew
-            // this point has density `g`, so the mixture estimator is `f/g`.
-            let g = self.combiner.alphas()[j] / point.weight;
-            let scale_u: Vec<f64> = scale_draw.uniforms::<f64>(self.scale_draw_ndim());
-            let est = self
-                .shape(
-                    self.scratch(),
-                    &m,
-                    &point.momenta,
-                    self.sampled_channel(j),
-                    &scale_u,
-                )
-                .0
-                / g;
-            if est == 0.0 {
-                continue;
-            }
-            let est2 = est * est;
-            for (wj, ch) in w.iter_mut().zip(self.combiner.channels()) {
-                *wj += est2 * ch.density_at(m.sqrt_shat, &point.momenta) / g;
+        let scale_ndim = self.scale_draw_ndim();
+        let nchunks = n_survey.div_ceil(SURVEY_CHUNK);
+        let partials: Vec<Vec<f64>> = (0..nchunks)
+            .into_par_iter()
+            .map(|chunk| {
+                let first = chunk * SURVEY_CHUNK;
+                let points = (n_survey - first).min(SURVEY_CHUNK);
+                let mut s = SubStream::new(seed, stream, (first * ndim) as u64);
+                // The scale draw's uniforms come off a stream of their own, so the
+                // survey's own point sequence is what it would be with no draw
+                // installed.
+                let mut scale_draw = SubStream::new(
+                    seed,
+                    SCALE_DRAW_STREAM_BASE + stream,
+                    (first * scale_ndim) as u64,
+                );
+                let sc = self.scratch();
+                let mut w = vec![0.0; n];
+                let mut scale_u = vec![0.0; scale_ndim];
+                for _ in 0..points {
+                    let u = s.uniforms::<f64>(ndim);
+                    let m = self.map_point(&u);
+                    let j = self.combiner.select(u[OUTER_NDIM]);
+                    let point =
+                        self.combiner
+                            .sample_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
+                    // `sample_channel_at` weights by `αⱼ/g`; the mixture that actually
+                    // drew this point has density `g`, so the mixture estimator is `f/g`.
+                    let g = self.combiner.alphas()[j] / point.weight;
+                    scale_draw.fill_uniforms(&mut scale_u);
+                    let est = self
+                        .shape(sc, &m, &point.momenta, self.sampled_channel(j), &scale_u)
+                        .0
+                        / g;
+                    if est == 0.0 {
+                        continue;
+                    }
+                    let est2 = est * est;
+                    for (wj, ch) in w.iter_mut().zip(self.combiner.channels()) {
+                        *wj += est2 * ch.density_at(m.sqrt_shat, &point.momenta) / g;
+                    }
+                }
+                w
+            })
+            .collect();
+        let mut w = vec![0.0; n];
+        for partial in &partials {
+            for (wj, pj) in w.iter_mut().zip(partial) {
+                *wj += pj;
             }
         }
         let inv = 1.0 / n_survey as f64;

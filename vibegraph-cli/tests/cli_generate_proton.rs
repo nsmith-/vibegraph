@@ -153,6 +153,7 @@ fn integrate() -> Run {
         .arg(&out)
         .arg("--pdf-dir")
         .arg(pdf_dir())
+        .arg("--fixed-budget")
         .args(["--neval", NEVAL, "--niter", NITER, "--seed", SEED])
         .output()
         .expect("spawn vibegraph");
@@ -647,7 +648,7 @@ fn a_dynamical_scale_card_runs_past_the_density_grid_and_past_the_coupling_table
         .arg(run.dir.join("dynamical-out"))
         .arg("--pdf-dir")
         .arg(pdf_dir())
-        .args(["--neval", "2000", "--niter", "2"])
+        .args(["--fixed-budget", "--neval", "2000", "--niter", "2"])
         .output()
         .expect("spawn vibegraph");
     let stderr = String::from_utf8_lossy(&out.stderr);
