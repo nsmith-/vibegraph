@@ -38,12 +38,32 @@ polarization, decay chains — is explicitly descoped to the feature backlog
 reach must be a **hard error**, never a silent acceptance; the fixes closing
 the remaining silent acceptances are validation-sprint items.
 
+**Addendum sprint planned (2026-08-05, note 32)** from the user's triage of the
+perf sprint's open items: eight sessions in two waves — wave 1: S1 (E3b
+cut-before-draw + I5 unweighted seed combination), S2 (I6 percentile `w_max`),
+S3 (parallelized α-survey + `--target-rel` CLI default, the single byte re-pin
+wave), S4 (`mg_perf_compare` onto the manifest on **both** arms — the bench's
+hand-synced 14-process list widened to all 19 comparable rows — + host-labelled
+`mg_timings.json` artifact), S5 (E4 allocator traffic, stretch), S9 (restore
+the scalar packed-complex idiom `3dab3a1` traded away — in-house `MulAdd`
+trait, `Complex<f64>` deferring to `num_traits`, lanes bit-for-bit untouched);
+wave 2, sequenced: S6 (budgets
+aligned to reference precision — `pp_to_jj` 4× cut pre-registered, llj 600k
+re-laddered under the unweighted combination), S7 (2→6 σ rows on — the 4 ⏳
+census cells), S8 (close-out + the stale-σ re-record). No tolerance moves.
+Planning-time findings recorded in note 32 §1: the `-j 16` 4.7–5.4× ceiling is
+a ~70–75% serial floor at 16 threads (α survey ~27%, setup, adapt barriers),
+not stalled threads; and `gen_amplitude.py` bypasses the manifest while
+`mg_timings.json` reaches no artifact and carries no host identity.
+
 **Next action — the user's**: the first release tag is **`v0.1`**, decided
 2026-08-02 and re-affirmed 2026-08-03 to follow the **performance sprint**.
-That sprint is now closed (above), so nothing is in front of the tag. A 0.x
-line because no global backwards-compatibility promise is made yet; a future
-"quality sprint" tightening the `pub` API surface (backlog below) precedes any
-1.0. Tagging runs `release.yml` and `acceptance.yml` for the first time.
+That sprint is closed; the addendum above is a cleanup, not a correctness
+sprint, so the tag can precede it or follow S8's re-recorded numbers — the
+user's call (note 32 §3). A 0.x line because no global backwards-compatibility
+promise is made yet; a future "quality sprint" tightening the `pub` API surface
+(backlog below) precedes any 1.0. Tagging runs `release.yml` and
+`acceptance.yml` for the first time.
 
 **Standing measurement facts** (note 30 baseline, note 31 §6 close-out; all
 one host, M3 Max). The layer's own run-to-run spread is **0.8% median / 3.4%
@@ -202,6 +222,25 @@ One line each; the note is the full record. Earlier sprints
   is proven *readable*, not proven to mean what we intended.
 
 ### Gate + tooling hygiene
+
+- **`mg_perf_compare` bypasses the manifest on both arms and banks no artifact**
+  → **scheduled: addendum S4 (note 32 §1.2)**. `gen_amplitude.py` carries its
+  own hardcoded `PROCESSES` registry instead of reading
+  `validation/manifest.toml` (whose header claims the generators read it), and
+  `mg_timings.json` exists only in the gitignored work area — not in the
+  refdata bundle, not in the report, no host identity in the JSON — so a
+  fetched checkout cannot run `scripts/mg_perf_compare.sh` at all. On the
+  vibegraph arm, `eval_strategies.rs` is a *third* hand-synced copy of the
+  registry and benches only **14 of the 19** MATRIX1-comparable processes —
+  the five silently dropped (`uux_to_epemg`, `ddx_to_epemg`, `gu_to_epemu`,
+  `gux_to_epemux`, `ud_to_epemud_qcd0`) are exactly the QCD llj-class rows,
+  so the MATRIX1 table is biased toward the EW rows we already win. Fix:
+  manifest-driven registry on both arms (dry-run parameter dump byte-identical
+  across the migration; the bench reuses `src/validation.rs`'s existing
+  manifest reader), the join reports one-sided rows instead of dropping them,
+  a host-labelled committed `mg_timings.json` on the `timings.json` precedent,
+  and the MATRIX1 geomean re-based 14 → 19 rows with the 14-row continuity
+  check recorded beside it.
 
 - **Weekly `schedule` trigger on `acceptance.yml`** — left off because it can only
   fail until a first release exists. Turn it on once one does: it is also the
@@ -419,7 +458,8 @@ exercised on SM evidence alone.
   G-directories, per-diagram-class = per *distinct* map) are second tier:
   real cluster-scale precedent, but they carry the routing fragility and need
   the same coverage guardrail as the per-flow item above.
-- **`w_max` from a percentile, not from an extremum** — the frozen scan now has a
+- **`w_max` from a percentile, not from an extremum** → **scheduled: addendum S2
+  (note 32)**. The frozen scan now has a
   budget of its own (`--scan-points`), and that turned out not to be the lever:
   the maxima never converge. On the llj grids `Σⱼ w_maxⱼ ∝ n^0.508` over 2.4
   decades of scan budget (10³–2.56·10⁵ draws/channel, no plateau) while the σ-share
@@ -434,28 +474,36 @@ exercised on SM evidence alone.
   per-channel function on its own stream, so a rayon `par_iter` over channels
   cannot move a number (worth doing only for large `--scan-points`).
   (`unweight`, note 31 §I2.)
-- **Seeds are still combined by inverse variance** — `combine_seeds`
+- **Seeds are still combined by inverse variance** → **scheduled: addendum S1
+  (note 32)**. `combine_seeds`
   (`validate_hadronic.rs`) is the same defect one level up from the one the
   iteration combination just shed: a `1/σ²` weighted mean over per-seed results.
   It is second-order now that per-seed errors are well estimated, which is
   exactly why it is worth closing while it is cheap. (Note 31 §I1.)
-- **Convergence mode is opt-in, and should be the CLI default** —
+- **Convergence mode is opt-in, and should be the CLI default** → **scheduled:
+  addendum S3 (note 32)**.
   `integrate --target-rel` reaches MG's banked accuracy at CPU parity on llj and
   4.2–4.5× less CPU on dy13, but flipping it to the default changes `integrate`'s
   default artifact bytes, which the CLI gates and `generate_samples.sh` pin. The
   flip plus the byte re-pin is a small self-contained follow-up. (Note 31 §I4.)
-- **Stale σ values in the gate sources, left by the budget re-pin** — `BB_NEVAL`'s
+- **Stale σ values in the gate sources, left by the budget re-pin** →
+  **scheduled: addendum S8 (note 32)**. `BB_NEVAL`'s
   ladder comments, the DY row docs and `validate_sigma.rs`'s per-process numbers
   still quote σ measured before `LLJ_NEVAL` went 300k → 150k. The close-out
   session re-measured timings, not σ, and its charter forbade code edits, so this
   needs a pass that re-records what a current run prints. (Note 31 §I1.)
-- **`pp_to_jj`'s integration budget was never bias-set** — it is flat to 0.08%
+- **`pp_to_jj`'s integration budget was never bias-set** → **scheduled: addendum
+  S6 (note 32), inside the general budget-alignment rule** (size every σ gate's
+  budget to the banked reference's own error, floored by seed scatter and ladder
+  flatness — llj's 600k gate re-laddered under the unweighted combination). It
+  is flat to 0.08%
   across the 75k–600k ladder, so it could take a 4× cut with no accuracy argument
   against it. Worth ~65 s of single-thread integrals time at the post-sprint cost
   (86.2 s for that row, note 31 §6.3) — the ~130 s the measuring session quoted was
   against note 30's 174.8 s and no longer applies. Deliberately left as a budget
   decision rather than taken inside the session that found it. (Note 31 §I1, §6.3.)
-- **The serial tail of a parallel `integrate` run** — the α-adaptation survey is
+- **The serial tail of a parallel `integrate` run** → **scheduled: addendum S3
+  (note 32; the `-j 16` Amdahl decomposition is note 32 §1.1)**. The α-adaptation survey is
   serial and budget-independent (`neval.clamp(10k,40k) × 6`) and is now ~27% of a
   fixed-budget `p p > ℓ⁺ℓ⁻ j` run at `-j 16`; `survey_variance` is
   O(n_survey × n_channels) and is the obvious thing to parallelise. Chunk size is
@@ -481,7 +529,8 @@ exercised on SM evidence alone.
   stage; whether MadEvent's `results.dat` point count includes the survey pass;
   and a per-phase `duration_s` inside a row, which is what would give our side
   a counterpart to MG's `output` + `compile` column.
-- **Accept/reject allocator traffic, and the per-event scale that feeds it** —
+- **Accept/reject allocator traffic, and the per-event scale that feeds it** →
+  **scheduled: addendum S5, stretch (note 32)** —
   one item, because both are the same allocation. The unweighting profile is the
   most allocation-bound of the four note-30 profiles: **18.4% allocator + libc
   mem, 5.1% `BTreeMap`**, and kT clustering at its highest share (9.2%) because
@@ -498,10 +547,13 @@ exercised on SM evidence alone.
   cut-surviving region above `|t| ≈ 4 000–40 000 GeV²` where the floor sits at
   400. A tighter derived bound scales the bounded-`t_max` variance win (measured
   1.67–1.83×) with it. (Note 28 §S2.5.)
-- **2→6 σ rows** — `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` stay
-  `Plan::Skip`: ~1 ms/eval over a 24-dim map is too slow to gate — a cost issue,
-  not a sampling one. (`validate_sigma.rs`.)
-- **Cut before the configuration draw on the fixed-beam path** —
+- **2→6 σ rows** → **scheduled: addendum S7 (note 32)**. `uux_to_ccx_emmm_qcd0`,
+  `bbx_to_ccx_emmm_qcd0` stay `Plan::Skip`, but the skip's "~1 ms/eval" premise
+  is stale — the bench now reads 89/149 µs (note 31 §6.8); the session measures
+  the gate-harness cost, ladders a σ row against the 0.30% references, and flips
+  the `long`-tier cells (the census's 4 ⏳). (`validate_sigma.rs`.)
+- **Cut before the configuration draw on the fixed-beam path** → **scheduled:
+  addendum S1 (note 32)**.
   `FixedBeamIntegrand` runs the scale-configuration draw *before* the cut, so 22%
   of `gu_to_epemu`/`gux_to_epemux` points pay ~190 ns of provably dead draw work;
   `ProtonIntegrand::shape` already cuts first. The same session fixes note 30 §6's
@@ -526,6 +578,19 @@ exercised on SM evidence alone.
   helicity-summed evaluation per accepted event), so single-helicity evaluation
   never became the hot path. Re-sequence under whatever first needs a single
   fixed helicity in a loop. (Note 23 §E2.)
+- **The lane-FMA commit's scalar toll, and `MulAdd` for `NumericArray`** →
+  **workaround scheduled: addendum S9 (note 32)**. `3dab3a1` shared one real-FMA
+  complex path between the scalar and lane fields (lanes −22–35%) because
+  `Complex<NumericArray>` lacks `num_traits::MulAdd`, and its own message
+  records the price: scalar forward +3.5%, "shipped as-is since forward is the
+  least-used path" — but lanes never entered production, so the toll lands on
+  the production evaluator. S9's workaround is an in-house complex multiply-add
+  trait (default = the shared real-FMA body, `f64` override deferring to
+  `Complex<f64>`'s `num_traits::MulAdd`/packed idiom), kill-gated on the win
+  still measuring ≥2% on the current tip. The clean long-term fix is an
+  **upstream** `numeric_array` contribution implementing `num_traits::MulAdd`
+  (orphan rule forbids it in-tree); when that lands the in-house trait
+  collapses to one deferral and scalar/lanes share one fast path again.
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)
