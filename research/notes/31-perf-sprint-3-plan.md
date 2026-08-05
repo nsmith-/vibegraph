@@ -153,6 +153,54 @@ grid/α update between iterations is the Amdahl term, measured by the scan itsel
 Close-out re-runs note 30 §5.2's wall-time comparison with a `-j 16` column so the
 "16-way farm vs one thread" asymmetry is retired from the record.
 
+**I3 — MERGED 2026-08-04 (`6497f7e`, merge `1b527cc`): measured results.**
+
+- **Brief/plan corrections (three, all recorded):** (1) the substrate was NOT
+  ready — `adapt_parallel`'s closure cannot know which point it is (the scale
+  draw is a function of the point index via a stateful sequential `SubStream`)
+  and its `(iter, chunk)` keying + per-chunk reduction does not reproduce
+  `adapt`'s numbers; it stays unused and untouched. The session added
+  **`adapt_parallel_seeded`**, bit-for-bit with sequential `adapt` by
+  construction: each chunk seeks its generator to `p·ndim` draws and per-point
+  values/bin indices are reduced in **global point order** (a per-chunk partial
+  sum would reshape the grid). (2) `validation/validate.sh` never passed
+  `--test-threads=1` — the §I3 "note-30 comparability contract" premise was
+  wrong; bit-identity is what makes the layer's numbers the CLI's numbers.
+  (3) The Amdahl term is the **α-adaptation survey** (serial,
+  budget-independent, `neval.clamp(10k,40k)×6`), not the grid/α update:
+  predicted 14.3%, measured 15.3–17.2%.
+- **Implementation**: `SubprocessProto`/`BoundSubprocess` split +
+  `ThreadLocal` scratch; both integrands `Sync` (asserted);
+  `-j/--parallel` on `integrate` and `generate` (`-j 0` refused; `generate`'s
+  accept/reject stays serial and says so). `Real`/`Channel`/`ScaledChannel`
+  gained `Send + Sync`.
+- **Bit-identity evidence**: artifact md5 identical across `-j 1/4/8/16` AND
+  vs the pre-change serial binary at `af12e01`, on partonic, `dy13_default`
+  and `pp_to_llj` cards, repeated at 4× budget. Full validate exit 0, census
+  character-identical. Seven new tests, each negative-controlled; one vacuous
+  check (fixed-beam trailing uniform is inert — 40/40 probes unmoved) was
+  caught by its own control and replaced with a live-draw reference on the
+  proton path; the blind spot is documented in the test.
+- **Scaling** (min of 4 round-robin rounds, load 7–8 from a sibling session —
+  speedups biased *down*): dy13 2.41→0.54 s (**4.46×**), llj 14.26→2.93 s
+  (**4.87×**) at default budget; **7.30×/8.34×** at 4× budget. Fixed serial
+  floor 0.39/0.55 s (the α-survey); the adapted phase alone parallelizes
+  **~10.5–13.5×** — inside the target band. Peak RSS flat (~0.11 GB) at any
+  thread count.
+- **For I4**: the prerequisite is `adapt_parallel_seeded` — `(channel, chunk)`
+  scheduling must keep the point-order reduction or every banked σ moves. The
+  remaining tail is granularity: 24 channels × 12 iterations = 288 sequential
+  parallel regions, floor channels yield 8 chunks vs 16 workers
+  (`MIN_CHUNK = 64` binds; chunk size is a free, results-inert knob — untuned
+  because the host was loaded). Parallelizing the α-survey
+  (`survey_variance` is O(n_survey × n_channels)) is the other lever.
+- **Layer timing semantics changed**: validation rows now use the machine
+  internally — this validate ran 10m09s vs the banked ~42m52s wall, with σ,
+  bytes and census untouched. **Close-out decision (manager)**: the close-out
+  per-row `duration_s` table re-runs under `RAYON_NUM_THREADS=1` for
+  comparability with note 30 §3.2, and separately records the default-parallel
+  validate wall time and the `-j 16` CLI column as the new headline numbers.
+
 ### I4 — convergence-targeted integration with hard-split per-channel allocation (user, 2026-08-04)
 
 Today every gate and the CLI spend a fixed `seeds × neval × niter`; MadGraph
