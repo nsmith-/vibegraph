@@ -671,6 +671,63 @@ mod tests {
         }
     }
 
+    /// What share of a production program's nodes produce a value a change of `αs`
+    /// cannot move — the ceiling on splitting the stream into a coupling-invariant
+    /// prefix that a second evaluation at a moved coupling could inherit.
+    ///
+    /// A node is invariant when every constant it reaches carries `G` to the power
+    /// zero (the same tagging [`ScaleAwareAmplitude`](super::super::rescale) rescales
+    /// the pools by) and every operand it reads is invariant; momentum read-offs are
+    /// functions of the point alone.
+    #[test]
+    #[ignore = "study instrumentation; run with --nocapture"]
+    fn alpha_s_invariant_share() {
+        use super::super::layout::arena_reads;
+        use super::super::op::{ConstKind, Op};
+        println!("process\tnodes\tinvariant\tshare\tconsts\tconsts_invariant");
+        for (name, process) in STUDY {
+            let (eval, evaluated) = compiled(process);
+            let folded = eval.folded_hel();
+            let model = evaluated.model();
+            let mut driven = model.params.dependents("aS");
+            driven.insert("aS".to_owned());
+            let powers = folded.g_powers(model, &driven);
+            let ast = &folded.ast;
+
+            let mut inv = vec![false; ast.len()];
+            let mut n_const = 0usize;
+            let mut n_const_inv = 0usize;
+            for id in 0..ast.len() as NodeId {
+                let n = ast.value(id);
+                let kids = ast.children_ids(id);
+                let v = match n.op {
+                    Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat => {
+                        n_const += 1;
+                        let idx = n.leaf.index() as usize;
+                        let p = match n.leaf.kind() {
+                            ConstKind::Complex => powers.complex.get(idx).copied().flatten(),
+                            ConstKind::Real => powers.real.get(idx).copied().flatten(),
+                            _ => None,
+                        };
+                        let v = p == Some(0);
+                        n_const_inv += usize::from(v);
+                        v
+                    }
+                    Op::PMom | Op::PMomOut => true,
+                    Op::Flows | Op::Hels | Op::Configs => false,
+                    _ => arena_reads(n.op, kids).iter().all(|&k| inv[k as usize]),
+                };
+                inv[id as usize] = v;
+            }
+            let total = ast.len();
+            let n_inv = inv.iter().filter(|b| **b).count();
+            println!(
+                "{name}\t{total}\t{n_inv}\t{:.1}%\t{n_const}\t{n_const_inv}",
+                n_inv as f64 / total as f64 * 100.0
+            );
+        }
+    }
+
     /// The study table: per process × order, the metrics an execution order can move.
     /// Ignored by default — it compiles a 2→6.
     #[test]
