@@ -110,6 +110,35 @@ efficiency and sample lumpiness.
 durations; the largest `w/w_max` is an extremum estimate — do not read it as
 convergence (note 24 §P4).
 
+**I2 — MERGED 2026-08-04 (`24aad64`, merge `928df28`): the premise was false.**
+
+- **The maxima never converge — there is no "own schedule".** On the llj
+  grids, `Σⱼ w_maxⱼ ∝ n^0.508` over 2.4 decades of scan budget (10³–2.56·10⁵
+  draws/channel, no plateau) and the σ-share above the maxima falls only as
+  `n^−0.455`: one statement — a Pareto weight tail of index ≈ 2, confirmed by
+  a Hill estimator (α = 2.08–2.40 on the twelve σ-carrying channels, which
+  also own the maxima; the heavy-tailed tiny channels never do). The budget
+  buys a point on an acceptance-vs-overweight-tail curve, nothing more.
+- **Delivered**: `ScanBudget::{PerChannel(n), IntegrationShare}` +
+  `--scan-points <N|share>` on `generate`, plus a `scan:` stdout line.
+  **Default `share` is bit-identical to the pre-change binary** (artifact md5
+  equality on llj two seeds + dy13; a live `--scan-points 20000` negative
+  control differs). Nothing banked moved; census character-identical.
+- **Allocation is a weak lever**: flat-vs-share sit on the same
+  overweight-vs-efficiency curve within the 5-stream spread (±7%); at equal
+  draws flat is +21% acceptance / +10% overweight share.
+- **For I4**: the σ-carrying channels' weight-tail index ≈ 2.1–2.4 sits at
+  the variance-existence boundary — empirical variances (the `N_j ∝ α_j σ_j`
+  input AND the χ²/dof stopping guard) converge slowly and bias low in
+  exactly the regime I1 showed the quoted error underestimates. Size the
+  χ²/dof precondition with that in mind.
+- **The real lever is the maxima rule, not the budget** (backlog): MadGraph's
+  `unwgt.f` sets the maximum from a percentile and re-normalises, capping
+  `Σⱼ w_maxⱼ` instead of chasing an extremum. That is the session that would
+  move llj's ~5e-3 σ-share. Also free and provably inert: `Unweighter::scan`
+  is a pure per-channel function on its own stream — a rayon `par_iter` over
+  channels cannot move a number (relevant only for large `--scan-points`).
+
 ### I3 — parallel `integrate`: `Sync` hadronic integrand + `-j/--parallel` (user, 2026-08-04)
 
 Note 30's single most important caveat — "MadGraph is a 16-way parallel job farm
