@@ -59,6 +59,44 @@ scatter on `pp_to_llj_dyn` — χ²/dof 6.38 at 75k, clean ≥150k — is the fr
 budget reduction would bite). Re-pin the report budgets only after the sweep is
 clean at the reduced budget.
 
+**I1 — MERGED 2026-08-04 (`5b3952d`, merge `59887a3`): measured results.**
+
+- **The plan's primary fix was wrong; its parenthetical was right.** A 4000-seed
+  offline study (5-D Gaussian, known integral) showed the warm-up discard alone
+  removes essentially none of the bias (−1.21% → −1.40% mean rel at 2k/iter with
+  2 discarded): the estimate–weight correlation is in *every* iteration, so the
+  lever is the combination rule. Landed: `VegasGrid::combination` (default
+  **`Unweighted`**; `InverseVariance` recovers Lepage bit-exactly — how the
+  pinned-seed goldens keep their bytes) plus `VegasGrid::warmup` (default 2 —
+  needed for variance, not bias: RMS 0.53%→0.19% at warm-up 0→2). Both
+  `#[serde(skip)]`: banked artifact bytes unchanged. Trained grid provably
+  untouched (bin-edge equality test), so samples are unaffected.
+- **Sweeps** (5 seeds × 75k/150k/300k/600k, before/after, same host; the before
+  arm reproduced the repo's recorded ladders digit-for-digit): llj ladder spans
+  collapse — `pp_to_llj` 2.09% → 0.46%, `llj_fixed` 0.80% → 0.12%, `llj_dyn`
+  0.76% → 0.06%; chain B's χ²/dof 6.38 at 75k falls to 2.55 (shrank, did not
+  migrate). Wide-channel rows (jj, bb) never had a climb and do not move.
+- **Budgets re-pinned**: `LLJ_NEVAL` 300k → **150k**, `pp_to_llj` recarded row
+  600k → **150k** (not 75k — largest inter-seed scatter rung). Gate pulls at
+  the new budgets: +0.32 / +0.49 / +0.68. `pp_to_jj` is flat to 0.08% across
+  the ladder and could take a 4× cut (~130 s) — left as a manager/backlog
+  budget decision, since its budget was never bias-set.
+- **Timing**: integrals category **842.6 s → 644.1 s (−24%)** vs note 30, each
+  llj row tracking its budget factor; samples category moved only with host
+  noise (smaller trained grids cost no measurable unweighting efficiency).
+- **For I4**: the hard prerequisite is `IterationCombination::Unweighted`, not
+  the discard — a convergence stop reading Lepage's error bar stops early on a
+  confidently wrong number. The unweighted error is larger and better
+  calibrated but still an underestimate at the starved end (1.70% quoted vs
+  8.2% actual at 2k/iter), so the χ²/dof precondition does real work.
+- **Same defect one level up, out of scope, session-worthy**: `combine_seeds`
+  in `validate_hadronic.rs` combines seeds by inverse variance (second-order
+  now that per-seed errors are well estimated).
+- **Close-out documentation debt**: stale measured σ values remain in
+  `BB_NEVAL`'s ladder comments, the DY row docs, and `validate_sigma.rs`'s
+  per-process numbers — re-recording them needs the close-out re-measure.
+- E3's probe rows now run 150k × 10; E3 measures against this commit.
+
 ### I2 — `w_max` scan budget decoupled from the integration budget
 
 The frozen scan inherits the integration budget's undersampled small channels: on
