@@ -679,6 +679,18 @@ Item 1 landed; items 2–4 implemented, measured, and deliberately not landed.
   linearization scope. Contention protocol that worked: per-config prebuilt
   bench binaries run round-robin, min over rounds.
 
+**E2b (item-4 follow-up) — MERGED 2026-08-05 (`ced17fb`, merge `027e710`).**
+The fermion-current CSE landed: the four spinor products in
+`left_current`/`right_current` named once (`cmul_add` fusion had blocked CSE
+of the sibling `cmul`). **Reassociating**: worst oracle deviation
+1.7760e-11 → 1.7761e-11, every row pass→pass, census unchanged, no bar
+touched. Win survives the scheduling pass: fermion rows −2.4 to −3.6%
+(8-round alternating control; the code-identical `gg_to_gg` control at
++0.03%), MATRIX1 geomean **1.00× → 0.98×** — the evaluator fleet is now
+marginally ahead of MadGraph. (Session hit two API drops + a watchdog stall;
+the manager assembled the final gate evidence from its on-disk logs and
+verified the branch directly.)
+
 ### E3 — chain-B draw work-sharing
 
 On live-draw rows each point pays one `eval_amp2` + one `set_alpha_s` *before* the
@@ -691,6 +703,39 @@ reuse) without changing the draw's value stream? Gate: the draw is a pure functi
 of `(channel, u)` — the σ gates plus the `AMP2_c`-share partition census must be
 byte-stable; any change to *what* is drawn (not just when it is computed) is out
 of scope.
+
+**E3 — MERGED 2026-08-05 (`6a8e91c`, merge `50fb671`): measured results.**
+
+- **Re-baselined draw cost post-E1b**: ≈870 ns / ≈18% on the partonic
+  live-draw rows (was ≈1 µs / ≈21% in note 30 §6); `llj_dyn` still a few
+  per cent.
+- **The plan's prefix design is a NO-GO by measurement**: only ≤28% of the
+  live-draw rows' program nodes are αs-invariant (and they are the cheap
+  ones), and a stream partition would perturb the op-blocked order worth
+  −17.3%. Premise correction: on strong-coupling drawing rows the
+  per-event *clustered* prescription exists precisely to move the coupling
+  between `AMP2` and `|M|²`, so the two evaluations share only momenta —
+  the absorbable case is Drell–Yan.
+- **Landed instead: arena-reuse cache** — `fill_token` + bit-compared
+  momenta stamp on `ScratchSpace`; all six helicity-summed read-outs reuse
+  a matching fill; any writer or `set_pools`/`set_alpha_s` retires the
+  stamp; per-thread token blocks keep I3's parallel path uncontended.
+  **Order-preserving, bit-for-bit**: 100 row files digest-identical
+  (`7e1cae69…` both sides), census unchanged; three reuse tests with an
+  anti-vacuity fills counter (a pass provably *skipped*, not merely
+  agreeing) including a 4-thread cross-thread isolation test.
+- **Wins**: the biggest beneficiary is `select_event` (4 passes → 1):
+  event readout −37.5%/−36.2% on `gu_to_epemu`/`gux_to_epemux`;
+  `pp_to_ll` draw cost −83% (193.6 → 32.5 ns/pt), total −8.4%.
+- **Known cost, accepted**: `pp_to_llj_dyn` +1.0–1.6% (consistently
+  signed) — the shape where the cache can never hit still pays the stamp;
+  the mitigation would trade away the exactness that makes this safe.
+- **Handed back, session-worthy (E3b candidate)**: `FixedBeamIntegrand`
+  runs the draw *before* the cut — 22% of `gu/gux_to_epemu(x)` points pay
+  ~190 ns of provably dead draw work; `ProtonIntegrand::shape` already
+  cuts first. Also corrects note 30 §6's "points the cuts reject return
+  before the draw" (true hadronic, false partonic) — fix the doc comments
+  with it.
 
 ### E4 (stretch) — accept/reject allocator traffic
 
