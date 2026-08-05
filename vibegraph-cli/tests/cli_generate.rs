@@ -400,6 +400,17 @@ fn a_seed_reproduces_the_sample() {
     }
 }
 
+/// The summed maximum a run reports, out of its `scan:` line.
+fn sum_w_max(stdout: &str) -> f64 {
+    stdout
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("scan:"))
+        .and_then(|l| l.split("sum w_max ").nth(1))
+        .and_then(|l| l.split(',').next())
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .unwrap_or_else(|| panic!("no scan line in:\n{stdout}"))
+}
+
 /// The `w_max` scan's budget is a knob of its own, and its default is the
 /// integration's per-channel allocation — so the default run and an explicit
 /// `--scan-points share` must be the *same bytes*, and a scan on a different
@@ -408,40 +419,106 @@ fn a_seed_reproduces_the_sample() {
 /// The negative control matters more than the equality here: the maxima only
 /// enter the file through the channel-selection weights and the acceptance
 /// probability, so a flag that silently did nothing would pass the first
-/// assertion and every other test in this file.
+/// assertion and every other test in this file. It is taken under
+/// `--max-truncation 0`, where a shorter scan provably cannot find a larger
+/// maximum in any channel; the truncating rule reads a quantile of the scan
+/// instead of its extremum, and a quantile is not monotone in the sample size.
 #[test]
 fn the_scan_budget_defaults_to_the_integration_allocation_and_is_otherwise_live() {
     let run = run();
-    let (default_file, default_out) = run.generate_with(&[], SEED_A, "scan-default.lhe");
+    let (default_file, _) = run.generate_with(&[], SEED_A, "scan-default.lhe");
     let (share_file, _) = run.generate_with(&["--scan-points", "share"], SEED_A, "scan-share.lhe");
     assert_eq!(
         default_file, share_file,
         "`--scan-points share` must be the default, byte for byte"
     );
 
-    let (other_file, other_out) =
-        run.generate_with(&["--scan-points", "250"], SEED_A, "scan-250.lhe");
+    let (other_file, _) = run.generate_with(&["--scan-points", "250"], SEED_A, "scan-250.lhe");
     assert_ne!(
         default_file, other_file,
         "a different scan budget produced an identical sample: the flag is inert"
     );
-    let sum_w_max = |stdout: &str| -> f64 {
-        stdout
-            .lines()
-            .find_map(|l| l.trim().strip_prefix("scan:"))
-            .and_then(|l| l.split("sum w_max ").nth(1))
-            .and_then(|l| l.split(',').next())
-            .and_then(|v| v.trim().parse::<f64>().ok())
-            .unwrap_or_else(|| panic!("no scan line in:\n{stdout}"))
-    };
-    // A shorter scan cannot find a larger maximum in any channel, so the summed
-    // maximum can only fall — the direction is what says the budget reached the
-    // scan rather than some other part of the run.
+
+    let (_, long_out) = run.generate_with(&["--max-truncation", "0"], SEED_A, "scan-extremum.lhe");
+    let (_, short_out) = run.generate_with(
+        &["--max-truncation", "0", "--scan-points", "250"],
+        SEED_A,
+        "scan-extremum-250.lhe",
+    );
     assert!(
-        sum_w_max(&other_out) < sum_w_max(&default_out),
-        "250 points per channel gave sum w_max {:.6e}, the default {:.6e}",
-        sum_w_max(&other_out),
-        sum_w_max(&default_out)
+        sum_w_max(&short_out) < sum_w_max(&long_out),
+        "250 points per channel gave sum w_max {:.6e}, the integration's own allocation {:.6e}",
+        sum_w_max(&short_out),
+        sum_w_max(&long_out)
+    );
+}
+
+/// The rule that reads the maxima off the same scan is the other knob, and its
+/// default is MadGraph's 1% truncation.
+///
+/// Allowing a larger share above the maxima can only walk each channel's ladder
+/// further down, so the summed maximum is non-increasing in the share and strictly
+/// below the extremum the same scan saw — the direction that says the flag reached
+/// the maxima rather than some other part of the run. The maxima set both the
+/// channel-selection weights and the acceptance probability, so a rule that
+/// changed nothing would leave the file byte-identical.
+#[test]
+fn the_maximum_rule_defaults_to_madgraphs_truncation_and_is_otherwise_live() {
+    let run = run();
+    let (default_file, default_out) = run.generate_with(&[], SEED_A, "trunc-default.lhe");
+    let (same_file, _) = run.generate_with(&["--max-truncation", "0.01"], SEED_A, "trunc-1pct.lhe");
+    assert_eq!(
+        default_file, same_file,
+        "`--max-truncation 0.01` must be the default, byte for byte"
+    );
+
+    let (extremum_file, extremum_out) =
+        run.generate_with(&["--max-truncation", "0"], SEED_A, "trunc-0.lhe");
+    assert_ne!(
+        default_file, extremum_file,
+        "the extremum rule produced an identical sample: the flag is inert"
+    );
+
+    let (_, wide_out) = run.generate_with(&["--max-truncation", "0.05"], SEED_A, "trunc-5pct.lhe");
+    let (extremum, default, wide) = (
+        sum_w_max(&extremum_out),
+        sum_w_max(&default_out),
+        sum_w_max(&wide_out),
+    );
+    assert!(
+        wide <= default && default < extremum,
+        "sum w_max must fall as the allowed share grows: \
+         5% {wide:.6e}, 1% {default:.6e}, extremum {extremum:.6e}"
+    );
+}
+
+/// A truncation share outside `[0, 1)` is a refusal: at one and above, the whole
+/// scanned cross section is allowed above the maximum and the ladder has no rung
+/// left to stand on.
+#[test]
+fn a_truncation_share_outside_the_unit_interval_is_refused() {
+    let run = run();
+    for bad in ["1", "1.5", "-0.01", "most"] {
+        let mut cmd = run.generate_cmd("buffer", SEED_A, 10, &run.dir.join("never.lhe"));
+        cmd.args(["--max-truncation", bad]);
+        expect_refusal(
+            cmd.output().expect("spawn vibegraph"),
+            &format!("--max-truncation {bad}"),
+        );
+    }
+}
+
+/// The per-channel scans run in parallel, and each is a function of its own two
+/// streams and of nothing another channel touches — so the maxima, and with them
+/// every accepted event, must not depend on how many threads found them.
+#[test]
+fn the_scan_does_not_depend_on_the_thread_count() {
+    let run = run();
+    let (one, _) = run.generate_with(&["-j", "1"], SEED_A, "threads-1.lhe");
+    let (many, _) = run.generate_with(&["-j", "16"], SEED_A, "threads-16.lhe");
+    assert_eq!(
+        one, many,
+        "`generate -j 1` and `-j 16` wrote different samples"
     );
 }
 

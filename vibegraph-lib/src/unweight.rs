@@ -3,33 +3,37 @@
 //! The integral is estimated channel by channel — one VEGAS grid per channel,
 //! each trained on `∫ dΦ f·αⱼgⱼ/g` with the channel frozen — so unweighting is
 //! done channel by channel too: a trial draws a channel, draws a point against
-//! that channel's frozen grid, and is accepted with probability `wⱼ(x)/w_maxⱼ`.
+//! that channel's frozen grid, and is accepted with probability
+//! `min(1, wⱼ(x)/w_maxⱼ)`.
 //!
 //! # Why the channel is drawn `∝ w_maxⱼ`
 //!
-//! The kept events must be distributed across channels `∝ σⱼ`, since that is what
-//! the physical cross section is decomposed into. A trial in channel `j` is kept
-//! with mean probability `σⱼ/w_maxⱼ`, so drawing the channel with probability
-//! `qⱼ` keeps events at a rate `∝ qⱼ·σⱼ/w_maxⱼ` — which is `∝ σⱼ` exactly when
-//! `qⱼ ∝ w_maxⱼ`. Any other choice needs a compensating per-event weight and so
-//! stops being an unweighted sample; drawing `∝ σⱼ`, in particular, over-populates
-//! the channels whose maximum is small relative to their integral. The overall
-//! acceptance is then
+//! The kept events must carry cross section `∝ σⱼ` across channels, since that is
+//! what the physical cross section is decomposed into. A trial in channel `j`
+//! carries mean weight `σⱼ/w_maxⱼ` in units of that channel's maximum, so drawing
+//! the channel with probability `qⱼ` accumulates weight at a rate
+//! `∝ qⱼ·σⱼ/w_maxⱼ` — which is `∝ σⱼ` exactly when `qⱼ ∝ w_maxⱼ`. Any other
+//! choice needs a compensating per-event weight and so stops being an unweighted
+//! sample; drawing `∝ σⱼ`, in particular, over-populates the channels whose
+//! maximum is small relative to their integral. Summing that rate gives
 //!
 //! ```text
 //! Σⱼ qⱼ·σⱼ/w_maxⱼ = (Σⱼ σⱼ) / (Σⱼ w_maxⱼ) = σ / Σⱼ w_maxⱼ
 //! ```
 //!
-//! which is also the largest acceptance any channel-selection rule can reach, and
-//! is what makes the largest channel's share of `Σⱼ w_maxⱼ` — not the channel
-//! count — the predictor of what splitting the integral buys.
+//! the largest acceptance any channel-selection rule can reach, and what makes the
+//! largest channel's share of `Σⱼ w_maxⱼ` — not the channel count — the predictor
+//! of what splitting the integral buys. It is the realised acceptance when nothing
+//! sits above the maxima, and an upper bound on it otherwise, since a trial above
+//! its channel's maximum is one event rather than the `w/w_max` its weight is
+//! worth.
 //!
-//! # `w_max` is an extremum estimate, so overweights are expected
+//! # `w_max` is an estimate, so overweights are expected
 //!
-//! Each `w_maxⱼ` is the largest weight a finite frozen scan on channel `j`'s grid
-//! happened to see, and the maximum of a finite sample is biased low. Points above
-//! it are therefore not an error condition: they are kept with a weight `> 1`,
-//! which leaves the estimator unbiased, and are counted two ways —
+//! Each `w_maxⱼ` is read off the weights a finite frozen scan on channel `j`'s
+//! grid happened to see ([`MaxRule`] is the rule that reads it). Points above it
+//! are not an error condition: they are kept with a weight `> 1`, which leaves the
+//! estimator unbiased, and are counted two ways —
 //! [`overweight_fraction`](UnweightStats::overweight_fraction) and
 //! [`overweight_weight_share`](UnweightStats::overweight_weight_share). The share
 //! is the load-bearing one: a handful of points carrying a large part of the cross
@@ -38,6 +42,7 @@
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use rayon::prelude::*;
 
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::select::select_index;
@@ -47,33 +52,34 @@ use crate::vegas::VegasGrid;
 /// each channel's scan is independent of the others and of the event generation.
 const SCAN_STREAM_BASE: u64 = 0x0057_4D41;
 
-/// How many points the frozen scan spends estimating one channel's maximum.
+/// How many points the frozen scan spends on one channel.
 ///
-/// The scan's budget is not the integration's. `w_max` is an extremum estimate,
-/// and how many draws an extremum needs is set by the tail of the weight
-/// distribution over the channel's own grid, not by how much of the cross section
-/// the channel carries — so a budget that gives a good `σ` says nothing about how
-/// good the maxima are.
+/// The scan's budget is not the integration's: what the scan has to resolve is the
+/// upper tail of the weight distribution over the channel's own grid, not how much
+/// of the cross section the channel carries, so a budget that gives a good `σ` says
+/// nothing about how good the maxima are.
 ///
-/// What a larger budget buys is a trade, not a convergence. Every extra draw can
-/// only raise a maximum, which moves cross section from above `w_max` to below it
-/// — fewer and smaller overweight events — while raising `Σⱼ w_maxⱼ` and so
-/// lowering the acceptance `σ / Σⱼ w_maxⱼ` that sets what an event costs. On the
-/// 24-channel `p p → ℓ⁺ℓ⁻ j` grids the two move together over more than two
-/// decades of budget: `Σⱼ w_maxⱼ` grows as `n^0.51` from 10³ to 2.6·10⁵ draws per
-/// channel with no plateau, which is the signature of a Pareto weight tail of
-/// index ≈ 2, and the share of `σ` above the maxima falls only as `n^-0.46`. There
-/// is no budget at which the maxima settle; there is a curve, and a budget picks a
-/// point on it.
+/// How much a larger budget buys depends on which [`MaxRule`] reads the maxima off
+/// it. Under [`MaxRule::Extremum`] it buys a move along a trade-off curve rather
+/// than a convergence: every extra draw can only raise a maximum, which moves cross
+/// section from above `w_max` to below it — fewer and smaller overweight events —
+/// while raising `Σⱼ w_maxⱼ` and so lowering the acceptance `σ / Σⱼ w_maxⱼ` that
+/// sets what an event costs. On the 24-channel `p p → ℓ⁺ℓ⁻ j` grids the two move
+/// together over more than two decades of budget: `Σⱼ w_maxⱼ` grows as `n^0.51`
+/// from 10³ to 2.6·10⁵ draws per channel with no plateau, the signature of a Pareto
+/// weight tail of index ≈ 2, and the share of `σ` above the maxima falls only as
+/// `n^-0.46`. There is no budget at which those maxima settle. Under a truncating
+/// rule the maximum is a quantile of the same distribution and does converge, and
+/// the budget buys the precision of the quantile instead of a point on the curve.
 ///
-/// The two variants choose the *allocation* across channels rather than the point
-/// on the curve. [`PerChannel`](Self::PerChannel) costs `channels × points` and is
-/// a function of the decomposition alone;
-/// [`IntegrationShare`](Self::IntegrationShare) gives a channel holding a
-/// per-mille of `σ` a per-mille of the points, which starves the narrow channels
-/// whose maxima are hardest to find. On those same grids the two land on the same
-/// curve to within the scan's own seed-to-seed spread (±20% on `Σⱼ w_maxⱼ` over
-/// five seeds), so the allocation is the much weaker lever of the two.
+/// The two variants choose the *allocation* across channels.
+/// [`PerChannel`](Self::PerChannel) costs `channels × points` and is a function of
+/// the decomposition alone; [`IntegrationShare`](Self::IntegrationShare) gives a
+/// channel holding a per-mille of `σ` a per-mille of the points, which starves the
+/// narrow channels whose maxima are hardest to find. On those same grids the two
+/// land on the same curve to within the scan's own seed-to-seed spread (±20% on
+/// `Σⱼ w_maxⱼ` over five seeds), so the allocation is the much weaker lever of the
+/// two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanBudget {
     /// Every channel scans on the same number of points, whatever the integration
@@ -97,6 +103,101 @@ impl ScanBudget {
     /// per-iteration integration budgets are `channel_nevals`.
     pub fn total_draws(self, channel_nevals: impl IntoIterator<Item = usize>) -> usize {
         channel_nevals.into_iter().map(|n| self.draws_for(n)).sum()
+    }
+}
+
+/// The share of a scan's summed weight MadGraph leaves above the maximum
+/// (`trunc_max` in `Template/LO/SubProcesses/unwgt.f`, declared in
+/// `madgraph/iolibs/template_files/madevent_run_config.inc`).
+pub const DEFAULT_EXCESS_SHARE: f64 = 0.01;
+
+/// How a channel's maximum weight is read off the weights its frozen scan saw.
+///
+/// [`Extremum`](Self::Extremum) takes the largest of them — the smallest maximum
+/// under which every scanned point would have been accepted with probability at
+/// most one. It is also an extremum estimate over a Pareto weight tail of index
+/// ≈ 2, so it never settles: on the `p p → ℓ⁺ℓ⁻ j` grids `Σⱼ w_maxⱼ` grows as
+/// `n^0.51` over more than two decades of scan budget, and the acceptance
+/// `σ / Σⱼ w_maxⱼ` falls with it.
+///
+/// [`Truncated`](Self::Truncated) stops chasing the extremum and *chooses* how
+/// much of the channel's cross section is allowed to sit above the maximum: it
+/// takes the lowest scanned weight that still leaves less than `excess_share` of
+/// the scan's summed weight above it. This is MadGraph's rule (`unwgt.f`, the
+/// `trunc_max` ladder), and it turns a quantity that diverges with the budget into
+/// one the caller sets.
+///
+/// Neither rule biases the estimator: a point above the maximum is kept at weight
+/// `w/w_max > 1` rather than clipped, so `Σ` weights is the same integral either
+/// way. What the choice moves is the acceptance — and, in the other direction, how
+/// lumpy the resulting sample is, since an event carrying weight `> 1` stands for
+/// more than one event's worth of cross section.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MaxRule {
+    /// The largest weight the scan saw.
+    Extremum,
+    /// The lowest scanned weight leaving less than `excess_share` of the scan's
+    /// summed weight above it.
+    Truncated { excess_share: f64 },
+}
+
+impl Default for MaxRule {
+    fn default() -> Self {
+        MaxRule::Truncated {
+            excess_share: DEFAULT_EXCESS_SHARE,
+        }
+    }
+}
+
+impl MaxRule {
+    /// The truncated rule at `excess_share`, or `None` when that is not a share
+    /// below one. A share of exactly zero is [`Extremum`](Self::Extremum), which is
+    /// what the ladder degenerates to.
+    pub fn truncated(excess_share: f64) -> Option<Self> {
+        if !(0.0..1.0).contains(&excess_share) {
+            return None;
+        }
+        Some(if excess_share == 0.0 {
+            MaxRule::Extremum
+        } else {
+            MaxRule::Truncated { excess_share }
+        })
+    }
+
+    /// The share of the summed weight this rule leaves above the maximum; zero for
+    /// [`Extremum`](Self::Extremum).
+    pub fn excess_share(self) -> f64 {
+        match self {
+            MaxRule::Extremum => 0.0,
+            MaxRule::Truncated { excess_share } => excess_share,
+        }
+    }
+
+    /// Apply the rule to one channel's non-zero scanned weights, which must be
+    /// sorted ascending. An empty scan has no maximum and yields zero.
+    fn apply(self, weights: &[f64]) -> f64 {
+        let n = weights.len();
+        if n == 0 {
+            return 0.0;
+        }
+        let share = self.excess_share();
+        let total: f64 = weights.iter().sum();
+        // Descend from the largest weight, lowering the candidate maximum while the
+        // cross section left above it — `Σ_{w > wᵢ} (w − wᵢ)`, accumulated as
+        // `above − wᵢ·(count above)` — is still under `share` of the total. The
+        // loop leaves `i` one step past the last candidate that satisfied that, so
+        // the step back is what selects it. The two largest weights are never
+        // candidates, so a scan of two points or fewer yields its extremum.
+        let mut above = 0.0f64;
+        let mut i = n;
+        while i > 2 && above - weights[i - 1] * ((n - i) as f64) < total * share {
+            above += weights[i - 1];
+            i -= 1;
+        }
+        if i < n {
+            i += 1;
+        }
+        weights[i - 1]
     }
 }
 
@@ -136,9 +237,14 @@ pub trait ChannelIntegrand {
 /// What a frozen scan of one channel's grid found.
 #[derive(Debug, Clone)]
 pub struct ChannelScan {
-    /// The largest weight seen, in the integrand's own units. Zero when the scan
+    /// The maximum the scan's [`MaxRule`] set, in the integrand's own units — what
+    /// the accept/reject pass normalises this channel against. Zero when the scan
     /// found no point passing the cuts.
     pub w_max: f64,
+    /// The largest weight seen. Equal to `w_max` under [`MaxRule::Extremum`] and
+    /// above it under a truncating rule, so the ratio of the two is how much
+    /// acceptance the truncation bought in this channel.
+    pub w_peak: f64,
     /// Points drawn.
     pub draws: usize,
     /// Points with a non-zero weight — a channel whose grid mostly lands outside
@@ -240,6 +346,68 @@ struct UnweightChannel {
     scan: ChannelScan,
 }
 
+/// Scan one channel's frozen grid, and hand back the channel together with the
+/// trailing-uniform stream the trials go on to draw from.
+///
+/// The channel index keys both streams, so a channel's scan is a function of the
+/// seed, the grid and its own draw count — never of what its neighbours got or of
+/// which thread ran it.
+fn scan_channel<I: ChannelIntegrand>(
+    integrand: &I,
+    grid: &VegasGrid,
+    draws: usize,
+    j: usize,
+    seed: u64,
+    rule: MaxRule,
+) -> (UnweightChannel, SubStream) {
+    let ndim = integrand.channel_grid_ndim();
+    let scale_ndim = integrand.scale_draw_ndim();
+    let mut u = vec![0.0; ndim + scale_ndim];
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    rng.set_stream(SCAN_STREAM_BASE + j as u64);
+    let mut trailing = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
+    let mut w_peak = 0.0f64;
+    let mut sum = 0.0f64;
+    let mut nonzero = 0usize;
+    // A truncating rule reads the whole weight distribution, not just its top, so
+    // the non-zero weights are held; the extremum rule needs none of them.
+    let mut weights: Vec<f64> = Vec::new();
+    let keep = rule != MaxRule::Extremum;
+    for _ in 0..draws {
+        let jac = grid.draw(&mut rng, &mut u[..ndim]);
+        trailing.fill_uniforms(&mut u[ndim..]);
+        let w = jac * integrand.value_in_channel(j, &u);
+        if w > 0.0 {
+            nonzero += 1;
+            sum += w;
+            w_peak = w_peak.max(w);
+            if keep {
+                weights.push(w);
+            }
+        }
+    }
+    let w_max = if keep {
+        weights.sort_by(f64::total_cmp);
+        rule.apply(&weights)
+    } else {
+        w_peak
+    };
+    (
+        UnweightChannel {
+            grid: grid.clone(),
+            w_max,
+            scan: ChannelScan {
+                w_max,
+                w_peak,
+                draws,
+                nonzero,
+                mean: ratio(sum, draws as f64),
+            },
+        },
+        trailing,
+    )
+}
+
 /// Accept/reject event generation over frozen per-channel VEGAS grids.
 ///
 /// Built by [`scan`](Self::scan), which estimates every channel's maximum weight,
@@ -277,51 +445,48 @@ impl Unweighter {
     /// and is never selected; [`empty_channels`](Self::empty_channels) reports it,
     /// because its term is then missing from the generated sample even though it is
     /// present in the banked cross section.
-    pub fn scan<'g, I: ChannelIntegrand>(
+    ///
+    /// The maxima come off the default [`MaxRule`];
+    /// [`scan_with`](Self::scan_with) takes another.
+    pub fn scan<'g, I: ChannelIntegrand + Sync>(
         integrand: &I,
         channels: impl IntoIterator<Item = (&'g VegasGrid, usize)>,
         seed: u64,
     ) -> Self {
+        Self::scan_with(integrand, channels, seed, MaxRule::default())
+    }
+
+    /// [`scan`](Self::scan) under an explicit [`MaxRule`].
+    ///
+    /// The channels are scanned in parallel. Each one is a pure function of its own
+    /// two streams and of nothing another channel touches, so the result is the same
+    /// whatever the thread count is — including the maxima, which depend on the
+    /// weights a channel saw and not on the order they arrived in.
+    pub fn scan_with<'g, I: ChannelIntegrand + Sync>(
+        integrand: &I,
+        channels: impl IntoIterator<Item = (&'g VegasGrid, usize)>,
+        seed: u64,
+        rule: MaxRule,
+    ) -> Self {
         let ndim = integrand.channel_grid_ndim();
         let scale_ndim = integrand.scale_draw_ndim();
-        let mut built = Vec::with_capacity(integrand.channel_count());
-        let mut u = vec![0.0; ndim + scale_ndim];
-        let mut scale_draw: Vec<SubStream> = Vec::with_capacity(integrand.channel_count());
-        for (j, (grid, draws)) in channels.into_iter().enumerate() {
+        let specs: Vec<(&VegasGrid, usize)> = channels.into_iter().collect();
+        for (j, (grid, _)) in specs.iter().enumerate() {
             assert_eq!(
                 grid.ndim(),
                 ndim,
                 "channel {j}'s grid is over {} coordinates, the integrand's channels over {ndim}",
                 grid.ndim()
             );
-            let mut rng = ChaCha8Rng::seed_from_u64(seed);
-            rng.set_stream(SCAN_STREAM_BASE + j as u64);
-            let mut trailing = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
-            let mut w_max = 0.0f64;
-            let mut sum = 0.0f64;
-            let mut nonzero = 0usize;
-            for _ in 0..draws {
-                let jac = grid.draw(&mut rng, &mut u[..ndim]);
-                trailing.fill_uniforms(&mut u[ndim..]);
-                let w = jac * integrand.value_in_channel(j, &u);
-                if w > 0.0 {
-                    nonzero += 1;
-                    sum += w;
-                    w_max = w_max.max(w);
-                }
-            }
-            built.push(UnweightChannel {
-                grid: grid.clone(),
-                w_max,
-                scan: ChannelScan {
-                    w_max,
-                    draws,
-                    nonzero,
-                    mean: ratio(sum, draws as f64),
-                },
-            });
-            scale_draw.push(trailing);
         }
+        let scanned: Vec<(UnweightChannel, SubStream)> = specs
+            .par_iter()
+            .enumerate()
+            .map(|(j, &(grid, draws))| scan_channel(integrand, grid, draws, j, seed, rule))
+            .collect();
+        let (built, scale_draw): (Vec<UnweightChannel>, Vec<SubStream>) =
+            scanned.into_iter().unzip();
+        let u = vec![0.0; ndim + scale_ndim];
         assert_eq!(
             built.len(),
             integrand.channel_count(),
@@ -348,6 +513,14 @@ impl Unweighter {
     /// the denominator of the predicted efficiency `σ / Σⱼ w_maxⱼ`.
     pub fn total_w_max(&self) -> f64 {
         self.total_w_max
+    }
+
+    /// `Σⱼ` of the largest weight each channel's scan saw — what
+    /// [`total_w_max`](Self::total_w_max) would have been under
+    /// [`MaxRule::Extremum`], and so the acceptance the truncation traded away
+    /// overweights for.
+    pub fn total_w_peak(&self) -> f64 {
+        self.channels.iter().map(|c| c.scan.w_peak).sum()
     }
 
     /// Per-channel maxima, in channel order.
@@ -496,10 +669,171 @@ mod tests {
         (0..n).map(|_| VegasGrid::new(1, 50, 0.0)).collect()
     }
 
+    /// The tests below that reason about suprema are statements about the extremum
+    /// rule, so that is the rule they scan under; the truncating rule reads a
+    /// quantile of the same scan and has its own tests.
     fn scan_of(integ: &PowerChannels, draws: usize, seed: u64) -> (Vec<VegasGrid>, Unweighter) {
+        scan_of_with(integ, draws, seed, MaxRule::Extremum)
+    }
+
+    fn scan_of_with(
+        integ: &PowerChannels,
+        draws: usize,
+        seed: u64,
+        rule: MaxRule,
+    ) -> (Vec<VegasGrid>, Unweighter) {
         let grids = flat_grids(integ.channel_count());
-        let uw = Unweighter::scan(integ, grids.iter().map(|g| (g, draws)), seed);
+        let uw = Unweighter::scan_with(integ, grids.iter().map(|g| (g, draws)), seed, rule);
         (grids, uw)
+    }
+
+    /// MadGraph's ladder, on weights small enough to walk by hand
+    /// (`Template/LO/SubProcesses/unwgt.f`, the `trunc_max` loop).
+    ///
+    /// Ten weights of `1`, one of `5` and one of `20`, summing to `35`.
+    ///
+    /// * At a 1% share (MadGraph's own `trunc_max`) the threshold is `0.35`. The
+    ///   first rung down from the top already leaves `20 − 5 = 15` above it, so the
+    ///   ladder stops immediately and the maximum is the extremum, `20`.
+    /// * At a 50% share the threshold is `17.5`. Stepping to `5` leaves `15`, which
+    ///   still fits; stepping to `1` would leave `(20−1) + (5−1) = 23`, which does
+    ///   not. The maximum is `5`.
+    ///
+    /// Both directions matter: the first says a tail too heavy to truncate is left
+    /// alone rather than clipped, the second that the rule stops at the last rung
+    /// that fits rather than the first that does not.
+    #[test]
+    fn the_truncation_ladder_is_madgraphs() {
+        let mut w = vec![1.0; 10];
+        w.push(5.0);
+        w.push(20.0);
+        assert_eq!(MaxRule::Truncated { excess_share: 0.01 }.apply(&w), 20.0);
+        assert_eq!(MaxRule::Truncated { excess_share: 0.5 }.apply(&w), 5.0);
+
+        // A hundred weights of `1` and one of `2`: every rung below the top leaves
+        // exactly `1` above it — 0.98% of the summed `102` — so the ladder runs to
+        // its floor and the maximum is `1`, not `2`.
+        let mut flat = vec![1.0; 100];
+        flat.push(2.0);
+        assert_eq!(MaxRule::Truncated { excess_share: 0.01 }.apply(&flat), 1.0);
+    }
+
+    /// A share of zero is the extremum: the ladder never takes its first step, so
+    /// nothing is allowed above the maximum. Two weights or fewer are the same case
+    /// by MadGraph's own floor — the rule never proposes a maximum with fewer than
+    /// two weights above it.
+    #[test]
+    fn a_zero_share_and_a_tiny_scan_both_give_the_extremum() {
+        assert_eq!(MaxRule::truncated(0.0), Some(MaxRule::Extremum));
+        assert_eq!(MaxRule::truncated(1.0), None);
+        assert_eq!(MaxRule::truncated(-0.1), None);
+
+        let w = vec![1.0, 2.0, 3.0, 400.0];
+        assert_eq!(MaxRule::Extremum.apply(&w), 400.0);
+        assert_eq!(MaxRule::Truncated { excess_share: 0.0 }.apply(&w), 400.0);
+        let wide = MaxRule::Truncated { excess_share: 0.9 };
+        assert_eq!(wide.apply(&[]), 0.0);
+        assert_eq!(wide.apply(&[7.0]), 7.0);
+        assert_eq!(wide.apply(&[7.0, 9.0]), 9.0);
+    }
+
+    /// What the truncation is for: it lowers the summed maximum, which is the
+    /// denominator of the acceptance, and pays for it with events above the
+    /// maximum. The integral is untouched by the trade, since those events are kept
+    /// at weight `> 1` rather than clipped.
+    #[test]
+    fn truncation_buys_acceptance_with_overweights_and_not_with_bias() {
+        let integ = PowerChannels {
+            sigma: vec![2.0, 0.5, 3.0],
+            power: vec![0.0, 2.0, 6.0],
+        };
+        let sigma: f64 = integ.sigma.iter().sum();
+        let run = |rule: MaxRule| {
+            let (_g, mut uw) = scan_of_with(&integ, 50_000, 3, rule);
+            let mut rng = ChaCha8Rng::seed_from_u64(9);
+            for _ in 0..1_000_000 {
+                uw.trial(&integ, &mut rng);
+            }
+            uw
+        };
+        let extremum = run(MaxRule::Extremum);
+        let truncated = run(MaxRule::Truncated { excess_share: 0.01 });
+
+        assert!(
+            truncated.total_w_max() < extremum.total_w_max(),
+            "truncation must lower the summed maximum: {:.6e} vs {:.6e}",
+            truncated.total_w_max(),
+            extremum.total_w_max()
+        );
+        assert!(
+            (truncated.total_w_peak() - extremum.total_w_max()).abs() < 1e-9,
+            "the truncating scan saw the same peaks: {:.6e} vs {:.6e}",
+            truncated.total_w_peak(),
+            extremum.total_w_max()
+        );
+        assert!(
+            truncated.stats().efficiency() > extremum.stats().efficiency(),
+            "acceptance must rise: {:.4e} vs {:.4e}",
+            truncated.stats().efficiency(),
+            extremum.stats().efficiency()
+        );
+        assert!(
+            truncated.stats().excess_share() > extremum.stats().excess_share(),
+            "and the cross section above the maxima with it: {:.3e} vs {:.3e}",
+            truncated.stats().excess_share(),
+            extremum.stats().excess_share()
+        );
+        for (label, uw) in [("extremum", &extremum), ("truncated", &truncated)] {
+            let rel = uw.sigma_from_events() / sigma - 1.0;
+            assert!(
+                rel.abs() < 0.02,
+                "{label} sigma from events {:.5} vs {sigma:.5}",
+                uw.sigma_from_events()
+            );
+        }
+    }
+
+    /// The channel composition under truncation: what stays `∝ σⱼ` is the cross
+    /// section the kept events carry, not how many of them there are. An event
+    /// above its channel's maximum stands for more than one event's worth, so the
+    /// counts drift by exactly the share the truncation put above the maxima —
+    /// which is the sample-lumpiness price the rule is paying.
+    #[test]
+    fn truncation_keeps_the_channel_cross_sections_and_not_the_channel_counts() {
+        let integ = PowerChannels {
+            sigma: vec![1.0, 1.0],
+            power: vec![0.0, 9.0],
+        };
+        let (_g, mut uw) =
+            scan_of_with(&integ, 50_000, 11, MaxRule::Truncated { excess_share: 0.1 });
+        let mut rng = ChaCha8Rng::seed_from_u64(4242);
+        let mut counts = [0usize; 2];
+        let mut carried = [0.0f64; 2];
+        let n = 40_000;
+        for _ in 0..n {
+            let ev = uw
+                .next_event(&integ, &mut rng, 100_000)
+                .expect("an event within the trial budget");
+            counts[ev.channel] += 1;
+            carried[ev.channel] += ev.weight;
+        }
+        let total: f64 = carried.iter().sum();
+        let by_weight = carried[0] / total;
+        // Both channels carry half the cross section.
+        let sigma = (0.5 * 0.5 / n as f64).sqrt();
+        assert!(
+            (by_weight - 0.5).abs() < 4.0 * sigma,
+            "channel-0 weight share {by_weight:.4} vs 0.5 (4σ = {:.4})",
+            4.0 * sigma
+        );
+        // The steep channel is where the truncated maximum leaves cross section
+        // above it, so it is the one whose events are worth more than one apiece.
+        let by_count = counts[0] as f64 / n as f64;
+        assert!(
+            by_count > by_weight,
+            "count share {by_count:.4} and weight share {by_weight:.4} \
+             must part company once events carry weight"
+        );
     }
 
     /// [`ScanBudget::IntegrationShare`] must hand back exactly the count it was
