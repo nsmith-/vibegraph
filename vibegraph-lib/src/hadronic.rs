@@ -1349,18 +1349,33 @@ impl<'a> FixedBeamIntegrand<'a> {
         if !self.cuts.pass(&ext) {
             return 0.0;
         }
+        self.matrix_element_at(sc, &ext, momenta, channel)
+    }
+
+    /// [`matrix_element`](Self::matrix_element) for a point whose externals
+    /// already passed the cut filter, so it neither rebuilds `ext` nor re-checks
+    /// it — the seam that lets a caller share the cut verdict with a
+    /// configuration draw taken on the same point.
+    fn matrix_element_at(
+        &self,
+        sc: &FixedBeamScratch<'a>,
+        ext: &[V],
+        momenta: &[V],
+        channel: usize,
+    ) -> f64 {
         self.apply_scale(sc, momenta, channel);
 
         let mut m2 = 0.0;
         for sub in &sc.subs {
-            m2 += sub.symmetry_factor() * sub.eval_m2(&ext);
+            m2 += sub.symmetry_factor() * sub.eval_m2(ext);
         }
         m2
     }
 
     /// The integrand value at a VEGAS point `u ∈ [0,1]^ndim`, in natural units
     /// (GeV⁻²); its VEGAS integral is the partonic cross section. Points whose
-    /// momenta fail a cut contribute exactly zero.
+    /// momenta fail a cut contribute exactly zero and return before the
+    /// configuration draw runs, so a rejected point never pays for it.
     pub fn value(&self, u: &[f64]) -> f64 {
         let map_ndim = self.sampler.ndim();
         assert_eq!(
@@ -1371,9 +1386,13 @@ impl<'a> FixedBeamIntegrand<'a> {
         );
         let (map_u, scale_u) = u.split_at(map_ndim);
         let (channel, point) = self.sampler.sample_from(map_u);
+        let ext = self.externals(&point.momenta);
+        if !self.cuts.pass(&ext) {
+            return 0.0;
+        }
         let sc = self.scratch();
-        let scale_channel = self.scale_channel(sc, &point.momenta, channel, scale_u);
-        let m2 = self.matrix_element(sc, &point.momenta, scale_channel);
+        let scale_channel = self.scale_channel(sc, &ext, channel, scale_u);
+        let m2 = self.matrix_element_at(sc, &ext, &point.momenta, scale_channel);
         if m2 == 0.0 {
             return 0.0;
         }
@@ -1447,7 +1466,8 @@ impl<'a> FixedBeamIntegrand<'a> {
                     .map(|_| scale_draw.borrow_mut().next_uniform::<f64>())
                     .collect();
                 let sc = self.scratch();
-                self.matrix_element(sc, momenta, self.scale_channel(sc, momenta, channel, &scale_u))
+                let ext = self.externals(momenta);
+                self.matrix_element(sc, momenta, self.scale_channel(sc, &ext, channel, &scale_u))
             },
             seed,
             MULTICHANNEL_ADAPT_STREAM,
@@ -1603,9 +1623,13 @@ impl<'a> FixedBeamIntegrand<'a> {
     pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         let (grid_u, scale_u) = self.split_point(u);
         let point = self.sample_channel(channel, grid_u);
+        let ext = self.externals(&point.momenta);
+        if !self.cuts.pass(&ext) {
+            return 0.0;
+        }
         let sc = self.scratch();
-        let scale_channel = self.scale_channel(sc, &point.momenta, channel, scale_u);
-        let m2 = self.matrix_element(sc, &point.momenta, scale_channel);
+        let scale_channel = self.scale_channel(sc, &ext, channel, scale_u);
+        let m2 = self.matrix_element_at(sc, &ext, &point.momenta, scale_channel);
         if m2 == 0.0 {
             return 0.0;
         }
@@ -1630,18 +1654,17 @@ impl<'a> FixedBeamIntegrand<'a> {
     fn scale_channel(
         &self,
         sc: &FixedBeamScratch<'a>,
-        momenta: &[V],
+        ext: &[V],
         channel: usize,
         scale_u: &[f64],
     ) -> usize {
         let [v] = scale_u else { return channel };
-        let ext = self.externals(momenta);
         let sub = &sc.subs[0];
         if let Some(alpha_s) = self.amp2_alpha_s {
             sub.set_alpha_s(alpha_s);
         }
         let mut amp2 = sc.amp2_buf.borrow_mut();
-        sub.eval_amp2(&ext, &mut amp2);
+        sub.eval_amp2(ext, &mut amp2);
         match select_index(&amp2, *v) {
             Some(c) => sub.evaluator().config_diagrams()[c],
             // Every diagram amplitude vanished here, so the coherent sum does too
@@ -1671,9 +1694,13 @@ impl<'a> FixedBeamIntegrand<'a> {
         let point = self.sample_channel(channel, grid_u);
         momenta.clear();
         momenta.extend_from_slice(&point.momenta);
+        let ext = self.externals(momenta);
+        if !self.cuts.pass(&ext) {
+            return 0.0;
+        }
         let sc = self.scratch();
-        let scale_channel = self.scale_channel(sc, &point.momenta, channel, scale_u);
-        let m2 = self.matrix_element(sc, &point.momenta, scale_channel);
+        let scale_channel = self.scale_channel(sc, &ext, channel, scale_u);
+        let m2 = self.matrix_element_at(sc, &ext, momenta, scale_channel);
         if m2 == 0.0 {
             return 0.0;
         }
@@ -1696,9 +1723,10 @@ impl<'a> FixedBeamIntegrand<'a> {
         u: &[f64],
     ) -> Option<Result<EventScales, ScaleError>> {
         let (_, scale_u) = self.split_point(u);
+        let ext = self.externals(momenta);
         self.event_scales(
             momenta,
-            self.scale_channel(self.scratch(), momenta, channel, scale_u),
+            self.scale_channel(self.scratch(), &ext, channel, scale_u),
         )
     }
 
