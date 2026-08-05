@@ -1,0 +1,149 @@
+{
+  "schema": 1,
+  "_comment": "MATRIX1 ns/eval per process, measured by this script on the machine in `host`. A measurement about that machine, not a reference: absolute times do not carry across hosts and this file is not part of the refdata bundle. scripts/mg_perf_compare.sh reads it, falling back to the committed validation/madgraph/mg_timings.json when this work area lacks one.",
+  "host": {
+    "captured": "2026-08-05T16:23:40Z",
+    "cpu": {
+      "arch": "arm64",
+      "model": "Apple M3 Max",
+      "logical_cpus": 16,
+      "physical_cpus": 16,
+      "performance_logical_cpus": 12,
+      "efficiency_logical_cpus": 4,
+      "frequency_hz": null,
+      "frequency_note": "null where the OS exposes no clock (Apple Silicon: `hw.cpufrequency`/`hw.cpufrequency_max` are empty)",
+      "memory_bytes": 51539607552
+    },
+    "scheduling": {
+      "affinity": "none \u2014 MadGraph is run as it is in production, with no core pinning; madevent forks its own subprocess jobs and the OS places them",
+      "cpu_count_seen_by_python": 16
+    },
+    "os": {
+      "family": "darwin",
+      "kernel": "Darwin 24.6.0",
+      "release": "15.7.7"
+    },
+    "toolchain": {
+      "python": "3.11.15",
+      "gfortran": "GNU Fortran (GCC) 14.3.0",
+      "gcc": "Apple clang version 17.0.0 (clang-1700.6.3.2)",
+      "madgraph": "version = 3.7.1\ndate = 2026-04-29"
+    }
+  },
+  "processes": {
+    "ee_to_mumu": {
+      "process_str": "e+ e- > mu+ mu-",
+      "n_evals": 10000,
+      "total_ms": 3.094417043030262,
+      "ns_per_eval": 309.4417043030262
+    },
+    "ee_to_ee": {
+      "process_str": "e+ e- > e+ e-",
+      "n_evals": 10000,
+      "total_ms": 7.611333858221769,
+      "ns_per_eval": 761.1333858221769
+    },
+    "ee_to_ttx": {
+      "process_str": "e+ e- > t t~",
+      "n_evals": 10000,
+      "total_ms": 3.666375298053026,
+      "ns_per_eval": 366.6375298053026
+    },
+    "ee_to_wpwm": {
+      "process_str": "e+ e- > W+ W-",
+      "n_evals": 10000,
+      "total_ms": 8.001375012099743,
+      "ns_per_eval": 800.1375012099743
+    },
+    "ee_to_zh": {
+      "process_str": "e+ e- > Z H",
+      "n_evals": 10000,
+      "total_ms": 2.2538751363754272,
+      "ns_per_eval": 225.38751363754272
+    },
+    "uux_to_uux": {
+      "process_str": "u u~ > u u~",
+      "n_evals": 10000,
+      "total_ms": 2.848832868039608,
+      "ns_per_eval": 284.8832868039608
+    },
+    "gg_to_ttx": {
+      "process_str": "g g > t t~",
+      "n_evals": 10000,
+      "total_ms": 7.045665755867958,
+      "ns_per_eval": 704.5665755867958
+    },
+    "gg_to_gg": {
+      "process_str": "g g > g g",
+      "n_evals": 10000,
+      "total_ms": 10.206374805420637,
+      "ns_per_eval": 1020.6374805420636
+    },
+    "ee_to_mumua": {
+      "process_str": "e+ e- > mu+ mu- a",
+      "n_evals": 10000,
+      "total_ms": 15.253415796905756,
+      "ns_per_eval": 1525.3415796905756
+    },
+    "ee_to_tatah": {
+      "process_str": "e+ e- > ta+ ta- H",
+      "n_evals": 10000,
+      "total_ms": 8.933166041970253,
+      "ns_per_eval": 893.3166041970253
+    },
+    "uux_to_epemg": {
+      "process_str": "u u~ > e+ e- g QCD=2 QED=2",
+      "n_evals": 10000,
+      "total_ms": 9.237749967724085,
+      "ns_per_eval": 923.7749967724085
+    },
+    "ddx_to_epemg": {
+      "process_str": "d d~ > e+ e- g QCD=2 QED=2",
+      "n_evals": 10000,
+      "total_ms": 8.930624928325415,
+      "ns_per_eval": 893.0624928325415
+    },
+    "gu_to_epemu": {
+      "process_str": "g u > e+ e- u QCD=2 QED=2",
+      "n_evals": 10000,
+      "total_ms": 9.03637520968914,
+      "ns_per_eval": 903.637520968914
+    },
+    "gux_to_epemux": {
+      "process_str": "g u~ > e+ e- u~ QCD=2 QED=2",
+      "n_evals": 10000,
+      "total_ms": 9.152915794402361,
+      "ns_per_eval": 915.2915794402361
+    },
+    "ee_to_mumu_tata_qcd0": {
+      "process_str": "e+ e- > mu+ mu- ta+ ta- QCD=0",
+      "n_evals": 2000,
+      "total_ms": 13.34866601973772,
+      "ns_per_eval": 6674.33300986886
+    },
+    "uux_to_ccx_emmm_qcd0": {
+      "process_str": "u u~ > c c~ e+ e- mu+ mu- QCD=0",
+      "n_evals": 500,
+      "total_ms": 54.582000244408846,
+      "ns_per_eval": 109164.00048881769
+    },
+    "bbx_to_ccx_emmm_qcd0": {
+      "process_str": "b b~ > c c~ e+ e- mu+ mu- QCD=0",
+      "n_evals": 500,
+      "total_ms": 75.60045784339309,
+      "ns_per_eval": 151200.91568678617
+    },
+    "ud_to_epemud_qcd0": {
+      "process_str": "u d > e+ e- u d QCD=0",
+      "n_evals": 2000,
+      "total_ms": 12.991124764084816,
+      "ns_per_eval": 6495.562382042408
+    },
+    "pp_to_ll_qcd0": {
+      "process_str": "u u~ > mu+ mu-",
+      "n_evals": 10000,
+      "total_ms": 3.008625004440546,
+      "ns_per_eval": 300.8625004440546
+    }
+  }
+}
