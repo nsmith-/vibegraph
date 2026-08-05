@@ -103,32 +103,47 @@ fn bench_lanes_prepacked<const N: usize>(
     );
 }
 
-/// List of processes to benchmark: (internal name, MadGraph-style process card)
-///
-/// Keep in sync with validation/madgraph/gen_amplitude.py PROCESSES
-/// and vibegraph-lib/tests/amplitude_oracle.rs
-const PROCESSES: [(&str, &str); 14] = [
-    ("ee_to_mumu", "e+ e- > mu+ mu-"),
-    ("pp_to_ll_qcd0", "u u~ > mu+ mu-"),
-    ("ee_to_ee", "e+ e- > e+ e-"),
-    ("ee_to_mumua", "e+ e- > mu+ mu- a"),
-    ("ee_to_ttx", "e+ e- > t t~"),
-    ("ee_to_wpwm", "e+ e- > w+ w-"),
-    ("ee_to_zh", "e+ e- > z h"),
-    ("ee_to_tatah", "e+ e- > ta+ ta- h"),
-    ("ee_to_mumu_tata_qcd0", "e+ e- > mu+ mu- ta+ ta- QCD=0"),
-    ("uux_to_ccx_emmm_qcd0", "u u~ > c c~ e+ e- mu+ mu- QCD=0"),
-    ("bbx_to_ccx_emmm_qcd0", "b b~ > c c~ e+ e- mu+ mu- QCD=0"),
-    ("uux_to_uux", "u u~ > u u~"),
-    ("gg_to_ttx", "g g > t t~"),
-    ("gg_to_gg", "g g > g g"),
-];
+/// The processes to benchmark: every `validation/manifest.toml` row that
+/// carries an `mg_amplitude` table, in the manifest's own row order — the
+/// same registry `validation/madgraph/gen_amplitude.py` compiles MATRIX1
+/// timings from, so this bench and `mg_timings.json` cover exactly the same
+/// set. `amplitude_oracle.rs` carries no such list of its own: it reads every
+/// file under `validation/madgraph/amplitudes/`, so it needs no synchronising.
+#[derive(serde::Deserialize)]
+struct ManifestProcess {
+    key: String,
+    mg_amplitude: Option<MgAmplitude>,
+}
+
+#[derive(serde::Deserialize)]
+struct MgAmplitude {
+    process: String,
+}
+
+fn manifest_processes() -> Vec<(String, String)> {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    #[derive(serde::Deserialize)]
+    struct Manifest {
+        #[serde(rename = "process")]
+        processes: Vec<ManifestProcess>,
+    }
+    let manifest: Manifest = toml::from_str(&text)
+        .unwrap_or_else(|e| panic!("{} does not parse: {e}", path.display()));
+    manifest
+        .processes
+        .into_iter()
+        .filter_map(|p| p.mg_amplitude.map(|mg| (p.key, mg.process)))
+        .collect()
+}
 
 /// Extra `name=card` process rows, semicolon-separated, from
-/// `VIBEGRAPH_BENCH_EXTRA_PROCESSES`. Lets a study measure processes the fixed list
-/// above does not carry without moving the list itself — the row set
-/// `scripts/mg_perf_compare.sh` joins against stays exactly [`PROCESSES`] unless the
-/// variable is set.
+/// `VIBEGRAPH_BENCH_EXTRA_PROCESSES`. Lets a study measure processes the manifest
+/// does not carry an `mg_amplitude` table for, without editing the manifest — the
+/// row set `scripts/mg_perf_compare.sh` joins against stays exactly
+/// [`manifest_processes`]'s output unless the variable is set.
 fn extra_processes() -> Vec<(String, String)> {
     let Ok(spec) = std::env::var("VIBEGRAPH_BENCH_EXTRA_PROCESSES") else {
         return Vec::new();
@@ -151,17 +166,12 @@ fn bench_eval_m2(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(0xBE7C4);
     let sqrt_s = 500.0;
 
-    let mut all: Vec<(&str, &str)> = PROCESSES.to_vec();
-    for (name, card) in extra_processes() {
-        all.push((
-            Box::leak(name.into_boxed_str()),
-            Box::leak(card.into_boxed_str()),
-        ));
-    }
+    let mut all: Vec<(String, String)> = manifest_processes();
+    all.extend(extra_processes());
 
     let mut group = c.benchmark_group("eval_m2");
     group.sample_size(10);
-    for (name, process) in all {
+    for (name, process) in &all {
         let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
         let sets = generate_from_proc_card(&pc, &model).unwrap();
         let mut eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();

@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Generate MadGraph amplitude reference CSVs on a fixed kinematic grid.
 
-For each registered process, evaluates MadGraph's compiled MATRIX1 Fortran
-subroutine (built by build_amplitude.sh against wrappers/generic.f) over
-RAMBO-sampled phase-space points at one or more collision energies, and writes
+For each process `validation/manifest.toml` registers an `mg_amplitude` table
+for, evaluates MadGraph's compiled MATRIX1 Fortran subroutine (built by
+build_amplitude.sh against wrappers/generic.f) over RAMBO-sampled phase-space
+points at one or more collision energies, and writes
   output/PROCESSNAME_amplitude.csv
 
 Also times each process's MATRIX1 over a dedicated `profile_npoints` batch and
-writes the table to output/mg_timings.json
-({name: {n_evals, total_ms, ns_per_eval}}).
+writes the table to output/mg_timings.json, alongside this machine's identity
+({schema, host, processes: {name: {process_str, n_evals, total_ms,
+ns_per_eval}}}) — see `host_info.py`.
 
 CSV schema (momenta-based; the only schema the Rust test reads):
   # process: PROCESS_STRING     <- parsed by vibegraph's process grammar
@@ -23,8 +25,19 @@ External masses are read from each process's own Cards/param_card.dat, so the
 generated momenta are on-shell for exactly the masses both MadGraph and
 vibegraph evaluate with (bit-for-bit comparison).
 
+The manifest is the single source of truth: a process's generation parameters
+(the concrete process card, external PDGs, RAMBO grid, seed, timing batch
+size) live once, in its `[[process]] mg_amplitude` table, not in a second
+Python-side copy. One compiled module can serve more than one manifest row's
+`amplitudes` gate (`pp_to_ll_qcd0` generates the table `uux_to_mumu` also
+reads) — such rows carry no `mg_amplitude` table of their own.
+
 Usage:
   python validation/madgraph/gen_amplitude.py
+  python validation/madgraph/gen_amplitude.py --dump-processes   # print the
+      resolved registry as JSON and exit; no MadGraph module is imported.
+      This is the migration oracle: run before and after any change to how
+      the registry is built and diff the output.
   pixi run -e madgraph generate-amplitude
 
 Prerequisites:
@@ -37,12 +50,16 @@ import math
 import os
 import sys
 import time
+import tomllib
 from dataclasses import dataclass, field
 
 import numpy as np
 
+from host_info import host_block
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, "output")
+MANIFEST_PATH = os.path.join(HERE, "..", "manifest.toml")
 
 # The compiled mg_*.so matrix elements are build products, so they live in the
 # work area rather than beside the sources that import them.
@@ -72,195 +89,38 @@ class Process:
     profile_npoints: int = 10_000
 
 
-# The uux/eemumutata seeds (7/11) and 50-point single-energy grids predate the
-# registry; kept so their references stay comparable with earlier runs.
-PROCESSES = [
-    Process(
-        "ee_to_mumu",
-        "e+ e- > mu+ mu-",
-        (-11, 11),
-        (-13, 13),
-        sqrt_s_list=(10.0, 50.0, 91.188, 200.0, 500.0),
-        npoints=10,
-        seed=3,
-    ),
-    Process(
-        "pp_to_ll_qcd0",
-        "u u~ > mu+ mu-",
-        (2, -2),
-        (-13, 13),
-        sqrt_s_list=(10.0, 50.0, 91.188, 200.0, 500.0),
-        npoints=10,
-        seed=5,
-    ),
-    Process(
-        "ee_to_ee",
-        "e+ e- > e+ e-",
-        (-11, 11),
-        (-11, 11),
-        sqrt_s_list=(91.188, 200.0, 500.0),
-        npoints=17,
-        seed=13,
-    ),
-    Process(
-        "ee_to_mumua",
-        "e+ e- > mu+ mu- a",
-        (-11, 11),
-        (-13, 13, 22),
-        sqrt_s_list=(200.0, 500.0),
-        npoints=25,
-        seed=17,
-    ),
-    Process(
-        "ee_to_ttx",
-        "e+ e- > t t~",
-        (-11, 11),
-        (6, -6),
-        sqrt_s_list=(400.0, 500.0),
-        npoints=25,
-        seed=19,
-    ),
-    Process(
-        "ee_to_wpwm",
-        "e+ e- > W+ W-",
-        (-11, 11),
-        (24, -24),
-        sqrt_s_list=(200.0, 500.0),
-        npoints=25,
-        seed=23,
-    ),
-    Process(
-        "ee_to_zh",
-        "e+ e- > Z H",
-        (-11, 11),
-        (23, 25),
-        sqrt_s_list=(250.0, 500.0),
-        npoints=25,
-        seed=29,
-    ),
-    Process(
-        "ee_to_tatah",
-        "e+ e- > ta+ ta- H",
-        (-11, 11),
-        (-15, 15, 25),
-        sqrt_s_list=(250.0, 500.0),
-        npoints=25,
-        seed=31,
-    ),
-    Process(
-        "ee_to_mumu_tata_qcd0",
-        "e+ e- > mu+ mu- ta+ ta- QCD=0",
-        (-11, 11),
-        (-13, 13, -15, 15),
-        sqrt_s_list=(500.0,),
-        npoints=50,
-        seed=11,
-        profile_npoints=2_000,
-    ),
-    Process(
-        "uux_to_ccx_emmm_qcd0",
-        "u u~ > c c~ e+ e- mu+ mu- QCD=0",
-        (2, -2),
-        (4, -4, -11, 11, -13, 13),
-        sqrt_s_list=(500.0,),
-        npoints=50,
-        seed=7,
-        profile_npoints=500,
-    ),
-    Process(
-        "bbx_to_ccx_emmm_qcd0",
-        "b b~ > c c~ e+ e- mu+ mu- QCD=0",
-        (5, -5),
-        (4, -4, -11, 11, -13, 13),
-        sqrt_s_list=(500.0,),
-        npoints=50,
-        seed=37,
-        profile_npoints=500,
-    ),
-    Process(
-        "uux_to_uux",
-        "u u~ > u u~",
-        (2, -2),
-        (2, -2),
-        sqrt_s_list=(50.0, 200.0, 500.0),
-        npoints=25,
-        seed=41,
-    ),
-    Process(
-        "gg_to_ttx",
-        "g g > t t~",
-        (21, 21),
-        (6, -6),
-        sqrt_s_list=(400.0, 500.0),
-        npoints=25,
-        seed=43,
-    ),
-    Process(
-        "gg_to_gg",
-        "g g > g g",
-        (21, 21),
-        (21, 21),
-        sqrt_s_list=(50.0, 200.0, 500.0),
-        npoints=25,
-        seed=47,
-    ),
-    # The three llj subprocess representatives. The energies bracket the Z pole
-    # from below and above so the lepton pair's invariant mass sweeps across it
-    # rather than sitting on one side; the leg order is MadGraph's, which is the
-    # order the .mg5 generate line was written in.
-    Process(
-        "uux_to_epemg",
-        "u u~ > e+ e- g QCD=2 QED=2",
-        (2, -2),
-        (-11, 11, 21),
-        sqrt_s_list=(50.0, 200.0, 500.0),
-        npoints=25,
-        seed=53,
-    ),
-    Process(
-        "gu_to_epemu",
-        "g u > e+ e- u QCD=2 QED=2",
-        (21, 2),
-        (-11, 11, 2),
-        sqrt_s_list=(50.0, 200.0, 500.0),
-        npoints=25,
-        seed=59,
-    ),
-    Process(
-        "ddx_to_epemg",
-        "d d~ > e+ e- g QCD=2 QED=2",
-        (1, -1),
-        (-11, 11, 21),
-        sqrt_s_list=(50.0, 200.0, 500.0),
-        npoints=25,
-        seed=61,
-    ),
-    # The antiquark orientation of the mixed gluon+quark initial state: same
-    # topology as gu_to_epemu with the fermion line traversed the other way.
-    Process(
-        "gux_to_epemux",
-        "g u~ > e+ e- u~ QCD=2 QED=2",
-        (21, -2),
-        (-11, 11, -2),
-        sqrt_s_list=(50.0, 200.0, 500.0),
-        npoints=25,
-        seed=67,
-    ),
-    # The multi-rung t-channel reference, and the only registered process whose
-    # diagrams put a W between two different quark lines. Two energies, both above
-    # the banked run's own 500 GeV threshold behaviour, so the grid visits the
-    # ladder at two ratios of transfer to collision energy.
-    Process(
-        "ud_to_epemud_qcd0",
-        "u d > e+ e- u d QCD=0",
-        (2, 1),
-        (-11, 11, 2, 1),
-        sqrt_s_list=(200.0, 500.0),
-        npoints=25,
-        seed=71,
-        profile_npoints=2_000,
-    ),
-]
+def load_processes() -> list["Process"]:
+    """The `mg_amplitude`-bearing rows of `validation/manifest.toml`, as `Process` records.
+
+    Iterated in the manifest's own row order (single-channel rows in their
+    written order, then the one multi-channel row that owns a generation,
+    `pp_to_ll_qcd0`) — nothing downstream depends on registry order, since
+    every process writes its own independent CSV and the timing table is
+    keyed by name.
+    """
+    with open(MANIFEST_PATH, "rb") as f:
+        manifest = tomllib.load(f)
+    procs = []
+    for entry in manifest["process"]:
+        mg = entry.get("mg_amplitude")
+        if mg is None:
+            continue
+        procs.append(
+            Process(
+                name=entry["key"],
+                process_str=mg["process"],
+                pdgs_in=tuple(mg["pdgs_in"]),
+                pdgs_out=tuple(mg["pdgs_out"]),
+                sqrt_s_list=tuple(mg["sqrt_s_list"]),
+                npoints=mg["npoints"],
+                seed=mg["seed"],
+                profile_npoints=mg.get("profile_npoints", 10_000),
+            )
+        )
+    return procs
+
+
+PROCESSES = load_processes()
 
 
 def param_card_path(proc: Process) -> str:
@@ -452,7 +312,38 @@ def sanity_check_ee_mumu(rows: list[list[float]]):
     print(f"  Sanity check passed: ee->mumu matches the QED formula on {checked} points.")
 
 
+def dump_processes() -> None:
+    """Print the resolved registry as JSON, sorted by name, and exit.
+
+    Imports no MadGraph module and touches no compiled `.so` — this is the
+    migration oracle for `validation/manifest.toml`'s `mg_amplitude` tables:
+    run before and after a change to how the registry is built (the manifest
+    move, a future field rename) and diff the two dumps. Sorted rather than
+    manifest-order so the comparison is insensitive to a row's position in the
+    manifest file.
+    """
+    records = [
+        {
+            "name": p.name,
+            "process_str": p.process_str,
+            "pdgs_in": list(p.pdgs_in),
+            "pdgs_out": list(p.pdgs_out),
+            "sqrt_s_list": list(p.sqrt_s_list),
+            "npoints": p.npoints,
+            "seed": p.seed,
+            "profile_npoints": p.profile_npoints,
+        }
+        for p in PROCESSES
+    ]
+    records.sort(key=lambda r: r["name"])
+    print(json.dumps(records, indent=2, sort_keys=True))
+
+
 if __name__ == "__main__":
+    if "--dump-processes" in sys.argv[1:]:
+        dump_processes()
+        sys.exit(0)
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     timings: dict[str, dict] = {}
@@ -471,7 +362,21 @@ if __name__ == "__main__":
 
     timings_path = os.path.join(OUTPUT_DIR, "mg_timings.json")
     with open(timings_path, "w") as f:
-        json.dump(timings, f, indent=2)
+        json.dump(
+            {
+                "schema": 1,
+                "_comment": "MATRIX1 ns/eval per process, measured by this script on the "
+                "machine in `host`. A measurement about that machine, not a reference: "
+                "absolute times do not carry across hosts and this file is not part of "
+                "the refdata bundle. scripts/mg_perf_compare.sh reads it, falling back "
+                "to the committed validation/madgraph/mg_timings.json when this work "
+                "area lacks one.",
+                "host": host_block(),
+                "processes": timings,
+            },
+            f,
+            indent=2,
+        )
     print(f"Wrote MATRIX1 timing table to {timings_path}")
 
     print("Done.")
