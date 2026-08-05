@@ -31,7 +31,7 @@ use thread_local::ThreadLocal;
 use crate::artifact::ChannelSampler;
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
-use crate::coupling::cluster::graph::ColorTable;
+use crate::coupling::cluster::graph::{ColorTable, MergeTablesByOrder};
 use crate::coupling::cluster::setclscales::ScaleRefusal;
 use crate::coupling::scales::{ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
@@ -196,6 +196,10 @@ impl SampledChannel {
 pub struct Channels {
     derived: DerivedChannels,
     colors: ColorTable,
+    /// The merge lookup each coupling order clusters against, hoisted out of the
+    /// per-event path: it is a function of the channel forests and the order
+    /// alone, and every event of a channel asks for the same one.
+    tables: MergeTablesByOrder,
     /// The channel named by a draw that has none of its own.
     ///
     /// Two callers reach it: a flat sampler, which draws no channel at all, and
@@ -213,6 +217,7 @@ impl Channels {
             colors: &self.colors,
             this_config,
             iproc: 1,
+            tables: Some(self.tables.of(this_config)),
         }
     }
 
@@ -802,9 +807,11 @@ pub(crate) fn compile_scale_source(
             model,
             evaluated,
         )?;
+        let tables = MergeTablesByOrder::build(&derived.set);
         sets.push(Channels {
             derived,
             colors: colors.clone(),
+            tables,
             default_config: 1,
         });
     }

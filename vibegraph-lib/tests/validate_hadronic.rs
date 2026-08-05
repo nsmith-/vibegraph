@@ -2242,6 +2242,7 @@ fn probe_cluster_scale_spread_over_configurations() {
                         colors: &colors,
                         this_config: config,
                         iproc: 1,
+                        tables: None,
                     };
                     let s = choice
                         .cluster_scales(&event, &input)

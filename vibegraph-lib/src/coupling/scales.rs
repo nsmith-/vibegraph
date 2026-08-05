@@ -38,7 +38,7 @@
 
 use thiserror::Error;
 
-use crate::coupling::cluster::graph::{ChannelSet, ColorTable};
+use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTable};
 use crate::coupling::cluster::kt::{Channel, ClusterSettings};
 use crate::coupling::cluster::setclscales::{setclscales, JetMemo, ScaleRefusal, ScaleSettings};
 use crate::runcard::RunCard;
@@ -123,6 +123,11 @@ pub struct ClusterInput<'a> {
     pub this_config: usize,
     /// The subprocess of the group, from `1`.
     pub iproc: usize,
+    /// The merge tables for `this_config`'s coupling order, when the caller
+    /// keeps them. They are a function of the channel set and that order alone,
+    /// so a caller clustering many events builds them once; `None` builds them
+    /// from `set` on each call.
+    pub tables: Option<&'a [MergeTable]>,
 }
 
 #[derive(Debug, Error, PartialEq)]
@@ -390,7 +395,14 @@ impl ScaleChoice {
             xmtc: self.xmtc,
             pdfwgt: self.pdfwgt,
         };
-        let tables = input.set.merge_tables(input.this_config);
+        let built;
+        let tables = match input.tables {
+            Some(tables) => tables,
+            None => {
+                built = input.set.merge_tables(input.this_config);
+                &built
+            }
+        };
         let channel = Channel {
             set: input.set,
             table: &tables[input.iproc - 1],
@@ -510,6 +522,7 @@ fn mg_dot(p1: &[f64; 4], p2: &[f64; 4]) -> f64 {
 mod tests {
     use super::*;
     use crate::coupling::cluster::configs::derive_channels;
+    use crate::coupling::cluster::graph::MergeTablesByOrder;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::ufo::particles::ParticleId;
     use crate::ufo::sm::{sm_model, SMRestrict};
@@ -582,7 +595,46 @@ mod tests {
                 colors: &self.colors,
                 this_config: config,
                 iproc: 1,
+                tables: None,
             }
+        }
+    }
+
+    /// On the processes the clustering actually runs on, the hoisted tables are
+    /// the ones the per-event build produces, channel by channel.
+    ///
+    /// The keying itself — one table set per coupling order rather than per
+    /// channel — is pinned in `graph.rs` on a set that carries two orders; every
+    /// process here carries one, which is the common case and not the
+    /// interesting one.
+    #[test]
+    fn hoisted_merge_tables_reproduce_the_per_event_build() {
+        for spec in ["u u~ > u u~", "e+ e- > e+ e-", "g g > g g", "u u~ > e+ e- g"] {
+            let proc = process(spec);
+            let set = &proc.derived.set;
+            let hoisted = MergeTablesByOrder::build(set);
+            for config in 1..=set.configs.len() {
+                assert_eq!(
+                    hoisted.of(config),
+                    set.merge_tables(config).as_slice(),
+                    "{spec} channel {config}"
+                );
+            }
+        }
+    }
+
+    /// The cluster scales themselves are unmoved by where the tables came from.
+    #[test]
+    fn the_hoisted_tables_leave_the_cluster_scale_alone() {
+        let choice = ScaleChoice::from_run_card(&partonic_card("")).expect("compiled");
+        let out = [[250.0, 30.0, 0.0, -100.0], [250.0, -30.0, 0.0, 100.0]];
+        let quarks = process("u u~ > u u~");
+        let hoisted = MergeTablesByOrder::build(&quarks.derived.set);
+        for config in 1..=quarks.derived.set.configs.len() {
+            let mut input = quarks.input(config);
+            let built = choice.cluster_scales(&event(&out), &input);
+            input.tables = Some(hoisted.of(config));
+            assert_eq!(choice.cluster_scales(&event(&out), &input), built);
         }
     }
 

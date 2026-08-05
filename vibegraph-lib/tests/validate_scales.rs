@@ -1220,6 +1220,7 @@ fn general(
             colors: &channels.colors,
             this_config: config,
             iproc: 1,
+            tables: None,
         },
     )?;
     Ok(MuTriple([scales.mu_r, scales.mu_f[0], scales.mu_f[1]]))
