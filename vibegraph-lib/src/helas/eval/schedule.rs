@@ -1,12 +1,13 @@
 //! Alternative execution orders for a compiled [`Program`], and the structural metrics
 //! that judge them.
 //!
-//! [`Program::build`] emits one instruction per node in arena (storage) order — the
-//! order hash-consing, lowering and helicity expansion happened to intern nodes in.
-//! Any other topological order of the same DAG computes exactly the same values with
-//! exactly the same arithmetic; only slot recycling, operand reuse distance and the
-//! discriminant sequence the dispatch sees change. This module builds such orders and
-//! measures the four properties an execution order can plausibly trade between:
+//! [`Program::build`] emits one instruction per node, grouped by
+//! [`Instr`](super::layout::Instr) variant inside each ASAP dependency level. Any other
+//! topological order of the same DAG
+//! computes exactly the same values with exactly the same arithmetic; only slot
+//! recycling, operand reuse distance and the discriminant sequence the dispatch sees
+//! change. This module builds such orders and measures the four properties an execution
+//! order can plausibly trade between:
 //!
 //! - **producer→consumer distance** — how far an operand's definition sits from its
 //!   use, in instructions (locality of the arena reads);
@@ -17,36 +18,26 @@
 //! - **critical-path depth vs stream length** — the instruction-level parallelism the
 //!   order leaves available.
 //!
-//! Selection is a study hook, not production behaviour: the compiled default is
-//! [`Schedule::Arena`] and the alternatives exist only under `cfg(test)` or the
-//! `eval-schedule-study` feature.
+//! Selecting anything but [`PRODUCTION`] is a study hook: the alternatives exist only
+//! under `cfg(test)` or the `eval-schedule-study` feature, and a release build carries
+//! the production order alone (which lives with the lowering, in
+//! [`super::layout::op_blocked_order`]).
 
 use std::cell::Cell;
 
 use super::analysis::NodeAnalysis;
 use super::ast::Ast;
-use super::layout::{arena_index, arena_reads, liveness, Liveness, Program, N_ARENAS};
+use super::layout::{
+    arena_elem_bytes, arena_index, arena_reads, asap_levels, instr_kinds, liveness, Liveness,
+    Program, N_ARENAS,
+};
 use super::op::{Const, NodeId};
 use super::tree::Tree;
-use crate::helas::repr::lorentz::{Bispinor, Bra, ComplexVector, Ket};
-use crate::helas::repr::C;
-
-/// Element size, in bytes, of each result arena at `F = f64` — the weight the
-/// live-width profile reports slots in.
-fn arena_elem_bytes() -> [usize; N_ARENAS] {
-    [
-        std::mem::size_of::<f64>(),
-        std::mem::size_of::<C<f64>>(),
-        std::mem::size_of::<ComplexVector<f64>>(),
-        std::mem::size_of::<Bispinor<f64, Ket>>(),
-        std::mem::size_of::<Bispinor<f64, Bra>>(),
-    ]
-}
 
 /// Which topological order [`Program::build`] emits.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Schedule {
-    /// Arena (storage) order: node id order, the compiled default.
+    /// Arena (storage) order: node id order, the order the folded arena interns nodes in.
     Arena,
     /// Post-order depth-first from the root, last operand emitted immediately before
     /// its consumer — minimizes producer→consumer distance on the chain being followed.
@@ -56,7 +47,8 @@ pub(super) enum Schedule {
     /// stays as narrow as the DAG allows.
     MinLive,
     /// Instructions grouped by [`super::layout::Instr`] variant inside each dependency
-    /// level, so the dispatch site sees long runs of one discriminant.
+    /// level, so the dispatch site sees long runs of one discriminant. The compiled
+    /// default ([`PRODUCTION`]), where it additionally carries the arena-bytes fallback.
     OpBlocked,
     /// Op-blocking confined to a sliding window of `w` instructions inside each
     /// dependency level: long enough runs to amortize the dispatch, short enough that
@@ -101,6 +93,9 @@ impl Schedule {
     ];
 }
 
+/// The order a build with no study hook active emits.
+pub(super) const PRODUCTION: Schedule = Schedule::OpBlocked;
+
 thread_local! {
     /// The order the next [`Program::build`] on this thread emits. Initialised from
     /// `VIBEGRAPH_EVAL_SCHEDULE` so a prebuilt bench binary can be swept over the
@@ -110,12 +105,19 @@ thread_local! {
         std::env::var("VIBEGRAPH_EVAL_SCHEDULE")
             .ok()
             .and_then(|v| Schedule::from_name(v.trim()))
-            .unwrap_or(Schedule::Arena),
+            .unwrap_or(PRODUCTION),
     );
 }
 
 pub(super) fn active() -> Schedule {
     ACTIVE.with(|c| c.get())
+}
+
+/// The order to build with when the study hook selects away from [`PRODUCTION`], or
+/// `None` to let [`Program::build`] take its own path.
+pub(super) fn override_order(ast: &Ast<Const>, an: &NodeAnalysis) -> Option<Vec<NodeId>> {
+    let sched = active();
+    (sched != PRODUCTION).then(|| build_order(ast, an, sched))
 }
 
 /// Select the order for subsequent program builds on this thread; returns the previous
@@ -125,21 +127,14 @@ pub(super) fn set_active(s: Schedule) -> Schedule {
     ACTIVE.with(|c| c.replace(s))
 }
 
-/// A topological order of every node of `ast` (children before parents), for
-/// `sched`. `base` is the same DAG already lowered in arena order — the source of each
-/// node's [`Instr`] variant, which only the lowering knows.
-pub(super) fn build_order(
-    ast: &Ast<Const>,
-    an: &NodeAnalysis,
-    base: &Program,
-    sched: Schedule,
-) -> Vec<NodeId> {
+/// A topological order of every node of `ast` (children before parents), for `sched`.
+pub(super) fn build_order(ast: &Ast<Const>, an: &NodeAnalysis, sched: Schedule) -> Vec<NodeId> {
     let order = match sched {
         Schedule::Arena => (0..ast.len() as NodeId).collect(),
         Schedule::DepthFirst => depth_first(ast),
         Schedule::MinLive => min_live(ast, an),
-        Schedule::OpBlocked => op_blocked(ast, base, u32::MAX),
-        Schedule::OpWindow(w) => op_blocked(ast, base, w),
+        Schedule::OpBlocked => super::layout::op_blocked_order(ast, an),
+        Schedule::OpWindow(w) => op_windowed(ast, an, w),
     };
     debug_assert!(is_topological(ast, &order));
     order
@@ -320,26 +315,14 @@ fn min_live(ast: &Ast<Const>, an: &NodeAnalysis) -> Vec<NodeId> {
     order
 }
 
-/// Instructions grouped by [`super::layout::Instr`] variant inside each ASAP dependency
-/// level. Children sit at a strictly smaller level, so ordering levels and permuting
-/// freely inside one is always topological.
-///
-/// `window` bounds how far the grouping may move an instruction: each level is cut
-/// into runs of `window` consecutive nodes *in arena order* and only those are sorted
-/// by variant, so arena order's operand locality survives at window granularity while
-/// the dispatch still sees runs. `u32::MAX` groups a whole level at once.
-fn op_blocked(ast: &Ast<Const>, base: &Program, window: u32) -> Vec<NodeId> {
+/// [`super::layout::op_blocked_order`] with the grouping confined to a sliding window:
+/// each ASAP dependency level is cut into runs of `window` consecutive nodes *in arena
+/// order* and only those are sorted by variant, so arena order's operand locality
+/// survives at window granularity while the dispatch still sees runs.
+fn op_windowed(ast: &Ast<Const>, an: &NodeAnalysis, window: u32) -> Vec<NodeId> {
     let n = ast.len();
-    let mut level = vec![0u32; n];
-    for id in 0..n as NodeId {
-        let l = ast
-            .children_ids(id)
-            .iter()
-            .map(|&c| level[c as usize] + 1)
-            .max()
-            .unwrap_or(0);
-        level[id as usize] = l;
-    }
+    let level = asap_levels(ast);
+    let kind = instr_kinds(ast, an);
     let mut order: Vec<NodeId> = (0..n as NodeId).collect();
     order.sort_by_key(|&id| (level[id as usize], id));
     let w = window.min(n.max(1) as u32) as usize;
@@ -351,7 +334,7 @@ fn op_blocked(ast: &Ast<Const>, base: &Program, window: u32) -> Vec<NodeId> {
         while end > start + 1 && level[order[end - 1] as usize] != lvl {
             end -= 1;
         }
-        order[start..end].sort_by_key(|&id| (base.instrs[id as usize].kind(), id));
+        order[start..end].sort_by_key(|&id| (kind[id as usize], id));
         start = end;
     }
     order
@@ -639,8 +622,7 @@ mod tests {
                     let folded = eval2.folded_hel();
                     let ast = &folded.ast;
                     let arena: Vec<NodeId> = (0..ast.len() as NodeId).collect();
-                    let base = Program::build_ordered(ast, folded.analysis(), &arena);
-                    let order = build_order(ast, folded.analysis(), &base, sched);
+                    let order = build_order(ast, folded.analysis(), sched);
                     assert_ne!(
                         order,
                         arena,
@@ -665,6 +647,30 @@ mod tests {
         }
     }
 
+    /// A build with no hook active emits the op-blocked order — the arena-bytes
+    /// fallback stays out of the way on the programs production actually compiles, and
+    /// that order is a different stream from the interning order it replaced.
+    #[test]
+    fn production_builds_are_op_blocked() {
+        for process in ["u u~ > u u~", "g g > g g", "g u > e+ e- u QCD=2 QED=2"] {
+            let prev = set_active(PRODUCTION);
+            let (eval, _) = compiled(process);
+            let folded = eval.folded_hel();
+            let (ast, an) = (&folded.ast, folded.analysis());
+            let order = super::super::layout::op_blocked_order(ast, an);
+            let arena: Vec<NodeId> = (0..ast.len() as NodeId).collect();
+            assert_ne!(order, arena, "{process}: op-blocked reproduced arena order");
+            let want = Program::build_ordered(ast, an, &order);
+            let got = Program::build(ast, an);
+            assert_eq!(
+                got.dest, want.dest,
+                "{process}: the default build is not the op-blocked order"
+            );
+            assert_eq!(got.arena_sizes, want.arena_sizes, "{process}");
+            set_active(prev);
+        }
+    }
+
     /// The study table: per process × order, the metrics an execution order can move.
     /// Ignored by default — it compiles a 2→6.
     #[test]
@@ -683,15 +689,13 @@ mod tests {
             let (eval, _) = compiled_maybe_pruned(process, prune);
             let folded = eval.folded_hel();
             let (ast, an) = (&folded.ast, folded.analysis());
-            let arena_order: Vec<NodeId> = (0..ast.len() as NodeId).collect();
-            let base = Program::build_ordered(ast, an, &arena_order);
             let name = if prune {
                 name.to_string()
             } else {
                 format!("{name}@unpruned")
             };
             for sched in Schedule::ALL {
-                let order = build_order(ast, an, &base, sched);
+                let order = build_order(ast, an, sched);
                 assert!(is_topological(ast, &order), "{name}/{}", sched.name());
                 let prog = Program::build_ordered(ast, an, &order);
                 let m = measure(ast, an, &prog, &order);
