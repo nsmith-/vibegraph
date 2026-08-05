@@ -274,6 +274,48 @@ channels are nowhere near converged at budgets where big ones long since were).
 **Sequencing**: after I1 (prerequisite) and I3 (parallel substrate); supersedes
 the old stretch-item I3 (channel-block stratification), which it absorbs.
 
+**I4 — MERGED 2026-08-04 (`30d44d1`, merge `539f0da`): measured results.**
+
+- **Brief corrections**: the hard split already existed (`adapt_grids` was
+  per-channel deterministic with a 512 floor; the multinomial survives only in
+  the undivided comparison estimator and the α-survey — neither the production
+  σ path); `α_j` is already inside `value_in_channel`, so the implemented rule
+  is `N_j ∝ s_j^term` (literal `α_j σ_j` would double-count); and convergence
+  mode is **opt-in `--target-rel`, not the CLI default** — a default flip
+  changes `integrate`'s default artifact bytes, which CLI gates and
+  `generate_samples.sh` pin (small follow-up: flip + re-pin, see backlog).
+- **Design**: `budget.rs` owns allocation (`ByAlpha`/`Neyman`; iterative floor
+  pinning, exact not clamped) + stopping (quoted error × √max(1, χ²/dof)
+  **per channel**; `min_iters ≥ warmup+2`; `Budget::Target` panics on
+  `InverseVariance`, pinned by `should_panic`); `vegas::adapt_blocks_iteration`
+  runs every channel's iteration in one rayon region keyed `(channel, chunk)`,
+  preserving `adapt_parallel_seeded`'s seek + point-order contracts
+  (per-channel `first_point` is a running total, enabling varying `N_j`).
+- **Gates**: fixed-budget bit-for-bit (artifact md5s vs the `6c4b382` binary;
+  inert across `-j 1/5/16`, chunk sizes and bases); census unchanged;
+  807 workspace tests. Convergence calibration: 2 processes × 2 targets ×
+  2 allocations × 8 seeds — **64/64 met target**, seed χ²/dof 0.44–1.14 (all
+  inside the 7-dof 95% band), sd/quoted ≤ 1.07 (llj over-covers ~25%,
+  conservative).
+- **Matched accuracy vs MG (note 30 §5.3 denominators)**: llj at MG's banked
+  accuracy = **CPU parity** (8.2–9.9 CPU-s vs 9.93); dy13 = **4.2–4.5× less
+  CPU** (19.5–22.3 vs 92.9). Vs our own pinned budgets, llj reaches
+  better-calibrated accuracy in ~2× fewer points.
+- **The offline Neyman prediction (1.00–1.22×, would have killed the lever)
+  was wrong for targets**: the KP α-survey already allocates near-Neyman for
+  a *fixed* budget, but under a live target the win is 2.18× fewer
+  evaluations — the mechanism is feeding the starved channels whose χ²/dof
+  blowup (one floor channel hit 23) inflates the stopping scale factor.
+  `--allocate` defaults to `neyman` under a target, `by-alpha` otherwise.
+- **Scheduling**: −7.2% wall at byte-identical CPU on llj fixed budget
+  (6.30× → 6.79× at `-j 16`; 3 dead-stable rounds; the identical-CPU
+  signature is the discriminator under load). Chunk size stays untuned — the
+  scan was load-dominated and a knob was not changed on unresolvable
+  evidence; inertness (identical md5 at every setting) is what survived.
+- **For close-out**: wall times here were taken under load — CPU-s and point
+  counts are the bankable columns; the α-survey is now ~27% of a fixed-budget
+  llj `-j 16` run and remains the named serial lever.
+
 ## 2. Track P — PDF interpolation hot path
 
 ### 2.1 What the code inspection found (2026-08-04, this plan)
