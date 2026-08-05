@@ -944,20 +944,27 @@ fn probe_scale_cost() {
             .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
             .expect("scale prescription compiles");
 
+        // The scale-aware integrand consumes trailing uniforms the fixed-coupling
+        // one does not, so the shared point set is drawn at the wider of the two
+        // dimensions and each side reads the prefix it declares. Both then walk
+        // the same phase-space coordinates, which is what makes the difference
+        // the scale prescription and nothing else.
         let mut rng = ChaCha8Rng::seed_from_u64(SEED);
+        let ndim = plain.vegas_ndim().max(scaled.vegas_ndim());
         let points: Vec<Vec<f64>> = (0..20_000)
             .map(|_| {
-                (0..plain.vegas_ndim())
+                (0..ndim)
                     .map(|_| rand::Rng::random::<f64>(&mut rng))
                     .collect()
             })
             .collect();
 
         let time = |integ: &FixedBeamIntegrand| {
+            let n = integ.vegas_ndim();
             let start = Instant::now();
             let mut acc = 0.0;
             for u in &points {
-                acc += integ.value(u);
+                acc += integ.value(&u[..n]);
             }
             std::hint::black_box(acc);
             start.elapsed().as_secs_f64() / points.len() as f64 * 1e9

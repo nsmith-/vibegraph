@@ -125,6 +125,30 @@ impl MergeTable {
         (!graphs.is_empty()).then_some(graphs)
     }
 
+    /// How many channels [`seed`](Self::seed) would return. The clustering's
+    /// first pass over the external pairs reads only that count and whether it
+    /// is zero, so it asks here and builds no list.
+    pub fn seed_count(
+        &self,
+        mask: u32,
+        chcluster: bool,
+        this_config: usize,
+        tagged: &[u32],
+    ) -> usize {
+        self.id_cl.get(&mask).map_or(0, |graphs| {
+            graphs
+                .iter()
+                .copied()
+                .filter(|&graph| !chcluster || graph == this_config)
+                .filter(|&graph| {
+                    tagged
+                        .iter()
+                        .all(|&res| self.resmap.contains(&(res, graph)))
+                })
+                .count()
+        })
+    }
+
     /// The intersection `findmt` takes on every later call: the running list
     /// against the channels allowing `mask`. Both lists are ascending, so this
     /// is a merge join.
@@ -173,9 +197,12 @@ impl ChannelSet {
     /// `filmap`: the merge table of each subprocess, for the channel being
     /// integrated.
     ///
-    /// The channel enters twice — once to select which other channels share its
-    /// QCD coupling order, and once because the walk's last line takes beam 2's
-    /// flavour when the channel's own forest does not name a propagator there.
+    /// `this_config` enters only by naming the QCD coupling order that selects
+    /// which channels contribute, so channels of one order share a table set —
+    /// which is what [`MergeTablesByOrder`] hoists out of the per-event path.
+    /// Every other channel-dependent step is a property of the forest being
+    /// walked, including the last line taking beam 2's flavour where that
+    /// forest names no propagator there.
     pub fn merge_tables(&self, this_config: usize) -> Vec<MergeTable> {
         let mut tables = vec![MergeTable::default(); self.n_proc()];
         let order = self.configs[this_config - 1].nqcd;
@@ -232,6 +259,50 @@ impl ChannelSet {
             }
         }
         tables
+    }
+}
+
+/// The merge tables of every coupling order a channel set carries, built once.
+///
+/// [`ChannelSet::merge_tables`] reads the integration channel only to pick the
+/// coupling order that decides which channels enter the lookup, so every channel
+/// of one order shares one set of tables. The clustering asks for them on each
+/// event, which is what makes building them there worth hoisting.
+#[derive(Clone, Debug)]
+pub struct MergeTablesByOrder {
+    /// One table set per distinct coupling order, in first-appearance order.
+    tables: Vec<Vec<MergeTable>>,
+    /// `order_of[config - 1]`: the entry of `tables` that channel reads.
+    order_of: Vec<usize>,
+}
+
+impl MergeTablesByOrder {
+    pub fn build(set: &ChannelSet) -> Self {
+        let mut orders: Vec<i64> = Vec::new();
+        let mut first_config: Vec<usize> = Vec::new();
+        let mut order_of = Vec::with_capacity(set.configs.len());
+        for (index, forest) in set.configs.iter().enumerate() {
+            let slot = match orders.iter().position(|&o| o == forest.nqcd) {
+                Some(slot) => slot,
+                None => {
+                    orders.push(forest.nqcd);
+                    first_config.push(index + 1);
+                    orders.len() - 1
+                }
+            };
+            order_of.push(slot);
+        }
+        let tables = first_config
+            .iter()
+            .map(|&config| set.merge_tables(config))
+            .collect();
+        MergeTablesByOrder { tables, order_of }
+    }
+
+    /// The tables `this_config` clusters against, numbered as `mapconfig`
+    /// numbers channels.
+    pub fn of(&self, this_config: usize) -> &[MergeTable] {
+        &self.tables[self.order_of[this_config - 1]]
     }
 }
 
@@ -378,6 +449,29 @@ mod tests {
         // pass through.
         assert!(qed[0].resmap.contains(&(0b1100, 3)));
         assert!(qcd[0].resmap.is_empty());
+    }
+
+    /// Hoisting the tables out of the per-event path keys them on the coupling
+    /// order and nothing else, so a set carrying two orders must still hand each
+    /// channel the table `merge_tables` would have built for it — and the two
+    /// orders' tables must differ, or the keying would be untested.
+    #[test]
+    fn hoisted_tables_are_keyed_on_the_coupling_order() {
+        let mut set = uux_to_uux();
+        set.configs.push(ConfigForest {
+            nqcd: 0,
+            lines: vec![line(-1, 4, 3, 0, 23, 2.44)],
+        });
+        set.contributes[0].push(true);
+        let hoisted = MergeTablesByOrder::build(&set);
+        for config in 1..=set.configs.len() {
+            assert_eq!(
+                hoisted.of(config),
+                set.merge_tables(config).as_slice(),
+                "channel {config}"
+            );
+        }
+        assert_ne!(hoisted.of(1), hoisted.of(3));
     }
 }
 

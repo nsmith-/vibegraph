@@ -580,10 +580,10 @@ pub fn cluster(
             let idj = 1u32 << (j - 1);
             let idij = idi + idj;
             let partner = lines[if j == 1 { 1 } else { 0 }].1;
-            let seed = channel
-                .table
-                .seed(idij, chcluster, channel.this_config, &tag_masks);
-            let n_graphs = seed.as_ref().map_or(0, Vec::len);
+            let n_graphs =
+                channel
+                    .table
+                    .seed_count(idij, chcluster, channel.this_config, &tag_masks);
             pt2ij[idij as usize] = NO_MEASURE;
             let mut record = Candidate {
                 pass: 0,
@@ -591,7 +591,7 @@ pub fn cluster(
                 leg: [i, j],
                 daughters: [idi, idj],
                 mother: idij,
-                admissible: seed.is_some(),
+                admissible: n_graphs > 0,
                 measure: Measure::None,
                 raw: NO_MEASURE,
                 inflated: false,
@@ -599,7 +599,7 @@ pub fn cluster(
                 z: 0.0,
                 n_graphs,
             };
-            if seed.is_some() {
+            if n_graphs > 0 {
                 measure_pair(
                     channel,
                     settings,
