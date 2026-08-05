@@ -62,6 +62,13 @@ mod root_lorentz;
 #[cfg(test)]
 mod rooting_soundness;
 mod run;
+// Alternative topological execution orders for the compiled instruction stream, and the
+// structural metrics that judge them. A study hook, not production behaviour: the
+// compiled default is arena order, and this module exists only under `cfg(test)` or the
+// `eval-schedule-study` feature.
+#[cfg(any(test, feature = "eval-schedule-study"))]
+#[cfg_attr(not(test), allow(dead_code))]
+mod schedule;
 // `Tree` is used by every arena; `Linearized`/`linearize`/`max_depth` are generic
 // traversal utilities no current pass needs.
 #[allow(dead_code)]

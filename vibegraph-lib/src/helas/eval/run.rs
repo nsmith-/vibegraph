@@ -880,7 +880,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
     let fout = fout.as_mut_slice();
     let moms = moms.as_slice();
 
-    for (instr, &loc) in prog.instrs.iter().zip(prog.loc.iter()) {
+    for (instr, &loc) in prog.instrs.iter().zip(prog.dest.iter()) {
         let loc = loc as usize;
         match *instr {
             Instr::ComplexConst { pool } => scalars[loc] = consts_c[pool as usize],

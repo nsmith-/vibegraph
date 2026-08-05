@@ -124,6 +124,26 @@ const PROCESSES: [(&str, &str); 14] = [
     ("gg_to_gg", "g g > g g"),
 ];
 
+/// Extra `name=card` process rows, semicolon-separated, from
+/// `VIBEGRAPH_BENCH_EXTRA_PROCESSES`. Lets a study measure processes the fixed list
+/// above does not carry without moving the list itself — the row set
+/// `scripts/mg_perf_compare.sh` joins against stays exactly [`PROCESSES`] unless the
+/// variable is set.
+fn extra_processes() -> Vec<(String, String)> {
+    let Ok(spec) = std::env::var("VIBEGRAPH_BENCH_EXTRA_PROCESSES") else {
+        return Vec::new();
+    };
+    spec.split(';')
+        .filter(|s| !s.trim().is_empty())
+        .map(|entry| {
+            let (name, card) = entry
+                .split_once('=')
+                .expect("extra process entry must be name=card");
+            (name.trim().to_string(), card.trim().to_string())
+        })
+        .collect()
+}
+
 fn bench_eval_m2(c: &mut Criterion) {
     let model = sm_model(SMRestrict::Default);
     let evaluated = EvaluatedModel::from_model(model.clone());
@@ -131,9 +151,17 @@ fn bench_eval_m2(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(0xBE7C4);
     let sqrt_s = 500.0;
 
+    let mut all: Vec<(&str, &str)> = PROCESSES.to_vec();
+    for (name, card) in extra_processes() {
+        all.push((
+            Box::leak(name.into_boxed_str()),
+            Box::leak(card.into_boxed_str()),
+        ));
+    }
+
     let mut group = c.benchmark_group("eval_m2");
     group.sample_size(10);
-    for (name, process) in PROCESSES {
+    for (name, process) in all {
         let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
         let sets = generate_from_proc_card(&pc, &model).unwrap();
         let mut eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
