@@ -55,6 +55,10 @@ pub mod vectorspace;
 ///    - [`Copy`] these should be cheap to copy for intermediate values
 ///    - `'static` no non-static references, can be used in trait objects without lifetime parameters
 ///    - [`std::fmt::Debug`] for diagnostic output.
+///    - [`Send`] + [`Sync`] a field element is plain numeric data, so anything
+///      built out of it — a phase-space channel, a bound amplitude — can be read
+///      from several threads at once. Stating it here is what lets a parallel
+///      integrator share one channel map instead of copying it per thread.
 ///
 /// The zero/one bounds are method-based (`Zero`/`One`, inherited through `Float`)
 /// rather than the associated-const `ConstZero`/`ConstOne`: SIMD lane types whose
@@ -64,10 +68,20 @@ pub mod vectorspace;
 ///
 /// Both `f32` and `f64` implement this automatically.
 pub trait Real:
-    num_traits::Float + num_traits::FloatConst + Copy + 'static + std::fmt::Debug
+    num_traits::Float + num_traits::FloatConst + Copy + 'static + std::fmt::Debug + Send + Sync
 {
 }
-impl<F: num_traits::Float + num_traits::FloatConst + Copy + 'static + std::fmt::Debug> Real for F {}
+impl<
+        F: num_traits::Float
+            + num_traits::FloatConst
+            + Copy
+            + 'static
+            + std::fmt::Debug
+            + Send
+            + Sync,
+    > Real for F
+{
+}
 
 /// Complex number over a [`Real`] scalar. Alias for [`num_complex::Complex`].
 pub type C<F> = num_complex::Complex<F>;

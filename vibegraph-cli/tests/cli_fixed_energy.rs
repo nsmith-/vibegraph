@@ -115,3 +115,48 @@ fn fixed_energy_2to2_finite_sigma() {
 fn fixed_energy_nbody_finite_sigma() {
     run_fixed_energy("e+ e- > ta+ ta- H", 100.0, 5);
 }
+
+/// The artifact `integrate` writes does not depend on how many threads wrote it.
+///
+/// VEGAS chunks run concurrently but draw from seeked substream positions and are
+/// reduced in point order, so the whole run is the sequential one bit for bit at
+/// any pool size. That property is what lets the validation layer measure σ on a
+/// single-threaded run and have it be the number the parallel command produces —
+/// so it is checked on the artifact bytes, the thing both would ship, rather than
+/// on a printed σ that rounding could hide a difference behind.
+///
+/// A 2→3 process with a resonance: several channels of unequal budget, which is
+/// where an off-by-one in a chunk's starting draw would show.
+#[test]
+fn integrate_is_thread_count_independent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let proc_path = tmp.path().join("proc_card.dat");
+    let run_path = tmp.path().join("run_card.dat");
+    std::fs::write(&proc_path, "import model sm\ngenerate e+ e- > ta+ ta- H\n").unwrap();
+    std::fs::write(
+        &run_path,
+        "  0 = lpp1\n  0 = lpp2\n  100 = ebeam1\n  100 = ebeam2\n",
+    )
+    .unwrap();
+
+    let mut bytes = Vec::new();
+    for threads in ["1", "16"] {
+        let out = tmp.path().join(format!("out-j{threads}"));
+        let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+            .args(["integrate"])
+            .arg(&proc_path)
+            .arg("--run-card")
+            .arg(&run_path)
+            .arg("--out")
+            .arg(&out)
+            .args(["--neval", "20000", "--niter", "4", "-j", threads])
+            .status()
+            .expect("spawn vibegraph");
+        assert!(status.success(), "vibegraph integrate -j {threads} exited non-zero");
+        bytes.push(std::fs::read(out.join("grid.bin.zst")).expect("read artifact"));
+    }
+    assert_eq!(
+        bytes[0], bytes[1],
+        "`integrate -j 1` and `-j 16` wrote different artifacts"
+    );
+}

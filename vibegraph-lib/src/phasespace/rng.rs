@@ -25,7 +25,7 @@ use crate::helas::repr::Real;
 /// A ChaCha8 output at 32-bit-word position `p` occupies words `[p, p+1)`; a
 /// 64-bit draw consumes two words, so the `position` (draw counter) maps to the
 /// underlying word position as `2 * position`.
-const WORDS_PER_DRAW: u128 = 2;
+pub(crate) const WORDS_PER_DRAW: u128 = 2;
 
 /// The stream family the per-point scale-configuration draw consumes, offset by
 /// channel index.

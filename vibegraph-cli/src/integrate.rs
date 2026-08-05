@@ -40,6 +40,7 @@ use vibegraph::vegas::VegasResult;
 
 use crate::assets;
 use crate::network::NetworkPolicy;
+use crate::parallel::ParallelArgs;
 use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 
 /// PDF member index (central value; error members are not consumed at LO).
@@ -103,6 +104,9 @@ pub struct IntegrateArgs {
     /// RNG seed for the integration.
     #[arg(long, default_value_t = 20_260_719)]
     pub seed: u64,
+
+    #[command(flatten)]
+    pub parallel: ParallelArgs,
 }
 
 /// The failure surface of the `integrate` command. Displayed to stderr by the
@@ -192,6 +196,7 @@ fn bank_channel(
 }
 
 pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), IntegrateError> {
+    args.parallel.install().map_err(err)?;
     // Refuse to clobber an existing artifact before spending the integration.
     let out_path = args.out.join(GRID_FILENAME);
     if !args.force && out_path.exists() {

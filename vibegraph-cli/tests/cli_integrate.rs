@@ -224,3 +224,41 @@ fn integrate_refuses_overwrite_without_force() {
     let forced = base.arg("--force").status().expect("spawn");
     assert!(forced.success(), "forced overwrite must succeed");
 }
+
+/// The hadronic counterpart of `cli_fixed_energy`'s thread-count check: the
+/// artifact `integrate` writes on proton beams is the same bytes at any pool size.
+///
+/// Worth checking separately from the partonic path because the hadronic
+/// integrand carries the state a shared integrand would corrupt — per-thread
+/// evaluation arenas, per-event constant pools moved by the running coupling, and
+/// a configuration draw off a second substream. A thread-dependent result there
+/// would be a silently wrong σ, not a crash.
+#[test]
+fn integrate_is_thread_count_independent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut bytes = Vec::new();
+    for threads in ["1", "16"] {
+        let out = tmp.path().join(format!("out-j{threads}"));
+        let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+            .arg("integrate")
+            .arg(validation_dir().join("dy13_proc_card.dat"))
+            .arg("--run-card")
+            .arg(validation_dir().join("dy13_default_run_card.dat"))
+            .arg("--pdf-dir")
+            .arg(pdf_dir())
+            .arg("--out")
+            .arg(&out)
+            .args(["--neval", "20000", "--niter", "4", "-j", threads])
+            .status()
+            .expect("spawn vibegraph");
+        assert!(
+            status.success(),
+            "vibegraph integrate -j {threads} exited non-zero"
+        );
+        bytes.push(std::fs::read(out.join("grid.bin.zst")).expect("read artifact"));
+    }
+    assert_eq!(
+        bytes[0], bytes[1],
+        "`integrate -j 1` and `-j 16` wrote different artifacts on proton beams"
+    );
+}

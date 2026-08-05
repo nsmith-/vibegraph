@@ -47,6 +47,12 @@ sha2 = "0.11.0"
 dirs = "6"
 tar = "0.4"
 flate2 = "1"
+# Per-thread integrand scratch: the parallel integrator needs one evaluation
+# arena and one set of amplitude constant pools per worker, reached through the
+# `&self` a rayon closure shares. `std::thread_local!` cannot hold it — the
+# scratch borrows the model and the compiled amplitudes, and `'static` is
+# precisely what it is not.
+thread_local = "1"
 
 [dev-dependencies]
 criterion = "0.5"

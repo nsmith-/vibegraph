@@ -2226,6 +2226,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "thread_local"
+version = "1.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "threadpool"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2457,6 +2466,7 @@ dependencies = [
  "flate2",
  "rand 0.9.4",
  "rand_chacha 0.9.0",
+ "rayon",
  "serde",
  "serde_json",
  "tar",
@@ -2500,6 +2510,7 @@ dependencies = [
  "strum",
  "tar",
  "thiserror",
+ "thread_local",
  "toml",
  "zstd",
 ]

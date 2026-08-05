@@ -22,9 +22,11 @@
 
 use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use rand::SeedableRng;
 use thiserror::Error;
+use thread_local::ThreadLocal;
 
 use crate::artifact::ChannelSampler;
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
@@ -82,6 +84,22 @@ const MULTICHANNEL_ADAPT_STREAM: u64 = 0xA1FA_5EED;
 /// terms of the channel-split estimator sample structurally independent sequences
 /// under one seed and each replays on its own.
 pub(crate) const CHANNEL_STREAM_BASE: u64 = 0xC7A0_0000;
+
+/// Points one rayon task evaluates before its results are reduced, as a function
+/// of a channel's per-iteration budget and the pool size.
+///
+/// The result is a scheduling knob only — [`VegasGrid::adapt_parallel_seeded`] is
+/// bit-identical at any chunk size — so it is tuned for balance alone: several
+/// chunks per worker, so a straggler costs a fraction of an iteration rather than
+/// all of it, with a floor that keeps per-chunk setup (a generator seek, a
+/// substream, two small allocations) far below the cost of the points in it.
+pub(crate) fn vegas_chunk_size(neval: usize, threads: usize) -> usize {
+    const MIN_CHUNK: usize = 64;
+    const CHUNKS_PER_THREAD: usize = 8;
+    neval
+        .div_ceil(threads.max(1) * CHUNKS_PER_THREAD)
+        .max(MIN_CHUNK)
+}
 
 /// Floor on a channel's per-iteration evaluation count, so a channel whose
 /// selection weight rounds to nothing still gets a grid it can refine and a term
@@ -563,11 +581,15 @@ pub fn compile_subprocesses(
     Ok(evals)
 }
 
-/// One compiled subprocess feeding a summed matrix element: an amplitude and its
-/// own evaluation scratch (behind [`RefCell`] so the integrand is `Fn`).
-pub(crate) struct BoundSubprocess<'a> {
-    amp: SubAmplitude<'a>,
-    scratch: RefCell<ScratchSpace<f64>>,
+/// What one subprocess of a summed matrix element computes, carrying no
+/// evaluation state.
+///
+/// This is the half of a subprocess an integrand shares between threads. Setup
+/// configures it — turning it scale-aware, moving it to a constant prescription's
+/// coupling — and every thread then [binds](Self::bind) a [`BoundSubprocess`] of
+/// its own from it.
+pub(crate) struct SubprocessProto<'a> {
+    amp: ProtoAmplitude<'a>,
     /// `1 / Π_s n_s!` over *this* amplitude's outgoing legs
     /// ([`identical_particle_factor`]). Held per subprocess because the terms of a
     /// summed matrix element need not share an outgoing multiset even when they
@@ -577,28 +599,95 @@ pub(crate) struct BoundSubprocess<'a> {
 
 /// A subprocess amplitude, held at the parameter card's own strong coupling or at
 /// the one each event's renormalisation scale implies.
+enum ProtoAmplitude<'a> {
+    Fixed(&'a BoundAmplitude<'a, f64>),
+    Running(ScaleAwareAmplitude<'a, f64>),
+}
+
+/// One thread's copy of a [`SubprocessProto`]: its own evaluation arena and — where
+/// the coupling runs — its own constant pools.
 ///
-/// The scale-aware form owns its constant pools, so it is mutable state. It lives
-/// behind the integrand's [`RefCell`]s, which makes the integrand `!Sync` and so
-/// makes the failure a shared pool would produce — two threads reading each
-/// other's coupling, giving a silently wrong `|M|²` with no panic and no NaN —
-/// unrepresentable rather than merely avoided. A parallel driver builds one
-/// integrand per thread, each forking its own amplitudes.
+/// The scale-aware form rewrites those pools per event, so it is mutable state and
+/// is never shared. Sharing one would let two threads read each other's coupling,
+/// giving a silently wrong `|M|²` with no panic and no NaN. The [`RefCell`]s are
+/// what let evaluation take `&self` within the one thread that owns the copy.
+pub(crate) struct BoundSubprocess<'a> {
+    amp: SubAmplitude<'a>,
+    scratch: RefCell<ScratchSpace<f64>>,
+    symmetry_factor: f64,
+}
+
 enum SubAmplitude<'a> {
     Fixed(&'a BoundAmplitude<'a, f64>),
     Running(RefCell<ScaleAwareAmplitude<'a, f64>>),
 }
 
-impl<'a> BoundSubprocess<'a> {
+impl<'a> SubprocessProto<'a> {
     pub(crate) fn fixed(amp: &'a BoundAmplitude<'a, f64>) -> Self {
         let eval = amp.evaluator();
-        BoundSubprocess {
-            scratch: RefCell::new(amp.scratch_space()),
+        SubprocessProto {
             symmetry_factor: identical_particle_factor(&eval.external_particles()[eval.n_in()..]),
-            amp: SubAmplitude::Fixed(amp),
+            amp: ProtoAmplitude::Fixed(amp),
         }
     }
 
+    /// A copy for one thread to evaluate through.
+    ///
+    /// Copies are interchangeable, not merely equivalent: every pool value a scale
+    /// change writes is recomputed from the card's own `αs`, so a subprocess's
+    /// `|M|²` is a function of `(αs, momenta)` and not of the sequence of points it
+    /// has already seen. Which thread evaluates a point therefore cannot move its
+    /// value.
+    pub(crate) fn bind(&self) -> BoundSubprocess<'a> {
+        let (amp, scratch) = match &self.amp {
+            ProtoAmplitude::Fixed(amp) => (SubAmplitude::Fixed(amp), amp.scratch_space()),
+            ProtoAmplitude::Running(amp) => {
+                let mine = amp.fork();
+                let scratch = mine.amplitude().scratch_space();
+                (SubAmplitude::Running(RefCell::new(mine)), scratch)
+            }
+        };
+        BoundSubprocess {
+            amp,
+            scratch: RefCell::new(scratch),
+            symmetry_factor: self.symmetry_factor,
+        }
+    }
+
+    /// The evaluator this subprocess was built from, the input a scale-aware copy
+    /// is derived from.
+    pub(crate) fn evaluator(&self) -> &'a AmplitudeEvaluator {
+        match &self.amp {
+            ProtoAmplitude::Fixed(amp) => amp.evaluator(),
+            ProtoAmplitude::Running(amp) => amp.amplitude().evaluator(),
+        }
+    }
+
+    /// Replace the amplitude by a scale-aware copy of itself, bound against
+    /// `evaluated`. The copy starts at the parameter card's own coupling, with
+    /// pools bit-for-bit those of the amplitude it replaces.
+    fn make_scale_aware(&mut self, evaluated: &EvaluatedModel) {
+        self.amp = ProtoAmplitude::Running(ScaleAwareAmplitude::<f64>::new(
+            self.evaluator(),
+            evaluated,
+        ));
+    }
+
+    fn scale_aware(&self) -> Option<&ScaleAwareAmplitude<'a, f64>> {
+        match &self.amp {
+            ProtoAmplitude::Fixed(_) => None,
+            ProtoAmplitude::Running(amp) => Some(amp),
+        }
+    }
+
+    pub(crate) fn set_alpha_s(&mut self, alpha_s: f64) {
+        if let ProtoAmplitude::Running(amp) = &mut self.amp {
+            amp.set_alpha_s(alpha_s);
+        }
+    }
+}
+
+impl<'a> BoundSubprocess<'a> {
     /// This subprocess's own identical-particle symmetry factor.
     pub(crate) fn symmetry_factor(&self) -> f64 {
         self.symmetry_factor
@@ -610,21 +699,6 @@ impl<'a> BoundSubprocess<'a> {
         match &self.amp {
             SubAmplitude::Fixed(amp) => amp.evaluator(),
             SubAmplitude::Running(amp) => amp.borrow().amplitude().evaluator(),
-        }
-    }
-
-    /// Replace the amplitude by a scale-aware copy of itself, bound against
-    /// `evaluated`. The copy starts at the parameter card's own coupling, with
-    /// pools bit-for-bit those of the amplitude it replaces.
-    fn make_scale_aware(&mut self, evaluated: &EvaluatedModel) {
-        let amp = ScaleAwareAmplitude::<f64>::new(self.evaluator(), evaluated);
-        self.amp = SubAmplitude::Running(RefCell::new(amp));
-    }
-
-    fn scale_aware(&self) -> Option<&RefCell<ScaleAwareAmplitude<'a, f64>>> {
-        match &self.amp {
-            SubAmplitude::Fixed(_) => None,
-            SubAmplitude::Running(amp) => Some(amp),
         }
     }
 
@@ -692,19 +766,19 @@ pub(crate) struct ScaleAwareness {
 
 /// Replace every subprocess amplitude by a scale-aware copy of itself.
 pub(crate) fn make_subs_scale_aware(
-    subs: &mut [BoundSubprocess<'_>],
+    subs: &mut [SubprocessProto<'_>],
     evaluated: &EvaluatedModel,
 ) -> ScaleAwareness {
     for sub in subs.iter_mut() {
         sub.make_scale_aware(evaluated);
     }
-    let scale_aware = || subs.iter().filter_map(BoundSubprocess::scale_aware);
+    let scale_aware = || subs.iter().filter_map(SubprocessProto::scale_aware);
     ScaleAwareness {
-        depends_on_alpha_s: scale_aware().any(|a| a.borrow().depends_on_alpha_s()),
+        depends_on_alpha_s: scale_aware().any(|a| a.depends_on_alpha_s()),
         fallbacks: scale_aware()
-            .filter_map(|a| a.borrow().fallback().map(|f| f.to_string()))
+            .filter_map(|a| a.fallback().map(|f| f.to_string()))
             .collect(),
-        alpha_s_ref: scale_aware().next().map(|a| a.borrow().alpha_s_ref()),
+        alpha_s_ref: scale_aware().next().map(|a| a.alpha_s_ref()),
     }
 }
 
@@ -759,7 +833,7 @@ pub(crate) fn compile_scale_source(
 /// Hold every subprocess at the coupling a constant prescription implies, and
 /// assemble the report describing what was installed.
 pub(crate) fn constant_scale_report(
-    subs: &[BoundSubprocess<'_>],
+    subs: &mut [SubprocessProto<'_>],
     source: Option<&EventScaleSource>,
     awareness: ScaleAwareness,
 ) -> RunningCouplingReport {
@@ -769,7 +843,7 @@ pub(crate) fn constant_scale_report(
         _ => None,
     };
     if let Some(alpha_s) = constant_alpha_s {
-        for sub in subs {
+        for sub in subs.iter_mut() {
             sub.set_alpha_s(alpha_s);
         }
     }
@@ -828,7 +902,7 @@ pub(crate) fn constant_scale_report(
 ///
 /// [`eval_m2`]: BoundAmplitude::eval_m2
 pub struct FixedBeamIntegrand<'a> {
-    subs: Vec<BoundSubprocess<'a>>,
+    subs: Vec<SubprocessProto<'a>>,
     cuts: &'a Cuts,
     sqrt_s: f64,
     /// Unit-hypercube → phase-space map over the outgoing legs, on the fixed `√ŝ`
@@ -857,6 +931,35 @@ pub struct FixedBeamIntegrand<'a> {
     /// `None`, or a prescription that resolves to a constant, leaves every
     /// subprocess at one coupling and costs nothing per point.
     scales: Option<EventScaleSource>,
+    /// One evaluation context per thread that has evaluated a point, forked from
+    /// `subs` on first use. See [`FixedBeamScratch`].
+    scratch: ThreadLocal<FixedBeamScratch<'a>>,
+    /// Length the configuration draw's `AMP2` buffer is sized to, zero where no
+    /// draw runs. Held on the integrand because a per-thread scratch is built
+    /// after the prescription that decides it.
+    amp2_len: usize,
+    /// The coupling the configuration draw forms `AMP2` at, so the drawn
+    /// configuration is a function of the momenta and not of whatever scale the
+    /// previous point left bound. `None` where no draw runs.
+    amp2_alpha_s: Option<f64>,
+    /// Points whose `AMP2` carried no probability at all, where the draw kept the
+    /// sampling channel instead. Such a point's every diagram amplitude vanishes,
+    /// so it carries no weight either — the count is here to say so rather than to
+    /// absorb it.
+    scale_draw_fallbacks: AtomicU64,
+}
+
+/// One thread's private half of a [`FixedBeamIntegrand`].
+///
+/// Everything a point evaluation writes lives here, so the integrand itself is
+/// immutable while an integration runs and can be shared across a rayon pool.
+/// Nothing in it carries information from one point to the next that changes a
+/// value: the amplitudes rescale from the card's own `αs` rather than from the
+/// previous point's, and the coupling memo returns what a recomputation would.
+/// A point's value is therefore the same whichever thread takes it.
+struct FixedBeamScratch<'a> {
+    /// This thread's own amplitudes ([`SubprocessProto::bind`]).
+    subs: Vec<BoundSubprocess<'a>>,
     /// Reused marshalling buffer for the outgoing momenta the scale reads.
     scale_buf: RefCell<Vec<[f64; 4]>>,
     /// The last `(μR, αs(μR))` pair, so a repeated scale does not repeat the
@@ -867,15 +970,6 @@ pub struct FixedBeamIntegrand<'a> {
     /// Reused `AMP2` buffer for the configuration draw, one entry per integration
     /// configuration of the subprocess the channel forests were derived from.
     amp2_buf: RefCell<Vec<f64>>,
-    /// The coupling the configuration draw forms `AMP2` at, so the drawn
-    /// configuration is a function of the momenta and not of whatever scale the
-    /// previous point left bound. `None` where no draw runs.
-    amp2_alpha_s: Option<f64>,
-    /// Points whose `AMP2` carried no probability at all, where the draw kept the
-    /// sampling channel instead. Such a point's every diagram amplitude vanishes,
-    /// so it carries no weight either — the count is here to say so rather than to
-    /// absorb it.
-    scale_draw_fallbacks: Cell<u64>,
 }
 
 /// The phase-space map a [`FixedBeamIntegrand`] draws through.
@@ -1002,7 +1096,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         spin_color_avg: f64,
     ) -> Self {
         let n = final_masses.len();
-        let subs = amps.into_iter().map(BoundSubprocess::fixed).collect();
+        let subs = amps.into_iter().map(SubprocessProto::fixed).collect();
         let sampler = Sampler::Flat(RamboChannel::new(sqrt_s, final_masses.clone()));
         FixedBeamIntegrand {
             subs,
@@ -1016,12 +1110,35 @@ impl<'a> FixedBeamIntegrand<'a> {
             beam_e: sqrt_s / 2.0,
             vegas_alpha: VEGAS_ALPHA,
             scales: None,
-            scale_buf: RefCell::new(Vec::with_capacity(n)),
-            last_coupling: Cell::new((f64::NAN, f64::NAN)),
-            amp2_buf: RefCell::new(Vec::new()),
+            scratch: ThreadLocal::new(),
+            amp2_len: 0,
             amp2_alpha_s: None,
-            scale_draw_fallbacks: Cell::new(0),
+            scale_draw_fallbacks: AtomicU64::new(0),
         }
+    }
+
+    /// This thread's evaluation context, forked from the integrand's own
+    /// subprocesses the first time the thread evaluates a point.
+    ///
+    /// Setup takes `&mut self` and so runs before any of these exist; a fork
+    /// therefore starts from the fully configured amplitudes.
+    fn scratch(&self) -> &FixedBeamScratch<'a> {
+        self.scratch.get_or(|| FixedBeamScratch {
+            subs: self.subs.iter().map(SubprocessProto::bind).collect(),
+            scale_buf: RefCell::new(Vec::with_capacity(self.final_masses.len())),
+            last_coupling: Cell::new((f64::NAN, f64::NAN)),
+            amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
+        })
+    }
+
+    /// Discard every thread's evaluation context, so the next point forks a fresh
+    /// one from the integrand's own subprocesses.
+    ///
+    /// Setup that changes what a subprocess evaluates — installing a scale
+    /// prescription, moving the coupling — must run this, or a thread that has
+    /// already evaluated a point would keep the amplitudes it forked before.
+    fn reset_scratch(&mut self) {
+        self.scratch.clear();
     }
 
     /// Evaluate the matrix element at the strong coupling the run card's per-event
@@ -1054,7 +1171,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         // on the scale that was refused.
         if !awareness.depends_on_alpha_s {
             self.scales = None;
-            return Ok(constant_scale_report(&self.subs, None, awareness));
+            return Ok(constant_scale_report(&mut self.subs, None, awareness));
         }
         // A fixed-beam run has no parton distributions, so `pdlabel` never reaches
         // the branch that would want a set's alpha_s tabulation.
@@ -1069,12 +1186,13 @@ impl<'a> FixedBeamIntegrand<'a> {
         if source.constant_scales().is_none() {
             self.probe_scale(&source)?;
         }
-        let report = constant_scale_report(&self.subs, Some(&source), awareness);
+        let report = constant_scale_report(&mut self.subs, Some(&source), awareness);
         if source.draws_configuration() {
-            *self.amp2_buf.borrow_mut() = vec![0.0; self.subs[0].evaluator().n_configs()];
+            self.amp2_len = self.subs[0].evaluator().n_configs();
             self.amp2_alpha_s = report.alpha_s_ref;
         }
         self.scales = Some(source);
+        self.reset_scratch();
         Ok(report)
     }
 
@@ -1107,7 +1225,8 @@ impl<'a> FixedBeamIntegrand<'a> {
             ext.extend_from_slice(&point.momenta);
             if self.cuts.pass(&ext) {
                 any_passed_cuts = true;
-                if let PointScales::Scales(_) = self.point_scales_of(source, &point.momenta, channel)?
+                if let PointScales::Scales(_) =
+                    self.point_scales_of(self.scratch(), source, &point.momenta, channel)?
                 {
                     return Ok(());
                 }
@@ -1125,11 +1244,12 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// and the sampling channel the point was drawn in.
     fn event_scales_of(
         &self,
+        sc: &FixedBeamScratch<'a>,
         source: &EventScaleSource,
         momenta: &[V],
         channel: usize,
     ) -> Result<EventScales, ScaleError> {
-        Ok(match self.point_scales_of(source, momenta, channel)? {
+        Ok(match self.point_scales_of(sc, source, momenta, channel)? {
             PointScales::Scales(scales) => scales,
             // The floor applies only to a beam carrying a parton density, and
             // `ScaleChoice::from_run_card` reads that off the card as
@@ -1145,11 +1265,12 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// which only the setup probe has a use for.
     fn point_scales_of(
         &self,
+        sc: &FixedBeamScratch<'a>,
         source: &EventScaleSource,
         momenta: &[V],
         channel: usize,
     ) -> Result<PointScales, ScaleError> {
-        let mut buf = self.scale_buf.borrow_mut();
+        let mut buf = sc.scale_buf.borrow_mut();
         buf.clear();
         buf.extend(momenta.iter().map(components));
         let beams = [
@@ -1177,7 +1298,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         channel: usize,
     ) -> Option<Result<EventScales, ScaleError>> {
         let source = self.scales.as_ref()?;
-        Some(self.event_scales_of(source, momenta, channel))
+        Some(self.event_scales_of(self.scratch(), source, momenta, channel))
     }
 
     /// The source an event record's `AQCDUP` is evaluated from, when one was built.
@@ -1195,7 +1316,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// implies. A constant prescription was applied once at installation, and a
     /// matrix element with no strong coupling in it has no coupling to move, so
     /// both return here without touching the momenta.
-    fn apply_scale(&self, momenta: &[V], channel: usize) {
+    fn apply_scale(&self, sc: &FixedBeamScratch<'a>, momenta: &[V], channel: usize) {
         let Some(source) = &self.scales else { return };
         if source.constant_scales().is_some() {
             return;
@@ -1204,17 +1325,17 @@ impl<'a> FixedBeamIntegrand<'a> {
             return;
         };
         let scales = self
-            .event_scales_of(source, momenta, channel)
+            .event_scales_of(sc, source, momenta, channel)
             .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"));
-        let (last_mu_r, last_alpha_s) = self.last_coupling.get();
+        let (last_mu_r, last_alpha_s) = sc.last_coupling.get();
         let alpha_s = if scales.mu_r == last_mu_r {
             last_alpha_s
         } else {
             let alpha_s = running.eval(scales.mu_r);
-            self.last_coupling.set((scales.mu_r, alpha_s));
+            sc.last_coupling.set((scales.mu_r, alpha_s));
             alpha_s
         };
-        for sub in &self.subs {
+        for sub in &sc.subs {
             sub.set_alpha_s(alpha_s);
         }
     }
@@ -1241,15 +1362,15 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// Each subprocess enters weighted by its own identical-particle factor, so a
     /// summed matrix element whose terms have different outgoing multisets is right
     /// term by term. The survey sees the same weighting the integral does.
-    fn matrix_element(&self, momenta: &[V], channel: usize) -> f64 {
+    fn matrix_element(&self, sc: &FixedBeamScratch<'a>, momenta: &[V], channel: usize) -> f64 {
         let ext = self.externals(momenta);
         if !self.cuts.pass(&ext) {
             return 0.0;
         }
-        self.apply_scale(momenta, channel);
+        self.apply_scale(sc, momenta, channel);
 
         let mut m2 = 0.0;
-        for sub in &self.subs {
+        for sub in &sc.subs {
             m2 += sub.symmetry_factor() * sub.eval_m2(&ext);
         }
         m2
@@ -1268,8 +1389,9 @@ impl<'a> FixedBeamIntegrand<'a> {
         );
         let (map_u, scale_u) = u.split_at(map_ndim);
         let (channel, point) = self.sampler.sample_from(map_u);
-        let scale_channel = self.scale_channel(&point.momenta, channel, scale_u);
-        let m2 = self.matrix_element(&point.momenta, scale_channel);
+        let sc = self.scratch();
+        let scale_channel = self.scale_channel(sc, &point.momenta, channel, scale_u);
+        let m2 = self.matrix_element(sc, &point.momenta, scale_channel);
         if m2 == 0.0 {
             return 0.0;
         }
@@ -1342,7 +1464,8 @@ impl<'a> FixedBeamIntegrand<'a> {
                 let scale_u: Vec<f64> = (0..scale_ndim)
                     .map(|_| scale_draw.borrow_mut().next_uniform::<f64>())
                     .collect();
-                self.matrix_element(momenta, self.scale_channel(momenta, channel, &scale_u))
+                let sc = self.scratch();
+                self.matrix_element(sc, momenta, self.scale_channel(sc, momenta, channel, &scale_u))
             },
             seed,
             MULTICHANNEL_ADAPT_STREAM,
@@ -1498,8 +1621,9 @@ impl<'a> FixedBeamIntegrand<'a> {
     pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         let (grid_u, scale_u) = self.split_point(u);
         let point = self.sample_channel(channel, grid_u);
-        let scale_channel = self.scale_channel(&point.momenta, channel, scale_u);
-        let m2 = self.matrix_element(&point.momenta, scale_channel);
+        let sc = self.scratch();
+        let scale_channel = self.scale_channel(sc, &point.momenta, channel, scale_u);
+        let m2 = self.matrix_element(sc, &point.momenta, scale_channel);
         if m2 == 0.0 {
             return 0.0;
         }
@@ -1521,21 +1645,27 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// at the one the previous point left, which is what makes the drawn
     /// configuration a function of the momenta alone: the scale is not known until
     /// after the draw, so evaluating "at the event's coupling" would be circular.
-    fn scale_channel(&self, momenta: &[V], channel: usize, scale_u: &[f64]) -> usize {
+    fn scale_channel(
+        &self,
+        sc: &FixedBeamScratch<'a>,
+        momenta: &[V],
+        channel: usize,
+        scale_u: &[f64],
+    ) -> usize {
         let [v] = scale_u else { return channel };
         let ext = self.externals(momenta);
-        let sub = &self.subs[0];
+        let sub = &sc.subs[0];
         if let Some(alpha_s) = self.amp2_alpha_s {
             sub.set_alpha_s(alpha_s);
         }
-        let mut amp2 = self.amp2_buf.borrow_mut();
+        let mut amp2 = sc.amp2_buf.borrow_mut();
         sub.eval_amp2(&ext, &mut amp2);
         match select_index(&amp2, *v) {
             Some(c) => sub.evaluator().config_diagrams()[c],
             // Every diagram amplitude vanished here, so the coherent sum does too
             // and this point carries no weight whichever channel names its scale.
             None => {
-                self.scale_draw_fallbacks.set(self.scale_draw_fallbacks.get() + 1);
+                self.scale_draw_fallbacks.fetch_add(1, Ordering::Relaxed);
                 channel
             }
         }
@@ -1544,7 +1674,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// Points on which the configuration draw found no probability and kept the
     /// sampling channel. Expected to be zero on a run that produces anything.
     pub fn scale_draw_fallbacks(&self) -> u64 {
-        self.scale_draw_fallbacks.get()
+        self.scale_draw_fallbacks.load(Ordering::Relaxed)
     }
 
     /// [`value_in_channel`](Self::value_in_channel) with the outgoing momenta kept:
@@ -1559,8 +1689,9 @@ impl<'a> FixedBeamIntegrand<'a> {
         let point = self.sample_channel(channel, grid_u);
         momenta.clear();
         momenta.extend_from_slice(&point.momenta);
-        let scale_channel = self.scale_channel(&point.momenta, channel, scale_u);
-        let m2 = self.matrix_element(&point.momenta, scale_channel);
+        let sc = self.scratch();
+        let scale_channel = self.scale_channel(sc, &point.momenta, channel, scale_u);
+        let m2 = self.matrix_element(sc, &point.momenta, scale_channel);
         if m2 == 0.0 {
             return 0.0;
         }
@@ -1583,7 +1714,10 @@ impl<'a> FixedBeamIntegrand<'a> {
         u: &[f64],
     ) -> Option<Result<EventScales, ScaleError>> {
         let (_, scale_u) = self.split_point(u);
-        self.event_scales(momenta, self.scale_channel(momenta, channel, scale_u))
+        self.event_scales(
+            momenta,
+            self.scale_channel(self.scratch(), momenta, channel, scale_u),
+        )
     }
 
     /// Split a point's coordinates into the ones its channel's map consumes and
@@ -1667,14 +1801,15 @@ impl<'a> FixedBeamIntegrand<'a> {
         u: [f64; 4],
     ) -> Option<EventSelection> {
         let ext = self.externals(momenta);
+        let sc = self.scratch();
         // The diagonals are read at the event's own coupling, the one its |M|² was
         // taken at — which is the point's own sampling channel's, since the
         // cluster scale reads it.
-        self.apply_scale(momenta, channel);
+        self.apply_scale(sc, momenta, channel);
 
-        let m2: Vec<f64> = self.subs.iter().map(|s| s.eval_m2(&ext)).collect();
+        let m2: Vec<f64> = sc.subs.iter().map(|s| s.eval_m2(&ext)).collect();
         let subprocess = select_index(&m2, u[0])?;
-        let sub = &self.subs[subprocess];
+        let sub = &sc.subs[subprocess];
         let eval = sub.evaluator();
 
         let mut hel_m2 = vec![0.0; eval.helicities().len()];
@@ -1757,23 +1892,33 @@ impl<'a> FixedBeamIntegrand<'a> {
                 channel_neval(alpha, neval)
             };
             let mut grid = VegasGrid::new(ndim, VEGAS_NBINS, vegas_alpha);
-            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-            rng.set_stream(CHANNEL_STREAM_BASE + j as u64);
-            rng.set_word_pos(0);
-            // The grid draws its own coordinates; the scale draw's trailing
-            // uniform comes off a stream of its own, so the grid's sequence is
-            // what it would be with no draw installed.
-            let mut scale_draw = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
-            let mut point = vec![0.0; point_ndim];
-            let result = grid.adapt(
-                |u| {
+            let scale_ndim = point_ndim - ndim;
+            // The grid draws its own coordinates from `CHANNEL_STREAM_BASE + j`;
+            // the scale draw's trailing uniforms come off a stream of its own, so
+            // the grid's sequence is what it would be with no draw installed.
+            // Both are addressed by the point's index in the channel's own run, so
+            // a chunk reproduces the points it would have drawn in sequence.
+            let result = grid.adapt_parallel_seeded(
+                |first| {
+                    (
+                        SubStream::new(
+                            seed,
+                            SCALE_DRAW_STREAM_BASE + j as u64,
+                            first * scale_ndim as u64,
+                        ),
+                        vec![0.0; point_ndim],
+                    )
+                },
+                |(scale_draw, point), u| {
                     point[..ndim].copy_from_slice(u);
                     scale_draw.fill_uniforms(&mut point[ndim..]);
-                    self.value_in_channel(j, &point)
+                    self.value_in_channel(j, point)
                 },
                 n_j,
                 niter,
-                &mut rng,
+                seed,
+                CHANNEL_STREAM_BASE + j as u64,
+                vegas_chunk_size(n_j, rayon::current_num_threads()),
             );
             per_channel.push(ChannelIntegration {
                 alpha,
@@ -2590,6 +2735,174 @@ mod tests {
         )
         .expect("a fixed prescription compiles")
         .draws_configuration());
+    }
+
+    /// The parallel channel integration reproduces the sequential one it replaced,
+    /// point for point.
+    ///
+    /// A pool-size comparison cannot see this: an addressing error in the
+    /// grid's substream is the same error on every thread, so both arms of a
+    /// thread-count test agree on the wrong answer. What pins it is a sequential
+    /// reference — one generator, consumed point by point, exactly as a serial
+    /// integrator would — written out here rather than shared with the
+    /// implementation, so the two cannot drift together.
+    ///
+    /// This covers the grid coordinates and the per-channel budgets. It says
+    /// nothing about the *configuration-draw* substream: a fixed-beam `2 → 2`
+    /// clusters to one scale whichever configuration is drawn, so the trailing
+    /// uniform is inert here and both sides would agree however it were addressed.
+    /// The proton path's `the_parallel_integration_reproduces_a_sequential_one`
+    /// is where that stream carries weight.
+    #[test]
+    fn adapt_grids_reproduces_a_sequential_integration() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let sqrt_s = 500.0;
+        let opts = ParsingOptions::default();
+        let proc = parse_proc_card("generate g g > g g", &opts).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let card = RunCard::parse(
+            "  0 = lpp1\n  0 = lpp2\n  250.0 = ebeam1\n  250.0 = ebeam2\n\
+             \x20 False = fixed_ren_scale\n  -1 = dynamical_scale_choice\n\
+             \x20 4 = maxjetflavor\n",
+        )
+        .expect("run card");
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&card, &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let mut integ =
+            FixedBeamIntegrand::new(bounds.iter().collect(), &cuts, sqrt_s, masses, avg);
+        integ
+            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .expect("a fixed-beam card is never refused for the factorisation floor");
+        integ.use_multichannel(&diagrams, &evaluated, 2_000, 3, 0x5EED_9C);
+
+        let (seed, neval, niter) = (0x5EED_9D, 3_000, 4);
+        let (got, _) = integ.adapt_grids(neval, niter, seed);
+
+        let ndim = integ.channel_grid_ndim();
+        let point_ndim = integ.point_ndim();
+        let alphas = integ.channel_alphas();
+        for (j, &alpha) in alphas.iter().enumerate() {
+            let n_j = if alphas.len() == 1 {
+                neval
+            } else {
+                channel_neval(alpha, neval)
+            };
+            let mut grid = VegasGrid::new(ndim, VEGAS_NBINS, VEGAS_ALPHA_MAPPED);
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            rng.set_stream(CHANNEL_STREAM_BASE + j as u64);
+            rng.set_word_pos(0);
+            let mut scale_draw = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
+            let mut point = vec![0.0; point_ndim];
+            let want = grid.adapt(
+                |u| {
+                    point[..ndim].copy_from_slice(u);
+                    scale_draw.fill_uniforms(&mut point[ndim..]);
+                    integ.value_in_channel(j, &point)
+                },
+                n_j,
+                niter,
+                &mut rng,
+            );
+            assert_eq!(
+                got[j].result.integral.to_bits(),
+                want.integral.to_bits(),
+                "channel {j} term"
+            );
+            assert_eq!(got[j].neval, n_j, "channel {j} budget");
+            for (dim, (a, b)) in got[j].grid.xi().iter().zip(grid.xi()).enumerate() {
+                assert_eq!(a, b, "channel {j} grid edges of dim {dim}");
+            }
+        }
+    }
+
+    /// The channel-split integration is the same numbers at any pool size — the
+    /// property the parallel CLI rests on, checked on the integrand rather than on
+    /// a plain closure.
+    ///
+    /// `g g > g g` with a per-event renormalisation scale is the case a shared
+    /// integrand would corrupt: every point moves the amplitude's constant pools,
+    /// so two threads sharing one would read each other's coupling and return a
+    /// wrong `|M|²` with no panic and no NaN. The trained grid edges are compared
+    /// as well as the estimate, because a refinement fed differently-rounded
+    /// histograms agrees on the first iteration and diverges after it.
+    #[test]
+    fn adapt_grids_does_not_depend_on_the_pool_size() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let sqrt_s = 500.0;
+        let opts = ParsingOptions::default();
+        let proc = parse_proc_card("generate g g > g g", &opts).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let card = RunCard::parse(
+            "  0 = lpp1\n  0 = lpp2\n  250.0 = ebeam1\n  250.0 = ebeam2\n\
+             \x20 False = fixed_ren_scale\n  -1 = dynamical_scale_choice\n\
+             \x20 4 = maxjetflavor\n",
+        )
+        .expect("run card");
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&card, &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let mut integ =
+            FixedBeamIntegrand::new(bounds.iter().collect(), &cuts, sqrt_s, masses, avg);
+        integ
+            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .expect("a fixed-beam card is never refused for the factorisation floor");
+        integ.use_multichannel(&diagrams, &evaluated, 2_000, 3, 0x5EED_9A);
+
+        let run = |threads: usize| {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            pool.install(|| integ.adapt_grids(4_000, 4, 0x5EED_9B))
+        };
+        let (one_channels, one) = run(1);
+        let (many_channels, many) = run(8);
+
+        assert_eq!(one.integral.to_bits(), many.integral.to_bits(), "integral");
+        assert_eq!(one.std_dev.to_bits(), many.std_dev.to_bits(), "std_dev");
+        assert!(one.integral > 0.0, "the test integrated nothing");
+        assert_eq!(one_channels.len(), many_channels.len());
+        for (j, (a, b)) in one_channels.iter().zip(&many_channels).enumerate() {
+            assert_eq!(
+                a.result.integral.to_bits(),
+                b.result.integral.to_bits(),
+                "channel {j} term"
+            );
+            for (dim, (ea, eb)) in a.grid.xi().iter().zip(b.grid.xi()).enumerate() {
+                assert_eq!(ea, eb, "channel {j} grid edges of dim {dim}");
+            }
+        }
     }
 
     /// The factorisation floor is unreachable on fixed-energy beams, and a
