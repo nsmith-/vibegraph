@@ -58,7 +58,7 @@ fn integrate_drell_yan(cwd: &Path, cache_root: &Path, out: &Path, extra: &[&str]
         .arg(validation_dir().join("dy13_default_run_card.dat"))
         .arg("--out")
         .arg(out)
-        .args(["--neval", "2000", "--niter", "2"])
+        .args(["--fixed-budget", "--neval", "2000", "--niter", "2"])
         .args(extra)
         .output()
         .expect("spawn vibegraph")
@@ -141,7 +141,7 @@ fn the_kill_switch_outranks_explicit_consent() {
         .arg(validation_dir().join("dy13_default_run_card.dat"))
         .arg("--out")
         .arg(out.path())
-        .args(["--neval", "2000", "--niter", "2", "--yes"])
+        .args(["--fixed-budget", "--neval", "2000", "--niter", "2", "--yes"])
         .output()
         .expect("spawn vibegraph");
 
@@ -175,7 +175,7 @@ fn an_unresolvable_model_explains_that_models_are_never_downloaded() {
         .arg(&proc_card)
         .arg("--out")
         .arg(out.path())
-        .args(["--neval", "1000", "--niter", "2"])
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
         .output()
         .expect("spawn vibegraph");
 
@@ -222,7 +222,7 @@ fn a_generated_sample_passes_check_events_and_a_damaged_one_does_not() {
         .arg(&run_card)
         .arg("--out")
         .arg(&out)
-        .args(["--neval", "8000", "--niter", "3"])
+        .args(["--fixed-budget", "--neval", "8000", "--niter", "3"])
         .output()
         .expect("spawn vibegraph");
     assert!(

@@ -62,6 +62,16 @@ const ADAPT_ITERS: usize = 6;
 /// Kleiss–Pittau exponent the α-reallocation is damped by.
 const ADAPT_DAMPING: f64 = 0.5;
 
+/// Relative uncertainty a run converges to when no budget mode is asked for.
+///
+/// Below the Monte-Carlo error of every banked MadGraph reference this command is
+/// compared against (0.048% on `p p > e+ e-`, 0.43% on `p p > l+ l- j`), so a
+/// default run resolves more finely than the reference — and stops there rather
+/// than spending points no comparison can see. Reaching it costs a `p p > l+ l- j`
+/// run about what MadGraph spends for its own accuracy and a `p p > e+ e-` run
+/// several times less.
+const DEFAULT_TARGET_REL: f64 = 1.0e-3;
+
 /// How the per-iteration budget is split across the phase-space channels.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum Allocation {
@@ -117,22 +127,32 @@ pub struct IntegrateArgs {
     #[arg(long, default_value_t = 120_000)]
     pub neval: usize,
 
-    /// VEGAS adaptation iterations. Ignored under `--target-rel`, which decides
-    /// how many to run.
+    /// VEGAS adaptation iterations under `--fixed-budget`. The default
+    /// convergence mode decides its own iteration count, capped by
+    /// `--max-iters`.
     #[arg(long, default_value_t = 12)]
     pub niter: usize,
 
-    /// Integrate until σ's relative uncertainty reaches this, instead of
-    /// spending a fixed `--niter` iterations.
+    /// Integrate until σ's relative uncertainty reaches this.
     ///
     /// The uncertainty the stop reads is the quoted one widened by each
     /// channel's own `√max(1, χ²/dof)`, so a run whose iterations disagree by
-    /// more than their error bars keeps going. `--niter` still sets nothing but
-    /// the caps below.
-    #[arg(long, value_name = "REL")]
-    pub target_rel: Option<f64>,
+    /// more than their error bars keeps going. `--neval` sets the points an
+    /// iteration spends; how many iterations run is what the target decides,
+    /// bounded by `--min-iters`, `--max-iters` and `--max-points`.
+    #[arg(long, value_name = "REL", default_value_t = DEFAULT_TARGET_REL, conflicts_with = "fixed_budget")]
+    pub target_rel: f64,
 
-    /// Iterations that must run before `--target-rel` may stop.
+    /// Spend a fixed `--neval × --niter` and stop, instead of converging to
+    /// `--target-rel`.
+    ///
+    /// The mode a banked run is reproducible under: a fixed budget draws the
+    /// same points from the same seed every time, where a convergence run's
+    /// length depends on the variance it measures.
+    #[arg(long)]
+    pub fixed_budget: bool,
+
+    /// Iterations that must run before the convergence target may stop a run.
     #[arg(long, default_value_t = 6)]
     pub min_iters: usize,
 
@@ -146,8 +166,8 @@ pub struct IntegrateArgs {
 
     /// How the per-iteration budget is split across channels.
     ///
-    /// Defaults to `by-alpha` for a fixed budget — the split a banked run is
-    /// reproducible under — and to `neyman` under `--target-rel`, where it
+    /// Defaults to `by-alpha` under `--fixed-budget` — the split a banked run is
+    /// reproducible under — and to `neyman` under a convergence target, where it
     /// reaches the same accuracy for roughly half the evaluations on a wide
     /// multichannel process (`p p > l+ l- j`, 24 channels, 8 seeds: 2.94M
     /// evaluations against 6.41M at a 0.179% target) and makes no measurable
@@ -187,32 +207,36 @@ fn err(msg: impl Into<String>) -> IntegrateError {
 impl IntegrateArgs {
     /// The channel-allocation rule, defaulted by mode where the flag is absent.
     fn allocation(&self) -> BlockAllocation {
-        match (self.allocate, self.target_rel) {
-            (Some(a), _) => a.into(),
-            (None, None) => BlockAllocation::ByAlpha,
-            (None, Some(_)) => BlockAllocation::Neyman,
+        match self.allocate {
+            Some(a) => a.into(),
+            None if self.fixed_budget => BlockAllocation::ByAlpha,
+            None => BlockAllocation::Neyman,
         }
     }
 
-    /// What this invocation asks the integrator to spend: a fixed number of
-    /// iterations, or however many it takes to reach `--target-rel`.
+    /// What this invocation asks the integrator to spend: however many
+    /// iterations it takes to reach `--target-rel`, or the fixed
+    /// `--neval × --niter` of `--fixed-budget`.
     fn budget(&self) -> Result<Budget, IntegrateError> {
-        match self.target_rel {
-            None => Ok(Budget::Fixed {
+        if self.fixed_budget {
+            return Ok(Budget::Fixed {
                 neval: self.neval,
                 niter: self.niter,
-            }),
-            Some(target_rel) if target_rel > 0.0 && target_rel < 1.0 => Ok(Budget::Target {
-                target_rel,
-                neval: self.neval,
-                min_iters: self.min_iters,
-                max_iters: self.max_iters,
-                max_points: self.max_points,
-            }),
-            Some(bad) => Err(err(format!(
-                "--target-rel must be a relative uncertainty in (0, 1); got {bad}"
-            ))),
+            });
         }
+        if !(self.target_rel > 0.0 && self.target_rel < 1.0) {
+            return Err(err(format!(
+                "--target-rel must be a relative uncertainty in (0, 1); got {}",
+                self.target_rel
+            )));
+        }
+        Ok(Budget::Target {
+            target_rel: self.target_rel,
+            neval: self.neval,
+            min_iters: self.min_iters,
+            max_iters: self.max_iters,
+            max_points: self.max_points,
+        })
     }
 }
 

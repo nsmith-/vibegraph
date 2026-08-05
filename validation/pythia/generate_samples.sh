@@ -35,11 +35,15 @@ emit() {
   shift 3
 
   echo ">>> [$name] integrating ..."
+  # `--fixed-budget` because this gate wants a bounded, rerunnable sample rather
+  # than an accuracy: the shipped default converges to a relative uncertainty and
+  # so spends however many iterations that takes.
   "$BIN" integrate "$proc_card" \
     --run-card "$run_card" \
     --pdf-dir "$PDF_DIR" \
     --out "$OUT/$name" \
     --force \
+    --fixed-budget \
     --seed "$SEED" \
     "$@"
 
@@ -69,7 +73,8 @@ emit llj_fixed "$LLJ_PROC" \
 # only colour line in the record is the one joining the two beams.
 emit dy13_default \
   "$ROOT/validation/madgraph/dy13_proc_card.dat" \
-  "$ROOT/validation/madgraph/dy13_default_run_card.dat"
+  "$ROOT/validation/madgraph/dy13_default_run_card.dat" \
+  --neval 120000 --niter 12
 
 python3 - "$OUT/samples.json" "$SEED" "$NEVENTS" <<'PY'
 import json, sys

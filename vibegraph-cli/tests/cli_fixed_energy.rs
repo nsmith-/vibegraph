@@ -39,6 +39,7 @@ fn run_fixed_energy(process: &str, ebeam: f64, expected_ndim: usize) -> Integrat
         .arg(&run_path)
         .arg("--out")
         .arg(&out)
+        .arg("--fixed-budget")
         .arg("--neval")
         .arg("20000")
         .arg("--niter")
@@ -149,6 +150,7 @@ fn integrate_is_thread_count_independent() {
             .arg(&run_path)
             .arg("--out")
             .arg(&out)
+            .arg("--fixed-budget")
             .args(["--neval", "20000", "--niter", "4", "-j", threads])
             .status()
             .expect("spawn vibegraph");
