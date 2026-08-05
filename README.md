@@ -177,6 +177,14 @@ vibegraph generate run/grid.bin.zst proc_card.dat --run-card run_card.dat \
 `--strategy stochastic-rounding` for unit-weight events (`IDWTUP = +3`).
 Overweighted points are kept at weight > 1 and counted, never silently clipped.
 
+How many of them there are is set by the frozen scan that estimates each
+channel's maximum weight, and `--scan-points <N|share>` sizes it: `N` points on
+every channel, or (the default) each channel's share of the integration budget.
+A longer scan finds higher maxima — fewer and smaller overweights, and a lower
+acceptance for the same number of events. It is a trade rather than a
+convergence: on the `p p > l+ l- j` grids the summed maximum still grows as
+`n^0.51` at 2.6·10⁵ points per channel.
+
 ### Example: proton beams
 
 Both phases run at `lpp = 1`, PDF-convolved through a pure-Rust LHAPDF6 grid

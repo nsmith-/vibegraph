@@ -47,6 +47,59 @@ use crate::vegas::VegasGrid;
 /// each channel's scan is independent of the others and of the event generation.
 const SCAN_STREAM_BASE: u64 = 0x0057_4D41;
 
+/// How many points the frozen scan spends estimating one channel's maximum.
+///
+/// The scan's budget is not the integration's. `w_max` is an extremum estimate,
+/// and how many draws an extremum needs is set by the tail of the weight
+/// distribution over the channel's own grid, not by how much of the cross section
+/// the channel carries — so a budget that gives a good `σ` says nothing about how
+/// good the maxima are.
+///
+/// What a larger budget buys is a trade, not a convergence. Every extra draw can
+/// only raise a maximum, which moves cross section from above `w_max` to below it
+/// — fewer and smaller overweight events — while raising `Σⱼ w_maxⱼ` and so
+/// lowering the acceptance `σ / Σⱼ w_maxⱼ` that sets what an event costs. On the
+/// 24-channel `p p → ℓ⁺ℓ⁻ j` grids the two move together over more than two
+/// decades of budget: `Σⱼ w_maxⱼ` grows as `n^0.51` from 10³ to 2.6·10⁵ draws per
+/// channel with no plateau, which is the signature of a Pareto weight tail of
+/// index ≈ 2, and the share of `σ` above the maxima falls only as `n^-0.46`. There
+/// is no budget at which the maxima settle; there is a curve, and a budget picks a
+/// point on it.
+///
+/// The two variants choose the *allocation* across channels rather than the point
+/// on the curve. [`PerChannel`](Self::PerChannel) costs `channels × points` and is
+/// a function of the decomposition alone;
+/// [`IntegrationShare`](Self::IntegrationShare) gives a channel holding a
+/// per-mille of `σ` a per-mille of the points, which starves the narrow channels
+/// whose maxima are hardest to find. On those same grids the two land on the same
+/// curve to within the scan's own seed-to-seed spread (±20% on `Σⱼ w_maxⱼ` over
+/// five seeds), so the allocation is the much weaker lever of the two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanBudget {
+    /// Every channel scans on the same number of points, whatever the integration
+    /// budget was and whatever share of it the channel received.
+    PerChannel(usize),
+    /// Each channel scans on the points the integration spent on it per iteration.
+    IntegrationShare,
+}
+
+impl ScanBudget {
+    /// The draws a channel gets, given the `channel_neval` the integration spent
+    /// on it per iteration.
+    pub fn draws_for(self, channel_neval: usize) -> usize {
+        match self {
+            ScanBudget::PerChannel(n) => n,
+            ScanBudget::IntegrationShare => channel_neval,
+        }
+    }
+
+    /// What the scan will cost in integrand evaluations, over channels whose
+    /// per-iteration integration budgets are `channel_nevals`.
+    pub fn total_draws(self, channel_nevals: impl IntoIterator<Item = usize>) -> usize {
+        channel_nevals.into_iter().map(|n| self.draws_for(n)).sum()
+    }
+}
+
 /// An integrand whose integral is split into channels, each sampled over its own
 /// coordinates with the channel frozen.
 ///
@@ -215,10 +268,10 @@ impl Unweighter {
     /// Estimate each channel's maximum weight by a frozen scan on its own grid.
     ///
     /// `channels` supplies each channel's trained grid together with the number of
-    /// scan draws to spend on it — the integration's own per-channel `nevalⱼ` is
-    /// the natural budget, since it is already the share of the sample the channel
-    /// was judged to deserve. Each channel scans on its own RNG stream off `seed`,
-    /// so a channel's estimate does not depend on how many draws its neighbours got.
+    /// scan draws to spend on it; [`ScanBudget`] is the vocabulary for choosing
+    /// those counts and carries what a budget buys. Each channel scans on its own
+    /// RNG stream off `seed`, so a channel's estimate does not depend on how many
+    /// draws its neighbours got.
     ///
     /// A channel whose scan finds nothing (every draw cut away) gets `w_max = 0`
     /// and is never selected; [`empty_channels`](Self::empty_channels) reports it,
@@ -447,6 +500,92 @@ mod tests {
         let grids = flat_grids(integ.channel_count());
         let uw = Unweighter::scan(integ, grids.iter().map(|g| (g, draws)), seed);
         (grids, uw)
+    }
+
+    /// [`ScanBudget::IntegrationShare`] must hand back exactly the count it was
+    /// given: it is the spelling of the coupling, not a policy on top of it, and a
+    /// caller that selects it gets the draws the integration allocated.
+    #[test]
+    fn the_integration_share_budget_is_the_integrations_own_count() {
+        for n in [0usize, 1, 37, 12_345, 600_000] {
+            assert_eq!(ScanBudget::IntegrationShare.draws_for(n), n);
+            assert_eq!(ScanBudget::PerChannel(500).draws_for(n), 500);
+        }
+        let nevals = [10usize, 200, 3_000];
+        assert_eq!(ScanBudget::IntegrationShare.total_draws(nevals), 3_210);
+        assert_eq!(ScanBudget::PerChannel(500).total_draws(nevals), 1_500);
+    }
+
+    /// The mechanism that makes the scan's budget a question of its own: how many
+    /// draws an extremum needs is set by the channel's weight distribution, not by
+    /// its share of the cross section.
+    ///
+    /// Two channels with the same analytic supremum, `20`, reached from opposite
+    /// ends — a wide one carrying essentially all of `σ` with a mild peak, and a
+    /// narrow one carrying a thousandth of it with a very steep one. Under an
+    /// allocation `∝ σⱼ` the narrow channel gets a thousandth of the points and
+    /// its maximum stays far below the supremum; under a flat allocation of the
+    /// *same total* it reaches it, and the wide channel, whose draws were halved
+    /// to pay for it, barely notices — an extremum estimate improves
+    /// logarithmically in the draw count.
+    ///
+    /// This is a statement about the allocation's reach, not about which
+    /// allocation wins on a real decomposition: whether starved narrow channels
+    /// matter there depends on how their maxima compare with the wide channels',
+    /// and on `p p → ℓ⁺ℓ⁻ j` grids the two allocations measure the same.
+    #[test]
+    fn a_flat_budget_finds_a_narrow_channels_maximum_the_share_budget_misses() {
+        let integ = PowerChannels {
+            sigma: vec![10.0, 0.01],
+            power: vec![1.0, 1999.0],
+        };
+        let supremum = [20.0, 20.0];
+        let grids = flat_grids(2);
+        // The share allocation over a 40 000-point budget, `αⱼ ∝ σⱼ`.
+        let total = 40_000usize;
+        let share = [
+            (total as f64 * 10.0 / 10.01) as usize,
+            (total as f64 * 0.01 / 10.01) as usize,
+        ];
+        let flat = [total / 2, total / 2];
+        assert_eq!(
+            ScanBudget::IntegrationShare.total_draws(share),
+            share.iter().sum::<usize>()
+        );
+
+        let scan = |draws: [usize; 2]| {
+            Unweighter::scan(
+                &integ,
+                grids.iter().zip(draws).map(|(g, n)| (g, n)),
+                0x5CA7_B0D9,
+            )
+            .w_max()
+        };
+        let by_share = scan(share);
+        let by_flat = scan(flat);
+
+        // The narrow channel: starved to 39 draws by the share allocation, so its
+        // steep peak is never approached; 20 000 flat draws reach it.
+        assert!(
+            by_share[1] / supremum[1] < 0.05,
+            "the share allocation should leave the narrow channel far below its \
+             supremum, got {:.4} of {}",
+            by_share[1],
+            supremum[1]
+        );
+        assert!(
+            by_flat[1] / supremum[1] > 0.9,
+            "a flat allocation should reach the narrow channel's peak, got {:.4} of {}",
+            by_flat[1],
+            supremum[1]
+        );
+
+        // The wide channel paid for it with half its draws and lost almost nothing.
+        assert!(
+            by_flat[0] / by_share[0] > 0.999,
+            "halving the wide channel's scan cost it {:.4} of its maximum",
+            by_flat[0] / by_share[0]
+        );
     }
 
     #[test]

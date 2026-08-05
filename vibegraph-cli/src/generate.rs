@@ -40,7 +40,7 @@ use vibegraph::proton::{
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::identity::ModelIdentity;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
-use vibegraph::unweight::{UnweightStats, Unweighter};
+use vibegraph::unweight::{ScanBudget, UnweightStats, Unweighter};
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -61,6 +61,12 @@ const PROCESS_ID: i32 = 1;
 const SCAN_SEED_OFFSET: u64 = 0x5CA7_0000;
 const GEN_SEED_OFFSET: u64 = 0xE7E7_0000;
 const ROUNDING_SEED_OFFSET: u64 = 0x524E_4400;
+/// Default `--scan-points`. Measured on the 24-channel `p p > l+ l- j` grids, a
+/// flat per-channel budget and the integration's own allocation sit on the same
+/// trade-off curve between the summed maximum (which sets acceptance) and the
+/// cross-section share above the maxima, so the allocation that costs nothing to
+/// compute is the default. [`ScanBudget`] carries what the curve is.
+const DEFAULT_SCAN_POINTS: &str = "share";
 /// Trials one event may cost before the source gives up. Sized well above the
 /// reciprocal of the worst unweighting efficiency measured on any gated process
 /// (~3e-2), so only a genuinely stuck sampler reaches it.
@@ -126,8 +132,33 @@ pub struct GenerateArgs {
     #[arg(long)]
     pub pdf_dir: Option<PathBuf>,
 
+    /// Points the frozen `w_max` scan spends on *each* channel, or `share` to give
+    /// every channel the integration's own per-channel budget instead. A larger
+    /// budget raises the maxima: fewer events above them, and a lower acceptance
+    /// for the same number of events.
+    #[arg(
+        long,
+        value_name = "N|share",
+        default_value = DEFAULT_SCAN_POINTS,
+        value_parser = parse_scan_budget
+    )]
+    pub scan_points: ScanBudget,
+
     #[command(flatten)]
     pub parallel: ParallelArgs,
+}
+
+/// `--scan-points` accepts a per-channel count or the word that ties the scan to
+/// the integration's own per-channel allocation.
+fn parse_scan_budget(raw: &str) -> Result<ScanBudget, String> {
+    if raw == "share" {
+        return Ok(ScanBudget::IntegrationShare);
+    }
+    match raw.parse::<usize>() {
+        Ok(0) => Err("--scan-points needs at least one point per channel".to_string()),
+        Ok(n) => Ok(ScanBudget::PerChannel(n)),
+        Err(_) => Err(format!("expected a point count or `share`, got `{raw}`")),
+    }
 }
 
 fn err(msg: impl Into<String>) -> IntegrateError {
@@ -566,10 +597,13 @@ fn generate_sample(
 
     let scan = Unweighter::scan(
         &integ,
-        artifact.channels.iter().map(|c| (&c.grid, c.neval)),
+        artifact
+            .channels
+            .iter()
+            .map(|c| (&c.grid, args.scan_points.draws_for(c.neval))),
         args.seed ^ SCAN_SEED_OFFSET,
     );
-    warn_on_empty_channels(&scan, artifact);
+    report_scan(&scan, artifact, args.scan_points);
 
     // A model with no strong coupling installs no per-event scale prescription, and
     // no cross section depended on a factorisation scale; the run card's own is
@@ -618,6 +652,30 @@ fn generate_sample(
         strategy.as_ref(),
     );
     Ok(summary)
+}
+
+/// What the frozen scan cost and what it found, then the channels it never
+/// reached.
+///
+/// The draw count is printed because it is a knob of its own, and because it sets
+/// the maxima every overweight number the run goes on to print is measured
+/// against.
+fn report_scan(scan: &Unweighter, artifact: &IntegrateArtifact, budget: ScanBudget) {
+    let draws = budget.total_draws(artifact.channels.iter().map(|c| c.neval));
+    let per_channel = match budget {
+        ScanBudget::PerChannel(n) => format!("{n} per channel"),
+        ScanBudget::IntegrationShare => {
+            "each channel's share of the integration budget".to_string()
+        }
+    };
+    println!(
+        "scan:     {draws} points over {} channels ({per_channel}), sum w_max {:.6e}, \
+         predicted efficiency {:.4e}",
+        artifact.channels.len(),
+        scan.total_w_max() * GEV2_TO_PB,
+        artifact.sigma_pb / (scan.total_w_max() * GEV2_TO_PB),
+    );
+    warn_on_empty_channels(scan, artifact);
 }
 
 /// A channel the frozen scan never reached is never drawn from, so its share of the
@@ -916,10 +974,13 @@ fn generate_proton_sample(
 
     let scan = Unweighter::scan(
         &integ,
-        artifact.channels.iter().map(|c| (&c.grid, c.neval)),
+        artifact
+            .channels
+            .iter()
+            .map(|c| (&c.grid, args.scan_points.draws_for(c.neval))),
         args.seed ^ SCAN_SEED_OFFSET,
     );
-    warn_on_empty_channels(&scan, artifact);
+    report_scan(&scan, artifact, args.scan_points);
 
     let alpha_qed = evaluated
         .param_values

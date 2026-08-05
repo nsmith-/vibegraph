@@ -169,6 +169,26 @@ impl Run {
         (file, text)
     }
 
+    /// Generate with extra flags appended, returning the file's bytes and the
+    /// run's stdout.
+    fn generate_with(&self, extra: &[&str], seed: &str, name: &str) -> (String, String) {
+        let output = self.dir.join(name);
+        let mut cmd = self.generate_cmd("buffer", seed, FEW_EVENTS, &output);
+        cmd.args(extra);
+        let out = cmd.output().expect("spawn vibegraph");
+        assert!(
+            out.status.success(),
+            "vibegraph generate {extra:?} failed:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        eprint!("{stdout}");
+        (
+            std::fs::read_to_string(&output).expect("read the event file"),
+            stdout,
+        )
+    }
+
     /// A `generate` invocation expected to fail, with the cards spelled out.
     fn refuse(&self, proc_card: &Path, run_card: Option<&Path>, name: &str) -> Output {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
@@ -377,6 +397,66 @@ fn a_seed_reproduces_the_sample() {
         assert_eq!(first, again, "{strategy} is not reproducible from its seed");
         let (_, other) = run.generate(strategy, SEED_B, FEW_EVENTS, &format!("{strategy}-3.lhe"));
         assert_ne!(first, other, "{strategy} ignores its seed");
+    }
+}
+
+/// The `w_max` scan's budget is a knob of its own, and its default is the
+/// integration's per-channel allocation — so the default run and an explicit
+/// `--scan-points share` must be the *same bytes*, and a scan on a different
+/// budget must be a different sample.
+///
+/// The negative control matters more than the equality here: the maxima only
+/// enter the file through the channel-selection weights and the acceptance
+/// probability, so a flag that silently did nothing would pass the first
+/// assertion and every other test in this file.
+#[test]
+fn the_scan_budget_defaults_to_the_integration_allocation_and_is_otherwise_live() {
+    let run = run();
+    let (default_file, default_out) = run.generate_with(&[], SEED_A, "scan-default.lhe");
+    let (share_file, _) = run.generate_with(&["--scan-points", "share"], SEED_A, "scan-share.lhe");
+    assert_eq!(
+        default_file, share_file,
+        "`--scan-points share` must be the default, byte for byte"
+    );
+
+    let (other_file, other_out) =
+        run.generate_with(&["--scan-points", "250"], SEED_A, "scan-250.lhe");
+    assert_ne!(
+        default_file, other_file,
+        "a different scan budget produced an identical sample: the flag is inert"
+    );
+    let sum_w_max = |stdout: &str| -> f64 {
+        stdout
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("scan:"))
+            .and_then(|l| l.split("sum w_max ").nth(1))
+            .and_then(|l| l.split(',').next())
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .unwrap_or_else(|| panic!("no scan line in:\n{stdout}"))
+    };
+    // A shorter scan cannot find a larger maximum in any channel, so the summed
+    // maximum can only fall — the direction is what says the budget reached the
+    // scan rather than some other part of the run.
+    assert!(
+        sum_w_max(&other_out) < sum_w_max(&default_out),
+        "250 points per channel gave sum w_max {:.6e}, the default {:.6e}",
+        sum_w_max(&other_out),
+        sum_w_max(&default_out)
+    );
+}
+
+/// A scan budget that is not a positive count is a refusal, not a fallback: the
+/// maxima it would produce set every event weight in the file.
+#[test]
+fn a_scan_budget_that_is_not_a_positive_count_is_refused() {
+    let run = run();
+    for bad in ["0", "half", "-5"] {
+        let mut cmd = run.generate_cmd("buffer", SEED_A, 10, &run.dir.join("never.lhe"));
+        cmd.args(["--scan-points", bad]);
+        expect_refusal(
+            cmd.output().expect("spawn vibegraph"),
+            &format!("--scan-points {bad}"),
+        );
     }
 }
 
