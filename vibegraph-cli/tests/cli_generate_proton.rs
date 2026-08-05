@@ -72,15 +72,15 @@ const ALPHA_S_TOLERANCE: f64 = 4e-7;
 
 /// Integration budget, chosen by a scan rather than for the wall clock alone.
 ///
-/// Two separate things degrade below it. The per-channel `w_max` a frozen scan
-/// finds is an extremum estimate on that channel's own share of the budget, and the
-/// cross section it leaves *above* itself falls with the budget: 3.2% at 30 000,
-/// 1.5% at 100 000, 0.8% here, 0.5% at 600 000 — where a gated fixed-energy process
-/// shows 3e-4. Those events are kept at a weight above one, so the estimator stays
-/// unbiased and what the tail costs is the sample's spread. Separately, the banked
-/// σ itself is still rising at 100 000 (see the cross-section bound below), so a
-/// comparison against it there measures the integration's convergence, not the
-/// sampling.
+/// Two separate things degrade below it. Each channel's `w_max` is read off a
+/// frozen scan on that channel's own share of the budget, so the budget sets how
+/// well the scan resolves the upper tail the maximum is cut out of, and the events
+/// that land above the maximum are what scatters the sample's own σ — 2.2% of the
+/// cross section at this budget. Those events are kept at a weight above one, so
+/// the estimator stays unbiased and what the tail costs is that spread.
+/// Separately, the banked σ itself is still rising at 100 000 (see the
+/// cross-section bound below), so a comparison against it there measures the
+/// integration's convergence, not the sampling.
 const NEVAL: &str = "300000";
 const NITER: &str = "8";
 const NEVENTS: usize = 20_000;

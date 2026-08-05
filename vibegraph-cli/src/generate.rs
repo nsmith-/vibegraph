@@ -40,7 +40,7 @@ use vibegraph::proton::{
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::identity::ModelIdentity;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
-use vibegraph::unweight::{ScanBudget, UnweightStats, Unweighter};
+use vibegraph::unweight::{MaxRule, ScanBudget, UnweightStats, Unweighter, DEFAULT_EXCESS_SHARE};
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -133,9 +133,10 @@ pub struct GenerateArgs {
     pub pdf_dir: Option<PathBuf>,
 
     /// Points the frozen `w_max` scan spends on *each* channel, or `share` to give
-    /// every channel the integration's own per-channel budget instead. A larger
-    /// budget raises the maxima: fewer events above them, and a lower acceptance
-    /// for the same number of events.
+    /// every channel the integration's own per-channel budget instead. What the
+    /// budget buys depends on `--max-truncation`: at zero a larger budget raises
+    /// the maxima, trading acceptance for fewer events above them; under a
+    /// truncation it sharpens the quantile the maxima converge to.
     #[arg(
         long,
         value_name = "N|share",
@@ -143,6 +144,18 @@ pub struct GenerateArgs {
         value_parser = parse_scan_budget
     )]
     pub scan_points: ScanBudget,
+
+    /// Share of each channel's scanned cross section its maximum may leave above
+    /// itself. `0` takes the largest weight the scan saw instead; a larger share
+    /// lowers the maxima, accepting more trials and giving more of the accepted
+    /// events a weight above one.
+    #[arg(
+        long,
+        value_name = "SHARE",
+        default_value_t = DEFAULT_EXCESS_SHARE,
+        value_parser = parse_excess_share
+    )]
+    pub max_truncation: f64,
 
     #[command(flatten)]
     pub parallel: ParallelArgs,
@@ -159,6 +172,25 @@ fn parse_scan_budget(raw: &str) -> Result<ScanBudget, String> {
         Ok(n) => Ok(ScanBudget::PerChannel(n)),
         Err(_) => Err(format!("expected a point count or `share`, got `{raw}`")),
     }
+}
+
+/// `--max-truncation` is a share of a channel's own scanned cross section, so a
+/// value of one or more would ask for every scanned point to sit above the
+/// maximum and is a refusal rather than a clamp.
+fn parse_excess_share(raw: &str) -> Result<f64, String> {
+    let share: f64 = raw
+        .parse()
+        .map_err(|_| format!("expected a share in [0, 1), got `{raw}`"))?;
+    match MaxRule::truncated(share) {
+        Some(_) => Ok(share),
+        None => Err(format!("expected a share in [0, 1), got `{raw}`")),
+    }
+}
+
+/// The rule the run reads its maxima off. The share is validated by the parser,
+/// so a run that reached here has one.
+fn max_rule(args: &GenerateArgs) -> MaxRule {
+    MaxRule::truncated(args.max_truncation).expect("--max-truncation is a share below one")
 }
 
 fn err(msg: impl Into<String>) -> IntegrateError {
@@ -595,15 +627,17 @@ fn generate_sample(
         .map_err(|e| err(format!("cannot build a subprocess record: {e}")))?;
     let beam_pdg = beam_pdg(&records)?;
 
-    let scan = Unweighter::scan(
+    let rule = max_rule(args);
+    let scan = Unweighter::scan_with(
         &integ,
         artifact
             .channels
             .iter()
             .map(|c| (&c.grid, args.scan_points.draws_for(c.neval))),
         args.seed ^ SCAN_SEED_OFFSET,
+        rule,
     );
-    report_scan(&scan, artifact, args.scan_points);
+    report_scan(&scan, artifact, args.scan_points, rule);
 
     // A model with no strong coupling installs no per-event scale prescription, and
     // no cross section depended on a factorisation scale; the run card's own is
@@ -657,10 +691,9 @@ fn generate_sample(
 /// What the frozen scan cost and what it found, then the channels it never
 /// reached.
 ///
-/// The draw count is printed because it is a knob of its own, and because it sets
-/// the maxima every overweight number the run goes on to print is measured
-/// against.
-fn report_scan(scan: &Unweighter, artifact: &IntegrateArtifact, budget: ScanBudget) {
+/// The draw count and the rule are both printed because between them they set the
+/// maxima every overweight number the run goes on to print is measured against.
+fn report_scan(scan: &Unweighter, artifact: &IntegrateArtifact, budget: ScanBudget, rule: MaxRule) {
     let draws = budget.total_draws(artifact.channels.iter().map(|c| c.neval));
     let per_channel = match budget {
         ScanBudget::PerChannel(n) => format!("{n} per channel"),
@@ -675,6 +708,15 @@ fn report_scan(scan: &Unweighter, artifact: &IntegrateArtifact, budget: ScanBudg
         scan.total_w_max() * GEV2_TO_PB,
         artifact.sigma_pb / (scan.total_w_max() * GEV2_TO_PB),
     );
+    match rule {
+        MaxRule::Extremum => println!("maxima:   the largest weight each channel's scan saw"),
+        MaxRule::Truncated { excess_share } => println!(
+            "maxima:   {:.3}% of each channel's scanned cross section left above them, \
+             summing to {:.4} of the summed largest weight",
+            100.0 * excess_share,
+            scan.total_w_max() / scan.total_w_peak()
+        ),
+    }
     warn_on_empty_channels(scan, artifact);
 }
 
@@ -972,15 +1014,17 @@ fn generate_proton_sample(
     let records = flavor_records(&groups, model, evaluated)?;
     let beam_pdg = hadron_beam_pdg(rc)?;
 
-    let scan = Unweighter::scan(
+    let rule = max_rule(args);
+    let scan = Unweighter::scan_with(
         &integ,
         artifact
             .channels
             .iter()
             .map(|c| (&c.grid, args.scan_points.draws_for(c.neval))),
         args.seed ^ SCAN_SEED_OFFSET,
+        rule,
     );
-    report_scan(&scan, artifact, args.scan_points);
+    report_scan(&scan, artifact, args.scan_points, rule);
 
     let alpha_qed = evaluated
         .param_values
