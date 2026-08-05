@@ -774,13 +774,16 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
     {
         let fo = &self.0;
         let fi = &fi.0;
+        // Every component is a sum or difference of the same four products, so
+        // they are named once. Folding a product into a multiply-add per
+        // component instead would compute each of the four twice, since a fused
+        // `a*b + c` is not a common subexpression of a bare `a*b`.
+        let a = cmul(fo[2], fi[0]);
+        let b = cmul(fo[3], fi[1]);
+        let c = cmul(fo[2], fi[1]);
+        let d = cmul(fo[3], fi[0]);
         ComplexVector(
-            [
-                cmul_add(fo[2], fi[0], cmul(fo[3], fi[1])),
-                -cmul_add(fo[2], fi[1], cmul(fo[3], fi[0])),
-                ri(F::one()) * cmul_add(fo[2], fi[1], -cmul(fo[3], fi[0])),
-                cmul_add(fo[3], fi[1], -cmul(fo[2], fi[0])),
-            ],
+            [a + b, -(c + d), ri(F::one()) * (c - d), b - a],
             PhantomData,
         )
     }
@@ -803,13 +806,13 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
     {
         let fo = &self.0;
         let fi = &fi.0;
+        // As in `left_current`: name the four products so none is computed twice.
+        let a = cmul(fo[0], fi[2]);
+        let b = cmul(fo[1], fi[3]);
+        let c = cmul(fo[0], fi[3]);
+        let d = cmul(fo[1], fi[2]);
         ComplexVector(
-            [
-                cmul_add(fo[0], fi[2], cmul(fo[1], fi[3])),
-                cmul_add(fo[0], fi[3], cmul(fo[1], fi[2])),
-                -ri(F::one()) * cmul_add(fo[0], fi[3], -cmul(fo[1], fi[2])),
-                cmul_add(fo[0], fi[2], -cmul(fo[1], fi[3])),
-            ],
+            [a + b, c + d, -ri(F::one()) * (c - d), a - b],
             PhantomData,
         )
     }
