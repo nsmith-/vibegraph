@@ -533,6 +533,36 @@ guards). Winner: **op-blocked within ASAP dependency levels**
   binary; integration tests and the validate layer are hard-wired to arena
   order.
 
+**E1b — MERGED 2026-08-04 (`486e237`, merge `94af883`): the pass is production.**
+
+- `Program::build` defaults to op-blocked-within-ASAP-levels. One-pass without
+  rule duplication: the lowering `match` was split out as `lower_node` and run
+  against a null slot map to read each node's true `Instr` discriminant — the
+  grouping key structurally cannot drift from the variant it groups.
+- **Guardrail**: 16 MiB arena-footprint limit (allocated bytes at f64,
+  lane-independent), falling back **only if interning order is actually
+  smaller**. Measured footprints: pruned 2→6 0.31→0.46 MB, unpruned
+  3.66→5.84 MB (E1's 2.84→4.64 figure was `live_bytes_peak`, a different and
+  also-correct metric; the guardrail uses allocated bytes) — the limit is
+  ~36× the largest production program; it fires on nothing measured.
+- **Bit-for-bit**: all 100 banked category row files digest-identical
+  (`e2c4299a…` before and after, per-file diff count 0) — including every σ
+  row, so `eval_amp2`'s unexpanded program is byte-stable too. Bit-identity
+  tests pass with production as default (anti-vacuity: order ≠ arena).
+  Census character-identical.
+- **Performance**: eval geomean **−17.34%** (14/14 rows; reproduces E1's
+  −17.9%/18-row study number inside noise). **MATRIX1 geomean 1.21× → 1.00×**;
+  processes beating MadGraph 3 → **8 of 14**; the 2→6 rows 1.14×→0.89× and
+  1.34×→1.06×. Compile cost of the pass: +1.06 ms = **+0.2%** of evaluator
+  construction on the biggest production program (+4.8% on the study-only
+  unpruned 2→6).
+- Row `duration_s` from this sitting is not bankable (same-build back-to-back
+  spread reached −57% under sibling load; row *contents* byte-identical) —
+  close-out re-measures on a quiet host.
+- **E3 re-baselines against `486e237`**: note 30 §6's "≈1.0 µs / ~21%"
+  chain-B draw cost predates a ~17% evaluator win and needs re-measuring
+  before E3 sizes its payoff.
+
 ### E2 — `fill_arenas` overhead reduction (scoped by E0)
 
 The study's budget says the ceiling plainly: dispatch + bounds checks + header
