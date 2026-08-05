@@ -13,6 +13,11 @@ extended-validation = []
 # Exposes helas::eval::bench_internals (kernels + random-slot generators) for the
 # kernel-granularity microbenches in benches/. Never enable in normal builds.
 bench-internals = []
+# Compiles the alternative execution orders in helas::eval::schedule and lets
+# VIBEGRAPH_EVAL_SCHEDULE pick one at program-build time, so one prebuilt binary can be
+# swept over the orders without a rebuild. A study hook: without it the module is not
+# compiled and the evaluator emits arena order. Never enable in normal builds.
+eval-schedule-study = []
 
 [lints]
 workspace = true

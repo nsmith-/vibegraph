@@ -248,6 +248,101 @@ pub(super) enum Instr {
     Configs,
 }
 
+impl Instr {
+    /// The variant's index in declaration order — the jump-table entry the forward
+    /// pass's single dispatch site selects. Its run lengths over the instruction
+    /// stream are what that indirect branch's predictability is made of.
+    #[cfg_attr(not(any(test, feature = "eval-schedule-study")), allow(dead_code))]
+    pub(super) fn kind(&self) -> u8 {
+        match self {
+            Instr::ComplexConst { .. } => 0,
+            Instr::RealConst { .. } => 1,
+            Instr::ExternalScalar { .. } => 2,
+            Instr::ExternalVector { .. } => 3,
+            Instr::ExternalFin { .. } => 4,
+            Instr::ExternalFout { .. } => 5,
+            Instr::PropagateScalar { .. } => 6,
+            Instr::PropagateVector { .. } => 7,
+            Instr::PropagateFin { .. } => 8,
+            Instr::PropagateFout { .. } => 9,
+            Instr::AddScalar { .. } => 10,
+            Instr::AddVector { .. } => 11,
+            Instr::AddFin { .. } => 12,
+            Instr::AddFout { .. } => 13,
+            Instr::MulScalarC { .. } => 14,
+            Instr::MulScalarR { .. } => 15,
+            Instr::ScaleVecC { .. } => 16,
+            Instr::ScaleVecR { .. } => 17,
+            Instr::ScaleFinC { .. } => 18,
+            Instr::ScaleFinR { .. } => 19,
+            Instr::ScaleFoutC { .. } => 20,
+            Instr::ScaleFoutR { .. } => 21,
+            Instr::GammaVout { .. } => 22,
+            Instr::FfvVout { .. } => 23,
+            Instr::GammaFin { .. } => 24,
+            Instr::GammaFout { .. } => 25,
+            Instr::FfvFin { .. } => 26,
+            Instr::FfvFout { .. } => 27,
+            Instr::ProjFin { .. } => 28,
+            Instr::ProjFout { .. } => 29,
+            Instr::Bilinear { .. } => 30,
+            Instr::Metric { .. } => 31,
+            Instr::MetricVout { .. } => 32,
+            Instr::PMom { .. } => 33,
+            Instr::PMomOut { .. } => 34,
+            Instr::Flows => 35,
+            Instr::Hels => 36,
+            Instr::Configs => 37,
+        }
+    }
+
+    /// Human-readable variant name, for the study's per-kind tables.
+    #[cfg_attr(not(any(test, feature = "eval-schedule-study")), allow(dead_code))]
+    pub(super) fn kind_name(kind: u8) -> &'static str {
+        const NAMES: [&str; 38] = [
+            "ComplexConst",
+            "RealConst",
+            "ExternalScalar",
+            "ExternalVector",
+            "ExternalFin",
+            "ExternalFout",
+            "PropagateScalar",
+            "PropagateVector",
+            "PropagateFin",
+            "PropagateFout",
+            "AddScalar",
+            "AddVector",
+            "AddFin",
+            "AddFout",
+            "MulScalarC",
+            "MulScalarR",
+            "ScaleVecC",
+            "ScaleVecR",
+            "ScaleFinC",
+            "ScaleFinR",
+            "ScaleFoutC",
+            "ScaleFoutR",
+            "GammaVout",
+            "FfvVout",
+            "GammaFin",
+            "GammaFout",
+            "FfvFin",
+            "FfvFout",
+            "ProjFin",
+            "ProjFout",
+            "Bilinear",
+            "Metric",
+            "MetricVout",
+            "PMom",
+            "PMomOut",
+            "Flows",
+            "Hels",
+            "Configs",
+        ];
+        NAMES[kind as usize]
+    }
+}
+
 /// Where the amplitude value(s) live after a run.
 #[derive(Clone, Debug)]
 pub(super) enum RootKind {
@@ -267,10 +362,15 @@ pub(super) enum RootKind {
 /// A folded arena lowered to a typed instruction stream.
 #[derive(Clone, Debug)]
 pub(super) struct Program {
-    /// One instruction per node, in arena (storage) order.
+    /// One instruction per node, in execution order.
     pub(super) instrs: Box<[Instr]>,
-    /// Per-node index within its result arena (`loc[id]`); used to reconstruct a slot for
-    /// the debug/extended-validation cross-check, and to locate the root.
+    /// Destination slot of each instruction (`dest[pos]`), within the arena its
+    /// output class fixes — the write index the forward pass uses.
+    pub(super) dest: Box<[u32]>,
+    /// Per-node index within its result arena (`loc[id]`), for the debug /
+    /// `extended-validation` cross-check that reconstructs every node's slot. The
+    /// forward pass reads `dest` instead, so this is absent from a release build.
+    #[cfg(any(debug_assertions, feature = "extended-validation"))]
     pub(super) loc: Box<[u32]>,
     /// Slots each arena needs for a run (`arena_sizes[class]`): the peak number of
     /// simultaneously live results of that class, not the node count — slots are
@@ -295,7 +395,7 @@ pub(super) struct Program {
 /// children, except that `PMom`/`PMomOut` read only their operands' momentum-table
 /// ids and the variadic roots' children are read out by the evaluator *after* the
 /// pass (kept live to the end instead).
-fn arena_reads(op: Op, kids: &[NodeId]) -> &[NodeId] {
+pub(super) fn arena_reads(op: Op, kids: &[NodeId]) -> &[NodeId] {
     match op {
         Op::PMom | Op::PMomOut | Op::Flows | Op::Hels | Op::Configs => &[],
         _ => kids,
@@ -314,68 +414,121 @@ fn split_configs(ast: &Ast<Const>, id: NodeId) -> (NodeId, &[NodeId]) {
     }
 }
 
+/// Liveness of every node's result over one execution order: where its last arena read
+/// happens, and whether the evaluator reads it out after the pass.
+pub(super) struct Liveness {
+    /// `expiry[expiry_off[p]..expiry_off[p + 1]]` are the nodes whose last arena read
+    /// is the instruction at position `p` — a CSR so a forward scan releases slots in
+    /// O(1). A node never read is listed at its own position.
+    pub(super) expiry_off: Vec<u32>,
+    pub(super) expiry: Vec<NodeId>,
+    /// Nodes the evaluator reads out of the arenas after the pass; their slots are
+    /// never recycled.
+    pub(super) live_end: Vec<bool>,
+}
+
+/// Liveness over the execution order `order` (`order[pos]` is the node executed at
+/// `pos`; it must list every node exactly once, children before parents).
+pub(super) fn liveness(ast: &Ast<Const>, order: &[NodeId]) -> Liveness {
+    let n = ast.len();
+    let mut pos_of = vec![0u32; n];
+    for (p, &id) in order.iter().enumerate() {
+        pos_of[id as usize] = p as u32;
+    }
+    // Last arena read of each node, as a position (its own position if never read).
+    let mut last_use: Vec<u32> = pos_of.clone();
+    for (p, &id) in order.iter().enumerate() {
+        for &k in arena_reads(ast.value(id).op, ast.children_ids(id)) {
+            last_use[k as usize] = p as u32;
+        }
+    }
+    // Root scalars read out by the evaluator after the pass.
+    let mut live_end = vec![false; n];
+    {
+        let root_id = ast.root();
+        let mark = |live_end: &mut Vec<bool>, id: NodeId| {
+            let (amplitude, amps) = split_configs(ast, id);
+            if ast.value(amplitude).op == Op::Flows {
+                for &j in ast.children_ids(amplitude) {
+                    live_end[j as usize] = true;
+                }
+            } else {
+                live_end[amplitude as usize] = true;
+            }
+            for &a in amps {
+                live_end[a as usize] = true;
+            }
+        };
+        if ast.value(root_id).op == Op::Hels {
+            for &c in ast.children_ids(root_id) {
+                mark(&mut live_end, c);
+            }
+        } else {
+            mark(&mut live_end, root_id);
+        }
+    }
+    let mut expiry_off = vec![0u32; n + 1];
+    for &lu in &last_use {
+        expiry_off[lu as usize + 1] += 1;
+    }
+    for i in 0..n {
+        expiry_off[i + 1] += expiry_off[i];
+    }
+    let mut expiry = vec![0 as NodeId; n];
+    let mut cursor = expiry_off.clone();
+    for (k, &lu) in last_use.iter().enumerate() {
+        expiry[cursor[lu as usize] as usize] = k as NodeId;
+        cursor[lu as usize] += 1;
+    }
+    Liveness {
+        expiry_off,
+        expiry,
+        live_end,
+    }
+}
+
 impl Program {
-    /// Lower a folded arena + its analysis into a typed instruction stream.
+    /// Lower a folded arena + its analysis into a typed instruction stream, in arena
+    /// (storage) order — or, when the execution-order study hook selects one, in an
+    /// alternative topological order over the same DAG.
+    pub(super) fn build(ast: &Ast<Const>, an: &NodeAnalysis) -> Program {
+        let arena_order: Vec<NodeId> = (0..ast.len() as NodeId).collect();
+        let base = Program::build_ordered(ast, an, &arena_order);
+        #[cfg(any(test, feature = "eval-schedule-study"))]
+        {
+            let sched = super::schedule::active();
+            if sched != super::schedule::Schedule::Arena {
+                let order = super::schedule::build_order(ast, an, &base, sched);
+                return Program::build_ordered(ast, an, &order);
+            }
+        }
+        base
+    }
+
+    /// Lower a folded arena + its analysis into a typed instruction stream, executing
+    /// nodes in the order `order` (any topological order of the DAG; `order[pos]` is
+    /// the node at position `pos`).
     ///
     /// Result slots are allocated by liveness: a node's slot is recycled once its last
     /// arena read has executed, so `arena_sizes` is the peak number of simultaneously
     /// live values per class, not the node count. A node's own slot is never one of its
     /// operands' (operands release only after the instruction's slot is assigned), and
     /// the root scalars the evaluator reads after the pass stay live to the end.
-    pub(super) fn build(ast: &Ast<Const>, an: &NodeAnalysis) -> Program {
+    pub(super) fn build_ordered(ast: &Ast<Const>, an: &NodeAnalysis, order: &[NodeId]) -> Program {
         let n = ast.len();
+        assert_eq!(order.len(), n, "execution order must cover every node once");
         let mut instrs: Vec<Instr> = Vec::with_capacity(n);
+        let mut dest: Vec<u32> = Vec::with_capacity(n);
         let mut loc = vec![0u32; n];
         let mut counts = [0u32; N_ARENAS];
         let mut operands: Vec<OperandRef> = Vec::new();
         let mut mom_operands: Vec<u32> = Vec::new();
 
-        // ── liveness ── last arena read of each node (its own position if never read).
-        let mut last_use: Vec<NodeId> = (0..n as NodeId).collect();
-        for id in 0..n as NodeId {
-            for &k in arena_reads(ast.value(id).op, ast.children_ids(id)) {
-                last_use[k as usize] = id;
-            }
-        }
-        // Root scalars read out by the evaluator after the pass.
-        let mut live_end = vec![false; n];
-        {
-            let root_id = ast.root();
-            let mark = |live_end: &mut Vec<bool>, id: NodeId| {
-                let (amplitude, amps) = split_configs(ast, id);
-                if ast.value(amplitude).op == Op::Flows {
-                    for &j in ast.children_ids(amplitude) {
-                        live_end[j as usize] = true;
-                    }
-                } else {
-                    live_end[amplitude as usize] = true;
-                }
-                for &a in amps {
-                    live_end[a as usize] = true;
-                }
-            };
-            if ast.value(root_id).op == Op::Hels {
-                for &c in ast.children_ids(root_id) {
-                    mark(&mut live_end, c);
-                }
-            } else {
-                mark(&mut live_end, root_id);
-            }
-        }
-        // CSR of nodes by expiry position, so the main loop can release slots in O(1).
-        let mut expiry_off = vec![0u32; n + 1];
-        for &lu in &last_use {
-            expiry_off[lu as usize + 1] += 1;
-        }
-        for i in 0..n {
-            expiry_off[i + 1] += expiry_off[i];
-        }
-        let mut expiry = vec![0 as NodeId; n];
-        let mut cursor = expiry_off.clone();
-        for (k, &lu) in last_use.iter().enumerate() {
-            expiry[cursor[lu as usize] as usize] = k as NodeId;
-            cursor[lu as usize] += 1;
-        }
+        let Liveness {
+            expiry_off,
+            expiry,
+            live_end,
+        } = liveness(ast, order);
         let mut free: [Vec<u32>; N_ARENAS] = Default::default();
 
         // The (bra = flow-out, ket = flow-in, reversed) resolution of a two-fermion
@@ -395,7 +548,7 @@ impl Program {
             OperandRef::new(class, loc[id as usize])
         };
 
-        for id in 0..n as NodeId {
+        for (pos, &id) in order.iter().enumerate() {
             let node = ast.value(id);
             let kids = ast.children_ids(id);
             let li = |k: NodeId| loc[k as usize];
@@ -612,9 +765,10 @@ impl Program {
                     counts[ai] - 1
                 });
             }
+            dest.push(loc[id as usize]);
             // Release slots whose last read was this instruction — after this node's own
             // slot is assigned, so an instruction never writes over one of its operands.
-            for k in expiry_off[id as usize]..expiry_off[id as usize + 1] {
+            for k in expiry_off[pos]..expiry_off[pos + 1] {
                 let dead = expiry[k as usize];
                 if live_end[dead as usize] {
                     continue;
@@ -685,6 +839,8 @@ impl Program {
 
         Program {
             instrs: instrs.into_boxed_slice(),
+            dest: dest.into_boxed_slice(),
+            #[cfg(any(debug_assertions, feature = "extended-validation"))]
             loc: loc.into_boxed_slice(),
             arena_sizes: counts,
             operands: operands.into_boxed_slice(),
