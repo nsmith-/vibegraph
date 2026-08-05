@@ -464,6 +464,46 @@ equality), unlike almost every other evaluator lever. Measure via `eval_strategi
 (±2–3% criterion noise floor; claims need to clear it). Deliverable: a go/no-go on
 a production scheduling pass in `Program::build`, with the winning order's numbers.
 
+**E1 — MERGED 2026-08-04 (`52327b2`, merge `7416c1d`): verdict GO** — study
+instrumentation + `VIBEGRAPH_EVAL_SCHEDULE` hook (absent from release/validate
+builds), default order unchanged and byte-identical to base (amplitude-oracle
+digest equal; every prototype order `to_bits`-identical with anti-vacuity
+guards). Winner: **op-blocked within ASAP dependency levels**
+(`sort_by_key(|id| (level, instr_kind, id))`):
+
+- **−17.9% geomean ns/eval, 18/18 rows improve** (−8.9%..−22.6%; 6-round
+  round-robin, min over rounds — round-1 spreads reached 173% under load, the
+  protocol was necessary). **MATRIX1 geomean 1.24× → 1.02×**; 6 of 14
+  processes now beat MadGraph; the 2→6 rows go 1.17×→0.94× and 1.37×→1.06×.
+- **Mechanism isolated by control**: `OpWindow{32,128,512}` variants share the
+  winner's (worse) locality and live width, differing only in discriminant run
+  length — the win is monotone in run length alone. Arena order's mean run is
+  1.00–1.12: the mispredicting jump-table `ldrh` (E0's 10.87%) was being fed
+  the worst possible input. E2's dead item 2 (threaded dispatch, +7.7%) is
+  fully superseded — same stall attacked from the input side; do not revisit.
+- **Non-levers, with numbers**: depth-first +1.2% (arena order already *is* a
+  bottom-up DFS — the plan's "accidental order" premise was wrong); live-width
+  minimization −0.4% (it shrinks peak bytes 2→6 236,760→206,160 and buys
+  nothing — the working set was never the constraint); ILP is a non-question
+  (depth 11–23 vs 36,523 instrs).
+- **Brief correction**: note 15 §2.2's "~27k live slots / 1.7 MB" 2→6 working
+  set does not exist at this HEAD — production (pruned) 2→6 is 305 KB
+  allocated / 231 KB peak; the unpruned program peaks at 149k slots / 2.84 MB.
+  Something between note 15 and now moved it (ZEROAMP/re-rooting candidates);
+  not chased, out of scope.
+- **Production pass (follow-up session E1b)**: ~20 lines (ASAP levels + one
+  sort, variant computable from `(Op, storage class)` for one-pass); arenas
+  grow under the winner (2→6 305→451 KB allocated) so add a cheap
+  measured-bytes fallback threshold; the gate recipe is already built
+  (`alternative_orders_are_bit_identical` + oracle digest — the banked layer
+  must stay byte-identical including amplitude values). `opwin512` gives 99%
+  of the win at mean-run ~103 if a bounded variant is ever wanted.
+- **E3 caveat**: `eval_amp2` runs the unexpanded program, unmeasured here; a
+  production pass hits it too — E3 re-baselines after E1b lands.
+- Env-var caveat: under `cfg(test)` the hook exists in the lib unit-test
+  binary; integration tests and the validate layer are hard-wired to arena
+  order.
+
 ### E2 — `fill_arenas` overhead reduction (scoped by E0)
 
 The study's budget says the ceiling plainly: dispatch + bounds checks + header
