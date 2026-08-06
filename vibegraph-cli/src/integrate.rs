@@ -18,6 +18,7 @@
 use std::path::PathBuf;
 
 use clap::Args;
+use tracing::info;
 use vibegraph::artifact::{
     ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, FORMAT_VERSION,
 };
@@ -352,18 +353,18 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     let sigma_pb = output.result.integral * GEV2_TO_PB;
     let sigma_err_pb = output.result.std_dev * GEV2_TO_PB;
 
-    println!("process:  {}", output.process);
-    println!("model:    {} ({})", model_id.label(), model_id.digest);
-    println!("PDF set:  {} (member {PDF_MEMBER})", output.pdf_set);
-    println!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
+    info!("process:  {}", output.process);
+    info!("model:    {} ({})", model_id.label(), model_id.digest);
+    info!("PDF set:  {} (member {PDF_MEMBER})", output.pdf_set);
+    info!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
     let conv = &output.convergence;
-    println!(
+    info!(
         "VEGAS:    {} evals × {} iters, seed {} (χ²/dof = {:.3})",
         args.neval, conv.iterations, args.seed, output.result.chi2_per_dof
     );
     if output.channels.len() > 1 {
         let total_neval: usize = output.channels.iter().map(|c| c.neval).sum();
-        println!(
+        info!(
             "channels: {} grids, {} evals in the last iteration, allocated {}",
             output.channels.len(),
             total_neval,
@@ -374,7 +375,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
         );
     }
     if let Some(target) = conv.target_rel {
-        println!(
+        info!(
             "target:   {:.4}% relative, {} after {} iterations and {} evaluations \
              (quoted {:.4}%, χ²-scaled {:.4}%)",
             100.0 * target,
@@ -390,6 +391,8 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
             100.0 * conv.scaled_rel,
         );
     }
+    // The command's result, and the reason `stdout` carries nothing else: a
+    // caller pipes this to read the cross section, at any verbosity.
     println!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb");
 
     let artifact = IntegrateArtifact {

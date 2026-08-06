@@ -113,7 +113,7 @@ pub fn resolve_pdf_set_dir(
     let ensured = ensure_pdf_set(&root, pdf_set, fetcher.as_ref())
         .map_err(|e| format!("cannot obtain PDF set {pdf_set}: {e}"))?;
     if ensured.fetched {
-        eprintln!("PDF set cached at {}", ensured.dir.display());
+        tracing::info!("PDF set cached at {}", ensured.dir.display());
     }
     Ok(ensured.dir)
 }

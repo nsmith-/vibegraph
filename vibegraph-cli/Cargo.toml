@@ -23,6 +23,10 @@ rand = "0.9"
 rand_chacha = "0.9"
 ureq = "3.3.0"
 rayon = "1"
+tracing = "0.1"
+# `env-filter` is what makes `RUST_LOG` and per-module scoping work; the rest of
+# the sink machinery (`fmt`, `registry`) is on by default.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = "3"

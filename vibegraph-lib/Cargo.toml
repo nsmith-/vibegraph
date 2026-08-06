@@ -58,6 +58,9 @@ flate2 = "1"
 # scratch borrows the model and the compiled amplitudes, and `'static` is
 # precisely what it is not.
 thread_local = "1"
+# Emission only: spans and events. Which sinks receive them, and whether any do,
+# is the binary's decision, so nothing here installs a subscriber.
+tracing = "0.1"
 
 [dev-dependencies]
 criterion = "0.5"

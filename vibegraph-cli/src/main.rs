@@ -9,6 +9,7 @@ mod check;
 mod fetch;
 mod generate;
 mod integrate;
+mod logging;
 mod network;
 mod parallel;
 
@@ -59,6 +60,9 @@ struct Cli {
     /// no terminal, where the default is to refuse.
     #[arg(long, short = 'y', global = true)]
     yes: bool,
+
+    #[command(flatten)]
+    log: logging::LogArgs,
 }
 
 #[derive(Subcommand)]
@@ -93,6 +97,15 @@ mod tests {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // Nothing above this line may log: until the subscriber is installed there
+    // is nowhere for an event to go.
+    let _logging = match logging::init(&cli.log) {
+        Ok(handle) => handle,
+        Err(why) => {
+            eprintln!("error: {why}");
+            return ExitCode::FAILURE;
+        }
+    };
     let network = NetworkPolicy::from_env(cli.no_network, cli.yes);
     let result = match cli.command {
         Command::Integrate(args) => integrate::run(&args, network),
@@ -102,7 +115,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("error: {err}");
+            tracing::error!("{err}");
             ExitCode::FAILURE
         }
     }

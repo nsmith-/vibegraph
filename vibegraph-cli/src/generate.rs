@@ -17,6 +17,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
+use tracing::{info, warn};
 use vibegraph::artifact::{ChannelKey, IntegrateArtifact, FORMAT_VERSION};
 use vibegraph::config::GlobalConfig;
 use vibegraph::coupling::scales::ScaleChoice;
@@ -543,6 +544,8 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
     } else {
         generate_sample(args, &artifact, &parsed, &model, &evaluated, &rc, nevents)?;
     }
+    // The command's result: the path a caller pipes this to learn, at any
+    // verbosity. Everything else the run had to say went to the notice stream.
     println!("wrote {}", args.out.display());
     Ok(())
 }
@@ -701,7 +704,7 @@ fn report_scan(scan: &Unweighter, artifact: &IntegrateArtifact, budget: ScanBudg
             "each channel's share of the integration budget".to_string()
         }
     };
-    println!(
+    info!(
         "scan:     {draws} points over {} channels ({per_channel}), sum w_max {:.6e}, \
          predicted efficiency {:.4e}",
         artifact.channels.len(),
@@ -709,8 +712,8 @@ fn report_scan(scan: &Unweighter, artifact: &IntegrateArtifact, budget: ScanBudg
         artifact.sigma_pb / (scan.total_w_max() * GEV2_TO_PB),
     );
     match rule {
-        MaxRule::Extremum => println!("maxima:   the largest weight each channel's scan saw"),
-        MaxRule::Truncated { excess_share } => println!(
+        MaxRule::Extremum => info!("maxima:   the largest weight each channel's scan saw"),
+        MaxRule::Truncated { excess_share } => info!(
             "maxima:   {:.3}% of each channel's scanned cross section left above them, \
              summing to {:.4} of the summed largest weight",
             100.0 * excess_share,
@@ -726,10 +729,9 @@ fn report_scan(scan: &Unweighter, artifact: &IntegrateArtifact, budget: ScanBudg
 fn warn_on_empty_channels(scan: &Unweighter, artifact: &IntegrateArtifact) {
     let empty = scan.empty_channels();
     if !empty.is_empty() {
-        eprintln!(
-            "warning: {} of {} channels produced no point in the weight scan and will never be \
-             drawn from ({empty:?}); their share of the banked cross section is missing from the \
-             sample",
+        warn!(
+            "{} of {} channels produced no point in the weight scan and will never be drawn from \
+             ({empty:?}); their share of the banked cross section is missing from the sample",
             empty.len(),
             artifact.channels.len()
         );
@@ -1133,29 +1135,29 @@ fn report(
     summary: &EmitSummary,
     strategy: &dyn UnweightStrategy,
 ) {
-    println!("process:  {}", artifact.process);
-    println!("strategy: {}", strategy.describe());
-    println!(
+    info!("process:  {}", artifact.process);
+    info!("strategy: {}", strategy.describe());
+    info!(
         "sampling: {} events from {} accepted points in {} trials (efficiency {:.4e})",
         summary.written,
         summary.drawn,
         stats.trials,
         stats.efficiency()
     );
-    println!(
+    info!(
         "overweight: rate {:.3e}, cross-section share {:.3e}, largest w/w_max {:.3}",
         stats.overweight_fraction(),
         stats.overweight_weight_share(),
         stats.ratio_max
     );
-    println!(
+    info!(
         "σ:        {sample_sigma:.6} pb from the sample vs {:.6} ± {:.6} pb from the integration \
          ({:+.3}%)",
         artifact.sigma_pb,
         artifact.sigma_err_pb,
         100.0 * (sample_sigma / artifact.sigma_pb - 1.0)
     );
-    println!(
+    info!(
         "file:     IDWTUP = {}, XSECUP = {:.6e} pb, XMAXUP = {:.6e}",
         strategy.weight_strategy().as_i32(),
         summary.xsec_pb,
