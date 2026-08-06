@@ -2851,3 +2851,242 @@ fn without_amp2_weights(text: &str) -> String {
         })
         .collect()
 }
+
+/// Where `p p > l+ l- j`'s sampling variance actually lives.
+///
+/// The row costs several times MadGraph's evaluations for the same accuracy and
+/// its σ ladder climbs monotonically with budget, and both are one statement:
+/// the weight distribution has a tail heavy enough that the sample mean and the
+/// empirical variance both converge slowly and from below. Knowing the tail
+/// index is not knowing where it comes from, and the fix — if there is one — is
+/// a map, so this decomposes the variance by channel and by the kinematics of
+/// the points that carry it.
+///
+/// Reads, per channel: the σ share, the variance share, the fraction of the
+/// channel's own second moment carried by its heaviest 0.1% of draws, and a Hill
+/// tail index over the top 1%. Then the same second moment binned in the
+/// variables the maps are built out of — the lepton-pair mass the timelike pole
+/// sits on, the jet `pT` the spacelike ones are cut at, and the partonic `√ŝ`
+/// the shared outer map draws.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_llj_weight_tail_regions() {
+    const SEED: u64 = 20_260_719;
+    const DRAWS_PER_CHANNEL: usize = 200_000;
+
+    // The two cards differ in `mmll` and in nothing else — 0 against 50 GeV — so
+    // running both turns "the tail lives at low lepton-pair mass" from a reading
+    // of one table into a controlled comparison.
+    for run in ["pp_to_llj", "pp_to_llj_dyn"] {
+        weight_tail_of(run, SEED, DRAWS_PER_CHANNEL);
+    }
+}
+
+/// One run card's weight-tail decomposition, printed. Split out of the probe so
+/// the two cards run under identical code.
+fn weight_tail_of(run: &str, seed: u64, draws_per_channel: usize) {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use vibegraph::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
+
+    if !dyn_run_present("probe_llj_weight_tail_regions", run) {
+        return;
+    }
+    let run_dir = validation_dir().join("output").join(run);
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for("p p > l+ l- j", &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+        .expect("hadronic integrand");
+    integ
+        .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+        .expect("run card scale prescription compiles");
+    integ.adapt_alphas(seed, LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, 0.5);
+    let (channels, total) = integ.adapt_grids(LLJ_NEVAL, LLJ_NITER, seed);
+    eprintln!(
+        "── {run}: trained at {LLJ_NEVAL} x {LLJ_NITER}, σ̂ = {:.6e} ± {:.3e} (χ²/dof {:.2}), \
+         τ_min = {:.3e}, {} channels ──",
+        total.integral,
+        total.std_dev,
+        total.chi2_per_dof,
+        integ.tau_min(),
+        channels.len(),
+    );
+
+    let ndim = integ.channel_grid_ndim();
+    let scale_ndim = integ.scale_draw_ndim();
+
+    // What a *fresh* grid accepts, against what the trained one does (the
+    // `nonzero` column below). A rejected point short-circuits before the matrix
+    // element, so the average point gets more expensive exactly as the sampler
+    // gets better at finding the fiducial region — which is the shape of the
+    // per-iteration ns/eval climb.
+    {
+        const ACCEPT_DRAWS: usize = 100_000;
+        let mut u = vec![0.0f64; ndim + scale_ndim];
+        let fresh = vibegraph::vegas::VegasGrid::new(ndim, 64, 1.5);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0xACCE);
+        let mut trailing = SubStream::from_stream(seed ^ 0xACCE, SCALE_DRAW_STREAM_BASE);
+        let mut passed = 0usize;
+        for k in 0..ACCEPT_DRAWS {
+            let j = k % channels.len();
+            fresh.draw(&mut rng, &mut u[..ndim]);
+            trailing.fill_uniforms(&mut u[ndim..]);
+            if integ.event_in_channel(j, &u).is_some() {
+                passed += 1;
+            }
+        }
+        eprintln!(
+            "  cut acceptance on an untrained grid: {:.1}% over {ACCEPT_DRAWS} draws",
+            100.0 * passed as f64 / ACCEPT_DRAWS as f64
+        );
+    }
+
+    // The bins the maps are built out of. `m_ll` is where the timelike poles are
+    // — the Z's Breit-Wigner and the photon's zero-width log map — `pT(j)` is
+    // where the spacelike ones are cut, and `√ŝ` is the one variable no channel
+    // maps: the shared logarithmic `(τ, y)` draw sets it before a channel is
+    // consulted.
+    let mll_edges = [0.0, 5.0, 10.0, 20.0, 40.0, 70.0, 88.0, 94.0, 120.0, 200.0];
+    let ptj_edges = [20.0, 25.0, 35.0, 50.0, 80.0, 150.0, 400.0];
+    let shat_edges = [0.0, 150.0, 250.0, 400.0, 700.0, 1500.0, 4000.0];
+    let bin = |edges: &[f64], v: f64| edges.iter().rposition(|&e| v >= e).unwrap_or(0);
+    let mut mll_m2 = vec![0.0f64; mll_edges.len()];
+    let mut ptj_m2 = vec![0.0f64; ptj_edges.len()];
+    let mut shat_m2 = vec![0.0f64; shat_edges.len()];
+    let mut mll_sum = vec![0.0f64; mll_edges.len()];
+    let mut ptj_sum = vec![0.0f64; ptj_edges.len()];
+    let mut shat_sum = vec![0.0f64; shat_edges.len()];
+
+    struct Row {
+        j: usize,
+        sum: f64,
+        m2: f64,
+        nonzero: usize,
+        top_share: f64,
+        hill: f64,
+        peak: (f64, f64, f64, f64),
+    }
+    let mut rows: Vec<Row> = Vec::new();
+    let mut u = vec![0.0f64; ndim + scale_ndim];
+
+    for (j, ch) in channels.iter().enumerate() {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0x7A11);
+        rng.set_stream(j as u64);
+        let mut trailing = SubStream::from_stream(seed ^ 0x7A11, SCALE_DRAW_STREAM_BASE + j as u64);
+        let mut weights: Vec<f64> = Vec::new();
+        let mut sum = 0.0f64;
+        let mut m2 = 0.0f64;
+        let mut peak = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+        for _ in 0..draws_per_channel {
+            let jac = ch.grid.draw(&mut rng, &mut u[..ndim]);
+            trailing.fill_uniforms(&mut u[ndim..]);
+            let Some(ev) = integ.event_in_channel(j, &u) else {
+                continue;
+            };
+            let w = jac * ev.weight;
+            if !(w > 0.0) {
+                continue;
+            }
+            sum += w;
+            m2 += w * w;
+            weights.push(w);
+            let ll = ev.lab[2] + ev.lab[3];
+            let mll = ll.m2().max(0.0).sqrt();
+            let jet = ev.lab[4];
+            let ptj = (jet.px() * jet.px() + jet.py() * jet.py()).sqrt();
+            let shat = (SQRT_S_HAD * SQRT_S_HAD * ev.x[0] * ev.x[1]).sqrt();
+            mll_m2[bin(&mll_edges, mll)] += w * w;
+            ptj_m2[bin(&ptj_edges, ptj)] += w * w;
+            shat_m2[bin(&shat_edges, shat)] += w * w;
+            mll_sum[bin(&mll_edges, mll)] += w;
+            ptj_sum[bin(&ptj_edges, ptj)] += w;
+            shat_sum[bin(&shat_edges, shat)] += w;
+            if w * w > peak.0 {
+                peak = (w * w, mll, ptj, shat);
+            }
+        }
+        weights.sort_by(f64::total_cmp);
+        let n = weights.len();
+        let top = n / 1000;
+        let top_share = if top > 0 {
+            weights[n - top..].iter().map(|w| w * w).sum::<f64>() / m2
+        } else {
+            f64::NAN
+        };
+        // Hill's estimator on the top 1%: `α = (k / Σ ln(w_(n-i)/w_(n-k)))`, the
+        // maximum-likelihood tail index of a Pareto upper tail. Below 2 the
+        // variance does not exist and no error bar on this channel means
+        // anything; near 2 it exists but converges arbitrarily slowly.
+        let k = (n / 100).max(1);
+        let hill = if n > 100 && weights[n - k] > 0.0 {
+            let s: f64 = weights[n - k..]
+                .iter()
+                .map(|w| (w / weights[n - k]).ln())
+                .sum();
+            k as f64 / s
+        } else {
+            f64::NAN
+        };
+        rows.push(Row {
+            j,
+            sum,
+            m2,
+            nonzero: n,
+            top_share,
+            hill,
+            peak,
+        });
+    }
+
+    let sum_all: f64 = rows.iter().map(|r| r.sum).sum();
+    let m2_all: f64 = rows.iter().map(|r| r.m2).sum();
+    eprintln!(
+        "\n  ch |  σ share | var share | nonzero |  top 0.1% of M2 | Hill α | peak at \
+         (m_ll, pT_j, √ŝ)"
+    );
+    let mut order: Vec<&Row> = rows.iter().collect();
+    order.sort_by(|a, b| b.m2.total_cmp(&a.m2));
+    for r in order {
+        eprintln!(
+            "  {:>2} | {:>7.3}% | {:>8.3}% | {:>7} | {:>14.1}% | {:>6.2} | {:>7.1} {:>7.1} {:>8.1}",
+            r.j,
+            100.0 * r.sum / sum_all,
+            100.0 * r.m2 / m2_all,
+            r.nonzero,
+            100.0 * r.top_share,
+            r.hill,
+            r.peak.1,
+            r.peak.2,
+            r.peak.3,
+        );
+    }
+
+    let table = |name: &str, edges: &[f64], m2: &[f64], sums: &[f64]| {
+        let m2_tot: f64 = m2.iter().sum();
+        let s_tot: f64 = sums.iter().sum();
+        eprintln!("\n  {name}: σ share and variance share by bin");
+        for (i, &e) in edges.iter().enumerate() {
+            let hi = edges.get(i + 1).copied().unwrap_or(f64::INFINITY);
+            eprintln!(
+                "    [{e:>7.1}, {hi:>7.1}) : σ {:>7.3}%  var {:>7.3}%  (var/σ ratio {:>6.2})",
+                100.0 * sums[i] / s_tot,
+                100.0 * m2[i] / m2_tot,
+                (m2[i] / m2_tot) / (sums[i] / s_tot).max(1.0e-30),
+            );
+        }
+    };
+    table("m_ll [GeV]", &mll_edges, &mll_m2, &mll_sum);
+    table("pT(j) [GeV]", &ptj_edges, &ptj_m2, &ptj_sum);
+    table("√ŝ [GeV]", &shat_edges, &shat_m2, &shat_sum);
+}
