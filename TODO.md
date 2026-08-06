@@ -271,6 +271,14 @@ above); the entries here are the eventual features.
 
 ### In-scope features
 
+- **`logging-tui` sprint — PLANNED, note 33** (user, 2026-08-05): `tracing`
+  through the library (MG-style notices at `info`, compile/VEGAS internals at
+  `debug`/`trace`), plain stderr lines when piped with the stdout result
+  contract frozen, and a sticky-footer terminal UI on a real terminal
+  (ratatui inline viewport + `insert_before` scrollback — not alternate
+  screen) with σ ± err, progress gauge, and arrow-key level/scope control.
+  Five sessions T1–T5, sequencing and gates in the note. Independent of the
+  `v0.1` tag.
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by
   sampled `|M|²` agreement: **complete but unsound** — two programs that differ
