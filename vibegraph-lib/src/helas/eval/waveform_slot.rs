@@ -42,42 +42,28 @@ impl<F: Real> Add for WaveformSlot<F> {
         use WaveformSlot::*;
         match (self, other) {
             (Empty, x) | (x, Empty) => x,
-            // Scalars are summed by value without a momentum-equality check: the only
-            // momentum-mismatched scalar sum is the final coherent sum over diagram
-            // amplitudes, where the (conserved, ≈0) momentum is physically irrelevant.
-            // Within a diagram, summed scalars share their inputs and so their momenta
-            // already match bit-for-bit.
+            // Scalars are summed by value: the only momentum-mismatched scalar sum is
+            // the final coherent sum over diagram amplitudes, where the (conserved, ≈0)
+            // momentum is physically irrelevant.
             (Scalar(s1), Scalar(s2)) => WaveformSlot::Scalar(ScalarWf {
                 value: s1.value + s2.value,
                 momentum: s1.momentum,
             }),
-            (Vector(v1), Vector(v2)) => {
-                assert_eq!(
-                    v1.momentum, v2.momentum,
-                    "Cannot add vector waveforms with different momenta"
-                );
-                WaveformSlot::Vector(VectorWf {
-                    eps: v1.eps + v2.eps,
-                    momentum: v1.momentum,
-                })
-            }
+            // Summed currents carry the same combination of external momenta, so the
+            // sum keeps the first operand's copy of it. That the two operands really do
+            // route the same combination is checked by the caller, which knows the scale
+            // the accumulation rounds at (see `eval::run::summed_momentum_tol`).
+            (Vector(v1), Vector(v2)) => WaveformSlot::Vector(VectorWf {
+                eps: v1.eps + v2.eps,
+                momentum: v1.momentum,
+            }),
             (FermionIn(f1), FermionIn(f2)) => {
-                assert_eq!(
-                    f1.momentum, f2.momentum,
-                    "Cannot add fermion waveforms with different momenta"
-                );
                 WaveformSlot::FermionIn(InDiracWf::from_spinor(f1.spinor + f2.spinor, f1.momentum))
             }
-            (FermionOut(f1), FermionOut(f2)) => {
-                assert_eq!(
-                    f1.momentum, f2.momentum,
-                    "Cannot add fermion waveforms with different momenta"
-                );
-                WaveformSlot::FermionOut(OutDiracWf::from_spinor(
-                    f1.spinor + f2.spinor,
-                    f1.momentum,
-                ))
-            }
+            (FermionOut(f1), FermionOut(f2)) => WaveformSlot::FermionOut(OutDiracWf::from_spinor(
+                f1.spinor + f2.spinor,
+                f1.momentum,
+            )),
             _ => panic!("Addition only implemented for matching waveform variants"),
         }
     }
@@ -115,6 +101,19 @@ where
 }
 
 impl<F: Real> WaveformSlot<F> {
+    /// The routed momentum of a *current* slot (vector or fermion), for which a sum
+    /// requires both operands to route the same combination of external momenta.
+    /// `None` for scalars and bare constants: a scalar sum is either momentum-free or
+    /// the coherent sum over diagram amplitudes, which is deliberately momentum-mixed.
+    pub(super) fn current_momentum(&self) -> Option<LorentzVector<F>> {
+        match self {
+            WaveformSlot::FermionIn(f) => Some(f.momentum),
+            WaveformSlot::FermionOut(f) => Some(f.momentum),
+            WaveformSlot::Vector(v) => Some(v.momentum),
+            WaveformSlot::Scalar(_) | WaveformSlot::Real(_) | WaveformSlot::Empty => None,
+        }
+    }
+
     pub fn momentum(&self) -> Option<LorentzVector<F>> {
         match self {
             WaveformSlot::FermionIn(f) => Some(f.momentum),
