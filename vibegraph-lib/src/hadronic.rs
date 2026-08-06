@@ -984,12 +984,47 @@ impl Sampler {
         }
     }
 
-    /// One draw, with the channel it was made in. The flat map has a single
-    /// channel and so always reports `0`.
-    fn sample_from(&self, u: &[f64]) -> (usize, PhaseSpacePoint<f64>) {
+    /// One draw, with the channel it was made in, carrying that channel's own
+    /// weight rather than the mixture's. The flat map has a single channel and so
+    /// always reports `0`.
+    fn draw_from(&self, u: &[f64]) -> (usize, PhaseSpacePoint<f64>) {
         match self {
             Sampler::Flat(c) => (0, c.sample(u)),
-            Sampler::Multi(c) => c.sample_from(u),
+            Sampler::Multi(c) => c.draw_from(u),
+        }
+    }
+
+    /// The point channel `channel` maps `u` to, with that channel's own weight.
+    fn draw_in_channel(&self, channel: usize, u: &[f64]) -> PhaseSpacePoint<f64> {
+        match self {
+            Sampler::Flat(c) => {
+                assert_eq!(channel, 0, "the flat map has a single channel");
+                c.sample(u)
+            }
+            Sampler::Multi(c) => c.draw_in_channel(channel, u),
+        }
+    }
+
+    /// The mixture weight `1/g` at `momenta`, completing a
+    /// [`draw_from`](Self::draw_from). `own` is the weight the drawing channel
+    /// gave the point, which under the single-channel flat map already is it.
+    ///
+    /// Split from the draw because it costs a density evaluation in every
+    /// channel, which a point the cuts reject never needs.
+    fn mixture_weight(&self, momenta: &[V], own: f64) -> f64 {
+        match self {
+            Sampler::Flat(_) => own,
+            Sampler::Multi(c) => c.mixture_weight(momenta),
+        }
+    }
+
+    /// The channel-split weight `αⱼ/g` at `momenta`, completing a
+    /// [`draw_in_channel`](Self::draw_in_channel); `own` as in
+    /// [`mixture_weight`](Self::mixture_weight).
+    fn channel_weight(&self, channel: usize, momenta: &[V], own: f64) -> f64 {
+        match self {
+            Sampler::Flat(_) => own,
+            Sampler::Multi(c) => c.channel_weight(channel, momenta),
         }
     }
 }
@@ -1236,7 +1271,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             let u: Vec<f64> = (0..self.sampler.ndim())
                 .map(|_| rng.random::<f64>())
                 .collect();
-            let (channel, point) = self.sampler.sample_from(&u);
+            let (channel, point) = self.sampler.draw_from(&u);
             let mut ext: Vec<V> = Vec::with_capacity(2 + point.momenta.len());
             ext.push(V::new(self.beam_e, 0.0, 0.0, self.beam_e));
             ext.push(V::new(self.beam_e, 0.0, 0.0, -self.beam_e));
@@ -1411,7 +1446,8 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// The integrand value at a VEGAS point `u ∈ [0,1]^ndim`, in natural units
     /// (GeV⁻²); its VEGAS integral is the partonic cross section. Points whose
     /// momenta fail a cut contribute exactly zero and return before the
-    /// configuration draw runs, so a rejected point never pays for it.
+    /// configuration draw runs, so a rejected point never pays for it — nor for
+    /// the mixture density, which only a point that keeps its weight needs.
     pub fn value(&self, u: &[f64]) -> f64 {
         let map_ndim = self.sampler.ndim();
         assert_eq!(
@@ -1421,7 +1457,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             self.scale_draw_ndim()
         );
         let (map_u, scale_u) = u.split_at(map_ndim);
-        let (channel, point) = self.sampler.sample_from(map_u);
+        let (channel, point) = self.sampler.draw_from(map_u);
         let ext = self.externals(&point.momenta);
         if !self.cuts.pass(&ext) {
             return 0.0;
@@ -1432,7 +1468,8 @@ impl<'a> FixedBeamIntegrand<'a> {
         if m2 == 0.0 {
             return 0.0;
         }
-        self.prefactor() * point.weight * m2
+        let weight = self.sampler.mixture_weight(&point.momenta, point.weight);
+        self.prefactor() * weight * m2
     }
 
     /// The constants in front of `weight · Σ_sub S_sub |M_sub|²`: the `1/(2ŝ)` flux,
@@ -1668,7 +1705,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// the sampler's own channel, which is a difference no cross section announces.
     pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         let (grid_u, scale_u) = self.split_point(u);
-        let point = self.sample_channel(channel, grid_u);
+        let point = self.sampler.draw_in_channel(channel, grid_u);
         let ext = self.externals(&point.momenta);
         if !self.cuts.pass(&ext) {
             return 0.0;
@@ -1679,7 +1716,10 @@ impl<'a> FixedBeamIntegrand<'a> {
         if m2 == 0.0 {
             return 0.0;
         }
-        self.prefactor() * point.weight * m2
+        let weight = self
+            .sampler
+            .channel_weight(channel, &point.momenta, point.weight);
+        self.prefactor() * weight * m2
     }
 
     /// Which of the process's channels names the integration configuration this
@@ -1737,7 +1777,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// through this — the same map at the same `u`, hence the same weight.
     pub fn event_in_channel(&self, channel: usize, u: &[f64], momenta: &mut Vec<V>) -> f64 {
         let (grid_u, scale_u) = self.split_point(u);
-        let point = self.sample_channel(channel, grid_u);
+        let point = self.sampler.draw_in_channel(channel, grid_u);
         momenta.clear();
         momenta.extend_from_slice(&point.momenta);
         let ext = self.externals(momenta);
@@ -1750,7 +1790,10 @@ impl<'a> FixedBeamIntegrand<'a> {
         if m2 == 0.0 {
             return 0.0;
         }
-        self.prefactor() * point.weight * m2
+        let weight = self
+            .sampler
+            .channel_weight(channel, &point.momenta, point.weight);
+        self.prefactor() * weight * m2
     }
 
     /// The scales a point drawn at `u` in `channel` was evaluated at — the scales
@@ -1788,17 +1831,6 @@ impl<'a> FixedBeamIntegrand<'a> {
             self.scale_draw_ndim()
         );
         u.split_at(grid_ndim)
-    }
-
-    /// Draw the phase-space point channel `channel` maps `u` to, with its weight.
-    fn sample_channel(&self, channel: usize, u: &[f64]) -> PhaseSpacePoint<f64> {
-        match &self.sampler {
-            Sampler::Flat(c) => {
-                assert_eq!(channel, 0, "the flat map has a single channel");
-                c.sample(u)
-            }
-            Sampler::Multi(c) => c.sample_channel(channel, u),
-        }
     }
 
     /// The two incoming momenta: `√ŝ/2` along ±z, the beam configuration every

@@ -1373,7 +1373,7 @@ impl<'a> ProtonIntegrand<'a> {
             let m = self.map_point(&u);
             let pt = self
                 .combiner
-                .sample_channel_at(0, m.sqrt_shat, &u[OUTER_NDIM..]);
+                .draw_in_channel_at(0, m.sqrt_shat, &u[OUTER_NDIM..]);
             let sc = self.scratch();
             self.build_frames(sc, &m, &pt.momenta);
             let lab = sc.lab_buf.borrow();
@@ -1734,7 +1734,7 @@ impl<'a> ProtonIntegrand<'a> {
         let m = self.map_point(grid_u);
         let point = self
             .combiner
-            .sample_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
+            .draw_in_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
         let (shape, _) = self.shape(
             self.scratch(),
             &m,
@@ -1745,7 +1745,18 @@ impl<'a> ProtonIntegrand<'a> {
         if shape == 0.0 {
             return 0.0;
         }
-        shape * point.weight
+        shape * self.channel_weight(channel, &m, &point.momenta)
+    }
+
+    /// The `αⱼ/g` weight a point drawn in `channel` at this partonic system's
+    /// energy carries.
+    ///
+    /// Kept apart from the draw because `g` is a density evaluation in every
+    /// channel, which a point the cuts reject never needs: such a point
+    /// contributes zero whatever weight it would have carried.
+    fn channel_weight(&self, channel: usize, m: &OuterPoint, momenta: &[V]) -> f64 {
+        self.combiner
+            .channel_weight_at(channel, m.sqrt_shat, momenta)
     }
 
     /// [`value_in_channel`](Self::value_in_channel) with the point kept: the two
@@ -1762,7 +1773,7 @@ impl<'a> ProtonIntegrand<'a> {
         let m = self.map_point(grid_u);
         let point = self
             .combiner
-            .sample_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
+            .draw_in_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
         let sc = self.scratch();
         let (shape, drawn) = self.shape(
             sc,
@@ -1775,7 +1786,7 @@ impl<'a> ProtonIntegrand<'a> {
             return None;
         }
         Some(ProtonEvent {
-            weight: shape * point.weight,
+            weight: shape * self.channel_weight(channel, &m, &point.momenta),
             x: [m.x1, m.x2],
             // `shape` returned nonzero, so this point was not vetoed.
             scales: self
@@ -1908,7 +1919,7 @@ impl<'a> ProtonIntegrand<'a> {
         let j = self.combiner.select(u[OUTER_NDIM]);
         let point = self
             .combiner
-            .sample_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
+            .draw_in_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
         let (shape, _) = self.shape(
             self.scratch(),
             &m,
@@ -1919,9 +1930,9 @@ impl<'a> ProtonIntegrand<'a> {
         if shape == 0.0 {
             return 0.0;
         }
-        // `sample_channel_at` weights by `αⱼ/g`, and the mixture that drew this point
+        // `channel_weight` weights by `αⱼ/g`, and the mixture that drew this point
         // has density `g`.
-        shape * point.weight / self.combiner.alphas()[j]
+        shape * self.channel_weight(j, &m, &point.momenta) / self.combiner.alphas()[j]
     }
 
     /// Refine the channel selection weights toward the variance-minimising mixture,
@@ -2017,15 +2028,22 @@ impl<'a> ProtonIntegrand<'a> {
                     let j = self.combiner.select(u[OUTER_NDIM]);
                     let point =
                         self.combiner
-                            .sample_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
-                    // `sample_channel_at` weights by `αⱼ/g`; the mixture that actually
-                    // drew this point has density `g`, so the mixture estimator is `f/g`.
-                    let g = self.combiner.alphas()[j] / point.weight;
+                            .draw_in_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
                     scale_draw.fill_uniforms(&mut scale_u);
-                    let est = self
+                    let shape = self
                         .shape(sc, &m, &point.momenta, self.sampled_channel(j), &scale_u)
-                        .0
-                        / g;
+                        .0;
+                    // A point the cuts reject adds zero to every `Wⱼ`, so the
+                    // mixture density — one evaluation per channel — is formed only
+                    // for points that carry something.
+                    if shape == 0.0 {
+                        continue;
+                    }
+                    let weight = self.channel_weight(j, &m, &point.momenta);
+                    // `channel_weight` weights by `αⱼ/g`; the mixture that actually
+                    // drew this point has density `g`, so the mixture estimator is `f/g`.
+                    let g = self.combiner.alphas()[j] / weight;
+                    let est = shape / g;
                     if est == 0.0 {
                         continue;
                     }
