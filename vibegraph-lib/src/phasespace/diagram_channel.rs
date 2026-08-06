@@ -2799,10 +2799,7 @@ mod tests {
         let ladder = |sqrt_s, beams, masses: Vec<f64>, rungs: &[RungSpec<f64>], recoil| {
             DiagramChannel::from_topology_ladder(sqrt_s, beams, masses, rungs, recoil)
         };
-        let base_rungs: [RungSpec<f64>; 2] = [
-            (vec![3], None, 0.0),
-            (vec![0, 1], Some(z), 80.4),
-        ];
+        let base_rungs: [RungSpec<f64>; 2] = [(vec![3], None, 0.0), (vec![0, 1], Some(z), 80.4)];
         let base = || {
             ladder(
                 600.0,

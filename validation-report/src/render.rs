@@ -192,12 +192,18 @@ fn timing(resolved: &[ResolvedRow], report_dir: &Path) -> String {
     for row in resolved {
         for cell in &row.cells {
             for (label, seconds) in &cell.durations {
-                let entry = per_category.entry(cell.category.as_str()).or_insert((0, 0.0));
+                let entry = per_category
+                    .entry(cell.category.as_str())
+                    .or_insert((0, 0.0));
                 entry.0 += 1;
                 entry.1 += seconds;
                 rows.push((
                     *seconds,
-                    format!("`{}` · {} · {label}", row.process.key, cell.category.as_str()),
+                    format!(
+                        "`{}` · {} · {label}",
+                        row.process.key,
+                        cell.category.as_str()
+                    ),
                 ));
             }
         }

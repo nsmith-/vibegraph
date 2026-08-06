@@ -438,24 +438,25 @@ impl EventSource for SampleSource<'_, '_> {
             .collect();
         // The scales the matrix element itself ran at, so the record reports the
         // run rather than a second prescription compiled off the same card.
-        let (scale, alpha_qcd) = match self
-            .integrand
-            .event_scales_at(&self.momenta, point.channel, &point.u)
-        {
-            Some(Ok(scales)) => {
-                let alpha_s = self
-                    .integrand
-                    .alpha_s_source()
-                    .map(|r| r.eval(scales.mu_r))
-                    .unwrap_or(0.0);
-                (scalup(&scales), alpha_s)
-            }
-            // A point the scale prescription rejects has no scale to report, so the
-            // source stops rather than inventing one, and the strategy reports a
-            // sample it could not fill.
-            Some(Err(_)) => return None,
-            None => (self.static_scale, 0.0),
-        };
+        let (scale, alpha_qcd) =
+            match self
+                .integrand
+                .event_scales_at(&self.momenta, point.channel, &point.u)
+            {
+                Some(Ok(scales)) => {
+                    let alpha_s = self
+                        .integrand
+                        .alpha_s_source()
+                        .map(|r| r.eval(scales.mu_r))
+                        .unwrap_or(0.0);
+                    (scalup(&scales), alpha_s)
+                }
+                // A point the scale prescription rejects has no scale to report, so the
+                // source stops rather than inventing one, and the strategy reports a
+                // sample it could not fill.
+                Some(Err(_)) => return None,
+                None => (self.static_scale, 0.0),
+            };
         let header = EventHeader {
             process_id: PROCESS_ID,
             // The strategy imposes the file's weight convention; this slot is

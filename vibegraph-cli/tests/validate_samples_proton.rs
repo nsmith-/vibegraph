@@ -138,12 +138,15 @@ struct Row {
 }
 
 /// One per-event scan: `(name, unit, run)`, where `run` returns `(bad, total)`.
-type Scan = (&'static str, &'static str, fn(&Row, &EventSample) -> (usize, usize));
+type Scan = (
+    &'static str,
+    &'static str,
+    fn(&Row, &EventSample) -> (usize, usize),
+);
 
 fn validation_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
 }
-
 
 /// Every leg's `ICOLUP` slots are the ones its own colour rep allows.
 ///

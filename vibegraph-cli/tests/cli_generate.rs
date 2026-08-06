@@ -625,7 +625,9 @@ fn stale_copy(run: &Run, name: &str, format_version: u32) -> PathBuf {
     let mut artifact = run.artifact.clone();
     artifact.format_version = format_version;
     let path = run.dir.join(name);
-    artifact.write_to_path(&path, true).expect("write stale copy");
+    artifact
+        .write_to_path(&path, true)
+        .expect("write stale copy");
     path
 }
 
@@ -703,7 +705,9 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
     );
     artifact.format_version = 6;
     let stale = dir.join("stale-fixed.bin.zst");
-    artifact.write_to_path(&stale, true).expect("write stale copy");
+    artifact
+        .write_to_path(&stale, true)
+        .expect("write stale copy");
 
     let output = dir.join("fixed.lhe");
     let gen_status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))

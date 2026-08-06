@@ -123,7 +123,10 @@ impl PdfSet {
         tracing::info!("PDF member {id} of {} loaded", self.name);
         tracing::debug!(
             subgrids = subgrids.len(),
-            knots = subgrids.iter().map(|g| g.x.len() * g.q2.len()).sum::<usize>(),
+            knots = subgrids
+                .iter()
+                .map(|g| g.x.len() * g.q2.len())
+                .sum::<usize>(),
             force_positive = self.info.force_positive,
             "PDF interpolation setup"
         );

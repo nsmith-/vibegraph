@@ -121,8 +121,7 @@ struct MgAmplitude {
 }
 
 fn manifest_processes() -> Vec<(String, String)> {
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
     #[derive(serde::Deserialize)]
@@ -130,8 +129,8 @@ fn manifest_processes() -> Vec<(String, String)> {
         #[serde(rename = "process")]
         processes: Vec<ManifestProcess>,
     }
-    let manifest: Manifest = toml::from_str(&text)
-        .unwrap_or_else(|e| panic!("{} does not parse: {e}", path.display()));
+    let manifest: Manifest =
+        toml::from_str(&text).unwrap_or_else(|e| panic!("{} does not parse: {e}", path.display()));
     manifest
         .processes
         .into_iter()

@@ -479,7 +479,10 @@ mod tests {
     /// An explicit level is the level, whatever else was passed.
     #[test]
     fn an_explicit_level_wins() {
-        assert_eq!(args(3, false, Some(LogLevel::Error)).level(), LogLevel::Error);
+        assert_eq!(
+            args(3, false, Some(LogLevel::Error)).level(),
+            LogLevel::Error
+        );
         assert_eq!(args(0, true, Some(LogLevel::Off)).level(), LogLevel::Off);
     }
 
@@ -524,10 +527,8 @@ mod tests {
         }
 
         let seen = Arc::new(Mutex::new(Vec::new()));
-        let subscriber =
-            Registry::default().with(Capture(Arc::clone(&seen)).with_filter(base_filter(
-                level, scope,
-            )));
+        let subscriber = Registry::default()
+            .with(Capture(Arc::clone(&seen)).with_filter(base_filter(level, scope)));
         tracing::subscriber::with_default(subscriber, || {
             tracing::info!(target: "vibegraph::helas", "an info line");
             tracing::warn!(target: "vibegraph::diagrams", "a warning");
@@ -558,7 +559,10 @@ mod tests {
     #[test]
     fn an_unscoped_run_shows_every_module() {
         let lines = shown(LogLevel::Debug, Scope::All);
-        assert!(lines.contains(&"vibegraph::helas@DEBUG".to_string()), "{lines:?}");
+        assert!(
+            lines.contains(&"vibegraph::helas@DEBUG".to_string()),
+            "{lines:?}"
+        );
         assert!(
             lines.contains(&"vibegraph::diagrams@DEBUG".to_string()),
             "{lines:?}"
@@ -575,8 +579,14 @@ mod tests {
             lines.contains(&"vibegraph::diagrams@DEBUG".to_string()),
             "{lines:?}"
         );
-        assert!(!lines.contains(&"vibegraph::helas@DEBUG".to_string()), "{lines:?}");
-        assert!(lines.contains(&"vibegraph::helas@INFO".to_string()), "{lines:?}");
+        assert!(
+            !lines.contains(&"vibegraph::helas@DEBUG".to_string()),
+            "{lines:?}"
+        );
+        assert!(
+            lines.contains(&"vibegraph::helas@INFO".to_string()),
+            "{lines:?}"
+        );
         assert!(
             lines.contains(&"vibegraph::diagrams@WARN".to_string()),
             "{lines:?}"
@@ -597,7 +607,13 @@ mod tests {
     #[test]
     fn a_scope_grants_the_level_it_was_asked_for() {
         let lines = shown(LogLevel::Trace, Scope::Sampling);
-        assert!(lines.contains(&"vibegraph::vegas@TRACE".to_string()), "{lines:?}");
-        assert!(!lines.contains(&"vibegraph::helas@DEBUG".to_string()), "{lines:?}");
+        assert!(
+            lines.contains(&"vibegraph::vegas@TRACE".to_string()),
+            "{lines:?}"
+        );
+        assert!(
+            !lines.contains(&"vibegraph::helas@DEBUG".to_string()),
+            "{lines:?}"
+        );
     }
 }

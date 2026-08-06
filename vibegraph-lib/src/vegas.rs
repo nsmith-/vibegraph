@@ -1816,12 +1816,7 @@ mod tests {
                 let r_par = run_with_threads(nthreads, || {
                     let mut grid = VegasGrid::new(3, 64, 1.5);
                     let r = grid.adapt_parallel_seeded(
-                        |first| {
-                            (
-                                SubStream::new(seed, 0x5CA1_0000, first * 2),
-                                [0.0_f64; 2],
-                            )
-                        },
+                        |first| (SubStream::new(seed, 0x5CA1_0000, first * 2), [0.0_f64; 2]),
                         |(extra, tail), u| {
                             extra.fill_uniforms(tail);
                             f(u) * (1.0 + tail[0] + tail[1])
@@ -1892,7 +1887,12 @@ mod tests {
         for b in 0..3 {
             let mut grid = VegasGrid::new(ndim, 64, 1.5);
             let r = grid.adapt_parallel_seeded(
-                |first| (SubStream::new(seed, 0x5CA1_0000 + b as u64, first * 2), [0.0_f64; 2]),
+                |first| {
+                    (
+                        SubStream::new(seed, 0x5CA1_0000 + b as u64, first * 2),
+                        [0.0_f64; 2],
+                    )
+                },
                 |(extra, tail), u| {
                     extra.fill_uniforms(tail);
                     f(b, u) * (1.0 + tail[0] + tail[1])

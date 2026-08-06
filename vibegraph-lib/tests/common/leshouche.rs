@@ -108,8 +108,8 @@ pub fn parse(path: &Path) -> Result<Vec<Subprocess>, String> {
                     return Err(format!("ICOLUP leg count changes within a flow: {line}"));
                 }
                 for (leg, v) in values.into_iter().enumerate() {
-                    row[leg][slot - 1] = u32::try_from(v)
-                        .map_err(|_| format!("negative ICOLUP label: {line}"))?;
+                    row[leg][slot - 1] =
+                        u32::try_from(v).map_err(|_| format!("negative ICOLUP label: {line}"))?;
                 }
             }
         }
@@ -223,7 +223,9 @@ pub fn patterns_of_events<'a>(
 pub fn allowed_patterns(run_dir: &Path) -> Result<BTreeSet<ColourPattern>, String> {
     let files = files_under(run_dir);
     if files.is_empty() {
-        return Err(format!("no SubProcesses/P*/leshouche.inc under {run_dir:?}"));
+        return Err(format!(
+            "no SubProcesses/P*/leshouche.inc under {run_dir:?}"
+        ));
     }
     let mut out = BTreeSet::new();
     for file in &files {

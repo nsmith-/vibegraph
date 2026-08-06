@@ -29,6 +29,9 @@ use thiserror::Error;
 use thread_local::ThreadLocal;
 
 use crate::artifact::{ChannelSampler, SamplerTopology};
+use crate::budget::{
+    integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal, MIN_CHANNEL_NEVAL,
+};
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
 use crate::coupling::cluster::graph::{ColorTable, MergeTablesByOrder};
@@ -36,9 +39,6 @@ use crate::coupling::cluster::setclscales::ScaleRefusal;
 use crate::coupling::scales::{ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
-use crate::budget::{
-    integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal, MIN_CHANNEL_NEVAL,
-};
 use crate::diagrams::{DiagramError, DiagramSet};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
@@ -409,7 +409,9 @@ impl EventScaleSource {
     ) -> Result<PointScales, ScaleError> {
         match self.scales(incoming, outgoing, channel) {
             Ok(scales) => Ok(PointScales::Scales(scales)),
-            Err(ScaleError::Clustering(ScaleRefusal::FactorisationFloor)) => Ok(PointScales::Vetoed),
+            Err(ScaleError::Clustering(ScaleRefusal::FactorisationFloor)) => {
+                Ok(PointScales::Vetoed)
+            }
             Err(other) => Err(other),
         }
     }
@@ -657,10 +659,8 @@ impl<'a> SubprocessProto<'a> {
     /// `evaluated`. The copy starts at the parameter card's own coupling, with
     /// pools bit-for-bit those of the amplitude it replaces.
     fn make_scale_aware(&mut self, evaluated: &EvaluatedModel) {
-        self.amp = ProtoAmplitude::Running(ScaleAwareAmplitude::<f64>::new(
-            self.evaluator(),
-            evaluated,
-        ));
+        self.amp =
+            ProtoAmplitude::Running(ScaleAwareAmplitude::<f64>::new(self.evaluator(), evaluated));
     }
 
     fn scale_aware(&self) -> Option<&ScaleAwareAmplitude<'a, f64>> {
@@ -713,7 +713,9 @@ impl<'a> BoundSubprocess<'a> {
         let scratch = &mut self.scratch.borrow_mut();
         match &self.amp {
             SubAmplitude::Fixed(amp) => amp.eval_amp2(momenta, scratch, amp2),
-            SubAmplitude::Running(amp) => amp.borrow().amplitude().eval_amp2(momenta, scratch, amp2),
+            SubAmplitude::Running(amp) => {
+                amp.borrow().amplitude().eval_amp2(momenta, scratch, amp2)
+            }
         }
     }
 
@@ -2708,15 +2710,8 @@ mod tests {
 {extra}"
             ))
             .expect("run card");
-            compile_scale_source(
-                &[(&evals[0], &diagrams)],
-                &m,
-                &evaluated,
-                &card,
-                None,
-                true,
-            )
-            .expect("the clustering scale compiles")
+            compile_scale_source(&[(&evals[0], &diagrams)], &m, &evaluated, &card, None, true)
+                .expect("the clustering scale compiles")
         };
 
         assert!(

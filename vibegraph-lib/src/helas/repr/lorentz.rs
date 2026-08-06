@@ -267,8 +267,10 @@ impl<F: Real, V: Variance> LorentzVector<F, V> {
     /// Momentum magnitude squared |p|² = px² + py² + pz²
     #[inline(always)]
     pub fn p3_squared(self) -> F {
-        self.0[3]
-            .mul_add(self.0[3], self.0[2].mul_add(self.0[2], self.0[1] * self.0[1]))
+        self.0[3].mul_add(
+            self.0[3],
+            self.0[2].mul_add(self.0[2], self.0[1] * self.0[1]),
+        )
     }
 
     /// Momentum magnitude |p| = √(px² + py² + pz²).
@@ -811,10 +813,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
         let b = cmul(fo[1], fi[3]);
         let c = cmul(fo[0], fi[3]);
         let d = cmul(fo[1], fi[2]);
-        ComplexVector(
-            [a + b, c + d, -ri(F::one()) * (c - d), a - b],
-            PhantomData,
-        )
+        ComplexVector([a + b, c + d, -ri(F::one()) * (c - d), a - b], PhantomData)
     }
 
     /// Scalar bilinear contraction: `f̄ Γ f` where `Γ` encodes chirality.

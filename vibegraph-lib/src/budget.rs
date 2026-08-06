@@ -284,12 +284,7 @@ impl ChannelHistory {
             return combine_iterations(&pairs, rule);
         }
         let wtot: f64 = self.kept.iter().map(|&(_, _, n)| n as f64).sum();
-        let integral: f64 = self
-            .kept
-            .iter()
-            .map(|&(i, _, n)| i * n as f64)
-            .sum::<f64>()
-            / wtot;
+        let integral: f64 = self.kept.iter().map(|&(i, _, n)| i * n as f64).sum::<f64>() / wtot;
         let var: f64 = self
             .kept
             .iter()
@@ -546,8 +541,11 @@ where
             c.point_var_sum += out.point_variance(plan.neval);
             c.point_var_n += 1;
             if iteration >= warmup {
-                c.kept
-                    .push((out.integral, out.variance.max(f64::MIN_POSITIVE), plan.neval));
+                c.kept.push((
+                    out.integral,
+                    out.variance.max(f64::MIN_POSITIVE),
+                    plan.neval,
+                ));
             }
         }
 
@@ -855,7 +853,10 @@ mod tests {
         for (j, &n_j) in n.iter().enumerate() {
             assert!(n_j >= MIN_CHANNEL_NEVAL, "channel {j} got {n_j}");
         }
-        assert!(n[1] > n[2], "the measurable channels still split by their sd");
+        assert!(
+            n[1] > n[2],
+            "the measurable channels still split by their sd"
+        );
     }
 
     /// End to end: with the variance concentrated in one channel, the Neyman rule
@@ -927,7 +928,11 @@ mod tests {
             &StopSignal::default(),
         );
         assert_eq!(report.stop, StopReason::TargetMet);
-        assert!(report.iterations >= 6, "stopped after {}", report.iterations);
+        assert!(
+            report.iterations >= 6,
+            "stopped after {}",
+            report.iterations
+        );
         assert!(
             report.scaled_rel <= target_rel,
             "stopped at scaled rel {} above the target {target_rel}",

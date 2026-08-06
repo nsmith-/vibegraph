@@ -657,7 +657,10 @@ mod tests {
 
     #[test]
     fn the_arrows_read_as_level_and_scope_keys() {
-        assert_eq!(key_of(&press(KeyCode::Up, KeyModifiers::NONE)), Some(Key::Louder));
+        assert_eq!(
+            key_of(&press(KeyCode::Up, KeyModifiers::NONE)),
+            Some(Key::Louder)
+        );
         assert_eq!(
             key_of(&press(KeyCode::Down, KeyModifiers::NONE)),
             Some(Key::Quieter)

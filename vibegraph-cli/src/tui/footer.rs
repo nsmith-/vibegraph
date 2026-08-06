@@ -583,8 +583,14 @@ mod tests {
         let rows = rows(&state, 80);
         assert!(rows[5].contains("level: DEBUG"), "{rows:?}");
         assert!(rows[5].contains("scope: sampling"), "{rows:?}");
-        assert!(rows[5].contains('\u{25b2}') && rows[5].contains('\u{25bc}'), "{rows:?}");
-        assert!(rows[5].contains('\u{25c2}') && rows[5].contains('\u{25b8}'), "{rows:?}");
+        assert!(
+            rows[5].contains('\u{25b2}') && rows[5].contains('\u{25bc}'),
+            "{rows:?}"
+        );
+        assert!(
+            rows[5].contains('\u{25c2}') && rows[5].contains('\u{25b8}'),
+            "{rows:?}"
+        );
     }
 
     /// A pending question takes over the bottom row entirely: the question on

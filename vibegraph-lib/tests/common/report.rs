@@ -607,7 +607,11 @@ fn run_out(program: &str, args: &[&str]) -> Option<String> {
         return None;
     }
     let text = String::from_utf8_lossy(&out.stdout);
-    let joined: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let joined: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
     (!joined.is_empty()).then(|| joined.join("; "))
 }
 

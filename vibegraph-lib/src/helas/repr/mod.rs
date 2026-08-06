@@ -72,13 +72,7 @@ pub trait Real:
 {
 }
 impl<
-        F: num_traits::Float
-            + num_traits::FloatConst
-            + Copy
-            + 'static
-            + std::fmt::Debug
-            + Send
-            + Sync,
+        F: num_traits::Float + num_traits::FloatConst + Copy + 'static + std::fmt::Debug + Send + Sync,
     > Real for F
 {
 }

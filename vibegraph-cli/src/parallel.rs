@@ -59,7 +59,9 @@ impl ParallelArgs {
     /// fallback to the default: a run asked for a thread count is usually being
     /// timed, and quietly giving it another one would misattribute the result.
     pub fn install(&self) -> Result<(), String> {
-        let Some(n) = self.parallel else { return Ok(()) };
+        let Some(n) = self.parallel else {
+            return Ok(());
+        };
         if n == 0 {
             return Err("--parallel needs at least one thread".to_string());
         }

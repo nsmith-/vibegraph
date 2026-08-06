@@ -650,15 +650,14 @@ mod tests {
     #[test]
     fn conjugating_a_flow_is_the_slot_exchange_and_nothing_else() {
         let legs = [gluon(true), quark(true), gluon(false), quark(false)];
-        let conj_legs = [
-            gluon(true),
-            antiquark(true),
-            gluon(false),
-            antiquark(false),
-        ];
+        let conj_legs = [gluon(true), antiquark(true), gluon(false), antiquark(false)];
 
         let ours = one_flow(t(&[1, 3, 4, 2]), &legs);
-        assert_eq!(ours.flow(0), GQ_GQ[0], "the representative's own flow moved");
+        assert_eq!(
+            ours.flow(0),
+            GQ_GQ[0],
+            "the representative's own flow moved"
+        );
 
         let by_key = one_flow(t(&[3, 1, 2, 4]), &conj_legs);
         let by_slots = ours.conjugated();
@@ -709,12 +708,7 @@ mod tests {
     #[test]
     fn the_representatives_tags_are_illegal_on_a_conjugate_members_legs() {
         let legs = [gluon(true), quark(true), gluon(false), quark(false)];
-        let conj_legs = [
-            gluon(true),
-            antiquark(true),
-            gluon(false),
-            antiquark(false),
-        ];
+        let conj_legs = [gluon(true), antiquark(true), gluon(false), antiquark(false)];
         let tags = one_flow(t(&[1, 3, 4, 2]), &legs);
 
         tags.check_legs(&legs).expect("legal on its own legs");

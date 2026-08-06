@@ -512,7 +512,9 @@ mod tests {
                     assert_eq!(got, name, "the refusal named the wrong field");
                     println!("  {e}");
                 }
-                other => panic!("'{name} = {perturbed}' on proton beams was not refused: {other:?}"),
+                other => {
+                    panic!("'{name} = {perturbed}' on proton beams was not refused: {other:?}")
+                }
             }
 
             // A `ProtonBeams` field is inert on fixed-energy beams, and real

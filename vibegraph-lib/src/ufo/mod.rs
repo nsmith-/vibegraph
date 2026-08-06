@@ -655,7 +655,10 @@ mod tests {
             std::process::id()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        for name in REQUIRED_SOURCE_FILES.iter().chain(["propagators.py"].iter()) {
+        for name in REQUIRED_SOURCE_FILES
+            .iter()
+            .chain(["propagators.py"].iter())
+        {
             std::fs::write(dir.join(name), "").unwrap();
         }
 

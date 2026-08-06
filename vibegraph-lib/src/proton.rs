@@ -84,11 +84,11 @@ use thiserror::Error;
 use thread_local::ThreadLocal;
 
 use crate::artifact::ChannelSampler;
+use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
 use crate::coupling::alphas::AlphaSSource;
 use crate::coupling::scales::{EventScales, ScaleError};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
-use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
     boost_z, compile_class, compile_scale_source, components, constant_scale_report,
@@ -513,7 +513,11 @@ pub enum ProtonError {
          up: {reason}. An event of {b} is labelled with a flow drawn in {a}'s indexing, so without \
          that pairing the label would be a guess"
     )]
-    ColorFlowPairing { a: String, b: String, reason: String },
+    ColorFlowPairing {
+        a: String,
+        b: String,
+        reason: String,
+    },
     #[error(
         "the groups represented by {a} and {b} separate by only {rel:.3e} at their best-separated \
          probe point; a partition that close is rounding, not a coupling distinction"
@@ -865,11 +869,7 @@ fn flow_permutation(
     let ours = representative.flow_fingerprints();
     let theirs = member.flow_fingerprints();
     if ours.len() != theirs.len() {
-        return Err(format!(
-            "{} flows against {}",
-            ours.len(),
-            theirs.len()
-        ));
+        return Err(format!("{} flows against {}", ours.len(), theirs.len()));
     }
     for (side, keys) in [("the representative", ours), ("the member", theirs)] {
         for a in 0..keys.len() {
@@ -2132,14 +2132,12 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
 mod tests {
     use super::*;
     use crate::artifact::SamplerTopology;
-    use crate::hadronic::{
-        channel_neval, CHANNEL_STREAM_BASE, VEGAS_NBINS,
-    };
-    use crate::vegas::VegasGrid;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+    use crate::hadronic::{channel_neval, CHANNEL_STREAM_BASE, VEGAS_NBINS};
     use crate::lhef::build::SubprocessRecord;
     use crate::pdf::grid::SubGrid;
     use crate::ufo::sm::{sm_model, SMRestrict};
+    use crate::vegas::VegasGrid;
     use std::collections::BTreeSet;
     use std::sync::Arc;
 
@@ -3251,7 +3249,11 @@ mod tests {
 
         // The configuration draw has to reach the value, or the substream it runs
         // on could be addressed any way at all and this test would still pass.
-        assert_eq!(integ.scale_draw_ndim(), 1, "no configuration draw installed");
+        assert_eq!(
+            integ.scale_draw_ndim(),
+            1,
+            "no configuration draw installed"
+        );
         let ndim = integ.point_ndim();
         let mut probes = 0;
         let mut moved = 0;
@@ -3267,7 +3269,10 @@ mod tests {
             u[ndim - 1] = 0.98;
             moved += usize::from(a.to_bits() != integ.value_in_channel(0, &u).to_bits());
         }
-        assert!(probes > 0, "every probe was cut away, so nothing was compared");
+        assert!(
+            probes > 0,
+            "every probe was cut away, so nothing was compared"
+        );
         assert!(
             moved > 0,
             "{probes} probes carried weight and the configuration draw moved none of them"
@@ -4351,7 +4356,10 @@ mod tests {
         evaluated: &EvaluatedModel,
     ) -> std::collections::BTreeMap<Vec<i32>, AmplitudeEvaluator> {
         let mut out = std::collections::BTreeMap::new();
-        for set in enumerate(process, m).iter().filter(|s| !s.diagrams.is_empty()) {
+        for set in enumerate(process, m)
+            .iter()
+            .filter(|s| !s.diagrams.is_empty())
+        {
             let evaluator = compile_class(set, m, evaluated).expect("subprocess compiles");
             let legs = process_external_legs(&evaluator, m, evaluated);
             out.insert(legs.iter().map(|l| l.pdg).collect(), evaluator);
@@ -4496,7 +4504,10 @@ mod tests {
         assert!(counts[0] > 0, "no identity-class member");
         assert!(counts[1] > 0, "no global-conjugate member");
         assert!(counts[2] > 0, "no crossing-class member");
-        assert!(non_identity_pi > 0, "every flow permutation was the identity");
+        assert!(
+            non_identity_pi > 0,
+            "every flow permutation was the identity"
+        );
         assert!(
             identity_pi_rep_differs > 0,
             "every rep-differing member permuted its flows, so this cannot tell the permutation \
@@ -4539,7 +4550,11 @@ mod tests {
                 if pi.iter().enumerate().any(|(f, &g)| f != g) {
                     permuted += 1;
                 }
-                assert_eq!(rep.n_diagrams(), theirs.n_diagrams(), "{direct:?}: diagram count");
+                assert_eq!(
+                    rep.n_diagrams(),
+                    theirs.n_diagrams(),
+                    "{direct:?}: diagram count"
+                );
                 for d in 0..rep.n_diagrams() {
                     let (ours, other) = (rep.reached_by(d), theirs.reached_by(d));
                     assert_eq!(ours.len(), other.len(), "{direct:?}: diagram {d} row width");
@@ -4562,7 +4577,10 @@ mod tests {
             "ICOLAMP invariance: {rows} diagram rows compared, {restrictive} of them actually \
              restricting, over {permuted} members with a non-identity flow permutation"
         );
-        assert!(restrictive > 0, "every mask row was all-true, so the identity is trivial");
+        assert!(
+            restrictive > 0,
+            "every mask row was all-true, so the identity is trivial"
+        );
         assert!(permuted > 0, "every flow permutation was the identity");
     }
 
@@ -4628,7 +4646,9 @@ mod tests {
                 compared += 1;
             }
         }
-        eprintln!("beam exchange: {compared} mirrored members compared against their direct record");
+        eprintln!(
+            "beam exchange: {compared} mirrored members compared against their direct record"
+        );
         assert!(compared > 0, "no member carried a mirrored ordering");
     }
 
@@ -4742,8 +4762,8 @@ mod tests {
                         });
                         if separated {
                             for p in 0..points.len() {
-                                worst = worst
-                                    .max((rep_j[p][f] - own_j[p][pi[f]]).abs() / scales[p]);
+                                worst =
+                                    worst.max((rep_j[p][f] - own_j[p][pi[f]]).abs() / scales[p]);
                             }
                             asserted += 1;
                         } else {
@@ -4771,8 +4791,14 @@ mod tests {
              {degenerate_blocks} degenerate ones, worst {worst:.2e} of the summed |M|\u{b2}",
             exempt.len()
         );
-        assert!(asserted > 0, "no flow was separated enough to compare by value");
-        assert!(worst < 1e-11, "JAMP2 disagreement {worst:.2e} across the permutation");
+        assert!(
+            asserted > 0,
+            "no flow was separated enough to compare by value"
+        );
+        assert!(
+            worst < 1e-11,
+            "JAMP2 disagreement {worst:.2e} across the permutation"
+        );
     }
 
     /// How far apart two flows must get, relative to the summed `|M|²` at some probe

@@ -151,7 +151,8 @@ mod tests {
 
     impl Visit for Recorder {
         fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-            self.0.push((field.name().to_string(), format!("{value:?}")));
+            self.0
+                .push((field.name().to_string(), format!("{value:?}")));
         }
         fn record_str(&mut self, field: &Field, value: &str) {
             self.0.push((field.name().to_string(), value.to_string()));

@@ -154,7 +154,10 @@ fn integrate_is_thread_count_independent() {
             .args(["--neval", "20000", "--niter", "4", "-j", threads])
             .status()
             .expect("spawn vibegraph");
-        assert!(status.success(), "vibegraph integrate -j {threads} exited non-zero");
+        assert!(
+            status.success(),
+            "vibegraph integrate -j {threads} exited non-zero"
+        );
         bytes.push(std::fs::read(out.join("grid.bin.zst")).expect("read artifact"));
     }
     assert_eq!(
@@ -191,10 +194,20 @@ fn integrate_spends_iterations_to_reach_a_target() {
             .arg(&run_path)
             .arg("--out")
             .arg(out)
-            .args(["--neval", "8000", "--target-rel", target, "--min-iters", "4"])
+            .args([
+                "--neval",
+                "8000",
+                "--target-rel",
+                target,
+                "--min-iters",
+                "4",
+            ])
             .status()
             .expect("spawn vibegraph");
-        assert!(status.success(), "integrate --target-rel {target} exited non-zero");
+        assert!(
+            status.success(),
+            "integrate --target-rel {target} exited non-zero"
+        );
         IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).expect("reload artifact")
     };
 
@@ -228,5 +241,8 @@ fn integrate_spends_iterations_to_reach_a_target() {
     );
     let (lo, hi) = (loose.sigma_pb, tight.sigma_pb);
     let spread = (lo - hi).abs() / (loose.sigma_err_pb.powi(2) + tight.sigma_err_pb.powi(2)).sqrt();
-    assert!(spread < 5.0, "the two runs disagree: {lo} vs {hi} pb ({spread:.1}σ)");
+    assert!(
+        spread < 5.0,
+        "the two runs disagree: {lo} vs {hi} pb ({spread:.1}σ)"
+    );
 }

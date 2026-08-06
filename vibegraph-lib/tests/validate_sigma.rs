@@ -1417,12 +1417,17 @@ fn probe_scale_draw_cost() {
 
         let build = |rc: &RunCard| {
             let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-            let mut integ =
-                FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg);
+            let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg);
             integ
                 .use_running_coupling(&diagrams, &model, &evaluated, rc)
                 .expect("scale prescription compiles");
-            integ.use_multichannel(&diagrams, &evaluated, MULTICHANNEL_SURVEY, MULTICHANNEL_ITERS, SEED);
+            integ.use_multichannel(
+                &diagrams,
+                &evaluated,
+                MULTICHANNEL_SURVEY,
+                MULTICHANNEL_ITERS,
+                SEED,
+            );
             integ
         };
         let with_draw = build(&live);
@@ -1829,7 +1834,11 @@ fn probe_the_scale_draw_reads_the_point_and_not_the_sampler() {
                 let v: Vec<f64> = (0..integ.point_ndim())
                     .map(|_| rand::Rng::random::<f64>(&mut rng))
                     .collect();
-                integ.event_in_channel(rng_channel(&mut rng, integ.channel_count()), &v, &mut scratch);
+                integ.event_in_channel(
+                    rng_channel(&mut rng, integ.channel_count()),
+                    &v,
+                    &mut scratch,
+                );
             }
             let after = integ
                 .event_scales_at(&momenta, 0, &u)

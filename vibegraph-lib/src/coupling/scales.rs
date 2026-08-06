@@ -609,7 +609,12 @@ mod tests {
     /// interesting one.
     #[test]
     fn hoisted_merge_tables_reproduce_the_per_event_build() {
-        for spec in ["u u~ > u u~", "e+ e- > e+ e-", "g g > g g", "u u~ > e+ e- g"] {
+        for spec in [
+            "u u~ > u u~",
+            "e+ e- > e+ e-",
+            "g g > g g",
+            "u u~ > e+ e- g",
+        ] {
             let proc = process(spec);
             let set = &proc.derived.set;
             let hoisted = MergeTablesByOrder::build(set);

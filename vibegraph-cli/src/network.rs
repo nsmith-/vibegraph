@@ -391,7 +391,10 @@ mod tests {
             "{notice}"
         );
         for text in [PIN.url, PIN.sha256, PIN.destination] {
-            assert!(notice.contains(text), "notice should state {text}: {notice}");
+            assert!(
+                notice.contains(text),
+                "notice should state {text}: {notice}"
+            );
         }
     }
 

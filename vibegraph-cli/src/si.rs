@@ -146,7 +146,10 @@ mod tests {
 
     #[test]
     fn negative_values_keep_their_sign_and_the_uncertainty_stays_positive() {
-        assert_eq!(fmt_si(-802.94e-12, Some(3.11e-12), "b", 3), "-803 \u{b1} 3 pb");
+        assert_eq!(
+            fmt_si(-802.94e-12, Some(3.11e-12), "b", 3),
+            "-803 \u{b1} 3 pb"
+        );
     }
 
     /// Every decade in a full three-step (femto → pico → nano) sweep renders
@@ -178,9 +181,6 @@ mod tests {
             .into_iter()
             .map(|v| fmt_si(v, None, "u", 3))
             .collect();
-        assert_eq!(
-            renders,
-            vec!["1.00 u", "10.0 u", "100 u", "1.00 ku"]
-        );
+        assert_eq!(renders, vec!["1.00 u", "10.0 u", "100 u", "1.00 ku"]);
     }
 }

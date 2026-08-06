@@ -2347,8 +2347,7 @@ fn probe_cluster_scale_spread_over_configurations() {
                     // The reconstruction is only worth reading if it reproduces
                     // what the integrand itself evaluated this point at.
                     let drawn = integ.channel_ids()[0];
-                    if g == drawn.group
-                        && d.config_of_diagram[drawn.diagram].unwrap_or(1) == config
+                    if g == drawn.group && d.config_of_diagram[drawn.diagram].unwrap_or(1) == config
                     {
                         assert_eq!(
                             (s.mu_r, s.mu_f),

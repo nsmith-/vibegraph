@@ -240,8 +240,8 @@ fn main() {
 
     let mut trials: Vec<Trial> = Vec::new();
     for path in files {
-        let subprocesses = leshouche::parse(&path)
-            .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+        let subprocesses =
+            leshouche::parse(&path).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
         for sub in subprocesses {
             let name = trial_name(&path, sub.isproc);
             let path = path.clone();

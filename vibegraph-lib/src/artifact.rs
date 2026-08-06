@@ -1176,10 +1176,8 @@ mod tests {
     fn a_version_6_artifact_keeps_its_own_recorded_version() {
         let mut artifact = sample_artifact();
         artifact.format_version = 6;
-        let dir = std::env::temp_dir().join(format!(
-            "vibegraph-artifact-test-v6-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("vibegraph-artifact-test-v6-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("v6.bin.zst");
         let _ = std::fs::remove_file(&path);
