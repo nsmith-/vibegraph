@@ -48,15 +48,17 @@ MLM-style matching + merging, and NLO event generation.
 ### Quick start — no toolchain required
 
 Precompiled binaries for macOS (Apple Silicon and Intel) and Linux x86\_64 are
-attached to every [release](../../releases). The Linux build is statically
-linked; none of them needs a Rust toolchain, a Python installation, or LHAPDF.
+attached to every [release](../../releases) as bare executables — nothing to
+unpack. The Linux build is statically linked; none of them needs a Rust
+toolchain, a Python installation, or LHAPDF. License notices for the binary
+and the Standard Model description compiled into it are printed by
+`./vibegraph --version` (`-V` for just the version).
 
 ```bash
-# 1. Download and unpack (pick the archive matching your platform)
-curl -fsSLO https://github.com/nsmith-/vibegraph/releases/latest/download/vibegraph-aarch64-apple-darwin.tar.gz
-tar xzf vibegraph-aarch64-apple-darwin.tar.gz
-cd vibegraph-aarch64-apple-darwin
-./vibegraph --version
+# 1. Download (pick the binary matching your platform) and mark executable
+curl -fsSL -o vibegraph https://github.com/nsmith-/vibegraph/releases/latest/download/vibegraph-aarch64-apple-darwin
+chmod +x vibegraph
+./vibegraph -V
 ```
 
 ```bash
@@ -443,6 +445,8 @@ dual-licensed on the same terms, with no additional conditions.
 Not everything shipped is vibegraph's own code. The MadGraph5\_aMC@NLO
 Standard Model assets interned into the binary keep their own NCSA-derived
 license; [`THIRD-PARTY-NOTICES`](THIRD-PARTY-NOTICES) identifies exactly what
-is redistributed and reproduces those terms, and it travels inside every
-release tarball alongside both license texts. PDF grids are fetched at run
-time, never redistributed.
+is redistributed and reproduces those terms. That file and both of
+vibegraph's own license texts are compiled into every binary and printed by
+`vibegraph --version`, so the notices accompany even a bare downloaded
+executable; the same three files are also attached to every release. PDF
+grids are fetched at run time, never redistributed.

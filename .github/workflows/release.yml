@@ -65,6 +65,13 @@ jobs:
           bin="target/${{ matrix.target }}/release/vibegraph"
           "$bin" --version
 
+          # The binary ships bare, so `--version` is the only vehicle for the
+          # license notices it is required to carry. Gate on the MadGraph
+          # copyright line and on vibegraph's own MIT text actually being
+          # emitted by the binary as built, not assumed from the source.
+          "$bin" --version | grep -q "Copyright (c) 2009, 2013, the MadTeam"
+          "$bin" --version | grep -q "Permission is hereby granted, free of charge"
+
           # A partonic (lpp = 0) process needs no PDF set, no UFO model file and
           # no network: the SM model is compiled into the binary. This is the
           # cheapest command that exercises diagram generation, HELAS
@@ -84,30 +91,25 @@ jobs:
             --out "$work/out" --neval 5000 --niter 2
           test -f "$work/out/grid.bin.zst"
 
+      # Each release asset is the bare executable, ready to run after
+      # `chmod +x` — no archive to unpack. The license notices (vibegraph's
+      # MIT/Apache-2.0 texts and THIRD-PARTY-NOTICES for the interned
+      # MadGraph5_aMC@NLO SM model) are compiled into the binary and printed by
+      # `--version`, so they accompany every copy of the binary itself; the
+      # publish job attaches the same files to the release alongside the
+      # binaries for anyone who wants them without running it.
       - name: package
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          asset="vibegraph-${{ matrix.target }}"
-          mkdir -p "$asset"
-          cp "target/${{ matrix.target }}/release/vibegraph" "$asset/"
-          # Both licenses travel inside every tarball: vibegraph is dual-licensed
-          # `MIT OR Apache-2.0`, and each arm requires its own text to accompany
-          # a binary distribution (MIT's "included in all copies", Apache 4(a)).
-          cp LICENSE-MIT LICENSE-APACHE "$asset/"
-          # THIRD-PARTY-NOTICES travels inside every tarball, not just the repo:
-          # the interned SM model (vibegraph-lib/src/ufo/sm_assets/) is
-          # MadGraph5_aMC@NLO material compiled into this binary, and its
-          # license's redistribution-in-binary-form clause requires the notice
-          # to accompany the distributed binary itself.
-          cp THIRD-PARTY-NOTICES "$asset/"
-          tar czf "dist/$asset.tar.gz" "$asset"
+          cp "target/${{ matrix.target }}/release/vibegraph" \
+            "dist/vibegraph-${{ matrix.target }}"
 
       - uses: actions/upload-artifact@v7
         with:
           name: vibegraph-${{ matrix.target }}
-          path: dist/*.tar.gz
+          path: dist/vibegraph-*
           if-no-files-found: error
 
   publish:
@@ -115,6 +117,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
+      # Checkout only to attach the license notice files next to the binaries.
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -122,10 +127,9 @@ jobs:
 
       - name: checksums
         working-directory: dist
-        run: sha256sum *.tar.gz > SHA256SUMS
+        run: sha256sum vibegraph-* > SHA256SUMS
 
       - name: create release
-        working-directory: dist
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -133,4 +137,5 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \
             --generate-notes \
-            *.tar.gz SHA256SUMS
+            dist/vibegraph-* dist/SHA256SUMS \
+            LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES

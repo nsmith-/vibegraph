@@ -43,6 +43,12 @@ a correctness sprint. A 0.x line because no global backwards-compatibility
 promise is made yet; a future "quality sprint" tightening the `pub` API surface
 (backlog below) precedes any 1.0. Tagging runs `release.yml` and
 `acceptance.yml` for the first time.
+Release assets are **bare executables** (2026-08-05): the license notices
+(`THIRD-PARTY-NOTICES` for the interned MG5 SM model, plus both vibegraph
+license texts) are compiled into the binary and emitted by `--version`
+(`-V` stays one line), pinned by a unit test, a release.yml smoke-test grep,
+and an acceptance.sh check; the same three files are also attached to each
+release alongside the binaries, so no tarball step remains.
 
 **Standing measurement facts** (note 30 baseline, note 31 §6 close-out; all
 one host, M3 Max). The layer's own run-to-run spread is **0.8% median / 3.4%
