@@ -2,11 +2,13 @@ Third-party notices for vibegraph
 ==================================
 
 This file lists third-party material redistributed with vibegraph binaries,
-as required by that material's own license. It covers the *packaged
-distribution* (the release tarballs built by `.github/workflows/release.yml`
-and anything derived from them). It does not license vibegraph itself: that
-code is dual-licensed `MIT OR Apache-2.0`, under `LICENSE-MIT` and
-`LICENSE-APACHE`, which ship in the same tarballs.
+as required by that material's own license. It is compiled into every
+`vibegraph` binary and printed, together with vibegraph's own license texts,
+by `vibegraph --version` — so the notices accompany each distributed binary
+even when it is downloaded bare. `.github/workflows/release.yml` additionally
+attaches this file to each release alongside the binaries. It does not
+license vibegraph itself: that code is dual-licensed `MIT OR Apache-2.0`,
+under `LICENSE-MIT` and `LICENSE-APACHE`.
 
 MadGraph5_aMC@NLO Standard Model UFO model (models/sm)
 --------------------------------------------------------

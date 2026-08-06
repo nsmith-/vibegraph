@@ -9,9 +9,9 @@
 # pre-fetched PDF set. Everything it consumes it either downloads (the binary
 # from a GitHub release, the PDF set from CERN through the binary's own pinned
 # fetch) or writes itself (the cards, below). That is the point: it reproduces
-# what a user with a fresh machine actually does. `curl`, `tar` and a POSIX
-# shell are the whole dependency list; `sha256sum`/`shasum` is used when
-# present to verify the release asset.
+# what a user with a fresh machine actually does. `curl` and a POSIX shell are
+# the whole dependency list; `sha256sum`/`shasum` is used when present to
+# verify the release asset.
 #
 # It downloads ~27 MB of PDF grids on every run, deliberately. The download is
 # the path under test — a cached PDF set would skip exactly the code this exists
@@ -86,7 +86,8 @@ release_target() {
 download_release() {
   local target asset base
   target="$(release_target)"
-  asset="vibegraph-${target}.tar.gz"
+  # The release asset is the bare executable, not an archive.
+  asset="vibegraph-${target}"
   if [ -n "$tag" ]; then
     base="https://github.com/${repo}/releases/download/${tag}"
   else
@@ -115,16 +116,16 @@ download_release() {
     echo "note: the release publishes no SHA256SUMS; asset not verified"
   fi
 
-  tar xzf "$work/$asset" -C "$work"
-  binary="$work/vibegraph-${target}/vibegraph"
-  [ -x "$binary" ] || fail "the tarball contains no executable at vibegraph-${target}/vibegraph"
+  binary="$work/$asset"
+  chmod +x "$binary" || fail "cannot mark $asset executable"
 
-  # Every tarball carries the third-party notice because the interned MG5 SM
-  # model is redistributed inside the binary; a tarball without it is a release
-  # that should not have shipped.
-  [ -f "$work/vibegraph-${target}/THIRD-PARTY-NOTICES" ] \
-    || fail "the tarball is missing THIRD-PARTY-NOTICES"
-  echo "THIRD-PARTY-NOTICES present in the tarball"
+  # The binary is the whole distribution, so it must carry the third-party
+  # notice itself: the interned MG5 SM model is redistributed inside it, and
+  # `--version` is where its license notice is reproduced. A binary that does
+  # not emit it is a release that should not have shipped.
+  "$binary" --version | grep -q "Copyright (c) 2009, 2013, the MadTeam" \
+    || fail "the binary's --version output is missing the MadGraph notice"
+  echo "MadGraph third-party notice present in --version output"
 }
 
 if [ -z "$binary" ]; then
