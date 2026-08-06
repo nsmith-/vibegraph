@@ -1448,6 +1448,68 @@ fn cut_implied_timelike_floors_move_llj_draws_out_of_the_cut_region() {
     );
 }
 
+/// A two-body final state has no invariant to floor, so the floors cannot reach it.
+///
+/// Both of its subsystem masses are fixed — the pair's is `ŝ` and each leg's is its
+/// own pole — so the decay tree draws no invariant at all and every floor is inert
+/// however large. This is what bounds the blast radius of the cut-implied floors:
+/// the `2 → 2` rows keep their sampling streams bit-for-bit, and only rows with a
+/// composite subsystem can move. Asserted on the drawn momenta and densities, with
+/// a floor far above anything the cuts of these processes imply.
+#[test]
+fn a_two_body_final_state_is_bit_identical_under_any_timelike_floor() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let sqrt_s = 500.0;
+
+    let draw = |ch: &DiagramChannel<f64>, seed: u64| -> Vec<(Vec<[u64; 4]>, u64, u64)> {
+        let mut stream = SubStream::from_stream(seed, 5);
+        (0..100)
+            .map(|_| {
+                let u = stream.uniforms::<f64>(ch.ndim());
+                let pt = ch.sample(&u);
+                let bits: Vec<[u64; 4]> = pt
+                    .momenta
+                    .iter()
+                    .map(|p| {
+                        [
+                            p.e().to_bits(),
+                            p.px().to_bits(),
+                            p.py().to_bits(),
+                            p.pz().to_bits(),
+                        ]
+                    })
+                    .collect();
+                (bits, pt.weight.to_bits(), ch.density(&pt.momenta).to_bits())
+            })
+            .collect()
+    };
+
+    let mut compared = 0usize;
+    for process in ["u u~ > e+ e-", "u u~ > u u~", "g g > g g", "u u~ > b b~"] {
+        let sets = common::generate(process);
+        for (i, d) in sets[0].diagrams.iter().enumerate() {
+            assert_eq!(
+                d.n_ext() - d.n_in,
+                2,
+                "{process} is not a two-body final state"
+            );
+            let seed = 0x7F_1003 + i as u64;
+            let plain = DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, 400.0);
+            let floored = plain.clone().with_timelike_floors(&|_| 10_000.0);
+            assert_eq!(
+                draw(&plain, seed),
+                draw(&floored, seed),
+                "{process} diagram {i}: a timelike floor moved a two-body channel, which has \
+                 no drawn invariant to floor"
+            );
+            compared += 1;
+        }
+    }
+    eprintln!("{compared} two-body diagram channels are inert under a 10000 GeV² timelike floor");
+    assert!(compared > 0, "no two-body diagram was compared");
+}
+
 // ── The ordered peripheral chain ─────────────────────────────────────────────
 
 /// The reference process for the ordered peripheral chain: one concrete flavour
