@@ -463,12 +463,25 @@ fn draw_loop(
     let started = Instant::now();
     // The question currently on screen, waiting for a key to answer it.
     let mut pending: Option<Sender<bool>> = None;
+    let mut size = terminal.size().ok();
     loop {
-        // The viewport learns its new size inside `draw`, and the history is
-        // written before that: a line pushed in the tick after a resize would be
-        // laid out for the terminal that no longer exists, and `insert_before`
-        // would be told a row count the terminal does not agree with. Ask first,
-        // so both are working from the size the terminal has now.
+        // Take a resize before anything is written, for two reasons.
+        //
+        // The pane has to be wiped where it stands first. Reserving the viewport
+        // again anchors it to the cursor, so it can land below the rows it used
+        // to occupy, and those rows are cleared from the *new* origin down —
+        // whatever sits above it survives, and the next line pushed into the
+        // history scrolls that leftover pane up into the scrollback for good.
+        //
+        // And the width the history is wrapped to comes from the viewport, which
+        // learns a new size only inside `draw`. Draining first would lay a line
+        // out for the terminal that no longer exists and hand `insert_before` a
+        // row count the terminal does not agree with.
+        let current = terminal.size().ok();
+        if current != size {
+            let _ = terminal.clear();
+            size = current;
+        }
         let _ = terminal.autoresize();
         drain(&mut terminal, incoming);
         if pending.is_none() {
