@@ -5,23 +5,20 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: the **performance sprint** ✅ **closed** 2026-08-05,
-eleven sessions over three tracks — I (integration engine), P (PDF hot path),
-E (evaluator) — all merged, `main` @ `ca53336`. Measured on one host in one
-sitting against the note-30 baseline: `pixi run --skip-deps validate`
-**691 s → 391 s (−43.4%)** on the identical command with the census
-cell-for-cell unchanged (**98 measured / 96 ✅ / 2 ⚠️ / 4 ⏳**); per-row
-single-thread **integrals 842.6 s → 389.8 s (−53.7%)**; integrand throughput
-against MadGraph on note 30 §5.3's CPU-time denominators **geomean
-6.84× → 8.76×** over the same 26 rows; the per-point MATRIX1 comparison
-**1.25× → 0.98×**, the evaluator itself −21.6%, with **8 of 14** processes now
-faster per point than MadGraph (was 3); and `integrate` scales **4.70×** on
-`dy13_default` and **5.36×** on `pp_to_llj` from `-j 1` to `-j 16` at a
-byte-identical artifact, which retires note 30 §1's "MadGraph is a 16-way
-parallel job farm and our integrator is one thread" caveat. Every bit-for-bit claim was checked at
-the layer's own resolution — the 100 banked category row files, digests
-compared — and no tolerance was relaxed anywhere in the sprint. Full record:
-note 31 §6; the sessions are one line each in the closed-sprint history below.
+**Current position**: between sprints. The **performance sprint** (eleven
+sessions, note 31 §6) and its **addendum** (eight of nine merged, S9 killed
+clean, note 32 §5) both closed 2026-08-05 — one line each in the closed-sprint
+history below; the notes hold the full records, and no tolerance was relaxed
+in either. Where that leaves the layer, measured at close-out on the one M3
+Max host: `pixi run --skip-deps validate` **341.4 s wall / 1305.6 s user**
+quiet-host (note 32 §5.3; 691 s at the note-30 baseline), census
+**100 measured (96 ✅ / 4 ⚠️ / 2 ⏳)** once the oracle layer's
+`validate-sigma-2to6` has run — 98 in the layers `validate` itself drives;
+the per-point MATRIX1 bench at geomean **0.95×** over its widened 19 rows
+(QCD-dense by S4's design, the 14-row continuity cut reads 1.06×), 8 of 14
+processes faster per point than MadGraph; and `integrate -j 16` at
+**8.68×/9.48×** over `-j 1` on `dy13_default`/`pp_to_llj`, byte-identical
+artifacts asserted.
 Standing caveats: a partonic σ quoted from `refdata-2` is **not comparable** to
 one from `refdata-3`/`refdata-4`/`refdata-5` (MadGraph 3.5.7 applied the PDF
 set's `αs(M_Z) = 0.130` to `lpp = 0` runs; 3.7.1 keeps the model's `0.118` —
@@ -37,58 +34,6 @@ polarization, decay chains — is explicitly descoped to the feature backlog
 (see "Descoped from v1" below), and every descoped surface a card can still
 reach must be a **hard error**, never a silent acceptance; the fixes closing
 the remaining silent acceptances are validation-sprint items.
-
-**Addendum sprint ✅ closed (2026-08-05, note 32)**, eight of nine sessions
-merged (S9 killed clean, below), `main` @ `225657a`. Wave 1: S1 landed E3b
-(cut-before-draw on the fixed-beam path, a bit-identical dead-work skip for
-every accepted point) and I5 (`combine_seeds` unweighted in
-`validate_hadronic.rs`, matching what I1 already did to VEGAS's own iteration
-combination — every hadronic row moved ≤0.02%); S2 replaced the never-converging
-extremum `w_max` with MadGraph's own `unwgt.f` truncation-ladder rule (not a
-percentile — the session corrected its own brief on the mechanism), lifting the
-five gating rows' acceptance from 22.2/20.6/23.3/10.6/4.21% to
-54.1/52.1/52.9/38.9/9.98% at matched budgets, `p p > l+ l- j` **4.36×** cheaper
-per effective unweighted event; S3 parallelised the α-survey (deterministic
-chunking, bit-identical at `-j {1,4,16}`, asserted) and made `--target-rel`
-convergence the CLI default (`--fixed-budget` for a reproducible fixed spend),
-correcting note 32 §1.1's serial-floor decomposition en route (the survey was
-41–52% of the `-j 16` wall, not the ~27% first quoted) — `-j 16` on
-`dy13_default`/`pp_to_llj` at `--fixed-budget --neval 120000 --niter 12` now
-reads **8.7×/9.5×** (min of 5 rounds, this session's re-measurement, host load
-6–19 from background indexing), byte-identical artifacts asserted; S4 closed
-all three `mg_perf_compare` findings (manifest-driven `gen_amplitude.py`
-registry, byte-identical migration; host-labelled committed `mg_timings.json`;
-the bench widened 14→19 rows) and found the omitted five rows were QCD-dense,
-inverting the "we're already ahead" reading — the 19-row MATRIX1 geomean sits
-worse than the 14-row one, by design, not regression; S5 (scoped as E4
-allocator traffic) landed the merge-table hoist out of `ScaleChoice::cluster_scales`
-(**−16.9% to −22.3%** ns/point on the three clustered-scale rows,
-`validate_unweighting` **−16.8%**, the partonic σ gate **−11.1%**,
-byte-identical); S9 (restore the pre-`3dab3a1` scalar packed-complex codegen)
-was **killed clean** — the packed idiom is x86-specific, an in-house `MulAdd`
-trait forcing it on this ARM (M3 Max) host cost **8–9%**, the opposite of a
-win, so the pre-registered kill criterion fired and nothing merged (worktree
-clean, branch carries no commit beyond the note-32 planning doc; the design
-stays at note 32 §2 S9 for an x86 host to pick up). Wave 2: S6 sized five
-hadronic σ budgets to reference precision under a ladder+sweep license
-(`pp_to_jj`/`pp_to_bb_fixed`/`pp_to_bb`/`pp_to_bb_qcd2`/`pp_to_ll_scalefact2`
-300k→75k; llj stays at 150k on both counts — its ladders are flat but the 75k
-rung's seed scatter is not, and the re-carded `pp_to_llj` ladder still climbs
-monotonically 0.04%→0.21% end to end, so no further cut is licensed there);
-S7 turned the 2→6 rows on as `info` at the long tier — the "~1 ms/eval" premise
-was stale by more than an order of magnitude (the gate's own harness reads
-64/71 µs), but the real blocker is `MIN_CHANNEL_NEVAL` × channel count
-(512 × 579/615 diagrams = 296 448/314 880 evaluations per iteration whatever
-budget is asked) and a heavy multichannel tail whose single-seed pulls do not
-shrink with budget (+4.8%/−4.5%/+3.5% at both ends of a 300k–1.2M ladder while
-the five-seed mean holds inside 1.1% of a 0.30%-precision reference) — census
-98→**100** measured, no existing cell moved; S8 (this session) re-recorded
-every stale σ/percentile/cost figure the wave-1/2 sessions left behind and
-took the addendum's own close-out measurements. Full record: note 32 §5.
-Planning-time findings recorded in note 32 §1: the `-j 16` 4.7–5.4× ceiling was
-a ~70–75% serial floor at 16 threads (S3 closed most of it); and
-`gen_amplitude.py` bypassed the manifest while `mg_timings.json` reached no
-artifact and carried no host identity (S4 closed both).
 
 **Next action — the user's**: the first release tag is **`v0.1`**, decided
 2026-08-02 and re-affirmed 2026-08-03 to follow the **performance sprint**.
@@ -150,7 +95,7 @@ One line each; the note is the full record. Earlier sprints
 - **note-29 validation sprint** (validation, closed 2026-08-03, branch `val4`) — seven design→implement→review chains + the §G re-bank. A: conjugate colour tags fixed by **per-member colour-flow tables** under a structurally-determined permutation (dijet `ICOLUP` χ² p 0 → 0.105–0.263, T5 0/80 000; the design's premise falsified twice by measurement en route). B: **MadEvent's per-point `AMP2_c` scale-channel draw** in production (pure function of `(channel, u)`, zero bits from existing streams) — partition gaps collapsed to MC noise, `gu`/`gux`/llj_dyn tolerances retired 0.02/0.015 → **0.005**, σ(pp→ℓ⁺ℓ⁻j) rel −0.68% → **−0.01%**; reviewer derived the missing `this_config` reconciliation from MG source. C1+C2: every descoped card surface a **hard error** (polarization, decay chains, `propagators.py`, 209-field audit with 23 refused, μF ≥ 2 GeV veto as zero-weight, `dynamical_scale_choice` 1–5 refused). D: `ee_to_mumua` drift adjudicated **D1 — the reference owns it** (MG's own partitions disagree at ≥15σ; our total matches its m(μμ) re-integration at 0.16σ; tolerances unchanged). E: ForcePositive with LHAPDF's own clamp semantics; `validate_kt_cluster` a declared oracle tier; +2 cells. F: U(1) charge-flow phase — pre-registered negative result. §G: **`refdata-5` pinned** (four runs re-carded onto lhaid 247000, member list identical name-for-name; publication pending), all 8 ⛔ cells enforced. Census 87/85✅/2⚠️ → **98/96✅/2⚠️**. Transferable lesson: **pre-register the may-move set** — chain B's escalation diff landing byte-exactly on its five predicted cells is what made the sprint's biggest σ change auditable at a glance; note 29 close-out.
 - **`kt-spine`** (feature, two tracks, closed 2026-08-02) — Track K: MadGraph's general kT clustering reproduced merge for merge against an instrumented 3.7.1 (90 000 dumped events, zero observed deviation), the closed forms deleted so `dynamical_scale_choice = -1` takes one path, `GridAlphaS` made LHAPDF's own `AlphaS_Ipol` and the density grid continued past its edges — then the flips: 6 asserted-refused scale rows became per-event replays, the 4 llj partonic σ rows and their `samples` cells left `blocked`, σ(pp→ℓ⁺ℓ⁻j) re-gated at the dynamical scale, and the capstone **`p p > j j`** gated on MadGraph's shipped run-card defaults (**6.803009e8 ± 2.511e5 pb** vs MG 6.788500e8 ± 1.4726e6, rel +0.21%, pull +0.97). Track S: the identical-particle factor moved into the phase-space map per subprocess, and the multi-rung t-channel spine landed in production. Two bugs the sprint found rather than assumed: the **fixed-beam path was never regulated** (every prior "what is the spine worth" measurement was taken on flat transfer draws), and `p p > j j`'s σ was **36% high** because a repeated final-state label enumerated `g u > g u` and `g u > u g` as two subprocesses. Transferable lesson: **a per-event field is a finer oracle than a cross section, and it exists more often than it looks** — the clustering was pinned by an instrumented replay of MadGraph's own intermediates long before any σ moved, which is why every σ flip that followed had a diagnosis attached. Census 75/74/1 → **87/85/2** over 29 rows; note 28.
 - **`perf-sprint-3`** (performance, three tracks, closed 2026-08-05) — eleven sessions against the note-30 baseline, all merged. Layer result, one host one sitting: `pixi run --skip-deps validate` **691 s → 391 s (−43.4%)** on the identical command with the census cell-for-cell unchanged; per-row single-thread **integrals 842.6 s → 389.8 s (−53.7%)**; integrand throughput vs MadGraph on note 30 §5.3's CPU-time denominators **geomean 6.84× → 8.76×** over the same 26 rows (`pp_to_jj` 2.3× → 4.6×, `pp_to_llj_fixed` 5.8× → 9.1×); per-point MATRIX1 **1.25× → 0.98×** with the evaluator itself −21.6% and 8 of 14 processes now beating MadGraph (was 3); `integrate` **4.70×**/**5.36×** from `-j 1` to `-j 16` on `dy13_default`/`pp_to_llj` at a byte-identical artifact. **Track I**: I1 made VEGAS's iteration combination unweighted (`5b3952d`/`59887a3`) — a 4000-seed offline study showed the plan's warm-up discard removes essentially none of the bias and its parenthetical was the real lever — collapsing the llj ladders (`pp_to_llj` span 2.09% → 0.46%) and re-pinning `LLJ_NEVAL` 300k → 150k; I2 gave the `w_max` scan its own budget (`24aad64`/`928df28`) and **falsified its own premise**, the maxima never converging (`Σⱼ w_maxⱼ ∝ n^0.508` over 2.4 decades — a Pareto weight tail of index ≈ 2), so the lever is the percentile rule not the budget; I3 made the hadronic integrand `Sync` and added `-j/--parallel` (`6497f7e`/`1b527cc`), bit-for-bit at any thread count by construction; I4 added convergence-targeted integration with hard-split Neyman allocation (`30d44d1`/`539f0da`), 64/64 calibration runs meeting target, CPU parity with MG on llj and 4.2–4.5× less CPU on dy13. **Track P**: P1 replaced the per-flavour PDF reads with an f64-only all-flavour kernel (`71a7ef3`/`a66d58a`) — `xfx_all` 112 ns vs 504 ns, PDF share 14.5% → 1.38% and 19.4% → 2.00%, **no tolerance relaxed**; P1b added an absolute screen to the continuation oracle (`91c5a79`/`0fd6344`) and recorded why Horner+FMA stays rejected in `cubic_hermite`. **Track E**: E1 studied execution order (`52327b2`/`7416c1d`) and E1b made op-blocked-within-ASAP-levels the production schedule (`486e237`/`94af883`) — −17.3% eval geomean, bit-for-bit across all 100 banked row files; E2 hoisted the arenas into local slices in `fill_arenas` (`54d666f`/`d2d7520`), header reloads 143 → 20, while measuring and **rejecting** threaded dispatch (+7.7%) and force-inlined sret kernels; E2b shared the four spinor products in the chiral currents (`ced17fb`/`027e710`); E3 found the plan's prefix design a **NO-GO by measurement** and landed an arena-reuse cache instead (`6a8e91c`/`50fb671`), order-preserving and bit-for-bit. Transferable lesson: **four of the eleven sessions refuted their own brief's mechanism and still delivered** — I1's discard, I2's budget, E2's dispatch, E3's prefix — because each was pre-committed to a measurement that could kill it; the close-out then did the same to its own brief, whose prescribed `RAYON_NUM_THREADS=1` per-row protocol serialises every concurrent row through one global worker and would have published an ~8× phantom regression. Note 31 §6.
-- **`perf-3-addendum`** (performance/validation cleanup, eight of nine sessions, closed 2026-08-05) — S1 E3b (bit-identical cut-before-draw on the fixed-beam path) + I5 (`combine_seeds` unweighted, matching I1); S2 read `w_max` off MadGraph's own `unwgt.f` truncation-ladder rule instead of a never-converging scan extremum, unweighting efficiency on five rows 22.2/20.6/23.3/10.6/4.21% → 54.1/52.1/52.9/38.9/9.98%, `p p > l+ l- j` 4.36× cheaper per effective event; S3 parallelised the α-adaptation survey (bit-identical at `-j {1,4,16}`) and made `--target-rel` the CLI's default convergence mode, correcting note 32 §1.1's own serial-floor decomposition (41–52% of the `-j 16` wall, not ~27%); S4 closed all three `mg_perf_compare` findings (manifest-driven registry on both arms, host-labelled committed `mg_timings.json`, bench widened 14→19 rows) and found the newly-included rows were QCD-dense, inverting the sample's earlier bias (19-row MATRIX1 geomean 0.95×, 14-row continuity check 1.06×); S5 hoisted a per-event merge-table rebuild out of the clustered-scale path, −16.9% to −22.3% ns/point on the three clustered rows; S6 sized five hadronic σ budgets to reference precision under a ladder+sweep license (300k → 75k), `validate` CPU −288 s against only −18 s of wall on that cut alone, because `validate` runs its rows concurrently; S7 turned the 2→6 rows on as `info` at the long tier — the "~1 ms/eval" skip premise was stale by more than an order of magnitude, the real cost floor is `MIN_CHANNEL_NEVAL` × channel count, and the physics agrees under the multichannel (five-seed mean inside 1.1% of a 0.30%-precision bank) even though single-seed pulls do not shrink with budget — census 98 → **100**; S9 (restore the pre-lane-FMA scalar packed-complex codegen) was **killed clean**: the idiom is x86-specific and cost 8–9% on this ARM host, the opposite of a win, so nothing merged. S8 re-recorded every σ/percentile/cost figure the wave-1/2 sessions left stale and took the addendum's own close-out measurements: `validate` wall 443.3 s against note 31's 391 s reads as a regression only because the host was not quiet (`mds_stores`/`mediaanalysisd` held load average 6–25 through the run) — CPU is the reliable instrument here, per S6's own −288 s CPU / −18 s wall split on its cut alone; census both numbers explained (98 in the layers `validate` drives vs **100** once the oracle layer's `validate-sigma-2to6` has run); `-j 16` on `dy13_default`/`pp_to_llj` at `--fixed-budget --neval 120000 --niter 12` reads **8.68×**/**9.48×**, bit-identical artifacts. Transferable lesson: **every session corrected something in its own brief** — mechanisms (S2's truncation ladder, S7's `MIN_CHANNEL_NEVAL`), decompositions (S3's 41–52%), and inverted hypotheses (S4's QCD-dense bench, S9's x86-only idiom) — consistent with the pattern the base sprint already showed. Note 32 §5.
+- **`perf-3-addendum`** (performance/validation cleanup, eight of nine sessions, closed 2026-08-05) — S1 E3b (bit-identical cut-before-draw on the fixed-beam path) + I5 (`combine_seeds` unweighted, matching I1); S2 read `w_max` off MadGraph's own `unwgt.f` truncation-ladder rule instead of a never-converging scan extremum, unweighting efficiency on five rows 22.2/20.6/23.3/10.6/4.21% → 54.1/52.1/52.9/38.9/9.98%, `p p > l+ l- j` 4.36× cheaper per effective event; S3 parallelised the α-adaptation survey (bit-identical at `-j {1,4,16}`) and made `--target-rel` the CLI's default convergence mode, correcting note 32 §1.1's own serial-floor decomposition (41–52% of the `-j 16` wall, not ~27%); S4 closed all three `mg_perf_compare` findings (manifest-driven registry on both arms, host-labelled committed `mg_timings.json`, bench widened 14→19 rows) and found the newly-included rows were QCD-dense, inverting the sample's earlier bias (19-row MATRIX1 geomean 0.95×, 14-row continuity check 1.06×); S5 hoisted a per-event merge-table rebuild out of the clustered-scale path, −16.9% to −22.3% ns/point on the three clustered rows; S6 sized five hadronic σ budgets to reference precision under a ladder+sweep license (300k → 75k), `validate` CPU −288 s against only −18 s of wall on that cut alone, because `validate` runs its rows concurrently; S7 turned the 2→6 rows on as `info` at the long tier — the "~1 ms/eval" skip premise was stale by more than an order of magnitude, the real cost floor is `MIN_CHANNEL_NEVAL` × channel count, and the physics agrees under the multichannel (five-seed mean inside 1.1% of a 0.30%-precision bank) even though single-seed pulls do not shrink with budget — census 98 → **100**; S9 (restore the pre-lane-FMA scalar packed-complex codegen) was **killed clean**: the idiom is x86-specific and cost 8–9% on this ARM host, the opposite of a win, so nothing merged. S8 re-recorded every σ/percentile/cost figure the wave-1/2 sessions left stale and took the addendum's own close-out measurements: `validate` wall 443.3 s against note 31's 391 s reads as a regression only because the host was not quiet (`mds_stores`/`mediaanalysisd` held load average 6–25 through the run) — CPU is the reliable instrument here, per S6's own −288 s CPU / −18 s wall split on its cut alone, and a same-day quiet-host re-run (load average 1.8, note 32 §5.3) read **341.4 s wall / 1305.6 s user**, −12.7% vs note 31 and within ~1% of S6's within-session "after" on both axes; census both numbers explained (98 in the layers `validate` drives vs **100** once the oracle layer's `validate-sigma-2to6` has run); `-j 16` on `dy13_default`/`pp_to_llj` at `--fixed-budget --neval 120000 --niter 12` reads **8.68×**/**9.48×**, bit-identical artifacts. Transferable lesson: **every session corrected something in its own brief** — mechanisms (S2's truncation ladder, S7's `MIN_CHANNEL_NEVAL`), decompositions (S3's 41–52%), and inverted hypotheses (S4's QCD-dense bench, S9's x86-only idiom) — consistent with the pattern the base sprint already showed. Note 32 §5.
 
 ---
 
@@ -192,7 +137,7 @@ One line each; the note is the full record. Earlier sprints
   MadGraph's banked LHEs carry it and `validate_scales` already replays it
   for MG's own events. Two findings wait on it: rows that compile no scale
   prescription emit the run-card `SCALUP` and `AQCDUP = 0`
-  (`vibegraph-cli/src/generate.rs:349`) while MadGraph's own `ee_to_mumua`
+  (`vibegraph-cli/src/generate.rs:455`) while MadGraph's own `ee_to_mumua`
   events carry a clustered channel-dependent `SCALUP` — σ is right (nothing
   reads the scale) but the *records* differ, and no gate sees it; and a
   per-event scale distribution check is the one oracle that would catch an
