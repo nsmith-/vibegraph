@@ -662,6 +662,26 @@ through — the addendum's CPU-time saving is real and larger than its wall-time
 saving, and the wall-time saving on this run was masked entirely by
 background load neither S6 nor this session controls.
 
+**Quiet-host re-run (post-close-out, same day, main @ `cb2436f`)**: with no
+sibling work and background daemons idle (load average 1.8), two back-to-back
+rounds of the identical command. The first paid rustc recompilation of the two
+test binaries this session's own comment edits had dirtied (381.3 s wall,
+1635.9 s user); the second, fully warm, is the steady-state measurement:
+
+```
+real  5m41.403s   (341.4 s)
+user  21m45.646s  (1305.6 s)
+sys   1m15.110s
+EXIT=0            census unchanged
+```
+
+**341.4 s against note 31 §6.5's 391 s: −49.6 s wall (−12.7%).** It also
+reproduces S6's within-session "after" (342.6 s wall / 1321.3 s CPU) to ~1% on
+both axes from a different checkout — confirming the 443.3 s reading above was
+entirely load + recompile, and giving the addendum's wall saving a clean
+measurement after all: roughly −50 s wall and −300 s CPU on the standard
+banked run.
+
 **Census, two numbers, not blurred**:
 
 ```
