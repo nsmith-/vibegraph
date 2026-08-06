@@ -780,3 +780,74 @@ session's host.
   manifest note saying it is not a statistic, stands; a future session touching
   `budget.rs`'s combination code should know the overflow is expected on any
   row with hundreds of channels, not a bug to fix reactively.
+
+## 6. MATRIX1 re-measurement, 2026-08-06 (post-close-out)
+
+S4's 19-row geomean of **0.95×** was taken mid-sprint, with sibling agent
+sessions resident on the host. Re-run on a quiet host — and against an MG side
+regenerated the same day rather than the committed snapshot — the same 19 rows
+read **0.87×**.
+
+The trigger was unrelated: `mg_perf_compare.sh` was failing with "no criterion
+process overlaps mg_timings.json" because the work area still held a
+pre-`host`-block `mg_timings.json` from 2026-08-01, whose absent `processes`
+key read as an empty table. The script now names that case
+(`scripts/mg_perf_compare.sh`) instead of reporting the empty join it causes.
+
+```
+host (vibegraph): Darwin arm64 (Apple M3 Max), rustc 1.94.1, RUSTFLAGS unset
+       host (MG): Apple M3 Max (darwin), captured 2026-08-06T19:25:43Z
+```
+
+| process | MG ns/eval | vg ns/eval | vg/MG |
+|---|--:|--:|--:|
+| `ee_to_zh` | 210 | 198 | 0.94× |
+| `uux_to_uux` | 261 | 401 | **1.54×** |
+| `pp_to_ll_qcd0` | 284 | 245 | 0.86× |
+| `ee_to_mumu` | 316 | 240 | 0.76× |
+| `ee_to_ttx` | 360 | 366 | 1.02× |
+| `gg_to_ttx` | 670 | 823 | 1.23× |
+| `ee_to_ee` | 734 | 582 | 0.79× |
+| `ee_to_wpwm` | 781 | 963 | 1.23× |
+| `gu_to_epemu` | 815 | 569 | 0.70× |
+| `ddx_to_epemg` | 830 | 578 | 0.70× |
+| `uux_to_epemg` | 846 | 578 | 0.68× |
+| `ee_to_tatah` | 860 | 676 | 0.79× |
+| `gux_to_epemux` | 869 | 569 | **0.65×** |
+| `gg_to_gg` | 971 | 1,296 | 1.34× |
+| `ee_to_mumua` | 1,445 | 1,012 | 0.70× |
+| `ud_to_epemud_qcd0` | 6,258 | 4,104 | 0.66× |
+| `ee_to_mumu_tata_qcd0` | 6,364 | 4,366 | 0.69× |
+| `uux_to_ccx_emmm_qcd0` | 106,538 | 89,052 | 0.84× |
+| `bbx_to_ccx_emmm_qcd0` | 145,695 | 148,973 | 1.02× |
+
+**Geomean 0.87×, range 0.65×–1.54×, 13 of 19 rows below 1.0.** All 19 joined;
+no one-sided rows.
+
+**The move is on our side, and the MG side proves it rather than explaining
+it.** Holding these criterion medians fixed and swapping only the MG table:
+
+| MG table | geomean |
+|---|--:|
+| committed 2026-08-05 snapshot (S4's own) | **0.829×** |
+| regenerated 2026-08-06 | **0.870×** |
+
+Today's MG side is 4.8% *faster* than the Aug-5 capture (18 of 19 rows down,
+−1.8% to −9.8%), which pushes the ratio **up**. So the vibegraph side improved
+by more than the headline shows — against S4's own denominators it reads
+0.829×, ~13% under 0.95×, which is the size of the quiet-host effect §5.3
+measured independently on `validate` (−12.7%).
+
+**Attributed, not proven.** Nothing merged between the two measurements
+plausibly touches `eval_m2/forward` — S5 is the clustered-scale path, S6 is
+budgets — but no bisect was run, and a −13% swing from host conditions alone
+is at the top of the range §5.3 would predict. Two confounds were checked and
+excluded: the run was made with `env -u RUSTFLAGS`, since this host's shell
+profile exports `-C target-cpu=native` and every recorded table is default
+codegen; and the Fortran side was not rebuilt except for
+`ud_to_epemud_qcd0`'s two modules, absent from the work area and recompiled at
+`build_amplitude.sh`'s unchanged flags (that row moved −3.7%, inside the
+whole-table −4.8%).
+
+What would settle it: re-run S4's exact bench on the current tip and on
+`e6d1d66`, same sitting, same quiet host. Cheap, and nobody has done it.

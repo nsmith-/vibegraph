@@ -14,11 +14,17 @@ Max host: `pixi run --skip-deps validate` **341.4 s wall / 1305.6 s user**
 quiet-host (note 32 §5.3; 691 s at the note-30 baseline), census
 **100 measured (96 ✅ / 4 ⚠️ / 2 ⏳)** once the oracle layer's
 `validate-sigma-2to6` has run — 98 in the layers `validate` itself drives;
-the per-point MATRIX1 bench at geomean **0.95×** over its widened 19 rows
-(QCD-dense by S4's design, the 14-row continuity cut reads 1.06×), 8 of 14
-processes faster per point than MadGraph; and `integrate -j 16` at
-**8.68×/9.48×** over `-j 1` on `dy13_default`/`pp_to_llj`, byte-identical
-artifacts asserted.
+the per-point MATRIX1 bench at geomean **0.87×** over its widened 19 rows
+(QCD-dense by S4's design), 13 of 19 processes faster per point than MadGraph;
+and `integrate -j 16` at **8.68×/9.48×** over `-j 1` on
+`dy13_default`/`pp_to_llj`, byte-identical artifacts asserted.
+The 0.87× supersedes S4's 0.95×, re-measured 2026-08-06 on a quiet host
+against a same-day `mg_timings.json`, and the move is ours: holding these
+criterion medians against S4's own MG table still reads 0.83×, because today's
+MG side is 4.8% *faster*, not slower. S4 measured mid-sprint with several
+agents resident — the noisy-host effect note 32 §5.3 quantified at −12.7% on
+`validate`. Attributed, not proven: no code between the two measurements
+plausibly touches `eval_m2/forward`, but nothing was bisected.
 Standing caveats: a partonic σ quoted from `refdata-2` is **not comparable** to
 one from `refdata-3`/`refdata-4`/`refdata-5` (MadGraph 3.5.7 applied the PDF
 set's `αs(M_Z) = 0.130` to `lpp = 0` runs; 3.7.1 keeps the model's `0.118` —

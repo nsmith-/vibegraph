@@ -444,12 +444,17 @@ as tracked rows, never as loosened tolerances.
 
 ## Performance
 
-Per-point matrix-element evaluation currently runs at **0.72×–1.69×** the
-cost of MadGraph's generated, helicity-filtered Fortran (`matrix1_optim.f`) —
-**geometric mean 1.24×** over the 14 processes the comparison kit covers, 2→2
-through 2→6. Several processes sit at parity, and `e+ e- > e+ e-` runs faster
-than MadGraph. Not bad for a runtime evaluator built at model-load time
-against code MadGraph generates and compiles per process.
+### The matrix element, per point
+
+Matrix-element evaluation currently runs at **0.65×–1.54×** the cost of
+MadGraph's generated, helicity-filtered Fortran (`matrix1_optim.f`) —
+**geometric mean 0.87×** over the 19 processes the comparison kit covers, 2→2
+through 2→6. Thirteen of the nineteen are faster than the Fortran. Of the six
+that are not, four are the colour-dense rows where colour-flow contraction
+dominates — `u u~ > u u~` 1.54×, `g g > g g` 1.34×, `g g > t t~` 1.23×,
+`e+ e- > W+ W-` 1.23× — and the other two sit at parity (1.02×). Not bad for a
+runtime evaluator built at model-load time against code MadGraph generates and
+compiles per process.
 
 The starting point was 8.6×–110× slower: a general expression DAG walked per
 point. The distance was closed by compiling that DAG into a flat typed tape
@@ -462,13 +467,54 @@ multiply variants, diagram rooting chosen to maximise current sharing) — all
 of it holding the ≤ 1e-12 matrix-element gate throughout. The full
 optimization record lives in [`research/notes/`](research/notes/).
 
+### End to end: the integrand, not just the matrix element
+
+A per-point ratio is not what anyone waits for, and the matrix element is not
+the whole integrand. On the 2→6 rows it is the smallest part of it: the
+multichannel density sum costs ~60 µs of the ~64 µs a point takes — **94%** —
+against roughly 5 µs for the matrix element itself. The figures below are
+therefore the ones that describe running the generator, and they come from the
+third performance sprint's close-out.
+
+**Integrand throughput against MadGraph.** Our points per single-threaded
+second, against MadEvent's points per Fortran CPU-second — a denominator that
+deliberately takes its 16-way job farm out of the comparison: **geometric mean
+8.76× over the 26 gated rows**, from 1.9× on `g g > g g` (a pure-gluon 2→2 with
+the densest colour algebra in the census and no PDF work to win) to 37× on the
+cheapest leptonic rows. Two caveats keep this honest: our per-point work is not
+MadGraph's per-point work, so this is an integrand ratio and not a
+matrix-element one; and whether MadEvent's recorded point count includes its
+survey pass was never established, which puts a systematic factor of order
+unity on every MadGraph column.
+
+**Parallel scaling.** `vibegraph integrate -j 16` against `-j 1`: **8.68×** on
+Drell–Yan and **9.48×** on `p p > l+ l- j`. Thread count moves no bit — all
+twenty runs behind those two figures wrote one artifact digest per card, so
+`-j 16` is the same number computed faster rather than an approximation of it.
+The residual serial term is the α-adaptation survey.
+
+**Unweighting.** Taking `w_max` from MadGraph's own `unwgt.f` truncation-ladder
+rule instead of the weight scan's extremum — which a Pareto tail of index ≈ 2
+never lets converge — raised accept/reject efficiency on the five gating rows
+from 22.2 / 20.6 / 23.3 / 10.6 / 4.21% to 54.1 / 52.1 / 52.9 / 38.9 / 9.98% at
+matched budgets. `p p > l+ l- j` needed 2 269 051 trials for 20 000 events
+before the change and 477 125 after: **4.36× cheaper per effective event**.
+
+**The validation layer as a user runs it.** `pixi run validate` — the whole
+banked gate, 29 rows — went 691 s → 391 s across the sprint, over a suite that
+grew by 42 running tests in that window, and reads **341 s wall / 1 306 s CPU**
+on a quiet host today.
+
 Caveats: ratios are single-host (Apple M3 Max) measurements, not constants —
-`scripts/mg_perf_compare.sh` is the rerun kit that re-derives the full ratio
-table directly on any platform (the headline is its 2026-07-28 output). Pruned
-evaluators inherit MadGraph's frame contract (partonic-CM momenta, beams along
-±z). The remaining gap is largest on colored 2→2s, where color-flow
-contraction dominates; candidate next steps are triaged in the performance
-backlog in [`TODO.md`](TODO.md).
+`scripts/mg_perf_compare.sh` is the rerun kit that re-derives the full
+matrix-element ratio table directly on any platform (the headline is its
+2026-08-06 output; both sides must be built at the same optimisation level for
+the ratio to mean anything, which the script's own fingerprint records). Wall
+times are noise-sensitive in the other direction: the close-out figures above
+were taken on a deliberately quiet host, because a busy one has been worth
+double-digit percentages here. Pruned evaluators inherit MadGraph's frame
+contract (partonic-CM momenta, beams along ±z). Candidate next steps are
+triaged in the performance backlog in [`TODO.md`](TODO.md).
 
 ```bash
 pixi run profile-sigma   # samply profile of the σ gate
