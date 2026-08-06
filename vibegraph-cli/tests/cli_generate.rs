@@ -170,22 +170,21 @@ impl Run {
     }
 
     /// Generate with extra flags appended, returning the file's bytes and the
-    /// run's stdout.
+    /// run's notices, which the command reports on stderr.
     fn generate_with(&self, extra: &[&str], seed: &str, name: &str) -> (String, String) {
         let output = self.dir.join(name);
         let mut cmd = self.generate_cmd("buffer", seed, FEW_EVENTS, &output);
         cmd.args(extra);
         let out = cmd.output().expect("spawn vibegraph");
+        let notices = String::from_utf8_lossy(&out.stderr).into_owned();
         assert!(
             out.status.success(),
-            "vibegraph generate {extra:?} failed:\n{}",
-            String::from_utf8_lossy(&out.stderr)
+            "vibegraph generate {extra:?} failed:\n{notices}"
         );
-        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-        eprint!("{stdout}");
+        eprint!("{notices}");
         (
             std::fs::read_to_string(&output).expect("read the event file"),
-            stdout,
+            notices,
         )
     }
 
@@ -400,15 +399,15 @@ fn a_seed_reproduces_the_sample() {
     }
 }
 
-/// The summed maximum a run reports, out of its `scan:` line.
-fn sum_w_max(stdout: &str) -> f64 {
-    stdout
+/// The summed maximum a run reports, out of its `scan:` notice.
+fn sum_w_max(notices: &str) -> f64 {
+    notices
         .lines()
-        .find_map(|l| l.trim().strip_prefix("scan:"))
+        .find_map(|l| l.split("scan:").nth(1))
         .and_then(|l| l.split("sum w_max ").nth(1))
         .and_then(|l| l.split(',').next())
         .and_then(|v| v.trim().parse::<f64>().ok())
-        .unwrap_or_else(|| panic!("no scan line in:\n{stdout}"))
+        .unwrap_or_else(|| panic!("no scan line in:\n{notices}"))
 }
 
 /// The `w_max` scan's budget is a knob of its own, and its default is the
