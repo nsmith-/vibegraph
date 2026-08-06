@@ -29,6 +29,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ratatui = { version = "0.30.2", features = ["scrolling-regions"] }
 unicode-width = "0.2.2"
+ansi-to-tui = "8.0.1"
 
 # Raw mode belongs to the terminal, not to the process, so a signal that ends
 # the run without unwinding has to be caught and the terminal handed back.

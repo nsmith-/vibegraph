@@ -39,13 +39,14 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use ansi_to_tui::IntoText;
 use ratatui::backend::{Backend, CrosstermBackend};
 use ratatui::crossterm::cursor::Show;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::layout::Position;
-use ratatui::style::Style;
+use ratatui::text::{Line, Span};
 use ratatui::{Terminal, TerminalOptions, Viewport};
 use unicode_width::UnicodeWidthChar;
 use vibegraph::budget::StopSignal;
@@ -310,43 +311,69 @@ fn elapsed_text(elapsed: Duration) -> String {
     }
 }
 
-/// Split a formatted line into terminal rows, breaking at the display width.
+/// Split a formatted line into terminal rows, breaking at the display width and
+/// carrying each span's style across the break.
 ///
 /// Hard-breaking rather than wrapping at word boundaries is what makes the row
 /// count predictable: the number of rows requested from `insert_before` has to
-/// be the number of rows that will be drawn, or the tail is lost.
-fn rows_of(line: &str, width: u16) -> Vec<String> {
+/// be the number of rows that will be drawn, or the tail is lost. Breaking
+/// counts display columns, and an escape code costs none of them — which is why
+/// the line is parsed into spans before it gets here rather than after.
+fn rows_of(line: &Line<'_>, width: u16) -> Vec<Line<'static>> {
     if width == 0 {
-        return vec![String::new()];
+        return vec![Line::default()];
     }
     let width = width as usize;
-    let mut rows = Vec::new();
-    let mut row = String::new();
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    let mut row: Vec<Span<'static>> = Vec::new();
+    let mut text = String::new();
     let mut used = 0;
-    for c in line.chars() {
-        let w = c.width().unwrap_or(0);
-        if used + w > width {
-            rows.push(std::mem::take(&mut row));
-            used = 0;
+    for span in &line.spans {
+        for c in span.content.chars() {
+            let w = c.width().unwrap_or(0);
+            if used + w > width {
+                if !text.is_empty() {
+                    row.push(Span::styled(std::mem::take(&mut text), span.style));
+                }
+                rows.push(Line::from(std::mem::take(&mut row)));
+                used = 0;
+            }
+            text.push(c);
+            used += w;
         }
-        row.push(c);
-        used += w;
+        if !text.is_empty() {
+            row.push(Span::styled(std::mem::take(&mut text), span.style));
+        }
     }
-    rows.push(row);
+    rows.push(Line::from(row));
     rows
 }
 
 /// Push one formatted log line into the terminal's history above the pane.
+///
+/// The line still carries the escape codes the formatter wrote, because here
+/// the pane draws the text rather than the terminal. They are read back into
+/// styles so the history keeps the colour the same events have without a
+/// display; a line that cannot be parsed is drawn as the text it is.
 fn insert_line(terminal: &mut Screen, line: &str) {
     let width = terminal.get_frame().area().width;
-    let rows = rows_of(line, width);
+    let parsed = match line.into_text() {
+        Ok(text) => Line::from(
+            text.lines
+                .into_iter()
+                .flat_map(|line| line.spans)
+                .collect::<Vec<_>>(),
+        ),
+        Err(_) => Line::raw(line.to_string()),
+    };
+    let rows = rows_of(&parsed, width);
     let height = u16::try_from(rows.len()).unwrap_or(u16::MAX).max(1);
     let _ = terminal.insert_before(height, |buf| {
         for (y, row) in rows.iter().enumerate() {
             let Ok(y) = u16::try_from(y) else {
                 break;
             };
-            buf.set_stringn(0, y, row, width as usize, Style::default());
+            buf.set_line(0, y, row, width);
         }
     });
 }
@@ -706,12 +733,14 @@ fn take_terminal_back() {
 mod tests {
     use super::{
         answer_of, ask_to_download, elapsed_text, key_of, marker, retuned, rows_of, summary,
-        take_prompt, Controls, Key, LIVE,
+        take_prompt, Controls, Key, Line, Span, LIVE,
     };
     use crate::logging::{LogLevel, Scope};
     use crate::tui::state::UiState;
 
     use std::time::Duration;
+
+    use ratatui::style::{Color, Style};
 
     use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
@@ -905,10 +934,18 @@ mod tests {
         );
     }
 
+    /// The rows `rows_of` lays out for unstyled text, as their text.
+    fn rows_of_text(line: &str, width: u16) -> Vec<String> {
+        rows_of(&Line::raw(line.to_string()), width)
+            .iter()
+            .map(|row| row.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
+    }
+
     #[test]
     fn a_short_line_is_one_row() {
         assert_eq!(
-            rows_of("compiled 4 channels", 40),
+            rows_of_text("compiled 4 channels", 40),
             vec!["compiled 4 channels"]
         );
     }
@@ -919,7 +956,7 @@ mod tests {
     #[test]
     fn a_long_line_breaks_at_the_display_width() {
         let line = "x".repeat(25);
-        let rows = rows_of(&line, 10);
+        let rows = rows_of_text(&line, 10);
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].chars().count(), 10);
         assert_eq!(rows[2].chars().count(), 5);
@@ -931,17 +968,47 @@ mod tests {
     #[test]
     fn multibyte_characters_count_as_their_display_width() {
         let line = "\u{3c3} = 802.94 \u{b1} 3.11 pb";
-        let rows = rows_of(line, 10);
+        let rows = rows_of_text(line, 10);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows.concat(), line);
         // Ten columns, not ten bytes: `σ` costs one of each ten.
         assert_eq!(rows[0], "\u{3c3} = 802.94");
     }
 
+    /// A line that breaks carries its styling into the rows it breaks into, and
+    /// the break lands on a display column rather than on a span boundary.
+    #[test]
+    fn a_break_carries_the_style_of_the_span_it_falls_inside() {
+        let styled = Style::default().fg(Color::Green);
+        let line = Line::from(vec![
+            Span::raw("INFO "),
+            Span::styled("aaaaaaaaaa", styled),
+            Span::raw("!"),
+        ]);
+        let rows = rows_of(&line, 10);
+        assert_eq!(rows.len(), 2, "{rows:?}");
+
+        let text: String = rows
+            .iter()
+            .flat_map(|row| row.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert_eq!(text, "INFO aaaaaaaaaa!");
+
+        // The break falls five characters into the styled span, so both rows
+        // hold part of it and both must still be green.
+        let green: Vec<&str> = rows
+            .iter()
+            .flat_map(|row| row.spans.iter())
+            .filter(|s| s.style.fg == Some(Color::Green))
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(green, vec!["aaaaa", "aaaaa"], "{rows:?}");
+    }
+
     #[test]
     fn an_empty_line_is_still_one_row() {
-        assert_eq!(rows_of("", 40), vec![String::new()]);
-        assert_eq!(rows_of("anything", 0), vec![String::new()]);
+        assert_eq!(rows_of_text("", 40), vec![String::new()]);
+        assert_eq!(rows_of_text("anything", 0), vec![String::new()]);
     }
 
     #[test]

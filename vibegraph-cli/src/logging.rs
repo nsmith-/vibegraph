@@ -379,10 +379,11 @@ pub(crate) fn init(args: &LogArgs, display: Option<Feed>) -> Result<LogHandle, S
     let (filter, visible) = reload::Layer::new(filter);
 
     let (line, progress) = match display {
-        // The display renders the text itself, so escape codes in it would be
-        // drawn as the characters they are made of.
+        // The display renders the text itself, and parses these codes back into
+        // styles as it pushes each line into its history, so an event reads the
+        // same whether or not a pane is drawing.
         Some(feed) => (
-            line_layer(LineChannel(feed.lines), false, detailed, filter),
+            line_layer(LineChannel(feed.lines), true, detailed, filter),
             Some(
                 ProgressLayer::new(feed.state)
                     .with_filter(filter_fn(|meta| meta.target() == progress::TARGET))
