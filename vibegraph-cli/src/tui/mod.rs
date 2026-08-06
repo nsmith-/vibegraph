@@ -11,13 +11,16 @@
 //! [`UiState`] on a fixed tick, and reads the keys. The command itself runs on
 //! the main thread and never touches the terminal.
 //!
-//! The keys reach the run by two routes, neither of which is the terminal. The
+//! The keys reach the run by three routes, none of which is the terminal. The
 //! level and scope keys swap the line layer's filter through the reload handle
 //! the subscriber hands over once it is built, so what is shown changes from the
 //! next event on and the history already written stays as it was. The stop key
 //! raises a [`StopSignal`] the integration reads at its own iteration boundary —
 //! the run decides when it is safe to stop, and the second press is what takes
-//! that decision away from it.
+//! that decision away from it. And a run that has a question to put — may this
+//! be downloaded? — hands it over through [`ask_to_download`] and blocks on the
+//! answer, because a raw-mode terminal whose keys this thread is reading leaves
+//! a plain `stdin` prompt nothing to read and nowhere clean to draw.
 //!
 //! `stdout` is not the display's to write. The command's result lines are held
 //! back while the pane is up and printed once it has been taken down, so the
@@ -86,6 +89,55 @@ static STOP: OnceLock<StopSignal> = OnceLock::new();
 /// The signal a command hands to the integration it drives.
 pub(crate) fn stop_signal() -> StopSignal {
     STOP.get_or_init(StopSignal::new).clone()
+}
+
+/// A question waiting for the drawing thread to put to the operator.
+struct PromptRequest {
+    /// Lines pushed into the history first, so the terms being agreed to are on
+    /// record above the question.
+    details: Vec<String>,
+    /// The one-line question the footer shows while waiting.
+    question: String,
+    reply: Sender<bool>,
+}
+
+/// The question a run has posted and the display has not yet picked up.
+///
+/// A slot rather than a channel because there is at most one: the asker blocks
+/// until its answer comes back, so a second question cannot exist before the
+/// first is resolved.
+static PROMPT: Mutex<Option<PromptRequest>> = Mutex::new(None);
+
+fn take_prompt() -> Option<PromptRequest> {
+    match PROMPT.lock() {
+        Ok(mut slot) => slot.take(),
+        Err(poisoned) => poisoned.into_inner().take(),
+    }
+}
+
+/// Put a download question to the operator through the running display,
+/// blocking until a key answers it.
+///
+/// `None` when no display is drawing — the caller owns its streams and asks on
+/// them itself. With one drawing, the terminal is in raw mode and its keys are
+/// read here, so this is the only way the question can be asked at all. A
+/// display that cannot read keys, or that comes down before an answer, answers
+/// no: an unanswerable question must never become consent.
+pub(crate) fn ask_to_download(question: &str, details: Vec<String>) -> Option<bool> {
+    if !LIVE.load(Ordering::SeqCst) {
+        return None;
+    }
+    let (reply, answer) = mpsc::channel();
+    let request = PromptRequest {
+        details,
+        question: question.to_string(),
+        reply,
+    };
+    match PROMPT.lock() {
+        Ok(mut slot) => *slot = Some(request),
+        Err(poisoned) => *poisoned.into_inner() = Some(request),
+    }
+    Some(answer.recv().unwrap_or(false))
 }
 
 /// What the subscriber needs in order to feed a running display.
@@ -339,6 +391,27 @@ fn key_of(event: &Event) -> Option<Key> {
     }
 }
 
+/// Read a terminal event as the answer to a pending question.
+///
+/// `y` alone grants. Enter takes the default — no, as the plain prompt's
+/// `[y/N]` spells it — and the keys that otherwise mean "get me out" (`n`, `q`,
+/// Esc, `^C`) decline the download rather than acting as themselves: while a
+/// question is up, no key may do anything but answer it.
+fn answer_of(event: &Event) -> Option<bool> {
+    let Event::Key(key) = event else {
+        return None;
+    };
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char('y' | 'Y') => Some(true),
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(false),
+        KeyCode::Char('n' | 'N' | 'q') | KeyCode::Esc | KeyCode::Enter => Some(false),
+        _ => None,
+    }
+}
+
 /// A line marking a change the operator made, pushed into the history so the
 /// lines above and below it explain their own difference.
 fn marker(text: &str) -> String {
@@ -374,19 +447,56 @@ fn draw_loop(
         stopping: false,
     };
     let started = Instant::now();
+    // The question currently on screen, waiting for a key to answer it.
+    let mut pending: Option<Sender<bool>> = None;
     loop {
         drain(&mut terminal, incoming);
+        if pending.is_none() {
+            if let Some(request) = take_prompt() {
+                for line in &request.details {
+                    insert_line(&mut terminal, line);
+                }
+                if keys {
+                    set(state, |ui| ui.prompt = Some(request.question.clone()));
+                    pending = Some(request.reply);
+                } else {
+                    // No keys means no way to say yes; the asker is unblocked
+                    // with a no rather than left waiting forever.
+                    let _ = request.reply.send(false);
+                }
+            }
+        }
         advance_logo(state, started.elapsed());
         redraw(&mut terminal, state);
         if stop.load(Ordering::SeqCst) {
             break;
         }
         if !keys {
+            if let Some(reply) = pending.take() {
+                let _ = reply.send(false);
+                set(state, |ui| ui.prompt = None);
+            }
             std::thread::sleep(TICK);
             continue;
         }
         match event::poll(TICK) {
             Ok(true) => match event::read() {
+                Ok(event) if pending.is_some() => {
+                    if let Some(granted) = answer_of(&event) {
+                        if let Some(reply) = pending.take() {
+                            let _ = reply.send(granted);
+                        }
+                        set(state, |ui| ui.prompt = None);
+                        insert_line(
+                            &mut terminal,
+                            &marker(if granted {
+                                "download allowed"
+                            } else {
+                                "download declined"
+                            }),
+                        );
+                    }
+                }
                 Ok(event) => match key_of(&event) {
                     Some(Key::Stop) if controls.stopping => {
                         take_down(&mut terminal);
@@ -421,6 +531,11 @@ fn draw_loop(
             Ok(false) => {}
             Err(_) => keys = false,
         }
+    }
+    // A question still up when the display comes down is answered no, so the
+    // thread that asked it is never left blocked on a pane that no longer exists.
+    if let Some(reply) = pending {
+        let _ = reply.send(false);
     }
     // Whatever was emitted between the last drain and the stop belongs in the
     // history too: the sender saw the stop set only after its send returned.
@@ -501,7 +616,10 @@ fn install_panic_hook() {
 
 #[cfg(test)]
 mod tests {
-    use super::{elapsed_text, key_of, marker, retuned, rows_of, summary, Controls, Key};
+    use super::{
+        answer_of, ask_to_download, elapsed_text, key_of, marker, retuned, rows_of, summary,
+        take_prompt, Controls, Key, LIVE,
+    };
     use crate::logging::{LogLevel, Scope};
     use crate::tui::state::UiState;
 
@@ -604,6 +722,69 @@ mod tests {
             ..controls()
         };
         assert_eq!(retuned(&quietest, Key::Quieter), None);
+    }
+
+    /// While a question is up, `y` is the only consent: Enter takes the `[y/N]`
+    /// default, and every key that otherwise means "get me out" declines the
+    /// download instead of acting as itself.
+    #[test]
+    fn y_grants_and_the_escape_keys_decline() {
+        for yes in [KeyCode::Char('y'), KeyCode::Char('Y')] {
+            assert_eq!(answer_of(&press(yes, KeyModifiers::NONE)), Some(true));
+        }
+        for no in [
+            press(KeyCode::Char('n'), KeyModifiers::NONE),
+            press(KeyCode::Char('N'), KeyModifiers::NONE),
+            press(KeyCode::Char('q'), KeyModifiers::NONE),
+            press(KeyCode::Esc, KeyModifiers::NONE),
+            press(KeyCode::Enter, KeyModifiers::NONE),
+            press(KeyCode::Char('c'), KeyModifiers::CONTROL),
+        ] {
+            assert_eq!(answer_of(&no), Some(false), "{no:?}");
+        }
+        // A key that is not an answer leaves the question standing.
+        assert_eq!(answer_of(&press(KeyCode::Up, KeyModifiers::NONE)), None);
+        let mut release = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+        release.kind = KeyEventKind::Release;
+        assert_eq!(answer_of(&Event::Key(release)), None);
+    }
+
+    /// The request/reply handoff end to end: with no display the caller keeps
+    /// its streams; with one live, the question lands in the slot with its
+    /// terms, the answer sent back is what the asker receives, and a reply
+    /// channel dropped without an answer is a no. One test rather than three
+    /// because it toggles the process-wide `LIVE` flag.
+    #[test]
+    fn a_question_travels_through_the_slot_and_its_answer_comes_back() {
+        use std::sync::atomic::Ordering;
+
+        assert_eq!(ask_to_download("download X?", Vec::new()), None);
+
+        LIVE.store(true, Ordering::SeqCst);
+        let asker = std::thread::spawn(|| {
+            ask_to_download("download X (1.0 MB)?", vec!["terms".to_string()])
+        });
+        let request = loop {
+            if let Some(request) = take_prompt() {
+                break request;
+            }
+            std::thread::yield_now();
+        };
+        assert_eq!(request.question, "download X (1.0 MB)?");
+        assert_eq!(request.details, vec!["terms".to_string()]);
+        let _ = request.reply.send(true);
+        assert_eq!(asker.join().unwrap(), Some(true));
+
+        let asker = std::thread::spawn(|| ask_to_download("download X?", Vec::new()));
+        let request = loop {
+            if let Some(request) = take_prompt() {
+                break request;
+            }
+            std::thread::yield_now();
+        };
+        drop(request);
+        assert_eq!(asker.join().unwrap(), Some(false));
+        LIVE.store(false, Ordering::SeqCst);
     }
 
     /// The marker is what makes the scrollback self-explaining: the lines above

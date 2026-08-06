@@ -88,7 +88,7 @@ fn an_unattended_run_refuses_the_download_and_names_the_consent_flag() {
         "https://lhapdfsets.web.cern.ch/current/NNPDF23_lo_as_0130_qed.tar.gz",
         "60d3c1df1c31e5840f91f4217163ae30a256b9291a5adc894882e86607ef5d63",
         "no terminal",
-        "--yes",
+        "pass -y",
     ] {
         assert!(
             stderr.contains(expected),

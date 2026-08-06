@@ -12,13 +12,18 @@
 //! **without a terminal is a refusal**. A test harness, a CI job, a cron entry
 //! and a container build all run without one, so none of them can start a
 //! download by accident: reaching the network from a non-interactive context
-//! takes an explicit `--yes` on the command line. The refusal always names the
+//! takes an explicit `-y` on the command line. The refusal always names the
 //! switch that would have allowed it, since "it refused and I cannot see why"
 //! is the failure mode that costs a user the most time.
 //!
 //! [`decide`] takes its terminal-ness and its input stream as parameters rather
 //! than reading `stdin` itself, so the whole matrix is exercised offline by the
 //! tests below; [`confirm`] is the thin wrapper that supplies the real ones.
+//!
+//! With the live status display up the streams are not askable at all — the
+//! terminal is in raw mode and the display's thread is reading its keys — so
+//! [`confirm`] puts the question through the display instead, with the same
+//! terms in the scrollback and the same decline text when the answer is no.
 
 use std::io::{BufRead, IsTerminal, Write};
 
@@ -28,8 +33,9 @@ use std::io::{BufRead, IsTerminal, Write};
 pub const NO_NETWORK_VAR: &str = "VIBEGRAPH_NO_NETWORK";
 /// Command-line spelling of the same refusal.
 pub const NO_NETWORK_FLAG: &str = "--no-network";
-/// Command-line consent, standing in for a "yes" at the prompt.
-pub const CONSENT_FLAG: &str = "--yes";
+/// Command-line consent, standing in for a "yes" at the prompt. Named by its
+/// short spelling in every message (`--yes` is the long form of the same flag).
+pub const CONSENT_FLAG: &str = "-y";
 
 /// What forbade a download, so a refusal can name the one thing the user has to
 /// change.
@@ -126,6 +132,34 @@ impl Download<'_> {
             self.destination
         )
     }
+
+    /// The question in one line, for a display whose answer row has no room for
+    /// the terms — those go into the scrollback as [`Download::notice`].
+    pub fn question(&self) -> String {
+        format!("download {} ({:.1} MB)?", self.what, self.megabytes())
+    }
+
+    /// What precedes the question, line by line: that the asset is missing, and
+    /// the terms of fetching it.
+    pub fn notice(&self) -> Vec<String> {
+        let mut lines = vec![format!(
+            "{} is not available locally. It can be downloaded now:",
+            self.what
+        )];
+        lines.extend(self.terms().lines().map(str::to_string));
+        lines
+    }
+}
+
+/// The refusal for a download the user was asked about and said no to,
+/// identical whichever surface put the question.
+fn declined(download: &Download<'_>) -> String {
+    format!(
+        "{} is not available locally and the download was declined;\n{}\nTo allow it, \
+         answer `y` or pass {CONSENT_FLAG}.",
+        download.what,
+        download.terms()
+    )
 }
 
 /// The answer to one download question.
@@ -195,24 +229,33 @@ pub fn decide(
                     download.what
                 )),
                 Ok(_) if is_yes(&answer) => Consent::Granted,
-                Ok(_) => Consent::Refused(format!(
-                    "{} is not available locally and the download was declined;\n{}\nTo allow it, \
-                     answer `y` or pass {CONSENT_FLAG}.",
-                    download.what,
-                    download.terms()
-                )),
+                Ok(_) => Consent::Refused(declined(download)),
             }
         }
     }
 }
 
-/// [`decide`], against the process's own streams.
+/// [`decide`], against the process's own streams — unless the live status
+/// display holds the terminal, in which case an [`NetworkPolicy::Ask`] goes
+/// through the display's own question row instead: raw mode leaves `stdin`
+/// nothing line-shaped to read, and the display's thread is the one reading
+/// keys.
 ///
-/// Both `stdin` and `stderr` have to be terminals for this to count as
-/// interactive: a redirected `stdin` cannot answer, and a redirected `stderr`
-/// hides the question. The prompt goes to `stderr` so that piping the command's
-/// `stdout` never swallows it.
+/// On the stream path, both `stdin` and `stderr` have to be terminals for this
+/// to count as interactive: a redirected `stdin` cannot answer, and a
+/// redirected `stderr` hides the question. The prompt goes to `stderr` so that
+/// piping the command's `stdout` never swallows it.
 pub fn confirm(policy: NetworkPolicy, download: &Download<'_>) -> Consent {
+    if policy == NetworkPolicy::Ask {
+        if let Some(granted) = crate::tui::ask_to_download(&download.question(), download.notice())
+        {
+            return if granted {
+                Consent::Granted
+            } else {
+                Consent::Refused(declined(download))
+            };
+        }
+    }
     let interactive = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
     let stdin = std::io::stdin();
     let mut input = stdin.lock();
@@ -290,7 +333,7 @@ mod tests {
         let Consent::Refused(msg) = consent else {
             unreachable!()
         };
-        assert!(msg.contains(CONSENT_FLAG), "refusal must name --yes: {msg}");
+        assert!(msg.contains(CONSENT_FLAG), "refusal must name -y: {msg}");
     }
 
     /// A non-interactive run does not become interactive because something is
@@ -334,6 +377,22 @@ mod tests {
             shown.contains("[y/N]"),
             "the default must be visible: {shown}"
         );
+    }
+
+    /// The display splits the prompt into a one-line question and the notice
+    /// lines above it; between them they must carry the same facts the stream
+    /// prompt shows in one piece.
+    #[test]
+    fn the_display_question_and_notice_carry_the_same_facts_as_the_prompt() {
+        assert_eq!(PIN.question(), "download PDF set TestSet (26.3 MB)?");
+        let notice = PIN.notice().join("\n");
+        assert!(
+            notice.starts_with("PDF set TestSet is not available locally"),
+            "{notice}"
+        );
+        for text in [PIN.url, PIN.sha256, PIN.destination] {
+            assert!(notice.contains(text), "notice should state {text}: {notice}");
+        }
     }
 
     /// Each refusal names the one switch that produced it, not a menu of every

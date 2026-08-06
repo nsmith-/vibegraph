@@ -101,16 +101,18 @@ kinds of data are resolved on demand, each in the order
 | UFO models (non-SM) | `--ufo-dir` | `$VIBEGRAPH_UFO_DIR` | `~/.vibegraph/ufo/<model>/` |
 
 A **PDF set** that is not there can be downloaded: vibegraph shows the URL, the
-size and the SHA-256 it will be checked against, and asks. The checksum is
-compiled into the binary, so the data a set name resolves to cannot drift from
-what the build was validated against.
+size and the SHA-256 it will be checked against, and asks — in the status pane
+when the live display is up (`y` accepts, `n` declines), on `stderr` otherwise.
+The checksum is compiled into the binary, so the data a set name resolves to
+cannot drift from what the build was validated against.
 
 **Nothing is ever downloaded without consent.** Without a terminal to ask on —
 a script, a CI job, a container build — the answer is no, and the run fails
-with a message naming the URL, the checksum, and the directory to unpack it
-into by hand. Pass `--yes` to consent up front, `--no-network` (or set
-`$VIBEGRAPH_NO_NETWORK`) to forbid downloads outright; a refusal always wins
-over `--yes`. Set `$VIBEGRAPH_HOME` to move the cache off `~/.vibegraph`.
+with a message naming the URL, the checksum, the directory to unpack it
+into by hand, and the `-y` that would consent on a rerun. Pass `-y` (`--yes`)
+to consent up front, `--no-network` (or set `$VIBEGRAPH_NO_NETWORK`) to forbid
+downloads outright; a refusal always wins over `-y`. Set `$VIBEGRAPH_HOME` to
+move the cache off `~/.vibegraph`.
 
 **UFO models are never downloaded.** FeynRules publishes no per-model index
 that a model name could be resolved through, so there is no URL to pin;

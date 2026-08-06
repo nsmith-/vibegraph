@@ -58,6 +58,9 @@ pub(crate) struct UiState {
     /// What the log is currently showing, as the level keys have left it.
     pub(crate) level: LogLevel,
     pub(crate) scope: Scope,
+    /// A question waiting on the operator, shown in place of the key hints
+    /// until a key answers it.
+    pub(crate) prompt: Option<String>,
     /// Whether a stop has been asked for and the run is finishing what it holds.
     pub(crate) stopping: bool,
 }

@@ -186,7 +186,19 @@ impl<'a> Footer<'a> {
     /// What the keys are set to and which key moves what. The state is shown
     /// rather than only the key, because a filter narrowed three presses ago and
     /// then forgotten is indistinguishable from a stage that has gone quiet.
+    ///
+    /// While a question is pending the row carries the question instead: the
+    /// keys mean something else until it is answered, and a row still offering
+    /// the level ladder would be describing keys that do not work.
     fn keys_line(&self) -> Line<'static> {
+        if let Some(question) = &self.state.prompt {
+            return Line::from(Span::styled(
+                question.clone(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
         Line::from(vec![
             Span::styled("level: ", dim()),
             Span::raw(self.state.level.label()),
@@ -200,6 +212,12 @@ impl<'a> Footer<'a> {
     /// What a stop key will do next: ask for one, or take one that was already
     /// asked for and is being waited on.
     fn abort_line(&self) -> Line<'static> {
+        if self.state.prompt.is_some() {
+            return Line::from(Span::styled(
+                "y allow  n decline",
+                Style::default().fg(Color::Yellow),
+            ));
+        }
         if self.state.stopping {
             Line::from(Span::styled(
                 "^C again  quit now",
@@ -404,6 +422,7 @@ mod tests {
             logo_phase: 0,
             level: LogLevel::Info,
             scope: Scope::All,
+            prompt: None,
             stopping: false,
         }
     }
@@ -566,6 +585,20 @@ mod tests {
         assert!(rows[5].contains("scope: sampling"), "{rows:?}");
         assert!(rows[5].contains('\u{25b2}') && rows[5].contains('\u{25bc}'), "{rows:?}");
         assert!(rows[5].contains('\u{25c2}') && rows[5].contains('\u{25b8}'), "{rows:?}");
+    }
+
+    /// A pending question takes over the bottom row entirely: the question on
+    /// the left, the keys that answer it on the right, and none of the hints
+    /// for keys that will not be read as themselves until it is answered.
+    #[test]
+    fn a_pending_question_replaces_the_key_hints() {
+        let mut state = integrating();
+        state.prompt = Some("download PDF set TestSet (26.3 MB)?".to_string());
+        let rows = rows(&state, 80);
+        assert!(rows[5].contains("download PDF set TestSet"), "{rows:?}");
+        assert!(rows[5].contains("y allow  n decline"), "{rows:?}");
+        assert!(!rows[5].contains("level:"), "{rows:?}");
+        assert!(!rows[5].contains("abort"), "{rows:?}");
     }
 
     /// Once a stop has been asked for, the hint has to change: the same key
