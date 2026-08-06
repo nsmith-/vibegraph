@@ -2087,6 +2087,80 @@ mod tests {
         eprintln!("walk-weight vs density: worst relative disagreement {worst:.3e}");
     }
 
+    /// A subsystem's cut-implied floor is the draw's lower edge: no point comes back
+    /// below it, and the walk's weight is still the reciprocal of the density.
+    ///
+    /// The topology is the one the defect was diagnosed on — a massless zero-width
+    /// pole on a pair's invariant, whose logarithmic map otherwise spends its tail
+    /// fraction below the floor an unfloored draw has no way to know about. The
+    /// unfloored channel is drawn on the same stream to show that the region really
+    /// is populated without the floor, so the support claim is not vacuous.
+    ///
+    /// Reciprocity is the contract a mixture rests on: the floor enters `sample` and
+    /// `density` through one expression, so raising it may move where the draws land
+    /// but may never make the weight and the density disagree.
+    #[test]
+    fn a_floored_subsystem_draws_above_its_floor_and_stays_reciprocal() {
+        const FLOOR: f64 = 400.0;
+        let photon = Resonance {
+            mass: 0.0,
+            width: 0.0,
+        };
+        let build = || {
+            DiagramChannel::from_topology_resonant(
+                500.0,
+                vec![0.0; 3],
+                &[(vec![0, 1], Some(photon))],
+            )
+        };
+        let floored =
+            build().with_timelike_floors(&|slots| if slots == 0b011 { FLOOR } else { 0.0 });
+        let plain = build();
+
+        let mut stream = SubStream::from_stream(0xF100_2, 1);
+        let (mut below_plain, mut worst_rel, mut lowest) = (0usize, 0.0f64, f64::INFINITY);
+        for _ in 0..2_000 {
+            let u = stream.uniforms::<f64>(floored.ndim());
+
+            let pt = floored.sample(&u);
+            let m2 = (pt.momenta[0] + pt.momenta[1]).m2();
+            assert!(
+                m2 >= FLOOR,
+                "a floored channel drew the pair at m² {m2}, below its floor {FLOOR}"
+            );
+            lowest = lowest.min(m2);
+            let recip = 1.0 / floored.density(&pt.momenta);
+            assert!(pt.weight > 0.0 && pt.weight.is_finite());
+            let rel = (pt.weight - recip).abs() / recip;
+            worst_rel = worst_rel.max(rel);
+            assert!(
+                rel < 1e-9,
+                "floored walk weight {} vs 1/density {recip} (rel {rel:.3e})",
+                pt.weight
+            );
+
+            let bare = plain.sample(&u);
+            if (bare.momenta[0] + bare.momenta[1]).m2() < FLOOR {
+                below_plain += 1;
+            }
+        }
+        eprintln!(
+            "floored draws bottom out at m² {lowest:.4} against the floor {FLOOR}; \
+             the unfloored map put {below_plain} of 2000 draws below it; \
+             worst reciprocity {worst_rel:.3e}"
+        );
+        assert!(
+            below_plain > 0,
+            "the unfloored map never draws below the floor, so the floor removes nothing \
+             and this test cannot see it work"
+        );
+        assert!(
+            lowest < FLOOR * 1.05,
+            "the floored draws stop well above the floor at {lowest}, so the lower edge \
+             is not the floor"
+        );
+    }
+
     /// Monte-Carlo estimate of a channel's flat-weight average, with its standard
     /// error.
     fn mc_volume(ch: &DiagramChannel<f64>, seed: u64, n: usize) -> (f64, f64) {
@@ -2991,6 +3065,14 @@ mod tests {
             ),
             ("transfer bound", base().with_fiducial_t_max(-400.0)),
             ("rung order", base().with_rung_order(&[1, 0])),
+            (
+                "blob floor",
+                base().with_timelike_floors(&|slots| if slots == 0b0011 { 25.0 } else { 0.0 }),
+            ),
+            (
+                "remainder floor",
+                base().with_timelike_floors(&|slots| if slots == 0b0111 { 25.0 } else { 0.0 }),
+            ),
             (
                 "timelike tree",
                 DiagramChannel::from_topology_resonant(

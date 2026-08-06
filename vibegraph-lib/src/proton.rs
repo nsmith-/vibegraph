@@ -3964,24 +3964,73 @@ mod tests {
         (groups, probe_pdf())
     }
 
-    /// The first cut-passing point a fixed stream produces that `wanted` accepts,
-    /// with the coordinates it was drawn at.
-    fn find_event(
-        integ: &ProtonIntegrand<'_>,
-        seed: u64,
-        wanted: impl Fn(&ProtonEvent) -> bool,
-    ) -> (usize, Vec<f64>, ProtonEvent) {
-        let mut stream = SubStream::from_stream(seed, 11);
-        for trial in 0..40_000 {
-            let u = stream.uniforms::<f64>(integ.point_ndim());
-            let channel = trial % integ.channel_count();
-            if let Some(event) = integ.event_in_channel(channel, &u) {
-                if wanted(&event) {
-                    return (channel, u, event);
+    /// The cut filter and the phase-space channels index the same legs in the same
+    /// order.
+    ///
+    /// A channel's outgoing *slot* `k` is `diagram.legs[n_in + k]`, while a cut
+    /// threshold names the `k`-th final-state leg of the sequence
+    /// [`process_external_legs`] reads off the evaluator.
+    /// [`Cuts::timelike_floor`] is consumed across that boundary — a channel asks
+    /// it for the bound on the subsystem spanning a set of slots — so a
+    /// permutation between the two sequences would hand a node the bound derived
+    /// for different legs. That is the one way a provable bound still comes out
+    /// wrong, and nothing downstream would see it: the floors would simply be the
+    /// wrong sizes.
+    ///
+    /// The two sequences do not carry the same *particles*: `diagram.legs` is
+    /// feyngraph's all-incoming convention, where an outgoing leg holds its
+    /// crossed antiparticle. What has to agree is position and everything a cut
+    /// reads — which is asserted at the strongest available level by compiling the
+    /// filter from each sequence and requiring the two filters to be equal, since
+    /// a compiled [`Cuts`] is precisely a set of leg *indices* and thresholds.
+    #[test]
+    fn a_channel_slot_and_a_cut_leg_are_the_same_leg() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let mut checked = 0usize;
+        for process in [LLJ, JJ] {
+            let groups = derive(process, &m, &evaluated);
+            for g in groups.groups() {
+                let from_evaluator = process_external_legs(g.evaluator(), &m, &evaluated);
+                for (di, d) in g.diagrams().iter().enumerate() {
+                    assert_eq!(d.n_ext(), from_evaluator.len(), "[{process}] diagram {di}");
+                    let from_diagram: Vec<ExternalLeg> = d
+                        .legs
+                        .iter()
+                        .enumerate()
+                        .map(|(i, l)| {
+                            assert_eq!(l.leg_idx.0, i, "[{process}] diagram {di} leg {i}");
+                            assert_eq!(l.incoming, i < d.n_in, "[{process}] diagram {di} leg {i}");
+                            let pdg = m.particle(l.particle).pdg_code as i32;
+                            let mass = evaluated.mass(l.particle);
+                            if l.incoming {
+                                ExternalLeg::incoming(pdg, mass)
+                            } else {
+                                ExternalLeg::outgoing(pdg, mass)
+                            }
+                        })
+                        .collect();
+                    for (i, (a, b)) in from_diagram.iter().zip(&from_evaluator).enumerate() {
+                        assert_eq!(a.mass, b.mass, "[{process}] diagram {di} leg {i} mass");
+                        assert_eq!(
+                            a.pdg.abs(),
+                            b.pdg.abs(),
+                            "[{process}] diagram {di} leg {i} is a different flavour"
+                        );
+                    }
+                    assert_eq!(
+                        Cuts::compile(&card, &from_diagram).expect("cuts compile"),
+                        Cuts::compile(&card, &from_evaluator).expect("cuts compile"),
+                        "[{process}] diagram {di}: the two leg orders compile to different \
+                         filters, so a slot-indexed floor names a different leg on each side"
+                    );
+                    checked += 1;
                 }
             }
         }
-        panic!("no point inside the cuts met the condition");
+        assert!(checked > 0, "no diagram was compared");
+        eprintln!("{checked} diagrams share their cut filter with their evaluator's leg order");
     }
 
     /// The first `n` cut-passing points a fixed stream produces that `wanted`
@@ -4008,7 +4057,10 @@ mod tests {
                 }
             }
         }
-        panic!("only {} points inside the cuts met the condition", found.len());
+        panic!(
+            "only {} points inside the cuts met the condition",
+            found.len()
+        );
     }
 
     /// An accepted point has to come back as the point its weight was taken at, in

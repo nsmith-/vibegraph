@@ -1323,6 +1323,131 @@ fn a_zero_spacelike_floor_leaves_every_channel_bit_identical() {
     );
 }
 
+/// A zero timelike floor is the identity map on the channel derivation, and the
+/// floors the `llj` run card implies are not.
+///
+/// The floors raise each drawn invariant's lower edge to the bound the cuts imply
+/// for that subsystem, so the map stops putting density where the integrand is
+/// identically zero. The claim is measured the way a run experiences it — the
+/// share of drawn points the cuts accept — rather than on the constructor
+/// arguments, and the reciprocity of every floored channel is checked alongside,
+/// since a support change that broke the weight/density identity would be worse
+/// than the waste it removes.
+#[test]
+fn cut_implied_timelike_floors_move_llj_draws_out_of_the_cut_region() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let sqrt_s = 500.0;
+
+    let draw = |ch: &DiagramChannel<f64>, seed: u64| -> Vec<(Vec<[u64; 4]>, u64, u64)> {
+        let mut stream = SubStream::from_stream(seed, 5);
+        (0..200)
+            .map(|_| {
+                let u = stream.uniforms::<f64>(ch.ndim());
+                let pt = ch.sample(&u);
+                let bits: Vec<[u64; 4]> = pt
+                    .momenta
+                    .iter()
+                    .map(|p| {
+                        [
+                            p.e().to_bits(),
+                            p.px().to_bits(),
+                            p.py().to_bits(),
+                            p.pz().to_bits(),
+                        ]
+                    })
+                    .collect();
+                (bits, pt.weight.to_bits(), ch.density(&pt.momenta).to_bits())
+            })
+            .collect()
+    };
+
+    let (mut compared, mut moved) = (0usize, 0usize);
+    let (mut accepted_plain, mut accepted_floored, mut drawn) = (0usize, 0usize, 0usize);
+    for process in LLJ_SUBPROCESSES {
+        let sets = common::generate(process);
+        let diagrams = &sets[0].diagrams;
+        let legs: Vec<ExternalLeg> = diagrams[0]
+            .legs
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                let pdg = model.particle(l.particle).pdg_code as i32;
+                let mass = evaluated.mass(l.particle);
+                if i < diagrams[0].n_in {
+                    ExternalLeg::incoming(pdg, mass)
+                } else {
+                    ExternalLeg::outgoing(pdg, mass)
+                }
+            })
+            .collect();
+        let cuts = Cuts::compile(&RunCard::default(), &legs).expect("llj cuts compile");
+        let spacelike = cuts.spacelike_floor();
+        assert!(
+            (0..8).any(|m| cuts.timelike_floor(m) > 0.0),
+            "{process}: the card implies no timelike floor, so this test checks nothing"
+        );
+        let half = sqrt_s / 2.0;
+        let beams = [
+            LorentzVector::new(half, 0.0, 0.0, half),
+            LorentzVector::new(half, 0.0, 0.0, -half),
+        ];
+
+        for (i, d) in diagrams.iter().enumerate() {
+            let seed = 0x7F_1002 + i as u64;
+            let plain =
+                DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, spacelike);
+            let zero = plain.clone().with_timelike_floors(&|_| 0.0);
+            assert_eq!(
+                draw(&plain, seed),
+                draw(&zero, seed),
+                "{process} diagram {i}: a zero timelike floor moved the channel"
+            );
+
+            let floored = plain
+                .clone()
+                .with_timelike_floors(&|slots| cuts.timelike_floor(slots));
+            if draw(&floored, seed) != draw(&plain, seed) {
+                moved += 1;
+            }
+            compared += 1;
+            assert_valid(&floored, sqrt_s, &out_masses(d, &evaluated), seed);
+
+            let mut stream = SubStream::from_stream(seed, 9);
+            for _ in 0..400 {
+                let u = stream.uniforms::<f64>(floored.ndim());
+                for (ch, accepted) in [
+                    (&plain, &mut accepted_plain),
+                    (&floored, &mut accepted_floored),
+                ] {
+                    let mut ext = beams.to_vec();
+                    ext.extend(ch.sample(&u).momenta);
+                    if cuts.pass(&ext) {
+                        *accepted += 1;
+                    }
+                }
+                drawn += 1;
+            }
+        }
+    }
+
+    eprintln!(
+        "{compared} llj diagram channels bit-identical at timelike floor 0; {moved} move under \
+         the card's own floors; cut acceptance over {drawn} draws each: {:.1}% -> {:.1}%",
+        100.0 * accepted_plain as f64 / drawn as f64,
+        100.0 * accepted_floored as f64 / drawn as f64,
+    );
+    assert!(
+        moved > 0,
+        "no channel responds to the cut-implied floors at all — the identity above is vacuous"
+    );
+    assert!(
+        accepted_floored > accepted_plain,
+        "the floors did not raise cut acceptance ({accepted_floored} against {accepted_plain} \
+         of {drawn}), so they are not removing draws the cuts reject"
+    );
+}
+
 // ── The ordered peripheral chain ─────────────────────────────────────────────
 
 /// The reference process for the ordered peripheral chain: one concrete flavour
