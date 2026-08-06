@@ -12,6 +12,7 @@ mod integrate;
 mod logging;
 mod network;
 mod parallel;
+mod si;
 
 use network::NetworkPolicy;
 
