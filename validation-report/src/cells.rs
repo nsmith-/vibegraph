@@ -124,9 +124,9 @@ impl RowFile {
             Category::Diagrams => format!("{}/{}", self.u64_at("ours")?, self.u64_at("theirs")?),
             Category::Amplitudes => format!("max rel {}", exp(self.worst_amplitude_deviation()?)),
             Category::Integrals => format!(
-                "pull {:+.2}, chi2/dof {:.2}",
+                "pull {:+.2}, chi2/dof {}",
                 self.f64_at("pull")?,
-                self.f64_at("chi2_dof")?
+                chi2(self.f64_at("chi2_dof")?)
             ),
             Category::Samples => format!(
                 "KS p {}, chi2 p {}",
@@ -282,6 +282,24 @@ pub fn load_all(report_dir: &Path) -> (Vec<RowFile>, Vec<String>) {
 /// deviation in the table is read at.
 pub fn exp(v: f64) -> String {
     format!("{v:.2e}")
+}
+
+/// A χ²/dof plainly where it is a statistic, in scientific notation where it is
+/// no longer one.
+///
+/// A channel-split integration divides its budget over every channel, and a
+/// channel whose term is identically zero in some iterations and denormal in
+/// others has its `Δ²/σ²` divided by a variance floored at the smallest positive
+/// double. The resulting χ² is not large, it is meaningless — and printed in
+/// fixed notation it is a two-hundred-digit number across a table cell. The value
+/// is passed through rather than clamped, because clamping would make a broken
+/// statistic look like a merely bad one; only its width is bounded.
+pub fn chi2(v: f64) -> String {
+    if v.is_finite() && v.abs() < 1e4 {
+        format!("{v:.2}")
+    } else {
+        format!("{v:.2e}")
+    }
 }
 
 /// A p-value plainly where it is readable, in scientific notation where it is

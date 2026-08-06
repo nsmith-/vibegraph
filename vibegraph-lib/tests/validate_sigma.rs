@@ -183,8 +183,31 @@ enum Plan {
         niter: usize,
         reason: &'static str,
     },
+    /// Measured by the oracle layer's own task rather than by the banked suite,
+    /// because the row's budget is one the banked layer will not spend.
+    ///
+    /// The tier says *where* the measurement is taken; `rel_tol` says whether it
+    /// is enforced. `Some` asserts the relative bound exactly as [`Plan::Gate`]
+    /// does, through the same [`gate_dir`]. `None` is [`Plan::Info`]'s rung one
+    /// layer out: the row is integrated and reported against the bank on every
+    /// run of its driver, and nothing is asserted, because its seed sweep does
+    /// not license a bound. `reason` is what that sweep measured.
+    Long {
+        neval: usize,
+        niter: usize,
+        rel_tol: Option<f64>,
+        reason: &'static str,
+    },
     /// Not integrated, with a recorded reason (printed, never a failure).
     Skip(&'static str),
+}
+
+impl Plan {
+    /// Whether the banked suite measures this row, or the oracle layer's driver
+    /// does.
+    fn is_long(&self) -> bool {
+        matches!(self, Plan::Long { .. })
+    }
 }
 
 /// The per-process evaluation plan, keyed by the MadGraph `output/` directory
@@ -373,10 +396,57 @@ fn plan_for(dir: &str) -> Plan {
             niter: 8,
             rel_tol: 0.005,
         },
-        // ── 2->6, not integrated ────────────────────────────────────────────
-        "uux_to_ccx_emmm_qcd0" | "bbx_to_ccx_emmm_qcd0" => {
-            Plan::Skip("2->6 final state: 24-dim flat RAMBO at ~1 ms/eval is too slow to gate")
-        }
+        // ── 2 -> 6, measured in the oracle layer and not enforced ───────────
+        // These two are not here because the matrix element is slow. One
+        // integration point costs 64 µs and 71 µs through this harness against the
+        // flat map's 48 µs and 82 µs on the same rows (`probe_2to6_eval_cost`), so
+        // the evaluator is not the obstacle the skip they replaced claimed. The
+        // obstacle is the *floor*: 579 and 615 per-diagram channels at
+        // `MIN_CHANNEL_NEVAL` apiece put 296 448 and 314 880 evaluations under
+        // every iteration whatever budget is asked, so a run of either row is
+        // millions of points before it is anything.
+        //
+        // The flat map is not the cheap way out. Over its 24-dimensional uniform
+        // draw these cross sections come back eleven and fifteen orders of
+        // magnitude low, with the five seeds of a rung spread over eighteen
+        // orders, and four rungs of budget move them by orders rather than towards
+        // the answer (`probe_2to6_budget_ladder`). It is not an acceptance
+        // problem — the coverage sweep accepts 46 487 of 100 000 flat draws on
+        // these rows — but a measure one: six outgoing legs put the Z poles and
+        // the regulated photon edge on a set the flat draw reaches with vanishing
+        // probability.
+        //
+        // Under the multichannel the physics agrees and the *estimator* does not
+        // hold still. Five seeds a rung at 300 000, 600 000 and 1 200 000 points
+        // an iteration put the five-seed mean within +1.08%/+0.36%/+0.62% of the
+        // bank on `uux_to_ccx_emmm_qcd0` and -0.47%/-0.20%/+0.81% on
+        // `bbx_to_ccx_emmm_qcd0` — agreement at the level of a reference whose own
+        // error is 0.30%. Individual seeds do not: one lands +4.8% at 300 000 on
+        // the first row, one -4.5% at 300 000 and one +3.5% at 1 200 000 on the
+        // second. The excursions are of both signs, they appear at the top of the
+        // ladder as well as the bottom, and they do not shrink with budget, which
+        // is what says they are a heavy tail the per-channel grids do not resolve
+        // rather than a residual convergence. χ²/dof over the seeds runs 0.76 to
+        // 13.3 with no order in it, so `err_vg` does not see the tail either.
+        //
+        // A gate spends one seed. Covering a 4.8% excursion would take a tolerance
+        // of about 0.10, which is not a bound on anything, and no budget this side
+        // can afford removes it — so these rows are reported and not asserted.
+        // That is the middle rung of the enforcement ladder, taken deliberately:
+        // the cross sections are measured against the bank on every run of their
+        // driver, and the day the sampler resolves that tail the reason below is
+        // the thing that has to change before the bound goes on.
+        //
+        // 600 000 is where they run: the lowest rung whose whole sweep stayed
+        // inside 1.2%, and the one whose cost the report can carry.
+        "uux_to_ccx_emmm_qcd0" | "bbx_to_ccx_emmm_qcd0" => Plan::Long {
+            neval: 600_000,
+            niter: 8,
+            rel_tol: None,
+            reason: "single-seed sigma swings by up to 4.8% at every budget on the ladder, \
+                     of both signs and not shrinking with it, while the five-seed mean holds \
+                     inside 1.1% of the bank",
+        },
         _ => Plan::Skip("no evaluation plan for this directory"),
     }
 }
@@ -564,6 +634,10 @@ fn integrate_probe(
 /// `mmll_override` patches the run card's minimum same-flavour lepton-pair mass
 /// before the cuts are compiled. It is a *diagnostic*: it changes the physics, so
 /// a result taken under it no longer compares to the banked MadGraph value.
+///
+/// `n_survey = 0` leaves the flat RAMBO sampler in place instead of installing the
+/// multichannel combiner at all — the sampler comparison a cost study needs, and
+/// distinct from `n_adapt_iter = 0`, which installs the combiner at uniform α.
 fn with_integrand<R>(
     dir: &str,
     process: &str,
@@ -647,7 +721,9 @@ fn with_integrand<R>(
     // production sampler `vibegraph integrate` drives — so the narrow electroweak
     // peaks that flat RAMBO under-samples converge. α is adapted to this process's
     // own |M|² on a survey substream disjoint from the integration seed.
-    let report = integ.use_multichannel(&diagrams, &evaluated, n_survey, n_adapt_iter, seed);
+    let report = (n_survey > 0)
+        .then(|| integ.use_multichannel(&diagrams, &evaluated, n_survey, n_adapt_iter, seed))
+        .flatten();
     let alphas = report
         .map(|r| r.trajectory.last().cloned().unwrap_or_default())
         .unwrap_or_default();
@@ -887,6 +963,300 @@ fn probe_unweighting_weight_max() {
                     eff_split / eff_shared,
                     w_hi / w_lo.max(f64::MIN_POSITIVE),
                     100.0 * w_hi / w_max_sum,
+                );
+            },
+        );
+    }
+}
+
+/// The two `2 -> 6` rows, whose cost is what decides whether they are integrated
+/// at all.
+const TWO_TO_SIX: [&str; 2] = ["uux_to_ccx_emmm_qcd0", "bbx_to_ccx_emmm_qcd0"];
+
+/// What one integration point of a `2 -> 6` row costs in this gate's own harness.
+///
+/// A matrix-element benchmark is not the number a budget is sized from: the gate
+/// pays the phase-space map, the cut filter, the per-event scale and — under the
+/// per-diagram multichannel — a density summed over every channel, on top of the
+/// amplitude. Those rows carry hundreds of diagrams, so the channel sum is a term
+/// no `2 -> 2` measurement extrapolates to.
+///
+/// The figure is per *integrand evaluation actually spent*, not per point of the
+/// nominal budget: [`MIN_CHANNEL_NEVAL`] floors every channel's per-iteration
+/// allocation, so a hundreds-of-channels row spends `n_channels x 512` points an
+/// iteration however small the budget asked. Dividing by the asked-for budget
+/// would charge that floor to the integrand and read the multichannel path as
+/// nearly two orders more expensive per point than the flat one, which it is not.
+/// What the floor does cost is a *minimum* budget, reported here beside the rate.
+///
+/// Reported per row and per sampler: the one-off build (diagram generation,
+/// amplitude compilation, channel construction), the marginal cost of an
+/// integration point, and — separately — what the α survey the gate runs before
+/// integrating costs on top of the build. The marginal figure is the minimum over
+/// rounds, so a co-scheduled process inflates a round rather than the number. Pin
+/// `RAYON_NUM_THREADS=1` for a per-core figure. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_2to6_eval_cost() {
+    use vibegraph::budget::{BlockAllocation, Budget};
+
+    const ROUNDS: usize = 3;
+    const COST_NEVAL: usize = 5_000;
+
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).expect("sigma reference readable");
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+
+    for dir in TWO_TO_SIX {
+        let entry = &banked[dir];
+        for (label, n_survey) in [("flat RAMBO ", 0), ("multichannel", MULTICHANNEL_SURVEY)] {
+            let clock = Stopwatch::start();
+            with_integrand(dir, &entry.process, SEED, n_survey, 0, None, |integ, _| {
+                let build_s = clock.seconds();
+                let mut best = f64::INFINITY;
+                let mut points = 0u64;
+                for round in 0..ROUNDS {
+                    let timer = Stopwatch::start();
+                    let (_, _, spend) = integ.adapt_grids_budget(
+                        Budget::Fixed {
+                            neval: COST_NEVAL,
+                            niter: 1,
+                        },
+                        BlockAllocation::ByAlpha,
+                        SEED + round as u64,
+                    );
+                    best = best.min(timer.seconds());
+                    points = spend.points;
+                }
+                eprintln!(
+                    "[{dir}] {label}: {:4} channel(s), {:2}-dim | build {build_s:7.1} s | \
+                     {:7.1} us/eval | {points} evals for a {COST_NEVAL}-point iteration \
+                     (min of {ROUNDS})",
+                    integ.channel_count(),
+                    integ.vegas_ndim(),
+                    best * 1e6 / points as f64,
+                );
+            });
+        }
+        let clock = Stopwatch::start();
+        with_integrand(
+            dir,
+            &entry.process,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+            None,
+            |_, _| {},
+        );
+        eprintln!(
+            "[{dir}] build + α survey ({MULTICHANNEL_SURVEY} x {MULTICHANNEL_ITERS}): {:7.1} s",
+            clock.seconds()
+        );
+    }
+}
+
+/// Combine independent seeds of the same integral: the plain mean, its error, and
+/// the χ²/dof that says whether the seeds scatter by more than they claim.
+///
+/// The mean is unweighted. Weighting by `1/err²` is what makes an under-sampled
+/// seed dominate — it reports a small integral *and* a small error — and this
+/// statistic exists to expose exactly that.
+fn combine_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
+    let n = runs.len() as f64;
+    let mean: f64 = runs.iter().map(|r| r.sigma_pb).sum::<f64>() / n;
+    let mean_err = runs
+        .iter()
+        .map(|r| r.sigma_err_pb * r.sigma_err_pb)
+        .sum::<f64>()
+        .sqrt()
+        / n;
+    let dof = runs.len().saturating_sub(1).max(1) as f64;
+    let chi2 = runs
+        .iter()
+        .map(|r| ((r.sigma_pb - mean) / r.sigma_err_pb).powi(2))
+        .sum::<f64>()
+        / dof;
+    (mean, mean_err, chi2)
+}
+
+/// The budget ladder and seed sweep the `2 -> 6` rows' σ gate is sized from, on
+/// both samplers.
+///
+/// A single seed at a single budget cannot separate an agreement from an
+/// estimator still moving: VEGAS's inverse-variance iteration combination reports
+/// an under-sampled region as a confident value, error bar included. What tells
+/// the two apart is whether σ moves with the budget and whether the seeds scatter
+/// by more than they claim, so the rungs are printed rather than summarised and
+/// each carries five independent seeds.
+///
+/// Both samplers are laddered because the choice between them is what this
+/// measurement decides. Flat RAMBO draws a 24-dimensional uniform and has no idea
+/// where the Z poles or the regulated `γ*` edge are; the per-diagram multichannel
+/// maps every one of the hundreds of diagrams but cannot spend less than
+/// [`MIN_CHANNEL_NEVAL`] a channel an iteration, which sets its lowest rung. The
+/// rungs differ per sampler for that reason: a multichannel budget under the floor
+/// is not a rung, it is the floor again.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_2to6_budget_ladder() {
+    const NITER: usize = 8;
+    const SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
+    const FLAT_RUNGS: [usize; 4] = [100_000, 200_000, 400_000, 800_000];
+    // A fourfold range starting at the floor. Both rows' channel sets put
+    // `n_channels x MIN_CHANNEL_NEVAL` — 296 448 and 314 880 — under every
+    // iteration, so 300 000 is the lowest rung that is a budget rather than the
+    // floor restated, and the range runs up from there rather than down to it.
+    const MULTI_RUNGS: [usize; 3] = [300_000, 600_000, 1_200_000];
+
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).expect("sigma reference readable");
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+
+    for dir in TWO_TO_SIX {
+        let entry = &banked[dir];
+        eprintln!(
+            "── {dir}: MG {:.6e} ± {:.3e} pb ({:+.2}%) ──",
+            entry.sigma_pb,
+            entry.sigma_err_pb,
+            100.0 * entry.sigma_err_pb / entry.sigma_pb,
+        );
+        for (label, n_survey, n_adapt, rungs) in [
+            ("flat RAMBO  ", 0, 0, &FLAT_RUNGS[..]),
+            (
+                "multichannel",
+                MULTICHANNEL_SURVEY,
+                MULTICHANNEL_ITERS,
+                &MULTI_RUNGS[..],
+            ),
+        ] {
+            for &neval in rungs {
+                let clock = Stopwatch::start();
+                let runs: Vec<SeedResult> = SEEDS
+                    .iter()
+                    .map(|&seed| {
+                        let (sigma_pb, sigma_err_pb, _, _) = integrate_with(
+                            dir,
+                            &entry.process,
+                            neval,
+                            NITER,
+                            seed,
+                            n_survey,
+                            n_adapt,
+                        );
+                        SeedResult {
+                            seed,
+                            sigma_pb,
+                            sigma_err_pb,
+                        }
+                    })
+                    .collect();
+                let (mean, mean_err, chi2) = combine_seeds(&runs);
+                let pull = (mean - entry.sigma_pb)
+                    / (mean_err * mean_err + entry.sigma_err_pb * entry.sigma_err_pb).sqrt();
+                eprintln!(
+                    "  {label} {neval:>9} x {NITER}: σ = {mean:.6e} ± {mean_err:.3e} pb \
+                     | rel {:+.2e} | pull {pull:+.2} | χ²/dof {chi2:8.2} | {:6.0} s \
+                     | per seed {}",
+                    mean / entry.sigma_pb - 1.0,
+                    clock.seconds(),
+                    runs.iter()
+                        .map(|r| format!("{:.4e}", r.sigma_pb))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+            }
+        }
+    }
+}
+
+/// What an unweighted-event run of a `2 -> 6` row would cost, priced from its own
+/// measured acceptance rather than from another row's.
+///
+/// The `samples` gate's cost is not its integration: it is the accept/reject
+/// loop, which is serial by construction (one RNG advanced trial by trial) and
+/// spends `1/efficiency` integrand evaluations per event kept. That ratio is a
+/// property of how well the channel maxima bound the weight on *this* integrand,
+/// so it is measured here — with the production `MaxRule`, whose truncation is
+/// what sets the acceptance — and the full run's wall time extrapolated from it
+/// rather than assumed from a `2 -> 2` row's efficiency.
+///
+/// Reported against the two thresholds a decision needs: the trials per event the
+/// `samples` gate allows before it calls a seed short, and the wall time of its
+/// three seeds at 20 000 events each. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_2to6_sample_cost() {
+    use vibegraph::unweight::Unweighter;
+
+    /// Events generated to measure the acceptance, well short of a real sample.
+    const TRIAL_EVENTS: usize = 500;
+    /// What the `samples` gate asks of each generation seed, and over how many.
+    const GATE_EVENTS: usize = 20_000;
+    const GATE_SEEDS: usize = 3;
+    /// The trial budget per event that gate allows before calling a seed short.
+    const GATE_MAX_TRIALS_PER_EVENT: usize = 400;
+    const SCAN_SEED: u64 = 0x5CA7_0FF0;
+
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).expect("sigma reference readable");
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+
+    for dir in TWO_TO_SIX {
+        let entry = &banked[dir];
+        let (neval, niter) = match plan_for(dir) {
+            Plan::Gate { neval, niter, .. }
+            | Plan::Long { neval, niter, .. }
+            | Plan::Info { neval, niter, .. } => (neval, niter),
+            Plan::Skip(_) => continue,
+        };
+        with_integrand(
+            dir,
+            &entry.process,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+            None,
+            |integ, _| {
+                let grids = Stopwatch::start();
+                let (channels, _) = integ.adapt_grids(neval, niter, SEED);
+                let grids_s = grids.seconds();
+
+                let scan = Stopwatch::start();
+                let mut uw = Unweighter::scan(
+                    integ,
+                    channels.iter().map(|c| (&c.grid, c.neval)),
+                    SCAN_SEED,
+                );
+                let scan_s = scan.seconds();
+
+                let gen = Stopwatch::start();
+                let mut rng = ChaCha8Rng::seed_from_u64(0x5A_4D_0001);
+                let mut kept = 0usize;
+                while kept < TRIAL_EVENTS {
+                    if uw.trial(integ, &mut rng).is_some() {
+                        kept += 1;
+                    }
+                }
+                let gen_s = gen.seconds();
+                let stats = uw.stats();
+                let trials_per_event = stats.trials as f64 / kept as f64;
+                let per_seed_s = gen_s / kept as f64 * GATE_EVENTS as f64;
+
+                eprintln!(
+                    "[{dir}] grids {neval}x{niter} {grids_s:6.1} s | w_max scan {scan_s:6.1} s \
+                     | acceptance {:.3e} ({trials_per_event:.0} trials/event, \
+                     {:.1}% of the {GATE_MAX_TRIALS_PER_EVENT}-trial budget) | \
+                     {GATE_SEEDS} x {GATE_EVENTS} events would take {:.0} s of serial \
+                     accept/reject on top of {:.0} s of grids and scan",
+                    stats.efficiency(),
+                    100.0 * trials_per_event / GATE_MAX_TRIALS_PER_EVENT as f64,
+                    per_seed_s * GATE_SEEDS as f64,
+                    grids_s + scan_s,
                 );
             },
         );
@@ -1228,7 +1598,9 @@ fn probe_llj_parton_seed_stability() {
         // The budget the gate itself integrates at, so the `1x` rung is the row's
         // own cell and the `4x` rung is what says whether it is converged.
         let (neval, niter) = match plan_for(dir) {
-            Plan::Gate { neval, niter, .. } | Plan::Info { neval, niter, .. } => (neval, niter),
+            Plan::Gate { neval, niter, .. }
+            | Plan::Long { neval, niter, .. }
+            | Plan::Info { neval, niter, .. } => (neval, niter),
             Plan::Skip(_) => continue,
         };
         let e = &banked[dir];
@@ -1759,7 +2131,9 @@ fn probe_channel_partition_moves_sigma() {
     let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
     for dir in LLJ_PARTON_ROWS {
         let (neval, niter) = match plan_for(dir) {
-            Plan::Gate { neval, niter, .. } | Plan::Info { neval, niter, .. } => (neval, niter),
+            Plan::Gate { neval, niter, .. }
+            | Plan::Long { neval, niter, .. }
+            | Plan::Info { neval, niter, .. } => (neval, niter),
             Plan::Skip(_) => continue,
         };
         let e = &banked[dir];
@@ -2117,6 +2491,21 @@ fn gate_dir(dir: &str, banked: &BankedSigma) -> Result<(), String> {
             niter,
             rel_tol,
         } => (neval, niter, "gate", None, Some(rel_tol)),
+        // The oracle layer's rows carry the mode their own bound implies: a row
+        // with a tolerance is a gate wherever it runs, and one without is an
+        // informational comparison wherever it runs.
+        Plan::Long {
+            neval,
+            niter,
+            rel_tol,
+            reason,
+        } => (
+            neval,
+            niter,
+            if rel_tol.is_some() { "gate" } else { "info" },
+            rel_tol.is_none().then_some(reason),
+            rel_tol,
+        ),
     };
 
     let (sigma_vg, err_vg, chi2, subsampler) =
@@ -2503,6 +2892,7 @@ fn sigma_gate_matches_madgraph() {
     let mut failures = Vec::new();
     let mut asserted = 0usize;
     let mut awaiting = Vec::new();
+    let mut long = Vec::new();
     for (dir, entry) in &banked {
         match run_presence(dir, &unbundled) {
             RunPresence::Present => {}
@@ -2519,6 +2909,14 @@ fn sigma_gate_matches_madgraph() {
                 "a banked run card",
                 dir,
             ),
+        }
+        if plan_for(dir).is_long() {
+            eprintln!(
+                "[{dir}] LONG TIER (measured by the oracle layer's own driver: \
+                 pixi run validate-sigma-2to6)"
+            );
+            long.push(dir.as_str());
+            continue;
         }
         if matches!(plan_for(dir), Plan::Gate { .. }) {
             asserted += 1;
@@ -2537,12 +2935,18 @@ fn sigma_gate_matches_madgraph() {
 
     eprintln!(
         "sigma gate: {asserted} process(es) asserted against banked MadGraph sigma, \
-         {} awaiting the bundle ({})",
+         {} awaiting the bundle ({}), {} in the oracle layer ({})",
         awaiting.len(),
         if awaiting.is_empty() {
             "none".to_string()
         } else {
             awaiting.join(", ")
+        },
+        long.len(),
+        if long.is_empty() {
+            "none".to_string()
+        } else {
+            long.join(", ")
         }
     );
     // A row passed over above writes no cell, so a reference whose runs had all gone
@@ -2554,6 +2958,65 @@ fn sigma_gate_matches_madgraph() {
     assert!(
         failures.is_empty(),
         "sigma gate failures:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// The oracle layer's half of the same comparison: every [`Plan::Long`] row,
+/// through the same [`gate_dir`] and on whatever bound its own plan carries.
+///
+/// Ignored in the banked suite and driven by `pixi run validate-sigma-2to6`,
+/// which is the only difference between this and [`sigma_gate_matches_madgraph`].
+/// It writes its rows' `integrals` cells the way every other cell is written, so
+/// a report collated after this task ran carries them as measurements and one
+/// collated without it carries them as awaiting the layer — a filled cell here is
+/// a run somebody made, never a tier inferred from a manifest.
+///
+/// The banked half is what keeps the split honest: it passes these rows over by
+/// name and says so, so a row that quietly stopped being measured anywhere would
+/// show up as a missing cell rather than as silence.
+#[test]
+#[ignore]
+fn the_long_tier_sigma_rows_match_madgraph() {
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path)
+        .unwrap_or_else(|e| panic!("missing sigma reference {}: {e}", ref_path.display()));
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+
+    let unbundled = common::manifest::unbundled_rows();
+    let mut failures = Vec::new();
+    let mut asserted = 0usize;
+    for (dir, entry) in &banked {
+        if !plan_for(dir).is_long() {
+            continue;
+        }
+        match run_presence(dir, &unbundled) {
+            RunPresence::Present => {}
+            RunPresence::AwaitingBundle => {
+                eprintln!("[{dir}] AWAITING BUNDLE (no run on this machine, no cell written)");
+                continue;
+            }
+            RunPresence::Missing => vibegraph::validation::require(
+                "the_long_tier_sigma_rows_match_madgraph",
+                "a banked run card",
+                dir,
+            ),
+        }
+        asserted += 1;
+        if let Err(e) = gate_dir(dir, entry) {
+            failures.push(e);
+        }
+    }
+
+    eprintln!("long-tier sigma: {asserted} process(es) measured against banked MadGraph sigma");
+    assert!(
+        asserted > 0 || banked.keys().all(|d| !plan_for(d).is_long()),
+        "no long-tier row was measured, so this driver wrote nothing the report can read"
+    );
+    assert!(
+        failures.is_empty(),
+        "long-tier sigma failures:\n{}",
         failures.join("\n")
     );
 }

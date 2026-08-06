@@ -24,7 +24,8 @@ pub fn markdown(
          row files the gates wrote under `target/validation-report/` and checked against the\n\
          cell set `validation/manifest.toml` declares. A cell is ✅ when its gate ran and\n\
          passed, ⚠️ when it is measured and deliberately not enforced, ❌ when it failed,\n\
-         ⏳ when the oracle layer runs it or the pinned bundle does not carry the row yet,\n\
+         ⏳ when the oracle layer owns it and its driver did not run in this cycle, or the\n\
+         pinned bundle does not carry the row yet,\n\
          ⛔ when a named feature blocks it, `—` when another\n\
          row covers the same physics, and `uncovered` when nothing measures it and nothing\n\
          claims to.\n\n",
@@ -157,7 +158,8 @@ pub fn markdown(
     out.push_str("## Verification\n\n");
     let (measured, marks) = tally(resolved);
     out.push_str(&format!(
-        "{} rows × {} categories = {} cells: {measured} measured in this layer ({}).\n\n",
+        "{} rows × {} categories = {} cells: {measured} measured in the layers this run \
+         drove ({}).\n\n",
         resolved.len(),
         CATEGORIES.len(),
         resolved.len() * CATEGORIES.len(),
