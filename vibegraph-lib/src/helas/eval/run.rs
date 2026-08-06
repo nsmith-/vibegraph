@@ -1425,6 +1425,52 @@ fn cross_check_node<F: Real>(
     }
 }
 
+/// Slack allowed on the routed momenta of two currents entering one sum, in ulps of the
+/// scale the accumulation runs at. Currents summed at a propagator route the same
+/// combination of external momenta, but two vertex orderings accumulate that combination
+/// in different summation orders, so a component that cancels arrives as `0.0` down one
+/// ordering and as a rounding residue down the other. Summing `n` externals leaves a
+/// residue growing like `n²` ulps of the largest external component; over the 2→3 QCD
+/// probe evaluations the largest observed gap is 1.4 ulps, so this bound carries ~700×
+/// headroom while staying ~12 orders of magnitude below the whole external momentum a
+/// genuine routing mismatch differs by.
+const SUMMED_MOMENTUM_ULPS: f64 = 1024.0;
+
+/// Per-component tolerance for [`SUMMED_MOMENTUM_ULPS`] at this point's kinematics. The
+/// scale is the largest external momentum component: every routed momentum is a signed
+/// subset sum of the externals, so that is what its rounding residue is measured in —
+/// not the routed momentum's own magnitude, which a near-cancelling combination (a
+/// small-angle t-channel line) drives arbitrarily far below the terms that built it.
+fn summed_momentum_tol<F: Real>(momenta: &[LorentzVector<F>]) -> F {
+    let scale = momenta.iter().fold(F::zero(), |acc, p| {
+        acc.max(p.e().abs())
+            .max(p.px().abs())
+            .max(p.py().abs())
+            .max(p.pz().abs())
+    });
+    let ulps: F = num_traits::cast(SUMMED_MOMENTUM_ULPS).expect("ulp count representable");
+    ulps * F::epsilon() * scale
+}
+
+/// Check that two currents about to be summed route the same combination of external
+/// momenta, to within [`summed_momentum_tol`]. Scalar operands are exempt: the coherent
+/// sum over diagram amplitudes deliberately mixes their (physically irrelevant) momenta.
+fn assert_summable<F: Real>(acc: &WaveformSlot<F>, rhs: &WaveformSlot<F>, tol: F) {
+    let (Some(a), Some(b)) = (acc.current_momentum(), rhs.current_momentum()) else {
+        return;
+    };
+    let gap = (a.e() - b.e())
+        .abs()
+        .max((a.px() - b.px()).abs())
+        .max((a.py() - b.py()).abs())
+        .max((a.pz() - b.pz()).abs());
+    assert!(
+        gap <= tol,
+        "cannot add currents routing different momenta: {a:?} vs {b:?} \
+         (component gap {gap:?} exceeds {tol:?})"
+    );
+}
+
 /// Reduce one folded node from its children's already-evaluated results, read through
 /// the `kid` accessor — the forward scan hands out references into its result buffer
 /// by child id. Constant leaves resolve from the pools;
@@ -1465,7 +1511,14 @@ pub(super) fn apply<'a, F: Real + 'a>(
             build_external_slot(env, node.leaf.index() as usize)
         }
         Op::Propagate => kernel::propagate(kid(0), kid(1), kid(2)),
-        Op::Add => (0..n_kids).fold(WaveformSlot::Empty, |acc, i| acc + *kid(i)),
+        Op::Add => {
+            let tol = summed_momentum_tol(env.momenta);
+            (0..n_kids).fold(WaveformSlot::Empty, |acc, i| {
+                let rhs = kid(i);
+                assert_summable(&acc, rhs, tol);
+                acc + *rhs
+            })
+        }
         Op::Mul => mul_apply((0..n_kids).map(|i| *kid(i))),
         // Lorentz primitives: each `Op` maps 1-to-1 to a `kernel::` fn named for it.
         Op::GammaVout => kernel::gamma_vout(kid(0), kid(1)),
@@ -1647,6 +1700,78 @@ mod tests {
         ufo::slha::ParamCard,
     };
     use num_complex::ComplexFloat;
+
+    /// Probe kinematics for the routed-momentum guard: a 500 GeV partonic-CM point.
+    fn guard_momenta() -> [LorentzVector<f64>; 4] {
+        [
+            LorentzVector::new(250.0, 0.0, 0.0, 250.0),
+            LorentzVector::new(250.0, 0.0, 0.0, -250.0),
+            LorentzVector::new(250.0, 100.0, 30.0, 220.0),
+            LorentzVector::new(250.0, -100.0, -30.0, -220.0),
+        ]
+    }
+
+    fn zero_vector_slot(momentum: LorentzVector<f64>) -> WaveformSlot<f64> {
+        WaveformSlot::Vector(VectorWf {
+            eps: ComplexVector::zero(),
+            momentum,
+        })
+    }
+
+    /// The routed-momentum guard on a current sum admits the rounding residue two
+    /// summation orders leave on a cancelling component, and admits nothing larger:
+    /// its tolerance is set by the external scale the accumulation runs at, not by the
+    /// routed momentum's own (possibly near-cancelled) magnitude.
+    #[test]
+    fn summed_momentum_guard_admits_accumulation_residue() {
+        let momenta = guard_momenta();
+        let tol = summed_momentum_tol(&momenta);
+        assert!(tol > 0.0, "tolerance must be positive at 500 GeV: {tol:e}");
+        assert!(
+            tol < 1e-9,
+            "tolerance must stay far below any physical momentum: {tol:e}"
+        );
+
+        // A residue a few ulps of the 250 GeV external scale, on a component that
+        // cancels to zero — the shape the two vertex orderings actually produce.
+        let residue = 8.0 * f64::EPSILON * 250.0;
+        let q = LorentzVector::new(500.0, 0.0, 0.0, 0.0);
+        let nudged = LorentzVector::new(500.0, residue, -residue, residue);
+        assert_summable(&zero_vector_slot(q), &zero_vector_slot(nudged), tol);
+
+        // A near-cancelling routed momentum keeps the same absolute tolerance: the
+        // residue is inherited from the terms, not from the (tiny) result.
+        let small = LorentzVector::new(1e-14, 0.0, 0.0, 0.0);
+        let small_nudged = LorentzVector::new(1e-14 + residue, 0.0, 0.0, 0.0);
+        assert_summable(
+            &zero_vector_slot(small),
+            &zero_vector_slot(small_nudged),
+            tol,
+        );
+    }
+
+    /// The relaxed guard still rejects what it exists to catch: a sum of two currents
+    /// routing momenta that differ by a whole external leg.
+    #[test]
+    #[should_panic(expected = "routing different momenta")]
+    fn summed_momentum_guard_rejects_a_misrouted_leg() {
+        let momenta = guard_momenta();
+        let tol = summed_momentum_tol(&momenta);
+        let q = LorentzVector::new(500.0, 0.0, 0.0, 0.0);
+        assert_summable(&zero_vector_slot(q), &zero_vector_slot(q + momenta[2]), tol);
+    }
+
+    /// The guard is not vacuous at its own scale either: an order of magnitude above
+    /// the admitted residue already aborts.
+    #[test]
+    #[should_panic(expected = "routing different momenta")]
+    fn summed_momentum_guard_rejects_ten_times_its_tolerance() {
+        let momenta = guard_momenta();
+        let tol = summed_momentum_tol(&momenta);
+        let q = LorentzVector::new(500.0, 0.0, 0.0, 0.0);
+        let off = LorentzVector::new(0.0, 10.0 * tol, 0.0, 0.0);
+        assert_summable(&zero_vector_slot(q), &zero_vector_slot(q + off), tol);
+    }
 
     /// Placeholder color factor for hand-built `VertexTerm`s in tests that don't
     /// exercise color at all — `VertexTerm::from_ufo` ignores its `_color` arg.
@@ -4501,6 +4626,54 @@ mod tests {
                 p.extend(rambo_massive(sqrt_s, &m_out, &mut rng));
                 let a = full.eval_m2(&p, &mut scratch_full);
                 let b = pruned.eval_m2(&p, &mut scratch_pruned);
+                assert_eq!(
+                    a.to_bits(),
+                    b.to_bits(),
+                    "[{process}] pruned eval_m2 diverged: {a:e} vs {b:e}"
+                );
+            }
+        }
+    }
+
+    /// Every 2→3 QCD process with a quark line reaches at least one propagator through
+    /// two different vertex orderings, which accumulate that propagator's routed
+    /// momentum in two different summation orders: a transverse component that cancels
+    /// arrives as `0.0` down one and as a rounding residue down the other. The
+    /// all-gluon process has no such pair. All four must compile and prune, and the
+    /// pruned evaluator must stay bit-for-bit with the unpruned one.
+    #[test]
+    fn prune_zero_helicities_handles_reordered_momentum_sums() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massless;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let mut rng = StdRng::seed_from_u64(0x2_70C_3);
+        let sqrt_s = 500.0;
+
+        for process in ["u u~ > g g g", "g g > g u u~", "g u > g g u", "g g > g g g"] {
+            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&pc, &model).unwrap();
+            let eval_full = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+            let mut eval_pruned = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+            eval_pruned.prune_zero_helicities(&evaluated);
+
+            let full = BoundAmplitude::<f64>::bind(&eval_full, &evaluated);
+            let pruned = BoundAmplitude::<f64>::bind(&eval_pruned, &evaluated);
+            let mut scratch_full = full.scratch_space();
+            let mut scratch_pruned = pruned.scratch_space();
+            for _ in 0..4 {
+                let mut p = vec![
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                    LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+                ];
+                p.extend(rambo_massless(sqrt_s, 3, &mut rng));
+                let a = full.eval_m2(&p, &mut scratch_full);
+                let b = pruned.eval_m2(&p, &mut scratch_pruned);
+                assert!(a > 0.0, "[{process}] |M|^2 must be positive: {a:e}");
                 assert_eq!(
                     a.to_bits(),
                     b.to_bits(),
