@@ -136,6 +136,27 @@ One line each; the note is the full record. Earlier sprints
   but it is far too large to be rounding on a 2→2 whose scale ought to be
   group-independent, and it is the size of the effect a future group-axis
   change would expose. Worth one look at where the group enters.
+- **Every 2→3 QCD process with a quark line aborts before it integrates**, on
+  an exact float comparison of two momenta that agree to a cancellation
+  residue. `WaveformSlot::Add` (`waveform_slot.rs:55`) guards vector and
+  fermion sums with `assert_eq!` on the momentum, and two currents reaching one
+  propagator by different vertex orderings accumulate that momentum in
+  different orders. Minimal reproducer `vibegraph integrate` on
+  `generate u u~ > g g g`: the probe point in
+  `AmplitudeEvaluator::prune_zero_helicities` → `eval_probe` sums
+  `[3.7, -1.11e-16, -1.11e-16, 3.33e-16]` against
+  `[3.7, 0.0, -1.11e-16, 3.33e-16]` — a transverse component that cancels to
+  zero, reached as `0.0` down one ordering and as one ulp of residue down the
+  other. `g g > g u u~` and `g u > g g u` abort identically; **`g g > g g g`
+  does not**, so it is the quark line that opens the second ordering. Same in
+  `dev` and `release`, and unrelated to enumeration scheduling (identical
+  under both `EnumerationPool`s). `p p > j j j` is therefore unreachable, which
+  is why no gated row sees this: the QCD rows stop at 2→2. The fix is not a
+  tolerance on the assert — it is that a bit-exactness requirement sits on a
+  quantity built by two summation orders, so either the momentum is carried
+  rather than re-accumulated, or the check becomes a scale-relative one on the
+  invariant. Note that the sibling `Scalar` arm already documents *why* it
+  needs no check; the vector arm's assumption is the one that does not hold.
 
 ### Sharper oracles the sprint named but did not build
 

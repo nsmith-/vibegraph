@@ -22,9 +22,9 @@ on:
     branches: [main]
   pull_request:
 
-# Both jobs below run on `ubuntu-latest`, which is x86_64, and both exist only to
-# compile and run this repository's own tests — nothing either of them builds is
-# distributed. Raising the codegen floor from the x86-64 baseline to v3 (AVX2 +
+# The two compiling jobs below run on `ubuntu-latest`, which is x86_64, and both
+# exist only to compile and run this repository's own tests — nothing either of
+# them builds is distributed. Raising the codegen floor from the x86-64 baseline to v3 (AVX2 +
 # FMA, which every GitHub-hosted x86_64 runner has) lets the amplitude and VEGAS
 # arithmetic that dominates the suite's wall time vectorise. `release.yml`
 # deliberately does not set this: its binaries ship to users, and must keep
@@ -39,6 +39,23 @@ env:
   RUSTFLAGS: -C target-cpu=x86-64-v3
 
 jobs:
+  # Formatting is checked here rather than in a local hook because the sprint
+  # workflow runs agents in `git worktree` checkouts, which share `.git/hooks`
+  # with nothing and are cloned by no one — a hook installed in one working copy
+  # governs neither the others nor a fresh clone. This job is the only place the
+  # rule is enforced for everybody. It compiles nothing, so it runs in seconds
+  # and needs no cargo cache.
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - run: cargo fmt --all --check
+
   test:
     runs-on: ubuntu-latest
     steps:
