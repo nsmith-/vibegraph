@@ -1477,9 +1477,13 @@ impl<'a> FixedBeamIntegrand<'a> {
         seed: u64,
     ) -> Option<AlphaAdaptation<f64>> {
         let floor = self.cuts.spacelike_floor();
+        let cuts = &self.cuts;
         let built: Vec<DiagramChannel<f64>> = diagrams
             .iter()
-            .map(|d| DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor))
+            .map(|d| {
+                DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor)
+                    .with_timelike_floors(&|slots| cuts.timelike_floor(slots))
+            })
             .collect();
         if built.is_empty() {
             return None;
@@ -1542,9 +1546,13 @@ impl<'a> FixedBeamIntegrand<'a> {
         alphas: &[f64],
     ) -> Option<Result<(), usize>> {
         let floor = self.cuts.spacelike_floor();
+        let cuts = &self.cuts;
         let built: Vec<DiagramChannel<f64>> = diagrams
             .iter()
-            .map(|d| DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor))
+            .map(|d| {
+                DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor)
+                    .with_timelike_floors(&|slots| cuts.timelike_floor(slots))
+            })
             .collect();
         if built.is_empty() {
             return None;

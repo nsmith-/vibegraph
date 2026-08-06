@@ -168,6 +168,9 @@ struct MmnlCut {
 pub struct Cuts {
     /// Indices of incoming legs (their momentum sum defines ŝ).
     incoming: Vec<usize>,
+    /// Indices of final-state legs, in the order given to [`Cuts::compile`]. Bit
+    /// `k` of a [`Cuts::timelike_floor`] subsystem names `finals[k]`.
+    finals: Vec<usize>,
     shat_min_sq: f64,
     shat_max_sq: f64,
     single: Vec<SingleLegCut>,
@@ -234,6 +237,27 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
 /// signed square used by MadGraph for mass/ptll thresholds: `x·|x|`.
 fn signed_sq(x: f64) -> f64 {
     x * x.abs()
+}
+
+/// Upper bound on the azimuthal separation `DELTA_PHI`'s cosine clamp can invent:
+/// `acos(0.99999999)`, rounded up. A pair at zero true separation is reported this
+/// far apart, so a `ΔR` threshold accepts pairs whose true separation is smaller
+/// than it by up to this much; every derived separation bound is taken at the
+/// correspondingly relaxed radius.
+const DELTA_PHI_CLAMP_SLACK: f64 = 1.5e-4;
+
+/// `min(cosh Δy − cos Δφ)` over the separations a `ΔR ≥ R` threshold accepts,
+/// given as the stored signed square `R·|R|`. The minimisation is derived in
+/// [`Cuts::timelike_floor`].
+fn min_separation_gap(dr2_min: f64) -> f64 {
+    let r2 = (dr2_min - DELTA_PHI_CLAMP_SLACK * DELTA_PHI_CLAMP_SLACK).max(0.0);
+    let r = r2.sqrt();
+    if r <= std::f64::consts::PI {
+        1.0 - r.cos()
+    } else {
+        let dy2 = r2 - std::f64::consts::PI * std::f64::consts::PI;
+        dy2.sqrt().cosh() + 1.0
+    }
 }
 
 impl Cuts {
@@ -338,6 +362,12 @@ impl Cuts {
 
         Ok(Cuts {
             incoming,
+            finals: legs
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| l.is_final)
+                .map(|(i, _)| i)
+                .collect(),
             shat_min_sq: dsqrt_shat * dsqrt_shat,
             shat_max_sq: if dsqrt_shatmax == -1.0 {
                 -1.0
@@ -391,6 +421,117 @@ impl Cuts {
             .fold(0.0f64, f64::max)
             .max(0.0);
         pt_min * pt_min
+    }
+
+    /// A lower bound (GeV²) on the invariant mass² of the final-state subsystem
+    /// `slots` — bit `k` naming the `k`-th final-state leg in [`Cuts::compile`]'s
+    /// leg order — holding at every configuration [`Cuts::pass`] accepts. Zero when
+    /// the active cuts imply none.
+    ///
+    /// This is the timelike counterpart of [`spacelike_floor`](Self::spacelike_floor),
+    /// and unlike it, it is a *kinematic* statement rather than a regulator scale: a
+    /// channel that draws a subsystem's invariant from this floor upward loses only
+    /// configurations the cuts reject, so the estimator stays unbiased — but only
+    /// while the bound is provable, which is what the derivation below is for. An
+    /// over-tight bound cuts into the accepted region and biases σ silently.
+    ///
+    /// ## Adding legs cannot lower the bound
+    ///
+    /// Every bound below is read off a *sub*-multiset `T ⊆ S` of the subsystem's
+    /// legs, and `m²(S) ≥ m²(T)`: writing `A = Σ_{T} p`, `B = Σ_{S∖T} p`,
+    /// `(A+B)² = A² + B² + 2A·B` with `B² ≥ 0` and
+    /// `A·B = E_A E_B − p⃗_A·p⃗_B ≥ E_A E_B − |p⃗_A||p⃗_B| ≥ 0`, since a sum of
+    /// on-shell final-state momenta is future-pointing with `E ≥ |p⃗|`. So a bound
+    /// on a pair inside `S` is a bound on `S`.
+    ///
+    /// ## The pair bounds
+    ///
+    /// An explicit pairwise invariant-mass threshold (`mmll` and friends) is the
+    /// bound itself, taken only from a *normal* window — an inverted one
+    /// (`m2_max < m2_min`, a veto band) admits masses below `m2_min` and implies
+    /// nothing.
+    ///
+    /// The transverse-momentum and separation thresholds imply one too. With
+    /// rapidity `y` (what `cuts.f` cuts on) and `m_T = √(m² + p_T²)`,
+    ///
+    /// ```text
+    ///   (p_i + p_j)² = m_i² + m_j² + 2(m_Ti m_Tj cosh Δy − p_Ti p_Tj cos Δφ)
+    ///               ≥ 2 p_Ti p_Tj (cosh Δy − cos Δφ),
+    /// ```
+    ///
+    /// using `m_T ≥ p_T ≥ 0` and `cosh ≥ 0`. The accepted region has
+    /// `p_Ti ≥ p_Ti^min`, `p_Tj ≥ p_Tj^min` and `Δy² + Δφ² ≥ R²`, so with both
+    /// thresholds positive the bound is `2 p_Ti^min p_Tj^min · g_min(R)`, where
+    /// `g(Δy, Δφ) = cosh Δy − cos Δφ` is minimised over the accepted separations.
+    ///
+    /// `g` increases in `|Δy|` and in `Δφ` on `[0, π]`, so shrinking any point of
+    /// the region radially toward the origin lowers `g` until it reaches the circle
+    /// `Δy² + Δφ² = R²`: the minimum sits there. On the circle, with `Δy = a` and
+    /// `Δφ = b = √(R² − a²)`,
+    /// `d/da [cosh a − cos b] = sinh a − a·sin(b)/b ≥ 0` for `a ≥ 0`, since
+    /// `sinh a ≥ a` and `sin b ≤ b`. So the minimum is at `Δy = 0, Δφ = R` and
+    /// `g_min = 1 − cos R` — for `R ≤ π`. A larger `R` puts that point outside the
+    /// strip `Δφ ≤ π` the opening angle lives in, and the minimum moves to the
+    /// strip's corner `Δφ = π, |Δy| = √(R² − π²)`, giving `cosh√(R² − π²) + 1`.
+    ///
+    /// `R` is taken a hair below the nominal threshold ([`DELTA_PHI_CLAMP_SLACK`]),
+    /// because `DELTA_PHI` clamps its cosine and so *reports* a pair at zero
+    /// azimuthal separation as being that far apart: a point whose true separation
+    /// is `√(R² − slack²)` can be accepted.
+    ///
+    /// The bound needs both legs held above a positive `p_T`, which also disposes of
+    /// the rapidity sentinel: `E ≤ |p_z|` — which `rapidity` reports as `−1e99` and
+    /// which would let a pair pass `ΔR` at an arbitrary true separation — needs
+    /// `m² ≤ −p_T²`, impossible for an on-shell leg carrying `p_T ≥ p_T^min > 0`.
+    ///
+    /// ## `mmnl`
+    ///
+    /// The combined lepton-plus-neutrino mass threshold bounds its own member set,
+    /// hence any subsystem containing it.
+    pub fn timelike_floor(&self, slots: u64) -> f64 {
+        let holds = |idx: usize| -> bool {
+            self.finals
+                .iter()
+                .position(|&f| f == idx)
+                .is_some_and(|k| k < 64 && slots & (1u64 << k) != 0)
+        };
+        let mut floor = 0.0f64;
+        for pc in &self.pairs {
+            if holds(pc.i) && holds(pc.j) {
+                floor = floor.max(self.pair_mass2_floor(pc));
+            }
+        }
+        if let Some(m) = &self.mmnl {
+            if m.min > 0.0 && !m.members.is_empty() && m.members.iter().all(|&i| holds(i)) {
+                floor = floor.max(m.min * m.min);
+            }
+        }
+        floor
+    }
+
+    /// The lower bound on one pair's invariant mass², from its own thresholds.
+    /// See [`timelike_floor`](Self::timelike_floor) for the derivation.
+    fn pair_mass2_floor(&self, pc: &PairCut) -> f64 {
+        let mut floor = 0.0f64;
+        // A normal window's lower edge is the bound; an inverted one (a veto band)
+        // admits everything below `m2_min` and implies nothing.
+        if pc.m2_min > 0.0 && (pc.m2_max < 0.0 || pc.m2_min <= pc.m2_max) {
+            floor = floor.max(pc.m2_min);
+        }
+        let (pt_i, pt_j) = (self.pt_min_of(pc.i), self.pt_min_of(pc.j));
+        if pc.dr2_min > 0.0 && pt_i > 0.0 && pt_j > 0.0 {
+            floor = floor.max(2.0 * pt_i * pt_j * min_separation_gap(pc.dr2_min));
+        }
+        floor
+    }
+
+    /// The transverse-momentum threshold the compiled single-leg cuts hold leg
+    /// `idx` above, or `0` when it has none.
+    fn pt_min_of(&self, idx: usize) -> f64 {
+        self.single
+            .iter()
+            .find(|c| c.idx == idx)
+            .map_or(0.0, |c| c.pt_min.max(0.0))
     }
 
     /// Phase-space indicator: `true` iff `momenta` (all external legs, in the

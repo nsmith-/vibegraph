@@ -147,6 +147,10 @@ struct Branch<F: Real> {
     /// Sum of the subtree's leaf masses — the minimal invariant mass of the
     /// system this branch decays.
     mu: F,
+    /// Cut-implied lower bound (GeV²) on this subsystem's invariant, or zero for no
+    /// bound. Installed by [`DiagramChannel::with_timelike_floors`]; the draw's lower
+    /// edge is [`draw_lo`] of it and `mu²`.
+    floor: F,
     /// The s-channel propagator whose pole sits on this branch's invariant, if the
     /// diagram has one. `None` for the root (invariant fixed at √ŝ) and for the
     /// auxiliary branches introduced when a vertex has more than two subsystems.
@@ -175,6 +179,10 @@ struct SpineRung<F: Real> {
     /// full kinematic window. A restriction narrows the channel's *support*, so
     /// the density reports exactly zero above it.
     t_max_cap: Option<F>,
+    /// Cut-implied lower bound (GeV²) on the invariant of the remainder `R_i` this
+    /// rung leaves behind, or zero for no bound. The blob's own bound lives on
+    /// `emitted`; installed together by [`DiagramChannel::with_timelike_floors`].
+    rest_floor: F,
 }
 
 /// A t-channel spine: the ordered chain of peripheral emissions a diagram's
@@ -516,6 +524,7 @@ impl<F: Real> DiagramChannel<F> {
                 emitted: build_node(emitted_mask, &masses, &subsystems, &resonances),
                 t_mass2: t_mass * t_mass,
                 t_max_cap: None,
+                rest_floor: F::zero(),
             }],
             recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
         };
@@ -582,6 +591,7 @@ impl<F: Real> DiagramChannel<F> {
                     emitted: build_node(mask, &masses, &subsystems, &resonances),
                     t_mass2,
                     t_max_cap: None,
+                    rest_floor: F::zero(),
                 })
                 .collect(),
             recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
@@ -603,8 +613,9 @@ impl<F: Real> DiagramChannel<F> {
     /// A canonical encoding of everything the map is a function of: the outgoing
     /// multiplicity, the beam pole masses the peripheral reference frame is built
     /// from, the energy the fixed-energy impls draw at, and the whole topology —
-    /// each node's leg slot or minimal invariant, its mass and its resonance, and
-    /// each peripheral rung's pole location and transfer bound.
+    /// each node's leg slot or minimal invariant, its mass, its cut-implied floor
+    /// and its resonance, and each peripheral rung's pole location, transfer bound
+    /// and remainder floor.
     ///
     /// Two channels with equal keys are the same map. [`Channel::density`],
     /// [`ScaledChannel::density_at`] and the two `sample` entry points read
@@ -647,6 +658,8 @@ impl<F: Real> DiagramChannel<F> {
                         None => out.push('-'),
                         Some(cap) => key_scalar(cap, &mut out),
                     }
+                    out.push(',');
+                    key_scalar(rung.rest_floor, &mut out);
                     out.push(',');
                     key_node(&rung.emitted, &mut out);
                     out.push(')');
@@ -701,6 +714,50 @@ impl<F: Real> DiagramChannel<F> {
         if let ChannelTopology::Spine(spine) = &mut self.topology {
             for rung in &mut spine.rungs {
                 rung.t_max_cap = Some(t_max);
+            }
+        }
+        self
+    }
+
+    /// Raise every drawn timelike invariant's lower edge from the kinematic
+    /// threshold `(Σ mᵢ)²` to the floor a process's own cuts imply.
+    ///
+    /// `floor` receives the outgoing-leg slots of a subsystem as a bitmask and
+    /// returns a lower bound (GeV²) on that subsystem's invariant mass² over the
+    /// accepted region — `Cuts::timelike_floor` is that derivation. The caller owes
+    /// a bound that actually holds: one that cuts into the accepted region removes
+    /// configurations the integrand needs and biases the estimate.
+    ///
+    /// The floor enters the draw and its measure alike, so the sampler's weight and
+    /// the density stay exact reciprocals; what it changes is where the map puts its
+    /// density. A zero-width pole is the case it is for — its logarithmic map
+    /// otherwise starts at a fixed absolute floor and spends a tenth of the draw
+    /// reaching a kinematic edge no accepted point comes near, mixing zero-weight
+    /// and largest-weight draws into one grid cell.
+    ///
+    /// Configurations below the floor keep a positive density here rather than the
+    /// exact zero a support restriction would report. That is consistent, not sloppy:
+    /// the same bound that makes the floor admissible says every such configuration
+    /// fails the cuts, so it carries integrand zero and its density is never read
+    /// against a non-zero contribution.
+    pub fn with_timelike_floors(mut self, floor: &dyn Fn(u64) -> F) -> Self {
+        match &mut self.topology {
+            ChannelTopology::Timelike(root) => {
+                floor_branch(root, floor);
+            }
+            ChannelTopology::Spine(spine) => {
+                let blobs: Vec<u64> = spine
+                    .rungs
+                    .iter_mut()
+                    .map(|rung| floor_node(&mut rung.emitted, floor))
+                    .collect();
+                // `R_i` is what the chain has not emitted by rung `i`: the recoil
+                // plus every later blob.
+                let mut rest = floor_node(&mut spine.recoil, floor);
+                for i in (0..spine.rungs.len()).rev() {
+                    spine.rungs[i].rest_floor = floor(rest);
+                    rest |= blobs[i];
+                }
             }
         }
         self
@@ -966,8 +1023,25 @@ fn binarize<F: Real>(mut children: Vec<Node<F>>, resonance: Option<Resonance<F>>
         left,
         right,
         mu,
+        floor: F::zero(),
         resonance,
     }))
+}
+
+/// Install `floor`'s bound on `branch` and on every composite node beneath it,
+/// returning the outgoing-leg slots the subtree spans.
+fn floor_branch<F: Real>(branch: &mut Branch<F>, floor: &dyn Fn(u64) -> F) -> u64 {
+    let mask = floor_node(&mut branch.left, floor) | floor_node(&mut branch.right, floor);
+    branch.floor = floor(mask);
+    mask
+}
+
+/// [`floor_branch`] over a node; a leaf has a fixed invariant and takes no floor.
+fn floor_node<F: Real>(node: &mut Node<F>, floor: &dyn Fn(u64) -> F) -> u64 {
+    match node {
+        Node::Leaf { slot, .. } => 1u64 << *slot,
+        Node::Branch(b) => floor_branch(b, floor),
+    }
 }
 
 /// Append a scalar's exact `(mantissa, exponent, sign)` decomposition, so two keys
@@ -997,6 +1071,8 @@ fn key_node<F: Real>(node: &Node<F>, out: &mut String) {
 fn key_branch<F: Real>(branch: &Branch<F>, out: &mut String) {
     out.push_str("B(");
     key_scalar(branch.mu, out);
+    out.push(',');
+    key_scalar(branch.floor, out);
     out.push(',');
     match branch.resonance {
         None => out.push('-'),
@@ -1127,6 +1203,7 @@ fn spine_chain<F: Real>(
             emitted: build_node(blob, masses, subsystems, resonances),
             t_mass2: if bounded { m2.max(pole_floor) } else { m2 },
             t_max_cap: bounded.then(|| -fiducial_scale),
+            rest_floor: F::zero(),
         });
         previous = side;
     }
@@ -1320,6 +1397,20 @@ fn log_scale<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>) -> Option<LogMap<
     })
 }
 
+/// The lower edge of an invariant draw over `[·, hi]`: the kinematic threshold
+/// `mu²`, raised to a cut-implied `floor` where one is installed.
+///
+/// The floor is never allowed past `hi`. A configuration that leaves a subsystem
+/// less energy than its own cuts demand is one the cuts reject; the draw is
+/// degenerate there, and clamping keeps the range non-negative — which a bare
+/// `max` would not — instead of handing `draw_invariant` an inverted one. With no
+/// floor installed this is exactly `mu²`.
+#[inline]
+fn draw_lo<F: Real>(mu: F, floor: F, hi: F) -> F {
+    let kinematic = mu * mu;
+    kinematic.max(floor.min(hi))
+}
+
 /// Map `x ∈ [0,1]` to an invariant `s ∈ [lo, hi]`.
 ///
 /// A finite-width pole importance-samples the relativistic Breit–Wigner via
@@ -1392,8 +1483,8 @@ fn sample_branch<F: Real>(
     let sl = match &branch.left {
         Node::Leaf { mass, .. } => *mass * *mass,
         Node::Branch(b) => {
-            let lo = mu_l * mu_l;
             let hi = (sqrt_s - mu_r).powi(2);
+            let lo = draw_lo(mu_l, b.floor, hi);
             let x = u[*cursor];
             *cursor += 1;
             let s = draw_invariant(lo, hi, b.resonance, x);
@@ -1405,8 +1496,8 @@ fn sample_branch<F: Real>(
     let sr = match &branch.right {
         Node::Leaf { mass, .. } => *mass * *mass,
         Node::Branch(b) => {
-            let lo = mu_r * mu_r;
             let hi = (sqrt_s - sqrt_sl).powi(2);
+            let lo = draw_lo(mu_r, b.floor, hi);
             let x = u[*cursor];
             *cursor += 1;
             let s = draw_invariant(lo, hi, b.resonance, x);
@@ -1494,13 +1585,13 @@ fn branch_jacobian<F: Real>(branch: &Branch<F>, s: F, momenta: &[LorentzVector<F
 
     let mut f = F::one();
     if let Node::Branch(b) = &branch.left {
-        let lo = mu_l * mu_l;
         let hi = (sqrt_s - mu_r).powi(2);
+        let lo = draw_lo(mu_l, b.floor, hi);
         f = f * invariant_measure(lo, hi, b.resonance, sl);
     }
     if let Node::Branch(b) = &branch.right {
-        let lo = mu_r * mu_r;
         let hi = (sqrt_s - sqrt_sl).powi(2);
+        let lo = draw_lo(mu_r, b.floor, hi);
         f = f * invariant_measure(lo, hi, b.resonance, sr);
     }
     f = f * r2_factor(s, sqrt_s, sl, sr);
@@ -1714,8 +1805,8 @@ fn sample_spine<F: Real>(
         let s_blob = match &rung.emitted {
             Node::Leaf { mass, .. } => *mass * *mass,
             Node::Branch(b) => {
-                let lo = mu_blob * mu_blob;
                 let hi = (sqrt_s_sys - mu_rest).powi(2);
+                let lo = draw_lo(mu_blob, b.floor, hi);
                 let x = u[*cursor];
                 *cursor += 1;
                 let drawn = draw_invariant(lo, hi, b.resonance, x);
@@ -1726,8 +1817,8 @@ fn sample_spine<F: Real>(
         let sqrt_s_blob = s_blob.sqrt();
         let rest_res = spine.rest_resonance(i);
         let s_rest = if spine.rest_is_composite(i) {
-            let lo = mu_rest * mu_rest;
             let hi = (sqrt_s_sys - sqrt_s_blob).powi(2);
+            let lo = draw_lo(mu_rest, rung.rest_floor, hi);
             let x = u[*cursor];
             *cursor += 1;
             let drawn = draw_invariant(lo, hi, rest_res, x);
@@ -1828,13 +1919,13 @@ fn spine_jacobian<F: Real>(
         let s_rest = spine.rest_invariant(i, momenta);
 
         if let Node::Branch(b) = &rung.emitted {
-            let lo = mu_blob * mu_blob;
             let hi = (sqrt_s_sys - mu_rest).powi(2);
+            let lo = draw_lo(mu_blob, b.floor, hi);
             f = f * invariant_measure(lo, hi, b.resonance, s_blob);
         }
         if spine.rest_is_composite(i) {
-            let lo = mu_rest * mu_rest;
             let hi = (sqrt_s_sys - sqrt_s_blob).powi(2);
+            let lo = draw_lo(mu_rest, rung.rest_floor, hi);
             f = f * invariant_measure(lo, hi, spine.rest_resonance(i), s_rest);
         }
 
