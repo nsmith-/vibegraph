@@ -2592,7 +2592,6 @@ dependencies = [
  "itertools 0.14.0",
  "libm",
  "libtest-mimic",
- "log",
  "num-complex",
  "num-rational",
  "num-traits",

@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 use num_rational::Ratio;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use tracing::{debug, info, info_span, trace};
 
 use crate::diagrams::{Diagram, DiagramSet};
 use crate::helas::color::colorize_process;
@@ -118,6 +119,13 @@ pub struct AmplitudeEvaluator {
 impl AmplitudeEvaluator {
     /// Compile from a DiagramSet + UFO model (symbolic, no param card needed).
     pub fn compile(set: &DiagramSet, model: &UFOModel) -> Result<Self, EvalError> {
+        let subprocess = format!(
+            "{} > {}",
+            set.particles_in.join(" "),
+            set.particles_out.join(" ")
+        );
+        let _span = info_span!("compile", process = %subprocess).entered();
+        let started = std::time::Instant::now();
         let ext_particle_names = set
             .particles_in
             .iter()
@@ -137,6 +145,9 @@ impl AmplitudeEvaluator {
         // Pass C: factorize color into a basis of flows + the exact CF matrix. Each
         // contribution names an amplitude by `(diagram, color-index chain)`.
         let basis = colorize_process(model, &set.diagrams)?;
+        let n_flows = basis.ncolor();
+        info!("{n_flows} colour flows, CF matrix {n_flows}×{n_flows}");
+        report_cf_matrix(n_flows, &basis.cf_matrix);
 
         // Root each distinct `(diagram, chain)` amplitude the flows reference. A chain
         // selects one color structure per vertex; for single-structure vertices this
@@ -201,6 +212,16 @@ impl AmplitudeEvaluator {
         let config_spans: Vec<usize> = configs.iter().map(Vec::len).collect();
         let symbolic = lower::optimize(lower::lower_flows(&basis, &evals, &configs));
         let folded = Folded::build(&symbolic);
+        let program = folded.program();
+        info!("compiled evaluator: {} ops", program.instrs.len());
+        debug!(
+            arena_nodes = folded.ast.len(),
+            arena_slots = program.arena_sizes.iter().sum::<u32>(),
+            amplitudes = evals.len(),
+            configurations = configs.len(),
+            helicities = helicities.len(),
+            "compiled program"
+        );
 
         // Read each flow's basis key back as color lines, giving the Les Houches
         // `(color, anticolor)` labels an event record carries per leg.
@@ -224,6 +245,7 @@ impl AmplitudeEvaluator {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let color_flow_tags = color_flow_tags(&basis, &leg_colors)?;
+        report_flow_tags(&color_flow_tags);
         let leading_color_flows = LeadingColorFlows::of(&basis, n_diagrams);
         let flow_fingerprints: Vec<FlowFingerprint> = basis
             .elements
@@ -249,6 +271,8 @@ impl AmplitudeEvaluator {
                 key
             })
             .collect();
+
+        debug!("compiled in {:.3} s", started.elapsed().as_secs_f64());
 
         Ok(Self {
             folded,
@@ -603,6 +627,40 @@ impl AmplitudeEvaluator {
             self.folded.coupling_ids().collect(),
             self.folded.particle_ids().collect(),
         )
+    }
+}
+
+/// The colour-factor matrix, one row per line.
+///
+/// The entries are exact rationals at `Nc = 3`, so this is the whole colour
+/// algebra of a process in a form another implementation's matrix can be compared
+/// against term by term. A wide process's matrix is quadratic in the flow count,
+/// which is why it is rendered only when someone asked for that much detail.
+fn report_cf_matrix(n_flows: usize, cf_matrix: &[Ratio<i64>]) {
+    if !tracing::enabled!(tracing::Level::TRACE) {
+        return;
+    }
+    for i in 0..n_flows {
+        let row: Vec<String> = cf_matrix[i * n_flows..(i + 1) * n_flows]
+            .iter()
+            .map(|entry| entry.to_string())
+            .collect();
+        trace!("CF row {i}: {}", row.join(" "));
+    }
+}
+
+/// Each flow's Les Houches `(colour, anticolour)` label per external leg.
+fn report_flow_tags(tags: &ColorFlowTags) {
+    if !tracing::enabled!(tracing::Level::DEBUG) {
+        return;
+    }
+    for f in 0..tags.n_flows() {
+        let legs: Vec<String> = tags
+            .flow(f)
+            .iter()
+            .map(|[c, a]| format!("({c},{a})"))
+            .collect();
+        debug!("flow {f} legs: {}", legs.join(" "));
     }
 }
 

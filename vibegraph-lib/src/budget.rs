@@ -62,12 +62,17 @@
 //!   is a 2–3× point cost — deliberately, since the alternative is stopping on an
 //!   error bar that the seed-to-seed spread does not support.
 
+use std::time::Instant;
+
+use tracing::{debug, info, info_span};
+
 use crate::hadronic::{combine_channels, ChannelIntegration, VEGAS_NBINS};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
+use crate::progress;
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{
-    adapt_blocks_iteration, combine_iterations, BlockPlan, IterationCombination, VegasGrid,
-    VegasResult,
+    adapt_blocks_iteration, combine_iterations, BlockIteration, BlockPlan, IterationCombination,
+    VegasGrid, VegasResult,
 };
 
 /// Floor on a channel's per-iteration evaluation count.
@@ -359,11 +364,23 @@ pub fn integrate_channels<I>(
 where
     I: ChannelIntegrand + Sync,
 {
+    let _span = info_span!("vegas").entered();
     let ndim = integrand.channel_grid_ndim();
     let scale_ndim = integrand.scale_draw_ndim();
     let point_ndim = ndim + scale_ndim;
     let neval = budget.neval();
     let single = alphas.len() == 1;
+    // The iteration count a display divides by. A convergence run may stop well
+    // short of its cap, so this is an upper bound rather than a plan.
+    let iteration_bound = budget.max_iters() as u64;
+    info!(
+        "{} channels over {ndim} coordinates, {neval} points per iteration, allocated {}",
+        alphas.len(),
+        match allocation {
+            BlockAllocation::ByAlpha => "by α",
+            BlockAllocation::Neyman => "by αⱼsⱼ (Neyman)",
+        }
+    );
 
     let mut grids: Vec<VegasGrid> = alphas
         .iter()
@@ -423,7 +440,9 @@ where
                 .iter()
                 .map(|c| c.point_sd().unwrap_or(0.0))
                 .collect();
+            let previous = current.clone();
             current = neyman_allocation(&sd, alpha_total, MIN_CHANNEL_NEVAL);
+            report_reallocation(&previous, &current);
         }
 
         let plans: Vec<BlockPlan> = channels
@@ -439,6 +458,8 @@ where
             .collect();
 
         min_channel_neval = min_channel_neval.min(plans.iter().map(|p| p.neval).min().unwrap_or(0));
+        let iteration_points: usize = plans.iter().map(|p| p.neval).sum();
+        let started = Instant::now();
 
         let outcomes = adapt_blocks_iteration(
             &grids,
@@ -477,7 +498,42 @@ where
             }
         }
 
+        let ns_per_eval = started.elapsed().as_nanos() as f64 / iteration_points.max(1) as f64;
         iteration += 1;
+
+        // Before the warm-up is over no iteration has been kept, and a combined
+        // estimate over nothing is not a number.
+        let estimate = (iteration > warmup).then(|| running_estimate(&channels, combination));
+        match &estimate {
+            Some(total) => info!(
+                "iteration {iteration}: {:.6e} ± {:.6e} (χ²/dof {:.3}), {iteration_points} points \
+                 at {ns_per_eval:.0} ns/eval",
+                total.integral, total.std_dev, total.chi2_per_dof
+            ),
+            None => info!(
+                "iteration {iteration} (warm-up): {iteration_points} points at \
+                 {ns_per_eval:.0} ns/eval"
+            ),
+        }
+        let total = estimate.unwrap_or(VegasResult {
+            integral: 0.0,
+            std_dev: 0.0,
+            chi2_per_dof: 0.0,
+        });
+        progress::vegas_iteration(
+            iteration as u64,
+            Some(iteration_bound),
+            total.integral,
+            total.std_dev,
+            total.chi2_per_dof,
+        );
+        progress::eval_rate(
+            progress::stage::VEGAS,
+            iteration as u64,
+            Some(iteration_bound),
+            ns_per_eval,
+        );
+        report_channels(&plans, &outcomes);
 
         let done = match budget {
             Budget::Fixed { niter, .. } => {
@@ -545,6 +601,60 @@ where
         min_channel_neval,
     };
     (per_channel, total, report)
+}
+
+/// The combined estimate over every channel's kept iterations, as it stands.
+///
+/// The same sum the run's own result is formed from: terms add, their variances
+/// add, and the reported χ²/dof is the mean of the channels' own.
+fn running_estimate(channels: &[ChannelHistory], combination: IterationCombination) -> VegasResult {
+    let terms: Vec<VegasResult> = channels.iter().map(|c| c.combine(combination)).collect();
+    let integral: f64 = terms.iter().map(|t| t.integral).sum();
+    let variance: f64 = terms.iter().map(|t| t.std_dev * t.std_dev).sum();
+    let chi2_per_dof = if terms.is_empty() {
+        0.0
+    } else {
+        terms.iter().map(|t| t.chi2_per_dof).sum::<f64>() / terms.len() as f64
+    };
+    VegasResult {
+        integral,
+        std_dev: variance.sqrt(),
+        chi2_per_dof,
+    }
+}
+
+/// What each channel's own iteration just measured, one line per channel.
+fn report_channels(plans: &[BlockPlan], outcomes: &[BlockIteration]) {
+    if !tracing::enabled!(tracing::Level::DEBUG) {
+        return;
+    }
+    for (j, (plan, out)) in plans.iter().zip(outcomes).enumerate() {
+        debug!(
+            "channel {j}: {:.6e} ± {:.6e} over {} points",
+            out.integral,
+            out.variance.max(0.0).sqrt(),
+            plan.neval
+        );
+    }
+}
+
+/// The channels whose per-iteration budget the variance reallocation moved, and by
+/// how much. Channels it left alone are omitted — on a wide process they are most
+/// of the list and none of the information.
+fn report_reallocation(before: &[usize], after: &[usize]) {
+    if !tracing::enabled!(tracing::Level::DEBUG) {
+        return;
+    }
+    let moved: Vec<String> = before
+        .iter()
+        .zip(after)
+        .enumerate()
+        .filter(|(_, (b, a))| b != a)
+        .map(|(j, (b, a))| format!("{j}: {b}→{a}"))
+        .collect();
+    if !moved.is_empty() {
+        debug!("reallocated {}", moved.join(", "));
+    }
 }
 
 /// `Δσ/σ` of a result, `∞` for a vanishing integral.

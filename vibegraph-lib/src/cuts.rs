@@ -327,6 +327,15 @@ impl Cuts {
         let dsqrt_shatmax = rc.float("dsqrt_shatmax");
         let shat_min_hint = shat_min_hint(rc, legs, &infos, &single);
 
+        tracing::debug!(
+            single_leg = single.len(),
+            pairs = pairs.len(),
+            mmnl = mmnl_cut.is_some(),
+            sqrt_shat_min = dsqrt_shat,
+            sqrt_shat_max = dsqrt_shatmax,
+            "compiled cuts"
+        );
+
         Ok(Cuts {
             incoming,
             shat_min_sq: dsqrt_shat * dsqrt_shat,

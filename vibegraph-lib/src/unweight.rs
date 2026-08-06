@@ -40,11 +40,14 @@
 //! section is the classic silent unweighting failure, and a rate alone cannot see
 //! it.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
+use crate::progress;
 use crate::select::select_index;
 use crate::vegas::VegasGrid;
 
@@ -479,10 +482,26 @@ impl Unweighter {
                 grid.ndim()
             );
         }
+        let _span = tracing::info_span!("weight_scan").entered();
+        let total = specs.len() as u64;
+        let finished = AtomicU64::new(0);
         let scanned: Vec<(UnweightChannel, SubStream)> = specs
             .par_iter()
             .enumerate()
-            .map(|(j, &(grid, draws))| scan_channel(integrand, grid, draws, j, seed, rule))
+            .map(|(j, &(grid, draws))| {
+                let out = scan_channel(integrand, grid, draws, j, seed, rule);
+                tracing::debug!(
+                    "channel {j}: w_max {:.6e}, peak {:.6e}, {} of {draws} draws non-zero",
+                    out.0.scan.w_max,
+                    out.0.scan.w_peak,
+                    out.0.scan.nonzero
+                );
+                // The scan runs in parallel, so this counts completions rather than
+                // positions: `done` rises monotonically, but not in channel order.
+                let done = finished.fetch_add(1, Ordering::Relaxed) + 1;
+                progress::step(progress::stage::WEIGHT_SCAN, done, Some(total));
+                out
+            })
             .collect();
         let (built, scale_draw): (Vec<UnweightChannel>, Vec<SubStream>) =
             scanned.into_iter().unzip();

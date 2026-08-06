@@ -29,7 +29,6 @@ rand_chacha = "0.9"
 rayon = "1"
 feyngraph = { git = "https://github.com/nsmith-/FeynGraph", branch = "main", default-features = false }
 indexmap = { version = "2.14.0", features = ["serde"] }
-log = "0.4.29"
 num-complex = "0.4.6"
 num-rational = "0.4"
 peg = "0.8.6"

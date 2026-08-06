@@ -11,11 +11,49 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tracing::{debug, info, info_span, trace};
+
 use crate::diagrams::ModelImport;
+use crate::progress;
 use crate::runcard::{RunCard, RunCardError};
 use crate::ufo::identity::ModelIdentity;
 use crate::ufo::sm::{sm_model, SMRestrict};
 use crate::ufo::{UFOModel, UfoError};
+
+/// Report a resolved model and hand it straight back.
+///
+/// The digest rides on the headline because it is the only part of the report a
+/// second run can compare: two models with the same label and different contents
+/// differ nowhere else in what is said about them.
+fn describe(model: Arc<UFOModel>, identity: ModelIdentity) -> (Arc<UFOModel>, ModelIdentity) {
+    info!("model {} ({})", identity.label(), identity.digest);
+    debug!(
+        particles = model.particles.len(),
+        vertices = model.vertices.len(),
+        couplings = model.couplings.len(),
+        parameters = model.params.externals.len() + model.params.internals.len(),
+        lorentz = model.lorentz.len(),
+        "model contents"
+    );
+    let orders: Vec<String> = model
+        .order_hierarchy
+        .iter()
+        .map(|(name, hierarchy)| format!("{name}={hierarchy}"))
+        .collect();
+    debug!("coupling-order hierarchy: {}", orders.join(" "));
+    if tracing::enabled!(tracing::Level::TRACE) {
+        for vertex in model.vertices.values() {
+            let structures: Vec<&str> = vertex
+                .lorentz
+                .iter()
+                .map(|&id| model.lorentz_struct(id).structure.as_str())
+                .collect();
+            trace!("vertex {}: {}", vertex.name, structures.join(" | "));
+        }
+    }
+    progress::step(progress::stage::UFO_LOAD, 1, Some(1));
+    (model, identity)
+}
 
 /// Coordinates model loading for the CLI: maps a parsed `import model` spec to a
 /// concrete [`UFOModel`].
@@ -49,8 +87,10 @@ impl GlobalConfig {
         &self,
         spec: &Option<ModelImport>,
     ) -> Result<(Arc<UFOModel>, ModelIdentity), UfoError> {
+        let _span = info_span!("ufo_load").entered();
+        progress::step(progress::stage::UFO_LOAD, 0, Some(1));
         let Some(import) = spec else {
-            return Ok((
+            return Ok(describe(
                 sm_model(SMRestrict::Default),
                 ModelIdentity::interned_sm(SMRestrict::Default),
             ));
@@ -70,7 +110,10 @@ impl GlobalConfig {
                         ),
                     }
                 })?;
-            return Ok((sm_model(restrict), ModelIdentity::interned_sm(restrict)));
+            return Ok(describe(
+                sm_model(restrict),
+                ModelIdentity::interned_sm(restrict),
+            ));
         }
 
         // Non-SM model: read from the UFO search path.
@@ -85,7 +128,7 @@ impl GlobalConfig {
         let (model, digest) = UFOModel::load_with_digest(&dir, restrict.as_deref())?;
         let label = import.restrict_variant.as_deref().unwrap_or("default");
         let identity = ModelIdentity::from_loaded(&import.name, label, digest);
-        Ok((model, identity))
+        Ok(describe(model, identity))
     }
 
     /// Resolve the run card: parse [`run_card_path`](Self::run_card_path) if set,

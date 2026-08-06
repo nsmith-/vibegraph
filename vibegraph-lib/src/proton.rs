@@ -92,9 +92,10 @@ use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceRepo
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
     boost_z, compile_class, compile_scale_source, components, constant_scale_report,
-    initial_spin_color_average, make_subs_scale_aware, process_external_legs, BoundSubprocess,
-    ChannelIntegration, EventScaleSource, HadronicError, PointScales, RunningCouplingReport,
-    SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
+    initial_spin_color_average, make_subs_scale_aware, process_external_legs, report_channel_maps,
+    BoundSubprocess, ChannelIntegration, EventScaleSource, HadronicError, PointScales,
+    RunningCouplingReport, SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED,
+    VEGAS_ALPHA_MAPPED,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -107,6 +108,7 @@ use crate::phasespace::{
     identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, DiagramChannel, PhaseSpaceMap,
     RamboChannel, ScaledChannel, ScaledMultiChannel, GEV2_TO_PB,
 };
+use crate::progress;
 use crate::runcard::RunCard;
 use crate::select::select_index;
 use crate::ufo::{EvaluatedModel, UFOModel};
@@ -617,6 +619,28 @@ fn label(set: &DiagramSet) -> String {
     )
 }
 
+/// Where the survey left the channel selection weights: the spread of `αⱼ` and the
+/// channels carrying the most variance, which between them say whether the mixture
+/// concentrated on a few channels or stayed broad.
+fn report_alpha_spread(variance_shares: &[f64], alphas: &[f64]) {
+    if !tracing::enabled!(tracing::Level::DEBUG) || alphas.is_empty() {
+        return;
+    }
+    let lo = alphas.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = alphas.iter().copied().fold(0.0, f64::max);
+    let mut ranked: Vec<(usize, f64)> = variance_shares.iter().copied().enumerate().collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let top: Vec<String> = ranked
+        .iter()
+        .take(3)
+        .map(|(j, w)| format!("{j}: {w:.3e}"))
+        .collect();
+    tracing::debug!(
+        "alphas span {lo:.3e}..{hi:.3e}; largest variance shares {}",
+        top.join(", ")
+    );
+}
+
 /// Partition a hadronic enumeration into flavour groups.
 ///
 /// `sets` are the `DiagramSet`s of one proc card (empty ones ignored), `card` the
@@ -640,6 +664,11 @@ pub fn derive_flavor_groups(
 
     let mut compiled = Vec::with_capacity(sets.len());
     for (set, process) in sets.iter().zip(&labels) {
+        progress::step(
+            progress::stage::COMPILE,
+            compiled.len() as u64,
+            Some(sets.len() as u64),
+        );
         let evaluator = compile_class(set, model, evaluated)?;
         if evaluator.n_in() != 2 {
             return Err(ProtonError::NotTwoIncoming {
@@ -657,6 +686,11 @@ pub fn derive_flavor_groups(
         let cuts = Cuts::compile(card, &legs)?;
         compiled.push((evaluator, legs, cuts));
     }
+    progress::step(
+        progress::stage::COMPILE,
+        compiled.len() as u64,
+        Some(sets.len() as u64),
+    );
 
     let final_masses: Vec<f64> = compiled[0].1[2..].iter().map(|l| l.mass).collect();
     for (i, (_, legs, _)) in compiled.iter().enumerate().skip(1) {
@@ -1185,6 +1219,8 @@ impl<'a> ProtonIntegrand<'a> {
                 });
             }
         }
+
+        report_channel_maps(&channel_samplers);
 
         let n_out = groups.groups()[0].final_masses().len();
         let s_had = sqrt_s_had * sqrt_s_had;
@@ -1909,17 +1945,29 @@ impl<'a> ProtonIntegrand<'a> {
         n_iter: usize,
         damping: f64,
     ) -> AlphaAdaptation<f64> {
+        let _span = tracing::info_span!("alpha_survey").entered();
+        tracing::info!(
+            "surveying {} channels over {n_iter} × {n_survey} points",
+            self.channel_count()
+        );
         let mut trajectory = vec![self.channel_alphas()];
         let mut variance_shares = vec![0.0; self.channel_count()];
         for it in 0..n_iter {
             let w = self.survey_variance(seed, ADAPT_STREAM + it as u64, n_survey);
             variance_shares = w.clone();
             let Some(raw) = kleiss_pittau_step(self.combiner.alphas(), &w, damping) else {
+                tracing::debug!("survey iteration {} carried no variance; stopping", it + 1);
                 break;
             };
             self.combiner.set_alphas(raw.clone());
             trajectory.push(raw);
+            progress::step(
+                progress::stage::ALPHA_SURVEY,
+                it as u64 + 1,
+                Some(n_iter as u64),
+            );
         }
+        report_alpha_spread(&variance_shares, self.combiner.alphas());
         AlphaAdaptation {
             trajectory,
             variance_shares,

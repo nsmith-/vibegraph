@@ -92,6 +92,16 @@ impl PdfSet {
     pub fn load(dir: &Path, name: &str) -> Result<Self, GridError> {
         let info_path = dir.join(format!("{name}.info"));
         let info = grid::parse_info_file(&info_path)?;
+        tracing::info!("PDF set {name} ({} members)", info.num_members);
+        tracing::debug!(
+            x_min = info.x_min,
+            x_max = info.x_max,
+            q_min = info.q_min,
+            q_max = info.q_max,
+            order_qcd = info.order_qcd,
+            flavors = info.flavors.len(),
+            "PDF grid range"
+        );
         Ok(PdfSet {
             info,
             dir: dir.to_path_buf(),
@@ -110,6 +120,13 @@ impl PdfSet {
         }
         let dat_path = self.dir.join(format!("{}_{id:04}.dat", self.name));
         let subgrids = grid::parse_member_dat(&dat_path)?;
+        tracing::info!("PDF member {id} of {} loaded", self.name);
+        tracing::debug!(
+            subgrids = subgrids.len(),
+            knots = subgrids.iter().map(|g| g.x.len() * g.q2.len()).sum::<usize>(),
+            force_positive = self.info.force_positive,
+            "PDF interpolation setup"
+        );
         Ok(PdfMember::from_subgrids(subgrids).with_force_positive(self.info.force_positive))
     }
 }
