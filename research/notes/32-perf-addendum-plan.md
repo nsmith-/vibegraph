@@ -457,3 +457,306 @@ wave 2 (serial):    S6 (B1, after S1+S2)  →  S7 (V26)  →  S8 (C0, after all)
   replacement, not attempted here.
 - No refdata regeneration: S4's migration is gated on producing byte-identical
   generation parameters, and S7 integrates against already-banked references.
+
+## 5. Close-out (S8, 2026-08-05)
+
+Eight of the nine planned sessions merged; S9 was killed by its own
+pre-registered criterion and landed nothing. `main` @ `225657a` carries every
+merge below. This section is the addendum's own close-out — the last debt
+note 31's close-out could not pay because its charter forbade code edits.
+
+### 5.1 Per-session outcomes
+
+- **S1 (E3b + I5, `824bfc8`/`a684f4d`)**. `FixedBeamIntegrand` drew the scale
+  configuration before checking the cut, paying `eval_amp2` + `set_alpha_s`
+  for a channel selection a rejected point would discard (~190 ns on 22% of
+  `gu_to_epemu`/`gux_to_epemux` points). `scale_u` is always a slice of the
+  point's own already-drawn `u`, never an independently advanced RNG stream,
+  so cutting first is a pure dead-work skip — bit-identical for every accepted
+  point, checked rather than assumed. `combine_seeds` in
+  `validate_hadronic.rs` moved to the unweighted mean (`err = √(Σᵢσᵢ²)/n`),
+  the same fix I1 already made one level up to VEGAS's own iteration
+  combination; every hadronic row moved, all ≤0.02% and within its unchanged
+  tolerance.
+- **S2 (I6, `49dc87d`/`dc2e581`)**. Read `w_max` off MadGraph's own `unwgt.f`
+  truncation-ladder rule (the lowest scanned weight leaving under 1% of a
+  channel's scanned cross section above it, re-normalised) rather than the
+  scan's extremum, which a Pareto tail of index ≈ 2 never lets converge.
+  Unweighting efficiency on the five gating rows rose from
+  22.2/20.6/23.3/10.6/4.21% to 54.1/52.1/52.9/38.9/9.98% at matched budgets;
+  `p p > l+ l- j` at 300k×8 needed 2 269 051 trials for 20 000 events before
+  the fix, 477 125 after (4.36× cheaper per effective event). `Unweighter::scan`
+  now runs its per-channel scans on a `rayon::par_iter`, bit-identical at
+  `--max-truncation 0`.
+- **S3 (J1 + I4b, `e8cd61e`/`43a9f51`)**. `survey_variance` now runs its point
+  loop in one rayon region over I3's deterministic chunking — each chunk
+  addresses its own substream by point index and seeks straight to its first
+  point, so the split changes only the summation order (per-chunk partials
+  reduced in chunk order), asserted bit-identical at `-j {1, 4, 16}`. This
+  session's re-measurement corrected note 32 §1.1's own decomposition: the
+  survey was 41–52% of a fixed-budget `-j 16` wall (`llj` 1.04/2.51 s = 41%,
+  `dy13` 0.24/0.46 s = 52%), not the ~27% first quoted from a different card
+  and budget. `integrate --target-rel` (0.1% default) is now the CLI's
+  convergence mode unless `--fixed-budget` asks for a fixed
+  `--neval × --niter` spend — every caller that actually wanted a fixed budget
+  (CLI tests, `generate_samples.sh`, `scripts/acceptance.sh`) had to say so
+  explicitly, which is the footgun the flip could have been without that
+  audit. The pre-registered byte re-pin step "resolved empty": once the
+  fixed-budget callers were made explicit, no pinned CLI/Pythia artifact
+  actually depended on the old default-budget path, so there was nothing left
+  to re-pin.
+- **S4 (M1, `db33913`/`767bb2d`)**. Closed all three §1.2 findings:
+  `validation/manifest.toml` gained a per-row `mg_amplitude` table and
+  `gen_amplitude.py` reads it instead of its own hardcoded registry (dry-run
+  parameter dump byte-identical across the migration); `mg_timings.json`
+  carries host identity and a host-labelled copy is committed beside
+  `timings.json`, with `mg_perf_compare.sh` falling back to it and reporting
+  one-sided rows instead of dropping them; `eval_strategies.rs` derives its
+  bench row set from the manifest at runtime, covering all 19 MATRIX1-comparable
+  rows instead of 14. The session's own finding inverted its brief's implicit
+  premise: the five previously-dropped rows are QCD-dense, so the wider table
+  reads *worse* (19-row geomean 0.95×) than the narrower one it replaces
+  (14-row geomean 1.06×, kept as the continuity figure) — that is the honest
+  number the biased 14-row sample was hiding, not a regression from this
+  session's own work.
+- **S5 (E4, `143e8e9`/`3ffcf7e`)**. Scoped as "accept/reject allocator
+  traffic," but the actual allocation hoisted out was
+  `ScaleChoice::cluster_scales`'s per-event rebuild of three `BTree`
+  containers — a different, adjacent piece of the same profile from the one
+  the session name names (`ScaleChoice::clustered`'s per-event beam–leg
+  candidate `Vec`, still unaddressed — see the follow-ups below).
+  `MergeTablesByOrder` builds one table set per coupling order at setup
+  instead of one per event;
+  `probe_scale_cost` — which had been unrunnable since an earlier session
+  widened the scale-aware integrand's dimension out from under it, and had to
+  be fixed before it could measure anything — now reads **−16.9%** (`gg_to_gg`),
+  **−21.6%** (`gg_to_ttx`), **−22.3%** (`uux_to_uux`) ns/point, with
+  `validate_unweighting` **−16.8%** and the partonic σ gate **−11.1%**
+  end to end, byte-identical throughout (2000 events byte-for-byte on the
+  clustering-scale card, before and after).
+- **S6 (B1, `551b3f7`/`59d1865`)**. Sized `pp_to_jj`, `pp_to_bb_fixed`,
+  `pp_to_bb`, `pp_to_bb_qcd2` and `pp_to_ll_scalefact2` 300k→75k under a
+  ladder+sweep license; `pp_to_llj` (both the fixed-scale and re-carded rows)
+  stayed at 150k on the floor that always wins over a precision argument — the
+  fixed-scale ladder is flat but its 75k rung carries dirty seed scatter
+  (χ²/dof 1.66/2.59), and the re-carded row's ladder still climbs
+  monotonically across the whole 75k–600k range. Same host, one sitting:
+  `validate` 360.6 s → 342.6 s wall, 1608.9 s → 1321.3 s CPU — the session's
+  own first demonstration that these cuts move CPU far more than wall, because
+  `validate` runs its rows concurrently (§5.3 below repeats this at the
+  addendum's full scale). `probe_bb_budget_ladder` had no committed ladder at
+  all before this session — `BB_NEVAL` cited a three-seed scan with no
+  instrument behind it — so it was added alongside the other three.
+- **S7 (V26, `d850b57`/`225657a`)**. The 2→6 rows' `Plan::Skip` blamed a
+  "~1 ms/eval" matrix element; the gate's own harness reads **64/71 µs** —
+  stale by more than an order of magnitude — and even the flat-RAMBO map the
+  premise offered as the affordable alternative is wrong for an unrelated
+  reason: six outgoing legs put the physical poles on a set of vanishing flat
+  measure, so flat RAMBO misses these cross sections by **eleven and fifteen
+  orders of magnitude** despite a respectable 46% cut-survival rate. The real
+  cost floor is `MIN_CHANNEL_NEVAL` (512, `budget.rs:78`) times the per-diagram
+  channel count — 579/615 channels put 296 448/314 880 evaluations under every
+  iteration whatever budget is asked, a mechanism the original brief did not
+  name. Under the multichannel the physics agrees (five-seed means inside 1.1%
+  of a 0.30%-precision bank at 300k/600k/1.2M) but the estimator is
+  heavy-tailed — single seeds swing +4.8%/−4.5%/+3.5% at both ends of that
+  ladder and do not shrink with budget — so both rows are `Plan::Long`,
+  measured and reported (`info`) on every `validate-sigma-2to6` run rather than
+  tolerance-bound. `ladder-2to6`, `ladder-bb` and `ladder-recarded` are now
+  named pixi tasks, all three listed in `validate-deep`'s long-tier text.
+  Census 98 → 100 measured; the two `samples` cells stay ⏳ with their cost
+  recorded (117/45 trials/event, inside the 400-trial budget, but ~40
+  unparallelisable minutes for the pair) rather than assumed.
+- **S9 (E5, no merge)** — **killed clean**. The plan's kill criterion was "if
+  the packed idiom no longer wins ≥2% forward geomean, record the numbers and
+  land nothing"; the session found something sharper than a null result — the
+  packed complex idiom `3dab3a1` traded away is **x86-specific** codegen, and
+  forcing it back via the in-house `MulAdd` trait on this ARM host (M3 Max)
+  cost **8–9%**, the opposite of a win. The kill criterion fired and nothing
+  merged: `add-s9-packed-complex`'s worktree is clean and its branch carries no
+  commit past the note-32 planning doc itself (verified directly, this
+  session — `git diff --stat HEAD` empty, `git log main..add-s9-packed-complex`
+  empty). The design — an in-house complex multiply-add trait, default body
+  the shared real-FMA construction, `f64` override deferring to
+  `Complex<f64>`'s `num_traits::MulAdd`/packed path, lanes left at the default
+  and therefore bit-for-bit untouched — stays at §2 S9 above as the resume
+  point for whoever revisits this on an x86 host, where the original +3.5%
+  scalar-forward toll may still be worth recovering.
+- **S8 (C0, this session)** — the re-record and the close-out measurements
+  below.
+
+### 5.2 Brief-correction ledger
+
+Every session corrected something in its own brief or a predecessor's,
+consistent with this sprint cycle's running pattern:
+
+- **S2** corrected both the rule's mechanism (MadGraph's truncation ladder, not
+  literally a percentile) and confirmed the σ-share direction the plan
+  predicted (no scan budget fixes it; the rule has to change).
+- **S3** corrected §1.1's serial-floor decomposition (41–52% of the `-j 16`
+  wall, not ~27%) and surfaced a CLI default-flip footgun the plan did not
+  name: every caller relying on the old fixed-budget default had to be found
+  and made explicit, or it would have silently changed behavior.
+- **S4** corrected the framing carried into the sprint by its own §1.2
+  finding 3: widening the bench sample was expected to be neutral bookkeeping,
+  and instead inverted the "we're already ahead" reading by exposing that the
+  omitted five rows were exactly the QCD-dense ones.
+- **S5** corrected two things: `probe_scale_cost` itself was broken (unrunnable
+  since an earlier dimension change), so no measurement in this area was
+  possible before it was fixed; and the session's own name (E4 = "accept/reject
+  allocator traffic") pointed at `ScaleChoice::clustered`'s per-event `Vec`,
+  while what actually got hoisted was the adjacent `cluster_scales` merge-table
+  rebuild — a related but distinct allocation from the one E4 was scoped
+  around.
+- **S6** corrected two stale figures inherited from the perf sprint: `pp_to_llj`
+  quoted a 600k×10 budget that had not existed since I1's unweighted iteration
+  combination collapsed the ladder (already re-pinned to 150k before this
+  addendum even started), and the reference σ/error figures S6 was handed were
+  pre-`refdata-5`.
+- **S7** corrected the "~1 ms/eval" premise (stale by more than an order of
+  magnitude) and named the actual cost mechanism (`MIN_CHANNEL_NEVAL` × channel
+  count) that the original brief did not identify.
+- **S9** corrected the premise that the packed-complex win would transfer to
+  this host: it is x86-specific, and forcing it here cost 8–9% rather than
+  saving 3.5%.
+- **S8 (this session)** found the assignment brief's claim that
+  `probe_bb_budget_ladder` "has no pixi task and is unnamed in `validate-deep`'s
+  long-tier text" was itself stale — S7's merge (`d850b57`) added `ladder-bb`
+  alongside `ladder-2to6` and `ladder-recarded` and named all three in
+  `validate-deep`, so no action was needed there.
+
+### 5.3 Close-out measurements
+
+All measured 2026-08-05, same worktree (`vibegraph-addendum/s8` @ `225657a`
+plus this session's docs-only commit), same M3 Max. The host was not quiet in
+the note-30/31 sense (`mds_stores`/`mediaanalysisd` background indexing held
+load average in the 6–25 range through most of this session, against note 31
+§6.5's load average 3.1 at start) — every timing below is reported with that
+caveat rather than re-run on a host this session could not obtain.
+
+**`validate` wall, the identical note-30 command**:
+
+```
+$ pixi run --skip-deps validate
+...
+29 rows × 4 categories = 116 cells: 98 measured in the layers this run drove (96 ✅, 2 ⚠️, 4 ⏳, 14 — / uncovered).
+real  7m23.316s   (443.3 s)
+user  40m53.826s  (2453.8 s)
+sys   2m0.669s
+EXIT=0
+```
+
+**443.3 s against note 31 §6.5's 391 s is a +13.4% wall regression on the
+identical command, and it is host noise, not the addendum going backward.**
+S6's own within-session before/after already showed why wall is the wrong
+instrument for these particular changes: its budget cuts alone moved CPU by
+−288 s (1608.9 s → 1321.3 s) against only −18 s of wall (360.6 s → 342.6 s),
+because `validate` runs its rows concurrently — a CPU saving only shows up in
+wall to the extent the run was CPU-bound rather than scheduler- or
+contention-bound, and a host at load average 17–25 from unrelated background
+processes is neither. Restated in both terms: the addendum's CPU total this
+session measured, 2453.8 s, is not directly comparable to a note-31 CPU figure
+(none was recorded for the 391 s run), but S6's own −288 s CPU / −18 s wall
+split on one licensed cut is the mechanism to read this session's wall number
+through — the addendum's CPU-time saving is real and larger than its wall-time
+saving, and the wall-time saving on this run was masked entirely by
+background load neither S6 nor this session controls.
+
+**Census, two numbers, not blurred**:
+
+```
+$ pixi run --skip-deps validate            # drives hermetic + banked layers
+29 rows × 4 categories = 116 cells: 98 measured (96 ✅, 2 ⚠️, 4 ⏳, 14 — / uncovered).
+
+$ pixi run validate-sigma-2to6 && pixi run validation-report   # + the oracle layer
+29 rows × 4 categories = 116 cells: 100 measured (96 ✅, 4 ⚠️, 2 ⏳, 14 — / uncovered).
+```
+
+The two numbers are not in tension. `validate` drives only the `hermetic` and
+`banked` dependency layers (note 25's layering), so its own line has never
+included the `oracle`-tier cells — the two 2→6 `integrals` cells S7 turned on
+are `oracle`, not `banked`, exactly like `probe_bb_budget_ladder` and its
+siblings. `validation-report` renders whatever is on disk, so its 100-measured
+line is only true once `validate-sigma-2to6` has populated those two cells in
+the same tree; run cold, `validation-report` alone still reads 98. The four
+⚠️ cells (up from 2) are the two 2→6 rows' `integrals` cells landing as
+`info`-not-`gate` (S7's design, not a regression) plus the two `samples` cells
+already counted ⏳ moving nowhere — the two ⏳ in the 100-measured line are
+`bbx_to_ccx_emmm_qcd0`/`uux_to_ccx_emmm_qcd0`'s `samples` cells, cost recorded,
+not run.
+
+**`-j 16` wall, `dy13_default` and `pp_to_llj`, `--fixed-budget --neval 120000
+--niter 12`, min of 5 rounds, host load 6–19 across the sweep**:
+
+| card | `-j 1` (min) | `-j 16` (min) | speedup | artifact md5 (all 10 runs) |
+|---|--:|--:|--:|:--|
+| `dy13_default` | 2.0446 s | 0.2357 s | **8.68×** | `cb8d12e354a426d00286a3c67739fdb0` |
+| `pp_to_llj` | 11.0434 s | 1.1645 s | **9.48×** | `e135706599bd07e59447bea9205336ef` |
+
+Every one of the 20 runs (5 rounds × 2 thread counts) for a given card wrote
+the identical artifact digest — thread count moved no bit, checked at the CLI
+rather than inferred from the unit-level assertion.
+
+Against §1.1's original prediction (dy13 ceiling 6.2×, llj ceiling 7.6×, both
+already superseded by S3's own fitted-model update to 18.2×/20.1× after the
+survey parallelised): the measured `-j 16` speedups sit well below those
+fitted asymptotic ceilings, which is expected — a ceiling from a two-term
+serial/parallel fit is a `-j → ∞` limit, not a `-j 16` prediction, and this
+run's ceiling is further suppressed by real contention from
+`mds_stores`/`mediaanalysisd`. Against S3's own re-measurement under a
+similarly noisy host (its commit message: `-j 16` walls "1.44 s and 0.23 s"
+for llj/dy13) and the dispatch brief's citation of that session's own
+correction (dy13 0.225 s/9.16×, llj 1.443 s/8.78×): this session's 0.2357 s/
+8.68× (dy13) and 1.1645 s/9.48× (llj) sit within a few percent of both,
+consistent with run-to-run noise on a host neither session could quiet, and
+not with a regression in either direction. The dy13/llj asymmetry in which
+session read the higher ratio (S3 read llj lower than dy13; this session reads
+llj higher) is itself a symptom of that noise rather than a real effect —
+llj's ~11 s `-j 1` run averages over more wall-clock-seconds of contention
+than dy13's ~2 s one, so it is the noisier of the two ratios on either
+session's host.
+
+### 5.4 Standing follow-ups
+
+- **Heavy-tail multichannel fix, with S7's falsifier.** The 2→6 rows' single-seed
+  swings (+4.8%/−4.5%/+3.5%, both signs, top and bottom of a 300k–1.2M ladder)
+  are diagnosed as a heavy-tailed multichannel estimator rather than a
+  convergence defect, on AGENTS.md's own rule: "if extra budget makes a failure
+  migrate between seeds instead of shrinking, it is a bug, not statistics" — S7
+  measured the swings *not* shrinking with budget, which is the heavy-tail
+  signature, not the bug one. The falsifier for any future fix: it must make
+  the single-seed swings shrink as budget grows, not merely move where they
+  land: a fix that reduces the swing magnitude at fixed budget without changing
+  its budget-scaling is a variance-reduction win, not a resolution of this
+  finding.
+- **E4's scratch-through-`setclscales` continuation.** S5 hoisted the
+  per-event merge-table rebuild out of `ScaleChoice::cluster_scales`, but
+  `ScaleChoice::clustered`'s own per-event beam–leg candidate `Vec`
+  (`coupling/scales.rs:376`) and `setclscales.rs`'s several per-call `Vec`s
+  (`attempts`, `traces`, `pt2`, `mt2`, `lines`) are untouched — the allocation
+  profile E4 was named for still has a remainder.
+- **`adapt_alphas` is still serial at the seed level** — `ProtonIntegrand::
+  adapt_alphas` (`proton.rs:1905`, itself calling down into
+  `phasespace::channel::Channels::adapt_alphas` at `channel.rs:322`) is invoked
+  once per seed inside the caller's own seed loop in every σ gate
+  (`validate_hadronic.rs`'s `run_seed*` family). S3 parallelised the
+  point-loop `survey_variance` runs *inside* one call to `adapt_alphas`, not
+  the seed-level loop that calls `adapt_alphas` itself; a multi-seed gate
+  still adapts its seeds one after another.
+- **llj batch-shape candidate (relayed as "240k×6" in this session's dispatch
+  brief; not independently verified here), pending a ≥5-seed sweep.** S3's
+  batch-size-vs-iteration-count measurement (§1.1 relief item, backlog (e))
+  found the adapt phase's sequential critical path shrinks with fewer, larger
+  iterations at fixed total budget — a free measurement, adopted nowhere. This
+  session found no "240k" or "240k×6" figure in S3's commit message or diff;
+  the specific batch shape is either recorded only in that session's own
+  (unavailable to S8) report, or was a manager-side inference from the
+  measurement's direction. Whoever picks this up should re-derive the
+  candidate shape from S3's raw sweep data before sizing a sweep around it.
+- **VEGAS per-iteration χ²/dof overflow on wide channel splits**
+  (`budget.rs:252`) — confirmed still present and unclamped this session
+  (the 2→6 `integrals` re-run above printed a χ²/dof over 10^250 on both rows).
+  S7's decision to pass the value through rather than clamp it, with the
+  manifest note saying it is not a statistic, stands; a future session touching
+  `budget.rs`'s combination code should know the overflow is expected on any
+  row with hundreds of channels, not a bug to fix reactively.
