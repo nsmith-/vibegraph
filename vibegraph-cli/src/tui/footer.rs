@@ -62,8 +62,38 @@ fn count(n: u64) -> String {
     }
 }
 
-fn dim() -> Style {
-    Style::default().fg(Color::DarkGray)
+/// The pane's palette, given literally rather than by ANSI name.
+///
+/// A named colour belongs to the terminal's theme, and two of the ways a theme
+/// may spend it leave text unreadable here. Solarized fills its eight bright
+/// slots with a greyscale ramp — bright black is the background itself, and
+/// bright blue, green, yellow and cyan are its base tones — so a named colour
+/// drawn bold turns grey on any terminal that renders bold in the bright
+/// variant, as iTerm2 does by default. Bright black is worse than grey: as a
+/// foreground it is the background, and the cells come out blank. Literal RGB
+/// is passed through instead of looked up, which is why the logo ramp above
+/// keeps its colours while bold.
+///
+/// Labels sit below the default foreground rather than above it, which rules
+/// out ANSI white as well — Solarized maps it to a near-white brighter than the
+/// text it would be annotating.
+const MUTED: Color = Color::Rgb(128, 128, 128);
+const ACCENT: Color = Color::Rgb(120, 190, 255);
+const ATTENTION: Color = Color::Rgb(255, 170, 90);
+
+/// Labels and hints, set back from the values they annotate.
+fn muted() -> Style {
+    Style::default().fg(MUTED)
+}
+
+/// The numbers this run is producing.
+fn accent() -> Style {
+    Style::default().fg(ACCENT)
+}
+
+/// The pane wanting something from the reader: an answer, or a second stop key.
+fn attention() -> Style {
+    Style::default().fg(ATTENTION)
 }
 
 /// A cross section and its uncertainty, in the prefix the value's own magnitude
@@ -118,7 +148,7 @@ impl<'a> Footer<'a> {
                     "  {} ({digest}\u{2026})  {}p {}v {}c",
                     model.label, model.particles, model.vertices, model.couplings
                 ),
-                dim(),
+                muted(),
             ));
         }
         Line::from(spans)
@@ -136,7 +166,7 @@ impl<'a> Footer<'a> {
             let plural = if channels == 1 { "" } else { "s" };
             spans.push(Span::styled(
                 format!("   {channels} channel{plural}"),
-                dim(),
+                muted(),
             ));
         }
         Line::from(spans)
@@ -144,7 +174,7 @@ impl<'a> Footer<'a> {
 
     fn stage_line(&self) -> Line<'static> {
         let Some(stage_name) = &self.state.stage else {
-            return Line::from(Span::styled("starting", dim()));
+            return Line::from(Span::styled("starting", muted()));
         };
         let mut text = stage_label(stage_name).to_string();
         match self.state.total {
@@ -157,7 +187,7 @@ impl<'a> Footer<'a> {
         if self.state.chi2 > 0.0 {
             spans.push(Span::styled(
                 format!("   \u{3c7}\u{b2}/dof {:.2}", self.state.chi2),
-                dim(),
+                muted(),
             ));
         }
         Line::from(spans)
@@ -194,18 +224,16 @@ impl<'a> Footer<'a> {
         if let Some(question) = &self.state.prompt {
             return Line::from(Span::styled(
                 question.clone(),
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
+                attention().add_modifier(Modifier::BOLD),
             ));
         }
         Line::from(vec![
-            Span::styled("level: ", dim()),
+            Span::styled("level: ", muted()),
             Span::raw(self.state.level.label()),
-            Span::styled(" \u{25b2}\u{25bc}  ", dim()),
-            Span::styled("scope: ", dim()),
+            Span::styled(" \u{25b2}\u{25bc}  ", muted()),
+            Span::styled("scope: ", muted()),
             Span::raw(self.state.scope.label()),
-            Span::styled(" \u{25c2}\u{25b8}", dim()),
+            Span::styled(" \u{25c2}\u{25b8}", muted()),
         ])
     }
 
@@ -213,27 +241,21 @@ impl<'a> Footer<'a> {
     /// asked for and is being waited on.
     fn abort_line(&self) -> Line<'static> {
         if self.state.prompt.is_some() {
-            return Line::from(Span::styled(
-                "y allow  n decline",
-                Style::default().fg(Color::Yellow),
-            ));
+            return Line::from(Span::styled("y allow  n decline", attention()));
         }
         if self.state.stopping {
-            Line::from(Span::styled(
-                "^C again  quit now",
-                Style::default().fg(Color::Yellow),
-            ))
+            Line::from(Span::styled("^C again  quit now", attention()))
         } else {
-            Line::from(Span::styled("q / ^C  abort", dim()))
+            Line::from(Span::styled("q / ^C  abort", muted()))
         }
     }
 
     fn sigma_line(&self) -> Line<'static> {
         match self.state.sigma_pb {
-            None => Line::from(Span::styled("\u{3c3} = \u{2014}", dim())),
+            None => Line::from(Span::styled("\u{3c3} = \u{2014}", muted())),
             Some(sigma_pb) => Line::from(Span::styled(
                 format!("\u{3c3} = {}", cross_section(sigma_pb, self.state.err_pb)),
-                Style::default().add_modifier(Modifier::BOLD),
+                accent().add_modifier(Modifier::BOLD),
             )),
         }
     }
@@ -250,7 +272,7 @@ impl<'a> Footer<'a> {
                 Some(total) => format!("events  {}/{}", count(self.state.done), count(total)),
                 None => format!("events  {}", count(self.state.done)),
             },
-            Style::default().add_modifier(Modifier::BOLD),
+            accent().add_modifier(Modifier::BOLD),
         ))
     }
 
@@ -260,7 +282,7 @@ impl<'a> Footer<'a> {
         };
         Line::from(Span::styled(
             format!("efficiency  {:.1}%", 100.0 * efficiency),
-            dim(),
+            muted(),
         ))
     }
 
@@ -274,7 +296,7 @@ impl<'a> Footer<'a> {
                 fmt_si(ns * 1.0e-9, None, "s", 3),
                 fmt_si(1.0e9 / ns, None, "/s", 3)
             ),
-            dim(),
+            muted(),
         ))
     }
 
@@ -352,7 +374,7 @@ impl Widget for Footer<'_> {
             area.x,
             area.y,
             "\u{2500}".repeat(area.width as usize),
-            dim(),
+            muted(),
         );
         let body = Rect {
             y: area.y + 1,
