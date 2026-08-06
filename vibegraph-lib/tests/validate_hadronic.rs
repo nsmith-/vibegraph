@@ -2432,20 +2432,34 @@ fn comps(p: &V) -> [f64; 4] {
 /// The spelling matters: `pp_to_bb` and `pp_to_llj` are the default-order
 /// halves of their order-constraint pairs, so they are generated without the
 /// explicit `QCD=` / `QED=` their twins carry.
-/// Each entry is `(run, process, neval)`. The budget is per row and comes from
-/// [`probe_recarded_budget_ladder`] rather than from cost, floored by the rung
-/// each row's ladder stops moving on and sized against the reference's own error
-/// above that floor — the gate resolves at `√(σ_ours² + σ_MG²)`, so points spent
-/// past the reference's precision are invisible to the comparison.
-const RECARDED_ROWS: &[(&str, &str, usize)] = &[
+/// Each entry is `(run, process, neval, ladder_note)`. The budget is per row and
+/// comes from [`probe_recarded_budget_ladder`] rather than from cost, floored by
+/// the rung each row's ladder stops moving on and sized against the reference's
+/// own error above that floor — the gate resolves at `√(σ_ours² + σ_MG²)`, so
+/// points spent past the reference's precision are invisible to the comparison.
+/// `ladder_note` is what [`measure_recarded_sigma`] writes into the row's report
+/// cell, and it is per row rather than one shared sentence: three of the four
+/// ladders are flat at the rung the gate runs at, but `pp_to_llj`'s is not, and a
+/// shared "the rung this row's ladder is flat at" sentence would misdescribe it.
+const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
     // Flat across the whole ladder — `+0.07%`, `−0.01%`, `+0.02%`, `−0.02%` at
     // 75k, 150k, 300k and 600k, with χ²/dof 0.55, 1.00, 0.09, 0.19 — so the
     // lowest rung is the converged one. Three seeds there leave this side's
     // error at `0.044%` against the reference's `0.071%`.
-    ("pp_to_bb", "p p > b b~", 75_000),
+    (
+        "pp_to_bb",
+        "p p > b b~",
+        75_000,
+        "the rung this row's budget ladder is flat at",
+    ),
     // The explicit-order twin, and flat on the same ladder: `+0.03%`, `+0.04%`,
     // `+0.00%`, `+0.00%` at χ²/dof 0.23, 1.03, 0.89, 0.15.
-    ("pp_to_bb_qcd2", "p p > b b~ QCD=2", 75_000),
+    (
+        "pp_to_bb_qcd2",
+        "p p > b b~ QCD=2",
+        75_000,
+        "the rung this row's budget ladder is flat at",
+    ),
     // `mmll = 0` opens the low lepton-pair-mass region, the hardest budget on
     // any row here, and the only ladder that still moves in one direction: five
     // seeds a rung read `+0.04%`, `+0.07%`, `+0.11%`, `+0.21%` at 75k, 150k,
@@ -2454,11 +2468,26 @@ const RECARDED_ROWS: &[(&str, &str, usize)] = &[
     // licensed here; `150k` is kept because the `75k` rung's error is inflated
     // to `0.29%` by a single seed (χ²/dof 1.49 against ≤0.65 above it), which is
     // the rung a three-seed gate would be reading.
-    ("pp_to_llj", "p p > l+ l- j", 150_000),
+    (
+        "pp_to_llj",
+        "p p > l+ l- j",
+        150_000,
+        "not a rung this row's budget ladder is flat at -- it still climbs \
+         monotonically over the whole 75k-600k range (span 0.17%), and this \
+         is the lowest rung whose 75k-inflated single-seed error does not \
+         dominate a three-seed read; the 0.17% span is unresolvable against \
+         the reference's own 0.33% error, which is why the climb is a \
+         recorded residual rather than a reason to cut further",
+    ),
     // Flat: `−0.03%`, `+0.05%`, `−0.02%`, `−0.04%` at χ²/dof 0.82, 0.65, 0.65,
     // 0.21, with this side's three-seed error `0.084%` against the reference's
     // `0.198%` at the lowest rung.
-    ("pp_to_ll_scalefact2", "p p > l+ l-", 75_000),
+    (
+        "pp_to_ll_scalefact2",
+        "p p > l+ l-",
+        75_000,
+        "the rung this row's budget ladder is flat at",
+    ),
 ];
 
 /// Independent seeds these rows are measured on, for the reason the ℓℓj sweep
@@ -2497,7 +2526,7 @@ const RECARDED_MAX_CHI2_PER_DOF: f64 = 4.0;
 /// what `validate_scales` replays all four runs' 10000 events for, field by
 /// field, and what `validate_kt_cluster` reproduces the merge sequences behind
 /// for two of them.
-fn measure_recarded_sigma(run: &str, process: &str, neval: usize) {
+fn measure_recarded_sigma(run: &str, process: &str, neval: usize, ladder_note: &str) {
     if !dyn_run_present("recarded_rows_sigma_vs_mg", run) {
         return;
     }
@@ -2581,8 +2610,7 @@ fn measure_recarded_sigma(run: &str, process: &str, neval: usize) {
     row.niter = RECARDED_NITER;
     row.subsampler = summary;
     row.note = Some(format!(
-        "three seeds at {neval} points an iteration, the rung this row's budget \
-         ladder is flat at"
+        "three seeds at {neval} points an iteration, {ladder_note}"
     ));
     row.duration_s = Some(clock.seconds());
     row.write();
@@ -2603,16 +2631,16 @@ fn measure_recarded_sigma(run: &str, process: &str, neval: usize) {
 /// orders more cross section, drawn from phase space no enforced row reaches.
 #[test]
 fn sigma_bb_recarded_vs_mg() {
-    let (run, process, neval) = RECARDED_ROWS[0];
-    measure_recarded_sigma(run, process, neval);
+    let (run, process, neval, ladder_note) = RECARDED_ROWS[0];
+    measure_recarded_sigma(run, process, neval, ladder_note);
 }
 
 /// The explicit-`QCD=2` spelling of the row above, on its own banked run: the
 /// pair is what pins order-constraint semantics at the cross-section level.
 #[test]
 fn sigma_bb_qcd2_recarded_vs_mg() {
-    let (run, process, neval) = RECARDED_ROWS[1];
-    measure_recarded_sigma(run, process, neval);
+    let (run, process, neval, ladder_note) = RECARDED_ROWS[1];
+    measure_recarded_sigma(run, process, neval, ladder_note);
 }
 
 /// `pp_to_llj_dyn`'s card with `mmll` back at 0 — the low lepton-pair-mass
@@ -2620,16 +2648,16 @@ fn sigma_bb_qcd2_recarded_vs_mg() {
 /// says the estimator has stopped climbing at.
 #[test]
 fn sigma_llj_recarded_vs_mg() {
-    let (run, process, neval) = RECARDED_ROWS[2];
-    measure_recarded_sigma(run, process, neval);
+    let (run, process, neval, ladder_note) = RECARDED_ROWS[2];
+    measure_recarded_sigma(run, process, neval, ladder_note);
 }
 
 /// The only banked row whose `scalefact` is not 1: Drell-Yan with every
 /// event-by-event scale doubled, so the run card's scale factor reaches σ.
 #[test]
 fn sigma_ll_scalefact2_recarded_vs_mg() {
-    let (run, process, neval) = RECARDED_ROWS[3];
-    measure_recarded_sigma(run, process, neval);
+    let (run, process, neval, ladder_note) = RECARDED_ROWS[3];
+    measure_recarded_sigma(run, process, neval, ladder_note);
 }
 
 /// The budget ladder behind the four re-carded rows' tolerances.
@@ -2650,7 +2678,7 @@ fn probe_recarded_budget_ladder() {
     let set = load_pdf_set();
     let pdf = set.member(0).expect("PDF member 0");
 
-    for (run, process, _) in RECARDED_ROWS {
+    for (run, process, _, _) in RECARDED_ROWS {
         if !dyn_run_present("probe_recarded_budget_ladder", run) {
             continue;
         }

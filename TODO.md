@@ -38,29 +38,63 @@ polarization, decay chains — is explicitly descoped to the feature backlog
 reach must be a **hard error**, never a silent acceptance; the fixes closing
 the remaining silent acceptances are validation-sprint items.
 
-**Addendum sprint planned (2026-08-05, note 32)** from the user's triage of the
-perf sprint's open items: eight sessions in two waves — wave 1: S1 (E3b
-cut-before-draw + I5 unweighted seed combination), S2 (I6 percentile `w_max`),
-S3 (parallelized α-survey + `--target-rel` CLI default, the single byte re-pin
-wave), S4 (`mg_perf_compare` onto the manifest on **both** arms — the bench's
-hand-synced 14-process list widened to all 19 comparable rows — + host-labelled
-`mg_timings.json` artifact), S5 (E4 allocator traffic, stretch), S9 (restore
-the scalar packed-complex idiom `3dab3a1` traded away — in-house `MulAdd`
-trait, `Complex<f64>` deferring to `num_traits`, lanes bit-for-bit untouched);
-wave 2, sequenced: S6 (budgets
-aligned to reference precision — `pp_to_jj` 4× cut pre-registered, llj 600k
-re-laddered under the unweighted combination), S7 (2→6 σ rows on — the 4 ⏳
-census cells), S8 (close-out + the stale-σ re-record). No tolerance moves.
-Planning-time findings recorded in note 32 §1: the `-j 16` 4.7–5.4× ceiling is
-a ~70–75% serial floor at 16 threads (α survey ~27%, setup, adapt barriers),
-not stalled threads; and `gen_amplitude.py` bypasses the manifest while
-`mg_timings.json` reaches no artifact and carries no host identity.
+**Addendum sprint ✅ closed (2026-08-05, note 32)**, eight of nine sessions
+merged (S9 killed clean, below), `main` @ `225657a`. Wave 1: S1 landed E3b
+(cut-before-draw on the fixed-beam path, a bit-identical dead-work skip for
+every accepted point) and I5 (`combine_seeds` unweighted in
+`validate_hadronic.rs`, matching what I1 already did to VEGAS's own iteration
+combination — every hadronic row moved ≤0.02%); S2 replaced the never-converging
+extremum `w_max` with MadGraph's own `unwgt.f` truncation-ladder rule (not a
+percentile — the session corrected its own brief on the mechanism), lifting the
+five gating rows' acceptance from 22.2/20.6/23.3/10.6/4.21% to
+54.1/52.1/52.9/38.9/9.98% at matched budgets, `p p > l+ l- j` **4.36×** cheaper
+per effective unweighted event; S3 parallelised the α-survey (deterministic
+chunking, bit-identical at `-j {1,4,16}`, asserted) and made `--target-rel`
+convergence the CLI default (`--fixed-budget` for a reproducible fixed spend),
+correcting note 32 §1.1's serial-floor decomposition en route (the survey was
+41–52% of the `-j 16` wall, not the ~27% first quoted) — `-j 16` on
+`dy13_default`/`pp_to_llj` at `--fixed-budget --neval 120000 --niter 12` now
+reads **8.7×/9.5×** (min of 5 rounds, this session's re-measurement, host load
+6–19 from background indexing), byte-identical artifacts asserted; S4 closed
+all three `mg_perf_compare` findings (manifest-driven `gen_amplitude.py`
+registry, byte-identical migration; host-labelled committed `mg_timings.json`;
+the bench widened 14→19 rows) and found the omitted five rows were QCD-dense,
+inverting the "we're already ahead" reading — the 19-row MATRIX1 geomean sits
+worse than the 14-row one, by design, not regression; S5 (scoped as E4
+allocator traffic) landed the merge-table hoist out of `ScaleChoice::cluster_scales`
+(**−16.9% to −22.3%** ns/point on the three clustered-scale rows,
+`validate_unweighting` **−16.8%**, the partonic σ gate **−11.1%**,
+byte-identical); S9 (restore the pre-`3dab3a1` scalar packed-complex codegen)
+was **killed clean** — the packed idiom is x86-specific, an in-house `MulAdd`
+trait forcing it on this ARM (M3 Max) host cost **8–9%**, the opposite of a
+win, so the pre-registered kill criterion fired and nothing merged (worktree
+clean, branch carries no commit beyond the note-32 planning doc; the design
+stays at note 32 §2 S9 for an x86 host to pick up). Wave 2: S6 sized five
+hadronic σ budgets to reference precision under a ladder+sweep license
+(`pp_to_jj`/`pp_to_bb_fixed`/`pp_to_bb`/`pp_to_bb_qcd2`/`pp_to_ll_scalefact2`
+300k→75k; llj stays at 150k on both counts — its ladders are flat but the 75k
+rung's seed scatter is not, and the re-carded `pp_to_llj` ladder still climbs
+monotonically 0.04%→0.21% end to end, so no further cut is licensed there);
+S7 turned the 2→6 rows on as `info` at the long tier — the "~1 ms/eval" premise
+was stale by more than an order of magnitude (the gate's own harness reads
+64/71 µs), but the real blocker is `MIN_CHANNEL_NEVAL` × channel count
+(512 × 579/615 diagrams = 296 448/314 880 evaluations per iteration whatever
+budget is asked) and a heavy multichannel tail whose single-seed pulls do not
+shrink with budget (+4.8%/−4.5%/+3.5% at both ends of a 300k–1.2M ladder while
+the five-seed mean holds inside 1.1% of a 0.30%-precision reference) — census
+98→**100** measured, no existing cell moved; S8 (this session) re-recorded
+every stale σ/percentile/cost figure the wave-1/2 sessions left behind and
+took the addendum's own close-out measurements. Full record: note 32 §5.
+Planning-time findings recorded in note 32 §1: the `-j 16` 4.7–5.4× ceiling was
+a ~70–75% serial floor at 16 threads (S3 closed most of it); and
+`gen_amplitude.py` bypassed the manifest while `mg_timings.json` reached no
+artifact and carried no host identity (S4 closed both).
 
 **Next action — the user's**: the first release tag is **`v0.1`**, decided
 2026-08-02 and re-affirmed 2026-08-03 to follow the **performance sprint**.
-That sprint is closed; the addendum above is a cleanup, not a correctness
-sprint, so the tag can precede it or follow S8's re-recorded numbers — the
-user's call (note 32 §3). A 0.x line because no global backwards-compatibility
+That sprint and the addendum above are both closed now, so nothing is left
+blocking the tag from either direction — it was never more than a cleanup, not
+a correctness sprint. A 0.x line because no global backwards-compatibility
 promise is made yet; a future "quality sprint" tightening the `pub` API surface
 (backlog below) precedes any 1.0. Tagging runs `release.yml` and
 `acceptance.yml` for the first time.
@@ -92,7 +126,7 @@ from.
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. The multi-rung t-channel spine and the per-subprocess identical-particle factor are in production (`kt-spine` Track S, note 28) |
-| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 17 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and all 4 llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.284 ± 0.537** vs MG 933.110 ± 0.447; **643.765 ± 0.367** vs 644.420 ± 0.315), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **423.048 ± 0.248 pb** over three seeds vs MG 422.840 ± 1.805 (Δ = 0.11σ). At a *dynamical* scale each point's cluster scale is taken in the integration configuration drawn from the point's own squared amplitudes (`∝ AMP2_c/Σ AMP2`, MadEvent's enhancement-weight conditional, note 29 chain B): `gu_to_epemu` **+0.004%** (pull +0.02) / `gux_to_epemux` **−0.11%** (pull −0.49) and σ(pp→ℓ⁺ℓ⁻j) **−0.01%** (pull −0.02), all GATE at `rel_tol` 0.005 set by the references' own errors. The four `refdata-5` re-carded rows gate on the same path (`pp_to_bb` +0.02%, `pp_to_bb_qcd2` +0.00%, `pp_to_llj` +0.04% at 600k, `pp_to_ll_scalefact2` −0.01%). The `p p > j j` capstone runs the same path on the canonical QCD process and is **GATE**: **6.803009e8 ± 2.511e5 pb** over three seeds vs MG 6.788500e8 ± 1.4726e6, rel **+0.21%** at pull **+0.97**, at `rel_tol` 0.005 — the reference's own 0.22% with headroom, pull asserted, since its channel-partition ambiguity is only `1.0e-3` (its own Monte-Carlo error, because a 2 → 2 gives the clustering no merge to choose). It sums over MadGraph's own 65 concrete assignments, pinned entry for entry against the run's `leshouche.inc` |
+| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 17 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and all 4 llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.905 ± 0.567** vs MG 933.230 ± 0.480; **644.203 ± 0.384** vs 644.330 ± 0.283), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **424.428 ± 0.432 pb** over three seeds vs MG 423.840 ± 1.518 (pull +0.37). At a *dynamical* scale each point's cluster scale is taken in the integration configuration drawn from the point's own squared amplitudes (`∝ AMP2_c/Σ AMP2`, MadEvent's enhancement-weight conditional, note 29 chain B): `gu_to_epemu` **+0.029%** (pull +0.13) / `gux_to_epemux` **−0.165%** (pull −0.70) and σ(pp→ℓ⁺ℓ⁻j) **+0.25%** (pull +0.73), all GATE at `rel_tol` 0.005 set by the references' own errors. The four `refdata-5` re-carded rows gate on the same path at their own reference-precision-sized budgets (addendum S6, note 32): `pp_to_bb` +0.05% at 75k, `pp_to_bb_qcd2` +0.01% at 75k, `pp_to_llj` +0.18% at 150k (its ladder still climbs monotonically across 75k–600k, 0.04%→0.21%, which is why it did not cut to 75k with the other three), `pp_to_ll_scalefact2` +0.02% at 75k. The `p p > j j` capstone runs the same path on the canonical QCD process and is **GATE**: **6.813339e8 ± 5.496e5 pb** over three seeds vs MG 6.788500e8 ± 1.473e6, rel **+0.37%** at pull **+1.58**, at `rel_tol` 0.005 (75k, addendum S6) — the reference's own 0.22% with headroom, pull asserted, since its channel-partition ambiguity is only `1.0e-3` (its own Monte-Carlo error, because a 2 → 2 gives the clustering no merge to choose). It sums over MadGraph's own 65 concrete assignments, pinned entry for entry against the run's `leshouche.inc` (all figures in this row measured fresh 2026-08-05 by the addendum close-out session, note 32 S8; run `pixi run --skip-deps validate-sigma` / `validate-hadronic` to reproduce) |
 | 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with **per-member colour-flow tables** — each flavour member's tags derived under the structurally-determined flow permutation, refuse-on-ambiguity — checked against MG's `leshouche.inc` (73/73 concrete subprocesses over 47 files; note 29 chain A), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 37 banked MG runs byte-for-byte (744 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
 
 ## Closed-sprint history
@@ -116,6 +150,7 @@ One line each; the note is the full record. Earlier sprints
 - **note-29 validation sprint** (validation, closed 2026-08-03, branch `val4`) — seven design→implement→review chains + the §G re-bank. A: conjugate colour tags fixed by **per-member colour-flow tables** under a structurally-determined permutation (dijet `ICOLUP` χ² p 0 → 0.105–0.263, T5 0/80 000; the design's premise falsified twice by measurement en route). B: **MadEvent's per-point `AMP2_c` scale-channel draw** in production (pure function of `(channel, u)`, zero bits from existing streams) — partition gaps collapsed to MC noise, `gu`/`gux`/llj_dyn tolerances retired 0.02/0.015 → **0.005**, σ(pp→ℓ⁺ℓ⁻j) rel −0.68% → **−0.01%**; reviewer derived the missing `this_config` reconciliation from MG source. C1+C2: every descoped card surface a **hard error** (polarization, decay chains, `propagators.py`, 209-field audit with 23 refused, μF ≥ 2 GeV veto as zero-weight, `dynamical_scale_choice` 1–5 refused). D: `ee_to_mumua` drift adjudicated **D1 — the reference owns it** (MG's own partitions disagree at ≥15σ; our total matches its m(μμ) re-integration at 0.16σ; tolerances unchanged). E: ForcePositive with LHAPDF's own clamp semantics; `validate_kt_cluster` a declared oracle tier; +2 cells. F: U(1) charge-flow phase — pre-registered negative result. §G: **`refdata-5` pinned** (four runs re-carded onto lhaid 247000, member list identical name-for-name; publication pending), all 8 ⛔ cells enforced. Census 87/85✅/2⚠️ → **98/96✅/2⚠️**. Transferable lesson: **pre-register the may-move set** — chain B's escalation diff landing byte-exactly on its five predicted cells is what made the sprint's biggest σ change auditable at a glance; note 29 close-out.
 - **`kt-spine`** (feature, two tracks, closed 2026-08-02) — Track K: MadGraph's general kT clustering reproduced merge for merge against an instrumented 3.7.1 (90 000 dumped events, zero observed deviation), the closed forms deleted so `dynamical_scale_choice = -1` takes one path, `GridAlphaS` made LHAPDF's own `AlphaS_Ipol` and the density grid continued past its edges — then the flips: 6 asserted-refused scale rows became per-event replays, the 4 llj partonic σ rows and their `samples` cells left `blocked`, σ(pp→ℓ⁺ℓ⁻j) re-gated at the dynamical scale, and the capstone **`p p > j j`** gated on MadGraph's shipped run-card defaults (**6.803009e8 ± 2.511e5 pb** vs MG 6.788500e8 ± 1.4726e6, rel +0.21%, pull +0.97). Track S: the identical-particle factor moved into the phase-space map per subprocess, and the multi-rung t-channel spine landed in production. Two bugs the sprint found rather than assumed: the **fixed-beam path was never regulated** (every prior "what is the spine worth" measurement was taken on flat transfer draws), and `p p > j j`'s σ was **36% high** because a repeated final-state label enumerated `g u > g u` and `g u > u g` as two subprocesses. Transferable lesson: **a per-event field is a finer oracle than a cross section, and it exists more often than it looks** — the clustering was pinned by an instrumented replay of MadGraph's own intermediates long before any σ moved, which is why every σ flip that followed had a diagnosis attached. Census 75/74/1 → **87/85/2** over 29 rows; note 28.
 - **`perf-sprint-3`** (performance, three tracks, closed 2026-08-05) — eleven sessions against the note-30 baseline, all merged. Layer result, one host one sitting: `pixi run --skip-deps validate` **691 s → 391 s (−43.4%)** on the identical command with the census cell-for-cell unchanged; per-row single-thread **integrals 842.6 s → 389.8 s (−53.7%)**; integrand throughput vs MadGraph on note 30 §5.3's CPU-time denominators **geomean 6.84× → 8.76×** over the same 26 rows (`pp_to_jj` 2.3× → 4.6×, `pp_to_llj_fixed` 5.8× → 9.1×); per-point MATRIX1 **1.25× → 0.98×** with the evaluator itself −21.6% and 8 of 14 processes now beating MadGraph (was 3); `integrate` **4.70×**/**5.36×** from `-j 1` to `-j 16` on `dy13_default`/`pp_to_llj` at a byte-identical artifact. **Track I**: I1 made VEGAS's iteration combination unweighted (`5b3952d`/`59887a3`) — a 4000-seed offline study showed the plan's warm-up discard removes essentially none of the bias and its parenthetical was the real lever — collapsing the llj ladders (`pp_to_llj` span 2.09% → 0.46%) and re-pinning `LLJ_NEVAL` 300k → 150k; I2 gave the `w_max` scan its own budget (`24aad64`/`928df28`) and **falsified its own premise**, the maxima never converging (`Σⱼ w_maxⱼ ∝ n^0.508` over 2.4 decades — a Pareto weight tail of index ≈ 2), so the lever is the percentile rule not the budget; I3 made the hadronic integrand `Sync` and added `-j/--parallel` (`6497f7e`/`1b527cc`), bit-for-bit at any thread count by construction; I4 added convergence-targeted integration with hard-split Neyman allocation (`30d44d1`/`539f0da`), 64/64 calibration runs meeting target, CPU parity with MG on llj and 4.2–4.5× less CPU on dy13. **Track P**: P1 replaced the per-flavour PDF reads with an f64-only all-flavour kernel (`71a7ef3`/`a66d58a`) — `xfx_all` 112 ns vs 504 ns, PDF share 14.5% → 1.38% and 19.4% → 2.00%, **no tolerance relaxed**; P1b added an absolute screen to the continuation oracle (`91c5a79`/`0fd6344`) and recorded why Horner+FMA stays rejected in `cubic_hermite`. **Track E**: E1 studied execution order (`52327b2`/`7416c1d`) and E1b made op-blocked-within-ASAP-levels the production schedule (`486e237`/`94af883`) — −17.3% eval geomean, bit-for-bit across all 100 banked row files; E2 hoisted the arenas into local slices in `fill_arenas` (`54d666f`/`d2d7520`), header reloads 143 → 20, while measuring and **rejecting** threaded dispatch (+7.7%) and force-inlined sret kernels; E2b shared the four spinor products in the chiral currents (`ced17fb`/`027e710`); E3 found the plan's prefix design a **NO-GO by measurement** and landed an arena-reuse cache instead (`6a8e91c`/`50fb671`), order-preserving and bit-for-bit. Transferable lesson: **four of the eleven sessions refuted their own brief's mechanism and still delivered** — I1's discard, I2's budget, E2's dispatch, E3's prefix — because each was pre-committed to a measurement that could kill it; the close-out then did the same to its own brief, whose prescribed `RAYON_NUM_THREADS=1` per-row protocol serialises every concurrent row through one global worker and would have published an ~8× phantom regression. Note 31 §6.
+- **`perf-3-addendum`** (performance/validation cleanup, eight of nine sessions, closed 2026-08-05) — S1 E3b (bit-identical cut-before-draw on the fixed-beam path) + I5 (`combine_seeds` unweighted, matching I1); S2 read `w_max` off MadGraph's own `unwgt.f` truncation-ladder rule instead of a never-converging scan extremum, unweighting efficiency on five rows 22.2/20.6/23.3/10.6/4.21% → 54.1/52.1/52.9/38.9/9.98%, `p p > l+ l- j` 4.36× cheaper per effective event; S3 parallelised the α-adaptation survey (bit-identical at `-j {1,4,16}`) and made `--target-rel` the CLI's default convergence mode, correcting note 32 §1.1's own serial-floor decomposition (41–52% of the `-j 16` wall, not ~27%); S4 closed all three `mg_perf_compare` findings (manifest-driven registry on both arms, host-labelled committed `mg_timings.json`, bench widened 14→19 rows) and found the newly-included rows were QCD-dense, inverting the sample's earlier bias (19-row MATRIX1 geomean 0.95×, 14-row continuity check 1.06×); S5 hoisted a per-event merge-table rebuild out of the clustered-scale path, −16.9% to −22.3% ns/point on the three clustered rows; S6 sized five hadronic σ budgets to reference precision under a ladder+sweep license (300k → 75k), `validate` CPU −288 s against only −18 s of wall on that cut alone, because `validate` runs its rows concurrently; S7 turned the 2→6 rows on as `info` at the long tier — the "~1 ms/eval" skip premise was stale by more than an order of magnitude, the real cost floor is `MIN_CHANNEL_NEVAL` × channel count, and the physics agrees under the multichannel (five-seed mean inside 1.1% of a 0.30%-precision bank) even though single-seed pulls do not shrink with budget — census 98 → **100**; S9 (restore the pre-lane-FMA scalar packed-complex codegen) was **killed clean**: the idiom is x86-specific and cost 8–9% on this ARM host, the opposite of a win, so nothing merged. S8 re-recorded every σ/percentile/cost figure the wave-1/2 sessions left stale and took the addendum's own close-out measurements: `validate` wall 443.3 s against note 31's 391 s reads as a regression only because the host was not quiet (`mds_stores`/`mediaanalysisd` held load average 6–25 through the run) — CPU is the reliable instrument here, per S6's own −288 s CPU / −18 s wall split on its cut alone; census both numbers explained (98 in the layers `validate` drives vs **100** once the oracle layer's `validate-sigma-2to6` has run); `-j 16` on `dy13_default`/`pp_to_llj` at `--fixed-budget --neval 120000 --niter 12` reads **8.68×**/**9.48×**, bit-identical artifacts. Transferable lesson: **every session corrected something in its own brief** — mechanisms (S2's truncation ladder, S7's `MIN_CHANNEL_NEVAL`), decompositions (S3's 41–52%), and inverted hypotheses (S4's QCD-dense bench, S9's x86-only idiom) — consistent with the pattern the base sprint already showed. Note 32 §5.
 
 ---
 
@@ -137,10 +172,12 @@ One line each; the note is the full record. Earlier sprints
   localised to MadGraph's `pt(γ)/η(γ)` coverage rather than either matrix
   element or the Z propagator. The named next probe: the 2D
   `[39.4, 77) × [86, 96)` `(pt(γ), m(μμ))` cell. Related watch item: the
-  row's `samples` KS floor headroom is **1.3×** (measured `1.292e-4` against
-  the `1e-4` floor), half what the stale doc claimed — if the cell flaps, the
-  D record (MG's sample contradicts MG's own integrals at ≥15σ) is the
-  diagnosis context, and the floor does not move.
+  row's `samples` KS floor headroom is **3.6×** (re-measured 2026-08-05,
+  `3.605e-4` against the `1e-4` floor — `ee_to_wpwm`'s `pt(w+)` cell is now
+  the closest of any gating row, at `1.573e-4`/`1.6×`, unrelated to this
+  row's diagnosis) — if either cell flaps, the D record (MG's sample
+  contradicts MG's own integrals at ≥15σ) is the diagnosis context for
+  `ee_to_mumua`, and the floor does not move.
 - **`p p > j j`'s across-group scale spread is `4.999999e-7`, not zero**,
   while every within-group spread is exactly `0.0` (chain B-0's census).
   Nothing in production reads the group axis for scales, so it moves no cell —
@@ -224,23 +261,32 @@ One line each; the note is the full record. Earlier sprints
 ### Gate + tooling hygiene
 
 - **`mg_perf_compare` bypasses the manifest on both arms and banks no artifact**
-  → **scheduled: addendum S4 (note 32 §1.2)**. `gen_amplitude.py` carries its
-  own hardcoded `PROCESSES` registry instead of reading
-  `validation/manifest.toml` (whose header claims the generators read it), and
-  `mg_timings.json` exists only in the gitignored work area — not in the
-  refdata bundle, not in the report, no host identity in the JSON — so a
-  fetched checkout cannot run `scripts/mg_perf_compare.sh` at all. On the
-  vibegraph arm, `eval_strategies.rs` is a *third* hand-synced copy of the
-  registry and benches only **14 of the 19** MATRIX1-comparable processes —
-  the five silently dropped (`uux_to_epemg`, `ddx_to_epemg`, `gu_to_epemu`,
-  `gux_to_epemux`, `ud_to_epemud_qcd0`) are exactly the QCD llj-class rows,
-  so the MATRIX1 table is biased toward the EW rows we already win. Fix:
-  manifest-driven registry on both arms (dry-run parameter dump byte-identical
-  across the migration; the bench reuses `src/validation.rs`'s existing
-  manifest reader), the join reports one-sided rows instead of dropping them,
-  a host-labelled committed `mg_timings.json` on the `timings.json` precedent,
-  and the MATRIX1 geomean re-based 14 → 19 rows with the 14-row continuity
-  check recorded beside it.
+  — ✅ **done (addendum S4, note 32 §1.2)**. `gen_amplitude.py` carried its own
+  hardcoded `PROCESSES` registry instead of reading `validation/manifest.toml`
+  (whose header claimed the generators read it), and `mg_timings.json` existed
+  only in the gitignored work area — not in the refdata bundle, not in the
+  report, no host identity in the JSON — so a fetched checkout could not run
+  `scripts/mg_perf_compare.sh` at all. `eval_strategies.rs` was a *third*
+  hand-synced copy of the registry benching only **14 of the 19**
+  MATRIX1-comparable processes — the five silently dropped
+  (`uux_to_epemg`, `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux`,
+  `ud_to_epemud_qcd0`) are exactly the QCD llj-class rows, biasing the MATRIX1
+  table toward the EW rows already ahead. All three fixed: `manifest.toml`
+  gained a per-row `mg_amplitude` table and `gen_amplitude.py` reads it (dry-run
+  parameter dump verified byte-identical across the migration, no reference CSV
+  regenerated); `mg_timings.json` carries host identity and a host-labelled
+  copy is committed beside `timings.json`, with `mg_perf_compare.sh` falling
+  back to it and reporting one-sided rows instead of dropping them;
+  `eval_strategies.rs` derives its row set from the manifest at runtime,
+  covering all 19 rows. **The widened table reads worse, and that is the
+  finding, not a regression**: the five previously-dropped rows are QCD-dense,
+  inverting the sample's earlier bias toward EW rows the crate already beats —
+  the 19-row MATRIX1 geomean, **0.95×**, is the new standing baseline, with the
+  14-row figure recorded alongside it as the continuity check (**1.06×** on
+  this run of the bench, relayed from the session report and not independently
+  re-measured by S8 — bench noise on this machine has not been characterised
+  against note 31's ~0.98× closely enough to call the two consistent). (Note 32
+  S4.)
 
 - **Weekly `schedule` trigger on `acceptance.yml`** — left off because it can only
   fail until a first release exists. Turn it on once one does: it is also the
@@ -248,14 +294,24 @@ One line each; the note is the full record. Earlier sprints
   other detector is an `#[ignore]`d test nobody runs on a timer. (Note 24 §U2.)
 - **Small hygiene the note-29 sprint left named**: the `blocked` tier is now a
   documented manifest schema slot used by nothing (keep or retire — a schema
-  decision); `probe_recarded_budget_ladder` (~26 min, oracle layer) has no
-  pixi task and `validate-deep`'s long-tier text does not name it;
-  `pp_to_llj`'s integrals gate runs 600k points/iteration (~+2 min per banked
-  run) because its ladder was still climbing at 300k — the alternative is
-  `info` at 300k, never a wider tolerance; the direct-vs-mirror ordering is a
-  third partition axis chain B named with a falsifier but nothing measures;
-  chain B's draw raises low-budget seed scatter (χ²/dof 6.38 at 75k,
-  clean ≥150k) — a future budget reduction on `pp_to_llj_dyn` would bite;
+  decision); `probe_recarded_budget_ladder`, `probe_bb_budget_ladder` and
+  `probe_2to6_budget_ladder` — ✅ **all three now have pixi tasks**
+  (`ladder-recarded`/`ladder-bb`/`ladder-2to6`, addendum S6/S7, note 32) and
+  are all named in `validate-deep`'s long-tier text. The `~26 min` figure this
+  bullet quoted for `probe_recarded_budget_ladder` was itself stale — S6
+  measured all eight hadronic budget ladders (llj fixed + dyn, `bb_fixed`, the
+  four re-carded rows) at **357 s total on 16 cores**, over 4× less than
+  claimed and the number to use going forward; `pp_to_llj`'s recarded
+  `integrals` gate now runs at **150k** points/iteration, not 600k — its
+  ladder still climbs monotonically over the whole eightfold range (0.04% to
+  0.21%), so `150k` is the lowest rung whose scatter a three-seed gate can
+  read without a single seed dominating, not a converged rung, and the
+  standing follow-up is unchanged: `info`, never a wider tolerance, is the
+  fallback if the climb ever needs addressing (addendum S6, note 32); the
+  direct-vs-mirror ordering is a third partition axis chain B named with a
+  falsifier but nothing measures; chain B's draw raises low-budget seed
+  scatter (χ²/dof 6.38 at 75k, clean ≥150k) — a future budget reduction on
+  `pp_to_llj_dyn` would bite;
   the `Opaque` run-card default payload fix (note 28 §C2.5).
 - **`pp_to_jj`'s banked event sample is not reproducible across MG re-runs** —
   σ is identical to all printed digits and single-group runs regenerate
@@ -439,8 +495,9 @@ exercised on SM evidence alone.
   what landed on top of it is `budget.rs`'s allocation and stopping rules and
   `vegas::adapt_blocks_iteration`, which runs every channel's iteration in one
   rayon region keyed `(channel, chunk)`. The multinomial survives only in the
-  undivided comparison estimator and the α-survey, neither of which is the
-  production σ path; (b) **helicity strata** — `Σ_hel |M_hel|²` is an exact orthogonal
+  undivided comparison estimator, which is not the production σ path — the
+  α-survey is the same deterministic chunking now too (addendum S3, note 32,
+  below); (b) **helicity strata** — `Σ_hel |M_hel|²` is an exact orthogonal
   decomposition (no interference for unpolarized beams), so helicity classes
   (parity-folded, zero-classes dropped) can carry their own budgets/grids;
   first real consumer for `mg-single-helicity-bench`; (c) **flavour groups ×
@@ -449,67 +506,73 @@ exercised on SM evidence alone.
   plus `ThreadLocal` scratch, note 31 §I3), so both integrands are `Sync`;
   (d) **frozen-pass bulk** — `sample_frozen` is already embarrassingly parallel;
   keep the sequential adapt phase short and put the budget in frozen passes;
-  (e) **batch-size vs iteration-count** — measure whether α/grid
-  adaptation converges in fewer sequential iterations with larger parallel
-  batches per iteration (adaptation signal-to-noise grows ~√batch, so the
-  sequential critical path should shrink until the update is
-  quasi-deterministic; the measurement is a batch-size sweep at fixed total
-  budget). Partition-based axes (per-diagram AMP2 shares à la MadEvent
+  (e) **batch-size vs iteration-count** — ✅ **measured** (addendum S3, note 32):
+  a free measurement taken alongside the survey parallelisation, adopted
+  nowhere (it moves no gate). Partition-based axes (per-diagram AMP2 shares à la MadEvent
   G-directories, per-diagram-class = per *distinct* map) are second tier:
   real cluster-scale precedent, but they carry the routing fragility and need
   the same coverage guardrail as the per-flow item above.
-- **`w_max` from a percentile, not from an extremum** → **scheduled: addendum S2
-  (note 32)**. The frozen scan now has a
-  budget of its own (`--scan-points`), and that turned out not to be the lever:
-  the maxima never converge. On the llj grids `Σⱼ w_maxⱼ ∝ n^0.508` over 2.4
-  decades of scan budget (10³–2.56·10⁵ draws/channel, no plateau) while the σ-share
-  above the maxima falls only as `n^−0.455` — one statement, a Pareto weight tail
-  of index ≈ 2, confirmed by a Hill estimator (α = 2.08–2.40 on the twelve
-  σ-carrying channels, which also own the maxima). So no scan budget fixes llj's
-  ~5e-3 σ-share; the rule has to change. MadGraph's `unwgt.f` sets the maximum from
-  a **percentile** and re-normalises, capping `Σⱼ w_maxⱼ` instead of chasing an
-  extremum. The estimator stays unbiased either way (overweights are kept at
-  weight > 1), so what this buys is unweighting efficiency and sample lumpiness,
-  not correctness. Also free and provably inert: `Unweighter::scan` is a pure
-  per-channel function on its own stream, so a rayon `par_iter` over channels
-  cannot move a number (worth doing only for large `--scan-points`).
-  (`unweight`, note 31 §I2.)
-- **Seeds are still combined by inverse variance** → **scheduled: addendum S1
-  (note 32)**. `combine_seeds`
-  (`validate_hadronic.rs`) is the same defect one level up from the one the
-  iteration combination just shed: a `1/σ²` weighted mean over per-seed results.
-  It is second-order now that per-seed errors are well estimated, which is
-  exactly why it is worth closing while it is cheap. (Note 31 §I1.)
-- **Convergence mode is opt-in, and should be the CLI default** → **scheduled:
-  addendum S3 (note 32)**.
-  `integrate --target-rel` reaches MG's banked accuracy at CPU parity on llj and
-  4.2–4.5× less CPU on dy13, but flipping it to the default changes `integrate`'s
-  default artifact bytes, which the CLI gates and `generate_samples.sh` pin. The
-  flip plus the byte re-pin is a small self-contained follow-up. (Note 31 §I4.)
-- **Stale σ values in the gate sources, left by the budget re-pin** →
-  **scheduled: addendum S8 (note 32)**. `BB_NEVAL`'s
-  ladder comments, the DY row docs and `validate_sigma.rs`'s per-process numbers
-  still quote σ measured before `LLJ_NEVAL` went 300k → 150k. The close-out
-  session re-measured timings, not σ, and its charter forbade code edits, so this
-  needs a pass that re-records what a current run prints. (Note 31 §I1.)
-- **`pp_to_jj`'s integration budget was never bias-set** → **scheduled: addendum
-  S6 (note 32), inside the general budget-alignment rule** (size every σ gate's
-  budget to the banked reference's own error, floored by seed scatter and ladder
-  flatness — llj's 600k gate re-laddered under the unweighted combination). It
-  is flat to 0.08%
-  across the 75k–600k ladder, so it could take a 4× cut with no accuracy argument
-  against it. Worth ~65 s of single-thread integrals time at the post-sprint cost
-  (86.2 s for that row, note 31 §6.3) — the ~130 s the measuring session quoted was
-  against note 30's 174.8 s and no longer applies. Deliberately left as a budget
-  decision rather than taken inside the session that found it. (Note 31 §I1, §6.3.)
-- **The serial tail of a parallel `integrate` run** → **scheduled: addendum S3
-  (note 32; the `-j 16` Amdahl decomposition is note 32 §1.1)**. The α-adaptation survey is
-  serial and budget-independent (`neval.clamp(10k,40k) × 6`) and is now ~27% of a
-  fixed-budget `p p > ℓ⁺ℓ⁻ j` run at `-j 16`; `survey_variance` is
-  O(n_survey × n_channels) and is the obvious thing to parallelise. Chunk size is
-  a second, smaller knob: measured **inert** (identical artifact md5 at every
-  setting) but never tuned, because the scan that would have tuned it was
-  load-dominated — free and unmeasured, not known-neutral. (Note 31 §I3/§I4.)
+- **`w_max` from a percentile, not from an extremum** — ✅ **done (addendum S2,
+  note 32)**. The frozen scan had a budget of its own (`--scan-points`), and
+  that turned out not to be the lever: the maxima never converge. On the llj
+  grids `Σⱼ w_maxⱼ ∝ n^0.508` over 2.4 decades of scan budget (10³–2.56·10⁵
+  draws/channel, no plateau) while the σ-share above the maxima falls only as
+  `n^−0.455` — one statement, a Pareto weight tail of index ≈ 2, confirmed by a
+  Hill estimator (α = 2.08–2.40 on the twelve σ-carrying channels, which also
+  own the maxima). So no scan budget fixes llj's ~5e-3 σ-share; the rule had to
+  change. `MaxRule` implements MadGraph's own `unwgt.f` truncation-ladder rule
+  (not literally a percentile — the session corrected that framing): the
+  maximum is the lowest scanned weight leaving under `excess_share` (1%) of
+  that channel's scanned cross section above it, re-normalised. The estimator
+  stays unbiased either way (overweights are kept at weight > 1), so what this
+  bought is unweighting efficiency and sample lumpiness, not correctness — the
+  five gating rows' acceptance rose from 22.2/20.6/23.3/10.6/4.21% to
+  54.1/52.1/52.9/38.9/9.98% at matched budgets, and `p p > l+ l- j` at 300k×8
+  needed 2 269 051 trials for 20 000 events before, 477 125 after (4.36× cheaper
+  per effective event). `Unweighter::scan` now runs its per-channel scans on a
+  rayon `par_iter`, bit-identical at `--max-truncation 0`. (`unweight`, note 31
+  §I2, note 32 S2.)
+- **Seeds are still combined by inverse variance** — ✅ **done (addendum S1,
+  note 32)**. `combine_seeds` (`validate_hadronic.rs`) was the same defect one
+  level up from the one the iteration combination shed: a `1/σ²` weighted mean
+  over per-seed results, now unweighted (`err = √(Σᵢ σᵢ²)/n`) to match. Every
+  hadronic row moved, second-order as expected (≤0.02%). (Note 31 §I1.)
+- **Convergence mode is opt-in, and should be the CLI default** — ✅ **done
+  (addendum S3, note 32)**. `integrate` now converges to `--target-rel` (0.1%
+  default, below every banked reference's own MC error) unless `--fixed-budget`
+  asks for a fixed `--neval × --niter` spend; every caller that wanted a fixed
+  budget (CLI tests, `generate_samples.sh`, `scripts/acceptance.sh`) now says so
+  explicitly. The artifact-byte re-pin this flip implied "resolved empty" — no
+  pinned CLI/Pythia-sample artifact actually depended on the old default budget
+  path once the explicit-budget callers were updated. (Note 31 §I4.)
+- **Stale σ values in the gate sources, left by the budget re-pin** — ✅ **done
+  (addendum S8, note 32, this session)**. Re-recorded from fresh runs:
+  `validate_hadronic.rs`'s ten hadronic GATE rows, the `RECARDED_ROWS` ladder
+  comments and per-row report note, `validate_samples.rs`'s KS p-floor headroom
+  comment, and the `ee_to_mumua` `samples` note in `validation/manifest.toml`.
+  (Note 31 §I1.)
+- **`pp_to_jj`'s integration budget was never bias-set** — ✅ **done (addendum
+  S6, note 32), inside the general budget-alignment rule** (size every σ gate's
+  budget to the banked reference's own error, floored by seed scatter and
+  ladder flatness). `pp_to_jj` was flat to 0.08% across the 75k–600k ladder and
+  cut 300k → 75k along with `pp_to_bb_fixed`, `pp_to_bb`, `pp_to_bb_qcd2` and
+  `pp_to_ll_scalefact2`; llj stayed at 150k on both the fixed-scale and
+  re-carded rows — flat ladders but a dirty 75k rung on the former, a still-climbing
+  ladder on the latter. Same host, one sitting: `validate` 360.6 s → 342.6 s
+  wall, 1608.9 s → 1321.3 s CPU, census and every tolerance unchanged. (Note 31
+  §I1, §6.3; note 32 S6.)
+- **The serial tail of a parallel `integrate` run** — ✅ **done (addendum S3,
+  note 32; the `-j 16` Amdahl decomposition is note 32 §1.1, corrected by the
+  session to 41–52% of the wall rather than ~27%)**. `survey_variance` now runs
+  its point loop in one rayon region over I3's deterministic chunking
+  (bit-identical at `-j {1,4,16}`, asserted) — its own share of a `--niter 1`
+  run fell from 1.04 s/0.24 s of an `-j 16` `p p > l+ l- j`/`p p > e+ e-` wall
+  to negligible, and the fitted Amdahl ceilings moved from 6.7×/5.8× to
+  18.2×/20.1×. Measured `-j 16` walls on `--fixed-budget --neval 120000
+  --niter 12`, min of 5 rounds: `dy13_default` **8.7×**, `pp_to_llj` **9.5×**
+  (S8 re-measurement, host load 6–19 from background indexing — see note 32
+  §5). Chunk size stayed the second, smaller knob, measured **inert** and never
+  tuned. (Note 31 §I3/§I4; note 32 S3.)
 - **Per-stage timing capture** — ✅ **done 2026-08-04, note 30.** Both halves
   landed: (a) `validation/madgraph/time_stages.py` regenerates named processes
   into a scratch directory and reads MG's generate / output / compile /
@@ -529,37 +592,59 @@ exercised on SM evidence alone.
   stage; whether MadEvent's `results.dat` point count includes the survey pass;
   and a per-phase `duration_s` inside a row, which is what would give our side
   a counterpart to MG's `output` + `compile` column.
-- **Accept/reject allocator traffic, and the per-event scale that feeds it** →
-  **scheduled: addendum S5, stretch (note 32)** —
-  one item, because both are the same allocation. The unweighting profile is the
+- **Accept/reject allocator traffic, and the per-event scale that feeds it** —
+  **partially done (addendum S5, note 32)**. The unweighting profile was the
   most allocation-bound of the four note-30 profiles: **18.4% allocator + libc
   mem, 5.1% `BTreeMap`**, and kT clustering at its highest share (9.2%) because
-  accept/reject re-derives the per-event scale on every trial.
-  `ScaleChoice::clustered` heap-allocates its beam–leg candidate list per event,
-  which is ~100 ns/point on top of a 0.5–1.7 µs matrix element (+6% `gg_to_gg`,
-  +21% `uux_to_uux`). First cut: per-event allocations → reused scratch. Sized
-  honestly: the samples category is about half the integrals category in wall
-  time, which is why this stayed a stretch item through the sprint.
-  (`coupling/scales.rs`; `validate_sigma.rs` `probe_scale_cost`; note 30 §7.2,
-  note 31 §E4.)
+  accept/reject re-derives the per-event scale on every trial. S5 landed one
+  piece: `ScaleChoice::cluster_scales` rebuilt three `BTree` containers per
+  event; `MergeTablesByOrder` now builds one table set per coupling order at
+  setup and hands it through `ClusterInput::tables`, cutting `probe_scale_cost`
+  ns/point **−16.9%** (`gg_to_gg`), **−21.6%** (`gg_to_ttx`), **−22.3%**
+  (`uux_to_uux`), `validate_unweighting` **−16.8%**, the partonic σ gate
+  **−11.1%**, byte-identical throughout. **Not done**: `ScaleChoice::clustered`
+  still heap-allocates its beam–leg candidate list per event
+  (`coupling/scales.rs:376`, `Vec::with_capacity(input.set.n_external)`) and
+  `setclscales.rs`'s clustering itself allocates several more `Vec`s per call
+  (`attempts`, `traces`, `pt2`, `mt2`, `lines`) that S5 did not touch — the
+  scratch-reuse continuation into `setclscales.rs` is the open remainder of E4.
+  (`coupling/scales.rs`, `coupling/cluster/setclscales.rs`; `validate_sigma.rs`
+  `probe_scale_cost`; note 30 §7.2, note 31 §E4, note 32 S5.)
 - **Tighter spacelike floor** — `Cuts::spacelike_floor() = pT_min²` is provable
   but 10–100× looser than the true fiducial floor: S2's D3 measurement found the
   cut-surviving region above `|t| ≈ 4 000–40 000 GeV²` where the floor sits at
   400. A tighter derived bound scales the bounded-`t_max` variance win (measured
   1.67–1.83×) with it. (Note 28 §S2.5.)
-- **2→6 σ rows** → **scheduled: addendum S7 (note 32)**. `uux_to_ccx_emmm_qcd0`,
-  `bbx_to_ccx_emmm_qcd0` stay `Plan::Skip`, but the skip's "~1 ms/eval" premise
-  is stale — the bench now reads 89/149 µs (note 31 §6.8); the session measures
-  the gate-harness cost, ladders a σ row against the 0.30% references, and flips
-  the `long`-tier cells (the census's 4 ⏳). (`validate_sigma.rs`.)
-- **Cut before the configuration draw on the fixed-beam path** → **scheduled:
-  addendum S1 (note 32)**.
-  `FixedBeamIntegrand` runs the scale-configuration draw *before* the cut, so 22%
-  of `gu_to_epemu`/`gux_to_epemux` points pay ~190 ns of provably dead draw work;
-  `ProtonIntegrand::shape` already cuts first. The same session fixes note 30 §6's
-  "points the cuts reject return before the draw", which is true on the hadronic
-  path and false on the partonic one, and the doc comments that repeat it.
-  (Note 31 §E3.)
+- **2→6 σ rows** — ✅ **turned on as `info` at the long tier (addendum S7, note
+  32)**. `uux_to_ccx_emmm_qcd0`/`bbx_to_ccx_emmm_qcd0` are `Plan::Long` now, not
+  `Plan::Skip` — the skip's "~1 ms/eval" premise was stale by more than an order
+  of magnitude (the gate's own harness reads 64/71 µs; even the flat-RAMBO map
+  the skip blamed reads only 48/82 µs and is wrong for a different reason: six
+  outgoing legs put the poles on a set of vanishing flat measure, so it misses
+  these cross sections by eleven and fifteen orders of magnitude despite passing
+  cuts on 46% of its draws). The real floor is `MIN_CHANNEL_NEVAL` (512) times
+  579/615 per-diagram channels — 296 448/314 880 evaluations every iteration
+  whatever budget is asked — and a heavy-tailed multichannel estimator: five
+  seeds at 300k/600k/1.2M hold the mean inside 1.1% of a bank whose own error is
+  0.30%, but single seeds swing +4.8%/−4.5%/+3.5% at both ends of that ladder
+  and do not shrink with budget, which is why the rows are measured (`info`, not
+  `gate`) rather than tolerance-bounded. Runs at 600k×8, one seed, on every
+  `validate-sigma-2to6` invocation; `ladder-2to6`, `ladder-bb`, `ladder-recarded`
+  are now named pixi tasks in `validate-deep`'s long-tier text. Census 98 → 100
+  measured; the two `samples` cells stay ⏳ with their cost recorded rather than
+  assumed (117/45 trials/event, inside the 400-trial budget, but ~40
+  unparallelisable minutes for the pair). (`validate_sigma.rs`; note 32 S7.)
+- **Cut before the configuration draw on the fixed-beam path** — ✅ **done
+  (addendum S1, note 32)**. `FixedBeamIntegrand` drew the scale configuration
+  before checking the cut, so a rejected point still paid `eval_amp2` +
+  `set_alpha_s` for a channel selection it would discard — ~190 ns of dead work
+  on 22% of `gu_to_epemu`/`gux_to_epemux` points. `scale_u` is always a slice of
+  the point's own already-supplied `u`, never an independently advanced RNG
+  stream, so cutting first changes no random draw: bit-identical for every
+  accepted point. `ProtonIntegrand::shape` already cut first; the fixed-beam
+  doc comments that repeated note 30 §6's "points the cuts reject return before
+  the draw" (true on the hadronic path, false on the partonic one before this
+  fix) are now accurate on both integrands. (Note 31 §E3, note 32 S1.)
 - **`feyngraph-perf`** — `AssignWorkspace::assign()` (`workspace.rs:L122`) calls
   itertools `.counts()` (a fresh `HashMap`) per candidate vertex per topology per
   subprocess — ~340M allocations for pp→qq̃4l. Fix: pre-compute per-vertex counts
@@ -578,19 +663,24 @@ exercised on SM evidence alone.
   helicity-summed evaluation per accepted event), so single-helicity evaluation
   never became the hot path. Re-sequence under whatever first needs a single
   fixed helicity in a loop. (Note 23 §E2.)
-- **The lane-FMA commit's scalar toll, and `MulAdd` for `NumericArray`** →
-  **workaround scheduled: addendum S9 (note 32)**. `3dab3a1` shared one real-FMA
-  complex path between the scalar and lane fields (lanes −22–35%) because
-  `Complex<NumericArray>` lacks `num_traits::MulAdd`, and its own message
-  records the price: scalar forward +3.5%, "shipped as-is since forward is the
-  least-used path" — but lanes never entered production, so the toll lands on
-  the production evaluator. S9's workaround is an in-house complex multiply-add
-  trait (default = the shared real-FMA body, `f64` override deferring to
-  `Complex<f64>`'s `num_traits::MulAdd`/packed idiom), kill-gated on the win
-  still measuring ≥2% on the current tip. The clean long-term fix is an
-  **upstream** `numeric_array` contribution implementing `num_traits::MulAdd`
-  (orphan rule forbids it in-tree); when that lands the in-house trait
-  collapses to one deferral and scalar/lanes share one fast path again.
+- **The lane-FMA commit's scalar toll, and `MulAdd` for `NumericArray`** —
+  **workaround attempted and killed clean (addendum S9, note 32)**. `3dab3a1`
+  shared one real-FMA complex path between the scalar and lane fields (lanes
+  −22–35%) because `Complex<NumericArray>` lacks `num_traits::MulAdd`, and its
+  own message recorded the price: scalar forward +3.5%, "shipped as-is since
+  forward is the least-used path" — but lanes never entered production, so the
+  toll lands on the production evaluator. S9's workaround was an in-house
+  complex multiply-add trait (default = the shared real-FMA body, `f64`
+  override deferring to `Complex<f64>`'s `num_traits::MulAdd`/packed idiom),
+  kill-gated on the win still measuring ≥2% on the current tip — but the packed
+  idiom turned out to be **x86-specific**: forcing it on this ARM host (M3 Max)
+  cost **8–9%**, the opposite of a win, so the pre-registered kill criterion
+  fired and nothing merged (worktree clean, branch carries no commit past the
+  note-32 planning doc). The clean long-term fix is still an **upstream**
+  `numeric_array` contribution implementing `num_traits::MulAdd` (orphan rule
+  forbids it in-tree); the in-house-trait design stays at note 32 §2 S9 for
+  whoever revisits this on an x86 host, where the original 3.5% may still be
+  worth recovering.
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)
