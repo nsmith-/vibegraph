@@ -423,6 +423,49 @@ exercised on SM evidence alone.
   (artifact `ChannelKey` is literally a diagram index, `check_channel_keys`
   replays position-by-position, `unweight.rs` offsets RNG streams by channel
   index, `hadronic.rs:1544` hard-asserts channels == diagrams).
+- **α-survey budget constants are unmeasured** (2026-08-06; sequenced *after*
+  the density-loop item above, which moves the cost this item is weighing).
+  `MIN_ADAPT_SURVEY = 10_000` / `MAX_ADAPT_SURVEY = 40_000`
+  (`vibegraph-cli/src/integrate.rs:60`) clamp `--neval` to set the α-survey's
+  points per iteration (6 iterations, damping 0.5). Neither bound has a
+  measurement behind it anywhere in the repo — no note, no gate — while the
+  doc comment asserts the range is "enough to resolve each channel's variance
+  share". Nothing would fail if that were false: the survey's resolution is not
+  gated, and the αs it produces decide every VEGAS iteration's channel split
+  under `ByAlpha`. Above 40k, `--neval` stops buying a better split entirely.
+  **Sequencing**: the survey's per-point cost *is* the `Σⱼ αⱼgⱼ` loop — a
+  `density_at` per channel per point (`proton.rs:2032`,
+  `phasespace/channel.rs:350`), so `n_survey × 6 × n_channels` density
+  evaluations, ≈8×10⁷ at the cap on the 336-channel `p p > l+ l- j j`. The cap
+  exists to bound exactly that, so measuring it before the density-loop session
+  lands prices a loop that is about to change.
+  **Regime**: the processes this was tuned against carry ~24 channels; the cap
+  binds hardest where channel counts are hundreds. Per-channel *estimator*
+  starvation is not the worry — each drawn point updates every `Wⱼ`
+  (`proton.rs:1978`) — but own-map exploration is ∝ `αⱼ`, so a channel at
+  `αⱼ = 10⁻³` gets ~40 draws from its own map per iteration at the cap, and
+  `Wⱼ` is what would raise its `αⱼ`.
+  **Experiment**: fixed seed, `n_survey ∈ {10k, 40k, 160k, 640k}`, recording the
+  α trajectory, the converged α vector, and then σ and its ≥5-seed spread from
+  the run those αs drive. Rows: `bbx_to_ccx_emmm_qcd0` / `uux_to_ccx_emmm_qcd0`
+  (615/579 channels, banked σ) for the many-channel regime and `pp_to_llj` (24)
+  as control — which also covers both survey implementations, the fixed-energy
+  one (`phasespace/channel.rs:350`) and the hadronic one (`proton.rs:2032`),
+  separate code carrying the same estimator. `p p > l+ l- j j` (336 channels)
+  is the case that surfaced this and has no banked reference, so it can only
+  contribute α stability, not a σ check.
+  **Verdict rule**: if the converged αs and σ are stable from 40k up — inside
+  the layer's own 0.8% median / 3.4% worst run-to-run spread — the cap is
+  confirmed and this closes with a recorded number replacing the assertion in
+  the doc comment. If they still move at the cap, the fix is to raise it or to
+  scale it with channel count rather than clamp a flat constant.
+  Worth checking against the 2→6 residue below while measuring: an
+  under-resolved α split on the 579/615-channel rows is an untested candidate
+  contributor to that heavy tail, and this is a different axis from the
+  integration budget those swings were measured against.
+  Reporting is no longer silent about either bound (2026-08-06): a clamp warns,
+  as does an iteration whose spend is set by the `MIN_CHANNEL_NEVAL` floor
+  rather than by `--neval`.
 - **2→6 residue** (addendum S7 landed the rows as `info`, note 32): promotion
   to an enforced gate is blocked on the heavy multichannel tail (single-seed
   pulls ±3.5–4.8% at every budget while five-seed means hold inside 1.1% of a

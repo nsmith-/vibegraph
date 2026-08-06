@@ -421,14 +421,6 @@ where
     // The iteration count a display divides by. A convergence run may stop well
     // short of its cap, so this is an upper bound rather than a plan.
     let iteration_bound = budget.max_iters() as u64;
-    info!(
-        "{} channels over {ndim} coordinates, {neval} points per iteration, allocated {}",
-        alphas.len(),
-        match allocation {
-            BlockAllocation::ByAlpha => "by α",
-            BlockAllocation::Neyman => "by αⱼsⱼ (Neyman)",
-        }
-    );
 
     let mut grids: Vec<VegasGrid> = alphas
         .iter()
@@ -468,6 +460,26 @@ where
         })
         .collect();
     let alpha_total: usize = by_alpha.iter().sum();
+
+    info!(
+        "{} channels over {ndim} coordinates, {alpha_total} points per iteration, allocated {}",
+        alphas.len(),
+        match allocation {
+            BlockAllocation::ByAlpha => "by α",
+            BlockAllocation::Neyman => "by αⱼsⱼ (Neyman)",
+        }
+    );
+    // Coverage outranks the budget, so a request under the floor is raised, not
+    // honoured. Say so: the spend is then set by the channel count and is not a
+    // knob `neval` can turn until it clears the floor.
+    if alpha_total > neval {
+        let floored = by_alpha.iter().filter(|&&n| n == MIN_CHANNEL_NEVAL).count();
+        warn!(
+            "neval {neval} is below what {} channels can cover: {floored} of them sit at the \
+             {MIN_CHANNEL_NEVAL}-point floor, so an iteration spends {alpha_total}",
+            alphas.len(),
+        );
+    }
 
     let warmup = grids
         .first()

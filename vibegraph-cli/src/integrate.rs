@@ -18,7 +18,7 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use tracing::info;
+use tracing::{info, warn};
 use vibegraph::artifact::{
     ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, FORMAT_VERSION,
 };
@@ -63,6 +63,20 @@ const MAX_ADAPT_SURVEY: usize = 40_000;
 const ADAPT_ITERS: usize = 6;
 /// Kleiss–Pittau exponent the α-reallocation is damped by.
 const ADAPT_DAMPING: f64 = 0.5;
+
+/// Points the α-survey spends per iteration for an integration budget of
+/// `neval`, warning when the clamp means `neval` did not decide it.
+fn survey_points(neval: usize) -> usize {
+    let n = neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
+    if n != neval {
+        let direction = if n > neval { "raised" } else { "capped" };
+        warn!(
+            "α-survey neval {direction} from {neval} to {n} \
+             (survey range {MIN_ADAPT_SURVEY}–{MAX_ADAPT_SURVEY})"
+        );
+    }
+    n
+}
 
 /// Relative uncertainty a run converges to when no budget mode is asked for.
 ///
@@ -126,6 +140,12 @@ pub struct IntegrateArgs {
     pub ufo_dir: Option<PathBuf>,
 
     /// VEGAS evaluations per adaptation iteration.
+    ///
+    /// Split across the channels by their selection weights, but every channel
+    /// draws at least 512 points so none stops covering its own region: a
+    /// process with many channels spends `512 × channels` per iteration however
+    /// small this is. Also sets the α-survey's points per iteration, clamped to
+    /// `[10000, 40000]`.
     #[arg(long, default_value_t = 120_000)]
     pub neval: usize,
 
@@ -380,8 +400,8 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     info!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
     let conv = &output.convergence;
     info!(
-        "VEGAS:    {} evals × {} iters, seed {} (χ²/dof = {:.3})",
-        args.neval, conv.iterations, args.seed, output.result.chi2_per_dof
+        "VEGAS:    {} evals over {} iters, seed {} (χ²/dof = {:.3})",
+        conv.points, conv.iterations, args.seed, output.result.chi2_per_dof
     );
     if output.channels.len() > 1 {
         let total_neval: usize = output.channels.iter().map(|c| c.neval).sum();
@@ -514,7 +534,7 @@ fn integrate_hadronic(
 
     tui::state::note_channels(integ.channel_ids().len());
 
-    let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
+    let n_survey = survey_points(args.neval);
     integ.adapt_alphas(args.seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
 
     let (per_channel, result, convergence) = integ.adapt_grids_budget(
@@ -597,7 +617,7 @@ fn integrate_fixed_energy(
         .use_running_coupling(&diagrams, model, evaluated, rc)
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
     tui::state::note_channels(diagrams.len());
-    let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
+    let n_survey = survey_points(args.neval);
     integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, args.seed);
 
     let (per_channel, result, convergence) = integ.adapt_grids_budget(
