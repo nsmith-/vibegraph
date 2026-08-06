@@ -917,17 +917,28 @@ observation that this row's σ ladder climbs monotonically with budget
   spends 399 217 points against the `--neval 120000` it was given. Above
   roughly 230 channels `--neval` no longer sets the budget.
 
-Unexplained, same runs: per-point cost climbs monotonically across iterations,
-70.1 → 74.4 → 80.6 → 85.6 → 89.2 → 91.5 µs over six, at constant points per
-iteration.
+Per-point cost climbs monotonically across iterations, 70.1 → 74.4 → 80.6 →
+85.6 → 89.2 → 91.5 µs over six, at constant points per iteration. *Explained
+(2026-08-06, `target-rel-convergence`): rising cut acceptance.* A rejected
+point short-circuits before the matrix element and the scale clustering, so
+the average point gets more expensive exactly as the grids learn the fiducial
+region. Measured on `pp_to_llj`: acceptance 23.8% on an untrained grid against
+48.5% trained; a two-component fit (`c_pre ≈ 1.0 µs`, `c_post ≈ 12.9 µs`)
+reproduces the observed averages, and `ee_to_mumu` is flat because its
+acceptance barely moves. Benign — the sampler working — but an ns/eval quoted
+from early iterations understates a converged run's cost.
 
-**A caveat on this section's own 2→6 probe.** It was driven from
-`output/uux_to_ccx_emmm_qcd0/Cards/run_card.dat` and returned
-σ = 1.84e-15 pb against that row's 7.1428e-7 reference, so its *physics* is
-wrong and no variance or σ claim is made from it — the two mechanisms above are
-structural (a channel count, a floor warning, a stop criterion reading an
-overflow) and survive the misconfiguration. Anyone repeating it should take the
-configuration from `validate_sigma.rs`'s `Plan::Long` and confirm σ against the
-bank first. The real variance study on those rows is already banked:
-`probe_2to6_budget_ladder`, five seeds each at 300k/600k/1.2M, recorded in
-`manifest.toml`'s note on the row.
+**A caveat on this section's own 2→6 probe — itself corrected 2026-08-06.**
+The original text here recorded σ = 1.84e-15 "pb" against the row's 7.1428e-7
+reference and concluded the probe's physics was wrong. The number was the raw
+GeV⁻² integral, not pb: × `GEV2_TO_PB` = 3.893793721e8 it reads
+**7.1646e-7 pb, +0.30%** of the bank, so the CLI-driven configuration from
+`output/uux_to_ccx_emmm_qcd0/Cards/` was correct all along. Confirmed by
+re-driving the row from the same cards (`--fixed-budget --neval 120000
+--niter 8 --seed 20260719`): 1.873082e-15 ± 3.714e-17 GeV⁻² =
+7.29339e-7 ± 1.446e-8 pb, +2.11%, pull +1.03. The two mechanisms above stand
+on their own regardless, and both were fixed by the `target-rel-convergence`
+session (the stop no longer consumes the χ²/dof overflow; the caps are priced
+in points actually spent — `61e578f`). The real variance study on those rows
+is banked: `probe_2to6_budget_ladder`, five seeds each at 300k/600k/1.2M,
+recorded in `manifest.toml`'s note on the row.
