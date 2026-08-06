@@ -17,13 +17,21 @@
 //! | tier | expects a row file | mark |
 //! |---|---|---|
 //! | `hermetic`, `banked` | yes | ✅ when the gate passed, ⚠️ when the cell is informational, ❌ when it failed |
-//! | `long` | no | ⏳ — the oracle layer runs it, for cost rather than for dependencies |
+//! | `long` | only when its own driver ran | ⏳ without one; otherwise rendered from it like a banked cell |
 //! | `blocked` | no | ⛔, naming the blocker |
 //! | `covered-by` | no | `—`, naming the rows that cover it |
 //! | `uncovered` | no | `uncovered`, with the manifest's account of the gap |
 //!
-//! A row file for a cell in one of the last four tiers is an *unexpected* cell
+//! A row file for a cell in one of the last three tiers is an *unexpected* cell
 //! and fails: it means something was measured that the manifest says is not.
+//!
+//! **A `long` cell is measured by a task of its own**, not by `pixi run validate`
+//! — that is the whole content of the tier, which is about cost and not about
+//! dependencies. So its cell is ⏳ in a bare banked run and a rendered
+//! measurement in a run whose driver went first. Nothing is inferred either way:
+//! `validate.sh` clears the per-category row files before the gates run, so a
+//! long cell reads as measured only when its driver ran in the same cycle as the
+//! collation, and reverts to ⏳ the moment it does not.
 //!
 //! **Hermetic cells are rendered from measurements, not inferred.** The
 //! alternative — taking a hermetic cell's mark from the manifest tier plus the
@@ -246,7 +254,12 @@ fn resolve_cell(
             .collect(),
     };
 
-    if !declared.tier.is_measured_here() {
+    // A `long` cell's driver is a task of its own, so whether it has a row file
+    // says whether that task ran in this cycle — not whether the cell was declared
+    // wrongly. With one, it is rendered from the measurement below like any other
+    // gate cell; without one it waits, the way it did before its driver existed.
+    let driven = declared.tier == Tier::Long && !measured.is_empty();
+    if !declared.tier.is_measured_here() && !driven {
         if !measured.is_empty() {
             problems.push(format!(
                 "{where_} is declared '{}' and yet {} row file(s) measured it",

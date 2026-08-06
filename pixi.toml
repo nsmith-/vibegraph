@@ -76,9 +76,27 @@ validate = { cmd = "bash validation/validate.sh", depends-on = [
 # The collator alone, over whatever the last `validate` left behind.
 validation-report = "cargo run --profile release-debug -p vibegraph-validation-report"
 
+# The 2 -> 6 sigma rows, measured in the long tier against the same bank through
+# the same driver as every other cross section. What puts them here is the
+# budget: their 579 and 615 per-diagram channels cannot be spent below
+# MIN_CHANNEL_NEVAL apiece, so the cheapest meaningful iteration is already ~300k
+# points, and the flat map is no cheaper alternative — it misses these cross
+# sections by eleven orders of magnitude. Reported and not enforced, for the
+# seed-sweep reason recorded on their manifest rows. Writes both rows'
+# `integrals` cells, so run it between `validate` and `validation-report` for a
+# report that carries them: `validate` clears the per-category cells first, which
+# is what keeps a stale long-tier measurement from being served as this run's.
+validate-sigma-2to6 = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_sigma -- --ignored --nocapture the_long_tier_sigma_rows_match_madgraph"
+# The budget ladders behind the enforced cross sections' `neval`, five seeds a
+# rung. Each is what says its row's gate measures an agreement rather than this
+# crate's convergence, and each is too long for the banked layer, so they live
+# here with a task apiece rather than only in a note.
+ladder-2to6 = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_sigma -- --ignored --nocapture probe_2to6_budget_ladder"
+ladder-bb = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_hadronic -- --ignored --nocapture probe_bb_budget_ladder"
+ladder-recarded = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_hadronic -- --ignored --nocapture probe_recarded_budget_ladder"
+
 # The oracle layer's vibegraph side: the runs too heavy for the banked budget.
-# A stub until those rows have a driver.
-validate-deep = '''printf '%s\n' "The oracle layer will run the long-tier cells of validation/manifest.toml:" "  - the 2 -> 6 sigma and sample rows (uux_to_ccx_emmm_qcd0, bbx_to_ccx_emmm_qcd0)" "  - the full seed sweep and budget ladder for the multi-channel sigma rows" "  - the full rooting-soundness sweep over every candidate re-rooting" "  - the kT clustering replay against MadGraph's own per-event intermediates, which already has a driver: pixi run -e madgraph validate-kt-cluster" "No driver yet for the rest; the ignored tests are the closest thing meanwhile:" "  cargo test --workspace --profile release-debug --features vibegraph/extended-validation -- --ignored --nocapture"'''
+validate-deep = '''printf '%s\n' "The oracle layer runs the long-tier cells of validation/manifest.toml:" "  - the 2 -> 6 sigma rows (uux_to_ccx_emmm_qcd0, bbx_to_ccx_emmm_qcd0), measured and reported: pixi run validate-sigma-2to6, then pixi run validation-report to collate their cells" "  - the budget ladders behind the enforced sigma budgets: pixi run ladder-2to6, pixi run ladder-bb, pixi run ladder-recarded" "  - the kT clustering replay against MadGraph's own per-event intermediates: pixi run -e madgraph validate-kt-cluster" "Still without a driver: the 2 -> 6 sample rows, the full seed sweep for the multi-channel sigma rows, and the full rooting-soundness sweep over every candidate re-rooting. The ignored tests are the closest thing meanwhile:" "  cargo test --workspace --profile release-debug --features vibegraph/extended-validation -- --ignored --nocapture"'''
 
 
 # --- nougat: scientific PDF OCR ---
