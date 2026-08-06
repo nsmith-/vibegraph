@@ -342,10 +342,18 @@ impl<F: Real> MultiChannel<F> {
             let mut w = vec![F::zero(); n];
             for _ in 0..n_survey {
                 let u = s.uniforms::<F>(ndim);
-                let (drawn, pt) = self.sample_from(&u);
+                let (drawn, pt) = self.draw_from(&u);
+                // A point the integrand vanishes on adds zero to every `Wⱼ`, so its
+                // mixture density is never formed. The integrand still runs on
+                // every drawn point: it may advance draws of its own.
+                let f = integrand(&pt.momenta, drawn);
+                if f == F::zero() {
+                    continue;
+                }
                 // g(p) = 1/weight is the combined density; est = weight·f = f/g.
-                let g = F::one() / pt.weight;
-                let est = pt.weight * integrand(&pt.momenta, drawn);
+                let weight = self.mixture_weight(&pt.momenta);
+                let g = F::one() / weight;
+                let est = weight * f;
                 let est2 = est * est;
                 for (wj, ch) in w.iter_mut().zip(&self.channels) {
                     *wj = *wj + est2 * ch.density(&pt.momenta) / g;
@@ -405,14 +413,42 @@ impl<F: Real> MultiChannel<F> {
     ///
     /// If `j` is not a channel index.
     pub fn sample_channel(&self, j: usize, u: &[F]) -> PhaseSpacePoint<F> {
-        assert!(j < self.channels.len(), "channel index out of range");
-        let pt = self.channels[j].sample(u);
-        let g = self.density(&pt.momenta);
-        debug_assert!(g > F::zero(), "combined density must be positive");
+        let pt = self.draw_in_channel(j, u);
+        let weight = self.channel_weight(j, &pt.momenta);
         PhaseSpacePoint {
             momenta: pt.momenta,
-            weight: self.alphas[j] / g,
+            weight,
         }
+    }
+
+    /// [`sample_channel`](Self::sample_channel)'s draw alone: the point channel
+    /// `j` maps `u` to, carrying *that channel's own* weight `1/gⱼ` rather than
+    /// the mixture's `αⱼ/g`.
+    ///
+    /// The mixture weight costs a density evaluation in every channel, and a
+    /// caller that discards points on a predicate of the momenta alone — a
+    /// fiducial cut — never needs it on the ones it discards. Such a caller draws
+    /// here and finishes the points it keeps with
+    /// [`channel_weight`](Self::channel_weight).
+    ///
+    /// # Panics
+    ///
+    /// If `j` is not a channel index.
+    pub fn draw_in_channel(&self, j: usize, u: &[F]) -> PhaseSpacePoint<F> {
+        assert!(j < self.channels.len(), "channel index out of range");
+        self.channels[j].sample(u)
+    }
+
+    /// The weight `αⱼ/g(p)` the channel-split estimator gives a point drawn in
+    /// channel `j` — the second half of [`sample_channel`](Self::sample_channel).
+    pub fn channel_weight(&self, j: usize, momenta: &[LorentzVector<F>]) -> F {
+        self.alphas[j] / self.positive_density(momenta)
+    }
+
+    /// The weight `1/g(p)` the mixture gives a point drawn through it — the
+    /// second half of [`sample_from`](Self::sample_from).
+    pub fn mixture_weight(&self, momenta: &[LorentzVector<F>]) -> F {
+        F::one() / self.positive_density(momenta)
     }
 
     /// [`PhaseSpaceMap::sample`] with the channel that drew the point reported
@@ -423,20 +459,35 @@ impl<F: Real> MultiChannel<F> {
     /// function of the momenta — a per-event scale prescription that reads the
     /// integration channel, for one.
     pub fn sample_from(&self, u: &[F]) -> (usize, PhaseSpacePoint<F>) {
-        let idx = self.select(u[0]);
-        let pt = self.channels[idx].sample(&u[1..]);
-        // g ≥ α_idx · g_idx = α_idx / pt.weight > 0: the generating channel's own
-        // positive density keeps the denominator off zero, so `1/g` is the exact
-        // reciprocal the reciprocity contract requires.
-        let g = self.density(&pt.momenta);
-        debug_assert!(g > F::zero(), "combined density must be positive");
+        let (idx, pt) = self.draw_from(u);
+        let weight = self.mixture_weight(&pt.momenta);
         (
             idx,
             PhaseSpacePoint {
                 momenta: pt.momenta,
-                weight: F::one() / g,
+                weight,
             },
         )
+    }
+
+    /// [`sample_from`](Self::sample_from)'s draw alone, carrying the drawing
+    /// channel's own weight; [`mixture_weight`](Self::mixture_weight) is the rest
+    /// of it, and [`draw_in_channel`](Self::draw_in_channel) says why they are
+    /// separable.
+    pub fn draw_from(&self, u: &[F]) -> (usize, PhaseSpacePoint<F>) {
+        let idx = self.select(u[0]);
+        (idx, self.channels[idx].sample(&u[1..]))
+    }
+
+    /// [`density`](Self::density) where a weight is about to divide by it.
+    ///
+    /// `g ≥ α_j · g_j > 0` at any point channel `j` generated: the generating
+    /// channel's own positive density keeps the denominator off zero, so the
+    /// reciprocal is the exact one the reciprocity contract requires.
+    fn positive_density(&self, momenta: &[LorentzVector<F>]) -> F {
+        let g = self.density(momenta);
+        debug_assert!(g > F::zero(), "combined density must be positive");
+        g
     }
 
     /// The channel `u0 ∈ [0,1)` selects, by cumulative selection weight.
@@ -563,13 +614,36 @@ impl<F: Real> ScaledMultiChannel<F> {
     ///
     /// If `j` is not a channel index.
     pub fn sample_channel_at(&self, j: usize, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F> {
-        assert!(j < self.channels.len(), "channel index out of range");
-        let pt = self.channels[j].sample_at(sqrt_s, u);
-        let g = self.density_at(sqrt_s, &pt.momenta);
+        let pt = self.draw_in_channel_at(j, sqrt_s, u);
+        let weight = self.channel_weight_at(j, sqrt_s, &pt.momenta);
         PhaseSpacePoint {
             momenta: pt.momenta,
-            weight: self.alphas[j] / g,
+            weight,
         }
+    }
+
+    /// [`sample_channel_at`](Self::sample_channel_at)'s draw alone: the point
+    /// channel `j` maps `u` to at CM energy `sqrt_s`, carrying *that channel's
+    /// own* weight `1/gⱼ` rather than the mixture's `αⱼ/g`.
+    ///
+    /// The mixture weight costs a density evaluation in every channel, and a
+    /// caller that discards points on a predicate of the momenta alone — a
+    /// fiducial cut — never needs it on the ones it discards. Such a caller draws
+    /// here and finishes the points it keeps with
+    /// [`channel_weight_at`](Self::channel_weight_at).
+    ///
+    /// # Panics
+    ///
+    /// If `j` is not a channel index.
+    pub fn draw_in_channel_at(&self, j: usize, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F> {
+        assert!(j < self.channels.len(), "channel index out of range");
+        self.channels[j].sample_at(sqrt_s, u)
+    }
+
+    /// The weight `αⱼ/g(p)` the channel-split estimator gives a point drawn in
+    /// channel `j` at CM energy `sqrt_s`.
+    pub fn channel_weight_at(&self, j: usize, sqrt_s: F, momenta: &[LorentzVector<F>]) -> F {
+        self.alphas[j] / self.density_at(sqrt_s, momenta)
     }
 
     /// The channel `u0 ∈ [0,1)` selects, by cumulative selection weight.
