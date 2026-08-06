@@ -181,7 +181,7 @@ impl Diagram {
             for (slot, ray) in vtx.propagators_ordered().enumerate() {
                 match ray {
                     Either::Left(leg) => {
-                        let li = leg.index();
+                        let li = leg.id();
                         rays.push(Ray::Leg(LegIdx(li)));
                         if legs[li].is_none() {
                             legs[li] = Some(make_leg(model, &leg, li, n_in)?);

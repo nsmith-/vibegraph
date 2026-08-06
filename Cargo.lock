@@ -1047,7 +1047,7 @@ checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 [[package]]
 name = "feyngraph"
 version = "0.1.0-beta.5"
-source = "git+https://github.com/nsmith-/FeynGraph?branch=main#0a1b754eb6d8503725ac8eec0de5f12bfdde74a2"
+source = "git+https://github.com/Jens-Braun/FeynGraph.git?rev=fd5aa8306746b432e098c40dcd96d7cb7ef20125#fd5aa8306746b432e098c40dcd96d7cb7ef20125"
 dependencies = [
  "either",
  "indexmap",
@@ -1056,7 +1056,6 @@ dependencies = [
  "peg",
  "rayon",
  "rustc-hash 2.1.2",
- "thiserror 2.0.18",
 ]
 
 [[package]]
