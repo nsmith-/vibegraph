@@ -104,7 +104,17 @@ python3 - <<'EOF'
 import glob, json, math, os, platform, subprocess, time
 
 mg_full = json.load(open(os.environ["MG_JSON"]))
-mg = mg_full.get("processes", {})
+# An unwrapped {name: timing} map is the pre-`host` layout: it carries no host
+# identity, so its ns/eval cannot be attributed to a machine. Say that, rather
+# than reading an absent `processes` key as an empty table and reporting the
+# empty join it produces.
+if "processes" not in mg_full:
+    raise SystemExit(
+        f"{os.environ['MG_JSON']} predates the host-labelled schema (no "
+        "`processes`/`host` keys). Regenerate it with "
+        "'pixi run -e madgraph generate-amplitude'."
+    )
+mg = mg_full["processes"]
 mg_host = mg_full.get("host", {}) or {}
 mg_mtime = os.path.getmtime(os.environ["MG_JSON"])
 mg_source = os.environ["MG_JSON_SOURCE"]
