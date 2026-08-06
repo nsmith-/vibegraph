@@ -3456,6 +3456,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "signal-hook",
  "tar",
  "tempfile",
  "toml",

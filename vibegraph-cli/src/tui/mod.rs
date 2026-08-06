@@ -75,6 +75,18 @@ type Screen = Terminal<CrosstermBackend<std::io::Stderr>>;
 /// has to wait for it.
 static LIVE: AtomicBool = AtomicBool::new(false);
 
+/// The drawing thread's name, which is how a thread asking for the terminal
+/// back tells whether it is the one that would have to hand it over.
+const DRAW_THREAD: &str = "vibegraph-tui";
+
+/// Asks the drawing thread to come down, for a caller that cannot reach the
+/// [`Tui`] to stop it — a panic unwinds the thread that owns it.
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+/// Set once the drawing thread has given the terminal back, so a caller that
+/// asked for it can wait rather than print into a pane still being drawn.
+static TAKEN_DOWN: AtomicBool = AtomicBool::new(false);
+
 /// Result lines printed while the pane was up, in the order they were produced.
 static HELD: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -182,6 +194,7 @@ impl Tui {
         let state = Arc::new(Mutex::new(UiState::default()));
         state::install(&state);
         install_panic_hook();
+        install_signal_handler();
 
         let stop = Arc::new(AtomicBool::new(false));
         let log: Arc<OnceLock<LogHandle>> = Arc::new(OnceLock::new());
@@ -191,7 +204,7 @@ impl Tui {
             let log = Arc::clone(&log);
             let abort = stop_signal();
             std::thread::Builder::new()
-                .name("vibegraph-tui".to_string())
+                .name(DRAW_THREAD.to_string())
                 .spawn(move || draw_loop(terminal, &incoming, &state, &stop, &log, &abort))
                 .map_err(|e| {
                     let _ = disable_raw_mode();
@@ -355,6 +368,7 @@ fn take_down(terminal: &mut Screen) {
     let _ = terminal.show_cursor();
     let _ = Backend::flush(terminal.backend_mut());
     let _ = disable_raw_mode();
+    TAKEN_DOWN.store(true, Ordering::SeqCst);
 }
 
 /// What a key press asks the display for. Anything else is ignored, so a stray
@@ -450,6 +464,12 @@ fn draw_loop(
     // The question currently on screen, waiting for a key to answer it.
     let mut pending: Option<Sender<bool>> = None;
     loop {
+        // The viewport learns its new size inside `draw`, and the history is
+        // written before that: a line pushed in the tick after a resize would be
+        // laid out for the terminal that no longer exists, and `insert_before`
+        // would be told a row count the terminal does not agree with. Ask first,
+        // so both are working from the size the terminal has now.
+        let _ = terminal.autoresize();
         drain(&mut terminal, incoming);
         if pending.is_none() {
             if let Some(request) = take_prompt() {
@@ -468,7 +488,7 @@ fn draw_loop(
         }
         advance_logo(state, started.elapsed());
         redraw(&mut terminal, state);
-        if stop.load(Ordering::SeqCst) {
+        if stop.load(Ordering::SeqCst) || INTERRUPTED.load(Ordering::SeqCst) {
             break;
         }
         if !keys {
@@ -608,10 +628,65 @@ fn drain(terminal: &mut Screen, incoming: &Receiver<String>) {
 fn install_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let _ = disable_raw_mode();
-        let _ = execute!(std::io::stderr(), Show);
+        take_terminal_back();
         previous(info);
     }));
+}
+
+/// Give the terminal back when the run is killed rather than stopped.
+///
+/// Raw mode is a property of the terminal and outlives the process that asked
+/// for it, so a signal that ends the run without unwinding leaves the shell in
+/// it. The signals are taken on a thread of their own rather than in a handler,
+/// which is what lets this wait for the pane to come down; the signal is then
+/// re-raised with its default disposition, so the exit status is the one the
+/// kill would have produced and nothing here decides how the run ends.
+///
+/// Only installed once the display holds the terminal. A run reporting in plain
+/// lines has nothing to restore and leaves the signals to their defaults.
+#[cfg(unix)]
+fn install_signal_handler() {
+    use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
+    use signal_hook::iterator::Signals;
+
+    // Raw mode suppresses the terminal's own interrupt, so a SIGINT here came
+    // from outside rather than from the keys the display reads.
+    let Ok(mut signals) = Signals::new([SIGTERM, SIGHUP, SIGQUIT, SIGINT]) else {
+        return;
+    };
+    let _ = std::thread::Builder::new()
+        .name("vibegraph-signals".to_string())
+        .spawn(move || {
+            for signal in signals.forever() {
+                take_terminal_back();
+                let _ = signal_hook::low_level::emulate_default_handler(signal);
+            }
+        });
+}
+
+#[cfg(not(unix))]
+fn install_signal_handler() {}
+
+/// Give the terminal back on behalf of a thread that cannot stop the display
+/// the ordinary way, and wait for the pane to come down first.
+///
+/// Restoring the terminal without stopping the drawing thread does not hold:
+/// within a tick it draws again, hides the cursor and paints the pane over
+/// whatever was being printed. So the thread is asked to come down and given a
+/// bounded moment to do it — bounded because a display that is wedged must not
+/// take the panic message with it. The drawing thread cannot wait on itself,
+/// and takes the terminal down on its way out regardless.
+fn take_terminal_back() {
+    let drawing = std::thread::current().name() == Some(DRAW_THREAD);
+    if LIVE.load(Ordering::SeqCst) && !drawing {
+        INTERRUPTED.store(true, Ordering::SeqCst);
+        let deadline = Instant::now() + 10 * TICK;
+        while !TAKEN_DOWN.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(TICK / 5);
+        }
+    }
+    let _ = disable_raw_mode();
+    let _ = execute!(std::io::stderr(), Show);
 }
 
 #[cfg(test)]
