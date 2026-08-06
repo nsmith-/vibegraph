@@ -44,6 +44,7 @@ use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
 use crate::assets;
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
+use crate::tui;
 use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 
 /// PDF member index (central value; error members are not consumed at LO).
@@ -338,6 +339,14 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     let rc = config
         .load_run_card()
         .map_err(|e| err(format!("failed to load run card: {e}")))?;
+    tui::state::describe_model(
+        &model_id.label(),
+        &model_id.digest,
+        model.particles.len(),
+        model.vertices.len(),
+        model.couplings.len(),
+    );
+    tui::state::describe_process(&process);
 
     let evaluated = EvaluatedModel::from_model(model.clone());
 
@@ -393,7 +402,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     }
     // The command's result, and the reason `stdout` carries nothing else: a
     // caller pipes this to read the cross section, at any verbosity.
-    println!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb");
+    tui::result_line(format_args!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb"));
 
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
@@ -422,7 +431,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     artifact
         .write_to_path(&out_path, args.force)
         .map_err(|e| err(e.to_string()))?;
-    println!("wrote {}", out_path.display());
+    tui::result_line(format_args!("wrote {}", out_path.display()));
 
     Ok(())
 }
@@ -489,6 +498,8 @@ fn integrate_hadronic(
     let scale_report = integ
         .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
+
+    tui::state::note_channels(integ.channel_ids().len());
 
     let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
     integ.adapt_alphas(args.seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
@@ -568,6 +579,7 @@ fn integrate_fixed_energy(
     integ
         .use_running_coupling(&diagrams, model, evaluated, rc)
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
+    tui::state::note_channels(diagrams.len());
     let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
     integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, args.seed);
 

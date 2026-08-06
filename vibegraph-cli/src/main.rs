@@ -13,6 +13,7 @@ mod logging;
 mod network;
 mod parallel;
 mod si;
+mod tui;
 
 use network::NetworkPolicy;
 
@@ -76,6 +77,18 @@ enum Command {
     CheckEvents(check::CheckArgs),
 }
 
+impl Command {
+    /// Whether this command has a run to watch. `check-events` reads a file and
+    /// prints a report; there is no progress to show and its report *is* the
+    /// output, so it is left alone.
+    fn is_watchable(&self) -> bool {
+        match self {
+            Command::Integrate(_) | Command::Generate(_) => true,
+            Command::CheckEvents(_) => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::LONG_VERSION;
@@ -98,26 +111,47 @@ mod tests {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // The display takes the terminal before the subscriber is built, because
+    // where the lines go depends on whether it got it.
+    let (display, unavailable) = if cli.log.wants_tui() && cli.command.is_watchable() {
+        match tui::Tui::start() {
+            Ok(display) => (Some(display), None),
+            Err(why) => (None, Some(why)),
+        }
+    } else {
+        (None, None)
+    };
     // Nothing above this line may log: until the subscriber is installed there
     // is nowhere for an event to go.
-    let _logging = match logging::init(&cli.log) {
+    let _logging = match logging::init(&cli.log, display.as_ref().map(tui::Tui::feed)) {
         Ok(handle) => handle,
         Err(why) => {
+            if let Some(display) = display {
+                display.finish();
+            }
             eprintln!("error: {why}");
             return ExitCode::FAILURE;
         }
     };
+    if let Some(why) = unavailable {
+        tracing::debug!("reporting in plain lines: {why}");
+    }
     let network = NetworkPolicy::from_env(cli.no_network, cli.yes);
     let result = match cli.command {
         Command::Integrate(args) => integrate::run(&args, network),
         Command::Generate(args) => generate::run(&args, network),
         Command::CheckEvents(args) => check::run(&args),
     };
+    // Reported before the display comes down, so the message lands in the
+    // scrollback with the rest of the run rather than after its closing line.
+    if let Err(err) = &result {
+        tracing::error!("{err}");
+    }
+    if let Some(display) = display {
+        display.finish();
+    }
     match result {
         Ok(()) => ExitCode::SUCCESS,
-        Err(err) => {
-            tracing::error!("{err}");
-            ExitCode::FAILURE
-        }
+        Err(_) => ExitCode::FAILURE,
     }
 }
