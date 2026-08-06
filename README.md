@@ -449,8 +449,9 @@ as tracked rows, never as loosened tolerances.
 Matrix-element evaluation currently runs at **0.65×–1.54×** the cost of
 MadGraph's generated, helicity-filtered Fortran (`matrix1_optim.f`) —
 **geometric mean 0.87×** over the 19 processes the comparison kit covers, 2→2
-through 2→6. Thirteen of the nineteen are faster than the Fortran. Of the six
-that are not, four are the colour-dense rows where colour-flow contraction
+through 2→6. It is a cost ratio, so below 1.0× is faster than MadGraph, and
+thirteen of the nineteen are. Of the six that are not, four are the
+colour-dense rows where colour-flow contraction
 dominates — `u u~ > u u~` 1.54×, `g g > g g` 1.34×, `g g > t t~` 1.23×,
 `e+ e- > W+ W-` 1.23× — and the other two sit at parity (1.02×). Not bad for a
 runtime evaluator built at model-load time against code MadGraph generates and
@@ -478,10 +479,12 @@ third performance sprint's close-out.
 
 **Integrand throughput against MadGraph.** Our points per single-threaded
 second, against MadEvent's points per Fortran CPU-second — a denominator that
-deliberately takes its 16-way job farm out of the comparison: **geometric mean
-8.76× over the 26 gated rows**, from 1.9× on `g g > g g` (a pure-gluon 2→2 with
-the densest colour algebra in the census and no PDF work to win) to 37× on the
-cheapest leptonic rows. Two caveats keep this honest: our per-point work is not
+deliberately takes its 16-way job farm out of the comparison: we evaluate
+**8.76× more points per second, geometric mean over the 26 gated rows**,
+ranging from 1.9× on `g g > g g` (a pure-gluon 2→2 with the densest colour
+algebra in the census and no PDF work to win) to 37× on the cheapest leptonic
+rows. Note this ratio runs the opposite way to the per-point one above: here
+bigger is faster. Two caveats keep it honest: our per-point work is not
 MadGraph's per-point work, so this is an integrand ratio and not a
 matrix-element one; and whether MadEvent's recorded point count includes its
 survey pass was never established, which puts a systematic factor of order
