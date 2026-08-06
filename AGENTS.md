@@ -134,8 +134,13 @@ use the `claude` agent type with an explicit model override — never
   reference data (whose absence silently triggers a multi-hour MG regeneration).
   Pre-create each worktree off `main` (`git worktree add -b <branch> <path>
   main`), verify its HEAD equals current `main` right after dispatch, COW-copy
-  the reference data in (`cp -Rc`, instant on APFS), and require the agent's
-  first action to be `cd` + toplevel/branch verification. Worker branches often
+  the reference data in (`cp -Rc`, instant on APFS) — that means
+  `validation/madgraph/output`, the fetched `validation/pdf` sets, **and** the
+  `research/refs/mg5amcnlo` submodule content (at minimum `models/`; a fresh
+  worktree gets none of the submodule, and `cargo test` fail-fasts on the
+  missing SM UFO source so the entire `validate_*` layer silently never runs)
+  — and require the agent's first action to be `cd` + toplevel/branch
+  verification. Worker branches often
   carry zero commits — find work via `git worktree list` plus per-worktree
   status, not `git log`.
 - **Subagent reports are evidence, not truth.** Demand the command alongside its

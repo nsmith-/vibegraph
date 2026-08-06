@@ -380,41 +380,37 @@ exercised on SM evidence alone.
 
 ## ⚡ Performance backlog
 
-- **Channel-dedup census — offline equivalence-class count first** (user,
-  2026-08-05; the cheap first move against the 2→6 heavy-tail blocker, note 32
-  S7). The multichannel mixture builds one `DiagramChannel` per diagram
-  (579/615 on the 2→6 rows), but a channel's map is determined by its
-  propagator chain — the (mass, width, regulator) rung sequence — not by
-  diagram identity, and diagrams differing only by internal flavour at equal
-  mass produce *identical* `g_j`. For exact duplicates the merge is free as a
-  distribution: `α_j g_j + α_k g_k = (α_j+α_k) g_j`, a re-parameterization of
-  the same mixture (byte-level it is a re-association — fewer summands in
-  `MultiChannel::density` — so artifact bytes move and it gates statistically).
-  **Stage 1 is a census, not a sampler**: fingerprint the 2→6 rows' chains and
-  count equivalence classes; if ~600 channels collapse to a few dozen the
-  session proceeds, if classes ≈ channels it dies here. First verify the dedup
-  key — if `from_diagram` bakes in anything beyond the chain, the key must
-  carry it. What a real collapse buys, all three measured pain points at once:
-  the O(n_channels) per-point density loop (the α-survey term), the
-  `MIN_CHANNEL_NEVAL` cost floor (512 × channels ≈ 300k evals/iteration
-  regardless of budget), and grid training concentration — each surviving map
-  gets its class's pooled points, which is also the affordable way to run S7's
-  pre-registered falsifier (≥4k pts/channel/iteration deciding under-training
-  vs map-shape defect). Pooling rule that falls out: samples pool *within* an
-  equivalence class (same proposal distribution, one shared VEGAS grid; class
-  α = Σ member α under Kleiss–Pittau), never across classes without
-  re-weighting. Near-duplicate merging (same chain shape, different masses) is
-  a second, genuinely lossy tier needing its own ladder+sweep license — keep
-  the tiers separate. Same keying move as the merge-table hoist (note 32 S5:
-  key the shared object by what it actually depends on); makes the
-  stratified-axes entry's second-tier "per-diagram-class = per *distinct* map"
-  concrete.
+- **2→6 density-loop cost — attack `Σⱼ αⱼgⱼ` directly** (the lever the
+  channel-dedup census left standing, 2026-08-06, `319af7d`).
+  `MultiChannel::sample_channel` (`channel.rs:399`) evaluates the full mixture
+  density once per point *before* cuts and matrix element; on the 2→6 rows
+  that loop is **94%/92%** of per-point cost (density sum 59.9/63.5 µs of
+  63.6/68.9 µs total against a ~5 µs matrix element). Candidate mechanisms:
+  early-out on zero-support spine rungs; hoisting shared subtree jacobians
+  across channels — the census's class structure (`DiagramChannel::map_key`,
+  411/447 distinct maps on 579/615 channels) is exactly the sharing map, even
+  though merging the channel *set* is dead (below). Unlike dedup this is not
+  bounded by the 1.4× class collapse. Any change here must respect the
+  channel↔diagram consumer audit recorded in `319af7d`'s commit message
+  (artifact `ChannelKey` is literally a diagram index, `check_channel_keys`
+  replays position-by-position, `unweight.rs` offsets RNG streams by channel
+  index, `hadronic.rs:1544` hard-asserts channels == diagrams).
 - **2→6 residue** (addendum S7 landed the rows as `info`, note 32): promotion
   to an enforced gate is blocked on the heavy multichannel tail (single-seed
   pulls ±3.5–4.8% at every budget while five-seed means hold inside 1.1% of a
-  0.30% reference) — the channel-dedup census above is the cheap path to S7's
-  pre-registered falsifier (≥4k pts/channel/iteration decides under-training
-  vs map-shape defect). The two `samples` cells stay ⏳ at a *recorded* cost:
+  0.30% reference). **The channel-dedup census (2026-08-06, `319af7d`) closed
+  the cheap merge path — verdict DIES**: fingerprinting every channel by the
+  full map determinant (`DiagramChannel::map_key`; key↔density equivalence
+  verified exhaustively in both directions, 0 mismatches, plus the banked
+  `map_key_separates_every_field_the_map_reads` gate) collapses 579 → **411**
+  and 615 → **447** classes with the largest class exactly two members —
+  "classes ≈ channels", so the pre-registered kill fired and no merge session
+  ran. The census also corrected this entry: the "≥4k pts/channel/iteration
+  decides under-training vs map-shape defect" falsifier previously attributed
+  here to S7 appears nowhere in note 32 — the recorded falsifier (note 32
+  §5.4) is that a fix must make single-seed swings **shrink as budget grows**,
+  and a constant-factor channel-count reduction could never have satisfied it.
+  The two `samples` cells stay ⏳ at a *recorded* cost:
   117/45 trials/event (efficiency is fine) but ~40 unparallelisable minutes of
   serial accept/reject for the pair. Also S7's: VEGAS's per-iteration χ²/dof
   overflows to ~1e254 on wide channel splits (`budget.rs` floors a channel's
