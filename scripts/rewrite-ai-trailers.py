@@ -146,15 +146,11 @@ MAPPING: dict[str, str] = {
                                                    "Assisted-by: github-copilot",
 
     # --- Qwen ---------------------------------------------------------------
-    # REVIEW ME -- THE HARNESS HALF IS A GUESS.  The trailer records the model
-    # slug (`qwen/qwen3-coder-next`) but not the harness; the only evidence is
-    # the `noreply@github.com` address, which points at a GitHub-hosted agent
-    # (Copilot's bring-your-own-model picker uses exactly this `vendor/model`
-    # slug form).  That is suggestive, not conclusive -- the same slug form is
-    # used by OpenRouter-backed tools.  If you do not want to assert a harness
-    # you are not sure of, use "Assisted-by: qwen3-coder-next" (model only) or
-    # "Assisted-by: unknown-harness:qwen3-coder-next".
-    "qwen/qwen3-coder-next <noreply@github.com>":  "Assisted-by: github-copilot:qwen3-coder-next",
+    # The trailer records the model slug but not the harness, and the
+    # `noreply@github.com` address makes it look like a GitHub-hosted agent.  It
+    # was not one: these two commits came from claude-code driving a non-Anthropic
+    # model, confirmed by the repository owner.  The address is a red herring.
+    "qwen/qwen3-coder-next <noreply@github.com>":  "Assisted-by: claude-code:qwen3-coder-next",
 }
 
 # Whole lines to DELETE outright (e.g. `🤖 Generated with [Claude Code](...)`

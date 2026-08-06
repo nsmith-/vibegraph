@@ -130,8 +130,9 @@ jobs:
       # Downloads are a step of their own rather than something a test triggers
       # by reaching for a file it cannot find, so what this job pulls from the
       # network is visible in the log without reading any Rust. The bundle is a
-      # release asset of this (private) repository, so its fetch authenticates
-      # with the workflow token.
+      # release asset of this repository, fetched with the workflow token rather
+      # than anonymously so the step keeps working whatever the repository's
+      # visibility is.
       - name: Fetch reference data
         env:
           VIBEGRAPH_FETCH_CONSENT: "1"
