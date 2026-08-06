@@ -22,7 +22,7 @@ use vibegraph::artifact::{ChannelKey, IntegrateArtifact, FORMAT_VERSION};
 use vibegraph::config::GlobalConfig;
 use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::cuts::Cuts;
-use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card_file, ParsingOptions};
+use vibegraph::diagrams::{generate_from_proc_card_in, parse_proc_card_file, ParsingOptions};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
 };
@@ -575,7 +575,7 @@ fn generate_sample(
 ) -> Result<EmitSummary, IntegrateError> {
     let sqrt_s = rc.ebeam1 + rc.ebeam2;
 
-    let sets = generate_from_proc_card(parsed, model)
+    let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
@@ -1003,7 +1003,7 @@ fn generate_proton_sample(
 ) -> Result<EmitSummary, IntegrateError> {
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
-    let sets = generate_from_proc_card(parsed, model)
+    let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     let groups = derive_flavor_groups(sets, model, evaluated, rc)
         .map_err(|e| err(format!("failed to decompose into flavour groups: {e}")))?;

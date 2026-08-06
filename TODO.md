@@ -492,6 +492,14 @@ exercised on SM evidence alone.
   in `AssignWorkspace::new()`. Submodule change, dedicated session. Vibegraph-side
   mitigations already applied: topology caching per `(n_ext, n_loops)` and the
   charge-conservation pre-filter (~86% of candidates eliminated).
+  Enumeration now runs on **one thread** by default (`EnumerationPool::Serial`),
+  with `--parallel-diagrams` opting into the `-j` pool: feyngraph's internal
+  fan-out is contended, so its sign flips with process size — on 16 threads
+  vs 1, `p p > j j j` reads 0.137 s vs 0.083 s (worse) while
+  `p p > e+ e- j j j` reads 3.36 s vs 8.90 s (2.6× better), the crossover
+  sitting around `p p > e+ e- j j` (0.22 s vs 0.28 s). Fixing the allocation
+  above is what would let the small case parallelise too; until then the default
+  serves the common (small) process and the flag serves the large one.
 - **`egraph-rewrite`** (blocked) — remaining rule families are *sharing* rewrites
   invisible to tree-cost extraction; path to yes needs a global/ILP extractor +
   compute-aware `WorkCost` + a ≥3-consumer demo process. Substrate on `main`:

@@ -59,6 +59,8 @@ pub enum DiagramError {
     FeynGraph(#[from] feyngraph::model::ModelError),
     #[error("diagram conversion error: {0}")]
     Convert(#[from] ConvertError),
+    #[error("cannot build the enumeration worker pool: {0}")]
+    Pool(#[from] rayon::ThreadPoolBuildError),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -106,11 +108,64 @@ pub fn parse_proc_card(
 
 // ── Diagram generation API ────────────────────────────────────────────────────
 
+/// How much of the ambient rayon pool enumeration may spread over.
+///
+/// feyngraph parallelises the topology search and the per-assignment diagram
+/// construction internally, so whatever pool enumeration runs on is the pool
+/// those loops use.
+///
+/// Which one is faster depends on the process: the fan-out is over topologies and
+/// particle assignments whose bodies are short and share their output container,
+/// so a small enumeration spends more on contention than it saves (`p p > j j j`
+/// on 16 threads: 0.14 s against 0.08 s on one), while a large one is dominated by
+/// the fan-out and gains (`p p > e+ e- j j j`: 3.4 s against 8.9 s). [`Serial`] is
+/// the default because the small case is the common one and the large case is the
+/// one worth passing a flag for.
+///
+/// [`Serial`]: EnumerationPool::Serial
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EnumerationPool {
+    /// One thread, whatever the caller's pool is sized to.
+    #[default]
+    Serial,
+    /// The caller's pool, however many threads it was sized to.
+    Ambient,
+}
+
 /// High-level entry point: parse + expand + generate diagrams for every process
-/// in a `ParsedProcCard`.
+/// in a `ParsedProcCard`, on a single thread.
 ///
 /// Returns one `DiagramSet` per concrete particle assignment across all processes.
 pub fn generate_from_proc_card(
+    proc_card: &ParsedProcCard,
+    model: &UFOModel,
+) -> Result<Vec<DiagramSet>, DiagramError> {
+    generate_from_proc_card_in(proc_card, model, EnumerationPool::default())
+}
+
+/// [`generate_from_proc_card`] with an explicit choice of worker pool.
+///
+/// The result does not depend on the choice: enumeration order and diagram
+/// identity are fixed by the topology and assignment enumeration, not by how the
+/// work is scheduled. It is a timing knob only.
+pub fn generate_from_proc_card_in(
+    proc_card: &ParsedProcCard,
+    model: &UFOModel,
+    pool: EnumerationPool,
+) -> Result<Vec<DiagramSet>, DiagramError> {
+    match pool {
+        EnumerationPool::Ambient => enumerate(proc_card, model),
+        // A pool of its own rather than a serial code path: feyngraph's `par_iter`s
+        // are internal, and one thread is the only way to keep them off the
+        // caller's pool without forking the enumeration itself.
+        EnumerationPool::Serial => rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()?
+            .install(|| enumerate(proc_card, model)),
+    }
+}
+
+fn enumerate(
     proc_card: &ParsedProcCard,
     model: &UFOModel,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
@@ -390,5 +445,30 @@ fn report_vertex_assignments(subprocess: &str, diagrams: &[Diagram], model: &UFO
             vertices.join(" "),
             props.join(" ")
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ufo::sm::{sm_model, SMRestrict};
+
+    /// The pool is a scheduling choice and nothing else: enumeration order and
+    /// diagram content are fixed by the topology and assignment enumeration.
+    #[test]
+    fn the_pool_does_not_change_what_is_enumerated() {
+        let model = sm_model(SMRestrict::Default);
+        let card = parse_proc_card("generate u u~ > g g g", &ParsingOptions::default()).unwrap();
+        let serial = generate_from_proc_card_in(&card, &model, EnumerationPool::Serial).unwrap();
+        let ambient = generate_from_proc_card_in(&card, &model, EnumerationPool::Ambient).unwrap();
+
+        assert_eq!(serial.len(), ambient.len());
+        for (s, a) in serial.iter().zip(&ambient) {
+            assert_eq!(s.particles_in, a.particles_in);
+            assert_eq!(s.particles_out, a.particles_out);
+            assert!(!s.diagrams.is_empty());
+            let render = |d: &[Diagram]| d.iter().map(|d| format!("{d:?}")).collect::<Vec<_>>();
+            assert_eq!(render(&s.diagrams), render(&a.diagrams));
+        }
     }
 }
