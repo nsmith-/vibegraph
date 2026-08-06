@@ -232,6 +232,17 @@ pub struct JetMemo(pub Option<usize>);
 ///
 /// `incoming` is what the run card already fixed: `scale` and `q2fact(1:2)`,
 /// zero where the card leaves them dynamic.
+// Nine because the routine's inputs are nine: the event, the channel it was
+// sampled from, the two settings groups, the run card's already-fixed scales and
+// its clustering flag, the two pieces of state carried between events, and the
+// trace switch. A struct would hold the same list under one name.
+#[allow(clippy::too_many_arguments)]
+// `beam` and `step` are physical indices rather than positions in one
+// container. Every per-beam loop reads `settings.fixed_fac` and the `j*` arrays
+// at the same index as `q2fact`, so an iterator over `q2fact` would keep the
+// index anyway; and the merge-step loop is bounded by the core count, not by
+// `pt2`'s length, so the suggested `.take()` would silently shorten it.
+#[allow(clippy::needless_range_loop)]
 pub fn setclscales(
     channel: &Channel<'_>,
     cluster_settings: &ClusterSettings,
@@ -730,6 +741,12 @@ fn final_state_vertex(
         } else if ipart[mother][0] > 2 {
             let hardest = 1usize << (ipart[mother][0] - 1);
             if !colors.is_octet(pdg[hardest]) {
+                // The two arms clearing the hardest leg's tag are separate cases
+                // of the reference's chain, and their order is load-bearing: a
+                // softest entry of zero is what the second arm tests for, and
+                // reaching the third with it would index `iqjets` at
+                // `ipart[mother][1] - 1` and underflow.
+                #[allow(clippy::if_same_then_else)]
                 if !colors.is_qcd(pdgm) && !colors.is_qcd(pdg1) && !colors.is_qcd(pdg2) {
                     // A vertex with no colour anywhere says nothing about jets.
                 } else if ipart[mother][1] == 0 {
@@ -772,9 +789,9 @@ fn final_state_vertex(
             let replacement = ipart[source];
             // The rewrite sweeps from the merge's own index, which is a vertex
             // number rather than a leg set, up to the last line there can be.
-            for mask in step..ipart.len() {
-                if ipart[mask] == target {
-                    ipart[mask] = replacement;
+            for line in ipart.iter_mut().skip(step) {
+                if *line == target {
+                    *line = replacement;
                 }
             }
         }
@@ -879,6 +896,13 @@ fn ipartupdate(
     let (hard, soft) = if harder_is_first { (d1, d2) } else { (d2, d1) };
     let (cmo, c1, c2) = (colors.color(idmo), colors.color(id1), colors.color(id2));
 
+    // One ordered cascade over colour structures, each arm naming a distinct
+    // splitting. Several neighbouring arms assign the same provenance, and
+    // merging their conditions would collapse cases the reference keeps apart —
+    // the arms are what this transcription is diffed against, and the order they
+    // are tested in is what decides which one a structure matching two of them
+    // lands on.
+    #[allow(clippy::if_same_then_else)]
     if idmo == 21 && id1 == 21 && id2 == 21 {
         ipart[mo] = ipart[hard];
     } else if idmo == 21 && id1.abs() <= 6 && id2.abs() <= 6 {

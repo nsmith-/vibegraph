@@ -62,6 +62,8 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       # Compiled dependencies + the crate registry, keyed on Cargo.lock and the
       # toolchain, with stale target artifacts pruned before saving — so the
@@ -70,6 +72,19 @@ jobs:
         with:
           shared-key: hermetic
           cache-on-failure: true
+
+      # Clippy runs here rather than in `fmt` or a job of its own because this
+      # is the job that already has the cache and target directory it needs: it
+      # lints the same crate graph `cargo test` is about to build, so it costs a
+      # check pass over dependencies compiled a step later anyway, not a second
+      # runner rebuilding all of them. (`fmt` deliberately compiles nothing,
+      # which is what makes it finish in seconds.) `--all-targets` reaches the
+      # test and binary targets, where the lints about test placement and
+      # test-only code are the only ones that can fire. `-D warnings` is what
+      # makes the step mean anything: clippy exits 0 over warnings, so without
+      # it a lint that had drifted would stay advisory and the job would go
+      # green across a growing pile of them.
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       # `cargo test` compiles everything `cargo build` would, plus the
       # dev-dependencies and test binaries; a separate build step adds a

@@ -907,12 +907,7 @@ mod tests {
         );
 
         let scan = |draws: [usize; 2]| {
-            Unweighter::scan(
-                &integ,
-                grids.iter().zip(draws).map(|(g, n)| (g, n)),
-                0x5CA7_B0D9,
-            )
-            .w_max()
+            Unweighter::scan(&integ, grids.iter().zip(draws), 0x5CA7_B0D9).w_max()
         };
         let by_share = scan(share);
         let by_flat = scan(flat);

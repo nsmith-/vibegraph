@@ -4437,6 +4437,12 @@ mod tests {
                         .relabelled(&order, &pdg, &legs, &member.flows)
                         .unwrap_or_else(|e| panic!("{pdg:?} {ordering:?}: {e}"));
 
+                    // `f` walks the record's flows and reads the permutation at
+                    // the same index; the count and `pi`'s length are separate
+                    // values, and an iterator over `pi` truncated to the count
+                    // would check fewer flows than the record has rather than
+                    // failing, which is the disagreement this asserts against.
+                    #[allow(clippy::needless_range_loop)]
                     for f in 0..record.n_flows() {
                         // The record's table is the member's own, at `π(f)`, with the
                         // beam exchange applied to the legs and nothing else.
@@ -4459,6 +4465,10 @@ mod tests {
                 }
 
                 // Per class, on the direct ordering, where the leg order is shared.
+                // The bound is the representative's flow count, which the member's
+                // own tables and `pi` are being checked against; iterating `pi`
+                // instead would make the count agree by construction.
+                #[allow(clippy::needless_range_loop)]
                 for f in 0..rep_tags.n_flows() {
                     let ours = connectivity(member.flows.flow(f));
                     match class {

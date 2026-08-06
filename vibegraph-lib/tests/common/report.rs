@@ -645,7 +645,7 @@ fn count(sysctl_key: &str, proc_key: &str) -> Option<u64> {
             .filter(|(k, _)| k.trim() == proc_key)
             .map(|(_, v)| v.trim())
             .collect();
-        (!distinct.is_empty()).then(|| distinct.len() as u64)
+        (!distinct.is_empty()).then_some(distinct.len() as u64)
     })
 }
 

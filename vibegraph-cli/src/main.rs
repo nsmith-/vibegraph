@@ -89,26 +89,6 @@ impl Command {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::LONG_VERSION;
-
-    /// The bare-binary distribution carries its license notices nowhere but
-    /// here; each required element must survive in the `--version` text.
-    #[test]
-    fn long_version_carries_every_required_notice() {
-        // MadGraph5_aMC@NLO notice: copyright line, the binary-redistribution
-        // condition itself, and the disclaimer.
-        assert!(LONG_VERSION.contains("Copyright (c) 2009, 2013, the MadTeam"));
-        assert!(LONG_VERSION.contains("Redistributions in binary form must reproduce"));
-        assert!(LONG_VERSION.contains("THE SOFTWARE IS PROVIDED \"AS IS\""));
-        // vibegraph's own dual license texts.
-        assert!(LONG_VERSION.contains("Permission is hereby granted, free of charge"));
-        assert!(LONG_VERSION.contains("Apache License"));
-        assert!(LONG_VERSION.contains("Version 2.0, January 2004"));
-    }
-}
-
 fn main() -> ExitCode {
     let cli = Cli::parse();
     // The display takes the terminal before the subscriber is built, because
@@ -160,5 +140,25 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(_) => ExitCode::FAILURE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LONG_VERSION;
+
+    /// The bare-binary distribution carries its license notices nowhere but
+    /// here; each required element must survive in the `--version` text.
+    #[test]
+    fn long_version_carries_every_required_notice() {
+        // MadGraph5_aMC@NLO notice: copyright line, the binary-redistribution
+        // condition itself, and the disclaimer.
+        assert!(LONG_VERSION.contains("Copyright (c) 2009, 2013, the MadTeam"));
+        assert!(LONG_VERSION.contains("Redistributions in binary form must reproduce"));
+        assert!(LONG_VERSION.contains("THE SOFTWARE IS PROVIDED \"AS IS\""));
+        // vibegraph's own dual license texts.
+        assert!(LONG_VERSION.contains("Permission is hereby granted, free of charge"));
+        assert!(LONG_VERSION.contains("Apache License"));
+        assert!(LONG_VERSION.contains("Version 2.0, January 2004"));
     }
 }

@@ -554,7 +554,7 @@ pub fn cluster(
 
     let mut lines: Vec<(usize, u32)> = (1..=n).map(|i| (i, 1u32 << (i - 1))).collect();
     for i in 1..=n {
-        let mask = (1usize << (i - 1)) as usize;
+        let mask = 1usize << (i - 1);
         pcl[mask][..4].copy_from_slice(&p[i - 1]);
         pcl[mask][4] = mg_dot(&p[i - 1], &p[i - 1]);
     }
@@ -727,6 +727,11 @@ pub fn cluster(
                 });
             }
         } else {
+            // `k` runs over the four momentum components of a five-slot row
+            // whose fifth entry is the line's mass, so the bound is not the
+            // row's length and an iterator over it would negate the mass too.
+            // The sum also reads two rows of the array it writes a third of.
+            #[allow(clippy::needless_range_loop)]
             for k in 0..4 {
                 pcl[mother as usize][k] = pcl[d1 as usize][k] + pcl[d2 as usize][k];
             }
@@ -771,8 +776,8 @@ pub fn cluster(
                     let blob = lines[2].1;
                     let back = rotate(&spatial(&pcl[blob as usize]), &rotation, false);
                     let mut inverse = frame;
-                    for k in 1..4 {
-                        inverse[k] = -inverse[k];
+                    for component in inverse.iter_mut().skip(1) {
+                        *component = -*component;
                     }
                     let moved = boost(&back, &inverse);
                     pcl[blob as usize][..4].copy_from_slice(&moved);

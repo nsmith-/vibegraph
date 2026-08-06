@@ -211,6 +211,10 @@ impl ChannelSet {
             if forest.nqcd != order {
                 continue;
             }
+            // `iproc` names a subprocess, not a position in `tables` alone: the
+            // body reads `self.external_pdg` at the same index, so replacing the
+            // index with an iterator over `tables` would keep the index anyway.
+            #[allow(clippy::needless_range_loop)]
             for iproc in 0..self.n_proc() {
                 for leg in 1..=self.n_external {
                     tables[iproc]
@@ -225,6 +229,10 @@ impl ChannelSet {
                     continue;
                 };
                 let complement = self.full_mask() - mask;
+                // `iproc` names a subprocess: the body selects that subprocess's
+                // row of `self.contributes` and its entry in `line.sprop` by the
+                // same index, so an iterator over `tables` would not remove it.
+                #[allow(clippy::needless_range_loop)]
                 for iproc in 0..self.n_proc() {
                     if !self.contributes[iproc][index] {
                         continue;
