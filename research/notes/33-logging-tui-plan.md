@@ -2,7 +2,9 @@
 
 **Status:** PLAN, drafted 2026-08-05. Design settled with the user in the
 originating session; §7 lists the points still open. Baseline: `main` @
-`fe415cb` (post note-32 close-out). This is a UX/plumbing sprint — no physics
+`319af7d` (post note-32 close-out; drafted before the channel-dedup census
+close and the interned license notices merged — neither touches a surface this
+plan names). This is a UX/plumbing sprint — no physics
 surface moves, no tolerance changes, and the validation layer is a regression
 gate here, not a target.
 
