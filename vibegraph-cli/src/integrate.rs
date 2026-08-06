@@ -359,6 +359,18 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
         }
     };
 
+    // A run stopped before its warm-up finished kept no iteration, so its terms
+    // are combined over nothing and its grids were never refined past the ones
+    // the discard exists to throw away. There is no cross section to print and
+    // no artifact worth banking; refusing is what keeps a stopped run from
+    // reading downstream as a completed one.
+    if output.convergence.kept_iterations == 0 {
+        return Err(err(
+            "stopped before any iteration was kept: nothing was measured, and no artifact \
+             was written",
+        ));
+    }
+
     let sigma_pb = output.result.integral * GEV2_TO_PB;
     let sigma_err_pb = output.result.std_dev * GEV2_TO_PB;
 

@@ -210,6 +210,12 @@ pub struct ConvergenceReport {
     pub stop: StopReason,
     /// Iterations run, warm-up included.
     pub iterations: usize,
+    /// Iterations that entered the combination — those past the warm-up.
+    ///
+    /// `0` means the run holds no estimate at all: the terms it returns are
+    /// combined over nothing and are not numbers. Only a run stopped early can
+    /// end that way, since a budget always outlasts its own warm-up.
+    pub kept_iterations: usize,
     /// Integrand evaluations over all channels and iterations.
     pub points: u64,
     /// The target that was asked for, if any.
@@ -390,6 +396,13 @@ pub fn neyman_allocation(sd: &[f64], total: usize, floor: usize) -> Vec<usize> {
 ///
 /// `stop` is read at each iteration boundary; [`StopSignal::default`] is the
 /// signal nobody can raise, and a run under it is decided by `budget` alone.
+///
+/// A run stopped before its warm-up is over has kept no iteration, and the terms
+/// it returns are combined over nothing: they are not numbers, and
+/// [`ConvergenceReport::kept_iterations`] is `0`. A caller that can be stopped
+/// has to read that field before presenting a result — there is no cross section
+/// to present, and the grids, while sampled, were never trained past the
+/// iterations that were meant to be thrown away.
 #[allow(clippy::too_many_arguments)]
 pub fn integrate_channels<I>(
     integrand: &I,
@@ -611,10 +624,18 @@ where
         }
         if stop.requested() {
             reason = StopReason::Aborted;
-            warn!(
-                "stopping at the operator's request after {iteration} iterations \
-                 and {points} evaluations"
-            );
+            if iteration > warmup {
+                warn!(
+                    "stopping at the operator's request after {iteration} iterations \
+                     and {points} evaluations"
+                );
+            } else {
+                warn!(
+                    "stopping at the operator's request after {iteration} iterations \
+                     and {points} evaluations, with the warm-up unfinished: no iteration \
+                     was kept, so this run measured nothing"
+                );
+            }
             break;
         }
         // Only a run that will draw again refines: the banked grid is the one the
@@ -640,6 +661,7 @@ where
     let report = ConvergenceReport {
         stop: reason,
         iterations: iteration,
+        kept_iterations: channels.first().map(|c| c.kept.len()).unwrap_or(0),
         points,
         target_rel: match budget {
             Budget::Target { target_rel, .. } => Some(target_rel),
@@ -740,6 +762,8 @@ fn scaled_rel(channels: &[ChannelHistory], combination: IterationCombination) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::vegas::DEFAULT_WARMUP_ITERS;
 
     /// A multichannel integrand with a known integral: channel `j` contributes
     /// `αⱼ · f(u)` with `Σ αⱼ = 1`, so the terms sum to `∫f`. `spread[j]` scales
@@ -965,15 +989,86 @@ mod tests {
         assert!(report.points >= 20_000);
     }
 
-    /// A raised signal stops the run at the next iteration boundary and says so,
-    /// with a whole iteration's worth of grids and terms to show for it — the
-    /// property a caller banking the artifact depends on.
+    /// A toy that raises a stop signal once it has been evaluated `after` times.
+    ///
+    /// A key press arrives part-way through an iteration, and that is the only
+    /// interesting moment to arrive at: a signal raised before the run starts
+    /// cannot tell an iteration boundary from a loop that never began.
+    struct StopAfter<'a> {
+        inner: &'a Toy,
+        stop: StopSignal,
+        seen: std::sync::atomic::AtomicUsize,
+        after: usize,
+    }
+
+    impl ChannelIntegrand for StopAfter<'_> {
+        fn channel_count(&self) -> usize {
+            self.inner.channel_count()
+        }
+        fn channel_grid_ndim(&self) -> usize {
+            self.inner.channel_grid_ndim()
+        }
+        fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
+            if self.seen.fetch_add(1, Ordering::Relaxed) + 1 >= self.after {
+                self.stop.request();
+            }
+            self.inner.value_in_channel(channel, u)
+        }
+    }
+
+    /// A stop raised mid-run ends it at the next iteration boundary, with whole
+    /// iterations' worth of grids and terms to show for it — the property a
+    /// caller banking the artifact depends on.
     #[test]
     fn a_raised_stop_signal_ends_the_run_at_an_iteration_boundary() {
+        let inner = toy(vec![1.0, 1.0]);
+        let neval = 4_000;
+        let integ = StopAfter {
+            inner: &inner,
+            stop: StopSignal::new(),
+            seen: std::sync::atomic::AtomicUsize::new(0),
+            // Part-way into the iteration after the warm-up, so there is exactly
+            // one kept iteration and the run is nowhere near its budget.
+            after: neval * (DEFAULT_WARMUP_ITERS + 1) + neval / 2,
+        };
+        let (per_channel, total, report) = integrate_channels(
+            &integ,
+            &inner.alphas.clone(),
+            1.5,
+            IterationCombination::Unweighted,
+            Budget::Fixed { neval, niter: 40 },
+            BlockAllocation::ByAlpha,
+            7,
+            &integ.stop,
+        );
+        assert_eq!(report.stop, StopReason::Aborted);
+        assert!(!report.stop.converged());
+        assert!(
+            report.iterations > DEFAULT_WARMUP_ITERS && report.iterations < 40,
+            "stopped after {} iterations",
+            report.iterations
+        );
+        assert_eq!(
+            report.kept_iterations,
+            report.iterations - DEFAULT_WARMUP_ITERS
+        );
+        assert_eq!(per_channel.len(), 2);
+        assert!(
+            total.integral.is_finite() && total.integral > 0.0,
+            "{total:?}"
+        );
+    }
+
+    /// A stop taken *inside* the warm-up keeps nothing at all, and the report
+    /// says so rather than leaving a caller to discover it from a NaN. Only the
+    /// `kept_iterations` field distinguishes this from a run that measured
+    /// something, which is why a stoppable caller has to read it.
+    #[test]
+    fn a_stop_inside_the_warm_up_keeps_nothing_and_reports_it() {
         let integ = toy(vec![1.0, 1.0]);
         let stop = StopSignal::new();
         stop.request();
-        let (per_channel, total, report) = integrate_channels(
+        let (_per_channel, total, report) = integrate_channels(
             &integ,
             &integ.alphas.clone(),
             1.5,
@@ -987,10 +1082,31 @@ mod tests {
             &stop,
         );
         assert_eq!(report.stop, StopReason::Aborted);
-        assert!(!report.stop.converged());
         assert_eq!(report.iterations, 1);
-        assert_eq!(per_channel.len(), 2);
-        assert!(total.integral > 0.0, "{total:?}");
+        assert_eq!(report.kept_iterations, 0);
+        assert!(!total.integral.is_finite(), "{total:?}");
+    }
+
+    /// A run that finishes its budget has kept every iteration past the warm-up,
+    /// which is the baseline the stopped runs above are read against.
+    #[test]
+    fn a_completed_run_keeps_every_iteration_past_the_warm_up() {
+        let integ = toy(vec![1.0, 1.0]);
+        let (_c, _t, report) = integrate_channels(
+            &integ,
+            &integ.alphas.clone(),
+            1.5,
+            IterationCombination::Unweighted,
+            Budget::Fixed {
+                neval: 4_000,
+                niter: 6,
+            },
+            BlockAllocation::ByAlpha,
+            7,
+            &StopSignal::default(),
+        );
+        assert_eq!(report.iterations, 6);
+        assert_eq!(report.kept_iterations, 6 - DEFAULT_WARMUP_ITERS);
     }
 
     /// The signal is read at the boundary and nowhere else, so a run that is not
