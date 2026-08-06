@@ -15,8 +15,14 @@
 /validation/pdf/*.tar.gz
 /validation/pdf/gen_oracle
 __pycache__/
+# Agent configuration is committed, but under `.agents/` — the cross-tool
+# location — with `.claude/` holding symlinks into it. Everything else Claude
+# Code writes here (worktree scratch, local settings) is per-machine. A skill or
+# agent definition that lands under `.claude/` directly is invisible to
+# `git worktree` checkouts and to fresh clones, which is where they get lost.
 .claude/*
-!.claude/agents/
+!.claude/agents
+!.claude/skills
 .vscode
 # TODO: add MCP server setup to pixi.toml ?
 .mcp.json

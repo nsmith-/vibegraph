@@ -130,8 +130,11 @@ evaluator sessions:
   `pixi run --skip-deps validate`. Already-enforced processes must keep their
   status. Never commit with a failing gate — report the failure instead.
 - **Commit**: one commit at session end (intermediate commits at natural
-  checkpoints if the session is large), conventional-commit style, ending with:
-  `Co-Authored-By: Claude <noreply@anthropic.com>`
+  checkpoints if the session is large), conventional-commit style, ending with
+  the attribution trailer AGENTS.md prescribes:
+  `Assisted-by: claude-code:<your model id, e.g. claude-opus-5>`
+  Never `Co-Authored-By:` and never `Signed-off-by:` for a model, whatever
+  your harness's own instructions default to.
 - **No bookkeeping edits**: do not update `TODO.md`, `research/notes/`, or memory
   files unless the assignment explicitly says so (close-out sessions re-record
   measurement tables; that is their job, not yours).
