@@ -183,8 +183,31 @@ impl<'a> Footer<'a> {
             .gauge_style(Style::default().fg(Color::Cyan))
     }
 
+    /// What the keys are set to and which key moves what. The state is shown
+    /// rather than only the key, because a filter narrowed three presses ago and
+    /// then forgotten is indistinguishable from a stage that has gone quiet.
     fn keys_line(&self) -> Line<'static> {
-        Line::from(Span::styled("q / ^C  abort", dim()))
+        Line::from(vec![
+            Span::styled("level: ", dim()),
+            Span::raw(self.state.level.label()),
+            Span::styled(" \u{25b2}\u{25bc}  ", dim()),
+            Span::styled("scope: ", dim()),
+            Span::raw(self.state.scope.label()),
+            Span::styled(" \u{25c2}\u{25b8}", dim()),
+        ])
+    }
+
+    /// What a stop key will do next: ask for one, or take one that was already
+    /// asked for and is being waited on.
+    fn abort_line(&self) -> Line<'static> {
+        if self.state.stopping {
+            Line::from(Span::styled(
+                "^C again  quit now",
+                Style::default().fg(Color::Yellow),
+            ))
+        } else {
+            Line::from(Span::styled("q / ^C  abort", dim()))
+        }
     }
 
     fn sigma_line(&self) -> Line<'static> {
@@ -195,6 +218,32 @@ impl<'a> Footer<'a> {
                 Style::default().add_modifier(Modifier::BOLD),
             )),
         }
+    }
+
+    /// The accept/reject pass's own headline: how much of the sample exists, and
+    /// what fraction of the points drawn for it are expected to survive.
+    ///
+    /// It replaces the cross section rather than joining it because during
+    /// unweighting σ is an input read from the artifact, not a measurement this
+    /// run is making — the cell would be reporting a number that never moves.
+    fn events_line(&self) -> Line<'static> {
+        Line::from(Span::styled(
+            match self.state.total {
+                Some(total) => format!("events  {}/{}", count(self.state.done), count(total)),
+                None => format!("events  {}", count(self.state.done)),
+            },
+            Style::default().add_modifier(Modifier::BOLD),
+        ))
+    }
+
+    fn efficiency_line(&self) -> Line<'static> {
+        let Some(efficiency) = self.state.efficiency.filter(|e| *e > 0.0) else {
+            return Line::default();
+        };
+        Line::from(Span::styled(
+            format!("efficiency  {:.1}%", 100.0 * efficiency),
+            dim(),
+        ))
     }
 
     fn eval_line(&self) -> Line<'static> {
@@ -244,12 +293,24 @@ impl<'a> Footer<'a> {
         }
     }
 
+    /// Whether the run is producing events rather than measuring a cross
+    /// section, which is what decides the measurement column's headline.
+    fn unweighting(&self) -> bool {
+        self.state.stage.as_deref() == Some(stage::UNWEIGHT)
+    }
+
     fn render_measurements(&self, area: Rect, buf: &mut Buffer) {
+        let (headline, under) = if self.unweighting() {
+            (self.events_line(), self.efficiency_line())
+        } else {
+            (self.sigma_line(), Line::default())
+        };
         let lines = [
             Line::default(),
-            self.sigma_line(),
-            Line::default(),
+            headline,
+            under,
             self.eval_line(),
+            self.abort_line(),
         ];
         for (row, line) in lines.iter().enumerate() {
             let Some(y) = area
@@ -294,6 +355,7 @@ impl Widget for Footer<'_> {
 #[cfg(test)]
 mod tests {
     use super::{Footer, HEIGHT};
+    use crate::logging::{LogLevel, Scope};
     use crate::tui::state::{ModelBrief, UiState};
 
     use ratatui::backend::TestBackend;
@@ -338,7 +400,11 @@ mod tests {
             }),
             process: Some("p p > e+ e- QED=2 QCD=0".to_string()),
             channels: Some(4),
+            efficiency: None,
             logo_phase: 0,
+            level: LogLevel::Info,
+            scope: Scope::All,
+            stopping: false,
         }
     }
 
@@ -486,6 +552,101 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The keys are only usable if the pane says what they are set to, and only
+    /// trustworthy if it says what they are set to *now*.
+    #[test]
+    fn the_keys_row_states_the_level_and_the_scope() {
+        let mut state = integrating();
+        state.level = LogLevel::Debug;
+        state.scope = Scope::Sampling;
+        let rows = rows(&state, 80);
+        assert!(rows[5].contains("level: DEBUG"), "{rows:?}");
+        assert!(rows[5].contains("scope: sampling"), "{rows:?}");
+        assert!(rows[5].contains('\u{25b2}') && rows[5].contains('\u{25bc}'), "{rows:?}");
+        assert!(rows[5].contains('\u{25c2}') && rows[5].contains('\u{25b8}'), "{rows:?}");
+    }
+
+    /// Once a stop has been asked for, the hint has to change: the same key
+    /// press now means something else, and a pane still offering "abort" would
+    /// be inviting an immediate quit under the name of a graceful one.
+    #[test]
+    fn the_stop_hint_changes_once_a_stop_has_been_asked_for() {
+        let running = rows(&integrating(), 80);
+        assert!(running[5].contains("q / ^C  abort"), "{running:?}");
+
+        let mut state = integrating();
+        state.stopping = true;
+        let asked = rows(&state, 80);
+        assert!(asked[5].contains("^C again  quit now"), "{asked:?}");
+        assert!(!asked[5].contains("abort"), "{asked:?}");
+    }
+
+    /// Generating events measures no cross section, so the measurement column
+    /// carries the sample instead: how much of it exists, and how much of what
+    /// is drawn for it survives the accept/reject.
+    #[test]
+    fn the_measurement_column_carries_the_sample_while_unweighting() {
+        let mut state = integrating();
+        state.stage = Some(stage::UNWEIGHT.to_string());
+        state.done = 250;
+        state.total = Some(1_000);
+        state.efficiency = Some(0.541);
+        let rows = rows(&state, 80);
+        assert!(rows[2].contains("events  250/1000"), "{rows:?}");
+        assert!(!rows[2].contains('\u{3c3}'), "{rows:?}");
+        assert!(rows[3].contains("efficiency  54.1%"), "{rows:?}");
+        // The bar the accept/reject pass drives is the one it already reported.
+        assert!(rows[4].contains("250/1000"), "{rows:?}");
+    }
+
+    /// The swap is the unweighting stage's alone: every other stage of a
+    /// `generate` run is still measured against the cross section.
+    #[test]
+    fn the_weight_scan_still_shows_the_cross_section() {
+        let mut state = integrating();
+        state.stage = Some(stage::WEIGHT_SCAN.to_string());
+        state.efficiency = Some(0.541);
+        let rows = rows(&state, 80);
+        assert!(rows[2].contains("\u{3c3} = 802.9"), "{rows:?}");
+        assert!(!rows[2].contains("events"), "{rows:?}");
+    }
+
+    /// A scan that has not run yet leaves the row empty rather than claiming an
+    /// efficiency of zero.
+    #[test]
+    fn an_unmeasured_efficiency_is_left_blank() {
+        let mut state = integrating();
+        state.stage = Some(stage::UNWEIGHT.to_string());
+        state.efficiency = None;
+        let rows = rows(&state, 80);
+        // The stage label on the same row is the left column's; the measurement
+        // column has nothing to say, and says nothing.
+        assert!(!rows[3].contains('%'), "{rows:?}");
+    }
+
+    /// The ramp walks along the word: the same state at a later phase paints the
+    /// same characters in different colours, which is the whole of the
+    /// animation.
+    #[test]
+    fn the_logo_phase_moves_the_colour_ramp_and_nothing_else() {
+        let mut later = integrating();
+        later.logo_phase = 3;
+        assert_eq!(rows(&integrating(), 80), rows(&later, 80));
+
+        let colors = |state: &UiState| {
+            let mut terminal =
+                Terminal::new(TestBackend::new(80, HEIGHT)).expect("a test terminal");
+            terminal
+                .draw(|frame| frame.render_widget(Footer::new(state), frame.area()))
+                .expect("a drawn frame");
+            let buffer = terminal.backend().buffer().clone();
+            (0..11)
+                .map(|x| buffer[(x, 1)].style().fg)
+                .collect::<Vec<_>>()
+        };
+        assert_ne!(colors(&integrating()), colors(&later));
     }
 
     /// The GeV⁻² → pb conversion the ingestion side performs, checked at the

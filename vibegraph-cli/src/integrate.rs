@@ -392,6 +392,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
                 StopReason::TargetMet => "met",
                 StopReason::MaxIters => "GAVE UP on the iteration cap",
                 StopReason::MaxPoints => "GAVE UP on the evaluation cap",
+                StopReason::Aborted => "ABANDONED at the operator's request",
                 StopReason::Budget => "unreachable",
             },
             conv.iterations,
@@ -504,8 +505,12 @@ fn integrate_hadronic(
     let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
     integ.adapt_alphas(args.seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
 
-    let (per_channel, result, convergence) =
-        integ.adapt_grids_budget(args.budget()?, args.allocation(), args.seed);
+    let (per_channel, result, convergence) = integ.adapt_grids_budget(
+        args.budget()?,
+        args.allocation(),
+        args.seed,
+        &tui::stop_signal(),
+    );
     let channels = integ
         .channel_ids()
         .iter()
@@ -583,8 +588,12 @@ fn integrate_fixed_energy(
     let n_survey = args.neval.clamp(MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY);
     integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, args.seed);
 
-    let (per_channel, result, convergence) =
-        integ.adapt_grids_budget(args.budget()?, args.allocation(), args.seed);
+    let (per_channel, result, convergence) = integ.adapt_grids_budget(
+        args.budget()?,
+        args.allocation(),
+        args.seed,
+        &tui::stop_signal(),
+    );
     Ok(RunOutput {
         process,
         pdf_set: NO_PDF.to_string(),

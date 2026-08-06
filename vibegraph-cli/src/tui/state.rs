@@ -14,6 +14,8 @@ use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 use vibegraph::phasespace::GEV2_TO_PB;
 
+use crate::logging::{LogLevel, Scope};
+
 /// The model brief the footer shows: what was loaded, and enough of its contents
 /// to tell two models with the same name apart.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -48,8 +50,16 @@ pub(crate) struct UiState {
     pub(crate) model: Option<ModelBrief>,
     pub(crate) process: Option<String>,
     pub(crate) channels: Option<usize>,
+    /// The fraction of drawn events an accept/reject pass is expected to keep,
+    /// as the frozen weight scan predicts it. Absent until a scan has run.
+    pub(crate) efficiency: Option<f64>,
     /// Rotation of the logo's colour ramp, in characters.
     pub(crate) logo_phase: usize,
+    /// What the log is currently showing, as the level keys have left it.
+    pub(crate) level: LogLevel,
+    pub(crate) scope: Scope,
+    /// Whether a stop has been asked for and the run is finishing what it holds.
+    pub(crate) stopping: bool,
 }
 
 /// The fields of one progress event, before they are folded into [`UiState`].
@@ -187,6 +197,11 @@ pub(crate) fn describe_process(process: &str) {
 /// How many phase-space channels the integration was built over.
 pub(crate) fn note_channels(channels: usize) {
     update(|state| state.channels = Some(channels));
+}
+
+/// The accept/reject efficiency the frozen weight scan predicts, as a fraction.
+pub(crate) fn note_unweighting_efficiency(efficiency: f64) {
+    update(|state| state.efficiency = Some(efficiency));
 }
 
 #[cfg(test)]

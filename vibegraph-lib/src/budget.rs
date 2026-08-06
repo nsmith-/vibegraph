@@ -62,9 +62,11 @@
 //!   is a 2–3× point cost — deliberately, since the alternative is stopping on an
 //!   error bar that the seed-to-seed spread does not support.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
-use tracing::{debug, info, info_span};
+use tracing::{debug, info, info_span, warn};
 
 use crate::hadronic::{combine_channels, ChannelIntegration, VEGAS_NBINS};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
@@ -158,6 +160,9 @@ pub enum StopReason {
     MaxIters,
     /// `max_points` was reached with the target unmet.
     MaxPoints,
+    /// A [`StopSignal`] was raised: the run stopped at the first iteration
+    /// boundary after the request, whatever its budget still allowed.
+    Aborted,
 }
 
 impl StopReason {
@@ -165,6 +170,37 @@ impl StopReason {
     /// budget, which was asked for points rather than accuracy.
     pub fn converged(self) -> bool {
         matches!(self, StopReason::Budget | StopReason::TargetMet)
+    }
+}
+
+/// A request, raisable from another thread, that a running integration stop early
+/// and keep what it has.
+///
+/// The request is read once per iteration and nowhere else, so a signal that is
+/// never raised changes neither the points an integration draws nor the order it
+/// draws them in: the arithmetic of a run that is not stopped is the arithmetic of
+/// a run that could not be. What a raised signal buys is that the grids and the
+/// terms returned are those of the last *completed* iteration — an iteration
+/// abandoned part-way would have sampled only some of its channels, and a term
+/// combined over that is not an estimate of anything.
+#[derive(Debug, Clone, Default)]
+pub struct StopSignal(Arc<AtomicBool>);
+
+impl StopSignal {
+    /// A signal nobody has raised.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Ask every integration reading this signal to stop after its current
+    /// iteration.
+    pub fn request(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether the request has been made.
+    pub fn requested(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
     }
 }
 
@@ -351,6 +387,9 @@ pub fn neyman_allocation(sd: &[f64], total: usize, floor: usize) -> Vec<usize> {
 /// cannot move a number.
 ///
 /// `vegas_alpha` is the grid-damping exponent every channel's grid is built with.
+///
+/// `stop` is read at each iteration boundary; [`StopSignal::default`] is the
+/// signal nobody can raise, and a run under it is decided by `budget` alone.
 #[allow(clippy::too_many_arguments)]
 pub fn integrate_channels<I>(
     integrand: &I,
@@ -360,6 +399,7 @@ pub fn integrate_channels<I>(
     budget: Budget,
     allocation: BlockAllocation,
     seed: u64,
+    stop: &StopSignal,
 ) -> (Vec<ChannelIntegration>, VegasResult, ConvergenceReport)
 where
     I: ChannelIntegrand + Sync,
@@ -432,7 +472,7 @@ where
     let mut points = 0_u64;
     let mut min_channel_neval = usize::MAX;
     let mut iteration = 0_usize;
-    let mut stop = StopReason::Budget;
+    let mut reason = StopReason::Budget;
 
     loop {
         if iteration > 0 && !single && allocation == BlockAllocation::Neyman {
@@ -537,7 +577,7 @@ where
 
         let done = match budget {
             Budget::Fixed { niter, .. } => {
-                stop = StopReason::Budget;
+                reason = StopReason::Budget;
                 iteration >= niter
             }
             Budget::Target {
@@ -550,13 +590,13 @@ where
                 let met = iteration >= min_iters.max(warmup + 2)
                     && scaled_rel(&channels, combination) <= target_rel;
                 if met {
-                    stop = StopReason::TargetMet;
+                    reason = StopReason::TargetMet;
                     true
                 } else if iteration >= max_iters {
-                    stop = StopReason::MaxIters;
+                    reason = StopReason::MaxIters;
                     true
                 } else if points >= max_points {
-                    stop = StopReason::MaxPoints;
+                    reason = StopReason::MaxPoints;
                     true
                 } else {
                     false
@@ -564,7 +604,17 @@ where
             }
         };
 
+        // A budget that has run out on this very iteration keeps its own reason:
+        // the run reached the end it was given, and was not cut short of it.
         if done {
+            break;
+        }
+        if stop.requested() {
+            reason = StopReason::Aborted;
+            warn!(
+                "stopping at the operator's request after {iteration} iterations \
+                 and {points} evaluations"
+            );
             break;
         }
         // Only a run that will draw again refines: the banked grid is the one the
@@ -588,7 +638,7 @@ where
     let total = combine_channels(&per_channel, iteration);
     let achieved_rel = rel_of(&total);
     let report = ConvergenceReport {
-        stop,
+        stop: reason,
         iterations: iteration,
         points,
         target_rel: match budget {
@@ -805,6 +855,7 @@ mod tests {
             budget,
             BlockAllocation::Neyman,
             0x1234,
+            &StopSignal::default(),
         );
         assert!(
             report.min_channel_neval >= MIN_CHANNEL_NEVAL,
@@ -849,6 +900,7 @@ mod tests {
             },
             BlockAllocation::Neyman,
             0xBEEF,
+            &StopSignal::default(),
         );
         assert_eq!(report.stop, StopReason::TargetMet);
         assert!(report.iterations >= 6, "stopped after {}", report.iterations);
@@ -881,6 +933,7 @@ mod tests {
             },
             BlockAllocation::ByAlpha,
             7,
+            &StopSignal::default(),
         );
         assert_eq!(report.stop, StopReason::MaxIters);
         assert_eq!(report.iterations, 5);
@@ -906,9 +959,92 @@ mod tests {
             },
             BlockAllocation::ByAlpha,
             7,
+            &StopSignal::default(),
         );
         assert_eq!(report.stop, StopReason::MaxPoints);
         assert!(report.points >= 20_000);
+    }
+
+    /// A raised signal stops the run at the next iteration boundary and says so,
+    /// with a whole iteration's worth of grids and terms to show for it — the
+    /// property a caller banking the artifact depends on.
+    #[test]
+    fn a_raised_stop_signal_ends_the_run_at_an_iteration_boundary() {
+        let integ = toy(vec![1.0, 1.0]);
+        let stop = StopSignal::new();
+        stop.request();
+        let (per_channel, total, report) = integrate_channels(
+            &integ,
+            &integ.alphas.clone(),
+            1.5,
+            IterationCombination::Unweighted,
+            Budget::Fixed {
+                neval: 4_000,
+                niter: 20,
+            },
+            BlockAllocation::ByAlpha,
+            7,
+            &stop,
+        );
+        assert_eq!(report.stop, StopReason::Aborted);
+        assert!(!report.stop.converged());
+        assert_eq!(report.iterations, 1);
+        assert_eq!(per_channel.len(), 2);
+        assert!(total.integral > 0.0, "{total:?}");
+    }
+
+    /// The signal is read at the boundary and nowhere else, so a run that is not
+    /// stopped draws exactly what a run with no signal at all draws — the
+    /// property that keeps the abort out of the arithmetic.
+    #[test]
+    fn an_unraised_stop_signal_changes_nothing() {
+        let integ = toy(vec![1.0, 0.3]);
+        let run = |stop: &StopSignal| {
+            integrate_channels(
+                &integ,
+                &integ.alphas.clone(),
+                1.5,
+                IterationCombination::Unweighted,
+                Budget::Fixed {
+                    neval: 6_000,
+                    niter: 5,
+                },
+                BlockAllocation::Neyman,
+                0x9E,
+                stop,
+            )
+        };
+        let (_, quiet, quiet_report) = run(&StopSignal::default());
+        let (_, armed, armed_report) = run(&StopSignal::new());
+        assert_eq!(quiet.integral.to_bits(), armed.integral.to_bits());
+        assert_eq!(quiet.std_dev.to_bits(), armed.std_dev.to_bits());
+        assert_eq!(quiet_report.points, armed_report.points);
+        assert_eq!(quiet_report.stop, StopReason::Budget);
+        assert_eq!(armed_report.stop, StopReason::Budget);
+    }
+
+    /// A budget that runs out on the same iteration the signal is read keeps its
+    /// own reason: the run reached its end rather than being cut short of it.
+    #[test]
+    fn a_completed_budget_is_not_reported_as_an_abort() {
+        let integ = toy(vec![1.0, 1.0]);
+        let stop = StopSignal::new();
+        stop.request();
+        let (_c, _t, report) = integrate_channels(
+            &integ,
+            &integ.alphas.clone(),
+            1.5,
+            IterationCombination::Unweighted,
+            Budget::Fixed {
+                neval: 4_000,
+                niter: 1,
+            },
+            BlockAllocation::ByAlpha,
+            7,
+            &stop,
+        );
+        assert_eq!(report.stop, StopReason::Budget);
+        assert_eq!(report.iterations, 1);
     }
 
     /// The prerequisite, pinned rather than asserted in prose: a convergence stop
@@ -932,6 +1068,7 @@ mod tests {
             },
             BlockAllocation::ByAlpha,
             1,
+            &StopSignal::default(),
         );
     }
 
@@ -955,6 +1092,7 @@ mod tests {
                 budget,
                 a,
                 0x51,
+                &StopSignal::default(),
             )
         };
         let (_, by_alpha, ra) = run(BlockAllocation::ByAlpha);
