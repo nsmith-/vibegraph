@@ -4278,7 +4278,7 @@ than asserted: nothing this session did reached a gated measurement.
 ### Z.6 The environment
 
 Nothing changed it. `pixi.lock` is byte-identical to the sprint's base
-(`b676b6f`), and the only `pixi.toml` change in the whole sprint is K1b's added
+(`57bbfdd`), and the only `pixi.toml` change in the whole sprint is K1b's added
 `generate-kt-cluster-dumps` task — a task, not a dependency. `pixi install
 --locked -e madgraph` succeeds, and the local pixi is `0.63.2`, which is what
 CI's `setup-pixi` pins. The refdata-3 close-out's CI failure has no counterpart

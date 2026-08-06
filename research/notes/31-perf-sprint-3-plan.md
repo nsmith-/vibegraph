@@ -1,7 +1,7 @@
 # 31 — Performance sprint 3: integration budget, PDF interpolation, evaluator schedule (plan)
 
 **Status:** PLAN, drafted 2026-08-04 against the note-30 baseline (per-stage timings,
-samply profiles, host block — all taken on `main` @ `d7b7e68`, M3 Max). Predecessor
+samply profiles, host block — all taken on `main` @ `45a7d62`, M3 Max). Predecessor
 performance programs: note 15 (eval layout/expansion/filtering, closed 2026-07-17)
 and note 20 (`eval-perf-2`, closed 2026-07-21, vs-MG geomean 1.24×). The gate this
 sprint optimizes against is the note-29-hardened validation layer
@@ -59,7 +59,7 @@ scatter on `pp_to_llj_dyn` — χ²/dof 6.38 at 75k, clean ≥150k — is the fr
 budget reduction would bite). Re-pin the report budgets only after the sweep is
 clean at the reduced budget.
 
-**I1 — MERGED 2026-08-04 (`5b3952d`, merge `59887a3`): measured results.**
+**I1 — MERGED 2026-08-04 (`ea58ab9`, merge `e99b05c`): measured results.**
 
 - **The plan's primary fix was wrong; its parenthetical was right.** A 4000-seed
   offline study (5-D Gaussian, known integral) showed the warm-up discard alone
@@ -110,7 +110,7 @@ efficiency and sample lumpiness.
 durations; the largest `w/w_max` is an extremum estimate — do not read it as
 convergence (note 24 §P4).
 
-**I2 — MERGED 2026-08-04 (`24aad64`, merge `928df28`): the premise was false.**
+**I2 — MERGED 2026-08-04 (`ad54c8f`, merge `152efb1`): the premise was false.**
 
 - **The maxima never converge — there is no "own schedule".** On the llj
   grids, `Σⱼ w_maxⱼ ∝ n^0.508` over 2.4 decades of scan budget (10³–2.56·10⁵
@@ -182,7 +182,7 @@ grid/α update between iterations is the Amdahl term, measured by the scan itsel
 Close-out re-runs note 30 §5.2's wall-time comparison with a `-j 16` column so the
 "16-way farm vs one thread" asymmetry is retired from the record.
 
-**I3 — MERGED 2026-08-04 (`6497f7e`, merge `1b527cc`): measured results.**
+**I3 — MERGED 2026-08-04 (`b612253`, merge `17fd612`): measured results.**
 
 - **Brief/plan corrections (three, all recorded):** (1) the substrate was NOT
   ready — `adapt_parallel`'s closure cannot know which point it is (the scale
@@ -204,7 +204,7 @@ Close-out re-runs note 30 §5.2's wall-time comparison with a `-j 16` column so 
   accept/reject stays serial and says so). `Real`/`Channel`/`ScaledChannel`
   gained `Send + Sync`.
 - **Bit-identity evidence**: artifact md5 identical across `-j 1/4/8/16` AND
-  vs the pre-change serial binary at `af12e01`, on partonic, `dy13_default`
+  vs the pre-change serial binary at `7938409`, on partonic, `dy13_default`
   and `pp_to_llj` cards, repeated at 4× budget. Full validate exit 0, census
   character-identical. Seven new tests, each negative-controlled; one vacuous
   check (fixed-beam trailing uniform is inert — 40/40 probes unmoved) was
@@ -274,7 +274,7 @@ channels are nowhere near converged at budgets where big ones long since were).
 **Sequencing**: after I1 (prerequisite) and I3 (parallel substrate); supersedes
 the old stretch-item I3 (channel-block stratification), which it absorbs.
 
-**I4 — MERGED 2026-08-04 (`30d44d1`, merge `539f0da`): measured results.**
+**I4 — MERGED 2026-08-04 (`a62df73`, merge `bd16311`): measured results.**
 
 - **Brief corrections**: the hard split already existed (`adapt_grids` was
   per-channel deterministic with a 512 floor; the multinomial survives only in
@@ -291,7 +291,7 @@ the old stretch-item I3 (channel-block stratification), which it absorbs.
   runs every channel's iteration in one rayon region keyed `(channel, chunk)`,
   preserving `adapt_parallel_seeded`'s seek + point-order contracts
   (per-channel `first_point` is a running total, enabling varying `N_j`).
-- **Gates**: fixed-budget bit-for-bit (artifact md5s vs the `6c4b382` binary;
+- **Gates**: fixed-budget bit-for-bit (artifact md5s vs the `3ea0402` binary;
   inert across `-j 1/5/16`, chunk sizes and bases); census unchanged;
   807 workspace tests. Convergence calibration: 2 processes × 2 targets ×
   2 allocations × 8 seeds — **64/64 met target**, seed χ²/dof 0.44–1.14 (all
@@ -418,7 +418,7 @@ on proton generate — measurable against the 0.8%/3.4% noise floor via row
 durations, plus a dedicated criterion micro-bench for `xfx_all` (add one; there is
 none today).
 
-### 2.4 P1 — MERGED 2026-08-04 (`71a7ef3`, merge `a66d58a`): measured results
+### 2.4 P1 — MERGED 2026-08-04 (`865828a`, merge `c999c16`): measured results
 
 All five items landed plus the `pdf_xfx` criterion bench; **no tolerance was
 relaxed anywhere**. Gate: full banked layer green, cell-for-cell identical census
@@ -448,13 +448,13 @@ relaxed anywhere**. Gate: full banked layer green, cell-for-cell identical censu
   is now **62% / 79%** with `fill_arenas` alone at 33.1% / 42.6% — Track E's
   ceiling grew accordingly. Note 30 §7.3's "PDF 14–19% wherever there are
   protons" is retired; every Track-I duration claim must re-baseline against
-  `a66d58a`, not note 30 §3.2's table.
+  `c999c16`, not note 30 §3.2's table.
 - Ops note for future worktree sessions: `git worktree add` leaves the
   `research/refs/mg5amcnlo` submodule checkout empty, which aborts
   `cargo test --workspace` before most gates run; COW-copy the checkout in and
   point its `.git` file at the shared module.
 
-**P1b follow-up — MERGED 2026-08-04 (`91c5a79`, merge `0fd6344`)**, user-directed:
+**P1b follow-up — MERGED 2026-08-04 (`5f953b9`, merge `be42df2`)**, user-directed:
 the continuation oracle's relative-only comparison gains an absolute screen —
 `|got − want| ≤ 1e-30 + 1e-11·|want|`, all five continuation categories, both
 oracles. ABS_TOL 1e-30 is four orders below one ulp of the `ForcePositive`
@@ -535,7 +535,7 @@ equality), unlike almost every other evaluator lever. Measure via `eval_strategi
 (±2–3% criterion noise floor; claims need to clear it). Deliverable: a go/no-go on
 a production scheduling pass in `Program::build`, with the winning order's numbers.
 
-**E1 — MERGED 2026-08-04 (`52327b2`, merge `7416c1d`): verdict GO** — study
+**E1 — MERGED 2026-08-04 (`94ed907`, merge `b9bb758`): verdict GO** — study
 instrumentation + `VIBEGRAPH_EVAL_SCHEDULE` hook (absent from release/validate
 builds), default order unchanged and byte-identical to base (amplitude-oracle
 digest equal; every prototype order `to_bits`-identical with anti-vacuity
@@ -575,7 +575,7 @@ guards). Winner: **op-blocked within ASAP dependency levels**
   binary; integration tests and the validate layer are hard-wired to arena
   order.
 
-**E1b — MERGED 2026-08-04 (`486e237`, merge `94af883`): the pass is production.**
+**E1b — MERGED 2026-08-04 (`052a00e`, merge `01ba9cd`): the pass is production.**
 
 - `Program::build` defaults to op-blocked-within-ASAP-levels. One-pass without
   rule duplication: the lowering `match` was split out as `lower_node` and run
@@ -601,7 +601,7 @@ guards). Winner: **op-blocked within ASAP dependency levels**
 - Row `duration_s` from this sitting is not bankable (same-build back-to-back
   spread reached −57% under sibling load; row *contents* byte-identical) —
   close-out re-measures on a quiet host.
-- **E3 re-baselines against `486e237`**: note 30 §6's "≈1.0 µs / ~21%"
+- **E3 re-baselines against `052a00e`**: note 30 §6's "≈1.0 µs / ~21%"
   chain-B draw cost predates a ~17% evaluator win and needs re-measuring
   before E3 sizes its payoff.
 
@@ -638,7 +638,7 @@ Gate: `validate_helas_mg` byte-equality for items 1–3, `eval_strategies` media
 with host fingerprint for all; the honest ceiling for 1–3 combined is bounded by
 the ~50% non-arithmetic share, discounted by whatever the loads/stalls overlap.
 
-**E2 — MERGED 2026-08-04 (`54d666f`, merge `d2d7520`): measured results.**
+**E2 — MERGED 2026-08-04 (`82b68d1`, merge `9ac8858`): measured results.**
 Item 1 landed; items 2–4 implemented, measured, and deliberately not landed.
 
 - **Gate-name correction**: `validate_helas_mg` no longer exists; the successor
@@ -674,12 +674,12 @@ Item 1 landed; items 2–4 implemented, measured, and deliberately not landed.
   unchanged at 1.776e-11. **Reassociating** and touches the public
   `SpinorRepr` vocabulary → held for its own REL_TOL-gated session (patch
   stashed in the session record).
-- For E1: measure against `54d666f`; `Instr` is 20 B with `loc[i]` in a second
+- For E1: measure against `82b68d1`; `Instr` is 20 B with `loc[i]` in a second
   stream — folding `loc` into the instruction encoding is adjacent to E1's
   linearization scope. Contention protocol that worked: per-config prebuilt
   bench binaries run round-robin, min over rounds.
 
-**E2b (item-4 follow-up) — MERGED 2026-08-05 (`ced17fb`, merge `027e710`).**
+**E2b (item-4 follow-up) — MERGED 2026-08-05 (`31640a8`, merge `854c049`).**
 The fermion-current CSE landed: the four spinor products in
 `left_current`/`right_current` named once (`cmul_add` fusion had blocked CSE
 of the sibling `cmul`). **Reassociating**: worst oracle deviation
@@ -704,7 +704,7 @@ of `(channel, u)` — the σ gates plus the `AMP2_c`-share partition census must
 byte-stable; any change to *what* is drawn (not just when it is computed) is out
 of scope.
 
-**E3 — MERGED 2026-08-05 (`6a8e91c`, merge `50fb671`): measured results.**
+**E3 — MERGED 2026-08-05 (`f3d6e8b`, merge `cf2d489`): measured results.**
 
 - **Re-baselined draw cost post-E1b**: ≈870 ns / ≈18% on the partonic
   live-draw rows (was ≈1 µs / ≈21% in note 30 §6); `llj_dyn` still a few
@@ -787,7 +787,7 @@ the samples category is half the size of integrals in wall time.
 
 ## 6. Close-out: the sprint measured end to end
 
-**Status:** measurement record, taken 2026-08-05 on `perf3-closeout` @ `ca53336`
+**Status:** measurement record, taken 2026-08-05 on `perf3-closeout` @ `62d78e4`
 — the merged sprint tree, all eleven sessions in — on the same M3 Max note 30
 was taken on. Every table carries the command that produced it and the load
 average at its own start.
@@ -801,7 +801,7 @@ wrong**, and it is worth recording because it will catch anyone who compares a
 row duration across the I3 boundary.
 
 The premise: before the sprint nothing in the library reached rayon on a gate
-path. The only call site in `vibegraph-lib/src` at `6008697` is
+path. The only call site in `vibegraph-lib/src` at `e951045` is
 `run_iter_parallel`, the private helper of the never-reached `adapt_parallel` —
 note 30 §7's "~16 rayon workers parked in `__psynch_cvwait`" is the same fact
 seen from the profile side.
@@ -869,7 +869,7 @@ generation work, which both protocols measure alike.
 - **Elapsed wall: comparable for the *default* command, and then only as a lower
   bound on the gain.** §6.5's 691 s → 391 s runs note 30's exact invocation on
   both sides, so it is like-for-like — but the suite grew this sprint (`#[test]`
-  861 → 905, `#[ignore]` 32 → 34 between `6008697` and `ca53336`: +42
+  861 → 905, `#[ignore]` 32 → 34 between `e951045` and `62d78e4`: +42
   newly-running tests, several deliberately expensive — E1's alternative-order
   bit-identity runs, I3's thread-count identity runs, I4's calibration), so the
   391 s buys strictly more work than the 691 s did. The wall of the *corrected
@@ -906,7 +906,7 @@ generation work, which both protocols measure alike.
   wrong, since `amplitude_oracle::measure` does run enumeration and
   `AmplitudeEvaluator::compile` per row rather than "never build an evaluator" —
   which is precisely why the 2→6 rows cost fifty times what a 2→2 does. The file
-  is untouched since note 30's own tree (`git log d7b7e68..ca53336 --
+  is untouched since note 30's own tree (`git log 45a7d62..62d78e4 --
   vibegraph-lib/tests/amplitude_oracle.rs` shows only the instrumentation commit
   note 30 itself measured), so this is a wording defect in note 30, not a change.
 
@@ -1108,7 +1108,7 @@ only place the sprint's parallelism counts, since from I3 onward the rows use th
 machine internally.
 
 It also *understates* the sprint, because the suite grew: `#[test]` 861 → 905 and
-`#[ignore]` 32 → 34 between `6008697` and `ca53336`, so 391 s buys 42 more running
+`#[ignore]` 32 → 34 between `e951045` and `62d78e4`, so 391 s buys 42 more running
 tests than 691 s did.
 
 **Its per-row durations are not used for per-row claims, in this note or note 30.**
@@ -1242,8 +1242,8 @@ divided by the bench's points-per-iteration, against MATRIX1 ns/eval from
 bash scripts/mg_perf_compare.sh          # run in each tree
 ```
 
-- **after arm**: this worktree at `ca53336`.
-- **before arm**: `6008697`, the pre-sprint tip, checked out with
+- **after arm**: this worktree at `62d78e4`.
+- **before arm**: `e951045`, the pre-sprint tip, checked out with
   `git worktree add --detach` into this worktree's gitignored `target/` — never the
   shared checkout — with `mg_timings.json` and the `mg_*.so` modules symlinked in
   so both arms read an identical MadGraph column.
@@ -1252,7 +1252,7 @@ The arms alternate round by round and each row takes its minimum over two rounds
 daemon spike then lands on a round rather than on an arm, which mattered here — the
 after arm's whole-table geomean read 0.98× on round 1 and 1.09× on round 2. Both
 arms are the `bench` profile, `RUSTFLAGS` unset, same rustc, same host, one
-sitting. The after arm's fingerprint reads `ca53336-dirty`: at measurement time the
+sitting. The after arm's fingerprint reads `62d78e4-dirty`: at measurement time the
 worktree carried the uncommitted `TODO.md` and note-31 edits and nothing else
 (`git diff --name-only` returns exactly those two files), so no source went into
 that binary which this commit does not also contain.

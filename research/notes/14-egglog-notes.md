@@ -283,7 +283,7 @@ an "egg" stage; this paper is the design reference for that stage, and confirms 
   `rewrite` rules run to saturation, instead of hand-written peephole passes over the node
   tree — the same trade a peephole optimizer makes vs. a proper term-rewriting system.
   Fused-kernel dispatch (currently a hard-coded pattern match, see the chiral-pair FFV
-  fusion committed in `1ce5aca`) is a natural `rewrite` target: match the general node
+  fusion committed in `283d164`) is a natural `rewrite` target: match the general node
   pattern, replace with the fused-kernel node, extract by cost so the fused form always wins.
 - Preferring the fused/kernel form over the general form should be encoded as an extraction
   **cost** policy, not via `:merge`: the crate's `:cost` annotation (on constructors/functions,

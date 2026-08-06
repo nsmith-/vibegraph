@@ -261,11 +261,11 @@ the harness is the non-representative one). Each process's AST is compiled once 
 run — the lowering path emits a ±1-node AST per hash seed (§4.2) — so the numbers carry
 ≈±2–3% run-to-run noise, well below the measured wins.
 
-**Cumulative evaluator speedup, P5 baseline `7a1a66d` → post-A5 `main`.** ns per
+**Cumulative evaluator speedup, P5 baseline `15c4d7c` → post-A5 `main`.** ns per
 `eval_m2` (helicity-summed |M|², one phase-space point), criterion median; MG = MATRIX1
 `ns_per_eval` from `validation/madgraph/output/mg_timings.json`:
 
-| process | mult | NCOLOR | MG | P5 `7a1a66d` | post-A5 `main` | P5→A5 | A5 vs MG |
+| process | mult | NCOLOR | MG | P5 `15c4d7c` | post-A5 `main` | P5→A5 | A5 vs MG |
 |---|:--:|:--:|--:|--:|--:|--:|--:|
 | ee_to_mumu | 2→2 | 1 | 283 | 4,000 | 1,930 | 2.07× | 6.8× |
 | ee_to_ee | 2→2 | 1 | 731 | 6,619 | 3,609 | 1.83× | 4.9× |

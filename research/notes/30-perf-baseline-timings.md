@@ -1,6 +1,6 @@
 # 30 — Per-stage timing baseline: vibegraph against MadGraph on one host
 
-**Status:** measurement record, taken 2026-08-04 on `main` @ `d7b7e68` (the merge that
+**Status:** measurement record, taken 2026-08-04 on `main` @ `45a7d62` (the merge that
 brought the FMA/inlining evaluator changes in), before the performance sprint's first
 optimizing session. Everything below is a recorded measurement on one machine; the
 host block is in §1 and every number carries the command that produced it.

@@ -17,7 +17,7 @@ verbatim:
    the timing's missing artifact story (both confirmed below, §1.2), plus the
    bench arm's unrepresentative process sample (§1.2 finding 3).
 6. **Why does `-j 16` only see 4–5×?** (answered §1.1; relief is a session).
-7. **Undo the scalar cost of the lane-FMA commit** (`3dab3a1`): SIMD lanes are
+7. **Undo the scalar cost of the lane-FMA commit** (`be76771`): SIMD lanes are
    not in production, but the shared complex-FMA path that bought them −22–35%
    also took the packed complex idiom away from the production scalar
    evaluator — the commit's own message records "scalar forward regresses
@@ -103,7 +103,7 @@ scope here.
 
 ### 1.2 `mg_perf_compare`: both halves of the triage suspicion are confirmed
 
-Checked 2026-08-05 against the tree at `1e5b950`:
+Checked 2026-08-05 against the tree at `df3836f`:
 
 1. **The manifest is not the source of the timing registry.**
    `validation/madgraph/gen_amplitude.py` carries its own hardcoded `PROCESSES`
@@ -293,7 +293,7 @@ reorder any draw).
 
 *(performance-dev)*
 
-Commit `3dab3a1` routed the hot complex primitives (`cmul`/`cmul_add` in
+Commit `be76771` routed the hot complex primitives (`cmul`/`cmul_add` in
 `helas/repr/lorentz.rs`, feeding `dot`/`dot_lorentz`, `slash_bispinor`, the
 currents and `scalar_bilinear`) through element-wise real `F::mul_add`, shared
 between the scalar and lane fields because `Complex<NumericArray<f64, N>>`
@@ -315,7 +315,7 @@ The session, in order:
    associated functions on `Real` with a default body equal to today's shared
    real-FMA construction — overridden for `f64` to defer to the
    `Complex<f64>` `num_traits::MulAdd`/operator path the scalar evaluator used
-   before `3dab3a1`. Lane fields keep the default, so no lane row may move a
+   before `be76771`. Lane fields keep the default, so no lane row may move a
    bit (asserted). The real-valued `p3_squared`/`m2` single-rounding fixes are
    orthogonal and stay.
 3. **Re-scope the bit-identity contract consciously.** `lanes.rs`'s
@@ -461,13 +461,13 @@ wave 2 (serial):    S6 (B1, after S1+S2)  →  S7 (V26)  →  S8 (C0, after all)
 ## 5. Close-out (S8, 2026-08-05)
 
 Eight of the nine planned sessions merged; S9 was killed by its own
-pre-registered criterion and landed nothing. `main` @ `225657a` carries every
+pre-registered criterion and landed nothing. `main` @ `b0e08d3` carries every
 merge below. This section is the addendum's own close-out — the last debt
 note 31's close-out could not pay because its charter forbade code edits.
 
 ### 5.1 Per-session outcomes
 
-- **S1 (E3b + I5, `824bfc8`/`a684f4d`)**. `FixedBeamIntegrand` drew the scale
+- **S1 (E3b + I5, `72d81ca`/`6e44f1d`)**. `FixedBeamIntegrand` drew the scale
   configuration before checking the cut, paying `eval_amp2` + `set_alpha_s`
   for a channel selection a rejected point would discard (~190 ns on 22% of
   `gu_to_epemu`/`gux_to_epemux` points). `scale_u` is always a slice of the
@@ -478,7 +478,7 @@ note 31's close-out could not pay because its charter forbade code edits.
   the same fix I1 already made one level up to VEGAS's own iteration
   combination; every hadronic row moved, all ≤0.02% and within its unchanged
   tolerance.
-- **S2 (I6, `49dc87d`/`dc2e581`)**. Read `w_max` off MadGraph's own `unwgt.f`
+- **S2 (I6, `0aba406`/`5713a29`)**. Read `w_max` off MadGraph's own `unwgt.f`
   truncation-ladder rule (the lowest scanned weight leaving under 1% of a
   channel's scanned cross section above it, re-normalised) rather than the
   scan's extremum, which a Pareto tail of index ≈ 2 never lets converge.
@@ -488,7 +488,7 @@ note 31's close-out could not pay because its charter forbade code edits.
   the fix, 477 125 after (4.36× cheaper per effective event). `Unweighter::scan`
   now runs its per-channel scans on a `rayon::par_iter`, bit-identical at
   `--max-truncation 0`.
-- **S3 (J1 + I4b, `e8cd61e`/`43a9f51`)**. `survey_variance` now runs its point
+- **S3 (J1 + I4b, `1c15cf4`/`5ff1de5`)**. `survey_variance` now runs its point
   loop in one rayon region over I3's deterministic chunking — each chunk
   addresses its own substream by point index and seeks straight to its first
   point, so the split changes only the summation order (per-chunk partials
@@ -505,7 +505,7 @@ note 31's close-out could not pay because its charter forbade code edits.
   fixed-budget callers were made explicit, no pinned CLI/Pythia artifact
   actually depended on the old default-budget path, so there was nothing left
   to re-pin.
-- **S4 (M1, `db33913`/`767bb2d`)**. Closed all three §1.2 findings:
+- **S4 (M1, `e6d1d66`/`3fd56ad`)**. Closed all three §1.2 findings:
   `validation/manifest.toml` gained a per-row `mg_amplitude` table and
   `gen_amplitude.py` reads it instead of its own hardcoded registry (dry-run
   parameter dump byte-identical across the migration); `mg_timings.json`
@@ -519,7 +519,7 @@ note 31's close-out could not pay because its charter forbade code edits.
   (14-row geomean 1.06×, kept as the continuity figure) — that is the honest
   number the biased 14-row sample was hiding, not a regression from this
   session's own work.
-- **S5 (E4, `143e8e9`/`3ffcf7e`)**. Scoped as "accept/reject allocator
+- **S5 (E4, `326f7ce`/`a7f5a2c`)**. Scoped as "accept/reject allocator
   traffic," but the actual allocation hoisted out was
   `ScaleChoice::cluster_scales`'s per-event rebuild of three `BTree`
   containers — a different, adjacent piece of the same profile from the one
@@ -534,7 +534,7 @@ note 31's close-out could not pay because its charter forbade code edits.
   `validate_unweighting` **−16.8%** and the partonic σ gate **−11.1%**
   end to end, byte-identical throughout (2000 events byte-for-byte on the
   clustering-scale card, before and after).
-- **S6 (B1, `551b3f7`/`59d1865`)**. Sized `pp_to_jj`, `pp_to_bb_fixed`,
+- **S6 (B1, `d1adce7`/`a914234`)**. Sized `pp_to_jj`, `pp_to_bb_fixed`,
   `pp_to_bb`, `pp_to_bb_qcd2` and `pp_to_ll_scalefact2` 300k→75k under a
   ladder+sweep license; `pp_to_llj` (both the fixed-scale and re-carded rows)
   stayed at 150k on the floor that always wins over a precision argument — the
@@ -547,7 +547,7 @@ note 31's close-out could not pay because its charter forbade code edits.
   addendum's full scale). `probe_bb_budget_ladder` had no committed ladder at
   all before this session — `BB_NEVAL` cited a three-seed scan with no
   instrument behind it — so it was added alongside the other three.
-- **S7 (V26, `d850b57`/`225657a`)**. The 2→6 rows' `Plan::Skip` blamed a
+- **S7 (V26, `1cf96dd`/`b0e08d3`)**. The 2→6 rows' `Plan::Skip` blamed a
   "~1 ms/eval" matrix element; the gate's own harness reads **64/71 µs** —
   stale by more than an order of magnitude — and even the flat-RAMBO map the
   premise offered as the affordable alternative is wrong for an unrelated
@@ -570,7 +570,7 @@ note 31's close-out could not pay because its charter forbade code edits.
 - **S9 (E5, no merge)** — **killed clean**. The plan's kill criterion was "if
   the packed idiom no longer wins ≥2% forward geomean, record the numbers and
   land nothing"; the session found something sharper than a null result — the
-  packed complex idiom `3dab3a1` traded away is **x86-specific** codegen, and
+  packed complex idiom `be76771` traded away is **x86-specific** codegen, and
   forcing it back via the in-house `MulAdd` trait on this ARM host (M3 Max)
   cost **8–9%**, the opposite of a win. The kill criterion fired and nothing
   merged: `add-s9-packed-complex`'s worktree is clean and its branch carries no
@@ -621,13 +621,13 @@ consistent with this sprint cycle's running pattern:
   saving 3.5%.
 - **S8 (this session)** found the assignment brief's claim that
   `probe_bb_budget_ladder` "has no pixi task and is unnamed in `validate-deep`'s
-  long-tier text" was itself stale — S7's merge (`d850b57`) added `ladder-bb`
+  long-tier text" was itself stale — S7's merge (`1cf96dd`) added `ladder-bb`
   alongside `ladder-2to6` and `ladder-recarded` and named all three in
   `validate-deep`, so no action was needed there.
 
 ### 5.3 Close-out measurements
 
-All measured 2026-08-05, same worktree (`vibegraph-addendum/s8` @ `225657a`
+All measured 2026-08-05, same worktree (`vibegraph-addendum/s8` @ `b0e08d3`
 plus this session's docs-only commit), same M3 Max. The host was not quiet in
 the note-30/31 sense (`mds_stores`/`mediaanalysisd` background indexing held
 load average in the 6–25 range through most of this session, against note 31
@@ -662,7 +662,7 @@ through — the addendum's CPU-time saving is real and larger than its wall-time
 saving, and the wall-time saving on this run was masked entirely by
 background load neither S6 nor this session controls.
 
-**Quiet-host re-run (post-close-out, same day, main @ `cb2436f`)**: with no
+**Quiet-host re-run (post-close-out, same day, main @ `8cdb180`)**: with no
 sibling work and background daemons idle (load average 1.8), two back-to-back
 rounds of the identical command. The first paid rustc recompilation of the two
 test binaries this session's own comment edits had dirtied (381.3 s wall,

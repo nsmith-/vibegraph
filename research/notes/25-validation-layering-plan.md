@@ -483,7 +483,7 @@ concrete-subprocess rows, stated in the manifest):
 `--restrict` override (CLI feature).
 
 **Closed by user decision (2026-07-31)**: licensing is resolved on `main` at
-`a1a4ae7` (dual `MIT OR Apache-2.0`); the U2 question of whether banked test
+`4ce1b0c` (dual `MIT OR Apache-2.0`); the U2 question of whether banked test
 artifacts need their own source-form notice is dropped — they are *outputs* of
 the MadGraph program, not redistributed MadGraph source, so no notice is owed.
 The refdata bundle (§5.2) inherits this position.

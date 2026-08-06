@@ -861,12 +861,12 @@ for two of the three colour gates; both now have one.
 
 ## P2 outcome (partial, 2026-07-30) ⚠️ INCOMPLETE — one commit landed, integrand not built
 
-Branch `proton-events`, commit `1d8e9bf`. The session was cut off twice by
+Branch `proton-events`, commit `9a48bf0`. The session was cut off twice by
 infrastructure stalls; the phase-space groundwork is committed and green, the
 hadronic integrand itself is **not started**. This section records what is proven,
 what the design settled on, and the order a successor should resume in.
 
-### Landed: `1d8e9bf` — per-energy channels, spacelike floor, real weight check
+### Landed: `9a48bf0` — per-energy channels, spacelike floor, real weight check
 
 Three changes to `phasespace`, all with every existing caller unchanged and the
 default `cargo test` gate green (`cargo build` clean, 489 lib + 10 diagram-channel
@@ -1184,7 +1184,7 @@ is unchanged and no tolerance was loosened anywhere.
 
 ## P2c outcome (2026-07-30) ✅ — the flavour-group derivation
 
-Branch `proton-events`, one commit `0670068`. Resume item 3 of P2's order: the
+Branch `proton-events`, one commit `b130d0c`. Resume item 3 of P2's order: the
 `(subprocess-group, flavour-class)` decomposition, in a new
 `vibegraph-lib/src/proton.rs`. Items 4–6 (`ProtonIntegrand`, α-adaptation, the
 fixed-ŝ validation) are untouched and their design stands.
@@ -1376,7 +1376,7 @@ above.
 
 ## P2d outcome (2026-07-30) ✅ — the integrand
 
-Branch `proton-events`, three commits (`f9fe0fc`, `8840e63`, `613af41`). This is the
+Branch `proton-events`, three commits (`2a7da37`, `1627be4`, `1e3c324`). This is the
 last slice of P2: resume items 4, 5 and 6 — `ProtonIntegrand`, the joint
 α-adaptation, and the in-session validation. P2's design stands; the corrections
 below are recorded rather than absorbed.
@@ -1577,8 +1577,8 @@ the natural first step.
 
 ## P3 outcome (2026-07-30) ✅ — the σ gate at `lpp = 1`
 
-Branch `proton-events`, two commits: `d35fc98` (routing + artifact schema) and
-`02e009a` (the gate). P2/P3's design stands; the corrections below are recorded
+Branch `proton-events`, two commits: `fa63166` (routing + artifact schema) and
+`f261372` (the gate). P2/P3's design stands; the corrections below are recorded
 rather than absorbed.
 
 ### The routing, and a latent bug it uncovered
@@ -2151,7 +2151,7 @@ x86_64" means here.
   exit 0 with zero trials when `validation/madgraph/output/` doesn't exist)
   already makes a bare `cargo test` CI-safe — nothing extra needed in
   `ci.yml`.
-- `--version`, in-git, no tag: `vibegraph 246ae4e-dirty` (matches
+- `--version`, in-git, no tag: `vibegraph c6f3c32-dirty` (matches
   `git describe --tags --always --dirty=-dirty` on this checkout, which has no
   tags yet).
 - `--version`, in-git, with a local test tag: created `v0.1.0-test-u1`
@@ -2299,7 +2299,7 @@ drwxr-xr-x  0 ncsmith admin       0 ... vibegraph-local-verify/
 -rwxr-xr-x  0 ncsmith admin 6790416 ... vibegraph-local-verify/vibegraph
 $ tar xzf ... && diff THIRD-PARTY-NOTICES <extracted copy>   # byte-identical
 $ ./extracted/vibegraph --version
-vibegraph 246ae4e-dirty
+vibegraph c6f3c32-dirty
 ```
 
 **Whether anything else shipped needs the same treatment**, checked and not
@@ -2836,7 +2836,7 @@ Also checked, since the binary is in hand anyway: the release tarball's
 ```
 $ bash scripts/acceptance.sh --binary target/release/vibegraph
 === version
-vibegraph 42d4eed
+vibegraph a96aad5
 === an unattended run refuses to download the PDF set
 refused, naming --yes and the URL
 === with consent, the PDF set is downloaded, verified and cached
@@ -2989,8 +2989,8 @@ both the flag and the cache step, whose directories are built differently.
 ## Sprint close-out (2026-07-31) ✅
 
 Track U merged into Track P on `main`, Acceptance A flipped to the llj cards,
-and the commit-time regression fixed. Four commits: `bb395c5` (merge), `38acc52`
-(dev profile), `6e59311` (comment cleanup), `2653602` (Acceptance A).
+and the commit-time regression fixed. Four commits: `e671ada` (merge), `0212993`
+(dev profile), `72295e0` (comment cleanup), `cb4b5e5` (Acceptance A).
 
 ### The merge
 

@@ -1172,7 +1172,7 @@ worktree-fragility rule and the B1/B3-before-B4 constraint verbatim.
 ## 7. Close-out (2026-08-01)
 
 All seven sessions closed, merged to the `v3-backlog` integration branch
-(`a55447f`), final gate green on that tip: hermetic complete, `pixi run
+(`0d72bd8`), final gate green on that tip: hermetic complete, `pixi run
 --skip-deps validate` exit 0. The user decides the merge to `main`; nothing is
 pushed, and `refdata-3` is assembled and verified but not published.
 

@@ -11,10 +11,10 @@ Two of the four sessions are unblocked *because* of `validation-2` V5
 1e-10, which together turn the rooting-CSE headroom (S4) from "silently corrupts
 the amplitude" into a realizable win.
 
-## Sprint outcome — ✅ CLOSED 2026-07-21 (all four sessions merged to `main`, HEAD `ee6be0e`)
+## Sprint outcome — ✅ CLOSED 2026-07-21 (all four sessions merged to `main`, HEAD `6ab25f1`)
 
 All four sessions landed. **Cumulative** `eval_strategies/forward` speedup, measured
-clean end-to-end (pre-sprint `0707f48` → post-S4 `ee6be0e`, release, Apple M3 Max,
+clean end-to-end (pre-sprint `86b3e0a` → post-S4 `6ab25f1`, release, Apple M3 Max,
 criterion median; times are per 16-eval batch):
 
 | process | before | after | speedup | Δ |
@@ -31,13 +31,13 @@ Every benchmarked process improved (1.18×–2.19×), on top of the earlier eval
 8.6×–110× → 1.2×–3.5× vs MG — the fresh vs-MG measurement (§ below, 2026-07-28) puts
 the residual gap at **0.72×–1.69×, geomean 1.24×**. Session contributions:
 
-- **S1 `mul-split`** (`fa65c23`): the broad base win — helped every process (−13…−44%),
+- **S1 `mul-split`** (`95fca7f`): the broad base win — helped every process (−13…−44%),
   biggest on the Mul-heavy `gg_to_gg`. Bit-exact.
-- **S2 `dag-validate-once`** (`a8cfe29`): no release change (validation is `cfg`'d out);
+- **S2 `dag-validate-once`** (`b53faf6`): no release change (validation is `cfg`'d out);
   retired the "extended-validation timings run ~4–5× hot" caveat (3.1×–5.4× faster there).
-- **S3 `zeroamp-skip`** (`5a4c4cc`): the colored-2→2 win (ee_to_ee, uux, gg_to_gg) —
+- **S3 `zeroamp-skip`** (`c9f826d`): the colored-2→2 win (ee_to_ee, uux, gg_to_gg) —
   beat its "likely small" prior. Bit-exact.
-- **S4 `rooting-cse`** (`ee6be0e`): the multi-leg win (2→3/2→4/2→6, −18…−26%), neutral on
+- **S4 `rooting-cse`** (`6ab25f1`): the multi-leg win (2→3/2→4/2→6, −18…−26%), neutral on
   2→2 (their vertices tie on external-leg count, so no re-rooting). Reassociating (values
   shift) but **`validate_helas_mg` stayed at its tight 1e-12** — the plan's feared
   "1e-14 → 1e-10 agreement cost" did **not** materialize (shorter/more-shared current
@@ -52,7 +52,7 @@ Deferred backlog below unchanged.
 The direct joint rerun the close-out deferred. Fingerprint: Darwin arm64
 (Apple M3 Max), rustc 1.94.1, RUSTFLAGS unset (default codegen, both sides),
 `mg_timings.json` of 2026-07-21 (same host, MG side unchanged since), vibegraph
-at `ba9b4a8` (+doc-only edits). All **14 gated processes**, `eval_m2/forward`
+at `405d18b` (+doc-only edits). All **14 gated processes**, `eval_m2/forward`
 criterion medians:
 
 | process | MG ns/eval | vg ns/eval | vg/MG |
@@ -192,7 +192,7 @@ re-expansion.
 **Bit-for-bit.** Only exact zeros and sub-half-ulp residues are dropped (same
 threshold discipline as the combination filter), so the pruned sum stays byte-equal.
 
-**Outcome (`5a4c4cc`, DONE — beat the prior).** The "expected small" guess was wrong:
+**Outcome (`c9f826d`, DONE — beat the prior).** The "expected small" guess was wrong:
 `forward` improved **−17%…−32%** on exactly the colored 2→2s that were the widest
 gaps vs MG (ee_to_ee −32%, uux_to_uux −27%, gg_to_gg −17%), neutral elsewhere (no
 regressions). Node reductions: ee_to_ee 165→109, uux 138→98, gg_to_gg 775→625,
@@ -239,7 +239,7 @@ against the current baseline — gate at `REL_TOL` 1e-10 (the V5 floor) via
 S4 last: it is the highest-risk/highest-variance session and benefits from S1's
 instruction census already in place.
 
-**Outcome (`ee6be0e`, KEEP).** Production `choose_root` now returns the vertex with
+**Outcome (`6ab25f1`, KEEP).** Production `choose_root` now returns the vertex with
 the **fewest directly-attached external legs** (ties → lowest vertex index):
 `canonical_root` in `root_diagram.rs`, wired into both production and test `choose_root`.
 Soundness confirmed (`all_rootings_preserve_amplitude` 0/133 at 1e-10, both before and

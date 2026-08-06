@@ -370,7 +370,7 @@ in advance, the derivation step that decides it.
 | 4c | Pure-metric vertex −1 (VVS/VVSS/VVVV) | `root_lorentz.rs:530-537`, once per term (`metric_vertex_applied`) | `mg_guard_…` (`g g > g g`, channel 2 > 0); `root_lorentz::tests::test_root_vvs_metric` (`build_sign == -1`, line 1202, amplitude root) and `…::test_root_vvs_metric_scalar_out` (line 1235, scalar-out root) | −1 once per term |
 | 4d | Standalone-projector-crossed −1 | `root_lorentz.rs:654` | `e+ e- > ta+ ta- H` (H off the crossed τ line) vs MG `AMP()` | −1 |
 | 5 | Yang–Mills VVV source sign | `root_diagram.rs:996` `yang_mills_vvv_sign` | `root_diagram::tests::yang_mills_vvv_sign_fires_only_for_source_vvv`; `mg_guard_…` (`e+ e- > W+ W-`, channel 0 > 0) | −1 per VVV vertex at index ≥ 1 |
-| 6 | VVVV amplitude phase | commit `eda4412`, which deleted `Op::MetricNegI` end to end | `gg_to_gg` promoted to `EXPECT_MATCH` in `validate_helas_mg.rs` at `REL_TOL` 1e-12 (observed 8.25e-14); `amplitudes/gg_to_gg.json` row | real **−1** — *not* −i |
+| 6 | VVVV amplitude phase | commit `b62ac17`, which deleted `Op::MetricNegI` end to end | `gg_to_gg` promoted to `EXPECT_MATCH` in `validate_helas_mg.rs` at `REL_TOL` 1e-12 (observed 8.25e-14); `amplitudes/gg_to_gg.json` row | real **−1** — *not* −i |
 | 7 | Colour 3/3̄ slot swap | colorize walk (note 16 §2.4): unconditional swap of the single 3 and 3̄ slots at every vertex having one of each | `tests/color_cf.rs::gg_to_ttx_flow_structures_untransposed` | `flow_structures == [T(1,2,3,4), T(2,1,3,4)]`, exactly one imaginary contribution per flow |
 | 8 | Fitted global constant `G` | `tests/amplitude_oracle.rs:581` `fit_constant` (least squares `Σ conj(mg)·vg / Σ|mg|²`), called at line 1016 | asserted `|G| = 1` at 1061-1068 and `Re G = 0` at 1069-1075, both at `LINEAR_REL_TOL = 1e-12` | `G ∈ {+i, −i}`; **the sign is not asserted**, only printed (`g.im.signum()`, ~line 1136) |
 | 9 | Fitted per-configuration phases `k` | `tests/amplitude_oracle.rs:1101` (`fit_constant` per configuration) | `|k| = 1` asserted at 1117-1124; residual at 1111-1116 | unit modulus only — **the phase of `k` is entirely free**, one per configuration per process |
@@ -419,7 +419,7 @@ and `P = V − 1` internal propagators the accumulated phase is
 That is the derivation of row 8's `|G| = 1, Re G = 0` — zero free parameters —
 and it is also why row 6 had to be a real −1: the VVVV contact diagram is the
 one banked diagram whose line carries *no* propagator, so an extra `−i` there
-was an uncancelled 90° phase rather than a convention (commit `eda4412`'s own
+was an uncancelled 90° phase rather than a convention (commit `b62ac17`'s own
 message says exactly this). Consequently, of row 8 only **the sign of `G`**
 is genuinely fitted, and the charge-flow rule's headline test is whether that
 sign, across all 20 processes in `validation/madgraph/amplitudes/`, is a
@@ -582,7 +582,7 @@ Named inputs the research session reads:
   `compile_single_diagram` ~1042, `channel_counts` 1204,
   `mg_guard_processes_exercise_every_convention_channel` 1237).
 - `kernel.rs:238-243` and `:639` for the propagator/vertex `i` convention;
-  commit `eda4412` for the VVVV history.
+  commit `b62ac17` for the VVVV history.
 
 Long runs (`amplitude_oracle`, `all_rootings_preserve_amplitude`) go to the
 background with a `chainF_` log prefix. No MG regeneration is needed anywhere in
@@ -663,7 +663,7 @@ regenerates no reference data, so no census cell can move as a result of it.
   the *modulus* is asserted. Row 9 above; the bar counts them.
 - The brief attributes the VVVV −i to "note 16 §6". §6 mentions it only in
   passing (observation 5, "imaginary VVVV coupling"); the actual record is
-  commit `eda4412`, and the resolution was to replace the −i with a real −1 and
+  commit `b62ac17`, and the resolution was to replace the −i with a real −1 and
   delete `Op::MetricNegI` end to end. The research session should read the
   commit, not only §6.
 - `p p > j j` is named in the brief's neighbourhood as slot-swap territory but
@@ -673,7 +673,7 @@ regenerates no reference data, so no census cell can move as a result of it.
 ## Chain F findings (2026-08-03)
 
 Research-only sidecar, executed against the pre-registration in
-`## Chain F design (2026-08-02)` (commit `391affd`). No production file is
+`## Chain F design (2026-08-02)` (commit `1c34354`). No production file is
 modified by this section; the instrumentation used to obtain the numbers below
 was a scratch patch to `helas/eval/root_diagram.rs`'s test module and to
 `tests/amplitude_oracle.rs`, run and then reverted — the working tree was
@@ -1136,7 +1136,7 @@ Reported, not patched around, as the brief requires.
    F.7; noted here because a future pre-registration should site its falsifier
    on a dump-visible quantity.
 8. The dispatch brief's own errors were already caught by the design's F.6 (133
-   not 165 re-rootings; the second family of fitted phases; `eda4412` rather
+   not 165 re-rootings; the second family of fitted phases; `b62ac17` rather
    than note 16 §6; `p p > j j` has no amplitude dump). All four confirmed
    correct as F.6 states; nothing to add.
 
@@ -2420,8 +2420,8 @@ point of widening the oracle before, not after, flipping the cell.
 Second design session, after implementation falsified the first design's central
 classification. It supersedes **A.1 items 4–7** and **A.2's T3 and T4**, and
 corrects **A.0 Fact 2** and **A.4's "unreachable today"** claim. A.1 items 1–3
-and 8 are landed as `8a56825`; A.2's T1, T2, T5–T8, A.3 and A.5 stand except
-where said below. Written against the worktree at `8a56825`, with the withheld
+and 8 are landed as `0b68496`; A.2's T1, T2, T5–T8, A.3 and A.5 stand except
+where said below. Written against the worktree at `0b68496`, with the withheld
 implementation attempt (`chainA_full_attempt.patch`, 1252 lines) as raw material.
 
 ### B.0 What was wrong, and the measurement that settles the replacement
@@ -2499,7 +2499,7 @@ flow `f` is the one carrying the same amplitude, i.e. `JAMP'_{π(f)} = ± JAMP_f
 — and `π` must be **computed per member**, never assumed. B.2 makes that
 computation structural.
 
-### B.2 Change list against the current worktree (`8a56825` landed)
+### B.2 Change list against the current worktree (`0b68496` landed)
 
 The shape of the fix: **each member carries its own subprocess's colour-flow
 table, reordered once into the representative's flow indexing.** Nothing is
@@ -2668,7 +2668,7 @@ anti-vacuity assertions named.
 ### B.4 Gates and expected movement
 
 Unchanged from A.3, with two additions: `pixi run --skip-deps
-validate-color-flow-tags` is already green at **73 trials** on `8a56825` and must
+validate-color-flow-tags` is already green at **73 trials** on `0b68496` and must
 stay so (the counts in A.0/A.1 said 49/79; the correct figures are **47 files /
 73 isprocs**, the difference being the since-retired `pp_to_llj_qcd2_qed2`), and
 the hermetic suite now carries T9–T12.
@@ -2683,7 +2683,7 @@ E1 is unchanged and is still the target:
 
 Must not move: every other printed field, `pp_to_jj`'s own `integrals` cell, and
 every row of `pp_to_llj*`, `pp_to_bb*`, `pp_to_ll*`. The zero-line report diff
-the implementation session already recorded for `8a56825` is the baseline the
+the implementation session already recorded for `0b68496` is the baseline the
 next diff is taken against.
 
 ### B.5 Risks, and what this provably cannot break
@@ -4329,14 +4329,14 @@ resolved as `pdlabel` where MadGraph would resolve it as `nn23lo1`.
 ## Chain C2 design amendment (2026-08-03)
 
 Supersedes C2.4's change list items 2–4 and tests T5a/T5b. C2.0–C2.3 and
-C2.5–C2.7's T1–T4/T6 stand as landed in `30e88c1`. C2.4's *semantics* reading
+C2.5–C2.7's T1–T4/T6 stand as landed in `e546587`. C2.4's *semantics* reading
 of `reweight.f` stands and is what convicts the current code; only its "where
 it lives" was wrong.
 
 ### A.0 What the control falsified, re-verified here
 
 The implementer's three findings were re-checked against the worktree at
-`30e88c1` rather than taken on report:
+`e546587` rather than taken on report:
 
 1. **The veto already exists.** `coupling/cluster/setclscales.rs:468-473`:
    `if settings.beam_has_pdf[beam] && q2fact[beam] < MUF_FLOOR && !settings.fixed_fac[beam]`
@@ -4596,7 +4596,7 @@ loop. Concretely:
 
 ### A.4 (d) Gates and expected movement
 
-Everything the implementer landed in `30e88c1` stays; nothing in the audit half
+Everything the implementer landed in `e546587` stays; nothing in the audit half
 is reopened. Run, all with `--skip-deps`:
 
 - `cargo test --workspace` — T1–T4 as landed, plus T5a′, T5b′, T5c′,
@@ -4690,7 +4690,7 @@ accordingly.
 ## Chain B design (2026-08-03)
 
 Design session, read-only but for this section. Branch `val4-b`, cut from `val4`
-at `8ed8467` — after chain A's per-member colour-flow merge. Every claim about
+at `3e7da1c` — after chain A's per-member colour-flow merge. Every claim about
 this crate below was read out of *that* tree and carries a `file:line`; every
 claim about MadGraph was read out of the pinned checkout under `research/refs/`
 or out of a banked run directory, and carries a path.
@@ -5313,9 +5313,9 @@ whose own error is `0.22%` and which no scale rule can move.
 ### B.12 Errors found in the chain brief and in the note
 
 * **The brief's premise is sound and its checks all passed**: toplevel, branch
-  `val4-b`, `HEAD = 8ed84676`, clean tree. Chain A's merge (`8ed8467`, "per-member
+  `val4-b`, `HEAD = 3e7da1c1`, clean tree. Chain A's merge (`3e7da1c`, "per-member
   colour-flow tables via structurally-determined permutation") is in this
-  history, as are C1 (`6018549`) and E (`6f95f83`).
+  history, as are C1 (`ca8bd17`) and E (`372572e`).
 * **The note's chain B entry states MadEvent's rule unconditionally** as
   "weights the integrand of channel `c` by `AMP2_c/Σ AMP2`" (§K6.5, §K6.8, and
   TODO's standing-discrepancy entry). It is conditional on
@@ -5342,7 +5342,7 @@ whose own error is `0.22%` and which no scale rule can move.
 
 ### B-0 output — the baseline, and the pre-registered movement census (2026-08-03)
 
-Implementation session, branch `val4-b` at `1cfd9aa`. No production line changed:
+Implementation session, branch `val4-b` at `949ef6b`. No production line changed:
 the two probes below are `--ignored` test code, and the baseline was captured from
 this worktree before either was written.
 
@@ -5512,9 +5512,9 @@ stop-and-report either way.
 
 ### Chain B results (2026-08-03)
 
-Implementation, in four commits on `val4-b`: `9f7a1ea` (B-0 census), `33f561a`
-(B-1a plumbing), `a6384cc` (B-1b the draw), `825ef31` (B-1c tolerances), plus
-`a51c258` (B-3 rider) and `0440769` (B-4 artifact guard) from a separate session.
+Implementation, in four commits on `val4-b`: `890212c` (B-0 census), `86793c0`
+(B-1a plumbing), `cd011a1` (B-1b the draw), `02c6915` (B-1c tolerances), plus
+`c876ac2` (B-3 rider) and `22dc912` (B-4 artifact guard) from a separate session.
 
 #### The census, and what it corrected
 
@@ -5662,7 +5662,7 @@ None of §B.10's names exist in the tree. What delivers each, by real name:
 | 4 | `the_scale_draw_is_independent_of_the_bound_coupling` | same probe, third property | **yes, in observable form**. The design's literal form — build `AMP2` at two different `αs` — is not reachable from outside the crate, the pin being internal; its observable consequence is that evaluation history does not move the drawn configuration, which is what is asserted |
 | 5 | `a_non_default_sde_strategy_keeps_the_sampler_channel` | `the_configuration_draw_needs_both_run_card_fields` (`vibegraph-lib/src/hadronic.rs`, banked unit test) | **yes**, and it additionally pins that a card setting `tmin_for_channel` is refused upstream |
 | 6 | `the_clustered_rows_that_cannot_move_are_bit_identical` | — | **no**. The measurement exists as `probe_cluster_scale_spread_over_configurations` (both `validate_sigma.rs` and `validate_hadronic.rs`, `--ignored`) but it *reports* the spreads and asserts nothing about the rows that read zero. Promoting it means asserting `spread == 0.0` on the named rows; what keeps it out of the banked layer as written is that it builds sixteen fixed-beam integrands |
-| 7 | the rider's cell and the artifact refusal | `a51c258`, `0440769` | **yes** |
+| 7 | the rider's cell and the artifact refusal | `c876ac2`, `22dc912` | **yes** |
 
 The two gaps are stated rather than papered over. Item 1's frequency half is
 blocked on observability: no public API reports *which* configuration was drawn,
@@ -5852,10 +5852,10 @@ target and two tests**: `validate_alphas`'s
 `GRID_ALPHA_S_RUNS`, precisely so a run that changed source shows up as a
 failure rather than as a quiet reclassification. `pdlabel = lhapdf` makes
 MadGraph link the grid's α_s, so all four re-banked runs move into that class
-and the list — four fixed-scale names, unchanged since `main`'s 4deb883 — no
+and the list — four fixed-scale names, unchanged since `main`'s 8f41ecc — no
 longer describes them.
 
-The classification list is the same at `2322357`, so **the re-bank commit
+The classification list is the same at `370aaa7`, so **the re-bank commit
 itself left the gate red**; the failure is not the merge's and not phase 1's
 (removing phase 1's only artifact reproduces it verbatim). Updating
 `GRID_ALPHA_S_RUNS` in `validate_alphas.rs` and `validate_scales.rs` is coverage
@@ -5988,7 +5988,7 @@ two of them. The σ rows are the end-to-end statement, not the fine one.
 ### G.12 Retirement, and a correction to the phase-2 brief
 
 The brief asked for the four superseded run directories to be retired *from this
-worktree's* `output/`. They were not there: the re-bank commit `2322357`
+worktree's* `output/`. They were not there: the re-bank commit `370aaa7`
 regenerated in place, having already moved the `nn23lo1` originals to
 `~/src/generators/vibegraph-refdata-retired/`. Their event text is byte-identical
 to what `refdata-4` carries, checked by extracting the archive's own copies and

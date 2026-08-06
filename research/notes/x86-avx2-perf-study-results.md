@@ -32,7 +32,7 @@ dispatch loop, `helas/eval/run.rs:566`). Three findings drove the work:
 
 ## What happened (2 shipped, 1 reverted)
 
-### Commit `1b47771` — inlining tune (finding 3)
+### Commit `cf3f35b` — inlining tune (finding 3)
 
 Soft `#[inline]` on the six out-of-line `*_bare` kernels; `validate_arenas` →
 `#[inline(never)]`. Under `extended-validation` the hot frame shrank 520 → 296 B and the
@@ -147,7 +147,7 @@ arm64 build had 57). But the inline bounds *compare+branch* pairs are still ther
 −810 instructions, −105 conditional branches (−22% body size). So the transform is real;
 it just isn't visible by counting panic trampolines on this toolchain.
 
-**Bench (before = FMA HEAD `3dab3a1` / baseline `pre_unchecked`, after = +unchecked;
+**Bench (before = FMA HEAD `be76771` / baseline `pre_unchecked`, after = +unchecked;
 median Δ%, 56 cells):**
 
 | strategy | mean | median | min | max |
@@ -173,8 +173,8 @@ that were the study's actual motivation. Reverted; the evaluator remains 100% sa
 
 ## Cumulative outcome (whole study, `x86_avx2_perf` branch)
 
-Two shipped changes vs the pre-study `x86_avx2_perf` base (`90fe612`, the 14-process bench
-extension): **inlining tune** (`1b47771`) → **FMA/`mul_add`** (`3dab3a1`). The third
+Two shipped changes vs the pre-study `x86_avx2_perf` base (`b99bb40`, the 14-process bench
+extension): **inlining tune** (`cf3f35b`) → **FMA/`mul_add`** (`be76771`). The third
 (`get_unchecked`) was measured and reverted (above), so it contributes nothing to the
 shipped state. The arithmetic (FMA) is the whole story:
 

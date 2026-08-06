@@ -2,7 +2,7 @@
 
 **Status:** PLAN, drafted 2026-08-05. Design settled with the user in the
 originating session; §7 lists the points still open. Baseline: `main` @
-`319af7d` (post note-32 close-out; drafted before the channel-dedup census
+`e059092` (post note-32 close-out; drafted before the channel-dedup census
 close and the interned license notices merged — neither touches a surface this
 plan names). This is a UX/plumbing sprint — no physics
 surface moves, no tolerance changes, and the validation layer is a regression
@@ -347,7 +347,7 @@ Recorded so the next reader patches the note's model of the codebase:
 A graceful stop during warm-up banks no kept iteration and the combined σ is
 NaN; the first implementation would have printed `σ = NaN` and banked an
 artifact holding exactly the grids the warm-up discard exists to throw away.
-Fixed in `a791c87`: `ConvergenceReport` carries `kept_iterations`, and a run
+Fixed in `05b4839`: `ConvergenceReport` carries `kept_iterations`, and a run
 stopped before any kept iteration is refused (exit 1, no artifact, no σ
 line), pinned by `budget.rs` tests and a PTY run. The `StopSignal` is an
 explicit parameter of `integrate_channels`, not a global, and its inertness

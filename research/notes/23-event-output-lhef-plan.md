@@ -1,7 +1,7 @@
 # `event-output-lhef` — unweighted event output (sprint plan)
 
-**✅ CLOSED 2026-07-28, merged to `main` (ff, HEAD `073f482`; the model-digest
-hardening continued on `main` through `5849241`).** Close-out with session
+**✅ CLOSED 2026-07-28, merged to `main` (ff, HEAD `49124d5`; the model-digest
+hardening continued on `main` through `cd5d075`).** Close-out with session
 outcomes and the deferred table in §"Sprint close-out" below.
 
 Sprint B of the two-sprint events program opened in note 21 (Sprint A =
@@ -271,8 +271,8 @@ sweep seeds before trusting the σ agreement.
 ### E2 outcome (2026-07-28) ✅
 
 `unweight::Unweighter` (`vibegraph-lib/src/unweight.rs`) + the
-`validate_unweighting` gate. Landed in two commits (`6c36411` selection
-primitives, `6f1b226` accept/reject) — the session was interrupted twice by
+`validate_unweighting` gate. Landed in two commits (`6a81986` selection
+primitives, `9195d21` accept/reject) — the session was interrupted twice by
 infrastructure failures, and committing at the seam is why nothing was lost.
 
 **Plan correction — the channel draw.** The brief said draw the channel
@@ -374,7 +374,7 @@ on disk (13+ processes) and are what `validate_scales` already replays.
 
 `vibegraph-lib/src/lhef/` in four layers — `record` (the `<init>` and `<event>`
 blocks as data), `write`, `parse`, `build` (assembling a record from what the
-generator produces) — plus the `validate_lhef` gate. Commit `2154222`.
+generator produces) — plus the `validate_lhef` gate. Commit `04d5da4`.
 
 **Plan correction — the gate the brief asked for was not achievable, and the
 brief's format reference was the wrong file.** Two separate corrections:
@@ -563,7 +563,7 @@ event weights matches the `integrate` σ within MC error.
 `vibegraph generate <artifact> <proc-card> [--run-card …] [--nevents N]
 [-o events.lhe] [--strategy …] [--seed …]`, plus the generic
 `lhef::emit::UnweightStrategy` the output mode is chosen through. Commit
-`2df978b`.
+`8234ede`.
 
 **The proc card is an argument, not an inference.** The artifact banks the
 process string and the resolved run card, but not the compiled amplitude and not
@@ -853,14 +853,14 @@ file.
 
 | Session | Commit(s) |
 |---|---|
-| sprint opened | `4e9f337` |
-| E1 `jamp2-flow-select` | `059918c` |
-| E1c NCOLOR=6 JAMP diagnosis | `5b7f79e` |
-| per-channel VEGAS grids (detour, before E2) | `9afcbe4` |
-| E2 `accept-reject` | `6c36411`, `6f1b226`, `bd0755e` |
-| E3 `lhef-writer` | `2154222`, `8d9a337` |
-| E4 `generate-cli` | `2df978b`, `a349878` |
-| post-E4 model identity in the artifact | `fc11526` |
+| sprint opened | `5dfdba6` |
+| E1 `jamp2-flow-select` | `2242c13` |
+| E1c NCOLOR=6 JAMP diagnosis | `5820c59` |
+| per-channel VEGAS grids (detour, before E2) | `d73fbca` |
+| E2 `accept-reject` | `6a81986`, `9195d21`, `071a168` |
+| E3 `lhef-writer` | `04d5da4`, `63b4657` |
+| E4 `generate-cli` | `8234ede`, `3d84ea6` |
+| post-E4 model identity in the artifact | `8f01091` |
 
 **What the sprint delivered.** `eval_jamp2` and the `leshouche.inc`-checked
 flow → `ICOLUP` dictionary (24/24 subprocesses, strong form including

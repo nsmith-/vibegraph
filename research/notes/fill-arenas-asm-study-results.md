@@ -1,6 +1,6 @@
 # `fill_arenas` instruction-level study
 
-**Date:** 2026-08-04 · **Host:** Apple M3 Max, macOS 15.7.7, `aarch64-apple-darwin` · **Repo:** `/Users/ncsmith/src/generators/vibegraph` @ `c40c923` (shared main checkout; no source edited, nothing committed, `validation/` untouched)
+**Date:** 2026-08-04 · **Host:** Apple M3 Max, macOS 15.7.7, `aarch64-apple-darwin` · **Repo:** `/Users/ncsmith/src/generators/vibegraph` @ `9bad54c` (shared main checkout; no source edited, nothing committed, `validation/` untouched)
 **Target:** `vibegraph::helas::eval::run::fill_arenas` (`vibegraph-lib/src/helas/eval/run.rs:856`), `F = f64`, `release-debug` (thin LTO, `opt-level=3`, `debug=1`), `extended-validation`.
 
 ## 0. Headline
@@ -228,7 +228,7 @@ All from `/Users/ncsmith/src/generators/vibegraph`; `OD=$(xcrun -f llvm-objdump)
 $ git rev-parse --show-toplevel
 /Users/ncsmith/src/generators/vibegraph
 $ git log --oneline -1
-c40c923 Merge perf-baseline-timing: per-stage timing baseline vs MadGraph
+9bad54c Merge perf-baseline-timing: per-stage timing baseline vs MadGraph
 ```
 
 **2 — build** (backgrounded; `fas-build.log`)

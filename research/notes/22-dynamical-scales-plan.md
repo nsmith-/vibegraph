@@ -1,6 +1,6 @@
 # `dynamical-scales` — running couplings and the per-event scale (sprint plan)
 
-**✅ CLOSED 2026-07-27, merged to `main` (ff, HEAD `3a98900`).** D1–D4 landed;
+**✅ CLOSED 2026-07-27, merged to `main` (ff, HEAD `249ec5b`).** D1–D4 landed;
 D5 stayed optional and was not needed. Close-out with session outcomes at the
 end of this note.
 
@@ -265,8 +265,8 @@ Every session stays behind the 14-process `validate_helas_mg` bit-exact net.
 
 ## Sprint close-out (2026-07-27) ✅
 
-All four required sessions landed on branch `dynamical-scales` (HEAD `5b1258f`)
-and fast-forwarded onto `main` (HEAD `3a98900`). D5 was not needed — §2 explains
+All four required sessions landed on branch `dynamical-scales` (HEAD `e61762f`)
+and fast-forwarded onto `main` (HEAD `249ec5b`). D5 was not needed — §2 explains
 why per-diagram coupling orders are not a dependency: the power of `G` lives in
 each vertex's coupling and a diagram's total power emerges from the product.
 

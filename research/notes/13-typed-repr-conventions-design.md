@@ -282,18 +282,18 @@ LO becomes imminent.
 re-plan (harness first; simplify before optimize; Stage A may defer). Status flags reflect
 `cleanup-refactor`.*
 
-1. **Terminology rename ✅ Done** (`84bd2d3`): `SpinorFlow`/`FlowIn`/`FlowOut` →
+1. **Terminology rename ✅ Done** (`ef5fe5d`): `SpinorFlow`/`FlowIn`/`FlowOut` →
    `DiracAdjoint`/`Ket`/`Bra` in `repr/lorentz.rs`; runtime `Flow`/`LegFlow` → `Adjoint`/`LegAdjoint`
    in `root_lorentz.rs`. "Flow" reserved for the in/out axis at `wavefn`.
-2. **Typed propagator seam ✅ Done** (`aed1a80`, `402322c`): `VectorWf` variance-parameterized;
+2. **Typed propagator seam ✅ Done** (`a6589ba`, `3b5801e`): `VectorWf` variance-parameterized;
    `WaveformSlot::VectorCo` carries the index-lowered currents; the propagator dispatches on slot
    variance. Variance/adjoint now live **on the register**, not a node tag. Killed
    `Op::PropagateLowered` + `PropInfo.lowered_storage` + `has_flipped_vector_out`.
 3. **Property-test harness (Stage 0) ✅ Done** (uncommitted): `helas/eval/prop_harness.rs` —
    typed random-input generators + variant-strict `slots_approx_eq` + the `check_agree` driver.
    The shared toolbox for steps 5a/5b.
-4. **Kernel factor-out + 1-1 `Op` naming ✅ Done** (`cleanup-refactor`, `e2ba8e7`; Stage 0 harness
-   committed first as `820614e`). New `helas/eval/kernel.rs` (`pub(crate)`) holds the Lorentz-
+4. **Kernel factor-out + 1-1 `Op` naming ✅ Done** (`cleanup-refactor`, `06823b0`; Stage 0 harness
+   committed first as `adfc3c3`). New `helas/eval/kernel.rs` (`pub(crate)`) holds the Lorentz-
    primitive kernels; each Lorentz `Op` maps 1-to-1 to a kernel fn named for it (snake_cased), so
    `run::apply` collapses to a match of `kernel::<op>(children)`. The N-to-1 cases got thin per-Op
    wrappers over shared private helpers (`gamma_iout`/`gamma_oout`→`off_shell_fermion_current`;
@@ -304,7 +304,7 @@ re-plan (harness first; simplify before optimize; Stage A may defer). Status fla
    bit-for-bit** (175 lib + `validate_helas_mg` 11/11, max_rel_diff ≤ 6.25e-13). Perf baseline
    (`benches/amplitude_eval`, ee→μμ, release, N=10k): ~14.0 µs/eval — the Stage-A profiling anchor.
 5. **Two equivalence stages on the harness — Stage B done, Stage A deferred:**
-   - **5b. Stage B ✅ DONE (2026-07-09, `cleanup-refactor` d537e1e/3c60fe0/5c95d5b): one physical
+   - **5b. Stage B ✅ DONE (2026-07-09, `cleanup-refactor` d5257ff/0af6731/0b84d62): one physical
      contravariant vector convention; `WaveformSlot::VectorCo` deleted.** The corrected-scope
      analysis (global amplitude-load-bearing rewrite) had shown a *producer-only* change with the
      producers held at their covariant values fails (5/11 MG broken); what resolved it was choosing

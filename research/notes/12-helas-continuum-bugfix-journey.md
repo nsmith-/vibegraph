@@ -28,23 +28,23 @@ defects in the validation setup itself, each masking the next.
 
 uux `max_rel_diff` vs MadGraph after each stage in parentheses.
 
-1. **Off-shell momentum routing** (2.26e10 → 6.95e6, commits around `e767d31`).
+1. **Off-shell momentum routing** (2.26e10 → 6.95e6, commits around `c2e7007`).
    Three conflated bugs: `evaluate_propagation` flipped momentum on every propagator
    (mis-routing every >1-vertex line → spurious poles); flow-in currents must subtract
    the boson momentum (`fvixxx`: `fi.p − v.p`) where flow-out adds it; a leg-index
-   crash. Also the VVS off-shell vector current (`MetricVout`, commit `abe77ea`).
+   crash. Also the VVS off-shell vector current (`MetricVout`, commit `99e4589`).
 2. **Flow-typed fermion slots** (with a QCD=0 validation-harness mismatch accounting
    for most of the remaining 4e6). `WaveformSlot::Fermion` split into
    `FermionIn`/`FermionOut`; the old "adjoint on demand" `.bar()`/`.unbar()` coercions
    corrupted `GammaJout` (the propagator `(q̸+m)` does not commute with the adjoint).
-3. **Flow-driven dispatch** (7.26e3 → 3.96e1, commit `d064e28`, 2026-06-14). External
+3. **Flow-driven dispatch** (7.26e3 → 3.96e1, commit `82c5e81`, 2026-06-14). External
    slots were all built flow-in and silently dualized at consumption; bra/ket must be
    picked by *physical* flow (`is_incoming == is_particle`), with UFO i/j selecting
    only which leg is input vs output. Plus the FFS Higgs-current momentum sign
-   (`fo.p + fi.p` → `fo.p − fi.p`, commit `24cedb5`), caught by a 2→5 Ward test.
+   (`fo.p + fi.p` → `fo.p − fi.p`, commit `9d47e24`), caught by a 2→5 Ward test.
 4. **Initial-state spine sign** (3.77e1 → 2.66e1; ee→μμττ 2.02e1 → 5.7e-3, commit
-   `959576d`). A fermion line joining the two incoming legs needs a crossing sign.
-5. **Crossed-line conjugation** (ee→μμττ 0.2–0.57% → 1.8e-14, commit `ea4b1a7`,
+   `6a6d920`). A fermion line joining the two incoming legs needs a crossing sign.
+5. **Crossed-line conjugation** (ee→μμττ 0.2–0.57% → 1.8e-14, commit `8cd2ff0`,
    2026-07-06 "S19"). feyngraph binds outgoing legs in the all-incoming (crossed)
    convention: a final-state pair evaluates `ū₁Γv₂` where the vertex is defined
    `ū₂Γv₁`. By `ū₁Γv₂ = −ū₂(CΓᵀC⁻¹)v₁` this is exact for γ^μ, conjugates chiral
@@ -53,7 +53,7 @@ uux `max_rel_diff` vs MadGraph after each stage in parentheses.
    inspection can detect it — it required an explicit per-leg `crossed` bit
    (`LegFlow`) threaded through the bake.
 6. **Chain-phase normalization + spine-sign parity** (2.66e1 → 2.14e-13, commit
-   `1740c2c`, 2026-07-06 "S20"). The V-propagator carried −i/D (bit-matched to MG),
+   `51ed7d7`, 2026-07-06 "S20"). The V-propagator carried −i/D (bit-matched to MG),
    the F-propagator no i, the S-propagator −i/D — so every fermion or scalar chain
    deviated by ×i per chain relative to MadGraph. Uniform per process until uux mixed
    the 2-F-chain continuum with the 1-S-chain ZZH Higgs class. Fix: F-prop
@@ -64,7 +64,7 @@ uux `max_rel_diff` vs MadGraph after each stage in parentheses.
 Two **oracle defects** fixed along the way, without which none of the endgame was
 possible:
 
-6′. **UFO restrict-card parameters discarded** (commit `fa8fff5`): `restrict_default.dat`
+6′. **UFO restrict-card parameters discarded** (commit `c8ee1bd`): `restrict_default.dat`
    was used for vertex pruning only, so Rust ran physical lepton masses against MG's
    massless-baked matrix elements. Fixing it (and evaluating with each process's
    actual `param_card.dat`) took ee→μμ / pp→ll from 6.7e-4 "agreement" to 1e-14
