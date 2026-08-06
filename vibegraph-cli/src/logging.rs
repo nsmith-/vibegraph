@@ -11,19 +11,32 @@
 //! wants, `debug` is per-stage internals and `trace` is per-item detail.
 //! `RUST_LOG` is the expert override — when it is set it replaces the level the
 //! flags ask for and can scope directives per module.
+//!
+//! Where the lines go depends on whether anything is watching. Piped, they are
+//! written to `stderr` as they arrive. On a terminal a status display takes
+//! them instead, formatted the same way but handed over as strings for it to
+//! push into the scrollback, and a second layer — filtered on the progress
+//! target alone, so it is unaffected by the visible level — keeps the display's
+//! state current.
 
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
 use clap::{ArgAction, Args, ValueEnum};
 use tracing::level_filters::LevelFilter;
-use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::filter::{filter_fn, EnvFilter};
 use tracing_subscriber::fmt;
+use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::{Filter, Layer, SubscriberExt};
 use tracing_subscriber::reload;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::Registry;
+use vibegraph::progress;
+
+use crate::tui::state::ProgressLayer;
+use crate::tui::Feed;
 
 /// The level a run reports at when nothing asks for another one.
 const DEFAULT_LEVEL: LevelFilter = LevelFilter::INFO;
@@ -79,6 +92,14 @@ pub struct LogArgs {
     /// a run reviewable afterwards at a level nobody chose to watch it at.
     #[arg(long, value_name = "PATH", global = true)]
     pub log_file: Option<PathBuf>,
+
+    /// Draw the live status pane even where one would not be drawn by default.
+    #[arg(long, global = true, conflicts_with = "no_tui")]
+    pub tui: bool,
+
+    /// Never draw the live status pane; report in plain lines.
+    #[arg(long, global = true)]
+    pub no_tui: bool,
 }
 
 impl LogArgs {
@@ -94,6 +115,63 @@ impl LogArgs {
             0 | 1 => LevelFilter::INFO,
             2 => LevelFilter::DEBUG,
             _ => LevelFilter::TRACE,
+        }
+    }
+
+    /// Whether this run should draw the live status pane.
+    ///
+    /// Both streams have to be terminals: the pane is drawn on `stderr`, and a
+    /// redirected `stdout` means something downstream is reading the result,
+    /// which is a run nobody is watching.
+    pub(crate) fn wants_tui(&self) -> bool {
+        if self.no_tui {
+            return false;
+        }
+        self.tui || (std::io::stdout().is_terminal() && std::io::stderr().is_terminal())
+    }
+}
+
+/// Hands each formatted event to the display as a string instead of writing it
+/// to a stream: the display owns the terminal, and two writers to one screen
+/// would interleave mid-line.
+#[derive(Clone)]
+struct LineChannel(Sender<String>);
+
+/// One event's formatted text, sent on when the formatter is done with it.
+struct FormattedEvent {
+    text: Vec<u8>,
+    lines: Sender<String>,
+}
+
+impl std::io::Write for FormattedEvent {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.text.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for FormattedEvent {
+    fn drop(&mut self) {
+        let text = String::from_utf8_lossy(&self.text);
+        for line in text.trim_end_matches('\n').split('\n') {
+            // A display that has already come down is not an error: the run is
+            // over and the line has nowhere left to go.
+            let _ = self.lines.send(line.to_string());
+        }
+    }
+}
+
+impl<'a> MakeWriter<'a> for LineChannel {
+    type Writer = FormattedEvent;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        FormattedEvent {
+            text: Vec::new(),
+            lines: self.0.clone(),
         }
     }
 }
@@ -126,8 +204,41 @@ fn base_filter(level: LevelFilter) -> EnvFilter {
         .from_env_lossy()
 }
 
+/// The layer that turns events into lines, in the form the level asks for.
+///
+/// At `info` the lines are a commentary and read best bare. Past it they are
+/// evidence, and which module produced an event and how far into the run it
+/// arrived are the two things that make one line comparable with another.
+fn line_layer<W>(
+    writer: W,
+    ansi: bool,
+    detailed: bool,
+    filter: reload::Layer<EnvFilter, Registry>,
+) -> Box<dyn Layer<Registry> + Send + Sync>
+where
+    W: for<'writer> MakeWriter<'writer> + Send + Sync + 'static,
+{
+    let lines = fmt::layer().compact().with_ansi(ansi).with_writer(writer);
+    if detailed {
+        lines
+            .with_timer(fmt::time::uptime())
+            .with_filter(filter)
+            .boxed()
+    } else {
+        lines
+            .without_time()
+            .with_target(false)
+            .with_filter(filter)
+            .boxed()
+    }
+}
+
 /// Install the process-wide subscriber. Called once, before any command runs.
-pub(crate) fn init(args: &LogArgs) -> Result<LogHandle, String> {
+///
+/// `display`, when present, is a running status pane: the formatted lines go to
+/// it instead of to `stderr`, and it is given a layer of its own that folds
+/// progress measurements into what it draws.
+pub(crate) fn init(args: &LogArgs, display: Option<Feed>) -> Result<LogHandle, String> {
     let filter = base_filter(args.level());
     // The filter, not the flags, decides the format: `RUST_LOG=debug` is as much
     // a request for the detailed form as `-vv` is.
@@ -136,27 +247,32 @@ pub(crate) fn init(args: &LogArgs) -> Result<LogHandle, String> {
         .ge(&LevelFilter::DEBUG);
     let (filter, visible) = reload::Layer::new(filter);
 
-    let line = fmt::layer()
-        .compact()
+    let (line, progress) = match display {
+        // The display renders the text itself, so escape codes in it would be
+        // drawn as the characters they are made of.
+        Some(feed) => (
+            line_layer(LineChannel(feed.lines), false, detailed, filter),
+            Some(
+                ProgressLayer::new(feed.state)
+                    .with_filter(filter_fn(|meta| meta.target() == progress::TARGET))
+                    .boxed(),
+            ),
+        ),
         // Escape codes belong on a terminal and nowhere else: the notice stream
         // is routinely captured and compared.
-        .with_ansi(std::io::stderr().is_terminal())
-        .with_writer(std::io::stderr);
-    // At `info` the lines are a commentary and read best bare. Past it they are
-    // evidence, and which module produced an event and how far into the run it
-    // arrived are the two things that make one line comparable with another.
-    let line = if detailed {
-        line.with_timer(fmt::time::uptime())
-            .with_filter(filter)
-            .boxed()
-    } else {
-        line.without_time()
-            .with_target(false)
-            .with_filter(filter)
-            .boxed()
+        None => (
+            line_layer(
+                std::io::stderr as fn() -> std::io::Stderr,
+                std::io::stderr().is_terminal(),
+                detailed,
+                filter,
+            ),
+            None,
+        ),
     };
 
     let mut layers = vec![line];
+    layers.extend(progress);
     if let Some(path) = &args.log_file {
         let file = std::fs::File::create(path)
             .map_err(|e| format!("cannot open log file {}: {e}", path.display()))?;
@@ -187,6 +303,8 @@ mod tests {
             quiet,
             log_level,
             log_file: None,
+            tui: false,
+            no_tui: false,
         }
     }
 
@@ -202,6 +320,26 @@ mod tests {
         assert_eq!(args(3, false, None).level(), LevelFilter::TRACE);
         assert_eq!(args(9, false, None).level(), LevelFilter::TRACE);
         assert_eq!(args(0, true, None).level(), LevelFilter::WARN);
+    }
+
+    /// The overrides decide on their own, without asking what the streams are:
+    /// `--no-tui` is how a run under a terminal is made to report in plain
+    /// lines, and `--tui` how one that is not is made to draw anyway.
+    #[test]
+    fn the_display_overrides_outrank_the_streams() {
+        let mut forced = args(0, false, None);
+        forced.tui = true;
+        assert!(forced.wants_tui());
+
+        let mut refused = args(0, false, None);
+        refused.no_tui = true;
+        assert!(!refused.wants_tui());
+
+        // Refusing outranks asking, so a script passing both gets plain lines.
+        let mut both = args(0, false, None);
+        both.tui = true;
+        both.no_tui = true;
+        assert!(!both.wants_tui());
     }
 
     /// An explicit level is the level, whatever else was passed.

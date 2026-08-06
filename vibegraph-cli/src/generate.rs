@@ -49,6 +49,7 @@ use rand_chacha::ChaCha8Rng;
 use crate::integrate::{load_pdf_set, process_string, IntegrateError, NO_PDF, PDF_MEMBER};
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
+use crate::tui;
 use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 
 type V = LorentzVector<f64>;
@@ -516,6 +517,16 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
         .load_run_card()
         .map_err(|e| err(format!("failed to load run card: {e}")))?;
 
+    tui::state::describe_model(
+        &model_id.label(),
+        &model_id.digest,
+        model.particles.len(),
+        model.vertices.len(),
+        model.couplings.len(),
+    );
+    tui::state::describe_process(&process);
+    tui::state::note_channels(artifact.channels.len());
+
     let hadronic = rc.beam_mode() == BeamMode::Proton;
     let mut mismatches = card_mismatches(&artifact, &model_id, &process, &rc);
     // A fixed-energy run reads no parton distributions, and the artifact says so;
@@ -546,7 +557,7 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
     }
     // The command's result: the path a caller pipes this to learn, at any
     // verbosity. Everything else the run had to say went to the notice stream.
-    println!("wrote {}", args.out.display());
+    tui::result_line(format_args!("wrote {}", args.out.display()));
     Ok(())
 }
 

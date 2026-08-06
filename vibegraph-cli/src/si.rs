@@ -90,7 +90,6 @@ fn si_components(value: f64, sig_figs: usize) -> (f64, i32, usize) {
 /// section, seconds for a duration — not a unit that already carries a
 /// prefix; `unit` is the bare symbol (`"b"`, `"s"`) that prefix is written
 /// against.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn fmt_si(value: f64, unc: Option<f64>, unit: &str, sig_figs: usize) -> String {
     let (mantissa, si_exp, decimals) = si_components(value, sig_figs);
     let prefix = prefix_symbol(si_exp);
