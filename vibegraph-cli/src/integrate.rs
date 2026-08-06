@@ -416,6 +416,22 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
         );
     }
     if let Some(target) = conv.target_rel {
+        // Price the caps at what an iteration really costs rather than at
+        // `--neval`: on a process with more channels than the per-channel floor
+        // leaves room for, the two differ by a factor, and both caps then bind
+        // somewhere the flags on the command line do not suggest.
+        if conv.points_per_iteration > args.neval {
+            info!(
+                "budget:   an iteration spends {} evaluations against the {} asked for, so \
+                 --max-points {} allows {} iterations and --max-iters {} would cost {}",
+                conv.points_per_iteration,
+                args.neval,
+                args.max_points,
+                args.max_points / conv.points_per_iteration.max(1) as u64,
+                args.max_iters,
+                args.max_iters as u64 * conv.points_per_iteration as u64,
+            );
+        }
         info!(
             "target:   {:.4}% relative, {} after {} iterations and {} evaluations \
              (quoted {:.4}%, χ²-scaled {:.4}%)",
