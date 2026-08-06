@@ -61,6 +61,18 @@
 //!   so the factor buys a 1.4–1.8× tighter error before a stop is granted, which
 //!   is a 2–3× point cost — deliberately, since the alternative is stopping on an
 //!   error bar that the seed-to-seed spread does not support.
+//!
+//! The χ² that factor comes from is formed over the iterations that *measured* a
+//! variance. On a split wide enough to put most channels on
+//! [`MIN_CHANNEL_NEVAL`], an allocation regularly loses every one of its points
+//! to the cuts and comes back a constant zero, whose measured variance is exactly
+//! zero — not a small error bar but no error bar at all. Dividing a residual by
+//! it puts the channel's χ²/dof at ~1e250, and a control decision taken on that
+//! number is a target nothing can satisfy. Such iterations stay in the integral
+//! and in the quoted error, and the χ²/dof the run *reports* is still the one
+//! they produce; what they are kept out of is the consistency test, which has
+//! nothing to say about an iteration that quoted no error. See
+//! [`ChannelHistory::stop_scale`].
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -127,7 +139,11 @@ pub enum Budget {
         min_iters: usize,
         /// Iterations after which the run stops whether or not it converged.
         max_iters: usize,
-        /// Points after which the run stops whether or not it converged.
+        /// Points the run will not exceed, converged or not. A bound rather than
+        /// a threshold: an iteration that would breach it is not drawn, since
+        /// what an iteration costs is set by the channel count and the
+        /// [`MIN_CHANNEL_NEVAL`] floor as much as by `neval`, and a cap tested
+        /// only afterwards is overshot by a whole one.
         max_points: u64,
     },
 }
@@ -158,7 +174,8 @@ pub enum StopReason {
     TargetMet,
     /// `max_iters` was reached with the target unmet.
     MaxIters,
-    /// `max_points` was reached with the target unmet.
+    /// The target was unmet and another iteration would have breached
+    /// `max_points`.
     MaxPoints,
     /// A [`StopSignal`] was raised: the run stopped at the first iteration
     /// boundary after the request, whatever its budget still allowed.
@@ -218,6 +235,15 @@ pub struct ConvergenceReport {
     pub kept_iterations: usize,
     /// Integrand evaluations over all channels and iterations.
     pub points: u64,
+    /// Evaluations the last iteration spent over all channels.
+    ///
+    /// The price of one more iteration, and the number an iteration count has to
+    /// be multiplied by to become a spend. It is not `neval`: the
+    /// [`MIN_CHANNEL_NEVAL`] floor raises it above what the budget asked for
+    /// whenever the channel count alone outweighs the request, and above roughly
+    /// `neval / MIN_CHANNEL_NEVAL` channels it is the channel count, not the
+    /// request, that decides what a run costs.
+    pub points_per_iteration: usize,
     /// The target that was asked for, if any.
     pub target_rel: Option<f64>,
     /// `Δσ/σ` of the combined estimate as quoted.
@@ -239,7 +265,11 @@ struct ChannelHistory {
     alpha: f64,
     /// Points drawn so far — the block's generator position.
     drawn: u64,
-    /// `(integral, variance, neval)` of every iteration past the warm-up.
+    /// `(integral, variance, neval)` of every iteration past the warm-up, the
+    /// variance exactly as measured. Zero is a value it really takes — an
+    /// iteration all of whose points came back equal, which on a wide split is
+    /// routinely an allocation every point of which failed the cuts — and the
+    /// stopping test needs to see that rather than a floored stand-in.
     kept: Vec<(f64, f64, usize)>,
     /// Running sum of the per-point variances measured by *every* iteration, and
     /// the count behind it: the Neyman input. Warm-up iterations are included
@@ -275,28 +305,37 @@ impl ChannelHistory {
     /// 0.26–0.40 σ with no common sign — no bias at the 0.02–0.04% these
     /// resolve.
     fn combine(&self, rule: IterationCombination) -> VegasResult {
-        let uniform = self
-            .kept
+        Self::combine_kept(&self.kept, rule)
+    }
+
+    /// [`ChannelHistory::combine`] over an arbitrary set of this channel's
+    /// iterations. Every quoted variance is floored at [`f64::MIN_POSITIVE`],
+    /// which is what keeps a zero-variance iteration from dividing the χ² sum by
+    /// nothing; the floor makes that term enormous instead of undefined, so a
+    /// caller that cares about the difference filters before it calls.
+    fn combine_kept(kept: &[(f64, f64, usize)], rule: IterationCombination) -> VegasResult {
+        let uniform = kept
             .first()
-            .is_some_and(|&(_, _, n0)| self.kept.iter().all(|&(_, _, n)| n == n0));
+            .is_some_and(|&(_, _, n0)| kept.iter().all(|&(_, _, n)| n == n0));
         if uniform {
-            let pairs: Vec<(f64, f64)> = self.kept.iter().map(|&(i, v, _)| (i, v)).collect();
+            let pairs: Vec<(f64, f64)> = kept
+                .iter()
+                .map(|&(i, v, _)| (i, v.max(f64::MIN_POSITIVE)))
+                .collect();
             return combine_iterations(&pairs, rule);
         }
-        let wtot: f64 = self.kept.iter().map(|&(_, _, n)| n as f64).sum();
-        let integral: f64 = self.kept.iter().map(|&(i, _, n)| i * n as f64).sum::<f64>() / wtot;
-        let var: f64 = self
-            .kept
+        let wtot: f64 = kept.iter().map(|&(_, _, n)| n as f64).sum();
+        let integral: f64 = kept.iter().map(|&(i, _, n)| i * n as f64).sum::<f64>() / wtot;
+        let var: f64 = kept
             .iter()
-            .map(|&(_, v, n)| v * (n as f64) * (n as f64))
+            .map(|&(_, v, n)| v.max(f64::MIN_POSITIVE) * (n as f64) * (n as f64))
             .sum::<f64>()
             / (wtot * wtot);
-        let chi2_per_dof = if self.kept.len() > 1 {
-            self.kept
-                .iter()
-                .map(|&(i, v, _)| (i - integral).powi(2) / v)
+        let chi2_per_dof = if kept.len() > 1 {
+            kept.iter()
+                .map(|&(i, v, _)| (i - integral).powi(2) / v.max(f64::MIN_POSITIVE))
                 .sum::<f64>()
-                / (self.kept.len() - 1) as f64
+                / (kept.len() - 1) as f64
         } else {
             0.0
         };
@@ -305,6 +344,48 @@ impl ChannelHistory {
             std_dev: var.sqrt(),
             chi2_per_dof,
         }
+    }
+
+    /// The iteration-consistency scale factor the stopping test widens this
+    /// channel's quoted error by: `max(1, χ²/dof)`.
+    ///
+    /// The χ² is formed over the iterations that measured a variance. An
+    /// iteration whose points all came back equal measured a variance of exactly
+    /// zero, and zero is not a small error bar — it is no error bar at all. A
+    /// residual divided by it is arbitrarily large, so on a split wide enough
+    /// that most channels get the [`MIN_CHANNEL_NEVAL`] floor and some of their
+    /// allocations lose every point to the cuts, the resulting χ²/dof reaches
+    /// ~1e250 and no target is satisfiable. Those iterations are dropped from
+    /// the consistency test and from nothing else: they still set the channel's
+    /// integral and its quoted error, and the report still prints the χ²/dof
+    /// they produce.
+    ///
+    /// Dropping them costs the test nothing it could measure. A channel
+    /// populated in a minority of its iterations already quotes a relative error
+    /// of order one — the empty iterations drag its mean down while contributing
+    /// no variance — and that error enters the stopping sum in quadrature, where
+    /// a channel too small to matter is weighted by how small it is. What the
+    /// scale factor exists to catch is a channel whose iterations disagree by
+    /// more than error bars they *did* quote, and every such iteration is still
+    /// in the sum.
+    ///
+    /// A channel with fewer than two informative iterations has no scatter to
+    /// measure and gets no scale factor. Where every iteration is informative
+    /// this is the χ²/dof of the whole channel, unchanged.
+    fn stop_scale(&self, rule: IterationCombination) -> f64 {
+        if self.kept.iter().all(|&(_, v, _)| v > 0.0) {
+            return self.combine(rule).chi2_per_dof.max(1.0);
+        }
+        let informative: Vec<(f64, f64, usize)> = self
+            .kept
+            .iter()
+            .copied()
+            .filter(|&(_, v, _)| v > 0.0)
+            .collect();
+        if informative.len() < 2 {
+            return 1.0;
+        }
+        Self::combine_kept(&informative, rule).chi2_per_dof.max(1.0)
     }
 }
 
@@ -418,9 +499,6 @@ where
     let point_ndim = ndim + scale_ndim;
     let neval = budget.neval();
     let single = alphas.len() == 1;
-    // The iteration count a display divides by. A convergence run may stop well
-    // short of its cap, so this is an upper bound rather than a plan.
-    let iteration_bound = budget.max_iters() as u64;
 
     let mut grids: Vec<VegasGrid> = alphas
         .iter()
@@ -481,6 +559,24 @@ where
         );
     }
 
+    // The iteration count a display divides by. A convergence run may stop well
+    // short of it, so it is an upper bound rather than a plan — but it is an
+    // upper bound in points the run will really spend: `alpha_total`, not
+    // `neval`, is what an iteration costs once the per-channel floor has raised
+    // it, so the point cap buys fewer iterations than dividing by the requested
+    // budget would suggest. One iteration is the floor, since a bound of zero
+    // describes no run.
+    let iteration_bound = match budget {
+        Budget::Fixed { niter, .. } => niter as u64,
+        Budget::Target {
+            max_iters,
+            max_points,
+            ..
+        } => (max_iters as u64)
+            .min(max_points / alpha_total.max(1) as u64)
+            .max(1),
+    };
+
     let warmup = grids
         .first()
         .map(|g| g.warmup())
@@ -490,6 +586,7 @@ where
     let threads = rayon::current_num_threads();
     let mut current = by_alpha.clone();
     let mut points = 0_u64;
+    let mut iteration_points: usize;
     let mut min_channel_neval = usize::MAX;
     let mut iteration = 0_usize;
     let mut reason = StopReason::Budget;
@@ -518,7 +615,7 @@ where
             .collect();
 
         min_channel_neval = min_channel_neval.min(plans.iter().map(|p| p.neval).min().unwrap_or(0));
-        let iteration_points: usize = plans.iter().map(|p| p.neval).sum();
+        iteration_points = plans.iter().map(|p| p.neval).sum();
         let started = Instant::now();
 
         let outcomes = adapt_blocks_iteration(
@@ -553,11 +650,7 @@ where
             c.point_var_sum += out.point_variance(plan.neval);
             c.point_var_n += 1;
             if iteration >= warmup {
-                c.kept.push((
-                    out.integral,
-                    out.variance.max(f64::MIN_POSITIVE),
-                    plan.neval,
-                ));
+                c.kept.push((out.integral, out.variance, plan.neval));
             }
         }
 
@@ -618,7 +711,13 @@ where
                 } else if iteration >= max_iters {
                     reason = StopReason::MaxIters;
                     true
-                } else if points >= max_points {
+                } else if points + iteration_points as u64 > max_points {
+                    // Prospective, and against what an iteration really costs:
+                    // the per-channel floor can put that several times above
+                    // `neval`, so a cap tested only after the fact is overshot
+                    // by an iteration whose size the caller never asked for.
+                    // The forecast is the iteration just drawn, which is the
+                    // size the next one is allocated to as well.
                     reason = StopReason::MaxPoints;
                     true
                 } else {
@@ -673,6 +772,7 @@ where
         iterations: iteration,
         kept_iterations: channels.first().map(|c| c.kept.len()).unwrap_or(0),
         points,
+        points_per_iteration: iteration_points,
         target_rel: match budget {
             Budget::Target { target_rel, .. } => Some(target_rel),
             Budget::Fixed { .. } => None,
@@ -753,14 +853,17 @@ fn rel_of(r: &VegasResult) -> f64 {
 ///
 /// The scale factor goes on per channel rather than on the total because that is
 /// where the inconsistency is: one channel whose iterations disagree should widen
-/// its own term, not the terms of channels that agree with themselves.
+/// its own term, not the terms of channels that agree with themselves. It is
+/// [`ChannelHistory::stop_scale`] rather than the channel's reported χ²/dof, so
+/// that a channel with iterations that measured no variance at all still yields a
+/// number a control decision can be made on.
 fn scaled_rel(channels: &[ChannelHistory], combination: IterationCombination) -> f64 {
     let mut integral = 0.0_f64;
     let mut variance = 0.0_f64;
     for c in channels {
         let r = c.combine(combination);
         integral += r.integral;
-        variance += r.std_dev * r.std_dev * r.chi2_per_dof.max(1.0);
+        variance += r.std_dev * r.std_dev * c.stop_scale(combination);
     }
     if integral > 0.0 {
         variance.sqrt() / integral
@@ -824,6 +927,155 @@ mod tests {
             alphas: vec![1.0 / n as f64; n],
             spread,
         }
+    }
+
+    /// A multichannel integrand whose minor channels have support narrower than
+    /// their allocation can reliably find: channel `j > 0` is a spike on
+    /// `u₀ < width` and zero elsewhere, so an iteration of it either lands a
+    /// point in the spike or comes back a constant zero — with a measured
+    /// variance of exactly zero.
+    ///
+    /// That is the profile a split wide enough to put most channels on the
+    /// [`MIN_CHANNEL_NEVAL`] floor produces by the hundred, and the one the
+    /// stopping test has to stay well-defined on. Every channel still integrates
+    /// to `αⱼ · 1.5`, so the terms sum to `1.5` as the other toy's do.
+    struct SparseTail {
+        alphas: Vec<f64>,
+        width: f64,
+    }
+
+    impl ChannelIntegrand for SparseTail {
+        fn channel_count(&self) -> usize {
+            self.alphas.len()
+        }
+        fn channel_grid_ndim(&self) -> usize {
+            2
+        }
+        fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
+            if channel == 0 {
+                return self.alphas[0] * (3.0 * u[0] * u[0] + u[1]);
+            }
+            if u[0] < self.width {
+                self.alphas[channel] * 1.5 / self.width
+            } else {
+                0.0
+            }
+        }
+    }
+
+    /// One channel's kept history, built by hand. Handing the stopping test an
+    /// iteration of exactly zero measured variance on demand is the only way to
+    /// pin what it does with one.
+    fn history(kept: &[(f64, f64)]) -> ChannelHistory {
+        ChannelHistory {
+            alpha: 1.0,
+            drawn: 0,
+            kept: kept
+                .iter()
+                .map(|&(i, v)| (i, v, MIN_CHANNEL_NEVAL))
+                .collect(),
+            point_var_sum: 0.0,
+            point_var_n: 0,
+        }
+    }
+
+    /// Where every iteration measured a variance there is nothing to exclude, and
+    /// the factor the stopping test widens by is the channel's own χ²/dof.
+    #[test]
+    fn the_stop_scale_is_the_reported_chi2_when_every_iteration_measured_one() {
+        let rule = IterationCombination::Unweighted;
+        let h = history(&[(1.0, 0.01), (1.2, 0.01), (0.9, 0.01)]);
+        let chi2 = h.combine(rule).chi2_per_dof;
+        assert!(
+            chi2 > 1.0,
+            "the case worth testing needs a widening χ²: {chi2}"
+        );
+        assert_eq!(h.stop_scale(rule), chi2);
+    }
+
+    /// An iteration whose points all came back equal measured no error bar, not a
+    /// vanishing one. Dividing a residual by it is what puts the reported χ²/dof
+    /// at ~1e250 on a wide split — a number the report is welcome to carry and a
+    /// control decision cannot be made on. The stopping test reads the iterations
+    /// that measured something.
+    #[test]
+    fn a_zero_variance_iteration_cannot_blow_up_the_stop_scale() {
+        let rule = IterationCombination::Unweighted;
+        let empty = [(0.0, 0.0); 6];
+        let fired = [(1.0e-9, 1.0e-21), (1.3e-9, 1.0e-21)];
+        let mixed: Vec<(f64, f64)> = empty.iter().chain(&fired).copied().collect();
+
+        let reported = history(&mixed).combine(rule).chi2_per_dof;
+        assert!(
+            reported > 1.0e200 && reported.is_finite(),
+            "the pathology this guards against did not reproduce: χ²/dof {reported}"
+        );
+
+        let scale = history(&mixed).stop_scale(rule);
+        assert_eq!(scale, history(&fired).combine(rule).chi2_per_dof);
+        assert!(scale.is_finite() && scale < 1.0e3, "stop scale {scale}");
+    }
+
+    /// A channel that fired in one iteration out of many has no scatter to
+    /// measure, and gets no scale factor. What it contributes to the stopping sum
+    /// is its quoted error, which for such a channel is already of the size of
+    /// its own term.
+    #[test]
+    fn one_informative_iteration_is_no_scatter_measurement() {
+        let rule = IterationCombination::Unweighted;
+        let mut kept = vec![(0.0, 0.0); 7];
+        kept.push((1.0e-9, 1.0e-21));
+        assert_eq!(history(&kept).stop_scale(rule), 1.0);
+    }
+
+    /// End to end on a split wide enough to produce the degenerate iterations by
+    /// itself: the reported χ²/dof still overflows — that pass-through is what the
+    /// report is for — while the stopping test reads a finite number and the run
+    /// reaches the accuracy it was asked for instead of burning its cap.
+    #[test]
+    fn a_wide_split_with_empty_iterations_still_converges() {
+        let channels = 40;
+        let epsilon = 1.0e-5;
+        let mut alphas = vec![epsilon; channels];
+        alphas[0] = 1.0 - epsilon * (channels - 1) as f64;
+        let integ = SparseTail {
+            alphas: alphas.clone(),
+            width: 6.0e-4,
+        };
+        let target_rel = 5.0e-3;
+        let (per_channel, total, report) = integrate_channels(
+            &integ,
+            &alphas,
+            1.5,
+            IterationCombination::Unweighted,
+            Budget::Target {
+                target_rel,
+                neval: 4_000,
+                min_iters: 6,
+                max_iters: 40,
+                max_points: 200_000_000,
+            },
+            BlockAllocation::ByAlpha,
+            0xC0FFEE,
+            &StopSignal::default(),
+        );
+        let worst = per_channel
+            .iter()
+            .map(|c| c.result.chi2_per_dof)
+            .fold(0.0_f64, f64::max);
+        assert!(
+            worst > 1.0e100,
+            "no channel produced the degenerate χ²/dof this test exists for (worst {worst})"
+        );
+        assert_eq!(report.stop, StopReason::TargetMet);
+        assert!(
+            report.scaled_rel.is_finite() && report.scaled_rel <= target_rel,
+            "stopped at scaled rel {}",
+            report.scaled_rel
+        );
+        assert!(report.achieved_rel <= report.scaled_rel);
+        let pull = (total.integral - 1.5).abs() / total.std_dev;
+        assert!(pull < 5.0, "σ = {} ± {}", total.integral, total.std_dev);
     }
 
     #[test]
@@ -982,10 +1234,12 @@ mod tests {
     }
 
     /// The point cap likewise, and before the iteration cap when it is the
-    /// tighter of the two.
+    /// tighter of the two. It is a bound rather than a threshold: the run stops
+    /// before an iteration it cannot afford, having spent the cap or less.
     #[test]
     fn convergence_run_respects_its_point_cap() {
         let integ = toy(vec![1.0, 1.0]);
+        let cap = 22_000_u64;
         let (_c, _t, report) = integrate_channels(
             &integ,
             &integ.alphas.clone(),
@@ -996,14 +1250,61 @@ mod tests {
                 neval: 4_000,
                 min_iters: 2,
                 max_iters: 1_000,
-                max_points: 20_000,
+                max_points: cap,
             },
             BlockAllocation::ByAlpha,
             7,
             &StopSignal::default(),
         );
         assert_eq!(report.stop, StopReason::MaxPoints);
-        assert!(report.points >= 20_000);
+        assert!(
+            report.points <= cap,
+            "spent {} against a cap of {cap}",
+            report.points
+        );
+        // And it stopped because it could not afford another, not early.
+        assert!(
+            report.points + report.points_per_iteration as u64 > cap,
+            "stopped at {} with room for another {} points",
+            report.points,
+            report.points_per_iteration
+        );
+    }
+
+    /// A split too wide for the requested budget spends what the per-channel
+    /// floor costs, and the report says so in points rather than repeating the
+    /// request back. That number is what an iteration count has to be priced at:
+    /// the caps a caller sets bind at `points_per_iteration × iterations`.
+    #[test]
+    fn a_floored_split_reports_what_an_iteration_really_spends() {
+        let channels = 40;
+        let neval = 4_000;
+        let integ = toy(vec![1.0; channels]);
+        let (_c, _t, report) = integrate_channels(
+            &integ,
+            &integ.alphas.clone(),
+            1.5,
+            IterationCombination::Unweighted,
+            Budget::Target {
+                target_rel: 1.0e-12,
+                neval,
+                min_iters: 2,
+                max_iters: 4,
+                max_points: 200_000_000,
+            },
+            BlockAllocation::ByAlpha,
+            7,
+            &StopSignal::default(),
+        );
+        assert_eq!(report.points_per_iteration, channels * MIN_CHANNEL_NEVAL);
+        assert!(
+            report.points_per_iteration > neval,
+            "{channels} channels at the {MIN_CHANNEL_NEVAL}-point floor should outspend {neval}"
+        );
+        assert_eq!(
+            report.points,
+            report.points_per_iteration as u64 * report.iterations as u64
+        );
     }
 
     /// A toy that raises a stop signal once it has been evaluated `after` times.
