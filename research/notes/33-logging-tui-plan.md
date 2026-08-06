@@ -288,3 +288,101 @@ discretion. Manager owns worktrees per AGENTS.md Sprint & Subagent
 Operations; no MG reference data is needed by any session except T1's
 `cli_integrate` gate (COW-copy the refdata in, or the gate silently triggers
 regeneration).
+
+## 9. Close-out (manager, 2026-08-06)
+
+**Status: CLOSED.** Five sessions T1–T5, five branches, all merged to `main`
+in plan order (`logtui-t1` → `-t2`/`-t3` → `-t4` → `-t5`); default
+`cargo test` run green on `main` after every merge. Exit check: T5's
+`pixi run --skip-deps validate` exit 0, every gate cell passed, the measured
+cells exactly the manifest's declared set — no diff, so no finding. The two
+§7 defaults stood unexercised by anything the sprint found: **default level
+stayed `info` in both modes** (§7.1) and **the stdout σ line stayed frozen**
+(§7.3); both remain one-line changes.
+
+### 9.1 Where the plan and the code disagreed, the code won
+
+Recorded so the next reader patches the note's model of the codebase:
+
+- **§2.1's target names are wrong**: the lib crate's library name is
+  `vibegraph`, not `vibegraph_lib`, so targets are `vibegraph::diagrams`, …
+  — and `vibegraph::progress` is literally the `progress` module's own path.
+- **§4 T2's file list**: the production VEGAS iteration loop is
+  `budget.rs::integrate_channels` (both `hadronic.rs` and `proton.rs`
+  `adapt_grids_budget` delegate to it; `vegas.rs`'s `adapt_*` family is
+  test-only). Requested-count unweighting loops live in `lhef/emit.rs`, not
+  `unweight.rs` (which got the weight-scan instrumentation instead).
+- **The compile stage span is `compile`, not `compile_channel`** — the
+  compile loop iterates subprocesses/flavour groups; "channel" in this
+  codebase means a per-diagram phase-space map.
+- **§2.1's "TRACE keeps progress events off plain mode" was false as built**
+  (`-vvv` printed them); T5 filters `vibegraph::progress=off` in the line
+  layer at every level. `--log-file` still records them.
+- **§2.4's unweighting-efficiency cell is not derivable from the progress
+  contract** (no trial count on the stream); the footer shows the scan's
+  predicted efficiency (`σ / Σⱼ w_maxⱼ`) pushed in by the CLI — it read
+  30.6% predicted vs 30.03% achieved on the verification run. Follow-up
+  filed: add `trials` to `progress::unweighting`.
+- The level ladder is six rungs (off…trace), a superset of §2.3's four;
+  scope narrowing applies only above INFO so it can never swallow a warning.
+- T1 found `cli_integrate` never parsed stdout (the stdout-parsing extended
+  test is `cli_generate_proton`); and the default-feature `cli_generate`
+  test read `scan:` off stdout — §1's exhaustive stdout contract governs, so
+  `scan:` moved to stderr and the test helper followed.
+
+### 9.2 Decisions taken by the manager during the sprint
+
+- **Span-close timings (§2.1) are not enabled** — `FmtSpan::CLOSE` would
+  change plain-mode output shape for every run; each heavy stage instead
+  emits its own elapsed at `debug`. Revisit if per-stage timing becomes a
+  consumer surface.
+- crossterm is consumed as ratatui's re-export (0.29) rather than a separate
+  manifest entry — §3's own dual-version rationale.
+- One extra dependency beyond §3's list: `unicode-width` (already in-tree
+  transitively) for display-width line breaking, because `insert_before`
+  truncates if the height undercounts.
+
+### 9.3 What the abort work surfaced
+
+A graceful stop during warm-up banks no kept iteration and the combined σ is
+NaN; the first implementation would have printed `σ = NaN` and banked an
+artifact holding exactly the grids the warm-up discard exists to throw away.
+Fixed in `a791c87`: `ConvergenceReport` carries `kept_iterations`, and a run
+stopped before any kept iteration is refused (exit 1, no artifact, no σ
+line), pinned by `budget.rs` tests and a PTY run. The `StopSignal` is an
+explicit parameter of `integrate_channels`, not a global, and its inertness
+on non-aborted runs is pinned by byte-identical artifacts vs the pre-T5
+binary on both a fixed-energy and a hadronic row.
+
+### 9.4 Verified vs asserted
+
+Verified by recorded capture or byte comparison: stdout frozen at every
+verbosity (raw-byte hashes, T1/T4/T5); artifacts byte-identical across
+`-q`/`-vv`, TUI/piped, and pre/post-abort-plumbing binaries; the thread-count
+assertion re-run (T2); footer render, `insert_before` scrollback,
+teardown, marker lines, level/scope filter actually moving, graceful and
+immediate abort exits — all under a DSR-answering PTY harness with a VT
+replayer (captures in the session records).
+
+Asserted, NOT re-verifiable by the manager: everything "on a real terminal"
+— the PTY harness stands in for one throughout; colour was read as SGR
+sequences, not rendered pixels; terminal resize during a run was never
+exercised (narrow-terminal layouts are unit-tested only); the generate
+footer variant was captured on the fixed-energy path only (the hadronic path
+shares `report_scan` but was not captured under the PTY).
+
+### 9.5 Filed to the backlog
+
+- `generate` has no graceful-stop poll: only `integrate_channels` reads the
+  signal, so under `generate` the first `q`/`^C` does nothing visible.
+  Stopping accept/reject early is a design decision (truncate the sample or
+  refuse), not a wiring gap.
+- `trials` field for `progress::unweighting` (needs `EventSource` to expose
+  its trial count).
+- The network-consent prompt is incompatible with the pane (raw mode +
+  viewport); needs a suspend/resume around `network::confirm`. Only fires on
+  an uncached PDF fetch, so on no gate path today.
+- Cosmetic: the line layer's format is fixed at init from the starting
+  level, so a runtime climb to DEBUG keeps the compact form; crossterm's
+  cursor-position probe costs ~2 s before falling back to plain lines where
+  nothing answers DSR (bare `script(1)`; real terminals answer immediately).
