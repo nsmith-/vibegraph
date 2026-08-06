@@ -291,6 +291,64 @@ into the artifact, so a worker needs one file, is a tracked post-v0.1 feature
 
 Run `vibegraph <cmd> --help` for the full option list.
 
+### Watching a run
+
+`stdout` carries the result and nothing else — the `σ = … pb` line, the path
+written, the `check-events` report — at every verbosity, so a pipeline reading
+it sees the same bytes however loud the run is. Everything the run has to say
+about itself goes to `stderr`.
+
+| flag | effect |
+|---|---|
+| *(none)* | `info`: MadGraph-style running commentary |
+| `-q` | `warn`: only what went wrong |
+| `-vv` | `debug`: per-stage internals (diagram counts, compile-pass stats, per-channel iterations) |
+| `-vvv` | `trace`: per-item detail |
+| `--log-level <off\|error\|warn\|info\|debug\|trace>` | the level, spelled out |
+| `--log-file <path>` | additionally record **everything**, at `trace`, to a file — whatever the screen is showing |
+| `RUST_LOG=…` | the expert override, replacing the flags and scoping per module (`RUST_LOG=vibegraph::helas=debug`) |
+
+At `debug` and above each line carries its module and the time since start;
+below that the lines read as commentary and carry neither.
+
+### The status pane
+
+On a terminal — both `stdout` and `stderr` — `integrate` and `generate` draw a
+six-row status pane pinned below the log: model and process brief, the stage in
+progress and its bar, σ ± err (or, while unweighting, the sample and its
+accept/reject efficiency), and the cost of an integrand evaluation.
+
+The pane is an *inline* viewport, not an alternate screen: log lines are pushed
+into the terminal's real scrollback above it, so scrolling, searching and
+copying work as they do for any other command and the history survives the run.
+Nothing is erased on exit but the pane itself, and the run closes on a plain
+summary line.
+
+`--tui` draws it where it would not be drawn by default; `--no-tui` never draws
+it. A redirected `stdout` means something downstream is reading the result, so
+that is a run nobody is watching and the pane stays down.
+
+Keys, with the current setting always shown in the pane:
+
+| key | effect |
+|---|---|
+| `↑` / `↓` | raise / lower the visible level (`off … trace`) |
+| `←` / `→` | cycle the module scope the *detailed* tiers are shown for: all → diagrams → helas → sampling → pdf |
+| `q` / `^C` | ask the run to stop; press again to quit immediately |
+
+Narrowing the scope leaves `info` and above alone and restricts only `debug`
+and `trace`, so a narrowed filter can never swallow a warning. Every change
+writes a marker line into the scrollback (`── log level → DEBUG ──`), and it
+applies from the next event on — lines already emitted are part of the
+terminal's history and are not rewritten. The progress measurements the pane
+folds in are never printed as lines at any level; `--log-file` records them.
+
+A first `q`/`^C` is a *graceful* stop: the integration finishes the iteration it
+is in, banks the grids and terms of the iterations it completed, and writes the
+artifact, which is therefore a usable — if less converged — input to `generate`.
+The run's own report says it was abandoned early. A second press quits at once
+with status 130.
+
 ## Feature breakdown
 
 | Pipeline step | Status |

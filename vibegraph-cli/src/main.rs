@@ -123,7 +123,7 @@ fn main() -> ExitCode {
     };
     // Nothing above this line may log: until the subscriber is installed there
     // is nowhere for an event to go.
-    let _logging = match logging::init(&cli.log, display.as_ref().map(tui::Tui::feed)) {
+    let logging = match logging::init(&cli.log, display.as_ref().map(tui::Tui::feed)) {
         Ok(handle) => handle,
         Err(why) => {
             if let Some(display) = display {
@@ -133,6 +133,13 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // The display's level and scope keys drive the filter through this handle;
+    // with no display running nobody holds it and the level is the one the flags
+    // asked for, for the whole run.
+    match &display {
+        Some(display) => display.attach(logging),
+        None => drop(logging),
+    }
     if let Some(why) = unavailable {
         tracing::debug!("reporting in plain lines: {why}");
     }

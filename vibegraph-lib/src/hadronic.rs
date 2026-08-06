@@ -37,7 +37,7 @@ use crate::coupling::scales::{ClusterInput, EventScales, ScaleChoice, ScaleError
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
 use crate::budget::{
-    integrate_channels, BlockAllocation, Budget, ConvergenceReport, MIN_CHANNEL_NEVAL,
+    integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal, MIN_CHANNEL_NEVAL,
 };
 use crate::diagrams::{DiagramError, DiagramSet};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
@@ -1935,6 +1935,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             Budget::Fixed { neval, niter },
             BlockAllocation::ByAlpha,
             seed,
+            &StopSignal::default(),
         );
         (per_channel, total)
     }
@@ -1943,12 +1944,15 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// reporting what was spent alongside the terms.
     ///
     /// [`adapt_grids`](Self::adapt_grids) is the [`Budget::Fixed`],
-    /// [`BlockAllocation::ByAlpha`] case of this.
+    /// [`BlockAllocation::ByAlpha`] case of this, under a signal nobody holds. A
+    /// raised `stop` ends the run at the next iteration boundary, with the grids
+    /// and terms of the iterations it did complete.
     pub fn adapt_grids_budget(
         &self,
         budget: Budget,
         allocation: BlockAllocation,
         seed: u64,
+        stop: &StopSignal,
     ) -> (Vec<ChannelIntegration>, VegasResult, ConvergenceReport) {
         integrate_channels(
             self,
@@ -1958,6 +1962,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             budget,
             allocation,
             seed,
+            stop,
         )
     }
 }

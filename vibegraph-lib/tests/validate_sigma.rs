@@ -999,7 +999,7 @@ const TWO_TO_SIX: [&str; 2] = ["uux_to_ccx_emmm_qcd0", "bbx_to_ccx_emmm_qcd0"];
 #[test]
 #[ignore]
 fn probe_2to6_eval_cost() {
-    use vibegraph::budget::{BlockAllocation, Budget};
+    use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
 
     const ROUNDS: usize = 3;
     const COST_NEVAL: usize = 5_000;
@@ -1026,6 +1026,7 @@ fn probe_2to6_eval_cost() {
                         },
                         BlockAllocation::ByAlpha,
                         SEED + round as u64,
+                        &StopSignal::default(),
                     );
                     best = best.min(timer.seconds());
                     points = spend.points;

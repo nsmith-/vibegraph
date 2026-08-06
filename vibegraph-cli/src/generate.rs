@@ -715,12 +715,13 @@ fn report_scan(scan: &Unweighter, artifact: &IntegrateArtifact, budget: ScanBudg
             "each channel's share of the integration budget".to_string()
         }
     };
+    let efficiency = artifact.sigma_pb / (scan.total_w_max() * GEV2_TO_PB);
+    tui::state::note_unweighting_efficiency(efficiency);
     info!(
         "scan:     {draws} points over {} channels ({per_channel}), sum w_max {:.6e}, \
-         predicted efficiency {:.4e}",
+         predicted efficiency {efficiency:.4e}",
         artifact.channels.len(),
         scan.total_w_max() * GEV2_TO_PB,
-        artifact.sigma_pb / (scan.total_w_max() * GEV2_TO_PB),
     );
     match rule {
         MaxRule::Extremum => info!("maxima:   the largest weight each channel's scan saw"),

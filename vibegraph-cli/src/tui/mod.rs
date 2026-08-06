@@ -8,8 +8,16 @@
 //!
 //! One thread owns the terminal. It drains formatted log lines from a channel
 //! the subscriber's line layer writes into, redraws the pane from the shared
-//! [`UiState`] on a fixed tick, and watches for the keys that abort the run. The
-//! command itself runs on the main thread and never touches the terminal.
+//! [`UiState`] on a fixed tick, and reads the keys. The command itself runs on
+//! the main thread and never touches the terminal.
+//!
+//! The keys reach the run by two routes, neither of which is the terminal. The
+//! level and scope keys swap the line layer's filter through the reload handle
+//! the subscriber hands over once it is built, so what is shown changes from the
+//! next event on and the history already written stays as it was. The stop key
+//! raises a [`StopSignal`] the integration reads at its own iteration boundary —
+//! the run decides when it is safe to stop, and the second press is what takes
+//! that decision away from it.
 //!
 //! `stdout` is not the display's to write. The command's result lines are held
 //! back while the pane is up and printed once it has been taken down, so the
@@ -24,7 +32,7 @@ use std::fmt;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -37,13 +45,20 @@ use ratatui::layout::Position;
 use ratatui::style::Style;
 use ratatui::{Terminal, TerminalOptions, Viewport};
 use unicode_width::UnicodeWidthChar;
+use vibegraph::budget::StopSignal;
 
+use crate::logging::{LogHandle, LogLevel, Scope};
 use crate::si::fmt_si;
 use crate::tui::footer::Footer;
 use crate::tui::state::UiState;
 
 /// How often the pane is redrawn, and how long a key press waits to be seen.
 const TICK: Duration = Duration::from_millis(50);
+
+/// How long the logo's colour ramp holds each rotation. Slow enough that the
+/// wave reads as motion rather than as flicker, fast enough that a stalled
+/// display is obvious.
+const LOGO_STEP: Duration = Duration::from_millis(150);
 
 /// Exit status for a run the operator stopped, by the usual convention for a
 /// process killed by SIGINT.
@@ -60,6 +75,19 @@ static LIVE: AtomicBool = AtomicBool::new(false);
 /// Result lines printed while the pane was up, in the order they were produced.
 static HELD: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// The run's stop request, shared between the keys that raise it and the
+/// integration that reads it.
+///
+/// One per process, because there is one operator and one run for them to stop.
+/// A command asks for it whether or not a display was started; with no display
+/// nothing can raise it, and the run is decided by its budget alone.
+static STOP: OnceLock<StopSignal> = OnceLock::new();
+
+/// The signal a command hands to the integration it drives.
+pub(crate) fn stop_signal() -> StopSignal {
+    STOP.get_or_init(StopSignal::new).clone()
+}
+
 /// What the subscriber needs in order to feed a running display.
 pub(crate) struct Feed {
     /// Formatted log lines, one per event, to be pushed into the scrollback.
@@ -73,6 +101,7 @@ pub(crate) struct Tui {
     lines: Sender<String>,
     state: Arc<Mutex<UiState>>,
     stop: Arc<AtomicBool>,
+    log: Arc<OnceLock<LogHandle>>,
     worker: JoinHandle<()>,
     started: Instant,
 }
@@ -103,12 +132,15 @@ impl Tui {
         install_panic_hook();
 
         let stop = Arc::new(AtomicBool::new(false));
+        let log: Arc<OnceLock<LogHandle>> = Arc::new(OnceLock::new());
         let worker = {
             let state = Arc::clone(&state);
             let stop = Arc::clone(&stop);
+            let log = Arc::clone(&log);
+            let abort = stop_signal();
             std::thread::Builder::new()
                 .name("vibegraph-tui".to_string())
-                .spawn(move || draw_loop(terminal, &incoming, &state, &stop))
+                .spawn(move || draw_loop(terminal, &incoming, &state, &stop, &log, &abort))
                 .map_err(|e| {
                     let _ = disable_raw_mode();
                     format!("cannot start the status display: {e}")
@@ -119,6 +151,7 @@ impl Tui {
             lines,
             state,
             stop,
+            log,
             worker,
             started: Instant::now(),
         })
@@ -130,6 +163,16 @@ impl Tui {
             lines: self.lines.clone(),
             state: Arc::clone(&self.state),
         }
+    }
+
+    /// Give the display the filter handle its level and scope keys drive.
+    ///
+    /// It cannot be had at [`Tui::start`]: the display takes the terminal first,
+    /// because where the subscriber's lines go depends on whether it got it, and
+    /// the handle only exists once that subscriber is built. Until this is
+    /// called those keys have nothing to change and are ignored.
+    pub(crate) fn attach(&self, handle: LogHandle) {
+        let _ = self.log.set(handle);
     }
 
     /// Take the pane down, close the run with a plain summary line, and release
@@ -179,6 +222,9 @@ fn release_results() {
 fn summary(state: &UiState, elapsed: Duration) -> String {
     let stage = state.stage.as_deref().unwrap_or("nothing to do");
     let mut line = format!("vibegraph: {stage}");
+    if state.stopping {
+        line.push_str(" (stopped early)");
+    }
     if let Some(sigma_pb) = state.sigma_pb {
         line.push_str(&format!(
             ", \u{3c3} = {}",
@@ -259,21 +305,56 @@ fn take_down(terminal: &mut Screen) {
     let _ = disable_raw_mode();
 }
 
-/// Whether a key event asks for the run to stop. Raw mode suppresses the
-/// terminal's own interrupt, so `^C` has to be recognised here or it would do
-/// nothing at all.
-fn is_abort(event: &Event) -> bool {
+/// What a key press asks the display for. Anything else is ignored, so a stray
+/// keystroke cannot disturb a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Key {
+    /// Stop the run: gracefully the first time, immediately the second.
+    Stop,
+    Louder,
+    Quieter,
+    ScopeForward,
+    ScopeBack,
+}
+
+/// Read a terminal event as one of the display's keys.
+///
+/// Raw mode suppresses the terminal's own interrupt, so `^C` has to be
+/// recognised here or it would do nothing at all.
+fn key_of(event: &Event) -> Option<Key> {
     let Event::Key(key) = event else {
-        return false;
+        return None;
     };
     if key.kind != KeyEventKind::Press {
-        return false;
+        return None;
     }
     match key.code {
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => true,
-        KeyCode::Char('q') => true,
-        _ => false,
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Key::Stop),
+        KeyCode::Char('q') => Some(Key::Stop),
+        KeyCode::Up => Some(Key::Louder),
+        KeyCode::Down => Some(Key::Quieter),
+        KeyCode::Right => Some(Key::ScopeForward),
+        KeyCode::Left => Some(Key::ScopeBack),
+        _ => None,
     }
+}
+
+/// A line marking a change the operator made, pushed into the history so the
+/// lines above and below it explain their own difference.
+fn marker(text: &str) -> String {
+    format!("\u{2500}\u{2500} {text} \u{2500}\u{2500}")
+}
+
+/// What the display is currently showing, and the abort that has been asked for.
+///
+/// Held by the drawing thread alone and mirrored into [`UiState`] on each change:
+/// the footer draws from the state, and the keys decide from this.
+struct Controls {
+    level: LogLevel,
+    scope: Scope,
+    /// Whether a graceful stop has already been requested, which is what makes
+    /// the next stop key an immediate one.
+    stopping: bool,
 }
 
 fn draw_loop(
@@ -281,12 +362,21 @@ fn draw_loop(
     incoming: &Receiver<String>,
     state: &Mutex<UiState>,
     stop: &AtomicBool,
+    log: &OnceLock<LogHandle>,
+    abort: &StopSignal,
 ) {
     // A terminal whose events cannot be read still shows the pane; it just has
     // no keys, and must not spin on the failing poll.
     let mut keys = true;
+    let mut controls = Controls {
+        level: LogLevel::default(),
+        scope: Scope::default(),
+        stopping: false,
+    };
+    let started = Instant::now();
     loop {
         drain(&mut terminal, incoming);
+        advance_logo(state, started.elapsed());
         redraw(&mut terminal, state);
         if stop.load(Ordering::SeqCst) {
             break;
@@ -297,12 +387,35 @@ fn draw_loop(
         }
         match event::poll(TICK) {
             Ok(true) => match event::read() {
-                Ok(event) if is_abort(&event) => {
-                    take_down(&mut terminal);
-                    let _ = writeln!(std::io::stderr(), "vibegraph: aborted");
-                    std::process::exit(ABORT_EXIT);
-                }
-                Ok(_) => {}
+                Ok(event) => match key_of(&event) {
+                    Some(Key::Stop) if controls.stopping => {
+                        take_down(&mut terminal);
+                        let _ = writeln!(std::io::stderr(), "vibegraph: aborted");
+                        std::process::exit(ABORT_EXIT);
+                    }
+                    Some(Key::Stop) => {
+                        controls.stopping = true;
+                        abort.request();
+                        set(state, |ui| ui.stopping = true);
+                        insert_line(
+                            &mut terminal,
+                            &marker(
+                                "stopping: the run is finishing what it holds; \
+                                 press again to quit now",
+                            ),
+                        );
+                    }
+                    Some(key) => {
+                        if let Some(change) = retune(&mut controls, key, log) {
+                            set(state, |ui| {
+                                ui.level = controls.level;
+                                ui.scope = controls.scope;
+                            });
+                            insert_line(&mut terminal, &marker(&change));
+                        }
+                    }
+                    None => {}
+                },
                 Err(_) => keys = false,
             },
             Ok(false) => {}
@@ -313,6 +426,57 @@ fn draw_loop(
     // history too: the sender saw the stop set only after its send returned.
     drain(&mut terminal, incoming);
     take_down(&mut terminal);
+}
+
+/// Where a key moves the display's controls.
+///
+/// A key that changes nothing — the level already at the end of its ladder —
+/// moves nowhere, so holding one down at an end neither reloads the filter nor
+/// fills the scrollback with markers saying nothing happened.
+fn retuned(controls: &Controls, key: Key) -> Option<(LogLevel, Scope)> {
+    let next = match key {
+        Key::Louder => (controls.level.louder(), controls.scope),
+        Key::Quieter => (controls.level.quieter(), controls.scope),
+        Key::ScopeForward => (controls.level, controls.scope.next()),
+        Key::ScopeBack => (controls.level, controls.scope.previous()),
+        Key::Stop => return None,
+    };
+    (next != (controls.level, controls.scope)).then_some(next)
+}
+
+/// Apply a level or scope key, returning what to say about it in the history.
+fn retune(controls: &mut Controls, key: Key, log: &OnceLock<LogHandle>) -> Option<String> {
+    let (level, scope) = retuned(controls, key)?;
+    let handle = log.get()?;
+    if let Err(why) = handle.show(level, scope) {
+        return Some(why);
+    }
+    // Each key moves one of the two, so which one moved names the change.
+    let moved_level = level != controls.level;
+    controls.level = level;
+    controls.scope = scope;
+    Some(if moved_level {
+        format!("log level \u{2192} {}", level.label())
+    } else {
+        format!("log scope \u{2192} {}", scope.label())
+    })
+}
+
+/// Rotate the logo's colour ramp to where it stands at `elapsed`.
+///
+/// Driven by the clock rather than by a tick count so the wave keeps its pace
+/// through a burst of log lines, which is when a drawing thread's ticks are
+/// least even.
+fn advance_logo(state: &Mutex<UiState>, elapsed: Duration) {
+    let phase = (elapsed.as_millis() / LOGO_STEP.as_millis().max(1)) as usize;
+    set(state, |ui| ui.logo_phase = phase);
+}
+
+fn set(state: &Mutex<UiState>, edit: impl FnOnce(&mut UiState)) {
+    match state.lock() {
+        Ok(mut state) => edit(&mut state),
+        Err(poisoned) => edit(&mut poisoned.into_inner()),
+    }
 }
 
 fn drain(terminal: &mut Screen, incoming: &Receiver<String>) {
@@ -337,10 +501,137 @@ fn install_panic_hook() {
 
 #[cfg(test)]
 mod tests {
-    use super::{elapsed_text, rows_of, summary};
+    use super::{elapsed_text, key_of, marker, retuned, rows_of, summary, Controls, Key};
+    use crate::logging::{LogLevel, Scope};
     use crate::tui::state::UiState;
 
     use std::time::Duration;
+
+    use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+    fn press(code: KeyCode, modifiers: KeyModifiers) -> Event {
+        Event::Key(KeyEvent::new(code, modifiers))
+    }
+
+    fn controls() -> Controls {
+        Controls {
+            level: LogLevel::Info,
+            scope: Scope::All,
+            stopping: false,
+        }
+    }
+
+    /// Raw mode is on, so the terminal's own interrupt never fires: `^C` is a
+    /// key like any other and stops the run only because it is read as one.
+    #[test]
+    fn ctrl_c_and_q_both_read_as_a_stop() {
+        assert_eq!(
+            key_of(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            Some(Key::Stop)
+        );
+        assert_eq!(
+            key_of(&press(KeyCode::Char('q'), KeyModifiers::NONE)),
+            Some(Key::Stop)
+        );
+        // A bare `c` is a letter, not an interrupt.
+        assert_eq!(key_of(&press(KeyCode::Char('c'), KeyModifiers::NONE)), None);
+    }
+
+    #[test]
+    fn the_arrows_read_as_level_and_scope_keys() {
+        assert_eq!(key_of(&press(KeyCode::Up, KeyModifiers::NONE)), Some(Key::Louder));
+        assert_eq!(
+            key_of(&press(KeyCode::Down, KeyModifiers::NONE)),
+            Some(Key::Quieter)
+        );
+        assert_eq!(
+            key_of(&press(KeyCode::Right, KeyModifiers::NONE)),
+            Some(Key::ScopeForward)
+        );
+        assert_eq!(
+            key_of(&press(KeyCode::Left, KeyModifiers::NONE)),
+            Some(Key::ScopeBack)
+        );
+        assert_eq!(key_of(&press(KeyCode::Char('x'), KeyModifiers::NONE)), None);
+    }
+
+    /// A terminal reports a key twice — pressed and released — and acting on
+    /// both would move the level two rungs for one press.
+    #[test]
+    fn only_a_press_counts() {
+        let mut release = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        release.kind = KeyEventKind::Release;
+        assert_eq!(key_of(&Event::Key(release)), None);
+    }
+
+    #[test]
+    fn the_level_keys_move_one_rung_at_a_time() {
+        let controls = controls();
+        assert_eq!(
+            retuned(&controls, Key::Louder),
+            Some((LogLevel::Debug, Scope::All))
+        );
+        assert_eq!(
+            retuned(&controls, Key::Quieter),
+            Some((LogLevel::Warn, Scope::All))
+        );
+    }
+
+    #[test]
+    fn the_scope_keys_move_the_scope_and_leave_the_level() {
+        let controls = controls();
+        assert_eq!(
+            retuned(&controls, Key::ScopeForward),
+            Some((LogLevel::Info, Scope::Diagrams))
+        );
+        assert_eq!(
+            retuned(&controls, Key::ScopeBack),
+            Some((LogLevel::Info, Scope::Pdf))
+        );
+    }
+
+    /// At the end of the ladder the key does nothing at all — not a filter
+    /// reload, and not a marker line claiming a change.
+    #[test]
+    fn a_level_key_at_the_end_of_its_ladder_moves_nothing() {
+        let loudest = Controls {
+            level: LogLevel::Trace,
+            ..controls()
+        };
+        assert_eq!(retuned(&loudest, Key::Louder), None);
+        let quietest = Controls {
+            level: LogLevel::Off,
+            ..controls()
+        };
+        assert_eq!(retuned(&quietest, Key::Quieter), None);
+    }
+
+    /// The marker is what makes the scrollback self-explaining: the lines above
+    /// and below it differ, and it says why.
+    #[test]
+    fn a_marker_line_states_the_change_it_marks() {
+        assert_eq!(
+            marker("log level \u{2192} DEBUG"),
+            "\u{2500}\u{2500} log level \u{2192} DEBUG \u{2500}\u{2500}"
+        );
+    }
+
+    /// A run the operator stopped closes on a line that says so, so the
+    /// scrollback cannot be read as a run that finished what it was asked for.
+    #[test]
+    fn the_summary_records_that_a_run_was_stopped_early() {
+        let state = UiState {
+            stage: Some("vegas".to_string()),
+            sigma_pb: Some(802.94),
+            err_pb: 3.11,
+            stopping: true,
+            ..UiState::default()
+        };
+        assert_eq!(
+            summary(&state, Duration::from_secs(64)),
+            "vibegraph: vegas (stopped early), \u{3c3} = 802.9 \u{b1} 3.1 pb, 1m 04s"
+        );
+    }
 
     #[test]
     fn a_short_line_is_one_row() {
