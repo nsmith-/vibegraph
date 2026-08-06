@@ -101,6 +101,7 @@ use serde::Deserialize;
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use vibegraph::artifact::ChannelSampler;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
@@ -3019,4 +3020,240 @@ fn the_long_tier_sigma_rows_match_madgraph() {
         "long-tier sigma failures:\n{}",
         failures.join("\n")
     );
+}
+
+/// The per-diagram channel set a row's multichannel mixture is built from, and the
+/// spacelike floor it was regulated at.
+///
+/// Mirrors [`with_integrand`]'s channel construction exactly — same run card, same
+/// param card, same generated diagrams, same [`Cuts::spacelike_floor`] — while
+/// skipping the amplitude compilation, which the map does not depend on. The
+/// external-leg identities the cut compiler classifies are read off the generated
+/// diagram rather than off an evaluator; `from_diagram_regulated` reads the
+/// outgoing masses from the same `legs` slice, so the two sides cannot disagree
+/// about which leg is which.
+fn channel_set(dir: &str, process: &str) -> (Vec<vibegraph::phasespace::DiagramChannel<f64>>, f64) {
+    use vibegraph::cuts::ExternalLeg;
+    use vibegraph::phasespace::DiagramChannel;
+
+    let card_path = output_dir().join(dir).join("Cards/run_card.dat");
+    let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
+    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+
+    let sets = common::generate(process);
+    let diagrams: Vec<_> = sets
+        .iter()
+        .flat_map(|s| s.diagrams.iter().cloned())
+        .collect();
+    assert!(!diagrams.is_empty(), "[{dir}] generated no diagrams");
+
+    let reference: Vec<_> = diagrams[0].legs.iter().map(|l| l.particle).collect();
+    for d in &diagrams {
+        let seq: Vec<_> = d.legs.iter().map(|l| l.particle).collect();
+        assert_eq!(
+            seq, reference,
+            "[{dir}] the row's diagrams do not share one external-leg sequence, \
+             so one cut filter cannot serve them"
+        );
+    }
+    let legs: Vec<ExternalLeg> = diagrams[0]
+        .legs
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let pdg = model.particle(l.particle).pdg_code as i32;
+            let mass = evaluated.mass(l.particle);
+            if i < diagrams[0].n_in {
+                ExternalLeg::incoming(pdg, mass)
+            } else {
+                ExternalLeg::outgoing(pdg, mass)
+            }
+        })
+        .collect();
+    let cuts = Cuts::compile(&run_card, &legs)
+        .unwrap_or_else(|e| panic!("[{dir}] run card activates a cut vibegraph cannot apply: {e}"));
+    let floor = cuts.spacelike_floor();
+
+    let built = diagrams
+        .iter()
+        .map(|d| DiagramChannel::from_diagram_regulated(d, &evaluated, sqrt_s, floor))
+        .collect();
+    (built, floor)
+}
+
+/// How many *distinct maps* a row's per-diagram channel set actually contains, and
+/// whether the structural key that counts them is the density's own determinant.
+///
+/// The multichannel mixture carries one channel per diagram — hundreds on a
+/// `2 -> 6` row — but the map a channel draws through is a function of its
+/// subsystem tree, its poles and its regulator, not of the diagram it was read
+/// off. Diagrams differing only by an internal flavour at equal mass therefore
+/// build the *same* density, and a mixture term `α_j g_j + α_k g_k` with
+/// `g_j = g_k` is exactly `(α_j + α_k) g_j`: the duplicate costs a density
+/// evaluation, a per-iteration sample floor and a share of the grid training, and
+/// buys nothing. This counts what that costs before anything is built to fix it.
+///
+/// The key ([`DiagramChannel::map_key`]) is checked against the density in both
+/// directions rather than assumed:
+///
+/// - *exhaustively within each class*, every member's density is compared bit for
+///   bit against its class representative at every probe point. Same construction
+///   on same inputs is deterministic, so anything but bitwise equality means the
+///   key is missing a determinant of the map.
+/// - *exhaustively across classes*, every pair of representatives is checked for a
+///   point where the two densities differ. A pair agreeing everywhere would be a
+///   split the key makes and the density does not — conservative for a merge, but
+///   worth knowing.
+///
+/// Probe points are drawn from the channels themselves, so each lands inside at
+/// least one channel's support; the count of points where a compared pair is
+/// non-zero is reported, since a comparison over an all-zero column would be
+/// vacuous.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_channel_dedup_census() {
+    use rand::Rng;
+    use std::collections::BTreeMap;
+    use vibegraph::phasespace::{Channel, PhaseSpaceMap};
+
+    const POINTS: usize = 64;
+
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).expect("sigma reference readable");
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+
+    for (dir, entry) in &banked {
+        let clock = Stopwatch::start();
+        let (built, floor) = channel_set(dir, &entry.process);
+        let build_s = clock.seconds();
+
+        let mut classes: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        for (i, ch) in built.iter().enumerate() {
+            classes.entry(ch.map_key()).or_default().push(i);
+        }
+        // In channel order, so timing the sum over representatives against the sum
+        // over everything compares two forward walks rather than charging the
+        // shorter one for a scattered access pattern.
+        let mut reps: Vec<usize> = classes.values().map(|m| m[0]).collect();
+        reps.sort_unstable();
+
+        let mut sizes: BTreeMap<usize, usize> = BTreeMap::new();
+        for members in classes.values() {
+            *sizes.entry(members.len()).or_default() += 1;
+        }
+        let histogram: Vec<String> = sizes
+            .iter()
+            .rev()
+            .map(|(size, count)| format!("{count}x{size}"))
+            .collect();
+
+        // A run's record carries one `ChannelSampler` per channel, and it reads the
+        // channel's spacelike line list — which the density does not. Classes whose
+        // members disagree there have no single composition to record, so a merge
+        // owes the artifact a rule rather than a copy.
+        let split_records = classes
+            .values()
+            .filter(|members| {
+                let first = ChannelSampler::of(&built[members[0]]);
+                members[1..]
+                    .iter()
+                    .any(|&m| ChannelSampler::of(&built[m]) != first)
+            })
+            .count();
+
+        // Probe points, one per channel taken round-robin so the set spans every
+        // class's own support rather than one channel's.
+        let mut rng = ChaCha8Rng::seed_from_u64(SEED);
+        let points: Vec<Vec<LorentzVector<f64>>> = (0..POINTS)
+            .map(|k| {
+                let ch = &built[reps[k % reps.len()]];
+                let u: Vec<f64> = (0..ch.ndim()).map(|_| rng.random::<f64>()).collect();
+                ch.sample(&u).momenta
+            })
+            .collect();
+
+        // Within a class: every member against its representative, bit for bit.
+        let mut mismatches = 0usize;
+        let mut compared = 0usize;
+        let mut live = 0usize;
+        for members in classes.values() {
+            let rep = &built[members[0]];
+            for &m in &members[1..] {
+                compared += 1;
+                let other = &built[m];
+                for p in &points {
+                    let a = rep.density(p);
+                    let b = other.density(p);
+                    if a.to_bits() != b.to_bits() {
+                        mismatches += 1;
+                        break;
+                    }
+                }
+                if points.iter().any(|p| rep.density(p) != 0.0) {
+                    live += 1;
+                }
+            }
+        }
+
+        // Across classes: every pair of representatives needs a point that
+        // separates it, or the key split a map the density does not.
+        let mut pairs = 0usize;
+        let mut inseparable = 0usize;
+        for (a, &i) in reps.iter().enumerate() {
+            for &j in &reps[a + 1..] {
+                pairs += 1;
+                let (ci, cj) = (&built[i], &built[j]);
+                if points
+                    .iter()
+                    .all(|p| ci.density(p).to_bits() == cj.density(p).to_bits())
+                {
+                    inseparable += 1;
+                }
+            }
+        }
+
+        // What the merge would actually save per point: the combiner's `Σⱼ gⱼ`
+        // over every channel against the same sum over one member per class. Timed
+        // as the minimum over rounds, so a co-scheduled process inflates a round
+        // rather than the figure.
+        const ROUNDS: usize = 5;
+        let sum_over = |idx: &[usize]| -> f64 {
+            let mut best = f64::INFINITY;
+            for _ in 0..ROUNDS {
+                let timer = Stopwatch::start();
+                let mut acc = 0.0f64;
+                for p in &points {
+                    for &j in idx {
+                        acc += built[j].density(p);
+                    }
+                }
+                std::hint::black_box(acc);
+                best = best.min(timer.seconds());
+            }
+            best * 1e6 / points.len() as f64
+        };
+        let all: Vec<usize> = (0..built.len()).collect();
+        let (us_all, us_reps) = (sum_over(&all), sum_over(&reps));
+
+        eprintln!(
+            "[{dir}] {:5} channels -> {:4} classes ({:.2}x) | floor {floor:8.1} GeV^2 | \
+             sizes {} | within-class {compared} pairs, {mismatches} density mismatch, \
+             {live} with a non-zero column | across-class {pairs} pairs, \
+             {inseparable} inseparable | {split_records} classes with a split sampler record | \
+             density sum {us_all:7.2} -> {us_reps:7.2} us/point | \
+             floor {} -> {} evals/iter | build {build_s:5.1} s",
+            built.len(),
+            classes.len(),
+            built.len() as f64 / classes.len() as f64,
+            histogram.join(" "),
+            built.len() * vibegraph::budget::MIN_CHANNEL_NEVAL,
+            classes.len() * vibegraph::budget::MIN_CHANNEL_NEVAL,
+        );
+    }
 }

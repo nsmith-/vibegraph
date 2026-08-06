@@ -600,6 +600,65 @@ impl<F: Real> DiagramChannel<F> {
         self.n_out
     }
 
+    /// A canonical encoding of everything the map is a function of: the outgoing
+    /// multiplicity, the beam pole masses the peripheral reference frame is built
+    /// from, the energy the fixed-energy impls draw at, and the whole topology —
+    /// each node's leg slot or minimal invariant, its mass and its resonance, and
+    /// each peripheral rung's pole location and transfer bound.
+    ///
+    /// Two channels with equal keys are the same map. [`Channel::density`],
+    /// [`ScaledChannel::density_at`] and the two `sample` entry points read
+    /// `n_out`, `beam_masses`, `sqrt_s` and `topology` and nothing else, and the
+    /// encoding is injective on those, so equal keys give a pointwise equal
+    /// density — the condition under which two terms of a mixture may be replaced
+    /// by one carrying the sum of their selection weights.
+    ///
+    /// [`t_channels`](Self::t_channels) is deliberately absent: it records the
+    /// diagram's spacelike lines for inspection and no draw or density reads it.
+    /// The key is finer than density equality where a symmetry of the Jacobian
+    /// makes two encodings agree pointwise anyway, so it can only under-count
+    /// coincidences, never invent one.
+    ///
+    /// Scalars are encoded by their exact mantissa/exponent/sign decomposition
+    /// rather than a printed decimal, so no two distinct poles round together.
+    pub fn map_key(&self) -> String {
+        let mut out = String::new();
+        out.push_str("n=");
+        out.push_str(&self.n_out.to_string());
+        out.push_str(";beams(");
+        key_scalar(self.beam_masses[0], &mut out);
+        out.push(',');
+        key_scalar(self.beam_masses[1], &mut out);
+        out.push_str(");sqrt_s(");
+        key_scalar(self.sqrt_s, &mut out);
+        out.push_str(");");
+        match &self.topology {
+            ChannelTopology::Timelike(root) => {
+                out.push('T');
+                key_branch(root, &mut out);
+            }
+            ChannelTopology::Spine(spine) => {
+                out.push_str("S[");
+                for rung in &spine.rungs {
+                    out.push_str("G(");
+                    key_scalar(rung.t_mass2, &mut out);
+                    out.push(',');
+                    match rung.t_max_cap {
+                        None => out.push('-'),
+                        Some(cap) => key_scalar(cap, &mut out),
+                    }
+                    out.push(',');
+                    key_node(&rung.emitted, &mut out);
+                    out.push(')');
+                }
+                out.push('|');
+                key_node(&spine.recoil, &mut out);
+                out.push(']');
+            }
+        }
+        out
+    }
+
     /// The s-channel propagator poles the sampled invariants sit on, for a
     /// resonance-aware invariant map.
     pub fn resonances(&self) -> Vec<Resonance<F>> {
@@ -909,6 +968,51 @@ fn binarize<F: Real>(mut children: Vec<Node<F>>, resonance: Option<Resonance<F>>
         mu,
         resonance,
     }))
+}
+
+/// Append a scalar's exact `(mantissa, exponent, sign)` decomposition, so two keys
+/// compare equal only for bit-identical values.
+fn key_scalar<F: Real>(x: F, out: &mut String) {
+    let (mantissa, exponent, sign) = x.integer_decode();
+    out.push_str(&mantissa.to_string());
+    out.push(':');
+    out.push_str(&exponent.to_string());
+    out.push(':');
+    out.push_str(&sign.to_string());
+}
+
+fn key_node<F: Real>(node: &Node<F>, out: &mut String) {
+    match node {
+        Node::Leaf { slot, mass } => {
+            out.push_str("L(");
+            out.push_str(&slot.to_string());
+            out.push(',');
+            key_scalar(*mass, out);
+            out.push(')');
+        }
+        Node::Branch(b) => key_branch(b, out),
+    }
+}
+
+fn key_branch<F: Real>(branch: &Branch<F>, out: &mut String) {
+    out.push_str("B(");
+    key_scalar(branch.mu, out);
+    out.push(',');
+    match branch.resonance {
+        None => out.push('-'),
+        Some(r) => {
+            out.push_str("R(");
+            key_scalar(r.mass, out);
+            out.push(',');
+            key_scalar(r.width, out);
+            out.push(')');
+        }
+    }
+    out.push(',');
+    key_node(&branch.left, out);
+    out.push(',');
+    key_node(&branch.right, out);
+    out.push(')');
 }
 
 fn collect_resonances<F: Real>(branch: &Branch<F>, out: &mut Vec<Resonance<F>>) {
@@ -2671,6 +2775,153 @@ mod tests {
             near_w < 1e-2 * wide_w,
             "spacelike window {near_w:.3e} did not collapse near threshold (wide {wide_w:.3e})"
         );
+    }
+
+    /// [`DiagramChannel::map_key`] separates every field the map is a function of.
+    ///
+    /// The key exists to decide when two channels of a mixture are the same
+    /// distribution, so a field it silently dropped would merge two channels that
+    /// draw differently — a wrong sampler reporting no error. Each entry below
+    /// moves exactly one determinant of the map off a common base; all the keys
+    /// have to differ, and a channel rebuilt from identical inputs has to repeat
+    /// its own.
+    #[test]
+    fn map_key_separates_every_field_the_map_reads() {
+        let z = z_resonance();
+        let heavier = Resonance {
+            mass: z.mass + 1.0,
+            ..z
+        };
+        let wider = Resonance {
+            width: z.width + 1.0,
+            ..z
+        };
+        let ladder = |sqrt_s, beams, masses: Vec<f64>, rungs: &[RungSpec<f64>], recoil| {
+            DiagramChannel::from_topology_ladder(sqrt_s, beams, masses, rungs, recoil)
+        };
+        let base_rungs: [RungSpec<f64>; 2] = [
+            (vec![3], None, 0.0),
+            (vec![0, 1], Some(z), 80.4),
+        ];
+        let base = || {
+            ladder(
+                600.0,
+                [0.0, 0.0],
+                vec![0.0, 0.0, 0.0, 0.0],
+                &base_rungs,
+                (vec![2], None),
+            )
+        };
+
+        assert_eq!(
+            base().map_key(),
+            base().map_key(),
+            "the same inputs must rebuild the same key"
+        );
+
+        let variations: Vec<(&str, DiagramChannel<f64>)> = vec![
+            ("base", base()),
+            (
+                "energy",
+                ladder(
+                    601.0,
+                    [0.0, 0.0],
+                    vec![0.0, 0.0, 0.0, 0.0],
+                    &base_rungs,
+                    (vec![2], None),
+                ),
+            ),
+            (
+                "beam mass",
+                ladder(
+                    600.0,
+                    [1.0, 0.0],
+                    vec![0.0, 0.0, 0.0, 0.0],
+                    &base_rungs,
+                    (vec![2], None),
+                ),
+            ),
+            (
+                "leg mass",
+                ladder(
+                    600.0,
+                    [0.0, 0.0],
+                    vec![0.0, 0.0, 0.0, 5.0],
+                    &base_rungs,
+                    (vec![2], None),
+                ),
+            ),
+            (
+                "resonance mass",
+                ladder(
+                    600.0,
+                    [0.0, 0.0],
+                    vec![0.0, 0.0, 0.0, 0.0],
+                    &[(vec![3], None, 0.0), (vec![0, 1], Some(heavier), 80.4)],
+                    (vec![2], None),
+                ),
+            ),
+            (
+                "resonance width",
+                ladder(
+                    600.0,
+                    [0.0, 0.0],
+                    vec![0.0, 0.0, 0.0, 0.0],
+                    &[(vec![3], None, 0.0), (vec![0, 1], Some(wider), 80.4)],
+                    (vec![2], None),
+                ),
+            ),
+            (
+                "no resonance",
+                ladder(
+                    600.0,
+                    [0.0, 0.0],
+                    vec![0.0, 0.0, 0.0, 0.0],
+                    &[(vec![3], None, 0.0), (vec![0, 1], None, 80.4)],
+                    (vec![2], None),
+                ),
+            ),
+            (
+                "spacelike pole",
+                ladder(
+                    600.0,
+                    [0.0, 0.0],
+                    vec![0.0, 0.0, 0.0, 0.0],
+                    &[(vec![3], None, 0.0), (vec![0, 1], Some(z), 91.2)],
+                    (vec![2], None),
+                ),
+            ),
+            (
+                "blob membership",
+                ladder(
+                    600.0,
+                    [0.0, 0.0],
+                    vec![0.0, 0.0, 0.0, 0.0],
+                    &[(vec![2], None, 0.0), (vec![0, 1], Some(z), 80.4)],
+                    (vec![3], None),
+                ),
+            ),
+            ("transfer bound", base().with_fiducial_t_max(-400.0)),
+            ("rung order", base().with_rung_order(&[1, 0])),
+            (
+                "timelike tree",
+                DiagramChannel::from_topology_resonant(
+                    600.0,
+                    vec![0.0, 0.0, 0.0, 0.0],
+                    &[(vec![0, 1], Some(z))],
+                ),
+            ),
+        ];
+
+        for (a, (name_a, ch_a)) in variations.iter().enumerate() {
+            for (name_b, ch_b) in &variations[a + 1..] {
+                assert_ne!(
+                    ch_a.map_key(),
+                    ch_b.map_key(),
+                    "'{name_a}' and '{name_b}' share a key but are different maps"
+                );
+            }
+        }
     }
 
     /// A single-rung spine at √s = 500 with 80 GeV beams and massless final legs.
