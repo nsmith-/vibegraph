@@ -157,11 +157,7 @@ pub fn lower_flows(
 /// minimal tree, not a minimal DAG, so CSE stays as the tree→DAG post-process).
 pub fn optimize(ast: Ast<Sym>) -> Ast<Sym> {
     let deduped = cse(&flatten_adds(&ast));
-    log::debug!(
-        "optimize: {} nodes → {} after CSE",
-        ast.len(),
-        deduped.len()
-    );
+    tracing::debug!("lowered {} nodes → {} after CSE", ast.len(), deduped.len());
     deduped
 }
 

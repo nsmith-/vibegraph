@@ -334,6 +334,8 @@ impl<F: Real> MultiChannel<F> {
 
         let mut trajectory = vec![self.alphas.clone()];
         let mut variance_shares = vec![F::zero(); n];
+        let _span = tracing::info_span!("alpha_survey").entered();
+        tracing::info!("surveying {n} channels over {n_iter} × {n_survey} points");
 
         for it in 0..n_iter {
             let mut s = SubStream::from_stream(seed, stream + it as u64);
@@ -355,10 +357,16 @@ impl<F: Real> MultiChannel<F> {
             variance_shares = w.clone();
 
             let Some(raw) = kleiss_pittau_step(&self.alphas, &w, damping) else {
+                tracing::debug!("survey iteration {} carried no variance; stopping", it + 1);
                 break;
             };
             self.set_alphas(raw.clone());
             trajectory.push(raw);
+            crate::progress::step(
+                crate::progress::stage::ALPHA_SURVEY,
+                it as u64 + 1,
+                Some(n_iter as u64),
+            );
         }
 
         AlphaAdaptation {

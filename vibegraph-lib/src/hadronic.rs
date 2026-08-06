@@ -28,7 +28,7 @@ use rand::SeedableRng;
 use thiserror::Error;
 use thread_local::ThreadLocal;
 
-use crate::artifact::ChannelSampler;
+use crate::artifact::{ChannelSampler, SamplerTopology};
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
 use crate::coupling::cluster::graph::{ColorTable, MergeTablesByOrder};
@@ -48,6 +48,7 @@ use crate::phasespace::{
     identical_particle_factor, AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel,
     PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
 };
+use crate::progress;
 use crate::runcard::RunCard;
 use crate::select::select_index;
 use crate::ufo::{EvaluatedModel, UFOModel};
@@ -548,12 +549,14 @@ pub fn compile_subprocesses(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Result<Vec<AmplitudeEvaluator>, HadronicError> {
+    let total = sets.iter().filter(|s| !s.diagrams.is_empty()).count() as u64;
     let mut evals = Vec::new();
     for set in sets {
         if set.diagrams.is_empty() {
             continue;
         }
         evals.push(compile_class(set, model, evaluated)?);
+        progress::step(progress::stage::COMPILE, evals.len() as u64, Some(total));
     }
     if evals.is_empty() {
         return Err(HadronicError::NoSubprocess);
@@ -1028,6 +1031,30 @@ pub struct EventSelection {
     pub flow: usize,
 }
 
+/// The phase-space maps the channels were built from: how many there are, how many
+/// carry a peripheral spine, and — in detail — what each one draws against.
+pub(crate) fn report_channel_maps(samplers: &[ChannelSampler]) {
+    let spine = samplers
+        .iter()
+        .filter(|s| s.topology == SamplerTopology::Spine)
+        .count();
+    tracing::info!(
+        "phase space: {} channels, {spine} peripheral, {} all-timelike",
+        samplers.len(),
+        samplers.len() - spine
+    );
+    if tracing::enabled!(tracing::Level::DEBUG) {
+        for (j, sampler) in samplers.iter().enumerate() {
+            tracing::debug!(
+                "channel {j}: {:?}, {} resonances, {} spacelike lines",
+                sampler.topology,
+                sampler.resonances.len(),
+                sampler.t_channels.len()
+            );
+        }
+    }
+}
+
 /// Sum the per-channel terms: integrals add, errors add in quadrature, and the
 /// χ²/dof is the pooled statistic (`Σ χ²ⱼ` over `Σ dofⱼ`) rather than any single
 /// channel's.
@@ -1457,6 +1484,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         }
         self.assert_channels_match_the_scale_source(built.len());
         let samplers: Vec<ChannelSampler> = built.iter().map(ChannelSampler::of).collect();
+        report_channel_maps(&samplers);
         let channels: Vec<Box<dyn Channel<f64>>> = built
             .into_iter()
             .map(|c| Box::new(c) as Box<dyn Channel<f64>>)
@@ -1528,6 +1556,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         if channels.len() != alphas.len() {
             return Some(Err(channels.len()));
         }
+        report_channel_maps(&samplers);
         let mut combiner = MultiChannel::uniform(channels);
         combiner.set_alphas(alphas.to_vec());
         self.sampler = Sampler::Multi(combiner);

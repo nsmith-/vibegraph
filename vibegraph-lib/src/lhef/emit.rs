@@ -37,6 +37,8 @@ use std::io::{self, Write};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
+use crate::progress;
+
 use super::build::WeightNormalisation;
 use super::record::{LheEvent, LheInit, LheProcess, WeightStrategy};
 use super::write::LheWriter;
@@ -201,7 +203,9 @@ fn init_block(plan: &EmitPlan, strategy: WeightStrategy, xsec_pb: f64, xmax: f64
 
 /// Take `n` accepted events from the source, or report how far it got.
 fn draw_all(source: &mut dyn EventSource, n: usize) -> Result<Vec<WeightedEvent>, EmitError> {
+    let _span = tracing::info_span!("unweight").entered();
     let mut events = Vec::with_capacity(n);
+    progress::unweighting(0, n as u64);
     while events.len() < n {
         let Some(event) = source.next_event() else {
             return Err(EmitError::Exhausted {
@@ -210,6 +214,7 @@ fn draw_all(source: &mut dyn EventSource, n: usize) -> Result<Vec<WeightedEvent>
             });
         };
         events.push(event);
+        progress::unweighting(events.len() as u64, n as u64);
     }
     Ok(events)
 }
@@ -356,9 +361,11 @@ impl UnweightStrategy for StochasticRounding {
         let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
         rng.set_stream(ROUNDING_STREAM);
 
+        let _span = tracing::info_span!("unweight").entered();
         let mut drawn = 0usize;
         let mut weight_total = 0.0f64;
         let mut max_source_weight = 0.0f64;
+        progress::unweighting(0, plan.nevents as u64);
         while writer.events_written() < plan.nevents as u64 {
             let Some(event) = source.next_event() else {
                 return Err(EmitError::Exhausted {
@@ -378,6 +385,7 @@ impl UnweightStrategy for StochasticRounding {
             for _ in 0..copies {
                 writer.write_event(&record)?;
             }
+            progress::unweighting(writer.events_written(), plan.nevents as u64);
         }
         let written = writer.events_written();
         writer.finish()?;

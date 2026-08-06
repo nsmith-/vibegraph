@@ -33,11 +33,14 @@ pub use parse::{
 };
 
 use std::path::Path;
+use std::time::Instant;
 
 use feyngraph::topology::{Topology, TopologyGenerator, TopologyModel};
 use feyngraph::DiagramGenerator;
 use thiserror::Error;
+use tracing::{debug, info, info_span, trace};
 
+use crate::progress;
 use crate::ufo::UFOModel;
 
 use alias::expand_process;
@@ -85,7 +88,20 @@ pub fn parse_proc_card(
     content: &str,
     opts: &ParsingOptions,
 ) -> Result<ParsedProcCard, DiagramError> {
-    Ok(inner_parse_proc_card(content, opts)?)
+    let card = inner_parse_proc_card(content, opts)?;
+    let _span = info_span!("proc_card").entered();
+    for spec in &card.processes {
+        info!("generate {spec}");
+    }
+    for def in &card.defines {
+        let except = if def.except.is_empty() {
+            String::new()
+        } else {
+            format!(" / {}", def.except.join(" "))
+        };
+        debug!("define {} = {}{except}", def.alias, def.particles.join(" "));
+    }
+    Ok(card)
 }
 
 // ── Diagram generation API ────────────────────────────────────────────────────
@@ -98,11 +114,20 @@ pub fn generate_from_proc_card(
     proc_card: &ParsedProcCard,
     model: &UFOModel,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
+    let _span = info_span!("enumerate").entered();
+    let started = Instant::now();
     let aliases = AliasTable::from_defines(&proc_card.defines);
     let mut sets = Vec::new();
     for spec in &proc_card.processes {
         sets.extend(generate_from_process_spec(spec, model, &aliases)?);
     }
+    let diagrams: usize = sets.iter().map(|s| s.diagrams.len()).sum();
+    let populated = sets.iter().filter(|s| !s.diagrams.is_empty()).count();
+    info!(
+        "enumerated {diagrams} diagrams in {populated} subprocess{} ({:.3} s)",
+        if populated == 1 { "" } else { "es" },
+        started.elapsed().as_secs_f64()
+    );
     Ok(sets)
 }
 
@@ -140,11 +165,14 @@ fn generate_from_process_spec(
         loop {
             let sets = generate_sets_inner(spec, model, aliases, Some(w), &cached_topologies)?;
             if sets.iter().any(|s| !s.diagrams.is_empty()) {
+                debug!("lowest WEIGHTED order with diagrams: {w}");
                 return Ok(sets);
             }
             if w >= max_w {
+                debug!("no diagrams at any WEIGHTED order in {min_w}..={max_w}");
                 return Ok(sets);
             }
+            debug!("no diagrams at WEIGHTED {w}, raising the bound");
             w += 1;
         }
     } else {
@@ -157,8 +185,14 @@ fn generate_from_process_spec(
 /// recomputing the topology search (which is O(n!) in the number of internal vertices)
 /// for every concrete subprocess.
 fn generate_topologies(n_ext: usize, topo_model: &feyngraph::model::Model) -> Vec<Topology> {
+    let started = Instant::now();
     let container =
         TopologyGenerator::new(n_ext, 0, TopologyModel::from(topo_model), None).generate();
+    debug!(
+        "{} tree topologies on {n_ext} legs in {:.3} s",
+        container.len(),
+        started.elapsed().as_secs_f64()
+    );
     (0..container.len())
         .map(|i| container.get(i).clone())
         .collect()
@@ -180,6 +214,11 @@ fn generate_sets_inner(
     cached_topologies: &[Topology],
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     let mut sets = Vec::new();
+    // Candidate assignments seen, and the two prefilters' kills: what the
+    // enumeration paid for the assignments it never handed to feyngraph.
+    let mut candidates = 0usize;
+    let mut duplicates = 0usize;
+    let mut charge_kills = 0usize;
     // Deduplicate on (sorted initial, sorted final): a concrete subprocess is
     // identified by the *unordered* content of each side, so a card whose
     // final-state slots draw on intersecting alias sets (`p p > j j`) yields
@@ -220,6 +259,7 @@ fn generate_sets_inner(
     };
 
     for concrete in expand_process(spec, aliases) {
+        candidates += 1;
         let mut concrete = concrete;
         for n in concrete
             .initial
@@ -235,6 +275,7 @@ fn generate_sets_inner(
         let mut final_sorted = concrete.final_state.clone();
         final_sorted.sort();
         if !seen_processes.insert((initial_sorted, final_sorted)) {
+            duplicates += 1;
             continue;
         }
 
@@ -250,6 +291,7 @@ fn generate_sets_inner(
             .map(|p| particle_charge(p))
             .sum();
         if (q_in - q_out).abs() > 1e-6 {
+            charge_kills += 1;
             continue;
         }
 
@@ -273,6 +315,7 @@ fn generate_sets_inner(
 
         let in_refs: Vec<&str> = concrete.initial.iter().map(String::as_str).collect();
         let out_refs: Vec<&str> = concrete.final_state.iter().map(String::as_str).collect();
+        let started = Instant::now();
 
         let generator =
             DiagramGenerator::new(&in_refs, &out_refs, 0, model.topo.clone(), Some(sel))?;
@@ -289,12 +332,63 @@ fn generate_sets_inner(
             .map(|view| Diagram::from_view(&view, model))
             .collect::<Result<Vec<_>, _>>()?;
 
+        let subprocess = format!("{} > {}", in_refs.join(" "), out_refs.join(" "));
+        if !diagrams.is_empty() {
+            info!("{} diagrams for {subprocess}", diagrams.len());
+            debug!(
+                "{subprocess}: enumerated in {:.3} s",
+                started.elapsed().as_secs_f64()
+            );
+            report_vertex_assignments(&subprocess, &diagrams, model);
+        }
+
         sets.push(DiagramSet {
             particles_in: concrete.initial,
             particles_out: concrete.final_state,
             diagrams,
         });
+        progress::step(progress::stage::ENUMERATE, sets.len() as u64, None);
+    }
+
+    // Reported only for the pass that found something: under the automatic
+    // WEIGHTED search the same expansion is walked once per candidate order, and
+    // the prefilter counts are identical every time.
+    if sets.iter().any(|s| !s.diagrams.is_empty()) {
+        debug!(
+            "{candidates} alias-expanded assignments: {duplicates} duplicate, {charge_kills} \
+             charge-violating, {} enumerated",
+            sets.len()
+        );
     }
 
     Ok(sets)
+}
+
+/// Every diagram's vertices and internal lines, one line each.
+///
+/// Gated on the level rather than left to the macro because rendering a diagram
+/// costs a string per vertex and per propagator, and a wide process has thousands
+/// of them.
+fn report_vertex_assignments(subprocess: &str, diagrams: &[Diagram], model: &UFOModel) {
+    if !tracing::enabled!(tracing::Level::TRACE) {
+        return;
+    }
+    for (d, diagram) in diagrams.iter().enumerate() {
+        let vertices: Vec<&str> = diagram
+            .vertices
+            .iter()
+            .map(|v| model.vertex_def(v.interaction).name.as_str())
+            .collect();
+        let props: Vec<&str> = diagram
+            .props
+            .iter()
+            .map(|p| model.particle(p.particle).name.as_str())
+            .collect();
+        trace!(
+            "{subprocess} diagram {}: vertices [{}], internal [{}]",
+            d + 1,
+            vertices.join(" "),
+            props.join(" ")
+        );
+    }
 }
