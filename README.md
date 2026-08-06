@@ -491,6 +491,15 @@ scripts/              Acceptance run + profiling and perf-comparison kits
 `TODO.md` holds the prioritized backlogs and pipeline status; the notes in
 `research/notes/` record each sprint's design, bugs, and close-out in full.
 
+## Contributing
+
+Patches welcome, with no process to clear first —
+[`CONTRIBUTING.md`](CONTRIBUTING.md) is short and mostly says so. Written with
+an AI harness? Also welcome, and most of this repository was:
+[`AI_POLICY.md`](AI_POLICY.md) says what we ask (name the model, own the code,
+back physics claims with a gate), and [`AGENTS.md`](AGENTS.md) is the context
+file to point your tool at.
+
 ## License
 
 vibegraph's own code is dual-licensed under either

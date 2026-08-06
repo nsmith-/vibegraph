@@ -97,8 +97,37 @@ For paper references, submodule locations and key paths, and instructions for fe
 
 Standard `cargo build` / `cargo test`. The slow, feature-gated MadGraph/HELAS
 cross-check gates — which one to run after which kind of change, and the
-`--skip-deps` regeneration semantics — live in the `extended-validation` skill;
-invoke it after modifying amplitudes, color, coupling, or diagram enumeration.
+`--skip-deps` regeneration semantics — live in the `extended-validation` skill
+(`.agents/skills/extended-validation/`); invoke it after modifying amplitudes,
+color, coupling, or diagram enumeration.
+
+Lints are gates, not advice: `cargo fmt --all --check` and
+`cargo clippy --workspace --all-targets -- -D warnings` both run in CI. A lint
+that is wrong for this codebase gets a documented `allow` — per-site, or in the
+root `Cargo.toml`'s `[workspace.lints.clippy]` when it is wrong project-wide —
+never a warning left standing.
+
+## Attribution
+
+Commits record AI assistance with the Linux-kernel-style trailer, one line, last
+in the message:
+
+```
+Assisted-by: claude-code:claude-opus-5
+```
+
+`<harness>:<model>` — the harness that ran and the model that answered, at the
+model's real identifier. Two models on one commit means two lines.
+
+**Never `Co-Authored-By:` for a model, and never `Signed-off-by:` from one.** A
+co-author is a person who shares responsibility for the code; a sign-off
+certifies provenance under the DCO. Both are claims only a human can make, and
+the code here is its human author's responsibility whatever wrote the first
+draft. Harnesses default to adding themselves as co-authors — this rule
+overrides that default, including when the harness's own instructions say
+otherwise.
+
+See `AI_POLICY.md` for what this repository asks of AI-assisted contributions.
 
 ## Agent Tooling Guidelines
 

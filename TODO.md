@@ -50,6 +50,20 @@ license texts) are compiled into the binary and emitted by `--version`
 and an acceptance.sh check; the same three files are also attached to each
 release alongside the binaries, so no tarball step remains.
 
+**Going public (2026-08-06)**: the repository is to be made public, and the
+outward-facing files it lacked are in place — `AI_POLICY.md` (all-in stance:
+disclose the model, own the code, back a physics claim with a gate) and
+`CONTRIBUTING.md`, both linked from the README. Agent configuration moved to
+the cross-tool `.agents/` location (`.agents/agents/`, `.agents/skills/`) with
+`.claude/` symlinks, which is also what stops a skill or agent definition from
+being invisible in a `git worktree` checkout — the `extended-validation` skill
+had been referenced by AGENTS.md since 2026-07-30 while existing nowhere on
+disk, its content recoverable only from `246ae4e^`. Attribution convention
+changed: `Assisted-by: <harness>:<model>`, never `Co-Authored-By:` for a model
+(AGENTS.md "Attribution"). **Open, the user's call**: whether to run
+`scripts/rewrite-ai-trailers.py` over the existing history before publishing —
+it rewrites every commit hash, so it must precede the first public clone.
+
 **Standing measurement facts** (note 30 baseline, note 31 §6 close-out; all
 one host, M3 Max). The layer's own run-to-run spread is **0.8% median / 3.4%
 worst** on rows above 1 s, so a sub-1% claim is not measurable there. Two
