@@ -851,3 +851,83 @@ whole-table −4.8%).
 
 What would settle it: re-run S4's exact bench on the current tip and on
 `e6d1d66`, same sitting, same quiet host. Cheap, and nobody has done it.
+
+## 7. Time to a target accuracy on σ, 2026-08-06
+
+Throughput (§6.4 of note 31) prices a point; it cannot see whether the point
+was worth drawing. This measures the quantity a user actually waits for:
+CPU-seconds to a given relative uncertainty on σ.
+
+**Protocol.** Ours is measured, not derived:
+
+```
+vibegraph integrate <proc card> --run-card <run card> \
+    --target-rel 0.001 --seed {20260719,20260720,20260721} -j 1
+```
+
+wall-clock over the whole process, so model load, diagram enumeration and
+evaluator compilation are all inside the number. MadGraph's side is its banked
+run's `<cumulated_time>` (summed CPU of its Fortran jobs, which removes its job
+farm from the comparison, as §6.4 required) together with the σ ± err of the
+same run's `SubProcesses/results.dat`, scaled to the accuracy *our* run reached
+by the 1/δ² law. Normalising at our achieved δ rather than at a round target
+puts the whole extrapolation on MadGraph's side. δ is the χ²-scaled error —
+the quoted one widened by `√max(1, χ²/dof)`, the same reading `--target-rel`
+itself stops on, and the stricter of the two.
+
+Host: M3 Max, quiet, `-j 1` throughout. Three seeds per row; wall spread across
+seeds 1.3–4.0% except `dy13_default` at 26%, whose convergence run stops at 17
+or 18 iterations depending on the seed.
+
+| row | ch | ours s | δ quoted | δ χ² | our Mpts | MG pts @δ | pts ours/MG | MG s @δ | ratio |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| `ee_to_mumu` | 2 | 0.43 | 0.0414% | 0.0461% | 0.72 | 0.19 | 3.7× | 6.9 | **16.0×** |
+| `dy13_default` | 4 | 3.11 | 0.0881% | 0.0972% | 2.28 | 0.86 | 2.7× | 26.0 | **8.4×** |
+| `gg_to_gg` | 4 | 3.98 | 0.0613% | 0.0613% | 0.73 | 0.54 | 1.4× | 8.7 | **2.2×** |
+| `pp_to_jj` | 19 | 19.23 | 0.0903% | 0.0987% | 2.00 | 1.11 | 1.8× | 48.7 | **2.5×** |
+| `pp_to_llj` | 24 | 86.86 | 0.1169% | 0.1531% | 12.00 | 0.83 | 14.5× | — | capped 3/3 |
+
+**Geomean 5.2× over the four converging rows**, against a 8.76× throughput
+geomean. The deficit is the sampler handing back what the evaluator won, and
+the two columns together localise it: `pp_to_llj` reads 8.2× throughput
+(note 31 §6.4) against 14.5× the points, and 8.2/14.5 is the sub-parity
+time ratio the row would otherwise have posted. The decomposition closes
+arithmetically, which is the check that the two measurements describe one
+program.
+
+**`pp_to_llj` is a defect, not a data point.** All three seeds exhausted
+`--max-iters 100` at 12.0M evaluations without reaching 0.1%, χ²/dof ≈ 1.7 —
+real iteration-to-iteration disagreement, not the ~1e250 overflow the wide
+splits show. No ratio is quoted from it. Its likely sibling is the open
+observation that this row's σ ladder climbs monotonically with budget
+(0.04% → 0.21% across 75k–600k); they should be investigated as one thing.
+
+**Two mechanisms this measurement surfaced on wide splits**, both on
+`u u~ > c c~ e+ e- mu+ mu- QCD=0` (579 channels):
+
+- `--target-rel` **cannot terminate** there. The stop widens the quoted error
+  by `√max(1, χ²/dof)`, and on hundreds of channels that χ²/dof is the ~1e250
+  overflow `manifest.toml`'s own note documents and deliberately passes through
+  as "reported, and not a statistic". Passing it through is fine for a report;
+  the convergence criterion *consumes* it, so the target is unsatisfiable and
+  the run always burns its iteration cap. A quantity documented as not a
+  statistic is wired into a control decision.
+- `MIN_CHANNEL_NEVAL` **overrides the requested budget**: the run warns that
+  554 of 579 channels sit at the 512-point floor and an iteration therefore
+  spends 399 217 points against the `--neval 120000` it was given. Above
+  roughly 230 channels `--neval` no longer sets the budget.
+
+Unexplained, same runs: per-point cost climbs monotonically across iterations,
+70.1 → 74.4 → 80.6 → 85.6 → 89.2 → 91.5 µs over six, at constant points per
+iteration.
+
+**A caveat on this section's own 2→6 probe.** It was driven from
+`output/uux_to_ccx_emmm_qcd0/Cards/run_card.dat` and returned
+σ = 1.84e-15 pb against that row's 7.1428e-7 reference, so its *physics* is
+wrong and no variance or σ claim is made from it — the two mechanisms above are
+structural (a channel count, a floor warning, a stop criterion reading an
+overflow) and survive the misconfiguration. Anyone repeating it should take the
+configuration from `validate_sigma.rs`'s `Plan::Long` and confirm σ against the
+bank first. The real variance study on those rows is already banked:
+`probe_2to6_budget_ladder`, five seeds each at 300k/600k/1.2M, recorded in
+`manifest.toml`'s note on the row.

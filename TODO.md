@@ -428,6 +428,28 @@ exercised on SM evidence alone.
 
 ## ⚡ Performance backlog
 
+- **`--target-rel` does not converge on wide multichannel processes**
+  (2026-08-06, note 32 §7). Three mechanisms, found while measuring
+  time-to-accuracy. (a) The **convergence criterion consumes the χ²/dof
+  overflow**: the stop widens the quoted error by `√max(1, χ²/dof)`, and on
+  hundreds of channels that statistic is the ~1e250 overflow `manifest.toml`
+  documents and passes through as "reported, and not a statistic" — so the
+  target is unsatisfiable and the run always burns `--max-iters`. Passing a
+  non-statistic through to a *report* is fine; wiring it into a *control
+  decision* is not. (b) **`MIN_CHANNEL_NEVAL` overrides the requested budget**
+  above roughly 230 channels: on `u u~ > c c~ e+ e- mu+ mu- QCD=0` the run
+  warns that 554 of 579 channels sit at the 512-point floor and an iteration
+  spends 399 217 points against `--neval 120000`. Sequence with the α-survey
+  budget item below, which is the same allocator. (c) **`p p > l+ l- j` fails
+  at only 24 channels**, and channel count does not explain it: 3/3 seeds
+  exhausted the 100-iteration cap at 12.0M evaluations, χ²/dof ≈ 1.7 (real
+  disagreement, not overflow), while `p p > j j` at **19** channels converges
+  in 19.2 s at 1.8× MadGraph's points. Soft-and-collinear map quality on the
+  extra jet, and almost certainly the same defect as this row's σ ladder
+  climbing monotonically with budget (0.04% → 0.21% across 75k–600k) — one
+  investigation, not two. Unexplained alongside (a)/(b): per-point cost climbs
+  70.1 → 91.5 µs across six iterations at constant points per iteration.
+
 - **2→6 density-loop cost — attack `Σⱼ αⱼgⱼ` directly** (the lever the
   channel-dedup census left standing, 2026-08-06, `e059092`).
   `MultiChannel::sample_channel` (`channel.rs:399`) evaluates the full mixture
