@@ -8,8 +8,16 @@
 //!
 //! One thread owns the terminal. It drains formatted log lines from a channel
 //! the subscriber's line layer writes into, redraws the pane from the shared
-//! [`UiState`] on a fixed tick, and watches for the keys that abort the run. The
-//! command itself runs on the main thread and never touches the terminal.
+//! [`UiState`] on a fixed tick, and reads the keys. The command itself runs on
+//! the main thread and never touches the terminal.
+//!
+//! The keys reach the run by two routes, neither of which is the terminal. The
+//! level and scope keys swap the line layer's filter through the reload handle
+//! the subscriber hands over once it is built, so what is shown changes from the
+//! next event on and the history already written stays as it was. The stop key
+//! raises a [`StopSignal`] the integration reads at its own iteration boundary —
+//! the run decides when it is safe to stop, and the second press is what takes
+//! that decision away from it.
 //!
 //! `stdout` is not the display's to write. The command's result lines are held
 //! back while the pane is up and printed once it has been taken down, so the
