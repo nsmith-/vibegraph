@@ -203,7 +203,13 @@ pub struct IntegrateArgs {
     pub min_iters: usize,
 
     /// Iteration cap for `--target-rel`.
-    #[arg(long, default_value_t = 100)]
+    ///
+    /// A safety bound, not a budget: a run that reaches its target stops there,
+    /// so the cap only ever binds on a run whose iterations keep disagreeing.
+    /// Sized so that the widest gated process needing ~156 iterations at the
+    /// default `--neval` converges with headroom; `--max-points` still bounds
+    /// the total spend.
+    #[arg(long, default_value_t = 500)]
     pub max_iters: usize,
 
     /// Evaluation cap for `--target-rel`, over all channels and iterations.

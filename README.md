@@ -488,22 +488,25 @@ ones, which is the stricter reading.
 
 | process | channels | ours (CPU-s) | at δ | MadGraph, same δ | ratio |
 |---|--:|--:|--:|--:|--:|
-| `e+ e- > mu+ mu-` | 2 | 0.43 | 0.046% | 6.9 | 16.0× |
-| `p p > e+ e-` (dy13) | 4 | 3.11 | 0.097% | 26.0 | 8.4× |
-| `g g > g g` | 4 | 3.98 | 0.061% | 8.7 | 2.2× |
-| `p p > j j` | 19 | 19.23 | 0.099% | 48.7 | 2.5× |
-| `p p > l+ l- j` | 24 | 86.86 | 0.153%, capped | — | **does not converge** |
+| `e+ e- > mu+ mu-` | 2 | 0.39 | 0.046% | 6.9 | 17.6× |
+| `p p > e+ e-` (dy13) | 4 | 3.09 | 0.097% | 26.0 | 8.4× |
+| `g g > g g` | 4 | 3.95 | 0.061% | 8.7 | 2.2× |
+| `p p > j j` | 19 | 18.83 | 0.099% | 48.7 | 2.6× |
+| `p p > l+ l- j` | 24 | 122.5 | 0.100% | 121.2 | 0.99× |
 
-**Geometric mean 5.2× faster to a given accuracy** over the four rows that
-converge. That is *below* the throughput ratio below, and the gap is the point:
-a faster point is not a faster answer if it is a worse point.
+**Geometric mean 3.8× faster to a given accuracy** over the five rows —
+5.4× over the first four, pulled toward parity by `p p > l+ l- j`. Both
+figures sit *below* the throughput ratio below, and the gap is the point: a
+faster point is not a faster answer if it is a worse point.
 
-`p p > l+ l- j` is reported as a defect rather than a ratio because it is one.
-All three seeds exhausted the 100-iteration cap at 12.0M evaluations without
-reaching 0.1%, with χ²/dof ≈ 1.7 — the iterations disagree, so the run is not
-in the asymptotic regime and any ratio quoted from it would imply a
-measurement that has not settled. It is under investigation together with the
-known budget-dependent σ ladder on that row.
+`p p > l+ l- j` reaches its target in 140–156 iterations (all three seeds,
+16.8–18.7M evaluations), and at that accuracy the row is at parity with
+MadGraph. The default `--max-iters 500` gives it the headroom; the cap is a
+safety bound that a converging run never touches, so raising it costs the
+other rows nothing. The row's χ²/dof ≈ 1.4 prices real
+iteration-to-iteration disagreement into the stop, and the ~9× point
+deficit is phase-space map quality at the fiducial cut boundary — the named
+next lever on this row.
 
 **Integrand throughput against MadGraph.** The per-point half of the figure
 above: our points per single-threaded second, against MadEvent's points per
@@ -516,8 +519,9 @@ ratio above: here bigger is faster.
 
 Throughput exceeding time-to-accuracy is the sampler giving back what the
 evaluator won, and it localises where the work is. `p p > l+ l- j` is the
-extreme: 8.2× more points per second, but 14.5× more points needed for the
-same accuracy. Nothing there is wrong with the evaluator — it is phase-space
+extreme: 8.2× more points per second, but 9.0× more points needed for the
+same accuracy — the two roughly cancel, which is the parity the accuracy
+table shows. Nothing there is wrong with the evaluator — it is phase-space
 map quality, and points per second is structurally blind to it.
 
 Caveats on both. Our per-point work is not MadGraph's per-point work, so
@@ -526,8 +530,9 @@ whether MadEvent's recorded point count includes its survey pass was never
 established — a systematic factor of order unity on its column. The accuracy
 figure sidesteps that (it uses time and error, never a point count) but takes
 on the 1/δ² extrapolation instead, which is mild on `e+ e- > mu+ mu-` (×0.8)
-and `g g > g g` (×1.2) and heavier on `p p > j j` (×4.8) and `p p > e+ e-`
-(×0.3). And MadGraph's `cumulated_time` excludes its `output` and `compile`
+and `g g > g g` (×1.2), heavier on `p p > j j` (×4.8) and `p p > e+ e-`
+(×0.3), and heaviest on `p p > l+ l- j` (×11.1). And MadGraph's
+`cumulated_time` excludes its `output` and `compile`
 stages — about 130 CPU-s per process — while our model load and diagram
 enumeration sit inside our wall time. That asymmetry runs against us and is
 left uncorrected.

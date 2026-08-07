@@ -1,11 +1,12 @@
 # 34 — Draw-performance sprint record, and the follow-up plan (2026-08-06)
 
-Two parts. §1 is the record of the **draw-performance sprint** — two parallel
-performance-dev sessions off `main@4d03400`, which had no note of its own.
-§2 is the follow-up plan: four sessions in two waves, every item unblocked or
-re-scoped by §1's reports. The TODO backlog entries remain the per-item
-authority; this note adds the record, the sequencing, and the session
-boundaries.
+Three parts. §1 is the record of the **draw-performance sprint** — two
+parallel performance-dev sessions off `main@4d03400`, which had no note of
+its own. §2 is the follow-up plan: four sessions in two waves, every item
+unblocked or re-scoped by §1's reports. §3 remeasures note 32 §7's
+time-to-target-accuracy figure with the whole chain merged. The TODO backlog
+entries remain the per-item authority; this note adds the record, the
+sequencing, and the session boundaries.
 
 ## 1. Sprint record — draw performance
 
@@ -323,3 +324,81 @@ the ladder does not implicate this edge (the `mmll = 50` twin, which has no
 photon-pole edge, stepped identically), so S5 prices independently on its
 ≈9% variance share — a candidate for wave 2 alongside S3/S4 if that share
 is judged worth a session.
+
+## 3. Time to a target accuracy on σ, remeasured post-sprint (2026-08-07)
+
+Note 32 §7's measurement, repeated with the sprint's four sessions merged
+(main `098c9e2`). Protocol identical: `vibegraph integrate <proc card>
+--run-card <run card> --target-rel 0.001 -j 1`, seeds 20260719/20/21, wall
+clock over the whole process, release build at default codegen. The MadGraph
+side is unchanged by construction — the same banked runs' `<cumulated_time>`
+and `results.dat` σ ± err, rescaled by 1/δ² to the δ each of *our* runs
+achieved — and re-deriving note 32's scaled values from those files
+reproduced its table to the digit before the new runs started. Host: the
+same M3 Max; the first three rows started minutes after a release build
+(1-min load ≈ 3, settling), which the identical-draw walls below bound at
+the few-percent level.
+
+| row | ch | ours s | δ quoted | δ χ² | our Mpts | MG pts @δ | pts ours/MG | MG s @δ | ratio |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| `ee_to_mumu` | 2 | 0.39 | 0.0414% | 0.0461% | 0.72 | 0.19 | 3.7× | 6.9 | **17.6×** |
+| `dy13_default` | 4 | 3.09 | 0.0881% | 0.0972% | 2.28 | 0.86 | 2.7× | 26.0 | **8.4×** |
+| `gg_to_gg` | 4 | 3.95 | 0.0613% | 0.0613% | 0.73 | 0.54 | 1.4× | 8.7 | **2.2×** |
+| `pp_to_jj` | 19 | 18.83 | 0.0903% | 0.0987% | 2.00 | 1.11 | 1.8× | 48.7 | **2.6×** |
+| `pp_to_llj` (100-iteration cap) | 24 | 83.53 | 0.0990% | 0.1169% | 12.00 | 1.42 | 8.5× | 88.1 | capped 3/3 |
+| `pp_to_llj` (`--max-iters 300`) | 24 | 122.54 | 0.0840% | 0.0997% | 17.64 | 1.95 | 9.0× | 121.2 | **0.99×** |
+
+**The four already-converging rows did not move, and that is the expected
+result, confirmed to the digit**: per-seed iteration counts, point totals and
+both δ columns are identical to note 32's (the sprint's sampling-stream
+changes were gated byte-identical on narrow rows, and the floors are proven
+inert on 2→2), so the only free axis is wall time — −2% to −9% per row, at
+the scale of host noise. Geomean over the four: **5.40×** (was 5.2×; the
+difference is those wall deltas, not a resampling).
+
+**`pp_to_llj` converges — the first time this measurement has ever seen it
+finish.** Under the 100-iteration cap that was the default when this was
+measured it still gives up, but the cap is by then the only thing stopping
+it — and it was raised on the strength of this row, below. At the identical 12.0M-point
+spend the χ²-scaled error reads 0.1163/0.1206/0.1137% against note 32's
+0.1531%, the quoted error is at 0.099% — the target itself — and χ²/dof
+fell 1.7 → ≈1.38. That variance is the sprint's work on this row (the
+cut-implied timelike floors plus the accepted-point floor, which this row's
+512-accepted promise was violating 2× before). With the one protocol
+deviation of `--max-iters 300`, all three seeds meet the 0.1% χ²-scaled
+target: 140/156/145 iterations, 16.80/18.72/17.40M evaluations,
+117.76/129.25/120.60 s. σ = 505.540 ± 0.427 / 505.698 ± 0.419 /
+505.814 ± 0.427 pb, +0.18% to +0.23% of the banked 504.63 ± 1.67 —
+consistent with S2's reference-side finding that MadGraph's own last-3
+combination sits 0.146% below its iterations recombined by point count.
+
+At the achieved δ the row is at **parity**: MadGraph's scaled 121.2 s
+against our 122.54 s mean. The decomposition still closes arithmetically:
+9.0× the points at ~8–9× the throughput (note 31 §6.4 read 8.2× on this
+row) is a time ratio of ~1, which is what was measured. The row's remaining
+deficit is exactly its map quality — 9× the points for the same accuracy —
+and its χ²/dof ≈ 1.38 costs a further ×1.38 in time through the scaled
+stop. Both point at the same residual: the cut-boundary concentration at
+the map's lower edge that §2's deferred S5 names.
+
+Geomean over all five rows, taking llj's extended-cap ratio: **3.84×**.
+
+**The default cap was raised to 500 the same day** (user decision,
+2026-08-07): the stop fires the iteration the χ²-scaled error meets the
+target, so the cap is a safety bound a converging run never touches, and
+raising it is invisible to every converging row while giving llj's
+measured 140–156-iteration need real headroom. The extended-cap rows above
+are exactly what a stock run now produces — the cap does not enter the
+sampling stream and never binds below iteration 157 — verified, not
+argued: a stock seed-20260719 run at the new default stopped at the same
+140 iterations and 16 800 313 evaluations with a SHA-256-identical grid
+artifact. The cost lands only on genuinely non-converging runs, which burn
+up to 5× longer before the "GAVE UP" report (which carries the achieved δ,
+so the failure stays loud); `--max-points` still bounds total spend. A UX
+observation from the same discussion, filed in TODO: the VEGAS progress
+bar's denominator is this cap, so it counts distance to giving up, not to
+the target — a 1/δ² estimated-total display would track the quantity the
+run is chasing.
+
+Every number in this section is a recorded run reproducible from the
+commands above; none is inferred from another cell.

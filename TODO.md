@@ -145,6 +145,14 @@ One line each; the note is the full record. Earlier sprints
   one CLI test premise 8% inside its iteration floor, one α-draw mirage),
   every one exposed by a legitimate sampling-stream change and every one
   fixed by matching the statistic to its calibration, never by widening.
+  Post-sprint remeasure of note 32 §7's time-to-accuracy figure (note 34 §3,
+  2026-08-07): the four default-cap rows draw-identical at geomean **5.40×**
+  (wall-only deltas), and **`pp_to_llj` converges for the first time** —
+  0.1% χ²-scaled met on all three seeds at 140–156 iterations under
+  `--max-iters 300`, **0.99× parity** with MadGraph at the achieved δ;
+  README table updated, and the default cap raised 100 → 500 the same day
+  (user decision; the performance-backlog entry records the rationale and
+  the SHA-identical stock-run verification).
 - **`draw-performance`** (two parallel sessions, merged 2026-08-06; note 34 §1
   is the record) — `density-draw` (`470eb8f`/`443f6bc`): the mixture density
   priced only after the cut, **2→6 per-point 62.9/68.5 → 4.6/6.8 µs
@@ -503,15 +511,35 @@ exercised on SM evidence alone.
 
 - ~~Cut-implied timelike floors for the invariant draw~~ — **landed
   2026-08-06** (`7664ff9`, closed-sprint history; note 34 §1.2 is the record,
-  incl. the bound derivations and the falsifier's 16.9 → 4.4). What it left
-  open, both scheduled in note 34 §2: the **σ-ladder climb survived** and is
-  an unexplained drift with no candidate mechanism (S2, validation-dev —
-  first establish the 1.2–2.7 sd drift is real at higher budget); and with a
-  small floor the map's lower edge lands on the cut edge, concentrating the
+  incl. the bound derivations and the falsifier's 16.9 → 4.4). Of the two
+  things it left open: the σ-ladder climb was **resolved as a misread**
+  (note 34 S2, gate-hygiene entry above); what remains is **S5 — the map's
+  lower edge lands on the cut edge** with a small floor, concentrating the
   residual `ΔR`/`pT` boundary there (`pp_to_llj` `m_ll [0,5)` var/σ
-  24.5 → 55.7 — S5, deferred pending S2's verdict). The bias oracle for any
+  24.5 → 55.7, deferred in note 34 §2). S5 is now also the named lever for
+  what the post-sprint time-to-accuracy remeasure (note 34 §3) localised:
+  `pp_to_llj` converges at parity with MadGraph (0.99×), and the whole
+  residual is 9.0× the points for the same accuracy plus a stable
+  χ²/dof ≈ 1.4 priced into the stop — both signatures of the cut-boundary
+  map edge, neither of the evaluator. The bias oracle for any
   future floor is `no_accepted_configuration_sits_below_a_subsystem_floor`;
   the `mmll = 50` bound is attained within 1.0002, so it cannot tighten.
+- ~~Should the default `--max-iters 100` move?~~ — **decided and raised to
+  500** (user, 2026-08-07, same day the note 34 §3 remeasure filed it): the
+  cap is a safety bound a converging run never touches (the stop fires the
+  iteration the χ²-scaled error meets the target, floor `--min-iters 6`), so
+  the raise is invisible to every converging row and turns `pp_to_llj` —
+  which needs 140–156 iterations — into a stock convergence. The cost lands
+  only on genuinely non-converging runs, which now burn up to 5× longer
+  before the loud "GAVE UP with achieved δ" report; `--max-points` still
+  bounds total spend, and the 2→3 reproducers (χ²/dof 2.5–8.2 at the old
+  cap) are the known family that pays it. What the cap-as-denominator also
+  exposed: the VEGAS progress bar counts `iteration / min(max_iters,
+  max_points/pts_per_iter)` — distance to *giving up*, not to the target —
+  so a converging run finishes with the bar at 4–30%. A 1/δ² estimated
+  total (`iteration × (δ_now/δ_target)²`, the same scaling law the
+  measurement itself uses) would make the bar track the quantity the run is
+  actually chasing; unscheduled UX item.
 - ~~`MIN_CHANNEL_NEVAL` should count post-cut points~~ (user, 2026-08-06) —
   **landed 2026-08-07** (`b6a0b88`, note 34 S3 close-out): the floor is
   scaled by the run's own pooled per-channel acceptance,
