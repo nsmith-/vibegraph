@@ -175,6 +175,27 @@ One line each; the note is the full record. Earlier sprints
   symptoms was wrong". Follow-up sprint planned in note 34 §2.
 - **`convergence-and-2to3-abort`** (two independent sessions, merged 2026-08-06) — `fix-momentum-sum-abort` (`abedb81`): the 2→3 QCD abort fixed by moving the current-sum momentum guard from `WaveformSlot::Add` to `run.rs`'s `Op::Add` apply arm, sized scale-relative at 1024 ulps of the largest external component (measured residue max 1.4 ulps, so ~720× headroom, ~12 orders below a real routing mismatch); check-only and non-reassociating, all 24 amplitude-oracle rows byte-identical against the pre-fix baseline; `u u~ > g g g` / `g g > g u u~` / `g u > g g u` integrate end to end and `p p > j j j` is reachable for the first time (unbanked — validation backlog). `target-rel-convergence` (`61e578f`/`56e1b48`): the `--target-rel` stop no longer consumes the wide-split χ²/dof overflow (scale factor formed over variance-measuring iterations; the *reported* statistic untouched; 25/25 narrow-row convergence runs byte-identical, `pp_to_llj` still failing identically — the kill criterion held), the `--max-points`/`--max-iters` caps priced in points actually spent (was a 6.5% cap overshoot on 579 channels), and the llj non-convergence diagnosed to fiducial cut edges (performance backlog carries the named fix). Transferable lesson: **the session falsified both its brief's hypothesis and the measurement note's own caveat** — the "soft/collinear jet" hypothesis lost to cut-edge variance by an order of magnitude in the probe's own ratios, and note 32 §7's "wrong physics" probe caveat was a GeV⁻²-vs-pb misread; both corrections are recorded at their sources.
 - **`logging-tui`** (feature/UX, five sessions T1–T5, closed 2026-08-06) — `tracing` through the library with the stdout result contract frozen byte-for-byte at every verbosity: `-v`/`-vv`/`-q`/`--log-level`/`--log-file`/`RUST_LOG` over a reload-swappable `EnvFilter`, per-stage spans and events at the note's levels, and a `vibegraph::progress` target whose field contract (`stage`/`done`/`total` plus per-stage measurements) is a named library surface a display codes against rather than a convention. On a terminal, a six-row ratatui **inline viewport** — not an alternate screen, so log lines land in the terminal's own scrollback and survive the run — carrying the model/process brief, the stage gauge, σ ± err through an SI-prefix formatter, and per-eval cost; arrow keys retune the visible level and the module scope of the detailed tiers mid-run, each change marking itself in the history. `q`/`^C` is a two-stage stop: the first raises a `StopSignal` the integration loop reads at its iteration boundary and banks what it holds, the second quits at 130. No physics surface moved — `pixi run --skip-deps validate` green as the exit check, and the abort path pinned inert by a byte-identical artifact against the pre-sprint binary at a fixed seed. Note 33.
+- **UX mini-sprint** (single session, 2026-08-07) — three items. (1) The VEGAS
+  progress bar tracks **distance to the convergence target**, not to the
+  iteration cap: under `Budget::Target` the emitted total is the 1/δ²
+  projection `iteration × (δ_now/δ_target)²`, floored at the earliest legal
+  stop and capped at the give-up bound, so meeting the target is exactly a
+  full bar; absent through the warm-up (performance-backlog item closed
+  in place). (2) The gauge row carries the run's **elapsed** time at its left
+  end and the reporting stage's **estimated remaining** at its right
+  (stage-elapsed scaled by work owed over work done — for VEGAS that is
+  time-to-target, re-priced as the projection moves), in the accent/attention
+  colour pair; the footer stays a pure function of `UiState`, with the drawing
+  thread stamping the clock per tick. (3) `-` as the proc-card argument reads
+  the card from **stdin** for both `integrate` and `generate`
+  (`echo "generate p p > e+ e- QED=2" | vibegraph integrate -`), pinned by a
+  CLI test whose piped decay-chain card earns the parser's own refusal. The
+  stop test's arithmetic is unchanged (δ computed once per iteration, shared
+  with the projection). Found en route: `tracing`'s process-wide callsite
+  interest cache makes a thread-scoped test subscriber flaky under parallel
+  tests — whichever thread first hits a callsite stamps its interest — so the
+  budget progress test primes the callsite and rebuilds the interest cache
+  after installing its subscriber.
 
 ---
 
@@ -534,12 +555,15 @@ exercised on SM evidence alone.
   before the loud "GAVE UP with achieved δ" report; `--max-points` still
   bounds total spend, and the 2→3 reproducers (χ²/dof 2.5–8.2 at the old
   cap) are the known family that pays it. What the cap-as-denominator also
-  exposed: the VEGAS progress bar counts `iteration / min(max_iters,
+  exposed: the VEGAS progress bar counted `iteration / min(max_iters,
   max_points/pts_per_iter)` — distance to *giving up*, not to the target —
-  so a converging run finishes with the bar at 4–30%. A 1/δ² estimated
-  total (`iteration × (δ_now/δ_target)²`, the same scaling law the
-  measurement itself uses) would make the bar track the quantity the run is
-  actually chasing; unscheduled UX item.
+  so a converging run finished with the bar at 4–30%. **Landed 2026-08-07**
+  (UX mini-sprint): under a convergence target the emitted total is now the
+  1/δ² projection `iteration × (δ_now/δ_target)²` (the same scaling law the
+  measurement itself uses), clamped to `[iteration, iteration_bound]` and
+  floored at the earliest legal stop, so meeting the target reads as exactly
+  a full bar; absent through the warm-up, when there is no δ to project
+  from. Pinned by `the_progress_total_projects_the_convergence_target`.
 - ~~`MIN_CHANNEL_NEVAL` should count post-cut points~~ (user, 2026-08-06) —
   **landed 2026-08-07** (`b6a0b88`, note 34 S3 close-out): the floor is
   scaled by the run's own pooled per-channel acceptance,
