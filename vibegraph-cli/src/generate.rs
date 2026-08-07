@@ -22,7 +22,7 @@ use vibegraph::artifact::{ChannelKey, IntegrateArtifact, FORMAT_VERSION};
 use vibegraph::config::GlobalConfig;
 use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::cuts::Cuts;
-use vibegraph::diagrams::{generate_from_proc_card_in, parse_proc_card_file, ParsingOptions};
+use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
 };
@@ -89,7 +89,8 @@ pub struct GenerateArgs {
     /// Grid artifact from a completed `vibegraph integrate` run.
     pub artifact: PathBuf,
 
-    /// The same process card the artifact was integrated from.
+    /// The same process card the artifact was integrated from; `-` reads the
+    /// card from stdin.
     pub proc_card: PathBuf,
 
     /// The same run card the artifact was integrated with; absent → MadGraph LO
@@ -498,7 +499,7 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
         .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
 
     let opts = ParsingOptions::default();
-    let parsed = parse_proc_card_file(&args.proc_card, &opts)
+    let parsed = crate::read_proc_card(&args.proc_card, &opts)
         .map_err(|e| err(format!("failed to parse proc card: {e}")))?;
     let process = process_string(&parsed)?;
 

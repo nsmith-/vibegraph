@@ -24,9 +24,7 @@ use vibegraph::artifact::{
 };
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::Cuts;
-use vibegraph::diagrams::{
-    generate_from_proc_card_in, parse_proc_card_file, ParsedProcCard, ParsingOptions,
-};
+use vibegraph::diagrams::{generate_from_proc_card_in, ParsedProcCard, ParsingOptions};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, ChannelIntegration,
     FixedBeamIntegrand, RunningCouplingReport,
@@ -132,7 +130,8 @@ impl From<Allocation> for BlockAllocation {
 
 #[derive(Args, Debug)]
 pub struct IntegrateArgs {
-    /// Process card selecting the model and process (`import model` + `generate`).
+    /// Process card selecting the model and process (`import model` +
+    /// `generate`); `-` reads the card from stdin.
     pub proc_card: PathBuf,
 
     /// MadGraph `run_card.dat`; absent → MadGraph LO defaults.
@@ -370,7 +369,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     }
 
     let opts = ParsingOptions::default();
-    let parsed = parse_proc_card_file(&args.proc_card, &opts)
+    let parsed = crate::read_proc_card(&args.proc_card, &opts)
         .map_err(|e| err(format!("failed to parse proc card: {e}")))?;
     let process = process_string(&parsed)?;
 

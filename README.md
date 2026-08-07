@@ -89,6 +89,13 @@ and checks momentum balance, mass shells, weight bounds and the `<init>`
 cross-references — a self-read, so it catches a damaged or truncated file but
 not a format both the writer and the reader agree on wrongly.
 
+The proc-card argument also accepts `-` for a card on stdin, so a one-process
+run needs no card file at all:
+
+```bash
+echo "generate e+ e- > mu+ mu-" | ./vibegraph integrate - --run-card run_card.dat --out run/
+```
+
 #### Data the binary does not carry
 
 The Standard Model is compiled in, so the run above needs nothing else. Two

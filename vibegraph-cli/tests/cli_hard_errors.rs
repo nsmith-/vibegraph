@@ -94,6 +94,50 @@ fn cli_decay_chain_proc_card_is_refused() {
     );
 }
 
+/// `-` as the proc-card argument reads the card from stdin. The card piped in
+/// here carries a decay chain, and the refusal it must earn is the parser's
+/// own — proof the bytes on stdin reached the parser, with no card file
+/// anywhere on disk.
+#[test]
+fn cli_reads_the_proc_card_from_stdin_for_a_dash() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+
+    let mut child = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg("-")
+        .arg("--out")
+        .arg(out.path())
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn vibegraph");
+    child
+        .stdin
+        .take()
+        .expect("a piped stdin")
+        .write_all(b"import model sm\ngenerate p p > t t~, t > w+ b\n")
+        .unwrap();
+    let output = child.wait_with_output().expect("run vibegraph");
+
+    assert!(
+        !output.status.success(),
+        "the piped decay-chain card must be refused"
+    );
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("decay-chain process syntax is not supported"),
+        "got:\n{stderr}"
+    );
+}
+
 #[test]
 fn cli_propagators_py_model_is_refused() {
     let home = tempfile::tempdir().unwrap();

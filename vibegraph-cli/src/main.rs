@@ -1,8 +1,13 @@
 //! `vibegraph` command-line entry point.
 
+use std::io::Read;
+use std::path::Path;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use vibegraph::diagrams::{
+    parse_proc_card, parse_proc_card_file, DiagramError, ParsedProcCard, ParsingOptions,
+};
 
 mod assets;
 mod check;
@@ -16,6 +21,23 @@ mod si;
 mod tui;
 
 use network::NetworkPolicy;
+
+/// The proc-card argument as every command reads it: the card in the file at
+/// `path`, or, when `path` is `-`, the card on stdin — so a one-process card
+/// can be piped straight in (`echo "generate p p > e+ e-" | vibegraph
+/// integrate -`) rather than written to a file first.
+pub(crate) fn read_proc_card(
+    path: &Path,
+    opts: &ParsingOptions,
+) -> Result<ParsedProcCard, DiagramError> {
+    if path == Path::new("-") {
+        let mut card = String::new();
+        std::io::stdin().read_to_string(&mut card)?;
+        parse_proc_card(&card, opts)
+    } else {
+        parse_proc_card_file(path, opts)
+    }
+}
 
 /// `--version` output: version line, then every license notice the binary is
 /// required to carry. The binary is distributed bare (no accompanying files),
