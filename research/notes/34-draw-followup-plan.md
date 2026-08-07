@@ -42,7 +42,7 @@ the real fresh-grid multichannel acceptance is ≈3% (the brief's 46% was the
 flat-RAMBO sweep — why the result is 13.7× and not ~2×), and note 32's S1 had
 moved the cut ahead of the *scale* draw only, not the phase-space density.
 
-### 1.2 `timelike-floor` — cut-implied floors for the invariant draw
+### 1.2 `timelike-floor` — cut-implied floors for the invariant draw (merged `7664ff9`)
 
 `Cuts::timelike_floor(slots)`: a provable lower bound on a final-state
 subsystem's m² over the accepted region, installed by
@@ -78,18 +78,44 @@ worsened: with a small floor the map's lower edge lands on the cut edge and
 the leftover `ΔR`/`pT` boundary concentrates there (`m_ll [0,5)` var/σ
 24.5 → 55.7) — the deferred map-shape question (§2 S5).
 
-**Gate incident, and the decision**: llj_dyn's 3-seed scatter guard read
-χ²/dof 4.24 against `LLJ_MAX_CHI2_PER_DOF = 4.0` — a threshold whose doc
-comment records a five-seed calibration family — while the five-seed reading
-at the same budget is 2.49 and σ moved *closer* to MG (+0.25% → +0.06%).
-The session refused to widen anything and escalated; the user's decision was
-to run the llj σ gates at five seeds, matching the statistic to its
-threshold's provenance and to AGENTS.md's own ≥5-seed standard. The
-amendment's final gate readings and the merge hash are recorded at
-close-out. En route the session also repaired two pre-existing test
-fragilities (a lab-frame balance bound measured below its own width on
-unmodified `main`, and a luminosity-share test pinned to one lucky event) —
-neither a tolerance weakened for the floors.
+**The gate cascade, and the three decisions.** Because cargo stops at the
+first failing test binary, the branch unmasked three at-threshold gate cells
+one at a time (24 → 30 → 33 → 35 binaries reached), and all three were the
+same defect wearing different clothes: **a gate statistic formed on fewer
+seeds than AGENTS.md's own ≥5 standard, sitting at its threshold, re-rolled
+by any sampling-stream change.** In each case the session measured causation
+two-arm before proposing anything, refused to widen, and escalated.
+
+1. **llj_dyn's 3-seed scatter guard** read χ²/dof 4.24 against
+   `LLJ_MAX_CHI2_PER_DOF = 4.0` — a threshold calibrated on five-seed
+   ladders — while the five-seed reading at the same budget is 2.49 and σ
+   moved *closer* to MG (+0.25% → +0.06%). User decision: form both llj
+   gates over the five calibration seeds (`ca4d11f`). Final readings:
+   `llj_fixed` 423.747 ± 0.299, χ²/dof 1.86, rel −0.02%; `llj_dyn`
+   415.928 ± 0.293, χ²/dof 2.49, rel +0.12% — each reproducing its ladder's
+   150k rung digit for digit.
+2. **`ee_to_mumua`'s samples KS** crossed `P_FLOOR` on one of three seeds
+   (p 8.3e-6 on `pt(a) ≡ pt(ll)`) with the shape agreement unchanged
+   (mean D 0.0241 → 0.0242, two of three seeds improved). TODO's watch item
+   had pre-registered this flap with its diagnosis context; `P_FLOOR`'s own
+   prescription was applied verbatim: cell → info with the measurement and
+   the chain-D record in its note, threshold unmoved (`71d47d1`).
+3. **`ee_to_mumua`'s σ pull** failed at 3.56 on the gate's *single* seed —
+   and the five-seed sweep showed the row's true state is a fixed **+1.04%
+   on both arms** (pulls +4.11/+4.17; the floors move σ by +0.006%): the
+   base had been passing at +2.83 on a seed 0.089% below its own mean. The
+   row joined `PULL_REPORTED_NOT_ASSERTED` by that category's own recorded
+   criterion (a systematic of measured size, here reference-adjudicated by
+   chain D), `rel_tol 0.03` still enforced (`ec2c5a0`).
+
+Close-out: `validate` exit 0 over all 35 binaries, census 95 ✅ / 3 ⚠️ /
+0 ❌ (the one movement being decision 2), **merged at `7664ff9`**. En route
+the session also repaired two pre-existing test fragilities (a lab-frame
+balance bound measured below its own width on unmodified `main`, and a
+luminosity-share test pinned to one lucky event) — neither a tolerance
+weakened for the floors. Filed for the validation backlog: the remaining
+single-seed `integrate_reported` gates are the same shape of exposure and
+have not been swept.
 
 Transferable lesson, continuing the note-32 pattern: **both sessions
 corrected their own briefs** — an acceptance sizing wrong by an order of
