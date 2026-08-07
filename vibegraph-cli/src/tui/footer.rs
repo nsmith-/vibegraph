@@ -5,6 +5,8 @@
 //! reads a clock or a channel, so a given state always draws the same cells and
 //! a test can assert on them.
 
+use std::time::Duration;
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -13,6 +15,7 @@ use ratatui::widgets::{Gauge, Widget};
 use vibegraph::progress::stage;
 
 use crate::si::fmt_si;
+use crate::tui::elapsed_text;
 use crate::tui::state::UiState;
 
 /// Rows the footer occupies: one rule and five of content.
@@ -193,6 +196,59 @@ impl<'a> Footer<'a> {
         Line::from(spans)
     }
 
+    /// How much longer the reporting stage looks like taking: its own elapsed
+    /// time scaled by the work still to do over the work done. For the VEGAS
+    /// stage the total is itself the projected convergence iteration, so this
+    /// is time-to-target, re-priced as the projection moves. Absent whenever
+    /// the arithmetic would be a guess: no total, nothing done yet, or no tick
+    /// has stamped the clock since the stage began.
+    fn remaining(&self) -> Option<Duration> {
+        let done = self.state.done;
+        let total = self.state.total.filter(|&t| t >= done && done > 0)?;
+        let in_stage = self
+            .state
+            .elapsed
+            .checked_sub(self.state.stage_started)
+            .filter(|t| !t.is_zero())?;
+        Some(in_stage.mul_f64((total - done) as f64 / done as f64))
+    }
+
+    /// The gauge's row: the bar, flanked by the run's elapsed time on the left
+    /// and the stage's estimated remaining time on the right — spent time in
+    /// the measurement colour, owed time in the attention colour, so the two
+    /// read apart at a glance. A row too narrow to afford the times, or a
+    /// state no tick has stamped a clock into, carries the bar alone.
+    fn gauge_row(&self, area: Rect, buf: &mut Buffer) {
+        const TIME_WIDTH: u16 = 9;
+        if self.state.elapsed.is_zero() || area.width < 4 * TIME_WIDTH {
+            self.gauge().render(area, buf);
+            return;
+        }
+        let [left, bar, right] = Layout::horizontal([
+            Constraint::Length(TIME_WIDTH),
+            Constraint::Min(10),
+            Constraint::Length(TIME_WIDTH),
+        ])
+        .areas(area);
+        buf.set_line(
+            left.x,
+            left.y,
+            &Line::from(Span::styled(elapsed_text(self.state.elapsed), accent())),
+            left.width.saturating_sub(1),
+        );
+        self.gauge().render(bar, buf);
+        if let Some(remaining) = self.remaining() {
+            let text = format!("-{}", elapsed_text(remaining));
+            let width = (text.chars().count() as u16).min(right.width.saturating_sub(1));
+            buf.set_line(
+                right.x + right.width - width,
+                right.y,
+                &Line::from(Span::styled(text, attention())),
+                width,
+            );
+        }
+    }
+
     /// The progress bar. A stage that does not know its extent draws an empty
     /// bar labelled with the count alone — the honest reading of "this many so
     /// far, out of an unknown number".
@@ -320,7 +376,7 @@ impl<'a> Footer<'a> {
                 Some(line) => {
                     buf.set_line(area.x, y, line, area.width);
                 }
-                None => self.gauge().render(
+                None => self.gauge_row(
                     Rect {
                         x: area.x,
                         y,
@@ -398,6 +454,8 @@ mod tests {
     use crate::logging::{LogLevel, Scope};
     use crate::tui::state::{ModelBrief, UiState};
 
+    use std::time::Duration;
+
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
     use vibegraph::phasespace::GEV2_TO_PB;
@@ -442,6 +500,8 @@ mod tests {
             channels: Some(4),
             efficiency: None,
             logo_phase: 0,
+            elapsed: Duration::ZERO,
+            stage_started: Duration::ZERO,
             level: LogLevel::Info,
             scope: Scope::All,
             prompt: None,
@@ -555,6 +615,53 @@ mod tests {
         assert!(!rows[4].contains('\u{2588}'), "{rows:?}");
         assert!(rows[4].contains("12"), "{rows:?}");
         assert!(rows[3].contains("enumerating   12"), "{rows:?}");
+    }
+
+    /// Once the drawing thread has stamped a clock into the state, the gauge
+    /// row carries the run's elapsed time at its left end and the stage's
+    /// estimated remaining time at its right — the stage is 4 of 12 done after
+    /// a minute of its own time, so two more of them are owed.
+    #[test]
+    fn the_gauge_row_carries_elapsed_and_remaining() {
+        let mut state = integrating();
+        state.elapsed = Duration::from_secs(90);
+        state.stage_started = Duration::from_secs(30);
+        let rows = rows(&state, 80);
+        assert!(rows[4].starts_with("1m 30s"), "{rows:?}");
+        assert!(rows[4].contains("-2m 00s"), "{rows:?}");
+        assert!(rows[4].contains("4/12"), "{rows:?}");
+        assert!(rows[4].contains('\u{2588}'), "{rows:?}");
+        // The remaining estimate sits at the right end of the bar, before the
+        // measurement column's cells.
+        let bar_end = 80 - super::MEASUREMENT_WIDTH as usize;
+        let run_row: String = rows[4].chars().take(bar_end).collect();
+        assert!(run_row.trim_end().ends_with("-2m 00s"), "{run_row:?}");
+    }
+
+    /// A stage that does not know its extent owes an unknowable amount of
+    /// work: the elapsed time still shows, and no remaining estimate does.
+    #[test]
+    fn an_unknown_total_estimates_no_remaining_time() {
+        let mut state = integrating();
+        state.stage = Some(stage::ENUMERATE.to_string());
+        state.total = None;
+        state.elapsed = Duration::from_secs(90);
+        state.stage_started = Duration::from_secs(30);
+        state.ns_per_eval = None;
+        let rows = rows(&state, 80);
+        assert!(rows[4].starts_with("1m 30s"), "{rows:?}");
+        assert!(!rows[4].contains('-'), "{rows:?}");
+    }
+
+    /// Before any tick has stamped a clock — every state a unit test builds,
+    /// and the instant before the first draw — the row is the bar alone, so a
+    /// zero elapsed is never shown as a measurement.
+    #[test]
+    fn an_unstamped_clock_leaves_the_times_off() {
+        let rows = rows(&integrating(), 80);
+        // The bar begins in the row's first cell: nothing flanks it.
+        assert!(rows[4].starts_with('\u{2588}'), "{rows:?}");
+        assert!(!rows[4].contains("0 s"), "{rows:?}");
     }
 
     /// A count past five digits is abbreviated so the bar's label cannot grow

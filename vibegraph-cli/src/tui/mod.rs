@@ -301,7 +301,7 @@ fn summary(state: &UiState, elapsed: Duration) -> String {
     line
 }
 
-fn elapsed_text(elapsed: Duration) -> String {
+pub(crate) fn elapsed_text(elapsed: Duration) -> String {
     let seconds = elapsed.as_secs_f64();
     if seconds < 60.0 {
         fmt_si(seconds, None, "s", 3)
@@ -488,6 +488,8 @@ fn draw_loop(
         stopping: false,
     };
     let started = Instant::now();
+    // Which stage the last tick saw reporting, for stamping stage changes.
+    let mut last_stage: Option<String> = None;
     // The question currently on screen, waiting for a key to answer it.
     let mut pending: Option<Sender<bool>> = None;
     let mut size = terminal.size().ok();
@@ -526,7 +528,7 @@ fn draw_loop(
                 }
             }
         }
-        advance_logo(state, started.elapsed());
+        advance_clock(state, started.elapsed(), &mut last_stage);
         redraw(&mut terminal, state);
         if stop.load(Ordering::SeqCst) || INTERRUPTED.load(Ordering::SeqCst) {
             break;
@@ -637,14 +639,23 @@ fn retune(controls: &mut Controls, key: Key, log: &OnceLock<LogHandle>) -> Optio
     })
 }
 
-/// Rotate the logo's colour ramp to where it stands at `elapsed`.
+/// Stamp the clock into the state: the run's elapsed time, the moment the
+/// reporting stage last changed (`last_stage` is the drawing thread's memory of
+/// which stage that was), and the logo's colour ramp rotated to where it stands.
 ///
 /// Driven by the clock rather than by a tick count so the wave keeps its pace
 /// through a burst of log lines, which is when a drawing thread's ticks are
 /// least even.
-fn advance_logo(state: &Mutex<UiState>, elapsed: Duration) {
+fn advance_clock(state: &Mutex<UiState>, elapsed: Duration, last_stage: &mut Option<String>) {
     let phase = (elapsed.as_millis() / LOGO_STEP.as_millis().max(1)) as usize;
-    set(state, |ui| ui.logo_phase = phase);
+    set(state, |ui| {
+        ui.logo_phase = phase;
+        ui.elapsed = elapsed;
+        if ui.stage != *last_stage {
+            last_stage.clone_from(&ui.stage);
+            ui.stage_started = elapsed;
+        }
+    });
 }
 
 fn set(state: &Mutex<UiState>, edit: impl FnOnce(&mut UiState)) {

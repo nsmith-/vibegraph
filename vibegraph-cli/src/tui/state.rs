@@ -55,6 +55,15 @@ pub(crate) struct UiState {
     pub(crate) efficiency: Option<f64>,
     /// Rotation of the logo's colour ramp, in characters.
     pub(crate) logo_phase: usize,
+    /// Wall time since the run began, as the drawing thread last stamped it.
+    /// The footer never reads a clock itself, so a given state always draws
+    /// the same cells; zero means no tick has stamped one yet, and the times
+    /// are left off the pane.
+    pub(crate) elapsed: std::time::Duration,
+    /// What `elapsed` read when the reporting stage last changed, so a
+    /// remaining-time estimate is priced from the current stage's own pace
+    /// rather than from work a finished stage already paid for.
+    pub(crate) stage_started: std::time::Duration,
     /// What the log is currently showing, as the level keys have left it.
     pub(crate) level: LogLevel,
     pub(crate) scope: Scope,
