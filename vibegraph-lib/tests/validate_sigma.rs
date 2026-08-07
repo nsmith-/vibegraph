@@ -1090,16 +1090,30 @@ fn probe_2to6_eval_cost() {
 /// element, keeping each one's channel, coordinates and momenta, then times over
 /// exactly that set:
 ///
-/// - `accepted` — the whole integrand at an accepted point
+/// - `accepted point` — the whole integrand at an accepted point
 ///   ([`FixedBeamIntegrand::value_in_channel`], which redraws the same point from
 ///   the same `u` and repeats the cut, the scale draw, the matrix element and the
 ///   density);
-/// - `density` — the mixture density alone, on the kept momenta, over a channel
-///   set rebuilt by [`channel_set`] (the same maps the integrand samples through:
-///   selection weights scale the sum but not its cost, so the rebuilt mixture's
-///   uniform `α` measures the same loop the adapted one runs).
+/// - the channel loop, four ways, over a channel set rebuilt by [`channel_set`]
+///   (the same maps the integrand samples through: selection weights scale the sum
+///   but not its cost, so the rebuilt mixture's uniform `α` measures the same loop
+///   the adapted one runs).
 ///
-/// Both are minima over rounds, so a co-scheduled process inflates a round rather
+/// The four ways are the decomposition. Every channel of the mixture reads the same
+/// momenta, and different diagrams route them through the same subsystems, so the
+/// loop's subtree momenta and invariants are shareable work and the rest —
+/// invariant measures, LIPS factors, the peripheral chain — is not. Turning the
+/// [`SubsystemMemo`] off and widening its scope prices exactly that split:
+///
+/// - `no memo` — [`SubsystemMemo::disabled`], every channel recomputing everything;
+/// - `per channel` — the memo reset before each channel, so a channel shares only
+///   with itself (the decay tree asks for a subtree's momentum several times over);
+/// - `per point` — the memo reset once per configuration: the production sharing;
+/// - `mixture` — [`MultiChannel::density`] itself, which adds the `αⱼ` multiply and
+///   the per-thread memo lookup to `per point`, and is what production actually
+///   runs.
+///
+/// All are minima over rounds, so a co-scheduled process inflates a round rather
 /// than the figure; `RAYON_NUM_THREADS=1` pins it per core. Run with `--ignored
 /// --nocapture`.
 ///
@@ -1123,7 +1137,7 @@ fn probe_2to6_eval_cost() {
 #[ignore]
 fn probe_2to6_density_decomposition() {
     use rand::Rng;
-    use vibegraph::phasespace::{Channel, MultiChannel};
+    use vibegraph::phasespace::{Channel, Combiner, MultiChannel, SubsystemMemo};
 
     const ROUNDS: usize = 5;
     const ACCEPTED: usize = 200;
@@ -1172,8 +1186,13 @@ fn probe_2to6_density_decomposition() {
                 "[{dir}] no point survived the cut in {drawn} draws, so there is nothing to time"
             );
 
+                let channels = Combiner::channels(&mixture);
+                let n_out = kept[0].2.len();
                 let mut best_total = f64::INFINITY;
-                let mut best_density = f64::INFINITY;
+                let mut best_none = f64::INFINITY;
+                let mut best_per_channel = f64::INFINITY;
+                let mut best_per_point = f64::INFINITY;
+                let mut best_mixture = f64::INFINITY;
                 for _ in 0..ROUNDS {
                     let timer = Stopwatch::start();
                     let mut acc = 0.0;
@@ -1183,26 +1202,77 @@ fn probe_2to6_density_decomposition() {
                     best_total = best_total.min(timer.seconds());
                     assert!(acc > 0.0, "[{dir}] the kept points carry weight");
 
+                    let mut off = SubsystemMemo::disabled();
+                    let timer = Stopwatch::start();
+                    let mut acc = 0.0;
+                    for (_, _, momenta) in &kept {
+                        for ch in channels {
+                            acc += ch.density_memo(momenta, &mut off);
+                        }
+                    }
+                    best_none = best_none.min(timer.seconds());
+                    assert!(acc > 0.0, "[{dir}] the kept points have a mixture density");
+
+                    let mut memo = SubsystemMemo::new(n_out);
+                    let timer = Stopwatch::start();
+                    let mut acc = 0.0;
+                    for (_, _, momenta) in &kept {
+                        for ch in channels {
+                            memo.next_point();
+                            acc += ch.density_memo(momenta, &mut memo);
+                        }
+                    }
+                    best_per_channel = best_per_channel.min(timer.seconds());
+                    assert!(acc > 0.0, "[{dir}] the kept points have a mixture density");
+
+                    let timer = Stopwatch::start();
+                    let mut acc = 0.0;
+                    for (_, _, momenta) in &kept {
+                        memo.next_point();
+                        for ch in channels {
+                            acc += ch.density_memo(momenta, &mut memo);
+                        }
+                    }
+                    best_per_point = best_per_point.min(timer.seconds());
+                    assert!(acc > 0.0, "[{dir}] the kept points have a mixture density");
+
                     let timer = Stopwatch::start();
                     let mut acc = 0.0;
                     for (_, _, momenta) in &kept {
                         acc += mixture.density(momenta);
                     }
-                    best_density = best_density.min(timer.seconds());
+                    best_mixture = best_mixture.min(timer.seconds());
                     assert!(acc > 0.0, "[{dir}] the kept points have a mixture density");
                 }
 
                 let n = kept.len() as f64;
-                let total_us = best_total * 1e6 / n;
-                let density_us = best_density * 1e6 / n;
+                let per_point = |best: f64| best * 1e6 / n;
+                let (total_us, none_us) = (per_point(best_total), per_point(best_none));
+                let (chan_us, point_us) = (per_point(best_per_channel), per_point(best_per_point));
+                let mixture_us = per_point(best_mixture);
+                // The accepted point as it stands already carries the memo, so the
+                // cost the sharing removed has to be added back to name the
+                // denominator it was removed from.
+                let unshared_total_us = total_us + (none_us - mixture_us);
                 eprintln!(
-                    "[{dir}] {nch} channels | acceptance {:.3}% ({}/{drawn}) | accepted point \
-                 {total_us:8.2} us | density {density_us:8.2} us ({:5.1}% of it, \
-                 {:6.1} ns/channel) | min of {ROUNDS}",
+                    "[{dir}] {nch} channels, {n_out} legs | acceptance {:.3}% ({}/{drawn}) | \
+                     min of {ROUNDS}",
                     100.0 * n / drawn as f64,
                     kept.len(),
-                    100.0 * density_us / total_us,
-                    density_us * 1e3 / nch as f64,
+                );
+                eprintln!(
+                    "    accepted point {total_us:8.2} us | density: no memo {none_us:8.2} us \
+                     ({:6.1} ns/channel), per channel {chan_us:8.2} us, per point \
+                     {point_us:8.2} us, mixture {mixture_us:8.2} us",
+                    none_us * 1e3 / nch as f64,
+                );
+                eprintln!(
+                    "    sharing removes {:8.2} us = {:5.1}% of the density and {:5.1}% of the \
+                     accepted point (denominator {unshared_total_us:.2} us before, \
+                     {total_us:.2} us after)",
+                    none_us - mixture_us,
+                    100.0 * (none_us - mixture_us) / none_us,
+                    100.0 * (none_us - mixture_us) / unshared_total_us,
                 );
             },
         );

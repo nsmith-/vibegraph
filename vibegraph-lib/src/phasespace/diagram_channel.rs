@@ -103,12 +103,14 @@
 
 use std::collections::BTreeMap;
 
+use sha2::{Digest, Sha256};
+
 use crate::diagrams::diagram::Diagram;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
 use crate::ufo::EvaluatedModel;
 
-use super::channel::{Channel, PhaseSpaceMap, PhaseSpacePoint, ScaledChannel};
+use super::channel::{Channel, PhaseSpaceMap, PhaseSpacePoint, ScaledChannel, SubsystemMemo};
 
 /// The propagator pole a subsystem's invariant sits on: the timelike line's mass
 /// and width, driving the Breit–Wigner importance map for that invariant.
@@ -147,6 +149,13 @@ struct Branch<F: Real> {
     /// Sum of the subtree's leaf masses — the minimal invariant mass of the
     /// system this branch decays.
     mu: F,
+    /// Outgoing-leg slots this subtree spans, as a bitmask over `0..n_out`: which
+    /// [`SubsystemMemo`] slot this branch's momentum and invariant occupy.
+    mask: u64,
+    /// Fingerprint of the subtree's leaf slots *and* its bracketing ([`shape_of`]).
+    /// What makes a memo hit reproduce this branch's own floating-point sum rather
+    /// than another channel's grouping of the same legs.
+    shape: u128,
     /// Cut-implied lower bound (GeV²) on this subsystem's invariant, or zero for no
     /// bound. Installed by [`DiagramChannel::with_timelike_floors`]; the draw's lower
     /// edge is [`draw_lo`] of it and `mu²`.
@@ -241,27 +250,36 @@ impl<F: Real> Spine<F> {
     }
 
     /// Four-momentum of `R_i` at a configuration.
-    fn rest_momentum(&self, i: usize, momenta: &[LorentzVector<F>]) -> LorentzVector<F> {
-        self.rungs[i + 1..]
-            .iter()
-            .fold(subtree_momentum(&self.recoil, momenta), |acc, r| {
-                let p = subtree_momentum(&r.emitted, momenta);
-                LorentzVector::new(
-                    acc.e() + p.e(),
-                    acc.px() + p.px(),
-                    acc.py() + p.py(),
-                    acc.pz() + p.pz(),
-                )
-            })
+    fn rest_momentum(
+        &self,
+        i: usize,
+        momenta: &[LorentzVector<F>],
+        memo: &mut SubsystemMemo<F>,
+    ) -> LorentzVector<F> {
+        let start = subtree_momentum(&self.recoil, momenta, memo);
+        self.rungs[i + 1..].iter().fold(start, |acc, r| {
+            let p = subtree_momentum(&r.emitted, momenta, memo);
+            LorentzVector::new(
+                acc.e() + p.e(),
+                acc.px() + p.px(),
+                acc.py() + p.py(),
+                acc.pz() + p.pz(),
+            )
+        })
     }
 
     /// Invariant mass² of `R_i` at a configuration, clamped away from the tiny
     /// negative value a near-threshold configuration can pick up.
-    fn rest_invariant(&self, i: usize, momenta: &[LorentzVector<F>]) -> F {
+    fn rest_invariant(
+        &self,
+        i: usize,
+        momenta: &[LorentzVector<F>],
+        memo: &mut SubsystemMemo<F>,
+    ) -> F {
         if i + 1 == self.rungs.len() {
-            node_invariant(&self.recoil, momenta)
+            node_invariant(&self.recoil, momenta, memo)
         } else {
-            self.rest_momentum(i, momenta).m2().max(F::zero())
+            self.rest_momentum(i, momenta, memo).m2().max(F::zero())
         }
     }
 }
@@ -861,11 +879,22 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
     }
 
     fn density_at(&self, sqrt_s: F, momenta: &[LorentzVector<F>]) -> F {
+        let mut memo = SubsystemMemo::new(self.n_out);
+        memo.next_point();
+        self.density_at_memo(sqrt_s, momenta, &mut memo)
+    }
+
+    fn density_at_memo(
+        &self,
+        sqrt_s: F,
+        momenta: &[LorentzVector<F>],
+        memo: &mut SubsystemMemo<F>,
+    ) -> F {
         let s = sqrt_s * sqrt_s;
         let jac = match &self.topology {
-            ChannelTopology::Timelike(root) => branch_jacobian(root, s, momenta),
+            ChannelTopology::Timelike(root) => branch_jacobian(root, s, momenta, memo),
             ChannelTopology::Spine(spine) => {
-                spine_jacobian(spine, s, &self.beams_at(sqrt_s), momenta)
+                spine_jacobian(spine, s, &self.beams_at(sqrt_s), momenta, memo)
             }
         };
         F::one() / jac
@@ -884,7 +913,11 @@ impl<F: Real> PhaseSpaceMap<F> for DiagramChannel<F> {
 
 impl<F: Real> Channel<F> for DiagramChannel<F> {
     fn density(&self, momenta: &[LorentzVector<F>]) -> F {
-        self.density_at(self.sqrt_s, momenta)
+        ScaledChannel::density_at(self, self.sqrt_s, momenta)
+    }
+
+    fn density_memo(&self, momenta: &[LorentzVector<F>], memo: &mut SubsystemMemo<F>) -> F {
+        self.density_at_memo(self.sqrt_s, momenta, memo)
     }
 }
 
@@ -1019,13 +1052,60 @@ fn binarize<F: Real>(mut children: Vec<Node<F>>, resonance: Option<Resonance<F>>
         binarize(children, None)
     };
     let mu = left.mu() + right.mu();
+    let mask = node_mask(&left) | node_mask(&right);
+    let shape = shape_of(&left, &right);
     Node::Branch(Box::new(Branch {
         left,
         right,
         mu,
+        mask,
+        shape,
         floor: F::zero(),
         resonance,
     }))
+}
+
+/// The outgoing-leg slots a node spans.
+fn node_mask<F: Real>(node: &Node<F>) -> u64 {
+    match node {
+        Node::Leaf { slot, .. } => 1u64 << *slot,
+        Node::Branch(b) => b.mask,
+    }
+}
+
+/// Serialise a subtree's leaf slots and bracketing — everything
+/// [`subtree_momentum`] reads, and nothing else, so two subtrees summing the same
+/// legs the same way agree here even when their poles, floors or masses differ.
+fn shape_bytes<F: Real>(node: &Node<F>, out: &mut Vec<u8>) {
+    match node {
+        Node::Leaf { slot, .. } => {
+            out.push(b'L');
+            out.extend_from_slice(&(*slot as u64).to_le_bytes());
+        }
+        Node::Branch(b) => {
+            out.push(b'(');
+            shape_bytes(&b.left, out);
+            shape_bytes(&b.right, out);
+            out.push(b')');
+        }
+    }
+}
+
+/// A subtree's structural fingerprint: the 128-bit prefix of SHA-256 over
+/// [`shape_bytes`].
+///
+/// The memo compares this rather than the serialisation itself, which turns a
+/// lookup into one integer comparison; two structurally different subtrees
+/// colliding is a `2^-128` event, and the alternative — keying on the leg mask
+/// alone — would silently hand one channel another's summation order. Computed
+/// once per branch at construction, so the digest's cost is not on any hot path.
+fn shape_of<F: Real>(left: &Node<F>, right: &Node<F>) -> u128 {
+    let mut bytes = vec![b'('];
+    shape_bytes(left, &mut bytes);
+    shape_bytes(right, &mut bytes);
+    bytes.push(b')');
+    let digest = Sha256::digest(&bytes);
+    u128::from_le_bytes(digest[..16].try_into().expect("SHA-256 is 32 bytes"))
 }
 
 /// Install `floor`'s bound on `branch` and on every composite node beneath it,
@@ -1546,28 +1626,51 @@ fn sample_branch<F: Real>(
 }
 
 /// Total four-momentum of a node's subtree, summed over its leaves.
-fn subtree_momentum<F: Real>(node: &Node<F>, momenta: &[LorentzVector<F>]) -> LorentzVector<F> {
+fn subtree_momentum<F: Real>(
+    node: &Node<F>,
+    momenta: &[LorentzVector<F>],
+    memo: &mut SubsystemMemo<F>,
+) -> LorentzVector<F> {
     match node {
         Node::Leaf { slot, .. } => momenta[*slot],
         Node::Branch(b) => {
-            let l = subtree_momentum(&b.left, momenta);
-            let r = subtree_momentum(&b.right, momenta);
-            LorentzVector::new(
+            // A hit is the sum this branch would have formed itself: the memo key
+            // carries the bracketing, so nothing else's grouping can land here.
+            if let Some(p) = memo.momentum(b.mask, b.shape) {
+                return p;
+            }
+            let l = subtree_momentum(&b.left, momenta, memo);
+            let r = subtree_momentum(&b.right, momenta, memo);
+            let p = LorentzVector::new(
                 l.e() + r.e(),
                 l.px() + r.px(),
                 l.py() + r.py(),
                 l.pz() + r.pz(),
-            )
+            );
+            memo.put(b.mask, b.shape, p, None);
+            p
         }
     }
 }
 
-fn node_invariant<F: Real>(node: &Node<F>, momenta: &[LorentzVector<F>]) -> F {
+fn node_invariant<F: Real>(
+    node: &Node<F>,
+    momenta: &[LorentzVector<F>],
+    memo: &mut SubsystemMemo<F>,
+) -> F {
     match node {
         Node::Leaf { mass, .. } => *mass * *mass,
-        // A composite subsystem is timelike; clamp away the tiny negative `m²` a
-        // near-threshold configuration can pick up so `√s` stays real.
-        Node::Branch(_) => subtree_momentum(node, momenta).m2().max(F::zero()),
+        Node::Branch(b) => {
+            if let Some(m2) = memo.invariant(b.mask, b.shape) {
+                return m2;
+            }
+            let p = subtree_momentum(node, momenta, memo);
+            // A composite subsystem is timelike; clamp away the tiny negative `m²` a
+            // near-threshold configuration can pick up so `√s` stays real.
+            let m2 = p.m2().max(F::zero());
+            memo.put(b.mask, b.shape, p, Some(m2));
+            m2
+        }
     }
 }
 
@@ -1575,13 +1678,18 @@ fn node_invariant<F: Real>(node: &Node<F>, momenta: &[LorentzVector<F>]) -> F {
 /// subtree rooted at `branch`, evaluated at `momenta`. Its reciprocal is the
 /// channel density; the sampler's weight is the reciprocal of the density, so the
 /// two are exact inverses at any generated point.
-fn branch_jacobian<F: Real>(branch: &Branch<F>, s: F, momenta: &[LorentzVector<F>]) -> F {
+fn branch_jacobian<F: Real>(
+    branch: &Branch<F>,
+    s: F,
+    momenta: &[LorentzVector<F>],
+    memo: &mut SubsystemMemo<F>,
+) -> F {
     let sqrt_s = s.sqrt();
     let mu_l = branch.left.mu();
     let mu_r = branch.right.mu();
-    let sl = node_invariant(&branch.left, momenta);
+    let sl = node_invariant(&branch.left, momenta, memo);
     let sqrt_sl = sl.sqrt();
-    let sr = node_invariant(&branch.right, momenta);
+    let sr = node_invariant(&branch.right, momenta, memo);
 
     let mut f = F::one();
     if let Node::Branch(b) = &branch.left {
@@ -1596,10 +1704,10 @@ fn branch_jacobian<F: Real>(branch: &Branch<F>, s: F, momenta: &[LorentzVector<F
     }
     f = f * r2_factor(s, sqrt_s, sl, sr);
     if let Node::Branch(b) = &branch.left {
-        f = f * branch_jacobian(b, sl, momenta);
+        f = f * branch_jacobian(b, sl, momenta, memo);
     }
     if let Node::Branch(b) = &branch.right {
-        f = f * branch_jacobian(b, sr, momenta);
+        f = f * branch_jacobian(b, sr, momenta, memo);
     }
     f
 }
@@ -1903,6 +2011,7 @@ fn spine_jacobian<F: Real>(
     s: F,
     beams: &[LorentzVector<F>; 2],
     momenta: &[LorentzVector<F>],
+    memo: &mut SubsystemMemo<F>,
 ) -> F {
     let mb2 = beams[1].m2();
     let mut f = F::one();
@@ -1914,9 +2023,9 @@ fn spine_jacobian<F: Real>(
         let sqrt_s_sys = s_sys.sqrt();
         let mu_blob = rung.emitted.mu();
         let mu_rest = spine.rest_mu(i);
-        let s_blob = node_invariant(&rung.emitted, momenta);
+        let s_blob = node_invariant(&rung.emitted, momenta, memo);
         let sqrt_s_blob = s_blob.sqrt();
-        let s_rest = spine.rest_invariant(i, momenta);
+        let s_rest = spine.rest_invariant(i, momenta, memo);
 
         if let Node::Branch(b) = &rung.emitted {
             let hi = (sqrt_s_sys - mu_rest).powi(2);
@@ -1931,7 +2040,7 @@ fn spine_jacobian<F: Real>(
 
         let mut tk = t_kinematics(s_sys, t_prev, mb2, s_blob, s_rest);
         let restricted = apply_fiducial_t_max(&mut tk, rung.t_max_cap);
-        let p_blob = subtree_momentum(&rung.emitted, momenta);
+        let p_blob = subtree_momentum(&rung.emitted, momenta, memo);
         emitted_so_far = LorentzVector::new(
             emitted_so_far.e() + p_blob.e(),
             emitted_so_far.px() + p_blob.px(),
@@ -1955,11 +2064,13 @@ fn spine_jacobian<F: Real>(
 
     for rung in &spine.rungs {
         if let Node::Branch(b) = &rung.emitted {
-            f = f * branch_jacobian(b, node_invariant(&rung.emitted, momenta), momenta);
+            let s_blob = node_invariant(&rung.emitted, momenta, memo);
+            f = f * branch_jacobian(b, s_blob, momenta, memo);
         }
     }
     if let Node::Branch(b) = &spine.recoil {
-        f = f * branch_jacobian(b, node_invariant(&spine.recoil, momenta), momenta);
+        let s_recoil = node_invariant(&spine.recoil, momenta, memo);
+        f = f * branch_jacobian(b, s_recoil, momenta, memo);
     }
     f
 }
@@ -2940,6 +3051,158 @@ mod tests {
             near_w < 1e-2 * wide_w,
             "spacelike window {near_w:.3e} did not collapse near threshold (wide {wide_w:.3e})"
         );
+    }
+
+    /// Every composite node of a channel, as the `(mask, shape)` pair that keys its
+    /// [`SubsystemMemo`] slot.
+    fn memo_keys(ch: &DiagramChannel<f64>) -> Vec<(u64, u128)> {
+        fn walk(node: &Node<f64>, out: &mut Vec<(u64, u128)>) {
+            if let Node::Branch(b) = node {
+                out.push((b.mask, b.shape));
+                walk(&b.left, out);
+                walk(&b.right, out);
+            }
+        }
+        let mut out = Vec::new();
+        match &ch.topology {
+            ChannelTopology::Timelike(root) => {
+                out.push((root.mask, root.shape));
+                walk(&root.left, &mut out);
+                walk(&root.right, &mut out);
+            }
+            ChannelTopology::Spine(spine) => {
+                for rung in &spine.rungs {
+                    walk(&rung.emitted, &mut out);
+                }
+                walk(&spine.recoil, &mut out);
+            }
+        }
+        out
+    }
+
+    /// A spread of channels over one five-body final state, the way a per-diagram
+    /// mixture holds them: several timelike trees and several spines, all pricing
+    /// the same configurations.
+    fn five_body_mixture() -> (f64, Vec<f64>, Vec<DiagramChannel<f64>>) {
+        let sqrt_s = 700.0;
+        let masses = vec![0.0; 5];
+        let z = z_resonance();
+        let channels = vec![
+            DiagramChannel::from_topology(sqrt_s, masses.clone(), &[vec![0, 1]]),
+            DiagramChannel::from_topology(sqrt_s, masses.clone(), &[vec![3, 4]]),
+            DiagramChannel::from_topology(sqrt_s, masses.clone(), &[vec![1, 2, 3, 4], vec![3, 4]]),
+            DiagramChannel::from_topology(sqrt_s, masses.clone(), &[vec![0, 1, 2], vec![0, 1]]),
+            DiagramChannel::from_topology_resonant(
+                sqrt_s,
+                masses.clone(),
+                &[(vec![0, 1], Some(z))],
+            ),
+            DiagramChannel::from_topology_ladder(
+                sqrt_s,
+                [0.0, 0.0],
+                masses.clone(),
+                &[(vec![4], None, 0.0), (vec![0, 1], Some(z), 80.4)],
+                (vec![2, 3], None),
+            ),
+            DiagramChannel::from_topology_ladder(
+                sqrt_s,
+                [0.0, 0.0],
+                masses.clone(),
+                &[(vec![0], None, 0.0), (vec![1, 2], None, 80.4)],
+                (vec![3, 4], None),
+            ),
+        ];
+        (sqrt_s, masses, channels)
+    }
+
+    /// Sharing the subsystem memo across a mixture's channels moves no channel's
+    /// density by a single bit.
+    ///
+    /// The memo hands one channel a four-momentum another channel summed, which is
+    /// the same computation only if the two summed the same legs in the same
+    /// bracketing — a sum of four-momenta is not associative, and keying on the leg
+    /// mask alone would quietly reassociate the mixture's weights. Each channel is
+    /// therefore priced twice at the same configuration: once against
+    /// [`SubsystemMemo::disabled`], which holds nothing and so is the plain
+    /// recursion, and once against a memo every *other* channel has already written
+    /// to. The sweep is repeated in reverse channel order, since a key that failed
+    /// to separate two subtrees would produce an answer that depends on who wrote
+    /// the slot first.
+    #[test]
+    fn a_shared_memo_leaves_every_channel_density_bit_identical() {
+        let (sqrt_s, masses, channels) = five_body_mixture();
+
+        // Non-vacuity: the mixture really does route the same subsystem through
+        // several channels, so the sweeps below exercise hits and not only misses.
+        let all: Vec<(u64, u128)> = channels.iter().flat_map(memo_keys).collect();
+        let distinct: std::collections::BTreeSet<(u64, u128)> = all.iter().copied().collect();
+        assert!(
+            distinct.len() < all.len(),
+            "no subsystem is shared between these channels, so the test would prove nothing"
+        );
+
+        let mut stream = SubStream::from_stream(0x5EED_7, 7);
+        for round in 0..40 {
+            let src = round % channels.len();
+            let u = stream.uniforms::<f64>(channels[src].ndim());
+            let momenta = channels[src].sample(&u).momenta;
+
+            let plain: Vec<f64> = channels
+                .iter()
+                .map(|c| {
+                    let mut off = SubsystemMemo::disabled();
+                    c.density_at_memo(sqrt_s, &momenta, &mut off)
+                })
+                .collect();
+
+            for reversed in [false, true] {
+                let mut memo = SubsystemMemo::new(masses.len());
+                memo.next_point();
+                let order: Vec<usize> = if reversed {
+                    (0..channels.len()).rev().collect()
+                } else {
+                    (0..channels.len()).collect()
+                };
+                for j in order {
+                    let shared = channels[j].density_memo(&momenta, &mut memo);
+                    assert_eq!(
+                        shared.to_bits(),
+                        plain[j].to_bits(),
+                        "channel {j} priced {shared} against a shared memo \
+                         (reversed sweep: {reversed}) and {} on its own",
+                        plain[j]
+                    );
+                }
+            }
+        }
+    }
+
+    /// The memo key separates two bracketings of one leg set.
+    ///
+    /// `({0,1},({2},{3}))` and `({0},({1},{2,3}))` span the same four legs, so a
+    /// mask-keyed memo would let either serve the other. They sum those legs in
+    /// different orders, which is a different floating-point value, so the
+    /// fingerprint has to tell them apart — and has to repeat itself for a subtree
+    /// rebuilt from the same inputs, or nothing is ever shared.
+    #[test]
+    fn the_memo_key_separates_two_bracketings_of_one_leg_set() {
+        let build =
+            |subs: &[Vec<usize>]| DiagramChannel::<f64>::from_topology(500.0, vec![0.0; 4], subs);
+        let roots = |ch: &DiagramChannel<f64>| match &ch.topology {
+            ChannelTopology::Timelike(root) => (root.mask, root.shape),
+            ChannelTopology::Spine(_) => panic!("an all-timelike topology was asked for"),
+        };
+
+        let (mask_a, shape_a) = roots(&build(&[vec![0, 1]]));
+        let (mask_b, shape_b) = roots(&build(&[vec![2, 3]]));
+        assert_eq!(mask_a, mask_b, "both roots span the whole final state");
+        assert_ne!(
+            shape_a, shape_b,
+            "two bracketings of one leg set must not share a memo slot"
+        );
+
+        let (mask_c, shape_c) = roots(&build(&[vec![0, 1]]));
+        assert_eq!((mask_a, shape_a), (mask_c, shape_c));
     }
 
     /// [`DiagramChannel::map_key`] separates every field the map is a function of.
