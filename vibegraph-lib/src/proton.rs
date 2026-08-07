@@ -2022,6 +2022,7 @@ impl<'a> ProtonIntegrand<'a> {
                 let sc = self.scratch();
                 let mut w = vec![0.0; n];
                 let mut scale_u = vec![0.0; scale_ndim];
+                let mut densities = Vec::with_capacity(n);
                 for _ in 0..points {
                     let u = s.uniforms::<f64>(ndim);
                     let m = self.map_point(&u);
@@ -2039,7 +2040,15 @@ impl<'a> ProtonIntegrand<'a> {
                     if shape == 0.0 {
                         continue;
                     }
-                    let weight = self.channel_weight(j, &m, &point.momenta);
+                    // The `gⱼ` row the shares are formed from is the one the
+                    // weight's `g` was summed over, so the channel sweep runs once
+                    // for both.
+                    let weight = self.combiner.channel_weight_at_recording(
+                        j,
+                        m.sqrt_shat,
+                        &point.momenta,
+                        &mut densities,
+                    );
                     // `channel_weight` weights by `αⱼ/g`; the mixture that actually
                     // drew this point has density `g`, so the mixture estimator is `f/g`.
                     let g = self.combiner.alphas()[j] / weight;
@@ -2048,8 +2057,8 @@ impl<'a> ProtonIntegrand<'a> {
                         continue;
                     }
                     let est2 = est * est;
-                    for (wj, ch) in w.iter_mut().zip(self.combiner.channels()) {
-                        *wj += est2 * ch.density_at(m.sqrt_shat, &point.momenta) / g;
+                    for (wj, gj) in w.iter_mut().zip(&densities) {
+                        *wj += est2 * gj / g;
                     }
                 }
                 w

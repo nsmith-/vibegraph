@@ -340,6 +340,7 @@ impl<F: Real> MultiChannel<F> {
         for it in 0..n_iter {
             let mut s = SubStream::from_stream(seed, stream + it as u64);
             let mut w = vec![F::zero(); n];
+            let mut densities = Vec::with_capacity(n);
             for _ in 0..n_survey {
                 let u = s.uniforms::<F>(ndim);
                 let (drawn, pt) = self.draw_from(&u);
@@ -351,12 +352,14 @@ impl<F: Real> MultiChannel<F> {
                     continue;
                 }
                 // g(p) = 1/weight is the combined density; est = weight·f = f/g.
-                let weight = self.mixture_weight(&pt.momenta);
+                // The `gⱼ` row the shares are formed from is the one that sum was
+                // taken over, so the channel sweep runs once for both.
+                let weight = self.mixture_weight_recording(&pt.momenta, &mut densities);
                 let g = F::one() / weight;
                 let est = weight * f;
                 let est2 = est * est;
-                for (wj, ch) in w.iter_mut().zip(&self.channels) {
-                    *wj = *wj + est2 * ch.density(&pt.momenta) / g;
+                for (wj, gj) in w.iter_mut().zip(&densities) {
+                    *wj = *wj + est2 * *gj / g;
                 }
             }
             for wj in &mut w {
@@ -386,9 +389,18 @@ impl<F: Real> MultiChannel<F> {
     /// The combined sampling density `g(p) = Σⱼ αⱼ gⱼ(p)` at `momenta` — the
     /// reciprocal of the weight the combiner assigns to a point generated there.
     pub fn density(&self, momenta: &[LorentzVector<F>]) -> F {
+        self.density_recorded(momenta, |_| {})
+    }
+
+    /// [`density`](Self::density), reporting each channel's own `gⱼ(p)` to
+    /// `record` as the sum forms. The one place the combined density is
+    /// summed, so every caller sees the same accumulation order.
+    fn density_recorded(&self, momenta: &[LorentzVector<F>], mut record: impl FnMut(F)) -> F {
         let mut g = F::zero();
         for (alpha, ch) in self.alphas.iter().zip(&self.channels) {
-            g = g + *alpha * ch.density(momenta);
+            let gj = ch.density(momenta);
+            record(gj);
+            g = g + *alpha * gj;
         }
         g
     }
@@ -449,6 +461,24 @@ impl<F: Real> MultiChannel<F> {
     /// second half of [`sample_from`](Self::sample_from).
     pub fn mixture_weight(&self, momenta: &[LorentzVector<F>]) -> F {
         F::one() / self.positive_density(momenta)
+    }
+
+    /// [`mixture_weight`](Self::mixture_weight) with the per-channel densities
+    /// the combined one sums recorded into `densities` — cleared first, then one
+    /// `gⱼ(p)` per channel in channel order.
+    ///
+    /// `g` costs a density evaluation in every channel, and a caller needing the
+    /// row as well as the weight — a variance-share estimator needs both —
+    /// otherwise pays for that sweep twice.
+    pub fn mixture_weight_recording(
+        &self,
+        momenta: &[LorentzVector<F>],
+        densities: &mut Vec<F>,
+    ) -> F {
+        densities.clear();
+        let g = self.density_recorded(momenta, |gj| densities.push(gj));
+        debug_assert!(g > F::zero(), "combined density must be positive");
+        F::one() / g
     }
 
     /// [`PhaseSpaceMap::sample`] with the channel that drew the point reported
@@ -601,9 +631,23 @@ impl<F: Real> ScaledMultiChannel<F> {
 
     /// The combined sampling density `g(p) = Σⱼ αⱼ gⱼ(p)` at CM energy `sqrt_s`.
     pub fn density_at(&self, sqrt_s: F, momenta: &[LorentzVector<F>]) -> F {
+        self.density_at_recorded(sqrt_s, momenta, |_| {})
+    }
+
+    /// [`density_at`](Self::density_at), reporting each channel's own `gⱼ(p)` to
+    /// `record` as the sum forms. The one place the combined density is summed,
+    /// so every caller sees the same accumulation order.
+    fn density_at_recorded(
+        &self,
+        sqrt_s: F,
+        momenta: &[LorentzVector<F>],
+        mut record: impl FnMut(F),
+    ) -> F {
         let mut g = F::zero();
         for (alpha, ch) in self.alphas.iter().zip(&self.channels) {
-            g = g + *alpha * ch.density_at(sqrt_s, momenta);
+            let gj = ch.density_at(sqrt_s, momenta);
+            record(gj);
+            g = g + *alpha * gj;
         }
         g
     }
@@ -644,6 +688,24 @@ impl<F: Real> ScaledMultiChannel<F> {
     /// channel `j` at CM energy `sqrt_s`.
     pub fn channel_weight_at(&self, j: usize, sqrt_s: F, momenta: &[LorentzVector<F>]) -> F {
         self.alphas[j] / self.density_at(sqrt_s, momenta)
+    }
+
+    /// [`channel_weight_at`](Self::channel_weight_at) with the per-channel
+    /// densities the combined one sums recorded into `densities` — cleared
+    /// first, then one `gⱼ(p)` per channel in channel order.
+    ///
+    /// `g` costs a density evaluation in every channel, and a caller needing the
+    /// row as well as the weight — a variance-share estimator needs both —
+    /// otherwise pays for that sweep twice.
+    pub fn channel_weight_at_recording(
+        &self,
+        j: usize,
+        sqrt_s: F,
+        momenta: &[LorentzVector<F>],
+        densities: &mut Vec<F>,
+    ) -> F {
+        densities.clear();
+        self.alphas[j] / self.density_at_recorded(sqrt_s, momenta, |gj| densities.push(gj))
     }
 
     /// The channel `u0 ∈ [0,1)` selects, by cumulative selection weight.

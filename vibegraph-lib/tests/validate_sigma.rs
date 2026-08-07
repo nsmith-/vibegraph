@@ -109,7 +109,7 @@ use vibegraph::hadronic::{
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
-use vibegraph::phasespace::GEV2_TO_PB;
+use vibegraph::phasespace::{AlphaAdaptation, GEV2_TO_PB};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
@@ -625,7 +625,7 @@ fn integrate_probe(
         n_survey,
         n_adapt_iter,
         mmll_override,
-        |integ, alphas| {
+        |integ, adaptation| {
             let result = match vegas_alpha {
                 None => integ.adapt_grids(neval, niter, seed).1,
                 // Same run, but with the grid-damping exponent under the probe's
@@ -637,7 +637,7 @@ fn integrate_probe(
                 result.integral * GEV2_TO_PB,
                 result.std_dev * GEV2_TO_PB,
                 result.chi2_per_dof,
-                alphas.to_vec(),
+                adaptation.trajectory.last().cloned().unwrap_or_default(),
             )
         },
     )
@@ -663,7 +663,7 @@ fn with_integrand<R>(
     n_survey: usize,
     n_adapt_iter: usize,
     mmll_override: Option<f64>,
-    f: impl FnOnce(&FixedBeamIntegrand, &[f64]) -> R,
+    f: impl FnOnce(&FixedBeamIntegrand, &AlphaAdaptation<f64>) -> R,
 ) -> R {
     let card_path = output_dir().join(dir).join("Cards/run_card.dat");
     let card_path = match mmll_override {
@@ -741,11 +741,12 @@ fn with_integrand<R>(
     // own |M|² on a survey substream disjoint from the integration seed.
     let report = (n_survey > 0)
         .then(|| integ.use_multichannel(&diagrams, &evaluated, n_survey, n_adapt_iter, seed))
-        .flatten();
-    let alphas = report
-        .map(|r| r.trajectory.last().cloned().unwrap_or_default())
-        .unwrap_or_default();
-    f(&integ, &alphas)
+        .flatten()
+        .unwrap_or_else(|| AlphaAdaptation {
+            trajectory: Vec::new(),
+            variance_shares: Vec::new(),
+        });
+    f(&integ, &report)
 }
 
 /// Seed-stability sweep for the resonant multichannel rows: integrate each across
@@ -1189,6 +1190,160 @@ fn probe_2to6_budget_ladder() {
                 );
             }
         }
+    }
+}
+
+/// What the α-survey budget buys on a wide split: the converged selection
+/// weights, and the cross section they drive, as a function of `n_survey`.
+///
+/// The survey costs `n_survey × n_iter` points, each pricing a density in every
+/// channel, so its budget is capped rather than tracking the integration's. A cap
+/// is only sound if the α it produces has stopped moving by the time it binds:
+/// α decides every iteration's channel split, and a split resolved on too few
+/// points starves the channels whose `Wⱼ` would have raised them. The rungs
+/// therefore run from below the cap to sixteen times above it, and each is read
+/// two ways — the converged α vector against the highest rung's, and the five-seed
+/// σ the αs of that rung drive, on the plan budget the row is measured at.
+///
+/// Five seeds because one cannot tell a shifted mean from a re-rolled draw. The
+/// spread that matters is the seed-to-seed one at fixed `n_survey`: an α
+/// difference between rungs is only a finding if it exceeds it.
+///
+/// `scaled_rel` is reported per seed beside the quoted error: the stopping test's
+/// per-channel `√max(1, χ²/dofⱼ)` inflation of `Δσ/σ`, whose ratio to the realized
+/// seed spread is what says whether that inflation is calibrated. Run with
+/// `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_alpha_survey_budget() {
+    use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
+
+    const SURVEYS: [usize; 4] = [10_000, 40_000, 160_000, 640_000];
+    const SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
+    const SURVEY_ITERS: usize = 6;
+
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).expect("sigma reference readable");
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+
+    for dir in TWO_TO_SIX {
+        let entry = &banked[dir];
+        let (neval, niter) = match plan_for(dir) {
+            Plan::Long { neval, niter, .. } => (neval, niter),
+            _ => panic!("[{dir}] is not a long-tier row"),
+        };
+        eprintln!(
+            "── {dir}: MG {:.6e} ± {:.3e} pb, driven at {neval} × {niter} ──",
+            entry.sigma_pb, entry.sigma_err_pb,
+        );
+        let mut converged: Vec<(usize, Vec<f64>)> = Vec::new();
+        for n_survey in SURVEYS {
+            let clock = Stopwatch::start();
+            let alphas = with_integrand(
+                dir,
+                &entry.process,
+                SEED,
+                n_survey,
+                SURVEY_ITERS,
+                None,
+                |integ, adaptation| {
+                    let steps: Vec<String> = adaptation
+                        .trajectory
+                        .windows(2)
+                        .map(|w| format!("{:.2e}", l1_distance(&w[0], &w[1])))
+                        .collect();
+                    eprintln!(
+                        "  n_survey {n_survey:>7} ({:.0} s): α steps (L1) {}",
+                        clock.seconds(),
+                        steps.join(" "),
+                    );
+                    let mut runs: Vec<SeedResult> = Vec::new();
+                    for seed in SEEDS {
+                        let (_, result, spend) = integ.adapt_grids_budget(
+                            Budget::Fixed { neval, niter },
+                            BlockAllocation::ByAlpha,
+                            seed,
+                            &StopSignal::default(),
+                        );
+                        let sigma_pb = result.integral * GEV2_TO_PB;
+                        let sigma_err_pb = result.std_dev * GEV2_TO_PB;
+                        eprintln!(
+                            "      seed {seed:>10}: σ {sigma_pb:.6e} ± {sigma_err_pb:.3e} \
+                             | rel {:+.4} | χ²/dof {:7.2} | achieved_rel {:.5} \
+                             | scaled_rel {:.5} (×{:.1})",
+                            sigma_pb / entry.sigma_pb - 1.0,
+                            result.chi2_per_dof,
+                            spend.achieved_rel,
+                            spend.scaled_rel,
+                            spend.scaled_rel / spend.achieved_rel,
+                        );
+                        runs.push(SeedResult {
+                            seed,
+                            sigma_pb,
+                            sigma_err_pb,
+                        });
+                    }
+                    let (mean, mean_err, chi2) = combine_seeds(&runs);
+                    let lo = runs.iter().map(|r| r.sigma_pb).fold(f64::MAX, f64::min);
+                    let hi = runs.iter().map(|r| r.sigma_pb).fold(f64::MIN, f64::max);
+                    let sd = (runs
+                        .iter()
+                        .map(|r| (r.sigma_pb - mean).powi(2))
+                        .sum::<f64>()
+                        / (runs.len() - 1) as f64)
+                        .sqrt();
+                    eprintln!(
+                        "    → 5-seed σ {mean:.6e} ± {mean_err:.3e} (χ²/dof {chi2:.2}) \
+                         | rel {:+.4} | seed sd/σ {:.4} | full spread {:.4}",
+                        mean / entry.sigma_pb - 1.0,
+                        sd / mean,
+                        (hi - lo) / mean,
+                    );
+                    adaptation.trajectory.last().cloned().unwrap_or_default()
+                },
+            );
+            converged.push((n_survey, alphas));
+        }
+        report_alpha_stability(&converged);
+    }
+}
+
+/// `Σⱼ |aⱼ − bⱼ|` between two selection-weight vectors: both sum to one, so this
+/// is twice the total variation between the mixtures they define.
+fn l1_distance(a: &[f64], b: &[f64]) -> f64 {
+    a.iter().zip(b).map(|(x, y)| (x - y).abs()).sum()
+}
+
+/// Each survey budget's converged α against the highest budget's, which is the
+/// closest thing to the fixed point the experiment measures.
+///
+/// Three readings, because a wide split hides movement three ways: the L1
+/// distance is the whole mixture's, `max αⱼ ratio` is the worst *relative* move
+/// over the channels that carry weight — a channel at `10⁻³` moving by half is
+/// invisible in L1 — and the leading-channel share says whether the mixture's
+/// concentration itself moved.
+fn report_alpha_stability(converged: &[(usize, Vec<f64>)]) {
+    let Some((top_n, top)) = converged.last() else {
+        return;
+    };
+    for (n, a) in converged {
+        let carrying = |x: &f64| *x > 1e-6;
+        let worst = a
+            .iter()
+            .zip(top)
+            .filter(|(x, y)| carrying(x) || carrying(y))
+            .map(|(x, y)| (x / y).max(y / x))
+            .fold(0.0_f64, f64::max);
+        let mut sorted = a.clone();
+        sorted.sort_by(|p, q| q.partial_cmp(p).expect("selection weights are numbers"));
+        eprintln!(
+            "  α({n:>7}) vs α({top_n}): L1 {:.4e} | worst αⱼ ratio {worst:8.2} \
+             | top-1 {:.4} | top-10 {:.4}",
+            l1_distance(a, top),
+            sorted[0],
+            sorted.iter().take(10).sum::<f64>(),
+        );
     }
 }
 
@@ -2081,7 +2236,7 @@ fn probe_sampled_channel_cost_in_alpha_s() {
             MULTICHANNEL_SURVEY,
             MULTICHANNEL_ITERS,
             None,
-            |integ, alphas| {
+            |integ, adaptation| {
                 let running = integ
                     .alpha_s_source()
                     .expect("a clustered row runs its own coupling");
@@ -2089,6 +2244,10 @@ fn probe_sampled_channel_cost_in_alpha_s() {
                 let mut momenta = Vec::new();
                 let (mut sum_w, mut sum_wa, mut sum_a) = (0.0f64, 0.0f64, 0.0f64);
                 let mut kept = 0usize;
+                let alphas = adaptation
+                    .trajectory
+                    .last()
+                    .expect("the survey installed selection weights");
                 for (j, &alpha) in alphas.iter().enumerate() {
                     let n_j = ((alpha * DRAWS as f64) as usize).max(4_096);
                     let mut rng = ChaCha8Rng::seed_from_u64(SEED);
