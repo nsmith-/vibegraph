@@ -174,6 +174,15 @@ fn integrate_is_thread_count_independent() {
 /// accuracy it reached is the accuracy requested and that asking for twice as
 /// good costs more work. A run that ignored its target — stopping on
 /// `--min-iters`, say — would satisfy the first half and fail the second.
+///
+/// The two targets have to straddle what the *shortest permitted* run already
+/// achieves, or the comparison measures nothing: a convergence run cannot stop
+/// before `warmup + 2` iterations, and four iterations of this process reach
+/// 0.46%. A tight target inside that is met at the iteration floor exactly as
+/// the loose one is, so the two counts come out equal and the test reads a
+/// stopping rule that never ran. `0.25%` is the far side of that boundary —
+/// about thirty iterations here, against a cap of a hundred — while `2%` is
+/// comfortably the near side.
 #[test]
 fn integrate_spends_iterations_to_reach_a_target() {
     let tmp = tempfile::tempdir().unwrap();
@@ -212,9 +221,9 @@ fn integrate_spends_iterations_to_reach_a_target() {
     };
 
     let loose = integrate("0.02", &tmp.path().join("loose"));
-    let tight = integrate("0.005", &tmp.path().join("tight"));
+    let tight = integrate("0.0025", &tmp.path().join("tight"));
 
-    for (label, a, target) in [("loose", &loose, 0.02), ("tight", &tight, 0.005)] {
+    for (label, a, target) in [("loose", &loose, 0.02), ("tight", &tight, 0.0025)] {
         assert!(
             a.sigma_pb > 0.0 && a.sigma_err_pb > 0.0,
             "[{label}] σ = {} ± {} pb",
@@ -235,7 +244,7 @@ fn integrate_spends_iterations_to_reach_a_target() {
     }
     assert!(
         tight.niter > loose.niter,
-        "a 4× tighter target cost no extra iterations: {} vs {}",
+        "an 8× tighter target cost no extra iterations: {} vs {}",
         tight.niter,
         loose.niter
     );
