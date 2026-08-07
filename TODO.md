@@ -295,13 +295,19 @@ One line each; the note is the full record. Earlier sprints
   decision); the recarded `pp_to_llj` `integrals` ladder still climbs
   monotonically over its whole eightfold range (0.04% → 0.21% across
   75k–600k, span half the reference's own error), so its 150k budget is the
-  lowest readable rung, not a converged one — the standing follow-up is
-  unchanged: `info`, never a wider tolerance, is the fallback if the climb
-  ever needs addressing (addendum S6, note 32; the full eight-ladder run costs
-  ~357 s on 16 cores, so re-checking is cheap; **diagnosed 2026-08-06**: the
-  climb is the cut-edge weight tail the timelike-floor item in the performance
-  backlog carries — same defect as this row's `--target-rel` non-convergence,
-  and that item's falsifier covers this ladder too); the direct-vs-mirror ordering
+  lowest readable rung, not a converged one — **resolved 2026-08-06
+  (`5a3b837`, note 34 S2): the climb was a misread, not a drift.** A
+  40-seed-per-rung ensemble puts the estimator's expectation flat from 150k
+  up (drift excluded at 7.3σ; the observed step has the wrong sign); the
+  recorded ladder was one five-seed draw 2.3σ low at its bottom rung, read
+  with scatter statistics 2–5× below the row's measured per-seed spread
+  (sd 1.378 pb at 150k). The 150k budget is where the estimator already is.
+  An earlier same-day annotation here blamed the cut-edge weight tail; the
+  timelike floors cut that variance 4× and the ladder reading persisted,
+  which is what forced the ensemble measurement. Falsifier:
+  `probe_llj_seed_ensemble` — a 40-seed mean at 150k differing from one at
+  600k by more than ~0.1% overturns the verdict. Follow-up filed below
+  (in-code pre-floor ladder figures); the direct-vs-mirror ordering
   is a third partition axis chain B named with a falsifier but nothing
   measures; chain B's draw raises low-budget seed scatter (χ²/dof 6.38 at 75k,
   clean ≥150k) — a future budget reduction on `pp_to_llj_dyn` would bite;
@@ -326,6 +332,18 @@ One line each; the note is the full record. Earlier sprints
   (`pp_to_bb_qcd2`, `pp_to_llj*`, with an outright `NQCD` collision). A
   re-extraction keyed by directory removes that whole exception class.
   (Note 28 §K3.4.)
+- **`validate_hadronic.rs` carries pre-timelike-floor ladder figures in
+  load-bearing doc comments** (2026-08-06, found by note 34's S2): the
+  `LLJ_NEVAL` budget rationale, `LLJ_DYN_MAX_REL`, the `LLJ_MAX_CHI2_PER_DOF`
+  calibration family, and `measure_llj_dyn_sigma`'s note all quote the
+  pre-floor five-seed ladders (`423.81…`/`416.23…` series). The constants
+  and gates are sound (post-floor gate readings are recorded in the manifest
+  and note 34 §1.2); the *rationale numbers* are stale. Mechanical re-record:
+  re-run `probe_llj_fixed_budget_ladder` / `probe_llj_dyn_budget_ladder` on a
+  quiet host (~357 s each on 16 cores) and rewrite the four comment sites —
+  and per S2's finding, quote the measured per-seed spread alongside any
+  five-seed rung figures, since five-seed scatter understates this row's
+  spread 2–5×.
 - **`pixi run -e madgraph extract-diagrams` silently re-runs MadGraph** for any
   script whose output directory is missing (`depends-on = ["build-diagrams"]`
   → `build.sh` regenerates). Anyone holding a run directory aside must invoke

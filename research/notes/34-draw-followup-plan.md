@@ -188,6 +188,27 @@ Wave-1 concurrency: S1 and S2 may share the host. σ, χ², and α statistics
 are load-robust; neither session may quote a wall-clock or ns/eval figure
 taken while the other runs.
 
+**S2 close-out (2026-08-06, `5a3b837`, merged `119e6d3`): the climb was a
+misread, not a drift.** The 40-seed-per-rung ensemble puts the estimator's
+expectation flat from 150k up — the drift hypothesis dies at 7.3σ, with the
+observed 150k→600k step carrying the wrong sign (−0.19 ± 0.23 pb) — while
+the recorded ladder is one five-seed draw 2.3σ low at its bottom rung
+(1 of 8 disjoint quintets reproduces the pattern; 3 step monotonically the
+other way). The instrument was the defect: five-seed scatter understates
+this row's measured per-seed spread (sd 1.378 pb at 150k) by 2× at 150k and
+5× at 600k, where it produced a χ²/dof of 0.03 — as loud a warning as 4.0,
+and read as reassurance. Reference side: MadGraph's `x²/σ²` last-3
+combination pulls its own run down 0.146% by down-weighting the iterations
+that caught the weight tail; our converged value is +0.09% from its
+iterations recombined by point count. Every alternative excluded by a
+dedicated measurement (equal-kept controls, budget-independent α survey,
+the `mmll = 50` twin stepping identically, `w_max` absent from the path).
+Falsifier for the verdict: `probe_llj_seed_ensemble`, ~0.1% between 40-seed
+rung means overturns it. Bookkeeping: the row's manifest note re-recorded;
+the pre-floor in-code ladder figures in `validate_hadronic.rs` filed in TODO
+as a mechanical re-record; AGENTS.md's seed-sweep line extended with the
+rung-difference caveat.
+
 ### Wave 2 — dispatch after S1 merges
 
 #### S3 — `MIN_CHANNEL_NEVAL` counts post-cut points (performance-dev)
@@ -225,6 +246,8 @@ density call sites this cache must thread through.
 residual `ΔR`/`pT` cut boundary concentrates at the map edge
 (`pp_to_llj` `m_ll [0,5)` var/σ 24.5 → 55.7 post-floor). Fixing it means
 bounds in the other cut coordinates or a softened lower edge — a map-shape
-change the floor session rightly refused. Blocked on S2: if the ladder climb
-implicates this edge, the two become one design; if not, its ≈9% variance
-share prices the session on its own.
+change the floor session rightly refused. **Unblocked by S2's close-out**:
+the ladder does not implicate this edge (the `mmll = 50` twin, which has no
+photon-pole edge, stepped identically), so S5 prices independently on its
+≈9% variance share — a candidate for wave 2 alongside S3/S4 if that share
+is judged worth a session.

@@ -74,7 +74,12 @@ For paper references, submodule locations and key paths, and instructions for fe
   the spread and χ²/dof, not the headline pull. A clean sweep is necessary, not
   sufficient: five mutually consistent seeds have been collectively 1% low, so
   budget convergence is a second axis. If extra budget makes a failure migrate
-  between seeds instead of shrinking, it is a bug, not statistics.
+  between seeds instead of shrinking, it is a bug, not statistics. Five seeds
+  detect a missed region; they cannot calibrate a rung-to-rung difference —
+  a budget-ladder comparison must be read against the estimator's *measured*
+  seed spread (20+ seeds on the two rungs that matter), because few-seed
+  scatter statistics have understated a heavy-tailed row's true spread by
+  2–5×, and a χ²/dof far below 1 is as loud a warning as one far above.
 - **A per-event field is a finer oracle than a cross section, and it exists more
   often than it looks** — pin intermediates (scales, merge sequences, per-event
   replays) against the reference's own record before flipping a σ gate, so every
