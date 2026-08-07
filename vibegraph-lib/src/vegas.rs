@@ -653,6 +653,33 @@ impl VegasGrid {
         wgt
     }
 
+    /// One iteration of [`VegasGrid::adapt`] against the grid as it stands,
+    /// which it leaves unrefined: the estimate, its variance, and the histogram
+    /// [`VegasGrid::refine_grid`] reshapes from.
+    ///
+    /// `adapt` is this in a loop at a constant `neval`. Driving the loop from
+    /// outside is what an adaptation whose per-iteration point count *varies*
+    /// needs — a channel of a block split is allocated afresh every iteration —
+    /// and it is how a sequential reference for such a run is written.
+    #[cfg(test)]
+    pub(crate) fn adapt_iteration(
+        &self,
+        mut f: impl FnMut(&[f64]) -> f64,
+        neval: usize,
+        rng: &mut impl Rng,
+    ) -> (f64, f64, Vec<Vec<f64>>) {
+        self.run_iter_batched(
+            &mut |points: &[SamplePoint], out: &mut [f64]| {
+                for (p, o) in points.iter().zip(out.iter_mut()) {
+                    *o = f(p.u);
+                }
+            },
+            neval,
+            1,
+            rng,
+        )
+    }
+
     /// Draw `neval` samples in batches, evaluating `f` once per batch.
     /// Returns `(integral_estimate, variance, d)`, `d[dim][bin]` accumulating
     /// `fval²` for grid refinement.
@@ -969,6 +996,14 @@ pub struct BlockIteration {
     pub integral: f64,
     /// Variance of that estimate (not of a single point).
     pub variance: f64,
+    /// Points whose integrand value was not exactly zero.
+    ///
+    /// For an integrand that returns a hard zero on every point its cuts reject —
+    /// what a cut-first evaluation does — this counts the points that contributed
+    /// to the estimate at all, and `accepted / neval` is the block's acceptance.
+    /// An integrand whose support had interior zeros would be undercounted by
+    /// them, a set a continuous draw hits with probability zero.
+    pub accepted: usize,
     /// `hist[dim][bin]` accumulating `(f·w)²`, the input
     /// [`VegasGrid::refine_grid`] reshapes the block's grid from.
     pub(crate) hist: Vec<Vec<f64>>,
@@ -1077,11 +1112,13 @@ where
         let mut hist = vec![vec![0.0_f64; grid.nbins]; ndim];
         let mut sum = 0.0_f64;
         let mut sum2 = 0.0_f64;
+        let mut accepted = 0_usize;
         for (fvals, bins) in &chunks[next..next + nchunks] {
             for (i, &fval) in fvals.iter().enumerate() {
                 let fval2 = fval * fval;
                 sum += fval;
                 sum2 += fval2;
+                accepted += usize::from(fval != 0.0);
                 for (dim, &k) in bins[i * ndim..(i + 1) * ndim].iter().enumerate() {
                     hist[dim][usize::from(k)] += fval2;
                 }
@@ -1095,6 +1132,7 @@ where
         out.push(BlockIteration {
             integral: mean,
             variance,
+            accepted,
             hist,
         });
     }

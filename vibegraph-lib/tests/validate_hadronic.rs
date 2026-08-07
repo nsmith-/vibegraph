@@ -987,6 +987,82 @@ fn probe_llj_fixed_budget_ladder() {
     }
 }
 
+/// The accepted-point channel floor on the hadronic sampler: what it costs, what
+/// coverage it realises, and the cross section it drives.
+///
+/// `p p > l+ l- j` is the narrow-split control for the same measurement the σ
+/// gate's `probe_accepted_point_floor` takes on the `2 -> 6` rows: 24 channels
+/// rather than hundreds, and an acceptance the draw-performance work measured at
+/// 23.8% untrained. The five gate seeds at the gate budget, so the σ printed is
+/// the statistic the row is enforced on. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_accepted_point_floor_hadronic() {
+    use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
+    use vibegraph::phasespace::GEV2_TO_PB;
+
+    let run_dir = validation_dir().join("output/pp_to_llj_fixed");
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(LLJ_PROCESS, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+
+    eprintln!("-- pp_to_llj_fixed: MG {mg:.3} +- {mg_err:.3} pb, {LLJ_NEVAL} x {LLJ_NITER} --");
+    let mut runs: Vec<SeedResult> = Vec::new();
+    for &seed in LLJ_SEEDS {
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            .expect("hadronic integrand");
+        integ
+            .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+            .expect("run card scale prescription compiles");
+        integ.adapt_alphas(seed, LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, 0.5);
+        let (_, result, spend) = integ.adapt_grids_budget(
+            Budget::Fixed {
+                neval: LLJ_NEVAL,
+                niter: LLJ_NITER,
+            },
+            BlockAllocation::ByAlpha,
+            seed,
+            &StopSignal::default(),
+        );
+        let sigma_pb = result.integral * GEV2_TO_PB;
+        let sigma_err_pb = result.std_dev * GEV2_TO_PB;
+        eprintln!(
+            "  seed {seed:>10}: sigma {sigma_pb:.4} +- {sigma_err_pb:.4} pb | rel {:+.4} \
+             | chi2/dof {:6.2}",
+            sigma_pb / mg - 1.0,
+            result.chi2_per_dof,
+        );
+        eprintln!("    {}", common::floor_coverage_line(&spend));
+        runs.push(SeedResult {
+            seed,
+            sigma_pb,
+            sigma_err_pb,
+        });
+    }
+    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let sd = (runs
+        .iter()
+        .map(|r| (r.sigma_pb - mean).powi(2))
+        .sum::<f64>()
+        / (runs.len() - 1) as f64)
+        .sqrt();
+    eprintln!(
+        "  -> 5-seed sigma {mean:.4} +- {mean_err:.4} pb (chi2/dof {chi2:.2}) | rel {:+.4} \
+         | seed sd/sigma {:.4}",
+        mean / mg - 1.0,
+        sd / mean,
+    );
+}
+
 /// What the α-survey budget buys on the hadronic sampler: the converged
 /// selection weights, and the cross section they drive, as a function of
 /// `n_survey`.

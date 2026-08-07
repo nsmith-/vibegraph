@@ -29,9 +29,7 @@ use thiserror::Error;
 use thread_local::ThreadLocal;
 
 use crate::artifact::{ChannelSampler, SamplerTopology};
-use crate::budget::{
-    integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal, MIN_CHANNEL_NEVAL,
-};
+use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
 use crate::coupling::cluster::graph::{ColorTable, MergeTablesByOrder};
@@ -1118,16 +1116,14 @@ pub(crate) fn combine_channels(per_channel: &[ChannelIntegration], niter: usize)
     }
 }
 
-/// A channel's per-iteration evaluation count: its share `αⱼ · neval` of the
-/// budget, floored at [`MIN_CHANNEL_NEVAL`] so no channel goes unsampled.
-pub(crate) fn channel_neval(alpha: f64, neval: usize) -> usize {
+/// A channel's share `αⱼ · neval` of the per-iteration budget, before any floor.
+pub(crate) fn channel_share(alpha: f64, neval: usize) -> usize {
     let share = (alpha * neval as f64).round();
-    let share = if share.is_finite() && share > 0.0 {
+    if share.is_finite() && share > 0.0 {
         share as usize
     } else {
         0
-    };
-    share.max(MIN_CHANNEL_NEVAL)
+    }
 }
 
 impl<'a> FixedBeamIntegrand<'a> {
@@ -2033,6 +2029,7 @@ impl ChannelIntegrand for FixedBeamIntegrand<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::budget::sequential_channel_reference;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::runcard::RunCard;
     use crate::ufo::sm::{sm_model, SMRestrict};
@@ -2868,10 +2865,10 @@ mod tests {
         let point_ndim = integ.point_ndim();
         let alphas = integ.channel_alphas();
         for (j, &alpha) in alphas.iter().enumerate() {
-            let n_j = if alphas.len() == 1 {
+            let share = if alphas.len() == 1 {
                 neval
             } else {
-                channel_neval(alpha, neval)
+                channel_share(alpha, neval)
             };
             let mut grid = VegasGrid::new(ndim, VEGAS_NBINS, VEGAS_ALPHA_MAPPED);
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
@@ -2879,19 +2876,20 @@ mod tests {
             rng.set_word_pos(0);
             let mut scale_draw = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
             let mut point = vec![0.0; point_ndim];
-            let want = grid.adapt(
+            let (want_integral, n_j) = sequential_channel_reference(
+                &mut grid,
                 |u| {
                     point[..ndim].copy_from_slice(u);
                     scale_draw.fill_uniforms(&mut point[ndim..]);
                     integ.value_in_channel(j, &point)
                 },
-                n_j,
+                share,
                 niter,
                 &mut rng,
             );
             assert_eq!(
                 got[j].result.integral.to_bits(),
-                want.integral.to_bits(),
+                want_integral.to_bits(),
                 "channel {j} term"
             );
             assert_eq!(got[j].neval, n_j, "channel {j} budget");

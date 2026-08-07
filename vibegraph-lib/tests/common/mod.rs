@@ -40,3 +40,57 @@ pub fn generate_with(process: &str, model: &UFOModel) -> Vec<DiagramSet> {
     let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
     generate_from_proc_card(&card, model).unwrap()
 }
+
+/// The accepted-point floor as a run realised it, one line.
+///
+/// The floor promises coverage in accepted points and is paid for in drawn ones,
+/// so both are printed: the per-channel acceptance the correction read, the spend
+/// it bought at, the spend an uncapped correction would have asked for, and the
+/// coverage and zero-variance-iteration counts that say whether the promise was
+/// kept.
+pub fn floor_coverage_line(spend: &vibegraph::budget::ConvergenceReport) -> String {
+    use vibegraph::budget::{MAX_FLOOR_ACCEPTANCE_SCALE, MIN_CHANNEL_NEVAL};
+
+    let n = spend.channel_points.len();
+    let acceptance: Vec<f64> = spend
+        .channel_accepted
+        .iter()
+        .zip(&spend.channel_points)
+        .map(|(&a, &p)| if p > 0 { a as f64 / p as f64 } else { 0.0 })
+        .collect();
+    let mut sorted = acceptance.clone();
+    sorted.sort_by(f64::total_cmp);
+    let q = |p: f64| sorted[(((sorted.len() - 1) as f64) * p).round() as usize];
+    let dead = acceptance.iter().filter(|&&a| a == 0.0).count();
+    // What the correction would have asked for with no cap on it: the number the
+    // cap exists to keep an iteration away from. Channels that accepted nothing
+    // have no finite ask at all, so they are counted separately rather than
+    // folded in as an infinity.
+    let uncapped: f64 = acceptance
+        .iter()
+        .filter(|&&a| a > 0.0)
+        .map(|&a| (MIN_CHANNEL_NEVAL as f64 / a).ceil())
+        .sum();
+    format!(
+        "{n} channels | acceptance min {:.4} p10 {:.4} p50 {:.4} p90 {:.4} max {:.4} \
+         | zero-acceptance {dead} | capped (<1/{MAX_FLOOR_ACCEPTANCE_SCALE}) {} \
+         | floor spend {MIN_CHANNEL_NEVAL}×n {} → realised {}/iter (uncapped floors would ask {:.3e}) \
+         | min accepted/channel/iter {} | zero-variance kept iters {} \
+         | points {} | achieved_rel {:.5} scaled_rel {:.5} | floor-bound channels {}",
+        q(0.0),
+        q(0.10),
+        q(0.50),
+        q(0.90),
+        q(1.0),
+        spend.floor_capped_channels,
+        n * MIN_CHANNEL_NEVAL,
+        spend.points_per_iteration,
+        uncapped,
+        spend.min_channel_accepted,
+        spend.zero_variance_iterations,
+        spend.points,
+        spend.achieved_rel,
+        spend.scaled_rel,
+        spend.floor_bound_channels,
+    )
+}

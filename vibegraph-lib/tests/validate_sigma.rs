@@ -992,6 +992,93 @@ fn probe_unweighting_weight_max() {
 /// at all.
 const TWO_TO_SIX: [&str; 2] = ["uux_to_ccx_emmm_qcd0", "bbx_to_ccx_emmm_qcd0"];
 
+/// What the accepted-point channel floor costs and what it buys, on the widest
+/// splits in the suite.
+///
+/// The floor promises coverage in *accepted* points and is paid for in drawn
+/// ones, so both are printed. The acceptance distribution over channels is the
+/// design input — it says how much of the correction the cap has to absorb — and
+/// the realised minimum accepted count per channel per iteration is whether the
+/// promise was kept. The zero-variance kept-iteration count rides along: an
+/// allocation every point of which the cuts reject measures a variance of exactly
+/// zero, and that is the quantity a floor denominated in accepted points is
+/// expected to move.
+///
+/// Five seeds at the row's own plan budget, so the σ printed beside it is the
+/// same statistic the gate reads and an arm of this probe is comparable to the
+/// other arm of a floor change. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_accepted_point_floor() {
+    use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
+
+    const SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
+
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).expect("sigma reference readable");
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+
+    for dir in TWO_TO_SIX {
+        let entry = &banked[dir];
+        let (neval, niter) = match plan_for(dir) {
+            Plan::Long { neval, niter, .. } => (neval, niter),
+            _ => panic!("[{dir}] is no longer a long-tier row"),
+        };
+        eprintln!(
+            "-- {dir}: MG {:.6e} +- {:.3e} pb, {neval} x {niter} --",
+            entry.sigma_pb, entry.sigma_err_pb,
+        );
+        let mut runs: Vec<SeedResult> = Vec::new();
+        with_integrand(
+            dir,
+            &entry.process,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+            None,
+            |integ, _| {
+                for seed in SEEDS {
+                    let (_, result, spend) = integ.adapt_grids_budget(
+                        Budget::Fixed { neval, niter },
+                        BlockAllocation::ByAlpha,
+                        seed,
+                        &StopSignal::default(),
+                    );
+                    let sigma_pb = result.integral * GEV2_TO_PB;
+                    let sigma_err_pb = result.std_dev * GEV2_TO_PB;
+                    eprintln!(
+                        "  seed {seed:>10}: sigma {sigma_pb:.6e} +- {sigma_err_pb:.3e} pb \
+                         | rel {:+.4} | chi2/dof {:8.2}",
+                        sigma_pb / entry.sigma_pb - 1.0,
+                        result.chi2_per_dof,
+                    );
+                    eprintln!("    {}", common::floor_coverage_line(&spend));
+                    runs.push(SeedResult {
+                        seed,
+                        sigma_pb,
+                        sigma_err_pb,
+                    });
+                }
+            },
+        );
+        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let sd = (runs
+            .iter()
+            .map(|r| (r.sigma_pb - mean).powi(2))
+            .sum::<f64>()
+            / (runs.len() - 1) as f64)
+            .sqrt();
+        let points: u64 = neval as u64 * niter as u64;
+        eprintln!(
+            "  -> 5-seed sigma {mean:.6e} +- {mean_err:.3e} pb (chi2/dof {chi2:.2}) \
+             | rel {:+.4} | seed sd/sigma {:.4} | nominal budget {points} points",
+            mean / entry.sigma_pb - 1.0,
+            sd / mean,
+        );
+    }
+}
+
 /// What one integration point of a `2 -> 6` row costs in this gate's own harness.
 ///
 /// A matrix-element benchmark is not the number a budget is sized from: the gate
