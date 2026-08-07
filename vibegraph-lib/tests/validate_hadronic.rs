@@ -987,6 +987,171 @@ fn probe_llj_fixed_budget_ladder() {
     }
 }
 
+/// What the α-survey budget buys on the hadronic sampler: the converged
+/// selection weights, and the cross section they drive, as a function of
+/// `n_survey`.
+///
+/// The fixed-energy sibling of this measurement is `probe_alpha_survey_budget` in
+/// the σ gate; both estimators are the same Kleiss–Pittau one over separate code,
+/// and the pair is what says a verdict about the survey budget is about the
+/// estimator rather than about one implementation.
+///
+/// α is surveyed once per rung at a single seed and then held while five
+/// independent seeds integrate under it — deliberately unlike the gate, which
+/// re-surveys per seed. Holding α is what makes the seed spread a measurement of
+/// the *integration* noise the rungs must be compared against, instead of folding
+/// the survey's own noise back into it.
+///
+/// The second row carries no banked σ, so it contributes α stability only: it is
+/// the several-hundred-channel hadronic case, where the survey cap binds hardest.
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_alpha_survey_budget_hadronic() {
+    use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
+    use vibegraph::phasespace::GEV2_TO_PB;
+
+    const SURVEYS: [usize; 4] = [10_000, 40_000, 160_000, 640_000];
+    const SURVEY_ITERS: usize = 6;
+    const SURVEY_SEED: u64 = 20260730;
+
+    let run_dir = validation_dir().join("output/pp_to_llj_fixed");
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+
+    for (label, process, banked) in [
+        ("pp_to_llj_fixed", LLJ_PROCESS, Some((mg, mg_err))),
+        ("pp_to_lljj", "p p > l+ l- j j", None),
+    ] {
+        let groups = groups_for(process, &model, &evaluated, &rc);
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+        match banked {
+            Some((mg, mg_err)) => eprintln!(
+                "── {label} ({process}): MG {mg:.3} ± {mg_err:.3} pb, \
+                 driven at {LLJ_NEVAL} × {LLJ_NITER} ──"
+            ),
+            None => eprintln!("── {label} ({process}): no banked σ, α stability only ──"),
+        }
+        let mut converged: Vec<(usize, Vec<f64>)> = Vec::new();
+        for n_survey in SURVEYS {
+            let clock = Stopwatch::start();
+            let mut integ =
+                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                    .expect("hadronic integrand");
+            integ
+                .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+                .expect("run card scale prescription compiles");
+            let adaptation = integ.adapt_alphas(SURVEY_SEED, n_survey, SURVEY_ITERS, 0.5);
+            let steps: Vec<String> = adaptation
+                .trajectory
+                .windows(2)
+                .map(|w| format!("{:.2e}", l1_distance(&w[0], &w[1])))
+                .collect();
+            eprintln!(
+                "  n_survey {n_survey:>7} ({:>4.0} s, {} channels): α steps (L1) {}",
+                clock.seconds(),
+                integ.channel_count(),
+                steps.join(" "),
+            );
+            if let Some((mg, _)) = banked {
+                let mut runs: Vec<SeedResult> = Vec::new();
+                for &seed in LLJ_SEEDS {
+                    let (_, result, spend) = integ.adapt_grids_budget(
+                        Budget::Fixed {
+                            neval: LLJ_NEVAL,
+                            niter: LLJ_NITER,
+                        },
+                        BlockAllocation::ByAlpha,
+                        seed,
+                        &StopSignal::default(),
+                    );
+                    let sigma_pb = result.integral * GEV2_TO_PB;
+                    let sigma_err_pb = result.std_dev * GEV2_TO_PB;
+                    eprintln!(
+                        "      seed {seed:>10}: σ {sigma_pb:.4} ± {sigma_err_pb:.4} pb \
+                         | rel {:+.4} | χ²/dof {:6.2} | achieved_rel {:.5} \
+                         | scaled_rel {:.5} (×{:.1})",
+                        sigma_pb / mg - 1.0,
+                        result.chi2_per_dof,
+                        spend.achieved_rel,
+                        spend.scaled_rel,
+                        spend.scaled_rel / spend.achieved_rel,
+                    );
+                    runs.push(SeedResult {
+                        seed,
+                        sigma_pb,
+                        sigma_err_pb,
+                    });
+                }
+                let (mean, mean_err, chi2) = combine_seeds(&runs);
+                let sd = (runs
+                    .iter()
+                    .map(|r| (r.sigma_pb - mean).powi(2))
+                    .sum::<f64>()
+                    / (runs.len() - 1) as f64)
+                    .sqrt();
+                let lo = runs.iter().map(|r| r.sigma_pb).fold(f64::MAX, f64::min);
+                let hi = runs.iter().map(|r| r.sigma_pb).fold(f64::MIN, f64::max);
+                eprintln!(
+                    "    → 5-seed σ {mean:.4} ± {mean_err:.4} pb (χ²/dof {chi2:.2}) \
+                     | rel {:+.4} | seed sd/σ {:.4} | full spread {:.4}",
+                    mean / mg - 1.0,
+                    sd / mean,
+                    (hi - lo) / mean,
+                );
+            }
+            converged.push((n_survey, integ.channel_alphas()));
+        }
+        report_alpha_stability(&converged);
+    }
+}
+
+/// `Σⱼ |aⱼ − bⱼ|` between two selection-weight vectors: both sum to one, so this
+/// is twice the total variation between the mixtures they define.
+fn l1_distance(a: &[f64], b: &[f64]) -> f64 {
+    a.iter().zip(b).map(|(x, y)| (x - y).abs()).sum()
+}
+
+/// Each survey budget's converged α against the highest budget's, which is the
+/// closest thing to the fixed point the experiment measures.
+///
+/// Three readings, because a wide split hides movement three ways: the L1
+/// distance is the whole mixture's, `worst αⱼ ratio` is the largest *relative*
+/// move over the channels that carry weight — a channel at `10⁻³` moving by half
+/// is invisible in L1 — and the leading-channel shares say whether the mixture's
+/// concentration itself moved.
+fn report_alpha_stability(converged: &[(usize, Vec<f64>)]) {
+    let Some((top_n, top)) = converged.last() else {
+        return;
+    };
+    for (n, a) in converged {
+        let carrying = |x: &f64| *x > 1e-6;
+        let worst = a
+            .iter()
+            .zip(top)
+            .filter(|(x, y)| carrying(x) || carrying(y))
+            .map(|(x, y)| (x / y).max(y / x))
+            .fold(0.0_f64, f64::max);
+        let mut sorted = a.clone();
+        sorted.sort_by(|p, q| q.partial_cmp(p).expect("selection weights are numbers"));
+        eprintln!(
+            "  α({n:>7}) vs α({top_n}): L1 {:.4e} | worst αⱼ ratio {worst:8.2} \
+             | top-1 {:.4} | top-10 {:.4}",
+            l1_distance(a, top),
+            sorted[0],
+            sorted.iter().take(10).sum::<f64>(),
+        );
+    }
+}
+
 /// The run whose card is `pp_to_llj_fixed`'s with the three `fixed_*_scale`
 /// switches turned off, and nothing else changed.
 const LLJ_DYN_RUN: &str = "pp_to_llj_dyn";
