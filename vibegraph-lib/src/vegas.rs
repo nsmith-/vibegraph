@@ -653,6 +653,33 @@ impl VegasGrid {
         wgt
     }
 
+    /// One iteration of [`VegasGrid::adapt`] against the grid as it stands,
+    /// which it leaves unrefined: the estimate, its variance, and the histogram
+    /// [`VegasGrid::refine_grid`] reshapes from.
+    ///
+    /// `adapt` is this in a loop at a constant `neval`. Driving the loop from
+    /// outside is what an adaptation whose per-iteration point count *varies*
+    /// needs — a channel of a block split is allocated afresh every iteration —
+    /// and it is how a sequential reference for such a run is written.
+    #[cfg(test)]
+    pub(crate) fn adapt_iteration(
+        &self,
+        mut f: impl FnMut(&[f64]) -> f64,
+        neval: usize,
+        rng: &mut impl Rng,
+    ) -> (f64, f64, Vec<Vec<f64>>) {
+        self.run_iter_batched(
+            &mut |points: &[SamplePoint], out: &mut [f64]| {
+                for (p, o) in points.iter().zip(out.iter_mut()) {
+                    *o = f(p.u);
+                }
+            },
+            neval,
+            1,
+            rng,
+        )
+    }
+
     /// Draw `neval` samples in batches, evaluating `f` once per batch.
     /// Returns `(integral_estimate, variance, d)`, `d[dim][bin]` accumulating
     /// `fval²` for grid refinement.

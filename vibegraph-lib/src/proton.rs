@@ -2160,8 +2160,8 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
 mod tests {
     use super::*;
     use crate::artifact::SamplerTopology;
+    use crate::budget::sequential_channel_reference;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-    use crate::budget::MIN_CHANNEL_NEVAL;
     use crate::hadronic::{channel_share, CHANNEL_STREAM_BASE, VEGAS_NBINS};
     use crate::lhef::build::SubprocessRecord;
     use crate::pdf::grid::SubGrid;
@@ -3316,10 +3316,10 @@ mod tests {
         let point_ndim = integ.point_ndim();
         let alphas = integ.channel_alphas();
         for (j, &alpha) in alphas.iter().enumerate() {
-            let n_j = if alphas.len() == 1 {
+            let share = if alphas.len() == 1 {
                 neval
             } else {
-                channel_share(alpha, neval).max(MIN_CHANNEL_NEVAL)
+                channel_share(alpha, neval)
             };
             let mut grid = VegasGrid::new(grid_ndim, VEGAS_NBINS, VEGAS_ALPHA_MAPPED);
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
@@ -3327,21 +3327,23 @@ mod tests {
             rng.set_word_pos(0);
             let mut scale_draw = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
             let mut point = vec![0.0; point_ndim];
-            let want = grid.adapt(
+            let (want_integral, n_j) = sequential_channel_reference(
+                &mut grid,
                 |u| {
                     point[..grid_ndim].copy_from_slice(u);
                     scale_draw.fill_uniforms(&mut point[grid_ndim..]);
                     integ.value_in_channel(j, &point)
                 },
-                n_j,
+                share,
                 niter,
                 &mut rng,
             );
             assert_eq!(
                 got[j].result.integral.to_bits(),
-                want.integral.to_bits(),
+                want_integral.to_bits(),
                 "channel {j} term"
             );
+            assert_eq!(got[j].neval, n_j, "channel {j} budget");
             for (dim, (a, b)) in got[j].grid.xi().iter().zip(grid.xi()).enumerate() {
                 assert_eq!(a, b, "channel {j} grid edges of dim {dim}");
             }

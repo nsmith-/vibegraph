@@ -1066,6 +1066,61 @@ fn report_floor_correction(
     }
 }
 
+/// One channel of a block-split adaptation, integrated serially: one generator
+/// consumed point by point, the schedule re-derived from the points this driver
+/// itself watched the cuts keep.
+///
+/// The hand-written definition the parallel path is checked against — `share` is
+/// the channel's α share of the budget before any floor, and the return is the
+/// combined estimate and the last iteration's point count. It duplicates the
+/// production loop's arithmetic deliberately: a reference that called into the
+/// implementation could only drift with it.
+#[cfg(test)]
+pub(crate) fn sequential_channel_reference(
+    grid: &mut VegasGrid,
+    mut f: impl FnMut(&[f64]) -> f64,
+    share: usize,
+    niter: usize,
+    rng: &mut impl rand::Rng,
+) -> (f64, usize) {
+    let warmup = grid.warmup().min(niter.saturating_sub(1));
+    let mut n_j = share.max(MIN_CHANNEL_NEVAL);
+    let mut drawn = 0_u64;
+    let mut accepted = 0_u64;
+    let mut kept: Vec<(f64, usize)> = Vec::new();
+    let mut last = n_j;
+    for iteration in 0..niter {
+        let (integral, _, hist) = grid.adapt_iteration(
+            |u| {
+                let v = f(u);
+                if v != 0.0 {
+                    accepted += 1;
+                }
+                v
+            },
+            n_j,
+            rng,
+        );
+        drawn += n_j as u64;
+        if iteration >= warmup {
+            kept.push((integral, n_j));
+        }
+        if iteration + 1 < niter {
+            grid.refine_grid(&hist, n_j);
+        }
+        last = n_j;
+        n_j = share.max(floor_for_acceptance(Some(accepted as f64 / drawn as f64)));
+    }
+    let uniform = kept.iter().all(|&(_, n)| n == kept[0].1);
+    let integral = if uniform {
+        kept.iter().map(|&(i, _)| i).sum::<f64>() / kept.len() as f64
+    } else {
+        let wtot: f64 = kept.iter().map(|&(_, n)| n as f64).sum();
+        kept.iter().map(|&(i, n)| i * n as f64).sum::<f64>() / wtot
+    };
+    (integral, last)
+}
+
 /// `Δσ/σ` of a result, `∞` for a vanishing integral.
 fn rel_of(r: &VegasResult) -> f64 {
     if r.integral > 0.0 {
