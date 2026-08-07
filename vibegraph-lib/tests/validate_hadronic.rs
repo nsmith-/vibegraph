@@ -2740,6 +2740,339 @@ fn probe_recarded_budget_ladder() {
     }
 }
 
+/// Whether the re-carded `p p > l+ l- j` estimator is still moving above the
+/// budget its gate runs at, and what it is moving with.
+///
+/// The four-rung ladder above reads that row rising monotonically over `75k`
+/// to `600k` at a size the reference's own `0.33%` cannot resolve, so it
+/// cannot say whether the estimator converges to something and where. This
+/// extends the same measurement by two more doublings and adds two controls
+/// that the σ ladder alone does not separate.
+///
+/// **Arms.** `pp_to_llj` is the `mmll = 0` card and `pp_to_llj_dyn` is the same
+/// card with `mmll = 50`; nothing else differs. Running both over the same
+/// rungs turns "the drift lives below the lepton-pair mass cut" into a
+/// controlled comparison rather than a reading of one column.
+///
+/// **The equal-kept controls.** A rung moves `neval` and the kept sample size
+/// together, so a drift in the combined estimate cannot be attributed between
+/// them. `150k × 34`, `300k × 18` and `600k × 10` all keep `4.8M` points past
+/// the two warm-up iterations while the per-iteration budget spans `4×`: an
+/// estimator limited by its total sample agrees across the three, one limited
+/// by the grid an iteration is drawn against does not.
+///
+/// The α survey is `8000 × 5` at every rung and is addressed by the seed
+/// alone, so the channel weights are identical along a row and the survey is
+/// not on the list of things a rung changes.
+///
+/// Two errors are printed per rung: the quoted `√(Σσᵢ²)/n`, and the seeds' own
+/// RMS about their mean over `√n`. Neither is the estimator's real spread at
+/// five seeds — `probe_llj_seed_ensemble` measures that over forty — and the
+/// scatter is the further off of the two, so both are printed rather than one.
+///
+/// Reads, on the `mmll = 0` card against MadGraph's `504.630 ± 1.674 pb`:
+/// `504.506` / `505.184` / `505.977` / `505.849` / `505.828` at `150k` through
+/// `2.4M`, so the rise the four-rung ladder shows stops by `600k` and the next
+/// two doublings move nothing. The three equal-kept rungs read `505.977`
+/// (`600k × 10`), `505.964` (`150k × 34`) and `505.931` (`300k × 18`) — `0.05
+/// pb` apart across a `4×` span in per-iteration budget, so what the estimator
+/// is limited by at the low rungs is its total sample and not the grid an
+/// iteration draws against. The `mmll = 50` arm steps by the same relative
+/// amount (`415.456` → `416.361` → `416.186`), so the step is not the low
+/// lepton-pair-mass region that card cuts away.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_llj_deep_budget_ladder() {
+    const SEEDS: &[u64] = &[20260901u64, 20260902, 20260903, 20260904, 20260905];
+    const RUNGS: &[(usize, usize)] = &[
+        (150_000, 10),
+        (300_000, 10),
+        (600_000, 10),
+        (1_200_000, 10),
+        (2_400_000, 10),
+        (150_000, 34),
+        (300_000, 18),
+    ];
+    const ARMS: &[(&str, &str, &[(usize, usize)])] = &[
+        ("pp_to_llj", "p p > l+ l- j", RUNGS),
+        (
+            LLJ_DYN_RUN,
+            LLJ_PROCESS,
+            &[(150_000, 10), (600_000, 10), (2_400_000, 10)],
+        ),
+    ];
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+
+    for &(run, process, rungs) in ARMS {
+        if !dyn_run_present("probe_llj_deep_budget_ladder", run) {
+            continue;
+        }
+        let run_dir = validation_dir().join("output").join(run);
+        let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+        let (mg, mg_err) = banked_llj_sigma(&run_dir);
+        let groups = groups_for(process, &model, &evaluated, &rc);
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+
+        eprintln!(
+            "── {run}: MG {mg:.6e} ± {mg_err:.3e} pb, mmll = {} ──",
+            rc.float("mmll")
+        );
+        let mut base: Option<(f64, f64)> = None;
+        for &(neval, niter) in rungs {
+            let clock = Stopwatch::start();
+            let mut summary = Vec::new();
+            let mut runs: Vec<SeedResult> = Vec::new();
+            for &seed in SEEDS {
+                let (sigma, err) = run_seed_shaped(
+                    &groups,
+                    &amps,
+                    &model,
+                    &evaluated,
+                    &set,
+                    &pdf,
+                    &rc,
+                    (RECARDED_ADAPT_SURVEY, RECARDED_ADAPT_ITERS, neval, niter),
+                    seed,
+                    true,
+                    &mut summary,
+                    true,
+                    ScaleShape::PerEvent,
+                );
+                runs.push(SeedResult {
+                    seed,
+                    sigma_pb: sigma,
+                    sigma_err_pb: err,
+                });
+            }
+            let (mean, mean_err, chi2) = combine_seeds(&runs);
+            let n = runs.len() as f64;
+            let scatter = (runs
+                .iter()
+                .map(|r| (r.sigma_pb - mean).powi(2))
+                .sum::<f64>()
+                / (n - 1.0))
+                .sqrt()
+                / n.sqrt();
+            let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
+            let kept = (niter - 2) * neval;
+            let drift = base.map(|(b, be)| {
+                (
+                    mean - b,
+                    (mean - b) / (mean_err * mean_err + be * be).sqrt(),
+                )
+            });
+            if base.is_none() {
+                base = Some((mean, mean_err));
+            }
+            eprintln!(
+                "  {neval:>7} x {niter:<2} (kept {:>5.1}M): σ = {mean:.4} ± {mean_err:.4} pb \
+                 [scatter ±{scatter:.4}] (χ²/dof {chi2:.2}) | rel {:+.4} | pull {pull:+.2}{} | \
+                 {:.0} s",
+                kept as f64 / 1e6,
+                mean / mg - 1.0,
+                drift
+                    .map(|(d, s)| format!(" | vs base {d:+.3} pb = {s:+.2} sd"))
+                    .unwrap_or_default(),
+                clock.seconds(),
+            );
+            eprintln!(
+                "            per seed {}",
+                runs.iter()
+                    .map(|r| format!("{:.2}±{:.2}", r.sigma_pb, r.sigma_err_pb))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
+    }
+}
+
+/// Whether the re-carded `p p > l+ l- j` estimator's low-budget deficit is a
+/// bias in its expectation or a skew in its distribution.
+///
+/// Its ladder reads a rung `0.26%` below where the same estimator settles once
+/// the sample is `10×` larger. Five seeds cannot say which of two things that
+/// is. An estimator whose *expectation* moves with the budget is missing part
+/// of the integrand at the small one; an estimator whose expectation is right
+/// but whose distribution is right-skewed puts most seeds below its own mean,
+/// and a five-seed average of it reads low without anything being missed. The
+/// two want different answers — the first wants budget, the second wants
+/// seeds — and they are told apart by the shape of the seed distribution, not
+/// by its first five draws.
+///
+/// So: forty independent seeds at each of three rungs, reporting the mean
+/// against the median and the skewness of each. Equal expectations with a
+/// right skew is the second; means that differ by the ladder's own step is the
+/// first.
+///
+/// The forty are also split into eight disjoint quintets and each quintet's
+/// own three-rung ladder is read, because a five-seed ladder is what the gate
+/// budgets are set from: how many of the eight climb says directly whether a
+/// climb is a property of the estimator or of a seed set.
+///
+/// Both `ℓ⁺ℓ⁻ j` cards are measured. The `mmll = 50` one is the enforced row,
+/// and its own five-seed ladder steps by the same relative amount, so what the
+/// ensemble says about the estimator has to be said about it too.
+///
+/// Reads, on the `mmll = 0` card: `505.902 ± 0.218` / `505.853 ± 0.127` /
+/// `505.709 ± 0.070 pb` at `150k` / `300k` / `600k`, flat to `0.84` standard
+/// errors over the whole range and drifting *down* rather than up — the
+/// estimator's expectation does not move with the budget, and the four-rung
+/// ladder's step is not one. What does move is the spread: per-seed `sd`
+/// `1.378` / `0.803` / `0.443 pb`, so a five-seed mean at `150k` has a real
+/// error of `0.616 pb`, twice what five seeds' own scatter estimates it at.
+/// One of the eight quintets reproduces the four-rung ladder's step almost
+/// digit for digit (`504.307` → `505.120` → `505.790`, `+0.294%` against that
+/// ladder's `+0.291%`); three step monotonically down. The `mmll = 50` card
+/// reads `416.257 ± 0.114 pb` at `150k`, which is already where its own
+/// `2.4M` rung sits.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_llj_seed_ensemble() {
+    const SEEDS: usize = 40;
+    const ARMS: &[(&str, &str, &[(usize, usize)])] = &[
+        (
+            "pp_to_llj",
+            "p p > l+ l- j",
+            &[(150_000, 10), (300_000, 10), (600_000, 10)],
+        ),
+        (
+            LLJ_DYN_RUN,
+            LLJ_PROCESS,
+            &[(150_000, 10), (300_000, 10), (600_000, 10)],
+        ),
+    ];
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    for &(run, process, rungs) in ARMS {
+        if !dyn_run_present("probe_llj_seed_ensemble", run) {
+            continue;
+        }
+        seed_ensemble_of(run, process, rungs, SEEDS, &model, &evaluated, &set, &pdf);
+    }
+}
+
+/// One card's seed ensemble, printed. Split out so the two arms run under
+/// identical code.
+#[expect(clippy::too_many_arguments)]
+fn seed_ensemble_of(
+    run: &str,
+    process: &str,
+    rungs: &[(usize, usize)],
+    seeds: usize,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    set: &PdfSet,
+    pdf: &PdfMember,
+) {
+    let run_dir = validation_dir().join("output").join(run);
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let (mg, mg_err) = banked_llj_sigma(&run_dir);
+    let groups = groups_for(process, model, evaluated, &rc);
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), evaluated))
+        .collect();
+
+    eprintln!("── {run}: MG {mg:.6e} ± {mg_err:.3e} pb, {seeds} seeds a rung ──");
+    let mut per_rung: Vec<Vec<f64>> = Vec::new();
+    for &(neval, niter) in rungs {
+        let clock = Stopwatch::start();
+        let mut summary = Vec::new();
+        let mut sigmas: Vec<f64> = Vec::new();
+        for k in 0..seeds {
+            let (sigma, _) = run_seed_shaped(
+                &groups,
+                &amps,
+                model,
+                evaluated,
+                set,
+                pdf,
+                &rc,
+                (RECARDED_ADAPT_SURVEY, RECARDED_ADAPT_ITERS, neval, niter),
+                20_261_000 + k as u64,
+                true,
+                &mut summary,
+                true,
+                ScaleShape::PerEvent,
+            );
+            sigmas.push(sigma);
+        }
+        let n = sigmas.len() as f64;
+        let mean = sigmas.iter().sum::<f64>() / n;
+        let var = sigmas.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        let sd = var.sqrt();
+        let skew = sigmas
+            .iter()
+            .map(|s| ((s - mean) / sd).powi(3))
+            .sum::<f64>()
+            * n
+            / ((n - 1.0) * (n - 2.0));
+        let mut sorted = sigmas.clone();
+        sorted.sort_by(f64::total_cmp);
+        let median = 0.5 * (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]);
+        eprintln!(
+            "  {neval:>7} x {niter:<2}: mean {mean:.4} ± {:.4} pb | median {median:.4} \
+             (mean − median {:+.4}) | sd {sd:.4} | skew {skew:+.2} | \
+             range [{:.2}, {:.2}] | rel {:+.4} | {:.0} s",
+            sd / n.sqrt(),
+            mean - median,
+            sorted[0],
+            sorted[sorted.len() - 1],
+            mean / mg - 1.0,
+            clock.seconds(),
+        );
+        per_rung.push(sigmas);
+    }
+
+    eprintln!("  disjoint five-seed ladders over the same rungs:");
+    let mut monotone = 0usize;
+    for q in 0..seeds / 5 {
+        let means: Vec<f64> = per_rung
+            .iter()
+            .map(|s| s[5 * q..5 * q + 5].iter().sum::<f64>() / 5.0)
+            .collect();
+        let up = means.windows(2).all(|w| w[1] > w[0]);
+        let down = means.windows(2).all(|w| w[1] < w[0]);
+        monotone += usize::from(up);
+        eprintln!(
+            "    seeds {}..{}: {} | span {:+.3} pb ({:+.3}%) | {}",
+            20_261_000 + 5 * q,
+            20_261_004 + 5 * q,
+            means
+                .iter()
+                .map(|m| format!("{m:.3}"))
+                .collect::<Vec<_>>()
+                .join(" -> "),
+            means[means.len() - 1] - means[0],
+            100.0 * (means[means.len() - 1] / means[0] - 1.0),
+            if up {
+                "monotone up"
+            } else if down {
+                "monotone down"
+            } else {
+                "not monotone"
+            },
+        );
+    }
+    eprintln!("  {monotone} of {} quintets climb monotonically", seeds / 5);
+}
+
 /// What the per-point configuration draw costs on a live-draw row.
 ///
 /// The dynamical-scale rows draw the integration configuration their scale is
