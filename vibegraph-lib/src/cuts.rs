@@ -168,6 +168,9 @@ struct MmnlCut {
 pub struct Cuts {
     /// Indices of incoming legs (their momentum sum defines ŝ).
     incoming: Vec<usize>,
+    /// Indices of final-state legs, in the order given to [`Cuts::compile`]. Bit
+    /// `k` of a [`Cuts::timelike_floor`] subsystem names `finals[k]`.
+    finals: Vec<usize>,
     shat_min_sq: f64,
     shat_max_sq: f64,
     single: Vec<SingleLegCut>,
@@ -234,6 +237,27 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
 /// signed square used by MadGraph for mass/ptll thresholds: `x·|x|`.
 fn signed_sq(x: f64) -> f64 {
     x * x.abs()
+}
+
+/// Upper bound on the azimuthal separation `DELTA_PHI`'s cosine clamp can invent:
+/// `acos(0.99999999)`, rounded up. A pair at zero true separation is reported this
+/// far apart, so a `ΔR` threshold accepts pairs whose true separation is smaller
+/// than it by up to this much; every derived separation bound is taken at the
+/// correspondingly relaxed radius.
+const DELTA_PHI_CLAMP_SLACK: f64 = 1.5e-4;
+
+/// `min(cosh Δy − cos Δφ)` over the separations a `ΔR ≥ R` threshold accepts,
+/// given as the stored signed square `R·|R|`. The minimisation is derived in
+/// [`Cuts::timelike_floor`].
+fn min_separation_gap(dr2_min: f64) -> f64 {
+    let r2 = (dr2_min - DELTA_PHI_CLAMP_SLACK * DELTA_PHI_CLAMP_SLACK).max(0.0);
+    let r = r2.sqrt();
+    if r <= std::f64::consts::PI {
+        1.0 - r.cos()
+    } else {
+        let dy2 = r2 - std::f64::consts::PI * std::f64::consts::PI;
+        dy2.sqrt().cosh() + 1.0
+    }
 }
 
 impl Cuts {
@@ -338,6 +362,12 @@ impl Cuts {
 
         Ok(Cuts {
             incoming,
+            finals: legs
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| l.is_final)
+                .map(|(i, _)| i)
+                .collect(),
             shat_min_sq: dsqrt_shat * dsqrt_shat,
             shat_max_sq: if dsqrt_shatmax == -1.0 {
                 -1.0
@@ -391,6 +421,117 @@ impl Cuts {
             .fold(0.0f64, f64::max)
             .max(0.0);
         pt_min * pt_min
+    }
+
+    /// A lower bound (GeV²) on the invariant mass² of the final-state subsystem
+    /// `slots` — bit `k` naming the `k`-th final-state leg in [`Cuts::compile`]'s
+    /// leg order — holding at every configuration [`Cuts::pass`] accepts. Zero when
+    /// the active cuts imply none.
+    ///
+    /// This is the timelike counterpart of [`spacelike_floor`](Self::spacelike_floor),
+    /// and unlike it, it is a *kinematic* statement rather than a regulator scale: a
+    /// channel that draws a subsystem's invariant from this floor upward loses only
+    /// configurations the cuts reject, so the estimator stays unbiased — but only
+    /// while the bound is provable, which is what the derivation below is for. An
+    /// over-tight bound cuts into the accepted region and biases σ silently.
+    ///
+    /// ## Adding legs cannot lower the bound
+    ///
+    /// Every bound below is read off a *sub*-multiset `T ⊆ S` of the subsystem's
+    /// legs, and `m²(S) ≥ m²(T)`: writing `A = Σ_{T} p`, `B = Σ_{S∖T} p`,
+    /// `(A+B)² = A² + B² + 2A·B` with `B² ≥ 0` and
+    /// `A·B = E_A E_B − p⃗_A·p⃗_B ≥ E_A E_B − |p⃗_A||p⃗_B| ≥ 0`, since a sum of
+    /// on-shell final-state momenta is future-pointing with `E ≥ |p⃗|`. So a bound
+    /// on a pair inside `S` is a bound on `S`.
+    ///
+    /// ## The pair bounds
+    ///
+    /// An explicit pairwise invariant-mass threshold (`mmll` and friends) is the
+    /// bound itself, taken only from a *normal* window — an inverted one
+    /// (`m2_max < m2_min`, a veto band) admits masses below `m2_min` and implies
+    /// nothing.
+    ///
+    /// The transverse-momentum and separation thresholds imply one too. With
+    /// rapidity `y` (what `cuts.f` cuts on) and `m_T = √(m² + p_T²)`,
+    ///
+    /// ```text
+    ///   (p_i + p_j)² = m_i² + m_j² + 2(m_Ti m_Tj cosh Δy − p_Ti p_Tj cos Δφ)
+    ///               ≥ 2 p_Ti p_Tj (cosh Δy − cos Δφ),
+    /// ```
+    ///
+    /// using `m_T ≥ p_T ≥ 0` and `cosh ≥ 0`. The accepted region has
+    /// `p_Ti ≥ p_Ti^min`, `p_Tj ≥ p_Tj^min` and `Δy² + Δφ² ≥ R²`, so with both
+    /// thresholds positive the bound is `2 p_Ti^min p_Tj^min · g_min(R)`, where
+    /// `g(Δy, Δφ) = cosh Δy − cos Δφ` is minimised over the accepted separations.
+    ///
+    /// `g` increases in `|Δy|` and in `Δφ` on `[0, π]`, so shrinking any point of
+    /// the region radially toward the origin lowers `g` until it reaches the circle
+    /// `Δy² + Δφ² = R²`: the minimum sits there. On the circle, with `Δy = a` and
+    /// `Δφ = b = √(R² − a²)`,
+    /// `d/da [cosh a − cos b] = sinh a − a·sin(b)/b ≥ 0` for `a ≥ 0`, since
+    /// `sinh a ≥ a` and `sin b ≤ b`. So the minimum is at `Δy = 0, Δφ = R` and
+    /// `g_min = 1 − cos R` — for `R ≤ π`. A larger `R` puts that point outside the
+    /// strip `Δφ ≤ π` the opening angle lives in, and the minimum moves to the
+    /// strip's corner `Δφ = π, |Δy| = √(R² − π²)`, giving `cosh√(R² − π²) + 1`.
+    ///
+    /// `R` is taken a hair below the nominal threshold ([`DELTA_PHI_CLAMP_SLACK`]),
+    /// because `DELTA_PHI` clamps its cosine and so *reports* a pair at zero
+    /// azimuthal separation as being that far apart: a point whose true separation
+    /// is `√(R² − slack²)` can be accepted.
+    ///
+    /// The bound needs both legs held above a positive `p_T`, which also disposes of
+    /// the rapidity sentinel: `E ≤ |p_z|` — which `rapidity` reports as `−1e99` and
+    /// which would let a pair pass `ΔR` at an arbitrary true separation — needs
+    /// `m² ≤ −p_T²`, impossible for an on-shell leg carrying `p_T ≥ p_T^min > 0`.
+    ///
+    /// ## `mmnl`
+    ///
+    /// The combined lepton-plus-neutrino mass threshold bounds its own member set,
+    /// hence any subsystem containing it.
+    pub fn timelike_floor(&self, slots: u64) -> f64 {
+        let holds = |idx: usize| -> bool {
+            self.finals
+                .iter()
+                .position(|&f| f == idx)
+                .is_some_and(|k| k < 64 && slots & (1u64 << k) != 0)
+        };
+        let mut floor = 0.0f64;
+        for pc in &self.pairs {
+            if holds(pc.i) && holds(pc.j) {
+                floor = floor.max(self.pair_mass2_floor(pc));
+            }
+        }
+        if let Some(m) = &self.mmnl {
+            if m.min > 0.0 && !m.members.is_empty() && m.members.iter().all(|&i| holds(i)) {
+                floor = floor.max(m.min * m.min);
+            }
+        }
+        floor
+    }
+
+    /// The lower bound on one pair's invariant mass², from its own thresholds.
+    /// See [`timelike_floor`](Self::timelike_floor) for the derivation.
+    fn pair_mass2_floor(&self, pc: &PairCut) -> f64 {
+        let mut floor = 0.0f64;
+        // A normal window's lower edge is the bound; an inverted one (a veto band)
+        // admits everything below `m2_min` and implies nothing.
+        if pc.m2_min > 0.0 && (pc.m2_max < 0.0 || pc.m2_min <= pc.m2_max) {
+            floor = floor.max(pc.m2_min);
+        }
+        let (pt_i, pt_j) = (self.pt_min_of(pc.i), self.pt_min_of(pc.j));
+        if pc.dr2_min > 0.0 && pt_i > 0.0 && pt_j > 0.0 {
+            floor = floor.max(2.0 * pt_i * pt_j * min_separation_gap(pc.dr2_min));
+        }
+        floor
+    }
+
+    /// The transverse-momentum threshold the compiled single-leg cuts hold leg
+    /// `idx` above, or `0` when it has none.
+    fn pt_min_of(&self, idx: usize) -> f64 {
+        self.single
+            .iter()
+            .find(|c| c.idx == idx)
+            .map_or(0.0, |c| c.pt_min.max(0.0))
     }
 
     /// Phase-space indicator: `true` iff `momenta` (all external legs, in the
@@ -1282,5 +1423,197 @@ mod tests {
     fn misset_activation_errors() {
         let err = Cuts::compile(&card("15 = misset\n"), &dy_legs()).unwrap_err();
         assert!(matches!(err, CutError::UnimplementedCutActive { .. }));
+    }
+
+    // ── cut-implied timelike floors ─────────────────────────────────────
+
+    /// The slack allowed for `DELTA_PHI`'s cosine clamp has to cover the angle the
+    /// clamp actually invents, or a bound derived at the relaxed radius is not a
+    /// bound at all.
+    #[test]
+    fn the_clamp_slack_covers_the_angle_the_clamp_invents() {
+        assert!(DELTA_PHI_CLAMP_SLACK >= (0.99999999f64).acos());
+    }
+
+    /// The `ptl`/`ΔR` pair bound at `p p > l+ l- j`'s thresholds, against the value
+    /// worked out by hand: `2·10·10·(1 − cos 0.4) = 15.79 GeV²`, so `m_ll ≥ 3.97`.
+    #[test]
+    fn the_llj_lepton_pair_floor_is_the_ptl_and_dr_minimum() {
+        let cuts = Cuts::compile(&card("10 = ptl\n0.4 = drll\n"), &dy_legs()).unwrap();
+        let floor = cuts.timelike_floor(0b11);
+        let hand = 2.0 * 10.0 * 10.0 * (1.0 - 0.4f64.cos());
+        assert!(
+            (floor - hand).abs() < 1e-5 * hand,
+            "floor {floor} against {hand} by hand"
+        );
+        assert!(
+            (floor.sqrt() - 3.9734).abs() < 1e-3,
+            "m_ll floor {}",
+            floor.sqrt()
+        );
+    }
+
+    /// An explicit pair-mass threshold is the bound where it is the tighter one,
+    /// and a subsystem no threshold speaks about gets none.
+    #[test]
+    fn an_explicit_pair_mass_threshold_takes_over_from_the_derived_one() {
+        let cuts = Cuts::compile(&card("10 = ptl\n0.4 = drll\n50 = mmll\n"), &dy_legs()).unwrap();
+        assert_eq!(cuts.timelike_floor(0b11), 2500.0);
+        // One leg alone is bounded by nothing pairwise.
+        assert_eq!(cuts.timelike_floor(0b01), 0.0);
+        assert_eq!(cuts.timelike_floor(0b10), 0.0);
+    }
+
+    /// An **inverted** mass window is a veto band, not a lower bound: it accepts
+    /// everything below `mmll`, so the floor must fall back to the derived bound —
+    /// and a point inside the accepted low-mass region proves the window really is
+    /// the inverted one.
+    #[test]
+    fn a_veto_band_implies_no_mass_floor() {
+        let cuts = Cuts::compile(
+            &card("10 = ptl\n0.4 = drll\n-1 = etal\n50 = mmll\n20 = mmllmax\n"),
+            &dy_legs(),
+        )
+        .unwrap();
+        let derived = 2.0 * 10.0 * 10.0 * (1.0 - 0.4f64.cos());
+        let floor = cuts.timelike_floor(0b11);
+        assert!(
+            floor < derived * 1.001 && floor > derived * 0.999,
+            "floor {floor}"
+        );
+
+        // A pair below the band, separated widely enough to clear `drll`: accepted,
+        // and well below the `2500` an inverted window's lower edge would have
+        // imposed.
+        let (l1, l2) = (lep(48.0, 0.0, 0.0), lep(48.0, 0.0, 0.41));
+        let m2 = (l1 + l2).m2();
+        assert!(m2 < 400.0, "m2 {m2} is not below the veto band");
+        assert!(cuts.pass(&dy_momenta(l1, l2)), "m2 {m2} was rejected");
+        assert!(m2 >= floor, "m2 {m2} below the floor {floor}");
+    }
+
+    /// The minimisation behind the `p_T`/`ΔR` bound, sampled on the boundary it is
+    /// taken over.
+    ///
+    /// Both legs sit at the transverse threshold and the pair at the separation
+    /// threshold, swept around the `(Δy, Δφ)` circle and boosted along the beam.
+    /// Every such configuration is accepted, so every one of them has to lie at or
+    /// above the floor — and the sweep's own minimum has to come back down to it,
+    /// or the bound is loose enough to be cutting into the accepted region
+    /// somewhere else.
+    #[test]
+    fn the_pair_floor_is_attained_on_the_accepted_boundary() {
+        let cuts = Cuts::compile(&card("10 = ptl\n0.4 = drll\n-1 = etal\n"), &dy_legs()).unwrap();
+        let floor = cuts.timelike_floor(0b11);
+        // A hair outside the threshold circle, so the sweep is inside the accepted
+        // region rather than on its numerical edge.
+        let r = 0.4 * (1.0 + 1e-9);
+
+        let mut lowest = f64::INFINITY;
+        let mut accepted = 0;
+        for k in 0..=64 {
+            let theta = 0.5 * std::f64::consts::PI * k as f64 / 64.0;
+            let (dy, dphi) = (r * theta.cos(), r * theta.sin());
+            for &boost in &[0.0f64, 0.7, -1.9, 4.0] {
+                for &extra in &[0.0f64, 5.0, 40.0] {
+                    // A hair above the transverse threshold too: `pt` is rebuilt
+                    // from the components and a leg placed exactly at `ptl` can
+                    // round below it.
+                    let l1 = lep(10.0 * (1.0 + 1e-9), boost, 0.0);
+                    let l2 = lep((10.0 + extra) * (1.0 + 1e-9), boost + dy, dphi);
+                    assert!(
+                        cuts.pass(&dy_momenta(l1, l2)),
+                        "the boundary configuration (θ {theta}, boost {boost}, extra {extra}) \
+                         is not accepted, so the sweep is not sampling the accepted region"
+                    );
+                    accepted += 1;
+                    let m2 = (l1 + l2).m2();
+                    assert!(
+                        m2 >= floor,
+                        "an accepted pair at m² {m2} sits below the floor {floor} \
+                         (θ {theta}, boost {boost}, extra {extra})"
+                    );
+                    lowest = lowest.min(m2);
+                }
+            }
+        }
+        assert!(accepted > 100, "{accepted} boundary configurations");
+        assert!(
+            lowest < floor * 1.000_01,
+            "the sweep's minimum {lowest} stands well above the floor {floor}, so the \
+             minimisation is not the one the bound claims"
+        );
+    }
+
+    /// The bound over a whole final state, against configurations drawn rather than
+    /// constructed: no point the cuts accept may sit below any subsystem's floor.
+    ///
+    /// This is the bias falsifier. The floors narrow where each channel puts its
+    /// invariant draws, and the estimator survives that only because the region
+    /// given up is entirely outside the cuts — which is this test's claim, taken
+    /// over every subsystem of the final state at once.
+    #[test]
+    fn no_accepted_configuration_sits_below_a_subsystem_floor() {
+        use crate::phasespace::channel::PhaseSpaceMap;
+        use crate::phasespace::rng::SubStream;
+        use crate::phasespace::RamboChannel;
+
+        // `p p > l+ l- j` thresholds, and the same with the lepton pair held off the
+        // photon pole — the two cards the weight-tail probe compares.
+        for text in [
+            "20 = ptj\n10 = ptl\n5 = etaj\n2.5 = etal\n0.4 = drll\n0.4 = drjl\n0 = mmll\n",
+            "20 = ptj\n10 = ptl\n5 = etaj\n2.5 = etal\n0.4 = drll\n0.4 = drjl\n50 = mmll\n",
+        ] {
+            let legs = vec![
+                ExternalLeg::incoming(2, 0.0),
+                ExternalLeg::incoming(-2, 0.0),
+                ExternalLeg::outgoing(-11, 0.0),
+                ExternalLeg::outgoing(11, 0.0),
+                ExternalLeg::outgoing(21, 0.0),
+            ];
+            let cuts = Cuts::compile(&card(text), &legs).unwrap();
+            let floors: Vec<f64> = (0u64..8).map(|m| cuts.timelike_floor(m)).collect();
+            assert!(
+                floors.iter().any(|&f| f > 0.0),
+                "no floor is active, so this card checks nothing"
+            );
+
+            let rambo = RamboChannel::<f64>::new(300.0, vec![0.0; 3]);
+            let mut stream = SubStream::from_stream(0x7F_1005, 3);
+            let (mut accepted, mut tightest) = (0usize, f64::INFINITY);
+            for _ in 0..40_000 {
+                let u = stream.uniforms::<f64>(rambo.ndim());
+                let out = rambo.sample(&u).momenta;
+                let (b1, b2) = beams(150.0);
+                let momenta = vec![b1, b2, out[0], out[1], out[2]];
+                if !cuts.pass(&momenta) {
+                    continue;
+                }
+                accepted += 1;
+                for (mask, &floor) in floors.iter().enumerate().skip(1) {
+                    if floor <= 0.0 {
+                        continue;
+                    }
+                    let mut sum = V::new(0.0, 0.0, 0.0, 0.0);
+                    for slot in 0..3 {
+                        if mask & (1 << slot) != 0 {
+                            sum = sum + momenta[2 + slot];
+                        }
+                    }
+                    let m2 = sum.m2();
+                    assert!(
+                        m2 >= floor,
+                        "[{text}] an accepted point puts subsystem {mask:03b} at m² {m2}, \
+                         below its floor {floor}"
+                    );
+                    tightest = tightest.min(m2 / floor);
+                }
+            }
+            assert!(accepted > 500, "[{text}] only {accepted} accepted points");
+            eprintln!(
+                "[mmll {}] {accepted} accepted, closest approach to a floor {tightest:.4}",
+                cuts.timelike_floor(0b011).sqrt(),
+            );
+        }
     }
 }

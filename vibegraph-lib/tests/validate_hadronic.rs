@@ -84,10 +84,12 @@ const DY_SEEDS: &[u64] = &[20260719, 20260720, 20260721];
 /// than one because an under-sampled region is reported as a confident number,
 /// which one seed cannot distinguish from a converged one.
 ///
-/// Three seeds here, not the five of the oracle-layer sweep: three already
-/// separates a seed-unstable coverage defect from a converged estimate, and the
-/// full sweep with its budget ladder is what the deeper layer is for.
-const LLJ_SEEDS: &[u64] = &[20260730, 20260731, 20260732];
+/// Five, and the same five the oracle-layer budget ladders sweep, so the scatter
+/// this gate forms is the statistic [`LLJ_MAX_CHI2_PER_DOF`] is calibrated on
+/// rather than a three-seed cousin of it. χ²/dof over three seeds carries two
+/// degrees of freedom, which is wide enough that a converged row can post an
+/// alarming value and a genuinely scattered one an unremarkable value.
+const LLJ_SEEDS: &[u64] = &[20260730, 20260731, 20260732, 20260733, 20260734];
 /// Points per survey iteration, and iterations, of the channel-weight adaptation.
 const LLJ_ADAPT_SURVEY: usize = 8_000;
 const LLJ_ADAPT_ITERS: usize = 5;
@@ -146,6 +148,10 @@ const LLJ_DYN_MAX_REL: f64 = 0.005;
 /// quoted errors. Measured over the same budget family, worst rung first:
 /// `2.59`, `1.66`, `1.11`, `1.03`, `0.75`, `0.66`, `0.40`, `0.29` across both
 /// ℓℓj ladders.
+///
+/// Both gates that read this form it over [`LLJ_SEEDS`], which is the same
+/// five-seed sweep those ladder rungs used, so the bound and the statistic it
+/// bounds have the same number of degrees of freedom behind them.
 const LLJ_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 /// Largest relative distance from the banked MadGraph σ a Drell–Yan row may show.
