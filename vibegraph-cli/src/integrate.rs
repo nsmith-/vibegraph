@@ -54,9 +54,33 @@ pub(crate) const NO_PDF: &str = "none";
 /// Artifact filename written inside the output directory.
 const GRID_FILENAME: &str = "grid.bin.zst";
 
-/// Points per survey iteration when α-adapting the fixed-energy multichannel
-/// combiner, clamped to `[MIN, MAX]` around the integration budget: enough to
-/// resolve each channel's variance share, capped so the one-off survey stays cheap.
+/// Points per survey iteration when α-adapting the multichannel combiner — the
+/// hadronic one and the fixed-energy one alike — clamped to `[MIN, MAX]` around
+/// the integration budget.
+///
+/// The cap is measured rather than asserted. Over `n_survey ∈ {10 000, 40 000,
+/// 160 000, 640 000}` at [`ADAPT_ITERS`] iterations and [`ADAPT_DAMPING`], each
+/// rung's converged α driving five independent integration seeds at the row's own
+/// budget, the five-seed cross section is flat across the whole sixty-four-fold
+/// range: inside `0.6%` of the banked MadGraph value at every rung on the 579- and
+/// 615-channel `2 → 6` rows bar the single-draw excursion below, and inside
+/// `0.04%` on the 24-channel `p p > l+ l- j`, against a five-seed `sd/σ` of
+/// `0.21%` within a rung at the cap and the validation layer's own `0.8%` median
+/// run-to-run spread. Points above the cap buy nothing the cross section can see.
+///
+/// Why they cannot: α itself is not resolved at any budget in that range. Surveyed
+/// from three independent seeds at one budget, the 579-channel row's converged α
+/// vectors sit `L1 0.15`–`0.74` apart out of a possible `2` — as far apart as the
+/// budgets sit from each other — and one such draw moves that rung's five-seed σ
+/// to `1.0%` where its two siblings read `0.05%` and `0.18%`. What limits a
+/// several-hundred-channel split is the iteration count, not the points each
+/// iteration spends; σ is insensitive to which draw it runs under, which is what
+/// makes the cap free.
+///
+/// The floor is not free. `10 000` is measurably worse than `40 000` on both wide
+/// rows — five-seed `sd/σ` of `0.52%` and `0.39%` against `0.21%` and `0.21%`,
+/// a gap wider than the survey-seed noise on the means — so it is what keeps the
+/// channel split from being the dominant noise in a small `--neval` run.
 const MIN_ADAPT_SURVEY: usize = 10_000;
 const MAX_ADAPT_SURVEY: usize = 40_000;
 /// Survey→refine iterations for the α-adaptation.
