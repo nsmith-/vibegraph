@@ -136,20 +136,37 @@ const PULL_LIMIT: f64 = 3.5;
 /// comparison does not have, and tightening the budget would eventually fail a
 /// row that had not moved.
 ///
-/// No row is that case now. The two that were — `gu_to_epemu` and
-/// `gux_to_epemux`, the only fixed-energy rows whose cluster scale moves with
-/// the integration configuration at all (`9.96e-1` on `μR` and both `μF`, where
-/// every other clustered row measures exactly zero:
-/// `probe_cluster_scale_spread_over_configurations`) — carried a systematic
-/// while their scale was read in the channel the *sampler* drew the point in. Each point's configuration is
-/// now drawn from its own squared amplitudes, and what is left on both rows is
-/// Monte Carlo: five seeds at the gate budget and at four times it scatter about
-/// zero at `|pull| ≤ 0.67` with `χ²/dof` in `0.58`–`1.74`, worst `|rel|` `1.5e-3`
-/// against a reference whose own error is `1.8e-3` and `2.0e-3`.
+/// `ee_to_mumua` is that case, and the offset is the reference's own. Five seeds
+/// at the gate budget put this side `+1.04%` above the bank at `χ²/dof` `0.50`,
+/// so the residual is a fixed offset the seeds resolve rather than a spread they
+/// scatter over; the same sweep with the cut-implied timelike floors on the
+/// invariant draw moves `σ` by `+0.006%` and reads `+1.05%` at `χ²/dof` `0.45`,
+/// which is what says the offset belongs to the comparison rather than to this
+/// side's sampling. Its pull is `+4.11` and `+4.17` across those two sweeps —
+/// above [`PULL_LIMIT`] on a disagreement that is not shrinking, which is the
+/// reading this list exists to refuse. One seed cannot see any of it: the gate's
+/// own seed sits `0.089%` below its five-seed mean and reads `2.83`, an accident
+/// of the draw rather than an agreement.
 ///
-/// The list is kept because the distinction it draws is the one to make when a
-/// row's residual stops shrinking, not because it is expected to stay empty.
-const PULL_REPORTED_NOT_ASSERTED: [&str; 0] = [];
+/// Where the offset lives is adjudicated rather than assumed. MadGraph's `pt(a)`
+/// and `m(μμ)` partitions of one of its own runs disagree with *each other* by
+/// `16.7σ`, both above its own unwindowed control, while this side's total
+/// matches MadGraph's `m(μμ)` re-integration to `0.16σ`. `rel_tol` stays
+/// enforced at `0.03`, and it is what bounds the offset's size.
+///
+/// `gu_to_epemu` and `gux_to_epemux` make the distinction concrete by no longer
+/// needing it. They are the only fixed-energy rows whose cluster scale moves
+/// with the integration configuration at all (`9.96e-1` on `μR` and both `μF`,
+/// where every other clustered row measures exactly zero:
+/// `probe_cluster_scale_spread_over_configurations`), and they carried a
+/// systematic while their scale was read in the channel the *sampler* drew the
+/// point in. Each point's configuration is drawn from its own squared amplitudes
+/// now, and what is left on both rows is Monte Carlo: five seeds at the gate
+/// budget and at four times it scatter about zero at `|pull| ≤ 0.67` with
+/// `χ²/dof` in `0.58`–`1.74`, worst `|rel|` `1.5e-3` against a reference whose
+/// own error is `1.8e-3` and `2.0e-3`. A row leaves this list by its residual
+/// shrinking, not by its budget being cut.
+const PULL_REPORTED_NOT_ASSERTED: [&str; 1] = ["ee_to_mumua"];
 
 /// Fixed RNG seed — makes the integral (and hence the pull) reproducible.
 const SEED: u64 = 20_260_719;
