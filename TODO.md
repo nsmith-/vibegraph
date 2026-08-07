@@ -126,6 +126,25 @@ One line each; the note is the full record. Earlier sprints
 - **`kt-spine`** (feature, two tracks, closed 2026-08-02) — Track K: MadGraph's general kT clustering reproduced merge for merge against an instrumented 3.7.1 (90 000 dumped events, zero observed deviation), the closed forms deleted so `dynamical_scale_choice = -1` takes one path, `GridAlphaS` made LHAPDF's own `AlphaS_Ipol` and the density grid continued past its edges — then the flips: 6 asserted-refused scale rows became per-event replays, the 4 llj partonic σ rows and their `samples` cells left `blocked`, σ(pp→ℓ⁺ℓ⁻j) re-gated at the dynamical scale, and the capstone **`p p > j j`** gated on MadGraph's shipped run-card defaults (**6.803009e8 ± 2.511e5 pb** vs MG 6.788500e8 ± 1.4726e6, rel +0.21%, pull +0.97). Track S: the identical-particle factor moved into the phase-space map per subprocess, and the multi-rung t-channel spine landed in production. Two bugs the sprint found rather than assumed: the **fixed-beam path was never regulated** (every prior "what is the spine worth" measurement was taken on flat transfer draws), and `p p > j j`'s σ was **36% high** because a repeated final-state label enumerated `g u > g u` and `g u > u g` as two subprocesses. Transferable lesson: **a per-event field is a finer oracle than a cross section, and it exists more often than it looks** — the clustering was pinned by an instrumented replay of MadGraph's own intermediates long before any σ moved, which is why every σ flip that followed had a diagnosis attached. Census 75/74/1 → **87/85/2** over 29 rows; note 28.
 - **`perf-sprint-3`** (performance, three tracks, closed 2026-08-05) — eleven sessions against the note-30 baseline, all merged. Layer result, one host one sitting: `pixi run --skip-deps validate` **691 s → 391 s (−43.4%)** on the identical command with the census cell-for-cell unchanged; per-row single-thread **integrals 842.6 s → 389.8 s (−53.7%)**; integrand throughput vs MadGraph on note 30 §5.3's CPU-time denominators **geomean 6.84× → 8.76×** over the same 26 rows (`pp_to_jj` 2.3× → 4.6×, `pp_to_llj_fixed` 5.8× → 9.1×); per-point MATRIX1 **1.25× → 0.98×** with the evaluator itself −21.6% and 8 of 14 processes now beating MadGraph (was 3); `integrate` **4.70×**/**5.36×** from `-j 1` to `-j 16` on `dy13_default`/`pp_to_llj` at a byte-identical artifact. **Track I**: I1 made VEGAS's iteration combination unweighted (`ea58ab9`/`e99b05c`) — a 4000-seed offline study showed the plan's warm-up discard removes essentially none of the bias and its parenthetical was the real lever — collapsing the llj ladders (`pp_to_llj` span 2.09% → 0.46%) and re-pinning `LLJ_NEVAL` 300k → 150k; I2 gave the `w_max` scan its own budget (`ad54c8f`/`152efb1`) and **falsified its own premise**, the maxima never converging (`Σⱼ w_maxⱼ ∝ n^0.508` over 2.4 decades — a Pareto weight tail of index ≈ 2), so the lever is the percentile rule not the budget; I3 made the hadronic integrand `Sync` and added `-j/--parallel` (`b612253`/`17fd612`), bit-for-bit at any thread count by construction; I4 added convergence-targeted integration with hard-split Neyman allocation (`a62df73`/`bd16311`), 64/64 calibration runs meeting target, CPU parity with MG on llj and 4.2–4.5× less CPU on dy13. **Track P**: P1 replaced the per-flavour PDF reads with an f64-only all-flavour kernel (`865828a`/`c999c16`) — `xfx_all` 112 ns vs 504 ns, PDF share 14.5% → 1.38% and 19.4% → 2.00%, **no tolerance relaxed**; P1b added an absolute screen to the continuation oracle (`5f953b9`/`be42df2`) and recorded why Horner+FMA stays rejected in `cubic_hermite`. **Track E**: E1 studied execution order (`94ed907`/`b9bb758`) and E1b made op-blocked-within-ASAP-levels the production schedule (`052a00e`/`01ba9cd`) — −17.3% eval geomean, bit-for-bit across all 100 banked row files; E2 hoisted the arenas into local slices in `fill_arenas` (`82b68d1`/`9ac8858`), header reloads 143 → 20, while measuring and **rejecting** threaded dispatch (+7.7%) and force-inlined sret kernels; E2b shared the four spinor products in the chiral currents (`31640a8`/`854c049`); E3 found the plan's prefix design a **NO-GO by measurement** and landed an arena-reuse cache instead (`f3d6e8b`/`cf2d489`), order-preserving and bit-for-bit. Transferable lesson: **four of the eleven sessions refuted their own brief's mechanism and still delivered** — I1's discard, I2's budget, E2's dispatch, E3's prefix — because each was pre-committed to a measurement that could kill it; the close-out then did the same to its own brief, whose prescribed `RAYON_NUM_THREADS=1` per-row protocol serialises every concurrent row through one global worker and would have published an ~8× phantom regression. Note 31 §6.
 - **`perf-3-addendum`** (performance/validation cleanup, eight of nine sessions, closed 2026-08-05) — S1 E3b (bit-identical cut-before-draw on the fixed-beam path) + I5 (`combine_seeds` unweighted, matching I1); S2 read `w_max` off MadGraph's own `unwgt.f` truncation-ladder rule instead of a never-converging scan extremum, unweighting efficiency on five rows 22.2/20.6/23.3/10.6/4.21% → 54.1/52.1/52.9/38.9/9.98%, `p p > l+ l- j` 4.36× cheaper per effective event; S3 parallelised the α-adaptation survey (bit-identical at `-j {1,4,16}`) and made `--target-rel` the CLI's default convergence mode, correcting note 32 §1.1's own serial-floor decomposition (41–52% of the `-j 16` wall, not ~27%); S4 closed all three `mg_perf_compare` findings (manifest-driven registry on both arms, host-labelled committed `mg_timings.json`, bench widened 14→19 rows) and found the newly-included rows were QCD-dense, inverting the sample's earlier bias (19-row MATRIX1 geomean 0.95×, 14-row continuity check 1.06×); S5 hoisted a per-event merge-table rebuild out of the clustered-scale path, −16.9% to −22.3% ns/point on the three clustered rows; S6 sized five hadronic σ budgets to reference precision under a ladder+sweep license (300k → 75k), `validate` CPU −288 s against only −18 s of wall on that cut alone, because `validate` runs its rows concurrently; S7 turned the 2→6 rows on as `info` at the long tier — the "~1 ms/eval" skip premise was stale by more than an order of magnitude, the real cost floor is `MIN_CHANNEL_NEVAL` × channel count, and the physics agrees under the multichannel (five-seed mean inside 1.1% of a 0.30%-precision bank) even though single-seed pulls do not shrink with budget — census 98 → **100**; S9 (restore the pre-lane-FMA scalar packed-complex codegen) was **killed clean**: the idiom is x86-specific and cost 8–9% on this ARM host, the opposite of a win, so nothing merged. S8 re-recorded every σ/percentile/cost figure the wave-1/2 sessions left stale and took the addendum's own close-out measurements: `validate` wall 443.3 s against note 31's 391 s reads as a regression only because the host was not quiet (`mds_stores`/`mediaanalysisd` held load average 6–25 through the run) — CPU is the reliable instrument here, per S6's own −288 s CPU / −18 s wall split on its cut alone, and a same-day quiet-host re-run (load average 1.8, note 32 §5.3) read **341.4 s wall / 1305.6 s user**, −12.7% vs note 31 and within ~1% of S6's within-session "after" on both axes; census both numbers explained (98 in the layers `validate` drives vs **100** once the oracle layer's `validate-sigma-2to6` has run); `-j 16` on `dy13_default`/`pp_to_llj` at `--fixed-budget --neval 120000 --niter 12` reads **8.68×**/**9.48×**, bit-identical artifacts. Transferable lesson: **every session corrected something in its own brief** — mechanisms (S2's truncation ladder, S7's `MIN_CHANNEL_NEVAL`), decompositions (S3's 41–52%), and inverted hypotheses (S4's QCD-dense bench, S9's x86-only idiom) — consistent with the pattern the base sprint already showed. Note 32 §5.
+- **`draw-followup`** (four sessions S1–S4 in two waves, note 34 §2 planned +
+  close-outs, all merged by 2026-08-07, main `b6a0b88`) — S1 (`1f68326`):
+  survey density pass halved bit-identically (1.32×/1.22×), the α-survey cap
+  **confirmed** with no constant moved (the apparent above-cap degradation
+  was one α draw, killed by a survey-seed sweep), α found iteration-limited,
+  and the wide-split stop factor found **not calibratable as a constant**
+  (`--target-rel` inert on 2→6). S2 (`119e6d3`): the recarded llj σ-ladder
+  climb was a **misread, not a drift** — 40-seed ensembles flat, one 5-seed
+  ladder 2.3σ low read with scatter statistics 2–5× below the true spread;
+  AGENTS.md gained the rung-difference caveat. S4 (`df109b9`): the 2→6
+  density share measured directly (37.1%/27.5%), cross-channel subsystem memo
+  −38% on the density arm (~10–14% end-to-end), keyed by mask + bracketing
+  fingerprint because mask alone would hand one channel another's rounding;
+  byte-identical artifacts. S3 (`b6a0b88`): the accepted-point floor (entry
+  above). Transferable lesson: **the at-threshold gate statistic is a class,
+  not an incident** — this sprint hit it five times (three validation cells,
+  one CLI test premise 8% inside its iteration floor, one α-draw mirage),
+  every one exposed by a legitimate sampling-stream change and every one
+  fixed by matching the statistic to its calibration, never by widening.
 - **`draw-performance`** (two parallel sessions, merged 2026-08-06; note 34 §1
   is the record) — `density-draw` (`470eb8f`/`443f6bc`): the mixture density
   priced only after the cut, **2→6 per-point 62.9/68.5 → 4.6/6.8 µs
@@ -493,20 +512,23 @@ exercised on SM evidence alone.
   24.5 → 55.7 — S5, deferred pending S2's verdict). The bias oracle for any
   future floor is `no_accepted_configuration_sits_below_a_subsystem_floor`;
   the `mmll = 50` bound is attained within 1.0002, so it cannot tighten.
-- **`MIN_CHANNEL_NEVAL` should count post-cut points** (user, 2026-08-06;
-  **now S3 in note 34 §2**, wave 2 after S1). The floor exists for coverage,
-  but a cut point contributes exactly zero to the integral and its variance
-  estimate, so 512 *drawn* points at low acceptance is far less coverage than
-  the floor intends (llj acceptance is 23.8% on an untrained grid — a floored
-  channel starts with ~120 contributing points). Count accepted points
-  against the floor (or equivalently scale the floor by measured acceptance).
-  Its cheap-draw rider is satisfied (the draw is 4.6/6.8 µs on the
-  579/615-channel rows); what remains is the wide-split spend bound — raising
-  effective floors raises the spend where the floor already sets the budget,
-  so it needs an explicit cap folded into the honest budget accounting, and
-  its design should argue from S1 Part B's per-channel variance/acceptance
-  data. All floor/α measurements must be taken against post-`7664ff9` main —
-  the timelike floors changed every 2→3-and-up row's per-channel variances.
+- ~~`MIN_CHANNEL_NEVAL` should count post-cut points~~ (user, 2026-08-06) —
+  **landed 2026-08-07** (`b6a0b88`, note 34 S3 close-out): the floor is
+  scaled by the run's own pooled per-channel acceptance,
+  `floorⱼ = min(4, ⌈512/âⱼ⌉)`, cold-starting at the old floor — scaling
+  chosen over counting accepted draws because a draw-until-accepted count
+  correlates with the iteration's own estimate, the exact bias the
+  point-count combination rule exists to avoid. The purchase is **tail
+  suppression, not cheaper points** (recorded honestly: median seeds cost
+  more per point; worst single-seed rel +3.82% → +0.46% on bbx, over-seed
+  χ²/dof 13.5 → 0.33, err²×points 0.011–0.94 of baseline). Coverage: llj's
+  512-accepted promise met (was violated 2×); wide rows 0–3 → 5–14 with
+  343–401 channels held at the cap, warned per run.
+  `MAX_FLOOR_ACCEPTANCE_SCALE = 1` is an exact off-switch. Consumers:
+  `hadronic::channel_neval` is gone (`channel_share` + per-caller floors),
+  `neyman_allocation` takes `floors:`, and a channel's allocation now varies
+  within a run — sequential reproducers must follow
+  `budget::sequential_channel_reference`.
 - ~~2→6 density-loop cost — attack `Σⱼ αⱼgⱼ` directly~~ — **landed
   2026-08-06** (`443f6bc`, closed-sprint history; note 34 §1.1): the mixture
   density is priced only after the cut, 62.9/68.5 → **4.6/6.8 µs** per point
@@ -538,22 +560,25 @@ exercised on SM evidence alone.
   runs under (which is why the cap is free). The lever, if α quality is ever
   worth buying: vary the iteration count with damping, not the points. No
   urgency — nothing measured is limited by it today.
-- **`stop_scale` reads a zero-variance iteration as a thousandfold
+- **`stop_scale` reads a near-degenerate iteration as a thousandfold
   disagreement, leaving `--target-rel` inert on 2→6 rows** (2026-08-06,
-  note 34 S1 Part C; supersedes the resolved "wide-split stop scale factor is
-  finite but uncalibrated" entry). The factor is not calibratable as a
-  constant: `scaled_rel/achieved_rel` spans ×4.8–×30 270 across rungs and
-  ×2.9–×11 085 at a single budget, structured by the α draw. Cause: at
-  wide-split density a channel routinely posts a zero-variance iteration
-  (every point cut — the value `ChannelHistory` deliberately does not floor)
-  beside one that caught a tail point, and per-channel χ²/dof reaches
-  1e6–1e12. With `scaled_rel` at ×100+ the stop cannot fire, so
-  `--target-rel` on these rows is well-defined but inert. The fix is in what
-  `stop_scale` does with zero-variance iterations — not a retuned factor,
-  and not the reported statistic (which stays as documented). Meanwhile the
-  *plain* quoted error at the 40k cap is well calibrated (achieved_rel
-  0.0021–0.0024 vs realized sd/σ 0.0021 on both wide rows; 2× optimistic
-  below the cap).
+  note 34 S1 Part C; **mechanism corrected and effect re-measured by S3,
+  2026-08-07**). The factor is not calibratable as a constant:
+  `scaled_rel/achieved_rel` spanned ×4.8–×30 270, structured by the α draw.
+  **The driver is NOT all-points-cut zero-variance iterations** — S3 counted
+  exactly zero of those on every wide-row seed in both floor arms (P ≈ 1e-8
+  at 512 draws with ≥3.5% acceptance) — it is iterations with **one to three
+  accepted points**, whose sample variance is tiny but strictly positive; a
+  fix filtering on `variance == 0` would miss the entire effect. The
+  accepted-point floor (landed `b6a0b88`) attacks exactly that population
+  and moved the spread four orders — ×334–×6.9e6 → ×8.8–×267 (uux),
+  ×44–×4.0e5 → ×3.4–×758 (bbx), per-channel χ²/dof to 5.3e2–8.0e5 — but a
+  0.2% target still cannot fire (a 1% target now can, on some seeds). The
+  remaining fix is what `stop_scale` does with few-accepted-point
+  iterations — a minimum-accepted-count qualification or equivalent — never
+  a retuned factor and never the reported statistic. The *plain* quoted
+  error at the 40k survey cap remains well calibrated (achieved_rel
+  0.0021–0.0024 vs realized sd/σ 0.0021; 2× optimistic below the cap).
   `MIN_ADAPT_SURVEY = 10_000` / `MAX_ADAPT_SURVEY = 40_000`
   (`vibegraph-cli/src/integrate.rs:60`) clamp `--neval` to set the α-survey's
   points per iteration (6 iterations, damping 0.5). Neither bound has a
@@ -616,6 +641,21 @@ exercised on SM evidence alone.
   overflows to ~1e254 on wide channel splits (`budget.rs` floors a channel's
   variance at `f64::MIN_POSITIVE`) — a reported statistic only, σ unaffected,
   root-cause fix touches the estimator.
+  **2026-08-07 update (note 34 wave 2): the accepted-point floor changed this
+  entry's arithmetic and the promotion measurement is now due.** At one
+  budget, over-seed χ²/dof fell 2.10 → 0.81 / 13.46 → 0.33 and the worst
+  single-seed rel +1.68% → +0.89% / +3.82% → +0.46% on uux/bbx — but the
+  §5.4 falsifier (swings must *shrink with budget*) was measured at one
+  budget only and is explicitly not claimed. The next measurement is a re-run
+  of `probe_2to6_budget_ladder` under the new floor, reading per-seed spread
+  against AGENTS.md's rung-difference caveat (20+ seeds on the rungs that
+  matter). Costs to know: a wide-row rung now spends ~2× (floors scaled by
+  1/acceptance, capped at 4 — that is the purchase, not a regression);
+  `validate` itself moved +1.9%. Also: the census's 411/447 class counts
+  above were measured on floor-less channels (`channel_set` lacked the
+  timelike floors until `c9993b4`) — direction-safe, floors only split
+  classes, but the figures are pre-floor; `probe_channel_dedup_census` is a
+  cheap re-run for corrected numbers.
 - **Note-30 timing leftovers**: the `refs` reference-generation stage (f2py
   modules, amplitude tables, α_s and PDF oracles) stays unmeasured because
   timing it means writing into the reference bank; whether MadEvent's

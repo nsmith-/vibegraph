@@ -268,6 +268,50 @@ bounds sharing, not the win. Respect the `e059092` channel↔diagram consumer
 audit throughout. Sequenced after S1 because Part A rewires the survey's
 density call sites this cache must thread through.
 
+**S4 close-out (2026-08-07, `c9993b4`/`f85718d`, merged `df109b9`).** The
+instrument came first and converted the ≈35% inference into a measurement:
+density is **37.1%/27.5%** of a 2→6 accepted point (the two rows differ —
+bbx's larger matrix element dilutes the same absolute cost), and the
+four-arm ablation split the loop into ~15% own-channel repeated walks, ~33%
+cross-channel-shared walks, ~53% non-memoisable. The cache cleared the <5%
+kill line 2–3× (density arm −38% on both rows, defensible end-to-end band
+10–14%), with the three estimates ranked by trustworthiness and the two
+biased ones called out. The plan's "memoise by leg bitmask" was
+**under-specified and unsound**: two bracketings of one leg set share a mask
+but not a rounding, so the key carries a bracketing fingerprint, gated by a
+both-directions bit-identity test and a two-bracketings separation test.
+Byte-identity discharged post-report by the manager (fixed-seed artifacts
+SHA-identical, uux + llj). Found en route: test-side `channel_set` had never
+installed the timelike floors (fixed in `c9993b4`), so the dedup census's
+411/447 class counts are pre-floor — direction-safe, figures stale. Open:
+the llj no-regression cost measurement (`probe_scale_draw_cost` is the
+instrument); `MEMO_MAX_LEGS = 10` bounds the table; `SubsystemMemo::
+disabled()` is the in-run ablation switch.
+
+**S3 close-out (2026-08-07, five commits, merged `b6a0b88`).** The floor is
+scaled by pooled per-channel acceptance, `min(4, ⌈512/âⱼ⌉)`, cold-starting
+at the old floor — scaling chosen over counting accepted draws because a
+draw-until-accepted count correlates with the iteration's own estimate, the
+exact bias the point-count combination rule exists to avoid; cap 4 sits at
+the wide rows' measured acceptance median (~0.25). Verdict: **tail
+suppression, not cheaper points** — median seeds cost more per point, worst
+single-seed rel +3.82% → +0.46% (bbx), over-seed χ²/dof 13.5 → 0.33,
+err²×points 0.011–0.94 of baseline; llj's 512-accepted promise met (was
+violated 2×), wide rows 0–3 → 5–14 accepted/channel/iter. Costs, by design:
+wide-row oracle runs ~2× spend, `validate` +1.9%. Side effect measured with
+nothing changed: `stop_scale` spread fell four orders (not un-inerted), and
+the S1-Part-C mechanism is **corrected** — zero all-points-cut iterations
+exist; 1–3-accepted-point iterations drive the inflation. Two premise
+defects fixed en route, assertions untouched: the CLI convergence test's
+tight target sat 8% inside the iteration floor (re-set from the run's own
+measured ladder), and the manager's spend hypothesis for it was falsified by
+measurement (7999 points/iteration in both arms — the Neyman *split*
+re-rolled, not the spend). Composition with S4's memo proven at the bit
+level: the post-merge five-seed bbx σ is digit-identical to the pre-merge
+after-arm. The 2→6 §5.4 promotion falsifier is explicitly *not* claimed —
+one budget was measured; the ladder re-run under the new floor is the named
+next measurement.
+
 ### Deferred — named, not scheduled
 
 **S5, the map's lower edge on the cut edge**: with a small floor the
