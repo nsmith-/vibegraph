@@ -16,6 +16,10 @@
 //! Two maps sit behind the seam today: flat [`RamboChannel`] over the scalar
 //! field `F`, and the massless 2-body [`Lips2Channel`].
 
+use std::cell::RefCell;
+
+use thread_local::ThreadLocal;
+
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
 
@@ -67,6 +71,149 @@ pub trait Channel<F: Real>: PhaseSpaceMap<F> + Send + Sync {
     /// The sampling density `g` this channel assigns to `momenta`. Equal to
     /// `1 / weight` at any point the channel itself generated.
     fn density(&self, momenta: &[LorentzVector<F>]) -> F;
+
+    /// [`density`](Self::density), sharing `memo` with the other channels priced
+    /// at the same configuration. Returns exactly what
+    /// [`density`](Self::density) does; a channel with nothing to share ignores
+    /// the memo, which is the default.
+    fn density_memo(&self, momenta: &[LorentzVector<F>], memo: &mut SubsystemMemo<F>) -> F {
+        let _ = memo;
+        self.density(momenta)
+    }
+}
+
+/// Final states wider than this get no memo table: `1 << n_out` slots is the price
+/// of the O(1) lookup, and past ten legs the table stops fitting a cache that makes
+/// the lookup worth taking. A memo built for a wider state misses on every lookup,
+/// which is the plain recursion.
+const MEMO_MAX_LEGS: usize = 10;
+
+/// One memo slot: the subsystem four-momentum a subtree of a known shape produced
+/// at a known configuration, and its invariant mass² once something has asked for
+/// it.
+#[derive(Clone, Copy, Debug)]
+struct MemoSlot<F: Real> {
+    /// Which configuration wrote this slot. Stale unless it equals the memo's
+    /// current `point`, so starting a configuration costs one increment rather
+    /// than a sweep over the table.
+    point: u64,
+    shape: u128,
+    momentum: LorentzVector<F>,
+    m2: F,
+    /// Whether `m2` has been formed. Most subtrees are asked for both, but a
+    /// running remainder's constituents are summed without their own invariants
+    /// ever being wanted, and forming one costs as much as the sum that produced
+    /// the momentum.
+    has_m2: bool,
+}
+
+/// The subsystem momenta and invariant masses the channels of one mixture read at
+/// one phase-space configuration, computed once and shared.
+///
+/// Every channel of a per-diagram mixture is asked for its density at the *same*
+/// momenta, and different diagrams route those momenta through overlapping
+/// subsystems: the four-momentum of an outgoing-leg set, and the invariant mass²
+/// that follows from it, are the same arithmetic in every channel whose tree
+/// contains that subsystem with the same bracketing. Hundreds of channels over a
+/// six-body final state means thousands of subtree sums a point where at most
+/// `2^6` leg sets exist.
+///
+/// # Why the bracketing is part of the key
+///
+/// A sum of four-momenta is not associative in floating point, so two subtrees
+/// spanning the same legs in different bracketings can differ in the last bits.
+/// Keying on the leg mask alone would hand one channel the other's rounding, which
+/// is a reassociation — small, but not nothing, and not what a shared computation
+/// is supposed to be. The key is therefore the mask *and* a fingerprint of the
+/// subtree's structure, and a mismatch recomputes instead of reusing. What comes
+/// back is then the value the plain recursion would have produced, bit for bit.
+///
+/// The mask indexes the table and the fingerprint is compared inside the slot, so a
+/// lookup is an index and one integer comparison.
+#[derive(Clone, Debug)]
+pub struct SubsystemMemo<F: Real> {
+    /// One slot per outgoing-leg mask, or empty for a final state past
+    /// [`MEMO_MAX_LEGS`] — in which case every lookup misses.
+    slots: Vec<MemoSlot<F>>,
+    /// Configuration counter; `0` is the "never written" value the table starts at,
+    /// so the first configuration is `1`.
+    point: u64,
+}
+
+impl<F: Real> SubsystemMemo<F> {
+    /// A memo over an `n_out`-body final state, holding nothing yet.
+    pub fn new(n_out: usize) -> Self {
+        let slots = if n_out <= MEMO_MAX_LEGS {
+            vec![
+                MemoSlot {
+                    point: 0,
+                    shape: 0,
+                    momentum: LorentzVector::new(F::zero(), F::zero(), F::zero(), F::zero()),
+                    m2: F::zero(),
+                    has_m2: false,
+                };
+                1usize << n_out
+            ]
+        } else {
+            Vec::new()
+        };
+        SubsystemMemo { slots, point: 0 }
+    }
+
+    /// A memo that never holds anything, so every channel recomputes. What the
+    /// wide-final-state fallback does, reachable on purpose so the sharing can be
+    /// measured against its own absence.
+    pub fn disabled() -> Self {
+        SubsystemMemo {
+            slots: Vec::new(),
+            point: 0,
+        }
+    }
+
+    /// Begin a configuration: everything written for the previous one goes stale.
+    pub fn next_point(&mut self) {
+        self.point += 1;
+    }
+
+    /// The live slot for a subtree spanning `mask` with fingerprint `shape`.
+    fn live(&self, mask: u64, shape: u128) -> Option<&MemoSlot<F>> {
+        let slot = self.slots.get(mask as usize)?;
+        (slot.point == self.point && slot.shape == shape).then_some(slot)
+    }
+
+    /// The four-momentum this configuration already summed for that subtree.
+    pub(super) fn momentum(&self, mask: u64, shape: u128) -> Option<LorentzVector<F>> {
+        self.live(mask, shape).map(|slot| slot.momentum)
+    }
+
+    /// The invariant mass² this configuration already formed for that subtree —
+    /// `None` when the slot holds only the momentum.
+    pub(super) fn invariant(&self, mask: u64, shape: u128) -> Option<F> {
+        self.live(mask, shape)
+            .and_then(|slot| slot.has_m2.then_some(slot.m2))
+    }
+
+    /// Record what a subtree spanning `mask` with fingerprint `shape` produced at
+    /// this configuration, displacing whatever the slot held. `m2` is `None` when
+    /// only the momentum was wanted.
+    pub(super) fn put(
+        &mut self,
+        mask: u64,
+        shape: u128,
+        momentum: LorentzVector<F>,
+        m2: Option<F>,
+    ) {
+        let point = self.point;
+        if let Some(slot) = self.slots.get_mut(mask as usize) {
+            *slot = MemoSlot {
+                point,
+                shape,
+                momentum,
+                m2: m2.unwrap_or_else(F::zero),
+                has_m2: m2.is_some(),
+            };
+        }
+    }
 }
 
 /// A channel whose collision energy is supplied per draw instead of baked in.
@@ -88,7 +235,26 @@ pub trait ScaledChannel<F: Real>: PhaseSpaceMap<F> + Send + Sync {
     /// The sampling density this channel assigns to `momenta` at CM energy
     /// `sqrt_s`.
     fn density_at(&self, sqrt_s: F, momenta: &[LorentzVector<F>]) -> F;
+
+    /// [`density_at`](Self::density_at), sharing `memo` with the other channels
+    /// priced at the same configuration. Returns exactly what
+    /// [`density_at`](Self::density_at) does; the default ignores the memo.
+    fn density_at_memo(
+        &self,
+        sqrt_s: F,
+        momenta: &[LorentzVector<F>],
+        memo: &mut SubsystemMemo<F>,
+    ) -> F {
+        let _ = memo;
+        self.density_at(sqrt_s, momenta)
+    }
 }
+
+/// A combiner's per-thread [`SubsystemMemo`].
+///
+/// Boxed so a combiner stays a small value: the thread-local table is a fixed-size
+/// bucket array, and a combiner is held inline by the samplers that own one.
+type ThreadMemo<F> = Box<ThreadLocal<RefCell<SubsystemMemo<F>>>>;
 
 /// One Kleiss–Pittau reallocation of the selection weights: `αⱼ ← αⱼ·Wⱼ^damping`,
 /// floored strictly positive and renormalised.
@@ -200,6 +366,10 @@ pub struct MultiChannel<F: Real> {
     channels: Vec<Box<dyn Channel<F>>>,
     alphas: Vec<F>,
     channel_ndim: usize,
+    /// One [`SubsystemMemo`] per thread that has priced a point, so the channel
+    /// loop shares its subsystem arithmetic without the combiner itself becoming
+    /// mutable — the parallel integrator reads one combiner from every worker.
+    memo: ThreadMemo<F>,
 }
 
 /// The record of a survey→refine α-adaptation pass ([`MultiChannel::adapt_alphas`]).
@@ -262,6 +432,7 @@ impl<F: Real> MultiChannel<F> {
             channels,
             alphas,
             channel_ndim,
+            memo: Box::new(ThreadLocal::new()),
         };
         mc.assert_normalized();
         mc
@@ -395,10 +566,19 @@ impl<F: Real> MultiChannel<F> {
     /// [`density`](Self::density), reporting each channel's own `gⱼ(p)` to
     /// `record` as the sum forms. The one place the combined density is
     /// summed, so every caller sees the same accumulation order.
+    ///
+    /// The channels share one [`SubsystemMemo`] across the sweep, so a subsystem
+    /// several diagrams route the point through is built once. Each `gⱼ` is the
+    /// value that channel returns on its own.
     fn density_recorded(&self, momenta: &[LorentzVector<F>], mut record: impl FnMut(F)) -> F {
+        let cell = self
+            .memo
+            .get_or(|| RefCell::new(SubsystemMemo::new(momenta.len())));
+        let mut memo = cell.borrow_mut();
+        memo.next_point();
         let mut g = F::zero();
         for (alpha, ch) in self.alphas.iter().zip(&self.channels) {
-            let gj = ch.density(momenta);
+            let gj = ch.density_memo(momenta, &mut memo);
             record(gj);
             g = g + *alpha * gj;
         }
@@ -570,6 +750,8 @@ pub struct ScaledMultiChannel<F: Real> {
     channels: Vec<Box<dyn ScaledChannel<F>>>,
     alphas: Vec<F>,
     channel_ndim: usize,
+    /// Per-thread subsystem memo, for the reason [`MultiChannel::memo`] carries one.
+    memo: ThreadMemo<F>,
 }
 
 impl<F: Real> ScaledMultiChannel<F> {
@@ -593,6 +775,7 @@ impl<F: Real> ScaledMultiChannel<F> {
             channels,
             alphas,
             channel_ndim,
+            memo: Box::new(ThreadLocal::new()),
         }
     }
 
@@ -637,15 +820,23 @@ impl<F: Real> ScaledMultiChannel<F> {
     /// [`density_at`](Self::density_at), reporting each channel's own `gⱼ(p)` to
     /// `record` as the sum forms. The one place the combined density is summed,
     /// so every caller sees the same accumulation order.
+    ///
+    /// The channels share one [`SubsystemMemo`] across the sweep, exactly as
+    /// [`MultiChannel::density_recorded`] does.
     fn density_at_recorded(
         &self,
         sqrt_s: F,
         momenta: &[LorentzVector<F>],
         mut record: impl FnMut(F),
     ) -> F {
+        let cell = self
+            .memo
+            .get_or(|| RefCell::new(SubsystemMemo::new(momenta.len())));
+        let mut memo = cell.borrow_mut();
+        memo.next_point();
         let mut g = F::zero();
         for (alpha, ch) in self.alphas.iter().zip(&self.channels) {
-            let gj = ch.density_at(sqrt_s, momenta);
+            let gj = ch.density_at_memo(sqrt_s, momenta, &mut memo);
             record(gj);
             g = g + *alpha * gj;
         }
