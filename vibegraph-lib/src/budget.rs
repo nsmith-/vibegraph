@@ -771,15 +771,15 @@ where
         min_channel_neval = min_channel_neval.min(plans.iter().map(|p| p.neval).min().unwrap_or(0));
         iteration_points = plans.iter().map(|p| p.neval).sum();
 
-        // The iteration count a display divides by. A convergence run may stop
-        // well short of it, so it is an upper bound rather than a plan — but it
-        // is an upper bound in points the run will really spend: what an
-        // iteration costs is set by the channel count and the accepted-point
-        // floor as much as by `neval`, so the point cap buys fewer iterations
-        // than dividing by the requested budget would suggest, and it is priced
-        // against the iteration about to be drawn rather than against the
-        // request. One iteration is the floor, since a bound of zero describes no
-        // run.
+        // The most iterations this run can still be, in points it will really
+        // spend: what an iteration costs is set by the channel count and the
+        // accepted-point floor as much as by `neval`, so the point cap buys
+        // fewer iterations than dividing by the requested budget would suggest,
+        // and it is priced against the iteration about to be drawn rather than
+        // against the request. For a fixed budget this is the plan itself; for a
+        // convergence target it is where the run gives up, and only caps the
+        // projected total a display divides by. One iteration is the floor,
+        // since a bound of zero describes no run.
         let iteration_bound = match budget {
             Budget::Fixed { niter, .. } => niter as u64,
             Budget::Target {
@@ -845,6 +845,11 @@ where
         // Before the warm-up is over no iteration has been kept, and a combined
         // estimate over nothing is not a number.
         let estimate = (iteration > warmup).then(|| running_estimate(&channels, combination));
+        // The number the stopping test reads, computed once per iteration and
+        // shared with the progress projection so both see the same δ.
+        let scaled = estimate
+            .as_ref()
+            .map(|_| scaled_rel(&channels, combination));
         match &estimate {
             Some(total) => info!(
                 "iteration {iteration}: {:.6e} ± {:.6e} (χ²/dof {:.3}), {iteration_points} points \
@@ -861,9 +866,33 @@ where
             std_dev: 0.0,
             chi2_per_dof: 0.0,
         });
+        // The iteration count a display divides by: the run's *destination*,
+        // not where it gives up. A fixed budget's destination is its plan. A
+        // convergence run is chasing δ ≤ target, and the error of a
+        // fixed-size iteration contracts as 1/√n, so `iteration × (δ/target)²`
+        // is where the stop fires if the estimate keeps behaving — re-projected
+        // each iteration as δ moves. It is floored at the earliest iteration
+        // the stopping test may fire at, so a bar cannot read full while the
+        // run is still obliged to continue, and capped at the give-up bound;
+        // at the stop itself δ ≤ target puts the projection at `iteration`
+        // exactly, so a converged run ends on a full bar. Until the warm-up
+        // ends there is no δ and the extent is honestly unknown.
+        let progress_total = match budget {
+            Budget::Fixed { .. } => Some(iteration_bound),
+            Budget::Target {
+                target_rel,
+                min_iters,
+                ..
+            } => scaled.map(|rel| {
+                let projected = (iteration as f64 * (rel / target_rel).powi(2)).ceil() as u64;
+                projected
+                    .max(min_iters.max(warmup + 2) as u64)
+                    .clamp(iteration as u64, iteration_bound.max(iteration as u64))
+            }),
+        };
         progress::vegas_iteration(
             iteration as u64,
-            Some(iteration_bound),
+            progress_total,
             total.integral,
             total.std_dev,
             total.chi2_per_dof,
@@ -871,7 +900,7 @@ where
         progress::eval_rate(
             progress::stage::VEGAS,
             iteration as u64,
-            Some(iteration_bound),
+            progress_total,
             ns_per_eval,
         );
         report_channels(&plans, &outcomes);
@@ -889,7 +918,7 @@ where
                 ..
             } => {
                 let met = iteration >= min_iters.max(warmup + 2)
-                    && scaled_rel(&channels, combination) <= target_rel;
+                    && scaled.is_some_and(|rel| rel <= target_rel);
                 if met {
                     reason = StopReason::TargetMet;
                     true
@@ -1366,6 +1395,160 @@ mod tests {
         assert!(report.achieved_rel <= report.scaled_rel);
         let pull = (total.integral - 1.5).abs() / total.std_dev;
         assert!(pull < 5.0, "σ = {} ± {}", total.integral, total.std_dev);
+    }
+
+    /// The VEGAS totals a display divides by, on a run under a convergence
+    /// target: the bar has to track the distance to the *target*, not to the
+    /// iteration cap the run would give up at — against the cap a converging
+    /// run finishes with the bar a few percent full. Warm-up iterations carry
+    /// no estimate to project from, so their extent is absent; every projected
+    /// total stays within [done, max_iters] and above the earliest iteration
+    /// the stop may fire at; and δ ≤ target pins the projection at the current
+    /// iteration, so meeting the target is exactly a full bar.
+    #[test]
+    fn the_progress_total_projects_the_convergence_target() {
+        use std::sync::{Arc, Mutex};
+
+        use tracing::field::{Field, Visit};
+        use tracing::span::{Attributes, Id, Record};
+        use tracing::{Event, Metadata, Subscriber};
+
+        #[derive(Default)]
+        struct Fields {
+            stage: Option<String>,
+            done: Option<u64>,
+            total: Option<u64>,
+            sigma: Option<f64>,
+        }
+
+        impl Visit for Fields {
+            fn record_str(&mut self, field: &Field, value: &str) {
+                if field.name() == "stage" {
+                    self.stage = Some(value.to_string());
+                }
+            }
+            fn record_u64(&mut self, field: &Field, value: u64) {
+                match field.name() {
+                    "done" => self.done = Some(value),
+                    "total" => self.total = Some(value),
+                    _ => {}
+                }
+            }
+            fn record_f64(&mut self, field: &Field, value: f64) {
+                if field.name() == "sigma" {
+                    self.sigma = Some(value);
+                }
+            }
+            fn record_debug(&mut self, _field: &Field, _value: &dyn std::fmt::Debug) {}
+        }
+
+        /// `(done, total, sigma)` from one `vegas_iteration` event.
+        type VegasEvent = (u64, Option<u64>, f64);
+
+        /// Keeps every `vegas_iteration` event — the ones that carry an
+        /// estimate field — and nothing else.
+        #[derive(Clone, Default)]
+        struct Capture(Arc<Mutex<Vec<VegasEvent>>>);
+
+        impl Subscriber for Capture {
+            fn enabled(&self, meta: &Metadata<'_>) -> bool {
+                meta.target() == crate::progress::TARGET
+            }
+            fn new_span(&self, _: &Attributes<'_>) -> Id {
+                Id::from_u64(1)
+            }
+            fn record(&self, _: &Id, _: &Record<'_>) {}
+            fn record_follows_from(&self, _: &Id, _: &Id) {}
+            fn event(&self, event: &Event<'_>) {
+                let mut fields = Fields::default();
+                event.record(&mut fields);
+                if fields.stage.as_deref() != Some(crate::progress::stage::VEGAS) {
+                    return;
+                }
+                if let (Some(done), Some(sigma)) = (fields.done, fields.sigma) {
+                    self.0
+                        .lock()
+                        .expect("capture")
+                        .push((done, fields.total, sigma));
+                }
+            }
+            fn enter(&self, _: &Id) {}
+            fn exit(&self, _: &Id) {}
+        }
+
+        let integ = toy(vec![1.0, 0.3, 0.0, 0.0]);
+        let target_rel = 2.0e-3;
+        let min_iters = 6;
+        let max_iters = 200;
+        let capture = Capture::default();
+        let (_per_channel, _total, report) =
+            tracing::subscriber::with_default(capture.clone(), || {
+                // `tracing` caches each callsite's interest process-wide from
+                // whichever thread hits it first — under a parallel test run
+                // that is usually a test with no subscriber at all, which
+                // stamps the progress callsites `never` and this capture is
+                // skipped before `enabled` is consulted. Hit the callsite from
+                // this thread (registering it against this subscriber if it is
+                // new), then rebuild the cache (healing it if it was already
+                // stamped). The primer carries `done = 0`, which no real
+                // iteration does, and is filtered out below.
+                crate::progress::vegas_iteration(0, None, 0.0, 0.0, 0.0);
+                tracing::callsite::rebuild_interest_cache();
+                integrate_channels(
+                    &integ,
+                    &integ.alphas.clone(),
+                    1.5,
+                    IterationCombination::Unweighted,
+                    Budget::Target {
+                        target_rel,
+                        neval: 20_000,
+                        min_iters,
+                        max_iters,
+                        max_points: 200_000_000,
+                    },
+                    BlockAllocation::Neyman,
+                    0x5EED_7,
+                    &StopSignal::default(),
+                )
+            });
+        assert_eq!(report.stop, StopReason::TargetMet);
+
+        let events: Vec<VegasEvent> = capture
+            .0
+            .lock()
+            .expect("capture")
+            .iter()
+            .copied()
+            .filter(|&(done, ..)| done > 0)
+            .collect();
+        assert_eq!(events.len(), report.iterations, "one event per iteration");
+        let stop_floor = min_iters.max(DEFAULT_WARMUP_ITERS + 2) as u64;
+        for &(done, total, sigma) in &events {
+            if sigma == 0.0 {
+                // A warm-up iteration: nothing to project from.
+                assert_eq!(
+                    total, None,
+                    "iteration {done} projected without an estimate"
+                );
+            } else {
+                let total = total.expect("a projected total once an estimate exists");
+                assert!(
+                    (done..=max_iters as u64).contains(&total),
+                    "iteration {done} projected {total}"
+                );
+                assert!(
+                    total >= stop_floor.min(max_iters as u64),
+                    "iteration {done} projected {total}, below the earliest possible stop \
+                     {stop_floor}"
+                );
+            }
+        }
+        let &(done, total, _) = events.last().expect("a converged run has iterations");
+        assert_eq!(
+            total,
+            Some(done),
+            "meeting the target must read as a full bar"
+        );
     }
 
     #[test]

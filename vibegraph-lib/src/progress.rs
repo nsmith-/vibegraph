@@ -65,8 +65,11 @@ pub mod stage {
     /// The Kleiss–Pittau survey that sets the channel selection weights, counting
     /// survey iterations.
     pub const ALPHA_SURVEY: &str = "alpha_survey";
-    /// The VEGAS integration, counting adaptation iterations. Under a convergence
-    /// target the total is the iteration cap, which the run may stop well short of.
+    /// The VEGAS integration, counting adaptation iterations. Under a fixed
+    /// budget the total is the plan. Under a convergence target it is the
+    /// iteration the target is projected to be met at — re-estimated as the
+    /// error contracts, capped where the run would give up, and absent through
+    /// the warm-up, when no estimate exists to project from.
     pub const VEGAS: &str = "vegas";
     /// The frozen scan for each channel's maximum weight, counting channels.
     pub const WEIGHT_SCAN: &str = "weight_scan";
