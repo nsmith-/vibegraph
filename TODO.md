@@ -507,22 +507,6 @@ exercised on SM evidence alone.
   its design should argue from S1 Part B's per-channel variance/acceptance
   data. All floor/α measurements must be taken against post-`7664ff9` main —
   the timelike floors changed every 2→3-and-up row's per-channel variances.
-- **The wide-split stop scale factor is finite but uncalibrated**
-  (2026-08-06, `61e578f`; **now S1 Part C in note 34 §2**, riding Part B's
-  seed sweeps at no extra integration cost). Mechanisms (a)/(b) of the resolved
-  non-convergence entry are fixed: the stop reads a scale factor formed over
-  the iterations that measured a variance (`ChannelHistory::stop_scale`) —
-  the reported χ²/dof still overflows by design — and the caps are priced in
-  points actually spent (`ConvergenceReport::points_per_iteration`). On the
-  579-channel row the stop reading is now ~20× the quoted error at 8
-  iterations (seed-stable to 2%), conservative by construction (it can only
-  delay a stop); the independent five-seed ladder implies ~3.6× at a larger
-  budget through a different harness, not directly comparable. Before
-  `--target-rel` is *used* on 2→6 rows rather than merely well-defined,
-  calibrate the factor against a seed sweep. The ns/eval climb recorded
-  alongside the original finding is explained and closed (rising cut
-  acceptance as the grids train — note 32 §7).
-
 - ~~2→6 density-loop cost — attack `Σⱼ αⱼgⱼ` directly~~ — **landed
   2026-08-06** (`443f6bc`, closed-sprint history; note 34 §1.1): the mixture
   density is priced only after the cut, 62.9/68.5 → **4.6/6.8 µs** per point
@@ -531,11 +515,45 @@ exercised on SM evidence alone.
   lever is shared-subtree jacobian memoisation by `map_key` class (S4,
   note 34 §2: build the decomposition instrument first, kill line <5%).
   The `e059092` channel↔diagram consumer audit still binds any change here.
-- **α-survey budget constants are unmeasured** (2026-08-06; **now S1 Part B
-  in note 34 §2** — its density-loop sequencing condition is satisfied by
-  `443f6bc`, and S1 Part A first collapses the survey's two full density
-  passes per accepted point into one, a finding of the density session; all
-  measurements against post-`7664ff9` main).
+- ~~α-survey budget constants are unmeasured~~ — **resolved 2026-08-06
+  (`30c4aaf`/`1f68326`, note 34 S1): the cap is confirmed, no constant
+  moved.** σ and α are stable from 40k up — inside the layer's own spread —
+  *once the survey seed is swept*: the apparent degradation above the cap was
+  one α draw, killed by a three-survey-seed sweep (two of three 640k readings
+  are the tightest in the whole experiment). The floor is not free (10k is
+  genuinely worse: sd 0.52%/0.39% vs 0.21%/0.21% on the wide rows). The
+  measurement now lives in the `MIN_ADAPT_SURVEY`/`MAX_ADAPT_SURVEY` doc
+  comment. Two successors filed below: the α-iteration axis, and the
+  `stop_scale` zero-variance defect. The survey itself got cheaper en route
+  (`c48fc69`, one density sweep per surveyed point, bit-identical, whole
+  survey 1.32×/1.22× on the wide rows). Historical wording note: this entry
+  called `pp_to_llj` a control "covering both survey implementations" — a
+  `p p` row exercises only the hadronic survey; the fixed-energy one is
+  covered by the `lpp = 0` 2→6 rows.
+- **α on wide splits is iteration-limited, not point-limited** (2026-08-06,
+  note 34 S1). Independent surveys at *any* budget land a tenth to a third of
+  the mixture mass apart (within-rung α L1 across survey seeds 0.15–0.74),
+  and the last survey step is still O(0.1–0.4) at every rung — six
+  `ADAPT_ITERS` is the binding limit, while σ is insensitive to which draw it
+  runs under (which is why the cap is free). The lever, if α quality is ever
+  worth buying: vary the iteration count with damping, not the points. No
+  urgency — nothing measured is limited by it today.
+- **`stop_scale` reads a zero-variance iteration as a thousandfold
+  disagreement, leaving `--target-rel` inert on 2→6 rows** (2026-08-06,
+  note 34 S1 Part C; supersedes the resolved "wide-split stop scale factor is
+  finite but uncalibrated" entry). The factor is not calibratable as a
+  constant: `scaled_rel/achieved_rel` spans ×4.8–×30 270 across rungs and
+  ×2.9–×11 085 at a single budget, structured by the α draw. Cause: at
+  wide-split density a channel routinely posts a zero-variance iteration
+  (every point cut — the value `ChannelHistory` deliberately does not floor)
+  beside one that caught a tail point, and per-channel χ²/dof reaches
+  1e6–1e12. With `scaled_rel` at ×100+ the stop cannot fire, so
+  `--target-rel` on these rows is well-defined but inert. The fix is in what
+  `stop_scale` does with zero-variance iterations — not a retuned factor,
+  and not the reported statistic (which stays as documented). Meanwhile the
+  *plain* quoted error at the 40k cap is well calibrated (achieved_rel
+  0.0021–0.0024 vs realized sd/σ 0.0021 on both wide rows; 2× optimistic
+  below the cap).
   `MIN_ADAPT_SURVEY = 10_000` / `MAX_ADAPT_SURVEY = 40_000`
   (`vibegraph-cli/src/integrate.rs:60`) clamp `--neval` to set the α-survey's
   points per iteration (6 iterations, damping 0.5). Neither bound has a

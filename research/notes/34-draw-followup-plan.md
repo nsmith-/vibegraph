@@ -164,6 +164,34 @@ conservative by construction (it can only delay a stop), so the deliverable
 is a recorded calibration statement replacing "uncalibrated" in the TODO
 entry — no code change is in scope.
 
+**S1 close-out (2026-08-06, `c48fc69`/`27433f0`/`30c4aaf`, merged
+`1f68326`).** Part A landed bit-identical — and by a *better* route than
+this plan's: handing back `g` would have replaced the pre-existing
+`αⱼ/(αⱼ/g)` round trip with a re-rounding, so the session instead recorded
+each `gⱼ` during the weight-forming sweep and left both round trips alone,
+buying SHA-pinned byte-identical artifacts on both survey implementations;
+whole-survey 1.32×/1.22× on the wide rows (the plan's "≈2×" was the density
+term only — the cut-first short-circuit had already removed it from cut
+points). Part B confirms the cap, no constant moved: σ and α stable from
+40k up once the survey seed is swept — the session's own provisional "wide
+rows degrade above the cap" was killed by its three-survey-seed sweep (one
+unlucky α draw; two of three 640k readings are the tightest in the whole
+experiment), the second time this backlog chain has been saved by
+"a single fixed-seed pull is not evidence". The floor is not free (10k
+genuinely worse). Real and recorded: α is iteration-limited on wide splits
+(within-rung α L1 across survey seeds 0.15–0.74 at every budget; six
+`ADAPT_ITERS` binds, σ indifferent) — filed in TODO as a lever. Part C:
+the stop scale factor is **not calibratable as a constant**
+(`scaled_rel/achieved_rel` ×4.8–×30 270, structured by the α draw): at
+wide-split density a channel posts zero-variance iterations (all points
+cut) beside tail-catching ones and per-channel χ²/dof reaches 1e6–1e12, so
+`--target-rel` on 2→6 is well-defined but *inert* — the fix is what
+`stop_scale` does with a zero-variance iteration, filed in TODO; the plain
+quoted error at the cap tracks seed truth (ratio ≈1.0). Brief corrections:
+`pp_to_llj` exercises only the hadronic survey (the 2→6 rows cover the
+fixed-energy one); the control-row wording came from the TODO entry and is
+corrected there.
+
 #### S2 — the recarded `pp_to_llj` ladder climb: diagnosis (validation-dev)
 
 The climb (+0.04% → +0.21% over 75k–600k, reproduced post-floor as
