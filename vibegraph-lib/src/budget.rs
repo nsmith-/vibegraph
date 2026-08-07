@@ -34,6 +34,18 @@
 //! cheap, because a channel that stops covering its own region is how a
 //! multichannel integral becomes confidently wrong.
 //!
+//! The floor counts *accepted* points. A point the cuts reject contributes
+//! exactly zero to a channel's term and exactly zero to its variance, so a
+//! floor denominated in drawn points promises coverage it does not deliver:
+//! `p p > l+ l- j` accepts under a quarter of an untrained channel's draws, so
+//! 512 of them are ~120 points of coverage. Each channel's allocation is
+//! therefore floored at `MIN_CHANNEL_NEVAL / acceptanceⱼ`, with `acceptanceⱼ`
+//! measured from that channel's own completed iterations and capped at
+//! [`MAX_FLOOR_ACCEPTANCE_SCALE`] — see [`floor_for_acceptance`] for the cap's
+//! rationale and the cold start. The correction is read from iterations already
+//! finished, never from the draws it sizes, which is what keeps an allocation
+//! uncorrelated with the estimate it weights (see [`ChannelHistory::combine`]).
+//!
 //! # Stopping
 //!
 //! [`Budget::Fixed`] is the reproducible mode: `neval × niter`, the same points
@@ -89,12 +101,69 @@ use crate::vegas::{
     VegasGrid, VegasResult,
 };
 
-/// Floor on a channel's per-iteration evaluation count.
+/// Floor on the points a channel gets through the cuts in one iteration.
 ///
 /// A channel whose selection weight rounds to nothing still gets a grid it can
 /// refine and a term it can estimate. Coverage is not a thing an allocation rule
 /// is allowed to trade away.
+///
+/// The floor is denominated in *accepted* points: a point the cuts reject
+/// contributes exactly zero to the channel's term and exactly zero to its
+/// variance, so it is not coverage of anything. What a channel is allocated is
+/// therefore this many points divided by its own measured acceptance, capped —
+/// see [`floor_for_acceptance`].
 pub const MIN_CHANNEL_NEVAL: usize = 512;
+
+/// The most the acceptance correction may multiply a channel's allocation by.
+///
+/// The correction is `1/acceptance`, which is unbounded, and the split it acts on
+/// can be hundreds of channels wide — a `2 → 6` row already spends
+/// `n_channels × MIN_CHANNEL_NEVAL` an iteration before any correction, so an
+/// uncapped one at the few-percent acceptance those rows sample at would multiply
+/// the cost of a run by ten or more. The cap bounds an iteration at
+/// `MAX_FLOOR_ACCEPTANCE_SCALE × n_channels × MIN_CHANNEL_NEVAL` however bad the
+/// acceptance gets, which is a number a caller can compute before spending
+/// anything.
+///
+/// Where it binds, the coverage promise is not kept, and the run says so rather
+/// than silently buying less coverage than the floor names.
+pub const MAX_FLOOR_ACCEPTANCE_SCALE: usize = 4;
+
+/// The points a channel of measured `acceptance` must draw for
+/// [`MIN_CHANNEL_NEVAL`] of them to survive the cuts, capped at
+/// [`MAX_FLOOR_ACCEPTANCE_SCALE`] times the floor.
+///
+/// `None` is the cold start — a channel that has drawn nothing has measured no
+/// acceptance, and the floor is the uncorrected one, which is what the whole
+/// allocation was before any acceptance existed. A channel that has accepted
+/// *nothing* is not the same case: it has a measurement, and the measurement says
+/// no finite allocation buys the floor's coverage, so it gets the cap.
+pub fn floor_for_acceptance(acceptance: Option<f64>) -> usize {
+    let cap = MIN_CHANNEL_NEVAL.saturating_mul(MAX_FLOOR_ACCEPTANCE_SCALE);
+    match acceptance {
+        None => MIN_CHANNEL_NEVAL,
+        Some(a) if a >= 1.0 => MIN_CHANNEL_NEVAL,
+        Some(a) if a > 0.0 && a.is_finite() => {
+            let need = (MIN_CHANNEL_NEVAL as f64 / a).ceil();
+            if need >= cap as f64 {
+                cap
+            } else {
+                need as usize
+            }
+        }
+        _ => cap,
+    }
+}
+
+/// Whether [`floor_for_acceptance`] had to cap this acceptance — the channel's
+/// allocation is bounded by the cap rather than by the coverage it was asked to
+/// buy.
+fn floor_is_capped(acceptance: Option<f64>) -> bool {
+    match acceptance {
+        None => false,
+        Some(a) => !(a * MAX_FLOOR_ACCEPTANCE_SCALE as f64 >= 1.0),
+    }
+}
 
 /// How the per-iteration budget is split across channels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -253,11 +322,37 @@ pub struct ConvergenceReport {
     pub scaled_rel: f64,
     /// Points each channel drew over the whole run, in channel order.
     pub channel_points: Vec<u64>,
+    /// Points each channel got through the cuts over the whole run, in channel
+    /// order — the numerator of the acceptance that channel's floor was
+    /// denominated in.
+    pub channel_accepted: Vec<u64>,
     /// The smallest per-iteration allocation any channel received in any
     /// iteration — the floor guardrail as realised rather than as intended. A
     /// cumulative point count cannot see a channel starved after the first
     /// iteration, since the first iteration's α split dominates the sum.
     pub min_channel_neval: usize,
+    /// The smallest number of *accepted* points any channel gathered in any
+    /// iteration after the first — the coverage the floor exists to buy, as
+    /// realised.
+    ///
+    /// The first iteration is excluded because no acceptance has been measured
+    /// yet when it is allocated, so it draws the uncorrected floor by
+    /// construction; every iteration after it is one the correction had a
+    /// measurement for. A run of a single iteration reports the first one rather
+    /// than nothing.
+    pub min_channel_accepted: usize,
+    /// Channels whose floor was held at [`floor_for_acceptance`]'s cap in the
+    /// last iteration: their acceptance is too low for the floor to buy
+    /// [`MIN_CHANNEL_NEVAL`] accepted points at the capped spend, so on those
+    /// channels the coverage promise is bounded by the cap.
+    pub floor_capped_channels: usize,
+    /// Kept iterations, summed over channels, that measured a variance of exactly
+    /// zero — an allocation every point of which the cuts rejected.
+    ///
+    /// A reported statistic, not an input to any decision. It is the quantity the
+    /// per-channel floor's denomination moves: an iteration with accepted points
+    /// in it measures a variance.
+    pub zero_variance_iterations: usize,
 }
 
 /// One channel's running record over the iterations of a block-split adaptation.
@@ -276,9 +371,20 @@ struct ChannelHistory {
     /// because before the warm-up is over they are the only measurement there is.
     point_var_sum: f64,
     point_var_n: usize,
+    /// Points of `drawn` that the cuts kept — the numerator of this channel's
+    /// acceptance. Pooled over every iteration, warm-up included: the channels
+    /// the floor binds on draw few points an iteration, and an acceptance formed
+    /// on one such allocation is noise.
+    accepted: u64,
 }
 
 impl ChannelHistory {
+    /// The fraction of this channel's drawn points the cuts kept, over every
+    /// iteration it has run, or `None` before it has drawn anything.
+    fn acceptance(&self) -> Option<f64> {
+        (self.drawn > 0).then(|| self.accepted as f64 / self.drawn as f64)
+    }
+
     /// The per-point standard deviation this channel's iterations have measured,
     /// or `None` before any iteration has run.
     fn point_sd(&self) -> Option<f64> {
@@ -412,26 +518,37 @@ fn chunk_size(channel_neval: usize, threads: usize) -> usize {
 }
 
 /// Split `total` points across channels with per-point standard deviations
-/// `sd`, `Nⱼ ∝ sdⱼ`, subject to `Nⱼ ≥ floor`.
+/// `sd`, `Nⱼ ∝ sdⱼ`, subject to `Nⱼ ≥ floorⱼ`.
 ///
-/// Channels the proportional rule would put below the floor are pinned there and
-/// the rest re-split over what remains, repeatedly — so the floor is exact rather
-/// than a post-hoc clamp that would overspend the budget. When every channel is
-/// pinned the total simply rises to `channels × floor`: coverage wins over the
-/// budget, which is the point of having a floor at all.
-pub fn neyman_allocation(sd: &[f64], total: usize, floor: usize) -> Vec<usize> {
+/// Channels the proportional rule would put below their floor are pinned there
+/// and the rest re-split over what remains, repeatedly — so the floors are exact
+/// rather than a post-hoc clamp that would overspend the budget. When every
+/// channel is pinned the total simply rises to `Σⱼ floorⱼ`: coverage wins over
+/// the budget, which is the point of having a floor at all.
+///
+/// The floors are per channel because they are denominated in accepted points and
+/// channels do not share an acceptance — see [`floor_for_acceptance`].
+pub fn neyman_allocation(sd: &[f64], total: usize, floors: &[usize]) -> Vec<usize> {
+    assert_eq!(
+        sd.len(),
+        floors.len(),
+        "one floor per channel: {} sd(s), {} floor(s)",
+        sd.len(),
+        floors.len()
+    );
     // Two points is the least an iteration's variance estimator can be formed
     // from, so a floor below that is not a floor on anything.
-    let floor = floor.max(2);
+    let floors: Vec<usize> = floors.iter().map(|&f| f.max(2)).collect();
     let n = sd.len();
-    let mut out = vec![floor; n];
+    let mut out = floors.clone();
     let mut pinned = vec![false; n];
     loop {
         let free: Vec<usize> = (0..n).filter(|&j| !pinned[j]).collect();
         if free.is_empty() {
             break;
         }
-        let remaining = total.saturating_sub(floor * (n - free.len()));
+        let pinned_total: usize = (0..n).filter(|&j| pinned[j]).map(|j| floors[j]).sum();
+        let remaining = total.saturating_sub(pinned_total);
         let sd_total: f64 = free.iter().map(|&j| sd[j].max(0.0)).sum();
         let mut newly_pinned = false;
         for &j in &free {
@@ -445,8 +562,8 @@ pub fn neyman_allocation(sd: &[f64], total: usize, floor: usize) -> Vec<usize> {
             } else {
                 0
             };
-            if share <= floor {
-                out[j] = floor;
+            if share <= floors[j] {
+                out[j] = floors[j];
                 pinned[j] = true;
                 newly_pinned = true;
             } else {
@@ -512,6 +629,7 @@ where
             kept: Vec::new(),
             point_var_sum: 0.0,
             point_var_n: 0,
+            accepted: 0,
         })
         .collect();
 
@@ -524,19 +642,28 @@ where
         );
     }
 
-    // The α split is what a fixed budget spends every iteration and what the
-    // first iteration of a Neyman run spends, there being no variance measured
-    // yet to reallocate on.
-    let by_alpha: Vec<usize> = alphas
+    // What the budget asks each channel to spend, before any floor: the quantity
+    // the floor is a floor *on*, and the split a fixed budget spends every
+    // iteration and a Neyman run spends its first, there being no variance
+    // measured yet to reallocate on.
+    let shares: Vec<usize> = alphas
         .iter()
         .map(|&a| {
             if single {
                 neval
             } else {
-                crate::hadronic::channel_neval(a, neval)
+                crate::hadronic::channel_share(a, neval)
             }
         })
         .collect();
+    // The uncorrected split: the floor as it stands before any acceptance has
+    // been measured, which is what the first iteration spends and the budget the
+    // Neyman re-split is handed.
+    let by_alpha: Vec<usize> = if single {
+        shares.clone()
+    } else {
+        shares.iter().map(|&s| s.max(MIN_CHANNEL_NEVAL)).collect()
+    };
     let alpha_total: usize = by_alpha.iter().sum();
 
     info!(
@@ -549,33 +676,19 @@ where
     );
     // Coverage outranks the budget, so a request under the floor is raised, not
     // honoured. Say so: the spend is then set by the channel count and is not a
-    // knob `neval` can turn until it clears the floor.
+    // knob `neval` can turn until it clears the floor. The acceptance correction
+    // raises it further once the first iteration has measured one, and warns
+    // again there with the number it reaches.
     if alpha_total > neval {
         let floored = by_alpha.iter().filter(|&&n| n == MIN_CHANNEL_NEVAL).count();
         warn!(
             "neval {neval} is below what {} channels can cover: {floored} of them sit at the \
-             {MIN_CHANNEL_NEVAL}-point floor, so an iteration spends {alpha_total}",
+             {MIN_CHANNEL_NEVAL}-point floor, so an iteration spends {alpha_total} before the \
+             acceptance correction, and at most {} after it",
             alphas.len(),
+            alpha_total.saturating_mul(MAX_FLOOR_ACCEPTANCE_SCALE),
         );
     }
-
-    // The iteration count a display divides by. A convergence run may stop well
-    // short of it, so it is an upper bound rather than a plan — but it is an
-    // upper bound in points the run will really spend: `alpha_total`, not
-    // `neval`, is what an iteration costs once the per-channel floor has raised
-    // it, so the point cap buys fewer iterations than dividing by the requested
-    // budget would suggest. One iteration is the floor, since a bound of zero
-    // describes no run.
-    let iteration_bound = match budget {
-        Budget::Fixed { niter, .. } => niter as u64,
-        Budget::Target {
-            max_iters,
-            max_points,
-            ..
-        } => (max_iters as u64)
-            .min(max_points / alpha_total.max(1) as u64)
-            .max(1),
-    };
 
     let warmup = grids
         .first()
@@ -588,18 +701,53 @@ where
     let mut points = 0_u64;
     let mut iteration_points: usize;
     let mut min_channel_neval = usize::MAX;
+    let mut min_channel_accepted = usize::MAX;
+    let mut first_min_accepted = 0_usize;
+    let mut floor_capped_channels = 0_usize;
+    let mut capped_reported = false;
+    let mut raised_reported = false;
     let mut iteration = 0_usize;
     let mut reason = StopReason::Budget;
 
     loop {
-        if iteration > 0 && !single && allocation == BlockAllocation::Neyman {
-            let sd: Vec<f64> = channels
+        // The floors are denominated in accepted points, so each channel's own
+        // acceptance sets its own floor and they are re-read every iteration.
+        // Before the first iteration none has been measured and every floor is
+        // the uncorrected one, so a run's first iteration is the split it always
+        // was; a floor thereafter is decided by iterations already complete, and
+        // never by the draws it is about to size.
+        if !single {
+            let floors: Vec<usize> = channels
                 .iter()
-                .map(|c| c.point_sd().unwrap_or(0.0))
+                .map(|c| floor_for_acceptance(c.acceptance()))
                 .collect();
-            let previous = current.clone();
-            current = neyman_allocation(&sd, alpha_total, MIN_CHANNEL_NEVAL);
+            floor_capped_channels = channels
+                .iter()
+                .filter(|c| floor_is_capped(c.acceptance()))
+                .count();
+            let previous = std::mem::take(&mut current);
+            current = if allocation == BlockAllocation::Neyman && iteration > 0 {
+                let sd: Vec<f64> = channels
+                    .iter()
+                    .map(|c| c.point_sd().unwrap_or(0.0))
+                    .collect();
+                neyman_allocation(&sd, alpha_total, &floors)
+            } else {
+                shares
+                    .iter()
+                    .zip(&floors)
+                    .map(|(&s, &f)| s.max(f))
+                    .collect()
+            };
             report_reallocation(&previous, &current);
+            report_floor_correction(
+                alphas.len(),
+                alpha_total,
+                current.iter().sum(),
+                floor_capped_channels,
+                &mut raised_reported,
+                &mut capped_reported,
+            );
         }
 
         let plans: Vec<BlockPlan> = channels
@@ -616,6 +764,26 @@ where
 
         min_channel_neval = min_channel_neval.min(plans.iter().map(|p| p.neval).min().unwrap_or(0));
         iteration_points = plans.iter().map(|p| p.neval).sum();
+
+        // The iteration count a display divides by. A convergence run may stop
+        // well short of it, so it is an upper bound rather than a plan — but it
+        // is an upper bound in points the run will really spend: what an
+        // iteration costs is set by the channel count and the accepted-point
+        // floor as much as by `neval`, so the point cap buys fewer iterations
+        // than dividing by the requested budget would suggest, and it is priced
+        // against the iteration about to be drawn rather than against the
+        // request. One iteration is the floor, since a bound of zero describes no
+        // run.
+        let iteration_bound = match budget {
+            Budget::Fixed { niter, .. } => niter as u64,
+            Budget::Target {
+                max_iters,
+                max_points,
+                ..
+            } => (max_iters as u64)
+                .min(max_points / iteration_points.max(1) as u64)
+                .max(1),
+        };
         let started = Instant::now();
 
         let outcomes = adapt_blocks_iteration(
@@ -644,9 +812,20 @@ where
             },
         );
 
+        // The coverage the iteration realised, which is what the floor is
+        // denominated in. The first iteration is allocated before any acceptance
+        // has been measured, so it is recorded apart from the rest.
+        let iteration_min_accepted = outcomes.iter().map(|o| o.accepted).min().unwrap_or(0);
+        if iteration == 0 {
+            first_min_accepted = iteration_min_accepted;
+        } else {
+            min_channel_accepted = min_channel_accepted.min(iteration_min_accepted);
+        }
+
         for ((c, out), plan) in channels.iter_mut().zip(&outcomes).zip(&plans) {
             c.drawn += plan.neval as u64;
             points += plan.neval as u64;
+            c.accepted += out.accepted as u64;
             c.point_var_sum += out.point_variance(plan.neval);
             c.point_var_n += 1;
             if iteration >= warmup {
@@ -780,7 +959,18 @@ where
         achieved_rel,
         scaled_rel: scaled_rel(&channels, combination),
         channel_points: channels.iter().map(|c| c.drawn).collect(),
+        channel_accepted: channels.iter().map(|c| c.accepted).collect(),
         min_channel_neval,
+        min_channel_accepted: if min_channel_accepted == usize::MAX {
+            first_min_accepted
+        } else {
+            min_channel_accepted
+        },
+        floor_capped_channels,
+        zero_variance_iterations: channels
+            .iter()
+            .map(|c| c.kept.iter().filter(|&&(_, v, _)| v == 0.0).count())
+            .sum(),
     };
     (per_channel, total, report)
 }
@@ -836,6 +1026,43 @@ fn report_reallocation(before: &[usize], after: &[usize]) {
         .collect();
     if !moved.is_empty() {
         debug!("reallocated {}", moved.join(", "));
+    }
+}
+
+/// What the accepted-point denomination of the floor did to this run's spend, said
+/// once.
+///
+/// Two separate facts, each reported the first time it is true. That the
+/// correction raised the spend is accounting a caller pricing a run needs, since
+/// the number an iteration costs is no longer the one `neval` and the channel
+/// count imply. That it had to be *capped* is a coverage statement: on those
+/// channels the run is knowingly buying fewer than [`MIN_CHANNEL_NEVAL`] accepted
+/// points, which is the promise the floor exists to make.
+fn report_floor_correction(
+    channels: usize,
+    uncorrected: usize,
+    corrected: usize,
+    capped: usize,
+    raised_reported: &mut bool,
+    capped_reported: &mut bool,
+) {
+    if corrected > uncorrected && !*raised_reported {
+        *raised_reported = true;
+        info!(
+            "the {MIN_CHANNEL_NEVAL}-accepted-point floor raises an iteration over \
+             {channels} channels from {uncorrected} to {corrected} points at the measured \
+             acceptances"
+        );
+    }
+    if capped > 0 && !*capped_reported {
+        *capped_reported = true;
+        warn!(
+            "{capped} of {channels} channels accept less than one point in \
+             {MAX_FLOOR_ACCEPTANCE_SCALE}, so their allocation is held at the \
+             {}-point cap and they cover their own region with fewer than \
+             {MIN_CHANNEL_NEVAL} accepted points an iteration",
+            MIN_CHANNEL_NEVAL * MAX_FLOOR_ACCEPTANCE_SCALE,
+        );
     }
 }
 
@@ -976,6 +1203,7 @@ mod tests {
                 .collect(),
             point_var_sum: 0.0,
             point_var_n: 0,
+            accepted: 0,
         }
     }
 
@@ -1080,7 +1308,7 @@ mod tests {
 
     #[test]
     fn neyman_allocation_is_proportional_when_nothing_binds() {
-        let n = neyman_allocation(&[1.0, 2.0, 5.0], 8_000, 100);
+        let n = neyman_allocation(&[1.0, 2.0, 5.0], 8_000, &[100; 3]);
         assert_eq!(n, vec![1_000, 2_000, 5_000]);
     }
 
@@ -1091,7 +1319,7 @@ mod tests {
     fn neyman_allocation_floors_a_zero_variance_channel() {
         let floor = MIN_CHANNEL_NEVAL;
         let sd = vec![1.0e9, 0.0, 0.0, 0.0, 0.0, 0.0];
-        let n = neyman_allocation(&sd, 100_000, floor);
+        let n = neyman_allocation(&sd, 100_000, &vec![floor; sd.len()]);
         for (j, &n_j) in n.iter().enumerate() {
             assert!(n_j >= floor, "channel {j} got {n_j} < floor {floor}");
         }
@@ -1105,7 +1333,7 @@ mod tests {
     /// starving one: coverage outranks the budget.
     #[test]
     fn neyman_allocation_never_starves_below_the_floor() {
-        let n = neyman_allocation(&[1.0, 0.0, 0.0], 100, MIN_CHANNEL_NEVAL);
+        let n = neyman_allocation(&[1.0, 0.0, 0.0], 100, &[MIN_CHANNEL_NEVAL; 3]);
         assert_eq!(n, vec![MIN_CHANNEL_NEVAL; 3]);
     }
 
@@ -1113,7 +1341,7 @@ mod tests {
     /// is not allowed to swallow or to starve the split.
     #[test]
     fn neyman_allocation_survives_a_degenerate_estimate() {
-        let n = neyman_allocation(&[f64::NAN, 3.0, 1.0], 10_000, MIN_CHANNEL_NEVAL);
+        let n = neyman_allocation(&[f64::NAN, 3.0, 1.0], 10_000, &[MIN_CHANNEL_NEVAL; 3]);
         for (j, &n_j) in n.iter().enumerate() {
             assert!(n_j >= MIN_CHANNEL_NEVAL, "channel {j} got {n_j}");
         }

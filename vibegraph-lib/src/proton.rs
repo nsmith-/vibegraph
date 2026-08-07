@@ -2161,7 +2161,8 @@ mod tests {
     use super::*;
     use crate::artifact::SamplerTopology;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-    use crate::hadronic::{channel_neval, CHANNEL_STREAM_BASE, VEGAS_NBINS};
+    use crate::budget::MIN_CHANNEL_NEVAL;
+    use crate::hadronic::{channel_share, CHANNEL_STREAM_BASE, VEGAS_NBINS};
     use crate::lhef::build::SubprocessRecord;
     use crate::pdf::grid::SubGrid;
     use crate::ufo::sm::{sm_model, SMRestrict};
@@ -3318,7 +3319,7 @@ mod tests {
             let n_j = if alphas.len() == 1 {
                 neval
             } else {
-                channel_neval(alpha, neval)
+                channel_share(alpha, neval).max(MIN_CHANNEL_NEVAL)
             };
             let mut grid = VegasGrid::new(grid_ndim, VEGAS_NBINS, VEGAS_ALPHA_MAPPED);
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
