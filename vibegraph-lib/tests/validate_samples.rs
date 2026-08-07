@@ -110,17 +110,20 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 ///
 /// The measured minimum over every gating row and three seeds is `1.573e-4`
 /// (`ee_to_wpwm`, `pt(w+)`; per-seed `2.727e-2`, `1.116e-2`, `1.573e-4`), with
-/// `ee_to_mumua` at `3.605e-4` (`pt(a)`), `gu_to_epemu` at `3.329e-3` and
-/// `ddx_to_epemg` at `8.063e-3` behind it, against `3.6e-6` and `0` for the two
-/// rows that used to disagree. `ee_to_wpwm` is the row to watch now: it sits
-/// only `1.6x` above the floor. `GEN_SEEDS` is fixed, so this reading is
-/// reproducible on this tip; it moved from an earlier reading of `1.29e-4` on
-/// `ee_to_mumua` because a `p`-value near a hard accept/reject-style boundary
-/// (here a KS statistic against a floor) is exactly the kind of quantity
-/// AGENTS.md warns is not meant to be pinned at ulp level — several sprints of
-/// bit-for-bit-checked but not bit-identical evaluator reassociation sit
-/// between the two readings. Re-record this line whenever it is next checked
-/// rather than trusting the last one.
+/// `gu_to_epemu` at `3.329e-3` and `ddx_to_epemg` at `8.063e-3` behind it,
+/// against `3.6e-6` and `0` for the two rows that used to disagree.
+/// `ee_to_wpwm` is the row to watch: it sits only `1.6x` above the floor.
+/// `ee_to_mumua` is informational and so not among these — its `pt(a)` column
+/// measures the reference's own sample, and its manifest note carries the
+/// measurement and the diagnosis.
+///
+/// `GEN_SEEDS` is fixed, so this reading is reproducible on this tip, but a
+/// `p`-value near a hard accept/reject-style boundary (here a KS statistic
+/// against a floor) is exactly the kind of quantity AGENTS.md warns is not
+/// meant to be pinned at ulp level: `ee_to_mumua` read `1.29e-4` and then
+/// `3.605e-4` with nothing between the two but bit-for-bit-checked, not
+/// bit-identical, evaluator reassociation. Re-record this line whenever it is
+/// next checked rather than trusting the last one.
 ///
 /// That `pt(a)` column is the one the windowed measurement attributed: MadGraph's
 /// banked sample puts 8.73% of σ below `pt(a) = 20` GeV where MadGraph's *own*
@@ -215,12 +218,15 @@ const ROWS: &[Row] = &[
         niter: 5,
         mode: "gate",
     },
+    // Informational: the `pt(a)` KS column measures the reference's own sample,
+    // which contradicts MadGraph's own windowed integrals at 19.9 sigma. The
+    // manifest note carries the measurement and the diagnosis.
     Row {
         key: "ee_to_mumua",
         process: "e+ e- > mu+ mu- a",
         neval: 40_000,
         niter: 5,
-        mode: "gate",
+        mode: "info",
     },
     Row {
         key: "ee_to_tatah",
