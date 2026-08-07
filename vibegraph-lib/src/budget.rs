@@ -341,6 +341,10 @@ pub struct ConvergenceReport {
     /// measurement for. A run of a single iteration reports the first one rather
     /// than nothing.
     pub min_channel_accepted: usize,
+    /// Channels whose last iteration was sized by the floor rather than by their
+    /// α share of the budget — the channels the floor's denomination can move at
+    /// all.
+    pub floor_bound_channels: usize,
     /// Channels whose floor was held at [`floor_for_acceptance`]'s cap in the
     /// last iteration: their acceptance is too low for the floor to buy
     /// [`MIN_CHANNEL_NEVAL`] accepted points at the capped spend, so on those
@@ -704,6 +708,7 @@ where
     let mut min_channel_accepted = usize::MAX;
     let mut first_min_accepted = 0_usize;
     let mut floor_capped_channels = 0_usize;
+    let mut floor_bound_channels = 0_usize;
     let mut capped_reported = false;
     let mut raised_reported = false;
     let mut iteration = 0_usize;
@@ -725,6 +730,7 @@ where
                 .iter()
                 .filter(|c| floor_is_capped(c.acceptance()))
                 .count();
+            floor_bound_channels = shares.iter().zip(&floors).filter(|(&s, &f)| s <= f).count();
             let previous = std::mem::take(&mut current);
             current = if allocation == BlockAllocation::Neyman && iteration > 0 {
                 let sd: Vec<f64> = channels
@@ -966,6 +972,7 @@ where
         } else {
             min_channel_accepted
         },
+        floor_bound_channels,
         floor_capped_channels,
         zero_variance_iterations: channels
             .iter()
@@ -1403,6 +1410,148 @@ mod tests {
         assert!(
             n[1] > n[2],
             "the measurable channels still split by their sd"
+        );
+    }
+
+    /// The floor's own arithmetic: what a channel must draw for
+    /// [`MIN_CHANNEL_NEVAL`] of its points to survive the cuts.
+    #[test]
+    fn the_floor_is_denominated_in_accepted_points() {
+        let cap = MIN_CHANNEL_NEVAL * MAX_FLOOR_ACCEPTANCE_SCALE;
+        // Cold start: nothing measured, so the floor is the uncorrected one.
+        assert_eq!(floor_for_acceptance(None), MIN_CHANNEL_NEVAL);
+        // A channel the cuts never reject needs no correction.
+        assert_eq!(floor_for_acceptance(Some(1.0)), MIN_CHANNEL_NEVAL);
+        // Half the draws through the cuts costs twice the draws.
+        assert_eq!(floor_for_acceptance(Some(0.5)), 2 * MIN_CHANNEL_NEVAL);
+        // Below the cap's acceptance the ask is held, and said to be held.
+        let starved = 0.5 / MAX_FLOOR_ACCEPTANCE_SCALE as f64;
+        assert_eq!(floor_for_acceptance(Some(starved)), cap);
+        assert!(floor_is_capped(Some(starved)));
+        assert!(!floor_is_capped(Some(1.0)));
+        assert!(!floor_is_capped(None));
+        // A channel that has accepted nothing has a measurement, not a missing
+        // one: no finite allocation buys it coverage, so it gets the cap.
+        assert_eq!(floor_for_acceptance(Some(0.0)), cap);
+        assert!(floor_is_capped(Some(0.0)));
+        // A degenerate estimate cannot conjure an unbounded allocation.
+        assert_eq!(floor_for_acceptance(Some(f64::NAN)), cap);
+    }
+
+    /// Floors are per channel because acceptances are, and the Neyman split
+    /// honours each channel's own.
+    #[test]
+    fn neyman_allocation_honours_a_per_channel_floor() {
+        let floors = [512, 2_048, 1_024];
+        let n = neyman_allocation(&[1.0e9, 0.0, 0.0], 100_000, &floors);
+        assert_eq!(&n[1..], &floors[1..]);
+        assert_eq!(n[0], 100_000 - floors[1] - floors[2]);
+        assert_eq!(n.iter().sum::<usize>(), 100_000);
+    }
+
+    /// The promise, end to end: on an integrand whose minor channels accept a
+    /// known fraction of their draws, a floored channel comes back with
+    /// [`MIN_CHANNEL_NEVAL`] points that survived the cuts — not 512 draws of
+    /// which most were rejected.
+    ///
+    /// The grids are frozen (`vegas_alpha = 0`) so the acceptance is the
+    /// integrand's `width` and nothing else: a refining grid moves its own
+    /// acceptance around, and what is under test here is the floor rule rather
+    /// than VEGAS's dynamics on a step function.
+    ///
+    /// The count is binomial about the floor, so the bound is set several
+    /// standard deviations below it: what it has to separate is 512 accepted
+    /// points from the `512 × width` the uncorrected floor delivers, and those
+    /// two are far apart.
+    #[test]
+    fn a_floored_channel_gathers_its_accepted_points() {
+        let width = 0.5;
+        let channels = 8;
+        let epsilon = 1.0e-4;
+        let mut alphas = vec![epsilon; channels];
+        alphas[0] = 1.0 - epsilon * (channels - 1) as f64;
+        let integ = SparseTail {
+            alphas: alphas.clone(),
+            width,
+        };
+        let (_, _, report) = integrate_channels(
+            &integ,
+            &alphas,
+            0.0,
+            IterationCombination::Unweighted,
+            Budget::Fixed {
+                neval: 4_000,
+                niter: 6,
+            },
+            BlockAllocation::ByAlpha,
+            0xF100,
+            &StopSignal::default(),
+        );
+        assert_eq!(
+            report.floor_capped_channels, 0,
+            "this integrand accepts exactly the cap's acceptance, so nothing is capped"
+        );
+        assert_eq!(
+            report.min_channel_neval, MIN_CHANNEL_NEVAL,
+            "the first iteration is the cold start and draws the uncorrected floor"
+        );
+        let uncorrected = (MIN_CHANNEL_NEVAL as f64 * width) as usize;
+        assert!(
+            report.min_channel_accepted > 3 * uncorrected / 2,
+            "the worst channel gathered {} accepted points an iteration; the uncorrected \
+             floor would have delivered about {uncorrected}",
+            report.min_channel_accepted,
+        );
+        assert!(
+            report.min_channel_accepted as f64 > 0.8 * MIN_CHANNEL_NEVAL as f64,
+            "the floor promises {MIN_CHANNEL_NEVAL} accepted points and delivered {}",
+            report.min_channel_accepted,
+        );
+    }
+
+    /// Where acceptance is below what the cap can pay for, the spend stops rising
+    /// and the run records that the promise is not being kept — the alternative
+    /// being an allocation that grows without bound as acceptance falls.
+    #[test]
+    fn the_cap_bounds_what_a_starved_channel_costs() {
+        let channels = 8;
+        let epsilon = 1.0e-4;
+        let mut alphas = vec![epsilon; channels];
+        alphas[0] = 1.0 - epsilon * (channels - 1) as f64;
+        // Frozen grids again, so the acceptance under test is the integrand's.
+        let integ = SparseTail {
+            alphas: alphas.clone(),
+            width: 1.0e-2,
+        };
+        let (_, _, report) = integrate_channels(
+            &integ,
+            &alphas,
+            0.0,
+            IterationCombination::Unweighted,
+            Budget::Fixed {
+                neval: 4_000,
+                niter: 6,
+            },
+            BlockAllocation::ByAlpha,
+            0xF101,
+            &StopSignal::default(),
+        );
+        let cap = MIN_CHANNEL_NEVAL * MAX_FLOOR_ACCEPTANCE_SCALE;
+        assert_eq!(
+            report.floor_capped_channels,
+            channels - 1,
+            "every spike channel accepts 1% of its draws and should be capped"
+        );
+        assert!(
+            report.points_per_iteration <= alphas.len() * cap + 4_000,
+            "an iteration spent {} against the cap's bound",
+            report.points_per_iteration
+        );
+        assert!(
+            report.min_channel_accepted < MIN_CHANNEL_NEVAL,
+            "at 1% acceptance the cap cannot buy the floor's coverage, and the run \
+             should not pretend it did: {} accepted",
+            report.min_channel_accepted
         );
     }
 

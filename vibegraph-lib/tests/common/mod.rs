@@ -62,18 +62,21 @@ pub fn floor_coverage_line(spend: &vibegraph::budget::ConvergenceReport) -> Stri
     sorted.sort_by(f64::total_cmp);
     let q = |p: f64| sorted[(((sorted.len() - 1) as f64) * p).round() as usize];
     let dead = acceptance.iter().filter(|&&a| a == 0.0).count();
+    // What the correction would have asked for with no cap on it: the number the
+    // cap exists to keep an iteration away from. Channels that accepted nothing
+    // have no finite ask at all, so they are counted separately rather than
+    // folded in as an infinity.
     let uncapped: f64 = acceptance
         .iter()
         .filter(|&&a| a > 0.0)
         .map(|&a| (MIN_CHANNEL_NEVAL as f64 / a).ceil())
-        .sum::<f64>()
-        + (dead * MIN_CHANNEL_NEVAL * 1000) as f64;
+        .sum();
     format!(
         "{n} channels | acceptance min {:.4} p10 {:.4} p50 {:.4} p90 {:.4} max {:.4} \
          | zero-acceptance {dead} | capped (<1/{MAX_FLOOR_ACCEPTANCE_SCALE}) {} \
          | floor spend {MIN_CHANNEL_NEVAL}×n {} → realised {}/iter (uncapped floors would ask {:.3e}) \
          | min accepted/channel/iter {} | zero-variance kept iters {} \
-         | points {} | achieved_rel {:.5} scaled_rel {:.5}",
+         | points {} | achieved_rel {:.5} scaled_rel {:.5} | floor-bound channels {}",
         q(0.0),
         q(0.10),
         q(0.50),
@@ -88,5 +91,6 @@ pub fn floor_coverage_line(spend: &vibegraph::budget::ConvergenceReport) -> Stri
         spend.points,
         spend.achieved_rel,
         spend.scaled_rel,
+        spend.floor_bound_channels,
     )
 }
