@@ -1347,6 +1347,111 @@ fn report_alpha_stability(converged: &[(usize, Vec<f64>)]) {
     }
 }
 
+/// Whether a difference between two survey budgets is a difference at all: the
+/// same rung surveyed from independent survey seeds.
+///
+/// [`probe_alpha_survey_budget`] varies `n_survey` at one survey seed, which
+/// cannot separate "this budget converges somewhere else" from "this budget's α
+/// is one draw of a noisy quantity". The converged α *is* a random variable —
+/// the survey estimates every `Wⱼ` from a finite sample — so the budget
+/// comparison is only readable against the spread of α at fixed budget. Two
+/// rungs, three survey seeds each, and five integration seeds under every one of
+/// them: pairwise `L1` inside a rung is the noise floor the between-rung `L1`
+/// has to clear, and the σ block says whether a rung's estimator quality
+/// reproduces.
+///
+/// One row, because the question is about the estimator and this is the
+/// expensive half of the measurement. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_alpha_survey_seed_sensitivity() {
+    use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
+
+    const SURVEY_SEEDS: [u64; 3] = [SEED, 11, 22];
+    const RUNGS: [usize; 2] = [40_000, 640_000];
+    const SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
+    const SURVEY_ITERS: usize = 6;
+
+    let dir = TWO_TO_SIX[0];
+    let ref_path = reference_path();
+    let text = std::fs::read_to_string(&ref_path).expect("sigma reference readable");
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+    let entry = &banked[dir];
+    let (neval, niter) = match plan_for(dir) {
+        Plan::Long { neval, niter, .. } => (neval, niter),
+        _ => panic!("[{dir}] is not a long-tier row"),
+    };
+    eprintln!(
+        "── {dir}: MG {:.6e} ± {:.3e} pb, driven at {neval} × {niter} ──",
+        entry.sigma_pb, entry.sigma_err_pb,
+    );
+
+    for n_survey in RUNGS {
+        let mut per_seed: Vec<(u64, Vec<f64>)> = Vec::new();
+        for survey_seed in SURVEY_SEEDS {
+            let alphas = with_integrand(
+                dir,
+                &entry.process,
+                survey_seed,
+                n_survey,
+                SURVEY_ITERS,
+                None,
+                |integ, adaptation| {
+                    let mut runs: Vec<SeedResult> = Vec::new();
+                    for seed in SEEDS {
+                        let (_, result, spend) = integ.adapt_grids_budget(
+                            Budget::Fixed { neval, niter },
+                            BlockAllocation::ByAlpha,
+                            seed,
+                            &StopSignal::default(),
+                        );
+                        runs.push(SeedResult {
+                            seed,
+                            sigma_pb: result.integral * GEV2_TO_PB,
+                            sigma_err_pb: result.std_dev * GEV2_TO_PB,
+                        });
+                        eprintln!(
+                            "        [n_survey {n_survey}, survey seed {survey_seed}] \
+                             seed {seed:>10}: rel {:+.4} | achieved_rel {:.5} \
+                             | scaled_rel {:.5}",
+                            runs.last().expect("just pushed").sigma_pb / entry.sigma_pb - 1.0,
+                            spend.achieved_rel,
+                            spend.scaled_rel,
+                        );
+                    }
+                    let (mean, mean_err, chi2) = combine_seeds(&runs);
+                    let sd = (runs
+                        .iter()
+                        .map(|r| (r.sigma_pb - mean).powi(2))
+                        .sum::<f64>()
+                        / (runs.len() - 1) as f64)
+                        .sqrt();
+                    eprintln!(
+                        "  n_survey {n_survey:>7}, survey seed {survey_seed:>10}: \
+                         5-seed σ {mean:.6e} ± {mean_err:.3e} (χ²/dof {chi2:.2}) \
+                         | rel {:+.4} | seed sd/σ {:.4}",
+                        mean / entry.sigma_pb - 1.0,
+                        sd / mean,
+                    );
+                    adaptation.trajectory.last().cloned().unwrap_or_default()
+                },
+            );
+            per_seed.push((survey_seed, alphas));
+        }
+        for i in 0..per_seed.len() {
+            for j in i + 1..per_seed.len() {
+                eprintln!(
+                    "  n_survey {n_survey:>7}: α(seed {}) vs α(seed {}): L1 {:.4e}",
+                    per_seed[i].0,
+                    per_seed[j].0,
+                    l1_distance(&per_seed[i].1, &per_seed[j].1),
+                );
+            }
+        }
+    }
+}
+
 /// What an unweighted-event run of a `2 -> 6` row would cost, priced from its own
 /// measured acceptance rather than from another row's.
 ///
