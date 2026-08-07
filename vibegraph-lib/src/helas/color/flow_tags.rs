@@ -114,11 +114,7 @@ pub struct ColorFlowTags {
 impl ColorFlowTags {
     /// The number of colour flows (NCOLOR).
     pub fn n_flows(&self) -> usize {
-        if self.n_ext == 0 {
-            0
-        } else {
-            self.tags.len() / self.n_ext
-        }
+        self.tags.len().checked_div(self.n_ext).unwrap_or(0)
     }
 
     /// The number of external legs.
@@ -366,11 +362,7 @@ impl LeadingColorFlows {
 
     /// The number of diagrams the table has a row for.
     pub fn n_diagrams(&self) -> usize {
-        if self.n_flows == 0 {
-            0
-        } else {
-            self.reached.len() / self.n_flows
-        }
+        self.reached.len().checked_div(self.n_flows).unwrap_or(0)
     }
 
     /// Diagram `d`'s row, one flag per flow. Empty for a diagram outside the
