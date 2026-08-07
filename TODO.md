@@ -45,11 +45,13 @@ polarization, decay chains — is explicitly descoped to the feature backlog
 reach must be a **hard error**, never a silent acceptance; the fixes closing
 the remaining silent acceptances are validation-sprint items.
 
-**Next action — the user's**: the first release tag is **`v0.1`**, decided
+**Next action — the user's**: the first release tag is **`v0.1.0`**, decided
 2026-08-02 and re-affirmed 2026-08-03 to follow the **performance sprint**.
 That sprint and the addendum above are both closed now, so nothing is left
 blocking the tag from either direction — it was never more than a cleanup, not
-a correctness sprint. A 0.x line because no global backwards-compatibility
+a correctness sprint. Three components, not two: `release.yml` triggers on
+`v*.*.*`, so a `v0.1` tag would fire neither it nor `acceptance.yml` and would
+publish nothing. A 0.x line because no global backwards-compatibility
 promise is made yet; a future "quality sprint" tightening the `pub` API surface
 (backlog below) precedes any 1.0. Tagging runs `release.yml` and
 `acceptance.yml` for the first time.
@@ -489,7 +491,7 @@ above); the entries here are the eventual features.
   before any backwards-compatibility promise (i.e. before 1.0): audit what
   `vibegraph-lib` exports, demote what only the CLI and the validation crates
   consume, and decide what the supported library surface actually is. Until
-  then releases stay on the 0.x line (first tag `v0.1`).
+  then releases stay on the 0.x line (first tag `v0.1.0`).
 
 ### `non-sm-ufo` — collected boundaries a non-SM UFO model will hit
 
