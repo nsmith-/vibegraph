@@ -61,6 +61,18 @@ license texts) are compiled into the binary and emitted by `--version`
 (`-V` stays one line), pinned by a unit test, a release.yml smoke-test grep,
 and an acceptance.sh check; the same three files are also attached to each
 release alongside the binaries, so no tarball step remains.
+The **release matrix is four legs** (2026-08-11): the first `v0.1.0` attempt
+published nothing because its `x86_64-apple-darwin` leg asked for `macos-13`,
+an image Actions retired, so the job sat queued for the full 24 h, was
+cancelled, and took `publish` (`needs: build`) down as skipped. Intel macOS is
+now `macos-15-intel` — the standard-runner label, and the last x86_64 macOS
+image, retiring Fall 2027 — and arm64 moved `macos-14` → `macos-15` since
+`macos-14` is itself deprecated now. The fourth leg is an **opt-in
+`…-musl-v3`** asset: the same musl target built under
+`-C target-cpu=x86-64-v3`. Matrix legs are therefore keyed by `asset`, not by
+`target`, which two legs now share. A retired runner label fails *silently and
+slowly* — nothing errors, the job simply never gets a host — so a matrix that
+has not run since its labels were last touched is unverified.
 
 **Going public (2026-08-06)**: the repository is to be made public, and the
 outward-facing files it lacked are in place — `AI_POLICY.md` (all-in stance:

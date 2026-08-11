@@ -16,14 +16,24 @@ jobs:
   build:
     strategy:
       fail-fast: false
+      # `asset`, not `target`, names the published file and keys the caches: two
+      # legs below share one target triple and differ only in the instruction
+      # set they are compiled for, so the triple alone is not a unique name.
       matrix:
         include:
           - target: aarch64-apple-darwin
-            os: macos-14 # Apple Silicon runner: native build, no cross toolchain.
+            asset: vibegraph-aarch64-apple-darwin
+            os: macos-15 # Apple Silicon runner: native build, no cross toolchain.
           - target: x86_64-apple-darwin
-            os: macos-13 # Intel runner: native build too, so this needs no
-            # Rosetta step — macos-13 still ships real x86_64 hardware.
+            asset: vibegraph-x86_64-apple-darwin
+            # Intel runner: native build too, so this needs no Rosetta step.
+            # `macos-15-intel` is the standard-runner Intel label, and the last
+            # x86_64 macOS image Actions will offer — it retires in Fall 2027,
+            # after which this leg has no host to build on and Intel Macs stop
+            # being a supported target.
+            os: macos-15-intel
           - target: x86_64-unknown-linux-musl
+            asset: vibegraph-x86_64-unknown-linux-musl
             os: ubuntu-latest
             # musl over a glibc floor: the crate's only C dependency is
             # zstd-sys's bundled (not system) libzstd, so nothing else needs a
@@ -32,6 +42,18 @@ jobs:
             # "which glibc does this distro ship" support matrix to maintain -
             # exactly the "no dev toolchain" bar this sprint is aiming for.
             # The one added cost is musl-tools for musl-gcc, installed below.
+          - target: x86_64-unknown-linux-musl
+            asset: vibegraph-x86_64-unknown-linux-musl-v3
+            os: ubuntu-latest
+            # The same static musl binary, compiled for x86-64-v3 (AVX2, FMA,
+            # BMI) instead of the baseline the triple implies. Opt-in: it is a
+            # separate asset because it SIGILLs on anything older than roughly
+            # Haswell/Excavator, so the plain triple has to stay the one that
+            # runs everywhere. Worth publishing because the hot path here is
+            # floating-point amplitude evaluation, which is what the wider
+            # vector width buys. `ci.yml` builds and tests the whole workspace
+            # under these same flags, so the runner is known to execute v3.
+            rustflags: -C target-cpu=x86-64-v3
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -51,11 +73,17 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: release-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          # `--` terminates the asset name: one asset name is a prefix of
+          # another (`...-musl` of `...-musl-v3`), and a restore-key is a
+          # prefix match, so a single dash would let the baseline leg restore
+          # the v3 leg's cache.
+          key: release-${{ matrix.asset }}--${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            release-${{ matrix.target }}-
+            release-${{ matrix.asset }}--
 
       - name: cargo build --release
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
         run: cargo build --release --locked --target ${{ matrix.target }} --package vibegraph
 
       - name: smoke test
@@ -104,12 +132,12 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/vibegraph" \
-            "dist/vibegraph-${{ matrix.target }}"
+            "dist/${{ matrix.asset }}"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: vibegraph-${{ matrix.target }}
-          path: dist/vibegraph-*
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
   publish:

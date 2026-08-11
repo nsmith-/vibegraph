@@ -54,6 +54,19 @@ toolchain, a Python installation, or LHAPDF. License notices for the binary
 and the Standard Model description compiled into it are printed by
 `./vibegraph --version` (`-V` for just the version).
 
+The Linux build comes in two flavours. `vibegraph-x86_64-unknown-linux-musl`
+runs on any x86\_64 machine; `…-musl-v3` is the same code compiled for
+[x86-64-v3](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels)
+(AVX2/FMA, roughly Haswell and later), which is worth picking up for the
+amplitude evaluation if your CPU is recent enough. It will die with an illegal
+instruction on anything older, so take the plain one if unsure — this prints
+`supported` when the `-v3` asset will run:
+
+```bash
+grep -qw avx2 /proc/cpuinfo && grep -qw fma /proc/cpuinfo \
+  && echo supported || echo "use the baseline build"
+```
+
 ```bash
 # 1. Download (pick the binary matching your platform) and mark executable
 curl -fsSL -o vibegraph https://github.com/nsmith-/vibegraph/releases/latest/download/vibegraph-aarch64-apple-darwin
