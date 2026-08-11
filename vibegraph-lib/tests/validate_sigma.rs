@@ -1215,10 +1215,12 @@ fn probe_2to6_eval_cost() {
 /// survives that, not the absolute microseconds):
 ///
 /// ```text
-/// [uux_to_ccx_emmm_qcd0] 579 channels | acceptance 3.60% | accepted point 158.73 us
-///                        | density 58.82 us (37.1% of it, 101.6 ns/channel)
-/// [bbx_to_ccx_emmm_qcd0] 615 channels | acceptance 4.30% | accepted point 226.53 us
-///                        | density 62.31 us (27.5% of it, 101.3 ns/channel)
+/// [uux_to_ccx_emmm_qcd0] 579 channels | acceptance 3.60% | accepted point 137.89 us
+///     density: no memo 66.24 us (114.4 ns/channel), per channel 57.59, per point 35.95,
+///     mixture 35.87 us -- sharing removes 45.8% of the density, 18.0% of the point
+/// [bbx_to_ccx_emmm_qcd0] 615 channels | acceptance 4.30% | accepted point 206.62 us
+///     density: no memo 70.25 us (114.2 ns/channel), per channel 61.47, per point 37.87,
+///     mixture 38.03 us -- sharing removes 45.9% of the density, 13.5% of the point
 /// ```
 #[test]
 #[ignore]
