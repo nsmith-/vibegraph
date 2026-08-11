@@ -43,9 +43,15 @@ in [`TODO.md`](TODO.md).
 the boundary checklist already lives in [`TODO.md`](TODO.md) — plus LO
 MLM-style matching + merging, and NLO event generation.
 
-## Getting started
+## Quickstart
 
-### Quick start — no toolchain required
+Two cards and two commands. A **process card** picks the model and the process,
+a **run card** sets the beams, cuts and scales; `vibegraph integrate` adapts the
+phase-space grids and prints σ, and `vibegraph generate` unweights against those
+frozen grids into a Les Houches event file. Both cards are MadGraph's own
+formats, so the same pair drives a MadGraph reference run unchanged.
+
+### Get the binary
 
 Precompiled binaries for macOS (Apple Silicon and Intel) and Linux x86\_64 are
 attached to every [release](../../releases) as bare executables — nothing to
@@ -53,6 +59,13 @@ unpack. The Linux build is statically linked; none of them needs a Rust
 toolchain, a Python installation, or LHAPDF. License notices for the binary
 and the Standard Model description compiled into it are printed by
 `./vibegraph --version` (`-V` for just the version).
+
+```bash
+# pick the binary matching your platform, and mark it executable
+curl -fsSL -o vibegraph https://github.com/nsmith-/vibegraph/releases/latest/download/vibegraph-aarch64-apple-darwin
+chmod +x vibegraph
+./vibegraph -V
+```
 
 The Linux build comes in two flavours. `vibegraph-x86_64-unknown-linux-musl`
 runs on any x86\_64 machine; `…-musl-v3` is the same code compiled for
@@ -67,52 +80,109 @@ grep -qw avx2 /proc/cpuinfo && grep -qw fma /proc/cpuinfo \
   && echo supported || echo "use the baseline build"
 ```
 
+To build from a checkout instead:
+
 ```bash
-# 1. Download (pick the binary matching your platform) and mark executable
-curl -fsSL -o vibegraph https://github.com/nsmith-/vibegraph/releases/latest/download/vibegraph-aarch64-apple-darwin
-chmod +x vibegraph
-./vibegraph -V
+git clone --recurse-submodules <repo-url>
+cd vibegraph
+cargo build --release        # library + `vibegraph` CLI
+cargo test                   # the hermetic suite: complete on a bare clone
+```
+
+The layers that assume fetched data or a MadGraph installation use
+[pixi](https://pixi.sh) environments; see [Validation](#validation) below.
+
+### A lepton collider: `e+ e- > mu+ mu-`
+
+![Terminal recording: the two cards are written, then vibegraph integrate takes
+the cross section past its 0.1% target in six VEGAS iterations and banks
+grid.bin.zst, vibegraph generate unweights 10000 events out of it, and
+check-events reads the file back.](assets/demo_ee.gif)
+
+The process card is one line, and the run card is the shortest one that says
+anything at all: fixed-energy partonic beams (`lpp = 0`) at the Z pole. Every
+parameter left out of it — cuts, scales, PDF choice — takes MadGraph's own LO
+default.
+
+```bash
+echo 'generate e+ e- > mu+ mu-' > proc_card.dat
+
+cat > run_card.dat <<EOF
+0    = lpp1
+0    = lpp2
+45.6 = ebeam1
+45.6 = ebeam2
+EOF
 ```
 
 ```bash
-# 2. Write two MadGraph-format cards
-cat > proc_card.dat <<'EOF'
-import model sm
-generate e+ e- > mu+ mu-
-EOF
+vibegraph integrate proc_card.dat --run-card run_card.dat --out ee_to_mumu/
+#   → σ ± err (pb) on stdout, the adapted grids in ee_to_mumu/grid.bin.zst
 
-cat > run_card.dat <<'EOF'
-  0    = lpp1
-  0    = lpp2
-  45.6 = ebeam1
-  45.6 = ebeam2
-EOF
-```
-
-```bash
-# 3. Integrate, generate, and read the events back
-./vibegraph integrate proc_card.dat --run-card run_card.dat --out run/
-./vibegraph generate run/grid.bin.zst proc_card.dat --run-card run_card.dat \
+vibegraph generate ee_to_mumu/grid.bin.zst proc_card.dat --run-card run_card.dat \
   --nevents 10000 --seed 1 -o events.lhe
-./vibegraph check-events events.lhe
+
+vibegraph check-events events.lhe
 ```
 
-`events.lhe` is a standard Les Houches event file. `check-events` re-reads it
+A process card with no `import model` line gets the Standard Model compiled into
+the binary; `import model <name>` loads a UFO model directory instead.
+`events.lhe` is a standard Les Houches event file, and `check-events` re-reads it
 and checks momentum balance, mass shells, weight bounds and the `<init>`
-cross-references — a self-read, so it catches a damaged or truncated file but
-not a format both the writer and the reader agree on wrongly.
+cross-references — a self-read, so it catches a damaged or truncated file but not
+a format both the writer and the reader agree on wrongly.
 
-The proc-card argument also accepts `-` for a card on stdin, so a one-process
-run needs no card file at all:
+The proc-card argument also accepts `-` for a card on stdin, so a one-process run
+needs no card file at all:
 
 ```bash
-echo "generate e+ e- > mu+ mu-" | ./vibegraph integrate - --run-card run_card.dat --out run/
+echo 'generate e+ e- > mu+ mu-' | vibegraph integrate - --run-card run_card.dat --out ee_to_mumu/
 ```
 
-#### Data the binary does not carry
+### Proton beams: `p p > l+ l- j`
 
-The Standard Model is compiled in, so the run above needs nothing else. Two
-kinds of data are resolved on demand, each in the order
+![Terminal recording: vibegraph integrate runs p p > l+ l- j over 24 phase-space
+channels with a live status pane pinned below the scrolling log, reaching 0.1%
+in 140 iterations and 12 seconds, then vibegraph generate unweights 10000 events
+and check-events reads them back.](assets/demo_pp.gif)
+
+The same two commands, with no run card at all — which is to say MadGraph's LO
+defaults: 13 TeV protons, its default jet and lepton cuts (`ptj = 20`,
+`ptl = 10`, `etaj = 5`, `etal = 2.5`, `drjl = 0.4`), and, since nothing here
+fixes the scales, its default *dynamical* prescription — the kT-clustered scale
+(`dynamical_scale_choice = -1`), computed per event exactly as a MadGraph
+reference run would compute it. The parton densities go through a pure-Rust
+LHAPDF6 grid reader.
+
+```bash
+echo 'generate p p > l+ l- j' > proc_card.dat
+
+vibegraph integrate proc_card.dat --out llj/
+vibegraph generate llj/grid.bin.zst proc_card.dat --nevents 10000 --seed 1 -o events.lhe
+vibegraph check-events events.lhe
+```
+
+Nothing sets an iteration count here either: the run stops when σ's relative
+uncertainty reaches 0.1%, so the `integrating 117/136` the pane counts is
+against a *projected* total, re-estimated from the error every iteration — which
+is why the bar's denominator moves, and why the bar itself is not monotonic.
+[The status pane](#the-status-pane) has the arithmetic, and `--fixed-budget`
+trades the target for a set number of iterations.
+
+`p`, `j` and `l+ l-` are MadGraph's multiparticle labels, and coupling-order
+constraints belong to the same grammar (`generate p p > l+ l- j QCD=2 QED=2`).
+Concrete subprocesses that share a matrix element are grouped — the grouping is
+*measured* pointwise, not listed — and each group's parton luminosity is summed
+over its members and both beam orderings, so one compiled program serves the
+whole group.
+
+A proton run also needs a PDF set — the one input the binary does not carry, and
+the only thing here that can involve the network.
+
+### Data the binary does not carry
+
+The Standard Model is compiled in, so the leptonic run above needs nothing else.
+Two kinds of data are resolved on demand, each in the order
 `--flag` → environment variable → `~/.vibegraph/` → the working directory:
 
 | Data | Flag | Environment | Cached at |
@@ -139,63 +209,28 @@ that a model name could be resolved through, so there is no URL to pin;
 unpack the model's UFO directory into `~/.vibegraph/ufo/<model>/` yourself,
 or point `--ufo-dir` at whatever directory holds it.
 
-`scripts/acceptance.sh` runs this whole path on a clean machine, on the harder
-process `p p > l+ l- j`: download the binary, write the cards, watch an
-unattended run *refuse* to fetch, consent, fetch and verify the PDF set, emit
-events off the cache, read them back.
-
-### For developers
-
-```bash
-git clone --recurse-submodules <repo-url>
-cd vibegraph
-cargo build --release        # library + `vibegraph` CLI
-cargo test                   # the hermetic suite: complete on a bare clone
-```
-
-The layers that assume fetched data or a MadGraph installation use
-[pixi](https://pixi.sh) environments; see [Validation](#validation) below.
+`scripts/acceptance.sh` runs the whole proton path on a clean machine: download
+the binary, write the cards, watch an unattended run *refuse* to fetch, consent,
+fetch and verify the PDF set, emit events off the cache, read them back.
 
 ## Using the CLI
 
-The CLI splits event generation into two phases that share one on-disk
-artifact, mirroring MadGraph's survey/refine-then-generate structure:
+The two phases split the work the way MadGraph's survey/refine-then-generate
+structure does, and share one on-disk artifact:
 
 1. `vibegraph integrate` — enumerate diagrams, compile the matrix element,
    adapt one VEGAS grid **per phase-space channel**, and bank everything in
-   `grid.bin.zst`.
+   `grid.bin.zst`. It runs until σ's relative uncertainty reaches
+   `--target-rel` (0.1% by default); `--fixed-budget` spends a flat
+   `--neval × --niter` instead, which is the mode a banked run is reproducible
+   under.
 2. `vibegraph generate` — reload the artifact, unweight against the frozen
    grids by accept/reject, and write a Les Houches event file.
 
-A third command, `vibegraph check-events`, reads an emitted file back and
-checks it against itself.
+A third command, `vibegraph check-events`, reads an emitted file back and checks
+it against itself. `vibegraph <cmd> --help` has the full option list.
 
-Both phases consume MadGraph card formats, so the same cards can drive a
-MadGraph reference run unchanged.
-
-### Example: fixed-energy lepton collider
-
-```bash
-# proc_card.dat
-import model sm
-generate e+ e- > mu+ mu-
-```
-
-```bash
-# run_card.dat — fixed-energy partonic beams at the Z pole
-  0    = lpp1
-  0    = lpp2
-  45.6 = ebeam1
-  45.6 = ebeam2
-```
-
-```bash
-vibegraph integrate proc_card.dat --run-card run_card.dat --out run/
-# → prints σ ± err (pb), writes run/grid.bin.zst
-
-vibegraph generate run/grid.bin.zst proc_card.dat --run-card run_card.dat \
-  --nevents 20000 --seed 1 -o events.lhe
-```
+### Unweighting
 
 `generate` writes weighted-buffer output by default (`IDWTUP = -4`); pass
 `--strategy stochastic-rounding` for unit-weight events (`IDWTUP = +3`).
@@ -209,16 +244,10 @@ acceptance for the same number of events. It is a trade rather than a
 convergence: on the `p p > l+ l- j` grids the summed maximum still grows as
 `n^0.51` at 2.6·10⁵ points per channel.
 
-### Example: proton beams
+### Cards beyond the defaults
 
-Both phases run at `lpp = 1`, PDF-convolved through a pure-Rust LHAPDF6 grid
-reader, over an arbitrary process. Cards to events for `p p > l+ l- j`:
-
-```bash
-# proc_card.dat
-import model sm
-generate p p > l+ l- j QCD=2 QED=2
-```
+Pinning the scales and the cuts is what a full run card does — this one is the
+13 TeV card the `p p > l+ l- j` validation rows run on:
 
 ```bash
 # run_card.dat — 13 TeV proton beams, fixed scales, jet and lepton cuts
@@ -243,30 +272,18 @@ generate p p > l+ l- j QCD=2 QED=2
   0.4     = drjl
 ```
 
-The scale lines pin μR and μF to fixed values; leave them out and MadGraph's
-default prescription applies instead — the kT-clustered dynamical scale
-(`dynamical_scale_choice = -1`), computed per event exactly as a MadGraph
-reference run would compute it.
-
-```bash
-vibegraph integrate proc_card.dat --run-card run_card.dat --out run/
-vibegraph generate run/grid.bin.zst proc_card.dat --run-card run_card.dat \
-  --nevents 2000 --seed 1 -o events.lhe
-```
-
-Concrete subprocesses that share a matrix element are grouped — the grouping is
-*measured* pointwise, not listed — and each group's parton luminosity is summed
-over its members and both beam orderings, so one compiled program serves the
-whole group.
+The three `fixed_*_scale` lines are what take μR and μF off the dynamical
+default; drop them and the kT-clustered per-event scale comes back.
 
 `--pdf-set` selects the set (default `NNPDF23_lo_as_0130_qed`, MG5's LO
-default), which is downloaded on first use as described in the
-[quick start](#data-the-binary-does-not-carry). Inside a checkout,
-`pixi run fetch-pdf` puts a set in `validation/pdf/<set>/`, which
-resolution falls back to last — so a dev tree that has already fetched one
-never reaches for the network.
+default), which is downloaded on first use as described
+[above](#data-the-binary-does-not-carry). Inside a checkout,
+`pixi run fetch-pdf` puts a set in `validation/pdf/<set>/`, which resolution
+falls back to last — so a dev tree that has already fetched one never reaches
+for the network.
 
-Drell–Yan is one such process and takes no special route:
+The banked MadGraph cards in the checkout are ordinary inputs; Drell–Yan takes
+no special route:
 
 ```bash
 vibegraph integrate validation/madgraph/dy13_proc_card.dat \
@@ -311,8 +328,6 @@ non-SM run ships its UFO model directory the same way. Folding all of this
 into the artifact, so a worker needs one file, is a tracked post-v0.1 feature
 (see [`TODO.md`](TODO.md)).
 
-Run `vibegraph <cmd> --help` for the full option list.
-
 ### Watching a run
 
 `stdout` carries the result and nothing else — the `σ = … pb` line, the path
@@ -339,6 +354,21 @@ On a terminal — both `stdout` and `stderr` — `integrate` and `generate` draw
 six-row status pane pinned below the log: model and process brief, the stage in
 progress and its bar, σ ± err (or, while unweighting, the sample and its
 accept/reject efficiency), and the cost of an integrand evaluation.
+
+**The integration bar is a projection, not a plan**, which is why its total
+moves and why the fraction can fall as well as rise. A run converging to
+`--target-rel` does not know how many iterations it will need, so the total the
+bar divides by is `iteration × (δ / target)²`, with δ the relative uncertainty
+σ currently carries: where the stop lands if the error goes on contracting as
+1/√n. It is re-projected from δ every iteration, so an iteration that measures
+worse than the trend pushes the destination out from under the bar. The
+projection is floored at the earliest iteration the stopping test may fire at,
+so the bar cannot read full while the run is still obliged to continue, capped
+where the run would give up (`--max-iters`, or the iterations `--max-points`
+buys, whichever binds first), and absent through the warm-up iterations, which
+have no δ to project from. At the stop δ ≤ target puts it at the current
+iteration, so a converged run does end on a full bar. `--fixed-budget` spends a
+flat `--neval × --niter` instead, and that bar counts against a plan.
 
 The pane is an *inline* viewport, not an alternate screen: log lines are pushed
 into the terminal's real scrollback above it, so scrolling, searching and
@@ -370,7 +400,6 @@ is in, banks the grids and terms of the iterations it completed, and writes the
 artifact, which is therefore a usable — if less converged — input to `generate`.
 The run's own report says it was abandoned early. A second press quits at once
 with status 130.
-
 ## Feature breakdown
 
 | Pipeline step | Status |
@@ -601,7 +630,8 @@ validation/           MadGraph/HELAS/PDF reference generation + banked reference
 research/notes/       Numbered design + close-out notes (the project's real record)
 research/refs/        Reference code as submodules (mg5amcnlo, feyngraph) — see
                       research/refs/README.md
-scripts/              Acceptance run + profiling and perf-comparison kits
+scripts/              Acceptance run, profiling and perf-comparison kits, and
+                      the VHS tapes behind the quickstart recordings
 ```
 
 `TODO.md` holds the prioritized backlogs and pipeline status; the notes in

@@ -1,71 +1,46 @@
-# VHS documentation
+# The README's p p > l+ l- j quickstart, recorded with VHS (https://vhs.charm.sh).
 #
-# Output:
-#   Output <path>.gif               Create a GIF output at the given <path>
-#   Output <path>.mp4               Create an MP4 output at the given <path>
-#   Output <path>.webm              Create a WebM output at the given <path>
+#   cargo build --release
+#   PATH=$(realpath ./target/release):$PATH vhs scripts/demo_pp.tape
 #
-# Require:
-#   Require <string>                Ensure a program is on the $PATH to proceed
+# Run it from the repository root. The hidden preamble moves the recording into
+# an empty scratch directory and points it at the checkout's already-fetched PDF
+# set (`pixi run fetch-pdf`), so the recording neither asks to download one nor
+# leaves anything behind. A first run without it offers the download instead —
+# that prompt is the one thing here the GIF deliberately does not show.
 #
-# Settings:
-#   Set FontSize <number>           Set the font size of the terminal
-#   Set FontFamily <string>         Set the font family of the terminal
-#   Set Height <number>             Set the height of the terminal
-#   Set Width <number>              Set the width of the terminal
-#   Set LetterSpacing <float>       Set the font letter spacing (tracking)
-#   Set LineHeight <float>          Set the font line height
-#   Set LoopOffset <float>%         Set the starting frame offset for the GIF loop
-#   Set Theme <json|string>         Set the theme of the terminal
-#   Set Padding <number>            Set the padding of the terminal
-#   Set Framerate <number>          Set the framerate of the recording
-#   Set PlaybackSpeed <float>       Set the playback speed of the recording
-#   Set MarginFill <file|#000000>   Set the file or color the margin will be filled with.
-#   Set Margin <number>             Set the size of the margin. Has no effect if MarginFill isn't set.
-#   Set BorderRadius <number>       Set terminal border radius, in pixels.
-#   Set WindowBar <string>          Set window bar type. (one of: Rings, RingsRight, Colorful, ColorfulRight)
-#   Set WindowBarSize <number>      Set window bar size, in pixels. Default is 40.
-#   Set TypingSpeed <time>          Set the typing speed of the terminal. Default is 50ms.
-#
-# Sleep:
-#   Sleep <time>                    Sleep for a set amount of <time> in seconds
-#
-# Type:
-#   Type[@<time>] "<characters>"    Type <characters> into the terminal with a
-#                                   <time> delay between each character
-#
-# Keys:
-#   Escape[@<time>] [number]        Press the Escape key
-#   Backspace[@<time>] [number]     Press the Backspace key
-#   Delete[@<time>] [number]        Press the Delete key
-#   Insert[@<time>] [number]        Press the Insert key
-#   Down[@<time>] [number]          Press the Down key
-#   Enter[@<time>] [number]         Press the Enter key
-#   Space[@<time>] [number]         Press the Space key
-#   Tab[@<time>] [number]           Press the Tab key
-#   Left[@<time>] [number]          Press the Left Arrow key
-#   Right[@<time>] [number]         Press the Right Arrow key
-#   Up[@<time>] [number]            Press the Up Arrow key
-#   Down[@<time>] [number]          Press the Down Arrow key
-#   PageUp[@<time>] [number]        Press the Page Up key
-#   PageDown[@<time>] [number]      Press the Page Down key
-#   Ctrl+<key>                      Press the Control key + <key> (e.g. Ctrl+C)
-#
-# Display:
-#   Hide                            Hide the subsequent commands from the output
-#   Show                            Show the subsequent commands in the output
-#   ScrollUp[@<time>] [number]      Scroll terminal viewport up by rows
-#   ScrollDown[@<time>] [number]    Scroll terminal viewport down by rows
+# Bare `Wait` — wait for VHS's own prompt pattern — is what keeps a command from
+# being typed into a run still in progress; a `Wait+Screen /wrote …/` never
+# matches through the status pane's redraws.
 
-Output scripts/demo_pp.gif
+Output assets/demo_pp.gif
 
-Require echo
+Require vibegraph
 
 Set Shell "bash"
-Set FontSize 32
-Set Width 1200
-Set Height 600
+Set FontSize 13
+Set Width 1030
+Set Height 290
+Set Padding 25
+Set TypingSpeed 30ms
+Set WaitTimeout 15m
 
-Type "echo 'Welcome to VHS!'" Sleep 500ms  Enter
+Hide
+Type "export VIBEGRAPH_PDF_DIR=$PWD/validation/pdf && cd $(mktemp -d) && clear" Enter
+Show
 
-Sleep 5s
+Sleep 1s
+Type "echo 'generate p p > l+ l- j' > proc_card.dat" Sleep 200ms Enter
+Sleep 1s
+
+Type "vibegraph integrate proc_card.dat --out llj/" Sleep 500ms Enter
+Wait
+Sleep 2s
+
+Type "vibegraph generate llj/grid.bin.zst proc_card.dat --nevents 10000 --seed 1 -o events.lhe" Sleep 500ms Enter
+Wait
+Sleep 2s
+
+Type "vibegraph check-events events.lhe" Sleep 500ms Enter
+Wait
+Sleep 3s
