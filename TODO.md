@@ -348,8 +348,23 @@ One line each; the note is the full record. Earlier sprints
 
 ### Gate + tooling hygiene
 
+- **`acceptance.yml` has still never passed, and needs the repo to be public**
+  (2026-08-11). `v0.1.0` published all four binaries, but acceptance 404s on
+  `releases/download/...`: the script downloads unauthenticated **by design**
+  (it must reproduce on a clean VM with no checkout and no token), and a
+  private repo serves 404 for that. Nothing is wrong with the release — the
+  macOS asset was verified by hand against the published `SHA256SUMS`, reports
+  `v0.1.0`, carries its licence notices and integrates
+  `e+ e- > mu+ mu-` to 2025.08 ± 1.99 pb at the Z peak. **Going public is the
+  fix**; the alternative, an authenticated fallback in `acceptance.sh`, was
+  considered and declined to keep the script checkout-free. Until then the gate
+  is unproven, so the first public run is the one to actually read.
+  Note also that the release event alone will not start it — see the
+  `workflow_dispatch` step in `release.yml`.
 - **Weekly `schedule` trigger on `acceptance.yml`** — left off because it can only
-  fail until a first release exists. Turn it on once one does: it is also the
+  fail until a first release exists. A release exists now, but the job cannot
+  pass while the repo is private (above), so this waits on that. Turn it on
+  after the first green run: it is also the
   second detector for the "CERN repackages the PDF archive" risk, whose only
   other detector is an `#[ignore]`d test nobody runs on a timer. (Note 24 §U2.)
 - **Small hygiene left named by past sprints**: the `blocked` tier is a
