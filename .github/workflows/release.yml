@@ -9,8 +9,9 @@ on:
       - "v*.*.*"
   workflow_dispatch: {}
 
+# The build jobs only read the checkout; `publish` raises what it needs.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -144,6 +145,12 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    # `contents` to create the release, `actions` to dispatch acceptance at the
+    # end. Set here rather than at the top level so the build jobs keep the
+    # read-only default.
+    permissions:
+      contents: write
+      actions: write
     steps:
       # Checkout only to attach the license notice files next to the binaries.
       - uses: actions/checkout@v7
@@ -167,3 +174,19 @@ jobs:
             --generate-notes \
             dist/vibegraph-* dist/SHA256SUMS \
             LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES
+
+      # `acceptance.yml` subscribes to `release: published`, but it will never
+      # see the release created above: an event raised with the repository's
+      # own GITHUB_TOKEN does not start a workflow run, precisely so a workflow
+      # cannot trigger itself into a loop. `workflow_dispatch` is one of the two
+      # documented exceptions to that rule, so ask for the run explicitly. The
+      # `release` subscription stays for releases published by hand, which do
+      # carry a user's token and do trigger it.
+      - name: run acceptance against the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run acceptance.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${{ github.event.repository.default_branch }}" \
+            -f tag="${{ github.ref_name }}"
