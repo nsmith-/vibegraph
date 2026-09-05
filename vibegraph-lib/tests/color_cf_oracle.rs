@@ -15,6 +15,14 @@
 //! `CF ∈ {1,3,9}` scalar cases, and the QCD `q q~`/`g g` processes are genuine
 //! NCOLOR=2 checks.
 //!
+//! Each run is colorized under the model `validation/manifest.toml` records for
+//! its row, not under the interned Standard Model: two rows can carry the same
+//! process string and differ only in which vertices their restrict card leaves
+//! standing. Enforcement follows the row's `amplitudes` cell — the colour basis
+//! is a factor of the amplitude rather than a category of its own — so a row
+//! that cell declares informational has its comparison run and printed and is
+//! not asserted.
+//!
 //! Run:
 //!   cargo test -p vibegraph-lib --features extended-validation \
 //!              --test color_cf_oracle
@@ -30,6 +38,7 @@ use std::path::{Path, PathBuf};
 use vibegraph::diagrams::{Diagram, DiagramSet};
 use vibegraph::helas::color::{colorize_process, ColorBasis};
 use vibegraph::helas::color::{ImmutableString, TensorKind};
+use vibegraph::ufo::UFOModel;
 
 /// Relative tolerance for the MadGraph decimal ↔ our-rational CF comparison.
 /// MadGraph prints each rational to 16 significant digits, so the only error is
@@ -367,9 +376,9 @@ fn clean_process(raw: &str) -> String {
         .join(" ")
 }
 
-/// Enumerate `process` and colorize its single concrete subprocess.
-fn colorize(process: &str) -> Result<ColorBasis, String> {
-    let sets: Vec<DiagramSet> = common::generate(process);
+/// Enumerate `process` under `model` and colorize its single concrete subprocess.
+fn colorize(process: &str, model: &UFOModel) -> Result<ColorBasis, String> {
+    let sets: Vec<DiagramSet> = common::generate_with(process, model);
     let with_diagrams: Vec<&Vec<Diagram>> = sets
         .iter()
         .filter(|s| !s.diagrams.is_empty())
@@ -381,15 +390,46 @@ fn colorize(process: &str) -> Result<ColorBasis, String> {
             with_diagrams.len()
         ));
     }
-    let model = common::sm_model();
-    colorize_process(&model, with_diagrams[0]).map_err(|e| format!("colorize: {e}"))
+    colorize_process(model, with_diagrams[0]).map_err(|e| format!("colorize: {e}"))
 }
 
+/// A row's cell is asserted or only reported, and the comparison itself is the
+/// same either way, so it is run first and its outcome decided on after.
 fn run_trial(matrix_path: PathBuf) -> Result<(), Failed> {
-    let mg = parse_matrix_file(&matrix_path)?;
+    let key = common::row_key_of(&matrix_path);
+    let name = trial_name(&matrix_path);
+    // An enforced row's panic stays a panic; a reported one is part of what is
+    // being reported.
+    let enforced = common::amplitudes_enforced(&key);
+    let outcome = if enforced {
+        compare(&matrix_path)
+    } else {
+        common::catching_panics(|| compare(&matrix_path))
+    };
+    match outcome {
+        Ok(line) => {
+            println!("  [{name}] {line}");
+            Ok(())
+        }
+        Err(message) if !enforced => {
+            println!("  [{name}] reported, not enforced: {message}");
+            Ok(())
+        }
+        Err(message) => Err(message.into()),
+    }
+}
+
+/// Compare one generated subprocess's colour-factor matrix to ours, returning
+/// the line that describes the agreement.
+fn compare(matrix_path: &Path) -> Result<String, String> {
+    let mg = parse_matrix_file(matrix_path)?;
     let process = clean_process(&mg.process);
 
-    let cb = colorize(&process)?;
+    // The row's own model under its own restrict card: two rows can share a
+    // process string and differ only in which vertices their card leaves
+    // standing, and a colour basis built from the wrong one is not a comparison.
+    let model = common::model_for_row(&common::row_key_of(matrix_path))?;
+    let cb = colorize(&process, &model)?;
 
     // NCOLOR must match exactly.
     if cb.ncolor() != mg.ncolor {
@@ -397,8 +437,7 @@ fn run_trial(matrix_path: PathBuf) -> Result<(), Failed> {
             "NCOLOR mismatch for '{process}': vibegraph {} vs MG {}",
             cb.ncolor(),
             mg.ncolor
-        )
-        .into());
+        ));
     }
 
     // Full CF matrix within tolerance.
@@ -416,8 +455,7 @@ fn run_trial(matrix_path: PathBuf) -> Result<(), Failed> {
                 return Err(format!(
                     "CF[{i}][{j}] mismatch for '{process}': vibegraph {ours} vs MG {theirs} \
                      (rel {rel:.2e} > {CF_REL_TOL:.0e})"
-                )
-                .into());
+                ));
             }
         }
     }
@@ -449,11 +487,9 @@ fn run_trial(matrix_path: PathBuf) -> Result<(), Failed> {
         }
     };
 
-    println!(
-        "  [{}] '{process}' NCOLOR={n} CF max_rel={max_rel:.2e}{ngraphs_note}{ordering_note}",
-        trial_name(&matrix_path)
-    );
-    Ok(())
+    Ok(format!(
+        "'{process}' NCOLOR={n} CF max_rel={max_rel:.2e}{ngraphs_note}{ordering_note}"
+    ))
 }
 
 /// Cast an exact rational to `f64` the same way binding will.

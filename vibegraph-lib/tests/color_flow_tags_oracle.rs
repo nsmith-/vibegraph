@@ -14,6 +14,12 @@
 //! `IDUP(·, 1, isproc)` row, so "we compiled the process MadGraph named" is
 //! checked rather than assumed.
 //!
+//! Each subprocess is compiled under the model `validation/manifest.toml` records
+//! for its row, not under the interned Standard Model, and enforcement follows
+//! that row's `amplitudes` cell — the colour basis is a factor of the amplitude
+//! rather than a category of its own — so a row that cell declares informational
+//! has its comparison run and printed and is not asserted.
+//!
 //! Two things this deliberately does **not** do:
 //!
 //! - It does not transcribe MadGraph's table. vibegraph derives each flow's tags
@@ -47,6 +53,7 @@ use std::path::{Path, PathBuf};
 use common::leshouche;
 use vibegraph::diagrams::DiagramSet;
 use vibegraph::helas::eval::AmplitudeEvaluator;
+use vibegraph::ufo::UFOModel;
 
 /// A colour line as the comparison sees it: the two `(leg, slot)` endpoints it
 /// joins, sorted, with the label discarded.
@@ -135,9 +142,9 @@ fn render(pairs: &[Line]) -> String {
         .join(" ")
 }
 
-/// Compile `process`'s single concrete subprocess.
-fn compile(process: &str) -> Result<AmplitudeEvaluator, String> {
-    let sets: Vec<DiagramSet> = common::generate(process);
+/// Compile `process`'s single concrete subprocess under `model`.
+fn compile(process: &str, model: &UFOModel) -> Result<AmplitudeEvaluator, String> {
+    let sets: Vec<DiagramSet> = common::generate_with(process, model);
     let with_diagrams: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
     if with_diagrams.len() != 1 {
         return Err(format!(
@@ -145,23 +152,54 @@ fn compile(process: &str) -> Result<AmplitudeEvaluator, String> {
             with_diagrams.len()
         ));
     }
-    let model = common::sm_model();
-    AmplitudeEvaluator::compile(with_diagrams[0], &model).map_err(|e| format!("compile: {e}"))
+    AmplitudeEvaluator::compile(with_diagrams[0], model).map_err(|e| format!("compile: {e}"))
 }
 
+/// A row's cell is asserted or only reported, and the comparison itself is the
+/// same either way, so it is run first and its outcome decided on after.
 fn run_trial(path: PathBuf, isproc: usize) -> Result<(), Failed> {
-    let process = process_of(&path, isproc)?;
-    let subprocess = leshouche::parse(&path)?
+    let key = common::row_key_of(&path);
+    let name = trial_name(&path, isproc);
+    // An enforced row's panic stays a panic; a reported one is part of what is
+    // being reported.
+    let enforced = common::amplitudes_enforced(&key);
+    let outcome = if enforced {
+        compare(&path, isproc)
+    } else {
+        common::catching_panics(|| compare(&path, isproc))
+    };
+    match outcome {
+        Ok(line) => {
+            println!("  [{name}] {line}");
+            Ok(())
+        }
+        Err(message) if !enforced => {
+            println!("  [{name}] reported, not enforced: {message}");
+            Ok(())
+        }
+        Err(message) => Err(message.into()),
+    }
+}
+
+/// Compare one generated subprocess's colour-flow tags to ours, returning the
+/// line that describes the agreement.
+fn compare(path: &Path, isproc: usize) -> Result<String, String> {
+    let process = process_of(path, isproc)?;
+    let subprocess = leshouche::parse(path)?
         .into_iter()
         .find(|s| s.isproc == isproc)
         .ok_or_else(|| format!("isproc {isproc} vanished from {path:?}"))?;
     let mg = subprocess.flows;
-    let eval = compile(&process)?;
+
+    // The row's own model under its own restrict card: two rows can share a
+    // process string and differ only in which vertices their card leaves
+    // standing, and flows compiled from the wrong one are not a comparison.
+    let model = common::model_for_row(&common::row_key_of(path))?;
+    let eval = compile(&process, &model)?;
     let tags = eval.color_flow_tags();
 
     // The compiled subprocess is the one MadGraph filed this table under, rather
     // than whatever the header string happened to parse into.
-    let model = common::sm_model();
     let ours: Vec<i32> = eval
         .external_particles()
         .iter()
@@ -172,8 +210,7 @@ fn run_trial(path: PathBuf, isproc: usize) -> Result<(), Failed> {
         return Err(format!(
             "'{process}' compiles to PDG codes {ours:?}, but MadGraph files isproc \
              {isproc} under IDUP {theirs:?}"
-        )
-        .into());
+        ));
     }
 
     if tags.n_flows() != mg.len() {
@@ -181,8 +218,7 @@ fn run_trial(path: PathBuf, isproc: usize) -> Result<(), Failed> {
             "flow count mismatch for '{process}': vibegraph {} vs MG {}",
             tags.n_flows(),
             mg.len()
-        )
-        .into());
+        ));
     }
 
     let mut labels_identical = true;
@@ -194,8 +230,7 @@ fn run_trial(path: PathBuf, isproc: usize) -> Result<(), Failed> {
                 f + 1,
                 ours.len(),
                 mg_flow.len()
-            )
-            .into());
+            ));
         }
         let ours_lines = lines(ours)?;
         let mg_lines = lines(mg_flow)?;
@@ -207,24 +242,21 @@ fn run_trial(path: PathBuf, isproc: usize) -> Result<(), Failed> {
                 f + 1,
                 render(&ours_lines),
                 render(&mg_lines)
-            )
-            .into());
+            ));
         }
         labels_identical &= ours == mg_flow.as_slice();
     }
 
     let n_lines = lines(tags.flow(0))?.len();
-    println!(
-        "  [{}] '{process}' NCOLOR={} lines/flow={n_lines} labels={}",
-        trial_name(&path, isproc),
+    Ok(format!(
+        "'{process}' NCOLOR={} lines/flow={n_lines} labels={}",
         tags.n_flows(),
         if labels_identical {
             "identical to MG"
         } else {
             "relabelled (connectivity equal)"
         }
-    );
-    Ok(())
+    ))
 }
 
 fn main() {
