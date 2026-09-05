@@ -1,8 +1,9 @@
 # 35 — `ufo-lorentz` feature sprint plan: general UFO Lorentz structures
 
-**Status: IN PROGRESS — wave 1 dispatched 2026-09-05 (§8); R1 landed at
-`bff5aa9` and L1 at `00858a8`, both merged; V1 in flight. Per-session landing
-records are appended to the session paragraphs below ("Landed:").**
+**Status: IN PROGRESS — wave 1 dispatched and landed 2026-09-05 (§8): R1
+`bff5aa9`, L1 `00858a8`, V1 `2a34b9d`, all merged. Per-session landing
+records are appended to the session paragraphs below ("Landed:"); §5 carries
+V1's corrections to the row table.**
 
 The feature sprint that takes the UFO surface past the Standard Model's
 feature set. Three deliverables, as asked:
@@ -490,6 +491,38 @@ Oracle before engine, banked before any flip:
 logs), and the per-row table sweep; card authoring and every "which
 coefficient class does this row isolate" judgment is Opus.
 
+**Landed (`2a34b9d`, 2026-09-05).** Sixteen rows banked (§5 as corrected
+below, plus `gg_to_ttx_smlimit_qcd2`, the SM-limit control for L1's fourth
+diagram — MadGraph gives 4, NCOLOR 3, confirming the prediction), each with
+MadGraph's diagram count, per-point |M|² and per-helicity `AMP()`/`JAMP()`
+tables, its own param card, and where MadEvent could integrate its partonic
+σ; the capstone `e+ e- > t t~ NP<=1` at √s = 500 GeV under
+`restrict_massless` is σ = 2.2223 ± 0.00053 pb. Every `diagrams`/`amplitudes`
+cell is `info`; the capstone `integrals` cell is `blocked`, not `info`,
+because no gate can write a number for it until an amplitude compiles and an
+`info` cell has to be a recorded measurement. Split-interaction counts come
+from `display interactions` in each script (MadGraph's "Current model
+contains N interactions", `madgraph_interface.py:3613`), read into the
+committed `validation/madgraph/interactions.json`: 62 under
+`SMlimit_massless`, 913 under `massless`, 154 (`vg_c4l`), 82 (`vg_c4q`) —
+**the 62 and 913 equal L1's independently measured split counts**, the
+first two-sided check of the splitting. Once the loader landed alongside,
+the merged tree enumerated MadGraph's diagram count on every row but
+`gg_to_gg_cg` (21 of 27 — E1's to identify), and the four SM-limit
+`amplitudes` cells agreed at `max rel` ≤ 2.5e-14 before any flip — L2's gate
+is demonstrated, not yet enforced. MadGraph surprises: a 2→1 row leaves
+`matrix1_optim.f` as the un-recycled per-helicity `MATRIX1` (the probe now
+sums `MG_EVAL_M2_HEL` over MadGraph's own NHEL table for such rows); a
+checkout without `.git` makes MadGraph write ANSI escapes into the LHE
+banner (stripped by `build.sh` after generation; refdata-6's SM rows carry
+none); three Linux portability fixes in the generators (`-lc++` gated on
+`uname`, `-I../../Source`, GNU `tar` owner flags). The refdata-7 archive
+(123573853 bytes, sha256 `035af83c…`) is built but unpublished; the manifest
+pin stays at 6 until the owner uploads it, and the 16 rows carry
+`bundled = false` until then. The colour oracles' SM-only model loading was
+found on the merge; a follow-up commit makes them load the row's model (see
+§5).
+
 ### L2 — the SM-limit gate (validation-dev; after L1 + V1)
 
 Flip `ee_to_mumu_smlimit`, `gg_to_ttx_smlimit`, `ee_to_ttx_smlimit` (and the
@@ -545,7 +578,26 @@ same primitive must keep the primitive column covered.
 | `wpwm_to_wpwmz_cw` (stretch) | `W+ W- > W+ W- Z NP<=1` | `cW` | a five-vector vertex in a diagram | E1 if cheap, else backlog |
 
 Exact coefficient names are read off `parameters.py` by V1 when the cards are
-authored; the class labels above are the physics. **Colour**: no SMEFTsim row
+authored; the class labels above are the physics. **V1's corrections to this
+table (2026-09-05):** (a) `ee_to_ttx_tensor4f` cannot exist — every cyclic
+tensor⊗tensor structure (FFFF5–8, 19–21) reaches its vertices only through a
+coupling proportional to a lepton Yukawa (the `topU3l` spurion on every
+chirality-flipping lepton operator), and `restrict_massless.dat` zeroes all
+three, so MadGraph refuses `NP` as an order for the row; it is replaced by
+`tata_to_ttx_tensor4f` (`ta+ ta- > t t~ NP<=1`, `cleQt3`, with `MTA` and
+`ymtau` restored on that card alone), and by the same token **the capstone
+contains no tensor four-fermion operator**. (b) `restrict_massless.dat`'s
+`SMEFTcpv` block is zero throughout, so `cGtil`, `cWtil`, `cHGtil`, `ctWIm`,
+`ctBIm` are values V1 chose on the per-class cards and **the capstone reaches
+no `Epsilon` structure**. (c) `ee_to_ttx_dipole` must carry the `Im`
+coefficients: the momentum-slashed chain (`FFV9`) pairs with
+`ctWRe`/`ctBRe`, but `Gamma5` inside a chain (`FFV2`) is reached only through
+`ctWIm`/`ctBIm`. (d) `cQq11`/`cQq18` do not exist in `topU3l`; the row uses
+`cQj11`/`cQj18`. (e) Added `gg_to_ttx_smlimit_qcd2` (`g g > t t~ QCD<=2`,
+SM limit: 4 diagrams). The colour oracles (`color_cf_oracle`,
+`color_flow_tags_oracle`) were found to load the interned SM for every row;
+a follow-up commit makes them load the row's model and card, and report
+rather than enforce a row whose `amplitudes` cell is `info`. **Colour**: no SMEFTsim row
 needs a colour atom the engine lacks (§1.2); the toy model carries the rest.
 
 ## 6. Track T — the toy UFO for what SMEFTsim leaves unexercised
@@ -633,7 +685,7 @@ oracle already banked.
 
 ```
 Wave 0 (manager, done): S0 vendored UFO + this note + TODO
-Wave 1:  R1 (hermetic)  ∥  L1 (loader/splitting)  ∥  V1 (bank the ladder, MG host)   ← dispatched 2026-09-05; R1, L1 merged
+Wave 1:  R1 (hermetic)  ∥  L1 (loader/splitting)  ∥  V1 (bank the ladder, MG host)   ← landed 2026-09-05
 Wave 2:  L2 (SM-limit gate; needs L1+V1)  ∥  E1 (tree-shaped primitives; needs R1, L1, V1)
 Wave 3:  F1 (four-fermion; needs L1, V1)  →  R4 (tensor slot; needs R1, E1, F1)
 Wave 4:  T1 (toy oracle; needs V1's pipeline)  ∥  C (capstone; needs E1, F1, R4)

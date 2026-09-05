@@ -6,9 +6,17 @@ what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
 **Current position**: **`ufo-lorentz` feature sprint in progress** (note 35;
-wave 1 dispatched 2026-09-05 — R1 `bff5aa9` and L1 `00858a8` landed and merged,
-V1 in flight; the landing records are in the note's session paragraphs). Two
-walls are already down: the loader now splits interactions per coupling-order
+wave 1 landed 2026-09-05 — R1 `bff5aa9`, L1 `00858a8`, V1 `2a34b9d`, all
+merged; the landing records are in the note's session paragraphs, V1's
+corrections to the row table in its §5). The SMEFTsim ladder is banked as an
+informational MadGraph oracle — 16 rows, every `diagrams`/`amplitudes` cell
+`info` — and on the merged tree every row but `gg_to_gg_cg` (21/27) already
+enumerates MadGraph's diagram count, with the four SM-limit `amplitudes` cells
+agreeing at 1e-14 ahead of L2's flip. Two of §5's premises fell on contact:
+the cyclic tensor⊗tensor row needs a massive lepton (`tata_to_ttx_tensor4f`
+replaces it) and the shipped `restrict_massless` card zeroes every CP-odd
+coefficient, so the capstone reaches neither an `Epsilon` nor a tensor
+four-fermion structure. Two walls are already down: the loader now splits interactions per coupling-order
 tuple and prunes zero couplings the way MadGraph does, so SMEFTsim's SM limit
 enumerates MadGraph's diagram counts (2 / 3 / 2 for the three SM-limit rows),
 and the graded Clifford-basis tensor representation exists with its ε/γ5 sign
