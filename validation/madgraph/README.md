@@ -14,6 +14,8 @@ in the set at all. Adding a process means adding a row there and a script in
 
 ```
 scripts/*.mg5             one batch script per reference run
+cards/<family>/           restrict cards this repository authors for a vendored
+                            UFO model, staged into the work-area copy by build.sh
 wrappers/*.f              Fortran shims f2py compiles against the generated code
 mg5_pinned.sh             runs the *pinned* mg5_aMC, which every generator uses
 build.sh                  runs the scripts that have no output directory yet
@@ -25,6 +27,8 @@ output/                   the work area (gitignored, ~1 GB)
   <process>/                a MadGraph process directory
   <process>.json            diagram counts + configs.inc topologies
   <process>_amplitude.csv   |M|² on the fixed kinematic grid
+  models/                   work-area copies of the vendored UFO models a script
+                              may import, with the authored cards added
   f2py/                     compiled matrix-element extension modules
   bundle/                   the assembled banked-reference archive
   ktdump/                   instrumented replays of the banked runs, and the
@@ -36,6 +40,16 @@ bespoke runs some references are measured from — the two `dy13_*` Drell-Yan
 cards and the `ee_to_mumu_tata_qcd0_h*` Higgs-window runs. They are named after
 what they measure rather than after a script, and only the generators that ask
 for them by name read them; `extract_diagrams.py` skips them for that reason.
+
+**Which model.** A script that names no model is generated against MadGraph's
+built-in `sm`. A script that names one imports it as
+`import model validation/ufo/<model>-<card>`, repository-relative, and `build.sh`
+rewrites that path to the copy it stages under `output/models/` — MadGraph writes
+a cached pickle into a model directory it imports and the vendored directories
+are committed byte for byte, so neither generator reads `validation/ufo/` in
+place. The cards the model ships travel with the copy; the ones this repository
+authors are added to it from `cards/`. The manifest row's `model` and `restrict`
+fields say the same thing to the Rust side, and the gates compare the two.
 
 **Which MadGraph.** Every run in this directory comes from the pinned
 `research/refs/mg5amcnlo` submodule by way of `mg5_pinned.sh`, not from whatever
@@ -51,6 +65,7 @@ Committed reference files, each the output of one generator:
 | file | generator | consumed by |
 |---|---|---|
 | `diagrams.json` | `extract_diagrams.py` | the diagram-count gate |
+| `interactions.json` | `extract_interactions.py` | model topology per (UFO model, restrict card) |
 | `sigma_reference.json` | `extract_sigma.py` | the fixed-energy σ gate |
 | `amplitudes/<process>.json` | `gen_amplitude_tables.py` | the amplitude gate |
 | `hadronic_sigma_reference.json` | `gen_hadronic_sigma.sh` | the hadronic σ gate |

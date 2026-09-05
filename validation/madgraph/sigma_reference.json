@@ -27,6 +27,20 @@
     "sigma_err_pb": 0.84272,
     "sigma_pb": 2025.0
   },
+  "ee_to_mumu_4f": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > mu+ mu- NP<=1",
+    "sigma_err_pb": 0.0037172,
+    "sigma_pb": 7.3845
+  },
+  "ee_to_mumu_smlimit": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > mu+ mu-",
+    "sigma_err_pb": 0.00020574,
+    "sigma_pb": 0.42096
+  },
   "ee_to_mumu_tata_qcd0": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
@@ -55,12 +69,40 @@
     "sigma_err_pb": 0.00018055,
     "sigma_pb": 0.54866
   },
+  "ee_to_ttx_dipole": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > t t~ NP<=1",
+    "sigma_err_pb": 0.00019356,
+    "sigma_pb": 0.54739
+  },
+  "ee_to_ttx_smeft": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > t t~ NP<=1",
+    "sigma_err_pb": 0.00052567,
+    "sigma_pb": 2.2223
+  },
+  "ee_to_ttx_smlimit": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > t t~",
+    "sigma_err_pb": 0.00018137,
+    "sigma_pb": 0.55021
+  },
   "ee_to_wpwm": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "e+ e- > w+ w-",
     "sigma_err_pb": 0.011137,
     "sigma_pb": 7.2123
+  },
+  "ee_to_wpwm_cw": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > w+ w- NP<=1",
+    "sigma_err_pb": 0.011432,
+    "sigma_pb": 7.3037
   },
   "ee_to_zh": {
     "ebeam1": 250.0,
@@ -69,6 +111,13 @@
     "sigma_err_pb": 1.3783e-05,
     "sigma_pb": 0.05721
   },
+  "ee_to_zh_smeft": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > z h NP<=1",
+    "sigma_err_pb": 1.139e-05,
+    "sigma_pb": 0.14109
+  },
   "gg_to_gg": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
@@ -76,12 +125,33 @@
     "sigma_err_pb": 97.157,
     "sigma_pb": 142770.0
   },
+  "gg_to_gg_cg": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "g g > g g NP<=1",
+    "sigma_err_pb": 229.8,
+    "sigma_pb": 271240.0
+  },
   "gg_to_ttx": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "g g > t t~",
     "sigma_err_pb": 0.016289,
     "sigma_pb": 13.513
+  },
+  "gg_to_ttx_smlimit": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "g g > t t~",
+    "sigma_err_pb": 0.017069,
+    "sigma_pb": 13.533
+  },
+  "gg_to_ttx_smlimit_qcd2": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "g g > t t~ QCD<=2",
+    "sigma_err_pb": 0.017586,
+    "sigma_pb": 13.504
   },
   "gu_to_epemu": {
     "ebeam1": 250.0,
@@ -96,6 +166,13 @@
     "process": "g u~ > e+ e- u~ QCD=2 QED=2",
     "sigma_err_pb": 0.00021701,
     "sigma_pb": 0.10884
+  },
+  "tata_to_ttx_tensor4f": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "ta+ ta- > t t~ NP<=1",
+    "sigma_err_pb": 0.00022301,
+    "sigma_pb": 0.55516
   },
   "ud_to_epemud_qcd0": {
     "ebeam1": 250.0,
@@ -125,11 +202,25 @@
     "sigma_err_pb": 5.065e-05,
     "sigma_pb": 0.076796
   },
+  "uux_to_ttx_4f": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "u u~ > t t~ NP<=1",
+    "sigma_err_pb": 0.0013626,
+    "sigma_pb": 13.913
+  },
   "uux_to_uux": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "u u~ > u u~",
     "sigma_err_pb": 24.379,
     "sigma_pb": 28269.0
+  },
+  "wpwm_to_wpwmz_cw": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "w+ w- > w+ w- z NP<=1",
+    "sigma_err_pb": 0.014461,
+    "sigma_pb": 7.266
   }
 }

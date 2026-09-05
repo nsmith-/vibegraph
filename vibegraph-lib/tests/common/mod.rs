@@ -94,3 +94,54 @@ pub fn floor_coverage_line(spend: &vibegraph::budget::ConvergenceReport) -> Stri
         spend.floor_bound_channels,
     )
 }
+
+/// The model a manifest row's gate evaluates in: the interned Standard Model
+/// where the row names none, and the vendored UFO directory under its restrict
+/// card where it does.
+///
+/// The `Err` is the message the informational cell carries. A row whose model
+/// this crate cannot read yet is exactly why the SMEFTsim cells are registered
+/// informational, so the failure is a measurement to report rather than a
+/// condition to hide: it is returned, never unwrapped.
+pub fn model_for_row(key: &str) -> Result<Arc<UFOModel>, String> {
+    let Some(row) = manifest::row_models().get(key).cloned() else {
+        return Ok(sm_model());
+    };
+    let dir = row.dir_path();
+    let card = row.restrict_card();
+    if let Some(card) = card.as_ref() {
+        if !card.exists() {
+            return Err(format!(
+                "no restrict card at {} for `{}`",
+                card.display(),
+                row.restrict.as_deref().unwrap_or("")
+            ));
+        }
+    }
+    UFOModel::load(&dir, card.as_deref()).map_err(|e| {
+        format!(
+            "cannot load {}{}: {e}",
+            row.dir,
+            row.restrict
+                .as_ref()
+                .map(|r| format!("-{r}"))
+                .unwrap_or_default()
+        )
+    })
+}
+
+/// The `import model` line of a row's `.mg5` script, as `<dir>-<restrict>`.
+///
+/// The manifest is what the Rust side reads and the script is what MadGraph
+/// read; a gate compares the two so a row cannot silently be generated under one
+/// card and checked under another.
+pub fn script_model_import(script: &str) -> Option<String> {
+    script.lines().find_map(|line| {
+        line.split('#')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .strip_prefix("import model ")
+            .map(|rest| rest.trim().to_string())
+    })
+}

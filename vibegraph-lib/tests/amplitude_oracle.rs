@@ -209,6 +209,24 @@ const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
 /// the defect it names.
 const KNOWN_LINEAR_DISAGREEMENT: &[(&str, &str)] = &[];
 
+/// Whether a row's cell is enforced or only reported, from
+/// `validation/manifest.toml`'s own `categories.amplitudes.mode`.
+///
+/// [`KNOWN_LINEAR_DISAGREEMENT`] and this answer different questions: that list
+/// names a row whose comparison runs and disagrees at a level this gate
+/// understands, while a manifest `info` cell may be a row whose comparison
+/// cannot start — the SMEFTsim ladder is banked before the loader that would
+/// evaluate it, so those cells are measured as the failure they are.
+fn declared_mode(key: &str) -> &'static str {
+    static MODES: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
+        std::sync::OnceLock::new();
+    let modes = MODES.get_or_init(|| common::manifest::category_modes("amplitudes"));
+    match modes.get(key).map(String::as_str) {
+        Some("info") => "info",
+        _ => "gate",
+    }
+}
+
 /// MadGraph graph index of each vibegraph diagram, for processes whose two
 /// enumeration orders differ. Absent processes pair by the identity.
 ///
@@ -617,7 +635,25 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
         .iter()
         .find(|(k, _)| *k == key)
         .map(|(_, why)| *why);
-    match (measure(path, known.is_some()), known) {
+    // A row the manifest declares informational is measured and reported, never
+    // enforced — including when the measurement cannot start at all, which is
+    // what the SMEFTsim rows look like until their model loads.
+    let manifest_info = declared_mode(&key) == "info";
+    match (measure(path, known.is_some() || manifest_info), known) {
+        (Ok(mut row), None) if manifest_info => {
+            if row.note.is_none() {
+                println!(
+                    "  [{key}] the manifest declares this cell informational and it now \
+                     agrees with MadGraph at every level — the cell is ready to be \
+                     promoted to a gate"
+                );
+            }
+            row.mode = "info";
+            row.status = "info";
+            row.duration_s = Some(clock.seconds());
+            row.write();
+            Ok(())
+        }
         (Ok(mut row), None) => {
             row.duration_s = Some(clock.seconds());
             row.write();
@@ -649,12 +685,19 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
             Ok(())
         }
         (Err(failed), _) => {
-            let mut row =
-                AmplitudesRow::new(&key, "", if known.is_some() { "info" } else { "gate" });
-            row.status = "fail";
+            let info = known.is_some() || manifest_info;
+            let mut row = AmplitudesRow::new(&key, "", if info { "info" } else { "gate" });
+            row.status = if info { "info" } else { "fail" };
             row.note = Some(failed.message().unwrap_or_default().to_string());
             row.duration_s = Some(clock.seconds());
             row.write();
+            if info {
+                println!(
+                    "  [{key}] no comparison: {}",
+                    row.note.as_deref().unwrap_or("")
+                );
+                return Ok(());
+            }
             Err(failed)
         }
     }
@@ -669,7 +712,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     let table = parse_table(&json);
     let name = table.key.as_str();
 
-    let model = common::sm_model();
+    let model = common::model_for_row(name)?;
     let card = table
         .param_card
         .parse::<ParamCard>()

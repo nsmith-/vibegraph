@@ -34,6 +34,9 @@ reads) — such rows carry no `mg_amplitude` table of their own.
 
 Usage:
   python validation/madgraph/gen_amplitude.py
+  python validation/madgraph/gen_amplitude.py ee_to_mumu gg_to_gg   # only these
+      rows; the timing table is merged into the work area's rather than
+      replaced, so a partial run does not drop the rows it did not measure.
   python validation/madgraph/gen_amplitude.py --dump-processes   # print the
       resolved registry as JSON and exit; no MadGraph module is imported.
       This is the migration oracle: run before and after any change to how
@@ -48,6 +51,7 @@ import importlib
 import json
 import math
 import os
+import re
 import sys
 import time
 import tomllib
@@ -87,6 +91,11 @@ class Process:
     # validation rows): large enough that the per-call wrapper overhead
     # amortizes, scaled down for the expensive high-multiplicity processes.
     profile_npoints: int = 10_000
+    # The UFO model directory the row's .mg5 script imports, and the restrict
+    # card it imports it with. Absent for a row generated against MadGraph's
+    # default `sm`, which is what the manifest saying nothing means.
+    model: str | None = None
+    restrict: str | None = None
 
 
 def load_processes() -> list["Process"]:
@@ -115,12 +124,67 @@ def load_processes() -> list["Process"]:
                 npoints=mg["npoints"],
                 seed=mg["seed"],
                 profile_npoints=mg.get("profile_npoints", 10_000),
+                model=entry.get("model"),
+                restrict=entry.get("restrict"),
             )
         )
     return procs
 
 
 PROCESSES = load_processes()
+
+
+def matrix_file(name: str) -> str:
+    """The process's single `SubProcesses/P*/matrix1_orig.f`."""
+    sub = os.path.join(OUTPUT_DIR, name, "SubProcesses")
+    dirs = [d for d in sorted(os.listdir(sub)) if d.startswith("P")]
+    assert len(dirs) == 1, f"{name}: expected one P* subprocess dir, got {dirs}"
+    return os.path.join(sub, dirs[0], "matrix1_orig.f")
+
+
+def nhel_table(name: str, n_ext: int) -> list[list[int]]:
+    """MadGraph's own NHEL table for a process, in its own row order.
+
+    Read from the generated `DATA (NHEL(I,N),I=1,n_ext) / ... /` block rather
+    than enumerated as a product, so the helicity set is MadGraph's.
+    """
+    with open(matrix_file(name)) as f:
+        src = re.sub(r"\n     [^ ]", "", f.read())
+    combos = []
+    for row in re.findall(r"DATA \(NHEL\(I,\s*\d+\),I=1,\s*\d+\) /([^/]*)/", src):
+        vals = [int(v) for v in row.replace(" ", "").split(",")]
+        assert len(vals) == n_ext, f"{name}: NHEL row {vals} is not {n_ext} long"
+        combos.append(vals)
+    assert combos, f"{name}: no NHEL rows found in {matrix_file(name)}"
+    return combos
+
+
+class ProbeM2:
+    """|M|^2 through the per-diagram probe rather than the shared wrapper.
+
+    `wrappers/generic.f` calls the helicity-summed `MATRIX1` subroutine that
+    MadEvent's helicity recycling writes. A 2 -> 1 process has no phase space to
+    integrate, so its `launch` stops before recycling and the matrix element
+    keeps the per-helicity `MATRIX1` function instead — a different argument
+    list behind the same name. The probe module calls that form, and summing its
+    value over MadGraph's own NHEL table is the same helicity- and colour-summed
+    number the wrapper would have returned.
+    """
+
+    def __init__(self, name: str, n_ext: int):
+        self.module = importlib.import_module(f"mg_amp_probe_{name}")
+        self.helicities = [
+            np.array(h, dtype=np.int32) for h in nhel_table(name, n_ext)
+        ]
+
+    def mg_eval_m2(self, p, card):
+        return sum(
+            float(self.module.mg_eval_m2_hel(p, hel, card)) for hel in self.helicities
+        )
+
+    def mg_eval_m2_batch(self, p_batch, card):
+        for k in range(p_batch.shape[2]):
+            self.mg_eval_m2(np.asfortranarray(p_batch[:, :, k]), card)
 
 
 def param_card_path(proc: Process) -> str:
@@ -195,6 +259,24 @@ def rambo(n: int, sqrt_s: float, masses: list[float], rng: np.random.Generator) 
     return k
 
 
+def final_state(
+    n: int, sqrt_s: float, masses: list[float], rng: np.random.Generator
+) -> np.ndarray:
+    """The outgoing momenta of one phase-space point in the CM frame.
+
+    A one-particle final state has no phase space to sample: momentum
+    conservation fixes the single momentum to (sqrt_s, 0, 0, 0) and sqrt_s to
+    that particle's mass, so the "grid" of a 2 -> 1 row is the one point the
+    process has and RAMBO is neither used nor meaningful there.
+    """
+    if n == 1:
+        assert abs(sqrt_s - masses[0]) < 1e-9 * max(1.0, sqrt_s), (
+            f"a 2 -> 1 process exists only at sqrt_s = {masses[0]}, not {sqrt_s}"
+        )
+        return np.array([[sqrt_s, 0.0, 0.0, 0.0]])
+    return rambo(n, sqrt_s, masses, rng)
+
+
 def beam_momenta(sqrt_s: float, m1: float, m2: float) -> tuple[list[float], list[float]]:
     """CM-frame beam 4-momenta along ±z for incoming masses (m1, m2)."""
     s = sqrt_s**2
@@ -212,22 +294,30 @@ def gen_process(proc: Process) -> tuple[int, list[list[float]], dict]:
     timing) where each row is [m2, E0,px0,py0,pz0, E1,...] over all n_ext legs
     and timing is the profile_batch record.
     """
-    module = importlib.import_module(f"mg_{proc.name}")
+    n_ext = len(proc.pdgs_in) + len(proc.pdgs_out)
+    module = (
+        ProbeM2(proc.name, n_ext)
+        if len(proc.pdgs_out) == 1
+        else importlib.import_module(f"mg_{proc.name}")
+    )
     card = param_card_path(proc)
     masses = read_masses(card)
     m_in = [masses.get(abs(pdg), 0.0) for pdg in proc.pdgs_in]
     m_out = [masses.get(abs(pdg), 0.0) for pdg in proc.pdgs_out]
-    n_ext = len(proc.pdgs_in) + len(proc.pdgs_out)
     rng = np.random.default_rng(proc.seed)
 
     rows: list[list[float]] = []
     for sqrt_s in proc.sqrt_s_list:
-        assert sqrt_s > sum(m_out) + 1.0, (
+        assert len(m_out) == 1 or sqrt_s > sum(m_out) + 1.0, (
             f"{proc.name}: sqrt_s={sqrt_s} too close to threshold {sum(m_out)}"
+        )
+        assert len(m_out) > 1 or proc.npoints == 1, (
+            f"{proc.name}: a 2 -> 1 process has one phase-space point, "
+            f"not {proc.npoints}"
         )
         beam1, beam2 = beam_momenta(sqrt_s, m_in[0], m_in[1])
         for _ in range(proc.npoints):
-            out = rambo(len(m_out), sqrt_s, m_out, rng)
+            out = final_state(len(m_out), sqrt_s, m_out, rng)
             p = np.zeros((4, n_ext), dtype=np.float64, order="F")
             p[:, 0] = beam1
             p[:, 1] = beam2
@@ -261,7 +351,7 @@ def profile_batch(
     for k in range(n):
         p_batch[:, 0, k] = beam1
         p_batch[:, 1, k] = beam2
-        out = rambo(len(m_out), sqrt_s, m_out, rng)
+        out = final_state(len(m_out), sqrt_s, m_out, rng)
         for j in range(len(m_out)):
             p_batch[:, 2 + j, k] = out[j]
     module.mg_eval_m2_batch(p_batch, card)  # warm-up
@@ -332,6 +422,8 @@ def dump_processes() -> None:
             "npoints": p.npoints,
             "seed": p.seed,
             "profile_npoints": p.profile_npoints,
+            **({"model": p.model} if p.model is not None else {}),
+            **({"restrict": p.restrict} if p.restrict is not None else {}),
         }
         for p in PROCESSES
     ]
@@ -346,8 +438,18 @@ if __name__ == "__main__":
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    selected = [a for a in sys.argv[1:] if not a.startswith("-")]
+    known = {p.name for p in PROCESSES}
+    unknown = sorted(set(selected) - known)
+    assert not unknown, f"no such registered process: {unknown}"
+    procs = [p for p in PROCESSES if not selected or p.name in selected]
+
+    timings_path = os.path.join(OUTPUT_DIR, "mg_timings.json")
     timings: dict[str, dict] = {}
-    for proc in PROCESSES:
+    if selected and os.path.exists(timings_path):
+        with open(timings_path) as f:
+            timings = json.load(f).get("processes", {})
+    for proc in procs:
         print(f"Generating {proc.name} ({proc.process_str})...")
         n_ext, rows, timing = gen_process(proc)
         timings[proc.name] = timing
@@ -360,7 +462,6 @@ if __name__ == "__main__":
             rows,
         )
 
-    timings_path = os.path.join(OUTPUT_DIR, "mg_timings.json")
     with open(timings_path, "w") as f:
         json.dump(
             {

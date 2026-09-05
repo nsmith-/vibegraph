@@ -15,6 +15,47 @@ C       NHEL        INTEGER NHEL(NEXTERNAL): helicities (+/-1) per leg
 C       PARAM_PATH  path to param_card.dat (read once on first call)
 C       AMP_OUT     COMPLEX*16 AMP_OUT(NGRAPHS): per-diagram amplitudes
 C       JAMP_OUT    COMPLEX*16 JAMP_OUT(NCOLOR): per-color-flow JAMPs
+C     A second entry point returning only MATRIX1's own value: the
+C     colour-summed |M|^2 of one helicity assignment. Summed over the process's
+C     NHEL table it is MadGraph's helicity- and colour-summed |M|^2, which is
+C     what wrappers/generic.f produces for a process whose matrix element went
+C     through helicity recycling. A 2 -> 1 process has no phase space for
+C     MadEvent to integrate, so its `launch` stops before recycling and leaves
+C     the per-helicity matrix element in place; this is how such a row reaches
+C     the same number.
+      SUBROUTINE MG_EVAL_M2_HEL(P, NHEL, PARAM_PATH, M2_OUT)
+Cf2py intent(in)  P, NHEL, PARAM_PATH
+Cf2py intent(out) M2_OUT
+      IMPLICIT NONE
+      INTEGER    NGRAPHS
+      PARAMETER (NGRAPHS=@NGRAPHS@)
+      INTEGER    NCOLOR
+      PARAMETER (NCOLOR=@NCOLOR@)
+      INCLUDE 'nexternal.inc'
+      INCLUDE 'maxamps.inc'
+      CHARACTER*(*) PARAM_PATH
+      REAL*8 P(0:3, NEXTERNAL)
+      INTEGER NHEL(NEXTERNAL)
+      REAL*8 M2_OUT
+      DOUBLE PRECISION AMP2(MAXAMPS), JAMP2(0:MAXFLOW)
+      REAL*8 MATRIX1
+      INTEGER IC(NEXTERNAL), I
+      LOGICAL FIRST2
+      SAVE FIRST2
+      DATA FIRST2 /.TRUE./
+
+      IF (FIRST2) THEN
+        CALL SETPARA(PARAM_PATH)
+        FIRST2 = .FALSE.
+      ENDIF
+
+      DO I = 1, NEXTERNAL
+        IC(I) = 1
+      END DO
+
+      M2_OUT = MATRIX1(P, NHEL, IC, 1, AMP2, JAMP2, 1)
+      END
+
       SUBROUTINE MG_EVAL_AMP(P, NHEL, PARAM_PATH, AMP_OUT, JAMP_OUT)
 Cf2py intent(in)  P, NHEL, PARAM_PATH
 Cf2py intent(out) AMP_OUT, JAMP_OUT
