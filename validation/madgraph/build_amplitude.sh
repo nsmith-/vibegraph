@@ -11,6 +11,7 @@
 #
 # Usage:
 #   bash validation/madgraph/build_amplitude.sh
+#   bash validation/madgraph/build_amplitude.sh ee_to_mumu gg_to_gg   # only these
 #   pixi run -e madgraph build-amplitude
 #
 # Prerequisites: pixi run -e madgraph build-diagrams  (generates MG output dirs)
@@ -30,30 +31,20 @@ already_built() {
 
 # All amplitude-validation processes build against the shared wrappers/generic.f
 # (SETPARA reads couplings from param_card.dat; libmodel.a supplies the model
-# routines), so registering a new process is one line here + one .mg5 script +
-# one gen_amplitude.py registry entry.
-GENERIC_PROCESSES=(
-    ee_to_mumu
-    pp_to_ll_qcd0
-    uux_to_mumu
-    ee_to_ee
-    ee_to_mumua
-    ee_to_ttx
-    ee_to_wpwm
-    ee_to_zh
-    ee_to_tatah
-    ee_to_mumu_tata_qcd0
-    uux_to_ccx_emmm_qcd0
-    bbx_to_ccx_emmm_qcd0
-    uux_to_uux
-    gg_to_ttx
-    gg_to_gg
-    uux_to_epemg
-    gu_to_epemu
-    ddx_to_epemg
-    gux_to_epemux
-    ud_to_epemud_qcd0
+# routines), so registering a new process is one .mg5 script plus one
+# `mg_amplitude` table in validation/manifest.toml — the same table
+# gen_amplitude.py reads, listed here through its own resolved registry so the
+# two can never name different sets.
+# Positional arguments narrow the set to those rows; with none, every row builds.
+mapfile -t GENERIC_PROCESSES < <(
+    python "$REPO_ROOT/validation/madgraph/gen_amplitude.py" --dump-processes |
+        python -c 'import json,sys; [print(r["name"]) for r in json.load(sys.stdin)]' |
+        { if [ $# -gt 0 ]; then grep -Fx -f <(printf '%s\n' "$@"); else cat; fi; }
 )
+[ ${#GENERIC_PROCESSES[@]} -gt 0 ] || {
+    echo "ERROR: the manifest resolved to no mg_amplitude rows" >&2
+    exit 1
+}
 
 # subprocess_dir NAME — the single SubProcesses/P1_* directory of a process.
 # All registered processes are single-subprocess by construction (one concrete
@@ -94,17 +85,33 @@ compile_process_generic() {
         echo "SKIP $name: libmodel.a not found (did the .mg5 script 'launch'?)"
         return 0
     fi
+    # `launch` writes matrix1_optim.f as the helicity-recycled matrix element,
+    # whose `MATRIX1` is a subroutine summing over helicities into an array --
+    # the signature wrappers/generic.f is written against. Where recycling did
+    # not run, MadGraph copies matrix1_orig.f into place instead, and that file's
+    # `MATRIX1` is a per-helicity function with a different argument list; the
+    # two link but disagree, so the module would be built and then crash. A 2 -> 1
+    # process is the case that reaches here: it has no phase space to integrate,
+    # so `launch` never gets as far as recycling. Its |M|^2 comes from the
+    # per-diagram probe below, which calls the per-helicity form directly.
+    if grep -qi 'USE DISCRETESAMPLER' "$pdir/matrix1_optim.f"; then
+        echo "SKIP $name: matrix1_optim.f is the un-recycled matrix element; \
+its |M|^2 comes from mg_amp_probe_${name} instead"
+        return 0
+    fi
 
     echo "Building mg_${name} (generic, $(basename "$pdir"))..."
 
-    # f2py scans only matrix1_optim.f + the wrapper; the model coupling routines
-    # (SETPARA/COUP/lha_read) are linked from the precompiled libmodel.a that
-    # `launch` builds, so f2py never has to parse their complex PARAMETER decls.
-    # Run from the subprocess directory so Fortran INCLUDE statements resolve.
+    # f2py scans only matrix1_optim.f and the wrapper; the model coupling
+    # routines (SETPARA/COUP/lha_read) are linked from the precompiled libmodel.a
+    # that `launch` builds, so f2py never has to parse their complex PARAMETER
+    # decls. Run from the subprocess directory so Fortran INCLUDE statements
+    # resolve, with `-I../../Source` for the generated code's Fortran modules --
+    # the search path MadGraph's own makefileP uses for the subprocess.
     pushd "$pdir" > /dev/null
     python -m numpy.f2py \
         -c \
-        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I." \
+        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I. -I../../Source" \
         "matrix1_optim.f" \
         "$WRAPPERS/generic.f" \
         -L"$libdir" -lmodel -ldhelas \
@@ -143,7 +150,7 @@ build_amp_probe() {
     pushd "$pdir" > /dev/null
     python -m numpy.f2py \
         -c \
-        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I." \
+        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I. -I../../Source" \
         "$WRAPPERS/matrix1_func.f" \
         "$WRAPPERS/ee_amp_probe.f" \
         -L"$libdir" -lmodel -ldhelas \
@@ -226,7 +233,7 @@ build_amp_dump_probe() {
     pushd "$pdir" > /dev/null
     python -m numpy.f2py \
         -c \
-        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I." \
+        --f77flags="-fallow-argument-mismatch -ffixed-line-length-132 -I. -I../../Source" \
         "matrix1_ampdbg.f" \
         "amp_probe_gen.f" \
         -L"$libdir" -lmodel -ldhelas \

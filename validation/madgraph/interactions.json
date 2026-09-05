@@ -1,0 +1,106 @@
+{
+  "_comment": "How many interactions MadGraph's own model topology holds for each (UFO model, restrict card) pair the validation manifest names: the count after import_ufo.add_interaction has split every vertex into one interaction per coupling-order tuple and the restriction has dropped the ones whose couplings all vanish. Read out of `display interactions` in each row's build log by validation/madgraph/extract_interactions.py and committed, so a checkout that has never run MadGraph can compare its own model topology against it. `rows` lists the manifest rows generated under that pair.",
+  "models": {
+    "SMEFTsim_topU3l_MwScheme_UFO-SMlimit_massless": {
+      "interactions": 62,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "SMlimit_massless",
+      "rows": [
+        "ee_to_mumu_smlimit",
+        "ee_to_ttx_smlimit",
+        "gg_to_ttx_smlimit",
+        "gg_to_ttx_smlimit_qcd2"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-massless": {
+      "interactions": 913,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "massless",
+      "rows": [
+        "ee_to_ttx_smeft"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-vg_c4l": {
+      "interactions": 154,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "vg_c4l",
+      "rows": [
+        "ee_to_mumu_4f"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-vg_c4q": {
+      "interactions": 82,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "vg_c4q",
+      "rows": [
+        "uux_to_ttx_4f"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-vg_cG": {
+      "interactions": 70,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "vg_cG",
+      "rows": [
+        "gg_to_gg_cg"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-vg_cHG": {
+      "interactions": 68,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "vg_cHG",
+      "rows": [
+        "gg_to_h_cpeven"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-vg_cHGtil": {
+      "interactions": 73,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "vg_cHGtil",
+      "rows": [
+        "gg_to_h_cpodd"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-vg_cHV": {
+      "interactions": 168,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "vg_cHV",
+      "rows": [
+        "ee_to_zh_smeft"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-vg_cW": {
+      "interactions": 89,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "vg_cW",
+      "rows": [
+        "ee_to_wpwm_cw",
+        "wpwm_to_wpwmz_cw"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-vg_cbH": {
+      "interactions": 65,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "vg_cbH",
+      "rows": [
+        "bbx_to_h_identity"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-vg_cleQt3": {
+      "interactions": 66,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "vg_cleQt3",
+      "rows": [
+        "tata_to_ttx_tensor4f"
+      ]
+    },
+    "SMEFTsim_topU3l_MwScheme_UFO-vg_ctdipole": {
+      "interactions": 106,
+      "model": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO",
+      "restrict": "vg_ctdipole",
+      "rows": [
+        "ee_to_ttx_dipole"
+      ]
+    }
+  },
+  "schema": 1
+}

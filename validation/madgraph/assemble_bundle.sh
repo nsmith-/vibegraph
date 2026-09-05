@@ -13,6 +13,11 @@
 # It unpacks *into* `validation/madgraph/output/`, so a fetched checkout and a
 # machine that generated the runs itself present the gates with identical paths.
 #
+# What it deliberately leaves out is `output/models/`: the work-area copies of the
+# vendored UFO models a row may import. Those are staged by `build.sh` from
+# `validation/ufo/` and `validation/madgraph/cards/`, both committed, so carrying
+# them would put a second, drifting copy of committed files in the archive.
+#
 # The archive is byte-reproducible from a given work area: the member list is
 # sorted in the C locale, every member is staged with the same timestamp, mode
 # and (blank) ownership, event files are carried decompressed (so no gzip
@@ -69,6 +74,12 @@ vg_say ">>> selecting banked files under $WORK_AREA"
     # Per-channel integration logs: where MadGraph prints the alpha_s source rule
     # and its own alpha_s at the scales the run evaluated.
     find "$proc/SubProcesses" -maxdepth 3 -type f -name 'run_*_log.txt' 2>/dev/null || true
+    # The generation log. For a row generated against a UFO model rather than
+    # MadGraph's built-in `sm` it is the only record of how many interactions
+    # MadGraph's own splitting and restriction arrived at, which is what
+    # extract_interactions.py reads back; for every other row it is the record of
+    # which generator version wrote the directory.
+    find "$proc" -maxdepth 1 -type f -name build.log 2>/dev/null || true
   done
   # The fixed-grid amplitude tables sit beside the process directories.
   find . -maxdepth 1 -type f -name '*_amplitude.csv' 2>/dev/null | sed 's|^\./||'
@@ -99,9 +110,21 @@ find "$STAGE/root" -exec touch -t 197001010000 {} +
 
 vg_say ">>> writing $ARCHIVE"
 mkdir -p "$BUNDLE_DIR"
-COPYFILE_DISABLE=1 tar -cf "$STAGE/bundle.tar" \
-  --format ustar --uid 0 --gid 0 --uname '' --gname '' --no-mac-metadata \
-  -C "$STAGE/root" -T "$STAGE/archive.txt"
+# The two tars this repository is built on spell the same normalisation
+# differently: bsdtar (libarchive, the macOS default) takes the ids and names
+# directly, GNU tar takes owner/group and needs telling not to write the names
+# it would otherwise look up. Both write the same ustar member headers -- all
+# zero ids, empty names, the fixed mtime and mode set on the stage above -- so
+# the archive is the same bytes from either.
+if tar --uid 0 --version > /dev/null 2>&1; then
+  COPYFILE_DISABLE=1 tar -cf "$STAGE/bundle.tar" \
+    --format ustar --uid 0 --gid 0 --uname '' --gname '' --no-mac-metadata \
+    -C "$STAGE/root" -T "$STAGE/archive.txt"
+else
+  tar -cf "$STAGE/bundle.tar" \
+    --format=ustar --owner=0 --group=0 --numeric-owner \
+    -C "$STAGE/root" -T "$STAGE/archive.txt"
+fi
 zstd -19 -q -f --single-thread --no-progress -o "$ARCHIVE" "$STAGE/bundle.tar"
 
 sha="$(vg_sha256 "$ARCHIVE")"
