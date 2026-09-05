@@ -12,6 +12,7 @@ Git submodules for upstream code we study or adapt from. Fetched papers live in 
 | `refs/mg5amcnlo` | https://github.com/mg5amcnlo/mg5amcnlo | MadGraph5: HELAS routines, ALOHA code generation, SM UFO model |
 | `refs/sherpa` | https://gitlab.com/sherpa-team/sherpa | Sherpa MC: COMIX Berends-Giele ME generator + UFO loader |
 | `refs/powheg-box-v2` | https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2 | POWHEG-BOX-V2: NLO+PS Fortran framework (MINT, B-tilde, LHE output) |
+| `refs/smeftsim` | https://github.com/SMEFTsim/SMEFTsim | SMEFTsim 3.0 (pinned at tag `v3.0.2`): dimension-6 SMEFT UFO models — the non-SM Lorentz-structure test bed (MIT licence) |
 
 ### Key paths in mg5amcnlo
 
@@ -44,6 +45,17 @@ Git submodules for upstream code we study or adapt from. Fetched papers live in 
 | `lhefwrite.f` | LHEF 3.0 output |
 | `include/` | Fortran common block headers (pwhg_flst.h, pwhg_kn.h, LesHouches.h, …) |
 | `hvq/` | Heavy-quark production — canonical complete example process |
+
+### Key paths in smeftsim
+
+| Path | Contents |
+|---|---|
+| `UFO_models/SMEFTsim_topU3l_MwScheme_UFO/` | The model vibegraph gates against: `topU3l` flavour assumption (U(2)³ quarks, U(3)² leptons), `{m_W, m_Z, G_F}` inputs. 21 particles (incl. the four `NPprop` auxiliary fields `Z1`/`W1±`/`t1`/`H1`, which carry `propagators.py`), 260 Lorentz structures, 904 vertices |
+| `UFO_models/SMEFTsim_topU3l_MwScheme_UFO/lorentz.py` | The structure census that sized the `ufo-lorentz` sprint (note 35 §1): `P` 3189, `Metric` 2885, `Epsilon` 846, `Gamma` 137, `ProjM`/`ProjP` 40 each, `Gamma5` 13, `Identity` 3, **no `Sigma`, no `C`**; `**2` powers of momenta; vertices up to six legs |
+| `UFO_models/SMEFTsim_topU3l_MwScheme_UFO/restrict_SMlimit_massless.dat` | Every Wilson coefficient zero: the SM-limit card, the loader/parameter oracle needing no new physics |
+| `UFO_models/SMEFTsim_topU3l_MwScheme_UFO/restrict_massless.dat` | Every real Wilson coefficient at a fixed non-zero value: one card that turns every structure class on at once |
+| `UFO_models/*_alphaScheme_UFO`, `*_U35_*`, `*_MFV_*`, `*_general_*`, `*_top_*` | The other nine flavour/input-scheme variants; not read by any gate |
+| `FeynRules_source/`, `Mathematica_notebooks/` | The FeynRules model files the UFOs were exported from (most of the 100 MB checkout); reference only |
 
 ## Fetching submodules
 

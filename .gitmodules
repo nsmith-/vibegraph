@@ -10,3 +10,6 @@
 [submodule "research/refs/powheg-box-v2"]
 	path = research/refs/powheg-box-v2
 	url = https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2.git
+[submodule "research/refs/smeftsim"]
+	path = research/refs/smeftsim
+	url = https://github.com/SMEFTsim/SMEFTsim

@@ -5,7 +5,19 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: between sprints. The **performance sprint** (eleven
+**Current position**: between sprints, with the **`ufo-lorentz` feature
+sprint planned** (note 35, 2026-09-05; awaiting its §7 decisions, nothing
+dispatched). It takes the UFO surface past the SM's feature set: the rank-2
+Lorentz tensor representation and the finished completeness relations, SMEFTsim
+(`research/refs/smeftsim`, pinned `v3.0.2`) with `SMEFTsim_topU3l_MwScheme_UFO`
+as the MadGraph-gated test case for `Epsilon`, `Gamma5`, γ-chains,
+four-fermion and tensor⊗tensor structures, and a hand-written toy UFO for the
+structures SMEFTsim never emits (literal `Sigma`, `d(a,b,c)`, baryonic colour
+`Epsilon`, sextets as stretch). Its census probe found the first wall is not
+Lorentz at all: MadGraph splits one UFO vertex into one interaction per
+coupling-order tuple and drops zero couplings under a restriction, and we do
+neither, so SMEFTsim enumerates zero SM diagrams even in its SM limit.
+Sprint-history context follows. The **performance sprint** (eleven
 sessions, note 31 §6) and its **addendum** (eight of nine merged, S9 killed
 clean, note 32 §5) both closed 2026-08-05 — one line each in the closed-sprint
 history below; the notes hold the full records, and no tolerance was relaxed
@@ -324,7 +336,8 @@ One line each; the note is the full record. Earlier sprints
   intent, not the current assertion.
 - **`IdentityAmp` process-level coverage** — the last `KNOWN_UNCOVERED` op; needs
   an `Identity` scalar bilinear the SM lacks, so it rides with `non-sm-ufo`
-  (feature backlog).
+  (feature backlog). SMEFTsim's `FFS2` is exactly that structure; note 35 L2
+  gates it (`bbx_to_h_identity`), and the census becomes per-model there.
 - **Flavour-group probe coverage** — `derive_flavor_groups` partitions on sampled
   `|M|²`, which is complete but unsound whatever the probe set: two subprocesses
   differing only where the probe does not look are merged silently. The probe
@@ -446,7 +459,9 @@ above); the entries here are the eventual features.
 - **Custom UFO propagators** (`propagators.py`, UFO 2.0) — parse the file and
   thread the propagator forms through the HELAS compiler.
 - **Non-SM UFO models** — the `non-sm-ufo` checklist below; the README's
-  scope section points at it as the natural next scope step.
+  scope section points at it as the natural next scope step. **Planned as the
+  `ufo-lorentz` sprint (note 35)**: SMEFTsim `topU3l_MwScheme` end to end, the
+  tensor representation, and a toy UFO for the rest of the checklist.
 
 ### In-scope features
 
@@ -490,6 +505,16 @@ above); the entries here are the eventual features.
   invariant, and only composite emitted sides still exhibit the defect. The
   conservative fallback is kept; whether it is still the right default is an
   open measurement. (Note 28 §S3 deviations.)
+- **Squared-order constraints (`NP^2==1`, interference-only |M|²)** — the
+  grammar parses `^2` and `selector.rs` treats it as an amplitude order;
+  MadGraph's per-order splitting of |M|² is a separate feature. Kept out of the
+  `ufo-lorentz` sprint (note 35 §7 D4): every SMEFT row there compares the full
+  |M|² at `NP<=1`, which MadGraph computes identically.
+- **Spin-2 externals and propagators (UFO spin code 5), spin-3/2, Majorana
+  fermions / `C`** — deferred from `ufo-lorentz` (note 35 §7 D2): the rank-2
+  tensor type is designed to host spin-2 polarisation tensors later; Majorana
+  is fermion-flow machinery of its own, and MadGraph itself refuses Majorana in
+  four-fermion vertices.
 - **`typed-units`** — research `uom`/`dimensioned`/`units` crates for typed
   four-momenta and cross sections.
 - **Self-contained `generate` artifact** (user, 2026-08-02; post-v0.1) — one
@@ -531,6 +556,35 @@ time. A small dedicated test model (or a public BSM UFO) would be the natural
 vehicle for several at once — and would also retire the standing gap that no
 non-SM model has ever been loaded end to end, so "model-generic" is currently
 exercised on SM evidence alone.
+
+**Measured 2026-09-05** (note 35 §1.3 — a probe of today's loader against
+SMEFTsim `topU3l_MwScheme`, the sprint's test case). Walls in the order the code
+hits them, each owned by a note-35 session:
+
+- **Coupling-order bundling** (L1): `ufo/topo.rs` unions every coupling's
+  orders into one map per vertex, so a SMEFTsim photon vertex reads as `NP=1`
+  and `e+ e- > mu+ mu-` enumerates **0** diagrams even under the SM-limit card.
+  MadGraph's `import_ufo.add_interaction` emits one interaction per
+  coupling-order tuple (`order_to_int`) and its restriction removes zero
+  *couplings*, not just empty vertices; ours keeps zero-coupling Lorentz
+  structures attached, so even the SM limit tries to root a dipole γ-chain.
+  `expansion_order` (`NPprop = 0`) is not read either.
+- **Parser gaps** (L1): `Gamma5` (13 uses) is `UnknownOperator`; `P(-1,a)**2`
+  powers (123 uses) do not parse; `propagators.py` is refused at the directory
+  level although only the four `NPprop` auxiliary fields carry a custom form.
+  Parameters and couplings evaluate correctly (315, 0 NaN, MW scheme).
+- **Tree-shaped primitives** (E1): `Epsilon` (846 uses) hits a `todo!()`;
+  γ-chains and `Gamma5` inside a fermion line fail adjoint inference;
+  feyngraph accepts the five- and six-leg vertices without complaint.
+- **Four-fermion vertices** (F1): `root_diagram.rs` asserts one fermion pair
+  per sink; 70 of SMEFTsim's 200 FFFF vertices mix the `(1,2)(3,4)` and
+  `(1,4)(2,3)` pairings, whose relative sign MadGraph sets per structure
+  (`get_sign_flow`).
+- **Cyclic tensor⊗tensor structures** (R4): `Gamma(-2,·)*Gamma(-2,·)*Gamma(-1,·)*Gamma(-1,·)`
+  is a 4-cycle in the index graph; no rooted tree evaluates it — it needs the
+  rank-2 tensor slot R1 builds.
+- SMEFTsim emits **no `Sigma` and no `C`**; literal `Sigma`, `d(a,b,c)` and the
+  baryonic/sextet colour atoms are the toy model's job (T1–T3).
 
 - **Color sextets and baryonic epsilons**: the color engine handles
   Singlet/Triplet/AntiTriplet/Octet only (`helas/repr/color.rs`); sextet tensors
