@@ -5,7 +5,9 @@ pub mod manifest;
 pub mod pdfset;
 pub mod report;
 
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
 use vibegraph::ufo::sm::{sm_model as interned_sm, SMRestrict};
@@ -104,6 +106,26 @@ pub fn floor_coverage_line(spend: &vibegraph::budget::ConvergenceReport) -> Stri
 /// informational, so the failure is a measurement to report rather than a
 /// condition to hide: it is returned, never unwrapped.
 pub fn model_for_row(key: &str) -> Result<Arc<UFOModel>, String> {
+    // Reading a UFO directory is not cheap and a sweep asks for the same row's
+    // model once per subprocess, so the outcome -- the failure as much as the
+    // model -- is kept.
+    static CACHE: OnceLock<Mutex<ModelCache>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(BTreeMap::new()));
+    if let Some(hit) = cache.lock().unwrap().get(key) {
+        return hit.clone();
+    }
+    let loaded = load_model_for_row(key);
+    cache
+        .lock()
+        .unwrap()
+        .insert(key.to_string(), loaded.clone());
+    loaded
+}
+
+/// What [`model_for_row`] remembers: the load's outcome per row key.
+type ModelCache = BTreeMap<String, Result<Arc<UFOModel>, String>>;
+
+fn load_model_for_row(key: &str) -> Result<Arc<UFOModel>, String> {
     let Some(row) = manifest::row_models().get(key).cloned() else {
         return Ok(sm_model());
     };
@@ -143,5 +165,58 @@ pub fn script_model_import(script: &str) -> Option<String> {
             .trim()
             .strip_prefix("import model ")
             .map(|rest| rest.trim().to_string())
+    })
+}
+
+/// The manifest row a generated subprocess file belongs to.
+///
+/// MadGraph writes each run into `validation/madgraph/output/<key>/`, and
+/// `<key>` is what the manifest keys the row by, so a sweep that walks
+/// `SubProcesses/P*/…` recovers the row from the path it is already holding.
+pub fn row_key_of(path: &Path) -> String {
+    path.ancestors()
+        .nth(3)
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("?")
+        .to_string()
+}
+
+/// Whether a row's amplitude-level gates assert or only report.
+///
+/// The colour basis is a factor of the amplitude, not a category of its own, so
+/// the colour oracles take their enforcement from the row's `amplitudes` cell:
+/// a row that cell declares `info` is measured and printed, and one that
+/// declares `gate` -- or declares no mode at all, which is every row that was
+/// enforced before any cell was informational -- is asserted.
+pub fn amplitudes_enforced(key: &str) -> bool {
+    static INFO: OnceLock<BTreeSet<String>> = OnceLock::new();
+    let info = INFO.get_or_init(|| {
+        manifest::category_modes("amplitudes")
+            .into_iter()
+            .filter(|(_, mode)| mode == "info")
+            .map(|(key, _)| key)
+            .collect()
+    });
+    !info.contains(key)
+}
+
+/// Run a comparison whose failure is only being reported, turning a panic into
+/// its message.
+///
+/// A row registered informational is measured against code that does not claim
+/// to handle it yet, and "does not handle it" arrives as an `Err` from a loader
+/// or as a panic from deeper in — the colour algebra refusing to reduce a
+/// structure it has no rule for, say — with equal legitimacy. Both are the
+/// measurement. Only the non-enforced path goes through here: a panic on a row
+/// that is asserted stays a panic.
+pub fn catching_panics<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|payload| {
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "panic payload of an unprintable type".to_string());
+        Err(format!("panicked: {message}"))
     })
 }
