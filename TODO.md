@@ -5,9 +5,17 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: between sprints, with the **`ufo-lorentz` feature
-sprint planned and approved** (note 35, 2026-09-05; §7 decisions taken, nothing
-dispatched yet). It takes the UFO surface past the SM's feature set: the rank-2
+**Current position**: **`ufo-lorentz` feature sprint in progress** (note 35;
+wave 1 dispatched 2026-09-05 — R1 `bff5aa9` and L1 `00858a8` landed and merged,
+V1 in flight; the landing records are in the note's session paragraphs). Two
+walls are already down: the loader now splits interactions per coupling-order
+tuple and prunes zero couplings the way MadGraph does, so SMEFTsim's SM limit
+enumerates MadGraph's diagram counts (2 / 3 / 2 for the three SM-limit rows),
+and the graded Clifford-basis tensor representation exists with its ε/γ5 sign
+identity pinned. One §1.4 hypothesis was falsified on contact: MadGraph's
+`expansion_order` cap applies only to orders strictly between 0 and 99, so
+`NPprop = 0` caps nothing and the auxiliary fields stay out through the WEIGHTED
+hierarchy instead. The sprint takes the UFO surface past the SM's feature set: the rank-2
 Lorentz tensor representation in the graded `1+4+6+4+1` Dirac basis and the
 finished completeness relations, SMEFTsim's `SMEFTsim_topU3l_MwScheme_UFO`
 (vendored byte for byte at `validation/ufo/`, tag `v3.0.2`, MIT) as the
@@ -564,18 +572,18 @@ exercised on SM evidence alone.
 SMEFTsim `topU3l_MwScheme`, the sprint's test case). Walls in the order the code
 hits them, each owned by a note-35 session:
 
-- **Coupling-order bundling** (L1): `ufo/topo.rs` unions every coupling's
-  orders into one map per vertex, so a SMEFTsim photon vertex reads as `NP=1`
-  and `e+ e- > mu+ mu-` enumerates **0** diagrams even under the SM-limit card.
-  MadGraph's `import_ufo.add_interaction` emits one interaction per
-  coupling-order tuple (`order_to_int`) and its restriction removes zero
-  *couplings*, not just empty vertices; ours keeps zero-coupling Lorentz
-  structures attached, so even the SM limit tries to root a dipole γ-chain.
-  `expansion_order` (`NPprop = 0`) is not read either.
-- **Parser gaps** (L1): `Gamma5` (13 uses) is `UnknownOperator`; `P(-1,a)**2`
-  powers (123 uses) do not parse; `propagators.py` is refused at the directory
-  level although only the four `NPprop` auxiliary fields carry a custom form.
-  Parameters and couplings evaluate correctly (315, 0 NaN, MW scheme).
+- ~~**Coupling-order bundling** (L1)~~ **done `00858a8`**: one vertex per
+  coupling-order tuple (`<vertex>#<n>`), restriction drops zero couplings then
+  empty vertices then unreferenced Lorentz structures, `expansion_order` read
+  and applied with MadGraph's `0 < v < 99` window (which makes it inert for
+  SMEFTsim). SM limit: `e+ e- > mu+ mu-` 2, `g g > t t~` 3, `e+ e- > t t~` 2.
+  Still open from this item: `root_diagram.rs` takes the first structure's
+  `spin_map` for a whole vertex (F1).
+- ~~**Parser gaps** (L1)~~ **done `00858a8`**: `Gamma5`, `**` integer powers
+  (`n > 2` on an indexed object rejected), sub-expression operator arguments
+  reporting `UnknownOperator` by name; `propagators.py` parsed and the hard
+  error moved to "a custom-propagator particle propagates in a selected
+  diagram" (`ConvertError::CustomPropagator`).
 - **Tree-shaped primitives** (E1): `Epsilon` (846 uses) hits a `todo!()`;
   γ-chains and `Gamma5` inside a fermion line fail adjoint inference;
   feyngraph accepts the five- and six-leg vertices without complaint.

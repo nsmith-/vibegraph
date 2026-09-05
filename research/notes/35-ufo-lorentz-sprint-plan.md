@@ -1,7 +1,8 @@
 # 35 — `ufo-lorentz` feature sprint plan: general UFO Lorentz structures
 
-**Status: APPROVED 2026-09-05 — §7 decisions taken (D1 vendored, D2 graded
-Clifford basis, D3–D5 as recommended); ready to dispatch, nothing dispatched yet.**
+**Status: IN PROGRESS — wave 1 dispatched 2026-09-05 (§8); R1 landed at
+`bff5aa9` and L1 at `00858a8`, both merged; V1 in flight. Per-session landing
+records are appended to the session paragraphs below ("Landed:").**
 
 The feature sprint that takes the UFO surface past the Standard Model's
 feature set. Three deliverables, as asked:
@@ -166,7 +167,16 @@ every gate below, including the SM-limit one that needs no new primitive.
   the four propagator-corrected auxiliary fields out of every default
   process. L1 verifies the exact rule in `madgraph_interface.py` before
   implementing it; the hypothesis is recorded here so its falsification is
-  visible.
+  visible. **Falsified by L1 (2026-09-05).** The rule is
+  `Process.check_expansion_orders` (`madgraph/core/base_objects.py:3757`,
+  called from `diagram_generation.py:1688` on the process definition after
+  `find_optimal_process_orders`, and `:2089` per concrete process): only
+  orders with `0 < expansion_order < 99` cap anything, so `NPprop = 0` caps
+  nothing, and every other SMEFTsim order is 99. What keeps the auxiliary
+  fields out of a default process is their hierarchy-99 weight under the
+  WEIGHTED search. `import_ufo.py:662-672` sets the model's `expansion_order`
+  only when every order carries the attribute. L1 implemented the rule
+  verbatim, window included, and pinned both halves with a synthetic SM cap.
 - **Sign of `restrict_massless`**: every real Wilson coefficient is set to a
   distinct fixed value (`cG 0.2, cW 0.3, cH 0.4, …`) with `LambdaSMEFT =
   1000`; imaginary parts stay zero. One card turns every structure class on,
@@ -267,6 +277,30 @@ Gate: `cargo test -p vibegraph-lib --lib helas::repr` plus the whole hermetic
 suite; `cargo clippy -D warnings`, `cargo fmt --check`. No MG involvement,
 no `KNOWN_UNCOVERED` change (nothing is wired to the evaluator yet). **No
 delegation** — small and pure judgment.
+
+**Landed (`bff5aa9`, 2026-09-05)**, with these deviations from the list
+above, each for a reason the tests pin: the grade-3 basis element is
+`γ⁵γ^μ`, not `γ^μγ⁵` (the intrinsic sign then sits in the pairing's grade-3
+term and `fierz_coefficients` equals the five existing bilinears with no
+fixups); `fierz_coefficients` returns the raw bilinears, the ¼ appearing
+only in the reconstruction `ψφ̄ = ¼ Σ_A (φ̄Γ_Aψ) Γ^A`; the Clifford product
+goes through the faithful 4×4 Weyl matrix (`to_weyl_matrix`) rather than
+hand-written structure constants, with `from_gamma_pair` as the closed
+coefficient form checked against it; `Multivector` stores `[C<F>; 16]` with
+grade accessors, since `ArrayBacked` needs one contiguous array and five
+named fields cannot provide it; `AsymRank2Tensor`'s field is private, order
+`(0,1)(0,2)(0,3)(1,2)(1,3)(2,3)`. `intertwiner.rs` never held stubs — only
+doc text naming types that did not exist — so its table was corrected.
+Convention results: `σ^{μν}γ⁵ = −(i/2) ε^{μνρσ} σ_{ρσ}`, i.e. `s = −1`
+under `ε^{0123} = −1` with Weyl `γ⁵ = diag(−1,−1,+1,+1)` — `s` is the ε
+sign re-expressed, and the pin fails under the flipped convention. **E1
+trap**: `epsilon4` takes contravariant arguments and returns the all-lower
+symbol `ε_{μνρσ} a^μ b^ν c^ρ d^σ` (`+1` on `e₀..e₃`); ALOHA's stored
+upper-index component is its negative. A five-mutation sweep was caught by
+the tests; one mutation exposed that the diagonal reconstruction `ψψ̄` is
+blind to the three boost-like `σ^{0i}` slots for a helicity eigenstate, so
+the off-diagonal reconstruction with an unrelated bra — the form R4 needs —
+was added.
 
 ### E1 — tree-shaped structures: `Epsilon`, γ-chains, `Gamma5`, momentum algebra (feature-dev)
 
@@ -394,6 +428,35 @@ Einstein contraction, reject `n > 2` on an indexed object — SMEFTsim uses only
   hermetic test, so a drifted vendored copy fails loudly.
 
 **Sonnet relief**: none — every item is a convention with a falsifier.
+
+**Landed (`00858a8`, 2026-09-05).** Corrections to the list above: the
+interned SM blob could not stay byte-identical — `ParsedModel` gained
+`expansion_order` and `propagators` and `Particle` a `propagator`, and
+bincode is not schema-evolving — so it was regenerated (5131 → 5115 bytes)
+and value-equality on every pre-change field proven instead, with
+`splitting_is_the_identity_on_the_standard_model` and the 19-process
+bit-for-bit `amplitude_oracle` as the permanent falsifiers; the committed
+blob had not been a bincode round-trip fixed point (map entries out of
+`BTreeMap` order), which the value-comparing test could never see. Colour
+strings are not pruned under restriction (MadGraph prunes only the Lorentz
+list, and every consumer reaches colour structures through the coupling
+keys). The splitting key is the sorted order map where MadGraph's is the
+insertion-ordered tuple; zero divergent pairs in six models. Measured:
+1985 split interactions before restriction; 62 under `SMlimit_massless`
+(`{3: 50, 4: 10, 5: 2}`), 913 under `massless` (`{3: 256, 4: 564, 5: 82,
+6: 11}`) — §1.3's 60/540 were pre-split counts. SM-limit diagrams:
+`e+ e- > mu+ mu-` 2, `g g > t t~` 3, `e+ e- > t t~` 2. The probe's fourth
+`g g > t t~` diagram is `g g → H → t t̄` through the effective `ggH` split
+(`SMHLOOP = 1`), which the WEIGHTED default drops; `QCD<=2` alone brings it
+back, and MadGraph is predicted to give 4 there too (V1 measures). The
+SM-limit op census allowlist is `[Hels, ProjM, ProjMAmp, ProjPAmp,
+MetricVout, IdentityAmp, FfvVout, FfvIout, FfvOout, PMomOut]`; the fused
+`Ffv*` forms are not reached on this vertex set, which E1's fused-vs-generic
+pin must not assume. `root_diagram.rs` still takes the first structure's
+`spin_map` for a whole vertex — F1's item, now over referenced structures
+only. Two files outside the list changed: `root_lorentz.rs` (a `Gamma5 =>
+UnsupportedVertex` arm E1 replaces) and the CLI half of the note-29 refusal
+test.
 
 ### V1 — SMEFTsim into the MadGraph oracle pipeline (validation-dev; runs on the MG host)
 
@@ -570,7 +633,7 @@ oracle already banked.
 
 ```
 Wave 0 (manager, done): S0 vendored UFO + this note + TODO
-Wave 1:  R1 (hermetic)  ∥  L1 (loader/splitting)  ∥  V1 (bank the ladder, MG host)
+Wave 1:  R1 (hermetic)  ∥  L1 (loader/splitting)  ∥  V1 (bank the ladder, MG host)   ← dispatched 2026-09-05; R1, L1 merged
 Wave 2:  L2 (SM-limit gate; needs L1+V1)  ∥  E1 (tree-shaped primitives; needs R1, L1, V1)
 Wave 3:  F1 (four-fermion; needs L1, V1)  →  R4 (tensor slot; needs R1, E1, F1)
 Wave 4:  T1 (toy oracle; needs V1's pipeline)  ∥  C (capstone; needs E1, F1, R4)
