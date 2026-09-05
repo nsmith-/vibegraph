@@ -520,8 +520,15 @@ none); three Linux portability fixes in the generators (`-lc++` gated on
 (123573853 bytes, sha256 `035af83c…`) is built but unpublished; the manifest
 pin stays at 6 until the owner uploads it, and the 16 rows carry
 `bundled = false` until then. The colour oracles' SM-only model loading was
-found on the merge; a follow-up commit makes them load the row's model (see
-§5).
+found on the merge and fixed in `92db0ad` (see §5): 15 of the 16 rows then
+reproduce MadGraph's colour matrix exactly (`CF max_rel = 0`), including
+`gg_to_gg_cg` at NCOLOR 9 with `cGtil` on and the 222-diagram
+`wpwm_to_wpwmz_cw`; the one colour-engine gap is `uux_to_ttx_4f`, whose
+singlet⊗singlet four-quark contact structure (`δ_{12} δ_{43} δ_{12} δ_{43}`)
+the CF reducer has no rule for — F1's row, F1's item. The flow-tags oracle
+agrees on the seven rows that compile; the other nine stop in the tree
+builder (`Epsilon` routing, `Gamma5` in a chain, four-fermion sinks), which
+are E1/F1/R4 by construction.
 
 ### L2 — the SM-limit gate (validation-dev; after L1 + V1)
 
@@ -596,8 +603,9 @@ coefficients: the momentum-slashed chain (`FFV9`) pairs with
 `cQj11`/`cQj18`. (e) Added `gg_to_ttx_smlimit_qcd2` (`g g > t t~ QCD<=2`,
 SM limit: 4 diagrams). The colour oracles (`color_cf_oracle`,
 `color_flow_tags_oracle`) were found to load the interned SM for every row;
-a follow-up commit makes them load the row's model and card, and report
-rather than enforce a row whose `amplitudes` cell is `info`. **Colour**: no SMEFTsim row
+`92db0ad` makes them load the row's model and card, and report rather than
+enforce a row whose `amplitudes` cell is `info` (a panic on such a row is
+caught and reported too; a `gate` row's panic stays a panic). **Colour**: no SMEFTsim row
 needs a colour atom the engine lacks (§1.2); the toy model carries the rest.
 
 ## 6. Track T — the toy UFO for what SMEFTsim leaves unexercised

@@ -598,7 +598,11 @@ hits them, each owned by a note-35 session:
 - **Four-fermion vertices** (F1): `root_diagram.rs` asserts one fermion pair
   per sink; 70 of SMEFTsim's 200 FFFF vertices mix the `(1,2)(3,4)` and
   `(1,4)(2,3)` pairings, whose relative sign MadGraph sets per structure
-  (`get_sign_flow`).
+  (`get_sign_flow`). Measured on the banked ladder: the colour-singlet⊗singlet
+  four-quark contact structure (`uux_to_ttx_4f`, `Identity*Identity`) panics
+  the CF reducer — "color matrix entry did not reduce to a scalar" on
+  `δ_{12} δ_{43} δ_{12} δ_{43}` — the one colour-algebra rule the ladder needs
+  that the engine lacks; every other SMEFTsim row's colour matrix is exact.
 - **Cyclic tensor⊗tensor structures** (R4): `Gamma(-2,·)*Gamma(-2,·)*Gamma(-1,·)*Gamma(-1,·)`
   is a 4-cycle in the index graph; no rooted tree evaluates it — it needs the
   rank-2 tensor slot R1 builds.
