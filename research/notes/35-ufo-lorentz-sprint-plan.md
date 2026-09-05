@@ -1,6 +1,7 @@
 # 35 — `ufo-lorentz` feature sprint plan: general UFO Lorentz structures
 
-**Status: PLANNED 2026-09-05 — awaiting the §7 decisions; nothing dispatched.**
+**Status: APPROVED 2026-09-05 — §7 decisions taken (D1 vendored, D2 graded
+Clifford basis, D3–D5 as recommended); ready to dispatch, nothing dispatched yet.**
 
 The feature sprint that takes the UFO surface past the Standard Model's
 feature set. Three deliverables, as asked:
@@ -9,7 +10,8 @@ feature set. Three deliverables, as asked:
    and finish the spinor completeness-relation unit tests — the `AsymRank2Tensor`
    placeholder, the `tensor bilinear f̄ σ^μν Γ f` TODO, and the
    `test_completeness_relations` TODO that has waited on it.
-2. **SMEFTsim as a submodule, `SMEFTsim_topU3l_MwScheme_UFO` as the test case**
+2. **SMEFTsim's `SMEFTsim_topU3l_MwScheme_UFO` as the test case** (vendored
+   byte for byte at `validation/ufo/`, provenance in its README)
    for every Lorentz-structure vertex primitive the SM never exercised —
    gated the project's way, per-diagram × per-helicity against MadGraph's own
    `MATRIX1`, informational first and enforced when agreement is demonstrated.
@@ -76,7 +78,7 @@ dump (note 12).
   same rounded card — the same mechanism carries Wilson coefficients for
   free). `mg5_pinned.sh` runs the submodule's MadGraph (3.7.x line).
 
-### 1.2 SMEFTsim `topU3l_MwScheme` — static census (v3.0.2, `db7d4a80`)
+### 1.2 SMEFTsim `topU3l_MwScheme` — static census (v3.0.2, `db7d4a80`; vendored at `validation/ufo/SMEFTsim_topU3l_MwScheme_UFO/`)
 
 21 particles (spins 1/2/3 only, no ghosts; colours 1/3/8), 260 Lorentz
 structures, 904 vertices, 1278 couplings, 315 parameters; `propagators.py`
@@ -190,53 +192,76 @@ Inherited from notes 28/29/34, with the additions this sprint needs:
   registration, never a runtime skip); the SMEFTsim `amplitudes` cells are
   hermetic once their tables are banked, like today's.
 - **Worktrees pre-created off `main` by the manager, reference data
-  COW-cloned in, submodules (both) present** — a fresh worktree gets neither
-  `mg5amcnlo` nor `smeftsim` content and `cargo test` would fail-fast on the
-  missing sources. Dev-agent briefs carry the worktree/long-command discipline
+  COW-cloned in, the `mg5amcnlo` submodule present** — a fresh worktree gets
+  none of it and `cargo test` would fail-fast on the missing SM source. The
+  SMEFTsim UFO is vendored, so it is in every checkout. Dev-agent briefs carry the worktree/long-command discipline
   verbatim (`.agents/agents/feature-dev.md`).
 - **Sonnet relief valves**: named per session; deterministic bulk only.
 
 ## 3. Track R — representation layer and evaluator primitives
 
-### R1 — rank-2 tensor representation and the completeness relations (feature-dev, hermetic)
+### R1 — the graded Clifford-basis tensor representation and the completeness relations (feature-dev, hermetic)
 
-`helas/repr/lorentz.rs` only. Deliverables:
+`helas/repr/lorentz.rs` only. **Design (user, §7 D2)**: the "general rank-2
+tensor" a fermion line produces — `f̄ γ^μ γ^ν Γ f`, and by extension any
+γ-chain with Γ ∈ Cl(1,3) ⊗ ℂ — is not stored as sixteen `(μ, ν)` components
+but in the **graded Dirac basis `1 + 4 + 6 + 4 + 1`**: `{1, γ^μ, σ^μν, γ^μγ5, γ5}`
+(scalar, vector, bivector, axial vector, pseudoscalar). Every 4×4 spinor-space
+operator is a unique combination of these sixteen; `γ^μγ^ν = g^{μν} − i σ^{μν}`
+puts the γγ current in grades 0 and 2 only; a chiral projector moves weight
+between the even grades (`1 ↔ γ5`, `σ ↔ σγ5 ∝ ε·σ`) and between the odd ones
+(`γ ↔ γγ5`); the antisymmetric part is the grade-2 slice, not an extraction.
+Fierz orthogonality `Tr[Γ_A Γ^B] = 4 δ_A^B` makes the tensor⊗tensor contraction
+of two lines a grade-diagonal pairing of their coefficient vectors. Deliverables:
 
-- `Rank2Tensor<F, V1: Variance, V2: Variance>`: 16 complex components,
-  row-major `(μ, ν)`, `ArrayBacked` + `impl_vectorspace!`, `LorentzRepr`,
-  per-index `dualize` (raise/lower with the metric), `contract` with a
-  same-shape tensor of dual variances (`T^{μν} U_{μν}`), left/right
-  contraction with a `ComplexVector` (`T^{μν} v_ν`), outer product, transpose,
-  trace, `antisymmetric_part`.
-- `AsymRank2Tensor<F>` promoted from placeholder to the (1,0)⊕(0,1)
-  representation: six components in a documented order, `From` into the
-  general tensor and `antisymmetric_part` back, `contract`, and the Hodge
-  dual `½ ε^{μνρσ} T_{ρσ}` (which is the chirality decomposition: on Weyl
-  spinors `σ^μν P_L` is anti-self-dual / self-dual — a convention-pinning test
-  in itself).
-- `SpinorRepr::tensor_bilinear(fi, chirality) -> AsymRank2Tensor`
-  (`f̄ σ^μν Γ f`, `σ^μν = i/2 [γ^μ, γ^ν]`), `gamma_pair_bilinear(fi, chirality)
-  -> Rank2Tensor` (`f̄ γ^μ γ^ν Γ f`, the form SMEFTsim actually emits), and the
-  identity `γ^μγ^ν = g^{μν} − i σ^{μν}` pinned between them. Spinor-side
-  `slash_pair(&Rank2Tensor<Cov,Cov>)` applying `T_{μν} γ^μ γ^ν` on both
-  adjoints (bra order reversed), pinned by `ψ̄ (T·γγ) ψ = T_{μν} (ψ̄ γ^μγ^ν ψ)`.
+- **`Multivector<F>`** — the name proposed here for an element of the
+  complexified spacetime Clifford algebra with its five graded parts
+  (geometric algebra's standard term; `CliffordElement` is the fallback if the
+  reviewer prefers the algebra named). Fields by grade: `scalar: C<F>`,
+  `vector: ComplexVector`, `bivector: AsymRank2Tensor` (six components, a
+  documented order), `axial: ComplexVector`, `pseudoscalar: C<F>`;
+  `ArrayBacked<C<F>, 16>` over the concatenation so `impl_vectorspace!`
+  applies. Operations: the **Clifford product** (multivector × multivector,
+  closed — this is what composes γ-chains), **action on a spinor** for both
+  adjoints (`ψ ↦ M ψ`, `ψ̄ ↦ ψ̄ M`, grade by grade in the Weyl basis, where
+  even grades preserve the chiral blocks and odd grades swap them — a
+  structural test in itself), the **Fierz pairing** `⟨M, N⟩ = ¼ Tr[M N]`
+  expressed on coefficients, `from_gamma(v)` (`v̸`), `from_gamma_pair(a, b)`
+  (`a̸ b̸ = a·b − i σ^{μν} a_μ b_ν`), `from_projector(chirality)`, and
+  `bivector.hodge_dual()` (`½ ε^{μνρσ} T_{ρσ}`, the chirality split of the
+  bivector: (anti-)self-dual on Weyl spinors).
+- `AsymRank2Tensor<F>` promoted from placeholder to the six-component grade-2
+  slice with its own `contract`, `dualize`, `contract_vectors(a, b)`
+  (`T^{μν} a_μ b_ν`) and the Hodge dual above.
+- `SpinorRepr::fierz_coefficients(fi) -> Multivector` — all sixteen bilinears
+  `f̄ Γ_A f` of a line at once (the line's "current" in the graded basis);
+  `tensor_bilinear(fi, chirality) -> AsymRank2Tensor` (`f̄ σ^μν Γ f`) as its
+  grade-2 slice with the projector folded in; `apply(&Multivector)` on both
+  adjoints. Identities pinned: `f̄ a̸ b̸ f = (a·b) f̄f − i a_μ b_ν f̄σ^{μν}f`, the
+  existing scalar/pseudoscalar/vector/axial bilinears equal the corresponding
+  grades of `fierz_coefficients`, and `ψ̄ (M ψ) = ⟨fierz(ψ̄, ψ), M⟩`.
 - Levi-Civita primitives `epsilon4(a,b,c,d) -> C<F>` and
   `epsilon_vector(a,b,c) -> ComplexVector` at the **ALOHA convention
   `ε^{0123} = −1`** (§1.4), antisymmetry and basis values pinned, plus the
-  γ5–ε identity `f̄ σ^μν γ5 f ∝ ε^{μνρσ} f̄ σ_ρσ f` derived in the Weyl basis
-  under that convention and pinned — this is the test that ties the ε sign
-  to the γ5 sign inside one representation, before MadGraph is consulted.
+  γ5–ε identity `σ^μν γ5 = (i/2)·s·ε^{μνρσ} σ_ρσ` with the sign `s` derived in
+  the Weyl basis under that convention and pinned — the test that ties the ε
+  sign to the γ5 sign inside one representation, before MadGraph is consulted.
 - **Completeness relations finished**: helicity-summed
   `Σ_h ū σ^μν u = 0` (all six components) and `Σ_h ū γ^μγ^ν u = ±4m g^{μν}`
   (u/v), closing the TODO; and the stronger **per-helicity Fierz
-  reconstruction** `u ū = ¼ Σ_A (ū Γ_A u) Γ^A` over the 16-element basis
-  `{1, γ5, γ^μ, γ^μγ5, σ^μν}` built from explicit Weyl-basis gamma matrices
-  in the test module — passes only if every bilinear's convention is
-  mutually consistent, which is exactly what the summed relations cannot see
+  reconstruction** `u ū = ¼ Σ_A (ū Γ_A u) Γ^A` — with the graded basis in
+  place this is literally "`fierz_coefficients(u)` acting as a `Multivector`
+  reproduces the outer product `u ū`", checked against explicit Weyl-basis
+  gamma matrices built in the test module. It passes only if every bilinear's
+  convention is mutually consistent, which the summed relations cannot see
   (AGENTS.md: know each oracle's blind spot).
 - `intertwiner.rs`'s phantom stubs either become thin wrappers over the new
   methods or are deleted with the doc table corrected — no "stub pending"
   text survives.
+
+Not built (§7 D2): a symmetric rank-2 Lorentz tensor for spin-2
+wavefunctions. It is a different object (a Lorentz tensor, not a Clifford
+element) and gets its own type when a spin-2 model is in reach.
 
 Gate: `cargo test -p vibegraph-lib --lib helas::repr` plus the whole hermetic
 suite; `cargo clippy -D warnings`, `cargo fmt --check`. No MG involvement,
@@ -309,15 +334,18 @@ and the sign diagnoses are Opus.
 
 ### R4 — the tensor slot and the cyclic four-fermion structures (feature-dev; after R1, E1, F1)
 
-- `WaveformSlot::Tensor(TensorWf<F>)` (rank-2 + momentum), `Add`/scalar
-  `Mul` arms, `prop_harness::rand_tensor`.
+- `WaveformSlot::Multivector(MultivectorWf<F>)` (the line's graded
+  coefficients + momentum), `Add`/scalar `Mul` arms,
+  `prop_harness::rand_multivector`.
 - Rooting: when `build_child` meets an already-visited operator through a
   second Lorentz index (the 4-cycle), cut the cycle at the fermion line that
   does not contain the output leg: evaluate that line as a rank-2 current
-  (`GammaPairTout{i,j}` — `ψ̄ γ^μ γ^ν Γ ψ`), and contract it into the output
-  line (`TensorSlashIout/Oout` applying `T_{μν} γ^ν γ^μ` in the order the
-  chain dictates) or into the amplitude (`TensorContract`). Ops, lowering,
-  kernels (R1's `gamma_pair_bilinear`, `slash_pair`, `contract`).
+  (`FierzOut{i,j}` — `fierz_coefficients` of the chain, grades 0 and 2 for a
+  γγ chain), and contract it into the output line (`MultivectorIout/Oout`:
+  the other line's coefficients rebuilt as the operator `Σ c_A Γ^A` with the
+  index order the chain dictates, applied to the continuing spinor) or into
+  the amplitude (`FierzPair`, the grade-diagonal pairing). Ops, lowering,
+  kernels (R1's `fierz_coefficients`, `apply`, Fierz pairing).
 - Pin the γγ⊗γγ evaluation against the toy model's literal `Sigma⊗Sigma`
   vertex once T2 lands (the two must agree by the R1 identity); until then
   against MadGraph on `ee_to_ttx_tensor4f` (§5).
@@ -362,8 +390,8 @@ Einstein contraction, reject `n > 2` on an indexed object — SMEFTsim uses only
   count against MadGraph's (V1 banks it), the SM-limit derived parameters
   against MadGraph's `param_card.dat` values, and diagram counts for the
   §5 processes (`info` until V1's `diagrams.json` entries exist, then `gate`).
-- `validation/fetch_common.sh::vg_ensure_submodule` learns the second
-  submodule (and the sparse-checkout option of §7 D1 if adopted).
+- `validation/ufo/SMEFTsim_topU3l_MwScheme_UFO/SHA256SUMS` verified by a
+  hermetic test, so a drifted vendored copy fails loudly.
 
 **Sonnet relief**: none — every item is a convention with a falsifier.
 
@@ -376,8 +404,9 @@ Oracle before engine, banked before any flip:
   for `output`. Manifest rows gain `model` and `restrict` fields; the report
   collator and `gen_amplitude.py` read them (its `--dump-processes`
   migration oracle diffed before/after).
-- **Per-row Wilson-coefficient selection without editing the submodule**:
-  `build.sh` copies the UFO directory into `output/models/…` and adds the
+- **Per-row Wilson-coefficient selection without editing the vendored copy**:
+  `build.sh` copies `validation/ufo/SMEFTsim_topU3l_MwScheme_UFO` into
+  `output/models/…` and adds the
   committed cards from `validation/madgraph/cards/smeft/restrict_vg_<class>.dat`
   (each a copy of `restrict_massless.dat` with only one class of coefficients
   non-zero, at the shipped values). Both MadGraph and vibegraph import the
@@ -420,7 +449,7 @@ on: Z-coupling shifts, `ctZ`/`ctA` dipoles, scalar/vector/tensor
 four-fermion, `cHDD`/`cHWB` input shifts) — σ vs MadGraph's banked fixed-energy
 run at `rel_tol` set by the reference's own error, ≥ 5 seeds and the ladder
 discipline (AGENTS.md); `amplitudes` cell for the same row already `gate`.
-Then the user path: `vibegraph integrate --ufo-dir research/refs/smeftsim/UFO_models …`
+Then the user path: `vibegraph integrate --ufo-dir validation/ufo …`
 with the restrict-name suffix syntax (`-SMlimit_massless`), a proc card
 carrying `NP<=1`, and the artifact's model identity (label + digest) recording
 the SMEFTsim model — README scope paragraph updated from "SM only" to what is
@@ -428,8 +457,8 @@ now gated.
 
 ## 5. Coverage table — every new primitive has a MadGraph-gated row
 
-Rows import the work-area copy of `SMEFTsim_topU3l_MwScheme_UFO` with the
-named card; process strings carry explicit orders because the WEIGHTED
+Rows import the work-area copy of the vendored
+`SMEFTsim_topU3l_MwScheme_UFO` with the named card; process strings carry explicit orders because the WEIGHTED
 default would drop NP diagrams (`NP` hierarchy 99). All start `info` (V1)
 and flip in the named session. The dev choosing a cheaper process for the
 same primitive must keep the primitive column covered.
@@ -509,44 +538,38 @@ decides how to write them. If time runs out, `Epsilon` alone is the
 deliverable and sextets return to the `non-sm-ufo` checklist with the CF
 oracle already banked.
 
-## 7. Decisions (user)
+## 7. Decisions (user, 2026-09-05)
 
-1. **D1 — SMEFTsim submodule footprint.** Added in this planning commit at
-   tag `v3.0.2` (`db7d4a80`), `--depth=1`, 101 MB checked out — the UFO the
-   gates read is 0.8 MB of it; the rest is FeynRules sources and notebooks.
-   CI's `banked` job checks submodules out (`submodules: true`), so this adds
-   ~100 MB to that job's checkout. **Recommended**: keep the full submodule
-   (provenance by pin, as asked) and have `vg_ensure_submodule` apply a
-   `sparse-checkout` to `UFO_models/SMEFTsim_topU3l_MwScheme_UFO` after
-   init, measuring whether `--filter=blob:none` on the submodule update is
-   honoured by the pinned git. Alternative: vendor the one directory
-   (0.8 MB, MIT) and drop the submodule.
-2. **D2 — scope of "the tensor rep".** **Recommended**: general rank-2 +
-   antisymmetric (R1) hosting σ^μν, γγ currents and ε contractions;
-   **spin-2 external wavefunctions and propagators (UFO spin code 5) stay
-   deferred** — the symmetric-traceless polarisation tensors and the
-   massive spin-2 propagator are a feature of their own with no test model in
-   reach, and `Rank2Tensor` is designed so they slot in later. Spin-3/2 and
-   Majorana/`C` are out (Majorana is fermion-flow machinery, its own sprint;
-   MadGraph itself refuses Majorana in 4-fermion vertices).
-3. **D3 — toy UFO: generate, not adopt** (§6 rationale). Which of the three
-   colour atoms are in scope decides T3's size: **recommended** `d` and
-   baryonic `Epsilon` in scope, sextets as the stretch.
-4. **D4 — squared-order constraints (`NP^2==1`, interference-only |M|²).**
-   The grammar parses `^2` and the selector treats it like an amplitude
-   order (`selector.rs:43`); implementing MadGraph's per-order |M|²
-   splitting is a separate feature. **Recommended**: out of this sprint,
-   tracked in the feature backlog; every row above compares the full |M|² at
-   `NP<=1` (SM + interference + NP²), which MadGraph computes identically.
-5. **D5 — capstone.** **Recommended** `e+ e- > t t~ NP<=1` at 500 GeV under
-   `restrict_massless` (fixed energy, no PDFs, every structure class in one
-   process). Alternative `p p > t t~` with `ctG` at 13 TeV exercises the
-   hadronic path too but costs a full hadronic reference run.
+1. **D1 — vendor the UFO, not a submodule (decided).** The planning commit
+   had added SMEFTsim as a depth-1 submodule (101 MB checked out for a 0.8 MB
+   UFO, and CI's `banked` job checks submodules out); it is replaced by a
+   byte-for-byte copy of `UFO_models/SMEFTsim_topU3l_MwScheme_UFO` at
+   `validation/ufo/SMEFTsim_topU3l_MwScheme_UFO/` with the upstream MIT
+   `LICENSE`, a `SHA256SUMS` manifest and a README recording the provenance
+   (tag `v3.0.2`, commit `db7d4a80`, 2021-01-24). No submodule step in any
+   session; `vg_ensure_submodule` is unchanged.
+2. **D2 — the tensor representation lives in the graded `1 + 4 + 6 + 4 + 1`
+   Dirac basis (decided).** R1 builds a `Multivector<F>` (proposed name; an
+   element of Cl(1,3) ⊗ ℂ with scalar, vector, bivector, axial-vector and
+   pseudoscalar grades) rather than a sixteen-component `(μ, ν)` array; the
+   antisymmetric tensor is its grade-2 slice, γ-chains compose by the
+   Clifford product, and the tensor⊗tensor four-fermion contraction is the
+   grade-diagonal Fierz pairing. Spin-2 externals (a symmetric Lorentz
+   tensor, a different object) stay deferred; spin-3/2 and Majorana/`C` are
+   out (Majorana is fermion-flow machinery of its own; MadGraph itself
+   refuses Majorana in 4-fermion vertices).
+3. **D3 — toy UFO: generate, not adopt (decided as recommended)**; `d` and
+   baryonic `Epsilon` in scope, sextets as the T3 stretch.
+4. **D4 — squared-order constraints out of this sprint (decided as
+   recommended)**; tracked in the feature backlog; every row compares the full
+   |M|² at `NP<=1`.
+5. **D5 — capstone `e+ e- > t t~ NP<=1` at 500 GeV under `restrict_massless`
+   (decided as recommended).**
 
 ## 8. Sequencing
 
 ```
-Wave 0 (manager, this commit): S0 submodule + this note + TODO
+Wave 0 (manager, done): S0 vendored UFO + this note + TODO
 Wave 1:  R1 (hermetic)  ∥  L1 (loader/splitting)  ∥  V1 (bank the ladder, MG host)
 Wave 2:  L2 (SM-limit gate; needs L1+V1)  ∥  E1 (tree-shaped primitives; needs R1, L1, V1)
 Wave 3:  F1 (four-fermion; needs L1, V1)  →  R4 (tensor slot; needs R1, E1, F1)

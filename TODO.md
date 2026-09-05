@@ -6,11 +6,12 @@ what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
 **Current position**: between sprints, with the **`ufo-lorentz` feature
-sprint planned** (note 35, 2026-09-05; awaiting its §7 decisions, nothing
-dispatched). It takes the UFO surface past the SM's feature set: the rank-2
-Lorentz tensor representation and the finished completeness relations, SMEFTsim
-(`research/refs/smeftsim`, pinned `v3.0.2`) with `SMEFTsim_topU3l_MwScheme_UFO`
-as the MadGraph-gated test case for `Epsilon`, `Gamma5`, γ-chains,
+sprint planned and approved** (note 35, 2026-09-05; §7 decisions taken, nothing
+dispatched yet). It takes the UFO surface past the SM's feature set: the rank-2
+Lorentz tensor representation in the graded `1+4+6+4+1` Dirac basis and the
+finished completeness relations, SMEFTsim's `SMEFTsim_topU3l_MwScheme_UFO`
+(vendored byte for byte at `validation/ufo/`, tag `v3.0.2`, MIT) as the
+MadGraph-gated test case for `Epsilon`, `Gamma5`, γ-chains,
 four-fermion and tensor⊗tensor structures, and a hand-written toy UFO for the
 structures SMEFTsim never emits (literal `Sigma`, `d(a,b,c)`, baryonic colour
 `Epsilon`, sextets as stretch). Its census probe found the first wall is not
@@ -511,8 +512,10 @@ above); the entries here are the eventual features.
   `ufo-lorentz` sprint (note 35 §7 D4): every SMEFT row there compares the full
   |M|² at `NP<=1`, which MadGraph computes identically.
 - **Spin-2 externals and propagators (UFO spin code 5), spin-3/2, Majorana
-  fermions / `C`** — deferred from `ufo-lorentz` (note 35 §7 D2): the rank-2
-  tensor type is designed to host spin-2 polarisation tensors later; Majorana
+  fermions / `C`** — deferred from `ufo-lorentz` (note 35 §7 D2): the sprint's
+  tensor type is a Clifford-algebra element in the graded Dirac basis, so a
+  spin-2 polarisation tensor (a symmetric Lorentz tensor) is a separate type
+  for a later sprint; Majorana
   is fermion-flow machinery of its own, and MadGraph itself refuses Majorana in
   four-fermion vertices.
 - **`typed-units`** — research `uom`/`dimensioned`/`units` crates for typed
