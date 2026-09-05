@@ -32,6 +32,18 @@ fn cmul<F: Real>(a: C<F>, b: C<F>) -> C<F> {
     C::new(re, im)
 }
 
+/// Multiplication by `i`, as a component swap rather than a complex product.
+#[inline(always)]
+fn mul_i<F: Real>(z: C<F>) -> C<F> {
+    C::new(-z.im, z.re)
+}
+
+/// Multiplication by `−i`, as a component swap rather than a complex product.
+#[inline(always)]
+fn mul_neg_i<F: Real>(z: C<F>) -> C<F> {
+    C::new(z.im, -z.re)
+}
+
 /// Complex multiply-add `a * b + c`.
 #[inline(always)]
 fn cmul_add<F: Real>(a: C<F>, b: C<F>, c: C<F>) -> C<F> {
@@ -472,6 +484,24 @@ pub trait DiracAdjoint: sealed::Sealed + Copy + PartialEq + Eq + 'static {
     /// - **ket**: the left action `v̸ ψ`;
     /// - **bra**: the right action `ψ̄ v̸`.
     fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4];
+
+    /// Apply a 4×4 Weyl-basis operator to a bispinor of this adjoint.
+    ///
+    /// The open spinor index sits on a different side of the operator for each
+    /// adjoint, so a ket takes the column action `M ψ` and a bra the row action
+    /// `ψ̄ M` — the transpose of the ket action, which is what the bra's storage
+    /// of the row vector `ψ† γ⁰` calls for.
+    fn apply_weyl_matrix<F: Real>(psi: &[C<F>; 4], m: &[[C<F>; 4]; 4]) -> [C<F>; 4];
+}
+
+/// Contract one length-4 complex row against a length-4 complex column.
+#[inline(always)]
+fn dot4<F: Real>(a: [C<F>; 4], b: [C<F>; 4]) -> C<F> {
+    cmul_add(
+        a[0],
+        b[0],
+        cmul_add(a[1], b[1], cmul_add(a[2], b[2], cmul(a[3], b[3]))),
+    )
 }
 
 /// Marker for ket spinors (`u`/`v` columns).
@@ -513,6 +543,12 @@ impl DiracAdjoint for Ket {
 
         [l1, l2, r1, r2]
     }
+
+    /// Ket column action `(M ψ)_i = M_{ij} ψ_j`.
+    #[inline(always)]
+    fn apply_weyl_matrix<F: Real>(psi: &[C<F>; 4], m: &[[C<F>; 4]; 4]) -> [C<F>; 4] {
+        std::array::from_fn(|i| dot4(m[i], *psi))
+    }
 }
 
 /// Marker for bra spinors (`ū`/`v̄` rows).
@@ -552,6 +588,12 @@ impl DiracAdjoint for Bra {
             cmul_add(v0_p_v3, psi[0], cmul(v1_p_iv2, psi[1])),
             cmul_add(v1_m_iv2, psi[0], cmul(v0_m_v3, psi[1])),
         ]
+    }
+
+    /// Bra row action `(ψ̄ M)_j = ψ̄_i M_{ij}`.
+    #[inline(always)]
+    fn apply_weyl_matrix<F: Real>(psi: &[C<F>; 4], m: &[[C<F>; 4]; 4]) -> [C<F>; 4] {
+        std::array::from_fn(|j| dot4(*psi, [m[0][j], m[1][j], m[2][j], m[3][j]]))
     }
 }
 
@@ -664,7 +706,48 @@ pub trait SpinorRepr<F: Real, Adj: DiracAdjoint = Ket>: LorentzRepr<F> {
         }
     }
 
-    // TODO: tensor bilinear `f̄ σ^μν Γ f` where `σ^μν = i/2 [γ^μ, γ^ν]` and `Γ` encodes chirality.
+    /// Tensor bilinear contraction: `f̄ σ^{μν} Γ f` where `σ^{μν} = (i/2)[γ^μ, γ^ν]`
+    /// and `Γ` encodes chirality.
+    ///
+    /// The result holds the contravariant `T^{μν}` in [`AsymRank2Tensor`]'s
+    /// six-slot order. `σ^{μν}` commutes with `γ^5`, so the chiral projector may be
+    /// read on either side of it.
+    fn tensor_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> AsymRank2Tensor<F>
+    where
+        Adj: IsBra;
+
+    /// All sixteen bilinears `f̄ Γ_A f` of a fermion line at once: the line's
+    /// current in the graded Dirac basis.
+    ///
+    /// The five grades are exactly the scalar, vector, tensor, axial-vector and
+    /// pseudoscalar bilinears with no relative normalisation — that is what
+    /// [`Multivector`]'s choice of `γ^5 γ^μ` for its grade-3 basis element buys.
+    /// Two identities fix the overall normalisation, both pinned in this module's
+    /// tests:
+    ///
+    /// - the outer product is `ψ ψ̄ = ¼ Σ_A (ψ̄ Γ_A ψ) Γ^A`, i.e. a quarter of this
+    ///   multivector read as an operator;
+    /// - `ψ̄ M ψ = ⟨fierz_coefficients(ψ̄, ψ), M⟩` for every Clifford element `M`,
+    ///   with `⟨·,·⟩` the Fierz pairing [`Multivector::fierz_pairing`].
+    #[inline]
+    fn fierz_coefficients(&self, fi: &Self::Dual) -> Multivector<F>
+    where
+        Adj: IsBra,
+    {
+        Multivector::new(
+            self.scalar_bilinear(fi, Chirality::Both),
+            self.vector_bilinear(fi, Chirality::Both),
+            self.tensor_bilinear(fi, Chirality::Both),
+            self.axial_vector_bilinear(fi, Chirality::Both),
+            self.pseudoscalar_bilinear(fi, Chirality::Both),
+        )
+    }
+
+    /// Apply a Clifford-algebra element: `M ψ` on a ket, `ψ̄ M` on a bra.
+    ///
+    /// This is the general form of [`slash`](Self::slash), which is the grade-1
+    /// case: `psi.apply(&Multivector::from_gamma(&v)) == psi.slash(&v)`.
+    fn apply(self, m: &Multivector<F>) -> Self;
 }
 
 /// A concrete Spin(1,3) representation: the Weyl basis for Dirac spinors.
@@ -864,6 +947,52 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
             }
         }
     }
+
+    /// Tensor bilinear contraction `f̄ σ^{μν} Γ f`.
+    ///
+    /// `σ^{μν}` is block diagonal in the Weyl basis, so a chiral projector simply
+    /// selects one block. Writing `L^a` and `R^a` for the two Pauli sandwiches
+    /// `fo_i (σ^a)_{ij} fi_j` over the left-chiral (0,1) and right-chiral (2,3)
+    /// index pairs, the blocks are `σ^{0i} = diag(−i σ^i, +i σ^i)` and
+    /// `σ^{jk} = diag(ε^{jkl} σ^l, ε^{jkl} σ^l)`, giving
+    /// `T^{0i} = i(R^i − L^i)`, `T^{12} = L³+R³`, `T^{13} = −(L²+R²)`,
+    /// `T^{23} = L¹+R¹`.
+    #[inline]
+    fn tensor_bilinear(&self, fi: &Self::Dual, chirality: Chirality) -> AsymRank2Tensor<F>
+    where
+        Adj: IsBra,
+    {
+        let fo = &self.0;
+        let fi = &fi.0;
+        // ⟨(x,y)| σ^a |(z,w)⟩ for a = 1,2,3, the two-component Pauli sandwich.
+        let pauli_sandwich = |x: C<F>, y: C<F>, z: C<F>, w: C<F>| -> [C<F>; 3] {
+            let xw = cmul(x, w);
+            let yz = cmul(y, z);
+            [xw + yz, mul_i(yz - xw), cmul(x, z) - cmul(y, w)]
+        };
+        let left = match chirality {
+            Chirality::Right => [C::zero(); 3],
+            _ => pauli_sandwich(fo[0], fo[1], fi[0], fi[1]),
+        };
+        let right = match chirality {
+            Chirality::Left => [C::zero(); 3],
+            _ => pauli_sandwich(fo[2], fo[3], fi[2], fi[3]),
+        };
+        let sum: [C<F>; 3] = std::array::from_fn(|i| left[i] + right[i]);
+        AsymRank2Tensor::new([
+            mul_i(right[0] - left[0]),
+            mul_i(right[1] - left[1]),
+            mul_i(right[2] - left[2]),
+            sum[2],
+            -sum[1],
+            sum[0],
+        ])
+    }
+
+    #[inline]
+    fn apply(self, m: &Multivector<F>) -> Self {
+        Bispinor::from_array(Adj::apply_weyl_matrix(&self.0, &m.to_weyl_matrix()))
+    }
 }
 
 impl<F: Real, Adj: DiracAdjoint> Bispinor<F, Adj> {
@@ -932,15 +1061,555 @@ impl<F: Real + std::fmt::Display> std::fmt::Display for Bispinor<F, Bra> {
     }
 }
 
-/// Antisymmetric rank-2 Lorentz tensor (placeholder type).
+// ─────────────────────────────────────────────────────────────────────────────
+// Levi-Civita primitives
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The four cofactors `C_τ = ε_{μνρτ} a^μ b^ν c^ρ` of the last row: the
+/// covariant components of [`epsilon_vector`] before the index is raised.
+fn epsilon_cofactors<F: Real>(
+    a: &ComplexVector<F, Contravariant>,
+    b: &ComplexVector<F, Contravariant>,
+    c: &ComplexVector<F, Contravariant>,
+) -> [C<F>; 4] {
+    // det of the 3×3 built from rows a, b, c on columns (i, j, k).
+    let minor = |i: usize, j: usize, k: usize| -> C<F> {
+        cmul(a.0[i], cmul(b.0[j], c.0[k]) - cmul(b.0[k], c.0[j]))
+            - cmul(a.0[j], cmul(b.0[i], c.0[k]) - cmul(b.0[k], c.0[i]))
+            + cmul(a.0[k], cmul(b.0[i], c.0[j]) - cmul(b.0[j], c.0[i]))
+    };
+    [
+        -minor(1, 2, 3),
+        minor(0, 2, 3),
+        -minor(0, 1, 3),
+        minor(0, 1, 2),
+    ]
+}
+
+/// Fully contracted Levi-Civita symbol `ε_{μνρσ} a^μ b^ν c^ρ d^σ`.
 ///
-/// Represents a tensor `T^{μν} = -T^{νμ}` such as the output of `σ^μν = i/2 [γ^μ, γ^ν]`.
-/// It is the (1,0) ⊕ (0,1) representation of the Lorentz group, which is 6-dimensional.
+/// # Convention
+///
+/// `ε^{0123} = −1`, equivalently `ε_{0123} = +1`. This is ALOHA's convention:
+/// `aloha/aloha_object.py::L_Epsilon.give_parity` stores the component
+/// `(l1,l2,l3,l4)` of the upper-index object as `−sign(perm)` and applies the
+/// metric at contraction time. With four contravariant arguments the value is
+/// therefore `+1` on `(e₀, e₁, e₂, e₃)`, i.e. the determinant of the matrix whose
+/// rows are the arguments in the `[E, px, py, pz]` layout.
+///
+/// The sign is a hypothesis about MadGraph until an MG comparison exercises it;
+/// what is *not* a hypothesis is that everything in this module — the Hodge dual
+/// and the `σ^{μν} γ^5` identity included — is derived from the value stated here,
+/// so a single flip propagates consistently.
+pub fn epsilon4<F: Real>(
+    a: &ComplexVector<F, Contravariant>,
+    b: &ComplexVector<F, Contravariant>,
+    c: &ComplexVector<F, Contravariant>,
+    d: &ComplexVector<F, Contravariant>,
+) -> C<F> {
+    dot4(epsilon_cofactors(a, b, c), d.0)
+}
+
+/// The contravariant vector `E^σ = ε^{μνρσ} a_μ b_ν c_ρ`.
+///
+/// Characterised by `E·d = epsilon4(a, b, c, d)` for every `d`, with `·` the
+/// Minkowski contraction — which is what makes it composable as a three-vectors-in,
+/// one-vector-out current. Same convention as [`epsilon4`].
+pub fn epsilon_vector<F: Real>(
+    a: &ComplexVector<F, Contravariant>,
+    b: &ComplexVector<F, Contravariant>,
+    c: &ComplexVector<F, Contravariant>,
+) -> ComplexVector<F, Contravariant> {
+    let cof = epsilon_cofactors(a, b, c);
+    ComplexVector::new([cof[0], -cof[1], -cof[2], -cof[3]])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Grade-2 slice: the antisymmetric rank-2 tensor
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Antisymmetric rank-2 Lorentz tensor `T^{μν} = −T^{νμ}`.
+///
+/// This is the six-dimensional `(1,0) ⊕ (0,1)` representation, and the grade-2
+/// slice of [`Multivector`] — the shape of `σ^{μν} = (i/2)[γ^μ, γ^ν]`.
+///
+/// # Component order
+///
+/// The six stored slots are the **contravariant** components `T^{μν}` for the
+/// index pairs `μ < ν` in lexicographic order:
+///
+/// | slot | 0 | 1 | 2 | 3 | 4 | 5 |
+/// |------|---|---|---|---|---|---|
+/// | `(μ,ν)` | (0,1) | (0,2) | (0,3) | (1,2) | (1,3) | (2,3) |
+///
+/// [`get`](Self::get) reads any `(μ,ν)` with the antisymmetry applied. Read as a
+/// Clifford element the tensor is `Σ_{μ<ν} T^{μν} σ_{μν} = ½ T^{μν} σ_{μν}`, so
+/// `σ^{μν}` for one index pair is the tensor with a single unit slot.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct AsymRank2Tensor<F: Real>(pub [C<F>; 6]);
+pub struct AsymRank2Tensor<F: Real>([C<F>; 6]);
+
+impl<F: Real> ArrayBacked<C<F>, 6> for AsymRank2Tensor<F> {
+    #[inline(always)]
+    fn as_array(&self) -> &[C<F>; 6] {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn from_array(arr: [C<F>; 6]) -> Self {
+        AsymRank2Tensor(arr)
+    }
+}
+
+impl_vectorspace!(impl[F: Real] AsymRank2Tensor<F>, scalar = C<F>);
+impl_mul_for_array!(impl[F: Real] AsymRank2Tensor<F>, scalar = F);
 
 impl<F: Real> LorentzRepr<F> for AsymRank2Tensor<F> {
     type Scalar = C<F>;
+}
+
+impl<F: Real> AsymRank2Tensor<F> {
+    /// The `(μ, ν)` index pair held in each of the six slots.
+    pub const INDEX_PAIRS: [(usize, usize); 6] = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+
+    /// Build from the six `μ < ν` components, in [`INDEX_PAIRS`](Self::INDEX_PAIRS) order.
+    #[inline(always)]
+    pub fn new(components: [C<F>; 6]) -> Self {
+        AsymRank2Tensor(components)
+    }
+
+    /// The six stored components, in [`INDEX_PAIRS`](Self::INDEX_PAIRS) order.
+    #[inline(always)]
+    pub fn components(&self) -> &[C<F>; 6] {
+        &self.0
+    }
+
+    /// The `i`-th stored component.
+    #[inline(always)]
+    pub fn component(&self, i: usize) -> C<F> {
+        self.0[i]
+    }
+
+    /// Slot holding `T^{μν}` for `μ < ν`.
+    #[inline(always)]
+    fn slot(mu: usize, nu: usize) -> usize {
+        mu * (5 - mu) / 2 + nu - 1
+    }
+
+    /// `T^{μν}` for any index pair, with the antisymmetry applied:
+    /// `T^{νμ} = −T^{μν}` and `T^{μμ} = 0`.
+    #[inline]
+    pub fn get(&self, mu: usize, nu: usize) -> C<F> {
+        match mu.cmp(&nu) {
+            std::cmp::Ordering::Equal => C::zero(),
+            std::cmp::Ordering::Less => self.0[Self::slot(mu, nu)],
+            std::cmp::Ordering::Greater => -self.0[Self::slot(nu, mu)],
+        }
+    }
+
+    /// The antisymmetrised outer product `T^{μν} = a^μ b^ν − a^ν b^μ`.
+    #[inline]
+    pub fn wedge(a: &ComplexVector<F, Contravariant>, b: &ComplexVector<F, Contravariant>) -> Self {
+        AsymRank2Tensor(std::array::from_fn(|s| {
+            let (mu, nu) = Self::INDEX_PAIRS[s];
+            cmul(a.0[mu], b.0[nu]) - cmul(a.0[nu], b.0[mu])
+        }))
+    }
+
+    /// Full contraction with another tensor: `T^{μν} S_{μν}`.
+    ///
+    /// Summing over all `μν` is twice the sum over `μ < ν`, and the two metric
+    /// factors give `g_{00} g_{ii} = −1` on the three `(0,i)` slots and `+1` on the
+    /// three spatial ones.
+    #[inline]
+    pub fn contract(&self, other: &Self) -> C<F> {
+        let s = &other.0;
+        let t = &self.0;
+        let spatial = cmul_add(t[3], s[3], cmul_add(t[4], s[4], cmul(t[5], s[5])));
+        let boost = cmul_add(t[0], s[0], cmul_add(t[1], s[1], cmul(t[2], s[2])));
+        (spatial - boost) * (F::one() + F::one())
+    }
+
+    /// Lower (equivalently raise) both indices: `T_{μν} = g_{μα} g_{νβ} T^{αβ}`.
+    /// Only the three `(0,i)` slots change sign.
+    #[inline]
+    pub fn dualize(&self) -> Self {
+        let t = &self.0;
+        AsymRank2Tensor([-t[0], -t[1], -t[2], t[3], t[4], t[5]])
+    }
+
+    /// Hodge dual `(⋆T)^{μν} = ½ ε^{μνρσ} T_{ρσ}` at [`epsilon4`]'s convention
+    /// `ε^{0123} = −1`.
+    ///
+    /// Writing the tensor as the boost-like `k^i = T^{0i}` and rotation-like
+    /// `m^i = ½ ε^{ijk} T^{jk}` three-vectors, the dual is `(k, m) ↦ (−m, k)`, so
+    /// `⋆⋆ = −1` as it must in Lorentzian signature. On the Weyl blocks of the
+    /// corresponding Clifford element it acts as `−i` on the left-chiral block and
+    /// `+i` on the right-chiral one — the (anti-)self-dual split. Flipping the ε
+    /// convention would exchange the two blocks' eigenvalues.
+    #[inline]
+    pub fn hodge_dual(&self) -> Self {
+        let t = &self.0;
+        AsymRank2Tensor([-t[5], t[4], -t[3], t[2], -t[1], t[0]])
+    }
+
+    /// `T^{μν} a_μ b_ν`, lowering the two contravariant arguments here.
+    #[inline]
+    pub fn contract_vectors(
+        &self,
+        a: &ComplexVector<F, Contravariant>,
+        b: &ComplexVector<F, Contravariant>,
+    ) -> C<F> {
+        let al = a.dualize();
+        let bl = b.dualize();
+        Self::INDEX_PAIRS
+            .iter()
+            .enumerate()
+            .fold(C::zero(), |acc, (s, &(mu, nu))| {
+                let anti = cmul(al.0[mu], bl.0[nu]) - cmul(al.0[nu], bl.0[mu]);
+                cmul_add(self.0[s], anti, acc)
+            })
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The graded Clifford element
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 2×2 block `α I₂ + u⃗·σ⃗` in the Pauli basis.
+#[inline(always)]
+fn pauli_block<F: Real>(alpha: C<F>, u: [C<F>; 3]) -> [[C<F>; 2]; 2] {
+    let off = mul_i(u[1]);
+    [[alpha + u[2], u[0] - off], [u[0] + off, alpha - u[2]]]
+}
+
+/// Inverse of [`pauli_block`]: recover `(α, u⃗)` from a 2×2 block.
+#[inline(always)]
+fn unpauli_block<F: Real>(blk: &[[C<F>; 2]; 2]) -> (C<F>, [C<F>; 3]) {
+    let half = F::one() / (F::one() + F::one());
+    (
+        (blk[0][0] + blk[1][1]) * half,
+        [
+            (blk[0][1] + blk[1][0]) * half,
+            mul_i(blk[0][1] - blk[1][0]) * half,
+            (blk[0][0] - blk[1][1]) * half,
+        ],
+    )
+}
+
+/// An element of the complexified spacetime Clifford algebra `Cl(1,3) ⊗ ℂ`, held
+/// in the graded Dirac basis `1 + 4 + 6 + 4 + 1`.
+///
+/// Every 4×4 spinor-space operator is a unique combination of sixteen basis
+/// elements, which this type stores by grade:
+///
+/// | grade | basis element | coefficient | slots |
+/// |-------|---------------|-------------|-------|
+/// | 0 | `1` | `s` | 0 |
+/// | 1 | `γ_μ` | `v^μ` | 1–4 |
+/// | 2 | `σ_{μν}` (`μ<ν`) | `T^{μν}` | 5–10 |
+/// | 3 | `γ^5 γ_μ` | `a^μ` | 11–14 |
+/// | 4 | `γ^5` | `p` | 15 |
+///
+/// so that `M = s·1 + v^μ γ_μ + ½ T^{μν} σ_{μν} + a^μ γ^5 γ_μ + p γ^5`. Coefficients
+/// carry the index variance opposite to their basis element, so every grade's
+/// contraction is the plain Minkowski one and no grade needs a raise at use.
+///
+/// The point of the graded basis is that `γ^μ γ^ν = g^{μν} − i σ^{μν}` puts a
+/// γγ-chain in grades 0 and 2 alone, a chiral projector moves weight between the
+/// even grades and between the odd ones, and the antisymmetric rank-2 tensor a
+/// fermion line produces is the grade-2 slice rather than something extracted from
+/// sixteen `(μ,ν)` components.
+///
+/// # Why `γ^5 γ^μ` and not `γ^μ γ^5`
+///
+/// The two orderings differ by a sign, and this one is what makes
+/// [`SpinorRepr::fierz_coefficients`] the five bilinears with no sign fixups: for
+/// `X = ψ ψ̄`, the coefficient of `γ^5 γ_ν` is `¼ Tr[X γ^ν γ^5] = ¼ (ψ̄ γ^ν γ^5 ψ)`,
+/// where in the `γ^μ γ^5` basis it would be its negative. The sign is intrinsic to
+/// the grade and has to live somewhere: here it sits in the pairing
+/// ([`fierz_pairing`](Self::fierz_pairing)), whose grade-3 term is `−a_M·a_N`
+/// because `¼ Tr[γ^5 γ_μ γ^5 γ_ν] = −g_{μν}`.
+///
+/// # Grade parity and chirality
+///
+/// In the Weyl basis the even grades (0, 2, 4) are block diagonal and the odd
+/// grades (1, 3) are block off-diagonal, so even grades preserve a spinor's chiral
+/// blocks and odd grades swap them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Multivector<F: Real>([C<F>; 16]);
+
+impl<F: Real> ArrayBacked<C<F>, 16> for Multivector<F> {
+    #[inline(always)]
+    fn as_array(&self) -> &[C<F>; 16] {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn from_array(arr: [C<F>; 16]) -> Self {
+        Multivector(arr)
+    }
+}
+
+impl_vectorspace!(impl[F: Real] Multivector<F>, scalar = C<F>);
+impl_mul_for_array!(impl[F: Real] Multivector<F>, scalar = F);
+
+impl<F: Real> LorentzRepr<F> for Multivector<F> {
+    type Scalar = C<F>;
+}
+
+impl<F: Real> Multivector<F> {
+    /// First slot of the grade-1 (vector) coefficients.
+    const VECTOR: usize = 1;
+    /// First slot of the grade-2 (bivector) coefficients.
+    const BIVECTOR: usize = 5;
+    /// First slot of the grade-3 (axial-vector) coefficients.
+    const AXIAL: usize = 11;
+    /// Slot of the grade-4 (pseudoscalar) coefficient.
+    const PSEUDOSCALAR: usize = 15;
+
+    /// Assemble from the five graded parts.
+    #[inline]
+    pub fn new(
+        scalar: C<F>,
+        vector: ComplexVector<F, Contravariant>,
+        bivector: AsymRank2Tensor<F>,
+        axial: ComplexVector<F, Contravariant>,
+        pseudoscalar: C<F>,
+    ) -> Self {
+        let mut c = [C::zero(); 16];
+        c[0] = scalar;
+        c[Self::VECTOR..Self::BIVECTOR].copy_from_slice(vector.as_array());
+        c[Self::BIVECTOR..Self::AXIAL].copy_from_slice(bivector.as_array());
+        c[Self::AXIAL..Self::PSEUDOSCALAR].copy_from_slice(axial.as_array());
+        c[Self::PSEUDOSCALAR] = pseudoscalar;
+        Multivector(c)
+    }
+
+    /// Grade-0 coefficient `s`.
+    #[inline(always)]
+    pub fn scalar(&self) -> C<F> {
+        self.0[0]
+    }
+
+    /// Grade-1 coefficients `v^μ` (contravariant, contracted against `γ_μ`).
+    #[inline(always)]
+    pub fn vector(&self) -> ComplexVector<F, Contravariant> {
+        ComplexVector::from_array(std::array::from_fn(|i| self.0[Self::VECTOR + i]))
+    }
+
+    /// Grade-2 coefficients `T^{μν}` (contracted against `σ_{μν}`, `μ < ν`).
+    #[inline(always)]
+    pub fn bivector(&self) -> AsymRank2Tensor<F> {
+        AsymRank2Tensor::from_array(std::array::from_fn(|i| self.0[Self::BIVECTOR + i]))
+    }
+
+    /// Grade-3 coefficients `a^μ` (contracted against `γ^5 γ_μ`).
+    #[inline(always)]
+    pub fn axial(&self) -> ComplexVector<F, Contravariant> {
+        ComplexVector::from_array(std::array::from_fn(|i| self.0[Self::AXIAL + i]))
+    }
+
+    /// Grade-4 coefficient `p`.
+    #[inline(always)]
+    pub fn pseudoscalar(&self) -> C<F> {
+        self.0[Self::PSEUDOSCALAR]
+    }
+
+    /// The identity element `1`.
+    #[inline]
+    pub fn identity() -> Self {
+        Self::from_scalar(C::new(F::one(), F::zero()))
+    }
+
+    /// The pure grade-0 element `c·1`.
+    #[inline]
+    pub fn from_scalar(c: C<F>) -> Self {
+        let mut m = Self::zero();
+        m.0[0] = c;
+        m
+    }
+
+    /// The pure grade-4 element `c γ^5`.
+    #[inline]
+    pub fn from_pseudoscalar(c: C<F>) -> Self {
+        let mut m = Self::zero();
+        m.0[Self::PSEUDOSCALAR] = c;
+        m
+    }
+
+    /// The gamma-slash `v̸ = v^μ γ_μ = v_μ γ^μ`.
+    #[inline]
+    pub fn from_gamma(v: &ComplexVector<F, Contravariant>) -> Self {
+        let mut m = Self::zero();
+        m.0[Self::VECTOR..Self::BIVECTOR].copy_from_slice(v.as_array());
+        m
+    }
+
+    /// The axial slash `γ^5 v̸ = v^μ γ^5 γ_μ`.
+    #[inline]
+    pub fn from_axial(v: &ComplexVector<F, Contravariant>) -> Self {
+        let mut m = Self::zero();
+        m.0[Self::AXIAL..Self::PSEUDOSCALAR].copy_from_slice(v.as_array());
+        m
+    }
+
+    /// The pure grade-2 element `½ T^{μν} σ_{μν}`.
+    #[inline]
+    pub fn from_bivector(t: &AsymRank2Tensor<F>) -> Self {
+        let mut m = Self::zero();
+        m.0[Self::BIVECTOR..Self::AXIAL].copy_from_slice(t.as_array());
+        m
+    }
+
+    /// A chiral projector: `P_L = (1 − γ^5)/2`, `P_R = (1 + γ^5)/2`, or the
+    /// identity for [`Chirality::Both`].
+    #[inline]
+    pub fn from_projector(chirality: Chirality) -> Self {
+        let half = C::new(F::one() / (F::one() + F::one()), F::zero());
+        match chirality {
+            Chirality::Left => Self::new(
+                half,
+                ComplexVector::zero(),
+                AsymRank2Tensor::zero(),
+                ComplexVector::zero(),
+                -half,
+            ),
+            Chirality::Right => Self::new(
+                half,
+                ComplexVector::zero(),
+                AsymRank2Tensor::zero(),
+                ComplexVector::zero(),
+                half,
+            ),
+            Chirality::Both => Self::identity(),
+        }
+    }
+
+    /// The two-gamma chain `a̸ b̸ = (a·b) − i σ^{μν} a_μ b_ν`, which lives entirely
+    /// in grades 0 and 2.
+    #[inline]
+    pub fn from_gamma_pair(
+        a: &ComplexVector<F, Contravariant>,
+        b: &ComplexVector<F, Contravariant>,
+    ) -> Self {
+        let mut m = Self::zero();
+        m.0[0] = a.dualize().dot(b);
+        let wedge = AsymRank2Tensor::wedge(a, b);
+        for (slot, w) in wedge.as_array().iter().enumerate() {
+            m.0[Self::BIVECTOR + slot] = mul_neg_i(*w);
+        }
+        m
+    }
+
+    /// The 4×4 matrix of this element in the Weyl basis (the basis
+    /// [`Bispinor`] stores its components in).
+    ///
+    /// Blocking the matrix by chirality as `[[A, B], [C, D]]`, the even grades fill
+    /// the diagonal blocks and the odd grades the off-diagonal ones:
+    ///
+    /// ```text
+    /// A = (s − p) I₂ + (m⃗ + i k⃗)·σ⃗      B = (v⁰ − a⁰) I₂ − (v⃗ − a⃗)·σ⃗
+    /// C = (v⁰ + a⁰) I₂ + (v⃗ + a⃗)·σ⃗      D = (s + p) I₂ + (m⃗ − i k⃗)·σ⃗
+    /// ```
+    ///
+    /// with `k^i = T^{0i}` and `m^i = ½ ε^{ijk} T^{jk}` the boost- and
+    /// rotation-like halves of the bivector. `m⃗ ± i k⃗` are its (anti-)self-dual
+    /// parts, which is why the two diagonal blocks see different combinations.
+    pub fn to_weyl_matrix(&self) -> [[C<F>; 4]; 4] {
+        let (s, p) = (self.scalar(), self.pseudoscalar());
+        let v = self.vector();
+        let a = self.axial();
+        let t = self.bivector();
+        let k = [t.component(0), t.component(1), t.component(2)];
+        let m = [t.component(5), -t.component(4), t.component(3)];
+
+        let blk_a = pauli_block(s - p, std::array::from_fn(|i| m[i] + mul_i(k[i])));
+        let blk_d = pauli_block(s + p, std::array::from_fn(|i| m[i] - mul_i(k[i])));
+        // σ^μ = (I, σ⃗) sits in the upper-right block and σ̄^μ = (I, −σ⃗) in the
+        // lower-left one, and the coefficients enter lowered: v_i = −v^i.
+        let blk_b = pauli_block(
+            v.0[0] - a.0[0],
+            std::array::from_fn(|i| a.0[i + 1] - v.0[i + 1]),
+        );
+        let blk_c = pauli_block(
+            v.0[0] + a.0[0],
+            std::array::from_fn(|i| v.0[i + 1] + a.0[i + 1]),
+        );
+
+        std::array::from_fn(|row| {
+            let (left, right) = if row < 2 {
+                (&blk_a, &blk_b)
+            } else {
+                (&blk_c, &blk_d)
+            };
+            let r = row % 2;
+            [left[r][0], left[r][1], right[r][0], right[r][1]]
+        })
+    }
+
+    /// Recover the sixteen graded coefficients from a Weyl-basis matrix — the
+    /// inverse of [`to_weyl_matrix`](Self::to_weyl_matrix), and the trace
+    /// projection `c_A ∝ Tr[X Γ_A]` written out in blocks.
+    pub fn from_weyl_matrix(mat: &[[C<F>; 4]; 4]) -> Self {
+        let block = |r: usize, c: usize| {
+            [
+                [mat[r][c], mat[r][c + 1]],
+                [mat[r + 1][c], mat[r + 1][c + 1]],
+            ]
+        };
+        let (alpha_a, ua) = unpauli_block(&block(0, 0));
+        let (alpha_b, ub) = unpauli_block(&block(0, 2));
+        let (alpha_c, uc) = unpauli_block(&block(2, 0));
+        let (alpha_d, ud) = unpauli_block(&block(2, 2));
+        let half = F::one() / (F::one() + F::one());
+
+        let m: [C<F>; 3] = std::array::from_fn(|i| (ua[i] + ud[i]) * half);
+        // ua − ud = 2 i k⃗
+        let k: [C<F>; 3] = std::array::from_fn(|i| mul_neg_i(ua[i] - ud[i]) * half);
+        let vs: [C<F>; 3] = std::array::from_fn(|i| (uc[i] - ub[i]) * half);
+        let ax: [C<F>; 3] = std::array::from_fn(|i| (uc[i] + ub[i]) * half);
+
+        Self::new(
+            (alpha_a + alpha_d) * half,
+            ComplexVector::new([(alpha_b + alpha_c) * half, vs[0], vs[1], vs[2]]),
+            AsymRank2Tensor::new([k[0], k[1], k[2], m[2], -m[1], m[0]]),
+            ComplexVector::new([(alpha_c - alpha_b) * half, ax[0], ax[1], ax[2]]),
+            (alpha_d - alpha_a) * half,
+        )
+    }
+
+    /// The Clifford (geometric) product `self · rhs` — what composes γ-chains.
+    ///
+    /// Computed through the faithful 4×4 Weyl-basis representation rather than a
+    /// table of 256 structure constants; the products of the basis elements are
+    /// pinned against explicitly built gamma matrices in this module's tests.
+    pub fn clifford_product(&self, rhs: &Self) -> Self {
+        let a = self.to_weyl_matrix();
+        let b = rhs.to_weyl_matrix();
+        let prod: [[C<F>; 4]; 4] = std::array::from_fn(|i| {
+            std::array::from_fn(|j| dot4(a[i], [b[0][j], b[1][j], b[2][j], b[3][j]]))
+        });
+        Self::from_weyl_matrix(&prod)
+    }
+
+    /// The Fierz pairing `⟨M, N⟩ = ¼ Tr[M N]`, evaluated on coefficients.
+    ///
+    /// Fierz orthogonality `¼ Tr[Γ_A Γ^B] = ±δ_A^B` makes the pairing grade
+    /// diagonal, which is what turns a tensor⊗tensor contraction of two fermion
+    /// lines into a dot product of their coefficient vectors. The grade-3 term
+    /// carries a minus sign: `¼ Tr[γ^5 γ_μ γ^5 γ_ν] = −g_{μν}`.
+    pub fn fierz_pairing(&self, other: &Self) -> C<F> {
+        let half = F::one() / (F::one() + F::one());
+        let scalars = cmul_add(
+            self.scalar(),
+            other.scalar(),
+            cmul(self.pseudoscalar(), other.pseudoscalar()),
+        );
+        let vectors = self.vector().dualize().dot(&other.vector());
+        let axials = self.axial().dualize().dot(&other.axial());
+        let bivectors = self.bivector().contract(&other.bivector()) * half;
+        scalars + vectors - axials + bivectors
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1044,6 +1713,8 @@ mod tests {
 
     use itertools::{iproduct, Itertools};
     use num_traits::One;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
 
     use super::*;
 
@@ -1187,7 +1858,54 @@ mod tests {
                 expected
             );
 
-            // TODO: when tensor bilinears are implemented, test those as well to fully check the completeness relations.
+            // The tensor grade vanishes: Tr[(p̸ ± m) σ^{μν}] = 0 because the trace
+            // of one and of three gamma matrices does.
+            let u_tensor = up.bar().tensor_bilinear(&up, Chirality::Both)
+                + um.bar().tensor_bilinear(&um, Chirality::Both);
+            let v_tensor = vp.bar().tensor_bilinear(&vp, Chirality::Both)
+                + vm.bar().tensor_bilinear(&vm, Chirality::Both);
+            for slot in 0..6 {
+                assert!(
+                    u_tensor.component(slot).norm() < EPS_ABS,
+                    "Fermion tensor bilinear nonzero for helicity-summed spinors: slot {} = {}",
+                    slot,
+                    u_tensor.component(slot)
+                );
+                assert!(
+                    v_tensor.component(slot).norm() < EPS_ABS,
+                    "Antifermion tensor bilinear nonzero for helicity-summed spinors: slot {} = {}",
+                    slot,
+                    v_tensor.component(slot)
+                );
+            }
+
+            // Σ_h ū γ^μ γ^ν u = Tr[(p̸ + m) γ^μ γ^ν] = 4m g^{μν}, and −4m g^{μν} for
+            // v. Reached through two slashes of covariant basis covectors rather
+            // than through `γ^μ γ^ν = g^{μν} − i σ^{μν}`, so the check does not
+            // presuppose the decomposition the tensor bilinear is built on.
+            for (mu, nu) in iproduct!(0..4, 0..4) {
+                let (em, en) = (covariant_basis(mu), covariant_basis(nu));
+                let two_slash = |psi: &Bispinor<f64, Ket>| {
+                    psi.bar()
+                        .scalar_bilinear(&psi.slash(&en).slash(&em), Chirality::Both)
+                };
+                let expected = if mu == nu {
+                    4.0 * mass * minkowski_sign(mu)
+                } else {
+                    0.0
+                };
+                let u_gg = two_slash(&up) + two_slash(&um);
+                let v_gg = two_slash(&vp) + two_slash(&vm);
+                assert!(
+                    (u_gg - expected).norm() < EPS_ABS,
+                    "Fermion γ^μγ^ν bilinear mismatch at ({mu},{nu}): {u_gg} vs {expected}"
+                );
+                assert!(
+                    (v_gg + expected).norm() < EPS_ABS,
+                    "Antifermion γ^μγ^ν bilinear mismatch at ({mu},{nu}): {v_gg} vs {}",
+                    -expected
+                );
+            }
 
             // The axial vector bilinear should vanish for the helicity-summed spinors
             let u_axial_vector = up.bar().axial_vector_bilinear(&up, Chirality::Both)
@@ -1300,6 +2018,736 @@ mod tests {
                     slash_out,
                     expected,
                     basis
+                );
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Explicit Weyl-basis Dirac matrices
+    //
+    // Built here from the Pauli blocks and assembled by commutators, so they are
+    // an independent reference for the closed-form block expressions
+    // `Multivector::to_weyl_matrix` uses. Every convention this module carries —
+    // the chiral block layout, γ⁵'s sign, the ε sign — is checked against these.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    type Mat4 = [[C<f64>; 4]; 4];
+
+    /// `σ^1, σ^2, σ^3` at indices 0–2; the 2×2 identity at any other index.
+    fn pauli(a: usize) -> [[C<f64>; 2]; 2] {
+        let (z, o) = (C::zero(), C::one());
+        match a {
+            0 => [[z, o], [o, z]],
+            1 => [[z, -C::i()], [C::i(), z]],
+            2 => [[o, z], [z, -o]],
+            _ => [[o, z], [z, o]],
+        }
+    }
+
+    /// `γ^μ = [[0, σ^μ], [σ̄^μ, 0]]` blocked as (left-chiral, right-chiral), with
+    /// `σ^μ = (I, σ⃗)` and `σ̄^μ = (I, −σ⃗)`.
+    fn gamma(mu: usize) -> Mat4 {
+        let (s, sbar) = if mu == 0 {
+            (pauli(4), pauli(4))
+        } else {
+            let p = pauli(mu - 1);
+            (p, [[-p[0][0], -p[0][1]], [-p[1][0], -p[1][1]]])
+        };
+        let mut m = [[C::zero(); 4]; 4];
+        for (i, j) in iproduct!(0..2, 0..2) {
+            m[i][2 + j] = s[i][j];
+            m[2 + i][j] = sbar[i][j];
+        }
+        m
+    }
+
+    /// `γ⁵ = i γ⁰γ¹γ²γ³`.
+    fn gamma5() -> Mat4 {
+        let g = mat_mul(
+            &mat_mul(&gamma(0), &gamma(1)),
+            &mat_mul(&gamma(2), &gamma(3)),
+        );
+        mat_scale(&g, C::i())
+    }
+
+    /// `σ^{μν} = (i/2)[γ^μ, γ^ν]`.
+    fn sigma(mu: usize, nu: usize) -> Mat4 {
+        let comm = mat_sub(
+            &mat_mul(&gamma(mu), &gamma(nu)),
+            &mat_mul(&gamma(nu), &gamma(mu)),
+        );
+        mat_scale(&comm, C::new(0.0, 0.5))
+    }
+
+    fn mat_identity() -> Mat4 {
+        std::array::from_fn(|i| std::array::from_fn(|j| if i == j { C::one() } else { C::zero() }))
+    }
+
+    fn mat_mul(a: &Mat4, b: &Mat4) -> Mat4 {
+        std::array::from_fn(|i| {
+            std::array::from_fn(|j| (0..4).map(|k| a[i][k] * b[k][j]).sum::<C<f64>>())
+        })
+    }
+
+    fn mat_add(a: &Mat4, b: &Mat4) -> Mat4 {
+        std::array::from_fn(|i| std::array::from_fn(|j| a[i][j] + b[i][j]))
+    }
+
+    fn mat_sub(a: &Mat4, b: &Mat4) -> Mat4 {
+        std::array::from_fn(|i| std::array::from_fn(|j| a[i][j] - b[i][j]))
+    }
+
+    fn mat_scale(a: &Mat4, s: C<f64>) -> Mat4 {
+        std::array::from_fn(|i| std::array::from_fn(|j| a[i][j] * s))
+    }
+
+    fn mat_max_diff(a: &Mat4, b: &Mat4) -> f64 {
+        iproduct!(0..4, 0..4).fold(0.0_f64, |acc, (i, j)| acc.max((a[i][j] - b[i][j]).norm()))
+    }
+
+    fn mv_max_diff(a: &Multivector<f64>, b: &Multivector<f64>) -> f64 {
+        (0..16).fold(0.0_f64, |acc, i| {
+            acc.max((a.as_array()[i] - b.as_array()[i]).norm())
+        })
+    }
+
+    /// `g^{μμ}` — `+1` for the time component, `−1` for the spatial ones.
+    fn minkowski_sign(mu: usize) -> f64 {
+        if mu == 0 {
+            1.0
+        } else {
+            -1.0
+        }
+    }
+
+    fn contravariant_basis(mu: usize) -> ComplexVector<f64, Contravariant> {
+        ComplexVector::from_array(std::array::from_fn(|i| {
+            if i == mu {
+                C::one()
+            } else {
+                C::zero()
+            }
+        }))
+    }
+
+    /// The covector `δ_α^μ`: slashing it yields `γ^μ` with its index up, since
+    /// [`DiracAdjoint::slash_bispinor`] reads its argument as the covariant `v_α`.
+    fn covariant_basis(mu: usize) -> ComplexVector<f64, Covariant> {
+        ComplexVector::from_array(std::array::from_fn(|i| {
+            if i == mu {
+                C::one()
+            } else {
+                C::zero()
+            }
+        }))
+    }
+
+    /// `ε^{μνρσ}` with all indices up: four metric factors flip the sign of the
+    /// all-lower symbol [`epsilon4`] returns on contravariant basis vectors.
+    fn epsilon_upper(mu: usize, nu: usize, rho: usize, sig: usize) -> C<f64> {
+        -epsilon4(
+            &contravariant_basis(mu),
+            &contravariant_basis(nu),
+            &contravariant_basis(rho),
+            &contravariant_basis(sig),
+        )
+    }
+
+    fn permutation_sign(p: &[usize]) -> f64 {
+        let mut sign = 1.0;
+        for i in 0..p.len() {
+            for j in (i + 1)..p.len() {
+                if p[i] > p[j] {
+                    sign = -sign;
+                }
+            }
+        }
+        sign
+    }
+
+    fn rand_re(rng: &mut StdRng) -> f64 {
+        rng.random::<f64>() * 4.0 - 2.0
+    }
+
+    fn rand_c(rng: &mut StdRng) -> C<f64> {
+        C::new(rand_re(rng), rand_re(rng))
+    }
+
+    fn rand_cvec(rng: &mut StdRng) -> ComplexVector<f64, Contravariant> {
+        ComplexVector::new(std::array::from_fn(|_| rand_c(rng)))
+    }
+
+    fn rand_tensor(rng: &mut StdRng) -> AsymRank2Tensor<f64> {
+        AsymRank2Tensor::new(std::array::from_fn(|_| rand_c(rng)))
+    }
+
+    fn rand_multivector(rng: &mut StdRng) -> Multivector<f64> {
+        Multivector::from_array(std::array::from_fn(|_| rand_c(rng)))
+    }
+
+    /// `Σ_A c_A Γ_A` assembled from the explicit gamma matrices above — the
+    /// independent reference for [`Multivector::to_weyl_matrix`].
+    fn expand_basis(mv: &Multivector<f64>) -> Mat4 {
+        let g5 = gamma5();
+        let mut out = mat_scale(&mat_identity(), mv.scalar());
+        out = mat_add(&out, &mat_scale(&g5, mv.pseudoscalar()));
+        let (v, a) = (mv.vector(), mv.axial());
+        for mu in 0..4 {
+            // v^μ γ_μ and a^μ γ⁵ γ_μ, with γ_μ = g_{μν} γ^ν
+            let lowered = mat_scale(&gamma(mu), C::from(minkowski_sign(mu)));
+            out = mat_add(&out, &mat_scale(&lowered, v.component(mu)));
+            out = mat_add(&out, &mat_scale(&mat_mul(&g5, &lowered), a.component(mu)));
+        }
+        let t = mv.bivector();
+        for (slot, &(mu, nu)) in AsymRank2Tensor::<f64>::INDEX_PAIRS.iter().enumerate() {
+            // Σ_{μ<ν} T^{μν} σ_{μν}, with σ_{μν} = g_{μα} g_{νβ} σ^{αβ}
+            let lowered = mat_scale(
+                &sigma(mu, nu),
+                C::from(minkowski_sign(mu) * minkowski_sign(nu)),
+            );
+            out = mat_add(&out, &mat_scale(&lowered, t.component(slot)));
+        }
+        out
+    }
+
+    /// The Levi-Civita convention: `ε^{0123} = −1`, every permutation carries its
+    /// parity, repeats vanish, and [`epsilon_vector`] is the partial contraction of
+    /// [`epsilon4`].
+    ///
+    /// Blind spot: this fixes ε's normalisation and all its relative signs, but a
+    /// consumer that uses ε an even number of times cannot see the overall sign.
+    /// `test_sigma_gamma5_epsilon_identity` is what ties that sign to the module's
+    /// chirality convention.
+    #[test]
+    fn test_epsilon_convention() {
+        let e: Vec<_> = (0..4).map(contravariant_basis).collect();
+
+        // ALOHA stores the upper-index component as −sign(perm), so ε^{0123} = −1
+        // and the all-lower symbol this function returns on contravariant
+        // arguments is ε_{0123} = +1.
+        assert_eq!(epsilon4(&e[0], &e[1], &e[2], &e[3]), C::one());
+        assert_eq!(epsilon_upper(0, 1, 2, 3), -C::one());
+
+        for perm in (0..4).permutations(4) {
+            assert_eq!(
+                epsilon4(&e[perm[0]], &e[perm[1]], &e[perm[2]], &e[perm[3]]),
+                C::from(permutation_sign(&perm)),
+                "ε parity wrong at {perm:?}"
+            );
+        }
+        for (i, j, k, l) in iproduct!(0..4, 0..4, 0..4, 0..4) {
+            if [i, j, k, l].iter().unique().count() < 4 {
+                assert_eq!(
+                    epsilon4(&e[i], &e[j], &e[k], &e[l]),
+                    C::zero(),
+                    "ε nonzero on a repeated index at ({i},{j},{k},{l})"
+                );
+            }
+        }
+
+        let mut rng = StdRng::seed_from_u64(0xE7_0001);
+        for _ in 0..32 {
+            let (a, b, c, d) = (
+                rand_cvec(&mut rng),
+                rand_cvec(&mut rng),
+                rand_cvec(&mut rng),
+                rand_cvec(&mut rng),
+            );
+            let ev = epsilon_vector(&a, &b, &c);
+            assert!(
+                (ev.lower().dot(&d) - epsilon4(&a, &b, &c, &d)).norm() < EPS_ABS,
+                "epsilon_vector does not contract to epsilon4"
+            );
+            // Antisymmetry in the three contracted slots.
+            assert!(
+                (epsilon_vector(&b, &a, &c) + ev).bare_norm_sq() < EPS_ABS,
+                "epsilon_vector not antisymmetric in its first two arguments"
+            );
+        }
+    }
+
+    /// `σ^{μν} γ⁵ = (i/2)·s·ε^{μνρσ} σ_{ρσ}` with `s = −1`.
+    ///
+    /// The sign is forced by two independent conventions meeting: the Weyl basis
+    /// fixes `γ⁵ = diag(−1,−1,+1,+1)`, and [`epsilon4`] fixes `ε^{0123} = −1`. In
+    /// the textbook `ε^{0123} = +1` convention the same identity has `s = +1`, so
+    /// this test is where a flipped ε convention becomes visible without consulting
+    /// MadGraph. The `s = +1` form is asserted to be *wrong*, which is what makes
+    /// the check falsifiable rather than vacuous.
+    #[test]
+    fn test_sigma_gamma5_epsilon_identity() {
+        // The Weyl basis γ⁵ that `project_left`/`project_right` assume.
+        let g5 = gamma5();
+        let expected_g5: Mat4 = std::array::from_fn(|i| {
+            std::array::from_fn(|j| {
+                if i != j {
+                    C::zero()
+                } else if i < 2 {
+                    -C::one()
+                } else {
+                    C::one()
+                }
+            })
+        });
+        assert!(mat_max_diff(&g5, &expected_g5) < EPS_ABS);
+
+        for (mu, nu) in iproduct!(0..4, 0..4) {
+            let lhs = mat_mul(&sigma(mu, nu), &g5);
+            let mut rhs = [[C::zero(); 4]; 4];
+            for (rho, sig) in iproduct!(0..4, 0..4) {
+                let lowered = mat_scale(
+                    &sigma(rho, sig),
+                    C::from(minkowski_sign(rho) * minkowski_sign(sig)),
+                );
+                rhs = mat_add(&rhs, &mat_scale(&lowered, epsilon_upper(mu, nu, rho, sig)));
+            }
+            let rhs = mat_scale(&rhs, C::new(0.0, 0.5));
+
+            assert!(
+                mat_max_diff(&lhs, &mat_scale(&rhs, -C::one())) < EPS_ABS,
+                "σ^{{{mu}{nu}}} γ⁵ ≠ −(i/2) ε^{{{mu}{nu}ρσ}} σ_ρσ"
+            );
+            if mu != nu {
+                assert!(
+                    mat_max_diff(&lhs, &rhs) > 1.0,
+                    "the s = +1 form is indistinguishable at ({mu},{nu}); the test cannot see the ε sign"
+                );
+            }
+        }
+    }
+
+    /// The grade-2 slice: index accessors, contraction, index lowering, the Hodge
+    /// dual against its defining formula, and the (anti-)self-dual split.
+    #[test]
+    fn test_asym_rank2_tensor() {
+        let mut rng = StdRng::seed_from_u64(0xA2_0001);
+        for _ in 0..32 {
+            let t = rand_tensor(&mut rng);
+            let s = rand_tensor(&mut rng);
+
+            for (mu, nu) in iproduct!(0..4, 0..4) {
+                assert_eq!(t.get(mu, nu), -t.get(nu, mu));
+            }
+            for (slot, &(mu, nu)) in AsymRank2Tensor::<f64>::INDEX_PAIRS.iter().enumerate() {
+                assert_eq!(t.get(mu, nu), t.component(slot));
+            }
+
+            // T^{μν} S_{μν} summed over every index pair
+            let brute: C<f64> = iproduct!(0..4, 0..4)
+                .map(|(mu, nu)| {
+                    t.get(mu, nu) * s.get(mu, nu) * (minkowski_sign(mu) * minkowski_sign(nu))
+                })
+                .sum();
+            assert!((t.contract(&s) - brute).norm() < EPS_ABS);
+
+            // dualize lowers both indices and is its own inverse
+            for (mu, nu) in iproduct!(0..4, 0..4) {
+                let lowered = t.dualize().get(mu, nu);
+                let expect = t.get(mu, nu) * (minkowski_sign(mu) * minkowski_sign(nu));
+                assert!((lowered - expect).norm() < EPS_ABS);
+            }
+            assert!(mv_diff_tensor(&t.dualize().dualize(), &t) < EPS_ABS);
+
+            // (⋆T)^{μν} = ½ ε^{μνρσ} T_{ρσ}
+            let lowered = t.dualize();
+            let expect = AsymRank2Tensor::new(std::array::from_fn(|slot| {
+                let (mu, nu) = AsymRank2Tensor::<f64>::INDEX_PAIRS[slot];
+                iproduct!(0..4, 0..4)
+                    .map(|(rho, sig)| epsilon_upper(mu, nu, rho, sig) * lowered.get(rho, sig))
+                    .sum::<C<f64>>()
+                    * 0.5
+            }));
+            assert!(
+                mv_diff_tensor(&t.hodge_dual(), &expect) < EPS_ABS,
+                "hodge_dual disagrees with ½ ε^{{μνρσ}} T_ρσ"
+            );
+            // ⋆⋆ = −1 in Lorentzian signature
+            assert!(mv_diff_tensor(&t.hodge_dual().hodge_dual(), &(-t)) < EPS_ABS);
+
+            // T^{μν} a_μ b_ν, and the wedge that builds it
+            let (a, b) = (rand_cvec(&mut rng), rand_cvec(&mut rng));
+            let (al, bl) = (a.dualize(), b.dualize());
+            let brute: C<f64> = iproduct!(0..4, 0..4)
+                .map(|(mu, nu)| t.get(mu, nu) * al.component(mu) * bl.component(nu))
+                .sum();
+            assert!((t.contract_vectors(&a, &b) - brute).norm() < EPS_ABS);
+
+            let w = AsymRank2Tensor::wedge(&a, &b);
+            for (mu, nu) in iproduct!(0..4, 0..4) {
+                let expect = a.component(mu) * b.component(nu) - a.component(nu) * b.component(mu);
+                assert!((w.get(mu, nu) - expect).norm() < EPS_ABS);
+            }
+        }
+    }
+
+    fn mv_diff_tensor(a: &AsymRank2Tensor<f64>, b: &AsymRank2Tensor<f64>) -> f64 {
+        (0..6).fold(0.0_f64, |acc, i| {
+            acc.max((a.component(i) - b.component(i)).norm())
+        })
+    }
+
+    /// [`Multivector::to_weyl_matrix`] against the explicitly built basis matrices,
+    /// element by element and on random coefficients, plus the round trip through
+    /// [`Multivector::from_weyl_matrix`].
+    ///
+    /// Blind spot: agreement here says the closed-form blocks reproduce the basis
+    /// expansion, not that either matches MadGraph's γ-matrix conventions — only an
+    /// amplitude comparison can say that.
+    #[test]
+    fn test_multivector_weyl_matrix() {
+        assert!(
+            mat_max_diff(
+                &Multivector::<f64>::identity().to_weyl_matrix(),
+                &mat_identity()
+            ) < EPS_ABS
+        );
+        assert!(
+            mat_max_diff(
+                &Multivector::from_pseudoscalar(C::<f64>::one()).to_weyl_matrix(),
+                &gamma5()
+            ) < EPS_ABS
+        );
+        for mu in 0..4 {
+            // from_gamma(e_μ) = e_μ^α γ_α = γ_μ
+            let lowered = mat_scale(&gamma(mu), C::from(minkowski_sign(mu)));
+            assert!(
+                mat_max_diff(
+                    &Multivector::from_gamma(&contravariant_basis(mu)).to_weyl_matrix(),
+                    &lowered
+                ) < EPS_ABS,
+                "from_gamma mismatch at μ = {mu}"
+            );
+            assert!(
+                mat_max_diff(
+                    &Multivector::from_axial(&contravariant_basis(mu)).to_weyl_matrix(),
+                    &mat_mul(&gamma5(), &lowered)
+                ) < EPS_ABS,
+                "from_axial is not γ⁵ γ_μ at μ = {mu}"
+            );
+        }
+        for (slot, &(mu, nu)) in AsymRank2Tensor::<f64>::INDEX_PAIRS.iter().enumerate() {
+            let unit = AsymRank2Tensor::new(std::array::from_fn(|i| {
+                if i == slot {
+                    C::one()
+                } else {
+                    C::zero()
+                }
+            }));
+            let lowered = mat_scale(
+                &sigma(mu, nu),
+                C::from(minkowski_sign(mu) * minkowski_sign(nu)),
+            );
+            assert!(
+                mat_max_diff(
+                    &Multivector::from_bivector(&unit).to_weyl_matrix(),
+                    &lowered
+                ) < EPS_ABS,
+                "bivector slot {slot} is not σ_{{{mu}{nu}}}"
+            );
+        }
+        for chirality in [Chirality::Left, Chirality::Right, Chirality::Both] {
+            let sign = match chirality {
+                Chirality::Left => -1.0,
+                Chirality::Right => 1.0,
+                Chirality::Both => 0.0,
+            };
+            let expect = mat_add(
+                &mat_scale(
+                    &mat_identity(),
+                    C::from(if sign == 0.0 { 1.0 } else { 0.5 }),
+                ),
+                &mat_scale(&gamma5(), C::from(0.5 * sign)),
+            );
+            assert!(
+                mat_max_diff(
+                    &Multivector::<f64>::from_projector(chirality).to_weyl_matrix(),
+                    &expect
+                ) < EPS_ABS
+            );
+        }
+
+        let mut rng = StdRng::seed_from_u64(0x3F_0001);
+        for _ in 0..64 {
+            let mv = rand_multivector(&mut rng);
+            let mat = mv.to_weyl_matrix();
+            assert!(
+                mat_max_diff(&mat, &expand_basis(&mv)) < EPS_ABS,
+                "to_weyl_matrix disagrees with Σ_A c_A Γ_A"
+            );
+            assert!(
+                mv_max_diff(&Multivector::from_weyl_matrix(&mat), &mv) < EPS_ABS,
+                "from_weyl_matrix is not the inverse of to_weyl_matrix"
+            );
+        }
+    }
+
+    /// The Clifford product: the γγ chain lands in grades 0 and 2 with the
+    /// coefficients `a̸ b̸ = a·b − i σ^{μν} a_μ b_ν` predicts, projectors behave as
+    /// projectors, `γ⁵ v̸` is the grade-3 basis element, and the product is
+    /// associative.
+    #[test]
+    fn test_clifford_product() {
+        let mut rng = StdRng::seed_from_u64(0xC1_0001);
+        for _ in 0..32 {
+            let (a, b) = (rand_cvec(&mut rng), rand_cvec(&mut rng));
+            let chained =
+                Multivector::from_gamma(&a).clifford_product(&Multivector::from_gamma(&b));
+            let closed = Multivector::from_gamma_pair(&a, &b);
+            assert!(
+                mv_max_diff(&chained, &closed) < EPS_ABS,
+                "a̸b̸ from the Clifford product disagrees with the grade-0/2 closed form"
+            );
+            // Odd grades are empty and the scalar grade is the Minkowski dot.
+            assert!(chained.vector().bare_norm_sq() < EPS_ABS);
+            assert!(chained.axial().bare_norm_sq() < EPS_ABS);
+            assert!(chained.pseudoscalar().norm() < EPS_ABS);
+            assert!((chained.scalar() - a.dualize().dot(&b)).norm() < EPS_ABS);
+
+            // γ⁵ v̸ is exactly the grade-3 part: the basis-element ordering claim.
+            let g5v = Multivector::from_pseudoscalar(C::<f64>::one())
+                .clifford_product(&Multivector::from_gamma(&a));
+            assert!(
+                mv_max_diff(&g5v, &Multivector::from_axial(&a)) < EPS_ABS,
+                "γ⁵ v̸ is not the grade-3 basis element"
+            );
+            // and the opposite ordering is its negative
+            let vg5 = Multivector::from_gamma(&a)
+                .clifford_product(&Multivector::from_pseudoscalar(C::<f64>::one()));
+            assert!(mv_max_diff(&vg5, &(-Multivector::from_axial(&a))) < EPS_ABS);
+
+            let (x, y, z) = (
+                rand_multivector(&mut rng),
+                rand_multivector(&mut rng),
+                rand_multivector(&mut rng),
+            );
+            assert!(
+                mv_max_diff(
+                    &x.clifford_product(&y).clifford_product(&z),
+                    &x.clifford_product(&y.clifford_product(&z))
+                ) < 1e-10,
+                "Clifford product is not associative"
+            );
+            assert!(mv_max_diff(&x.clifford_product(&Multivector::identity()), &x) < EPS_ABS);
+        }
+
+        let pl = Multivector::<f64>::from_projector(Chirality::Left);
+        let pr = Multivector::<f64>::from_projector(Chirality::Right);
+        assert!(mv_max_diff(&pl.clifford_product(&pl), &pl) < EPS_ABS);
+        assert!(mv_max_diff(&pr.clifford_product(&pr), &pr) < EPS_ABS);
+        assert!(pl
+            .clifford_product(&pr)
+            .as_array()
+            .iter()
+            .all(|c| c.norm() < EPS_ABS));
+        assert!(mv_max_diff(&(pl + pr), &Multivector::identity()) < EPS_ABS);
+    }
+
+    /// Even grades preserve a spinor's chiral blocks and odd grades swap them.
+    ///
+    /// This is the structural content of the `1+4+6+4+1` grading in the Weyl basis,
+    /// and it holds for both adjoints because the bra action is the transpose of the
+    /// ket action, not a chiral swap.
+    #[test]
+    fn test_grade_parity_and_chirality() {
+        let mut rng = StdRng::seed_from_u64(0x9A_0001);
+        for _ in 0..16 {
+            let even = [
+                Multivector::from_scalar(rand_c(&mut rng)),
+                Multivector::from_bivector(&rand_tensor(&mut rng)),
+                Multivector::from_pseudoscalar(rand_c(&mut rng)),
+            ];
+            let odd = [
+                Multivector::from_gamma(&rand_cvec(&mut rng)),
+                Multivector::from_axial(&rand_cvec(&mut rng)),
+            ];
+            let (l0, l1) = (rand_c(&mut rng), rand_c(&mut rng));
+            let left_ket = Bispinor::<f64, Ket>::from_components([l0, l1, C::zero(), C::zero()]);
+            let left_bra = Bispinor::<f64, Bra>::from_components([l0, l1, C::zero(), C::zero()]);
+
+            for m in &even {
+                for out in [left_ket.apply(m).0, left_bra.apply(m).0] {
+                    assert!(
+                        out[2].norm() < EPS_ABS && out[3].norm() < EPS_ABS,
+                        "an even grade moved weight out of the left-chiral block"
+                    );
+                }
+            }
+            for m in &odd {
+                for out in [left_ket.apply(m).0, left_bra.apply(m).0] {
+                    assert!(
+                        out[0].norm() < EPS_ABS && out[1].norm() < EPS_ABS,
+                        "an odd grade left weight in the left-chiral block"
+                    );
+                }
+            }
+        }
+    }
+
+    /// [`SpinorRepr::apply`] reduces to the hand-written kernels it generalises:
+    /// the grade-1 element is [`SpinorRepr::slash`] and the projector grades are
+    /// [`SpinorRepr::project_left`]/[`SpinorRepr::project_right`], on both adjoints.
+    /// Also `ψ̄ (M ψ) = (ψ̄ M) ψ`.
+    #[test]
+    fn test_apply_matches_existing_kernels() {
+        let mut rng = StdRng::seed_from_u64(0x5A_0001);
+        for (p, mass, nhel, nsf) in spinor_test_cases() {
+            let ket = Bispinor::<f64, Ket>::from_momentum(p, mass, nhel, nsf);
+            let bra = Bispinor::<f64, Bra>::from_momentum(p, mass, nhel, nsf);
+            for _ in 0..4 {
+                let v = rand_cvec(&mut rng);
+                let slash = Multivector::from_gamma(&v);
+                assert!(
+                    (ket.apply(&slash) - ket.slash(&v)).bare_norm_sq() < EPS_ABS,
+                    "ket apply(γ) does not reproduce slash"
+                );
+                assert!(
+                    (bra.apply(&slash) - bra.slash(&v)).bare_norm_sq() < EPS_ABS,
+                    "bra apply(γ) does not reproduce slash"
+                );
+                let m = rand_multivector(&mut rng);
+                let via_ket = bra.scalar_bilinear(&ket.apply(&m), Chirality::Both);
+                let via_bra = bra.apply(&m).scalar_bilinear(&ket, Chirality::Both);
+                assert!(
+                    (via_ket - via_bra).norm() < 1e-11,
+                    "ψ̄(Mψ) ≠ (ψ̄M)ψ: {via_ket} vs {via_bra}"
+                );
+            }
+            assert_eq!(
+                ket.apply(&Multivector::from_projector(Chirality::Left)),
+                ket.project_left()
+            );
+            assert_eq!(
+                ket.apply(&Multivector::from_projector(Chirality::Right)),
+                ket.project_right()
+            );
+            assert_eq!(
+                bra.apply(&Multivector::from_projector(Chirality::Left)),
+                bra.project_left()
+            );
+        }
+    }
+
+    /// The Fierz pairing on coefficients equals `¼ Tr[M N]` on matrices.
+    #[test]
+    fn test_fierz_pairing_is_quarter_trace() {
+        let mut rng = StdRng::seed_from_u64(0xF1_0001);
+        for _ in 0..64 {
+            let (m, n) = (rand_multivector(&mut rng), rand_multivector(&mut rng));
+            let prod = mat_mul(&m.to_weyl_matrix(), &n.to_weyl_matrix());
+            let trace: C<f64> = (0..4).map(|i| prod[i][i]).sum();
+            assert!(
+                (m.fierz_pairing(&n) - trace * 0.25).norm() < 1e-11,
+                "fierz_pairing ≠ ¼ Tr[MN]"
+            );
+            assert!((m.fierz_pairing(&n) - n.fierz_pairing(&m)).norm() < 1e-12);
+        }
+    }
+
+    /// `f̄ a̸ b̸ f = (a·b) f̄ f − i a_μ b_ν f̄ σ^{μν} f`, per chirality.
+    ///
+    /// This is the identity that makes the grade-2 slice the tensor bilinear: the
+    /// left side goes through two hand-written slashes and the scalar bilinear, the
+    /// right through [`SpinorRepr::tensor_bilinear`], so a sign or component-order
+    /// error in either shows up as a disagreement.
+    #[test]
+    fn test_gamma_pair_bilinear_identity() {
+        let mut rng = StdRng::seed_from_u64(0x2B_0001);
+        for (p, mass, nhel, nsf) in spinor_test_cases() {
+            let fi = Bispinor::<f64, Ket>::from_momentum(p, mass, nhel, nsf);
+            let fo = fi.bar();
+            for _ in 0..4 {
+                let (a, b) = (rand_cvec(&mut rng), rand_cvec(&mut rng));
+                let a_dot_b = a.dualize().dot(&b);
+                for chirality in [Chirality::Left, Chirality::Right, Chirality::Both] {
+                    let projected = match chirality {
+                        Chirality::Left => fi.project_left(),
+                        Chirality::Right => fi.project_right(),
+                        Chirality::Both => fi,
+                    };
+                    let lhs = fo.scalar_bilinear(&projected.slash(&b).slash(&a), Chirality::Both);
+                    let tensor = fo.tensor_bilinear(&fi, chirality);
+                    let rhs = a_dot_b * fo.scalar_bilinear(&fi, chirality)
+                        - C::<f64>::i() * tensor.contract_vectors(&a, &b);
+                    assert!(
+                        (lhs - rhs).norm() < 1e-11,
+                        "f̄ a̸b̸ f identity fails at chirality {chirality:?}: {lhs} vs {rhs}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The per-helicity Fierz reconstruction `ψ ψ̄ = ¼ Σ_A (ψ̄ Γ_A ψ) Γ^A`, and the
+    /// pairing identity `ψ̄ M ψ = ⟨fierz(ψ̄, ψ), M⟩`.
+    ///
+    /// This is the finest oracle in this module: it compares the outer product of
+    /// the spinor components — sixteen complex numbers — against the sixteen
+    /// bilinears read back through the graded basis, one helicity at a time. It
+    /// passes only if every bilinear's normalisation, sign and index order is
+    /// mutually consistent, which the helicity-summed relations in
+    /// `test_completeness_relations` provably cannot see: those sum the two
+    /// helicities first and so are blind to any error antisymmetric in helicity, and
+    /// they project onto only five of the sixteen basis directions.
+    ///
+    /// The *diagonal* form `ψ ψ̄` has a degeneracy of its own —
+    /// `ψ̄ σ^{0i} ψ ∝ (p⃗ × s⃗)^i` vanishes identically when the spin is along the
+    /// momentum, so a helicity eigenstate leaves the three boost-like grade-2 slots
+    /// at zero and cannot see an error in them. The general outer product `ψ φ̄`
+    /// with an unrelated `φ̄` below is what covers all sixteen.
+    #[test]
+    fn test_fierz_reconstruction() {
+        let mut rng = StdRng::seed_from_u64(0x4E_0001);
+        for (p, mass, nhel, nsf) in spinor_test_cases() {
+            let psi = Bispinor::<f64, Ket>::from_momentum(p, mass, nhel, nsf);
+            let psibar = psi.bar();
+            let coefficients = psibar.fierz_coefficients(&psi);
+
+            let outer: Mat4 = std::array::from_fn(|i| {
+                std::array::from_fn(|j| psi.component(i) * psibar.component(j))
+            });
+            let rebuilt = mat_scale(&coefficients.to_weyl_matrix(), C::from(0.25));
+            assert!(
+                mat_max_diff(&outer, &rebuilt) < EPS_ABS,
+                "ψψ̄ ≠ ¼ Σ_A (ψ̄ Γ_A ψ) Γ^A for p = {p}, m = {mass}, {nhel}, {nsf:?}"
+            );
+
+            // Each grade is the corresponding bilinear, with no rescaling.
+            assert_eq!(
+                coefficients.scalar(),
+                psibar.scalar_bilinear(&psi, Chirality::Both)
+            );
+            assert_eq!(
+                coefficients.bivector(),
+                psibar.tensor_bilinear(&psi, Chirality::Both)
+            );
+            assert_eq!(
+                coefficients.axial(),
+                psibar.axial_vector_bilinear(&psi, Chirality::Both)
+            );
+
+            for _ in 0..4 {
+                let other = Bispinor::<f64, Bra>::from_components(std::array::from_fn(|_| {
+                    rand_c(&mut rng)
+                }));
+                let general: Mat4 = std::array::from_fn(|i| {
+                    std::array::from_fn(|j| psi.component(i) * other.component(j))
+                });
+                let rebuilt_general = mat_scale(
+                    &other.fierz_coefficients(&psi).to_weyl_matrix(),
+                    C::from(0.25),
+                );
+                assert!(
+                    mat_max_diff(&general, &rebuilt_general) < 1e-11,
+                    "ψφ̄ ≠ ¼ Σ_A (φ̄ Γ_A ψ) Γ^A"
+                );
+
+                let m = rand_multivector(&mut rng);
+                let direct = psibar.scalar_bilinear(&psi.apply(&m), Chirality::Both);
+                assert!(
+                    (direct - coefficients.fierz_pairing(&m)).norm() < 1e-11,
+                    "ψ̄ M ψ ≠ ⟨fierz(ψ̄, ψ), M⟩: {direct} vs {}",
+                    coefficients.fierz_pairing(&m)
                 );
             }
         }

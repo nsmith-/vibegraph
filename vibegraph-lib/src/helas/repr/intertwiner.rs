@@ -32,21 +32,28 @@
 //! fibers changes.  The [`Intertwiner2Leg`], [`Intertwiner3Leg`], and
 //! [`Intertwiner4Leg`] traits encode each orientation by leg count.
 //!
-//! ## Implemented intertwiners
+//! ## Where the vertex factors live
 //!
-//! | Type | Map | `(j_L,j_R)` chain | Description |
-//! |------|-----|-------------------|-------------|
-//! | [`Gamma`]  | S* ⊗ S → T\*M | `(½,0)×(0,½)→(½,½)` | Full vector current `ψ̄ γ^μ ψ` |
-//! | [`GammaL`] | S* ⊗ S → T\*M | `(½,0)×(½,0)→(½,½)` | Left bilinear current `ψ̄ γ^μ P_L ψ` |
-//! | [`GammaR`] | S* ⊗ S → T\*M | `(0,½)×(0,½)→(½,½)` | Right bilinear current `ψ̄ γ^μ P_R ψ` |
+//! This module holds the leg-count traits. The vertex factors themselves are
+//! methods on the representation types in
+//! [`lorentz`](crate::helas::repr::lorentz), which is where each has a concrete
+//! basis to be written in:
 //!
-//! ## Status
+//! | Vertex factor | Map | `(j_L,j_R)` chain | Where |
+//! |---------------|-----|-------------------|-------|
+//! | `ψ̄ γ^μ P_L ψ` | S\* ⊗ S → T\*M | `(½,0)×(½,0)→(½,½)` | [`SpinorRepr::left_current`](crate::helas::repr::lorentz::SpinorRepr::left_current) |
+//! | `ψ̄ γ^μ P_R ψ` | S\* ⊗ S → T\*M | `(0,½)×(0,½)→(½,½)` | [`SpinorRepr::right_current`](crate::helas::repr::lorentz::SpinorRepr::right_current) |
+//! | `ψ̄ γ^μ Γ ψ` | S\* ⊗ S → T\*M | `(½,0)×(0,½)→(½,½)` | [`SpinorRepr::vector_bilinear`](crate::helas::repr::lorentz::SpinorRepr::vector_bilinear) |
+//! | `ψ̄ σ^{μν} Γ ψ` | S\* ⊗ S → Λ²T\*M | `(½,0)×(0,½)→(1,0)⊕(0,1)` | [`SpinorRepr::tensor_bilinear`](crate::helas::repr::lorentz::SpinorRepr::tensor_bilinear) |
+//! | all sixteen `ψ̄ Γ_A ψ` | S\* ⊗ S → Cl(1,3)⊗ℂ | — | [`SpinorRepr::fierz_coefficients`](crate::helas::repr::lorentz::SpinorRepr::fierz_coefficients) |
+//! | `ε^{μνρσ}` | (T\*M)³ → T\*M | `(½,½)³→(½,½)` | [`epsilon_vector`](crate::helas::repr::lorentz::epsilon_vector), [`epsilon4`](crate::helas::repr::lorentz::epsilon4) |
 //!
-//! - [`GammaL`] and [`GammaR`] are **fully implemented** — they
-//!   delegate to [`SpinorRepr::left_current`] and [`SpinorRepr::right_current`].
-//!   These are used directly in [`crate::helas::vertex`].
-//! - [`GammaV`], [`SigmaTensor`], and [`Epsilon`] are **stubs** pending
-//!   implementation.
+//! An arbitrary Clifford element acts on a spinor through [`SpinorRepr::apply`](crate::helas::repr::lorentz::SpinorRepr::apply),
+//! and two of them compose through [`Multivector::clifford_product`](crate::helas::repr::lorentz::Multivector::clifford_product), so a
+//! γ-chain of any length needs no intertwiner type of its own.
+//!
+//! The traits below are the interface a dispatch layer would use to name one
+//! orientation per implementor; nothing implements them yet.
 
 use super::Real;
 use crate::helas::repr::lorentz::LorentzRepr;

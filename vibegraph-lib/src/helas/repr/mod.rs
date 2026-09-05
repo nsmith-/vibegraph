@@ -29,9 +29,10 @@
 //! Each vertex intertwiner has multiple *orientations* depending on which legs
 //! are incoming vs. outgoing: the same coupling constant appears in all
 //! orientations, but the map between fibers changes because each orientation
-//! contracts different leg bundles. The [`intertwiner`] module encodes each
-//! orientation as a separate implementor of the [`intertwiner::Intertwiner`]
-//! trait, parameterised by the basis type `B`.
+//! contracts different leg bundles. The [`intertwiner`] module carries the
+//! leg-count traits that name an orientation; the vertex factors themselves are
+//! methods on the [`lorentz`] representation types, which is where each has a
+//! concrete basis to be written in.
 //!
 //! ## Scalar primitives
 //!
