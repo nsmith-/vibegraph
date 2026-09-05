@@ -138,6 +138,18 @@ pub enum ConvertError {
         is_anti: bool,
         pdg: i64,
     },
+    /// A particle whose model gives it a `propagators.py` form of its own is on an
+    /// internal line. The evaluator builds every propagator from the default UFO
+    /// forms, so honouring the custom one is out of reach and quietly using the
+    /// default would be wrong physics.
+    #[error(
+        "particle '{particle}' propagates in this diagram with the custom propagator \
+         '{propagator}' from propagators.py, which this evaluator does not implement"
+    )]
+    CustomPropagator {
+        particle: String,
+        propagator: String,
+    },
 }
 
 impl Diagram {
@@ -160,6 +172,12 @@ impl Diagram {
             let (v1, s1) = (p.vertex(1).id(), p.ray_index_ordered(1));
             slot_to_prop.insert((v0, s0), (PropIdx(pi), 0));
             slot_to_prop.insert((v1, s1), (PropIdx(pi), 1));
+            if let Some(propagator) = &model.particle(pid).propagator {
+                return Err(ConvertError::CustomPropagator {
+                    particle: model.particle(pid).name.clone(),
+                    propagator: propagator.clone(),
+                });
+            }
             props.push(Prop {
                 particle: pid,
                 endpoints: [(VtxIdx(v0), RaySlot(s0)), (VtxIdx(v1), RaySlot(s1))],
@@ -292,4 +310,80 @@ fn make_leg(model: &UFOModel, leg: &LegView, li: usize, n_in: usize) -> Result<L
         leg_idx: LegIdx(li),
         incoming: li < n_in,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::diagrams::{
+        generate_from_proc_card, parse_proc_card, ConvertError, DiagramError, ParsingOptions,
+    };
+    use crate::ufo::propagators::Propagator;
+    use crate::ufo::sm::{sm_parsed_model, SMRestrict};
+
+    /// A particle carrying a `propagators.py` form of its own is refused where it
+    /// propagates, and only there.
+    ///
+    /// No model in reach reaches this refusal on its own — SMEFTsim's four
+    /// width-corrected auxiliary fields are the only particles that carry a custom
+    /// propagator, and no coverage-table process selects a diagram they appear in —
+    /// so the refusal is pinned on a Standard Model deliberately given one. The `Z`
+    /// is an internal line of `e+ e- > mu+ mu-` and only an external leg of
+    /// `e+ e- > Z Z` (which goes through t- and u-channel electrons), which is the
+    /// distinction the refusal turns on.
+    #[test]
+    fn a_custom_propagator_is_refused_where_it_propagates() {
+        let mut parsed = sm_parsed_model();
+        parsed.propagators.insert(
+            "V1".to_owned(),
+            Propagator {
+                python_name: "V1".to_owned(),
+                name: "V1".to_owned(),
+                numerator: "- Metric(1, 2)".to_owned(),
+                denominator: "P('mu', id) * P('mu', id)".to_owned(),
+            },
+        );
+        parsed
+            .particles
+            .get_mut("Z")
+            .expect("Z in the SM")
+            .propagator = Some("V1".to_owned());
+        let card = SMRestrict::Default
+            .restrict_card_text()
+            .parse()
+            .expect("parse the interned SM restrict card");
+        let model = parsed
+            .into_model(Some(&card))
+            .expect("build the SM with a custom Z propagator");
+
+        let generate = |process: &str| {
+            let pc = parse_proc_card(&format!("generate {process}"), &ParsingOptions::default())
+                .unwrap();
+            generate_from_proc_card(&pc, &model)
+        };
+
+        let err = match generate("e+ e- > mu+ mu-") {
+            Err(e) => e,
+            Ok(_) => panic!("a propagating Z must be refused"),
+        };
+        assert!(
+            matches!(
+                err,
+                DiagramError::Convert(ConvertError::CustomPropagator { ref particle, .. })
+                    if particle == "Z"
+            ),
+            "expected CustomPropagator(Z), got {err}"
+        );
+
+        // The same particle as an external leg is not propagating, so it is fine.
+        let sets = generate("e+ e- > Z Z").expect("an external Z must not be refused");
+        let diagrams: usize = sets.iter().map(|s| s.diagrams.len()).sum();
+        assert!(diagrams > 0, "no diagrams to judge");
+        for set in &sets {
+            for diagram in &set.diagrams {
+                for prop in &diagram.props {
+                    assert_ne!(model.particle(prop.particle).name, "Z");
+                }
+            }
+        }
+    }
 }

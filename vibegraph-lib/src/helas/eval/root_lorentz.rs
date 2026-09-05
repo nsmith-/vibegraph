@@ -372,6 +372,9 @@ impl LorentzEvalTree {
                     unreachable!("Identity op should involve idx {}", idx);
                 }
             }
+            LorentzOp::Gamma5 { .. } => Err(RootLorentzError::UnsupportedVertex(
+                "the chirality matrix Gamma5 is deferred to future work".to_string(),
+            )),
             LorentzOp::Sigma { .. } => Err(RootLorentzError::UnsupportedVertex(
                 "Sigma tensors are deferred to future work".to_string(),
             )),

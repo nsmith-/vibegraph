@@ -1,0 +1,465 @@
+//! The vendored SMEFTsim `topU3l_MwScheme` UFO through the loader.
+//!
+//! The first non-Standard-Model UFO this project reads end to end: 21 particle
+//! definitions, 260 Lorentz structures, 904 vertices carrying couplings of many
+//! different orders in one vertex, a `propagators.py`, and an input scheme
+//! (`{m_W, m_Z, G_F}`) the SM UFO does not use. Everything here reads the committed copy under
+//! `validation/ufo/` — no MadGraph run, no submodule — but it is registered in the
+//! banked layer because the numbers it pins are reconciled against MadGraph's own,
+//! not derived here.
+//!
+//! What each measurement is a falsifier for is written at the test, because most
+//! of them exist to catch a *silent* change: a loader that stopped splitting
+//! interactions, or started pruning one structure too many, still loads the model
+//! and still enumerates diagrams — it just enumerates the wrong ones.
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+use vibegraph::ufo::identity::digest_bytes;
+use vibegraph::ufo::slha::ParamCard;
+use vibegraph::ufo::{expansion_order_caps, EvaluatedModel, ParsedModel, UFOModel};
+
+fn model_dir() -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO");
+    assert!(dir.is_dir(), "vendored UFO missing at {}", dir.display());
+    dir
+}
+
+fn load(card: &str) -> std::sync::Arc<UFOModel> {
+    let dir = model_dir();
+    UFOModel::load(&dir, Some(&dir.join(card))).unwrap_or_else(|e| panic!("load {card}: {e}"))
+}
+
+/// Arity histogram of a vertex set: `n legs → count`.
+fn arity(model: &UFOModel) -> BTreeMap<usize, usize> {
+    let mut out = BTreeMap::new();
+    for v in model.vertices.values() {
+        *out.entry(v.particles.len()).or_insert(0) += 1;
+    }
+    out
+}
+
+fn diagram_count(model: &UFOModel, process: &str) -> usize {
+    let opts = ParsingOptions::default();
+    let pc = parse_proc_card(&format!("generate {process}"), &opts)
+        .unwrap_or_else(|e| panic!("parse '{process}': {e}"));
+    let sets = generate_from_proc_card(&pc, model)
+        .unwrap_or_else(|e| panic!("enumerate '{process}': {e}"));
+    sets.iter().map(|s| s.diagrams.len()).sum()
+}
+
+/// The vendored copy against its own `SHA256SUMS`, both ways: every listed file
+/// has the recorded digest, and every file in the directory is listed. A drifted
+/// or extended copy fails here rather than silently changing what every gate
+/// below measures.
+#[test]
+fn vendored_copy_matches_its_manifest() {
+    let dir = model_dir();
+    let manifest = std::fs::read_to_string(dir.join("SHA256SUMS")).expect("read SHA256SUMS");
+
+    let mut listed: Vec<String> = Vec::new();
+    for line in manifest.lines().filter(|l| !l.trim().is_empty()) {
+        let (want, name) = line
+            .split_once("  ")
+            .unwrap_or_else(|| panic!("malformed SHA256SUMS line: {line:?}"));
+        let bytes = std::fs::read(dir.join(name)).unwrap_or_else(|e| panic!("read {name}: {e}"));
+        assert_eq!(
+            digest_bytes(&bytes),
+            want,
+            "{name} does not match SHA256SUMS"
+        );
+        listed.push(name.to_owned());
+    }
+    listed.sort();
+
+    let mut present: Vec<String> = std::fs::read_dir(&dir)
+        .expect("read model dir")
+        .map(|e| {
+            e.expect("dir entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .filter(|n| n != "SHA256SUMS")
+        .collect();
+    present.sort();
+    assert_eq!(listed, present, "SHA256SUMS does not cover the directory");
+}
+
+/// The pre-restriction model as the loader sees it, against a direct reading of
+/// the UFO's Python: 904 `Vertex(...)` entries carrying 1278 couplings become
+/// 1985 interactions once split by coupling-order tuple, and no vertex is lost.
+///
+/// The split count is the number MadGraph's `add_interaction` produces from the
+/// same file, so it is what a per-interaction diagram count is comparable
+/// against. It is also the falsifier for the splitting itself: a loader that
+/// stopped splitting would report 904 here and would then read every SMEFTsim
+/// `FFV` vertex as carrying `NP`.
+#[test]
+fn interaction_splitting_matches_madgraph() {
+    let parsed = ParsedModel::parse(&model_dir()).expect("parse SMEFTsim");
+
+    // 21 `Particle(...)` entries plus the antiparticle each non-self-conjugate one
+    // implies, which the loader materialises so a vertex can name either.
+    assert_eq!(parsed.particles.len(), 36);
+    assert_eq!(parsed.lorentz.len(), 260);
+    assert_eq!(parsed.couplings.len(), 1278);
+    assert_eq!(parsed.vertices.len(), 1985, "split interaction count");
+
+    // Every split's couplings agree on their order tuple — the property the whole
+    // split exists to establish, and what `topo::build_feyngraph_model` relies on.
+    for (name, vertex) in &parsed.vertices {
+        let mut tuples: Vec<_> = vertex
+            .couplings
+            .values()
+            .map(|&id| &parsed.couplings[id].orders)
+            .collect();
+        tuples.dedup();
+        assert_eq!(
+            tuples.len(),
+            1,
+            "interaction '{name}' mixes coupling orders"
+        );
+    }
+
+    let mut split_arity: BTreeMap<usize, usize> = BTreeMap::new();
+    for v in parsed.vertices.values() {
+        *split_arity.entry(v.particles.len()).or_insert(0) += 1;
+    }
+    assert_eq!(
+        split_arity,
+        [(3, 527), (4, 1234), (5, 212), (6, 12)]
+            .into_iter()
+            .collect::<BTreeMap<usize, usize>>(),
+        "post-split arity histogram"
+    );
+
+    // Splitting partitions each UFO vertex's coupling entries: the 2737
+    // `(color, lorentz) -> coupling` entries of the 904 `Vertex(...)` definitions
+    // are spread across the 1985 interactions with none lost or duplicated. (A
+    // coupling *constant* is shared across vertices, so it is the entries that are
+    // counted, not the distinct coupling ids.)
+    let entries: usize = parsed.vertices.values().map(|v| v.couplings.len()).sum();
+    assert_eq!(entries, 2737, "coupling entries after splitting");
+}
+
+/// Every one of the 260 Lorentz structures parses, with the operator mix the
+/// model actually writes. `Gamma5` and the `**` powers are the two the parser
+/// gained for this model: `Gamma5` used to fail the whole load as an
+/// `UnknownOperator`, and `P(-1,a)**2` used to fail as a syntax error. The `P`
+/// count is *after* power expansion, so it exceeds the 3189 textual `P(` uses by
+/// the 123 squared momenta, each of which becomes two contracted copies.
+#[test]
+fn every_lorentz_structure_parses() {
+    use vibegraph::ufo::lorentz::LorentzOp;
+
+    let parsed = ParsedModel::parse(&model_dir()).expect("parse SMEFTsim");
+    let mut ops: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for structure in parsed.lorentz.values() {
+        for term in &structure.expr {
+            for op in &term.ops {
+                let name = match op {
+                    LorentzOp::Gamma { .. } => "Gamma",
+                    LorentzOp::Gamma5 { .. } => "Gamma5",
+                    LorentzOp::Sigma { .. } => "Sigma",
+                    LorentzOp::Identity { .. } => "Identity",
+                    LorentzOp::ProjM { .. } => "ProjM",
+                    LorentzOp::ProjP { .. } => "ProjP",
+                    LorentzOp::Metric { .. } => "Metric",
+                    LorentzOp::P { .. } => "P",
+                    LorentzOp::Epsilon { .. } => "Epsilon",
+                    LorentzOp::C { .. } => "C",
+                };
+                *ops.entry(name).or_insert(0) += 1;
+            }
+        }
+    }
+    println!("SMEFTsim Lorentz operator uses: {ops:?}");
+    assert_eq!(ops.get("Gamma5"), Some(&13));
+    assert!(
+        !ops.contains_key("Sigma"),
+        "SMEFTsim emits no literal Sigma"
+    );
+    assert!(
+        !ops.contains_key("C"),
+        "SMEFTsim emits no charge conjugation"
+    );
+}
+
+/// `propagators.py` is read rather than refused: the four width-corrected
+/// auxiliary fields keep their propagator forms verbatim, and only they carry
+/// one. The refusal now lives where such a particle actually propagates
+/// (`diagrams::diagram::ConvertError::CustomPropagator`).
+#[test]
+fn custom_propagators_are_read_and_attached() {
+    let parsed = ParsedModel::parse(&model_dir()).expect("parse SMEFTsim");
+
+    let mut named: Vec<(&str, &str)> = parsed
+        .particles
+        .values()
+        .filter_map(|p| p.propagator.as_deref().map(|prop| (p.name.as_str(), prop)))
+        .collect();
+    named.sort();
+    assert_eq!(
+        named,
+        [
+            ("H1", "H1"),
+            ("W1+", "W1"),
+            ("W1-", "W1"),
+            ("Z1", "Z1"),
+            ("t1", "T1"),
+            ("t1~", "T1"),
+        ]
+    );
+
+    // The forms are kept as written, including the `denominator + "**2"`
+    // concatenation the file builds them from.
+    let z1 = &parsed.propagators["Z1"];
+    assert!(
+        z1.numerator.contains("dWZ"),
+        "Z1 numerator: {}",
+        z1.numerator
+    );
+    assert!(
+        z1.denominator.ends_with("**2"),
+        "Z1 denominator: {}",
+        z1.denominator
+    );
+    assert_eq!(parsed.propagators["V2"].numerator, "- Metric(1, 2)");
+}
+
+/// SMEFTsim declares an `expansion_order` for every coupling order, and exactly
+/// one of them is not 99: `NPprop = 0`. MadGraph's window is `0 < v < 99`, so
+/// *none* of them caps anything — the auxiliary fields are kept out of a default
+/// process by their hierarchy-99 orders under the WEIGHTED search, not by
+/// `expansion_order`. Recorded here because the opposite is the natural reading.
+#[test]
+fn expansion_order_is_declared_but_caps_nothing() {
+    let parsed = ParsedModel::parse(&model_dir()).expect("parse SMEFTsim");
+    assert_eq!(parsed.expansion_order.get("NPprop"), Some(&0));
+    assert_eq!(parsed.expansion_order.get("QED"), Some(&99));
+    assert_eq!(parsed.expansion_order.get("NP"), Some(&99));
+    assert_eq!(
+        parsed
+            .expansion_order
+            .values()
+            .filter(|&&v| v != 99)
+            .count(),
+        1,
+        "only NPprop departs from 99"
+    );
+    assert!(
+        expansion_order_caps(&parsed.expansion_order).is_empty(),
+        "nothing in SMEFTsim falls inside MadGraph's 0 < expansion_order < 99 window"
+    );
+    assert_eq!(parsed.order_hierarchy.get("NPprop"), Some(&99));
+    assert_eq!(parsed.order_hierarchy.get("QCD"), Some(&1));
+    assert_eq!(parsed.order_hierarchy.get("QED"), Some(&2));
+}
+
+/// The two shipped restrict cards, after zero couplings, empty interactions and
+/// unreferenced Lorentz structures are removed in MadGraph's order.
+///
+/// `SMlimit_massless` zeroes every Wilson coefficient, so what survives is the
+/// Standard Model as SMEFTsim writes it; `massless` sets every real coefficient
+/// to a fixed non-zero value and keeps a vertex from every structure class,
+/// including the five- and six-leg field-strength contact terms.
+#[test]
+fn both_restrict_cards_prune_to_a_workable_model() {
+    let sm_limit = load("restrict_SMlimit_massless.dat");
+    assert_eq!(sm_limit.vertices.len(), 62);
+    assert_eq!(
+        arity(&sm_limit),
+        [(3, 50), (4, 10), (5, 2)]
+            .into_iter()
+            .collect::<BTreeMap<usize, usize>>()
+    );
+
+    let all_on = load("restrict_massless.dat");
+    assert_eq!(all_on.vertices.len(), 913);
+    assert_eq!(
+        arity(&all_on),
+        [(3, 256), (4, 564), (5, 82), (6, 11)]
+            .into_iter()
+            .collect::<BTreeMap<usize, usize>>()
+    );
+
+    // Pruning is exactly the removal of vanishing couplings: nothing survives
+    // holding a Lorentz structure no coupling of its own refers to, which is what
+    // used to send the evaluator into a zero-coupling dipole chain.
+    for model in [&sm_limit, &all_on] {
+        for (name, vertex) in &model.vertices {
+            let used: std::collections::BTreeSet<usize> =
+                vertex.couplings.keys().map(|&(_, l)| l).collect();
+            assert_eq!(
+                used.len(),
+                vertex.lorentz.len(),
+                "interaction '{name}' kept an unreferenced Lorentz structure"
+            );
+            assert!(!vertex.couplings.is_empty());
+        }
+    }
+}
+
+/// The `{m_W, m_Z, G_F}` input scheme evaluates to the values SMEFTsim's own
+/// documentation quotes, under both cards — the derived electroweak parameters
+/// are what every amplitude below is built from, and the Wilson coefficients do
+/// not shift them at this order in the `massless` card either.
+#[test]
+fn mw_scheme_derived_parameters() {
+    for card in ["restrict_SMlimit_massless.dat", "restrict_massless.dat"] {
+        let model = load(card);
+        let ev = EvaluatedModel::from_model_card(model, &ParamCard::default());
+        let at = |name: &str| ev.param_values[name].re;
+        assert!(
+            (at("ee") - 0.30825).abs() < 5e-6,
+            "[{card}] ee = {}",
+            at("ee")
+        );
+        assert!(
+            (at("sth") - 0.47208).abs() < 5e-6,
+            "[{card}] sth = {}",
+            at("sth")
+        );
+        assert!(
+            (at("vevhat") - 246.22).abs() < 5e-3,
+            "[{card}] vevhat = {}",
+            at("vevhat")
+        );
+        assert!(
+            (at("yt") - 0.99228).abs() < 5e-6,
+            "[{card}] yt = {}",
+            at("yt")
+        );
+        // The scheme's own inputs, straight from the card.
+        assert!((at("MW") - 80.387).abs() < 1e-9);
+        assert!((at("MZ") - 91.1876).abs() < 1e-9);
+        assert!((at("LambdaSMEFT") - 1000.0).abs() < 1e-9);
+    }
+}
+
+/// Diagram counts for the coverage-table processes, printed for reconciliation
+/// against MadGraph's banked `diagrams.json` and asserted where MadGraph's own
+/// number is already known.
+///
+/// The two SM-limit counts are the ones the interaction splitting exists for.
+/// Before it, `e+ e- > mu+ mu-` enumerated **0** — every SMEFTsim `FFV` vertex
+/// bundles the SM current with dipole and current-shift couplings, so the union
+/// of their orders made the photon vertex read as `NP = 1` and two of them
+/// exceeded any bound. And `g g > t t~` enumerated **4**, the extra one being the
+/// `g g > H > t t~` s-channel through SMEFTsim's effective `SMHLOOP` `ggH`
+/// vertex; the WEIGHTED default now costs that diagram 99 per `SMHLOOP` power
+/// and drops it, leaving MadGraph's 3. It is a real diagram of this model, not a
+/// spurious one: ask for `g g > t t~ QCD<=2`, which bounds `QCD` but leaves
+/// `SMHLOOP` free, and it comes back.
+#[test]
+fn coverage_table_diagram_counts() {
+    let sm_limit = load("restrict_SMlimit_massless.dat");
+    assert_eq!(diagram_count(&sm_limit, "e+ e- > mu+ mu-"), 2);
+    assert_eq!(diagram_count(&sm_limit, "g g > t t~"), 3);
+    assert_eq!(diagram_count(&sm_limit, "e+ e- > t t~"), 2);
+    assert_eq!(
+        diagram_count(&sm_limit, "g g > t t~ QCD<=2"),
+        4,
+        "the SMHLOOP ggH s-channel is a diagram of this model whenever SMHLOOP is unbounded"
+    );
+
+    // Informational until V1's `diagrams.json` rows exist: these are what this
+    // loader enumerates, to be reconciled against MadGraph's own counts.
+    let all_on = load("restrict_massless.dat");
+    for process in [
+        "e+ e- > mu+ mu- NP<=1",
+        "g g > h NP<=1",
+        "g g > g g NP<=1",
+        "e+ e- > t t~ NP<=1",
+        "e+ e- > W+ W- NP<=1",
+        "u u~ > t t~ NP<=1",
+        "e+ e- > Z h NP<=1",
+        "b b~ > h NP<=1",
+    ] {
+        println!(
+            "[info] restrict_massless {process}: {} diagrams",
+            diagram_count(&all_on, process)
+        );
+    }
+}
+
+/// No process of the coverage table selects a diagram in which one of the four
+/// width-corrected auxiliary fields propagates, so none of them meets the
+/// custom-propagator refusal. Their `NPprop` order carries hierarchy 99, which is
+/// what the WEIGHTED default charges them; `expansion_order` does not (see
+/// [`expansion_order_is_declared_but_caps_nothing`]).
+///
+/// That the refusal *fires* when it should is pinned separately, on a model built
+/// to trigger it (`diagrams::diagram`), because a refusal nothing reaches is a
+/// check that proves nothing.
+#[test]
+fn no_coverage_row_propagates_an_auxiliary_field() {
+    let all_on = load("restrict_massless.dat");
+    let opts = ParsingOptions::default();
+    for process in [
+        "e+ e- > mu+ mu- NP<=1",
+        "e+ e- > t t~ NP<=1",
+        "e+ e- > W+ W- NP<=1",
+        "e+ e- > Z h NP<=1",
+    ] {
+        let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, &all_on)
+            .unwrap_or_else(|e| panic!("'{process}' reached the custom-propagator refusal: {e}"));
+        for set in &sets {
+            for diagram in &set.diagrams {
+                for prop in &diagram.props {
+                    assert!(
+                        all_on.particle(prop.particle).propagator.is_none(),
+                        "'{process}' propagates {}",
+                        all_on.particle(prop.particle).name
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The SM-limit process list as this model's op-coverage instrument.
+///
+/// The same two-way census the Standard Model's MG-validated suite runs
+/// (`helas::eval::compile`), instantiated on a second model: every evaluator
+/// primitive these processes do *not* compile to is listed, and an op the list
+/// starts covering must be struck from the allowlist. The list is short because
+/// only the SM-limit rows compile today; it grows as the sprint's later sessions
+/// land the primitives the full SMEFT rows need, and the allowlist shrinks with it.
+const SMEFTSIM_SM_LIMIT_PROCESSES: [&str; 3] = ["e+ e- > mu+ mu-", "g g > t t~", "e+ e- > t t~"];
+
+#[test]
+fn sm_limit_op_census() {
+    use vibegraph::helas::eval::op_census::{assert_op_coverage, Op};
+
+    // Every op the SM-limit rows do not reach. `Hels` is never emitted at compile
+    // time in any model (the helicity expansion derives it). The chiral projector
+    // ops and the fused `Ffv*` forms are absent because SMEFTsim writes its SM
+    // currents as `Gamma * ProjP + Gamma * ProjM` pairs that this vertex set roots
+    // through the generic path, and the SM-limit card leaves only the `ProjP` half
+    // of the structures these three processes use. The rest wait on the primitives
+    // later sessions add and on the SMEFT rows that exercise them.
+    const KNOWN_UNCOVERED: [Op; 10] = [
+        Op::Hels,
+        Op::ProjM,
+        Op::ProjMAmp,
+        Op::ProjPAmp,
+        Op::MetricVout,
+        Op::IdentityAmp,
+        Op::FfvVout,
+        Op::FfvIout,
+        Op::FfvOout,
+        Op::PMomOut,
+    ];
+    assert_op_coverage(
+        "SMEFTsim-SMlimit",
+        &load("restrict_SMlimit_massless.dat"),
+        &SMEFTSIM_SM_LIMIT_PROCESSES,
+        &KNOWN_UNCOVERED,
+    );
+}

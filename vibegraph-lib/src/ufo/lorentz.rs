@@ -14,6 +14,8 @@ pub enum LorentzError {
     StructureParse { name: String, cause: String },
     #[error("Unknown Lorentz operator '{0}'")]
     UnknownOperator(String),
+    #[error("Lorentz operator '{name}': {cause}")]
+    OperatorArguments { name: String, cause: String },
     #[error("Spin map error in structure '{structure}': {cause}")]
     SpinMap { structure: String, cause: String },
     #[error("Invalid Lorentz index '{0}'")]
@@ -55,6 +57,8 @@ pub enum LorentzOp {
     },
     /// Charge-conjugation matrix: C_{ij}
     C { i: isize, j: isize },
+    /// Chirality matrix: (γ^5)_{ij} = ProjP_{ij} − ProjM_{ij}
+    Gamma5 { i: isize, j: isize },
 }
 
 impl LorentzOp {
@@ -68,6 +72,7 @@ impl LorentzOp {
             | LorentzOp::Identity { i, j }
             | LorentzOp::ProjM { i, j }
             | LorentzOp::ProjP { i, j }
+            | LorentzOp::Gamma5 { i, j }
             | LorentzOp::C { i, j } => *i == idx || *j == idx,
             _ => false,
         }
@@ -152,6 +157,7 @@ fn find_connections(expr: &LorentzExpr, idx: isize) -> HashSet<isize> {
                 | LorentzOp::Identity { i, j }
                 | LorentzOp::ProjM { i, j }
                 | LorentzOp::ProjP { i, j }
+                | LorentzOp::Gamma5 { i, j }
                 | LorentzOp::C { i, j } => {
                     if *i == idx {
                         out.insert(*j);
@@ -302,9 +308,21 @@ fn extract_spins(keywords: &[ast::Keyword]) -> Result<Vec<i32>, LorentzError> {
 
 // ── Intermediate (raw) types used by the PEG grammar ─────────────────────────
 
+/// One argument of a syntactically parsed operator call.
+///
+/// A UFO Lorentz operator takes plain indices, but the grammar accepts an
+/// arbitrary sub-expression so that a model-specific operator built on top of
+/// them (`FFCT2((P(-3,3)+P(-3,4))*…)`) still parses far enough to be reported by
+/// name rather than as a syntax error.
+#[derive(Debug, Clone)]
+enum RawArg {
+    Index(i32),
+    Nested,
+}
+
 /// A syntactically parsed operator call before name dispatch.
 #[derive(Debug, Clone)]
-struct RawOp(String, Vec<i32>);
+struct RawOp(String, Vec<RawArg>);
 
 /// Raw version of LorentzTerm: coeff may have been folded from numeric atoms,
 /// ops are still RawOps to be resolved in the conversion pass.
@@ -345,11 +363,34 @@ fn to_isize(i: &i32) -> Result<isize, LorentzError> {
     }
 }
 
+/// The operator names this loader understands. A call to anything else is an
+/// [`LorentzError::UnknownOperator`], whatever shape its arguments have.
+const KNOWN_OPERATORS: [&str; 10] = [
+    "Gamma", "Gamma5", "Sigma", "Identity", "ProjM", "ProjP", "Metric", "P", "Epsilon", "C",
+];
+
 fn build_lorentz_op(raw: &RawOp) -> Result<LorentzOp, LorentzError> {
     let RawOp(name, args) = raw;
-    let iargs = args.iter().map(to_isize).collect::<Result<Vec<_>, _>>()?;
+    if !KNOWN_OPERATORS.contains(&name.as_str()) {
+        return Err(LorentzError::UnknownOperator(name.clone()));
+    }
+    let indices = args
+        .iter()
+        .map(|a| match a {
+            RawArg::Index(i) => Ok(*i),
+            RawArg::Nested => Err(LorentzError::OperatorArguments {
+                name: name.clone(),
+                cause: "takes plain indices, not sub-expressions".to_owned(),
+            }),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let iargs = indices
+        .iter()
+        .map(to_isize)
+        .collect::<Result<Vec<_>, _>>()?;
     match (name.as_str(), iargs.as_slice()) {
         ("Gamma", &[mu, i, j]) => Ok(LorentzOp::Gamma { mu, i, j }),
+        ("Gamma5", &[i, j]) => Ok(LorentzOp::Gamma5 { i, j }),
         ("Sigma", &[mu, nu, i, j]) => Ok(LorentzOp::Sigma { mu, nu, i, j }),
         ("Identity", &[i, j]) => Ok(LorentzOp::Identity { i, j }),
         ("ProjM", &[i, j]) => Ok(LorentzOp::ProjM { i, j }),
@@ -358,7 +399,10 @@ fn build_lorentz_op(raw: &RawOp) -> Result<LorentzOp, LorentzError> {
         ("P", &[mu, leg]) => Ok(LorentzOp::P { mu, leg }),
         ("Epsilon", &[mu, nu, rho, sigma]) => Ok(LorentzOp::Epsilon { mu, nu, rho, sigma }),
         ("C", &[i, j]) => Ok(LorentzOp::C { i, j }),
-        _ => Err(LorentzError::UnknownOperator(name.clone())),
+        _ => Err(LorentzError::OperatorArguments {
+            name: name.clone(),
+            cause: format!("does not take {} index argument(s)", iargs.len()),
+        }),
     }
 }
 
@@ -446,11 +490,11 @@ peg::parser! {
             }
             / p:product() { p }
 
-        /// A product of atoms joined by `*` or `/`.
-        /// Returns `Vec<RawTerm>` because a parenthesized atom may expand into
+        /// A product of factors joined by `*` or `/`.
+        /// Returns `Vec<RawTerm>` because a parenthesized factor may expand into
         /// multiple terms (e.g. `2*(A + B)` → `[2A, 2B]`).
         rule product() -> RawExpr
-            = head:atom() tail:( _ op:['*' | '/'] _ a:atom() { (op, a) } )* {
+            = head:factor() tail:( _ op:['*' | '/'] _ a:factor() { (op, a) } )* {
                 let mut terms = atom_to_terms(head);
                 for (op, a) in tail {
                     terms = match op {
@@ -462,25 +506,38 @@ peg::parser! {
                 terms
             }
 
+        /// An atom, optionally raised to a non-negative integer power.
+        rule factor() -> Atom
+            = a:atom() e:( _ "**" _ n:exponent() { n } )? {?
+                match e {
+                    None => Ok(a),
+                    Some(k) => pow_atom(a, k),
+                }
+            }
+
         /// A single atom: number, operator call, or parenthesised sub-expression.
         rule atom() -> Atom
             = n:number()    { Atom::Num(n) }
             / op:operator() { Atom::Op(op) }
             / "(" _ e:structure() _ ")" { Atom::Group(e) }
 
-        /// Capture any `Identifier(int, ...)` call by name; dispatch happens in Rust.
+        /// Capture any `Identifier(arg, ...)` call by name; dispatch happens in Rust.
+        /// An argument that is not a plain index is kept only as `Nested`, which is
+        /// enough for an unknown operator to be reported by name.
         rule operator() -> RawOp
             = name:$(['A'..='Z' | 'a'..='z']['A'..='Z' | 'a'..='z' | '0'..='9' | '_']*)
-              "(" _ args:(idx() ** (_ "," _)) _ ")" {
+              "(" _ args:(oparg() ** (_ "," _)) _ ")" {
                 RawOp(name.to_owned(), args)
             }
+
+        rule oparg() -> RawArg
+            = e:structure() { classify_arg(&e) }
 
         rule number() -> f64
             = n:$(['0'..='9']+ ("." ['0'..='9']*)?) {? n.parse().or(Err("number")) }
 
-        rule idx() -> i32
-            = "-" n:$(['0'..='9']+) {? n.parse::<i32>().map(|v| -v).or(Err("idx")) }
-            / n:$(['0'..='9']+) {? n.parse().or(Err("idx")) }
+        rule exponent() -> u32
+            = n:$(['0'..='9']+) {? n.parse().or(Err("exponent")) }
 
         rule sign() -> f64
             = "+" { 1.0 }
@@ -490,10 +547,49 @@ peg::parser! {
     }
 }
 
+#[derive(Clone)]
 enum Atom {
     Num(f64),
     Op(RawOp),
     Group(RawExpr),
+}
+
+/// Classify one operator argument: a lone signed integer literal is an index,
+/// anything else is an opaque sub-expression.
+fn classify_arg(e: &RawExpr) -> RawArg {
+    match e.as_slice() {
+        [term] if term.ops.is_empty() && term.coeff.fract() == 0.0 => {
+            RawArg::Index(term.coeff as i32)
+        }
+        _ => RawArg::Nested,
+    }
+}
+
+/// `X**n`: `n` copies of `X` multiplied together, so Einstein summation over a
+/// repeated dummy index does the contraction (`P(-1,2)**2` = `p₂·p₂`).
+///
+/// A tensor index may appear at most twice in a term, so a power above 2 on an
+/// operator has no Einstein reading and is rejected rather than guessed at.
+fn pow_atom(a: Atom, k: u32) -> Result<Atom, &'static str> {
+    let carries_ops = match &a {
+        Atom::Num(_) => false,
+        Atom::Op(_) => true,
+        Atom::Group(terms) => terms.iter().any(|t| !t.ops.is_empty()),
+    };
+    if carries_ops && k > 2 {
+        return Err("power above 2 on an indexed Lorentz object");
+    }
+    match k {
+        0 => Ok(Atom::Num(1.0)),
+        1 => Ok(a),
+        _ => {
+            let mut terms = atom_to_terms(a.clone());
+            for _ in 1..k {
+                terms = mul_terms(terms, a.clone());
+            }
+            Ok(Atom::Group(terms))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -602,13 +698,97 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "the parser has a bug for more complex expressions"]
     fn test_unknown_operator_taudecay_ufo() {
         // The UFO for tau decays contains a non-standard operator FFCT2 that we don't support.
         let result = parse_structure("FFCT2((P(-3,3)+P(-3,4))*(P(-3,3)+P(-3,4))) *(P(-1,3)*Gamma(-1,2,-2)*ProjM(-2,1) - P(-1,4)*Gamma(-1,2,-2)*ProjM(-2,1))");
         assert!(
             matches!(result, Err(LorentzError::UnknownOperator(ref s)) if s == "FFCT2"),
             "expected UnknownOperator(FFCT2), got {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_gamma5() {
+        let expr = parse_structure("Gamma5(2,1)").unwrap();
+        assert_eq!(expr[0].ops[0], LorentzOp::Gamma5 { i: 1, j: 0 });
+
+        // A γ5 inside a chain keeps its dummy indices, so the chain still traces.
+        let expr = parse_structure("Gamma5(-2,1)*Gamma(3,2,-2)").unwrap();
+        assert_eq!(expr[0].ops[0], LorentzOp::Gamma5 { i: -2, j: 0 });
+        let spin_map = compute_spin_map(&expr, 3).unwrap();
+        assert_eq!(spin_map, vec![1, 0, 2]);
+    }
+
+    #[test]
+    fn test_parse_squared_momentum() {
+        // `P(-1,1)**2` is the same term as `P(-1,1)*P(-1,1)`: the repeated dummy
+        // index contracts the two copies into a scalar product.
+        let squared = parse_structure("P(-1,1)**2").unwrap();
+        let written_out = parse_structure("P(-1,1)*P(-1,1)").unwrap();
+        assert_eq!(squared, written_out);
+        assert_eq!(squared[0].ops.len(), 2);
+
+        // Inside a product, with a coefficient, and with two independent dummies.
+        let expr = parse_structure("P(-2,2)**2*P(-1,1)**2*Metric(1,2)/2.").unwrap();
+        assert_eq!(expr.len(), 1);
+        assert!((expr[0].coeff - 0.5).abs() < 1e-12);
+        assert_eq!(expr[0].ops.len(), 5);
+        assert_eq!(
+            expr[0].ops,
+            vec![
+                LorentzOp::P { mu: -2, leg: 1 },
+                LorentzOp::P { mu: -2, leg: 1 },
+                LorentzOp::P { mu: -1, leg: 0 },
+                LorentzOp::P { mu: -1, leg: 0 },
+                LorentzOp::Metric { mu: 0, nu: 1 },
+            ]
+        );
+
+        // Powers distribute over a sum.
+        let expr = parse_structure("(P(-1,1) + P(-1,2))**2").unwrap();
+        assert_eq!(expr.len(), 4);
+    }
+
+    #[test]
+    fn test_numeric_power_folds_into_the_coefficient() {
+        let expr = parse_structure("2**3*Metric(1,2)").unwrap();
+        assert_eq!(expr.len(), 1);
+        assert!((expr[0].coeff - 8.0).abs() < 1e-12);
+        assert_eq!(expr[0].ops, vec![LorentzOp::Metric { mu: 0, nu: 1 }]);
+    }
+
+    #[test]
+    fn test_cubed_operator_is_rejected() {
+        // A tensor index may appear at most twice in a term, so there is no
+        // Einstein reading of a cube — it must not silently become three copies.
+        let result = parse_structure("P(-1,1)**3");
+        assert!(
+            matches!(result, Err(LorentzError::StructureParse { .. })),
+            "expected a structure parse error, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_known_operator_rejects_a_nested_argument() {
+        let result = parse_structure("Gamma((P(-1,1)+P(-1,2)),2,1)");
+        assert!(
+            matches!(
+                result,
+                Err(LorentzError::OperatorArguments { ref name, .. }) if name == "Gamma"
+            ),
+            "expected OperatorArguments(Gamma), got {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_known_operator_rejects_wrong_arity() {
+        let result = parse_structure("Metric(1,2,3)");
+        assert!(
+            matches!(
+                result,
+                Err(LorentzError::OperatorArguments { ref name, .. }) if name == "Metric"
+            ),
+            "expected OperatorArguments(Metric), got {result:?}"
         );
     }
 

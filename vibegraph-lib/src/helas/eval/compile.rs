@@ -672,8 +672,8 @@ fn report_flow_tags(tags: &ColorFlowTags) {
 /// amplitude and not only colourless ones and `2 -> 2`s. A process added to the
 /// amplitude gate belongs here too; the cost is another full re-rooting sweep to
 /// re-verify.
-#[cfg(test)]
-pub(super) const MG_VALIDATED_PROCESSES: [&str; 19] = [
+#[cfg(any(test, feature = "extended-validation"))]
+pub const MG_VALIDATED_PROCESSES: [&str; 19] = [
     "e+ e- > mu+ mu-",
     "u u~ > mu+ mu-",
     "e+ e- > e+ e-",
@@ -757,10 +757,82 @@ fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
     out
 }
 
+// ── Per-model op-coverage census ──────────────────────────────────────────────
+
+/// Every `Op` the compiled arenas of `processes` under `model` contain, with
+/// counts, printing one line per process.
+///
+/// A model's gated process list is its coverage instrument: an evaluator
+/// primitive no gated process compiles to is unexercised by the reference, and
+/// the census is what says so. Reused per model rather than written once for the
+/// SM, so a second model's list carries its own allowlist.
+#[cfg(any(test, feature = "extended-validation"))]
+pub fn op_census(
+    label: &str,
+    model: &UFOModel,
+    processes: &[&str],
+) -> std::collections::BTreeMap<&'static str, usize> {
+    use super::tree::Tree;
+    use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+
+    let opts = ParsingOptions::default();
+    let mut counts = std::collections::BTreeMap::new();
+    for process in processes {
+        let pc = parse_proc_card(&format!("generate {process}"), &opts)
+            .unwrap_or_else(|e| panic!("[{label}] parse '{process}': {e}"));
+        let sets = generate_from_proc_card(&pc, model)
+            .unwrap_or_else(|e| panic!("[{label}] enumerate '{process}': {e}"));
+        assert!(
+            sets.iter().any(|s| !s.diagrams.is_empty()),
+            "[{label}] no diagrams for '{process}'"
+        );
+        let mut per_process = std::collections::BTreeMap::new();
+        for set in &sets {
+            if set.diagrams.is_empty() {
+                continue;
+            }
+            let eval = AmplitudeEvaluator::compile(set, model)
+                .unwrap_or_else(|e| panic!("[{label}] compile '{process}': {e}"));
+            let ast = &eval.folded().ast;
+            for id in ast.iter() {
+                *per_process.entry(ast.value(id).op.name()).or_insert(0) += 1;
+            }
+        }
+        println!("[{label}] [{process}] {per_process:?}");
+        for (name, n) in per_process {
+            *counts.entry(name).or_insert(0usize) += n;
+        }
+    }
+    counts
+}
+
+/// Assert that the ops *missing* from `model`'s census over `processes` are
+/// exactly `known_uncovered` — two-way, so an op the list newly covers must be
+/// removed from the allowlist rather than left standing.
+#[cfg(any(test, feature = "extended-validation"))]
+pub fn assert_op_coverage(
+    label: &str,
+    model: &UFOModel,
+    processes: &[&str],
+    known_uncovered: &[super::op::Op],
+) {
+    use super::op::Op;
+
+    let counts = op_census(label, model, processes);
+    let missing: Vec<&str> = <Op as strum::VariantArray>::VARIANTS
+        .iter()
+        .map(|op| op.name())
+        .filter(|name| !counts.contains_key(name))
+        .collect();
+    let expected_missing: Vec<&str> = known_uncovered.iter().map(|op| op.name()).collect();
+    assert_eq!(
+        missing, expected_missing,
+        "[{label}] op coverage changed (left: actually missing, right: the allowlist)\nop counts: {counts:#?}"
+    );
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use super::super::lower;
     use super::super::root_diagram::compile_diagram_ast;
     use super::{AmplitudeEvaluator, MG_VALIDATED_PROCESSES};
@@ -769,54 +841,30 @@ mod tests {
     use crate::helas::eval::tree::Tree;
     use crate::ufo::sm::{sm_model, SMRestrict};
 
-    /// Ops absent from the *compiled* (`folded().ast`) arenas this test scans.
+    /// Ops absent from the *compiled* (`folded().ast`) arenas of the SM census.
     /// `IdentityAmp` needs a UFO model with an `Identity` scalar bilinear; the SM has
     /// none (its Yukawas are `ProjM + ProjP`). Its kernel is pinned algebraically
-    /// against MG-covered ops in `kernel::tests`; process-level coverage remains a
-    /// future item. `Hels` is never emitted at compile time at all — it is the root
-    /// the helicity expansion (`Folded::expand_helicities`) derives from every one of
-    /// these arenas, and `eval_m2` reads it on every MG-gated |M|² comparison, so it
-    /// is exercised by the same net through a different door. `Flows` and `CoeffRat`
-    /// are only emitted for processes whose color basis has more than one flow
-    /// (multi-flow color algebra); `uux_to_uux` (`NCOLOR=2`), `gg_to_ttx` (`NCOLOR=2`)
-    /// and `gg_to_gg` (`NCOLOR=6`) now bit-validate both.
-    const KNOWN_UNCOVERED: [Op; 2] = [Op::Hels, Op::IdentityAmp];
+    /// against MG-covered ops in `kernel::tests`; process-level coverage belongs to a
+    /// model that has the bilinear. `Hels` is never emitted at compile time at all — it
+    /// is the root the helicity expansion (`Folded::expand_helicities`) derives from
+    /// every one of these arenas, and `eval_m2` reads it on every MG-gated |M|²
+    /// comparison, so it is exercised by the same net through a different door.
+    /// `Flows` and `CoeffRat` are only emitted for processes whose color basis has
+    /// more than one flow (multi-flow color algebra); `uux_to_uux` (`NCOLOR=2`),
+    /// `gg_to_ttx` (`NCOLOR=2`) and `gg_to_gg` (`NCOLOR=6`) now bit-validate both.
+    const SM_KNOWN_UNCOVERED: [Op; 2] = [Op::Hels, Op::IdentityAmp];
 
-    /// Every `Op` outside [`KNOWN_UNCOVERED`] appears in the compiled AST of at least
-    /// one MG-validated process — the bit-for-bit `amplitude_oracle` net exercises the
-    /// whole primitive set. Two-way: an op newly covered by the suite must be removed
-    /// from the allowlist.
+    /// Every `Op` outside [`SM_KNOWN_UNCOVERED`] appears in the compiled AST of at
+    /// least one MG-validated SM process — the bit-for-bit `amplitude_oracle` net
+    /// exercises the whole primitive set. Two-way: an op newly covered by the suite
+    /// must be removed from the allowlist.
     #[test]
     fn mg_validated_suite_exercises_every_op() {
-        let model = sm_model(SMRestrict::Default);
-        let opts = ParsingOptions::default();
-        let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
-        for process in MG_VALIDATED_PROCESSES {
-            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
-            let sets = generate_from_proc_card(&pc, &model).unwrap();
-            assert!(!sets.is_empty(), "no diagrams for '{process}'");
-            let mut per_process: BTreeMap<&'static str, usize> = BTreeMap::new();
-            for set in &sets {
-                let eval = AmplitudeEvaluator::compile(set, &model).unwrap();
-                let ast = &eval.folded().ast;
-                for id in ast.iter() {
-                    *per_process.entry(ast.value(id).op.name()).or_insert(0) += 1;
-                }
-            }
-            println!("[{process}] {per_process:?}");
-            for (name, n) in per_process {
-                *counts.entry(name).or_insert(0) += n;
-            }
-        }
-        let missing: Vec<&str> = <Op as strum::VariantArray>::VARIANTS
-            .iter()
-            .map(|op| op.name())
-            .filter(|name| !counts.contains_key(name))
-            .collect();
-        let expected_missing: Vec<&str> = KNOWN_UNCOVERED.iter().map(|op| op.name()).collect();
-        assert_eq!(
-            missing, expected_missing,
-            "MG-validated op coverage changed (left: actually missing, right: KNOWN_UNCOVERED)\nop counts: {counts:#?}"
+        super::assert_op_coverage(
+            "sm",
+            &sm_model(SMRestrict::Default),
+            &MG_VALIDATED_PROCESSES,
+            &SM_KNOWN_UNCOVERED,
         );
     }
 

@@ -49,6 +49,7 @@ fn interned_default_matches_submodule() {
     assert_eq!(interned.lorentz.len(), fresh.lorentz.len());
     assert_eq!(interned.couplings.len(), fresh.couplings.len());
     assert_eq!(interned.order_hierarchy, fresh.order_hierarchy);
+    assert_eq!(interned.expansion_order, fresh.expansion_order);
 
     // Same evaluated physics on the empty param card.
     let card = "".parse::<ParamCard>().unwrap();
@@ -130,6 +131,19 @@ fn interned_blob_matches_submodule_exactly() {
     assert_eq!(
         interned.order_hierarchy, fresh.order_hierarchy,
         "coupling-order hierarchy drifted from the submodule"
+    );
+    assert_eq!(
+        interned.expansion_order, fresh.expansion_order,
+        "coupling-order expansion caps drifted from the submodule"
+    );
+    assert_eq!(
+        interned.propagators.keys().collect::<Vec<_>>(),
+        fresh.propagators.keys().collect::<Vec<_>>(),
+        "custom propagator set drifted from the submodule"
+    );
+    assert!(
+        fresh.propagators.is_empty(),
+        "the SM UFO gained a propagators.py"
     );
 
     for variant in SMRestrict::ALL {

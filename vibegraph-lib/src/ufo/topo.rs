@@ -127,17 +127,25 @@ pub fn build_feyngraph_model(
         let lorentz_struct = &lorentz[lorentz_id];
         let spin_map_for_vertex: Vec<isize> = lorentz_struct.spin_map.clone();
 
-        // Build coupling orders map from vertex couplings
+        // The coupling orders of the interaction: one feyngraph vertex per UFO
+        // vertex, and a UFO vertex is split so that all of its couplings carry the
+        // same order tuple (`ufo::split_vertices_by_coupling_order`), so the tuple
+        // is read off any one of them. Reading them all and asserting agreement is
+        // what keeps a future loader change from silently reintroducing the union
+        // that made an SM photon current read as `NP = 1`.
         let mut coupling_orders: FxHashMap<String, usize> = FxHashMap::default();
-
-        // Process all couplings associated with this vertex
-        for &coupling_id in vertex.couplings.values() {
-            let coupling_def = &couplings[coupling_id];
-
-            // Extract coupling order information from the coupling definition
-            // The coupling definition includes the order information in the `orders` field
-            for (order_name, order_value) in &coupling_def.orders {
-                coupling_orders.insert(order_name.clone(), *order_value);
+        for (n, &coupling_id) in vertex.couplings.values().enumerate() {
+            let orders = &couplings[coupling_id].orders;
+            if n == 0 {
+                coupling_orders = orders.iter().map(|(k, &v)| (k.clone(), v)).collect();
+            } else if orders.len() != coupling_orders.len()
+                || orders
+                    .iter()
+                    .any(|(k, v)| coupling_orders.get(k) != Some(v))
+            {
+                return Err(TopoError::BuildError(format!(
+                    "Vertex '{vertex_name}' mixes coupling orders across its couplings"
+                )));
             }
         }
 

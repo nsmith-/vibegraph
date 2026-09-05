@@ -209,7 +209,15 @@ fn generate_from_process_spec(
     let n_ext = spec.initial.len() + spec.final_state.len();
     let cached_topologies = generate_topologies(n_ext, &model.topo);
 
-    if spec.coupling_constraints.is_empty() {
+    // The model's own per-order caps ride on top of whatever the process asked for,
+    // but they never decide whether the automatic WEIGHTED search runs: MadGraph
+    // applies them (`Process.check_expansion_orders`) only after
+    // `find_optimal_process_orders` has looked at the process's own orders.
+    let auto_weighted = spec.coupling_constraints.is_empty();
+    let capped = capped_spec(spec, model);
+    let spec = capped.as_ref().unwrap_or(spec);
+
+    if auto_weighted {
         // No explicit constraints: discover the minimum WEIGHTED order.
         let min_hier = model.order_hierarchy.values().copied().min().unwrap_or(1) as usize;
         let max_hier = model.order_hierarchy.values().copied().max().unwrap_or(2) as usize;
@@ -233,6 +241,47 @@ fn generate_from_process_spec(
     } else {
         generate_sets_inner(spec, model, aliases, None, &cached_topologies)
     }
+}
+
+/// `spec` with the model's `expansion_order` caps folded into its coupling
+/// constraints, or `None` when the model caps nothing (every model in reach:
+/// `expansion_order` is 99 throughout the SM and SMEFTsim, and SMEFTsim's
+/// `NPprop = 0` falls outside MadGraph's `0 < v < 99` window).
+///
+/// MadGraph's `Process.check_expansion_orders` writes the cap straight into the
+/// process's `orders` dict — lowering an order the process bounded above the cap,
+/// and adding one it left unconstrained. `orders` there means `<=`, so an
+/// explicit constraint using any other comparison is left alone rather than
+/// reinterpreted.
+fn capped_spec(spec: &ProcessSpec, model: &UFOModel) -> Option<ProcessSpec> {
+    let caps = crate::ufo::expansion_order_caps(&model.expansion_order);
+    if caps.is_empty() {
+        return None;
+    }
+    let mut out = spec.clone();
+    for (order, cap) in caps {
+        let cap = cap as i64;
+        match out
+            .coupling_constraints
+            .iter_mut()
+            .find(|c| c.name == order && !c.squared)
+        {
+            Some(c) if matches!(c.op, CouplingOp::Le | CouplingOp::Eq) => {
+                if c.value > cap {
+                    debug!("{order}<={} lowered to the model's cap {cap}", c.value);
+                    c.value = cap;
+                }
+            }
+            Some(_) => {}
+            None => out.coupling_constraints.push(CouplingConstraint {
+                name: order,
+                squared: false,
+                op: CouplingOp::Le,
+                value: cap,
+            }),
+        }
+    }
+    Some(out)
 }
 
 /// Pre-generate all abstract graph topologies for `n_ext` external legs at tree level.
@@ -451,7 +500,59 @@ fn report_vertex_assignments(subprocess: &str, diagrams: &[Diagram], model: &UFO
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ufo::sm::{sm_model, SMRestrict};
+    use crate::ufo::sm::{sm_model, sm_parsed_model, SMRestrict};
+
+    /// The model's `expansion_order` cap reaches diagram generation, and only
+    /// through MadGraph's `0 < v < 99` window.
+    ///
+    /// No model this loader reads declares a cap inside that window — SMEFTsim's
+    /// only non-99 order is `NPprop = 0`, which the window excludes — so the
+    /// window is pinned on an SM deliberately given one: `e+ e- > mu+ mu-` needs
+    /// `QED = 2`, so a cap of 1 must empty it, while a cap of 0 (or 99, or a
+    /// negative one) must leave its two diagrams alone. Without the window the
+    /// declared 0 would read as "at most zero QED vertices" and empty it too.
+    #[test]
+    fn expansion_order_caps_reach_generation_only_inside_madgraphs_window() {
+        let capped_model = |expansion: i64| {
+            let mut parsed = sm_parsed_model();
+            parsed.expansion_order.insert("QED".to_owned(), expansion);
+            let card = SMRestrict::Default
+                .restrict_card_text()
+                .parse()
+                .expect("parse the interned SM restrict card");
+            parsed
+                .into_model(Some(&card))
+                .expect("build the SM with a synthetic expansion_order")
+        };
+        let count = |model: &UFOModel, process: &str| -> usize {
+            let card = parse_proc_card(&format!("generate {process}"), &ParsingOptions::default())
+                .unwrap();
+            generate_from_proc_card(&card, model)
+                .unwrap()
+                .iter()
+                .map(|s| s.diagrams.len())
+                .sum()
+        };
+
+        let plain = sm_model(SMRestrict::Default);
+        assert_eq!(count(&plain, "e+ e- > mu+ mu-"), 2);
+
+        // Inside the window: the cap applies, to an unconstrained order and to an
+        // explicit one alike.
+        let inside = capped_model(1);
+        assert_eq!(count(&inside, "e+ e- > mu+ mu-"), 0);
+        assert_eq!(count(&inside, "e+ e- > mu+ mu- QED<=2"), 0);
+
+        // Outside it: 0, 99 and a negative value all cap nothing.
+        for expansion in [0, 99, -1] {
+            let outside = capped_model(expansion);
+            assert_eq!(
+                count(&outside, "e+ e- > mu+ mu-"),
+                2,
+                "expansion_order = {expansion} must not cap"
+            );
+        }
+    }
 
     /// The pool is a scheduling choice and nothing else: enumeration order and
     /// diagram content are fixed by the topology and assignment enumeration.

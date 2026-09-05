@@ -92,6 +92,17 @@ pub mod bench_internals {
     pub use super::waveform_slot::WaveformSlot;
 }
 
+/// Per-model op-coverage census: which evaluator primitives a model's gated
+/// process list actually compiles to, and the two-way assertion over its
+/// allowlist. Feature-gated because the banked non-SM instance lives in an
+/// integration test; not a public API surface.
+#[cfg(feature = "extended-validation")]
+#[doc(hidden)]
+pub mod op_census {
+    pub use super::compile::{assert_op_coverage, op_census, MG_VALIDATED_PROCESSES};
+    pub use super::op::Op;
+}
+
 pub use ast::{Ast, ParseAstError};
 pub use compile::AmplitudeEvaluator;
 pub use error::{CompileError, EvalError, RootDiagramError};
