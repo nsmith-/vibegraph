@@ -18,10 +18,10 @@
 use num_complex::ComplexFloat;
 use num_traits::Zero;
 
-use super::waveform_slot::WaveformSlot;
+use super::waveform_slot::{MultivectorWf, WaveformSlot};
 use crate::helas::repr::lorentz::{
     epsilon4, epsilon_vector, Bispinor, Bra, ComplexVector, DiracAdjoint, Ket, LorentzVector,
-    SpinorRepr, VectorRepr,
+    Multivector, SpinorRepr, VectorRepr,
 };
 use crate::helas::repr::numbers::Chirality;
 use crate::helas::repr::{ri, Real, C};
@@ -254,6 +254,67 @@ pub fn epsilon_amp_bare<F: Real>(
     epsilon4(a, b, c, d)
 }
 
+/// `FierzOut` on bare spinors: the cut fermion line's `γ^α γ^β` chain as a Clifford
+/// element, ready to contract into the other line's two gammas.
+///
+/// `γ^αγ^β = g^{αβ} − i σ^{αβ}` puts the chain in grades 0 and 2, so the line is fixed
+/// by its scalar and tensor bilinears alone: `V^{αβ} = g^{αβ} s − i t^{αβ}`. Contracting
+/// that against the other line's `γ_α γ_β` gives `4 s − σ_{αβ} t^{αβ}`, which in
+/// [`Multivector`]'s normalisation (grade 2 is `½ T^{μν} σ_{μν}`) is `4s` on grade 0 and
+/// `−2t` on grade 2. `reversed_order` is for two lines traversing the shared indices in
+/// opposite orders (`γ^αγ^β` against `γ_βγ_α`), where the grade-2 term enters with the
+/// other sign — the whole content of the index order.
+///
+/// The pair arrives as (bra, ket) by the ends' actual adjoints. A line the vertex reads
+/// against its own arrow needs `C Γᵀ C⁻¹`, which for `X γ^αγ^β Y` is `Y γ^βγ^α X`: the
+/// two gammas transpose and nothing else changes, so that case is one more flip of
+/// `reversed_order` and is decided at rooting time rather than here.
+#[inline]
+pub fn fierz_out_bare<F: Real>(
+    fo: &Bispinor<F, Bra>,
+    fi: &Bispinor<F, Ket>,
+    reversed_order: bool,
+) -> Multivector<F> {
+    let coeffs = fo.fierz_coefficients(fi);
+    let two = F::one() + F::one();
+    let scalar = Multivector::from_scalar(coeffs.scalar() * (two + two));
+    let bivector = Multivector::from_bivector(&(coeffs.bivector() * two));
+    if reversed_order {
+        scalar + bivector
+    } else {
+        scalar - bivector
+    }
+}
+
+/// `MultivectorIout` on a bare ket line: `M ψ`.
+#[inline]
+pub fn multivector_fin_bare<F: Real>(
+    m: &Multivector<F>,
+    fi: &Bispinor<F, Ket>,
+) -> Bispinor<F, Ket> {
+    fi.apply(m)
+}
+
+/// `MultivectorOout` on a bare bra line: `ψ̄ M`.
+#[inline]
+pub fn multivector_fout_bare<F: Real>(
+    m: &Multivector<F>,
+    fo: &Bispinor<F, Bra>,
+) -> Bispinor<F, Bra> {
+    fo.apply(m)
+}
+
+/// `FierzPair` on bare spinors: `ψ̄ M ψ`, as the grade-diagonal pairing of the element
+/// with the pair's own sixteen bilinears.
+#[inline]
+pub fn fierz_pair_bare<F: Real>(
+    m: &Multivector<F>,
+    fo: &Bispinor<F, Bra>,
+    fi: &Bispinor<F, Ket>,
+) -> C<F> {
+    fo.fierz_coefficients(fi).fierz_pairing(m)
+}
+
 // ──────────────────────────── propagator ────────────────────────────
 
 /// `Propagate`: apply a propagator (interned mass/width from the two real operands) to
@@ -277,6 +338,9 @@ pub fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> Wa
         WaveformSlot::Vector(wf) => WaveformSlot::Vector(propagate_vector(wf, mass, width)),
         WaveformSlot::Scalar(wf) => WaveformSlot::Scalar(propagate_scalar(wf, mass, width)),
         WaveformSlot::Real(_) => panic!("propagate step read a real-constant slot"),
+        WaveformSlot::Multivector(_) => {
+            panic!("propagate step read a Clifford element: it never leaves its vertex")
+        }
         WaveformSlot::Empty => panic!("propagate step read an empty slot"),
     }
 }
@@ -777,6 +841,86 @@ pub fn epsilon_amp<F: Real>(
     })
 }
 
+// ──────────────────── tensor-tensor (cyclic four-fermion) kernels ────────────────────
+
+/// `FierzOut`: the cut fermion line as a Clifford element (see [`fierz_out_bare`]).
+pub fn fierz_out<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    fierz_out_current(a, b, false)
+}
+
+/// `FierzOutRev`: [`fierz_out`] with the two lines' shared indices in opposite orders.
+pub fn fierz_out_rev<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    fierz_out_current(a, b, true)
+}
+
+/// The cut line's Clifford element, carrying the momentum a fermion pair routes
+/// (`p_bra − p_ket`, as for [`gamma_vout`]).
+pub fn fierz_out_current<F: Real>(
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+    reversed_order: bool,
+) -> WaveformSlot<F> {
+    let (fo, fi, _) = resolve_bra_ket(a, b);
+    WaveformSlot::Multivector(MultivectorWf {
+        m: fierz_out_bare(&fo.spinor, &fi.spinor, reversed_order),
+        momentum: fo.momentum - fi.momentum,
+    })
+}
+
+/// `MultivectorIout`: continue a flow-in (ket) fermion line by applying the Clifford
+/// element the cut line handed over, `M ψ`. Same kernel as [`multivector_oout`] because
+/// [`multivector_current`] follows the input fermion's adjoint.
+pub fn multivector_iout<F: Real>(m: &WaveformSlot<F>, f: &WaveformSlot<F>) -> WaveformSlot<F> {
+    multivector_current(m, f)
+}
+
+/// `MultivectorOout`: continue a flow-out (bra) fermion line, `ψ̄ M`. See
+/// [`multivector_iout`].
+pub fn multivector_oout<F: Real>(m: &WaveformSlot<F>, f: &WaveformSlot<F>) -> WaveformSlot<F> {
+    multivector_current(m, f)
+}
+
+/// Off-shell fermion current from a tensor-tensor contact: the Clifford element of the
+/// cut line applied to the continuing fermion. The current follows the input's adjoint
+/// (`M ψ` on a ket, `ψ̄ M` on a bra) and routes the element's momentum with the sign that
+/// adjoint dictates, exactly as [`off_shell_fermion_current`] does for a vector leg.
+pub fn multivector_current<F: Real>(
+    m: &WaveformSlot<F>,
+    fermion: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    let WaveformSlot::Multivector(m) = m else {
+        panic!("multivector current: expected a Clifford-element input");
+    };
+    match fermion {
+        WaveformSlot::FermionIn(fi) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
+            multivector_fin_bare(&m.m, &fi.spinor),
+            fi.momentum - m.momentum,
+        )),
+        WaveformSlot::FermionOut(fo) => WaveformSlot::FermionOut(OutDiracWf::from_spinor(
+            multivector_fout_bare(&m.m, &fo.spinor),
+            fo.momentum + m.momentum,
+        )),
+        _ => panic!("multivector current: expected fermion input"),
+    }
+}
+
+/// `FierzPair`: close the surviving fermion line into the amplitude against the Clifford
+/// element the cut line produced, `ψ̄ M ψ` (see [`fierz_pair_bare`]).
+pub fn fierz_pair<F: Real>(
+    m: &WaveformSlot<F>,
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    let WaveformSlot::Multivector(m) = m else {
+        panic!("FierzPair: expected a Clifford-element input");
+    };
+    let (fo, fi, _) = resolve_bra_ket(a, b);
+    WaveformSlot::Scalar(ScalarWf {
+        value: fierz_pair_bare(&m.m, &fo.spinor, &fi.spinor),
+        momentum: m.momentum + fo.momentum - fi.momentum,
+    })
+}
+
 /// The vector currents behind `N` slots, panicking on any non-vector operand.
 fn expect_vectors<F: Real, const N: usize>(slots: [&WaveformSlot<F>; N]) -> [VectorWf<F>; N] {
     slots.map(|s| match s {
@@ -1101,5 +1245,165 @@ mod tests {
                 })
             },
         );
+    }
+    // ───────────── tensor-tensor (cyclic four-fermion) contact ─────────────
+
+    /// The Weyl-basis matrix of `γ_μ` for each `μ`, from the graded basis's own faithful
+    /// representation (pinned against hand-built gamma matrices in `repr::lorentz`).
+    fn gamma_lower(mu: usize) -> [[C<f64>; 4]; 4] {
+        let mut e = [C::zero(); 4];
+        e[mu] = C::new(1.0, 0.0);
+        Multivector::from_gamma(&ComplexVector::new(e)).to_weyl_matrix()
+    }
+
+    /// `ψ̄ A B ψ` from explicit 4×4 matrices, index by index.
+    fn chain_bilinear(
+        bra: &WaveformSlot<f64>,
+        ket: &WaveformSlot<f64>,
+        a: &[[C<f64>; 4]; 4],
+        b: &[[C<f64>; 4]; 4],
+    ) -> C<f64> {
+        let (fo, fi, reversed) = resolve_bra_ket(bra, ket);
+        assert!(!reversed, "the oracle passes (bra, ket) in that order");
+        let mut total: C<f64> = C::zero();
+        for (i, arow) in a.iter().enumerate() {
+            for (k, &aik) in arow.iter().enumerate() {
+                for (j, &bkj) in b[k].iter().enumerate() {
+                    total += fo.spinor.component(i) * aik * bkj * fi.spinor.component(j);
+                }
+            }
+        }
+        total
+    }
+
+    /// The tensor-tensor contact against a direct 4×4 evaluation of the same two chains.
+    ///
+    /// `Σ_{αβ} [ψ̄₁ γ^α γ^β ψ₁][ψ̄₂ γ_α γ_β ψ₂]` written out over sixteen index pairs with
+    /// explicit gamma matrices is the whole structure with nothing factored out — it
+    /// knows nothing of the graded basis, of Fierz orthogonality, or of the `4s ∓ 2t`
+    /// reconstruction, so it sees the normalisation, the relative weight of the two
+    /// grades *and* the index order. Both orders are checked, and the two differ, which
+    /// is what makes the order a measurement rather than a coincidence.
+    ///
+    /// Blind spots: it evaluates the pair in the vertex's own orientation, so it says
+    /// nothing about the crossed-line and against-the-arrow readings (those are the
+    /// rooting's, pinned by `rooting_soundness` and by the MadGraph row), and it fixes
+    /// no overall phase convention beyond the one `to_weyl_matrix` already carries.
+    #[test]
+    fn tensor_contact_matches_the_direct_gamma_matrix_chains() {
+        let mut rng = crate::helas::eval::prop_harness::seeded_rng(0x7E1150_01);
+        // g^{αα} per index: γ^α = g^{αα} γ_α, no sum.
+        let raise = [1.0f64, -1.0, -1.0, -1.0];
+        for _ in 0..64 {
+            let (bra1, ket1) = (rand_bra(&mut rng), rand_ket(&mut rng));
+            let (bra2, ket2) = (rand_bra(&mut rng), rand_ket(&mut rng));
+
+            let mut aligned: C<f64> = C::zero();
+            let mut reversed: C<f64> = C::zero();
+            for alpha in 0..4 {
+                for beta in 0..4 {
+                    let (ga, gb) = (gamma_lower(alpha), gamma_lower(beta));
+                    let weight = C::new(raise[alpha] * raise[beta], 0.0);
+                    let one = chain_bilinear(&bra1, &ket1, &ga, &gb);
+                    aligned += weight * one * chain_bilinear(&bra2, &ket2, &ga, &gb);
+                    reversed += weight * one * chain_bilinear(&bra2, &ket2, &gb, &ga);
+                }
+            }
+
+            let ours_aligned = as_scalar(&fierz_pair(&fierz_out(&bra2, &ket2), &bra1, &ket1));
+            let ours_reversed = as_scalar(&fierz_pair(&fierz_out_rev(&bra2, &ket2), &bra1, &ket1));
+            let scale = aligned.norm().max(reversed.norm()).max(1.0);
+            assert!(
+                (ours_aligned - aligned).norm() < CLIFFORD_TOL * scale,
+                "aligned tensor contact: {ours_aligned:?} vs direct {aligned:?}"
+            );
+            assert!(
+                (ours_reversed - reversed).norm() < CLIFFORD_TOL * scale,
+                "reversed tensor contact: {ours_reversed:?} vs direct {reversed:?}"
+            );
+            assert!(
+                (aligned - reversed).norm() > 1e-6 * scale,
+                "the two index orders coincided on this draw, so the check is vacuous"
+            );
+
+            // Which line is cut is a choice the rooting makes (at the amplitude sink
+            // neither line carries the output leg), so the contraction must not care:
+            // `4 s_A s_B ∓ t_A·t_B` is symmetric under exchanging the lines.
+            let swapped_aligned = as_scalar(&fierz_pair(&fierz_out(&bra1, &ket1), &bra2, &ket2));
+            let swapped_reversed =
+                as_scalar(&fierz_pair(&fierz_out_rev(&bra1, &ket1), &bra2, &ket2));
+            assert!(
+                (swapped_aligned - ours_aligned).norm() < CLIFFORD_TOL * scale
+                    && (swapped_reversed - ours_reversed).norm() < CLIFFORD_TOL * scale,
+                "cutting the other line changed the contact"
+            );
+        }
+    }
+
+    /// The cut line's element is grades 0 and 2 alone, and the two index orders differ
+    /// only in the sign of the grade-2 part.
+    ///
+    /// This is the structural half of `γ^αγ^β = g^{αβ} − i σ^{αβ}`: a chain that leaked
+    /// weight into the vector, axial or pseudoscalar grades would still pair correctly
+    /// against another `γγ` chain (those grades meet zeros) and only show up once a
+    /// literal `Sigma` or a longer chain reaches the same slot.
+    #[test]
+    fn the_cut_line_element_is_grades_zero_and_two() {
+        let mut rng = crate::helas::eval::prop_harness::seeded_rng(0x7E1150_02);
+        for _ in 0..64 {
+            let (bra, ket) = (rand_bra(&mut rng), rand_ket(&mut rng));
+            let WaveformSlot::Multivector(a) = fierz_out(&bra, &ket) else {
+                panic!("FierzOut must produce a Clifford element");
+            };
+            let WaveformSlot::Multivector(r) = fierz_out_rev(&bra, &ket) else {
+                panic!("FierzOutRev must produce a Clifford element");
+            };
+            for mu in 0..4 {
+                assert!(a.m.vector().component(mu).norm() == 0.0);
+                assert!(a.m.axial().component(mu).norm() == 0.0);
+            }
+            assert!(a.m.pseudoscalar().norm() == 0.0);
+            assert_eq!(a.m.scalar(), r.m.scalar());
+            for slot in 0..6 {
+                assert!(
+                    (a.m.bivector().component(slot) + r.m.bivector().component(slot)).norm()
+                        < CLIFFORD_TOL,
+                    "the two index orders must differ by the grade-2 sign alone"
+                );
+            }
+            assert!(
+                a.m.bivector().component(0).norm() > 0.0,
+                "a vanishing grade-2 part would make the sign check vacuous"
+            );
+        }
+    }
+
+    /// Applying the element to either end of the surviving line gives the same number as
+    /// pairing it with the line, on both flows: `ψ̄ (M ψ) = (ψ̄ M) ψ = ⟨fierz(ψ̄, ψ), M⟩`.
+    ///
+    /// This is what `MultivectorIout`/`MultivectorOout` rest on — a four-fermion contact
+    /// on an internal line roots at a fermion leg and produces a current instead of a
+    /// number, and no gated row does that. The element is drawn with all sixteen grades
+    /// independent, so the identity is pinned for an element a literal `Sigma` (grade 2
+    /// only) or a longer chain would produce, not just for a `γγ` one.
+    #[test]
+    fn the_clifford_element_applies_to_either_end_of_the_line() {
+        let mut rng = crate::helas::eval::prop_harness::seeded_rng(0x7E1150_03);
+        for _ in 0..256 {
+            let (bra, ket) = (rand_bra(&mut rng), rand_ket(&mut rng));
+            let m = crate::helas::eval::prop_harness::rand_multivector(&mut rng);
+            let paired = as_scalar(&fierz_pair(&m, &bra, &ket));
+            let on_ket = as_scalar(&identity_amp(&bra, &multivector_iout(&m, &ket)));
+            let on_bra = as_scalar(&identity_amp(&multivector_oout(&m, &bra), &ket));
+            let scale = paired.norm().max(1.0);
+            assert!(
+                (on_ket - paired).norm() < CLIFFORD_TOL * scale,
+                "M applied to the ket: {on_ket:?} vs the pairing {paired:?}"
+            );
+            assert!(
+                (on_bra - paired).norm() < CLIFFORD_TOL * scale,
+                "M applied to the bra: {on_bra:?} vs the pairing {paired:?}"
+            );
+        }
     }
 }

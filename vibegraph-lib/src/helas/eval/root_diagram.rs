@@ -1069,18 +1069,23 @@ impl std::fmt::Display for DiagramEval {
     }
 }
 
-/// True iff `interaction` is a Yang-Mills triple-vector (VVV) vertex: an all-vector
-/// vertex whose Lorentz structure carries a momentum (`P`) factor. Its rooted vector
-/// current ([`super::root_lorentz`]) is now built honestly (`+V^μ`), so relative to
-/// MadGraph it needs a −1 at every rooting where the vertex is a *source* (off-shell
-/// vector current), supplied rooting-invariantly by [`yang_mills_vvv_sign`]. The
-/// 4-vector contact (VVVV) is all-vector but momentum-free, so it is excluded — its
-/// −1 is the pure-metric vertex factor already applied symmetrically in both source
-/// and sink modes.
+/// True iff `interaction` is a Yang-Mills triple-vector (VVV) vertex: a **three-leg**
+/// all-vector vertex whose Lorentz structure carries a momentum (`P`) factor. Its
+/// rooted vector current ([`super::root_lorentz`]) is built honestly (`+V^μ`), so
+/// relative to MadGraph it needs a −1 at every rooting where the vertex is a *source*
+/// (off-shell vector current), supplied rooting-invariantly by [`yang_mills_vvv_sign`].
+///
+/// The leg count is part of the predicate, not a consequence of the momentum test: a
+/// contact of four or more vectors *can* carry momenta (SMEFTsim's `VVVV2`/`VVVV3` and
+/// the five-vector structures of `O_W` all do), and such a vertex already takes the
+/// contact `−1` [`super::root_lorentz::LorentzEvalTree::build_at_leg`] applies to every
+/// all-vector structure of four legs or more. Without the arity test it would take both
+/// signs wherever it sits at a non-root vertex.
 fn is_yang_mills_vvv(model: &UFOModel, interaction: VertexId) -> bool {
     use crate::ufo::lorentz::LorentzOp;
     let def = model.vertex_def(interaction);
-    def.particles.iter().all(|&p| model.particle(p).spin == 3)
+    def.particles.len() == 3
+        && def.particles.iter().all(|&p| model.particle(p).spin == 3)
         && def.lorentz.iter().any(|&lid| {
             model
                 .lorentz_struct(lid)
@@ -1605,6 +1610,99 @@ mod tests {
                 (vec![1, 0, 3, 2], vec![], -1),
                 (vec![3, 2, 1, 0], vec![2, 3], 1),
             ]
+        );
+    }
+    /// The Yang-Mills source sign is a property of the *three*-vector vertex, and a
+    /// momentum-bearing contact of four or more vectors is not one.
+    ///
+    /// An all-vector contact can carry momenta — `O_W` and `O_G` give SMEFTsim
+    /// four-vector structures built from three momenta and a metric, and five-vector ones
+    /// too — so "all vector legs and some `P`" does not separate the triple vertex from
+    /// the contact. Such a contact already takes the `−1` the rooting applies to every
+    /// all-vector structure of four legs or more; counted as a Yang-Mills source as well
+    /// it would take both, wherever it sits at a vertex the rooting did not root at.
+    ///
+    /// Both halves are checked: the predicate itself, and that the model really does
+    /// carry the momentum-bearing contacts that make the leg count do work — a check on
+    /// a model whose only contact were the pure-metric Standard-Model one would pass
+    /// with or without the arity test.
+    #[test]
+    fn a_momentum_bearing_vector_contact_is_not_a_yang_mills_source() {
+        use crate::ufo::lorentz::LorentzOp;
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let model = crate::ufo::UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_cW.dat")),
+        )
+        .expect("load SMEFTsim under vg_cW");
+
+        let mut momentum_bearing_by_legs: std::collections::BTreeMap<usize, usize> =
+            Default::default();
+        for (name, vertex) in &model.vertices {
+            let id = model.vertex_id(name).expect("every vertex has an id");
+            let all_vector = vertex
+                .particles
+                .iter()
+                .all(|&p| model.particle(p).spin == 3);
+            if !all_vector {
+                assert!(
+                    !is_yang_mills_vvv(&model, id),
+                    "vertex '{name}' has a non-vector leg"
+                );
+                continue;
+            }
+            let has_momentum = vertex.lorentz.iter().any(|&lid| {
+                model
+                    .lorentz_struct(lid)
+                    .expr
+                    .iter()
+                    .any(|t| t.ops.iter().any(|op| matches!(op, LorentzOp::P { .. })))
+            });
+            if has_momentum {
+                *momentum_bearing_by_legs
+                    .entry(vertex.particles.len())
+                    .or_default() += 1;
+            }
+            assert_eq!(
+                is_yang_mills_vvv(&model, id),
+                has_momentum && vertex.particles.len() == 3,
+                "vertex '{name}' with {} vector legs, momentum-bearing {has_momentum}",
+                vertex.particles.len()
+            );
+        }
+        assert!(
+            momentum_bearing_by_legs.get(&4).copied().unwrap_or(0) > 0
+                && momentum_bearing_by_legs.get(&5).copied().unwrap_or(0) > 0,
+            "this card carries no momentum-bearing vector contact, so the leg count \
+             does no work here: {momentum_bearing_by_legs:?}"
+        );
+
+        // And the distinction is reachable: a five-vector process puts such a contact at
+        // a vertex the canonical rooting does not root at, which is exactly where a
+        // Yang-Mills source sign is counted.
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate w+ w- > w+ w- z NP<=1", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, &model).unwrap();
+        let contacts_off_root =
+            sets.iter()
+                .flat_map(|s| s.diagrams.iter())
+                .filter(|d| {
+                    d.vertices.iter().skip(1).any(|v| {
+                        let def = model.vertex_def(v.interaction);
+                        def.particles.len() >= 4
+                            && def.particles.iter().all(|&p| model.particle(p).spin == 3)
+                            && def.lorentz.iter().any(|&lid| {
+                                model.lorentz_struct(lid).expr.iter().any(|t| {
+                                    t.ops.iter().any(|op| matches!(op, LorentzOp::P { .. }))
+                                })
+                            })
+                    })
+                })
+                .count();
+        assert!(
+            contacts_off_root > 0,
+            "no diagram places a momentum-bearing vector contact off the canonical root"
         );
     }
 }

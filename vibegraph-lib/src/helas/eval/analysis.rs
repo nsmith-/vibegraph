@@ -51,6 +51,9 @@ pub enum NodeType {
     ScalarWf,
     /// Contravariant vector current — `WaveformSlot::Vector`.
     Vector,
+    /// Graded Clifford-algebra element — `WaveformSlot::Multivector`. Produced and
+    /// consumed inside one tensor-tensor vertex; it never crosses a propagator.
+    Multivector,
     /// Flow-in (ket) fermion current — `WaveformSlot::FermionIn`.
     FermionIn,
     /// Flow-out (bra) fermion current — `WaveformSlot::FermionOut`.
@@ -67,6 +70,7 @@ pub enum Storage {
     Real,
     Scalar,
     Vector,
+    Multivector,
     FermionIn,
     FermionOut,
 }
@@ -90,7 +94,7 @@ impl NodeType {
     pub fn is_current(self) -> bool {
         matches!(
             self,
-            NodeType::Vector | NodeType::FermionIn | NodeType::FermionOut
+            NodeType::Vector | NodeType::Multivector | NodeType::FermionIn | NodeType::FermionOut
         )
     }
 
@@ -100,6 +104,7 @@ impl NodeType {
             NodeType::RealConst => Storage::Real,
             NodeType::ScalarConst | NodeType::ScalarWf => Storage::Scalar,
             NodeType::Vector => Storage::Vector,
+            NodeType::Multivector => Storage::Multivector,
             NodeType::FermionIn => Storage::FermionIn,
             NodeType::FermionOut => Storage::FermionOut,
             NodeType::Sink => return None,
@@ -445,14 +450,22 @@ fn out_type_nonleaf(op: Op, kids: &[NodeId], out: &[NodeType]) -> NodeType {
             NodeType::Vector
         }
         // Off-shell fermion currents follow the fermion input's flow (operand 1).
-        Op::GammaIout | Op::GammaOout | Op::FfvIout | Op::FfvOout => ty(1),
+        Op::GammaIout
+        | Op::GammaOout
+        | Op::FfvIout
+        | Op::FfvOout
+        | Op::MultivectorIout
+        | Op::MultivectorOout => ty(1),
+        // The cut fermion line of a tensor-tensor contact.
+        Op::FierzOut | Op::FierzOutRev => NodeType::Multivector,
         // Scalar bilinears and full contractions.
         Op::ProjMAmp
         | Op::ProjPAmp
         | Op::IdentityAmp
         | Op::Gamma5Amp
         | Op::Metric
-        | Op::EpsilonAmp => NodeType::ScalarWf,
+        | Op::EpsilonAmp
+        | Op::FierzPair => NodeType::ScalarWf,
         Op::Add => join_add(kids, out),
         Op::Mul => mul_out(kids, out),
         other => panic!("out_type_nonleaf: unexpected non-leaf op {other:?}"),
@@ -555,14 +568,28 @@ fn momentum_into(
         | Op::ProjMAmp
         | Op::ProjPAmp
         | Op::IdentityAmp
-        | Op::Gamma5Amp => {
+        | Op::Gamma5Amp
+        | Op::FierzOut
+        | Op::FierzOutRev => {
             let (bra, ket) = bra_ket(kids);
+            add(buf, bra, 1);
+            add(buf, ket, -1);
+        }
+        // The Clifford element (operand 0) plus the closed pair it is contracted with.
+        Op::FierzPair => {
+            add(buf, kids[0], 1);
+            let (bra, ket) = bra_ket(&kids[1..]);
             add(buf, bra, 1);
             add(buf, ket, -1);
         }
         // Off-shell fermion current: ket `f − v`, bra `f + v` (operand 0 = vector,
         // operand 1 = fermion).
-        Op::GammaIout | Op::GammaOout | Op::FfvIout | Op::FfvOout => {
+        Op::GammaIout
+        | Op::GammaOout
+        | Op::FfvIout
+        | Op::FfvOout
+        | Op::MultivectorIout
+        | Op::MultivectorOout => {
             add(buf, kids[1], 1);
             let vsign = match out_type[kids[1] as usize] {
                 NodeType::FermionIn => -1,

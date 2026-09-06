@@ -156,6 +156,20 @@ pub enum LorentzEvalNode {
         c: usize,
         d: usize,
     },
+    /// Two fermions → the cut line's `γ^αγ^β` chain as a Clifford element, in the
+    /// index order the other line reads it (see [`Op::FierzOut`](super::op::Op::FierzOut)).
+    /// Children are the line's two ends in vertex slot order (row first).
+    FierzOut { i: usize, j: usize },
+    /// [`FierzOut`](Self::FierzOut) with the two lines traversing the shared indices
+    /// in opposite orders — the grade-2 coefficient enters with the other sign.
+    FierzOutRev { i: usize, j: usize },
+    /// Clifford element + flow-in fermion → flow-in fermion current `M ψ`.
+    MultivectorIout { m: usize, j: usize },
+    /// Clifford element + flow-out fermion → flow-out fermion current `ψ̄ M`.
+    MultivectorOout { m: usize, i: usize },
+    /// Clifford element + two fermions → the scalar `ψ̄ M ψ`, the grade-diagonal
+    /// Fierz pairing of the element with the pair's own sixteen bilinears.
+    FierzPair { m: usize, i: usize, j: usize },
     // TODO: Sigma
 }
 
@@ -178,6 +192,12 @@ impl LorentzEvalNode {
             LorentzEvalNode::P { .. } => vec![],
             LorentzEvalNode::POut => vec![],
             LorentzEvalNode::IdentityAmp { i, j } => vec![*i, *j],
+            LorentzEvalNode::FierzOut { i, j } | LorentzEvalNode::FierzOutRev { i, j } => {
+                vec![*i, *j]
+            }
+            LorentzEvalNode::MultivectorIout { m, j } => vec![*m, *j],
+            LorentzEvalNode::MultivectorOout { m, i } => vec![*m, *i],
+            LorentzEvalNode::FierzPair { m, i, j } => vec![*m, *i, *j],
         }
     }
 
@@ -202,6 +222,11 @@ impl LorentzEvalNode {
             Gamma5Amp { .. } => format!("Gamma5Amp({})", body),
             EpsilonVout { .. } => format!("EpsilonVout({})", body),
             EpsilonAmp { .. } => format!("EpsilonAmp({})", body),
+            FierzOut { .. } => format!("FierzOut({})", body),
+            FierzOutRev { .. } => format!("FierzOutRev({})", body),
+            MultivectorIout { .. } => format!("MultivectorIout({})", body),
+            MultivectorOout { .. } => format!("MultivectorOout({})", body),
+            FierzPair { .. } => format!("FierzPair({})", body),
         }
     }
 }
@@ -495,6 +520,14 @@ impl LorentzEvalTree {
         flows: &[Option<LegAdjoint>],
     ) -> Result<(Self, f64, i8), RootLorentzError> {
         let out_adjoint = idx.and_then(|i| flows.get(i).copied().flatten().map(|lf| lf.adjoint));
+        // A cyclic index graph is not rootable as a tree; the tensor path cuts the
+        // cycle at one fermion line instead (its gammas never become a `GammaVout`,
+        // so the term carries no reversed-bilinear parity of its own).
+        if let Some(tensor) = cyclic_tensor_term(term, spins)? {
+            let (tree, sign) =
+                LorentzEvalTree::build_tensor_term(term, &tensor, idx, out_adjoint, flows)?;
+            return Ok((tree.compact_legs(idx), sign, 1));
+        }
         let idx = correct_spin_index_for_flow(spins, flow, idx, out_adjoint)?;
         let reversed_parity = term_reversed_parity(term, idx, flows);
         let mut tree = LorentzEvalTree {
@@ -729,15 +762,20 @@ impl LorentzEvalTree {
 
         tree.root = Some(root);
 
-        // The output leg's wavefunction is never referenced by an off-shell current,
-        // so its position is a hole in the input-leg numbering. Compact the leg
-        // references by dropping that hole: every input leg above `out` shifts down
-        // by one, so `Leg(i)`/`P{leg}` index directly into the caller's gap-free
-        // input list (vertex legs in order, output omitted) with no per-eval
-        // reindexing. A `P` *can* reference the output leg's momentum (e.g. VVV1);
-        // it becomes the leg-less `POut`, evaluated from the input currents.
+        Ok((tree.compact_legs(idx), sign, reversed_parity))
+    }
+
+    /// Drop the output leg's hole from the input-leg numbering.
+    ///
+    /// The output leg's wavefunction is never referenced by an off-shell current, so
+    /// its position is a hole: every input leg above `out` shifts down by one, and
+    /// `Leg(i)`/`P{leg}` then index directly into the caller's gap-free input list
+    /// (vertex legs in order, output omitted) with no per-eval reindexing. A `P` *can*
+    /// reference the output leg's momentum (e.g. VVV1); it becomes the leg-less
+    /// `POut`, evaluated from the input currents.
+    fn compact_legs(mut self, idx: Option<usize>) -> Self {
         if let Some(out) = idx {
-            for node in &mut tree.nodes {
+            for node in &mut self.nodes {
                 match node {
                     LorentzEvalNode::Leg(i) if *i > out => *i -= 1,
                     LorentzEvalNode::P { leg } if *leg == out => *node = LorentzEvalNode::POut,
@@ -746,8 +784,7 @@ impl LorentzEvalTree {
                 }
             }
         }
-
-        Ok((tree, sign, reversed_parity))
+        self
     }
 
     fn render_expression(&self) -> String {
@@ -1003,6 +1040,374 @@ fn correct_spin_index_for_flow(
     }
 }
 
+// ───────────────── Cyclic four-fermion (tensor⊗tensor) structures ─────────────────
+//
+// A four-fermion structure whose two fermion lines share *two* summed Lorentz indices
+// closes a 4-cycle in the index graph, so no rooted tree can contract it one index at
+// a time. What makes it evaluable anyway is that a two-gamma chain is a Clifford
+// element of grades 0 and 2 alone (`γ^αγ^β = g^{αβ} − i σ^{αβ}`): each line's chain is
+// fixed by two numbers per index pair, the bilinears `ψ̄ψ` and `ψ̄σ^{μν}ψ` of its own
+// two ends. Evaluating one line into those coefficients cuts the cycle; contracting
+// them against the other line's two gammas gives a Clifford element again
+//
+//     γ_α γ_β (g^{αβ} s − i t^{αβ}) = 4 s − σ_{αβ} t^{αβ},
+//
+// which is then applied to the surviving line — as an operator on its continuing
+// spinor, or as the pairing that closes it into the amplitude. The two index orders
+// (`γ^αγ^β` against `γ_αγ_β` or against `γ_βγ_α`) differ only in the sign of the
+// grade-2 term.
+
+/// One fermion line of a recognised cyclic tensor⊗tensor term.
+///
+/// The chain reads `ψ_row · row_ops · γ^{shared[0]} γ^{shared[1]} · col_ops · ψ_col`
+/// in the vertex's own (row = bra slot, column = ket slot) orientation.
+#[derive(Clone, Debug)]
+struct TensorLine {
+    /// Vertex leg at the chain's row (bra) end.
+    row_leg: usize,
+    /// Vertex leg at the chain's column (ket) end.
+    col_leg: usize,
+    /// Non-gamma operators between the row leg and the first shared gamma, as
+    /// operator indices into the term. Order within the list is immaterial — the
+    /// recognised set is mutually commuting (see
+    /// [`apply_chain_ops`](LorentzEvalTree::apply_chain_ops)).
+    row_ops: Vec<usize>,
+    /// Non-gamma operators between the second shared gamma and the column leg.
+    col_ops: Vec<usize>,
+    /// The two shared Lorentz index labels, in chain order.
+    shared: [isize; 2],
+}
+
+/// A term recognised as two fermion lines joined by two summed Lorentz indices.
+#[derive(Clone, Debug)]
+struct TensorTerm {
+    lines: [TensorLine; 2],
+    /// Whether the two lines traverse the shared indices in opposite orders
+    /// (`γ^αγ^β` against `γ_βγ_α`).
+    reversed_order: bool,
+}
+
+/// The spinor index pair `(row, column)` of an operator the tensor path can place on a
+/// fermion line, or `None`.
+///
+/// `Sigma` and `C` carry a spinor pair too and are deliberately absent: a `Sigma`
+/// carries the two Lorentz indices itself (it is the two gammas already contracted, and
+/// belongs where they do rather than beside them), and charge conjugation is not
+/// supported anywhere in the rooting.
+fn spinor_pair(op: &LorentzOp) -> Option<(isize, isize)> {
+    match op {
+        LorentzOp::Gamma { i, j, .. }
+        | LorentzOp::Identity { i, j }
+        | LorentzOp::ProjM { i, j }
+        | LorentzOp::ProjP { i, j }
+        | LorentzOp::Gamma5 { i, j } => Some((*i, *j)),
+        _ => None,
+    }
+}
+
+/// Recognise a cyclic term as a tensor⊗tensor four-fermion structure.
+///
+/// `Ok(None)` for a term whose index graph is a tree — the rooted contraction handles
+/// those. `Err` for a cycle this shape does not cover, which is a refusal naming what
+/// it found rather than an "index has no operator" failure deep in the walk.
+///
+/// The recognised shape is deliberately narrow: four fermion legs and nothing else,
+/// every operator a spinor-index one, each line carrying exactly two adjacent `Gamma`
+/// factors whose Lorentz indices are the two labels the lines share. That is every
+/// cyclic structure SMEFTsim writes (`FFFF5`–`8`, `FFFF19`–`21`); a literal
+/// `Sigma(α,β,i,j)` carrying both shared indices on one line is the same object with
+/// the two gammas already contracted and is the natural next case.
+fn cyclic_tensor_term(
+    term: &LorentzTerm,
+    spins: &[i32],
+) -> Result<Option<TensorTerm>, RootLorentzError> {
+    if !cyclic_index_graph(term) {
+        return Ok(None);
+    }
+    let refuse = |what: &str| {
+        Err(RootLorentzError::UnsupportedVertex(format!(
+            "cyclic Lorentz structure: {what}; only two fermion lines joined by two \
+             summed Lorentz indices are evaluable as a rank-2 current"
+        )))
+    };
+    if spins.len() != 4 || spins.iter().any(|&s| s != 2) {
+        return refuse("not a four-fermion vertex");
+    }
+    if term.ops.iter().any(|op| spinor_pair(op).is_none()) {
+        return refuse(
+            "an operator outside the fermion-line set (Gamma/ProjM/ProjP/Gamma5/Identity)",
+        );
+    }
+
+    // Each chain starts at the plain leg sitting at an operator's *row* index and
+    // walks column → row until it reaches a second plain leg.
+    let mut lines: Vec<(Vec<usize>, usize, usize)> = Vec::new();
+    let mut used: Vec<usize> = Vec::new();
+    for leg in 0..spins.len() {
+        let start = term
+            .ops
+            .iter()
+            .position(|op| spinor_pair(op).is_some_and(|(i, _)| i == leg as isize));
+        let Some(start) = start.filter(|k| !used.contains(k)) else {
+            continue;
+        };
+        let mut chain = vec![start];
+        let mut cursor = spinor_pair(&term.ops[start]).unwrap().1;
+        while cursor < 0 {
+            let next = term.ops.iter().enumerate().find(|(k, op)| {
+                spinor_pair(op).is_some_and(|(i, _)| i == cursor) && !chain.contains(k)
+            });
+            let Some((next, _)) = next else {
+                return refuse("a summed spinor index with no continuing operator");
+            };
+            chain.push(next);
+            cursor = spinor_pair(&term.ops[next]).unwrap().1;
+        }
+        used.extend(chain.iter().copied());
+        lines.push((chain, leg, cursor as usize));
+    }
+    if lines.len() != 2 {
+        return refuse("the fermion lines do not split the vertex into two chains");
+    }
+    used.sort_unstable();
+    used.dedup();
+    if used.len() != term.ops.len() {
+        return refuse("an operator on no fermion line");
+    }
+
+    let mut built: Vec<TensorLine> = Vec::new();
+    for (chain, row_leg, col_leg) in lines {
+        let gammas: Vec<usize> = chain
+            .iter()
+            .enumerate()
+            .filter(|&(_, &k)| matches!(term.ops[k], LorentzOp::Gamma { .. }))
+            .map(|(pos, _)| pos)
+            .collect();
+        if gammas.len() != 2 || gammas[1] != gammas[0] + 1 {
+            return refuse("a fermion line without exactly two adjacent Gamma factors");
+        }
+        let mu_of = |pos: usize| match term.ops[chain[pos]] {
+            LorentzOp::Gamma { mu, .. } => mu,
+            _ => unreachable!("gamma positions were filtered on the op"),
+        };
+        built.push(TensorLine {
+            row_leg,
+            col_leg,
+            row_ops: chain[..gammas[0]].to_vec(),
+            col_ops: chain[gammas[1] + 1..].to_vec(),
+            shared: [mu_of(gammas[0]), mu_of(gammas[1])],
+        });
+    }
+
+    let (a, b) = (built[0].shared, built[1].shared);
+    if a[0] == a[1] || !a.iter().all(|x| *x < 0) {
+        return refuse("the two gammas of a line do not carry distinct summed indices");
+    }
+    let reversed_order = if a == b {
+        false
+    } else if a == [b[1], b[0]] {
+        true
+    } else {
+        return refuse("the two lines do not share the same pair of summed indices");
+    };
+    let [line_a, line_b]: [TensorLine; 2] = built
+        .try_into()
+        .expect("exactly two lines were built above");
+    Ok(Some(TensorTerm {
+        lines: [line_a, line_b],
+        reversed_order,
+    }))
+}
+
+/// The adjoint the vertex expects at the *row* slot of a line, as bound: `Bra` unless
+/// the line runs against the vertex's own arrow.
+///
+/// At the rooted output leg there is no bound wavefunction — `flows` holds the adjoint
+/// of the current the vertex *produces* there, which is the opposite of what the slot
+/// would have held (an output at the bra slot leaves `Γψ`, a ket).
+fn row_slot_adjoint(
+    line: &TensorLine,
+    out: Option<usize>,
+    flows: &[Option<LegAdjoint>],
+) -> Option<Adjoint> {
+    let bound = flows.get(line.row_leg).copied().flatten()?.adjoint;
+    Some(if out == Some(line.row_leg) {
+        match bound {
+            Adjoint::Ket => Adjoint::Bra,
+            Adjoint::Bra => Adjoint::Ket,
+        }
+    } else {
+        bound
+    })
+}
+
+/// True iff either end of the line sits on a crossed fermion line.
+fn line_crossed(line: &TensorLine, flows: &[Option<LegAdjoint>]) -> bool {
+    [line.row_leg, line.col_leg].into_iter().any(|leg| {
+        matches!(
+            flows.get(leg).copied().flatten(),
+            Some(lf) if lf.crossed
+        )
+    })
+}
+
+impl LorentzEvalTree {
+    /// Attach a line's non-gamma operators to the end they sit on.
+    ///
+    /// The nodes act on whichever adjoint the child turns out to carry, so the same
+    /// tree serves a line read along the vertex's arrow and one read against it: the
+    /// reversal replaces `X γ^αγ^β Y` by `Y γ^βγ^α X`, which moves each factor to the
+    /// other side of the chain *together with* the slot it belongs to. Order within a
+    /// side is immaterial — the recognised set (chiral projectors, `γ⁵`, the identity)
+    /// is diagonal in chirality and mutually commuting.
+    fn apply_chain_ops(
+        &mut self,
+        term: &LorentzTerm,
+        node: usize,
+        ops: &[usize],
+    ) -> Result<usize, RootLorentzError> {
+        let mut node = node;
+        for &iop in ops {
+            node = match term.ops[iop] {
+                LorentzOp::Identity { .. } => node,
+                LorentzOp::ProjM { .. } => self.add_node(LorentzEvalNode::ProjM { i: node }),
+                LorentzOp::ProjP { .. } => self.add_node(LorentzEvalNode::ProjP { i: node }),
+                LorentzOp::Gamma5 { .. } => self.add_node(LorentzEvalNode::Gamma5 { i: node }),
+                ref other => {
+                    return Err(RootLorentzError::UnsupportedVertex(format!(
+                        "cyclic Lorentz structure: {other:?} on a fermion line beside the \
+                         two shared gammas"
+                    )))
+                }
+            };
+        }
+        Ok(node)
+    }
+
+    /// A line end: its leg leaf with that end's operators applied.
+    fn chain_end(
+        &mut self,
+        term: &LorentzTerm,
+        leg: usize,
+        ops: &[usize],
+    ) -> Result<usize, RootLorentzError> {
+        let leaf = self.add_node(LorentzEvalNode::Leg(leg));
+        self.apply_chain_ops(term, leaf, ops)
+    }
+
+    /// The cut line evaluated as a Clifford element, with the index order the pairing
+    /// of the two chains dictates.
+    ///
+    /// The order flips once per line that is read against the vertex's own arrow: the
+    /// reversal replaces the chain by `C Γᵀ C⁻¹`, and for `X γ^α γ^β Y` that is
+    /// `Y γ^β γ^α X` — the same operators with the two gammas transposed, so only the
+    /// grade-2 coefficient changes sign. A crossed line reads the same way and adds
+    /// the `−1` of the conjugated pair's operator reordering.
+    fn add_cut_line(
+        &mut self,
+        term: &LorentzTerm,
+        tensor: &TensorTerm,
+        cut: usize,
+        out: Option<usize>,
+        flows: &[Option<LegAdjoint>],
+        sign: &mut f64,
+    ) -> Result<usize, RootLorentzError> {
+        let line = &tensor.lines[cut];
+        let row = self.chain_end(term, line.row_leg, &line.row_ops)?;
+        let col = self.chain_end(term, line.col_leg, &line.col_ops)?;
+        let mut reversed = tensor.reversed_order;
+        for l in &tensor.lines {
+            if row_slot_adjoint(l, out, flows) != Some(Adjoint::Bra) {
+                reversed = !reversed;
+            }
+            if line_crossed(l, flows) {
+                reversed = !reversed;
+                *sign = -*sign;
+            }
+        }
+        Ok(self.add_node(if reversed {
+            LorentzEvalNode::FierzOutRev { i: row, j: col }
+        } else {
+            LorentzEvalNode::FierzOut { i: row, j: col }
+        }))
+    }
+
+    /// Root a recognised cyclic tensor⊗tensor term.
+    ///
+    /// The cycle is cut at the fermion line that does not carry the output leg: that
+    /// line becomes a Clifford element, and the element is contracted into the other
+    /// line — applied to its continuing spinor when the output is one of its own legs,
+    /// paired with its two ends when the term sinks into the amplitude.
+    fn build_tensor_term(
+        term: &LorentzTerm,
+        tensor: &TensorTerm,
+        idx: Option<usize>,
+        out_adjoint: Option<Adjoint>,
+        flows: &[Option<LegAdjoint>],
+    ) -> Result<(Self, f64), RootLorentzError> {
+        let mut tree = LorentzEvalTree {
+            nodes: vec![],
+            root: None,
+        };
+        let mut sign = 1.0;
+        let keep = match idx {
+            Some(out) => tensor
+                .lines
+                .iter()
+                .position(|l| l.row_leg == out || l.col_leg == out)
+                .ok_or_else(|| {
+                    RootLorentzError::InvalidStructure(format!(
+                        "leg {out} carries no fermion line of this cyclic structure"
+                    ))
+                })?,
+            // Both lines sink into the amplitude, so either may be cut; the choice is
+            // fixed here and its irrelevance is what `rooting_soundness` measures by
+            // re-rooting at each leg (which cuts the other line).
+            None => 0,
+        };
+        let cut = 1 - keep;
+        let m = tree.add_cut_line(term, tensor, cut, idx, flows, &mut sign)?;
+
+        let line = &tensor.lines[keep];
+        let root = match idx {
+            None => {
+                let row = tree.chain_end(term, line.row_leg, &line.row_ops)?;
+                let col = tree.chain_end(term, line.col_leg, &line.col_ops)?;
+                tree.add_node(LorentzEvalNode::FierzPair { m, i: row, j: col })
+            }
+            Some(out) => {
+                // The continuing input is the end that is not the output leg, and the
+                // current keeps that line's adjoint; the output end's own operators
+                // apply to the current the vertex produces, not to any input.
+                let (leg, cont_ops, out_ops) = if line.row_leg == out {
+                    (line.col_leg, &line.col_ops, &line.row_ops)
+                } else {
+                    (line.row_leg, &line.row_ops, &line.col_ops)
+                };
+                let f = tree.chain_end(term, leg, cont_ops)?;
+                let current = match out_adjoint {
+                    Some(Adjoint::Ket) => {
+                        tree.add_node(LorentzEvalNode::MultivectorIout { m, j: f })
+                    }
+                    Some(Adjoint::Bra) => {
+                        tree.add_node(LorentzEvalNode::MultivectorOout { m, i: f })
+                    }
+                    None => {
+                        return Err(RootLorentzError::InvalidStructure(
+                            "cyclic four-fermion structure rooted at a leg with no spinor \
+                             adjoint"
+                                .to_string(),
+                        ))
+                    }
+                };
+                tree.apply_chain_ops(term, current, out_ops)?
+            }
+        };
+        tree.root = Some(root);
+        Ok((tree, sign))
+    }
+}
+
 /// True iff the term's index graph has a cycle: two operators joined by more than one
 /// contracted index, directly or through a chain.
 ///
@@ -1058,18 +1463,24 @@ fn cyclic_index_graph(term: &LorentzTerm) -> bool {
     false
 }
 
-/// [`cyclic_index_graph`] over a whole structure, as the error the evaluator reports.
+/// [`cyclic_tensor_term`] over a whole structure, as the error the evaluator reports.
+///
+/// Reported here rather than left to the per-term rooting so that a cycle the tensor
+/// path does not cover is one statement naming the structure, instead of an
+/// "index has no operator" failure deep in a walk that has already consumed half the
+/// cycle.
 pub fn reject_cyclic_structure(
     name: &str,
     structure: &str,
+    spins: &[i32],
     expr: &crate::ufo::lorentz::LorentzExpr,
 ) -> Result<(), RootLorentzError> {
-    if expr.iter().any(cyclic_index_graph) {
-        return Err(RootLorentzError::UnsupportedVertex(format!(
-            "Lorentz structure {name} has a cyclic index graph ({structure}); evaluating it \
-             needs a rank-2 tensor current carried between the two fermion lines, which the \
-             rooted tree cannot express"
-        )));
+    for term in expr.iter() {
+        if let Err(why) = cyclic_tensor_term(term, spins) {
+            return Err(RootLorentzError::UnsupportedVertex(format!(
+                "Lorentz structure {name} ({structure}): {why}"
+            )));
+        }
     }
     Ok(())
 }
@@ -1622,5 +2033,117 @@ mod tests {
                 root: Some(3)
             }
         )
+    }
+
+    /// SMEFTsim's cyclic Lorentz structures are exactly the seven tensor⊗tensor
+    /// four-fermion ones, and each is recognised as two fermion lines joined by two
+    /// summed Lorentz indices.
+    ///
+    /// Two statements at once. The census — which structures of the model have a cyclic
+    /// index graph — is a claim about the model that the by-hand reading of
+    /// `lorentz.py` could get wrong, so it is machine-checked here rather than asserted
+    /// in prose. And the recognised decomposition is pinned per structure: which legs
+    /// each line joins, and whether the two lines traverse the shared indices in the
+    /// same order (`γ^αγ^β` against `γ_αγ_β`) or opposite ones. The order is the sign of
+    /// the grade-2 half of the contact, so getting it wrong on one structure of a vertex
+    /// and right on another is a real failure mode; `FFFF8`/`FFFF21` sit on one side of
+    /// that split and the other five on the other, in one vertex.
+    #[test]
+    fn smeftsims_cyclic_structures_are_the_tensor_four_fermion_ones() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let parsed = crate::ufo::ParsedModel::parse(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+        )
+        .expect("parse SMEFTsim");
+
+        /// Structure name, whether the two lines run the shared indices in opposite
+        /// orders, and the `(row leg, column leg)` of each line.
+        type Recognised = (String, bool, Vec<(usize, usize)>);
+        let mut seen: Vec<Recognised> = Vec::new();
+        for structure in parsed.lorentz.values() {
+            let mut cyclic = false;
+            for term in structure.expr.iter() {
+                let recognised = cyclic_tensor_term(term, &structure.spins)
+                    .unwrap_or_else(|e| panic!("{}: {e}", structure.name));
+                let Some(tensor) = recognised else { continue };
+                cyclic = true;
+                let lines: Vec<(usize, usize)> = tensor
+                    .lines
+                    .iter()
+                    .map(|l| (l.row_leg, l.col_leg))
+                    .collect();
+                seen.push((structure.name.clone(), tensor.reversed_order, lines));
+            }
+            assert_eq!(
+                cyclic,
+                structure.expr.iter().any(cyclic_index_graph),
+                "{}: recognition and the cycle test disagree",
+                structure.name
+            );
+        }
+        seen.sort();
+
+        // Every one is a single term, so one entry per structure. `(row, column)` is the
+        // vertex's own (bra slot, ket slot) orientation, 0-based; the lines come out in
+        // ascending row-leg order, so every structure of the model pairs `(1,0)` with
+        // `(3,2)` and only the traversal order distinguishes them.
+        assert_eq!(
+            seen,
+            vec![
+                ("FFFF19".to_string(), true, vec![(1, 0), (3, 2)]),
+                ("FFFF20".to_string(), true, vec![(1, 0), (3, 2)]),
+                ("FFFF21".to_string(), false, vec![(1, 0), (3, 2)]),
+                ("FFFF5".to_string(), true, vec![(1, 0), (3, 2)]),
+                ("FFFF6".to_string(), true, vec![(1, 0), (3, 2)]),
+                ("FFFF7".to_string(), true, vec![(1, 0), (3, 2)]),
+                ("FFFF8".to_string(), false, vec![(1, 0), (3, 2)]),
+            ]
+        );
+    }
+
+    /// A cycle the tensor path does not cover is refused by name, not walked into.
+    ///
+    /// The recognised shape is narrow on purpose (four fermion legs, two adjacent
+    /// `Gamma` factors per line, nothing else); this is the other half of that
+    /// statement — a term whose two lines are joined by a `Metric` rather than by their
+    /// own gammas closes the same 4-cycle and is not evaluable this way.
+    #[test]
+    fn an_unrecognised_cycle_is_refused_by_name() {
+        // Two γγ lines whose shared indices meet through a pair of metrics rather than
+        // directly: `Gamma(-1,2,-5)*Gamma(-2,-5,1)*Gamma(-3,4,-6)*Gamma(-4,-6,3)
+        //           *Metric(-1,-3)*Metric(-2,-4)`.
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![
+                LorentzOp::Gamma {
+                    mu: -1,
+                    i: 1,
+                    j: -5,
+                },
+                LorentzOp::Gamma {
+                    mu: -2,
+                    i: -5,
+                    j: 0,
+                },
+                LorentzOp::Gamma {
+                    mu: -3,
+                    i: 3,
+                    j: -6,
+                },
+                LorentzOp::Gamma {
+                    mu: -4,
+                    i: -6,
+                    j: 2,
+                },
+                LorentzOp::Metric { mu: -1, nu: -3 },
+                LorentzOp::Metric { mu: -2, nu: -4 },
+            ],
+        };
+        assert!(cyclic_index_graph(&term), "the probe term must be cyclic");
+        let err = cyclic_tensor_term(&term, &[2, 2, 2, 2]).unwrap_err();
+        assert!(
+            format!("{err}").contains("outside the fermion-line set"),
+            "unexpected refusal: {err}"
+        );
     }
 }
