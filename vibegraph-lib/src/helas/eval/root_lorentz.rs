@@ -1317,7 +1317,13 @@ impl LorentzEvalTree {
         let col = self.chain_end(term, line.col_leg, &line.col_ops)?;
         let mut reversed = tensor.reversed_order;
         for l in &tensor.lines {
-            if row_slot_adjoint(l, out, flows) != Some(Adjoint::Bra) {
+            let bound = row_slot_adjoint(l, out, flows).ok_or_else(|| {
+                RootLorentzError::MissingAdjoint(format!(
+                    "leg {} of a cyclic four-fermion structure carries no spinor adjoint",
+                    l.row_leg
+                ))
+            })?;
+            if bound != Adjoint::Bra {
                 reversed = !reversed;
             }
             if line_crossed(l, flows) {
