@@ -99,6 +99,12 @@ pub enum Ray {
 #[derive(Clone, Debug)]
 pub struct Vertex {
     pub interaction: VertexId,
+    /// Which of the interaction's fermion-flow groups
+    /// ([`topo::flow_groups`](crate::ufo::topo::flow_groups)) this occurrence uses:
+    /// the index of the spinor pairing its Lorentz structures share. A vertex whose
+    /// structures agree on one pairing — every vertex with fewer than four fermion
+    /// legs, and every Standard-Model vertex — has only group `0`.
+    pub flow_group: usize,
     pub rays: Vec<Ray>,
 }
 
@@ -192,9 +198,10 @@ impl Diagram {
         let mut vertices = Vec::with_capacity(view.vertices().count());
         let mut legs: Vec<Option<Leg>> = vec![None; n_ext];
         for vtx in view.vertices() {
-            let interaction = model.vertex_id(vtx.interaction().name()).ok_or_else(|| {
-                ConvertError::VertexNotFound(vtx.interaction().name().to_string())
-            })?;
+            let (base, flow_group) = crate::ufo::topo::split_flow_group(vtx.interaction().name());
+            let interaction = model
+                .vertex_id(base)
+                .ok_or_else(|| ConvertError::VertexNotFound(base.to_string()))?;
             let mut rays = Vec::new();
             for (slot, ray) in vtx.propagators_ordered().enumerate() {
                 match ray {
@@ -213,7 +220,11 @@ impl Diagram {
                     }
                 }
             }
-            vertices.push(Vertex { interaction, rays });
+            vertices.push(Vertex {
+                interaction,
+                flow_group,
+                rays,
+            });
         }
 
         let legs = legs

@@ -489,3 +489,150 @@ fn momentum_slashed_chain_is_rooting_invariant() {
         );
     }
 }
+
+/// A four-fermion vertex with an *off-shell* fermion output, re-rooted.
+///
+/// Every four-fermion diagram of the gated rows is a single contact vertex, which has
+/// exactly one rooting, so the row cannot reach the code that carries a fermion line
+/// *through* such a vertex: three of its four fermion legs are inputs, two of them
+/// close a line there and the third continues into the output. Adding a photon to
+/// `e+ e- > mu+ mu-` puts the contact vertex on an internal muon line and makes that
+/// path reachable, and re-rooting is its falsifier — the continuing input is chosen by
+/// the vertex's own pairing, so picking the first fermion child instead (the rule that
+/// was right while every sink had two fermion legs) sends the line through the wrong
+/// leg at some rootings and not others.
+///
+/// The oracle is the amplitude's invariance under the root choice, as elsewhere in this
+/// module; the row itself has no MadGraph reference.
+#[test]
+#[cfg(feature = "extended-validation")]
+fn four_fermion_currents_are_rooting_invariant() {
+    use crate::phasespace::rambo_massless;
+    use rand::SeedableRng;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let model = Arc::new(
+        UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_c4l.dat")),
+        )
+        .expect("load SMEFTsim under the four-lepton card"),
+    );
+    let table: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("../validation/madgraph/amplitudes/ee_to_mumu_4f.json"))
+            .expect("the banked four-lepton table"),
+    )
+    .expect("parse the banked four-lepton table");
+    let card: ParamCard = table["param_card"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .parse()
+        .expect("the banked param card");
+    let evaluated = EvaluatedModel::from_model_card((*model).clone(), &card);
+    let opts = ParsingOptions::default();
+    let pc = parse_proc_card("generate e+ e- > mu+ mu- a NP<=1", &opts).unwrap();
+    let sets = generate_from_proc_card(&pc, model.as_ref()).unwrap();
+    let set = sets.iter().find(|s| !s.diagrams.is_empty()).unwrap();
+
+    // Diagrams whose four-fermion vertex is not the whole diagram: those are the ones
+    // that carry a fermion line through it.
+    let through: Vec<&Diagram> = set
+        .diagrams
+        .iter()
+        .filter(|d| {
+            d.vertices.len() > 1
+                && d.vertices.iter().any(|v| {
+                    model
+                        .vertex_def(v.interaction)
+                        .particles
+                        .iter()
+                        .filter(|&&p| model.particle(p).spin == 2)
+                        .count()
+                        == 4
+                })
+        })
+        .collect();
+    assert!(
+        through.len() >= 4,
+        "expected several diagrams routing a fermion line through a four-fermion \
+         vertex, found {}",
+        through.len()
+    );
+
+    let sqrt_s = 500.0;
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x4f4f_4f4f);
+    let mut momenta = vec![
+        LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+        LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+    ];
+    momenta.extend(rambo_massless(sqrt_s, 3, &mut rng));
+
+    // Every helicity combination, so the comparison is over amplitudes that are
+    // actually non-zero: most of a four-fermion contact's combinations vanish, and a
+    // vanishing amplitude compares equal to anything.
+    let helicities: Vec<Vec<i32>> = (0..32)
+        .map(|m: usize| {
+            (0..5)
+                .map(|i| if m >> i & 1 == 1 { 1 } else { -1 })
+                .collect()
+        })
+        .collect();
+
+    // Control: the same comparison on this process's diagrams that have no
+    // four-fermion vertex, so a failure above is the four-fermion path and not the
+    // harness. (It was: the consecutive-slot reading of the spinor pairs sent the
+    // rooted output to a leg of the other line, and only the four-fermion diagrams
+    // moved.)
+    let control: Vec<&Diagram> = set
+        .diagrams
+        .iter()
+        .filter(|d| {
+            !d.vertices.iter().any(|v| {
+                model
+                    .vertex_def(v.interaction)
+                    .particles
+                    .iter()
+                    .filter(|&&p| model.particle(p).spin == 2)
+                    .count()
+                    == 4
+            })
+        })
+        .collect();
+    let mut compared = 0usize;
+    for (d, diagram) in control.iter().chain(through.iter()).enumerate() {
+        let per_root = |r: usize| -> Vec<num_complex::Complex<f64>> {
+            set_root_override(Box::new(move |_| VtxIdx(r)));
+            let one = DiagramSet {
+                particles_in: set.particles_in.clone(),
+                particles_out: set.particles_out.clone(),
+                diagrams: vec![(*diagram).clone()],
+            };
+            let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
+            let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
+            let mut scratch = bound.scratch_space();
+            let values = helicities
+                .iter()
+                .map(|hel| bound.eval_amplitude(&momenta, hel, &mut scratch))
+                .collect();
+            clear_root_override();
+            values
+        };
+        let base = per_root(0);
+        let scale = base.iter().fold(0.0f64, |m, z| m.max(z.norm()));
+        assert!(scale > 0.0, "diagram {d} vanishes at every helicity");
+        for r in 1..diagram.vertices.len() {
+            for (h, (a, b)) in base.iter().zip(&per_root(r)).enumerate() {
+                assert!(
+                    (a - b).norm() / scale < REL_TOL,
+                    "diagram {d} helicity {h}: rooted at vertex 0 {a:?}, at vertex {r} {b:?}"
+                );
+                compared += 1;
+            }
+        }
+    }
+    assert!(compared >= 100, "only {compared} amplitudes compared");
+}

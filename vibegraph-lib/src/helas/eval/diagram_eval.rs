@@ -15,6 +15,7 @@ use crate::helas::repr::numbers::Charge;
 use crate::ufo::couplings::CouplingId;
 use crate::ufo::lorentz::LorentzId;
 use crate::ufo::particles::ParticleId;
+use crate::ufo::topo::{flow_groups, FlowGroup};
 use crate::ufo::vertices::VertexId;
 use crate::ufo::UFOModel;
 
@@ -93,20 +94,29 @@ impl VertexTerm {
     /// Generate a VertexTerm from a UFO vertex definition, given the model and the desired index of the result leg.
     ///
     /// result_leg_idx is 0-indexed here
+    #[allow(clippy::too_many_arguments)]
     pub fn from_ufo(
         model: &UFOModel,
         lorentz_id: LorentzId,
         _color: &crate::ufo::color::ColorExpr, // TODO: handle color structures if needed
         coupling_id: CouplingId,
+        flow: &[(usize, usize)],
         result_leg_idx: Option<usize>,
         flows: &[Option<LegAdjoint>],
     ) -> Result<Self, RootLorentzError> {
         let lorentz = model.lorentz_struct(lorentz_id);
+        super::root_lorentz::reject_cyclic_structure(
+            &lorentz.name,
+            &lorentz.structure,
+            &lorentz.expr,
+        )?;
 
         let terms = lorentz
             .expr
             .iter()
-            .map(|term| super::root_lorentz::root_term(term, &lorentz.spins, result_leg_idx, flows))
+            .map(|term| {
+                super::root_lorentz::root_term(term, &lorentz.spins, flow, result_leg_idx, flows)
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(VertexTerm { terms, coupling_id })
@@ -170,10 +180,27 @@ pub struct VertexInfo {
     pub terms: Vec<VertexTerm>,
 }
 
+/// The fermion-flow group `group` of `id`'s Lorentz structures: which of the
+/// vertex's spinor pairings this occurrence of it uses.
+///
+/// The group index comes from the diagram
+/// ([`Vertex::flow_group`](crate::diagrams::diagram::Vertex::flow_group)), which
+/// carries it from the feyngraph vertex the enumeration chose.
+pub(super) fn vertex_flow_group(model: &UFOModel, id: VertexId, group: usize) -> FlowGroup {
+    let mut groups = flow_groups(model.vertex_def(id), &model.lorentz);
+    assert!(
+        group < groups.len(),
+        "vertex '{}' has {} fermion-flow groups, asked for {group}",
+        model.vertex_def(id).name,
+        groups.len()
+    );
+    groups.swap_remove(group)
+}
+
 impl VertexInfo {
     /// Generate VertexInfo from a UFO vertex definition, restricted to a single
-    /// color structure `color_idx`, given the model and the desired index of the
-    /// result leg.
+    /// color structure `color_idx` and a single fermion-flow group `flow_group`,
+    /// given the model and the desired index of the result leg.
     ///
     /// Only the `(color_idx, lorentz_idx)` couplings whose first component equals
     /// `color_idx` are summed into the term list, so a vertex with several color
@@ -181,24 +208,32 @@ impl VertexInfo {
     /// color-index chain. For the usual single-structure vertex every coupling key
     /// has first component `0`, so `color_idx == 0` keeps them all in their original
     /// iteration order.
+    ///
+    /// `flow_group` narrows the same way along the other axis: a four-fermion vertex
+    /// whose structures contract its legs two different ways describes two fermion-line
+    /// topologies, which the enumeration has already separated into two vertices, so
+    /// only the structures of the named group belong to this occurrence.
     pub fn from_ufo(
         model: &UFOModel,
         id: VertexId,
         color_idx: usize,
+        flow_group: usize,
         result_leg_idx: Option<usize>,
         flows: &[Option<LegAdjoint>],
     ) -> Result<Self, RootLorentzError> {
         let vertex = model.vertex_def(id);
+        let group = vertex_flow_group(model, id, flow_group);
         let terms = vertex
             .couplings
             .iter()
-            .filter(|(&(c, _), _)| c == color_idx)
+            .filter(|(&(c, l), _)| c == color_idx && group.lorentz.contains(&l))
             .map(|(&(_, lorentz_idx), coupling_id)| {
                 VertexTerm::from_ufo(
                     model,
                     vertex.lorentz[lorentz_idx],
                     &vertex.color[color_idx],
                     *coupling_id,
+                    &group.flow,
                     result_leg_idx,
                     flows,
                 )

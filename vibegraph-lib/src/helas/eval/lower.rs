@@ -319,7 +319,7 @@ fn lower_diagram_node(tree: &DiagramEvalTree, id: EvalNodeId, b: &mut AstBuilder
             };
             b.add(Op::Propagate, Sym::None, vec![current, mass, width])
         }
-        EvalNode::ContractAmplitude { info, children } => {
+        EvalNode::ContractAmplitude { info, children, .. } => {
             let inputs = lower_children(tree, children, b);
             lower_vertex(info, &inputs, b)
         }

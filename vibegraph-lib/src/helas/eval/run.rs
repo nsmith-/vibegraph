@@ -1808,6 +1808,11 @@ mod tests {
         assert_summable(&zero_vector_slot(q), &zero_vector_slot(q + off), tol);
     }
 
+    /// The fermion pairing every `FFV`/`FFS` structure carries: legs 1 and 2 share the
+    /// vertex's one line, ket slot first. Every hand-built `VertexTerm` here is a
+    /// two-fermion vertex.
+    const FFV_FLOW: &[(usize, usize)] = &[(0, 1)];
+
     /// Placeholder color factor for hand-built `VertexTerm`s in tests that don't
     /// exercise color at all — `VertexTerm::from_ufo` ignores its `_color` arg.
     fn no_color() -> ColorExpr {
@@ -1986,6 +1991,7 @@ mod tests {
                     lorentz_id,
                     &no_color(),
                     coupling_id,
+                    FFV_FLOW,
                     Some(2),
                     &[],
                 )
@@ -2001,6 +2007,7 @@ mod tests {
                     lorentz_id,
                     &no_color(),
                     coupling_id,
+                    FFV_FLOW,
                     None,
                     &[],
                 )
@@ -2021,6 +2028,7 @@ mod tests {
                         info: vertex_info.clone(),
                         adjoint: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                        fermion_pairs: vec![(0, 1)],
                     },
                     EvalNode::Propagate {
                         info: prop_info.clone(),
@@ -2039,6 +2047,7 @@ mod tests {
                         info: vertex_info,
                         adjoint: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                        fermion_pairs: vec![(0, 1)],
                     },
                     EvalNode::Propagate {
                         info: prop_info,
@@ -2050,6 +2059,7 @@ mod tests {
                     EvalNode::ContractAmplitude {
                         info: amp_info,
                         children: vec![EvalNodeId::new(4), EvalNodeId::new(5), EvalNodeId::new(3)],
+                        fermion_pairs: vec![(0, 1)],
                     },
                 ],
             );
@@ -2162,10 +2172,26 @@ mod tests {
         // Two-term vertex: FFV2 (left) ⊕ FFV4 (left + 2·right), both with GC_3.
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(&model, ffv2_id, &no_color(), coupling_id, Some(2), &[])
-                    .unwrap(),
-                VertexTerm::from_ufo(&model, ffv4_id, &no_color(), coupling_id, Some(2), &[])
-                    .unwrap(),
+                VertexTerm::from_ufo(
+                    &model,
+                    ffv2_id,
+                    &no_color(),
+                    coupling_id,
+                    FFV_FLOW,
+                    Some(2),
+                    &[],
+                )
+                .unwrap(),
+                VertexTerm::from_ufo(
+                    &model,
+                    ffv4_id,
+                    &no_color(),
+                    coupling_id,
+                    FFV_FLOW,
+                    Some(2),
+                    &[],
+                )
+                .unwrap(),
             ],
         };
 
@@ -2192,6 +2218,7 @@ mod tests {
                         info: vertex_info.clone(),
                         adjoint: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                        fermion_pairs: vec![(0, 1)],
                     },
                     EvalNode::Propagate {
                         info: PropInfo {
@@ -2311,8 +2338,10 @@ mod tests {
 
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(&model, ffv2_id, &no_color(), gc50, Some(2), &[]).unwrap(),
-                VertexTerm::from_ufo(&model, ffv4_id, &no_color(), gc59, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv2_id, &no_color(), gc50, FFV_FLOW, Some(2), &[])
+                    .unwrap(),
+                VertexTerm::from_ufo(&model, ffv4_id, &no_color(), gc59, FFV_FLOW, Some(2), &[])
+                    .unwrap(),
             ],
         };
 
@@ -2333,6 +2362,7 @@ mod tests {
                         info: vertex_info.clone(),
                         adjoint: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                        fermion_pairs: vec![(0, 1)],
                     },
                     EvalNode::Propagate {
                         info: PropInfo {
@@ -3716,8 +3746,10 @@ mod tests {
         // rooted at the Z (vector output leg = leg index 2 in the vertex).
         let vertex_info = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(&model, ffv2_id, &no_color(), gc50, Some(2), &[]).unwrap(),
-                VertexTerm::from_ufo(&model, ffv4_id, &no_color(), gc59, Some(2), &[]).unwrap(),
+                VertexTerm::from_ufo(&model, ffv2_id, &no_color(), gc50, FFV_FLOW, Some(2), &[])
+                    .unwrap(),
+                VertexTerm::from_ufo(&model, ffv4_id, &no_color(), gc59, FFV_FLOW, Some(2), &[])
+                    .unwrap(),
             ],
         };
 
@@ -3732,6 +3764,7 @@ mod tests {
                     info: vertex_info.clone(),
                     adjoint: None,
                     children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                    fermion_pairs: vec![(0, 1)],
                 },
                 EvalNode::Propagate {
                     info: PropInfo {
@@ -3890,6 +3923,7 @@ mod tests {
                         info: current_vertex,
                         adjoint: None,
                         children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                        fermion_pairs: vec![(0, 1)],
                     },
                     EvalNode::Propagate {
                         info: PropInfo {
@@ -3904,6 +3938,7 @@ mod tests {
                         info: absorb_vertex,
                         adjoint: Some(ep_flow),
                         children: vec![EvalNodeId::new(4), EvalNodeId::new(3)],
+                        fermion_pairs: vec![],
                     },
                     EvalNode::Propagate {
                         info: PropInfo {
@@ -3931,6 +3966,7 @@ mod tests {
                 ffv1_id,
                 &no_color(),
                 gc3,
+                FFV_FLOW,
                 Some(2),
                 &mu_flows,
             )
@@ -3942,6 +3978,7 @@ mod tests {
                 ffv1_id,
                 &no_color(),
                 gc3,
+                FFV_FLOW,
                 Some(1),
                 &[lf(ep_flow), lf(ep_flow), None],
             )
@@ -3949,10 +3986,26 @@ mod tests {
         };
         let z_current = VertexInfo {
             terms: vec![
-                VertexTerm::from_ufo(&model, ffv2_id, &no_color(), gc50, Some(2), &mu_flows)
-                    .unwrap(),
-                VertexTerm::from_ufo(&model, ffv4_id, &no_color(), gc59, Some(2), &mu_flows)
-                    .unwrap(),
+                VertexTerm::from_ufo(
+                    &model,
+                    ffv2_id,
+                    &no_color(),
+                    gc50,
+                    FFV_FLOW,
+                    Some(2),
+                    &mu_flows,
+                )
+                .unwrap(),
+                VertexTerm::from_ufo(
+                    &model,
+                    ffv4_id,
+                    &no_color(),
+                    gc59,
+                    FFV_FLOW,
+                    Some(2),
+                    &mu_flows,
+                )
+                .unwrap(),
             ],
         };
         let z_absorb = VertexInfo {
@@ -3962,6 +4015,7 @@ mod tests {
                     ffv2_id,
                     &no_color(),
                     gc50,
+                    FFV_FLOW,
                     Some(1),
                     &[lf(ep_flow), lf(ep_flow), None],
                 )
@@ -3971,6 +4025,7 @@ mod tests {
                     ffv4_id,
                     &no_color(),
                     gc59,
+                    FFV_FLOW,
                     Some(1),
                     &[lf(ep_flow), lf(ep_flow), None],
                 )
