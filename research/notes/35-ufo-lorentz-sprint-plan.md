@@ -3,11 +3,14 @@
 **Status: IN PROGRESS — wave 1 landed 2026-09-05 (R1 `bff5aa9`, L1
 `00858a8`, V1 `2a34b9d`/`92db0ad`), wave 2 landed 2026-09-06 (L2 `5f319a9`,
 E1 `069ffad`/`49146e6`), wave 3 landed 2026-09-06 (C1 `331646e`, E2
-`733e33d`, F1 `c64a939`, R4 `575c1b6`/`9604089`, all merged). Thirteen
-SMEFTsim rows are enforced against MadGraph, the capstone `e+ e- > t t~
-NP<=1` and the cyclic tensor⊗tensor row among them; only `ee_to_wpwm_cw`
-(one point), `ee_to_zh_smeft` (derived parameters) and the five-vector
-stretch row remain informational.
+`733e33d`, F1 `c64a939`, R4 `575c1b6`/`9604089`), wave 4 landed 2026-09-06
+(C `412bc68`, T1 `a9d0f35`), all merged. Thirteen SMEFTsim rows are enforced
+against MadGraph at the amplitude level and **the capstone `e+ e- > t t~
+NP<=1` cross section is gated** (pull +0.82, rel +3.1e-4); only
+`ee_to_wpwm_cw` (one point), `ee_to_zh_smeft` (derived parameters) and the
+five-vector stretch row remain informational. Six toy-model rows are banked
+`info` for wave 5 (T2 `Sigma`, T3 colour), each with its disagreement already
+localized (§6 T1's record).
 Per-session landing records are appended to the session paragraphs below
 ("Landed:"); §5 carries the corrections to the row table; §3.5 records the
 two sessions added mid-sprint (C1 colour, E2 contact sign).**
@@ -899,6 +902,63 @@ unchanged. Contents:
 
 Cells registered `info`. **Sonnet relief**: the MG runs.
 
+**Landed (`a9d0f35`, 2026-09-06)**, with the brief's contents revised by
+measurement. Two models under `validation/ufo/`, ours: `vibegraph_toy_UFO`
+(5 fields, 7 vertices, 7 structures — `FFVD = Sigma(3,-1,2,-2)*P(-1,3)*ProjM(-2,1)`,
+`FFFFT = Sigma(-1,-2,2,1)*Sigma(-1,-2,4,3)`, `FFFFG` its γγ expansion as a
+separate coupling on the same vertex, `Identity`, `Gamma5`, `FFV1`, and
+`d(1,2,3)` on `o8 o8 o8`; cards `restrict_{dipole,tensor,yukawa,dcolor,all}`)
+and `vibegraph_toy_color_UFO` (all-scalar — two fermions reach a diquark only
+through a fermion-number-violating vertex, i.e. the charge conjugation §7 D2
+puts out of scope; two *distinct* triplets `p3`, `r3` because `Epsilon(1,2,3)`
+is antisymmetric; `K6Bar(3,1,2)` with the sextet leg first per
+`color_algebra.py`; cards `restrict_{eps,k6,all}`). Six rows banked, MadGraph
+diagram counts reproduced on the four loadable ones (2/3/5/3), interaction
+counts asserted, colour oracles exact (`CF max_rel = 0`) where they run; none
+promoted, each for a measured reason: `ll_to_qqx_toy_dipole` and
+`ll_to_qqx_toy_tensor` wait on T2 (`Sigma` refused by name; the cyclic
+detector reports a `Sigma` outside the fermion-line operator set);
+`p3r3_to_p3r3_toy_epsilon`/`_sextet` are refused at *load* by the colour
+grammar, as designed (T3). **Three findings.** (1) `qqx_to_o8o8_toy_dcolor`
+compiles and disagrees by **one sign on the `d` diagram's flow assembly**: our
+per-configuration amplitudes equal MadGraph's `AMP(1..3)` to 3.95e-16, the
+colour matrix and JAMP colour columns are exact, yet `JAMP(1) = +2/3·AMP(1)`
+where MadGraph has `−2/3·AMP(1)` (and the sign of `AMP(1)` in `JAMP(2,3)`) —
+`d_to_traces` is MadGraph's rule verbatim, so the sign sits between the
+diagram amplitude and the flow assembly; **both colour oracles are blind to
+it** by construction (each normalises a column by its leading fourth root of
+unity), and this row is the first to put a `d` where |M|² can see it (T3's
+first item, already isolated to one sign). (2) `ll_to_qqx_toy_yukawa`: four
+scalar exchanges on one s-channel propagator differing only in the bilinear at
+each end get **one `AMP2` accumulator from MadGraph and four from us**
+(`[1, 4]` vs `[1,1,1,1,1]`) — a channel-grouping gap in `config_diagrams`, not
+a bilinear one; the bare `Identity`/`Gamma5` amplitudes are unmeasured until it
+is closed (per-helicity `AMP()` banked). (3) **ALOHA's `Sigma` is half the
+textbook `σ^{μν} = (i/2)[γ^μ,γ^ν]`** (`L_Sigma.sigma` carries ±½): measured as
+`AMP(FFFFG)/AMP(FFFFT) = 4 × ggam/gtens` to 4.7e-14 over every helicity and
+point, so a T2 kernel at textbook normalisation is 4× too large in the
+tensor row and 2× in the dipole row; the square is blind to `Sigma`'s global
+sign, which the dipole row (linear, interfering with a plain gauge coupling)
+pins. Two MadGraph conventions recorded for model authors: a vertex whose
+particle multiset is not self-conjugate needs its h.c. listed too (lookup is
+by sorted PDG tuple with initial legs conjugated), and a model with no
+`T(a,i,j)` vertex leaves `find_color_anti_color_rep` to guess the 3/3̄ labelling
+from the particle's colour sign — invisible without an ε (a uniform transpose),
+fatal with one (`set_Nc` fails to reduce); a model must also declare `QCD` or
+the unbounded WEIGHTED search dies. Supporting changes: `gen_amplitude*.py`
+select the |M|² module by what `build_amplitude.sh` built, and
+`tests/smeftsim.rs` reports (instead of panicking) a `(model, card)` whose
+model this crate cannot read *and* whose rows are all `info`. **Environment
+findings on the banked layer** (none from this session): the fetched PDF sets
+are absent on this host (nine `pp_*` rows unmeasurable; see C's record);
+**V1's `ee_to_mumu_smlimit` `run_01/unweighted_events.lhe.gz` is corrupt**
+(line 14793 has 11 fields — garbled Fortran exponents such as
+`-0.8358042304-2-0.06`; 2743 events; mtime 2026-09-05 22:21), which fails
+`validate_lhef` and `validate_alphas`; and `validate_scales::declared_runs()`
+was never extended for the SMEFTsim runs, so `ee_to_mumu_4f` and now the six
+toy runs are "in none of this gate's inventories". Two `ENOSPC` hits at ~38 GB
+of worktree `target/` dirs (`CARGO_INCREMENTAL=0` advised).
+
 ### T2 — literal `Sigma` primitive (feature-dev; after R1, R4)
 
 `Sigma` nodes (`SigmaTout` two fermions → `AsymRank2Tensor`; contraction
@@ -955,8 +1015,9 @@ Wave 0 (manager, done): S0 vendored UFO + this note + TODO
 Wave 1:  R1 (hermetic)  ∥  L1 (loader/splitting)  ∥  V1 (bank the ladder, MG host)   ← landed 2026-09-05
 Wave 2:  L2 (SM-limit gate; needs L1+V1)  ∥  E1 (tree-shaped primitives; needs R1, L1, V1)   ← landed 2026-09-06
 Wave 3:  F1 (four-fermion; needs L1, V1)  →  R4 (tensor slot; needs R1, E1, F1)   ← F1 ∥ C1 ∥ E2, then R4, landed 2026-09-06
-Wave 4:  T1 (toy oracle; needs V1's pipeline)  ∥  C (capstone; needs E1, F1, R4)
-Wave 5:  T2 (Sigma; needs R4, T1)  ∥  T3 (colour; needs T1)  →  Z (close-out)
+Wave 4:  T1 (toy oracle; needs V1's pipeline)  ∥  C (capstone; needs E1, F1, R4)   ← landed 2026-09-06
+Wave 5:  T2 (Sigma; needs R4, T1)  ∥  T3 (colour; needs T1)  ∥  V2 (banked-layer hygiene: the
+         corrupt SM-limit LHE, `declared_runs()` inventories, the `[1,4]` channel grouping)  →  Z (close-out)
 ```
 
 - Three sessions open the sprint in parallel and touch disjoint files

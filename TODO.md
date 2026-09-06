@@ -6,23 +6,35 @@ what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
 **Current position**: **`ufo-lorentz` feature sprint in progress** (note 35;
-wave 1 landed 2026-09-05 — R1 `bff5aa9`, L1 `00858a8`, V1 `2a34b9d` — and
-wave 2 landed 2026-09-06 — L2 `5f319a9`, E1 `069ffad`/`49146e6` — all merged;
-the landing records are in the note's session paragraphs, the corrections to
-the row table in its §5). Wave 3 (C1 `331646e`, E2 `733e33d`, F1 `c64a939`, R4 `575c1b6`/`9604089`,
-all merged) took it to **thirteen SMEFTsim rows enforced against MadGraph,
-the capstone `e+ e- > t t~ NP<=1` (36 diagrams, 6.82e-15) and the cyclic
-tensor⊗tensor row (3.91e-13) among them** — the four SM-limit
-rows, `b b~ > h` (`IdentityAmp`), `g g > h` CP-even and CP-odd (the ALOHA ε
-sign pinned through their interference), the `e+ e- > t t~` dipole, `g g > g g`
-with `cG`/`cGtil` (a per-term contact-sign proxy fixed per vertex), and the
-scalar/vector four-fermion rows (`e+ e- > mu+ mu-` with both pairings in one
-vertex, `u u~ > t t~` after a colour slot-correction bug). Sixteen rows are
-banked; the three that stay `info` have their disagreements localized: one
-|M|² point on `e+ e- > W+ W-` at 2.08e-12 against a 1e-12 budget, a
-tenth-digit derived-parameter spread on `e+ e- > Z h`, and the five-vector
-stretch row (2.20e3). Next per the note's §8: wave 4, T1 (the toy UFO's
-oracle) ∥ C (the capstone σ and the CLI path). Two of §5's premises fell on contact:
+waves 1–4 landed 2026-09-05/06 and merged — R1 `bff5aa9`, L1 `00858a8`, V1
+`2a34b9d`, L2 `5f319a9`, E1 `069ffad`, C1 `331646e`, E2 `733e33d`, F1
+`c64a939`, R4 `575c1b6`, C `412bc68`, T1 `a9d0f35`; landing records in the
+note's session paragraphs, row-table corrections in its §5). Where that
+leaves it: **thirteen SMEFTsim rows enforced against MadGraph at the
+amplitude level and the capstone `e+ e- > t t~ NP<=1` cross section gated**
+(σ 2.222986 ± 6.6e-4 vs 2.2223 ± 5.3e-4 pb, pull +0.82, seven seeds within
+±1.22, ladder flat over 16×; the SM limit of the same process is 4.04× lower,
+so the gate sees the SMEFT content), plus the user path
+(`vibegraph integrate --ufo-dir validation/ufo` with
+`import model SMEFTsim_topU3l_MwScheme_UFO-massless`, model identity in the
+artifact, `NP^2==1` a hard error instead of a silently different process).
+Wave 4 also fixed a parameter-provenance bug the capstone path exposed: a
+restrict card's non-zero values now become the model's defaults as in
+MadGraph, so a card-less run of a restricted model is no longer silently its
+SM limit (421 externals over 13 rows pinned against MadGraph's own generated
+cards). Six **toy-model rows are banked `info`** for wave 5 with their
+disagreements already localized: two wait on the literal `Sigma` kernel
+(note ALOHA's `Sigma` is *half* the textbook σ^{μν}), two on the colour
+grammar (`Epsilon`, `K6Bar`), one (`d(1,2,3)`) is exercised and **wrong by a
+single sign in the flow assembly that both colour oracles are blind to**, and
+one (`Identity`/`Gamma5` Yukawas) is blocked by a channel-grouping gap
+(MadGraph groups four scalar exchanges on one propagator into one `AMP2`
+accumulator; we make four). Next per the note's §8: wave 5 — T2 (`Sigma`),
+T3 (colour), and a hygiene session for the banked-layer findings below —
+then the close-out. The three rows that stay `info` on the SMEFTsim ladder
+keep their localized disagreements: one |M|² point on `e+ e- > W+ W-` at
+2.08e-12, a tenth-digit derived-parameter spread on `e+ e- > Z h`, and the
+five-vector stretch row. Two of §5's premises fell on contact:
 the cyclic tensor⊗tensor row needs a massive lepton (`tata_to_ttx_tensor4f`
 replaces it) and the shipped `restrict_massless` card zeroes every CP-odd
 coefficient, so the capstone reaches neither an `Epsilon` nor a tensor
@@ -311,6 +323,27 @@ One line each; the note is the full record. Earlier sprints
   a single run; and the guard's measured residue distribution (max 1.4 ulps
   over 1088 sums) is recorded in `abedb81`'s tests if the tolerance is ever
   revisited.
+
+- **Banked-layer findings from the `ufo-lorentz` wave-4 sessions (2026-09-06)**,
+  none caused by them, all for a hygiene session: (a) V1's
+  `ee_to_mumu_smlimit` run's `Events/run_01/unweighted_events.lhe.gz` is
+  **corrupt** (garbled Fortran exponent fields at line 14793, 2743 events) and
+  fails `validate_lhef`/`validate_alphas` — re-run the row or drop its sample
+  from those inventories, then record which; (b) `validate_scales::declared_runs()`
+  lists no SMEFTsim or toy run, so `ee_to_mumu_4f` and the six toy runs are "in
+  none of this gate's inventories"; (c) MadGraph groups the four scalar
+  exchanges of `ll_to_qqx_toy_yukawa` on one s-channel propagator into **one**
+  `AMP2` accumulator where `config_diagrams` makes four (`[1, 4]` vs
+  `[1,1,1,1,1]`) — a channel-grouping rule no SM row reaches, blocking that
+  row's `Identity`/`Gamma5` measurement; (d) the `d(1,2,3)` flow-assembly sign
+  (`qqx_to_o8o8_toy_dcolor`, note 35 §6 T1) is invisible to both colour
+  oracles because each normalises a colour column by its leading fourth root
+  of unity — a blind spot worth a per-diagram signed comparison; (e) this
+  container holds no PDF set and cannot fetch one (`lhapdfsets.web.cern.ch`
+  403 through the proxy), so the nine `pp_*` rows' `integrals`/`samples` cells
+  are unmeasurable here; (f) MadGraph fixes a restrict-card parameter set to
+  exactly `1` alongside the zeros and this loader does not — latent, no card in
+  the repository uses `1.0`.
 
 ### Sharper oracles the sprint named but did not build
 
