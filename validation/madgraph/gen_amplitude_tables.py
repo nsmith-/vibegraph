@@ -431,13 +431,11 @@ def evaluate(key, row, proc):
     card = param_card_path(key)
     masses = read_masses(card)
 
-    # The helicity-summed |M|^2 module is what the event points need; the grid
-    # points carry MadGraph's own value from the CSV. A row with no event set
-    # (a 2 -> 1 process, whose `launch` writes no events) therefore never needs
-    # it — which is as well, since that is exactly the case build_amplitude.sh
-    # cannot compile it for.
+    # The helicity-summed |M|^2 is what the event points need; the grid points
+    # carry MadGraph's own value from the CSV. A row with no event set (a 2 -> 1
+    # process, whose `launch` writes no events) therefore never needs it.
     m2_module = (
-        importlib.import_module(f"mg_{key}") if row.n_event_points else None
+        gen_amplitude.summed_m2_module(key, n_ext) if row.n_event_points else None
     )
     probe = importlib.import_module(f"mg_amp_probe_{key}")
 

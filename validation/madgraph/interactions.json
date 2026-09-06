@@ -100,6 +100,54 @@
       "rows": [
         "ee_to_ttx_dipole"
       ]
+    },
+    "vibegraph_toy_UFO-dcolor": {
+      "interactions": 2,
+      "model": "validation/ufo/vibegraph_toy_UFO",
+      "restrict": "dcolor",
+      "rows": [
+        "qqx_to_o8o8_toy_dcolor"
+      ]
+    },
+    "vibegraph_toy_UFO-dipole": {
+      "interactions": 3,
+      "model": "validation/ufo/vibegraph_toy_UFO",
+      "restrict": "dipole",
+      "rows": [
+        "ll_to_qqx_toy_dipole"
+      ]
+    },
+    "vibegraph_toy_UFO-tensor": {
+      "interactions": 4,
+      "model": "validation/ufo/vibegraph_toy_UFO",
+      "restrict": "tensor",
+      "rows": [
+        "ll_to_qqx_toy_tensor"
+      ]
+    },
+    "vibegraph_toy_UFO-yukawa": {
+      "interactions": 6,
+      "model": "validation/ufo/vibegraph_toy_UFO",
+      "restrict": "yukawa",
+      "rows": [
+        "ll_to_qqx_toy_yukawa"
+      ]
+    },
+    "vibegraph_toy_color_UFO-eps": {
+      "interactions": 4,
+      "model": "validation/ufo/vibegraph_toy_color_UFO",
+      "restrict": "eps",
+      "rows": [
+        "p3r3_to_p3r3_toy_epsilon"
+      ]
+    },
+    "vibegraph_toy_color_UFO-k6": {
+      "interactions": 4,
+      "model": "validation/ufo/vibegraph_toy_color_UFO",
+      "restrict": "k6",
+      "rows": [
+        "p3r3_to_p3r3_toy_sextet"
+      ]
     }
   },
   "schema": 1
