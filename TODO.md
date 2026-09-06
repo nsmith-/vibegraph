@@ -465,6 +465,29 @@ above); the entries here are the eventual features.
 
 ### In-scope features
 
+- **`madgraph-style-enumeration`** (research, unscheduled) — feyngraph
+  enumerates topology-first (QGRAF-style orderly generation over vertex-degree
+  partitions, then particle assignment by backtracking per topology), while
+  MadGraph 5 (arXiv:1106.0522, `diagram_generation.py::Amplitude.generate_diagrams`)
+  recursively combines external-leg subsets through the vertex table, so it
+  never visits a shape the model cannot fill and prunes coupling orders
+  in-recursion. Question to answer before any code: is enumeration ever on the
+  critical path here? Measure feyngraph's share of `integrate` wall time on the
+  widest cards (`p p > j j j`, the 2→6 rows, a hypothetical `p p > j j j j`)
+  against MadGraph 5's own generation time for the same cards. If it is, the
+  design spike is: (i) a leg-combination enumerator over `ufo::topo`'s vertex
+  table producing `diagrams::Diagram` unchanged — same slot-ordered rays,
+  momentum routing, Fermi sign and symmetry factor — so every downstream
+  consumer (rooting, colorize, channels, the kT merge graph) is untouched;
+  (ii) a canonical diagram tag for duplicate elimination; (iii) the WEIGHTED
+  order bound applied in-recursion rather than as a post-filter;
+  (iv) subprocess reuse across flavour relabellings, which the measured
+  flavour groups currently recover after the fact. Gate: identical diagram
+  census against `validation/madgraph/diagrams.json` and byte-identical
+  amplitude-oracle rows, since a diagram set that differs only in ordering
+  changes the rooting and therefore the arithmetic. The chapter
+  `docs/src/guide/03-diagrams.md` records the algorithmic contrast.
+
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by
   sampled `|M|²` agreement: **complete but unsound** — two programs that differ

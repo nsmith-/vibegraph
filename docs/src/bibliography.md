@@ -53,6 +53,9 @@ more detail, and `research/refs/fetch-papers.sh` fetches the arXiv ones.
   amplitudes*, Comput. Phys. Commun. 81 (1994) 357,
   [hep-ph/9401258](https://arxiv.org/abs/hep-ph/9401258). The original
   MadGraph: topology-first diagram enumeration and HELAS call generation.
+- P. Nogueira, *Automatic Feynman graph generation*, J. Comput. Phys. 105
+  (1993) 279. QGRAF: orderly enumeration of graph topologies over vertex-degree
+  partitions, the family feyngraph's topology stage belongs to.
 - J. Braun, *FeynGraph*, <https://github.com/Jens-Braun/FeynGraph>. The Rust
   diagram generator vibegraph drives.
 

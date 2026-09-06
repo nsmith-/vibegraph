@@ -46,21 +46,57 @@ asked for.
 
 The enumeration itself is delegated to
 [feyngraph](https://github.com/Jens-Braun/FeynGraph), a Rust diagram
-generator. Its algorithm is the topology-first scheme of the original
-MadGraph paper:
+generator built for multi-loop work, of which vibegraph uses the tree-level
+case. Its algorithm is **topology-first**: the shapes of all graphs are
+enumerated without reference to any particle, and particles are assigned
+to each shape afterwards.
 
-1. Generate every tree **topology** with the right number of external
-   legs, recursively: the unique three-leg topology, then each larger one
-   by attaching a new leg to every existing line and every existing vertex
-   of the smaller ones, deduplicated. Four legs give four topologies, five
-   give twenty-five.
-2. **Insert particles**: for each topology, assign a particle to every
-   internal line such that every vertex is an interaction of the model. The
+1. **Topologies.** A tree with \\(E\\) external legs and \\(N_k\\)
+   vertices of degree \\(k\\) satisfies \\(\\sum_k (k-2) N_k = E - 2\\),
+   which fixes the admissible vertex-degree partitions for the degrees the
+   model's interactions have (three and four in the Standard Model). For
+   each partition the generator fills an adjacency matrix by depth-first
+   backtracking, and keeps a graph only if it is the canonical
+   representative of its permutation orbit, which is what makes the
+   enumeration duplicate-free and yields the symmetry factor as a
+   by-product. This is the orderly-generation approach of QGRAF
+   ([Nogueira 1993](../bibliography.md#diagrams)) rather than the
+   leg-attachment recursion of the original MadGraph, though both are
+   topology-first.
+2. **Particle assignment.** For each topology, a second backtracking pass
+   assigns a particle to every internal line such that every vertex is an
+   interaction of the model, pruning as soon as a partial assignment has no
+   vertex to complete it, and again keeping only canonical assignments. The
    model is built from the UFO vertex table (`ufo::topo`), so a model with
    different interactions produces different diagrams with no change to the
-   enumerator.
-3. Filter by the coupling-order constraint and discard diagrams that vanish
-   by the model's restriction.
+   enumerator. Topologies are processed in parallel.
+3. **Filtering** by the coupling-order constraint, and discarding diagrams
+   that vanish under the model's restriction.
+
+### What MadGraph 5 does instead
+
+MadGraph 5 ([Alwall et al. 2011](../bibliography.md#the-pipeline-as-a-whole))
+abandoned topology-first enumeration. Its algorithm starts from the list of
+external legs, all flipped to one convention, and recursively **combines
+subsets of legs through the model's interactions**: a subset is replaced
+by the single off-shell leg the matching vertex implies, the reduced list
+is recursed into, and the recursion closes when the remaining legs form a
+final vertex. Duplicates are removed by a canonical tag per diagram, and
+coupling-order limits prune the recursion as it runs.
+
+The difference is structural. Topology-first generates every graph shape
+and only then discovers that most admit no particle assignment, and the
+number of tree shapes grows factorially with the leg count, faster still
+once four-point vertices are admitted. Leg combination never visits a
+shape the model cannot fill, because a subset of legs is only combined
+when a vertex exists for it; \\(n\\)-point vertices cost nothing extra, and
+an order constraint stops a branch early rather than discarding its
+output. That pruning is what let MadGraph 5 handle high multiplicities its
+predecessor could not, and it is also what made reusing diagrams across
+flavour-relabelled subprocesses natural. At the multiplicities this
+generator validates, up to \\(2\\to6\\), feyngraph's enumeration is a small
+fraction of a run; a self-implemented leg-combination enumerator is a
+tracked research item, not a present need.
 
 Each diagram comes back with what the amplitude needs: its external legs,
 its vertices with the UFO interaction they realise and their legs in the
