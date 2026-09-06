@@ -541,9 +541,7 @@ fn momentum_into(
         | Op::Hels
         | Op::Configs => {}
         // Momentum-preserving unary transforms.
-        Op::Propagate | Op::ProjM | Op::ProjP | Op::Gamma5 | Op::MetricVout => {
-            add(buf, kids[0], 1)
-        }
+        Op::Propagate | Op::ProjM | Op::ProjP | Op::Gamma5 | Op::MetricVout => add(buf, kids[0], 1),
         // Vector contractions: the sum of the operands' momenta, as for the unary
         // `MetricVout` above.
         Op::Metric | Op::EpsilonVout | Op::EpsilonAmp => {

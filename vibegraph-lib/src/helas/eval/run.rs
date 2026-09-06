@@ -1276,8 +1276,9 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
             Instr::PMomOut { start, len } => {
                 let slice = &mom_ops[start as usize..(start + len) as usize];
                 let mut acc = LorentzVector::zero();
-                for &mid in slice {
-                    acc = acc + moms[mid as usize];
+                for &(mid, sign) in slice {
+                    let p = moms[mid as usize];
+                    acc = if sign < 0 { acc - p } else { acc + p };
                 }
                 let neg = -acc;
                 vectors[loc] = kernel::pmom_bare(&neg);

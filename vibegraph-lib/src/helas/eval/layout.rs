@@ -437,9 +437,11 @@ pub(super) struct Program {
     pub(super) arena_sizes: [u32; N_ARENAS],
     /// Shared operand table for the variadic/mixed-class instructions.
     pub(super) operands: Box<[OperandRef]>,
-    /// Momentum-table ids for the `PMomOut` operand slices — the momenta whose negated sum
-    /// is the vertex output leg's structure momentum.
-    pub(super) mom_operands: Box<[u32]>,
+    /// The `PMomOut` operand slices: each entry is a momentum-table id and the sign
+    /// with which that input's stored momentum enters the vertex's all-incoming sum
+    /// (see [`super::kernel::pmom_out`]). The output leg's structure momentum is the
+    /// negated signed sum.
+    pub(super) mom_operands: Box<[(u32, i8)]>,
     pub(super) root: RootKind,
     /// Scalar-arena indices of the per-configuration diagram amplitudes `A_d` (the
     /// children of the [`Op::Configs`] root bundle), in configuration order. Under a
@@ -661,7 +663,7 @@ fn lower_node(
     id: NodeId,
     loc: &[u32],
     operands: &mut Vec<OperandRef>,
-    mom_operands: &mut Vec<u32>,
+    mom_operands: &mut Vec<(u32, i8)>,
 ) -> Instr {
     let node = ast.value(id);
     let kids = ast.children_ids(id);
@@ -896,7 +898,11 @@ fn lower_node(
         Op::PMomOut => {
             let start = mom_operands.len() as u32;
             for &k in kids {
-                mom_operands.push(an.mom_id(k));
+                let sign = match an.out_type(k) {
+                    NodeType::FermionIn => -1,
+                    _ => 1,
+                };
+                mom_operands.push((an.mom_id(k), sign));
             }
             Instr::PMomOut {
                 start,
@@ -956,7 +962,7 @@ impl Program {
         let mut instrs: Vec<Instr> = Vec::with_capacity(n);
         let mut dest: Vec<u32> = Vec::with_capacity(n);
         let mut operands: Vec<OperandRef> = Vec::new();
-        let mut mom_operands: Vec<u32> = Vec::new();
+        let mut mom_operands: Vec<(u32, i8)> = Vec::new();
 
         for &id in order.iter() {
             instrs.push(lower_node(
