@@ -99,7 +99,9 @@ pub mod bench_internals {
 #[cfg(feature = "extended-validation")]
 #[doc(hidden)]
 pub mod op_census {
-    pub use super::compile::{assert_op_coverage, op_census, MG_VALIDATED_PROCESSES};
+    pub use super::compile::{
+        assert_op_coverage, assert_op_coverage_across, op_census, MG_VALIDATED_PROCESSES,
+    };
     pub use super::op::Op;
 }
 

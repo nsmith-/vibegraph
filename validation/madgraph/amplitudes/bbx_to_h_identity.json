@@ -1,6 +1,6 @@
 {
  "key": "bbx_to_h_identity",
- "process": "b b~ > h",
+ "process": "b b~ > h NP<=1",
  "n_ext": 3,
  "n_graphs": 2,
  "n_flows": 1,

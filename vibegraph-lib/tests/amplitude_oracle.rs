@@ -193,6 +193,23 @@ const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
          diagrams that differ only in which of γ/Z carries each of two rungs share one, \
          and eight further pairs differing only in the boson on one rung share one each",
     ),
+    (
+        "bbx_to_h_identity",
+        "2 -> 1: no diagram of this process has an internal line, so MadGraph's channel \
+         mapping has no propagator to key a configuration on and writes a single \
+         accumulator over every graph — `AMP2(1) = |AMP(1) + AMP(2)|²` here — under a \
+         fake channel id. Ours are one per diagram, which is finer",
+    ),
+    (
+        "gg_to_h_cpeven",
+        "2 -> 1, as `bbx_to_h_identity`: one accumulator, `|AMP(1) + AMP(2)|²`, over \
+         the two graphs",
+    ),
+    (
+        "gg_to_h_cpodd",
+        "2 -> 1, as `bbx_to_h_identity`: one accumulator, `|AMP(1) + AMP(2) + AMP(3)|²`, \
+         over the three graphs",
+    ),
 ];
 
 /// Processes whose linear-level comparison is known to disagree with MadGraph, with the
@@ -637,9 +654,22 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
         .map(|(_, why)| *why);
     // A row the manifest declares informational is measured and reported, never
     // enforced — including when the measurement cannot start at all, which is
-    // what the SMEFTsim rows look like until their model loads.
+    // what a SMEFTsim row looks like until the primitives its structures need
+    // exist. "Cannot start" arrives as an `Err` from a loader or as a panic from
+    // deeper in — the rooting refusing a structure it has no rule for — with equal
+    // legitimacy, so an informational row runs under the panic-catching path and a
+    // gated one does not.
+    let informational = known.is_some() || declared_mode(&key) == "info";
     let manifest_info = declared_mode(&key) == "info";
-    match (measure(path, known.is_some() || manifest_info), known) {
+    let outcome = if informational {
+        common::catching_panics(|| {
+            measure(path, true).map_err(|f| f.message().unwrap_or_default().to_string())
+        })
+        .map_err(Failed::from)
+    } else {
+        measure(path, false)
+    };
+    match (outcome, known) {
         (Ok(mut row), None) if manifest_info => {
             if row.note.is_none() {
                 println!(
@@ -712,6 +742,43 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     let table = parse_table(&json);
     let name = table.key.as_str();
 
+    // The table's process string is what this side enumerates from, and the
+    // manifest's is what generated the table; a row whose two statements have
+    // drifted apart compares one process against another's numbers.
+    if let Some(declared) = common::manifest::mg_amplitude_processes().get(name) {
+        if declared != &table.process {
+            return Err(format!(
+                "[{name}] the banked table was generated for '{}' and the manifest \
+                 declares mg_amplitude.process = '{declared}'",
+                table.process
+            )
+            .into());
+        }
+    }
+
+    // And the coupling-order bounds must be the row's script's own. The particle
+    // content legitimately differs — `pp_to_ll_qcd0` gates a hadronic process at
+    // the diagram level and one partonic subprocess of it here — but a bound
+    // MadGraph generated under and this side does not enumerate under makes the two
+    // sides different processes of the same model, with no other symptom than a
+    // diagram MadGraph has and we do not.
+    let script = common::script_for_row(name)?;
+    let script_process = common::script_process(&script)
+        .ok_or_else(|| format!("[{name}] no `generate` line in the row's .mg5 script"))?;
+    let (theirs, ours) = (
+        common::order_constraints(&script_process),
+        common::order_constraints(&table.process),
+    );
+    if theirs != ours {
+        return Err(format!(
+            "[{name}] the script generates '{script_process}' and the amplitude table \
+             was banked for '{}': the coupling-order bounds differ ({theirs:?} against \
+             {ours:?})",
+            table.process
+        )
+        .into());
+    }
+
     let model = common::model_for_row(name)?;
     let card = table
         .param_card
@@ -771,6 +838,36 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         .find(|(p, _)| *p == name)
         .map(|(_, o)| o.to_vec())
         .unwrap_or_else(|| (0..table.n_graphs).collect());
+
+    // Where MadGraph's graph list is one entry per diagram — which is what banking
+    // the per-diagram amplitudes beside the single-flow colour coefficients says —
+    // the two enumerations must agree before anything derived from them is read.
+    // A coupling-order bound present on one side and absent on the other shows up
+    // here as a missing diagram, and every check below would otherwise report that
+    // as its own kind of disagreement. `NGRAPHS` is not universally our diagram
+    // count: for `g g > g g` MadGraph writes the four-gluon contact as its three
+    // colour-ordered amplitudes, six `AMP()` over four diagrams, which is why the
+    // comparison is made only where the table pairs them one to one.
+    if per_diagram_fit {
+        if set.diagrams.len() != table.n_graphs {
+            return Err(format!(
+                "[{name}] diagram count for '{}': vibegraph {} vs MadGraph NGRAPHS {}",
+                table.process,
+                set.diagrams.len(),
+                table.n_graphs
+            )
+            .into());
+        }
+        if order.len() != table.n_graphs
+            || order.iter().collect::<BTreeSet<_>>().len() != order.len()
+        {
+            return Err(format!(
+                "[{name}] MG_DIAGRAM_ORDER is not a permutation of {} indices",
+                table.n_graphs
+            )
+            .into());
+        }
+    }
 
     // ── the integration configurations ───────────────────────────────────────
     // MadGraph's own AMP2 accumulators, against the configurations our compiler
@@ -844,23 +941,6 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
 
     let mut per_diagram: Vec<AmplitudeEvaluator> = Vec::new();
     if per_diagram_fit {
-        if set.diagrams.len() != table.n_graphs {
-            return Err(format!(
-                "[{name}] diagram count: vibegraph {} vs MadGraph NGRAPHS {}",
-                set.diagrams.len(),
-                table.n_graphs
-            )
-            .into());
-        }
-        if order.len() != table.n_graphs
-            || order.iter().collect::<BTreeSet<_>>().len() != order.len()
-        {
-            return Err(format!(
-                "[{name}] MG_DIAGRAM_ORDER is not a permutation of {} indices",
-                table.n_graphs
-            )
-            .into());
-        }
         // One evaluator per diagram: a single-diagram `DiagramSet` compiles the
         // same rooted tree the full set gives that diagram — the rooting and its
         // fermion sign are properties of the diagram — so its amplitude root is

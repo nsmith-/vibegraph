@@ -1,6 +1,6 @@
 {
  "key": "ee_to_wpwm_cw",
- "process": "e+ e- > W+ W-",
+ "process": "e+ e- > W+ W- NP<=1",
  "n_ext": 4,
  "n_graphs": 7,
  "n_flows": 1,

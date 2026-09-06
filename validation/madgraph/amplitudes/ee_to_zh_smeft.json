@@ -1,6 +1,6 @@
 {
  "key": "ee_to_zh_smeft",
- "process": "e+ e- > Z H",
+ "process": "e+ e- > Z H NP<=1",
  "n_ext": 4,
  "n_graphs": 14,
  "n_flows": 1,

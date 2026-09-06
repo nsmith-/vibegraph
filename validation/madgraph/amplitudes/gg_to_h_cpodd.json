@@ -1,6 +1,6 @@
 {
  "key": "gg_to_h_cpodd",
- "process": "g g > h",
+ "process": "g g > h NP<=1",
  "n_ext": 3,
  "n_graphs": 3,
  "n_flows": 1,

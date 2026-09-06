@@ -1,6 +1,6 @@
 {
  "key": "ee_to_mumu_4f",
- "process": "e+ e- > mu+ mu-",
+ "process": "e+ e- > mu+ mu- NP<=1",
  "n_ext": 4,
  "n_graphs": 11,
  "n_flows": 1,
