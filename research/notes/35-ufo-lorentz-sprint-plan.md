@@ -765,6 +765,47 @@ carrying `NP<=1`, and the artifact's model identity (label + digest) recording
 the SMEFTsim model — README scope paragraph updated from "SM only" to what is
 now gated.
 
+**Landed (`412bc68`, 2026-09-06).** `ee_to_ttx_smeft` `integrals` flipped
+`blocked → gate`: at 160 000×8 (the rung where our error, 2.95e-4 relative,
+matches the reference's 2.37e-4) σ = 2.222986 ± 6.565e-4 pb against MadGraph's
+2.2223 ± 5.257e-4, pull +0.82, rel +3.09e-4, χ²/dof 0.91; seven seeds span
+pulls −0.80…+1.22 (combined 2.222655 ± 2.486e-4, rel +1.60e-4, χ²/dof over
+seeds 0.75), and a fivefold budget ladder from 40k×8 to 640k×8 is flat
+(rel 8.2e-4 → 1.2e-4, every rung inside 1.4σ). `rel_tol = 0.002` is set from
+the measured seed spread (4.3× the worst seed), pull asserted. The gate is not
+blind to the SMEFT content: the same process under `-SMlimit_massless` gives
+0.5496 pb, a factor 4.04 below. `validate_sigma.rs` now loads each row's own
+model and restrict card (`common::model_for_row`), which is what lets a non-SM
+row exist in that gate at all. **F1's loader observation, corrected**: the
+card-less evaluation was not zero but the model's *Standard-Model limit* —
+`ParameterSet::apply_restrict` baked a restrict card into the defaults only
+for the parameters it zeroed, leaving all 129 Wilson coefficients at
+`parameters.py`'s zero, whereas MadGraph assigns every external the card names
+(`model_reader.set_parameters_and_couplings`) and writes those values into the
+generated `param_card.dat`. Fixed (non-zero values become defaults, zeros
+still lock); falsifier `restricted_defaults_are_madgraphs_generated_param_card`
+compares 421 external parameters over the 13 gated rows against MadGraph's own
+generated cards at ≤ 1e-12 and fails on the revert. Consequence on the record:
+the SM's card-less defaults now take `restrict_default.dat`'s values too
+(`Gf` 1.16639e-5, `WZ` 2.441404, `WT` 1.4915, `WW` 2.0476 — toward MadGraph;
+all suites green). Latent divergence filed: MadGraph also fixes parameters a
+restrict card sets to exactly `1`; no card in the repository does. **CLI**:
+`-<restrict>` resolution already existed (`config.rs::load_ufo_with_identity`;
+the brief's `restrict_variant: None` was a test helper); the path is pinned by
+the hermetic `cli_ufo_model.rs` (label, digest moving with the card, 36
+channels, a σ band excluding the SM limit by 3×, refusal of a mismatched
+variant on `generate`), and a real run reads σ = 2.224189 ± 0.001714 pb at a
+small budget. **Out of brief, acted on**: `NP^2==1` was parsed and silently
+dropped (34 channels, σ = 3.6686 pb — a different process); it is now
+`DiagramError::SquaredOrder`, a hard error with a control test (§7 D4's item
+has a live refusal in front of it). Eleven SMEFT rows' display `process`
+fields carry `NP<=1`. README scope and `--ufo-dir` sections rewritten.
+Environment finding for every later session: this host holds no PDF set and
+cannot fetch one (`lhapdfsets.web.cern.ch` 403 through the proxy), so the nine
+`pp_*` rows' `integrals`/`samples` cells (18 ❌ in the report) are
+unmeasurable here — they fail in `validation::require` before any code runs;
+and a worktree `target/` reached 17 GB mid-gate, filling the disk.
+
 ## 5. Coverage table — every new primitive has a MadGraph-gated row
 
 Rows import the work-area copy of the vendored
