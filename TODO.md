@@ -9,18 +9,20 @@ gate.
 wave 1 landed 2026-09-05 — R1 `bff5aa9`, L1 `00858a8`, V1 `2a34b9d` — and
 wave 2 landed 2026-09-06 — L2 `5f319a9`, E1 `069ffad`/`49146e6` — all merged;
 the landing records are in the note's session paragraphs, the corrections to
-the row table in its §5). Wave 3 (C1 `331646e`, E2 `733e33d`, F1 `c64a939` merged; R4 in flight) took
-it to **twelve SMEFTsim rows enforced against MadGraph, the capstone
-`e+ e- > t t~ NP<=1` (36 diagrams, 6.82e-15) among them** — the four SM-limit
+the row table in its §5). Wave 3 (C1 `331646e`, E2 `733e33d`, F1 `c64a939`, R4 `575c1b6`/`9604089`,
+all merged) took it to **thirteen SMEFTsim rows enforced against MadGraph,
+the capstone `e+ e- > t t~ NP<=1` (36 diagrams, 6.82e-15) and the cyclic
+tensor⊗tensor row (3.91e-13) among them** — the four SM-limit
 rows, `b b~ > h` (`IdentityAmp`), `g g > h` CP-even and CP-odd (the ALOHA ε
 sign pinned through their interference), the `e+ e- > t t~` dipole, `g g > g g`
 with `cG`/`cGtil` (a per-term contact-sign proxy fixed per vertex), and the
 scalar/vector four-fermion rows (`e+ e- > mu+ mu-` with both pairings in one
 vertex, `u u~ > t t~` after a colour slot-correction bug). Sixteen rows are
-banked; the rest stay `info` with their disagreements localized: one |M|²
-point on `e+ e- > W+ W-` at 2.08e-12 against a 1e-12 budget, a tenth-digit
-derived-parameter spread on `e+ e- > Z h`, the cyclic tensor⊗tensor row (R4),
-and the five-vector stretch row. Two of §5's premises fell on contact:
+banked; the three that stay `info` have their disagreements localized: one
+|M|² point on `e+ e- > W+ W-` at 2.08e-12 against a 1e-12 budget, a
+tenth-digit derived-parameter spread on `e+ e- > Z h`, and the five-vector
+stretch row (2.20e3). Next per the note's §8: wave 4, T1 (the toy UFO's
+oracle) ∥ C (the capstone σ and the CLI path). Two of §5's premises fell on contact:
 the cyclic tensor⊗tensor row needs a massive lepton (`tata_to_ttx_tensor4f`
 replaces it) and the shipped `restrict_massless` card zeroes every CP-odd
 coefficient, so the capstone reaches neither an `Epsilon` nor a tensor
@@ -635,9 +637,12 @@ hits them, each owned by a note-35 session:
   SMEFTsim model evaluates every amplitude to zero where `from_model_card`
   is right — check before any SMEFT σ run; the capstone `integrals` cell's
   blocker text is stale (C).
-- **Cyclic tensor⊗tensor structures** (R4): `Gamma(-2,·)*Gamma(-2,·)*Gamma(-1,·)*Gamma(-1,·)`
-  is a 4-cycle in the index graph; no rooted tree evaluates it — it needs the
-  rank-2 tensor slot R1 builds.
+- ~~**Cyclic tensor⊗tensor structures** (R4)~~ **done `575c1b6`**: the cut
+  line is evaluated as a Clifford element (grades 0 and 2), contracted into
+  the other line or the amplitude; `ta+ ta- > t t~` with `cleQt3` gated.
+  Blind spot recorded in note 35 §3 R4: the gated row cannot see the grade-0
+  weight (SMEFTsim's operator cancels it by construction), which rests on the
+  hermetic 4×4 pin.
 - SMEFTsim emits **no `Sigma` and no `C`**; literal `Sigma`, `d(a,b,c)` and the
   baryonic/sextet colour atoms are the toy model's job (T1–T3).
 

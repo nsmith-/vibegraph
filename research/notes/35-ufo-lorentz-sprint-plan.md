@@ -2,9 +2,12 @@
 
 **Status: IN PROGRESS — wave 1 landed 2026-09-05 (R1 `bff5aa9`, L1
 `00858a8`, V1 `2a34b9d`/`92db0ad`), wave 2 landed 2026-09-06 (L2 `5f319a9`,
-E1 `069ffad`/`49146e6`), wave 3 landing 2026-09-06 (C1 `331646e`, E2
-`733e33d`, F1 `c64a939` merged; R4 in flight). Twelve SMEFTsim rows are
-enforced against MadGraph, the capstone `e+ e- > t t~ NP<=1` among them.
+E1 `069ffad`/`49146e6`), wave 3 landed 2026-09-06 (C1 `331646e`, E2
+`733e33d`, F1 `c64a939`, R4 `575c1b6`/`9604089`, all merged). Thirteen
+SMEFTsim rows are enforced against MadGraph, the capstone `e+ e- > t t~
+NP<=1` and the cyclic tensor⊗tensor row among them; only `ee_to_wpwm_cw`
+(one point), `ee_to_zh_smeft` (derived parameters) and the five-vector
+stretch row remain informational.
 Per-session landing records are appended to the session paragraphs below
 ("Landed:"); §5 carries the corrections to the row table; §3.5 records the
 two sessions added mid-sprint (C1 colour, E2 contact sign).**
@@ -528,6 +531,41 @@ the banked param card is correct — check before the capstone σ run.
   vertex once T2 lands (the two must agree by the R1 identity); until then
   against MadGraph on `ee_to_ttx_tensor4f` (§5).
 
+**Landed (`575c1b6`, `9604089`, 2026-09-06).** `tata_to_ttx_tensor4f` gated
+(`diagrams` 4/4 and `amplitudes` 3.91e-13, per-diagram 5.03e-15, `G = +1i`).
+The physics: a two-gamma chain lives in grades 0 and 2 alone (`γ^αγ^β =
+g^{αβ} − iσ^{αβ}`), so the cut line is fixed by its `ψ̄ψ` and `ψ̄σ^{μν}ψ`
+bilinears and its contraction against the other line's two gammas is
+`4s − σ_{αβ}t^{αβ}`, a Clifford element again. Implementation:
+`WaveformSlot::Multivector` (a sixth result arena), ops `FierzOut`
+(`4s − 2·½t^{μν}σ_{μν}`), `FierzOutRev` (the same with `+` — the two index
+orders differ in the grade-2 sign and nothing else), `MultivectorIout/Oout`
+(following the input fermion's adjoint, momentum `p_bra − p_ket` routed by
+the element), `FierzPair`; the cycle is recognised by a pre-pass over the
+term (`cyclic_tensor_term`) rather than inside `build_child`, so the refusal
+names the shape and the walk 31 gated rows use is untouched. Conventions
+measured: a line the vertex reads against its own arrow takes `CΓᵀC⁻¹`,
+which for two gammas transposes them and moves the projectors with their
+slots **without** conjugating the chirality (unlike the single-gamma case);
+at the amplitude sink the choice of which line to cut is free (a control
+mutation confirms it). The tensor path reads each line's bound adjoint at
+its row slot directly, never `chain_adjoint`; the output leg's `flows` entry
+holds the adjoint of the produced current, the inverse of the slot's. **A
+blind spot worth carrying forward**: the gated row cannot see the grade-0
+weight of the reconstruction, because SMEFTsim writes the tensor operator
+with its aligned structures at exactly `−2×` the reversed ones (measured
+under `vg_cleQt3`, `c₁₀₅₂ = −2 c₁₀₄₉`), so the scalar part cancels
+identically — that is the γγ⊗γγ decomposition of `(l̄σ^{μν}e)(q̄σ_{μν}u)`
+doing its job, and the weight rests on the hermetic 4×4 Weyl-matrix pin
+alone. `is_yang_mills_vvv` now requires three legs (E2's finding), which
+moved `wpwm_to_wpwmz_cw` from 2.17e3 to 2.20e3 without resolving it — the
+five-vector structures still own that residual. Census: 13 gated rows;
+SMEFTsim allowlist gains `MultivectorIout/Oout` (the contact saturates its
+four legs, so it has one rooting); SM `KNOWN_UNCOVERED` gains the five ops.
+For T2: `Sigma` is the two gammas already contracted, so `cyclic_tensor_term`
+accepts one `Sigma` per line in place of two adjacent gammas, and a `Sigma`
+cut emits `∓2t` with the grade-0 term dropped.
+
 ## 4. Track L/V — loader, order bookkeeping and the MadGraph oracle
 
 ### L1 — loader and model-topology surface (feature-dev; first session, no MG)
@@ -875,7 +913,7 @@ oracle already banked.
 Wave 0 (manager, done): S0 vendored UFO + this note + TODO
 Wave 1:  R1 (hermetic)  ∥  L1 (loader/splitting)  ∥  V1 (bank the ladder, MG host)   ← landed 2026-09-05
 Wave 2:  L2 (SM-limit gate; needs L1+V1)  ∥  E1 (tree-shaped primitives; needs R1, L1, V1)   ← landed 2026-09-06
-Wave 3:  F1 (four-fermion; needs L1, V1)  →  R4 (tensor slot; needs R1, E1, F1)   ← F1 ∥ C1 ∥ E2 landed 2026-09-06; R4 in flight
+Wave 3:  F1 (four-fermion; needs L1, V1)  →  R4 (tensor slot; needs R1, E1, F1)   ← F1 ∥ C1 ∥ E2, then R4, landed 2026-09-06
 Wave 4:  T1 (toy oracle; needs V1's pipeline)  ∥  C (capstone; needs E1, F1, R4)
 Wave 5:  T2 (Sigma; needs R4, T1)  ∥  T3 (colour; needs T1)  →  Z (close-out)
 ```
