@@ -1540,7 +1540,7 @@ mod tests {
         ];
         for (what, ops) in structures {
             let term = LorentzTerm { coeff: 1.0, ops };
-            let rooted = root_term(&term, &vvvv, None, &[None; 4]).unwrap();
+            let rooted = root_term(&term, &vvvv, &[], None, &[None; 4]).unwrap();
             assert_eq!(
                 rooted.build_sign, -1,
                 "the {what} four-vector contact structure must carry the contact −1"
@@ -1556,7 +1556,7 @@ mod tests {
                 LorentzOp::Metric { mu: 0, nu: 1 },
             ],
         };
-        let rooted = root_term(&triple, &[3, 3, 3], None, &[None; 3]).unwrap();
+        let rooted = root_term(&triple, &[3, 3, 3], &[], None, &[None; 3]).unwrap();
         assert_eq!(
             rooted.build_sign, 1,
             "a triple-vector vertex takes no contact −1"
