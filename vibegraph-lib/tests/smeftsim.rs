@@ -434,7 +434,7 @@ fn mw_scheme_derived_parameters() {
 ///
 /// This list is the model's coverage instrument twice over: the diagram counts
 /// below and the op census at the end of the file both run on it.
-const GATED_ROWS: [(&str, &str); 8] = [
+const GATED_ROWS: [(&str, &str); 9] = [
     ("ee_to_mumu_smlimit", "e+ e- > mu+ mu-"),
     ("gg_to_ttx_smlimit", "g g > t t~"),
     ("gg_to_ttx_smlimit_qcd2", "g g > t t~ QCD<=2"),
@@ -443,6 +443,7 @@ const GATED_ROWS: [(&str, &str); 8] = [
     ("gg_to_h_cpeven", "g g > h NP<=1"),
     ("gg_to_h_cpodd", "g g > h NP<=1"),
     ("ee_to_ttx_dipole", "e+ e- > t t~ NP<=1"),
+    ("gg_to_gg_cg", "g g > g g NP<=1"),
 ];
 
 /// [`GATED_ROWS`] is exactly the set of SMEFTsim rows the manifest declares
@@ -483,16 +484,31 @@ fn gated_rows_are_the_manifest_s_gated_smeftsim_rows() {
 /// MadGraph's 3. It is a real diagram of this model, not a spurious one, which is
 /// what the `QCD<=2` row is here to show: bounding `QCD` while leaving `SMHLOOP`
 /// free brings it back, on both sides.
+///
+/// A row whose `diagrams` cell the manifest declares informational is counted and
+/// reported rather than asserted, exactly as `validate_madgraph_diagrams` does and
+/// for the same reason it does: `g g > g g` under a four-gluon vertex with several
+/// colour structures is one diagram here and one MadGraph graph per colour-ordered
+/// structure, a counting convention rather than a missing diagram. The amplitude
+/// gate compares those rows at the per-flow and configuration levels instead.
 #[test]
 fn gated_row_diagram_counts_match_madgraph() {
     let banked = banked_diagram_counts();
+    let modes = common::manifest::category_modes("diagrams");
     for (key, process) in GATED_ROWS {
         let model = common::model_for_row(key)
             .unwrap_or_else(|e| panic!("[{key}] load the row's model: {e}"));
         let want = banked
             .get(key)
             .unwrap_or_else(|| panic!("[{key}] has no entry in diagrams.json"));
-        assert_eq!(diagram_count(&model, process), *want, "[{key}] '{process}'");
+        let ours = diagram_count(&model, process);
+        if modes.get(key).map(String::as_str) == Some("info") {
+            println!(
+                "[{key}] '{process}': {ours} diagrams against MadGraph's {want} (informational)"
+            );
+            continue;
+        }
+        assert_eq!(ours, *want, "[{key}] '{process}'");
     }
 }
 
@@ -549,19 +565,17 @@ fn gated_rows_op_census() {
     // in any model (the helicity expansion derives it). The chiral projector ops and
     // the fused `Ffv*` forms are absent because SMEFTsim writes its SM currents as
     // `Gamma * ProjP + Gamma * ProjM` pairs that this vertex set roots through the
-    // generic path. `Gamma5Amp` (a bare pseudoscalar bilinear) and `EpsilonVout` (a
-    // Levi-Civita tensor rooted at a vector leg rather than closing into the
-    // amplitude) exist in this model but not in these rows: the dipole reaches γ⁵
-    // only inside a chain, and `g g > h` contracts its `Epsilon` into a scalar. The
-    // triple-gauge and four-gluon rows reach both, and take them off this list when
-    // they gate.
-    const KNOWN_UNCOVERED: [Op; 9] = [
+    // generic path. `Gamma5Amp` (a bare pseudoscalar bilinear) exists in this model
+    // but not in these rows: the dipole reaches γ⁵ only inside a chain, never as a
+    // bilinear of its own. The four-gluon row is what covers `EpsilonVout` (a
+    // Levi-Civita tensor rooted at a vector leg rather than closed into the
+    // amplitude) and `MetricVout`: its gluon-exchange diagrams root both at the
+    // off-shell gluon.
+    const KNOWN_UNCOVERED: [Op; 7] = [
         Op::Hels,
         Op::ProjMAmp,
         Op::ProjPAmp,
-        Op::MetricVout,
         Op::Gamma5Amp,
-        Op::EpsilonVout,
         Op::FfvVout,
         Op::FfvIout,
         Op::FfvOout,

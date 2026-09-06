@@ -503,10 +503,21 @@ impl LorentzEvalTree {
         let mut sign = 1.0;
         let mut visited_ops = Vec::new(); // LorentzOp is so small that Vec is probably better than HashSet
         let mut term_roots = Vec::new();
-        // Whether this term's once-per-vertex pure-metric −1 has been applied;
-        // guards against double application for structures with several Metric
-        // ops (VVVV).
+        // Whether this term's once-per-vertex −1 has been applied; guards against
+        // double application for structures with several Metric ops (VVVV).
         let mut metric_vertex_applied = false;
+
+        // An all-vector contact of four or more legs carries the −1 as a property of
+        // the *vertex*, not of the operators a particular term happens to contain: the
+        // four-gluon vertex and the field-strength operators sharing its legs sit in
+        // one interaction whose structures range over pure metrics, momentum products
+        // and Levi-Civita tensors, and a term-by-term test would give the same vertex
+        // different signs (and leave the Levi-Civita-only terms, which carry no Metric
+        // at all, unsigned). Applying it here also covers those terms.
+        if spins.len() >= 4 && spins.iter().all(|&s| s == 3) {
+            metric_vertex_applied = true;
+            sign = -sign;
+        }
 
         // If idx is specified, build the tree rooted at that leg
         if let Some(root_leg) = idx {
@@ -601,16 +612,16 @@ impl LorentzEvalTree {
                         tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
                     let child_nu =
                         tree.build_child(term, *nu, &mut visited_ops, flows, None, &mut sign)?;
-                    // A pure-metric structure (VVS/VVSS, or the propagator-free
-                    // 4-vector contact VVVV) carries an explicit −1 vertex factor,
-                    // once per term (Gamma-/P-carrying structures — FFV, VVV —
-                    // contract plainly). The sign holds whether the contraction
-                    // sinks into the *amplitude* (the VVVV contact term, which has
-                    // no propagator on its line) or into a scalar output leg (the
-                    // H-current from two Z chains, −1 against the −i/D scalar
+                    // A pure-metric boson structure (VVS/VVSS) carries an explicit
+                    // −1 vertex factor, once per term (Gamma-/P-carrying structures —
+                    // FFV, VVV — contract plainly). The sign holds whether the
+                    // contraction sinks into the *amplitude* or into a scalar output
+                    // leg (the H-current from two Z chains, −1 against the −i/D scalar
                     // propagator): both are pinned per-diagram against MadGraph
                     // AMP() — gg→gg for the amplitude root, the uux 2→6 and b b̄ 2→6
-                    // H classes for the output-leg root.
+                    // H classes for the output-leg root. The all-vector contact takes
+                    // the same −1 from the vertex-level test above, whatever its
+                    // structure contains.
                     let pure_metric = !term
                         .ops
                         .iter()
@@ -1396,6 +1407,79 @@ mod tests {
                 root: Some(4)
             }
         )
+    }
+
+    /// The four-vector contact's −1 is a property of the vertex, not of the operators
+    /// an individual term happens to carry.
+    ///
+    /// The four-gluon vertex and the field-strength operators sharing its legs form one
+    /// interaction whose Lorentz structures range over pure metrics (`VVVV1`), momentum
+    /// products (`VVVV2`) and Levi-Civita tensors carrying no `Metric` at all (`VVVV3`),
+    /// and the per-vertex sign factorisation requires one sign across all of them.
+    /// Keying the −1 on the term's operator content signs only the first, which is what
+    /// put the six higher-derivative four-gluon contact amplitudes of `g g > g g NP<=1`
+    /// a relative −1 away from the three Standard-Model ones. The triple-vector vertex
+    /// is the control: its own −1 is a source-side diagram sign, not a build sign, so a
+    /// rule keyed on "all-vector" alone would double it.
+    #[test]
+    fn four_vector_contact_sign_is_uniform_over_its_structures() {
+        let vvvv = vec![3, 3, 3, 3];
+        let structures = [
+            // VVVV1: Metric(1,4)*Metric(2,3)
+            (
+                "pure metric",
+                vec![
+                    LorentzOp::Metric { mu: 0, nu: 3 },
+                    LorentzOp::Metric { mu: 1, nu: 2 },
+                ],
+            ),
+            // VVVV2: P(3,2)*P(4,1)*Metric(1,2)
+            (
+                "momentum",
+                vec![
+                    LorentzOp::P { mu: 2, leg: 1 },
+                    LorentzOp::P { mu: 3, leg: 0 },
+                    LorentzOp::Metric { mu: 0, nu: 1 },
+                ],
+            ),
+            // VVVV3: Epsilon(1,2,3,4)*P(-1,2)*P(-1,3)
+            (
+                "Levi-Civita",
+                vec![
+                    LorentzOp::Epsilon {
+                        mu: 0,
+                        nu: 1,
+                        rho: 2,
+                        sigma: 3,
+                    },
+                    LorentzOp::P { mu: -1, leg: 1 },
+                    LorentzOp::P { mu: -1, leg: 2 },
+                ],
+            ),
+        ];
+        for (what, ops) in structures {
+            let term = LorentzTerm { coeff: 1.0, ops };
+            let rooted = root_term(&term, &vvvv, None, &[None; 4]).unwrap();
+            assert_eq!(
+                rooted.build_sign, -1,
+                "the {what} four-vector contact structure must carry the contact −1"
+            );
+        }
+
+        // VVV5: P(3,1)*Metric(1,2) at the amplitude sink — three vector legs, so no
+        // contact factor.
+        let triple = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![
+                LorentzOp::P { mu: 2, leg: 0 },
+                LorentzOp::Metric { mu: 0, nu: 1 },
+            ],
+        };
+        let rooted = root_term(&triple, &[3, 3, 3], None, &[None; 3]).unwrap();
+        assert_eq!(
+            rooted.build_sign, 1,
+            "a triple-vector vertex takes no contact −1"
+        );
     }
 
     #[test]
