@@ -20,7 +20,8 @@ use num_traits::Zero;
 
 use super::waveform_slot::WaveformSlot;
 use crate::helas::repr::lorentz::{
-    Bispinor, Bra, ComplexVector, DiracAdjoint, Ket, LorentzVector, SpinorRepr, VectorRepr,
+    epsilon4, epsilon_vector, Bispinor, Bra, ComplexVector, DiracAdjoint, Ket, LorentzVector,
+    SpinorRepr, VectorRepr,
 };
 use crate::helas::repr::numbers::Chirality;
 use crate::helas::repr::{ri, Real, C};
@@ -196,6 +197,16 @@ pub fn proj_fout_bare<F: Real>(fo: &Bispinor<F, Bra>, chirality: Chirality) -> B
     project_spinor(fo, chirality)
 }
 
+/// `Gamma5` on a bare ket line, `γ⁵ψ`.
+pub fn gamma5_fin_bare<F: Real>(fi: &Bispinor<F, Ket>) -> Bispinor<F, Ket> {
+    gamma5_spinor(fi)
+}
+
+/// `Gamma5` on a bare bra line, `ψ̄γ⁵`.
+pub fn gamma5_fout_bare<F: Real>(fo: &Bispinor<F, Bra>) -> Bispinor<F, Bra> {
+    gamma5_spinor(fo)
+}
+
 /// Scalar bilinear `ψ̄ Γ ψ` on bare spinors.
 pub fn scalar_bilinear_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
@@ -203,6 +214,11 @@ pub fn scalar_bilinear_bare<F: Real>(
     chirality: Chirality,
 ) -> C<F> {
     Bispinor::scalar_bilinear(fo, fi, chirality)
+}
+
+/// Pseudoscalar bilinear `ψ̄ γ⁵ ψ` on bare spinors.
+pub fn pseudoscalar_bilinear_bare<F: Real>(fo: &Bispinor<F, Bra>, fi: &Bispinor<F, Ket>) -> C<F> {
+    Bispinor::pseudoscalar_bilinear(fo, fi, Chirality::Both)
 }
 
 /// `Metric`: contract two bare contravariant vectors → scalar.
@@ -213,6 +229,29 @@ pub fn metric_bare<F: Real>(v1: &ComplexVector<F>, v2: &ComplexVector<F>) -> C<F
 /// `MetricVout`: the contravariant current `g^{μν}V_ν = V^μ` — identity on bare storage.
 pub fn metric_vout_bare<F: Real>(vin: &ComplexVector<F>) -> ComplexVector<F> {
     *vin
+}
+
+/// `EpsilonVout` on bare contravariant vectors: `E^σ = ε^{μνρσ} a_μ b_ν c_ρ`, the
+/// three-vectors-in current characterised by `E·d = epsilon_amp_bare(a, b, c, d)`
+/// under the Minkowski contraction. Output is contravariant, like every other
+/// vector current here.
+pub fn epsilon_vout_bare<F: Real>(
+    a: &ComplexVector<F>,
+    b: &ComplexVector<F>,
+    c: &ComplexVector<F>,
+) -> ComplexVector<F> {
+    epsilon_vector(a, b, c)
+}
+
+/// `EpsilonAmp` on bare contravariant vectors: the fully contracted
+/// `ε^{μνρσ} a_μ b_ν c_ρ d_σ` (ALOHA's `ε^{0123} = −1`; see [`epsilon4`]).
+pub fn epsilon_amp_bare<F: Real>(
+    a: &ComplexVector<F>,
+    b: &ComplexVector<F>,
+    c: &ComplexVector<F>,
+    d: &ComplexVector<F>,
+) -> C<F> {
+    epsilon4(a, b, c, d)
 }
 
 // ──────────────────────────── propagator ────────────────────────────
@@ -311,14 +350,28 @@ pub fn pmom_from_mom<F: Real>(momentum: LorentzVector<F>) -> VectorWf<F> {
     }
 }
 
-/// `PMomOut`: the 4-momentum of the vertex's *output* leg, `−Σ (input momenta)`, as a
-/// vector current. The only variadic kernel (all vertex inputs), so it takes the
-/// operands as an iterator rather than fixed arity.
+/// `PMomOut`: the 4-momentum of the vertex's *output* leg — minus the sum of the
+/// input legs' momenta in the all-incoming convention. The only variadic kernel
+/// (all vertex inputs), so it takes the operands as an iterator rather than fixed
+/// arity.
+///
+/// A boson current stores the momentum flowing *into* the vertex, so it enters that
+/// sum as it is. A fermion current stores the momentum flowing *along its line*:
+/// the bra half of a pair carries the line's momentum into the vertex and the ket
+/// half carries it out, so the pair contributes `p_bra − p_ket` — the same
+/// combination the vector current those two fermions produce is routed with
+/// ([`gamma_vout_c`]). Summing a fermion pair with two plus signs instead reads the
+/// wrong momentum into every `P` that names the output leg of an `FFV` vertex,
+/// which is invisible until a structure puts one there (SMEFTsim's dipoles do).
 pub fn pmom_out<'a, F: Real + 'a>(
     children: impl IntoIterator<Item = &'a WaveformSlot<F>>,
 ) -> WaveformSlot<F> {
     let momentum = -children.into_iter().fold(LorentzVector::zero(), |acc, c| {
-        acc + c.momentum().expect("PMomOut: empty slot")
+        let p = c.momentum().expect("PMomOut: empty slot");
+        match c {
+            WaveformSlot::FermionIn(_) => acc - p,
+            _ => acc + p,
+        }
     });
     WaveformSlot::Vector(pmom_from_mom(momentum))
 }
@@ -430,6 +483,30 @@ fn project_spinor<F: Real, Fl: DiracAdjoint>(
         Chirality::Right => s.project_right(),
         Chirality::Both => *s,
     }
+}
+
+/// `Gamma5`: γ⁵ on a continuing fermion current, preserving the input adjoint.
+///
+/// `γ⁵ = P_R − P_L` is diagonal in the Weyl basis, so the left action on a ket and
+/// the right action on a bra are the same weighting of the stored blocks — which is
+/// what lets one kernel serve both flows, as [`chiral_project`] does.
+pub fn gamma5<F: Real>(child: &WaveformSlot<F>) -> WaveformSlot<F> {
+    match child {
+        WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
+            gamma5_fin_bare(&f.spinor),
+            f.momentum,
+        )),
+        WaveformSlot::FermionOut(f) => WaveformSlot::FermionOut(OutDiracWf::from_spinor(
+            gamma5_fout_bare(&f.spinor),
+            f.momentum,
+        )),
+        _ => panic!("gamma5: expected fermion input"),
+    }
+}
+
+/// γ⁵ on a stored spinor block, `P_R − P_L`.
+fn gamma5_spinor<F: Real, Fl: DiracAdjoint>(s: &Bispinor<F, Fl>) -> Bispinor<F, Fl> {
+    s.project_right() - s.project_left()
 }
 
 /// Chiral projection of a flow-in fermion current, preserving the flow.
@@ -596,6 +673,19 @@ pub fn identity_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> Wavefo
     scalar_bilinear_current(a, b, Chirality::Both)
 }
 
+/// `Gamma5Amp`: pseudoscalar bilinear `ψ̄ γ⁵ ψ`; the bra/ket are picked by the legs'
+/// actual adjoint. Like the scalar bilinears it takes no reversal sign — `C γ⁵ᵀ C⁻¹
+/// = γ⁵`, so reading the pair against the vertex's defined adjoint leaves the
+/// structure unchanged (the −1 a crossed pair needs is a rooting sign, applied in
+/// [`super::root_lorentz`] alongside the `ProjM`/`Identity` case).
+pub fn gamma5_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    let (fo, fi, _) = resolve_bra_ket(a, b);
+    WaveformSlot::Scalar(ScalarWf {
+        value: pseudoscalar_bilinear_bare(&fo.spinor, &fi.spinor),
+        momentum: fo.momentum - fi.momentum,
+    })
+}
+
 /// `ProjMAmp`/`ProjPAmp`/`IdentityAmp`: scalar bilinear `ψ̄ Γ ψ` (`Γ = P_L`, `P_R`, or
 /// `1`); the bra/ket are picked by the legs' actual adjoint.
 pub fn scalar_bilinear_current<F: Real>(
@@ -660,11 +750,46 @@ pub fn metric_vout_c<F: Real>(vin: &VectorWf<F>) -> VectorWf<F> {
     *vin
 }
 
+/// `EpsilonVout`: three vector currents → the off-shell vector `ε^{μνρσ} a_μ b_ν c_ρ`.
+pub fn epsilon_vout<F: Real>(
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+    c: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    let [va, vb, vc] = expect_vectors([a, b, c]);
+    WaveformSlot::Vector(VectorWf {
+        eps: epsilon_vout_bare(&va.eps, &vb.eps, &vc.eps),
+        momentum: va.momentum + vb.momentum + vc.momentum,
+    })
+}
+
+/// `EpsilonAmp`: four vector currents → the scalar `ε^{μνρσ} a_μ b_ν c_ρ d_σ`.
+pub fn epsilon_amp<F: Real>(
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+    c: &WaveformSlot<F>,
+    d: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    let [va, vb, vc, vd] = expect_vectors([a, b, c, d]);
+    WaveformSlot::Scalar(ScalarWf {
+        value: epsilon_amp_bare(&va.eps, &vb.eps, &vc.eps, &vd.eps),
+        momentum: va.momentum + vb.momentum + vc.momentum + vd.momentum,
+    })
+}
+
+/// The vector currents behind `N` slots, panicking on any non-vector operand.
+fn expect_vectors<F: Real, const N: usize>(slots: [&WaveformSlot<F>; N]) -> [VectorWf<F>; N] {
+    slots.map(|s| match s {
+        WaveformSlot::Vector(v) => *v,
+        other => panic!("Epsilon: expected vector input, got {other:?}"),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::helas::eval::prop_harness::{check_agree, rand_bra, rand_c, rand_ket, rand_vector};
-    use crate::helas::repr::lorentz::LorentzVector;
+    use crate::helas::repr::lorentz::{LorentzVector, Multivector};
 
     /// The fused-kernel oracle tolerance: far tighter than the whole-amplitude MG
     /// gate (1e-12), since a single kernel has few compounding roundings — fusion
@@ -676,6 +801,181 @@ mod tests {
             value: g,
             momentum: LorentzVector::zero(),
         })
+    }
+
+    /// Tolerance for the Clifford-algebra oracles below: both sides evaluate the
+    /// same bilinears through different routes (stored-component kernels against
+    /// the graded Dirac basis, which goes through a 4×4 matrix product), so the
+    /// gap is a handful of roundings on inputs of order one.
+    const CLIFFORD_TOL: f64 = 1e-13;
+
+    fn as_vector(slot: &WaveformSlot<f64>) -> ComplexVector<f64> {
+        match slot {
+            WaveformSlot::Vector(v) => v.eps,
+            other => panic!("expected a vector slot, got {other:?}"),
+        }
+    }
+
+    fn as_scalar(slot: &WaveformSlot<f64>) -> C<f64> {
+        match slot {
+            WaveformSlot::Scalar(s) => s.value,
+            other => panic!("expected a scalar slot, got {other:?}"),
+        }
+    }
+
+    /// The line's sixteen bilinears, the basis every oracle below is written in.
+    fn line(bra: &WaveformSlot<f64>, ket: &WaveformSlot<f64>) -> Multivector<f64> {
+        let (fo, fi, reversed) = resolve_bra_ket(bra, ket);
+        assert!(!reversed, "the oracles pass (bra, ket) in that order");
+        fo.spinor.fierz_coefficients(&fi.spinor)
+    }
+
+    /// A γ-chain composed by the evaluator is the Clifford product of its factors.
+    ///
+    /// `GammaVout(ψ̄, GammaIout(p, ψ))` is `ψ̄ γ^μ p̸ ψ` and
+    /// `GammaVout(GammaOout(p, ψ̄), ψ)` is `ψ̄ p̸ γ^μ ψ`: the same two gammas in
+    /// opposite orders, which is the whole content of a dipole structure
+    /// (`γ^μ p̸ − p̸ γ^μ = −2i σ^{μν} p_ν`) and the one thing a bilinear that
+    /// discarded the ordering would get wrong. Contracting the free index with an
+    /// arbitrary `q` turns each into a scalar the graded basis states directly:
+    /// `ψ̄ q̸ p̸ ψ = ⟨fierz(ψ̄, ψ), q̸ p̸⟩`.
+    #[test]
+    fn gamma_chain_order_is_the_clifford_product() {
+        let mut rng = crate::helas::eval::prop_harness::seeded_rng(0x6A11A_01);
+        for _ in 0..256 {
+            let (bra, ket) = (rand_bra(&mut rng), rand_ket(&mut rng));
+            let (p, q) = (rand_vector(&mut rng), rand_vector(&mut rng));
+            let coeffs = line(&bra, &ket);
+            let (pv, qv) = (as_vector(&p), as_vector(&q));
+
+            let ket_side = metric(&gamma_vout(&bra, &gamma_iout(&p, &ket)), &q);
+            let expected = coeffs.fierz_pairing(&Multivector::from_gamma_pair(&qv, &pv));
+            assert!(
+                (as_scalar(&ket_side) - expected).norm() < CLIFFORD_TOL,
+                "psi-bar q-slash p-slash psi: kernel {:?} vs Clifford {expected:?}",
+                as_scalar(&ket_side)
+            );
+
+            let bra_side = metric(&gamma_vout(&gamma_oout(&p, &bra), &ket), &q);
+            let expected = coeffs.fierz_pairing(&Multivector::from_gamma_pair(&pv, &qv));
+            assert!(
+                (as_scalar(&bra_side) - expected).norm() < CLIFFORD_TOL,
+                "psi-bar p-slash q-slash psi: kernel {:?} vs Clifford {expected:?}",
+                as_scalar(&bra_side)
+            );
+        }
+    }
+
+    /// `Gamma5Amp` is the pseudoscalar bilinear, and `Gamma5` on a continuing
+    /// current is `γ⁵` acting from the side the current's adjoint dictates: pinned
+    /// on both flows against the graded basis, where `γ⁵ = P_R − P_L`.
+    #[test]
+    fn gamma5_acts_as_the_chirality_matrix_on_either_flow() {
+        let g5: Multivector<f64> = Multivector::from_projector(Chirality::Right)
+            - Multivector::from_projector(Chirality::Left);
+        let mut rng = crate::helas::eval::prop_harness::seeded_rng(0x6A11A_02);
+        for _ in 0..256 {
+            let (bra, ket) = (rand_bra(&mut rng), rand_ket(&mut rng));
+            let coeffs = line(&bra, &ket);
+            let expected = coeffs.fierz_pairing(&g5);
+
+            assert!(
+                (as_scalar(&gamma5_amp(&bra, &ket)) - expected).norm() < CLIFFORD_TOL,
+                "Gamma5Amp is not the pseudoscalar bilinear"
+            );
+            // γ⁵ on the ket, then the plain bilinear — the same number.
+            assert!(
+                (as_scalar(&identity_amp(&bra, &gamma5(&ket))) - expected).norm() < CLIFFORD_TOL,
+                "Gamma5 on the ket does not reproduce psi-bar gamma5 psi"
+            );
+            // and on the bra, which is the case a γ⁵ mid-chain on a bra line hits.
+            assert!(
+                (as_scalar(&identity_amp(&gamma5(&bra), &ket)) - expected).norm() < CLIFFORD_TOL,
+                "Gamma5 on the bra does not reproduce psi-bar gamma5 psi"
+            );
+        }
+    }
+
+    /// A γ⁵ inside a chain composes as the Clifford product, on either side of the
+    /// slash — the structure SMEFTsim's CP-odd dipole (`FFV2`) is built from.
+    #[test]
+    fn gamma5_inside_a_chain_is_the_clifford_product() {
+        let g5: Multivector<f64> = Multivector::from_projector(Chirality::Right)
+            - Multivector::from_projector(Chirality::Left);
+        let mut rng = crate::helas::eval::prop_harness::seeded_rng(0x6A11A_03);
+        for _ in 0..256 {
+            let (bra, ket) = (rand_bra(&mut rng), rand_ket(&mut rng));
+            let (p, q) = (rand_vector(&mut rng), rand_vector(&mut rng));
+            let coeffs = line(&bra, &ket);
+            let (pv, qv) = (as_vector(&p), as_vector(&q));
+
+            // ψ̄ q̸ p̸ γ⁵ ψ
+            let ours = metric(&gamma_vout(&bra, &gamma_iout(&p, &gamma5(&ket))), &q);
+            let expected =
+                coeffs.fierz_pairing(&Multivector::from_gamma_pair(&qv, &pv).clifford_product(&g5));
+            assert!(
+                (as_scalar(&ours) - expected).norm() < CLIFFORD_TOL,
+                "gamma5 at the end of a two-gamma chain"
+            );
+        }
+    }
+
+    /// `EpsilonVout` is `EpsilonAmp` with one index left free: contracting the
+    /// current with a fourth vector reproduces the fully contracted symbol, which
+    /// is what makes the two kernels one object rooted two ways.
+    #[test]
+    fn epsilon_current_contracts_to_the_epsilon_scalar() {
+        let mut rng = crate::helas::eval::prop_harness::seeded_rng(0x6A11A_04);
+        for _ in 0..256 {
+            let (a, b, c, d) = (
+                rand_vector(&mut rng),
+                rand_vector(&mut rng),
+                rand_vector(&mut rng),
+                rand_vector(&mut rng),
+            );
+            let contracted = as_scalar(&metric(&epsilon_vout(&a, &b, &c), &d));
+            let full = as_scalar(&epsilon_amp(&a, &b, &c, &d));
+            assert!(
+                (contracted - full).norm() < CLIFFORD_TOL,
+                "EpsilonVout . d = {contracted:?} vs EpsilonAmp = {full:?}"
+            );
+            // Antisymmetry: one transposition flips the sign, and a repeated
+            // argument annihilates it.
+            let swapped = as_scalar(&epsilon_amp(&b, &a, &c, &d));
+            assert!(
+                (swapped + full).norm() < CLIFFORD_TOL,
+                "epsilon antisymmetry"
+            );
+            assert!(
+                as_scalar(&epsilon_amp(&a, &a, &c, &d)).norm() < CLIFFORD_TOL,
+                "epsilon with a repeated argument"
+            );
+        }
+    }
+
+    /// The Levi-Civita convention, stated where the evaluator uses it.
+    ///
+    /// `epsilon_amp` takes contravariant arguments and returns the *all-lower*
+    /// symbol, `ε_{μνρσ} a^μ b^ν c^ρ d^σ`, which is `+1` on the ordered basis
+    /// `(e₀, e₁, e₂, e₃)`. ALOHA stores the upper-index component
+    /// (`aloha_object.py::L_Epsilon.give_parity`, `ε^{0123} = −1`) and applies the
+    /// metric at contraction time, so the two differ by the determinant of the
+    /// metric — the trap this test exists to keep visible. A flipped convention
+    /// fails here before it reaches a process.
+    #[test]
+    fn epsilon_amp_returns_the_all_lower_symbol() {
+        let e = |i: usize| {
+            let mut c = [C::new(0.0, 0.0); 4];
+            c[i] = C::new(1.0, 0.0);
+            WaveformSlot::Vector(VectorWf {
+                eps: ComplexVector::new(c),
+                momentum: LorentzVector::zero(),
+            })
+        };
+        let value = as_scalar(&epsilon_amp(&e(0), &e(1), &e(2), &e(3)));
+        assert_eq!(value, C::new(1.0, 0.0), "epsilon_{{0123}} = +1");
+        // Which is minus ALOHA's stored upper-index component.
+        assert_eq!(-value, C::new(-1.0, 0.0), "ALOHA's epsilon^{{0123}} = -1");
     }
 
     /// `FfvVout` equals the generic chiral pair `g_L·GammaVout(a, ProjM(b)) +

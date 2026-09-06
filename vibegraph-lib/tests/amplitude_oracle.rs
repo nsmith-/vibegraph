@@ -210,6 +210,38 @@ const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
         "2 -> 1, as `bbx_to_h_identity`: one accumulator, `|AMP(1) + AMP(2) + AMP(3)|²`, \
          over the three graphs",
     ),
+    (
+        "ee_to_ttx_dipole",
+        "one accumulator per s-channel boson: the SM current and the four dipole \
+         structures on the photon line are one topology to MadGraph's channel mapping, \
+         and likewise on the Z line, so its two accumulators cover our ten diagrams",
+    ),
+    (
+        "ee_to_wpwm_cw",
+        "one accumulator per topology: the SM `VVV5` triple-gauge vertex and O_W's \
+         `VVV7`/`VVV8` sit on the same photon line, and again on the Z line, so \
+         MadGraph writes [3, 3, 1] over our seven diagrams",
+    ),
+    (
+        "ee_to_zh_smeft",
+        "one accumulator per s-channel boson: the SM `VVS1` vertex and the derivative \
+         `VVS4..7` structures share the photon line and the Z line, so MadGraph writes \
+         [6, 8] over our fourteen diagrams",
+    ),
+    (
+        "gg_to_gg_cg",
+        "one accumulator per topology per exchanged particle: in each channel the five \
+         gluon-exchange diagrams (the SM `VVV5` vertex against O_G's `VVV7` and \
+         O_Gtil's `VVV8` at either end) share one and the SMHLOOP Higgs exchange has \
+         its own, giving [5, 1] three times over our eighteen configuration-carrying \
+         diagrams",
+    ),
+    (
+        "wpwm_to_wpwmz_cw",
+        "as `ee_to_wpwm_cw` at five legs: the SM and O_W gauge structures on one \
+         topology share an accumulator, so MadGraph writes 21 of them over our \
+         configuration-carrying diagrams",
+    ),
 ];
 
 /// Processes whose linear-level comparison is known to disagree with MadGraph, with the
@@ -259,6 +291,27 @@ const MG_DIAGRAM_ORDER: &[(&str, &[usize])] = &[
             9, 11, 13, 15, 10, 12, 14, 16, 0, 2, 4, 6, 1, 3, 5, 7, 8, 17, 19, 21, 23, 18, 22, 20,
             24,
         ],
+    ),
+    // MadGraph lists a vertex's Lorentz structures in the reverse of our order, so a
+    // row whose SMEFT structures sit on the same topology as the Standard Model's
+    // pairs by reversing each topology's block.
+    ("ee_to_wpwm_cw", &[2, 1, 0, 5, 4, 3, 6]),
+    ("ee_to_ttx_dipole", &[0, 2, 1, 4, 3, 5, 7, 6, 9, 8]),
+    // Not a permutation: MadGraph writes the three four-gluon contacts as their
+    // three colour-ordered amplitudes each, nine `AMP()` over three diagrams, so
+    // this row's 21 diagrams face 27 graphs. Only the eighteen
+    // configuration-carrying diagrams are read here (the contact entries name the
+    // first amplitude of their diagram's group: ours 0 is MadGraph's Standard-Model
+    // contact, 1 its O_G contact, 2 its O_Gtil contact).
+    (
+        "gg_to_gg_cg",
+        &[
+            6, 3, 0, 13, 12, 11, 10, 9, 14, 19, 18, 17, 16, 15, 20, 25, 24, 23, 22, 21, 26,
+        ],
+    ),
+    (
+        "ee_to_zh_smeft",
+        &[0, 1, 2, 3, 4, 5, 7, 6, 8, 10, 9, 11, 12, 13],
     ),
     (
         "ud_to_epemud_qcd0",

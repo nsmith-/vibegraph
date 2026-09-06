@@ -1219,6 +1219,14 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 let out = kernel::proj_fout_bare(&fout[f as usize], chirality);
                 fout[loc] = out;
             }
+            Instr::Gamma5Fin { f } => {
+                let out = kernel::gamma5_fin_bare(&fin[f as usize]);
+                fin[loc] = out;
+            }
+            Instr::Gamma5Fout { f } => {
+                let out = kernel::gamma5_fout_bare(&fout[f as usize]);
+                fout[loc] = out;
+            }
             Instr::Bilinear {
                 bra,
                 ket,
@@ -1231,6 +1239,11 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 );
                 scalars[loc] = out;
             }
+            Instr::Pseudoscalar { bra, ket } => {
+                let out =
+                    kernel::pseudoscalar_bilinear_bare(&fout[bra as usize], &fin[ket as usize]);
+                scalars[loc] = out;
+            }
             Instr::Metric { a, b } => {
                 let out = kernel::metric_bare(&vectors[a as usize], &vectors[b as usize]);
                 scalars[loc] = out;
@@ -1239,6 +1252,23 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 let out = kernel::metric_vout_bare(&vectors[v as usize]);
                 vectors[loc] = out;
             }
+            Instr::EpsilonVout { a, b, c } => {
+                let out = kernel::epsilon_vout_bare(
+                    &vectors[a as usize],
+                    &vectors[b as usize],
+                    &vectors[c as usize],
+                );
+                vectors[loc] = out;
+            }
+            Instr::EpsilonAmp { a, b, c, d } => {
+                let out = kernel::epsilon_amp_bare(
+                    &vectors[a as usize],
+                    &vectors[b as usize],
+                    &vectors[c as usize],
+                    &vectors[d as usize],
+                );
+                scalars[loc] = out;
+            }
             Instr::PMom { mom } => {
                 let out = kernel::pmom_bare(&moms[mom as usize]);
                 vectors[loc] = out;
@@ -1246,8 +1276,9 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
             Instr::PMomOut { start, len } => {
                 let slice = &mom_ops[start as usize..(start + len) as usize];
                 let mut acc = LorentzVector::zero();
-                for &mid in slice {
-                    acc = acc + moms[mid as usize];
+                for &(mid, sign) in slice {
+                    let p = moms[mid as usize];
+                    acc = if sign < 0 { acc - p } else { acc + p };
                 }
                 let neg = -acc;
                 vectors[loc] = kernel::pmom_bare(&neg);
@@ -1534,6 +1565,10 @@ pub(super) fn apply<'a, F: Real + 'a>(
         Op::Metric => kernel::metric(kid(0), kid(1)),
         Op::MetricVout => kernel::metric_vout(kid(0)),
         Op::IdentityAmp => kernel::identity_amp(kid(0), kid(1)),
+        Op::Gamma5 => kernel::gamma5(kid(0)),
+        Op::Gamma5Amp => kernel::gamma5_amp(kid(0), kid(1)),
+        Op::EpsilonVout => kernel::epsilon_vout(kid(0), kid(1), kid(2)),
+        Op::EpsilonAmp => kernel::epsilon_amp(kid(0), kid(1), kid(2), kid(3)),
         Op::PMom => kernel::pmom(kid(0)),
         // n-ary (all vertex inputs): the one variadic kernel takes the operands as
         // an iterator of references.

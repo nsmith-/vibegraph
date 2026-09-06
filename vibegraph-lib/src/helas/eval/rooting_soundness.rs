@@ -385,3 +385,107 @@ fn root_override_hook_is_transparent() {
     }
     clear_root_override();
 }
+
+/// A momentum-slashed γ-chain is rooting-invariant, including at the vertex's own
+/// vector leg.
+///
+/// SMEFTsim's top dipoles (`FFV9`, and `FFV2` with a `Gamma5` in the middle) are the
+/// first structures in the suite whose `P` names the *output* leg of a vertex that
+/// also closes a fermion pair. Rooted at either fermion leg that `P` reads a bound
+/// leg's momentum; rooted at the vector leg it becomes `PMomOut`, the negated
+/// all-incoming sum over the vertex's inputs — and a fermion pair enters that sum as
+/// `p_bra − p_ket`, not as `p_bra + p_ket`, because a fermion current stores the
+/// momentum flowing along its line rather than into the vertex. Summing the pair
+/// with two plus signs leaves every other row of the suite untouched (no Standard
+/// Model structure puts a `P` on an `FFV` output leg) and moves this one by percent,
+/// which is why the falsifier is here rather than left to the process gate.
+///
+/// Fast enough to run unignored: ten diagrams, two rootings, one phase-space point.
+#[test]
+#[cfg(feature = "extended-validation")]
+fn momentum_slashed_chain_is_rooting_invariant() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let model = Arc::new(
+        UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_ctdipole.dat")),
+        )
+        .expect("load SMEFTsim under the dipole card"),
+    );
+    let table: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            root.join("../validation/madgraph/amplitudes/ee_to_ttx_dipole.json"),
+        )
+        .expect("the banked dipole table"),
+    )
+    .expect("parse the banked dipole table");
+    let card: ParamCard = table["param_card"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .parse()
+        .expect("the banked param card");
+    let evaluated = EvaluatedModel::from_model_card((*model).clone(), &card);
+    let opts = ParsingOptions::default();
+    let pc = parse_proc_card("generate e+ e- > t t~ NP<=1", &opts).unwrap();
+    let sets = generate_from_proc_card(&pc, model.as_ref()).unwrap();
+    let set = sets.iter().find(|s| !s.diagrams.is_empty()).unwrap();
+    let point = &table["points"][0];
+    let momenta: Vec<LorentzVector<f64>> = point["momenta"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            let c: Vec<f64> = m
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_f64().unwrap())
+                .collect();
+            LorentzVector::new(c[0], c[1], c[2], c[3])
+        })
+        .collect();
+    let hel: Vec<i32> = table["helicities"]
+        [point["detail"]["helicities"][0].as_u64().unwrap() as usize]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap() as i32)
+        .collect();
+
+    let per_root = |r: usize| -> Vec<num_complex::Complex<f64>> {
+        set_root_override(Box::new(move |_| VtxIdx(r)));
+        let values = set
+            .diagrams
+            .iter()
+            .map(|d| {
+                let one = DiagramSet {
+                    particles_in: set.particles_in.clone(),
+                    particles_out: set.particles_out.clone(),
+                    diagrams: vec![d.clone()],
+                };
+                let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
+                let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
+                let mut scratch = bound.scratch_space();
+                bound.eval_amplitude(&momenta, &hel, &mut scratch)
+            })
+            .collect();
+        clear_root_override();
+        values
+    };
+
+    let (at_fermion, at_vector) = (per_root(1), per_root(0));
+    let scale = at_fermion
+        .iter()
+        .fold(0.0f64, |m, z| m.max(z.norm()))
+        .max(1e-300);
+    for (d, (a, b)) in at_fermion.iter().zip(&at_vector).enumerate() {
+        assert!(
+            (a - b).norm() / scale < REL_TOL,
+            "diagram {d}: rooted at a fermion leg {a:?}, at the vector leg {b:?}"
+        );
+    }
+}

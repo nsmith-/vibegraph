@@ -98,6 +98,20 @@ pub enum Op {
     MetricVout,
     /// full scalar bilinear ψ̄ δ ψ.
     IdentityAmp,
+    /// γ⁵ on a continuing fermion current. Preserves the input's adjoint: γ⁵ is
+    /// diagonal in the Weyl basis, so the same weighting acts on a ket from the
+    /// left and on a bra from the right.
+    Gamma5,
+    /// pseudoscalar bilinear ψ̄ γ⁵ ψ.
+    Gamma5Amp,
+    /// three vectors → off-shell vector current `E^σ = ε^{μνρσ} a_μ b_ν c_ρ`, the
+    /// free index last. Operands are the ε arguments with the output slot removed;
+    /// the antisymmetry sign of moving that slot to the end is absorbed by the
+    /// rooting, which swaps two operands when it is negative.
+    EpsilonVout,
+    /// four vectors → scalar `ε^{μνρσ} a_μ b_ν c_ρ d_σ`, operands in ε argument
+    /// order.
+    EpsilonAmp,
     // ── fused chiral FFV kernels ──
     // A vertex whose structures form a chiral pair (`Gamma·ProjM` / `Gamma·ProjP`
     // variants of one contraction shape) is fused at lowering into a single node:
