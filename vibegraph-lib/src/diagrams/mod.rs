@@ -63,6 +63,13 @@ pub enum DiagramError {
     Pool(#[from] rayon::ThreadPoolBuildError),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[error(
+        "squared-order constraint `{0}` is not supported: this generator selects diagrams by \
+         their coupling orders and squares the whole amplitude, so it cannot restrict the \
+         *interference* terms a `^2` constraint names. Ask for the amplitude-level order \
+         instead (`{1}<=n`), which keeps every term a diagram of that order contributes to"
+    )]
+    SquaredOrder(String, String),
 }
 
 // ── Output type ───────────────────────────────────────────────────────────────
@@ -202,6 +209,14 @@ fn generate_from_process_spec(
     model: &UFOModel,
     aliases: &AliasTable,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
+    // A `^2` constraint bounds the order of an interference term in |M|^2, which is
+    // a statement about pairs of diagrams; nothing downstream of here can express one,
+    // and dropping it silently would answer a different question than the one asked —
+    // the amplitude-level bound over the same order, whose cross section differs.
+    if let Some(c) = spec.coupling_constraints.iter().find(|c| c.squared) {
+        return Err(DiagramError::SquaredOrder(c.to_string(), c.name.clone()));
+    }
+
     // Generate abstract graph topologies once for this (n_external, n_loops=0) combination.
     // All concrete subprocesses share the same topology set; reusing it avoids re-running
     // the O(n!) topology search for every one of the potentially thousands of particle

@@ -77,6 +77,26 @@ fn banked_interaction_counts() -> BTreeMap<String, (usize, String)> {
         .collect()
 }
 
+/// MadGraph's own generated `param_card.dat` for a row, as banked beside that
+/// row's amplitude table — the values MadGraph's restriction left the model at.
+fn banked_param_card(key: &str) -> ParamCard {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/amplitudes")
+        .join(format!("{key}.json"));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let json: serde_json::Value = serde_json::from_str(&text).expect("parse the amplitude table");
+    json["param_card"]
+        .as_array()
+        .unwrap_or_else(|| panic!("[{key}] the amplitude table banks no param card"))
+        .iter()
+        .map(|l| l.as_str().expect("param card line"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .parse()
+        .unwrap_or_else(|e| panic!("[{key}] banked param card: {e:?}"))
+}
+
 /// MadGraph's own diagram count per manifest row, from the committed
 /// `validation/madgraph/diagrams.json`.
 fn banked_diagram_counts() -> BTreeMap<String, usize> {
@@ -422,6 +442,89 @@ fn mw_scheme_derived_parameters() {
         assert!((at("MZ") - 91.1876).abs() < 1e-9);
         assert!((at("LambdaSMEFT") - 1000.0).abs() < 1e-9);
     }
+}
+
+/// A restricted model's own parameter defaults are MadGraph's, parameter by
+/// parameter, on every gated row's card.
+///
+/// A restriction is the model's new baseline and not a list of switches: MadGraph
+/// reads the restrict card into every external parameter it names and writes those
+/// values out as the generated `param_card.dat`, which is what a run of that model
+/// with no card of its own computes at. Reading the card only for the parameters it
+/// *zeroes* leaves every other one at the `parameters.py` value — for SMEFTsim,
+/// zero for every Wilson coefficient — so a card-less evaluation would silently be
+/// the Standard-Model limit of the model it claims to be.
+///
+/// That is exactly the path `vibegraph integrate --ufo-dir` takes: a proc card
+/// names `<model>-<restrict>` and there is no param card anywhere, so the defaults
+/// *are* the physics. The oracle is MadGraph's own generated card, banked beside
+/// each row's amplitude table, compared per parameter rather than through any
+/// amplitude — the finest level this claim exists at.
+///
+/// The capstone's Wilson coefficients at the end are what make the sweep
+/// non-vacuous: a loader that ignored the restriction entirely would still agree on
+/// every parameter MadGraph and `parameters.py` happen to share, and disagree only
+/// on the coefficients — which is most of the card and none of its SM inputs.
+#[test]
+fn restricted_defaults_are_madgraphs_generated_param_card() {
+    use vibegraph::ufo::parameters::ParamNature;
+
+    let mut compared_total = 0usize;
+    for (key, _) in GATED_ROWS {
+        let model = common::model_for_row(key)
+            .unwrap_or_else(|e| panic!("[{key}] load the row's model: {e}"));
+        let banked = banked_param_card(key);
+        let ev = EvaluatedModel::from_model(model.clone());
+
+        let mut compared = 0usize;
+        for p in &model.params.externals {
+            let ParamNature::External {
+                lha_block,
+                lha_code,
+                ..
+            } = &p.nature
+            else {
+                continue;
+            };
+            let Some(want) = banked.get(lha_block, lha_code) else {
+                continue;
+            };
+            let got = ev.param_values[&p.name].re;
+            assert!(
+                (got - want).abs() <= 1e-12 * want.abs().max(1.0),
+                "[{key}] {} defaults to {got} where MadGraph's generated card says {want}",
+                p.name
+            );
+            compared += 1;
+        }
+        // MadGraph drops the parameters its restriction fixed, so the card is
+        // shorter than the external list; it is never a handful of entries.
+        assert!(
+            compared >= 20,
+            "[{key}] only {compared} external parameters were compared against \
+             MadGraph's generated card"
+        );
+        compared_total += compared;
+    }
+
+    // The capstone's card switches every real Wilson coefficient on, and those are
+    // exactly the parameters `parameters.py` defaults to zero. Reading one of them
+    // back non-zero with no param card in sight is the claim this test exists for.
+    let capstone = common::model_for_row("ee_to_ttx_smeft").expect("the capstone's model");
+    let ev = EvaluatedModel::from_model(capstone);
+    for (name, want) in [("cHDD", 0.6), ("cHWB", 0.02), ("cHl1", 0.71)] {
+        assert!(
+            (ev.param_values[name].re - want).abs() < 1e-12,
+            "[ee_to_ttx_smeft] {name} = {} with no param card, expected the \
+             restriction's {want}",
+            ev.param_values[name].re
+        );
+    }
+    eprintln!(
+        "restricted defaults: {compared_total} external parameters over {} rows agree \
+         with MadGraph's generated cards",
+        GATED_ROWS.len()
+    );
 }
 
 /// The SMEFTsim rows the manifest gates, with the process each one enumerates.

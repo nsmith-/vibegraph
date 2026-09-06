@@ -61,6 +61,12 @@
 //! their ~1 ms matrix-element cost over a 24-dim map making a meaningful integral
 //! prohibitively slow.
 //!
+//! `ee_to_ttx_smeft` is the one row here whose model is not the Standard Model: a
+//! dimension-six SMEFT cross section under the vendored SMEFTsim model and its own
+//! restrict card. Each row's model is the one its manifest entry names, so the
+//! comparison is against the process MadGraph generated and not against a
+//! same-named Standard-Model one.
+//!
 //! Every process is driven through the same run-card-pinned setup, so the cut
 //! compiler and beam handling are exercised for all of them.
 //!
@@ -345,6 +351,34 @@ fn plan_for(dir: &str) -> Plan {
             niter: 8,
             rel_tol: 0.02,
         },
+        // ── the SMEFT capstone, asserted ────────────────────────────────────
+        // The one cross section in the SMEFTsim ladder, and the only row here whose
+        // model is not the Standard Model: `e+ e- > t t~ NP<=1` under the model's
+        // own `restrict_massless` card, with every real Wilson coefficient on, at
+        // the parameters of MadGraph's own `param_card.dat` for this run.
+        //
+        // 36 diagrams and 36 sampling channels, of which the contact four-fermion
+        // ones span the whole final state and the dipole and current-shift ones sit
+        // on the same γ/Z poles as the Standard-Model pair — so the budget is set by
+        // how finely the reference is known rather than by a resonance. 160 000 × 8
+        // puts `err_vg` at 2.95e-4 relative against the banked run's own 2.37e-4,
+        // which is what "comparable precision" means here.
+        //
+        // `rel_tol` is the measured seed spread with headroom, not the reference's
+        // error and not the achieved central value. Over seven seeds at this budget
+        // (`probe_smeft_capstone_seed_stability`) the row holds |pull| <= 1.22 and
+        // |rel| <= 4.7e-4 with per-seed χ²/dof in 0.91–1.22; their inverse-variance
+        // mean is +1.6e-4 of the bank at χ²/dof 0.75 over the seeds, inside the
+        // reference's own error. The ladder is flat: rel +8.2e-4 / +2.9e-4 / +3.1e-4
+        // / +4.3e-4 / +1.2e-4 at 40 000 / 80 000 / 160 000 / 320 000 / 640 000 points
+        // an iteration, scattering inside the same band over a sixteenfold budget
+        // rather than drifting, which is what says the residual is sampling — a
+        // defect migrates between seeds at fixed size instead.
+        "ee_to_ttx_smeft" => Plan::Gate {
+            neval: 160_000,
+            niter: 8,
+            rel_tol: 0.002,
+        },
         // ── the multi-rung spine reference, asserted ────────────────────────
         // The one banked row whose diagrams carry a ladder of spacelike lines:
         // 35 channels splitting 12 / 14 / 9 over one, two and three of them, so
@@ -514,15 +548,27 @@ fn reference_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/sigma_reference.json")
 }
 
-/// Load MadGraph's exact param card for a run if present, else the interned SM
-/// restrict defaults (a ~1e-7 relative shift in |M|^2, negligible against the
-/// Monte-Carlo error of this gate).
+/// Load MadGraph's exact param card for a run if present, else the model's own
+/// post-restriction defaults — an empty card leaves every external parameter where
+/// `import model <name>-<restrict>` put it, which is what MadGraph's generated card
+/// carries for a run that did not edit one.
 fn param_card(dir: &str) -> ParamCard {
     let path = output_dir().join(dir).join("Cards/param_card.dat");
     std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| s.parse::<ParamCard>().ok())
         .unwrap_or_else(|| "".parse::<ParamCard>().unwrap())
+}
+
+/// The UFO model a banked row's reference was generated against.
+///
+/// A row that names no model of its own is the interned Standard Model; the
+/// SMEFTsim rows name a vendored directory and a restrict card, and a gate that
+/// integrated one of those under the SM would be comparing a different process to
+/// the bank. The restrict card is part of the model here rather than of the
+/// parameter card, exactly as `import model <dir>-<restrict>` makes it.
+fn row_model(dir: &str) -> std::sync::Arc<vibegraph::ufo::UFOModel> {
+    common::model_for_row(dir).unwrap_or_else(|e| panic!("[{dir}] {e}"))
 }
 
 /// Integrate one process and return `(sigma_pb, err_pb, chi2_per_dof)`.
@@ -693,10 +739,10 @@ fn with_integrand<R>(
     );
     let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
-    let model = common::sm_model();
+    let model = row_model(dir);
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
 
-    let sets = common::generate(process);
+    let sets = common::generate_with(process, model.as_ref());
     let evals =
         compile_subprocesses(&sets, &model, &evaluated).expect("compile fixed-energy subprocesses");
     let bounds: Vec<_> = evals
@@ -793,6 +839,74 @@ fn probe_resonant_seed_stability() {
             );
         }
     }
+}
+
+/// The capstone SMEFT row's seed sweep and budget ladder, the measurement its
+/// `rel_tol` is set from.
+///
+/// A SMEFT cross section is the first here whose integrand carries contact
+/// diagrams beside the s-channel poles, so how the multichannel combiner splits
+/// the budget over them is not inherited from any Standard-Model row. The sweep
+/// is the same instrument the resonant rows use — several seeds at the gate
+/// budget, read as a spread and a chi2/dof about their own mean rather than as
+/// one pull — with the ladder beside it, because a residual that is sampling
+/// shrinks with budget where a defect migrates between seeds at fixed size.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_smeft_capstone_seed_stability() {
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let dir = "ee_to_ttx_smeft";
+    let e = &banked[dir];
+    let (neval, niter) = match plan_for(dir) {
+        Plan::Gate { neval, niter, .. } => (neval, niter),
+        _ => panic!("[{dir}] has no gate plan to sweep"),
+    };
+    eprintln!(
+        "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%) ──",
+        e.sigma_pb,
+        e.sigma_err_pb,
+        100.0 * e.sigma_err_pb / e.sigma_pb
+    );
+    for (label, n, k) in [
+        ("ladder x1/4", neval / 4, niter),
+        ("ladder x1/2", neval / 2, niter),
+        ("ladder x1", neval, niter),
+        ("ladder x2", neval * 2, niter),
+        ("ladder x4", neval * 4, niter),
+    ] {
+        let t = std::time::Instant::now();
+        let (s, err, chi2) = integrate(dir, &e.process, n, k, SEED);
+        let (pull, rel) = compare(s, err, e);
+        eprintln!(
+            "  {label:>12} ({n}x{k}): vg {s:.6e} ± {err:.3e} | pull {pull:+7.2} | \
+             rel {rel:+.2e} | chi2/dof {chi2:.2} | {:.1} s",
+            t.elapsed().as_secs_f64()
+        );
+    }
+    let seeds = [SEED, 11, 22, 33, 44, 55, 66];
+    let mut sigmas = Vec::new();
+    for seed in seeds {
+        let (s, err, chi2) = integrate(dir, &e.process, neval, niter, seed);
+        let (pull, rel) = compare(s, err, e);
+        eprintln!(
+            "  seed {seed:>10}: vg {s:.6e} ± {err:.3e} | pull {pull:+7.2} | \
+             rel {rel:+.2e} | chi2/dof {chi2:.2}"
+        );
+        sigmas.push((s, err));
+    }
+    let w: f64 = sigmas.iter().map(|(_, e)| 1.0 / (e * e)).sum();
+    let mean: f64 = sigmas.iter().map(|(s, e)| s / (e * e)).sum::<f64>() / w;
+    let chi2: f64 = sigmas.iter().map(|(s, e)| ((s - mean) / e).powi(2)).sum();
+    eprintln!(
+        "  {} seeds: mean {mean:.6e} ± {:.3e} | rel {:+.2e} | chi2/dof {:.2}",
+        sigmas.len(),
+        w.sqrt().recip(),
+        mean / e.sigma_pb - 1.0,
+        chi2 / (sigmas.len() - 1) as f64
+    );
 }
 
 /// The processes the per-channel-grid studies below sweep: a spread of channel
@@ -3284,7 +3398,6 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
     let banked: BTreeMap<String, BankedSigma> =
         serde_json::from_str(&text).expect("sigma_reference.json parses");
 
-    let model = common::sm_model();
     let unbundled = common::manifest::unbundled_rows();
     let mut bounded_processes = 0usize;
     let mut control_fired = 0usize;
@@ -3313,8 +3426,9 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
         let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
+        let model = row_model(dir);
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
-        let sets = common::generate(&entry.process);
+        let sets = common::generate_with(&entry.process, model.as_ref());
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
@@ -3624,10 +3738,10 @@ fn channel_set(dir: &str, process: &str) -> (Vec<vibegraph::phasespace::DiagramC
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
     let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
-    let model = common::sm_model();
+    let model = row_model(dir);
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
 
-    let sets = common::generate(process);
+    let sets = common::generate_with(process, model.as_ref());
     let diagrams: Vec<_> = sets
         .iter()
         .flat_map(|s| s.diagrams.iter().cloned())
