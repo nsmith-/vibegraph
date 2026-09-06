@@ -1,0 +1,24 @@
+# The narrative half of the documentation site. `scripts/build-docs.sh`
+# renders this book, the rustdoc API reference and the generated CLI
+# reference into one tree under target/site/, which docs.yml publishes.
+[book]
+title = "vibegraph"
+description = "A leading-order Monte Carlo event generator in Rust, and how it works"
+authors = ["Nick Smith"]
+language = "en"
+src = "src"
+
+[build]
+create-missing = false
+
+[output.html]
+site-url = "/vibegraph/"
+git-repository-url = "https://github.com/nsmith-/vibegraph"
+edit-url-template = "https://github.com/nsmith-/vibegraph/edit/main/docs/{path}"
+mathjax-support = true
+default-theme = "light"
+preferred-dark-theme = "navy"
+
+[output.html.fold]
+enable = true
+level = 1

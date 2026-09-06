@@ -12,6 +12,11 @@ at the strictest level each stage permits: bit-level on the UFO-model and card
 inputs, machine precision on the matrix elements, and statistical agreement on
 the emitted Les Houches event samples.
 
+**Documentation:** <https://nsmith-.github.io/vibegraph/> — a guided tour of
+how the generator works, stage by stage and paper by paper, the command-line
+reference, and the `vibegraph-lib` API docs. Its source is [`docs/`](docs/)
+and `scripts/build-docs.sh` builds it locally.
+
 ## Scope
 
 **Current goal — near-MVP**: an LO event generator for **arbitrary fixed-order
@@ -632,6 +637,8 @@ research/refs/        Reference code as submodules (mg5amcnlo, feyngraph) — se
                       research/refs/README.md
 scripts/              Acceptance run, profiling and perf-comparison kits, and
                       the VHS tapes behind the quickstart recordings
+docs/                 The documentation site (mdBook); scripts/build-docs.sh
+                      assembles it with the API and CLI references
 ```
 
 `TODO.md` holds the prioritized task lists and pipeline status; the notes in

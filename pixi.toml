@@ -19,8 +19,15 @@ profile-diagrams = { cmd = "bash scripts/profile.sh validate_madgraph_diagrams",
 # Profile the sigma gate under samply: per-process time is weighted by how hard
 # each process is to integrate (unlike a fixed-N eval micro-benchmark)
 profile-sigma = { cmd = "bash scripts/profile.sh validate_sigma", depends-on = ["install-samply"] }
-# Custom command to build docs with MathJax support for rendering LaTeX in docstrings
-docs = "RUSTDOCFLAGS=\"--html-in-header doc-include/mathjax-header.html\" cargo doc --no-deps"
+# rustdoc alone, with the KaTeX header that renders the LaTeX in doc comments.
+docs-api = "RUSTDOCFLAGS=\"--html-in-header doc-include/mathjax-header.html\" cargo doc --no-deps -p vibegraph-lib"
+# The whole documentation site — the mdBook under docs/, the rustdoc reference
+# and the CLI reference generated from `vibegraph --help` — into target/site/,
+# exactly as docs.yml publishes it. Needs `mdbook` on PATH.
+docs = "bash scripts/build-docs.sh"
+# Regenerate the committed CLI reference chapter after changing a flag or its
+# help text; `cargo test -p vibegraph` fails while it is stale.
+docs-cli-reference = "bash scripts/gen-cli-docs.sh"
 # Ensure the SM UFO submodule is checked out (offline once the object cache exists).
 # Through the shared helper, which returns as soon as the model source is on
 # disk: an exported tree carries that content but no `.git`, and there

@@ -88,6 +88,21 @@ changed: `Assisted-by: <harness>:<model>`, never `Co-Authored-By:` for a model
 `scripts/rewrite-ai-trailers.py` over the existing history before publishing —
 it rewrites every commit hash, so it must precede the first public clone.
 
+**Documentation site (2026-09-06)**: `docs/` is an mdBook — a twelve-chapter
+pedagogical tour of the pipeline (physics, algorithm, paper and module per
+stage, plus a compiler-concepts chapter on `helas::eval`), a CLI overview, the
+command reference generated from `vibegraph --help`, and a bibliography —
+assembled by `scripts/build-docs.sh` together with the KaTeX-header rustdoc of
+`vibegraph-lib` into `target/site/`, which `docs.yml` publishes to GitHub Pages
+from `main` (PRs build without deploying, and the build fails on a book link
+into a rustdoc path that does not exist). The committed CLI reference is pinned
+to the binary by the hermetic `cli_reference_docs` test; `pixi run docs` builds
+the site, `docs-api` the rustdoc alone, `docs-cli-reference` regenerates the
+chapter. **Open, the user's call**: Pages must be switched to the "GitHub
+Actions" source once in the repository settings before the deploy job can
+succeed. Rustdoc still emits 51 intra-doc-link warnings (ambiguous `write`/
+`rambo` links, unresolved `[`…`]` names); the docs build does not gate on them.
+
 **Standing measurement facts** (note 30 baseline, note 31 §6 close-out; all
 one host, M3 Max). The layer's own run-to-run spread is **0.8% median / 3.4%
 worst** on rows above 1 s, so a sub-1% claim is not measurable there. Two

@@ -44,6 +44,15 @@ regression by reading the diff.
 comment style — and is worth a skim before a first patch. It is written for AI
 harnesses but it is just the project's house rules, and it reads fine as prose.
 
+## If you touched the CLI or want to write docs
+
+The documentation site under `docs/` is an mdBook, published from `main` by
+`docs.yml`; `scripts/build-docs.sh` builds the same site locally, API reference
+included, given `mdbook` on `PATH`. The command reference chapter is generated
+from `vibegraph --help`, so after changing a flag or its help text run
+`scripts/gen-cli-docs.sh` and commit the result — `cargo test` fails while the
+committed chapter is stale.
+
 ## Using AI to write it
 
 Encouraged, with four small asks. See [`AI_POLICY.md`](AI_POLICY.md) — the short
