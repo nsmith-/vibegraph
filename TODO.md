@@ -9,17 +9,18 @@ gate.
 wave 1 landed 2026-09-05 — R1 `bff5aa9`, L1 `00858a8`, V1 `2a34b9d` — and
 wave 2 landed 2026-09-06 — L2 `5f319a9`, E1 `069ffad`/`49146e6` — all merged;
 the landing records are in the note's session paragraphs, the corrections to
-the row table in its §5). **Eight SMEFTsim rows are enforced against
-MadGraph** — the four SM-limit rows, `b b~ > h` (`IdentityAmp`), `g g > h`
-CP-even and CP-odd (the ALOHA ε sign pinned through their interference) and
-the `e+ e- > t t~` dipole (which exposed and fixed a fermion-pair momentum
-sign in `PMomOut`) — the first non-SM model gated end to end. Sixteen rows are
+the row table in its §5). Wave 3 (C1 `331646e`, E2 `733e33d`, F1 `c64a939` merged; R4 in flight) took
+it to **twelve SMEFTsim rows enforced against MadGraph, the capstone
+`e+ e- > t t~ NP<=1` (36 diagrams, 6.82e-15) among them** — the four SM-limit
+rows, `b b~ > h` (`IdentityAmp`), `g g > h` CP-even and CP-odd (the ALOHA ε
+sign pinned through their interference), the `e+ e- > t t~` dipole, `g g > g g`
+with `cG`/`cGtil` (a per-term contact-sign proxy fixed per vertex), and the
+scalar/vector four-fermion rows (`e+ e- > mu+ mu-` with both pairings in one
+vertex, `u u~ > t t~` after a colour slot-correction bug). Sixteen rows are
 banked; the rest stay `info` with their disagreements localized: one |M|²
-point on `e+ e- > W+ W-` at 2.08e-12 against a 1e-12 budget, the four-gluon
-contact's colour decomposition into the nine-flow basis (`gg_to_gg_cg`; the
-CF matrix and flow tags are blind to it), a tenth-digit derived-parameter
-spread on `e+ e- > Z h`, the four-fermion rows (F1/R4), and the five-vector
-stretch row. Two of §5's premises fell on contact:
+point on `e+ e- > W+ W-` at 2.08e-12 against a 1e-12 budget, a tenth-digit
+derived-parameter spread on `e+ e- > Z h`, the cyclic tensor⊗tensor row (R4),
+and the five-vector stretch row. Two of §5's premises fell on contact:
 the cyclic tensor⊗tensor row needs a massive lepton (`tata_to_ttx_tensor4f`
 replaces it) and the shipped `restrict_massless` card zeroes every CP-odd
 coefficient, so the capstone reaches neither an `Epsilon` nor a tensor
@@ -602,13 +603,11 @@ hits them, each owned by a note-35 session:
 - ~~**Tree-shaped primitives** (E1)~~ **done `069ffad`/`49146e6`**: `Gamma5`,
   `Epsilon` (vector-output and scalar), per-node adjoint inference along a
   fermion line, the `PMomOut` bra−ket sign. Left behind, each measured:
-  - **Four-gluon contact colour decomposition** (`helas/color/colorize.rs`):
-    on `gg_to_gg_cg` every one of the 27 amplitude pieces matches MadGraph's
-    `AMP()` individually, but the six single-trace flows carry coefficient
-    errors of order 1–4 from the contact structures (the three double-trace
-    flows are exact). `color_cf_oracle` and `color_flow_tags_oracle` cannot
-    see it — a Gram matrix's blind spot. Also the `EpsilonVout` process-level
-    pin, which only this row and `ee_to_wpwm_cw` reach.
+  - ~~Four-gluon contact colour decomposition~~ **not a colour bug** (C1
+    `331646e` proved the decomposition exact and added a per-graph JAMP
+    oracle on every subprocess); the residual was the four-vector contact's
+    build sign gated per term on a SM-only proxy, fixed per vertex (E2
+    `733e33d`, `gg_to_gg_cg` gated at 2.16e-13, `EpsilonVout` covered).
   - **`ee_to_zh_smeft` derived parameters**: each diagram equals MadGraph's
     times its own unit-modulus constant, differing in the tenth digit; the
     card is the only one turning on both input-scheme shifts. Suspects:
@@ -622,14 +621,20 @@ hits them, each owned by a note-35 session:
     banked `MG_DIAGRAM_ORDER`, measured from `matrix1_orig.f`.
   - The SMEFT rows' top-level `process` display field still lacks `NP<=1`
     (only `mg_amplitude.process` carries it); close-out sweep.
-- **Four-fermion vertices** (F1): `root_diagram.rs` asserts one fermion pair
-  per sink; 70 of SMEFTsim's 200 FFFF vertices mix the `(1,2)(3,4)` and
-  `(1,4)(2,3)` pairings, whose relative sign MadGraph sets per structure
-  (`get_sign_flow`). Measured on the banked ladder: the colour-singlet⊗singlet
-  four-quark contact structure (`uux_to_ttx_4f`, `Identity*Identity`) panics
-  the CF reducer — "color matrix entry did not reduce to a scalar" on
-  `δ_{12} δ_{43} δ_{12} δ_{43}` — the one colour-algebra rule the ladder needs
-  that the engine lacks; every other SMEFTsim row's colour matrix is exact.
+- ~~**Four-fermion vertices** (F1)~~ **done `c64a939`**: sinks close any
+  number of fermion pairs, the pairing is read per Lorentz structure
+  (MadGraph's `get_fermion_flow` ported; one feyngraph vertex per flow
+  group), MadGraph's `get_sign_flow` parity is measured to be already inside
+  our Fermi sign; `ee_to_mumu_4f`, `uux_to_ttx_4f` and the capstone gated.
+  The four-quark "did not reduce to a scalar" was a `colorize.rs` slot
+  correction that gave up at a vertex with two 3 and two 3̄ slots (C1
+  `331646e`), not a missing rule. Left behind: a same-flavour four-fermion
+  process (`e+ e- > e+ e- NP<=1`) enumerates one diagram per pairing where
+  MadGraph draws one (an `ee_to_ee_4f` row would gate it — the `gg_to_gg_cg`
+  21/27 class); `EvaluatedModel::from_model` on a restrict-card-loaded
+  SMEFTsim model evaluates every amplitude to zero where `from_model_card`
+  is right — check before any SMEFT σ run; the capstone `integrals` cell's
+  blocker text is stale (C).
 - **Cyclic tensor⊗tensor structures** (R4): `Gamma(-2,·)*Gamma(-2,·)*Gamma(-1,·)*Gamma(-1,·)`
   is a 4-cycle in the index graph; no rooted tree evaluates it — it needs the
   rank-2 tensor slot R1 builds.

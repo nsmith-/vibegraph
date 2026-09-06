@@ -2,9 +2,12 @@
 
 **Status: IN PROGRESS — wave 1 landed 2026-09-05 (R1 `bff5aa9`, L1
 `00858a8`, V1 `2a34b9d`/`92db0ad`), wave 2 landed 2026-09-06 (L2 `5f319a9`,
-E1 `069ffad`/`49146e6`), all merged. Eight SMEFTsim rows are enforced against
-MadGraph. Per-session landing records are appended to the session paragraphs
-below ("Landed:"); §5 carries the corrections to the row table.**
+E1 `069ffad`/`49146e6`), wave 3 landing 2026-09-06 (C1 `331646e`, E2
+`733e33d`, F1 `c64a939` merged; R4 in flight). Twelve SMEFTsim rows are
+enforced against MadGraph, the capstone `e+ e- > t t~ NP<=1` among them.
+Per-session landing records are appended to the session paragraphs below
+("Landed:"); §5 carries the corrections to the row table; §3.5 records the
+two sessions added mid-sprint (C1 colour, E2 contact sign).**
 
 The feature sprint that takes the UFO surface past the Standard Model's
 feature set. Three deliverables, as asked:
@@ -364,11 +367,12 @@ localized: `ee_to_wpwm_cw` — linear level exact (per-diagram 4.70e-16), one
 of 48 |M|² points at 2.078e-12 against the 1e-12 budget (point 36, 336× its
 own ulp conditioning; not loosened, for the close-out to decide);
 `gg_to_gg_cg` — all 27 amplitude pieces match MadGraph's `AMP()`
-individually (contacts at a common −i, configurations at 6.04e-16), the
-residual lives in the **colour decomposition of the four-gluon contact into
-the nine-flow basis** (coefficient errors of order 1–4 on the six
-single-trace flows, the three double-trace flows exact) — the CF matrix and
-flow tags are blind to it, a `helas/color/colorize.rs` session of its own;
+individually, but E1's attribution of the residual to the colour
+decomposition of the four-gluon contact was **wrong** (C1 proved the colour
+side exact; E2 found the cause in the evaluator — the four-vector contact's
+build sign was decided per term by a "no `P`, no `Gamma` in the term" proxy
+that holds only in the SM, so the `O_G`/`O_Gtil` contact structures went
+unsigned; see §3.5). Gated since `733e33d` at 2.16e-13;
 `ee_to_zh_smeft` — each of 14 diagrams equals MadGraph's times its own
 unit-modulus constant at +90°, the constants differing in the tenth digit:
 a derived-parameter difference on the only card with both input-scheme
@@ -388,6 +392,49 @@ vector leg) is exercised only by the two informational rows, so it still
 rests on the hermetic identity `EpsilonVout·d = EpsilonAmp`. Measured
 `MG_DIAGRAM_ORDER`/`KNOWN_CONFIG_MERGE` entries were banked for the E1 rows
 (MadGraph lists a vertex's Lorentz structures in the reverse of our order).
+
+### 3.5 — sessions added mid-sprint: C1 (colour) and E2 (the contact sign)
+
+**C1 (feature-dev, `331646e`, 2026-09-06)** was dispatched on two measured
+colour gaps and found both diagnoses false. (a) The four-gluon contact's
+colour decomposition on `gg_to_gg_cg` is exact: a per-graph oracle against
+MadGraph's own `JAMP(i) = … AMP(j)` lines (grouping read from its diagram
+comments, `TMP_JAMP` expansion included) passes at `max_rel = 0` with no
+rephasing on all 27 columns, and is now live on all 64 generated
+subprocesses in `color_cf_oracle` (falsified twice before being trusted). (b)
+`uux_to_ttx_4f`'s "did not reduce to a scalar" on `δ_{12}δ_{43}δ_{12}δ_{43}`
+was not a missing rule — the pinned `color_algebra.py` refuses the same
+product; the bug was upstream in `colorize.rs::slot_indices`, which undid
+feyngraph's all-incoming crossing by a positional swap of a vertex's single
+3 slot with its single 3̄ slot and gave up (`None`) at a vertex with two of
+each, so the four-quark contact was never corrected and the basis held a
+structure and its conjugate. Now a per-tensor transpose of each `T`'s index
+pair, with `check_t_slot_reps` pinning the convention; NCOLOR 2,
+`CF = [[9,3],[3,9]]`, basis keys literally MadGraph's `T(2,1)T(3,4)` /
+`T(2,4)T(3,1)`.
+
+**E2 (feature-dev, `733e33d`, 2026-09-06)** then localized `gg_to_gg_cg`'s
+residual by solving the per-flow JAMPs against MadGraph's `AMP()` through the
+exact JAMP coefficients (864 equations over 27 unknowns): one global `−i`
+(the process-wide phase; E1's "contacts at a common −i" was this constant
+misread) plus a relative `−1` on `AMP(1..6)` only — the three `O_Gtil`
+(`VVVV6/4/3`) and three `O_G` (`VVVV2/13/12`) contacts — while the SM
+pure-metric contacts `AMP(7,8,9)` and all eighteen exchange amplitudes were
+right. Cause: `root_lorentz.rs::build_at_leg` gated the four-vector
+contact's `−1` on the *term* carrying no `P` and no `Gamma`, a proxy that
+holds for the SM's pure-metric vertex and fails for an interaction with
+mixed operator content (some `O_Gtil` terms carry no `Metric` at all). The
+sign is now decided per vertex (≥ 4 legs, all spin 3), pinned by
+`four_vector_contact_sign_is_uniform_over_its_structures`; `gg_to_gg_cg`
+`amplitudes` gated at 2.16e-13 (its `diagrams` cell stays `info` by the
+NGRAPHS convention), which covers `EpsilonVout` and `MetricVout`. The SM and
+SMEFTsim VVV conventions do not differ for the evaluator: ALOHA emits
+`VERTEX = −i·COUP·L` uniformly, so SMEFTsim's real `GC_7 = G` versus the
+SM's `i·G` is not a lead. `ee_to_wpwm_cw`'s one out-of-budget point did not
+move; `wpwm_to_wpwmz_cw` moved from 2.28e3 to 2.17e3 and is still off — E2
+found `is_yang_mills_vvv` (`root_diagram.rs`) lacks an arity check, so a
+momentum-bearing four-gluon contact at index ≥ 1 of a multi-vertex diagram
+takes both the contact `−1` and the Yang-Mills source `−1` (assigned to R4).
 
 ### F1 — four-fermion vertices (feature-dev)
 
@@ -412,6 +459,56 @@ rests on the hermetic identity `EpsilonVout·d = EpsilonAmp`. Measured
   tree-shaped); the tensor⊗tensor structures stay `UnsupportedVertex` with a
   message naming R4 — and the `ee_to_mumu_4f` and `uux_to_ttx_4f` cells (§5)
   flip.
+
+**Landed (`c64a939`, 2026-09-06).** Gated: `ee_to_mumu_4f` (1.63e-14,
+per-diagram 1.76e-15), `uux_to_ttx_4f` (5.46e-15, NCOLOR 2, flow labels
+identical to MadGraph's — it needed no Lorentz work at all; the whole row was
+C1's colour bug), and **the capstone `ee_to_ttx_smeft`** (36 diagrams,
+6.82e-15, per-diagram 1.34e-15, `G = +1i` with `|G|−1 = 0` exactly, CF and
+JAMP decomposition exact) — the `ee_to_zh_smeft` derived-parameter spread
+does not appear there. `tata_to_ttx_tensor4f` reports its cyclic structure
+by name (`reject_cyclic_structure`, union-find over the term's index graph)
+for R4. Design: the pairing split lives at the feyngraph/diagram layer, not
+in the UFO interaction set (which stays exactly MadGraph's — 1985 / 62 / 913
+/ 154 / 82 untouched): a port of `aloha_fct.py::get_fermion_flow` reads each
+structure's oriented pairing, `flow_groups` partitions a vertex's referenced
+structures by it, `build_feyngraph_model` emits one feyngraph vertex per
+group (`@k` suffix), `Diagram::from_view` records `Vertex::flow_group`, and
+`VertexInfo::from_ufo` sums that group's structures. MadGraph instead builds
+every four-fermion amplitude on the interaction's canonical pairing and puts
+the difference into a coupling sign; this engine cannot, because the pairing
+decides how each shared external wavefunction is typed (`crossed` vs
+mixed). Sinks: `collect_fermion_pairs` tags each open fermion end with its
+vertex slot and closes them by the vertex's own pairing; `OffShellCurrent`/
+`ContractAmplitude` carry `fermion_pairs`; `spine_sign_from_flow` walks every
+line a sink closes. **The permutation sign** (`import_ufo.py::get_sign_flow`,
+ported as `topo::permutation_sign`) is **never multiplied in**, and that is
+measured, not assumed: MadGraph factorises the fermion sign as (Wick sign of
+the canonical pairing) × (permutation sign), while this engine builds each
+diagram on the structure's own lines, so the same parity is already inside
+the diagram's Fermi sign; the pin is `ee_to_mumu_4f`, where `V_729`'s
+`(1,4)(2,3)` structures (`FFFF14+16`, `FFFF15`) and `(1,2)(3,4)` structure
+(`FFFF4`) interfere with eight γ/Z diagrams inside every helicity
+amplitude, and MadGraph's own `matrix1_orig.f` carries `−GC_54`, `−GC_29`
+on exactly the `(1,4)(2,3)` calls. A real bug surfaced: `correct_spin_index_for_flow`
+grouped fermion legs consecutively, so a `(1,4)(2,3)` structure re-rooted
+onto the other line gave a root-dependent amplitude — no gated row reaches
+it (every gated four-fermion diagram is a single contact vertex), so the
+falsifier `four_fermion_currents_are_rooting_invariant` runs a fermion line
+*through* the contact by adding a photon, sweeping all 32 helicities with a
+control. Corrections to this note: §1.2's pairing census is **15 and 6**
+(`FFFF13`, `FFFF16` write their chains crossed), not 14 and 7; "70 of 200
+FFFF vertices mix pairings" is pre-split — post-split it is 80 of 1985
+interactions, every one same-flavour (`X̄ X X̄ X`), so the flow split is
+load-bearing only there and is not observable in any gated cell (pinned
+structurally instead, and said so). Divergence worth a row: for a
+same-flavour process (`e+ e- > e+ e- NP<=1`) this engine emits one diagram
+per pairing where MadGraph draws one — the `gg_to_gg_cg` 21/27 class. Loader
+observation for C: `EvaluatedModel::from_model` on a restrict-card-loaded
+SMEFTsim model evaluated every amplitude of `e+ e- > mu+ mu- a NP<=1` to
+exactly zero (the pure-QED diagrams included) while `from_model_card` with
+the banked param card is correct — check before the capstone σ run.
+`FfvVout` left the SMEFTsim allowlist (the capstone's currents reach it).
 
 ### R4 — the tensor slot and the cyclic four-fermion structures (feature-dev; after R1, E1, F1)
 
@@ -684,7 +781,11 @@ Higgs-exchange) × 3 channels); the banked 27 is `NGRAPHS`, one `AMP()` per
 (diagram, colour-ordered contact structure), the same convention that keeps
 SM `gg_to_gg` at 4/6, so its `diagrams` cell stays `info` by rule. (g) The
 row table's amplitude comparisons were all measuring the wrong process until
-L2 put the order bound into the process strings (§4 L2). **Colour**: no SMEFTsim row
+L2 put the order bound into the process strings (§4 L2). (h) Wave-3 status
+of the table: every row gated except `ee_to_wpwm_cw` (one point at
+2.08e-12), `ee_to_zh_smeft` (derived parameters), `tata_to_ttx_tensor4f`
+(R4) and the stretch `wpwm_to_wpwmz_cw`; `gg_to_gg_cg`'s `diagrams` cell is
+`info` by convention. **Colour**: no SMEFTsim row
 needs a colour atom the engine lacks (§1.2); the toy model carries the rest.
 
 ## 6. Track T — the toy UFO for what SMEFTsim leaves unexercised
@@ -774,7 +875,7 @@ oracle already banked.
 Wave 0 (manager, done): S0 vendored UFO + this note + TODO
 Wave 1:  R1 (hermetic)  ∥  L1 (loader/splitting)  ∥  V1 (bank the ladder, MG host)   ← landed 2026-09-05
 Wave 2:  L2 (SM-limit gate; needs L1+V1)  ∥  E1 (tree-shaped primitives; needs R1, L1, V1)   ← landed 2026-09-06
-Wave 3:  F1 (four-fermion; needs L1, V1)  →  R4 (tensor slot; needs R1, E1, F1)
+Wave 3:  F1 (four-fermion; needs L1, V1)  →  R4 (tensor slot; needs R1, E1, F1)   ← F1 ∥ C1 ∥ E2 landed 2026-09-06; R4 in flight
 Wave 4:  T1 (toy oracle; needs V1's pipeline)  ∥  C (capstone; needs E1, F1, R4)
 Wave 5:  T2 (Sigma; needs R4, T1)  ∥  T3 (colour; needs T1)  →  Z (close-out)
 ```
