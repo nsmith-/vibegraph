@@ -20,10 +20,11 @@ use std::collections::HashSet;
 
 use crate::diagrams::diagram::{Diagram, Leg, LegIdx, PropIdx, Ray, RaySlot, VtxIdx};
 use crate::diagrams::DiagramSet;
-use crate::helas::eval::diagram_eval::{ExtLegInfo, PropInfo, VertexInfo};
+use crate::helas::eval::diagram_eval::{vertex_flow_group, ExtLegInfo, PropInfo, VertexInfo};
 use crate::helas::eval::tree::Tree;
 use crate::helas::repr::numbers::Charge;
 use crate::ufo::particles::ParticleId;
+use crate::ufo::topo::FlowGroup;
 use crate::ufo::vertices::VertexId;
 use crate::ufo::UFOModel;
 
@@ -235,6 +236,11 @@ pub enum EvalNode {
         info: VertexInfo,
         adjoint: Option<Adjoint>,
         children: Vec<EvalNodeId>,
+        /// Fermion lines this vertex *closes*, as pairs of positions in `children`.
+        /// A vertex closes every fermion line whose two legs are both inputs here;
+        /// the line continuing into the output leg is not among them, so a fermion
+        /// current's continuing input is exactly the fermion child no pair names.
+        fermion_pairs: Vec<(usize, usize)>,
     },
     /// Propagator applied to its single child off-shell current. `adjoint` matches the
     /// current it wraps (a propagator preserves fermion adjoint).
@@ -247,6 +253,10 @@ pub enum EvalNode {
     ContractAmplitude {
         info: VertexInfo,
         children: Vec<EvalNodeId>,
+        /// Fermion lines this vertex closes (see
+        /// [`OffShellCurrent`](EvalNode::OffShellCurrent)); at the amplitude root
+        /// every fermion leg is an input, so every line the vertex touches is here.
+        fermion_pairs: Vec<(usize, usize)>,
     },
 }
 
@@ -421,19 +431,27 @@ impl DiagramEvalTree {
                     .collect::<Result<Vec<_>, _>>()?;
                 let child_ids: Vec<EvalNodeId> = baked.iter().map(|(id, _)| *id).collect();
                 let color_idx = chain[vtx.0] as usize;
+                let flow_group = diagram.vertex(*vtx).flow_group;
+                let group = vertex_flow_group(model, *vertex, flow_group);
                 match result {
                     Some(rl) => {
                         // Internal vertex: off-shell current rooted at the output leg,
                         // wrapped by the propagator on that leg.
                         let ri = rl.slot;
                         let prop_id = model.vertex_def(*vertex).particles[ri.0];
-                        // The current keeps the binding of its continuing fermion input
-                        // (one such child for an FFV) iff the output leg is itself a
-                        // fermion; a bosonic output carries none. The bindings are
-                        // passed into the Lorentz rooting so it picks the in/out gamma
-                        // routine and detects reversed/crossed pairs.
+                        // The current keeps the binding of the fermion input the
+                        // vertex's pairing continues into the output leg iff that leg
+                        // is itself a fermion; a bosonic output carries none. Reading
+                        // the pairing rather than taking the first fermion child is
+                        // what keeps a four-fermion current (three fermion inputs, two
+                        // of them closing a line here) on the right line. The bindings
+                        // are passed into the Lorentz rooting so it picks the in/out
+                        // gamma routine and detects reversed/crossed pairs.
                         let bind = (model.particle(prop_id).spin == 2)
-                            .then(|| baked.iter().find_map(|(_, f)| *f))
+                            .then(|| {
+                                let cont = input_position(group.partner(ri.0), ri.0);
+                                baked[cont].1
+                            })
                             .flatten();
                         // Per-leg bindings in vertex-leg order: children with the
                         // output's binding spliced in at its position, so the Lorentz
@@ -441,8 +459,14 @@ impl DiagramEvalTree {
                         let mut flows: Vec<Option<LegAdjoint>> =
                             baked.iter().map(|(_, f)| *f).collect();
                         flows.insert(ri.0, bind);
-                        let info =
-                            VertexInfo::from_ufo(model, *vertex, color_idx, Some(ri.0), &flows)?;
+                        let info = VertexInfo::from_ufo(
+                            model,
+                            *vertex,
+                            color_idx,
+                            flow_group,
+                            Some(ri.0),
+                            &flows,
+                        )?;
                         let adjoint = bind.map(|lf| lf.adjoint);
                         let current = Self::add(
                             nodes,
@@ -450,6 +474,7 @@ impl DiagramEvalTree {
                                 info,
                                 adjoint,
                                 children: child_ids,
+                                fermion_pairs: closed_fermion_pairs(&group, Some(ri.0)),
                             },
                         );
                         Ok((
@@ -475,13 +500,16 @@ impl DiagramEvalTree {
                         // scalar sink, so no fermion output adjoint; every leg is a child.
                         let flows: Vec<Option<LegAdjoint>> =
                             baked.iter().map(|(_, f)| *f).collect();
-                        let info = VertexInfo::from_ufo(model, *vertex, color_idx, None, &flows)?;
+                        let info = VertexInfo::from_ufo(
+                            model, *vertex, color_idx, flow_group, None, &flows,
+                        )?;
                         Ok((
                             Self::add(
                                 nodes,
                                 EvalNode::ContractAmplitude {
                                     info,
                                     children: child_ids,
+                                    fermion_pairs: closed_fermion_pairs(&group, None),
                                 },
                             ),
                             None,
@@ -579,8 +607,8 @@ fn trace_fermion_line(
     // Tree diagrams terminate; the bound only guards against pathological loops.
     for _ in 0..1024 {
         let vertex = diagram.vertex(vtx);
-        let lid = model.vertex_def(vertex.interaction).lorentz[0];
-        let out_ray = model.lorentz_struct(lid).spin_map[in_ray.0] as usize;
+        let group = vertex_flow_group(model, vertex.interaction, vertex.flow_group);
+        let out_ray = group.partner(in_ray.0);
         match vertex.rays[out_ray] {
             Ray::Leg(li) => return (li, n_props),
             Ray::Prop { prop, end } => {
@@ -638,11 +666,21 @@ fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> (bool, usiz
             let (incoming, n) = descend_fermion_line(tree, *child);
             (incoming, n + 1)
         }
-        EvalNode::OffShellCurrent { children, .. } => {
+        EvalNode::OffShellCurrent {
+            children,
+            fermion_pairs,
+            ..
+        } => {
+            // The continuing input is the fermion child no closed pair names: at a
+            // four-fermion current two of the three fermion inputs close a line here.
             let cont = children
                 .iter()
-                .copied()
-                .find(|&c| tree.value(c).out_adjoint().is_some())
+                .enumerate()
+                .find(|&(pos, &c)| {
+                    tree.value(c).out_adjoint().is_some()
+                        && !fermion_pairs.iter().any(|&(a, b)| a == pos || b == pos)
+                })
+                .map(|(_, &c)| c)
                 .expect("a fermion off-shell current has a continuing fermion input");
             descend_fermion_line(tree, cont)
         }
@@ -696,20 +734,26 @@ pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
     let mut sign = 1i8;
     for id in tree.iter() {
         let node = tree.value(id);
-        let is_sink = matches!(node, EvalNode::ContractAmplitude { .. })
-            || matches!(node, EvalNode::OffShellCurrent { adjoint: None, .. });
-        if !is_sink {
-            continue;
-        }
-        let fermions: Vec<EvalNodeId> = node
-            .children()
-            .into_iter()
-            .filter(|&c| tree.value(c).out_adjoint().is_some())
-            .collect();
-        // SM vertices pair fermions, so a sink has 0 or 2 fermion legs (one line).
-        if let [a, b] = fermions[..] {
-            let (inc_a, n_props_a) = descend_fermion_line(tree, a);
-            let (inc_b, n_props_b) = descend_fermion_line(tree, b);
+        let (children, fermion_pairs) = match node {
+            EvalNode::ContractAmplitude {
+                children,
+                fermion_pairs,
+                ..
+            }
+            | EvalNode::OffShellCurrent {
+                adjoint: None,
+                children,
+                fermion_pairs,
+                ..
+            } => (children, fermion_pairs),
+            _ => continue,
+        };
+        // Every line the vertex closes, one at a two-fermion sink and two at a
+        // four-fermion one; a line's two ends are named by the vertex's own pairing,
+        // not by their order in the child list.
+        for &(a, b) in fermion_pairs {
+            let (inc_a, n_props_a) = descend_fermion_line(tree, children[a]);
+            let (inc_b, n_props_b) = descend_fermion_line(tree, children[b]);
             let crossed = !inc_a && !inc_b;
             if !crossed && (n_props_a + n_props_b) % 2 == 1 {
                 sign = -sign;
@@ -730,6 +774,7 @@ pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
 /// is not a fermion (or at the root contraction) yet has two fermion inputs.
 fn collect_fermion_pairs(
     raw: &RawDiagramTree,
+    diagram: &Diagram,
     model: &UFOModel,
     id: RawNodeId,
     pairs: &mut Vec<(LegIdx, LegIdx)>,
@@ -738,33 +783,90 @@ fn collect_fermion_pairs(
         RawNode::Leg { leg_idx, spin, .. } => (spin.abs() == 2).then_some(*leg_idx),
         RawNode::Vertex {
             vertex,
+            vtx,
             result,
             children,
-            ..
         } => {
-            let mut ends: Vec<LegIdx> = children
-                .iter()
-                .filter_map(|&c| collect_fermion_pairs(raw, model, c, pairs))
-                .collect();
-            let out_is_fermion = result.is_some_and(|rl| {
-                let pid = model.vertex_def(*vertex).particles[rl.slot.0];
-                model.particle(pid).spin.abs() == 2
-            });
-            if out_is_fermion {
-                assert_eq!(ends.len(), 1, "a fermion current has one continuing input");
-                ends.pop()
-            } else {
-                match ends[..] {
-                    [] => None,
-                    [a, b] => {
-                        pairs.push((a, b));
-                        None
-                    }
-                    _ => panic!("SM vertices pair fermions: 0 or 2 fermion legs per sink"),
+            // Open fermion ends of this vertex's inputs, tagged with the vertex slot
+            // they arrive at, so the vertex's own pairing can match them up.
+            let mut open: Vec<(usize, LegIdx)> = Vec::new();
+            for (pos, &child) in children.iter().enumerate() {
+                if let Some(end) = collect_fermion_pairs(raw, diagram, model, child, pairs) {
+                    open.push((input_slot(pos, *result), end));
                 }
             }
+            let out_slot = result.map(|rl| rl.slot.0);
+            let out_is_fermion = out_slot.is_some_and(|slot| {
+                let pid = model.vertex_def(*vertex).particles[slot];
+                model.particle(pid).spin.abs() == 2
+            });
+            let group = vertex_flow_group(model, *vertex, diagram.vertex(*vtx).flow_group);
+            let mut carried = None;
+            let mut closed = vec![false; open.len()];
+            for i in 0..open.len() {
+                if closed[i] {
+                    continue;
+                }
+                let partner = group.partner(open[i].0);
+                if Some(partner) == out_slot {
+                    carried = Some(open[i].1);
+                    closed[i] = true;
+                    continue;
+                }
+                let j = open
+                    .iter()
+                    .position(|&(slot, _)| slot == partner)
+                    .expect("a fermion line leaves this vertex by a leg the pairing names");
+                pairs.push((open[i].1, open[j].1));
+                closed[i] = true;
+                closed[j] = true;
+            }
+            assert_eq!(
+                carried.is_some(),
+                out_is_fermion,
+                "a fermion output leg continues exactly one input line"
+            );
+            carried
         }
     }
+}
+
+/// The vertex slot an input child sits at: children are the vertex's legs in slot
+/// order with the output leg's position removed, so every position at or beyond it
+/// shifts up by one.
+fn input_slot(pos: usize, result: Option<ResultLeg>) -> usize {
+    match result {
+        Some(rl) if pos >= rl.slot.0 => pos + 1,
+        _ => pos,
+    }
+}
+
+/// Inverse of [`input_slot`] for a vertex rooted at `out_slot`: the child position a
+/// vertex slot occupies once the output leg is removed from the list.
+fn input_position(slot: usize, out_slot: usize) -> usize {
+    if slot < out_slot {
+        slot
+    } else {
+        slot - 1
+    }
+}
+
+/// The fermion lines a vertex closes, as pairs of positions in its input-child list:
+/// every pair of the vertex's fermion flow whose two legs are both inputs. Rooted at
+/// a fermion leg, the line through `out_slot` is open and is left out.
+fn closed_fermion_pairs(group: &FlowGroup, out_slot: Option<usize>) -> Vec<(usize, usize)> {
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    for (leg, &partner) in group.spin_map.iter().enumerate() {
+        let partner = partner as usize;
+        if partner <= leg || Some(leg) == out_slot || Some(partner) == out_slot {
+            continue;
+        }
+        match out_slot {
+            Some(out) => pairs.push((input_position(leg, out), input_position(partner, out))),
+            None => pairs.push((leg, partner)),
+        }
+    }
+    pairs
 }
 
 /// Final-state legs whose fermion line connects to an *initial-state* leg (e.g. the
@@ -773,9 +875,14 @@ fn collect_fermion_pairs(
 /// crossed (all-incoming) identity feyngraph reports: the crossed representation
 /// C-conjugates the whole bilinear chain, which is only an identity when *both*
 /// endpoints of the line conjugate together, i.e. for final–final pairs.
-fn mixed_line_final_legs(raw: &RawDiagramTree, model: &UFOModel, n_in: usize) -> HashSet<LegIdx> {
+fn mixed_line_final_legs(
+    raw: &RawDiagramTree,
+    diagram: &Diagram,
+    model: &UFOModel,
+    n_in: usize,
+) -> HashSet<LegIdx> {
     let mut pairs = Vec::new();
-    let open = collect_fermion_pairs(raw, model, raw.root(), &mut pairs);
+    let open = collect_fermion_pairs(raw, diagram, model, raw.root(), &mut pairs);
     assert!(open.is_none(), "all fermion lines close at some sink");
     pairs
         .into_iter()
@@ -902,7 +1009,7 @@ pub(super) fn root_tree_at(
     };
 
     let n_in = diagram.n_in;
-    let uncross = mixed_line_final_legs(&raw, model, n_in);
+    let uncross = mixed_line_final_legs(&raw, diagram, model, n_in);
     Ok(DiagramEvalTree::bake(
         &raw, diagram, model, n_in, &uncross, chain,
     )?)
@@ -1407,6 +1514,97 @@ mod tests {
             vec![-1, -1, -1],
             "g g > t t~ must carry one crossed-line −1 per diagram regardless of the \
              top-line propagator"
+        );
+    }
+
+    /// The two pairings of the four-lepton contact vertex give a process two different
+    /// fermion-line topologies, and the rooting reads each diagram's own.
+    ///
+    /// With `e+ e- > mu+ mu-`'s legs `[e+ in, e- in, mu- out, mu+ out]`, the
+    /// `(1,4)(2,3)` structures join the two muons and the two electrons — a *crossed*
+    /// line (both ends final) and an initial–initial one — while the `(1,2)(3,4)`
+    /// structure joins each muon to an electron, two *mixed* lines whose final legs must
+    /// be typed by their physical wavefunction rather than the all-incoming one. So the
+    /// same four external legs are built differently in the two diagrams, and each
+    /// carries the spine sign its own topology implies: one crossed line is a −1, two
+    /// mixed propagator-free lines are not.
+    ///
+    /// This is the falsifier for reading the pairing per structure. Before it, every
+    /// structure of a vertex took the first one's map, so contact diagrams were built on
+    /// the wrong lines — with the same particle content, the same diagram count and the
+    /// same colour, which is why nothing but the amplitude could see it.
+    ///
+    /// `e+ e- > e+ e-` is the second half. There one interaction carries both pairings,
+    /// so splitting the *interaction* by coupling order (which is what separates them in
+    /// the two-flavour process) does not, and this split is the only thing that does.
+    /// Which pairing gives which topology is the other way round there, because the
+    /// enumeration binds the identical electrons to the vertex's slots in a different
+    /// order — which is exactly why the topology has to be read off the diagram rather
+    /// than assumed from the structure.
+    #[test]
+    fn four_fermion_pairings_type_a_diagram_s_external_legs() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let model = crate::ufo::UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_c4l.dat")),
+        )
+        .expect("load SMEFTsim under vg_c4l");
+        let opts = ParsingOptions::default();
+
+        // Per contact diagram: the vertex's pairing, the final legs restored to their
+        // physical wavefunction, and the diagram's spine sign.
+        let topologies = |process: &str| -> Vec<(Vec<isize>, Vec<usize>, i8)> {
+            let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&card, &model).unwrap();
+            let mut seen: Vec<(Vec<isize>, Vec<usize>, i8)> = Vec::new();
+            for set in &sets {
+                for diagram in &set.diagrams {
+                    // The contact diagrams are the single-vertex ones.
+                    if diagram.vertices.len() != 1 {
+                        continue;
+                    }
+                    let vtx = &diagram.vertices[0];
+                    let group = vertex_flow_group(&model, vtx.interaction, vtx.flow_group);
+                    let raw = {
+                        let mut builder = RawBuilder::new(diagram);
+                        let root = builder.walk_vertex(VtxIdx(0), None).unwrap();
+                        RawDiagramTree {
+                            nodes: builder.nodes,
+                            root,
+                        }
+                    };
+                    let mut uncross: Vec<usize> =
+                        mixed_line_final_legs(&raw, diagram, &model, diagram.n_in)
+                            .into_iter()
+                            .map(|l| l.0)
+                            .collect();
+                    uncross.sort();
+                    let tree = root_tree_at(diagram, &model, &[0u8], VtxIdx(0)).unwrap();
+                    seen.push((group.spin_map.clone(), uncross, spine_sign_from_flow(&tree)));
+                }
+            }
+            seen.sort();
+            seen.dedup();
+            seen
+        };
+
+        assert_eq!(
+            topologies("e+ e- > mu+ mu- NP<=1"),
+            vec![
+                // (1,2)(3,4): mu+ with e-, e+ with mu- — two mixed lines, both final
+                // legs restored to their physical wavefunction, no crossed −1.
+                (vec![1, 0, 3, 2], vec![2, 3], 1),
+                // (1,4)(2,3): the muon line is crossed and the electron line is
+                // initial–initial, so nothing is uncrossed and the crossed line is a −1.
+                (vec![3, 2, 1, 0], vec![], -1),
+            ]
+        );
+        assert_eq!(
+            topologies("e+ e- > e+ e- NP<=1"),
+            vec![
+                (vec![1, 0, 3, 2], vec![], -1),
+                (vec![3, 2, 1, 0], vec![2, 3], 1),
+            ]
         );
     }
 }

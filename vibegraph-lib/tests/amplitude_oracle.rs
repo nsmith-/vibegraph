@@ -242,6 +242,20 @@ const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
          topology share an accumulator, so MadGraph writes 21 of them over our \
          configuration-carrying diagrams",
     ),
+    (
+        "ee_to_mumu_4f",
+        "one accumulator per s-channel boson: the photon line's three diagrams (the SM \
+         current against the shifted ones) share one and the Z line's five share one, \
+         so MadGraph writes [3, 5] over our eight configuration-carrying diagrams. The \
+         three four-fermion contacts carry no accumulator on either side",
+    ),
+    (
+        "ee_to_ttx_smeft",
+        "as `ee_to_mumu_4f` and `ee_to_ttx_dipole` together: MadGraph writes [11, 20] \
+         over our thirty-one configuration-carrying diagrams, one accumulator for the \
+         photon line and one for the Z line, each covering the SM current, the coupling \
+         shifts and the dipole structures at either end",
+    ),
 ];
 
 /// Processes whose linear-level comparison is known to disagree with MadGraph, with the
@@ -312,6 +326,25 @@ const MG_DIAGRAM_ORDER: &[(&str, &[usize])] = &[
     (
         "ee_to_zh_smeft",
         &[0, 1, 2, 3, 4, 5, 7, 6, 8, 10, 9, 11, 12, 13],
+    ),
+    // The three four-fermion contacts are three split interactions of one UFO vertex,
+    // and the two loaders enumerate a vertex's couplings differently: this side walks
+    // them in `(color, lorentz)` key order, MadGraph in the UFO file's dict order. The
+    // vertex writes `cll` first, which the card zeroes, so MadGraph's surviving three
+    // start at `cll1` where ours start at `cle`. The eight s-channel diagrams pair by
+    // the identity.
+    ("ee_to_mumu_4f", &[1, 2, 0, 3, 4, 5, 6, 7, 8, 9, 10]),
+    // Both reorderings at once: the five four-fermion contacts are split interactions
+    // of two UFO vertices whose couplings the two loaders walk in different orders (as
+    // `ee_to_mumu_4f`), and each s-channel boson's block lists the SM current before
+    // the dipole structures on one side and after them on the other (as
+    // `ee_to_ttx_dipole`), which is the two transpositions among the s-channel diagrams.
+    (
+        "ee_to_ttx_smeft",
+        &[
+            1, 2, 3, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 17, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 29, 28, 30, 31, 32, 33, 34, 35,
+        ],
     ),
     (
         "ud_to_epemud_qcd0",

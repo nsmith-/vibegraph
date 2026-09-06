@@ -434,7 +434,7 @@ fn mw_scheme_derived_parameters() {
 ///
 /// This list is the model's coverage instrument twice over: the diagram counts
 /// below and the op census at the end of the file both run on it.
-const GATED_ROWS: [(&str, &str); 8] = [
+const GATED_ROWS: [(&str, &str); 11] = [
     ("ee_to_mumu_smlimit", "e+ e- > mu+ mu-"),
     ("gg_to_ttx_smlimit", "g g > t t~"),
     ("gg_to_ttx_smlimit_qcd2", "g g > t t~ QCD<=2"),
@@ -443,6 +443,9 @@ const GATED_ROWS: [(&str, &str); 8] = [
     ("gg_to_h_cpeven", "g g > h NP<=1"),
     ("gg_to_h_cpodd", "g g > h NP<=1"),
     ("ee_to_ttx_dipole", "e+ e- > t t~ NP<=1"),
+    ("ee_to_mumu_4f", "e+ e- > mu+ mu- NP<=1"),
+    ("uux_to_ttx_4f", "u u~ > t t~ NP<=1"),
+    ("ee_to_ttx_smeft", "e+ e- > t t~ NP<=1"),
 ];
 
 /// [`GATED_ROWS`] is exactly the set of SMEFTsim rows the manifest declares
@@ -546,23 +549,26 @@ fn gated_rows_op_census() {
     use vibegraph::helas::eval::op_census::{assert_op_coverage_across, Op};
 
     // Every op the gated rows do not reach. `Hels` is never emitted at compile time
-    // in any model (the helicity expansion derives it). The chiral projector ops and
-    // the fused `Ffv*` forms are absent because SMEFTsim writes its SM currents as
-    // `Gamma * ProjP + Gamma * ProjM` pairs that this vertex set roots through the
-    // generic path. `Gamma5Amp` (a bare pseudoscalar bilinear) and `EpsilonVout` (a
-    // Levi-Civita tensor rooted at a vector leg rather than closing into the
-    // amplitude) exist in this model but not in these rows: the dipole reaches γ⁵
-    // only inside a chain, and `g g > h` contracts its `Epsilon` into a scalar. The
-    // triple-gauge and four-gluon rows reach both, and take them off this list when
-    // they gate.
-    const KNOWN_UNCOVERED: [Op; 9] = [
+    // in any model (the helicity expansion derives it). The chiral projector ops are
+    // absent because SMEFTsim writes its scalar four-fermion contacts with Wilson
+    // coefficients this ladder's cards leave at zero, so every contact that survives
+    // is the vector⊗vector shape, whose projectors sit inside a gamma chain. The
+    // fermion-continuing fused forms `FfvIout`/`FfvOout` need a chiral *pair* on a
+    // vertex rooted at a fermion leg, which SMEFTsim's restricted vertices do not
+    // keep — `FfvVout`, the pair rooted at the vector leg, is reached by the
+    // capstone's `e+ e- > t t~` currents. `Gamma5Amp` (a bare pseudoscalar bilinear)
+    // and `EpsilonVout` (a Levi-Civita tensor rooted at a vector leg rather than
+    // closing into the amplitude) exist in this model but not in these rows: the
+    // dipole reaches γ⁵ only inside a chain, and `g g > h` contracts its `Epsilon`
+    // into a scalar. The triple-gauge and four-gluon rows reach both, and take them
+    // off this list when they gate.
+    const KNOWN_UNCOVERED: [Op; 8] = [
         Op::Hels,
         Op::ProjMAmp,
         Op::ProjPAmp,
         Op::MetricVout,
         Op::Gamma5Amp,
         Op::EpsilonVout,
-        Op::FfvVout,
         Op::FfvIout,
         Op::FfvOout,
     ];
