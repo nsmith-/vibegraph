@@ -163,6 +163,36 @@
       },
       "total_diagrams": 4
     },
+    "ll_to_qqx_toy_dipole": {
+      "diagrams_by_subprocess": {
+        "P1_ltxlt_qtqtx": 2
+      },
+      "total_diagrams": 2
+    },
+    "ll_to_qqx_toy_tensor": {
+      "diagrams_by_subprocess": {
+        "P1_ltxlt_qtqtx": 3
+      },
+      "total_diagrams": 3
+    },
+    "ll_to_qqx_toy_yukawa": {
+      "diagrams_by_subprocess": {
+        "P1_ltxlt_qtqtx": 5
+      },
+      "total_diagrams": 5
+    },
+    "p3r3_to_p3r3_toy_epsilon": {
+      "diagrams_by_subprocess": {
+        "P1_p3r3_p3r3": 2
+      },
+      "total_diagrams": 2
+    },
+    "p3r3_to_p3r3_toy_sextet": {
+      "diagrams_by_subprocess": {
+        "P1_p3r3_p3r3": 2
+      },
+      "total_diagrams": 2
+    },
     "pp_to_bb": {
       "diagrams_by_subprocess": {
         "P1_gg_bbx": 3,
@@ -209,6 +239,12 @@
         "P1_qq_llg": 4
       },
       "total_diagrams": 8
+    },
+    "qqx_to_o8o8_toy_dcolor": {
+      "diagrams_by_subprocess": {
+        "P1_qtqtx_o8o8": 3
+      },
+      "total_diagrams": 3
     },
     "tata_to_ttx_tensor4f": {
       "diagrams_by_subprocess": {

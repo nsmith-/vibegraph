@@ -886,6 +886,137 @@ amplitudes = { tier = "hermetic", mode = "info", note = "measured and reported, 
 integrals = { tier = "covered-by", rows = ["ee_to_ttx_smeft"], note = "the ladder banks one cross section, on the capstone row; this row exists at the diagram and amplitude levels, which is where the structure it names is visible" }
 samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows; what it would add here is the shape of a SMEFT matrix element under the same machinery, which is worth banking once a SMEFT cross section is gated and not before" }
 
+# ───────────────────────────── the toy-model rows ────────────────────────────
+#
+# Rows generated against the two UFO models this repository authors rather than
+# vendors: `validation/ufo/vibegraph_toy_UFO` and `vibegraph_toy_color_UFO`.
+# They exist because no model in reach writes the structures they carry.
+# FeynRules expands `sigma^{mu nu}` into gamma-matrix chains before it emits a
+# UFO, so a literal `Sigma` is in ALOHA's object library and in no model file;
+# no Standard-Model vertex uses the symmetric structure constant `d`; and the
+# baryonic `Epsilon` and the sextet `K6` are in no model this repository has.
+# Each row puts one such structure in one vertex with a coupling chosen here, so
+# a disagreement names the structure instead of a corner of a 900-vertex model.
+#
+# Because the models are ours, their restrict cards live inside the model
+# directory rather than under `validation/madgraph/cards/`, and every one of
+# them is a card this repository wrote.
+#
+# Every process string carries explicit order bounds. The models give each
+# structure family a coupling order of its own -- which is what makes MadGraph
+# split a two-structure vertex into two interactions, and so into two diagrams
+# with an `AMP()` each rather than one diagram whose amplitude is already their
+# sum -- and MadGraph's WEIGHTED search would drop the higher-order half of
+# every interference the rows are built around.
+
+[[process]]
+key = "ll_to_qqx_toy_dipole"
+process = "lt~ lt > qt qt~ NP<=1"
+model = "validation/ufo/vibegraph_toy_UFO"
+restrict = "dipole"
+script = "validation/madgraph/scripts/ll_to_qqx_toy_dipole.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "A dipole whose Lorentz structure writes `Sigma` literally: `Sigma(3,-1,2,-2)*P(-1,3)*ProjM(-2,1)`, a momentum-contracted sigma^{mu nu} behind a chiral projector. No FeynRules-written model emits one, so this row and ll_to_qqx_toy_tensor are the only place the operator exists unexpanded. The dipole and the plain gauge coupling share the qt~ qt vt vertex at different coupling orders, so the row is two diagrams through one propagator and the dipole's phase and normalisation are measurable in the per-helicity interference rather than only in the helicity sum."
+artifacts = ["output/ll_to_qqx_toy_dipole", "output/ll_to_qqx_toy_dipole.json", "output/ll_to_qqx_toy_dipole_amplitude.csv", "amplitudes/ll_to_qqx_toy_dipole.json"]
+mg_amplitude = { process = "lt~ lt > qt qt~ NP<=1", pdgs_in = [-9000011, 9000011], pdgs_out = [9000004, -9000004], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 211 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "info", note = "measured and agreeing: 2 diagrams enumerated against MadGraph's 2 -- the s-channel vector with the gauge coupling at one end and the same propagator with the literal-`Sigma` dipole at the other, which MadGraph's splitting of the qt~ qt vt vertex into one interaction per coupling-order tuple keeps apart. Informational because the row's amplitude cell is: the census agrees and nothing downstream of it is measured yet, so the count is reported rather than enforced until the structure the row exists for can be evaluated" }
+amplitudes = { tier = "hermetic", mode = "info", note = "no comparison yet: the tree builder refuses the dipole with `unsupported vertex: Sigma tensors are deferred to future work`, so the row is registered informational and the refusal is what it records. Waits on a kernel for a literal `Sigma` contracted with a momentum. MadGraph's side is banked in full and is what that kernel will be judged against: 2 diagrams, NCOLOR 1, |M|^2 at 24 grid and 24 event points, and per-helicity AMP()/JAMP() at three points of each set -- so the dipole's phase against the gauge diagram, which the helicity sum alone cannot see, is already on record" }
+integrals = { tier = "uncovered", note = "the toy models bank no cross section. Their couplings and masses are chosen to make a structure visible per diagram, not to describe anything, so a sigma computed from them would measure the phase-space and flux machinery the Standard-Model rows already gate and nothing else. What these rows own is the amplitude level" }
+samples = { tier = "uncovered", note = "no toy-model event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows" }
+
+[[process]]
+key = "ll_to_qqx_toy_tensor"
+process = "lt~ lt > qt qt~ NP<=1 NPGG<=1"
+model = "validation/ufo/vibegraph_toy_UFO"
+restrict = "tensor"
+script = "validation/madgraph/scripts/ll_to_qqx_toy_tensor.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "The tensor-tensor four-fermion contact in both of its spellings at once, beside the vector exchange they interfere with: `Sigma(-1,-2,2,1)*Sigma(-1,-2,4,3)` under one coupling order and the gamma-gamma expansion of the same operator under another, so MadGraph writes them as two diagrams and the identity between the two spellings is a per-helicity comparison of `AMP(2)` against `AMP(3)` rather than an algebraic claim. The expanded spelling's index graph is a 4-cycle, the shape no rooted contraction tree can walk."
+artifacts = ["output/ll_to_qqx_toy_tensor", "output/ll_to_qqx_toy_tensor.json", "output/ll_to_qqx_toy_tensor_amplitude.csv", "amplitudes/ll_to_qqx_toy_tensor.json"]
+mg_amplitude = { process = "lt~ lt > qt qt~ NP<=1 NPGG<=1", pdgs_in = [-9000011, 9000011], pdgs_out = [9000004, -9000004], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 223 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "info", note = "measured and agreeing: 3 diagrams enumerated against MadGraph's 3 -- the vector exchange, the `Sigma`-spelled contact and the gamma-gamma-spelled one, each its own diagram because each coupling carries its own order. Informational because the row's amplitude cell is" }
+amplitudes = { tier = "hermetic", mode = "info", note = "no comparison yet: the tree builder refuses `FFFFT` with `unsupported vertex: Lorentz structure FFFFT (Sigma(-1,-2,2,1)*Sigma(-1,-2,4,3)): unsupported vertex: cyclic Lorentz structure: an operator outside the fermion-line set (Gamma/ProjM/ProjP/Gamma5/Identity); only two fermion lines joined by two summed Lorentz indices are evaluable as a rank-2 current` -- the cyclic four-fermion path exists and admits gamma chains only. Waits on a `Sigma` node in that slot. One convention the row already settles from MadGraph's own table, before any kernel exists: AMP(FFFFG)/AMP(FFFFT) is exactly four times the ratio of the two couplings, to 4.7e-14 over every helicity of every detail point, so ALOHA's `Sigma` is half the textbook sigma^{mu nu} = (i/2)[gamma^mu, gamma^nu] and a kernel written to the textbook normalisation will be four times too large here" }
+integrals = { tier = "uncovered", note = "the toy models bank no cross section. Their couplings and masses are chosen to make a structure visible per diagram, not to describe anything, so a sigma computed from them would measure the phase-space and flux machinery the Standard-Model rows already gate and nothing else. What these rows own is the amplitude level" }
+samples = { tier = "uncovered", note = "no toy-model event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows" }
+
+[[process]]
+key = "ll_to_qqx_toy_yukawa"
+process = "lt~ lt > qt qt~ NP<=2 NPCP<=2"
+model = "validation/ufo/vibegraph_toy_UFO"
+restrict = "yukawa"
+script = "validation/madgraph/scripts/ll_to_qqx_toy_yukawa.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "The bare `Identity(2,1)` and the bare `Gamma5(2,1)` on both ends of one s-channel scalar. Each Yukawa vertex carries both bilinears at different coupling orders, so the scalar exchange arrives as four diagrams -- scalar/scalar, scalar/pseudoscalar, pseudoscalar/scalar, pseudoscalar/pseudoscalar -- beside a vector exchange, and the relative phase between a scalar and a pseudoscalar current is what their per-helicity interference measures. SMEFTsim reaches `Identity` through one operator and never reaches a bare `Gamma5` at all."
+artifacts = ["output/ll_to_qqx_toy_yukawa", "output/ll_to_qqx_toy_yukawa.json", "output/ll_to_qqx_toy_yukawa_amplitude.csv", "amplitudes/ll_to_qqx_toy_yukawa.json"]
+mg_amplitude = { process = "lt~ lt > qt qt~ NP<=2 NPCP<=2", pdgs_in = [-9000011, 9000011], pdgs_out = [9000004, -9000004], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 227 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "info", note = "measured and agreeing: 5 diagrams enumerated against MadGraph's 5 -- the vector exchange plus the four scalar exchanges the two bilinears make at the two ends. Informational because the row's amplitude cell is" }
+amplitudes = { tier = "hermetic", mode = "info", note = "measured, and what it measures first is not the bilinears: the comparison stops before them at `the integration configurations are not MadGraph's: ours group [1, 1, 1, 1, 1] amplitudes, MadGraph's AMP2 accumulators group [1, 4]`. The four scalar exchanges share one s-channel propagator and differ only in which bilinear sits at each end, so MadGraph gives them a single integration channel and this side gives them four. No process in the suite had put four diagrams on one propagator before, which is why this row is where the channel builder's grouping first parts company with MadGraph's. Waits on that grouping; until then the bare `Identity` and `Gamma5` amplitudes themselves are unmeasured, though MadGraph's per-helicity AMP() for all five diagrams is banked and ready" }
+integrals = { tier = "uncovered", note = "the toy models bank no cross section. Their couplings and masses are chosen to make a structure visible per diagram, not to describe anything, so a sigma computed from them would measure the phase-space and flux machinery the Standard-Model rows already gate and nothing else. What these rows own is the amplitude level" }
+samples = { tier = "uncovered", note = "no toy-model event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows" }
+
+[[process]]
+key = "qqx_to_o8o8_toy_dcolor"
+process = "qt qt~ > o8 o8 NP<=2"
+model = "validation/ufo/vibegraph_toy_UFO"
+restrict = "dcolor"
+script = "validation/madgraph/scripts/qqx_to_o8o8_toy_dcolor.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "The symmetric structure constant `d(1,2,3)`, which this crate's colour algebra can represent and no validated process reaches: the Standard Model writes `f` and `T` and never `d`. It sits on the cubic self-coupling of a real colour-octet scalar, so the s-channel diagram carrying it interferes with the t- and u-channel quark exchanges that do not, and the reduction d(a,b,c) = 2 Tr(a,b,c) + 2 Tr(c,b,a) shows up as a three-flow colour basis whose first flow is MadGraph's own -2/3 * AMP(1) rather than only as a number in a total."
+artifacts = ["output/qqx_to_o8o8_toy_dcolor", "output/qqx_to_o8o8_toy_dcolor.json", "output/qqx_to_o8o8_toy_dcolor_amplitude.csv", "amplitudes/qqx_to_o8o8_toy_dcolor.json"]
+mg_amplitude = { process = "qt qt~ > o8 o8 NP<=2", pdgs_in = [9000004, -9000004], pdgs_out = [9000021, 9000021], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 229 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "info", note = "measured and agreeing: 3 diagrams enumerated against MadGraph's 3 -- t- and u-channel quark exchange and the s-channel octet scalar whose second vertex carries `d(1,2,3)`. Informational because the row's amplitude cell is" }
+amplitudes = { tier = "hermetic", mode = "info", note = "measured and disagreeing, with the disagreement localised to one sign. |M|^2 max_rel is 3.49e-1 on the grid and 2.12e-1 on the event set, per-flow JAMP 8.85e-2 and JAMP2 5.58e-1 (fitted G = -1i, |G|-1 = 6.1e-2) -- and yet every ingredient of |M|^2 checks out on its own: the per-configuration amplitudes reproduce MadGraph's AMP(1..3) at 3.95e-16 and its AMP2 at 7.45e-16, the colour matrix reproduces its `DATA CF` exactly, and the JAMP colour columns match its Fortran exactly. What differs is the sign this side gives the `d`-carrying diagram when it assembles flows from amplitudes: read against MadGraph's own JAMP lines, ours is +2/3*AMP(1) where MadGraph has -2/3*AMP(1), AMP(3)-AMP(1) where it has AMP(1)+AMP(3), and AMP(2)-AMP(1) where it has AMP(1)+AMP(2). AMP(1) is the one diagram whose colour string is `d(1,2,3)`, and the reduction itself is right -- `d(a,b,c) = 2 Tr(a,b,c) + 2 Tr(c,b,a)` is what the colour module applies. Neither colour oracle can see this: both normalise each colour column by its leading fourth root of unity before comparing, so a per-diagram sign on a column is precisely their blind spot, and this row is the first to put a `d` in a multi-flow basis where |M|^2 can see it instead" }
+integrals = { tier = "uncovered", note = "the toy models bank no cross section. Their couplings and masses are chosen to make a structure visible per diagram, not to describe anything, so a sigma computed from them would measure the phase-space and flux machinery the Standard-Model rows already gate and nothing else. What these rows own is the amplitude level" }
+samples = { tier = "uncovered", note = "no toy-model event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows" }
+
+[[process]]
+key = "p3r3_to_p3r3_toy_epsilon"
+process = "p3 r3 > p3 r3 NP<=2"
+model = "validation/ufo/vibegraph_toy_color_UFO"
+restrict = "eps"
+script = "validation/madgraph/scripts/p3r3_to_p3r3_toy_epsilon.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "The baryonic colour atom, reached through an s-channel triplet diquark whose two ends contribute `Epsilon` and `EpsilonBar`: what the row measures is their contraction rule, not either atom alone, and the singlet-scalar exchange it interferes with supplies the plain delta-delta structure the contraction reduces to. Every field of the model is a scalar, because joining two same-representation fermions to a diquark needs a fermion-number-violating vertex and therefore charge conjugation -- separate machinery, deliberately out of scope -- so the row measures colour and nothing else."
+artifacts = ["output/p3r3_to_p3r3_toy_epsilon", "output/p3r3_to_p3r3_toy_epsilon.json", "output/p3r3_to_p3r3_toy_epsilon_amplitude.csv", "amplitudes/p3r3_to_p3r3_toy_epsilon.json"]
+mg_amplitude = { process = "p3 r3 > p3 r3 NP<=2", pdgs_in = [9000051, 9000052], pdgs_out = [9000051, 9000052], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 233 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "info", note = "red by construction and measured as such: 0 enumerated against MadGraph's 2, because this crate's colour grammar parses `Identity`, `T`, `f` and `d` and refuses the model outright -- `cannot load validation/ufo/vibegraph_toy_color_UFO-eps: Vertex parse error: Failed to parse vertices.py: vertex 'V_p3r3d3': failed to parse color string 'Epsilon(1,2,3)'`. The refusal is at parse time, before any restriction, which is why a card that switches the vertex off still reports it. Waits on `Epsilon`/`EpsilonBar` in the grammar and their contraction rule" }
+amplitudes = { tier = "hermetic", mode = "info", note = "no comparison: the same load refusal, recorded rather than enforced. MadGraph's side is banked and is what the atoms will be judged against: 2 diagrams, NCOLOR 2 over the flow basis `T(3,1) T(4,2)` and `T(3,2) T(4,1)`, and JAMP lines `JAMP(1) = AMP(1)+AMP(2)`, `JAMP(2) = -AMP(1)` -- the epsilon-epsilonbar reduction into a difference of two delta-delta structures, written out as coefficients" }
+integrals = { tier = "uncovered", note = "the toy models bank no cross section. Their couplings and masses are chosen to make a structure visible per diagram, not to describe anything, so a sigma computed from them would measure the phase-space and flux machinery the Standard-Model rows already gate and nothing else. What these rows own is the amplitude level" }
+samples = { tier = "uncovered", note = "no toy-model event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows" }
+
+[[process]]
+key = "p3r3_to_p3r3_toy_sextet"
+process = "p3 r3 > p3 r3 NP<=2"
+model = "validation/ufo/vibegraph_toy_color_UFO"
+restrict = "k6"
+script = "validation/madgraph/scripts/p3r3_to_p3r3_toy_sextet.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "The sextet Clebsch coefficients `K6`/`K6Bar`, reached through an s-channel sextet diquark. The sextet is internal, so MadGraph reduces the pair through K6(m,i,j) K6Bar(m,k,l) = (T(l,i)T(k,j) + T(k,i)T(l,j))/2 before it builds a colour matrix and no external leg carries two colour lines -- which separates the reduction rules from the open question of how a sextet leg is written into an event file. The same process as p3r3_to_p3r3_toy_epsilon under the other card, so the two differ by the atom alone and MadGraph's JAMP coefficients (1, -1 against 1/2, 1/2) are the reduction made visible."
+artifacts = ["output/p3r3_to_p3r3_toy_sextet", "output/p3r3_to_p3r3_toy_sextet.json", "output/p3r3_to_p3r3_toy_sextet_amplitude.csv", "amplitudes/p3r3_to_p3r3_toy_sextet.json"]
+mg_amplitude = { process = "p3 r3 > p3 r3 NP<=2", pdgs_in = [9000051, 9000052], pdgs_out = [9000051, 9000052], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 239 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "info", note = "red by construction and measured as such: 0 enumerated against MadGraph's 2, on the same load refusal as p3r3_to_p3r3_toy_epsilon -- the colour grammar rejects `Epsilon(1,2,3)` at parse time, before the restriction that would have removed that vertex from this card. Waits on `K6`/`K6Bar` in the grammar, and on `Epsilon` alongside them for the model to load at all" }
+amplitudes = { tier = "hermetic", mode = "info", note = "no comparison: the same load refusal, recorded rather than enforced. What is banked is the sextet reduction as coefficients: 2 diagrams, NCOLOR 2 over the same flow basis as p3r3_to_p3r3_toy_epsilon, with `JAMP(1) = 0.5*AMP(1)+AMP(2)` and `JAMP(2) = 0.5*AMP(1)` -- the halves of K6(m,i,j) K6Bar(m,k,l) = (T(l,i)T(k,j) + T(k,i)T(l,j))/2 against the epsilon row's +1/-1, so the two rows differ by the atom alone" }
+integrals = { tier = "uncovered", note = "the toy models bank no cross section. Their couplings and masses are chosen to make a structure visible per diagram, not to describe anything, so a sigma computed from them would measure the phase-space and flux machinery the Standard-Model rows already gate and nothing else. What these rows own is the amplitude level" }
+samples = { tier = "uncovered", note = "no toy-model event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows" }
+
 # ─────────────────────────── standalone gates ────────────────────────────────
 #
 # Process-independent checks, run once per invocation of their layer and

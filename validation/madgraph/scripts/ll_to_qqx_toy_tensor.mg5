@@ -1,0 +1,34 @@
+# MadGraph5 batch script: lt~ lt > qt qt~ NP<=1 NPGG<=1
+# in vibegraph_toy_UFO, restricted by restrict_tensor.dat.
+#
+# Why this exact process:
+#   The tensor-tensor four-fermion contact in both of its spellings at once --
+#   Sigma(-1,-2,2,1)*Sigma(-1,-2,4,3) under NP, and the same operator written as
+#   the gamma-gamma chains FeynRules would have produced under NPGG -- beside the
+#   s-channel vector exchange they both interfere with. Three diagrams, so the
+#   contact's sign and normalisation are measurable per helicity, and the two
+#   spellings can be compared against each other diagram by diagram in MadGraph's
+#   own AMP() before anything on this side evaluates either.
+#
+# The model path is repo-relative to the vendored UFO; build.sh rewrites it to
+# the work-area copy it stages under output/models/. This model is ours, so its
+# restrict cards live inside the model directory and are staged with it.
+#
+# `display interactions` prints the count MadGraph's own interaction splitting
+# arrives at (one interaction per coupling-order tuple, import_ufo.add_interaction)
+# into the build log, which is where extract_interactions.py reads it from.
+#
+# The order bound is explicit on every row of this model: an unbounded generate
+# runs MadGraph's WEIGHTED search, which would drop the higher-order diagrams the
+# interference needs.
+import model validation/ufo/vibegraph_toy_UFO-tensor
+display interactions
+generate lt~ lt > qt qt~ NP<=1 NPGG<=1
+output ll_to_qqx_toy_tensor -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

@@ -163,12 +163,11 @@ class ProbeM2:
     """|M|^2 through the per-diagram probe rather than the shared wrapper.
 
     `wrappers/generic.f` calls the helicity-summed `MATRIX1` subroutine that
-    MadEvent's helicity recycling writes. A 2 -> 1 process has no phase space to
-    integrate, so its `launch` stops before recycling and the matrix element
-    keeps the per-helicity `MATRIX1` function instead — a different argument
-    list behind the same name. The probe module calls that form, and summing its
-    value over MadGraph's own NHEL table is the same helicity- and colour-summed
-    number the wrapper would have returned.
+    MadEvent's helicity recycling writes. Where recycling did not run, the matrix
+    element keeps `matrix1_orig.f`'s per-helicity `MATRIX1` function instead — a
+    different argument list behind the same name. The probe module calls that
+    form, and summing its value over MadGraph's own NHEL table is the same
+    helicity- and colour-summed number the wrapper would have returned.
     """
 
     def __init__(self, name: str, n_ext: int):
@@ -185,6 +184,28 @@ class ProbeM2:
     def mg_eval_m2_batch(self, p_batch, card):
         for k in range(p_batch.shape[2]):
             self.mg_eval_m2(np.asfortranarray(p_batch[:, :, k]), card)
+
+
+def summed_m2_module(name: str, n_ext: int):
+    """The helicity- and colour-summed |M|^2 of a process, however it is reachable.
+
+    `build_amplitude.sh` compiles `mg_<name>` against `wrappers/generic.f` only
+    where MadEvent's helicity recycling rewrote the matrix element, and says so
+    when it declines. Two kinds of process reach here without one: a 2 -> 1
+    process, whose `launch` has no phase space to integrate and stops before
+    recycling, and an all-scalar process, which has a single helicity
+    combination for recycling to work on and keeps `matrix1_orig.f` under the
+    optimised name. Both are served by [`ProbeM2`], which reaches the same
+    number through the per-diagram probe every row builds anyway. Selecting on
+    the module rather than on the Fortran is deliberate: a work area restored
+    from the reference bundle carries `matrix1_orig.f` and not the optimised
+    file, so the source is not there to read on every checkout and the compiled
+    module is.
+    """
+    try:
+        return importlib.import_module(f"mg_{name}")
+    except ModuleNotFoundError:
+        return ProbeM2(name, n_ext)
 
 
 def param_card_path(proc: Process) -> str:
@@ -295,11 +316,7 @@ def gen_process(proc: Process) -> tuple[int, list[list[float]], dict]:
     and timing is the profile_batch record.
     """
     n_ext = len(proc.pdgs_in) + len(proc.pdgs_out)
-    module = (
-        ProbeM2(proc.name, n_ext)
-        if len(proc.pdgs_out) == 1
-        else importlib.import_module(f"mg_{proc.name}")
-    )
+    module = summed_m2_module(proc.name, n_ext)
     card = param_card_path(proc)
     masses = read_masses(card)
     m_in = [masses.get(abs(pdg), 0.0) for pdg in proc.pdgs_in]

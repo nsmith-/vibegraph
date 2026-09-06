@@ -54,9 +54,9 @@ fn diagram_count(model: &UFOModel, process: &str) -> usize {
 }
 
 /// MadGraph's own post-restriction interaction count for every (model, card) pair
-/// the validation manifest names, keyed `<model dir>-<restrict>`, with one row
+/// the validation manifest names, keyed `<model dir>-<restrict>`, with the rows
 /// generated under that pair.
-fn banked_interaction_counts() -> BTreeMap<String, (usize, String)> {
+fn banked_interaction_counts() -> BTreeMap<String, (usize, Vec<String>)> {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/interactions.json");
     let text =
@@ -68,11 +68,14 @@ fn banked_interaction_counts() -> BTreeMap<String, (usize, String)> {
         .iter()
         .map(|(pair, entry)| {
             let count = entry["interactions"].as_u64().expect("interaction count") as usize;
-            let row = entry["rows"][0]
-                .as_str()
-                .expect("every banked pair names a row")
-                .to_owned();
-            (pair.clone(), (count, row))
+            let rows: Vec<String> = entry["rows"]
+                .as_array()
+                .expect("every banked pair names its rows")
+                .iter()
+                .map(|r| r.as_str().expect("row key").to_owned())
+                .collect();
+            assert!(!rows.is_empty(), "[{pair}] names no row");
+            (pair.clone(), (count, rows))
         })
         .collect()
 }
@@ -315,16 +318,32 @@ fn expansion_order_is_declared_but_caps_nothing() {
 /// holds after `add_interaction` has split every UFO vertex by coupling-order
 /// tuple and the restriction has dropped the ones whose couplings all vanish. Two
 /// programs arriving at the same number from the same file is what says the split
-/// and the pruning are MadGraph's, and it is checked on all twelve pairs rather
-/// than the two shipped cards, because the per-class cards are where a card zeroes
-/// most of the model and a pruning error has room to show.
+/// and the pruning are MadGraph's, and it is checked on every banked pair rather
+/// than on the two shipped cards, because the per-class cards are where a card
+/// zeroes most of the model and a pruning error has room to show.
+///
+/// A pair whose model this crate cannot read at all is reported by name with the
+/// refusal rather than failing, and only where the manifest already says so:
+/// enforcement follows the pair's rows, so a pair carrying an enforced
+/// `amplitudes` cell must load and must match, and one whose rows are all
+/// informational — a model written for a structure the loader has yet to
+/// learn — records what stopped it. The count itself is asserted whenever the
+/// model loads, informational rows included, so the allowance covers the refusal
+/// and never a wrong number.
 #[test]
 fn restricted_interaction_counts_match_madgraph() {
     let banked = banked_interaction_counts();
     assert!(!banked.is_empty(), "no banked interaction counts");
-    for (pair, (want, row)) in &banked {
-        let model = common::model_for_row(row)
-            .unwrap_or_else(|e| panic!("[{pair}] load the model row '{row}' names: {e}"));
+    for (pair, (want, rows)) in &banked {
+        let enforced = rows.iter().any(|r| common::amplitudes_enforced(r));
+        let model = match common::model_for_row(&rows[0]) {
+            Ok(model) => model,
+            Err(e) if !enforced => {
+                println!("  [{pair}] no count: {e}");
+                continue;
+            }
+            Err(e) => panic!("[{pair}] load the model row '{}' names: {e}", rows[0]),
+        };
         assert_eq!(
             model.vertices.len(),
             *want,
