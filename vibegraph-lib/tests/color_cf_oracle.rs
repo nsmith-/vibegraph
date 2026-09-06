@@ -15,6 +15,17 @@
 //! `CF ∈ {1,3,9}` scalar cases, and the QCD `q q~`/`g g` processes are genuine
 //! NCOLOR=2 checks.
 //!
+//! The same files carry a second, finer comparison: MadGraph's own
+//! `JAMP(i) = … AMP(j)` lines give the colour coefficient every amplitude enters
+//! every flow with, which is the *decomposition* into the basis rather than the
+//! basis itself. `CF` is a Gram matrix and is blind to it — it is invariant under
+//! a uniform transpose of the basis keys, and says nothing at all about how a
+//! vertex's several colour structures distribute over the flows — so a wrong
+//! coefficient on one structure of a multi-structure vertex (the four-gluon
+//! contact, with three) survives a perfect `CF` match. [`check_jamp`] closes
+//! that: it compares the per-amplitude coefficient columns graph by graph, with
+//! each graph's structures kept in order.
+//!
 //! Each run is colorized under the model `validation/manifest.toml` records for
 //! its row, not under the interned Standard Model: two rows can carry the same
 //! process string and differ only in which vertices their restrict card leaves
@@ -33,6 +44,7 @@
 mod common;
 
 use libtest_mimic::{Arguments, Failed, Trial};
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use vibegraph::diagrams::{Diagram, DiagramSet};
@@ -56,6 +68,9 @@ struct MgReference {
     /// One MadGraph basis-structure label per flow, e.g. `"T(2,1) T(3,4)"`
     /// (from the `C     1 T(2,1) T(3,4)` comment following each CF column).
     structures: Vec<String>,
+    /// `jamp[flow][graph]`: the colour coefficient MadGraph's own
+    /// `JAMP(flow) = Σ_g c AMP(g)` lines multiply each amplitude by.
+    jamp: Vec<Vec<Cx>>,
 }
 
 /// Find every `SubProcesses/P*/matrix1_orig.f` under the MG output tree.
@@ -161,12 +176,14 @@ fn parse_matrix_file(path: &Path) -> Result<MgReference, String> {
         .any(|l| l.trim_start().starts_with("DATA (CF(I),"))
     {
         let (cf, structures) = parse_packed_cf(&lines, ncolor)?;
+        let jamp = parse_jamp_block(&lines, ncolor, ngraphs)?;
         return Ok(MgReference {
             process,
             ncolor,
             ngraphs,
             cf,
             structures,
+            jamp,
         });
     }
 
@@ -218,12 +235,14 @@ fn parse_matrix_file(path: &Path) -> Result<MgReference, String> {
     if cf.iter().any(|v| v.is_nan()) {
         return Err("CF matrix has unfilled entries".into());
     }
+    let jamp = parse_jamp_block(&lines, ncolor, ngraphs)?;
     Ok(MgReference {
         process,
         ncolor,
         ngraphs,
         cf,
         structures,
+        jamp,
     })
 }
 
@@ -393,6 +412,24 @@ fn colorize(process: &str, model: &UFOModel) -> Result<ColorBasis, String> {
     colorize_process(model, with_diagrams[0]).map_err(|e| format!("colorize: {e}"))
 }
 
+/// Rows whose `amplitudes` cell is informational but whose **colour**
+/// comparison is enforced anyway, each with the measurement that earned it.
+///
+/// The default rule below reads enforcement off the row's `amplitudes` cell,
+/// because a colour basis is a factor of an amplitude rather than a category of
+/// its own. That is the right default for a row nothing yet evaluates, and the
+/// wrong one for a row whose colour layer has been measured exact while its
+/// amplitude is still under construction — leaving it reported would let the
+/// colour result regress silently while the amplitude cell explains why nobody
+/// noticed. A row listed here must pass; the list is not an exemption from
+/// anything, it is a promotion.
+const COLOUR_ENFORCED_INFO_ROWS: &[(&str, &str)] = &[(
+    "gg_to_gg_cg",
+    "CF max_rel = 0 at NCOLOR 9 and all 27 JAMP colour columns exact with no rephasing, \
+     including the nine four-gluon contact structures; the row's residual against \
+     MadGraph is in the amplitudes, not in the colour decomposition",
+)];
+
 /// A row's cell is asserted or only reported, and the comparison itself is the
 /// same either way, so it is run first and its outcome decided on after.
 fn run_trial(matrix_path: PathBuf) -> Result<(), Failed> {
@@ -400,7 +437,8 @@ fn run_trial(matrix_path: PathBuf) -> Result<(), Failed> {
     let name = trial_name(&matrix_path);
     // An enforced row's panic stays a panic; a reported one is part of what is
     // being reported.
-    let enforced = common::amplitudes_enforced(&key);
+    let enforced = common::amplitudes_enforced(&key)
+        || COLOUR_ENFORCED_INFO_ROWS.iter().any(|(k, _)| *k == key);
     let outcome = if enforced {
         compare(&matrix_path)
     } else {
@@ -422,6 +460,9 @@ fn run_trial(matrix_path: PathBuf) -> Result<(), Failed> {
 /// Compare one generated subprocess's colour-factor matrix to ours, returning
 /// the line that describes the agreement.
 fn compare(matrix_path: &Path) -> Result<String, String> {
+    let content =
+        std::fs::read_to_string(matrix_path).map_err(|e| format!("read {matrix_path:?}: {e}"))?;
+    let lines = logical_lines(&content);
     let mg = parse_matrix_file(matrix_path)?;
     let process = clean_process(&mg.process);
 
@@ -460,6 +501,10 @@ fn compare(matrix_path: &Path) -> Result<String, String> {
         }
     }
 
+    // The colour coefficients each amplitude enters `JAMP` with, against
+    // MadGraph's own JAMP lines — the level below the CF matrix.
+    let jamp_note = check_jamp(&cb, &mg, &lines)?;
+
     // Ordering cross-check (report-only): compare our sorted basis structures to
     // MadGraph's per-flow structure comments. A mismatch is a finding, not a
     // failure — the summed-index labelling differs, so this only catches a real
@@ -488,7 +533,7 @@ fn compare(matrix_path: &Path) -> Result<String, String> {
     };
 
     Ok(format!(
-        "'{process}' NCOLOR={n} CF max_rel={max_rel:.2e}{ngraphs_note}{ordering_note}"
+        "'{process}' NCOLOR={n} CF max_rel={max_rel:.2e}{jamp_note}{ngraphs_note}{ordering_note}"
     ))
 }
 
@@ -587,4 +632,404 @@ fn main() {
     ));
 
     libtest_mimic::run(&args, trials).exit();
+}
+
+// ── JAMP colour-coefficient oracle ───────────────────────────────────────────
+
+/// Relative tolerance on the JAMP colour coefficients. Both sides are exact
+/// rationals; MadGraph prints them as 16-digit decimals, so the only error is
+/// the last-digit rounding of both sides to the nearest `f64`.
+const JAMP_REL_TOL: f64 = 1e-14;
+
+/// A complex colour coefficient, `(re, im)`.
+type Cx = (f64, f64);
+
+fn cx_add(a: Cx, b: Cx) -> Cx {
+    (a.0 + b.0, a.1 + b.1)
+}
+
+fn cx_mul(a: Cx, b: Cx) -> Cx {
+    (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+
+fn cx_abs(a: Cx) -> f64 {
+    a.0.hypot(a.1)
+}
+
+/// Parse one Fortran scalar literal as it appears inside a JAMP term's
+/// parenthesised coefficient: either a real (`-5.0D-01`) or a complex pair
+/// (`(0.0D+00,1.0D+00)`).
+fn parse_fortran_scalar(tok: &str) -> Option<Cx> {
+    let t = tok.trim();
+    if let Some(inner) = t.strip_prefix('(').and_then(|r| r.strip_suffix(')')) {
+        let (re, im) = inner.split_once(',')?;
+        return Some((parse_fortran_real(re)?, parse_fortran_real(im)?));
+    }
+    Some((parse_fortran_real(t)?, 0.0))
+}
+
+/// Split off the matching `)` of a leading `(`; returns `(inside, rest)`.
+fn balanced(s: &str) -> Option<(&str, &str)> {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'(') {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (k, b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&s[1..k], &s[k + 1..]));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Parse one right-hand side of a `JAMP`/`TMP_JAMP` assignment into a vector of
+/// coefficients over `AMP(1..ngraphs)`, resolving `TMP_JAMP` references against
+/// the ones already parsed.
+///
+/// The grammar MadGraph's exporter emits is a signed sum of terms, each an
+/// optional parenthesised scalar times either `AMP(n)` or `TMP_JAMP(n)`.
+fn parse_jamp_rhs(
+    rhs: &str,
+    tmp: &HashMap<usize, Vec<Cx>>,
+    ngraphs: usize,
+) -> Result<Vec<Cx>, String> {
+    let mut out = vec![(0.0, 0.0); ngraphs];
+    let mut rest: &str = rhs;
+    while !rest.is_empty() {
+        let mut sign = 1.0;
+        if let Some(r) = rest.strip_prefix('+') {
+            rest = r;
+        } else if let Some(r) = rest.strip_prefix('-') {
+            sign = -1.0;
+            rest = r;
+        }
+        let mut coeff = (sign, 0.0);
+        if rest.starts_with('(') {
+            let (inside, after) =
+                balanced(rest).ok_or_else(|| format!("unbalanced '(' in {rhs}"))?;
+            let scalar =
+                parse_fortran_scalar(inside).ok_or_else(|| format!("bad scalar '{inside}'"))?;
+            coeff = cx_mul(coeff, scalar);
+            rest = after
+                .strip_prefix('*')
+                .ok_or_else(|| format!("coefficient not followed by '*' in {rhs}"))?;
+        }
+        let (name, after) = rest
+            .split_once('(')
+            .ok_or_else(|| format!("term without an operand in {rhs}"))?;
+        let (index, after) = after
+            .split_once(')')
+            .ok_or_else(|| format!("unterminated index in {rhs}"))?;
+        let index: usize = index
+            .parse()
+            .map_err(|_| format!("non-numeric index '{index}' in {rhs}"))?;
+        match name {
+            "AMP" => {
+                if index == 0 || index > ngraphs {
+                    return Err(format!("AMP({index}) out of range 1..{ngraphs}"));
+                }
+                out[index - 1] = cx_add(out[index - 1], coeff);
+            }
+            "TMP_JAMP" => {
+                let src = tmp
+                    .get(&index)
+                    .ok_or_else(|| format!("TMP_JAMP({index}) used before it is defined"))?;
+                for (o, s) in out.iter_mut().zip(src) {
+                    *o = cx_add(*o, cx_mul(coeff, *s));
+                }
+            }
+            other => return Err(format!("unknown operand '{other}' in {rhs}")),
+        }
+        rest = after;
+    }
+    Ok(out)
+}
+
+/// Parse the `JAMP(f,1) = …` block into `jamp[flow][graph]`, the exact colour
+/// coefficient MadGraph's generated code multiplies each `AMP()` by.
+fn parse_jamp_block(
+    lines: &[String],
+    ncolor: usize,
+    ngraphs: usize,
+) -> Result<Vec<Vec<Cx>>, String> {
+    let mut tmp: HashMap<usize, Vec<Cx>> = HashMap::new();
+    let mut jamp: Vec<Option<Vec<Cx>>> = vec![None; ncolor];
+    for line in lines {
+        // One logical statement, comment stripped and whitespace removed: the
+        // exporter's continuation lines split numeric literals mid-token.
+        let stmt: String = line
+            .split('!')
+            .next()
+            .unwrap_or("")
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let Some((lhs, rhs)) = stmt.split_once('=') else {
+            continue;
+        };
+        if let Some(idx) = lhs
+            .strip_prefix("TMP_JAMP(")
+            .and_then(|r| r.strip_suffix(')'))
+        {
+            let idx: usize = idx
+                .parse()
+                .map_err(|_| format!("bad TMP_JAMP index: {lhs}"))?;
+            let value = parse_jamp_rhs(rhs, &tmp, ngraphs)?;
+            tmp.insert(idx, value);
+        } else if let Some(idx) = lhs
+            .strip_prefix("JAMP(")
+            .and_then(|r| r.strip_suffix(",1)"))
+        {
+            let Ok(idx) = idx.parse::<usize>() else {
+                continue; // `JAMP(:,:) = (0D0,0D0)`
+            };
+            if idx == 0 || idx > ncolor {
+                return Err(format!("JAMP({idx},1) out of range 1..{ncolor}"));
+            }
+            jamp[idx - 1] = Some(parse_jamp_rhs(rhs, &tmp, ngraphs)?);
+        }
+    }
+    jamp.into_iter()
+        .enumerate()
+        .map(|(f, row)| row.ok_or_else(|| format!("no JAMP({},1) assignment", f + 1)))
+        .collect()
+}
+
+/// Our own JAMP decomposition: one column of colour coefficients over the flows
+/// per amplitude, an amplitude being one `(diagram, colour-index chain)` pair —
+/// the same object MadGraph writes as one `AMP()`.
+fn our_jamp(cb: &ColorBasis) -> Vec<((usize, Vec<u8>), Vec<Cx>)> {
+    let mut keys: BTreeSet<(usize, Vec<u8>)> = BTreeSet::new();
+    for el in &cb.elements {
+        for c in &el.contributions {
+            keys.insert((c.diagram, c.chain.clone()));
+        }
+    }
+    let keys: Vec<(usize, Vec<u8>)> = keys.into_iter().collect();
+    let mut columns = vec![vec![(0.0, 0.0); cb.ncolor()]; keys.len()];
+    for (f, el) in cb.elements.iter().enumerate() {
+        for c in &el.contributions {
+            let a = keys
+                .iter()
+                .position(|k| k.0 == c.diagram && k.1 == c.chain)
+                .expect("key collected above");
+            let q = ratio_to_f64(c.coeff.eval_nc(3));
+            let value = if c.coeff.imag { (0.0, q) } else { (q, 0.0) };
+            columns[a][f] = cx_add(columns[a][f], value);
+        }
+    }
+    keys.into_iter().zip(columns).collect()
+}
+
+/// The unit factor a colour-coefficient column is defined up to: MadGraph puts
+/// the relative sign between two diagrams (and the factor of `i` an `f`-derived
+/// structure carries) into the colour coefficient, vibegraph into the diagram
+/// root, so a column is fixed only up to one overall unit per amplitude. Return
+/// the column divided by the phase of its first non-zero entry, together with
+/// that phase.
+fn normalise_column(col: &[Cx]) -> Option<(Cx, Vec<Cx>)> {
+    let scale = col.iter().map(|c| cx_abs(*c)).fold(0.0f64, f64::max);
+    if scale == 0.0 {
+        return None;
+    }
+    let lead = *col.iter().find(|c| cx_abs(**c) > 1e-12 * scale)?;
+    let unit = (lead.0 / cx_abs(lead), lead.1 / cx_abs(lead));
+    let conj = (unit.0, -unit.1);
+    Some((unit, col.iter().map(|c| cx_mul(*c, conj)).collect()))
+}
+
+/// Sort key that orders normalised columns deterministically for the multiset
+/// comparison (they are compared numerically afterwards).
+fn column_key(col: &[Cx]) -> Vec<(i64, i64)> {
+    col.iter()
+        .map(|c| ((c.0 * 1e9).round() as i64, (c.1 * 1e9).round() as i64))
+        .collect()
+}
+
+/// MadGraph's grouping of `AMP()` indices by the graph that produced them, read
+/// from its own `C     Amplitude(s) for diagram number N` comments.
+///
+/// A vertex with several colour structures makes one graph write several
+/// amplitudes — the four-gluon contact writes three — so this is what turns the
+/// per-amplitude comparison into a per-*structure* one: the amplitudes of one
+/// graph are compared as an ordered tuple, in the order MadGraph emits them.
+fn mg_amp_groups(lines: &[String]) -> Vec<Vec<usize>> {
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for line in lines {
+        let t = line.trim_start();
+        if t.starts_with("JAMP(") || t.contains("JAMP(:,:)") {
+            break;
+        }
+        if t.starts_with('C') && t.contains("Amplitude(s) for diagram number") {
+            groups.push(Vec::new());
+            continue;
+        }
+        if !t.starts_with("CALL") {
+            continue;
+        }
+        let Some(group) = groups.last_mut() else {
+            continue;
+        };
+        let mut rest = t;
+        while let Some((_, after)) = rest.split_once("AMP(") {
+            let Some((idx, tail)) = after.split_once(')') else {
+                break;
+            };
+            if let Ok(i) = idx.trim().parse::<usize>() {
+                group.push(i - 1);
+            }
+            rest = tail;
+        }
+    }
+    groups
+}
+
+/// Compare our per-amplitude colour-coefficient columns to MadGraph's own
+/// `JAMP(i) = … AMP(j)` lines, and return the note describing the agreement.
+///
+/// This is the level below the CF matrix: `CF` is a Gram matrix over the basis
+/// and so cannot see how a diagram's colour structure *decomposes into* it, and
+/// the flow tags see only each basis key's connectivity. The decomposition is
+/// what multiplies the amplitudes into `JAMP`, and a wrong coefficient on one
+/// structure of a multi-structure vertex — the four-gluon contact is the case
+/// with three of them — shows up here and nowhere else in the colour layer.
+///
+/// The comparison is mapping-free: nothing derives MadGraph's graph order from
+/// ours, so graphs are matched as a multiset rather than paired by index
+/// (`amplitude_oracle`'s banked `MG_DIAGRAM_ORDER` is what pins the pairing).
+/// What is compared per graph is the **ordered tuple** of its amplitudes'
+/// columns, so a vertex's colour structures cannot be permuted among themselves
+/// without failing here. Each column is taken up to one unit per amplitude,
+/// which is the convention freedom named in [`normalise_column`]; that the unit
+/// is a fourth root of unity is the part of it that has teeth, and how many
+/// columns need one at all is measured and reported.
+fn check_jamp(cb: &ColorBasis, mg: &MgReference, lines: &[String]) -> Result<String, String> {
+    let normalise = |col: &[Cx], what: &str| -> Result<Option<(Cx, Vec<Cx>)>, String> {
+        let Some((unit, norm)) = normalise_column(col) else {
+            return Ok(None);
+        };
+        let quarter = [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)];
+        if !quarter
+            .iter()
+            .any(|q| cx_abs((unit.0 - q.0, unit.1 - q.1)) < 1e-9)
+        {
+            return Err(format!(
+                "{what} leads with the unit ({}, {}), not a fourth root of unity",
+                unit.0, unit.1
+            ));
+        }
+        Ok(Some((unit, norm)))
+    };
+
+    // Ours, grouped by diagram: one group per graph, its columns in colour-index
+    // chain order.
+    let ours = our_jamp(cb);
+    let mut mine: Vec<(Vec<Vec<(i64, i64)>>, Vec<(Cx, Vec<Cx>)>)> = Vec::new();
+    for (diagram, columns) in group_by_diagram(&ours) {
+        let mut entries = Vec::new();
+        for (chain, col) in &columns {
+            let what = format!("our diagram {diagram} colour chain {chain:?}");
+            if let Some(entry) = normalise(col, &what)? {
+                entries.push(entry);
+            }
+        }
+        if !entries.is_empty() {
+            mine.push((entries.iter().map(|e| column_key(&e.1)).collect(), entries));
+        }
+    }
+
+    // MadGraph's, grouped by its own `Amplitude(s) for diagram number` comments.
+    let groups = mg_amp_groups(lines);
+    if groups.iter().map(Vec::len).sum::<usize>() != mg.ngraphs {
+        return Err(format!(
+            "MadGraph's amplitude comments cover {} of {} graphs",
+            groups.iter().map(Vec::len).sum::<usize>(),
+            mg.ngraphs
+        ));
+    }
+    let mut theirs: Vec<(Vec<Vec<(i64, i64)>>, Vec<(Cx, Vec<Cx>)>)> = Vec::new();
+    for group in &groups {
+        let mut entries = Vec::new();
+        for &g in group {
+            let col: Vec<Cx> = (0..mg.ncolor).map(|f| mg.jamp[f][g]).collect();
+            // An `AMP()` no `JAMP` picks up carries no colour information.
+            if let Some(entry) = normalise(&col, &format!("MadGraph AMP({})", g + 1))? {
+                entries.push(entry);
+            }
+        }
+        if !entries.is_empty() {
+            theirs.push((entries.iter().map(|e| column_key(&e.1)).collect(), entries));
+        }
+    }
+
+    if mine.len() != theirs.len() {
+        return Err(format!(
+            "colour-carrying graph count: vibegraph {} vs MadGraph {} (NGRAPHS {})",
+            mine.len(),
+            theirs.len(),
+            mg.ngraphs
+        ));
+    }
+    mine.sort_by(|a, b| a.0.cmp(&b.0));
+    theirs.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut max_rel = 0.0f64;
+    let mut columns = 0usize;
+    let mut rephased = 0usize;
+    for (g, (a, b)) in mine.iter().zip(&theirs).enumerate() {
+        if a.1.len() != b.1.len() {
+            return Err(format!(
+                "graph {g}: vibegraph writes {} colour structures, MadGraph {}",
+                a.1.len(),
+                b.1.len()
+            ));
+        }
+        for (k, (ours, mg_col)) in a.1.iter().zip(&b.1).enumerate() {
+            columns += 1;
+            let unit = cx_mul(ours.0, (mg_col.0 .0, -mg_col.0 .1));
+            if cx_abs((unit.0 - 1.0, unit.1)) > 1e-9 {
+                rephased += 1;
+            }
+            for (f, (x, y)) in ours.1.iter().zip(&mg_col.1).enumerate() {
+                let diff = cx_abs((x.0 - y.0, x.1 - y.1));
+                let rel = diff / cx_abs(*y).max(1.0);
+                max_rel = max_rel.max(rel);
+                if rel > JAMP_REL_TOL {
+                    return Err(format!(
+                        "JAMP coefficient of graph {g} structure {k} on flow {f}: vibegraph \
+                         ({}, {}) vs MadGraph ({}, {}) (rel {rel:.2e} > {JAMP_REL_TOL:.0e})",
+                        x.0, x.1, y.0, y.1
+                    ));
+                }
+            }
+        }
+    }
+    Ok(format!(
+        " | JAMP {columns} columns over {} graphs max_rel={max_rel:.2e} ({rephased} rephased)",
+        mine.len()
+    ))
+}
+
+/// Split [`our_jamp`]'s per-amplitude columns into per-diagram groups, keeping
+/// each diagram's colour-index chains in ascending order.
+#[allow(clippy::type_complexity)]
+fn group_by_diagram(
+    amplitudes: &[((usize, Vec<u8>), Vec<Cx>)],
+) -> Vec<(usize, Vec<(Vec<u8>, Vec<Cx>)>)> {
+    let mut out: Vec<(usize, Vec<(Vec<u8>, Vec<Cx>)>)> = Vec::new();
+    for ((diagram, chain), col) in amplitudes {
+        match out.last_mut() {
+            Some((d, group)) if d == diagram => group.push((chain.clone(), col.clone())),
+            _ => out.push((*diagram, vec![(chain.clone(), col.clone())])),
+        }
+    }
+    out
 }

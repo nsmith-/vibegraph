@@ -162,6 +162,22 @@ fn map_index(
 /// slot indices from `slot_index` and allocating fresh summed indices (from
 /// `counter`) for the expression's internal negative indices. Returns the
 /// integer coefficient (the `2` from an octet `Identity`, otherwise `1`).
+///
+/// **The `T` index pair is transposed on substitution.** In a UFO color string
+/// `T(a…,i,j)` the slot `i` holds the interaction's `3` field and `j` its `3̄`
+/// ([`check_t_slot_reps`] pins that). MadGraph instead indexes a `T`'s
+/// fundamental slot by the leg that carries a `3` index in the all-outgoing
+/// crossing, and feyngraph presents every leg in the all-incoming crossing — the
+/// opposite arrow — so the leg standing in a `3` slot is exactly the one
+/// MadGraph puts in the antifundamental position. Reading the pair straight
+/// through would complex-conjugate the color string: invisible to the CF matrix
+/// and to the purely-rational T-chain contributions, but it flips the sign of
+/// the imaginary `f → trace` coefficients (corrupting the relative sign between
+/// `f`-derived and T-chain structures, e.g. `g g > t t~`) and it splits a basis
+/// that mixes both readings into a structure and its conjugate (`u u~ > t t~`
+/// with a four-quark contact, where the singlet contact and the gluon exchange
+/// then land on two unrelated keys). Adjoint indices are self-conjugate and pass
+/// through untouched, so pure-gluon vertices are unaffected.
 fn convert_expr(
     expr: &ColorExpr,
     slot_index: &[Idx],
@@ -174,7 +190,8 @@ fn convert_expr(
         .iter()
         .map(|atom| match atom {
             ColorAtom::T(adj, i, j) => {
-                ColorTensor::T(adj.iter().map(|&a| map(a)).collect(), map(*i), map(*j))
+                let adj: Vec<Idx> = adj.iter().map(|&a| map(a)).collect();
+                ColorTensor::T(adj, map(*j), map(*i))
             }
             ColorAtom::Tr(adj) => ColorTensor::Tr(adj.iter().map(|&a| map(a)).collect()),
             ColorAtom::F(a, b, c) => ColorTensor::F(map(*a), map(*b), map(*c)),
@@ -189,63 +206,64 @@ fn convert_expr(
 /// propagator index). External legs get their (positive) leg number; each
 /// propagator gets one shared negative summed index.
 ///
-/// The **fundamental/antifundamental slot assignment** follows MadGraph's
-/// convention rather than feyngraph's ray order. MadGraph indexes a `T`'s
-/// fundamental slot `i` by the quark whose fermion-number arrow points *out* of
-/// the vertex and the antifundamental slot `j` by the arrow pointing *in*.
-/// feyngraph instead presents every leg in the all-incoming crossing, which
-/// orders each directed line by its crossed rep — the exact opposite arrow — so
-/// its `3`/`3̄` slots come out uniformly transposed from MadGraph's. That
-/// transpose complex-conjugates the whole color string: invisible for the
-/// purely-rational T-chain contributions, but it flips the sign of the
-/// imaginary `f → trace` coefficients and so corrupts the relative sign between
-/// `f`-derived and T-chain color structures (e.g. `g g > t t~`). Undoing it is a
-/// uniform swap of the single `3` and `3̄` slots at every vertex that has one of
-/// each; octet (gluon) and singlet slots keep feyngraph's order untouched, so
-/// pure-gluon vertices (`g g > g g`) are unaffected.
-fn slot_indices(model: &UFOModel, diagram: &Diagram) -> (Vec<Vec<Idx>>, Idx) {
+/// The mapping is purely positional: feyngraph presents a vertex's rays in UFO
+/// interaction-slot order, which is the order the color-string indices `1..n`
+/// refer to. The `3`/`3̄` crossing between feyngraph's slot order and
+/// MadGraph's `T` index convention is undone per tensor in [`convert_expr`],
+/// not by permuting slots.
+fn slot_indices(diagram: &Diagram) -> (Vec<Vec<Idx>>, Idx) {
     // One summed index per propagator, deterministic in PropIdx order.
     let prop_index = |p: PropIdx| -(p.0 as Idx + 1);
     let slots = diagram
         .vertices
         .iter()
-        .enumerate()
-        .map(|(vi, v)| {
-            let mut positions: Vec<Idx> = v
-                .rays
+        .map(|v| {
+            v.rays
                 .iter()
                 .map(|ray| match ray {
                     Ray::Leg(li) => li.0 as Idx + 1,
                     Ray::Prop { prop, .. } => prop_index(*prop),
                 })
-                .collect();
-
-            // The single 3 and 3̄ slots, if this vertex has exactly one of each.
-            let reps: Vec<Option<ColorRep>> = (0..v.rays.len())
-                .map(|s| slot_rep(model, diagram, VtxIdx(vi), s).ok())
-                .collect();
-            let one_slot = |target: ColorRep| -> Option<usize> {
-                let mut found = None;
-                for (s, r) in reps.iter().enumerate() {
-                    if *r == Some(target) {
-                        if found.is_some() {
-                            return None; // ambiguous (>1) — leave feyngraph order
-                        }
-                        found = Some(s);
-                    }
-                }
-                found
-            };
-            if let (Some(fund), Some(anti)) =
-                (one_slot(ColorRep::Triplet), one_slot(ColorRep::AntiTriplet))
-            {
-                positions.swap(fund, anti);
-            }
-            positions
+                .collect()
         })
         .collect();
     let internal_base = -(diagram.props.len() as Idx + 1);
     (slots, internal_base)
+}
+
+/// Cross-check the index convention [`convert_expr`] transposes under: in every
+/// `T(a…,i,j)` of every color structure the diagram uses, `i` and `j` are slot
+/// indices whose interaction particles are a `3` and a `3̄` in that order.
+///
+/// A summed index in either position, or a slot pair that is not a `3`/`3̄` pair,
+/// means the vertex is written under a convention this engine does not read, so
+/// it is rejected rather than transposed into a wrong answer.
+fn check_t_slot_reps(model: &UFOModel, diagram: &Diagram) -> Result<(), ColorAlgebraError> {
+    for (vi, vertex) in diagram.vertices.iter().enumerate() {
+        let structures = &model.vertex_def(vertex.interaction).color;
+        for expr in used_color_indices(model, vertex)
+            .into_iter()
+            .map(|c| &structures[c])
+        {
+            for atom in &expr.atoms {
+                let ColorAtom::T(_, i, j) = atom else {
+                    continue;
+                };
+                let rep = |slot: i32| -> Option<ColorRep> {
+                    let s = usize::try_from(slot - 1).ok()?;
+                    (s < vertex.rays.len())
+                        .then(|| slot_rep(model, diagram, VtxIdx(vi), s).ok())
+                        .flatten()
+                };
+                if rep(*i) != Some(ColorRep::Triplet) || rep(*j) != Some(ColorRep::AntiTriplet) {
+                    return Err(ColorAlgebraError::Unsupported(format!(
+                        "T({i},{j}) in '{expr}' is not a 3/3̄ slot pair"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Cross-check that each propagator's two endpoints carry mutually-conjugate
@@ -275,7 +293,9 @@ fn colorize_diagram(
 ) -> Result<Vec<(Vec<u8>, ColorString)>, ColorAlgebraError> {
     check_propagator_reps(model, diagram)?;
 
-    let (slots, internal_base) = slot_indices(model, diagram);
+    check_t_slot_reps(model, diagram)?;
+
+    let (slots, internal_base) = slot_indices(diagram);
     let used: Vec<Vec<usize>> = diagram
         .vertices
         .iter()

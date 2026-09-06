@@ -282,6 +282,99 @@ fn full_simplify_mixed_atoms_is_a_fixpoint() {
     }
 }
 
+// ── Four-quark contact structures ─────────────────────────────────────────
+
+/// A color string's tensors in the order its basis key uses (`to_immutable`
+/// sorts them; `full_simplify` leaves a term it did not have to rewrite alone).
+fn sorted(tensors: &[ColorTensor]) -> Vec<ColorTensor> {
+    let mut out = tensors.to_vec();
+    out.sort_by_key(|t| (t.kind(), t.indices()));
+    out
+}
+
+/// The two colour structures a four-quark contact vertex writes reduce into one
+/// two-element basis, with the decomposition and colour matrix MadGraph's own
+/// `color_algebra.py` gives for the same index-labelled products.
+///
+/// Reference values, from the pinned submodule copy
+/// (`research/refs/mg5amcnlo/madgraph/core/color_algebra.py`) on the strings
+/// `u u~ > t t~` produces once the leg labels are substituted:
+///
+/// ```text
+/// T(3,4)T(2,1)             -> (1 T(3,4) T(2,1))
+/// T(-1,3,4)T(-1,2,1)       -> (1/2 T(2,4) T(3,1)) + (-1/2 1/Nc T(2,1) T(3,4))
+/// <0|0> = 9   <0|1> = 3   <1|1> = 9        (Nc = 3)
+/// ```
+///
+/// The singlet's own key and the octet's Fierz image are the *same* two
+/// structures, which is what makes MadGraph's `NCOLOR` 2 rather than 4; both
+/// readings of the delta cannot coexist in one basis, and the `3`/`3̄` slot
+/// convention that keeps them consistent is [`convert_expr`]'s transpose.
+///
+/// [`convert_expr`]: super::colorize
+#[test]
+fn four_quark_contact_structures_share_one_basis() {
+    let singlet = ColorFactor(vec![ColorString::new(vec![delta(3, 4), delta(2, 1)])]);
+    let reduced = singlet.full_simplify();
+    assert_eq!(
+        reduced.0.len(),
+        1,
+        "singlet reduces to one term: {reduced:?}"
+    );
+    assert_eq!(
+        sorted(&reduced.0[0].tensors),
+        vec![delta(2, 1), delta(3, 4)]
+    );
+    assert_eq!(reduced.0[0].coeff.eval_nc(3), Ratio::from_integer(1));
+
+    let octet = ColorFactor(vec![ColorString::new(vec![t(&[-1], 3, 4), t(&[-1], 2, 1)])]);
+    let reduced = octet.full_simplify();
+    let mut terms: Vec<(Vec<ColorTensor>, Ratio<i64>)> = reduced
+        .0
+        .iter()
+        .map(|s| {
+            assert!(!s.coeff.imag, "the octet Fierz is real: {s:?}");
+            (sorted(&s.tensors), s.coeff.eval_nc(3))
+        })
+        .collect();
+    terms.sort_by_key(|(ts, _)| format!("{ts:?}"));
+    assert_eq!(
+        terms,
+        vec![
+            (vec![delta(2, 1), delta(3, 4)], Ratio::new(-1, 6)),
+            (vec![delta(2, 4), delta(3, 1)], Ratio::new(1, 2)),
+        ],
+        "octet Fierz against color_algebra.py"
+    );
+}
+
+/// The colour matrix over that two-element basis, against `color_algebra.py`'s
+/// `[[9, 3], [3, 9]]` — the numbers MadGraph's generated `matrix1_orig.f` writes
+/// packed as `DATA (CF(I),I=1,2) /9,6/`, `DATA (CF(I),I=3,3) /9/` with `DENOM` 1.
+#[test]
+fn four_quark_basis_colour_matrix() {
+    let basis = [
+        vec![delta(2, 1), delta(3, 4)],
+        vec![delta(2, 4), delta(3, 1)],
+    ];
+    let expected = [[9, 3], [3, 9]];
+    for (i, bi) in basis.iter().enumerate() {
+        for (j, bj) in basis.iter().enumerate() {
+            let conj: Vec<ColorTensor> = bj.iter().map(ColorTensor::conj).collect();
+            let mut tensors = bi.clone();
+            tensors.extend(conj);
+            let (re, im) =
+                eval_scalar(&ColorFactor(vec![ColorString::new(tensors)]).full_simplify());
+            assert_eq!(im, Ratio::from_integer(0), "CF[{i}][{j}] is real");
+            assert_eq!(
+                re,
+                Ratio::from_integer(expected[i][j]),
+                "CF[{i}][{j}] against color_algebra.py"
+            );
+        }
+    }
+}
+
 // ── Overflow tripwire ─────────────────────────────────────────────────────
 
 /// Coefficient multiplication panics rather than wrapping on `i64` overflow.
