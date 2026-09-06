@@ -52,7 +52,7 @@ enumerated without reference to any particle, and particles are assigned
 to each shape afterwards.
 
 1. **Topologies.** A tree with \\(E\\) external legs and \\(N_k\\)
-   vertices of degree \\(k\\) satisfies \\(\\sum_k (k-2) N_k = E - 2\\),
+   vertices of degree \\(k\\) satisfies \\(\sum_k (k-2) N_k = E - 2\\),
    which fixes the admissible vertex-degree partitions for the degrees the
    model's interactions have (three and four in the Standard Model). For
    each partition the generator fills an adjacency matrix by depth-first
