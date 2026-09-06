@@ -239,10 +239,21 @@ pub(super) enum Instr {
         f: u32,
         chirality: Chirality,
     },
+    Gamma5Fin {
+        f: u32,
+    },
+    Gamma5Fout {
+        f: u32,
+    },
     Bilinear {
         bra: u32,
         ket: u32,
         chirality: Chirality,
+    },
+    /// Pseudoscalar bilinear `ψ̄ γ⁵ ψ`.
+    Pseudoscalar {
+        bra: u32,
+        ket: u32,
     },
     Metric {
         a: u32,
@@ -250,6 +261,19 @@ pub(super) enum Instr {
     },
     MetricVout {
         v: u32,
+    },
+    /// `ε^{μνρσ} a_μ b_ν c_ρ` at the free index σ → vector current.
+    EpsilonVout {
+        a: u32,
+        b: u32,
+        c: u32,
+    },
+    /// `ε^{μνρσ} a_μ b_ν c_ρ d_σ` → scalar.
+    EpsilonAmp {
+        a: u32,
+        b: u32,
+        c: u32,
+        d: u32,
     },
     /// `P` read-off of an input line: its structure momentum is the momentum-table entry
     /// `mom` (the operand's momentum id), promoted to a vector current.
@@ -310,21 +334,26 @@ impl Instr {
             Instr::FfvFout { .. } => 27,
             Instr::ProjFin { .. } => 28,
             Instr::ProjFout { .. } => 29,
-            Instr::Bilinear { .. } => 30,
-            Instr::Metric { .. } => 31,
-            Instr::MetricVout { .. } => 32,
-            Instr::PMom { .. } => 33,
-            Instr::PMomOut { .. } => 34,
-            Instr::Flows => 35,
-            Instr::Hels => 36,
-            Instr::Configs => 37,
+            Instr::Gamma5Fin { .. } => 30,
+            Instr::Gamma5Fout { .. } => 31,
+            Instr::Bilinear { .. } => 32,
+            Instr::Pseudoscalar { .. } => 33,
+            Instr::Metric { .. } => 34,
+            Instr::MetricVout { .. } => 35,
+            Instr::EpsilonVout { .. } => 36,
+            Instr::EpsilonAmp { .. } => 37,
+            Instr::PMom { .. } => 38,
+            Instr::PMomOut { .. } => 39,
+            Instr::Flows => 40,
+            Instr::Hels => 41,
+            Instr::Configs => 42,
         }
     }
 
     /// Human-readable variant name, for the study's per-kind tables.
     #[cfg_attr(not(any(test, feature = "eval-schedule-study")), allow(dead_code))]
     pub(super) fn kind_name(kind: u8) -> &'static str {
-        const NAMES: [&str; 38] = [
+        const NAMES: [&str; 43] = [
             "ComplexConst",
             "RealConst",
             "ExternalScalar",
@@ -355,9 +384,14 @@ impl Instr {
             "FfvFout",
             "ProjFin",
             "ProjFout",
+            "Gamma5Fin",
+            "Gamma5Fout",
             "Bilinear",
+            "Pseudoscalar",
             "Metric",
             "MetricVout",
+            "EpsilonVout",
+            "EpsilonAmp",
             "PMom",
             "PMomOut",
             "Flows",
@@ -812,6 +846,32 @@ fn lower_node(
                 other => panic!("chiral projection on {other:?} input"),
             }
         }
+        Op::Gamma5 => {
+            let f = li(kids[0]);
+            match an.out_type(kids[0]).storage().unwrap() {
+                Storage::FermionIn => Instr::Gamma5Fin { f },
+                Storage::FermionOut => Instr::Gamma5Fout { f },
+                other => panic!("gamma5 on {other:?} input"),
+            }
+        }
+        Op::Gamma5Amp => {
+            let (bra, ket, _) = bra_ket(kids[0], kids[1]);
+            Instr::Pseudoscalar {
+                bra: li(bra),
+                ket: li(ket),
+            }
+        }
+        Op::EpsilonVout => Instr::EpsilonVout {
+            a: li(kids[0]),
+            b: li(kids[1]),
+            c: li(kids[2]),
+        },
+        Op::EpsilonAmp => Instr::EpsilonAmp {
+            a: li(kids[0]),
+            b: li(kids[1]),
+            c: li(kids[2]),
+            d: li(kids[3]),
+        },
         Op::ProjMAmp | Op::ProjPAmp | Op::IdentityAmp => {
             let chirality = match node.op {
                 Op::ProjMAmp => Chirality::Left,

@@ -444,13 +444,17 @@ fn sm_limit_op_census() {
     // through the generic path, and the SM-limit card leaves only the `ProjP` half
     // of the structures these three processes use. The rest wait on the primitives
     // later sessions add and on the SMEFT rows that exercise them.
-    const KNOWN_UNCOVERED: [Op; 10] = [
+    const KNOWN_UNCOVERED: [Op; 14] = [
         Op::Hels,
         Op::ProjM,
         Op::ProjMAmp,
         Op::ProjPAmp,
         Op::MetricVout,
         Op::IdentityAmp,
+        Op::Gamma5,
+        Op::Gamma5Amp,
+        Op::EpsilonVout,
+        Op::EpsilonAmp,
         Op::FfvVout,
         Op::FfvIout,
         Op::FfvOout,

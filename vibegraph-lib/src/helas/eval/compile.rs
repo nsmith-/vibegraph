@@ -852,7 +852,17 @@ mod tests {
     /// `Flows` and `CoeffRat` are only emitted for processes whose color basis has
     /// more than one flow (multi-flow color algebra); `uux_to_uux` (`NCOLOR=2`),
     /// `gg_to_ttx` (`NCOLOR=2`) and `gg_to_gg` (`NCOLOR=6`) now bit-validate both.
-    const SM_KNOWN_UNCOVERED: [Op; 2] = [Op::Hels, Op::IdentityAmp];
+    /// The `Gamma5` and `Epsilon` ops need a model that writes those structures: the
+    /// Standard Model's UFO expands γ⁵ into `ProjP − ProjM` and has no Levi-Civita
+    /// vertex at all, so their coverage belongs to the SMEFTsim census.
+    const SM_KNOWN_UNCOVERED: [Op; 6] = [
+        Op::Hels,
+        Op::IdentityAmp,
+        Op::Gamma5,
+        Op::Gamma5Amp,
+        Op::EpsilonVout,
+        Op::EpsilonAmp,
+    ];
 
     /// Every `Op` outside [`SM_KNOWN_UNCOVERED`] appears in the compiled AST of at
     /// least one MG-validated SM process — the bit-for-bit `amplitude_oracle` net

@@ -140,13 +140,33 @@ pub enum LorentzEvalNode {
     POut,
     /// Full scalar bilinear ψ̄_i δ ψ_j (Identity amplitude contraction)
     IdentityAmp { i: usize, j: usize },
-    // TODO: Sigma, Epsilon
+    /// γ⁵ on a continuing fermion current.
+    Gamma5 { i: usize },
+    /// Pseudoscalar bilinear ψ̄_i γ⁵ ψ_j.
+    Gamma5Amp { i: usize, j: usize },
+    /// Three vectors → off-shell vector: `ε^{μνρσ} a_μ b_ν c_ρ`, free index last.
+    /// The children are the `Epsilon` arguments in source order with the output
+    /// slot removed; the sign of moving that slot to the end is absorbed by
+    /// [`epsilon_out_order`], which swaps two of them when it is negative.
+    EpsilonVout { a: usize, b: usize, c: usize },
+    /// Four vectors → scalar: `ε^{μνρσ} a_μ b_ν c_ρ d_σ`, children in argument order.
+    EpsilonAmp {
+        a: usize,
+        b: usize,
+        c: usize,
+        d: usize,
+    },
+    // TODO: Sigma
 }
 
 impl LorentzEvalNode {
     pub fn children(&self) -> Vec<usize> {
         match self {
             LorentzEvalNode::Leg(_) => vec![],
+            LorentzEvalNode::Gamma5 { i } => vec![*i],
+            LorentzEvalNode::Gamma5Amp { i, j } => vec![*i, *j],
+            LorentzEvalNode::EpsilonVout { a, b, c } => vec![*a, *b, *c],
+            LorentzEvalNode::EpsilonAmp { a, b, c, d } => vec![*a, *b, *c, *d],
             LorentzEvalNode::GammaVout { i, j } => vec![*i, *j],
             LorentzEvalNode::GammaIout { mu, j } => vec![*mu, *j],
             LorentzEvalNode::GammaOout { mu, i } => vec![*mu, *i],
@@ -178,8 +198,34 @@ impl LorentzEvalNode {
             P { leg } => format!("P{leg}"),
             POut => "POut".to_string(), // leaf node
             IdentityAmp { .. } => format!("IdentityAmp({})", body),
+            Gamma5 { .. } => format!("Gamma5({})", body),
+            Gamma5Amp { .. } => format!("Gamma5Amp({})", body),
+            EpsilonVout { .. } => format!("EpsilonVout({})", body),
+            EpsilonAmp { .. } => format!("EpsilonAmp({})", body),
         }
     }
+}
+
+/// The `Epsilon` argument slots other than the output slot `k`, in source order,
+/// already carrying the antisymmetry sign of moving `k` to the last position.
+///
+/// `ε(x₀,x₁,x₂,x₃)` with the output at slot `k` equals `(−1)^{3−k}` times
+/// `ε(remaining…, out)`, which is the form [`LorentzEvalNode::EpsilonVout`]
+/// evaluates. A `−1` is absorbed by swapping the first two remaining slots (one
+/// transposition), so the node never needs a sign of its own.
+fn epsilon_out_order(args: [isize; 4], k: usize) -> [isize; 3] {
+    let mut rest = [0isize; 3];
+    let mut n = 0;
+    for (slot, &idx) in args.iter().enumerate() {
+        if slot != k {
+            rest[n] = idx;
+            n += 1;
+        }
+    }
+    if (3 - k) % 2 == 1 {
+        rest.swap(0, 1);
+    }
+    rest
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -283,11 +329,21 @@ impl LorentzEvalTree {
                     // opposite to the actual line (e.g. an incoming-pair spine). The
                     // input fermion is the gamma's other fermion index.
                     let other = if *i == idx { *j } else { *i };
+                    // At the rooted output leg the adjoint is that leg's; at a *summed*
+                    // spinor index (a γ-chain) there is no leg to read, so it is that of
+                    // the external fermion this gamma's input chain leads to
+                    // ([`chain_adjoint`]) — the two agree at the root, because a current
+                    // keeps one adjoint along its whole line.
+                    let node_adjoint = if idx >= 0 {
+                        out_adjoint
+                    } else {
+                        chain_adjoint(term, other, iop, flows)
+                    };
                     let child_mu =
                         self.build_child(term, *mu, visited_ops, flows, out_adjoint, sign)?;
                     let child_f =
                         self.build_child(term, other, visited_ops, flows, out_adjoint, sign)?;
-                    let node = match out_adjoint {
+                    let node = match node_adjoint {
                         Some(Adjoint::Ket) => LorentzEvalNode::GammaIout {
                             mu: child_mu,
                             j: child_f,
@@ -372,15 +428,40 @@ impl LorentzEvalTree {
                     unreachable!("Identity op should involve idx {}", idx);
                 }
             }
-            LorentzOp::Gamma5 { .. } => Err(RootLorentzError::UnsupportedVertex(
-                "the chirality matrix Gamma5 is deferred to future work".to_string(),
-            )),
+            LorentzOp::Gamma5 { i, j } => {
+                let wrapped = if *i == idx {
+                    *j
+                } else if *j == idx {
+                    *i
+                } else {
+                    unreachable!("Gamma5 op should involve idx {}", idx);
+                };
+                // `C γ⁵ᵀ C⁻¹ = γ⁵`, so a standalone γ⁵ over a crossed pair keeps the
+                // −1 the reversed reading gives it, exactly as a standalone chiral
+                // projector does (see [`standalone_projector_crossed`]); and, for the
+                // same reason, a γ⁵ reached through a summed index needs no chirality
+                // conjugation of its own.
+                if standalone_projector_crossed(idx, wrapped, flows) {
+                    *sign = -*sign;
+                }
+                let child =
+                    self.build_child(term, wrapped, visited_ops, flows, out_adjoint, sign)?;
+                Ok(self.add_node(LorentzEvalNode::Gamma5 { i: child }))
+            }
             LorentzOp::Sigma { .. } => Err(RootLorentzError::UnsupportedVertex(
                 "Sigma tensors are deferred to future work".to_string(),
             )),
-            LorentzOp::Epsilon { .. } => Err(RootLorentzError::UnsupportedVertex(
-                "Epsilon tensors are deferred to future work".to_string(),
-            )),
+            LorentzOp::Epsilon { mu, nu, rho, sigma } => {
+                let args = [*mu, *nu, *rho, *sigma];
+                let Some(slot) = args.iter().position(|&a| a == idx) else {
+                    unreachable!("Epsilon op should involve idx {}", idx);
+                };
+                let rest = epsilon_out_order(args, slot);
+                let a = self.build_child(term, rest[0], visited_ops, flows, out_adjoint, sign)?;
+                let b = self.build_child(term, rest[1], visited_ops, flows, out_adjoint, sign)?;
+                let c = self.build_child(term, rest[2], visited_ops, flows, out_adjoint, sign)?;
+                Ok(self.add_node(LorentzEvalNode::EpsilonVout { a, b, c }))
+            }
             LorentzOp::C { .. } => Err(RootLorentzError::UnsupportedVertex(
                 "Charge conjugation is deferred to future work".to_string(),
             )),
@@ -570,6 +651,34 @@ impl LorentzEvalTree {
                         j: child_j,
                     })
                 }
+                LorentzOp::Gamma5 { i, j } => {
+                    visited_ops.push(iop);
+                    // Scalar-sink bilinear: −1, as in the ProjM arm above.
+                    sign = -sign;
+                    if pair_crossed(*i, *j, flows) {
+                        sign = -sign;
+                    }
+                    let child_i =
+                        tree.build_child(term, *i, &mut visited_ops, flows, None, &mut sign)?;
+                    let child_j =
+                        tree.build_child(term, *j, &mut visited_ops, flows, None, &mut sign)?;
+                    tree.add_node(LorentzEvalNode::Gamma5Amp {
+                        i: child_i,
+                        j: child_j,
+                    })
+                }
+                LorentzOp::Epsilon { mu, nu, rho, sigma } => {
+                    visited_ops.push(iop);
+                    let a =
+                        tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
+                    let b =
+                        tree.build_child(term, *nu, &mut visited_ops, flows, None, &mut sign)?;
+                    let c =
+                        tree.build_child(term, *rho, &mut visited_ops, flows, None, &mut sign)?;
+                    let d =
+                        tree.build_child(term, *sigma, &mut visited_ops, flows, None, &mut sign)?;
+                    tree.add_node(LorentzEvalNode::EpsilonAmp { a, b, c, d })
+                }
                 _ => {
                     todo!(
                         "Routing for remaining ops not yet implemented in tree builder: {:?}",
@@ -698,6 +807,74 @@ fn term_reversed_parity(
         }
     }
     parity
+}
+
+/// The spinor adjoint a node rooted at the *summed* spinor index `idx` must produce:
+/// that of the external fermion its input chain leads to.
+///
+/// Every operation a fermion line passes through — a gamma slash, a chiral
+/// projector, γ⁵ — preserves the adjoint, so one adjoint holds from the external
+/// leg the chain starts at to any node on it. Walking spinor indices until a plain
+/// leg appears is therefore the whole rule, and it is what makes a γ-chain rootable
+/// at a leg that is not on the chain (the vector leg of an FFVV or of a
+/// momentum-slashed dipole), where the rooted output carries no adjoint at all.
+/// `from_op` is the operator the walk starts inside, so the first step cannot turn
+/// straight back through it.
+fn chain_adjoint(
+    term: &LorentzTerm,
+    idx: isize,
+    from_op: usize,
+    flows: &[Option<LegAdjoint>],
+) -> Option<Adjoint> {
+    let leg_adjoint = |leg: isize| {
+        flows
+            .get(leg as usize)
+            .copied()
+            .flatten()
+            .map(|lf| lf.adjoint)
+    };
+    if idx >= 0 {
+        return leg_adjoint(idx);
+    }
+    let mut walked = vec![from_op];
+    let mut cursor = idx;
+    // Each step consumes one operator, so the term's operator count bounds the walk
+    // (and a cyclic index graph — the four-fermion tensor structures — terminates
+    // with `None` rather than looping).
+    for _ in 0..term.ops.len() {
+        let (iop, op) = term
+            .ops
+            .iter()
+            .enumerate()
+            .find(|&(i, op)| op.involves_spinor(cursor) && !walked.contains(&i))?;
+        walked.push(iop);
+        cursor = other_spinor_index(op, cursor)?;
+        if cursor >= 0 {
+            return leg_adjoint(cursor);
+        }
+    }
+    None
+}
+
+/// The spinor index on the other side of a two-spinor-index operator.
+fn other_spinor_index(op: &LorentzOp, idx: isize) -> Option<isize> {
+    let (i, j) = match op {
+        LorentzOp::Gamma { i, j, .. }
+        | LorentzOp::Sigma { i, j, .. }
+        | LorentzOp::Identity { i, j }
+        | LorentzOp::ProjM { i, j }
+        | LorentzOp::ProjP { i, j }
+        | LorentzOp::Gamma5 { i, j }
+        | LorentzOp::C { i, j } => (*i, *j),
+        _ => return None,
+    };
+    if i == idx {
+        Some(j)
+    } else if j == idx {
+        Some(i)
+    } else {
+        None
+    }
 }
 
 fn pair_crossed(i: isize, j: isize, flows: &[Option<LegAdjoint>]) -> bool {

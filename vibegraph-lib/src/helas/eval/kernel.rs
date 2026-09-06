@@ -20,7 +20,8 @@ use num_traits::Zero;
 
 use super::waveform_slot::WaveformSlot;
 use crate::helas::repr::lorentz::{
-    Bispinor, Bra, ComplexVector, DiracAdjoint, Ket, LorentzVector, SpinorRepr, VectorRepr,
+    epsilon4, epsilon_vector, Bispinor, Bra, ComplexVector, DiracAdjoint, Ket, LorentzVector,
+    SpinorRepr, VectorRepr,
 };
 use crate::helas::repr::numbers::Chirality;
 use crate::helas::repr::{ri, Real, C};
@@ -196,6 +197,16 @@ pub fn proj_fout_bare<F: Real>(fo: &Bispinor<F, Bra>, chirality: Chirality) -> B
     project_spinor(fo, chirality)
 }
 
+/// `Gamma5` on a bare ket line, `γ⁵ψ`.
+pub fn gamma5_fin_bare<F: Real>(fi: &Bispinor<F, Ket>) -> Bispinor<F, Ket> {
+    gamma5_spinor(fi)
+}
+
+/// `Gamma5` on a bare bra line, `ψ̄γ⁵`.
+pub fn gamma5_fout_bare<F: Real>(fo: &Bispinor<F, Bra>) -> Bispinor<F, Bra> {
+    gamma5_spinor(fo)
+}
+
 /// Scalar bilinear `ψ̄ Γ ψ` on bare spinors.
 pub fn scalar_bilinear_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
@@ -203,6 +214,14 @@ pub fn scalar_bilinear_bare<F: Real>(
     chirality: Chirality,
 ) -> C<F> {
     Bispinor::scalar_bilinear(fo, fi, chirality)
+}
+
+/// Pseudoscalar bilinear `ψ̄ γ⁵ ψ` on bare spinors.
+pub fn pseudoscalar_bilinear_bare<F: Real>(
+    fo: &Bispinor<F, Bra>,
+    fi: &Bispinor<F, Ket>,
+) -> C<F> {
+    Bispinor::pseudoscalar_bilinear(fo, fi, Chirality::Both)
 }
 
 /// `Metric`: contract two bare contravariant vectors → scalar.
@@ -213,6 +232,29 @@ pub fn metric_bare<F: Real>(v1: &ComplexVector<F>, v2: &ComplexVector<F>) -> C<F
 /// `MetricVout`: the contravariant current `g^{μν}V_ν = V^μ` — identity on bare storage.
 pub fn metric_vout_bare<F: Real>(vin: &ComplexVector<F>) -> ComplexVector<F> {
     *vin
+}
+
+/// `EpsilonVout` on bare contravariant vectors: `E^σ = ε^{μνρσ} a_μ b_ν c_ρ`, the
+/// three-vectors-in current characterised by `E·d = epsilon_amp_bare(a, b, c, d)`
+/// under the Minkowski contraction. Output is contravariant, like every other
+/// vector current here.
+pub fn epsilon_vout_bare<F: Real>(
+    a: &ComplexVector<F>,
+    b: &ComplexVector<F>,
+    c: &ComplexVector<F>,
+) -> ComplexVector<F> {
+    epsilon_vector(a, b, c)
+}
+
+/// `EpsilonAmp` on bare contravariant vectors: the fully contracted
+/// `ε^{μνρσ} a_μ b_ν c_ρ d_σ` (ALOHA's `ε^{0123} = −1`; see [`epsilon4`]).
+pub fn epsilon_amp_bare<F: Real>(
+    a: &ComplexVector<F>,
+    b: &ComplexVector<F>,
+    c: &ComplexVector<F>,
+    d: &ComplexVector<F>,
+) -> C<F> {
+    epsilon4(a, b, c, d)
 }
 
 // ──────────────────────────── propagator ────────────────────────────
@@ -432,6 +474,30 @@ fn project_spinor<F: Real, Fl: DiracAdjoint>(
     }
 }
 
+/// `Gamma5`: γ⁵ on a continuing fermion current, preserving the input adjoint.
+///
+/// `γ⁵ = P_R − P_L` is diagonal in the Weyl basis, so the left action on a ket and
+/// the right action on a bra are the same weighting of the stored blocks — which is
+/// what lets one kernel serve both flows, as [`chiral_project`] does.
+pub fn gamma5<F: Real>(child: &WaveformSlot<F>) -> WaveformSlot<F> {
+    match child {
+        WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
+            gamma5_fin_bare(&f.spinor),
+            f.momentum,
+        )),
+        WaveformSlot::FermionOut(f) => WaveformSlot::FermionOut(OutDiracWf::from_spinor(
+            gamma5_fout_bare(&f.spinor),
+            f.momentum,
+        )),
+        _ => panic!("gamma5: expected fermion input"),
+    }
+}
+
+/// γ⁵ on a stored spinor block, `P_R − P_L`.
+fn gamma5_spinor<F: Real, Fl: DiracAdjoint>(s: &Bispinor<F, Fl>) -> Bispinor<F, Fl> {
+    s.project_right() - s.project_left()
+}
+
 /// Chiral projection of a flow-in fermion current, preserving the flow.
 pub fn proj_fin<F: Real>(f: &InDiracWf<F>, chirality: Chirality) -> InDiracWf<F> {
     InDiracWf::from_spinor(proj_fin_bare(&f.spinor, chirality), f.momentum)
@@ -596,6 +662,19 @@ pub fn identity_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> Wavefo
     scalar_bilinear_current(a, b, Chirality::Both)
 }
 
+/// `Gamma5Amp`: pseudoscalar bilinear `ψ̄ γ⁵ ψ`; the bra/ket are picked by the legs'
+/// actual adjoint. Like the scalar bilinears it takes no reversal sign — `C γ⁵ᵀ C⁻¹
+/// = γ⁵`, so reading the pair against the vertex's defined adjoint leaves the
+/// structure unchanged (the −1 a crossed pair needs is a rooting sign, applied in
+/// [`super::root_lorentz`] alongside the `ProjM`/`Identity` case).
+pub fn gamma5_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    let (fo, fi, _) = resolve_bra_ket(a, b);
+    WaveformSlot::Scalar(ScalarWf {
+        value: pseudoscalar_bilinear_bare(&fo.spinor, &fi.spinor),
+        momentum: fo.momentum - fi.momentum,
+    })
+}
+
 /// `ProjMAmp`/`ProjPAmp`/`IdentityAmp`: scalar bilinear `ψ̄ Γ ψ` (`Γ = P_L`, `P_R`, or
 /// `1`); the bra/ket are picked by the legs' actual adjoint.
 pub fn scalar_bilinear_current<F: Real>(
@@ -658,6 +737,41 @@ pub fn metric_vout<F: Real>(v: &WaveformSlot<F>) -> WaveformSlot<F> {
 /// contravariant storage.
 pub fn metric_vout_c<F: Real>(vin: &VectorWf<F>) -> VectorWf<F> {
     *vin
+}
+
+/// `EpsilonVout`: three vector currents → the off-shell vector `ε^{μνρσ} a_μ b_ν c_ρ`.
+pub fn epsilon_vout<F: Real>(
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+    c: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    let [va, vb, vc] = expect_vectors([a, b, c]);
+    WaveformSlot::Vector(VectorWf {
+        eps: epsilon_vout_bare(&va.eps, &vb.eps, &vc.eps),
+        momentum: va.momentum + vb.momentum + vc.momentum,
+    })
+}
+
+/// `EpsilonAmp`: four vector currents → the scalar `ε^{μνρσ} a_μ b_ν c_ρ d_σ`.
+pub fn epsilon_amp<F: Real>(
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+    c: &WaveformSlot<F>,
+    d: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    let [va, vb, vc, vd] = expect_vectors([a, b, c, d]);
+    WaveformSlot::Scalar(ScalarWf {
+        value: epsilon_amp_bare(&va.eps, &vb.eps, &vc.eps, &vd.eps),
+        momentum: va.momentum + vb.momentum + vc.momentum + vd.momentum,
+    })
+}
+
+/// The vector currents behind `N` slots, panicking on any non-vector operand.
+fn expect_vectors<F: Real, const N: usize>(slots: [&WaveformSlot<F>; N]) -> [VectorWf<F>; N] {
+    slots.map(|s| match s {
+        WaveformSlot::Vector(v) => *v,
+        other => panic!("Epsilon: expected vector input, got {other:?}"),
+    })
 }
 
 #[cfg(test)]

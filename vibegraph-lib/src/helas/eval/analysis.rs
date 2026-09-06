@@ -438,14 +438,21 @@ fn out_type_nonleaf(op: Op, kids: &[NodeId], out: &[NodeType]) -> NodeType {
             NodeType::FermionOut => NodeType::FermionOut,
             _ => NodeType::ScalarWf,
         },
-        // Chiral projection preserves the fermion flow.
-        Op::ProjM | Op::ProjP => ty(0),
+        // Chiral projection and γ⁵ preserve the fermion flow.
+        Op::ProjM | Op::ProjP | Op::Gamma5 => ty(0),
         // Vector producers.
-        Op::GammaVout | Op::FfvVout | Op::MetricVout | Op::PMom | Op::PMomOut => NodeType::Vector,
+        Op::GammaVout | Op::FfvVout | Op::MetricVout | Op::EpsilonVout | Op::PMom | Op::PMomOut => {
+            NodeType::Vector
+        }
         // Off-shell fermion currents follow the fermion input's flow (operand 1).
         Op::GammaIout | Op::GammaOout | Op::FfvIout | Op::FfvOout => ty(1),
-        // Scalar bilinears.
-        Op::ProjMAmp | Op::ProjPAmp | Op::IdentityAmp | Op::Metric => NodeType::ScalarWf,
+        // Scalar bilinears and full contractions.
+        Op::ProjMAmp
+        | Op::ProjPAmp
+        | Op::IdentityAmp
+        | Op::Gamma5Amp
+        | Op::Metric
+        | Op::EpsilonAmp => NodeType::ScalarWf,
         Op::Add => join_add(kids, out),
         Op::Mul => mul_out(kids, out),
         other => panic!("out_type_nonleaf: unexpected non-leaf op {other:?}"),
@@ -534,14 +541,23 @@ fn momentum_into(
         | Op::Hels
         | Op::Configs => {}
         // Momentum-preserving unary transforms.
-        Op::Propagate | Op::ProjM | Op::ProjP | Op::MetricVout => add(buf, kids[0], 1),
-        // Scalar contraction: sum of the two vectors' momenta.
-        Op::Metric => {
-            add(buf, kids[0], 1);
-            add(buf, kids[1], 1);
+        Op::Propagate | Op::ProjM | Op::ProjP | Op::Gamma5 | Op::MetricVout => {
+            add(buf, kids[0], 1)
+        }
+        // Vector contractions: the sum of the operands' momenta, as for the unary
+        // `MetricVout` above.
+        Op::Metric | Op::EpsilonVout | Op::EpsilonAmp => {
+            for &k in kids {
+                add(buf, k, 1);
+            }
         }
         // Vector / scalar bilinears of two fermions: bra − ket.
-        Op::GammaVout | Op::FfvVout | Op::ProjMAmp | Op::ProjPAmp | Op::IdentityAmp => {
+        Op::GammaVout
+        | Op::FfvVout
+        | Op::ProjMAmp
+        | Op::ProjPAmp
+        | Op::IdentityAmp
+        | Op::Gamma5Amp => {
             let (bra, ket) = bra_ket(kids);
             add(buf, bra, 1);
             add(buf, ket, -1);
