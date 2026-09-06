@@ -29,19 +29,30 @@ UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALO
                                                           (multichannel VEGAS)
 ```
 
-The UFO loader is model-generic, but the supported feature surface is
-deliberately scoped to the Standard Model's: representations the SM does not
-use — color sextets, baryonic epsilon tensors, spin ≥ 3/2, Majorana fermions —
-are hard errors rather than silent gaps. Beam configurations other than
-unpolarized proton–proton or fixed-energy partonic collisions, and MadGraph's
-decay-chain process syntax, are likewise out of scope for now; the audit making
-every such boundary a hard error is part of the validation backlog. The
-remaining open validation items are detailed in the sections below and tracked
-in [`TODO.md`](TODO.md).
+The UFO loader is model-generic, and its Lorentz-structure surface now reaches
+past the Standard Model's. SMEFTsim's `SMEFTsim_topU3l_MwScheme_UFO` — a
+dimension-six SMEFT model with derivative gauge-boson vertices, Levi-Civita
+structures, `γ⁵` and momenta inside γ-chains, four-fermion contacts in both
+pairings and a cyclic tensor⊗tensor one, under the {m_W, m_Z, G_F} input scheme
+— is enumerated, compiled and compared against MadGraph's own matrix elements
+per diagram, per helicity and per colour flow, and its `e+ e- > t t~ NP<=1`
+cross section is gated against a banked MadGraph run.
+[`validation/manifest.toml`](validation/manifest.toml) is the per-row record of
+which of those comparisons are enforced and which are measured and reported.
 
-**Future scope may include**: full support for arbitrary (BSM) UFO models —
-the boundary checklist already lives in [`TODO.md`](TODO.md) — plus LO
-MLM-style matching + merging, and NLO event generation.
+Representations neither model uses — color sextets, baryonic epsilon tensors,
+spin ≥ 3/2, Majorana fermions — are hard errors rather than silent gaps, as are
+squared-order constraints (`NP^2==1`: a bound on an interference term, which
+this generator selects diagrams too early to express). Beam configurations
+other than unpolarized proton–proton or fixed-energy partonic collisions, and
+MadGraph's decay-chain process syntax, are likewise out of scope for now; the
+audit making every such boundary a hard error is part of the validation
+backlog. The remaining open validation items are detailed in the sections below
+and tracked in [`TODO.md`](TODO.md).
+
+**Future scope may include**: the rest of the arbitrary-BSM-UFO surface — the
+boundary checklist already lives in [`TODO.md`](TODO.md) — plus LO MLM-style
+matching + merging, and NLO event generation.
 
 ## Quickstart
 
@@ -126,7 +137,9 @@ vibegraph check-events events.lhe
 ```
 
 A process card with no `import model` line gets the Standard Model compiled into
-the binary; `import model <name>` loads a UFO model directory instead.
+the binary; `import model <name>` loads a UFO model directory instead, and
+`import model <name>-<restrict>` reads `restrict_<restrict>.dat` from inside it
+the way MadGraph does.
 `events.lhe` is a standard Les Houches event file, and `check-events` re-reads it
 and checks momentum balance, mass shells, weight bounds and the `<init>`
 cross-references — a self-read, so it catches a damaged or truncated file but not
@@ -207,7 +220,21 @@ move the cache off `~/.vibegraph`.
 **UFO models are never downloaded.** FeynRules publishes no per-model index
 that a model name could be resolved through, so there is no URL to pin;
 unpack the model's UFO directory into `~/.vibegraph/ufo/<model>/` yourself,
-or point `--ufo-dir` at whatever directory holds it.
+or point `--ufo-dir` at whatever directory holds it. `import model
+<name>-<restrict>` selects `restrict_<restrict>.dat` from that directory, and
+the restriction's values become the model's parameter defaults — so a run with
+no param card of its own computes at exactly the values MadGraph's generated
+`param_card.dat` would carry. The SMEFT model the validation ladder gates is
+committed at [`validation/ufo/`](validation/ufo), so
+
+```bash
+printf 'import model SMEFTsim_topU3l_MwScheme_UFO-massless\ngenerate e+ e- > t t~ NP<=1\n' \
+  | vibegraph integrate - --ufo-dir validation/ufo --run-card run_card.dat --out ee_to_ttx_smeft/
+```
+
+runs it out of a checkout. Every run records the model it was built from —
+name, restrict card and a digest of both — in its artifact, and `generate`
+refuses grids trained on a different one.
 
 `scripts/acceptance.sh` runs the whole proton path on a clean machine: download
 the binary, write the cards, watch an unattended run *refuse* to fetch, consent,

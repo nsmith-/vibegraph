@@ -690,7 +690,7 @@ samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What
 
 [[process]]
 key = "gg_to_h_cpeven"
-process = "g g > h"
+process = "g g > h NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_cHG"
 script = "validation/madgraph/scripts/gg_to_h_cpeven.mg5"
@@ -708,7 +708,7 @@ samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What
 
 [[process]]
 key = "gg_to_h_cpodd"
-process = "g g > h"
+process = "g g > h NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_cHGtil"
 script = "validation/madgraph/scripts/gg_to_h_cpodd.mg5"
@@ -726,7 +726,7 @@ samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What
 
 [[process]]
 key = "ee_to_wpwm_cw"
-process = "e+ e- > w+ w-"
+process = "e+ e- > w+ w- NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_cW"
 script = "validation/madgraph/scripts/ee_to_wpwm_cw.mg5"
@@ -744,7 +744,7 @@ samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What
 
 [[process]]
 key = "gg_to_gg_cg"
-process = "g g > g g"
+process = "g g > g g NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_cG"
 script = "validation/madgraph/scripts/gg_to_gg_cg.mg5"
@@ -762,7 +762,7 @@ samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What
 
 [[process]]
 key = "ee_to_ttx_dipole"
-process = "e+ e- > t t~"
+process = "e+ e- > t t~ NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_ctdipole"
 script = "validation/madgraph/scripts/ee_to_ttx_dipole.mg5"
@@ -780,7 +780,7 @@ samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What
 
 [[process]]
 key = "ee_to_zh_smeft"
-process = "e+ e- > z h"
+process = "e+ e- > z h NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_cHV"
 script = "validation/madgraph/scripts/ee_to_zh_smeft.mg5"
@@ -798,7 +798,7 @@ samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What
 
 [[process]]
 key = "ee_to_mumu_4f"
-process = "e+ e- > mu+ mu-"
+process = "e+ e- > mu+ mu- NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_c4l"
 script = "validation/madgraph/scripts/ee_to_mumu_4f.mg5"
@@ -816,7 +816,7 @@ samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What
 
 [[process]]
 key = "uux_to_ttx_4f"
-process = "u u~ > t t~"
+process = "u u~ > t t~ NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_c4q"
 script = "validation/madgraph/scripts/uux_to_ttx_4f.mg5"
@@ -834,7 +834,7 @@ samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What
 
 [[process]]
 key = "tata_to_ttx_tensor4f"
-process = "ta+ ta- > t t~"
+process = "ta+ ta- > t t~ NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_cleQt3"
 script = "validation/madgraph/scripts/tata_to_ttx_tensor4f.mg5"
@@ -852,7 +852,7 @@ samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What
 
 [[process]]
 key = "ee_to_ttx_smeft"
-process = "e+ e- > t t~"
+process = "e+ e- > t t~ NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "massless"
 script = "validation/madgraph/scripts/ee_to_ttx_smeft.mg5"
@@ -865,12 +865,12 @@ mg_amplitude = { process = "e+ e- > t t~ NP<=1", pdgs_in = [-11, 11], pdgs_out =
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate", note = "every structure class this model reaches at once: the Z-coupling shifts, the `ctZ`/`ctA` dipole chains, the scalar and vector four-fermion contacts and the `cHDD`/`cHWB` input-scheme shifts, over 36 diagrams against MadGraph per point, per helicity and per diagram. The card carries no CP-odd coefficient and no tensor four-fermion operator (both are zero in `restrict_massless`), so this row does not cover `Epsilon` or the cyclic tensor structures" }
-integrals = { tier = "blocked", blocker = "a compiled SMEFT amplitude: the loader accepting a model with `propagators.py` and `Gamma5`, MadGraph's interaction splitting, and the Epsilon, gamma-chain and four-fermion kernels this ladder's other rows name", note = "MadGraph's side is banked -- sigma_reference.json carries the fixed-energy partonic cross section of this run at sqrt(s) = 500 GeV -- and this side cannot yet produce a number to compare it with, because the integrand needs a compiled amplitude and the loader refuses the model. Registered blocked rather than informational deliberately: an informational cell would have to be written by a gate that ran, and there is no measurement to record until there is" }
+integrals = { tier = "banked", mode = "gate", note = "the ladder's one cross section, and the only banked sigma whose model is not the Standard Model: e+ e- > t t~ NP<=1 under the vendored SMEFTsim model and its own restrict_massless card, at the parameters of MadGraph's own Cards/param_card.dat for this run. sigma = 2.222986 +- 6.565e-4 pb against MadGraph's 2.2223 +- 5.2567e-4 pb: pull +0.82, rel +3.09e-4, chi2/dof 0.91 at 160000 x 8, a budget chosen so this side's 2.95e-4 relative error is comparable to the reference's own 2.37e-4. Enforced at rel_tol 0.002, set by the measured seed spread rather than by the reference error or by the achieved central value: over seven seeds (probe_smeft_capstone_seed_stability) |pull| <= 1.22 and |rel| <= 4.7e-4 with per-seed chi2/dof in 0.91-1.22, and their inverse-variance mean sits +1.6e-4 of the bank at chi2/dof 0.75 over the seeds -- inside the reference's own error. The budget ladder is flat, rel +8.2e-4 / +2.9e-4 / +3.1e-4 / +4.3e-4 / +1.2e-4 at 40000 / 80000 / 160000 / 320000 / 640000 points an iteration, so the residual is sampling and not a defect. What this cell adds over the row's gated amplitudes is everything outside the matrix element -- the flux factor, the initial-state spin and colour average, the cut filter and the phase-space measure -- on a 36-diagram integrand whose contact four-fermion channels span the whole final state" }
 samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows; what it would add here is the shape of a SMEFT matrix element under the same machinery, which is worth banking once a SMEFT cross section is gated and not before" }
 
 [[process]]
 key = "wpwm_to_wpwmz_cw"
-process = "w+ w- > w+ w- z"
+process = "w+ w- > w+ w- z NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_cW"
 script = "validation/madgraph/scripts/wpwm_to_wpwmz_cw.mg5"
