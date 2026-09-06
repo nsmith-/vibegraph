@@ -1,6 +1,6 @@
 {
  "key": "tata_to_ttx_tensor4f",
- "process": "ta+ ta- > t t~",
+ "process": "ta+ ta- > t t~ NP<=1",
  "n_ext": 4,
  "n_graphs": 4,
  "n_flows": 1,

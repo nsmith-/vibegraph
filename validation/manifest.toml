@@ -459,7 +459,7 @@ artifacts = ["output/pp_to_ll_qcd0", "output/pp_to_ll_qcd0.json", "output/pp_to_
 # Generates through this row's own compiled module (the concrete u u~ > mu+ mu-
 # subprocess), which is also uux_to_mumu's amplitude table — see that row's
 # `amplitudes` note.
-mg_amplitude = { process = "u u~ > mu+ mu-", pdgs_in = [2, -2], pdgs_out = [-13, 13], sqrt_s_list = [10.0, 50.0, 91.188, 200.0, 500.0], npoints = 10, seed = 5 }
+mg_amplitude = { process = "u u~ > mu+ mu- QCD=0", pdgs_in = [2, -2], pdgs_out = [-13, 13], sqrt_s_list = [10.0, 50.0, 91.188, 200.0, 500.0], npoints = 10, seed = 5 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "includes the per-flavour concrete-subprocess union" }
 amplitudes = { tier = "hermetic", mode = "gate", note = "its banked table is the u u~ > mu+ mu- subprocess; the event points are the group's proton-beam events filtered to that flavour assignment and boosted into the partonic centre of mass, so this is the one row whose points come from a hadronic run" }
@@ -591,12 +591,12 @@ samples = { tier = "banked", mode = "gate", note = "generated_scalefact2_events_
 # `validation/madgraph/build.sh` puts in the work area, so both generators
 # prune from the same file.
 #
-# Every one of these cells is informational and every one of them is red: this
-# crate's loader cannot read the model at all today. They are here before the
-# code that would turn them green, which is what makes the day it lands an
-# end-to-end signal rather than a claim -- and what a row's rationale records is
-# the Lorentz or colour structure it is the *only* row to reach, so a cell that
-# stays red names exactly what is still missing.
+# The cells were registered informational and red before the code that would turn
+# them green existed, which is what makes the day one lands an end-to-end signal
+# rather than a claim. A row is promoted to `gate` when its comparison agrees at
+# the amplitude gate's own standard, one row at a time; what a row's rationale
+# records is the Lorentz or colour structure it is the *only* row to reach, so a
+# cell that stays informational names exactly what is still missing.
 
 [[process]]
 key = "ee_to_mumu_smlimit"
@@ -611,8 +611,8 @@ rationale = "The SMEFTsim SM limit on the smallest amplitude there is. Every Wil
 artifacts = ["output/ee_to_mumu_smlimit", "output/ee_to_mumu_smlimit.json", "output/ee_to_mumu_smlimit_amplitude.csv", "amplitudes/ee_to_mumu_smlimit.json"]
 mg_amplitude = { process = "e+ e- > mu+ mu-", pdgs_in = [-11, 11], pdgs_out = [-13, 13], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 101 }
 [process.categories]
-diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
-amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
 integrals = { tier = "covered-by", rows = ["ee_to_mumu"], note = "the same matrix element, gated as a cross section on the interned-SM row of this process" }
 samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows; what it would add here is the shape of a SMEFT matrix element under the same machinery, which is worth banking once a SMEFT cross section is gated and not before" }
 
@@ -629,8 +629,8 @@ rationale = "The SM limit with colour: the f(1,2,3) triple-gluon vertex and a ma
 artifacts = ["output/gg_to_ttx_smlimit", "output/gg_to_ttx_smlimit.json", "output/gg_to_ttx_smlimit_amplitude.csv", "amplitudes/gg_to_ttx_smlimit.json"]
 mg_amplitude = { process = "g g > t t~", pdgs_in = [21, 21], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 103 }
 [process.categories]
-diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
-amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
 integrals = { tier = "covered-by", rows = ["gg_to_ttx"], note = "the same matrix element, gated as a cross section on the interned-SM row of this process" }
 samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows; what it would add here is the shape of a SMEFT matrix element under the same machinery, which is worth banking once a SMEFT cross section is gated and not before" }
 
@@ -647,8 +647,8 @@ rationale = "gg_to_ttx_smlimit with the coupling order written out, as the contr
 artifacts = ["output/gg_to_ttx_smlimit_qcd2", "output/gg_to_ttx_smlimit_qcd2.json", "output/gg_to_ttx_smlimit_qcd2_amplitude.csv", "amplitudes/gg_to_ttx_smlimit_qcd2.json"]
 mg_amplitude = { process = "g g > t t~ QCD<=2", pdgs_in = [21, 21], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 179 }
 [process.categories]
-diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
-amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
 integrals = { tier = "covered-by", rows = ["gg_to_ttx", "gg_to_ttx_smlimit"], note = "the same matrix element, gated as a cross section on the interned-SM row of this process" }
 samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows; what it would add here is the shape of a SMEFT matrix element under the same machinery, which is worth banking once a SMEFT cross section is gated and not before" }
 
@@ -665,14 +665,14 @@ rationale = "The SM limit with massive external fermions, read through SMEFTsim'
 artifacts = ["output/ee_to_ttx_smlimit", "output/ee_to_ttx_smlimit.json", "output/ee_to_ttx_smlimit_amplitude.csv", "amplitudes/ee_to_ttx_smlimit.json"]
 mg_amplitude = { process = "e+ e- > t t~", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 107 }
 [process.categories]
-diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
-amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
 integrals = { tier = "covered-by", rows = ["ee_to_ttx"], note = "the same matrix element, gated as a cross section on the interned-SM row of this process" }
 samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows; what it would add here is the shape of a SMEFT matrix element under the same machinery, which is worth banking once a SMEFT cross section is gated and not before" }
 
 [[process]]
 key = "bbx_to_h_identity"
-process = "b b~ > h"
+process = "b b~ > h NP<=1"
 model = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"
 restrict = "vg_cbH"
 script = "validation/madgraph/scripts/bbx_to_h_identity.mg5"
@@ -681,10 +681,10 @@ n_final = 1
 bundled = false
 rationale = "O_bH's fermion-fermion-scalar vertex carries the bare `Identity(2,1)` bilinear, the one UFO Lorentz operator no Standard-Model process in this set reaches. 2 -> 1 at fixed beams, so the whole phase space is the single point the amplitude table banks and MadEvent has no volume to integrate."
 artifacts = ["output/bbx_to_h_identity", "output/bbx_to_h_identity.json", "output/bbx_to_h_identity_amplitude.csv", "amplitudes/bbx_to_h_identity.json"]
-mg_amplitude = { process = "b b~ > h", pdgs_in = [5, -5], pdgs_out = [25], sqrt_s_list = [125.09], npoints = 1, seed = 109 }
+mg_amplitude = { process = "b b~ > h NP<=1", pdgs_in = [5, -5], pdgs_out = [25], sqrt_s_list = [125.09], npoints = 1, seed = 109 }
 [process.categories]
-diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
-amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate" }
 integrals = { tier = "covered-by", rows = ["ee_to_ttx_smeft"], note = "the ladder banks one cross section, on the capstone row; this row exists at the diagram and amplitude levels, which is where the structure it names is visible" }
 samples = { tier = "uncovered", note = "no SMEFTsim event sample is banked. What a samples cell measures -- unweighting, colour and helicity selection, the LHE writer -- is model-independent and gated on the Standard-Model rows; what it would add here is the shape of a SMEFT matrix element under the same machinery, which is worth banking once a SMEFT cross section is gated and not before" }
 
@@ -699,7 +699,7 @@ n_final = 1
 bundled = false
 rationale = "O_HG's vector-vector-scalar vertex, whose structure is `P(1,2)*P(2,1) - P.P Metric(1,2)`: two momenta on a VVS vertex, measured beside SMEFTsim's own effective SM ggh vertex rather than alone."
 artifacts = ["output/gg_to_h_cpeven", "output/gg_to_h_cpeven.json", "output/gg_to_h_cpeven_amplitude.csv", "amplitudes/gg_to_h_cpeven.json"]
-mg_amplitude = { process = "g g > h", pdgs_in = [21, 21], pdgs_out = [25], sqrt_s_list = [125.09], npoints = 1, seed = 113 }
+mg_amplitude = { process = "g g > h NP<=1", pdgs_in = [21, 21], pdgs_out = [25], sqrt_s_list = [125.09], npoints = 1, seed = 113 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
@@ -717,7 +717,7 @@ n_final = 1
 bundled = false
 rationale = "The same process with O_HGtil beside O_HG, whose vertex carries `Epsilon(1,2,-1,-2)*P(-2,2)*P(-1,1)`. The two do not interfere in the helicity-summed |M|^2 -- the epsilon flips sign between the two gluon helicity configurations and the interference cancels -- so the epsilon sign convention is visible only in the per-helicity amplitudes, which is exactly the level this row's table banks."
 artifacts = ["output/gg_to_h_cpodd", "output/gg_to_h_cpodd.json", "output/gg_to_h_cpodd_amplitude.csv", "amplitudes/gg_to_h_cpodd.json"]
-mg_amplitude = { process = "g g > h", pdgs_in = [21, 21], pdgs_out = [25], sqrt_s_list = [125.09], npoints = 1, seed = 127 }
+mg_amplitude = { process = "g g > h NP<=1", pdgs_in = [21, 21], pdgs_out = [25], sqrt_s_list = [125.09], npoints = 1, seed = 127 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
@@ -735,7 +735,7 @@ n_final = 2
 bundled = false
 rationale = "O_W's triple-gauge vertex carries three momenta and O_Wtil's its `Epsilon` counterpart, on a process whose Standard-Model diagrams are already gated in this set -- so a disagreement localises to the new vertex."
 artifacts = ["output/ee_to_wpwm_cw", "output/ee_to_wpwm_cw.json", "output/ee_to_wpwm_cw_amplitude.csv", "amplitudes/ee_to_wpwm_cw.json"]
-mg_amplitude = { process = "e+ e- > W+ W-", pdgs_in = [-11, 11], pdgs_out = [24, -24], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 131 }
+mg_amplitude = { process = "e+ e- > W+ W- NP<=1", pdgs_in = [-11, 11], pdgs_out = [24, -24], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 131 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
@@ -753,7 +753,7 @@ n_final = 2
 bundled = false
 rationale = "O_G and O_Gtil: a higher-derivative four-gluon vertex, an `Epsilon` VVVV and the f*f*f colour chains, on the process with the largest colour matrix in the set."
 artifacts = ["output/gg_to_gg_cg", "output/gg_to_gg_cg.json", "output/gg_to_gg_cg_amplitude.csv", "amplitudes/gg_to_gg_cg.json"]
-mg_amplitude = { process = "g g > g g", pdgs_in = [21, 21], pdgs_out = [21, 21], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 137 }
+mg_amplitude = { process = "g g > g g NP<=1", pdgs_in = [21, 21], pdgs_out = [21, 21], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 137 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
@@ -771,7 +771,7 @@ n_final = 2
 bundled = false
 rationale = "The top electroweak dipoles in both CP parities. Their CP-even part is a momentum-slashed gamma chain (FFV9) and their CP-odd part the same chain with a `Gamma5` in the middle of it (FFV2) -- the only route in this model to a `Gamma5` inside a chain, which is why the card carries the imaginary coefficients the shipped one leaves at zero."
 artifacts = ["output/ee_to_ttx_dipole", "output/ee_to_ttx_dipole.json", "output/ee_to_ttx_dipole_amplitude.csv", "amplitudes/ee_to_ttx_dipole.json"]
-mg_amplitude = { process = "e+ e- > t t~", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 139 }
+mg_amplitude = { process = "e+ e- > t t~ NP<=1", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 139 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
@@ -789,7 +789,7 @@ n_final = 2
 bundled = false
 rationale = "The Higgs-gauge derivative operators O_HW, O_HB, O_HWB together with O_HDD: the derivative VVS vertices and the two coefficients that shift the {mW, mZ, GF} input scheme, deliberately on one card. A scheme shift moves every diagram of the row including the Standard-Model ones; a vertex error moves one."
 artifacts = ["output/ee_to_zh_smeft", "output/ee_to_zh_smeft.json", "output/ee_to_zh_smeft_amplitude.csv", "amplitudes/ee_to_zh_smeft.json"]
-mg_amplitude = { process = "e+ e- > Z H", pdgs_in = [-11, 11], pdgs_out = [23, 25], sqrt_s_list = [250.0, 500.0], npoints = 12, seed = 149 }
+mg_amplitude = { process = "e+ e- > Z H NP<=1", pdgs_in = [-11, 11], pdgs_out = [23, 25], sqrt_s_list = [250.0, 500.0], npoints = 12, seed = 149 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
@@ -807,7 +807,7 @@ n_final = 2
 bundled = false
 rationale = "Vector four-lepton contact operators across two lepton flavours. This is where one UFO vertex carries both spinor pairings -- (1,2)(3,4) and (1,4)(2,3) -- so the permutation sign MadGraph prefixes per Lorentz structure is observable rather than conventional."
 artifacts = ["output/ee_to_mumu_4f", "output/ee_to_mumu_4f.json", "output/ee_to_mumu_4f_amplitude.csv", "amplitudes/ee_to_mumu_4f.json"]
-mg_amplitude = { process = "e+ e- > mu+ mu-", pdgs_in = [-11, 11], pdgs_out = [-13, 13], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 151 }
+mg_amplitude = { process = "e+ e- > mu+ mu- NP<=1", pdgs_in = [-11, 11], pdgs_out = [-13, 13], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 151 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
@@ -825,7 +825,7 @@ n_final = 2
 bundled = false
 rationale = "Four-quark contact operators joining the light and third generations in both colour contractions: the singlet operators give `Identity*Identity` colour and the octet ones `T(-1,i,j)*T(-1,k,l)`, in one process, against the Standard Model's s-channel gluon and photon/Z diagrams."
 artifacts = ["output/uux_to_ttx_4f", "output/uux_to_ttx_4f.json", "output/uux_to_ttx_4f_amplitude.csv", "amplitudes/uux_to_ttx_4f.json"]
-mg_amplitude = { process = "u u~ > t t~", pdgs_in = [2, -2], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 157 }
+mg_amplitude = { process = "u u~ > t t~ NP<=1", pdgs_in = [2, -2], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 157 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
@@ -843,7 +843,7 @@ n_final = 2
 bundled = false
 rationale = "The tensor-tensor four-fermion operator O_leQt3, whose Lorentz structure is four `Gamma` factors on an index graph that is a 4-cycle -- the one shape no rooting of a tree can evaluate. Taus and not electrons because the topU3l flavour assumption puts a lepton Yukawa spurion on every chirality-flipping lepton operator: under the shipped massless-lepton values every cyclic-tensor vertex in the model vanishes and MadGraph does not know the NP coupling order at all, so this row's card restores the tau mass and Yukawa and nothing else."
 artifacts = ["output/tata_to_ttx_tensor4f", "output/tata_to_ttx_tensor4f.json", "output/tata_to_ttx_tensor4f_amplitude.csv", "amplitudes/tata_to_ttx_tensor4f.json"]
-mg_amplitude = { process = "ta+ ta- > t t~", pdgs_in = [-15, 15], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 163 }
+mg_amplitude = { process = "ta+ ta- > t t~ NP<=1", pdgs_in = [-15, 15], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 163 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
@@ -861,7 +861,7 @@ n_final = 2
 bundled = false
 rationale = "The capstone: every real Wilson coefficient on at once under the model's own restrict_massless.dat, and the one row of the ladder that owns a cross section. What that card does *not* switch on is on the record too: its CP-odd block is zero throughout, and its lepton Yukawas are zero, so neither the `Epsilon` structures nor the cyclic tensor-tensor one reaches this row -- they are covered by gg_to_h_cpodd, ee_to_wpwm_cw, gg_to_gg_cg and tata_to_ttx_tensor4f, whose cards choose the values the shipped card leaves at zero."
 artifacts = ["output/ee_to_ttx_smeft", "output/ee_to_ttx_smeft.json", "output/ee_to_ttx_smeft_amplitude.csv", "amplitudes/ee_to_ttx_smeft.json", "sigma_reference.json#ee_to_ttx_smeft"]
-mg_amplitude = { process = "e+ e- > t t~", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 167 }
+mg_amplitude = { process = "e+ e- > t t~ NP<=1", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 167 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
@@ -879,7 +879,7 @@ n_final = 3
 bundled = false
 rationale = "O_W reached through a five-vector vertex sitting inside a diagram rather than saturating the external legs -- the arity the four-point rows never reach, and the one most likely to expose an assumption in the colour or channel builder rather than in the rooting."
 artifacts = ["output/wpwm_to_wpwmz_cw", "output/wpwm_to_wpwmz_cw.json", "output/wpwm_to_wpwmz_cw_amplitude.csv", "amplitudes/wpwm_to_wpwmz_cw.json"]
-mg_amplitude = { process = "W+ W- > W+ W- Z", pdgs_in = [24, -24], pdgs_out = [24, -24, 23], sqrt_s_list = [500.0], npoints = 8, seed = 173, profile_npoints = 2000 }
+mg_amplitude = { process = "W+ W- > W+ W- Z NP<=1", pdgs_in = [24, -24], pdgs_out = [24, -24, 23], sqrt_s_list = [500.0], npoints = 8, seed = 173, profile_npoints = 2000 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }
 amplitudes = { tier = "hermetic", mode = "info", note = "red by construction: this crate's UFO loader refuses the model today -- `propagators.py` is a hard error and `Gamma5` parses as an unknown Lorentz operator -- so nothing is enumerated and nothing is evaluated. The cell is registered informational so the comparison against MadGraph's own SMEFTsim output is live and measured from the moment the reference was banked, and turns green by itself when the loader, the interaction splitting and the structure kernels the row names arrive" }

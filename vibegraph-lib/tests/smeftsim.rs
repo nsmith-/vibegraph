@@ -13,6 +13,8 @@
 //! interactions, or started pruning one structure too many, still loads the model
 //! and still enumerates diagrams — it just enumerates the wrong ones.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -49,6 +51,51 @@ fn diagram_count(model: &UFOModel, process: &str) -> usize {
     let sets = generate_from_proc_card(&pc, model)
         .unwrap_or_else(|e| panic!("enumerate '{process}': {e}"));
     sets.iter().map(|s| s.diagrams.len()).sum()
+}
+
+/// MadGraph's own post-restriction interaction count for every (model, card) pair
+/// the validation manifest names, keyed `<model dir>-<restrict>`, with one row
+/// generated under that pair.
+fn banked_interaction_counts() -> BTreeMap<String, (usize, String)> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/interactions.json");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let json: serde_json::Value = serde_json::from_str(&text).expect("parse interactions.json");
+    json["models"]
+        .as_object()
+        .expect("interactions.json has a `models` table")
+        .iter()
+        .map(|(pair, entry)| {
+            let count = entry["interactions"].as_u64().expect("interaction count") as usize;
+            let row = entry["rows"][0]
+                .as_str()
+                .expect("every banked pair names a row")
+                .to_owned();
+            (pair.clone(), (count, row))
+        })
+        .collect()
+}
+
+/// MadGraph's own diagram count per manifest row, from the committed
+/// `validation/madgraph/diagrams.json`.
+fn banked_diagram_counts() -> BTreeMap<String, usize> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/diagrams.json");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let json: serde_json::Value = serde_json::from_str(&text).expect("parse diagrams.json");
+    json["processes"]
+        .as_object()
+        .expect("diagrams.json has a `processes` table")
+        .iter()
+        .map(|(key, entry)| {
+            (
+                key.clone(),
+                entry["total_diagrams"].as_u64().expect("total_diagrams") as usize,
+            )
+        })
+        .collect()
 }
 
 /// The vendored copy against its own `SHA256SUMS`, both ways: every listed file
@@ -260,17 +307,50 @@ fn expansion_order_is_declared_but_caps_nothing() {
     assert_eq!(parsed.order_hierarchy.get("QED"), Some(&2));
 }
 
+/// Every restrict card the manifest names, against MadGraph's own count of what
+/// survives it.
+///
+/// The reference is `display interactions` in each row's build log, read into
+/// `validation/madgraph/interactions.json`: the number of interactions MadGraph
+/// holds after `add_interaction` has split every UFO vertex by coupling-order
+/// tuple and the restriction has dropped the ones whose couplings all vanish. Two
+/// programs arriving at the same number from the same file is what says the split
+/// and the pruning are MadGraph's, and it is checked on all twelve pairs rather
+/// than the two shipped cards, because the per-class cards are where a card zeroes
+/// most of the model and a pruning error has room to show.
+#[test]
+fn restricted_interaction_counts_match_madgraph() {
+    let banked = banked_interaction_counts();
+    assert!(!banked.is_empty(), "no banked interaction counts");
+    for (pair, (want, row)) in &banked {
+        let model = common::model_for_row(row)
+            .unwrap_or_else(|e| panic!("[{pair}] load the model row '{row}' names: {e}"));
+        assert_eq!(
+            model.vertices.len(),
+            *want,
+            "[{pair}] interactions after restriction"
+        );
+    }
+}
+
 /// The two shipped restrict cards, after zero couplings, empty interactions and
 /// unreferenced Lorentz structures are removed in MadGraph's order.
 ///
 /// `SMlimit_massless` zeroes every Wilson coefficient, so what survives is the
 /// Standard Model as SMEFTsim writes it; `massless` sets every real coefficient
 /// to a fixed non-zero value and keeps a vertex from every structure class,
-/// including the five- and six-leg field-strength contact terms.
+/// including the five- and six-leg field-strength contact terms. The counts
+/// themselves are MadGraph's ([`restricted_interaction_counts_match_madgraph`]);
+/// what is asserted here is how they are distributed over vertex arities, which
+/// MadGraph's log does not report and which is this side's own measurement.
 #[test]
 fn both_restrict_cards_prune_to_a_workable_model() {
+    let banked = banked_interaction_counts();
     let sm_limit = load("restrict_SMlimit_massless.dat");
-    assert_eq!(sm_limit.vertices.len(), 62);
+    assert_eq!(
+        sm_limit.vertices.len(),
+        banked["SMEFTsim_topU3l_MwScheme_UFO-SMlimit_massless"].0
+    );
     assert_eq!(
         arity(&sm_limit),
         [(3, 50), (4, 10), (5, 2)]
@@ -279,7 +359,10 @@ fn both_restrict_cards_prune_to_a_workable_model() {
     );
 
     let all_on = load("restrict_massless.dat");
-    assert_eq!(all_on.vertices.len(), 913);
+    assert_eq!(
+        all_on.vertices.len(),
+        banked["SMEFTsim_topU3l_MwScheme_UFO-massless"].0
+    );
     assert_eq!(
         arity(&all_on),
         [(3, 256), (4, 564), (5, 82), (6, 11)]
@@ -341,49 +424,72 @@ fn mw_scheme_derived_parameters() {
     }
 }
 
-/// Diagram counts for the coverage-table processes, printed for reconciliation
-/// against MadGraph's banked `diagrams.json` and asserted where MadGraph's own
-/// number is already known.
+/// The SMEFTsim rows the manifest gates, with the process each one enumerates.
 ///
-/// The two SM-limit counts are the ones the interaction splitting exists for.
-/// Before it, `e+ e- > mu+ mu-` enumerated **0** — every SMEFTsim `FFV` vertex
-/// bundles the SM current with dipole and current-shift couplings, so the union
-/// of their orders made the photon vertex read as `NP = 1` and two of them
-/// exceeded any bound. And `g g > t t~` enumerated **4**, the extra one being the
-/// `g g > H > t t~` s-channel through SMEFTsim's effective `SMHLOOP` `ggH`
-/// vertex; the WEIGHTED default now costs that diagram 99 per `SMHLOOP` power
-/// and drops it, leaving MadGraph's 3. It is a real diagram of this model, not a
-/// spurious one: ask for `g g > t t~ QCD<=2`, which bounds `QCD` but leaves
-/// `SMHLOOP` free, and it comes back.
-#[test]
-fn coverage_table_diagram_counts() {
-    let sm_limit = load("restrict_SMlimit_massless.dat");
-    assert_eq!(diagram_count(&sm_limit, "e+ e- > mu+ mu-"), 2);
-    assert_eq!(diagram_count(&sm_limit, "g g > t t~"), 3);
-    assert_eq!(diagram_count(&sm_limit, "e+ e- > t t~"), 2);
-    assert_eq!(
-        diagram_count(&sm_limit, "g g > t t~ QCD<=2"),
-        4,
-        "the SMHLOOP ggH s-channel is a diagram of this model whenever SMHLOOP is unbounded"
-    );
+/// Order bounds are part of the process string: SMEFTsim gives `NP` hierarchy 99,
+/// so MadGraph's default WEIGHTED search drops every diagram carrying a Wilson
+/// coefficient and `b b~ > h` is a different process of this model from
+/// `b b~ > h NP<=1`. The same is true of `SMHLOOP`, which is what separates the
+/// two `g g > t t~` rows.
+///
+/// This list is the model's coverage instrument twice over: the diagram counts
+/// below and the op census at the end of the file both run on it.
+const GATED_ROWS: [(&str, &str); 5] = [
+    ("ee_to_mumu_smlimit", "e+ e- > mu+ mu-"),
+    ("gg_to_ttx_smlimit", "g g > t t~"),
+    ("gg_to_ttx_smlimit_qcd2", "g g > t t~ QCD<=2"),
+    ("ee_to_ttx_smlimit", "e+ e- > t t~"),
+    ("bbx_to_h_identity", "b b~ > h NP<=1"),
+];
 
-    // Informational until V1's `diagrams.json` rows exist: these are what this
-    // loader enumerates, to be reconciled against MadGraph's own counts.
-    let all_on = load("restrict_massless.dat");
-    for process in [
-        "e+ e- > mu+ mu- NP<=1",
-        "g g > h NP<=1",
-        "g g > g g NP<=1",
-        "e+ e- > t t~ NP<=1",
-        "e+ e- > W+ W- NP<=1",
-        "u u~ > t t~ NP<=1",
-        "e+ e- > Z h NP<=1",
-        "b b~ > h NP<=1",
-    ] {
-        println!(
-            "[info] restrict_massless {process}: {} diagrams",
-            diagram_count(&all_on, process)
-        );
+/// [`GATED_ROWS`] is exactly the set of SMEFTsim rows the manifest declares
+/// `amplitudes = gate`.
+///
+/// The census and the diagram counts below are only a coverage statement if the
+/// list they run on is the gated set; a row promoted in the manifest without being
+/// added here would silently leave the census, and an op it newly covers would
+/// stay on the allowlist.
+#[test]
+fn gated_rows_are_the_manifest_s_gated_smeftsim_rows() {
+    let modes = common::manifest::category_modes("amplitudes");
+    let declared: std::collections::BTreeSet<String> = common::manifest::row_models()
+        .into_iter()
+        .filter(|(key, row)| {
+            row.dir.ends_with("SMEFTsim_topU3l_MwScheme_UFO")
+                && modes.get(key).map(String::as_str) == Some("gate")
+        })
+        .map(|(key, _)| key)
+        .collect();
+    let listed: std::collections::BTreeSet<String> = GATED_ROWS
+        .iter()
+        .map(|(key, _)| (*key).to_owned())
+        .collect();
+    assert_eq!(listed, declared);
+}
+
+/// Every gated row's diagram count against MadGraph's own, from the committed
+/// `validation/madgraph/diagrams.json`.
+///
+/// This is what the interaction splitting exists for. Before it, `e+ e- > mu+ mu-`
+/// enumerated **0** — every SMEFTsim `FFV` vertex bundles the SM current with
+/// dipole and current-shift couplings, so the union of their orders made the
+/// photon vertex read as `NP = 1` and two of them exceeded any bound. And
+/// `g g > t t~` enumerated **4**, the extra one being the `g g > H > t t~`
+/// s-channel through SMEFTsim's effective `SMHLOOP` `ggH` vertex; the WEIGHTED
+/// default costs that diagram 99 per `SMHLOOP` power and drops it, leaving
+/// MadGraph's 3. It is a real diagram of this model, not a spurious one, which is
+/// what the `QCD<=2` row is here to show: bounding `QCD` while leaving `SMHLOOP`
+/// free brings it back, on both sides.
+#[test]
+fn gated_row_diagram_counts_match_madgraph() {
+    let banked = banked_diagram_counts();
+    for (key, process) in GATED_ROWS {
+        let model = common::model_for_row(key)
+            .unwrap_or_else(|e| panic!("[{key}] load the row's model: {e}"));
+        let want = banked
+            .get(key)
+            .unwrap_or_else(|| panic!("[{key}] has no entry in diagrams.json"));
+        assert_eq!(diagram_count(&model, process), *want, "[{key}] '{process}'");
     }
 }
 
@@ -423,43 +529,52 @@ fn no_coverage_row_propagates_an_auxiliary_field() {
     }
 }
 
-/// The SM-limit process list as this model's op-coverage instrument.
+/// The gated rows as this model's op-coverage instrument.
 ///
 /// The same two-way census the Standard Model's MG-validated suite runs
-/// (`helas::eval::compile`), instantiated on a second model: every evaluator
-/// primitive these processes do *not* compile to is listed, and an op the list
-/// starts covering must be struck from the allowlist. The list is short because
-/// only the SM-limit rows compile today; it grows as the sprint's later sessions
-/// land the primitives the full SMEFT rows need, and the allowlist shrinks with it.
-const SMEFTSIM_SM_LIMIT_PROCESSES: [&str; 3] = ["e+ e- > mu+ mu-", "g g > t t~", "e+ e- > t t~"];
-
+/// (`helas::eval::op_census`), instantiated on a second model and over more than
+/// one restrict card: the ops the gated rows compile to are the ops MadGraph's
+/// reference actually exercises here, everything else is listed, and an op the
+/// list starts covering must be struck from the allowlist. The list is short
+/// because only these rows compile today; it grows as the primitives the full
+/// SMEFT rows need arrive, and the allowlist shrinks with it.
 #[test]
-fn sm_limit_op_census() {
-    use vibegraph::helas::eval::op_census::{assert_op_coverage, Op};
+fn gated_rows_op_census() {
+    use vibegraph::helas::eval::op_census::{assert_op_coverage_across, Op};
 
-    // Every op the SM-limit rows do not reach. `Hels` is never emitted at compile
-    // time in any model (the helicity expansion derives it). The chiral projector
-    // ops and the fused `Ffv*` forms are absent because SMEFTsim writes its SM
-    // currents as `Gamma * ProjP + Gamma * ProjM` pairs that this vertex set roots
-    // through the generic path, and the SM-limit card leaves only the `ProjP` half
-    // of the structures these three processes use. The rest wait on the primitives
-    // later sessions add and on the SMEFT rows that exercise them.
-    const KNOWN_UNCOVERED: [Op; 10] = [
+    // Every op the gated rows do not reach. `Hels` is never emitted at compile time
+    // in any model (the helicity expansion derives it). The chiral projector ops and
+    // the fused `Ffv*` forms are absent because SMEFTsim writes its SM currents as
+    // `Gamma * ProjP + Gamma * ProjM` pairs that this vertex set roots through the
+    // generic path, and the SM-limit card leaves only the `ProjP` half of the
+    // structures these processes use. `IdentityAmp` is covered twice over:
+    // `b b~ > h NP<=1` reaches it through O_bH's bare `Identity(2,1)` bilinear, and
+    // `g g > t t~ QCD<=2` through the `t t~ h` Yukawa on its SMHLOOP s-channel. It is
+    // the op the Standard Model's own census cannot reach at all, since the SM UFO
+    // writes its Yukawas as `ProjM + ProjP`.
+    const KNOWN_UNCOVERED: [Op; 9] = [
         Op::Hels,
         Op::ProjM,
         Op::ProjMAmp,
         Op::ProjPAmp,
         Op::MetricVout,
-        Op::IdentityAmp,
         Op::FfvVout,
         Op::FfvIout,
         Op::FfvOout,
         Op::PMomOut,
     ];
-    assert_op_coverage(
-        "SMEFTsim-SMlimit",
-        &load("restrict_SMlimit_massless.dat"),
-        &SMEFTSIM_SM_LIMIT_PROCESSES,
-        &KNOWN_UNCOVERED,
-    );
+
+    let models: Vec<_> = GATED_ROWS
+        .iter()
+        .map(|(key, process)| {
+            let model = common::model_for_row(key)
+                .unwrap_or_else(|e| panic!("[{key}] load the row's model: {e}"));
+            (*key, model, [*process])
+        })
+        .collect();
+    let instances: Vec<_> = models
+        .iter()
+        .map(|(key, model, processes)| (*key, model.as_ref(), &processes[..]))
+        .collect();
+    assert_op_coverage_across(&instances, &KNOWN_UNCOVERED);
 }

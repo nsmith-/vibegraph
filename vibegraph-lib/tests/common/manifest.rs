@@ -38,7 +38,14 @@ struct Process {
     #[serde(default)]
     restrict: Option<String>,
     #[serde(default)]
+    mg_amplitude: Option<MgAmplitude>,
+    #[serde(default)]
     categories: Categories,
+}
+
+#[derive(Debug, Deserialize)]
+struct MgAmplitude {
+    process: String,
 }
 
 fn bundled_by_default() -> bool {
@@ -188,5 +195,20 @@ pub fn category_modes(category: &str) -> BTreeMap<String, String> {
             }?;
             Some((p.key, cell.mode?))
         })
+        .collect()
+}
+
+/// The process string each row's amplitude table was banked for, by row key.
+///
+/// The banked table carries the same string, and the amplitude gate enumerates
+/// from it; reading it back from the manifest is what keeps a committed table and
+/// the declaration it was generated from from drifting apart. It is not always the
+/// row's own `process`: `pp_to_ll_qcd0` gates a hadronic process at the diagram
+/// level and one of its partonic subprocesses at the amplitude level.
+pub fn mg_amplitude_processes() -> BTreeMap<String, String> {
+    load_manifest()
+        .processes
+        .into_iter()
+        .filter_map(|p| Some((p.key, p.mg_amplitude?.process)))
         .collect()
 }

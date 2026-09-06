@@ -1,6 +1,6 @@
 {
  "key": "ee_to_ttx_dipole",
- "process": "e+ e- > t t~",
+ "process": "e+ e- > t t~ NP<=1",
  "n_ext": 4,
  "n_graphs": 10,
  "n_flows": 1,

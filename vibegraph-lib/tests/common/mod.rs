@@ -168,6 +168,42 @@ pub fn script_model_import(script: &str) -> Option<String> {
     })
 }
 
+/// The coupling-order constraints of a MadGraph process string, as written.
+///
+/// The tokens carrying a comparison — `QCD=0`, `NP<=1`, `QED<=2` — separated from
+/// the particle content, so two statements of the same process can be compared on
+/// the bounds alone. They are what decides which diagrams exist at all in a model
+/// whose orders are not the Standard Model's: SMEFTsim gives `NP` hierarchy 99,
+/// so MadGraph's default WEIGHTED search drops every diagram carrying a Wilson
+/// coefficient and `b b~ > h` is a different process from `b b~ > h NP<=1`.
+pub fn order_constraints(process: &str) -> BTreeSet<String> {
+    process
+        .split_whitespace()
+        .filter(|token| token.contains('='))
+        .map(|token| token.to_string())
+        .collect()
+}
+
+/// The `generate` line of a row's `.mg5` script, without the keyword.
+pub fn script_process(script: &str) -> Option<String> {
+    script.lines().find_map(|line| {
+        line.split('#')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .strip_prefix("generate ")
+            .map(|rest| rest.trim().to_string())
+    })
+}
+
+/// The `.mg5` script that generated a row's MadGraph reference.
+pub fn script_for_row(key: &str) -> Result<String, String> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/scripts")
+        .join(format!("{key}.mg5"));
+    std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))
+}
+
 /// The manifest row a generated subprocess file belongs to.
 ///
 /// MadGraph writes each run into `validation/madgraph/output/<key>/`, and

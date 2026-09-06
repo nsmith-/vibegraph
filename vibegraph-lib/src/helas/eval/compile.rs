@@ -816,18 +816,38 @@ pub fn assert_op_coverage(
     processes: &[&str],
     known_uncovered: &[super::op::Op],
 ) {
+    assert_op_coverage_across(&[(label, model, processes)], known_uncovered);
+}
+
+/// The same over several `(label, model, processes)` instances at once.
+///
+/// A model whose gated processes are generated under different restrict cards is
+/// one coverage instrument spread over several loaded models — the cards prune
+/// different vertices out of the same UFO — so what it leaves unreached is what
+/// none of them reaches.
+#[cfg(any(test, feature = "extended-validation"))]
+pub fn assert_op_coverage_across(
+    instances: &[(&str, &UFOModel, &[&str])],
+    known_uncovered: &[super::op::Op],
+) {
     use super::op::Op;
 
-    let counts = op_census(label, model, processes);
+    let mut counts = std::collections::BTreeMap::new();
+    for (label, model, processes) in instances {
+        for (name, n) in op_census(label, model, processes) {
+            *counts.entry(name).or_insert(0usize) += n;
+        }
+    }
     let missing: Vec<&str> = <Op as strum::VariantArray>::VARIANTS
         .iter()
         .map(|op| op.name())
         .filter(|name| !counts.contains_key(name))
         .collect();
     let expected_missing: Vec<&str> = known_uncovered.iter().map(|op| op.name()).collect();
+    let labels: Vec<&str> = instances.iter().map(|(label, _, _)| *label).collect();
     assert_eq!(
         missing, expected_missing,
-        "[{label}] op coverage changed (left: actually missing, right: the allowlist)\nop counts: {counts:#?}"
+        "[{labels:?}] op coverage changed (left: actually missing, right: the allowlist)\nop counts: {counts:#?}"
     );
 }
 

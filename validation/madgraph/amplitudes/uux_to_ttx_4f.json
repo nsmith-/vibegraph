@@ -1,6 +1,6 @@
 {
  "key": "uux_to_ttx_4f",
- "process": "u u~ > t t~",
+ "process": "u u~ > t t~ NP<=1",
  "n_ext": 4,
  "n_graphs": 7,
  "n_flows": 2,

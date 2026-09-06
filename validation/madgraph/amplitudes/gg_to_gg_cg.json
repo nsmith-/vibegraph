@@ -1,6 +1,6 @@
 {
  "key": "gg_to_gg_cg",
- "process": "g g > g g",
+ "process": "g g > g g NP<=1",
  "n_ext": 4,
  "n_graphs": 27,
  "n_flows": 9,

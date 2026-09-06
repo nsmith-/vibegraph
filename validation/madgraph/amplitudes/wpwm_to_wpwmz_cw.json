@@ -1,6 +1,6 @@
 {
  "key": "wpwm_to_wpwmz_cw",
- "process": "W+ W- > W+ W- Z",
+ "process": "W+ W- > W+ W- Z NP<=1",
  "n_ext": 5,
  "n_graphs": 222,
  "n_flows": 1,
