@@ -434,7 +434,7 @@ fn mw_scheme_derived_parameters() {
 ///
 /// This list is the model's coverage instrument twice over: the diagram counts
 /// below and the op census at the end of the file both run on it.
-const GATED_ROWS: [(&str, &str); 12] = [
+const GATED_ROWS: [(&str, &str); 13] = [
     ("ee_to_mumu_smlimit", "e+ e- > mu+ mu-"),
     ("gg_to_ttx_smlimit", "g g > t t~"),
     ("gg_to_ttx_smlimit_qcd2", "g g > t t~ QCD<=2"),
@@ -446,6 +446,7 @@ const GATED_ROWS: [(&str, &str); 12] = [
     ("gg_to_gg_cg", "g g > g g NP<=1"),
     ("ee_to_mumu_4f", "e+ e- > mu+ mu- NP<=1"),
     ("uux_to_ttx_4f", "u u~ > t t~ NP<=1"),
+    ("tata_to_ttx_tensor4f", "ta+ ta- > t t~ NP<=1"),
     ("ee_to_ttx_smeft", "e+ e- > t t~ NP<=1"),
 ];
 
@@ -577,12 +578,21 @@ fn gated_rows_op_census() {
     // a chain, never as a bilinear of its own. The four-gluon row is what covers
     // `EpsilonVout` (a Levi-Civita tensor rooted at a vector leg rather than closed
     // into the amplitude) and `MetricVout`: its gluon-exchange diagrams root both at
-    // the off-shell gluon.
-    const KNOWN_UNCOVERED: [Op; 6] = [
+    // the off-shell gluon. The tensor-tensor contact of `tata_to_ttx_tensor4f`
+    // saturates its four external legs, so it has exactly one rooting — the amplitude
+    // sink — and reaches `FierzOut`/`FierzOutRev`/`FierzPair` but never the
+    // fermion-continuing `MultivectorIout`/`MultivectorOout`, which need the contact to
+    // sit on an internal line. Those two rest on the hermetic kernel identity
+    // `ψ̄ (M ψ) = (ψ̄ M) ψ = ⟨fierz(ψ̄, ψ), M⟩` and on
+    // `tensor_four_fermion_currents_are_rooting_invariant`, which re-roots a contact
+    // that does.
+    const KNOWN_UNCOVERED: [Op; 8] = [
         Op::Hels,
         Op::ProjMAmp,
         Op::ProjPAmp,
         Op::Gamma5Amp,
+        Op::MultivectorIout,
+        Op::MultivectorOout,
         Op::FfvIout,
         Op::FfvOout,
     ];

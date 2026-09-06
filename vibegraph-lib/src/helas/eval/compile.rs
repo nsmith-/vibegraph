@@ -874,14 +874,22 @@ mod tests {
     /// `gg_to_ttx` (`NCOLOR=2`) and `gg_to_gg` (`NCOLOR=6`) now bit-validate both.
     /// The `Gamma5` and `Epsilon` ops need a model that writes those structures: the
     /// Standard Model's UFO expands γ⁵ into `ProjP − ProjM` and has no Levi-Civita
-    /// vertex at all, so their coverage belongs to the SMEFTsim census.
-    const SM_KNOWN_UNCOVERED: [Op; 6] = [
+    /// vertex at all, so their coverage belongs to the SMEFTsim census. So do the
+    /// tensor-tensor ops: they exist for a four-fermion structure whose two lines
+    /// share two summed Lorentz indices, and no Standard Model structure has a cyclic
+    /// index graph at all.
+    const SM_KNOWN_UNCOVERED: [Op; 11] = [
         Op::Hels,
         Op::IdentityAmp,
         Op::Gamma5,
         Op::Gamma5Amp,
         Op::EpsilonVout,
         Op::EpsilonAmp,
+        Op::FierzOut,
+        Op::FierzOutRev,
+        Op::MultivectorIout,
+        Op::MultivectorOout,
+        Op::FierzPair,
     ];
 
     /// Every `Op` outside [`SM_KNOWN_UNCOVERED`] appears in the compiled AST of at

@@ -5,7 +5,7 @@
 //! phase-space point it walks the arena in storage (topological) order, reducing each
 //! node from its already-computed children via the single [`apply`] match.
 
-use crate::helas::repr::lorentz::{Bispinor, Bra, ComplexVector, Ket, LorentzVector};
+use crate::helas::repr::lorentz::{Bispinor, Bra, ComplexVector, Ket, LorentzVector, Multivector};
 use crate::helas::repr::numbers::{Charge, SpinorHelicity};
 use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
@@ -24,7 +24,7 @@ use super::layout::{Instr, RootKind, N_ARENAS};
 use super::op::{Const, ConstKind, Node, NodeId, Op};
 #[cfg(test)]
 use super::tree::Tree;
-use super::waveform_slot::WaveformSlot;
+use super::waveform_slot::{MultivectorWf, WaveformSlot};
 use crate::ufo::EvaluatedModel;
 
 #[cfg(test)]
@@ -53,6 +53,7 @@ pub struct ScratchSpace<F: Real> {
     reals: Vec<F>,
     scalars: Vec<C<F>>,
     vectors: Vec<ComplexVector<F>>,
+    multivectors: Vec<Multivector<F>>,
     fin: Vec<Bispinor<F, Ket>>,
     fout: Vec<Bispinor<F, Bra>>,
     /// Per-point momentum pool: `moms[id]` is the external-momentum combination the
@@ -104,11 +105,15 @@ impl<F: Real> ScratchSpace<F> {
             self.vectors
                 .resize(sizes[2] as usize, ComplexVector::zero());
         }
-        if self.fin.len() < sizes[3] as usize {
-            self.fin.resize(sizes[3] as usize, Bispinor::zero());
+        if self.multivectors.len() < sizes[3] as usize {
+            self.multivectors
+                .resize(sizes[3] as usize, Multivector::zero());
         }
-        if self.fout.len() < sizes[4] as usize {
-            self.fout.resize(sizes[4] as usize, Bispinor::zero());
+        if self.fin.len() < sizes[4] as usize {
+            self.fin.resize(sizes[4] as usize, Bispinor::zero());
+        }
+        if self.fout.len() < sizes[5] as usize {
+            self.fout.resize(sizes[5] as usize, Bispinor::zero());
         }
     }
 
@@ -308,8 +313,9 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             reals: Vec::with_capacity(sizes[0] as usize),
             scalars: Vec::with_capacity(sizes[1] as usize),
             vectors: Vec::with_capacity(sizes[2] as usize),
-            fin: Vec::with_capacity(sizes[3] as usize),
-            fout: Vec::with_capacity(sizes[4] as usize),
+            multivectors: Vec::with_capacity(sizes[3] as usize),
+            fin: Vec::with_capacity(sizes[4] as usize),
+            fout: Vec::with_capacity(sizes[5] as usize),
             moms: Vec::with_capacity(self.eval.folded().analysis().mom_table().len()),
             #[cfg(test)]
             fills: 0,
@@ -1007,6 +1013,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
         reals,
         scalars,
         vectors,
+        multivectors,
         fin,
         fout,
         moms,
@@ -1015,6 +1022,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
     let reals = reals.as_mut_slice();
     let scalars = scalars.as_mut_slice();
     let vectors = vectors.as_mut_slice();
+    let multivectors = multivectors.as_mut_slice();
     let fin = fin.as_mut_slice();
     let fout = fout.as_mut_slice();
     let moms = moms.as_slice();
@@ -1283,6 +1291,46 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 let neg = -acc;
                 vectors[loc] = kernel::pmom_bare(&neg);
             }
+            Instr::FierzOut {
+                bra,
+                ket,
+                reversed_order,
+            } => {
+                let out =
+                    kernel::fierz_out_bare(&fout[bra as usize], &fin[ket as usize], reversed_order);
+                multivectors[loc] = out;
+            }
+            Instr::MultivectorFin { m, f } => {
+                let out = kernel::multivector_fin_bare(&multivectors[m as usize], &fin[f as usize]);
+                fin[loc] = out;
+            }
+            Instr::MultivectorFout { m, f } => {
+                let out =
+                    kernel::multivector_fout_bare(&multivectors[m as usize], &fout[f as usize]);
+                fout[loc] = out;
+            }
+            Instr::FierzPair { m, bra, ket } => {
+                let out = kernel::fierz_pair_bare(
+                    &multivectors[m as usize],
+                    &fout[bra as usize],
+                    &fin[ket as usize],
+                );
+                scalars[loc] = out;
+            }
+            Instr::ScaleMvC { m, scale } => {
+                multivectors[loc] = multivectors[m as usize] * scalars[scale as usize];
+            }
+            Instr::ScaleMvR { m, scale } => {
+                multivectors[loc] = multivectors[m as usize] * reals[scale as usize];
+            }
+            Instr::AddMultivector { start, len } => {
+                let slice = &ops[start as usize..(start + len) as usize];
+                let mut acc = multivectors[slice[0].index()];
+                for op in &slice[1..] {
+                    acc = acc + multivectors[op.index()];
+                }
+                multivectors[loc] = acc;
+            }
             Instr::Flows | Instr::Hels | Instr::Configs => {}
         }
     }
@@ -1327,6 +1375,10 @@ fn validate_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut
                 }),
                 Storage::Vector => WaveformSlot::Vector(VectorWf {
                     eps: scratch.vectors[loc],
+                    momentum: mom,
+                }),
+                Storage::Multivector => WaveformSlot::Multivector(MultivectorWf {
+                    m: scratch.multivectors[loc],
                     momentum: mom,
                 }),
                 Storage::FermionIn => {
@@ -1404,6 +1456,7 @@ fn cross_check_node<F: Real>(
                 matches!(ty, NodeType::ScalarConst | NodeType::ScalarWf)
             }
             WaveformSlot::Vector(_) => ty == NodeType::Vector,
+            WaveformSlot::Multivector(_) => ty == NodeType::Multivector,
             WaveformSlot::FermionIn(_) => ty == NodeType::FermionIn,
             WaveformSlot::FermionOut(_) => ty == NodeType::FermionOut,
             // A structurally-zero node (empty product/sum) leaves the type unconstrained.
@@ -1567,6 +1620,11 @@ pub(super) fn apply<'a, F: Real + 'a>(
         Op::IdentityAmp => kernel::identity_amp(kid(0), kid(1)),
         Op::Gamma5 => kernel::gamma5(kid(0)),
         Op::Gamma5Amp => kernel::gamma5_amp(kid(0), kid(1)),
+        Op::FierzOut => kernel::fierz_out(kid(0), kid(1)),
+        Op::FierzOutRev => kernel::fierz_out_rev(kid(0), kid(1)),
+        Op::MultivectorIout => kernel::multivector_iout(kid(0), kid(1)),
+        Op::MultivectorOout => kernel::multivector_oout(kid(0), kid(1)),
+        Op::FierzPair => kernel::fierz_pair(kid(0), kid(1), kid(2)),
         Op::EpsilonVout => kernel::epsilon_vout(kid(0), kid(1), kid(2)),
         Op::EpsilonAmp => kernel::epsilon_amp(kid(0), kid(1), kid(2), kid(3)),
         Op::PMom => kernel::pmom(kid(0)),
@@ -4874,6 +4932,96 @@ mod tests {
         }
         scratch.validated = false;
         validate_arenas(folded, &env, &mut scratch);
+    }
+
+    /// The tensor-tensor contact's currents route the momentum the static analysis
+    /// predicts, on both fermion flows.
+    ///
+    /// [`cross_check_node`] compares each node's kernel-produced momentum against the
+    /// combination [`NodeAnalysis`](super::super::analysis::NodeAnalysis) derives from
+    /// the compiled DAG, and it is the analysis's copy — not the kernel's — that the
+    /// typed instruction stream feeds to a propagator. So the element's own routing
+    /// (`p_bra − p_ket` out of the cut line, then subtracted by a continuing ket and
+    /// added by a continuing bra) is checked only where the generic slot pass runs, and
+    /// only where those currents exist: a four-fermion contact sitting on an internal
+    /// fermion line, rooted at one of its own fermion legs.
+    #[test]
+    fn tensor_contact_currents_route_the_analysed_momentum() {
+        use crate::diagrams::diagram::VtxIdx;
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::helas::eval::root_diagram::{
+            clear_root_override, compile_single_diagram, set_root_override,
+        };
+        use crate::phasespace::rambo_massless;
+        use rand::SeedableRng;
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let model = crate::ufo::UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_cleQt3.dat")),
+        )
+        .expect("load SMEFTsim under the tensor four-fermion card");
+        let card: ParamCard = std::fs::read_to_string(
+            root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO/param_card_massless.dat"),
+        )
+        .expect("the vendored param card")
+        .parse()
+        .expect("parse the vendored param card");
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+
+        let opts = ParsingOptions::default();
+        let pc = parse_proc_card("generate ta+ ta- > t t~ a NP<=1", &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, &model).unwrap();
+
+        let sqrt_s = 500.0;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x7e_c0_de);
+        let mut momenta = vec![
+            LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+            LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+        ];
+        momenta.extend(rambo_massless(sqrt_s, 3, &mut rng));
+        let helicities = [1, -1, 1, -1, 1];
+
+        let mut checked = 0usize;
+        for set in &sets {
+            for diagram in &set.diagrams {
+                let four_fermion = diagram.vertices.iter().any(|v| {
+                    model
+                        .vertex_def(v.interaction)
+                        .particles
+                        .iter()
+                        .filter(|&&p| model.particle(p).spin == 2)
+                        .count()
+                        == 4
+                });
+                if !four_fermion || diagram.vertices.len() < 2 {
+                    continue;
+                }
+                let chain = vec![0u8; diagram.vertices.len()];
+                for r in 0..diagram.vertices.len() {
+                    set_root_override(Box::new(move |_| VtxIdx(r)));
+                    let compiled = compile_single_diagram(diagram, &model, &chain).unwrap();
+                    clear_root_override();
+                    // The assertions are inside `cross_check_node`, which every node of
+                    // the generic pass goes through.
+                    let slot = eval_single_diagram_slot::<f64>(
+                        &compiled,
+                        &momenta,
+                        &helicities,
+                        &evaluated,
+                    );
+                    assert!(
+                        matches!(slot, WaveformSlot::Scalar(_)),
+                        "amplitude root is not a scalar: {slot:?}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(
+            checked >= 8,
+            "only {checked} rootings of a tensor contact on an internal line were run"
+        );
     }
 }
 

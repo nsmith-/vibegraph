@@ -108,6 +108,7 @@ impl VertexTerm {
         super::root_lorentz::reject_cyclic_structure(
             &lorentz.name,
             &lorentz.structure,
+            &lorentz.spins,
             &lorentz.expr,
         )?;
 

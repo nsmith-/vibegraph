@@ -1,9 +1,23 @@
 //! Runtime wavefunction slot, representing a single particle's wavefunction in a computation.
+use crate::helas::repr::lorentz::Multivector;
 use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use crate::helas::LorentzVector;
 use num_traits::Zero;
 use std::ops::{Add, Mul};
+
+/// A Clifford-algebra element carried between the two fermion lines of a
+/// tensor-tensor contact, with the momentum it routes.
+///
+/// The element is held in the graded Dirac basis ([`Multivector`]); the momentum
+/// follows the same convention as a vector current built from a fermion pair
+/// (`p_bra − p_ket`), which is what the line the element came from contributes to
+/// the vertex's all-incoming momentum sum.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MultivectorWf<F: Real> {
+    pub m: Multivector<F>,
+    pub momentum: LorentzVector<F>,
+}
 
 /// A runtime wavefunction register (holds one particle's wavefunction).
 ///
@@ -26,6 +40,9 @@ pub enum WaveformSlot<F: Real> {
     Vector(VectorWf<F>),
     /// Scalar amplitude + momentum
     Scalar(ScalarWf<F>),
+    /// Graded Clifford-algebra element + momentum: the rank-2 current one fermion
+    /// line of a tensor-tensor contact hands to the other.
+    Multivector(MultivectorWf<F>),
     /// A bare real constant (mass / width / coefficient) with no momentum. Kept
     /// separate from `Scalar` so real coupling/coefficient chains multiply in `F`
     /// rather than paying the ~2× cost of `C<F>` multiplication.
@@ -64,6 +81,10 @@ impl<F: Real> Add for WaveformSlot<F> {
                 f1.spinor + f2.spinor,
                 f1.momentum,
             )),
+            (Multivector(m1), Multivector(m2)) => WaveformSlot::Multivector(MultivectorWf {
+                m: m1.m + m2.m,
+                momentum: m1.momentum,
+            }),
             _ => panic!("Addition only implemented for matching waveform variants"),
         }
     }
@@ -96,6 +117,10 @@ where
             }),
             FermionIn(f) => FermionIn(InDiracWf::from_spinor(f.spinor * self, f.momentum)),
             FermionOut(f) => FermionOut(OutDiracWf::from_spinor(f.spinor * self, f.momentum)),
+            Multivector(m) => Multivector(MultivectorWf {
+                m: m.m * self,
+                momentum: m.momentum,
+            }),
         }
     }
 }
@@ -110,6 +135,7 @@ impl<F: Real> WaveformSlot<F> {
             WaveformSlot::FermionIn(f) => Some(f.momentum),
             WaveformSlot::FermionOut(f) => Some(f.momentum),
             WaveformSlot::Vector(v) => Some(v.momentum),
+            WaveformSlot::Multivector(m) => Some(m.momentum),
             WaveformSlot::Scalar(_) | WaveformSlot::Real(_) | WaveformSlot::Empty => None,
         }
     }
@@ -119,6 +145,7 @@ impl<F: Real> WaveformSlot<F> {
             WaveformSlot::FermionIn(f) => Some(f.momentum),
             WaveformSlot::FermionOut(f) => Some(f.momentum),
             WaveformSlot::Vector(v) => Some(v.momentum),
+            WaveformSlot::Multivector(m) => Some(m.momentum),
             WaveformSlot::Scalar(s) => Some(s.momentum),
             WaveformSlot::Real(_) => None,
             WaveformSlot::Empty => None,

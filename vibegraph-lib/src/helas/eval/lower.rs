@@ -455,6 +455,11 @@ fn render_hole(lt: &LorentzEvalTree, n: usize, proj: usize) -> String {
             L::Gamma5Amp { .. } => "Gamma5Amp".to_string(),
             L::EpsilonVout { .. } => "EpsilonVout".to_string(),
             L::EpsilonAmp { .. } => "EpsilonAmp".to_string(),
+            L::FierzOut { .. } => "FierzOut".to_string(),
+            L::FierzOutRev { .. } => "FierzOutRev".to_string(),
+            L::MultivectorIout { .. } => "MultivectorIout".to_string(),
+            L::MultivectorOout { .. } => "MultivectorOout".to_string(),
+            L::FierzPair { .. } => "FierzPair".to_string(),
         }
     };
     let kids = node
@@ -704,6 +709,32 @@ fn lower_lorentz(
             let y = rec(c, b);
             let z = rec(d, b);
             b.add(Op::EpsilonAmp, Sym::None, vec![w, x, y, z])
+        }
+        L::FierzOut { i, j } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            b.add(Op::FierzOut, Sym::None, vec![a, c])
+        }
+        L::FierzOutRev { i, j } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            b.add(Op::FierzOutRev, Sym::None, vec![a, c])
+        }
+        L::MultivectorIout { m, j } => {
+            let a = rec(m, b);
+            let c = rec(j, b);
+            b.add(Op::MultivectorIout, Sym::None, vec![a, c])
+        }
+        L::MultivectorOout { m, i } => {
+            let a = rec(m, b);
+            let c = rec(i, b);
+            b.add(Op::MultivectorOout, Sym::None, vec![a, c])
+        }
+        L::FierzPair { m, i, j } => {
+            let a = rec(m, b);
+            let c = rec(i, b);
+            let d = rec(j, b);
+            b.add(Op::FierzPair, Sym::None, vec![a, c, d])
         }
         L::Mul { ref children } => {
             let cs: Vec<NodeId> = children.iter().map(|&c| rec(c, b)).collect();

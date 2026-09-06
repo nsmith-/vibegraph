@@ -636,3 +636,134 @@ fn four_fermion_currents_are_rooting_invariant() {
     }
     assert!(compared >= 100, "only {compared} amplitudes compared");
 }
+
+/// A cyclic tensor⊗tensor four-fermion vertex with an *off-shell* fermion output,
+/// re-rooted.
+///
+/// The gated row's contact saturates its four external legs, so it has exactly one
+/// rooting — the amplitude sink — and never reaches the path that carries a fermion line
+/// *through* a tensor contact: the cycle is then cut at the line the output leg is not
+/// on, the surviving line's continuing spinor takes the cut line's Clifford element as
+/// an operator (`MultivectorIout`/`MultivectorOout`), and the output leg's own chiral
+/// projector applies to the current the vertex produces rather than to any input.
+/// Adding a photon to `ta+ ta- > t t~` puts the contact on an internal fermion line and
+/// makes all of that reachable.
+///
+/// Re-rooting is its falsifier twice over. The amplitude must not depend on which
+/// vertex is the root, which is what pins the element's momentum routing (a fermion pair
+/// hands over `p_bra − p_ket`, and the continuing current subtracts or adds it by its
+/// own adjoint — the sign no single-vertex row can see); and rooting at the other vertex
+/// swaps which of the two fermion lines is cut, so the two cuts are compared against
+/// each other on a real process rather than only on random spinors.
+///
+/// The oracle is the amplitude's invariance under the root choice, as elsewhere in this
+/// module; the row itself has no MadGraph reference.
+#[test]
+#[cfg(feature = "extended-validation")]
+fn tensor_four_fermion_currents_are_rooting_invariant() {
+    use crate::phasespace::rambo_massless;
+    use rand::SeedableRng;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let model = Arc::new(
+        UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_cleQt3.dat")),
+        )
+        .expect("load SMEFTsim under the tensor four-fermion card"),
+    );
+    let table: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            root.join("../validation/madgraph/amplitudes/tata_to_ttx_tensor4f.json"),
+        )
+        .expect("the banked tensor four-fermion table"),
+    )
+    .expect("parse the banked tensor four-fermion table");
+    let card: ParamCard = table["param_card"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .parse()
+        .expect("the banked param card");
+    let evaluated = EvaluatedModel::from_model_card((*model).clone(), &card);
+    let opts = ParsingOptions::default();
+    let pc = parse_proc_card("generate ta+ ta- > t t~ a NP<=1", &opts).unwrap();
+    let sets = generate_from_proc_card(&pc, model.as_ref()).unwrap();
+    let set = sets.iter().find(|s| !s.diagrams.is_empty()).unwrap();
+
+    // The diagrams whose four-fermion vertex is not the whole diagram: those carry a
+    // fermion line through it.
+    let is_four_fermion = |v: &crate::diagrams::diagram::Vertex| {
+        model
+            .vertex_def(v.interaction)
+            .particles
+            .iter()
+            .filter(|&&p| model.particle(p).spin == 2)
+            .count()
+            == 4
+    };
+    let through: Vec<&Diagram> = set
+        .diagrams
+        .iter()
+        .filter(|d| d.vertices.len() > 1 && d.vertices.iter().any(is_four_fermion))
+        .collect();
+    assert!(
+        through.len() >= 4,
+        "expected several diagrams routing a fermion line through a tensor four-fermion \
+         vertex, found {}",
+        through.len()
+    );
+
+    let sqrt_s = 500.0;
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x7e_4f_4f_4f);
+    let mut momenta = vec![
+        LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+        LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+    ];
+    momenta.extend(rambo_massless(sqrt_s, 3, &mut rng));
+
+    let helicities: Vec<Vec<i32>> = (0..32)
+        .map(|m: usize| {
+            (0..5)
+                .map(|i| if m >> i & 1 == 1 { 1 } else { -1 })
+                .collect()
+        })
+        .collect();
+
+    let mut compared = 0usize;
+    for (d, diagram) in through.iter().enumerate() {
+        let per_root = |r: usize| -> Vec<num_complex::Complex<f64>> {
+            set_root_override(Box::new(move |_| VtxIdx(r)));
+            let one = DiagramSet {
+                particles_in: set.particles_in.clone(),
+                particles_out: set.particles_out.clone(),
+                diagrams: vec![(*diagram).clone()],
+            };
+            let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
+            let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
+            let mut scratch = bound.scratch_space();
+            let values = helicities
+                .iter()
+                .map(|hel| bound.eval_amplitude(&momenta, hel, &mut scratch))
+                .collect();
+            clear_root_override();
+            values
+        };
+        let base = per_root(0);
+        let scale = base.iter().fold(0.0f64, |m, z| m.max(z.norm()));
+        assert!(scale > 0.0, "diagram {d} vanishes at every helicity");
+        for r in 1..diagram.vertices.len() {
+            for (h, (a, b)) in base.iter().zip(&per_root(r)).enumerate() {
+                assert!(
+                    (a - b).norm() / scale < REL_TOL,
+                    "diagram {d} helicity {h}: rooted at vertex 0 {a:?}, at vertex {r} {b:?}"
+                );
+                compared += 1;
+            }
+        }
+    }
+    assert!(compared >= 100, "only {compared} amplitudes compared");
+}
