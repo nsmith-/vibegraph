@@ -1,9 +1,10 @@
 # 35 — `ufo-lorentz` feature sprint plan: general UFO Lorentz structures
 
-**Status: IN PROGRESS — wave 1 dispatched and landed 2026-09-05 (§8): R1
-`bff5aa9`, L1 `00858a8`, V1 `2a34b9d`, all merged. Per-session landing
-records are appended to the session paragraphs below ("Landed:"); §5 carries
-V1's corrections to the row table.**
+**Status: IN PROGRESS — wave 1 landed 2026-09-05 (R1 `bff5aa9`, L1
+`00858a8`, V1 `2a34b9d`/`92db0ad`), wave 2 landed 2026-09-06 (L2 `5f319a9`,
+E1 `069ffad`/`49146e6`), all merged. Eight SMEFTsim rows are enforced against
+MadGraph. Per-session landing records are appended to the session paragraphs
+below ("Landed:"); §5 carries the corrections to the row table.**
 
 The feature sprint that takes the UFO surface past the Standard Model's
 feature set. Three deliverables, as asked:
@@ -343,6 +344,51 @@ because the CP-even diagram is present in the same helicity amplitude),
 amplitude tables across the ladder and reports per-cell status; the physics
 and the sign diagnoses are Opus.
 
+**Landed (`069ffad`, `49146e6`, 2026-09-06).** Ops `Gamma5`, `Gamma5Amp`,
+`EpsilonVout`, `EpsilonAmp` end to end; per-node adjoint inference
+(`chain_adjoint`: at a summed spinor index the adjoint is that of the
+external fermion the input chain leads to, found by walking spinor indices
+until a plain leg; bounded, so a cyclic index graph returns `None` rather
+than looping); `EpsilonVout` carries the free index last and absorbs the
+antisymmetry sign by one transposition (`epsilon_out_order`). Flipped to
+`gate`: `gg_to_h_cpeven` (4.22e-16), `gg_to_h_cpodd` (8.47e-16 — **the ALOHA
+ε sign is confirmed against MadGraph** through the CP-even/CP-odd
+interference inside each per-helicity JAMP; a flipped ε cannot be absorbed by
+the global phase), `ee_to_ttx_dipole` (4.27e-14). The dipole row exposed a
+real bug: `PMomOut` summed a fermion pair's stored momenta with two plus
+signs, but a fermion current stores the momentum along its line, so the
+pair enters the all-incoming sum as `p_bra − p_ket`; no SM structure puts a
+`P` on an FFV output leg, so nothing could see it (falsifier
+`momentum_slashed_chain_is_rooting_invariant`). Staying `info`, each
+localized: `ee_to_wpwm_cw` — linear level exact (per-diagram 4.70e-16), one
+of 48 |M|² points at 2.078e-12 against the 1e-12 budget (point 36, 336× its
+own ulp conditioning; not loosened, for the close-out to decide);
+`gg_to_gg_cg` — all 27 amplitude pieces match MadGraph's `AMP()`
+individually (contacts at a common −i, configurations at 6.04e-16), the
+residual lives in the **colour decomposition of the four-gluon contact into
+the nine-flow basis** (coefficient errors of order 1–4 on the six
+single-trace flows, the three double-trace flows exact) — the CF matrix and
+flow tags are blind to it, a `helas/color/colorize.rs` session of its own;
+`ee_to_zh_smeft` — each of 14 diagrams equals MadGraph's times its own
+unit-modulus constant at +90°, the constants differing in the tenth digit:
+a derived-parameter difference on the only card with both input-scheme
+shifts (`dMZ2`, `dkH`, and the width shifts `dWZ`/`dWH` — `dWZ` uses
+`cmath.sqrt(-4*MB**2 + MZ**2)` — are the suspects); `wpwm_to_wpwmz_cw`
+enumerates and compiles (five-leg vertices needed no arity work) but is
+grossly off with no per-diagram table banked. Fusion guard: `chiral_gamma_site`
+refuses a chain or a `Gamma5`; the process-level fused-vs-generic pin is
+vacuous on SMEFTsim (its restricted vertices keep one chirality, so no
+chiral pair survives to fuse) and the hermetic `ffv_*_matches_generic_chiral_pair`
+pair is the equivalence evidence. `P(1,2)*P(2,1)` and `P**2` forms compiled
+at the sprint tip already. Census: SM `KNOWN_UNCOVERED` gained the four ops
+(the SM writes γ⁵ as `ProjP − ProjM` and has no Levi-Civita vertex);
+SMEFTsim allowlist now `[Hels, ProjMAmp, ProjPAmp, MetricVout, Gamma5Amp,
+EpsilonVout, FfvVout, FfvIout, FfvOout]` — `EpsilonVout` (ε rooted at a
+vector leg) is exercised only by the two informational rows, so it still
+rests on the hermetic identity `EpsilonVout·d = EpsilonAmp`. Measured
+`MG_DIAGRAM_ORDER`/`KNOWN_CONFIG_MERGE` entries were banked for the E1 rows
+(MadGraph lists a vertex's Lorentz structures in the reverse of our order).
+
 ### F1 — four-fermion vertices (feature-dev)
 
 - `root_diagram.rs`: lift the "0 or 2 fermion legs per sink" assumption —
@@ -545,6 +591,32 @@ card, `b b~ > h` — flips `KNOWN_UNCOVERED` on the SM census only if the
 op appears in an SM-gated row, which it does not; it leaves the SMEFTsim
 census instead.
 
+**Landed (`5f319a9`, 2026-09-06).** Gated: `ee_to_mumu_smlimit` (2.49e-14),
+`gg_to_ttx_smlimit` (2.64e-15), `gg_to_ttx_smlimit_qcd2` (3.76e-15),
+`ee_to_ttx_smlimit` (1.03e-14), `bbx_to_h_identity` (1.83e-16, `|G|−1 = 0`),
+`diagrams` and `amplitudes` both, which also enforces their colour
+comparisons (CF exact, flow connectivity equal) — the first non-SM model
+gated end to end. `IdentityAmp` left the SMEFTsim allowlist twice over:
+O_bH's bare `Identity(2,1)` and the `t t~ h` Yukawa on `g g > t t~ QCD<=2`'s
+SMHLOOP s-channel, which SMEFTsim also writes as `FFS2`. The blocker on every
+SMEFTsim amplitude cell was the harness, not 2→1 kinematics: `amplitude_oracle`
+enumerated from the banked table's bare `process` string, and under the `NP`
+hierarchy the WEIGHTED default then dropped every NP diagram, so the oracle
+compared an SM subset against a table generated at `NP<=1`. Fixed as data
+— every SMEFTsim row's `mg_amplitude.process` and table `process` carry the
+order bound, pinned by two assertions (table == manifest; its order bounds
+== the script's `generate` line; `pp_to_ll_qcd0` gained `QCD=0`) — rather
+than derived at runtime, because `pp_to_ll_qcd0` legitimately banks one
+partonic subprocess of a hadronic row. Informational rows now have panics
+caught and reported by name (a gate row's panic stays a panic); 2→1 rows
+got measured `KNOWN_CONFIG_MERGE` entries (MadGraph writes one `AMP2`
+accumulator under a fake channel id when there is no internal line).
+`tests/smeftsim.rs` now asserts the split-interaction counts against
+`interactions.json` and carries `GATED_ROWS`, which a test holds equal to the
+manifest's gated SMEFTsim rows. The SMEFTsim census lives in that file, not
+`compile.rs` (a brief error). Open from this session: the top-level
+`process` display field of the SMEFT rows still lacks `NP<=1`.
+
 ### C — capstone: a SMEFT cross section and the CLI path (validation-dev; after E1, F1, R4)
 
 `e+ e- > t t~ NP<=1` at √s = 500 GeV under `restrict_massless` (every class
@@ -605,7 +677,14 @@ SM limit: 4 diagrams). The colour oracles (`color_cf_oracle`,
 `color_flow_tags_oracle`) were found to load the interned SM for every row;
 `92db0ad` makes them load the row's model and card, and report rather than
 enforce a row whose `amplitudes` cell is `info` (a panic on such a row is
-caught and reported too; a `gate` row's panic stays a panic). **Colour**: no SMEFTsim row
+caught and reported too; a `gate` row's panic stays a panic). (f) **`gg_to_gg_cg`
+is not missing diagrams**: MadGraph draws 21 for `g g > g g NP<=1` and so do
+we, census matching (3 four-gluon contacts + (5 gluon-exchange + 1 SMHLOOP
+Higgs-exchange) × 3 channels); the banked 27 is `NGRAPHS`, one `AMP()` per
+(diagram, colour-ordered contact structure), the same convention that keeps
+SM `gg_to_gg` at 4/6, so its `diagrams` cell stays `info` by rule. (g) The
+row table's amplitude comparisons were all measuring the wrong process until
+L2 put the order bound into the process strings (§4 L2). **Colour**: no SMEFTsim row
 needs a colour atom the engine lacks (§1.2); the toy model carries the rest.
 
 ## 6. Track T — the toy UFO for what SMEFTsim leaves unexercised
@@ -694,7 +773,7 @@ oracle already banked.
 ```
 Wave 0 (manager, done): S0 vendored UFO + this note + TODO
 Wave 1:  R1 (hermetic)  ∥  L1 (loader/splitting)  ∥  V1 (bank the ladder, MG host)   ← landed 2026-09-05
-Wave 2:  L2 (SM-limit gate; needs L1+V1)  ∥  E1 (tree-shaped primitives; needs R1, L1, V1)
+Wave 2:  L2 (SM-limit gate; needs L1+V1)  ∥  E1 (tree-shaped primitives; needs R1, L1, V1)   ← landed 2026-09-06
 Wave 3:  F1 (four-fermion; needs L1, V1)  →  R4 (tensor slot; needs R1, E1, F1)
 Wave 4:  T1 (toy oracle; needs V1's pipeline)  ∥  C (capstone; needs E1, F1, R4)
 Wave 5:  T2 (Sigma; needs R4, T1)  ∥  T3 (colour; needs T1)  →  Z (close-out)

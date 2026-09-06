@@ -6,13 +6,20 @@ what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
 **Current position**: **`ufo-lorentz` feature sprint in progress** (note 35;
-wave 1 landed 2026-09-05 — R1 `bff5aa9`, L1 `00858a8`, V1 `2a34b9d`, all
-merged; the landing records are in the note's session paragraphs, V1's
-corrections to the row table in its §5). The SMEFTsim ladder is banked as an
-informational MadGraph oracle — 16 rows, every `diagrams`/`amplitudes` cell
-`info` — and on the merged tree every row but `gg_to_gg_cg` (21/27) already
-enumerates MadGraph's diagram count, with the four SM-limit `amplitudes` cells
-agreeing at 1e-14 ahead of L2's flip. Two of §5's premises fell on contact:
+wave 1 landed 2026-09-05 — R1 `bff5aa9`, L1 `00858a8`, V1 `2a34b9d` — and
+wave 2 landed 2026-09-06 — L2 `5f319a9`, E1 `069ffad`/`49146e6` — all merged;
+the landing records are in the note's session paragraphs, the corrections to
+the row table in its §5). **Eight SMEFTsim rows are enforced against
+MadGraph** — the four SM-limit rows, `b b~ > h` (`IdentityAmp`), `g g > h`
+CP-even and CP-odd (the ALOHA ε sign pinned through their interference) and
+the `e+ e- > t t~` dipole (which exposed and fixed a fermion-pair momentum
+sign in `PMomOut`) — the first non-SM model gated end to end. Sixteen rows are
+banked; the rest stay `info` with their disagreements localized: one |M|²
+point on `e+ e- > W+ W-` at 2.08e-12 against a 1e-12 budget, the four-gluon
+contact's colour decomposition into the nine-flow basis (`gg_to_gg_cg`; the
+CF matrix and flow tags are blind to it), a tenth-digit derived-parameter
+spread on `e+ e- > Z h`, the four-fermion rows (F1/R4), and the five-vector
+stretch row. Two of §5's premises fell on contact:
 the cyclic tensor⊗tensor row needs a massive lepton (`tata_to_ttx_tensor4f`
 replaces it) and the shipped `restrict_massless` card zeroes every CP-odd
 coefficient, so the capstone reaches neither an `Epsilon` nor a tensor
@@ -592,9 +599,29 @@ hits them, each owned by a note-35 session:
   reporting `UnknownOperator` by name; `propagators.py` parsed and the hard
   error moved to "a custom-propagator particle propagates in a selected
   diagram" (`ConvertError::CustomPropagator`).
-- **Tree-shaped primitives** (E1): `Epsilon` (846 uses) hits a `todo!()`;
-  γ-chains and `Gamma5` inside a fermion line fail adjoint inference;
-  feyngraph accepts the five- and six-leg vertices without complaint.
+- ~~**Tree-shaped primitives** (E1)~~ **done `069ffad`/`49146e6`**: `Gamma5`,
+  `Epsilon` (vector-output and scalar), per-node adjoint inference along a
+  fermion line, the `PMomOut` bra−ket sign. Left behind, each measured:
+  - **Four-gluon contact colour decomposition** (`helas/color/colorize.rs`):
+    on `gg_to_gg_cg` every one of the 27 amplitude pieces matches MadGraph's
+    `AMP()` individually, but the six single-trace flows carry coefficient
+    errors of order 1–4 from the contact structures (the three double-trace
+    flows are exact). `color_cf_oracle` and `color_flow_tags_oracle` cannot
+    see it — a Gram matrix's blind spot. Also the `EpsilonVout` process-level
+    pin, which only this row and `ee_to_wpwm_cw` reach.
+  - **`ee_to_zh_smeft` derived parameters**: each diagram equals MadGraph's
+    times its own unit-modulus constant, differing in the tenth digit; the
+    card is the only one turning on both input-scheme shifts. Suspects:
+    `dMZ2`, `dkH`, `dWZ` (`cmath.sqrt(-4*MB**2 + MZ**2)`), `dWH`, then
+    `dGf`/`dgw`/`dg1`.
+  - **`ee_to_wpwm_cw` point 36** (√s = 500 GeV RAMBO grid): 2.078e-12 against
+    the 1e-12 budget at the linear level exact; not input conditioning
+    (336× its ulp sensitivity). Reformulate or explain; never loosen.
+  - **Multi-topology configuration merges** for `wpwm_to_wpwmz_cw` (and any
+    row where MadGraph folds same-topology diagrams into one `AMP2`) need a
+    banked `MG_DIAGRAM_ORDER`, measured from `matrix1_orig.f`.
+  - The SMEFT rows' top-level `process` display field still lacks `NP<=1`
+    (only `mg_amplitude.process` carries it); close-out sweep.
 - **Four-fermion vertices** (F1): `root_diagram.rs` asserts one fermion pair
   per sink; 70 of SMEFTsim's 200 FFFF vertices mix the `(1,2)(3,4)` and
   `(1,4)(2,3)` pairings, whose relative sign MadGraph sets per structure
