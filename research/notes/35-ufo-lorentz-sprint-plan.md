@@ -1022,6 +1022,64 @@ decides how to write them. If time runs out, `Epsilon` alone is the
 deliverable and sextets return to the `non-sm-ufo` checklist with the CF
 oracle already banked.
 
+**Landed (`1dbeb3d`, `fc88d2c`, 2026-09-07), all three items, with the
+brief's premise for item 1 falsified.** The `d(1,2,3)` disagreement was **not
+in colour**: our coefficients for the `d`-carrying diagram were already
+MadGraph's (`−2·Nc⁻¹, +1, +1` on `T(2,1)Tr(3,4)` / `T(3,4,2,1)` /
+`T(4,3,2,1)`, confirmed from our basis dump and by running MadGraph's own
+`get_color_amplitudes()` on the toy model, whose `fermionfactor`s are all
+`+1`). The sign was `spine_sign_from_flow` (`root_diagram.rs`) charging one
+`−1` per internal fermion propagator on every uncrossed line — the `C Γᵀ C⁻¹`
+parity of the bilinear, which is `−1` for `Gamma`/`Sigma` but `+1` for
+`Identity`/`Gamma5`/bare projectors. Every SM fermion line reaches a gauge
+vertex, so counting propagators had stood in for the parity; `qt qt~ > o8 o8`
+is the suite's first fermion line built entirely of Yukawa-type bilinears. The
+flip is now gated on the line's Dirac-matrix content, read per vertex off the
+UFO operator list (`carries_dirac_matrix`, which asserts uniformity across a
+vertex's Lorentz terms — a model mixing a `Gamma` term with an `Identity` term
+in one interaction would trip it, an open question left explicit), and is
+all-or-nothing per line: the `b` line of `b b~ > c c~ e+ e- mu+ mu- QCD=0`
+(one photon vertex, one `b b~ H` vertex, one propagator) is bit-for-bit only
+*with* the `−1`, which fixes the form; which vertex on a mixed line owns which
+factor no oracle in the suite resolves, and the doc says so.
+`qqx_to_o8o8_toy_dcolor` gated at |M|² 1.69e-15 (from 3.49e-1), per-flow
+2.04e-16, `G = +1i`. The oracle question answered: C1's per-graph JAMP check
+*did* run and correctly read `max_rel = 0` (nothing was wrong in colour); it
+was tightened anyway — one normalising unit per *graph* shared across its
+colour structures (`normalise_group`) plus `graph_unit_flips` requiring every
+graph's unit real relative to the subprocess's modal fourth root of unity, so
+a per-structure sign on a multi-structure vertex (the four-gluon contact's
+three `AMP()` from one graph) is now visible; `color_flow_tags_oracle` never
+normalised by a phase (it compares colour-line labels) — the brief's "both
+oracles normalise" was loose. **Items 2–3**: `Epsilon`/`EpsilonBar` and
+`K6`/`K6Bar`/`T6` through grammar, `ColorTensor` (`TensorKind` order matching
+MadGraph's class-name sort: `ColorOne < Epsilon < EpsilonBar < K6 < K6Bar < T <
+T6 < Tr < d < f`), the `color_algebra.py` reduction rules, colorize and
+`ColorRep::Sextet/AntiSextet` with `Identity(6,6̄) → T6` (sextet slot first).
+**Convention found and pinned**: the all-incoming crossing that transposes a
+`T` index pair **exchanges `Epsilon` and `EpsilonBar`** (every leg of an
+`Epsilon` is the opposite kind to the one MadGraph reads) and likewise
+`K6 ↔ K6Bar`; without the swap the row's colour matrix fails to reduce to a
+scalar — exactly the `set_Nc` failure the toy model's docstring records for
+MadGraph — and that is now a standing gated failure. `p3r3_to_p3r3_toy_epsilon`
+(1.16e-15, `G = −1i`) and `p3r3_to_p3r3_toy_sextet` (1.57e-15) gated, both
+reproducing MadGraph's basis `T(3,1)T(4,2)` / `T(3,2)T(4,1)` with JAMP columns
+`+1/−1` (antisymmetric triplet) against `½/½` (symmetric sextet) — the two
+rows separate the representations by the colour atom alone; `CF max_rel = 0`,
+`JAMP max_rel = 0` on all three. Every previously-enforced cell unmoved
+(amplitude 42/0, CF 70/0, flow tags 95/0, diagrams 49/0, smeftsim 13/0, lib
+789/0); the failures in the run are the known PDF class. Still refused, on
+purpose: a `T6` carrying adjoint indices (the sextet generator's expansion
+draws fresh summed indices from a module-global MadGraph counter), and any
+basis key in which a baryonic or sextet tensor survives — three colour indices
+tied at a point, or two colour lines on one leg, which no Les Houches record
+can write; both `p3r3` rows keep the diquark internal, so their flow tags are
+ordinary. Not pinned by any gate: the `T6` crossing (no row carries a sextet
+`Identity`; the algebra is unit-tested, `δ6(i,i) = 6`), and `order_summation`
+is not ported (a no-op while `K6`/`K6Bar` reduce away; needed for an external
+sextet). Note 16's "sextets out of scope" and the `non-sm-ufo` checklist's
+sextet/ε entries are superseded by this record.
+
 ## 7. Decisions (user, 2026-09-05)
 
 1. **D1 — vendor the UFO, not a submodule (decided).** The planning commit
