@@ -509,6 +509,35 @@ impl Cuts {
         floor
     }
 
+    /// A lower bound (GeV) on the energy, in any frame reached from the lab by a
+    /// boost along the beam axis, of the final-state subsystem `slots` (bit `k`
+    /// naming the `k`-th final-state leg in [`Cuts::compile`]'s leg order), holding
+    /// at every configuration [`Cuts::pass`] accepts. Zero when the active cuts
+    /// imply none.
+    ///
+    /// Each leg's energy is at least its transverse momentum in every such frame,
+    /// `E² = p_T² + p_z² + m²` with `p_T` invariant under the boost, and at least
+    /// the `emin` threshold in the lab; a subsystem's energy is the sum of its legs'.
+    /// The bound is what regulates a soft-shaped angular draw at the cuts
+    /// ([`DiagramChannel::with_soft_split_angles`]), so that a map built for a
+    /// `1/E` rise does not spend its draws below the threshold that rejects them.
+    ///
+    /// [`DiagramChannel::with_soft_split_angles`]:
+    ///     crate::phasespace::diagram_channel::DiagramChannel::with_soft_split_angles
+    pub fn energy_floor(&self, slots: u64) -> f64 {
+        self.finals
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| *k < 64 && slots & (1u64 << k) != 0)
+            .map(|(_, &idx)| {
+                self.single
+                    .iter()
+                    .find(|c| c.idx == idx)
+                    .map_or(0.0, |c| c.pt_min.max(c.e_min).max(0.0))
+            })
+            .sum()
+    }
+
     /// The lower bound on one pair's invariant mass², from its own thresholds.
     /// See [`timelike_floor`](Self::timelike_floor) for the derivation.
     fn pair_mass2_floor(&self, pc: &PairCut) -> f64 {
@@ -1256,6 +1285,29 @@ mod tests {
             ExternalLeg::outgoing(11, 0.0),
             ExternalLeg::outgoing(21, 0.0),
         ]
+    }
+
+    /// The energy floor of a subsystem is the sum of its legs' transverse-momentum
+    /// thresholds, the `emin` threshold where it is the larger one, and nothing for
+    /// a leg the cuts leave free.
+    #[test]
+    fn energy_floor_sums_the_legs_thresholds() {
+        // llj final-state order: l+, l-, j ⇒ ptl + ptl + ptj = 10 + 10 + 20.
+        let llj = Cuts::compile(&RunCard::default(), &llj_legs()).unwrap();
+        assert_eq!(llj.energy_floor(0b001), 10.0);
+        assert_eq!(llj.energy_floor(0b100), 20.0);
+        assert_eq!(llj.energy_floor(0b011), 20.0);
+        assert_eq!(llj.energy_floor(0b111), 40.0);
+        assert_eq!(llj.energy_floor(0), 0.0);
+
+        // `ej` above `ptj` takes over for the jet and only for the jet.
+        let energetic = Cuts::compile(&card("50 = ej\n"), &llj_legs()).unwrap();
+        assert_eq!(energetic.energy_floor(0b100), 50.0);
+        assert_eq!(energetic.energy_floor(0b011), 20.0);
+
+        // A card that switches the thresholds off implies nothing.
+        let free = Cuts::compile(&card("0 = ptj\n0 = ptl\n"), &llj_legs()).unwrap();
+        assert_eq!(free.energy_floor(0b111), 0.0);
     }
 
     #[test]
