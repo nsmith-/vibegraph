@@ -837,9 +837,9 @@ fn check_channel_keys(
     let derived: Vec<ChannelKey> = integ
         .channel_ids()
         .iter()
-        .map(|id| ChannelKey::GroupDiagram {
+        .map(|id| ChannelKey::GroupChannel {
             group: id.group,
-            diagram: id.diagram,
+            channel: id.channel,
         })
         .collect();
     if artifact.channels.len() != derived.len() {

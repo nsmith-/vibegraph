@@ -95,14 +95,18 @@ pub struct AmplitudeEvaluator {
     /// Which flows each diagram reaches at leading order in `Nc` (MadGraph's
     /// `ICOLAMP`), read off the same basis as the flow tags.
     leading_color_flows: LeadingColorFlows,
-    /// The diagram behind each integration configuration, in configuration order —
-    /// the diagrams MadGraph writes an `AMP2` for (see
-    /// [`config_carrying_diagrams`]). Indexes [`Self::leading_color_flows`].
-    config_diagrams: Vec<usize>,
-    /// How many `(diagram, color chain)` amplitudes each configuration owns, parallel
-    /// to `config_diagrams`. All but a four-point-vertex diagram carry exactly one;
-    /// the sum is the width of the compiled program's configuration-amplitude row.
+    /// The diagram behind each `(diagram, color chain)` amplitude of every
+    /// integration configuration, flattened in the layout `config_spans` describes.
+    /// Indexes [`Self::leading_color_flows`].
+    config_amp_diagrams: Vec<usize>,
+    /// How many `(diagram, color chain)` amplitudes each configuration owns, one
+    /// entry per configuration; the sum is the width of the compiled program's
+    /// configuration-amplitude row.
     config_spans: Vec<usize>,
+    /// Which colour flows each configuration admits — the union of its member
+    /// diagrams' rows of [`Self::leading_color_flows`], configuration-major with
+    /// `n_flows` entries each (MadGraph's `ICOLAMP` column).
+    config_flows: Vec<bool>,
     /// Set by [`prune_zero_helicities`](Self::prune_zero_helicities) once it has
     /// actually dropped combinations. `eval_m2` on a pruned evaluator only sums the
     /// survivors, so it is correct only under that method's kinematic contract
@@ -192,22 +196,33 @@ impl AmplitudeEvaluator {
         // `NCOLOR = 1`), then intern the constants into the folded skeleton. The
         // configuration amplitudes ride under the same root.
         let n_diagrams = set.diagrams.len();
-        let mut config_diagrams: Vec<usize> = Vec::new();
+        let mut config_members: Vec<Vec<usize>> = Vec::new();
+        let mut config_amp_diagrams: Vec<usize> = Vec::new();
         let mut configs: Vec<Vec<(usize, Vec<u8>)>> = Vec::new();
-        for d in config_carrying_diagrams(&set.diagrams) {
-            let mut chains: Vec<Vec<u8>> = evals
-                .keys()
-                .filter(|(diagram, _)| *diagram == d)
-                .map(|(_, chain)| chain.clone())
-                .collect();
-            chains.sort();
-            // A diagram the color basis never references contributes nothing to any
-            // flow, so it has no amplitude to square and no configuration either.
-            if chains.is_empty() {
+        for group in config_groups(&set.diagrams, model) {
+            let mut amps: Vec<(usize, Vec<u8>)> = Vec::new();
+            let mut members: Vec<usize> = Vec::new();
+            for &d in &group {
+                let mut chains: Vec<Vec<u8>> = evals
+                    .keys()
+                    .filter(|(diagram, _)| *diagram == d)
+                    .map(|(_, chain)| chain.clone())
+                    .collect();
+                chains.sort();
+                // A diagram the color basis never references contributes nothing to
+                // any flow, so it has no amplitude in the group's coherent sum.
+                if chains.is_empty() {
+                    continue;
+                }
+                members.push(d);
+                amps.extend(chains.into_iter().map(|chain| (d, chain)));
+            }
+            if amps.is_empty() {
                 continue;
             }
-            config_diagrams.push(d);
-            configs.push(chains.into_iter().map(|chain| (d, chain)).collect());
+            config_amp_diagrams.extend(amps.iter().map(|(d, _)| *d));
+            config_members.push(members);
+            configs.push(amps);
         }
         let config_spans: Vec<usize> = configs.iter().map(Vec::len).collect();
         let symbolic = lower::optimize(lower::lower_flows(&basis, &evals, &configs));
@@ -247,6 +262,18 @@ impl AmplitudeEvaluator {
         let color_flow_tags = color_flow_tags(&basis, &leg_colors)?;
         report_flow_tags(&color_flow_tags);
         let leading_color_flows = LeadingColorFlows::of(&basis, n_diagrams);
+        let n_flows = basis.ncolor();
+        let mut config_flows = vec![false; config_members.len() * n_flows];
+        for (c, members) in config_members.iter().enumerate() {
+            for &d in members {
+                for (slot, &reached) in config_flows[c * n_flows..][..n_flows]
+                    .iter_mut()
+                    .zip(leading_color_flows.reached_by(d))
+                {
+                    *slot |= reached;
+                }
+            }
+        }
         let flow_fingerprints: Vec<FlowFingerprint> = basis
             .elements
             .iter()
@@ -282,14 +309,15 @@ impl AmplitudeEvaluator {
             n_diagrams,
             ext_particle_ids,
             helicities,
-            n_flows: basis.ncolor(),
+            n_flows,
             cf_matrix: basis.cf_matrix,
             leg_colors,
             flow_fingerprints,
             color_flow_tags,
             leading_color_flows,
-            config_diagrams,
+            config_amp_diagrams,
             config_spans,
+            config_flows,
             pruned: false,
             zeroamp_nodes_before: 0,
             zeroamp_nodes_after: 0,
@@ -405,11 +433,7 @@ impl AmplitudeEvaluator {
             "jamp2 weights must cover the color flows"
         );
         match select_index(amp2, u[0]) {
-            Some(c) => select_flow_reached_by(
-                jamp2,
-                self.leading_color_flows.reached_by(self.config_diagrams[c]),
-                u[1],
-            ),
+            Some(c) => select_flow_reached_by(jamp2, self.config_flows(c), u[1]),
             // No configuration carries weight here (or the process has none), so
             // there is nothing to condition on and the draw runs over every flow —
             // the same fallback `SELECT_COLOR` takes when its masked cumulant ends
@@ -463,18 +487,31 @@ impl AmplitudeEvaluator {
         &self.leading_color_flows
     }
 
-    /// The diagram behind each integration configuration, in the configuration order
-    /// [`BoundAmplitude::eval_amp2`](super::run::BoundAmplitude::eval_amp2) fills and
-    /// MadGraph's `ICOLAMP` columns run in. Indexes [`Self::leading_color_flows`], so
-    /// `leading_color_flows().reached_by(config_diagrams()[c])` is configuration `c`'s
-    /// admitted-flow mask.
-    pub fn config_diagrams(&self) -> &[usize] {
-        &self.config_diagrams
+    /// The diagram behind each configuration amplitude, in the order
+    /// [`BoundAmplitude::run_config_amps`](super::run::BoundAmplitude::run_config_amps)
+    /// returns them and the layout [`Self::config_amp_counts`] describes. Indexes
+    /// [`Self::leading_color_flows`].
+    pub fn config_amp_diagrams(&self) -> &[usize] {
+        &self.config_amp_diagrams
+    }
+
+    /// Configuration `c`'s admitted colour flows — MadGraph's `ICOLAMP` column, one
+    /// flag per flow.
+    ///
+    /// MadGraph writes the column of the configuration's *first* diagram
+    /// (`get_icolamp_lines` takes one representative per config); this is the union
+    /// over the configuration's diagrams, which is the same column wherever the
+    /// members agree, and the amplitude gate asserts that they do.
+    pub fn config_flows(&self, c: usize) -> &[bool] {
+        let start = c * self.n_flows;
+        self.config_flows
+            .get(start..start + self.n_flows)
+            .unwrap_or(&[])
     }
 
     /// The number of integration configurations — the length of an `AMP2` vector.
     pub fn n_configs(&self) -> usize {
-        self.config_diagrams.len()
+        self.config_spans.len()
     }
 
     /// How many `(diagram, color chain)` amplitudes each configuration owns —
@@ -1131,7 +1168,7 @@ mod tests {
             let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
             assert_eq!(eval.n_diagrams(), n_diagrams, "[{process}] diagram count");
             assert_eq!(
-                eval.config_diagrams(),
+                eval.config_amp_diagrams(),
                 configs,
                 "[{process}] configuration-carrying diagrams"
             );

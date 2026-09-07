@@ -179,7 +179,7 @@ fn integrate_at(seed: &str) -> Run {
         artifact
             .channels
             .iter()
-            .all(|c| matches!(c.key, ChannelKey::GroupDiagram { .. })),
+            .all(|c| matches!(c.key, ChannelKey::GroupChannel { .. })),
         "the hadronic path must bank (group, diagram) channels"
     );
     Run {

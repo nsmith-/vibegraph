@@ -40,6 +40,8 @@ use crate::diagrams::diagram::{Diagram, LegIdx, PropIdx, Ray, VtxIdx};
 use crate::ufo::particles::ParticleId;
 use crate::ufo::{EvaluatedModel, UFOModel};
 
+use crate::helas::eval::config_groups;
+
 use super::graph::{ChannelSet, ConfigForest, ForestLine};
 
 /// Why a process's diagrams do not yield channel forests.
@@ -58,21 +60,17 @@ pub enum ConfigError {
     ExternalMismatch { got: usize, want: usize },
 }
 
-/// The channel forests of one subprocess, with the diagram each came from.
+/// The channel forests of one subprocess, with the diagrams each came from.
 #[derive(Clone, Debug)]
 pub struct DerivedChannels {
     pub set: ChannelSet,
-    /// `diagram_of[c - 1]` indexes the diagram slice this channel was derived
-    /// from. The two numberings differ: a diagram the vertex filter drops has no
-    /// channel at all.
+    /// `diagram_of[c - 1]` indexes the diagram the forest of channel `c` was
+    /// written from — the lowest-numbered member of the channel's configuration,
+    /// which is the representative MadGraph's `configs.inc` writes.
     pub diagram_of: Vec<usize>,
-    /// `config_of_diagram[d]` is the channel (from `1`) diagram `d` yielded, or
-    /// `None` where the vertex filter dropped it — the inverse of `diagram_of`,
-    /// over the whole diagram slice rather than over the surviving channels.
-    ///
-    /// This is the map a sampler needs. Its channels are one per *diagram*, so
-    /// the channel it drew a point in names an integration channel only through
-    /// here, and the two numberings coincide exactly when nothing was dropped.
+    /// `config_of_diagram[d]` is the channel (from `1`) diagram `d` belongs to, or
+    /// `None` where the vertex filter dropped it. Several diagrams share a channel
+    /// wherever the configuration mapping merges them.
     pub config_of_diagram: Vec<Option<usize>>,
 }
 
@@ -161,22 +159,38 @@ pub fn derive_channels_permuted(
         return Err(ConfigError::IrreducibleHigherVertex { arity: minvert });
     }
 
-    let mut configs: Vec<ConfigForest> = Vec::new();
-    let mut diagram_of: Vec<usize> = Vec::new();
-    for (index, diagram) in diagrams.iter().enumerate() {
+    for diagram in diagrams {
         if diagram.legs.len() != n_external {
             return Err(ConfigError::ExternalMismatch {
                 got: diagram.legs.len(),
                 want: n_external,
             });
         }
-        if arity(diagram) > minvert {
-            continue;
-        }
+    }
+
+    // One forest per integration configuration, written from the configuration's
+    // lowest-numbered diagram: the members share every propagator the forest
+    // records, up to the substitution `config_groups` makes on a spacelike line,
+    // where MadGraph writes the same representative's propagator.
+    let groups = config_groups(diagrams, model);
+    let mut configs: Vec<ConfigForest> = Vec::new();
+    let mut diagram_of: Vec<usize> = Vec::new();
+    let mut config_of_diagram = vec![None; diagrams.len()];
+    for group in &groups {
+        let index = group[0];
         configs.push(forest(
-            diagram, index, n_external, positions, model, evaluated, externals,
+            &diagrams[index],
+            index,
+            n_external,
+            positions,
+            model,
+            evaluated,
+            externals,
         )?);
         diagram_of.push(index);
+        for &d in group {
+            config_of_diagram[d] = Some(configs.len());
+        }
     }
 
     let external_pdg: Vec<i64> = externals
@@ -184,10 +198,6 @@ pub fn derive_channels_permuted(
         .map(|&id| model.particle(id).pdg_code)
         .collect();
     let n_configs = configs.len();
-    let mut config_of_diagram = vec![None; diagrams.len()];
-    for (config, &diagram) in diagram_of.iter().enumerate() {
-        config_of_diagram[diagram] = Some(config + 1);
-    }
     Ok(DerivedChannels {
         set: ChannelSet {
             n_external,

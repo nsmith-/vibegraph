@@ -32,7 +32,7 @@ use crate::artifact::{ChannelSampler, SamplerTopology};
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
-use crate::coupling::cluster::graph::{ColorTable, MergeTablesByOrder};
+use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTablesByOrder};
 use crate::coupling::cluster::setclscales::ScaleRefusal;
 use crate::coupling::scales::{
     ClosedForms, ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent,
@@ -40,7 +40,9 @@ use crate::coupling::scales::{
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::{DiagramError, DiagramSet};
-use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
+use crate::helas::eval::{
+    config_groups, AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace,
+};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::lhef::build::scalup;
 use crate::pdf::grid::AlphaSInfo;
@@ -174,23 +176,23 @@ enum ScaleSourceKind {
 ///
 /// The cluster scale is a function of the event **and** of the channel being
 /// integrated, so a point carries the channel that produced it all the way to
-/// [`EventScaleSource::scales`]. A sampling channel is one diagram of one
-/// subprocess, which is exactly the pair below.
+/// [`EventScaleSource::scales`]. A sampling channel is one integration
+/// configuration of one subprocess, which is exactly the pair below.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SampledChannel {
     /// Which channel set the draw belongs to: the flavour group on a hadronic
     /// run, and `0` wherever one subprocess supplies every channel.
     pub group: usize,
-    /// The channel's diagram, indexed into the diagram slice its channel set
-    /// was derived from.
-    pub diagram: usize,
+    /// The channel within that set, indexed from zero in the order its channel
+    /// forests were derived.
+    pub channel: usize,
 }
 
 impl SampledChannel {
-    /// The `diagram`-th channel of the only channel set — a fixed-beam run,
-    /// where the sampling channel index *is* the diagram index.
-    pub fn sole(diagram: usize) -> Self {
-        SampledChannel { group: 0, diagram }
+    /// The `channel`-th channel of the only channel set — a fixed-beam run,
+    /// where one subprocess supplies every channel.
+    pub fn sole(channel: usize) -> Self {
+        SampledChannel { group: 0, channel }
     }
 }
 
@@ -203,14 +205,6 @@ pub struct Channels {
     /// per-event path: it is a function of the channel forests and the order
     /// alone, and every event of a channel asks for the same one.
     tables: MergeTablesByOrder,
-    /// The channel named by a draw that has none of its own.
-    ///
-    /// Two callers reach it: a flat sampler, which draws no channel at all, and
-    /// a sampling channel whose diagram the vertex filter dropped, whose region
-    /// of phase space MadGraph covers from the surviving channels instead. The
-    /// banked replay in `validate_scales.rs` reports, per run, how many events
-    /// the choice moves at all — it is the measurement this default rests on.
-    default_config: usize,
 }
 
 impl Channels {
@@ -224,16 +218,24 @@ impl Channels {
         }
     }
 
-    /// The integration channel a point drawn from the `diagram`-th sampling
-    /// channel was generated in, falling back to the set's default channel where
-    /// that diagram has none.
-    pub fn config_of_channel(&self, diagram: usize) -> usize {
-        self.config_of_diagram(diagram)
-            .unwrap_or(self.default_config)
+    /// The integration channel (from `1`) a point drawn from sampling channel
+    /// `channel` was generated in.
+    ///
+    /// The sampling channels and the channel forests are one per configuration of
+    /// MadGraph's channel mapping and are built from the same diagram slice, so
+    /// the two numberings are the same one shifted by the Fortran origin.
+    pub fn config_of_channel(&self, channel: usize) -> usize {
+        assert!(
+            channel < self.len(),
+            "a point was drawn in channel {channel} of {}",
+            self.len()
+        );
+        channel + 1
     }
 
-    /// The integration channel derived from one diagram, or `None` where the
-    /// vertex filter dropped it. The mapping itself, without the fallback.
+    /// The integration channel diagram `d` belongs to, or `None` where the vertex
+    /// filter dropped it. Several diagrams share a channel wherever the
+    /// configuration mapping merges them.
     pub fn config_of_diagram(&self, diagram: usize) -> Option<usize> {
         self.derived
             .config_of_diagram
@@ -242,24 +244,9 @@ impl Channels {
             .flatten()
     }
 
-    /// How many diagrams the channel forests were derived from — the range of
-    /// [`config_of_channel`](Channels::config_of_channel)'s argument, and the
-    /// number of sampling channels the same diagram slice produces.
-    pub fn diagram_count(&self) -> usize {
-        self.derived.config_of_diagram.len()
-    }
-
-    /// How many sampling channels name no integration channel of their own.
-    pub fn unmapped_channels(&self) -> usize {
-        self.derived
-            .config_of_diagram
-            .iter()
-            .filter(|c| c.is_none())
-            .count()
-    }
-
     /// How many integration channels the process has, which is the range
-    /// [`Channels::input`] accepts.
+    /// [`Channels::input`] accepts and the number of sampling channels its
+    /// diagrams produce.
     pub fn len(&self) -> usize {
         self.derived.set.configs.len()
     }
@@ -328,22 +315,38 @@ impl EventScaleSource {
         })
     }
 
-    /// Whether a point's integration configuration is drawn from the squared
-    /// amplitude rather than taken from the sampling channel it came from.
+    /// Whether a point's integration configuration is drawn per event rather than
+    /// taken from the sampling channel it came from.
     ///
-    /// True only where all three hold: the prescription reads the event at all,
-    /// it consults channel forests (the kT clustering, not one of `setscales.f`'s
-    /// closed forms), and the card's enhancement weight is the squared amplitude
-    /// alone.
+    /// True where the prescription reads the event at all and consults channel
+    /// forests (the kT clustering, not one of `setscales.f`'s closed forms). The
+    /// draw's weights are [`weights_configurations_by_amp2`] — the same rule the
+    /// colour flow's configuration is drawn under.
+    ///
+    /// [`weights_configurations_by_amp2`]: Self::weights_configurations_by_amp2
     pub fn draws_configuration(&self) -> bool {
+        matches!(
+            &self.kind,
+            ScaleSourceKind::PerEvent {
+                channels: Some(_),
+                ..
+            }
+        )
+    }
+
+    /// Whether MadEvent's per-configuration enhancement weight is the squared
+    /// amplitude alone, which is the run card's own condition rather than anything
+    /// about the prescription.
+    ///
+    /// `matrix1.f`'s multi-channel block weights configuration `c` by
+    /// `AMP2_c · CC_c` at `SDE_strategy = 1` and by `CC_c` alone at `2`, where
+    /// `CC_c` is `genps.f`'s `get_channel_cut` — a product of inverse propagator
+    /// denominators that short-circuits to `1` exactly when `SDE_strategy = 1` and
+    /// `tmin_for_channel = -1`. Both the configuration a point's cluster scale is
+    /// taken in and the one its colour flow is drawn in follow that weight, so
+    /// they read this one condition.
+    pub fn weights_configurations_by_amp2(&self) -> bool {
         self.amp2_configuration_weights
-            && matches!(
-                &self.kind,
-                ScaleSourceKind::PerEvent {
-                    channels: Some(_),
-                    ..
-                }
-            )
     }
 
     /// The scales, when they are the same on every event.
@@ -395,7 +398,7 @@ impl EventScaleSource {
                         });
                         choice.cluster_scales(
                             &event,
-                            &set.input(set.config_of_channel(channel.diagram)),
+                            &set.input(set.config_of_channel(channel.channel)),
                         )
                     }
                     None => choice.scales(&event),
@@ -450,11 +453,6 @@ pub struct RunningCouplingReport {
     /// over its channel sets, or `None` where the prescription reads no merge
     /// graph.
     pub channels: Option<usize>,
-    /// How many sampling channels of those sets name no integration channel of
-    /// their own, because MadGraph's vertex filter drops the diagram they were
-    /// built on. Such a draw takes the set's default channel, so a run that has
-    /// any says so rather than absorbing it.
-    pub unmapped_channels: usize,
     /// The scales, when the prescription resolves to constants — then no event
     /// kinematics are read and the coupling is applied once rather than per point.
     pub constant_scales: Option<EventScales>,
@@ -933,11 +931,42 @@ pub(crate) fn compile_scale_source(
             derived,
             colors: colors.clone(),
             tables,
-            default_config: 1,
         });
     }
     let param_card_as = evaluated.alpha_s().ok_or(HadronicError::MissingAlphaS)?;
     EventScaleSource::from_run_card(card, param_card_as, grid, Some(sets), needs_alpha_s, closed)
+}
+
+/// The channel forests MadEvent's enhancement weight is a product over, one set
+/// per subprocess — or `None` where the run card leaves that weight the squared
+/// amplitude and no forest is read at all.
+///
+/// This is derived beside the scale prescription rather than out of it: a run
+/// whose matrix element carries no strong coupling compiles no prescription, and
+/// its events still have a colour flow to draw in a configuration.
+pub(crate) fn compile_configuration_weights(
+    subprocesses: &[(&AmplitudeEvaluator, &[Diagram])],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    card: &RunCard,
+) -> Result<Option<Vec<ChannelSet>>, HadronicError> {
+    if card.int("SDE_strategy") == 1 && card.float("tmin_for_channel") == -1.0 {
+        return Ok(None);
+    }
+    let mut sets = Vec::with_capacity(subprocesses.len());
+    for (rep, diagrams) in subprocesses {
+        sets.push(
+            derive_channels(
+                diagrams,
+                rep.external_particles(),
+                rep.n_in(),
+                model,
+                evaluated,
+            )?
+            .set,
+        );
+    }
+    Ok(Some(sets))
 }
 
 /// Hold every subprocess at the coupling a constant prescription implies, and
@@ -962,10 +991,6 @@ pub(crate) fn constant_scale_report(
         channels: source
             .and_then(EventScaleSource::channels)
             .map(|sets| sets.iter().map(Channels::len).sum()),
-        unmapped_channels: source
-            .and_then(EventScaleSource::channels)
-            .map(|sets| sets.iter().map(Channels::unmapped_channels).sum())
-            .unwrap_or(0),
         constant_scales,
         constant_alpha_s,
         alpha_s_ref: awareness.alpha_s_ref,
@@ -1070,6 +1095,10 @@ pub struct FixedBeamIntegrand<'a> {
     /// so it carries no weight either — the count is here to say so rather than to
     /// absorb it.
     scale_draw_fallbacks: AtomicU64,
+    /// The channel forests MadEvent's enhancement weight is a product over, where
+    /// the run card makes that weight something other than the squared amplitude.
+    /// `None` leaves every configuration draw on `AMP2`.
+    config_weights: Option<ChannelSet>,
 }
 
 /// One thread's private half of a [`FixedBeamIntegrand`].
@@ -1197,6 +1226,23 @@ pub struct EventSelection {
     pub flow: usize,
 }
 
+/// The diagrams the integration channels are built from: one per configuration of
+/// MadGraph's channel mapping ([`config_groups`]), written from the configuration's
+/// lowest-numbered diagram.
+///
+/// A configuration's members share every propagator its channel map reads, up to
+/// the substitution the mapping makes on a spacelike line — where MadGraph's own
+/// `configs.inc` records the same representative's propagator.
+pub(crate) fn channel_diagrams<'d>(
+    diagrams: &'d [Diagram],
+    model: &EvaluatedModel,
+) -> Vec<&'d Diagram> {
+    config_groups(diagrams, model.model())
+        .into_iter()
+        .map(|group| &diagrams[group[0]])
+        .collect()
+}
+
 /// The phase-space maps the channels were built from: how many there are, how many
 /// carry a peripheral spine, and — in detail — what each one draws against.
 pub(crate) fn report_channel_maps(samplers: &[ChannelSampler]) {
@@ -1298,6 +1344,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             amp2_len: 0,
             amp2_alpha_s: None,
             scale_draw_fallbacks: AtomicU64::new(0),
+            config_weights: None,
         }
     }
 
@@ -1348,6 +1395,16 @@ impl<'a> FixedBeamIntegrand<'a> {
         card: &RunCard,
     ) -> Result<RunningCouplingReport, HadronicError> {
         let awareness = make_subs_scale_aware(&mut self.subs, evaluated);
+        // The enhancement weight the configuration draws follow is a property of
+        // the run card, not of the scale, so it is installed whether or not a
+        // prescription is.
+        self.config_weights = compile_configuration_weights(
+            &[(self.subs[0].evaluator(), diagrams)],
+            model,
+            evaluated,
+            card,
+        )?
+        .map(|mut sets| sets.remove(0));
         // With no parton distributions to read and no strong coupling in the matrix
         // element, neither scale the prescription produces has a consumer, so the
         // prescription is not compiled at all — a process whose cluster scale this
@@ -1641,8 +1698,8 @@ impl<'a> FixedBeamIntegrand<'a> {
     ) -> Option<AlphaAdaptation<f64>> {
         let floor = self.cuts.spacelike_floor();
         let cuts = &self.cuts;
-        let built: Vec<DiagramChannel<f64>> = diagrams
-            .iter()
+        let built: Vec<DiagramChannel<f64>> = channel_diagrams(diagrams, model)
+            .into_iter()
             .map(|d| {
                 DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor)
                     .with_timelike_floors(&|slots| cuts.timelike_floor(slots))
@@ -1710,8 +1767,8 @@ impl<'a> FixedBeamIntegrand<'a> {
     ) -> Option<Result<(), usize>> {
         let floor = self.cuts.spacelike_floor();
         let cuts = &self.cuts;
-        let built: Vec<DiagramChannel<f64>> = diagrams
-            .iter()
+        let built: Vec<DiagramChannel<f64>> = channel_diagrams(diagrams, model)
+            .into_iter()
             .map(|d| {
                 DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor)
                     .with_timelike_floors(&|slots| cuts.timelike_floor(slots))
@@ -1754,7 +1811,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         );
         assert_eq!(
             built,
-            sets[0].diagram_count(),
+            sets[0].len(),
             "the multichannel map and the cluster scale were built from different diagrams, \
              so a sampled channel would name the wrong integration channel"
         );
@@ -1854,10 +1911,9 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// Without the draw it is the sampling channel the point came from. With it,
     /// the configuration is drawn `∝ AMP2_c(p)` — MadEvent's single-diagram
     /// enhancement weight under the card condition
-    /// [`EventScaleSource::draws_configuration`] tests — and named back through
-    /// *its own diagram*, because the evaluator's configuration order and the
-    /// channel forests' are two independent derivations from one diagram slice
-    /// and the diagram is their common ground.
+    /// [`EventScaleSource::draws_configuration`] tests. The evaluator's
+    /// configurations and the sampling channels are the same partition of the
+    /// diagrams in the same order, so the drawn index needs no translation.
     ///
     /// `AMP2` is formed at the coupling the amplitudes were bound at rather than
     /// at the one the previous point left, which is what makes the drawn
@@ -1872,18 +1928,39 @@ impl<'a> FixedBeamIntegrand<'a> {
     ) -> usize {
         let [v] = scale_u else { return channel };
         let sub = &sc.subs[0];
-        if let Some(alpha_s) = self.amp2_alpha_s {
-            sub.set_alpha_s(alpha_s);
-        }
         let mut amp2 = sc.amp2_buf.borrow_mut();
-        sub.eval_amp2(ext, &mut amp2);
+        self.configuration_weights(sub, ext, &mut amp2);
         match select_index(&amp2, *v) {
-            Some(c) => sub.evaluator().config_diagrams()[c],
+            Some(c) => c,
             // Every diagram amplitude vanished here, so the coherent sum does too
             // and this point carries no weight whichever channel names its scale.
             None => {
                 self.scale_draw_fallbacks.fetch_add(1, Ordering::Relaxed);
                 channel
+            }
+        }
+    }
+
+    /// MadEvent's per-configuration enhancement weight at one point, filled into
+    /// `out` (one entry per configuration).
+    ///
+    /// It is `AMP2_c` under the run card's default `SDE_strategy`, and
+    /// `get_channel_cut`'s product of inverse propagator denominators — carrying no
+    /// amplitude at all — where the card replaces it. `AMP2` is formed at the
+    /// coupling the amplitudes were bound at rather than at the one the previous
+    /// point left, which is what makes the drawn configuration a function of the
+    /// momenta alone.
+    fn configuration_weights(&self, sub: &BoundSubprocess<'a>, ext: &[V], out: &mut [f64]) {
+        match &self.config_weights {
+            None => {
+                if let Some(alpha_s) = self.amp2_alpha_s {
+                    sub.set_alpha_s(alpha_s);
+                }
+                sub.eval_amp2(ext, out);
+            }
+            Some(set) => {
+                let momenta: Vec<[f64; 4]> = ext.iter().map(components).collect();
+                set.channel_cuts(&momenta, self.sqrt_s * self.sqrt_s, out);
             }
         }
     }
@@ -2045,8 +2122,16 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// integrand forms), then within it the helicity `∝ |M_c|²` (MadGraph's
     /// `SELECT_HEL`), and finally the colour flow through
     /// [`AmplitudeEvaluator::select_color_flow`] — the integration configuration
-    /// `∝ AMP2(d)` from `u[2]` and the flow `∝ JAMP2(i)` within that
-    /// configuration's admitted set from `u[3]` (`SELECT_COLOR`).
+    /// from `u[2]` and the flow `∝ JAMP2(i)` within that configuration's admitted
+    /// set from `u[3]` (`SELECT_COLOR`).
+    ///
+    /// MadEvent hands `SELECT_COLOR` the `ICONFIG` its point was generated in, so
+    /// the written flow's marginal is the multichannel weight share — which at a
+    /// fixed point is the enhancement weight share, `AMP2_c` under the card's
+    /// default and `get_channel_cut`'s propagator-denominator product where
+    /// `SDE_strategy` replaces it. Drawing that share here reproduces the same
+    /// conditional distribution from a sampler whose own channel weights are
+    /// adapted rather than single-diagram-enhanced.
     ///
     /// All of them are *selections*, not sampling channels: the cross section sums
     /// over subprocesses, helicities, configurations and flows, and this reads
@@ -2078,6 +2163,10 @@ impl<'a> FixedBeamIntegrand<'a> {
         let mut amp2 = vec![0.0; eval.n_configs()];
         let mut jamp2 = vec![0.0; eval.n_flows()];
         sub.eval_diagonals(&ext, &mut hel_m2, &mut amp2, &mut jamp2);
+        if let Some(set) = &self.config_weights {
+            let momenta: Vec<[f64; 4]> = ext.iter().map(components).collect();
+            set.channel_cuts(&momenta, self.sqrt_s * self.sqrt_s, &mut amp2);
+        }
 
         Some(EventSelection {
             subprocess,
@@ -2825,42 +2914,40 @@ mod tests {
             .use_running_coupling(&diagrams, &m, &evaluated, &card)
             .expect("the clustering scale compiles for g g > g g");
         assert_eq!(report.channels, Some(3));
-        assert_eq!(report.unmapped_channels, 1);
 
-        let sets = integ
-            .scale_source()
-            .and_then(EventScaleSource::channels)
-            .expect("the clustering branch carries channel forests");
-        assert_eq!(sets.len(), 1, "one subprocess, one channel set");
-        let channels = &sets[0];
-        assert_eq!(channels.diagram_count(), diagrams.len());
-        assert_eq!(
-            (0..4)
-                .map(|j| channels.config_of_diagram(j))
-                .collect::<Vec<_>>(),
-            vec![None, Some(1), Some(2), Some(3)],
-        );
-        // The unmapped channel takes the default rather than an out-of-range
-        // index or the identity's `1`-off answer.
-        assert_eq!(
-            (0..4)
-                .map(|j| channels.config_of_channel(j))
-                .collect::<Vec<_>>(),
-            vec![1, 1, 2, 3],
-        );
+        let (n_channels, of_diagram, of_channel) = {
+            let sets = integ
+                .scale_source()
+                .and_then(EventScaleSource::channels)
+                .expect("the clustering branch carries channel forests");
+            assert_eq!(sets.len(), 1, "one subprocess, one channel set");
+            let channels = &sets[0];
+            (
+                channels.len(),
+                (0..4)
+                    .map(|j| channels.config_of_diagram(j))
+                    .collect::<Vec<_>>(),
+                (0..3)
+                    .map(|j| channels.config_of_channel(j))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        // The four-gluon contact diagram has no propagator to enhance, so it gets
+        // no channel at all and the remaining three number from one.
+        assert_eq!(of_diagram, vec![None, Some(1), Some(2), Some(3)]);
+        assert_eq!(of_channel, vec![1, 2, 3]);
 
-        let diagram_count = channels.diagram_count();
-        // And the sampler is built over the same slice, so `j` means the same
-        // thing on both sides.
+        // And the sampler is built over the same configurations, so `j` means the
+        // same thing on both sides.
         integ.use_multichannel(&diagrams, &evaluated, 512, 1, 0x5EED_C6);
-        assert_eq!(integ.channel_count(), diagram_count);
+        assert_eq!(integ.channel_count(), n_channels);
     }
 
     /// The evaluator's `AMP2` configuration order and the channel forests' agree,
     /// over a process where the two are known to be derived independently.
     ///
-    /// `AMP2` index `c` names a configuration in
-    /// [`AmplitudeEvaluator::config_diagrams`]' order; `ClusterInput::this_config`
+    /// `AMP2` index `c` names a configuration in the evaluator's order;
+    /// `ClusterInput::this_config`
     /// names one in `derive_channels`' order. Both are derived from the same
     /// diagram slice, by different code. Production does not assume they coincide
     /// — the configuration draw composes through the diagram index, which is the
@@ -2915,13 +3002,17 @@ mod tests {
             "the evaluator and the channel forests disagree about how many \
              integration configurations this process has"
         );
-        for (c, &diagram) in eval.config_diagrams().iter().enumerate() {
-            assert_eq!(
-                channels.config_of_diagram(diagram),
-                Some(c + 1),
-                "AMP2 configuration {c} is diagram {diagram}, which the channel \
-                 forests number differently"
-            );
+        let mut at = 0;
+        for (c, &span) in eval.config_amp_counts().iter().enumerate() {
+            for &diagram in &eval.config_amp_diagrams()[at..at + span] {
+                assert_eq!(
+                    channels.config_of_diagram(diagram),
+                    Some(c + 1),
+                    "AMP2 configuration {c} holds diagram {diagram}, which the channel \
+                     forests number differently"
+                );
+            }
+            at += span;
         }
     }
 
@@ -2933,13 +3024,12 @@ mod tests {
     /// `AMP2_c · CC_c`, and `genps.f`'s `get_channel_cut` short-circuits to
     /// `CC_c = 1` only for `sde_strat == 1` *and* `tmin_for_channel == -1`. At
     /// `sde_strategy = 2` the squared amplitude is discarded outright and the
-    /// weight is a product of propagator denominators; with `tmin_for_channel`
-    /// set, the same product multiplies it. This crate implements neither, so on
-    /// those cards the scale keeps the sampling channel.
+    /// weight is the propagator-denominator product alone; with
+    /// `tmin_for_channel` set, the same product multiplies it.
     ///
     /// Without this the condition is an unexercised branch: every banked run whose
     /// scale clusters *and* whose matrix element carries the strong coupling sits
-    /// on the drawing side of it, so no gate reaches the other.
+    /// on the squared-amplitude side of it, so no gate reaches the other.
     #[test]
     fn the_configuration_draw_needs_both_run_card_fields() {
         let m = model();
@@ -2980,17 +3070,20 @@ mod tests {
         };
 
         assert!(
-            source_for("  1 = sde_strategy\n").draws_configuration(),
+            source_for("  1 = sde_strategy\n").weights_configurations_by_amp2(),
             "the default conjunction is what MadEvent's simple rule holds under"
         );
         assert!(
-            source_for("").draws_configuration(),
+            source_for("").weights_configurations_by_amp2(),
             "both fields absent is the default conjunction"
         );
         assert!(
-            !source_for("  2 = sde_strategy\n").draws_configuration(),
+            !source_for("  2 = sde_strategy\n").weights_configurations_by_amp2(),
             "at sde_strategy = 2 the configuration weight is not the squared amplitude"
         );
+        // The draw itself runs either way — what the conjunction decides is only
+        // which weight it follows.
+        assert!(source_for("  2 = sde_strategy\n").draws_configuration());
         // The other half of the conjunction is refused a step earlier: a card that
         // sets `tmin_for_channel` at all does not parse, so the scale source's own
         // test of it can never be the thing that fires. Both guards are kept —
@@ -3348,9 +3441,7 @@ mod tests {
             let total: f64 = amp2.iter().sum();
             let mut p = vec![0.0; jamp2.len()];
             for (c, &w) in amp2.iter().enumerate() {
-                let reached = eval
-                    .leading_color_flows()
-                    .reached_by(eval.config_diagrams()[c]);
+                let reached = eval.config_flows(c);
                 let masked: Vec<f64> = jamp2
                     .iter()
                     .zip(reached)

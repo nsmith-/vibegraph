@@ -446,13 +446,14 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
     }
 
     /// Fill `amp2` with the per-configuration helicity-summed squared amplitude
-    /// `AMP2(d) = Σ_hel Σ_chains |A_d(p)|²` — MadGraph's `AMP2` array.
+    /// `AMP2(c) = Σ_hel |Σ_{a ∈ c} A_a(p)|²` — MadGraph's `AMP2` array.
     ///
-    /// `A_d` is the colour-stripped amplitude of the diagram configuration `d` is
-    /// built on, without the symmetry factor, the Fermi sign or the colour
-    /// coefficient the JAMPs multiply it by, exactly as MadGraph's `AMP(i)` is. The
-    /// chains of one diagram are squared *separately* and added, which is
-    /// `get_amp2_lines`' own `Σ_a AMP(a)·conj(AMP(a))` over a diagram's amplitudes.
+    /// The amplitudes of one configuration are summed *coherently* and the sum
+    /// squared, which is `get_amp2_lines`' own `(Σ_a AMP(a))·dconjg(Σ_a AMP(a))`
+    /// over every amplitude of every diagram MadGraph's channel mapping calls one
+    /// topology. Each `AMP(a)` is a colour-stripped diagram amplitude carrying
+    /// neither the symmetry factor, the Fermi sign nor the colour coefficient the
+    /// JAMPs multiply it by, exactly as MadGraph's is.
     ///
     /// This is the distribution MadEvent's per-event integration configuration
     /// follows: under single-diagram-enhanced multi-channel integration configuration
@@ -502,9 +503,11 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         for row in program.amp_locs.chunks_exact(n) {
             let mut at = 0;
             for (acc, &span) in amp2.iter_mut().zip(self.eval.config_amp_counts()) {
+                let mut coherent = C::new(F::zero(), F::zero());
                 for &l in &row[at..at + span] {
-                    *acc = *acc + scratch.scalars[l as usize].norm_sqr();
+                    coherent = coherent + scratch.scalars[l as usize];
                 }
+                *acc = *acc + coherent.norm_sqr();
                 at += span;
             }
         }

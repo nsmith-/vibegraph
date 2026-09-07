@@ -595,9 +595,9 @@ fn integrate_hadronic(
         .zip(&per_channel)
         .map(|((id, sampler), c)| {
             bank_channel(
-                ChannelKey::GroupDiagram {
+                ChannelKey::GroupChannel {
                     group: id.group,
-                    diagram: id.diagram,
+                    channel: id.channel,
                 },
                 c,
                 Some(sampler.clone()),
@@ -682,7 +682,7 @@ fn integrate_fixed_energy(
             .enumerate()
             .map(|(j, c)| {
                 bank_channel(
-                    ChannelKey::Diagram { diagram: j },
+                    ChannelKey::Channel { channel: j },
                     c,
                     integ.channel_samplers().get(j).cloned(),
                 )

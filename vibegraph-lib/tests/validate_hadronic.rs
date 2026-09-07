@@ -239,7 +239,7 @@ fn subsampler_summary(integ: &ProtonIntegrand<'_>) -> Vec<ChannelSummary> {
         .iter()
         .zip(integ.channel_samplers())
         .map(|(id, s)| ChannelSummary {
-            channel: format!("group {} diagram {}", id.group, id.diagram),
+            channel: format!("group {} channel {}", id.group, id.channel),
             sampler: s.clone(),
         })
         .collect()
@@ -2628,8 +2628,7 @@ fn probe_cluster_scale_spread_over_configurations() {
                     // The reconstruction is only worth reading if it reproduces
                     // what the integrand itself evaluated this point at.
                     let drawn = integ.channel_ids()[0];
-                    if g == drawn.group && d.config_of_diagram[drawn.diagram].unwrap_or(1) == config
-                    {
+                    if g == drawn.group && drawn.channel + 1 == config {
                         assert_eq!(
                             (s.mu_r, s.mu_f),
                             (ev.scales.mu_r, ev.scales.mu_f),

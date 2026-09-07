@@ -3044,7 +3044,7 @@ fn probe_cluster_scale_spread_over_configurations() {
                 let set = &sets[0];
                 assert_eq!(
                     integ.channel_count(),
-                    set.diagram_count(),
+                    set.len(),
                     "[{dir}] the sampling channels and the channel forests were built \
                      from different diagram slices, so this sweep is not a sweep over \
                      configurations"
@@ -3080,7 +3080,7 @@ fn probe_cluster_scale_spread_over_configurations() {
                         worst[k] = worst[k].max(hi[k] / lo[k] - 1.0);
                     }
                 }
-                Some((set.len(), set.unmapped_channels(), kept, worst))
+                Some((set.len(), kept, worst))
             },
         );
         match report {
@@ -3088,8 +3088,8 @@ fn probe_cluster_scale_spread_over_configurations() {
                 "{dir}: no per-event prescription — nothing in this row's cross section \
                  reads a scale"
             ),
-            Some((configs, unmapped, kept, worst)) => println!(
-                "{dir}: {configs} configs ({unmapped} unmapped) over {kept} points | \
+            Some((configs, kept, worst)) => println!(
+                "{dir}: {configs} configs over {kept} points | \
                  worst spread mu_R {:.3e} | mu_F1 {:.3e} | mu_F2 {:.3e}",
                 worst[0], worst[1], worst[2]
             ),
