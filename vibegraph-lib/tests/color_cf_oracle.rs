@@ -829,21 +829,38 @@ fn our_jamp(cb: &ColorBasis) -> Vec<((usize, Vec<u8>), Vec<Cx>)> {
     keys.into_iter().zip(columns).collect()
 }
 
-/// The unit factor a colour-coefficient column is defined up to: MadGraph puts
-/// the relative sign between two diagrams (and the factor of `i` an `f`-derived
-/// structure carries) into the colour coefficient, vibegraph into the diagram
-/// root, so a column is fixed only up to one overall unit per amplitude. Return
-/// the column divided by the phase of its first non-zero entry, together with
-/// that phase.
-fn normalise_column(col: &[Cx]) -> Option<(Cx, Vec<Cx>)> {
-    let scale = col.iter().map(|c| cx_abs(*c)).fold(0.0f64, f64::max);
+/// The unit factor a *graph's* colour-coefficient columns are collectively defined
+/// up to: MadGraph folds the diagram's fermion factor into the coefficient where
+/// vibegraph carries it in the diagram root, so a graph is fixed only up to one
+/// overall unit. Return every column of the graph divided by the phase of the first
+/// non-zero entry of its first non-zero column, together with that phase.
+///
+/// The unit is **per graph, not per column**: a vertex's several colour structures
+/// (the four-gluon contact has three) write several `AMP()` of the same graph, and
+/// they share whatever convention factor separates the two sides. Normalising each
+/// column on its own would absorb an independent sign per structure — the freedom a
+/// per-structure sign error hides in.
+fn normalise_group(cols: &[Vec<Cx>]) -> Option<(Cx, Vec<Vec<Cx>>)> {
+    let scale = cols
+        .iter()
+        .flatten()
+        .map(|c| cx_abs(*c))
+        .fold(0.0f64, f64::max);
     if scale == 0.0 {
         return None;
     }
-    let lead = *col.iter().find(|c| cx_abs(**c) > 1e-12 * scale)?;
+    let lead = *cols
+        .iter()
+        .flatten()
+        .find(|c| cx_abs(**c) > 1e-12 * scale)?;
     let unit = (lead.0 / cx_abs(lead), lead.1 / cx_abs(lead));
     let conj = (unit.0, -unit.1);
-    Some((unit, col.iter().map(|c| cx_mul(*c, conj)).collect()))
+    Some((
+        unit,
+        cols.iter()
+            .map(|col| col.iter().map(|c| cx_mul(*c, conj)).collect())
+            .collect(),
+    ))
 }
 
 /// Sort key that orders normalised columns deterministically for the multiset
@@ -906,43 +923,26 @@ fn mg_amp_groups(lines: &[String]) -> Vec<Vec<usize>> {
 /// ours, so graphs are matched as a multiset rather than paired by index
 /// (`amplitude_oracle`'s banked `MG_DIAGRAM_ORDER` is what pins the pairing).
 /// What is compared per graph is the **ordered tuple** of its amplitudes'
-/// columns, so a vertex's colour structures cannot be permuted among themselves
-/// without failing here. Each column is taken up to one unit per amplitude,
-/// which is the convention freedom named in [`normalise_column`]; that the unit
-/// is a fourth root of unity is the part of it that has teeth, and how many
-/// columns need one at all is measured and reported.
+/// columns under a *single* unit for the whole graph ([`normalise_group`]), so
+/// neither a permutation of a vertex's colour structures nor a sign on one of them
+/// survives.
+///
+/// The per-graph units are then held to each other. MadGraph's own freedom here is
+/// its fermion factor, which is real, and every other difference between the two
+/// sides' coefficients is a property of the colour conventions and so common to the
+/// whole subprocess. So each graph's unit must be `±1` times the subprocess's modal
+/// unit; a graph that needs a factor of `i` of its own is a colour-convention defect
+/// and fails. How many graphs carry the `−1` is reported — that number is MadGraph's
+/// fermion-factor pattern, read out of its JAMP lines.
 fn check_jamp(cb: &ColorBasis, mg: &MgReference, lines: &[String]) -> Result<String, String> {
-    let normalise = |col: &[Cx], what: &str| -> Result<Option<(Cx, Vec<Cx>)>, String> {
-        let Some((unit, norm)) = normalise_column(col) else {
-            return Ok(None);
-        };
-        let quarter = [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)];
-        if !quarter
-            .iter()
-            .any(|q| cx_abs((unit.0 - q.0, unit.1 - q.1)) < 1e-9)
-        {
-            return Err(format!(
-                "{what} leads with the unit ({}, {}), not a fourth root of unity",
-                unit.0, unit.1
-            ));
-        }
-        Ok(Some((unit, norm)))
-    };
-
     // Ours, grouped by diagram: one group per graph, its columns in colour-index
     // chain order.
     let ours = our_jamp(cb);
-    let mut mine: Vec<(Vec<Vec<(i64, i64)>>, Vec<(Cx, Vec<Cx>)>)> = Vec::new();
-    for (diagram, columns) in group_by_diagram(&ours) {
-        let mut entries = Vec::new();
-        for (chain, col) in &columns {
-            let what = format!("our diagram {diagram} colour chain {chain:?}");
-            if let Some(entry) = normalise(col, &what)? {
-                entries.push(entry);
-            }
-        }
-        if !entries.is_empty() {
-            mine.push((entries.iter().map(|e| column_key(&e.1)).collect(), entries));
+    let mut mine: Vec<(Vec<Vec<(i64, i64)>>, Cx, Vec<Vec<Cx>>)> = Vec::new();
+    for (_diagram, columns) in group_by_diagram(&ours) {
+        let cols: Vec<Vec<Cx>> = columns.into_iter().map(|(_, col)| col).collect();
+        if let Some((unit, norm)) = normalise_group(&cols) {
+            mine.push((norm.iter().map(|c| column_key(c)).collect(), unit, norm));
         }
     }
 
@@ -955,18 +955,14 @@ fn check_jamp(cb: &ColorBasis, mg: &MgReference, lines: &[String]) -> Result<Str
             mg.ngraphs
         ));
     }
-    let mut theirs: Vec<(Vec<Vec<(i64, i64)>>, Vec<(Cx, Vec<Cx>)>)> = Vec::new();
+    let mut theirs: Vec<(Vec<Vec<(i64, i64)>>, Cx, Vec<Vec<Cx>>)> = Vec::new();
     for group in &groups {
-        let mut entries = Vec::new();
-        for &g in group {
-            let col: Vec<Cx> = (0..mg.ncolor).map(|f| mg.jamp[f][g]).collect();
-            // An `AMP()` no `JAMP` picks up carries no colour information.
-            if let Some(entry) = normalise(&col, &format!("MadGraph AMP({})", g + 1))? {
-                entries.push(entry);
-            }
-        }
-        if !entries.is_empty() {
-            theirs.push((entries.iter().map(|e| column_key(&e.1)).collect(), entries));
+        let cols: Vec<Vec<Cx>> = group
+            .iter()
+            .map(|&g| (0..mg.ncolor).map(|f| mg.jamp[f][g]).collect())
+            .collect();
+        if let Some((unit, norm)) = normalise_group(&cols) {
+            theirs.push((norm.iter().map(|c| column_key(c)).collect(), unit, norm));
         }
     }
 
@@ -983,22 +979,19 @@ fn check_jamp(cb: &ColorBasis, mg: &MgReference, lines: &[String]) -> Result<Str
 
     let mut max_rel = 0.0f64;
     let mut columns = 0usize;
-    let mut rephased = 0usize;
+    let mut units: Vec<Cx> = Vec::new();
     for (g, (a, b)) in mine.iter().zip(&theirs).enumerate() {
-        if a.1.len() != b.1.len() {
+        if a.2.len() != b.2.len() {
             return Err(format!(
                 "graph {g}: vibegraph writes {} colour structures, MadGraph {}",
-                a.1.len(),
-                b.1.len()
+                a.2.len(),
+                b.2.len()
             ));
         }
-        for (k, (ours, mg_col)) in a.1.iter().zip(&b.1).enumerate() {
+        units.push(cx_mul(a.1, (b.1 .0, -b.1 .1)));
+        for (k, (ours, mg_col)) in a.2.iter().zip(&b.2).enumerate() {
             columns += 1;
-            let unit = cx_mul(ours.0, (mg_col.0 .0, -mg_col.0 .1));
-            if cx_abs((unit.0 - 1.0, unit.1)) > 1e-9 {
-                rephased += 1;
-            }
-            for (f, (x, y)) in ours.1.iter().zip(&mg_col.1).enumerate() {
+            for (f, (x, y)) in ours.iter().zip(mg_col).enumerate() {
                 let diff = cx_abs((x.0 - y.0, x.1 - y.1));
                 let rel = diff / cx_abs(*y).max(1.0);
                 max_rel = max_rel.max(rel);
@@ -1012,10 +1005,54 @@ fn check_jamp(cb: &ColorBasis, mg: &MgReference, lines: &[String]) -> Result<Str
             }
         }
     }
+
+    // The modal unit is the subprocess's colour-convention factor; every graph must
+    // sit at ±1 of it, which is all MadGraph's real fermion factor can produce.
+    let flipped = graph_unit_flips(&units)?;
     Ok(format!(
-        " | JAMP {columns} columns over {} graphs max_rel={max_rel:.2e} ({rephased} rephased)",
+        " | JAMP {columns} columns over {} graphs max_rel={max_rel:.2e} ({flipped} sign-flipped)",
         mine.len()
     ))
+}
+
+/// The number of graphs whose unit is the negative of the subprocess's modal unit,
+/// after checking that the mode is a fourth root of unity and that every graph's
+/// unit is real relative to it.
+fn graph_unit_flips(units: &[Cx]) -> Result<usize, String> {
+    let Some(&modal) = units.first() else {
+        return Ok(0);
+    };
+    let quarter = [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)];
+    if !quarter
+        .iter()
+        .any(|q| cx_abs((modal.0 - q.0, modal.1 - q.1)) < 1e-9)
+    {
+        return Err(format!(
+            "the subprocess's colour coefficients lead with the unit ({}, {}), not a \
+             fourth root of unity",
+            modal.0, modal.1
+        ));
+    }
+    // Take the majority of the two candidate modes (`modal` and `−modal`) so a
+    // process whose first graph is the flipped one still reports the small count.
+    let mut same = 0usize;
+    let mut flipped = 0usize;
+    for (g, &u) in units.iter().enumerate() {
+        let ratio = cx_mul(u, (modal.0, -modal.1));
+        if cx_abs((ratio.0 - 1.0, ratio.1)) < 1e-9 {
+            same += 1;
+        } else if cx_abs((ratio.0 + 1.0, ratio.1)) < 1e-9 {
+            flipped += 1;
+        } else {
+            return Err(format!(
+                "graph {g}'s colour coefficients need the unit ({}, {}) relative to the \
+                 subprocess's, which is not ±1: MadGraph's own freedom here is a real \
+                 fermion factor, so a complex one is a colour-convention defect",
+                ratio.0, ratio.1
+            ));
+        }
+    }
+    Ok(same.min(flipped))
 }
 
 /// Split [`our_jamp`]'s per-amplitude columns into per-diagram groups, keeping
