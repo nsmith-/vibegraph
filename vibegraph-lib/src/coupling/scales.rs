@@ -169,11 +169,29 @@ pub enum ScaleError {
     #[error("scale choice {choice} gives a non-positive scale {value} on these momenta")]
     DegenerateKinematics { choice: i64, value: f64 },
     #[error(
-        "run card selects dynamical_scale_choice = {choice}: the integration path evaluates the \
-         clustered scale only, and the closed forms for 1-5 are computed nowhere a cross section \
-         reads them"
+        "run card selects dynamical_scale_choice = {choice}: the closed forms for 1-5 are \
+         evaluated on the fixed-beam path, where a banked run measures them, and refused at \
+         hadron beams, where no reference run selects one"
     )]
     UnhonouredScaleChoice { choice: i64 },
+}
+
+/// Whether a caller may take a number under `setscales.f`'s closed-form choices
+/// `1`–`5`.
+///
+/// The formulas are transcribed and unit-tested either way; what this decides is
+/// whether a *cross section* may be computed under one. Fixed beams honour them:
+/// `gg_to_gg_cg`'s banked run picks `dynamical_scale_choice = 3` for itself and
+/// ships a cross section, an event sample and a per-event `SCALUP` on every one
+/// of those events, which is the oracle that says whether the transcription is
+/// right. Hadron beams refuse them: no banked run selects a closed form there,
+/// so a scale taken under one would feed the parton densities with nothing on
+/// the other side of it, and [`ScaleError::UnhonouredScaleChoice`] is returned
+/// rather than a plausible number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClosedForms {
+    Honour,
+    Refuse,
 }
 
 /// A run card's scale prescription, compiled once.
@@ -206,15 +224,23 @@ impl ScaleChoice {
     /// would keep the single flag — the only combination where the two readings
     /// differ, and one MadGraph itself calls out.
     pub fn from_run_card(card: &RunCard) -> Result<Self, ScaleError> {
+        Self::from_run_card_for(card, ClosedForms::Refuse)
+    }
+
+    /// [`from_run_card`](Self::from_run_card) with the caller saying whether it
+    /// has an oracle for `setscales.f`'s closed-form choices.
+    ///
+    /// The choice is only read where a scale is derived from the event: both
+    /// `scales` and `cluster_scales` short-circuit on `is_fully_fixed` before
+    /// reaching it, so on a card that fixes every scale the value provably
+    /// cannot change a number and refusing it would be a refusal the code cannot
+    /// justify. That short-circuit is why the refusal below is conditioned on
+    /// `is_fully_fixed` and not on the choice alone.
+    pub fn from_run_card_for(card: &RunCard, closed: ClosedForms) -> Result<Self, ScaleError> {
         let compiled = Self::compile(card)?;
-        // The choice is only read where a scale is derived from the event: both
-        // `scales` and `cluster_scales` short-circuit on `is_fully_fixed` before
-        // reaching it, so on a card that fixes every scale the value provably
-        // cannot change a number and refusing it would be a refusal the code
-        // cannot justify. Everywhere else the closed forms for 1-5 are computed
-        // nowhere a cross section reads them, and a scale prescription with no
-        // oracle behind it is refused rather than approximated.
-        if !compiled.is_fully_fixed() && compiled.choice != DynamicalChoice::Clustered {
+        let closed_form =
+            !compiled.is_fully_fixed() && compiled.choice != DynamicalChoice::Clustered;
+        if closed_form && closed == ClosedForms::Refuse {
             return Err(ScaleError::UnhonouredScaleChoice {
                 choice: compiled.choice.as_i64(),
             });
@@ -222,11 +248,8 @@ impl ScaleChoice {
         Ok(compiled)
     }
 
-    /// [`from_run_card`](Self::from_run_card) without its refusal of the
-    /// closed-form scale choices. Those formulas are transcribed from
-    /// `setscales.f` and keep their unit tests through here, so the arithmetic
-    /// stays pinned for whoever wires them to a cross section; no run card
-    /// reaches them.
+    /// The prescription a card spells, before any caller's decision about which
+    /// of them it has an oracle for.
     fn compile(card: &RunCard) -> Result<Self, ScaleError> {
         let choice_int = card.int("dynamical_scale_choice");
         let choice = DynamicalChoice::from_i64(choice_int)
@@ -693,21 +716,19 @@ mod tests {
         assert_eq!(scales.mu_f, [500.0, 500.0]);
     }
 
-    /// The closed-form scale choices are refused where they would be read, and
-    /// only there.
+    /// The closed-form scale choices are refused for a caller that has no oracle
+    /// for them, and only where they would be read.
     ///
-    /// `ScaleChoice::closed_form` computes all five, and nothing on the
-    /// integration path evaluates them: every per-event scale goes through the
-    /// clustering. A prescription with no reference run behind it would produce a
-    /// plausible, smooth, wrong cross section with nothing to notice it by, so it
-    /// is named rather than approximated.
+    /// A prescription with no reference run behind it produces a plausible,
+    /// smooth, wrong cross section with nothing to notice it by, so it is named
+    /// rather than approximated — which is what hadron beams get, no banked run
+    /// there selecting one. Fixed beams pass [`ClosedForms::Honour`] instead,
+    /// because `gg_to_gg_cg`'s banked run measures the transcription per event.
     ///
     /// The `fully_fixed` half is the accuracy of the gate, not leniency: both
     /// scale entry points short-circuit on `is_fully_fixed` before the choice is
-    /// read, so there the value cannot reach a number.
-    ///
-    /// This cannot say whether the closed forms are *correct* — nothing here
-    /// claims they are, which is the reason for the refusal.
+    /// read, so there the value cannot reach a number and refusing it would be a
+    /// refusal the code cannot justify.
     #[test]
     fn an_unhonoured_scale_choice_is_refused() {
         for choice in [1, 2, 3, 4, 5] {
@@ -716,6 +737,15 @@ mod tests {
                 ScaleChoice::from_run_card(&card(&text)),
                 Err(ScaleError::UnhonouredScaleChoice { choice }),
                 "choice {choice} on a dynamical card"
+            );
+            // The same card, for a caller that has an oracle: compiled, and the
+            // choice it compiled to is the card's own.
+            let honoured = ScaleChoice::from_run_card_for(&card(&text), ClosedForms::Honour)
+                .unwrap_or_else(|e| panic!("choice {choice} honoured: {e}"));
+            assert_eq!(honoured.choice().as_i64(), choice);
+            assert!(
+                !honoured.needs_channels(),
+                "a closed form reads no channels"
             );
 
             // The same choice where every scale is a run-card constant is

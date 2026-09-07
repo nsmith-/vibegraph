@@ -296,10 +296,10 @@ const ROWS: &[Row] = &[
     // ── the SMEFTsim ladder and the toy models, under their own UFO ──
     // Every row of both non-Standard-Model families whose banked run this crate
     // can reproduce: the four SM-limit rows, the six Wilson-coefficient rows with
-    // an event sample, the capstone, and all six toy-model rows. `gg_to_gg_cg`
-    // and `wpwm_to_wpwmz_cw` are absent because their banked run cards select
-    // `dynamical_scale_choice = 3` and `nhel = 1`, neither of which this crate's
-    // integration path honours.
+    // an event sample, the capstone, and all six toy-model rows.
+    // `wpwm_to_wpwmz_cw` is absent because its banked run card selects
+    // `nhel = 1`, which this crate's integration path does not honour;
+    // `gg_to_gg_cg` is here at MadGraph's own `dynamical_scale_choice = 3`.
     //
     // The model each row is generated under is the one its manifest entry names,
     // through `common::model_for_row`, so a SMEFT sample is drawn from a SMEFT
@@ -309,6 +309,13 @@ const ROWS: &[Row] = &[
     // by any of the observables, which are built from the outgoing legs alone;
     // the toy rows with massive incoming particles are what those columns are
     // there for.
+    Row {
+        key: "gg_to_gg_cg",
+        process: "g g > g g NP<=1",
+        neval: 30_000,
+        niter: 5,
+        mode: "gate",
+    },
     Row {
         key: "ee_to_mumu_smlimit",
         process: "e+ e- > mu+ mu-",

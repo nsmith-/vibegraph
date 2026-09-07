@@ -208,10 +208,14 @@ const PULL_REPORTED_NOT_ASSERTED: [&str; 1] = ["ee_to_mumua"];
 /// cost lands almost entirely on the α survey, so the row runs in 17 s at its
 /// gate budget against 16 s at a twentieth of it.
 ///
+/// `gg_to_gg_cg` is here for the same reason on a different operator: `O_G`'s
+/// higher-derivative four-gluon vertex carries `cG` alongside the strong
+/// coupling, so its pool entry is not a monomial in `G` either.
+///
 /// Membership is asserted in both directions in [`with_integrand`]: a row that
 /// stopped falling back would leave a stale entry here, and one that started
 /// would be a silent hundredfold on the banked layer.
-const SCALE_FALLBACK_ROWS: [&str; 1] = ["gg_to_ttx_smlimit_qcd2"];
+const SCALE_FALLBACK_ROWS: [&str; 2] = ["gg_to_gg_cg", "gg_to_ttx_smlimit_qcd2"];
 
 /// Fixed RNG seed — makes the integral (and hence the pull) reproducible.
 const SEED: u64 = 20_260_719;
@@ -238,9 +242,6 @@ enum Plan {
     /// measured and recorded rather than absorbed into a widened `rel_tol`, and
     /// the arm a demotion lands on.
     ///
-    /// The attribute keeps the rung available while every row happens to be
-    /// enforced; it is what [`plan_for`] returns for a row that is not.
-    #[allow(dead_code)]
     Info {
         neval: usize,
         niter: usize,
@@ -630,13 +631,37 @@ fn plan_for(dir: &str) -> Plan {
                 rel_tol: 0.005,
             }
         }
-        // ── the two rows whose banked run card this crate refuses ───────────
-        // Neither script asks for these settings; MadGraph chose them for the
+        // The one banked row integrated at one of `setscales.f`'s closed forms
+        // rather than at the clustering: MadGraph chose
+        // `dynamical_scale_choice = 3` — half the sum of final-state transverse
+        // masses — for this process itself, the row's own `.mg5` script asking
+        // for no scale at all.
+        //
+        // Measured and reported rather than asserted, because the residual is a
+        // converged offset with no attribution yet. The five seeds are mutually
+        // consistent at chi2/dof 1.01 and their inverse-variance mean sits at
+        // rel -2.21e-3, which is 2.6x the reference's own 8.5e-4 relative error,
+        // and the budget ladder settles rather than shrinks (rel +4.9e-4 /
+        // -1.2e-3 / -1.2e-3 / -2.9e-3 / -2.9e-3 across a sixteenfold budget). So
+        // it is not sampling. What it is not, either, is the scale formula: the
+        // per-event replay reproduces both printed scales on all 10 000 banked
+        // events inside their own printing budget, worst 0.999 of it, with
+        // AQCDUP recovered from the computed mu_R on every one. And it is not
+        // the process's own convergence: `gg_to_gg` is the same final state
+        // under a run card differing in this one field, and sits at rel +9.8e-6.
+        // The offset therefore lives in what those two comparisons do not cover
+        // — the coupling this row's matrix element runs at across the whole cut
+        // region, rather than on the events MadGraph kept.
+        "gg_to_gg_cg" => Plan::Info {
+            neval: 40_000,
+            niter: 6,
+            reason: "sigma is a converged -0.22% below the bank, seed-consistent at chi2/dof \
+                     1.01, while the per-event scale replay reproduces every banked event's \
+                     SCALUP and AQCDUP: measured and reported until the offset is attributed",
+        },
+        // ── the row whose banked run card this crate refuses ────────────────
+        // Its script does not ask for the setting; MadGraph chose it for the
         // process, and the run card is part of the reference.
-        "gg_to_gg_cg" => Plan::Skip(
-            "MadGraph ran it at dynamical_scale_choice = 3, and the closed forms for 1-5 \
-             are computed nowhere a cross section reads them",
-        ),
         "wpwm_to_wpwmz_cw" => Plan::Skip(
             "MadGraph ran it at nhel = 1, Monte-Carlo over helicities, which the run card \
              parser refuses because it changes both the estimator and the per-event weight",
@@ -1213,10 +1238,11 @@ fn probe_gate_row_seed_headroom() {
 /// The rows the σ gate reaches beyond the Standard Model: the SMEFTsim ladder's
 /// own cross sections and the toy models'. Every one of them has a banked
 /// fixed-energy σ and is measured here, gated or not.
-const NON_SM_SIGMA_ROWS: [&str; 16] = [
+const NON_SM_SIGMA_ROWS: [&str; 17] = [
     "ee_to_mumu_smlimit",
     "gg_to_ttx_smlimit",
     "gg_to_ttx_smlimit_qcd2",
+    "gg_to_gg_cg",
     "ee_to_ttx_smlimit",
     "ee_to_wpwm_cw",
     "ee_to_ttx_dipole",

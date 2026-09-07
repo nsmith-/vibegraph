@@ -34,7 +34,9 @@ use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
 use crate::coupling::cluster::graph::{ColorTable, MergeTablesByOrder};
 use crate::coupling::cluster::setclscales::ScaleRefusal;
-use crate::coupling::scales::{ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent};
+use crate::coupling::scales::{
+    ClosedForms, ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent,
+};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::{DiagramError, DiagramSet};
@@ -291,8 +293,9 @@ impl EventScaleSource {
         grid: Option<&AlphaSInfo>,
         channels: Option<Vec<Channels>>,
         needs_alpha_s: bool,
+        closed: ClosedForms,
     ) -> Result<Self, HadronicError> {
-        let choice = ScaleChoice::from_run_card(card)?;
+        let choice = ScaleChoice::from_run_card_for(card, closed)?;
         let alpha_s = needs_alpha_s
             .then(|| AlphaSSource::from_run_card(card, param_card_as, grid))
             .transpose()?;
@@ -306,7 +309,15 @@ impl EventScaleSource {
         } else {
             ScaleSourceKind::PerEvent {
                 choice,
-                channels: channels.map(Vec::into_boxed_slice),
+                // `setscales.f`'s closed forms read the momenta and nothing else,
+                // so a prescription that is one of them is handed no channel
+                // forests: keeping them would send `scales` down the clustering
+                // branch, which is a different prescription entirely.
+                channels: choice
+                    .needs_channels()
+                    .then_some(channels)
+                    .flatten()
+                    .map(Vec::into_boxed_slice),
             }
         };
         Ok(EventScaleSource {
@@ -898,6 +909,7 @@ pub(crate) fn compile_scale_source(
     card: &RunCard,
     grid: Option<&AlphaSInfo>,
     needs_alpha_s: bool,
+    closed: ClosedForms,
 ) -> Result<EventScaleSource, HadronicError> {
     let colors = ColorTable::new(
         model
@@ -925,7 +937,7 @@ pub(crate) fn compile_scale_source(
         });
     }
     let param_card_as = evaluated.alpha_s().ok_or(HadronicError::MissingAlphaS)?;
-    EventScaleSource::from_run_card(card, param_card_as, grid, Some(sets), needs_alpha_s)
+    EventScaleSource::from_run_card(card, param_card_as, grid, Some(sets), needs_alpha_s, closed)
 }
 
 /// Hold every subprocess at the coupling a constant prescription implies, and
@@ -1354,6 +1366,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             card,
             None,
             true,
+            ClosedForms::Honour,
         )?;
         if source.constant_scales().is_none() {
             self.probe_scale(&source)?;
@@ -2883,9 +2896,16 @@ mod tests {
 ",
         )
         .expect("run card");
-        let source =
-            compile_scale_source(&[(&evals[0], &diagrams)], &m, &evaluated, &card, None, true)
-                .expect("the clustering scale compiles");
+        let source = compile_scale_source(
+            &[(&evals[0], &diagrams)],
+            &m,
+            &evaluated,
+            &card,
+            None,
+            true,
+            ClosedForms::Honour,
+        )
+        .expect("the clustering scale compiles");
         let channels = &source.channels().expect("channel forests")[0];
         let eval = &evals[0];
 
@@ -2947,8 +2967,16 @@ mod tests {
 {extra}"
             ))
             .expect("run card");
-            compile_scale_source(&[(&evals[0], &diagrams)], &m, &evaluated, &card, None, true)
-                .expect("the clustering scale compiles")
+            compile_scale_source(
+                &[(&evals[0], &diagrams)],
+                &m,
+                &evaluated,
+                &card,
+                None,
+                true,
+                ClosedForms::Honour,
+            )
+            .expect("the clustering scale compiles")
         };
 
         assert!(
@@ -2999,6 +3027,7 @@ mod tests {
             &fixed,
             None,
             true,
+            ClosedForms::Honour,
         )
         .expect("a fixed prescription compiles")
         .draws_configuration());
