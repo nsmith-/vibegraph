@@ -278,3 +278,106 @@ this is called validated at the layer level.
    `probe_llj_weight_tail_regions` decomposition binned in `ŝ − ŝ_rest`
    — the variable the tail would live in if this is right.
 
+
+## 5. The map choices as configuration (2026-09-07, second session)
+
+Every open choice of §1 that is implemented is now a flag on `vibegraph
+integrate`, with `auto` a rule that reads the process, and the settled
+choices are banked in the artifact (schema 8) so `generate` rebuilds its
+channels and its `τ` draw from what the grids were trained on. The types
+live in `phasespace::maps`: `MapOptions` (what was asked, `None` = auto),
+`MapChoices` (what was settled, serialised), `ProcessShape` (what the rule
+reads: how many splits the soft-emission rule would select, the longest
+chain), and `MapChoices::channel`, the one place a channel is built for
+integration — the previous commit had `integrate` and the fixed-beam
+`generate` building channels through two different code paths, which the
+shared builder closes.
+
+| flag | values | `auto` |
+|---|---|---|
+| `--map-split-angle` | `isotropic`, `windowed`, `soft-emission`, `soft-all` | `soft-emission` where `ProcessShape::soft_emission_splits > 0`, else `isotropic` |
+| `--map-tau` | `log`, `inverse-square` | `log` (the alternative is unmeasured: PDF host) |
+| `--map-rung-order` | `derived`, `reversed` | `derived` |
+
+`windowed` is new: the isotropic density confined to the cut-implied energy
+window on every moving split — the floor without the shape, so the two
+effects the first session's `every, floored` column mixed can be read apart.
+A file older than schema 8 reads back under `MapChoices::LEGACY` (isotropic,
+log, derived), which is what every such run integrated under; that also
+retires the silent mismatch the previous commit introduced for a pre-existing
+artifact of a process the rule touches.
+
+### 5.1 Measurements, same protocol as §3.1
+
+Evaluations to a χ²-scaled 0.1% in millions, seeds 20260719 / 20260720 /
+20260721; `base` is §3.1's isotropic column. `auto` reproduced §3.1's `soft,
+floored` column bit for bit (same counts, same σ to the last digit), which is
+the check that the flag path builds the same channels the hard-wired rule did.
+
+| process | base | `auto` (= `soft-emission`) | `windowed` | `soft-all` | `reversed` (with `auto` angles) |
+|---|---|---|---|---|---|
+| `u u~ > g g g` | 5.04 / 4.80 / 4.80 | 3.48 / 3.36 / 3.12 | 3.84 / 3.60 / 3.12 | identical to `auto` | **3.00 / 3.24 / 3.00** (−14% / −4% / −4% vs `auto`) |
+| `g g > g u u~` | 5.11 / 3.49 / 2.75 | 5.36 / 3.49 / 2.74 | 5.61 / 4.74 / 2.99 | 3.12 / 5.74 / 3.87 | 5.24 / 2.87 / 2.87 |
+| `g u > e+ e- u` | 1.20 / 0.96 / 1.08 | bit-identical to base | 1.44 / 0.84 / 1.80 | 1.20 / 0.72 / 0.72 | bit-identical to base (one rung) |
+
+Readings:
+
+- **The window carries most of the `u u~ > g g g` gain** (−24% / −25% / −35%
+  from the window alone; the soft shape on top adds −9% / −7% / 0%). The
+  first session attributed the whole effect to the shape; the split is now
+  measured.
+- **`reversed` beats `derived` on `u u~ > g g g` on all three seeds** (its
+  two-rung ladders: the chain then draws the outer transfer first). On
+  `g g > g u u~` it sits inside the row's own 2.7–5.4M seed spread, and on a
+  one-rung process it is the identity. Three seeds at 4–14% do not move a
+  rule (AGENTS.md: a rung-to-rung difference is read against a 20-seed
+  spread); filed as the first thing to measure at that size. MadEvent's own
+  `reorder_tchannels` flips the chain's side for a two-transfer ladder with
+  massless lines at both ends by leg-number order, i.e. arbitrarily — this
+  is the same question asked of a different chain semantic.
+- **On the lepton pair, the shape helps and the bare window hurts**:
+  `soft-all` 1.20 / 0.72 / 0.72 against `windowed` 1.44 / 0.84 / 1.80 on
+  `g u > e+ e- u`. That is the opposite of the §4 guess (that the floor was
+  the lever). Three seeds of a row whose two better seeds sit on the
+  `--min-iters` floor; suggestive, not a rule.
+- `g g > g u u~` distinguishes nothing at three seeds.
+
+### 5.2 Absolute grid coordinates — the design, not yet the code
+
+The §1 candidate the user asked to have as an option. What it is: MadEvent's
+`sample_get_x` bins each invariant's VEGAS coordinate as the *absolute*
+dimensionless invariant (`s/s_tot`, `−t/s_tot`) and restricts each draw to
+the point's own `[x_min, x_max]` window by bin index, scaling the weight by
+the window's bin count. A cut edge or a pole is then a fixed location in
+grid space whatever the other coordinates did. Our coordinate is the
+fractional position in the window, so the same feature drifts through the
+unit cube as `ŝ` and the earlier invariants move.
+
+What it takes here, and why it did not fit this session:
+
+1. **The VEGAS↔channel contract inverts.** Today VEGAS draws the whole point
+   (`VegasGrid::draw`) and hands the channel a slice; a windowed draw needs
+   the channel to *drive* the grid one coordinate at a time, since the
+   window of coordinate `k` depends on coordinates `< k`. That is a
+   `Coordinates` source threaded through `sample_branch`/`sample_spine` and
+   the hadronic outer draw, a per-dimension `draw_in_window(dim, lo, hi)` on
+   `VegasGrid` that also reports the bin for refinement, and driven variants
+   of `adapt`, `sample_frozen`, the `w_max` scan and the unweighting replay.
+   The eager path must stay bit-identical (it draws the same uniforms in the
+   same order, so it can).
+2. **The analytic maps become window-independent.** A BW/log/`t` map must be
+   a fixed transform of the absolute coordinate over the full range, with
+   the window inverted through it (`T⁻¹(lo)`, `T⁻¹(hi)`), so the channel's
+   analytic density stays grid-free — which is what keeps the Kleiss–Pittau
+   mixture `Σ αⱼ gⱼ` well defined at a foreign point. MadEvent needs no such
+   care because its single-diagram-enhanced weight never evaluates one
+   channel's density at another's point. Four map families, each with an
+   inverse.
+3. **A rejection-form shortcut is not worth building**: interpreting the
+   eager coordinate as absolute and zero-weighting draws outside the window
+   is unbiased but, for a hadronic run whose windows sit at `ŝ ≪ s`, wastes
+   most draws; it would measure worse for a reason unrelated to the idea.
+
+Filed in TODO as its own item with these three parts; the flag is not
+exposed until the code exists, so no artifact can claim a map that was not
+run.

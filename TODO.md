@@ -229,6 +229,22 @@ One line each; the note is the full record. Earlier sprints
   policy) — `pixi run --skip-deps validate` is owed on the next host with
   the set. Transferable lesson: **a `1/x` map without its cut-implied floor
   is a loss, not a wash** — the third time this codebase has measured it.
+  **Second session (same day, note 36 §5)**: every implemented map choice is
+  a flag — `--map-split-angle {isotropic,windowed,soft-emission,soft-all}`,
+  `--map-tau {log,inverse-square}`, `--map-rung-order {derived,reversed}`,
+  each defaulting to an `auto` rule (`phasespace::maps`) — settled into
+  `MapChoices`, **banked in the artifact (schema 8**, older files read back
+  under the legacy maps) and replayed by `generate` through the one shared
+  channel builder, which also closes a path split the first commit had left
+  between `integrate` and the fixed-beam `generate`. Measured (same
+  protocol): `auto` reproduces the hard-wired rule **bit for bit**; on
+  `u u~ > g g g` the *window* alone is −24/−25/−35% and the shape adds
+  −9/−7/0%; **`reversed` beats `derived` 4–14% on all three seeds** there
+  (inside the spread on `g g > g u u~`, identity on one-rung rows); on the
+  lepton pair `soft-all` 1.20/0.72/0.72M against `windowed` 1.44/0.84/1.80M
+  — the shape, not the floor, is what helped, inverting the first session's
+  guess. Rules unmoved: three seeds do not move one. Absolute grid
+  coordinates designed, not built (backlog).
 - **`draw-performance`** (two parallel sessions, merged 2026-08-06; note 34 §1
   is the record) — `density-draw` (`470eb8f`/`443f6bc`): the mixture density
   priced only after the cut, **2→6 per-point 62.9/68.5 → 4.6/6.8 µs
@@ -1015,6 +1031,34 @@ what refuses and where.
   map edge, neither of the evaluator. The bias oracle for any
   future floor is `no_accepted_configuration_sits_below_a_subsystem_floor`;
   the `mmll = 50` bound is attained within 1.0002, so it cannot tighten.
+- **Absolute grid coordinates** (note 36 §1 candidate, design in §5.2;
+  user-requested option, 2026-09-07). MadEvent's `sample_get_x` bins each
+  invariant's VEGAS coordinate as the absolute `s/s_tot` / `−t/s_tot` and
+  restricts every draw to the point's own window by bin index, so a cut
+  edge or pole is a fixed grid location whatever the other coordinates did;
+  ours drifts with the window. Three parts, in order: (1) invert the
+  VEGAS↔channel contract — a `Coordinates` source the channel drives one
+  coordinate at a time, `VegasGrid::draw_in_window(dim, lo, hi)` reporting
+  the bin, driven variants of `adapt`/`sample_frozen`/the `w_max` scan/the
+  unweighting replay, the eager path kept bit-identical; (2) make the
+  BW/log/flat/`t` maps fixed transforms of the absolute coordinate with the
+  window inverted through them, so the channel density stays grid-free and
+  the KP mixture stays defined at foreign points; (3) then the flag
+  `--map-grid-coords {fractional,absolute}` and its `auto`. Not the
+  rejection shortcut (§5.2 says why). Expect the payoff on the cut-edge
+  rows (`pp_to_llj`, `pp_to_jj`), which need the PDF set to measure.
+- **Rung order at 20 seeds** (note 36 §5.1). `--map-rung-order reversed`
+  read 3.00/3.24/3.00M against `derived`'s 3.48/3.36/3.12M on
+  `u u~ > g g g`, all three seeds better, inside the spread on
+  `g g > g u u~`. A rung-to-rung difference is read against a 20-seed spread
+  (AGENTS.md); run both arms at 20 seeds on the two-rung rows, and if it
+  holds, the `auto` rule flips for ladders — MadEvent's `reorder_tchannels`
+  decides the same question by leg-number order.
+- **The soft shape on a lepton pair** (note 36 §5.1). `soft-all`
+  1.20/0.72/0.72M against `auto`'s 1.20/0.96/1.08M and `windowed`'s
+  1.44/0.84/1.80M on `g u > e+ e- u`: the shape, not the floor, helped,
+  with two seeds on the `--min-iters` floor. Five seeds and the ladder
+  before the rule shapes `V → l+ l-`; if it holds it reaches llj.
 - **Splitting-angle follow-ups** (note 36 §4, 2026-09-07). (a) A one-sided
   `1/E_g` variant of `SoftSplit` for `q* → q g`, where the symmetric map
   spends half its attention on the quark's soft end `P_qq` does not have —
@@ -1022,9 +1066,9 @@ what refuses and where.
   energy-floored *isotropic* window for every composite split: shaping the
   lepton pair in `g u > e+ e- u` read 1.20/0.72/0.72M evaluations against
   1.20/0.96/1.08M, two seeds on the `--min-iters` floor, and the shape is
-  wrong for `V → l+ l-`, so the floor is the candidate lever — the one item
-  in this family that can reach llj's lepton pair. Three seeds is a hint;
-  measure with ≥ 5 and the ladder. (c) MadEvent's `τ` map is `1/τ²` above the
+  wrong for `V → l+ l-`, so the floor looked like the lever — **measured
+  otherwise in the second session** (`windowed` is worse there, `soft-all`
+  better; entry above). (c) MadEvent's `τ` map is `1/τ²` above the
   cut floor (`transpole(pole = −2)`), ours `1/τ`; and its `tstrategy`
   ping-pong for ≥ 3-rung ladders. Both need the PDF set (`dy13`,
   `pp_to_llj`) or a ≥ 4-jet process. (d) llj's own soft structure lives on
