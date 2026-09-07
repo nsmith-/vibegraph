@@ -286,16 +286,12 @@ const ROWS: &[Row] = &[
         process: "u d > e+ e- u d QCD=0",
         neval: 60_000,
         niter: 6,
-        // Kinematics and SPINUP agree, but ICOLUP does not: chi2 590-671 on 1
-        // dof (p ~ 0) on every seed. The flow tags match MadGraph's
-        // `leshouche.inc` exactly; what differs is the share of events each
-        // flow gets. MadEvent masks the draw with the ICOLAMP row of the
-        // integration channel, every channel of this process admits exactly one
-        // of its two flows, and its run card's `sde_strategy = 2` makes the
-        // channel weight a product of propagator denominators rather than the
-        // amplitude share drawn from here. Measured and reported rather than
-        // gated; see validation/manifest.toml's note for the numbers.
-        mode: "info",
+        // The row whose `ICOLUP` column is the colour draw's own gate: every one
+        // of its 21 integration channels admits exactly one of its two flows, so
+        // the written column is the configuration share and nothing else, and its
+        // run card is the only banked one setting `sde_strategy = 2` with more
+        // than one flow.
+        mode: "gate",
     },
     // ── the SMEFTsim ladder and the toy models, under their own UFO ──
     // Every row of both non-Standard-Model families whose banked run this crate

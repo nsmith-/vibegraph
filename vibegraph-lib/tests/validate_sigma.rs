@@ -118,10 +118,10 @@ use rand_chacha::ChaCha8Rng;
 use vibegraph::artifact::ChannelSampler;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
-    FixedBeams,
+    channel_diagrams, compile_subprocesses, initial_spin_color_average, process_external_legs,
+    FixedBeamIntegrand, FixedBeams,
 };
-use vibegraph::helas::eval::BoundAmplitude;
+use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use vibegraph::phasespace::{AlphaAdaptation, GEV2_TO_PB};
@@ -3362,8 +3362,8 @@ fn probe_channel_map_degeneracy() {
             .iter()
             .flat_map(|s| s.diagrams.iter().cloned())
             .collect();
-        let channels: Vec<DiagramChannel<f64>> = diagrams
-            .iter()
+        let channels: Vec<DiagramChannel<f64>> = channel_diagrams(&diagrams, &evaluated)
+            .into_iter()
             .map(|d| DiagramChannel::from_diagram_regulated(d, &evaluated, sqrt_s, floor))
             .collect();
 
@@ -3803,6 +3803,102 @@ const CONTROL_BOUND_FACTOR: f64 = 100.0;
 /// contact diagram, whose tree spans the whole final state — passes that trivially,
 /// so the count of points only a bounded channel reaches is reported beside it and
 /// is what says whether the process constrains anything.
+/// The integration channels are MadGraph's own, counted from the very run each row
+/// is compared against.
+///
+/// `coloramps.inc` declares `ICOLAMP(maxflows, nconfigs, nsubproc)`. On a process
+/// directory holding one subprocess those leading dimensions are the colour-flow
+/// count and the number of integration configurations MadEvent runs — the channel
+/// set the multichannel sampler here is built on, and the columns its colour draw
+/// is masked with. Reading them off the generated file is independent of every
+/// table in the amplitude bank: they come from MadGraph's own exporter rather than
+/// from a dump this repository asked it for, so a channel set that drifted from
+/// `IdentifyConfigTag` fails here whether or not the per-process tables were
+/// regenerated with it.
+///
+/// Only single-subprocess directories take part: a grouped one writes one
+/// `nconfigs` over the whole group, which no single subprocess's diagrams
+/// determine.
+#[test]
+fn the_channel_count_is_madgraphs_configuration_count() {
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let unbundled = common::manifest::unbundled_rows();
+    let mut checked = 0usize;
+    for (dir, e) in &banked {
+        if !matches!(run_presence(dir, &unbundled), RunPresence::Present) {
+            continue;
+        }
+        let subprocesses = output_dir().join(dir).join("SubProcesses");
+        let mut dirs: Vec<PathBuf> = std::fs::read_dir(&subprocesses)
+            .unwrap_or_else(|err| panic!("[{dir}] {}: {err}", subprocesses.display()))
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|p| {
+                p.is_dir()
+                    && p.file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.starts_with('P'))
+            })
+            .collect();
+        dirs.sort();
+        assert_eq!(
+            dirs.len(),
+            1,
+            "[{dir}] a banked fixed-beam run holds one subprocess directory"
+        );
+        let inc = std::fs::read_to_string(dirs[0].join("coloramps.inc"))
+            .unwrap_or_else(|err| panic!("[{dir}] coloramps.inc: {err}"));
+        let dims: Vec<usize> = inc
+            .lines()
+            .find_map(|l| {
+                l.trim()
+                    .to_uppercase()
+                    .strip_prefix("LOGICAL ICOLAMP(")
+                    .map(String::from)
+            })
+            .unwrap_or_else(|| panic!("[{dir}] coloramps.inc declares no ICOLAMP"))
+            .trim_end_matches(')')
+            .split(',')
+            .map(|f| f.trim().parse().expect("an ICOLAMP dimension is a count"))
+            .collect();
+        let [flows, configs, subprocs] = dims[..] else {
+            panic!("[{dir}] ICOLAMP has {} dimensions", dims.len());
+        };
+        assert_eq!(
+            subprocs, 1,
+            "[{dir}] the directory groups several subprocesses"
+        );
+
+        let model = row_model(dir);
+        let sets = common::generate_with(&e.process, model.as_ref());
+        let non_empty: Vec<_> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
+        assert_eq!(
+            non_empty.len(),
+            1,
+            "[{dir}] the enumeration produced several subprocesses"
+        );
+        let evaluator = AmplitudeEvaluator::compile(non_empty[0], model.as_ref())
+            .unwrap_or_else(|err| panic!("[{dir}] compile: {err}"));
+        assert_eq!(
+            (evaluator.n_flows(), evaluator.n_configs()),
+            (flows, configs),
+            "[{dir}] (NCOLOR, integration configurations) against MadGraph's own \
+             ICOLAMP declaration"
+        );
+        println!(
+            "{dir}: {} diagrams -> {configs} integration configurations over {flows} \
+             colour flows, MadGraph's own count",
+            non_empty[0].diagrams.len()
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 30,
+        "only {checked} banked runs carried a single-subprocess coloramps.inc"
+    );
+}
+
 ///
 /// The control is the second half. The same channels with every bound pushed out by
 /// [`CONTROL_BOUND_FACTOR`] have to *lose* accepted points somewhere, or the pass
@@ -3868,8 +3964,8 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
             .flat_map(|s| s.diagrams.iter().cloned())
             .collect();
         let build = |cap: Option<f64>| -> Vec<DiagramChannel<f64>> {
-            diagrams
-                .iter()
+            channel_diagrams(&diagrams, &evaluated)
+                .into_iter()
                 .map(|d| {
                     let ch = DiagramChannel::from_diagram_regulated(d, &evaluated, sqrt_s, floor);
                     match cap {
@@ -4187,8 +4283,8 @@ fn channel_set(dir: &str, process: &str) -> (Vec<vibegraph::phasespace::DiagramC
         .unwrap_or_else(|e| panic!("[{dir}] run card activates a cut vibegraph cannot apply: {e}"));
     let floor = cuts.spacelike_floor();
 
-    let built = diagrams
-        .iter()
+    let built = channel_diagrams(&diagrams, &evaluated)
+        .into_iter()
         .map(|d| {
             DiagramChannel::from_diagram_regulated(d, &evaluated, sqrt_s, floor)
                 .with_timelike_floors(&|slots| cuts.timelike_floor(slots))

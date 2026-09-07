@@ -1233,10 +1233,7 @@ pub struct EventSelection {
 /// A configuration's members share every propagator its channel map reads, up to
 /// the substitution the mapping makes on a spacelike line — where MadGraph's own
 /// `configs.inc` records the same representative's propagator.
-pub(crate) fn channel_diagrams<'d>(
-    diagrams: &'d [Diagram],
-    model: &EvaluatedModel,
-) -> Vec<&'d Diagram> {
+pub fn channel_diagrams<'d>(diagrams: &'d [Diagram], model: &EvaluatedModel) -> Vec<&'d Diagram> {
     config_groups(diagrams, model.model())
         .into_iter()
         .map(|group| &diagrams[group[0]])
