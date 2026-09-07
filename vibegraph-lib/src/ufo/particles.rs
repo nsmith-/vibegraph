@@ -73,6 +73,11 @@ pub struct Particle {
     pub is_self_conjugate: bool,
     /// Optional line style override, e.g. `line = 'dashed'`.
     pub line_style: Option<String>,
+    /// Python variable name of the `propagators.py` entry this particle
+    /// propagates with (`propagator = Prop.Z1`), when the model overrides the
+    /// default form. Rejected — see [`crate::ufo::propagators`] — only when such
+    /// a particle actually propagates in a selected diagram.
+    pub propagator: Option<String>,
 }
 
 impl Particle {
@@ -94,6 +99,7 @@ impl Particle {
             is_goldstone: self.is_goldstone,
             is_self_conjugate: self.is_self_conjugate,
             line_style: self.line_style.clone(),
+            propagator: self.propagator.clone(),
         }
     }
 }
@@ -149,6 +155,7 @@ pub fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
                     extract_param_ref(keywords, "width").unwrap_or_else(|| "ZERO".to_owned());
                 let is_self_conjugate = name == antiname;
                 let line_style = extract_param_ref(keywords, "line");
+                let propagator = extract_param_ref(keywords, "propagator");
 
                 by_python_name.insert(python_name.clone(), particles.len());
                 particles.push(Particle {
@@ -167,6 +174,7 @@ pub fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
                     is_goldstone,
                     is_self_conjugate,
                     line_style,
+                    propagator,
                 });
             }
 

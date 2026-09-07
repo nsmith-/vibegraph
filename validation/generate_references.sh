@@ -68,6 +68,9 @@ stage_refs() {
   vg_say ">>> diagrams.json — per-process diagram counts"
   python "$MG/extract_diagrams.py"
 
+  vg_say ">>> interactions.json — MadGraph's post-restriction interaction counts"
+  python "$MG/extract_interactions.py"
+
   vg_say ">>> f2py matrix-element modules (cached per process)"
   bash "$MG/build_amplitude.sh"
 

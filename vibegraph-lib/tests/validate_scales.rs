@@ -90,18 +90,25 @@ enum Coverage {
     /// The card fixes every scale, so no clustering enters and the printed
     /// fields are run-card constants.
     Fixed,
+    /// The run is declared but its scales are not replayed against its record,
+    /// for the reason it carries. Each reason is itself asserted, so a blocker
+    /// that lifts fails the gate and asks for the run to be promoted.
+    Declined(Declined),
 }
 
 fn coverage(run: &str) -> Coverage {
+    if let Some((_, why)) = DECLINED_RUNS.iter().find(|(name, _)| *name == run) {
+        return Coverage::Declined(*why);
+    }
     if FIXED_SCALE_RUNS.contains(&run) {
         return Coverage::Fixed;
     }
-    if CLUSTERED_RUNS.contains(&run) || UNREPLAYABLE_RUNS.contains(&run) {
+    if CLUSTERED_RUNS.contains(&run) {
         return Coverage::Clustered;
     }
     panic!(
         "banked run {run} is in none of this gate's inventories: add it to CLUSTERED_RUNS, \
-         UNREPLAYABLE_RUNS or FIXED_SCALE_RUNS"
+         FIXED_SCALE_RUNS or DECLINED_RUNS"
     )
 }
 
@@ -110,16 +117,30 @@ const CLUSTERED_RUNS: &[&str] = &[
     "ddx_to_epemg",
     "ee_to_ee",
     "ee_to_mumu",
+    "ee_to_mumu_4f",
+    "ee_to_mumu_smlimit",
     "ee_to_mumu_tata_qcd0",
     "ee_to_mumua",
     "ee_to_tatah",
     "ee_to_ttx",
+    "ee_to_ttx_dipole",
+    "ee_to_ttx_smeft",
+    "ee_to_ttx_smlimit",
     "ee_to_wpwm",
+    "ee_to_wpwm_cw",
     "ee_to_zh",
+    "ee_to_zh_smeft",
     "gg_to_gg",
     "gg_to_ttx",
+    "gg_to_ttx_smlimit",
+    "gg_to_ttx_smlimit_qcd2",
     "gu_to_epemu",
     "gux_to_epemux",
+    "ll_to_qqx_toy_dipole",
+    "ll_to_qqx_toy_tensor",
+    "ll_to_qqx_toy_yukawa",
+    "p3r3_to_p3r3_toy_epsilon",
+    "p3r3_to_p3r3_toy_sextet",
     "pp_to_bb",
     "pp_to_bb_qcd2",
     "pp_to_jj",
@@ -128,32 +149,62 @@ const CLUSTERED_RUNS: &[&str] = &[
     "pp_to_ll_scalefact2",
     "pp_to_llj",
     "pp_to_llj_dyn",
+    "qqx_to_o8o8_toy_dcolor",
+    "tata_to_ttx_tensor4f",
     "uux_to_epemg",
     "uux_to_mumu",
+    "uux_to_ttx_4f",
     "uux_to_uux",
 ];
 
-/// The two `2 → 6` runs, which are clustered but **not** replayed here.
+/// Why a declared run's scales are not replayed against its own record.
 ///
-/// Both blockers are properties of the record rather than of the engine, and
-/// neither is a tolerance:
-///
-/// * MadGraph's on-shell flags survive across events: `checkbw` clears them only
-///   for the integration channel's own timelike lines, so a leg set another
-///   channel flagged keeps its flag into the next event. 81 of
-///   `bbx_to_ccx_emmm_qcd0`'s events and 163 of `uux_to_ccx_emmm_qcd0`'s take a
-///   measure that a flag left by a *previous* event under a different channel
-///   set, and no function of one event can produce them.
-/// * The scale is not a function of the event: these directories carry 615 and
-///   579 integration channels, and the resonance tagging reads the one being
-///   integrated. An LHE record does not say which, and searching 615 of them for
-///   one that agrees would be a gate that almost anything passes.
-///
-/// What enforces them instead is finer: `validate_kt_cluster.rs` reproduces all
-/// 20 000 of their events — every candidate pair, every merge, both scales —
-/// against MadGraph's own instrumented intermediates, given the channel and the
-/// carried flags. The scale field is the coarser oracle of the two.
-const UNREPLAYABLE_RUNS: &[&str] = &["bbx_to_ccx_emmm_qcd0", "uux_to_ccx_emmm_qcd0"];
+/// Each variant is a claim about the run that
+/// [`declined_runs_decline_for_the_declared_reason`] measures, so a run listed
+/// here is still read every time the gate runs; what it is not is silently
+/// dropped. A blocker that lifts turns that measurement red and asks for the
+/// run to move into [`CLUSTERED_RUNS`] or [`FIXED_SCALE_RUNS`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Declined {
+    /// Clustered, and enforced against MadGraph's own instrumented per-event
+    /// dump instead, which is the finer of the two oracles.
+    ///
+    /// Two properties of the record, neither of them a tolerance, keep the
+    /// scale field from being a function of the event:
+    ///
+    /// * MadGraph's on-shell flags survive across events: `checkbw` clears them
+    ///   only for the integration channel's own timelike lines, so a leg set
+    ///   another channel flagged keeps its flag into the next event. 81 of
+    ///   `bbx_to_ccx_emmm_qcd0`'s events and 163 of `uux_to_ccx_emmm_qcd0`'s
+    ///   take a measure that a flag left by a *previous* event under a
+    ///   different channel set, and no function of one event can produce them.
+    /// * These directories carry 615 and 579 integration channels and the
+    ///   resonance tagging reads the one being integrated. An LHE record does
+    ///   not say which, and searching 615 of them for one that agrees would be
+    ///   a gate that almost anything passes.
+    ///
+    /// `validate_kt_cluster.rs` reproduces all 20 000 of their events — every
+    /// candidate pair, every merge, both scales — against those intermediates,
+    /// given the channel and the carried flags.
+    InstrumentedDump,
+    /// MadGraph wrote a closed-form `dynamical_scale_choice` this crate
+    /// transcribes but declines to honour, so no prescription compiles: the
+    /// formulas for `1`–`5` keep their unit tests and no cross section reads
+    /// them, and [`ScaleChoice::from_run_card`] returns `UnhonouredScaleChoice`
+    /// rather than approximating one. The integer is the card's own value.
+    UnhonouredChoice(i64),
+    /// The run card is refused outright, so there is no prescription and no
+    /// `αs` source either.
+    RefusedRunCard,
+}
+
+/// Every declared run whose scales are not replayed, with its reason.
+const DECLINED_RUNS: &[(&str, Declined)] = &[
+    ("bbx_to_ccx_emmm_qcd0", Declined::InstrumentedDump),
+    ("gg_to_gg_cg", Declined::UnhonouredChoice(3)),
+    ("uux_to_ccx_emmm_qcd0", Declined::InstrumentedDump),
+    ("wpwm_to_wpwmz_cw", Declined::RefusedRunCard),
+];
 
 /// The runs whose `αs` MadGraph reads out of the PDF grid rather than solving
 /// for: with `pdlabel = lhapdf` it links `alfas_functions_lhapdf.f`, whose
@@ -180,6 +231,28 @@ const GRID_ALPHA_S_RUNS: &[&str] = &[
 /// what separates the two regimes is the `fixed_*_scale` flags alone, not the
 /// final state.
 const FIXED_SCALE_RUNS: &[&str] = &["pp_to_bb_fixed", "pp_to_llj_fixed", "ud_to_epemud_qcd0"];
+
+/// The clustered runs whose `SCALUP` is `μF` and *not* `μR`.
+///
+/// `unwgt.f:686` fills `SCALUP` with `sqrt(max(q2fact(1), q2fact(2)))` — the
+/// larger **factorisation** scale. It doubles as `μR` only where the clustering
+/// reads both off the same vertex, which every other banked run does. These two
+/// are the suite's first `2 → 2` reaching the general `q2fact(1) != q2fact(2)`
+/// case: their beams are two *distinct massive* colour triplets, so
+/// `partonline` ends at the first initial-state merge (the beams are `isqcd`
+/// but not `isparton`) and `jcentral` differs per side, leaving each beam its
+/// own factorisation scale and `μR` the four-factor geometric mean of the two.
+///
+/// So the entry drops one comparison and nothing else: the `SCALUP`-against-`μR`
+/// check, which is not a statement about these runs. Every other field is still
+/// replayed, and `μR` itself is still enforced — through `AQCDUP`, which is the
+/// finer oracle for it anyway (`αs`'s seven printed digits locate the scale to
+/// about `1e-6` relative, tighter than `SCALUP`'s own rounding).
+///
+/// [`scalup_is_the_factorisation_scale_on_the_diquark_rows`] is what keeps this
+/// from being an exemption: it measures both halves, so a run that stopped
+/// parting the two scales, or stopped reproducing either of them, fails.
+const SCALUP_IS_NOT_MU_R: &[&str] = &["p3r3_to_p3r3_toy_epsilon", "p3r3_to_p3r3_toy_sextet"];
 
 /// `cluster.f`'s inflation of a beam–leg candidate whose legs point in opposite
 /// directions, as it reaches the scale: the factor lands on `pt2ijcl`, so a
@@ -218,9 +291,9 @@ const SCALEFACT_RUNS: &[(&str, f64)] = &[("pp_to_ll_scalefact2", 2.0)];
 fn declared_runs() -> Vec<&'static str> {
     let mut names: Vec<&'static str> = CLUSTERED_RUNS
         .iter()
-        .chain(UNREPLAYABLE_RUNS)
         .chain(FIXED_SCALE_RUNS)
         .copied()
+        .chain(DECLINED_RUNS.iter().map(|(name, _)| *name))
         .collect();
     names.sort_unstable();
     let mut unique = names.clone();
@@ -422,17 +495,18 @@ fn printed_half_ulp(v: f64, digits: i32) -> f64 {
 /// Momentum components are printed to eleven significant digits.
 const MOMENTUM_DIGITS: i32 = 11;
 
+/// The three scales as a function of one event's momenta, with everything else
+/// about the replay — the run's prescription, its channel forests, the
+/// integration channel — already bound.
+type ScaleOf<'a> = dyn FnMut(&[[f64; 4]; 2], &[[f64; 4]]) -> Result<MuTriple, ScaleError> + 'a;
+
 /// How far the computed scale moves when each printed momentum component is
 /// walked to the ends of its own rounding interval, summed over components.
 ///
 /// Measured rather than estimated from a derivative, exactly because the
 /// interesting cases are the ones where the derivative is enormous: a forward
 /// leg's `(E − p_z)(E + p_z)` cancels most of the digits it was given.
-fn momentum_spread(
-    scales: &mut dyn FnMut(&[[f64; 4]; 2], &[[f64; 4]]) -> Result<MuTriple, ScaleError>,
-    event: &Event,
-    base: MuTriple,
-) -> MuTriple {
+fn momentum_spread(scales: &mut ScaleOf, event: &Event, base: MuTriple) -> MuTriple {
     let mut spread = MuTriple::default();
     let mut outgoing = event.outgoing.clone();
     let mut incoming = event.incoming;
@@ -504,6 +578,30 @@ fn fixed(choice: &ScaleChoice) -> Result<MuTriple, ScaleError> {
     Ok(MuTriple([scales.mu_r, scales.mu_f[0], scales.mu_f[1]]))
 }
 
+/// A run's `αs(M_Z)`, from `SMINPUTS` where the model declares an `aS` and from
+/// [`common::UNDECLARED_ALPHA_S_MZ`] where it declares none. A run in neither is a
+/// model this gate has not classified, not a run to skip.
+fn alpha_s_mz(name: &str, params: &ParamCard) -> f64 {
+    match params.get("sminputs", &[3]) {
+        Some(a_s) => {
+            assert!(
+                !common::UNDECLARED_ALPHA_S_RUNS.contains(&name),
+                "{name}: its parameter card carries an aS now — drop it from \
+                 UNDECLARED_ALPHA_S_RUNS"
+            );
+            a_s
+        }
+        None => {
+            assert!(
+                common::UNDECLARED_ALPHA_S_RUNS.contains(&name),
+                "{name}: no aS in SMINPUTS and the run is not declared as a model \
+                 without one"
+            );
+            common::UNDECLARED_ALPHA_S_MZ
+        }
+    }
+}
+
 fn run_card(run: &Path) -> RunCard {
     RunCard::parse_file(&run.join("Cards/run_card.dat")).expect("run card")
 }
@@ -518,6 +616,16 @@ fn run_card(run: &Path) -> RunCard {
 #[test]
 fn every_banked_run_uses_the_clustering_default() {
     for (name, run) in banked_runs() {
+        // A run whose card is refused, or whose card asks for a prescription
+        // this crate declines, has no compiled `ScaleChoice` to classify. What
+        // its card says is asserted by
+        // [`declined_runs_decline_for_the_declared_reason`] instead.
+        if matches!(
+            coverage(&name),
+            Coverage::Declined(Declined::RefusedRunCard | Declined::UnhonouredChoice(_))
+        ) {
+            continue;
+        }
         let card = run_card(&run);
         let choice = ScaleChoice::from_run_card(&card).expect("compiled");
         assert_eq!(
@@ -542,6 +650,79 @@ fn every_banked_run_uses_the_clustering_default() {
             "{name}: channel requirement disagrees with the card"
         );
     }
+}
+
+/// Every declined run declines for the reason it declares, read off the run's
+/// own card and model rather than assumed.
+///
+/// This is what keeps [`DECLINED_RUNS`] an inventory of measurements instead of
+/// a list of runs the gate stopped looking at: a card that stops setting the
+/// choice it is listed for, a run card that starts being accepted, or a model
+/// this crate learns to read all fail here, naming the run to promote.
+#[test]
+fn declined_runs_decline_for_the_declared_reason() {
+    let runs = banked_runs();
+    let mut checked = 0usize;
+    for (name, run) in &runs {
+        let Coverage::Declined(why) = coverage(name) else {
+            continue;
+        };
+        let card_path = run.join("Cards/run_card.dat");
+        match why {
+            Declined::InstrumentedDump => {
+                // The card is an ordinary clustered one — that half is asserted
+                // by `every_banked_run_uses_the_clustering_default`. What is
+                // asserted here is that the finer oracle exists.
+                let dump = output_dir()
+                    .join("..")
+                    .join("kt_cluster_dump_manifest.json");
+                let manifest = std::fs::read_to_string(&dump)
+                    .unwrap_or_else(|e| panic!("{name}: {}: {e}", dump.display()));
+                assert!(
+                    manifest.contains(name.as_str()),
+                    "{name} declines because `validate_kt_cluster` enforces it, but it is \
+                     not in {}",
+                    dump.display()
+                );
+            }
+            Declined::UnhonouredChoice(choice) => {
+                let card =
+                    RunCard::parse_file(&card_path).unwrap_or_else(|e| panic!("{name}: {e}"));
+                assert_eq!(
+                    card.int("dynamical_scale_choice"),
+                    choice,
+                    "{name}: declared dynamical_scale_choice"
+                );
+                let refused = ScaleChoice::from_run_card(&card);
+                assert!(
+                    matches!(
+                        refused,
+                        Err(ScaleError::UnhonouredScaleChoice { choice: got }) if got == choice
+                    ),
+                    "{name}: dynamical_scale_choice {choice} is no longer refused \
+                     ({refused:?}) — the run has an oracle now and belongs in a replaying \
+                     inventory"
+                );
+            }
+            Declined::RefusedRunCard => {
+                let refused = RunCard::parse_file(&card_path);
+                assert!(
+                    refused.is_err(),
+                    "{name}: its run card is accepted now, so the run belongs in a \
+                     replaying inventory"
+                );
+                println!("{name}: run card refused — {}", refused.unwrap_err());
+            }
+        }
+        checked += 1;
+    }
+    let declared: Vec<&str> = DECLINED_RUNS.iter().map(|(name, _)| *name).collect();
+    assert_eq!(
+        checked,
+        present(&declared, &runs).len(),
+        "every declined run on this machine is measured"
+    );
+    println!("declined runs: {checked} measured against their declared reason");
 }
 
 /// One event's replay: the three scales, how far each moves across the momenta's
@@ -611,19 +792,25 @@ fn replay(choice: &ScaleChoice, channels: Option<&Channels>, event: &Event) -> R
 /// because it is the measure of what the missing input is worth: a run where it
 /// is zero has a cluster scale that is a function of the event alone.
 ///
-/// The two `2 → 6` runs are outside for a reason that is not a tolerance; see
-/// [`UNREPLAYABLE_RUNS`]. `pp_to_jj` carries a small declared exception of its
-/// own; see [`TIE_BREAK_MISSES`].
+/// The runs outside are outside for reasons that are not tolerances; see
+/// [`Declined`]. `pp_to_jj` carries a small declared exception of its own; see
+/// [`TIE_BREAK_MISSES`].
 #[test]
 fn banked_events_reproduce_every_printed_scale() {
     let runs = banked_runs();
     let mut clustered: Vec<String> = Vec::new();
     let mut fixed_runs: Vec<String> = Vec::new();
+    let mut declined: Vec<String> = Vec::new();
     let mut total_events = 0usize;
     let mut total_comparisons = 0usize;
     let mut worst = (0.0f64, String::new(), String::new());
 
     for (name, run) in &runs {
+        if let Coverage::Declined(why) = coverage(name) {
+            declined.push(name.clone());
+            println!("{name}: not replayed from its LHE record — {why:?}");
+            continue;
+        }
         let card = run_card(run);
         let choice = ScaleChoice::from_run_card(&card).expect("compiled");
         let events = parse_events(run);
@@ -636,17 +823,10 @@ fn banked_events_reproduce_every_printed_scale() {
                 None
             }
             Coverage::Clustered => {
-                if UNREPLAYABLE_RUNS.contains(&name.as_str()) {
-                    println!(
-                        "{name}: {} events, not replayable from an LHE record — enforced \
-                         against the instrumented dump instead",
-                        events.len()
-                    );
-                    continue;
-                }
                 clustered.push(name.clone());
-                Some(channels_for(run))
+                Some(channels_for(name, run))
             }
+            Coverage::Declined(_) => unreachable!("declined runs are skipped above"),
         };
 
         let mut run_worst = (0.0f64, "all fields".to_string());
@@ -660,7 +840,14 @@ fn banked_events_reproduce_every_printed_scale() {
             if got.config != 1 {
                 other_channel += 1;
             }
-            for (field, printed, digits, pick, moved) in checks(event, got.mu, got.spread) {
+            for check in checks(name, event, got.spread) {
+                let ScaleCheck {
+                    field,
+                    printed,
+                    digits,
+                    pick,
+                    moved,
+                } = check;
                 let budget = printed_half_ulp(printed, digits) + moved;
                 let fraction = (pick(got.mu) - printed).abs() / budget;
                 comparisons += 1;
@@ -740,25 +927,35 @@ fn banked_events_reproduce_every_printed_scale() {
     println!(
         "scales: {total_comparisons} comparisons over {total_events} events in {} runs \
          within their printing budget, worst {:.3} of budget ({} in {}); \
-         {} fixed-scale, {} not replayable from an LHE record",
+         {} fixed-scale, {} declined ({})",
         clustered.len() + fixed_runs.len(),
         worst.0,
         worst.2,
         worst.1,
         fixed_runs.len(),
-        UNREPLAYABLE_RUNS.len()
+        declined.len(),
+        declined.join(", ")
     );
 }
 
-/// Each printed scale field of one event, with the digits it carries, which of
-/// the three computed scales it is compared against, and how far that scale
-/// moves across the momenta's own rounding.
-#[allow(clippy::type_complexity)]
-fn checks(
-    event: &Event,
-    base: MuTriple,
-    spread: MuTriple,
-) -> Vec<(&'static str, f64, i32, fn(MuTriple) -> f64, f64)> {
+/// One printed scale field of an event against the computed scale it is compared
+/// with: the field's name, its printed value and how many significant digits
+/// that value carries, which of the three computed scales answers it, and how
+/// far that scale moves across the momenta's own printed rounding.
+struct ScaleCheck {
+    field: &'static str,
+    printed: f64,
+    digits: i32,
+    pick: fn(MuTriple) -> f64,
+    moved: f64,
+}
+
+/// Every printed scale field of one event, as the checks the replay owes it.
+///
+/// `SCALUP` answers to `μF` on every run and to `μR` on all but the diquark
+/// rows; see [`SCALUP_IS_NOT_MU_R`] for what separates them and for the
+/// two-way measurement that keeps the partition from being a convenience.
+fn checks(name: &str, event: &Event, spread: MuTriple) -> Vec<ScaleCheck> {
     // SCALUP is sqrt(max(q2fact)), so it is compared against whichever
     // factorisation scale is larger; mu_R rides along wherever the clustering
     // assigns both from the same vertex.
@@ -766,25 +963,48 @@ fn checks(
     let mu_r: fn(MuTriple) -> f64 = |mu| mu.0[0];
     let mu_f1: fn(MuTriple) -> f64 = |mu| mu.0[1];
     let mu_f2: fn(MuTriple) -> f64 = |mu| mu.0[2];
-    let _ = base;
-    let mut checks = vec![
-        (
-            "SCALUP vs mu_F",
-            event.scalup,
-            7,
-            mu_f_max,
-            spread.0[1].max(spread.0[2]),
-        ),
-        ("SCALUP vs mu_R", event.scalup, 7, mu_r, spread.0[0]),
-    ];
+    let mut checks = vec![ScaleCheck {
+        field: "SCALUP vs mu_F",
+        printed: event.scalup,
+        digits: 7,
+        pick: mu_f_max,
+        moved: spread.0[1].max(spread.0[2]),
+    }];
+    if !SCALUP_IS_NOT_MU_R.contains(&name) {
+        checks.push(ScaleCheck {
+            field: "SCALUP vs mu_R",
+            printed: event.scalup,
+            digits: 7,
+            pick: mu_r,
+            moved: spread.0[0],
+        });
+    }
     if let Some(rscale) = event.rscale {
-        checks.push(("rscale", rscale, 8, mu_r, spread.0[0]));
+        checks.push(ScaleCheck {
+            field: "rscale",
+            printed: rscale,
+            digits: 8,
+            pick: mu_r,
+            moved: spread.0[0],
+        });
     }
     if let Some(q) = event.pdf_scale[0] {
-        checks.push(("pdfrwt beam 1", q, 8, mu_f1, spread.0[1]));
+        checks.push(ScaleCheck {
+            field: "pdfrwt beam 1",
+            printed: q,
+            digits: 8,
+            pick: mu_f1,
+            moved: spread.0[1],
+        });
     }
     if let Some(q) = event.pdf_scale[1] {
-        checks.push(("pdfrwt beam 2", q, 8, mu_f2, spread.0[2]));
+        checks.push(ScaleCheck {
+            field: "pdfrwt beam 2",
+            printed: q,
+            digits: 8,
+            pick: mu_f2,
+            moved: spread.0[2],
+        });
     }
     checks
 }
@@ -811,13 +1031,14 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
     for (name, run) in &runs {
         let channels = match coverage(name) {
             Coverage::Fixed => None,
-            Coverage::Clustered if UNREPLAYABLE_RUNS.contains(&name.as_str()) => continue,
-            Coverage::Clustered => Some(channels_for(run)),
+            Coverage::Declined(_) => continue,
+            Coverage::Clustered => Some(channels_for(name, run)),
         };
         let card = run_card(run);
         let choice = ScaleChoice::from_run_card(&card).expect("compiled");
         let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
-        let a_s = params.get("sminputs", &[3]).expect("aS in SMINPUTS");
+
+        let a_s = alpha_s_mz(name, &params);
         let source = AlphaSSource::from_run_card(
             &card,
             a_s,
@@ -971,7 +1192,6 @@ fn the_grid_runs_need_the_grids_alpha_s_and_not_the_parameter_cards() {
 fn probe_first_channel_cost_in_alpha_s() {
     for (name, run) in &banked_runs() {
         if !matches!(coverage(name), Coverage::Clustered)
-            || UNREPLAYABLE_RUNS.contains(&name.as_str())
             || GRID_ALPHA_S_RUNS.contains(&name.as_str())
         {
             continue;
@@ -983,7 +1203,7 @@ fn probe_first_channel_cost_in_alpha_s() {
         let Ok(running) = RunningAlphaS::from_run_card(&card, a_s) else {
             continue;
         };
-        let channels = channels_for(run);
+        let channels = channels_for(name, run);
         let events = parse_events(run);
         let mut moved = 0usize;
         let mut sum = 0.0f64;
@@ -1085,6 +1305,100 @@ fn scalup_is_not_the_renormalisation_scale() {
     assert_eq!(checked, 2);
 }
 
+/// The two halves of [`SCALUP_IS_NOT_MU_R`], measured on the rows it names.
+///
+/// The `SCALUP`-against-`μR` comparison is dropped for these two runs, and an
+/// entry that only removes a check is an exemption. What makes it a
+/// measurement is that both halves are asserted here:
+///
+/// * **`SCALUP` is `μF`.** The larger of the two computed factorisation scales
+///   reproduces the printed field inside its own printing budget.
+/// * **`SCALUP` is not `μR`.** The computed renormalisation scale is more than
+///   `1e3` budgets away from the same field — three orders of magnitude, so no
+///   rounding argument reaches it.
+/// * **`μR` is right anyway.** `αs` at the computed `μR` reproduces `AQCDUP`
+///   inside *its* printing budget, which is the finer of the two oracles for
+///   the scale and the reason dropping the coarser one costs no coverage.
+///
+/// A run that stopped parting the two scales fails the second assertion and
+/// belongs back in the ordinary inventory; one whose replay drifted fails the
+/// first or the third.
+#[test]
+fn scalup_is_the_factorisation_scale_on_the_diquark_rows() {
+    let mut checked = 0usize;
+    for &name in SCALUP_IS_NOT_MU_R {
+        let run = output_dir().join(name);
+        if !run.join("Cards/run_card.dat").exists() {
+            vibegraph::validation::require("scales_gate_replays_madgraph", "a banked run", name);
+        }
+        let card = run_card(&run);
+        let choice = ScaleChoice::from_run_card(&card).expect("compiled");
+        let channels = channels_for(name, &run);
+        let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
+        let running = RunningAlphaS::from_run_card(&card, alpha_s_mz(name, &params))
+            .expect("supported alpha_s");
+
+        let events = parse_events(&run);
+        let mut worst_mu_f = 0.0f64;
+        let mut closest_mu_r = f64::INFINITY;
+        let mut worst_aqcdup = 0.0f64;
+        let mut worst_inversion = 0.0f64;
+        let mut first = None;
+        for event in &events {
+            let got = replay(&choice, Some(&channels), event);
+            let (mu_r, mu_f) = (got.mu.0[0], got.mu.0[1].max(got.mu.0[2]));
+            let scalup_budget = printed_half_ulp(event.scalup, 7);
+            worst_mu_f = worst_mu_f.max(
+                (mu_f - event.scalup).abs()
+                    / (scalup_budget + got.spread.0[1].max(got.spread.0[2])),
+            );
+            closest_mu_r =
+                closest_mu_r.min((mu_r - event.scalup).abs() / (scalup_budget + got.spread.0[0]));
+
+            let from_mu_r = aqcdup_from_alpha_s(running.eval(mu_r));
+            let moved = [mu_r + got.spread.0[0], mu_r - got.spread.0[0]]
+                .into_iter()
+                .map(|q| (aqcdup_from_alpha_s(running.eval(q)) - from_mu_r).abs())
+                .fold(0.0f64, f64::max);
+            worst_aqcdup = worst_aqcdup.max(
+                (from_mu_r - event.aqcdup).abs() / (printed_half_ulp(event.aqcdup, 7) + moved),
+            );
+            // The same statement without the printing budget: the scale the
+            // field itself names, against the one the clustering computed.
+            worst_inversion =
+                worst_inversion.max((invert_alpha_s(&running, event.aqcdup) / mu_r - 1.0).abs());
+            first.get_or_insert((mu_r, got.mu.0[1], got.mu.0[2]));
+        }
+
+        let (mu_r, mu_f1, mu_f2) = first.expect("events");
+        assert!(
+            worst_mu_f <= 1.0,
+            "{name}: SCALUP is not reproduced by the larger factorisation scale \
+             ({worst_mu_f:.3} of budget)"
+        );
+        assert!(
+            closest_mu_r > 1e3,
+            "{name}: the computed mu_R comes within {closest_mu_r:.3e} budgets of SCALUP on \
+             some event, so the two scales no longer part and the run belongs back in the \
+             ordinary inventory"
+        );
+        assert!(
+            worst_aqcdup <= 1.0,
+            "{name}: alpha_s at the computed mu_R misses AQCDUP by {worst_aqcdup:.3} of its \
+             printing budget"
+        );
+        println!(
+            "{name}: {} events at mu_F {mu_f1:.6}/{mu_f2:.6} GeV and mu_R {mu_r:.6} GeV; \
+             SCALUP = max(mu_F) at {worst_mu_f:.3} of budget and {closest_mu_r:.3e} budgets \
+             from mu_R; AQCDUP from mu_R at {worst_aqcdup:.3} of budget, and inverting it \
+             returns mu_R to {worst_inversion:.2e} relative",
+            events.len()
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, SCALUP_IS_NOT_MU_R.len());
+}
+
 /// `μR` recovered from `αs(μR)` by bisection, which is monotone over the range
 /// the banked events cover.
 fn invert_alpha_s(running: &RunningAlphaS, aqcdup: f64) -> f64 {
@@ -1130,8 +1444,8 @@ impl Channels {
     }
 }
 
-fn channels_for(run: &Path) -> Channels {
-    let model = common::sm_model();
+fn channels_for(name: &str, run: &Path) -> Channels {
+    let model = common::model_for_row(name).unwrap_or_else(|e| panic!("{name}: {e}"));
     let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &params);
     let card = run_card(run);
@@ -1250,7 +1564,7 @@ fn the_general_path_keeps_the_beam_crossing_population() {
         );
     }
     let choice = ScaleChoice::from_run_card(&run_card(&run)).expect("compiled");
-    let channels = channels_for(&run);
+    let channels = channels_for("uux_to_uux", &run);
     // The partonic beam energy, which is what the uninflated clustering returns.
     const CORE: f64 = 250.0;
     let mut inflated = 0usize;
@@ -1295,15 +1609,32 @@ fn the_general_path_keeps_the_beam_crossing_population() {
 /// What this cannot see is an enforcement that is too *weak*. It proves only
 /// that nothing legitimate is rejected; the committed-card half runs on a bare
 /// clone in `scales_run_cards.rs`.
+///
+/// [`common::REFUSED_RUN_CARDS`] is the two-way exception: those cards are rejected on
+/// purpose and are asserted to stay rejected, so a refusal that is quietly
+/// dropped fails here rather than turning into silent acceptance.
 #[test]
 fn banked_run_cards_are_accepted() {
     let mut cards: Vec<PathBuf> = Vec::new();
+    let mut refused: Vec<PathBuf> = Vec::new();
     for entry in std::fs::read_dir(output_dir()).expect("MadGraph output directory") {
         let dir = entry.expect("directory entry").path();
+        let row = dir
+            .file_name()
+            .expect("row directory")
+            .to_string_lossy()
+            .into_owned();
+        let deliberate = common::REFUSED_RUN_CARDS
+            .iter()
+            .any(|(name, _)| *name == row);
         for name in ["run_card.dat", "run_card_default.dat"] {
             let path = dir.join("Cards").join(name);
             if path.is_file() {
-                cards.push(path);
+                if deliberate {
+                    refused.push(path);
+                } else {
+                    cards.push(path);
+                }
             }
         }
     }
@@ -1320,9 +1651,25 @@ fn banked_run_cards_are_accepted() {
     for path in &cards {
         RunCard::parse_file(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     }
+    refused.sort();
+    for path in &refused {
+        let outcome = RunCard::parse_file(path);
+        assert!(
+            outcome.is_err(),
+            "{} is listed in common::REFUSED_RUN_CARDS but is accepted now — drop the entry",
+            path.display()
+        );
+        println!(
+            "  refused on purpose: {} — {}",
+            path.display(),
+            outcome.unwrap_err()
+        );
+    }
     println!(
-        "run cards: {} banked and committed cards accepted by the field enforcement",
-        cards.len()
+        "run cards: {} banked and committed cards accepted by the field enforcement, \
+         {} refused on purpose",
+        cards.len(),
+        refused.len()
     );
 }
 
@@ -1364,6 +1711,15 @@ fn banked_hadronic_runs_clear_the_factorisation_floor() {
     let mut reachable: Vec<String> = Vec::new();
     let mut global = (f64::INFINITY, String::new());
     for (name, run) in banked_runs() {
+        // A run whose card this crate refuses, or whose prescription it
+        // declines, compiles nothing to replay; both have `lpp = 0` and so
+        // could reach no floor anyway.
+        if matches!(
+            coverage(&name),
+            Coverage::Declined(Declined::RefusedRunCard | Declined::UnhonouredChoice(_))
+        ) {
+            continue;
+        }
         let card = run_card(&run);
         let dynamic_pdf_beam = |beam: usize| {
             let lpp = if beam == 0 { card.lpp1 } else { card.lpp2 };
@@ -1385,7 +1741,7 @@ fn banked_hadronic_runs_clear_the_factorisation_floor() {
         reachable.push(name.clone());
 
         let choice = ScaleChoice::from_run_card(&card).expect("compiled");
-        let channels = channels_for(&run);
+        let channels = channels_for(&name, &run);
         let mut run_min = f64::INFINITY;
         for event in parse_events(&run).iter() {
             let mu = replay(&choice, Some(&channels), event).mu;

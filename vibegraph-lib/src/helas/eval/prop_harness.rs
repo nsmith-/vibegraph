@@ -19,9 +19,9 @@
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-use super::waveform_slot::WaveformSlot;
+use super::waveform_slot::{MultivectorWf, WaveformSlot};
 use crate::helas::repr::lorentz::{
-    Bispinor, ComplexVector, Contravariant, LorentzVector, VectorRepr,
+    AsymRank2Tensor, Bispinor, ComplexVector, Contravariant, LorentzVector, Multivector, VectorRepr,
 };
 use crate::helas::repr::C;
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
@@ -87,6 +87,23 @@ pub fn rand_vector(rng: &mut StdRng) -> WaveformSlot<F> {
     })
 }
 
+/// A random Clifford-element slot: all sixteen graded coefficients independent, which
+/// is deliberately more general than any single fermion line produces (a `γγ` chain
+/// fills grades 0 and 2 only) so an identity that quietly assumed the other grades were
+/// zero fails here.
+pub fn rand_multivector(rng: &mut StdRng) -> WaveformSlot<F> {
+    WaveformSlot::Multivector(MultivectorWf {
+        m: Multivector::new(
+            rand_c(rng),
+            rand_eps::<Contravariant>(rng),
+            AsymRank2Tensor::new(std::array::from_fn(|_| rand_c(rng))),
+            rand_eps::<Contravariant>(rng),
+            rand_c(rng),
+        ),
+        momentum: rand_momentum(rng),
+    })
+}
+
 /// A random scalar current slot (arbitrary complex amplitude + momentum).
 pub fn rand_scalar(rng: &mut StdRng) -> WaveformSlot<F> {
     WaveformSlot::Scalar(ScalarWf {
@@ -127,6 +144,7 @@ fn variant(slot: &WaveformSlot<F>) -> &'static str {
         WaveformSlot::FermionIn(_) => "FermionIn",
         WaveformSlot::FermionOut(_) => "FermionOut",
         WaveformSlot::Vector(_) => "Vector",
+        WaveformSlot::Multivector(_) => "Multivector",
         WaveformSlot::Scalar(_) => "Scalar",
         WaveformSlot::Real(_) => "Real",
         WaveformSlot::Empty => "Empty",
@@ -182,6 +200,30 @@ pub fn slots_approx_eq(a: &WaveformSlot<F>, b: &WaveformSlot<F>, tol: F) -> Resu
             &y.momentum,
             tol,
         ),
+        (Multivector(x), Multivector(y)) => {
+            let grades = |m: &crate::helas::repr::lorentz::Multivector<F>| -> Vec<C<F>> {
+                let mut c = vec![m.scalar()];
+                c.extend((0..4).map(|i| m.vector().component(i)));
+                c.extend((0..6).map(|i| m.bivector().component(i)));
+                c.extend((0..4).map(|i| m.axial().component(i)));
+                c.push(m.pseudoscalar());
+                c
+            };
+            for (slot, (a, b)) in grades(&x.m).into_iter().zip(grades(&y.m)).enumerate() {
+                if !approx_c(a, b, tol) {
+                    return Err(format!(
+                        "multivector coefficient {slot} mismatch: {a:?} vs {b:?}"
+                    ));
+                }
+            }
+            if !approx_mom(&x.momentum, &y.momentum, tol) {
+                return Err(format!(
+                    "multivector momentum mismatch: {:?} vs {:?}",
+                    x.momentum, y.momentum
+                ));
+            }
+            Ok(())
+        }
         (Empty, Empty) => Ok(()),
         _ => Err(format!(
             "variant mismatch: {} vs {}",

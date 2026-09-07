@@ -1,6 +1,6 @@
 {
  "key": "pp_to_ll_qcd0",
- "process": "u u~ > mu+ mu-",
+ "process": "u u~ > mu+ mu- QCD=0",
  "n_ext": 4,
  "n_graphs": 2,
  "n_flows": 1,

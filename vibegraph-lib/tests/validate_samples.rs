@@ -100,17 +100,18 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// The p-value a column must clear.
 ///
 /// Chosen from the trial count, not from taste. A run takes the smallest p over
-/// every observable of every gating row on every seed: twelve fixed-beam rows and
-/// four proton ones, three seeds and seven to twenty-one observables each, and the
-/// observables of a `2 → 2` row are heavily correlated (both legs' `pT` are one
+/// every observable of every gating row on every seed: twenty-nine fixed-beam rows
+/// and four proton ones, three seeds and seven to twenty-one observables each, and
+/// the observables of a `2 → 2` row are heavily correlated (both legs' `pT` are one
 /// number at fixed beams), so the draws from the null distribution number a few
 /// hundred rather than a few thousand. At a floor of `1e-3` that is an expected
-/// 0.2 to 0.4 spurious failures per run, which would make the gate flap; at `1e-4`
-/// it is under 0.05.
+/// half a spurious failure per run, which would make the gate flap; at `1e-4` it is
+/// around 0.1.
 ///
 /// The measured minimum over every gating row and three seeds is `1.573e-4`
 /// (`ee_to_wpwm`, `pt(w+)`; per-seed `2.727e-2`, `1.116e-2`, `1.573e-4`), with
-/// `gu_to_epemu` at `3.329e-3` and `ddx_to_epemg` at `8.063e-3` behind it,
+/// `ee_to_wpwm_cw` at `7.791e-4`, `qqx_to_o8o8_toy_dcolor` at `9.361e-4`,
+/// `ddx_to_epemg` at `1.846e-3` and `uux_to_ttx_4f` at `2.079e-3` behind it,
 /// against `3.6e-6` and `0` for the two rows that used to disagree.
 /// `ee_to_wpwm` is the row to watch: it sits only `1.6x` above the floor.
 /// `ee_to_mumua` is informational and so not among these — its `pt(a)` column
@@ -254,6 +255,144 @@ const ROWS: &[Row] = &[
         // rather than gated; see validation/manifest.toml's note.
         mode: "info",
     },
+    // ── the SMEFTsim ladder and the toy models, under their own UFO ──
+    // Every row of both non-Standard-Model families whose banked run this crate
+    // can reproduce: the four SM-limit rows, the six Wilson-coefficient rows with
+    // an event sample, the capstone, and all six toy-model rows. `gg_to_gg_cg`
+    // and `wpwm_to_wpwmz_cw` are absent because their banked run cards select
+    // `dynamical_scale_choice = 3` and `nhel = 1`, neither of which this crate's
+    // integration path honours.
+    //
+    // The model each row is generated under is the one its manifest entry names,
+    // through `common::model_for_row`, so a SMEFT sample is drawn from a SMEFT
+    // matrix element rather than from a same-named Standard-Model one.
+    //
+    // What these cells do *not* see is the beam configuration: every observable
+    // here is built from the outgoing legs alone, so a difference in how the
+    // incoming momenta are constructed is invisible to all of them. It is not
+    // hypothetical — `qqx_to_o8o8_toy_dcolor` and the two `p3r3` rows have massive
+    // incoming particles that this crate puts on the light cone, which moves their
+    // cross sections by 6 to 7% (their `integrals` cells) and leaves every column
+    // below comfortably above the floor.
+    Row {
+        key: "ee_to_mumu_smlimit",
+        process: "e+ e- > mu+ mu-",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "gg_to_ttx_smlimit",
+        process: "g g > t t~",
+        neval: 30_000,
+        niter: 5,
+        mode: "gate",
+    },
+    Row {
+        key: "gg_to_ttx_smlimit_qcd2",
+        process: "g g > t t~ QCD<=2",
+        neval: 30_000,
+        niter: 5,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_ttx_smlimit",
+        process: "e+ e- > t t~",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_wpwm_cw",
+        process: "e+ e- > w+ w- NP<=1",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_ttx_dipole",
+        process: "e+ e- > t t~ NP<=1",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_zh_smeft",
+        process: "e+ e- > z h NP<=1",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_mumu_4f",
+        process: "e+ e- > mu+ mu- NP<=1",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "uux_to_ttx_4f",
+        process: "u u~ > t t~ NP<=1",
+        neval: 30_000,
+        niter: 5,
+        mode: "gate",
+    },
+    Row {
+        key: "tata_to_ttx_tensor4f",
+        process: "ta+ ta- > t t~ NP<=1",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_ttx_smeft",
+        process: "e+ e- > t t~ NP<=1",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ll_to_qqx_toy_dipole",
+        process: "lt~ lt > qt qt~ NP<=1",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ll_to_qqx_toy_tensor",
+        process: "lt~ lt > qt qt~ NP<=1 NPGG<=1",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ll_to_qqx_toy_yukawa",
+        process: "lt~ lt > qt qt~ NP<=2 NPCP<=2",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "qqx_to_o8o8_toy_dcolor",
+        process: "qt qt~ > o8 o8 NP<=2",
+        neval: 30_000,
+        niter: 5,
+        mode: "gate",
+    },
+    Row {
+        key: "p3r3_to_p3r3_toy_epsilon",
+        process: "p3 r3 > p3 r3 NP<=2",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "p3r3_to_p3r3_toy_sextet",
+        process: "p3 r3 > p3 r3 NP<=2",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
     // ── the ℓ⁺ℓ⁻ j partonic rows, generated at a per-event cluster scale ──
     // The only rows here whose renormalisation and factorisation scales are
     // recomputed from each event's kT clustering rather than read once off the
@@ -349,10 +488,14 @@ fn with_integrand<R>(
     );
     let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
-    let model = common::sm_model();
+    // The model a row's events were generated against, not the Standard Model:
+    // the manifest names a vendored UFO directory and a restrict card for the
+    // SMEFTsim and toy rows, and a sample drawn under one model compared against
+    // MadGraph's under another would measure the model choice.
+    let model = common::model_for_row(row.key).unwrap_or_else(|e| panic!("[{}] {e}", row.key));
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.key));
 
-    let sets = common::generate(row.process);
+    let sets = common::generate_with(row.process, model.as_ref());
     let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
     let bounds: Vec<_> = evals
         .iter()

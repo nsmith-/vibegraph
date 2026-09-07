@@ -180,15 +180,41 @@ impl Event {
     }
 }
 
+/// A decompressor whose child is reaped when the stream it feeds is dropped.
+///
+/// The events are streamed rather than collected — a dump is tens of megabytes —
+/// so the `gzip` process outlives the call that spawned it. Dropping the handle
+/// without waiting would leave a zombie per dump; a reader that stops early would
+/// leave one blocked on a full pipe, which is what the `kill` is for.
+struct Decompressed<I> {
+    child: std::process::Child,
+    events: I,
+}
+
+impl<I: Iterator> Iterator for Decompressed<I> {
+    type Item = I::Item;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.events.next()
+    }
+}
+
+impl<I> Drop for Decompressed<I> {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 /// Stream a run's dump: the header, then the events in the banked file's order.
 fn read_dump(path: &Path) -> (Value, impl Iterator<Item = Event>) {
-    let child = Command::new("gzip")
+    let mut child = Command::new("gzip")
         .arg("-dc")
         .arg(path)
         .stdout(Stdio::piped())
         .spawn()
         .expect("gzip -dc");
-    let mut reader = BufReader::with_capacity(1 << 20, child.stdout.expect("piped stdout"));
+    let stdout = child.stdout.take().expect("piped stdout");
+    let mut reader = BufReader::with_capacity(1 << 20, stdout);
     let mut head = String::new();
     reader.read_line(&mut head).expect("dump header");
     let header: Value = serde_json::from_str(&head).expect("dump header parses");
@@ -205,7 +231,7 @@ fn read_dump(path: &Path) -> (Value, impl Iterator<Item = Event>) {
                 .collect(),
         }
     });
-    (header, events)
+    (header, Decompressed { child, events })
 }
 
 // ── the derivation the harness has to do before the engine can run ───────────
@@ -793,7 +819,7 @@ fn compare_run(_name: &str, path: &Path, model: &Model) -> Tally {
             // one key, so only a single-directory run can be asked whether the
             // reference has a leg set the derivation lacks.
             if directories.len() == 1 {
-                for ((config, proc, mask), _) in dumped_map.iter() {
+                for (config, proc, mask) in dumped_map.keys() {
                     if (*config, *proc) == (this_config, iproc)
                         && !tables[iproc - 1].id_cl.contains_key(mask)
                     {

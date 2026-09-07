@@ -28,7 +28,6 @@ use std::path::{Path, PathBuf};
 use common::report::{DiagramsRow, Stopwatch};
 use libtest_mimic::{Arguments, Failed, Trial};
 use vibegraph::diagrams::{self, generate_from_proc_card, DiagramSet, ParsingOptions};
-use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::UFOModel;
 
 #[derive(Debug, serde::Deserialize)]
@@ -67,19 +66,24 @@ struct DiagramTopologies {
     topologies_by_subprocess: HashMap<String, Vec<MgDiagram>>,
 }
 
-/// Rows whose count difference is understood, reported and not enforced.
+/// Whether a row's count difference fails the suite or is only reported.
 ///
-/// `g g > g g`: MadGraph writes the four-gluon contact term as three separate
-/// graphs, one per colour structure (`VVVV1_0`, `VVVV3_0`, `VVVV4_0` into
-/// `AMP(1..3)`), and vibegraph writes it as one diagram whose vertex carries all
-/// three structures — so 3 exchange + 3 contact against 3 exchange + 1 contact.
-/// The physics of the row is pinned at a finer level than a count: the per-flow
-/// amplitude gate over the same process agrees with MadGraph to 1e-13, which no
-/// difference in diagram *content* could survive.
-const INFORMATIONAL_ROWS: &[(&str, &str)] = &[(
-    "gg_to_gg",
-    "MadGraph counts the four-gluon vertex once per colour structure",
-)];
+/// Read from `validation/manifest.toml`'s own `categories.diagrams.mode` rather
+/// than from a list here, so the cell's declared enforcement and the gate's
+/// behaviour cannot drift apart. Two rows are informational today and each for
+/// its own reason, both recorded in the manifest beside the declaration: `g g >
+/// g g`, where MadGraph writes the four-gluon contact term once per colour
+/// structure and this side writes one diagram carrying all three, and the
+/// SMEFTsim ladder, where the model does not load at all yet.
+fn declared_mode(key: &str) -> &'static str {
+    static MODES: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
+        std::sync::OnceLock::new();
+    let modes = MODES.get_or_init(|| common::manifest::category_modes("diagrams"));
+    match modes.get(key).map(String::as_str) {
+        Some("info") => "info",
+        _ => "gate",
+    }
+}
 
 fn print_madgraph_topologies(key: &str, data: &DiagramTopologies) {
     println!("=== MadGraph topologies: {key} ===");
@@ -259,9 +263,29 @@ fn print_diagram_topologies(process_str: &str, sets: &[DiagramSet], model: &UFOM
 
 fn run_trial(key: &str, mg_counts: &DiagramCounts) -> Result<(), Failed> {
     let clock = Stopwatch::start();
+    let mode = declared_mode(key);
     let script_path = madgraph_dir().join(format!("scripts/{key}.mg5"));
     let script_content = fs::read_to_string(&script_path)
         .map_err(|e| Failed::from(format!("cannot read {}: {e}", script_path.display())))?;
+
+    // The script is what MadGraph read and the manifest is what this side reads;
+    // a row generated under one restrict card and checked under another would
+    // agree on nothing and explain nothing, so the two statements are compared
+    // before either is used.
+    let declared_import = common::manifest::row_models()
+        .get(key)
+        .map(|m| match &m.restrict {
+            Some(r) => format!("{}-{r}", m.dir),
+            None => m.dir.clone(),
+        });
+    let script_import = common::script_model_import(&script_content);
+    if script_import != declared_import {
+        return Err(format!(
+            "[{key}] the script imports {script_import:?} and the manifest declares \
+             {declared_import:?}"
+        )
+        .into());
+    }
 
     let opts = ParsingOptions::default();
     let card = diagrams::parse_proc_card(&script_content, &opts)
@@ -274,9 +298,22 @@ fn run_trial(key: &str, mg_counts: &DiagramCounts) -> Result<(), Failed> {
         .ok_or("no 'generate' line in .mg5 script")?
         .to_string();
 
-    let model = sm_model(SMRestrict::Default);
-    let sets = generate_from_proc_card(&card, &model)
-        .map_err(|e| Failed::from(format!("diagram generation failed: {e}")))?;
+    let mut row = DiagramsRow::new(key, &process_str, mode);
+    row.theirs = mg_counts.total_diagrams;
+
+    // A row whose model this crate cannot read is measured as the zero it
+    // enumerates, with the loader's own message on the cell: the comparison ran
+    // and disagreed, which is a different thing from a cell nothing wrote.
+    let model = match common::model_for_row(key) {
+        Ok(model) => model,
+        Err(e) => return report_unevaluated(row, clock, mode, &e),
+    };
+    let sets = match generate_from_proc_card(&card, &model) {
+        Ok(sets) => sets,
+        Err(e) => {
+            return report_unevaluated(row, clock, mode, &format!("diagram generation failed: {e}"))
+        }
+    };
     let total_count: u32 = sets.iter().map(|s| s.diagrams.len() as u32).sum();
     let unique_topology_count = count_mg_style_topologies(&sets, &model);
 
@@ -287,38 +324,44 @@ fn run_trial(key: &str, mg_counts: &DiagramCounts) -> Result<(), Failed> {
     println!(
         "  vibegraph: {total_count} total diagrams ({unique_topology_count} unique topologies)"
     );
-    let informational = INFORMATIONAL_ROWS.iter().find(|(row, _)| *row == key);
-    let mut row = DiagramsRow::new(
-        key,
-        &process_str,
-        if informational.is_some() {
-            "info"
-        } else {
-            "gate"
-        },
-    );
     row.ours = unique_topology_count;
-    row.theirs = mg_counts.total_diagrams;
     row.ours_all_subprocesses = total_count;
-    row.note = informational.map(|(_, why)| (*why).to_string());
 
     if unique_topology_count != mg_counts.total_diagrams {
         let report = format!(
             "vibegraph: {unique_topology_count} unique topologies, MG5 reference: {}",
             mg_counts.total_diagrams
         );
-        match informational {
-            Some((_, why)) => println!("  informational: {report} — {why}"),
-            None => {
-                row.status = "fail";
-                row.note = Some(report.clone());
-                row.duration_s = Some(clock.seconds());
-                row.write();
-                return Err(report.into());
-            }
+        row.note = Some(report.clone());
+        if mode == "gate" {
+            row.status = "fail";
+            row.duration_s = Some(clock.seconds());
+            row.write();
+            return Err(report.into());
         }
+        println!("  informational: {report}");
     }
     row.duration_s = Some(clock.seconds());
+    row.write();
+    Ok(())
+}
+
+/// Write the cell for a row whose comparison could not start, and decide the
+/// trial by the row's declared mode.
+fn report_unevaluated(
+    mut row: DiagramsRow,
+    clock: Stopwatch,
+    mode: &str,
+    why: &str,
+) -> Result<(), Failed> {
+    println!("  [{}] no enumeration: {why}", row.row);
+    row.note = Some(why.to_string());
+    row.duration_s = Some(clock.seconds());
+    if mode == "gate" {
+        row.status = "fail";
+        row.write();
+        return Err(why.to_string().into());
+    }
     row.write();
     Ok(())
 }

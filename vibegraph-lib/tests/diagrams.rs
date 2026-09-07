@@ -113,3 +113,39 @@ fn test_forbidden_u_propagator_in_uux_to_gg() {
         "only s-channel gluon without quark propagators"
     );
 }
+
+/// A squared-order constraint is refused rather than dropped.
+///
+/// `NP^2==1` is how MadGraph is asked for the dimension-six *interference* alone,
+/// and it is the first thing a SMEFT user types. It bounds the order of a term in
+/// |M|², which is a statement about pairs of diagrams and not about any one of
+/// them, so this generator cannot honour it — and answering the amplitude-level
+/// question instead would hand back a cross section that is not the one asked for,
+/// with nothing on screen to say so.
+///
+/// The unconstrained control is what makes this a test of the refusal rather than
+/// of the process string: the same legs without the `^2` enumerate normally.
+#[test]
+fn a_squared_order_constraint_is_a_hard_error() {
+    let opts = ParsingOptions::default();
+    let model = common::sm_model();
+
+    let card = parse_proc_card("generate e+ e- > mu+ mu- QED^2==2", &opts).unwrap();
+    let text = match vibegraph::diagrams::generate_from_proc_card(&card, model.as_ref()) {
+        Err(e) => e.to_string(),
+        Ok(sets) => panic!(
+            "a squared-order constraint enumerated {} diagrams instead of being refused",
+            total_diagrams(&sets)
+        ),
+    };
+    assert!(text.contains("QED^2==2"), "{text}");
+    assert!(text.contains("QED<=n"), "{text}");
+
+    let control = parse_proc_card("generate e+ e- > mu+ mu- QED<=2", &opts).unwrap();
+    assert!(
+        total_diagrams(
+            &vibegraph::diagrams::generate_from_proc_card(&control, model.as_ref())
+                .expect("the same legs without the `^2` enumerate")
+        ) > 0
+    );
+}

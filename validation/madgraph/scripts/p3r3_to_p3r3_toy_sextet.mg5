@@ -1,0 +1,33 @@
+# MadGraph5 batch script: p3 r3 > p3 r3 NP<=2
+# in vibegraph_toy_color_UFO, restricted by restrict_k6.dat.
+#
+# Why this exact process:
+#   The sextet Clebsch coefficients K6 and K6Bar, which this crate's colour
+#   grammar refuses outright, reached through an s-channel sextet diquark. The
+#   sextet is internal, so the pair reduces through
+#   K6(m,i,j) K6Bar(m,k,l) = (T(l,i)T(k,j) + T(k,i)T(l,j))/2 before any colour
+#   matrix is built and no external leg ever carries two colour lines -- which
+#   separates the reduction rules from the open question of how a sextet leg is
+#   written into an event file.
+#
+# The model path is repo-relative to the vendored UFO; build.sh rewrites it to
+# the work-area copy it stages under output/models/. This model is ours, so its
+# restrict cards live inside the model directory and are staged with it.
+#
+# `display interactions` prints the count MadGraph's own interaction splitting
+# arrives at (one interaction per coupling-order tuple, import_ufo.add_interaction)
+# into the build log, which is where extract_interactions.py reads it from.
+#
+# The order bound is explicit because the model declares no coupling at all under
+# the QCD order MadGraph's WEIGHTED search reads by name.
+import model validation/ufo/vibegraph_toy_color_UFO-k6
+display interactions
+generate p3 r3 > p3 r3 NP<=2
+output p3r3_to_p3r3_toy_sextet -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

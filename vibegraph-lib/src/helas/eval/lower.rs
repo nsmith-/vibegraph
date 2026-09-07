@@ -319,7 +319,7 @@ fn lower_diagram_node(tree: &DiagramEvalTree, id: EvalNodeId, b: &mut AstBuilder
             };
             b.add(Op::Propagate, Sym::None, vec![current, mass, width])
         }
-        EvalNode::ContractAmplitude { info, children } => {
+        EvalNode::ContractAmplitude { info, children, .. } => {
             let inputs = lower_children(tree, children, b);
             lower_vertex(info, &inputs, b)
         }
@@ -368,6 +368,28 @@ fn chiral_gamma_site(tree: &LorentzEvalTree) -> Option<ChiralSite> {
         return None;
     };
     let proj_is_left = matches!(tree.value(proj), L::ProjM { .. });
+
+    // The fused kernels fold the projector into *one* gamma node, so the site must be
+    // the tree's only place where chirality is moved. A second `Gamma*` (a γ-chain, and
+    // in particular a momentum-slashed dipole chain) or a `Gamma5` puts another
+    // chirality-sensitive factor between the projector and the current, which the fused
+    // form does not carry — those stay generic, and the fused/generic equivalence test
+    // is on the vertex sets where fusion does apply.
+    let gammas = tree
+        .iter()
+        .filter(|&n| {
+            matches!(
+                tree.value(n),
+                L::GammaVout { .. } | L::GammaIout { .. } | L::GammaOout { .. }
+            )
+        })
+        .count();
+    let has_gamma5 = tree
+        .iter()
+        .any(|n| matches!(tree.value(n), L::Gamma5 { .. } | L::Gamma5Amp { .. }));
+    if gammas != 1 || has_gamma5 {
+        return None;
+    }
 
     // The fused kernels put the projected fermion at the second operand
     // (`GammaVout`'s `j`; the continuing fermion of `GammaIout`/`GammaOout`).
@@ -429,6 +451,20 @@ fn render_hole(lt: &LorentzEvalTree, n: usize, proj: usize) -> String {
             L::MetricVout { .. } => "MetricVout".to_string(),
             L::Mul { .. } => "Mul".to_string(),
             L::IdentityAmp { .. } => "IdentityAmp".to_string(),
+            L::Gamma5 { .. } => "Gamma5".to_string(),
+            L::Gamma5Amp { .. } => "Gamma5Amp".to_string(),
+            L::EpsilonVout { .. } => "EpsilonVout".to_string(),
+            L::EpsilonAmp { .. } => "EpsilonAmp".to_string(),
+            L::FierzOut { .. } => "FierzOut".to_string(),
+            L::FierzOutRev { .. } => "FierzOutRev".to_string(),
+            L::MultivectorIout { .. } => "MultivectorIout".to_string(),
+            L::MultivectorOout { .. } => "MultivectorOout".to_string(),
+            L::FierzPair { .. } => "FierzPair".to_string(),
+            L::SigmaVout { .. } => "SigmaVout".to_string(),
+            L::SigmaVoutRev { .. } => "SigmaVoutRev".to_string(),
+            L::SigmaMv { .. } => "SigmaMv".to_string(),
+            L::SigmaOut { .. } => "SigmaOut".to_string(),
+            L::SigmaOutRev { .. } => "SigmaOutRev".to_string(),
         }
     };
     let kids = node
@@ -656,6 +692,81 @@ fn lower_lorentz(
             let a = rec(i, b);
             let c = rec(j, b);
             b.add(Op::IdentityAmp, Sym::None, vec![a, c])
+        }
+        L::Gamma5 { i } => {
+            let a = rec(i, b);
+            b.add(Op::Gamma5, Sym::None, vec![a])
+        }
+        L::Gamma5Amp { i, j } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            b.add(Op::Gamma5Amp, Sym::None, vec![a, c])
+        }
+        L::EpsilonVout { a, b: bb, c } => {
+            let x = rec(a, b);
+            let y = rec(bb, b);
+            let z = rec(c, b);
+            b.add(Op::EpsilonVout, Sym::None, vec![x, y, z])
+        }
+        L::EpsilonAmp { a, b: bb, c, d } => {
+            let w = rec(a, b);
+            let x = rec(bb, b);
+            let y = rec(c, b);
+            let z = rec(d, b);
+            b.add(Op::EpsilonAmp, Sym::None, vec![w, x, y, z])
+        }
+        L::FierzOut { i, j } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            b.add(Op::FierzOut, Sym::None, vec![a, c])
+        }
+        L::FierzOutRev { i, j } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            b.add(Op::FierzOutRev, Sym::None, vec![a, c])
+        }
+        L::MultivectorIout { m, j } => {
+            let a = rec(m, b);
+            let c = rec(j, b);
+            b.add(Op::MultivectorIout, Sym::None, vec![a, c])
+        }
+        L::MultivectorOout { m, i } => {
+            let a = rec(m, b);
+            let c = rec(i, b);
+            b.add(Op::MultivectorOout, Sym::None, vec![a, c])
+        }
+        L::FierzPair { m, i, j } => {
+            let a = rec(m, b);
+            let c = rec(i, b);
+            let d = rec(j, b);
+            b.add(Op::FierzPair, Sym::None, vec![a, c, d])
+        }
+        L::SigmaVout { i, j, v } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            let d = rec(v, b);
+            b.add(Op::SigmaVout, Sym::None, vec![a, c, d])
+        }
+        L::SigmaVoutRev { i, j, v } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            let d = rec(v, b);
+            b.add(Op::SigmaVoutRev, Sym::None, vec![a, c, d])
+        }
+        L::SigmaMv { a, b: bb } => {
+            let x = rec(a, b);
+            let y = rec(bb, b);
+            b.add(Op::SigmaMv, Sym::None, vec![x, y])
+        }
+        L::SigmaOut { i, j } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            b.add(Op::SigmaOut, Sym::None, vec![a, c])
+        }
+        L::SigmaOutRev { i, j } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            b.add(Op::SigmaOutRev, Sym::None, vec![a, c])
         }
         L::Mul { ref children } => {
             let cs: Vec<NodeId> = children.iter().map(|&c| rec(c, b)).collect();

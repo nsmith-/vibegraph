@@ -96,12 +96,22 @@ impl ParameterSet {
 
     /// Bake a model restriction card's external values into the parameter defaults.
     ///
-    /// MadGraph applies the restriction (e.g. `restrict_default.dat`)
-    /// when importing a model: the listed parameters with value ZERO become fixed
-    /// to zero from that point forward. A user-supplied param card (e.g. `param_card.dat`)
-    /// CANNOT override a zero parameter in the restriction. This is intentional, because
-    /// the restriction also is used to prune the vertices and diagrams, so allowing a user
-    /// card to "un-restrict" a parameter would lead to inconsistencies.
+    /// The restriction is the model's new baseline, not merely a list of things to
+    /// switch off: MadGraph reads the card into every external parameter it names
+    /// (`model_reader.set_parameters_and_couplings` assigns `parameter.value`) and
+    /// writes those values out as the `param_card.dat` of the generated process, so
+    /// a run of a restricted model with no card of its own is a run *at the
+    /// restriction's values*. Baking only the zeros would leave every other
+    /// coefficient at the `parameters.py` default — for SMEFTsim, zero — and a
+    /// card-less evaluation of a restricted model would silently be its
+    /// Standard-Model limit.
+    ///
+    /// The zeroed parameters (light masses/Yukawas, CKM mixing) are additionally
+    /// *locked*: a later param card must not revive one, because the restriction is
+    /// also what pruned the vertices and diagrams, so reviving a parameter would
+    /// evaluate a vertex set that no longer matches the couplings. Non-zero values
+    /// are defaults and stay overridable, which is what makes the generated
+    /// `param_card.dat` an editable card rather than a transcript.
     pub fn apply_restrict(&mut self, card: &ParamCard) {
         for p in &mut self.externals {
             if let ParamNature::External {
@@ -111,9 +121,9 @@ impl ParameterSet {
             } = &mut p.nature
             {
                 if let Some(v) = card.get(lha_block, lha_code) {
+                    *default_value = v;
                     if v.is_zero() {
                         self.zeros.insert(p.name.clone());
-                        *default_value = v;
                     }
                 }
             }
@@ -438,7 +448,8 @@ MZ2 = Parameter(name = 'MZ2',
     fn test_restrict_zero_is_locked() {
         let mut ps = parse_parameters(PARAMS_WITH_MASS_DEP).unwrap();
 
-        // Restriction zeros MZ. A non-zero entry would NOT be baked/locked.
+        // Restriction zeros MZ, which locks it; a non-zero entry becomes a
+        // default instead (see `test_restrict_nonzero_becomes_the_default`).
         let restrict = "Block MASS\n 23 0.0\n".parse::<ParamCard>().unwrap();
         ps.apply_restrict(&restrict);
         assert!(ps.zeros.contains("MZ"));
@@ -457,15 +468,34 @@ MZ2 = Parameter(name = 'MZ2',
         assert_eq!(vals["MZ2"].re, 0.0);
     }
 
+    /// A non-zero restriction value becomes the parameter's default and stays
+    /// overridable — the two halves of what MadGraph's `restrict_model` does with
+    /// one, and the pair that decides what a card-less run of a restricted model
+    /// computes.
+    ///
+    /// The first half is the one with teeth: reading the restriction only for the
+    /// parameters it zeroes leaves every other one at the `parameters.py` value,
+    /// which for a SMEFT model is zero for every Wilson coefficient — so a
+    /// restricted model evaluated without a card would silently be its
+    /// Standard-Model limit while MadGraph's own generated `param_card.dat`
+    /// carries the restriction's values. The `evaluate(&default())` assertion is
+    /// what fails if that regresses.
     #[test]
-    fn test_restrict_nonzero_not_baked() {
+    fn test_restrict_nonzero_becomes_the_default() {
         let mut ps = parse_parameters(PARAMS_WITH_MASS_DEP).unwrap();
 
-        // A non-zero restriction value is not locked: the user card overrides it.
         let restrict = "Block MASS\n 23 80.0\n".parse::<ParamCard>().unwrap();
         ps.apply_restrict(&restrict);
         assert!(!ps.zeros.contains("MZ"));
 
+        // No card: the restriction's value, not the `parameters.py` default, and
+        // the internals that depend on it follow.
+        let vals = ps.evaluate(&ParamCard::default());
+        assert!((vals["MZ"].re - 80.0).abs() < 1e-10, "{}", vals["MZ"].re);
+        assert!((vals["MZ2"].re - 6400.0).abs() < 1e-7, "{}", vals["MZ2"].re);
+
+        // A card overrides it, because a non-zero restriction value is a default
+        // and not a lock.
         let user = "Block MASS\n 23 91.1876\n".parse::<ParamCard>().unwrap();
         let vals = ps.evaluate(&user);
         assert!((vals["MZ"].re - 91.1876).abs() < 1e-10);

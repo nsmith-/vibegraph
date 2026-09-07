@@ -2981,6 +2981,11 @@ fn probe_recarded_budget_ladder() {
     }
 }
 
+/// One arm of a budget ladder: the banked run it is read against, the process
+/// string that reproduces it, and the `(points per iteration, iterations)` rungs
+/// to walk.
+type LadderArm = (&'static str, &'static str, &'static [(usize, usize)]);
+
 /// Whether the re-carded `p p > l+ l- j` estimator is still moving above the
 /// budget its gate runs at, and what it is moving with.
 ///
@@ -3036,7 +3041,7 @@ fn probe_llj_deep_budget_ladder() {
         (150_000, 34),
         (300_000, 18),
     ];
-    const ARMS: &[(&str, &str, &[(usize, usize)])] = &[
+    const ARMS: &[LadderArm] = &[
         ("pp_to_llj", "p p > l+ l- j", RUNGS),
         (
             LLJ_DYN_RUN,
@@ -3182,7 +3187,7 @@ fn probe_llj_deep_budget_ladder() {
 #[ignore]
 fn probe_llj_seed_ensemble() {
     const SEEDS: usize = 40;
-    const ARMS: &[(&str, &str, &[(usize, usize)])] = &[
+    const ARMS: &[LadderArm] = &[
         (
             "pp_to_llj",
             "p p > l+ l- j",

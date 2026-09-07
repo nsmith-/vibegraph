@@ -1,0 +1,38 @@
+# MadGraph5 batch script: lt~ lt > qt qt~ NP<=1
+# in vibegraph_toy_UFO, restricted by restrict_dipole.dat.
+#
+# Why this exact process:
+#   The dipole vertex whose Lorentz structure writes `Sigma` literally --
+#   Sigma(3,-1,2,-2)*P(-1,3)*ProjM(-2,1), a momentum-contracted sigma^{mu nu}
+#   with a chiral projector. No FeynRules-written model emits the operator that
+#   way: FeynRules expands sigma^{mu nu} into gamma^mu gamma^nu before it writes
+#   the UFO, so `Sigma` lives in ALOHA's object library and in no model file.
+#
+#   The dipole and the plain gauge coupling sit on the same qt~ qt vt vertex at
+#   different coupling orders, so MadGraph splits them into two interactions and
+#   the row is two diagrams sharing one s-channel propagator. The dipole's phase
+#   and normalisation are therefore visible in the interference, per helicity,
+#   and not only in the helicity sum.
+#
+# The model path is repo-relative to the vendored UFO; build.sh rewrites it to
+# the work-area copy it stages under output/models/. This model is ours, so its
+# restrict cards live inside the model directory and are staged with it.
+#
+# `display interactions` prints the count MadGraph's own interaction splitting
+# arrives at (one interaction per coupling-order tuple, import_ufo.add_interaction)
+# into the build log, which is where extract_interactions.py reads it from.
+#
+# The order bound is explicit on every row of this model: an unbounded generate
+# runs MadGraph's WEIGHTED search, which would drop the higher-order diagram the
+# interference needs.
+import model validation/ufo/vibegraph_toy_UFO-dipole
+display interactions
+generate lt~ lt > qt qt~ NP<=1
+output ll_to_qqx_toy_dipole -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

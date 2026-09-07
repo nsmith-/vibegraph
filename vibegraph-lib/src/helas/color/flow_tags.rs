@@ -72,12 +72,17 @@ pub struct LegColor {
 /// an octet both and a singlet neither — the rule the derived lines are checked
 /// against, and the same rule a written record can be scanned against without any
 /// reference at all.
+///
+/// A sextet leg carries *two* colour lines of the same kind, which two `ICOLUP`
+/// slots cannot express, so it has no assignment here: an external sextet is
+/// rejected upstream rather than given a wrong one.
 pub fn slots_for(rep: ColorRep) -> [bool; 2] {
     match rep {
         ColorRep::Singlet => [false, false],
         ColorRep::Triplet => [true, false],
         ColorRep::AntiTriplet => [false, true],
         ColorRep::Octet => [true, true],
+        ColorRep::Sextet | ColorRep::AntiSextet => [false, false],
     }
 }
 
@@ -486,6 +491,21 @@ fn derive_flow(structure: &ImmutableString, legs: &[LegColor]) -> Result<Vec<[u3
             }
             TensorKind::F | TensorKind::D => {
                 return Err(format!("{kind:?} tensor survives in a basis key"));
+            }
+            // A baryonic invariant ties three colour indices together at a point
+            // rather than along a line, so a flow that survives with one in it has
+            // no Les-Houches line assignment at all.
+            TensorKind::Epsilon | TensorKind::EpsilonBar => {
+                return Err(format!(
+                    "{kind:?} survives in a basis key: a baryonic colour flow is not a set of colour lines"
+                ));
+            }
+            // A sextet leg carries two colour lines at once, which a Les Houches
+            // record has no way to write on one particle.
+            TensorKind::K6 | TensorKind::K6Bar | TensorKind::T6 => {
+                return Err(format!(
+                    "{kind:?} survives in a basis key: a sextet leg carries two colour lines and has no single Les Houches assignment"
+                ));
             }
         }
     }

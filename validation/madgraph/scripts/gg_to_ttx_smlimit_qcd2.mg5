@@ -1,0 +1,30 @@
+# MadGraph5 batch script: g g > t t~ QCD<=2
+# in SMEFTsim_topU3l_MwScheme (UFO v3.0.2), restricted by restrict_SMlimit_massless.dat.
+#
+# Why this exact process:
+#   The same SM-limit process as gg_to_ttx_smlimit with the coupling order
+#   written out. It is the control on MadGraph's default WEIGHTED bound: the
+#   model carries an effective ggH vertex at SMHLOOP = 1, whose g g > H > t t~
+#   diagram the default bound drops and an explicit QCD<=2 keeps. The two rows
+#   therefore differ by exactly that one diagram, which is what makes the
+#   default's effect a measured number rather than an inference.
+#
+# The model path is repo-relative to the vendored UFO; build.sh rewrites it to
+# the work-area copy it stages under output/models/, which is where the
+# vg_* restrict cards of validation/madgraph/cards/smeft/ are placed. Both
+# generators therefore prune vertices from the same card.
+#
+# `display interactions` prints the count MadGraph's own interaction splitting
+# arrives at (one interaction per coupling-order tuple, import_ufo.add_interaction)
+# into the build log, which is where extract_interactions.py reads it from.
+import model validation/ufo/SMEFTsim_topU3l_MwScheme_UFO-SMlimit_massless
+display interactions
+generate g g > t t~ QCD<=2
+output gg_to_ttx_smlimit_qcd2 -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

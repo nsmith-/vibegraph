@@ -122,6 +122,7 @@ impl RowFile {
     pub fn metric(&self) -> Result<String, String> {
         Ok(match self.category {
             Category::Diagrams => format!("{}/{}", self.u64_at("ours")?, self.u64_at("theirs")?),
+            Category::Amplitudes if self.compared_no_points()? => "no comparison".to_string(),
             Category::Amplitudes => format!("max rel {}", exp(self.worst_amplitude_deviation()?)),
             Category::Integrals => format!(
                 "pull {:+.2}, chi2/dof {}",
@@ -141,6 +142,7 @@ impl RowFile {
     pub fn short_metric(&self) -> Result<String, String> {
         Ok(match self.category {
             Category::Diagrams => format!("{}/{}", self.u64_at("ours")?, self.u64_at("theirs")?),
+            Category::Amplitudes if self.compared_no_points()? => "none".to_string(),
             Category::Amplitudes => exp(self.worst_amplitude_deviation()?),
             Category::Integrals => format!("pull {:+.2}", self.f64_at("pull")?),
             Category::Samples => format!("KS p {}", pval(self.f64_at("min_ks_p")?)),
@@ -157,6 +159,9 @@ impl RowFile {
                 self.u64_at("theirs")?,
                 self.u64_at("ours_all_subprocesses")?,
             ),
+            Category::Amplitudes if self.compared_no_points()? => {
+                "no phase-space point was compared".to_string()
+            }
             Category::Amplitudes => {
                 let per_diagram = match self.value.get("per_diagram").and_then(Value::as_f64) {
                     Some(v) => exp(v),
@@ -211,6 +216,16 @@ impl RowFile {
                 pval(self.f64_at("min_chi2_p")?),
             ),
         })
+    }
+
+    /// Whether an `amplitudes` measurement compared nothing at all.
+    ///
+    /// A deviation of zero over zero points is not agreement, and rendering it
+    /// as `max rel 0` would read as the strongest cell in the table. An
+    /// informational row whose model this crate cannot load yet is exactly that
+    /// case, so the two are distinguished by what the gate says it looked at.
+    fn compared_no_points(&self) -> Result<bool, String> {
+        Ok(self.u64_at("points_grid")? == 0 && self.u64_at("points_event")? == 0)
     }
 
     fn worst_amplitude_deviation(&self) -> Result<f64, String> {

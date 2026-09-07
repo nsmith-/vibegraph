@@ -34,19 +34,20 @@ UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALO
                                                           (multichannel VEGAS)
 ```
 
-The UFO loader is model-generic, but the supported feature surface is
-deliberately scoped to the Standard Model's: representations the SM does not
-use — color sextets, baryonic epsilon tensors, spin ≥ 3/2, Majorana fermions —
-are hard errors rather than silent gaps. Beam configurations other than
-unpolarized proton–proton or fixed-energy partonic collisions, and MadGraph's
-decay-chain process syntax, are likewise out of scope for now; the audit making
-every such boundary a hard error is part of the validation backlog. The
-remaining open validation items are detailed in the sections below and tracked
-in [`TODO.md`](TODO.md).
+The UFO loader is model-generic, and its Lorentz and colour surface reaches
+past the Standard Model's: SMEFTsim's `topU3l_MwScheme` model and two small
+models written here are enumerated, compiled and gated against MadGraph's own
+matrix elements. What is covered, what is refused as a hard error (spin ≥ 3/2,
+spin-2, Majorana fermions, squared-order constraints) and where each claim is
+measured is in the guide's [UFO chapter](https://nsmith-.github.io/vibegraph/guide/02-ufo.html#beyond-the-standard-model)
+and in [`validation/manifest.toml`](validation/manifest.toml). Beam
+configurations other than unpolarized proton–proton or fixed-energy partonic
+collisions, and MadGraph's decay-chain process syntax, are out of scope for
+now; open validation items are tracked in [`TODO.md`](TODO.md).
 
-**Future scope may include**: full support for arbitrary (BSM) UFO models —
-the boundary checklist already lives in [`TODO.md`](TODO.md) — plus LO
-MLM-style matching + merging, and NLO event generation.
+**Future scope may include**: the rest of the arbitrary-BSM-UFO surface — the
+boundary checklist already lives in [`TODO.md`](TODO.md) — plus LO MLM-style
+matching + merging, and NLO event generation.
 
 ## Quickstart
 
@@ -131,7 +132,9 @@ vibegraph check-events events.lhe
 ```
 
 A process card with no `import model` line gets the Standard Model compiled into
-the binary; `import model <name>` loads a UFO model directory instead.
+the binary; `import model <name>` loads a UFO model directory instead, and
+`import model <name>-<restrict>` reads `restrict_<restrict>.dat` from inside it
+the way MadGraph does.
 `events.lhe` is a standard Les Houches event file, and `check-events` re-reads it
 and checks momentum balance, mass shells, weight bounds and the `<init>`
 cross-references — a self-read, so it catches a damaged or truncated file but not
@@ -236,12 +239,16 @@ vibegraph integrate validation/madgraph/dy13_proc_card.dat \
 | Unweighted event output | ✅ Accept/reject over the frozen grids at fixed-energy **and** proton beams; per-event helicity and colour-flow selection following MadEvent's own rules, with the flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; a four-layer LHEF writer/reader that round-trips MadGraph's own event files byte-for-byte |
 
 Notable current boundaries (hard errors or tracked rows, not silent
-wrongness): color sextets / baryonic epsilon tensors, spin-3/2 and spin-2
-wavefunctions, Majorana fermions, loop-level UFOs (out of the LO charter),
-beam configurations beyond unpolarized proton–proton or fixed-energy partonic
-beams, and decay-chain process syntax. See the backlogs in
-[`TODO.md`](TODO.md) and the design notes in
-[`research/notes/`](research/notes/).
+wrongness): spin-3/2 and spin-2 wavefunctions, Majorana fermions and charge
+conjugation, loop-level UFOs (out of the LO charter), beam configurations
+beyond unpolarized proton–proton or fixed-energy partonic beams, and
+decay-chain process syntax. Colour sextets and baryonic epsilon tensors are
+*supported* — `Epsilon`/`EpsilonBar`, `K6`/`K6Bar`/`T6` and
+`ColorRep::Sextet`, each gated against MadGraph on a row of its own — with two
+corners still refused rather than guessed: a `T6` carrying adjoint indices, and
+any colour basis in which such a tensor survives to an external leg, which no
+Les Houches record can write. See the backlogs in [`TODO.md`](TODO.md) and the
+design notes in [`research/notes/`](research/notes/).
 
 ## Validation
 
