@@ -72,14 +72,16 @@ model directory because the model is ours: `restrict_dipole`, `restrict_tensor`,
 |---|---|
 | Provenance | Authored in this repository, 2026-09-06 |
 | Licence | `MIT OR Apache-2.0`, the repository's own |
-| Role | The colour atoms this crate's colour grammar refuses outright: the baryonic `Epsilon`/`EpsilonBar`, and the sextet Clebsch coefficients `K6`/`K6Bar` |
+| Role | The colour atoms no published model in reach isolates: the baryonic `Epsilon`/`EpsilonBar`, and the sextet Clebsch coefficients `K6`/`K6Bar`. Both are internal to a diagram here, so MadGraph reduces each pair to `T` products before it builds a colour matrix and the rows measure the reduction rules alone |
 
-Separate from `vibegraph_toy_UFO` on purpose. The colour grammar
-(`vibegraph-lib/src/ufo/color.rs`) parses `Identity`, `T`, `f` and `d` and
-nothing else, so a model containing an `Epsilon` or `K6` colour string is
-refused at *load*: putting these atoms in the same model as the Lorentz
-structures would make every toy row red for a reason that has nothing to do
-with the row.
+Separate from `vibegraph_toy_UFO` on purpose. When this model was authored the
+colour grammar (`vibegraph-lib/src/ufo/color.rs`) parsed `Identity`, `T`, `f`
+and `d` and nothing else, so a model containing an `Epsilon` or `K6` colour
+string was refused at *load* — and putting these atoms beside the Lorentz
+structures would have made every toy row red for a reason that had nothing to
+do with the row. The grammar reads all five atoms now, and both of this model's
+rows are enforced against MadGraph; the separation stays because it is what
+keeps a failure attributable to one structure family.
 
 Every field is a scalar — two distinct colour triplets `p3` and `r3`, a triplet
 diquark `d3`, a sextet diquark `d6` and a singlet `st`. Scalars rather than

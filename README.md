@@ -40,15 +40,26 @@ cross section is gated against a banked MadGraph run.
 [`validation/manifest.toml`](validation/manifest.toml) is the per-row record of
 which of those comparisons are enforced and which are measured and reported.
 
-Representations neither model uses — color sextets, baryonic epsilon tensors,
-spin ≥ 3/2, Majorana fermions — are hard errors rather than silent gaps, as are
-squared-order constraints (`NP^2==1`: a bound on an interference term, which
-this generator selects diagrams too early to express). Beam configurations
-other than unpolarized proton–proton or fixed-energy partonic collisions, and
-MadGraph's decay-chain process syntax, are likewise out of scope for now; the
-audit making every such boundary a hard error is part of the validation
-backlog. The remaining open validation items are detailed in the sections below
-and tracked in [`TODO.md`](TODO.md).
+Structures no published model in reach isolates get a UFO of their own. Two
+small models written here — under
+[`validation/ufo/`](validation/ufo/README.md), MIT/Apache like the rest of the
+repository — put one such structure in one vertex each, so a failure names the
+structure rather than a corner of a 900-vertex model: a literal `σ^{μν}` (which
+FeynRules expands away before it writes a model file), the bare `Identity` and
+`γ⁵` bilinears, the symmetric colour structure constant `d(a,b,c)`, the
+baryonic `ε` tensors and the sextet Clebsch coefficients. All six of their rows
+are enforced against MadGraph per diagram and per helicity too, and two real
+convention bugs surfaced there that no Standard-Model process could isolate.
+
+Representations neither the models nor the toys reach — spin ≥ 3/2, spin-2,
+Majorana fermions and charge conjugation — are hard errors rather than silent
+gaps, as are squared-order constraints (`NP^2==1`: a bound on an interference
+term, which this generator selects diagrams too early to express). Beam
+configurations other than unpolarized proton–proton or fixed-energy partonic
+collisions, and MadGraph's decay-chain process syntax, are likewise out of
+scope for now; the audit making every such boundary a hard error is part of the
+validation backlog. The remaining open validation items are detailed in the
+sections below and tracked in [`TODO.md`](TODO.md).
 
 **Future scope may include**: the rest of the arbitrary-BSM-UFO surface — the
 boundary checklist already lives in [`TODO.md`](TODO.md) — plus LO MLM-style
@@ -439,12 +450,16 @@ with status 130.
 | Unweighted event output | ✅ Accept/reject over the frozen grids at fixed-energy **and** proton beams; per-event helicity and colour-flow selection following MadEvent's own rules, with the flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; a four-layer LHEF writer/reader that round-trips MadGraph's own event files byte-for-byte |
 
 Notable current boundaries (hard errors or tracked rows, not silent
-wrongness): color sextets / baryonic epsilon tensors, spin-3/2 and spin-2
-wavefunctions, Majorana fermions, loop-level UFOs (out of the LO charter),
-beam configurations beyond unpolarized proton–proton or fixed-energy partonic
-beams, and decay-chain process syntax. See the backlogs in
-[`TODO.md`](TODO.md) and the design notes in
-[`research/notes/`](research/notes/).
+wrongness): spin-3/2 and spin-2 wavefunctions, Majorana fermions and charge
+conjugation, loop-level UFOs (out of the LO charter), beam configurations
+beyond unpolarized proton–proton or fixed-energy partonic beams, and
+decay-chain process syntax. Colour sextets and baryonic epsilon tensors are
+*supported* — `Epsilon`/`EpsilonBar`, `K6`/`K6Bar`/`T6` and
+`ColorRep::Sextet`, each gated against MadGraph on a row of its own — with two
+corners still refused rather than guessed: a `T6` carrying adjoint indices, and
+any colour basis in which such a tensor survives to an external leg, which no
+Les Houches record can write. See the backlogs in [`TODO.md`](TODO.md) and the
+design notes in [`research/notes/`](research/notes/).
 
 ## Validation
 
