@@ -399,6 +399,25 @@ disagreement fails the gate.
 **Blind spot, recorded.** A rounding both sides share is invisible here as it
 is to the amplitude gate; say so in the test's doc comment.
 
+**Landed B5 (`a8a19e0`, 2026-09-07).** `gen_couplings.py` banks, per
+`mg_amplitude` row (41), the couplings from MadGraph's Python `model_reader`
+and from the f2py module's `COMMON/COUPLINGS/` after `SETPARA`; hermetic
+`coupling_oracle.rs` compares the crate's couplings against both
+(`PYTHON_REL_TOL 1e-13`, `FORTRAN_REL_TOL 1e-14`, measured worst agreeing
+gaps 8.85e-15 crate-vs-Python on the SM, 3.0e-16 Fortran-vs-Python);
+`[[standalone]] couplings-mg`, `pixi run -e madgraph generate-couplings` /
+`validate-couplings`. Findings: (1) the `GC_303` writer rounding (1.197e-8)
+is on **two** rows, `ee_to_zh_smeft` and `wpwm_to_wpwmz_cw`, and nothing
+else on any row deviates Fortran-vs-Python; (2) **a crate-side parser
+precedence bug** — `ufo/expr.rs` binds unary `-` tighter than `**`, so
+`-ee**2/(2.*cw)` reads as `(-ee)**2/…` (sign flip plus a 2.4e-16 spurious
+imaginary part from `powc` on a negative base). Reach, machine-checked over
+every expression in every model the repo loads: SM `GC_7`/`GC_54` (Goldstone
+vertices, unreachable at tree level in unitary gauge) and SMEFTsim's `dWT`
+(reached only through the `T1` custom propagator). No banked cell affected;
+landed as `KNOWN_CRATE_DEFECTS`, required present so the entry cannot
+outlive its cause. **B7 below fixes it.**
+
 ### B6 — hygiene bundle (validation-dev; Sonnet is adequate)
 
 Four independent items, one commit each:
@@ -431,6 +450,30 @@ Four independent items, one commit each:
    for_the_declared_reason` names `gg_to_gg_cg` as declined for exactly this
    reason — promote it into the replay inventory in the same change, since
    the blocker lifting is what that test exists to notice.
+
+### B7 — UFO expression precedence: unary minus under `**` (feature-dev; added after B5)
+
+**Defect** (B5's finding). `vibegraph-lib/src/ufo/expr.rs`'s PEG grammar has
+`power = unary "**" power / unary` with `unary = "-" primary / …`, so unary
+minus binds tighter than exponentiation. Python — the language UFO
+expressions are written in — has `factor: ('+'|'-') factor | power` and
+`power: primary ['**' factor]`: `-a**2` is `-(a**2)`, and the exponent itself
+is a `factor`, so `a**-b` parses. Three expressions in the repo's models hit
+it (SM `GC_7`, `GC_54`; SMEFTsim `dWT`), none reachable by a banked row.
+
+**Fix.** Adopt Python's grammar: `unary = "-" unary | "+" unary | power`,
+`power = primary "**" unary / primary`, with `multiplicative` calling
+`unary`. Pin with unit tests on `-a**2` (= `-(a²)`), `(-a)**2`, `a**-b`,
+`-a**-b`, `2**3**2` (right-associative, 512), and the three model
+expressions evaluated against Python's values from the banked coupling
+tables.
+
+**Falsifier.** `coupling_oracle`'s `KNOWN_CRATE_DEFECTS` entries for `GC_7`
+and `GC_54` must stop deviating — the gate is built to fail when a listed
+defect disappears, so delete both entries in the same commit and the test
+must pass with the list empty. Everything else in the banked layer is
+bit-identical: `pixi run --skip-deps validate` cell-for-cell against the
+sprint branch, and `amplitude_oracle` byte-identical.
 
 ## 5. Wave 2
 
