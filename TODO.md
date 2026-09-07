@@ -5,36 +5,38 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: **`ufo-lorentz` feature sprint in progress** (note 35;
-waves 1–4 landed 2026-09-05/06 and merged — R1 `bff5aa9`, L1 `00858a8`, V1
+**Current position**: **`ufo-lorentz` feature sprint — waves 1–5 landed
+and merged, close-out Z pending** (note 35; R1 `bff5aa9`, L1 `00858a8`, V1
 `2a34b9d`, L2 `5f319a9`, E1 `069ffad`, C1 `331646e`, E2 `733e33d`, F1
-`c64a939`, R4 `575c1b6`, C `412bc68`, T1 `a9d0f35`; landing records in the
-note's session paragraphs, row-table corrections in its §5). Where that
-leaves it: **thirteen SMEFTsim rows enforced against MadGraph at the
-amplitude level and the capstone `e+ e- > t t~ NP<=1` cross section gated**
-(σ 2.222986 ± 6.6e-4 vs 2.2223 ± 5.3e-4 pb, pull +0.82, seven seeds within
-±1.22, ladder flat over 16×; the SM limit of the same process is 4.04× lower,
-so the gate sees the SMEFT content), plus the user path
+`c64a939`, R4 `575c1b6`, C `412bc68`, T1 `a9d0f35`, T2 `87e79ca`, T3
+`1dbeb3d`/`fc88d2c`, V2 `6304216`/`4826d1c`/`9519e9f`; landing records in the
+note's session paragraphs). Where that leaves it: **thirteen SMEFTsim rows
+enforced against MadGraph at the amplitude level, the capstone `e+ e- > t t~
+NP<=1` cross section gated** (pull +0.82, seven seeds within ±1.22, ladder
+flat over 16×; the SM limit of the same process is 4.04× lower), the user path
 (`vibegraph integrate --ufo-dir validation/ufo` with
 `import model SMEFTsim_topU3l_MwScheme_UFO-massless`, model identity in the
-artifact, `NP^2==1` a hard error instead of a silently different process).
-Wave 4 also fixed a parameter-provenance bug the capstone path exposed: a
-restrict card's non-zero values now become the model's defaults as in
-MadGraph, so a card-less run of a restricted model is no longer silently its
-SM limit (421 externals over 13 rows pinned against MadGraph's own generated
-cards). Six **toy-model rows are banked `info`** for wave 5 with their
-disagreements already localized: two wait on the literal `Sigma` kernel
-(note ALOHA's `Sigma` is *half* the textbook σ^{μν}), two on the colour
-grammar (`Epsilon`, `K6Bar`), one (`d(1,2,3)`) is exercised and **wrong by a
-single sign in the flow assembly that both colour oracles are blind to**, and
-one (`Identity`/`Gamma5` Yukawas) is blocked by a channel-grouping gap
-(MadGraph groups four scalar exchanges on one propagator into one `AMP2`
-accumulator; we make four). Next per the note's §8: wave 5 — T2 (`Sigma`),
-T3 (colour), and a hygiene session for the banked-layer findings below —
-then the close-out. The three rows that stay `info` on the SMEFTsim ladder
-keep their localized disagreements: one |M|² point on `e+ e- > W+ W-` at
-2.08e-12, a tenth-digit derived-parameter spread on `e+ e- > Z h`, and the
-five-vector stretch row. Two of §5's premises fell on contact:
+artifact, `NP^2==1` a hard error), and **all six toy-model rows gated**: the
+literal `Sigma` in a dipole and a tensor⊗tensor contact (ALOHA's `Sigma` is
+half the textbook σ^{μν} — measured, mutation-pinned), bare `Identity` and
+`Gamma5` (after MadGraph's `AMP2` channel-grouping rule `IdentifyConfigTag` was
+ported), `d(1,2,3)`, baryonic colour `Epsilon`, and the sextet `K6` — the
+colour engine now carries `Epsilon/EpsilonBar/K6/K6Bar/T6` and
+`ColorRep::Sextet`, with the finding that the all-incoming crossing exchanges
+`Epsilon ↔ EpsilonBar` and `K6 ↔ K6Bar`. Two real bugs surfaced by the toy
+rows and fixed: a restrict card's non-zero values were not the model's defaults
+(a card-less run of a restricted model was silently its SM limit), and the
+fermion-line reversal sign charged a `−1` per internal propagator regardless of
+whether the line's vertices carry a Dirac matrix — `+1` for
+`Identity`/`Gamma5`/bare projectors, which no SM line had ever isolated.
+Banked-layer hygiene landed too: five corrupt banked event files regenerated
+with no reference moved, all nineteen model-bearing runs declared in the
+`validate_scales` inventories (42 runs, 1.14 M scale comparisons), and the
+`AMP2` grouping now derived rather than exempted on nine rows. The three
+SMEFTsim rows that stay `info` keep their localized disagreements: one |M|²
+point on `e+ e- > W+ W-` at 2.08e-12, a tenth-digit derived-parameter spread
+on `e+ e- > Z h`, and the five-vector stretch row. **Next**: the close-out
+session Z (below). Two of §5's premises fell on contact:
 the cyclic tensor⊗tensor row needs a massive lepton (`tata_to_ttx_tensor4f`
 replaces it) and the shipped `restrict_massless` card zeroes every CP-odd
 coefficient, so the capstone reaches neither an `Epsilon` nor a tensor
@@ -324,8 +326,33 @@ One line each; the note is the full record. Earlier sprints
   over 1088 sums) is recorded in `abedb81`'s tests if the tolerance is ever
   revisited.
 
-- **Banked-layer findings from the `ufo-lorentz` wave-4 sessions (2026-09-06)**,
-  none caused by them, all for a hygiene session: (a) V1's
+- **Close-out Z of `ufo-lorentz`** (note 35 §8): rewrite the `non-sm-ufo`
+  checklist and README scope from measurement (sextets/ε are no longer refused;
+  spin-2, spin-3/2, Majorana/`C` remain the descoped set); promote the two
+  colour-toy runs out of `validate_scales`' declined set now that T3 loads
+  their model; the `sigma_chained` mutation pin T2 left (force it false,
+  rebuild, confirm `ll_to_qqx_toy_dipole` fails); reconcile the per-model op
+  census allowlists; `p3r3_to_p3r3_toy_epsilon`/`_sextet`'s `AQCDUP` finding
+  (V2: `AQCDUP` larger at a larger `SCALUP`, the only banked 2→2 whose
+  clustering reads μR off a different vertex than μF); the `extended-validation`
+  clippy debt CI's clippy step never sees (`validate_scales.rs` and siblings);
+  the refdata-7 bundle cut carrying the 16 SMEFTsim + 6 toy rows (`bundled =
+  false` today).
+- **Move `AmplitudeEvaluator` onto MadGraph's channel set** (from V2, note 35
+  §V2): `config_groups` implements MadGraph's `IdentifyConfigTag` and the
+  oracle asserts it, but the integrator still runs one channel per
+  config-carrying diagram and `eval_amp2` sums `Σ|amp|²` where MadGraph's
+  merged accumulator is the coherent `|Σ AMP|²` (correct so far only because
+  every configuration held one amplitude). Wiring it changes the channel set
+  on nine gated-σ rows including the capstone, so it is a dedicated session:
+  coherent accumulation, the channel move, re-gating the nine σ ladders,
+  re-pinning the capstone's 36 channels in `cli_ufo_model.rs`. Until then the
+  per-event configuration draw and `ICOLAMP` mask are finer than MadGraph's.
+- **`wpwm_to_wpwmz_cw` needs an `MG_DIAGRAM_ORDER` entry** before its amplitude
+  comparison can start (derived grouping starts at diagram 62 vs MadGraph's 2).
+- **Banked-layer findings from the `ufo-lorentz` wave-4 sessions (2026-09-06)** —
+  (a)–(c) **resolved by V2 (2026-09-07, note 35 §V2)**, (d) was a fermion-line
+  sign, not colour (T3), (e)–(f) stand: (a) V1's
   `ee_to_mumu_smlimit` run's `Events/run_01/unweighted_events.lhe.gz` is
   **corrupt** (garbled Fortran exponent fields at line 14793, 2743 events) and
   fails `validate_lhef`/`validate_alphas` — re-run the row or drop its sample

@@ -4,13 +4,15 @@
 `00858a8`, V1 `2a34b9d`/`92db0ad`), wave 2 landed 2026-09-06 (L2 `5f319a9`,
 E1 `069ffad`/`49146e6`), wave 3 landed 2026-09-06 (C1 `331646e`, E2
 `733e33d`, F1 `c64a939`, R4 `575c1b6`/`9604089`), wave 4 landed 2026-09-06
-(C `412bc68`, T1 `a9d0f35`), all merged. Thirteen SMEFTsim rows are enforced
-against MadGraph at the amplitude level and **the capstone `e+ e- > t t~
-NP<=1` cross section is gated** (pull +0.82, rel +3.1e-4); only
-`ee_to_wpwm_cw` (one point), `ee_to_zh_smeft` (derived parameters) and the
-five-vector stretch row remain informational. Six toy-model rows are banked
-`info` for wave 5 (T2 `Sigma`, T3 colour), each with its disagreement already
-localized (§6 T1's record).
+(C `412bc68`, T1 `a9d0f35`), wave 5 landed 2026-09-07 (T2 `87e79ca`, T3
+`1dbeb3d`/`fc88d2c`, V2 `6304216`/`4826d1c`/`9519e9f`), all merged. Thirteen
+SMEFTsim rows are enforced against MadGraph at the amplitude level, **the
+capstone `e+ e- > t t~ NP<=1` cross section is gated** (pull +0.82, rel
++3.1e-4), and **all six toy-model rows are gated** — literal `Sigma` (dipole
+and tensor⊗tensor), bare `Identity`/`Gamma5`, `d(1,2,3)`, baryonic `Epsilon`,
+sextet `K6`. Only `ee_to_wpwm_cw` (one point), `ee_to_zh_smeft` (derived
+parameters) and the five-vector stretch row remain informational. Remaining:
+the close-out session Z.
 Per-session landing records are appended to the session paragraphs below
 ("Landed:"); §5 carries the corrections to the row table; §3.5 records the
 two sessions added mid-sprint (C1 colour, E2 contact sign).**
@@ -1080,6 +1082,84 @@ is not ported (a no-op while `K6`/`K6Bar` reduce away; needed for an external
 sextet). Note 16's "sextets out of scope" and the `non-sm-ufo` checklist's
 sextet/ε entries are superseded by this record.
 
+### V2 — banked-layer hygiene (validation-dev; added in wave 5)
+
+Three items from the wave-4 findings: the corrupt SM-limit event file, the
+`validate_scales` inventories, and MadGraph's `AMP2` channel grouping.
+
+**Landed (`6304216`, `4826d1c`, `9519e9f`, 2026-09-07; the session was cut
+off by a container restart after its final gate ran, so this record is
+reconstructed from its commits, logs and the regenerated work area.)**
+**Corrupt event files**: not one but **five** of the banked runs had damaged
+`unweighted_events.lhe.gz` — `ee_to_mumu_smlimit` (banner said 10 000 events,
+file held 2743 with garbled numeric fields; no ANSI escapes, so not V1's banner
+problem — consistent with a write cut short, most plausibly the disk pressure
+that session ran under), `ee_to_zh_smeft`, `gg_to_gg_cg`, `uux_to_ttx_4f`,
+`wpwm_to_wpwmz_cw`. All five were re-launched through the pinned MadGraph
+(`v2-regen/regen.sh`, originals kept under `v2-regen/corrupt-originals/`),
+each now 10 000 well-formed events with zero escapes; **no reference moved**:
+`ee_to_zh_smeft` re-integrates to 0.14109 ± 1.139e-5 pb, the banked value
+digit for digit, and the SM-limit row to 0.420956 pb against the corrupt run's
+own 0.42096. `validate_lhef` is green on this host; `validate_alphas`' two
+remaining failures are the PDF class (they load the set for the grid α_s),
+not the event files. **Inventories**: the nineteen `model`-bearing runs are
+classified by what their card and model say — fifteen replay through the
+clustering and join `CLUSTERED_RUNS` (the gate now covers 42 runs, 420 000
+events, 1 140 000 scale comparisons, all inside the printing budget;
+`channels_for` takes the row's own model), four decline for a measured reason
+(`declined_runs_decline_for_the_declared_reason` fails the gate if a blocker
+lifts): `gg_to_gg_cg` carries `dynamical_scale_choice = 3` (SMEFTsim's `cG`
+vertex puts `MLM` in the process limitations and `banner.py` forces H_T/2 —
+the first banked run that could enforce a closed form); `wpwm_to_wpwmz_cw` is
+MadGraph's effective-vector-approximation branch (`nhel = 1`, a different
+estimator; its run card is now a declared refusal in `REFUSED_RUN_CARDS`); the
+two colour-toy rows were refused at load when the session ran — **T3 has since
+lifted that, so their promotion out of the declined set is Z's first check**.
+The four `vibegraph_toy_UFO` runs declare no `aS`, so `AQCDUP` is one constant
+over all events, asserted as such; `validate_alphas` reads the strong coupling
+MadGraph actually ran (`setrun.f`'s 1.3799843265950287 at two loops, from the
+run logs) rather than skipping, and sixteen runs join
+`SCALUP_IS_THE_RENORMALISATION_SCALE` at worst 0.475 of budget. **A finding**:
+`p3r3_to_p3r3_toy_epsilon`/`_sextet` miss that oracle on all 10 000 events by
+13 514× the budget with `AQCDUP` *larger* at a *larger* `SCALUP` (0.4333599 at
+251.30 GeV vs 0.4333524 at 250), which no running coupling does — they are the
+only banked 2→2 whose clustering reads μR off a different vertex than μF, so
+the `SCALUP` field is not the scale the coupling was evaluated at (validation
+backlog). **Channel grouping**: `config_groups` implements `IdentifyConfigTag`
+(`madgraph/iolibs/group_subprocs.py`), the rule behind the `config_map` branch
+of `get_amp2_lines` — an external leg is its leg number, an internal line the
+propagating particle's `(colour, mass, width)`, the interaction at each vertex
+looked up and discarded, with MadGraph's Z/H-as-photon substitution on
+spacelike lines — so two diagrams differing only in which interaction joins
+the same particles share one accumulator; `amplitude_oracle` now derives the
+partition and asserts it against the generated `matrix1.f` as sets of graph
+indices (positional size comparison had been comparing two orderings), so nine
+rows previously exempted are reproduced from their diagrams
+(`ud_to_epemud_qcd0`'s `[[0,2,4,6],[1,3,5,7],…]` among them) and merged
+accumulators compared as MadGraph forms them. The integrator's own channel set
+is **deliberately untouched** (one per config-carrying diagram, finer wherever
+MadGraph merges): wiring the rule into `compile()` first showed it changes the
+multichannel channel set on nine rows with gated σ (`ee_to_ee`,
+`ud_to_epemud_qcd0`, `ee_to_ttx_smeft`, `ee_to_mumu_4f`, `ee_to_ttx_dipole`,
+`gg_to_gg_cg`, `bbx_to_h_identity`, `gg_to_h_cpeven`, `gg_to_h_cpodd`), and
+that `eval_amp2` accumulates `Σ|amp|²` where MadGraph's merged accumulator is
+the **coherent** `|Σ AMP|²` — correct until now only because every
+configuration held one amplitude. Both are a session of their own (make
+`eval_amp2` coherent within a configuration, move onto MadGraph's channel set,
+re-gate the nine σ ladders, re-pin the capstone's 36 channels in
+`cli_ufo_model.rs`); until then the per-event configuration draw and `ICOLAMP`
+mask are finer than MadGraph's — a divergence now measured rather than assumed.
+`ll_to_qqx_toy_yukawa` gated: bare `Identity` and `Gamma5` at |M|² 7.06e-14,
+per-diagram 1.33e-15, `G = +i`, `|G|−1 = 0`. Left for Z: `wpwm_to_wpwmz_cw`
+needs an `MG_DIAGRAM_ORDER` entry (its derived grouping starts at diagram 62
+where MadGraph's starts at 2 — same multiset, shifted indices) before its
+amplitude comparison can start; `IdentityAmp`/`Gamma5Amp` sit on both
+`KNOWN_UNCOVERED` lists as unreached although the Yukawa row now reaches them —
+a toy-model census instance is the honest fix; the closing set-equality in
+`banked_events_reproduce_aqcdup` is unconfirmed on this host (the sweep panics
+on the PDF set at `pp_to_bb` before reaching it; per-row content was measured
+with a probe).
+
 ## 7. Decisions (user, 2026-09-05)
 
 1. **D1 — vendor the UFO, not a submodule (decided).** The planning commit
@@ -1117,7 +1197,9 @@ Wave 2:  L2 (SM-limit gate; needs L1+V1)  ∥  E1 (tree-shaped primitives; needs
 Wave 3:  F1 (four-fermion; needs L1, V1)  →  R4 (tensor slot; needs R1, E1, F1)   ← F1 ∥ C1 ∥ E2, then R4, landed 2026-09-06
 Wave 4:  T1 (toy oracle; needs V1's pipeline)  ∥  C (capstone; needs E1, F1, R4)   ← landed 2026-09-06
 Wave 5:  T2 (Sigma; needs R4, T1)  ∥  T3 (colour; needs T1)  ∥  V2 (banked-layer hygiene: the
-         corrupt SM-limit LHE, `declared_runs()` inventories, the `[1,4]` channel grouping)  →  Z (close-out)
+         corrupt SM-limit LHE, `declared_runs()` inventories, the `[1,4]` channel grouping)   ← landed 2026-09-07
+Z (close-out): TODO/README/checklist rewritten from measurement; the T3-lifted colour-toy runs
+         promoted in `validate_scales`; the `sigma_chained` mutation pin; per-model census reconciled
 ```
 
 - Three sessions open the sprint in parallel and touch disjoint files
