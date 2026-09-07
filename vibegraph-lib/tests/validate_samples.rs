@@ -19,6 +19,13 @@
 //!   reaches. At fixed beams they are constants of the process, and the
 //!   comparison is an equality at the banked file's own printed precision rather
 //!   than a p-value — see [`samples::beam_columns`](vibegraph::validation::samples::beam_columns).
+//! * The **reported scales**. `SCALUP` and `AQCDUP` say what the matrix element
+//!   was evaluated at, and no shape or cross section reaches them: a run whose
+//!   records name a scale nothing computed agrees on every other column here.
+//!   The two fields are filled by
+//!   [`FixedBeamIntegrand::record_scales`](vibegraph::hadronic::FixedBeamIntegrand::record_scales) —
+//!   the shipped generator's own call — so the column measures the record the
+//!   binary would write, not a second assembly built for the comparison.
 //!
 //! # How the two samples are made comparable
 //!
@@ -83,13 +90,13 @@ use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
 use vibegraph::unweight::Unweighter;
 use vibegraph::validation::samples::{
-    compare, labelling_for, BeamKind, Chi2Column, EventSample, Spectrum,
+    compare, labelling_for, Chi2Column, EventSample, FieldColumn, FieldKind, Spectrum,
 };
 
 mod common;
 
 use common::report::{
-    BeamCell, CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample, Stopwatch,
+    CategoryCount, Chi2Cell, FieldCell, KsCell, SamplesRow, SeedSample, Stopwatch,
 };
 
 /// α-adaptation budget for the multichannel combiner, matching the σ gate's, so
@@ -458,6 +465,48 @@ const ROWS: &[Row] = &[
     },
 ];
 
+/// The rows whose matrix element does not move with the strong coupling.
+///
+/// `use_running_coupling` compiles no per-event scale prescription there — with
+/// no parton densities to read and no `αs` in the amplitude, neither scale it
+/// would produce has a consumer — so the record falls back to the run card's own
+/// factorisation scale and reports no strong coupling at all. MadGraph runs
+/// `setclscales` regardless of what its matrix element depends on, so its banked
+/// records on exactly these rows carry a clustered `SCALUP` and `αs(μR)`, and
+/// the two records disagree on both scale columns while every distribution and
+/// every cross section agrees. That is what makes the columns informational
+/// here.
+///
+/// Spelled out rather than read off the integrand, and asserted against it: a
+/// row that stopped installing a prescription it used to install would otherwise
+/// turn its own gate informational with nobody deciding it had.
+const NO_SCALE_PRESCRIPTION: &[&str] = &[
+    "ee_to_mumu",
+    "ee_to_ee",
+    "ee_to_ttx",
+    "ee_to_wpwm",
+    "ee_to_zh",
+    "uux_to_mumu",
+    "ee_to_mumua",
+    "ee_to_tatah",
+    "ee_to_mumu_tata_qcd0",
+    "ud_to_epemud_qcd0",
+    "ee_to_mumu_smlimit",
+    "ee_to_ttx_smlimit",
+    "ee_to_wpwm_cw",
+    "ee_to_ttx_dipole",
+    "ee_to_zh_smeft",
+    "ee_to_mumu_4f",
+    "tata_to_ttx_tensor4f",
+    "ee_to_ttx_smeft",
+    "ll_to_qqx_toy_dipole",
+    "ll_to_qqx_toy_tensor",
+    "ll_to_qqx_toy_yukawa",
+    "qqx_to_o8o8_toy_dcolor",
+    "p3r3_to_p3r3_toy_epsilon",
+    "p3r3_to_p3r3_toy_sextet",
+];
+
 /// The four `l+ l- j` partonic rows: the ones whose run cards leave both scales
 /// free at `dynamical_scale_choice = -1`.
 const LLJ_PARTON_KEYS: [&str; 4] = [
@@ -564,12 +613,21 @@ fn with_integrand<R>(
 
 /// Generate one seed's worth of events off frozen grids.
 ///
-/// The header's scalar fields play no part in any observable here, so they are
-/// left as NaN rather than filled with a plausible-looking number: this record is
-/// a view of an event's legs, not a file's event.
+/// `SCALUP` and `AQCDUP` come from
+/// [`FixedBeamIntegrand::record_scales`], which is the call the shipped
+/// generator makes, so the scale columns compare the record the binary would
+/// write. `AQEDUP` is left NaN and compared by nothing: no cross section here
+/// runs the electromagnetic coupling, so the field is a parameter-card constant
+/// on both sides and would compare the parameter card to itself.
+///
+/// A point whose scale the prescription refuses stops the row rather than being
+/// dropped: `use_running_coupling` already resolved the scale at setup, so a
+/// refusal here is a surprise, and quietly skipping the point would bias the
+/// sample being compared.
 fn generate(
     integ: &FixedBeamIntegrand,
     records: &[SubprocessRecord],
+    run_card: &RunCard,
     uw: &mut Unweighter,
     seed: u64,
 ) -> EventSample {
@@ -596,12 +654,15 @@ fn generate(
             [beams[1].e(), beams[1].px(), beams[1].py(), beams[1].pz()],
         ];
         external.extend(momenta.iter().map(|p| [p.e(), p.px(), p.py(), p.pz()]));
+        let (scale, alpha_qcd) = integ
+            .record_scales(&momenta, point.channel, &point.u, run_card)
+            .expect("an accepted point's scales are the ones its own weight was taken at");
         let header = EventHeader {
             process_id: 1,
             weight: point.weight,
-            scale: f64::NAN,
+            scale,
             alpha_qed: f64::NAN,
-            alpha_qcd: f64::NAN,
+            alpha_qcd,
         };
         let event = records[selection.subprocess]
             .event(&external, &selection.helicity, selection.flow, header)
@@ -620,11 +681,31 @@ fn generate(
 }
 
 /// What one seed's comparison found that disagrees, split by which mode governs
-/// it: the outgoing columns and the incoming legs carry separate modes.
+/// it: the outgoing columns, the incoming legs and the reported scales each
+/// carry their own.
 #[derive(Default)]
 struct Disagreements {
     columns: Vec<String>,
     beams: Vec<String>,
+    scales: Vec<String>,
+}
+
+/// One field family's columns as the per-seed log prints them.
+fn field_lines(columns: &[FieldColumn]) -> String {
+    columns
+        .iter()
+        .map(|cell| format!("             {}\n", cell.describe()))
+        .collect()
+}
+
+/// The columns of one field family that fall outside what the banked record
+/// allows, under the row and seed that measured them.
+fn field_disagreements(key: &str, seed: u64, what: &str, columns: &[FieldColumn]) -> Vec<String> {
+    columns
+        .iter()
+        .filter_map(|cell| cell.disagreement(what, P_FLOOR))
+        .map(|line| format!("[{key}] seed {seed:#010x} {line}"))
+        .collect()
 }
 
 /// Compare one generated sample against MadGraph's, filling in a report row's
@@ -663,22 +744,8 @@ fn compare_seed(
         );
     }
 
-    let mut beam_lines = String::new();
-    for cell in &found.beams {
-        match cell.kind {
-            BeamKind::Constant {
-                theirs, ours, tol, ..
-            } => beam_lines.push_str(&format!(
-                "             {:<9} {ours:.11e} against {theirs:.11e} (tol {tol:.2e})\n",
-                cell.field
-            )),
-            BeamKind::Distribution { d, p } => beam_lines.push_str(&format!(
-                "             {:<9} KS p {p:.3e} (D {d:.4})\n",
-                cell.field
-            )),
-        }
-    }
-    eprint!("{beam_lines}");
+    eprint!("{}", field_lines(&found.beams));
+    eprint!("{}", field_lines(&found.scales));
 
     let mut below = Disagreements::default();
     for cell in &found.ks {
@@ -698,28 +765,8 @@ fn compare_seed(
             ));
         }
     }
-    for cell in &found.beams {
-        if cell.agrees(P_FLOOR) {
-            continue;
-        }
-        below.beams.push(match cell.kind {
-            BeamKind::Constant {
-                theirs,
-                ours,
-                max_dev,
-                tol,
-            } => format!(
-                "[{key}] seed {seed:#010x} incoming {} is {ours:.11e} against the record's \
-                 {theirs:.11e}: {max_dev:.4e} outside the {tol:.2e} its printing allows",
-                cell.field
-            ),
-            BeamKind::Distribution { d, p } => format!(
-                "[{key}] seed {seed:#010x} incoming {} KS p {p:.3e} (D {d:.4}) below the \
-                 {P_FLOOR:.0e} floor",
-                cell.field
-            ),
-        });
-    }
+    below.beams = field_disagreements(key, seed, "incoming", &found.beams);
+    below.scales = field_disagreements(key, seed, "reported", &found.scales);
 
     row.constant_observables = found.constant.clone();
     row.single_category = found
@@ -741,7 +788,8 @@ fn compare_seed(
             })
             .collect(),
         chi2: found.chi2.iter().map(chi2_cell).collect(),
-        beams: found.beams.iter().map(BeamCell::of).collect(),
+        beams: found.beams.iter().map(FieldCell::of).collect(),
+        scales: found.scales.iter().map(FieldCell::of).collect(),
     });
     below
 }
@@ -777,6 +825,9 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
     // Which rows' incoming legs departed from the banked record at all, asserted
     // empty at the end.
     let mut beams_disagreed: BTreeSet<&'static str> = BTreeSet::new();
+    // Rows whose integrand disagrees with `NO_SCALE_PRESCRIPTION` about whether a
+    // per-event scale prescription was installed at all.
+    let mut prescription_surprises: Vec<String> = Vec::new();
     for row in ROWS {
         let clock = Stopwatch::start();
         let mg = banked_sample(row.key);
@@ -786,7 +837,7 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
             mg.len(),
             mg.sigma_pb
         );
-        with_integrand(row, |integ, records, _| {
+        with_integrand(row, |integ, records, run_card| {
             let (channels, _) = integ.adapt_grids(row.neval, row.niter, SEED);
             let mut uw = Unweighter::scan(
                 integ,
@@ -796,13 +847,29 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
             // The incoming legs are enforced wherever the outgoing ones are: a row
             // is informational on all of its columns or on none of them.
             let beams = row.mode;
-            let mut report = SamplesRow::new(row.key, row.process, row.mode).with_beam_mode(beams);
+            // The reported scales are enforced wherever a prescription computed
+            // them, and measured where the record falls back to the run card.
+            let installed = integ.scale_source().is_some();
+            let declared = !NO_SCALE_PRESCRIPTION.contains(&row.key);
+            if installed != declared {
+                prescription_surprises.push(format!(
+                    "[{}] installs {} per-event scale prescription; NO_SCALE_PRESCRIPTION says \
+                     it installs {}",
+                    row.key,
+                    if installed { "a" } else { "no" },
+                    if declared { "one" } else { "none" },
+                ));
+            }
+            let scales = if installed { row.mode } else { "info" };
+            let mut report = SamplesRow::new(row.key, row.process, row.mode)
+                .with_beam_mode(beams)
+                .with_scale_mode(scales);
             report.p_floor = P_FLOOR;
             report.mg_events = mg.len();
             report.sigma_mg_pb = mg.sigma_pb;
             let mut labelling = None;
             for &seed in &GEN_SEEDS {
-                let ours = generate(integ, records, &mut uw, seed);
+                let ours = generate(integ, records, run_card, &mut uw, seed);
                 if ours.len() < EVENTS_PER_SEED {
                     failures.push(format!(
                         "[{}] seed {seed:#010x} produced {} of {EVENTS_PER_SEED} events",
@@ -819,7 +886,11 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                 if !found.beams.is_empty() {
                     beams_disagreed.insert(row.key);
                 }
-                for (mode, what) in [(row.mode, found.columns), (beams, found.beams)] {
+                for (mode, what) in [
+                    (row.mode, found.columns),
+                    (beams, found.beams),
+                    (scales, found.scales),
+                ] {
                     if mode == "gate" {
                         failures.extend(what);
                     } else {
@@ -839,10 +910,20 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                 report.min_beam_ks_p,
                 GEN_SEEDS.len()
             );
+            eprintln!(
+                "  worst reported {} {:.4e} against a {:.2e} tolerance (min scale KS p {:.3e}), \
+                 {scales}",
+                report.worst_scale_field,
+                report.max_scale_dev,
+                report.scale_tol,
+                report.min_scale_ks_p,
+            );
             report.status = match row.mode {
                 "gate" => {
                     let outgoing = report.min_ks_p >= P_FLOOR && report.min_chi2_p >= P_FLOOR;
-                    if outgoing && (beams != "gate" || report.beams_agree(P_FLOOR)) {
+                    let legs = beams != "gate" || report.beams_agree(P_FLOOR);
+                    let reported = scales != "gate" || report.scales_agree(P_FLOOR);
+                    if outgoing && legs && reported {
                         "pass"
                     } else {
                         "fail"
@@ -867,6 +948,12 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
     assert!(
         beams_disagreed.is_empty(),
         "these rows' incoming legs depart from MadGraph's record: {beams_disagreed:?}"
+    );
+    // Which rows compile a per-event scale prescription decides which rows can
+    // gate on the scales they report, so the two must not drift apart silently.
+    assert!(
+        prescription_surprises.is_empty(),
+        "scale-prescription declarations out of date:\n{prescription_surprises:#?}"
     );
     assert!(failures.is_empty(), "samples gate failures:\n{failures:#?}");
 }
@@ -901,7 +988,7 @@ fn probe_samples_p_floor_headroom() {
     let mut five: Vec<(f64, String)> = Vec::new();
     for row in ROWS {
         let mg = banked_sample(row.key);
-        with_integrand(row, |integ, records, _| {
+        with_integrand(row, |integ, records, run_card| {
             let (channels, _) = integ.adapt_grids(row.neval, row.niter, SEED);
             let mut uw = Unweighter::scan(
                 integ,
@@ -912,7 +999,7 @@ fn probe_samples_p_floor_headroom() {
             let mut row_three = (f64::INFINITY, String::new());
             let mut row_five = (f64::INFINITY, String::new());
             for (i, &seed) in HEADROOM_GEN_SEEDS.iter().enumerate() {
-                let ours = generate(integ, records, &mut uw, seed);
+                let ours = generate(integ, records, run_card, &mut uw, seed);
                 let l = *labelling.get_or_insert_with(|| labelling_for(&ours, &mg));
                 let found = compare(&ours, &mg, l);
                 let mut worst = (f64::INFINITY, String::new());
@@ -1025,7 +1112,7 @@ fn the_gate_rejects_a_sample_from_a_different_process() {
         let worst = found
             .worst_beam_constant()
             .expect("both runs are at fixed beams");
-        let BeamKind::Constant {
+        let FieldKind::Constant {
             theirs,
             ours,
             max_dev,
@@ -1213,7 +1300,7 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
         }
     }
 
-    with_integrand(row, |integ, records, _| {
+    with_integrand(row, |integ, records, run_card| {
         // 1. The production sampler, pooled over the same seeds the gate uses.
         let (channels, _) = integ.adapt_grids(row.neval, row.niter, SEED);
         let mut uw = Unweighter::scan(
@@ -1225,7 +1312,7 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
         let mut ours_tata = Spectrum::new(MLL_EDGES);
         let mut sigma_sum = 0.0;
         for &seed in &GEN_SEEDS {
-            let sample = generate(integ, records, &mut uw, seed);
+            let sample = generate(integ, records, run_card, &mut uw, seed);
             sigma_sum += sample.sigma_pb;
             for (event, &w) in sample.events.iter().zip(&sample.weights) {
                 let event = canonical(event, Labelling::Fine);

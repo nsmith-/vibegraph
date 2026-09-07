@@ -40,6 +40,7 @@ use crate::diagrams::diagram::Diagram;
 use crate::diagrams::{DiagramError, DiagramSet};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
+use crate::lhef::build::scalup;
 use crate::pdf::grid::AlphaSInfo;
 use crate::phasespace::beams;
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
@@ -1929,6 +1930,39 @@ impl<'a> FixedBeamIntegrand<'a> {
             momenta,
             self.scale_channel(self.scratch(), &ext, channel, scale_u),
         )
+    }
+
+    /// The `SCALUP` and `AQCDUP` a record assembled from the point drawn at `u`
+    /// in `channel` reports.
+    ///
+    /// The scales are the ones the matrix element itself ran at, so the record
+    /// describes the run rather than a second prescription compiled off the same
+    /// card. Where nothing in the matrix element moves with `αs` no prescription
+    /// was installed at all and neither scale had a consumer; the record then
+    /// falls back to the run card's own factorisation scale, and reports no
+    /// strong coupling because none was built.
+    ///
+    /// `Err` on a point the prescription rejects — it has no scale to report, and
+    /// inventing one would put a number in the record that no weight was taken
+    /// at.
+    pub fn record_scales(
+        &self,
+        momenta: &[V],
+        channel: usize,
+        u: &[f64],
+        card: &RunCard,
+    ) -> Result<(f64, f64), ScaleError> {
+        match self.event_scales_at(momenta, channel, u) {
+            Some(Ok(scales)) => {
+                let alpha_s = self
+                    .alpha_s_source()
+                    .map(|source| source.eval(scales.mu_r))
+                    .unwrap_or(0.0);
+                Ok((scalup(&scales), alpha_s))
+            }
+            Some(Err(refusal)) => Err(refusal),
+            None => Ok((card.dsqrt_q2fact1.max(card.dsqrt_q2fact2), 0.0)),
+        }
     }
 
     /// Split a point's coordinates into the ones its channel's map consumes and
