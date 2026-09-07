@@ -27,7 +27,7 @@ use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card_in, ParsedProcCard, ParsingOptions};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, ChannelIntegration,
-    FixedBeamIntegrand, RunningCouplingReport,
+    FixedBeamIntegrand, FixedBeams, RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::{PdfMember, PdfSet};
@@ -628,8 +628,6 @@ fn integrate_fixed_energy(
     rc: &RunCard,
     process: String,
 ) -> Result<RunOutput, IntegrateError> {
-    let sqrt_s = rc.ebeam1 + rc.ebeam2;
-
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     let evals = compile_subprocesses(&sets, model, evaluated)
@@ -641,6 +639,8 @@ fn integrate_fixed_energy(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, model, evaluated);
+    let beams = FixedBeams::from_run_card(rc, &legs);
+    let sqrt_s = beams.sqrt_s();
     let cuts = Cuts::compile(rc, &legs).map_err(|e| err(format!("failed to compile cuts: {e}")))?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -654,7 +654,7 @@ fn integrate_fixed_energy(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     // The strong coupling follows the run card's per-event renormalisation scale.
     // Installed before the α-adaptation so the survey sees the same integrand the
     // integration will.

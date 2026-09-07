@@ -10,9 +10,10 @@
 //! # What this gate covers that the bit-exact net cannot
 //!
 //! The per-point `amplitude_oracle` net is blind to everything *outside* the
-//! matrix element: the flux factor `1/(2 s-hat)`, the initial-state spin/colour
+//! matrix element: the beam configuration and the flux it implies, the
+//! initial-state spin/colour
 //! average, identical-particle and phase-space symmetry factors, the cut filter,
-//! and the beam/phase-space measure. A wrong constant in any of those leaves the
+//! and the phase-space measure. A wrong constant in any of those leaves the
 //! per-point |M|^2 bit-exact yet moves the cross section. This gate is the coarse
 //! instrument that sees those.
 //!
@@ -118,6 +119,7 @@ use vibegraph::artifact::ChannelSampler;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
+    FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -590,41 +592,40 @@ fn plan_for(dir: &str) -> Plan {
             rel_tol: 0.005,
         },
         // ── the toy models' cross sections ──────────────────────────────────
-        // Colour-singlet incoming legs, where this crate's fixed-beam convention and
-        // MadGraph's agree.
+        // Colour-singlet incoming legs at 10 GeV, where the two conventions differ
+        // by 2e-7 relative: an O(m^2/s-hat) flux deficit cancelled by an |M|^2
+        // excess of the same size.
         "ll_to_qqx_toy_dipole" | "ll_to_qqx_toy_tensor" => Plan::Gate {
             neval: 40_000,
             niter: 6,
             rel_tol: 0.005,
         },
-        // The three rows with *massive* incoming particles, measured and not
-        // enforced. `FixedBeamIntegrand` puts both beams on the light cone at
-        // `sqrt(s-hat)/2` and takes the flux as `1/(2 s-hat)`; MadGraph puts each beam
-        // on its own mass shell at the run card's energy and boosts to the partonic
-        // centre of mass, which its banked events show directly (`p3 r3` at 60 and
-        // 70 GeV records incoming `pz = +-241.350` and `E = 248.696 / 251.296`, so
-        // even `s-hat` differs -- 499.99275 against 500). Every other fixed-energy row
-        // in the suite has massless incoming particles, so nothing here could see it.
+        // The three rows with *massive* incoming particles: 60 and 70 GeV diquark
+        // beams at 250 + 250, and 50 GeV `qt qt~` at the same. They are the suite's
+        // only test of the initial state a fixed-energy run actually collides --
+        // `s-hat = m_a^2 + m_b^2 + 2(E_a E_b + |p_a||p_b|)` rather than
+        // `(E_1 + E_2)^2`, beams on their own mass shells in the partonic centre of
+        // mass, and the Moller flux `2 lambda^(1/2)(s-hat, m_a^2, m_b^2)` rather
+        // than `2 s-hat`. The flux alone is 3.46% smaller on the diquark rows.
         //
-        // The size is localised, not inferred. A 200-node Gauss-Legendre quadrature
-        // of the same amplitudes over `cos(theta)` reproduces this side's own Monte
-        // Carlo under the massless-beam convention (-6.77e-2 / -6.06e-2 / -6.76e-2
-        // against the sweeps' -6.77e-2 / -6.03e-2 / -6.73e-2) and lands on the banked
-        // sigma under MadGraph's (-7.8e-4, -2.1e-4, -5.2e-4, against reference errors
-        // of 1.0e-3, 4.3e-4 and 4.6e-4). Its control is `ee_to_ttx_smlimit`, whose
-        // massless beams make the two conventions identical and both -1.3e-4 of the
-        // bank.
+        // A finer oracle than this cell fixes the kinematics: the integrand's own
+        // beams reproduce all eleven printed digits of MadGraph's banked event
+        // record (`E = 248.69635439 / 251.29639211`, `pz = +-241.35011226` on
+        // `p3 r3`; `pz = +-244.94897428` on `qt qt~`), so what this cell adds is
+        // that the flux and the frame the amplitude is evaluated in follow.
         //
-        // The ladder is what says this is not sampling: rel holds at -6.7e-2, -6.0e-2
-        // and -6.7e-2 from a quarter of the budget to four times it while the pull
-        // grows from -43 to -63, -42 to -113 and -47 to -120.
+        // `rel_tol` is the toy-row convention, set from the measured five-seed
+        // spread (`probe_non_sm_seed_stability`) and not from the achieved central
+        // value: worst |rel| 1.9e-3, 1.0e-3 and 1.1e-3 over the seeds at chi2/dof
+        // 0.98, 0.99 and 0.68, inverse-variance means -9.1e-4, +6.9e-5 and -2.4e-4.
+        // The ladders converge rather than drift -- `p3 r3` epsilon reads +3.6e-3 /
+        // +1.3e-3 / +8.0e-4 / +6.2e-4 / +2.2e-4 from a quarter of the budget to four
+        // times it -- which is what says the residual is sampling.
         "qqx_to_o8o8_toy_dcolor" | "p3r3_to_p3r3_toy_epsilon" | "p3r3_to_p3r3_toy_sextet" => {
-            Plan::Info {
+            Plan::Gate {
                 neval: 40_000,
                 niter: 6,
-                reason: "massive incoming legs: this side builds them massless at \
-                         sqrt(s-hat)/2 with flux 1/(2 s-hat), MadGraph on shell at the card \
-                         energy in the partonic centre of mass",
+                rel_tol: 0.005,
             }
         }
         // ── the two rows whose banked run card this crate refuses ───────────
@@ -927,7 +928,6 @@ fn with_integrand<R>(
         BeamMode::FixedEnergy,
         "[{dir}] banked as fixed-energy but run card is not lpp=0"
     );
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
     let model = row_model(dir);
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
@@ -942,6 +942,7 @@ fn with_integrand<R>(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
     let cuts = Cuts::compile(&run_card, &legs)
         .unwrap_or_else(|e| panic!("[{dir}] run card activates a cut vibegraph cannot apply: {e}"));
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
@@ -956,7 +957,7 @@ fn with_integrand<R>(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     // Evaluate alpha_s at the run card's own per-event renormalisation scale, the way
     // MadGraph does, rather than at the param card's value. Installed before the
     // multichannel adaptation so the alpha survey sees the integrand the integration
@@ -2345,7 +2346,6 @@ fn probe_scale_cost() {
     ] {
         let card_path = output_dir().join(dir).join("Cards/run_card.dat");
         let run_card = RunCard::parse_file(&card_path).expect("run card parses");
-        let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
         let model = common::sm_model();
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
         let sets = common::generate(process);
@@ -2356,6 +2356,7 @@ fn probe_scale_cost() {
             .collect();
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
+        let beams = FixedBeams::from_run_card(&run_card, &legs);
         let cuts = Cuts::compile(&run_card, &legs).expect("compile cuts");
         let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
             .iter()
@@ -2369,7 +2370,7 @@ fn probe_scale_cost() {
 
         let build = || {
             let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-            FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg)
+            FixedBeamIntegrand::new(amps, &cuts, beams, final_masses.clone(), avg)
         };
         let plain = build();
         let mut scaled = build();
@@ -2454,7 +2455,6 @@ fn probe_scale_draw_cost() {
             .collect();
         let off = RunCard::parse(&patched).expect("patched run card parses");
 
-        let sqrt_s = live.ebeam1 + live.ebeam2;
         let model = common::sm_model();
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
         let sets = common::generate(process);
@@ -2465,6 +2465,7 @@ fn probe_scale_draw_cost() {
             .collect();
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
+        let beams = FixedBeams::from_run_card(&live, &legs);
         let cuts = Cuts::compile(&live, &legs).expect("compile cuts");
         let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
             .iter()
@@ -2478,7 +2479,7 @@ fn probe_scale_draw_cost() {
 
         let build = |rc: &RunCard| {
             let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-            let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg);
+            let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses.clone(), avg);
             integ
                 .use_running_coupling(&diagrams, &model, &evaluated, rc)
                 .expect("scale prescription compiles");
@@ -2557,7 +2558,6 @@ fn probe_event_readout_cost() {
         let text = std::fs::read_to_string(output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("run card readable");
         let live = RunCard::parse(&text).expect("banked run card parses");
-        let sqrt_s = live.ebeam1 + live.ebeam2;
         let model = common::sm_model();
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
         let sets = common::generate(process);
@@ -2568,6 +2568,7 @@ fn probe_event_readout_cost() {
             .collect();
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
+        let beams = FixedBeams::from_run_card(&live, &legs);
         let cuts = Cuts::compile(&live, &legs).expect("compile cuts");
         let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
             .iter()
@@ -2579,7 +2580,7 @@ fn probe_event_readout_cost() {
             .flat_map(|s| s.diagrams.iter().cloned())
             .collect();
         let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-        let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg);
+        let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses.clone(), avg);
         integ
             .use_running_coupling(&diagrams, &model, &evaluated, &live)
             .expect("scale prescription compiles");
@@ -3307,12 +3308,13 @@ fn probe_channel_map_degeneracy() {
         let entry = &banked[dir];
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
-        let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
         let sets = common::generate(&entry.process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
+        let beams = FixedBeams::from_run_card(&run_card, &legs);
+        let sqrt_s = beams.sqrt_s();
         let cuts = Cuts::compile(&run_card, &legs).expect("cuts compile");
         let floor = cuts.spacelike_floor();
         let diagrams: Vec<_> = sets
@@ -3801,13 +3803,14 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
         }
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
-        let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
         let model = row_model(dir);
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
         let sets = common::generate_with(&entry.process, model.as_ref());
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
+        let fixed_beams = FixedBeams::from_run_card(&run_card, &legs);
+        let sqrt_s = fixed_beams.sqrt_s();
         let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
         let floor = cuts.spacelike_floor();
 
@@ -3817,14 +3820,7 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
             .iter()
             .map(|&id| evaluated.mass(id))
             .collect();
-        let beams: Vec<LorentzVector<f64>> = (0..n_in)
-            .map(|a| {
-                let m = evaluated.mass(particles[a]);
-                let e = sqrt_s / 2.0;
-                let pz = (e * e - m * m).max(0.0).sqrt();
-                LorentzVector::new(e, 0.0, 0.0, if a == 0 { pz } else { -pz })
-            })
-            .collect();
+        let beams: Vec<LorentzVector<f64>> = fixed_beams.momenta().to_vec();
 
         let diagrams: Vec<_> = sets
             .iter()
@@ -4112,8 +4108,6 @@ fn channel_set(dir: &str, process: &str) -> (Vec<vibegraph::phasespace::DiagramC
 
     let card_path = output_dir().join(dir).join("Cards/run_card.dat");
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
-
     let model = row_model(dir);
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
 
@@ -4147,6 +4141,7 @@ fn channel_set(dir: &str, process: &str) -> (Vec<vibegraph::phasespace::DiagramC
             }
         })
         .collect();
+    let sqrt_s = FixedBeams::from_run_card(&run_card, &legs).sqrt_s();
     let cuts = Cuts::compile(&run_card, &legs)
         .unwrap_or_else(|e| panic!("[{dir}] run card activates a cut vibegraph cannot apply: {e}"));
     let floor = cuts.spacelike_floor();

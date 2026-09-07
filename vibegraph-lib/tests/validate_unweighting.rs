@@ -58,6 +58,7 @@ use rand_chacha::ChaCha8Rng;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
+    FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -211,7 +212,6 @@ fn with_integrand<R>(row: &Row, f: impl FnOnce(&FixedBeamIntegrand) -> R) -> R {
     let card_path = output_dir().join(row.dir).join("Cards/run_card.dat");
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
     assert_eq!(run_card.beam_mode(), BeamMode::FixedEnergy);
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
     let model = common::sm_model();
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.dir));
@@ -225,6 +225,7 @@ fn with_integrand<R>(row: &Row, f: impl FnOnce(&FixedBeamIntegrand) -> R) -> R {
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
     let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -237,7 +238,7 @@ fn with_integrand<R>(row: &Row, f: impl FnOnce(&FixedBeamIntegrand) -> R) -> R {
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
         .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
         .expect("run card scale prescription compiles");

@@ -58,6 +58,7 @@ use rand_chacha::ChaCha8Rng;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
+    FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::lhef::build::{scalup, EventHeader, SubprocessRecord, WeightNormalisation};
@@ -463,7 +464,6 @@ fn generate_and_check(row: &Row) {
     let run_card = RunCard::parse_file(&output_dir().join(row.dir).join("Cards/run_card.dat"))
         .expect("run card");
     assert_eq!(run_card.beam_mode(), BeamMode::FixedEnergy);
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
     let params = param_card(row.dir);
     let alpha_qed = 1.0 / params.get("sminputs", &[1]).expect("aEWM1 in SMINPUTS");
 
@@ -477,6 +477,8 @@ fn generate_and_check(row: &Row) {
         .collect();
     let rep = &evals[0];
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
+    let sqrt_s = beams.sqrt_s();
     let cuts = Cuts::compile(&run_card, &legs).expect("cuts compile");
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -491,7 +493,7 @@ fn generate_and_check(row: &Row) {
     let mut integ = FixedBeamIntegrand::new(
         bounds.iter().collect(),
         &cuts,
-        sqrt_s,
+        beams,
         final_masses.clone(),
         spin_color_avg,
     );
@@ -580,7 +582,7 @@ fn generate_and_check(row: &Row) {
     let max_weight = generated.iter().map(|g| g.4).fold(0.0f64, f64::max);
     let init = LheInit {
         beam_pdg: [records[0].pdg()[0], records[0].pdg()[1]],
-        beam_energy: [sqrt_s / 2.0, sqrt_s / 2.0],
+        beam_energy: [run_card.ebeam1, run_card.ebeam2],
         pdf_group: [0, 0],
         pdf_set: [0, 0],
         weight_strategy: WeightStrategy::MeanCrossSectionPb,

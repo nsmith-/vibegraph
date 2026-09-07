@@ -25,6 +25,7 @@ use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
+    FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -575,8 +576,6 @@ fn generate_sample(
     rc: &RunCard,
     nevents: usize,
 ) -> Result<EmitSummary, IntegrateError> {
-    let sqrt_s = rc.ebeam1 + rc.ebeam2;
-
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     let evals = compile_subprocesses(&sets, model, evaluated)
@@ -588,6 +587,7 @@ fn generate_sample(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, model, evaluated);
+    let beams = FixedBeams::from_run_card(rc, &legs);
     let cuts = Cuts::compile(rc, &legs).map_err(|e| err(format!("failed to compile cuts: {e}")))?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -600,7 +600,7 @@ fn generate_sample(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
         .use_running_coupling(&diagrams, model, evaluated, rc)
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
@@ -680,7 +680,7 @@ fn generate_sample(
         sigma_pb: artifact.sigma_pb,
         sigma_err_pb: artifact.sigma_err_pb,
         beam_pdg,
-        beam_energy: [sqrt_s / 2.0, sqrt_s / 2.0],
+        beam_energy: [rc.ebeam1, rc.ebeam2],
         // No parton densities on a fixed-energy run, so both beams report none.
         pdf_group: [0, 0],
         pdf_set: [0, 0],
@@ -1351,10 +1351,11 @@ mod tests {
             .flat_map(|s| s.diagrams.iter().cloned())
             .collect();
 
+        let legs = process_external_legs(rep, &model, &evaluated);
         let mut integ = FixedBeamIntegrand::new(
             bounds.iter().collect(),
             &cuts,
-            rc.ebeam1 + rc.ebeam2,
+            FixedBeams::from_run_card(&rc, &legs),
             masses,
             avg,
         );

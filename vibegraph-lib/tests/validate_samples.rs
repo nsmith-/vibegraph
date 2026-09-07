@@ -70,6 +70,7 @@ use rand_chacha::ChaCha8Rng;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
+    FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::lhef::build::{EventHeader, SubprocessRecord};
@@ -124,8 +125,8 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 ///
 /// The measured minimum over every gating row and three seeds is `1.573e-4`
 /// (`ee_to_wpwm`, `pt(w+)`; per-seed `2.727e-2`, `1.116e-2`, `1.573e-4`), with
-/// `ee_to_wpwm_cw` at `7.791e-4`, `qqx_to_o8o8_toy_dcolor` at `9.361e-4`,
-/// `ddx_to_epemg` at `1.846e-3` and `uux_to_ttx_4f` at `2.079e-3` behind it,
+/// `ee_to_wpwm_cw` at `7.791e-4`, `ddx_to_epemg` at `1.846e-3` and
+/// `uux_to_ttx_4f` at `2.079e-3` behind it,
 /// against `3.6e-6` and `0` for the two rows that used to disagree.
 /// `ee_to_wpwm` is the row to watch: it sits only `1.6x` above the floor.
 /// `ee_to_mumua` is informational and so not among these — its `pt(a)` column
@@ -560,7 +561,6 @@ fn with_integrand<R>(
         "[{}] the comparison assumes the lab frame is the partonic centre of mass",
         row.key
     );
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
     // The model a row's events were generated against, not the Standard Model:
     // the manifest names a vendored UFO directory and a restrict card for the
@@ -582,6 +582,7 @@ fn with_integrand<R>(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
     let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -594,7 +595,7 @@ fn with_integrand<R>(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
         .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
         .expect("run card scale prescription compiles");
@@ -1145,7 +1146,7 @@ fn the_llj_parton_rows_take_a_per_event_cluster_scale() {
         let mut integ = FixedBeamIntegrand::new(
             bounds.iter().collect(),
             &cuts,
-            run_card.ebeam1 + run_card.ebeam2,
+            FixedBeams::from_run_card(&run_card, &legs),
             final_masses,
             spin_color_avg,
         );
@@ -1447,7 +1448,6 @@ fn the_higgs_pole_window_is_measured_against_madgraph() {
 
     let card_path = output_dir().join(row.key).join("Cards/run_card.dat");
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
     let model = common::sm_model();
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.key));
     let sets = common::generate(row.process);
@@ -1458,6 +1458,8 @@ fn the_higgs_pole_window_is_measured_against_madgraph() {
         .collect();
     let rep = &evals[0];
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
+    let sqrt_s = beams.sqrt_s();
     let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -1490,7 +1492,7 @@ fn the_higgs_pole_window_is_measured_against_madgraph() {
     );
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
         .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
         .expect("run card scale prescription compiles");
@@ -1647,7 +1649,6 @@ fn with_mumua_integrand<R>(
         run_card.ebeam1, run_card.ebeam2,
         "the comparison assumes the lab frame is the partonic centre of mass"
     );
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
     let model = common::sm_model();
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(KEY));
@@ -1674,6 +1675,7 @@ fn with_mumua_integrand<R>(
     );
 
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
     let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -1686,7 +1688,7 @@ fn with_mumua_integrand<R>(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
         .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
         .expect("run card scale prescription compiles");

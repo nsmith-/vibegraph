@@ -3728,7 +3728,7 @@ mod tests {
     /// pins the argument.
     #[test]
     fn at_fixed_energy_the_integrand_is_the_partonic_cross_section_times_luminosity() {
-        use crate::hadronic::FixedBeamIntegrand;
+        use crate::hadronic::{FixedBeamIntegrand, FixedBeams};
 
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
@@ -3759,7 +3759,7 @@ mod tests {
                 let mut fixed = FixedBeamIntegrand::new(
                     vec![amp],
                     cuts,
-                    sqrt_shat,
+                    FixedBeams::massless(sqrt_shat),
                     masses.clone(),
                     g.spin_color_average(),
                 );
@@ -3823,7 +3823,7 @@ mod tests {
     /// against itself.
     #[test]
     fn at_fixed_energy_each_group_carries_its_own_symmetry_factor() {
-        use crate::hadronic::FixedBeamIntegrand;
+        use crate::hadronic::{FixedBeamIntegrand, FixedBeams};
 
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
@@ -3871,7 +3871,7 @@ mod tests {
                 let mut fixed = FixedBeamIntegrand::new(
                     vec![amp],
                     cuts,
-                    sqrt_shat,
+                    FixedBeams::massless(sqrt_shat),
                     masses.clone(),
                     g.spin_color_average(),
                 );

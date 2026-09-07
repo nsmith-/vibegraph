@@ -41,6 +41,7 @@ use crate::diagrams::{DiagramError, DiagramSet};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::grid::AlphaSInfo;
+use crate::phasespace::beams;
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
     identical_particle_factor, AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel,
@@ -541,6 +542,110 @@ pub fn process_external_legs(
         .collect()
 }
 
+/// The initial state of a fixed-energy run: two beams on their own mass shells
+/// at the run card's energies, and everything that follows from them.
+///
+/// The partonic invariant, the centre-of-mass beam momenta, the flux and the
+/// boost to the laboratory are all functions of `(E_a, m_a, E_b, m_b)`, so they
+/// are derived together and travel together — the beams the amplitude is
+/// evaluated at, the beams the channel maps generate against and the `√ŝ` the
+/// outgoing map is built on cannot then be three different initial states.
+///
+/// # Kinematics
+///
+/// In the laboratory the beams are on shell along `±z` at the card's energies,
+/// so
+///
+/// ```text
+/// ŝ = (p_a + p_b)² = m_a² + m_b² + 2 (E_a E_b + |p_a| |p_b|),
+/// ```
+///
+/// which is `(E_a + E_b)²` only for two massless beams of equal energy. In the
+/// partonic centre of
+/// mass the two share one momentum magnitude and split the energy by their
+/// masses,
+///
+/// ```text
+/// E_a* = (ŝ + m_a² − m_b²) / (2√ŝ),   |p*| = λ^{1/2}(ŝ, m_a², m_b²) / (2√ŝ),
+/// ```
+///
+/// and the flux in `σ = (1/F) ∫ dΦ_n |M|²` is the Møller invariant
+/// `F = 4√((p_a·p_b)² − m_a²m_b²) = 2 λ^{1/2}(ŝ, m_a², m_b²)`, which reduces to
+/// `2ŝ` when both masses vanish.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FixedBeams {
+    energies: [f64; 2],
+    masses: [f64; 2],
+    sqrt_s: f64,
+}
+
+impl FixedBeams {
+    /// The initial state a fixed-energy run card and a compiled process describe:
+    /// `ebeam1`/`ebeam2` with the pole masses of the two incoming legs.
+    ///
+    /// # Panics
+    ///
+    /// If `legs` does not start with two incoming legs, which every compiled
+    /// `2 → n` process does ([`process_external_legs`]).
+    pub fn from_run_card(rc: &RunCard, legs: &[ExternalLeg]) -> Self {
+        assert!(
+            legs.len() >= 2 && !legs[0].is_final && !legs[1].is_final,
+            "a fixed-energy process begins with two incoming legs"
+        );
+        Self::new([rc.ebeam1, rc.ebeam2], [legs[0].mass, legs[1].mass])
+    }
+
+    /// Two beams of the given laboratory energies and pole masses.
+    pub fn new(energies: [f64; 2], masses: [f64; 2]) -> Self {
+        FixedBeams {
+            energies,
+            masses,
+            sqrt_s: beams::partonic_s(energies, masses).sqrt(),
+        }
+    }
+
+    /// Two massless beams sharing `sqrt_s` evenly, the head-on light-cone
+    /// configuration.
+    pub fn massless(sqrt_s: f64) -> Self {
+        Self::new([sqrt_s / 2.0, sqrt_s / 2.0], [0.0, 0.0])
+    }
+
+    /// The partonic invariant mass `√ŝ`.
+    pub fn sqrt_s(&self) -> f64 {
+        self.sqrt_s
+    }
+
+    /// The beams' pole masses, in beam order.
+    pub fn masses(&self) -> [f64; 2] {
+        self.masses
+    }
+
+    /// The two incoming momenta in the partonic centre of mass, beam `0` along
+    /// `+z`: the frame the helicity-pruned matrix element and the channel maps
+    /// both work in, and the frame MadGraph writes its event record in.
+    pub fn momenta(&self) -> [V; 2] {
+        beams::beam_momenta(self.sqrt_s, self.masses[0], self.masses[1])
+    }
+
+    /// The `1/F` the master formula multiplies, `1 / (2 λ^{1/2}(ŝ, m_a², m_b²))`.
+    pub fn inverse_flux(&self) -> f64 {
+        let s = self.sqrt_s * self.sqrt_s;
+        let lambda = beams::kallen(
+            s,
+            self.masses[0] * self.masses[0],
+            self.masses[1] * self.masses[1],
+        );
+        1.0 / (2.0 * lambda.max(0.0).sqrt())
+    }
+
+    /// The `z` velocity carrying a centre-of-mass momentum into the laboratory.
+    /// Exactly zero for beams of equal energy and mass, where the two frames
+    /// coincide.
+    pub fn lab_beta(&self) -> f64 {
+        beams::lab_beta_z(self.energies, self.masses)
+    }
+}
+
 /// Compile every non-empty subprocess of a generated proc card into a
 /// helicity-pruned evaluator, requiring that they share one external-particle
 /// sequence so a single RAMBO mass list and one cut filter serve them all.
@@ -859,14 +964,15 @@ pub(crate) fn constant_scale_report(
 /// configuration (`lpp = 0`) and an arbitrary final-state multiplicity, sampled
 /// under VEGAS.
 ///
-/// The incoming particles *are* the beam particles: `√ŝ = E₁ + E₂` is fixed, so
-/// there is no `τ`/`x` sampling and no PDF luminosity. The phase-space
-/// [`PhaseSpaceMap`] maps the VEGAS uniforms to `n` on-shell final-state momenta
-/// summing to `(√ŝ, 0, 0, 0)` and supplies the invariant-volume weight; the two
-/// beams sit at `√ŝ/2` along ±z, so the full external set is already the
+/// The incoming particles *are* the beam particles: the run card's two energies
+/// and their own pole masses fix `ŝ` ([`FixedBeams`]), so there is no `τ`/`x`
+/// sampling and no PDF luminosity. The phase-space [`PhaseSpaceMap`] maps the
+/// VEGAS uniforms to `n` on-shell final-state momenta summing to `(√ŝ, 0, 0, 0)`
+/// and supplies the invariant-volume weight; the two beams sit on their own mass
+/// shells along ±z at the same `√ŝ`, so the full external set is already the
 /// partonic-CM, ±z-beam frame the helicity-pruned [`BoundAmplitude::eval_m2`]
-/// requires, and (for symmetric beams) the lab frame coincides with it — the same
-/// momenta feed the cut filter.
+/// requires. The cut filter reads the laboratory frame, which the beams' own
+/// boost separates from that one unless they carry equal energy and mass.
 ///
 /// The map is flat [`RamboChannel`] by default. [`use_multichannel`] swaps in a
 /// resonance-aware per-diagram [`MultiChannel`] combiner, α-adapted to this very
@@ -880,11 +986,14 @@ pub(crate) fn constant_scale_report(
 /// # Master formula
 ///
 /// ```text
-/// σ̂ = 1/(2ŝ) · ⟨spin·colour avg⟩ · ∫ dΦ_n Σ_sub S_sub |M_sub|²
-///    = 1/(2ŝ) · avg · (2π)^{4−3n} · ⟨weight · Σ_sub S_sub |M_sub|²⟩_uniform
+/// σ̂ = 1/F · ⟨spin·colour avg⟩ · ∫ dΦ_n Σ_sub S_sub |M_sub|²
+///    = 1/F · avg · (2π)^{4−3n} · ⟨weight · Σ_sub S_sub |M_sub|²⟩_uniform
 /// ```
 ///
-/// where `|M_sub|²` is a subprocess's colour+helicity-summed matrix element
+/// with `F = 2 λ^{1/2}(ŝ, m_a², m_b²)` the Møller flux of the two beams
+/// ([`FixedBeams::inverse_flux`]), `2ŝ` when both are massless,
+///
+/// and where `|M_sub|²` is a subprocess's colour+helicity-summed matrix element
 /// ([`eval_m2`]), the `(2π)^{4−3n}` factor turns the map's invariant volume `R_n`
 /// into the full `dΦ_n` measure, and `S_sub = 1/Π_s n_s!` is that subprocess's own
 /// identical-particle symmetry factor ([`identical_particle_factor`]), undoing
@@ -912,8 +1021,17 @@ pub struct FixedBeamIntegrand<'a> {
     spin_color_avg: f64,
     /// The `(2π)^{4−3n}` measure factor.
     lips_2pi: f64,
-    /// Beam energy `√ŝ/2`.
-    beam_e: f64,
+    /// The incoming momenta in the partonic centre of mass, on their own mass
+    /// shells ([`FixedBeams::momenta`]) — the configuration every evaluation,
+    /// scale and event record in this integrand is made in.
+    beam_momenta: [V; 2],
+    /// `1 / (2 λ^{1/2}(ŝ, m_a², m_b²))`, the Møller flux the master formula divides
+    /// by.
+    inverse_flux: f64,
+    /// The `z` velocity that carries a centre-of-mass momentum into the laboratory
+    /// frame the cut filter reads. Exactly zero whenever the two frames coincide,
+    /// where the boost is skipped entirely.
+    lab_beta: f64,
     /// Grid-damping exponent for the VEGAS pass, following the active sampler:
     /// [`VEGAS_ALPHA`] over the raw flat map, [`VEGAS_ALPHA_MAPPED`] once a
     /// multichannel map has already flattened the integrand's known peaks.
@@ -1134,17 +1252,19 @@ impl<'a> FixedBeamIntegrand<'a> {
     ///   (a single subprocess for a fully-specified initial state), each weighted
     ///   by its own identical-particle symmetry factor.
     /// * `cuts` — the compiled cut filter.
-    /// * `sqrt_s` — the fixed partonic energy `E₁ + E₂`.
+    /// * `beams` — the initial state, from the run card's energies and the incoming
+    ///   legs' pole masses ([`FixedBeams::from_run_card`]).
     /// * `final_masses` — outgoing pole masses in leg order (the RAMBO targets).
     /// * `spin_color_avg` — the initial-state average ([`initial_spin_color_average`]).
     pub fn new(
         amps: Vec<&'a BoundAmplitude<'a, f64>>,
         cuts: &'a Cuts,
-        sqrt_s: f64,
+        beams: FixedBeams,
         final_masses: Vec<f64>,
         spin_color_avg: f64,
     ) -> Self {
         let n = final_masses.len();
+        let sqrt_s = beams.sqrt_s();
         let subs = amps.into_iter().map(SubprocessProto::fixed).collect();
         let sampler = Sampler::Flat(RamboChannel::new(sqrt_s, final_masses.clone()));
         FixedBeamIntegrand {
@@ -1156,7 +1276,9 @@ impl<'a> FixedBeamIntegrand<'a> {
             final_masses,
             spin_color_avg,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n as i32),
-            beam_e: sqrt_s / 2.0,
+            beam_momenta: beams.momenta(),
+            inverse_flux: beams.inverse_flux(),
+            lab_beta: beams.lab_beta(),
             vegas_alpha: VEGAS_ALPHA,
             scales: None,
             scratch: ThreadLocal::new(),
@@ -1268,11 +1390,8 @@ impl<'a> FixedBeamIntegrand<'a> {
                 .map(|_| rng.random::<f64>())
                 .collect();
             let (channel, point) = self.sampler.draw_from(&u);
-            let mut ext: Vec<V> = Vec::with_capacity(2 + point.momenta.len());
-            ext.push(V::new(self.beam_e, 0.0, 0.0, self.beam_e));
-            ext.push(V::new(self.beam_e, 0.0, 0.0, -self.beam_e));
-            ext.extend_from_slice(&point.momenta);
-            if self.cuts.pass(&ext) {
+            let ext = self.externals(&point.momenta);
+            if self.passes_cuts(&ext) {
                 any_passed_cuts = true;
                 if let PointScales::Scales(_) =
                     self.point_scales_of(self.scratch(), source, &point.momenta, channel)?
@@ -1322,10 +1441,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         let mut buf = sc.scale_buf.borrow_mut();
         buf.clear();
         buf.extend(momenta.iter().map(components));
-        let beams = [
-            [self.beam_e, 0.0, 0.0, self.beam_e],
-            [self.beam_e, 0.0, 0.0, -self.beam_e],
-        ];
+        let beams = self.beam_momenta.map(|p| components(&p));
         source.point_scales(beams, &buf, SampledChannel::sole(channel))
     }
 
@@ -1413,7 +1529,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// term by term. The survey sees the same weighting the integral does.
     fn matrix_element(&self, sc: &FixedBeamScratch<'a>, momenta: &[V], channel: usize) -> f64 {
         let ext = self.externals(momenta);
-        if !self.cuts.pass(&ext) {
+        if !self.passes_cuts(&ext) {
             return 0.0;
         }
         self.matrix_element_at(sc, &ext, momenta, channel)
@@ -1455,7 +1571,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         let (map_u, scale_u) = u.split_at(map_ndim);
         let (channel, point) = self.sampler.draw_from(map_u);
         let ext = self.externals(&point.momenta);
-        if !self.cuts.pass(&ext) {
+        if !self.passes_cuts(&ext) {
             return 0.0;
         }
         let sc = self.scratch();
@@ -1468,13 +1584,13 @@ impl<'a> FixedBeamIntegrand<'a> {
         self.prefactor() * weight * m2
     }
 
-    /// The constants in front of `weight · Σ_sub S_sub |M_sub|²`: the `1/(2ŝ)` flux,
-    /// the initial-state spin×colour average, and the `(2π)^{4−3n}` measure factor.
+    /// The constants in front of `weight · Σ_sub S_sub |M_sub|²`: the Møller flux
+    /// `1/(2 λ^{1/2}(ŝ, m_a², m_b²))`, the initial-state spin×colour average, and the
+    /// `(2π)^{4−3n}` measure factor.
     /// The identical-particle factors are not among them — they are per subprocess,
     /// applied inside the sum.
     fn prefactor(&self) -> f64 {
-        let flux = 1.0 / (2.0 * self.sqrt_s * self.sqrt_s);
-        flux * self.spin_color_avg * self.lips_2pi
+        self.inverse_flux * self.spin_color_avg * self.lips_2pi
     }
 
     /// Replace flat RAMBO with a resonance-aware per-diagram [`MultiChannel`] built
@@ -1703,7 +1819,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         let (grid_u, scale_u) = self.split_point(u);
         let point = self.sampler.draw_in_channel(channel, grid_u);
         let ext = self.externals(&point.momenta);
-        if !self.cuts.pass(&ext) {
+        if !self.passes_cuts(&ext) {
             return 0.0;
         }
         let sc = self.scratch();
@@ -1777,7 +1893,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         momenta.clear();
         momenta.extend_from_slice(&point.momenta);
         let ext = self.externals(momenta);
-        if !self.cuts.pass(&ext) {
+        if !self.passes_cuts(&ext) {
             return 0.0;
         }
         let sc = self.scratch();
@@ -1829,13 +1945,28 @@ impl<'a> FixedBeamIntegrand<'a> {
         u.split_at(grid_ndim)
     }
 
-    /// The two incoming momenta: `√ŝ/2` along ±z, the beam configuration every
-    /// evaluation in this integrand is made in.
+    /// The two incoming momenta in the partonic centre of mass, on their own mass
+    /// shells along ±z: the beam configuration every evaluation in this integrand
+    /// is made in, and the one an event record carries.
     pub fn beams(&self) -> [V; 2] {
-        [
-            V::new(self.beam_e, 0.0, 0.0, self.beam_e),
-            V::new(self.beam_e, 0.0, 0.0, -self.beam_e),
-        ]
+        self.beam_momenta
+    }
+
+    /// Whether an external configuration passes the compiled cuts.
+    ///
+    /// The cuts read the **laboratory** frame, which differs from the partonic
+    /// centre of mass the momenta are built in by a boost along `z` whenever the
+    /// beams do not carry equal energy and mass. Rapidity is not invariant under
+    /// it — MadGraph shifts every rapidity by the same boost's rapidity before a
+    /// cut compares it (`genps.f`'s `cm_rap`, applied in `kin_functions.f`'s
+    /// `rap`) — so the configuration is carried into that frame first. Where the
+    /// two frames coincide the boost is the identity and is skipped.
+    fn passes_cuts(&self, ext: &[V]) -> bool {
+        if self.lab_beta == 0.0 {
+            return self.cuts.pass(ext);
+        }
+        let lab: Vec<V> = ext.iter().map(|p| boost_z(*p, self.lab_beta)).collect();
+        self.cuts.pass(&lab)
     }
 
     /// The external momenta an amplitude is evaluated at: the beams, then the
@@ -2161,9 +2292,27 @@ mod tests {
         let avg = initial_spin_color_average(&gg, &m, &evaluated);
         let masses = vec![0.0, 0.0];
         let sqrt_s = 400.0;
-        let both = FixedBeamIntegrand::new(vec![&b_gg, &b_ddx], &cuts, sqrt_s, masses.clone(), avg);
-        let only_gg = FixedBeamIntegrand::new(vec![&b_gg], &cuts, sqrt_s, masses.clone(), avg);
-        let only_ddx = FixedBeamIntegrand::new(vec![&b_ddx], &cuts, sqrt_s, masses, avg);
+        let both = FixedBeamIntegrand::new(
+            vec![&b_gg, &b_ddx],
+            &cuts,
+            FixedBeams::massless(sqrt_s),
+            masses.clone(),
+            avg,
+        );
+        let only_gg = FixedBeamIntegrand::new(
+            vec![&b_gg],
+            &cuts,
+            FixedBeams::massless(sqrt_s),
+            masses.clone(),
+            avg,
+        );
+        let only_ddx = FixedBeamIntegrand::new(
+            vec![&b_ddx],
+            &cuts,
+            FixedBeams::massless(sqrt_s),
+            masses,
+            avg,
+        );
 
         let mut stream = SubStream::from_stream(0x5111_5EED, 3);
         let mut nonzero = 0;
@@ -2290,7 +2439,7 @@ mod tests {
         let avg = initial_spin_color_average(&evals[0], &m, &evaluated);
 
         let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-        let integ = FixedBeamIntegrand::new(amps, &cuts, 500.0, masses, avg);
+        let integ = FixedBeamIntegrand::new(amps, &cuts, FixedBeams::massless(500.0), masses, avg);
         assert_eq!(integ.vegas_ndim(), 8);
         let (sigma, err) = integ.integrate(20_000, 4, 0x5EED);
         assert!(sigma.is_finite() && sigma > 0.0, "sigma = {sigma}");
@@ -2422,7 +2571,13 @@ mod tests {
 
         let build = || {
             let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-            FixedBeamIntegrand::new(amps, &cuts, sqrt_s, masses.clone(), avg)
+            FixedBeamIntegrand::new(
+                amps,
+                &cuts,
+                FixedBeams::massless(sqrt_s),
+                masses.clone(),
+                avg,
+            )
         };
 
         // Flat RAMBO (the known-wrong baseline for a narrow pole) at a matched budget.
@@ -2498,7 +2653,13 @@ mod tests {
 
         let build = || {
             let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-            FixedBeamIntegrand::new(amps, &cuts, sqrt_s, masses.clone(), avg)
+            FixedBeamIntegrand::new(
+                amps,
+                &cuts,
+                FixedBeams::massless(sqrt_s),
+                masses.clone(),
+                avg,
+            )
         };
 
         let flat = build();
@@ -2606,8 +2767,13 @@ mod tests {
             .iter()
             .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
             .collect();
-        let mut integ =
-            FixedBeamIntegrand::new(bounds.iter().collect(), &cuts, sqrt_s, masses, avg);
+        let mut integ = FixedBeamIntegrand::new(
+            bounds.iter().collect(),
+            &cuts,
+            FixedBeams::massless(sqrt_s),
+            masses,
+            avg,
+        );
         let report = integ
             .use_running_coupling(&diagrams, &m, &evaluated, &card)
             .expect("the clustering scale compiles for g g > g g");
@@ -2851,8 +3017,13 @@ mod tests {
             .iter()
             .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
             .collect();
-        let mut integ =
-            FixedBeamIntegrand::new(bounds.iter().collect(), &cuts, sqrt_s, masses, avg);
+        let mut integ = FixedBeamIntegrand::new(
+            bounds.iter().collect(),
+            &cuts,
+            FixedBeams::massless(sqrt_s),
+            masses,
+            avg,
+        );
         integ
             .use_running_coupling(&diagrams, &m, &evaluated, &card)
             .expect("a fixed-beam card is never refused for the factorisation floor");
@@ -2940,8 +3111,13 @@ mod tests {
             .iter()
             .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
             .collect();
-        let mut integ =
-            FixedBeamIntegrand::new(bounds.iter().collect(), &cuts, sqrt_s, masses, avg);
+        let mut integ = FixedBeamIntegrand::new(
+            bounds.iter().collect(),
+            &cuts,
+            FixedBeams::massless(sqrt_s),
+            masses,
+            avg,
+        );
         integ
             .use_running_coupling(&diagrams, &m, &evaluated, &card)
             .expect("a fixed-beam card is never refused for the factorisation floor");
@@ -3024,8 +3200,13 @@ mod tests {
             .iter()
             .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
             .collect();
-        let mut integ =
-            FixedBeamIntegrand::new(bounds.iter().collect(), &cuts, sqrt_s, masses, avg);
+        let mut integ = FixedBeamIntegrand::new(
+            bounds.iter().collect(),
+            &cuts,
+            FixedBeams::massless(sqrt_s),
+            masses,
+            avg,
+        );
         integ
             .use_running_coupling(&diagrams, &m, &evaluated, &card)
             .expect("a fixed-beam card is never refused for the factorisation floor");
@@ -3067,7 +3248,7 @@ mod tests {
             .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
             .collect();
         let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-        let integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, masses, avg);
+        let integ = FixedBeamIntegrand::new(amps, &cuts, FixedBeams::massless(sqrt_s), masses, avg);
 
         // One ordinary phase-space point of the flat map.
         let u: Vec<f64> = (0..integ.point_ndim())
@@ -3195,7 +3376,8 @@ mod tests {
             .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
             .collect();
         let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-        let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, masses, avg);
+        let mut integ =
+            FixedBeamIntegrand::new(amps, &cuts, FixedBeams::massless(sqrt_s), masses, avg);
         let card = parse_proc_card("generate u u~ > u u~", &ParsingOptions::default()).unwrap();
         let diagrams: Vec<Diagram> = generate_from_proc_card(&card, &m)
             .unwrap()
@@ -3303,7 +3485,13 @@ mod tests {
         let avg = initial_spin_color_average(rep, &m, &evaluated);
         let build = || {
             let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-            FixedBeamIntegrand::new(amps, &cuts, 500.0, masses.clone(), avg)
+            FixedBeamIntegrand::new(
+                amps,
+                &cuts,
+                FixedBeams::massless(500.0),
+                masses.clone(),
+                avg,
+            )
         };
 
         let mut adapted = build();
@@ -3380,5 +3568,121 @@ mod tests {
             wrong.use_multichannel_with_alphas(&diagrams, &evaluated, short),
             Some(Err(diagrams.len()))
         );
+    }
+
+    /// Two beams of unequal mass, the configuration `p3 r3` collides in: the
+    /// integrand's own beams are on their own mass shells, sum to the invariant
+    /// at rest, and are the same `√ŝ` the outgoing map is built on — so the
+    /// external set the amplitude sees conserves four-momentum.
+    ///
+    /// Under a light-cone construction at `√ŝ/2` the incoming energy would be the
+    /// run card's `E₁ + E₂` while the outgoing state summed to `√ŝ`, and the two
+    /// differ here by 7.3 MeV.
+    #[test]
+    fn the_integrands_beams_and_its_outgoing_map_share_one_invariant() {
+        let legs = [
+            ExternalLeg::incoming(9_000_051, 60.0),
+            ExternalLeg::incoming(9_000_052, 70.0),
+            ExternalLeg::outgoing(9_000_051, 60.0),
+            ExternalLeg::outgoing(9_000_052, 70.0),
+        ];
+        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let final_masses = vec![60.0, 70.0];
+        let beams = FixedBeams::new([250.0, 250.0], [60.0, 70.0]);
+        assert!((beams.sqrt_s() - 499.99275).abs() < 5e-6);
+        let integ = FixedBeamIntegrand::new(Vec::new(), &cuts, beams, final_masses.clone(), 1.0);
+
+        let [a, b] = integ.beams();
+        assert!((a.m2() - 3600.0).abs() < 1e-6, "beam 0 off its mass shell");
+        assert!((b.m2() - 4900.0).abs() < 1e-6, "beam 1 off its mass shell");
+
+        let map = RamboChannel::new(beams.sqrt_s(), final_masses);
+        let u: Vec<f64> = (0..map.ndim())
+            .map(|i| 0.13 + 0.0731 * (i as f64 % 11.0))
+            .map(|x| x - x.floor())
+            .collect();
+        let out = map.sample(&u).momenta;
+        let total = out.iter().fold(a + b, |acc, p| acc - *p);
+        assert!(
+            total.e().abs() < 1e-9 && total.pz().abs() < 1e-9,
+            "the external set does not conserve four-momentum: {total:?}"
+        );
+    }
+
+    /// The flux is the Møller invariant `2λ^{1/2}(ŝ, m_a², m_b²)`, which is `2ŝ`
+    /// for massless beams and 3.46% *below* it for two 60/70 GeV beams at
+    /// 250 + 250 — a deficit of `(m_a² + m_b²)/ŝ` to leading order, which a
+    /// massless flux would take straight off the cross section.
+    #[test]
+    fn the_prefactor_carries_the_moller_flux() {
+        let legs = [
+            ExternalLeg::incoming(9_000_051, 60.0),
+            ExternalLeg::incoming(9_000_052, 70.0),
+            ExternalLeg::outgoing(9_000_051, 60.0),
+            ExternalLeg::outgoing(9_000_052, 70.0),
+        ];
+        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let masses = vec![60.0, 70.0];
+
+        let massless = FixedBeams::massless(500.0);
+        assert_eq!(massless.inverse_flux(), 1.0 / (2.0 * 500.0 * 500.0));
+        let flat =
+            FixedBeamIntegrand::new(Vec::new(), &cuts, massless, masses.clone(), 1.0).prefactor();
+        assert_eq!(flat, 1.0 / (2.0 * 500.0 * 500.0) * (2.0 * PI).powi(4 - 6));
+
+        let on_shell = FixedBeams::new([250.0, 250.0], [60.0, 70.0]);
+        let [a, _] = on_shell.momenta();
+        // F = 4 |p*| sqrt(s-hat), the third form of the same invariant.
+        let expected = 1.0 / (4.0 * a.pz() * on_shell.sqrt_s());
+        assert!((on_shell.inverse_flux() / expected - 1.0).abs() < 1e-12);
+        let ratio = (1.0 / on_shell.inverse_flux()) / (2.0 * on_shell.sqrt_s().powi(2));
+        assert!((ratio - 0.965414).abs() < 1e-6, "flux ratio {ratio}");
+        // Leading order in m²/ŝ, the form the deficit takes on a row that escapes
+        // the convention by scale alone.
+        let leading = (60.0f64.powi(2) + 70.0f64.powi(2)) / on_shell.sqrt_s().powi(2);
+        assert!(((1.0 - ratio) / leading - 1.0).abs() < 0.02);
+    }
+
+    /// The cut filter reads the laboratory frame, which the beams' own boost
+    /// separates from the partonic centre of mass whenever they carry unequal
+    /// mass: a leg at centre-of-mass rapidity `−0.998` sits at `−0.9926` in the
+    /// laboratory and passes an `|y| ≤ 1` cut, while its mirror at `+0.998` sits
+    /// at `+1.0034` and does not. Without the shift both verdicts are the same.
+    #[test]
+    fn the_cut_filter_reads_the_laboratory_rapidity() {
+        let legs = [
+            ExternalLeg::incoming(9_000_051, 60.0),
+            ExternalLeg::incoming(9_000_052, 70.0),
+            ExternalLeg::outgoing(11, 0.0),
+            ExternalLeg::outgoing(-11, 0.0),
+        ];
+        let card = RunCard::parse(
+            "  0 = lpp1\n  0 = lpp2\n  250.0 = ebeam1\n  250.0 = ebeam2\n  1.0 = etal\n",
+        )
+        .unwrap();
+        let cuts = Cuts::compile(&card, &legs).unwrap();
+        let beams = FixedBeams::new([250.0, 250.0], [60.0, 70.0]);
+        let y_cm = beams.lab_beta().atanh();
+        assert!((y_cm - 5.386e-3).abs() < 1e-6, "beam rapidity {y_cm}");
+        let integ = FixedBeamIntegrand::new(Vec::new(), &cuts, beams, vec![0.0, 0.0], 1.0);
+        // Both legs at one rapidity, separated in azimuth so no pair cut fires:
+        // the boost then moves the whole final state the same way.
+        let leg = |y: f64, phi: f64| {
+            let pt = 100.0;
+            V::new(pt * y.cosh(), pt * phi.cos(), pt * phi.sin(), pt * y.sinh())
+        };
+        let [a, b] = integ.beams();
+        for (y, lab_pass) in [(-0.998, true), (0.998, false)] {
+            let ext = vec![a, b, leg(y, 0.0), leg(y, PI / 2.0)];
+            assert_eq!(
+                integ.passes_cuts(&ext),
+                lab_pass,
+                "a leg at centre-of-mass rapidity {y} is at {} in the laboratory",
+                y + y_cm
+            );
+            // The same configuration read without the boost is accepted either way,
+            // so the verdict above is the shift and not the cut.
+            assert!(cuts.pass(&ext));
+        }
     }
 }
