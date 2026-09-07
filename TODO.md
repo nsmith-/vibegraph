@@ -6,24 +6,27 @@ what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
 **Current position**: **between sprints.** The `ufo-lorentz` feature sprint
-closed 2026-09-07 with session Z; **note 35 §10 is the close-out record** and
-the closed-sprint history below carries its one-line summary. What it leaves
-standing, counted from `validation/manifest.toml`: **51 rows × 4 categories,
-147 cells declaring a mode (138 `gate`, 9 `info`) and 57 declaring none** —
-29 Standard-Model rows (97 `gate`), 16 SMEFTsim rows (29), 4 `vibegraph_toy_UFO`
-rows (8) and 2 `vibegraph_toy_color_UFO` rows (4). Thirteen SMEFTsim rows are
-enforced at the amplitude level with the capstone `e+ e- > t t~ NP<=1` cross
-section gated, all six toy-model rows are enforced, and the `validate_scales`
-per-event replay covers 44 runs / 440 000 events / 1 160 000 scale comparisons.
-The collated report, measured on the M3 Max host at close-out: **143 measured
-cells — 136 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and 57 uncovered**
-(`pixi run --skip-deps validate` exit 0; amplitudes 42, diagrams 48,
-integrals 28, samples 27 timed measurements).
+closed 2026-09-07 with session Z; **note 35 §10 is the close-out record**, and
+**§10.9 the post-close-out addendum** that gave the non-Standard-Model rows
+their own cross sections and event samples. What that leaves standing, counted
+from `validation/manifest.toml`: **51 rows × 4 categories, 180 cells declaring a
+mode (168 `gate`, 12 `info`) and 24 declaring none** — 29 Standard-Model rows
+(97 `gate`, 5 `info`), 16 SMEFTsim rows (50 / 4), 4 `vibegraph_toy_UFO` rows
+(15 / 1) and 2 `vibegraph_toy_color_UFO` rows (6 / 2). Thirteen SMEFTsim rows
+are enforced at the amplitude level, **sixteen non-SM rows now have a gated or
+informational cross section and seventeen a gated event sample**, all six
+toy-model rows are enforced, and the `validate_scales` per-event replay covers
+44 runs / 440 000 events / 1 160 000 scale comparisons.
+The collated report, measured on the M3 Max host: **176 measured cells — 166 ✅,
+10 ⚠️ — plus 4 ⏳ at the long tier and 24 uncovered** (`pixi run --skip-deps
+validate` exit 0, 7 m 05 s wall / 33 m 27 s user).
 The `info` cells that remain are `ee_to_wpwm_cw` (one |M|² point at 2.08e-12),
 `ee_to_zh_smeft` (MadGraph's generated Fortran rounds the UFO's `11/24` literal in the h-Z-γ loop coupling `GC_303` to seven significant digits, a 1.2e-8 defect on its side — attributed, note 35 §3 E1), `wpwm_to_wpwmz_cw`
 (the five-vector residual, |M|² 2.20e3 and reported again since Z),
-`gg_to_gg_cg`'s diagram count under the `NGRAPHS` convention, and the five
-Standard-Model `info` cells that predate the sprint. **Next**: the user's call.
+`gg_to_gg_cg`'s diagram count under the `NGRAPHS` convention, the three
+massive-incoming-leg toy cross sections (the fixed-beam convention finding
+below, σ 6–7% low with the cause localised), and the five Standard-Model `info`
+cells that predate the sprint. **Next**: the user's call.
 The named candidates are the channel-set migration and the five-vector residual
 (both in the validation backlog below), and `refdata-7`'s upload, which is the
 one thing the sprint could not do for itself.
@@ -298,6 +301,40 @@ One line each; the note is the full record. Earlier sprints
   writer, which prints a UFO literal like `0.4583333333333333` as
   `4.583333D-01`. Blind spot of the whole check: a rounding that both sides
   share, which the amplitude gate cannot see either.
+- **The fixed-beam integrand builds massive incoming particles massless**
+  (found and localised 2026-09-07 by the non-SM σ/samples pass, note 35 §10.9;
+  **diagnosed, deliberately not fixed there**). `FixedBeamIntegrand::beams`
+  returns `(√ŝ/2)(1,0,0,±1)` and `prefactor` takes the flux as `1/(2ŝ)` with
+  `ŝ = (E₁+E₂)²`, so a row whose incoming particles carry mass is evaluated at
+  momenta that are not on their own mass shells and normalised by the massless
+  flux. MadGraph puts each beam on its own mass shell at the run card's energy
+  and boosts to the partonic centre of mass, which its own banked events record:
+  `p3 r3` at 60/70 GeV carries incoming `pz = ±241.35011`, `E = 248.69635 /
+  251.29639` and therefore `√ŝ = 499.99275` against this side's 500, and
+  `qt qt~` at 50 GeV carries `pz = ±244.94897`. **Effect**: σ low by
+  −6.72e-2 (`qqx_to_o8o8_toy_dcolor`), −5.95e-2 (`p3r3_to_p3r3_toy_epsilon`) and
+  −6.67e-2 (`p3r3_to_p3r3_toy_sextet`), budget-flat from a quarter to four times
+  the gate budget while the pull grows to −63/−113/−120. **Evidence**: a 200-node
+  Gauss–Legendre quadrature of the same compiled amplitudes over `cos θ`
+  reproduces this side's Monte Carlo under the massless-beam convention
+  (−6.77e-2 / −6.06e-2 / −6.76e-2) and lands on the banked σ under MadGraph's
+  (−7.8e-4 / −2.1e-4 / −5.2e-4, against reference errors 1.0e-3 / 4.3e-4 /
+  4.6e-4), with `ee_to_ttx_smlimit` as the control — massless beams, the two
+  conventions identical, both −1.3e-4 of the bank. Those rows' `amplitudes`
+  cells stay enforced bit-exact, because the amplitude tables are evaluated at
+  RAMBO momenta built with the right masses; only the integrand's own beams are
+  wrong. **Falsifier**: build the beams on shell, take the flux as
+  `1/(2λ^{1/2}(ŝ,m₁²,m₂²))`, and the three rows should land inside their
+  references' errors while every massless-beam row moves by nothing. **Scope of
+  the fix**: beam construction, the flux, the frame RAMBO maps into, the `ŝ` a
+  fixed-energy run derives from `ebeam1 + ebeam2` for unequal masses,
+  `process_external_legs`, and the incoming legs the LHE record writes — its own
+  session. Until then those three `integrals` cells are `banked`/`info` with the
+  measurement in `validation/manifest.toml`. Note that four rows escape only by
+  accident of scale: `ll_to_qqx_toy_*` (`m_in` 10 GeV, the O(m²/2E²) flux deficit
+  cancelling an |M|² excess of the same size to 2e-7) and
+  `tata_to_ttx_tensor4f` (1.77686 GeV, 1e-7), all measured, all gated.
+
 - **A nondeterministic heap-corruption abort under the proton-sample suite's
   concurrent load** (observed 2026-09-07 by the sprint manager, 1 run in 7;
   *not* caused by the `ufo-lorentz` sprint and not diagnosed by it). In one of
@@ -436,6 +473,17 @@ One line each; the note is the full record. Earlier sprints
 
 ### Sharper oracles the sprint named but did not build
 
+- **The `samples` gate never looks at the incoming legs.**
+  `lhef::observables::kinematics` builds every observable from `STATUS_OUTGOING`
+  legs, so no column compares the beam four-momenta or their masses against
+  MadGraph's record. That is not hypothetical: the three massive-incoming-leg
+  toy rows above carry a 6–7% σ error and still clear the KS floor comfortably
+  (worst p 9.4e-4), because every statistic here is a normalised distribution of
+  the outgoing state. A per-event comparison of the incoming legs — masses and
+  `pz`, which MadGraph writes in every banked `.lhe` — would have caught that
+  defect on the first row that had one, needs no new reference data, and moves
+  no tolerance.
+
 - **A `SCALUP` column in the `samples` category** — the sharpest missing
   oracle (chain B review): no samples cell compares `SCALUP`, though
   MadGraph's banked LHEs carry it and `validate_scales` already replays it
@@ -471,6 +519,26 @@ One line each; the note is the full record. Earlier sprints
   uniformity.
 
 ### Deferred coverage
+
+- **`dynamical_scale_choice` 1–5 reaches no cross section**, so
+  `gg_to_gg_cg`'s `integrals` and `samples` cells are `uncovered`. MadGraph chose
+  `= 3` for `g g > g g NP<=1` itself (the row's `.mg5` script sets no scale), and
+  `ScaleChoice::from_run_card` refuses the choice rather than approximating it
+  (`UnhonouredScaleChoice`). The closed forms are transcribed from `setscales.f`
+  and keep their unit tests through `ScaleChoice::compile`; wiring them to
+  `FixedBeamIntegrand::use_running_coupling` is what would fill those two cells.
+- **`nhel = 1` run cards are refused**, so `wpwm_to_wpwmz_cw`'s `integrals` and
+  `samples` cells are `uncovered`. MadGraph chose helicity importance sampling
+  for that 222-diagram process itself. The refusal is correct — it changes the
+  estimator and the per-event weight — but it means the reference's σ and events
+  are unreachable from the run card that produced them. That row's amplitudes
+  disagree grossly in any case (|M|² 2.20e3), so both cells would have been
+  informational.
+- **No `samples` cell for a 2 → 1 row, and none possible** — `bbx_to_h_identity`,
+  `gg_to_h_cpeven` and `gg_to_h_cpodd` have no phase-space volume, so MadEvent
+  banked neither a σ nor an event file. Both cells are `uncovered` with that
+  reason (they previously read `covered-by = ["ee_to_ttx_smeft"]`, which was
+  wrong: a `2 → 1` amplitude is not covered by a `2 → 2` cross section).
 
 - **V7 per-flavor diagram matching** — deferred from `validation-2`: Python
   extractor + Rust sorted-PDG matching + JSON regen, with a real-finding risk
@@ -819,7 +887,9 @@ above); the entries here are the eventual features.
 **Rewritten from measurement 2026-09-07 (note 35 §10).** The `ufo-lorentz`
 sprint retired most of this list: two non-SM models are now loaded end to end
 and gated against MadGraph — the vendored SMEFTsim `topU3l_MwScheme` (13
-amplitude rows, one cross section) and two authored toy UFOs (6 rows) — so
+amplitude rows, eleven cross sections, eleven event samples) and two authored toy
+UFOs (6 rows, six cross sections of which three are informational for the
+fixed-beam convention finding above, six event samples) — so
 "model-generic" is no longer exercised on Standard-Model evidence alone. Every
 entry below states what is *measured*, and each one that is still a wall says
 what refuses and where.
