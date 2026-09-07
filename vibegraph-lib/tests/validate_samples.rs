@@ -299,8 +299,9 @@ const ROWS: &[Row] = &[
     // matrix element rather than from a same-named Standard-Model one.
     //
     // The beam configuration is compared by the incoming-leg columns rather than
-    // by any of the observables, which are built from the outgoing legs alone.
-    // `MASSIVE_BEAMS` is where that comparison currently disagrees.
+    // by any of the observables, which are built from the outgoing legs alone;
+    // the toy rows with massive incoming particles are what those columns are
+    // there for.
     Row {
         key: "ee_to_mumu_smlimit",
         process: "e+ e- > mu+ mu-",
@@ -456,54 +457,6 @@ const ROWS: &[Row] = &[
         mode: "gate",
     },
 ];
-
-/// The rows whose incoming legs this crate builds differently from MadGraph, so
-/// their incoming-leg columns are measured and reported rather than enforced.
-///
-/// MadGraph puts each beam on its own mass shell at the run card's energy and
-/// boosts to the partonic centre of mass; `FixedBeamIntegrand` puts both on the
-/// light cone at `√ŝ/2`. Every row with a massive incoming particle therefore
-/// disagrees on the beams' `pz`, by a construction difference whose size is set
-/// by the mass and not by any statistic. Measured against MadGraph's banked
-/// records, at `ebeam1 = ebeam2 = 250` GeV throughout:
-///
-/// | row | `m_in` (GeV) | banked `pz` | worst deviation (GeV) |
-/// |---|---|---|---|
-/// | `qqx_to_o8o8_toy_dcolor` | 50 | ±244.94897428 | 5.05 on `pz` |
-/// | `p3r3_to_p3r3_toy_epsilon` | 60 / 70 | ±241.35011226 | 8.65 on `pz`, 1.30 on `E` |
-/// | `p3r3_to_p3r3_toy_sextet` | 60 / 70 | ±241.35011226 | 8.65 on `pz`, 1.30 on `E` |
-/// | `ll_to_qqx_toy_dipole` | 10 | ±249.79991994 | 0.200 on `pz` |
-/// | `ll_to_qqx_toy_tensor` | 10 | ±249.79991994 | 0.200 on `pz` |
-/// | `ll_to_qqx_toy_yukawa` | 10 | ±249.79991994 | 0.200 on `pz` |
-/// | `tata_to_ttx_tensor4f` | 1.77686 | ±249.99368546 | 6.31e-3 on `pz` |
-///
-/// The masses themselves agree on every one of them — the record carries the
-/// model's pole mass, so these events are written off their own mass shell —
-/// which is what says the disagreement is the momentum construction and not the
-/// particle content. The first three carry the same defect in their `integrals`
-/// cells at 6 to 7%; on the last four the flux error cancels against an `|M|²`
-/// excess of the same `O(m²/ŝ)` size and those cells are enforced, which is
-/// exactly why the beams need a column of their own rather than a cross section
-/// to be seen in.
-const MASSIVE_BEAMS: [&str; 7] = [
-    "qqx_to_o8o8_toy_dcolor",
-    "p3r3_to_p3r3_toy_epsilon",
-    "p3r3_to_p3r3_toy_sextet",
-    "ll_to_qqx_toy_dipole",
-    "ll_to_qqx_toy_tensor",
-    "ll_to_qqx_toy_yukawa",
-    "tata_to_ttx_tensor4f",
-];
-
-/// Whether a row's incoming-leg columns are enforced. An informational row is
-/// informational on all of its columns.
-fn beam_column_mode(row: &Row) -> &'static str {
-    if row.mode != "gate" || MASSIVE_BEAMS.contains(&row.key) {
-        "info"
-    } else {
-        "gate"
-    }
-}
 
 /// The four `l+ l- j` partonic rows: the ones whose run cards leave both scales
 /// free at `dynamical_scale_choice = -1`.
@@ -821,8 +774,8 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
     // Columns below the floor on a row the manifest marks informational: reported
     // in full, never enforced, and tracked in the backlog instead.
     let mut informational: Vec<String> = Vec::new();
-    // Which rows' incoming legs actually disagreed, checked against
-    // `MASSIVE_BEAMS` at the end.
+    // Which rows' incoming legs departed from the banked record at all, asserted
+    // empty at the end.
     let mut beams_disagreed: BTreeSet<&'static str> = BTreeSet::new();
     for row in ROWS {
         let clock = Stopwatch::start();
@@ -840,7 +793,9 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                 channels.iter().map(|c| (&c.grid, c.neval)),
                 SCAN_SEED,
             );
-            let beams = beam_column_mode(row);
+            // The incoming legs are enforced wherever the outgoing ones are: a row
+            // is informational on all of its columns or on none of them.
+            let beams = row.mode;
             let mut report = SamplesRow::new(row.key, row.process, row.mode).with_beam_mode(beams);
             report.p_floor = P_FLOOR;
             report.mg_events = mg.len();
@@ -904,15 +859,14 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
             "informational rows below the floor (measured, not enforced):\n{informational:#?}"
         );
     }
-    // The exception list has to stay a record of a live disagreement, in both
-    // directions. A row that has started agreeing belongs in the enforced set,
-    // and a row that has started disagreeing is a regression no p-value column
-    // here would notice — an informational list nobody re-reads is how a cell
-    // outlives the defect it was opened for.
-    assert_eq!(
-        beams_disagreed,
-        MASSIVE_BEAMS.into_iter().collect::<BTreeSet<_>>(),
-        "the rows whose incoming legs disagree are no longer the rows MASSIVE_BEAMS names"
+    // No row's incoming legs may depart from the banked record at all, including
+    // the rows whose *outgoing* columns are informational and so could not report
+    // it as a failure. The set is asserted rather than the failures alone because
+    // that is what makes the statement "every beam agrees" rather than "every
+    // enforced beam agrees".
+    assert!(
+        beams_disagreed.is_empty(),
+        "these rows' incoming legs depart from MadGraph's record: {beams_disagreed:?}"
     );
     assert!(failures.is_empty(), "samples gate failures:\n{failures:#?}");
 }

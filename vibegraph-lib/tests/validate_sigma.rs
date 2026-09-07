@@ -608,11 +608,13 @@ fn plan_for(dir: &str) -> Plan {
         // mass, and the Moller flux `2 lambda^(1/2)(s-hat, m_a^2, m_b^2)` rather
         // than `2 s-hat`. The flux alone is 3.46% smaller on the diquark rows.
         //
-        // A finer oracle than this cell fixes the kinematics: the integrand's own
-        // beams reproduce all eleven printed digits of MadGraph's banked event
-        // record (`E = 248.69635439 / 251.29639211`, `pz = +-241.35011226` on
-        // `p3 r3`; `pz = +-244.94897428` on `qt qt~`), so what this cell adds is
-        // that the flux and the frame the amplitude is evaluated in follow.
+        // The kinematics themselves are fixed by a finer oracle than a cross
+        // section, these rows' incoming-leg columns in `validate_samples`: the
+        // beams this integrand evaluates at are MadGraph's banked record to its
+        // printed precision (`E = 248.69635439 / 251.29639211`,
+        // `pz = +-241.35011226` on `p3 r3`; `pz = +-244.94897428` on `qt qt~`).
+        // What this cell adds is that the flux and the frame the amplitude is
+        // evaluated in follow, neither of which is visible in a momentum.
         //
         // `rel_tol` is the toy-row convention, set from the measured five-seed
         // spread (`probe_non_sm_seed_stability`) and not from the achieved central
