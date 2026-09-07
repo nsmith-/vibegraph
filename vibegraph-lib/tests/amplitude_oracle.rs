@@ -274,6 +274,32 @@ const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
     ),
 ];
 
+/// Rows whose configuration partition cannot be compared against MadGraph's,
+/// because nothing pairs the two diagram enumerations.
+///
+/// The comparison below reads MadGraph's own graph indices, so it needs the
+/// pairing [`MG_DIAGRAM_ORDER`] banks. Where a row banks per-diagram amplitudes
+/// that pairing is *measured* — over-determined by every helicity at every
+/// point under one constant — but a row that banks none has nothing to measure
+/// one against, and a pairing chosen to make this one check agree would be
+/// fitted to the only check that reads it. So both partitions are printed and
+/// the rest of the row's comparison runs: `|M|²`, the per-flow JAMPs and JAMP2
+/// need no pairing at all, and the cell reports the deviation it measures
+/// instead of reporting nothing.
+///
+/// Two-way: a listed row that starts banking per-diagram amplitudes fails here.
+/// At that point the pairing is derivable, and an exemption that outlives the
+/// reason for it is how a gate stops covering what it claims to.
+const KNOWN_CONFIG_PAIRING_UNAVAILABLE: &[(&str, &str)] = &[(
+    "wpwm_to_wpwmz_cw",
+    "222 graphs, so no per-diagram table is banked and the two orderings have \
+     nothing to be paired by. The partitions are not a shift of one another \
+     either: they agree on the multiset of group sizes and on nothing finer, \
+     and MadGraph's own per-diagram cluster trees in output/wpwm_to_wpwmz_cw.json \
+     are the honest route to the pairing whenever a session takes the five-vector \
+     structures on",
+)];
+
 /// Processes whose linear-level comparison is known to disagree with MadGraph, with the
 /// finding that keeps them out of the gate.
 ///
@@ -1001,17 +1027,45 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         .iter()
         .map(|group| group.iter().copied().collect())
         .collect();
-    if ours_grouped != theirs_grouped {
-        return Err(format!(
-            "[{name}] the integration configurations are not MadGraph's: ours group \
-             {:?}, MadGraph's AMP2 accumulators group {:?}",
-            ours_grouped
-                .iter()
-                .map(|g| g.iter().copied().collect::<Vec<_>>())
-                .collect::<Vec<_>>(),
-            table.amp2_groups
-        )
-        .into());
+    let unpaired = KNOWN_CONFIG_PAIRING_UNAVAILABLE
+        .iter()
+        .find(|(k, _)| *k == name);
+    match unpaired {
+        Some((_, why)) if banks_amps => {
+            return Err(format!(
+                "[{name}] is listed in KNOWN_CONFIG_PAIRING_UNAVAILABLE ({why}) but its table \
+                 banks per-diagram amplitudes now, so the pairing is measurable — bank it in \
+                 MG_DIAGRAM_ORDER and drop the exemption"
+            )
+            .into());
+        }
+        Some(_) => {
+            // No pairing, so the two partitions are printed side by side rather
+            // than compared: what they are read for here is the shape of the
+            // disagreement, not a verdict.
+            println!(
+                "  [{name}] integration configurations not compared (no diagram pairing): \
+                 ours group {:?}, MadGraph's AMP2 accumulators group {:?}",
+                ours_grouped
+                    .iter()
+                    .map(|g| g.iter().copied().collect::<Vec<_>>())
+                    .collect::<Vec<_>>(),
+                table.amp2_groups
+            );
+        }
+        None if ours_grouped != theirs_grouped => {
+            return Err(format!(
+                "[{name}] the integration configurations are not MadGraph's: ours group \
+                 {:?}, MadGraph's AMP2 accumulators group {:?}",
+                ours_grouped
+                    .iter()
+                    .map(|g| g.iter().copied().collect::<Vec<_>>())
+                    .collect::<Vec<_>>(),
+                table.amp2_groups
+            )
+            .into());
+        }
+        None => {}
     }
     // Where MadGraph merges, our own configurations stay one per diagram, so the
     // comparison folds ours into its accumulators rather than the other way round.

@@ -16,6 +16,15 @@
 //! authority on its shape; these are the fields a gate has to agree with it
 //! about, so they are deserialised the same way — `bundled` defaulting to true,
 //! which is what an entry that says nothing means.
+//!
+//! Read by gates in two crates, and `vibegraph-cli`'s reach it through a
+//! `#[path]` module rather than through `common/mod.rs`, so the parent module's
+//! blanket allow does not cover it there. Each consumer uses a different part of
+//! the file, which makes `dead_code` a statement about the caller rather than
+//! about this module; `report.rs` and `leshouche.rs` carry the same allow for
+//! the same reason.
+
+#![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

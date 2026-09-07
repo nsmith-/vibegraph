@@ -949,8 +949,10 @@ mod tests {
     /// Ops absent from the *compiled* (`folded().ast`) arenas of the SM census.
     /// `IdentityAmp` needs a UFO model with an `Identity` scalar bilinear; the SM has
     /// none (its Yukawas are `ProjM + ProjP`). Its kernel is pinned algebraically
-    /// against MG-covered ops in `kernel::tests`; process-level coverage belongs to a
-    /// model that has the bilinear. `Hels` is never emitted at compile time at all — it
+    /// against MG-covered ops in `kernel::tests`, and process-level coverage belongs
+    /// to the models that have the bilinear — SMEFTsim's `bbx_to_h_identity` and the
+    /// toy model's `ll_to_qqx_toy_yukawa`, whose censuses run in
+    /// `tests/smeftsim.rs` and `tests/toy_models.rs`. `Hels` is never emitted at compile time at all — it
     /// is the root the helicity expansion (`Folded::expand_helicities`) derives from
     /// every one of these arenas, and `eval_m2` reads it on every MG-gated |M|²
     /// comparison, so it is exercised by the same net through a different door.
@@ -964,10 +966,10 @@ mod tests {
     /// share two summed Lorentz indices, and no Standard Model structure has a cyclic
     /// index graph at all. The `Sigma` ops need a model that writes `Sigma` literally,
     /// which no FeynRules-generated UFO does — FeynRules expands `σ^{μν}` into gamma
-    /// chains before it emits the model — so their coverage is the toy model's
-    /// (`ll_to_qqx_toy_dipole` reaches `SigmaVout`, `ll_to_qqx_toy_tensor` reaches
-    /// `SigmaOut`; the other three are pinned hermetically, see the toy census note in
-    /// `tests/smeftsim.rs`).
+    /// chains before it emits the model — so their coverage is the toy models',
+    /// censused in `tests/toy_models.rs`: `ll_to_qqx_toy_dipole` reaches `SigmaVout`
+    /// and `ll_to_qqx_toy_tensor` reaches `SigmaOut`, and that file's allowlist records
+    /// why the other three are pinned hermetically instead.
     const SM_KNOWN_UNCOVERED: [Op; 16] = [
         Op::Hels,
         Op::IdentityAmp,

@@ -271,9 +271,15 @@ fn event_scales(run: &Path) -> Vec<(f64, f64)> {
 /// *larger* `SCALUP` (0.4333599 at 251.2964 GeV against 0.4333524 at 250), which
 /// no running coupling does. `SCALUP` is `μF` and these two are the only banked
 /// runs where the clustering reads `μR` off a different vertex, so the field this
-/// oracle takes as given is not the scale the coupling was evaluated at. Their
-/// `μR` is not recoverable from the record — `validate_scales` declines them for
-/// a model it cannot read — so the miss is reported here and not repaired.
+/// oracle takes as given is not the scale the coupling was evaluated at.
+///
+/// Their `μR` is recoverable — from the momenta rather than from the record.
+/// `validate_scales` replays both runs through the clustering, and there the
+/// computed `μR` reproduces this same `AQCDUP` inside its printing budget
+/// (`scalup_is_the_factorisation_scale_on_the_diquark_rows`, which also measures
+/// how far that scale sits from `SCALUP`). What stays unrepaired here is this
+/// module's own premise: `SCALUP` is the factorisation scale, and no reading of
+/// it recovers the coupling's.
 ///
 /// The four `lhapdf` runs are here on the strength of a *different* source:
 /// their `αs` comes from the PDF set's own table, not from this crate's

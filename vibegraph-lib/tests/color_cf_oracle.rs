@@ -808,17 +808,20 @@ fn parse_jamp_block(
         .collect()
 }
 
+/// One amplitude's identity: the diagram it came from and the colour-index chain
+/// through it — the pair MadGraph writes as one `AMP()`.
+type AmpKey = (usize, Vec<u8>);
+
 /// Our own JAMP decomposition: one column of colour coefficients over the flows
-/// per amplitude, an amplitude being one `(diagram, colour-index chain)` pair —
-/// the same object MadGraph writes as one `AMP()`.
-fn our_jamp(cb: &ColorBasis) -> Vec<((usize, Vec<u8>), Vec<Cx>)> {
-    let mut keys: BTreeSet<(usize, Vec<u8>)> = BTreeSet::new();
+/// per amplitude.
+fn our_jamp(cb: &ColorBasis) -> Vec<(AmpKey, Vec<Cx>)> {
+    let mut keys: BTreeSet<AmpKey> = BTreeSet::new();
     for el in &cb.elements {
         for c in &el.contributions {
             keys.insert((c.diagram, c.chain.clone()));
         }
     }
-    let keys: Vec<(usize, Vec<u8>)> = keys.into_iter().collect();
+    let keys: Vec<AmpKey> = keys.into_iter().collect();
     let mut columns = vec![vec![(0.0, 0.0); cb.ncolor()]; keys.len()];
     for (f, el) in cb.elements.iter().enumerate() {
         for c in &el.contributions {
@@ -845,6 +848,11 @@ fn our_jamp(cb: &ColorBasis) -> Vec<((usize, Vec<u8>), Vec<Cx>)> {
 /// they share whatever convention factor separates the two sides. Normalising each
 /// column on its own would absorb an independent sign per structure — the freedom a
 /// per-structure sign error hides in.
+/// One graph's colour block after [`normalise_group`]: its rounded columns (the
+/// sort key, so the two sides are ordered by content rather than by enumeration),
+/// the unit that normalised it, and the normalised columns themselves.
+type NormalisedGraph = (Vec<Vec<(i64, i64)>>, Cx, Vec<Vec<Cx>>);
+
 fn normalise_group(cols: &[Vec<Cx>]) -> Option<(Cx, Vec<Vec<Cx>>)> {
     let scale = cols
         .iter()
@@ -943,7 +951,7 @@ fn check_jamp(cb: &ColorBasis, mg: &MgReference, lines: &[String]) -> Result<Str
     // Ours, grouped by diagram: one group per graph, its columns in colour-index
     // chain order.
     let ours = our_jamp(cb);
-    let mut mine: Vec<(Vec<Vec<(i64, i64)>>, Cx, Vec<Vec<Cx>>)> = Vec::new();
+    let mut mine: Vec<NormalisedGraph> = Vec::new();
     for (_diagram, columns) in group_by_diagram(&ours) {
         let cols: Vec<Vec<Cx>> = columns.into_iter().map(|(_, col)| col).collect();
         if let Some((unit, norm)) = normalise_group(&cols) {
@@ -960,7 +968,7 @@ fn check_jamp(cb: &ColorBasis, mg: &MgReference, lines: &[String]) -> Result<Str
             mg.ngraphs
         ));
     }
-    let mut theirs: Vec<(Vec<Vec<(i64, i64)>>, Cx, Vec<Vec<Cx>>)> = Vec::new();
+    let mut theirs: Vec<NormalisedGraph> = Vec::new();
     for group in &groups {
         let cols: Vec<Vec<Cx>> = group
             .iter()
@@ -1060,13 +1068,14 @@ fn graph_unit_flips(units: &[Cx]) -> Result<usize, String> {
     Ok(same.min(flipped))
 }
 
+/// One diagram with every amplitude it produced: its colour-index chains, each
+/// with that amplitude's column of coefficients over the flows.
+type DiagramGroup = (usize, Vec<(Vec<u8>, Vec<Cx>)>);
+
 /// Split [`our_jamp`]'s per-amplitude columns into per-diagram groups, keeping
 /// each diagram's colour-index chains in ascending order.
-#[allow(clippy::type_complexity)]
-fn group_by_diagram(
-    amplitudes: &[((usize, Vec<u8>), Vec<Cx>)],
-) -> Vec<(usize, Vec<(Vec<u8>, Vec<Cx>)>)> {
-    let mut out: Vec<(usize, Vec<(Vec<u8>, Vec<Cx>)>)> = Vec::new();
+fn group_by_diagram(amplitudes: &[(AmpKey, Vec<Cx>)]) -> Vec<DiagramGroup> {
+    let mut out: Vec<DiagramGroup> = Vec::new();
     for ((diagram, chain), col) in amplitudes {
         match out.last_mut() {
             Some((d, group)) if d == diagram => group.push((chain.clone(), col.clone())),
