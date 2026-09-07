@@ -501,6 +501,22 @@ must pass with the list empty. Everything else in the banked layer is
 bit-identical: `pixi run --skip-deps validate` cell-for-cell against the
 sprint branch, and `amplitude_oracle` byte-identical.
 
+**Landed B7 (`f3425e2`, 2026-09-07).** Python's `factor`/`power` grammar
+adopted verbatim (`unary = "-" unary | "+" unary | power`, `power = primary
+"**" unary`), five unit tests incl. the three model expressions against
+Python's arithmetic, and `KNOWN_CRATE_DEFECTS` emptied with the falsifier
+firing as designed (`GC_7` 2.0 → 3.87e-16, `GC_54` 2.0 → 2.07e-15, imaginary
+parts exactly 0). Brief corrections: the interned SM blob caches parsed ASTs,
+so `sm_parsed.bin.zst` had to be regenerated in the same commit (any future
+`ufo/expr.rs` edit must do the same; `sm_interned_blob` catches it only under
+`extended-validation`); `dWT` has no banked Python value and is 0 under both
+banked restrictions, so its pin is expression-level. Two further defects
+found: `-x` left `im = −0.0`, sending `(−a)**0.5` to the wrong branch (fixed,
+tested); a non-negative real base still goes through `exp(e·log b)` (`3**2 =
+9.000000000000002`), and switching to `powf` moves 335 of 3254 model values by
+~1 ulp — measured, **not landed**, filed as a follow-up needing its own
+oracle before/after. Cell-for-cell report diff: 0 non-duration differences.
+
 ## 5. Wave 2
 
 ### B3 — MadGraph's channel set (feature-dev)
