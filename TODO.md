@@ -270,9 +270,9 @@ One line each; the note is the full record. Earlier sprints
 ### Standing findings to diagnose (from the note-29 sprint; never a loosened tolerance)
 
 - **A nondeterministic heap-corruption abort under the proton-sample suite's
-  concurrent load** (observed 2026-09-07 by the sprint manager, 1 run in 5;
+  concurrent load** (observed 2026-09-07 by the sprint manager, 1 run in 7;
   *not* caused by the `ufo-lorentz` sprint and not diagnosed by it). In one of
-  five runs of
+  seven runs of
   `validate_samples_proton::generated_llj_dyn_events_agree_with_madgraphs_banked_ones`,
   the `vibegraph integrate` child (`p p > l+ l- j QCD=2 QED=2` on
   `pp_to_llj_dyn`'s dynamical-scale card, seed 20260731, 300k × niter) aborted
@@ -287,8 +287,9 @@ One line each; the note is the full record. Earlier sprints
   egglog 2.0 but not installed), the linked native code is zstd, ring, dirs-sys
   and mimalloc, and `coupling/cluster/**`, `hadronic.rs`, `proton.rs` and
   `vegas` are byte-identical to `main`. Unreproduced so far: the same child
-  command run directly twice, the test alone once, and a full no-fail-fast
-  banked layer once all passed, and it has not been attempted on `main`. Crash
+  command run directly twice, the test alone once, the whole test binary under
+  its own eleven-child load twice, and a full no-fail-fast banked layer once
+  all passed, and it has not been attempted on `main`. Crash
   report preserved at
   `~/Library/Logs/DiagnosticReports/vibegraph-2026-09-07-085712.ips`. Anyone
   reading a gate under this suite should rerun the binary once on an abort and
