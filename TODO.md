@@ -5,7 +5,20 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: **between sprints.** The `ufo-lorentz` feature sprint
+**Current position**: **the `banked-open-ends` validation sprint is open**
+(planned 2026-09-07, **note 36 is the design note**). Seven sessions in three
+waves close the open ends the last three sprints banked: B0 seed-headroom
+census, B2 incoming-leg `samples` column and B1 massive fixed beams (wave 0,
+dispatched 2026-09-07); B4 `ud_to_epemud_qcd0` `ICOLUP`, B5 coupling-level
+oracle, B6 hygiene bundle incl. `dynamical_scale_choice` 1–5 on the fixed-beam
+path (wave 1); B3 MadGraph's channel set (wave 2). Targets: the three
+massive-incoming toy `integrals` cells, `ud_to_epemud_qcd0`'s `samples` cell
+and `gg_to_gg_cg`'s two `uncovered` cells flip on measurement; every other
+cell unmoved. Excluded with reasons in note 36 §1: the five-vector residual,
+the `ee_to_mumua` +1.04%, the 2→6 tail, banking `p p > j j j`, the malloc
+abort.
+
+The `ufo-lorentz` feature sprint
 closed 2026-09-07 with session Z; **note 35 §10 is the close-out record**, and
 **§10.9 the post-close-out addendum** that gave the non-Standard-Model rows
 their own cross sections and event samples. What that leaves standing, counted
@@ -26,10 +39,9 @@ The `info` cells that remain are `ee_to_wpwm_cw` (one |M|² point at 2.08e-12),
 `gg_to_gg_cg`'s diagram count under the `NGRAPHS` convention, the three
 massive-incoming-leg toy cross sections (the fixed-beam convention finding
 below, σ 6–7% low with the cause localised), and the five Standard-Model `info`
-cells that predate the sprint. **Next**: the user's call.
-The named candidates are the channel-set migration and the five-vector residual
-(both in the validation backlog below), and `refdata-7`'s upload, which is the
-one thing the sprint could not do for itself.
+cells that predate the sprint. The channel-set migration is B3 of the open
+sprint; the five-vector residual stays in the validation backlog below;
+`refdata-7` was published the same day.
 
 Sprint-history context follows. The **performance sprint** (eleven
 sessions, note 31 §6) and its **addendum** (eight of nine merged, S9 killed
