@@ -284,6 +284,20 @@ One line each; the note is the full record. Earlier sprints
 
 ### Standing findings to diagnose (from the note-29 sprint; never a loosened tolerance)
 
+- **A coupling-level oracle ahead of the amplitude gate** (from the
+  `ee_to_zh_smeft` diagnosis, 2026-09-07). For every banked row, compare this
+  crate's coupling values on the row's own `param_card.dat` against
+  MadGraph's *Fortran runtime* values, read from the f2py matrix-element
+  module's `couplings` common block that `build_amplitude.sh` already builds
+  (bit-level, per coupling, so a 1e-8 on one coupling reads as "`GC_303`
+  differs" rather than as a tenth-digit spread in per-diagram constants);
+  when the two disagree, evaluate the same card through MadGraph's Python
+  `model_reader` as the arbiter, which says whose side is off its own model.
+  MadGraph's Python is not an oracle by itself here: it agreed with this crate
+  on all 109 couplings, and the Zh defect lived in MadGraph's Python-to-Fortran
+  writer, which prints a UFO literal like `0.4583333333333333` as
+  `4.583333D-01`. Blind spot of the whole check: a rounding that both sides
+  share, which the amplitude gate cannot see either.
 - **A nondeterministic heap-corruption abort under the proton-sample suite's
   concurrent load** (observed 2026-09-07 by the sprint manager, 1 run in 7;
   *not* caused by the `ufo-lorentz` sprint and not diagnosed by it). In one of
